@@ -4,7 +4,7 @@ A medieval open-world merchant simulation built with HTML5 Canvas and vanilla Ja
 
 ## 🎮 Play Now
 
-**[► Play Merchant Realms](https://YOUR_USERNAME.github.io/MerchantRealms/)**
+**[► Play Merchant Realms](https://configmancooper.github.io/MerchantRealms/)**
 
 ## About
 
