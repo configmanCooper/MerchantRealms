@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Merchant Realms</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=MedievalSharp&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Main game canvas -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Minimap canvas -->
+    <canvas id="minimapCanvas" width="200" height="160"></canvas>
+
+    <!-- Title Screen Overlay -->
+    <div id="titleScreen" class="overlay">
+        <div class="title-content">
+            <h1 class="game-title">Merchant Realms</h1>
+            <p class="game-subtitle">Build Your Trade Empire in a World of War and Diplomacy</p>
+            <div class="title-divider">⚜</div>
+            <p class="game-desc">
+                Navigate the treacherous politics of rival kingdoms, forge supply chains across
+                perilous roads, and amass a fortune worthy of legend. Hire workers, build
+                production facilities, and dispatch caravans — but beware the perils of war,
+                plague, and banditry.
+            </p>
+            <button id="btnNewGame" class="btn-medieval btn-large">⚔️ New Game</button>
+            <button id="btnLoadGame" class="btn-medieval btn-large" style="margin-top:12px;">📂 Load Game</button>
+            <button id="btnTutorial" class="btn-medieval btn-large btn-tutorial" style="margin-top:12px;">📖 Tutorial</button>
+            <div class="title-footer">
+                <span>🌾 Trade &bull; 🏗️ Build &bull; ⚔️ Conquer</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Character Creation Screen -->
+    <div id="charCreateScreen" class="overlay hidden">
+        <div class="title-content char-create-content">
+            <h1 class="game-title" style="font-size:2.2rem;margin-bottom:8px;">Create Your Character</h1>
+            <div class="title-divider">⚜</div>
+            <form id="charCreateForm" class="char-form" autocomplete="off">
+                <div class="char-form-group">
+                    <label class="char-label" for="charFirstName">First Name</label>
+                    <input type="text" id="charFirstName" class="char-input" maxlength="20" placeholder="Aldric" />
+                </div>
+                <div class="char-form-group">
+                    <label class="char-label" for="charLastName">Last Name</label>
+                    <input type="text" id="charLastName" class="char-input" maxlength="20" placeholder="Ashford" />
+                </div>
+                <div class="char-form-group">
+                    <label class="char-label">Sex</label>
+                    <div class="char-sex-toggle">
+                        <label class="char-sex-option">
+                            <input type="radio" name="charSex" value="M" checked />
+                            <span class="char-sex-btn">♂ Male</span>
+                        </label>
+                        <label class="char-sex-option">
+                            <input type="radio" name="charSex" value="F" />
+                            <span class="char-sex-btn">♀ Female</span>
+                        </label>
+                    </div>
+                </div>
+                <button type="button" id="btnStartAdventure" class="btn-medieval btn-large" style="margin-top:20px;">Start Adventure</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Top Bar -->
+    <div id="topBar" class="ui-panel top-bar hidden">
+        <div class="top-left">
+            <span id="dayDisplay" class="day-display">Day 1 — Spring, Year 1</span>
+        </div>
+        <div class="top-center">
+            <div class="speed-controls">
+                <button class="btn-speed" data-speed="0" title="Pause (0)">⏸</button>
+                <button class="btn-speed active" data-speed="1" title="Normal (1 day/min)">▶ 1×</button>
+                <button class="btn-speed" data-speed="4" title="Fast (4x)">▶▶ 4×</button>
+                <button class="btn-speed" data-speed="16" title="Faster (16x)">▶▶▶ 16×</button>
+                <button class="btn-speed" data-speed="60" title="Fastest (60x)">⏩ 60×</button>
+            </div>
+        </div>
+        <div class="top-right">
+            <div class="zoom-controls" style="display:inline-flex;align-items:center;margin-right:10px;gap:4px;">
+                <button id="btnZoomOut" class="btn-speed" title="Zoom Out (-)">🔍−</button>
+                <span id="zoomLevel" style="font-size:0.75rem;color:#d4af37;min-width:36px;text-align:center;">1.0×</span>
+                <button id="btnZoomIn" class="btn-speed" title="Zoom In (+)">🔍+</button>
+            </div>
+            <div class="music-controls" style="display:inline-flex;align-items:center;gap:4px;margin-right:8px;">
+                <button id="btnMusicToggle" class="btn-speed" title="Toggle Music" style="font-size:1rem;">🔊</button>
+                <input id="musicVolume" type="range" min="0" max="100" value="30"
+                       style="width:54px;height:14px;accent-color:#d4af37;cursor:pointer;">
+            </div>
+            <button id="btnSave" class="btn-speed" title="Save Game (Ctrl+S)" style="margin-right:4px;font-size:1rem;">💾</button>
+            <button id="btnLoad" class="btn-speed" title="Load Game" style="margin-right:4px;font-size:1rem;">📂</button>
+            <button id="btnMainMenu" class="btn-speed" title="Main Menu" style="margin-right:8px;font-size:0.85rem;">🏠</button>
+            <button id="btnTopLeaderboard" class="btn-speed" title="Leaderboard" style="margin-right:8px;font-size:0.85rem;" onclick="UI.openLeaderboard()">🏆</button>
+            <button id="btnSettings" class="btn-speed" title="Settings" style="margin-right:8px;font-size:0.9rem;">⚙️</button>
+            <div id="notificationBell" class="notification-bell" title="Notifications">
+                🔔 <span id="notifCount" class="notif-count hidden">0</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pause Indicator -->
+    <div id="pauseIndicator" class="pause-indicator" style="display:none;">⏸ PAUSED</div>
+
+    <!-- Left Panel -->
+    <div id="leftPanel" class="ui-panel left-panel hidden">
+        <div class="panel-header">
+            <span class="panel-title">📜 Ledger</span>
+            <button class="btn-collapse" data-target="leftPanelBody">◀</button>
+        </div>
+        <div id="leftPanelBody" class="panel-body">
+            <div class="stat-group">
+                <div class="stat-label">Player</div>
+                <div id="playerName" class="stat-value player-name">Merchant</div>
+                <div id="playerCharInfo" class="stat-value" style="font-size:0.8rem;color:var(--parchment-dark);"></div>
+            </div>
+            <div id="playerEquipSection" class="stat-group" style="display:none;">
+                <div class="stat-label">Equipment</div>
+                <div id="playerEquipInfo" style="font-size:0.8rem;color:var(--parchment-dark);"></div>
+            </div>
+            <div class="stat-group">
+                <div class="stat-label">Gold</div>
+                <div id="playerGold" class="stat-value gold-value">🪙 500</div>
+            </div>
+            <div class="stat-group">
+                <div class="stat-label">Location</div>
+                <div id="playerTown" class="stat-value">—</div>
+            </div>
+            <div class="stat-group">
+                <div class="stat-label">Reputation</div>
+                <div id="reputationBars" class="reputation-bars" title="Your standing with each kingdom. Higher reputation gives better prices, lower taxes, and access to higher social ranks."></div>
+            </div>
+            <div class="stat-group">
+                <div class="stat-label">Notoriety</div>
+                <div class="meter-container" title="How well known you are to law enforcement. High notoriety increases detection chance for illegal activities.">
+                    <div id="notorietyMeter" class="meter notoriety-meter">
+                        <div id="notorietyFill" class="meter-fill" style="width:0%"></div>
+                    </div>
+                    <span id="notorietyValue" class="meter-label">0</span>
+                </div>
+            </div>
+            <div class="stat-row">
+                <div class="stat-mini"><span class="stat-icon">👥</span> <span id="employeeCount">0</span> Workers</div>
+                <div class="stat-mini"><span class="stat-icon">🏠</span> <span id="buildingCount">0</span> Buildings</div>
+            </div>
+            <div class="stat-row">
+                <div class="stat-mini"><span class="stat-icon">🐴</span> <span id="caravanCount">0</span> Caravans</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Panel (context-sensitive) -->
+    <div id="rightPanel" class="ui-panel right-panel hidden">
+        <div class="panel-header">
+            <span id="rightPanelTitle" class="panel-title">Details</span>
+            <button id="btnCloseRight" class="btn-close">✕</button>
+        </div>
+        <div id="rightPanelBody" class="panel-body scrollable"></div>
+    </div>
+
+    <!-- Bottom Bar -->
+    <div id="bottomBar" class="ui-panel bottom-bar hidden">
+        <div class="action-buttons">
+            <div class="bar-row" id="barRowActions">
+                <button class="btn-action" id="btnTrade" title="Trade (T)">📊<span class="btn-label"> Trade</span></button>
+                <button class="btn-action" id="btnBuild" title="Build (B)">🏗️<span class="btn-label"> Build</span></button>
+                <button class="btn-action" id="btnHire" title="Hire (H)">👥<span class="btn-label"> Hire</span></button>
+            </div>
+            <div class="bar-row" id="barRowManage">
+                <button class="btn-action" id="btnCharacter" title="Character">👤<span class="btn-label"> Character</span></button>
+                <button class="btn-action" id="btnCaravan" title="Caravan (C)">🐴<span class="btn-label"> Caravan</span></button>
+            </div>
+            <div class="bar-row" id="barRowWorld">
+                <button class="btn-action" id="btnKingdoms" title="Kingdoms">👑<span class="btn-label"> Kingdoms</span></button>
+                <button class="btn-action" id="btnMap" title="Map View (M)">🗺️<span class="btn-label"> Map</span></button>
+                <button class="btn-action btn-small" id="btnLocate" title="Find Me (F)">📍<span class="btn-label"> Find</span></button>
+                <button class="btn-action" id="btnLog" title="Event Log (L)">📋<span class="btn-label"> Log</span></button>
+            </div>
+        </div>
+        <div id="quickInventory" class="quick-inventory"></div>
+        <div id="winProgress" class="win-progress"></div>
+    </div>
+
+    <!-- Travel HUD Panel -->
+    <div id="travelPanel" class="ui-panel travel-panel hidden">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;background:rgba(0,0,0,0.3);border-bottom:1px solid rgba(255,255,255,0.1);">
+            <span style="font-size:0.85rem;color:var(--gold);">🚶 Traveling</span>
+            <span id="travelETA" style="font-size:0.8rem;color:var(--text-muted);">-- days left</span>
+        </div>
+        <div style="padding:6px 8px;">
+            <div id="travelDestText" style="font-size:0.85rem;margin-bottom:4px;">To: ---</div>
+            <div style="background:rgba(0,0,0,0.4);border-radius:3px;height:8px;margin-bottom:6px;overflow:hidden;">
+                <div id="travelProgressBar" style="height:100%;background:var(--gold);width:0%;transition:width 0.3s;border-radius:3px;"></div>
+            </div>
+            <div id="travelActions" style="display:flex;flex-wrap:wrap;gap:4px;">
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Container -->
+    <div id="modalOverlay" class="modal-overlay hidden">
+        <div id="modalDialog" class="modal-dialog">
+            <div class="modal-header">
+                <span id="modalTitle" class="modal-title">Dialog</span>
+                <button id="btnCloseModal" class="btn-close">✕</button>
+            </div>
+            <div id="modalBody" class="modal-body scrollable"></div>
+            <div id="modalFooter" class="modal-footer"></div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Tooltip -->
+    <div id="tooltip" class="tooltip hidden"></div>
+
+    <!-- Win/Lose Overlay -->
+    <div id="endScreen" class="overlay hidden">
+        <div class="title-content">
+            <h1 id="endTitle" class="game-title">Victory!</h1>
+            <p id="endMessage" class="game-subtitle"></p>
+            <div id="endStats" class="end-stats"></div>
+            <button id="btnEndOk" class="btn-medieval btn-large">Return to Title</button>
+        </div>
+    </div>
+
+    <!-- Kingdom/Town Selection Screen -->
+    <div id="kingdomSelectScreen" class="overlay hidden">
+        <div id="kingdomSelectContent" class="kingdom-select-content"></div>
+    </div>
+
+    <!-- Context Menu -->
+    <div id="contextMenu" class="context-menu hidden">
+        <div class="context-menu-items"></div>
+    </div>
+
+    <!-- Scripts loaded in dependency order -->
+    <script src="js/lz-string.min.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/engine.js"></script>
+    <script src="js/player.js"></script>
+    <script src="js/render.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/tutorial.js"></script>
+    <script src="js/music.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>

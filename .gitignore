@@ -1,0 +1,20 @@
+﻿# Dev/testing files
+node_modules/
+test_*.js
+server.js
+start.bat
+package.json
+package-lock.json
+GameTestingCompany/
+screenshots/
+game/
+
+# OS files
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Editor files
+*.swp
+*.swo
+.vscode/

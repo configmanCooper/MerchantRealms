@@ -1,0 +1,1011 @@
+// ============================================================
+// Merchant Realms — Interactive Tutorial System (19 Chapters)
+// ============================================================
+
+window.Tutorial = (function () {
+    'use strict';
+
+    var active = false;
+    var currentChapter = 0;
+    var currentStep = 0;
+    var panelEl = null;
+    var highlightedEls = [];
+
+    // Polling / waitFor state
+    var pollInterval = null;
+    var skipTimeout = null;
+    var snapshotState = {};
+
+    // ═══════════════════════════════════════════════════════════
+    //  HELPERS
+    // ═══════════════════════════════════════════════════════════
+
+    function isModalOpen() {
+        var overlay = document.getElementById('modalOverlay');
+        return overlay && !overlay.classList.contains('hidden');
+    }
+
+    function isModalClosed() {
+        return !isModalOpen();
+    }
+
+    function closeModal() {
+        var overlay = document.getElementById('modalOverlay');
+        if (overlay && !overlay.classList.contains('hidden')) {
+            overlay.classList.add('hidden');
+        }
+    }
+
+    function getPlayerGold() {
+        try { return Player.state.gold || 0; } catch (e) { return 0; }
+    }
+
+    function getPlayerInventory() {
+        try { return Player.state.inventory || {}; } catch (e) { return {}; }
+    }
+
+    function getPlayerBuildings() {
+        try { return Player.state.buildings || []; } catch (e) { return []; }
+    }
+
+    function getPlayerEmployees() {
+        try { return Player.state.employees || []; } catch (e) { return []; }
+    }
+
+    function getPlayerSkills() {
+        try { return Player.state.skills || {}; } catch (e) { return {}; }
+    }
+
+    function getPlayerSkillCount() {
+        try {
+            var s = Player.state.skills || {};
+            return Object.keys(s).length;
+        } catch (e) { return 0; }
+    }
+
+    function clickButton(id) {
+        var btn = document.getElementById(id);
+        if (btn) btn.click();
+    }
+
+    function btnExists(id) {
+        return !!document.getElementById(id);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  CHEATS (tutorial aids only)
+    // ═══════════════════════════════════════════════════════════
+
+    function giveGold(amount) {
+        if (!active) return;
+        try {
+            Player.state.gold = (Player.state.gold || 0) + (amount || 0);
+            if (typeof UI !== 'undefined' && UI.update) UI.update();
+        } catch (e) { console.error('Tutorial cheat giveGold error:', e); }
+    }
+
+    function giveSkillPoints(amount) {
+        if (!active) return;
+        try {
+            Player.state.skillPoints = (Player.state.skillPoints || 0) + (amount || 0);
+            if (typeof UI !== 'undefined' && UI.update) UI.update();
+        } catch (e) { console.error('Tutorial cheat giveSP error:', e); }
+    }
+
+    function giveItem(resourceId, qty) {
+        if (!active) return;
+        try {
+            if (!Player.state.inventory) Player.state.inventory = {};
+            Player.state.inventory[resourceId] = (Player.state.inventory[resourceId] || 0) + (qty || 0);
+            if (typeof UI !== 'undefined' && UI.update) UI.update();
+        } catch (e) { console.error('Tutorial cheat giveItem error:', e); }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  POLLING / WAITFOR SYSTEM
+    // ═══════════════════════════════════════════════════════════
+
+    function startWatching(conditionFn, onComplete) {
+        stopWatching();
+
+        // Show waiting state
+        updateNextButton('\u23F3 Complete the action above...', true);
+
+        pollInterval = setInterval(function () {
+            try {
+                if (conditionFn()) {
+                    stopWatching();
+                    // Brief success flash
+                    updateNextButton('\u2705 Done!', true);
+                    setTimeout(function () {
+                        if (onComplete) {
+                            onComplete();
+                        } else {
+                            nextStep();
+                        }
+                    }, 800);
+                }
+            } catch (e) {
+                console.error('Tutorial poll error:', e);
+            }
+        }, 500);
+
+        // After 45 seconds, show skip option
+        skipTimeout = setTimeout(function () {
+            updateNextButton('Skip this step \u2192', false);
+        }, 45000);
+    }
+
+    function stopWatching() {
+        if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+        if (skipTimeout) { clearTimeout(skipTimeout); skipTimeout = null; }
+    }
+
+    function updateNextButton(label, disabled) {
+        var btn = document.getElementById('tutBtnNext');
+        if (!btn) return;
+        btn.textContent = label;
+        btn.disabled = !!disabled;
+        if (disabled) {
+            btn.style.opacity = '0.5';
+            btn.style.cursor = 'not-allowed';
+        } else {
+            btn.style.opacity = '1';
+            btn.style.cursor = 'pointer';
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  CHAPTERS & STEPS
+    // ═══════════════════════════════════════════════════════════
+
+
+    var chapters = [
+
+        // ═══════════════════════════════════════════════════════
+        //  PART 1: BASICS
+        // ═══════════════════════════════════════════════════════
+
+        // ── Chapter 1: Welcome & Controls ─────────────────────
+        {
+            title: 'Welcome & Controls',
+            part: 'basic',
+            steps: [
+                {
+                    title: 'Welcome to Merchant Realms',
+                    text: '\uD83C\uDFF0 Welcome, merchant! In <strong>Merchant Realms</strong> you trade goods, build an empire, climb social ranks, and found a dynasty across generations. Let\u2019s learn the basics \u2014 you can leave at any time via the \uD83C\uDFE0 Main Menu button.'
+                },
+                {
+                    title: 'Camera & Map',
+                    text: '\uD83C\uDFA5 <strong>Pan</strong> the map with <strong>W/A/S/D</strong> or <strong>arrow keys</strong>. <strong>Zoom</strong> with the <strong>scroll wheel</strong> (0.5x\u20134x). Click any <strong>town</strong> on the map to inspect it.',
+                    highlight: '#gameCanvas'
+                },
+                {
+                    title: 'Your Player Icon',
+                    text: '\uD83D\uDD36 See that <strong>golden pulsing diamond</strong> on the map? That\u2019s <strong>you</strong>! It shows your exact position \u2014 in a town, on the road, or traveling by sea. If you ever lose track of yourself, click the <strong>\uD83D\uDCCD Find</strong> button or <strong>click your name</strong> in the top-left panel to instantly snap the camera back to your location. Try it now \u2014 pan away with W/A/S/D, then click <strong>\uD83D\uDCCD Find</strong>!',
+                    highlight: '#btnLocate',
+                    waitFor: function () {
+                        // Detect that locatePlayer was used by checking for the toast
+                        var toasts = document.querySelectorAll('.toast');
+                        for (var i = 0; i < toasts.length; i++) {
+                            if (toasts[i].textContent.indexOf('Centered on your location') >= 0) return true;
+                        }
+                        return false;
+                    },
+                    skipAfter: 12000
+                },
+                {
+                    title: 'Speed Controls',
+                    text: '\u23E9 Press <strong>1\u20135</strong> or click the speed buttons to change game speed. Try pressing <strong>2</strong> now! Use \u23F8 to pause when you need to plan.',
+                    highlight: '.speed-controls',
+                    waitFor: function () {
+                        return typeof Game !== 'undefined' && Game.getSpeed && Game.getSpeed() > 1;
+                    },
+                    onComplete: function () {
+                        if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(1);
+                        nextStep();
+                    }
+                },
+                {
+                    title: 'Meeting the Townsfolk',
+                    text: '\uD83D\uDC65 <strong>Zoom in</strong> (scroll wheel) past 1.5x to see individual <strong>NPCs walking around</strong> your town \u2014 click one to see their name, job, and personality! You can also click the <strong>\uD83D\uDCAC Talk</strong> button in the bottom bar to chat with a random local \u2014 they may share useful rumors about prices, wars, or elite merchants. Try clicking <strong>\uD83D\uDCAC Talk</strong> now!',
+                    highlight: '#btnTalk',
+                    waitFor: function () {
+                        // Detect that the talk dialog appeared
+                        var modal = document.getElementById('modalOverlay');
+                        if (!modal || modal.classList.contains('hidden')) return false;
+                        var body = document.getElementById('modalBody');
+                        return body && body.textContent.indexOf('says') >= 0;
+                    },
+                    skipAfter: 15000
+                },
+                {
+                    title: 'Town Info & People List',
+                    text: '\uD83C\uDFD8\uFE0F <strong>Click any town</strong> on the map to see its details \u2014 population, market prices, buildings, and a <strong>\uD83D\uDC65 View Townspeople</strong> button that lists every NPC living there. You can <strong>right-click anywhere</strong> on the map to travel off-road to that point for shortcuts! The <strong>Ledger</strong> (left panel) shows your gold, location, and status.',
+                    highlight: '#leftPanel'
+                },
+                {
+                    title: 'Saving Your Game',
+                    text: '\uD83D\uDCBE <strong>Save/Load</strong> from the menu at any time. You have <strong>5 save slots</strong> to experiment with different strategies. Each slot has a <strong>Download</strong> button (\u2B07\uFE0F) to save your game as a file to your computer, and an <strong>Import</strong> button (\uD83D\uDCC2) to upload a previously downloaded save. This way your progress is safe even if browser data is cleared! Try saving now \u2014 click the <strong>Save Game</strong> button.',
+                    highlight: '#btnSaveGame',
+                    waitFor: function () { return typeof Game !== 'undefined' && Game.hasSave && Game.hasSave(); },
+                    skipAfter: 8000
+                }
+            ]
+        },
+
+        // ── Chapter 2: Your First Trade ───────────────────────
+        {
+            title: 'Your First Trade',
+            part: 'basic',
+            steps: [
+                {
+                    title: 'Open the Market',
+                    text: '\uD83D\uDCB0 Time for your first trade! We\u2019ve given you <strong>300 bonus gold</strong>. Click the <strong>\uD83D\uDCCA Trade</strong> button to open the market.',
+                    highlight: '#btnTrade',
+                    onEnter: function () {
+                        giveGold(300);
+                    },
+                    waitFor: function () { return isModalOpen(); }
+                },
+                {
+                    title: 'Buy Some Goods',
+                    text: '\uD83C\uDF3E Prices are set by <strong>supply & demand</strong>. Find \uD83C\uDF3E Wheat and click <strong>Buy</strong>. In a real game, you\u2019d buy cheap here and sell where prices are higher!',
+                    waitFor: function () {
+                        var inv = getPlayerInventory();
+                        return (inv.wheat || 0) > 0;
+                    },
+                    onComplete: function () {
+                        snapshotState.wheatBought = (getPlayerInventory().wheat || 0);
+                        closeModal();
+                        nextStep();
+                    }
+                },
+                {
+                    title: 'Sell for Profit',
+                    text: '\uD83D\uDCCA Now sell it back. Click <strong>\uD83D\uDCCA Trade</strong> again and sell your wheat. The <strong>market spread</strong> means sell prices are ~80% of buy in the same town \u2014 real profit comes from <strong>trading between towns</strong>.',
+                    highlight: '#btnTrade',
+                    waitFor: function () { return isModalOpen(); }
+                },
+                {
+                    title: 'Complete the Sale',
+                    text: '\uD83C\uDF3E Sell all your wheat now! Remember the golden rule: <strong>buy low in one town, sell high in another</strong>.',
+                    waitFor: function () {
+                        var inv = getPlayerInventory();
+                        return (inv.wheat || 0) === 0;
+                    },
+                    onComplete: function () {
+                        closeModal();
+                        nextStep();
+                    }
+                },
+                {
+                    title: 'Trading Tips',
+                    text: '\uD83D\uDCA1 <strong>Key concepts</strong>:<br>\u2022 \uD83D\uDCC8 <strong>Supply/demand</strong> \u2014 prices swing \u00B115% based on local stock<br>\u2022 \uD83D\uDCC5 <strong>Seasons</strong> affect crop prices \u2014 buy grain after harvest, sell in winter<br>\u2022 \uD83C\uDFDB\uFE0F <strong>Tariffs</strong> \u2014 foreign traders pay extra in some kingdoms<br>\u2022 Higher <strong>rank</strong> = tax discount (up to 30%!)'
+                }
+            ]
+        },
+
+        // ── Chapter 3: Traveling the World ────────────────────
+        {
+            title: 'Traveling the World',
+            part: 'basic',
+            steps: [
+                {
+                    title: 'Road Travel',
+                    text: '\uD83D\uDEB6 <strong>Click any town</strong> on the map, then click <strong>\uD83D\uDEB6 Travel Here</strong>. Road quality affects speed: no road (0.25x), poor road (1.5x), good road (2x). Routes show estimated travel time.',
+                    highlight: '#gameCanvas'
+                },
+                {
+                    title: 'Travel Demo',
+                    text: '\uD83D\uDC34 We\u2019re sending you to a nearby town! A <strong>\uD83D\uDC34 horse</strong> gives +30% speed. Watch the progress bar \u2014 you\u2019ll arrive shortly.',
+                    onEnter: function () {
+                        if (Player.horses && Player.horses.length === 0) {
+                            try { Player.buyHorse && Player.buyHorse(Player.townId); } catch(e) {}
+                            if (Player.horses && Player.horses.length === 0 && Player.state) {
+                                Player.state.horses = Player.state.horses || [];
+                                Player.state.horses.push({ id: 'tutorial_horse', name: 'Storm', stamina: 90, speed: 1.0 });
+                            }
+                        }
+                        var towns = Engine.getTowns();
+                        var roads = Engine.getRoads();
+                        var nearest = null, nearestDist = Infinity;
+                        var startTown = Engine.findTown(Player.townId);
+                        if (startTown && roads) {
+                            for (var ri = 0; ri < roads.length; ri++) {
+                                var rd = roads[ri];
+                                var otherId = null;
+                                if (rd.fromTownId === Player.townId) otherId = rd.toTownId;
+                                else if (rd.toTownId === Player.townId) otherId = rd.fromTownId;
+                                if (otherId) {
+                                    var ot = Engine.findTown(otherId);
+                                    if (ot) {
+                                        var d = Math.hypot(startTown.x - ot.x, startTown.y - ot.y);
+                                        if (d < nearestDist) { nearestDist = d; nearest = otherId; }
+                                    }
+                                }
+                            }
+                        }
+                        if (nearest) {
+                            try { Player.travelTo(nearest); } catch (e) { }
+                        } else if (towns.length > 1) {
+                            try { Player.travelTo(towns[1].id); } catch (e) { }
+                        }
+                        if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(10);
+                    },
+                    waitFor: function () {
+                        try { return !Player.traveling; } catch (e) { return false; }
+                    },
+                    onComplete: function () {
+                        if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(1);
+                        nextStep();
+                    }
+                },
+                {
+                    title: 'Off-Road & Free Travel',
+                    text: '\uD83E\uDD7E <strong>Right-click anywhere</strong> on the map to travel off-road. It\u2019s slow (0.25x speed) but lets you go <strong>anywhere</strong> \u2014 no roads needed! Great for shortcuts.',
+                    highlight: '#gameCanvas'
+                },
+                {
+                    title: 'Sea Travel',
+                    text: '\u26F5 At <strong>port towns</strong>, buy a ship to sail ocean routes at 1.5x speed. Beware <strong>storms</strong> (5% risk, lose 10\u201330% cargo). Ships unlock fast trade lanes between distant ports.'
+                }
+            ]
+        },
+
+        // ── Chapter 4: Working & Earning ──────────────────────
+        {
+            title: 'Working & Earning',
+            part: 'basic',
+            steps: [
+                {
+                    title: 'Fatigue & Rest',
+                    text: '\uD83D\uDE34 <strong>Fatigue</strong> builds over time (0\u2013100%). At 60% you get a warning; at 85% you take penalties to trade, combat, and social skills. <strong>Rest at home or an inn</strong> to recover.'
+                },
+                {
+                    title: 'Jobs & Street Trading',
+                    text: '\uD83D\uDD28 As a <strong>Peasant</strong>, work for other merchants or take odd jobs. <strong>Street trading</strong> lets you sell directly to townspeople. Both are great ways to earn starting gold!'
+                },
+                {
+                    title: 'Transport & Carry Capacity',
+                    text: '\uD83D\uDCE6 Upgrade your capacity to carry more goods:<br>\u2022 \uD83C\uDF92 <strong>Backpack</strong>: 2x (free) \u2022 \uD83D\uDED2 <strong>Cart</strong>: 4x (100g)<br>\u2022 <strong>Wagon</strong>: 10x (400g, needs horses)<br>More cargo = bigger profits per trip!'
+                }
+            ]
+        },
+
+        // ── Chapter 5: Your First Home ────────────────────────
+        {
+            title: 'Your First Home',
+            part: 'basic',
+            steps: [
+                {
+                    title: 'Why Get Housing?',
+                    text: '\uD83C\uDFE0 Housing gives you a <strong>place to rest</strong>, <strong>storage</strong> for goods, <strong>security</strong> against theft, and a home for your <strong>family</strong>. Start with a \uD83D\uDED6 <strong>Shack</strong> (50g) or \uD83C\uDFE1 <strong>Cottage</strong> (200g).'
+                },
+                {
+                    title: 'Rest & Storage',
+                    text: '\uD83D\uDCA4 <strong>Sleep at home</strong> for full recovery in 20 ticks. Better housing = faster rest and more storage (up to 500 units). A \uD83C\uDFE8 <strong>Inn Room</strong> (3g/night) works while traveling.'
+                },
+                {
+                    title: 'Upgrading Over Time',
+                    text: '\uD83C\uDFF0 As you grow wealthier, upgrade for better bonuses:<br>\u2022 <strong>Townhouse</strong> (600g): +15 reputation, 200 storage<br>\u2022 <strong>Merchant House</strong> (1,500g): +25 rep, 350 storage<br>\u2022 <strong>Manor</strong> (5,000g): +30 rep, 400 storage<br>Housing sells at 70% of purchase price.'
+                }
+            ]
+        },
+
+        // ── Chapter 6: Marriage & Dynasty ─────────────────────
+        {
+            title: 'Marriage & Dynasty',
+            part: 'basic',
+            steps: [
+                {
+                    title: '\u26A0\uFE0F Why This Matters',
+                    text: '\u26A0\uFE0F <strong>CRITICAL</strong>: If you die without a <strong>spouse</strong> or <strong>children</strong>, it\u2019s <strong>GAME OVER</strong> \u2014 you restart from scratch! <strong>Get married early</strong> to ensure your dynasty continues.'
+                },
+                {
+                    title: 'Meeting & Courtship',
+                    text: '\uD83E\uDD1D <strong>Click on NPCs</strong> in towns to build relationships (0\u2013100). Give <strong>gifts</strong>, go on <strong>dates</strong>, and build trust. At 60+ relationship, begin <strong>courtship</strong> (nobles require 80+). The <strong>Charming</strong> skill gives +25% relationship gains.'
+                },
+                {
+                    title: 'Marriage & Children',
+                    text: '\uD83D\uDC8D <strong>Marriage</strong> costs 50g + 100g per rank. Choose wisely \u2014 spouses have <strong>personality traits</strong> that affect your business! <strong>Children</strong> arrive naturally (3% chance/day, 270-day pregnancy, max 8).'
+                },
+                {
+                    title: 'Inheritance \u2014 Your Legacy',
+                    text: '\uD83D\uDC51 When you die, your <strong>heir inherits</strong>: 70% of gold, 70% of reputation, 15% of skills, and your <strong>buildings</strong>. The <strong>Legacy of Trust</strong> skill boosts inheritance to 50%! <strong>Good Parent</strong> gives +10% gold/rep.'
+                },
+                {
+                    title: 'Dynasty Tips',
+                    text: '\uD83D\uDCA1 <strong>Dynasty strategies</strong>:<br>\u2022 Marry someone with <strong>Natural Leader</strong> (+10% worker productivity)<br>\u2022 Teach your children skills to prepare them<br>\u2022 Invest in <strong>Dynasty Founder</strong> skill (+1 SP to your heir)<br>\u2022 Build wealth and buildings \u2014 they pass to your heirs!'
+                }
+            ]
+        },
+
+        // ── Chapter 7: Getting Help ───────────────────────────
+        {
+            title: 'Getting Help',
+            part: 'basic',
+            steps: [
+                {
+                    title: 'The Help Button',
+                    text: '\u2753 Press the <strong>\u2753 Help</strong> button anytime to open the <strong>Game Guide</strong>. It has detailed explanations of every game system \u2014 trading, building, kingdoms, combat, and more.',
+                    highlight: '#btnHelp'
+                },
+                {
+                    title: 'Glossary & Icons',
+                    text: '\uD83D\uDCD6 Inside Help, check the <strong>Glossary</strong> for definitions of game terms, and the <strong>Icons Guide</strong> to learn what every symbol means. Hover over most UI elements for <strong>tooltips</strong> with extra info.'
+                },
+                {
+                    title: 'You\u2019re Ready!',
+                    text: '\uD83C\uDF89 <strong>That\u2019s the basics!</strong> You know how to control the game, trade, travel, earn money, get housing, start a family, and find help. Now choose: start playing, or continue to advanced systems.'
+                }
+            ]
+        },
+
+        // ═══════════════════════════════════════════════════════
+        //  PART 2: ADVANCED
+        // ═══════════════════════════════════════════════════════
+
+        // ── Chapter 8: Buildings & Production ─────────────────
+        {
+            title: 'Buildings & Production',
+            part: 'advanced',
+            steps: [
+                {
+                    title: 'Build Your First Business',
+                    text: '\uD83C\uDFD7\uFE0F We\u2019ve given you <strong>2,000 gold</strong>. Click <strong>\uD83C\uDFD7\uFE0F Build</strong> to see available buildings. Try a <strong>Wheat Farm</strong> or anything you can afford!',
+                    highlight: '#btnBuild',
+                    onEnter: function () {
+                        giveGold(2000);
+                    },
+                    waitFor: function () { return isModalOpen(); }
+                },
+                {
+                    title: 'Building Types',
+                    text: '\uD83C\uDFED <strong>40+ buildings</strong> in categories:<br>\u2022 \uD83C\uDF3E <strong>Farming</strong>: Wheat Farm, Cattle Ranch, Vineyard<br>\u2022 \u26CF\uFE0F <strong>Mining</strong>: Iron Mine, Gold Mine, Quarry<br>\u2022 \u2699\uFE0F <strong>Processing</strong>: Flour Mill, Smelter, Sawmill<br>\u2022 \uD83C\uDFAF <strong>Finished</strong>: Bakery, Blacksmith, Jeweler<br>Match buildings to local <strong>resource deposits</strong> for bonus output!',
+                    waitFor: function () {
+                        return getPlayerBuildings().length > 0;
+                    },
+                    onComplete: function () {
+                        closeModal();
+                        nextStep();
+                    }
+                },
+                {
+                    title: 'Supply Chains',
+                    text: '\uD83D\uDD17 Chain buildings for high-value goods:<br>\u2022 Wheat Farm \u2192 Flour Mill \u2192 Bakery = \uD83C\uDF5E Bread<br>\u2022 Iron Mine \u2192 Smelter \u2192 Blacksmith = \u2694\uFE0F Swords<br>Buildings in the same town <strong>auto-supply</strong> each other. Guildmasters get +10% chain bonus!'
+                },
+                {
+                    title: 'Workers & Hiring',
+                    text: '\uD83D\uDC77 Click <strong>\uD83D\uDC65 Hire</strong> to recruit. Four skill levels:<br>\u2022 \uD83D\uDFE2 <strong>Unskilled</strong>: 10g hire, 5g/week, 100% output<br>\u2022 \uD83D\uDFE1 <strong>Skilled</strong>: 50g, 120% output<br>\u2022 \uD83D\uDFE0 <strong>Expert</strong>: 200g, 140% output<br>\u2022 \uD83D\uDD34 <strong>Master</strong>: 800g, 160% output',
+                    highlight: '#btnHire',
+                    waitFor: function () { return isModalOpen(); }
+                },
+                {
+                    title: 'Building Management',
+                    text: '\uD83D\uDD27 Buildings need <strong>maintenance</strong> (3% of cost/week). Condition degrades over time \u2014 neglect leads to destruction! Hire <strong>guards</strong> (10g/season) to prevent theft. Use <strong>Transfer Targets</strong> to auto-send output between buildings.',
+                    waitFor: function () { return isModalClosed(); }
+                }
+            ]
+        },
+
+        // ── Chapter 9: Skills & Progression ───────────────────
+        {
+            title: 'Skills & Progression',
+            part: 'advanced',
+            steps: [
+                {
+                    title: 'Skill Branches',
+                    text: '\uD83D\uDCDA Click <strong>\uD83D\uDCDA Skills</strong> to browse. <strong>50+ skills in 6 branches</strong>:<br>\u2022 \uD83D\uDCB0 <strong>Commerce</strong> \u2022 \uD83C\uDFED <strong>Industry</strong> \u2022 \uD83D\uDE9A <strong>Transport</strong><br>\u2022 \uD83D\uDC65 <strong>Social</strong> \u2022 \u2694\uFE0F <strong>Survival</strong> \u2022 \uD83D\uDD75\uFE0F <strong>Underworld</strong><br>We\u2019ve given you <strong>5 skill points</strong> to try!',
+                    highlight: '#btnSkills',
+                    onEnter: function () {
+                        giveSkillPoints(5);
+                        snapshotState.skillCountBefore = getPlayerSkillCount();
+                    },
+                    waitFor: function () { return isModalOpen(); }
+                },
+                {
+                    title: 'Buy a Skill',
+                    text: '\uD83C\uDF1F <strong>Buy a skill now!</strong> Try <strong>Keen Eye</strong> (reveals prices), <strong>Charming</strong> (+25% relationships), or <strong>Haggling</strong> (better trade prices). Each costs <strong>3 SP</strong>.',
+                    waitFor: function () {
+                        return getPlayerSkillCount() > (snapshotState.skillCountBefore || 0);
+                    }
+                },
+                {
+                    title: 'XP & Leveling',
+                    text: '\uD83D\uDCC8 Earn <strong>XP</strong> from trading (1 per 50g), jobs, and kingdom orders. <strong>10 levels</strong>, 3 SP each. <strong>Invest in skills early</strong> \u2014 they compound your earnings over time!'
+                },
+                {
+                    title: 'Skill Inheritance',
+                    text: '\uD83D\uDC51 <strong>Legacy of Trust</strong> (Social branch) boosts skill inheritance from 15% to <strong>50%</strong>! Combined with <strong>Dynasty Founder</strong> (+1 SP to heir), your children start much stronger. Close when done.',
+                    waitFor: function () { return isModalClosed(); }
+                }
+            ]
+        },
+
+        // ── Chapter 10: Kingdoms & Politics ───────────────────
+        {
+            title: 'Kingdoms & Politics',
+            part: 'advanced',
+            steps: [
+                {
+                    title: 'Social Ranks',
+                    text: '\uD83D\uDC51 Click <strong>\uD83D\uDC64 Character</strong> to view your rank. <strong>7 ranks</strong>:<br>\uD83C\uDF3E Peasant \u2192 \uD83C\uDFE0 Citizen \u2192 \u2696\uFE0F Burgher \u2192 \uD83D\uDD28 Guildmaster \u2192 \uD83D\uDC51 Noble \u2192 \uD83C\uDFF0 Lord \u2192 \uD83D\uDCDC Royal Advisor<br>Each unlocks more buildings, workers, and political power.',
+                    highlight: '#btnCharacter',
+                    waitFor: function () { return isModalOpen(); }
+                },
+                {
+                    title: 'Climbing the Ranks',
+                    text: '\uD83D\uDCCB Advancement needs <strong>gold, reputation, and achievements</strong>:<br>\u2022 <strong>Citizen</strong>: 1,000g + 40 rep + 90 days residency<br>\u2022 <strong>Guildmaster</strong>: 20,000g + 75 rep + 3 buildings in 2+ towns<br>\u2022 <strong>Royal Advisor</strong>: 600,000g + 100 rep + Lord for 3+ years'
+                },
+                {
+                    title: 'Multi-Kingdom Play',
+                    text: '\uD83C\uDF0D Hold rank in <strong>multiple kingdoms</strong>! Become Citizen anywhere to gain citizenship. If two of your kingdoms go to <strong>war</strong>, you must pick a side \u2014 losing 30 rep in the other.',
+                    waitFor: function () { return isModalClosed(); }
+                },
+                {
+                    title: 'Petitions & Influence',
+                    text: '\uD83D\uDCDC As Citizen+, create <strong>petitions</strong> to influence the king \u2014 build roads, lower taxes, ban goods, or declare war! Gather NPC signatures and submit. <strong>Royal Advisors</strong> can propose laws directly.'
+                },
+                {
+                    title: 'Kingdom Orders',
+                    text: '\uD83D\uDC51 Kingdoms post <strong>procurement orders</strong> \u2014 guaranteed sales at fixed prices, often above market. Check the <strong>\uD83D\uDC51 Kingdoms</strong> panel for contracts. War supply orders are especially lucrative!',
+                    highlight: '#btnKingdoms'
+                }
+            ]
+        },
+
+        // ── Chapter 11: War & Military ────────────────────────
+        {
+            title: 'War & Military',
+            part: 'advanced',
+            steps: [
+                {
+                    title: 'How Wars Start',
+                    text: '\u2694\uFE0F <strong>Wars</strong> erupt when kingdom relations drop below \u221235. <strong>Frontline zones</strong> (500px radius) have 25% daily ambush chance \u2014 extremely dangerous but massively profitable for war suppliers.'
+                },
+                {
+                    title: 'Military Enlistment',
+                    text: '\u2694\uFE0F <strong>Enlist</strong> during wartime! <strong>7 military ranks</strong>: Recruit \u2192 Footman \u2192 Sergeant \u2192 Knight \u2192 Captain \u2192 Commander \u2192 General. Reaching <strong>Knight</strong> auto-grants <strong>Citizen status</strong> \u2014 bypasses gold requirements!'
+                },
+                {
+                    title: 'War Profiteering',
+                    text: '\uD83D\uDCB0 Kingdoms need <strong>swords, armor, food, and horses</strong> during wars \u2014 prices spike! Selling to enemies is <strong>War Profiteering</strong> (30 days jail if caught). Add <strong>armed escorts</strong> (20g/day) to reduce ambush chance by 15%.'
+                },
+                {
+                    title: 'Naval & Bridge Warfare',
+                    text: '\uD83D\uDEA2 Ships can be <strong>armed</strong> during wartime with cannons and reinforced hulls. Naval battles determine sea route control. Destroy enemy <strong>bridges</strong> (500g) to cripple trade \u2014 rebuilding costs 1,000g and 30 days!'
+                }
+            ]
+        },
+
+        // ── Chapter 12: Ships & Sea Trade ─────────────────────
+        {
+            title: 'Ships & Sea Trade',
+            part: 'advanced',
+            steps: [
+                {
+                    title: 'Ship Types',
+                    text: '\u26F5 Buy ships at port towns:<br>\u2022 <strong>Small Ship</strong> (200g): Basic sea travel, 1.5x speed<br>\u2022 <strong>Large Ship</strong> (500g): More cargo, better storm resistance<br>Equip <strong>addons</strong> like extra sails, reinforced hulls, and cargo holds.'
+                },
+                {
+                    title: 'Sea Routes & Fishing',
+                    text: '\uD83C\uDF0A Build <strong>sea routes</strong> between ports for fast oceanic trade. <strong>Storms</strong> risk 10\u201330% cargo loss. <strong>Fishing</strong> provides food and extra income \u2014 a great side business for port-based merchants.'
+                },
+                {
+                    title: 'Fleet Management',
+                    text: '\uD83D\uDEA2 At higher ranks, build a <strong>fleet</strong> for simultaneous sea routes. The <strong>Fleet Admiral</strong> skill reduces ship costs and boosts crew efficiency. Control the seas = control long-distance trade!'
+                }
+            ]
+        },
+
+        // ── Chapter 13: Advanced Commerce ─────────────────────
+        {
+            title: 'Advanced Commerce',
+            part: 'advanced',
+            steps: [
+                {
+                    title: 'Caravans',
+                    text: '\uD83D\uDC34 <strong>Caravans</strong> send goods between towns automatically! Add <strong>armed escorts</strong> (20g/day) to reduce bandit ambush chance. Bandits attack 3%/day on roads, +15% for military goods.',
+                    highlight: '#btnCaravan'
+                },
+                {
+                    title: 'Toll Roads',
+                    text: '\uD83D\uDEE4\uFE0F At <strong>Guildmaster rank</strong>, build toll roads (5,000g+). Every merchant using your road pays a toll! Set rates (1\u201350g) \u2014 higher tolls earn more but may discourage traffic.'
+                },
+                {
+                    title: 'Elite Merchants & Competition',
+                    text: '\uD83E\uDD16 <strong>Elite NPC merchants</strong> are fierce rivals \u2014 they build, trade, hire, and poach your workers! Watch the <strong>Leaderboard</strong> to track competition. Counter their moves and outmaneuver them.'
+                },
+                {
+                    title: 'Outposts & Expansion',
+                    text: '\uD83C\uDFD5\uFE0F Build <strong>outposts</strong> in remote locations to extend your trade network. They provide storage, rest, and a foothold in new territories. Combine with toll roads and caravans for a self-sustaining empire!'
+                }
+            ]
+        },
+
+        // ── Chapter 14: Mastery & Endgame ─────────────────────
+        {
+            title: 'Mastery & Endgame',
+            part: 'advanced',
+            steps: [
+                {
+                    title: 'Crime & Smuggling',
+                    text: '\uD83D\uDEA8 <strong>16 crime types</strong> from smuggling (5 days jail) to treason (execution!). <strong>Smuggling</strong> banned goods pays 2x price but has 35% detection. Skills like <strong>Discrete</strong> (\u221210%) and <strong>Master Smuggler</strong> (\u221220%) reduce risk.'
+                },
+                {
+                    title: 'The Leaderboard',
+                    text: '\uD83C\uDFC6 The <strong>Leaderboard</strong> tracks top 10 merchants by <strong>net worth</strong> (gold + buildings + inventory + ships + routes). Compete against elite NPCs for the #1 spot!'
+                },
+                {
+                    title: 'Advanced Strategies',
+                    text: '\uD83D\uDCC8 <strong>Pro tips</strong>:<br>\u2022 <strong>Manipulate markets</strong> \u2014 buy out a town\u2019s stock to spike prices<br>\u2022 <strong>Watch seasonal prices</strong> \u2014 buy grain after harvest, sell in winter<br>\u2022 <strong>Invest in skills early</strong> \u2014 they compound over time<br>\u2022 <strong>Control supply chains</strong> end-to-end for maximum profit'
+                },
+                {
+                    title: 'Endgame Goals',
+                    text: '\uD83C\uDFC6 <strong>Ultimate goals</strong>:<br>\u2022 \uD83D\uDC51 Reach <strong>Royal Advisor</strong> in multiple kingdoms<br>\u2022 \uD83C\uDFF0 Own buildings in every town<br>\u2022 \uD83D\uDEE4\uFE0F Build a toll road network spanning the map<br>\u2022 \uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67\u200D\uD83D\uDC66 Found a dynasty lasting 3+ generations<br>\u2022 \uD83C\uDFC6 Top the leaderboard as #1 merchant'
+                },
+                {
+                    title: 'Congratulations!',
+                    text: '\uD83C\uDF89 <strong>You\u2019ve completed the full tutorial!</strong> You know every system in Merchant Realms. Diversify across kingdoms, time seasonal trades, invest in skills, marry for dynasty, and watch the leaderboard. <strong>Now go build your trade empire!</strong>',
+                    isFinal: true
+                }
+            ]
+        }
+    ];
+
+
+    // ═══════════════════════════════════════════════════════════
+    //  UI: PANEL
+    // ═══════════════════════════════════════════════════════════
+
+    function createPanel() {
+        if (panelEl) return;
+        panelEl = document.createElement('div');
+        panelEl.className = 'tutorial-panel';
+        panelEl.id = 'tutorialPanel';
+        document.body.appendChild(panelEl);
+    }
+
+    function destroyPanel() {
+        if (panelEl) {
+            panelEl.remove();
+            panelEl = null;
+        }
+    }
+
+
+
+    function renderPanel() {
+        if (!panelEl) return;
+        var ch = chapters[currentChapter];
+        if (!ch) return;
+        var step = ch.steps[currentStep];
+        if (!step) return;
+
+        var part = ch.part || 'basic';
+        var basicCount = 0, advancedCount = 0;
+        for (var ci = 0; ci < chapters.length; ci++) {
+            if (chapters[ci].part === 'basic') basicCount++;
+            else advancedCount++;
+        }
+        var isBasic = part === 'basic';
+        var partIndex = isBasic ? currentChapter : (currentChapter - basicCount);
+        var partTotal = isBasic ? basicCount : advancedCount;
+        var partLabel = isBasic ? 'Part 1: Basics' : 'Part 2: Advanced';
+        var progressText = (isBasic ? 'Basic' : 'Advanced') + ' ' + (partIndex + 1) + '/' + partTotal + ' \u2022 Step ' + (currentStep + 1) + '/' + ch.steps.length;
+
+        var isFinal = step.isFinal || false;
+        var hasWaitFor = typeof step.waitFor === 'function';
+        var nextLabel = isFinal ? '\uD83C\uDFE0 Start a Real Game' : 'Next \u2192';
+        var canGoBack = currentChapter > 0 || currentStep > 0;
+
+        var stepTitleHtml = step.title ? '<div class="tutorial-step-title">' + step.title + '</div>' : '';
+
+        panelEl.innerHTML =
+            '<div class="tutorial-panel-header">' +
+                '<span class="tutorial-part-label">' + partLabel + '</span>' +
+                '<span class="tutorial-chapter-title">Ch ' + (currentChapter + 1) + ': ' + ch.title + '</span>' +
+                '<button class="tutorial-btn-skip" id="tutBtnMainMenu">\uD83C\uDFE0 Main Menu</button>' +
+            '</div>' +
+            stepTitleHtml +
+            '<div class="tutorial-step-text">' + step.text + '</div>' +
+            '<div class="tutorial-panel-footer">' +
+                '<div class="tutorial-footer-left">' +
+                    (canGoBack ? '<button class="tutorial-btn-back" id="tutBtnBack">\u2190 Back</button>' : '') +
+                    '<span class="tutorial-progress">' + progressText + '</span>' +
+                '</div>' +
+                '<button class="tutorial-btn-next" id="tutBtnNext">' + nextLabel + '</button>' +
+            '</div>';
+
+        // Bind main menu button
+        var btnMenu = document.getElementById('tutBtnMainMenu');
+        if (btnMenu) {
+            btnMenu.addEventListener('click', function () { end(); });
+        }
+
+        // Bind back button
+        var btnBack = document.getElementById('tutBtnBack');
+        if (btnBack) {
+            btnBack.addEventListener('click', function () { prevStep(); });
+        }
+
+        // Bind next button
+        var btnNext = document.getElementById('tutBtnNext');
+        if (btnNext) {
+            if (hasWaitFor) {
+                btnNext.disabled = true;
+                btnNext.style.opacity = '0.5';
+                btnNext.style.cursor = 'not-allowed';
+                btnNext.textContent = '\u23F3 Complete the action above...';
+            }
+            btnNext.addEventListener('click', function () {
+                if (btnNext.disabled) return;
+                if (isFinal) {
+                    end();
+                } else {
+                    nextStep();
+                }
+            });
+        }
+    }
+
+
+    // ═══════════════════════════════════════════════════════════
+    //  HIGHLIGHT SYSTEM
+    // ═══════════════════════════════════════════════════════════
+
+    function clearHighlights() {
+        for (var i = 0; i < highlightedEls.length; i++) {
+            highlightedEls[i].classList.remove('tutorial-highlight');
+        }
+        highlightedEls = [];
+    }
+
+    function highlightElement(selector) {
+        clearHighlights();
+        if (!selector) return;
+        try {
+            var els = document.querySelectorAll(selector);
+            for (var i = 0; i < els.length; i++) {
+                els[i].classList.add('tutorial-highlight');
+                highlightedEls.push(els[i]);
+            }
+        } catch (e) {
+            // Invalid selector, ignore
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  STEP NAVIGATION
+    // ═══════════════════════════════════════════════════════════
+
+    function enterStep() {
+        if (!active) return;
+        var ch = chapters[currentChapter];
+        if (!ch) return;
+        var step = ch.steps[currentStep];
+        if (!step) return;
+
+        // Stop any existing polling
+        stopWatching();
+
+        // Run onEnter callback
+        if (step.onEnter && typeof step.onEnter === 'function') {
+            try { step.onEnter(); } catch (e) { console.error('Tutorial onEnter error:', e); }
+        }
+
+        // Highlight
+        highlightElement(step.highlight || null);
+
+        // Render panel
+        renderPanel();
+
+        // Start watching if step has waitFor
+        if (typeof step.waitFor === 'function') {
+            startWatching(step.waitFor, step.onComplete || null);
+        }
+    }
+
+
+    function prevStep() {
+        if (!active) return;
+        stopWatching();
+        clearHighlights();
+
+        if (currentStep > 0) {
+            currentStep--;
+            enterStep();
+        } else if (currentChapter > 0) {
+            currentChapter--;
+            var ch = chapters[currentChapter];
+            currentStep = ch.steps.length - 1;
+            enterStep();
+        }
+    }
+
+    function nextStep() {
+        if (!active) return;
+        stopWatching();
+        clearHighlights();
+
+        var ch = chapters[currentChapter];
+        if (!ch) { end(); return; }
+
+        if (currentStep < ch.steps.length - 1) {
+            currentStep++;
+            enterStep();
+        } else {
+            advanceChapter();
+        }
+    }
+
+    function advanceChapter() {
+        if (!active) return;
+        stopWatching();
+        clearHighlights();
+
+        if (currentChapter < chapters.length - 1) {
+            // Check for basic-to-advanced transition
+            var currentPart = chapters[currentChapter].part;
+            var nextPart = chapters[currentChapter + 1].part;
+            if (currentPart === 'basic' && nextPart === 'advanced') {
+                showBasicCompleteTransition();
+                return;
+            }
+            currentChapter++;
+            currentStep = 0;
+            enterStep();
+        } else {
+            end();
+        }
+    }
+
+    function showBasicCompleteTransition() {
+        if (!panelEl) return;
+
+        panelEl.innerHTML =
+            '<div class="tutorial-panel-header">' +
+                '<span class="tutorial-part-label">Part 1: Basics \u2014 Complete!</span>' +
+                '<button class="tutorial-btn-skip" id="tutBtnMainMenu">\uD83C\uDFE0 Main Menu</button>' +
+            '</div>' +
+            '<div class="tutorial-step-title">\uD83C\uDF89 Basic Tutorial Complete!</div>' +
+            '<div class="tutorial-step-text">' +
+                'You\u2019ve learned the essentials of Merchant Realms! You\u2019re ready to start playing, or continue to learn about <strong>advanced systems</strong> like buildings, skills, kingdoms, war, ships, and more.' +
+            '</div>' +
+            '<div class="tutorial-transition-buttons">' +
+                '<button class="tutorial-btn-newgame" id="tutBtnNewGame">\uD83C\uDFAE Start a New Game</button>' +
+                '<button class="tutorial-btn-continue" id="tutBtnContinue">\uD83D\uDCDA Continue to Advanced Tutorial</button>' +
+            '</div>';
+
+        var btnMenu = document.getElementById('tutBtnMainMenu');
+        if (btnMenu) {
+            btnMenu.addEventListener('click', function () { end(); });
+        }
+
+        var btnNew = document.getElementById('tutBtnNewGame');
+        if (btnNew) {
+            btnNew.addEventListener('click', function () { end(); });
+        }
+
+        var btnContinue = document.getElementById('tutBtnContinue');
+        if (btnContinue) {
+            btnContinue.addEventListener('click', function () {
+                currentChapter++;
+                currentStep = 0;
+                enterStep();
+            });
+        }
+    }
+
+
+    // ═══════════════════════════════════════════════════════════
+    //  START / END
+    // ═══════════════════════════════════════════════════════════
+
+    function start() {
+        active = true;
+        currentChapter = 0;
+        currentStep = 0;
+        snapshotState = {};
+
+        // Hide title screen
+        var ts = document.getElementById('titleScreen');
+        if (ts) { ts.classList.add('hidden'); ts.style.display = 'none'; }
+        // Also hide character creation if visible
+        var cc = document.getElementById('charCreateScreen');
+        if (cc) { cc.classList.add('hidden'); cc.style.display = 'none'; }
+
+        // Generate tutorial world with fixed seed
+        Engine.generate(7777);
+        var world = Engine.getWorld();
+        var towns = Engine.getTowns();
+        var startTownId = towns.length > 0 ? towns[0].id : null;
+
+        // Init UI first so DOM elements are cached
+        UI.init();
+
+        // Initialize player WITH a town (5th param is critical)
+        Player.init(world, 'Tutorial', 'Merchant', 'M', startTownId);
+
+        // Initialize renderer
+        var canvas = document.getElementById('gameCanvas');
+        Renderer.init(canvas, world);
+
+        // Show game UI
+        UI.showGameUI();
+
+        // Start game state
+        if (typeof Game !== 'undefined') {
+            Game.setState('playing');
+            Game.setSpeed(1);
+            // Start the game loop — critical for rendering and ticks
+            if (Game.startLoop) {
+                Game.startLoop();
+            }
+            // Setup input handlers for keyboard/mouse
+            if (Game.setupInput) {
+                Game.setupInput();
+            }
+        }
+
+        // Center camera on starting town and zoom in for tutorial
+        if (typeof Renderer !== 'undefined') {
+            if (Renderer.centerOnTown && startTownId) Renderer.centerOnTown(startTownId);
+            if (Renderer.setZoom) Renderer.setZoom(1.6);
+            else if (Renderer.getCamera) { var cam = Renderer.getCamera(); cam.zoom = 1.6; cam.targetZoom = 1.6; }
+        }
+
+        // Start the game loop if Game has init
+        if (typeof Game !== 'undefined' && Game.init) {
+            // Game.init already called from main; the loop should be running
+            // Just ensure state is 'playing'
+            Game.setState('playing');
+        }
+
+        // Create tutorial panel and start first step
+        createPanel();
+        enterStep();
+
+        // Show welcome toast
+        var townName = towns.length > 0 ? towns[0].name : 'your town';
+        if (typeof UI !== 'undefined' && UI.toast) {
+            UI.toast('\uD83D\uDCD6 Tutorial started! You are in ' + townName + '.', 'info');
+        }
+    }
+
+    function end() {
+        active = false;
+        stopWatching();
+        clearHighlights();
+        destroyPanel();
+
+        // Return to main menu
+        if (typeof Game !== 'undefined' && Game.showTitleScreen) {
+            Game.showTitleScreen();
+        } else {
+            // Fallback
+            var ts = document.getElementById('titleScreen');
+            if (ts) { ts.classList.remove('hidden'); ts.style.display = 'flex'; }
+            if (typeof UI !== 'undefined' && UI.hideGameUI) UI.hideGameUI();
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  PUBLIC API
+    // ═══════════════════════════════════════════════════════════
+
+    // ═══════════════════════════════════════════════════════════
+    //  PUBLIC API
+    // ═══════════════════════════════════════════════════════════
+
+    return {
+        start: start,
+        isActive: function () { return active; },
+        nextStep: nextStep,
+        prevStep: prevStep,
+        skip: end,
+        getCurrentChapter: function () { return currentChapter; },
+        getCurrentStep: function () { return currentStep; }
+    };
+})();
