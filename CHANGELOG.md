@@ -4,6 +4,60 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.30.0] - 2026-03-27
+
+### Added — NPC Social Interaction System
+- **6 interaction types** — Small Talk, Tell a Joke, Discuss Business, Compliment, Ask for Advice, Share a Drink
+- **Personality-driven outcomes** — Each interaction is weighted by NPC personality traits (warm, serious, ambitious, etc.)
+- **Quirk bonuses/penalties** — NPC quirks like "bookworm" or "stubborn" affect interaction gains
+- **Daily cooldown** — 3 interactions per NPC per day to prevent spam-clicking
+- **Social Insight skill** — New social branch skill that reveals color-coded interaction ratings (great/good/neutral/poor)
+- **Gold costs** — Share a Drink costs 5g; other interactions are free
+
+### Added — Guild Membership System
+- **9 guilds** — Farmers', Miners', Harvesters', Artisans', Craftsmen's, Armorsmiths', Luxury Artisans', Maritime, Merchants'
+- **Monthly (25g) or yearly (200g) memberships** — Dynamic pricing based on world economy
+- **Guild crafting** — Members can use any guild building in their town to craft goods (5-10g entry fee per visit)
+- **Material consumption** — Crafting uses materials from inventory/warehouse and produces finished goods
+- **Guild fee distribution** — Monthly fees collected and distributed to building owners
+- **🏛️ Guilds toolbar button** — New UI panel showing all guilds, membership status, and craftable items
+
+### Added — Notification Category Tabs
+- **4 category tabs** in Event Log — 📋 All, 🧑 Personal, 🏘️ Local, 🌍 World
+- **Personal** = my actions, business, travel, combat
+- **Local** = local town events, NPC activity
+- **World** = kingdom politics, foreign affairs, world economy, military
+- **Per-category filter buttons** only visible in "All" tab
+
+### Added — Tutorial Improvements
+- **Interactive notification settings step** — Player must open Settings and enable kingdom notifications
+- **Kingdom policies mention** — Added to Trading Tips tutorial step
+- **War event suppression** — Military events and war allegiance popups suppressed during tutorial
+- **Kingdom notification default off** — `my_kingdom` filter defaults to false for first 5 days / tutorial
+
+### Added — Street Trading Enhancements
+- **Premium percentage display** — Shows "+X% above market" (green) or "-X% below market" (red) inline
+- **Below-market warning** — Red "⚠️ Below market price!" text on offers below market rate
+- **Stale data fix** — Street trading panel now clears and refreshes on town arrival
+
+### Added — Housing Material Color Indicators
+- **Green ✓** for materials you have enough of
+- **Red ✗** with "need X more" for materials you're short on
+
+### Fixed — Critical Bugs
+- **Day 0 off-by-one** — `world.day` now initializes to 1 (was 0)
+- **Rest button disappearing** — Always visible, greyed out while traveling instead of hidden
+- **Street trading stale data** — Cache cleared on town arrival to prevent wrong-town offers
+
+### Fixed — Travel Time Estimates
+- **~24x overestimate fixed** — UI was dividing by `speed * 24` but travel ticks once per day, not per hour
+- **Route distance calculation** — Now accounts for road quality multipliers, off-road penalty, and sea speed
+- **8 instances corrected** across walk, horse, sail, passage, and ETA displays
+
+### Changed — Tutorial Step Split
+- **Chapter 1 Step 7** split into two steps: "Town Info & People" (interactive) + "Navigation & Ledger"
+- Each step now has one primary action, reducing information overload
+
 ## [0.29.0] - 2026-03-27
 
 ### Added — Bridge Destruction Overhaul
