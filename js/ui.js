@@ -1791,7 +1791,7 @@ window.UI = (function () {
         // Update preview
         const preview = document.getElementById(type + 'Preview_' + resId);
         if (preview) {
-            const total = (unitPrice * qty).toFixed(1);
+            const total = Math.round(unitPrice * qty);
             const label = type === 'buy' ? 'Buy' : 'Sell';
             preview.textContent = qty > 0 ? `${label} ${qty}: ${total}g` : '';
         }
@@ -5792,7 +5792,10 @@ window.UI = (function () {
 
     // ── Forced Requisition Dialog ──
     function showRequisitionDialog(kingdom, targetRes, resName, seizeQty, seizeValue) {
-        var bribeCost = Math.max(20, Math.floor(seizeValue * 0.4));
+        // Corruption Expert halves bribe cost
+        var bribeMult = (Player.hasSkill && Player.hasSkill('corruption_expert')) ? 0.2 : 0.4;
+        var bribeFloor = (Player.hasSkill && Player.hasSkill('corruption_expert')) ? 10 : 20;
+        var bribeCost = Math.max(bribeFloor, Math.floor(seizeValue * bribeMult));
         var html = '<div style="text-align:center;margin-bottom:12px;">';
         html += '<div style="font-size:1.2rem;margin-bottom:8px;">⚠️ Guards Demand Your Goods!</div>';
         html += '<div style="font-size:0.8rem;color:#ccc;margin-bottom:12px;">Under <strong>Forced Requisition</strong> law in ' + kingdom.name + ', guards are seizing merchant goods for the crown.</div>';
@@ -5807,12 +5810,20 @@ window.UI = (function () {
         html += '<button class="btn-medieval" onclick="Player.executeRequisition(\'' + targetRes + '\',' + seizeQty + '); UI.closeModal(); UI.toast(\'⚠️ Guards seized ' + seizeQty + ' ' + resName + '.\', \'danger\');" style="padding:8px;">';
         html += '😔 Comply (' + seizeQty + ' ' + resName + ' seized)</button>';
         // Bribe
+        var bribeLabel = (Player.hasSkill && Player.hasSkill('corruption_expert')) ? '💰 Bribe the Guards (' + bribeCost + 'g — Corruption Expert)' : '💰 Bribe the Guards (' + bribeCost + 'g)';
         html += '<button class="btn-medieval" onclick="var r = Player.bribeRequisitionGuard(' + bribeCost + '); UI.closeModal(); if(!r.success){ Player.executeRequisition(\'' + targetRes + '\',' + seizeQty + '); }" style="padding:8px;">';
-        html += '💰 Bribe the Guards (' + bribeCost + 'g)</button>';
+        html += bribeLabel + '</button>';
         // Resist (if player has combat skills)
         if (Player.hasSkill && (Player.hasSkill('combat_trained') || Player.hasSkill('battle_hardened'))) {
             html += '<button class="btn-medieval" onclick="UI._resistRequisition(\'' + targetRes + '\',' + seizeQty + ',\'' + kingdom.id + '\');" style="padding:8px;border-color:#c44;">';
             html += '⚔️ Resist (Combat — risky!)</button>';
+        }
+        // Fighting Retreat (if player has the skill)
+        if (Player.hasSkill && Player.hasSkill('fighting_retreat')) {
+            var combatLvl = (Player.getCombatLevel ? Player.getCombatLevel() : 0);
+            var fleeChance = Math.min(85, Math.round(combatLvl));
+            html += '<button class="btn-medieval" onclick="UI._fightingRetreat(\'' + targetRes + '\',' + seizeQty + ',\'' + kingdom.id + '\');" style="padding:8px;border-color:#c90;">';
+            html += '🏃 Fighting Retreat (~' + fleeChance + '% — hit and run)</button>';
         }
         html += '</div>';
 
@@ -5842,6 +5853,27 @@ window.UI = (function () {
                 Player.state.reputation[kingdomId] = Math.max(0, (Player.state.reputation[kingdomId] || 50) - 25);
             }
             Engine.logEvent(Player.state.fullName + ' tried to resist requisition but was captured! Fined ' + fineAmt + 'g.');
+        }
+    }
+
+    function _fightingRetreat(targetRes, seizeQty, kingdomId) {
+        closeModal();
+        var rng = Engine.getRng ? Engine.getRng() : null;
+        var combatLevel = (Player.getCombatLevel ? Player.getCombatLevel() : 0);
+        var fleeChance = Math.min(0.85, combatLevel / 100);
+        if (rng && rng.chance(fleeChance)) {
+            toast('🏃 You fought the guards and escaped with your goods!', 'success');
+            if (Player.state) Player.state.notoriety = Math.min(100, (Player.state.notoriety || 0) + 10);
+            var kingdom = Engine.findKingdom(kingdomId);
+            if (kingdom && Player.state.reputation) {
+                Player.state.reputation[kingdomId] = Math.max(0, (Player.state.reputation[kingdomId] || 50) - 10);
+            }
+            Engine.logEvent(Player.state.fullName + ' fought off requisition guards and fled!');
+        } else {
+            toast('🏃 You tried to flee but the guards caught you! Goods seized.', 'danger');
+            Player.executeRequisition(targetRes, seizeQty);
+            if (Player.state) Player.state.notoriety = Math.min(100, (Player.state.notoriety || 0) + 15);
+            Engine.logEvent(Player.state.fullName + ' tried to flee requisition but was caught.');
         }
     }
 
@@ -12845,21 +12877,21 @@ window.UI = (function () {
 
         // Set Gold input
         html += '<br><input id="gm-set-gold" type="number" placeholder="Set gold..." style="width:80px; background:#333; color:#fff; border:1px solid #666; padding:2px 4px; margin:2px;" />';
-        html += '<button onclick="var v=document.getElementById(\'gm-set-gold\').value; if(v){Player.state.gold=parseInt(v); UI.toast(\'💰 Gold set to \'+v,\'success\');}" style="margin:2px; padding:3px 8px; background:#2d5016; color:#fff; border:1px solid #4a8; cursor:pointer;">Set Gold</button> ';
+        html += '<button onclick="var v=document.getElementById(\'gm-set-gold\').value; if(v){var g=parseInt(v,10); if(!isNaN(g)&&isFinite(g)){Player.state.gold=Math.max(0,g); UI.toast(\'💰 Gold set to \'+g,\'success\');}else{UI.toast(\'Invalid number\',\'error\');}}" style="margin:2px; padding:3px 8px; background:#2d5016; color:#fff; border:1px solid #4a8; cursor:pointer;">Set Gold</button> ';
 
         // Invincibility toggle
         html += '<br><button id="gm-invincible-btn" onclick="window._godInvincible=!window._godInvincible; var b=this; b.textContent=window._godInvincible?\'🛡️ Invincible ON\':\'🛡️ Invincible OFF\'; b.style.background=window._godInvincible?\'#8b0000\':\'#16305d\'; b.style.borderColor=window._godInvincible?\'#f44\':\'#48a\'; UI.toast(window._godInvincible?\'🛡️ INVINCIBLE — Cannot die or lose\':\'Invincibility OFF\', window._godInvincible?\'success\':\'info\')" style="margin:2px; padding:3px 8px; background:' + (window._godInvincible ? '#8b0000' : '#16305d') + '; color:#fff; border:1px solid ' + (window._godInvincible ? '#f44' : '#48a') + '; cursor:pointer;">' + (window._godInvincible ? '🛡️ Invincible ON' : '🛡️ Invincible OFF') + '</button> ';
 
         // Set rank
         html += '<select id="gm-set-rank" style="background:#333; color:#fff; border:1px solid #666; margin:2px; padding:2px;"><option value="0">Peasant</option><option value="1">Citizen</option><option value="2">Burgher</option><option value="3">Guildmaster</option><option value="4">Minor Noble</option><option value="5">Lord</option><option value="6">Royal Advisor</option></select>';
-        html += '<button onclick="var sel=document.getElementById(\'gm-set-rank\'); var r=parseInt(sel.value); var kid=Player.state.citizenshipKingdomId||Object.keys(Player.state.socialRank||{})[0]||\'k_1\'; if(!Player.state.socialRank)Player.state.socialRank={}; Player.state.socialRank[kid]=r; var names=[\'Peasant\',\'Citizen\',\'Burgher\',\'Guildmaster\',\'Minor Noble\',\'Lord\',\'Royal Advisor\']; UI.toast(\'Set rank to \'+(names[r]||r)+\' in \'+kid,\'success\')" style="margin:2px; padding:3px 8px; background:#5d1630; color:#fff; border:1px solid #a48; cursor:pointer;">Set Rank</button> ';
+        html += '<button onclick="var sel=document.getElementById(\'gm-set-rank\'); var r=parseInt(sel.value,10); if(isNaN(r)||r<0||r>6){UI.toast(\'Invalid rank\',\'error\');return;} var kid=Player.state.citizenshipKingdomId||Object.keys(Player.state.socialRank||{})[0]||\'k_1\'; if(!Player.state.socialRank)Player.state.socialRank={}; Player.state.socialRank[kid]=r; var names=[\'Peasant\',\'Citizen\',\'Burgher\',\'Guildmaster\',\'Minor Noble\',\'Lord\',\'Royal Advisor\']; UI.toast(\'Set rank to \'+(names[r]||r)+\' in \'+kid,\'success\')" style="margin:2px; padding:3px 8px; background:#5d1630; color:#fff; border:1px solid #a48; cursor:pointer;">Set Rank</button> ';
 
         // Unlock all skills
         html += '<button onclick="if(typeof SKILLS!==\'undefined\'){var count=0; for(var sk in SKILLS){if(!Player.state.unlockedSkills)Player.state.unlockedSkills=[];if(Player.state.unlockedSkills.indexOf(sk)===-1){Player.state.unlockedSkills.push(sk); count++;}} UI.toast(\'🧠 Unlocked \'+count+\' skills! (\'+Player.state.unlockedSkills.length+\' total)\',\'success\');}else{UI.toast(\'SKILLS config not found\',\'error\');}" style="margin:2px; padding:3px 8px; background:#5d4016; color:#fff; border:1px solid #a84; cursor:pointer;">Unlock All Skills</button> ';
 
         // Advance time
         html += '<br><input id="gm-advance-days" type="number" value="30" style="width:60px; background:#333; color:#fff; border:1px solid #666; padding:2px 4px; margin:2px;" />';
-        html += '<button onclick="var d=parseInt(document.getElementById(\'gm-advance-days\').value)||30; for(var i=0;i<d;i++){Engine.tick();Player.tick();} UI.toast(\'⏩ Advanced \'+d+\' days\',\'success\')" style="margin:2px; padding:3px 8px; background:#16305d; color:#fff; border:1px solid #48a; cursor:pointer;">Advance Days</button> ';
+        html += '<button onclick="var d=parseInt(document.getElementById(\'gm-advance-days\').value,10); if(isNaN(d)||d<=0)d=30; d=Math.min(d,365); for(var i=0;i<d;i++){Engine.tick();Player.tick();} UI.toast(\'⏩ Advanced \'+d+\' days\',\'success\')" style="margin:2px; padding:3px 8px; background:#16305d; color:#fff; border:1px solid #48a; cursor:pointer;">Advance Days</button> ';
 
         html += '</div>';
 
@@ -13394,6 +13426,7 @@ window.UI = (function () {
         _smuggleBorder,
         showRequisitionDialog,
         _resistRequisition,
+        _fightingRetreat,
         showExclusiveCitizenshipDialog,
         showHorsePermitViolationDialog,
         _chooseExclusiveCitizenship,

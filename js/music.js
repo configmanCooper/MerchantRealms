@@ -59,9 +59,10 @@ window.Music = (function () {
         if (!ctx) init();
         if (ctx && ctx.state === 'suspended') {
             ctx.resume().then(function () {
-                // Re-trigger current mood after context resumes
-                if (currentMood && !playing) {
-                    playing = true;
+                // Only schedule if context ACTUALLY resumed (not still suspended)
+                if (ctx.state === 'running' && currentMood && playing) {
+                    stopAllSources();
+                    if (_loopTimeout) { clearTimeout(_loopTimeout); _loopTimeout = null; }
                     scheduleLoop(currentMood);
                 }
             });
@@ -484,21 +485,23 @@ window.Music = (function () {
 
     function playTitleMusic() {
         if (!ensureCtx()) return;
-        if (currentMood === 'title' && playing) return;
+        // Allow re-trigger if context just resumed from suspended state
+        if (currentMood === 'title' && playing && ctx && ctx.state === 'running') return;
         stopInternal();
         currentMood = 'title'; playing = true;
-        scheduleLoop('title');
+        if (ctx && ctx.state === 'running') scheduleLoop('title');
     }
 
     function playGameMusic(mood) {
         if (!ensureCtx()) return;
         mood = mood || 'peaceful';
-        if (currentMood === mood && playing) return;
+        if (currentMood === mood && playing && ctx && ctx.state === 'running') return;
         var now = Date.now();
         if (currentMood && currentMood !== 'title' && now - _moodSwitchCooldown < 60000) return;
         _moodSwitchCooldown = now;
+        stopInternal();
         currentMood = mood; playing = true;
-        scheduleLoop(mood);
+        if (ctx && ctx.state === 'running') scheduleLoop(mood);
     }
 
     function stop() { stopInternal(); }

@@ -1,5 +1,5 @@
 // ============================================================
-// Merchant Realms — Interactive Tutorial System (19 Chapters)
+// Merchant Realms — Interactive Tutorial System (14 Chapters)
 // ============================================================
 
 window.Tutorial = (function () {
@@ -225,6 +225,18 @@ window.Tutorial = (function () {
                     }
                 },
                 {
+                    title: 'Keyboard Shortcuts',
+                    text: '\u2328\uFE0F Speed up your play with <strong>keyboard shortcuts</strong>:<br>\u2022 <strong>T</strong> = Trade \u2022 <strong>B</strong> = Build \u2022 <strong>H</strong> = Hire \u2022 <strong>C</strong> = Caravans<br>\u2022 <strong>F</strong> = Find Me \u2022 <strong>M</strong> = Map \u2022 <strong>L</strong> = Log \u2022 <strong>R</strong> = Resource Deposits<br>\u2022 <strong>Space</strong> = Pause \u2022 <strong>1\u20135</strong> = Speed<br>Try pressing <strong>T</strong> now to open the Trade panel!',
+                    waitFor: function () {
+                        return isModalOpen();
+                    },
+                    onComplete: function () {
+                        closeModal();
+                        nextStep();
+                    },
+                    skipAfter: 8000
+                },
+                {
                     title: 'Meeting the Townsfolk',
                     text: '\uD83D\uDC65 <strong>Zoom in</strong> (scroll wheel) past 1.5x to see individual <strong>NPCs walking around</strong> your town \u2014 click one to see their name, job, and personality! You can also click the <strong>\uD83D\uDCAC Talk</strong> button in the bottom bar to chat with a random local \u2014 they may share useful rumors about prices, wars, or elite merchants. Try clicking <strong>\uD83D\uDCAC Talk</strong> now!',
                     highlight: '#btnTalk',
@@ -245,7 +257,7 @@ window.Tutorial = (function () {
                 {
                     title: 'Saving Your Game',
                     text: '\uD83D\uDCBE <strong>Save/Load</strong> from the menu at any time. You have <strong>5 save slots</strong> to experiment with different strategies. Each slot has a <strong>Download</strong> button (\u2B07\uFE0F) to save your game as a file to your computer, and an <strong>Import</strong> button (\uD83D\uDCC2) to upload a previously downloaded save. This way your progress is safe even if browser data is cleared! Try saving now \u2014 click the <strong>Save Game</strong> button.',
-                    highlight: '#btnSaveGame',
+                    highlight: '#btnSave',
                     waitFor: function () { return typeof Game !== 'undefined' && Game.hasSave && Game.hasSave(); },
                     skipAfter: 4000
                 }
@@ -300,6 +312,17 @@ window.Tutorial = (function () {
                 {
                     title: 'Trading Tips',
                     text: '\uD83D\uDCA1 <strong>Key concepts</strong>:<br>\u2022 \uD83D\uDCC8 <strong>Supply/demand</strong> \u2014 prices swing \u00B115% based on local stock<br>\u2022 \uD83D\uDCC5 <strong>Seasons</strong> affect crop prices \u2014 buy grain after harvest, sell in winter<br>\u2022 \uD83C\uDFDB\uFE0F <strong>Tariffs</strong> \u2014 foreign traders pay extra in some kingdoms<br>\u2022 Higher <strong>rank</strong> = tax discount (up to 30%!)'
+                },
+                {
+                    title: 'Street Trading',
+                    text: '\uD83E\uDD1D You can trade <strong>directly with townspeople</strong>! Click the <strong>\uD83E\uDD1D Street</strong> button to see what locals want to buy or sell. Street trading lets you bypass the market and deal person-to-person \u2014 sometimes at better prices. Some goods can <strong>only</strong> be sold on the street. Try it now!',
+                    highlight: '#btnStreet',
+                    waitFor: function () { return isModalOpen(); },
+                    skipAfter: 6000
+                },
+                {
+                    title: 'Trade Licenses',
+                    text: '\uD83D\uDCDC Some valuable goods require a <strong>Trade License</strong> to sell legally. You can buy licenses from the <strong>kingdom panel</strong> (\uD83D\uDC51 Kingdoms). Selling without a license is <strong>smuggling</strong> \u2014 high profit but you risk jail! Check the kingdom\u2019s laws to see which goods are restricted.'
                 }
             ]
         },
@@ -377,12 +400,32 @@ window.Tutorial = (function () {
             part: 'basic',
             steps: [
                 {
+                    title: 'Staying Fed & Hydrated',
+                    text: '\uD83C\uDF5E Your <strong>hunger</strong> and <strong>thirst</strong> bars drain over time. If hunger hits 0, you <strong>start starving</strong> and lose health! We\u2019ve given you bread and water. Open <strong>\uD83D\uDC64 Character</strong> to see your vitals and eat/drink from your inventory. Keep both bars above 20%!',
+                    highlight: '#btnCharacter',
+                    onEnter: function () {
+                        giveItem('bread', 5);
+                        giveItem('water', 3);
+                    },
+                    waitFor: function () {
+                        try { return Player.state.hunger > 50; } catch (e) { return false; }
+                    },
+                    skipAfter: 10000
+                },
+                {
+                    title: 'Health & Injuries',
+                    text: '\uD83C\uDFE5 Your <strong>health bar</strong> shows your physical condition. You can get <strong>injured</strong> from combat, bandit attacks, or starvation. Visit a <strong>\uD83C\uDFE5 Hospital</strong> in town for treatment, or learn <strong>First Aid</strong> (Survival skill) to self-treat minor injuries. The <strong>Herbalist</strong> skill lets you craft healing potions from foraged herbs!'
+                },
+                {
                     title: 'Energy & Rest',
                     text: '\uD83D\uDE34 <strong>Energy</strong> depletes as you perform actions (trading, building, traveling, working). At 30% you get a warning; below 20% you take penalties to trade, combat, and other skills. At 0 energy you may <strong>collapse</strong>! <strong>Rest at home or an inn</strong> to recover \u2014 better housing restores energy faster.'
                 },
                 {
-                    title: 'Jobs & Street Trading',
-                    text: '\uD83D\uDD28 As a <strong>Peasant</strong>, work for other merchants or take odd jobs. <strong>Street trading</strong> lets you sell directly to townspeople. Both are great ways to earn starting gold!'
+                    title: 'Take Your First Job',
+                    text: '\uD83D\uDD28 Open the <strong>\uD83D\uDCBC Work</strong> panel to see available jobs in town. Accept any job to start earning gold! Jobs pay daily wages and build experience. Try it now \u2014 click <strong>\uD83D\uDCBC Work</strong>!',
+                    highlight: '#btnWork',
+                    waitFor: function () { return isModalOpen(); },
+                    skipAfter: 6000
                 },
                 {
                     title: 'Transport & Carry Capacity',
@@ -398,9 +441,29 @@ window.Tutorial = (function () {
             part: 'basic',
             steps: [
                 {
-                    title: 'Why Get Housing?',
-                    text: '\uD83C\uDFE0 Click the <strong>\uD83C\uDFE1 Housing</strong> button to browse and buy property. Start with a \uD83D\uDED6 <strong>Shack</strong> or \uD83C\uDFE1 <strong>Cottage</strong>. Housing gives you a <strong>place to rest</strong>, <strong>storage</strong>, <strong>security</strong> against theft, and a home for your <strong>family</strong>. Prices are <strong>dynamically set</strong> based on local material and labor costs!',
-                    highlight: '#btnHousing'
+                    title: 'Buy a Home',
+                    text: '\uD83C\uDFE0 We\u2019ve given you <strong>gold, land, and materials</strong>. Open <strong>\uD83C\uDFE1 Housing</strong> and build a home \u2014 even a <strong>Shack</strong> is better than sleeping outside! Housing gives you a <strong>place to rest</strong>, <strong>storage</strong>, <strong>security</strong> against theft, and a home for your <strong>family</strong>.',
+                    highlight: '#btnHousing',
+                    onEnter: function () {
+                        giveGold(500);
+                        giveItem('wood', 10);
+                        giveItem('rope', 5);
+                        giveItem('stone', 10);
+                        giveItem('planks', 10);
+                        // Grant a land plot so the player can actually build
+                        try {
+                            if (!Player.state.landOwned) Player.state.landOwned = {};
+                            Player.state.landOwned[Player.state.townId] = (Player.state.landOwned[Player.state.townId] || 0) + 1;
+                        } catch (e) { console.error('Tutorial land grant error:', e); }
+                    },
+                    waitFor: function () {
+                        try { return (Player.state.houses || []).length > 0; } catch (e) { return false; }
+                    },
+                    onComplete: function () {
+                        closeModal();
+                        nextStep();
+                    },
+                    skipAfter: 12000
                 },
                 {
                     title: 'Rest & Storage',
@@ -409,6 +472,10 @@ window.Tutorial = (function () {
                 {
                     title: 'Upgrading Over Time',
                     text: '\uD83C\uDFF0 As you grow wealthier, upgrade for better bonuses:<br>\u2022 <strong>Townhouse</strong>: +15 reputation, 200 storage<br>\u2022 <strong>Merchant House</strong>: +25 rep, 350 storage<br>\u2022 <strong>Manor</strong>: +30 rep, 400 storage<br>Costs vary by town \u2014 building materials are priced from the <strong>local market</strong>, so shop around! Sell housing at 70% of current material value.'
+                },
+                {
+                    title: 'Home Crafting',
+                    text: '\u2692\uFE0F If your home has a <strong>Workshop</strong> (Townhouse+), you can <strong>craft items at home</strong>! Open <strong>\uD83C\uDFE1 Housing</strong> and look for the crafting section. Craft weapons, tools, or goods from raw materials without needing a dedicated building. It\u2019s a great way to add value to cheap resources!'
                 }
             ]
         },
@@ -437,6 +504,10 @@ window.Tutorial = (function () {
                 {
                     title: 'Dynasty Tips',
                     text: '\uD83D\uDCA1 <strong>Dynasty strategies</strong>:<br>\u2022 Marry someone with <strong>Natural Leader</strong> (+10% worker productivity)<br>\u2022 Teach your children skills to prepare them<br>\u2022 Invest in <strong>Dynasty Founder</strong> skill (+1 SP to your heir)<br>\u2022 Build wealth and buildings \u2014 they pass to your heirs!'
+                },
+                {
+                    title: 'Investigating NPCs',
+                    text: '\uD83D\uDD0D Every NPC has <strong>hidden quirks</strong> that affect how they work and interact. Click any person and try <strong>Observe</strong> to discover their traits. This costs <strong>8 hours</strong> but may reveal useful info about potential workers or spouses!<br>\u2022 \uD83D\uDC41\uFE0F <strong>Observe</strong>: 8hrs, 30% success<br>\u2022 \uD83D\uDDE3\uFE0F <strong>Ask Around</strong>: 4hrs, 25% success<br>\u2022 \uD83D\uDD0D <strong>Investigate</strong>: costs gold, 50% success'
                 }
             ]
         },
@@ -510,6 +581,14 @@ window.Tutorial = (function () {
                     title: 'Building Management',
                     text: '\uD83D\uDD27 Buildings need <strong>maintenance</strong> (3% of cost/week). Condition degrades over time \u2014 neglect leads to destruction! Hire <strong>guards</strong> (10g/season) to prevent theft. Use <strong>Transfer Targets</strong> to auto-send output between buildings.',
                     waitFor: function () { return isModalClosed(); }
+                },
+                {
+                    title: 'Worker Quirk Effects',
+                    text: '\uD83E\uDDE0 Workers\u2019 <strong>quirks affect your buildings</strong>! A <strong>Perfectionist</strong> worker produces higher quality goods but works slower. A <strong>Clumsy</strong> worker breaks materials. A <strong>Thief</strong> may steal output! Use <strong>Observe/Ask Around/Investigate</strong> on NPCs before hiring to discover their quirks. Check the building panel to see active quirk effects on production.'
+                },
+                {
+                    title: 'Resource Deposits',
+                    text: '\u26CF\uFE0F Towns near <strong>resource deposits</strong> produce those resources more cheaply. Press <strong>R</strong> or click the <strong>\u26CF Deposits</strong> button to see deposit icons on the map (requires <strong>Regional Survey</strong> skill). Build mines and farms in towns with matching deposits for <strong>bonus output</strong>!'
                 }
             ]
         },
@@ -585,6 +664,19 @@ window.Tutorial = (function () {
                     text: '📜 The king also posts <strong>Royal Commissions</strong> \u2014 one-off requests with gold + reputation rewards. Find the <strong>📦 Commissions</strong> button in the town detail (just above Market Prices). These are great for building reputation early!',
                     onEnter: function () { closeModal(); },
                     waitFor: function () { return isModalOpen(); }
+                },
+                {
+                    title: 'Kingdom Laws',
+                    text: '\uD83D\uDCDC Every kingdom has <strong>laws</strong> set by the king that affect your business! Click a town on the map, then find <strong>\uD83D\uDCDC Laws</strong> in the town detail to see current taxes, trade restrictions, and special policies like <strong>Open Market</strong>, <strong>Forced Requisition</strong>, or <strong>Exclusive Citizenship</strong>. Laws change based on the king\u2019s mood and personality!',
+                    onEnter: function () { closeModal(); }
+                },
+                {
+                    title: 'King Personality & Mood',
+                    text: '\uD83D\uDC51 Each king has a <strong>personality</strong> (Generous, Warlike, Greedy, etc.) that influences their decisions. The king\u2019s <strong>mood</strong> fluctuates based on kingdom wealth, wars, and events \u2014 affecting taxes, laws, and war declarations. A happy king means lower taxes and more trade-friendly policies!'
+                },
+                {
+                    title: 'Succession',
+                    text: '\u2620\uFE0F When a king <strong>dies</strong>, the crown passes to their heir. The new king may have a completely different personality \u2014 changing laws, taxes, and alliances overnight! A <strong>Succession Crisis</strong> can occur if there\u2019s no clear heir, causing instability. Watch for these events \u2014 they create massive trading opportunities.'
                 }
             ]
         },
@@ -599,8 +691,28 @@ window.Tutorial = (function () {
                     text: '\u2694\uFE0F <strong>Wars</strong> erupt when kingdom relations drop below \u221235. <strong>Frontline zones</strong> (500px radius) have 25% daily ambush chance \u2014 extremely dangerous but massively profitable for war suppliers.'
                 },
                 {
+                    title: 'Arm Yourself',
+                    text: '\u2694\uFE0F We\u2019ve <strong>equipped you with a sword and armor</strong>. Open <strong>\uD83D\uDC64 Character</strong> to see your gear! Equipment improves your <strong>combat rating</strong> for bandit encounters, military service, and resisting forced requisition. You can buy better gear from the <strong>Character panel</strong> when a town\u2019s market sells weapons. Better gear = better survival.',
+                    highlight: '#btnCharacter',
+                    onEnter: function () {
+                        // Equip directly since equipWeapon() buys from market, not inventory
+                        try {
+                            Player.state.weapon = { id: 'iron_sword', name: 'Iron Sword', quality: 'standard', combatBonus: 0.15 };
+                            Player.state.armor = { id: 'leather_armor', name: 'Leather Armor', quality: 'standard', combatBonus: 0.10 };
+                        } catch (e) { console.error('Tutorial equip error:', e); }
+                    },
+                    waitFor: function () {
+                        try { return Player.state.weapon || Player.state.armor; } catch (e) { return false; }
+                    },
+                    skipAfter: 10000
+                },
+                {
                     title: 'Military Enlistment',
                     text: '\u2694\uFE0F <strong>Enlist</strong> during wartime! Normal enlistment has <strong>4 ranks</strong>: Militiaman \u2192 Footman \u2192 Sergeant \u2192 <strong>Knight</strong> (max). Reaching Knight auto-grants <strong>Citizen status</strong>! The unique <strong>Military Leader</strong> start unlocks 3 higher ranks: Captain \u2192 Commander \u2192 General.'
+                },
+                {
+                    title: 'Conscription',
+                    text: '\uD83D\uDEA8 During wartime, kingdoms may <strong>draft citizens</strong> into military service! Higher social rank makes you less likely to be conscripted \u2014 <strong>Minor Nobles and above are exempt</strong>. If drafted, you\u2019ll serve for a set period and risk combat. The <strong>Political Connections</strong> skill reduces your draft chance. Plan accordingly when wars break out!'
                 },
                 {
                     title: 'War Profiteering',
@@ -621,6 +733,10 @@ window.Tutorial = (function () {
                 {
                     title: 'Ship Types',
                     text: '\u26F5 Buy ships at port towns:<br>\u2022 <strong>Small Ship</strong> (200g): Basic sea travel, 1.5x speed<br>\u2022 <strong>Large Ship</strong> (500g): More cargo, better storm resistance<br>Equip <strong>addons</strong> like extra sails, reinforced hulls, and cargo holds.'
+                },
+                {
+                    title: 'Ship Addons & Repair',
+                    text: '\u2693 Ships have <strong>addon slots</strong> for upgrades:<br>\u2022 \uD83D\uDCA8 <strong>Extra Sails</strong>: +speed<br>\u2022 \uD83D\uDEE1\uFE0F <strong>Reinforced Hull</strong>: +storm resistance<br>\u2022 \uD83D\uDCE6 <strong>Cargo Hold</strong>: +capacity<br>Ships take <strong>hull damage</strong> from storms and combat. Repair at port towns before your ship sinks! Hull health is shown in your ship panel.'
                 },
                 {
                     title: 'Sea Routes & Fishing',
@@ -666,8 +782,11 @@ window.Tutorial = (function () {
             part: 'advanced',
             steps: [
                 {
-                    title: 'Crime & Smuggling',
-                    text: '\uD83D\uDEA8 <strong>16 crime types</strong> from smuggling to treason. <strong>Smuggling</strong> banned goods pays 2x price but you can get caught! Punishments vary by kingdom \u2014 some are harsher than others. Skills like <strong>Discrete</strong> and <strong>Master Smuggler</strong> reduce your detection chance.'
+                    title: 'Dark Deeds & Schemes',
+                    text: '\uD83D\uDEA8 The <strong>\uD83D\uDD75\uFE0F Schemes</strong> panel lets you plot sabotage, political schemes, assassinations, tax evasion, and market manipulation. 5 categories of crime \u2014 high risk, high reward! Hover over each tab to see what\u2019s available. Some require <strong>Underworld skills</strong>. Click <strong>\uD83D\uDD75\uFE0F Schemes</strong> to take a look!',
+                    highlight: '#btnSchemes',
+                    waitFor: function () { return isModalOpen(); },
+                    skipAfter: 8000
                 },
                 {
                     title: 'The Leaderboard',
@@ -1149,6 +1268,12 @@ window.Tutorial = (function () {
             if (badge) badge.textContent = '0';
             if (typeof UI !== 'undefined' && UI.clearNotifications) UI.clearNotifications();
         }, 200);
+
+        // Start game music (tutorial doesn't trigger main.js music path)
+        if (typeof Music !== 'undefined') {
+            Music.init();
+            Music.playGameMusic('peaceful');
+        }
 
         // Show welcome toast
         var townName = towns.length > 0 ? towns[0].name : 'your town';

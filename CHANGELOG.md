@@ -4,6 +4,68 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.28.0] - 2026-03-27
+
+### Fixed — Comprehensive Bug Hunting Pass (43 bugs fixed)
+
+#### Critical — Input Validation (State Corruption Prevention)
+- **buy() string/NaN/Infinity exploit** — buy('wheat', 'abc') no longer corrupts gold to NaN
+- **sell() string/NaN exploit** — sell() now validates quantity with Number() + isFinite()
+- **bribeRequisitionGuard() string exploit** — bribe('abc') no longer corrupts player gold
+- **bribeGuards() string exploit** — Town guard bribe now validates amount before processing
+- **giveSpouseGold() string exploit** — Spouse gold transfer now validates amount
+- **askSpouseForMoney() string exploit** — Spouse money request now validates amount
+- **makeDebtPayment() string exploit** — Indentured debt payment now validates amount
+- **buyHorseForTravel() string cost** — Horse purchase cost now validated before gold deduction
+- **hireArmedEscort() string days** — Escort hire duration now validated
+- **depositToStorage() string qty** — Warehouse deposit now validates quantity
+- **withdrawFromStorage() string qty** — Warehouse withdrawal now validates quantity
+- **sellToKingdom() string qty** — Kingdom sell now validates and floors quantity
+- **giveGift() string qty** — Gift giving now validates quantity
+- **sellCounterfeit() string qty** — Counterfeit sales now validates quantity
+- **attemptSmuggle() string qty** — Smuggling now validates quantity
+- **deliverOrder() string qty** — Kingdom order delivery now validates quantity
+- **deliverSupplyDeal() string qty** — Supply deal delivery now validates quantity
+- **stealGoods() string qty** — Theft now validates quantity
+
+#### Critical — Caravan System
+- **sendCaravan() goods NaN** — Caravan goods quantities now validated with Number() + isFinite() + floor()
+- **sendCaravan() guards NaN** — Guard count now properly validated
+- **sendSeaCaravan() goods NaN** — Sea caravan goods quantities now validated
+- **sendSeaCaravan() guards NaN** — Sea caravan guard count now validated
+- **Sea caravan missing active flag** — Sea caravans now set `active: true` so they appear in Routes panel
+- **Naval blockade goods duplication** — Blocked caravans now clear goods after returning to player, preventing item duplication
+- **Naval blockade processing leak** — Blocked caravans now skip storm/arrival processing in the same tick
+
+#### High — Inheritance System
+- **dynasty_founder skill never applied (3 paths)** — The `hasSkill('dynasty_founder')` check was running AFTER skills were wiped to `{keen_eye: true}`, so the +1 bonus skill point was never granted. Fixed in inheritAsChild(), inheritAsSpouse(), and regency inheritance.
+
+#### High — God Mode
+- **Set Gold NaN** — God mode gold setter now validates input with parseInt + isNaN check
+- **Set Rank NaN** — God mode rank setter now validates input range (0-6)
+- **Advance Days no cap** — God mode day advance now capped at 365 and validates input
+
+#### Medium — Config Safety
+- **XP_REWARDS.HEIR_TRANSFER_RATIO fallback** — Added `|| 10` fallback to prevent Infinity on inheritance
+- **XP_REWARDS.DAILY_PASSIVE fallback** — Added `|| 0.1` fallback to prevent NaN XP accumulation
+- **CONFIG.BUILDING_GUARD_COST_PER_SEASON fallback** — Added `|| 50` fallback in 3 locations
+- **CONFIG.BUILDING_LOCKED_STORAGE_COST fallback** — Added `|| 100` fallback
+
+#### Low — UI Polish
+- **Trade preview decimal display** — Changed `.toFixed(1)` to `Math.round()` so gold shows as integers (not "10.0g")
+
+#### Fixed — Music System
+- **Title music not playing on New Game click** — AudioContext resume was blocked by a flag that was incorrectly set during the failed autoplay attempt on page load, preventing the real user-gesture resume from firing
+- **Tutorial double-play overlap** — Switching from title music to game music now properly stops the previous track before starting the new one (was playing both simultaneously for ~4 seconds)
+- **AudioContext resume race condition** — Resume callback now verifies context is actually running before scheduling audio, preventing phantom schedule attempts from failed autoplay
+- **Removed non-functional mousemove listener** — mousemove is not a qualifying user gesture for AudioContext; removed to avoid confusion
+
+#### Previously Fixed (from v0.27.0 checkpoint)
+- **Tutorial "Buy a Home" text** — Changed from "Tent" to "Shack" (tent doesn't exist)
+- **Tutorial "Arm Yourself"** — Now directly equips weapon/armor instead of adding to inventory
+- **Tutorial save button ID** — Changed `#btnSaveGame` to `#btnSave`
+- **Corruption Expert bribe formula** — Lowered floor from 20 to 10, changed divisor from /60 to /30
+
 ## [0.27.0] - 2026-03-27
 
 ### Fixed — Bug Hunting Pass (26 bugs)

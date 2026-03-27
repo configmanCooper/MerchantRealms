@@ -602,7 +602,8 @@
      * @returns {{ success: boolean, message: string, totalCost?: number }}
      */
     function buy(resourceId, qty, townId) {
-        if (!qty || qty <= 0) return { success: false, message: 'Invalid quantity.' };
+        qty = Number(qty);
+        if (!qty || !isFinite(qty) || qty <= 0) return { success: false, message: 'Invalid quantity.' };
         qty = Math.floor(qty);
         if (qty <= 0) return { success: false, message: 'Invalid quantity.' };
         if (resourceId === 'horses') {
@@ -830,7 +831,8 @@
      * @returns {{ success: boolean, message: string, totalRevenue?: number }}
      */
     function sell(resourceId, qty, townId) {
-        if (!qty || qty <= 0) return { success: false, message: 'Invalid quantity.' };
+        qty = Number(qty);
+        if (!qty || !isFinite(qty) || qty <= 0) return { success: false, message: 'Invalid quantity.' };
         qty = Math.floor(qty);
         if (qty <= 0) return { success: false, message: 'Invalid quantity.' };
         if (resourceId === 'horses') {
@@ -1134,6 +1136,9 @@
     // §3B  SMUGGLING / CONTRABAND
     // ========================================================
     function attemptSmuggle(resourceId, qty, town, kingdom, basePrice) {
+        qty = Number(qty);
+        if (!qty || !isFinite(qty) || qty <= 0) return { success: false, message: 'Invalid quantity.' };
+        qty = Math.floor(qty);
         const rng = Engine.getRng();
         const rankIdx = player.socialRank[kingdom.id] || 0;
         let detectionChance = CONFIG.SMUGGLING_BASE_DETECTION
@@ -1659,13 +1664,17 @@
         if (!goods || typeof goods !== 'object') return { success: false, message: 'No goods specified.' };
         var hasValidGoods = false;
         for (const [resId, gqty] of Object.entries(goods)) {
-            if (gqty <= 0) return { success: false, message: `Invalid quantity for ${resId}.` };
+            var nqty = Number(gqty);
+            if (!nqty || !isFinite(nqty) || nqty <= 0) return { success: false, message: `Invalid quantity for ${resId}.` };
+            goods[resId] = Math.floor(nqty);
             hasValidGoods = true;
         }
         if (!hasValidGoods) return { success: false, message: 'No goods specified for the caravan.' };
 
         // Validate guards
-        if (guards < 0) return { success: false, message: 'Invalid guard count.' };
+        guards = Number(guards) || 0;
+        if (!isFinite(guards) || guards < 0) return { success: false, message: 'Invalid guard count.' };
+        guards = Math.floor(guards);
 
         options = options || {};
         const buyOrders = options.buyOrders || null;   // { resId: { qty, maxPrice } }
@@ -2636,11 +2645,15 @@
         if (!goods || typeof goods !== 'object') return { success: false, message: 'No goods specified.' };
         var hasSeaGoods = false;
         for (const [resId, gqty] of Object.entries(goods)) {
-            if (gqty <= 0) return { success: false, message: `Invalid quantity for ${resId}.` };
+            var nqty = Number(gqty);
+            if (!nqty || !isFinite(nqty) || nqty <= 0) return { success: false, message: `Invalid quantity for ${resId}.` };
+            goods[resId] = Math.floor(nqty);
             hasSeaGoods = true;
         }
         if (!hasSeaGoods) return { success: false, message: 'No goods specified for the sea caravan.' };
-        if (guards < 0) return { success: false, message: 'Invalid guard count.' };
+        guards = Number(guards) || 0;
+        if (!isFinite(guards) || guards < 0) return { success: false, message: 'Invalid guard count.' };
+        guards = Math.floor(guards);
 
         const hasShip = player.ships.length > 0;
         if (!hasShip) {
@@ -2718,6 +2731,7 @@
             totalDist: seaRoute.distance / (CONFIG.SEA_SPEED_MULTIPLIER || 1.5),
             totalWeight,
             daysSent: Engine.getDay(),
+            active: true,
         };
         player.caravans.push(caravan);
         Engine.logEvent(`Sea caravan dispatched from ${fromTown.name} to ${toTown.name}.`);
@@ -2776,6 +2790,7 @@
                             if (ev.townId === caravan.toTownId) {
                                 // Blockaded — caravan turns back
                                 caravan.status = 'blocked';
+                                caravan.active = false;
                                 Engine.logEvent('Your sea caravan was turned back by a naval blockade!');
                                 // Return goods to player
                                 for (const [resId, qty] of Object.entries(caravan.goods)) {
@@ -2783,11 +2798,15 @@
                                         player.inventory[resId] = (player.inventory[resId] || 0) + qty;
                                     }
                                 }
-                                continue;
+                                caravan.goods = {}; // Clear to prevent duplication
+                                break;
                             }
                         }
                     }
                 }
+
+                // Skip further processing if blocked by naval blockade
+                if (caravan.status === 'blocked') continue;
 
                 // Scale storm chance per-tick (not per-trip)
                 const stormChancePerTick = stormChance / 30;
@@ -3440,6 +3459,9 @@
     }
 
     function buyHorseForTravel(townId, cost) {
+        cost = Number(cost);
+        if (!cost || !isFinite(cost) || cost <= 0) return { success: false, message: 'Invalid cost.' };
+        cost = Math.floor(cost);
         var currentTown = Engine.findTown(player.townId);
         if (!currentTown) return { success: false, message: 'Cannot find current town.' };
 
@@ -4384,7 +4406,9 @@
     }
 
     function depositToStorage(resId, qty) {
-        if (!qty || qty <= 0) return { success: false, message: 'Invalid quantity.' };
+        qty = Number(qty);
+        if (!qty || !isFinite(qty) || qty <= 0) return { success: false, message: 'Invalid quantity.' };
+        qty = Math.floor(qty);
         if (!player.townId) return { success: false, message: 'Must be in a town to deposit.' };
         var available = player.inventory[resId] || 0;
         if (available < qty) return { success: false, message: 'Not enough in inventory.' };
@@ -4403,7 +4427,9 @@
     }
 
     function withdrawFromStorage(resId, qty) {
-        if (!qty || qty <= 0) return { success: false, message: 'Invalid quantity.' };
+        qty = Number(qty);
+        if (!qty || !isFinite(qty) || qty <= 0) return { success: false, message: 'Invalid quantity.' };
+        qty = Math.floor(qty);
         if (!player.townId) return { success: false, message: 'Must be in a town to withdraw.' };
         var stored = (player.townStorage[player.townId] || {})[resId] || 0;
         if (stored < qty) return { success: false, message: 'Not enough in storage.' };
@@ -5304,7 +5330,7 @@
         player.jailedUntilDay = 0;
 
         // XP transfer: old XP/ratio + XP bank (dynasty surplus)
-        var xpTransfer = Math.floor(player.xp / XP_REWARDS.HEIR_TRANSFER_RATIO);
+        var xpTransfer = Math.floor(player.xp / (XP_REWARDS.HEIR_TRANSFER_RATIO || 10));
         var bankBonus = player.xpBank || 0;
         xpTransfer += bankBonus;
         var prevGen = player.achievementStats.generation || 1;
@@ -5316,6 +5342,7 @@
         }
         player.level = 1;
         player.skillPoints = 0;
+        var hadDynastyFounder = player.skills && player.skills['dynasty_founder'];
         player.skills = { keen_eye: true };
         player.achievements = {};
         player.hunger = HUNGER_CONFIG.START;
@@ -5333,7 +5360,7 @@
         player.generation = prevGen + 1;
         player._xpAccumulator = 0;
         checkLevelUp();
-        player.skillPoints = Math.min(player.skillPoints, 3 + (hasSkill('dynasty_founder') ? 1 : 0));
+        player.skillPoints = Math.min(player.skillPoints, 3 + (hadDynastyFounder ? 1 : 0));
 
         // Reset various tracking
         player.warAllegiances = {};
@@ -5457,6 +5484,7 @@
         }
         player.level = 1;
         player.skillPoints = 0;
+        var hadDynastyFounder = player.skills && player.skills['dynasty_founder'];
         player.skills = { keen_eye: true };
         player.achievements = {};
         player.hunger = HUNGER_CONFIG.START;
@@ -5474,7 +5502,7 @@
         player.generation = prevGen + 1;
         player._xpAccumulator = 0;
         checkLevelUp();
-        player.skillPoints = Math.min(player.skillPoints, 3 + (hasSkill('dynasty_founder') ? 1 : 0));
+        player.skillPoints = Math.min(player.skillPoints, 3 + (hadDynastyFounder ? 1 : 0));
 
         // Reset various tracking
         player.warAllegiances = {};
@@ -7969,6 +7997,9 @@
     }
 
     function askSpouseForMoney(amount) {
+        amount = Number(amount);
+        if (!amount || !isFinite(amount) || amount <= 0) return { success: false, message: 'Invalid amount.' };
+        amount = Math.floor(amount);
         if (!player.spouseId) return { success: false, message: 'You have no spouse.' };
         var spouse = Engine.findPerson(player.spouseId);
         if (!spouse || !spouse.alive) return { success: false, message: 'Your spouse is not available.' };
@@ -8057,6 +8088,9 @@
     }
 
     function giveSpouseGold(amount) {
+        amount = Number(amount);
+        if (!amount || !isFinite(amount) || amount <= 0) return { success: false, message: 'Invalid amount.' };
+        amount = Math.floor(amount);
         if (!player.spouseId) return { success: false, message: 'You have no spouse.' };
         var spouse = Engine.findPerson(player.spouseId);
         if (!spouse || !spouse.alive) return { success: false, message: 'Your spouse is not available.' };
@@ -8364,6 +8398,7 @@
         player.xp = xpTransfer;
         player.totalXp = xpTransfer;
         player.level = 1;
+        var hadDynastyFounder = player.skills && player.skills['dynasty_founder'];
         player.skills = { keen_eye: true };
         player.achievements = {};
         player.hunger = HUNGER_CONFIG.START;
@@ -8410,7 +8445,7 @@
             }
         }
 
-        player.skillPoints = Math.max(0, (hasSkill('dynasty_founder') ? 1 : 0) + bonusPoints);
+        player.skillPoints = Math.max(0, (hadDynastyFounder ? 1 : 0) + bonusPoints);
         checkLevelUp();
 
         // Reputation
@@ -10677,7 +10712,7 @@
         tickAIMerchants();
 
         // Passive daily XP
-        player._xpAccumulator = (player._xpAccumulator || 0) + XP_REWARDS.DAILY_PASSIVE;
+        player._xpAccumulator = (player._xpAccumulator || 0) + (XP_REWARDS.DAILY_PASSIVE || 0.1);
         if (player._xpAccumulator >= 1) {
             const xpToGrant = Math.floor(player._xpAccumulator);
             grantXP(xpToGrant, 'passive');
@@ -11287,7 +11322,9 @@
     // §12B-5 SELL TO KINGDOM
     // ========================================================
     function sellToKingdom(kingdomId, resourceId, qty, pricePerUnit) {
-        if (!qty || qty <= 0) return { success: false, message: 'Invalid quantity.' };
+        qty = Number(qty);
+        if (!qty || !isFinite(qty) || qty <= 0) return { success: false, message: 'Invalid quantity.' };
+        qty = Math.floor(qty);
         if (player.traveling) return { success: false, message: 'Cannot trade while traveling.' };
         if (player.jailedUntilDay > 0 && Engine.getDay() < player.jailedUntilDay) {
             return { success: false, message: 'You are in jail until day ' + player.jailedUntilDay + '.' };
@@ -11770,7 +11807,8 @@
     }
 
     function giveGift(personId, resourceId, qty) {
-        if (!qty || qty <= 0) return { success: false, message: 'Invalid quantity.' };
+        qty = Number(qty);
+        if (!qty || !isFinite(qty) || qty <= 0) return { success: false, message: 'Invalid quantity.' };
         qty = Math.floor(qty);
         if (qty <= 0) return { success: false, message: 'Invalid quantity.' };
         const person = Engine.findPerson(personId);
@@ -11930,6 +11968,9 @@
     }
 
     function deliverOrder(orderId, qty) {
+        qty = Number(qty);
+        if (!qty || !isFinite(qty) || qty <= 0) return { success: false, message: 'Invalid quantity.' };
+        qty = Math.floor(qty);
         if (!player.alive) return { success: false, message: 'You are not alive.' };
         var kingdoms = Engine.getKingdoms();
         var foundOrder = null;
@@ -12064,6 +12105,9 @@
     }
 
     function deliverSupplyDeal(dealId, qty) {
+        qty = Number(qty);
+        if (!qty || !isFinite(qty) || qty <= 0) return { success: false, message: 'Invalid quantity.' };
+        qty = Math.floor(qty);
         if (!player.alive) return { success: false, message: 'You are not alive.' };
         if (!player.supplyDeals) return { success: false, message: 'No supply deals.' };
         var deal = null;
@@ -12524,10 +12568,10 @@
         if (!bld) return { success: false, message: 'Building not found.' };
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.toggle_guard || 1);
         if (!bld.hasGuard) {
-            if (player.gold < CONFIG.BUILDING_GUARD_COST_PER_SEASON) {
-                return { success: false, message: `Need ${CONFIG.BUILDING_GUARD_COST_PER_SEASON} gold to hire a guard.` };
+            if (player.gold < (CONFIG.BUILDING_GUARD_COST_PER_SEASON || 50)) {
+                return { success: false, message: `Need ${CONFIG.BUILDING_GUARD_COST_PER_SEASON || 50} gold to hire a guard.` };
             }
-            player.gold -= CONFIG.BUILDING_GUARD_COST_PER_SEASON;
+            player.gold -= (CONFIG.BUILDING_GUARD_COST_PER_SEASON || 50);
         }
         bld.hasGuard = !bld.hasGuard;
         const status = bld.hasGuard ? 'hired' : 'dismissed';
@@ -12538,10 +12582,10 @@
         const bld = player.buildings.find(b => b.id === buildingId);
         if (!bld) return { success: false, message: 'Building not found.' };
         if (bld.lockedStorage) return { success: false, message: 'Already has locked storage.' };
-        if (player.gold < CONFIG.BUILDING_LOCKED_STORAGE_COST) {
-            return { success: false, message: `Need ${CONFIG.BUILDING_LOCKED_STORAGE_COST} gold.` };
+        if (player.gold < (CONFIG.BUILDING_LOCKED_STORAGE_COST || 100)) {
+            return { success: false, message: `Need ${CONFIG.BUILDING_LOCKED_STORAGE_COST || 100} gold.` };
         }
-        player.gold -= CONFIG.BUILDING_LOCKED_STORAGE_COST;
+        player.gold -= (CONFIG.BUILDING_LOCKED_STORAGE_COST || 100);
         bld.lockedStorage = true;
         return { success: true, message: 'Locked storage installed!' };
     }
@@ -12644,8 +12688,8 @@
         if (day % (CONFIG.DAYS_PER_SEASON || 30) === 0) {
             for (const bld of player.buildings) {
                 if (bld.hasGuard) {
-                    if (player.gold >= CONFIG.BUILDING_GUARD_COST_PER_SEASON) {
-                        player.gold -= CONFIG.BUILDING_GUARD_COST_PER_SEASON;
+                    if (player.gold >= (CONFIG.BUILDING_GUARD_COST_PER_SEASON || 50)) {
+                        player.gold -= (CONFIG.BUILDING_GUARD_COST_PER_SEASON || 50);
                     } else {
                         bld.hasGuard = false;
                         if (typeof UI !== 'undefined' && UI.toast) {
@@ -12852,6 +12896,15 @@
 
         if (!rng.chance(seizureChance)) return;
 
+        // Diplomatic Immunity — charm guards into leaving
+        if (hasSkill('diplomatic_immunity') && rng.chance(0.4)) {
+            Engine.logEvent(player.fullName + ' talked the guards out of seizing goods with diplomatic charm.');
+            if (typeof UI !== 'undefined' && UI.toast) {
+                UI.toast('🕊️ Your diplomatic connections convinced the guards to move along!', 'success', 'forced_requisition');
+            }
+            return;
+        }
+
         // Pick a resource from inventory to seize
         var inventoryItems = [];
         for (var resId in player.inventory) {
@@ -12913,12 +12966,19 @@
     }
 
     function bribeRequisitionGuard(bribeAmount) {
-        if (!bribeAmount || bribeAmount <= 0) return { success: false, message: 'Invalid bribe amount.' };
+        bribeAmount = Number(bribeAmount);
+        if (!bribeAmount || !isFinite(bribeAmount) || bribeAmount <= 0) return { success: false, message: 'Invalid bribe amount.' };
         if (player.gold < bribeAmount) return { success: false, message: 'Not enough gold.' };
         var rng = Engine.getRng();
         player.gold -= bribeAmount;
         // Bribe success based on amount relative to guard's greed
-        var successChance = Math.min(0.9, bribeAmount / 100);
+        // Corruption Expert improves the formula
+        var successChance;
+        if (hasSkill('corruption_expert')) {
+            successChance = Math.min(0.95, bribeAmount / 30);
+        } else {
+            successChance = Math.min(0.9, bribeAmount / 100);
+        }
         if (rng && rng.chance(successChance)) {
             Engine.logEvent(player.fullName + ' bribed the guards to avoid requisition (' + bribeAmount + 'g).');
             if (typeof UI !== 'undefined' && UI.toast) {
@@ -15867,6 +15927,9 @@
 
     // ── (d) Steal Goods ──
     function stealGoods(resourceId, qty, townId) {
+        qty = Number(qty);
+        if (!qty || !isFinite(qty) || qty <= 0) return { success: false, message: 'Invalid quantity.' };
+        qty = Math.floor(qty);
         if (isJailed()) return { success: false, message: 'You are in jail.' };
         if (!isInTown(townId)) return { success: false, message: 'You must be in the town.' };
         const town = Engine.findTown(townId);
@@ -16104,7 +16167,9 @@
 
     // ── (e) Sell Counterfeit Goods ──
     function sellCounterfeit(resourceId, qty, townId) {
-        if (!qty || qty <= 0) return { success: false, message: 'Invalid quantity.' };
+        qty = Number(qty);
+        if (!qty || !isFinite(qty) || qty <= 0) return { success: false, message: 'Invalid quantity.' };
+        qty = Math.floor(qty);
         if (isJailed()) return { success: false, message: 'You are in jail.' };
         if (!hasSkill('master_forger')) return { success: false, message: 'Requires Master Forger skill.' };
         if (!isInTown(townId)) return { success: false, message: 'You must be in the town.' };
@@ -16142,6 +16207,9 @@
 
     // ── (f) Bribe Guards ──
     function bribeGuards(townId, amount) {
+        amount = Number(amount);
+        if (!amount || !isFinite(amount) || amount <= 0) return { success: false, message: 'Invalid bribe amount.' };
+        amount = Math.floor(amount);
         if (isJailed()) return { success: false, message: 'You are in jail.' };
         if (!isInTown(townId)) return { success: false, message: 'You must be in the town.' };
         const town = Engine.findTown(townId);
@@ -19071,6 +19139,9 @@
     // §12K  WARTIME TRAVEL DANGER
     // ========================================================
     function hireArmedEscort(days) {
+        days = Number(days);
+        if (!days || !isFinite(days) || days <= 0) return { success: false, message: 'Invalid escort duration.' };
+        days = Math.floor(days);
         var cost = days * CONFIG.WARTIME_ESCORT_COST_PER_DAY;
         if (player.gold < cost) return { success: false, message: 'Need ' + cost + 'g for ' + days + ' days of armed escort.' };
         player.gold -= cost;
@@ -21038,13 +21109,14 @@
     }
 
     function makeDebtPayment(amount) {
-        if (!player.indentured || !player.indentured.active) {
-            return { success: false, message: 'You are not indentured.' };
-        }
-        if (!amount || amount <= 0) {
+        amount = Number(amount);
+        if (!amount || !isFinite(amount) || amount <= 0) {
             return { success: false, message: 'Enter an amount to pay.' };
         }
         amount = Math.floor(amount);
+        if (!player.indentured || !player.indentured.active) {
+            return { success: false, message: 'You are not indentured.' };
+        }
         if (player.gold < amount) {
             return { success: false, message: 'You only have ' + Math.floor(player.gold) + 'g.' };
         }

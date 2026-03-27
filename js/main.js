@@ -66,13 +66,17 @@ window.Game = (function () {
         // Bind title screen button
         const btnNew = document.getElementById('btnNewGame');
         if (btnNew) {
-            btnNew.addEventListener('click', showCharacterCreation);
+            btnNew.addEventListener('click', function () {
+                startTitleMusic();
+                showCharacterCreation();
+            });
         }
 
         // Load Game button (replaces old Continue)
         const btnLoad = document.getElementById('btnLoadGame');
         if (btnLoad) {
             btnLoad.addEventListener('click', function () {
+                startTitleMusic();
                 showLoadSlotPicker();
             });
             btnLoad.style.display = '';
@@ -82,6 +86,7 @@ window.Game = (function () {
         const btnTutorial = document.getElementById('btnTutorial');
         if (btnTutorial) {
             btnTutorial.addEventListener('click', function () {
+                startTitleMusic();
                 if (typeof Tutorial !== 'undefined' && Tutorial.start) {
                     Tutorial.start();
                 }
@@ -106,12 +111,12 @@ window.Game = (function () {
         initMusicControls();
 
         // Start title music on first user interaction (AudioContext policy)
-        // Try autoplay first; if blocked, wait for first click/key
+        // Browsers block audio until a click/keydown/touchstart.
+        // First click (e.g. New Game, Tutorial, Load) will start title music.
         function startTitleMusic() {
             if (typeof Music !== 'undefined') {
                 Music.init();
                 Music.playTitleMusic();
-                // Sync UI with persisted settings
                 var volSlider = document.getElementById('musicVolume');
                 if (volSlider) volSlider.value = Math.round(Music.getVolume() * 100);
                 var btn = document.getElementById('btnMusicToggle');
@@ -119,23 +124,18 @@ window.Game = (function () {
             }
             document.removeEventListener('click', startTitleMusic);
             document.removeEventListener('keydown', startTitleMusic);
-            document.removeEventListener('mousemove', startTitleMusic);
         }
+
         // Attempt autoplay immediately (works if user has interacted with site before)
         try {
             if (typeof Music !== 'undefined') {
                 Music.init();
                 Music.playTitleMusic();
-                var volSlider2 = document.getElementById('musicVolume');
-                if (volSlider2) volSlider2.value = Math.round(Music.getVolume() * 100);
-                var btn2 = document.getElementById('btnMusicToggle');
-                if (btn2) btn2.textContent = Music.isMuted() ? '🔇' : '🔊';
             }
         } catch (e) { /* autoplay blocked — fall through to event listeners */ }
-        // Fallback: start on first interaction (mouse move, click, or key)
+        // Fallback: start on first click or keydown
         document.addEventListener('click', startTitleMusic);
         document.addEventListener('keydown', startTitleMusic);
-        document.addEventListener('mousemove', startTitleMusic, { once: true });
     }
 
     // ── Music UI Controls ──
