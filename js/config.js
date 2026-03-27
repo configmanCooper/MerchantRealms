@@ -2216,7 +2216,7 @@ const SPOUSE_QUIRKS = [
 
 const SOCIAL_INTERACTIONS = [
     {
-        id: 'small_talk', name: '💬 Small Talk', icon: '💬',
+        id: 'small_talk', name: 'Small Talk', icon: '💬',
         description: 'Safe, light conversation about the weather and town gossip',
         baseGain: 2, cost: 0, timeHours: 1,
         personalityWeights: { warmth: 0.02, honesty: 0.01 },
@@ -2225,7 +2225,7 @@ const SOCIAL_INTERACTIONS = [
         dateProgress: 8
     },
     {
-        id: 'tell_joke', name: '😂 Tell a Joke', icon: '😂',
+        id: 'tell_joke', name: 'Tell a Joke', icon: '😂',
         description: 'Try to make them laugh — works great with warm people, risky with serious ones',
         baseGain: 1, cost: 0, timeHours: 1,
         personalityWeights: { warmth: 0.06, honesty: -0.01, ambition: -0.02 },
@@ -2234,7 +2234,7 @@ const SOCIAL_INTERACTIONS = [
         dateProgress: 10
     },
     {
-        id: 'discuss_business', name: '📊 Discuss Business', icon: '📊',
+        id: 'discuss_business', name: 'Discuss Business', icon: '📊',
         description: 'Talk shop — ambitious and intelligent people love this, others find it dull',
         baseGain: 1, cost: 0, timeHours: 1,
         personalityWeights: { ambition: 0.05, intelligence: 0.03, warmth: -0.02 },
@@ -2243,7 +2243,7 @@ const SOCIAL_INTERACTIONS = [
         dateProgress: 12
     },
     {
-        id: 'compliment', name: '🌹 Compliment', icon: '🌹',
+        id: 'compliment', name: 'Compliment', icon: '🌹',
         description: 'Pay them a genuine compliment — usually positive, but some see through flattery',
         baseGain: 2, cost: 0, timeHours: 1,
         personalityWeights: { warmth: 0.03, honesty: -0.03, loyalty: 0.01 },
@@ -2252,7 +2252,7 @@ const SOCIAL_INTERACTIONS = [
         dateProgress: 6
     },
     {
-        id: 'ask_advice', name: '🧠 Ask for Advice', icon: '🧠',
+        id: 'ask_advice', name: 'Ask for Advice', icon: '🧠',
         description: 'Seek their wisdom — intelligent and loyal people appreciate being consulted',
         baseGain: 1, cost: 0, timeHours: 1,
         personalityWeights: { intelligence: 0.05, loyalty: 0.02, ambition: 0.01 },
@@ -2261,7 +2261,7 @@ const SOCIAL_INTERACTIONS = [
         dateProgress: 14
     },
     {
-        id: 'share_drink', name: '🍺 Share a Drink', icon: '🍺',
+        id: 'share_drink', name: 'Share a Drink', icon: '🍺',
         description: 'Buy them a drink at the tavern — great for bonding, but costs a few gold',
         baseGain: 3, cost: 5, timeHours: 2,
         personalityWeights: { warmth: 0.02, frugality: -0.03, honesty: 0.01 },
