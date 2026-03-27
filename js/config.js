@@ -99,6 +99,7 @@ const CONFIG = {
     RELATION_DECAY_RATE: 0.1,           // Was 0.5; much slower decay lets grudges accumulate
     WAR_CHANCE_PER_DAY: 0.01,           // Was 0.002; 5x more likely once threshold met
     PEACE_CHANCE_PER_DAY: 0.008,        // Was 0.005; slightly faster peace for balance
+    WARTIME_SUPPLY_COST_PER_SOLDIER: 2, // Gold per soldier per day during wartime (was hardcoded 5)
     DISPUTE_CHANCE: 0.04,               // Was 0.01 (hardcoded); 4x more border disputes
     DISPUTE_MIN: 5,                     // Border dispute minimum relation penalty
     DISPUTE_MAX: 18,                    // Border dispute maximum relation penalty
@@ -134,7 +135,7 @@ const CONFIG = {
 
     // Frontline
     FRONTLINE_TRADE_PENALTY: 0.5,         // 50% trade reduction
-    FRONTLINE_HAPPINESS_DRAIN: 1,         // per day
+    FRONTLINE_HAPPINESS_DRAIN: 0.4,         // per day (softened from 1.0)
 
     // Peace Negotiation
     PEACE_TRIBUTE_PERCENT: [0.10, 0.15, 0.20, 0.25, 0.30], // escalating tribute %
@@ -762,6 +763,15 @@ const CONFIG = {
     },
     TOWN_CATEGORY_CHECK_INTERVAL: 30,
     TOWN_CATEGORY_UPGRADE_HOLD_DAYS: 30,
+
+    // Per-town population caps by category
+    TOWN_POP_CAP: {
+        village: 80,
+        town: 250,
+        city: 600,
+        capital_city: 1200,
+        island: 150,
+    },
 
     // Wilderness Outpost System
     OUTPOST_CONFIG: {

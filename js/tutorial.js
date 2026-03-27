@@ -48,7 +48,18 @@ window.Tutorial = (function () {
     }
 
     function getPlayerBuildings() {
-        try { return Player.state.buildings || []; } catch (e) { return []; }
+        try {
+            // Player buildings are in Player.state.buildings (pushed by buildBuilding)
+            // and also in town.buildings with ownerId === 'player'
+            var buildings = Player.state.buildings || [];
+            if (buildings.length > 0) return buildings;
+            // Fallback: check town buildings for player ownership
+            var town = Engine.findTown(Player.state.townId);
+            if (town && town.buildings) {
+                return town.buildings.filter(function(b) { return b.ownerId === 'player'; });
+            }
+            return [];
+        } catch (e) { return []; }
     }
 
     function getPlayerEmployees() {
@@ -340,6 +351,10 @@ window.Tutorial = (function () {
                     text: '\uD83E\uDD1D You can trade <strong>directly with townspeople</strong>! Click the <strong>\uD83E\uDD1D Street</strong> button to see what locals want to buy or sell. Street trading lets you bypass the market and deal person-to-person \u2014 sometimes at better prices. Some goods can <strong>only</strong> be sold on the street. Try it now!',
                     highlight: '#btnStreet',
                     waitFor: function () { return isModalOpen(); },
+                    onComplete: function () {
+                        closeModal();
+                        nextStep();
+                    },
                     skipAfter: 6000
                 },
                 {
@@ -594,6 +609,12 @@ window.Tutorial = (function () {
                     highlight: '#btnBuild',
                     onEnter: function () {
                         giveGold(2000);
+                        // Ensure player can build (bypass Apprentice Law work-day requirement)
+                        try {
+                            Player.state.workDaysCompleted = Math.max(Player.state.workDaysCompleted || 0, 30);
+                            if (!Player.state.stats) Player.state.stats = {};
+                            Player.state.stats.totalDaysWorked = Math.max(Player.state.stats.totalDaysWorked || 0, 30);
+                        } catch (e) { console.error('Tutorial build prereq error:', e); }
                     },
                     waitFor: function () { return isModalOpen(); }
                 },
@@ -621,7 +642,7 @@ window.Tutorial = (function () {
                 {
                     title: 'Building Management',
                     text: '\uD83D\uDD27 Buildings need <strong>maintenance</strong> (3% of cost/week). Condition degrades over time \u2014 neglect leads to destruction! Hire <strong>guards</strong> (10g/season) to prevent theft. Use <strong>Transfer Targets</strong> to auto-send output between buildings.',
-                    waitFor: function () { return isModalClosed(); }
+                    onEnter: function () { closeModal(); }
                 },
                 {
                     title: 'Worker Quirk Effects',
@@ -654,6 +675,10 @@ window.Tutorial = (function () {
                     text: '\uD83C\uDF1F <strong>Buy a skill now!</strong> Try <strong>Keen Eye</strong> (reveals prices), <strong>Charming</strong> (+25% relationships), or <strong>Haggling</strong> (better trade prices). Each costs <strong>3 SP</strong>.',
                     waitFor: function () {
                         return getPlayerSkillCount() > (snapshotState.skillCountBefore || 0);
+                    },
+                    onComplete: function () {
+                        closeModal();
+                        nextStep();
                     }
                 },
                 {
@@ -741,9 +766,7 @@ window.Tutorial = (function () {
                             Player.state.armor = { id: 'leather_armor', name: 'Leather Armor', quality: 'standard', combatBonus: 0.10 };
                         } catch (e) { console.error('Tutorial equip error:', e); }
                     },
-                    waitFor: function () {
-                        try { return Player.state.weapon || Player.state.armor; } catch (e) { return false; }
-                    },
+                    waitFor: function () { return isModalOpen(); },
                     skipAfter: 10000
                 },
                 {

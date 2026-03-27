@@ -23274,7 +23274,7 @@
             }
         } else if (chosen.effect === 'blockade') {
             if (enemyK) {
-                enemyK.treasury = Math.floor((enemyK.treasury || 0) * 0.9);
+                enemyK.gold = Math.floor((enemyK.gold || 0) * 0.9);
             }
         }
         

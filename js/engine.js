@@ -775,6 +775,7 @@
                 kingActionLog: [],
                 successionCrisis: null,
                 immigrationPolicy: 'open',
+                warExhaustion: 0,           // 0-100 scale, accumulates during war, recovers during peace
             });
             // Bug 5: store starting gold for crisis detection
             kingdoms[kingdoms.length - 1]._startingGold = kingdoms[kingdoms.length - 1].gold;
@@ -4917,12 +4918,104 @@
     }
 
     // ========================================================
+    // §13b WAR EXHAUSTION
+    // ========================================================
+    function tickWarExhaustion(k) {
+        if (typeof k.warExhaustion !== 'number') k.warExhaustion = 0;
+        if (k.atWar.size === 0) {
+            // Recover during peacetime
+            k.warExhaustion = Math.max(0, k.warExhaustion - 0.5);
+            return;
+        }
+        // Accumulate: base + per-war + treasury pressure + bankruptcy
+        var gain = 0.15 + (k.atWar.size * 0.1);
+        var startGold = k._startingGold || 10000;
+        if (k.gold < startGold * 0.25) gain += 0.2;
+        if (k._bankruptDays > 0) gain += 0.3;
+        k.warExhaustion = Math.min(100, k.warExhaustion + gain);
+    }
+
+    // Called when a kingdom loses a battle
+    function addBattleLossExhaustion(k) {
+        if (!k) return;
+        if (typeof k.warExhaustion !== 'number') k.warExhaustion = 0;
+        k.warExhaustion = Math.min(100, k.warExhaustion + 5);
+    }
+
+    // Called when a kingdom loses a town
+    function addTownLossExhaustion(k) {
+        if (!k) return;
+        if (typeof k.warExhaustion !== 'number') k.warExhaustion = 0;
+        k.warExhaustion = Math.min(100, k.warExhaustion + 10);
+    }
+
+    // Apply war exhaustion effects (called each day per kingdom)
+    function applyWarExhaustionEffects(k, rng) {
+        var we = k.warExhaustion || 0;
+        if (we <= 25) return; // Normal — no effects
+
+        // Tier 2 (25-50): happiness drain
+        if (we > 25 && we <= 50) {
+            k.happiness = Math.max(0, (k.happiness || 50) - 0.1);
+        }
+        // Tier 3 (50-75): stronger happiness drain
+        else if (we > 50 && we <= 75) {
+            k.happiness = Math.max(0, (k.happiness || 50) - 0.3);
+        }
+        // Tier 4 (75-100): severe effects
+        else if (we > 75) {
+            k.happiness = Math.max(0, (k.happiness || 50) - 0.5);
+            // Soldiers desert at 1%/day
+            if (rng.chance(0.01)) {
+                for (var ti = 0; ti < world.towns.length; ti++) {
+                    var town = world.towns[ti];
+                    if (town.kingdomId !== k.id || !town.garrison || town.garrison <= 1) continue;
+                    var deserters = Math.max(1, Math.floor(town.garrison * 0.01));
+                    town.garrison = Math.max(1, town.garrison - deserters);
+                    // Convert deserters back to civilians
+                    var townSoldiers = (world.people || []).filter(function(p) {
+                        return p.alive && p.townId === town.id && p.occupation === 'soldier';
+                    });
+                    for (var di = 0; di < Math.min(deserters, townSoldiers.length); di++) {
+                        townSoldiers[di].occupation = 'laborer';
+                    }
+                }
+                logEvent('🏃‍♂️ Soldiers are deserting ' + k.name + '\'s exhausted army!', {
+                    type: 'war_exhaustion_desertion', cause: 'War exhaustion at ' + Math.round(we) + '%',
+                    effects: ['Garrison strength reduced across all towns'],
+                    kingdoms: [k.id]
+                }, 'military');
+            }
+        }
+    }
+
+    // Get recruitment modifier based on war exhaustion (1.0 = normal, 0 = halted)
+    function getWarExhaustionRecruitMod(k) {
+        var we = k.warExhaustion || 0;
+        if (we <= 50) return 1.0;
+        if (we <= 75) return 0.5; // 50% recruitment
+        return 0;                  // Recruitment halted
+    }
+
+    // Get surrender bonus from war exhaustion
+    function getWarExhaustionSurrenderBonus(k) {
+        var we = k.warExhaustion || 0;
+        if (we > 75) return 0.40;
+        if (we > 50) return 0.15;
+        return 0;
+    }
+
+    // ========================================================
     // §14 DIPLOMACY & KINGDOM AI TICK
     // ========================================================
     function tickDiplomacy() {
         const rng = world.rng;
 
         for (const k of world.kingdoms) {
+            // ---- War exhaustion tick ----
+            tickWarExhaustion(k);
+            applyWarExhaustionEffects(k, rng);
+
             // ---- Relation drift toward 0 ----
             for (const otherId in k.relations) {
                 const val = k.relations[otherId];
@@ -5046,37 +5139,34 @@
                 }
             }
 
-            // ---- Alliance mutual defense: join ally's wars ----
+            // ---- Alliance Call to Arms (replaces auto-join) ----
             for (const allyId of k.alliances) {
                 const ally = findKingdom(allyId);
                 if (!ally) continue;
                 for (const enemyId of ally.atWar) {
-                    if (enemyId === k.id) continue; // Can't be at war with yourself
-                    if (k.atWar.has(enemyId)) continue; // Already at war
-                    if (k.alliances.has(enemyId)) continue; // Allied with both sides — stay neutral
-                    // Check peace treaties
+                    if (enemyId === k.id) continue;
+                    if (k.atWar.has(enemyId)) continue;
+                    if (k.alliances.has(enemyId)) continue;
                     if (k.peaceTreaties && k.peaceTreaties[enemyId] && world.day < k.peaceTreaties[enemyId]) continue;
                     const enemy = findKingdom(enemyId);
                     if (!enemy) continue;
-                    // Join war after a delay (check if war has been going on long enough)
+
+                    // War age check (ally must have been at war for 30+ days before call)
                     const war = Object.values(world.activeWars || {}).find(w =>
                         (w.kingdomA === allyId && w.kingdomB === enemyId) ||
                         (w.kingdomB === allyId && w.kingdomA === enemyId)
                     );
                     const warAge = war ? world.day - war.startDay : 999;
-                    if (warAge >= (CONFIG.ALLIANCE_WAR_JOIN_DELAY || 30)) {
-                        declareWar(k, enemy);
-                        logEvent(`⚔️ ${k.name} joins the war against ${enemy.name} to honor their alliance with ${ally.name}!`, {
-                            type: 'alliance_war_join',
-                            cause: k.name + ' is obligated to defend their ally ' + ally.name + ' after the alliance war-join delay expired.',
-                            effects: [
-                                k.name + ' enters the war against ' + enemy.name,
-                                'Military forces mobilized',
-                                'Trade between ' + k.name + ' and ' + enemy.name + ' may be disrupted'
-                            ],
-                            kingdoms: [k.id, enemy.id]
-                        });
-                    }
+                    if (warAge < (CONFIG.ALLIANCE_WAR_JOIN_DELAY || 30)) continue;
+
+                    // Determine if this is a defensive war for the ally (they were attacked)
+                    var isDefensive = war && war.aggressor === enemyId;
+
+                    // Check if alliance is strong enough for this type of call
+                    if (!shouldCallToArms(k, ally, isDefensive)) continue;
+
+                    // Process the call to arms — ally decides whether to join
+                    processCallToArms(k, ally, enemy);
                 }
             }
 
@@ -5097,7 +5187,11 @@
                 const myStrength = computeMilitaryStrength(k);
                 const theirStrength = computeMilitaryStrength(other);
                 const losingFactor = myStrength < theirStrength ? 3 : 1;
-                if (rng.chance(CONFIG.PEACE_CHANCE_PER_DAY * losingFactor)) {
+                // Duration factor: ramps from 1 to 3 over 360 days past the 90-day minimum
+                const durationFactor = Math.min(3, 1 + Math.max(0, warAge - 90) / 180);
+                // War exhaustion factor: up to 5× at exhaustion 100
+                const exhaustionFactor = 1 + (k.warExhaustion || 0) / 25;
+                if (rng.chance(CONFIG.PEACE_CHANCE_PER_DAY * losingFactor * durationFactor * exhaustionFactor)) {
                     // Use enhanced peace negotiation
                     const loser = myStrength < theirStrength ? k : other;
                     const winner = loser === k ? other : k;
@@ -5133,6 +5227,44 @@
                         }
 
                         makePeace(k, other, result.level >= 3, result.level >= 3 ? loser : null);
+                    }
+                }
+            }
+
+            // ---- Mutual exhaustion peace (both sides too tired to fight) ----
+            for (const warTargetId of k.atWar) {
+                const other = findKingdom(warTargetId);
+                if (!other) continue;
+                if ((k.warExhaustion > 60 && (other.warExhaustion || 0) > 60) ||
+                    (k._bankruptDays > 60 && (other._bankruptDays || 0) > 60)) {
+                    logEvent('🕊️ ' + k.name + ' and ' + other.name + ' agree to a white peace — both sides are exhausted from the war.', {
+                        type: 'mutual_exhaustion_peace',
+                        cause: 'Both kingdoms have war exhaustion above 60 or have been bankrupt for over 60 days.',
+                        effects: ['War ends with no tribute or concessions', 'Both kingdoms begin recovery'],
+                        kingdoms: [k.id, other.id]
+                    }, 'military');
+                    makePeace(k, other, false, null); // White peace — no terms
+                    break;
+                }
+            }
+
+            // ---- Multi-front war prioritization: seek peace with weakest enemy ----
+            if (k.atWar.size > 1) {
+                var enemies = [];
+                for (const eid of k.atWar) {
+                    var eK = findKingdom(eid);
+                    if (eK) enemies.push({ id: eid, strength: computeMilitaryStrength(eK) });
+                }
+                enemies.sort(function(a, b) { return a.strength - b.strength; });
+                // If losing overall, increase desire to peace the weakest enemy
+                if (enemies.length > 1 && k.warExhaustion > 30) {
+                    var weakest = findKingdom(enemies[0].id);
+                    if (weakest && rng.chance(0.02 * (k.warExhaustion / 50))) {
+                        logEvent('🕊️ ' + k.name + ' sues for peace with ' + weakest.name + ' to focus on other fronts.', {
+                            type: 'multi_front_peace', cause: 'Multi-front war pressure',
+                            effects: [k.name + ' seeks to consolidate forces'], kingdoms: [k.id, weakest.id]
+                        }, 'military');
+                        makePeace(k, weakest, false, null);
                     }
                 }
             }
@@ -5246,9 +5378,21 @@
                 k.prosperity = kTowns.reduce((s, t) => s + t.prosperity, 0) / kTowns.length;
             }
         }
+
+        // ---- Tick treaties (reparations, violations, expiry) ----
+        tickTreaties();
+
+        // ---- Check war goals for auto-peace ----
+        checkWarGoals();
     }
 
     function declareWar(a, b) {
+        // --- CHECK NON-AGGRESSION PACT ---
+        var napTreaty = wouldViolateNonAggression(a.id, b.id);
+        if (napTreaty) {
+            handleNonAggressionViolation(a, napTreaty);
+        }
+
         // --- WAR DECLARATION COST (aggressor pays upfront) ---
         var soldiers = (_tickCache.soldiersByKingdom[a.id] || []);
         const warDeclarationCost = Math.min(2000, Math.max(500, soldiers.length * 10));
@@ -5274,6 +5418,7 @@
             aggressor: a.id,
             strengthAtStart: { [a.id]: strengthA, [b.id]: strengthB },
             originalTowns: { [a.id]: a.territories.size, [b.id]: b.territories.size },
+            warGoals: generateWarGoals(a, b, world.rng),
         };
 
         logEvent(`WAR! ${a.name} declares war on ${b.name}! (War chest: -${warDeclarationCost}g)`, {
@@ -5443,6 +5588,386 @@
             !(army.kingdomId === a.id && army.targetKingdomId === b.id) &&
             !(army.kingdomId === b.id && army.targetKingdomId === a.id)
         );
+
+        // Create binding peace treaty
+        createTreaty(a, b, isSurrender, loser, null);
+
+        // Reset war exhaustion partially on peace
+        a.warExhaustion = Math.max(0, (a.warExhaustion || 0) - 20);
+        b.warExhaustion = Math.max(0, (b.warExhaustion || 0) - 20);
+    }
+
+    // ========================================================
+    // §14b TREATY SYSTEM
+    // ========================================================
+    function createTreaty(a, b, isSurrender, loser, terms) {
+        if (!world.treaties) world.treaties = [];
+        var treaty = {
+            id: 'treaty_' + a.id + '_' + b.id + '_' + world.day,
+            type: 'peace_treaty',
+            signatories: [a.id, b.id],
+            terms: {
+                reparations: null,
+                cededTowns: [],
+                tradeAgreement: null,
+                nonAggression: { duration: isSurrender ? 720 : 360 },
+                demilitarizedZone: null,
+                tributeSchedule: null,
+            },
+            signedDay: world.day,
+            expiresDay: world.day + (isSurrender ? 720 : 360),
+            violations: [],
+            active: true,
+        };
+
+        // Apply passed-in terms or generate default terms
+        if (terms) {
+            for (var key in terms) {
+                if (terms.hasOwnProperty(key)) treaty.terms[key] = terms[key];
+            }
+        }
+
+        // Surrender generates harsher default terms
+        if (isSurrender && loser) {
+            var winner = loser.id === a.id ? b : a;
+            // Reparation schedule: 20% of loser treasury over 4 seasons
+            var totalRep = Math.floor((loser.gold || 0) * 0.2);
+            if (totalRep > 100) {
+                treaty.terms.reparations = {
+                    payer: loser.id, receiver: winner.id,
+                    totalAmount: totalRep,
+                    paidPerSeason: Math.ceil(totalRep / 4),
+                    paid: 0, lastPayDay: world.day
+                };
+            }
+            // Forced trade agreement with reduced tariffs
+            treaty.terms.tradeAgreement = {
+                duration: 360, tariffCap: 0.03,
+                beneficiary: winner.id, target: loser.id
+            };
+        }
+
+        world.treaties.push(treaty);
+        return treaty;
+    }
+
+    function tickTreaties() {
+        if (!world.treaties) return;
+        var rng = world.rng;
+        var toRemove = [];
+
+        for (var i = 0; i < world.treaties.length; i++) {
+            var treaty = world.treaties[i];
+            if (!treaty.active) { toRemove.push(i); continue; }
+
+            // Check expiry
+            if (world.day >= treaty.expiresDay) {
+                treaty.active = false;
+                logEvent('📜 Treaty between ' + getKingdomName(treaty.signatories[0]) + ' and ' + getKingdomName(treaty.signatories[1]) + ' has expired.', {
+                    type: 'treaty_expired', kingdoms: treaty.signatories
+                });
+                toRemove.push(i);
+                continue;
+            }
+
+            // Process reparation payments (every 90 days)
+            if (treaty.terms.reparations && world.day % 90 === 0) {
+                var rep = treaty.terms.reparations;
+                if (rep.paid < rep.totalAmount) {
+                    var payer = findKingdom(rep.payer);
+                    var receiver = findKingdom(rep.receiver);
+                    if (payer && receiver) {
+                        var payment = Math.min(rep.paidPerSeason, rep.totalAmount - rep.paid);
+                        if (payer.gold >= payment) {
+                            payer.gold -= payment;
+                            receiver.gold += payment;
+                            rep.paid += payment;
+                            rep.lastPayDay = world.day;
+                            logEvent('💰 ' + payer.name + ' pays ' + payment + 'g in war reparations to ' + receiver.name + '. (' + rep.paid + '/' + rep.totalAmount + 'g)', {
+                                type: 'reparation_payment', kingdoms: [rep.payer, rep.receiver]
+                            });
+                        } else {
+                            // Failed to pay — treaty violation
+                            treaty.violations.push({ day: world.day, type: 'missed_reparation', by: rep.payer });
+                            logEvent('⚠️ ' + payer.name + ' failed to pay reparations to ' + receiver.name + '! (' + Math.floor(payer.gold) + 'g available, ' + payment + 'g owed)', {
+                                type: 'treaty_violation', cause: 'Insufficient gold for reparation payment',
+                                effects: [receiver.name + ' may resume hostilities without war declaration cost'],
+                                kingdoms: [rep.payer, rep.receiver]
+                            }, 'military');
+                            // Receiver can resume war without cost
+                            if (receiver.peaceTreaties) receiver.peaceTreaties[payer.id] = 0;
+                        }
+                    }
+                }
+            }
+
+            // Enforce trade agreement tariff cap
+            if (treaty.terms.tradeAgreement) {
+                var ta = treaty.terms.tradeAgreement;
+                var target = findKingdom(ta.target);
+                if (target && target.laws && target.laws.tradeTariff > ta.tariffCap) {
+                    target.laws.tradeTariff = ta.tariffCap;
+                }
+            }
+
+            // Check DMZ violations
+            if (treaty.terms.demilitarizedZone) {
+                var dmz = treaty.terms.demilitarizedZone;
+                for (var di = 0; di < (dmz.townIds || []).length; di++) {
+                    var dmzTown = findTown(dmz.townIds[di]);
+                    if (dmzTown && (dmzTown.garrison || 0) > (dmz.maxGarrison || 10)) {
+                        var violator = findKingdom(dmzTown.kingdomId);
+                        if (violator && treaty.signatories.includes(violator.id)) {
+                            treaty.violations.push({ day: world.day, type: 'dmz_violation', by: violator.id, townId: dmzTown.id });
+                            logEvent('⚠️ ' + violator.name + ' violates the demilitarized zone in ' + dmzTown.name + '!', {
+                                type: 'treaty_violation', cause: 'Garrison exceeds ' + dmz.maxGarrison + ' in DMZ town',
+                                effects: ['Relations damaged with all kingdoms', 'War may resume'],
+                                kingdoms: treaty.signatories
+                            }, 'military');
+                            // Penalty: -30 relations with ALL other kingdoms
+                            for (var ki = 0; ki < world.kingdoms.length; ki++) {
+                                var otherK = world.kingdoms[ki];
+                                if (otherK.id !== violator.id) {
+                                    otherK.relations[violator.id] = (otherK.relations[violator.id] || 0) - 30;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Check non-aggression pact violations (handled in declareWar)
+        }
+
+        // Clean up expired treaties
+        for (var r = toRemove.length - 1; r >= 0; r--) {
+            world.treaties.splice(toRemove[r], 1);
+        }
+    }
+
+    function getKingdomName(id) {
+        var k = findKingdom(id);
+        return k ? k.name : 'Unknown';
+    }
+
+    // Check if declaring war would violate a non-aggression pact
+    function wouldViolateNonAggression(aId, bId) {
+        if (!world.treaties) return null;
+        for (var i = 0; i < world.treaties.length; i++) {
+            var t = world.treaties[i];
+            if (!t.active || !t.terms.nonAggression) continue;
+            if (t.signatories.includes(aId) && t.signatories.includes(bId)) {
+                return t;
+            }
+        }
+        return null;
+    }
+
+    function handleNonAggressionViolation(violator, treaty) {
+        treaty.violations.push({ day: world.day, type: 'non_aggression_broken', by: violator.id });
+        // -50 relations with ALL kingdoms
+        for (var ki = 0; ki < world.kingdoms.length; ki++) {
+            var k = world.kingdoms[ki];
+            if (k.id !== violator.id) {
+                k.relations[violator.id] = Math.max(-100, (k.relations[violator.id] || 0) - 50);
+            }
+        }
+        treaty.active = false;
+        logEvent('💀 ' + violator.name + ' breaks their non-aggression pact! All kingdoms are outraged.', {
+            type: 'treaty_violation', cause: 'Non-aggression pact broken',
+            effects: ['-50 relations with all kingdoms', 'Treaty voided'],
+            kingdoms: treaty.signatories
+        }, 'military');
+    }
+
+    // ========================================================
+    // §14c WAR GOALS SYSTEM
+    // ========================================================
+    function generateWarGoals(aggressor, defender, rng) {
+        var goals = [];
+        var p = aggressor.kingPersonality || {};
+
+        // Every war: conquer at least one town
+        var borderTowns = [];
+        for (var tid of defender.territories) {
+            var t = findTown(tid);
+            if (!t) continue;
+            // Check if adjacent to aggressor territory
+            for (var road of world.roads) {
+                if ((road.fromTownId === tid || road.toTownId === tid)) {
+                    var otherTid = road.fromTownId === tid ? road.toTownId : road.fromTownId;
+                    if (aggressor.territories.has(otherTid)) {
+                        borderTowns.push(tid);
+                        break;
+                    }
+                }
+            }
+        }
+        if (borderTowns.length > 0) {
+            goals.push({
+                type: 'conquer_town',
+                targetTownId: borderTowns[Math.floor(rng.randFloat(0, borderTowns.length))],
+                achieved: false
+            });
+        }
+
+        // Ambitious or greedy kings: economic dominance
+        if (p.temperament === 'greedy' || p.courage === 'brave') {
+            goals.push({ type: 'economic_dominance', targetGoldRatio: 2.0, achieved: false });
+        }
+
+        // Cruel or proud kings: humiliate
+        if (p.temperament === 'cruel' || rng.chance(0.3)) {
+            goals.push({ type: 'humiliate', requiredBattlesWon: 3, battlesWon: 0, achieved: false });
+        }
+
+        return goals;
+    }
+
+    function checkWarGoals() {
+        if (!world.activeWars) return;
+        for (var warId in world.activeWars) {
+            var war = world.activeWars[warId];
+            if (!war.warGoals || war._goalsAchieved) continue;
+
+            var aggressor = findKingdom(war.aggressor);
+            var defender = findKingdom(war.kingdomA === war.aggressor ? war.kingdomB : war.kingdomA);
+            if (!aggressor || !defender) continue;
+
+            var allAchieved = true;
+            for (var g = 0; g < war.warGoals.length; g++) {
+                var goal = war.warGoals[g];
+                if (goal.achieved) continue;
+
+                if (goal.type === 'conquer_town') {
+                    var town = findTown(goal.targetTownId);
+                    if (town && town.kingdomId === aggressor.id) {
+                        goal.achieved = true;
+                        logEvent('🎯 ' + aggressor.name + ' achieved war goal: conquered ' + town.name + '!');
+                    } else {
+                        allAchieved = false;
+                    }
+                } else if (goal.type === 'economic_dominance') {
+                    if ((aggressor.gold || 0) > (defender.gold || 1) * goal.targetGoldRatio) {
+                        goal.achieved = true;
+                        logEvent('🎯 ' + aggressor.name + ' achieved war goal: economic dominance over ' + defender.name + '!');
+                    } else {
+                        allAchieved = false;
+                    }
+                } else if (goal.type === 'humiliate') {
+                    if ((goal.battlesWon || 0) >= goal.requiredBattlesWon) {
+                        goal.achieved = true;
+                        logEvent('🎯 ' + aggressor.name + ' achieved war goal: humiliated ' + defender.name + '!');
+                    } else {
+                        allAchieved = false;
+                    }
+                }
+            }
+
+            // If all goals achieved, auto-trigger favorable peace
+            if (allAchieved && war.warGoals.length > 0) {
+                war._goalsAchieved = true;
+                logEvent('🏆 ' + aggressor.name + ' has achieved all war goals against ' + defender.name + '. Seeking favorable peace terms.');
+                // Boost peace chance dramatically
+                if (aggressor.relations) {
+                    aggressor.relations[defender.id] = Math.max(aggressor.relations[defender.id] || 0, -10);
+                }
+                makePeace(aggressor, defender, true, defender);
+            }
+        }
+    }
+
+    // Increment humiliate counter on battle win
+    function incrementWarGoalBattles(winnerK, loserK) {
+        if (!world.activeWars || !winnerK || !loserK) return;
+        for (var warId in world.activeWars) {
+            var war = world.activeWars[warId];
+            if (!war.warGoals) continue;
+            if (war.aggressor === winnerK.id &&
+                ((war.kingdomA === loserK.id || war.kingdomB === loserK.id))) {
+                for (var g = 0; g < war.warGoals.length; g++) {
+                    if (war.warGoals[g].type === 'humiliate' && !war.warGoals[g].achieved) {
+                        war.warGoals[g].battlesWon = (war.warGoals[g].battlesWon || 0) + 1;
+                    }
+                }
+            }
+        }
+    }
+
+    // ========================================================
+    // §14d ALLIANCE DYNAMICS
+    // ========================================================
+    function processCallToArms(ally, caller, enemyK) {
+        if (!ally || !caller || !enemyK) return false;
+        var p = ally.kingPersonality || {};
+        var rng = world.rng;
+
+        // Evaluate whether to join
+        var joinScore = 0;
+
+        // Alliance strength base
+        var allianceStrength = ally.relations[caller.id] || 0;
+        joinScore += (allianceStrength - 50) * 0.5; // higher relations = more likely
+
+        // Brave kings always join (mostly)
+        if (p.courage === 'brave') joinScore += 30;
+        if (p.courage === 'cautious') joinScore -= 20;
+        if (p.courage === 'cowardly') joinScore -= 40;
+
+        // Treasury health: poor kingdoms hesitate
+        if (ally.gold < 500) joinScore -= 20;
+        if (ally.gold > 2000) joinScore += 10;
+
+        // War exhaustion penalty
+        joinScore -= (ally.warExhaustion || 0) * 0.5;
+
+        // Already in too many wars: alliance fatigue
+        joinScore -= ally.atWar.size * 15;
+
+        // Do we border the enemy? (more relevant if yes)
+        var bordersEnemy = false;
+        for (var tid of ally.territories) {
+            for (var road of world.roads) {
+                var otherTid = road.fromTownId === tid ? road.toTownId : road.fromTownId;
+                if (road.fromTownId === tid || road.toTownId === tid) {
+                    var otherTown = findTown(otherTid);
+                    if (otherTown && otherTown.kingdomId === enemyK.id) {
+                        bordersEnemy = true;
+                        break;
+                    }
+                }
+            }
+            if (bordersEnemy) break;
+        }
+        if (bordersEnemy) joinScore += 15;
+        if (!bordersEnemy) joinScore -= 10;
+
+        // Decide
+        var threshold = 20; // base threshold to join
+        if (joinScore >= threshold) {
+            // Accept call to arms
+            declareWar(ally, enemyK);
+            logEvent('⚔️ ' + ally.name + ' answers ' + caller.name + "'s call to arms against " + enemyK.name + '!', {
+                type: 'call_to_arms_accepted', kingdoms: [ally.id, caller.id, enemyK.id]
+            }, 'military');
+            return true;
+        } else {
+            // Decline — damages relations
+            ally.relations[caller.id] = Math.max(-100, (ally.relations[caller.id] || 0) - 20);
+            caller.relations[ally.id] = Math.max(-100, (caller.relations[ally.id] || 0) - 15);
+            logEvent('🕊️ ' + ally.name + ' declines ' + caller.name + "'s call to arms. Relations damaged.", {
+                type: 'call_to_arms_declined', kingdoms: [ally.id, caller.id]
+            }, 'military');
+            return false;
+        }
+    }
+
+    // Check if alliance is strong enough to trigger call to arms
+    function shouldCallToArms(ally, caller, isDefensive) {
+        var allianceStrength = ally.relations[caller.id] || 0;
+        var threshold = isDefensive ? 55 : 85; // Offensive alliances need much higher relations
+        threshold += ally.atWar.size * 15; // Alliance fatigue
+        return allianceStrength >= threshold;
     }
 
     function isRoadSafe(road) {
@@ -6406,8 +6931,10 @@
         // =============================================
         if (atWar) {
             // a. MASS RECRUITMENT — recruit aggressively during war
-            const recruitLimit = p.courage === 'brave' ? 5 :
-                                 p.courage === 'cautious' ? 2 : 1;
+            // War exhaustion reduces or halts recruitment
+            var recruitMod = getWarExhaustionRecruitMod(k);
+            const recruitLimit = Math.floor((p.courage === 'brave' ? 5 :
+                                 p.courage === 'cautious' ? 2 : 1) * recruitMod);
             let recruited = 0;
             for (const townId of k.territories) {
                 if (recruited >= recruitLimit) break;
@@ -6536,7 +7063,7 @@
                 }
             }
 
-            // g. NEGOTIATE PEACE — if losing badly
+            // g. NEGOTIATE PEACE — if losing badly or war-exhausted
             for (const enemyId of k.atWar) {
                 const enemy = findKingdom(enemyId);
                 if (!enemy) continue;
@@ -6555,10 +7082,24 @@
                     }
                     return 0;
                 })(k);
+
+                var exhaustion = k.warExhaustion || 0;
+                var highExhaustion = exhaustion > 50;
+                var criticalExhaustion = exhaustion > 75;
+
                 const wantsPeace = (losing && lostTowns >= 2 && p.courage !== 'brave') ||
                                    (p.courage === 'cowardly' && losing) ||
-                                   (p.intelligence === 'brilliant' && losing && lostTowns >= 1);
-                if (wantsPeace && rng.chance(0.1)) {
+                                   (p.intelligence === 'brilliant' && losing && lostTowns >= 1) ||
+                                   (highExhaustion && p.courage !== 'brave') ||
+                                   (criticalExhaustion) || // even brave kings consider peace at critical exhaustion
+                                   (k.gold < 200 && (k._bankruptDays || 0) > 30);
+
+                var peaceChance = 0.1;
+                if (criticalExhaustion) peaceChance = 0.4;
+                else if (highExhaustion) peaceChance = 0.2;
+                if (k.atWar.size > 1) peaceChance += 0.1; // multi-front pressure
+
+                if (wantsPeace && rng.chance(peaceChance)) {
                     makePeace(k, enemy, true, k);
                     break;
                 }
@@ -7240,7 +7781,16 @@
                     var expectedDeaths = pop * deathRate;
                     var deaths = Math.floor(expectedDeaths);
                     if (rng.chance(expectedDeaths - deaths)) deaths++;
-                    var netGrowth = Math.max(0, births - deaths);
+                    var netGrowth = births - deaths; // allow negative (natural decline)
+
+                    // Per-town population cap — skip growth if at or above cap
+                    var townCatCfg = CONFIG.TOWN_CATEGORIES[town.category || 'town'] || CONFIG.TOWN_CATEGORIES['town'];
+                    var townPopCap = (CONFIG.TOWN_POP_CAP || {})[town.category || 'town'] || (townCatCfg.maxPop || 9999);
+                    if (town.isIsland && CONFIG.TOWN_POP_CAP && CONFIG.TOWN_POP_CAP.island) {
+                        townPopCap = Math.min(townPopCap, CONFIG.TOWN_POP_CAP.island);
+                    }
+                    if (netGrowth > 0 && pop >= townPopCap) netGrowth = 0;
+
                     if (netGrowth > 0) {
                         town.population += netGrowth;
                         // Spawn actual people for the births
@@ -7284,6 +7834,15 @@
                             };
                             world.people.push(newborn);
                             if (typeof registerPerson === 'function') registerPerson(newborn);
+                        }
+                    } else if (netGrowth < 0) {
+                        // Natural decline — kill elderly/sick people via killPerson for proper bookkeeping
+                        var toKill = Math.min(Math.abs(netGrowth), Math.floor(pop * 0.01) || 1);
+                        var elderly = (_tickCache.peopleByTown[town.id] || [])
+                            .filter(function(p) { return p.alive && p.age >= 50; })
+                            .sort(function(a, b) { return b.age - a.age; });
+                        for (var ki = 0; ki < Math.min(toKill, elderly.length); ki++) {
+                            killPerson(elderly[ki], 'natural causes');
                         }
                     }
                 }
@@ -7431,11 +7990,18 @@
                     var infected = rng.randInt(Math.ceil(pop * 0.03), Math.ceil(pop * 0.08));
                     var deaths = Math.floor(infected * rng.randFloat(0.1, 0.2));
                     deaths = Math.min(deaths, Math.floor(pop * 0.05)); // cap at 5% of population
-                    if (typeof town.population === 'number') town.population = Math.max(10, town.population - deaths);
+                    // Use killPerson for proper population tracking (fixes desync)
+                    var townPeople = (_tickCache.peopleByTown[town.id] || []).filter(function(pp) { return pp.alive; });
+                    var shuffled = rng.shuffle([...townPeople]);
+                    var killed = 0;
+                    for (var di = 0; di < shuffled.length && killed < deaths; di++) {
+                        killPerson(shuffled[di], 'disease');
+                        killed++;
+                    }
                     town.prosperity = Math.max(0, (town.prosperity || 50) - 5);
-                    logEvent('🦠 Disease outbreak in ' + town.name + '! ' + deaths + ' dead. Poor conditions breed illness. (Happiness: ' + Math.round(h) + '%)', {
+                    logEvent('🦠 Disease outbreak in ' + town.name + '! ' + killed + ' dead. Poor conditions breed illness. (Happiness: ' + Math.round(h) + '%)', {
                         type: 'disease_outbreak', cause: 'Crisis conditions and poor sanitation',
-                        effects: [deaths + ' people died', infected + ' infected', 'Prosperity drops']
+                        effects: [killed + ' people died', infected + ' infected', 'Prosperity drops']
                     });
                 }
             }
@@ -8036,11 +8602,16 @@
             let surrenderChance = 0;
 
             if (townLossRatio >= 0.75) surrenderChance = 0.70;
-            else if (townLossRatio >= 0.50) surrenderChance = 0.30;
+            else if (townLossRatio >= 0.50) surrenderChance = 0.40;
+            else if (townLossRatio >= 0.25) surrenderChance = 0.15;
+            else if (k.gold < 100 && (k._bankruptDays || 0) > 30) surrenderChance = 0.10;
             else continue; // Not losing badly enough
 
             // Treasury modifier
             if (k.gold < 100) surrenderChance += 0.20;
+
+            // War exhaustion modifier
+            surrenderChance += getWarExhaustionSurrenderBonus(k);
 
             // King personality modifier
             const p = k.kingPersonality;
@@ -9049,11 +9620,12 @@
         const rng = world.rng;
         const toRemove = [];
 
-        // --- WARTIME SUPPLY LINE COSTS (5g per soldier per day for kingdoms at war) ---
+        // --- WARTIME SUPPLY LINE COSTS (configurable per soldier per day for kingdoms at war) ---
         for (const k of world.kingdoms) {
             if (k.atWar.size > 0) {
                 var soldiers = (_tickCache.soldiersByKingdom[k.id] || []);
-                const supplyLineCost = soldiers.length * 5;
+                const costPerSoldier = CONFIG.WARTIME_SUPPLY_COST_PER_SOLDIER || 2;
+                const supplyLineCost = soldiers.length * costPerSoldier;
                 if (supplyLineCost > 0) {
                     k.gold = Math.max(0, k.gold - supplyLineCost);
                 }
@@ -9300,6 +9872,14 @@
 
             logEvent(`${attackK ? attackK.name : 'An army'} conquers ${town.name}!`);
 
+            // War exhaustion: defender loses a town and a battle
+            if (defendK) {
+                addBattleLossExhaustion(defendK);
+                addTownLossExhaustion(defendK);
+            }
+            // War goals: attacker wins battle and potentially conquers target town
+            if (attackK && defendK) incrementWarGoalBattles(attackK, defendK);
+
             if (defendK && defendK.territories.size === 0) {
                 logEvent(`${defendK.name} has been completely conquered by ${attackK ? attackK.name : 'invaders'}!`);
                 if (attackK) {
@@ -9336,6 +9916,10 @@
             army.soldiers -= attackerLoss;
             town.garrison = Math.max(0, town.garrison - Math.floor(town.garrison * rng.randFloat(0.1, 0.3)));
             logEvent(`Attack on ${town.name} repelled! The garrison holds.`);
+            // War exhaustion: attacker loses a battle
+            if (attackK) addBattleLossExhaustion(attackK);
+            // War goals: defender wins
+            if (defendK && attackK) incrementWarGoalBattles(defendK, attackK);
         }
     }
 
@@ -9362,10 +9946,14 @@
             a.soldiers -= Math.floor(a.soldiers * rng.randFloat(0.1, 0.3));
             b.soldiers = 0;
             logEvent('Armies clashed in the field! One force was routed.');
+            if (bK) addBattleLossExhaustion(bK);
+            if (aK && bK) incrementWarGoalBattles(aK, bK);
         } else {
             b.soldiers -= Math.floor(b.soldiers * rng.randFloat(0.1, 0.3));
             a.soldiers = 0;
             logEvent('Armies clashed in the field! One force was routed.');
+            if (aK) addBattleLossExhaustion(aK);
+            if (bK && aK) incrementWarGoalBattles(bK, aK);
         }
     }
 
@@ -11422,6 +12010,7 @@
                         type: 'immigration', cause: 'Kingdom immigration incentive',
                         effects: [`${targetTown.name} gains a citizen`, `Treasury pays ${inc.bonus}g`]
                     });
+                    inc.fulfilled = true; // Mark incentive as fulfilled
                 }
             }
 
@@ -13941,6 +14530,9 @@
                 var oldTown = town.name;
                 em.townId = dest.id;
                 em.kingdomId = dest.kingdomId;
+                // Fix population bookkeeping on flee
+                if (town.population > 0) town.population--;
+                dest.population = (dest.population || 0) + 1;
                 logEvent(em.firstName + ' ' + (em.lastName || '') + ' flees the frontline in ' + oldTown + ' for safety in ' + dest.name + '.', {
                     type: 'elite_frontline_flee',
                     cause: oldTown + ' is on the front lines of war — too dangerous for trade.',
@@ -13965,6 +14557,10 @@
         if (choices.length > 0) {
             choices.sort(function(a, b) { return (b.prosperity || 0) - (a.prosperity || 0); });
             var dest = choices[Math.min(rng.randInt(0, 2), choices.length - 1)];
+            // Fix population bookkeeping
+            var oldEliteTown = findTown(em.townId);
+            if (oldEliteTown && oldEliteTown.population > 0) oldEliteTown.population--;
+            dest.population = (dest.population || 0) + 1;
             em.townId = dest.id;
             em.kingdomId = dest.kingdomId;
         }
@@ -14571,6 +15167,10 @@
                     var freeTowns = world.towns.filter(function(t) { return t.kingdomId === freeK.id && !t.isFrontline; });
                     if (freeTowns.length > 0) {
                         var freeDest = freeTowns.sort(function(a, b) { return (b.prosperity || 0) - (a.prosperity || 0); })[0];
+                        // Fix population bookkeeping
+                        var oldNatTown = findTown(em.townId);
+                        if (oldNatTown && oldNatTown.population > 0) oldNatTown.population--;
+                        freeDest.population = (freeDest.population || 0) + 1;
                         em.townId = freeDest.id;
                         em.kingdomId = freeDest.kingdomId;
                         logEvent(em.firstName + ' ' + (em.lastName || '') + ' relocates to ' + freeDest.name + ' in ' + freeK.name + ' to escape nationalization.', {
@@ -16337,6 +16937,18 @@
             k.transportRevenue = (k.transportRevenue || 0) + revenue;
         }
 
+        // ---- Periodic Financial Report (every 90 days, for auditing) ----
+        if (world.day % 90 === 0) {
+            k._financialReport = {
+                day: world.day,
+                gold: k.gold,
+                income: { baseTax: k.taxRevenue || 0, tradeTax: k.tradeTaxRevenue || 0,
+                          propertyTax: k.propertyTaxRevenue || 0, incomeTax: k.incomeTaxRevenue || 0 },
+                expenses: { soldiers: soldierCost * 30, buildings: buildingCost * 30,
+                            warSupply: k.atWar.size > 0 ? soldiers.length * (CONFIG.WARTIME_SUPPLY_COST_PER_SOLDIER || 2) * 90 : 0 }
+            };
+        }
+
         // ---- Monthly Property Tax Collection ----
         if (!k._lastPropertyTaxDay) k._lastPropertyTaxDay = 0;
         if (world.day - k._lastPropertyTaxDay >= (CONFIG.KINGDOM_PROPERTY_TAX_INTERVAL || 30)) {
@@ -16491,9 +17103,27 @@
                     town.market.prices[food] = Math.ceil(town.market.prices[food] * 3.0);
                 }
             }
-            // Population flight
+            // Population flight — use killPerson for proper tracking
             const fleeing = Math.floor(town.population * rng.randFloat(0.05, 0.15));
-            town.population = Math.max(10, town.population - fleeing);
+            var fleeablePeople = (_tickCache.peopleByTown[town.id] || []).filter(function(pp) { return pp.alive; });
+            var shuffledFlee = rng.shuffle([...fleeablePeople]);
+            var fled = 0;
+            for (var fi = 0; fi < shuffledFlee.length && fled < fleeing; fi++) {
+                // Move person to a random safe town in another kingdom
+                var destKingdoms = world.kingdoms.filter(function(ok) { return ok.id !== k.id; });
+                if (destKingdoms.length > 0) {
+                    var destK = rng.pick(destKingdoms);
+                    var destTowns = world.towns.filter(function(dt) { return dt.kingdomId === destK.id && !dt.destroyed && !dt.abandoned; });
+                    if (destTowns.length > 0) {
+                        var destTown2 = rng.pick(destTowns);
+                        shuffledFlee[fi].townId = destTown2.id;
+                        shuffledFlee[fi].kingdomId = destK.id;
+                        destTown2.population = (destTown2.population || 0) + 1;
+                        town.population = Math.max(10, town.population - 1);
+                        fled++;
+                    }
+                }
+            }
         }
 
         // 3. MILITARY DECIMATION
@@ -18590,6 +19220,7 @@
                 eventLog: world.eventLog.slice(-100),
                 armies: world.armies,
                 activeWars: world.activeWars || {},
+                treaties: world.treaties || [],
                 fashionTrends: world.fashionTrends || [],
                 npcCaravans: world.npcCaravans || [],
                 _nextId,
@@ -18943,6 +19574,7 @@
             world.eventLog = data.eventLog || [];
             world.armies = data.armies || [];
             world.activeWars = data.activeWars || {};
+            world.treaties = data.treaties || [];
             world.fashionTrends = data.fashionTrends || [];
             world.npcCaravans = data.npcCaravans || [];
             _nextId = data._nextId || world.people.length + world.towns.length + 1000;
