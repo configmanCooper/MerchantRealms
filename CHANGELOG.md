@@ -4,6 +4,95 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.32.0] - 2026-03-27
+
+### Added — Alliance Dynamics Overhaul
+- **Alliance metadata** — Alliances now track type (defensive/offensive), formation day, calls honored/refused, and fatigue
+- **Call to arms** — Replaces auto-join; allies evaluate whether to honor calls based on relations, personality, treasury, exhaustion, and fatigue
+- **Defensive vs offensive alliances** — Defensive (75-80%) only trigger when ally is attacked; offensive (20-25%) also trigger for wars the ally starts
+- **Alliance fatigue** — Repeated calls to arms increase fatigue; old alliances accumulate passive fatigue; high fatigue can dissolve alliances
+- **Alliance betrayal** — Corrupt/greedy kings with low relations may betray allies, causing severe relation drops and unique events
+
+### Added — Treaty System with Binding Terms
+- **3 treaty tiers** — Surrender (720-day non-aggression, reparations, DMZ, tariffs, town cessions), Negotiated (360-day, lighter terms), Exhaustion (180-day non-aggression only)
+- **Monthly reparation processing** — Losing kingdoms pay treasury reparations over 6-12 months
+- **DMZ enforcement** — Military buildings and garrison buildup restricted in border towns; violations detected daily
+- **Trade agreements** — Mutual or one-sided tariff reductions as treaty terms
+- **Treaty violation penalties** — -30 relations with all kingdoms, ruler branded oathbreaker
+- **Territorial concessions** — 1-2 border towns transferred via `transferTown` in surrender treaties
+
+### Added — Opportunity Sensing AI
+- **NPC supply gap boost** — NPCs get `demandBonus = 15` (vs 5 normal) for zero-supply/high-demand goods when switching products
+- **EM trade opportunity** — EMs scan connected towns for supply gaps; willing to pay 30% more for goods with zero supply elsewhere
+- **EM travel routing** — +25 destination score when carrying goods that fill a complete supply void
+- **EM building incentive** — Gap score doubled when supply is completely absent
+- **Kingdom gap awareness** — New `supply_gap_building` strategy (priority 120) finds and builds missing production buildings
+- **Royal monopoly** — Greedy/corrupt kings ban goods after building to produce them, creating kingdom monopolies
+
+### Added — Building Conversion System
+- **Convert any building** — Buy a for-sale building + 500g + 1 blasting powder → demolish → rebuild as any type
+- **Demolish buildings** — Player can demolish owned buildings to free slots (same cost)
+- **Kingdom profit tracking** — Kingdom-owned buildings now track revenue/costs; unprofitable ones auto-listed for sale after 90 days
+- **AI conversion** — EMs evaluate 180-day ROI before converting; NPCs 30% chance when wealthy; kingdoms convert for supply gaps
+- **Blasting powder from kingdom** — Always available at 1.5-3x markup (by king greed); doubled if banned
+- **Street buying** — Buy banned goods (blasting powder, etc.) from shady NPCs at 2-3.5x premium with detection risk
+
+### Added — Zero-Demand Goods Fix
+- **Intermediate goods demand** — Buildings now register demand for their input materials (smelter → iron_ore, bakery → flour, tailor → cloth/leather, etc.)
+- **Multi-product building demand** — Available recipes counted at 50% weight
+- **Service building demand** — Clinics and bathhouses register herbal_tea and water demand
+- **Missing goods added** — livestock_chicken, water, herbal_tea, ale, mead, cider, pearls now have proper demand registration
+
+### Added — UI & Quality of Life
+- **Goods Guide** — Searchable, filterable guide in help system showing all goods with icons, prices, categories, and producer/consumer chains
+- **Guild UI overhaul** — "Gives Access to Buildings:" replaces generic "Categories:" label; local availability indicator shows guild building count per town
+- **Town prosperity descriptors** — 7-tier system on tooltips: Golden Age, Flourishing, Thriving, Stable, Struggling, Impoverished, Destitute
+- **Expanded name pools** — Kingdom names 14→36, town names 44→86, island names 8→22, male/female first names 50→80, surnames 46→76
+- **Birth/settler names use main pool** — No more repetitive hardcoded mini-pools
+
+### Added — Developer & QA Tools
+- **Export Console button** — God mode "📋 Export Console" copies last 500 console entries (with timestamps and levels) to clipboard for easy bug reporting
+- **Console capture system** — Hooks console.log/warn/error/info + uncaught errors + unhandled promise rejections; stored in memory for export
+- **Favicon** — ⚖️ balance scales SVG favicon added to browser tab
+
+### Fixed
+- **First war auto-neutral** — First war in each new game auto-sets player to neutral without popup; subsequent wars show full allegiance choice
+- **Military enlistment bankruptcy** — Added 3 fallback layers for war detection (town kingdom, atWar sets, any-war)
+- **EM flee population bookkeeping** — Added population counter updates at 2 EM relocation sites (tax-driven flight, travel)
+- **Population bugs verified** — Confirmed 5 prior population bugs already fixed in previous sessions
+- **Elite merchant AI crash** — `eliteCollapseAI()` threw `ReferenceError: strategy is not defined` every 5 days; added local strategy variable
+- **Load Game UI overlap** — Download/Import/Delete buttons no longer overlap save slot text; restructured to flex column layout
+- **Rankings button crash** — Fixed `CONFIG.SKILLS` → `SKILLS` reference error that broke the rankings panel
+
+## [0.31.0] - 2026-03-27
+
+### Added — Elite Merchant Skill System
+- **Full skill tree for EMs** — Elite merchants now have XP, levels, skill points, and learn skills from the same tree as the player
+- **Personality-driven skill selection** — Strategy and personality traits determine which skills EMs pursue (e.g., war profiteers learn war_profiteer, political climbers learn court_etiquette)
+- **Starting skills seeded** — Older/wealthier EMs begin with more skills based on their background
+- **XP from actions** — EMs gain XP from daily activity, trading (proportional to value), building (+10), and rank advancement (+50)
+- **Skill-gated AI decisions** — EMs can only see market data their skills allow (keen_eye for local, market_scout for connected towns, trade_network for kingdom, global_trade_intel for all)
+- **Trade skill bonuses** — haggler/master_haggler buy discounts, silver_tongue/golden_tongue sell bonuses applied to EM trades
+- **Building cost reduction** — efficient_builder/master_builder reduce EM construction costs
+- **Supply chain gap detection** — EMs with keen_eye + market_scout identify demand gaps in connected towns and build to fill them
+- **Demand exploitation** — EMs with market_scout buy high-demand goods for arbitrage
+
+### Added — Economy Demand System Overhaul
+- **CRITICAL FIX: Demand ordering** — Population demand now calculated BEFORE price recalculation (was after, making demand invisible to prices)
+- **Missing demand categories** — Added pearl_jewelry, demolition_tools, camping gear (tent, bedroll, waterskin, camping_kit) demand
+- **Quality weapon consumption** — Elite units consume good-tier weapons; royal guard in capitals consume excellent-tier
+- **Kingdom quality procurement** — Kingdoms now procure quality weapons (good/excellent) during wartime at premium prices
+- **Expanded luxury modifiers** — pearl_jewelry, harp, hurdy_gurdy now scale with town prosperity
+
+### Added — NPC Production Intelligence
+- **NPC product switching AI** — NPC-owned buildings evaluate all available products every 14 days and switch to the most profitable one based on sell price, input costs, and unmet demand
+- **Military quality tier upgrades** — NPC military buildings (blacksmith, armorer, fletcher, arrow_maker) now set production tier based on worker skill and wartime urgency
+- **11 missing building types** — armorer, fletcher, arrow_maker, instrument_workshop, string_maker, drum_maker, perfumery, silk_weaver, fine_tailor, tapestry_loom, goldsmith, canvas_workshop added to NPC construction list
+
+### Fixed
+- **Canvas Workshop produces:null** — Buildings with `availableProducts` but no default `produces` now work correctly in production loop
+- **Stable goods economy** — 15+ goods that were frozen at fixed prices now have active supply/demand dynamics
+
 ## [0.30.0] - 2026-03-27
 
 ### Added — NPC Social Interaction System

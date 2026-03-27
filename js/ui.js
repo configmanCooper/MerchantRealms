@@ -13622,6 +13622,9 @@ window.UI = (function () {
         html += '<br><input id="gm-advance-days" type="number" value="30" style="width:60px; background:#333; color:#fff; border:1px solid #666; padding:2px 4px; margin:2px;" />';
         html += '<button onclick="var d=parseInt(document.getElementById(\'gm-advance-days\').value,10); if(isNaN(d)||d<=0)d=30; d=Math.min(d,365); for(var i=0;i<d;i++){Engine.tick();Player.tick();} UI.toast(\'⏩ Advanced \'+d+\' days\',\'success\')" style="margin:2px; padding:3px 8px; background:#16305d; color:#fff; border:1px solid #48a; cursor:pointer;">Advance Days</button> ';
 
+        // Export Console button
+        html += '<br><button onclick="Game.exportConsole()" style="margin:2px; padding:3px 8px; background:#4a3520; color:#fff; border:1px solid #d4af37; cursor:pointer;">📋 Export Console</button> ';
+
         html += '</div>';
 
         // === POSSESSED NPC ===

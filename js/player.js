@@ -1721,6 +1721,8 @@
     }
 
     /**
+     * Revitalize an abandoned town — invest gold + materials to bring it back.
+     */
     function revitalizeTown(townId) {
         const town = Engine.findTown(townId);
         if (!town) return { success: false, message: 'Town not found.' };

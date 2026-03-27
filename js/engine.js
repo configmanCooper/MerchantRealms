@@ -14037,7 +14037,7 @@
             // Remove duplicates
             var uniqueCandidates = [];
             for (var sci = 0; sci < candidateSkills.length; sci++) {
-                if (uniqueCandidates.indexOf(candidateSkills[sci]) === -1 && CONFIG.SKILLS[candidateSkills[sci]]) {
+                if (uniqueCandidates.indexOf(candidateSkills[sci]) === -1 && SKILLS[candidateSkills[sci]]) {
                     uniqueCandidates.push(candidateSkills[sci]);
                 }
             }
@@ -14054,7 +14054,7 @@
             var assigned = 0;
             for (var asi = 0; asi < uniqueCandidates.length && assigned < startingSkills; asi++) {
                 var skillId = uniqueCandidates[asi];
-                var skillDef = CONFIG.SKILLS[skillId];
+                var skillDef = SKILLS[skillId];
                 if (!skillDef || em.emSkills[skillId]) continue;
                 // Check prerequisites
                 var prereqsMet = true;
@@ -15618,7 +15618,7 @@
 
         for (var sid in skillScores) {
             if (em.emSkills[sid]) continue;
-            var sDef = CONFIG.SKILLS[sid];
+            var sDef = SKILLS[sid];
             if (!sDef) continue;
             if ((sDef.cost || 0) > (em.emSkillPoints || 0)) continue;
 
@@ -15638,7 +15638,7 @@
         }
 
         if (bestSkill) {
-            var bDef = CONFIG.SKILLS[bestSkill];
+            var bDef = SKILLS[bestSkill];
             em.emSkillPoints -= (bDef.cost || 0);
             em.emSkills[bestSkill] = true;
             logEvent(em.name + ' learned skill: ' + (bDef.name || bestSkill), {
@@ -15999,6 +15999,7 @@
     function eliteCollapseAI(em, town, rng, personality) {
         var kingdom = findKingdom(em.kingdomId);
         if (!kingdom) return;
+        var strategy = em.strategy || 'diversified';
         var bankruptDays = kingdom._bankruptDays || 0;
 
         // Phase 1: Kingdom nearing collapse (bankrupt > 30 days) — start moving assets

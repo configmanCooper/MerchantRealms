@@ -16,7 +16,7 @@ window.Renderer = (function () {
         targetX: 0, targetY: 0,
         zoom: 1.2,
         targetZoom: 1.2,
-        minZoom: 0.25,
+        minZoom: 0.5,
         maxZoom: 3.0,
         lerpSpeed: 0.12,
         width: 0,

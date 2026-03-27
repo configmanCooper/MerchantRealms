@@ -15,6 +15,36 @@ window.Game = (function () {
     let animFrameId = null;
     let lastFrameTime = 0;
 
+    // ── Console capture for god mode export ──
+    var _consoleLogs = [];
+    var _consoleMaxEntries = 500;
+    (function hookConsole() {
+        var origLog = console.log;
+        var origWarn = console.warn;
+        var origError = console.error;
+        var origInfo = console.info;
+        function capture(level, args) {
+            var msg = Array.prototype.slice.call(args).map(function(a) {
+                try { return typeof a === 'object' ? JSON.stringify(a) : String(a); }
+                catch(e) { return String(a); }
+            }).join(' ');
+            _consoleLogs.push({ t: new Date().toISOString(), level: level, msg: msg });
+            if (_consoleLogs.length > _consoleMaxEntries) _consoleLogs.shift();
+        }
+        console.log = function() { capture('LOG', arguments); origLog.apply(console, arguments); };
+        console.warn = function() { capture('WARN', arguments); origWarn.apply(console, arguments); };
+        console.error = function() { capture('ERROR', arguments); origError.apply(console, arguments); };
+        console.info = function() { capture('INFO', arguments); origInfo.apply(console, arguments); };
+        window.addEventListener('error', function(e) {
+            _consoleLogs.push({ t: new Date().toISOString(), level: 'UNCAUGHT', msg: e.message + ' at ' + (e.filename || '?') + ':' + (e.lineno || '?') + ':' + (e.colno || '?') });
+            if (_consoleLogs.length > _consoleMaxEntries) _consoleLogs.shift();
+        });
+        window.addEventListener('unhandledrejection', function(e) {
+            _consoleLogs.push({ t: new Date().toISOString(), level: 'UNHANDLED_PROMISE', msg: String(e.reason) });
+            if (_consoleLogs.length > _consoleMaxEntries) _consoleLogs.shift();
+        });
+    })();
+
     // ── Town hover hint ──
     let townHoverHintCount = parseInt(localStorage.getItem('mr_townHoverHints') || '0', 10);
     const TOWN_HOVER_HINT_MAX = 10;
@@ -412,6 +442,10 @@ window.Game = (function () {
         for (let i = 0; i < count; i++) {
             gameTick();
         }
+        // Check achievements after every player action (not just daily)
+        if (typeof Player !== 'undefined' && Player.checkAchievements) {
+            Player.checkAchievements();
+        }
     }
 
     function checkEndConditions() {
@@ -455,8 +489,19 @@ window.Game = (function () {
                     if (event.type === 'warDeclared') {
                         var tutorialActive = typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive();
                         if (!tutorialActive && typeof Player !== 'undefined' && Player.shouldShowWarAllegiancePopup && Player.shouldShowWarAllegiancePopup(event)) {
-                            if (typeof UI !== 'undefined' && UI.showWarAllegiancePopup) {
-                                UI.showWarAllegiancePopup(event);
+                            // Auto-neutral for the very first war the player encounters
+                            var hasAnyPriorAllegiance = false;
+                            if (Player.warAllegiances) {
+                                for (var _wk in Player.warAllegiances) { hasAnyPriorAllegiance = true; break; }
+                            }
+                            if (!hasAnyPriorAllegiance) {
+                                // First war ever — auto-neutral, no popup
+                                if (Player.setWarAllegiance) Player.setWarAllegiance(event.warId, 'neutral');
+                                if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚔️ War declared! You remain neutral for now.', 'info', 'military');
+                            } else {
+                                if (typeof UI !== 'undefined' && UI.showWarAllegiancePopup) {
+                                    UI.showWarAllegiancePopup(event);
+                                }
                             }
                         }
                     }
@@ -1150,6 +1195,7 @@ window.Game = (function () {
             } else {
                 const dateStr = meta.savedAt ? new Date(meta.savedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
                 html += '<div class="' + slotClass + '" data-slot="' + i + '">' +
+                    '<div class="save-slot-left">' +
                     '<div class="save-slot-info">' +
                     '<span class="save-slot-num">[' + i + ']</span>' +
                     '<span class="save-slot-name">' + meta.playerName + '</span>' +
@@ -1159,6 +1205,7 @@ window.Game = (function () {
                     '</div>' +
                     '<div class="save-slot-meta">' +
                     '🪙 ' + Math.floor(meta.gold).toLocaleString() + '  •  ' + dateStr +
+                    '</div>' +
                     '</div>' +
                     '<div class="save-slot-actions">' +
                     '<button class="save-slot-download btn-medieval" data-download-slot="' + i + '" title="Download Save">📤 Download</button>' +
@@ -1426,7 +1473,7 @@ window.Game = (function () {
         if (key.length === 1) {
             _godModeBuffer += key;
             clearTimeout(_godModeBufferTimeout);
-            _godModeBufferTimeout = setTimeout(function() { _godModeBuffer = ''; }, 3000);
+            _godModeBufferTimeout = setTimeout(function() { _godModeBuffer = ''; }, 5000);
             if (_godModeBuffer.endsWith(_godModeSequence)) {
                 _godModeBuffer = '';
                 toggleGodMode();
@@ -1471,6 +1518,19 @@ window.Game = (function () {
         showCharacterCreation,
         advanceTicks,
         isGodMode,
+        getConsoleLogs: function() { return _consoleLogs; },
+        exportConsole: function() {
+            var text = _consoleLogs.map(function(e) {
+                return '[' + e.t + '] [' + e.level + '] ' + e.msg;
+            }).join('\n');
+            if (!text) text = '(No console logs captured)';
+            navigator.clipboard.writeText(text).then(function() {
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('📋 Console logs copied! (' + _consoleLogs.length + ' entries)', 'success');
+            }).catch(function() {
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('❌ Clipboard write failed', 'error');
+            });
+            return text;
+        },
         setupInput: setupInput,
         startLoop: function() {
             lastTickTime = performance.now();

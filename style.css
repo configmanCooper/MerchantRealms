@@ -1929,11 +1929,14 @@ body {
 .save-slot-actions {
     display: flex;
     gap: 6px;
-    position: absolute;
-    right: 10px;
-    top: 50%;
-    transform: translateY(-50%);
+    margin-top: 6px;
     z-index: 2;
+}
+
+.save-slot-left {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
 }
 
 .save-slot-download,
