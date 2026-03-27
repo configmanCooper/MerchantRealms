@@ -824,8 +824,17 @@ window.UI = (function () {
         const happyTier = town._happinessTier || 'neutral';
         const townTierLabels = { thriving: '🌟 Thriving', content: '😊 Content', neutral: '😐 Neutral', unrest: '😠 Unrest', crisis: '🔥 Crisis' };
         const townTierLabel = townTierLabels[happyTier] || '';
+        // Prosperity descriptor
+        var prospDesc = '';
+        if (prosperity >= 90) prospDesc = '🏛️ Golden Age';
+        else if (prosperity >= 75) prospDesc = '✨ Flourishing';
+        else if (prosperity >= 60) prospDesc = '📈 Thriving';
+        else if (prosperity >= 45) prospDesc = '⚖️ Stable';
+        else if (prosperity >= 30) prospDesc = '📉 Struggling';
+        else if (prosperity >= 15) prospDesc = '💔 Impoverished';
+        else prospDesc = '💀 Destitute';
         html += `<div class="detail-row"><span class="label">Prosperity</span>
-                <span class="value"><div class="bar-small"><div class="bar-small-fill" style="width:${Math.round(prosperity)}%;background:${prosperity > 60 ? '#55a868' : prosperity > 30 ? '#ccb974' : '#c44e52'}"></div></div> ${Math.round(prosperity)}%</span></div>
+                <span class="value"><div class="bar-small"><div class="bar-small-fill" style="width:${Math.round(prosperity)}%;background:${prosperity > 60 ? '#55a868' : prosperity > 30 ? '#ccb974' : '#c44e52'}"></div></div> ${Math.round(prosperity)}% ${prospDesc}</span></div>
             <div class="detail-row"><span class="label">Happiness</span>
                 <span class="value"><div class="bar-small"><div class="bar-small-fill" style="width:${happiness}%;background:${happiness > 60 ? '#55a868' : happiness > 30 ? '#ccb974' : '#c44e52'}"></div></div> ${Math.round(happiness)}% ${townTierLabel}</span></div>
             <div class="detail-row"><span class="label">Walls</span>
@@ -2325,26 +2334,55 @@ window.UI = (function () {
             var laborCost = bt.cost || 0;
             var totalBuildCost = laborCost + matCost;
             const canAfford = (Player.gold || 0) >= totalBuildCost && matsOk;
-            const consumesStr = Object.entries(bt.consumes || {}).map(([r, q]) => {
-                const res = findResource(r);
-                return `${res ? res.icon : ''} ${q}`;
-            }).join(', ') || 'None';
+
+            // Deposit requirement check
+            const depReq = CONFIG.DEPOSIT_REQUIREMENTS ? CONFIG.DEPOSIT_REQUIREMENTS[bt.id] : null;
+            var hasDeposit = true;
+            if (depReq && town && town.naturalDeposits) {
+                hasDeposit = (town.naturalDeposits[depReq.deposit] || 0) > 0;
+            } else if (depReq && town && !town.naturalDeposits) {
+                hasDeposit = false;
+            }
+
+            // Consumes string — show deposit if applicable, otherwise show input goods
+            var consumesStr;
+            if (depReq) {
+                consumesStr = '⛰️ ' + depReq.label;
+            } else {
+                consumesStr = Object.entries(bt.consumes || {}).map(([r, q]) => {
+                    const res = findResource(r);
+                    return `${res ? res.icon : ''} ${res ? res.name : r} ×${q}`;
+                }).join(', ') || 'None';
+            }
+
+            // Produces string — special case for tree_plantation
             const producesRes = bt.produces ? findResource(bt.produces) : null;
-            const producesStr = producesRes ? `${producesRes.icon} ${producesRes.name}` : (bt.storage ? `📦 +${bt.storage} storage` : bt.salesBonus ? `📈 +${Math.round(bt.salesBonus * 100)}% sales` : bt.livestockCapacity ? `🐄 Holds ${bt.livestockCapacity} livestock` : bt.archerBonus ? `🏹 Archer +${Math.round(bt.archerBonus * 100)}%` : '—');
+            var producesStr;
+            if (bt.id === 'tree_plantation') {
+                producesStr = '🌲 Trees (Wood Deposit)';
+            } else {
+                producesStr = producesRes ? `${producesRes.icon} ${producesRes.name}` : (bt.storage ? `📦 +${bt.storage} storage` : bt.salesBonus ? `📈 +${Math.round(bt.salesBonus * 100)}% sales` : bt.livestockCapacity ? `🐄 Holds ${bt.livestockCapacity} livestock` : bt.archerBonus ? `🏹 Archer +${Math.round(bt.archerBonus * 100)}%` : '—');
+            }
 
             // Material requirements string
             let materialsStr = '';
             if (bt.materials && Object.keys(bt.materials).length > 0) {
                 materialsStr = Object.entries(bt.materials).map(([r, q]) => {
                     const matRes = findResource(r);
-                    return `${matRes ? matRes.icon : ''} ${q}`;
+                    return `${matRes ? matRes.icon : ''} ${matRes ? matRes.name : r} ×${q}`;
                 }).join(', ');
             }
 
-            gridHtml += `<div class="build-card ${canAfford ? '' : 'cant-afford'}" data-category="${bt.category}" onclick="UI.executeBuild('${bt.id}','${town ? town.id : ''}')">
+            // Deposit warning string
+            var depositWarning = '';
+            if (depReq && !hasDeposit) {
+                depositWarning = `<br><span style="color:#c44e52;">⛔ No ${depReq.label.toLowerCase()} here</span>`;
+            }
+
+            gridHtml += `<div class="build-card ${canAfford && hasDeposit ? '' : 'cant-afford'}" data-category="${bt.category}" onclick="UI.executeBuild('${bt.id}','${town ? town.id : ''}')">
                 <div class="build-name">${bt.name}</div>
                 <div class="build-cost">🪙 ${Math.ceil(totalBuildCost)}g (labor: ${Math.ceil(laborCost)}g${matCost > 0 ? ' + materials: ' + Math.ceil(matCost) + 'g' : ''}) | 👥 ${bt.workers} workers</div>
-                <div class="build-info">Produces: ${producesStr}<br>Consumes: ${consumesStr}<br>Rate: ${bt.rate}/day${materialsStr ? '<br>🔨 Materials: ' + materialsStr : ''}${!matsOk ? '<br><span style="color:#c44e52;">⚠ Materials unavailable!</span>' : ''}</div>
+                <div class="build-info">Produces: ${producesStr}<br>Consumes: ${consumesStr}<br>Rate: ${bt.rate}/day${materialsStr ? '<br>🔨 Materials: ' + materialsStr : ''}${!matsOk ? '<br><span style="color:#c44e52;">⚠ Materials unavailable!</span>' : ''}${depositWarning}</div>
             </div>`;
         }
 
@@ -2362,10 +2400,36 @@ window.UI = (function () {
                     const bldName = obt ? obt.name : offer.building.type;
                     const condLabel = offer.building.condition || 'new';
                     const canAffordOffer = (Player.gold || 0) >= offer.price;
-                    saleHtml += `<div class="build-card ${canAffordOffer ? '' : 'cant-afford'}" style="cursor:pointer;" onclick="UI.purchaseNPCBuildingUI(${bldIdx},'${town.id}')">
+                    const canAffordConvert = (Player.gold || 0) >= (offer.price + 500);
+                    saleHtml += `<div class="build-card ${canAffordOffer ? '' : 'cant-afford'}" style="display:flex;flex-direction:column;gap:4px;">
                         <div class="build-name">${bldName} (Lv.${offer.building.level || 1})</div>
                         <div class="build-cost">🪙 ${Math.ceil(+offer.price)}g | ${condLabel}</div>
                         <div class="build-info">${offer.reason}</div>
+                        <div style="display:flex;gap:4px;margin-top:4px;">
+                            <button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;flex:1;" ${canAffordOffer ? '' : 'disabled'} onclick="UI.purchaseNPCBuildingUI(${bldIdx},'${town.id}')">🏠 Buy</button>
+                            <button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;flex:1;" ${canAffordConvert ? '' : 'disabled'} onclick="UI.openConvertBuildingUI(${bldIdx},'${town.id}')">🔄 Convert (500g + 💥)</button>
+                        </div>
+                    </div>`;
+                }
+                saleHtml += '</div>';
+            }
+
+            // Player-owned buildings: demolish option
+            var playerBlds = (Player.buildings || []).filter(function(b) { return b.townId === town.id; });
+            if (playerBlds.length > 0) {
+                saleHtml += '<div style="margin-top:12px;padding:8px;border:1px solid var(--border);border-radius:4px;">';
+                saleHtml += '<div style="font-weight:bold;font-size:0.85rem;margin-bottom:6px;">🧨 DEMOLISH YOUR BUILDINGS</div>';
+                for (let di = 0; di < playerBlds.length; di++) {
+                    var pBld = playerBlds[di];
+                    var pBt = Engine.findBuildingType(pBld.type);
+                    var pBldName = pBt ? pBt.name : pBld.type;
+                    var demoBldIdx = town.buildings.findIndex(function(tb) { return tb.ownerId === 'player' && tb.type === pBld.type; });
+                    if (demoBldIdx < 0) continue;
+                    var canAffordDemo = (Player.gold || 0) >= 500;
+                    saleHtml += `<div class="build-card" style="display:flex;flex-direction:column;gap:4px;">
+                        <div class="build-name">${pBldName} (Lv.${pBld.level || 1})</div>
+                        <div class="build-info">Your building — demolish to free the slot</div>
+                        <button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;" ${canAffordDemo ? '' : 'disabled'} onclick="UI.demolishBuildingUI(${demoBldIdx},'${town.id}')">🧨 Demolish (500g + 💥)</button>
                     </div>`;
                 }
                 saleHtml += '</div>';
@@ -2989,6 +3053,63 @@ window.UI = (function () {
 
     function purchaseNPCBuildingUI(buildingIndex, townId) {
         const result = Player.purchaseNPCBuilding(buildingIndex, townId);
+        toast(result.message, result.success ? 'success' : 'warning');
+        if (result.success) {
+            openBuildDialog();
+        }
+    }
+
+    function openConvertBuildingUI(buildingIndex, townId) {
+        var town = Engine.findTown(townId);
+        if (!town) { toast('Town not found.', 'warning'); return; }
+        var bld = town.buildings[buildingIndex];
+        if (!bld) { toast('Building not found.', 'warning'); return; }
+        var oldBt = Engine.findBuildingType(bld.type);
+        var oldName = oldBt ? oldBt.name : bld.type;
+        var salePrice = bld.salePrice || 0;
+
+        var html = '<p>Convert <strong>' + oldName + '</strong> to a new building type.</p>';
+        html += '<p style="font-size:0.8rem;color:var(--text-dim);">Cost: 🪙 ' + salePrice + 'g (sale) + 500g (demolition) + 💥 1 blasting powder</p>';
+        html += '<div style="max-height:300px;overflow-y:auto;">';
+
+        // List all available building types
+        var buildingTypes = CONFIG.BUILDING_TYPES;
+        for (var bKey in buildingTypes) {
+            var bt = buildingTypes[bKey];
+            if (!bt || !bt.id || bt.id === bld.type) continue;
+            if (bt.capitalOnly && !town.isCapital) continue;
+            if (bt.villageOnly && town.category !== 'village') continue;
+            if (bt.portOnly && !town.isPort) continue;
+            if ((CONFIG.KINGDOM_EXCLUSIVE_BUILDINGS || []).indexOf(bt.id) !== -1) continue;
+            // Check deposit requirements
+            var depReq = CONFIG.DEPOSIT_REQUIREMENTS ? CONFIG.DEPOSIT_REQUIREMENTS[bt.id] : null;
+            if (depReq) {
+                var townDeps = town.naturalDeposits || {};
+                if (!townDeps[depReq.deposit] || townDeps[depReq.deposit] <= 0) continue;
+            }
+            var totalCost = salePrice + 500;
+            var canAfford = (Player.gold || 0) >= totalCost;
+            var producesInfo = bt.produces ? (' → produces ' + bt.produces) : ' (no production)';
+            html += '<div class="build-card' + (canAfford ? '' : ' cant-afford') + '" style="cursor:pointer;margin-bottom:4px;" onclick="UI.executeConvertBuildingUI(' + buildingIndex + ',\'' + townId + '\',\'' + bt.id + '\')">';
+            html += '<div class="build-name">' + (bt.icon || '') + ' ' + bt.name + '</div>';
+            html += '<div class="build-cost">🪙 ' + totalCost + 'g + 💥' + producesInfo + '</div>';
+            if (bt.description) html += '<div class="build-info" style="font-size:0.7rem;">' + bt.description + '</div>';
+            html += '</div>';
+        }
+        html += '</div>';
+        openModal('🔄 Convert ' + oldName, html);
+    }
+
+    function executeConvertBuildingUI(buildingIndex, townId, newBuildingTypeId) {
+        var result = Player.playerConvertBuilding(buildingIndex, townId, newBuildingTypeId);
+        toast(result.message, result.success ? 'success' : 'warning');
+        if (result.success) {
+            openBuildDialog();
+        }
+    }
+
+    function demolishBuildingUI(buildingIndex, townId) {
+        var result = Player.playerDemolishBuilding(buildingIndex, townId);
         toast(result.message, result.success ? 'success' : 'warning');
         if (result.success) {
             openBuildDialog();
@@ -7207,8 +7328,35 @@ window.UI = (function () {
             }
             html += '</div>';
 
-            // Category info
-            html += '<div style="color:#aaa;font-size:0.85em;margin:4px 0;">Categories: ' + g.categories.join(', ') + '</div>';
+            // Building types this guild gives access to
+            var guildBuildingNames = [];
+            var BT_G = typeof BUILDING_TYPES !== 'undefined' ? BUILDING_TYPES : (CONFIG.BUILDING_TYPES || {});
+            for (var btk in BT_G) {
+                var bt = BT_G[btk];
+                if (g.categories.indexOf(bt.category) !== -1) {
+                    guildBuildingNames.push(bt.name);
+                }
+            }
+            html += '<div style="color:#aaa;font-size:0.85em;margin:4px 0;">Gives Access to Buildings: <span style="color:#ddd;">' + (guildBuildingNames.length > 0 ? guildBuildingNames.join(', ') : 'None') + '</span></div>';
+
+            // Local availability indicator (show for non-members too)
+            var localTown = null;
+            try { localTown = Engine.findTown(Player.townId); } catch(e2) {}
+            var localGuildBuildings = 0;
+            if (localTown && localTown.buildings) {
+                for (var lbi = 0; lbi < localTown.buildings.length; lbi++) {
+                    var lb = localTown.buildings[lbi];
+                    if (!lb.active) continue;
+                    var lbt = null;
+                    for (var lbk in BT_G) { if (BT_G[lbk].id === lb.type) { lbt = BT_G[lbk]; break; } }
+                    if (lbt && g.categories.indexOf(lbt.category) !== -1) localGuildBuildings++;
+                }
+            }
+            if (localGuildBuildings > 0) {
+                html += '<div style="color:#4a7;font-size:0.85em;margin:2px 0;">✅ ' + localGuildBuildings + ' guild building' + (localGuildBuildings > 1 ? 's' : '') + ' in this town</div>';
+            } else {
+                html += '<div style="color:#c55;font-size:0.85em;margin:2px 0;">❌ No guild buildings of this type here</div>';
+            }
 
             // Join/Extend buttons
             html += '<div style="margin-top:6px;">';
@@ -10124,6 +10272,34 @@ window.UI = (function () {
             html += '</div>';
         }
 
+        // Street BUY offers (black market — buying contraband from NPCs)
+        if (typeof Player !== 'undefined' && Player.getStreetBuyOffers) {
+            var buyOffers = Player.getStreetBuyOffers();
+            if (buyOffers.length > 0) {
+                html += '<hr style="border-color:#555;margin:12px 0;">';
+                html += '<p class="street-intro">🛒 <strong>Buy from Street</strong> — Shady characters selling contraband at black market prices.</p>';
+                html += '<div class="street-trade-list">';
+                for (var bi = 0; bi < buyOffers.length; bi++) {
+                    var bo = buyOffers[bi];
+                    var boTotal = bo.pricePerUnit * bo.qty;
+                    var boCanAfford = (Player.gold || 0) >= boTotal;
+                    html += '<div class="street-trade-item">';
+                    html += '<div class="street-trade-info">';
+                    html += '<span class="street-npc-name">' + bo.npcName + '</span> offers ';
+                    html += '<strong>' + bo.qty + ' ' + (bo.resourceIcon || '') + ' ' + bo.resourceName + '</strong>';
+                    html += ' — price <span class="street-price">' + bo.pricePerUnit + 'g each</span>';
+                    if (bo.isBanned) html += ' <span style="color:#c44e52;font-weight:bold;font-size:0.85em;">🚫 Banned</span>';
+                    html += '</div>';
+                    html += '<div class="street-trade-actions">';
+                    html += '<span class="street-have">Total: ' + boTotal + 'g</span>';
+                    html += '<button class="btn-medieval btn-street-sell" ' + (boCanAfford ? 'onclick="UI.executeStreetBuyUI(' + bi + ')"' : 'disabled') + '>';
+                    html += 'Buy ' + bo.qty + ' for ' + boTotal + 'g</button>';
+                    html += '</div></div>';
+                }
+                html += '</div>';
+            }
+        }
+
         // Add NPC Chat section for indentured servants seeking escape hints
         if (typeof Player !== 'undefined' && Player.indentured && Player.indentured.active) {
             html += '<hr style="border-color:#555;margin:12px 0;">';
@@ -10193,6 +10369,16 @@ window.UI = (function () {
             openStreetTrading(); // refresh
         } else {
             toast(result.message, 'warning');
+        }
+    }
+
+    function executeStreetBuyUI(buyIndex) {
+        var result = Player.executeStreetBuy(buyIndex);
+        if (result.success) {
+            toast(result.message, 'success');
+            openStreetTrading(); // refresh
+        } else {
+            toast(result.message, result.caught ? 'error' : 'warning');
         }
     }
 
@@ -10527,6 +10713,7 @@ window.UI = (function () {
         <div class="help-section" style="display:flex; gap:10px; margin-bottom:8px;">
             <button class="btn btn-primary" onclick="UI.openIconsGlossary()" style="flex:1; padding:10px; font-size:14px; cursor:pointer;">🗺️ Icons Guide</button>
             <button class="btn btn-primary" onclick="UI.openGameGuide()" style="flex:1; padding:10px; font-size:14px; cursor:pointer;">📖 Game Guide</button>
+            <button class="btn btn-primary" onclick="UI.openGoodsGuide()" style="flex:1; padding:10px; font-size:14px; cursor:pointer;">📦 Goods Guide</button>
         </div>
         <div class="help-section">
             <h3 class="help-heading">⌨️ Keyboard Shortcuts</h3>
@@ -10952,6 +11139,169 @@ window.UI = (function () {
             if (btn) {
                 btn.style.background = cats[ci] === cat ? '#FFD700' : '#2a2a3e';
                 btn.style.color = cats[ci] === cat ? '#000' : '#ddd';
+            }
+        }
+    };
+
+    // ========================================================
+    // GOODS GUIDE
+    // ========================================================
+    function openGoodsGuide() {
+        var overlay = document.createElement('div');
+        overlay.id = 'goods-guide-overlay';
+        overlay.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:10000; display:flex; justify-content:center; align-items:center;';
+
+        var panel = document.createElement('div');
+        panel.style.cssText = 'background:#1a1a2e; border:2px solid #FFD700; border-radius:8px; width:750px; max-height:85vh; display:flex; flex-direction:column; color:#fff; font-family:sans-serif;';
+
+        // Build goods data from CONFIG
+        var goodsData = [];
+        var BT = typeof BUILDING_TYPES !== 'undefined' ? BUILDING_TYPES : (typeof CONFIG !== 'undefined' ? CONFIG.BUILDING_TYPES : {});
+        var RT = typeof RESOURCE_TYPES !== 'undefined' ? RESOURCE_TYPES : (typeof CONFIG !== 'undefined' ? CONFIG.RESOURCE_TYPES : {});
+
+        // Build producer/consumer lookup
+        var producedBy = {};
+        var consumedBy = {};
+        for (var bk in BT) {
+            var b = BT[bk];
+            if (b.produces) {
+                if (!producedBy[b.produces]) producedBy[b.produces] = [];
+                producedBy[b.produces].push(b.name);
+            }
+            if (b.consumes) {
+                for (var cId in b.consumes) {
+                    if (!consumedBy[cId]) consumedBy[cId] = [];
+                    consumedBy[cId].push(b.name);
+                }
+            }
+            if (b.availableProducts) {
+                for (var apk in b.availableProducts) {
+                    var ap = b.availableProducts[apk];
+                    if (ap.produces) {
+                        if (!producedBy[ap.produces]) producedBy[ap.produces] = [];
+                        producedBy[ap.produces].push(b.name);
+                    }
+                    if (ap.consumes) {
+                        for (var acId in ap.consumes) {
+                            if (!consumedBy[acId]) consumedBy[acId] = [];
+                            consumedBy[acId].push(b.name);
+                        }
+                    }
+                }
+            }
+            if (b.materials) {
+                for (var mId in b.materials) {
+                    if (!consumedBy[mId]) consumedBy[mId] = [];
+                    consumedBy[mId].push(b.name + ' (construction)');
+                }
+            }
+        }
+
+        // Build use descriptions per good
+        for (var rk in RT) {
+            var r = RT[rk];
+            var uses = [];
+            if (producedBy[r.id]) uses.push('Made by: ' + producedBy[r.id].filter(function(v,i,a){return a.indexOf(v)===i;}).join(', '));
+            if (consumedBy[r.id]) uses.push('Used by: ' + consumedBy[r.id].filter(function(v,i,a){return a.indexOf(v)===i;}).slice(0, 6).join(', '));
+            // Special-case descriptions
+            var desc = '';
+            if (r.category === 'food') desc = 'Consumed by population for sustenance. ';
+            else if (r.category === 'beverage') desc = 'Consumed for thirst and morale. ';
+            else if (r.category === 'military') desc = 'Used to equip garrisons and armies. ';
+            else if (r.category === 'luxury') desc = 'Boosts town prosperity and happiness. ';
+            else if (r.category === 'contraband') desc = 'Illegal in most kingdoms — high risk, high reward. ';
+            else if (r.category === 'livestock') desc = 'Livestock for breeding and production. ';
+            else if (r.category === 'supplies') desc = 'Travel and camping supplies. ';
+            else if (r.category === 'raw') desc = 'Raw material for processing and construction. ';
+            else if (r.category === 'processed') desc = 'Processed material for crafting and building. ';
+            else if (r.category === 'finished') desc = 'Finished goods for sale to population. ';
+            desc += uses.join('. ');
+
+            goodsData.push({ id: r.id, name: r.name, icon: r.icon || '', category: r.category || '?', basePrice: r.basePrice || 0, weight: r.weight || 1, desc: desc });
+        }
+
+        // Sort by category then name
+        var catOrder = ['raw', 'processed', 'food', 'beverage', 'finished', 'military', 'luxury', 'supplies', 'livestock', 'contraband'];
+        goodsData.sort(function(a, b) {
+            var ai = catOrder.indexOf(a.category); if (ai < 0) ai = 99;
+            var bi = catOrder.indexOf(b.category); if (bi < 0) bi = 99;
+            if (ai !== bi) return ai - bi;
+            return a.name.localeCompare(b.name);
+        });
+
+        // Header
+        var header = '<div style="padding:12px 16px; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center;">';
+        header += '<span style="color:#FFD700; font-size:18px; font-weight:bold;">📦 Goods Guide</span>';
+        header += '<button onclick="document.getElementById(\'goods-guide-overlay\').remove()" style="background:#600; color:#fff; border:1px solid #a00; padding:4px 12px; cursor:pointer; border-radius:4px;">✖ Close</button>';
+        header += '</div>';
+
+        // Filter bar
+        header += '<div style="padding:8px 16px; border-bottom:1px solid #333; display:flex; flex-wrap:wrap; align-items:center;">';
+        header += '<input id="goods-search" type="text" placeholder="Search goods..." style="width:200px; background:#2a2a3e; color:#fff; border:1px solid #555; padding:6px 10px; border-radius:4px; margin-right:8px;" />';
+        var catLabels = { raw: '🪨 Raw', processed: '⚙️ Processed', food: '🍞 Food', beverage: '🍺 Beverage', finished: '🏭 Finished', military: '⚔️ Military', luxury: '💎 Luxury', supplies: '🏕️ Supplies', livestock: '🐄 Livestock', contraband: '☠️ Contraband' };
+        header += '<button onclick="window._goodsCat=\'all\'; window._filterGoods()" style="margin:2px; padding:3px 8px; background:#FFD700; color:#000; border:1px solid #555; border-radius:3px; cursor:pointer; font-size:11px;" id="goods-cat-all">All</button>';
+        for (var ci2 = 0; ci2 < catOrder.length; ci2++) {
+            var cat = catOrder[ci2];
+            header += '<button onclick="window._goodsCat=\'' + cat + '\'; window._filterGoods()" style="margin:2px; padding:3px 8px; background:#2a2a3e; color:#ddd; border:1px solid #555; border-radius:3px; cursor:pointer; font-size:11px;" id="goods-cat-' + cat + '">' + (catLabels[cat] || cat) + '</button>';
+        }
+        header += '</div>';
+
+        panel.innerHTML = header + '<div id="goods-list" style="padding:8px 16px; overflow-y:auto; flex:1;"></div>';
+        overlay.appendChild(panel);
+        overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+        document.body.appendChild(overlay);
+
+        window._goodsData = goodsData;
+        window._goodsCat = 'all';
+
+        // Search handler
+        var searchEl = document.getElementById('goods-search');
+        if (searchEl) searchEl.addEventListener('input', function() { window._filterGoods(); });
+
+        window._filterGoods();
+    }
+
+    window._filterGoods = function() {
+        var search = (document.getElementById('goods-search') ? document.getElementById('goods-search').value : '').toLowerCase();
+        var cat = window._goodsCat || 'all';
+        var list = document.getElementById('goods-list');
+        if (!list) return;
+
+        var data = window._goodsData || [];
+        var html = '';
+        var lastCat = '';
+        var shown = 0;
+        var catLabels = { raw: '🪨 Raw Materials', processed: '⚙️ Processed Materials', food: '🍞 Food', beverage: '🍺 Beverages', finished: '🏭 Finished Goods', military: '⚔️ Military', luxury: '💎 Luxury', supplies: '🏕️ Supplies', livestock: '🐄 Livestock', contraband: '☠️ Contraband' };
+
+        for (var i = 0; i < data.length; i++) {
+            var g = data[i];
+            if (cat !== 'all' && g.category !== cat) continue;
+            if (search && g.name.toLowerCase().indexOf(search) === -1 && g.desc.toLowerCase().indexOf(search) === -1 && g.id.toLowerCase().indexOf(search) === -1) continue;
+            if (g.category !== lastCat) {
+                if (lastCat) html += '<div style="height:8px;"></div>';
+                html += '<div style="color:#FFD700; font-size:13px; font-weight:bold; padding:8px 0 4px; border-bottom:1px solid #444; text-transform:uppercase; letter-spacing:1px;">' + (catLabels[g.category] || g.category) + '</div>';
+                lastCat = g.category;
+            }
+            html += '<div style="padding:6px 0; border-bottom:1px solid #222; display:flex; align-items:flex-start; gap:8px;">';
+            html += '<span style="font-size:20px; min-width:28px; text-align:center;">' + g.icon + '</span>';
+            html += '<div style="flex:1;">';
+            html += '<span style="color:#FFD700; font-weight:bold;">' + g.name + '</span>';
+            html += ' <span style="color:#888; font-size:11px;">(' + g.id + ')</span>';
+            html += ' <span style="color:#aaa; font-size:11px;">| Base: ' + g.basePrice + 'g | Wt: ' + g.weight + '</span>';
+            html += '<div style="color:#ccc; font-size:12px; line-height:1.4; margin-top:2px;">' + g.desc + '</div>';
+            html += '</div></div>';
+            shown++;
+        }
+        if (shown === 0) html = '<div style="color:#888; padding:20px; text-align:center;">No goods match your search</div>';
+        list.innerHTML = html;
+
+        // Update category button highlights
+        var allCats = ['all', 'raw', 'processed', 'food', 'beverage', 'finished', 'military', 'luxury', 'supplies', 'livestock', 'contraband'];
+        for (var ci3 = 0; ci3 < allCats.length; ci3++) {
+            var btn = document.getElementById('goods-cat-' + allCats[ci3]);
+            if (btn) {
+                btn.style.background = allCats[ci3] === cat ? '#FFD700' : '#2a2a3e';
+                btn.style.color = allCats[ci3] === cat ? '#000' : '#ddd';
             }
         }
     };
@@ -13477,20 +13827,23 @@ window.UI = (function () {
         html += '<div style="color:#FFD700; font-weight:bold; margin-bottom:6px;">👥 NPC BROWSER</div>';
 
         // Search and filter controls
+        var curFilter = window._gmNpcFilter || 'all';
+        var curSort = window._gmNpcSort || 'gold';
+        var curSearch = window._gmNpcSearch || '';
         html += '<div style="margin-bottom:6px;">';
-        html += '<input id="gm-npc-search" type="text" placeholder="Search by name..." style="width:140px; background:#333; color:#fff; border:1px solid #666; padding:3px 6px; margin:2px;" oninput="window._gmNpcSearch=this.value" />';
+        html += '<input id="gm-npc-search" type="text" placeholder="Search by name..." value="' + curSearch.replace(/"/g, '&quot;') + '" style="width:140px; background:#333; color:#fff; border:1px solid #666; padding:3px 6px; margin:2px;" oninput="window._gmNpcSearch=this.value" />';
         html += '<select id="gm-npc-filter" style="background:#333; color:#fff; border:1px solid #666; margin:2px; padding:3px;" onchange="window._gmNpcFilter=this.value">';
-        html += '<option value="all">All NPCs</option>';
-        html += '<option value="king">👑 Kings</option>';
-        html += '<option value="elite">⭐ Elite Merchants</option>';
-        html += '<option value="merchant">🏪 Merchants</option>';
-        html += '<option value="farmer">🌾 Farmers</option>';
-        html += '<option value="craftsman">🔨 Craftsmen</option>';
+        html += '<option value="all"' + (curFilter === 'all' ? ' selected' : '') + '>All NPCs</option>';
+        html += '<option value="king"' + (curFilter === 'king' ? ' selected' : '') + '>👑 Kings</option>';
+        html += '<option value="elite"' + (curFilter === 'elite' ? ' selected' : '') + '>⭐ Elite Merchants</option>';
+        html += '<option value="merchant"' + (curFilter === 'merchant' ? ' selected' : '') + '>🏪 Merchants</option>';
+        html += '<option value="farmer"' + (curFilter === 'farmer' ? ' selected' : '') + '>🌾 Farmers</option>';
+        html += '<option value="craftsman"' + (curFilter === 'craftsman' ? ' selected' : '') + '>🔨 Craftsmen</option>';
         html += '</select>';
         html += '<select id="gm-npc-sort" style="background:#333; color:#fff; border:1px solid #666; margin:2px; padding:3px;" onchange="window._gmNpcSort=this.value">';
-        html += '<option value="gold">Sort: Gold ↓</option>';
-        html += '<option value="name">Sort: Name</option>';
-        html += '<option value="age">Sort: Age ↓</option>';
+        html += '<option value="gold"' + (curSort === 'gold' ? ' selected' : '') + '>Sort: Gold ↓</option>';
+        html += '<option value="name"' + (curSort === 'name' ? ' selected' : '') + '>Sort: Name</option>';
+        html += '<option value="age"' + (curSort === 'age' ? ' selected' : '') + '>Sort: Age ↓</option>';
         html += '</select>';
         html += '</div>';
 
@@ -13504,7 +13857,7 @@ window.UI = (function () {
             // Build king lookup
             var kingIds = {};
             for (var kki = 0; kki < npcKingdoms.length; kki++) {
-                if (npcKingdoms[kki].kingId) kingIds[npcKingdoms[kki].kingId] = npcKingdoms[kki].name;
+                if (npcKingdoms[kki].king) kingIds[npcKingdoms[kki].king] = npcKingdoms[kki].name;
             }
 
             // Filter people
@@ -13559,7 +13912,7 @@ window.UI = (function () {
 
                 // King-specific actions
                 if (isKing) {
-                    var kingKingdom = npcKingdoms.find(function(kk) { return kk.kingId === npc.id; });
+                    var kingKingdom = npcKingdoms.find(function(kk) { return kk.king === npc.id; });
                     if (kingKingdom) {
                         var kid = kingKingdom.id;
                         html += '<br>';
@@ -13889,6 +14242,7 @@ window.UI = (function () {
         executeTeachChild,
         openStreetTrading,
         executeStreetTrade: executeStreetTradeUI,
+        executeStreetBuyUI,
         chatWithNPC,
         // Dark Deeds / Schemes
         openSchemesDialog,
@@ -13903,6 +14257,7 @@ window.UI = (function () {
         openHelpDialog,
         openIconsGlossary,
         openGameGuide,
+        openGoodsGuide,
         // Crown & Succession
         openAdviseKingDialog,
         executeAdvice,
@@ -13920,6 +14275,9 @@ window.UI = (function () {
         buyContainer: buyContainerUI,
         setBuildingProductUI,
         purchaseNPCBuildingUI,
+        openConvertBuildingUI,
+        executeConvertBuildingUI,
+        demolishBuildingUI,
         sellHorse,
         depositToStorage: depositToStorageUI,
         withdrawFromStorage: withdrawFromStorageUI,

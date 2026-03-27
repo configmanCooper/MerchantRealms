@@ -1280,6 +1280,15 @@
         const bt = Engine.findBuildingType(buildingType);
         if (!bt) return { success: false, message: 'Unknown building type.' };
 
+        // Check natural deposit requirement
+        var depReq = CONFIG.DEPOSIT_REQUIREMENTS ? CONFIG.DEPOSIT_REQUIREMENTS[bt.id] : null;
+        if (depReq) {
+            var townDeposits = town.naturalDeposits || {};
+            if (!townDeposits[depReq.deposit] || townDeposits[depReq.deposit] <= 0) {
+                return { success: false, message: '⛔ No ' + depReq.label.toLowerCase() + ' in ' + town.name + '. This building requires a natural ' + depReq.label.toLowerCase() + ' to operate.' };
+            }
+        }
+
         // bt.cost is now the labor cost; material cost is calculated from local prices
         var laborCost = bt.cost || 0;
         if (hasSkill('master_builder')) laborCost = Math.floor(laborCost * 0.80);
@@ -1525,10 +1534,193 @@
         return { success: true, message: 'Purchased ' + bName + ' for ' + result.price + 'g.', building: playerBld };
     }
 
+    function playerConvertBuilding(buildingIndex, townId, newBuildingTypeId) {
+        if (player.traveling) return { success: false, message: 'Cannot convert while traveling.' };
+        var tid = townId || player.townId;
+        if (tid !== player.townId) return { success: false, message: 'You must be in the town.' };
+        var town = Engine.findTown(tid);
+        if (!town) return { success: false, message: 'Town not found.' };
+        var bld = town.buildings[buildingIndex];
+        if (!bld) return { success: false, message: 'Building not found.' };
+        if (!bld.forSale && bld.ownerId !== 'player') return { success: false, message: 'Building is not for sale.' };
+
+        var newBt = Engine.findBuildingType(newBuildingTypeId);
+        if (!newBt) return { success: false, message: 'Invalid building type.' };
+
+        // Check rank-based building limit (only for non-owned buildings)
+        if (bld.ownerId !== 'player') {
+            var rankInfo = getPlayerRankInfo(town.kingdomId);
+            if (rankInfo && player.buildings.length >= rankInfo.maxBuildings + (hasSkill('property_magnate') ? 1 : 0)) {
+                return { success: false, message: 'Your rank (' + rankInfo.name + ') limits your building count.' };
+            }
+        }
+
+        // Calculate total costs
+        var salePrice = (bld.forSale && bld.ownerId !== 'player') ? (bld.salePrice || 0) : 0;
+        var conversionCost = 500;
+        var blastingPowderCost = 0;
+        var blastingPowderSource = 'inventory';
+
+        // Check blasting powder
+        var hasBp = (player.inventory.blasting_powder || 0) >= 1;
+        if (!hasBp) {
+            // Check market
+            var kingdom = Engine.findKingdom(town.kingdomId);
+            var bannedGoods = (kingdom && kingdom.laws && kingdom.laws.bannedGoods) || [];
+            var isBanned = bannedGoods.indexOf('blasting_powder') !== -1;
+            var mktSupply = (town.market && town.market.supply && town.market.supply.blasting_powder) || 0;
+            if (!isBanned && mktSupply >= 1) {
+                var mktPrice = Engine.getMarketPrice(tid, 'blasting_powder') || 40;
+                blastingPowderCost = mktPrice;
+                blastingPowderSource = 'market';
+            } else if (kingdom) {
+                // Buy from kingdom
+                var kResult = Engine.buyBlastingPowderFromKingdom(kingdom.id, player.gold);
+                if (kResult.success) {
+                    blastingPowderCost = kResult.price;
+                    blastingPowderSource = 'kingdom';
+                } else {
+                    return { success: false, message: 'Cannot acquire blasting powder. ' + (kResult.reason || '') };
+                }
+            } else {
+                return { success: false, message: 'No blasting powder available.' };
+            }
+        }
+
+        var totalCost = salePrice + conversionCost + blastingPowderCost;
+        if (player.gold < totalCost) {
+            return { success: false, message: 'Not enough gold. Need ' + totalCost + 'g (sale: ' + salePrice + 'g + conversion: ' + conversionCost + 'g + powder: ' + blastingPowderCost + 'g).' };
+        }
+
+        // Check land ownership for new acquisition
+        if (bld.ownerId !== 'player') {
+            var ownedLand = getOwnedLand(tid);
+            var playerBldCount = player.buildings.filter(function(b) { return b.townId === tid; }).length;
+            if (playerBldCount >= ownedLand) {
+                return { success: false, message: 'You need to own land here first. Buy land to place buildings.' };
+            }
+        }
+
+        // Deduct player gold
+        player.gold -= totalCost;
+        player.stats.totalGoldSpent += totalCost;
+
+        // Deduct blasting powder
+        if (blastingPowderSource === 'inventory') {
+            player.inventory.blasting_powder = (player.inventory.blasting_powder || 0) - 1;
+            if (player.inventory.blasting_powder <= 0) delete player.inventory.blasting_powder;
+        } else if (blastingPowderSource === 'market') {
+            if (town.market && town.market.supply) {
+                town.market.supply.blasting_powder = Math.max(0, (town.market.supply.blasting_powder || 0) - 1);
+            }
+        }
+        // kingdom source: gold already covers it, no inventory change needed
+
+        // If player owned the old building, remove it from player.buildings
+        if (bld.ownerId === 'player') {
+            var pIdx = player.buildings.findIndex(function(pb) { return pb.townId === tid && pb.type === bld.type; });
+            if (pIdx >= 0) player.buildings.splice(pIdx, 1);
+        }
+
+        // Perform conversion via Engine
+        var result = Engine.convertBuilding(town, buildingIndex, newBuildingTypeId, 'player', 'player');
+        if (!result.success) return result;
+
+        // Add new building to player records
+        var playerBld = {
+            id: buildingUid(),
+            type: newBuildingTypeId,
+            townId: tid,
+            workers: [],
+            active: true,
+            level: 1,
+            builtDay: Engine.getDay(),
+            condition: 'new',
+            lastRepairDay: 0,
+            transferTarget: null,
+            transferEnabled: false,
+        };
+        player.buildings.push(playerBld);
+        player.stats.buildingsOwned++;
+
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.build || 10);
+        grantXP(XP_REWARDS.BUILD || 10, 'build');
+        Engine.logEvent('The merchant converted a building to ' + newBt.name + ' in ' + town.name + '.');
+        return { success: true, message: 'Converted to ' + newBt.name + ' for ' + totalCost + 'g.', building: playerBld };
+    }
+
+    function playerDemolishBuilding(buildingIndex, townId) {
+        if (player.traveling) return { success: false, message: 'Cannot demolish while traveling.' };
+        var tid = townId || player.townId;
+        if (tid !== player.townId) return { success: false, message: 'You must be in the town.' };
+        var town = Engine.findTown(tid);
+        if (!town) return { success: false, message: 'Town not found.' };
+        var bld = town.buildings[buildingIndex];
+        if (!bld) return { success: false, message: 'Building not found.' };
+        if (bld.ownerId !== 'player') return { success: false, message: 'You can only demolish buildings you own.' };
+
+        var conversionCost = 500;
+        var blastingPowderCost = 0;
+        var blastingPowderSource = 'inventory';
+
+        // Check blasting powder
+        var hasBp = (player.inventory.blasting_powder || 0) >= 1;
+        if (!hasBp) {
+            var kingdom = Engine.findKingdom(town.kingdomId);
+            var bannedGoods = (kingdom && kingdom.laws && kingdom.laws.bannedGoods) || [];
+            var isBanned = bannedGoods.indexOf('blasting_powder') !== -1;
+            var mktSupply = (town.market && town.market.supply && town.market.supply.blasting_powder) || 0;
+            if (!isBanned && mktSupply >= 1) {
+                blastingPowderCost = Engine.getMarketPrice(tid, 'blasting_powder') || 40;
+                blastingPowderSource = 'market';
+            } else if (kingdom) {
+                var kResult = Engine.buyBlastingPowderFromKingdom(kingdom.id, player.gold);
+                if (kResult.success) {
+                    blastingPowderCost = kResult.price;
+                    blastingPowderSource = 'kingdom';
+                } else {
+                    return { success: false, message: 'Cannot acquire blasting powder. ' + (kResult.reason || '') };
+                }
+            } else {
+                return { success: false, message: 'No blasting powder available.' };
+            }
+        }
+
+        var totalCost = conversionCost + blastingPowderCost;
+        if (player.gold < totalCost) {
+            return { success: false, message: 'Not enough gold. Need ' + totalCost + 'g (demolition: ' + conversionCost + 'g + powder: ' + blastingPowderCost + 'g).' };
+        }
+
+        // Deduct costs
+        player.gold -= totalCost;
+        player.stats.totalGoldSpent += totalCost;
+
+        // Deduct blasting powder
+        if (blastingPowderSource === 'inventory') {
+            player.inventory.blasting_powder = (player.inventory.blasting_powder || 0) - 1;
+            if (player.inventory.blasting_powder <= 0) delete player.inventory.blasting_powder;
+        } else if (blastingPowderSource === 'market') {
+            if (town.market && town.market.supply) {
+                town.market.supply.blasting_powder = Math.max(0, (town.market.supply.blasting_powder || 0) - 1);
+            }
+        }
+
+        // Remove from player buildings
+        var bt = Engine.findBuildingType(bld.type);
+        var pIdx = player.buildings.findIndex(function(pb) { return pb.townId === tid && pb.type === bld.type; });
+        if (pIdx >= 0) player.buildings.splice(pIdx, 1);
+
+        // Perform demolition via Engine
+        var result = Engine.demolishBuilding(town, buildingIndex, 'player', 'player');
+        if (!result.success) return result;
+
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.build || 10);
+        var bldName = bt ? bt.name : bld.type;
+        Engine.logEvent('The merchant demolished a ' + bldName + ' in ' + town.name + '.');
+        return { success: true, message: 'Demolished ' + bldName + ' for ' + totalCost + 'g. Slot freed.' };
+    }
+
     /**
-     * Begin revitalizing an abandoned town. Costs 2000g + 200 wood + 100 stone.
-     * Takes 90 days. Player must be in or adjacent to the town.
-     */
     function revitalizeTown(townId) {
         const town = Engine.findTown(townId);
         if (!town) return { success: false, message: 'Town not found.' };
@@ -12195,12 +12387,38 @@
         }
         if (!recipe) return { success: false, message: 'Cannot craft ' + productId + ' at ' + bType.name + '.' };
 
+        // Banned goods check — cannot craft banned goods at guild buildings without a production permit
+        var kingdom = null;
+        try { kingdom = Engine.findKingdom(town.kingdomId); } catch(e) {}
+        if (kingdom && kingdom.laws && kingdom.laws.bannedGoods && kingdom.laws.bannedGoods.includes(recipe.produces)) {
+            var hasPermit = player.productionPermits &&
+                player.productionPermits[kingdom.id] &&
+                player.productionPermits[kingdom.id].includes(recipe.produces);
+            if (!hasPermit) {
+                var bannedResName = findResource(recipe.produces);
+                return { success: false, message: '🚫 ' + (bannedResName ? bannedResName.name : recipe.produces) + ' is banned in ' + kingdom.name + '. You need a Royal Production Permit to craft this.' };
+            }
+        }
+
         // Entry fee
         var entryFee = CONFIG.GUILD_BUILDING_ENTRY_FEE_MIN + Math.floor(Math.random() * (CONFIG.GUILD_BUILDING_ENTRY_FEE_MAX - CONFIG.GUILD_BUILDING_ENTRY_FEE_MIN + 1));
-        if (player.gold < entryFee) return { success: false, message: 'Cannot afford entry fee of ' + entryFee + 'g.' };
+
+        // Per-item crafting fee for no-input crafts (e.g. wheat, wood — 1g per item)
+        var consumes = recipe.consumes || {};
+        var hasInputs = Object.keys(consumes).length > 0;
+        var perItemFee = 0;
+        if (!hasInputs) {
+            perItemFee = qty * 1; // 1g per item
+        }
+        var totalFee = entryFee + perItemFee;
+        if (player.gold < totalFee) {
+            var feeMsg = 'Cannot afford fees: ' + entryFee + 'g entry';
+            if (perItemFee > 0) feeMsg += ' + ' + perItemFee + 'g crafting (' + qty + ' × 1g)';
+            feeMsg += ' = ' + totalFee + 'g total.';
+            return { success: false, message: feeMsg };
+        }
 
         // Check materials (inventory + town storage)
-        var consumes = recipe.consumes || {};
         for (var resId in consumes) {
             var onPerson = player.inventory[resId] || 0;
             var inStorage = (player.townStorage[player.townId] && player.townStorage[player.townId][resId]) ? player.townStorage[player.townId][resId] : 0;
@@ -12225,9 +12443,9 @@
             return { success: false, message: 'Not enough storage for crafted goods. Free up inventory or warehouse space.' };
         }
 
-        // All checks passed — deduct entry fee
-        player.gold -= entryFee;
-        player.stats.totalGoldSpent += entryFee;
+        // All checks passed — deduct fees (entry + per-item for no-input crafts)
+        player.gold -= totalFee;
+        player.stats.totalGoldSpent += totalFee;
 
         // Deduct materials (inventory first, then town storage)
         for (var matId in consumes) {
@@ -12262,7 +12480,9 @@
 
         var productName = outputRes ? outputRes.name : recipe.produces;
         var storageMsg = addedToInventory ? 'Added to inventory.' : 'Stored in warehouse.';
-        var msg = '🔨 Crafted ' + qty + ' ' + productName + ' at ' + bType.name + '. Entry fee: ' + entryFee + 'g. ' + storageMsg;
+        var feeDetail = entryFee + 'g entry';
+        if (perItemFee > 0) feeDetail += ' + ' + perItemFee + 'g crafting';
+        var msg = '🔨 Crafted ' + qty + ' ' + productName + ' at ' + bType.name + '. Fees: ' + feeDetail + '. ' + storageMsg;
 
         try { Engine.logEvent(msg, 'my_actions'); } catch(e) {}
         grantXP(3 * qty, 'guild_crafting');
@@ -15057,6 +15277,144 @@
             player._streetTradesDay = day;
         }
         return player._streetTradesCache || [];
+    }
+
+    function getStreetBuyOffers(townId) {
+        if (player.traveling) return [];
+        var tid = townId || player.townId;
+        var town = Engine.findTown(tid);
+        if (!town) return [];
+        var rng = Engine.getRng();
+        if (!rng) return [];
+
+        var day = Engine.getDay();
+        if (player._streetBuyCache && player._streetBuyDay && day - player._streetBuyDay < (CONFIG.STREET_TRADE_REFRESH_DAYS || 3)) {
+            return player._streetBuyCache || [];
+        }
+
+        var offers = [];
+        var kingdom = Engine.findKingdom(town.kingdomId);
+        var bannedGoods = (kingdom && kingdom.laws && kingdom.laws.bannedGoods) || [];
+
+        // Only generate buy offers for banned goods (otherwise buy from market normally)
+        if (bannedGoods.length > 0) {
+            var people = Engine.getPeople(town.id);
+            var candidates = [];
+            if (people && people.length > 0) {
+                for (var ci = 0; ci < people.length; ci++) {
+                    var cp = people[ci];
+                    if (cp && cp.alive && cp.occupation !== 'soldier' && cp.occupation !== 'guard' && cp.occupation !== 'noble') {
+                        candidates.push(cp);
+                    }
+                }
+            }
+            // Shuffle and pick up to 3 sellers
+            var shuffled = [];
+            for (var si = candidates.length - 1; si > 0; si--) {
+                var j = rng.randInt(0, si);
+                var tmp = candidates[si];
+                candidates[si] = candidates[j];
+                candidates[j] = tmp;
+            }
+            shuffled = candidates.slice(0, 3);
+
+            for (var oi = 0; oi < shuffled.length; oi++) {
+                var npc = shuffled[oi];
+                // Pick a random banned good to sell
+                var bannedGood = bannedGoods[rng.randInt(0, bannedGoods.length - 1)];
+                var res = findResource(bannedGood);
+                if (!res) continue;
+                var qty = rng.randInt(1, 5);
+                var premium = rng.randFloat(2.0, 3.5);
+                var pricePerUnit = Math.ceil(res.basePrice * premium);
+
+                // Also always include blasting_powder if banned
+                offers.push({
+                    npcName: npc.firstName + ' ' + npc.lastName,
+                    npcId: npc.id,
+                    resourceId: res.id,
+                    resourceName: res.name,
+                    resourceIcon: res.icon || '\uD83D\uDCE6',
+                    qty: qty,
+                    pricePerUnit: pricePerUnit,
+                    detectionChance: 0.15,
+                    isBanned: true,
+                });
+            }
+
+            // Always include a blasting_powder offer if it's banned
+            var bpBanned = bannedGoods.indexOf('blasting_powder') !== -1;
+            if (bpBanned && offers.filter(function(o) { return o.resourceId === 'blasting_powder'; }).length === 0 && shuffled.length > 0) {
+                var bpNpc = shuffled[0];
+                var bpRes = findResource('blasting_powder');
+                if (bpRes) {
+                    offers.push({
+                        npcName: bpNpc.firstName + ' ' + bpNpc.lastName,
+                        npcId: bpNpc.id,
+                        resourceId: 'blasting_powder',
+                        resourceName: bpRes.name,
+                        resourceIcon: bpRes.icon || '\uD83D\uDCA5',
+                        qty: rng.randInt(1, 3),
+                        pricePerUnit: Math.ceil(bpRes.basePrice * rng.randFloat(2.0, 3.5)),
+                        detectionChance: 0.15,
+                        isBanned: true,
+                    });
+                }
+            }
+        }
+
+        player._streetBuyCache = offers;
+        player._streetBuyDay = day;
+        return offers;
+    }
+
+    function executeStreetBuy(buyIndex) {
+        var offers = getStreetBuyOffers();
+        if (buyIndex < 0 || buyIndex >= offers.length) return { success: false, message: 'Invalid offer.' };
+
+        var offer = offers[buyIndex];
+        var totalPrice = offer.pricePerUnit * offer.qty;
+        if (player.gold < totalPrice) return { success: false, message: 'Not enough gold. Need ' + totalPrice + 'g.' };
+
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.street_trade || 3);
+
+        var town = Engine.findTown(player.townId);
+        var kingdom = town ? Engine.findKingdom(town.kingdomId) : null;
+        var rng = Engine.getRng();
+
+        // Detection check
+        if (rng && offer.isBanned) {
+            var detectionChance = offer.detectionChance || 0.15;
+            var rankIdx = player.socialRank ? (player.socialRank[(kingdom || {}).id] || 0) : 0;
+            detectionChance -= rankIdx * (CONFIG.SMUGGLING_RANK_REDUCTION || 0.05);
+            detectionChance -= Math.min(CONFIG.SMUGGLING_SKILL_MAX_REDUCTION || 0.20, (player.smugglingSkill || 0) * (CONFIG.SMUGGLING_SKILL_REDUCTION || 0.01));
+            if (hasSkill('master_smuggler')) detectionChance -= 0.20;
+            else if (hasSkill('discrete')) detectionChance -= 0.10;
+            detectionChance = Math.max(0.03, detectionChance);
+
+            if (rng.chance(detectionChance)) {
+                var fineAmount = Math.floor(totalPrice * (CONFIG.SMUGGLING_FINE_MULTIPLIER || 2));
+                var actualFine = Math.min(fineAmount, player.gold);
+                player.gold -= actualFine;
+                if (kingdom) {
+                    player.reputation[kingdom.id] = Math.max(0, (player.reputation[kingdom.id] || 50) - (CONFIG.SMUGGLING_REP_PENALTY || 15));
+                }
+                offers.splice(buyIndex, 1);
+                Engine.logEvent(player.fullName + ' was caught buying banned ' + offer.resourceName + ' on the street! Fined ' + actualFine + 'g.');
+                return { success: false, message: 'Caught buying banned goods! Fined ' + actualFine + 'g. Goods confiscated.', caught: true };
+            }
+        }
+
+        // Successful purchase
+        player.gold -= totalPrice;
+        player.stats.totalGoldSpent += totalPrice;
+        player.inventory[offer.resourceId] = (player.inventory[offer.resourceId] || 0) + offer.qty;
+
+        // Improve smuggling skill
+        player.smugglingSkill = Math.min(20, (player.smugglingSkill || 0) + 1);
+
+        offers.splice(buyIndex, 1);
+        return { success: true, message: 'Bought ' + offer.qty + ' ' + offer.resourceName + ' for ' + totalPrice + 'g from the black market.' };
     }
 
     function executeStreetTrade(tradeIndex) {
@@ -24024,6 +24382,8 @@
         var wars = Engine.getActiveWars ? Engine.getActiveWars() : {};
         var hasWar = false;
         var warKingdomId = null;
+
+        // Check player's citizenship kingdom
         for (var wId in wars) {
             var w = wars[wId];
             if (w.kingdomA === player.citizenshipKingdomId || w.kingdomB === player.citizenshipKingdomId) {
@@ -24032,6 +24392,44 @@
                 break;
             }
         }
+
+        // Fallback: check player's current town's kingdom
+        if (!hasWar && player.townId) {
+            var bkTown = Engine.findTown(player.townId);
+            var bkTownKingdom = bkTown ? bkTown.kingdomId : null;
+            if (bkTownKingdom && bkTownKingdom !== player.citizenshipKingdomId) {
+                for (var wId1b in wars) {
+                    var w1b = wars[wId1b];
+                    if (w1b.kingdomA === bkTownKingdom || w1b.kingdomB === bkTownKingdom) {
+                        hasWar = true;
+                        warKingdomId = bkTownKingdom;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Fallback: check kingdom atWar sets directly
+        if (!hasWar) {
+            var bkKingdoms = Engine.getKingdoms ? Engine.getKingdoms() : [];
+            var playerKIds = [player.citizenshipKingdomId];
+            if (player.townId) {
+                var bkT2 = Engine.findTown(player.townId);
+                if (bkT2 && bkT2.kingdomId) playerKIds.push(bkT2.kingdomId);
+            }
+            for (var pki = 0; pki < playerKIds.length && !hasWar; pki++) {
+                if (!playerKIds[pki]) continue;
+                for (var bki = 0; bki < bkKingdoms.length; bki++) {
+                    if (bkKingdoms[bki].id === playerKIds[pki] && bkKingdoms[bki].atWar && bkKingdoms[bki].atWar.size > 0) {
+                        hasWar = true;
+                        warKingdomId = playerKIds[pki];
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Last resort: any war at all
         if (!hasWar) {
             for (var wId2 in wars) {
                 hasWar = true;
@@ -26167,6 +26565,8 @@
         buildBuilding,
         setBuildingProduct,
         purchaseNPCBuilding,
+        playerConvertBuilding,
+        playerDemolishBuilding,
         revitalizeTown,
         hireWorker,
         fireWorker,
@@ -26368,6 +26768,8 @@
         doWork,
         getStreetTrades,
         executeStreetTrade,
+        getStreetBuyOffers,
+        executeStreetBuy,
 
         // Foraging & Off-road
         forage,
