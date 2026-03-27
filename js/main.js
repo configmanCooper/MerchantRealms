@@ -19,6 +19,10 @@ window.Game = (function () {
     let townHoverHintCount = parseInt(localStorage.getItem('mr_townHoverHints') || '0', 10);
     const TOWN_HOVER_HINT_MAX = 10;
 
+    // ── Sticky hover for shift-select (prevents tooltip flicker) ──
+    let _lastPersonHover = null; // { data, sx, sy, time }
+    const PERSON_HOVER_STICKY_MS = 300;
+
     // ── Input state ──
     const input = {
         mouseX: 0,
@@ -846,6 +850,18 @@ window.Game = (function () {
 
         const hit = Renderer.hitTest(sx, sy, { shiftKey: shiftKey || false });
 
+        // Sticky person hover when shift is held — prevents flicker
+        if (shiftKey && hit.type === 'none' && _lastPersonHover) {
+            if (Date.now() - _lastPersonHover.time < PERSON_HOVER_STICKY_MS) {
+                // Keep showing the last person tooltip
+                const p = _lastPersonHover.data;
+                UI.showTooltip(sx, sy, `${p.firstName || ''} ${p.lastName || ''}\n${(p.occupation || 'Unemployed')}`);
+                document.getElementById('gameCanvas').style.cursor = 'pointer';
+                return;
+            }
+            _lastPersonHover = null;
+        }
+
         if (hit.type === 'town' && hit.data) {
             const town = hit.data;
             Renderer.setHover({ type: 'town', data: town });
@@ -906,6 +922,7 @@ window.Game = (function () {
             Renderer.setHover({ type: 'person', data: p });
             UI.showTooltip(sx, sy, `${p.firstName || ''} ${p.lastName || ''}\n${(p.occupation || 'Unemployed')}`);
             document.getElementById('gameCanvas').style.cursor = 'pointer';
+            if (shiftKey) _lastPersonHover = { data: p, sx: sx, sy: sy, time: Date.now() };
         } else if (hit.type === 'road' && hit.data) {
             Renderer.setHover({ type: 'road', data: hit.data });
             const road = hit.data;
@@ -917,6 +934,7 @@ window.Game = (function () {
             UI.showTooltip(sx, sy, `⛵ Sea Route: ${sr.fromTown?.name || '?'} → ${sr.toTown?.name || '?'}\nDist: ${Math.round(sr.distance || 0)} | ${sr.safe !== false ? 'Safe' : '⚠ Dangerous'}`);
             document.getElementById('gameCanvas').style.cursor = 'pointer';
         } else {
+            _lastPersonHover = null;
             Renderer.setHover(null);
             UI.hideTooltip();
             if (!input.mouseDown) {

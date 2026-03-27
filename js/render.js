@@ -40,6 +40,8 @@ window.Renderer = (function () {
     let lastTerrainCamY = -9999;
     let worldData = null;
     let frameCount = 0;
+    let _npcAnimTime = 0; // Game-speed-driven animation clock for NPC movement
+    let _lastFrameTimestamp = 0;
     let hoverTarget = null; // { type, id, x, y }
     let selectedTarget = null;
 
@@ -265,6 +267,19 @@ window.Renderer = (function () {
         if (!worldData || !ctx) return;
 
         frameCount++;
+        // Advance NPC animation clock based on game speed (NPCs freeze when paused)
+        var now = performance.now();
+        if (_lastFrameTimestamp > 0) {
+            var dt = (now - _lastFrameTimestamp) / 1000; // seconds since last frame
+            var gameSpeed = (typeof Game !== 'undefined' && Game.getSpeed) ? Game.getSpeed() : 0;
+            if (gameSpeed > 0) {
+                // Scale so current visual speed at 1x is 1/16th of old speed
+                // Old: animT = frameCount * 0.015 (~0.9/sec at 60fps)
+                // New at 1x: ~0.056/sec, at 16x: ~0.9/sec (matches old), at 60x: ~3.4/sec
+                _npcAnimTime += dt * 0.056 * gameSpeed;
+            }
+        }
+        _lastFrameTimestamp = now;
         updateCamera();
 
         // Cache towns/kingdoms for this frame to avoid repeated Engine calls
@@ -1448,6 +1463,51 @@ window.Renderer = (function () {
     //  5. PEOPLE
     // ═══════════════════════════════════════════════════════════
 
+    // Extract numeric ID from string IDs like "p_38" for stable hashing
+    function _npcNumId(p, i) {
+        if (typeof p.id === 'number') return p.id;
+        if (typeof p.id === 'string') {
+            var match = p.id.match(/\d+/);
+            if (match) return parseInt(match[0], 10);
+        }
+        return i * 137;
+    }
+
+    // Compute NPC world position — shared by rendering and hit testing
+    // Uses hash-based random walk: each NPC picks unique waypoints and walks between them
+    function _npcPosition(numId, cx, cy, animTime) {
+        var baseSeed  = tileHash(numId * 3 + 1, numId * 5 + 7);
+        var baseSeed2 = tileHash(numId * 7 + 13, numId * 11 + 3);
+
+        // Base position spread around town center
+        var angle = baseSeed * Math.PI * 2;
+        var dist  = 10 + baseSeed2 * 35;
+        var baseX = cx + Math.cos(angle) * dist;
+        var baseY = cy + Math.sin(angle) * dist;
+
+        // Each NPC has a unique step duration (how long between direction changes)
+        var stepLen = 1.8 + tileHash(numId * 19 + 5, numId * 23 + 11) * 3.5;
+        var currentStep = Math.floor(animTime / stepLen);
+        var frac = (animTime - currentStep * stepLen) / stepLen;
+        // Smoothstep for natural decel/accel between waypoints
+        frac = frac * frac * (3 - 2 * frac);
+
+        // Wander radius from base position
+        var wander = 5 + baseSeed2 * 8;
+
+        // Waypoint A (current) and B (next) — each fully unique per NPC + step
+        var dirA  = tileHash(numId * 41 + currentStep * 13, currentStep * 29 + numId * 7) * Math.PI * 2;
+        var distA = tileHash(numId * 53 + currentStep * 17, currentStep * 37 + numId * 11) * wander;
+        var dirB  = tileHash(numId * 41 + (currentStep + 1) * 13, (currentStep + 1) * 29 + numId * 7) * Math.PI * 2;
+        var distB = tileHash(numId * 53 + (currentStep + 1) * 17, (currentStep + 1) * 37 + numId * 11) * wander;
+
+        // Lerp between waypoints
+        var wx = Math.cos(dirA) * distA + (Math.cos(dirB) * distB - Math.cos(dirA) * distA) * frac;
+        var wy = Math.sin(dirA) * distA + (Math.sin(dirB) * distB - Math.sin(dirA) * distA) * frac;
+
+        return { x: baseX + wx, y: baseY + wy };
+    }
+
     function renderPeople() {
         const towns = _frameTowns;
         if (!towns) return;
@@ -1477,26 +1537,25 @@ window.Renderer = (function () {
             try { people = Engine.getPeopleCached(town.id); } catch (e) { continue; }
             if (!people || !people.length) continue;
 
-            // Limit visible people for performance
-            const maxShow = Math.min(people.length, 50);
-            const animT = frameCount * 0.015;
-            for (let i = 0; i < maxShow; i++) {
-                const p = people[i];
-                if (!p.alive) continue;
+            // Stable selection: sort alive NPCs by ID so the same ones render each frame
+            var alivePeople = [];
+            for (var pi = 0; pi < people.length; pi++) {
+                if (people[pi].alive) alivePeople.push(people[pi]);
+            }
+            if (!alivePeople.length) continue;
+            alivePeople.sort(function(a, b) { return _npcNumId(a, 0) - _npcNumId(b, 0); });
+            if (alivePeople.length > 50) alivePeople.length = 50;
 
-                const seed = tileHash(p.id || i, town.x);
-                const angle = (i / maxShow) * Math.PI * 2 + seed * 1.5;
-                const dist = 8 + tileHash(i * 11, town.y * 3) * 25;
-                // Subtle idle wander — each NPC drifts on their own sine cycle
-                const wx = Math.sin(animT + seed * 6.28) * 1.5;
-                const wy = Math.cos(animT * 0.8 + (seed + 0.5) * 6.28) * 1.5;
-                const px = cx + Math.cos(angle) * dist + wx;
-                const py = cy + Math.sin(angle) * dist + wy;
+            for (let i = 0; i < alivePeople.length; i++) {
+                const p = alivePeople[i];
+
+                var numId = _npcNumId(p, i);
+                var pos = _npcPosition(numId, cx, cy, _npcAnimTime);
 
                 const occ = (p.occupation || 'none').toLowerCase();
                 ctx.fillStyle = occColors[occ] || '#888';
                 ctx.beginPath();
-                ctx.arc(px, py, 1.8, 0, Math.PI * 2);
+                ctx.arc(pos.x, pos.y, 1.8, 0, Math.PI * 2);
                 ctx.fill();
             }
         }
@@ -2216,24 +2275,38 @@ window.Renderer = (function () {
                 if (!people) continue;
 
                 const maxShow = Math.min(people.length, 50);
-                for (let i = 0; i < maxShow; i++) {
-                    const p = people[i];
-                    if (!p.alive) continue;
-                    const angle = (i / maxShow) * Math.PI * 2 + tileHash(p.id || i, town.x) * 1.5;
-                    const dist = 8 + tileHash(i * 11, town.y * 3) * 25;
-                    const px = cx + Math.cos(angle) * dist;
-                    const py = cy + Math.sin(angle) * dist;
-                    const d = Math.sqrt((w.x - px) ** 2 + (w.y - py) ** 2);
-                    if (d < 5) {
+                var hitAlive = [];
+                for (var pi = 0; pi < people.length; pi++) {
+                    if (people[pi].alive) hitAlive.push(people[pi]);
+                }
+                hitAlive.sort(function(a, b) { return _npcNumId(a, 0) - _npcNumId(b, 0); });
+                if (hitAlive.length > 50) hitAlive.length = 50;
+                var hitRadius = prioritizePeople ? 14 : 7;
+                for (let i = 0; i < hitAlive.length; i++) {
+                    const p = hitAlive[i];
+                    var numId = _npcNumId(p, i);
+                    var pos = _npcPosition(numId, cx, cy, _npcAnimTime);
+                    const d = Math.sqrt((w.x - pos.x) ** 2 + (w.y - pos.y) ** 2);
+                    if (d < hitRadius) {
                         return { type: 'person', data: p };
                     }
                 }
             }
         }
 
-        // If shift was held and we didn't find a person, fall through to town check
+        // If shift was held and we didn't find a person, only fall through to town
+        // if we're NOT in the NPC rendering zone (prevents tooltip flickering)
         if (prioritizePeople) {
-            if (towns) {
+            // Check if cursor is near any town's NPC zone — if so, return 'none'
+            // to keep the tooltip stable instead of flipping to the town tooltip
+            var inNpcZone = false;
+            if (camera.zoom > 1.5 && towns) {
+                for (var ti = 0; ti < towns.length; ti++) {
+                    var td = Math.sqrt((w.x - towns[ti].x) ** 2 + (w.y - towns[ti].y) ** 2);
+                    if (td < 60) { inNpcZone = true; break; }
+                }
+            }
+            if (!inNpcZone && towns) {
                 for (const town of towns) {
                     const cx = town.x;
                     const cy = town.y;
