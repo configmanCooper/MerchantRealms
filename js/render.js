@@ -47,6 +47,7 @@ window.Renderer = (function () {
     let _minimapCacheCanvas = null;
     let _minimapCacheDirty = true;
     let _minimapCacheDay = -1;
+    let showDeposits = false; // toggled by player with Regional Survey skill
 
     // ── Per-frame render cache (avoid repeated Engine calls) ──
     let _frameTowns = null;
@@ -304,6 +305,11 @@ window.Renderer = (function () {
 
         // 4b. Elite merchant heraldry flags
         renderEliteMerchantIcons();
+
+        // 4c. Resource deposits overlay (Regional Survey skill)
+        if (camera.zoom > 0.5) {
+            renderDeposits();
+        }
 
         // 5. People (only when zoomed in)
         if (camera.zoom > 1.5) {
@@ -1395,6 +1401,50 @@ window.Renderer = (function () {
     }
 
     // ═══════════════════════════════════════════════════════════
+    //  4c. RESOURCE DEPOSITS OVERLAY
+    // ═══════════════════════════════════════════════════════════
+
+    function renderDeposits() {
+        if (!showDeposits) return;
+        const towns = _frameTowns;
+        if (!towns) return;
+        if (typeof Player === 'undefined' || !Player.hasSkill || !Player.hasSkill('regional_survey')) return;
+
+        var playerKingdom = Player.kingdomId;
+        var depositIcons = {
+            wheat: '\uD83C\uDF3E', iron_ore: '\u26CF', wood: '\uD83E\uDEB5',
+            stone: '\uD83E\uDEA8', wool: '\uD83D\uDC11', hide: '\uD83D\uDC04',
+            grapes: '\uD83C\uDF47', gold_ore: '\u2728', hemp: '\uD83C\uDF3F',
+            clay: '\uD83C\uDFFA', salt: '\uD83E\uDDC2', fish: '\uD83D\uDC1F',
+            herbs: '\uD83C\uDF3F', honey: '\uD83C\uDF6F', silk: '\uD83E\uDDE3',
+            pearls: '\uD83E\uDEE7'
+        };
+
+        for (var t = 0; t < towns.length; t++) {
+            var town = towns[t];
+            if (!town.naturalDeposits) continue;
+            // Only show for player's kingdom or towns the player is in
+            if (town.kingdomId !== playerKingdom && Player.townId !== town.id) continue;
+            if (!isVisible(town.x, town.y, 200)) continue;
+
+            var keys = Object.keys(town.naturalDeposits);
+            var icons = '';
+            for (var k = 0; k < keys.length; k++) {
+                if (town.naturalDeposits[keys[k]] > 0 && depositIcons[keys[k]]) {
+                    icons += depositIcons[keys[k]];
+                }
+            }
+            if (!icons) continue;
+
+            var baseSize = (town.category === 'city' ? 14 : town.category === 'town' ? 11 : 8);
+            var yOff = town.y - baseSize - 12;
+            ctx.font = '7px sans-serif';
+            ctx.fillStyle = 'rgba(40,80,40,0.95)';
+            ctx.fillText(icons, town.x - ctx.measureText(icons).width / 2, yOff);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
     //  5. PEOPLE
     // ═══════════════════════════════════════════════════════════
 
@@ -1429,14 +1479,19 @@ window.Renderer = (function () {
 
             // Limit visible people for performance
             const maxShow = Math.min(people.length, 50);
+            const animT = frameCount * 0.015;
             for (let i = 0; i < maxShow; i++) {
                 const p = people[i];
                 if (!p.alive) continue;
 
-                const angle = (i / maxShow) * Math.PI * 2 + tileHash(p.id || i, town.x) * 1.5;
+                const seed = tileHash(p.id || i, town.x);
+                const angle = (i / maxShow) * Math.PI * 2 + seed * 1.5;
                 const dist = 8 + tileHash(i * 11, town.y * 3) * 25;
-                const px = cx + Math.cos(angle) * dist;
-                const py = cy + Math.sin(angle) * dist;
+                // Subtle idle wander — each NPC drifts on their own sine cycle
+                const wx = Math.sin(animT + seed * 6.28) * 1.5;
+                const wy = Math.cos(animT * 0.8 + (seed + 0.5) * 6.28) * 1.5;
+                const px = cx + Math.cos(angle) * dist + wx;
+                const py = cy + Math.sin(angle) * dist + wy;
 
                 const occ = (p.occupation || 'none').toLowerCase();
                 ctx.fillStyle = occColors[occ] || '#888';
@@ -2418,7 +2473,19 @@ window.Renderer = (function () {
         }
         mapMode = 0;
         centerOnPlayer();
-        camera.targetZoom = Math.max(camera.minZoom, Math.min(camera.maxZoom, 1.5));
+        camera.targetZoom = Math.max(camera.minZoom, Math.min(camera.maxZoom, 1.6));
+    }
+
+    function toggleDeposits() {
+        if (typeof Player === 'undefined' || !Player.hasSkill || !Player.hasSkill('regional_survey')) {
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('You need the Regional Survey skill to view deposits.', 'warning');
+            return false;
+        }
+        showDeposits = !showDeposits;
+        if (typeof UI !== 'undefined' && UI.toast) {
+            UI.toast('Resource deposits ' + (showDeposits ? 'shown' : 'hidden') + '.', 'info');
+        }
+        return showDeposits;
     }
 
     // ── Strategic Map (Mode 1): enhanced town labels ──
@@ -3077,5 +3144,6 @@ window.Renderer = (function () {
         hideWorldMap,
         locatePlayer,
         markMinimapDirty,
+        toggleDeposits,
     };
 })();

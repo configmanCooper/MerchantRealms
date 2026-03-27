@@ -14,6 +14,9 @@ window.Tutorial = (function () {
     // Polling / waitFor state
     var pollInterval = null;
     var skipTimeout = null;
+    var doneTimeout = null;
+    var doneAdvanceFn = null;
+    var modalObserver = null;
     var snapshotState = {};
 
     // ═══════════════════════════════════════════════════════════
@@ -111,34 +114,49 @@ window.Tutorial = (function () {
         // Show waiting state
         updateNextButton('\u23F3 Complete the action above...', true);
 
+        // Get step's custom skip delay or use default (20s)
+        var step = chapters[currentChapter] && chapters[currentChapter].steps[currentStep];
+        var skipDelay = (step && step.skipAfter) ? step.skipAfter : 20000;
+
         pollInterval = setInterval(function () {
             try {
                 if (conditionFn()) {
                     stopWatching();
-                    // Brief success flash
-                    updateNextButton('\u2705 Done!', true);
-                    setTimeout(function () {
-                        if (onComplete) {
-                            onComplete();
-                        } else {
-                            nextStep();
-                        }
-                    }, 800);
+                    // Show Done as clickable button with green highlight
+                    doneAdvanceFn = onComplete || function () { nextStep(); };
+                    var btn = document.getElementById('tutBtnNext');
+                    if (btn) {
+                        btn.textContent = '\u2705 Done! Continue \u2192';
+                        btn.disabled = false;
+                        btn.style.opacity = '1';
+                        btn.style.cursor = 'pointer';
+                        btn.style.background = 'linear-gradient(135deg, #2d5a1d, #3a7a24)';
+                        btn.style.borderColor = '#5aad35';
+                    }
+                    // Auto-advance after 5 seconds if not clicked
+                    doneTimeout = setTimeout(function () {
+                        var fn = doneAdvanceFn;
+                        doneAdvanceFn = null;
+                        doneTimeout = null;
+                        if (fn) fn();
+                    }, 5000);
                 }
             } catch (e) {
                 console.error('Tutorial poll error:', e);
             }
         }, 500);
 
-        // After 45 seconds, show skip option
+        // Show skip option after delay
         skipTimeout = setTimeout(function () {
             updateNextButton('Skip this step \u2192', false);
-        }, 45000);
+        }, skipDelay);
     }
 
     function stopWatching() {
         if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
         if (skipTimeout) { clearTimeout(skipTimeout); skipTimeout = null; }
+        if (doneTimeout) { clearTimeout(doneTimeout); doneTimeout = null; }
+        doneAdvanceFn = null;
     }
 
     function updateNextButton(label, disabled) {
@@ -192,7 +210,7 @@ window.Tutorial = (function () {
                         }
                         return false;
                     },
-                    skipAfter: 12000
+                    skipAfter: 6000
                 },
                 {
                     title: 'Speed Controls',
@@ -211,17 +229,17 @@ window.Tutorial = (function () {
                     text: '\uD83D\uDC65 <strong>Zoom in</strong> (scroll wheel) past 1.5x to see individual <strong>NPCs walking around</strong> your town \u2014 click one to see their name, job, and personality! You can also click the <strong>\uD83D\uDCAC Talk</strong> button in the bottom bar to chat with a random local \u2014 they may share useful rumors about prices, wars, or elite merchants. Try clicking <strong>\uD83D\uDCAC Talk</strong> now!',
                     highlight: '#btnTalk',
                     waitFor: function () {
-                        // Detect that the talk dialog appeared
+                        // Detect that the talk dialog appeared (modal title is "💬 Conversation")
                         var modal = document.getElementById('modalOverlay');
                         if (!modal || modal.classList.contains('hidden')) return false;
-                        var body = document.getElementById('modalBody');
-                        return body && body.textContent.indexOf('says') >= 0;
+                        var title = document.getElementById('modalTitle');
+                        return title && title.textContent.indexOf('Conversation') >= 0;
                     },
-                    skipAfter: 15000
+                    skipAfter: 4000
                 },
                 {
                     title: 'Town Info & People List',
-                    text: '\uD83C\uDFD8\uFE0F <strong>Click any town</strong> on the map to see its details \u2014 population, market prices, buildings, and a <strong>\uD83D\uDC65 View Townspeople</strong> button that lists every NPC living there. You can <strong>right-click anywhere</strong> on the map to travel off-road to that point for shortcuts! The <strong>Ledger</strong> (left panel) shows your gold, location, and status.',
+                    text: '\uD83C\uDFD8\uFE0F <strong>Click any town</strong> on the map to see its details \u2014 population, market prices, buildings, and a <strong>\uD83D\uDC65 View Townspeople</strong> button that lists every NPC living there. <strong>Tip:</strong> Hold <strong>Shift + Click</strong> to select an individual NPC instead of the town they\u2019re standing in! You can <strong>right-click anywhere</strong> on the map to travel off-road to that point for shortcuts. The <strong>Ledger</strong> (left panel) shows your gold, location, and status.',
                     highlight: '#leftPanel'
                 },
                 {
@@ -229,7 +247,7 @@ window.Tutorial = (function () {
                     text: '\uD83D\uDCBE <strong>Save/Load</strong> from the menu at any time. You have <strong>5 save slots</strong> to experiment with different strategies. Each slot has a <strong>Download</strong> button (\u2B07\uFE0F) to save your game as a file to your computer, and an <strong>Import</strong> button (\uD83D\uDCC2) to upload a previously downloaded save. This way your progress is safe even if browser data is cleared! Try saving now \u2014 click the <strong>Save Game</strong> button.',
                     highlight: '#btnSaveGame',
                     waitFor: function () { return typeof Game !== 'undefined' && Game.hasSave && Game.hasSave(); },
-                    skipAfter: 8000
+                    skipAfter: 4000
                 }
             ]
         },
@@ -359,8 +377,8 @@ window.Tutorial = (function () {
             part: 'basic',
             steps: [
                 {
-                    title: 'Fatigue & Rest',
-                    text: '\uD83D\uDE34 <strong>Fatigue</strong> builds over time (0\u2013100%). At 60% you get a warning; at 85% you take penalties to trade, combat, and social skills. <strong>Rest at home or an inn</strong> to recover.'
+                    title: 'Energy & Rest',
+                    text: '\uD83D\uDE34 <strong>Energy</strong> depletes as you perform actions (trading, building, traveling, working). At 30% you get a warning; below 20% you take penalties to trade, combat, and other skills. At 0 energy you may <strong>collapse</strong>! <strong>Rest at home or an inn</strong> to recover \u2014 better housing restores energy faster.'
                 },
                 {
                     title: 'Jobs & Street Trading',
@@ -368,7 +386,8 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Transport & Carry Capacity',
-                    text: '\uD83D\uDCE6 Upgrade your capacity to carry more goods:<br>\u2022 \uD83C\uDF92 <strong>Backpack</strong>: 2x (free) \u2022 \uD83D\uDED2 <strong>Cart</strong>: 4x (100g)<br>\u2022 <strong>Wagon</strong>: 10x (400g, needs horses)<br>More cargo = bigger profits per trip!'
+                    text: '\uD83D\uDCE6 Open the <strong>\uD83D\uDC34 Caravan</strong> panel to upgrade your carry capacity:<br>\u2022 \uD83C\uDF92 <strong>Backpack</strong>: 2x (~10g + materials)<br>\u2022 \uD83D\uDED2 <strong>Cart</strong>: 4x (~30g + materials)<br>\u2022 <strong>Wagon</strong>: 10x (needs horses)<br>Prices depend on <strong>local material costs</strong> \u2014 a dynamic economy feature! More cargo = bigger profits per trip.',
+                    highlight: '#btnCaravan'
                 }
             ]
         },
@@ -380,7 +399,8 @@ window.Tutorial = (function () {
             steps: [
                 {
                     title: 'Why Get Housing?',
-                    text: '\uD83C\uDFE0 Housing gives you a <strong>place to rest</strong>, <strong>storage</strong> for goods, <strong>security</strong> against theft, and a home for your <strong>family</strong>. Start with a \uD83D\uDED6 <strong>Shack</strong> (50g) or \uD83C\uDFE1 <strong>Cottage</strong> (200g).'
+                    text: '\uD83C\uDFE0 Click the <strong>\uD83C\uDFE1 Housing</strong> button to browse and buy property. Start with a \uD83D\uDED6 <strong>Shack</strong> or \uD83C\uDFE1 <strong>Cottage</strong>. Housing gives you a <strong>place to rest</strong>, <strong>storage</strong>, <strong>security</strong> against theft, and a home for your <strong>family</strong>. Prices are <strong>dynamically set</strong> based on local material and labor costs!',
+                    highlight: '#btnHousing'
                 },
                 {
                     title: 'Rest & Storage',
@@ -388,7 +408,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Upgrading Over Time',
-                    text: '\uD83C\uDFF0 As you grow wealthier, upgrade for better bonuses:<br>\u2022 <strong>Townhouse</strong> (600g): +15 reputation, 200 storage<br>\u2022 <strong>Merchant House</strong> (1,500g): +25 rep, 350 storage<br>\u2022 <strong>Manor</strong> (5,000g): +30 rep, 400 storage<br>Housing sells at 70% of purchase price.'
+                    text: '\uD83C\uDFF0 As you grow wealthier, upgrade for better bonuses:<br>\u2022 <strong>Townhouse</strong>: +15 reputation, 200 storage<br>\u2022 <strong>Merchant House</strong>: +25 rep, 350 storage<br>\u2022 <strong>Manor</strong>: +30 rep, 400 storage<br>Costs vary by town \u2014 building materials are priced from the <strong>local market</strong>, so shop around! Sell housing at 70% of current material value.'
                 }
             ]
         },
@@ -408,11 +428,11 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Marriage & Children',
-                    text: '\uD83D\uDC8D <strong>Marriage</strong> costs 50g + 100g per rank. Choose wisely \u2014 spouses have <strong>personality traits</strong> that affect your business! <strong>Children</strong> arrive naturally (3% chance/day, 270-day pregnancy, max 8).'
+                    text: '\uD83D\uDC8D <strong>Marriage</strong> costs 50g + 100g per rank. Choose wisely \u2014 spouses have <strong>personality traits</strong> that affect your business! <strong>Children</strong> arrive naturally (3% chance/day, 270-day pregnancy). You and your spouse must be in the <strong>same town</strong> for a chance at conception, and having a <strong>home</strong> greatly improves fertility!'
                 },
                 {
                     title: 'Inheritance \u2014 Your Legacy',
-                    text: '\uD83D\uDC51 When you die, your <strong>heir inherits</strong>: 70% of gold, 70% of reputation, 15% of skills, and your <strong>buildings</strong>. The <strong>Legacy of Trust</strong> skill boosts inheritance to 50%! <strong>Good Parent</strong> gives +10% gold/rep.'
+                    text: '\uD83D\uDC51 When you die, your <strong>heir inherits</strong> your <strong>gold</strong> (split with siblings if any, minus kingdom inheritance tax), your <strong>buildings</strong>, and partial <strong>reputation</strong> (15% retention, or 50% with <strong>Legacy of Trust</strong>). Skills reset, but <strong>Dynasty Founder</strong> gives your heir +1 SP. A surviving <strong>spouse</strong> inherits 100% of gold!'
                 },
                 {
                     title: 'Dynasty Tips',
@@ -434,6 +454,11 @@ window.Tutorial = (function () {
                 {
                     title: 'Glossary & Icons',
                     text: '\uD83D\uDCD6 Inside Help, check the <strong>Glossary</strong> for definitions of game terms, and the <strong>Icons Guide</strong> to learn what every symbol means. Hover over most UI elements for <strong>tooltips</strong> with extra info.'
+                },
+                {
+                    title: 'Notifications & Settings',
+                    text: '\uD83D\uDD14 See the <strong>\uD83D\uDD14 bell icon</strong> in the top bar? That\u2019s your <strong>notification center</strong> \u2014 click it to review events you may have missed. Click <strong>\u2699\uFE0F Settings</strong> to customize your experience, including <strong>notification filters</strong> to show only what matters to you. Too many popups? Turn off categories you don\u2019t need!',
+                    highlight: '#btnSettings'
                 },
                 {
                     title: 'You\u2019re Ready!',
@@ -462,7 +487,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Building Types',
-                    text: '\uD83C\uDFED <strong>40+ buildings</strong> in categories:<br>\u2022 \uD83C\uDF3E <strong>Farming</strong>: Wheat Farm, Cattle Ranch, Vineyard<br>\u2022 \u26CF\uFE0F <strong>Mining</strong>: Iron Mine, Gold Mine, Quarry<br>\u2022 \u2699\uFE0F <strong>Processing</strong>: Flour Mill, Smelter, Sawmill<br>\u2022 \uD83C\uDFAF <strong>Finished</strong>: Bakery, Blacksmith, Jeweler<br>Match buildings to local <strong>resource deposits</strong> for bonus output!',
+                    text: '\uD83C\uDFED <strong>Pick a building and construct it!</strong> 40+ buildings in categories:<br>\u2022 \uD83C\uDF3E <strong>Farming</strong>: Wheat Farm, Cattle Ranch, Vineyard<br>\u2022 \u26CF\uFE0F <strong>Mining</strong>: Iron Mine, Gold Mine, Quarry<br>\u2022 \u2699\uFE0F <strong>Processing</strong>: Flour Mill, Smelter, Sawmill<br>\u2022 \uD83C\uDFAF <strong>Finished</strong>: Bakery, Blacksmith, Jeweler<br>Match buildings to local <strong>resource deposits</strong> for bonus output!',
                     waitFor: function () {
                         return getPlayerBuildings().length > 0;
                     },
@@ -517,8 +542,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Skill Inheritance',
-                    text: '\uD83D\uDC51 <strong>Legacy of Trust</strong> (Social branch) boosts skill inheritance from 15% to <strong>50%</strong>! Combined with <strong>Dynasty Founder</strong> (+1 SP to heir), your children start much stronger. Close when done.',
-                    waitFor: function () { return isModalClosed(); }
+                    text: '\uD83D\uDC51 Plan for the future! <strong>Legacy of Trust</strong> (Social branch) boosts reputation inheritance from 15% to <strong>50%</strong>. <strong>Dynasty Founder</strong> gives your heir +1 SP to start. Skills reset on inheritance, but these investments make your dynasty grow stronger each generation.'
                 }
             ]
         },
@@ -541,16 +565,26 @@ window.Tutorial = (function () {
                 {
                     title: 'Multi-Kingdom Play',
                     text: '\uD83C\uDF0D Hold rank in <strong>multiple kingdoms</strong>! Become Citizen anywhere to gain citizenship. If two of your kingdoms go to <strong>war</strong>, you must pick a side \u2014 losing 30 rep in the other.',
-                    waitFor: function () { return isModalClosed(); }
+                    onEnter: function () { closeModal(); }
                 },
                 {
                     title: 'Petitions & Influence',
-                    text: '\uD83D\uDCDC As Citizen+, create <strong>petitions</strong> to influence the king \u2014 build roads, lower taxes, ban goods, or declare war! Gather NPC signatures and submit. <strong>Royal Advisors</strong> can propose laws directly.'
+                    text: '\uD83D\uDCDC Click <strong>\uD83D\uDC51 Kingdoms</strong> to open the kingdom panel. As Citizen+, you can create <strong>petitions</strong> to influence the king \u2014 build roads, lower taxes, ban goods, or declare war! Look for the <strong>Petitions</strong> section inside. Gather NPC signatures and submit. <strong>Royal Advisors</strong> can propose laws directly.',
+                    highlight: '#btnKingdoms',
+                    waitFor: function () { return isModalOpen(); }
                 },
                 {
                     title: 'Kingdom Orders',
-                    text: '\uD83D\uDC51 Kingdoms post <strong>procurement orders</strong> \u2014 guaranteed sales at fixed prices, often above market. Check the <strong>\uD83D\uDC51 Kingdoms</strong> panel for contracts. War supply orders are especially lucrative!',
-                    highlight: '#btnKingdoms'
+                    text: '\uD83D\uDC51 Kingdoms post <strong>procurement orders</strong> \u2014 guaranteed sales at fixed prices, often above market. Scroll down in the town detail and find <strong>📋 Kingdom Orders</strong> under ⚒️ Actions. Open it to see the orders the crown needs filled!',
+                    highlight: '#btnKingdoms',
+                    onEnter: function () { closeModal(); },
+                    waitFor: function () { return isModalOpen(); }
+                },
+                {
+                    title: 'Royal Commissions',
+                    text: '📜 The king also posts <strong>Royal Commissions</strong> \u2014 one-off requests with gold + reputation rewards. Find the <strong>📦 Commissions</strong> button in the town detail (just above Market Prices). These are great for building reputation early!',
+                    onEnter: function () { closeModal(); },
+                    waitFor: function () { return isModalOpen(); }
                 }
             ]
         },
@@ -566,7 +600,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Military Enlistment',
-                    text: '\u2694\uFE0F <strong>Enlist</strong> during wartime! <strong>7 military ranks</strong>: Recruit \u2192 Footman \u2192 Sergeant \u2192 Knight \u2192 Captain \u2192 Commander \u2192 General. Reaching <strong>Knight</strong> auto-grants <strong>Citizen status</strong> \u2014 bypasses gold requirements!'
+                    text: '\u2694\uFE0F <strong>Enlist</strong> during wartime! Normal enlistment has <strong>4 ranks</strong>: Militiaman \u2192 Footman \u2192 Sergeant \u2192 <strong>Knight</strong> (max). Reaching Knight auto-grants <strong>Citizen status</strong>! The unique <strong>Military Leader</strong> start unlocks 3 higher ranks: Captain \u2192 Commander \u2192 General.'
                 },
                 {
                     title: 'War Profiteering',
@@ -574,7 +608,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Naval & Bridge Warfare',
-                    text: '\uD83D\uDEA2 Ships can be <strong>armed</strong> during wartime with cannons and reinforced hulls. Naval battles determine sea route control. Destroy enemy <strong>bridges</strong> (500g) to cripple trade \u2014 rebuilding costs 1,000g and 30 days!'
+                    text: '\uD83D\uDEA2 Ships can be <strong>armed</strong> during wartime with cannons and reinforced hulls. Naval battles determine sea route control. Destroying enemy <strong>bridges</strong> cripples their trade and costs the kingdom dearly to rebuild!'
                 }
             ]
         },
@@ -590,7 +624,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Sea Routes & Fishing',
-                    text: '\uD83C\uDF0A Build <strong>sea routes</strong> between ports for fast oceanic trade. <strong>Storms</strong> risk 10\u201330% cargo loss. <strong>Fishing</strong> provides food and extra income \u2014 a great side business for port-based merchants.'
+                    text: '\uD83C\uDF0A <strong>Sea routes</strong> connect port towns for fast oceanic trade. At <strong>Guildmaster</strong> rank with a ship, you can build new sea routes from the town \u2699\uFE0F Actions panel. <strong>Storms</strong> risk cargo loss. <strong>Fishing</strong> provides food and extra income \u2014 a great side business for port-based merchants.'
                 },
                 {
                     title: 'Fleet Management',
@@ -619,7 +653,9 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Outposts & Expansion',
-                    text: '\uD83C\uDFD5\uFE0F Build <strong>outposts</strong> in remote locations to extend your trade network. They provide storage, rest, and a foothold in new territories. Combine with toll roads and caravans for a self-sustaining empire!'
+                    text: '\uD83C\uDFD5\uFE0F Click <strong>\uD83C\uDFE0 Buildings</strong> to open the building manager \u2014 look for the <strong>\u26FA Wilderness Outposts</strong> section. Outposts extend your trade network into remote areas, providing storage, rest, and a foothold in new territories. They cost 500g + materials (wood, stone) to found and can grow into full towns! Combine with toll roads and caravans for a self-sustaining empire.',
+                    highlight: '#btnBuildings',
+                    waitFor: function () { return isModalOpen(); }
                 }
             ]
         },
@@ -631,11 +667,13 @@ window.Tutorial = (function () {
             steps: [
                 {
                     title: 'Crime & Smuggling',
-                    text: '\uD83D\uDEA8 <strong>16 crime types</strong> from smuggling (5 days jail) to treason (execution!). <strong>Smuggling</strong> banned goods pays 2x price but has 35% detection. Skills like <strong>Discrete</strong> (\u221210%) and <strong>Master Smuggler</strong> (\u221220%) reduce risk.'
+                    text: '\uD83D\uDEA8 <strong>16 crime types</strong> from smuggling to treason. <strong>Smuggling</strong> banned goods pays 2x price but you can get caught! Punishments vary by kingdom \u2014 some are harsher than others. Skills like <strong>Discrete</strong> and <strong>Master Smuggler</strong> reduce your detection chance.'
                 },
                 {
                     title: 'The Leaderboard',
-                    text: '\uD83C\uDFC6 The <strong>Leaderboard</strong> tracks top 10 merchants by <strong>net worth</strong> (gold + buildings + inventory + ships + routes). Compete against elite NPCs for the #1 spot!'
+                    text: '\uD83C\uDFC6 Click <strong>\uD83C\uDFC6 Rankings</strong> to see the top merchants! The <strong>Leaderboard</strong> tracks the top 10 by <strong>net worth</strong> (gold + buildings + inventory + ships + routes). Compete against elite NPCs for the #1 spot!',
+                    highlight: '#btnRankings',
+                    waitFor: function () { return isModalOpen(); }
                 },
                 {
                     title: 'Advanced Strategies',
@@ -659,15 +697,91 @@ window.Tutorial = (function () {
     //  UI: PANEL
     // ═══════════════════════════════════════════════════════════
 
+    function avoidOverlap() {
+        if (!panelEl || !active) return;
+        var overlay = document.getElementById('modalOverlay');
+        if (!overlay || overlay.classList.contains('hidden')) return;
+        var modalBox = overlay.querySelector('.modal-content') || overlay.children[0];
+        if (!modalBox) return;
+        var pr = panelEl.getBoundingClientRect();
+        var mr = modalBox.getBoundingClientRect();
+        if (pr.right < mr.left || pr.left > mr.right || pr.bottom < mr.top || pr.top > mr.bottom) return;
+        var pw = panelEl.offsetWidth, ph = panelEl.offsetHeight;
+        var vw = window.innerWidth, vh = window.innerHeight;
+        var spots = [
+            { x: vw - pw - 10, y: vh - ph - 10 },
+            { x: 10, y: vh - ph - 10 },
+            { x: vw - pw - 10, y: 60 },
+            { x: 10, y: 60 }
+        ];
+        for (var i = 0; i < spots.length; i++) {
+            var s = spots[i];
+            if (s.x + pw < mr.left || s.x > mr.right || s.y + ph < mr.top || s.y > mr.bottom) {
+                panelEl.style.left = Math.max(0, Math.min(vw - pw, s.x)) + 'px';
+                panelEl.style.top = Math.max(0, Math.min(vh - ph, s.y)) + 'px';
+                panelEl.style.bottom = 'auto';
+                panelEl.style.transform = 'none';
+                return;
+            }
+        }
+        panelEl.style.left = (vw - pw - 10) + 'px';
+        panelEl.style.top = '60px';
+        panelEl.style.bottom = 'auto';
+        panelEl.style.transform = 'none';
+    }
+
     function createPanel() {
         if (panelEl) return;
         panelEl = document.createElement('div');
         panelEl.className = 'tutorial-panel';
         panelEl.id = 'tutorialPanel';
         document.body.appendChild(panelEl);
+
+        // Make panel draggable by its header
+        var dragOffsetX = 0, dragOffsetY = 0, dragging = false;
+        panelEl.addEventListener('mousedown', function (e) {
+            // Only drag from header area (not buttons)
+            if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
+            var header = panelEl.querySelector('.tutorial-panel-header');
+            if (!header || !header.contains(e.target)) return;
+            dragging = true;
+            var rect = panelEl.getBoundingClientRect();
+            dragOffsetX = e.clientX - rect.left;
+            dragOffsetY = e.clientY - rect.top;
+            panelEl.style.cursor = 'grabbing';
+            e.preventDefault();
+        });
+        document.addEventListener('mousemove', function (e) {
+            if (!dragging) return;
+            var x = e.clientX - dragOffsetX;
+            var y = e.clientY - dragOffsetY;
+            // Clamp to viewport
+            x = Math.max(0, Math.min(window.innerWidth - panelEl.offsetWidth, x));
+            y = Math.max(0, Math.min(window.innerHeight - panelEl.offsetHeight, y));
+            panelEl.style.left = x + 'px';
+            panelEl.style.top = y + 'px';
+            panelEl.style.bottom = 'auto';
+            panelEl.style.transform = 'none';
+        });
+        document.addEventListener('mouseup', function () {
+            if (dragging) {
+                dragging = false;
+                panelEl.style.cursor = '';
+            }
+        });
+
+        // Watch for modal open/close to auto-reposition panel
+        var overlay = document.getElementById('modalOverlay');
+        if (overlay) {
+            modalObserver = new MutationObserver(function () {
+                setTimeout(avoidOverlap, 100);
+            });
+            modalObserver.observe(overlay, { attributes: true, attributeFilter: ['class'] });
+        }
     }
 
     function destroyPanel() {
+        if (modalObserver) { modalObserver.disconnect(); modalObserver = null; }
         if (panelEl) {
             panelEl.remove();
             panelEl = null;
@@ -741,6 +855,13 @@ window.Tutorial = (function () {
             }
             btnNext.addEventListener('click', function () {
                 if (btnNext.disabled) return;
+                if (doneAdvanceFn) {
+                    if (doneTimeout) { clearTimeout(doneTimeout); doneTimeout = null; }
+                    var fn = doneAdvanceFn;
+                    doneAdvanceFn = null;
+                    fn();
+                    return;
+                }
                 if (isFinal) {
                     end();
                 } else {
@@ -800,6 +921,9 @@ window.Tutorial = (function () {
 
         // Render panel
         renderPanel();
+
+        // Auto-move panel if it overlaps a modal
+        avoidOverlap();
 
         // Start watching if step has waitFor
         if (typeof step.waitFor === 'function') {
@@ -928,6 +1052,56 @@ window.Tutorial = (function () {
         // Initialize player WITH a town (5th param is critical)
         Player.init(world, 'Tutorial', 'Merchant', 'M', startTownId);
 
+        // Set player to Citizen rank so they can build things in the tutorial
+        var startTown = towns.length > 0 ? towns[0] : null;
+        if (startTown) {
+            Player.socialRank[startTown.kingdomId] = 1; // Citizen
+            // Stock starting town and adjacent towns with building materials
+            var materialBoost = { wood: 200, stone: 150, iron: 80, planks: 100, bricks: 80, clay: 60, rope: 40, iron_ore: 60 };
+            var stockedTowns = [startTown];
+            // Find adjacent towns via roads
+            var roads = Engine.getRoads ? Engine.getRoads() : [];
+            for (var ri = 0; ri < roads.length; ri++) {
+                var rd = roads[ri];
+                var adjId = null;
+                if (rd.fromTownId === startTown.id) adjId = rd.toTownId;
+                else if (rd.toTownId === startTown.id) adjId = rd.fromTownId;
+                if (adjId) {
+                    var adjTown = Engine.findTown(adjId);
+                    if (adjTown) stockedTowns.push(adjTown);
+                }
+            }
+            for (var ti = 0; ti < stockedTowns.length; ti++) {
+                var t = stockedTowns[ti];
+                if (!t.market || !t.market.supply) continue;
+                for (var mat in materialBoost) {
+                    t.market.supply[mat] = (t.market.supply[mat] || 0) + materialBoost[mat];
+                }
+            }
+        }
+
+        // Inject sample Kingdom Orders and Royal Commissions for tutorial
+        if (startTown) {
+            var kId = startTown.kingdomId;
+            var kObj = world.kingdoms ? world.kingdoms.find(function (k) { return k.id === kId; }) : null;
+            if (kObj) {
+                var day = typeof Engine !== 'undefined' && Engine.getDay ? Engine.getDay() : 0;
+                // Procurement orders
+                if (!kObj.procurement) kObj.procurement = { orders: [], needs: {} };
+                kObj.procurement.orders.push(
+                    { id: 'tut_order_1', resourceId: 'wheat', quantity: 20, pricePerUnit: 8, deadlineDay: day + 60, status: 'open', bids: [], requiresPermit: false, description: 'Wheat Supply — Royal Granary' },
+                    { id: 'tut_order_2', resourceId: 'planks', quantity: 10, pricePerUnit: 18, deadlineDay: day + 45, status: 'open', bids: [], requiresPermit: false, description: 'Planks — Castle Repairs' },
+                    { id: 'tut_order_3', resourceId: 'iron', quantity: 8, pricePerUnit: 25, deadlineDay: day + 30, status: 'open', bids: [], requiresPermit: false, description: 'Iron Supply — Royal Armory' }
+                );
+                // Royal commissions
+                if (!kObj.royalCommissions) kObj.royalCommissions = [];
+                kObj.royalCommissions.push(
+                    { id: 'tut_comm_1', type: 'supply', resourceId: 'bread', quantity: 15, reward: 250, repReward: 8, expiresDay: day + 50, status: 'open', description: 'Supply 15 Bread for the Royal Feast' },
+                    { id: 'tut_comm_2', type: 'supply', resourceId: 'wool', quantity: 10, reward: 180, repReward: 5, expiresDay: day + 40, status: 'open', description: 'Supply 10 Wool for Winter Cloaks' }
+                );
+            }
+        }
+
         // Initialize renderer
         var canvas = document.getElementById('gameCanvas');
         Renderer.init(canvas, world);
@@ -967,10 +1141,21 @@ window.Tutorial = (function () {
         createPanel();
         enterStep();
 
+        // Clear startup notifications — wars/events during world gen are distracting
+        setTimeout(function () {
+            var tc = document.getElementById('toastContainer');
+            if (tc) tc.innerHTML = '';
+            var badge = document.querySelector('[ref] .notification-count, .notif-count');
+            if (badge) badge.textContent = '0';
+            if (typeof UI !== 'undefined' && UI.clearNotifications) UI.clearNotifications();
+        }, 200);
+
         // Show welcome toast
         var townName = towns.length > 0 ? towns[0].name : 'your town';
         if (typeof UI !== 'undefined' && UI.toast) {
-            UI.toast('\uD83D\uDCD6 Tutorial started! You are in ' + townName + '.', 'info');
+            setTimeout(function () {
+                UI.toast('\uD83D\uDCD6 Tutorial started! You are in ' + townName + '.', 'info');
+            }, 500);
         }
     }
 
@@ -991,9 +1176,13 @@ window.Tutorial = (function () {
         }
     }
 
-    // ═══════════════════════════════════════════════════════════
-    //  PUBLIC API
-    // ═══════════════════════════════════════════════════════════
+    // Clean up tutorial state and UI without navigating (for external callers)
+    function cleanup() {
+        active = false;
+        stopWatching();
+        clearHighlights();
+        destroyPanel();
+    }
 
     // ═══════════════════════════════════════════════════════════
     //  PUBLIC API
@@ -1005,6 +1194,7 @@ window.Tutorial = (function () {
         nextStep: nextStep,
         prevStep: prevStep,
         skip: end,
+        cleanup: cleanup,
         getCurrentChapter: function () { return currentChapter; },
         getCurrentStep: function () { return currentStep; }
     };

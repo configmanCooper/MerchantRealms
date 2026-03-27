@@ -602,6 +602,9 @@
      * @returns {{ success: boolean, message: string, totalCost?: number }}
      */
     function buy(resourceId, qty, townId) {
+        if (!qty || qty <= 0) return { success: false, message: 'Invalid quantity.' };
+        qty = Math.floor(qty);
+        if (qty <= 0) return { success: false, message: 'Invalid quantity.' };
         if (resourceId === 'horses') {
             // Redirect to horse system
             return buyHorse(player.townId);
@@ -827,6 +830,9 @@
      * @returns {{ success: boolean, message: string, totalRevenue?: number }}
      */
     function sell(resourceId, qty, townId) {
+        if (!qty || qty <= 0) return { success: false, message: 'Invalid quantity.' };
+        qty = Math.floor(qty);
+        if (qty <= 0) return { success: false, message: 'Invalid quantity.' };
         if (resourceId === 'horses') {
             return { success: false, message: 'Use the Character panel to manage your horses.' };
         }
@@ -1649,6 +1655,18 @@
         if (!fromTown || !toTown) return { success: false, message: 'Invalid town.' };
         if (fromTownId === toTownId) return { success: false, message: 'Origin and destination are the same.' };
 
+        // Validate goods — must have at least one item with qty > 0
+        if (!goods || typeof goods !== 'object') return { success: false, message: 'No goods specified.' };
+        var hasValidGoods = false;
+        for (const [resId, gqty] of Object.entries(goods)) {
+            if (gqty <= 0) return { success: false, message: `Invalid quantity for ${resId}.` };
+            hasValidGoods = true;
+        }
+        if (!hasValidGoods) return { success: false, message: 'No goods specified for the caravan.' };
+
+        // Validate guards
+        if (guards < 0) return { success: false, message: 'Invalid guard count.' };
+
         options = options || {};
         const buyOrders = options.buyOrders || null;   // { resId: { qty, maxPrice } }
         const roundTrip = options.roundTrip || false;
@@ -2132,6 +2150,8 @@
     function collectBuildingOutput(buildingId, resourceId, quantity) {
         const bld = player.buildings.find(b => b.id === buildingId);
         if (!bld) return { success: false, message: 'Building not found.' };
+        if (!resourceId) return { success: false, message: 'No resource specified.' };
+        if (!quantity || quantity <= 0) return { success: false, message: 'Invalid quantity.' };
         if (player.traveling) return { success: false, message: 'Cannot collect while traveling.' };
         if (bld.townId !== player.townId) return { success: false, message: 'Must be in the same town.' };
 
@@ -2611,6 +2631,16 @@
         if (!fromTown || !toTown) return { success: false, message: 'Invalid town.' };
         if (fromTownId === toTownId) return { success: false, message: 'Origin and destination are the same.' };
         if (!fromTown.isPort || !toTown.isPort) return { success: false, message: 'Both towns must be ports for sea trade.' };
+
+        // Validate goods
+        if (!goods || typeof goods !== 'object') return { success: false, message: 'No goods specified.' };
+        var hasSeaGoods = false;
+        for (const [resId, gqty] of Object.entries(goods)) {
+            if (gqty <= 0) return { success: false, message: `Invalid quantity for ${resId}.` };
+            hasSeaGoods = true;
+        }
+        if (!hasSeaGoods) return { success: false, message: 'No goods specified for the sea caravan.' };
+        if (guards < 0) return { success: false, message: 'Invalid guard count.' };
 
         const hasShip = player.ships.length > 0;
         if (!hasShip) {
@@ -3497,7 +3527,8 @@
                     if (ev2.type === 'pirates') pirateChance *= (ev2.seaRiskMultiplier || 3);
                 }
             }
-            if (Math.random() < pirateChance) {
+            var _travelRng = Engine.getRng();
+            if (_travelRng && _travelRng.random() < pirateChance) {
                 handlePirateEncounter();
             }
 
@@ -3515,13 +3546,13 @@
                 }
             }
             if (hasSkill('expert_navigator')) stormChancePlayer *= 0.90;
-            if (Math.random() < stormChancePlayer && bestSeaShip) {
+            if (_travelRng && _travelRng.random() < stormChancePlayer && bestSeaShip) {
                 var stormDmg = CONFIG.SHIP_STORM_HULL_DAMAGE || 10;
                 bestSeaShip.hullHealth = Math.max(0, (bestSeaShip.hullHealth || 100) - stormDmg);
                 Engine.logEvent('⛈️ A storm battered your ship! Hull took ' + stormDmg + ' damage.');
                 if (bestSeaShip.hullHealth <= 0) {
                     Engine.logEvent('💀 Your ' + bestSeaShip.name + ' has sunk in the storm!');
-                    var stormCargoLoss = 0.4 + Math.random() * 0.4;
+                    var stormCargoLoss = 0.4 + (_travelRng ? _travelRng.random() : Math.random()) * 0.4;
                     for (var sr in player.inventory) {
                         if (player.inventory[sr] > 0) {
                             var lost = Math.floor(player.inventory[sr] * stormCargoLoss);
@@ -3537,7 +3568,9 @@
         }
 
         // Off-road discovery events — chance of finding things while traversing wilderness
-        if (player.travelOffroad && Math.random() < 0.10) {
+        if (player.travelOffroad) {
+            var _offroadRng = Engine.getRng();
+            if (_offroadRng && _offroadRng.random() < 0.10) {
             // Determine dominant terrain of the route
             let dominantTerrain = TERRAIN.GRASS.id;
             if (player.travelRoute && player.travelRoute.length > 0) {
@@ -3558,7 +3591,7 @@
                     dominantTerrain = Engine.getTerrainAtPixel(curPos.x, curPos.y);
                 }
             }
-            const roll = Math.random.bind(Math);
+            const roll = function() { return _offroadRng ? _offroadRng.random() : Math.random(); };
 
             if (dominantTerrain === TERRAIN.MOUNTAIN.id) {
                 const r = roll();
@@ -3567,7 +3600,7 @@
                     player.inventory.iron_ore = (player.inventory.iron_ore || 0) + qty;
                     Engine.logEvent(`\u26CF\uFE0F You found ${qty} iron ore in the mountain pass!`);
                 } else if (r < 0.32) {
-                    player.inventory.gold_ingot = (player.inventory.gold_ingot || 0) + 1;
+                    player.inventory.gold_ore = (player.inventory.gold_ore || 0) + 1;
                     Engine.logEvent(`\u2728 You found a gold nugget gleaming in the rocks!`);
                 } else if (r < 0.55) {
                     Engine.logEvent(`\uD83D\uDDF3\uFE0F You discovered a dark cave in the mountainside. Best not to venture in alone.`);
@@ -3648,6 +3681,7 @@
                 } else {
                     Engine.logEvent(`\uD83C\uDF04 The open grasslands stretch endlessly before you.`);
                 }
+            }
             }
         }
 
@@ -4350,6 +4384,7 @@
     }
 
     function depositToStorage(resId, qty) {
+        if (!qty || qty <= 0) return { success: false, message: 'Invalid quantity.' };
         if (!player.townId) return { success: false, message: 'Must be in a town to deposit.' };
         var available = player.inventory[resId] || 0;
         if (available < qty) return { success: false, message: 'Not enough in inventory.' };
@@ -4368,6 +4403,7 @@
     }
 
     function withdrawFromStorage(resId, qty) {
+        if (!qty || qty <= 0) return { success: false, message: 'Invalid quantity.' };
         if (!player.townId) return { success: false, message: 'Must be in a town to withdraw.' };
         var stored = (player.townStorage[player.townId] || {})[resId] || 0;
         if (stored < qty) return { success: false, message: 'Not enough in storage.' };
@@ -11251,6 +11287,7 @@
     // §12B-5 SELL TO KINGDOM
     // ========================================================
     function sellToKingdom(kingdomId, resourceId, qty, pricePerUnit) {
+        if (!qty || qty <= 0) return { success: false, message: 'Invalid quantity.' };
         if (player.traveling) return { success: false, message: 'Cannot trade while traveling.' };
         if (player.jailedUntilDay > 0 && Engine.getDay() < player.jailedUntilDay) {
             return { success: false, message: 'You are in jail until day ' + player.jailedUntilDay + '.' };
@@ -11491,8 +11528,9 @@
         const currentIdx = player.socialRank[kId] || 0;
         const newIdx = currentIdx + 1;
         const nextRank = CONFIG.SOCIAL_RANKS[newIdx];
-        // Deduct fee
+        // Deduct fee (re-check after tick advance which may have spent gold)
         if (nextRank.fee) {
+            if (player.gold < nextRank.fee) return { success: false, message: `Not enough gold for promotion fee. Need ${nextRank.fee}g, have ${Math.floor(player.gold)}g.` };
             player.gold -= nextRank.fee;
             player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + nextRank.fee;
             var promoKingdom = Engine.findKingdom(kId);
@@ -11732,6 +11770,9 @@
     }
 
     function giveGift(personId, resourceId, qty) {
+        if (!qty || qty <= 0) return { success: false, message: 'Invalid quantity.' };
+        qty = Math.floor(qty);
+        if (qty <= 0) return { success: false, message: 'Invalid quantity.' };
         const person = Engine.findPerson(personId);
         if (!person) return { success: false, message: 'Person not found.' };
         if (person.townId !== player.townId) return { success: false, message: 'Not in same town.' };
@@ -12872,6 +12913,7 @@
     }
 
     function bribeRequisitionGuard(bribeAmount) {
+        if (!bribeAmount || bribeAmount <= 0) return { success: false, message: 'Invalid bribe amount.' };
         if (player.gold < bribeAmount) return { success: false, message: 'Not enough gold.' };
         var rng = Engine.getRng();
         player.gold -= bribeAmount;
@@ -16062,6 +16104,7 @@
 
     // ── (e) Sell Counterfeit Goods ──
     function sellCounterfeit(resourceId, qty, townId) {
+        if (!qty || qty <= 0) return { success: false, message: 'Invalid quantity.' };
         if (isJailed()) return { success: false, message: 'You are in jail.' };
         if (!hasSkill('master_forger')) return { success: false, message: 'Requires Master Forger skill.' };
         if (!isInTown(townId)) return { success: false, message: 'You must be in the town.' };
@@ -17675,7 +17718,8 @@
 
     function checkEnergyForAction(energyCost) {
         var cost = energyCost || 0;
-        if (player.energy <= ENERGY_CONFIG.COLLAPSE_THRESHOLD) {
+        var energy = (player.energy != null) ? player.energy : ENERGY_CONFIG.START;
+        if (energy <= ENERGY_CONFIG.COLLAPSE_THRESHOLD) {
             var rng = Engine.getRng();
             if (rng && rng.chance(ENERGY_CONFIG.COLLAPSE_CHANCE)) {
                 if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(30);
@@ -17689,11 +17733,11 @@
                 return { blocked: true, message: '💫 You collapsed from exhaustion!' + (injuryChance ? ' You injured yourself in the fall.' : '') };
             }
         }
-        if (player.energy < ENERGY_CONFIG.ACTION_BLOCK) {
-            return { blocked: true, message: '😵 Too exhausted! You need to rest. (Energy: ' + Math.floor(player.energy) + ')' };
+        if (energy < ENERGY_CONFIG.ACTION_BLOCK) {
+            return { blocked: true, message: '😵 Too exhausted! You need to rest. (Energy: ' + Math.floor(energy) + ')' };
         }
-        if (cost > 0 && player.energy < cost) {
-            return { blocked: true, message: '😴 Not enough energy for this action. Need ' + Math.ceil(cost) + ', have ' + Math.floor(player.energy) + '. Rest first!' };
+        if (cost > 0 && energy < cost) {
+            return { blocked: true, message: '😴 Not enough energy for this action. Need ' + Math.ceil(cost) + ', have ' + Math.floor(energy) + '. Rest first!' };
         }
         return { blocked: false };
     }
@@ -17701,7 +17745,8 @@
     function getEnergyDebuffs() {
         var max = getMaxEnergy();
         var threshold = max * ENERGY_CONFIG.LOW_DEBUFF_THRESHOLD;
-        if (player.energy > threshold) return null;
+        var energy = (player.energy != null) ? player.energy : ENERGY_CONFIG.START;
+        if (energy > threshold) return null;
         return ENERGY_CONFIG.DEBUFFS;
     }
 

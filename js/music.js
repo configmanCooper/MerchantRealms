@@ -57,7 +57,15 @@ window.Music = (function () {
 
     function ensureCtx() {
         if (!ctx) init();
-        if (ctx && ctx.state === 'suspended') ctx.resume();
+        if (ctx && ctx.state === 'suspended') {
+            ctx.resume().then(function () {
+                // Re-trigger current mood after context resumes
+                if (currentMood && !playing) {
+                    playing = true;
+                    scheduleLoop(currentMood);
+                }
+            });
+        }
         return !!ctx;
     }
 
@@ -444,8 +452,9 @@ window.Music = (function () {
             }, 5000);
         }
 
+        var fadeIn = (mood === 'title') ? 0.5 : 3;
         newGain.gain.setValueAtTime(0.0, ctx.currentTime);
-        newGain.gain.linearRampToValueAtTime(1.0, ctx.currentTime + 3);
+        newGain.gain.linearRampToValueAtTime(1.0, ctx.currentTime + fadeIn);
         _segmentGain = newGain;
 
         var t0 = ctx.currentTime + 0.15;

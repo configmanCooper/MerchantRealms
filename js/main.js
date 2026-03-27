@@ -208,6 +208,11 @@ window.Game = (function () {
 
     function startNewGame() {
         try {
+            // Clean up tutorial if it was running
+            if (typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive()) {
+                try { Tutorial.cleanup(); } catch(e) {}
+            }
+
             // Read character creation form values
             const firstNameInput = document.getElementById('charFirstName');
             const lastNameInput = document.getElementById('charLastName');
@@ -738,6 +743,9 @@ window.Game = (function () {
                 break;
             case 'f':
                 UI.locatePlayer();
+                break;
+            case 'r':
+                Renderer.toggleDeposits();
                 break;
             case '+':
             case '=':
@@ -1458,6 +1466,10 @@ window.Game = (function () {
         showTitleScreen: function () {
             state = 'title';
             if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
+            // Clean up tutorial if it was running
+            if (typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive()) {
+                Tutorial.cleanup();
+            }
             if (typeof UI !== 'undefined' && UI.hideGameUI) UI.hideGameUI();
             var ts = document.getElementById('titleScreen');
             if (ts) { ts.classList.remove('hidden'); ts.style.display = 'flex'; }

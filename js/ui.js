@@ -207,6 +207,16 @@ window.UI = (function () {
             btnHelp.addEventListener('click', openHelpDialog);
             if (rowWorld) rowWorld.appendChild(btnHelp);
 
+            // Resource deposits toggle → World row, hidden until Regional Survey skill
+            const btnDeposits = document.createElement('button');
+            btnDeposits.className = 'btn-action';
+            btnDeposits.id = 'btnDeposits';
+            btnDeposits.title = 'Toggle Resource Deposits (R)';
+            btnDeposits.textContent = '\u26CF Deposits';
+            btnDeposits.style.display = 'none';
+            btnDeposits.addEventListener('click', function() { if (typeof Renderer !== 'undefined') Renderer.toggleDeposits(); });
+            if (rowWorld) rowWorld.appendChild(btnDeposits);
+
             // Schemes (Dark Deeds) button → Actions row, initially hidden
             const btnSchemes = document.createElement('button');
             btnSchemes.className = 'btn-action btn-action-schemes';
@@ -894,7 +904,9 @@ window.UI = (function () {
 
         if (town.market && town.market.prices && canSeePrices) {
             const isRemote = !isPlayerHere;
-            html += `<div class="detail-section"><h3>📊 Market Prices${isRemote ? ' <span class="text-dim" style="font-size:0.7rem;">(Intel)</span>' : ''}</h3>`;
+            html += `<div class="detail-section">
+                <h3 style="cursor:pointer;user-select:none;" onclick="var b=this.nextElementSibling;b.style.display=b.style.display==='none'?'':'none';this.querySelector('.collapse-arrow').textContent=b.style.display==='none'?'▶':'▼';">📊 Market Prices${isRemote ? ' <span class="text-dim" style="font-size:0.7rem;">(Intel)</span>' : ''} <span class="collapse-arrow" style="font-size:0.7rem;opacity:0.6;">▶</span></h3>
+                <div style="display:none;">`;
             html += `<table class="price-table"><tr><th>Item</th><th>Price</th><th>Supply</th><th style="font-size:0.7rem;">Source</th>`;
             if (isPlayerHere) html += `<th></th>`;
             html += `</tr>`;
@@ -953,6 +965,7 @@ window.UI = (function () {
             }
             html += `</table>
                 <div class="text-dim" style="font-size:0.7rem;margin-top:4px;">⛏ = Natural deposit | 🏭 = Produced locally | 📦 = Imported</div>
+                </div>
             </div>`;
 
             // Kingdom trade panel — sell directly to kingdom
@@ -1370,7 +1383,7 @@ window.UI = (function () {
             for (const [kId, val] of Object.entries(kingdom.relations)) {
                 const other = kingdoms.find(k => k.id == kId);
                 if (!other) continue;
-                const isWar = kingdom.atWar && kingdom.atWar.includes(parseInt(kId));
+                const isWar = kingdom.atWar && kingdom.atWar.includes(kId);
                 html += `<div class="detail-row">
                     <span class="label">${other.name}</span>
                     <span class="value ${isWar ? 'text-danger' : val > 50 ? 'text-success' : val < -30 ? 'text-warning' : ''}">${isWar ? '⚔ AT WAR' : val}</span>
@@ -1541,13 +1554,72 @@ window.UI = (function () {
                 html += `<div class="detail-section"><h3>🤝 Social</h3>
                     <div style="display:flex;flex-wrap:wrap;gap:4px;">`;
 
-                html += `<button class="btn-medieval" onclick="UI.openGiftDialog('${person.id}')" style="font-size:0.75rem;padding:5px 10px;">🎁 Gift</button>`;
-                html += `<button class="btn-medieval" onclick="UI.talkToPerson('${person.id}')" style="font-size:0.75rem;padding:5px 10px;">💬 Talk</button>`;
-                html += `<button class="btn-medieval" onclick="UI.observePerson('${person.id}')" style="font-size:0.75rem;padding:5px 10px;">👀 Observe</button>`;
-                html += `<button class="btn-medieval" onclick="UI.askTavernAbout('${person.id}')" style="font-size:0.75rem;padding:5px 10px;">🍺 Ask Around</button>`;
-                html += `<button class="btn-medieval" onclick="UI.hireInvestigator('${person.id}')" style="font-size:0.75rem;padding:5px 10px;">🕵️ Investigate</button>`;
+                html += `<button class="btn-medieval" onclick="UI.openGiftDialog('${person.id}')" title="Give a gift to improve your relationship" style="font-size:0.75rem;padding:5px 10px;">🎁 Gift</button>`;
+                html += `<button class="btn-medieval" onclick="UI.talkToPerson('${person.id}')" title="Have a conversation to build rapport" style="font-size:0.75rem;padding:5px 10px;">💬 Talk</button>`;
+                html += `<button class="btn-medieval" onclick="UI.observePerson('${person.id}')" title="Spend 8 hours watching this person — 30% chance to discover a hidden quirk (free)" style="font-size:0.75rem;padding:5px 10px;">👀 Observe</button>`;
+                html += `<button class="btn-medieval" onclick="UI.askTavernAbout('${person.id}')" title="Ask around at the tavern for gossip about this person (5g)" style="font-size:0.75rem;padding:5px 10px;">🍺 Ask Around</button>`;
+                html += `<button class="btn-medieval" onclick="UI.hireInvestigator('${person.id}')" title="Hire an investigator to uncover secrets — costly and risky, they may find out!" style="font-size:0.75rem;padding:5px 10px;">🕵️ Investigate</button>`;
 
                 html += `</div></div>`;
+
+                // ── Discovered Traits & Quirks ──
+                if (Player.getRevealedInfo) {
+                    const revealed = Player.getRevealedInfo(person.id);
+                    const totalQuirks = person.quirks ? person.quirks.length : 0;
+                    const revealedQuirks = revealed && revealed.quirks ? revealed.quirks : [];
+                    const revealedTraits = revealed && revealed.traits ? revealed.traits : {};
+                    const traitNames = ['loyalty','ambition','frugality','intelligence','warmth','honesty'];
+                    const traitIcons = {loyalty:'\uD83E\uDEE1',ambition:'\uD83D\uDD25',frugality:'\uD83D\uDCB0',intelligence:'\uD83E\uDDE0',warmth:'\u2764\uFE0F',honesty:'\u2696\uFE0F'};
+                    const hasAnyReveal = revealedQuirks.length > 0 || Object.keys(revealedTraits).length > 0;
+
+                    html += `<div class="detail-section"><h3>\uD83D\uDD0D Discovered Info</h3>`;
+
+                    // Traits
+                    if (Object.keys(revealedTraits).length > 0) {
+                        html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;">';
+                        for (const tn of traitNames) {
+                            if (revealedTraits[tn]) {
+                                const lvl = revealedTraits[tn];
+                                let label = tn.charAt(0).toUpperCase() + tn.slice(1);
+                                let val = '';
+                                if (lvl === 'exact' && person[tn] !== undefined) {
+                                    val = ' ' + Math.round(person[tn]);
+                                } else if (lvl === 'specific') {
+                                    const v = person[tn] || 50;
+                                    val = v > 70 ? ' High' : v < 30 ? ' Low' : ' Average';
+                                } else {
+                                    val = '';
+                                }
+                                html += `<span style="font-size:0.75rem;padding:2px 6px;border-radius:4px;background:rgba(100,150,200,0.15);border:1px solid rgba(100,150,200,0.3);" title="${label}: ${val.trim() || 'Vague impression'}">${traitIcons[tn] || ''} ${label}${val}</span>`;
+                            }
+                        }
+                        html += '</div>';
+                    }
+
+                    // Quirks
+                    if (revealedQuirks.length > 0) {
+                        html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px;">';
+                        for (const qId of revealedQuirks) {
+                            const qDef = (typeof SPOUSE_QUIRKS !== 'undefined') ? SPOUSE_QUIRKS.find(function(q) { return q.id === qId; }) : null;
+                            if (qDef) {
+                                const color = qDef.positive ? 'rgba(85,168,104,0.15)' : 'rgba(196,78,82,0.15)';
+                                const border = qDef.positive ? 'rgba(85,168,104,0.3)' : 'rgba(196,78,82,0.3)';
+                                html += `<span style="font-size:0.75rem;padding:2px 6px;border-radius:4px;background:${color};border:1px solid ${border};" title="${qDef.effect || ''}">${qDef.icon || ''} ${qDef.name}</span>`;
+                            }
+                        }
+                        html += '</div>';
+                    }
+
+                    // Undiscovered count
+                    const undiscovered = totalQuirks - revealedQuirks.length;
+                    if (undiscovered > 0) {
+                        html += `<div style="font-size:0.7rem;color:var(--text-muted);">${undiscovered} undiscovered quirk${undiscovered > 1 ? 's' : ''} \u2014 use Observe, Ask Around, or Investigate to learn more.</div>`;
+                    } else if (!hasAnyReveal) {
+                        html += `<div style="font-size:0.7rem;color:var(--text-muted);">You haven\u2019t discovered anything about this person yet. Use the social actions above to learn more.</div>`;
+                    }
+
+                    html += '</div>';
+                }
 
                 // ── Relationship Perks (Favors) ──
                 if (Player.getRelationshipPerks) {
@@ -3360,6 +3432,19 @@ window.UI = (function () {
         }
     }
 
+    function _refreshPersonView(personId) {
+        // If person detail is currently showing, refresh it; otherwise refresh hire dialog
+        var modal = document.getElementById('modalTitle');
+        if (modal && modal.textContent && modal.textContent.indexOf('Conversation') === -1) {
+            try {
+                var people = Engine.getPeople(Player.townId);
+                var p = people ? people.find(function(x) { return x.id === personId; }) : null;
+                if (p) { showPersonDetail(p); return; }
+            } catch (e) {}
+        }
+        openHireDialog();
+    }
+
     function hireInvestigator(personId) {
         try {
             const result = Player.hireInvestigator(personId);
@@ -3368,7 +3453,7 @@ window.UI = (function () {
             } else {
                 toast((result && result.message) || 'Investigation failed', result && result.permanent ? 'danger' : 'warning');
             }
-            openHireDialog(); // refresh
+            _refreshPersonView(personId);
         } catch (e) {
             toast(e.message || 'Cannot investigate', 'danger');
         }
@@ -3382,7 +3467,7 @@ window.UI = (function () {
             } else {
                 toast((result && result.message) || 'Cannot ask', 'warning');
             }
-            openHireDialog(); // refresh
+            _refreshPersonView(personId);
         } catch (e) {
             toast(e.message || 'Cannot ask', 'danger');
         }
@@ -3638,7 +3723,7 @@ window.UI = (function () {
             } else {
                 toast((result && result.message) || 'Cannot observe', 'warning');
             }
-            openHireDialog(); // refresh
+            _refreshPersonView(personId);
         } catch (e) {
             toast(e.message || 'Cannot observe', 'danger');
         }
@@ -4833,7 +4918,11 @@ window.UI = (function () {
         } catch (e) {}
         if (Player.tradeLog) Player.tradeLog.length = 0;
         _lastSeenEventCount = 0;
-        updateNotifCount();
+        // Force badge hidden immediately
+        if (el.notifCount) {
+            el.notifCount.textContent = '0';
+            el.notifCount.classList.add('hidden');
+        }
         closeModal();
         toast('Event log cleared', 'info');
     }
@@ -5721,7 +5810,7 @@ window.UI = (function () {
         html += '<button class="btn-medieval" onclick="var r = Player.bribeRequisitionGuard(' + bribeCost + '); UI.closeModal(); if(!r.success){ Player.executeRequisition(\'' + targetRes + '\',' + seizeQty + '); }" style="padding:8px;">';
         html += '💰 Bribe the Guards (' + bribeCost + 'g)</button>';
         // Resist (if player has combat skills)
-        if (Player.hasSkill && (Player.hasSkill('combat_training') || Player.hasSkill('veteran_fighter'))) {
+        if (Player.hasSkill && (Player.hasSkill('combat_trained') || Player.hasSkill('battle_hardened'))) {
             html += '<button class="btn-medieval" onclick="UI._resistRequisition(\'' + targetRes + '\',' + seizeQty + ',\'' + kingdom.id + '\');" style="padding:8px;border-color:#c44;">';
             html += '⚔️ Resist (Combat — risky!)</button>';
         }
@@ -5733,7 +5822,7 @@ window.UI = (function () {
     function _resistRequisition(targetRes, seizeQty, kingdomId) {
         closeModal();
         var rng = Engine.getRng ? Engine.getRng() : null;
-        var combatSkill = (Player.hasSkill && Player.hasSkill('veteran_fighter')) ? 0.6 : 0.35;
+        var combatSkill = (Player.hasSkill && Player.hasSkill('battle_hardened')) ? 0.6 : 0.35;
         if (rng && rng.chance(combatSkill)) {
             toast('⚔️ You fought off the guards! But your notoriety increased.', 'success');
             if (Player.state) Player.state.notoriety = Math.min(100, (Player.state.notoriety || 0) + 25);
@@ -7234,13 +7323,27 @@ window.UI = (function () {
             }
 
             const reqNames = skill.requires.map(r => SKILLS[r] ? SKILLS[r].name : r).join(', ');
+            const missingReqs = skill.requires.filter(r => !playerSkills[r]);
+            let reqHtml = '';
+            if (skill.requires.length > 0) {
+                reqHtml = '<div class="skill-requires">Requires: ' + reqNames;
+                if (!isUnlocked && missingReqs.length > 0) {
+                    for (const mr of missingReqs) {
+                        const mrSkill = SKILLS[mr];
+                        if (mrSkill && sp >= mrSkill.cost) {
+                            reqHtml += ` <button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;margin-left:4px;" onclick="UI.learnSkill('${mr}')">Learn ${mrSkill.name} (${mrSkill.cost} SP)</button>`;
+                        }
+                    }
+                }
+                reqHtml += '</div>';
+            }
 
             skillsHtml += `<div class="skill-node ${stateClass}" title="${skill.desc}">
                 <div class="skill-icon">${skill.icon}</div>
                 <div class="skill-name">${skill.name} ${stateLabel}</div>
                 <div class="skill-cost">${skill.cost > 0 ? skill.cost + ' SP' : 'FREE'}</div>
                 <div class="skill-desc">${skill.desc}</div>
-                ${skill.requires.length > 0 ? `<div class="skill-requires">Requires: ${reqNames}</div>` : ''}
+                ${reqHtml}
                 ${!isUnlocked && canUnlock ? `<button class="btn-trade buy skill-learn-btn" onclick="UI.learnSkill('${skill.id}')">Learn</button>` : ''}
             </div>`;
         }
@@ -9710,11 +9813,11 @@ window.UI = (function () {
     function openSchemesDialog() {
         const actions = Player.getAvailableCorruptActions();
         const tabs = [
-            { id: 'sabotage', label: '🔨 Sabotage' },
-            { id: 'political', label: '🏛️ Political' },
-            { id: 'assassination', label: '🗡️ Assassination' },
-            { id: 'tax_evasion', label: '💰 Tax Evasion' },
-            { id: 'market', label: '📈 Market' },
+            { id: 'sabotage', label: '🔨 Sabotage', tip: 'Damage rival businesses, burn warehouses, and disrupt supply chains' },
+            { id: 'political', label: '🏛️ Political', tip: 'Bribe officials, spread rumors, and manipulate kingdom politics' },
+            { id: 'assassination', label: '🗡️ Assassination', tip: 'Eliminate rivals and competitors through hired assassins or poison' },
+            { id: 'tax_evasion', label: '💰 Tax Evasion', tip: 'Hide income, forge documents, and evade kingdom taxes' },
+            { id: 'market', label: '📈 Market', tip: 'Manipulate prices, corner markets, and exploit insider information' },
         ];
 
         let html = '<div class="schemes-tabs" style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">';
@@ -9722,6 +9825,7 @@ window.UI = (function () {
             const count = actions.filter(a => a.tab === tab.id).length;
             html += `<button class="btn-tab${_schemesTab === tab.id ? ' active' : ''}" `
                 + `onclick="UI.switchSchemesTab('${tab.id}')" `
+                + `title="${tab.tip}" `
                 + `style="font-size:0.85rem;padding:6px 12px;">`
                 + `${tab.label} (${count})</button>`;
         }
@@ -9766,6 +9870,21 @@ window.UI = (function () {
                 html += '</div>';
                 if (a.requires && !hasSkillForAction(a)) {
                     html += `<div style="font-size:0.85rem;color:#c44e52;">🔒 Requires: ${a.requires}</div>`;
+                }
+
+                if (!a.available) {
+                    // Show why this action is currently unavailable
+                    var reason = a.disabledReason || '';
+                    if (!reason) {
+                        if (a.requires && !hasSkillForAction(a)) {
+                            reason = 'You lack the required skill: ' + a.requires;
+                        } else if (typeof a.cost === 'string') {
+                            reason = 'You don\u2019t have the required resources (' + a.cost + ')';
+                        } else {
+                            reason = 'Requirements not met';
+                        }
+                    }
+                    html += `<div style="font-size:0.8rem;color:#c44e52;font-style:italic;margin-top:4px;">\u26D4 ${reason}</div>`;
                 }
 
                 if (a.available) {
@@ -10340,7 +10459,19 @@ window.UI = (function () {
         { cat: 'Tips', title: 'War Profiteering', text: 'Wars create trading opportunities. Military goods (weapons, arrows, armor) spike in price near war zones. Medical supplies become valuable. But travel near frontlines is dangerous — weigh risk vs reward.' },
         { cat: 'Tips', title: 'Early Game Strategy', text: 'Focus on: 1) Take odd jobs for initial gold, 2) Buy cheap goods and sell in the next town, 3) Save up for Citizen rank, 4) Buy your first building, 5) Hire workers and build passive income.' },
         { cat: 'Tips', title: 'Notification Filters', text: 'Too many notifications? Open Settings (⚙️) and filter by category. You can show only important notifications while hiding routine messages. Customize to focus on what matters to you.' },
-        { cat: 'Tips', title: 'Check the Leaderboard', text: 'The Rankings panel shows how you compare to Elite Merchants and other powerful figures. Track your progress and aim to climb the ranks. Your dynasty score is cumulative across generations.' }
+        { cat: 'Tips', title: 'Check the Leaderboard', text: 'The Rankings panel shows how you compare to Elite Merchants and other powerful figures. Track your progress and aim to climb the ranks. Your dynasty score is cumulative across generations.' },
+        // KINGDOM ORDERS & COMMISSIONS
+        { cat: 'Kingdoms', title: 'Kingdom Procurement Orders', text: 'Kingdoms post procurement orders — contracts to supply specific goods at fixed prices (often above market rate). Find the <b>📋 Kingdom Orders</b> button in the town detail under <b>⚒️ Actions</b> (scroll down past Market Prices). You must be a <b>Citizen</b> of that kingdom and physically present in the town to see and bid on orders. Open Orders, My Orders, My Deals, and History tabs organize your procurement activity.' },
+        { cat: 'Kingdoms', title: 'Commissions vs Orders', text: 'Royal Commissions (📦) are one-off requests from the king with gold + reputation rewards — great for building rep early. Kingdom Orders (📋) are formal procurement contracts you bid on and fulfill for guaranteed sales. Both are found in the <b>town detail panel</b> — Commissions button is above Market Prices, Orders is under ⚒️ Actions.' },
+        { cat: 'Kingdoms', title: 'Finding Kingdom Features', text: 'Most kingdom features are in the <b>town detail panel</b> (click a town on the map). You\'ll find: 📜 Laws, 👑 King Actions, 📦 Commissions (always visible), and 📋 Kingdom Orders, 📜 Petitions (under ⚒️ Actions, requires citizenship). The Kingdoms button (👑) in the top bar shows a high-level overview of all kingdoms.' },
+        // SCHEMES
+        { cat: 'Kingdoms', title: 'Schemes', text: 'Open the Schemes panel to plot against rivals. Five categories: <b>Sabotage</b> (damage buildings/caravans), <b>Political</b> (slander, bribe officials), <b>Assassination</b> (eliminate rivals — very risky), <b>Tax Evasion</b> (hide income), and <b>Market Manipulation</b> (corner markets, spread rumors). Each scheme requires gold, skill, and sometimes specific ranks. Hover over scheme buttons for details.' },
+        // NPC QUIRKS & SOCIAL ACTIONS
+        { cat: 'Family', title: 'NPC Quirks & Traits', text: 'Every NPC has hidden <b>quirks</b> (personality traits like Ambitious, Lazy, Kleptomaniac, Thrifty). Quirks affect NPCs as workers in your buildings — boosting or reducing productivity, loyalty, material efficiency, and more. Quirks apply whether or not you\'ve discovered them, so investigating NPCs before hiring is a smart strategy.' },
+        { cat: 'Family', title: 'Discovering Quirks', text: 'Use social actions on any NPC to uncover their quirks: <b>Observe</b> (8 hrs, 30% chance — spot behavioral quirks), <b>Ask Around</b> (4 hrs, 25% — learn reputation traits from others), <b>Investigate</b> (costs gold, 50% — deep background check). Discovered info appears in the NPC\'s detail panel under 🔍 Discovered Info.' },
+        { cat: 'Family', title: 'Worker Quirk Effects', text: 'When an NPC works at your building, their quirks silently affect output. Effects include: production bonuses/penalties, material savings or waste, theft, breakage chance, quality modifiers for military goods, and loyalty (quit chance). Check an NPC\'s quirks before assigning them as workers to optimize your business.' },
+        // RESOURCE DEPOSITS
+        { cat: 'Economy', title: 'Resource Deposits', text: 'Towns have natural resource deposits (ore, stone, clay, etc.) that affect local supply and prices. With the <b>Regional Survey</b> skill, press <b>R</b> or click the <b>⛏ Deposits</b> button to toggle deposit icons above towns on the map. This helps you find the best locations for production buildings.' }
     ];
 
     function openGameGuide() {
@@ -12556,6 +12687,37 @@ window.UI = (function () {
         }
 
         panel.classList.remove('hidden');
+
+        // Attach drag handler once
+        if (!panel._dragInit) {
+            panel._dragInit = true;
+            var header = panel.querySelector('.travel-panel-header');
+            if (header) {
+                var dx = 0, dy = 0, sx = 0, sy = 0;
+                header.addEventListener('mousedown', function(e) {
+                    e.preventDefault();
+                    sx = e.clientX; sy = e.clientY;
+                    panel.style.transform = 'none';
+                    function onMove(e2) {
+                        dx = e2.clientX - sx; dy = e2.clientY - sy;
+                        sx = e2.clientX; sy = e2.clientY;
+                        var t = panel.offsetTop + dy;
+                        var l = panel.offsetLeft + dx;
+                        t = Math.max(0, Math.min(window.innerHeight - 40, t));
+                        l = Math.max(-panel.offsetWidth + 40, Math.min(window.innerWidth - 40, l));
+                        panel.style.top = t + 'px';
+                        panel.style.left = l + 'px';
+                        panel.style.bottom = 'auto';
+                    }
+                    function onUp() {
+                        document.removeEventListener('mousemove', onMove);
+                        document.removeEventListener('mouseup', onUp);
+                    }
+                    document.addEventListener('mousemove', onMove);
+                    document.addEventListener('mouseup', onUp);
+                });
+            }
+        }
 
         var destText = document.getElementById('travelDestText');
         if (destText) {

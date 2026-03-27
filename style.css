@@ -2003,6 +2003,7 @@ body {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 10px;
+    cursor: grab;
 }
 
 .tutorial-chapter-title {
@@ -3271,7 +3272,7 @@ body {
 /* Travel HUD Panel */
 .travel-panel {
     position: fixed;
-    bottom: 60px;
+    bottom: 120px;
     left: 50%;
     transform: translateX(-50%);
     width: 320px;
@@ -3281,6 +3282,10 @@ body {
     border-radius: 8px;
     z-index: 100;
     box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+
+.travel-panel-header {
+    cursor: grab;
 }
 
 .travel-panel .btn-travel {

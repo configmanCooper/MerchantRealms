@@ -2179,6 +2179,14 @@
     // ========================================================
     // §10 PERSON GENERATION
     // ========================================================
+    function assignRandomQuirks(rng) {
+        if (typeof SPOUSE_QUIRKS === 'undefined' || !SPOUSE_QUIRKS.length) return [];
+        var n = rng.randInt(1, 2);
+        var shuffled = SPOUSE_QUIRKS.slice();
+        rng.shuffle(shuffled);
+        return shuffled.slice(0, n).map(function(q) { return q.id; });
+    }
+
     function generatePeople(rng, towns, kingdoms) {
         const people = [];
         const occupationWeights = [
@@ -2313,15 +2321,7 @@
                     honesty:      Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
                 };
 
-                // Assign 1-2 random quirks
-                if (typeof SPOUSE_QUIRKS !== 'undefined' && SPOUSE_QUIRKS.length > 0) {
-                    const numQuirks = rng.randInt(1, 2);
-                    const shuffled = SPOUSE_QUIRKS.slice();
-                    rng.shuffle(shuffled);
-                    person.quirks = shuffled.slice(0, numQuirks).map(q => q.id);
-                } else {
-                    person.quirks = [];
-                }
+                person.quirks = assignRandomQuirks(rng);
 
                 // Food preferences
                 person.foodPreferences = {};
@@ -2408,7 +2408,7 @@
                             warmth: Math.floor((rng.random()+rng.random()+rng.random())/3*100),
                             honesty: Math.floor((rng.random()+rng.random()+rng.random())/3*100),
                         },
-                        quirks: [],
+                        quirks: assignRandomQuirks(rng),
                         foodPreferences: { bread: 1, meat: 1, poultry: 1, fish: 1, eggs: 1, preserved_food: 1 },
                         recentFoods: [],
                         birthDay: -(childAge * 360 + rng.randInt(0, 359)), // Negative = born before game start
@@ -2638,7 +2638,7 @@
                         warmth:       Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
                         honesty:      Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
                     },
-                    quirks: [],
+                    quirks: assignRandomQuirks(rng),
                     foodPreferences: { bread: 1, meat: 1, poultry: 1, fish: 1, eggs: 1, preserved_food: 1 },
                     recentFoods: [],
                     houseType: em.houseType,
@@ -2692,7 +2692,7 @@
                                 warmth: Math.floor((rng.random()+rng.random()+rng.random())/3*100),
                                 honesty: Math.floor((rng.random()+rng.random()+rng.random())/3*100),
                             },
-                            quirks: [],
+                            quirks: assignRandomQuirks(rng),
                             foodPreferences: { bread: 1, meat: 1, poultry: 1, fish: 1, eggs: 1, preserved_food: 1 },
                             recentFoods: [],
                             birthDay: -(childAge * 360 + rng.randInt(0, 359)),
@@ -2872,7 +2872,7 @@
                     warmth:       Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
                     honesty:      Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
                 },
-                quirks: [],
+                quirks: assignRandomQuirks(rng),
                 foodPreferences: { bread: 1, meat: 1, poultry: 1, fish: 1, eggs: 1, preserved_food: 1 },
                 recentFoods: [],
             };
@@ -3116,6 +3116,22 @@
                     happyMod = 1.0 - happinessScaledChance(townHappy, CONFIG.TOWN_HAPPINESS_UNREST || 35, CONFIG.TOWN_UNREST_PRODUCTIVITY_PENALTY || 0.20);
                 }
                 happyMod = Math.max(0.3, happyMod); // Floor at 30% production
+
+                // --- WORKER QUIRK MODIFIER (player buildings only) ---
+                var quirkMod = 1.0;
+                if (bld.ownerId === 'player' && bld.workers && bld.workers.length > 0 && typeof SPOUSE_QUIRKS !== 'undefined') {
+                    var qTotal = 0;
+                    var qCount = 0;
+                    for (var wi = 0; wi < bld.workers.length; wi++) {
+                        var w = findPerson(bld.workers[wi]);
+                        if (!w || !w.alive || !w.quirks) continue;
+                        for (var qi = 0; qi < w.quirks.length; qi++) {
+                            var qDef = SPOUSE_QUIRKS.find(function(q) { return q.id === w.quirks[qi]; });
+                            if (qDef && qDef.workerMod) { qTotal += qDef.workerMod; qCount++; }
+                        }
+                    }
+                    if (qCount > 0) quirkMod = Math.max(0.5, 1.0 + qTotal);
+                }
 
                 // Apprenticeship: master produces 50% less, apprentice gains 3x XP
                 let apprenticePenalty = 1.0;
@@ -7262,7 +7278,7 @@
                                     warmth: Math.floor((rng.random()+rng.random()+rng.random())/3*100),
                                     honesty: Math.floor((rng.random()+rng.random()+rng.random())/3*100),
                                 },
-                                quirks: [],
+                                quirks: assignRandomQuirks(rng),
                                 foodPreferences: { bread: 1, meat: 1, poultry: 1, fish: 1, eggs: 1, preserved_food: 1 },
                                 recentFoods: [],
                             };
@@ -9508,7 +9524,7 @@
                                 warmth: Math.floor((world.rng.random()+world.rng.random()+world.rng.random())/3*100),
                                 honesty: Math.floor((world.rng.random()+world.rng.random()+world.rng.random())/3*100),
                             },
-                            quirks: [],
+                            quirks: assignRandomQuirks(world.rng),
                             foodPreferences: { bread: 1, meat: 1, poultry: 1, fish: 1, eggs: 1, preserved_food: 1 },
                             recentFoods: [],
                         };
@@ -9887,7 +9903,7 @@
                         warmth: Math.floor((world.rng.random()+world.rng.random()+world.rng.random())/3*100),
                         honesty: Math.floor((world.rng.random()+world.rng.random()+world.rng.random())/3*100),
                     },
-                    quirks: [],
+                    quirks: assignRandomQuirks(world.rng),
                     foodPreferences: { bread: 1, meat: 1, poultry: 1, fish: 1, eggs: 1, preserved_food: 1 },
                     recentFoods: [],
                 };
@@ -12259,7 +12275,7 @@
                 warmth:       Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
                 honesty:      Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
             },
-            quirks: [],
+            quirks: assignRandomQuirks(rng),
             foodPreferences: { bread: 1, meat: 1, poultry: 1, fish: 1, eggs: 1, preserved_food: 1 },
             recentFoods: [],
             houseType: gold > 5000 ? 'manor' : 'townhouse',
