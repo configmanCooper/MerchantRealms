@@ -1566,6 +1566,7 @@ const SKILLS = {
     royal_favor:         { name: 'Royal Favor',         branch: 'social',     cost: 4, requires: ['political_connections'],        desc: 'Petition for social rank costs 25% less reputation requirement.',            icon: '👸' },
     diplomatic_immunity: { name: 'Diplomatic Immunity', branch: 'social',     cost: 4, requires: ['political_connections'],        desc: '40% chance to talk guards out of forced requisition without losing goods.',  icon: '🕊️' },
     musician:            { name: 'Musician',            branch: 'social',     cost: 2, requires: [],                              desc: 'Learn instruments 50% faster. Performance pay +50%. Gifts build +2 extra relationship. Fame spreads 25% faster.', icon: '🎵' },
+    social_insight:      { name: 'Social Insight',      branch: 'social',     cost: 2, requires: ['charming'],                    desc: 'Read people better: see which social interactions will resonate and which will fall flat.', icon: '🔮' },
     legacy_of_trust:     { name: 'Legacy of Trust',     branch: 'social',     cost: 4, requires: ['charismatic', 'political_connections'], desc: 'Your heir inherits 50% of your relationships and reputation instead of 15%. A lifetime of connections passed down through family bonds.', icon: '🏛️' },
     literacy:            { name: 'Literacy',            branch: 'social',     cost: 2, requires: [],                              desc: 'Can read and write. Required for scholarly and administrative positions.',  icon: '📖' },
 
@@ -2203,6 +2204,95 @@ const SPOUSE_QUIRKS = [
     { id: 'low_fertility', name: 'Low Fertility', icon: '🥀', positive: false, effect: 'Conception takes much longer (~100 days avg)', heirEffect: 'May inherit low fertility', workerMod: 0, workerDesc: 'No worker effect' },
     { id: 'infertile', name: 'Infertile', icon: '🚫', positive: false, effect: 'Cannot have children', heirEffect: 'No children possible', rare: true, workerMod: 0, workerDesc: 'No worker effect' },
 ];
+
+// ============================================================
+// Social Interactions (NPC relationship building)
+// ============================================================
+// Each interaction is weighted by NPC personality traits (0-100 scale).
+// personalityWeights: positive means that trait helps, negative means it hurts.
+// quirkBonuses/quirkPenalties: specific quirks that modify the outcome.
+// baseGain: relationship gain before personality modifiers.
+// The final gain is clamped to [-5, +8] range.
+
+const SOCIAL_INTERACTIONS = [
+    {
+        id: 'small_talk', name: '💬 Small Talk', icon: '💬',
+        description: 'Safe, light conversation about the weather and town gossip',
+        baseGain: 2, cost: 0, timeHours: 1,
+        personalityWeights: { warmth: 0.02, honesty: 0.01 },
+        quirkBonuses: ['charming_smile', 'diplomatic', 'generous_spirit'],
+        quirkPenalties: ['paranoid'],
+        dateProgress: 8
+    },
+    {
+        id: 'tell_joke', name: '😂 Tell a Joke', icon: '😂',
+        description: 'Try to make them laugh — works great with warm people, risky with serious ones',
+        baseGain: 1, cost: 0, timeHours: 1,
+        personalityWeights: { warmth: 0.06, honesty: -0.01, ambition: -0.02 },
+        quirkBonuses: ['musical', 'adventurous', 'charming_smile'],
+        quirkPenalties: ['prideful', 'violent_temper', 'pessimist'],
+        dateProgress: 10
+    },
+    {
+        id: 'discuss_business', name: '📊 Discuss Business', icon: '📊',
+        description: 'Talk shop — ambitious and intelligent people love this, others find it dull',
+        baseGain: 1, cost: 0, timeHours: 1,
+        personalityWeights: { ambition: 0.05, intelligence: 0.03, warmth: -0.02 },
+        quirkBonuses: ['merchant_family', 'silver_tongue', 'keen_eye_quirk', 'well_connected'],
+        quirkPenalties: ['lazy', 'superstitious'],
+        dateProgress: 12
+    },
+    {
+        id: 'compliment', name: '🌹 Compliment', icon: '🌹',
+        description: 'Pay them a genuine compliment — usually positive, but some see through flattery',
+        baseGain: 2, cost: 0, timeHours: 1,
+        personalityWeights: { warmth: 0.03, honesty: -0.03, loyalty: 0.01 },
+        quirkBonuses: ['vain', 'charming_smile', 'generous_spirit'],
+        quirkPenalties: ['paranoid', 'stubborn', 'manipulative'],
+        dateProgress: 6
+    },
+    {
+        id: 'ask_advice', name: '🧠 Ask for Advice', icon: '🧠',
+        description: 'Seek their wisdom — intelligent and loyal people appreciate being consulted',
+        baseGain: 1, cost: 0, timeHours: 1,
+        personalityWeights: { intelligence: 0.05, loyalty: 0.02, ambition: 0.01 },
+        quirkBonuses: ['bookworm', 'natural_leader', 'patient', 'quick_learner'],
+        quirkPenalties: ['lazy', 'hot_headed', 'drunkard'],
+        dateProgress: 14
+    },
+    {
+        id: 'share_drink', name: '🍺 Share a Drink', icon: '🍺',
+        description: 'Buy them a drink at the tavern — great for bonding, but costs a few gold',
+        baseGain: 3, cost: 5, timeHours: 2,
+        personalityWeights: { warmth: 0.02, frugality: -0.03, honesty: 0.01 },
+        quirkBonuses: ['drunkard', 'adventurous', 'generous_spirit', 'musical'],
+        quirkPenalties: ['superstitious', 'patient', 'paranoid'],
+        dateProgress: 15
+    },
+];
+
+// Max interactions with same NPC per day before cooldown
+CONFIG.NPC_INTERACTION_DAILY_LIMIT = 3;
+
+// ============================================================
+// Guild Membership System
+// ============================================================
+const GUILDS = {
+    farmers:     { id: 'farmers',     name: "Farmers' Guild",         icon: '🌾', categories: ['farm'] },
+    miners:      { id: 'miners',      name: "Miners' Guild",          icon: '⛏️', categories: ['mine'] },
+    harvesters:  { id: 'harvesters',  name: "Harvesters' Guild",      icon: '🪓', categories: ['harvest'] },
+    artisans:    { id: 'artisans',    name: "Artisans' Guild",        icon: '⚙️', categories: ['processing'] },
+    craftsmen:   { id: 'craftsmen',   name: "Craftsmen's Guild",      icon: '🔨', categories: ['finished'] },
+    armorsmiths: { id: 'armorsmiths', name: "Armorsmiths' Guild",     icon: '⚔️', categories: ['military'] },
+    luxury:      { id: 'luxury',      name: "Luxury Artisans' Guild", icon: '💎', categories: ['luxury'] },
+    maritime:    { id: 'maritime',    name: "Maritime Guild",         icon: '⚓', categories: ['port'] },
+    merchants:   { id: 'merchants',   name: "Merchants' Guild",       icon: '💰', categories: ['trade'] },
+};
+CONFIG.GUILDS = GUILDS;
+CONFIG.GUILD_BASE_MONTHLY = 25;
+CONFIG.GUILD_BASE_YEARLY = 200;
+CONFIG.GUILD_BUILDING_ENTRY_FEE_MIN = 5;
+CONFIG.GUILD_BUILDING_ENTRY_FEE_MAX = 10;
 
 // ============================================================
 // Dating Activities

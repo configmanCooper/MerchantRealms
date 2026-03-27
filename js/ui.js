@@ -121,6 +121,15 @@ window.UI = (function () {
             btnHousing.addEventListener('click', openHousingDialog);
             if (rowActions) rowActions.appendChild(btnHousing);
 
+            // Guilds button → Actions row
+            const btnGuilds = document.createElement('button');
+            btnGuilds.className = 'btn-action';
+            btnGuilds.id = 'btnGuilds';
+            btnGuilds.title = 'Guild Memberships';
+            btnGuilds.textContent = '🏛️ Guilds';
+            btnGuilds.addEventListener('click', openGuildsPanel);
+            if (rowActions) rowActions.appendChild(btnGuilds);
+
             // Rest button → Actions row
             const btnRest = document.createElement('button');
             btnRest.className = 'btn-action';
@@ -3480,16 +3489,91 @@ window.UI = (function () {
     }
 
     function talkToPerson(personId) {
-        if (typeof Player === 'undefined') return;
-        const result = Player.goOnDate(personId, 'walk');
-        if (result && result.success) {
-            toast(result.message, 'success');
-            try {
-                const person = Engine.getPerson(personId);
-                if (person) showPersonDetail(person);
-            } catch (e) { /* no-op */ }
-        } else {
-            toast((result && result.message) || 'Cannot talk right now.', 'warning');
+        if (typeof Player === 'undefined' || !Player.getAvailableInteractions) return;
+        var interactions = Player.getAvailableInteractions(personId);
+        if (!interactions || interactions.length === 0) {
+            toast('No interactions available.', 'warning');
+            return;
+        }
+        var person = null;
+        try { person = Engine.getPerson(personId); } catch(e) {}
+        var personName = person ? person.firstName : 'this person';
+
+        var html = '<div style="max-width:420px;padding:6px">';
+        html += '<h3 style="margin:0 0 8px;color:#ffd700">💬 Interact with ' + personName + '</h3>';
+
+        var cooldownCount = 0;
+        for (var i = 0; i < interactions.length; i++) {
+            var inter = interactions[i];
+            if (inter.atCooldownLimit) { cooldownCount = CONFIG.NPC_INTERACTION_DAILY_LIMIT || 3; break; }
+        }
+
+        if (cooldownCount > 0) {
+            html += '<p style="color:#ff9999;margin:4px 0 10px;font-size:0.9em">⏳ You\'ve used all ' + (CONFIG.NPC_INTERACTION_DAILY_LIMIT || 3) + ' interactions with ' + personName + ' today. Come back tomorrow!</p>';
+        }
+
+        for (var j = 0; j < interactions.length; j++) {
+            var si = interactions[j];
+            var bgColor = '#2a2a2a';
+            var borderColor = '#555';
+            var textColor = '#ccc';
+
+            if (si.showRating) {
+                if (si.rating === 'great') { borderColor = '#2ecc40'; bgColor = '#1a3a1a'; }
+                else if (si.rating === 'good') { borderColor = '#88cc44'; bgColor = '#223322'; }
+                else if (si.rating === 'neutral') { borderColor = '#bbbb44'; bgColor = '#2a2a22'; }
+                else if (si.rating === 'bad') { borderColor = '#cc4444'; bgColor = '#3a1a1a'; }
+            }
+
+            var opacity = si.available ? '1' : '0.5';
+            var cursor = si.available ? 'pointer' : 'not-allowed';
+
+            html += '<div class="social-interaction-btn" data-person="' + personId + '" data-interaction="' + si.id + '" ';
+            html += 'style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin:4px 0;';
+            html += 'border:1px solid ' + borderColor + ';border-radius:6px;background:' + bgColor + ';';
+            html += 'cursor:' + cursor + ';opacity:' + opacity + ';transition:background 0.15s">';
+            html += '<span style="font-size:1.4em">' + (si.icon || '💬') + '</span>';
+            html += '<div style="flex:1">';
+            html += '<div style="font-weight:bold;color:#eee">' + si.name;
+            if (si.cost > 0) html += ' <span style="color:#ffd700;font-size:0.85em">(' + si.cost + 'g)</span>';
+            html += '</div>';
+            html += '<div style="font-size:0.82em;color:' + textColor + '">' + si.description + '</div>';
+            if (si.showRating) {
+                var ratingText = si.rating === 'great' ? '🟢 Great match' : si.rating === 'good' ? '🟡 Good' : si.rating === 'neutral' ? '⚪ Neutral' : '🔴 Poor match';
+                html += '<div style="font-size:0.78em;color:' + borderColor + ';margin-top:2px">' + ratingText + '</div>';
+            }
+            html += '</div></div>';
+        }
+
+        html += '</div>';
+
+        openModal('💬 Interact with ' + personName, html, '');
+
+        var btns = document.querySelectorAll('.social-interaction-btn');
+        for (var b = 0; b < btns.length; b++) {
+            btns[b].addEventListener('click', function() {
+                var pid = this.getAttribute('data-person');
+                var iid = this.getAttribute('data-interaction');
+                if (!pid || !iid) return;
+                var result = Player.interactWithNPC(pid, iid);
+                if (result && result.success) {
+                    toast(result.message, 'success');
+                    closeModal();
+                    try {
+                        var p = Engine.getPerson(pid);
+                        if (p) showPersonDetail(p);
+                    } catch(e) {}
+                } else {
+                    toast((result && result.message) || 'Cannot interact right now.', 'warning');
+                }
+            });
+            // Hover effect
+            btns[b].addEventListener('mouseenter', function() {
+                if (this.style.opacity !== '0.5') this.style.filter = 'brightness(1.2)';
+            });
+            btns[b].addEventListener('mouseleave', function() {
+                this.style.filter = '';
+            });
         }
     }
 
@@ -4828,32 +4912,57 @@ window.UI = (function () {
 
         const tradeLog = Player.tradeLog || [];
 
-        // Build filter bar
-        var filterBarHtml = '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">';
-        var filterLabels = {
-            my_actions: '🎯 My Actions',
-            my_business: '💼 Business',
-            my_kingdom: '👑 Kingdom',
-            local_town: '🏘️ Local',
-            foreign_kingdoms: '🌍 Foreign',
-            world_economy: '📈 Economy',
-            military: '⚔️ Military',
-            npc_activity: '👥 NPCs',
-            travel_events: '🚶 Travel',
-            combat: '☠️ Combat',
+        // Category tab groups
+        var tabGroups = {
+            all:      { label: '📋 All',      categories: null },
+            personal: { label: '🧑 Personal', categories: ['my_actions', 'my_business', 'travel_events', 'combat'] },
+            local:    { label: '🏘️ Local',    categories: ['local_town', 'npc_activity'] },
+            world:    { label: '🌍 World',     categories: ['my_kingdom', 'foreign_kingdoms', 'world_economy', 'military'] },
         };
-        var filters = (typeof Player !== 'undefined' && Player.getNotificationFilters) ? Player.getNotificationFilters() : {};
-        for (var fKey in filterLabels) {
-            if (filterLabels.hasOwnProperty(fKey)) {
-                var fLabel = filterLabels[fKey];
-                var isOn = filters[fKey] === true || filters[fKey] === 'smart';
-                var isSmart = filters[fKey] === 'smart';
-                filterBarHtml += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 6px;opacity:' + (isOn ? 1 : 0.4) + ';' + (isSmart ? 'border:1px solid gold;' : '') + '" onclick="UI.toggleNotifFilter(\'' + fKey + '\')">' + fLabel + '</button>';
+        if (!openEventLog._activeTab) openEventLog._activeTab = 'all';
+        var activeTab = openEventLog._activeTab;
+
+        var tabBarHtml = '<div style="display:flex;gap:4px;margin-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:6px;">';
+        for (var tabKey in tabGroups) {
+            if (tabGroups.hasOwnProperty(tabKey)) {
+                var tg = tabGroups[tabKey];
+                var isActive = (tabKey === activeTab);
+                tabBarHtml += '<button class="btn-medieval" style="font-size:0.78rem;padding:4px 10px;' +
+                    (isActive ? 'background:rgba(255,215,0,0.2);border-color:var(--gold);color:var(--gold);' : 'opacity:0.6;') +
+                    '" onclick="UI._setEventTab(\'' + tabKey + '\')">' + tg.label + '</button>';
             }
         }
-        filterBarHtml += '</div>';
+        tabBarHtml += '</div>';
 
-        let html = filterBarHtml;
+        // Build filter bar (only show when on "all" tab)
+        var filterBarHtml = '';
+        if (activeTab === 'all') {
+            filterBarHtml = '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">';
+            var filterLabels = {
+                my_actions: '🎯 My Actions',
+                my_business: '💼 Business',
+                my_kingdom: '👑 Kingdom',
+                local_town: '🏘️ Local',
+                foreign_kingdoms: '🌍 Foreign',
+                world_economy: '📈 Economy',
+                military: '⚔️ Military',
+                npc_activity: '👥 NPCs',
+                travel_events: '🚶 Travel',
+                combat: '☠️ Combat',
+            };
+            var filters = (typeof Player !== 'undefined' && Player.getNotificationFilters) ? Player.getNotificationFilters() : {};
+            for (var fKey in filterLabels) {
+                if (filterLabels.hasOwnProperty(fKey)) {
+                    var fLabel = filterLabels[fKey];
+                    var isOn = filters[fKey] === true || filters[fKey] === 'smart';
+                    var isSmart = filters[fKey] === 'smart';
+                    filterBarHtml += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 6px;opacity:' + (isOn ? 1 : 0.4) + ';' + (isSmart ? 'border:1px solid gold;' : '') + '" onclick="UI.toggleNotifFilter(\'' + fKey + '\')">' + fLabel + '</button>';
+                }
+            }
+            filterBarHtml += '</div>';
+        }
+
+        let html = tabBarHtml + filterBarHtml;
         html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
 
         // Combine engine events and trade log, sort by day descending
@@ -4867,10 +4976,15 @@ window.UI = (function () {
             }))
         ].sort((a, b) => (b.day || 0) - (a.day || 0));
 
-        // Filter events by notification settings
+        // Filter events based on active tab
+        var activeCats = (tabGroups[activeTab] && tabGroups[activeTab].categories) ? tabGroups[activeTab].categories : null;
+
         const filteredEvents = allEvents.filter(function(e) {
             var cat = e.category || inferCategoryFromMessage(e);
-            if (typeof Player !== 'undefined' && Player.shouldShowNotification) {
+            // Tab filter
+            if (activeCats && !activeCats.includes(cat)) return false;
+            // User notification settings filter (only in "all" tab)
+            if (activeTab === 'all' && typeof Player !== 'undefined' && Player.shouldShowNotification) {
                 return Player.shouldShowNotification(cat, e);
             }
             return true;
@@ -4913,6 +5027,11 @@ window.UI = (function () {
 
         html += '</div>';
         openModal('📋 Event Log', html);
+    }
+
+    function _setEventTab(tabKey) {
+        openEventLog._activeTab = tabKey;
+        openEventLog();
     }
 
     function clearEventLog() {
@@ -5625,9 +5744,20 @@ window.UI = (function () {
         var totalDist = 0;
         if (!route) return 0;
         for (var i = 0; i < route.length; i++) {
-            var a = Engine.findTown(route[i].fromTownId);
-            var b = Engine.findTown(route[i].toTownId);
-            if (a && b) totalDist += Math.hypot(a.x - b.x, a.y - b.y);
+            var seg = route[i];
+            var a = Engine.findTown(seg.fromTownId);
+            var b = Engine.findTown(seg.toTownId);
+            if (a && b) {
+                var segDist = Math.hypot(a.x - b.x, a.y - b.y);
+                if (seg.type === 'offroad') {
+                    segDist /= (CONFIG.OFFROAD_SPEED_MULTIPLIER || 0.25);
+                } else if (seg.type === 'sea') {
+                    segDist /= (CONFIG.SEA_SPEED_MULTIPLIER || 1.5);
+                } else {
+                    segDist /= CONFIG.CARAVAN_ROAD_MULTIPLIER[seg.quality || 1] || 1;
+                }
+                totalDist += segDist;
+            }
         }
         return totalDist;
     }
@@ -5640,7 +5770,7 @@ window.UI = (function () {
         try { kingdom = Engine.findKingdom(fromTown.kingdomId); } catch (e) { /* ignore */ }
 
         var baseDist = Math.hypot((toTown.x || 0) - (fromTown.x || 0), (toTown.y || 0) - (fromTown.y || 0));
-        var baseDays = Math.ceil(baseDist / (CONFIG.CARAVAN_BASE_SPEED * 1.5 * 24));
+        var baseDays = Math.ceil(baseDist / (CONFIG.CARAVAN_BASE_SPEED * 1.5));
         if (baseDays < 1) baseDays = 1;
 
         // Kingdom Transport (if law active)
@@ -6012,7 +6142,7 @@ window.UI = (function () {
             if (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('cartographer')) baseSpeed *= 1.05;
 
             // Option: Walk
-            var walkDays = Math.max(1, Math.ceil(baseDist / (baseSpeed * 24)));
+            var walkDays = Math.max(1, Math.ceil(baseDist / baseSpeed));
             options.push({
                 id: 'walk',
                 icon: '🚶',
@@ -6028,7 +6158,7 @@ window.UI = (function () {
             if (hasHorse) {
                 var horseSpeed = baseSpeed * (1 + (CONFIG.HORSE_TRAVEL_SPEED_BONUS || 0.3));
                 if (hasSaddle) horseSpeed *= CONFIG.SADDLE_BONUS_MULTIPLIER || 2;
-                var horseDays = Math.max(1, Math.ceil(baseDist / (horseSpeed * 24)));
+                var horseDays = Math.max(1, Math.ceil(baseDist / horseSpeed));
                 options.push({
                     id: 'ride_horse',
                     icon: '🐴',
@@ -6060,7 +6190,7 @@ window.UI = (function () {
 
                 if (horseLegal && horseAvailable) {
                     var buyHorseSpeed = baseSpeed * (1 + (CONFIG.HORSE_TRAVEL_SPEED_BONUS || 0.3));
-                    var buyHorseDays = Math.max(1, Math.ceil(baseDist / (buyHorseSpeed * 24)));
+                    var buyHorseDays = Math.max(1, Math.ceil(baseDist / buyHorseSpeed));
                     options.push({
                         id: 'buy_horse',
                         icon: '🐴💰',
@@ -6113,7 +6243,7 @@ window.UI = (function () {
             if (hasShip) {
                 var shipSpeed = CONFIG.CARAVAN_BASE_SPEED * 1.5 * (CONFIG.SEA_SPEED_MULTIPLIER || 1.5);
                 if (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('expert_navigator')) shipSpeed *= 1.2;
-                var sailDays = Math.max(1, Math.ceil(seaDist / (shipSpeed * 24)));
+                var sailDays = Math.max(1, Math.ceil(seaDist / shipSpeed));
                 options.push({
                     id: 'sail_own',
                     icon: '⛵',
@@ -6129,7 +6259,7 @@ window.UI = (function () {
             // Option: Pay for sea passage
             var passageCost = CONFIG.SEA_PASSAGE_COST || 50;
             var passageSpeed = CONFIG.CARAVAN_BASE_SPEED * 1.5 * (CONFIG.SEA_SPEED_MULTIPLIER || 1.5) * 0.8;
-            var passageDays = Math.max(1, Math.ceil(seaDist / (passageSpeed * 24)));
+            var passageDays = Math.max(1, Math.ceil(seaDist / passageSpeed));
             options.push({
                 id: 'sea_passage',
                 icon: '🚢',
@@ -7041,6 +7171,127 @@ window.UI = (function () {
         else if (healthPct > 40) healthFill.style.background = '#ccb974';
         else if (healthPct > 20) healthFill.style.background = '#e8a040';
         else healthFill.style.background = '#c44e52';
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  GUILDS PANEL
+    // ═══════════════════════════════════════════════════════════
+    function openGuildsPanel() {
+        if (typeof Player === 'undefined') return;
+        if (Player.traveling) { toast('Cannot visit guilds while traveling.', 'warning'); return; }
+
+        var guilds = CONFIG.GUILDS;
+        if (!guilds) { toast('Guilds not available.', 'warning'); return; }
+
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+
+        var html = '<div style="max-height:550px;overflow-y:auto;">';
+        html += '<p style="color:#ccc;margin:0 0 10px;">Join guilds to craft at any guild-member building in your town. One membership per building category.</p>';
+
+        for (var gId in guilds) {
+            var g = guilds[gId];
+            var membership = Player.guildMemberships[gId];
+            var isMember = membership && membership.expiresDay > day;
+            var monthlyPrice = Player.getGuildPrice(gId, 'monthly');
+            var yearlyPrice = Player.getGuildPrice(gId, 'yearly');
+
+            html += '<div style="border:1px solid ' + (isMember ? '#4a7' : '#555') + ';border-radius:6px;padding:10px;margin-bottom:8px;background:' + (isMember ? 'rgba(68,170,119,0.1)' : 'rgba(40,40,40,0.5)') + ';">';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+            html += '<span style="font-size:1.2em;">' + g.icon + ' <strong>' + escapeHtml(g.name) + '</strong></span>';
+
+            if (isMember) {
+                html += '<span style="color:#4a7;font-size:0.9em;">✅ Member until Day ' + membership.expiresDay + '</span>';
+            } else {
+                html += '<span style="color:#888;font-size:0.9em;">Not a member</span>';
+            }
+            html += '</div>';
+
+            // Category info
+            html += '<div style="color:#aaa;font-size:0.85em;margin:4px 0;">Categories: ' + g.categories.join(', ') + '</div>';
+
+            // Join/Extend buttons
+            html += '<div style="margin-top:6px;">';
+            html += '<button class="btn-medieval" style="margin-right:6px;" onclick="UI.guildJoin(\'' + gId + '\', \'monthly\')">' + (isMember ? '🔄 Extend' : '📜 Join') + ' Monthly (' + monthlyPrice + 'g)</button>';
+            html += '<button class="btn-medieval" onclick="UI.guildJoin(\'' + gId + '\', \'yearly\')">' + (isMember ? '🔄 Extend' : '📜 Join') + ' Yearly (' + yearlyPrice + 'g)</button>';
+            html += '</div>';
+
+            // If member, show craftable items at current town
+            if (isMember) {
+                var items = Player.getGuildCraftableItems();
+                var guildItems = [];
+                for (var i = 0; i < items.length; i++) {
+                    if (items[i].guildName === g.name) guildItems.push(items[i]);
+                }
+                if (guildItems.length > 0) {
+                    html += '<div style="margin-top:8px;border-top:1px solid #444;padding-top:6px;">';
+                    html += '<div style="color:#aaa;font-size:0.85em;margin-bottom:4px;">Available to craft in this town:</div>';
+                    for (var j = 0; j < guildItems.length; j++) {
+                        var item = guildItems[j];
+                        var matsText = '';
+                        var consumeKeys = Object.keys(item.consumes || {});
+                        if (consumeKeys.length > 0) {
+                            var matParts = [];
+                            for (var k = 0; k < consumeKeys.length; k++) {
+                                matParts.push(item.consumes[consumeKeys[k]] + ' ' + consumeKeys[k]);
+                            }
+                            matsText = matParts.join(', ');
+                        } else {
+                            matsText = 'none';
+                        }
+                        html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid #333;">';
+                        html += '<span><strong>' + escapeHtml(item.productName) + '</strong> <span style="color:#888;font-size:0.85em;">at ' + escapeHtml(item.buildingName) + ' (needs: ' + matsText + ')</span></span>';
+                        html += '<button class="btn-medieval" style="font-size:0.85em;" onclick="UI.guildCraftPrompt(\'' + escapeHtml(item.buildingId) + '\', \'' + escapeHtml(item.productId) + '\', \'' + escapeHtml(item.productName) + '\')">🔨 Craft</button>';
+                        html += '</div>';
+                    }
+                    html += '</div>';
+                } else {
+                    html += '<div style="margin-top:6px;color:#777;font-size:0.85em;">No guild buildings of this type in your current town.</div>';
+                }
+            }
+
+            html += '</div>';
+        }
+
+        html += '</div>';
+        openModal('🏛️ Guilds', html);
+    }
+
+    function guildJoin(guildId, type) {
+        if (typeof Player === 'undefined') return;
+        var result = Player.joinGuild(guildId, type);
+        if (result.success) {
+            toast(result.message, 'success');
+        } else {
+            toast(result.message, 'warning');
+        }
+        openGuildsPanel(); // refresh
+    }
+
+    function guildCraftPrompt(buildingId, productId, productName) {
+        var html = '<div style="text-align:center;">';
+        html += '<p>How many <strong>' + productName + '</strong> to craft?</p>';
+        html += '<input type="number" id="guildCraftQty" value="1" min="1" max="100" style="width:80px;text-align:center;padding:4px;background:#222;color:#eee;border:1px solid #555;border-radius:4px;">';
+        html += '<div style="margin-top:10px;">';
+        html += '<button class="btn-medieval" onclick="UI.guildCraftExecute(\'' + escapeHtml(buildingId) + '\', \'' + escapeHtml(productId) + '\')">🔨 Craft</button>';
+        html += ' <button class="btn-medieval" onclick="UI.openGuildsPanel()">Cancel</button>';
+        html += '</div></div>';
+        openModal('🔨 Craft ' + productName, html);
+    }
+
+    function guildCraftExecute(buildingId, productId) {
+        if (typeof Player === 'undefined') return;
+        var qtyEl = document.getElementById('guildCraftQty');
+        var qty = qtyEl ? parseInt(qtyEl.value, 10) : 1;
+        if (isNaN(qty) || qty < 1) qty = 1;
+
+        var result = Player.craftAtGuildBuilding(buildingId, productId, qty);
+        if (result.success) {
+            toast(result.message, 'success');
+        } else {
+            toast(result.message, 'warning');
+        }
+        openGuildsPanel(); // refresh
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -12804,7 +13055,7 @@ window.UI = (function () {
         if (Player.hasSkill && Player.hasSkill('cartographer')) offRoadMult *= 1.5;
         var effectiveDist = dist / offRoadMult;
         if (Player.horses && Player.horses.length > 0) effectiveDist *= 0.7;
-        var estDays = Math.max(1, Math.ceil(effectiveDist / (30 * 1.5 * 24)));
+        var estDays = Math.max(1, Math.ceil(effectiveDist / (30 * 1.5)));
 
         var nearbyTowns = [];
         var towns = Engine.getTowns();
@@ -12899,8 +13150,8 @@ window.UI = (function () {
         var eta = document.getElementById('travelETA');
         if (eta) {
             var remaining = 1 - (Player.travelProgress || 0);
-            var speed = 30 * 1.5;
-            var daysLeft = Math.max(1, Math.ceil(remaining * (Player.travelTotalDist || 100) / (speed * 24)));
+            var speed = CONFIG.CARAVAN_BASE_SPEED * 1.5;
+            var daysLeft = Math.max(1, Math.ceil(remaining * (Player.travelTotalDist || 100) / speed));
             eta.textContent = '~' + daysLeft + ' day' + (daysLeft !== 1 ? 's' : '') + ' left';
         }
 
@@ -13506,6 +13757,7 @@ window.UI = (function () {
         showEventDetail,
         clearEventLog,
         toggleNotifFilter,
+        _setEventTab,
         openSettings,
         setNotifFilter,
         openMapView,
@@ -13731,6 +13983,11 @@ window.UI = (function () {
         deliverSupplyDealUI,
         executeDeliverDeal,
         cancelSupplyDealUI,
+        // Guilds
+        openGuildsPanel,
+        guildJoin,
+        guildCraftPrompt,
+        guildCraftExecute,
         // Housing & Rest
         openHousingDialog,
         buyHouseUI,

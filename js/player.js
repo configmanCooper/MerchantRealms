@@ -56,6 +56,8 @@
         tradingStartDay: 0,     // day player first traded
         // Relationships
         relationships: {},      // personId → { level: 0-100, type: string }
+        // Guild memberships
+        guildMemberships: {},   // guildId → { expiresDay: number, type: 'monthly'|'yearly' }
         // Smuggling
         smugglingSkill: 0,
         jailedUntilDay: 0,      // day when jail sentence ends
@@ -68,6 +70,7 @@
         spouseRelHighDays: 0,   // days spouse relationship stayed >= 90
         heirTraits: [],         // permanent heir traits from regency
         dateProgress: {},       // personId → { traitProgress: 0, quirkProgress: 0 }
+        _npcInteractions: {},   // personId → { day: N, count: N } — daily interaction cooldowns
         investigatorCaught: {}, // personId → count (0, 1, or 2 = permanent rejection)
         // Spouse effect modifiers (recalculated daily)
         spouseProdMod: 1.0,
@@ -449,6 +452,7 @@
         player.spouseRelHighDays = 0;
         player.heirTraits = [];
         player.dateProgress = {};
+        player._npcInteractions = {};
         player.investigatorCaught = {};
         player.spouseProdMod = 1.0;
         player.spouseCostMod = 1.0;
@@ -518,6 +522,7 @@
         player.nursePostServiceJobs = [];
         // Guild membership
         player.guilds = {};  // { guildId: { joinedDay, rank, duesPaidUntilDay } }
+        player.guildMemberships = {};  // guildId → { expiresDay, type }
         player.horsePermit = {};  // { kingdomId: { purchasedDay, expiresDay } }
         // Injuries & illnesses
         player.injuries = [];
@@ -9516,6 +9521,7 @@
             spouseRelHighDays: player.spouseRelHighDays || 0,
             heirTraits: JSON.parse(JSON.stringify(player.heirTraits || [])),
             dateProgress: JSON.parse(JSON.stringify(player.dateProgress || {})),
+            _npcInteractions: JSON.parse(JSON.stringify(player._npcInteractions || {})),
             investigatorCaught: JSON.parse(JSON.stringify(player.investigatorCaught || {})),
             // Crown & Royal Advisor
             isRoyalAdvisorFromKing: player.isRoyalAdvisorFromKing || false,
@@ -9538,6 +9544,7 @@
             nursePostServiceJobs: player.nursePostServiceJobs ? JSON.parse(JSON.stringify(player.nursePostServiceJobs)) : [],
             // Guilds & Permits
             guilds: JSON.parse(JSON.stringify(player.guilds || {})),
+            guildMemberships: JSON.parse(JSON.stringify(player.guildMemberships || {})),
             horsePermit: JSON.parse(JSON.stringify(player.horsePermit || {})),
             // Injuries & Illnesses
             injuries: JSON.parse(JSON.stringify(player.injuries || [])),
@@ -9758,6 +9765,7 @@
         player.spouseRelHighDays = data.spouseRelHighDays || 0;
         player.heirTraits = data.heirTraits || [];
         player.dateProgress = data.dateProgress || {};
+        player._npcInteractions = data._npcInteractions || {};
         player.investigatorCaught = data.investigatorCaught || {};
         // Crown & Royal Advisor
         player.isRoyalAdvisorFromKing = data.isRoyalAdvisorFromKing || false;
@@ -9783,6 +9791,7 @@
         player.nursePostServiceJobs = data.nursePostServiceJobs || [];
         // Guilds & Permits
         player.guilds = data.guilds || {};
+        player.guildMemberships = data.guildMemberships || {};
         player.horsePermit = data.horsePermit || {};
         // Injuries & Illnesses
         player.injuries = data.injuries || [];
@@ -10709,6 +10718,9 @@
 
         // Tick relationship system
         tickRelationships();
+
+        // Tick guild fee distribution
+        tickGuildFees();
 
         // Check for exile
         checkExile();
@@ -11839,6 +11851,449 @@
         grantXP(XP_REWARDS.GIFT, 'gift');
         player.achievementStats.giftsGiven = (player.achievementStats.giftsGiven || 0) + 1;
         return { success: true, message: `Gave ${qty} ${res.name} to ${person.firstName}. Relationship +${gain}.` };
+    }
+
+    // ── Social Interaction System ──────────────────────────────
+    // Personality-weighted interactions that replace spam-clicking "Talk"
+
+    function getInteractionCooldown(personId) {
+        if (!player._npcInteractions) player._npcInteractions = {};
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+        var entry = player._npcInteractions[personId];
+        if (!entry || entry.day !== day) return 0;
+        return entry.count || 0;
+    }
+
+    function calculateInteractionGain(interaction, person) {
+        var gain = interaction.baseGain;
+        var personality = person.personality || {};
+        var quirks = person.quirks || [];
+
+        // Apply personality weights
+        for (var trait in interaction.personalityWeights) {
+            if (personality[trait] !== undefined) {
+                var traitVal = personality[trait]; // 0-100
+                var weight = interaction.personalityWeights[trait];
+                // Shift trait to -50..+50 range so 50 = neutral
+                gain += (traitVal - 50) * weight;
+            }
+        }
+
+        // Apply quirk bonuses (+1.5 each)
+        if (interaction.quirkBonuses) {
+            for (var qi = 0; qi < interaction.quirkBonuses.length; qi++) {
+                if (quirks.includes(interaction.quirkBonuses[qi])) gain += 1.5;
+            }
+        }
+
+        // Apply quirk penalties (-2 each)
+        if (interaction.quirkPenalties) {
+            for (var qp = 0; qp < interaction.quirkPenalties.length; qp++) {
+                if (quirks.includes(interaction.quirkPenalties[qp])) gain -= 2;
+            }
+        }
+
+        // Stubborn quirk general penalty
+        if (quirks.includes('stubborn')) gain *= 0.75;
+
+        // Clamp to [-5, +8]
+        gain = Math.max(-5, Math.min(8, Math.round(gain * 10) / 10));
+        return gain;
+    }
+
+    function getAvailableInteractions(personId) {
+        var person = Engine.findPerson(personId);
+        if (!person) return [];
+        var cooldownCount = getInteractionCooldown(personId);
+        var atLimit = cooldownCount >= (CONFIG.NPC_INTERACTION_DAILY_LIMIT || 3);
+        var hasSocialInsight = hasSkill('social_insight') || hasSkill('charismatic');
+
+        var interactions = [];
+        var socialInteractions = (typeof SOCIAL_INTERACTIONS !== 'undefined') ? SOCIAL_INTERACTIONS : [];
+
+        for (var i = 0; i < socialInteractions.length; i++) {
+            var si = socialInteractions[i];
+            var gain = calculateInteractionGain(si, person);
+            var canAfford = player.gold >= (si.cost || 0);
+
+            var rating = 'neutral';
+            if (gain >= 3) rating = 'great';
+            else if (gain >= 1) rating = 'good';
+            else if (gain >= 0) rating = 'neutral';
+            else rating = 'bad';
+
+            interactions.push({
+                id: si.id,
+                name: si.name,
+                icon: si.icon,
+                description: si.description,
+                cost: si.cost || 0,
+                gain: gain,
+                rating: rating,
+                showRating: hasSocialInsight,
+                available: !atLimit && canAfford,
+                atCooldownLimit: atLimit,
+                dateProgress: si.dateProgress || 0,
+                timeHours: si.timeHours || 1
+            });
+        }
+        return interactions;
+    }
+
+    function interactWithNPC(personId, interactionId) {
+        if (!player.alive) return { success: false, message: 'You are not alive.' };
+        var person = Engine.findPerson(personId);
+        if (!person) return { success: false, message: 'Person not found.' };
+        if (person.townId !== player.townId) return { success: false, message: 'Not in same town.' };
+        if (player.traveling) return { success: false, message: 'Cannot interact while traveling.' };
+
+        // Investigator rejection
+        if ((player.investigatorCaught[personId] || 0) >= 2) {
+            return { success: false, message: 'This person will never speak to you again.' };
+        }
+
+        // Cooldown check
+        var cooldownCount = getInteractionCooldown(personId);
+        var limit = CONFIG.NPC_INTERACTION_DAILY_LIMIT || 3;
+        if (cooldownCount >= limit) {
+            return { success: false, message: person.firstName + ' says: "We\'ve talked enough for today. Come back tomorrow!"' };
+        }
+
+        // Find interaction config
+        var socialInteractions = (typeof SOCIAL_INTERACTIONS !== 'undefined') ? SOCIAL_INTERACTIONS : [];
+        var interaction = null;
+        for (var i = 0; i < socialInteractions.length; i++) {
+            if (socialInteractions[i].id === interactionId) { interaction = socialInteractions[i]; break; }
+        }
+        if (!interaction) return { success: false, message: 'Unknown interaction.' };
+
+        // Cost check
+        if (player.gold < (interaction.cost || 0)) {
+            return { success: false, message: 'Need ' + interaction.cost + 'g (have ' + player.gold + 'g).' };
+        }
+
+        // Advance time
+        if (typeof Game !== 'undefined' && Game.advanceTicks) {
+            Game.advanceTicks(Math.max(1, Math.ceil(interaction.timeHours * 2.5)));
+        }
+
+        // Pay cost
+        if (interaction.cost > 0) {
+            player.gold -= interaction.cost;
+            player.stats.totalGoldSpent += interaction.cost;
+        }
+
+        // Calculate and apply relationship gain
+        var gain = calculateInteractionGain(interaction, person);
+        var rel = getRelationship(personId);
+        modifyRelationship(personId, gain, rel.type === 'spouse' ? 'spouse' : undefined);
+
+        // Progress trait/quirk reveal
+        var revealMsg = '';
+        if (interaction.dateProgress > 0) {
+            if (!player.dateProgress[personId]) {
+                player.dateProgress[personId] = { traitProgress: 0, quirkProgress: 0 };
+            }
+            var dp = player.dateProgress[personId];
+            var progress = interaction.dateProgress;
+            if (person.quirks && person.quirks.includes('secretive')) progress = Math.floor(progress / 2);
+
+            var revealed = player.revealedTraits[personId] || { traits: {}, quirks: [] };
+            var allTraitNames = person.personality ? Object.keys(person.personality) : [];
+            var unrevealedTraits = allTraitNames.filter(function(t) { return !(t in revealed.traits); });
+            var personQuirks = person.quirks || [];
+            var unrevealedQuirks = personQuirks.filter(function(q) { return !revealed.quirks.includes(q); });
+
+            if (unrevealedTraits.length > 0 || unrevealedQuirks.length > 0) {
+                var progressQuirk = unrevealedQuirks.length > 0 && (unrevealedTraits.length === 0 || dp.traitProgress > dp.quirkProgress);
+                if (progressQuirk) dp.quirkProgress += progress;
+                else dp.traitProgress += progress;
+
+                if (dp.traitProgress >= 100 && unrevealedTraits.length > 0) {
+                    dp.traitProgress -= 100;
+                    var reveal = revealTrait(personId, 'vague');
+                    if (reveal && reveal.message) revealMsg = ' ' + reveal.message;
+                } else if (dp.quirkProgress >= 100 && unrevealedQuirks.length > 0) {
+                    dp.quirkProgress -= 100;
+                    var reveal2 = revealTrait(personId, 'vague');
+                    if (reveal2 && reveal2.message) revealMsg = ' ' + reveal2.message;
+                }
+            }
+        }
+
+        // Track cooldown
+        if (!player._npcInteractions) player._npcInteractions = {};
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+        if (!player._npcInteractions[personId] || player._npcInteractions[personId].day !== day) {
+            player._npcInteractions[personId] = { day: day, count: 0 };
+        }
+        player._npcInteractions[personId].count++;
+
+        var remainingToday = limit - player._npcInteractions[personId].count;
+
+        // Build message
+        var gainSign = gain >= 0 ? '+' : '';
+        var gainColor = gain >= 2 ? '💚' : gain >= 0 ? '💛' : '❤️‍🩹';
+        var msg = interaction.name + ': ' + gainColor + ' Relationship ' + gainSign + gain.toFixed(1) + '.';
+        if (interaction.cost > 0) msg += ' Cost: ' + interaction.cost + 'g.';
+        if (remainingToday > 0) msg += ' (' + remainingToday + ' interaction' + (remainingToday !== 1 ? 's' : '') + ' left today)';
+        else msg += ' (No more interactions today)';
+        msg += revealMsg;
+
+        grantXP(2, 'social_interaction');
+        return { success: true, message: msg, gain: gain };
+    }
+
+    // ── Guild Membership System ──────────────────────────────
+
+    function getGuildForCategory(category) {
+        if (!CONFIG.GUILDS) return null;
+        for (var gId in CONFIG.GUILDS) {
+            if (CONFIG.GUILDS[gId].categories.indexOf(category) >= 0) return CONFIG.GUILDS[gId];
+        }
+        return null;
+    }
+
+    function isGuildMember(guildId) {
+        var membership = player.guildMemberships[guildId];
+        if (!membership) return false;
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+        return membership.expiresDay > day;
+    }
+
+    function getGuildPrice(guildId, type) {
+        var base = type === 'yearly' ? (CONFIG.GUILD_BASE_YEARLY || 200) : (CONFIG.GUILD_BASE_MONTHLY || 25);
+        var guild = CONFIG.GUILDS[guildId];
+        if (!guild) return base;
+        try {
+            var world = Engine.getWorld();
+            var towns = world.towns || [];
+            var totalRevenue = 0;
+            var count = 0;
+            for (var ti = 0; ti < towns.length; ti++) {
+                var buildings = towns[ti].buildings || [];
+                for (var bi = 0; bi < buildings.length; bi++) {
+                    var bType = Engine.findBuildingType(buildings[bi].type);
+                    if (bType && guild.categories.indexOf(bType.category) >= 0) {
+                        totalRevenue += (buildings[bi].revenue || 0);
+                        count++;
+                    }
+                }
+            }
+            if (count > 0) {
+                var avgRevenue = totalRevenue / count;
+                var multiplier = Math.max(0.5, Math.min(3, 1 + avgRevenue / 100));
+                base = Math.round(base * multiplier);
+            }
+        } catch(e) {}
+        return base;
+    }
+
+    function joinGuild(guildId, type) {
+        if (!CONFIG.GUILDS || !CONFIG.GUILDS[guildId]) return { success: false, message: 'Guild not found.' };
+        var guild = CONFIG.GUILDS[guildId];
+        var price = getGuildPrice(guildId, type);
+        if (player.gold < price) return { success: false, message: 'Not enough gold. Need ' + price + 'g.' };
+
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+        var duration = type === 'yearly' ? 365 : 30;
+
+        // If already a member, extend from expiration
+        var currentExpiry = (player.guildMemberships[guildId] && player.guildMemberships[guildId].expiresDay > day)
+            ? player.guildMemberships[guildId].expiresDay : day;
+
+        player.gold -= price;
+        player.stats.totalGoldSpent += price;
+        player.guildMemberships[guildId] = {
+            expiresDay: currentExpiry + duration,
+            type: type
+        };
+
+        try { Engine.logEvent(guild.icon + ' Joined ' + guild.name + ' (' + type + ', ' + price + 'g)', 'my_actions'); } catch(e) {}
+
+        return { success: true, message: 'Joined ' + guild.name + '! Membership until Day ' + (currentExpiry + duration) + '.' };
+    }
+
+    function getGuildCraftableItems(townId) {
+        var results = [];
+        try {
+            var town = Engine.findTown(townId || player.townId);
+            if (!town) return results;
+            var buildings = town.buildings || [];
+            for (var i = 0; i < buildings.length; i++) {
+                var bldg = buildings[i];
+                var bType = Engine.findBuildingType(bldg.type);
+                if (!bType) continue;
+                var guild = getGuildForCategory(bType.category);
+                if (!guild) continue;
+                if (!isGuildMember(guild.id)) continue;
+
+                if (bType.availableProducts) {
+                    for (var pKey in bType.availableProducts) {
+                        var prod = bType.availableProducts[pKey];
+                        var prodRes = findResource(prod.produces);
+                        results.push({
+                            buildingName: bType.name,
+                            buildingId: bldg.type,
+                            guildName: guild.name,
+                            guildIcon: guild.icon,
+                            productId: prod.produces,
+                            productName: prodRes ? prodRes.name : prod.produces,
+                            consumes: prod.consumes,
+                            rate: prod.rate || 1
+                        });
+                    }
+                } else if (bType.produces) {
+                    var prodRes2 = findResource(bType.produces);
+                    results.push({
+                        buildingName: bType.name,
+                        buildingId: bldg.type,
+                        guildName: guild.name,
+                        guildIcon: guild.icon,
+                        productId: bType.produces,
+                        productName: prodRes2 ? prodRes2.name : bType.produces,
+                        consumes: bType.consumes || {},
+                        rate: bType.rate || 1
+                    });
+                }
+            }
+        } catch(e) {}
+        return results;
+    }
+
+    function craftAtGuildBuilding(buildingType, productId, qty) {
+        qty = Number(qty) || 1;
+        if (!player.alive) return { success: false, message: 'You are not alive.' };
+        if (player.traveling) return { success: false, message: 'Cannot craft while traveling.' };
+
+        var bType = Engine.findBuildingType(buildingType);
+        if (!bType) return { success: false, message: 'Building type not found.' };
+
+        var guild = getGuildForCategory(bType.category);
+        if (!guild) return { success: false, message: 'No guild covers this building type.' };
+        if (!isGuildMember(guild.id)) return { success: false, message: 'You are not a member of ' + guild.name + '.' };
+
+        var town = null;
+        try { town = Engine.findTown(player.townId); } catch(e) {}
+        if (!town) return { success: false, message: 'You are not in a town.' };
+        var found = false;
+        for (var bi = 0; bi < (town.buildings || []).length; bi++) {
+            if (town.buildings[bi].type === buildingType) { found = true; break; }
+        }
+        if (!found) return { success: false, message: 'No ' + bType.name + ' in this town.' };
+
+        // Find recipe
+        var recipe = null;
+        if (bType.availableProducts && bType.availableProducts[productId]) {
+            recipe = bType.availableProducts[productId];
+        } else if (bType.produces === productId) {
+            recipe = { produces: bType.produces, consumes: bType.consumes || {}, rate: bType.rate || 1 };
+        }
+        if (!recipe) return { success: false, message: 'Cannot craft ' + productId + ' at ' + bType.name + '.' };
+
+        // Entry fee
+        var entryFee = CONFIG.GUILD_BUILDING_ENTRY_FEE_MIN + Math.floor(Math.random() * (CONFIG.GUILD_BUILDING_ENTRY_FEE_MAX - CONFIG.GUILD_BUILDING_ENTRY_FEE_MIN + 1));
+        if (player.gold < entryFee) return { success: false, message: 'Cannot afford entry fee of ' + entryFee + 'g.' };
+
+        // Check materials (inventory + town storage)
+        var consumes = recipe.consumes || {};
+        for (var resId in consumes) {
+            var onPerson = player.inventory[resId] || 0;
+            var inStorage = (player.townStorage[player.townId] && player.townStorage[player.townId][resId]) ? player.townStorage[player.townId][resId] : 0;
+            var totalAvail = onPerson + inStorage;
+            var needed = consumes[resId] * qty;
+            if (totalAvail < needed) {
+                var resName = findResource(resId);
+                return { success: false, message: 'Need ' + needed + ' ' + (resName ? resName.name : resId) + ' (have ' + totalAvail + ').' };
+            }
+        }
+
+        // Check output storage
+        var outputRes = findResource(recipe.produces);
+        var outputWeight = (outputRes ? outputRes.weight : 1) * qty;
+        var currentWeight = getCarriedWeight();
+        var maxWeight = getCarryCapacity();
+        var storageCapacity = getTownStorageCapacity(player.townId);
+        var storageUsed = getTownStorageUsed(player.townId);
+        var warehouseSpace = storageCapacity - storageUsed;
+
+        if (currentWeight + outputWeight > maxWeight && warehouseSpace < outputWeight) {
+            return { success: false, message: 'Not enough storage for crafted goods. Free up inventory or warehouse space.' };
+        }
+
+        // All checks passed — deduct entry fee
+        player.gold -= entryFee;
+        player.stats.totalGoldSpent += entryFee;
+
+        // Deduct materials (inventory first, then town storage)
+        for (var matId in consumes) {
+            var needed2 = consumes[matId] * qty;
+            var fromInv = Math.min(needed2, player.inventory[matId] || 0);
+            if (fromInv > 0) {
+                player.inventory[matId] -= fromInv;
+                if (player.inventory[matId] <= 0) delete player.inventory[matId];
+                needed2 -= fromInv;
+            }
+            if (needed2 > 0 && player.townStorage[player.townId]) {
+                player.townStorage[player.townId][matId] = (player.townStorage[player.townId][matId] || 0) - needed2;
+                if (player.townStorage[player.townId][matId] <= 0) delete player.townStorage[player.townId][matId];
+            }
+        }
+
+        // Add crafted goods
+        var addedToInventory = false;
+        if (currentWeight + outputWeight <= maxWeight) {
+            player.inventory[recipe.produces] = (player.inventory[recipe.produces] || 0) + qty;
+            addedToInventory = true;
+        } else {
+            if (!player.townStorage[player.townId]) player.townStorage[player.townId] = {};
+            player.townStorage[player.townId][recipe.produces] = (player.townStorage[player.townId][recipe.produces] || 0) + qty;
+        }
+
+        // Advance time
+        var timeHours = Math.max(1, Math.ceil(qty / (recipe.rate || 1)));
+        if (typeof Game !== 'undefined' && Game.advanceTicks) {
+            Game.advanceTicks(Math.max(1, Math.ceil(timeHours * 2.5)));
+        }
+
+        var productName = outputRes ? outputRes.name : recipe.produces;
+        var storageMsg = addedToInventory ? 'Added to inventory.' : 'Stored in warehouse.';
+        var msg = '🔨 Crafted ' + qty + ' ' + productName + ' at ' + bType.name + '. Entry fee: ' + entryFee + 'g. ' + storageMsg;
+
+        try { Engine.logEvent(msg, 'my_actions'); } catch(e) {}
+        grantXP(3 * qty, 'guild_crafting');
+
+        return { success: true, message: msg };
+    }
+
+    function tickGuildFees() {
+        // Distribute guild membership fees to building owners once per 30 days
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+        if (day <= 0 || day % 30 !== 0) return;
+
+        try {
+            var world = Engine.getWorld();
+            if (!world) return;
+            var towns = world.towns || [];
+            for (var ti = 0; ti < towns.length; ti++) {
+                var buildings = towns[ti].buildings || [];
+                for (var bi = 0; bi < buildings.length; bi++) {
+                    var bldg = buildings[bi];
+                    if (!bldg.ownerId) continue;
+                    var bType = Engine.findBuildingType(bldg.type);
+                    if (!bType) continue;
+                    var guild = getGuildForCategory(bType.category);
+                    if (!guild) continue;
+                    // Add a small share of guild fees to building revenue
+                    bldg.revenue = (bldg.revenue || 0) + 2;
+                }
+            }
+        } catch(e) {}
     }
 
     function tickRelationships() {
@@ -25851,9 +26306,20 @@
         modifyRelationship,
         getRelationshipLabel,
         giveGift,
+        interactWithNPC,
+        getAvailableInteractions,
         getCourtshipCandidates,
         getRelationshipPerks,
         useRelationshipPerk,
+
+        // Guild Membership
+        isGuildMember,
+        joinGuild,
+        getGuildPrice,
+        getGuildCraftableItems,
+        craftAtGuildBuilding,
+        getGuildForCategory,
+        get guildMemberships() { return player.guildMemberships || {}; },
 
         // Spouse personality / dating / regency
         goOnDate,
