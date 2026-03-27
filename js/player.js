@@ -86,7 +86,7 @@
         notificationFilters: {
             my_actions: true,
             my_business: true,
-            my_kingdom: true,
+            my_kingdom: false,
             local_town: true,
             foreign_kingdoms: false,
             world_economy: false,
@@ -3762,6 +3762,10 @@
                 Engine.logEvent('\u{1F6E1}\uFE0F ' + player.escort.personName + ' completes the escort. Safe travels!');
                 player.escort = null;
             }
+
+            // Clear street trading cache so new town gets fresh offers
+            player._streetTradesCache = null;
+            player._streetTradesDay = 0;
 
             const town = Engine.findTown(player.townId);
             Engine.logEvent(`You have arrived at ${town ? town.name : 'your destination'}.`);
@@ -13176,6 +13180,11 @@
     function shouldShowNotification(category, event) {
         // Tier 1: Critical — always show
         if (category === 'critical') return true;
+
+        // Suppress military/war events during the tutorial
+        if (category === 'military' && typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive()) {
+            return false;
+        }
 
         var filters = player.notificationFilters;
         if (!filters) return true; // no filters = show all

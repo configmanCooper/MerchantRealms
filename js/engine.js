@@ -148,7 +148,7 @@
     function defaultWorld() {
         return {
             seed: 42,
-            day: 0,
+            day: 1,
             hour: 0,            // 0-23 hour of day cycle
             terrain: null,      // Uint8Array (grid cols × rows)
             gridCols: 0,
@@ -18603,7 +18603,7 @@
             if (!data) return;
             world = defaultWorld();
             world.seed = data.seed || 42;
-            world.day = data.day || 0;
+            world.day = data.day || 1;
             world.hour = data.hour || 0;
             world.rng = createRNG(world.seed);
             // Advance RNG to current state (approximate — re-seed is good enough)

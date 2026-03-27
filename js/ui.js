@@ -638,11 +638,17 @@ window.UI = (function () {
                 updateFatigueBar();
                 updateHealthBar();
 
-                // Rest button visibility — only show if fatigued
+                // Rest button — always visible; grey out when traveling
                 const btnRest = document.getElementById('btnRest');
                 if (btnRest) {
-                    const playerFatigue = Player.fatigue || 0;
-                    btnRest.style.display = playerFatigue > 30 ? '' : 'none';
+                    btnRest.style.display = '';
+                    if (Player.traveling) {
+                        btnRest.style.opacity = '0.4';
+                        btnRest.title = 'Cannot rest while traveling';
+                    } else {
+                        btnRest.style.opacity = '';
+                        btnRest.title = 'Rest & Recovery';
+                    }
                 }
 
                 // Schemes button visibility (with one-time unlock toast)
@@ -7112,8 +7118,10 @@ window.UI = (function () {
                         var matParts = [];
                         for (var mid in costInfo.breakdown) {
                             var mb = costInfo.breakdown[mid];
-                            var matColor = mb.needToBuy > mb.marketHas ? '#c44e52' : (mb.needToBuy > 0 ? '#ff9f43' : '#5ac85a');
-                            matParts.push('<span style="color:' + matColor + ';">' + mid + ': ' + mb.needed + (mb.playerHas > 0 ? ' (' + mb.playerHas + ' owned)' : '') + '</span>');
+                            var hasEnough = mb.playerHas >= mb.needed;
+                            var matColor = hasEnough ? '#55a868' : '#c44e52';
+                            var indicator = hasEnough ? ' ✓' : ' ✗ — need ' + (mb.needed - mb.playerHas) + ' more';
+                            matParts.push('<span style="color:' + matColor + ';font-weight:bold;">' + mid + ': ' + mb.needed + ' required (<strong>' + mb.playerHas + ' owned</strong>' + indicator + ')</span>');
                         }
                         html += '📦 ' + matParts.join(', ') + '</div>';
                     }
@@ -9843,8 +9851,17 @@ window.UI = (function () {
                 html += '<div class="street-trade-info">';
                 html += '<span class="street-npc-name">' + t.npcName + '</span> wants ';
                 html += '<strong>' + t.qty + ' ' + t.resourceIcon + ' ' + t.resourceName + '</strong>';
+                const premiumPct = t.marketPrice > 0 ? Math.round(((t.pricePerUnit - t.marketPrice) / t.marketPrice) * 100) : 0;
+                const isBelowMarket = t.pricePerUnit < t.marketPrice;
+                const premiumColor = isBelowMarket ? '#c44e52' : '#55a868';
+                const premiumSign = premiumPct >= 0 ? '+' : '';
                 html += ' — will pay <span class="street-price">' + t.pricePerUnit + 'g each</span>';
-                html += ' <span class="street-market-price">(market: ' + Math.round(t.marketPrice) + 'g)</span>';
+                html += ' <span style="color:' + premiumColor + ';font-weight:bold;font-size:0.85em;">';
+                html += '(' + premiumSign + premiumPct + '% ' + (isBelowMarket ? 'below' : 'above') + ' market)';
+                html += '</span>';
+                if (isBelowMarket) {
+                    html += ' <span style="color:#c44e52;font-weight:bold;">⚠️ Below market price!</span>';
+                }
                 html += '</div>';
                 html += '<div class="street-trade-actions">';
                 html += '<span class="street-have">You have: ' + held + '</span>';

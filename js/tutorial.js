@@ -258,9 +258,23 @@ window.Tutorial = (function () {
                     skipAfter: 4000
                 },
                 {
-                    title: 'Town Info & People List',
-                    text: '\uD83C\uDFD8\uFE0F <strong>Click any town</strong> on the map to see its details \u2014 population, market prices, buildings, and a <strong>\uD83D\uDC65 View Townspeople</strong> button that lists every NPC living there. <strong>Tip:</strong> Hold <strong>Shift + Click</strong> to select an individual NPC instead of the town they\u2019re standing in! You can <strong>right-click anywhere</strong> on the map to travel off-road to that point for shortcuts. The <strong>Ledger</strong> (left panel) shows your gold, location, and status.',
-                    highlight: '#leftPanel'
+                    title: 'Town Info & People',
+                    text: '🏘️ <strong>Click any town</strong> on the map to see its details — population, market prices, buildings, and a <strong>👥 View Townspeople</strong> button that lists every NPC living there. <strong>Tip:</strong> Hold <strong>Shift + Click</strong> to select an individual NPC instead of the town they\'re standing in! Try <strong>clicking a town</strong> now!',
+                    highlight: '#gameCanvas',
+                    waitFor: function () {
+                        var rp = document.getElementById('rightPanel');
+                        if (rp && !rp.classList.contains('hidden')) {
+                            var rpTitle = document.getElementById('rightPanelTitle');
+                            if (rpTitle && rpTitle.textContent.indexOf('🏘') >= 0) return true;
+                            if (rpTitle && rpTitle.textContent.indexOf('Town') >= 0) return true;
+                        }
+                        return false;
+                    },
+                    skipAfter: 6000
+                },
+                {
+                    title: 'Navigation & Ledger',
+                    text: '🧭 You can <strong>right-click anywhere</strong> on the map to travel off-road to that point — useful for shortcuts! The <strong>Ledger</strong> (left panel) shows your gold, location, inventory, and status at a glance. Keep an eye on it as you play.'
                 },
                 {
                     title: 'Saving Your Game',
@@ -319,7 +333,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Trading Tips',
-                    text: '\uD83D\uDCA1 <strong>Key concepts</strong>:<br>\u2022 \uD83D\uDCC8 <strong>Supply/demand</strong> \u2014 prices swing \u00B115% based on local stock<br>\u2022 \uD83D\uDCC5 <strong>Seasons</strong> affect crop prices \u2014 buy grain after harvest, sell in winter<br>\u2022 \uD83C\uDFDB\uFE0F <strong>Tariffs</strong> \u2014 foreign traders pay extra in some kingdoms<br>\u2022 Higher <strong>rank</strong> = tax discount (up to 30%!)'
+                    text: '\uD83D\uDCA1 <strong>Key concepts</strong>:<br>\u2022 \uD83D\uDCC8 <strong>Supply/demand</strong> \u2014 prices swing \u00B115% based on local stock<br>\u2022 \uD83D\uDCC5 <strong>Seasons</strong> affect crop prices \u2014 buy grain after harvest, sell in winter<br>\u2022 \uD83C\uDFDB\uFE0F <strong>Tariffs</strong> \u2014 foreign traders pay extra in some kingdoms<br>\u2022 Higher <strong>rank</strong> = tax discount (up to 30%!)<br>\u2022 \uD83D\uDC51 <strong>Kingdom Policies</strong> \u2014 subsidies can lower costs, while quotas may limit trades. Check the Policies panel for current rules affecting your business.'
                 },
                 {
                     title: 'Street Trading',
@@ -536,8 +550,27 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Notifications & Settings',
-                    text: '\uD83D\uDD14 See the <strong>\uD83D\uDD14 bell icon</strong> in the top bar? That\u2019s your <strong>notification center</strong> \u2014 click it to review events you may have missed. Click <strong>\u2699\uFE0F Settings</strong> to customize your experience, including <strong>notification filters</strong> to show only what matters to you. Too many popups? Turn off categories you don\u2019t need!',
-                    highlight: '#btnSettings'
+                    text: '🔔 See the <strong>🔔 bell icon</strong> in the top bar? That\'s your <strong>notification center</strong>. Now let\'s customize your notifications! Click <strong>⚙️ Settings</strong> to open notification filters. Once inside, find <strong>👑 My Kingdom</strong> and click <strong>On</strong> to enable kingdom notifications — these alert you to wars, laws, and festivals in your home kingdom!',
+                    highlight: '#btnSettings',
+                    onEnter: function () {
+                        // Ensure kingdom notifications are OFF before this step
+                        if (typeof Player !== 'undefined' && Player.setNotifFilter) {
+                            Player.setNotifFilter('my_kingdom', false);
+                        }
+                    },
+                    waitFor: function () {
+                        // Check if the player has turned on kingdom notifications
+                        if (typeof Player !== 'undefined' && Player.getNotificationFilters) {
+                            var filters = Player.getNotificationFilters();
+                            return filters.my_kingdom === true;
+                        }
+                        return false;
+                    },
+                    onComplete: function () {
+                        closeModal();
+                        nextStep();
+                    },
+                    skipAfter: 12000
                 },
                 {
                     title: 'You\u2019re Ready!',

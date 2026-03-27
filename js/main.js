@@ -451,9 +451,10 @@ window.Game = (function () {
             if (events.length > lastProcessedEventCount) {
                 const newEvents = events.slice(lastProcessedEventCount);
                 for (const event of newEvents) {
-                    // Handle war allegiance popup
+                    // Handle war allegiance popup (suppress during tutorial)
                     if (event.type === 'warDeclared') {
-                        if (typeof Player !== 'undefined' && Player.shouldShowWarAllegiancePopup && Player.shouldShowWarAllegiancePopup(event)) {
+                        var tutorialActive = typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive();
+                        if (!tutorialActive && typeof Player !== 'undefined' && Player.shouldShowWarAllegiancePopup && Player.shouldShowWarAllegiancePopup(event)) {
                             if (typeof UI !== 'undefined' && UI.showWarAllegiancePopup) {
                                 UI.showWarAllegiancePopup(event);
                             }
