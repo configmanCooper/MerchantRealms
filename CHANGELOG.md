@@ -58,7 +58,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - **Chapter 1 Step 7** split into two steps: "Town Info & People" (interactive) + "Navigation & Ledger"
 - Each step now has one primary action, reducing information overload
 
-## [0.29.0] - 2026-03-27
+### Fixed — UI Polish
+- **NPC interaction duplicate emoji** — Removed redundant emoji from interaction name text (kept icon column only)
+- **Town selection button alignment** — "Start Here" buttons now align at bottom of cards in each row via flexbox
+
+## [0.29.0]- 2026-03-27
 
 ### Added — Bridge Destruction Overhaul
 - **Time-based bridge destruction** — Destroying a bridge now takes multiple days (7 base, 3 with skills) instead of being instant
