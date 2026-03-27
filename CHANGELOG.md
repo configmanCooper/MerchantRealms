@@ -4,6 +4,38 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.29.0] - 2026-03-27
+
+### Added — Bridge Destruction Overhaul
+- **Time-based bridge destruction** — Destroying a bridge now takes multiple days (7 base, 3 with skills) instead of being instant
+- **Three destruction methods** — Manual Labor (rope + iron bars), Blasting Powder (fast but loud), Demolition Tools (balanced)
+- **Detection system** — Daily chance of being caught (10%/day base, 2% skilled) by passing guards, soldiers, and NPCs
+- **Consequences** — Getting caught: 2,000g fine (paid to kingdom coffers), 30 days jail, -30 reputation in ALL kingdoms
+- **New goods: Blasting Powder** — Crafted at Apothecary from Salt × 4 + Hemp × 2
+- **New goods: Demolition Tools** — Crafted at Blacksmith from Iron Bars × 3 + Rope × 2 + Wood × 3
+- **New goods are bannable** — Blasting Powder and Demolition Tools can be banned by kingdoms like weapons/armor
+- **Bridge destruction UI modal** — Shows method selection with material requirements, time estimates, detection rates, and progress tracking
+
+### Fixed — Tutorial Interactive Steps
+- **"Meeting the Townsfolk"** now accepts clicking an NPC OR the Talk button
+- **"Kingdom Orders"** removed misleading highlight, clearer instructions
+- **"Royal Commissions"** updated text for clarity
+- **"Outposts & Expansion"** made non-interactive (section doesn't exist in Buildings panel)
+- **"Dark Deeds & Schemes"** forces Schemes button visible during tutorial
+- **"The Leaderboard"** closes previous modal before opening Rankings
+
+### Fixed — UI Improvements
+- **Button colors** — Fixed all hard-to-read dark red buttons across entire UI
+- **Town detail layout** — Moved "View Townspeople" above "Land & Housing", moved "Actions" above "Sell to Kingdom"
+- **Kingdom orders display** — Added defensive fallbacks for undefined qty/maxPricePerUnit values
+- **Sabotage crime penalties** — Updated to 2,000g fine and 30 days jail
+
+### Changed — NPC Movement
+- **Organic NPC movement** — Each NPC has unique movement patterns using hash-based random walks
+- **Performance optimization** — NPCs only render when zoomed in past 1.5x
+- **Stable NPC selection** — Sorted by numeric ID to prevent visual popping
+- **Shift-key tooltip fix** — Increased hit radius when shift held, added sticky hover for stability
+
 ## [0.28.0] - 2026-03-27
 
 ### Fixed — Comprehensive Bug Hunting Pass (43 bugs fixed)
