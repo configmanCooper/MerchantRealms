@@ -865,6 +865,35 @@ window.UI = (function () {
         const canSeePrices = isPlayerHere || hasGlobalIntel ||
             (hasTradeNetwork && town.kingdomId === playerKingdomId) ||
             (hasMarketScout && (hasWorkersHere || hasBuildingsHere));
+
+        // View Townspeople button — only if player is in this town or a connected town
+        if (isPlayerHere) {
+            html += `<div class="text-center mt-sm">
+                <button class="btn-medieval" onclick="UI.showTownPeople('${town.id}')" style="font-size:0.8rem;padding:6px 16px;">
+                    👥 View Townspeople (${pop})
+                </button>
+            </div>`;
+        } else {
+            // Check if connected town (road or skill)
+            const hasSpyNetwork = typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('trade_network');
+            let isConnected = false;
+            if (typeof Player !== 'undefined' && typeof Engine !== 'undefined') {
+                try {
+                    const roads = Engine.getRoads();
+                    isConnected = roads.some(r =>
+                        (r.fromTownId === Player.townId && r.toTownId === town.id) ||
+                        (r.toTownId === Player.townId && r.fromTownId === town.id)
+                    );
+                } catch(e) {}
+            }
+            if (isConnected || hasSpyNetwork) {
+                html += `<div class="text-center mt-sm">
+                    <button class="btn-medieval" onclick="UI.showTownPeople('${town.id}')" style="font-size:0.8rem;padding:6px 16px;opacity:0.8;">
+                        👥 View Townspeople (${pop}) <span class="text-dim" style="font-size:0.7rem;">— View only</span>
+                    </button>
+                </div>`;
+            }
+        }
 
         // Land & Housing section (only when player is in town)
         if (isPlayerHere && typeof Player !== 'undefined') {
@@ -967,6 +996,40 @@ window.UI = (function () {
                 <div class="text-dim" style="font-size:0.7rem;margin-top:4px;">⛏ = Natural deposit | 🏭 = Produced locally | 📦 = Imported</div>
                 </div>
             </div>`;
+
+            // ⚒️ Actions section (toll roads, petitions, orders, forage)
+            if (isPlayerHere && typeof Player !== 'undefined') {
+                html += `<div class="detail-section"><h3>⚒️ Actions</h3>`;
+                html += `<div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;">`;
+                html += `<button class="btn-medieval" onclick="UI.showBuildRouteSelector('toll_road')" style="font-size:0.8rem;padding:6px 14px;background:rgba(180,140,50,0.15);border-color:rgba(180,140,50,0.4);">
+                    \uD83D\uDEE4\uFE0F Build Toll Road
+                </button>`;
+                if (town.isPort) {
+                    html += `<button class="btn-medieval" onclick="UI.showBuildRouteSelector('sea_route')" style="font-size:0.8rem;padding:6px 14px;background:rgba(0,180,200,0.15);border-color:rgba(0,180,200,0.4);">
+                        \u2693 Build Sea Route
+                    </button>`;
+                }
+                html += `<button class="btn-medieval" onclick="UI.showBuildRouteSelector('petition')" style="font-size:0.8rem;padding:6px 14px;background:rgba(255,215,0,0.15);border-color:rgba(255,215,0,0.4);">
+                    \uD83D\uDC51 Petition King for Road
+                </button>`;
+                html += `<button class="btn-medieval" onclick="UI.showTollRoutesPanel()" style="font-size:0.8rem;padding:6px 14px;background:rgba(100,200,100,0.15);border-color:rgba(100,200,100,0.4);">
+                    \uD83D\uDCCA My Toll Routes
+                </button>`;
+                if (typeof Player !== 'undefined' && Player.isPlayerCitizenOf && Player.citizenshipKingdomId) {
+                    html += `<button class="btn-medieval" onclick="UI.showPetitionsPanel()" style="font-size:0.8rem;padding:6px 14px;background:rgba(212,160,23,0.15);border-color:rgba(212,160,23,0.4);">
+                        📜 Petitions
+                    </button>`;
+                }
+                if (typeof Player !== 'undefined' && Player.isPlayerCitizenOf && Player.isPlayerCitizenOf(town.kingdomId)) {
+                    html += `<button class="btn-medieval" onclick="UI.showKingdomOrdersPanel('${town.kingdomId}')" style="font-size:0.8rem;padding:6px 14px;background:rgba(180,120,200,0.15);border-color:rgba(180,120,200,0.4);">
+                        📋 Kingdom Orders
+                    </button>`;
+                }
+                html += `<button class="btn-medieval" onclick="UI.forageNearby()" style="font-size:0.8rem;padding:6px 14px;background:rgba(85,168,104,0.15);border-color:rgba(85,168,104,0.3);">
+                    🌿 Forage Nearby
+                </button>`;
+                html += `</div></div>`;
+            }
 
             // Kingdom trade panel — sell directly to kingdom
             if (isPlayerHere && pop > 0 && typeof Player !== 'undefined' && Player.getKingdomBuyInfo) {
@@ -1129,40 +1192,6 @@ window.UI = (function () {
             </div>`;
         }
 
-        // Toll Route Buttons (player is here)
-        if (isPlayerHere && typeof Player !== 'undefined') {
-            html += `<div class="detail-section"><h3>⚒️ Actions</h3>`;
-            html += `<div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;">`;
-            html += `<button class="btn-medieval" onclick="UI.showBuildRouteSelector('toll_road')" style="font-size:0.8rem;padding:6px 14px;background:rgba(180,140,50,0.15);border-color:rgba(180,140,50,0.4);">
-                \uD83D\uDEE4\uFE0F Build Toll Road
-            </button>`;
-            if (town.isPort) {
-                html += `<button class="btn-medieval" onclick="UI.showBuildRouteSelector('sea_route')" style="font-size:0.8rem;padding:6px 14px;background:rgba(0,180,200,0.15);border-color:rgba(0,180,200,0.4);">
-                    \u2693 Build Sea Route
-                </button>`;
-            }
-            html += `<button class="btn-medieval" onclick="UI.showBuildRouteSelector('petition')" style="font-size:0.8rem;padding:6px 14px;background:rgba(255,215,0,0.15);border-color:rgba(255,215,0,0.4);">
-                \uD83D\uDC51 Petition King for Road
-            </button>`;
-            html += `<button class="btn-medieval" onclick="UI.showTollRoutesPanel()" style="font-size:0.8rem;padding:6px 14px;background:rgba(100,200,100,0.15);border-color:rgba(100,200,100,0.4);">
-                \uD83D\uDCCA My Toll Routes
-            </button>`;
-            if (typeof Player !== 'undefined' && Player.isPlayerCitizenOf && Player.citizenshipKingdomId) {
-                html += `<button class="btn-medieval" onclick="UI.showPetitionsPanel()" style="font-size:0.8rem;padding:6px 14px;background:rgba(212,160,23,0.15);border-color:rgba(212,160,23,0.4);">
-                    📜 Petitions
-                </button>`;
-            }
-            if (typeof Player !== 'undefined' && Player.isPlayerCitizenOf && Player.isPlayerCitizenOf(town.kingdomId)) {
-                html += `<button class="btn-medieval" onclick="UI.showKingdomOrdersPanel('${town.kingdomId}')" style="font-size:0.8rem;padding:6px 14px;background:rgba(180,120,200,0.15);border-color:rgba(180,120,200,0.4);">
-                    📋 Kingdom Orders
-                </button>`;
-            }
-            html += `<button class="btn-medieval" onclick="UI.forageNearby()" style="font-size:0.8rem;padding:6px 14px;background:rgba(85,168,104,0.15);border-color:rgba(85,168,104,0.3);">
-                🌿 Forage Nearby
-            </button>`;
-            html += `</div></div>`;
-        }
-
         // Kingdom Economic Policies section (bounties, subsidies, etc.)
         if (kingdom) {
             const kFull = Engine.getWorld() ? Engine.getWorld().kingdoms.find(kk => kk.id === kingdom.id) : kingdom;
@@ -1213,7 +1242,7 @@ window.UI = (function () {
                         html += `<button class="btn-medieval" onclick="UI.rebuildBridge(${idx})" style="font-size:0.7rem;padding:3px 8px;">🔧 Rebuild (${CONFIG.BRIDGE_REBUILD_COST}g)</button></div>`;
                     } else {
                         html += `<div style="font-size:0.8rem;color:#55a868;margin-bottom:4px;">🌉 Bridge to ${otherName} — intact `;
-                        html += `<button class="btn-medieval" onclick="UI.destroyBridge(${idx})" style="font-size:0.7rem;padding:3px 8px;background:rgba(200,50,50,0.15);">💣 Destroy (${CONFIG.BRIDGE_DESTROY_COST}g)</button></div>`;
+                        html += `<button class="btn-medieval" onclick="UI.destroyBridge(${idx})" style="font-size:0.7rem;padding:3px 8px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">💣 Destroy</button></div>`;
                     }
                 }
                 html += '</div>';
@@ -1240,35 +1269,6 @@ window.UI = (function () {
         // NPC Transport services (when player is in this town)
         if (isPlayerHere) {
             html += buildNPCTransportSection();
-        }
-
-        // View Townspeople button — only if player is in this town or a connected town
-        if (isPlayerHere) {
-            html += `<div class="text-center mt-sm">
-                <button class="btn-medieval" onclick="UI.showTownPeople('${town.id}')" style="font-size:0.8rem;padding:6px 16px;">
-                    👥 View Townspeople (${pop})
-                </button>
-            </div>`;
-        } else {
-            // Check if connected town (road or skill)
-            const hasSpyNetwork = typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('trade_network');
-            let isConnected = false;
-            if (typeof Player !== 'undefined' && typeof Engine !== 'undefined') {
-                try {
-                    const roads = Engine.getRoads();
-                    isConnected = roads.some(r =>
-                        (r.fromTownId === Player.townId && r.toTownId === town.id) ||
-                        (r.toTownId === Player.townId && r.fromTownId === town.id)
-                    );
-                } catch(e) {}
-            }
-            if (isConnected || hasSpyNetwork) {
-                html += `<div class="text-center mt-sm">
-                    <button class="btn-medieval" onclick="UI.showTownPeople('${town.id}')" style="font-size:0.8rem;padding:6px 16px;opacity:0.8;">
-                        👥 View Townspeople (${pop}) <span class="text-dim" style="font-size:0.7rem;">— View only</span>
-                    </button>
-                </div>`;
-            }
         }
 
         showRightPanel(`🏘 ${town.name}`, html);
@@ -1686,12 +1686,12 @@ window.UI = (function () {
                 html += `<div class="detail-section"><h3>🏴 Schemes</h3>
                     <div style="display:flex;flex-wrap:wrap;gap:4px;">`;
 
-                html += `<button class="btn-medieval" onclick="UI.stealFromPerson('${person.id}')" style="font-size:0.9rem;padding:6px 12px;background:rgba(180,40,30,0.25);border-color:rgba(180,40,30,0.5);color:var(--parchment);">💰 Steal</button>`;
-                html += `<button class="btn-medieval" onclick="UI.spreadRumorsAbout('${person.id}')" style="font-size:0.9rem;padding:6px 12px;background:rgba(180,40,30,0.25);border-color:rgba(180,40,30,0.5);color:var(--parchment);">🤫 Rumors</button>`;
-                html += `<button class="btn-medieval" onclick="UI.blackmailPerson('${person.id}')" style="font-size:0.9rem;padding:6px 12px;background:rgba(180,40,30,0.25);border-color:rgba(180,40,30,0.5);color:var(--parchment);">📜 Blackmail</button>`;
-                html += `<button class="btn-medieval" onclick="UI.hireAssassinFor('${person.id}')" style="font-size:0.9rem;padding:6px 12px;background:rgba(120,0,0,0.3);border-color:rgba(120,0,0,0.5);color:var(--parchment);">🗡️ Assassin</button>`;
-                html += `<button class="btn-medieval" onclick="UI.poisonPerson('${person.id}')" style="font-size:0.9rem;padding:6px 12px;background:rgba(80,120,0,0.3);border-color:rgba(80,120,0,0.5);color:var(--parchment);">☠️ Poison</button>`;
-                html += `<button class="btn-medieval" onclick="UI.framePerson('${person.id}')" style="font-size:0.9rem;padding:6px 12px;background:rgba(180,40,30,0.25);border-color:rgba(180,40,30,0.5);color:var(--parchment);">🎭 Frame</button>`;
+                html += `<button class="btn-medieval" onclick="UI.stealFromPerson('${person.id}')" style="font-size:0.9rem;padding:6px 12px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">💰 Steal</button>`;
+                html += `<button class="btn-medieval" onclick="UI.spreadRumorsAbout('${person.id}')" style="font-size:0.9rem;padding:6px 12px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">🤫 Rumors</button>`;
+                html += `<button class="btn-medieval" onclick="UI.blackmailPerson('${person.id}')" style="font-size:0.9rem;padding:6px 12px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">📜 Blackmail</button>`;
+                html += `<button class="btn-medieval" onclick="UI.hireAssassinFor('${person.id}')" style="font-size:0.9rem;padding:6px 12px;background:rgba(160,30,30,0.4);border-color:rgba(160,30,30,0.6);color:#f0d0a0;">🗡️ Assassin</button>`;
+                html += `<button class="btn-medieval" onclick="UI.poisonPerson('${person.id}')" style="font-size:0.9rem;padding:6px 12px;background:rgba(100,140,30,0.35);border-color:rgba(100,140,30,0.6);color:#f0d0a0;">☠️ Poison</button>`;
+                html += `<button class="btn-medieval" onclick="UI.framePerson('${person.id}')" style="font-size:0.9rem;padding:6px 12px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">🎭 Frame</button>`;
 
                 html += `</div>
                     <div class="text-dim" style="font-size:0.8rem;margin-top:6px;">⚠️ Criminal actions risk detection and punishment</div>
@@ -2840,7 +2840,7 @@ window.UI = (function () {
             html += '</select>';
             html += '<button class="btn-small" onclick="UI.setTransferTarget(\'' + buildingId + '\')" style="font-size:0.75rem;">Set</button>';
             if (transferEnabled) {
-                html += '<button class="btn-small" onclick="UI.clearTransfer(\'' + buildingId + '\')" style="font-size:0.75rem;background:rgba(200,50,50,0.15);">Clear</button>';
+                html += '<button class="btn-small" onclick="UI.clearTransfer(\'' + buildingId + '\')" style="font-size:0.75rem;background:rgba(200,60,50,0.3);">Clear</button>';
             }
             html += '</div>';
             
@@ -3983,7 +3983,7 @@ window.UI = (function () {
                     activeHtml += `<button class="btn-action btn-small" style="font-size:0.65rem;margin-left:4px;" onclick="(function(){var r=Player.rescueCaravan('${c.id}');UI.toast(r.message,r.success?'success':'warning');UI.openCaravanDialog();})()">🆘 Rescue (${CONFIG.CARAVAN_BLOCKED_RESCUE_COST || 100}g)</button>`;
                 }
                 if (c.recurring && c.active) {
-                    activeHtml += `<button class="btn-action btn-small" style="font-size:0.65rem;margin-left:4px;background:rgba(200,50,50,0.15);" onclick="(function(){var r=Player.cancelRecurringRoute('${c.id}');UI.toast(r.message,r.success?'success':'warning');UI.openCaravanDialog();})()">⏹️ Stop Route</button>`;
+                    activeHtml += `<button class="btn-action btn-small" style="font-size:0.65rem;margin-left:4px;background:rgba(200,60,50,0.3);" onclick="(function(){var r=Player.cancelRecurringRoute('${c.id}');UI.toast(r.message,r.success?'success':'warning');UI.openCaravanDialog();})()">⏹️ Stop Route</button>`;
                 }
                 activeHtml += `</div>`;
             }
@@ -4563,7 +4563,7 @@ window.UI = (function () {
                     } else {
                         var permitCostMonthly = permitCfg.permitCostMonthly || 100;
                         var permitCostAnnual = permitCfg.permitCostAnnual || 1000;
-                        html += `<div style="font-size:0.72rem;color:#c88;margin:4px 0;padding:4px 6px;background:rgba(100,0,0,0.15);border-radius:4px;">`;
+                        html += `<div style="font-size:0.72rem;color:#c88;margin:4px 0;padding:4px 6px;background:rgba(140,30,30,0.25);border-radius:4px;">`;
                         html += `⚠️ <strong>${permitKingdom.name}</strong> requires a horse permit for commoners (Draft Animal Law).`;
                         html += `<br><button class="btn-medieval" onclick="Player.buyHorsePermit('${permitKingdom.id}','monthly'); UI.openCharacterPanel();" style="font-size:0.7rem;padding:2px 8px;margin-top:4px;">🐴 30-Day Permit (${permitCostMonthly}g)</button>`;
                         html += ` <button class="btn-medieval" onclick="Player.buyHorsePermit('${permitKingdom.id}','annual'); UI.openCharacterPanel();" style="font-size:0.7rem;padding:2px 8px;margin-top:4px;">🐴 Annual Permit (${permitCostAnnual}g)</button>`;
@@ -5446,7 +5446,7 @@ window.UI = (function () {
             html += '</div>';
         }
 
-        html += '<button class="btn-medieval" onclick="UI.quitAutoTravelJob()" style="margin-top:8px;font-size:0.8rem;padding:6px 16px;background:rgba(200,50,50,0.15);border-color:rgba(200,50,50,0.3);">🛑 Quit Mission</button>';
+        html += '<button class="btn-medieval" onclick="UI.quitAutoTravelJob()" style="margin-top:8px;font-size:0.8rem;padding:6px 16px;background:rgba(200,60,50,0.3);border-color:rgba(200,60,50,0.55);">🛑 Quit Mission</button>';
         html += '</div>';
         html += '<p class="text-dim">You cannot take other jobs while on an auto-travel mission. The mission progresses automatically.</p>';
         return html;
@@ -6284,14 +6284,125 @@ window.UI = (function () {
     }
 
     function destroyBridge(roadIdx) {
-        if (!confirm('Are you sure? This will make the road impassable!')) return;
-        try {
-            const result = Player.playerDestroyBridge(roadIdx);
-            toast(result.message, result.success ? 'success' : 'warning');
-            if (Player.townId) showTownDetail(Engine.findTown(Player.townId));
-        } catch (e) {
-            toast(e.message || 'Cannot destroy bridge', 'warning');
+        // Check if already destroying a bridge
+        if (Player.bridgeDestruction) {
+            var status = Player.getBridgeDestructionStatus();
+            if (status) {
+                var html = '<div style="text-align:center;margin-bottom:12px;">';
+                html += '<div style="font-size:1.2rem;">💣 Bridge Sabotage In Progress</div>';
+                html += '<div style="font-size:0.85rem;color:#ccc;margin-top:8px;">';
+                html += '<strong>' + status.fromTown + ' – ' + status.toTown + '</strong><br>';
+                html += 'Method: ' + status.methodName + '<br>';
+                html += 'Progress: Day ' + status.daysElapsed + ' / ' + status.totalDays + '<br>';
+                html += 'Detection risk: ' + Math.round(status.detectionRate * 100) + '% per day<br>';
+                html += '</div>';
+                html += '<div style="margin-top:8px;background:rgba(0,0,0,0.3);border-radius:4px;height:12px;overflow:hidden;">';
+                var pct = Math.round((status.daysElapsed / status.totalDays) * 100);
+                html += '<div style="height:100%;width:' + pct + '%;background:linear-gradient(90deg,#c44e52,#e67e22);transition:width 0.3s;"></div>';
+                html += '</div>';
+                html += '<div style="font-size:0.75rem;color:#aaa;margin-top:4px;">' + status.daysRemaining + ' days remaining</div>';
+                html += '</div>';
+                html += '<div style="text-align:center;">';
+                html += '<button class="btn-medieval" onclick="(function(){var r=Player.cancelBridgeDestruction();UI.toast(r.message,r.success?\'warning\':\'danger\');UI.closeModal();})()" style="background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">⏹️ Cancel Sabotage</button>';
+                html += '</div>';
+                openModal('💣 Bridge Sabotage', html);
+                return;
+            }
         }
+
+        var roads = Engine.getRoads();
+        var road = roads[roadIdx];
+        if (!road || !road.hasBridge) { toast('No bridge on this road.', 'warning'); return; }
+        if (road.bridgeDestroyed) { toast('Bridge already destroyed.', 'warning'); return; }
+
+        var fromTown = Engine.findTown(road.fromTownId);
+        var toTown = Engine.findTown(road.toTownId);
+        var bridgeName = (fromTown ? fromTown.name : '?') + ' – ' + (toTown ? toTown.name : '?');
+
+        var methods = CONFIG.BRIDGE_DESTROY_METHODS;
+        if (!methods) { toast('Bridge destruction not configured.', 'warning'); return; }
+
+        var hasSkill = false;
+        var skillNames = CONFIG.BRIDGE_DESTROY_SKILLS || [];
+        for (var si = 0; si < skillNames.length; si++) {
+            if (typeof Player.hasSkill === 'function' && Player.hasSkill(skillNames[si])) { hasSkill = true; break; }
+        }
+
+        var cost = CONFIG.BRIDGE_DESTROY_COST || 500;
+        var html = '<div style="text-align:center;margin-bottom:12px;">';
+        html += '<div style="font-size:0.9rem;color:var(--gold);">🌉 Bridge: <strong>' + bridgeName + '</strong></div>';
+        html += '<div style="font-size:0.8rem;color:#ccc;margin-top:4px;">Cost: <strong>' + cost + 'g</strong> + materials below</div>';
+        if (hasSkill) {
+            html += '<div style="font-size:0.75rem;color:#7bed9f;margin-top:4px;">✅ Relevant skills detected — faster & stealthier</div>';
+        }
+        html += '</div>';
+
+        html += '<div style="display:flex;flex-direction:column;gap:8px;">';
+        for (var key in methods) {
+            var m = methods[key];
+            var days = hasSkill ? m.skilledDays : m.baseDays;
+            var detect = hasSkill ? m.skilledDetectionPerDay : m.detectionPerDay;
+            var reqs = m.requires || {};
+
+            // Check if player has materials
+            var canAfford = Player.gold >= cost;
+            var missingItems = [];
+            for (var resId in reqs) {
+                var have = (Player.inventory && Player.inventory[resId]) || 0;
+                var need = reqs[resId];
+                if (have < need) {
+                    var res = CONFIG.RESOURCE_TYPES ? Object.values(CONFIG.RESOURCE_TYPES).find(function(r) { return r.id === resId; }) : null;
+                    missingItems.push((res ? res.name : resId) + ' (' + have + '/' + need + ')');
+                }
+            }
+            var canDo = canAfford && missingItems.length === 0;
+
+            // Build material list
+            var matList = [];
+            for (var resId2 in reqs) {
+                var res2 = CONFIG.RESOURCE_TYPES ? Object.values(CONFIG.RESOURCE_TYPES).find(function(r) { return r.id === resId2; }) : null;
+                var icon2 = res2 ? res2.icon : '📦';
+                var name2 = res2 ? res2.name : resId2;
+                var have2 = (Player.inventory && Player.inventory[resId2]) || 0;
+                var need2 = reqs[resId2];
+                var color2 = have2 >= need2 ? '#7bed9f' : '#ff6b6b';
+                matList.push(icon2 + ' ' + name2 + ': <span style="color:' + color2 + '">' + have2 + '/' + need2 + '</span>');
+            }
+
+            var detectPct = Math.round(detect * 100);
+            var borderColor = canDo ? 'rgba(200,170,80,0.4)' : 'rgba(100,100,100,0.3)';
+            var bgColor = canDo ? 'rgba(200,170,80,0.08)' : 'rgba(50,50,50,0.1)';
+
+            html += '<div style="padding:10px;border:1px solid ' + borderColor + ';border-radius:6px;background:' + bgColor + ';">';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+            html += '<strong>' + m.icon + ' ' + m.name + '</strong>';
+            html += '<span style="font-size:0.75rem;color:#aaa;">⏱ ' + days + ' days · 🔍 ' + detectPct + '%/day</span>';
+            html += '</div>';
+            html += '<div style="font-size:0.78rem;color:#bbb;margin:4px 0;">' + m.description + '</div>';
+            html += '<div style="font-size:0.75rem;margin:4px 0;">' + matList.join(' · ') + '</div>';
+
+            if (missingItems.length > 0) {
+                html += '<div style="font-size:0.72rem;color:#ff6b6b;margin:2px 0;">❌ Missing: ' + missingItems.join(', ') + '</div>';
+            }
+            if (!canAfford) {
+                html += '<div style="font-size:0.72rem;color:#ff6b6b;">❌ Need ' + cost + 'g (have ' + Math.floor(Player.gold) + 'g)</div>';
+            }
+
+            html += '<div style="margin-top:6px;text-align:right;">';
+            if (canDo) {
+                html += '<button class="btn-medieval" onclick="(function(){var r=Player.playerDestroyBridge(' + roadIdx + ',\'' + key + '\');UI.toast(r.message,r.success?\'success\':\'warning\');if(r.success)UI.closeModal();})()" style="font-size:0.8rem;padding:5px 14px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">💣 Begin Sabotage</button>';
+            } else {
+                html += '<button class="btn-medieval" disabled style="font-size:0.8rem;padding:5px 14px;opacity:0.4;cursor:not-allowed;">💣 Cannot Begin</button>';
+            }
+            html += '</div></div>';
+        }
+        html += '</div>';
+
+        html += '<div style="margin-top:12px;padding:8px;background:rgba(200,60,50,0.1);border-radius:4px;border:1px solid rgba(200,60,50,0.3);">';
+        html += '<div style="font-size:0.75rem;color:#ff8866;">⚠️ <strong>Warning:</strong> Bridge sabotage is a serious crime. If caught, you face a <strong>' + (CONFIG.BRIDGE_DESTROY_CAUGHT_FINE || 2000) + 'g fine</strong>, <strong>' + (CONFIG.BRIDGE_DESTROY_CAUGHT_JAIL_DAYS || 30) + ' days jail</strong>, and <strong>reputation loss in ALL kingdoms</strong>. You must stay in the area during sabotage.</div>';
+        html += '</div>';
+
+        openModal('💣 Destroy Bridge — ' + bridgeName, html);
     }
 
     function buyShipUI(type) {
@@ -6618,7 +6729,7 @@ window.UI = (function () {
                     <span class="label" style="color:${ck.color};">${ck.name}</span>
                     <span class="value">${r.icon} ${r.name}
                         <button class="btn-medieval" onclick="UI.showRankProgressionPanel('${ck.id}')" style="font-size:0.7rem;padding:2px 8px;margin-left:6px;">Details</button>
-                        <button class="btn-medieval" onclick="UI.renounceKingdomUI('${ck.id}')" style="font-size:0.7rem;padding:2px 8px;margin-left:4px;background:rgba(200,50,50,0.15);border-color:rgba(200,50,50,0.4);">\u274C Renounce</button>
+                        <button class="btn-medieval" onclick="UI.renounceKingdomUI('${ck.id}')" style="font-size:0.7rem;padding:2px 8px;margin-left:4px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">\u274C Renounce</button>
                     </span>
                 </div>`;
             }
@@ -8071,7 +8182,7 @@ window.UI = (function () {
                     html += '<div style="margin-bottom:8px;padding:6px;background:rgba(255,255,255,0.05);border-radius:4px;">';
                     html += '<div style="font-size:0.85rem;color:#ddd;">' + (pr.eliteMerchantName || '?') + ' proposes: ' + (pr.eliteChildName || '?') + ' wed ' + (pr.playerChildName || '?') + '</div>';
                     html += '<button class="btn-action btn-small" onclick="UI.respondToMarriageProposal(\'' + pr.id + '\', true)">✅ Accept</button> ';
-                    html += '<button class="btn-action btn-small" style="background:rgba(200,50,50,0.15);" onclick="UI.respondToMarriageProposal(\'' + pr.id + '\', false)">❌ Reject</button>';
+                    html += '<button class="btn-action btn-small" style="background:rgba(200,60,50,0.3);" onclick="UI.respondToMarriageProposal(\'' + pr.id + '\', false)">❌ Reject</button>';
                     html += '</div>';
                 }
                 html += '</div>';
@@ -9329,7 +9440,7 @@ window.UI = (function () {
                     html += '<div style="margin-bottom:8px;padding:6px;background:rgba(255,255,255,0.05);border-radius:4px;">';
                     html += '<div style="font-size:0.85rem;color:#ddd;">' + pr.eliteMerchantName + ' proposes: ' + pr.eliteChildName + ' wed ' + pr.playerChildName + '</div>';
                     html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;margin-top:4px;" onclick="UI.respondToMarriageProposal(\'' + pr.id + '\', true)">✅ Accept</button> ';
-                    html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;margin-top:4px;background:rgba(200,50,50,0.15);" onclick="UI.respondToMarriageProposal(\'' + pr.id + '\', false)">❌ Reject</button>';
+                    html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;margin-top:4px;background:rgba(200,60,50,0.3);" onclick="UI.respondToMarriageProposal(\'' + pr.id + '\', false)">❌ Reject</button>';
                     html += '</div>';
                 }
                 html += '</div>';
@@ -9389,7 +9500,7 @@ window.UI = (function () {
                 html += '⚠️ <strong>Mandatory Service:</strong> ' + milDaysLeft + ' days remaining (' + (milDaysLeft / 365).toFixed(1) + ' years). Cannot desert.';
                 html += '</div>';
             } else {
-                html += '<button class="btn-medieval" onclick="UI.quitMilitary()" style="margin-top:8px;font-size:0.8rem;padding:6px 16px;background:rgba(200,50,50,0.15);border-color:rgba(200,50,50,0.3);">🏠 Quit Military</button>';
+                html += '<button class="btn-medieval" onclick="UI.quitMilitary()" style="margin-top:8px;font-size:0.8rem;padding:6px 16px;background:rgba(200,60,50,0.3);border-color:rgba(200,60,50,0.55);">🏠 Quit Military</button>';
             }
             html += '</div>';
             html += '<p class="text-dim">You cannot take other jobs while enlisted. Battles occur every 3-5 days automatically.</p>';
@@ -10893,7 +11004,7 @@ window.UI = (function () {
                 if (estimate && estimate.chance > 0) {
                     html += '<button class="btn-medieval" style="font-size:0.75rem;padding:4px 10px;background:rgba(100,200,100,0.2);border-color:rgba(100,200,100,0.4);" onclick="UI.submitPetitionUI(\'' + p.id + '\')">✅ Submit (~' + Math.floor(estimate.chance * 100) + '%)</button>';
                 }
-                html += '<button class="btn-medieval" style="font-size:0.75rem;padding:4px 10px;background:rgba(200,50,50,0.2);border-color:rgba(200,50,50,0.4);" onclick="UI.cancelPetitionUI(\'' + p.id + '\')">❌ Cancel</button>';
+                html += '<button class="btn-medieval" style="font-size:0.75rem;padding:4px 10px;background:rgba(200,60,50,0.3);border-color:rgba(200,60,50,0.55);" onclick="UI.cancelPetitionUI(\'' + p.id + '\')">❌ Cancel</button>';
                 html += '</div></div>';
             }
         }
@@ -11144,7 +11255,7 @@ window.UI = (function () {
                     var ptrTown = (typeof Engine !== 'undefined') ? Engine.findTown(ptr.currentTownId) : null;
                     html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #333;font-size:0.85em;">';
                     html += '<span>' + (ptr.mounted ? '🐴 Mounted' : '🚶 Basic') + ' — in ' + (ptrTown ? ptrTown.name : '?') + ' — ' + ptr.signaturesCollected + ' sigs — ' + ptr.dailyCost + 'g/day</span>';
-                    html += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 8px;background:rgba(200,50,50,0.2);" onclick="UI.firePetitionerUI(\'' + petition.id + '\',\'' + ptr.id + '\')">Fire</button>';
+                    html += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 8px;background:rgba(200,60,50,0.3);" onclick="UI.firePetitionerUI(\'' + petition.id + '\',\'' + ptr.id + '\')">Fire</button>';
                     html += '</div>';
                 }
             } else {
@@ -11160,7 +11271,7 @@ window.UI = (function () {
             if (estimate && estimate.chance > 0) {
                 html += '<button class="btn-medieval" style="padding:8px 16px;background:rgba(100,200,100,0.2);border-color:rgba(100,200,100,0.4);" onclick="UI.submitPetitionUI(\'' + petition.id + '\')">✅ Submit Petition (~' + Math.floor(estimate.chance * 100) + '% chance)</button>';
             }
-            html += '<button class="btn-medieval" style="padding:8px 16px;background:rgba(200,50,50,0.2);border-color:rgba(200,50,50,0.4);" onclick="UI.cancelPetitionUI(\'' + petition.id + '\')">❌ Cancel Petition</button>';
+            html += '<button class="btn-medieval" style="padding:8px 16px;background:rgba(200,60,50,0.3);border-color:rgba(200,60,50,0.55);" onclick="UI.cancelPetitionUI(\'' + petition.id + '\')">❌ Cancel Petition</button>';
             html += '<button class="btn-medieval" style="padding:8px 16px;" onclick="UI.showPetitionsPanel()">⬅️ Back</button>';
             html += '</div>';
         }
@@ -11252,7 +11363,7 @@ window.UI = (function () {
         confirmHtml += '<p style="color:#ff8866;margin-bottom:15px;">\u26A0\uFE0F Are you sure you want to renounce your rank in <strong>' + kName + '</strong>?</p>';
         confirmHtml += '<p style="color:#aaa;font-size:0.85rem;margin-bottom:20px;">You will lose ALL rank and -30 reputation.</p>';
         confirmHtml += '<div style="display:flex;gap:15px;justify-content:center;">';
-        confirmHtml += '<button class="btn-medieval" style="padding:10px 25px;background:rgba(200,50,50,0.2);border-color:rgba(200,50,50,0.4);" onclick="(function(){ var r = Player.renounceKingdom(\'' + kingdomId + '\'); UI.toast(r.message, r.success ? \'warning\' : \'danger\'); UI.closeModal(); UI.openCharacterDialog(); })()">Yes, Renounce</button>';
+        confirmHtml += '<button class="btn-medieval" style="padding:10px 25px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;" onclick="(function(){ var r = Player.renounceKingdom(\'' + kingdomId + '\'); UI.toast(r.message, r.success ? \'warning\' : \'danger\'); UI.closeModal(); UI.openCharacterDialog(); })()">Yes, Renounce</button>';
         confirmHtml += '<button class="btn-medieval" style="padding:10px 25px;" onclick="UI.closeModal()">Cancel</button>';
         confirmHtml += '</div></div>';
         openModal('\u26A0\uFE0F Renounce Kingdom', confirmHtml, '');
@@ -11337,7 +11448,7 @@ window.UI = (function () {
         // Renounce button
         if (rankIdx >= 1) {
             html += '<div style="margin-top:15px;border-top:1px solid #444;padding-top:10px;">';
-            html += '<button class="btn-medieval" onclick="UI.renounceKingdomUI(\'' + kingdomId + '\')" style="font-size:0.8rem;padding:5px 14px;background:rgba(200,50,50,0.15);border-color:rgba(200,50,50,0.4);">\u274C Renounce ' + kName + '</button>';
+            html += '<button class="btn-medieval" onclick="UI.renounceKingdomUI(\'' + kingdomId + '\')" style="font-size:0.8rem;padding:5px 14px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">\u274C Renounce ' + kName + '</button>';
             html += '</div>';
         }
 
@@ -11476,7 +11587,7 @@ window.UI = (function () {
             html += '<span style="font-size:0.75rem;color:#aaa;">' + daysLeft + ' days left</span>';
             html += '</div>';
             html += '<div style="font-size:0.78rem;color:#ccc;margin-top:4px;">';
-            html += 'Qty: <strong>' + o.qty + '</strong> · Max Price: <strong>' + o.maxPricePerUnit + 'g</strong>/unit · Bids: ' + (o.bids ? o.bids.length : 0);
+            html += 'Qty: <strong>' + (o.qty || o.qtyNeeded || '?') + '</strong> · Max Price: <strong>' + (o.maxPricePerUnit || o.maxPrice || '?') + 'g</strong>/unit · Bids: ' + (o.bids ? o.bids.length : 0);
             html += '</div>';
             if (playerBid) {
                 html += '<div style="font-size:0.75rem;color:#7bed9f;margin-top:3px;">✅ You bid ' + playerBid.pricePerUnit + 'g/unit</div>';
@@ -12492,7 +12603,7 @@ window.UI = (function () {
         html += '<div style="background:rgba(200,50,50,0.1);padding:10px;border-radius:6px;margin-bottom:8px;border:1px solid rgba(200,50,50,0.3);">';
         html += '<b>🏃 Dodge Conscription</b><br>';
         html += '<span class="text-dim">Refuse to report. Risk of being caught and sentenced to 2 years in prison. Being outside the kingdom greatly reduces catch chance. Stealth skills help.</span><br>';
-        html += '<button class="btn-medieval" onclick="UI.respondConscription(\'dodge\')" style="margin-top:6px;background:rgba(200,50,50,0.15);border-color:rgba(200,50,50,0.4);">🏃 Dodge (Risky)</button>';
+        html += '<button class="btn-medieval" onclick="UI.respondConscription(\'dodge\')" style="margin-top:6px;background:rgba(200,60,50,0.3);border-color:rgba(200,60,50,0.55);">🏃 Dodge (Risky)</button>';
         html += '</div>';
 
         html += '</div>';

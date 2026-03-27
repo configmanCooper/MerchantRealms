@@ -658,7 +658,7 @@
         const kingdoms = [];
         for (let i = 0; i < n; i++) {
             // Generate kingdom laws
-            const bannableGoods = ['swords', 'armor', 'wine', 'jewelry', 'horses'];
+            const bannableGoods = ['swords', 'armor', 'wine', 'jewelry', 'horses', 'blasting_powder', 'demolition_tools'];
             const shuffledBannable = rng.shuffle([...bannableGoods]);
             const numBanned = rng.randInt(0, CONFIG.MAX_BANNED_GOODS);
             const bannedGoods = shuffledBannable.slice(0, numBanned);
@@ -11471,7 +11471,7 @@
 
         var isAtWar = kingdom.atWar && kingdom.atWar.size > 0;
         var kPers = kingdom.kingPersonality || {};
-        var bannableWeapons = ['swords', 'armor', 'horses'];
+        var bannableWeapons = ['swords', 'armor', 'horses', 'blasting_powder', 'demolition_tools'];
         var bannableLuxury = ['wine', 'jewelry'];
 
         // Calculate military stockpile ratio

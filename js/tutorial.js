@@ -238,14 +238,22 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Meeting the Townsfolk',
-                    text: '\uD83D\uDC65 <strong>Zoom in</strong> (scroll wheel) past 1.5x to see individual <strong>NPCs walking around</strong> your town \u2014 click one to see their name, job, and personality! You can also click the <strong>\uD83D\uDCAC Talk</strong> button in the bottom bar to chat with a random local \u2014 they may share useful rumors about prices, wars, or elite merchants. Try clicking <strong>\uD83D\uDCAC Talk</strong> now!',
+                    text: '\uD83D\uDC65 <strong>Zoom in</strong> (scroll wheel) past 1.5x to see individual <strong>NPCs walking around</strong> your town \u2014 click one to see their name, job, and personality! You can also click the <strong>\uD83D\uDCAC Talk</strong> button in the bottom bar to chat with a random local \u2014 they may share useful rumors about prices, wars, or elite merchants. Try <strong>clicking an NPC</strong> or pressing <strong>\uD83D\uDCAC Talk</strong> now!',
                     highlight: '#btnTalk',
                     waitFor: function () {
                         // Detect that the talk dialog appeared (modal title is "💬 Conversation")
                         var modal = document.getElementById('modalOverlay');
-                        if (!modal || modal.classList.contains('hidden')) return false;
-                        var title = document.getElementById('modalTitle');
-                        return title && title.textContent.indexOf('Conversation') >= 0;
+                        if (modal && !modal.classList.contains('hidden')) {
+                            var title = document.getElementById('modalTitle');
+                            if (title && title.textContent.indexOf('Conversation') >= 0) return true;
+                        }
+                        // Also accept clicking an NPC (right panel shows person detail "👤")
+                        var rp = document.getElementById('rightPanel');
+                        if (rp && !rp.classList.contains('hidden')) {
+                            var rpTitle = document.getElementById('rightPanelTitle');
+                            if (rpTitle && rpTitle.textContent.indexOf('\uD83D\uDC64') >= 0) return true;
+                        }
+                        return false;
                     },
                     skipAfter: 4000
                 },
@@ -654,14 +662,13 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Kingdom Orders',
-                    text: '\uD83D\uDC51 Kingdoms post <strong>procurement orders</strong> \u2014 guaranteed sales at fixed prices, often above market. Scroll down in the town detail and find <strong>📋 Kingdom Orders</strong> under ⚒️ Actions. Open it to see the orders the crown needs filled!',
-                    highlight: '#btnKingdoms',
+                    text: '\uD83D\uDC51 Kingdoms post <strong>procurement orders</strong> \u2014 guaranteed sales at fixed prices, often above market. Click on <strong>your current town</strong> on the map to open its detail panel, then find the <strong>📋 Kingdom Orders</strong> button and click it!',
                     onEnter: function () { closeModal(); },
                     waitFor: function () { return isModalOpen(); }
                 },
                 {
                     title: 'Royal Commissions',
-                    text: '📜 The king also posts <strong>Royal Commissions</strong> \u2014 one-off requests with gold + reputation rewards. Find the <strong>📦 Commissions</strong> button in the town detail (just above Market Prices). These are great for building reputation early!',
+                    text: '📜 The king also posts <strong>Royal Commissions</strong> \u2014 one-off requests with gold + reputation rewards. Click on <strong>your current town</strong> on the map, then find the <strong>📦 Commissions</strong> button. These are great for building reputation early!',
                     onEnter: function () { closeModal(); },
                     waitFor: function () { return isModalOpen(); }
                 },
@@ -769,9 +776,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Outposts & Expansion',
-                    text: '\uD83C\uDFD5\uFE0F Click <strong>\uD83C\uDFE0 Buildings</strong> to open the building manager \u2014 look for the <strong>\u26FA Wilderness Outposts</strong> section. Outposts extend your trade network into remote areas, providing storage, rest, and a foothold in new territories. They cost 500g + materials (wood, stone) to found and can grow into full towns! Combine with toll roads and caravans for a self-sustaining empire.',
-                    highlight: '#btnBuildings',
-                    waitFor: function () { return isModalOpen(); }
+                    text: '\uD83C\uDFD5\uFE0F At <strong>Guildmaster rank</strong>, you can found <strong>\u26FA Wilderness Outposts</strong> in remote areas! Outposts extend your trade network, providing storage, rest, and a foothold in new territories. They cost 500g + materials (wood, stone) and can grow into full towns! Combine with toll roads and caravans for a self-sustaining empire.'
                 }
             ]
         },
@@ -785,6 +790,14 @@ window.Tutorial = (function () {
                     title: 'Dark Deeds & Schemes',
                     text: '\uD83D\uDEA8 The <strong>\uD83D\uDD75\uFE0F Schemes</strong> panel lets you plot sabotage, political schemes, assassinations, tax evasion, and market manipulation. 5 categories of crime \u2014 high risk, high reward! Hover over each tab to see what\u2019s available. Some require <strong>Underworld skills</strong>. Click <strong>\uD83D\uDD75\uFE0F Schemes</strong> to take a look!',
                     highlight: '#btnSchemes',
+                    onEnter: function () {
+                        closeModal();
+                        // Make Schemes button visible during tutorial
+                        var btn = document.getElementById('btnSchemes');
+                        if (btn) btn.style.display = '';
+                        var div = document.getElementById('schemesDivider');
+                        if (div) div.style.display = '';
+                    },
                     waitFor: function () { return isModalOpen(); },
                     skipAfter: 8000
                 },
@@ -792,6 +805,7 @@ window.Tutorial = (function () {
                     title: 'The Leaderboard',
                     text: '\uD83C\uDFC6 Click <strong>\uD83C\uDFC6 Rankings</strong> to see the top merchants! The <strong>Leaderboard</strong> tracks the top 10 by <strong>net worth</strong> (gold + buildings + inventory + ships + routes). Compete against elite NPCs for the #1 spot!',
                     highlight: '#btnRankings',
+                    onEnter: function () { closeModal(); },
                     waitFor: function () { return isModalOpen(); }
                 },
                 {

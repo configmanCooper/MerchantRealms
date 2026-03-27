@@ -500,6 +500,7 @@
         player.pendingWarChoice = null;
         player.roadsBuilt = 0;
         player.bridgesBuilt = 0;
+        player.bridgeDestruction = null;  // Active bridge destruction task
         player.seaRoutesBuilt = 0;
         player.hasSuppliedMilitary = false;
         player.tradesCompleted = 0;
@@ -9451,6 +9452,7 @@
             pendingWarChoice: player.pendingWarChoice ? JSON.parse(JSON.stringify(player.pendingWarChoice)) : null,
             roadsBuilt: player.roadsBuilt || 0,
             bridgesBuilt: player.bridgesBuilt || 0,
+            bridgeDestruction: player.bridgeDestruction ? JSON.parse(JSON.stringify(player.bridgeDestruction)) : null,
             seaRoutesBuilt: player.seaRoutesBuilt || 0,
             hasSuppliedMilitary: player.hasSuppliedMilitary || false,
             tradesCompleted: player.tradesCompleted || 0,
@@ -9683,6 +9685,7 @@
         player.pendingWarChoice = data.pendingWarChoice || null;
         player.roadsBuilt = data.roadsBuilt || 0;
         player.bridgesBuilt = data.bridgesBuilt || 0;
+        player.bridgeDestruction = data.bridgeDestruction || null;
         player.seaRoutesBuilt = data.seaRoutesBuilt || 0;
         player.hasSuppliedMilitary = data.hasSuppliedMilitary || false;
         player.tradesCompleted = data.tradesCompleted || 0;
@@ -10554,6 +10557,9 @@
         // Ongoing spouse trait/quirk effects
         tickSpouseEffects();
         tickHunger();
+
+        // Bridge destruction progress (multi-day task)
+        tickBridgeDestruction();
 
         // Special start scenario ticks
         tickSpecialStarts();
@@ -14752,27 +14758,209 @@
     // §12F3  BRIDGE & ROAD CONSTRUCTION (PLAYER)
     // ========================================================
 
-    function playerDestroyBridge(roadIndex) {
+    function playerDestroyBridge(roadIndex, method) {
         if (player.traveling) return { success: false, message: 'Cannot do this while traveling.' };
-        const roads = Engine.getRoads();
-        const road = roads[roadIndex];
+        if (player.bridgeDestruction) return { success: false, message: 'Already destroying a bridge. Cancel or wait for it to finish.' };
+        var roads = Engine.getRoads();
+        var road = roads[roadIndex];
         if (!road || !(road.hasBridge || false)) return { success: false, message: 'No bridge on this road.' };
         if (road.bridgeDestroyed) return { success: false, message: 'Bridge already destroyed.' };
-        const cost = CONFIG.BRIDGE_DESTROY_COST || 500;
-        if (player.gold < cost) return { success: false, message: `Need ${cost}g to hire saboteurs.` };
         if (player.townId !== road.fromTownId && player.townId !== road.toTownId) {
             return { success: false, message: 'You must be in a town connected to this bridge.' };
         }
-        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.destroy_bridge || 5);
+
+        // Validate method
+        var methods = CONFIG.BRIDGE_DESTROY_METHODS;
+        if (!methods || !methods[method]) return { success: false, message: 'Invalid destruction method.' };
+        var m = methods[method];
+
+        // Check materials
+        var reqs = m.requires || {};
+        for (var resId in reqs) {
+            if ((player.inventory[resId] || 0) < reqs[resId]) {
+                var res = CONFIG.RESOURCE_TYPES ? Object.values(CONFIG.RESOURCE_TYPES).find(function(r) { return r.id === resId; }) : null;
+                var rname = res ? res.name : resId;
+                return { success: false, message: 'Need ' + reqs[resId] + ' ' + rname + ' (have ' + (player.inventory[resId] || 0) + ').' };
+            }
+        }
+
+        // Check gold cost
+        var cost = CONFIG.BRIDGE_DESTROY_COST || 500;
+        if (player.gold < cost) return { success: false, message: 'Need ' + cost + 'g to begin sabotage.' };
+
+        // Deduct materials and gold
+        for (var resId2 in reqs) {
+            player.inventory[resId2] = (player.inventory[resId2] || 0) - reqs[resId2];
+        }
         player.gold -= cost;
         player.stats.totalGoldSpent += cost;
-        const result = Engine.destroyBridge(roadIndex);
-        if (result.success) {
-            grantXP(5, 'sabotage');
-            const town = Engine.findTown(player.townId);
-            if (town) modifyTownReputation(town.id, -10);
+
+        // Determine duration based on skills
+        var hasSkill = _hasBridgeDestructionSkill();
+        var totalDays = hasSkill ? m.skilledDays : m.baseDays;
+        var detectionRate = hasSkill ? m.skilledDetectionPerDay : m.detectionPerDay;
+
+        // Further skill modifiers
+        if (hasSkill && _hasSkill('arsonist_skill')) {
+            detectionRate *= 0.5;
         }
-        return result;
+        if (_hasSkill('shadow_dealings')) {
+            detectionRate *= 0.7;
+        }
+        if (_hasSkill('discrete')) {
+            detectionRate *= 0.8;
+        }
+
+        // Start the task
+        player.bridgeDestruction = {
+            roadIndex: roadIndex,
+            method: method,
+            startDay: Engine.getDay(),
+            totalDays: totalDays,
+            daysElapsed: 0,
+            detectionRate: detectionRate,
+            methodName: m.name,
+            caught: false,
+        };
+
+        var fromTown = Engine.findTown(road.fromTownId);
+        var toTown = Engine.findTown(road.toTownId);
+        var bridgeName = (fromTown ? fromTown.name : '?') + ' – ' + (toTown ? toTown.name : '?');
+        return { success: true, message: '💣 Bridge sabotage begun on ' + bridgeName + '! Estimated ' + totalDays + ' days. Stay near the bridge and avoid detection.' };
+    }
+
+    function _hasBridgeDestructionSkill() {
+        var skills = CONFIG.BRIDGE_DESTROY_SKILLS || ['arsonist_skill', 'shadow_dealings', 'discrete'];
+        for (var i = 0; i < skills.length; i++) {
+            if (_hasSkill(skills[i])) return true;
+        }
+        return false;
+    }
+
+    function _hasSkill(skillId) {
+        if (typeof Player !== 'undefined' && Player.hasSkill) return Player.hasSkill(skillId);
+        if (player.skills) {
+            for (var i = 0; i < player.skills.length; i++) {
+                if (player.skills[i] === skillId || (player.skills[i] && player.skills[i].id === skillId)) return true;
+            }
+        }
+        return false;
+    }
+
+    function tickBridgeDestruction() {
+        if (!player.bridgeDestruction) return;
+        var bd = player.bridgeDestruction;
+        bd.daysElapsed++;
+
+        // Check if player left the area (must stay in connected town)
+        var roads = Engine.getRoads();
+        var road = roads[bd.roadIndex];
+        if (!road) { player.bridgeDestruction = null; return; }
+        if (player.traveling || (player.townId !== road.fromTownId && player.townId !== road.toTownId)) {
+            player.bridgeDestruction = null;
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('💣 Bridge sabotage cancelled — you left the area.', 'warning');
+            return;
+        }
+
+        // Detection roll
+        var detectionChance = bd.detectionRate;
+        // Increase detection if kingdom has many guards
+        var kingdom = null;
+        try {
+            var town = Engine.findTown(player.townId);
+            if (town) kingdom = Engine.findKingdom(town.kingdomId);
+        } catch (e) { /* no-op */ }
+        if (kingdom) {
+            var guardBonus = ((kingdom.guards || 0) + (kingdom.soldiers || 0)) * 0.001;
+            detectionChance += Math.min(0.05, guardBonus);
+        }
+
+        var rng = Engine.getWorld ? (Engine.getWorld().rng || Math) : Math;
+        var roll = typeof rng.random === 'function' ? rng.random() : Math.random();
+
+        if (roll < detectionChance) {
+            // CAUGHT!
+            bd.caught = true;
+            player.bridgeDestruction = null;
+
+            var fine = CONFIG.BRIDGE_DESTROY_CAUGHT_FINE || 2000;
+            var jailDays = CONFIG.BRIDGE_DESTROY_CAUGHT_JAIL_DAYS || 30;
+            var repPenalty = CONFIG.BRIDGE_DESTROY_CAUGHT_REP_PENALTY || -30;
+
+            // Deduct fine (goes to kingdom coffers)
+            var actualFine = Math.min(player.gold, fine);
+            player.gold -= actualFine;
+            if (kingdom) kingdom.gold = (kingdom.gold || 0) + actualFine;
+
+            // Jail time
+            player.jailed = true;
+            player.jailDays = jailDays;
+            player.jailedDay = Engine.getDay();
+            player.jailKingdomId = kingdom ? kingdom.id : null;
+
+            // Reputation penalty in ALL kingdoms
+            var allKingdoms = Engine.getKingdoms ? Engine.getKingdoms() : [];
+            for (var ki = 0; ki < allKingdoms.length; ki++) {
+                modifyKingdomReputation(allKingdoms[ki].id, repPenalty);
+            }
+
+            // Criminal record
+            if (!player.criminalRecord) player.criminalRecord = {};
+            if (!player.criminalRecord.sabotage) player.criminalRecord.sabotage = 0;
+            player.criminalRecord.sabotage++;
+
+            if (typeof Engine !== 'undefined' && Engine.logEvent) {
+                Engine.logEvent('🚨 ' + (player.firstName || 'Player') + ' was caught destroying a bridge! Fined ' + actualFine + 'g and sentenced to ' + jailDays + ' days in jail.');
+            }
+            if (typeof UI !== 'undefined' && UI.toast) {
+                UI.toast('🚨 CAUGHT! You were caught destroying the bridge! Fined ' + actualFine + 'g, jailed for ' + jailDays + ' days, reputation damaged in all kingdoms.', 'danger');
+            }
+            return;
+        }
+
+        // Progress check — did we finish?
+        if (bd.daysElapsed >= bd.totalDays) {
+            // Bridge destroyed!
+            var result = Engine.destroyBridge(bd.roadIndex);
+            player.bridgeDestruction = null;
+
+            if (result && result.success) {
+                grantXP(15, 'sabotage');
+                var town2 = Engine.findTown(player.townId);
+                if (town2) modifyTownReputation(town2.id, -10);
+                player.bridgesDestroyed = (player.bridgesDestroyed || 0) + 1;
+
+                if (typeof UI !== 'undefined' && UI.toast) {
+                    UI.toast('💣 Bridge successfully destroyed! The road is now impassable.', 'success');
+                }
+            }
+        }
+    }
+
+    function cancelBridgeDestruction() {
+        if (!player.bridgeDestruction) return { success: false, message: 'No active bridge destruction.' };
+        player.bridgeDestruction = null;
+        return { success: true, message: 'Bridge sabotage cancelled. Materials already consumed.' };
+    }
+
+    function getBridgeDestructionStatus() {
+        if (!player.bridgeDestruction) return null;
+        var bd = player.bridgeDestruction;
+        var roads = Engine.getRoads();
+        var road = roads[bd.roadIndex];
+        var fromTown = road ? Engine.findTown(road.fromTownId) : null;
+        var toTown = road ? Engine.findTown(road.toTownId) : null;
+        return {
+            roadIndex: bd.roadIndex,
+            method: bd.method,
+            methodName: bd.methodName,
+            daysElapsed: bd.daysElapsed,
+            totalDays: bd.totalDays,
+            daysRemaining: bd.totalDays - bd.daysElapsed,
+            detectionRate: bd.detectionRate,
+            fromTown: fromTown ? fromTown.name : '?',
+            toTown: toTown ? toTown.name : '?',
+        };
     }
 
     function playerRebuildBridge(roadIndex) {
@@ -25711,6 +25899,8 @@
 
         // Bridge & Road Construction
         playerDestroyBridge,
+        cancelBridgeDestruction,
+        getBridgeDestructionStatus,
         playerRebuildBridge,
         playerBuildRoad,
         playerBuildTollRoad,

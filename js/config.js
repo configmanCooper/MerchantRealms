@@ -530,6 +530,44 @@ const CONFIG = {
     BRIDGE_REBUILD_COST: 1000,             // Gold cost to rebuild a destroyed bridge
     BRIDGE_REBUILD_DAYS: 30,               // Days to rebuild a bridge
 
+    // Bridge Destruction Methods
+    BRIDGE_DESTROY_METHODS: {
+        manual: {
+            name: 'Manual Labor',
+            icon: '🪢',
+            description: 'Dismantle the bridge with rope and iron tools. Slow but no special materials needed.',
+            requires: { rope: 5, iron: 3 },
+            baseDays: 7,
+            skilledDays: 3,
+            detectionPerDay: 0.10,
+            skilledDetectionPerDay: 0.02,
+        },
+        blasting: {
+            name: 'Blasting Powder',
+            icon: '💥',
+            description: 'Blow the bridge with explosives. Fast but extremely loud — higher chance of being caught.',
+            requires: { blasting_powder: 3 },
+            baseDays: 4,
+            skilledDays: 2,
+            detectionPerDay: 0.15,
+            skilledDetectionPerDay: 0.05,
+        },
+        demolition: {
+            name: 'Demolition Tools',
+            icon: '⛏️',
+            description: 'Precision demolition with specialized tools. Balanced speed and stealth.',
+            requires: { demolition_tools: 1 },
+            baseDays: 5,
+            skilledDays: 2,
+            detectionPerDay: 0.07,
+            skilledDetectionPerDay: 0.015,
+        },
+    },
+    BRIDGE_DESTROY_SKILLS: ['arsonist_skill', 'shadow_dealings', 'discrete'],
+    BRIDGE_DESTROY_CAUGHT_FINE: 2000,
+    BRIDGE_DESTROY_CAUGHT_JAIL_DAYS: 30,
+    BRIDGE_DESTROY_CAUGHT_REP_PENALTY: -30,
+
     // Route Limits (max total routes per settlement tier)
     MAX_ROUTES_VILLAGE: 4,
     MAX_ROUTES_TOWN: 6,
@@ -1029,6 +1067,10 @@ const RESOURCE_TYPES = {
     BOWS_EXCELLENT:   { id: 'bows_excellent',     name: 'Excellent Bows',   category: 'military', basePrice: 225, icon: '🏹🟣', weight: 2, tier: 'excellent', baseItem: 'bows' },
     ARROWS_GOOD:      { id: 'arrows_good',        name: 'Good Arrows',      category: 'military', basePrice: 15,  icon: '➳🔵',  weight: 1, tier: 'good',      baseItem: 'arrows' },
 
+    // --- Demolition & Sabotage goods ---
+    BLASTING_POWDER:  { id: 'blasting_powder',  name: 'Blasting Powder',  category: 'contraband', basePrice: 40, icon: '💥', weight: 2 },
+    DEMOLITION_TOOLS: { id: 'demolition_tools', name: 'Demolition Tools', category: 'military',   basePrice: 55, icon: '⛏️', weight: 4 },
+
     // --- Fashion & Luxury goods ---
     SILK:             { id: 'silk',             name: 'Silk',            category: 'luxury',    basePrice: 35,  icon: '🧣', weight: 1 },
     PERFUME:          { id: 'perfume',          name: 'Perfume',         category: 'luxury',    basePrice: 45,  icon: '🌸', weight: 1 },
@@ -1097,11 +1139,12 @@ const BUILDING_TYPES = {
             pearl_jewelry: { produces: 'pearl_jewelry', consumes: { gold_ore: 1, pearls: 1 }, rate: 2 },
         },
     },
-    BLACKSMITH:    { id: 'blacksmith',    name: 'Blacksmith',    cost: 600,  workers: 3, produces: 'swords',   consumes: { iron: 2, wood: 1 },     rate: 3, category: 'military',   materials: { stone: 20, iron: 5, bricks: 10 }, canProduce: ['swords', 'tools', 'iron'],
+    BLACKSMITH:    { id: 'blacksmith',    name: 'Blacksmith',    cost: 600,  workers: 3, produces: 'swords',   consumes: { iron: 2, wood: 1 },     rate: 3, category: 'military',   materials: { stone: 20, iron: 5, bricks: 10 }, canProduce: ['swords', 'tools', 'iron', 'demolition_tools'],
         availableProducts: {
-            swords: { produces: 'swords', consumes: { iron: 2, wood: 1 }, rate: 3 },
-            tools:  { produces: 'tools',  consumes: { iron: 1, wood: 1 }, rate: 3 },
-            iron:   { produces: 'iron',   consumes: { iron_ore: 2, wood: 1 }, rate: 4 },
+            swords:           { produces: 'swords',           consumes: { iron: 2, wood: 1 },              rate: 3 },
+            tools:            { produces: 'tools',            consumes: { iron: 1, wood: 1 },              rate: 3 },
+            iron:             { produces: 'iron',             consumes: { iron_ore: 2, wood: 1 },          rate: 4 },
+            demolition_tools: { produces: 'demolition_tools', consumes: { iron: 3, rope: 2, wood: 3 },    rate: 1 },
         },
     },
     ARMORER:       { id: 'armorer',       name: 'Armorer',       cost: 700,  workers: 3, produces: 'armor',    consumes: { iron: 3, leather: 2 },  rate: 2, category: 'military',   materials: { stone: 20, iron: 8, bricks: 10 } },
@@ -1179,7 +1222,12 @@ const BUILDING_TYPES = {
     TRANSPORT_GUILD:  { id: 'transport_guild',  name: 'Transport Guild Hall', cost: 800, workers: 4, produces: null,       consumes: {},                           rate: 0, category: 'trade',      materials: { wood: 25, stone: 15, planks: 10 }, icon: '🚚', description: 'Transporters handle goods delivery between your buildings automatically.' },
     // --- Goods audit buildings ---
     PEARL_DIVER:      { id: 'pearl_diver',      name: 'Pearl Diver',     cost: 350,  workers: 2, produces: 'pearls',         consumes: {},                          rate: 2, category: 'harvest',    portOnly: true, materials: { wood: 12, rope: 3 } },
-    APOTHECARY:       { id: 'apothecary',       name: 'Apothecary',      cost: 400,  workers: 1, produces: 'poison',         consumes: { hemp: 2 },                 rate: 1, category: 'finished',   materials: { wood: 8, stone: 5 } },
+    APOTHECARY:       { id: 'apothecary',       name: 'Apothecary',      cost: 400,  workers: 1, produces: 'poison',         consumes: { hemp: 2 },                 rate: 1, category: 'finished',   materials: { wood: 8, stone: 5 }, canProduce: ['poison', 'blasting_powder'],
+        availableProducts: {
+            poison:          { produces: 'poison',          consumes: { hemp: 2 },              rate: 1 },
+            blasting_powder: { produces: 'blasting_powder', consumes: { salt: 4, hemp: 2 },     rate: 2 },
+        },
+    },
     HUNTING_LODGE:    { id: 'hunting_lodge',    name: 'Hunting Lodge',   cost: 250,  workers: 2, produces: 'hide',           consumes: {},                          rate: 4, category: 'harvest',    villageOnly: true, materials: { wood: 15 } },
     // --- Water & Beverage Buildings ---
     WELL:             { id: 'well',             name: 'Well',            cost: 80,   workers: 0, produces: 'water',          consumes: {},                          rate: 15, category: 'civic',     materials: { stone: 10, wood: 5 }, icon: '🪣', description: 'Draws fresh water. Free water for townsfolk.' },
@@ -2202,7 +2250,7 @@ CONFIG.CRIME_TYPES = [
     { id: 'assault', name: 'Assault', icon: '👊', defaultPunishment: 'jail', defaultJailDays: 14, defaultFine: 300, description: 'Attacking another person' },
     { id: 'murder', name: 'Murder', icon: '💀', defaultPunishment: 'execution', defaultJailDays: 360, defaultFine: 5000, description: 'Killing another person' },
     { id: 'arson', name: 'Arson', icon: '🔥', defaultPunishment: 'jail', defaultJailDays: 30, defaultFine: 500, description: 'Setting fire to buildings or property' },
-    { id: 'sabotage', name: 'Sabotage', icon: '💣', defaultPunishment: 'jail', defaultJailDays: 20, defaultFine: 400, description: 'Deliberately damaging infrastructure' },
+    { id: 'sabotage', name: 'Sabotage', icon: '💣', defaultPunishment: 'jail', defaultJailDays: 30, defaultFine: 2000, description: 'Deliberately damaging infrastructure such as bridges or roads' },
     { id: 'tax_evasion', name: 'Tax Evasion', icon: '💸', defaultPunishment: 'fine', defaultJailDays: 3, defaultFine: 0, description: 'Evading kingdom taxes' },
     { id: 'bribery', name: 'Bribery', icon: '🤫', defaultPunishment: 'fine', defaultJailDays: 5, defaultFine: 300, description: 'Bribing officials or guards' },
     { id: 'treason', name: 'Treason', icon: '⚔️', defaultPunishment: 'execution', defaultJailDays: 360, defaultFine: 10000, description: 'Acting against the kingdom\'s interests' },
