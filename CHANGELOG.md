@@ -7,7 +7,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [0.34.0] - 2026-03-28
 
 ### Added — Tutorial Expansion
-- (Pending: New tutorial chapters for guilds, advanced trading, and other undocumented features)
+- **Chapter 14: Guilds & Crafting** (6 steps) — What guilds are, 9 guild types, interactive Guilds panel with 500g given, membership types (monthly vs yearly), guild building restrictions, Guild Monopoly law, guild crafting access, entry fees
+- **Chapter 15: Survival Economics** (5 steps) — Trade or Die lesson, economy death spiral warning, market saturation mechanics, early game survival checklist, bankruptcy recovery paths
+- Updated congratulations message to mention guilds and survival economics
+- Total tutorial now 16 chapters (was 14), ~105 steps
 
 ## [0.33.0] - 2026-03-28
 
