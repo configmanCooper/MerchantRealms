@@ -4,13 +4,50 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.34.0] - 2026-03-28
+
+### Added — Tutorial Expansion
+- (Pending: New tutorial chapters for guilds, advanced trading, and other undocumented features)
+
 ## [0.33.0] - 2026-03-28
 
-### Fixed — Playthrough Campaign Bug Fixes
-- **Musician fame rebalance** — Fame gains reduced ~10x across all actions (tavern, street, concert, compose, grand concert, duel). A dedicated musician should now take ~6 months to reach legendary (80) fame, not 29 days
-- **BUG-018 FIX:** `rng is not defined` crash in `tickEliteMerchantDynamics()` at engine.js:13793 — changed bare `rng` to `world.rng`
+### Fixed — 100-Bug Fixing Campaign
+100 verified code bugs fixed across all game systems. Highlights:
+
+#### Critical Fixes (10)
+- **Jail system:** 5 locations used stale `player.jailed`/`player.jailDays` instead of active `player.jailedUntilDay` — jail never worked for blockade running, border crossing, crime sentencing
+- **Battle crashes:** Set/Array mismatch in combat (`.includes()` on Set), wrong recruit rank value
+- **Surrender peace crash:** Winner stored as ID string, `setKingMood()` expected object
+- **specialLaws crash:** King politics crashed on old saves missing `specialLaws` field
+- **atWar null crashes:** 7+ locations accessed `.size`/`.has()` on undefined atWar
+
+#### High Fixes (25)
+- **Serialization gaps:** 30+ fields missing from `serializePlayer()` — travel state, spouse modifiers, military, bankruptcy, tournament, spy favors, tax exemption, petition, monopoly, instrument, maxAge, and more were all lost on save/load
+- **Property name typos:** `.horse` → `.horses`, `.spouse` → `.spouseId`, `currentTownId` → `townId`
+- **Spy rewards:** Enemy kingdom received spy mission rewards instead of home kingdom
+- **Criminal record:** `criminalRecord[kId] > 0` always false (was object, not number)
+- **Caravan stuck:** Caravans stuck forever if destination town removed
+- **Dynasty generation:** Regency never advanced generation counter
+- **Forage/horse RNG:** Used `Math.random()` instead of seeded RNG, breaking determinism
+
+#### Medium Fixes (35)
+- **Input validation:** 8 functions accepted NaN/negative/zero values, corrupting game state (sellToKingdom, negotiateSupplyDeal, bidOnOrder, setupTransport, supplyBuilding, collectBuildingOutput, stockRetailBuilding, giveFamilyGift)
+- **Dead spouse on load:** Validation allowed dead NPCs as valid spouse
+- **Sea speed:** Double-applied speed bonus
+- **Thirst debuff:** Used hungerRate instead of thirstRate
+- **Dead skills:** guild_negotiator, good_parent, royal_favor had no runtime effect — wired up
+- **Dead achievements:** bribesGiven, belowMarketSales, smugglingTaxSaved counters never incremented
+- **Blackmail exploit:** NPC never debited gold — created money from nothing
+- **Rental houses:** Family dinner, celebration, and invite accepted rental properties as valid homes
+
+#### Low Fixes (14)
+- Player undefined guards in 4 UI locations
+- Stale field writes and duplicate serialization
+- Tooltip negative coordinate positioning
+- Tournament forfeit logged wrong round number
 
 ### Changed
+- Musician fame rebalance — gains reduced ~10x; legendary fame requires ~6 months of dedicated play
 - Passive fan fame: `0.1` → `0.01` per fan per kingdom tick
 - Tavern performance fame: `1.0/1.25` → `0.12/0.15`
 - Street performance fame: `0.5/0.625` → `0.06/0.08`
