@@ -5821,9 +5821,15 @@
             isSurrender: !!isSurrender,
         });
 
-        // Mood: victor becomes jubilant, loser becomes wrathful
-        setKingMood(a, 'jubilant', 'won the war against ' + b.name);
-        setKingMood(b, 'wrathful', 'lost the war against ' + a.name);
+        // Mood: only set victor/loser moods if there was an actual winner
+        if (winner && loser) {
+            setKingMood(winner, 'jubilant', 'won the war against ' + loser.name);
+            setKingMood(loser, 'wrathful', 'lost the war against ' + winner.name);
+        } else {
+            // White/negotiated peace — both relieved
+            setKingMood(a, 'content', 'peace with ' + b.name);
+            setKingMood(b, 'content', 'peace with ' + a.name);
+        }
 
         // Clean up active war
         if (world.activeWars && warId) {

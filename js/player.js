@@ -1424,7 +1424,7 @@
             transferEnabled: false,
         };
         player.buildings.push(bld);
-        town.buildings.push({ type: buildingType, level: 1, ownerId: 'player', builtDay: Engine.getDay(), condition: 'new', lastRepairDay: 0 });
+        town.buildings.push({ id: bld.id, type: buildingType, level: 1, ownerId: 'player', builtDay: Engine.getDay(), condition: 'new', lastRepairDay: 0 });
         player.stats.buildingsOwned++;
 
         Engine.logEvent(`The merchant builds a ${bt.name} in ${town.name}.`);
@@ -2323,7 +2323,7 @@
         const town = Engine.findTown(bld.townId);
         if (town) {
             const townBld = town.buildings.find(b =>
-                b.type === bld.type && b.ownerId === 'player'
+                (b.id && b.id === bld.id) || (b.type === bld.type && b.ownerId === 'player')
             );
             if (townBld) townBld.level = bld.level;
         }
@@ -5328,12 +5328,14 @@
 
         // Death check: after age 55, small daily chance
         if (!window._godInvincible) {
-            if (player.age >= CONFIG.DEATH_AGE_MAX) {
+            var effectiveMaxAge = (player.maxAge || CONFIG.DEATH_AGE_MAX) + (player.maxAgeBonus || 0);
+            if (player.age >= effectiveMaxAge) {
                 handlePlayerDeath();
                 return;
             }
-            if (player.age > CONFIG.DEATH_AGE_MIN) {
-                const deathChance = 0.0005 * (player.age - CONFIG.DEATH_AGE_MIN);
+            var effectiveMinAge = CONFIG.DEATH_AGE_MIN + (player.maxAgeBonus || 0);
+            if (player.age > effectiveMinAge) {
+                const deathChance = 0.0005 * (player.age - effectiveMinAge);
                 const rng = Engine.getRng();
                 if (rng && rng.chance(deathChance)) {
                     handlePlayerDeath();
@@ -9390,7 +9392,7 @@
         // Payment based on skill level
         var basePay = hasSkill('doctor') ? 25 : 15;
         // Nurse military rank bonus
-        if (player.militaryRank === 'nurse') basePay = Math.floor(basePay * 1.5);
+        if (NURSE_RANKS && NURSE_RANKS.indexOf(player.militaryRank) !== -1) basePay = Math.floor(basePay * 1.5);
         player.gold += basePay;
         player.stats.totalGoldEarned += basePay;
         grantXP(5, 'medical');
@@ -9884,7 +9886,7 @@
         player.maintenanceDiscount = data.maintenanceDiscount || null;
         player.xpBonus = data.xpBonus || null;
         player.revealedTraits = data.revealedTraits || {};
-        player.stats = data.stats || player.stats;
+        player.stats = Object.assign({}, player.stats, data.stats || {});
         player.supplyChains = data.supplyChains || [];
         player.tradeLog = data.tradeLog || [];
         player.firstName = data.firstName || 'Unknown';
@@ -9894,6 +9896,13 @@
         player.age = data.age != null ? data.age : 18;
         player.alive = data.alive != null ? data.alive : true;
         player.spouseId = data.spouseId || null;
+        // Validate spouseId against loaded world
+        if (player.spouseId && typeof Engine !== 'undefined' && Engine.getWorld) {
+            var worldPeople = Engine.getWorld().people || [];
+            if (!worldPeople.some(function(pp) { return pp.id === player.spouseId; })) {
+                player.spouseId = null;
+            }
+        }
         player.childrenIds = data.childrenIds || [];
         // Clean up orphaned childrenIds that reference non-existent people
         if (player.childrenIds.length > 0 && typeof Engine !== 'undefined' && Engine.getWorld) {
@@ -10068,12 +10077,12 @@
         player.ownedRoutes = data.ownedRoutes || [];
         // Petitions
         player.petitions = data.petitions || [];
-        player.spouseProdMod = 1.0;
-        player.spouseCostMod = 1.0;
-        player.spouseRepMod = 1.0;
-        player.spouseHungerMod = 1.0;
-        player.spouseLuckMod = 1.0;
-        player.spouseProtectMod = 1.0;
+        player.spouseProdMod = data.spouseProdMod != null ? data.spouseProdMod : 1.0;
+        player.spouseCostMod = data.spouseCostMod != null ? data.spouseCostMod : 1.0;
+        player.spouseRepMod = data.spouseRepMod != null ? data.spouseRepMod : 1.0;
+        player.spouseHungerMod = data.spouseHungerMod != null ? data.spouseHungerMod : 1.0;
+        player.spouseLuckMod = data.spouseLuckMod != null ? data.spouseLuckMod : 1.0;
+        player.spouseProtectMod = data.spouseProtectMod != null ? data.spouseProtectMod : 1.0;
         // Dynasty marriages & alliances
         player.familyAlliances = data.familyAlliances || [];
         player._marriageProposals = data._marriageProposals || [];
@@ -18340,7 +18349,7 @@
         }
 
         // Caravan wagon requires a horse
-        if (ht.requiresHorse && !player.horse) {
+        if (ht.requiresHorse && (!player.horses || player.horses.length === 0)) {
             return { success: false, message: 'A caravan wagon requires a horse. Buy a horse first.' };
         }
 
@@ -20055,7 +20064,7 @@
             bld.retailTotalSold = bld.retailTotalSold || 0;
 
             // Need workers to operate
-            var workerCount = bld.workers || 0;
+            var workerCount = Array.isArray(bld.workers) ? bld.workers.length : (bld.workers || 0);
             if (workerCount < (bt.workers || 1)) continue;
 
             var town = Engine.findTown(bld.townId);
@@ -20804,7 +20813,7 @@
         if (player.citizenshipKingdomId) {
             player.militaryActive = true;
             player.militaryKingdomId = player.citizenshipKingdomId;
-            player.militaryRank = 'recruit';
+            player.militaryRank = 'militiaman';
             player.militaryDayEnlisted = 0;
         }
     }
@@ -21521,8 +21530,8 @@
                 var chance9 = 0.5 + (bestRelLevel - 70) * 0.01;
                 if (rng.random() < chance9) {
                     freeFromIndenture('💕 ' + partner.firstName + ' ' + partner.lastName + '\'s family purchased your freedom! Love conquers all!');
-                    player.spouse = partner.id;
-                    partner.spouse = 'player';
+                    player.spouseId = partner.id;
+                    partner.spouseId = 'player';
                     return { success: true, message: partner.firstName + ' married you and bought your freedom!' };
                 } else {
                     Engine.logEvent('💔 ' + partner.firstName + '\'s family refused to purchase your freedom.');
@@ -23530,7 +23539,7 @@
         if (player.militaryKingdomId) {
             playerK = Engine.findKingdom(player.militaryKingdomId);
         }
-        if (!playerK || !playerK.atWar || (Array.isArray(playerK.atWar) ? playerK.atWar.length === 0 : true)) {
+        if (!playerK || !playerK.atWar || (playerK.atWar instanceof Set ? playerK.atWar.size === 0 : (Array.isArray(playerK.atWar) ? playerK.atWar.length === 0 : true))) {
             return { success: false, message: 'Your kingdom is not at war. No battles available.' };
         }
         
@@ -23540,7 +23549,7 @@
         }
         
         var rng = Engine.getRng();
-        var atWarArr = Array.isArray(playerK.atWar) ? playerK.atWar : [playerK.atWar];
+        var atWarArr = playerK.atWar instanceof Set ? [...playerK.atWar] : (Array.isArray(playerK.atWar) ? playerK.atWar : [playerK.atWar]);
         var enemyId = atWarArr[rng.randInt(0, atWarArr.length - 1)];
         var enemyK = Engine.findKingdom(enemyId);
         if (!enemyK) return { success: false, message: 'Enemy kingdom not found.' };
@@ -23709,14 +23718,14 @@
         }
         
         var playerK = Engine.findKingdom(player.militaryKingdomId);
-        if (!playerK || !playerK.atWar || (Array.isArray(playerK.atWar) ? playerK.atWar.length === 0 : true)) {
+        if (!playerK || !playerK.atWar || (playerK.atWar instanceof Set ? playerK.atWar.size === 0 : (Array.isArray(playerK.atWar) ? playerK.atWar.length === 0 : true))) {
             return { success: false, message: 'Your kingdom must be at war for the decisive battle.' };
         }
         
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.decisive_battle || 60);
         
         var rng = Engine.getRng();
-        var atWarArr = Array.isArray(playerK.atWar) ? playerK.atWar : [playerK.atWar];
+        var atWarArr = playerK.atWar instanceof Set ? [...playerK.atWar] : (Array.isArray(playerK.atWar) ? playerK.atWar : [playerK.atWar]);
         var enemyId = atWarArr[rng.randInt(0, atWarArr.length - 1)];
         var enemyK = Engine.findKingdom(enemyId);
         
