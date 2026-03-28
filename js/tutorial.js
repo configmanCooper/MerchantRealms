@@ -832,12 +832,79 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Outposts & Expansion',
-                    text: '\uD83C\uDFD5\uFE0F At <strong>Guildmaster rank</strong>, you can found <strong>\u26FA Wilderness Outposts</strong> in remote areas! Outposts extend your trade network, providing storage, rest, and a foothold in new territories. They cost 500g + materials (wood, stone) and can grow into full towns! Combine with toll roads and caravans for a self-sustaining empire.'
+                    text: '🏕️ At <strong>Guildmaster rank</strong>, you can found <strong>⛺ Wilderness Outposts</strong> in remote areas! Outposts extend your trade network, providing storage, rest, and a foothold in new territories. They cost 500g + materials (wood, stone) and can grow into full towns! Combine with toll roads and caravans for a self-sustaining empire.'
                 }
             ]
         },
 
-        // ── Chapter 14: Mastery & Endgame ─────────────────────
+        // ── Chapter 14: Guilds & Crafting ─────────────────────
+        {
+            title: 'Guilds & Crafting',
+            part: 'advanced',
+            steps: [
+                {
+                    title: 'What Are Guilds?',
+                    text: '🏛️ <strong>Guilds</strong> are professional organizations that control access to certain building types. There are <strong>9 guilds</strong>: Farmers\', Miners\', Harvesters\', Artisans\', Craftsmen\'s, Armorsmiths\', Luxury Artisans\', Maritime, and Merchants\'. Each guild covers a <strong>building category</strong> — you must be a member to own those buildings!'
+                },
+                {
+                    title: 'The Guilds Panel',
+                    text: '🏛️ We\'ve given you <strong>500 gold</strong> for guild dues. Click the <strong>🏛️ Guilds</strong> button to see all available guilds and their costs!',
+                    highlight: '#btnGuilds',
+                    onEnter: function () {
+                        closeModal();
+                        giveGold(500);
+                    },
+                    waitFor: function () { return isModalOpen(); },
+                    skipAfter: 8000
+                },
+                {
+                    title: 'Joining a Guild',
+                    text: '💰 Guild memberships come in two types:<br>• <strong>Monthly</strong> — ' + (typeof CONFIG !== 'undefined' ? CONFIG.GUILD_BASE_MONTHLY : 25) + 'g/month (flexible, good for trying out)<br>• <strong>Yearly</strong> — ' + (typeof CONFIG !== 'undefined' ? CONFIG.GUILD_BASE_YEARLY : 200) + 'g/year (cheaper long-term)<br><br>The <strong>Guild Negotiator</strong> skill reduces dues by 20%. Memberships <strong>expire automatically</strong> — if you can\'t pay, you lose access to those building types!'
+                },
+                {
+                    title: 'Guild Building Restrictions',
+                    text: '🔨 Some kingdoms enforce <strong>Guild Monopoly</strong> laws — only guild members at <strong>Guildmaster rank</strong> can own production buildings! Check a kingdom\'s laws before investing. If the law passes while you own buildings, you may face penalties.<br><br>💡 <strong>Tip:</strong> Join guilds early for categories you plan to build in. The yearly option saves gold if you\'re committed.'
+                },
+                {
+                    title: 'Guild Crafting',
+                    text: '⚙️ Guild membership also unlocks <strong>crafting access</strong> at guild buildings in town. You can craft items using raw materials from your inventory — no need to own the building yourself! Check <strong>🏛️ Guilds</strong> for available crafting recipes in your current town.'
+                },
+                {
+                    title: 'Guild Entry Fees',
+                    text: '🏪 When you enter a town with guild-controlled buildings, you may be charged a small <strong>entry fee</strong> (' + (typeof CONFIG !== 'undefined' ? CONFIG.GUILD_BUILDING_ENTRY_FEE_MIN : 5) + '-' + (typeof CONFIG !== 'undefined' ? CONFIG.GUILD_BUILDING_ENTRY_FEE_MAX : 10) + 'g) if you\'re not a member of that guild. This applies to using their services. Membership waives these fees and is usually cheaper long-term.'
+                }
+            ]
+        },
+
+        // ── Chapter 15: Survival Economics ────────────────────
+        {
+            title: 'Survival Economics',
+            part: 'advanced',
+            steps: [
+                {
+                    title: 'Trade or Die',
+                    text: '⚠️ <strong>This is the most important lesson in the game.</strong><br><br>Working jobs alone will <strong>NOT</strong> keep you alive long-term. Job income barely covers food and water costs. The <strong>only reliable path to survival</strong> is <strong>trading for profit</strong> — buying goods where they\'re cheap and selling where they\'re expensive.'
+                },
+                {
+                    title: 'The Economy Death Spiral',
+                    text: '💀 If you hit <strong>0 gold</strong> without food or trade goods, recovery is extremely difficult:<br>• You can\'t buy food → hunger drops → energy drops<br>• Low energy → can\'t work efficiently → earn less<br>• Can\'t buy trade goods → can\'t make profit<br><br>🛡️ <strong>Prevention:</strong> Always keep an emergency fund of 50-100g. Never spend your last gold on non-essentials!'
+                },
+                {
+                    title: 'Market Saturation',
+                    text: '📉 <strong>Markets remember.</strong> If you sell the same goods in the same town repeatedly, prices <strong>drop</strong> as supply increases. Smart merchants:<br>• <strong>Diversify routes</strong> — don\'t rely on one trade route<br>• <strong>Rotate goods</strong> — sell different things each trip<br>• <strong>Watch supply/demand</strong> — the market panel shows current levels<br>• <strong>Trade across kingdoms</strong> — distant markets are less saturated'
+                },
+                {
+                    title: 'Early Game Survival Tips',
+                    text: '💡 <strong>Survival checklist for new merchants:</strong><br>• 🍞 <strong>Food first</strong> — always carry bread/fish, eat before you starve<br>• 💧 <strong>Water always</strong> — dehydration kills faster than hunger<br>• 💰 <strong>Trade early</strong> — buy cheap at farms, sell at cities<br>• 🏠 <strong>Home base</strong> — get a house ASAP for free rest<br>• ⚡ <strong>Rest wisely</strong> — rest at home (free) not at inns (costly)<br>• 🌿 <strong>Forage</strong> — free food near forests and water'
+                },
+                {
+                    title: 'Bankruptcy Recovery',
+                    text: '🆘 If you go bankrupt, don\'t panic! The game offers <strong>recovery paths</strong>:<br>• <strong>Indentured service</strong> — work for a master to pay off debts<br>• <strong>Military enlistment</strong> — join the army for guaranteed food and pay<br>• <strong>Forage & work</strong> — forage for free food, work basic jobs<br><br>Bankruptcy isn\'t game over — it\'s a setback. The recovery paths are designed to get you back on your feet!'
+                }
+            ]
+        },
+
+        // ── Chapter 16: Mastery & Endgame ─────────────────────
         {
             title: 'Mastery & Endgame',
             part: 'advanced',
@@ -874,7 +941,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Congratulations!',
-                    text: '\uD83C\uDF89 <strong>You\u2019ve completed the full tutorial!</strong> You know every system in Merchant Realms. Diversify across kingdoms, time seasonal trades, invest in skills, marry for dynasty, and watch the leaderboard. <strong>Now go build your trade empire!</strong>',
+                    text: '\uD83C\uDF89 <strong>You\u2019ve completed the full tutorial!</strong> You know every system in Merchant Realms — trading, building, guilds, survival economics, kingdoms, war, and more. Diversify across kingdoms, time seasonal trades, invest in skills, marry for dynasty, and watch the leaderboard. <strong>Now go build your trade empire!</strong>',
                     isFinal: true
                 }
             ]
