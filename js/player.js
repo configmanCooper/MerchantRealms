@@ -4496,17 +4496,18 @@
         town.market.supply.horses -= 1;
 
         var names = ['Shadow', 'Thunder', 'Storm', 'Blaze', 'Spirit', 'Midnight', 'Copper', 'Arrow', 'Dusty', 'Noble', 'Whisper', 'Ember', 'Frost', 'Chestnut', 'Maple'];
-        var name = names[Math.floor(Math.random() * names.length)];
+        var hrng = Engine.getRng();
+        var name = names[hrng ? hrng.randInt(0, names.length - 1) : Math.floor(Math.random() * names.length)];
         // Make sure name is unique among current horses
         while (player.horses.some(function(h) { return h.name === name; })) {
-            name = names[Math.floor(Math.random() * names.length)] + ' ' + Math.floor(Math.random() * 100);
+            name = names[hrng ? hrng.randInt(0, names.length - 1) : Math.floor(Math.random() * names.length)] + ' ' + (hrng ? hrng.randInt(0, 99) : Math.floor(Math.random() * 100));
         }
 
         var horse = {
-            id: 'horse_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+            id: 'horse_' + Date.now() + '_' + (hrng ? hrng.randInt(0, 999) : Math.floor(Math.random() * 1000)),
             name: name,
-            stamina: 80 + Math.floor(Math.random() * 21), // 80-100
-            speed: 0.8 + Math.random() * 0.4, // 0.8-1.2 multiplier
+            stamina: 80 + (hrng ? hrng.randInt(0, 20) : Math.floor(Math.random() * 21)), // 80-100
+            speed: 0.8 + (hrng ? hrng.random() * 0.4 : Math.random() * 0.4), // 0.8-1.2 multiplier
         };
         player.horses.push(horse);
         Engine.logEvent('🐴 You bought a horse named ' + horse.name + '!');
@@ -15639,7 +15640,8 @@
         }
 
         const found = [];
-        const roll = Math.random.bind(Math);
+        const rng = Engine.getRng();
+        const roll = function() { return rng ? rng.random() : Math.random(); };
 
         // Forest: herbs, timber, berries
         if (terrainCounts.forest > 20) {
@@ -24086,8 +24088,8 @@
 
     function familyDinner() {
         if (!player.houses || player.houses.length === 0) return { success: false, message: 'You need a house to host dinner.' };
-        var houseInTown = player.houses.find(function(h) { return h.townId === player.townId; });
-        if (!houseInTown) return { success: false, message: 'No house in this town.' };
+        var houseInTown = player.houses.find(function(h) { return h.townId === player.townId && !h.isRental; });
+        if (!houseInTown) return { success: false, message: 'No non-rental house in this town.' };
         var familyInTown = player.familyMembers.filter(function(m) {
             var p = Engine.findPerson(m.npcId);
             return p && p.alive && p.townId === player.townId;
@@ -24165,8 +24167,8 @@
 
     function familyCelebration() {
         if (!player.houses || player.houses.length === 0) return { success: false, message: 'Need a house.' };
-        var houseInTown = player.houses.find(function(h) { return h.townId === player.townId; });
-        if (!houseInTown) return { success: false, message: 'No house in this town.' };
+        var houseInTown = player.houses.find(function(h) { return h.townId === player.townId && !h.isRental; });
+        if (!houseInTown) return { success: false, message: 'No non-rental house in this town.' };
         var ht = CONFIG.HOUSING_TYPES.find(function(h) { return h.id === houseInTown.type; });
         var cost = ht ? Math.floor(20 + (ht.comfort || 0)) : 50;
         if (player.gold < cost) return { success: false, message: 'Need ' + cost + 'g for celebration.' };
@@ -24187,6 +24189,9 @@
     }
 
     function giveFamilyGift(npcId, resourceId, qty) {
+        qty = Number(qty);
+        if (!qty || !isFinite(qty) || qty <= 0) return { success: false, message: 'Invalid quantity.' };
+        qty = Math.floor(qty);
         var member = player.familyMembers.find(function(m) { return m.npcId === npcId; });
         if (!member) return { success: false, message: 'Not a family member.' };
         if (!player.inventory[resourceId] || player.inventory[resourceId] < qty) return { success: false, message: 'Not enough resources.' };
@@ -24207,8 +24212,8 @@
         if (!member) return { success: false, message: 'Not a family member.' };
         var person = Engine.findPerson(npcId);
         if (!person || !person.alive) return { success: false, message: 'Family member not found.' };
-        var houseInTown = player.houses.find(function(h) { return h.townId === player.townId; });
-        if (!houseInTown) return { success: false, message: 'No house in this town.' };
+        var houseInTown = player.houses.find(function(h) { return h.townId === player.townId && !h.isRental; });
+        if (!houseInTown) return { success: false, message: 'No non-rental house in this town.' };
         var ht = CONFIG.HOUSING_TYPES.find(function(h) { return h.id === houseInTown.type; });
         var maxOcc = ht ? ht.maxOccupants : 2;
         if (houseInTown.occupants.length >= maxOcc) return { success: false, message: 'House is full.' };
