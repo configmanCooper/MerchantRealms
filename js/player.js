@@ -8447,6 +8447,7 @@
             buildingsMaintained: player.buildings.length,
             dayStarted: Engine.getDay(),
             revealedAtDeath: player.revealedTraits[spouse.id] ? JSON.parse(JSON.stringify(player.revealedTraits[spouse.id])) : { traits: {}, quirks: [] },
+            parentSkills: player.skills ? { ...player.skills } : {},
         };
 
         Engine.logEvent(`${player.fullName} has passed. ${spouse.firstName} serves as regent for young ${heir.firstName}.`);
@@ -8624,6 +8625,10 @@
 
         // Gold based on regency outcome
         player.gold = Math.floor(rd.estateGold * threshold.goldPct);
+        // Good Parent skill: +10% inherited gold and reputation
+        if (rd.parentSkills && rd.parentSkills.good_parent) {
+            player.gold = Math.floor(player.gold * 1.10);
+        }
 
         // Buildings based on regency outcome
         if (threshold.buildingPct >= 1) {
@@ -8699,7 +8704,9 @@
 
         // Reputation
         for (const kId in player.reputation) {
-            player.reputation[kId] = Math.floor((rd.reputationAtDeath[kId] || 50) * threshold.repMult);
+            var repMult = threshold.repMult;
+            if (rd.parentSkills && rd.parentSkills.good_parent) repMult *= 1.10;
+            player.reputation[kId] = Math.floor((rd.reputationAtDeath[kId] || 50) * repMult);
         }
 
         // Heir traits
@@ -9667,7 +9674,6 @@
             laborBoost: player.laborBoost || null,
             maintenanceDiscount: player.maintenanceDiscount || null,
             xpBonus: player.xpBonus || null,
-            revealedTraits: player.revealedTraits || {},
             stats: { ...player.stats },
             supplyChains: [...player.supplyChains],
             tradeLog: JSON.parse(JSON.stringify(player.tradeLog)),
@@ -10217,7 +10223,7 @@
             player.scholar.specializationKnowledge = player.scholar.specializationKnowledge || 0;
             player.scholar.royaltiesActive = player.scholar.royaltiesActive || false;
             player.scholar.royaltiesStartDay = player.scholar.royaltiesStartDay || 0;
-            player.scholar.royaltiesPlayerId = player.scholar.royaltiesPlayerId || null;
+            player.scholar.royaltiesGeneration = player.scholar.royaltiesGeneration || player.scholar.royaltiesPlayerId ? (player.generation || 1) : null;
             player.scholar.totalRoyaltiesEarned = player.scholar.totalRoyaltiesEarned || 0;
         }
         // Kingdom debts & trade ledgers
@@ -11772,7 +11778,9 @@
         if (goldEarned < nextRank.goldReq) reasons.push(`Need ${nextRank.goldReq.toLocaleString()}g earned (have ${Math.floor(goldEarned).toLocaleString()}g)`);
 
         // Reputation requirement
-        if (rep < nextRank.repReq) reasons.push(`Need ${nextRank.repReq} reputation (have ${Math.floor(rep)})`);
+        var effectiveRepReq = nextRank.repReq;
+        if (hasSkill('royal_favor')) effectiveRepReq = Math.floor(effectiveRepReq * 0.75);
+        if (rep < effectiveRepReq) reasons.push(`Need ${effectiveRepReq} reputation (have ${Math.floor(rep)})`);
 
         // Fee check
         if (nextRank.fee && player.gold < nextRank.fee) reasons.push(`Need ${nextRank.fee.toLocaleString()}g fee (have ${Math.floor(player.gold).toLocaleString()}g)`);
@@ -12379,6 +12387,8 @@
                 base = Math.round(base * multiplier);
             }
         } catch(e) {}
+        // Guild Negotiator skill: 20% reduced dues
+        if (hasSkill('guild_negotiator')) base = Math.round(base * 0.80);
         return base;
     }
 
@@ -17777,8 +17787,18 @@
         for (const personId in player.blackmailTargets) {
             const bt = player.blackmailTargets[personId];
             if (day >= bt.nextPayDay) {
-                player.gold += bt.paymentPerSeason;
-                player.stats.totalGoldEarned += bt.paymentPerSeason;
+                // Deduct from target NPC if they exist and can pay
+                var bTarget = Engine.findPerson(personId);
+                if (bTarget && bTarget.alive) {
+                    var bPayment = Math.min(bt.paymentPerSeason, bTarget.gold || 0);
+                    if (bTarget.gold != null) bTarget.gold -= bPayment;
+                    player.gold += bPayment;
+                    player.stats.totalGoldEarned += bPayment;
+                } else {
+                    // Target gone — blackmail ends
+                    delete player.blackmailTargets[personId];
+                    continue;
+                }
                 bt.nextPayDay = day + 90;
             }
         }
@@ -18500,7 +18520,8 @@
         player.stats.totalGoldEarned += sellPrice;
         player.houses.splice(idx, 1);
         if (player.primaryHouseId === houseId) {
-            player.primaryHouseId = player.houses.length > 0 ? player.houses[0].id : null;
+            var nextHome = player.houses.find(function(h) { return !h.isRental; });
+            player.primaryHouseId = nextHome ? nextHome.id : null;
         }
         var town = Engine.findTown(house.townId);
         Engine.logEvent(player.fullName + ' sold a ' + (ht ? ht.name : 'house') + ' in ' + (town ? town.name : 'unknown') + ' for ' + sellPrice + 'g.');
@@ -18578,6 +18599,7 @@
     function setPrimaryHouse(houseId) {
         var house = (player.houses || []).find(h => h.id === houseId);
         if (!house) return { success: false, message: 'House not found.' };
+        if (house.isRental) return { success: false, message: 'Cannot set a rental property as primary home.' };
         player.primaryHouseId = houseId;
         return { success: true, message: 'Primary home updated.' };
     }
@@ -19546,7 +19568,7 @@
         if (!player.alive) return;
 
         var injDebuffs = getInjuryDebuffs();
-        var thirstDecay = THIRST_CONFIG.DECAY_PER_DAY * (injDebuffs.hungerRate || 1.0);
+        var thirstDecay = THIRST_CONFIG.DECAY_PER_DAY * (injDebuffs.thirstRate || 1.0);
         player.thirst = Math.max(0, (player.thirst != null ? player.thirst : THIRST_CONFIG.START) - thirstDecay);
 
         if (player.townId && !player.traveling) {
@@ -20885,8 +20907,8 @@
         if (player.indentured && player.indentured.active) tickIndentured();
         if (player.conquestServitude && player.conquestServitude.active) tickConquestServitude();
         if (player.pilgrim && player.pilgrim.active) tickPilgrim();
-        if (player.shipwrecked && player.shipwrecked.active) tickShipwrecked();
-        if (player.musician && player.musician.active) tickMusician();
+        if (player.shipwrecked && (player.shipwrecked.active || player.shipwrecked.embassy)) tickShipwrecked();
+        if (player.musician && (player.musician.active || player.musician.legacyChoice)) tickMusician();
         if (player.militaryLeader && player.militaryLeader.active) tickMilitaryLeader();
         if (player.scholar && (player.scholar.active || player.scholar.royaltiesActive)) tickScholar();
         // Military Service (from enlistment escape)
@@ -22611,8 +22633,8 @@
         // Royalties from Great Book
         if (s.royaltiesActive && s.greatBookWritten && day % 7 === 0) {
             // Check if current player is the author (royalties end on death/inheritance)
-            var currentId = player.firstName + '_' + player.lastName;
-            if (currentId !== s.royaltiesPlayerId) {
+            var currentGen = player.generation || 1;
+            if (currentGen !== (s.royaltiesGeneration || 1)) {
                 s.royaltiesActive = false;
                 Engine.logEvent('📖 The royalties from the Great Book have ended with the passing of its author.');
             } else {
@@ -23701,7 +23723,7 @@
         if (rankIdx < 4) return { success: false, message: 'Must be Captain or higher to attend War Council. Current rank: ' + (ranks[rankIdx] ? ranks[rankIdx].name : player.militaryLeader.rank) };
         
         var playerK = Engine.findKingdom(player.militaryKingdomId);
-        if (!playerK || !playerK.atWar || (Array.isArray(playerK.atWar) ? playerK.atWar.length === 0 : true)) {
+        if (!playerK || !playerK.atWar || (playerK.atWar instanceof Set ? playerK.atWar.size === 0 : (Array.isArray(playerK.atWar) ? playerK.atWar.length === 0 : true))) {
             return { success: false, message: 'No active wars. War council not in session.' };
         }
         
@@ -24002,7 +24024,7 @@
         }
         player.scholar.royaltiesActive = true;
         player.scholar.royaltiesStartDay = Engine.getDay();
-        player.scholar.royaltiesPlayerId = player.firstName + '_' + player.lastName;
+        player.scholar.royaltiesGeneration = player.generation || 1;
         player.scholar.totalRoyaltiesEarned = 0;
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.write_great_book || 60);
         Engine.logEvent(player.fullName + ' has written the Great Book! Scholar\'s journey complete.');

@@ -5766,7 +5766,7 @@
                     (w.kingdomA === b.id && w.kingdomB === a.id)) {
                     warId = wid;
                     if (isSurrender && loser) {
-                        winner = loser.id === a.id ? b.id : a.id;
+                        winner = loser.id === a.id ? b : a;
                     }
                     break;
                 }
@@ -5817,7 +5817,7 @@
             warId: warId,
             kingdomA: a.id,
             kingdomB: b.id,
-            winner: winner,
+            winner: winner ? (winner.id || winner) : null,
             isSurrender: !!isSurrender,
         });
 
@@ -6349,7 +6349,11 @@
 
             var aggressor = findKingdom(war.aggressor);
             var defender = findKingdom(war.kingdomA === war.aggressor ? war.kingdomB : war.kingdomA);
-            if (!aggressor || !defender) continue;
+            if (!aggressor || !defender) {
+                // Clean up orphaned war — one or both kingdoms no longer exist
+                delete world.activeWars[warId];
+                continue;
+            }
 
             var allAchieved = true;
             for (var g = 0; g < war.warGoals.length; g++) {
@@ -8024,6 +8028,8 @@
         // =============================================
         // 13. NEW LAW AI — Kings enact/repeal new laws based on mood and personality
         // =============================================
+        if (!k.laws) k.laws = {};
+        if (!k.laws.specialLaws) k.laws.specialLaws = [];
         var moodCurrent = k.kingMood ? k.kingMood.current : 'content';
 
         // a. Price Controls — brilliant kings enact during crises, repeal when stable
