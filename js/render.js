@@ -132,6 +132,7 @@ window.Renderer = (function () {
 
     function init(canvasEl, world) {
         canvas = canvasEl || document.getElementById('gameCanvas');
+        if (!canvas) { console.error('Render.init: canvas element not found'); return; }
         ctx = canvas.getContext('2d');
         minimapCanvas = document.getElementById('minimapCanvas');
         if (minimapCanvas) minimapCtx = minimapCanvas.getContext('2d');

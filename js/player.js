@@ -1105,6 +1105,11 @@
         }
         if (!player.achievementStats.totalSells) player.achievementStats.totalSells = {};
         player.achievementStats.totalSells[resourceId] = (player.achievementStats.totalSells[resourceId] || 0) + qty;
+        // Track below-market sales for philanthropist achievement
+        var baseMarketPrice = town.market.prices[resourceId] || 1;
+        if (effectivePrice < baseMarketPrice * 0.9) {
+            player.belowMarketSales = (player.belowMarketSales || 0) + qty;
+        }
         if (!player.achievementStats.resourcesTraded) player.achievementStats.resourcesTraded = {};
         player.achievementStats.resourcesTraded[resourceId] = true;
         if (kingdom) {
@@ -1252,6 +1257,9 @@
             player.achievementStats.smuggleSuccesses = (player.achievementStats.smuggleSuccesses || 0) + 1;
             player.achievementStats.smuggleStreak = (player.achievementStats.smuggleStreak || 0) + 1;
             player.achievementStats.smuggleGoldEarned = (player.achievementStats.smuggleGoldEarned || 0) + totalRevenue;
+            // Track tax saved by smuggling for achievement
+            var taxSaved = Math.floor(basePrice * qty * ((kingdom && kingdom.taxRate) || 0.10));
+            player.smugglingTaxSaved = (player.smugglingTaxSaved || 0) + taxSaved;
             // Double agent check
             if (isPlayerCitizenOf(kingdom.id)) unlockAchievement('double_agent');
             addTradeLog(resourceId, qty, smugglePrice, town.id, 'smuggle');
@@ -2757,8 +2765,7 @@
                     if (bestShip) {
                         player.ships = player.ships.filter(function(s) { return s.id !== bestShip.id; });
                     }
-                    player.jailed = true;
-                    player.jailDays = 30;
+                    player.jailedUntilDay = Engine.getDay() + 30;
                     player.jailReason = 'Running a naval blockade';
                     return { success: false, message: 'Caught running the blockade! Ship seized and you are jailed for 30 days.' };
                 }
@@ -10714,8 +10721,7 @@
 
             if (Math.random() < detectChance) {
                 // Caught!
-                player.jailed = true;
-                player.jailDays = 20;
+                player.jailedUntilDay = Engine.getDay() + 20;
                 player.jailReason = 'Illegal border crossing';
                 var fine = Math.min(player.gold, Math.floor(player.gold * 0.25));
                 player.gold -= fine;
@@ -11776,7 +11782,13 @@
             var startDay = player.kingdomResidencyStart ? (player.kingdomResidencyStart[kId] || Engine.getDay()) : Engine.getDay();
             var daysInKingdom = Engine.getDay() - startDay;
             if (daysInKingdom < (nextRank.residencyDays || 90)) reasons.push(`Must live in kingdom for ${nextRank.residencyDays || 90} days (${daysInKingdom} so far)`);
-            if (player.criminalRecord && player.criminalRecord[kId] && player.criminalRecord[kId] > 0) reasons.push('Must have no criminal record in this kingdom');
+            if (player.criminalRecord && player.criminalRecord[kId]) {
+                var totalCrimes = 0;
+                var rec = player.criminalRecord[kId];
+                if (typeof rec === 'object') { for (var ck in rec) { totalCrimes += (rec[ck] || 0); } }
+                else { totalCrimes = rec; }
+                if (totalCrimes > 0) reasons.push('Must have no criminal record in this kingdom');
+            }
         }
 
         if (nextRank.id === 'burgher') {
@@ -11784,7 +11796,7 @@
             if (tradeDays < (nextRank.tradingDays || 360)) reasons.push(`Need 1 year of trading (${tradeDays} days so far)`);
             var buildingsInKingdom = player.buildings.filter(function(b) { var t = Engine.findTown(b.townId); return t && t.kingdomId === kId; }).length;
             if (buildingsInKingdom < (nextRank.minBuildings || 1)) reasons.push(`Need at least ${nextRank.minBuildings || 1} building in kingdom (have ${buildingsInKingdom})`);
-            var trades = player.tradesCompleted || 0;
+            var trades = (player.stats && player.stats.tradesCompleted) || player.tradesCompleted || 0;
             if (trades < (nextRank.minTrades || 50)) reasons.push(`Need ${nextRank.minTrades || 50}+ trades completed (have ${trades})`);
         }
 
@@ -13763,6 +13775,7 @@
                 UI.toast('💰 Bribed the guards — goods safe!', 'success', 'forced_requisition');
             }
             player.notoriety = Math.min(100, (player.notoriety || 0) + 5);
+            player.achievementStats.bribesGiven = (player.achievementStats.bribesGiven || 0) + 1;
             return { success: true, message: 'Bribe accepted. Your goods are safe.' };
         } else {
             Engine.logEvent(player.fullName + ' attempted to bribe the guards but was caught!');
@@ -15808,9 +15821,7 @@
             if (kingdom) kingdom.gold = (kingdom.gold || 0) + actualFine;
 
             // Jail time
-            player.jailed = true;
-            player.jailDays = jailDays;
-            player.jailedDay = Engine.getDay();
+            player.jailedUntilDay = Engine.getDay() + jailDays;
             player.jailKingdomId = kingdom ? kingdom.id : null;
 
             // Reputation penalty in ALL kingdoms
@@ -17341,6 +17352,7 @@
         player.bribedGuards[townId] = { expiresDay: Engine.getDay() + 30, reductionPct: 40 };
         player.notoriety += 3;
         recordCorruptAction('bribe_guards', false);
+        player.achievementStats.bribesGiven = (player.achievementStats.bribesGiven || 0) + 1;
         grantXP(5, 'Bribed guards');
         Engine.logEvent(`Guards in ${town.name} have been bribed.`);
         return { success: true, message: `✅ Guards bribed! Detection -40% in ${town.name} for 30 days.` };
@@ -24919,8 +24931,11 @@
     function rollSpyEvent(rng) {
         var town = Engine.findTown(player.townId);
         if (!town) return '';
-        var kingdom = Engine.findKingdom(town.kingdomId);
+        // Spy rewards should go to the player's home kingdom, not the infiltrated town's kingdom
+        var homeKingdomId = player.citizenshipKingdomId || player.startingKingdomId;
+        var kingdom = homeKingdomId ? Engine.findKingdom(homeKingdomId) : null;
         if (!kingdom) return '';
+        var enemyKingdomId = town.kingdomId;
 
         // Event chances — skills increase odds
         var eventChance = 0.25; // 25% base chance of a special event
@@ -24940,7 +24955,7 @@
         if (roll < 0.30) {
             // EVENT: Reputation boost — uncovered plot against the kingdom
             var repBoost = rng.randInt(5, 12);
-            player.reputation[town.kingdomId] = Math.min(100, (player.reputation[town.kingdomId] || 50) + repBoost);
+            player.reputation[kingdom.id] = Math.min(100, (player.reputation[kingdom.id] || 50) + repBoost);
             if (kingdom.king) modifyRelationship(kingdom.king.id, rng.randInt(3, 8), 'spy_success');
             modifyTownReputation(town.id, rng.randInt(2, 5));
             Engine.logEvent('🕵️ Your spy work uncovered a plot against ' + kingdom.name + '! The crown is grateful. (Kingdom rep +' + repBoost + ')');
@@ -24950,16 +24965,16 @@
         } else if (roll < 0.55) {
             // EVENT: Military advantage — found enemy troop positions
             var wars = Engine.getActiveWars ? Engine.getActiveWars() : {};
-            var enemyKingdomId = null;
+            var warEnemyId = null;
             for (var wId in wars) {
                 var w = wars[wId];
-                if (w.kingdomA === town.kingdomId) { enemyKingdomId = w.kingdomB; break; }
-                if (w.kingdomB === town.kingdomId) { enemyKingdomId = w.kingdomA; break; }
+                if (w.kingdomA === kingdom.id) { warEnemyId = w.kingdomB; break; }
+                if (w.kingdomB === kingdom.id) { warEnemyId = w.kingdomA; break; }
             }
             // Weaken enemy army or boost friendly garrison
-            if (enemyKingdomId) {
-                var enemyK = Engine.findKingdom(enemyKingdomId);
-                var enemyTowns = Engine.getTowns().filter(function(t) { return t.kingdomId === enemyKingdomId; });
+            if (warEnemyId) {
+                var enemyK = Engine.findKingdom(warEnemyId);
+                var enemyTowns = Engine.getTowns().filter(function(t) { return t.kingdomId === warEnemyId; });
                 if (enemyTowns.length > 0) {
                     var targetTown = enemyTowns[rng.randInt(0, enemyTowns.length - 1)];
                     var garrisonLoss = rng.randInt(3, 8);
@@ -24968,7 +24983,7 @@
                 }
             }
             // Also boost a friendly garrison
-            var friendlyTowns = Engine.getTowns().filter(function(t) { return t.kingdomId === town.kingdomId; });
+            var friendlyTowns = Engine.getTowns().filter(function(t) { return t.kingdomId === kingdom.id; });
             if (friendlyTowns.length > 0) {
                 var boostTown = friendlyTowns[rng.randInt(0, friendlyTowns.length - 1)];
                 boostTown.garrison = (boostTown.garrison || 0) + rng.randInt(2, 5);
@@ -24989,7 +25004,7 @@
         } else if (roll < 0.95) {
             // EVENT: Discovered enemy war plans — reputation + kingdom benefit
             var planRepBoost = rng.randInt(8, 15);
-            player.reputation[town.kingdomId] = Math.min(100, (player.reputation[town.kingdomId] || 50) + planRepBoost);
+            player.reputation[kingdom.id] = Math.min(100, (player.reputation[kingdom.id] || 50) + planRepBoost);
             if (kingdom.king) modifyRelationship(kingdom.king.id, rng.randInt(5, 12), 'spy_war_plans');
             // Give the kingdom a stockpile boost (as if they captured supplies)
             kingdom.gold += rng.randInt(200, 500);
@@ -25004,7 +25019,7 @@
             // EVENT: KING'S FAVOR — the rarest and most powerful (~5% of events)
             // Store pending favor for player to choose
             player.pendingSpyFavor = {
-                kingdomId: town.kingdomId,
+                kingdomId: kingdom.id,
                 townId: town.id,
                 day: Engine.getDay()
             };
@@ -25012,7 +25027,7 @@
             if (typeof UI !== 'undefined' && UI.toast) UI.toast('👑 The King offers you a ROYAL FAVOR! Check your notifications.', 'success');
             // Show the favor dialog
             if (typeof UI !== 'undefined' && UI.showSpyFavorDialog) {
-                setTimeout(function() { UI.showSpyFavorDialog(town.kingdomId); }, 500);
+                setTimeout(function() { UI.showSpyFavorDialog(kingdom.id); }, 500);
             }
             return ' 👑 KING\'S FAVOR EARNED!';
         }
@@ -25508,7 +25523,7 @@
         if (!player.tournamentState) return { success: false, message: 'Not in a tournament.' };
         var round = player.tournamentState.round;
         player.tournamentState = null;
-        Engine.logEvent('🏟️ ' + player.fullName + ' has withdrawn from the tournament after Round ' + (round - 1) + '.');
+        Engine.logEvent('🏟️ ' + player.fullName + ' has withdrawn from the tournament before Round ' + round + '.');
         if (typeof UI !== 'undefined' && UI.toast) UI.toast('🏟️ Withdrew from tournament.', 'info', 'my_actions');
         return { success: true, message: 'Withdrew from tournament. Keeping winnings from previous rounds.' };
     }

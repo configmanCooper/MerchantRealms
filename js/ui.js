@@ -5373,6 +5373,8 @@ window.UI = (function () {
         let ty = y + 12;
         if (tx + ttw > window.innerWidth - 8) tx = x - ttw - 8;
         if (ty + tth > window.innerHeight - 8) ty = y - tth - 8;
+        if (tx < 4) tx = 4;
+        if (ty < 4) ty = 4;
         el.tooltip.style.left = tx + 'px';
         el.tooltip.style.top = ty + 'px';
     }
