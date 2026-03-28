@@ -2100,6 +2100,8 @@
     function setupTransport(townId, destTownId, pricePerPassenger, isSea) {
         if (player.traveling) return { success: false, message: 'Cannot setup transport while traveling.' };
         if (player.townId !== townId) return { success: false, message: 'Must be in the town.' };
+        pricePerPassenger = Number(pricePerPassenger);
+        if (!pricePerPassenger || !isFinite(pricePerPassenger) || pricePerPassenger <= 0) return { success: false, message: 'Invalid fare price.' };
 
         var town = Engine.findTown(townId);
         var destTown = Engine.findTown(destTownId);
@@ -11575,6 +11577,7 @@
         }
 
         var effectivePrice = pricePerUnit || Math.floor(basePrice * multiplier);
+        if (!isFinite(effectivePrice) || effectivePrice <= 0) effectivePrice = Math.floor(basePrice * multiplier);
         var totalPrice = effectivePrice * qty;
 
         if ((kingdom.gold || 0) < totalPrice) return { success: false, message: 'Kingdom treasury cannot afford this. Need ' + totalPrice + 'g, treasury has ' + (kingdom.gold || 0) + 'g.' };
@@ -12605,6 +12608,8 @@
 
     function bidOnOrder(orderId, pricePerUnit) {
         if (!player.alive) return { success: false, message: 'You are not alive.' };
+        pricePerUnit = Number(pricePerUnit);
+        if (!pricePerUnit || !isFinite(pricePerUnit) || pricePerUnit <= 0) return { success: false, message: 'Invalid price.' };
         // Find the order across all kingdoms
         var kingdoms = Engine.getKingdoms();
         var foundOrder = null;
@@ -12743,6 +12748,11 @@
 
     function negotiateSupplyDeal(kingdomId, resourceId, qtyPerMonth, pricePerUnit) {
         if (!player.alive) return { success: false, message: 'You are not alive.' };
+        qtyPerMonth = Number(qtyPerMonth);
+        pricePerUnit = Number(pricePerUnit);
+        if (!qtyPerMonth || !isFinite(qtyPerMonth) || qtyPerMonth <= 0) return { success: false, message: 'Invalid quantity per month.' };
+        if (!pricePerUnit || !isFinite(pricePerUnit) || pricePerUnit <= 0) return { success: false, message: 'Invalid price per unit.' };
+        qtyPerMonth = Math.floor(qtyPerMonth);
         if (!isPlayerCitizenOf(kingdomId)) return { success: false, message: 'You must be a citizen of this kingdom.' };
         var kingdom = Engine.findKingdom(kingdomId);
         if (!kingdom) return { success: false, message: 'Kingdom not found.' };

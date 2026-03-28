@@ -687,7 +687,7 @@ window.UI = (function () {
 
         // Special start status indicator
         var startStatusEl = document.getElementById('specialStartStatus');
-        if (Player.getSpecialStartStatus) {
+        if (typeof Player !== 'undefined' && Player.getSpecialStartStatus) {
             var startStatus = Player.getSpecialStartStatus();
             if (startStatus) {
                 if (!startStatusEl) {
@@ -708,7 +708,7 @@ window.UI = (function () {
         // Show family button if player has family
         var familyBtn = document.getElementById('btnFamily');
         if (familyBtn) {
-            familyBtn.style.display = (Player.familyMembers && Player.familyMembers.length > 0) ? '' : 'none';
+            familyBtn.style.display = (typeof Player !== 'undefined' && Player.familyMembers && Player.familyMembers.length > 0) ? '' : 'none';
         }
     }
 
@@ -1182,7 +1182,7 @@ window.UI = (function () {
         // Travel button
         if (!isPlayerHere) {
             // Route info preview
-            if (typeof Engine !== 'undefined' && Engine.findPath) {
+            if (typeof Engine !== 'undefined' && Engine.findPath && typeof Player !== 'undefined' && Player.townId) {
                 try {
                     const route = Engine.findPath(Player.townId, town.id);
                     if (route && route.length > 0) {
@@ -1862,7 +1862,7 @@ window.UI = (function () {
         const goodsTaxes = (kingdom && kingdom.laws && kingdom.laws.goodsTaxes) || {};
         const tariff = (kingdom && kingdom.laws && kingdom.laws.tradeTariff) || 0;
         const taxRate = (kingdom && kingdom.taxRate) || 0;
-        const isForeign = typeof Player !== 'undefined' && Player.isPlayerCitizenOf ? !Player.isPlayerCitizenOf(town.kingdomId) : (town.kingdomId !== Player.citizenshipKingdomId);
+        const isForeign = typeof Player !== 'undefined' && Player.isPlayerCitizenOf ? !Player.isPlayerCitizenOf(town.kingdomId) : (typeof Player !== 'undefined' && Player.citizenshipKingdomId ? town.kingdomId !== Player.citizenshipKingdomId : false);
 
         let taxDetailsInner = '';
         // Tax info
@@ -6790,9 +6790,9 @@ window.UI = (function () {
             const numTowns = k.territories ? k.territories.length : 0;
             const prosperityPct = Math.max(0, Math.min(100, k.prosperity || 0));
             const wealthLabel = k.gold > 10000 ? '💰 Wealthy' : k.gold > 5000 ? '💰 Moderate' : '💰 Poor';
-            const isHome = Player.isPlayerCitizenOf ? Player.isPlayerCitizenOf(k.id) : (k.id === Player.citizenshipKingdomId);
-            const rep = Player.reputation[k.id] || 0;
-            const rankIdx = Player.socialRank[k.id] || 0;
+            const isHome = typeof Player !== 'undefined' && Player.isPlayerCitizenOf ? Player.isPlayerCitizenOf(k.id) : (typeof Player !== 'undefined' && Player.citizenshipKingdomId ? k.id === Player.citizenshipKingdomId : false);
+            const rep = (typeof Player !== 'undefined' && Player.reputation) ? (Player.reputation[k.id] || 0) : 0;
+            const rankIdx = (typeof Player !== 'undefined' && Player.socialRank) ? (Player.socialRank[k.id] || 0) : 0;
             const rank = CONFIG.SOCIAL_RANKS[rankIdx] || CONFIG.SOCIAL_RANKS[0];
 
             // Laws
@@ -8391,8 +8391,10 @@ window.UI = (function () {
         var btns = document.querySelectorAll('#militaryKingdomOptions button');
         for (var i = 0; i < btns.length; i++) {
             btns[i].style.border = '';
+            if (btns[i].getAttribute('onclick') && btns[i].getAttribute('onclick').indexOf(kingdomId) !== -1) {
+                btns[i].style.border = '3px solid #FFD700';
+            }
         }
-        event.target.style.border = '3px solid #FFD700';
     }
 
     function confirmStartScenario() {
