@@ -4,6 +4,24 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.33.0] - 2026-03-28
+
+### Fixed — Playthrough Campaign Bug Fixes
+- **Musician fame rebalance** — Fame gains reduced ~10x across all actions (tavern, street, concert, compose, grand concert, duel). A dedicated musician should now take ~6 months to reach legendary (80) fame, not 29 days
+- **BUG-018 FIX:** `rng is not defined` crash in `tickEliteMerchantDynamics()` at engine.js:13793 — changed bare `rng` to `world.rng`
+
+### Changed
+- Passive fan fame: `0.1` → `0.01` per fan per kingdom tick
+- Tavern performance fame: `1.0/1.25` → `0.12/0.15`
+- Street performance fame: `0.5/0.625` → `0.06/0.08`
+- Concert fame: `5` → `0.5`
+- Compose song base fame: `3 + floor(skill/25)` → `0.25 + floor(skill/50)*0.1`
+- Grand concert legendary fame: `15` → `2` (all kingdoms)
+- Grand concert good fame: `8` → `1` (all kingdoms)
+- Grand concert flop penalty: `3-8` → `1-3`
+- Music duel win fame: `5` → `0.5`
+- Music duel loss penalty: `3-8` → `1-3`
+
 ## [0.32.0] - 2026-03-27
 
 ### Added — Alliance Dynamics Overhaul

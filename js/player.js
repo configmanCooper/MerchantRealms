@@ -22391,7 +22391,7 @@
                 }
             }
             if (fansInKingdom > 0) {
-                player.musician.fame[kId] = Math.min(100, (player.musician.fame[kId] || 0) + fansInKingdom * 0.1);
+                player.musician.fame[kId] = Math.min(100, (player.musician.fame[kId] || 0) + fansInKingdom * 0.01);
             }
         }
 
@@ -23037,7 +23037,7 @@
         // Fame boost
         var town = Engine.findTown(townId);
         if (town && town.kingdomId) {
-            var fameGain = hasSkill('musician') ? 1.25 : 1;
+            var fameGain = hasSkill('musician') ? 0.15 : 0.12;
             player.musician.fame[town.kingdomId] = Math.min(100, (player.musician.fame[town.kingdomId] || 0) + fameGain);
         }
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.perform_tavern || 8);
@@ -23062,7 +23062,7 @@
         }
         var town = Engine.findTown(townId);
         if (town && town.kingdomId) {
-            var streetFameGain = hasSkill('musician') ? 0.625 : 0.5;
+            var streetFameGain = hasSkill('musician') ? 0.08 : 0.06;
             player.musician.fame[town.kingdomId] = Math.min(100, (player.musician.fame[town.kingdomId] || 0) + streetFameGain);
         }
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.street_performance || 5);
@@ -23088,7 +23088,7 @@
         player.stats.totalGoldEarned += earnings;
         var town = Engine.findTown(townId);
         if (town && town.kingdomId) {
-            player.musician.fame[town.kingdomId] = Math.min(100, (player.musician.fame[town.kingdomId] || 0) + 5);
+            player.musician.fame[town.kingdomId] = Math.min(100, (player.musician.fame[town.kingdomId] || 0) + 0.5);
         }
         player.musician.totalPerformances++;
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.host_concert || 30);
@@ -23106,7 +23106,7 @@
         
         // Theme-specific fame bonuses
         var kingdoms = Engine.getKingdoms();
-        var fameBonus = 3 + Math.floor(player.musician.musicSkill / 25);
+        var fameBonus = 0.25 + Math.floor(player.musician.musicSkill / 50) * 0.1;
         for (var ki = 0; ki < kingdoms.length; ki++) {
             var k = kingdoms[ki];
             var bonus = fameBonus;
@@ -23202,7 +23202,7 @@
             player.stats.totalGoldEarned += earnings;
             // Massive fame boost
             for (var ki2 = 0; ki2 < kingdoms.length; ki2++) {
-                player.musician.fame[kingdoms[ki2].id] = Math.min(100, (player.musician.fame[kingdoms[ki2].id] || 0) + 15);
+                player.musician.fame[kingdoms[ki2].id] = Math.min(100, (player.musician.fame[kingdoms[ki2].id] || 0) + 2);
             }
             // Tons of new fans
             var townPeople = Engine.getPeople(townId);
@@ -23216,14 +23216,14 @@
             }
             grantXP(50, 'legendary concert');
             Engine.logEvent('🌟 ' + player.fullName + ' gave a LEGENDARY Grand Concert in ' + town.name + '! The crowd erupted in pure joy!');
-            return { success: true, message: '🌟 LEGENDARY! Earned ' + earnings + 'g, +15 fame everywhere, ' + Math.min(newFanCount, potentialFans.length) + ' new fans!' };
+            return { success: true, message: '🌟 LEGENDARY! Earned ' + earnings + 'g, +2 fame everywhere, ' + Math.min(newFanCount, potentialFans.length) + ' new fans!' };
         } else if (roll < successChance) {
             // Good performance
             var earnings2 = rng.randInt(200, 500);
             player.gold += earnings2;
             player.stats.totalGoldEarned += earnings2;
             for (var ki3 = 0; ki3 < kingdoms.length; ki3++) {
-                player.musician.fame[kingdoms[ki3].id] = Math.min(100, (player.musician.fame[kingdoms[ki3].id] || 0) + 8);
+                player.musician.fame[kingdoms[ki3].id] = Math.min(100, (player.musician.fame[kingdoms[ki3].id] || 0) + 1);
             }
             var townPeople2 = Engine.getPeople(townId);
             var potentialFans2 = townPeople2.filter(function(p) { return !player.musician.fans[p.id]; });
@@ -23232,10 +23232,10 @@
                 player.musician.fans[potentialFans2[fi2].id] = true;
             }
             grantXP(25, 'grand concert');
-            return { success: true, message: 'Grand Concert was a hit! Earned ' + earnings2 + 'g, +8 fame, ' + fanGain + ' new fans!' };
+            return { success: true, message: 'Grand Concert was a hit! Earned ' + earnings2 + 'g, +1 fame, ' + fanGain + ' new fans!' };
         } else {
             // FLOP
-            var fameLoss = rng.randInt(3, 8);
+            var fameLoss = rng.randInt(1, 3);
             if (town.kingdomId) {
                 player.musician.fame[town.kingdomId] = Math.max(0, (player.musician.fame[town.kingdomId] || 0) - fameLoss);
                 player.reputation[town.kingdomId] = Math.max(0, (player.reputation[town.kingdomId] || 50) - 5);
@@ -23331,15 +23331,15 @@
             
             var town = Engine.findTown(player.townId);
             if (town && town.kingdomId) {
-                player.musician.fame[town.kingdomId] = Math.min(100, (player.musician.fame[town.kingdomId] || 0) + 5);
+                player.musician.fame[town.kingdomId] = Math.min(100, (player.musician.fame[town.kingdomId] || 0) + 0.5);
             }
             grantXP(15, 'won duel');
             Engine.logEvent('🎵 ' + player.fullName + ' won a music duel against ' + rival.name + '!');
-            return { success: true, message: 'You won! ' + resultMsg + ' Gained ' + actualGained + ' fans, +5 fame.' };
+            return { success: true, message: 'You won! ' + resultMsg + ' Gained ' + actualGained + ' fans, +0.5 fame.' };
         } else {
             // LOSE — lose fame in this town's kingdom
             var town2 = Engine.findTown(player.townId);
-            var fameLoss2 = rng.randInt(3, 8);
+            var fameLoss2 = rng.randInt(1, 3);
             if (town2 && town2.kingdomId) {
                 player.musician.fame[town2.kingdomId] = Math.max(0, (player.musician.fame[town2.kingdomId] || 0) - fameLoss2);
             }

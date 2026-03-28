@@ -13790,7 +13790,7 @@
                 
                 if (candidateTown) {
                     // 4. Even with all conditions met, only 20% chance
-                    if (rng.random() < 0.20) {
+                    if (world.rng.random() < 0.20) {
                         // Find the wealthiest NPC merchant in that town
                         var candidates = world.people.filter(function(p) {
                             return p.alive && p.occupation === 'merchant' && !p.isEliteMerchant 
