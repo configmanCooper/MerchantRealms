@@ -4,6 +4,34 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.35.0] - 2026-03-28
+
+### Added — Playthrough Campaign & Documentation
+- **10-start playthrough campaign** — All game starts tested with human-like AI player (1800 days each)
+- **Per-start narratives** — RPG-style story documents for each playthrough
+- **Per-start analysis** — Gameplay statistics, observations, and suggestions
+- **Combined results document** — Summary of all 10 playthroughs with comparison table
+- **LESSONS_LEARNED.md** — Comprehensive AI session knowledge base (20 sections, 26KB)
+- All playthrough documents in `MerchantRealmsDevelopment/328playthroughs/`
+
+### Changed
+- Moved backup files from `js/` to `MerchantRealmsDevelopment/backups/` (game folder cleanup)
+- Updated AI_SESSION_HANDOFF.md, VERSIONS.md, aiassist.md, aieditingandtestingassist.md with lessons learned
+
+### Playthrough Results (v0.34.0 code, 1800 days each)
+| Start | Result | Final Gold | Trades |
+|-------|--------|-----------|--------|
+| Aspiring Merchant | ✅ Survived | 12g | 61 |
+| Indentured Servant | ✅ Survived | 5g | 60 |
+| Religious Pilgrim | 💰 Bankrupt (Day 1085) | 0g | 18 |
+| Shipwrecked Foreigner | ✅ Survived | 0g | 148 |
+| Traveling Musician | ✅ Survived | 102g | 17 |
+| Military Leader | ✅ Survived | 44g | 32 |
+| Scholar of Ages | ✅ Survived | 18g | 19 |
+| Penniless Peasant | ✅ Survived | 49g | 55 |
+| Noble Birth | ✅ Survived | 7g | 29 |
+| Merchant's Heir | ✅ Survived | 43g | 28 |
+
 ## [0.34.0] - 2026-03-28
 
 ### Added — Tutorial Expansion
