@@ -8141,6 +8141,16 @@
         var spouse = Engine.findPerson(player.spouseId);
         if (!spouse || !spouse.alive) return { success: false, message: 'Your spouse is not available.' };
         initSpouseAI();
+        buildingIdx = Number(buildingIdx);
+        if (isNaN(buildingIdx)) return { success: false, message: 'Invalid building index.' };
+        // -1 means unassign from building management
+        if (buildingIdx === -1) {
+            player.spouseAI.managedBuildingIdx = null;
+            player.spouseAI.assignedTask = null;
+            player.spouseAI.activity = 'idle';
+            player.spouseAI.activityDetail = 'Unassigned from building management';
+            return { success: true, accepted: true, message: spouse.firstName + ' is no longer managing a building.' };
+        }
         var cfg = CONFIG.SPOUSE_AI;
         if ((spouse.personality && spouse.personality.intelligence || 0) < cfg.MANAGE_MIN_INTELLIGENCE) {
             return { success: false, message: spouse.firstName + ' is not capable of managing a building.' };
@@ -9805,6 +9815,36 @@
             jailReason: player.jailReason || null,
             // Tracked Merchants
             trackedMerchants: JSON.parse(JSON.stringify(player.trackedMerchants || [])),
+            // Travel state (complete)
+            travelOrigin: player.travelOrigin || null,
+            travelPaid: player.travelPaid || 0,
+            travelMode: player.travelMode || null,
+            travelWaypoints: player.travelWaypoints ? JSON.parse(JSON.stringify(player.travelWaypoints)) : null,
+            travelDestCoords: player.travelDestCoords || null,
+            travelRestBonus: player.travelRestBonus || 0,
+            // Spouse modifiers
+            spouseProdMod: player.spouseProdMod != null ? player.spouseProdMod : 1.0,
+            spouseCostMod: player.spouseCostMod != null ? player.spouseCostMod : 1.0,
+            spouseRepMod: player.spouseRepMod != null ? player.spouseRepMod : 1.0,
+            spouseHungerMod: player.spouseHungerMod != null ? player.spouseHungerMod : 1.0,
+            // Military service
+            militaryMandatory: player.militaryMandatory || false,
+            militaryServiceEndDay: player.militaryServiceEndDay || 0,
+            militaryBorderService: player.militaryBorderService || false,
+            // Bankruptcy
+            bankruptDays: player.bankruptDays || 0,
+            bankruptcy: player.bankruptcy ? JSON.parse(JSON.stringify(player.bankruptcy)) : null,
+            // Tournament
+            tournamentState: player.tournamentState ? JSON.parse(JSON.stringify(player.tournamentState)) : null,
+            tournamentsWon: player.tournamentsWon || 0,
+            // Spy / Royal favors
+            pendingSpyFavor: player.pendingSpyFavor ? JSON.parse(JSON.stringify(player.pendingSpyFavor)) : null,
+            taxExemption: player.taxExemption ? JSON.parse(JSON.stringify(player.taxExemption)) : null,
+            guaranteedPetition: player.guaranteedPetition || false,
+            tradeMonopoly: player.tradeMonopoly ? JSON.parse(JSON.stringify(player.tradeMonopoly)) : null,
+            // Musician instruments
+            instrumentSkill: JSON.parse(JSON.stringify(player.instrumentSkill || {})),
+            instrumentFatigue: JSON.parse(JSON.stringify(player.instrumentFatigue || {})),
         };
     }
 
