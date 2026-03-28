@@ -5241,7 +5241,7 @@
             const w = Engine.getWorld();
             if (w) {
                 const kingdom = Engine.findKingdom(town.kingdomId);
-                if (kingdom && kingdom.atWar.size > 0) {
+                if (kingdom && kingdom.atWar && kingdom.atWar.size > 0) {
                     // Try to stockpile military goods
                     for (const milRes of ['swords', 'armor', 'horses']) {
                         const supply = town.market.supply[milRes] || 0;
@@ -5964,7 +5964,7 @@
             case 'declare_war':
                 if (adviceValue) {
                     const target = Engine.findKingdom(adviceValue);
-                    if (target && !kingdom.atWar.has(target.id)) {
+                    if (target && (!kingdom.atWar || !kingdom.atWar.has(target.id))) {
                         Engine.logEvent(`On the Royal Advisor's counsel, ${kingdom.name} considers war with ${target.name}.`);
                         // Shift relations negatively
                         kingdom.relations[target.id] = Math.max(-100, (kingdom.relations[target.id] || 0) - 40);
@@ -5974,7 +5974,7 @@
             case 'make_peace':
                 if (adviceValue) {
                     const target = Engine.findKingdom(adviceValue);
-                    if (target && kingdom.atWar.has(target.id)) {
+                    if (target && kingdom.atWar && kingdom.atWar.has(target.id)) {
                         Engine.logEvent(`On the Royal Advisor's counsel, ${kingdom.name} seeks peace with ${target.name}.`);
                         kingdom.relations[target.id] = Math.min(0, (kingdom.relations[target.id] || -50) + 30);
                     }
@@ -22170,7 +22170,6 @@
                 player.fatigue = Math.min(100, (player.fatigue || 0) + 30);
                 Engine.logEvent('💀 Your master sent thugs to teach you a lesson! You\'re injured. (' + failures + ' consecutive failures)');
             } else {
-                player.jailed = true;
                 player.jailedUntilDay = day + 15;
                 Engine.logEvent('🔒 Your master had you thrown in jail for 15 days! (' + failures + ' consecutive failures)');
             }
@@ -22219,7 +22218,6 @@
                     Engine.logEvent('☠️ Your master had you executed for persistent defiance. Game Over. (' + failures + ' consecutive failures)');
                 }
             } else if (isHarsh) {
-                player.jailed = true;
                 player.jailedUntilDay = day + 60;
                 player.indentured.contractDays += 540; // 1.5 years (was 3)
                 Engine.logEvent('🔒 Your master turned you over to the authorities! 60 days jail + 1.5 years added! (' + failures + ' consecutive failures)');

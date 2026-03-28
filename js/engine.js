@@ -3554,7 +3554,7 @@
 
             // War consumption (military goods)
             const kingdom = findKingdom(town.kingdomId);
-            if (kingdom && kingdom.atWar.size > 0) {
+            if (kingdom && kingdom.atWar && kingdom.atWar.size > 0) {
                 const garrisonConsuming = Math.ceil(town.garrison * 0.05);
                 consumeFromMarket(town, 'swords', garrisonConsuming);
                 consumeFromMarket(town, 'armor', Math.ceil(garrisonConsuming * 0.5));
@@ -5121,7 +5121,7 @@
             // War zone bonus
             if (fromTown.kingdomId !== toTown.kingdomId) {
                 const kA = findKingdom(fromTown.kingdomId);
-                if (kA && kA.atWar.has(toTown.kingdomId)) {
+                if (kA && kA.atWar && kA.atWar.has(toTown.kingdomId)) {
                     threat += CONFIG.BANDIT_WAR_ZONE_BONUS * 0.1;
                 }
             }
@@ -5152,13 +5152,13 @@
     // ========================================================
     function tickWarExhaustion(k) {
         if (typeof k.warExhaustion !== 'number') k.warExhaustion = 0;
-        if (k.atWar.size === 0) {
+        if (!k.atWar || k.atWar.size === 0) {
             // Recover during peacetime
             k.warExhaustion = Math.max(0, k.warExhaustion - 0.5);
             return;
         }
         // Accumulate: base + per-war + treasury pressure + bankruptcy
-        var gain = 0.15 + (k.atWar.size * 0.1);
+        var gain = 0.15 + ((k.atWar ? k.atWar.size : 0) * 0.1);
         var startGold = k._startingGold || 10000;
         if (k.gold < startGold * 0.25) gain += 0.2;
         if (k._bankruptDays > 0) gain += 0.3;
@@ -5294,7 +5294,7 @@
 
             // ---- War declaration ----
             for (const other of world.kingdoms) {
-                if (other.id === k.id || k.atWar.has(other.id)) continue;
+                if (other.id === k.id || (k.atWar && k.atWar.has(other.id))) continue;
                 // Enforce peace treaties
                 if (k.peaceTreaties && k.peaceTreaties[other.id] && world.day < k.peaceTreaties[other.id]) continue;
                 // Enforce war immunity (devastated kingdoms get recovery time)
