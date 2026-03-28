@@ -2064,7 +2064,11 @@
             player.travelProgress = 0;
             player.travelDestination = service.destinationTownId;
             player.travelRoute = [seaRoute];
-            player.travelTotalDist = (seaRoute.distance || 500) / (CONFIG.SEA_SPEED_MULTIPLIER || 1.5);
+            player.travelBySea = true;
+            player.travelPaid = true;
+            player.travelOrigin = townId;
+            player.travelMode = 'npc_sea';
+            player.travelTotalDist = (seaRoute.distance || 500);
             // NPC ships are reasonably fast
             player.travelTotalDist *= 0.7;
         } else {
@@ -2336,6 +2340,8 @@
     // ========================================================
 
     function supplyBuilding(buildingId, resourceId, quantity) {
+        quantity = Number(quantity);
+        if (!isFinite(quantity) || quantity <= 0) return { success: false, message: 'Invalid quantity.' };
         const bld = player.buildings.find(b => b.id === buildingId);
         if (!bld) return { success: false, message: 'Building not found.' };
         if (player.traveling) return { success: false, message: 'Cannot supply while traveling.' };
@@ -2359,10 +2365,11 @@
     }
 
     function collectBuildingOutput(buildingId, resourceId, quantity) {
+        quantity = Number(quantity);
         const bld = player.buildings.find(b => b.id === buildingId);
         if (!bld) return { success: false, message: 'Building not found.' };
         if (!resourceId) return { success: false, message: 'No resource specified.' };
-        if (!quantity || quantity <= 0) return { success: false, message: 'Invalid quantity.' };
+        if (!isFinite(quantity) || quantity <= 0) return { success: false, message: 'Invalid quantity.' };
         if (player.traveling) return { success: false, message: 'Cannot collect while traveling.' };
         if (bld.townId !== player.townId) return { success: false, message: 'Must be in the same town.' };
 
@@ -2796,7 +2803,7 @@
         player.travelProgress = 0;
         player.travelDestination = townId;
         player.travelRoute = route ? [route] : [];
-        player.travelTotalDist = route ? route.distance / ((CONFIG.SEA_SPEED_MULTIPLIER || 1.5) * shipSpeedMult) : 500;
+        player.travelTotalDist = route ? route.distance / shipSpeedMult : 500;
         player.travelBySea = true;
         player.travelOrigin = player.townId;
         player.travelPaid = !hasShip; // Paid passage if no ship
@@ -3166,6 +3173,17 @@
                         }
                         caravan.totalWeight = returnWeight;
                     }
+                } else {
+                    // Destination town no longer exists — return cargo and stop caravan
+                    for (const [resId, qty] of Object.entries(caravan.goods)) {
+                        if (qty > 0) player.inventory[resId] = (player.inventory[resId] || 0) + qty;
+                    }
+                    caravan.goods = {};
+                    caravan.status = 'arrived';
+                    caravan.active = false;
+                    caravan.recurring = false;
+                    Engine.logEvent('Caravan destination no longer exists — cargo returned to inventory.');
+                    continue;
                 }
 
                 const routeLabel = caravan.routeType === 'sea' ? 'Sea caravan' : 'Caravan';
@@ -7003,6 +7021,10 @@
                 if (w && w.people) w.people.push(child);
 
                 player.childrenIds.push(child.id);
+                // Link child to spouse's childrenIds too
+                if (spouse && spouse.childrenIds) {
+                    spouse.childrenIds.push(child.id);
+                }
                 // Add child to familyMembers for Family panel
                 if (!player.familyMembers) player.familyMembers = [];
                 player.familyMembers.push({ npcId: child.id, role: child.sex === 'M' ? 'son' : 'daughter', name: child.firstName + ' ' + child.lastName });
@@ -8613,6 +8635,8 @@
         // XP transfer
         const xpTransfer = Math.floor(player.xp / (XP_REWARDS.HEIR_TRANSFER_RATIO || 2));
         const prevGen = (player.achievementStats && player.achievementStats.generation) || 1;
+        player.generation = prevGen + 1;
+        if (player.achievementStats) player.achievementStats.generation = player.generation;
         player.xp = xpTransfer;
         player.totalXp = xpTransfer;
         player.level = 1;
@@ -9829,6 +9853,8 @@
             spouseCostMod: player.spouseCostMod != null ? player.spouseCostMod : 1.0,
             spouseRepMod: player.spouseRepMod != null ? player.spouseRepMod : 1.0,
             spouseHungerMod: player.spouseHungerMod != null ? player.spouseHungerMod : 1.0,
+            spouseLuckMod: player.spouseLuckMod != null ? player.spouseLuckMod : 1.0,
+            spouseProtectMod: player.spouseProtectMod != null ? player.spouseProtectMod : 1.0,
             // Military service
             militaryMandatory: player.militaryMandatory || false,
             militaryServiceEndDay: player.militaryServiceEndDay || 0,
@@ -9847,6 +9873,9 @@
             // Musician instruments
             instrumentSkill: JSON.parse(JSON.stringify(player.instrumentSkill || {})),
             instrumentFatigue: JSON.parse(JSON.stringify(player.instrumentFatigue || {})),
+            // Age / lifespan
+            maxAge: player.maxAge || null,
+            maxAgeBonus: player.maxAgeBonus || 0,
         };
     }
 
@@ -9894,12 +9923,15 @@
         player.sex = data.sex || 'M';
         player.fullName = data.fullName || (player.firstName + ' ' + player.lastName);
         player.age = data.age != null ? data.age : 18;
+        player.maxAge = data.maxAge || null;
+        player.maxAgeBonus = data.maxAgeBonus || 0;
         player.alive = data.alive != null ? data.alive : true;
         player.spouseId = data.spouseId || null;
         // Validate spouseId against loaded world
         if (player.spouseId && typeof Engine !== 'undefined' && Engine.getWorld) {
             var worldPeople = Engine.getWorld().people || [];
-            if (!worldPeople.some(function(pp) { return pp.id === player.spouseId; })) {
+            var spousePerson = worldPeople.find(function(pp) { return pp.id === player.spouseId; });
+            if (!spousePerson || !spousePerson.alive) {
                 player.spouseId = null;
             }
         }
@@ -19927,6 +19959,7 @@
     }
 
     function stockRetailBuilding(buildingId, resourceId, quantity) {
+        if (quantity != null) { quantity = Number(quantity); if (!isFinite(quantity) || quantity <= 0) return { success: false, message: 'Invalid quantity.' }; }
         var bld = (player.buildings || []).find(function(b) { return b.id === buildingId; });
         if (!bld) return { success: false, message: 'Building not found.' };
         var bt = findBuildingType(bld.type);
@@ -19960,6 +19993,7 @@
     }
 
     function unstockRetailBuilding(buildingId, resourceId, quantity) {
+        if (quantity != null) { quantity = Number(quantity); if (!isFinite(quantity) || quantity <= 0) return { success: false, message: 'Invalid quantity.' }; }
         var bld = (player.buildings || []).find(function(b) { return b.id === buildingId; });
         if (!bld) return { success: false, message: 'Building not found.' };
         bld.retailStock = bld.retailStock || {};
