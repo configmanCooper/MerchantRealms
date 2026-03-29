@@ -11183,7 +11183,7 @@
         // King decides conscription rate (2-20% of males) based on personality
         var conscriptionRate = cfg.minRate;
         var king = conscriptKingdom.king;
-        if (king) {
+        if (king && king.personality) {
             if (king.personality.militarism === 'warlike') conscriptionRate = rng.randInt(12, 20) / 100;
             else if (king.personality.militarism === 'aggressive') conscriptionRate = rng.randInt(8, 15) / 100;
             else if (king.personality.militarism === 'defensive') conscriptionRate = rng.randInt(4, 10) / 100;
@@ -14524,11 +14524,12 @@
     }
 
     function getInfoBrokerTip() {
-        if (player.gold < HUNGER_CONFIG.INFO_BROKER_COST) return null;
+        var brokerCost = CONFIG.INFO_BROKER_COST || 25;
+        if (player.gold < brokerCost) return null;
         const town = Engine.findTown(player.townId);
         if (!town) return null;
 
-        player.gold -= HUNGER_CONFIG.INFO_BROKER_COST;
+        player.gold -= brokerCost;
         const tips = [];
         try {
             const towns = Engine.getTowns();
