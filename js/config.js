@@ -712,6 +712,25 @@ const CONFIG = {
     SPOUSE_DAILY_INCOME_MIN: 5,
     SPOUSE_DAILY_INCOME_MAX: 20,
 
+    // Wedding Planning
+    WEDDING_PLANNING_DAYS: 5,            // Days between proposal and wedding
+    WEDDING_VENUES: [
+        { id: 'town_square', name: 'Town Square',     icon: '🏘️', cost: 0,    repBonus: 0,  relBonus: 5,   description: 'A humble ceremony in the town square. Free but modest.' },
+        { id: 'church',      name: 'Church / Temple',  icon: '⛪', cost: 100,  repBonus: 3,  relBonus: 10,  description: 'A blessed ceremony. Earns kingdom reputation.' },
+        { id: 'manor_hall',  name: 'Manor Hall',       icon: '🏰', cost: 500,  repBonus: 5,  relBonus: 15,  description: 'A prestigious venue. Requires rank of Established Trader or higher.', minRank: 2 },
+        { id: 'countryside', name: 'Countryside',      icon: '🌿', cost: 25,   repBonus: 0,  relBonus: 20,  description: 'A romantic private ceremony among the wildflowers.' },
+    ],
+    WEDDING_FEASTS: [
+        { id: 'simple',   name: 'Simple Meal',      icon: '🍞', cost: 20,   guests: 5,   relBonus: 3,  loyaltyBonus: 0,  description: 'Bread, cheese, and ale. Humble but heartfelt.' },
+        { id: 'moderate', name: 'Moderate Banquet',  icon: '🍖', cost: 150,  guests: 20,  relBonus: 8,  loyaltyBonus: 5,  description: 'Roasted meats, wine, and pastries. A proper celebration.' },
+        { id: 'grand',    name: 'Grand Feast',       icon: '👑', cost: 500,  guests: 50,  relBonus: 15, loyaltyBonus: 10, description: 'A lavish banquet with imported delicacies. The whole town talks about it.' },
+    ],
+    WEDDING_VOWS: [
+        { id: 'practical',  name: 'Practical Vows',   icon: '🤝', loyaltyBonus: 10, relBonus: 5,  traitBonus: 'frugality',   description: '"I vow to build a prosperous life together, through wise decisions and shared labor."' },
+        { id: 'romantic',   name: 'Romantic Vows',     icon: '💕', loyaltyBonus: 5,  relBonus: 15, traitBonus: 'warmth',      description: '"My heart is yours — in every sunrise and every storm, I choose you."' },
+        { id: 'ambitious',  name: 'Ambitious Vows',    icon: '⚔️', loyaltyBonus: 3,  relBonus: 8,  traitBonus: 'ambition',    description: '"Together we will rise above our station, claim fortune, and leave a legacy."' },
+    ],
+
     // Spouse AI System
     SPOUSE_AI: {
         TICK_INTERVAL: 1,                  // Days between AI ticks
@@ -738,6 +757,64 @@ const CONFIG = {
         WARMTH_ACCEPT_WEIGHT: 0.2,         // How much warmth affects acceptance
         AGE_SICKNESS_THRESHOLD: 45,        // Age at which sickness chance increases
         AGE_SICKNESS_MULTIPLIER: 0.0002,   // Extra sickness chance per year over threshold
+    },
+
+    // Spouse Conversation System
+    SPOUSE_CONVERSATIONS: {
+        askDay: [
+            { mood: 'happy',   lines: [
+                'It was a good day! I visited the market and found some interesting goods.',
+                'I had a lovely walk through town. The flowers near the square are blooming.',
+                'I helped a neighbor with their garden. It felt good to be useful.',
+                'I spent the morning reading and the afternoon cooking. A peaceful day.',
+            ]},
+            { mood: 'neutral', lines: [
+                'Just an ordinary day, really. Nothing much happened.',
+                'I tidied up the house and ran some errands. The usual.',
+                'I spoke with some of the townspeople. The gossip never changes much.',
+            ]},
+            { mood: 'worried', lines: [
+                'I am worried about the prices at market. Everything seems more expensive.',
+                'I heard rumors of bandits on the roads. Please be careful when you travel.',
+                'Some of the neighbors are talking about leaving town. Times feel uncertain.',
+                'The guards seem more on edge lately. I hope nothing bad is coming.',
+            ]},
+            { mood: 'sad',     lines: [
+                'I missed you today. The house feels empty when you are away.',
+                'I have not been feeling well. Maybe I need some rest.',
+                'I heard about a family losing their home. It made me think about how fragile things are.',
+            ]},
+        ],
+        discussPlans: {
+            saving: [
+                'Maybe we should save more before your next big venture.',
+                'I think we have enough gold to be comfortable for now. But a little more would not hurt.',
+                'Have you thought about putting some gold aside for the children?',
+            ],
+            trading: [
+                'I have heard good things about the market in {nearbyTown}. Might be worth a visit.',
+                'Some merchants were talking about a shortage of {scarceGood} nearby. Could be profitable.',
+                'Perhaps we should focus on one trade route and master it, rather than spreading thin.',
+            ],
+            building: [
+                'Another building? Make sure we can afford the workers first.',
+                'I think expanding our business is wise — but only if we have the gold for it.',
+                'Have you considered what the town actually needs? That is where the real profit is.',
+            ],
+            war: [
+                'With the war going on, maybe we should stock up on essentials.',
+                'I worry about you getting caught up in the fighting. Please stay safe.',
+                'War means opportunity for merchants, but also great risk. Be careful.',
+            ],
+        },
+        shareMemory: {
+            wedding:  'Do you remember our wedding day? {venueMemory} It feels like yesterday.',
+            child:    'I was thinking about when {childName} was born. What a day that was.',
+            trade:    'Remember that time you made {profit}g in a single trade? I could not believe it.',
+            travel:   'I still think about our journey to {townName}. The road was long but the sights were beautiful.',
+            early:    'Remember when we first met? You were just a struggling merchant with big dreams.',
+            hardship: 'We have been through hard times, but we always pulled through together.',
+        },
     },
 
     // Inheritance
@@ -849,6 +926,78 @@ const CONFIG = {
     ARMY_ROAD_SPEED_MULT: 1.0,          // Normal speed on roads
     ARMY_MAX_OFFROAD_RANGE: 4000,       // Max offroad distance between towns for army routing
     ARMY_MIN_GARRISON_RATIO: 0.4,       // Keep at least 40% of garrison when dispatching
+
+    // Siege System (H-3)
+    SIEGE_BASE_DAYS: 14,                 // Base siege duration before modifiers
+    SIEGE_WALL_MULT: 0.5,               // Each wall level adds 50% to siege duration
+    SIEGE_WORKSHOP_SPEED: 0.20,         // Each siege workshop reduces siege time by 20% (capped)
+    SIEGE_DAILY_ATTACKER_ATTRITION: 0.005, // 0.5% daily attacker losses
+    SIEGE_DAILY_DEFENDER_ATTRITION: 0.002, // 0.2% daily defender losses
+    SIEGE_SORTIE_CHANCE: 0.05,           // 5% daily chance defenders sortie
+    SIEGE_SORTIE_ATTACKER_LOSS: 0.03,    // Attackers lose 3% in sortie
+    SIEGE_SORTIE_DEFENDER_LOSS: 0.05,    // Defenders lose 5% in sortie
+    SIEGE_STARVATION_START_DAY: 21,      // Days before starvation kicks in
+    SIEGE_STARVATION_MORALE_LOSS: 3,     // Daily morale loss from starvation
+    SIEGE_RELIEF_ARMY_CHECK_DAYS: 7,     // How often to check for relief armies
+    SIEGE_BREACH_THRESHOLD: 0.6,         // Attacker strength ratio needed to breach
+
+    // Retreat Mechanics (H-4)
+    RETREAT_HIGH_MORALE_THRESHOLD: 30,   // Above this = orderly retreat
+    RETREAT_HIGH_MORALE_SURVIVAL_MIN: 0.30, // 30-60% survive orderly retreat
+    RETREAT_HIGH_MORALE_SURVIVAL_MAX: 0.60,
+    RETREAT_LOW_MORALE_SURVIVAL_MIN: 0.00, // 0-20% survive rout
+    RETREAT_LOW_MORALE_SURVIVAL_MAX: 0.20,
+    RETREAT_CAVALRY_BONUS: 0.10,         // +10% survival per 10% cavalry ratio
+
+    // Morale System (M-3)
+    MORALE_VICTORY_BOOST: 5,            // +5 morale per won battle
+    MORALE_DEFEAT_LOSS: 10,             // -10 morale per lost battle
+    MORALE_WAR_WEARINESS_DAYS: 90,      // Days of war before weariness kicks in
+    MORALE_WAR_WEARINESS_RATE: 0.5,     // Daily morale loss from war weariness
+    MORALE_GARRISON_DEFAULT: 70,         // Default garrison morale
+    MORALE_GARRISON_MIN: 10,            // Minimum garrison morale
+    MORALE_GARRISON_MAX: 100,
+
+    // Soldier Equipment & Experience
+    SOLDIER_BASE_COMBAT_SKILL: 20,       // Minimum combat skill for new recruits
+    SOLDIER_TRAINING_DAILY_GAIN: 0.15,   // Combat skill gain per day of training
+    SOLDIER_BATTLE_XP_GAIN: 5,           // Combat skill boost for surviving a battle
+    SOLDIER_MAX_COMBAT_SKILL: 100,
+    SOLDIER_EQUIPMENT_QUALITY_MULT: { none: 0.4, basic: 1.0, good: 1.3, excellent: 1.6 },
+
+    // Recruitment & Pay
+    SOLDIER_BASE_PAY: 2,                 // Base daily pay per soldier
+    SOLDIER_WARTIME_PAY_MULT: 2.0,       // Pay multiplier during war
+    SOLDIER_MAX_PAY_MULT: 5.0,           // Maximum pay multiplier when desperate
+    SOLDIER_PAY_INCREASE_THRESHOLD: 0.5, // If recruitment < 50% target, increase pay
+    CONSCRIPTION_MORALE_PENALTY: 15,     // Town happiness loss from conscription
+    CONSCRIPTION_LOYALTY_THRESHOLD: 30,  // NPC loyalty below this = desertion risk
+
+    // Supply Lines (M-2)
+    SUPPLY_LINE_CHECK_INTERVAL: 3,       // Check supply lines every 3 days
+    SUPPLY_LINE_CUT_MORALE_LOSS: 3,      // Extra daily morale loss when supply line cut
+    SUPPLY_LINE_CUT_SUPPLY_LOSS: 2,      // Extra daily supply loss when supply line cut
+
+    // Scouting & Intelligence (M-4)
+    SCOUT_BRILLIANT_ACCURACY: 0.95,      // ±5% error
+    SCOUT_CLEVER_ACCURACY: 0.85,         // ±15% error
+    SCOUT_AVERAGE_ACCURACY: 0.70,        // ±30% error
+    SCOUT_FOOLISH_ACCURACY: 0.40,        // ±60% error
+
+    // Peacetime Soldier Activities (M-1)
+    PEACETIME_PATROL_SECURITY_PER_10: 5, // +5% security per 10 patrolling soldiers
+    PEACETIME_TRAINING_SKILL_GAIN: 0.15, // Combat skill per training day
+    PEACETIME_TRAINING_GROUNDS_MULT: 2.0, // Training grounds doubles XP gain for soldiers training there
+    PEACETIME_CONSTRUCTION_WALL_REPAIR_DAYS: 30, // Days to repair 1 wall level
+    PEACETIME_SOLDIER_ALLOCATION: { patrol: 0.40, training: 0.30, construction: 0.30 },
+
+    // Building Conversion System
+    FARM_CROP_TYPES: ['wheat_farm', 'hemp_farm', 'vineyard', 'herb_garden', 'apiary'],
+    FARM_LIVESTOCK_TYPES: ['cattle_ranch', 'sheep_farm', 'chicken_farm', 'horse_ranch', 'pig_farm'],
+    FARM_FREE_CONVERSIONS_PER_YEAR: 1,       // Free crop farm conversion per year
+    FARM_PAID_CONVERSION_COST_MULT: 0.25,    // 1/4 cost after free conversion used
+    LIVESTOCK_CONVERSIONS_PER_YEAR: 2,        // Livestock conversions allowed per year
+    LIVESTOCK_CONVERSION_COST_MULT: 0.50,     // Half cost for livestock conversion
 
     // Player-as-King
     ADVISE_KING_POLITICAL_CAPITAL_MAX: 3,
@@ -1101,11 +1250,23 @@ const RESOURCE_TYPES = {
     HERBS:            { id: 'herbs',            name: 'Herbs',           category: 'raw',       basePrice: 3,   icon: '🌿', weight: 0.5 },
     VEGETABLES:       { id: 'vegetables',       name: 'Vegetables',      category: 'food',      basePrice: 3,   icon: '🥬', weight: 1 },
 
+    // --- Medical Supplies ---
+    BANDAGES:         { id: 'bandages',         name: 'Bandages',        category: 'medical',   basePrice: 5,   icon: '🩹', weight: 0.5 },
+    HERBAL_REMEDY:    { id: 'herbal_remedy',    name: 'Herbal Remedy',   category: 'medical',   basePrice: 10,  icon: '🧪', weight: 0.5 },
+    HEALING_TONIC:    { id: 'healing_tonic',    name: 'Healing Tonic',   category: 'medical',   basePrice: 18,  icon: '⚗️', weight: 0.5 },
+    SPLINT:           { id: 'splint',           name: 'Splint',          category: 'medical',   basePrice: 4,   icon: '🪵', weight: 1 },
+    FEVER_TONIC:      { id: 'fever_tonic',      name: 'Fever Tonic',     category: 'medical',   basePrice: 15,  icon: '🌡️', weight: 0.5 },
+    ANTIDOTE:         { id: 'antidote',         name: 'Antidote',        category: 'medical',   basePrice: 25,  icon: '💊', weight: 0.5 },
+    HERBAL_POULTICE:  { id: 'herbal_poultice',  name: 'Herbal Poultice', category: 'medical',   basePrice: 8,   icon: '🌱', weight: 0.5 },
+
     // --- Camping & Travel Supplies ---
     BEDROLL:          { id: 'bedroll',          name: 'Bedroll',         category: 'supplies',  basePrice: 8,   icon: '🛏️', weight: 3 },
     TENT:             { id: 'tent',             name: 'Tent',            category: 'supplies',  basePrice: 25,  icon: '⛺', weight: 8 },
     CAMPING_KIT:      { id: 'camping_kit',      name: 'Camping Kit',     category: 'supplies',  basePrice: 45,  icon: '🏕️', weight: 12 },
     WATERSKIN:        { id: 'waterskin',        name: 'Waterskin',       category: 'supplies',  basePrice: 5,   icon: '🫗', weight: 1 },
+
+    // --- Unique Start / Quest Items ---
+    EXOTIC_ARTIFACT:  { id: 'exotic_artifact',  name: 'Exotic Artifact', category: 'quest',     basePrice: 800, icon: '🔮', weight: 1 },
 };
 
 // ============================================================
@@ -1149,23 +1310,42 @@ const BUILDING_TYPES = {
             pearl_jewelry: { produces: 'pearl_jewelry', consumes: { gold_ore: 1, pearls: 1 }, rate: 2 },
         },
     },
-    BLACKSMITH:    { id: 'blacksmith',    name: 'Blacksmith',    cost: 600,  workers: 3, produces: 'swords',   consumes: { iron: 2, wood: 1 },     rate: 3, category: 'military',   materials: { stone: 20, iron: 5, bricks: 10 }, canProduce: ['swords', 'tools', 'iron', 'demolition_tools'],
+    BLACKSMITH:    { id: 'blacksmith',    name: 'Blacksmith',    cost: 600,  workers: 3, produces: 'swords',   consumes: { iron: 2, wood: 1 },     rate: 3, category: 'military',   materials: { stone: 20, iron: 5, bricks: 10 }, canProduce: ['swords', 'swords_good', 'swords_excellent', 'tools', 'iron', 'demolition_tools'],
         availableProducts: {
             swords:           { produces: 'swords',           consumes: { iron: 2, wood: 1 },              rate: 3 },
+            swords_good:      { produces: 'swords_good',      consumes: { iron: 3, wood: 2 },              rate: 2 },
+            swords_excellent: { produces: 'swords_excellent',  consumes: { iron: 5, wood: 3 },              rate: 1 },
             tools:            { produces: 'tools',            consumes: { iron: 1, wood: 1 },              rate: 3 },
             iron:             { produces: 'iron',             consumes: { iron_ore: 2, wood: 1 },          rate: 4 },
             demolition_tools: { produces: 'demolition_tools', consumes: { iron: 3, rope: 2, wood: 3 },    rate: 1 },
         },
     },
-    ARMORER:       { id: 'armorer',       name: 'Armorer',       cost: 700,  workers: 3, produces: 'armor',    consumes: { iron: 3, leather: 2 },  rate: 2, category: 'military',   materials: { stone: 20, iron: 8, bricks: 10 } },
+    ARMORER:       { id: 'armorer',       name: 'Armorer',       cost: 700,  workers: 3, produces: 'armor',    consumes: { iron: 3, leather: 2 },  rate: 2, category: 'military',   materials: { stone: 20, iron: 8, bricks: 10 }, canProduce: ['armor', 'armor_good', 'armor_excellent'],
+        availableProducts: {
+            armor:            { produces: 'armor',            consumes: { iron: 3, leather: 2 },           rate: 2 },
+            armor_good:       { produces: 'armor_good',       consumes: { iron: 5, leather: 3 },           rate: 1 },
+            armor_excellent:  { produces: 'armor_excellent',   consumes: { iron: 8, leather: 5 },           rate: 1 },
+        },
+    },
     WAREHOUSE:     { id: 'warehouse',     name: 'Warehouse',     cost: 500,  workers: 1, produces: null,       consumes: {},                       rate: 0, category: 'storage',    storage: 800, materials: { wood: 20, stone: 10, planks: 10, bricks: 5 } },
     MARKET_STALL:  { id: 'market_stall',  name: 'Market Stall',  cost: 150,  workers: 1, produces: null,       consumes: {},                       rate: 0, category: 'trade',      salesBonus: 0.1, materials: { wood: 8, planks: 3 } },
     DOCK:          { id: 'dock',          name: 'Dock',          cost: 400,  workers: 2, produces: null,       consumes: {},                       rate: 0, category: 'port',       portBonus: true, materials: { wood: 25, planks: 10, rope: 5 } },
     FISHERY:       { id: 'fishery',       name: 'Fishery',       cost: 250,  workers: 3, produces: 'fish',     consumes: {},                       rate: 8, category: 'port',       materials: { wood: 12, rope: 3 } },
     SALT_WORKS:    { id: 'salt_works',    name: 'Salt Works',    cost: 300,  workers: 2, produces: 'salt',     consumes: {},                       rate: 5, category: 'port',       materials: { wood: 10, stone: 10, bricks: 3 } },
     // --- New buildings ---
-    FLETCHER:      { id: 'fletcher',      name: 'Fletcher',      cost: 400,  workers: 2, produces: 'bows',           consumes: { wood: 2, hemp: 1 },        rate: 3, category: 'military',   materials: { wood: 12, stone: 8 } },
-    ARROW_MAKER:   { id: 'arrow_maker',   name: 'Arrow Maker',   cost: 250,  workers: 2, produces: 'arrows',         consumes: { wood: 1, iron: 1 },        rate: 8, category: 'military',   materials: { wood: 10, stone: 5 } },
+    FLETCHER:      { id: 'fletcher',      name: 'Fletcher',      cost: 400,  workers: 2, produces: 'bows',           consumes: { wood: 2, hemp: 1 },        rate: 3, category: 'military',   materials: { wood: 12, stone: 8 }, canProduce: ['bows', 'bows_good', 'bows_excellent'],
+        availableProducts: {
+            bows:             { produces: 'bows',             consumes: { wood: 2, hemp: 1 },              rate: 3 },
+            bows_good:        { produces: 'bows_good',        consumes: { wood: 3, hemp: 2 },              rate: 2 },
+            bows_excellent:   { produces: 'bows_excellent',   consumes: { wood: 5, hemp: 3 },              rate: 1 },
+        },
+    },
+    ARROW_MAKER:   { id: 'arrow_maker',   name: 'Arrow Maker',   cost: 250,  workers: 2, produces: 'arrows',         consumes: { wood: 1, iron: 1 },        rate: 8, category: 'military',   materials: { wood: 10, stone: 5 }, canProduce: ['arrows', 'arrows_good'],
+        availableProducts: {
+            arrows:           { produces: 'arrows',           consumes: { wood: 1, iron: 1 },              rate: 8 },
+            arrows_good:      { produces: 'arrows_good',      consumes: { wood: 2, iron: 2 },              rate: 5 },
+        },
+    },
     CARPENTER:     { id: 'carpenter',     name: 'Carpenter',     cost: 450,  workers: 2, produces: 'furniture',       consumes: { planks: 3 },               rate: 2, category: 'finished',   materials: { wood: 15, planks: 8, stone: 5 }, canProduce: ['furniture', 'planks'],
         availableProducts: {
             furniture: { produces: 'furniture', consumes: { planks: 3 },  rate: 2 },
@@ -1176,6 +1356,15 @@ const BUILDING_TYPES = {
     SADDLER:       { id: 'saddler',       name: 'Saddler',       cost: 400,  workers: 2, produces: 'saddles',        consumes: { leather: 2, wood: 1 },     rate: 3, category: 'finished',   materials: { wood: 10, planks: 5, stone: 5 } },
     ROPE_MAKER:    { id: 'rope_maker',    name: 'Rope Maker',    cost: 200,  workers: 1, produces: 'rope',           consumes: { hemp: 3 },                 rate: 5, category: 'processing', materials: { wood: 8 } },
     HEMP_FARM:     { id: 'hemp_farm',     name: 'Hemp Farm',     cost: 180,  workers: 2, produces: 'hemp',           consumes: {},                          rate: 7, category: 'farm',       materials: { wood: 8, stone: 3 } },
+    HERB_GARDEN:   { id: 'herb_garden',   name: 'Herb Garden',   cost: 150,  workers: 1, produces: 'herbs',          consumes: {},                          rate: 5, category: 'farm',       materials: { wood: 6, clay: 2 }, icon: '🌿', description: 'Cultivates medicinal herbs. Output affected by soil fertility and season.' },
+    BANDAGE_WORKSHOP: { id: 'bandage_workshop', name: 'Bandage Workshop', cost: 250, workers: 1, produces: 'bandages', consumes: { cloth: 2 },              rate: 4, category: 'medical',   materials: { wood: 8, cloth: 5 }, icon: '🩹', description: 'Produces bandages from cloth.',
+        canProduce: ['bandages', 'splint', 'herbal_poultice'],
+        availableProducts: {
+            bandages:        { produces: 'bandages',        consumes: { cloth: 2 },                 rate: 4 },
+            splint:          { produces: 'splint',          consumes: { wood: 1 },                  rate: 5 },
+            herbal_poultice: { produces: 'herbal_poultice', consumes: { herbs: 2, cloth: 1 },       rate: 3 },
+        },
+    },
     CLAY_PIT:      { id: 'clay_pit',      name: 'Clay Pit',      cost: 200,  workers: 3, produces: 'clay',           consumes: {},                          rate: 6, category: 'mine',       materials: { wood: 8, tools: 2 } },
     SMOKEHOUSE:    { id: 'smokehouse',    name: 'Smokehouse',    cost: 300,  workers: 2, produces: 'preserved_food', consumes: { meat: 2, salt: 1 },        rate: 4, category: 'processing', materials: { wood: 12, stone: 8, bricks: 3 } },
     PIG_FARM:      { id: 'pig_farm',      name: 'Pig Farm',      cost: 200,  workers: 2, produces: 'meat',           consumes: { wheat: 2 },                rate: 5, category: 'farm',       materials: { wood: 10, stone: 3 } },
@@ -1187,9 +1376,17 @@ const BUILDING_TYPES = {
     CASTLE:           { id: 'castle',           name: 'Castle',           cost: 3000, workers: 10, produces: null, consumes: {}, rate: 0, category: 'military',  defenseBonus: 0.50, capitalOnly: true, materials: { stone: 200, iron: 50 } },
     TRAINING_GROUNDS: { id: 'training_grounds', name: 'Training Grounds', cost: 800,  workers: 4,  produces: null, consumes: {}, rate: 0, category: 'military',  combatBonus: 0.30, materials: { wood: 100, iron: 20 } },
     SIEGE_WORKSHOP:   { id: 'siege_workshop',   name: 'Siege Workshop',   cost: 1000, workers: 5,  produces: null, consumes: {}, rate: 0, category: 'military',  siegeBonus: 1.0, materials: { wood: 150, iron: 80 } },
-    STABLES:          { id: 'stables',          name: 'Stables',          cost: 600,  workers: 3,  produces: null, consumes: {}, rate: 0, category: 'military',  cavalryCapacity: 20, materials: { wood: 120, leather: 30 } },
+    STABLES:          { id: 'stables',          name: 'Stables',          cost: 600,  workers: 3,  produces: null, consumes: { wheat: 2 }, rate: 0, category: 'military',  cavalryCapacity: 20, materials: { wood: 120, leather: 30 } },
     // --- Kingdom civic/economic buildings ---
-    HOSPITAL:         { id: 'hospital',         name: 'Hospital',         cost: 1200, workers: 5,  produces: null, consumes: {}, rate: 0, category: 'civic',     plagueReduction: 0.50, happinessBonus: 5, materials: { wood: 80, cloth: 30 } },
+    HOSPITAL:         { id: 'hospital',         name: 'Hospital',         cost: 1200, workers: 10, produces: null, consumes: {}, rate: 0, category: 'medical',   plagueReduction: 0.50, happinessBonus: 5, materials: { wood: 80, cloth: 30, stone: 40 }, icon: '🏥',
+        landSlots: 3, maxHealers: 10, medicalStorage: 200, description: 'Large medical facility. Treats injuries and illnesses. Consumes medical supplies.',
+        healingConfig: {
+            minor:    { ticks: 30,  supplies: { bandages: 1 } },
+            moderate: { ticks: 60,  supplies: { bandages: 1, herbal_remedy: 1 } },
+            serious:  { ticks: 120, supplies: { healing_tonic: 1, bandages: 2 } },
+            severe:   { ticks: 240, supplies: { healing_tonic: 1, antidote: 1, bandages: 2 } },
+        },
+    },
     // CLINIC moved to service section below (merged civic + service properties)
     GRANARY:          { id: 'granary',          name: 'Granary',          cost: 500,  workers: 2,  produces: null, consumes: {}, rate: 0, category: 'civic',     foodStorage: 500, materials: { wood: 100 } },
     TREASURY_VAULT:   { id: 'treasury_vault',   name: 'Treasury Vault',   cost: 1500, workers: 3,  produces: null, consumes: {}, rate: 0, category: 'civic',     taxEfficiency: 0.10, materials: { stone: 100, iron: 50 } },
@@ -1232,10 +1429,15 @@ const BUILDING_TYPES = {
     TRANSPORT_GUILD:  { id: 'transport_guild',  name: 'Transport Guild Hall', cost: 800, workers: 4, produces: null,       consumes: {},                           rate: 0, category: 'trade',      materials: { wood: 25, stone: 15, planks: 10 }, icon: '🚚', description: 'Transporters handle goods delivery between your buildings automatically.' },
     // --- Goods audit buildings ---
     PEARL_DIVER:      { id: 'pearl_diver',      name: 'Pearl Diver',     cost: 350,  workers: 2, produces: 'pearls',         consumes: {},                          rate: 2, category: 'harvest',    portOnly: true, materials: { wood: 12, rope: 3 } },
-    APOTHECARY:       { id: 'apothecary',       name: 'Apothecary',      cost: 400,  workers: 1, produces: 'poison',         consumes: { hemp: 2 },                 rate: 1, category: 'finished',   materials: { wood: 8, stone: 5 }, canProduce: ['poison', 'blasting_powder'],
+    APOTHECARY:       { id: 'apothecary',       name: 'Apothecary',      cost: 400,  workers: 1, produces: 'herbal_remedy',  consumes: { herbs: 3 },                rate: 2, category: 'medical',   materials: { wood: 8, stone: 5 }, icon: '⚗️', description: 'Produces medicines and remedies from herbs. Can also make poisons.',
+        canProduce: ['herbal_remedy', 'healing_tonic', 'fever_tonic', 'antidote', 'poison', 'blasting_powder'],
         availableProducts: {
-            poison:          { produces: 'poison',          consumes: { hemp: 2 },              rate: 1 },
-            blasting_powder: { produces: 'blasting_powder', consumes: { salt: 4, hemp: 2 },     rate: 2 },
+            herbal_remedy:   { produces: 'herbal_remedy',   consumes: { herbs: 3 },                 rate: 2 },
+            healing_tonic:   { produces: 'healing_tonic',   consumes: { herbs: 4, honey: 1 },       rate: 1 },
+            fever_tonic:     { produces: 'fever_tonic',     consumes: { herbs: 3, water: 2 },       rate: 1 },
+            antidote:        { produces: 'antidote',        consumes: { herbs: 5, honey: 2 },       rate: 1 },
+            poison:          { produces: 'poison',          consumes: { hemp: 2 },                  rate: 1 },
+            blasting_powder: { produces: 'blasting_powder', consumes: { salt: 4, hemp: 2 },         rate: 2 },
         },
     },
     HUNTING_LODGE:    { id: 'hunting_lodge',    name: 'Hunting Lodge',   cost: 250,  workers: 2, produces: 'hide',           consumes: {},                          rate: 4, category: 'harvest',    villageOnly: true, materials: { wood: 15 } },
@@ -1325,18 +1527,25 @@ const BUILDING_TYPES = {
             upgradeMarkupBonus: 0.05,
         },
     },
-    CLINIC:           { id: 'clinic',           name: 'Clinic',          cost: 500,  workers: 2, produces: null,             consumes: {},                          rate: 0,  category: 'service',   plagueReduction: 0.20, happinessBonus: 2, materials: { planks: 10, stone: 10, bricks: 5 }, icon: '🏥', description: 'Treats sick and injured NPCs. Stock with medicine. Earns gold per patient.',
+    CLINIC:           { id: 'clinic',           name: 'Clinic',          cost: 500,  workers: 2, produces: null,             consumes: {},                          rate: 0,  category: 'medical',   plagueReduction: 0.20, happinessBonus: 2, materials: { planks: 10, stone: 10, bricks: 5 }, icon: '🏥', description: 'Small medical facility. Treats sick and injured. Stock with medical supplies.',
+        landSlots: 1, maxHealers: 2, medicalStorage: 40,
+        healingConfig: {
+            minor:    { ticks: 30,  supplies: { bandages: 1 } },
+            moderate: { ticks: 60,  supplies: { bandages: 1, herbal_remedy: 1 } },
+            serious:  { ticks: 120, supplies: { healing_tonic: 1, bandages: 2 } },
+            severe:   { ticks: 240, supplies: { healing_tonic: 1, antidote: 1, bandages: 2 } },
+        },
         retailConfig: {
-            acceptsGoods: ['herbal_tea', 'water', 'honey'],
+            acceptsGoods: ['bandages', 'herbal_remedy', 'healing_tonic', 'herbal_poultice', 'fever_tonic', 'antidote', 'splint', 'herbal_tea', 'water'],
             baseMarkup: 2.0,
             maxMarkup: 4.0,
-            maxCustomersPerDay: 4,
-            maxStock: 30,
+            maxCustomersPerDay: 6,
+            maxStock: 40,
             npcMotivation: 'health',
             repPerSale: 0.5,
             upgradeMarkupBonus: 0.25,
-            consumesPerService: { herbal_tea: 1, water: 1 },
-            serviceFee: 8,
+            consumesPerService: { bandages: 1, water: 1 },
+            serviceFee: 12,
         },
     },
     BATHHOUSE:        { id: 'bathhouse',        name: 'Bathhouse',       cost: 400,  workers: 2, produces: null,             consumes: {},                          rate: 0,  category: 'service',   materials: { stone: 15, bricks: 10, clay: 5 }, icon: '🛁', description: 'NPCs wash here for hygiene. Reduces plague risk in town. Uses water.',
@@ -1540,10 +1749,10 @@ const SKILLS = {
     // ── Commerce Branch (10) ──
     keen_eye:            { name: 'Keen Eye',            branch: 'commerce',   cost: 0, requires: [],                              desc: 'See buy/sell prices in your current town at a glance.',                    icon: '👁️' },
     market_scout:        { name: 'Market Scout',        branch: 'commerce',   cost: 2, requires: ['keen_eye'],                    desc: 'See prices in towns where you have workers/buildings (updated every 30 days).', icon: '🔭' },
-    trade_network:       { name: 'Trade Network',       branch: 'commerce',   cost: 3, requires: ['market_scout'],                desc: 'See prices in all towns of your home kingdom.',                            icon: '🗺️' },
-    regional_survey:     { name: 'Regional Survey',     branch: 'commerce',   cost: 1, requires: ['trade_network'],               desc: 'See resource deposits and production info for all towns in your kingdom on hover.', icon: '📋' },
-    foreign_intelligence: { name: 'Foreign Intelligence', branch: 'commerce', cost: 3, requires: ['regional_survey'], desc: 'Your trade contacts keep you informed of foreign kingdom events — wars, laws, embargoes, plagues.', icon: '🌐' },
-    global_trade_intel:  { name: 'Global Trade Intel',  branch: 'commerce',   cost: 5, requires: ['trade_network'],               desc: 'See prices in ALL towns across all kingdoms.',                             icon: '🌍' },
+    trade_network:       { name: 'Trade Network',       branch: 'commerce',   cost: 5, requires: ['market_scout', 'silver_tongue'],   desc: 'See current prices in all towns of your home kingdom.',                    icon: '🗺️' },
+    regional_survey:     { name: 'Regional Survey',     branch: 'commerce',   cost: 2, requires: ['trade_network'],               desc: 'See resource deposits and production info for all towns in your kingdom on hover.', icon: '📋' },
+    foreign_intelligence: { name: 'Foreign Intelligence', branch: 'commerce', cost: 4, requires: ['regional_survey', 'haggler'], desc: 'Your trade contacts keep you informed of foreign kingdom events — wars, laws, embargoes, plagues.', icon: '🌐' },
+    global_trade_intel:  { name: 'Global Trade Intel',  branch: 'commerce',   cost: 8, requires: ['trade_network', 'foreign_intelligence'], desc: 'See current prices in ALL towns across all kingdoms.',                     icon: '🌍' },
     haggler:             { name: 'Haggler',             branch: 'commerce',   cost: 2, requires: [],                              desc: '5% discount when buying goods.',                                           icon: '🤝' },
     master_haggler:      { name: 'Master Haggler',      branch: 'commerce',   cost: 3, requires: ['haggler'],                     desc: '10% discount when buying goods (replaces Haggler).',                       icon: '💰' },
     silver_tongue:       { name: 'Silver Tongue',       branch: 'commerce',   cost: 2, requires: [],                              desc: '5% bonus when selling goods.',                                             icon: '🗣️' },
@@ -1631,6 +1840,7 @@ const SKILLS = {
     herbalist:           { name: 'Herbalist',           branch: 'survival',   cost: 3, requires: ['first_aid'],                   desc: 'Craft healing potions from herbs. Foraged herbs yield doubled.',             icon: '🌿' },
     field_medic:         { name: 'Field Medic',         branch: 'survival',   cost: 3, requires: ['first_aid'],                   desc: 'Treat others for gold as a job. Self-treat moderate injuries too.',          icon: '⛑️' },
     doctor:              { name: 'Doctor',              branch: 'survival',   cost: 4, requires: ['field_medic'],                 desc: 'Treat ALL injury severities. 2x nurse pay. Unlocks itinerant healer job.',  icon: '⚕️' },
+    soil_knowledge:      { name: 'Soil Knowledge',      branch: 'survival',   cost: 2, requires: ['herbalist'],                   desc: 'See soil fertility ratings on the map and forage chances. Better foraging yields in fertile land.', icon: '🌾' },
 
     // ── Underworld Branch (7) ──
     discrete:            { name: 'Discrete',            branch: 'underworld', cost: 2, requires: [],                              desc: 'Smuggling detection reduced by 10%.',                                       icon: '🤫' },
@@ -1836,6 +2046,34 @@ const ACHIEVEMENTS = {
     wartime_profiteer:   { name: 'Wartime Profiteer',    desc: 'Earn 5,000+ gold selling weapons/food during war.',            xp: 35,  icon: '💰', category: 'trading' },
 };
 
+// Achievements that are EXCLUDED per start — these are trivially granted by starting conditions
+// and should not count as real achievements for that difficulty tier.
+const ACHIEVEMENT_START_EXCLUSIONS = {
+    // Noble Birth: starts with 10000g, rank 4, 3 buildings, 5 workers, family
+    very_easy: [
+        'first_hundred', 'thousand_gold', 'five_thousand', 'ten_thousand',
+        'self_made', 'first_foundation', 'property_owner', 'first_employee',
+        'social_climber', 'guild_elite', 'noble_blood',
+        'making_friends', 'best_friends', 'wedding_bells', 'family_person'
+    ],
+    // Merchant's Heir: starts with 2000g, rank 2, 1 building, family
+    easy: [
+        'first_hundred', 'thousand_gold',
+        'first_foundation', 'social_climber',
+        'making_friends', 'best_friends', 'wedding_bells'
+    ],
+    // Aspiring Merchant: starts with 500g, rank 1, citizen, family
+    normal: [
+        'first_hundred',
+        'social_climber',
+        'making_friends', 'best_friends'
+    ],
+    // Penniless Peasant: starts with nothing — no exclusions
+    hard: [],
+    // Indentured Servant: starts with nothing — no exclusions
+    very_hard: [],
+};
+
 const ACHIEVEMENT_CATEGORIES = {
     trading:    { name: 'Trading',    icon: '📊' },
     building:   { name: 'Building',   icon: '🏗️' },
@@ -1995,6 +2233,29 @@ CONFIG.SOIL_FERTILITY = {
     degradePerSeason: 0.01,
     fallowRestorePerSeason: 0.25,
     cropRotationRestore: 0.10,
+    // Regional fertility generation (0-100 scale, affects farm/herb production)
+    mapAverageFertility: 60,       // Average across all towns
+    mapFertilityVariance: 25,      // Standard deviation for random spread
+    coastalPenalty: 10,            // Towns near coast lose this much fertility
+    mountainPenalty: 15,           // Towns near mountains/mines lose this much
+    minFertility: 5,               // No area is completely barren
+    maxFertility: 100,             // Maximum possible
+    // Production modifier: fertility 50 = baseline (1.0x), 100 = 2.0x, 0 = 0.25x
+    baselineFertility: 50,
+    maxProductionBonus: 2.0,       // At fertility 100
+    minProductionPenalty: 0.25,    // At fertility 0
+    // Season modifiers on growing production
+    seasonModifiers: {
+        Spring: 1.2,   // Good growing season
+        Summer: 1.3,   // Best growing season
+        Autumn: 0.8,   // Harvest winding down
+        Winter: 0.4,   // Very poor growing
+    },
+    // Guild crafting bonus from fertility
+    highFertilityBonusThreshold: 75,   // Fertility above this gives bonus items
+    highFertilityBonusChance: 0.7,     // 70% chance of bonus at high fertility + good season
+    lowFertilityPenaltyThreshold: 30,  // Fertility below this can fail harvests
+    lowFertilityFailChance: 0.2,       // 20% chance of no output at low fertility + bad season
 };
 CONFIG.LIVESTOCK_BREEDING = {
     livestock_cow:     { breedDays: 90, offspring: 1, feedPerDay: 'wheat', feedQty: 1 },
@@ -2007,10 +2268,10 @@ CONFIG.LIVESTOCK_BREEDING = {
 // Seasonal Demand Cycles
 // ============================================================
 CONFIG.SEASONAL_DEMAND = {
-    Spring: { wheat: 1.3, wood: 1.2, stone: 1.2, tools: 1.2, bread: 1.0, meat: 1.0 },
-    Summer: { wheat: 0.8, bread: 0.9, wine: 1.3, fish: 1.2, meat: 0.9, preserved_food: 0.7 },
-    Autumn: { wheat: 0.7, bread: 0.8, preserved_food: 1.5, salt: 1.3, wool: 1.2, wine: 1.1 },
-    Winter: { bread: 1.4, meat: 1.3, preserved_food: 1.5, wood: 1.3, wool: 1.3, clothes: 1.3, wheat: 1.2, fish: 0.7 },
+    Spring: { wheat: 1.3, wood: 1.2, stone: 1.2, tools: 1.2, bread: 1.0, meat: 1.0, herbs: 1.1 },
+    Summer: { wheat: 0.8, bread: 0.9, wine: 1.3, fish: 1.2, meat: 0.9, preserved_food: 0.7, herbs: 1.2 },
+    Autumn: { wheat: 0.7, bread: 0.8, preserved_food: 1.5, salt: 1.3, wool: 1.2, wine: 1.1, herbal_remedy: 1.2, bandages: 1.1 },
+    Winter: { bread: 1.4, meat: 1.3, preserved_food: 1.5, wood: 1.3, wool: 1.3, clothes: 1.3, wheat: 1.2, fish: 0.7, herbal_remedy: 1.4, healing_tonic: 1.3, fever_tonic: 1.5, bandages: 1.2 },
 };
 
 // ============================================================
@@ -2330,10 +2591,16 @@ const GUILDS = {
     luxury:      { id: 'luxury',      name: "Luxury Artisans' Guild", icon: '💎', categories: ['luxury'] },
     maritime:    { id: 'maritime',    name: "Maritime Guild",         icon: '⚓', categories: ['port'] },
     merchants:   { id: 'merchants',   name: "Merchants' Guild",       icon: '💰', categories: ['trade'] },
+    healers:     { id: 'healers',     name: "Healers' Guild",         icon: '⚕️', categories: ['medical'] },
 };
 CONFIG.GUILDS = GUILDS;
 CONFIG.GUILD_BASE_MONTHLY = 25;
 CONFIG.GUILD_BASE_YEARLY = 200;
+// Merchants Guild uses 4x base prices (100 monthly / 800 yearly)
+CONFIG.MERCHANTS_GUILD_BASE_MONTHLY = 100;
+CONFIG.MERCHANTS_GUILD_BASE_YEARLY = 800;
+CONFIG.MERCHANTS_GUILD_REPORT_FEE = 25;
+CONFIG.MERCHANTS_GUILD_PROSPERITY_CAP = 3.0; // max multiplier on membership price
 CONFIG.GUILD_BUILDING_ENTRY_FEE_MIN = 5;
 CONFIG.GUILD_BUILDING_ENTRY_FEE_MAX = 10;
 
@@ -2528,6 +2795,89 @@ CONFIG.MILITARY_LEADER_RANKS = [
     { id: 'commander', name: 'Commander', index: 5 },
     { id: 'general', name: 'General', index: 6 },
 ];
+
+// ============================================================
+// Military Service Tasks & Approach System
+// ============================================================
+CONFIG.MILITARY_TASKS = [
+    { id: 'training_drill',    name: '🗡️ Training Drill',      desc: 'Spar with fellow soldiers to sharpen combat skills.',
+      injuryChance: 0.05, injurySeverity: 'minor', xp: 3, rankProgress: 1, pay: 0, ticks: 2 },
+    { id: 'fortification',     name: '🏰 Fortification Work',  desc: 'Reinforce walls, dig trenches, and build palisades.',
+      injuryChance: 0.08, injurySeverity: 'minor', xp: 2, rankProgress: 1, pay: 0, ticks: 3 },
+    { id: 'patrol_duty',       name: '🛡️ Patrol Duty',         desc: 'Walk the perimeter and watch for enemy movements.',
+      injuryChance: 0.03, injurySeverity: 'moderate', xp: 2, rankProgress: 1, pay: 1, ticks: 2 },
+    { id: 'guard_duty',        name: '💂 Guard Duty',           desc: 'Stand watch at the gates. Boring but safe.',
+      injuryChance: 0.01, injurySeverity: 'minor', xp: 1, rankProgress: 0, pay: 2, ticks: 2 },
+    { id: 'weapons_training',  name: '⚔️ Weapons Training',    desc: 'Intensive combat drills under a veteran instructor.',
+      injuryChance: 0.10, injurySeverity: 'minor', xp: 5, rankProgress: 2, pay: 0, ticks: 3 },
+    { id: 'scouting_mission',  name: '🔍 Scouting Mission',    desc: 'Venture into enemy territory to gather intelligence.',
+      injuryChance: 0.06, injurySeverity: 'moderate', xp: 4, rankProgress: 2, pay: 3, ticks: 4 },
+    { id: 'supply_escort',     name: '📦 Supply Escort',        desc: 'Guard a supply convoy between camps.',
+      injuryChance: 0.04, injurySeverity: 'minor', xp: 2, rankProgress: 1, pay: 2, ticks: 3 },
+    { id: 'logistics_duty',    name: '📋 Logistics Duty',       desc: 'Manage inventory, rations, and equipment distribution.',
+      injuryChance: 0.00, injurySeverity: 'minor', xp: 2, rankProgress: 1, pay: 1, ticks: 2 },
+    { id: 'siege_work',        name: '🪨 Siege Engineering',    desc: 'Build and operate siege weapons. Dangerous but prestigious.',
+      injuryChance: 0.12, injurySeverity: 'moderate', xp: 5, rankProgress: 3, pay: 2, ticks: 4 },
+    { id: 'prisoner_escort',   name: '⛓️ Prisoner Escort',     desc: 'Transport captured enemies to a holding camp.',
+      injuryChance: 0.04, injurySeverity: 'minor', xp: 2, rankProgress: 1, pay: 2, ticks: 3 },
+];
+
+CONFIG.MILITARY_NURSE_TASKS = [
+    { id: 'ward_rounds',      name: '🏥 Ward Rounds',          desc: 'Check on patients, change bandages, administer medicine.',
+      injuryChance: 0.02, injurySeverity: 'minor', xp: 3, rankProgress: 1, pay: 0, ticks: 2 },
+    { id: 'herb_gathering',   name: '🌿 Herb Gathering',       desc: 'Forage for medicinal plants near camp.',
+      injuryChance: 0.03, injurySeverity: 'minor', xp: 2, rankProgress: 1, pay: 0, ticks: 2 },
+    { id: 'surgery_assist',   name: '🩺 Surgery Assist',       desc: 'Assist the chief surgeon with field operations.',
+      injuryChance: 0.01, injurySeverity: 'minor', xp: 5, rankProgress: 2, pay: 0, ticks: 3 },
+    { id: 'sanitation_duty',  name: '🧹 Sanitation Duty',      desc: 'Clean the field hospital to prevent disease.',
+      injuryChance: 0.04, injurySeverity: 'minor', xp: 1, rankProgress: 0, pay: 0, ticks: 2 },
+    { id: 'triage_duty',      name: '🚑 Triage Duty',          desc: 'Prioritize incoming wounded based on severity.',
+      injuryChance: 0.00, injurySeverity: 'minor', xp: 4, rankProgress: 2, pay: 1, ticks: 2 },
+];
+
+CONFIG.MILITARY_APPROACH = {
+    aggressive: {
+        label: '⚔️ Aggressive',
+        desc: 'Fight recklessly for glory. Higher risk, but guaranteed promotion if you survive a battle.',
+        deathMult: 1.5,    // +50% death chance
+        injuryMult: 1.5,   // +50% injury chance
+        xpMult: 2.0,       // double XP
+        repMult: 2.0,      // double reputation
+        rankMult: 2.0,     // double rank progress
+        promotionGuarantee: true  // guaranteed promotion after surviving battle
+    },
+    normal: {
+        label: '🛡️ Normal',
+        desc: 'Standard approach. Balance risk and reward.',
+        deathMult: 1.0,
+        injuryMult: 1.0,
+        xpMult: 1.0,
+        repMult: 1.0,
+        rankMult: 1.0,
+        promotionGuarantee: false
+    },
+    cautious: {
+        label: '🐢 Cautious',
+        desc: 'Stay in the rear. Much safer, but slower advancement and less glory.',
+        deathMult: 0.4,    // -60% death chance
+        injuryMult: 0.5,   // -50% injury chance
+        xpMult: 0.5,       // half XP
+        repMult: 0.5,      // half reputation
+        rankMult: 0.5,     // half rank progress
+        promotionGuarantee: false
+    }
+};
+
+CONFIG.MILITARY_RANK_PROGRESS_THRESHOLDS = {
+    militiaman: 10,   // progress needed to promote to footman
+    footman: 25,      // to sergeant
+    sergeant: 50,     // to knight
+    knight: 100,      // max rank for enlisted
+    field_nurse: 10,
+    ward_nurse: 25,
+    head_nurse: 50,
+    chief_healer: 100
+};
 
 const REGENCY_THRESHOLDS = [
     { min: 80, max: 100, label: 'Devoted Steward',    goldPct: 1.00, buildingPct: 1.00, bonusSkillPoints: 2,  repMult: 1.0 },

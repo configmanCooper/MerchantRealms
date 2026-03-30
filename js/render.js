@@ -912,6 +912,33 @@ window.Renderer = (function () {
                     ctx.fill();
                 }
 
+                // Fertility overlay ring (skill-gated)
+                if (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('soil_knowledge')) {
+                    var fert = town.soilFertilityRating != null ? town.soilFertilityRating : (town.soilFertility != null ? Math.round(town.soilFertility * 50) : 50);
+                    // Dark red (0) → yellow (50) → dark green (100)
+                    var fr, fg, fb;
+                    if (fert <= 50) {
+                        var t = fert / 50;
+                        fr = Math.round(139 * (1 - t) + 200 * t);
+                        fg = Math.round(0 * (1 - t) + 180 * t);
+                        fb = Math.round(0 * (1 - t) + 0 * t);
+                    } else {
+                        var t2 = (fert - 50) / 50;
+                        fr = Math.round(200 * (1 - t2) + 0 * t2);
+                        fg = Math.round(180 * (1 - t2) + 100 * t2);
+                        fb = Math.round(0 * (1 - t2) + 0 * t2);
+                    }
+                    ctx.fillStyle = 'rgba(' + fr + ',' + fg + ',' + fb + ',0.25)';
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, r + 10, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = 'rgba(' + fr + ',' + fg + ',' + fb + ',0.6)';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, r + 10, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+
                 ctx.fillStyle = kColor;
                 if (cat === 'capital_city') {
                     // Star/diamond shape for capitals

@@ -72,6 +72,9 @@
         dateProgress: {},       // personId → { traitProgress: 0, quirkProgress: 0 }
         _npcInteractions: {},   // personId → { day: N, count: N } — daily interaction cooldowns
         investigatorCaught: {}, // personId → count (0, 1, or 2 = permanent rejection)
+        // Wedding planning
+        weddingPlan: null,      // { fianceId, venue, feast, vows, planDay, weddingDay, guests }
+        weddingMemory: null,    // { venue, feast, vows, day } — saved after wedding for memories
         // Spouse effect modifiers (recalculated daily)
         spouseProdMod: 1.0,
         spouseCostMod: 1.0,
@@ -199,10 +202,19 @@
         militaryMandatory: false,       // true if serving mandatory commitment (e.g. freed from indenture)
         militaryServiceEndDay: 0,       // day mandatory service ends
         militaryBorderService: false,   // true if enlisted via closed borders to earn citizenship
+        militaryRankProgress: 0,        // accumulates toward rank promotion thresholds
+        militaryPendingEvent: null,     // { type:'battle'/'task', task?, enemyKingdomId?, day }
+        _militaryProvisionQuality: 0.7, // last computed provision quality (0.0-1.0)
 
         // ── Injuries & Illnesses ──
         injuries: [],                   // [{ type, severity, dayOccurred, treated }]
         illnesses: [],                  // [{ type, severity, dayOccurred, treated }]
+
+        // ── Journal / Narrative ──
+        journalEntries: [],             // [{ day, type, text, mood?, location? }] — permanent narrative log
+
+        // ── Remembered Prices (stale price memory) ──
+        rememberedPrices: {},           // { townId: { day, prices: { resId: price }, supply: { resId: qty } } }
 
         // ── Job Experience & Skill Learning ──
         jobExperience: {},              // jobType → cumulative days worked
@@ -290,17 +302,21 @@
           debuffs: { workEfficiency: -0.10, hungerRate: 1.2 }, debuffDesc: '−10% work pay, +20% hunger drain' },
         { id: 'broken_bone', name: 'Broken Bone', severity: 'moderate', healDays: 15, product: 'splint', productCost: 15,
           debuffs: { workEfficiency: -0.30, travelSpeed: -0.40, blocksPhysical: true }, debuffDesc: '−30% work pay, −40% travel speed, blocks physical jobs' },
-        { id: 'deep_wound', name: 'Deep Wound', severity: 'severe', healDays: 25, product: 'healing_tonic', productCost: 30,
-          debuffs: { workEfficiency: -0.60, travelSpeed: -0.50, hungerRate: 1.5, goldDrain: 2 }, debuffDesc: '−60% work pay, −50% travel speed, +50% hunger, 2g/day bandage cost' },
+        { id: 'deep_wound', name: 'Deep Wound', severity: 'severe', healDays: 25, product: 'healing_tonic', productCost: 30, deathRisk: 0.02,
+          debuffs: { workEfficiency: -0.60, travelSpeed: -0.50, hungerRate: 1.5, goldDrain: 2 }, debuffDesc: '−60% work pay, −50% travel speed, +50% hunger, 2g/day bandage cost, 2% daily death risk' },
         { id: 'concussion', name: 'Concussion', severity: 'moderate', healDays: 10, product: 'herbal_poultice', productCost: 12,
           debuffs: { workEfficiency: -0.25, xpMult: 0.5, tradePenalty: -0.15 }, debuffDesc: '−25% work pay, −50% XP gain, −15% trade prices' },
     ];
 
     const ILLNESS_TYPES = [
-        { id: 'common_cold', name: 'Common Cold', severity: 'minor', healDays: 3, product: 'herbal_remedy', productCost: 8 },
-        { id: 'fever', name: 'Fever', severity: 'moderate', healDays: 7, product: 'fever_tonic', productCost: 15 },
-        { id: 'plague', name: 'Plague', severity: 'severe', healDays: 20, product: 'antidote', productCost: 40, deathRisk: 0.02 },
-        { id: 'food_poisoning', name: 'Food Poisoning', severity: 'minor', healDays: 3, product: 'antidote', productCost: 10 },
+        { id: 'common_cold', name: 'Common Cold', severity: 'minor', healDays: 3, product: 'herbal_remedy', productCost: 8,
+          debuffs: { workEfficiency: -0.05, hungerRate: 1.1 }, debuffDesc: '−5% work pay, +10% hunger drain' },
+        { id: 'fever', name: 'Fever', severity: 'moderate', healDays: 7, product: 'fever_tonic', productCost: 15,
+          debuffs: { workEfficiency: -0.20, travelSpeed: -0.20, hungerRate: 1.3, xpMult: 0.75 }, debuffDesc: '−20% work pay, −20% travel speed, +30% hunger, −25% XP gain' },
+        { id: 'plague', name: 'Plague', severity: 'severe', healDays: 20, product: 'antidote', productCost: 40, deathRisk: 0.02,
+          debuffs: { workEfficiency: -0.50, travelSpeed: -0.40, hungerRate: 1.5, goldDrain: 3, blocksPhysical: true }, debuffDesc: '−50% work pay, −40% travel speed, +50% hunger, 3g/day medicine cost, blocks physical jobs, 2% daily death risk' },
+        { id: 'food_poisoning', name: 'Food Poisoning', severity: 'minor', healDays: 3, product: 'antidote', productCost: 10,
+          debuffs: { workEfficiency: -0.10, hungerRate: 1.4, travelSpeed: -0.10 }, debuffDesc: '−10% work pay, +40% hunger drain, −10% travel speed' },
     ];
 
     const MILITARY_RANKS = ['militiaman', 'footman', 'sergeant', 'knight'];
@@ -454,6 +470,8 @@
         player.dateProgress = {};
         player._npcInteractions = {};
         player.investigatorCaught = {};
+        player.weddingPlan = null;
+        player.weddingMemory = null;
         player.spouseProdMod = 1.0;
         player.spouseCostMod = 1.0;
         player.spouseRepMod = 1.0;
@@ -1041,7 +1059,7 @@
         }
 
         const effectivePrice = price * (1 + salesBonus);
-        const totalRevenue = Math.floor(effectivePrice * qty);
+        const totalRevenue = Math.max(qty > 0 ? 1 : 0, Math.floor(effectivePrice * qty));
 
         // Track first trade day
         if (player.tradingStartDay === 0) player.tradingStartDay = Engine.getDay();
@@ -1121,7 +1139,7 @@
         if (res && effectivePrice >= res.basePrice * 3) unlockAchievement('price_gouger');
         // Market crash check
         const newSupply = town.market.supply[resourceId] || 0;
-        const newPrice = town.market.prices[resourceId] || res.basePrice;
+        const newPrice = town.market.prices[resourceId] || (res ? res.basePrice : 1);
         if (res && newPrice < res.basePrice * 0.5) unlockAchievement('market_crash');
         // War profiteer achievement
         if (res && res.category === 'military' && kingdom && kingdom.atWar && kingdom.atWar.size > 0) {
@@ -1436,6 +1454,7 @@
         player.stats.buildingsOwned++;
 
         Engine.logEvent(`The merchant builds a ${bt.name} in ${town.name}.`);
+        autoJournalCapture('building', 'I built a ' + bt.name + ' in ' + town.name + '. My empire grows.', { mood: 'hopeful' });
         grantXP(XP_REWARDS.BUILD, 'build');
         consumeEnergy(ENERGY_CONFIG.BUILD_COST || 5);
         return { success: true, message: `Built ${bt.name} in ${town.name}.`, building: bld };
@@ -1655,6 +1674,70 @@
         grantXP(XP_REWARDS.BUILD || 10, 'build');
         Engine.logEvent('The merchant converted a building to ' + newBt.name + ' in ' + town.name + '.');
         return { success: true, message: 'Converted to ' + newBt.name + ' for ' + totalCost + 'g.', building: playerBld };
+    }
+
+    function playerConvertFarm(buildingIndex, townId, newTypeId) {
+        if (player.traveling) return { success: false, message: 'Cannot convert while traveling.' };
+        var tid = townId || player.townId;
+        if (tid !== player.townId) return { success: false, message: 'You must be in the town.' };
+        var town = Engine.findTown(tid);
+        if (!town) return { success: false, message: 'Town not found.' };
+        var bld = town.buildings[buildingIndex];
+        if (!bld) return { success: false, message: 'Building not found.' };
+        if (bld.ownerId !== 'player') return { success: false, message: 'You do not own this building.' };
+
+        // Get conversion cost info
+        var costInfo = Engine.getFarmConversionCost(bld, newTypeId);
+        if (!costInfo) {
+            if (Engine.isLivestockFarm(bld.type)) {
+                return { success: false, message: 'No more livestock conversions available this year.' };
+            }
+            return { success: false, message: 'This building cannot be converted to that type.' };
+        }
+
+        // Check gold
+        if (player.gold < costInfo.gold) {
+            return { success: false, message: 'Not enough gold. Need ' + costInfo.gold + 'g (have ' + Math.floor(player.gold) + 'g).' };
+        }
+
+        // Check materials
+        for (var mat in costInfo.materials) {
+            var needed = costInfo.materials[mat];
+            if (needed <= 0) continue;
+            var available = player.inventory[mat] || 0;
+            if (available < needed) {
+                return { success: false, message: 'Need ' + needed + ' ' + mat + ' (have ' + available + ').' };
+            }
+        }
+
+        // Deduct player costs
+        player.gold -= costInfo.gold;
+        for (var mat2 in costInfo.materials) {
+            if (costInfo.materials[mat2] > 0) {
+                player.inventory[mat2] = (player.inventory[mat2] || 0) - costInfo.materials[mat2];
+                if (player.inventory[mat2] <= 0) delete player.inventory[mat2];
+            }
+        }
+
+        // Perform conversion via Engine
+        var result = Engine.convertFarmBuilding(town, buildingIndex, newTypeId, 'player', 'player');
+        if (!result.success) return result;
+
+        // Update player buildings record
+        var pIdx = player.buildings.findIndex(function(pb) { return pb.townId === tid && pb.type !== newTypeId && (pb.type === bld.type || !bld.type); });
+        // The building was converted in-place, update player record
+        for (var pi = 0; pi < player.buildings.length; pi++) {
+            if (player.buildings[pi].townId === tid && player.buildings[pi].type !== newTypeId) {
+                // Find the matching old type
+                var oldType = result.building ? null : bld.type;
+                // The engine updated bld.type in place, so check by index
+                player.buildings[pi].type = newTypeId;
+                break;
+            }
+        }
+
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(5);
+        return result;
     }
 
     function playerDemolishBuilding(buildingIndex, townId) {
@@ -3995,7 +4078,25 @@
 
             const town = Engine.findTown(player.townId);
             Engine.logEvent(`You have arrived at ${town ? town.name : 'your destination'}.`);
+            autoJournalCapture('arrival', 'The journey was long, but I have arrived at last.', { mood: 'content' });
 
+            // Snapshot town prices for stale price memory (90-day recall)
+            if (town && town.market && town.market.prices) {
+                if (!player.rememberedPrices) player.rememberedPrices = {};
+                var pricesCopy = {};
+                var supplyCopy = {};
+                for (var rpk in town.market.prices) pricesCopy[rpk] = town.market.prices[rpk];
+                for (var rsk in (town.market.supply || {})) supplyCopy[rsk] = town.market.supply[rsk];
+                player.rememberedPrices[town.id] = { day: Engine.getDay(), prices: pricesCopy, supply: supplyCopy };
+            }
+
+            // Track kingdom residency — set start day when entering a new kingdom
+            if (town && town.kingdomId) {
+                if (!player.kingdomResidencyStart) player.kingdomResidencyStart = {};
+                if (player.kingdomResidencyStart[town.kingdomId] === undefined) {
+                    player.kingdomResidencyStart[town.kingdomId] = Engine.getDay();
+                }
+            }
             // Center camera on new location after arrival
             if (typeof Renderer !== 'undefined' && Renderer.centerOnPlayer) {
                 Renderer.centerOnPlayer();
@@ -6665,7 +6766,9 @@
     }
 
     function marry(personId) {
+        // Now starts the wedding planning phase instead of instant marriage
         if (!canMarry()) return { success: false, message: 'Cannot marry right now.' };
+        if (player.weddingPlan) return { success: false, message: 'You are already planning a wedding!' };
         const person = Engine.findPerson(personId);
         if (!person) return { success: false, message: 'Person not found.' };
         if (!person.alive) return { success: false, message: 'Person is not alive.' };
@@ -6677,22 +6780,14 @@
         let minRel = person.occupation === 'noble' ? CONFIG.COURTSHIP_NOBLE_MIN_RELATIONSHIP : CONFIG.COURTSHIP_MIN_RELATIONSHIP;
         if (hasSkill('romantic')) minRel = Math.min(minRel, 50);
         if (rel.level < minRel) {
-            return { success: false, message: `Need relationship ${minRel}+ to propose (current: ${Math.floor(rel.level)}). Build through gifts and time.` };
+            return { success: false, message: 'Need relationship ' + minRel + '+ to propose (current: ' + Math.floor(rel.level) + '). Build through gifts and time.' };
         }
-
-        // Wedding cost based on rank
-        const rankIdx = getPlayerRankIndex();
-        const weddingCost = CONFIG.WEDDING_COST_BASE + (rankIdx * CONFIG.WEDDING_COST_PER_RANK);
-        if (player.gold < weddingCost) {
-            return { success: false, message: `Wedding costs ${weddingCost}g (have ${player.gold}g).` };
-        }
-        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.petition_promotion || 10);
 
         // Housing affects marriage acceptance
         var bestHouse = null;
         var bestComfort = -1;
         for (var hi = 0; hi < (player.houses || []).length; hi++) {
-            var ht = CONFIG.HOUSING_TYPES.find(h => h.id === player.houses[hi].type);
+            var ht = CONFIG.HOUSING_TYPES.find(function(h) { return h.id === player.houses[hi].type; });
             if (ht && ht.comfort > bestComfort) { bestComfort = ht.comfort; bestHouse = ht; }
         }
         var housingAcceptMod = 0;
@@ -6705,37 +6800,316 @@
             return { success: false, message: 'Your proposal was rejected.' + (housingAcceptMod < 0 ? ' Having a home might help.' : '') };
         }
 
-        player.gold -= weddingCost;
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.petition_promotion || 10);
 
-        player.spouseId = personId;
+        // Proposal accepted! Start wedding planning phase
+        var planDay = Engine.getDay();
+        var weddingDay = planDay + (CONFIG.WEDDING_PLANNING_DAYS || 5);
+        player.weddingPlan = {
+            fianceId: personId,
+            fianceName: person.firstName + ' ' + person.lastName,
+            venue: null,
+            feast: null,
+            vows: null,
+            planDay: planDay,
+            weddingDay: weddingDay,
+            guests: [],
+        };
+
+        Engine.logEvent(player.fullName + ' proposed to ' + person.firstName + ' ' + person.lastName + '! Wedding in ' + (CONFIG.WEDDING_PLANNING_DAYS || 5) + ' days.');
+        return { success: true, message: person.firstName + ' accepted your proposal! 💍 Plan your wedding — it will be held in ' + (CONFIG.WEDDING_PLANNING_DAYS || 5) + ' days.', startPlanning: true };
+    }
+
+    function setWeddingChoice(choiceType, choiceId) {
+        if (!player.weddingPlan) return { success: false, message: 'No wedding being planned.' };
+        if (choiceType === 'venue') {
+            var venue = (CONFIG.WEDDING_VENUES || []).find(function(v) { return v.id === choiceId; });
+            if (!venue) return { success: false, message: 'Unknown venue.' };
+            if (venue.minRank && getPlayerRankIndex() < venue.minRank) {
+                return { success: false, message: 'You need a higher rank for this venue.' };
+            }
+            player.weddingPlan.venue = choiceId;
+            return { success: true, message: venue.icon + ' Venue set: ' + venue.name };
+        }
+        if (choiceType === 'feast') {
+            var feast = (CONFIG.WEDDING_FEASTS || []).find(function(f) { return f.id === choiceId; });
+            if (!feast) return { success: false, message: 'Unknown feast option.' };
+            player.weddingPlan.feast = choiceId;
+            return { success: true, message: feast.icon + ' Feast set: ' + feast.name };
+        }
+        if (choiceType === 'vows') {
+            var vow = (CONFIG.WEDDING_VOWS || []).find(function(v) { return v.id === choiceId; });
+            if (!vow) return { success: false, message: 'Unknown vow style.' };
+            player.weddingPlan.vows = choiceId;
+            return { success: true, message: vow.icon + ' Vows set: ' + vow.name };
+        }
+        return { success: false, message: 'Unknown choice type.' };
+    }
+
+    function getWeddingPlan() {
+        return player.weddingPlan;
+    }
+
+    function finalizeWedding() {
+        var plan = player.weddingPlan;
+        if (!plan) return { success: false, message: 'No wedding planned.' };
+        var person = Engine.findPerson(plan.fianceId);
+        if (!person || !person.alive) {
+            player.weddingPlan = null;
+            return { success: false, message: 'Your fiance is no longer available.' };
+        }
+
+        // Set defaults for any unchosen options
+        if (!plan.venue) plan.venue = 'town_square';
+        if (!plan.feast) plan.feast = 'simple';
+        if (!plan.vows) plan.vows = 'practical';
+
+        var venue = (CONFIG.WEDDING_VENUES || []).find(function(v) { return v.id === plan.venue; }) || CONFIG.WEDDING_VENUES[0];
+        var feast = (CONFIG.WEDDING_FEASTS || []).find(function(f) { return f.id === plan.feast; }) || CONFIG.WEDDING_FEASTS[0];
+        var vow = (CONFIG.WEDDING_VOWS || []).find(function(v) { return v.id === plan.vows; }) || CONFIG.WEDDING_VOWS[0];
+
+        // Calculate total cost
+        var totalCost = (CONFIG.WEDDING_COST_BASE || 50) + (venue.cost || 0) + (feast.cost || 0);
+        if (player.gold < totalCost) {
+            return { success: false, message: 'Cannot afford wedding! Need ' + totalCost + 'g (have ' + Math.floor(player.gold) + 'g).' };
+        }
+
+        player.gold -= totalCost;
+
+        // Finalize the marriage
+        player.spouseId = plan.fianceId;
         person.spouseId = 'player';
         person.employerId = 'player';
-        if (!player.employees.includes(personId)) {
-            player.employees.push(personId);
+        if (!player.employees.includes(plan.fianceId)) {
+            player.employees.push(plan.fianceId);
         }
-        modifyRelationship(personId, 20, 'spouse');
 
-        // Add spouse to familyMembers for Family panel
+        // Relationship bonuses from choices
+        var totalRelBonus = 20 + (venue.relBonus || 0) + (feast.relBonus || 0) + (vow.relBonus || 0);
+        modifyRelationship(plan.fianceId, totalRelBonus, 'spouse');
+
+        // Reputation bonus from venue
+        if (venue.repBonus > 0 && player.citizenshipKingdomId) {
+            var kingdoms = Engine.getKingdoms();
+            for (var ki = 0; ki < kingdoms.length; ki++) {
+                if (kingdoms[ki].id === player.citizenshipKingdomId) {
+                    player.reputation = player.reputation || {};
+                    player.reputation[kingdoms[ki].id] = (player.reputation[kingdoms[ki].id] || 0) + venue.repBonus;
+                    break;
+                }
+            }
+        }
+
+        // Loyalty bonus from feast and vows (applied to spouse personality)
+        var loyaltyBonus = (feast.loyaltyBonus || 0) + (vow.loyaltyBonus || 0);
+        if (person.personality && loyaltyBonus > 0) {
+            person.personality.loyalty = Math.min(100, (person.personality.loyalty || 50) + loyaltyBonus);
+        }
+
+        // Vow trait affinity bonus
+        if (vow.traitBonus && person.personality) {
+            person.personality[vow.traitBonus] = Math.min(100, (person.personality[vow.traitBonus] || 50) + 5);
+        }
+
+        // Add spouse to familyMembers
         if (!player.familyMembers) player.familyMembers = [];
         var alreadyInFamily = false;
         for (var fi = 0; fi < player.familyMembers.length; fi++) {
-            if (player.familyMembers[fi].npcId === personId) { alreadyInFamily = true; break; }
+            if (player.familyMembers[fi].npcId === plan.fianceId) { alreadyInFamily = true; break; }
         }
         if (!alreadyInFamily) {
-            player.familyMembers.push({ npcId: personId, role: 'spouse', name: person.firstName + ' ' + person.lastName });
+            player.familyMembers.push({ npcId: plan.fianceId, role: 'spouse', name: person.firstName + ' ' + person.lastName });
         }
 
-        // If spouse is from another kingdom, offer citizenship change option
-        const spouseKingdom = person.kingdomId;
+        // Save wedding memory for spouse conversations
+        player.weddingMemory = {
+            venue: venue.name,
+            venueIcon: venue.icon,
+            feast: feast.name,
+            vows: vow.name,
+            vowText: vow.description,
+            day: Engine.getDay(),
+            fianceName: person.firstName,
+            totalCost: totalCost,
+            guests: feast.guests || 5,
+        };
 
-        Engine.logEvent(`${player.fullName} married ${person.firstName} ${person.lastName}!`);
+        // Generate wedding journal entry prose
+        var journalText = 'Today I married ' + person.firstName + ' ' + person.lastName + '. ';
+        if (plan.venue === 'church') journalText += 'We exchanged our vows in the church, blessed by the gods. ';
+        else if (plan.venue === 'manor_hall') journalText += 'The manor hall was decorated with flowers and banners. A grand affair. ';
+        else if (plan.venue === 'countryside') journalText += 'We stood among the wildflowers under an open sky. Just us and nature. ';
+        else journalText += 'The town square was lively with well-wishers. A humble but joyous ceremony. ';
+
+        if (plan.feast === 'grand') journalText += 'The feast was magnificent — imported wines, roasted boar, music that went into the night. ';
+        else if (plan.feast === 'moderate') journalText += 'We shared roasted meats and good wine with friends. ';
+        else journalText += 'We broke bread together — simple but meaningful. ';
+
+        journalText += vow.description + ' A new chapter begins.';
+
+        autoJournalCapture('wedding', journalText, { mood: 'triumphant' });
+        Engine.logEvent(player.fullName + ' married ' + person.firstName + ' ' + person.lastName + '! ' + venue.icon + ' ' + feast.icon);
         grantXP(XP_REWARDS.MARRY, 'marry');
-        let msg = `Married ${person.firstName} ${person.lastName}! (Cost: ${weddingCost}g)`;
+
+        // Clear wedding plan
+        player.weddingPlan = null;
+
+        var spouseKingdom = person.kingdomId;
+        var msg = '💒 You married ' + person.firstName + ' ' + person.lastName + '! ' + venue.icon + ' at ' + venue.name + ', ' + feast.icon + ' ' + feast.name + ' feast. (Cost: ' + totalCost + 'g)';
         if (spouseKingdom && spouseKingdom !== player.citizenshipKingdomId) {
-            msg += ` Your spouse is from another kingdom — you may change citizenship.`;
+            msg += ' Your spouse is from another kingdom — you may change citizenship.';
         }
         return { success: true, message: msg, spouseKingdomId: spouseKingdom };
     }
+
+    // Check if wedding day has arrived and auto-prompt
+    function tickWeddingPlan() {
+        if (!player.weddingPlan) return;
+        var day = Engine.getDay();
+        if (day >= player.weddingPlan.weddingDay) {
+            // Wedding day! If choices not made, auto-finalize with defaults
+            if (!player.weddingPlan.venue || !player.weddingPlan.feast || !player.weddingPlan.vows) {
+                // Notify player the wedding is ready
+                if (typeof UI !== 'undefined' && UI.toast) {
+                    UI.toast('💒 Your wedding day has arrived! Open the wedding planner to finalize.', 'info');
+                }
+            } else {
+                // All choices made, auto-finalize
+                var result = finalizeWedding();
+                if (result.success) {
+                    if (typeof UI !== 'undefined' && UI.toast) {
+                        UI.toast(result.message, 'success');
+                    }
+                }
+            }
+        }
+    }
+
+    // ========================================================
+    // §SPOUSE-TALK: Meaningful Spouse Conversations
+    // ========================================================
+
+    function talkToSpouse(topic) {
+        if (!player.spouseId) return { success: false, message: 'You are not married.' };
+        var spouse = Engine.findPerson(player.spouseId);
+        if (!spouse || !spouse.alive) return { success: false, message: 'Your spouse is not here.' };
+        if (spouse.townId !== player.townId) return { success: false, message: 'Your spouse is not in this town.' };
+
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(5);
+        var rng = Engine.getRng();
+        var rel = getRelationship(player.spouseId);
+        var spousePersonality = spouse.personality || {};
+        var convos = CONFIG.SPOUSE_CONVERSATIONS || {};
+        var response = '';
+        var relGain = 0;
+
+        if (topic === 'ask_day') {
+            // Mood based on spouse needs/happiness
+            var mood = 'neutral';
+            var warmth = spousePersonality.warmth || 50;
+            if (rel.level > 80 && warmth > 60) mood = 'happy';
+            else if (rel.level < 40) mood = 'sad';
+            else if (spouse.needs && spouse.needs.safety < 40) mood = 'worried';
+            else if (rng && rng.chance(0.4)) mood = 'happy';
+
+            var moodLines = (convos.askDay || []).find(function(m) { return m.mood === mood; });
+            if (moodLines && moodLines.lines.length > 0) {
+                response = moodLines.lines[rng ? rng.randInt(0, moodLines.lines.length - 1) : 0];
+            } else {
+                response = 'It was a quiet day.';
+            }
+            relGain = 2;
+
+            // Add spouse observation about town
+            var town = Engine.findTown(player.townId);
+            if (town && rng && rng.chance(0.3)) {
+                if (town.happiness < 30) response += ' "The people here seem unhappy lately..."';
+                else if ((town.market.supply.bread || 0) < 5) response += ' "Have you noticed the baker has been running low on bread?"';
+                else if (town.prosperity > 80) response += ' "The town is thriving! I feel proud to live here."';
+            }
+        }
+        else if (topic === 'discuss_plans') {
+            var plans = convos.discussPlans || {};
+            var category = 'saving'; // default
+            if (player.buildings && player.buildings.length > 2) category = 'building';
+            else if (player.traveling) category = 'trading';
+            // Check for war context
+            var kingdoms = Engine.getKingdoms();
+            var playerK = kingdoms.find(function(k) { return k.id === player.citizenshipKingdomId; });
+            if (playerK && playerK.atWar && playerK.atWar.size > 0) category = 'war';
+            else if (player.gold > 2000) category = 'building';
+
+            var lines = plans[category] || plans.saving || ['We should plan carefully.'];
+            response = lines[rng ? rng.randInt(0, lines.length - 1) : 0];
+
+            // Replace placeholders
+            if (response.indexOf('{nearbyTown}') >= 0) {
+                var towns = Engine.getTowns();
+                var nearby = towns.filter(function(t) { return t.id !== player.townId; });
+                if (nearby.length > 0) {
+                    var pick = nearby[rng ? rng.randInt(0, nearby.length - 1) : 0];
+                    response = response.replace('{nearbyTown}', pick.name);
+                } else {
+                    response = response.replace('{nearbyTown}', 'a nearby town');
+                }
+            }
+            if (response.indexOf('{scarceGood}') >= 0) {
+                var scarceGoods = ['bread', 'iron', 'cloth', 'tools', 'wood'];
+                response = response.replace('{scarceGood}', scarceGoods[rng ? rng.randInt(0, scarceGoods.length - 1) : 0]);
+            }
+            relGain = 3;
+        }
+        else if (topic === 'share_memory') {
+            var memories = convos.shareMemory || {};
+            var memoryPool = [];
+
+            // Wedding memory
+            if (player.weddingMemory) {
+                var venueMemory = 'The ' + player.weddingMemory.venue + ' was perfect.';
+                memoryPool.push((memories.wedding || 'Our wedding was special.').replace('{venueMemory}', venueMemory));
+            }
+
+            // Child memory
+            if (player.childrenIds && player.childrenIds.length > 0) {
+                var child = Engine.findPerson(player.childrenIds[0]);
+                if (child) {
+                    memoryPool.push((memories.child || 'I think about our children.').replace('{childName}', child.firstName || 'our child'));
+                }
+            }
+
+            // Trade memory
+            if (player.stats && player.stats.bestSingleTrade > 0) {
+                memoryPool.push((memories.trade || 'That big trade was something.').replace('{profit}', Math.floor(player.stats.bestSingleTrade)));
+            }
+
+            // Travel memory
+            if (player.stats && player.stats.townsVisited && player.stats.townsVisited.length > 1) {
+                var visitedTown = player.stats.townsVisited[rng ? rng.randInt(0, player.stats.townsVisited.length - 1) : 0];
+                memoryPool.push((memories.travel || 'Remember our travels.').replace('{townName}', visitedTown));
+            }
+
+            // Fallback memories
+            memoryPool.push(memories.early || 'Remember when we first met?');
+            memoryPool.push(memories.hardship || 'We have been through a lot together.');
+
+            response = memoryPool[rng ? rng.randInt(0, memoryPool.length - 1) : 0];
+            relGain = 4;
+        }
+        else {
+            return { success: false, message: 'Unknown conversation topic.' };
+        }
+
+        // Apply relationship gain
+        modifyRelationship(player.spouseId, relGain, 'spouse');
+
+        return {
+            success: true,
+            message: spouse.firstName + ' says: "' + response + '"',
+            relGain: relGain,
+            topic: topic,
+        };
+    }
+
 
     // ========================================================
     // §8D  DYNASTY MARRIAGES — arrange child marriages
@@ -7042,6 +7416,7 @@
                 player.pregnantDay = 0;
 
                 Engine.logEvent(`A child is born! ${childFirstName} ${player.lastName} joins the family.`);
+                autoJournalCapture('child', 'Our child ' + childFirstName + ' has come into this world. I am overwhelmed with joy.', { mood: 'triumphant' });
                 grantXP(XP_REWARDS.CHILD, 'child');
                 if (typeof UI !== 'undefined' && UI.toast) {
                     UI.toast(`🍼 A child is born! Welcome ${childFirstName}!`, 'success', 'my_actions');
@@ -8798,6 +9173,8 @@
         player.spouseRelHighDays = 0;
         player.dateProgress = {};
         player.investigatorCaught = {};
+        player.weddingPlan = null;
+        player.weddingMemory = null;
         player.spouseProdMod = 1.0;
         player.spouseCostMod = 1.0;
         player.spouseRepMod = 1.0;
@@ -9014,8 +9391,10 @@
         player.militaryNextBattleDay = Engine.getDay() + (rng ? rng.randInt(3, 5) : 4);
 
         var rankLabel = isNurse ? NURSE_RANK_LABELS[player.militaryRank] : MILITARY_RANK_LABELS[player.militaryRank];
+        var kNameJ = Engine.findKingdom(kingdomId) ? Engine.findKingdom(kingdomId).name : 'the kingdom';
+        autoJournalCapture('military', 'I have enlisted as a ' + rankLabel + ' in the service of ' + kNameJ + '. A new chapter of my life begins.', { mood: wasIndentured ? 'hopeful' : 'anxious' });
         if (!wasIndentured) {
-            Engine.logEvent(player.fullName + ' enlisted as a ' + rankLabel + ' for ' + (Engine.findKingdom(kingdomId) ? Engine.findKingdom(kingdomId).name : kingdomId) + '!');
+            Engine.logEvent(player.fullName + ' enlisted as a ' + rankLabel + ' for ' + kNameJ + '!');
             if (typeof UI !== 'undefined' && UI.toast) {
                 UI.toast((isNurse ? '🏥' : '⚔️') + ' Enlisted as ' + rankLabel + '!', 'success', 'military');
             }
@@ -9049,178 +9428,586 @@
     function tickMilitaryCareer() {
         if (!player.militaryActive || !player.alive) return;
 
-        // Check if mandatory service has expired
-        if (player.militaryMandatory && Engine.getDay() >= (player.militaryServiceEndDay || 0)) {
+        var day = Engine.getDay();
+        var rng = Engine.getRng();
+        var isNurse = (player.militaryRole === 'nurse');
+
+        // ── MANDATORY SERVICE EXPIRY ──
+        if (player.militaryMandatory && day >= (player.militaryServiceEndDay || 0)) {
             player.militaryMandatory = false;
             player.militaryServiceEndDay = 0;
-            var serviceType = player.militaryRole === 'nurse' ? 'medical' : 'military';
+            var serviceType = isNurse ? 'medical' : 'military';
             Engine.logEvent('🎖️ ' + player.fullName + '\'s mandatory ' + serviceType + ' service is complete! You may now leave or continue serving.');
             if (typeof UI !== 'undefined' && UI.toast) {
                 UI.toast('🎖️ Mandatory service complete! You are free to leave.', 'success');
             }
+            if (player.bankruptcy && player.bankruptcy.active && player.bankruptcy.type === 'military') {
+                player.bankruptcy.active = false;
+                player.bankruptcy.completedDay = day;
+                Engine.logEvent('📜 ' + player.fullName + '\'s bankruptcy debt has been fully repaid through military service.');
+            }
         }
 
-        // Check war is still active
-        const wars = Engine.getActiveWars ? Engine.getActiveWars() : {};
-        let warActive = false;
-        let enemyKingdomId = null;
-        for (const wId in wars) {
-            const w = wars[wId];
+        // ── KINGDOM PROVISIONS — food, water, rest ──
+        provideMilitaryProvisions(day);
+
+        // ── AUTO-HOSPITAL for service injuries ──
+        autoTreatServiceInjuries(day);
+
+        // ── CHECK WAR STATUS ──
+        var wars = Engine.getActiveWars ? Engine.getActiveWars() : {};
+        var warActive = false;
+        var enemyKingdomId = null;
+        for (var wId in wars) {
+            var w = wars[wId];
             if (w.kingdomA === player.militaryKingdomId || w.kingdomB === player.militaryKingdomId) {
                 warActive = true;
                 enemyKingdomId = w.kingdomA === player.militaryKingdomId ? w.kingdomB : w.kingdomA;
                 break;
             }
         }
+
+        // ── WAR ENDED — handle discharge/peacetime ──
         if (!warActive) {
             if (player.militaryMandatory) {
-                player.hunger = Math.max(player.hunger, HUNGER_CONFIG.START * 0.8);
+                // Peacetime mandatory service — garrison tasks
+                if (day >= (player.militaryNextBattleDay || 0)) {
+                    var taskList = isNurse ? CONFIG.MILITARY_NURSE_TASKS : CONFIG.MILITARY_TASKS;
+                    // Filter to lower-risk peacetime tasks
+                    var peaceTasks = taskList.filter(function(t) { return t.injuryChance <= 0.06; });
+                    if (peaceTasks.length === 0) peaceTasks = taskList;
+                    var task = peaceTasks[rng ? rng.randInt(0, peaceTasks.length - 1) : 0];
+                    resolveMilitaryTask(task, 'normal', false);
+                    player.militaryNextBattleDay = day + (rng ? rng.randInt(5, 10) : 7);
+                }
                 return;
             }
+            // Voluntary service — war ended, discharge
             player.militaryActive = false;
             player.militaryNextBattleDay = 0;
             Engine.logEvent('The war has ended. You are no longer enlisted.');
             if (typeof UI !== 'undefined' && UI.toast) {
                 UI.toast('🕊️ War ended. Military service complete.', 'info', 'military');
             }
+            if (player.bankruptcy && player.bankruptcy.active && player.bankruptcy.type === 'military') {
+                player.bankruptcy.active = false;
+                player.bankruptcy.completedDay = day;
+                Engine.logEvent('📜 ' + player.fullName + '\'s bankruptcy debt forgiven — military service fulfilled.');
+            }
             return;
         }
 
-        // Fed for free while enlisted
-        player.hunger = Math.max(player.hunger, HUNGER_CONFIG.START * 0.8);
+        // ── AUTO-TRAVEL to deployment zone ──
+        if (player.traveling) return; // already traveling
+        autoDeployMilitary(day, enemyKingdomId);
+        if (player.traveling) return; // started traveling
 
-        // Check if it's battle/shift day
-        const day = Engine.getDay();
-        if (day < player.militaryNextBattleDay) return;
+        // ── WAIT FOR NEXT EVENT ──
+        if (day < (player.militaryNextBattleDay || 0)) return;
 
-        const rng = Engine.getRng();
+        // ── PENDING EVENT — waiting for player approach choice ──
+        if (player.militaryPendingEvent) {
+            // AI/headless auto-resolves; human player waits for UI choice
+            if (window._militaryAutoApproach) {
+                var approach = window._militaryAutoApproach;
+                window._militaryAutoApproach = null;
+                resolvePendingMilitaryEvent(approach);
+            } else if (day - (player.militaryPendingEvent.day || 0) >= 3) {
+                // Safety: auto-resolve if pending for 3+ days (UI may have failed)
+                resolvePendingMilitaryEvent('normal');
+            }
+            return;
+        }
+
+        // ── DETERMINE EVENT TYPE ──
+        // During war: 60% battle, 40% task. Between battles, tasks fill time.
+        var isBattle = rng ? rng.random() < 0.60 : true;
+        var taskList = isNurse ? CONFIG.MILITARY_NURSE_TASKS : CONFIG.MILITARY_TASKS;
+
+        if (isBattle) {
+            // Set up pending battle for approach choice
+            player.militaryPendingEvent = {
+                type: 'battle',
+                enemyKingdomId: enemyKingdomId,
+                day: day
+            };
+            // Pause for player choice if UI is available
+            if (typeof Game !== 'undefined' && Game.setSpeed && typeof UI !== 'undefined' && UI.showMilitaryEventChoice) {
+                Game.setSpeed(0);
+                UI.showMilitaryEventChoice(player.militaryPendingEvent);
+            } else {
+                // Headless / AI — auto-resolve with normal approach
+                resolvePendingMilitaryEvent('normal');
+            }
+        } else {
+            // Task — pick random task
+            var task = taskList[rng ? rng.randInt(0, taskList.length - 1) : 0];
+            player.militaryPendingEvent = {
+                type: 'task',
+                task: task,
+                day: day
+            };
+            if (typeof Game !== 'undefined' && Game.setSpeed && typeof UI !== 'undefined' && UI.showMilitaryEventChoice) {
+                Game.setSpeed(0);
+                UI.showMilitaryEventChoice(player.militaryPendingEvent);
+            } else {
+                resolvePendingMilitaryEvent('normal');
+            }
+        }
+    }
+
+    // ── Kingdom provisions: food, water, rest, barracks ──
+    // How well the kingdom takes care of its soldiers depends organically on:
+    // - Kingdom treasury (can they afford it?)
+    // - King personality (generous vs cruel/tyrant)
+    // - Kingdom stability (rebellions hurt supply lines)
+    // - War strain (multiple wars stretch resources thin)
+    function provideMilitaryProvisions(day) {
+        var kingdom = Engine.findKingdom(player.militaryKingdomId);
+        var provisionQuality = 1.0; // 0.0 = no provisions, 1.0 = excellent care
+
+        if (kingdom) {
+            // Treasury affects provision quality
+            var treasury = kingdom.treasury || 0;
+            if (treasury <= 0) {
+                provisionQuality = 0.2; // Bankrupt — soldiers barely fed
+            } else if (treasury < 200) {
+                provisionQuality = 0.4;
+            } else if (treasury < 500) {
+                provisionQuality = 0.6;
+            } else if (treasury < 2000) {
+                provisionQuality = 0.85;
+            }
+            // else 1.0 — wealthy kingdom feeds well
+
+            // King personality modifiers
+            var king = kingdom.king || kingdom.ruler || {};
+            var trait = king.trait || king.personality || '';
+            if (trait === 'tyrant' || trait === 'cruel' || trait === 'corrupt') {
+                provisionQuality *= 0.6; // Cruel kings neglect troops
+            } else if (trait === 'stingy' || trait === 'greedy') {
+                provisionQuality *= 0.75;
+            } else if (trait === 'kind' || trait === 'generous' || trait === 'benevolent') {
+                provisionQuality = Math.min(1.0, provisionQuality * 1.2); // Good kings boost care
+            } else if (trait === 'military' || trait === 'warlike' || trait === 'strategic') {
+                provisionQuality = Math.min(1.0, provisionQuality * 1.15); // Military-minded kings value troops
+            }
+
+            // Multiple active wars strain supplies
+            var wars = Engine.getActiveWars ? Engine.getActiveWars() : {};
+            var warCount = 0;
+            for (var wId in wars) {
+                var w = wars[wId];
+                if (w.kingdomA === player.militaryKingdomId || w.kingdomB === player.militaryKingdomId) warCount++;
+            }
+            if (warCount > 1) {
+                provisionQuality *= Math.max(0.5, 1.0 - (warCount - 1) * 0.15); // Each extra war -15%
+            }
+
+            // Rebellion/instability
+            if (kingdom.stability !== undefined && kingdom.stability < 30) {
+                provisionQuality *= 0.7;
+            }
+
+            // Periodic log messages about provision quality
+            if (day % 60 === 0) {
+                if (provisionQuality < 0.35) {
+                    Engine.logEvent('⚠️ The kingdom can barely feed its troops. Rations are dangerously low.');
+                } else if (provisionQuality < 0.55) {
+                    Engine.logEvent('😤 Soldiers grumble about thin rations and cold barracks.');
+                } else if (provisionQuality >= 0.95 && day % 180 === 0) {
+                    Engine.logEvent('🍖 The kingdom feeds its soldiers well. Morale is high.');
+                }
+            }
+        }
+
+        // Store quality for other systems to reference
+        player._militaryProvisionQuality = provisionQuality;
+
+        // Feed soldier — quality determines how well
+        var foodRestore = Math.floor(HUNGER_CONFIG.START * 0.85 * provisionQuality);
+        player.hunger = Math.max(player.hunger, foodRestore);
+
+        // Hydrate — provide water/ale
+        if (typeof THIRST_CONFIG !== 'undefined') {
+            var thirstRestore = Math.floor(THIRST_CONFIG.START * 0.85 * provisionQuality);
+            if (player.thirst !== undefined) {
+                player.thirst = Math.max(player.thirst, thirstRestore);
+            }
+        }
+
+        // Barracks rest — energy restoration
+        if (player.energy !== undefined) {
+            var restRestore = Math.floor(85 * provisionQuality);
+            player.energy = Math.max(player.energy, restRestore);
+        }
+    }
+
+    // ── Military hospital: treat injuries AND moderate/severe illnesses ──
+    // The kingdom sends soldiers to the hospital for:
+    // - All injuries (service-related or not — you're their asset)
+    // - Moderate and severe illnesses (can't have soldiers dying of plague)
+    // Treatment quality depends on provision quality (king personality, treasury)
+    function autoTreatServiceInjuries(day) {
+        var provisionQuality = player._militaryProvisionQuality || 0.8;
+
+        // Terrible kings might not send soldiers to hospital at all
+        if (provisionQuality < 0.3) {
+            // Only treat severe/life-threatening conditions
+            treatConditions(day, provisionQuality, true);
+            return;
+        }
+
+        treatConditions(day, provisionQuality, false);
+    }
+
+    function treatConditions(day, provisionQuality, severeOnly) {
+        // Treat injuries
+        if (player.injuries && player.injuries.length > 0) {
+            for (var i = player.injuries.length - 1; i >= 0; i--) {
+                var inj = player.injuries[i];
+                if (inj.treated) continue;
+                // Severe-only mode: skip minor injuries
+                if (severeOnly && inj.severity === 'minor') continue;
+
+                // Good kingdoms treat all injuries; mediocre ones skip minor non-service ones
+                var isServiceRelated = (inj.source === 'battle' || inj.source === 'military_task' || inj.source === 'military');
+                if (!isServiceRelated && inj.severity === 'minor' && provisionQuality < 0.6) continue;
+
+                inj.treated = true;
+                // Better provisioned = faster healing
+                var healSpeed = provisionQuality >= 0.8 ? 7 : (provisionQuality >= 0.5 ? 14 : 21);
+                inj.healDay = Math.min(inj.healDay || day + 30, day + healSpeed);
+                Engine.logEvent('🏥 ' + player.fullName + ' was sent to the military hospital for ' + (inj.name || inj.type) + ' (' + inj.severity + '). The kingdom covers the cost.');
+            }
+        }
+
+        // Treat illnesses — moderate and severe always, mild if kingdom is decent
+        if (player.illnesses && player.illnesses.length > 0) {
+            for (var j = player.illnesses.length - 1; j >= 0; j--) {
+                var ill = player.illnesses[j];
+                if (ill.treated) continue;
+
+                var illSeverity = ill.severity || 'mild';
+                // Always treat moderate+ illnesses (soldier could die)
+                if (illSeverity === 'moderate' || illSeverity === 'severe') {
+                    ill.treated = true;
+                    Engine.logEvent('🏥 Military hospital treating ' + player.fullName + '\'s ' + (ill.type || 'illness') + ' (' + illSeverity + '). Soldiers cannot die to neglect.');
+                } else if (illSeverity === 'mild' && provisionQuality >= 0.7 && !severeOnly) {
+                    // Good kingdoms treat even mild illnesses
+                    ill.treated = true;
+                    Engine.logEvent('🏥 The military hospital treated ' + player.fullName + '\'s mild ' + (ill.type || 'condition') + '.');
+                }
+            }
+        }
+    }
+
+    // ── Auto-deploy to frontier/warzone ──
+    function autoDeployMilitary(day, enemyKingdomId) {
+        if (player.traveling) return;
+        // Deploy every 30 days or when first enlisting
+        if (!player._lastMilitaryDeployDay) player._lastMilitaryDeployDay = 0;
+        if (day - player._lastMilitaryDeployDay < 30 && player._lastMilitaryDeployDay > 0) return;
+        player._lastMilitaryDeployDay = day;
+
+        // Find frontier town — a town in our kingdom bordering the enemy kingdom
+        var towns = Engine.getTowns ? Engine.getTowns() : [];
+        var currentTown = Engine.findTown(player.townId);
+        if (!currentTown) return;
+
+        // Already at a frontier town? Stay.
+        if (currentTown.kingdomId === player.militaryKingdomId) {
+            // Check if this town has trade routes to enemy kingdom
+            var routes = currentTown.tradeRoutes || currentTown.routes || [];
+            for (var r = 0; r < routes.length; r++) {
+                var destTown = Engine.findTown(routes[r].toTownId || routes[r].townId || routes[r]);
+                if (destTown && destTown.kingdomId === enemyKingdomId) return; // Already at frontier
+            }
+        }
+
+        // Find a frontier town to deploy to
+        var bestTown = null;
+        var bestDist = Infinity;
+        for (var t = 0; t < towns.length; t++) {
+            var town = towns[t];
+            if (town.kingdomId !== player.militaryKingdomId) continue;
+            var tRoutes = town.tradeRoutes || town.routes || [];
+            var isFrontier = false;
+            for (var tr = 0; tr < tRoutes.length; tr++) {
+                var dest = Engine.findTown(tRoutes[tr].toTownId || tRoutes[tr].townId || tRoutes[tr]);
+                if (dest && dest.kingdomId === enemyKingdomId) { isFrontier = true; break; }
+            }
+            if (isFrontier) {
+                var dx = (town.x || 0) - (currentTown.x || 0);
+                var dy = (town.y || 0) - (currentTown.y || 0);
+                var dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < bestDist && town.id !== player.townId) {
+                    bestDist = dist;
+                    bestTown = town;
+                }
+            }
+        }
+
+        if (bestTown) {
+            // Military travel — instant supplies, kingdom-ordered
+            Engine.logEvent('📯 ' + player.fullName + ' has been ordered to deploy to ' + bestTown.name + ' on the frontier.');
+            // Use the game's travel system
+            if (typeof startTravel === 'function') {
+                startTravel(bestTown.id);
+            } else if (Player.travel) {
+                Player.travel(bestTown.id);
+            }
+        }
+    }
+
+    // ── Resolve pending military event (called from UI or auto) ──
+    function resolvePendingMilitaryEvent(approach) {
+        var pending = player.militaryPendingEvent;
+        if (!pending) return;
+        player.militaryPendingEvent = null;
+
+        var approachConfig = (CONFIG.MILITARY_APPROACH && CONFIG.MILITARY_APPROACH[approach]) || CONFIG.MILITARY_APPROACH.normal;
+        var rng = Engine.getRng();
+        var day = Engine.getDay();
         var isNurse = (player.militaryRole === 'nurse');
 
-        if (isNurse) {
-            // ── NURSE SHIFT — treat wounded soldiers ──
-            var nurseRank = player.militaryRank || 'field_nurse';
-            var nurseDeath = NURSE_DEATH_CHANCE[nurseRank] || 0.0008;
-
-            // Nurses have lower death chance but it's still possible (field hospitals get attacked)
-            if (rng && rng.random() < nurseDeath && !window._godInvincible) {
-                Engine.logEvent(player.fullName + ' was killed when the field hospital was attacked!');
-                if (typeof UI !== 'undefined' && UI.toast) UI.toast('☠️ Killed in a field hospital attack!', 'danger', 'critical');
-                player.alive = false;
-                player.militaryActive = false;
-                return;
+        if (pending.type === 'battle') {
+            if (isNurse) {
+                resolveNurseBattle(approachConfig, pending.enemyKingdomId, rng, day);
+            } else {
+                resolveSoldierBattle(approachConfig, pending.enemyKingdomId, rng, day);
             }
-
-            // Treat soldiers — generates unique benefits
-            var soldiersHealed = rng ? rng.randInt(2, 8) : 4;
-            var nursePay = NURSE_PAY[nurseRank] || 4;
-            player.gold += nursePay;
-            player.stats.totalGoldEarned += nursePay;
-
-            // Nursing XP
-            grantXP(XP_REWARDS.COMBAT_SURVIVE || 5, 'nursing');
-
-            // Small injury risk from working with wounded (infection, exhaustion)
-            if (rng && rng.chance(0.015)) {
-                player.illnesses = player.illnesses || [];
-                player.illnesses.push({ type: 'infection', severity: 'mild', dayOccurred: day, treated: false });
-                Engine.logEvent('🤒 ' + player.fullName + ' contracted an infection while treating wounded soldiers.');
-            }
-
-            // Reputation gain (nurses are deeply respected)
-            player.reputation[player.militaryKingdomId] = Math.min(100,
-                (player.reputation[player.militaryKingdomId] || 50) + 3);
-
-            // Herbalism / medicine skill training
-            if (!player.jobExperience) player.jobExperience = {};
-            player.jobExperience.nursing = (player.jobExperience.nursing || 0) + 1;
-
-            // Promotion check (20% chance)
-            if (rng && rng.chance(0.20)) {
-                var curNurseIdx = NURSE_RANKS.indexOf(nurseRank);
-                if (curNurseIdx >= 0 && curNurseIdx < NURSE_RANKS.length - 1) {
-                    var newNurseRank = NURSE_RANKS[curNurseIdx + 1];
-                    player.militaryRank = newNurseRank;
-                    Engine.logEvent(player.fullName + ' promoted to ' + NURSE_RANK_LABELS[newNurseRank] + '!');
-                    if (typeof UI !== 'undefined' && UI.toast) UI.toast('⬆️ Promoted to ' + NURSE_RANK_LABELS[newNurseRank] + '!', 'success', 'military');
-                    // Chief Healer = automatic citizenship
-                    if (newNurseRank === 'chief_healer' && player.militaryKingdomId) {
-                        if (!player.socialRank[player.militaryKingdomId] || player.socialRank[player.militaryKingdomId] < 1) {
-                            player.socialRank[player.militaryKingdomId] = 1;
-                            player.rankSince[player.militaryKingdomId] = day;
-                            if (!player.citizenshipKingdomId) player.citizenshipKingdomId = player.militaryKingdomId;
-                            Engine.logEvent(player.fullName + ' granted citizenship as Chief Healer!');
-                        }
-                    }
-                }
-            }
-
-            Engine.logEvent('🏥 Treated ' + soldiersHealed + ' wounded soldiers. Earned ' + nursePay + 'g as ' + NURSE_RANK_LABELS[nurseRank] + '.');
-            player.militaryNextBattleDay = day + (rng ? rng.randInt(3, 5) : 4);
-
-        } else {
-            // ── SOLDIER BATTLE — original combat logic ──
-            const rank = player.militaryRank || 'militiaman';
-            const baseDeath = MILITARY_DEATH_CHANCE[rank] || 0.0025;
-            const combatMult = getCombatSurvivalMultiplier();
-            const deathChance = Math.max(0.0001, baseDeath / combatMult);
-            var baseInjury = { militiaman: 0.04, footman: 0.03, sergeant: 0.02, knight: 0.01 };
-            const injuryChance = Math.max(0.005, (baseInjury[rank] || 0.04) / combatMult);
-
-            if (rng && rng.random() < deathChance && !window._godInvincible) {
-                Engine.logEvent(player.fullName + ' was killed in battle as a ' + MILITARY_RANK_LABELS[rank] + '.');
-                if (typeof UI !== 'undefined' && UI.toast) UI.toast('☠️ Killed in battle!', 'danger', 'critical');
-                player.alive = false;
-                player.militaryActive = false;
-                return;
-            }
-
-            player.battlesSurvived++;
-            player.battlesWon++;
-            grantXP(XP_REWARDS.COMBAT_SURVIVE, 'battle');
-
-            if (rng && rng.random() < injuryChance) {
-                inflictRandomInjury('battle');
-            }
-
-            const pay = MILITARY_PAY[rank] || 5;
-            player.gold += pay;
-            player.stats.totalGoldEarned += pay;
-
-            player.reputation[player.militaryKingdomId] = Math.min(100,
-                (player.reputation[player.militaryKingdomId] || 50) + 2);
-            if (enemyKingdomId) {
-                player.reputation[enemyKingdomId] = Math.max(0,
-                    (player.reputation[enemyKingdomId] || 50) - 1);
-            }
-
-            if (rng && rng.random() < 0.25) {
-                const currentIdx = MILITARY_RANKS.indexOf(rank);
-                if (currentIdx >= 0 && currentIdx < MILITARY_RANKS.length - 1) {
-                    const newRank = MILITARY_RANKS[currentIdx + 1];
-                    player.militaryRank = newRank;
-                    Engine.logEvent(player.fullName + ' promoted to ' + MILITARY_RANK_LABELS[newRank] + '!');
-                    if (typeof UI !== 'undefined' && UI.toast) UI.toast('⬆️ Promoted to ' + MILITARY_RANK_LABELS[newRank] + '!', 'success', 'military');
-                    if (newRank === 'knight' && player.militaryKingdomId) {
-                        if (!player.socialRank[player.militaryKingdomId] || player.socialRank[player.militaryKingdomId] < 1) {
-                            player.socialRank[player.militaryKingdomId] = 1;
-                            player.rankSince[player.militaryKingdomId] = day;
-                            if (!player.citizenshipKingdomId) player.citizenshipKingdomId = player.militaryKingdomId;
-                            Engine.logEvent(player.fullName + ' granted citizenship as a Knight!');
-                        }
-                        // Clear border service obligation — they earned citizenship
-                        if (player.militaryBorderService) {
-                            player.militaryBorderService = false;
-                            player.militaryMandatory = false;
-                            Engine.logEvent('🏰 ' + player.fullName + ' has earned citizenship through military service! Free to leave or continue serving.');
-                            if (typeof UI !== 'undefined' && UI.toast) UI.toast('🏰 Citizenship earned! You may now leave the military or continue serving.', 'success', 'military');
-                        }
-                    }
-                }
-            }
-
-            Engine.logEvent('Battle survived! Earned ' + pay + 'g as ' + MILITARY_RANK_LABELS[rank] + '.');
-            player.militaryNextBattleDay = day + (rng ? rng.randInt(3, 5) : 4);
+        } else if (pending.type === 'task') {
+            resolveMilitaryTask(pending.task, approach, true);
         }
+
+        // Resume game speed
+        if (typeof Game !== 'undefined' && Game.setSpeed) {
+            var savedSpeed = player._preMilitarySpeed || 1;
+            Game.setSpeed(savedSpeed);
+        }
+    }
+
+    // ── Resolve soldier battle ──
+    function resolveSoldierBattle(approachCfg, enemyKingdomId, rng, day) {
+        var rank = player.militaryRank || 'militiaman';
+        var baseDeath = MILITARY_DEATH_CHANCE[rank] || 0.0025;
+        var combatMult = getCombatSurvivalMultiplier();
+        var deathChance = Math.max(0.0001, (baseDeath / combatMult) * approachCfg.deathMult);
+        var baseInjuryRates = { militiaman: 0.04, footman: 0.03, sergeant: 0.02, knight: 0.01 };
+        var injuryChance = Math.max(0.005, ((baseInjuryRates[rank] || 0.04) / combatMult) * approachCfg.injuryMult);
+
+        // Death check
+        if (rng && rng.random() < deathChance && !window._godInvincible) {
+            Engine.logEvent(player.fullName + ' was killed in battle as a ' + MILITARY_RANK_LABELS[rank] + '!');
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('☠️ Killed in battle!', 'danger', 'critical');
+            player.alive = false;
+            player.militaryActive = false;
+            return;
+        }
+
+        player.battlesSurvived = (player.battlesSurvived || 0) + 1;
+        player.battlesWon = (player.battlesWon || 0) + 1;
+        var xpAmount = Math.floor((XP_REWARDS.COMBAT_SURVIVE || 5) * approachCfg.xpMult);
+        grantXP(xpAmount, 'battle');
+
+        // Injury check
+        if (rng && rng.random() < injuryChance) {
+            inflictRandomInjury('battle');
+        }
+
+        // Pay
+        var pay = MILITARY_PAY[rank] || 5;
+        player.gold += pay;
+        player.stats.totalGoldEarned += pay;
+
+        // Reputation
+        var repGain = Math.floor(2 * approachCfg.repMult);
+        player.reputation[player.militaryKingdomId] = Math.min(100,
+            (player.reputation[player.militaryKingdomId] || 50) + repGain);
+        if (enemyKingdomId) {
+            player.reputation[enemyKingdomId] = Math.max(0,
+                (player.reputation[enemyKingdomId] || 50) - 1);
+        }
+
+        // Rank progress — battles give big progress
+        var battleRankProgress = Math.floor(5 * approachCfg.rankMult);
+        player.militaryRankProgress = (player.militaryRankProgress || 0) + battleRankProgress;
+        var threshold = (CONFIG.MILITARY_RANK_PROGRESS_THRESHOLDS && CONFIG.MILITARY_RANK_PROGRESS_THRESHOLDS[rank]) || 25;
+
+        // Guaranteed promotion on aggressive approach
+        var shouldPromote = approachCfg.promotionGuarantee || (player.militaryRankProgress >= threshold);
+        if (shouldPromote) {
+            var currentIdx = MILITARY_RANKS.indexOf(rank);
+            if (currentIdx >= 0 && currentIdx < MILITARY_RANKS.length - 1) {
+                var newRank = MILITARY_RANKS[currentIdx + 1];
+                player.militaryRank = newRank;
+                player.militaryRankProgress = 0;
+                Engine.logEvent('⬆️ ' + player.fullName + ' promoted to ' + MILITARY_RANK_LABELS[newRank] + '!');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('⬆️ Promoted to ' + MILITARY_RANK_LABELS[newRank] + '!', 'success', 'military');
+                if (newRank === 'knight' && player.militaryKingdomId) {
+                    if (!player.socialRank[player.militaryKingdomId] || player.socialRank[player.militaryKingdomId] < 1) {
+                        player.socialRank[player.militaryKingdomId] = 1;
+                        player.rankSince[player.militaryKingdomId] = day;
+                        if (!player.citizenshipKingdomId) player.citizenshipKingdomId = player.militaryKingdomId;
+                        Engine.logEvent(player.fullName + ' granted citizenship as a Knight!');
+                    }
+                    if (player.militaryBorderService) {
+                        player.militaryBorderService = false;
+                        player.militaryMandatory = false;
+                        Engine.logEvent('🏰 ' + player.fullName + ' has earned citizenship through military service!');
+                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('🏰 Citizenship earned!', 'success', 'military');
+                    }
+                }
+            }
+        }
+
+        var approachLabel = approachCfg.label || 'Normal';
+        Engine.logEvent('⚔️ Battle survived! Earned ' + pay + 'g as ' + MILITARY_RANK_LABELS[rank] + '. (Approach: ' + approachLabel + ')');
+        player.militaryNextBattleDay = day + (rng ? rng.randInt(3, 5) : 4);
+    }
+
+    // ── Resolve nurse battle/shift ──
+    function resolveNurseBattle(approachCfg, enemyKingdomId, rng, day) {
+        var nurseRank = player.militaryRank || 'field_nurse';
+        var nurseDeath = (NURSE_DEATH_CHANCE[nurseRank] || 0.0008) * approachCfg.deathMult;
+
+        if (rng && rng.random() < nurseDeath && !window._godInvincible) {
+            Engine.logEvent(player.fullName + ' was killed when the field hospital was attacked!');
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('☠️ Killed in a field hospital attack!', 'danger', 'critical');
+            player.alive = false;
+            player.militaryActive = false;
+            return;
+        }
+
+        var soldiersHealed = rng ? rng.randInt(2, 8) : 4;
+        var nursePay = NURSE_PAY[nurseRank] || 4;
+        player.gold += nursePay;
+        player.stats.totalGoldEarned += nursePay;
+
+        var xpAmount = Math.floor((XP_REWARDS.COMBAT_SURVIVE || 5) * approachCfg.xpMult);
+        grantXP(xpAmount, 'nursing');
+
+        // Infection risk
+        var infectionChance = 0.015 * approachCfg.injuryMult;
+        if (rng && rng.chance(infectionChance)) {
+            player.illnesses = player.illnesses || [];
+            player.illnesses.push({ type: 'infection', severity: 'mild', dayOccurred: day, treated: false, source: 'nursing' });
+            Engine.logEvent('🤒 ' + player.fullName + ' contracted an infection while treating wounded soldiers.');
+        }
+
+        // Reputation
+        var repGain = Math.floor(3 * approachCfg.repMult);
+        player.reputation[player.militaryKingdomId] = Math.min(100,
+            (player.reputation[player.militaryKingdomId] || 50) + repGain);
+
+        // Nursing experience
+        if (!player.jobExperience) player.jobExperience = {};
+        player.jobExperience.nursing = (player.jobExperience.nursing || 0) + 1;
+
+        // Rank progress — nurse shifts give big progress too
+        var nurseRankProgress = Math.floor(5 * approachCfg.rankMult);
+        player.militaryRankProgress = (player.militaryRankProgress || 0) + nurseRankProgress;
+        var threshold = (CONFIG.MILITARY_RANK_PROGRESS_THRESHOLDS && CONFIG.MILITARY_RANK_PROGRESS_THRESHOLDS[nurseRank]) || 25;
+
+        var shouldPromote = approachCfg.promotionGuarantee || (player.militaryRankProgress >= threshold);
+        if (shouldPromote) {
+            var curNurseIdx = NURSE_RANKS.indexOf(nurseRank);
+            if (curNurseIdx >= 0 && curNurseIdx < NURSE_RANKS.length - 1) {
+                var newNurseRank = NURSE_RANKS[curNurseIdx + 1];
+                player.militaryRank = newNurseRank;
+                player.militaryRankProgress = 0;
+                Engine.logEvent('⬆️ ' + player.fullName + ' promoted to ' + NURSE_RANK_LABELS[newNurseRank] + '!');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('⬆️ Promoted to ' + NURSE_RANK_LABELS[newNurseRank] + '!', 'success', 'military');
+                if (newNurseRank === 'chief_healer' && player.militaryKingdomId) {
+                    if (!player.socialRank[player.militaryKingdomId] || player.socialRank[player.militaryKingdomId] < 1) {
+                        player.socialRank[player.militaryKingdomId] = 1;
+                        player.rankSince[player.militaryKingdomId] = day;
+                        if (!player.citizenshipKingdomId) player.citizenshipKingdomId = player.militaryKingdomId;
+                        Engine.logEvent(player.fullName + ' granted citizenship as Chief Healer!');
+                    }
+                }
+            }
+        }
+
+        Engine.logEvent('🏥 Treated ' + soldiersHealed + ' wounded soldiers. Earned ' + nursePay + 'g as ' + NURSE_RANK_LABELS[nurseRank] + '.');
+        player.militaryNextBattleDay = day + (rng ? rng.randInt(3, 5) : 4);
+    }
+
+    // ── Resolve a military task (non-battle) ──
+    function resolveMilitaryTask(task, approach, isWartime) {
+        if (!task) return;
+        var rng = Engine.getRng();
+        var day = Engine.getDay();
+        var approachCfg = (CONFIG.MILITARY_APPROACH && CONFIG.MILITARY_APPROACH[approach]) || CONFIG.MILITARY_APPROACH.normal;
+        var isNurse = (player.militaryRole === 'nurse');
+        var rank = player.militaryRank || (isNurse ? 'field_nurse' : 'militiaman');
+        var rankLabels = isNurse ? NURSE_RANK_LABELS : MILITARY_RANK_LABELS;
+
+        // Advance game ticks
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(task.ticks || 2);
+
+        // Injury check — tasks never cause death, only injury
+        var injChance = (task.injuryChance || 0) * approachCfg.injuryMult;
+        if (rng && rng.random() < injChance) {
+            if (task.injurySeverity === 'moderate' || task.injurySeverity === 'severe') {
+                inflictRandomInjury('military_task');
+            } else {
+                // Minor injury — just a scratch
+                player.injuries = player.injuries || [];
+                player.injuries.push({
+                    type: 'bruise', name: 'Bruise', severity: 'minor',
+                    dayOccurred: day, treated: false, healDay: day + 5, source: 'military_task'
+                });
+                Engine.logEvent('🩹 ' + player.fullName + ' suffered a minor injury during ' + task.name + '.');
+            }
+        }
+
+        // Pay (if task has pay)
+        var taskPay = Math.floor((task.pay || 0) + (MILITARY_PAY[rank] || 5) * 0.3);
+        if (taskPay > 0) {
+            player.gold += taskPay;
+            player.stats.totalGoldEarned += taskPay;
+        }
+
+        // XP
+        var xpGain = Math.floor((task.xp || 1) * approachCfg.xpMult);
+        grantXP(xpGain, 'military_task');
+
+        // Rank progress — tasks give small progress
+        var progressGain = Math.floor((task.rankProgress || 1) * approachCfg.rankMult);
+        player.militaryRankProgress = (player.militaryRankProgress || 0) + progressGain;
+
+        // Check for task-based promotion
+        var threshold = (CONFIG.MILITARY_RANK_PROGRESS_THRESHOLDS && CONFIG.MILITARY_RANK_PROGRESS_THRESHOLDS[rank]) || 25;
+        if (player.militaryRankProgress >= threshold) {
+            var rankList = isNurse ? NURSE_RANKS : MILITARY_RANKS;
+            var curIdx = rankList.indexOf(rank);
+            if (curIdx >= 0 && curIdx < rankList.length - 1) {
+                var newRank = rankList[curIdx + 1];
+                player.militaryRank = newRank;
+                player.militaryRankProgress = 0;
+                Engine.logEvent('⬆️ ' + player.fullName + ' promoted to ' + rankLabels[newRank] + ' through dedicated service!');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('⬆️ Promoted to ' + rankLabels[newRank] + '!', 'success', 'military');
+                // Knight/Chief Healer citizenship grants
+                if ((newRank === 'knight' || newRank === 'chief_healer') && player.militaryKingdomId) {
+                    if (!player.socialRank[player.militaryKingdomId] || player.socialRank[player.militaryKingdomId] < 1) {
+                        player.socialRank[player.militaryKingdomId] = 1;
+                        player.rankSince[player.militaryKingdomId] = day;
+                        if (!player.citizenshipKingdomId) player.citizenshipKingdomId = player.militaryKingdomId;
+                        Engine.logEvent(player.fullName + ' granted citizenship through military excellence!');
+                    }
+                }
+            }
+        }
+
+        // Reputation
+        if (player.militaryKingdomId) {
+            player.reputation[player.militaryKingdomId] = Math.min(100,
+                (player.reputation[player.militaryKingdomId] || 50) + 1);
+        }
+
+        Engine.logEvent((isWartime ? '⚔️' : '🏰') + ' ' + task.name + ': ' + task.desc + ' Earned ' + taskPay + 'g as ' + rankLabels[rank] + '.');
     }
 
     // ========================================================
@@ -9485,7 +10272,17 @@
                         if (typeof UI !== 'undefined' && UI.toast) UI.toast(`⚠️ ${inj.name} is now severe!`, 'danger');
                     }
                 } else if (inj.severity === 'severe') {
-                    // Severe: NO self-healing. Kills in 30-90 days (~1.5% daily death = ~50% by day 45)
+                    // Severe: NO self-healing. Check type-specific death risk first, fallback to general
+                    const typeDef2 = INJURY_TYPES.find(t => t.id === inj.type);
+                    var injDeathRisk = (typeDef2 && typeDef2.deathRisk) ? typeDef2.deathRisk : 0;
+                    // Type-specific death risk applies immediately (e.g. deep wound 2%/day)
+                    if (injDeathRisk > 0 && rng && rng.random() < injDeathRisk && !window._godInvincible) {
+                        Engine.logEvent(`${player.fullName} died from ${inj.name}.`);
+                        if (typeof UI !== 'undefined' && UI.toast) UI.toast(`☠️ Died from ${inj.name}!`, 'danger', 'critical');
+                        player.alive = false;
+                        return;
+                    }
+                    // General severe injury death: ~1.5% daily after 30 days untreated
                     if (daysUntreated >= 30 && rng && rng.random() < 0.015 && !window._godInvincible) {
                         Engine.logEvent(`${player.fullName} died from untreated ${inj.name}.`);
                         if (typeof UI !== 'undefined' && UI.toast) UI.toast(`☠️ Died from untreated ${inj.name}!`, 'danger', 'critical');
@@ -9547,10 +10344,16 @@
             }
         }
         for (const ill of player.illnesses) {
-            const sev = ill.severity;
-            if (sev === 'severe') modifier -= 0.50;
-            else if (sev === 'moderate') modifier -= 0.25;
-            else if (sev === 'minor') modifier -= 0.10;
+            const typeDef = ILLNESS_TYPES.find(t => t.id === ill.type);
+            if (typeDef && typeDef.debuffs && typeDef.debuffs.workEfficiency) {
+                modifier += typeDef.debuffs.workEfficiency;
+            } else {
+                // Fallback for old illness types without debuffs
+                var sev = ill.severity;
+                if (sev === 'severe') modifier -= 0.50;
+                else if (sev === 'moderate') modifier -= 0.25;
+                else if (sev === 'minor') modifier -= 0.10;
+            }
         }
         return Math.max(0.10, modifier); // minimum 10% efficiency
     }
@@ -9558,9 +10361,14 @@
     function canDoPhysicalWork() {
         const sev = getWorstConditionSeverity();
         if (sev === 'severe') return false;
-        // Broken bones block physical work
+        // Injuries that block physical work
         for (const inj of player.injuries) {
             const typeDef = INJURY_TYPES.find(t => t.id === inj.type);
+            if (typeDef && typeDef.debuffs && typeDef.debuffs.blocksPhysical) return false;
+        }
+        // Illnesses that block physical work
+        for (const ill of player.illnesses) {
+            const typeDef = ILLNESS_TYPES.find(t => t.id === ill.type);
             if (typeDef && typeDef.debuffs && typeDef.debuffs.blocksPhysical) return false;
         }
         return true;
@@ -9571,11 +10379,21 @@
         return sev !== 'severe';
     }
 
-    // Get combined injury debuff effects for use by other systems
+    // Get combined injury + illness debuff effects for use by other systems
     function getInjuryDebuffs() {
         const result = { hungerRate: 1.0, travelSpeed: 0, xpMult: 1.0, tradePenalty: 0, goldDrain: 0 };
         for (const inj of player.injuries) {
             const typeDef = INJURY_TYPES.find(t => t.id === inj.type);
+            if (!typeDef || !typeDef.debuffs) continue;
+            const d = typeDef.debuffs;
+            if (d.hungerRate) result.hungerRate = Math.max(result.hungerRate, d.hungerRate);
+            if (d.travelSpeed) result.travelSpeed = Math.min(result.travelSpeed, d.travelSpeed);
+            if (d.xpMult) result.xpMult = Math.min(result.xpMult, d.xpMult);
+            if (d.tradePenalty) result.tradePenalty = Math.min(result.tradePenalty, d.tradePenalty);
+            if (d.goldDrain) result.goldDrain += d.goldDrain;
+        }
+        for (const ill of player.illnesses) {
+            const typeDef = ILLNESS_TYPES.find(t => t.id === ill.type);
             if (!typeDef || !typeDef.debuffs) continue;
             const d = typeDef.debuffs;
             if (d.hungerRate) result.hungerRate = Math.max(result.hungerRate, d.hungerRate);
@@ -9769,6 +10587,8 @@
             dateProgress: JSON.parse(JSON.stringify(player.dateProgress || {})),
             _npcInteractions: JSON.parse(JSON.stringify(player._npcInteractions || {})),
             investigatorCaught: JSON.parse(JSON.stringify(player.investigatorCaught || {})),
+            weddingPlan: player.weddingPlan ? JSON.parse(JSON.stringify(player.weddingPlan)) : null,
+            weddingMemory: player.weddingMemory ? JSON.parse(JSON.stringify(player.weddingMemory)) : null,
             // Crown & Royal Advisor
             isRoyalAdvisorFromKing: player.isRoyalAdvisorFromKing || false,
             royalAdvisorKingdomId: player.royalAdvisorKingdomId || null,
@@ -10058,6 +10878,8 @@
         player.dateProgress = data.dateProgress || {};
         player._npcInteractions = data._npcInteractions || {};
         player.investigatorCaught = data.investigatorCaught || {};
+        player.weddingPlan = data.weddingPlan || null;
+        player.weddingMemory = data.weddingMemory || null;
         // Crown & Royal Advisor
         player.isRoyalAdvisorFromKing = data.isRoyalAdvisorFromKing || false;
         player.royalAdvisorKingdomId = data.royalAdvisorKingdomId || null;
@@ -10255,9 +11077,13 @@
             my_actions: true, my_business: true, my_kingdom: true,
             local_town: true, foreign_kingdoms: false, world_economy: false,
             military: 'smart', npc_activity: false, travel_events: true, combat: true,
-            tracked: true,
+            tracked: true, error_alerts: false,
         };
         player.notificationFilters = data.notificationFilters || defaultFilters;
+        // Ensure error_alerts exists for older saves
+        if (player.notificationFilters.error_alerts === undefined) {
+            player.notificationFilters.error_alerts = false;
+        }
         // Merge localStorage overrides
         try {
             var savedFilters = localStorage.getItem('mr_notifFilters');
@@ -10859,6 +11685,10 @@
 
         // Ongoing spouse trait/quirk effects
         tickSpouseEffects();
+
+        // Wedding planning countdown
+        tickWeddingPlan();
+
         tickHunger();
 
         // Bridge destruction progress (multi-day task)
@@ -11788,7 +12618,7 @@
 
         // Rank-specific requirements
         if (nextRank.id === 'citizen') {
-            var startDay = player.kingdomResidencyStart ? (player.kingdomResidencyStart[kId] || Engine.getDay()) : Engine.getDay();
+            var startDay = (player.kingdomResidencyStart && player.kingdomResidencyStart[kId] !== undefined) ? player.kingdomResidencyStart[kId] : Engine.getDay();
             var daysInKingdom = Engine.getDay() - startDay;
             if (daysInKingdom < (nextRank.residencyDays || 90)) reasons.push(`Must live in kingdom for ${nextRank.residencyDays || 90} days (${daysInKingdom} so far)`);
             if (player.criminalRecord && player.criminalRecord[kId]) {
@@ -11899,6 +12729,7 @@
         const rank = CONFIG.SOCIAL_RANKS[newIdx];
         grantXP(XP_REWARDS.NEW_RANK || 100, 'rank');
         Engine.logEvent(`\uD83C\uDF96\uFE0F ${player.fullName} has been promoted to ${rank.name} in ${Engine.findKingdom(kId) ? Engine.findKingdom(kId).name : 'the kingdom'}!`);
+        autoJournalCapture('rank', 'I have been promoted to ' + rank.name + '! The kingdom recognizes my worth.', { mood: 'triumphant' });
         return { success: true, message: `Promoted to ${rank.icon} ${rank.name}! Fee: ${(nextRank.fee || 0).toLocaleString()}g` };
     }
 
@@ -11914,8 +12745,7 @@
         if (rep < CONFIG.CITIZENSHIP_MIN_REPUTATION) return { success: false, message: `Need ${CONFIG.CITIZENSHIP_MIN_REPUTATION} reputation (have ${Math.floor(rep)}).` };
 
         // Check residency
-        const startDay = player.kingdomResidencyStart ? (player.kingdomResidencyStart[kingdomId] || Engine.getDay()) : Engine.getDay();
-        const daysInKingdom = Engine.getDay() - startDay;
+        const startDay = (player.kingdomResidencyStart && player.kingdomResidencyStart[kingdomId] !== undefined) ? player.kingdomResidencyStart[kingdomId] : Engine.getDay();        const daysInKingdom = Engine.getDay() - startDay;
         if (daysInKingdom < 90) return { success: false, message: `Must live in kingdom for 90 days (${daysInKingdom} so far).` };
 
         // Check criminal record
@@ -12364,28 +13194,54 @@
     }
 
     function getGuildPrice(guildId, type) {
-        var base = type === 'yearly' ? (CONFIG.GUILD_BASE_YEARLY || 200) : (CONFIG.GUILD_BASE_MONTHLY || 25);
+        // Merchants guild uses its own doubled base prices
+        var base;
+        if (guildId === 'merchants') {
+            base = type === 'yearly' ? (CONFIG.MERCHANTS_GUILD_BASE_YEARLY || 400) : (CONFIG.MERCHANTS_GUILD_BASE_MONTHLY || 50);
+        } else {
+            base = type === 'yearly' ? (CONFIG.GUILD_BASE_YEARLY || 200) : (CONFIG.GUILD_BASE_MONTHLY || 25);
+        }
         var guild = CONFIG.GUILDS[guildId];
         if (!guild) return base;
         try {
             var world = Engine.getWorld();
             var towns = world.towns || [];
-            var totalRevenue = 0;
-            var count = 0;
-            for (var ti = 0; ti < towns.length; ti++) {
-                var buildings = towns[ti].buildings || [];
-                for (var bi = 0; bi < buildings.length; bi++) {
-                    var bType = Engine.findBuildingType(buildings[bi].type);
-                    if (bType && guild.categories.indexOf(bType.category) >= 0) {
-                        totalRevenue += (buildings[bi].revenue || 0);
-                        count++;
+
+            // Merchants guild: scale price with average world prosperity (cap at 3x starting base)
+            if (guildId === 'merchants') {
+                var totalProsperity = 0;
+                var kingdomCount = 0;
+                var kingdoms = world.kingdoms || [];
+                for (var ki = 0; ki < kingdoms.length; ki++) {
+                    if (kingdoms[ki].alive !== false) {
+                        totalProsperity += (kingdoms[ki].prosperity || 50);
+                        kingdomCount++;
                     }
                 }
-            }
-            if (count > 0) {
-                var avgRevenue = totalRevenue / count;
-                var multiplier = Math.max(0.5, Math.min(3, 1 + avgRevenue / 100));
-                base = Math.round(base * multiplier);
+                var avgProsperity = kingdomCount > 0 ? totalProsperity / kingdomCount : 50;
+                // Base prosperity is ~50 at game start. Scale linearly from 1.0x at 50 to cap at higher prosperity.
+                // At prosperity 50 → 1.0x, at 100 → 2.0x, at 150+ → 3.0x (capped)
+                var prosperityMultiplier = Math.max(1.0, Math.min(CONFIG.MERCHANTS_GUILD_PROSPERITY_CAP || 3.0, 1.0 + (avgProsperity - 50) / 50));
+                base = Math.round(base * prosperityMultiplier);
+            } else {
+                // Other guilds: existing revenue-based scaling
+                var totalRevenue = 0;
+                var count = 0;
+                for (var ti = 0; ti < towns.length; ti++) {
+                    var buildings = towns[ti].buildings || [];
+                    for (var bi = 0; bi < buildings.length; bi++) {
+                        var bType = Engine.findBuildingType(buildings[bi].type);
+                        if (bType && guild.categories.indexOf(bType.category) >= 0) {
+                            totalRevenue += (buildings[bi].revenue || 0);
+                            count++;
+                        }
+                    }
+                }
+                if (count > 0) {
+                    var avgRevenue = totalRevenue / count;
+                    var multiplier = Math.max(0.5, Math.min(3, 1 + avgRevenue / 100));
+                    base = Math.round(base * multiplier);
+                }
             }
         } catch(e) {}
         // Guild Negotiator skill: 20% reduced dues
@@ -12417,6 +13273,308 @@
         try { Engine.logEvent(guild.icon + ' Joined ' + guild.name + ' (' + type + ', ' + price + 'g)', 'my_actions'); } catch(e) {}
 
         return { success: true, message: 'Joined ' + guild.name + '! Membership until Day ' + (currentExpiry + duration) + '.' };
+    }
+
+    // ========================================================
+    // §12B-MG  MERCHANTS GUILD — Daily Market Intelligence Report
+    // ========================================================
+
+    var _merchantReportCache = { day: -1, tips: null };
+
+    // Tip category generators — each returns { icon, text } or null
+    var MERCHANT_TIP_GENERATORS = [
+        // 1. Highest sell price for a good
+        function tipHighPrice(world, towns, rng) {
+            var resources = getTradeableResources();
+            var res = resources[Math.floor(rng() * resources.length)];
+            if (!res) return null;
+            var best = null;
+            for (var i = 0; i < towns.length; i++) {
+                var p = (towns[i].market && towns[i].market.prices[res.id]) || 0;
+                if (p > 0 && (!best || p > best.price)) best = { town: towns[i], price: p };
+            }
+            if (!best) return null;
+            return { icon: '📈', text: res.icon + ' ' + res.name + ' fetches the highest price in <strong>' + best.town.name + '</strong> at <strong>' + Math.round(best.price) + 'g</strong> per unit.' };
+        },
+        // 2. Lowest buy price for a good
+        function tipLowPrice(world, towns, rng) {
+            var resources = getTradeableResources();
+            var res = resources[Math.floor(rng() * resources.length)];
+            if (!res) return null;
+            var best = null;
+            for (var i = 0; i < towns.length; i++) {
+                var p = (towns[i].market && towns[i].market.prices[res.id]) || 0;
+                var s = (towns[i].market && towns[i].market.supply[res.id]) || 0;
+                if (p > 0 && s > 0 && (!best || p < best.price)) best = { town: towns[i], price: p, supply: s };
+            }
+            if (!best) return null;
+            return { icon: '📉', text: res.icon + ' ' + res.name + ' is cheapest in <strong>' + best.town.name + '</strong> at <strong>' + Math.round(best.price) + 'g</strong> (' + best.supply + ' in stock).' };
+        },
+        // 3. Best trade route (buy low / sell high)
+        function tipTradeRoute(world, towns, rng) {
+            var resources = getTradeableResources();
+            var res = resources[Math.floor(rng() * resources.length)];
+            if (!res) return null;
+            var low = null, high = null;
+            for (var i = 0; i < towns.length; i++) {
+                var p = (towns[i].market && towns[i].market.prices[res.id]) || 0;
+                var s = (towns[i].market && towns[i].market.supply[res.id]) || 0;
+                if (p > 0 && s > 0 && (!low || p < low.price)) low = { town: towns[i], price: p };
+                if (p > 0 && (!high || p > high.price)) high = { town: towns[i], price: p };
+            }
+            if (!low || !high || low.town.id === high.town.id || high.price <= low.price * 1.2) return null;
+            var profit = Math.round(high.price - low.price);
+            return { icon: '🔄', text: res.icon + ' Buy ' + res.name + ' in <strong>' + low.town.name + '</strong> (' + Math.round(low.price) + 'g) and sell in <strong>' + high.town.name + '</strong> (' + Math.round(high.price) + 'g) for <strong>' + profit + 'g profit</strong> per unit.' };
+        },
+        // 4. Highest-paying jobs
+        function tipHighPayJob(world, towns, rng) {
+            var best = null;
+            for (var i = 0; i < towns.length; i++) {
+                var blds = towns[i].buildings || [];
+                for (var b = 0; b < blds.length; b++) {
+                    var bt = Engine.findBuildingType(blds[b].type);
+                    if (!bt || !bt.jobs) continue;
+                    for (var j = 0; j < bt.jobs.length; j++) {
+                        var job = bt.jobs[j];
+                        var pay = job.pay || 0;
+                        if (pay > 0 && (!best || pay > best.pay)) best = { town: towns[i], pay: pay, name: job.name || bt.name + ' work' };
+                    }
+                }
+            }
+            if (!best) return null;
+            return { icon: '💼', text: 'The highest-paying job right now is <strong>' + best.name + '</strong> in <strong>' + best.town.name + '</strong> paying <strong>' + Math.round(best.pay) + 'g</strong> per shift.' };
+        },
+        // 5. Cheapest building construction
+        function tipCheapBuilding(world, towns, rng) {
+            var btKeys = Object.keys(CONFIG.BUILDING_TYPES || {});
+            if (btKeys.length === 0) return null;
+            var btKey = btKeys[Math.floor(rng() * btKeys.length)];
+            var bt = CONFIG.BUILDING_TYPES[btKey];
+            if (!bt || !bt.materials) return null;
+            var best = null;
+            for (var i = 0; i < towns.length; i++) {
+                var cost = 0;
+                for (var matId in bt.materials) {
+                    var qty = bt.materials[matId];
+                    var mp = (towns[i].market && towns[i].market.prices[matId]) || 0;
+                    if (mp <= 0) { var rr = findResource(matId); mp = rr ? (rr.basePrice || 5) : 5; }
+                    cost += qty * mp;
+                }
+                cost += (bt.cost || 0);
+                if (!best || cost < best.cost) best = { town: towns[i], cost: cost };
+            }
+            if (!best) return null;
+            return { icon: '🏗️', text: 'Building a <strong>' + bt.name + '</strong> is cheapest in <strong>' + best.town.name + '</strong> at approximately <strong>' + Math.round(best.cost) + 'g</strong> total.' };
+        },
+        // 6. Most expensive building location
+        function tipExpensiveBuilding(world, towns, rng) {
+            var btKeys = Object.keys(CONFIG.BUILDING_TYPES || {});
+            if (btKeys.length === 0) return null;
+            var btKey = btKeys[Math.floor(rng() * btKeys.length)];
+            var bt = CONFIG.BUILDING_TYPES[btKey];
+            if (!bt || !bt.materials) return null;
+            var worst = null;
+            for (var i = 0; i < towns.length; i++) {
+                var cost = 0;
+                for (var matId in bt.materials) {
+                    var qty = bt.materials[matId];
+                    var mp = (towns[i].market && towns[i].market.prices[matId]) || 0;
+                    if (mp <= 0) { var rr = findResource(matId); mp = rr ? (rr.basePrice || 5) : 5; }
+                    cost += qty * mp;
+                }
+                cost += (bt.cost || 0);
+                if (!worst || cost > worst.cost) worst = { town: towns[i], cost: cost };
+            }
+            if (!worst) return null;
+            return { icon: '⚠️', text: 'Avoid building a <strong>' + bt.name + '</strong> in <strong>' + worst.town.name + '</strong> — material costs are the highest at approximately <strong>' + Math.round(worst.cost) + 'g</strong>.' };
+        },
+        // 7. Cheapest workers
+        function tipCheapWorkers(world, towns, rng) {
+            var best = null;
+            for (var i = 0; i < towns.length; i++) {
+                try {
+                    var workers = Engine.getAvailableWorkers(towns[i].id);
+                    if (!workers || workers.length === 0) continue;
+                    var totalWage = 0;
+                    for (var w = 0; w < workers.length; w++) totalWage += (workers[w].weeklyWage || 5);
+                    var avgWage = totalWage / workers.length;
+                    if (!best || avgWage < best.avgWage) best = { town: towns[i], avgWage: avgWage, count: workers.length };
+                } catch(e) {}
+            }
+            if (!best) return null;
+            return { icon: '👷', text: 'The cheapest labor is in <strong>' + best.town.name + '</strong> — ' + best.count + ' workers available at an average of <strong>' + Math.round(best.avgWage) + 'g/week</strong>.' };
+        },
+        // 8. Most skilled workers in a random skill tier
+        function tipSkilledWorkers(world, towns, rng) {
+            var best = null;
+            for (var i = 0; i < towns.length; i++) {
+                try {
+                    var workers = Engine.getAvailableWorkers(towns[i].id);
+                    if (!workers || workers.length === 0) continue;
+                    var experts = 0;
+                    for (var w = 0; w < workers.length; w++) {
+                        if (workers[w].skillTier === 'expert' || workers[w].skillTier === 'master') experts++;
+                    }
+                    if (experts > 0 && (!best || experts > best.count)) best = { town: towns[i], count: experts };
+                } catch(e) {}
+            }
+            if (!best) return null;
+            return { icon: '⭐', text: '<strong>' + best.town.name + '</strong> has <strong>' + best.count + ' expert/master workers</strong> available for hire — prime talent for your workshops.' };
+        },
+        // 9. Resource surplus (abundant supply, low price)
+        function tipSurplus(world, towns, rng) {
+            var resources = getTradeableResources();
+            var best = null;
+            for (var ri = 0; ri < resources.length; ri++) {
+                var res = resources[ri];
+                for (var i = 0; i < towns.length; i++) {
+                    var s = (towns[i].market && towns[i].market.supply[res.id]) || 0;
+                    var p = (towns[i].market && towns[i].market.prices[res.id]) || 0;
+                    if (s >= 20 && p > 0 && p < res.basePrice * 0.8) {
+                        if (!best || s > best.supply) best = { town: towns[i], res: res, supply: s, price: p };
+                    }
+                }
+            }
+            if (!best) return null;
+            return { icon: '📦', text: best.res.icon + ' ' + best.res.name + ' is in <strong>surplus</strong> in <strong>' + best.town.name + '</strong> — ' + best.supply + ' units at just <strong>' + Math.round(best.price) + 'g</strong> (below normal).' };
+        },
+        // 10. Resource shortage (high demand, high price)
+        function tipShortage(world, towns, rng) {
+            var resources = getTradeableResources();
+            var best = null;
+            for (var ri = 0; ri < resources.length; ri++) {
+                var res = resources[ri];
+                for (var i = 0; i < towns.length; i++) {
+                    var s = (towns[i].market && towns[i].market.supply[res.id]) || 0;
+                    var p = (towns[i].market && towns[i].market.prices[res.id]) || 0;
+                    if (s <= 3 && p > res.basePrice * 1.5) {
+                        if (!best || p > best.price) best = { town: towns[i], res: res, supply: s, price: p };
+                    }
+                }
+            }
+            if (!best) return null;
+            return { icon: '🔥', text: best.res.icon + ' ' + best.res.name + ' shortage in <strong>' + best.town.name + '</strong>! Only ' + best.supply + ' left at <strong>' + Math.round(best.price) + 'g</strong> — huge selling opportunity.' };
+        },
+        // 11. Prosperous kingdom (good place to sell luxury goods)
+        function tipProsperousKingdom(world, towns, rng) {
+            var kingdoms = world.kingdoms || [];
+            var best = null;
+            for (var i = 0; i < kingdoms.length; i++) {
+                if (kingdoms[i].alive === false) continue;
+                var p = kingdoms[i].prosperity || 50;
+                if (!best || p > best.prosperity) best = { kingdom: kingdoms[i], prosperity: p };
+            }
+            if (!best || best.prosperity < 60) return null;
+            return { icon: '👑', text: '<strong>' + best.kingdom.name + '</strong> is the most prosperous kingdom (prosperity: ' + Math.round(best.prosperity) + '). Luxury goods sell well there.' };
+        },
+        // 12. Kingdom at war (military goods in demand)
+        function tipWarDemand(world, towns, rng) {
+            var kingdoms = world.kingdoms || [];
+            var atWar = [];
+            for (var i = 0; i < kingdoms.length; i++) {
+                if (kingdoms[i].alive !== false && kingdoms[i].atWar) atWar.push(kingdoms[i]);
+            }
+            if (atWar.length === 0) return null;
+            var k = atWar[Math.floor(rng() * atWar.length)];
+            return { icon: '⚔️', text: '<strong>' + k.name + '</strong> is at war! Military goods (swords, armor, arrows) command premium prices in their towns.' };
+        },
+        // 13. Town with most buildings (economic hub)
+        function tipEconomicHub(world, towns, rng) {
+            var best = null;
+            for (var i = 0; i < towns.length; i++) {
+                var bc = (towns[i].buildings || []).length;
+                if (!best || bc > best.count) best = { town: towns[i], count: bc };
+            }
+            if (!best || best.count < 3) return null;
+            return { icon: '🏘️', text: '<strong>' + best.town.name + '</strong> is a thriving economic hub with <strong>' + best.count + ' buildings</strong> — excellent for finding work and trade opportunities.' };
+        },
+        // 14. Cheapest food (for travelers)
+        function tipCheapFood(world, towns, rng) {
+            var foodIds = ['bread', 'meat', 'eggs', 'fish', 'poultry'];
+            var best = null;
+            for (var fi = 0; fi < foodIds.length; fi++) {
+                for (var i = 0; i < towns.length; i++) {
+                    var p = (towns[i].market && towns[i].market.prices[foodIds[fi]]) || 0;
+                    var s = (towns[i].market && towns[i].market.supply[foodIds[fi]]) || 0;
+                    if (p > 0 && s > 0 && (!best || p < best.price)) {
+                        var rr = findResource(foodIds[fi]);
+                        best = { town: towns[i], price: p, name: rr ? rr.name : foodIds[fi], icon: rr ? rr.icon : '🍽️' };
+                    }
+                }
+            }
+            if (!best) return null;
+            return { icon: '🍽️', text: best.icon + ' Cheapest food: <strong>' + best.name + '</strong> in <strong>' + best.town.name + '</strong> at just <strong>' + Math.round(best.price) + 'g</strong>. Stock up before long journeys!' };
+        }
+    ];
+
+    function getTradeableResources() {
+        var arr = [];
+        for (var key in RESOURCE_TYPES) {
+            var r = RESOURCE_TYPES[key];
+            if (r.category !== 'contraband' && r.category !== 'livestock' && r.category !== 'beverage' && r.id !== 'water') {
+                arr.push(r);
+            }
+        }
+        return arr;
+    }
+
+    function generateMerchantGuildReport() {
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+
+        // Cache: one report per day
+        if (_merchantReportCache.day === day && _merchantReportCache.tips) {
+            return _merchantReportCache.tips;
+        }
+
+        var world;
+        try { world = Engine.getWorld(); } catch(e) { return []; }
+        var towns = world.towns || [];
+        if (towns.length === 0) return [];
+
+        // Seeded RNG for daily consistency
+        var seed = day * 7919 + 13;
+        function rng() {
+            seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+            return seed / 0x7fffffff;
+        }
+
+        var tips = [];
+        var maxAttempts = 80; // prevent infinite loops
+        var attempts = 0;
+
+        while (tips.length < 10 && attempts < maxAttempts) {
+            attempts++;
+            // Pick a random generator
+            var genIdx = Math.floor(rng() * MERCHANT_TIP_GENERATORS.length);
+            var tip = MERCHANT_TIP_GENERATORS[genIdx](world, towns, rng);
+            if (tip) {
+                // Deduplicate by checking text isn't identical
+                var dupe = false;
+                for (var d = 0; d < tips.length; d++) {
+                    if (tips[d].text === tip.text) { dupe = true; break; }
+                }
+                if (!dupe) tips.push(tip);
+            }
+        }
+
+        _merchantReportCache = { day: day, tips: tips };
+        return tips;
+    }
+
+    function readMerchantGuildReport() {
+        if (!isGuildMember('merchants')) {
+            return { success: false, message: 'You must be a member of the Merchants\' Guild to read the daily report.' };
+        }
+        var fee = CONFIG.MERCHANTS_GUILD_REPORT_FEE || 10;
+        if (player.gold < fee) {
+            return { success: false, message: 'The report costs ' + fee + 'g to read. You only have ' + Math.floor(player.gold) + 'g.' };
+        }
+
+        player.gold -= fee;
+        player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + fee;
+        var tips = generateMerchantGuildReport();
+        return { success: true, tips: tips, fee: fee };
     }
 
     function getGuildCraftableItems(townId) {
@@ -13973,9 +15131,32 @@
         // Tier 1: Critical — always show
         if (category === 'critical') return true;
 
+        // Suppress military/war/kingdom toast popups in the first 5 days of any game
+        // These events still go to the notification log, just not as popup toasts
+        try {
+            var gameDay = Engine.getDay();
+            if (gameDay <= 5) {
+                if (category === 'military' || category === 'foreign_kingdoms' || category === 'my_kingdom' || category === 'world_economy') {
+                    return false;
+                }
+            }
+        } catch(e) {}
+
         // Suppress military/war events during the tutorial
         if (category === 'military' && typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive()) {
             return false;
+        }
+
+        // Tutorial first-3-days filter: only show player-specific toasts to reduce overwhelm
+        if (typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive()) {
+            try {
+                var tutDay = Engine.getDay();
+                if (tutDay <= 3) {
+                    // Only allow critical and direct player action notifications
+                    if (category === 'my_actions' || category === 'combat' || category === 'travel_events') return true;
+                    return false;
+                }
+            } catch(e) {}
         }
 
         var filters = player.notificationFilters;
@@ -14139,6 +15320,14 @@
         if (player.achievements[id]) return;
         const ach = ACHIEVEMENTS[id];
         if (!ach) return;
+
+        // Check start-based exclusions — certain achievements are trivial for certain starts
+        const startId = player.gameStart || player.startConfigApplied || player.scenario;
+        if (startId && typeof ACHIEVEMENT_START_EXCLUSIONS !== 'undefined') {
+            const excluded = ACHIEVEMENT_START_EXCLUSIONS[startId];
+            if (excluded && excluded.indexOf(id) >= 0) return; // blocked for this start
+        }
+
         player.achievements[id] = { unlocked: true, unlockedAt: Engine.getDay() };
         grantXP(ach.xp, 'Achievement: ' + ach.name);
         if (typeof UI !== 'undefined' && UI.toast) {
@@ -14369,6 +15558,10 @@
         }
 
         if (player.townId && !player.traveling) {
+            // Military soldiers are fed by the kingdom — skip auto-buy
+            if (player.militaryActive) {
+                // Military provisions handle food separately in tickMilitaryCareer()
+            } else {
             // Auto-buy food from town market
             const town = Engine.findTown(player.townId);
             if (town && player.hunger < 60) {
@@ -14392,6 +15585,7 @@
                     if (!bought) break; // No food available or can't afford
                 }
             }
+            } // end else (not military)
         } else if (player.traveling) {
             // Eat from inventory while traveling — only when actually hungry
             if (player.hunger < 50) {
@@ -14541,7 +15735,7 @@
                     const remotePrice = t.market.prices[res.id] || res.basePrice;
                     const profit = remotePrice - localPrice;
                     if (profit > localPrice * 0.3) {
-                        tips.push({ resource: res, town: t, localPrice, remotePrice, profit });
+                        tips.push({ resource: res, resourceName: res.name, town: t, townName: t.name, localPrice, remotePrice, profit });
                     }
                 }
             }
@@ -15609,70 +16803,102 @@
     // ========================================================
 
     function forage() {
-        if (player.traveling) return { success: false, message: 'Cannot forage while traveling.' };
         if (player.workingUntilTick) return { success: false, message: 'Already working.' };
 
-        const town = Engine.findTown(player.townId);
-        if (!town) return { success: false, message: 'Town not found.' };
-
-        const terrainData = Engine.getTerrainGrid();
-        if (!terrainData) return { success: false, message: 'Terrain not available.' };
+        // Get fertility for current location
+        var fertility = 50; // default baseline
+        if (player.traveling) {
+            // While traveling, use nearest town fertility
+            var pos = getPlayerWorldPosition();
+            var nearestTown = (pos && Engine.findNearestTown) ? Engine.findNearestTown(pos.x, pos.y) : null;
+            if (nearestTown && nearestTown.soilFertilityRating != null) fertility = nearestTown.soilFertilityRating;
+            else if (nearestTown && nearestTown.soilFertility != null) fertility = Math.round(nearestTown.soilFertility * 50);
+        } else {
+            var town = Engine.findTown(player.townId);
+            if (!town) return { success: false, message: 'Town not found.' };
+            if (town.soilFertilityRating != null) fertility = town.soilFertilityRating;
+            else if (town.soilFertility != null) fertility = Math.round(town.soilFertility * 50);
+        }
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.forage || 30);
 
-        const { grid, cols, rows } = terrainData;
-        const cx = Math.floor(town.x / CONFIG.TILE_SIZE);
-        const cy = Math.floor(town.y / CONFIG.TILE_SIZE);
-        const radius = 10;
+        var found = [];
+        var rng = Engine.getRng();
+        var roll = function() { return rng ? rng.random() : Math.random(); };
 
-        let terrainCounts = { grass: 0, forest: 0, mountain: 0, hills: 0, water: 0, sand: 0 };
-        for (let dy = -radius; dy <= radius; dy++) {
-            for (let dx = -radius; dx <= radius; dx++) {
-                const tx = cx + dx, ty = cy + dy;
-                if (tx < 0 || ty < 0 || tx >= cols || ty >= rows) continue;
-                const t = grid[ty * cols + tx];
-                if (t === TERRAIN.WATER.id) terrainCounts.water++;
-                else if (t === TERRAIN.FOREST.id) terrainCounts.forest++;
-                else if (t === TERRAIN.MOUNTAIN.id) terrainCounts.mountain++;
-                else if (t === TERRAIN.HILLS.id) terrainCounts.hills++;
-                else if (t === TERRAIN.SAND.id) terrainCounts.sand++;
-                else terrainCounts.grass++;
-            }
+        // Fertility-based find chance: fertility 0 → 10%, fertility 100 → 80%
+        var findChance = 0.10 + (fertility / 100) * 0.70;
+        // Soil Knowledge skill gives better yields in fertile land
+        if (hasSkill('soil_knowledge')) findChance = Math.min(0.90, findChance + 0.05);
+
+        // Forage bonus from miner perk or other sources
+        var bonusMult = 1.0;
+        if (player.foragingBonus && player.foragingBonus.townId === player.townId &&
+            player.foragingBonus.expiresDay > Engine.getDay()) {
+            bonusMult = player.foragingBonus.multiplier || 1.0;
         }
 
-        const found = [];
-        const rng = Engine.getRng();
-        const roll = function() { return rng ? rng.random() : Math.random(); };
-
-        // Forest: herbs, timber, berries
-        if (terrainCounts.forest > 20) {
-            if (roll() < 0.4) { var qty = Math.ceil(roll() * 2); if (hasSkill('herbalist')) qty *= 2; player.inventory.herbs = (player.inventory.herbs || 0) + qty; found.push(`${qty} herbs`); }
-            if (roll() < 0.3) { const qty = Math.ceil(roll() * 2); player.inventory.timber = (player.inventory.timber || 0) + qty; found.push(`${qty} timber`); }
-            if (roll() < 0.3) { var hungerRestore = 15; if (hasSkill('wilderness_survival')) hungerRestore = 23; player.hunger = Math.min(100, (player.hunger || 0) + hungerRestore); found.push('wild berries (restored hunger)'); }
+        // Herbs (primary find)
+        if (roll() < findChance) {
+            var qty = Math.ceil(roll() * 2 * bonusMult);
+            if (hasSkill('herbalist')) qty *= 2;
+            player.inventory.herbs = (player.inventory.herbs || 0) + qty;
+            found.push(qty + ' herbs');
         }
 
-        // Mountain: iron ore, gold (rare), stone
-        if (terrainCounts.mountain > 10) {
-            if (roll() < 0.25) { const qty = Math.ceil(roll() * 2); player.inventory.iron_ore = (player.inventory.iron_ore || 0) + qty; found.push(`${qty} iron ore`); }
-            if (roll() < 0.05) { player.inventory.gold_ingot = (player.inventory.gold_ingot || 0) + 1; found.push('1 gold nugget!'); }
-            if (roll() < 0.3) { const qty = Math.ceil(roll() * 3); player.inventory.stone = (player.inventory.stone || 0) + qty; found.push(`${qty} stone`); }
+        // Timber / wood
+        if (roll() < findChance * 0.7) {
+            var qty2 = Math.ceil(roll() * 2);
+            player.inventory.timber = (player.inventory.timber || 0) + qty2;
+            found.push(qty2 + ' timber');
         }
 
-        // Water: fish
-        if (terrainCounts.water > 15) {
-            if (roll() < 0.5) { const qty = Math.ceil(roll() * 3); player.inventory.fish = (player.inventory.fish || 0) + qty; found.push(`${qty} fish`); }
+        // Wild berries (hunger restore)
+        if (roll() < findChance * 0.6) {
+            var hungerRestore = 15;
+            if (hasSkill('wilderness_survival')) hungerRestore = 23;
+            player.hunger = Math.min(100, (player.hunger || 0) + hungerRestore);
+            found.push('wild berries (restored hunger)');
         }
 
-        // Hills: herbs, small game
-        if (terrainCounts.hills > 15) {
-            if (roll() < 0.35) { var hqty = Math.ceil(roll() * 2); if (hasSkill('herbalist')) hqty *= 2; player.inventory.herbs = (player.inventory.herbs || 0) + hqty; found.push(`${hqty} herbs`); }
-            if (roll() < 0.2) { player.inventory.meat = (player.inventory.meat || 0) + 1; found.push('1 wild game meat'); }
+        // Stone (lower chance, not fertility-dependent)
+        if (roll() < 0.15) {
+            var qty3 = Math.ceil(roll() * 3);
+            player.inventory.stone = (player.inventory.stone || 0) + qty3;
+            found.push(qty3 + ' stone');
         }
 
-        // Desert/Sand: rare finds
-        if (terrainCounts.sand > 20) {
-            if (roll() < 0.1) { player.gold += 50; found.push('buried treasure (50g)'); }
-            if (roll() < 0.2) { player.hunger = Math.min(100, (player.hunger || 0) + 10); found.push('desert oasis (restored some hunger)'); }
+        // Iron ore (rare)
+        if (roll() < 0.08) {
+            var qty4 = Math.ceil(roll() * 2);
+            player.inventory.iron_ore = (player.inventory.iron_ore || 0) + qty4;
+            found.push(qty4 + ' iron ore');
+        }
+
+        // Wild game meat (moderate chance)
+        if (roll() < findChance * 0.4) {
+            player.inventory.meat = (player.inventory.meat || 0) + 1;
+            found.push('1 wild game meat');
+        }
+
+        // Fish (only near water — check if coastal town)
+        var nearTown = player.traveling ? ((function() { var p2 = getPlayerWorldPosition(); return p2 && Engine.findNearestTown ? Engine.findNearestTown(p2.x, p2.y) : null; })()) : Engine.findTown(player.townId);
+        if (nearTown && nearTown.isPort && roll() < 0.35) {
+            var qty5 = Math.ceil(roll() * 3);
+            player.inventory.fish = (player.inventory.fish || 0) + qty5;
+            found.push(qty5 + ' fish');
+        }
+
+        // Gold nugget (very rare, low fertility areas — mountain regions)
+        if (fertility < 30 && roll() < 0.04) {
+            player.inventory.gold_ingot = (player.inventory.gold_ingot || 0) + 1;
+            found.push('1 gold nugget!');
+        }
+
+        // Buried treasure (very rare in barren areas)
+        if (fertility < 20 && roll() < 0.06) {
+            player.gold += 50;
+            found.push('buried treasure (50g)');
         }
 
         // Injury risk from foraging
@@ -15683,16 +16909,20 @@
 
         grantXP(3, 'foraging');
 
-        // Takes half a day
-        player.workingUntilTick = Engine.getDay() + 0.5;
+        // Takes half a day (slightly longer while traveling)
+        if (player.traveling) {
+            // Don't set workingUntilTick while traveling — the travel continues
+        } else {
+            player.workingUntilTick = Engine.getDay() + 0.5;
+        }
 
         if (found.length === 0) {
-            Engine.logEvent('You spent time foraging but found nothing useful.');
+            Engine.logEvent('You spent time foraging but found nothing useful. (Fertility: ' + fertility + ')');
             return { success: true, message: 'Found nothing useful.', found: [] };
         }
 
-        Engine.logEvent(`\uD83C\uDF3F Foraging: Found ${found.join(', ')}.`);
-        return { success: true, message: `Found: ${found.join(', ')}`, found };
+        Engine.logEvent('\uD83C\uDF3F Foraging: Found ' + found.join(', ') + '.');
+        return { success: true, message: 'Found: ' + found.join(', '), found: found };
     }
 
     // ========================================================
@@ -19575,6 +20805,8 @@
         player.thirst = Math.max(0, (player.thirst != null ? player.thirst : THIRST_CONFIG.START) - thirstDecay);
 
         if (player.townId && !player.traveling) {
+            // Military soldiers get water from the kingdom — skip auto-buy
+            if (!player.militaryActive) {
             var town = Engine.findTown(player.townId);
             if (town && player.thirst < 60) {
                 // Try to auto-buy beverages from market
@@ -19595,6 +20827,7 @@
                     }
                 }
             }
+            } // end if not military
         } else if (player.traveling) {
             // Drink from inventory while traveling
             if (player.thirst < 50) {
@@ -19760,7 +20993,8 @@
         }
 
         // Check rep — need at least non-hostile rep to use the well
-        var townRep = getReputation(tid);
+        var townKingdomId = town.kingdomId;
+        var townRep = player.reputation && townKingdomId ? (player.reputation[townKingdomId] || 0) : 0;
         if (townRep < -30) {
             return { success: false, message: 'The townsfolk won\'t let you near the well. Your reputation is too low.' };
         }
@@ -22285,6 +23519,11 @@
         player.indentured.active = false;
         Engine.logEvent(message || (player.fullName + ' has been freed from indenture!'));
         grantXP(50, 'freedom');
+        // Clear bankruptcy state if freed from indenture-path bankruptcy
+        if (player.bankruptcy && player.bankruptcy.active && player.bankruptcy.type === 'indenture') {
+            player.bankruptcy.active = false;
+            player.bankruptcy.completedDay = Engine.getDay();
+        }
     }
 
     // ========================================================
@@ -22399,6 +23638,12 @@
             player.skills.prophets_tongue = true;
             Engine.logEvent(player.fullName + ' has completed their holy pilgrimage! Divine powers unlocked.');
             grantXP(100, 'pilgrimage complete');
+            // Clear bankruptcy state if this was a priest-path bankruptcy
+            if (player.bankruptcy && player.bankruptcy.active && player.bankruptcy.type === 'priest') {
+                player.bankruptcy.active = false;
+                player.bankruptcy.completedDay = Engine.getDay();
+                Engine.logEvent('📜 ' + player.fullName + '\'s bankruptcy debt forgiven through completion of the holy pilgrimage.');
+            }
         }
     }
 
@@ -26411,6 +27656,239 @@
     }
 
     // ========================================================
+    // §12b-RP  REMEMBERED PRICES (Stale Price Memory)
+    // ========================================================
+
+    function getRememberedPrices(townId) {
+        if (!player.rememberedPrices) return null;
+        var mem = player.rememberedPrices[townId];
+        if (!mem) return null;
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+        // Expire after 90 days
+        if (day - mem.day > 90) {
+            delete player.rememberedPrices[townId];
+            return null;
+        }
+        return { day: mem.day, daysAgo: day - mem.day, prices: mem.prices, supply: mem.supply };
+    }
+
+    // Clean up old remembered prices (called periodically)
+    function cleanRememberedPrices() {
+        if (!player.rememberedPrices) return;
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+        for (var tid in player.rememberedPrices) {
+            if (day - player.rememberedPrices[tid].day > 90) {
+                delete player.rememberedPrices[tid];
+            }
+        }
+    }
+
+    // ========================================================
+    // §12b JOURNAL / NARRATIVE SYSTEM
+    // ========================================================
+
+    var JOURNAL_MOODS = ['reflective', 'triumphant', 'weary', 'hopeful', 'bitter', 'grateful', 'anxious', 'content'];
+    var JOURNAL_SEASONS = { 0: 'winter', 1: 'spring', 2: 'summer', 3: 'autumn' };
+
+    function getJournalSeason(day) {
+        var quarter = Math.floor(((day - 1) % 360) / 90);
+        return JOURNAL_SEASONS[quarter] || 'summer';
+    }
+
+    function getJournalYear(day) {
+        return Math.floor((day - 1) / 360) + 1;
+    }
+
+    function recordJournalEntry(type, rawText, opts) {
+        if (!player.journalEntries) player.journalEntries = [];
+        var day = Engine.getDay();
+        var town = Engine.findTown(player.townId);
+        var entry = {
+            day: day,
+            year: getJournalYear(day),
+            season: getJournalSeason(day),
+            type: type,
+            text: rawText,
+            location: town ? town.name : 'the road',
+            mood: (opts && opts.mood) || 'reflective',
+            gold: player.gold
+        };
+        player.journalEntries.push(entry);
+        // Cap at 500 entries to avoid bloating saves
+        if (player.journalEntries.length > 500) {
+            player.journalEntries = player.journalEntries.slice(-500);
+        }
+    }
+
+    // Convert a journal entry to narrative prose
+    function narrateJournalEntry(entry) {
+        var dayInYear = ((entry.day - 1) % 360) + 1;
+        var phrases = [];
+        var type = entry.type;
+        var text = entry.text || '';
+
+        if (type === 'arrival') {
+            phrases = [
+                'I arrived in ' + entry.location + ' today. ' + text,
+                'The gates of ' + entry.location + ' opened before me. ' + text,
+                'At last, ' + entry.location + '. ' + text
+            ];
+        } else if (type === 'trade') {
+            phrases = [
+                'A profitable day at the market. ' + text,
+                'I struck a deal today that I am rather pleased with. ' + text,
+                'Commerce is the blood of this world, and today I drew deeply from it. ' + text
+            ];
+        } else if (type === 'job') {
+            phrases = [
+                'Another day of honest work. ' + text,
+                'I labored through the day. ' + text,
+                'The work is humbling, but it puts coin in my purse. ' + text
+            ];
+        } else if (type === 'marriage') {
+            phrases = [
+                'My heart is full beyond measure — we were wed today! ' + text,
+                'I never thought this day would come, yet here it is. We are married. ' + text
+            ];
+        } else if (type === 'child') {
+            phrases = [
+                'A miracle — our child has come into this world! ' + text,
+                'I am a parent now. The weight of it is immense and beautiful. ' + text
+            ];
+        } else if (type === 'rank') {
+            phrases = [
+                'A new title graces my name! ' + text,
+                'I have risen in station. ' + text,
+                'The climb continues. They call me by a new title now. ' + text
+            ];
+        } else if (type === 'military') {
+            phrases = [
+                'The drums of war echo in my ears. ' + text,
+                'Military life is not what I imagined. ' + text,
+                'I serve the crown faithfully. ' + text
+            ];
+        } else if (type === 'battle') {
+            phrases = [
+                'Blood and steel — I survived another battle. ' + text,
+                'The clash of armies is a terrible thing. ' + text,
+                'War tested my courage today. ' + text
+            ];
+        } else if (type === 'injury') {
+            phrases = [
+                'I am wounded. ' + text + ' I must rest and recover.',
+                'Pain is my companion now. ' + text
+            ];
+        } else if (type === 'illness') {
+            phrases = [
+                'A fever has taken hold. ' + text,
+                'I feel unwell. ' + text + ' I pray it passes quickly.'
+            ];
+        } else if (type === 'death_close') {
+            phrases = [
+                'I nearly met my end today. ' + text + ' I thank the gods for my life.',
+                'Death came so close I could feel its breath. ' + text
+            ];
+        } else if (type === 'building') {
+            phrases = [
+                'I have invested in property! ' + text,
+                'A new building bears my name. ' + text
+            ];
+        } else if (type === 'guild') {
+            phrases = [
+                'I have joined a guild. ' + text,
+                'New doors have opened through guild membership. ' + text
+            ];
+        } else if (type === 'bankruptcy') {
+            phrases = [
+                'Ruin. Complete and utter ruin. ' + text,
+                'The debtors have taken everything. ' + text + ' I must start again.'
+            ];
+        } else if (type === 'freedom') {
+            phrases = [
+                'Freedom! Sweet, beautiful freedom! ' + text,
+                'My bonds are broken at last. ' + text
+            ];
+        } else if (type === 'skill') {
+            phrases = [
+                'I have learned something new. ' + text,
+                'Knowledge is the truest wealth. ' + text
+            ];
+        } else if (type === 'travel') {
+            phrases = [
+                'The road stretches ahead. ' + text,
+                'I set out once more. ' + text
+            ];
+        } else if (type === 'milestone') {
+            phrases = [
+                text,
+                'A day worth remembering. ' + text
+            ];
+        } else {
+            phrases = [text || 'Another day passes.'];
+        }
+
+        return phrases[Math.floor(Math.random() * phrases.length)];
+    }
+
+    // Generate full journal document from all entries
+    function generateJournalDocument() {
+        var entries = player.journalEntries || [];
+        if (entries.length === 0) {
+            return '<p style="color:#999;font-style:italic;">The pages are blank. Your story has yet to be written...</p>';
+        }
+
+        var html = '';
+        var currentYear = -1;
+        var currentSeason = '';
+
+        for (var i = 0; i < entries.length; i++) {
+            var e = entries[i];
+            var yr = e.year || getJournalYear(e.day);
+            var sn = e.season || getJournalSeason(e.day);
+
+            // Year header
+            if (yr !== currentYear) {
+                currentYear = yr;
+                currentSeason = '';
+                html += '<div style="text-align:center;margin:20px 0 8px;border-bottom:1px solid #5a4a30;padding-bottom:6px;">';
+                html += '<span style="font-size:1.1rem;color:#d4a74a;font-variant:small-caps;letter-spacing:2px;">Year ' + yr + '</span>';
+                html += '</div>';
+            }
+
+            // Season header
+            if (sn !== currentSeason) {
+                currentSeason = sn;
+                var seasonEmoji = sn === 'spring' ? '🌱' : sn === 'summer' ? '☀️' : sn === 'autumn' ? '🍂' : '❄️';
+                html += '<div style="color:#8a7a5a;font-style:italic;margin:10px 0 6px;font-size:0.85rem;">' + seasonEmoji + ' ' + sn.charAt(0).toUpperCase() + sn.slice(1) + '</div>';
+            }
+
+            // Entry
+            var prose = narrateJournalEntry(e);
+            var dayLabel = 'Day ' + e.day;
+            var locationLabel = e.location ? ' — ' + e.location : '';
+            html += '<div style="margin:8px 0;padding:6px 10px;border-left:2px solid #3a3020;background:rgba(60,50,30,0.15);border-radius:0 4px 4px 0;">';
+            html += '<div style="font-size:0.7rem;color:#7a6a4a;margin-bottom:3px;">' + dayLabel + locationLabel + '</div>';
+            html += '<div style="font-size:0.85rem;color:#d4c8a8;line-height:1.5;font-style:italic;">' + prose + '</div>';
+            html += '</div>';
+        }
+
+        return html;
+    }
+
+    // Auto-capture hook — call from key game moments
+    function autoJournalCapture(type, text, opts) {
+        // Skip if journal is getting too frequent (max 1 per type per 3 days)
+        var entries = player.journalEntries || [];
+        var day = Engine.getDay();
+        for (var i = entries.length - 1; i >= Math.max(0, entries.length - 5); i--) {
+            if (entries[i] && entries[i].type === type && day - entries[i].day < 3) return;
+        }
+        recordJournalEntry(type, text, opts);
+    }
+
+    // ========================================================
     // §13 PUBLIC API — window.Player
     // ========================================================
     window.Player = {
@@ -26451,6 +27929,8 @@
         get age() { return player.age; },
         get alive() { return player.alive; },
         get spouseId() { return player.spouseId; },
+        get weddingPlan() { return player.weddingPlan; },
+        get weddingMemory() { return player.weddingMemory; },
         get childrenIds() { return player.childrenIds; },
         get weapon() { return player.weapon; },
         get armor() { return player.armor; },
@@ -26478,6 +27958,8 @@
         get achievements() { return player.achievements; },
         get hunger() { return player.hunger; },
         get marketIntel() { return player.marketIntel; },
+        get rememberedPrices() { return player.rememberedPrices || {}; },
+        getRememberedPrices,
         get achievementStats() { return player.achievementStats; },
         get generation() { return player.generation || 1; },
         get licenses() { return player.licenses; },
@@ -26693,6 +28175,18 @@
             if (startConfig) {
                 applyGameStart(startConfig);
             }
+            // Snapshot starting town prices for stale price memory
+            try {
+                var initTown = Engine.findTown(player.townId);
+                if (initTown && initTown.market && initTown.market.prices) {
+                    if (!player.rememberedPrices) player.rememberedPrices = {};
+                    var initPrices = {};
+                    var initSupply = {};
+                    for (var ipk in initTown.market.prices) initPrices[ipk] = initTown.market.prices[ipk];
+                    for (var isk in (initTown.market.supply || {})) initSupply[isk] = initTown.market.supply[isk];
+                    player.rememberedPrices[initTown.id] = { day: 0, prices: initPrices, supply: initSupply };
+                }
+            } catch(e) {}
         },
 
         // Actions
@@ -26702,6 +28196,7 @@
         setBuildingProduct,
         purchaseNPCBuilding,
         playerConvertBuilding,
+        playerConvertFarm,
         playerDemolishBuilding,
         revitalizeTown,
         hireWorker,
@@ -26729,6 +28224,11 @@
         canMarry,
         getMarriageCandidates,
         marry,
+        setWeddingChoice,
+        getWeddingPlan,
+        finalizeWedding,
+        tickWeddingPlan,
+        talkToSpouse,
         equipWeapon,
         equipArmor,
         getAvailableEquipment,
@@ -26747,6 +28247,7 @@
         // Military Career
         enlistAsSoldier,
         quitMilitary,
+        resolvePendingMilitaryEvent,
         getMilitaryRankLabel() { return player.militaryRank ? (MILITARY_RANK_LABELS[player.militaryRank] || player.militaryRank) : null; },
         getMilitaryPay() { return player.militaryRank ? (MILITARY_PAY[player.militaryRank] || 0) : 0; },
         getMilitaryRanks() { return MILITARY_RANKS; },
@@ -26855,6 +28356,10 @@
         getGuildCraftableItems,
         craftAtGuildBuilding,
         getGuildForCategory,
+        readMerchantGuildReport,
+        generateMerchantGuildReport,
+        generateJournalDocument,
+        recordJournalEntry,
         get guildMemberships() { return player.guildMemberships || {}; },
 
         // Spouse personality / dating / regency

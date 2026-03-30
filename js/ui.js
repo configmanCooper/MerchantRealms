@@ -877,7 +877,7 @@ window.UI = (function () {
         html += `</div>`;
 
         // Market prices — gated by location and skills
-        // Player can see prices if: in this town, OR has appropriate skill
+        // Player can see CURRENT prices if: in this town, OR has appropriate skill
         const hasMarketScout = typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('market_scout');
         const hasTradeNetwork = typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('trade_network');
         const hasGlobalIntel = typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('global_trade_intel');
@@ -889,6 +889,15 @@ window.UI = (function () {
         const canSeePrices = isPlayerHere || hasGlobalIntel ||
             (hasTradeNetwork && town.kingdomId === playerKingdomId) ||
             (hasMarketScout && (hasWorkersHere || hasBuildingsHere));
+
+        // Stale price memory: player can see prices from their last visit (up to 90 days)
+        // Skills that show CURRENT prices override stale prices
+        var rememberedData = null;
+        var showStale = false;
+        if (!canSeePrices && typeof Player !== 'undefined' && Player.getRememberedPrices) {
+            rememberedData = Player.getRememberedPrices(town.id);
+            if (rememberedData) showStale = true;
+        }
 
         // View Townspeople button — only if player is in this town or a connected town
         if (isPlayerHere) {
@@ -1049,9 +1058,15 @@ window.UI = (function () {
                         📋 Kingdom Orders
                     </button>`;
                 }
-                html += `<button class="btn-medieval" onclick="UI.forageNearby()" style="font-size:0.8rem;padding:6px 14px;background:rgba(85,168,104,0.15);border-color:rgba(85,168,104,0.3);">
-                    🌿 Forage Nearby
-                </button>`;
+                var forageText = '\uD83C\uDF3F Forage Nearby';
+                if (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('soil_knowledge')) {
+                    var tfert = town.soilFertilityRating != null ? town.soilFertilityRating : (town.soilFertility != null ? Math.round(town.soilFertility * 50) : 50);
+                    var tchance = Math.round(10 + (tfert / 100) * 70);
+                    forageText = '\uD83C\uDF3F Forage Nearby (' + tchance + '% chance)';
+                }
+                html += '<button class="btn-medieval" onclick="UI.forageNearby()" style="font-size:0.8rem;padding:6px 14px;background:rgba(85,168,104,0.15);border-color:rgba(85,168,104,0.3);">';
+                html += forageText;
+                html += '</button>';
                 html += `</div></div>`;
             }
 
@@ -1061,9 +1076,26 @@ window.UI = (function () {
                 html += `<button class="btn-action" onclick="UI.showKingdomTradePanel('${town.kingdomId}')">🏛️ Open Kingdom Trade</button>`;
                 html += `</div>`;
             }
+        } else if (town.market && town.market.prices && !canSeePrices && showStale && rememberedData) {
+            // STALE REMEMBERED PRICES — from player's last visit
+            html += `<div class="detail-section">
+                <h3 style="cursor:pointer;user-select:none;" onclick="var b=this.nextElementSibling;b.style.display=b.style.display==='none'?'':'none';this.querySelector('.collapse-arrow').textContent=b.style.display==='none'?'▶':'▼';">📊 Market Prices <span style="color:#c9a84c;font-size:0.7rem;">(Remembered)</span> <span class="collapse-arrow" style="font-size:0.7rem;opacity:0.6;">▶</span></h3>
+                <div style="display:none;">`;
+            html += `<div style="background:rgba(200,160,50,0.1);border:1px solid #5a4a20;border-radius:4px;padding:6px 8px;margin-bottom:8px;">
+                <span style="color:#c9a84c;font-size:0.8rem;">⚠️ These prices are from <strong>${rememberedData.daysAgo} day${rememberedData.daysAgo !== 1 ? 's' : ''} ago</strong> (Day ${rememberedData.day}). Actual prices may have changed. Learn <b>Trade Network</b> or <b>Global Trade Intel</b> to see current prices.</span>
+            </div>`;
+            html += `<table class="price-table"><tr><th>Item</th><th>Price (old)</th><th>Supply (old)</th></tr>`;
+            var stalePrices = rememberedData.prices || {};
+            var staleSupply = rememberedData.supply || {};
+            for (var srId in stalePrices) {
+                var sRes = findResource(srId);
+                if (!sRes) continue;
+                html += `<tr><td>${sRes.icon} ${sRes.name}</td><td style="color:#c9a84c;">${stalePrices[srId]}g</td><td style="color:#888;">~${Math.floor(staleSupply[srId] || 0)}</td></tr>`;
+            }
+            html += `</table></div></div>`;
         } else if (town.market && town.market.prices && !canSeePrices) {
             html += `<div class="detail-section"><h3>📊 Market Prices</h3>
-                <div class="text-dim" style="font-size:0.8rem;">🔒 You need to visit this town or learn <b>Market Scout</b>, <b>Trade Network</b>, or <b>Global Trade Intel</b> skills to see remote prices.</div>
+                <div class="text-dim" style="font-size:0.8rem;">🔒 You need to visit this town or learn <b>Market Scout</b>, <b>Trade Network</b>, or <b>Global Trade Intel</b> skills to see remote prices. Prices from towns you've visited in the last 90 days will also appear here.</div>
             </div>`;
         }
 
@@ -1084,12 +1116,13 @@ window.UI = (function () {
                         <span class="value"><div class="bar-small" style="width:80px;"><div class="bar-small-fill" style="width:${pct}%;background:${barColor}"></div></div> <span style="font-size:0.7rem;color:${barColor}">${label}</span></span>
                     </div>`;
                 }
-                if (town.soilFertility != null) {
-                    const sfPct = Math.round(town.soilFertility * 100);
+                if (town.soilFertility != null && typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('soil_knowledge')) {
+                    const sfRating = town.soilFertilityRating != null ? town.soilFertilityRating : Math.round(town.soilFertility * 50);
+                    const sfPct = Math.min(100, sfRating);
                     const sfColor = sfPct > 70 ? '#55a868' : sfPct > 40 ? '#ccb974' : '#c44e52';
                     html += `<div class="detail-row">
-                        <span class="label">🌱 Soil Fertility</span>
-                        <span class="value"><div class="bar-small" style="width:80px;"><div class="bar-small-fill" style="width:${sfPct}%;background:${sfColor}"></div></div> <span style="font-size:0.7rem;color:${sfColor}">${sfPct}%</span></span>
+                        <span class="label">🌾 Soil Fertility</span>
+                        <span class="value"><div class="bar-small" style="width:80px;"><div class="bar-small-fill" style="width:${sfPct}%;background:${sfColor}"></div></div> <span style="font-size:0.7rem;color:${sfColor}">${sfPct}/100</span></span>
                     </div>`;
                 }
                 html += `</div>`;
@@ -2414,6 +2447,28 @@ window.UI = (function () {
                 saleHtml += '</div>';
             }
 
+            // Player-owned farm/livestock: conversion option
+            var farmBlds = playerBlds.filter(function(b) {
+                return (typeof Engine !== 'undefined') && (Engine.isCropFarm(b.type) || Engine.isLivestockFarm(b.type));
+            });
+            if (farmBlds.length > 0) {
+                saleHtml += '<div style="margin-top:12px;padding:8px;border:1px solid rgba(120,160,80,0.4);border-radius:4px;background:rgba(60,80,40,0.1);">';
+                saleHtml += '<div style="font-weight:bold;font-size:0.85rem;margin-bottom:6px;">🔄 CONVERT FARM / LIVESTOCK</div>';
+                saleHtml += '<div style="font-size:0.75rem;color:#b0a080;margin-bottom:6px;">Crop farms: 1 free conversion/year, then ¼ cost. Livestock: 2/year at half cost.</div>';
+                for (let fi = 0; fi < farmBlds.length; fi++) {
+                    var fBld = farmBlds[fi];
+                    var fBt = Engine.findBuildingType(fBld.type);
+                    var fBldName = fBt ? fBt.name : fBld.type;
+                    var fBldIdx = town.buildings.findIndex(function(tb) { return tb.ownerId === 'player' && tb.type === fBld.type; });
+                    if (fBldIdx < 0) continue;
+                    saleHtml += '<div class="build-card" style="display:flex;flex-direction:column;gap:4px;">';
+                    saleHtml += '<div class="build-name">' + fBldName + '</div>';
+                    saleHtml += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;background:rgba(80,120,50,0.15);border-color:rgba(80,120,50,0.4);" onclick="UI.openFarmConvertUI(' + fBldIdx + ',\'' + town.id + '\')">🔄 Convert Type</button>';
+                    saleHtml += '</div>';
+                }
+                saleHtml += '</div>';
+            }
+
             // Player-owned buildings: demolish option
             var playerBlds = (Player.buildings || []).filter(function(b) { return b.townId === town.id; });
             if (playerBlds.length > 0) {
@@ -3116,6 +3171,78 @@ window.UI = (function () {
         }
     }
 
+    function openFarmConvertUI(buildingIndex, townId) {
+        var town = Engine.findTown(townId);
+        if (!town) { toast('Town not found.', 'warning'); return; }
+        var bld = town.buildings[buildingIndex];
+        if (!bld) { toast('Building not found.', 'warning'); return; }
+        var bt = Engine.findBuildingType(bld.type);
+        var oldName = bt ? bt.name : bld.type;
+
+        var isCrop = Engine.isCropFarm(bld.type);
+        var isLivestock = Engine.isLivestockFarm(bld.type);
+        var targetTypes = isCrop ? (CONFIG.FARM_CROP_TYPES || []) : isLivestock ? (CONFIG.FARM_LIVESTOCK_TYPES || []) : [];
+
+        var html = '<div style="padding:10px;">';
+        html += '<p style="font-size:0.85rem;color:#b0a080;margin-bottom:10px;">Convert <strong>' + oldName + '</strong> to:</p>';
+
+        for (var i = 0; i < targetTypes.length; i++) {
+            var tId = targetTypes[i];
+            if (tId === bld.type) continue;
+            var tBt = Engine.findBuildingType(tId);
+            if (!tBt) continue;
+            var costInfo = Engine.getFarmConversionCost(bld, tId);
+            if (!costInfo) {
+                html += '<div style="padding:6px 10px;margin-bottom:4px;border:1px solid rgba(120,60,60,0.3);border-radius:4px;opacity:0.5;">';
+                html += '<strong>' + tBt.name + '</strong> <span style="color:#c06040;">— no conversions remaining this year</span>';
+                html += '</div>';
+                continue;
+            }
+
+            var costDesc = '';
+            if (costInfo.free) {
+                costDesc = '<span style="color:#80b080;">FREE (seasonal)</span>';
+            } else {
+                var parts = [];
+                if (costInfo.gold > 0) parts.push(costInfo.gold + 'g');
+                for (var m in costInfo.materials) {
+                    if (costInfo.materials[m] > 0) {
+                        var mRes = findResource(m);
+                        parts.push(costInfo.materials[m] + ' ' + (mRes ? mRes.name : m));
+                    }
+                }
+                costDesc = parts.join(', ') || 'Free';
+            }
+
+            var canAfford = true;
+            if (costInfo.gold > (Player.gold || 0)) canAfford = false;
+            for (var cm in costInfo.materials) {
+                if (costInfo.materials[cm] > 0 && (Player.inventory[cm] || 0) < costInfo.materials[cm]) canAfford = false;
+            }
+
+            html += '<div style="padding:6px 10px;margin-bottom:4px;border:1px solid rgba(120,100,60,0.3);border-radius:4px;' + (canAfford ? '' : 'opacity:0.5;') + '">';
+            html += '<strong>' + tBt.name + '</strong> — ' + costDesc;
+            if (tBt.produces) {
+                var pRes = findResource(tBt.produces);
+                html += ' <span style="color:#a09070;">(produces ' + (pRes ? pRes.name : tBt.produces) + ')</span>';
+            }
+            html += '<br><button class="btn-medieval" style="font-size:0.7rem;padding:2px 8px;margin-top:4px;" ' + (canAfford ? '' : 'disabled') + ' onclick="UI.executeFarmConvertUI(' + buildingIndex + ',\'' + townId + '\',\'' + tId + '\')">Convert</button>';
+            html += '</div>';
+        }
+
+        html += '</div>';
+        openModal('🔄 Convert ' + oldName, html);
+    }
+
+    function executeFarmConvertUI(buildingIndex, townId, newTypeId) {
+        var result = Player.playerConvertFarm(buildingIndex, townId, newTypeId);
+        toast(result.message, result.success ? 'success' : 'warning');
+        if (result.success) {
+            closeModal();
+            openBuildDialog();
+        }
+    }
+
     function assignWorkerUI(buildingId) {
         const sel = document.getElementById('assignWorkerSelect');
         if (!sel || !sel.value) { toast('Select a worker first.', 'warning'); return; }
@@ -3725,14 +3852,196 @@ window.UI = (function () {
     function proposeTo(personId) {
         if (typeof Player === 'undefined' || !Player.marry) return;
         const result = Player.marry(personId);
-        if (result && result.success) {
+        if (result && result.success && result.startPlanning) {
             toast(result.message, 'success');
-            try {
-                const person = Engine.getPerson(personId);
-                if (person) showPersonDetail(person);
-            } catch (e) { /* no-op */ }
+            // Open wedding planner after a short delay
+            setTimeout(function() { openWeddingPlanner(); }, 500);
+        } else if (result && result.success) {
+            toast(result.message, 'success');
         } else {
             toast((result && result.message) || 'Proposal failed.', 'warning');
+        }
+    }
+
+    // ========================================================
+    // §WEDDING-PLANNER: Wedding Planning UI
+    // ========================================================
+
+    function openWeddingPlanner() {
+        const plan = Player.weddingPlan;
+        if (!plan) {
+            toast('No wedding being planned.', 'warning');
+            return;
+        }
+
+        const venues = CONFIG.WEDDING_VENUES || [];
+        const feasts = CONFIG.WEDDING_FEASTS || [];
+        const vows = CONFIG.WEDDING_VOWS || [];
+        const day = (typeof Engine !== 'undefined' && Engine.getDay) ? Engine.getDay() : 0;
+        const daysLeft = Math.max(0, plan.weddingDay - day);
+
+        let html = '<div style="padding:18px;max-width:600px;margin:auto;color:#e8d8c0;">';
+        html += '<h2 style="text-align:center;color:var(--gold);margin-bottom:4px;">💒 Wedding Planner</h2>';
+        html += '<p style="text-align:center;color:#b0a080;margin-bottom:14px;">Planning your wedding to <strong>' + plan.fianceName + '</strong>';
+        if (daysLeft > 0) html += ' — <em>' + daysLeft + ' days until the ceremony</em>';
+        else html += ' — <em style="color:#f0c060;">The ceremony is ready!</em>';
+        html += '</p>';
+
+        // Venue selection
+        html += '<div style="margin-bottom:14px;">';
+        html += '<h3 style="color:var(--gold);margin-bottom:6px;">📍 Venue</h3>';
+        for (let i = 0; i < venues.length; i++) {
+            const v = venues[i];
+            const selected = plan.venue === v.id;
+            const disabled = v.minRank && (Player.getPlayerRankIndex ? Player.getPlayerRankIndex() : 0) < v.minRank;
+            const borderCol = selected ? 'rgba(200,180,60,0.8)' : 'rgba(120,100,60,0.3)';
+            const bgCol = selected ? 'rgba(200,180,60,0.12)' : 'rgba(40,35,25,0.5)';
+            html += '<div onclick="' + (disabled ? '' : 'UI.setWeddingChoice(\'venue\',\'' + v.id + '\')') + '" style="cursor:' + (disabled ? 'not-allowed' : 'pointer') + ';border:1px solid ' + borderCol + ';background:' + bgCol + ';padding:8px 12px;margin-bottom:4px;border-radius:6px;' + (disabled ? 'opacity:0.4;' : '') + '">';
+            html += '<strong>' + v.icon + ' ' + v.name + '</strong>';
+            if (v.cost > 0) html += ' <span style="color:#b0a080;">(' + v.cost + 'g)</span>';
+            else html += ' <span style="color:#80b080;">(Free)</span>';
+            if (selected) html += ' <span style="color:var(--gold);">✓</span>';
+            html += '<br><small style="color:#a09070;">' + v.description + '</small>';
+            if (disabled) html += '<br><small style="color:#c06040;">Requires higher rank</small>';
+            html += '</div>';
+        }
+        html += '</div>';
+
+        // Feast selection
+        html += '<div style="margin-bottom:14px;">';
+        html += '<h3 style="color:var(--gold);margin-bottom:6px;">🍽️ Feast</h3>';
+        for (let i = 0; i < feasts.length; i++) {
+            const f = feasts[i];
+            const selected = plan.feast === f.id;
+            const borderCol = selected ? 'rgba(200,180,60,0.8)' : 'rgba(120,100,60,0.3)';
+            const bgCol = selected ? 'rgba(200,180,60,0.12)' : 'rgba(40,35,25,0.5)';
+            html += '<div onclick="UI.setWeddingChoice(\'feast\',\'' + f.id + '\')" style="cursor:pointer;border:1px solid ' + borderCol + ';background:' + bgCol + ';padding:8px 12px;margin-bottom:4px;border-radius:6px;">';
+            html += '<strong>' + f.icon + ' ' + f.name + '</strong> <span style="color:#b0a080;">(' + f.cost + 'g, ~' + f.guests + ' guests)</span>';
+            if (selected) html += ' <span style="color:var(--gold);">✓</span>';
+            html += '<br><small style="color:#a09070;">' + f.description + '</small>';
+            html += '</div>';
+        }
+        html += '</div>';
+
+        // Vow selection
+        html += '<div style="margin-bottom:14px;">';
+        html += '<h3 style="color:var(--gold);margin-bottom:6px;">📜 Vows</h3>';
+        for (let i = 0; i < vows.length; i++) {
+            const vw = vows[i];
+            const selected = plan.vows === vw.id;
+            const borderCol = selected ? 'rgba(200,180,60,0.8)' : 'rgba(120,100,60,0.3)';
+            const bgCol = selected ? 'rgba(200,180,60,0.12)' : 'rgba(40,35,25,0.5)';
+            html += '<div onclick="UI.setWeddingChoice(\'vows\',\'' + vw.id + '\')" style="cursor:pointer;border:1px solid ' + borderCol + ';background:' + bgCol + ';padding:8px 12px;margin-bottom:4px;border-radius:6px;">';
+            html += '<strong>' + vw.icon + ' ' + vw.name + '</strong>';
+            if (selected) html += ' <span style="color:var(--gold);">✓</span>';
+            html += '<br><small style="color:#c8b890;font-style:italic;">' + vw.description + '</small>';
+            html += '</div>';
+        }
+        html += '</div>';
+
+        // Total cost
+        let totalCost = CONFIG.WEDDING_COST_BASE || 50;
+        const selVenue = venues.find(function(v) { return v.id === plan.venue; });
+        const selFeast = feasts.find(function(f) { return f.id === plan.feast; });
+        if (selVenue) totalCost += selVenue.cost || 0;
+        if (selFeast) totalCost += selFeast.cost || 0;
+        const playerGold = Player.gold || 0;
+        const canAfford = playerGold >= totalCost;
+
+        html += '<div style="text-align:center;margin-top:14px;padding:10px;background:rgba(40,35,25,0.6);border:1px solid rgba(120,100,60,0.4);border-radius:6px;">';
+        html += '<p style="margin:0 0 8px 0;">Total Cost: <strong style="color:' + (canAfford ? 'var(--gold)' : '#c06040') + ';">' + totalCost + 'g</strong> (Have: ' + Math.floor(playerGold) + 'g)</p>';
+
+        const allChosen = plan.venue && plan.feast && plan.vows;
+        if (allChosen && canAfford) {
+            html += '<button class="btn-medieval" onclick="UI.finalizeWedding()" style="padding:8px 24px;font-size:1rem;background:rgba(160,140,60,0.2);border-color:var(--gold);color:var(--gold);">💒 Hold the Wedding!</button>';
+        } else if (!allChosen) {
+            html += '<p style="color:#b0a080;font-size:0.85rem;">Choose a venue, feast, and vows to proceed.</p>';
+        } else {
+            html += '<p style="color:#c06040;font-size:0.85rem;">Not enough gold for this wedding.</p>';
+        }
+        html += '</div>';
+        html += '</div>';
+
+        openModal('Wedding Planner', html);
+    }
+
+    function setWeddingChoice(choiceType, choiceId) {
+        const result = Player.setWeddingChoice(choiceType, choiceId);
+        if (result && result.success) {
+            openWeddingPlanner(); // refresh
+        } else {
+            toast((result && result.message) || 'Cannot set choice.', 'warning');
+        }
+    }
+
+    function finalizeWedding() {
+        const result = Player.finalizeWedding();
+        if (result && result.success) {
+            toast(result.message, 'success');
+            closeModal();
+        } else {
+            toast((result && result.message) || 'Cannot finalize wedding.', 'warning');
+        }
+    }
+
+    // ========================================================
+    // §SPOUSE-TALK: Talk to Spouse Dialog
+    // ========================================================
+
+    function openTalkToSpouse() {
+        if (!Player.spouseId) {
+            toast('You are not married.', 'warning');
+            return;
+        }
+        const spouse = (typeof Engine !== 'undefined' && Engine.findPerson) ? Engine.findPerson(Player.spouseId) : null;
+        if (!spouse) {
+            toast('Cannot find your spouse.', 'warning');
+            return;
+        }
+
+        let html = '<div style="padding:18px;max-width:500px;margin:auto;color:#e8d8c0;">';
+        html += '<h2 style="text-align:center;color:var(--gold);margin-bottom:4px;">💬 Talk to ' + spouse.firstName + '</h2>';
+        html += '<p style="text-align:center;color:#b0a080;margin-bottom:14px;">What would you like to talk about?</p>';
+
+        const topics = [
+            { id: 'ask_day',       icon: '🌤️', name: 'Ask About Their Day', desc: 'How was your day, love?' },
+            { id: 'discuss_plans', icon: '📋', name: 'Discuss Plans',        desc: 'What do you think about our next move?' },
+            { id: 'share_memory',  icon: '💭', name: 'Share a Memory',       desc: 'Remember when...' },
+        ];
+
+        for (let i = 0; i < topics.length; i++) {
+            const t = topics[i];
+            html += '<div onclick="UI.doTalkToSpouse(\'' + t.id + '\')" style="cursor:pointer;border:1px solid rgba(120,100,60,0.3);background:rgba(40,35,25,0.5);padding:10px 14px;margin-bottom:6px;border-radius:6px;transition:border-color 0.2s;" onmouseover="this.style.borderColor=\'rgba(200,180,60,0.6)\'" onmouseout="this.style.borderColor=\'rgba(120,100,60,0.3)\'">';
+            html += '<strong>' + t.icon + ' ' + t.name + '</strong>';
+            html += '<br><small style="color:#a09070;font-style:italic;">"' + t.desc + '"</small>';
+            html += '</div>';
+        }
+
+        html += '</div>';
+        openModal('Talk to Spouse', html);
+    }
+
+    function doTalkToSpouse(topic) {
+        const result = Player.talkToSpouse(topic);
+        if (result && result.success) {
+            const spouse = (typeof Engine !== 'undefined' && Engine.findPerson) ? Engine.findPerson(Player.spouseId) : null;
+            const name = spouse ? spouse.firstName : 'Your spouse';
+
+            let html = '<div style="padding:18px;max-width:500px;margin:auto;color:#e8d8c0;">';
+            html += '<h2 style="text-align:center;color:var(--gold);margin-bottom:12px;">💬 ' + name + '</h2>';
+            html += '<div style="background:rgba(40,35,25,0.6);border:1px solid rgba(120,100,60,0.4);border-radius:8px;padding:14px 18px;margin-bottom:12px;">';
+            html += '<p style="font-style:italic;color:#d8c8a0;margin:0;font-size:1.05rem;">"' + result.message.replace(name + ' says: "', '').replace(/"$/, '') + '"</p>';
+            html += '</div>';
+            html += '<p style="text-align:center;color:#80b080;font-size:0.85rem;">Relationship +' + result.relGain + '</p>';
+            html += '<div style="text-align:center;margin-top:10px;">';
+            html += '<button class="btn-medieval" onclick="UI.openTalkToSpouse()" style="padding:6px 16px;margin-right:8px;">Talk More</button>';
+            html += '<button class="btn-medieval" onclick="UI.closeModal()" style="padding:6px 16px;">Done</button>';
+            html += '</div>';
+            html += '</div>';
+
+            openModal('Conversation', html);
+        } else {
+            toast((result && result.message) || 'Cannot talk right now.', 'warning');
         }
     }
 
@@ -4014,7 +4323,10 @@ window.UI = (function () {
     function proposeMarriage(personId) {
         try {
             const result = Player.marry(personId);
-            if (result && result.success) {
+            if (result && result.success && result.startPlanning) {
+                toast(result.message, 'success');
+                setTimeout(function() { openWeddingPlanner(); }, 500);
+            } else if (result && result.success) {
                 toast(result.message, 'success');
                 openHireDialog(); // refresh
             } else {
@@ -4849,7 +5161,58 @@ window.UI = (function () {
         // Social Status section
         html += buildSocialStatusHtml();
 
+        // Journal button
+        html += `<div style="text-align:center;margin:12px 0 6px;">
+            <button class="btn-medieval" onclick="UI.openJournal()" style="font-size:0.85rem;padding:6px 18px;">📖 Read My Journal</button>
+        </div>`;
+
         openModal(`👤 ${Player.fullName || 'Character'}`, html);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  JOURNAL / STORYBOOK UI
+    // ═══════════════════════════════════════════════════════════
+    function openJournal() {
+        if (typeof Player === 'undefined') return;
+        var entries = Player.state.journalEntries || [];
+        var name = Player.fullName || 'the Merchant';
+
+        var html = '<div style="max-height:550px;overflow-y:auto;padding:10px 16px;background:linear-gradient(180deg,rgba(60,50,30,0.3) 0%,rgba(30,25,15,0.5) 100%);border-radius:6px;">';
+
+        // Header — styled like a journal cover
+        html += '<div style="text-align:center;margin-bottom:16px;padding-bottom:12px;border-bottom:2px double #5a4a30;">';
+        html += '<div style="font-size:1.4rem;color:#d4a74a;font-variant:small-caps;letter-spacing:3px;">📖 Personal Journal</div>';
+        html += '<div style="font-size:0.9rem;color:#a89060;margin-top:4px;font-style:italic;">From the diary of ' + escapeHtml(name) + '</div>';
+        html += '</div>';
+
+        if (entries.length === 0) {
+            html += '<div style="text-align:center;color:#888;font-style:italic;padding:30px 0;">The pages are blank. Your story has yet to be written...</div>';
+        } else {
+            // Generate journal document from Player's generateJournalDocument
+            if (typeof Player.generateJournalDocument === 'function') {
+                html += Player.generateJournalDocument();
+            } else {
+                // Fallback: basic entry list
+                for (var i = 0; i < entries.length; i++) {
+                    var e = entries[i];
+                    html += '<div style="margin:6px 0;padding:6px 10px;border-left:2px solid #3a3020;background:rgba(60,50,30,0.15);border-radius:0 4px 4px 0;">';
+                    html += '<div style="font-size:0.7rem;color:#7a6a4a;">Day ' + e.day + (e.location ? ' — ' + e.location : '') + '</div>';
+                    html += '<div style="font-size:0.85rem;color:#d4c8a8;line-height:1.4;font-style:italic;">' + escapeHtml(e.text || 'Another day passes.') + '</div>';
+                    html += '</div>';
+                }
+            }
+        }
+
+        // Footer
+        var dayCount = 0;
+        try { dayCount = Engine.getDay(); } catch(ex) {}
+        html += '<div style="text-align:center;margin-top:16px;padding-top:10px;border-top:1px solid #3a3020;color:#666;font-size:0.75rem;">';
+        html += entries.length + ' entries • Day ' + dayCount;
+        html += '</div>';
+
+        html += '</div>';
+
+        openModal('📖 ' + escapeHtml(name) + "'s Journal", html, '<button class="btn-medieval" onclick="UI.closeModal()">Close Journal</button>');
     }
 
     function buyWeapon(equipmentId) {
@@ -5196,6 +5559,7 @@ window.UI = (function () {
             { key: 'travel_events', label: '🚶 Travel Events', desc: 'Foraging, terrain encounters, ambushes' },
             { key: 'combat', label: '☠️ Combat/Piracy', desc: 'Pirate raids, blockades, attacks near you' },
             { key: 'tracked', label: '⭐ Tracked Merchants', desc: 'Activities of elite merchants you are tracking' },
+            { key: 'error_alerts', label: '🐛 Error Alerts', desc: 'Get notified when the game detects console errors (for bug reporting)' },
         ];
 
         var html = '<h3 style="margin-top:0;color:var(--gold);">📢 Notification Filters</h3>';
@@ -6199,7 +6563,7 @@ window.UI = (function () {
         html += '</div>';
         html += '<p style="font-size:0.8em;color:#888;margin-top:10px;">💡 Tip: Buy a permit from the Character panel, or rank up to Burgher to be exempt.</p>';
         html += '</div>';
-        showModal('🐴 Draft Animal Violation', html);
+        openModal('🐴 Draft Animal Violation', html);
     }
 
     function openTravelOptions(townId) {
@@ -7318,6 +7682,7 @@ window.UI = (function () {
             var isMember = membership && membership.expiresDay > day;
             var monthlyPrice = Player.getGuildPrice(gId, 'monthly');
             var yearlyPrice = Player.getGuildPrice(gId, 'yearly');
+            var isMerchants = (gId === 'merchants');
 
             html += '<div style="border:1px solid ' + (isMember ? '#4a7' : '#555') + ';border-radius:6px;padding:10px;margin-bottom:8px;background:' + (isMember ? 'rgba(68,170,119,0.1)' : 'rgba(40,40,40,0.5)') + ';">';
             html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
@@ -7330,6 +7695,21 @@ window.UI = (function () {
             }
             html += '</div>';
 
+            // Merchants Guild: special benefit description
+            if (isMerchants) {
+                if (!isMember) {
+                    html += '<div style="background:rgba(255,215,0,0.08);border:1px solid #5a4a20;border-radius:4px;padding:8px;margin:6px 0;">';
+                    html += '<div style="color:#d4a74a;font-size:0.9em;font-weight:bold;margin-bottom:4px;">📊 Exclusive Benefit: Daily Market Intelligence</div>';
+                    html += '<div style="color:#bbb;font-size:0.82em;line-height:1.4;">Members gain access to the guild\'s <strong>Daily Market Report</strong> — a curated list of 10 trade tips compiled by guild agents across all towns. Tips include the best prices for goods, profitable trade routes, cheapest labor markets, building costs, resource shortages, and more. A new report is generated each day. Reading the report costs a small fee of ' + (CONFIG.MERCHANTS_GUILD_REPORT_FEE || 10) + 'g.</div>';
+                    html += '</div>';
+                } else {
+                    // Member: show report button
+                    html += '<div style="margin:6px 0;text-align:center;">';
+                    html += '<button class="btn-medieval" style="background:linear-gradient(135deg,#3a2a10,#5a4a20);border-color:#d4a74a;color:#FFD700;padding:6px 16px;" onclick="UI.openMerchantGuildReport()">📊 Read Today\'s Market Report (' + (CONFIG.MERCHANTS_GUILD_REPORT_FEE || 10) + 'g)</button>';
+                    html += '</div>';
+                }
+            }
+
             // Building types this guild gives access to
             var guildBuildingNames = [];
             var BT_G = typeof BUILDING_TYPES !== 'undefined' ? BUILDING_TYPES : (CONFIG.BUILDING_TYPES || {});
@@ -7339,7 +7719,11 @@ window.UI = (function () {
                     guildBuildingNames.push(bt.name);
                 }
             }
-            html += '<div style="color:#aaa;font-size:0.85em;margin:4px 0;">Gives Access to Buildings: <span style="color:#ddd;">' + (guildBuildingNames.length > 0 ? guildBuildingNames.join(', ') : 'None') + '</span></div>';
+            if (!isMerchants) {
+                html += '<div style="color:#aaa;font-size:0.85em;margin:4px 0;">Gives Access to Buildings: <span style="color:#ddd;">' + (guildBuildingNames.length > 0 ? guildBuildingNames.join(', ') : 'None') + '</span></div>';
+            } else {
+                html += '<div style="color:#aaa;font-size:0.85em;margin:4px 0;">Gives Access to: <span style="color:#ddd;">Market Stalls, Transport Guild Halls, & Daily Market Intelligence Reports</span></div>';
+            }
 
             // Local availability indicator (show for non-members too)
             var localTown = null;
@@ -7356,7 +7740,7 @@ window.UI = (function () {
             }
             if (localGuildBuildings > 0) {
                 html += '<div style="color:#4a7;font-size:0.85em;margin:2px 0;">✅ ' + localGuildBuildings + ' guild building' + (localGuildBuildings > 1 ? 's' : '') + ' in this town</div>';
-            } else {
+            } else if (!isMerchants) {
                 html += '<div style="color:#c55;font-size:0.85em;margin:2px 0;">❌ No guild buildings of this type here</div>';
             }
 
@@ -7395,7 +7779,7 @@ window.UI = (function () {
                         html += '</div>';
                     }
                     html += '</div>';
-                } else {
+                } else if (!isMerchants) {
                     html += '<div style="margin-top:6px;color:#777;font-size:0.85em;">No guild buildings of this type in your current town.</div>';
                 }
             }
@@ -7416,6 +7800,46 @@ window.UI = (function () {
             toast(result.message, 'warning');
         }
         openGuildsPanel(); // refresh
+    }
+
+    function openMerchantGuildReport() {
+        if (typeof Player === 'undefined') return;
+        var result = Player.readMerchantGuildReport();
+        if (!result.success) {
+            toast(result.message, 'warning');
+            return;
+        }
+
+        var tips = result.tips || [];
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+        var year = Math.floor((day - 1) / 360) + 1;
+
+        var html = '<div style="max-height:500px;overflow-y:auto;padding:4px;">';
+        html += '<div style="text-align:center;border-bottom:2px solid #5a4a20;padding-bottom:8px;margin-bottom:12px;">';
+        html += '<div style="font-size:1.1rem;color:#d4a74a;font-variant:small-caps;letter-spacing:2px;">Merchants\' Guild Intelligence Bureau</div>';
+        html += '<div style="font-size:0.8rem;color:#888;margin-top:4px;">Daily Market Report — Day ' + day + ', Year ' + year + '</div>';
+        html += '<div style="font-size:0.75rem;color:#666;margin-top:2px;">Report fee: ' + (result.fee || 10) + 'g deducted</div>';
+        html += '</div>';
+
+        if (tips.length === 0) {
+            html += '<p style="color:#999;font-style:italic;text-align:center;">Our agents found no actionable intelligence today. Check back tomorrow.</p>';
+        } else {
+            for (var i = 0; i < tips.length; i++) {
+                var tip = tips[i];
+                html += '<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 8px;margin-bottom:6px;background:rgba(60,50,30,0.2);border-left:3px solid #5a4a20;border-radius:0 4px 4px 0;">';
+                html += '<span style="font-size:1.1rem;flex-shrink:0;">' + (tip.icon || '📋') + '</span>';
+                html += '<div style="font-size:0.85rem;color:#d4c8a8;line-height:1.4;">' + (i + 1) + '. ' + tip.text + '</div>';
+                html += '</div>';
+            }
+        }
+
+        html += '<div style="text-align:center;margin-top:12px;border-top:1px solid #333;padding-top:8px;">';
+        html += '<div style="font-size:0.7rem;color:#666;font-style:italic;">This report is valid for today only. A new report will be available tomorrow.</div>';
+        html += '</div>';
+        html += '</div>';
+
+        openModal('📊 Daily Market Report', html, '<button class="btn-medieval" onclick="UI.openGuildsPanel()">← Back to Guilds</button> <button class="btn-medieval" onclick="UI.closeModal()">Close</button>');
     }
 
     function guildCraftPrompt(buildingId, productId, productName) {
@@ -8730,11 +9154,20 @@ window.UI = (function () {
 
         html += '</div>'; // end header card
 
+        // Wedding Planner notification
+        if (Player.weddingPlan) {
+            html += '<div style="padding:8px;margin-bottom:6px;border:1px solid rgba(200,180,60,0.4);border-radius:6px;background:rgba(200,180,60,0.08);text-align:center;">';
+            html += '<strong>💒 Wedding Planning!</strong> You are planning your wedding to ' + Player.weddingPlan.fianceName + '.';
+            html += '<br><button class="btn-medieval" onclick="UI.openWeddingPlanner()" style="font-size:12px;padding:6px 16px;margin-top:6px;">Open Wedding Planner</button>';
+            html += '</div>';
+        }
+
         // === INTERACTIONS ===
         html += '<h4 style="color:#d4af37;margin:10px 0 6px 0;font-size:0.85rem;">💬 Interactions</h4>';
         html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">';
 
         // Relationship
+        html += '<button class="btn-medieval" onclick="UI.openTalkToSpouse()" style="font-size:12px;padding:6px;">💬 Talk to Spouse</button>';
         html += '<button class="btn-medieval" onclick="UI.spouseInteraction(\'spend_time\')" style="font-size:12px;padding:6px;">💕 Spend Time Together</button>';
         html += '<button class="btn-medieval" onclick="UI.spouseInteraction(\'give_gold\')" style="font-size:12px;padding:6px;">🪙 Give Gold</button>';
 
@@ -10045,6 +10478,77 @@ window.UI = (function () {
         } else {
             toast(result.message, 'warning');
         }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  MILITARY EVENT CHOICE — Battle/Task approach selection
+    // ═══════════════════════════════════════════════════════════
+    function showMilitaryEventChoice(event) {
+        if (!event) return;
+        var approaches = (typeof CONFIG !== 'undefined' && CONFIG.MILITARY_APPROACH) ? CONFIG.MILITARY_APPROACH : {};
+        var isBattle = event.type === 'battle';
+        var title = isBattle ? '⚔️ Battle Incoming!' : '📋 Military Assignment';
+        var desc = '';
+
+        if (isBattle) {
+            var enemyName = 'the enemy';
+            if (event.enemyKingdomId && typeof Engine !== 'undefined' && Engine.findKingdom) {
+                var ek = Engine.findKingdom(event.enemyKingdomId);
+                if (ek) enemyName = ek.name;
+            }
+            desc = '<p style="color:#ff9966;font-size:1.05rem;margin-bottom:12px;">⚔️ Your unit has been called to battle against <strong>' + enemyName + '</strong>!</p>';
+            desc += '<p style="color:#ccc;font-size:0.9rem;margin-bottom:16px;">Choose your approach. Aggressive fighters risk more but earn glory faster. Cautious soldiers survive longer but advance slowly.</p>';
+        } else if (event.task) {
+            desc = '<p style="color:#aad;font-size:1.05rem;margin-bottom:8px;">' + (event.task.name || 'Military Task') + '</p>';
+            desc += '<p style="color:#ccc;font-size:0.9rem;margin-bottom:16px;">' + (event.task.desc || '') + '</p>';
+            if (event.task.injuryChance > 0) {
+                var riskLabel = event.task.injuryChance >= 0.10 ? '⚠️ High' : event.task.injuryChance >= 0.05 ? '⚡ Moderate' : '✅ Low';
+                desc += '<p style="color:#888;font-size:0.85rem;margin-bottom:12px;">Injury risk: ' + riskLabel + ' (' + Math.round(event.task.injuryChance * 100) + '%)</p>';
+            }
+        }
+
+        var html = '<div style="text-align:center;padding:10px;">';
+        html += desc;
+        html += '<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:10px;">';
+
+        // Aggressive button
+        var agg = approaches.aggressive || {};
+        html += '<div style="flex:1;min-width:140px;max-width:200px;background:#3a1515;border:2px solid #cc3333;border-radius:8px;padding:12px;cursor:pointer;" ';
+        html += 'onclick="Player.resolvePendingMilitaryEvent(\'aggressive\'); UI.closeModal();" ';
+        html += 'onmouseover="this.style.borderColor=\'#ff4444\'" onmouseout="this.style.borderColor=\'#cc3333\'">';
+        html += '<div style="font-size:1.2rem;margin-bottom:6px;">' + (agg.label || '⚔️ Aggressive') + '</div>';
+        html += '<div style="color:#ccc;font-size:0.8rem;">' + (agg.desc || 'Fight recklessly for glory.') + '</div>';
+        if (isBattle) html += '<div style="color:#ff6666;font-size:0.75rem;margin-top:6px;">+50% death risk • Guaranteed promotion</div>';
+        html += '</div>';
+
+        // Normal button
+        var norm = approaches.normal || {};
+        html += '<div style="flex:1;min-width:140px;max-width:200px;background:#1a2a1a;border:2px solid #FFD700;border-radius:8px;padding:12px;cursor:pointer;" ';
+        html += 'onclick="Player.resolvePendingMilitaryEvent(\'normal\'); UI.closeModal();" ';
+        html += 'onmouseover="this.style.borderColor=\'#ffee00\'" onmouseout="this.style.borderColor=\'#FFD700\'">';
+        html += '<div style="font-size:1.2rem;margin-bottom:6px;">' + (norm.label || '🛡️ Normal') + '</div>';
+        html += '<div style="color:#ccc;font-size:0.8rem;">' + (norm.desc || 'Standard approach.') + '</div>';
+        if (isBattle) html += '<div style="color:#aaa;font-size:0.75rem;margin-top:6px;">Standard risk • Standard advancement</div>';
+        html += '</div>';
+
+        // Cautious button
+        var caut = approaches.cautious || {};
+        html += '<div style="flex:1;min-width:140px;max-width:200px;background:#151a2a;border:2px solid #4488cc;border-radius:8px;padding:12px;cursor:pointer;" ';
+        html += 'onclick="Player.resolvePendingMilitaryEvent(\'cautious\'); UI.closeModal();" ';
+        html += 'onmouseover="this.style.borderColor=\'#66aaee\'" onmouseout="this.style.borderColor=\'#4488cc\'">';
+        html += '<div style="font-size:1.2rem;margin-bottom:6px;">' + (caut.label || '🐢 Cautious') + '</div>';
+        html += '<div style="color:#ccc;font-size:0.8rem;">' + (caut.desc || 'Stay in the rear.') + '</div>';
+        if (isBattle) html += '<div style="color:#6699cc;font-size:0.75rem;margin-top:6px;">-60% death risk • Slower advancement</div>';
+        html += '</div>';
+
+        html += '</div></div>';
+
+        // Save game speed before pausing
+        if (typeof Player !== 'undefined' && Player.state) {
+            Player.state._preMilitarySpeed = (typeof Game !== 'undefined' && Game.getSpeed) ? Game.getSpeed() : 1;
+        }
+
+        openModal(title, html, '');
     }
 
     function executeWork(jobIndex) {
@@ -13518,6 +14022,18 @@ window.UI = (function () {
             }
             btns += '<button class="btn-travel" onclick="UI.openTravelRest()">\uD83C\uDFD5\uFE0F Camp</button>';
             btns += '<button class="btn-travel" onclick="UI.openCharacterDialog()">\uD83D\uDC64 Status</button>';
+            // Forage while traveling button
+            var forageLabel = '\uD83C\uDF3F Forage';
+            if (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('soil_knowledge')) {
+                var pos = Player.getPlayerWorldPosition ? Player.getPlayerWorldPosition() : null;
+                var nearTown = (pos && typeof Engine !== 'undefined' && Engine.findNearestTown) ? Engine.findNearestTown(pos.x, pos.y) : null;
+                if (nearTown) {
+                    var fert = nearTown.soilFertilityRating != null ? nearTown.soilFertilityRating : (nearTown.soilFertility != null ? Math.round(nearTown.soilFertility * 50) : 50);
+                    var chance = Math.round(10 + (fert / 100) * 70);
+                    forageLabel = '\uD83C\uDF3F Forage (' + chance + '%)';
+                }
+            }
+            btns += '<button class="btn-travel" onclick="UI.forageNearby()" style="background:rgba(85,168,104,0.15);border-color:rgba(85,168,104,0.3);">' + forageLabel + '</button>';
             actionsDiv.innerHTML = btns;
         }
     }
@@ -14175,6 +14691,11 @@ window.UI = (function () {
         installShipAddon: installShipAddonUI,
         clickTown,
         proposeMarriage,
+        openWeddingPlanner,
+        setWeddingChoice,
+        finalizeWedding,
+        openTalkToSpouse,
+        doTalkToSpouse,
         goOnDate,
         spendTimeWithSpouse,
         hireInvestigator,
@@ -14240,6 +14761,7 @@ window.UI = (function () {
         executeWork,
         enlistAsSoldier,
         quitMilitary,
+        showMilitaryEventChoice,
         // Health / Medical
         openHealthDialog,
         treatAtHospital,
@@ -14285,6 +14807,8 @@ window.UI = (function () {
         openConvertBuildingUI,
         executeConvertBuildingUI,
         demolishBuildingUI,
+        openFarmConvertUI,
+        executeFarmConvertUI,
         sellHorse,
         depositToStorage: depositToStorageUI,
         withdrawFromStorage: withdrawFromStorageUI,
@@ -14353,6 +14877,9 @@ window.UI = (function () {
         guildJoin,
         guildCraftPrompt,
         guildCraftExecute,
+        openMerchantGuildReport,
+        // Journal
+        openJournal,
         // Housing & Rest
         openHousingDialog,
         buyHouseUI,

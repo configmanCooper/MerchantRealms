@@ -344,7 +344,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Trading Tips',
-                    text: '\uD83D\uDCA1 <strong>Key concepts</strong>:<br>\u2022 \uD83D\uDCC8 <strong>Supply/demand</strong> \u2014 prices swing \u00B115% based on local stock<br>\u2022 \uD83D\uDCC5 <strong>Seasons</strong> affect crop prices \u2014 buy grain after harvest, sell in winter<br>\u2022 \uD83C\uDFDB\uFE0F <strong>Tariffs</strong> \u2014 foreign traders pay extra in some kingdoms<br>\u2022 Higher <strong>rank</strong> = tax discount (up to 30%!)<br>\u2022 \uD83D\uDC51 <strong>Kingdom Policies</strong> \u2014 subsidies can lower costs, while quotas may limit trades. Check the Policies panel for current rules affecting your business.'
+                    text: '\uD83D\uDCA1 <strong>Key concepts</strong>:<br>\u2022 \uD83D\uDCC8 <strong>Supply/demand</strong> \u2014 prices swing \u00B115% based on local stock<br>\u2022 \uD83D\uDCC5 <strong>Seasons</strong> affect crop prices \u2014 buy grain after harvest, sell in winter<br>\u2022 \uD83C\uDFDB\uFE0F <strong>Tariffs</strong> \u2014 foreign traders pay extra in some kingdoms<br>\u2022 Higher <strong>rank</strong> = tax discount (up to 30%!)<br>\u2022 \uD83D\uDC51 <strong>Kingdom Policies</strong> \u2014 subsidies can lower costs, while quotas may limit trades<br>\u2022 \uD83E\uDDE0 <strong>Price Memory</strong> \u2014 you recall prices from towns visited in the last <strong>90 days</strong>. Learn <strong>Trade Network</strong> skills to see <em>live</em> prices remotely!'
                 },
                 {
                     title: 'Street Trading',
@@ -454,6 +454,10 @@ window.Tutorial = (function () {
                     text: '\uD83C\uDFE5 Your <strong>health bar</strong> shows your physical condition. You can get <strong>injured</strong> from combat, bandit attacks, or starvation. Visit a <strong>\uD83C\uDFE5 Hospital</strong> in town for treatment, or learn <strong>First Aid</strong> (Survival skill) to self-treat minor injuries. The <strong>Herbalist</strong> skill lets you craft healing potions from foraged herbs!'
                 },
                 {
+                    title: 'Illness, Supplies & Travel Safety',
+                    text: '\u26A0\uFE0F <strong>Illness can kill you</strong>, especially while traveling when no hospital is nearby!<br>\u2022 \uD83E\uDD12 <strong>Illnesses</strong>: Common cold (minor), Fever (moderate), Plague (severe \u2014 2% daily death risk!), Food poisoning<br>\u2022 \uD83E\uDE7A <strong>Medical supplies</strong>: Stock <strong>bandages</strong> (craft from cloth), <strong>herbal remedies</strong> (craft from herbs with Herbalist), <strong>fever tonics</strong>, and <strong>antidotes</strong> before long journeys<br>\u2022 \uD83C\uDF3F <strong>First Aid → Herbalist → Field Medic → Doctor</strong>: This skill chain lets you self-treat on the road. Without it, you must reach a town hospital!<br>\u2022 \uD83D\uDCA1 <strong>Tip</strong>: Always carry a few medical supplies when traveling. A fever on Day 3 of a long journey with no supplies can be fatal.'
+                },
+                {
                     title: 'Energy & Rest',
                     text: '\uD83D\uDE34 <strong>Energy</strong> depletes as you perform actions (trading, building, traveling, working). At 30% you get a warning; below 20% you take penalties to trade, combat, and other skills. At 0 energy you may <strong>collapse</strong>! <strong>Rest at home or an inn</strong> to recover \u2014 better housing restores energy faster.'
                 },
@@ -540,7 +544,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Dynasty Tips',
-                    text: '\uD83D\uDCA1 <strong>Dynasty strategies</strong>:<br>\u2022 Marry someone with <strong>Natural Leader</strong> (+10% worker productivity)<br>\u2022 Teach your children skills to prepare them<br>\u2022 Invest in <strong>Dynasty Founder</strong> skill (+1 SP to your heir)<br>\u2022 Build wealth and buildings \u2014 they pass to your heirs!'
+                    text: '\uD83D\uDCA1 <strong>Dynasty strategies</strong>:<br>\u2022 Marry someone with <strong>Natural Leader</strong> (+10% worker productivity)<br>\u2022 Teach your children skills to prepare them<br>\u2022 Invest in <strong>Dynasty Founder</strong> skill (+1 SP to your heir)<br>\u2022 Build wealth and buildings \u2014 they pass to your heirs!<br><br>\uD83D\uDCD6 Check your <strong>Journal</strong> in the Character panel \u2014 it records major life events like marriages, promotions, battles, and children. A personal diary of your dynasty\u2019s story!'
                 },
                 {
                     title: 'Investigating NPCs',
@@ -771,7 +775,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Military Enlistment',
-                    text: '\u2694\uFE0F <strong>Enlist</strong> during wartime! Normal enlistment has <strong>4 ranks</strong>: Militiaman \u2192 Footman \u2192 Sergeant \u2192 <strong>Knight</strong> (max). Reaching Knight auto-grants <strong>Citizen status</strong>! The unique <strong>Military Leader</strong> start unlocks 3 higher ranks: Captain \u2192 Commander \u2192 General.'
+                    text: '\u2694\uFE0F <strong>Enlist</strong> during wartime! Normal enlistment has <strong>4 ranks</strong>: Militiaman \u2192 Footman \u2192 Sergeant \u2192 <strong>Knight</strong> (max). Reaching Knight auto-grants <strong>Citizen status</strong>! The unique <strong>Military Leader</strong> start unlocks 3 higher ranks: Captain \u2192 Commander \u2192 General.<br><br>\uD83D\uDEE1\uFE0F Each battle/task offers 3 approaches: <strong>Aggressive</strong> (high risk, double XP/rank), <strong>Normal</strong> (balanced), or <strong>Cautious</strong> (safe but slow). The kingdom feeds and treats your injuries while enlisted.'
                 },
                 {
                     title: 'Conscription',
@@ -844,7 +848,7 @@ window.Tutorial = (function () {
             steps: [
                 {
                     title: 'What Are Guilds?',
-                    text: '🏛️ <strong>Guilds</strong> are professional organizations that control access to certain building types. There are <strong>9 guilds</strong>: Farmers\', Miners\', Harvesters\', Artisans\', Craftsmen\'s, Armorsmiths\', Luxury Artisans\', Maritime, and Merchants\'. Each guild covers a <strong>building category</strong> — you must be a member to own those buildings!'
+                    text: '🏛️ <strong>Guilds</strong> are professional organizations that control access to certain building types. There are <strong>9 guilds</strong>: Farmers\', Miners\', Harvesters\', Artisans\', Craftsmen\'s, Armorsmiths\', Luxury Artisans\', Maritime, and Merchants\'. Each guild covers a <strong>building category</strong> — you must be a member to own those buildings!<br><br>📊 The <strong>Merchants\' Guild</strong> is special — members can read a <strong>Daily Market Report</strong> with 10 randomized trade tips: price highs/lows, skilled workers, cheap building sites, and more!'
                 },
                 {
                     title: 'The Guilds Panel',

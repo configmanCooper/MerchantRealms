@@ -15,6 +15,10 @@ window.Game = (function () {
     let animFrameId = null;
     let lastFrameTime = 0;
 
+    // ── Error notification tracking ──
+    var _lastErrorCheckDay = 0;
+    var _lastErrorCount = 0;
+
     // ── Console capture for god mode export ──
     var _consoleLogs = [];
     var _consoleMaxEntries = 500;
@@ -425,6 +429,9 @@ window.Game = (function () {
 
                 // Update music mood based on game state
                 updateMusicMood();
+
+                // Every 30 days, check for console errors and notify if enabled
+                checkErrorNotifications();
             }
 
             // Process events for notifications
@@ -527,7 +534,9 @@ window.Game = (function () {
                     }
                     // Don't double-toast warDeclared/warEnded (they have their own UI handling)
                     if (type !== 'wardeclared' && type !== 'warended' && type !== 'kingoverthrown') {
-                        UI.toast(msg, toastType);
+                        // Pass event category so notification filter can suppress non-player toasts
+                        var evtCategory = event.category || 'local_town';
+                        UI.toast(msg, toastType, evtCategory);
                     }
                     emit('eventOccurred', event);
                 }
@@ -1216,6 +1225,10 @@ window.Game = (function () {
             }
         }
         html += '</div>';
+        // Add debug file download button at the bottom
+        html += '<div style="margin-top:12px;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:10px;">' +
+            '<button class="btn-medieval save-slot-debug" title="Download a debug file containing your save data, console logs, and error info to send to the developer">🐛 Download Debug File</button>' +
+            '</div>';
         return { title, html };
     }
 
@@ -1250,6 +1263,13 @@ window.Game = (function () {
                     downloadSave(parseInt(this.dataset.downloadSlot));
                 });
             });
+            var debugBtnSave = document.querySelector('.save-slot-debug');
+            if (debugBtnSave) {
+                debugBtnSave.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    downloadDebugFile();
+                });
+            }
         }, 50);
     }
 
@@ -1302,6 +1322,13 @@ window.Game = (function () {
                     importSaveToSlot(parseInt(this.dataset.importSlot));
                 });
             });
+            var debugBtn = document.querySelector('.save-slot-debug');
+            if (debugBtn) {
+                debugBtn.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    downloadDebugFile();
+                });
+            }
         }, 50);
     }
 
@@ -1458,6 +1485,146 @@ window.Game = (function () {
         return false;
     }
 
+    // ── Error Notification & Debug System ──
+
+    function checkErrorNotifications() {
+        if (state !== 'playing') return;
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) { return; }
+        if (day - _lastErrorCheckDay < 30) return;
+        _lastErrorCheckDay = day;
+
+        // Count errors since last check
+        var errorCount = 0;
+        for (var i = 0; i < _consoleLogs.length; i++) {
+            var lvl = _consoleLogs[i].level;
+            if (lvl === 'ERROR' || lvl === 'UNCAUGHT' || lvl === 'UNHANDLED_PROMISE') {
+                errorCount++;
+            }
+        }
+
+        var newErrors = errorCount - _lastErrorCount;
+        _lastErrorCount = errorCount;
+
+        if (newErrors > 0) {
+            // Check if player has error_alerts enabled
+            var showAlert = false;
+            try {
+                var filters = Player.state.notificationFilters;
+                if (filters && filters.error_alerts) showAlert = true;
+            } catch(e) {}
+
+            if (showAlert && typeof UI !== 'undefined' && UI.toast) {
+                UI.toast('⚠️ ' + newErrors + ' error(s) detected in the last 30 days. Check notifications for details.', 'warning', 'critical');
+                // Log the error summary to event log
+                if (typeof Engine !== 'undefined' && Engine.logEvent) {
+                    Engine.logEvent({
+                        type: 'error_alert',
+                        icon: '⚠️',
+                        text: newErrors + ' console error(s) detected. Use the debug file download in Save/Load to report issues.',
+                        category: 'critical'
+                    });
+                }
+            }
+        }
+    }
+
+    function downloadDebugFile() {
+        try {
+            var debugData = {};
+
+            // 1. Console logs
+            debugData.consoleLogs = _consoleLogs.slice();
+
+            // 2. Current save data (from last used slot or generate fresh)
+            var saveData = null;
+            if (lastUsedSlot > 0) {
+                var raw = localStorage.getItem(SAVE_SLOT_PREFIX + lastUsedSlot);
+                if (raw) {
+                    try {
+                        var decompressed = (typeof LZString !== 'undefined') ? LZString.decompressFromUTF16(raw) : raw;
+                        saveData = JSON.parse(decompressed || raw);
+                    } catch(e) { saveData = { raw: raw.substring(0, 1000) + '...(truncated)' }; }
+                }
+            }
+            // If no slot save, serialize current state
+            if (!saveData && state === 'playing') {
+                try {
+                    saveData = {
+                        engine: Engine.serialize ? Engine.serialize() : null,
+                        player: Player.serialize ? Player.serialize() : null,
+                        day: Engine.getDay ? Engine.getDay() : 0
+                    };
+                } catch(e) { saveData = { error: 'Could not serialize: ' + e.message }; }
+            }
+            debugData.saveData = saveData;
+
+            // 3. Game metadata
+            debugData.meta = {
+                gameVersion: 'v0.39.0',
+                saveVersion: 3,
+                timestamp: new Date().toISOString(),
+                userAgent: navigator.userAgent,
+                screenSize: window.innerWidth + 'x' + window.innerHeight,
+                gameState: state,
+                currentDay: 0,
+                currentSeason: '',
+                playerName: '',
+                playerGold: 0,
+                playerTown: ''
+            };
+            try {
+                debugData.meta.currentDay = Engine.getDay();
+                debugData.meta.currentSeason = Engine.getSeason();
+                debugData.meta.playerName = Player.fullName || '';
+                debugData.meta.playerGold = Player.gold || 0;
+                debugData.meta.playerTown = Player.townId || '';
+            } catch(e) {}
+
+            // 4. Error summary
+            var errors = [];
+            for (var i = 0; i < _consoleLogs.length; i++) {
+                var lvl = _consoleLogs[i].level;
+                if (lvl === 'ERROR' || lvl === 'UNCAUGHT' || lvl === 'UNHANDLED_PROMISE') {
+                    errors.push(_consoleLogs[i]);
+                }
+            }
+            debugData.errorSummary = {
+                totalErrors: errors.length,
+                totalLogs: _consoleLogs.length,
+                errors: errors
+            };
+
+            // 5. Performance info
+            debugData.performance = {
+                memoryUsed: (performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) + 'MB' : 'N/A'),
+                memoryTotal: (performance.memory ? Math.round(performance.memory.totalJSHeapSize / 1048576) + 'MB' : 'N/A')
+            };
+
+            // Download as file
+            var jsonStr = JSON.stringify(debugData, null, 2);
+            var blob = new Blob([jsonStr], { type: 'application/json' });
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            var dayStr = debugData.meta.currentDay || 'unknown';
+            a.download = 'merchant_realms_debug_day' + dayStr + '_' + Date.now() + '.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            if (typeof UI !== 'undefined' && UI.toast) {
+                UI.toast('📦 Debug file downloaded! Send this to the developer.', 'success');
+            }
+        } catch(e) {
+            console.error('Debug file download failed:', e);
+            if (typeof UI !== 'undefined' && UI.toast) {
+                UI.toast('❌ Debug file download failed: ' + e.message, 'danger');
+            }
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════
     //  PUBLIC API
     // ═══════════════════════════════════════════════════════════
@@ -1518,6 +1685,7 @@ window.Game = (function () {
         showCharacterCreation,
         advanceTicks,
         isGodMode,
+        downloadDebugFile,
         getConsoleLogs: function() { return _consoleLogs; },
         exportConsole: function() {
             var text = _consoleLogs.map(function(e) {
