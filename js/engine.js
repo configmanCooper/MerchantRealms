@@ -15140,15 +15140,15 @@
     };
 
     const STRATEGY_BUILDINGS = {
-        food_monopoly:     ['wheat_farm', 'flour_mill', 'bakery', 'cattle_ranch', 'fishery', 'smokehouse', 'chicken_farm', 'restaurant'],
-        military_supplier: ['blacksmith', 'iron_mine', 'smelter', 'toolsmith', 'armory_shop'],
-        luxury_trader:     ['jeweler', 'vineyard', 'winery', 'weaver', 'jewelers_boutique', 'clothing_shop'],
-        diversified:       ['wheat_farm', 'bakery', 'blacksmith', 'weaver', 'sawmill', 'tanner', 'general_store', 'tavern'],
-        political_climber: ['vineyard', 'winery', 'jeweler', 'market_stall', 'jewelers_boutique'],
-        war_profiteer:     ['blacksmith', 'smelter', 'iron_mine', 'bakery', 'armory_shop'],
-        land_baron:        ['wheat_farm', 'cattle_ranch', 'sheep_farm', 'lumber_camp', 'iron_mine', 'pig_farm', 'restaurant'],
-        trade_network:     ['market_stall', 'weaver', 'salt_works', 'rope_maker', 'general_store', 'tavern'],
-        medical_supplier:  ['herb_garden', 'apothecary', 'bandage_workshop', 'clinic', 'herbalist_hut'],
+        food_monopoly:     ['wheat_farm', 'flour_mill', 'bakery', 'cattle_ranch', 'fishery', 'smokehouse', 'chicken_farm', 'restaurant', 'warehouse_small'],
+        military_supplier: ['blacksmith', 'iron_mine', 'smelter', 'toolsmith', 'armory_shop', 'warehouse_small'],
+        luxury_trader:     ['jeweler', 'vineyard', 'winery', 'weaver', 'jewelers_boutique', 'clothing_shop', 'warehouse_small'],
+        diversified:       ['wheat_farm', 'bakery', 'blacksmith', 'weaver', 'sawmill', 'tanner', 'general_store', 'tavern', 'warehouse_small'],
+        political_climber: ['vineyard', 'winery', 'jeweler', 'market_stall', 'jewelers_boutique', 'warehouse_small'],
+        war_profiteer:     ['blacksmith', 'smelter', 'iron_mine', 'bakery', 'armory_shop', 'warehouse'],
+        land_baron:        ['wheat_farm', 'cattle_ranch', 'sheep_farm', 'lumber_camp', 'iron_mine', 'pig_farm', 'restaurant', 'warehouse'],
+        trade_network:     ['market_stall', 'weaver', 'salt_works', 'rope_maker', 'general_store', 'tavern', 'warehouse'],
+        medical_supplier:  ['herb_garden', 'apothecary', 'bandage_workshop', 'clinic', 'herbalist_hut', 'warehouse_small'],
     };
 
     function ensureEliteMerchantFields(em) {
@@ -15778,6 +15778,11 @@
                 eliteBuildAI(em, town, rng, strategy);
             }
 
+            // ---- 3b. WORKER HIRING & MANAGEMENT (every 7 days) ----
+            if (day % 7 === 0) {
+                eliteWorkerAI(em, town, rng);
+            }
+
             // ---- 4. SOCIAL DECISIONS (every 30 days) ----
             if (day % 30 === 0) {
                 eliteSocialAI(em, town, rng, personality);
@@ -15861,9 +15866,10 @@
                 em.npcMerchantInventory = inv;
             }
 
-            // ---- 8. NET WORTH UPDATE (every 30 days) ----
-            if (day % 30 === 0) {
+            // ---- 8. NET WORTH UPDATE (every ~30 days, stagger-safe) ----
+            if (!em._lastNetWorthDay || day - em._lastNetWorthDay >= 27) {
                 em.netWorth = calculateNetWorth(em);
+                em._lastNetWorthDay = day;
             }
 
             // ---- 9. CONQUEST & SERVITUDE RESPONSE (daily check) ----
@@ -16496,7 +16502,7 @@
 
         em.gold -= effectiveCost;
         if (!em.buildings) em.buildings = [];
-        var newBld = { type: bType, level: 1, ownerId: em.id, townId: buildTown.id, workers: [], upgrades: [], builtDay: world.day };
+        var newBld = { type: bType, level: 1, ownerId: em.id, townId: buildTown.id, workers: [], upgrades: [], builtDay: world.day, _profitTracker: { revenue: 0, costs: 0, days: 0 } };
         buildTown.buildings.push(newBld);
         em.buildings.push({ type: bType, townId: buildTown.id, level: 1 });
         var subsidyNote = subsidyDiscount > 0 ? ' (with ' + Math.round(subsidyDiscount * 100) + '% land subsidy)' : '';
@@ -16512,6 +16518,144 @@
             ]
         });
         grantEmXp(em, 10, 'build');
+    }
+
+    // ── Elite Merchant Worker Hiring & Management AI ──
+    function eliteWorkerAI(em, town, rng) {
+        // Collect ALL buildings owned by this EM across all towns
+        // Each entry: { bld: buildingObj, townId: string }
+        var allEmBuildings = [];
+        var seenBldIds = {};
+
+        // Check current town first
+        if (town && town.buildings) {
+            for (var bi = 0; bi < town.buildings.length; bi++) {
+                if (town.buildings[bi].ownerId === em.id) {
+                    allEmBuildings.push({ bld: town.buildings[bi], townId: town.id });
+                    seenBldIds[town.id + '_' + bi] = true;
+                }
+            }
+        }
+
+        // Check buildings in other towns via em.buildings references
+        if (em.buildings) {
+            for (var ebi = 0; ebi < em.buildings.length; ebi++) {
+                var emBRef = em.buildings[ebi];
+                if (!emBRef.townId) continue;
+                if (town && emBRef.townId === town.id) continue; // already checked
+                var otherTown = findTown(emBRef.townId);
+                if (!otherTown || !otherTown.buildings) continue;
+                for (var obi = 0; obi < otherTown.buildings.length; obi++) {
+                    if (otherTown.buildings[obi].ownerId === em.id) {
+                        var key = emBRef.townId + '_' + obi;
+                        if (!seenBldIds[key]) {
+                            allEmBuildings.push({ bld: otherTown.buildings[obi], townId: emBRef.townId });
+                            seenBldIds[key] = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (allEmBuildings.length === 0) return;
+
+        var totalHired = 0;
+        var totalFired = 0;
+
+        for (var i = 0; i < allEmBuildings.length; i++) {
+            var entry = allEmBuildings[i];
+            var bld = entry.bld;
+            var bldTownId = entry.townId;
+            var bt = findBuildingType(bld.type);
+            if (!bt) continue;
+            var requiredWorkers = (bt.workers || 0) * (bld.level || 1);
+            if (requiredWorkers <= 0) continue;
+
+            if (!bld.workers) bld.workers = [];
+
+            // Ensure _profitTracker exists for revenue tracking
+            if (!bld._profitTracker) bld._profitTracker = { revenue: 0, costs: 0, days: 0 };
+
+            // Clean dead/invalid workers
+            for (var wi = bld.workers.length - 1; wi >= 0; wi--) {
+                var worker = findPerson(bld.workers[wi]);
+                if (!worker || !worker.alive) {
+                    bld.workers.splice(wi, 1);
+                }
+            }
+
+            var currentWorkers = bld.workers.length;
+            var bldTown = findTown(bldTownId);
+            if (!bldTown) continue;
+
+            // ---- HIRE: fill vacant slots ----
+            if (currentWorkers < requiredWorkers) {
+                var vacancies = requiredWorkers - currentWorkers;
+                // Find unemployed/laborer NPCs in the building's town
+                var candidates = [];
+                for (var pi = 0; pi < world.people.length; pi++) {
+                    var p = world.people[pi];
+                    if (!p.alive || p.townId !== bldTownId) continue;
+                    if (p.isEliteMerchant || p.id === em.id) continue;
+                    if (p.employerId && p.employerId !== em.id) continue;
+                    if (p.occupation === 'unemployed' || p.occupation === 'laborer' || p.occupation === 'none' || !p.occupation) {
+                        candidates.push(p);
+                    }
+                }
+
+                // Sort by relevant skill (higher skill = better worker)
+                var relevantSkill = bt.skillType || 'crafting';
+                candidates.sort(function(a, b) {
+                    return ((b.skills && b.skills[relevantSkill]) || 0) - ((a.skills && a.skills[relevantSkill]) || 0);
+                });
+
+                var hired = Math.min(vacancies, candidates.length);
+                for (var hi = 0; hi < hired; hi++) {
+                    var c = candidates[hi];
+                    bld.workers.push(c.id);
+                    c.employerId = em.id;
+                    c.occupation = bt.jobTitle || 'worker';
+                    totalHired++;
+                }
+            }
+
+            // ---- FIRE: unprofitable buildings — reduce staff to cut costs ----
+            var relevantSkillFire = bt.skillType || 'crafting';
+            if (bld._profitTracker && bld._profitTracker.days >= 30) {
+                var isUnprofitable = bld._profitTracker.revenue < bld._profitTracker.costs * 0.4;
+                if (isUnprofitable && currentWorkers > 1 && (em.gold || 0) < 100) {
+                    // Fire worst worker to cut costs
+                    var worstIdx = -1;
+                    var worstSkill = Infinity;
+                    for (var fwi = 0; fwi < bld.workers.length; fwi++) {
+                        var fw = findPerson(bld.workers[fwi]);
+                        if (!fw) continue;
+                        var fSkill = (fw.skills && fw.skills[relevantSkillFire]) || 0;
+                        if (fSkill < worstSkill) {
+                            worstSkill = fSkill;
+                            worstIdx = fwi;
+                        }
+                    }
+                    if (worstIdx >= 0) {
+                        var fired = findPerson(bld.workers[worstIdx]);
+                        if (fired) {
+                            fired.occupation = 'laborer';
+                            fired.employerId = null;
+                        }
+                        bld.workers.splice(worstIdx, 1);
+                        totalFired++;
+                    }
+                }
+            }
+        }
+
+        // Update em.employees count for display
+        var empCount = 0;
+        for (var eci = 0; eci < allEmBuildings.length; eci++) {
+            var ecBld = allEmBuildings[eci].bld;
+            empCount += (ecBld.workers ? ecBld.workers.length : 0);
+        }
+        em.employees = empCount;
     }
 
     // ── NPC Production Optimization ──
@@ -17044,7 +17188,21 @@
                     netWorth: m.netWorth || calculateNetWorth(m),
                     gold: m.gold || 0,
                     buildings: m.buildings ? m.buildings.length : 0,
-                    employees: m.employees ? m.employees.length : 0,
+                    employees: typeof m.employees === 'number' ? m.employees : (function() {
+                        var count = 0;
+                        if (m.id && world.towns) {
+                            for (var ti = 0; ti < world.towns.length; ti++) {
+                                var tBlds = world.towns[ti].buildings;
+                                if (!tBlds) continue;
+                                for (var bi = 0; bi < tBlds.length; bi++) {
+                                    if (tBlds[bi].ownerId === m.id && tBlds[bi].workers) {
+                                        count += tBlds[bi].workers.length;
+                                    }
+                                }
+                            }
+                        }
+                        return count;
+                    })(),
                     primaryKingdom: m.citizenshipKingdomId || m.kingdomId,
                     highestRank: getHighestRank(m.socialRank || {}),
                     strategy: m.strategy || 'diversified',
