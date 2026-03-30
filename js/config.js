@@ -909,6 +909,44 @@ const CONFIG = {
     SHIP_BLOCKADE_DETECTION_BASE: 0.60, // 60% chance caught running a blockade
     SHIP_BORDER_DETECTION_BASE: 0.70,   // 70% chance caught crossing closed border
 
+    // Naval Battle Constants
+    NAVAL_BATTLE_MAX_ROUNDS: 12,          // Max rounds in a fleet battle
+    NAVAL_CANNON_DAMAGE_MIN: 0.5,        // Min multiplier on cannon damage roll
+    NAVAL_CANNON_DAMAGE_MAX: 1.5,        // Max multiplier on cannon damage roll
+    NAVAL_MORALE_BREAK_THRESHOLD: 0.50,  // Fleet flees if 50%+ ships lost
+    NAVAL_MORALE_FLEE_CHANCE: 0.60,      // 60% chance to flee once morale breaks
+    NAVAL_SHIP_HP_SOLDIER_MULT: 4,       // HP from soldiers (lower = ships sink faster)
+    NAVAL_SHIP_HP_DEFENSE_MULT: 5,       // HP from defense stat
+    NAVAL_DAMAGE_REDUCTION_RATIO: 0.5,   // Damaged ships lose stats proportional to HP lost
+
+    // Amphibious Assault Constants
+    AMPHIBIOUS_LANDING_PENALTY: 0.70,    // Troops fight at 70% effectiveness when landing
+    AMPHIBIOUS_BOMBARDMENT_ROUNDS_MIN: 1,
+    AMPHIBIOUS_BOMBARDMENT_ROUNDS_MAX: 3,
+    AMPHIBIOUS_COVERING_FIRE_PER_CANNON: 0.10, // +10% damage per operational cannon
+    AMPHIBIOUS_FORTRESS_DAMAGE_PER_CANNON: 10, // Fortress cannons deal this damage to ships per round
+
+    // Fortress Walls (naval port defense)
+    FORTRESS_WALLS: {
+        cost: 3500,                       // Gold to build
+        materials: { stone: 120, iron: 30 }, // Construction materials
+        maxHP: 600,                       // Full wall health
+        bombardmentAbsorb: 0.75,          // Absorbs 75% of bombardment kills as wall damage
+        damagePerAbsorbedKill: 8,         // Each absorbed kill deals 8 HP damage to walls
+        repairCostPerHP: 3,               // Gold per HP to repair
+        repairMaterials: { stone: 0.15 }, // Stone per HP to repair
+        breachedEfficiency: 0.25,         // When HP=0, walls still reduce kills by 25% (rubble cover)
+        degradePerTick: 0.05,             // Passive HP loss per tick (weather/age) — very slow
+        buildDays: 60,                    // Days to construct
+    },
+
+    // Army Embarkation
+    ARMY_EMBARK_SOLDIERS_PER_SHIP: 50,   // Each transport ship carries up to 50 soldiers
+
+    // Sea Route Interception
+    NAVAL_PATROL_INTERCEPT_CHANCE: 0.20, // 20% chance patrol ships intercept per tick
+    NAVAL_PATROL_RANGE: 2000,            // Range within which patrol ships can intercept
+
     // Royal Advisor System
     ROYAL_ADVISOR_COUNT_MIN: 3,
     ROYAL_ADVISOR_COUNT_MAX: 5,
@@ -1009,6 +1047,9 @@ const CONFIG = {
         // Bedroll / Inn — no construction, purchased or rented
         { id: 'bedroll', name: 'Bedroll (Outdoors)', icon: '🛏️', cost: 5, storage: 0, security: 0, restBonus: 0, maxOccupants: 1, comfort: 0, diseaseReduction: 0, description: 'Sleep under the stars. No protection.' },
         { id: 'inn_room', name: 'Inn Room', icon: '🏨', cost: 0, dailyRent: 3, storage: 0, security: 0.2, restBonus: 0.3, maxOccupants: 2, comfort: 20, diseaseReduction: 0.1, description: 'A warm bed and a roof. Pay per night.' },
+        { id: 'tent', name: 'Tent', icon: '⛺', cost: 0, storage: 5, security: 0.02, restBonus: 0.1, maxOccupants: 2, comfort: 5, diseaseReduction: 0.02,
+          notBuildable: true, fromTentCamp: true, productivityMod: 0.85,
+          description: 'A basic canvas tent in a camp. Minimal shelter. High disease risk. Better than nothing.' },
         // Constructed housing — requires materials + labor
         { id: 'shack', name: 'Shack', icon: '🛖', laborCost: 15, storage: 20, security: 0.1, restBonus: 0.2, maxOccupants: 2, comfort: 10, diseaseReduction: 0.15, minTownCategory: 'village',
           materials: { wood: 6, rope: 1 },
@@ -1022,9 +1063,9 @@ const CONFIG = {
         { id: 'townhouse', name: 'Townhouse', icon: '🏠', laborCost: 100, storage: 80, security: 0.5, restBonus: 0.7, maxOccupants: 6, comfort: 50, diseaseReduction: 0.35, minTownCategory: 'town', repBonus: 5,
           materials: { planks: 12, stone: 8, bricks: 5, iron: 1 },
           description: 'A respectable home in town. +5 town reputation.' },
-        { id: 'apartment', name: 'Apartment', icon: '🏢', laborCost: 80, storage: 30, security: 0.4, restBonus: 0.5, maxOccupants: 3, comfort: 35, diseaseReduction: 0.30, minTownCategory: 'city',
-          materials: { planks: 8, bricks: 8, stone: 6, iron: 1 },
-          description: 'Compact city living. No land needed.' },
+        { id: 'apartment', name: 'Apartment', icon: '🏢', laborCost: 0, storage: 30, security: 0.4, restBonus: 0.5, maxOccupants: 4, comfort: 35, diseaseReduction: 0.30, minTownCategory: 'city',
+          notBuildable: true, fromApartmentBuilding: true,
+          description: 'Compact city living. Purchased from an apartment building. No land needed.' },
         { id: 'merchant_house', name: 'Merchant House', icon: '🏘️', laborCost: 200, storage: 150, security: 0.6, restBonus: 0.8, maxOccupants: 8, comfort: 65, diseaseReduction: 0.45, minTownCategory: 'town', repBonus: 10, hasWorkshop: true,
           materials: { planks: 25, stone: 15, bricks: 10, iron: 4, cloth: 3 },
           description: 'A fine house with workshop space. +10 rep. Can craft at home.' },
@@ -1040,7 +1081,7 @@ const CONFIG = {
         { id: 'fortress', name: 'Fortified Manor', icon: '🏯', laborCost: 2000, storage: 400, security: 1.0, restBonus: 0.85, maxOccupants: 25, comfort: 65, diseaseReduction: 0.60, minTownCategory: 'city', repBonus: 30, hasWorkshop: true, hasStables: true, defenseBonus: true, minRank: 5,
           materials: { stone: 80, bricks: 40, iron: 25, planks: 20 },
           description: 'A fortress-like home. Impervious to theft. Defensive bonus. Requires Lord rank.' },
-        { id: 'castle', name: 'Castle', icon: '🏰', laborCost: 5000, storage: 800, security: 1.0, restBonus: 1.0, maxOccupants: 40, comfort: 100, diseaseReduction: 0.80, minTownCategory: 'capital_city', repBonus: 50, hasWorkshop: true, hasStables: true, hasGarden: true, defenseBonus: true, minRank: 5, politicalInfluence: 5,
+        { id: 'castle', name: 'Castle', icon: '🏰', laborCost: 5000, storage: 800, security: 1.0, restBonus: 1.0, maxOccupants: 40, comfort: 100, diseaseReduction: 0.80, minTownCategory: 'capital_city', repBonus: 50, hasWorkshop: true, hasStables: true, hasGarden: true, defenseBonus: true, minRank: 5, politicalInfluence: 5, landSlots: 2,
           materials: { stone: 200, bricks: 80, iron: 50, planks: 60, cloth: 15 },
           description: 'The ultimate residence. All features. Grants political influence. Capital only. Requires Lord rank.' },
         { id: 'caravan_wagon', name: 'Caravan Wagon', icon: '🛒', laborCost: 40, storage: 60, security: 0.15, restBonus: 0.3, maxOccupants: 2, comfort: 15, diseaseReduction: 0.05, portable: true, requiresHorse: true,
@@ -1050,6 +1091,8 @@ const CONFIG = {
     HOUSING_LABOR_MULTIPLIER: { village: 0.7, town: 1.0, city: 1.3, capital_city: 1.8 },
     HOUSING_SELL_RATIO: 0.70,
     HOUSING_UPGRADE_DISCOUNT: 0.60, // when upgrading in-place, recover 60% of old materials value
+    // Worker productivity modifiers based on housing quality
+    HOUSING_PRODUCTIVITY: { none: 0.70, tent: 0.85, shack: 0.92, cottage: 1.0, farmstead: 1.0, townhouse: 1.0, apartment: 1.0, merchant_house: 1.0, harbor_house: 1.0, manor: 1.0, estate: 1.0, fortress: 1.0, castle: 1.0, caravan_wagon: 0.95, bedroll: 0.75, inn_room: 0.90 },
 
     // ── Energy System (replaces old Fatigue) ──
     // Legacy fatigue constants kept for backward compat; new code uses ENERGY_CONFIG
@@ -1573,6 +1616,16 @@ const BUILDING_TYPES = {
             waterskin:   { produces: 'waterskin',   consumes: { leather: 1 },               rate: 6 },
         },
     },
+    // --- Apartment Building (multi-unit residential) ---
+    APARTMENT_BUILDING: { id: 'apartment_building', name: 'Apartment Building', cost: 2500, workers: 2, produces: null, consumes: {}, rate: 0, category: 'housing',
+        landSlots: 2, minTownCategory: 'city', units: 10, unitMaxOccupants: 4,
+        materials: { stone: 80, bricks: 60, planks: 40, iron: 15, cloth: 5 },
+        icon: '🏢', description: 'A large building with 10 apartment units for rent. Owner collects purchase fees and monthly maintenance from tenants.' },
+    // --- Tent Camp (poor NPC housing, auto-built by kingdoms) ---
+    TENT_CAMP: { id: 'tent_camp', name: 'Tent Camp', cost: 50, workers: 0, produces: null, consumes: {}, rate: 0, category: 'housing',
+        landSlots: 1, tents: 10, tentMaxOccupants: 2, tentUpfrontCost: 20, tentMonthlyCost: 5,
+        notBuildable: true, notPlayerBuildable: true, diseaseMultiplier: 3.0,
+        icon: '⛺', description: 'A collection of basic tents for the poorest citizens. Cheap but unsanitary. Spreads disease.' },
 };
 
 // ============================================================
@@ -1761,7 +1814,7 @@ const SKILLS = {
     bulk_trader:         { name: 'Bulk Trader',         branch: 'commerce',   cost: 5, requires: ['master_haggler'],              desc: '25% discount on buy transactions over 5,000 gold.',                        icon: '📦' },
     trade_network_intelligence: { name: 'Trade Network Intel', branch: 'commerce', cost: 3, requires: ['bulk_trader'], desc: 'Your trade network reports on elite merchant activities — major trades, expansion, financial struggles.', icon: '📊' },
     market_manipulator:  { name: 'Market Manipulator',  branch: 'commerce',   cost: 5, requires: ['golden_tongue','master_haggler'], desc: 'Your trades have 2x effect on market prices.',                          icon: '📈' },
-    merchant_intelligence: { name: 'Merchant Intelligence', branch: 'commerce', cost: 3, requires: ['trade_network'], desc: 'Reveals elite merchant locations in the leaderboard and on the map.', icon: '🔍' },
+    merchant_intelligence: { name: 'Merchant Intelligence', branch: 'commerce', cost: 3, requires: ['trade_network'], desc: 'Reveals elite merchant locations and activity notifications. Without this skill, EM activities are hidden.', icon: '🔍' },
     merchant_tracker: { name: 'Merchant Tracker', cost: 1, branch: 'commerce', requires: [], desc: 'Track elite merchants on the map. Click any elite merchant and select "Track" to see their location with a ⭐ marker.', icon: '⭐' },
     elite_tracker: { name: 'Elite Tracker', cost: 5, branch: 'commerce', requires: ['merchant_tracker'], desc: 'Receive detailed notifications about your tracked elite merchants\' activities — their trades, travels, and business decisions.', icon: '📡' },
 
@@ -1779,6 +1832,11 @@ const SKILLS = {
     // ── Property/Business Branch (2) ──
     property_magnate:    { name: 'Property Magnate',    branch: 'industry',   cost: 3, requires: ['master_builder'],              desc: '+1 max buildings per rank tier. -10% property tax.',                        icon: '🏘️' },
     town_benefactor:     { name: 'Town Benefactor',    branch: 'industry',   cost: 4, requires: ['property_magnate'],       desc: 'Your buildings give 2× prosperity boost to town. +5% reputation in towns where you own buildings.', icon: '🏛️' },
+    property_appraiser:  { name: 'Property Appraiser', branch: 'industry',   cost: 1, requires: [],                              desc: 'Know the exact highest price anyone would pay for your property.',          icon: '🔎' },
+    rental_appraiser:    { name: 'Rental Appraiser',   branch: 'industry',   cost: 2, requires: [],                              desc: 'Know the exact highest rent anyone would pay for your rental property.',    icon: '🏷️' },
+    local_market_analysis: { name: 'Local Market Analysis', branch: 'industry', cost: 1, requires: [], desc: 'View a real estate report for your current town: building costs, material prices, 90/360-day trends and projections.', icon: '📊' },
+    kingdom_market_analysis: { name: 'Kingdom Market Analysis', branch: 'industry', cost: 2, requires: ['local_market_analysis'], desc: 'Extends your real estate report to all locations in your kingdom.', icon: '👑' },
+    global_market_analysis: { name: 'Global Market Analysis', branch: 'industry', cost: 3, requires: ['kingdom_market_analysis'], desc: 'Extends your real estate report to all locations in the world.', icon: '🌍' },
     efficient_logistics: { name: 'Efficient Logistics', branch: 'industry',   cost: 3, requires: ['foreman'],                     desc: 'Buildings consume 10% fewer raw materials in production.',                  icon: '📊' },
 
     // ── Transport Branch (8) ──
@@ -2311,6 +2369,7 @@ const ENERGY_CONFIG = {
         tent_travel: 4.0,        // tent while traveling
         camping_kit_travel: 5.0, // full camping kit while traveling
         caravan_wagon: 4.5,      // caravan wagon while traveling (portable housing)
+        tent: 3.0,
         shack: 3.0,
         master_quarters: 3.5,
         barracks: 3.5,
@@ -2464,6 +2523,8 @@ const SPECIAL_LAWS = [
     { id: 'draft_animal_law',   name: 'Draft Animal Permits',  desc: 'Commoners (below Burgher) require a royal permit to own horses.', icon: '🐴', effect: 'horse_permit' },
     { id: 'female_heir_law',    name: 'Female Succession',     desc: 'Women may inherit the throne and titles. Without this law, only males can be heirs.', icon: '👑', effect: 'female_heirs' },
     { id: 'no_dual_citizenship', name: 'Exclusive Citizenship', desc: 'Citizens may not hold citizenship in other kingdoms. Dual citizenship is forbidden.', icon: '🛡️', effect: 'no_dual_citizenship' },
+    { id: 'no_tent_camps',       name: 'No Tent Camps',         desc: 'Tent camps are forbidden. Existing camps will be demolished by soldiers.', icon: '🚫', effect: 'no_tent_camps' },
+    { id: 'right_to_camps',      name: 'Right to Camps',        desc: 'Homeless citizens may pool resources to build tent camps in any town.', icon: '⛺', effect: 'right_to_camps' },
 ];
 
 // ============================================================
@@ -2753,6 +2814,16 @@ CONFIG.MERCHANTS_GUILD_PROSPERITY_CAP = 3.0; // max multiplier on membership pri
 CONFIG.GUILD_BUILDING_ENTRY_FEE_MIN = 5;
 CONFIG.GUILD_BUILDING_ENTRY_FEE_MAX = 10;
 
+// ── Guild Loan (Bankruptcy Option) ──
+CONFIG.GUILD_LOAN = {
+    MIN_AMOUNT: 1000,
+    MAX_AMOUNT: 5000,
+    ANNUAL_INTEREST: 0.10,
+    TERM_DAYS: 720,           // 2 in-game years
+    PAYMENT_INTERVAL: 30,     // auto-payment every 30 days
+    MIN_GUILD_BUFFER: 1000    // guild must retain at least this much after lending
+};
+
 // ============================================================
 // Dating Activities
 // ============================================================
@@ -2788,6 +2859,7 @@ const PETITION_TYPES = [
     { id: 'declare_war', name: 'Declare War', icon: '⚔️', desc: 'Urge the kingdom to declare war on another kingdom', requiresTarget: true, targetType: 'kingdom', costFactor: 0 },
     { id: 'seek_peace', name: 'Seek Peace', icon: '🕊️', desc: 'Urge the kingdom to seek peace in an active war', requiresTarget: true, targetType: 'kingdom', costFactor: 0 },
     { id: 'fund_festival', name: 'Fund a Festival', icon: '🎉', desc: 'Request the kingdom fund a festival in a town', requiresTarget: true, targetType: 'town', costFactor: 0.01 },
+    { id: 'demolish_tent_camps', name: 'Demolish Tent Camps', icon: '🔥', desc: 'Request the king to demolish all tent camps in a specific town', requiresTarget: true, targetType: 'town', costFactor: 0 },
 ];
 
 // ============================================================
@@ -2867,13 +2939,45 @@ CONFIG.KINGDOM_BUILDING_TYPES = [
     'castle', 'training_grounds', 'siege_workshop', 'stables',
     'hospital', 'clinic', 'granary', 'treasury_vault', 'courthouse',
     'guild_hall', 'marketplace_royal', 'cathedral', 'university',
-    'port_fortress', 'wall_upgrade'
+    'port_fortress', 'wall_upgrade', 'fortress_walls'
 ];
 CONFIG.KINGDOM_EXCLUSIVE_BUILDINGS = [
     'barracks', 'armory', 'watchtower',
     'castle', 'training_grounds', 'siege_workshop', 'stables',
-    'courthouse', 'cathedral', 'university', 'port_fortress', 'wall_upgrade'
+    'courthouse', 'cathedral', 'university', 'port_fortress', 'wall_upgrade', 'fortress_walls'
 ];
+
+// ============================================================
+// Kingdom Building Construction & Repair Times (days)
+// ============================================================
+CONFIG.KINGDOM_BUILD_TIMES = {
+    // Small structures (5-12 days build, 2-5 days repair)
+    watchtower:        { build: 8,  repair: 3  },
+    clinic:            { build: 10, repair: 4  },
+    bakery:            { build: 8,  repair: 3  },
+    flour_mill:        { build: 10, repair: 4  },
+    blacksmith:        { build: 10, repair: 4  },
+    armorer:           { build: 12, repair: 5  },
+    granary:           { build: 10, repair: 4  },
+    marketplace_royal: { build: 12, repair: 5  },
+    // Medium structures (15-25 days build, 5-10 days repair)
+    barracks:          { build: 20, repair: 8  },
+    armory:            { build: 15, repair: 6  },
+    training_grounds:  { build: 15, repair: 5  },
+    stables:           { build: 12, repair: 5  },
+    hospital:          { build: 20, repair: 8  },
+    guild_hall:        { build: 20, repair: 8  },
+    courthouse:        { build: 20, repair: 8  },
+    treasury_vault:    { build: 25, repair: 10 },
+    siege_workshop:    { build: 25, repair: 10 },
+    // Large structures (30-60 days build, 15-30 days repair)
+    wall_upgrade:      { build: 30, repair: 15 },
+    university:        { build: 40, repair: 15 },
+    port_fortress:     { build: 45, repair: 20 },
+    cathedral:         { build: 50, repair: 20 },
+    castle:            { build: 60, repair: 25 },
+    fortress_walls:    { build: 60, repair: 20 },
+};
 
 // ============================================================
 // Game Start Scenarios

@@ -214,7 +214,9 @@ window.Tutorial = (function () {
                     text: '\uD83D\uDD36 See that <strong>golden pulsing diamond</strong> on the map? That\u2019s <strong>you</strong>! It shows your exact position \u2014 in a town, on the road, or traveling by sea. If you ever lose track of yourself, click the <strong>\uD83D\uDCCD Find</strong> button or <strong>click your name</strong> in the top-left panel to instantly snap the camera back to your location. Try it now \u2014 pan away with W/A/S/D, then click <strong>\uD83D\uDCCD Find</strong>!',
                     highlight: '#btnLocate',
                     waitFor: function () {
-                        // Detect that locatePlayer was used by checking for the toast
+                        // Check flag set by locatePlayer() (more reliable than toast DOM check)
+                        if (window._tutorialLocateUsed) return true;
+                        // Fallback: check for toast in DOM
                         var toasts = document.querySelectorAll('.toast');
                         for (var i = 0; i < toasts.length; i++) {
                             if (toasts[i].textContent.indexOf('Centered on your location') >= 0) return true;
@@ -291,7 +293,21 @@ window.Tutorial = (function () {
                     title: 'Saving Your Game',
                     text: '\uD83D\uDCBE <strong>Save/Load</strong> from the menu at any time. You have <strong>5 save slots</strong> to experiment with different strategies. Each slot has a <strong>Download</strong> button (\u2B07\uFE0F) to save your game as a file to your computer, and an <strong>Import</strong> button (\uD83D\uDCC2) to upload a previously downloaded save. This way your progress is safe even if browser data is cleared! Try saving now \u2014 click the <strong>Save Game</strong> button.',
                     highlight: '#btnSave',
-                    waitFor: function () { return typeof Game !== 'undefined' && Game.hasSave && Game.hasSave(); },
+                    onEnter: function () {
+                        // Snapshot save count so we detect a NEW save, not a pre-existing one
+                        var count = 0;
+                        for (var i = 1; i <= 5; i++) {
+                            if (localStorage.getItem('merchantRealms_slot_' + i)) count++;
+                        }
+                        snapshotState.saveCountBefore = count;
+                    },
+                    waitFor: function () {
+                        var count = 0;
+                        for (var i = 1; i <= 5; i++) {
+                            if (localStorage.getItem('merchantRealms_slot_' + i)) count++;
+                        }
+                        return count > (snapshotState.saveCountBefore || 0);
+                    },
                     skipAfter: 4000
                 }
             ]
@@ -736,7 +752,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Kingdom Laws',
-                    text: '\uD83D\uDCDC Every kingdom has <strong>laws</strong> set by the king that affect your business! Click a town on the map, then find <strong>\uD83D\uDCDC Laws</strong> in the town detail to see current taxes, trade restrictions, and special policies like <strong>Open Market</strong>, <strong>Forced Requisition</strong>, or <strong>Exclusive Citizenship</strong>. Laws change based on the king\u2019s mood and personality!',
+                    text: '\uD83D\uDCDC Every kingdom has <strong>laws</strong> set by the king! You can view them two ways: <strong>1)</strong> Click <strong>\uD83D\uDC51 Kingdoms</strong> in the top bar, then click the <strong>\uD83D\uDCDC Laws</strong> button on any kingdom card. <strong>2)</strong> Click a town on the map, then find <strong>\uD83D\uDCDC Laws</strong> in the town detail. Laws include taxes, trade restrictions, and special policies like <strong>Open Market</strong>, <strong>Forced Requisition</strong>, or <strong>Exclusive Citizenship</strong>. Laws change based on the king\u2019s mood and personality!',
                     onEnter: function () { closeModal(); }
                 },
                 {

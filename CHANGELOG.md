@@ -4,6 +4,141 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.42.0] - 2026-03-30
+
+### Added — Budget-Aware King AI, Kingdom Panel Buttons, Tutorial Fixes
+
+#### Budget-Aware Recruitment AI
+- **Wartime AI recruitment** now costs 50g per soldier with budget sustainability checks — kings estimate daily income vs costs before recruiting
+- **Personality-driven recruitment limits**: brave kings recruit more aggressively, cautious kings less; smart kings check budget surplus
+- **Peacetime recruitment** gated behind `minReserve` threshold — kings won't recruit if it would drain treasury
+- **Volunteer recruitment** wrapped in budget check — requires gold above minReserve
+- **Wartime section 8 recruitment** reduced base limits and added budget margin checks with RNG variability
+
+#### Budget Sustainability & Revenue Generation AI
+- **9-action financial strategy system**: kings respond to unsustainable budgets with revenue generation AND expense cutting
+- Revenue actions: raise trade/property/income tax, sell military stockpile, lower tariffs (smart kings), build markets
+- Expense actions: reduce guard budget, discharge soldiers, cancel construction
+- **Personality-driven priority**: greedy kings raise taxes first, generous kings cut expenses first, clever kings use balanced approach
+- **Emergency review frequency**: every 3 days if treasury < 500g, every 10 days if < 2000g (was fixed 30-day interval)
+- **Periodic budget sustainability review** in `tickKingdomFinancialStrategy` evaluates budget balance, discharges soldiers based on personality
+
+#### Kingdom Panel Action Buttons
+- Added 📜 Laws, 🏛️ Trade buttons on ALL kingdom cards in Kingdoms dialog
+- Added 📋 Orders, 📝 Petition buttons on player's home kingdom card
+- New `.kc-btn` CSS styling for kingdom card buttons
+
+#### Tutorial Interactive Step Fixes
+- **Find button**: Added `window._tutorialLocateUsed` flag for reliable detection (toast DOM was unreliable)
+- **Save game**: Snapshot save count on step entry, detect new saves (old method triggered immediately if any save existed)
+- **Kingdom Laws step**: Updated text to mention both Kingdoms panel button and town detail as ways to find laws
+
+### Fixed
+- Wartime AI recruitment was creating **free soldiers** with no gold cost and no budget check — now costs 50g each
+- `_lastSeasonTaxRevenue` initialization improved: uses population-based estimate instead of flat 15% of gold
+- Tutorial seed 7777 stability maintained for consistent tutorial experience
+
+## [0.41.0] - 2026-03-30
+
+### Added — King Succession, Bankruptcy Loans, Apartment/Rental Overhaul, Housing, Real Estate & Financial Reports
+
+#### King Death & Succession System Fix
+- **God mode kill buttons now properly call Engine.killPerson()** triggering full succession logic — fixed `pk.kingId` → `pk.king` field name bug that prevented king lookup
+- God mode plague button also fixed to route through killPerson()
+- Inline onclick JS no longer bypasses central handlers (killPerson, succession)
+
+#### King Personality → AI Derivation
+- **New kings' NPC personality traits (0-100 numeric)** now derive kingdom AI categorical traits (brilliant/clever/etc)
+- `installNewKing()` and revolution handler updated to derive `kingdom.kingPersonality` from king NPC personality
+- Worldgen stamps king NPC personality to match random kingdom traits at generation
+- Fixed 2 dead `k.personality` references → `k.kingPersonality` in tickDiplomacy and tax adjustments
+
+#### Bankruptcy Guild Loan System (10-part feature)
+- CONFIG constants for guild loan parameters
+- Max gold tracking (`Player.maxGoldEver`)
+- Guild loan data model (`Player.activeLoan`)
+- Guild loan calculation engine (virtual funds, credit score)
+- Guild loan as bankruptcy choice
+- Acceptance handler with free guild membership grant
+- Auto-payments every 30 days with interest
+- Debt forgiveness when choosing other bankruptcy options
+- Full loan selection UI with terms display
+- `Player.getGuildLoanOffers()` and `Player.acceptGuildLoan(guildId)` API
+
+#### Apartment System Overhaul
+- Replaced all `npc_placeholder_*` IDs with real NPCs during worldgen
+- New `tickApartmentFees()` for monthly fee collection from apartment residents
+- Death cleanup and missed payment eviction logic
+- NPCs can now buy apartment units in `tickNPCHousingAI()`
+
+#### EM Rental System Overhaul
+- `tickEMRentalBusiness()` no longer creates phantom rental entries
+- Real rent collection from tenants with proper gold tracking
+- Tenant assignment for vacant properties
+- Missed payment eviction system
+- Profitability evaluation before building new rental properties
+- Sale of underperforming properties
+
+#### NPC Birth Housing
+- Born NPCs now find parents (matching lastName in town)
+- Parent↔child linking at birth
+- Inherit housing type from parents (apartment/tent/house)
+- Parents help with apartment costs
+- Small gold gift to newborn NPCs
+
+#### NPC Income Bug Fix
+- **OCCUPATIONS wage was paying PER TICK (60x/day inflation)** — fixed with `_lastPayDay` guard
+- Removed duplicate `NPC_DAILY_INCOME` system
+- Building worker wages now once-per-day with skill modifiers
+- Soldiers/guards paid by kingdom instead of per-tick
+
+#### House Condition System
+- Player houses now have `condition`, `builtDay`, `lastRepairDay` fields
+- Houses degrade on same timeline as buildings
+- New `repairHouse()` function for house maintenance
+
+#### Real Estate Analysis Skills (3 skills)
+- `local_market_analysis` (1 SP) — local town real estate data
+- `kingdom_market_analysis` (2 SP) — kingdom-wide market overview
+- `global_market_analysis` (3 SP) — cross-kingdom market intelligence
+- Price history tracking via `tickMarketSnapshot()`
+- `getRealEstateReport(townId)` with trend projections
+- Full UI modal with building costs and material price trends
+
+#### Financial Report UI
+- 📊 button in character panel opens financial report
+- Income streams: building revenue, rental income, apartment income, trading profits
+- Expenses: wages, maintenance, taxes, loan payments, guild memberships
+- Net income calculation and 30-day projection
+- `UI.openFinancialReport()` API
+
+#### EM Guild AI
+- `tickEMGuildAI()`: Elite merchants join guilds relevant to their strategy
+- `STRATEGY_GUILDS` mapping for strategy → guild associations
+- Yearly membership management with production/trade bonuses and reputation boost
+- Expired memberships lapse automatically
+
+#### Notification Fixes
+- Fixed `clickTown()` closing modal AFTER showing town detail (race condition)
+- Toast clicks now open event log
+- Universal location button on all notification events
+- EM notifications gated behind `merchant_intelligence` skill
+
+#### Tent Camp Enhancements
+- Right to Camps law requires land purchase + kingdom ownership
+- NPC self-build tent camps when homeless
+- Player petition to demolish tent camps
+- No Tent Camps law enforcement
+
+### Bug Fixes
+- God mode Kill King button used `pk.kingId` instead of `pk.king` — never found the king
+- God mode kill/plague buttons bypassed `killPerson()`, skipping succession/cleanup
+- `k.personality` references (dead code) → `k.kingPersonality` in tickDiplomacy and tax adjustments
+- NPC income 60x inflation bug (OCCUPATIONS wage paying per tick instead of per day)
+- Building worker wages paying per tick instead of per day
+- Notification `clickTown()` closing just-opened town detail modal
+- Apartment buildings using placeholder NPC IDs instead of real NPCs
+
 ## [0.40.1] - 2026-03-30
 
 ### Fixed — AI/Elite Merchant Unification

@@ -23,6 +23,13 @@ window.UI = (function () {
     let toastId = 0;
     let _eventsInitialized = false;
     let selectedPersonId = null;
+    let _bankruptcyLock = false; // When true, player must resolve bankruptcy before accessing menus
+
+    function _isBankruptcyBlocked() {
+        if (!_bankruptcyLock) return false;
+        if (typeof Game !== 'undefined' && Game.isGodMode && Game.isGodMode()) return false;
+        return true;
+    }
 
     // ═══════════════════════════════════════════════════════════
     //  INIT
@@ -235,6 +242,17 @@ window.UI = (function () {
             btnSchemes.style.display = 'none';
             btnSchemes.addEventListener('click', openSchemesDialog);
             if (rowActions) rowActions.appendChild(btnSchemes);
+
+            // God Mode button → World row, hidden until god mode is activated
+            const btnGodMode = document.createElement('button');
+            btnGodMode.className = 'btn-action';
+            btnGodMode.id = 'btnGodMode';
+            btnGodMode.title = 'Open God Mode Panel';
+            btnGodMode.textContent = '🔮 God Mode';
+            btnGodMode.style.display = 'none';
+            btnGodMode.style.color = '#FFD700';
+            btnGodMode.addEventListener('click', openGodModePanel);
+            if (rowWorld) rowWorld.appendChild(btnGodMode);
         }
 
         // Dynamically add XP bar and hunger bar containers to left panel
@@ -673,6 +691,12 @@ window.UI = (function () {
                     }
                 }
 
+                // God Mode button visibility
+                const btnGodMode = document.getElementById('btnGodMode');
+                if (btnGodMode) {
+                    btnGodMode.style.display = (typeof Game !== 'undefined' && Game.isGodMode && Game.isGodMode()) ? '' : 'none';
+                }
+
                 // Pause indicator
                 const pauseIndicator = document.getElementById('pauseIndicator');
                 if (pauseIndicator) {
@@ -778,6 +802,7 @@ window.UI = (function () {
 
     function showTownDetail(town) {
         if (!town) return;
+        if (_isBankruptcyBlocked()) { toast('💸 You must resolve your bankruptcy first!', 'danger', 'critical'); return; }
         let kingdom;
         try { kingdom = Engine.getKingdom(town.kingdomId); } catch (e) { /* no-op */ }
         const kName = kingdom ? kingdom.name : 'Unknown';
@@ -946,6 +971,10 @@ window.UI = (function () {
             }
             html += '<div style="margin-top:6px;">';
             html += '<button class="btn-medieval" onclick="UI.openHousingDialog()" style="font-size:0.8rem;padding:4px 12px;">🏡 Manage Housing</button> ';
+            html += '<button class="btn-medieval" onclick="UI.openTownMarket()" style="font-size:0.8rem;padding:4px 12px;">🏪 Town Market</button> ';
+            if (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('local_market_analysis')) {
+                html += '<button class="btn-medieval" onclick="UI.openRealEstateReport()" style="font-size:0.8rem;padding:4px 12px;">📊 Real Estate Report</button> ';
+            }
             if (ownedLand < maxPlots) {
                 html += '<button class="btn-medieval" onclick="UI.buyLandUI()" style="font-size:0.8rem;padding:4px 12px;">🏗️ Buy Land (' + landCost + 'g)</button>';
             }
@@ -1864,6 +1893,14 @@ window.UI = (function () {
     // ═══════════════════════════════════════════════════════════
 
     function openModal(title, bodyHtml, footerHtml) {
+        // Block opening non-bankruptcy modals while bankruptcy decision pending
+        if (_isBankruptcyBlocked()) {
+            var tl = (title || '').toLowerCase();
+            if (tl.indexOf('bankrupt') === -1 && tl.indexOf('guild loan') === -1) {
+                toast('💸 You must resolve your bankruptcy first!', 'danger', 'critical');
+                return;
+            }
+        }
         const mt = el.modalTitle || document.getElementById('modalTitle');
         const mb = el.modalBody || document.getElementById('modalBody');
         const mf = el.modalFooter || document.getElementById('modalFooter');
@@ -1875,6 +1912,7 @@ window.UI = (function () {
     }
 
     function closeModal() {
+        if (_isBankruptcyBlocked()) return;
         const mo = el.modalOverlay || document.getElementById('modalOverlay');
         if (mo) mo.classList.add('hidden');
         // Flush trade batch summary when trade dialog closes
@@ -2485,31 +2523,14 @@ window.UI = (function () {
             </div>`;
         }
 
-        // NPC buildings for sale section
+        // Pointer to Town Market for buying existing buildings
         let saleHtml = '';
         if (town) {
             const offers = Engine.getNPCBuildingSaleOffers(town.id);
             if (offers.length > 0) {
-                saleHtml += '<div style="margin-top:12px;padding:8px;border:1px solid var(--border);border-radius:4px;">';
-                saleHtml += '<div style="font-weight:bold;font-size:0.85rem;margin-bottom:6px;">🏠 BUY EXISTING BUILDING</div>';
-                for (let i = 0; i < offers.length; i++) {
-                    const offer = offers[i];
-                    const bldIdx = town.buildings.indexOf(offer.building);
-                    const obt = Engine.findBuildingType(offer.building.type);
-                    const bldName = obt ? obt.name : offer.building.type;
-                    const condLabel = offer.building.condition || 'new';
-                    const canAffordOffer = (Player.gold || 0) >= offer.price;
-                    const canAffordConvert = (Player.gold || 0) >= (offer.price + 500);
-                    saleHtml += `<div class="build-card ${canAffordOffer ? '' : 'cant-afford'}" style="display:flex;flex-direction:column;gap:4px;">
-                        <div class="build-name">${bldName} (Lv.${offer.building.level || 1})</div>
-                        <div class="build-cost">🪙 ${Math.ceil(+offer.price)}g | ${condLabel}</div>
-                        <div class="build-info">${offer.reason}</div>
-                        <div style="display:flex;gap:4px;margin-top:4px;">
-                            <button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;flex:1;" ${canAffordOffer ? '' : 'disabled'} onclick="UI.purchaseNPCBuildingUI(${bldIdx},'${town.id}')">🏠 Buy</button>
-                            <button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;flex:1;" ${canAffordConvert ? '' : 'disabled'} onclick="UI.openConvertBuildingUI(${bldIdx},'${town.id}')">🔄 Convert (500g + 💥)</button>
-                        </div>
-                    </div>`;
-                }
+                saleHtml += '<div style="margin-top:12px;padding:8px;border:1px solid var(--border);border-radius:4px;text-align:center;">';
+                saleHtml += '<div style="font-size:0.8rem;color:#aaa;margin-bottom:4px;">' + offers.length + ' existing building(s) for sale in this town</div>';
+                saleHtml += '<button class="btn-medieval" onclick="UI.openTownMarket()" style="font-size:0.75rem;padding:3px 10px;">🏪 Open Town Market</button>';
                 saleHtml += '</div>';
             }
 
@@ -2587,24 +2608,54 @@ window.UI = (function () {
     // ── BUILDING MANAGEMENT ──
 
     function openBuildingManagement() {
-        if (!Player.buildings || Player.buildings.length === 0) {
-            toast('You have no buildings to manage.', 'warning');
+        var hasBuildings = Player.buildings && Player.buildings.length > 0;
+        var hasLand = false;
+        var landOwned = Player.state.landOwned || {};
+        for (var lk in landOwned) { if (landOwned[lk] > 0) { hasLand = true; break; } }
+        if (!hasBuildings && !hasLand) {
+            toast('You have no buildings or land to manage.', 'warning');
             return;
+        }
+
+        // Collect all townIds with buildings or land
+        var allTownIds = {};
+        if (Player.buildings) {
+            for (var bi = 0; bi < Player.buildings.length; bi++) {
+                allTownIds[Player.buildings[bi].townId] = true;
+            }
+        }
+        for (var lid in landOwned) {
+            if (landOwned[lid] > 0) allTownIds[lid] = true;
         }
 
         // Group buildings by town
         const byTown = {};
-        for (const bld of Player.buildings) {
-            if (!byTown[bld.townId]) byTown[bld.townId] = [];
-            byTown[bld.townId].push(bld);
+        if (Player.buildings) {
+            for (const bld of Player.buildings) {
+                if (!byTown[bld.townId]) byTown[bld.townId] = [];
+                byTown[bld.townId].push(bld);
+            }
         }
 
         let html = '<div class="building-mgmt">';
 
-        for (const [townId, buildings] of Object.entries(byTown)) {
+        for (const townId of Object.keys(allTownIds)) {
             const town = Engine.findTown(townId);
             const tName = town ? town.name : 'Unknown';
+            const buildings = byTown[townId] || [];
+            var ownedLand = (landOwned[townId] || 0);
+            var usedLand = Player.getUsedLandSlots ? Player.getUsedLandSlots(townId) : 0;
+            var freeLand = Math.max(0, ownedLand - usedLand);
+
             html += `<div style="margin-bottom:12px;"><h4 style="font-size:0.85rem;margin-bottom:6px;border-bottom:1px solid var(--border);padding-bottom:4px;">📍 ${tName}</h4>`;
+
+            // Land summary
+            html += '<div style="font-size:0.78rem;margin-bottom:6px;padding:4px 6px;background:rgba(0,0,0,0.15);border-radius:3px;">';
+            html += '🏗️ <b>Land:</b> ' + ownedLand + ' plot(s) owned — ' + usedLand + ' used, ' + freeLand + ' free';
+            if (freeLand > 0) {
+                html += ' <button class="btn-medieval" onclick="UI.listLandForSaleUI(\'' + townId + '\')" style="font-size:0.65rem;padding:1px 6px;margin-left:6px;">📋 Sell Land</button>';
+            }
+            html += '</div>';
 
             for (const bld of buildings) {
                 const info = Player.getBuildingStatus(bld.id);
@@ -2729,6 +2780,308 @@ window.UI = (function () {
         }
 
         openModal('🏗️ Building Management', html);
+    }
+
+    // ── Town Market: buildings, land, and apartments for sale ──
+    function openTownMarket() {
+        if (typeof Player === 'undefined' || Player.traveling) { toast('Cannot browse market while traveling.', 'warning'); return; }
+        var townId = Player.townId;
+        var town = Engine.findTown(townId);
+        if (!town) { toast('Not in a town.', 'warning'); return; }
+
+        var html = '<div style="max-height:500px;overflow-y:auto;">';
+
+        // === NPC/EM/Kingdom buildings for sale ===
+        var offers = Engine.getNPCBuildingSaleOffers(town.id);
+        html += '<h3 style="margin-bottom:6px;">🏗️ Buildings For Sale</h3>';
+        if (offers.length === 0) {
+            html += '<p style="color:#888;font-size:0.8rem;">No buildings currently for sale in ' + town.name + '.</p>';
+        } else {
+            for (var i = 0; i < offers.length; i++) {
+                var offer = offers[i];
+                var bldIdx = town.buildings.indexOf(offer.building);
+                var obt = Engine.findBuildingType(offer.building.type);
+                var bldName = obt ? obt.name : offer.building.type;
+                var condLabel = offer.building.condition || 'new';
+                var canAffordOffer = (Player.gold || 0) >= offer.price;
+                var canAffordConvert = (Player.gold || 0) >= (offer.price + 500);
+                html += '<div style="border:1px solid #444;padding:6px;margin:3px 0;border-radius:4px;opacity:' + (canAffordOffer ? '1' : '0.6') + ';">';
+                html += '<div><strong>' + bldName + '</strong> (Lv.' + (offer.building.level || 1) + ') — <span style="color:#ffd700;">' + Math.ceil(+offer.price) + 'g</span> | ' + condLabel + '</div>';
+                html += '<div style="font-size:0.75rem;color:#aaa;">' + offer.reason + '</div>';
+                html += '<div style="display:flex;gap:4px;margin-top:4px;">';
+                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;" ' + (canAffordOffer ? '' : 'disabled') + ' onclick="UI.purchaseNPCBuildingUI(' + bldIdx + ',\'' + town.id + '\')">🏠 Buy</button>';
+                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;" ' + (canAffordConvert ? '' : 'disabled') + ' onclick="UI.openConvertBuildingUI(' + bldIdx + ',\'' + town.id + '\')">🔄 Convert (500g + 💥)</button>';
+                html += '</div></div>';
+            }
+        }
+
+        // === Player-listed buildings for sale (from other players' listings if any) ===
+        // Future: show player.buildingsForSale listings here
+
+        // === Apartment units for sale ===
+        var aptBuildings = (town.buildings || []).filter(function(b) { return b.type === 'apartment_building'; });
+        if (aptBuildings.length > 0) {
+            html += '<h3 style="margin-top:12px;margin-bottom:6px;">🏢 Apartments For Sale</h3>';
+            for (var ai = 0; ai < aptBuildings.length; ai++) {
+                var aptBld = aptBuildings[ai];
+                var units = aptBld.units || [];
+                var availableUnits = units.filter(function(u) { return !u.occupantId; });
+                var ownerName = 'Unknown';
+                if (aptBld.ownerId === 'player') { ownerName = 'You'; }
+                else if (aptBld.ownerId) {
+                    var owner = Engine.findPerson(aptBld.ownerId);
+                    if (owner) ownerName = (owner.firstName || '') + ' ' + (owner.lastName || '');
+                    else {
+                        var kingdom = Engine.findKingdom(aptBld.ownerId);
+                        if (kingdom) ownerName = kingdom.name;
+                    }
+                }
+                var unitPrice = aptBld.unitPrice || 0;
+                var monthlyFee = aptBld.monthlyFee || 0;
+                html += '<div style="border:1px solid #555;padding:6px;margin:3px 0;border-radius:4px;">';
+                html += '<div><strong>🏢 Apartment Building</strong> — Owner: ' + ownerName + '</div>';
+                html += '<div style="font-size:0.78rem;color:#aaa;">' + availableUnits.length + '/' + units.length + ' units available | Buy: <span style="color:#ffd700;">' + Math.ceil(unitPrice) + 'g</span> | Monthly: <span style="color:#ffd700;">' + Math.ceil(monthlyFee) + 'g</span></div>';
+                if (availableUnits.length > 0 && aptBld.ownerId !== 'player') {
+                    var canAffordApt = (Player.gold || 0) >= unitPrice;
+                    html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;margin-top:4px;" ' + (canAffordApt ? '' : 'disabled') + ' onclick="UI.buyApartmentUnit(\'' + aptBld._id + '\')">🏢 Buy Apartment (' + Math.ceil(unitPrice) + 'g)</button>';
+                }
+                html += '</div>';
+            }
+        }
+
+        // === Land for sale by other players (future) ===
+
+        // === Tent camp tents for rent (only show camps with available tents) ===
+        var tentCampBlds = (town.buildings || []).filter(function(b) { return b.type === 'tent_camp'; });
+        var tentCampsWithAvail = tentCampBlds.filter(function(tc) {
+            var tents = tc.tents || [];
+            return tents.some(function(t) { return !t.occupantId; });
+        });
+        if (tentCampsWithAvail.length > 0) {
+            var tcKingdom = Engine.findKingdom(town.kingdomId);
+            var tcBanned = tcKingdom && tcKingdom.laws && tcKingdom.laws.specialLaws &&
+                tcKingdom.laws.specialLaws.some(function(l) { return l.id === 'no_tent_camps'; });
+            if (!tcBanned) {
+                html += '<h3 style="margin-top:12px;margin-bottom:6px;">⛺ Tent Camps</h3>';
+                for (var tci = 0; tci < tentCampsWithAvail.length; tci++) {
+                    var tcBld = tentCampsWithAvail[tci];
+                    var tcTents = tcBld.tents || [];
+                    var tcAvailable = tcTents.filter(function(t) { return !t.occupantId; });
+                    var tcUpfront = tcBld.tentUpfrontCost || 20;
+                    var tcMonthly = tcBld.tentMonthlyCost || 5;
+                    html += '<div style="border:1px solid #555;padding:6px;margin:3px 0;border-radius:4px;">';
+                    html += '<div><strong>⛺ Tent Camp</strong></div>';
+                    html += '<div style="font-size:0.78rem;color:#aaa;">' + tcAvailable.length + '/' + tcTents.length + ' tents available | Rent: <span style="color:#ffd700;">' + tcUpfront + 'g</span> upfront + <span style="color:#ffd700;">' + tcMonthly + 'g</span>/month</div>';
+                    html += '<div style="font-size:0.72rem;color:#888;margin-top:2px;">⚠️ Barely better than sleeping on the ground. Disease risk is high.</div>';
+                    if (tcAvailable.length > 0) {
+                        var canAffordTent = (Player.gold || 0) >= tcUpfront;
+                        var alreadyHasTent = Player.state && Player.state.houses && Player.state.houses.some(function(h) { return h.type === 'tent'; });
+                        if (alreadyHasTent) {
+                            html += '<div style="font-size:0.72rem;color:#cc8800;margin-top:3px;">You already rent a tent.</div>';
+                        } else {
+                            html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;margin-top:4px;" ' + (canAffordTent ? '' : 'disabled') + ' onclick="UI.buyTentSlot(\'' + tcBld._id + '\')">⛺ Rent Tent (' + tcUpfront + 'g)</button>';
+                        }
+                    }
+                    html += '</div>';
+                }
+            }
+        }
+
+        // === Town Buildings (not for sale, informational) ===
+        var townBuildings = (town.buildings || []).filter(function(b) { return b.type !== 'tent_camp'; });
+        if (townBuildings.length > 0) {
+            html += '<h3 style="margin-top:12px;margin-bottom:6px;">🏗️ Town Buildings</h3>';
+            html += '<div style="font-size:0.78rem;color:#aaa;margin-bottom:6px;">Buildings in ' + town.name + ':</div>';
+            // Group by type
+            var bldCounts = {};
+            for (var tbi = 0; tbi < townBuildings.length; tbi++) {
+                var tb = townBuildings[tbi];
+                var tbType = tb.type || 'unknown';
+                if (!bldCounts[tbType]) bldCounts[tbType] = { count: 0, forSale: 0, underConstruction: 0 };
+                bldCounts[tbType].count++;
+                if (tb.forSale) bldCounts[tbType].forSale++;
+                if (tb.condition === 'under_construction') bldCounts[tbType].underConstruction++;
+            }
+            html += '<div style="display:flex;flex-wrap:wrap;gap:4px;">';
+            for (var bType in bldCounts) {
+                if (!bldCounts.hasOwnProperty(bType)) continue;
+                var bc = bldCounts[bType];
+                var bt = Engine.findBuildingType ? Engine.findBuildingType(bType) : null;
+                var bName = bt ? bt.name : bType;
+                var bIcon = bt ? (bt.icon || '🏠') : '🏠';
+                var extra = '';
+                if (bc.forSale > 0) extra += ' <span style="color:#5ac85a;">(' + bc.forSale + ' for sale)</span>';
+                if (bc.underConstruction > 0) extra += ' <span style="color:#c4a35a;">(' + bc.underConstruction + ' building)</span>';
+                html += '<div style="border:1px solid #444;padding:3px 6px;border-radius:4px;font-size:0.75rem;background:rgba(0,0,0,0.2);">' + bIcon + ' ' + bName + ' ×' + bc.count + extra + '</div>';
+            }
+            html += '</div>';
+        }
+
+        html += '</div>';
+        openModal('🏪 Town Market — ' + town.name, html);
+    }
+
+    function listLandForSaleUI(townId) {
+        var maxPrice = null;
+        try { maxPrice = Engine.getPropertyMaxBuyPrice({ type: 'land' }, townId); } catch(e) {}
+        var recommended = maxPrice ? Math.floor(maxPrice * 0.85) : 100;
+        var hasAppraiser = Player.hasSkill && Player.hasSkill('property_appraiser');
+
+        var html = '<div style="padding:8px;">';
+        html += '<h3>📋 List Land For Sale</h3>';
+        html += '<div style="margin:8px 0;">Recommended price: <b style="color:#ffd700;">' + recommended + 'g</b></div>';
+        if (hasAppraiser) {
+            html += '<div style="margin:4px 0;font-size:0.8rem;">🔎 Max any buyer will pay: <b style="color:#55a868;">' + maxPrice + 'g</b></div>';
+        }
+        html += '<div style="margin:8px 0;"><label>Your price: </label><input type="number" id="landSalePrice" value="' + recommended + '" min="1" style="width:80px;padding:2px 4px;background:#222;color:#eee;border:1px solid #555;border-radius:3px;"> g</div>';
+        html += '<button class="btn-medieval" onclick="(function(){ var p=parseInt(document.getElementById(\'landSalePrice\').value)||0; var r=Player.listLandForSale(\'' + townId + '\',p); UI.toast(r.message, r.success?\'success\':\'error\'); if(r.success) UI.closeModal(); })()">📋 List For Sale</button>';
+
+        // Show existing listing if any
+        var existing = (Player.state.landForSale || []).find(function(l) { return l.townId === townId; });
+        if (existing) {
+            html += '<div style="margin-top:8px;padding:6px;border:1px solid #555;border-radius:3px;">Currently listed at <b>' + existing.price + 'g</b>';
+            html += ' <button class="btn-medieval" style="font-size:0.7rem;padding:2px 6px;color:#c44e52;" onclick="(function(){ Player.cancelLandListing(\'' + townId + '\'); UI.toast(\'Listing removed.\',\'success\'); UI.closeModal(); })()">🚫 Cancel</button></div>';
+        }
+        html += '</div>';
+        openModal('📋 Sell Land', html);
+    }
+
+    function buyApartmentUnit(aptBuildingId) {
+        // Find the apartment building in the current town
+        var town = Engine.findTown(Player.townId);
+        if (!town) { toast('Not in a town.', 'warning'); return; }
+        var aptBld = (town.buildings || []).find(function(b) { return b._id === aptBuildingId && b.type === 'apartment_building'; });
+        if (!aptBld) { toast('Apartment building not found.', 'warning'); return; }
+        var availableUnits = (aptBld.units || []).filter(function(u) { return !u.occupantId; });
+        if (availableUnits.length === 0) { toast('No available apartments.', 'warning'); return; }
+        var price = aptBld.unitPrice || 0;
+        if ((Player.gold || 0) < price) { toast('Not enough gold. Need ' + price + 'g.', 'error'); return; }
+
+        // Buy the first available unit
+        var unit = availableUnits[0];
+        unit.occupantId = 'player';
+        unit.occupantType = 'player';
+        unit.purchaseDay = Engine.getDay();
+        unit.purchasePrice = price;
+
+        // Deduct gold
+        Player.state.gold -= price;
+        Player.state.stats.totalGoldSpent = (Player.state.stats.totalGoldSpent || 0) + price;
+
+        // Pay owner
+        if (aptBld.ownerId && aptBld.ownerId !== 'player') {
+            var owner = Engine.findPerson(aptBld.ownerId);
+            if (owner) owner.gold = (owner.gold || 0) + price;
+            else {
+                var kingdom = Engine.findKingdom(aptBld.ownerId);
+                if (kingdom) kingdom.treasury = (kingdom.treasury || 0) + price;
+            }
+        }
+
+        // Create apartment house record for player
+        var house = {
+            id: 'apt_unit_' + aptBuildingId + '_' + unit.unitIndex,
+            type: 'apartment',
+            townId: Player.townId,
+            purchaseDay: Engine.getDay(),
+            occupants: [],
+            homeStorage: {},
+            isRental: false,
+            rentAccumulated: 0,
+            purchaseCost: price,
+            fromApartmentBuilding: aptBuildingId,
+            unitIndex: unit.unitIndex,
+            monthlyMaintenance: aptBld.monthlyFee || 0
+        };
+        if (!Player.state.houses) Player.state.houses = [];
+        Player.state.houses.push(house);
+        if (!Player.state.primaryHouseId) Player.state.primaryHouseId = house.id;
+
+        toast('🏢 Apartment purchased for ' + price + 'g! Monthly maintenance: ' + (aptBld.monthlyFee || 0) + 'g.', 'success');
+        Engine.logEvent('🏢 ' + Player.state.fullName + ' bought an apartment in ' + (town ? town.name : 'unknown') + ' for ' + price + 'g.');
+        openTownMarket(); // Refresh
+    }
+
+    function buyTentSlot(tcBuildingId) {
+        var town = Engine.currentTown();
+        if (!town) { toast('Not in a town.', 'warning'); return; }
+        var tcBld = null;
+        for (var i = 0; i < town.buildings.length; i++) {
+            if (town.buildings[i]._id === tcBuildingId && town.buildings[i].type === 'tent_camp') {
+                tcBld = town.buildings[i];
+                break;
+            }
+        }
+        if (!tcBld || !tcBld.tents) { toast('Tent camp not found.', 'warning'); return; }
+        var upfront = tcBld.tentUpfrontCost || 20;
+        if ((Player.gold || 0) < upfront) { toast('Not enough gold (' + upfront + 'g required).', 'warning'); return; }
+        // Check if player already has a tent
+        if (Player.state && Player.state.houses && Player.state.houses.some(function(h) { return h.type === 'tent'; })) {
+            toast('You already rent a tent.', 'warning');
+            return;
+        }
+        // Find available tent
+        var slot = null;
+        for (var ti = 0; ti < tcBld.tents.length; ti++) {
+            if (!tcBld.tents[ti].occupantId) { slot = tcBld.tents[ti]; break; }
+        }
+        if (!slot) { toast('No tents available.', 'warning'); return; }
+        // Rent the tent
+        Player.gold -= upfront;
+        slot.occupantId = Player.state.id || 'player';
+        slot.occupantType = 'player';
+        slot.rentStartDay = Engine.world().day;
+        slot.lastRentDay = Engine.world().day;
+        // Add house record to player
+        if (!Player.state.houses) Player.state.houses = [];
+        var tentHouseId = 'house_tent_' + town.id + '_' + slot.tentIndex;
+        Player.state.houses.push({
+            id: tentHouseId,
+            type: 'tent',
+            townId: town.id,
+            fromTentCamp: tcBld._id,
+            tentIndex: slot.tentIndex,
+            rentStartDay: Engine.world().day,
+            monthlyCost: tcBld.tentMonthlyCost || 5
+        });
+        Player.state.houseType = 'tent';
+        Player.state._tentCampId = tcBld._id;
+        Player.state._tentIndex = slot.tentIndex;
+        if (!Player.state.primaryHouseId) Player.state.primaryHouseId = tentHouseId;
+        toast('⛺ You rented a tent for ' + upfront + 'g. Monthly rent: ' + (tcBld.tentMonthlyCost || 5) + 'g.', 'success');
+        Engine.logEvent('⛺ ' + Player.state.fullName + ' rented a tent in ' + town.name + '.');
+        openTownMarket(); // Refresh
+    }
+
+    function listBuildingForSaleUI(buildingId) {
+        var bld = (Player.buildings || []).find(function(b) { return b.id === buildingId; });
+        if (!bld) { toast('Building not found.', 'warning'); return; }
+
+        // Toggle off if already for sale
+        if (bld.forSale) {
+            var result = Player.listBuildingForSale(buildingId);
+            toast(result.message, result.success ? 'success' : 'error');
+            if (result.success) showBuildingDetail(buildingId);
+            return;
+        }
+
+        var bt = Engine.findBuildingType(bld.type);
+        var bName = bt ? bt.name : bld.type;
+        var maxPrice = null;
+        try { maxPrice = Engine.getPropertyMaxBuyPrice(bld, bld.townId); } catch(e) {}
+        var recommended = maxPrice ? Math.floor(maxPrice * 0.85) : Math.floor((bt ? bt.cost : 500) * 0.8);
+        var hasAppraiser = Player.hasSkill && Player.hasSkill('property_appraiser');
+
+        var html = '<div style="padding:8px;">';
+        html += '<h3>📋 List ' + bName + ' For Sale</h3>';
+        html += '<div style="margin:8px 0;">Recommended price: <b style="color:#ffd700;">' + recommended + 'g</b></div>';
+        if (hasAppraiser) {
+            html += '<div style="margin:4px 0;font-size:0.8rem;">🔎 Max any buyer will pay: <b style="color:#55a868;">' + maxPrice + 'g</b></div>';
+        }
+        html += '<div style="margin:8px 0;"><label>Your price: </label><input type="number" id="bldSalePrice" value="' + recommended + '" min="1" style="width:100px;padding:2px 4px;background:#222;color:#eee;border:1px solid #555;border-radius:3px;"> g</div>';
+        html += '<button class="btn-medieval" onclick="(function(){ var p=parseInt(document.getElementById(\'bldSalePrice\').value)||0; var r=Player.listBuildingForSale(\'' + buildingId + '\',p); UI.toast(r.message, r.success?\'success\':\'error\'); if(r.success){ UI.closeModal(); UI.showBuildingDetail(\'' + buildingId + '\'); } })()">📋 List For Sale</button>';
+        html += '</div>';
+        openModal('📋 Sell Building', html);
     }
 
     function showBuildingDetail(buildingId) {
@@ -3098,9 +3451,26 @@ window.UI = (function () {
             html += `<button class="btn-trade buy" style="font-size:0.7rem;" onclick="UI.openWarehouseSecurityDialog('${bld.id}')">🔐 Security Upgrades</button>`;
         }
 
-        html += `</div></div>`;
+        // Farm/livestock conversion button
+        if (bt && (Engine.isCropFarm(bld.type) || Engine.isLivestockFarm(bld.type)) && town && bld.townId === Player.townId) {
+            var _convBldIdx = town.buildings.findIndex(function(b) { return b.ownerId === 'player' && b.type === bld.type; });
+            if (_convBldIdx >= 0) {
+                html += '<button class="btn-trade" style="font-size:0.7rem;background:rgba(100,160,220,0.15);border-color:rgba(100,160,220,0.3);" onclick="UI.openFarmConvertUI(' + _convBldIdx + ',\'' + bld.townId + '\')">🔄 Convert Farm Type</button>';
+            }
+        }
 
-        // Back button
+        // Demolish button
+        if (town && bld.townId === Player.townId) {
+            var _demBldIdx = town.buildings.findIndex(function(b) { return b.ownerId === 'player' && b.type === bld.type; });
+            if (_demBldIdx >= 0) {
+                html += '<button class="btn-trade sell" style="font-size:0.7rem;background:rgba(200,50,50,0.15);border-color:rgba(200,50,50,0.3);" onclick="UI.confirmDemolishUI(\'' + bld.id + '\',' + _demBldIdx + ',\'' + bld.townId + '\')">💥 Demolish (500g + blasting powder)</button>';
+            }
+        }
+
+        // List building for sale button
+        html += '<button class="btn-trade" style="font-size:0.7rem;background:rgba(80,180,80,0.15);border-color:rgba(80,180,80,0.3);" onclick="UI.listBuildingForSaleUI(\'' + bld.id + '\')">' + (bld.forSale ? '🚫 Remove Listing' : '📋 List For Sale') + '</button>';
+
+        html += `</div></div>`;
         html += `<div style="text-align:center;margin-top:8px;">
             <button class="btn-trade" style="font-size:0.75rem;" onclick="UI.openBuildingManagement()">← Back to All Buildings</button>
         </div>`;
@@ -3235,6 +3605,24 @@ window.UI = (function () {
         if (result.success) {
             openBuildDialog();
         }
+    }
+
+    function confirmDemolishUI(buildingId, buildingIndex, townId) {
+        var town = Engine.findTown(townId);
+        var bld = town ? town.buildings[buildingIndex] : null;
+        var bt = bld ? Engine.findBuildingType(bld.type) : null;
+        var bName = bt ? bt.name : (bld ? bld.type : 'Building');
+        var hasPowder = (Player.inventory && (Player.inventory.blasting_powder || 0) >= 1);
+        var powderNote = hasPowder ? '(from inventory)' : '(will buy from market/kingdom)';
+        var html = '<div style="padding:10px;">';
+        html += '<p>Are you sure you want to demolish <strong>' + bName + '</strong>?</p>';
+        html += '<p style="font-size:0.85rem;">Cost: <strong>500g</strong> + <strong>1 blasting powder</strong> ' + powderNote + '</p>';
+        html += '<p style="font-size:0.8rem;color:#c44e52;">⚠️ This action cannot be undone. The building will be destroyed and the land plot freed.</p>';
+        html += '<div style="display:flex;gap:8px;margin-top:12px;">';
+        html += '<button class="btn-medieval" style="flex:1;background:rgba(200,50,50,0.3);" onclick="UI.demolishBuildingUI(' + buildingIndex + ',\'' + townId + '\')">💥 Confirm Demolish</button>';
+        html += '<button class="btn-medieval" style="flex:1;" onclick="UI.showBuildingDetail(\'' + buildingId + '\')">Cancel</button>';
+        html += '</div></div>';
+        openModal('💥 Demolish ' + bName + '?', html);
     }
 
     function openFarmConvertUI(buildingIndex, townId) {
@@ -5259,12 +5647,260 @@ window.UI = (function () {
         // Social Status section
         html += buildSocialStatusHtml();
 
-        // Journal button
-        html += `<div style="text-align:center;margin:12px 0 6px;">
+        // Journal & Financial Report buttons
+        html += `<div style="text-align:center;margin:12px 0 6px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
             <button class="btn-medieval" onclick="UI.openJournal()" style="font-size:0.85rem;padding:6px 18px;">📖 Read My Journal</button>
+            <button class="btn-medieval" onclick="UI.openFinancialReport()" style="font-size:0.85rem;padding:6px 18px;">📊 Financial Report</button>
         </div>`;
 
         openModal(`👤 ${Player.fullName || 'Character'}`, html);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  FINANCIAL REPORT
+    // ═══════════════════════════════════════════════════════════
+    function openFinancialReport() {
+        if (typeof Player === 'undefined') return;
+
+        const state = Player.state;
+        const buildings = state.buildings || [];
+        const houses = state.houses || [];
+        const stats = state.stats || {};
+        const loan = state.activeLoan;
+        const guilds = state.guilds || {};
+        const guildMemberships = state.guildMemberships || {};
+        const baseWage = (typeof CONFIG !== 'undefined' && CONFIG.BASE_WAGE) || 4;
+
+        // Resolve town name helper
+        function townName(townId) {
+            try {
+                const t = Engine.getTown(townId);
+                return t ? t.name : townId;
+            } catch (e) { return townId || '?'; }
+        }
+
+        // Resolve kingdom for player's current town
+        function getPlayerKingdom() {
+            try {
+                const t = Engine.getTown(Player.townId);
+                if (t && t.kingdomId) return Engine.getKingdom(t.kingdomId);
+            } catch (e) { /* no-op */ }
+            return null;
+        }
+
+        // Color helpers
+        function posNeg(val) {
+            if (val > 0) return 'color:#5ac85a';
+            if (val < 0) return 'color:#e74c3c';
+            return 'color:#aaa';
+        }
+
+        function fmtGold(val) {
+            return formatGold(Math.round(val));
+        }
+
+        // ── INCOME ──
+        let totalIncome = 0;
+        let incomeRows = '';
+
+        // Building revenue
+        for (let i = 0; i < buildings.length; i++) {
+            const bld = buildings[i];
+            const bt = Engine.findBuildingType ? Engine.findBuildingType(bld.type) : null;
+            const name = (bt && bt.name) || bld.type;
+            const town = townName(bld.townId);
+            let rev = 0;
+            if (bld._profitTracker && bld._profitTracker.revenue) {
+                const days = bld._profitTracker.days || 1;
+                rev = bld._profitTracker.revenue / days; // avg per day
+            } else if (bld.revenue) {
+                rev = bld.revenue / 30; // rough daily estimate
+            }
+            if (rev > 0) {
+                totalIncome += rev;
+                incomeRows += `<div class="detail-row"><span class="label">🏭 ${name} (${town})</span><span class="value" style="color:#5ac85a">${fmtGold(rev)}/day</span></div>`;
+            }
+        }
+
+        // Rental income from houses
+        for (let i = 0; i < houses.length; i++) {
+            const h = houses[i];
+            if (h.isRental && h.tenantId && h.monthlyRent) {
+                const dailyRent = h.monthlyRent / 30;
+                totalIncome += dailyRent;
+                incomeRows += `<div class="detail-row"><span class="label">🏠 Rental — ${townName(h.townId)}</span><span class="value" style="color:#5ac85a">${fmtGold(dailyRent)}/day (${h.monthlyRent}g/mo)</span></div>`;
+            }
+        }
+
+        // Apartment income (player-owned apartment buildings that earn from NPC tenants)
+        for (let i = 0; i < buildings.length; i++) {
+            const bld = buildings[i];
+            if (bld.type === 'apartment_building' && bld.units) {
+                let occupiedUnits = 0;
+                for (let u = 0; u < bld.units.length; u++) {
+                    if (bld.units[u].occupantId && bld.units[u].occupantType !== 'player') occupiedUnits++;
+                }
+                if (occupiedUnits > 0) {
+                    const monthlyFee = bld.monthlyFee || 2;
+                    const dailyAptIncome = (monthlyFee * occupiedUnits) / 30;
+                    totalIncome += dailyAptIncome;
+                    incomeRows += `<div class="detail-row"><span class="label">🏢 Apartment (${townName(bld.townId)}) — ${occupiedUnits} tenants</span><span class="value" style="color:#5ac85a">${fmtGold(dailyAptIncome)}/day</span></div>`;
+                }
+            }
+        }
+
+        // Trading profits estimate
+        const tradingEarned = stats.totalGoldEarned || 0;
+        const tradingSpent = stats.totalGoldSpent || 0;
+        const daysPlayed = Math.max(stats.daysPlayed || 1, 1);
+        const tradingDailyEst = Math.max(0, (tradingEarned - tradingSpent) / daysPlayed);
+        if (tradingDailyEst > 0) {
+            incomeRows += `<div class="detail-row"><span class="label">📈 Trading profit (est.)</span><span class="value" style="color:#5ac85a">~${fmtGold(tradingDailyEst)}/day</span></div>`;
+        }
+
+        if (!incomeRows) {
+            incomeRows = `<div class="detail-row"><span class="label" style="color:#aaa;">No income sources found</span><span class="value">—</span></div>`;
+        }
+
+        // ── EXPENSES ──
+        let totalExpenses = 0;
+        let expenseRows = '';
+
+        // Building wages
+        for (let i = 0; i < buildings.length; i++) {
+            const bld = buildings[i];
+            const bt = Engine.findBuildingType ? Engine.findBuildingType(bld.type) : null;
+            const name = (bt && bt.name) || bld.type;
+            const workerCount = (bld.workers && bld.workers.length) || 0;
+            if (workerCount > 0) {
+                const dailyWage = baseWage * workerCount;
+                totalExpenses += dailyWage;
+                expenseRows += `<div class="detail-row"><span class="label">👷 ${name} wages (${workerCount})</span><span class="value" style="color:#e74c3c">${fmtGold(dailyWage)}/day</span></div>`;
+            }
+        }
+
+        // Building maintenance estimate (from condition system)
+        const weeklyMaintRate = (typeof CONFIG !== 'undefined' && CONFIG.BUILDING_WEEKLY_MAINTENANCE) || 0.03;
+        for (let i = 0; i < buildings.length; i++) {
+            const bld = buildings[i];
+            const bt = Engine.findBuildingType ? Engine.findBuildingType(bld.type) : null;
+            const baseCost = (bt && bt.cost) || 0;
+            if (baseCost > 0 && bld.condition && bld.condition !== 'new') {
+                const condMultiplier = bld.condition === 'destroyed' ? 0.5 : bld.condition === 'breaking' ? 0.3 : 0.2;
+                const repairCostEst = Math.floor(baseCost * condMultiplier);
+                const dailyMaint = (baseCost * weeklyMaintRate) / 7;
+                totalExpenses += dailyMaint;
+                const name = (bt && bt.name) || bld.type;
+                expenseRows += `<div class="detail-row"><span class="label">🔧 ${name} upkeep</span><span class="value" style="color:#e74c3c">${fmtGold(dailyMaint)}/day (repair: ~${repairCostEst}g)</span></div>`;
+            }
+        }
+
+        // House maintenance (apartment monthly fees the player pays)
+        for (let i = 0; i < houses.length; i++) {
+            const h = houses[i];
+            if (h.monthlyMaintenance && h.monthlyMaintenance > 0) {
+                const dailyMaint = h.monthlyMaintenance / 30;
+                totalExpenses += dailyMaint;
+                expenseRows += `<div class="detail-row"><span class="label">🏢 Apt maintenance (${townName(h.townId)})</span><span class="value" style="color:#e74c3c">${fmtGold(dailyMaint)}/day (${h.monthlyMaintenance}g/mo)</span></div>`;
+            }
+        }
+
+        // Tax burden estimate
+        const kingdom = getPlayerKingdom();
+        if (kingdom) {
+            const propertyTaxRate = kingdom.propertyTaxRate || 0.02;
+            const incomeTaxRate = kingdom.incomeTaxRate || 0.05;
+            // Property tax: rate × net worth, paid monthly (every 30 days)
+            const netWorth = Player.getNetWorth ? Player.getNetWorth() : Player.gold;
+            const dailyPropertyTax = (netWorth * propertyTaxRate) / 30;
+            // Income tax: rate × seasonal income, paid every 90 days
+            const seasonalIncome = totalIncome * 90;
+            const dailyIncomeTax = (seasonalIncome * incomeTaxRate) / 90;
+            const totalDailyTax = dailyPropertyTax + dailyIncomeTax;
+            if (totalDailyTax > 0) {
+                totalExpenses += totalDailyTax;
+                expenseRows += `<div class="detail-row"><span class="label">🏛️ Taxes (${kingdom.name})</span><span class="value" style="color:#e74c3c">~${fmtGold(totalDailyTax)}/day</span></div>`;
+                expenseRows += `<div style="font-size:0.72rem;color:#888;margin-left:12px;">Property ${(propertyTaxRate * 100).toFixed(1)}% · Income ${(incomeTaxRate * 100).toFixed(1)}%</div>`;
+            }
+        }
+
+        // Loan payments
+        if (loan) {
+            const dailyLoan = loan.monthlyPayment / 30;
+            totalExpenses += dailyLoan;
+            expenseRows += `<div class="detail-row"><span class="label">💰 Loan payment</span><span class="value" style="color:#e74c3c">${fmtGold(dailyLoan)}/day (${loan.monthlyPayment}g/mo)</span></div>`;
+            expenseRows += `<div style="font-size:0.72rem;color:#888;margin-left:12px;">Remaining balance: ${fmtGold(loan.remainingBalance)}</div>`;
+        }
+
+        // Guild dues (estimate from membership count)
+        const guildIds = Object.keys(guildMemberships);
+        if (guildIds.length > 0) {
+            // Guilds charge small recurring fees; estimate ~2g per day per guild
+            const guildDailyEst = guildIds.length * 2;
+            totalExpenses += guildDailyEst;
+            expenseRows += `<div class="detail-row"><span class="label">⚔️ Guild dues (${guildIds.length} guild${guildIds.length > 1 ? 's' : ''})</span><span class="value" style="color:#e74c3c">~${fmtGold(guildDailyEst)}/day</span></div>`;
+        }
+
+        if (!expenseRows) {
+            expenseRows = `<div class="detail-row"><span class="label" style="color:#aaa;">No expenses found</span><span class="value">—</span></div>`;
+        }
+
+        // ── SUMMARY ──
+        // Net income uses building/rental/apartment income minus expenses (not trading estimate)
+        const operatingIncome = totalIncome - tradingDailyEst; // income from assets only
+        const netIncome = totalIncome - totalExpenses;
+        const currentGold = Player.gold || 0;
+        const projected30 = Math.round(currentGold + netIncome * 30);
+
+        const reportStyle = `
+            <style>
+                .fin-report { font-size: 0.85rem; }
+                .fin-report h3 { color: #FFD700; margin: 14px 0 6px; border-bottom: 1px solid #333; padding-bottom: 4px; font-size: 0.95rem; }
+                .fin-report .detail-row { display: flex; justify-content: space-between; padding: 3px 0; }
+                .fin-report .label { color: #ccc; }
+                .fin-report .value { font-weight: bold; }
+                .fin-report .summary-box { background: #111122; border: 1px solid #333; border-radius: 6px; padding: 10px; margin-top: 12px; }
+                .fin-report .summary-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 0.9rem; }
+                .fin-report .summary-row.big { font-size: 1rem; border-top: 1px solid #444; padding-top: 8px; margin-top: 4px; }
+            </style>
+        `;
+
+        const reportHtml = `${reportStyle}<div class="fin-report" style="background:#1a1a2e;padding:12px;border-radius:8px;">
+            <h3>💰 Income Streams</h3>
+            ${incomeRows}
+            <div class="detail-row" style="border-top:1px solid #333;margin-top:6px;padding-top:6px;">
+                <span class="label" style="color:#FFD700;font-weight:bold;">Total Income</span>
+                <span class="value" style="color:#5ac85a;font-weight:bold;">${fmtGold(totalIncome)}/day</span>
+            </div>
+
+            <h3>📉 Expenses</h3>
+            ${expenseRows}
+            <div class="detail-row" style="border-top:1px solid #333;margin-top:6px;padding-top:6px;">
+                <span class="label" style="color:#FFD700;font-weight:bold;">Total Expenses</span>
+                <span class="value" style="color:#e74c3c;font-weight:bold;">${fmtGold(totalExpenses)}/day</span>
+            </div>
+
+            <div class="summary-box">
+                <div class="summary-row">
+                    <span style="color:#ccc;">Net Income</span>
+                    <span style="${posNeg(netIncome)};font-weight:bold;">${netIncome >= 0 ? '+' : ''}${fmtGold(netIncome)}/day</span>
+                </div>
+                <div class="summary-row">
+                    <span style="color:#ccc;">Current Gold</span>
+                    <span style="color:#FFD700;font-weight:bold;">🪙 ${fmtGold(currentGold)}</span>
+                </div>
+                <div class="summary-row big">
+                    <span style="color:#FFD700;">Projected Gold (30 days)</span>
+                    <span style="${posNeg(projected30)};font-weight:bold;">🪙 ${fmtGold(projected30)}</span>
+                </div>
+            </div>
+
+            <div style="text-align:center;margin-top:10px;font-size:0.7rem;color:#666;">
+                Estimates based on current assets · ${daysPlayed} day${daysPlayed !== 1 ? 's' : ''} played
+            </div>
+        </div>`;
+
+        openModal('📊 Financial Report', reportHtml);
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -5439,6 +6075,8 @@ window.UI = (function () {
         Renderer.locatePlayer();
         _mapModeState = 0;
         toast('Centered on your location', 'info');
+        // Flag for tutorial detection (toasts may be suppressed by notification filter)
+        window._tutorialLocateUsed = true;
     }
 
     function eatUntilFull() {
@@ -5566,9 +6204,14 @@ window.UI = (function () {
             var cat = e.category || inferCategoryFromMessage(e);
             // Tab filter
             if (activeCats && !activeCats.includes(cat)) return false;
-            // User notification settings filter (only in "all" tab)
-            if (activeTab === 'all' && typeof Player !== 'undefined' && Player.shouldShowNotification) {
-                return Player.shouldShowNotification(cat, e);
+            // In "all" tab, use user's notification filter preferences (but NOT the day-suppress or skill-gate)
+            if (activeTab === 'all' && typeof Player !== 'undefined' && Player.getNotificationFilters) {
+                var filters = Player.getNotificationFilters();
+                if (filters) {
+                    var filterKey = cat;
+                    // If filter explicitly set to false (not just missing), hide it
+                    if (filters.hasOwnProperty(filterKey) && filters[filterKey] === false) return false;
+                }
             }
             return true;
         });
@@ -5581,31 +6224,86 @@ window.UI = (function () {
         // Store events for detail lookup
         openEventLog._cachedEvents = filteredEvents;
 
-        for (let evIdx = 0; evIdx < Math.min(filteredEvents.length, 100); evIdx++) {
-            const event = filteredEvents[evIdx];
-            const type = (event.type || event.message || '').toLowerCase();
-            let eventClass = 'event-world';
-            if (type.includes('war') || type.includes('plague') || type.includes('assassin') || type.includes('bandit') ||
-                type.includes('collapse') || type.includes('bankrupt')) {
-                eventClass = 'event-war';
-            } else if (type.includes('flood') || type.includes('fire') || type.includes('blight') ||
-                       type.includes('mine collapse') || type.includes('embargo') || type.includes('disaster')) {
-                eventClass = 'event-war';
-            } else if (type.includes('trade') || type.includes('festival') || type.includes('bountiful') ||
-                       type.includes('discovery') || type.includes('prospector')) {
-                eventClass = 'event-trade';
-            } else if (type.includes('personal') || type.includes('hire') || type.includes('build') ||
-                       type.includes('refugee') || type.includes('migrat')) {
-                eventClass = 'event-personal';
+        // Group stackable events (refugees, migrations, similar types within 3 days)
+        var stackableTypes = { 'refugees': '🏃 Refugee Movements', 'migration': '🏃 Migration Events', 'npc_death': '💀 Deaths', 'npc_birth': '👶 Births' };
+        var displayItems = []; // { type: 'single'|'group', event, events, groupLabel, indices }
+        var i = 0;
+        while (i < Math.min(filteredEvents.length, 150)) {
+            var ev = filteredEvents[i];
+            var evType = ev.details && ev.details.type ? ev.details.type : null;
+            if (evType && stackableTypes[evType]) {
+                // Collect consecutive events of this type within 3 days
+                var group = [{ event: ev, idx: i }];
+                var j = i + 1;
+                while (j < filteredEvents.length && j < i + 20) {
+                    var next = filteredEvents[j];
+                    var nextType = next.details && next.details.type ? next.details.type : null;
+                    if (nextType === evType && Math.abs((next.day || 0) - (ev.day || 0)) <= 3) {
+                        group.push({ event: next, idx: j });
+                        j++;
+                    } else {
+                        break;
+                    }
+                }
+                if (group.length >= 2) {
+                    displayItems.push({ type: 'group', events: group, groupLabel: stackableTypes[evType], groupType: evType, dayStart: ev.day });
+                    i = j;
+                } else {
+                    displayItems.push({ type: 'single', event: ev, idx: i });
+                    i++;
+                }
+            } else {
+                displayItems.push({ type: 'single', event: ev, idx: i });
+                i++;
             }
+        }
 
-            const clickAction = `onclick="UI.showEventDetail(${evIdx})"`;
+        for (var di = 0; di < Math.min(displayItems.length, 100); di++) {
+            var item = displayItems[di];
+            if (item.type === 'group') {
+                // Collapsed group header
+                var groupId = 'evGroup_' + di;
+                html += '<div class="event-log-item event-personal" style="cursor:pointer;border-left:3px solid #c4a35a;" onclick="(function(){var el=document.getElementById(\'' + groupId + '\');if(el)el.style.display=el.style.display===\'none\'?\'block\':\'none\';})()">';
+                html += '<span class="event-day">Day ' + (item.dayStart || '?') + '</span>';
+                html += '<span class="event-text">' + item.groupLabel + ' (' + item.events.length + ' events) ▸</span>';
+                html += '</div>';
+                html += '<div id="' + groupId + '" style="display:none;margin-left:12px;border-left:2px solid #555;padding-left:6px;">';
+                for (var gi = 0; gi < item.events.length; gi++) {
+                    var ge = item.events[gi];
+                    var clickAct = 'onclick="UI.showEventDetail(' + ge.idx + ')"';
+                    html += '<div class="event-log-item event-personal" ' + clickAct + ' style="cursor:pointer;padding:3px 6px;font-size:0.78rem;">';
+                    html += '<span class="event-day">Day ' + (ge.event.day || '?') + '</span>';
+                    html += '<span class="event-text">' + (ge.event.description || ge.event.message || 'Event') + '</span>';
+                    html += (ge.event.details ? '<span style="float:right;opacity:0.5;">ℹ️</span>' : '') + '</div>';
+                }
+                html += '</div>';
+            } else {
+                var event = item.event;
+                var evIdx = item.idx;
+                var type = (event.type || event.message || '').toLowerCase();
+                var eventClass = 'event-world';
+                if (type.includes('war') || type.includes('plague') || type.includes('assassin') || type.includes('bandit') ||
+                    type.includes('collapse') || type.includes('bankrupt')) {
+                    eventClass = 'event-war';
+                } else if (type.includes('flood') || type.includes('fire') || type.includes('blight') ||
+                           type.includes('mine collapse') || type.includes('embargo') || type.includes('disaster')) {
+                    eventClass = 'event-war';
+                } else if (type.includes('trade') || type.includes('festival') || type.includes('bountiful') ||
+                           type.includes('discovery') || type.includes('prospector')) {
+                    eventClass = 'event-trade';
+                } else if (type.includes('personal') || type.includes('hire') || type.includes('build') ||
+                           type.includes('refugee') || type.includes('migrat')) {
+                    eventClass = 'event-personal';
+                }
 
-            html += `<div class="event-log-item ${eventClass}" ${clickAction} style="cursor:pointer;">
-                <span class="event-day">Day ${event.day || '?'}</span>
-                <span class="event-text">${event.description || event.message || type || 'Event'}</span>
-                ${event.details ? '<span class="event-detail-icon" style="float:right;opacity:0.5;">\u2139\uFE0F</span>' : ''}
-            </div>`;
+                var clickAction = 'onclick="UI.showEventDetail(' + evIdx + ')"';
+
+                html += '<div class="event-log-item ' + eventClass + '" ' + clickAction + ' style="cursor:pointer;">' +
+                    '<span class="event-day">Day ' + (event.day || '?') + '</span>' +
+                    '<span class="event-text">' + (event.description || event.message || type || 'Event') + '</span>' +
+                    (event.details ? '<span class="event-detail-icon" style="float:right;opacity:0.5;">ℹ️</span>' : '') +
+                    '</div>';
+            }
         }
 
         html += '</div>';
@@ -5751,18 +6449,29 @@ window.UI = (function () {
                 }
                 html += '</ul></div>';
             }
-
-            // Navigate to town button
-            var townId = event.details.townId || event.townId;
-            if (townId) {
-                html += '<button class="btn-action" style="margin-top:8px;" onclick="UI.closeModal(); UI.clickTown(\'' + townId + '\');">\uD83D\uDDFA\uFE0F View Location</button>';
-            }
         } else {
             html += '<div style="color:var(--text-dim);font-style:italic;">No additional details available for this event.</div>';
-            // Still allow navigation if there's a townId
-            if (event.townId) {
-                html += '<button class="btn-action" style="margin-top:8px;" onclick="UI.closeModal(); UI.clickTown(\'' + event.townId + '\');">\uD83D\uDDFA\uFE0F View Location</button>';
-            }
+        }
+
+        // Universal location button — check all possible townId sources
+        var locTownId = (event.details && event.details.townId) || event.townId || null;
+        // Try to infer town from message if no explicit townId
+        if (!locTownId) {
+            try {
+                var towns = Engine.getTowns();
+                if (towns) {
+                    var msg = (event.message || event.description || '').toLowerCase();
+                    for (var _ti = 0; _ti < towns.length; _ti++) {
+                        if (towns[_ti].name && msg.indexOf(towns[_ti].name.toLowerCase()) !== -1) {
+                            locTownId = towns[_ti].id;
+                            break;
+                        }
+                    }
+                }
+            } catch (e) { /* ignore */ }
+        }
+        if (locTownId) {
+            html += '<button class="btn-action" style="margin-top:8px;" onclick="UI.clickTown(\'' + locTownId + '\');">🗺️ View Location</button>';
         }
 
         html += '</div>';
@@ -5778,7 +6487,26 @@ window.UI = (function () {
         type = type || 'info';
         category = category || 'my_actions';
 
-        // Check notification filter
+        // Always log to engine event log (dedup: check if a matching event was already logged this tick)
+        try {
+            if (typeof Engine !== 'undefined' && Engine.getEvents && Engine.logEvent) {
+                var events = Engine.getEvents();
+                var day = Engine.getDay ? Engine.getDay() : 0;
+                var alreadyLogged = false;
+                // Check last 5 events for a duplicate within same day
+                for (var _di = events.length - 1; _di >= Math.max(0, events.length - 5); _di--) {
+                    if (events[_di].day === day && events[_di].message === message) {
+                        alreadyLogged = true;
+                        break;
+                    }
+                }
+                if (!alreadyLogged) {
+                    Engine.logEvent(message, null, category);
+                }
+            }
+        } catch(e) { /* ignore logging errors */ }
+
+        // Check notification filter for popup suppression (toasts can be suppressed but log entry persists)
         if (typeof Player !== 'undefined' && Player.shouldShowNotification) {
             if (!Player.shouldShowNotification(category, null)) return;
         }
@@ -5786,16 +6514,22 @@ window.UI = (function () {
         const icons = { info: 'ℹ️', warning: '⚠️', danger: '🔴', success: '✅', achievement: '🏆' };
         const id = 'toast_' + (toastId++);
 
+        // Store notification with index for detail lookup
+        var notifIndex = notifications.length;
+        notifications.push({ id, message, type, time: Date.now(), category: category });
+
         const toastEl = document.createElement('div');
         toastEl.className = `toast toast-${type}`;
         toastEl.id = id;
+        toastEl.style.cursor = 'pointer';
         toastEl.innerHTML = `<span class="toast-icon">${icons[type] || ''}</span> ${message}`;
-        toastEl.addEventListener('click', () => dismissToast(id));
+        toastEl.addEventListener('click', function() {
+            dismissToast(id);
+            // Open event log to show the most recent matching event
+            openEventLog();
+        });
 
         el.toastContainer.appendChild(toastEl);
-
-        // Track for notification count
-        notifications.push({ id, message, type, time: Date.now() });
         updateNotifCount();
 
         // Auto-dismiss after 5 seconds
@@ -5975,6 +6709,7 @@ window.UI = (function () {
     // ═══════════════════════════════════════════════════════════
 
     function showBankruptcyDialog(debtAmount, choices) {
+        _bankruptcyLock = true;
         var bodyHtml = '<div style="padding:15px;text-align:center;">';
         bodyHtml += '<p style="color:#ff6b6b;font-size:18px;margin-bottom:10px;">💸 You are bankrupt!</p>';
         bodyHtml += '<p style="color:#ccc;font-size:14px;margin-bottom:5px;">You have been in debt for 7 consecutive days with no assets to seize.</p>';
@@ -5986,12 +6721,22 @@ window.UI = (function () {
 
         for (var i = 0; i < choices.length; i++) {
             var ch = choices[i];
-            var borderColor = ch.available ? (ch.id === 'indenture' ? '#c4a' : ch.id === 'military' ? '#a44' : '#5a5') : '#444';
-            var bgColor = ch.available ? (ch.id === 'indenture' ? '#3a1a2a' : ch.id === 'military' ? '#3a1a1a' : '#1a2a1a') : '#1a1a1a';
+            var borderColor = ch.available ? (ch.id === 'indenture' ? '#c4a' : ch.id === 'military' ? '#a44' : ch.id === 'guild_loan' ? '#a80' : '#5a5') : '#444';
+            var bgColor = ch.available ? (ch.id === 'indenture' ? '#3a1a2a' : ch.id === 'military' ? '#3a1a1a' : ch.id === 'guild_loan' ? '#2a1a0a' : '#1a2a1a') : '#1a1a1a';
             var opacity = ch.available ? '1' : '0.5';
             var cursor = ch.available ? 'pointer' : 'not-allowed';
 
-            bodyHtml += '<div ' + (ch.available ? 'onclick="UI.handleBankruptcyChoice(\'' + ch.id + '\')"' : '') + ' style="';
+            // Guild loan opens a sub-dialog instead of directly choosing
+            var clickHandler = '';
+            if (ch.available) {
+                if (ch.id === 'guild_loan') {
+                    clickHandler = 'onclick="UI.showGuildLoanDialog()"';
+                } else {
+                    clickHandler = 'onclick="UI.handleBankruptcyChoice(\'' + ch.id + '\')"';
+                }
+            }
+
+            bodyHtml += '<div ' + clickHandler + ' style="';
             bodyHtml += 'border:2px solid ' + borderColor + ';background:' + bgColor + ';padding:14px;border-radius:8px;';
             bodyHtml += 'cursor:' + cursor + ';opacity:' + opacity + ';transition:all 0.2s;text-align:left;"';
             if (ch.available) {
@@ -6009,13 +6754,118 @@ window.UI = (function () {
 
         bodyHtml += '</div>';
 
+        // Save/Load/Main Menu buttons — always accessible during bankruptcy
+        bodyHtml += '<div style="display:flex;gap:8px;justify-content:center;padding:10px 15px 15px;border-top:1px solid #333;margin-top:5px;">';
+        bodyHtml += '<button onclick="if(typeof Game!==\'undefined\'&&Game.save)Game.save()" style="padding:6px 14px;background:#2a3a2a;color:#9d9;border:1px solid #5a5;border-radius:4px;cursor:pointer;font-size:12px;">💾 Save</button>';
+        bodyHtml += '<button onclick="if(typeof Game!==\'undefined\'&&Game.load)Game.load()" style="padding:6px 14px;background:#2a2a3a;color:#99d;border:1px solid #55a;border-radius:4px;cursor:pointer;font-size:12px;">📂 Load</button>';
+        bodyHtml += '<button onclick="UI.backToMainMenu()" style="padding:6px 14px;background:#3a2a1a;color:#da9;border:1px solid #a85;border-radius:4px;cursor:pointer;font-size:12px;">🏠 Main Menu</button>';
+        bodyHtml += '</div>';
+
         openModal('💸 Bankruptcy', bodyHtml, '');
+    }
+
+    function showGuildLoanDialog() {
+        if (typeof Player === 'undefined' || !Player.getGuildLoanOffers) return;
+
+        var offers = Player.getGuildLoanOffers();
+
+        var bodyHtml = '<div style="padding:15px;text-align:center;">';
+        bodyHtml += '<p style="color:#ffa500;font-size:18px;margin-bottom:10px;">🏛️ Guild Loan Offers</p>';
+        bodyHtml += '<p style="color:#ccc;font-size:13px;margin-bottom:15px;">Select a guild to borrow from. Terms: 10% annual interest, 2 year repayment, auto-payments every 30 days.</p>';
+        bodyHtml += '</div>';
+
+        bodyHtml += '<div style="display:flex;flex-direction:column;gap:8px;padding:0 15px 10px;max-height:400px;overflow-y:auto;">';
+
+        for (var i = 0; i < offers.length; i++) {
+            var offer = offers[i];
+            var avail = offer.available;
+            var borderColor = avail ? '#a80' : '#444';
+            var bgColor = avail ? '#2a1a0a' : '#1a1a1a';
+            var opacity = avail ? '1' : '0.5';
+            var cursor = avail ? 'pointer' : 'not-allowed';
+
+            var clickHandler = '';
+            if (avail) {
+                clickHandler = 'onclick="UI.handleGuildLoanAccept(\'' + offer.guildId + '\')"';
+            }
+
+            bodyHtml += '<div ' + clickHandler + ' style="';
+            bodyHtml += 'border:2px solid ' + borderColor + ';background:' + bgColor + ';padding:12px;border-radius:8px;';
+            bodyHtml += 'cursor:' + cursor + ';opacity:' + opacity + ';transition:all 0.2s;text-align:left;"';
+            if (avail) {
+                bodyHtml += ' onmouseover="this.style.borderColor=\'#fff\';this.style.transform=\'scale(1.02)\'"';
+                bodyHtml += ' onmouseout="this.style.borderColor=\'' + borderColor + '\';this.style.transform=\'scale(1)\'"';
+            }
+            bodyHtml += '>';
+
+            bodyHtml += '<div style="font-size:14px;font-weight:bold;color:' + (avail ? '#fff' : '#666') + ';margin-bottom:4px;">';
+            bodyHtml += (offer.guildIcon || '🏛️') + ' ' + (offer.guildName || offer.guildId);
+            bodyHtml += '</div>';
+
+            if (avail) {
+                bodyHtml += '<div style="font-size:12px;color:#ccc;margin-bottom:4px;">';
+                bodyHtml += 'Loan: <strong style="color:#ffd700;">' + offer.amount + 'g</strong>';
+                bodyHtml += ' | Interest: ' + offer.totalInterest + 'g';
+                bodyHtml += ' | Total repay: <strong>' + offer.totalRepay + 'g</strong>';
+                bodyHtml += '</div>';
+                bodyHtml += '<div style="font-size:11px;color:#999;">';
+                bodyHtml += 'Monthly payment: ' + offer.monthlyPayment + 'g';
+                bodyHtml += ' | ' + offer.numPayments + ' payments over ' + offer.termDays + ' days';
+                bodyHtml += ' | Free ' + (offer.guildName || 'guild') + ' membership';
+                bodyHtml += '</div>';
+            } else {
+                bodyHtml += '<div style="font-size:12px;color:#666;">' + (offer.reason || 'No loan available') + '</div>';
+            }
+
+            bodyHtml += '</div>';
+        }
+
+        bodyHtml += '</div>';
+
+        var footerHtml = '<button class="btn-action" onclick="UI.showBankruptcyDialogFromLoan()" style="margin-right:8px;">← Back</button>';
+
+        openModal('🏛️ Guild Loans', bodyHtml, footerHtml);
+    }
+
+    function showBankruptcyDialogFromLoan() {
+        // Re-show the bankruptcy dialog (recalculate choices fresh)
+        var debtAmount = 0;
+        if (typeof Player !== 'undefined' && Player.state) {
+            debtAmount = Math.abs(Player.state.gold);
+        }
+        var choices = [];
+        if (typeof Player !== 'undefined' && Player.getBankruptcyChoices) {
+            choices = Player.getBankruptcyChoices();
+        }
+        showBankruptcyDialog(debtAmount, choices);
+    }
+
+    function handleGuildLoanAccept(guildId) {
+        if (typeof Player === 'undefined' || !Player.acceptGuildLoan) return;
+
+        var result = Player.acceptGuildLoan(guildId);
+        if (result.success) {
+            _bankruptcyLock = false;
+            closeModal();
+            // Resume game
+            if (typeof Game !== 'undefined' && Game.setSpeed) {
+                Game.setSpeed(1);
+            }
+        } else {
+            // Show error and stay on dialog
+            if (typeof UI !== 'undefined' && UI.toast) {
+                UI.toast('❌ ' + (result.message || 'Loan failed.'), 'danger');
+            }
+        }
     }
 
     function handleBankruptcyChoice(choice) {
         if (typeof Player !== 'undefined' && Player.handleBankruptcyChoice) {
             Player.handleBankruptcyChoice(choice);
         }
+        // guild_loan is handled by showGuildLoanDialog, don't close/resume here
+        if (choice === 'guild_loan') return;
+        _bankruptcyLock = false;
         closeModal();
         // Resume game
         if (typeof Game !== 'undefined' && Game.setSpeed) {
@@ -6674,6 +7524,7 @@ window.UI = (function () {
     }
 
     function openTravelOptions(townId) {
+        if (_isBankruptcyBlocked()) { toast('💸 You must resolve your bankruptcy first!', 'danger', 'critical'); return; }
         var destTown = Engine.findTown(townId);
         if (!destTown) return;
         var currentTown = Engine.findTown(Player.townId);
@@ -6993,6 +7844,7 @@ window.UI = (function () {
     }
 
     function travelTo(townId) {
+        if (_isBankruptcyBlocked()) { toast('💸 You must resolve your bankruptcy first!', 'danger', 'critical'); return; }
         try {
             const result = Player.travelTo(townId);
             if (result && result.success) {
@@ -7011,6 +7863,7 @@ window.UI = (function () {
     }
 
     function travelBySeaUI(townId) {
+        if (_isBankruptcyBlocked()) { toast('💸 You must resolve your bankruptcy first!', 'danger', 'critical'); return; }
         try {
             const result = Player.travelBySea(townId);
             if (result && result.success) {
@@ -7236,11 +8089,11 @@ window.UI = (function () {
             town = towns ? towns.find(t => t.id === townId) : null;
         }
         if (town) {
-            showTownDetail(town);
+            closeModal(); // close any modal that spawned this FIRST
             if (typeof Renderer !== 'undefined') {
                 Renderer.panTo(town.x * CONFIG.TILE_SIZE, town.y * CONFIG.TILE_SIZE);
             }
-            closeModal(); // close any modal that spawned this
+            showTownDetail(town); // then open town detail
         }
     }
 
@@ -7380,6 +8233,12 @@ window.UI = (function () {
                 ${warList ? `<div class="kc-row" style="color:var(--danger);">💀 At War: ${warList}</div>` : ''}
                 ${isHome ? '<div class="kc-home-badge">★ YOUR HOME</div>' : ''}
                 <div class="kc-row">Rep: ${Math.floor(rep)} | Rank: ${rank.icon} ${rank.name}</div>
+                <div class="kc-buttons" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">
+                    <button class="kc-btn" data-action="laws" data-kid="${k.id}" title="View Laws">📜 Laws</button>
+                    <button class="kc-btn" data-action="trade" data-kid="${k.id}" title="Trade Routes">🏛️ Trade</button>
+                    ${isHome ? '<button class="kc-btn" data-action="orders" data-kid="' + k.id + '" title="Kingdom Orders">📋 Orders</button>' : ''}
+                    ${isHome ? '<button class="kc-btn" data-action="petition" data-kid="' + k.id + '" title="Submit Petition">📝 Petition</button>' : ''}
+                </div>
             </div>`;
         }
         cardsHtml += '</div>';
@@ -7454,6 +8313,19 @@ window.UI = (function () {
 
         const html = cardsHtml + matrixHtml + statusHtml;
         openModal('👑 Kingdoms of the Realm', html);
+
+        // Attach kingdom card button handlers
+        var kcBtns = document.querySelectorAll('.kc-btn');
+        for (var bi = 0; bi < kcBtns.length; bi++) {
+            kcBtns[bi].addEventListener('click', function(e) {
+                var action = this.getAttribute('data-action');
+                var kid = this.getAttribute('data-kid');
+                if (action === 'laws') openKingdomLawsPanel(kid);
+                else if (action === 'trade') showKingdomTradePanel(kid);
+                else if (action === 'orders') showKingdomOrdersPanel(kid);
+                else if (action === 'petition') showPetitionsPanel();
+            });
+        }
     }
 
     // ── SOCIAL STATUS PAGE (in character dialog) ──
@@ -8011,6 +8883,156 @@ window.UI = (function () {
     }
 
     // ═══════════════════════════════════════════════════════════
+    //  REAL ESTATE MARKET ANALYSIS REPORT
+    // ═══════════════════════════════════════════════════════════
+    function openRealEstateReport(selectedTownId) {
+        if (typeof Player === 'undefined' || typeof Engine === 'undefined') return;
+
+        var hasLocal = Player.hasSkill && Player.hasSkill('local_market_analysis');
+        var hasKingdom = Player.hasSkill && Player.hasSkill('kingdom_market_analysis');
+        var hasGlobal = Player.hasSkill && Player.hasSkill('global_market_analysis');
+
+        if (!hasLocal && !hasKingdom && !hasGlobal) {
+            openModal('📊 Real Estate Report',
+                '<p style="color:#cc8800;">You need the <b>Local Market Analysis</b> skill to view real estate reports.</p>',
+                '<button class="btn-medieval" onclick="UI.closeModal()">Close</button>');
+            return;
+        }
+
+        // Determine available towns
+        var allTowns = Engine.getTowns();
+        var playerTown = Engine.currentTown ? Engine.currentTown() : null;
+        var playerKingdomId = typeof Player !== 'undefined' ? Player.kingdomId : null;
+        var availableTowns = [];
+
+        if (hasGlobal) {
+            availableTowns = allTowns;
+        } else if (hasKingdom) {
+            for (var i = 0; i < allTowns.length; i++) {
+                if (allTowns[i].kingdomId === playerKingdomId) availableTowns.push(allTowns[i]);
+            }
+        } else {
+            if (playerTown) availableTowns = [playerTown];
+        }
+
+        if (availableTowns.length === 0) {
+            openModal('📊 Real Estate Report',
+                '<p style="color:#aaa;">No towns available for analysis.</p>',
+                '<button class="btn-medieval" onclick="UI.closeModal()">Close</button>');
+            return;
+        }
+
+        var targetTownId = selectedTownId || (playerTown ? playerTown.id : availableTowns[0].id);
+        var report = Engine.getRealEstateReport(targetTownId);
+        if (!report) {
+            openModal('📊 Real Estate Report',
+                '<p style="color:#cc8800;">No market data available for this town.</p>',
+                '<button class="btn-medieval" onclick="UI.closeModal()">Close</button>');
+            return;
+        }
+
+        var html = '<div style="max-height:520px;overflow-y:auto;">';
+
+        // Town selector (if more than one town available)
+        if (availableTowns.length > 1) {
+            html += '<div style="margin-bottom:10px;">';
+            html += '<label style="font-size:0.8rem;color:#ccc;">Select Town: </label>';
+            html += '<select id="reReportTownSelect" onchange="UI.openRealEstateReport(this.value)" style="font-size:0.8rem;padding:3px 6px;background:#2a2520;color:#e8dcc8;border:1px solid #555;border-radius:4px;">';
+            for (var ti = 0; ti < availableTowns.length; ti++) {
+                var t = availableTowns[ti];
+                var sel = (t.id === targetTownId) ? ' selected' : '';
+                html += '<option value="' + t.id + '"' + sel + '>' + (t.name || t.id) + '</option>';
+            }
+            html += '</select></div>';
+        }
+
+        // Header
+        html += '<h3 style="color:#ffd700;margin:0 0 6px 0;">📊 ' + report.townName + ' Real Estate Report</h3>';
+        html += '<div style="font-size:0.75rem;color:#999;margin-bottom:10px;">Day ' + report.day + ' | ' + (report.category || 'Unknown') + '</div>';
+
+        // Building costs table
+        html += '<h4 style="color:#cba135;margin:10px 0 4px 0;">🏗️ Building Costs</h4>';
+        html += '<table style="width:100%;border-collapse:collapse;font-size:0.78rem;">';
+        html += '<tr style="border-bottom:1px solid rgba(255,215,0,0.3);">';
+        html += '<th style="text-align:left;padding:4px 6px;">Building</th>';
+        html += '<th style="text-align:right;padding:4px 6px;">Base Cost</th>';
+        html += '<th style="text-align:right;padding:4px 6px;">Material Cost</th>';
+        html += '<th style="text-align:right;padding:4px 6px;">Total</th></tr>';
+        for (var bi = 0; bi < report.buildings.length; bi++) {
+            var b = report.buildings[bi];
+            html += '<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">';
+            html += '<td style="padding:3px 6px;">' + b.name + '</td>';
+            html += '<td style="text-align:right;padding:3px 6px;color:#ccc;">' + b.baseCost + 'g</td>';
+            html += '<td style="text-align:right;padding:3px 6px;color:#ccc;">' + b.materialCost + 'g</td>';
+            html += '<td style="text-align:right;padding:3px 6px;color:#ffd700;">' + b.totalCost + 'g</td></tr>';
+        }
+        html += '</table>';
+
+        // Material price trends table
+        html += '<h4 style="color:#cba135;margin:14px 0 4px 0;">📈 Material Price Trends</h4>';
+        html += '<table style="width:100%;border-collapse:collapse;font-size:0.78rem;">';
+        html += '<tr style="border-bottom:1px solid rgba(255,215,0,0.3);">';
+        html += '<th style="text-align:left;padding:4px 6px;">Material</th>';
+        html += '<th style="text-align:right;padding:4px 6px;">Current</th>';
+        html += '<th style="text-align:right;padding:4px 6px;">90d Ago</th>';
+        html += '<th style="text-align:right;padding:4px 6px;">360d Ago</th>';
+        html += '<th style="text-align:right;padding:4px 6px;">90d Proj</th>';
+        html += '<th style="text-align:right;padding:4px 6px;">360d Proj</th></tr>';
+
+        for (var mi = 0; mi < report.materials.length; mi++) {
+            var m = report.materials[mi];
+            html += '<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">';
+            html += '<td style="padding:3px 6px;">' + m.name + '</td>';
+            html += '<td style="text-align:right;padding:3px 6px;">' + (Math.round(m.current * 100) / 100) + 'g</td>';
+
+            // 90 days ago with color coding
+            if (m.price90ago !== null) {
+                var color90 = m.price90ago > m.current ? '#55a868' : (m.price90ago < m.current ? '#cc4444' : '#ccc');
+                html += '<td style="text-align:right;padding:3px 6px;color:' + color90 + ';">' + (Math.round(m.price90ago * 100) / 100) + 'g</td>';
+            } else {
+                html += '<td style="text-align:right;padding:3px 6px;color:#666;">N/A</td>';
+            }
+
+            // 360 days ago with color coding
+            if (m.price360ago !== null) {
+                var color360 = m.price360ago > m.current ? '#55a868' : (m.price360ago < m.current ? '#cc4444' : '#ccc');
+                html += '<td style="text-align:right;padding:3px 6px;color:' + color360 + ';">' + (Math.round(m.price360ago * 100) / 100) + 'g</td>';
+            } else {
+                html += '<td style="text-align:right;padding:3px 6px;color:#666;">N/A</td>';
+            }
+
+            // 90-day projection with color coding
+            if (m.projected90 !== null) {
+                var pColor90 = m.projected90 < m.current ? '#55a868' : (m.projected90 > m.current ? '#cc4444' : '#ccc');
+                html += '<td style="text-align:right;padding:3px 6px;color:' + pColor90 + ';">' + m.projected90 + 'g</td>';
+            } else {
+                html += '<td style="text-align:right;padding:3px 6px;color:#666;">N/A</td>';
+            }
+
+            // 360-day projection with color coding
+            if (m.projected360 !== null) {
+                var pColor360 = m.projected360 < m.current ? '#55a868' : (m.projected360 > m.current ? '#cc4444' : '#ccc');
+                html += '<td style="text-align:right;padding:3px 6px;color:' + pColor360 + ';">' + m.projected360 + 'g</td>';
+            } else {
+                html += '<td style="text-align:right;padding:3px 6px;color:#666;">N/A</td>';
+            }
+            html += '</tr>';
+        }
+        html += '</table>';
+
+        // Legend
+        html += '<div style="margin-top:8px;font-size:0.7rem;color:#888;">';
+        html += '<span style="color:#55a868;">■</span> Price drop (favorable) &nbsp;';
+        html += '<span style="color:#cc4444;">■</span> Price increase (unfavorable)';
+        html += '</div>';
+
+        html += '</div>';
+
+        openModal('📊 Real Estate Report', html,
+            '<button class="btn-medieval" onclick="UI.closeModal()">Close</button>');
+    }
+
+    // ═══════════════════════════════════════════════════════════
     //  HOUSING DIALOG
     // ═══════════════════════════════════════════════════════════
     function openHousingDialog() {
@@ -8035,12 +9057,40 @@ window.UI = (function () {
                 html += '<div><strong>' + ht.icon + ' ' + ht.name + '</strong> in ' + (town ? town.name : '?') + (isPrimary ? ' ⭐ Primary' : '') + '</div>';
                 html += '<div style="font-size:0.8rem;color:#aaa;">' + ht.description + '</div>';
                 html += '<div style="font-size:0.8rem;">Storage: ' + ht.storage + ' | Comfort: ' + ht.comfort + ' | Security: ' + Math.round(ht.security * 100) + '%</div>';
-                if (h.isRental) html += '<div style="color:#5ac85a;font-size:0.8rem;">💰 Rented out (accumulated: ' + (h.rentAccumulated || 0) + 'g)</div>';
+                if (h.isRental) {
+                    html += '<div style="color:#5ac85a;font-size:0.8rem;">💰 Rented — ' + (h.monthlyRent || 0) + 'g/month (total earned: ' + (h.rentAccumulated || 0) + 'g)</div>';
+                    if (h.tenantId) {
+                        var _tenant = Engine.findPerson(h.tenantId);
+                        var _tName = _tenant ? ((_tenant.firstName || '') + ' ' + (_tenant.lastName || '')) : 'Unknown';
+                        html += '<div style="font-size:0.78rem;color:#aaa;">👤 Tenant: ' + _tName + (h.tenantType === 'em' ? ' (Elite Merchant)' : '') + '</div>';
+                        if (h.evictionDay) {
+                            html += '<div style="font-size:0.78rem;color:#c44e52;">⚠️ Eviction pending — leaves by day ' + h.evictionDay + '</div>';
+                        }
+                    } else {
+                        html += '<div style="font-size:0.78rem;color:#888;">🔍 Waiting for tenant...</div>';
+                    }
+                }
+                if (h.monthlyMaintenance) {
+                    html += '<div style="font-size:0.78rem;color:#c4a35a;">🏢 Apartment — monthly maintenance: ' + h.monthlyMaintenance + 'g</div>';
+                }
                 html += '<div style="margin-top:4px;">';
                 if (!isPrimary) html += '<button class="btn-medieval" onclick="UI.setPrimaryHouseUI(\'' + h.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin:2px;">⭐ Set Primary</button>';
-                html += '<button class="btn-medieval" onclick="UI.rentOutHouseUI(\'' + h.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin:2px;">' + (h.isRental ? '🏠 Stop Renting' : '💰 Rent Out') + '</button>';
-                html += '<button class="btn-medieval" onclick="UI.upgradeHouseUI(\'' + h.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin:2px;">🏗️ Upgrade</button>';
-                html += '<button class="btn-medieval" onclick="UI.sellHouseUI(\'' + h.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin:2px;color:#c44e52;">🏚️ Sell</button>';
+                // Tents: only Leave option (stop renting), no rent-out/upgrade/sell
+                if (ht.fromTentCamp) {
+                    html += '<button class="btn-medieval" onclick="UI.leaveTentUI(\'' + h.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin:2px;color:#c44e52;">🚪 Leave Tent</button>';
+                } else {
+                    // Rent out (not for apartments owned from a building — those are units, not full houses)
+                    if (!ht.fromApartmentBuilding) {
+                        html += '<button class="btn-medieval" onclick="UI.rentOutHouseUI(\'' + h.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin:2px;">' + (h.isRental ? '🏠 Stop Renting' : '💰 Rent Out') + '</button>';
+                        if (h.tenantId && !h.evictionDay) html += '<button class="btn-medieval" onclick="UI.evictTenantUI(\'' + h.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin:2px;color:#c44e52;">🚪 Evict</button>';
+                    }
+                    // Upgrade only for land-based houses (not apartments, not tents, not portable)
+                    if (!ht.fromApartmentBuilding && !ht.portable) {
+                        html += '<button class="btn-medieval" onclick="UI.upgradeHouseUI(\'' + h.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin:2px;">🏗️ Upgrade</button>';
+                    }
+                    // Sell — opens listing UI with price recommendation
+                    html += '<button class="btn-medieval" onclick="UI.sellHouseUI(\'' + h.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin:2px;color:#c44e52;">🏚️ Sell</button>';
+                }
                 html += '</div></div>';
             }
         }
@@ -8051,12 +9101,13 @@ window.UI = (function () {
             if (town) {
                 html += '<h3 style="margin-top:12px;">🏗️ Buy Housing in ' + town.name + '</h3>';
                 var ownedLand = Player.getOwnedLand(Player.townId);
-                var usedLand = houses.filter(function(h) { return h.townId === Player.townId && h.type !== 'apartment'; }).length;
+                var usedLand = Player.getUsedLandSlots ? Player.getUsedLandSlots(Player.townId) : 0;
                 html += '<div style="font-size:0.85rem;margin-bottom:8px;">Land plots: ' + usedLand + '/' + ownedLand + ' used | <button class="btn-medieval" onclick="UI.buyLandUI()" style="font-size:0.75rem;padding:2px 8px;">Buy Land (' + (Player.getLandCost ? Player.getLandCost(Player.townId) : '?') + 'g)</button></div>';
 
                 for (var j = 0; j < CONFIG.HOUSING_TYPES.length; j++) {
                     var htype = CONFIG.HOUSING_TYPES[j];
                     if (htype.id === 'bedroll' || htype.id === 'inn_room') continue;
+                    if (htype.notBuildable || htype.fromApartmentBuilding) continue;
                     if (htype.requiresPort && !town.isPort) continue;
                     if (htype.portable && htype.requiresHorse && (!Player.horses || Player.horses.length === 0)) continue;
                     var catOrder = ['village', 'town', 'city', 'capital_city'];
@@ -8115,9 +9166,94 @@ window.UI = (function () {
     }
 
     function sellHouseUI(houseId) {
+        var house = (Player.state.houses || []).find(function(h) { return h.id === houseId; });
+        if (!house) { toast('House not found.', 'error'); return; }
+        var ht = CONFIG.HOUSING_TYPES.find(function(h) { return h.id === house.type; });
+        if (!ht) { toast('Unknown housing type.', 'error'); return; }
+
+        // Calculate max price and recommended price
+        var maxPrice = Engine.getPropertyMaxBuyPrice({ _isHouse: true, houseType: house.type }, house.townId);
+        var discountLow = 0.05, discountHigh = 0.30;
+        var discountPct = discountLow + Math.random() * (discountHigh - discountLow);
+        var recommendedPrice = Math.max(1, Math.floor(maxPrice * (1 - discountPct)));
+        var hasAppraiser = Player.hasSkill && Player.hasSkill('property_appraiser');
+
+        var html = '<div>';
+        html += '<div style="margin-bottom:8px;font-size:0.85rem;">' + ht.icon + ' <b>' + ht.name + '</b>';
+        var town = Engine.findTown(house.townId);
+        if (town) html += ' in ' + town.name;
+        html += '</div>';
+
+        html += '<div style="border:1px solid #555;padding:8px;border-radius:4px;margin-bottom:10px;background:rgba(0,0,0,0.2);">';
+        html += '<div style="font-size:0.82rem;margin-bottom:4px;">💰 <b>Recommended price:</b> <span style="color:#5ac85a;">' + recommendedPrice + 'g</span> <span style="font-size:0.7rem;color:#aaa;">(5-30% below max)</span></div>';
+        if (hasAppraiser) {
+            html += '<div style="font-size:0.82rem;margin-bottom:4px;">📊 <b>Max buyer will pay:</b> <span style="color:#ffd700;">' + maxPrice + 'g</span></div>';
+        } else {
+            html += '<div style="font-size:0.82rem;margin-bottom:4px;color:#888;">📊 Max buyer price: ??? <span style="font-size:0.7rem;">(learn Property Appraiser to reveal)</span></div>';
+        }
+        html += '</div>';
+
+        html += '<div style="margin-bottom:8px;">';
+        html += '<label style="font-size:0.82rem;">Set your asking price (leave blank for recommended):</label><br>';
+        html += '<input id="houseSalePrice" type="number" value="' + recommendedPrice + '" min="1" style="width:120px;padding:4px;margin-top:4px;background:#1a1a2e;color:#eee;border:1px solid #555;border-radius:4px;font-size:0.85rem;"> g';
+        html += '</div>';
+
+        if (house.isRental && house.tenantId) {
+            html += '<div style="color:#c44e52;font-size:0.78rem;margin-bottom:6px;">⚠️ This property has a tenant. Selling will evict them.</div>';
+        }
+
+        html += '<div style="font-size:0.72rem;color:#888;">Note: If the price is too high, no one will buy it. Higher prices take longer to sell. Lower prices sell faster.</div>';
+        html += '</div>';
+
+        var footer = '<button class="btn-medieval" onclick="UI.confirmSellHouseUI(\'' + houseId + '\')" style="margin-right:8px;">📋 List For Sale</button>';
+        footer += '<button class="btn-medieval" onclick="UI.quickSellHouseUI(\'' + houseId + '\')" style="margin-right:8px;color:#c4a35a;">⚡ Quick Sell (' + recommendedPrice + 'g)</button>';
+        footer += '<button class="btn-medieval" onclick="UI.closeModal()">Cancel</button>';
+        openModal('🏚️ Sell ' + ht.name, html, footer);
+    }
+
+    function confirmSellHouseUI(houseId) {
+        var priceEl = document.getElementById('houseSalePrice');
+        var price = priceEl ? parseInt(priceEl.value) : 0;
+        if (!price || price < 1) {
+            toast('Enter a valid price.', 'warning');
+            return;
+        }
+        var house = (Player.state.houses || []).find(function(h) { return h.id === houseId; });
+        if (!house) { toast('House not found.', 'error'); return; }
+
+        // Mark house for sale (AI will buy it over time via tickPlayerPropertySales)
+        house.forSale = true;
+        house.salePrice = price;
+        house.salePriceSetDay = Engine.getDay();
+
+        var ht = CONFIG.HOUSING_TYPES.find(function(h) { return h.id === house.type; });
+        var hName = ht ? ht.name : 'House';
+        Engine.logEvent('📋 ' + (Player.state.fullName || 'Player') + ' listed ' + hName + ' for sale at ' + price + 'g.');
+        toast('📋 ' + hName + ' listed for ' + price + 'g. A buyer will come if the price is right.', 'success');
+        closeModal();
+        openHousingDialog();
+    }
+
+    function quickSellHouseUI(houseId) {
         var result = Player.sellHouse(houseId);
         toast(result.message, result.success ? 'success' : 'error');
-        if (result.success) openHousingDialog();
+        if (result.success) { closeModal(); openHousingDialog(); }
+    }
+
+    function leaveTentUI(houseId) {
+        var house = (Player.state.houses || []).find(function(h) { return h.id === houseId; });
+        if (!house) { toast('Tent not found.', 'error'); return; }
+        var html = '<div style="font-size:0.85rem;margin-bottom:10px;">Are you sure you want to leave this tent? It will be freed up for someone else.</div>';
+        html += '<div style="font-size:0.78rem;color:#888;">You won\'t get any gold back — you\'re just stopping your rental.</div>';
+        var footer = '<button class="btn-medieval" onclick="UI.confirmLeaveTent(\'' + houseId + '\')" style="margin-right:8px;color:#c44e52;">🚪 Leave</button>';
+        footer += '<button class="btn-medieval" onclick="UI.closeModal()">Cancel</button>';
+        openModal('🚪 Leave Tent', html, footer);
+    }
+
+    function confirmLeaveTent(houseId) {
+        var result = Player.leaveTent(houseId);
+        toast(result.message, result.success ? 'success' : 'error');
+        if (result.success) { closeModal(); openHousingDialog(); }
     }
 
     function upgradeHouseUI(houseId) {
@@ -8167,9 +9303,73 @@ window.UI = (function () {
     }
 
     function rentOutHouseUI(houseId) {
-        var result = Player.rentOutHouse(houseId);
-        toast(result.message, result.success ? 'success' : 'error');
-        if (result.success) openHousingDialog();
+        var house = (Player.state.houses || []).find(function(h) { return h.id === houseId; });
+        if (!house) { toast('House not found.', 'error'); return; }
+
+        // If already renting, toggle off (which may trigger eviction)
+        if (house.isRental) {
+            var result = Player.rentOutHouse(houseId);
+            toast(result.message, result.success ? 'success' : 'error');
+            if (result.success) openHousingDialog();
+            return;
+        }
+
+        // Show rent price setting dialog
+        var ht = CONFIG.HOUSING_TYPES.find(function(h) { return h.id === house.type; });
+        var recommended = 0;
+        try { recommended = Player.getRecommendedRent(house); } catch(e) { recommended = 5; }
+        var maxRent = 0;
+        try { maxRent = Player.getMaxRentWillingness(house); } catch(e) {}
+        var hasAppraiser = Player.hasSkill && Player.hasSkill('rental_appraiser');
+
+        var html = '<div style="padding:8px;">';
+        html += '<h3>💰 Set Rental Price</h3>';
+        html += '<div style="margin:4px 0;">' + (ht ? ht.icon + ' ' + ht.name : 'Property') + '</div>';
+        html += '<div style="margin:8px 0;">Recommended monthly rent: <b style="color:#ffd700;">' + recommended + 'g</b></div>';
+        if (hasAppraiser) {
+            html += '<div style="margin:4px 0;font-size:0.8rem;">🏷️ Max any tenant will pay: <b style="color:#55a868;">' + maxRent + 'g</b></div>';
+        }
+        html += '<div style="margin:8px 0;"><label>Monthly rent: </label><input type="number" id="rentalPrice" value="' + recommended + '" min="1" style="width:80px;padding:2px 4px;background:#222;color:#eee;border:1px solid #555;border-radius:3px;"> g/month</div>';
+        html += '<div style="font-size:0.75rem;color:#aaa;margin-bottom:8px;">You can change the price once per day.</div>';
+        html += '<button class="btn-medieval" onclick="(function(){ var p=parseInt(document.getElementById(\'rentalPrice\').value)||0; var r=Player.rentOutHouse(\'' + houseId + '\',p); UI.toast(r.message, r.success?\'success\':\'error\'); if(r.success){ UI.closeModal(); UI.openHousingDialog(); } })()">💰 List For Rent</button>';
+        html += '</div>';
+        openModal('💰 Rent Property', html);
+    }
+
+    function evictTenantUI(houseId) {
+        var house = (Player.state.houses || []).find(function(h) { return h.id === houseId; });
+        if (!house || !house.tenantId) { toast('No tenant to evict.', 'warning'); return; }
+        var tenant = Engine.findPerson(house.tenantId);
+        var tName = tenant ? ((tenant.firstName || '') + ' ' + (tenant.lastName || '')) : 'tenant';
+        var html = '<div style="padding:8px;">';
+        html += '<p>Are you sure you want to evict <b>' + tName + '</b>?</p>';
+        html += '<p style="font-size:0.8rem;color:#aaa;">The tenant will stay until 30 days from their last rent payment.</p>';
+        html += '<div style="display:flex;gap:8px;margin-top:8px;">';
+        html += '<button class="btn-medieval" style="color:#c44e52;" onclick="(function(){ var r=Player.evictTenant(\'' + houseId + '\'); UI.toast(r.message, r.success?\'success\':\'error\'); UI.closeModal(); UI.openHousingDialog(); })()">🚪 Confirm Eviction</button>';
+        html += '<button class="btn-medieval" onclick="UI.closeModal()">Cancel</button>';
+        html += '</div></div>';
+        openModal('🚪 Evict Tenant', html);
+    }
+
+    function showRentNegotiations() {
+        var negotiations = Player.state.rentNegotiations || [];
+        if (negotiations.length === 0) { toast('No pending rent negotiations.', 'info'); return; }
+
+        var html = '<div style="max-height:400px;overflow-y:auto;">';
+        for (var i = 0; i < negotiations.length; i++) {
+            var neg = negotiations[i];
+            html += '<div style="border:1px solid #555;padding:8px;margin:4px 0;border-radius:4px;">';
+            html += '<div><strong>💬 ' + neg.tenantName + '</strong></div>';
+            html += '<div style="font-size:0.8rem;color:#aaa;">Cannot afford current rent of <b>' + neg.currentRent + 'g/month</b></div>';
+            html += '<div style="font-size:0.8rem;">Requests: <b style="color:#ffd700;">' + neg.requestedRent + 'g/month</b></div>';
+            html += '<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;">';
+            html += '<button class="btn-medieval" style="font-size:0.72rem;" onclick="(function(){ var r=Player.respondToRentNegotiation(\'' + neg.houseId + '\',\'accept\'); UI.toast(r.message, r.success?\'success\':\'error\'); UI.showRentNegotiations(); })()">✅ Accept (' + neg.requestedRent + 'g)</button>';
+            html += '<button class="btn-medieval" style="font-size:0.72rem;" onclick="(function(){ var amt=prompt(\'Counter-offer (gold/month):\',\'' + Math.floor((neg.currentRent + neg.requestedRent) / 2) + '\'); if(amt){ var r=Player.respondToRentNegotiation(\'' + neg.houseId + '\',\'counter\',parseInt(amt)); UI.toast(r.message, r.success?\'success\':\'error\'); UI.showRentNegotiations(); } })()">🤝 Counter</button>';
+            html += '<button class="btn-medieval" style="font-size:0.72rem;color:#c44e52;" onclick="(function(){ var r=Player.respondToRentNegotiation(\'' + neg.houseId + '\',\'reject\'); UI.toast(r.message, r.success?\'success\':\'error\'); UI.showRentNegotiations(); })()">❌ Reject</button>';
+            html += '</div></div>';
+        }
+        html += '</div>';
+        openModal('💬 Rent Negotiations', html);
     }
 
     function buyLandUI() {
@@ -8784,6 +9984,7 @@ window.UI = (function () {
     }
 
     function backToMainMenu() {
+        _bankruptcyLock = false; // Clear lock when returning to main menu
         // Hide kingdom select screen and return to title screen
         const screen = document.getElementById('kingdomSelectScreen');
         if (screen) { screen.classList.add('hidden'); screen.style.display = 'none'; }
@@ -12082,10 +13283,183 @@ window.UI = (function () {
     // ── Toll Route UI Functions ──
 
     function showTollRoutesPanel() {
-        const owned = Player.getPlayerOwnedRoutes();
-        let html = '<div style="padding:15px;">';
-        html += '<h3 style="color:#ffd700;margin-bottom:10px;">\uD83D\uDEE4\uFE0F Your Toll Routes</h3>';
+        let html = '<div style="padding:15px;max-height:500px;overflow-y:auto;">';
 
+        // ===== TRAVEL DESTINATIONS SECTION =====
+        html += '<h3 style="color:#c9a96e;margin-bottom:10px;">🗺️ Travel Destinations</h3>';
+
+        const playerTownId = Player.townId;
+        const currentTown = Engine.findTown(playerTownId);
+        const isTraveling = Player.traveling;
+
+        if (!currentTown) {
+            html += '<p style="color:#aaa;">Cannot determine your location.</p>';
+        } else if (isTraveling) {
+            html += '<p style="color:#aaa;">You are currently traveling.</p>';
+        } else {
+            // Gather connected towns via roads
+            const roads = Engine.getRoads ? Engine.getRoads() : [];
+            const seaRoutes = Engine.getSeaRoutes ? Engine.getSeaRoutes() : [];
+            const connected = {}; // townId -> { type: 'road'|'sea'|'both', town, road/seaRoute }
+
+            for (let i = 0; i < roads.length; i++) {
+                const rd = roads[i];
+                let otherId = null;
+                if (rd.fromTownId === playerTownId) otherId = rd.toTownId;
+                else if (rd.toTownId === playerTownId) otherId = rd.fromTownId;
+                if (!otherId) continue;
+                const t = Engine.findTown(otherId);
+                if (!t) continue;
+                if (!connected[otherId]) connected[otherId] = { town: t, landRoute: rd, seaRoute: null };
+                else connected[otherId].landRoute = rd;
+            }
+
+            for (let i = 0; i < seaRoutes.length; i++) {
+                const sr = seaRoutes[i];
+                let otherId = null;
+                if (sr.fromTownId === playerTownId) otherId = sr.toTownId;
+                else if (sr.toTownId === playerTownId) otherId = sr.fromTownId;
+                if (!otherId) continue;
+                const t = Engine.findTown(otherId);
+                if (!t) continue;
+                if (!connected[otherId]) connected[otherId] = { town: t, landRoute: null, seaRoute: sr };
+                else connected[otherId].seaRoute = sr;
+            }
+
+            const destinations = Object.values(connected);
+
+            if (destinations.length === 0) {
+                html += '<p style="color:#aaa;">No routes lead from ' + currentTown.name + '.</p>';
+            } else {
+                // Sort: same kingdom first, then alphabetical
+                destinations.sort(function(a, b) {
+                    const aOwn = a.town.kingdomId === currentTown.kingdomId ? 0 : 1;
+                    const bOwn = b.town.kingdomId === currentTown.kingdomId ? 0 : 1;
+                    if (aOwn !== bOwn) return aOwn - bOwn;
+                    return (a.town.name || '').localeCompare(b.town.name || '');
+                });
+
+                const hasHorse = Player.horses && Player.horses.length > 0;
+                const hasSaddle = Player.inventory && (Player.inventory.saddles || 0) > 0;
+                const hasShip = Player.ships && Player.ships.length > 0;
+                const baseSpeed = CONFIG.CARAVAN_BASE_SPEED * 1.5;
+                const kingdoms = Engine.getKingdoms ? Engine.getKingdoms() : [];
+
+                for (let di = 0; di < destinations.length; di++) {
+                    const dest = destinations[di];
+                    const t = dest.town;
+                    const isLand = !!dest.landRoute;
+                    const isSea = !!dest.seaRoute;
+                    const destKingdom = kingdoms.find(function(k) { return k.id === t.kingdomId; });
+                    const sameKingdom = t.kingdomId === currentTown.kingdomId;
+                    const kColor = destKingdom ? (destKingdom.color || '#888') : '#888';
+
+                    // Compute travel days estimate
+                    let landDays = null;
+                    if (isLand) {
+                        try {
+                            const route = Engine.findPath(playerTownId, t.id);
+                            if (route && route.length > 0) {
+                                const dist = calculateRouteDist(route);
+                                landDays = Math.max(1, Math.ceil(dist / baseSpeed));
+                                if (hasHorse) {
+                                    let horseSpeed = baseSpeed * (1 + (CONFIG.HORSE_TRAVEL_SPEED_BONUS || 0.3));
+                                    if (hasSaddle) horseSpeed *= CONFIG.SADDLE_BONUS_MULTIPLIER || 2;
+                                    landDays = Math.max(1, Math.ceil(dist / horseSpeed));
+                                }
+                            }
+                        } catch (e) { /* ignore */ }
+                    }
+
+                    let seaDays = null;
+                    let seaCost = CONFIG.SEA_PASSAGE_COST || 50;
+                    if (isSea) {
+                        const seaDist = dest.seaRoute.distance || 500;
+                        const seaSpeed = CONFIG.CARAVAN_BASE_SPEED * 1.5;
+                        seaDays = Math.max(1, Math.ceil(seaDist / seaSpeed));
+                        if (hasShip) seaCost = 0;
+                    }
+
+                    // Naval threat for sea routes
+                    let navalThreat = 0;
+                    if (isSea && Engine.getNavalThreat) {
+                        try { navalThreat = Engine.getNavalThreat(playerTownId, t.id); } catch (e) { /* ignore */ }
+                    }
+
+                    // Road quality / danger
+                    let banditThreat = 0;
+                    if (isLand && dest.landRoute) {
+                        banditThreat = dest.landRoute.banditThreat || 0;
+                    }
+
+                    // Blockade check
+                    let isBlockaded = false;
+                    if (isSea && Engine.isPortBlockaded) {
+                        try { isBlockaded = Engine.isPortBlockaded(t.id); } catch (e) { /* ignore */ }
+                    }
+
+                    // Build destination card
+                    const borderCol = sameKingdom ? 'rgba(196,163,90,0.3)' : 'rgba(150,150,150,0.2)';
+                    html += '<div style="border:1px solid ' + borderCol + ';border-left:3px solid ' + kColor + ';background:rgba(255,255,255,0.03);border-radius:6px;padding:10px;margin-bottom:8px;">';
+                    html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;">';
+
+                    // Left: town info
+                    html += '<div style="flex:1;">';
+                    html += '<div style="font-size:1rem;font-weight:bold;color:#e8d48b;">' + t.name + '</div>';
+                    html += '<div style="font-size:0.75rem;color:#999;margin-top:2px;">';
+                    html += (destKingdom ? destKingdom.name : 'Unknown') + (sameKingdom ? '' : ' 🌐');
+                    if (t.isPort) html += ' ⚓';
+                    html += ' · Pop: ' + (t.population || '?');
+                    html += '</div>';
+
+                    // Route type badges
+                    html += '<div style="margin-top:4px;">';
+                    if (isLand) {
+                        const roadQuality = dest.landRoute.quality || 1;
+                        const qualLabel = roadQuality >= 3 ? 'Paved' : roadQuality >= 2 ? 'Improved' : 'Dirt';
+                        html += '<span style="font-size:0.7rem;background:rgba(106,170,80,0.2);color:#8c8;padding:2px 6px;border-radius:3px;margin-right:4px;">🛤️ ' + qualLabel + ' Road</span>';
+                    }
+                    if (isSea) {
+                        html += '<span style="font-size:0.7rem;background:rgba(42,100,150,0.3);color:#8bf;padding:2px 6px;border-radius:3px;">⛵ Sea Route</span>';
+                    }
+                    html += '</div>';
+
+                    // Danger indicators
+                    if (banditThreat > (CONFIG.BANDIT_THREAT_DANGER_THRESHOLD || 30)) {
+                        const dangerColor = banditThreat >= 60 ? '#c44e52' : '#ccb974';
+                        html += '<div style="font-size:0.7rem;color:' + dangerColor + ';margin-top:3px;">⚠️ Bandit Threat: ' + Math.round(banditThreat) + '%</div>';
+                    }
+                    if (navalThreat > 0) {
+                        const threatColor = navalThreat >= 50 ? '#c44e52' : '#ccb974';
+                        html += '<div style="font-size:0.7rem;color:' + threatColor + ';margin-top:2px;">⚠️ Naval Threat: ' + navalThreat + '%</div>';
+                    }
+                    if (isBlockaded) {
+                        html += '<div style="font-size:0.7rem;color:#c44e52;margin-top:2px;">🚫 PORT BLOCKADED</div>';
+                    }
+                    html += '</div>';
+
+                    // Right: travel info + button
+                    html += '<div style="text-align:right;min-width:100px;">';
+                    if (isLand && landDays !== null) {
+                        html += '<div style="font-size:0.8rem;color:var(--gold);">' + (hasHorse ? '🐴' : '🚶') + ' ~' + landDays + 'd</div>';
+                    }
+                    if (isSea && seaDays !== null) {
+                        html += '<div style="font-size:0.8rem;color:#8bf;">⛵ ~' + seaDays + 'd' + (seaCost > 0 ? ' · ' + seaCost + 'g' : '') + '</div>';
+                    }
+                    html += '<button class="btn-medieval" style="margin-top:6px;padding:5px 12px;font-size:0.8rem;" onclick="UI.openTravelOptions(\'' + t.id + '\')">🗺️ Travel</button>';
+                    html += '</div>';
+
+                    html += '</div>'; // flex row
+                    html += '</div>'; // card
+                }
+            }
+        }
+
+        // ===== TOLL ROUTES SECTION =====
+        html += '<div style="border-top:1px solid #444;margin-top:15px;padding-top:15px;">';
+        html += '<h3 style="color:#ffd700;margin-bottom:10px;">🛤️ Your Toll Routes</h3>';
+
+        const owned = Player.getPlayerOwnedRoutes();
         if (owned.length === 0) {
             html += '<p style="color:#aaa;">You don\'t own any toll routes yet. Build roads or sea routes to start earning toll revenue!</p>';
         } else {
@@ -12105,11 +13479,12 @@ window.UI = (function () {
         }
 
         html += '<div style="margin-top:15px;">';
-        html += '<button class="btn-medieval" onclick="UI.collectTolls()" style="padding:8px 20px;">\uD83D\uDCB0 Collect All Revenue</button>';
+        html += '<button class="btn-medieval" onclick="UI.collectTolls()" style="padding:8px 20px;">💰 Collect All Revenue</button>';
         html += '</div>';
-        html += '</div>';
+        html += '</div>'; // toll routes section
+        html += '</div>'; // outer container
 
-        openModal('Toll Routes', html);
+        openModal('🛤️ Routes & Travel', html);
     }
 
     function changeTollRate(routeType, fromTownId, toTownId) {
@@ -14249,14 +15624,61 @@ window.UI = (function () {
 
         var panel = document.createElement('div');
         panel.id = 'god-mode-panel';
-        panel.style.cssText = 'position:fixed;top:0;right:0;width:480px;height:100vh;background:#1a1a2e;color:#e0e0e0;border-left:3px solid #FFD700;overflow-y:auto;z-index:10000;font-family:monospace;font-size:12px;padding:10px;box-shadow:-5px 0 20px rgba(0,0,0,0.5);';
+        panel.style.cssText = 'position:fixed;top:0;right:0;width:480px;height:100vh;background:#1a1a2e;color:#e0e0e0;border-left:3px solid #FFD700;overflow-y:auto;z-index:10000;font-family:monospace;font-size:12px;box-shadow:-5px 0 20px rgba(0,0,0,0.5);display:flex;flex-direction:column;';
 
-        panel.innerHTML = buildGodModeHTML();
+        // Drag handle header (outside refreshed content)
+        var dragBar = document.createElement('div');
+        dragBar.id = 'god-mode-drag-handle';
+        dragBar.style.cssText = 'padding:8px 10px;border-bottom:2px solid #FFD700;cursor:move;user-select:none;flex-shrink:0;background:#1a1a2e;';
+        dragBar.innerHTML = '<span style="font-size:18px;color:#FFD700;">🔮 GOD MODE</span> <span style="font-size:11px;color:#888;margin-left:8px;">⠿ drag to move</span>' +
+            ' <button onclick="UI.closeGodModePanel()" style="float:right;background:#8b0000;color:white;border:none;padding:4px 10px;cursor:pointer;">✕ Close</button>';
+        panel.appendChild(dragBar);
+
+        // Scrollable content area (refreshed by interval)
+        var content = document.createElement('div');
+        content.id = 'god-mode-content';
+        content.style.cssText = 'flex:1;overflow-y:auto;padding:10px;';
+        content.innerHTML = buildGodModeHTML();
+        panel.appendChild(content);
+
         document.body.appendChild(panel);
 
+        // Make panel draggable via the header bar
+        (function() {
+            var isDragging = false, startX = 0, startY = 0, origLeft = 0, origTop = 0;
+            dragBar.addEventListener('mousedown', function(e) {
+                if (e.target.tagName === 'BUTTON') return;
+                isDragging = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                var rect = panel.getBoundingClientRect();
+                origLeft = rect.left;
+                origTop = rect.top;
+                panel.style.left = rect.left + 'px';
+                panel.style.top = rect.top + 'px';
+                panel.style.right = 'auto';
+                panel.style.height = rect.height + 'px';
+                e.preventDefault();
+            });
+            function onMove(e) {
+                if (!isDragging) return;
+                var dx = e.clientX - startX;
+                var dy = e.clientY - startY;
+                panel.style.left = (origLeft + dx) + 'px';
+                panel.style.top = (origTop + dy) + 'px';
+            }
+            function onUp() { isDragging = false; }
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+            window._godModeDragCleanup = function() {
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+            };
+        })();
+
         window._godModeRefreshInterval = setInterval(function() {
-            var p = document.getElementById('god-mode-panel');
-            if (p) p.innerHTML = buildGodModeHTML();
+            var c = document.getElementById('god-mode-content');
+            if (c) c.innerHTML = buildGodModeHTML();
             else clearInterval(window._godModeRefreshInterval);
         }, 2000);
     }
@@ -14265,13 +15687,11 @@ window.UI = (function () {
         var panel = document.getElementById('god-mode-panel');
         if (panel) panel.remove();
         if (window._godModeRefreshInterval) clearInterval(window._godModeRefreshInterval);
+        if (window._godModeDragCleanup) { window._godModeDragCleanup(); window._godModeDragCleanup = null; }
     }
 
     function buildGodModeHTML() {
-        var html = '<div style="border-bottom:2px solid #FFD700;padding-bottom:8px;margin-bottom:10px;">';
-        html += '<span style="font-size:18px;color:#FFD700;">🔮 GOD MODE</span>';
-        html += ' <button onclick="UI.closeGodModePanel()" style="float:right;background:#8b0000;color:white;border:none;padding:4px 10px;cursor:pointer;">✕ Close</button>';
-        html += '</div>';
+        var html = '';
 
         // === CHEAT BUTTONS ===
         html += '<div style="margin-bottom:12px;padding:8px;background:#2a2a3e;border-radius:4px;">';
@@ -14398,8 +15818,8 @@ window.UI = (function () {
                 var avgProsp = kTowns.length > 0 ? Math.round(kTowns.reduce(function(s,t){return s+(t.prosperity||0);},0)/kTowns.length) : 0;
                 html += '<div style="margin:4px 0;padding:4px;border-left:3px solid ' + (k.color || '#666') + ';">';
                 html += '<b>' + (k.name || 'Kingdom') + '</b> — King: ' + kingName + '<br>';
-                html += '💰 ' + Math.floor(k.gold || 0).toLocaleString() + 'g | 😊 Mood: ' + mood + ' | ⚔️ Wars: ' + wars + ' | 🏘️ Towns: ' + kTowns.length + ' | 📈 Avg Prosperity: ' + avgProsp;
-                html += ' | Tax: ' + Math.round((k.taxRate || 0) * 100) + '%';
+                html += '<span style="color:#ffd700;font-weight:bold;">💰 Treasury: ' + Math.floor(k.gold || 0).toLocaleString() + 'g</span> | 😊 Mood: ' + mood + ' | ⚔️ Wars: ' + wars + ' | 🏘️ Towns: ' + kTowns.length + ' | 📈 Avg Prosperity: ' + avgProsp;
+                html += ' | Tax: ' + Math.round((k.taxRate || 0) * 100) + '% | Income: ' + Math.round((k.lastIncome || 0)).toLocaleString() + 'g/mo | Expenses: ' + Math.round((k.lastExpenses || 0)).toLocaleString() + 'g/mo';
                 html += '</div>';
             }
         } catch(e) { html += '<div style="color:#f44;">Error: ' + e.message + '</div>'; }
@@ -14583,7 +16003,7 @@ window.UI = (function () {
                 // Travel to
                 html += '<button onclick="Player.state.townId=\'' + npc.townId + '\'; Player.state.traveling=false; Player.state.travelProgress=0; Player.state.travelDestination=null; Player.state.travelRoute=null; Player.state.travelOrigin=null; Player.state.travelPaid=0; Player.state.travelMode=null; Player.state.travelBySea=false; Player.state.travelOffroad=false; Player.state.travelTotalDist=0; UI.toast(\'Teleported to ' + ((npcTown ? npcTown.name : '?').replace(/'/g, '')) + '\',\'success\')" style="font-size:10px; padding:1px 5px; margin:1px; background:#16305d; color:#fff; border:1px solid #48a; cursor:pointer;">📍Travel To</button>';
                 // Kill
-                html += '<button onclick="var pp=Engine.getPeople().find(function(x){return x.id===\'' + npc.id + '\';}); if(pp){pp.alive=false; pp._deathDay=Engine.getDay(); UI.toast(\'💀 Killed ' + ((npc.firstName || '?').replace(/'/g, '')) + '\',\'warning\');}" style="font-size:10px; padding:1px 5px; margin:1px; background:#8b0000; color:#fff; border:1px solid #f44; cursor:pointer;">💀Kill</button>';
+                html += '<button onclick="var pp=Engine.getPeople().find(function(x){return x.id===\'' + npc.id + '\';}); if(pp){Engine.killPerson(pp, \'god_mode\'); UI.toast(\'💀 Killed ' + ((npc.firstName || '?').replace(/'/g, '')) + '\',\'warning\');}" style="font-size:10px; padding:1px 5px; margin:1px; background:#8b0000; color:#fff; border:1px solid #f44; cursor:pointer;">💀Kill</button>';
                 // Give gold
                 html += '<button onclick="var pp=Engine.getPeople().find(function(x){return x.id===\'' + npc.id + '\';}); if(pp){pp.gold=(pp.gold||0)+1000; UI.toast(\'💰+1000g to ' + ((npc.firstName || '?').replace(/'/g, '')) + '\',\'success\');}" style="font-size:10px; padding:1px 5px; margin:1px; background:#2d5016; color:#fff; border:1px solid #4a8; cursor:pointer;">💰+1K</button>';
                 // Force marry player
@@ -14624,8 +16044,8 @@ window.UI = (function () {
         html += '<button onclick="(function(){var t=Engine.getTowns().find(function(t){return t.id===Player.state.townId}); if(t&&t.market&&t.market.supply){t.market.supply.gold_ore=(t.market.supply.gold_ore||0)+500; t.market.supply.jewelry=(t.market.supply.jewelry||0)+200; UI.toast(\'💎 Gold rush in \'+t.name+\'!\',\'success\');}else{UI.toast(\'No town\',\'error\');}})()" style="margin:2px; padding:3px 8px; background:#8b8000; color:#fff; border:1px solid #dd0; cursor:pointer;">💎 Gold Rush</button> ';
         html += '<button onclick="(function(){var t=Engine.getTowns().find(function(t){return t.id===Player.state.townId}); if(t&&t.market&&t.market.supply){for(var r in t.market.supply){t.market.supply[r]=Math.floor((t.market.supply[r]||0)*2);} UI.toast(\'📈 Trade boom in \'+t.name+\'!\',\'success\');}else{UI.toast(\'No town\',\'error\');}})()" style="margin:2px; padding:3px 8px; background:#006400; color:#fff; border:1px solid #0a0; cursor:pointer;">📈 Trade Boom</button> ';
         html += '<button onclick="(function(){var t=Engine.getTowns().find(function(t){return t.id===Player.state.townId}); if(t){t.gold=Math.max(0,(t.gold||0)-500); t.safety=Math.max(0,(t.safety||50)-30); UI.toast(\'🏴‍☠️ Bandit raid on \'+t.name+\'!\',\'warning\');}else{UI.toast(\'No town\',\'error\');}})()" style="margin:2px; padding:3px 8px; background:#4a0000; color:#fff; border:1px solid #a00; cursor:pointer;">🏴‍☠️ Bandit Raid</button> ';
-        html += '<button onclick="(function(){var ks=Engine.getKingdoms(); var pk=ks.find(function(k){var t=Engine.getTowns().find(function(tt){return tt.id===Player.state.townId}); return t && k.id===t.kingdomId;}); if(pk && pk.kingId){var king=Engine.getPeople().find(function(p){return p.id===pk.kingId;}); if(king){king.alive=false; king._deathDay=Engine.getDay(); UI.toast(\'💀 King \'+king.firstName+\' is dead! Succession crisis!\',\'warning\');}else{UI.toast(\'King not found\',\'error\');}}else{UI.toast(\'No kingdom\',\'error\');}})()" style="margin:2px; padding:3px 8px; background:#5a0000; color:#fff; border:1px solid #f44; cursor:pointer;">👑💀 Kill King</button> ';
-        html += '<button onclick="(function(){var people=Engine.getPeople().filter(function(p){return p.alive && p.townId===Player.state.townId}); if(people.length===0){UI.toast(\'No people in town\',\'info\');return;} var killCount=Math.max(1,Math.floor(people.length*0.1)); for(var i=0;i<killCount;i++){var victim=people[Math.floor(Math.random()*people.length)]; if(victim){victim.alive=false; victim._deathDay=Engine.getDay();}} UI.toast(\'☠️ Plague! \'+killCount+\' dead in town\',\'warning\');})()" style="margin:2px; padding:3px 8px; background:#2a004a; color:#fff; border:1px solid #80f; cursor:pointer;">☠️ Plague</button> ';
+        html += '<button onclick="(function(){var ks=Engine.getKingdoms(); var pk=ks.find(function(k){var t=Engine.getTowns().find(function(tt){return tt.id===Player.state.townId}); return t && k.id===t.kingdomId;}); if(pk && pk.king){var king=Engine.getPeople().find(function(p){return p.id===pk.king;}); if(king){Engine.killPerson(king, \'god_mode\'); UI.toast(\'💀 King \'+king.firstName+\' is dead! Succession triggered!\',\'warning\');}else{UI.toast(\'King not found\',\'error\');}}else{UI.toast(\'No kingdom\',\'error\');}})()" style="margin:2px; padding:3px 8px; background:#5a0000; color:#fff; border:1px solid #f44; cursor:pointer;">👑💀 Kill King</button> ';
+        html += '<button onclick="(function(){var people=Engine.getPeople().filter(function(p){return p.alive && p.townId===Player.state.townId}); if(people.length===0){UI.toast(\'No people in town\',\'info\');return;} var killCount=Math.max(1,Math.floor(people.length*0.1)); for(var i=0;i<killCount;i++){var victim=people[Math.floor(Math.random()*people.length)]; if(victim && victim.alive){Engine.killPerson(victim, \'plague\');}} UI.toast(\'☠️ Plague! \'+killCount+\' dead in town\',\'warning\');})()" style="margin:2px; padding:3px 8px; background:#2a004a; color:#fff; border:1px solid #80f; cursor:pointer;">☠️ Plague</button> ';
         html += '<button onclick="Engine.godMakeWorldWar(); UI.toast(\'⚔️ WORLD WAR! All kingdoms at war!\',\'warning\');" style="margin:2px; padding:3px 8px; background:#8b0000; color:#fff; border:1px solid #f00; cursor:pointer;">⚔️ World War</button> ';
         html += '<button onclick="Engine.godMakeWorldPeace(); UI.toast(\'☮️ World peace declared!\',\'success\');" style="margin:2px; padding:3px 8px; background:#005050; color:#fff; border:1px solid #0aa; cursor:pointer;">☮️ World Peace</button> ';
         html += '</div>';
@@ -14789,6 +16209,7 @@ window.UI = (function () {
         openHireDialog,
         openCaravanDialog,
         openCharacterDialog,
+        openFinancialReport,
         openRenamePlayer,
         confirmRenamePlayer,
         openEventLog,
@@ -14908,6 +16329,10 @@ window.UI = (function () {
         // Bankruptcy
         showBankruptcyDialog,
         handleBankruptcyChoice,
+        // Guild Loan
+        showGuildLoanDialog,
+        showBankruptcyDialogFromLoan,
+        handleGuildLoanAccept,
         showSpyFavorDialog,
         handleSpyFavor,
         showTournamentContinueDialog,
@@ -14969,8 +16394,16 @@ window.UI = (function () {
         openConvertBuildingUI,
         executeConvertBuildingUI,
         demolishBuildingUI,
+        confirmDemolishUI,
         openFarmConvertUI,
         executeFarmConvertUI,
+        openTownMarket,
+        listLandForSaleUI,
+        buyApartmentUnit,
+        buyTentSlot,
+        listBuildingForSaleUI,
+        evictTenantUI,
+        showRentNegotiations,
         sellHorse,
         depositToStorage: depositToStorageUI,
         withdrawFromStorage: withdrawFromStorageUI,
@@ -15044,8 +16477,13 @@ window.UI = (function () {
         openJournal,
         // Housing & Rest
         openHousingDialog,
+        openRealEstateReport,
         buyHouseUI,
         sellHouseUI,
+        confirmSellHouseUI,
+        quickSellHouseUI,
+        leaveTentUI,
+        confirmLeaveTent,
         upgradeHouseUI,
         doUpgradeHouse,
         setPrimaryHouseUI,

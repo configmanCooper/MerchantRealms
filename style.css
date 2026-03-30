@@ -1670,6 +1670,22 @@ body {
     font-size: 0.85rem;
 }
 
+.kc-btn {
+    font-size: 0.7rem;
+    padding: 3px 8px;
+    background: rgba(80, 60, 30, 0.5);
+    border: 1px solid rgba(180, 150, 80, 0.4);
+    color: #f0d0a0;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: var(--font-display);
+    transition: background 0.2s, border-color 0.2s;
+}
+.kc-btn:hover {
+    background: rgba(120, 90, 40, 0.7);
+    border-color: rgba(220, 180, 60, 0.7);
+}
+
 .mini-bar {
     display: inline-block;
     width: 60px;

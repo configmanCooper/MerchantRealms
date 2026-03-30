@@ -257,7 +257,12 @@
 
         // ── Bankruptcy System ──
         bankruptDays: 0,                // consecutive days at gold <= 0
-        bankruptcy: null,               // { active, type: 'indenture'|'military'|'priest', debtAmount, startDay, assetSeizureDay }
+        bankruptcy: null,               // { active, type: 'indenture'|'military'|'priest'|'guild_loan', debtAmount, startDay, assetSeizureDay }
+
+        // ── Guild Loan System ──
+        maxGoldEver: 0,                 // highest gold the player has ever held
+        activeLoan: null,               // { guildId, amount, remainingBalance, interestRate, startDay, termDays, lastPaymentDay, monthlyPayment }
+        loanHistory: [],                // past loans: { guildId, amount, outcome: 'repaid'|'forgiven', endDay }
 
         // ── Tournament System ──
         tournamentState: null,          // { round: 1-3, entryFee, kingdomId, townId } or null — active tournament progress
@@ -559,6 +564,10 @@
         // Bankruptcy
         player.bankruptDays = 0;
         player.bankruptcy = null;
+        // Guild loan
+        player.maxGoldEver = 0;
+        player.activeLoan = null;
+        player.loanHistory = [];
         player.tournamentState = null;
         player.tournamentsWon = 0;
         player.pendingSpyFavor = null;
@@ -1320,11 +1329,11 @@
         // Check land requirement (wells don't need land)
         if (!bt.noLandRequired) {
             var ownedPlots = (player.landOwned && player.landOwned[tid]) || 0;
-            var usedPlots = player.buildings.filter(function(b) { return b.townId === tid; }).length;
-            var housePlots = (player.houses || []).filter(function(h) { return h.townId === tid && h.type !== 'apartment'; }).length;
-            if (usedPlots + housePlots >= ownedPlots) {
+            var _usedSlotsBuild = getUsedLandSlots(tid);
+            var _neededSlotsBuild = bt.landSlots || 1;
+            if (_usedSlotsBuild + _neededSlotsBuild > ownedPlots) {
                 var landCost = getLandCost(tid);
-                return { success: false, message: '🏗️ No empty land plots! You need to buy land first (' + landCost + 'g) before building here.' };
+                return { success: false, message: '🏗️ Not enough land! Need ' + _neededSlotsBuild + ' plot(s) but only ' + Math.max(0, ownedPlots - _usedSlotsBuild) + ' available. Buy land first (' + landCost + 'g).' };
             }
         }
 
@@ -1448,6 +1457,10 @@
 
         player.gold -= buildCost;
         player.stats.totalGoldSpent += buildCost;
+        // Distribute construction wages to local NPCs (player building)
+        if (typeof Engine !== 'undefined' && Engine.distributeConstructionWages) {
+            Engine.distributeConstructionWages(tid, buildCost);
+        }
 
         const bld = {
             id: buildingUid(),
@@ -1544,8 +1557,8 @@
 
         // Check land ownership
         const ownedLand = getOwnedLand(tid);
-        const playerBuildingsInTown = player.buildings.filter(function(b) { return b.townId === tid; }).length;
-        if (playerBuildingsInTown >= ownedLand) {
+        const usedLandSlots = getUsedLandSlots(tid);
+        if (usedLandSlots + 1 > ownedLand) {
             return { success: false, message: 'You need to own land here first. Buy land to place buildings.' };
         }
 
@@ -1650,9 +1663,10 @@
         // Check land ownership for new acquisition
         if (bld.ownerId !== 'player') {
             var ownedLand = getOwnedLand(tid);
-            var playerBldCount = player.buildings.filter(function(b) { return b.townId === tid; }).length;
-            if (playerBldCount >= ownedLand) {
-                return { success: false, message: 'You need to own land here first. Buy land to place buildings.' };
+            var _usedSlots = getUsedLandSlots(tid);
+            var _neededSlots = (newBt && newBt.landSlots) ? newBt.landSlots : 1;
+            if (_usedSlots + _neededSlots > ownedLand) {
+                return { success: false, message: 'Not enough land. Need ' + _neededSlots + ' plot(s) but only ' + Math.max(0, ownedLand - _usedSlots) + ' available.' };
             }
         }
 
@@ -10629,6 +10643,10 @@
             // Bankruptcy
             bankruptDays: player.bankruptDays || 0,
             bankruptcy: player.bankruptcy ? JSON.parse(JSON.stringify(player.bankruptcy)) : null,
+            // Guild Loan
+            maxGoldEver: player.maxGoldEver || 0,
+            activeLoan: player.activeLoan ? JSON.parse(JSON.stringify(player.activeLoan)) : null,
+            loanHistory: JSON.parse(JSON.stringify(player.loanHistory || [])),
             // Tournament
             tournamentState: player.tournamentState ? JSON.parse(JSON.stringify(player.tournamentState)) : null,
             tournamentsWon: player.tournamentsWon || 0,
@@ -10852,6 +10870,10 @@
         // Bankruptcy
         player.bankruptDays = data.bankruptDays || 0;
         player.bankruptcy = data.bankruptcy || null;
+        // Guild Loan
+        player.maxGoldEver = data.maxGoldEver || 0;
+        player.activeLoan = data.activeLoan || null;
+        player.loanHistory = data.loanHistory || [];
         // Tournament
         player.tournamentState = data.tournamentState || null;
         player.tournamentsWon = data.tournamentsWon || 0;
@@ -11089,6 +11111,40 @@
 
         const bName = bt ? bt.name : bld.type;
         return { success: true, message: `Repaired ${bName} for ${cost}g. Back to New condition!` };
+    }
+
+    function repairHouse(houseId) {
+        var house = (player.houses || []).find(function(h) { return h.id === houseId; });
+        if (!house) return { success: false, message: 'House not found.' };
+
+        var cond = house.condition || 'new';
+        if (cond === 'new') return { success: false, message: 'House is in good condition.' };
+
+        var ht = CONFIG.HOUSING_TYPES.find(function(h) { return h.id === house.type; });
+        var baseCost = ht ? (ht.baseCost || 200) : 200;
+        var cost, days;
+
+        if (cond === 'destroyed') {
+            cost = Math.floor(baseCost * 0.5);
+            days = 5;
+        } else if (cond === 'breaking') {
+            cost = Math.floor(baseCost * 0.3);
+            days = 3;
+        } else { // used
+            cost = Math.floor(baseCost * 0.15);
+            days = 1;
+        }
+
+        if (player.gold < cost) return { success: false, message: 'Repair costs ' + cost + 'g. Not enough gold.' };
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.supply_building || 2);
+        player.gold -= cost;
+        player.stats.totalGoldSpent += cost;
+        house.condition = 'new';
+        house.lastRepairDay = Engine.getDay();
+
+        var hName = ht ? ht.name : house.type;
+        Engine.logEvent('🔧 Repaired your ' + hName + ' for ' + cost + 'g.', { townId: house.townId }, 'my_actions');
+        return { success: true, message: 'Repaired ' + hName + ' for ' + cost + 'g. Back to New condition!' };
     }
 
     function repairShip(shipId) {
@@ -11857,6 +11913,14 @@
         }
 
         checkAchievements();
+
+        // Track maximum gold ever held (for guild loan creditworthiness)
+        if (player.gold > (player.maxGoldEver || 0)) {
+            player.maxGoldEver = player.gold;
+        }
+
+        // Guild loan auto-payment
+        tickGuildLoan();
 
         // Sanitize gold to prevent float accumulation
         player.gold = Math.floor(player.gold);
@@ -15064,14 +15128,12 @@
         // Tier 1: Critical — always show
         if (category === 'critical') return true;
 
-        // Suppress military/war/kingdom toast popups in the first 5 days of any game
+        // Suppress ALL toast popups in the first 5 days of any game (except critical)
         // These events still go to the notification log, just not as popup toasts
         try {
             var gameDay = Engine.getDay();
             if (gameDay <= 5) {
-                if (category === 'military' || category === 'foreign_kingdoms' || category === 'my_kingdom' || category === 'world_economy') {
-                    return false;
-                }
+                return false;
             }
         } catch(e) {}
 
@@ -15138,6 +15200,16 @@
         // Tier 5: Trade intelligence — requires trade_network_intelligence
         if (category === 'trade_intel') {
             return hasSkill('trade_network_intelligence');
+        }
+
+        // Tier 6: NPC/EM activity — elite merchant events require merchant_intelligence skill
+        if (category === 'npc_activity') {
+            // Check if this is an elite merchant event
+            var emMsg = event ? ((event.message || event.description || '') + '').toLowerCase() : '';
+            var isEmEvent = emMsg.indexOf('elite merchant') !== -1 || emMsg.indexOf('merchant empire') !== -1 ||
+                emMsg.indexOf('merchant dynasty') !== -1 || emMsg.indexOf('merchant intelligence') !== -1 ||
+                (event && event.details && (event.details.type === 'elite_collapse' || event.details.type === 'em_action'));
+            if (isEmEvent && !hasSkill('merchant_intelligence')) return false;
         }
 
         // Smart military mode
@@ -17740,6 +17812,13 @@
             if (kp.greed === 'greedy') chance -= 0.15;
             if (kp.temperament === 'kind' && (petition.typeId === 'seek_peace' || petition.typeId === 'fund_festival')) chance += 0.05;
             if (kp.temperament === 'cruel') chance -= 0.05;
+            // Cruel/corrupt kings more likely to demolish tent camps; kind kings less so
+            if (petition.typeId === 'demolish_tent_camps') {
+                if (kp.temperament === 'cruel') chance += 0.15;
+                if (kp.greed === 'corrupt') chance += 0.10;
+                if (kp.temperament === 'kind') chance -= 0.15;
+                if (kp.greed === 'generous') chance -= 0.10;
+            }
         }
 
         // Player bonuses
@@ -17981,6 +18060,52 @@
                         town.happiness = Math.min(100, (town.happiness || 50) + 15);
                         town.prosperity = Math.min(100, (town.prosperity || 50) + 5);
                         Engine.logEvent('🎉 A grand festival was held in ' + town.name + '! Happiness soars!');
+                    }
+                }
+                break;
+            }
+            case 'demolish_tent_camps': {
+                if (td.townId) {
+                    var town = Engine.findTown(td.townId);
+                    if (town) {
+                        var tcamps = (town.buildings || []).filter(function(b) { return b.type === 'tent_camp'; });
+                        var demolished = 0;
+                        for (var dci = tcamps.length - 1; dci >= 0; dci--) {
+                            var camp = tcamps[dci];
+                            // Evict all occupants
+                            for (var dti = 0; dti < (camp.tents || []).length; dti++) {
+                                var tent = camp.tents[dti];
+                                if (tent.occupantId) {
+                                    if (tent.occupantType === 'player') {
+                                        // Remove player tent housing
+                                        if (player.houses) {
+                                            player.houses = player.houses.filter(function(h) { return h.fromTentCamp !== camp._id; });
+                                        }
+                                        if (player.houseType === 'tent') player.houseType = null;
+                                        player._tentCampId = null;
+                                        player._tentIndex = null;
+                                    } else {
+                                        var evPerson = Engine.findPerson(tent.occupantId);
+                                        if (evPerson) {
+                                            evPerson.houseType = null;
+                                            evPerson._tentCampId = null;
+                                            evPerson._tentIndex = null;
+                                        }
+                                    }
+                                    tent.occupantId = null;
+                                    tent.occupantType = null;
+                                }
+                            }
+                            var idx = town.buildings.indexOf(camp);
+                            if (idx >= 0) town.buildings.splice(idx, 1);
+                            demolished++;
+                        }
+                        if (demolished > 0) {
+                            Engine.logEvent('🔥 The king ordered all ' + demolished + ' tent camp(s) in ' + town.name + ' demolished per your petition!');
+                            if (town.happiness !== undefined) town.happiness = Math.max(0, town.happiness - 3 * demolished);
+                        } else {
+                            Engine.logEvent('📜 The king approved your petition, but there are no tent camps in ' + town.name + ' to demolish.');
+                        }
                     }
                 }
                 break;
@@ -19579,11 +19704,14 @@
         }
 
         // Caravan wagon doesn't need land
-        // Apartments don't need land
-        if (ht.id !== 'apartment' && !ht.portable) {
+        // Apartments don't need land (they come from apartment buildings)
+        if (ht.id !== 'apartment' && !ht.portable && !ht.fromApartmentBuilding) {
             var ownedLand = (player.landOwned && player.landOwned[townId]) || 0;
-            var usedLand = (player.houses || []).filter(h => h.townId === townId && h.type !== 'apartment' && !(CONFIG.HOUSING_TYPES.find(x => x.id === h.type) || {}).portable).length;
-            if (usedLand >= ownedLand) return { success: false, message: 'You need to own land in this town first. Buy a land plot.' };
+            var usedLand = getUsedLandSlots(townId);
+            var neededSlots = ht.landSlots || 1;
+            if (usedLand + neededSlots > ownedLand) {
+                return { success: false, message: 'Not enough land. Need ' + neededSlots + ' plot(s) but only ' + Math.max(0, ownedLand - usedLand) + ' available. Buy more land.' };
+            }
         }
 
         // Caravan wagon requires a horse
@@ -19660,7 +19788,7 @@
         player.gold -= totalGoldNeeded;
         player.stats.totalGoldSpent += totalGoldNeeded;
 
-        var house = { id: houseUid(), type: housingTypeId, townId: townId, purchaseDay: Engine.getDay(), occupants: [], homeStorage: {}, isRental: false, rentAccumulated: 0, purchaseCost: totalGoldNeeded };
+        var house = { id: houseUid(), type: housingTypeId, townId: townId, purchaseDay: Engine.getDay(), occupants: [], homeStorage: {}, isRental: false, rentAccumulated: 0, purchaseCost: totalGoldNeeded, condition: 'new', builtDay: Engine.getDay(), lastRepairDay: 0 };
         if (!player.houses) player.houses = [];
         player.houses.push(house);
         if (!player.primaryHouseId) player.primaryHouseId = house.id;
@@ -19700,6 +19828,43 @@
         var town = Engine.findTown(house.townId);
         Engine.logEvent(player.fullName + ' sold a ' + (ht ? ht.name : 'house') + ' in ' + (town ? town.name : 'unknown') + ' for ' + sellPrice + 'g.');
         return { success: true, message: 'Sold for ' + sellPrice + 'g.', amount: sellPrice };
+    }
+
+    // ── Leave tent (stop renting) — frees up the tent slot ──
+    function leaveTent(houseId) {
+        if (!player.houses) return { success: false, message: 'No houses owned.' };
+        var idx = player.houses.findIndex(function(h) { return h.id === houseId; });
+        if (idx === -1) return { success: false, message: 'Tent not found.' };
+        var house = player.houses[idx];
+        if (house.type !== 'tent') return { success: false, message: 'This is not a tent.' };
+
+        // Free the tent slot in the camp building
+        var town = Engine.findTown(house.townId);
+        if (town && house.fromTentCamp != null) {
+            var camp = (town.buildings || []).find(function(b) { return b._id === house.fromTentCamp && b.type === 'tent_camp'; });
+            if (camp && camp.tents) {
+                var slot = camp.tents.find(function(t) { return t.tentIndex === house.tentIndex; });
+                if (slot) {
+                    slot.occupantId = null;
+                    slot.occupantType = null;
+                    slot.rentStartDay = null;
+                    slot.lastRentDay = null;
+                }
+            }
+        }
+
+        // Remove from player houses
+        player.houses.splice(idx, 1);
+        if (player.primaryHouseId === houseId) {
+            var nextHome = player.houses.find(function(h) { return !h.isRental; });
+            player.primaryHouseId = nextHome ? nextHome.id : null;
+        }
+        player.houseType = null;
+        player._tentCampId = null;
+        player._tentIndex = null;
+
+        Engine.logEvent('⛺ ' + player.fullName + ' left their tent in ' + (town ? town.name : 'unknown') + '.');
+        return { success: true, message: 'You left the tent. It is now available for others.' };
     }
 
     // ── Housing upgrade (in-place) — pay difference in materials + labor ──
@@ -19785,36 +19950,300 @@
 
     // Old rest functions removed — replaced by restForTicks() in §12J Energy System
 
-    function rentOutHouse(houseId) {
+    function rentOutHouse(houseId, monthlyRent) {
         var house = (player.houses || []).find(h => h.id === houseId);
         if (!house) return { success: false, message: 'House not found.' };
         if (house.id === player.primaryHouseId) return { success: false, message: 'Cannot rent out your primary home.' };
-        house.isRental = !house.isRental;
-        house.rentAccumulated = 0;
-        return { success: true, message: house.isRental ? 'House set as rental property. 💰' : 'House no longer rented out.' };
+
+        // Toggling off rental
+        if (house.isRental && monthlyRent === undefined) {
+            // If tenant exists, start eviction (30 days from last payment)
+            if (house.tenantId) {
+                house.evictionDay = (house.lastRentDay || Engine.getDay()) + 30;
+                return { success: true, message: 'Eviction notice sent. Tenant will leave by day ' + house.evictionDay + '.' };
+            }
+            house.isRental = false;
+            house.monthlyRent = 0;
+            return { success: true, message: 'House no longer listed for rent.' };
+        }
+
+        // Setting or updating rent
+        var day = Engine.getDay();
+        if (house.isRental && house.rentSetDay === day) {
+            return { success: false, message: 'You can only change the rent price once per day.' };
+        }
+
+        var ht = CONFIG.HOUSING_TYPES.find(function(h) { return h.id === house.type; });
+        var rent = monthlyRent;
+        if (rent === undefined || rent === null) {
+            // Calculate recommended rent
+            rent = getRecommendedRent(house);
+        }
+        rent = Math.max(0, Math.floor(rent));
+
+        house.isRental = true;
+        house.monthlyRent = rent;
+        house.rentSetDay = day;
+        if (!house.tenantId) house.tenantId = null;
+        if (!house.tenantType) house.tenantType = null;
+        if (!house.lastRentDay) house.lastRentDay = 0;
+        if (!house.evictionDay) house.evictionDay = null;
+        house.rentAccumulated = house.rentAccumulated || 0;
+
+        return { success: true, message: 'House listed for rent at ' + rent + 'g/month. 💰' };
+    }
+
+    // Calculate recommended rent (5-30% below max NPC/EM willingness)
+    function getRecommendedRent(house) {
+        var maxRent = getMaxRentWillingness(house);
+        var discountPct = 0.05 + (Engine.getRng ? Engine.getRng().randFloat(0, 0.25) : Math.random() * 0.25);
+        return Math.max(1, Math.floor(maxRent * (1 - discountPct)));
+    }
+
+    // Calculate the max rent any NPC/EM in this location would pay
+    function getMaxRentWillingness(house) {
+        var ht = CONFIG.HOUSING_TYPES.find(function(h) { return h.id === house.type; });
+        if (!ht) return 1;
+        var town = Engine.findTown(house.townId);
+        var prosperity = town ? (town.prosperity || 50) : 50;
+        var catMultiplier = { village: 0.5, town: 1.0, city: 1.5, capital_city: 2.0 };
+        var cat = town ? (town.category || 'town') : 'town';
+        var mult = catMultiplier[cat] || 1.0;
+        // Base rent: comfort × prosperity / 50 × town category multiplier
+        var baseRent = Math.floor(ht.comfort * (prosperity / 50) * mult);
+        // Security and storage bonuses
+        baseRent += Math.floor(ht.storage * 0.05);
+        baseRent += Math.floor(ht.security * 10);
+        return Math.max(1, baseRent);
     }
 
     function collectRent() {
         var totalRent = 0;
         if (!player.houses) return 0;
+        var day = Engine.getDay();
         for (var i = 0; i < player.houses.length; i++) {
             var house = player.houses[i];
             if (!house.isRental) continue;
-            var ht = CONFIG.HOUSING_TYPES.find(h => h.id === house.type);
-            if (!ht) continue;
-            var town = Engine.findTown(house.townId);
-            var townProsperity = town ? (town.prosperity || 50) : 50;
-            var dailyIncome = Math.floor(ht.comfort * townProsperity / 100);
-            if (dailyIncome > 0) {
-                house.rentAccumulated += dailyIncome;
-                totalRent += dailyIncome;
+
+            // Process evictions
+            if (house.evictionDay && day >= house.evictionDay) {
+                var evictedName = '';
+                if (house.tenantId) {
+                    var evicted = Engine.findPerson(house.tenantId);
+                    evictedName = evicted ? ((evicted.firstName || '') + ' ' + (evicted.lastName || '')) : 'tenant';
+                    // Clear tenant housing reference
+                    if (evicted) evicted.rentedHouseId = null;
+                }
+                house.tenantId = null;
+                house.tenantType = null;
+                house.evictionDay = null;
+                if (evictedName) Engine.logEvent('🏠 ' + evictedName + ' has been evicted from your rental property.');
+                continue;
+            }
+
+            // No tenant = no income (but property is listed)
+            if (!house.tenantId) continue;
+
+            // Monthly rent collection (every 30 days)
+            if (house.lastRentDay && (day - house.lastRentDay) < 30) continue;
+
+            var rent = house.monthlyRent || 0;
+            if (rent <= 0) continue;
+
+            // Check if tenant can pay
+            var tenant = Engine.findPerson(house.tenantId);
+            if (!tenant || !tenant.alive) {
+                // Tenant died or disappeared
+                house.tenantId = null;
+                house.tenantType = null;
+                Engine.logEvent('🏠 A rental tenant has passed away or left.');
+                continue;
+            }
+
+            if ((tenant.gold || 0) >= rent) {
+                tenant.gold -= rent;
+                player.gold += rent;
+                player.stats.totalGoldEarned += rent;
+                house.rentAccumulated = (house.rentAccumulated || 0) + rent;
+                house.lastRentDay = day;
+                totalRent += rent;
+            } else {
+                // Tenant can't afford — queue negotiation request
+                if (!player.rentNegotiations) player.rentNegotiations = [];
+                var existingNeg = player.rentNegotiations.find(function(n) { return n.houseId === house.id; });
+                if (!existingNeg) {
+                    var tenantName = (tenant.firstName || '') + ' ' + (tenant.lastName || '');
+                    var desiredRent = Math.floor(rent * 0.7); // tenant asks for 30% less
+                    player.rentNegotiations.push({
+                        houseId: house.id,
+                        tenantId: house.tenantId,
+                        tenantName: tenantName,
+                        currentRent: rent,
+                        requestedRent: desiredRent,
+                        day: day
+                    });
+                    Engine.logEvent('💬 ' + tenantName + ' cannot afford rent (' + rent + 'g) and is requesting a reduction to ' + desiredRent + 'g.');
+                }
             }
         }
-        if (totalRent > 0) {
-            player.gold += totalRent;
-            player.stats.totalGoldEarned += totalRent;
-        }
         return totalRent;
+    }
+
+    // Handle rent negotiation response from player
+    function respondToRentNegotiation(houseId, decision, counterOffer) {
+        if (!player.rentNegotiations) return { success: false, message: 'No pending negotiations.' };
+        var negIdx = player.rentNegotiations.findIndex(function(n) { return n.houseId === houseId; });
+        if (negIdx === -1) return { success: false, message: 'Negotiation not found.' };
+        var neg = player.rentNegotiations[negIdx];
+        var house = (player.houses || []).find(function(h) { return h.id === houseId; });
+        if (!house) { player.rentNegotiations.splice(negIdx, 1); return { success: false, message: 'House not found.' }; }
+        var tenant = Engine.findPerson(neg.tenantId);
+
+        player.rentNegotiations.splice(negIdx, 1);
+
+        if (decision === 'accept') {
+            house.monthlyRent = neg.requestedRent;
+            house.rentSetDay = Engine.getDay();
+            Engine.logEvent('🤝 You agreed to lower rent for ' + neg.tenantName + ' to ' + neg.requestedRent + 'g/month.');
+            return { success: true, message: 'Rent lowered to ' + neg.requestedRent + 'g/month.' };
+        } else if (decision === 'counter' && counterOffer !== undefined) {
+            var offer = Math.max(0, Math.floor(counterOffer));
+            // Tenant evaluates counter offer
+            if (tenant && (tenant.gold || 0) >= offer * 0.8) {
+                house.monthlyRent = offer;
+                house.rentSetDay = Engine.getDay();
+                Engine.logEvent('🤝 ' + neg.tenantName + ' accepted your counter-offer of ' + offer + 'g/month.');
+                return { success: true, message: neg.tenantName + ' accepted ' + offer + 'g/month.' };
+            } else {
+                // Tenant decides to leave
+                house.evictionDay = (house.lastRentDay || Engine.getDay()) + 30;
+                Engine.logEvent('😤 ' + neg.tenantName + ' rejected your counter-offer and will leave by day ' + house.evictionDay + '.');
+                return { success: true, message: neg.tenantName + ' rejected the offer and will leave.' };
+            }
+        } else {
+            // Reject — tenant may leave depending on alternatives
+            if (tenant) {
+                var maxRent = getMaxRentWillingness(house);
+                if (house.monthlyRent > maxRent * 1.2) {
+                    // Rent is too high, tenant leaves
+                    house.evictionDay = (house.lastRentDay || Engine.getDay()) + 30;
+                    Engine.logEvent('😤 ' + neg.tenantName + ' decided to leave after rent negotiation failed.');
+                    return { success: true, message: neg.tenantName + ' will leave the property.' };
+                }
+                // Tenant stays grudgingly but might leave next month
+                Engine.logEvent('😐 ' + neg.tenantName + ' stays for now but is unhappy about the rent.');
+                return { success: true, message: neg.tenantName + ' stays for now.' };
+            }
+            return { success: true, message: 'Negotiation rejected.' };
+        }
+    }
+
+    // Evict a tenant from a rental property
+    function evictTenant(houseId) {
+        var house = (player.houses || []).find(function(h) { return h.id === houseId; });
+        if (!house) return { success: false, message: 'House not found.' };
+        if (!house.tenantId) return { success: false, message: 'No tenant to evict.' };
+        var tenant = Engine.findPerson(house.tenantId);
+        var tenantName = tenant ? ((tenant.firstName || '') + ' ' + (tenant.lastName || '')) : 'tenant';
+        house.evictionDay = (house.lastRentDay || Engine.getDay()) + 30;
+        Engine.logEvent('🏠 Eviction notice issued to ' + tenantName + '. They will leave by day ' + house.evictionDay + '.');
+        return { success: true, message: 'Eviction notice sent. ' + tenantName + ' will leave by day ' + house.evictionDay + '.' };
+    }
+
+    // ========================================================
+    // §12H1b  PROPERTY LISTING FOR SALE
+    // ========================================================
+
+    function listBuildingForSale(buildingId, price) {
+        var bld = (player.buildings || []).find(function(b) { return b.id === buildingId; });
+        if (!bld) return { success: false, message: 'Building not found.' };
+
+        // Toggle off
+        if (bld.forSale && price === undefined) {
+            bld.forSale = false;
+            bld.salePrice = 0;
+            return { success: true, message: 'Building removed from sale.' };
+        }
+
+        // Daily price change limit
+        var day = Engine.getDay();
+        if (bld.forSale && bld.salePriceSetDay === day) {
+            return { success: false, message: 'You can only change the sale price once per day.' };
+        }
+
+        // Calculate recommended price
+        var maxPrice = Engine.getPropertyMaxBuyPrice(bld, bld.townId);
+        var discountPct = 0.05 + Math.random() * 0.25; // 5-30% below max
+        var recommendedPrice = Math.max(1, Math.floor(maxPrice * (1 - discountPct)));
+
+        if (price === undefined || price === null) {
+            price = recommendedPrice;
+        }
+        price = Math.max(0, Math.floor(price));
+
+        bld.forSale = true;
+        bld.salePrice = price;
+        bld.salePriceSetDay = day;
+
+        // Also mark the town building as for sale
+        var town = Engine.findTown(bld.townId);
+        if (town) {
+            var townBld = (town.buildings || []).find(function(tb) { return tb.ownerId === 'player' && tb.type === bld.type; });
+            if (townBld) {
+                townBld.forSale = true;
+                townBld.salePrice = price;
+            }
+        }
+
+        var bt = Engine.findBuildingType(bld.type);
+        var bName = bt ? bt.name : bld.type;
+        Engine.logEvent('📋 ' + player.fullName + ' listed ' + bName + ' for sale at ' + price + 'g.');
+        return { success: true, message: '📋 ' + bName + ' listed for ' + price + 'g. Recommended: ' + recommendedPrice + 'g. Max buyer will pay: ' + (hasSkill('property_appraiser') ? maxPrice + 'g' : '???') + '.', recommendedPrice: recommendedPrice, maxPrice: hasSkill('property_appraiser') ? maxPrice : null };
+    }
+
+    function listLandForSale(townId, price) {
+        if (!player.landOwned || !player.landOwned[townId] || player.landOwned[townId] <= 0) {
+            return { success: false, message: 'No land owned in this town.' };
+        }
+        // Check no buildings/houses using all land
+        var usedSlots = getUsedLandSlots(townId);
+        if (usedSlots >= player.landOwned[townId]) {
+            return { success: false, message: 'All land is in use. Demolish a building or sell a house first.' };
+        }
+
+        if (!player.landForSale) player.landForSale = [];
+        // Check daily limit
+        var day = Engine.getDay();
+        var existing = player.landForSale.find(function(l) { return l.townId === townId; });
+        if (existing && existing.priceSetDay === day) {
+            return { success: false, message: 'You can only change the land price once per day.' };
+        }
+
+        var maxPrice = Engine.getPropertyMaxBuyPrice({ type: 'land' }, townId);
+        var discountPct = 0.05 + Math.random() * 0.25;
+        var recommendedPrice = Math.max(1, Math.floor(maxPrice * (1 - discountPct)));
+
+        if (price === undefined || price === null) price = recommendedPrice;
+        price = Math.max(0, Math.floor(price));
+
+        if (existing) {
+            existing.price = price;
+            existing.priceSetDay = day;
+        } else {
+            player.landForSale.push({ townId: townId, price: price, priceSetDay: day });
+        }
+
+        var town = Engine.findTown(townId);
+        Engine.logEvent('📋 ' + player.fullName + ' listed land in ' + (town ? town.name : 'unknown') + ' for ' + price + 'g.');
+        return { success: true, message: '📋 Land listed for ' + price + 'g. Recommended: ' + recommendedPrice + 'g. Max buyer will pay: ' + (hasSkill('property_appraiser') ? maxPrice + 'g' : '???') + '.', recommendedPrice: recommendedPrice, maxPrice: hasSkill('property_appraiser') ? maxPrice : null };
+    }
+
+    function cancelLandListing(townId) {
+        if (!player.landForSale) return { success: false, message: 'No listings.' };
+        var idx = player.landForSale.findIndex(function(l) { return l.townId === townId; });
+        if (idx === -1) return { success: false, message: 'No land listed in this town.' };
+        player.landForSale.splice(idx, 1);
+        return { success: true, message: 'Land listing removed.' };
     }
 
     // ========================================================
@@ -19943,6 +20372,23 @@
     // ========================================================
     // §12I  LAND OWNERSHIP
     // ========================================================
+
+    // Count total land slots used by player in a town (houses + buildings, respecting landSlots)
+    function getUsedLandSlots(townId) {
+        var used = 0;
+        (player.houses || []).forEach(function(h) {
+            if (h.townId !== townId) return;
+            var hht = CONFIG.HOUSING_TYPES.find(function(x) { return x.id === h.type; });
+            if (hht && (hht.id === 'apartment' || hht.portable || hht.fromApartmentBuilding)) return;
+            used += (hht && hht.landSlots) ? hht.landSlots : 1;
+        });
+        (player.buildings || []).forEach(function(b) {
+            if (b.townId !== townId) return;
+            var bbt = Engine.findBuildingType(b.type);
+            used += (bbt && bbt.landSlots) ? bbt.landSlots : 1;
+        });
+        return used;
+    }
     function getLandCost(townId) {
         var town = Engine.findTown(townId);
         if (!town) return CONFIG.LAND_COST_BASE;
@@ -20004,10 +20450,9 @@
         if (!player.landOwned || !player.landOwned[townId] || player.landOwned[townId] <= 0) {
             return { success: false, message: 'You own no land here.' };
         }
-        // Check that no buildings occupy this land slot
-        var housesOnLand = (player.houses || []).filter(h => h.townId === townId && h.type !== 'apartment').length;
-        var buildingsOnLand = player.buildings.filter(b => b.townId === townId).length;
-        if (housesOnLand + buildingsOnLand >= player.landOwned[townId]) {
+        // Check that there's free land to sell (using proper slot counting)
+        var usedSlots = getUsedLandSlots(townId);
+        if (usedSlots >= player.landOwned[townId]) {
             return { success: false, message: 'All land plots are occupied. Sell buildings/houses first.' };
         }
         var sellPrice = Math.floor(getLandCost(townId) * CONFIG.LAND_SELL_RATIO);
@@ -21672,16 +22117,31 @@
                 homeStorage: {},
                 isRental: false,
                 rentAccumulated: 0,
-                purchaseCost: 0
+                purchaseCost: 0,
+                condition: 'used', // starting house is not brand new
+                builtDay: 0,
+                lastRepairDay: 0
             };
             if (!player.houses) player.houses = [];
             player.houses.push(house);
             if (!player.primaryHouseId) player.primaryHouseId = house.id;
+
+            // Grant a land plot for the starting house (houses require land except apartments/portable)
+            var startHt = CONFIG.HOUSING_TYPES.find(function(h) { return h.id === startConfig.startHouse; });
+            if (startHt && startHt.id !== 'apartment' && !startHt.portable) {
+                player.landOwned = player.landOwned || {};
+                var startLandSlots = startHt.landSlots || 1;
+                player.landOwned[player.townId] = (player.landOwned[player.townId] || 0) + startLandSlots;
+            }
         }
 
         // Apply starting buildings
         var numBuildings = startConfig.startBuildings || (startConfig.startBuilding ? 1 : 0);
         if (numBuildings > 0) {
+            // Grant land plots for starting buildings (1 per building unless landSlots specified)
+            player.landOwned = player.landOwned || {};
+            player.landOwned[player.townId] = (player.landOwned[player.townId] || 0) + numBuildings;
+
             var basicBuildings = ['bakery', 'brewery', 'workshop', 'flour_mill', 'wheat_farm'];
             for (var bi = 0; bi < numBuildings; bi++) {
                 var bType = basicBuildings[bi % basicBuildings.length];
@@ -25498,6 +25958,285 @@
     }
 
     // ========================================================
+    // §12F-GL GUILD LOAN SYSTEM
+    // ========================================================
+
+    /**
+     * Calculate what a specific guild would offer as a loan.
+     * Factors: social rank, maxGoldEver, kingdom reputation, guild category relevance.
+     * Since guilds have no dynamic treasury, we derive a virtual fund pool from
+     * kingdom prosperity and guild size in the world.
+     */
+    function calculateGuildLoanOffer(guildId) {
+        var guild = CONFIG.GUILDS ? CONFIG.GUILDS[guildId] : null;
+        if (!guild) return { available: false, amount: 0, reason: 'Guild not found.' };
+
+        var loanCfg = CONFIG.GUILD_LOAN || {};
+        var minAmount = loanCfg.MIN_AMOUNT || 1000;
+        var maxAmount = loanCfg.MAX_AMOUNT || 5000;
+        var annualInterest = loanCfg.ANNUAL_INTEREST || 0.10;
+        var termDays = loanCfg.TERM_DAYS || 720;
+        var paymentInterval = loanCfg.PAYMENT_INTERVAL || 30;
+        var minBuffer = loanCfg.MIN_GUILD_BUFFER || 1000;
+
+        // Derive virtual guild funds from kingdom prosperity and world building count
+        var guildFunds = 2000; // baseline
+        try {
+            var world = Engine.getWorld();
+            var kingdoms = world.kingdoms || [];
+            var towns = world.towns || [];
+            var avgProsperity = 50;
+            var aliveCount = 0;
+            for (var ki = 0; ki < kingdoms.length; ki++) {
+                if (kingdoms[ki].alive !== false) {
+                    avgProsperity += (kingdoms[ki].prosperity || 50);
+                    aliveCount++;
+                }
+            }
+            if (aliveCount > 0) avgProsperity = avgProsperity / aliveCount;
+
+            // Count buildings in this guild's categories
+            var guildBuildingCount = 0;
+            for (var ti = 0; ti < towns.length; ti++) {
+                var buildings = towns[ti].buildings || [];
+                for (var bi = 0; bi < buildings.length; bi++) {
+                    var bType = Engine.findBuildingType(buildings[bi].type);
+                    if (bType && guild.categories.indexOf(bType.category) >= 0) {
+                        guildBuildingCount++;
+                    }
+                }
+            }
+
+            // Virtual funds: base + prosperity bonus + building count bonus
+            guildFunds = 2000 + Math.floor(avgProsperity * 30) + guildBuildingCount * 100;
+            // Merchants guild gets a bonus (wealthier)
+            if (guildId === 'merchants') guildFunds = Math.floor(guildFunds * 1.5);
+        } catch(e) {}
+
+        // Must have enough funds after loan
+        var maxFromFunds = guildFunds - minBuffer;
+        if (maxFromFunds < minAmount) {
+            return { available: false, amount: 0, reason: guild.name + ' lacks sufficient funds.' };
+        }
+
+        // Calculate creditworthiness score (0-1)
+        var creditScore = 0.3; // base
+
+        // Social rank bonus (0-6 scale, higher = more creditworthy)
+        var bestRank = 0;
+        for (var kId in player.socialRank) {
+            if (player.socialRank[kId] > bestRank) bestRank = player.socialRank[kId];
+        }
+        creditScore += bestRank * 0.05; // up to +0.30
+
+        // Max gold ever held bonus (shows history of wealth)
+        var mgEver = player.maxGoldEver || 0;
+        if (mgEver >= 10000) creditScore += 0.20;
+        else if (mgEver >= 5000) creditScore += 0.15;
+        else if (mgEver >= 2000) creditScore += 0.10;
+        else if (mgEver >= 500) creditScore += 0.05;
+
+        // Kingdom reputation bonus (average across all known kingdoms)
+        var totalRep = 0;
+        var repCount = 0;
+        for (var rId in player.reputation) {
+            totalRep += player.reputation[rId];
+            repCount++;
+        }
+        var avgRep = repCount > 0 ? totalRep / repCount : 50;
+        creditScore += (avgRep - 50) * 0.003; // -0.15 to +0.15
+
+        // Guild membership bonus
+        if (isGuildMember(guildId)) creditScore += 0.10;
+
+        // Clamp credit score
+        creditScore = Math.max(0.1, Math.min(1.0, creditScore));
+
+        // Calculate loan amount
+        var loanAmount = Math.floor(maxAmount * creditScore);
+        loanAmount = Math.min(loanAmount, maxFromFunds);
+        loanAmount = Math.max(0, Math.min(maxAmount, loanAmount));
+
+        if (loanAmount < minAmount) {
+            return { available: false, amount: 0, reason: 'Your credit is too low for ' + guild.name + '.' };
+        }
+
+        // Round to nearest 100
+        loanAmount = Math.floor(loanAmount / 100) * 100;
+        if (loanAmount < minAmount) loanAmount = minAmount;
+
+        // Calculate repayment terms
+        var totalInterest = Math.floor(loanAmount * annualInterest * (termDays / 365));
+        var totalRepay = loanAmount + totalInterest;
+        var numPayments = Math.floor(termDays / paymentInterval);
+        var monthlyPayment = Math.ceil(totalRepay / numPayments);
+
+        return {
+            available: true,
+            guildId: guildId,
+            guildName: guild.name,
+            guildIcon: guild.icon,
+            amount: loanAmount,
+            interestRate: annualInterest,
+            totalRepay: totalRepay,
+            totalInterest: totalInterest,
+            monthlyPayment: monthlyPayment,
+            termDays: termDays,
+            numPayments: numPayments
+        };
+    }
+
+    /**
+     * Get offers from ALL guilds. Returns array of offer objects.
+     */
+    function getGuildLoanOffers() {
+        var offers = [];
+        var guilds = CONFIG.GUILDS || {};
+        for (var gId in guilds) {
+            var offer = calculateGuildLoanOffer(gId);
+            offer.guildId = gId;
+            offer.guildName = guilds[gId].name;
+            offer.guildIcon = guilds[gId].icon;
+            offers.push(offer);
+        }
+        return offers;
+    }
+
+    /**
+     * Accept a guild loan during bankruptcy.
+     */
+    function acceptGuildLoan(guildId) {
+        var offer = calculateGuildLoanOffer(guildId);
+        if (!offer.available) return { success: false, message: 'This guild cannot offer you a loan.' };
+
+        var loanCfg = CONFIG.GUILD_LOAN || {};
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+
+        // Set up the active loan
+        player.activeLoan = {
+            guildId: guildId,
+            amount: offer.amount,
+            remainingBalance: offer.totalRepay,
+            interestRate: offer.interestRate,
+            startDay: day,
+            termDays: offer.termDays,
+            lastPaymentDay: day,
+            monthlyPayment: offer.monthlyPayment
+        };
+
+        // Grant free guild membership for loan duration
+        var membershipEnd = day + offer.termDays;
+        if (!player.guildMemberships[guildId] || player.guildMemberships[guildId].expiresDay < membershipEnd) {
+            player.guildMemberships[guildId] = {
+                expiresDay: membershipEnd,
+                type: 'loan'
+            };
+        }
+
+        // Give loan gold to player (clear debt)
+        player.gold += offer.amount;
+        player.bankruptDays = 0;
+
+        // Set bankruptcy state
+        player.bankruptcy = {
+            active: true,
+            type: 'guild_loan',
+            debtAmount: Math.abs(player.gold) + offer.amount, // original debt before loan
+            startDay: day,
+            assetSeizureDay: day,
+            loanGuildId: guildId
+        };
+
+        var guild = CONFIG.GUILDS[guildId];
+        Engine.logEvent(guild.icon + ' You accepted a ' + offer.amount + 'g loan from ' + guild.name + '. Repay ' + offer.totalRepay + 'g over ' + offer.termDays + ' days.');
+        if (typeof UI !== 'undefined' && UI.toast) {
+            UI.toast(guild.icon + ' Loan accepted: ' + offer.amount + 'g from ' + guild.name, 'info', 'critical');
+        }
+
+        return { success: true };
+    }
+
+    /**
+     * Daily tick for guild loan auto-payments.
+     * Every PAYMENT_INTERVAL days, deduct payment. If can't pay, accrue interest.
+     */
+    function tickGuildLoan() {
+        if (!player.activeLoan) return;
+
+        var loan = player.activeLoan;
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+        var interval = (CONFIG.GUILD_LOAN && CONFIG.GUILD_LOAN.PAYMENT_INTERVAL) || 30;
+
+        // Check if a payment is due
+        if (day - loan.lastPaymentDay < interval) return;
+
+        loan.lastPaymentDay = day;
+
+        if (player.gold >= loan.monthlyPayment) {
+            // Make payment
+            player.gold -= loan.monthlyPayment;
+            loan.remainingBalance -= loan.monthlyPayment;
+            player.stats.totalGoldSpent += loan.monthlyPayment;
+
+            if (loan.remainingBalance <= 0) {
+                // Loan fully repaid!
+                var guild = CONFIG.GUILDS ? CONFIG.GUILDS[loan.guildId] : null;
+                var gName = guild ? guild.name : 'the guild';
+                var gIcon = guild ? guild.icon : '🏛️';
+                player.loanHistory.push({
+                    guildId: loan.guildId,
+                    amount: loan.amount,
+                    outcome: 'repaid',
+                    endDay: day
+                });
+                player.activeLoan = null;
+                // Clear bankruptcy if it was a loan-type
+                if (player.bankruptcy && player.bankruptcy.type === 'guild_loan') {
+                    player.bankruptcy.active = false;
+                    player.bankruptcy.completedDay = day;
+                }
+                Engine.logEvent(gIcon + ' 🎉 You have fully repaid your loan to ' + gName + '! Your credit is restored.');
+                if (typeof UI !== 'undefined' && UI.toast) {
+                    UI.toast(gIcon + ' Loan repaid in full!', 'success', 'critical');
+                }
+            } else {
+                var guild2 = CONFIG.GUILDS ? CONFIG.GUILDS[loan.guildId] : null;
+                var gName2 = guild2 ? guild2.name : 'the guild';
+                Engine.logEvent('💰 Loan payment: ' + loan.monthlyPayment + 'g to ' + gName2 + '. Remaining: ' + loan.remainingBalance + 'g', 'my_business');
+            }
+        } else {
+            // Can't pay — accrue interest on remaining balance
+            var missedInterest = Math.ceil(loan.remainingBalance * (loan.interestRate / 12));
+            loan.remainingBalance += missedInterest;
+            var guild3 = CONFIG.GUILDS ? CONFIG.GUILDS[loan.guildId] : null;
+            var gName3 = guild3 ? guild3.name : 'the guild';
+            Engine.logEvent('⚠️ Missed loan payment to ' + gName3 + '! Interest accrued: +' + missedInterest + 'g. Balance: ' + loan.remainingBalance + 'g', 'my_business');
+            if (typeof UI !== 'undefined' && UI.toast) {
+                UI.toast('⚠️ Missed loan payment! +' + missedInterest + 'g interest', 'warning');
+            }
+        }
+    }
+
+    /**
+     * Forgive the active guild loan (called when choosing indenture/military/priest during second bankruptcy).
+     */
+    function forgiveGuildLoan() {
+        if (!player.activeLoan) return;
+        var loan = player.activeLoan;
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+        player.loanHistory.push({
+            guildId: loan.guildId,
+            amount: loan.amount,
+            outcome: 'forgiven',
+            endDay: day
+        });
+        player.activeLoan = null;
+    }
+
+    // ========================================================
     // §12F BANKRUPTCY SYSTEM
     // ========================================================
 
@@ -25799,6 +26538,27 @@
             detail: 'Debt: forgiven | Must complete pilgrimage to regain full freedoms'
         });
 
+        // Option 4: Guild Loan (not available if player already has an unpaid loan)
+        var hasUnpaidLoan = player.activeLoan && player.activeLoan.remainingBalance > 0;
+        var loanAvailable = !hasUnpaidLoan;
+        var loanDetail = '';
+        if (hasUnpaidLoan) {
+            var loanGuild = CONFIG.GUILDS ? CONFIG.GUILDS[player.activeLoan.guildId] : null;
+            var loanGuildName = loanGuild ? loanGuild.name : 'a guild';
+            loanDetail = '⚠️ You still owe ' + player.activeLoan.remainingBalance + 'g to ' + loanGuildName;
+        } else {
+            loanDetail = 'Borrow 1,000–5,000g | 10% annual interest | 2 year term | Free guild membership';
+        }
+        choices.push({
+            id: 'guild_loan',
+            available: loanAvailable,
+            label: '🏛️ Take a Guild Loan',
+            description: loanAvailable
+                ? 'Borrow gold from a guild to pay off your debt. You must repay with interest over 2 years. Includes free guild membership while repaying.'
+                : 'You already have an unpaid guild loan. This option is not available until your existing loan is repaid.',
+            detail: loanDetail
+        });
+
         return choices;
     }
 
@@ -25806,12 +26566,21 @@
         var debtAmount = Math.abs(player.gold);
         player.bankruptDays = 0;
 
+        // If player has an unpaid guild loan and picks indenture/military/priest, forgive the loan
+        if (choice !== 'guild_loan' && player.activeLoan) {
+            forgiveGuildLoan();
+        }
+
         if (choice === 'indenture') {
             initBankruptcyIndenture(debtAmount);
         } else if (choice === 'military') {
             initBankruptcyMilitary();
         } else if (choice === 'priest') {
             initBankruptcyPriest();
+        } else if (choice === 'guild_loan') {
+            // Guild loan is handled via UI sub-dialog → acceptGuildLoan()
+            // Don't set bankruptcy state here; acceptGuildLoan() handles it
+            return;
         }
 
         player.bankruptcy = {
@@ -27994,6 +28763,13 @@
         get bankruptcy() { return player.bankruptcy; },
         handleBankruptcyChoice,
         isBankruptcyPriestRestricted,
+        // Guild Loan
+        get activeLoan() { return player.activeLoan; },
+        get loanHistory() { return player.loanHistory || []; },
+        get maxGoldEver() { return player.maxGoldEver || 0; },
+        getGuildLoanOffers,
+        acceptGuildLoan,
+        getBankruptcyChoices,
         // Combat & Tournament
         getCombatLevel,
         get tournamentState() { return player.tournamentState; },
@@ -28055,6 +28831,7 @@
         get armedEscort() { return player.armedEscort; },
         buyHouse,
         sellHouse,
+        leaveTent,
         upgradeHouse,
         setPrimaryHouse,
         getHouseInTown,
@@ -28067,10 +28844,18 @@
         craftAtHome,
         getHomeCraftRecipes,
         collectRent,
+        respondToRentNegotiation,
+        evictTenant,
+        getRecommendedRent,
+        getMaxRentWillingness,
+        listBuildingForSale,
+        listLandForSale,
+        cancelLandListing,
         buyLand,
         sellLand,
         getOwnedLand,
         getLandCost,
+        getUsedLandSlots,
         hireArmedEscort,
         addFatigue,
         checkFatigueForAction,
@@ -28279,6 +29064,7 @@
 
         // Degradation & Repair
         repairBuilding,
+        repairHouse,
         repairShip,
 
         // Ship System

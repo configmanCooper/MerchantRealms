@@ -49,6 +49,7 @@ window.Renderer = (function () {
     let _minimapCacheCanvas = null;
     let _minimapCacheDirty = true;
     let _minimapCacheDay = -1;
+    let _minimapTerrainCanvas = null; // Permanent terrain cache — never changes after init
     let showDeposits = false; // toggled by player with Regional Survey skill
 
     // ── Per-frame render cache (avoid repeated Engine calls) ──
@@ -138,6 +139,7 @@ window.Renderer = (function () {
         if (minimapCanvas) minimapCtx = minimapCanvas.getContext('2d');
 
         worldData = world;
+        _minimapTerrainCanvas = null; // Rebuild terrain cache for new world
         resize();
         window.removeEventListener('resize', resize);
         window.addEventListener('resize', resize);
@@ -2056,6 +2058,56 @@ window.Renderer = (function () {
     //  MINIMAP
     // ═══════════════════════════════════════════════════════════
 
+    // Pre-computed RGB values for each terrain type (populated on first call)
+    const _terrainRGB = {};
+    function _getTerrainRGB(id) {
+        if (_terrainRGB[id]) return _terrainRGB[id];
+        const hex = getTerrainColor(id);
+        const rgb = hexToRgb(hex);
+        _terrainRGB[id] = rgb;
+        return rgb;
+    }
+
+    // Build a pixel-perfect terrain image for the minimap (called once, never changes)
+    function _buildMinimapTerrain() {
+        const mw = minimapCanvas.width;
+        const mh = minimapCanvas.height;
+        const terrain = worldData.terrain;
+        if (!terrain || !terrain.length) return;
+
+        const ts = CONFIG.TILE_SIZE;
+        const cols = worldData.gridCols || Math.floor(CONFIG.WORLD_WIDTH / ts);
+        const rows = worldData.gridRows || Math.floor(CONFIG.WORLD_HEIGHT / ts);
+        const worldPxW = CONFIG.WORLD_WIDTH;
+        const worldPxH = CONFIG.WORLD_HEIGHT;
+
+        _minimapTerrainCanvas = document.createElement('canvas');
+        _minimapTerrainCanvas.width = mw;
+        _minimapTerrainCanvas.height = mh;
+        const tctx = _minimapTerrainCanvas.getContext('2d');
+        const imageData = tctx.createImageData(mw, mh);
+        const data = imageData.data;
+
+        for (let py = 0; py < mh; py++) {
+            // Map minimap pixel Y to terrain row
+            const worldY = (py / mh) * worldPxH;
+            const tileRow = Math.min(rows - 1, Math.floor(worldY / ts));
+            for (let px = 0; px < mw; px++) {
+                // Map minimap pixel X to terrain column
+                const worldX = (px / mw) * worldPxW;
+                const tileCol = Math.min(cols - 1, Math.floor(worldX / ts));
+                const tileId = terrain[tileRow * cols + tileCol];
+                const rgb = _getTerrainRGB(tileId);
+                const idx = (py * mw + px) * 4;
+                data[idx] = rgb.r;
+                data[idx + 1] = rgb.g;
+                data[idx + 2] = rgb.b;
+                data[idx + 3] = 255;
+            }
+        }
+        tctx.putImageData(imageData, 0, 0);
+    }
+
     function _renderMinimapBase() {
         const mw = minimapCanvas.width;
         const mh = minimapCanvas.height;
@@ -2082,24 +2134,10 @@ window.Renderer = (function () {
         mctx.fillStyle = '#0d0a06';
         mctx.fillRect(0, 0, mw, mh);
 
-        // Terrain (sampled — draw every Nth tile)
-        const terrain = worldData.terrain;
-        if (terrain && terrain.length) {
-            const cols = worldData.gridCols || Math.floor(CONFIG.WORLD_WIDTH / ts);
-            const rows = worldData.gridRows || Math.floor(CONFIG.WORLD_HEIGHT / ts);
-            const step = Math.max(1, Math.floor(3 / Math.max(scaleX, scaleY)));
-
-            for (let r = 0; r < rows; r += step) {
-                for (let c = 0; c < cols; c += step) {
-                    const tileId = terrain[r * cols + c];
-                    mctx.fillStyle = getTerrainColor(tileId);
-                    const px = c * ts * scaleX;
-                    const py = r * ts * scaleY;
-                    const pw = Math.max(1, ts * step * scaleX);
-                    const ph = Math.max(1, ts * step * scaleY);
-                    mctx.fillRect(px, py, pw, ph);
-                }
-            }
+        // Terrain — blit the permanent pixel-perfect terrain cache
+        if (!_minimapTerrainCanvas) _buildMinimapTerrain();
+        if (_minimapTerrainCanvas) {
+            mctx.drawImage(_minimapTerrainCanvas, 0, 0);
         }
 
         // Kingdom territory colors
@@ -2123,13 +2161,31 @@ window.Renderer = (function () {
 
         // Town dots
         if (towns) {
-            // Draw sea routes on minimap
+            // Draw ALL land roads on minimap (black/dark)
+            let minimapRoadsAll;
+            try { minimapRoadsAll = Engine.getRoads(); } catch (e) { minimapRoadsAll = null; }
+            if (minimapRoadsAll) {
+                const townMap2 = _frameTownMap;
+                mctx.strokeStyle = 'rgba(0,0,0,0.7)';
+                mctx.lineWidth = 1;
+                for (const road of minimapRoadsAll) {
+                    const from = townMap2[road.fromTownId];
+                    const to = townMap2[road.toTownId];
+                    if (!from || !to) continue;
+                    mctx.beginPath();
+                    mctx.moveTo(from.x * scaleX, from.y * scaleY);
+                    mctx.lineTo(to.x * scaleX, to.y * scaleY);
+                    mctx.stroke();
+                }
+            }
+
+            // Draw sea routes on minimap (dotted black)
             let seaRoutes;
             try { seaRoutes = Engine.getSeaRoutes(); } catch (e) { seaRoutes = null; }
             if (seaRoutes) {
-                mctx.strokeStyle = 'rgba(255,200,50,0.5)';
-                mctx.lineWidth = 0.5;
-                mctx.setLineDash([2, 2]);
+                mctx.strokeStyle = '#000';
+                mctx.lineWidth = 1;
+                mctx.setLineDash([1, 3]);
                 for (const route of seaRoutes) {
                     const from = towns.find(t => t.id === route.fromTownId);
                     const to = towns.find(t => t.id === route.toTownId);
@@ -2142,14 +2198,21 @@ window.Renderer = (function () {
                 mctx.setLineDash([]);
             }
 
+            // Town dots with black outline
             for (const town of towns) {
                 const kingdom = kingdoms ? kingdoms.find(k => k.id === town.kingdomId) : null;
                 const kColor = kingdom ? (kingdom.color || CONFIG.KINGDOM_COLORS[kingdom.id % CONFIG.KINGDOM_COLORS.length]) : '#ccc';
-                mctx.fillStyle = kColor;
                 const px = town.x * scaleX;
                 const py = town.y * scaleY;
+                // Black outline
+                mctx.beginPath();
+                mctx.arc(px, py, 3.5, 0, Math.PI * 2);
+                mctx.fillStyle = '#000';
+                mctx.fill();
+                // Kingdom-colored center
                 mctx.beginPath();
                 mctx.arc(px, py, 2.5, 0, Math.PI * 2);
+                mctx.fillStyle = kColor;
                 mctx.fill();
             }
         }

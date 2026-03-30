@@ -780,6 +780,14 @@
             });
             // Bug 5: store starting gold for crisis detection
             kingdoms[kingdoms.length - 1]._startingGold = kingdoms[kingdoms.length - 1].gold;
+            // Initialize _lastSeasonTaxRevenue so spending caps work from day 1
+            // Estimate: assume ~4 towns, ~250 pop/town, taxRate × 5 per pop per season, plus trade/property
+            // This gets corrected after first real season
+            var _initK = kingdoms[kingdoms.length - 1];
+            var _estTowns = 4;
+            var _estPopPerTown = 250;
+            var _estBaseRev = _estTowns * _estPopPerTown * (_initK.taxRate || 0.1) * 5;
+            _initK._lastSeasonTaxRevenue = Math.max(Math.floor(_estBaseRev * 1.5), Math.floor(_initK.gold * 0.15));
             kingdoms[kingdoms.length - 1]._startingTowns = 0; // updated after town assignment
         }
         for (const kingdom of kingdoms) {
@@ -1233,6 +1241,9 @@
             if (rng.chance(0.5)) add('clinic');
             if (rng.chance(0.3)) add('herb_garden');
 
+            // Tent camp (villages get 1)
+            add('tent_camp');
+
         // ================================================================
         // TOWN: Mixed food + processing (8-12 buildings)
         // Economy: roughly balanced, specializes in 1-2 terrain goods
@@ -1308,6 +1319,10 @@
             add('herb_garden');
             if (rng.chance(0.3)) add('apothecary');
             if (rng.chance(0.2)) add('bandage_workshop');
+
+            // Tent camps (towns get 2)
+            add('tent_camp');
+            add('tent_camp');
 
         // ================================================================
         // CITY: Diverse production, limited food (14-20 buildings)
@@ -1424,6 +1439,15 @@
             if (rng.chance(0.5)) add('bandage_workshop');
             if (rng.chance(0.3)) add('herb_garden');
 
+            // Apartment buildings (cities get 1-2)
+            add('apartment_building');
+            if (rng.chance(0.5)) add('apartment_building');
+
+            // Tent camps (cities get 3)
+            add('tent_camp');
+            add('tent_camp');
+            add('tent_camp');
+
         // ================================================================
         // CAPITAL CITY: Luxury + military focus, food deficit (20-30 buildings)
         // Economy: highest demand, food importer, luxury/military exporter
@@ -1537,6 +1561,16 @@
             add('bandage_workshop');
             if (rng.chance(0.4)) add('clinic');
 
+            // Apartment buildings (capitals get 2-3)
+            add('apartment_building');
+            add('apartment_building');
+            if (rng.chance(0.5)) add('apartment_building');
+
+            // Tent camps (capitals get 3)
+            add('tent_camp');
+            add('tent_camp');
+            add('tent_camp');
+
             // Banned goods production — kingdom owns the facilities in capital
             if (kingdom && kingdom.laws && kingdom.laws.bannedGoods) {
                 const bannedGoods = kingdom.laws.bannedGoods;
@@ -1647,6 +1681,51 @@
                     buildings[wi].waterRemaining = capacity;
                     buildings[wi].depleted = false;
                 }
+            }
+        }
+
+        // Initialize apartment buildings with unit data and pricing
+        for (var abi = 0; abi < buildings.length; abi++) {
+            if (buildings[abi].type === 'apartment_building') {
+                var aptBt = BUILDING_TYPES['apartment_building'];
+                var numUnits = (aptBt && aptBt.units) || 10;
+                buildings[abi]._id = 'apt_' + (town ? town.id : 'unk') + '_' + abi;
+                buildings[abi].units = [];
+                for (var ui = 0; ui < numUnits; ui++) {
+                    buildings[abi].units.push({ unitIndex: ui, occupantId: null, occupantType: null, purchaseDay: null, purchasePrice: 0 });
+                }
+                // Dynamic pricing: 10% of construction cost for unit purchase, 0.083% for monthly maintenance
+                var baseBuildCost = (aptBt && aptBt.cost) || 2500;
+                buildings[abi].unitPrice = Math.floor(baseBuildCost * 0.10);
+                buildings[abi].monthlyFee = Math.max(1, Math.floor(baseBuildCost * 0.00083));
+                // Assign to kingdom or elite merchant
+                if (!buildings[abi].ownerId) {
+                    buildings[abi].ownerId = kingdom ? kingdom.id : null;
+                }
+                // Pre-fill some apartments with NPCs in cities/capitals (30-60% occupancy)
+                var fillRate = rng.randFloat(0.3, 0.6);
+                var fillCount = Math.floor(numUnits * fillRate);
+                for (var fi = 0; fi < fillCount; fi++) {
+                    buildings[abi].units[fi].occupantId = 'npc_placeholder_' + abi + '_' + fi;
+                    buildings[abi].units[fi].occupantType = 'npc';
+                    buildings[abi].units[fi].purchaseDay = -rng.randInt(30, 360);
+                    buildings[abi].units[fi].purchasePrice = buildings[abi].unitPrice;
+                }
+            }
+
+            // Initialize tent camps — each has 10 tents, kingdom-owned
+            if (buildings[abi].type === 'tent_camp') {
+                var tcBt = BUILDING_TYPES['tent_camp'];
+                var numTents = (tcBt && tcBt.tents) || 10;
+                buildings[abi]._id = 'tc_' + (town ? town.id : 'unk') + '_' + abi;
+                buildings[abi].tents = [];
+                for (var ti = 0; ti < numTents; ti++) {
+                    buildings[abi].tents.push({ tentIndex: ti, occupantId: null, occupantType: null, rentStartDay: null, lastRentDay: null });
+                }
+                buildings[abi].tentUpfrontCost = (tcBt && tcBt.tentUpfrontCost) || 20;
+                buildings[abi].tentMonthlyCost = (tcBt && tcBt.tentMonthlyCost) || 5;
+                buildings[abi].ownerId = kingdom ? kingdom.id : null;
+                buildings[abi].condition = 0.6 + rng.randFloat(0, 0.2); // tents start in fair condition
             }
         }
 
@@ -1770,7 +1849,7 @@
         supply.iron = Math.round((t === 'capital' ? 60 : t === 'city' ? 35 : t === 'town' ? 15 : 5) * s);
         supply.bricks = Math.round((t === 'capital' ? 80 : t === 'city' ? 50 : t === 'town' ? 20 : 0) * s);
         supply.cloth = Math.round((t === 'capital' ? 70 : t === 'city' ? 45 : t === 'town' ? 20 : 8) * s);
-        supply.rope = Math.round((t === 'capital' ? 40 : t === 'city' ? 25 : t === 'town' ? 10 : 3) * s);
+        supply.rope = Math.round((t === 'capital' ? 60 : t === 'city' ? 50 : t === 'town' ? 20 : 3) * s);
         supply.tools = Math.round((t === 'capital' ? 50 : t === 'city' ? 30 : t === 'town' ? 15 : 5) * s);
         supply.wool = Math.round((t === 'capital' ? 40 : t === 'city' ? 25 : t === 'town' ? 10 : 5) * s);
 
@@ -2016,7 +2095,7 @@
     // ========================================================
     // §8c  ARMY INTELLIGENT ROUTING (Dijkstra over town graph)
     // ========================================================
-    function findArmyRoute(fromTownId, toTownId) {
+    function findArmyRoute(fromTownId, toTownId, kingdomId) {
         var fromTown = findTown(fromTownId);
         var toTown = findTown(toTownId);
         if (!fromTown || !toTown) return null;
@@ -2038,6 +2117,8 @@
         for (var ri = 0; ri < world.roads.length; ri++) {
             var road = world.roads[ri];
             if (road.condition === 'destroyed') continue;
+            // Skip roads with destroyed bridges
+            if (road.hasBridge && road.bridgeDestroyed) continue;
             var rFrom = findTown(road.fromTownId);
             var rTo = findTown(road.toTownId);
             if (!rFrom || !rTo) continue;
@@ -2053,10 +2134,28 @@
             var sFrom = findTown(sr.fromTownId || sr.from);
             var sTo = findTown(sr.toTownId || sr.to);
             if (!sFrom || !sTo) continue;
-            var sDist = Math.hypot(sTo.x - sFrom.x, sTo.y - sFrom.y);
-            var sTime = sDist / (baseSpeed * seaMult);
             var sFromId = sr.fromTownId || sr.from;
             var sToId = sr.toTownId || sr.to;
+            // Skip blockaded sea routes: if either port is blockaded by an enemy of the traveler
+            if (kingdomId) {
+                var routeBlocked = false;
+                var travelK = findKingdom(kingdomId);
+                if (travelK) {
+                    if (sFrom._blockadedBy && sFrom._blockadedBy.length > 0) {
+                        for (var bi = 0; bi < sFrom._blockadedBy.length; bi++) {
+                            if (travelK.atWar.has(sFrom._blockadedBy[bi])) { routeBlocked = true; break; }
+                        }
+                    }
+                    if (!routeBlocked && sTo._blockadedBy && sTo._blockadedBy.length > 0) {
+                        for (var bi2 = 0; bi2 < sTo._blockadedBy.length; bi2++) {
+                            if (travelK.atWar.has(sTo._blockadedBy[bi2])) { routeBlocked = true; break; }
+                        }
+                    }
+                }
+                if (routeBlocked) continue;
+            }
+            var sDist = Math.hypot(sTo.x - sFrom.x, sTo.y - sFrom.y);
+            var sTime = sDist / (baseSpeed * seaMult);
             if (graph[sFromId]) graph[sFromId].push({ to: sToId, dist: sDist, type: 'sea', time: sTime });
             if (graph[sToId]) graph[sToId].push({ to: sFromId, dist: sDist, type: 'sea', time: sTime });
         }
@@ -3010,6 +3109,24 @@
             king.skills = { farming: 5, mining: 5, crafting: 10, trading: rng.randInt(30, 60), combat: rng.randInt(20, 50) };
             k.king = king.id;
 
+            // Sync king NPC personality to match the kingdom's kingPersonality (set during kingdom creation)
+            // This ensures the UI kingdom selection traits match the actual NPC
+            var _kpRef = k.kingPersonality || {};
+            var _intMap = { brilliant: 90, clever: 70, average: 50, dim: 30, foolish: 15 };
+            var _tempMap = { kind: 85, fair: 60, stern: 35, cruel: 15 };
+            var _ambMap = { ambitious: 80, content: 50, lazy: 20 };
+            var _greedMap = { generous: 80, fair: 55, greedy: 30, corrupt: 15 };
+            var _courMap = { brave: 80, cautious: 50, cowardly: 20 };
+            var _fuzz = function() { return rng.randInt(-8, 8); };
+            king.personality = {
+                intelligence: Math.max(0, Math.min(100, (_intMap[_kpRef.intelligence] || 50) + _fuzz())),
+                warmth:       Math.max(0, Math.min(100, (_tempMap[_kpRef.temperament] || 50) + _fuzz())),
+                ambition:     Math.max(0, Math.min(100, (_ambMap[_kpRef.ambition] || 50) + _fuzz())),
+                frugality:    Math.max(0, Math.min(100, (_greedMap[_kpRef.greed] || 50) + _fuzz())),
+                loyalty:      Math.max(0, Math.min(100, (_courMap[_kpRef.courage] || 50) + _fuzz())),
+                honesty:      Math.max(0, Math.min(100, (_greedMap[_kpRef.greed] || 50) + _fuzz())),
+            };
+
             // Generate a proper royal family for this king
             generateRoyalFamily(rng, king, people, kTowns);
 
@@ -3231,6 +3348,9 @@
         const farmBoost = isFarmSeason(day);
 
         for (const town of world.towns) {
+            // Cache town housing productivity modifier
+            var _townHousingProd = getTownHousingProductivity(town);
+
             // ---- Production from buildings ----
             for (const bld of town.buildings) {
                 const bt = findBuildingType(bld.type);
@@ -3420,7 +3540,7 @@
                         successRate = Math.min(1.0, 0.05 + avgSkill * 0.00944);
                     }
 
-                    var baseOutput = Math.floor(tierRate * workerFraction * seasonMod * (bld.level || 1) * conditionEff * apprenticePenalty * warZonePenalty * happyMod);
+                    var baseOutput = Math.floor(tierRate * workerFraction * seasonMod * (bld.level || 1) * conditionEff * apprenticePenalty * warZonePenalty * happyMod * _townHousingProd);
                     var produced = 0;
                     var failed = 0;
                     for (var u = 0; u < baseOutput; u++) {
@@ -3456,7 +3576,7 @@
                     if (bld.type === 'hunting_lodge' && town.wildlifeAbundance != null) {
                         wildlifeMod = town.wildlifeAbundance;
                     }
-                    const output = Math.floor(activeRate * workerFraction * seasonMod * (bld.level || 1) * conditionEff * apprenticePenalty * fertilityMod * wildlifeMod * warZonePenalty * happyMod);
+                    const output = Math.floor(activeRate * workerFraction * seasonMod * (bld.level || 1) * conditionEff * apprenticePenalty * fertilityMod * wildlifeMod * warZonePenalty * happyMod * _townHousingProd);
                     // Animal Husbandry: player livestock buildings produce 10% more
                     var livestockTypes = ['cattle_ranch', 'sheep_farm', 'chicken_farm', 'pig_farm', 'horse_ranch'];
                     var animalBonus = 0;
@@ -3476,24 +3596,30 @@
                     applyWorkerXP(bld, town, 'basic', output, 0);
                 }
 
-                // --- Worker wage payment & goods flow ---
-                if (bld.ownerId && bld.ownerId !== 'player') {
+                // --- Worker wage payment & goods flow (once per day) ---
+                if (bld.ownerId && bld.ownerId !== 'player' && world.day !== bld._lastWageDay) {
+                    bld._lastWageDay = world.day;
                     const kingdom = findKingdom(town.kingdomId);
                     const isKingdomOwned = kingdom && bld.ownerId === kingdom.id;
                     const workerIds = bld.workers || [];
-                    const wagePerWorker = CONFIG.BASE_WAGE || 4;
+                    const baseWage = CONFIG.BASE_WAGE || 4;
 
                     for (const wId of workerIds) {
                         const worker = findPerson(wId);
                         if (!worker || !worker.alive) continue;
+                        // Skill-modified wage: skilled workers earn more
+                        var wSkills = worker.skills || {};
+                        var wSkillMod = 1.0;
+                        var wSkill = worker.workerSkill || 0;
+                        if (wSkill >= 50) wSkillMod = 1.5;
+                        else if (wSkill >= 25) wSkillMod = 1.2;
+                        var wagePerWorker = Math.floor(baseWage * wSkillMod);
 
                         if (isKingdomOwned) {
-                            // Kingdom pays workers from treasury
                             if (kingdom.gold >= wagePerWorker) {
                                 kingdom.gold -= wagePerWorker;
                                 worker.gold = (worker.gold || 0) + wagePerWorker;
                             } else {
-                                // Kingdom can't pay — worker may quit
                                 if (world.rng.chance(0.1)) {
                                     worker.occupation = 'laborer';
                                     worker.employerId = null;
@@ -3502,13 +3628,11 @@
                                 }
                             }
                         } else {
-                            // NPC owner pays from personal gold
                             const owner = findPerson(bld.ownerId);
                             if (owner && owner.alive && owner.gold >= wagePerWorker) {
                                 owner.gold -= wagePerWorker;
                                 worker.gold = (worker.gold || 0) + wagePerWorker;
                             } else if (owner && owner.alive && world.rng.chance(0.1)) {
-                                // Owner can't pay — worker may quit
                                 worker.occupation = 'laborer';
                                 worker.employerId = null;
                                 const idx = workerIds.indexOf(wId);
@@ -3521,10 +3645,16 @@
                     if (!isKingdomOwned && bld._profitTracker) {
                         const owner = findPerson(bld.ownerId);
                         if (owner && owner.alive) {
-                            // Bug 3 fix: use actual production output for revenue
                             const sellingPrice = getMarketPrice(town, actualOutputId);
                             const earnedFromSales = Math.floor(sellingPrice * actualOutput);
                             owner.gold = (owner.gold || 0) + earnedFromSales;
+                            // Track revenue and costs for EM/NPC building profitability
+                            bld._profitTracker.revenue += earnedFromSales;
+                            bld._profitTracker.days++;
+                            var npcBt = findBuildingType(bld.type);
+                            if (npcBt) {
+                                bld._profitTracker.costs += (npcBt.workers || 1) * (CONFIG.BASE_WAGE || 4);
+                            }
                         }
                     }
 
@@ -4164,12 +4294,57 @@
         return _buildingTypeMap[typeId] || null;
     }
 
+    // --------------------------------------------------------
+    // §6B  CONSTRUCTION WAGES — distribute gold to local NPCs
+    // --------------------------------------------------------
+    function distributeConstructionWages(townId, goldAmount, rng) {
+        if (goldAmount <= 0) return 0;
+        var town = findTown(townId);
+        if (!town) return 0;
+
+        // Find adult NPCs in this town
+        var localNPCs = world.people.filter(function(p) {
+            return p.townId === townId && p.alive && !p.isPlayer && p.age >= 16;
+        });
+        if (localNPCs.length === 0) return 0;
+
+        // Sort by construction-relevant skills (crafting + mining) — skilled first
+        localNPCs.sort(function(a, b) {
+            var aSkill = ((a.skills ? a.skills.crafting : 0) || 0) + ((a.skills ? a.skills.mining : 0) || 0);
+            var bSkill = ((b.skills ? b.skills.crafting : 0) || 0) + ((b.skills ? b.skills.mining : 0) || 0);
+            return bSkill - aSkill;
+        });
+
+        // Target 25-50g per worker on average
+        var targetWage = rng.randInt(25, 50);
+        var numWorkers = Math.max(1, Math.min(Math.ceil(goldAmount / targetWage), localNPCs.length));
+        var hired = localNPCs.slice(0, numWorkers);
+
+        // Distribute gold evenly among hired workers
+        var perWorker = Math.floor(goldAmount / hired.length);
+        var remainder = goldAmount % hired.length;
+
+        for (var i = 0; i < hired.length; i++) {
+            hired[i].gold = (hired[i].gold || 0) + perWorker + (i < remainder ? 1 : 0);
+            // Small skill boost for construction work
+            if (hired[i].skills) {
+                hired[i].skills.crafting = Math.min(100, (hired[i].skills.crafting || 0) + 1);
+            }
+        }
+
+        return hired.length;
+    }
+
     // Helper: Kingdom/NPC builds a building, checking materials & paying dynamic cost
     function kingdomBuild(kingdom, town, buildingTypeId, rng) {
         var bt = findBuildingType(buildingTypeId);
         if (!bt) return false;
         // Block military buildings in DMZ towns
         if (DMZ_MILITARY_BUILDINGS.indexOf(buildingTypeId) !== -1 && isTownInDMZ(town.id, kingdom.id)) {
+            return false;
+        }
+        // Block if same type is already under construction in this town
+        if (town.buildings.some(function(b) { return b.type === buildingTypeId && b.condition === 'under_construction'; })) {
             return false;
         }
         // Check natural deposit requirement
@@ -4196,8 +4371,62 @@
             }
         }
         kingdom.gold -= totalCost;
-        town.buildings.push({ type: buildingTypeId, level: 1, ownerId: null, builtDay: world.day, condition: 'new', lastRepairDay: 0 });
+        // Distribute construction wages to local NPCs (gold flows into economy)
+        distributeConstructionWages(town.id, totalCost, rng || world.rng);
+        // Determine build time from config
+        var buildTimes = CONFIG.KINGDOM_BUILD_TIMES ? CONFIG.KINGDOM_BUILD_TIMES[buildingTypeId] : null;
+        var buildDays = buildTimes ? buildTimes.build : 0;
+        if (buildDays > 1) {
+            town.buildings.push({ type: buildingTypeId, level: 1, ownerId: null, builtDay: world.day, condition: 'under_construction', constructionComplete: world.day + buildDays, lastRepairDay: 0 });
+        } else {
+            town.buildings.push({ type: buildingTypeId, level: 1, ownerId: null, builtDay: world.day, condition: 'new', lastRepairDay: 0 });
+        }
         return true;
+    }
+
+    // --------------------------------------------------------
+    // §6C  CONSTRUCTION & REPAIR TIMER PROCESSING
+    // --------------------------------------------------------
+    function tickKingdomConstruction() {
+        for (var ti = 0; ti < world.towns.length; ti++) {
+            var town = world.towns[ti];
+            for (var bi = 0; bi < town.buildings.length; bi++) {
+                var bld = town.buildings[bi];
+                // Complete construction projects
+                if (bld.condition === 'under_construction' && bld.constructionComplete && world.day >= bld.constructionComplete) {
+                    bld.condition = 'new';
+                    delete bld.constructionComplete;
+                    var btName = bld.type.replace(/_/g, ' ');
+                    logEvent('🏗️ Construction of ' + btName + ' completed in ' + town.name + '!', {
+                        type: 'construction_complete', townId: town.id
+                    });
+                }
+                // Complete repair projects
+                if (bld.condition === 'repairing' && bld.repairComplete && world.day >= bld.repairComplete) {
+                    bld.condition = 'new';
+                    bld.lastRepairDay = world.day;
+                    delete bld.repairComplete;
+                }
+            }
+            // Process wall construction projects
+            if (town._wallConstruction && world.day >= town._wallConstruction.completeDay) {
+                town.walls = town._wallConstruction.targetLevel;
+                logEvent('🏰 ' + (town._wallConstruction.name || 'Wall upgrade') + ' completed around ' + town.name + '!', {
+                    type: 'construction_complete', townId: town.id
+                });
+                delete town._wallConstruction;
+            }
+            // Fortress walls passive degradation (weather/age — very slow)
+            for (var fwi = 0; fwi < town.buildings.length; fwi++) {
+                var fw = town.buildings[fwi];
+                if (fw.type === 'fortress_walls' && fw.condition !== 'under_construction' && fw.condition !== 'destroyed') {
+                    if (fw.fortressWallsHP > 0) {
+                        var degradeRate = (CONFIG.FORTRESS_WALLS && CONFIG.FORTRESS_WALLS.degradePerTick) || 0.05;
+                        fw.fortressWallsHP = Math.max(0, fw.fortressWallsHP - degradeRate);
+                    }
+                }
+            }
+        }
     }
 
     function countWorkersForBuilding(town, bld) {
@@ -4366,17 +4595,45 @@
             // ---- Gold floor (prevent floating-point drift below 0) ----
             if (p.gold < 0) p.gold = 0;
 
-            // ---- Employment income ----
+            // ---- Employment income (once per day, not per tick) ----
             const town = findTown(p.townId);
-            if (p.occupation !== 'none' && p.occupation !== 'noble' && !p.employerId) {
+            if (p.occupation !== 'none' && p.occupation !== 'noble' && !p.employerId && day !== p._lastPayDay) {
+                p._lastPayDay = day;
                 const occData = OCCUPATIONS[p.occupation.toUpperCase()];
                 if (occData && town) {
-                    // Indentured servants: wages go to kingdom treasury
-                    if (p.status === 'indentured' && p.servitudeKingdomId) {
-                        const servK = findKingdom(p.servitudeKingdomId);
-                        if (servK) servK.gold += occData.wage;
+                    // Calculate skill-modified wage
+                    var baseWage = occData.wage;
+                    var pSkills = p.skills || {};
+                    var skillMod = 1.0;
+                    if (p.occupation === 'farmer' && pSkills.farming) skillMod += Math.min(0.5, pSkills.farming / 100);
+                    else if (p.occupation === 'miner' && pSkills.mining) skillMod += Math.min(0.5, pSkills.mining / 100);
+                    else if (p.occupation === 'craftsman' && pSkills.crafting) skillMod += Math.min(0.5, pSkills.crafting / 100);
+                    else if (p.occupation === 'laborer') skillMod += Math.min(0.2, (pSkills.farming || pSkills.mining || 0) / 200);
+                    else if ((p.occupation === 'soldier' || p.occupation === 'guard') && pSkills.combat) skillMod += Math.min(0.3, pSkills.combat / 100);
+                    var dailyWage = Math.floor(baseWage * skillMod);
+
+                    // Soldiers/guards: kingdom upkeep is handled by tickKingdomFinances
+                    // Soldiers receive a small personal stipend from military provisions
+                    if ((p.occupation === 'soldier' || p.occupation === 'guard') && p.kingdomId) {
+                        var payK = findKingdom(p.kingdomId);
+                        // Personal stipend: 1g/day (from military provisions, not a separate treasury charge)
+                        if (payK && payK.gold >= 1) {
+                            payK.gold -= 1;
+                            if (p.status === 'indentured' && p.servitudeKingdomId) {
+                                var servK = findKingdom(p.servitudeKingdomId);
+                                if (servK) servK.gold += 1;
+                            } else {
+                                p.gold += 1;
+                            }
+                        }
                     } else {
-                        p.gold += occData.wage;
+                        // Indentured servants: wages go to kingdom treasury
+                        if (p.status === 'indentured' && p.servitudeKingdomId) {
+                            var servK2 = findKingdom(p.servitudeKingdomId);
+                            if (servK2) servK2.gold += dailyWage;
+                        } else {
+                            p.gold += dailyWage;
+                        }
                     }
                     // Restore food need if town has food
                     if (p.gold >= 1) {
@@ -4461,6 +4718,9 @@
                     var medAtWar = medKingdom && medKingdom.atWar && medKingdom.atWar.size > 0;
                     var medHasPlague = medTown.plague && medTown.plague.active;
                     var sickChance = medHasPlague ? 0.35 : (medAtWar ? 0.15 : 0.06);
+                    // Tent dwellers get sick much more often
+                    if (p.houseType === 'tent') sickChance = Math.min(0.5, sickChance * 2.5);
+                    else if (!p.houseType) sickChance = Math.min(0.45, sickChance * 1.8); // Homeless also elevated
                     if (world.rng.chance(sickChance)) {
                         // Determine severity of ailment
                         var sevRoll = world.rng.random();
@@ -5033,7 +5293,30 @@
         const rng = world.rng;
         const deadKing = findPerson(kingdom.king);
         const kingName = deadKing ? (deadKing.firstName + ' ' + deadKing.lastName) : 'The King';
-        logEvent(`${kingName} of ${kingdom.name} has died (${cause})! Succession triggered.`, null, 'sensitive_intel');
+        var isPlayerKingdom = typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdom.id;
+        var deathCategory = isPlayerKingdom ? 'my_kingdom' : 'foreign_kingdoms';
+        var causeText = cause === 'old_age' ? 'of old age' : cause === 'assassination' ? 'by assassination' :
+            cause === 'battle' ? 'in battle' : cause === 'illness' ? 'of illness' : cause === 'injury' ? 'of injuries' :
+            cause === 'god_mode' ? 'by divine intervention' : '';
+        logEvent('💀 ' + kingName + ' of ' + kingdom.name + ' has died' + (causeText ? ' ' + causeText : '') + '! Succession triggered.', {
+            type: 'king_death',
+            kingdomId: kingdom.id,
+            cause: kingName + ' has died' + (causeText ? ' ' + causeText : '') + '. The kingdom must find a successor.',
+            effects: [
+                'Succession has been triggered in ' + kingdom.name,
+                'The kingdom may enter a period of instability'
+            ]
+        }, deathCategory);
+
+        // Toast notification for king death (always show — critical for player, important for others)
+        if (typeof UI !== 'undefined' && UI.toast && world.day > 2) {
+            if (isPlayerKingdom) {
+                UI.toast('💀 ' + kingName + ', ruler of ' + kingdom.name + ', has died' + (causeText ? ' ' + causeText : '') + '!', 'danger', 'critical');
+            } else {
+                UI.toast('💀 ' + kingName + ' of ' + kingdom.name + ' has died' + (causeText ? ' ' + causeText : '') + '.', 'warning', 'critical');
+            }
+        }
+
         // Heir dies → grieving mood for new king
         kingdom._kingDeathCause = cause;
         var allowFemaleHeirs = hasSpecialLaw(kingdom, 'female_heir_law');
@@ -5265,14 +5548,26 @@
             logEvent(`${newKing.firstName} ${newKing.lastName} becomes the new ruler of ${kingdom.name}.`);
         }
 
-        // Generate new personality for new king
+        // Derive kingdom kingPersonality from the new king's actual NPC personality traits
+        var kp = newKing.personality || {};
+        var intVal = kp.intelligence || 50;
+        var warmVal = kp.warmth || 50;
+        var ambVal = kp.ambition || 50;
+        var frugVal = kp.frugality || 50;
+        var loyVal = kp.loyalty || 50;
+        var honVal = kp.honesty || 50;
+
         kingdom.kingPersonality = {
-            ...kingdom.kingPersonality,
-            intelligence: rng.pick(['brilliant', 'clever', 'average', 'dim', 'foolish']),
-            temperament: rng.pick(['kind', 'fair', 'stern', 'cruel']),
-            ambition: rng.pick(['ambitious', 'content', 'lazy']),
-            greed: rng.pick(['generous', 'fair', 'greedy', 'corrupt']),
-            courage: rng.pick(['brave', 'cautious', 'cowardly']),
+            generosity: warmVal >= 60 ? 'generous' : warmVal >= 40 ? 'fair' : 'greedy',
+            militarism: ambVal >= 70 ? 'aggressive' : loyVal >= 60 ? 'defensive' : 'peaceful',
+            justice: honVal >= 60 ? 'just' : 'pragmatic',
+            tradition: intVal >= 60 ? 'progressive' : 'moderate',
+            icon: (kingdom.kingPersonality && kingdom.kingPersonality.icon) || '👑',
+            intelligence: intVal >= 80 ? 'brilliant' : intVal >= 60 ? 'clever' : intVal >= 40 ? 'average' : intVal >= 20 ? 'dim' : 'foolish',
+            temperament: warmVal >= 75 ? 'kind' : warmVal >= 50 ? 'fair' : warmVal >= 25 ? 'stern' : 'cruel',
+            ambition: ambVal >= 70 ? 'ambitious' : ambVal >= 35 ? 'content' : 'lazy',
+            greed: honVal >= 70 && frugVal >= 60 ? 'generous' : honVal >= 45 ? 'fair' : frugVal <= 30 ? 'corrupt' : 'greedy',
+            courage: loyVal >= 65 && ambVal >= 50 ? 'brave' : loyVal >= 35 ? 'cautious' : 'cowardly',
         };
 
         // New king changes diplomacy
@@ -5308,6 +5603,26 @@
             setKingMood(kingdom, 'worried', 'uncertain times');
         }
         kingdom._kingDeathCause = null;
+
+        // Toast notification for new king with personality summary
+        if (typeof UI !== 'undefined' && UI.toast && world.day > 2) {
+            var kpd = kingdom.kingPersonality || {};
+            var traits = [];
+            if (kpd.intelligence && kpd.intelligence !== 'average') traits.push(kpd.intelligence);
+            if (kpd.temperament && kpd.temperament !== 'fair') traits.push(kpd.temperament);
+            if (kpd.ambition && kpd.ambition !== 'content') traits.push(kpd.ambition);
+            if (kpd.courage && kpd.courage !== 'cautious') traits.push(kpd.courage);
+            if (kpd.greed && kpd.greed !== 'fair') traits.push(kpd.greed);
+            var traitStr = traits.length > 0 ? ' (' + traits.join(', ') + ')' : '';
+            var isPlayerKingdom = typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdom.id;
+            var howText = cause === 'election' ? 'elected ruler' : cause === 'emergency' ? 'seized the throne' :
+                cause === 'succession_crisis' ? 'claimed the throne' : 'crowned ruler';
+            if (isPlayerKingdom) {
+                UI.toast('👑 ' + newKing.firstName + ' ' + newKing.lastName + ' ' + howText + ' of ' + kingdom.name + traitStr, 'warning', 'critical');
+            } else {
+                UI.toast('👑 ' + newKing.firstName + ' ' + newKing.lastName + ' is the new ruler of ' + kingdom.name + traitStr, 'info', 'critical');
+            }
+        }
     }
 
     function _checkPlayerIsAdvisor(kingdom) {
@@ -5562,7 +5877,7 @@
                     }
                 }
                 // Prosperity jealousy: ambitious kings may attack much more prosperous neighbors
-                if (k.personality && k.personality.ambition > 65) {
+                if (k.kingPersonality && k.kingPersonality.ambition === 'ambitious') {
                     var ourAvgProsp = 0, ourTownCount = 0;
                     for (var oti = 0; oti < (k.territories || []).length; oti++) {
                         var ot = findTown(k.territories[oti]);
@@ -5801,27 +6116,54 @@
                 }
             }
 
-            // ---- Tax collection (once per season) ----
-            // Skip if kingdom is under tax revolt
-            if (world.day % CONFIG.DAYS_PER_SEASON === 0 && !(k._taxRevoltUntil && world.day < k._taxRevoltUntil)) {
-                // Seasonal base tax from population (minimal — supplements trade taxes)
-                let baseTaxRevenue = 0;
-                for (const townId of k.territories) {
-                    const town = findTown(townId);
-                    if (town) {
-                        const tradeBonus = Object.values(town.market.supply).reduce((a, b) => a + b, 0) * 0.05;
-                        const rev = Math.floor(town.population * k.taxRate * 5 + tradeBonus);
-                        baseTaxRevenue += rev;
+            // ---- C-2: Financial peace-seeking — broke kingdoms seek peace ----
+            if (k.atWar.size > 0 && k.gold < 1000 && (k.warExhaustion || 0) > 50) {
+                var _kp = k.kingPersonality || {};
+                // Personality affects willingness: brave/ambitious resist, cowardly/cautious agree faster
+                var peaceDesperation = 0.03;
+                if (_kp.courage === 'cowardly') peaceDesperation = 0.08;
+                else if (_kp.courage === 'cautious') peaceDesperation = 0.06;
+                else if (_kp.courage === 'brave' && _kp.ambition === 'ambitious') peaceDesperation = 0.01;
+                // Bankrupt days increase urgency
+                peaceDesperation += (k._bankruptDays || 0) * 0.002;
+                for (var _peaceEid of k.atWar) {
+                    var _peaceEnemy = findKingdom(_peaceEid);
+                    if (_peaceEnemy && rng.chance(peaceDesperation)) {
+                        logEvent('🕊️💸 ' + k.name + ' desperately seeks peace with ' + _peaceEnemy.name + ' — the treasury is empty!', {
+                            type: 'financial_peace', cause: k.name + ' treasury at ' + Math.floor(k.gold) + 'g with war exhaustion ' + Math.floor(k.warExhaustion || 0),
+                            effects: ['War ends — kingdom cannot sustain the conflict', 'Both sides begin recovery'],
+                            kingdoms: [k.id, _peaceEnemy.id]
+                        }, 'military');
+                        makePeace(k, _peaceEnemy, false, null, true);
+                        break;
                     }
                 }
-                k.gold += baseTaxRevenue;
+            }
 
+            // ---- H-1: Daily base tax collection (smoothed, not seasonal lump) ----
+            if (!(k._taxRevoltUntil && world.day < k._taxRevoltUntil)) {
+                var dailyBaseTax = 0;
+                for (var _txTid of k.territories) {
+                    var _txTown = findTown(_txTid);
+                    if (_txTown) {
+                        var _tradeBonus = Object.values(_txTown.market.supply).reduce(function(a, b) { return a + b; }, 0) * 0.05;
+                        // Same formula as before but divided by 90 (days per season) for daily collection
+                        dailyBaseTax += (_txTown.population * k.taxRate * 5 + _tradeBonus) / CONFIG.DAYS_PER_SEASON;
+                    }
+                }
+                if (dailyBaseTax > 0) {
+                    k.gold += dailyBaseTax;
+                    k.taxRevenue = (k.taxRevenue || 0) + dailyBaseTax;
+                }
+            }
+
+            // ---- Seasonal tariff + trade tax reset + soldier pay (still per-season) ----
+            if (world.day % CONFIG.DAYS_PER_SEASON === 0 && !(k._taxRevoltUntil && world.day < k._taxRevoltUntil)) {
                 // Enforce tariff collection on foreign trade (accumulated)
                 let tariffRevenue = 0;
                 for (const townId of k.territories) {
                     const town = findTown(townId);
                     if (!town) continue;
-                    // Estimate tariff from foreign traders who visited
                     var foreignTraders = (_tickCache.peopleByTown[town.id] || []).filter(function(p) {
                         return p.kingdomId !== k.id &&
                         (p.occupation === 'merchant' || p.isEliteMerchant);
@@ -5837,36 +6179,55 @@
                 }
                 k.gold += tariffRevenue;
 
-                // Log total seasonal revenue
-                const seasonalTotal = baseTaxRevenue + tariffRevenue + (k.tradeTaxRevenue || 0);
-                k.taxRevenue = seasonalTotal;
-                k._lastSeasonTaxRevenue = seasonalTotal; // Used by happiness consequences
-                k.tradeTaxRevenue = 0; // reset for next season
+                // Log seasonal summary and reset trade tax accumulator
+                var seasonalTradeTotal = (k.tradeTaxRevenue || 0) + tariffRevenue;
+                k._lastSeasonTaxRevenue = (k.taxRevenue || 0) + seasonalTradeTotal;
+                k.taxRevenue = 0; // reset for next season's daily accumulation
+                k.tradeTaxRevenue = 0;
 
-                // Pay soldiers (adjusted by dynamic pay multiplier)
+                // Pay soldiers (adjusted by dynamic pay multiplier) — seasonal bonus pay
                 var soldiers = (_tickCache.soldiersByKingdom[k.id] || []);
                 const soldierCost = soldiers.length * CONFIG.SOLDIER_UPKEEP * (k.soldierPayMult || 1.0);
                 k.gold = Math.max(0, k.gold - soldierCost);
 
-                // Kingdom hires guards when wealthy
-                if (k.gold > CONFIG.KINGDOM_GUARD_HIRE_THRESHOLD) {
-                    const guardBudgetGold = Math.floor(k.gold * (k.guardBudget || 0.15));
-                    const guardsToHire = Math.floor(guardBudgetGold / CONFIG.KINGDOM_GUARD_COST);
-                    let hired = 0;
-                    for (const townId of k.territories) {
-                        if (hired >= guardsToHire) break;
-                        const town = findTown(townId);
-                        if (!town) continue;
-                        var idle = (_tickCache.peopleByTown[town.id] || []).filter(function(p) {
-                            return (p.occupation === 'laborer' || p.occupation === 'none') &&
-                            p.age >= CONFIG.COMING_OF_AGE && p.age <= 50;
-                        });
-                        for (const p of idle) {
+                // ---- C-1: Guard hiring with caps (once per season, with multiple limits) ----
+                if (!k._lastGuardHireDay) k._lastGuardHireDay = 0;
+                if (world.day - k._lastGuardHireDay >= CONFIG.DAYS_PER_SEASON) {
+                    k._lastGuardHireDay = world.day;
+                    var _fs = getKingdomFinancialState(k);
+                    // H-3: Only hire guards if treasury > 6 months of upkeep AND not at war
+                    if (_fs.canHireGuards && k.gold > CONFIG.KINGDOM_GUARD_HIRE_THRESHOLD) {
+                        // C-1: Cap budget at min(treasury * guardBudget, 25% of last season revenue)
+                        var rawBudget = Math.floor(k.gold * (k.guardBudget || 0.15));
+                        var revenueCap = Math.floor((_fs.lastSeasonRevenue || 1000) * 0.25);
+                        var guardBudgetGold = Math.min(rawBudget, revenueCap);
+                        var guardsToHire = Math.floor(guardBudgetGold / CONFIG.KINGDOM_GUARD_COST);
+                        // C-1: Military-to-income ratio cap: don't hire if already > seasonalRevenue / 2
+                        if (_fs.soldierCount > (_fs.lastSeasonRevenue / 2)) guardsToHire = 0;
+                        // C-1: Population cap: 3% of total pop
+                        var guardRoom = Math.max(0, _fs.maxGuards - _fs.soldierCount);
+                        guardsToHire = Math.min(guardsToHire, guardRoom);
+                        // M-3: Don't hire if it would dip below reserve
+                        var maxSpend = Math.max(0, k.gold - _fs.minReserve);
+                        guardsToHire = Math.min(guardsToHire, Math.floor(maxSpend / CONFIG.KINGDOM_GUARD_COST));
+
+                        let hired = 0;
+                        for (const townId of k.territories) {
                             if (hired >= guardsToHire) break;
-                            p.occupation = 'guard';
-                            p.skills.combat = Math.max(p.skills.combat, 15);
-                            hired++;
-                            k.gold -= CONFIG.KINGDOM_GUARD_COST;
+                            const town = findTown(townId);
+                            if (!town) continue;
+                            var idle = (_tickCache.peopleByTown[town.id] || []).filter(function(p) {
+                                return (p.occupation === 'laborer' || p.occupation === 'none') &&
+                                p.age >= CONFIG.COMING_OF_AGE && p.age <= 50;
+                            });
+                            for (const p of idle) {
+                                if (hired >= guardsToHire) break;
+                                if (k.gold < CONFIG.KINGDOM_GUARD_COST) break;
+                                p.occupation = 'guard';
+                                p.skills.combat = Math.max(p.skills.combat, 15);
+                                hired++;
+                                k.gold -= CONFIG.KINGDOM_GUARD_COST;
+                            }
                         }
                     }
                 }
@@ -5911,6 +6272,9 @@
             }
         }
 
+        // ---- Process construction & repair timers (daily) ----
+        tickKingdomConstruction();
+
         // ---- Tick treaties (reparations, violations, expiry) ----
         tickTreaties();
 
@@ -5918,11 +6282,36 @@
         checkWarGoals();
     }
 
-    function declareWar(a, b) {
+    function declareWar(a, b, isStartingWar) {
         // --- CHECK NON-AGGRESSION PACT ---
         var napTreaty = wouldViolateNonAggression(a.id, b.id);
         if (napTreaty) {
             handleNonAggressionViolation(a, napTreaty);
+        }
+
+        // --- M-4: WAR COST ESTIMATION (personality-driven) — skip for game-start wars ---
+        if (!isStartingWar) {
+            var _afs = getKingdomFinancialState(a);
+            var aSoldiers = _afs.soldierCount;
+            var monthlyMilitaryUpkeep = aSoldiers * CONFIG.KINGDOM_SOLDIER_DAILY_COST;
+            var expectedRecruitCost = Math.max(0, 50 - aSoldiers) * 75;
+            var sixMonthWarCost = (monthlyMilitaryUpkeep * 6) + expectedRecruitCost + 2000;
+
+            var ap = a.kingPersonality || {};
+            var warCostThreshold = 0.5;
+            if (ap.courage === 'brave') warCostThreshold = 0.3;
+            else if (ap.courage === 'cowardly' || ap.courage === 'cautious') warCostThreshold = 0.7;
+            if (ap.intelligence === 'brilliant') warCostThreshold = Math.min(warCostThreshold + 0.15, 0.9);
+            else if (ap.intelligence === 'clever') warCostThreshold = Math.min(warCostThreshold + 0.1, 0.8);
+            else if (ap.intelligence === 'foolish') warCostThreshold = Math.max(warCostThreshold - 0.2, 0.1);
+            if (ap.greed === 'greedy' || ap.greed === 'corrupt') warCostThreshold *= 0.7;
+
+            if (a.gold < sixMonthWarCost * warCostThreshold) {
+                logEvent(`${a.name}'s advisors warn against war with ${b.name} — the treasury cannot sustain it (${Math.floor(a.gold)}g vs estimated ${Math.floor(sixMonthWarCost)}g needed).`, {
+                    type: 'war_averted', cause: 'Insufficient treasury', effects: ['War declaration cancelled', 'Kingdom saves gold for buildup']
+                });
+                return;
+            }
         }
 
         // --- WAR DECLARATION COST (aggressor pays upfront) ---
@@ -5936,6 +6325,16 @@
 
         a.atWar.add(b.id);
         b.atWar.add(a.id);
+
+        // H-2: Record war start day on both kingdoms for early-war spending caps
+        a._lastWarStartDay = world.day;
+        b._lastWarStartDay = world.day;
+
+        // H-2: Trigger immediate financial strategy reassessment (skip during world gen)
+        if (!isStartingWar) {
+            tickKingdomFinancialStrategy(a);
+            tickKingdomFinancialStrategy(b);
+        }
 
         // Generate unique war ID and record war metadata
         const warId = 'war_' + a.id + '_' + b.id + '_day' + world.day;
@@ -7147,6 +7546,11 @@
             type: 'succession_crisis', severity: severity,
             effects: ['Happiness -' + happinessDrop, 'Trade disrupted', pretenders.length + ' pretenders']
         });
+
+        // Toast for succession crisis (major/extreme only)
+        if (typeof UI !== 'undefined' && UI.toast && world.day > 2 && severity !== 'minor') {
+            UI.toast(crisisMsg, severity === 'extreme' ? 'danger' : 'warning', 'critical');
+        }
     }
 
     function tickSuccessionCrisis(k) {
@@ -7384,7 +7788,7 @@
         // King mood modifiers affect all decisions
         var mood = getKingMoodModifiers(k);
 
-        // 1. TAX ADJUSTMENT
+        // 1. TAX ADJUSTMENT (H-4 enhanced — personality-driven, prosperity-aware)
         // Personality-based max tax caps
         let maxTaxRate = 0.25;
         if (p.greed === 'generous') maxTaxRate = 0.10;
@@ -7392,56 +7796,142 @@
         else if (p.greed === 'greedy') maxTaxRate = 0.20;
         else if (p.greed === 'corrupt') maxTaxRate = 0.25;
 
+        // Personality-based min "comfort" tax (kings won't voluntarily go below this)
+        var minComfortTax = 0.05;
+        if (p.greed === 'generous') minComfortTax = 0.03;
+        else if (p.greed === 'greedy') minComfortTax = 0.08;
+        else if (p.greed === 'corrupt') minComfortTax = 0.10;
+
+        var _prevTaxRate = k.taxRate;
+        var startGold = k._startingGold || 10000;
+        var avgProsperity = 0;
+        var _prosTownCount = 0;
+        for (var _ptid of k.territories) {
+            var _ptown = findTown(_ptid);
+            if (_ptown) { avgProsperity += (_ptown.prosperity || 50); _prosTownCount++; }
+        }
+        avgProsperity = _prosTownCount > 0 ? avgProsperity / _prosTownCount : 50;
+
+        // --- TAX RAISING logic (personality-driven) ---
         if (p.greed === 'greedy' || p.greed === 'corrupt') {
-            var _oldRate = k.taxRate;
-            if (rng.chance(0.3)) k.taxRate = Math.min(maxTaxRate, k.taxRate + 0.02 + (mood.taxMod || 0));
-            if (k.taxRate > _oldRate) k.lastTaxIncreaseDay = world.day;
-            if (k.taxRate > _oldRate) logKingAction(k, '📈 Raised taxes to ' + Math.round(k.taxRate * 100) + '%');
-        } else if (p.greed === 'generous' && happiness < 50) {
-            if (rng.chance(0.4)) {
-                k.taxRate = Math.max(0.02, k.taxRate - 0.02);
-                logKingAction(k, '📉 Lowered taxes to ' + Math.round(k.taxRate * 100) + '%');
+            // Greedy/corrupt: raise taxes frequently, especially when treasury is low
+            var raiseChance = 0.25 + (k.gold < startGold * 0.5 ? 0.15 : 0);
+            if (p.greed === 'corrupt') raiseChance += 0.10;
+            var raiseAmt = rng.randFloat(0.01, 0.03) + (mood.taxMod > 0 ? mood.taxMod : 0);
+            if (rng.chance(raiseChance) && k.taxRate < maxTaxRate) {
+                k.taxRate = Math.min(maxTaxRate, k.taxRate + raiseAmt);
             }
+        } else if (k.gold < startGold * 0.3) {
+            // Any king raises taxes when treasury dangerously low
+            var despRaiseChance = 0.15;
+            if (p.intelligence === 'brilliant') despRaiseChance = 0.25; // smart kings react faster
+            else if (p.intelligence === 'clever') despRaiseChance = 0.20;
+            else if (p.intelligence === 'dim') despRaiseChance = 0.08;
+            var despAmt = rng.randFloat(0.01, 0.02);
+            if (rng.chance(despRaiseChance) && k.taxRate < maxTaxRate - 0.02) {
+                k.taxRate = Math.min(maxTaxRate, k.taxRate + despAmt);
+            }
+        }
+
+        // --- TAX LOWERING logic (H-4: proactive prosperity/wealth-driven) ---
+        // A. Wealthy treasury: lower taxes to boost trade and prosperity
+        if (k.gold > startGold * 2 && k.taxRate > 0.08) {
+            var wealthLowerChance = 0.08;
+            var wealthLowerAmt = rng.randFloat(0.01, 0.02);
+            if (p.greed === 'generous') { wealthLowerChance = 0.25; wealthLowerAmt = rng.randFloat(0.02, 0.03); }
+            else if (p.greed === 'fair') { wealthLowerChance = 0.15; wealthLowerAmt = rng.randFloat(0.01, 0.02); }
+            else if (p.intelligence === 'brilliant') { wealthLowerChance = 0.18; wealthLowerAmt = rng.randFloat(0.01, 0.02); }
+            else if (p.intelligence === 'clever') wealthLowerChance = 0.12;
+            // Greedy/corrupt kings rarely lower even when wealthy
+            if (p.greed === 'greedy') wealthLowerChance *= 0.3;
+            if (p.greed === 'corrupt') wealthLowerChance *= 0.15;
+            if (rng.chance(wealthLowerChance)) {
+                k.taxRate = Math.max(minComfortTax, k.taxRate - wealthLowerAmt);
+                logKingAction(k, '📉 Lowered taxes to ' + Math.round(k.taxRate * 100) + '% — treasury is strong');
+            }
+        }
+        // B. Low prosperity: lower taxes to stimulate economy (smart/fair kings)
+        if (avgProsperity < 40 && k.gold > 5000 && k.taxRate > 0.08) {
+            var prosLowerChance = 0;
+            var prosLowerAmt = rng.randFloat(0.01, 0.02);
+            if (p.intelligence === 'brilliant') { prosLowerChance = 0.20; prosLowerAmt = rng.randFloat(0.02, 0.03); }
+            else if (p.intelligence === 'clever') prosLowerChance = 0.12;
+            else if (p.greed === 'generous') prosLowerChance = 0.15;
+            else if (p.greed === 'fair') prosLowerChance = 0.10;
+            // Even greedy kings may lower if prosperity is truly terrible
+            if (avgProsperity < 25 && prosLowerChance === 0) prosLowerChance = 0.05;
+            if (rng.chance(prosLowerChance)) {
+                k.taxRate = Math.max(minComfortTax, k.taxRate - prosLowerAmt);
+                logKingAction(k, '📉 Lowered taxes to ' + Math.round(k.taxRate * 100) + '% — stimulating the economy');
+            }
+        }
+        // C. Generous kings lower when happiness is poor (existing but improved)
+        if (p.greed === 'generous' && happiness < 50 && k.taxRate > minComfortTax) {
+            if (rng.chance(0.35)) {
+                k.taxRate = Math.max(minComfortTax, k.taxRate - rng.randFloat(0.01, 0.02));
+                logKingAction(k, '📉 Lowered taxes to ' + Math.round(k.taxRate * 100) + '% — the people deserve relief');
+            }
+        }
+        // D. Smart kings lower when happiness < 40 (existing but with variability)
+        if ((p.intelligence === 'brilliant' || p.intelligence === 'clever') && happiness < 40 && k.taxRate > minComfortTax) {
+            var smartLowerAmt = p.intelligence === 'brilliant' ? rng.randFloat(0.015, 0.025) : rng.randFloat(0.01, 0.02);
+            if (rng.chance(p.intelligence === 'brilliant' ? 0.30 : 0.20)) {
+                k.taxRate = Math.max(minComfortTax, k.taxRate - smartLowerAmt);
+            }
+        }
+
+        // Mood-driven tax adjustment (emotional overlay on top of strategic)
+        if (mood.taxMod > 0 && k.kingMood && k.kingMood.current !== 'content') {
+            k.taxRate = Math.min(maxTaxRate, k.taxRate + mood.taxMod);
+        } else if (mood.taxMod < 0) {
+            k.taxRate = Math.max(minComfortTax, k.taxRate + mood.taxMod);
         }
 
         // Enforce personality cap
         k.taxRate = Math.min(k.taxRate, maxTaxRate);
+        k.taxRate = Math.max(0.02, k.taxRate); // absolute floor
 
-        // Smart kings adjust taxes based on happiness
-        if ((p.intelligence === 'brilliant' || p.intelligence === 'clever') && happiness < 40) {
-            k.taxRate = Math.max(0.02, k.taxRate - 0.02);
+        // Log significant changes
+        if (k.taxRate > _prevTaxRate + 0.005) {
+            k.lastTaxIncreaseDay = world.day;
+            logKingAction(k, '📈 Raised taxes to ' + Math.round(k.taxRate * 100) + '%');
+        } else if (k.taxRate < _prevTaxRate - 0.005) {
+            logKingAction(k, '📉 Lowered taxes to ' + Math.round(k.taxRate * 100) + '%');
         }
 
-        // Mood-driven tax adjustment
-        if (mood.taxMod > 0 && k.kingMood && k.kingMood.current !== 'content') {
-            k.taxRate = Math.min(maxTaxRate, k.taxRate + mood.taxMod);
-            if (mood.taxMod >= 0.03) logKingAction(k, '📈 Raised taxes due to ' + (k.kingMood.reason || 'unrest'));
-        } else if (mood.taxMod < 0) {
-            k.taxRate = Math.max(0.02, k.taxRate + mood.taxMod);
-            logKingAction(k, '📉 Lowered taxes — the king is in a generous mood');
-        }
-
-        // 2. MILITARY(ambitious/brave kings build more military)
-        if (p.ambition === 'ambitious' && !atWar && rng.chance(0.3)) {
-            // Recruit in peacetime
-            for (const townId of k.territories) {
-                const town = findTown(townId);
-                if (!town) continue;
-                var idle = (_tickCache.peopleByTown[town.id] || []).filter(function(pp) {
-                    return (pp.occupation === 'laborer' || pp.occupation === 'none') &&
-                    pp.age >= CONFIG.COMING_OF_AGE && pp.age <= 50;
-                });
-                if (idle.length > 0 && k.gold > 200) {
-                    const recruit = idle[0];
-                    recruitSoldier(recruit, town, k, 'infantry');
-                    k.gold -= 50;
-                    break;
+        // 2. MILITARY(ambitious/brave kings build more military, with budget awareness)
+        if (p.ambition === 'ambitious' && !atWar && rng.chance(0.2)) {
+            // Peacetime recruitment: only if budget is sustainable
+            var _ptFs = getKingdomFinancialState(k);
+            var _ptCanRecruit = _ptFs.canHireGuards && k.gold > _ptFs.minReserve;
+            // Clever/brilliant kings also check if adding soldiers is affordable
+            if (p.intelligence === 'brilliant' || p.intelligence === 'clever') {
+                var _ptDailyInc = (_ptFs.lastSeasonRevenue || 0) / 90;
+                var _ptDailyCost = _ptFs.soldierCount * 1 + _ptFs.soldierCount * CONFIG.KINGDOM_SOLDIER_DAILY_COST / 30 + _ptFs.monthlyBuildingCost / 30;
+                if (_ptDailyInc - _ptDailyCost < 3) _ptCanRecruit = false;
+            }
+            if (_ptCanRecruit) {
+                for (const townId of k.territories) {
+                    const town = findTown(townId);
+                    if (!town) continue;
+                    var idle = (_tickCache.peopleByTown[town.id] || []).filter(function(pp) {
+                        return (pp.occupation === 'laborer' || pp.occupation === 'none') &&
+                        pp.age >= CONFIG.COMING_OF_AGE && pp.age <= 50;
+                    });
+                    if (idle.length > 0 && k.gold > 200) {
+                        const recruit = idle[0];
+                        recruitSoldier(recruit, town, k, 'infantry');
+                        k.gold -= 50;
+                        break;
+                    }
                 }
             }
         }
 
         // 3. INFRASTRUCTURE (clever/brilliant kings invest wisely)
-        if ((p.intelligence === 'brilliant' || p.intelligence === 'clever') && treasury > 1000 && rng.chance(0.2)) {
+        // H-3: Only build if treasury > 3 months upkeep; H-2: delay non-essential during war
+        var _infraFs = getKingdomFinancialState(k);
+        if ((p.intelligence === 'brilliant' || p.intelligence === 'clever') && treasury > 1000 && rng.chance(0.2) && _infraFs.canConstruct && !_infraFs.atWar) {
             // Build missing essential buildings in towns that lack them
             for (const townId of k.territories) {
                 const town = findTown(townId);
@@ -7497,9 +7987,10 @@
             const town = findTown(townId);
             if (!town) continue;
 
-            // Building maintenance
+            // Building maintenance — now uses time-based repair queue
             for (const bld of town.buildings) {
                 if (bld.ownerId === 'player') continue; // player repairs their own
+                if (bld.condition === 'under_construction' || bld.condition === 'repairing') continue; // already in progress
                 const repairThreshold = (p.intelligence === 'brilliant' || p.intelligence === 'clever') ? 'used' : 'breaking';
                 if (p.intelligence === 'foolish' || p.intelligence === 'dim') continue; // neglectful kings skip maintenance
                 if (bld.condition === repairThreshold || bld.condition === 'breaking' || bld.condition === 'destroyed') {
@@ -7508,9 +7999,17 @@
                                      : bld.condition === 'breaking' ? Math.floor((bt ? bt.cost : 200) * 0.3)
                                      : Math.floor((bt ? bt.cost : 200) * 0.2);
                     if (k.gold >= repairCost) {
-                        bld.condition = 'new';
-                        bld.lastRepairDay = world.day;
+                        var repairTimes = CONFIG.KINGDOM_BUILD_TIMES ? CONFIG.KINGDOM_BUILD_TIMES[bld.type] : null;
+                        var repairDays = repairTimes ? repairTimes.repair : 1;
+                        if (repairDays > 1) {
+                            bld.condition = 'repairing';
+                            bld.repairComplete = world.day + repairDays;
+                        } else {
+                            bld.condition = 'new';
+                            bld.lastRepairDay = world.day;
+                        }
                         k.gold -= repairCost;
+                        distributeConstructionWages(town.id, repairCost, rng);
                     }
                 }
             }
@@ -7762,8 +8261,10 @@
             logEvent(`🏟️ The royal tournament in ${k.name} has concluded.`);
         }
         // Kings can sponsor new tournaments when not at war, treasury > 1000g, no active tournament
+        // H-3: Only if treasury > 12 months of upkeep (festivals/tournaments are lowest priority)
+        var _tournFs = getKingdomFinancialState(k);
         // Higher chance for ambitious/brave kings, lower for miserly/cowardly
-        if (!atWar && k.gold > 1000 && (!k.tournament || !k.tournament.active)) {
+        if (!atWar && k.gold > 1000 && _tournFs.canFestival && (!k.tournament || !k.tournament.active)) {
             var tournamentChance = 0.02; // base 2% per tick
             if (p.ambition === 'ambitious') tournamentChance += 0.02;
             if (p.courage === 'brave') tournamentChance += 0.01;
@@ -7796,6 +8297,142 @@
             }
         }
 
+        // 6c. TENT CAMP MANAGEMENT — respects No Tent Camps / Right to Camps laws
+        // No Tent Camps law: soldiers destroy all existing camps
+        // Right to Camps law: NPCs self-build (handled in tickNPCHousingAI), king stays out
+        // Neither law: king decides based on personality (kind build, cruel destroy)
+        if (world.day % 90 === 0) { // Seasonal review
+            var hasBanLaw = hasSpecialLaw(k, 'no_tent_camps');
+            var hasRightLaw = hasSpecialLaw(k, 'right_to_camps');
+
+            for (const townId of k.territories) {
+                const town = findTown(townId);
+                if (!town) continue;
+                var tcamps = (town.buildings || []).filter(function(b) { return b.type === 'tent_camp'; });
+
+                // NO TENT CAMPS LAW: demolish ALL tent camps in the kingdom
+                if (hasBanLaw && tcamps.length > 0) {
+                    for (var _bci = tcamps.length - 1; _bci >= 0; _bci--) {
+                        var banCamp = tcamps[_bci];
+                        // Evict all occupants
+                        for (var _beti = 0; _beti < (banCamp.tents || []).length; _beti++) {
+                            var bEvTent = banCamp.tents[_beti];
+                            if (bEvTent.occupantId) {
+                                var bEvPerson = findPerson(bEvTent.occupantId);
+                                if (bEvPerson) {
+                                    bEvPerson.houseType = null;
+                                    bEvPerson._tentCampId = null;
+                                    bEvPerson._tentIndex = null;
+                                }
+                                bEvTent.occupantId = null;
+                                bEvTent.occupantType = null;
+                            }
+                        }
+                        var banIdx = town.buildings.indexOf(banCamp);
+                        if (banIdx >= 0) town.buildings.splice(banIdx, 1);
+                    }
+                    if (tcamps.length > 0) {
+                        logEvent('🚫 Soldiers of ' + k.name + ' demolished ' + tcamps.length + ' tent camp(s) in ' + town.name + ' under the No Tent Camps law.');
+                        if (town.happiness !== undefined) town.happiness = Math.max(0, town.happiness - 3 * tcamps.length);
+                    }
+                    continue; // Don't build under ban law
+                }
+
+                // RIGHT TO CAMPS LAW: king stays out, NPCs self-build (handled in tickNPCHousingAI)
+                if (hasRightLaw) continue;
+
+                // NEITHER LAW: king decides based on personality
+                var townPop = (town.population || 0);
+                var homeless = (_tickCache.peopleByTown[town.id] || []).filter(function(pp) {
+                    return pp.alive && pp.age >= 18 && !pp.houseType;
+                }).length;
+                var homelessRate = townPop > 0 ? homeless / townPop : 0;
+
+                // Calculate king's disposition toward tent camps
+                // Positive = wants more, negative = wants fewer
+                var disposition = 0;
+                if (p.temperament === 'kind') disposition += 3;
+                else if (p.temperament === 'neutral') disposition += 1;
+                else if (p.temperament === 'cruel') disposition -= 3;
+                if (p.greed === 'generous') disposition += 2;
+                else if (p.greed === 'fair') disposition += 1;
+                else if (p.greed === 'greedy') disposition -= 1;
+                else if (p.greed === 'corrupt') disposition -= 2;
+                if (p.intelligence === 'brilliant' || p.intelligence === 'clever') {
+                    var tentDisease = getTentCampDiseaseMod(town);
+                    if (tentDisease > 0.01) disposition -= 1;
+                    if (homelessRate > 0.3) disposition += 2;
+                }
+                if (p.intelligence === 'foolish') disposition += rng.randInt(-1, 2);
+
+                // BUILD more tent camps if disposition positive and homeless are many
+                if (disposition >= 2 && homelessRate > 0.15 && tcamps.length < 5) {
+                    var usedLand = 0;
+                    for (var _tbi = 0; _tbi < town.buildings.length; _tbi++) {
+                        var _bt = findBuildingType(town.buildings[_tbi].type);
+                        usedLand += (_bt && _bt.landSlots) || 1;
+                    }
+                    var totalLand = town.totalLand || (town.category === 'capital_city' ? 50 : town.category === 'city' ? 35 : town.category === 'town' ? 20 : 10);
+                    if (usedLand < totalLand - 1 && k.gold >= 50) {
+                        var tcBt = BUILDING_TYPES['tent_camp'];
+                        var newTc = {
+                            type: 'tent_camp',
+                            level: 1,
+                            ownerId: k.id,
+                            condition: 'new',
+                            _id: 'tc_' + town.id + '_' + town.buildings.length,
+                            tents: [],
+                            tentUpfrontCost: (tcBt && tcBt.tentUpfrontCost) || 20,
+                            tentMonthlyCost: (tcBt && tcBt.tentMonthlyCost) || 5
+                        };
+                        var numTents = (tcBt && tcBt.tents) || 10;
+                        for (var _nti = 0; _nti < numTents; _nti++) {
+                            newTc.tents.push({ tentIndex: _nti, occupantId: null, occupantType: null, rentStartDay: null, lastRentDay: null });
+                        }
+                        town.buildings.push(newTc);
+                        k.gold -= (tcBt && tcBt.cost) || 50;
+                        logEvent('⛺ The ruler of ' + k.name + ' has ordered a tent camp built in ' + town.name + ' to shelter the homeless.');
+                        logKingAction(k, '⛺ Built tent camp in ' + town.name);
+                    }
+                }
+
+                // DESTROY tent camps if disposition very negative or disease concern
+                if (disposition <= -2 && tcamps.length > 0) {
+                    var targetCamp = null;
+                    for (var _dci = 0; _dci < tcamps.length; _dci++) {
+                        var occ = 0;
+                        for (var _dti = 0; _dti < (tcamps[_dci].tents || []).length; _dti++) {
+                            if (tcamps[_dci].tents[_dti].occupantId) occ++;
+                        }
+                        if (occ === 0) { targetCamp = tcamps[_dci]; break; }
+                    }
+                    if (!targetCamp && (p.temperament === 'cruel' || disposition <= -4)) {
+                        targetCamp = rng.pick(tcamps);
+                    }
+                    if (targetCamp) {
+                        for (var _eti = 0; _eti < (targetCamp.tents || []).length; _eti++) {
+                            var evTent = targetCamp.tents[_eti];
+                            if (evTent.occupantId) {
+                                var evPerson = findPerson(evTent.occupantId);
+                                if (evPerson) {
+                                    evPerson.houseType = null;
+                                    evPerson._tentCampId = null;
+                                    evPerson._tentIndex = null;
+                                }
+                                evTent.occupantId = null;
+                                evTent.occupantType = null;
+                            }
+                        }
+                        var tcIdx = town.buildings.indexOf(targetCamp);
+                        if (tcIdx >= 0) town.buildings.splice(tcIdx, 1);
+                        logEvent('🔥 The ruler of ' + k.name + ' ordered soldiers to demolish a tent camp in ' + town.name + '.');
+                        logKingAction(k, '🔥 Demolished tent camp in ' + town.name);
+                        if (town.happiness !== undefined) town.happiness = Math.max(0, town.happiness - 5);
+                    }
+                }
+            }
+        }
+
         // 7. LAW CHANGES
         if (p.ambition === 'ambitious' && rng.chance(0.1)) {
             // Ambitious kings may add restrictive trade laws
@@ -7814,14 +8451,33 @@
         // 8. WARTIME MILITARY DECISIONS
         // =============================================
         if (atWar) {
-            // a. MASS RECRUITMENT — recruit aggressively during war
+            // a. MASS RECRUITMENT — recruit with budget sustainability awareness
             // War exhaustion reduces or halts recruitment
             var recruitMod = getWarExhaustionRecruitMod(k);
-            const recruitLimit = Math.floor((p.courage === 'brave' ? 5 :
-                                 p.courage === 'cautious' ? 2 : 1) * recruitMod);
+            const recruitLimit = Math.floor((p.courage === 'brave' ? 4 :
+                                 p.courage === 'cautious' ? 1 : 2) * recruitMod);
+            // H-2: First 90 days of war — cap recruitment to 50%
+            var _daysSinceWarStart = world.day - (k._lastWarStartDay || 0);
+            var earlyWarMod = _daysSinceWarStart < 90 ? 0.5 : 1.0;
+            var effectiveRecruitLimit = Math.max(0, Math.floor(recruitLimit * earlyWarMod));
+            // H-2: Don't recruit if treasury is below war reserve
+            var _warFs = getKingdomFinancialState(k);
+            if (k.gold < _warFs.minReserve * 0.5) effectiveRecruitLimit = 0;
+            // Budget sustainability: estimate if adding soldiers is affordable
+            var _estDailyIncome = (_warFs.lastSeasonRevenue || 0) / 90;
+            var _estDailyCost = _warFs.soldierCount * 1 + _warFs.soldierCount * CONFIG.KINGDOM_SOLDIER_DAILY_COST / 30 + _warFs.monthlyBuildingCost / 30;
+            var _budgetMargin = _estDailyIncome - _estDailyCost;
+            // Smart kings won't recruit if budget is unsustainable
+            if (_budgetMargin < 0 && (p.intelligence === 'brilliant' || p.intelligence === 'clever')) {
+                effectiveRecruitLimit = 0;
+            } else if (_budgetMargin < 2) {
+                effectiveRecruitLimit = Math.min(effectiveRecruitLimit, 1);
+            }
+            // RNG: sometimes kings recruit slightly more or less
+            if (rng.chance(0.1)) effectiveRecruitLimit = Math.max(0, effectiveRecruitLimit + rng.randInt(-1, 1));
             let recruited = 0;
             for (const townId of k.territories) {
-                if (recruited >= recruitLimit) break;
+                if (recruited >= effectiveRecruitLimit) break;
                 const town = findTown(townId);
                 if (!town) continue;
                 var idle = (_tickCache.peopleByTown[town.id] || []).filter(function(pp) {
@@ -7829,9 +8485,8 @@
                     pp.age >= CONFIG.COMING_OF_AGE && pp.age <= 50;
                 });
                 for (const person of idle) {
-                    if (recruited >= recruitLimit) break;
-                    if (k.gold < 75) break; // Wartime recruitment costs 2× (75g vs 50g peacetime)
-                    // Assign unit type based on available equipment
+                    if (recruited >= effectiveRecruitLimit) break;
+                    if (k.gold < 75) break;
                     var uType = 'infantry';
                     var townSupply = town.market.supply || {};
                     if ((townSupply.horses || 0) > 0 && (townSupply.saddles || 0) > 0 && rng.chance(0.15)) uType = 'cavalry';
@@ -7896,12 +8551,16 @@
                     if ((town.market.supply[matId] || 0) < qty) { hasMats = false; break; }
                 }
                 if (hasMats && rng.chance(0.2)) {
+                    // Skip if wall already under construction
+                    if (town._wallConstruction) continue;
                     for (const [matId, qty] of Object.entries(wallConfig.materials)) {
                         town.market.supply[matId] -= qty;
                     }
-                    town.walls = nextLevel;
                     k.gold -= wallConfig.cost;
-                    logEvent(`${kingdom_name(k)} has built ${wallConfig.name} around ${town.name}!`);
+                    distributeConstructionWages(town.id, wallConfig.cost, rng);
+                    var _wallBuildDays = (CONFIG.KINGDOM_BUILD_TIMES && CONFIG.KINGDOM_BUILD_TIMES.wall_upgrade) ? CONFIG.KINGDOM_BUILD_TIMES.wall_upgrade.build : 30;
+                    town._wallConstruction = { targetLevel: nextLevel, completeDay: world.day + _wallBuildDays, name: wallConfig.name };
+                    logEvent(`${kingdom_name(k)} begins building ${wallConfig.name} around ${town.name}!`);
                 }
             }
 
@@ -7984,7 +8643,162 @@
                 }
             }
 
-            // g. NEGOTIATE PEACE — if losing badly or war-exhausted
+            // g. BUILD FORTRESS WALLS AT VULNERABLE SEAPORTS
+            // Personality-driven: defensive/cautious kings prioritize, aggressive kings deprioritize
+            if (k.gold > 4000) {
+                var _fwCfg2 = CONFIG.FORTRESS_WALLS || {};
+                var _fwCost = _fwCfg2.cost || 3500;
+                for (var _fwTi = 0; _fwTi < Array.from(k.territories).length; _fwTi++) {
+                    var _fwTownId = Array.from(k.territories)[_fwTi];
+                    var _fwTown = findTown(_fwTownId);
+                    if (!_fwTown || !_fwTown.isPort) continue;
+                    var _hasFW = _fwTown.buildings.some(function(b) { return b.type === 'fortress_walls'; });
+                    if (_hasFW) continue;
+
+                    // Decision factors based on personality
+                    var _fwChance = 0;
+                    if (p.militarism === 'defensive') _fwChance += 0.15;
+                    if (p.courage === 'cautious') _fwChance += 0.10;
+                    if (p.militarism === 'aggressive' || p.militarism === 'warlike') _fwChance -= 0.08;
+                    if (p.intelligence === 'brilliant') _fwChance += 0.08;
+                    else if (p.intelligence === 'clever') _fwChance += 0.04;
+                    if (p.generosity === 'miserly' || p.greed === 'greedy') _fwChance -= 0.05;
+                    if (k.gold > 10000) _fwChance += 0.05;
+                    // At war greatly increases urgency
+                    if (k.atWar.size > 0) {
+                        _fwChance += 0.12;
+                        // Even more urgent if enemy has ships
+                        for (var _eId of k.atWar) {
+                            var _enemy = findKingdom(_eId);
+                            if (_enemy && _enemy.navalFleet && _enemy.navalFleet.length > 0) {
+                                _fwChance += 0.15;
+                                break;
+                            }
+                        }
+                    }
+
+                    // Check materials
+                    var _fwHasMats = true;
+                    if (_fwCfg2.materials) {
+                        for (var _fwMat in _fwCfg2.materials) {
+                            if ((_fwTown.market.supply[_fwMat] || 0) < _fwCfg2.materials[_fwMat]) {
+                                _fwHasMats = false;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (_fwHasMats && k.gold >= _fwCost && rng.chance(Math.max(0.01, _fwChance))) {
+                        // Consume materials
+                        if (_fwCfg2.materials) {
+                            for (var _fwMat2 in _fwCfg2.materials) {
+                                _fwTown.market.supply[_fwMat2] = Math.max(0, (_fwTown.market.supply[_fwMat2] || 0) - _fwCfg2.materials[_fwMat2]);
+                            }
+                        }
+                        k.gold -= _fwCost;
+                        distributeConstructionWages(_fwTown.id, _fwCost, rng);
+                        var _fwBuildDays = (CONFIG.KINGDOM_BUILD_TIMES && CONFIG.KINGDOM_BUILD_TIMES.fortress_walls) ? CONFIG.KINGDOM_BUILD_TIMES.fortress_walls.build : 60;
+                        _fwTown.buildings.push({
+                            type: 'fortress_walls', level: 1, ownerId: null,
+                            builtDay: world.day, condition: 'under_construction',
+                            constructionComplete: world.day + _fwBuildDays,
+                            lastRepairDay: 0,
+                            fortressWallsHP: _fwCfg2.maxHP || 600,
+                            fortressWallsMaxHP: _fwCfg2.maxHP || 600
+                        });
+                        logEvent('🏰 ' + kingdom_name(k) + ' begins constructing fortress walls at ' + _fwTown.name + '!', {
+                            type: 'construction_project', townId: _fwTown.id
+                        });
+                        logKingAction(k, '🏰 Ordered fortress wall construction at ' + _fwTown.name);
+                        break;
+                    }
+                }
+            }
+
+            // h. STRATEGIC BRIDGE DESTRUCTION — destroy bridges to enemy territory
+            // Kings evaluate: defensive value (slowing larger enemy army), trade disruption
+            // Smart kings destroy bridges on invasion routes; desperate kings destroy any
+            if (rng.chance(0.15)) { // Don't evaluate every tick
+                for (var _bri = 0; _bri < world.roads.length; _bri++) {
+                    var _road = world.roads[_bri];
+                    if (!_road.hasBridge || _road.bridgeDestroyed) continue;
+                    var _brFrom = findTown(_road.fromTownId);
+                    var _brTo = findTown(_road.toTownId);
+                    if (!_brFrom || !_brTo) continue;
+
+                    // Only consider bridges connecting our territory to enemy territory
+                    var ownFrom = k.territories.has(_road.fromTownId);
+                    var ownTo = k.territories.has(_road.toTownId);
+                    if (ownFrom === ownTo) continue; // Both ours or neither
+
+                    var enemyTown = ownFrom ? _brTo : _brFrom;
+                    var ourTown = ownFrom ? _brFrom : _brTo;
+                    if (!k.atWar.has(enemyTown.kingdomId)) continue; // Not at war with bridge neighbor
+
+                    var enemyK = findKingdom(enemyTown.kingdomId);
+                    if (!enemyK) continue;
+
+                    // Evaluate strategic value of destroying this bridge
+                    var destroyScore = 0;
+                    var myMilStr = computeMilitaryStrength(k);
+                    var theirMilStr = computeMilitaryStrength(enemyK);
+
+                    // DEFENSIVE: weaker kingdoms benefit more from bridge destruction
+                    if (theirMilStr > myMilStr * 1.3) destroyScore += 3; // They're stronger — slow them down
+                    else if (theirMilStr > myMilStr) destroyScore += 1;
+                    else destroyScore -= 1; // We're stronger — we want the bridge for attacking
+
+                    // TRADE DISRUPTION: does this bridge serve enemy trade?
+                    var enemyTradeRoutes = 0;
+                    for (var _eri = 0; _eri < (world.caravans || []).length; _eri++) {
+                        var _c = world.caravans[_eri];
+                        if (_c.route && (_c.route.some(function(leg) {
+                            return (leg.from === _road.fromTownId && leg.to === _road.toTownId) ||
+                                   (leg.from === _road.toTownId && leg.to === _road.fromTownId);
+                        }))) enemyTradeRoutes++;
+                    }
+                    if (enemyTradeRoutes > 0) destroyScore += 1;
+
+                    // PERSONALITY modifiers
+                    if (p.intelligence === 'brilliant') destroyScore += 1; // Strategic thinker
+                    else if (p.intelligence === 'foolish') destroyScore -= 2; // Doesn't think of this
+                    else if (p.intelligence === 'dim') destroyScore -= 1;
+                    if (p.courage === 'cowardly') destroyScore += 1; // Defensive instinct
+                    if (p.temperament === 'cruel') destroyScore += 1; // Scorched earth
+                    if (p.temperament === 'kind') destroyScore -= 1; // Reluctant to destroy infrastructure
+
+                    // Is our town near enemy armies? Urgent defensive need
+                    var nearbyEnemyArmies = (world.armies || []).filter(function(a) {
+                        return a.kingdomId === enemyK.id && a.toTownId &&
+                               (a.toTownId === ourTown.id || Math.hypot(
+                                   (findTown(a.toTownId) || {}).x - ourTown.x,
+                                   (findTown(a.toTownId) || {}).y - ourTown.y
+                               ) < 1000);
+                    });
+                    if (nearbyEnemyArmies.length > 0) destroyScore += 3; // Urgent!
+
+                    // Only destroy if score is convincingly positive
+                    if (destroyScore >= 3) {
+                        _road.bridgeDestroyed = true;
+                        _road.bridgeDestroyedDay = world.day;
+                        _road.bridgeDestroyedBy = k.id;
+                        logEvent('💥 ' + k.name + ' destroyed the bridge between ' + ourTown.name + ' and ' + enemyTown.name + '! ' +
+                            (theirMilStr > myMilStr ? 'A desperate defensive measure.' : 'A strategic strike to cut off the enemy.'), {
+                            type: 'bridge_destroyed',
+                            cause: 'Wartime strategic decision by ' + (k.king || 'ruler'),
+                            effects: [
+                                'Road between ' + ourTown.name + ' and ' + enemyTown.name + ' is now impassable',
+                                'Armies must take slower off-road routes',
+                                'Trade between towns disrupted'
+                            ]
+                        });
+                        logKingAction(k, '💥 Destroyed bridge to ' + enemyTown.name);
+                        break; // Only destroy one bridge per tick
+                    }
+                }
+            }
+
+            // h. NEGOTIATE PEACE — if losing badly or war-exhausted
             for (const enemyId of k.atWar) {
                 const enemy = findKingdom(enemyId);
                 if (!enemy) continue;
@@ -8066,8 +8880,11 @@
             k.soldierPayMult = Math.max(1.0, (k.soldierPayMult || 1.0) - 0.01);
         }
 
-        // Pay-driven peacetime recruitment: higher pay attracts volunteers
+        // Pay-driven peacetime recruitment: higher pay attracts volunteers (budget-aware)
         if (!atWar && soldierRatio < 0.9 && k.gold > 500) {
+            var _volFs = getKingdomFinancialState(k);
+            var _volCanRecruit = k.gold > _volFs.minReserve; // only recruit above reserve
+            if (_volCanRecruit) {
             var payMult = k.soldierPayMult || 1.0;
             // Higher pay = higher chance of volunteer per day (base 5%, up to 25% at 3x pay)
             var volunteerChance = 0.05 + (payMult - 1.0) * 0.10;
@@ -8090,6 +8907,248 @@
                         break; // one volunteer per day
                     }
                 }
+            }
+            } // end _volCanRecruit
+        }
+
+        // =============================================
+        // 8b. WARTIME FINANCIAL DECISIONS — personality-driven tax/seizure
+        // =============================================
+        if (atWar) {
+            var _wfFs = getKingdomFinancialState(k);
+
+            // --- WARTIME TAX RAISING (by personality) ---
+            // Kings raise taxes preemptively or reactively during war based on personality
+            if (k.gold < _wfFs.minReserve * 1.5) {
+                var taxRaiseChance = 0;
+                var taxRaiseAmount = 0;
+                if (p.intelligence === 'brilliant' || p.intelligence === 'clever') {
+                    // Smart kings raise taxes early and moderately
+                    taxRaiseChance = 0.4;
+                    taxRaiseAmount = rng.randFloat(0.01, 0.02);
+                } else if (p.greed === 'greedy' || p.greed === 'corrupt') {
+                    // Greedy/corrupt kings aggressively raise taxes
+                    taxRaiseChance = 0.6;
+                    taxRaiseAmount = rng.randFloat(0.02, 0.04);
+                } else if (p.courage === 'brave' || p.ambition === 'ambitious') {
+                    // Brave/ambitious kings raise taxes to fund the war effort
+                    taxRaiseChance = 0.3;
+                    taxRaiseAmount = rng.randFloat(0.01, 0.03);
+                } else if (p.greed === 'generous') {
+                    // Generous kings reluctant to raise taxes
+                    taxRaiseChance = 0.1;
+                    taxRaiseAmount = rng.randFloat(0.005, 0.01);
+                } else {
+                    taxRaiseChance = 0.2;
+                    taxRaiseAmount = rng.randFloat(0.01, 0.02);
+                }
+                // More urgent if actually broke
+                if (k.gold < 500) { taxRaiseChance += 0.3; taxRaiseAmount += 0.01; }
+
+                if (rng.chance(taxRaiseChance) && k.taxRate < 0.25) {
+                    k.taxRate = Math.min(0.25, k.taxRate + taxRaiseAmount);
+                    k.lastTaxIncreaseDay = world.day;
+                    logKingAction(k, '📈 Raised wartime taxes to ' + Math.round(k.taxRate * 100) + '%');
+                    logEvent('📈 ' + k.name + ' raises taxes to ' + Math.round(k.taxRate * 100) + '% to fund the war effort.', {
+                        type: 'wartime_tax_increase', cause: 'War expenses depleting treasury (' + Math.floor(k.gold) + 'g)',
+                        effects: ['Trade becomes more expensive', 'Citizens pay more taxes', 'War funding improved']
+                    });
+                }
+            }
+
+            // --- ASSET SEIZURE (cruel/corrupt/desperate kings) ---
+            // Enact seizure law if not already active and king is willing
+            if (!k._seizureLawActive) {
+                var seizureLawChance = 0;
+                if (p.temperament === 'cruel' && k.gold < _wfFs.minReserve) seizureLawChance = 0.15;
+                if (p.greed === 'corrupt') seizureLawChance += 0.10;
+                if (p.greed === 'greedy') seizureLawChance += 0.05;
+                // Desperate kings of any personality may resort to seizure
+                if (k.gold < 200 && (k._bankruptDays || 0) > 10) seizureLawChance += 0.20;
+                // Just/kind kings strongly resist
+                if (p.justice === 'just') seizureLawChance *= 0.2;
+                if (p.temperament === 'kind') seizureLawChance *= 0.3;
+
+                if (seizureLawChance > 0 && rng.chance(seizureLawChance)) {
+                    k._seizureLawActive = true;
+                    k._seizureLawDay = world.day;
+                    k._seizureCount = 0;
+                    k._seizureResentment = 0;
+                    logEvent('⚖️👑 The ruler of ' + k.name + ' enacts the Right of Royal Requisition — the crown may seize assets for the war effort!', {
+                        type: 'seizure_law', cause: 'War treasury crisis (' + Math.floor(k.gold) + 'g)',
+                        effects: ['The king can now seize buildings, gold, and goods from citizens',
+                                  'Citizens will grow resentful if seizures are frequent',
+                                  'Rebellion may follow if the king goes too far'],
+                        kingdomId: k.id
+                    }, 'my_kingdom');
+                    logKingAction(k, '⚖️ Enacted Right of Royal Requisition');
+                }
+            }
+
+            // Execute seizures if law is active and treasury is desperate
+            if (k._seizureLawActive && k.gold < _wfFs.minReserve * 0.8) {
+                // Personality-driven seizure target priority
+                // Cruel: target poorest first (commoners), Corrupt: target wealthiest (more gold), Desperate: target anyone
+                var seizureTargets = [];
+                var kCitizens = world.people.filter(function(c) {
+                    return c.alive && c.kingdomId === k.id && c.gold > 5 && c.occupation !== 'soldier' && c.occupation !== 'guard';
+                });
+
+                if (p.temperament === 'cruel') {
+                    // Cruel kings squeeze commoners first, then merchants, then elites
+                    seizureTargets = kCitizens.sort(function(a, b) { return (a.gold || 0) - (b.gold || 0); });
+                } else if (p.greed === 'corrupt') {
+                    // Corrupt kings target the wealthy (more gold to seize)
+                    seizureTargets = kCitizens.sort(function(a, b) { return (b.gold || 0) - (a.gold || 0); });
+                } else {
+                    // Others target merchants and elites first (less backlash)
+                    seizureTargets = kCitizens.filter(function(c) {
+                        return c.occupation === 'merchant' || c.isEliteMerchant;
+                    }).sort(function(a, b) { return (b.gold || 0) - (a.gold || 0); });
+                    // If not enough merchants, add laborers
+                    if (seizureTargets.length < 5) {
+                        var others = kCitizens.filter(function(c) { return c.occupation !== 'merchant' && !c.isEliteMerchant; });
+                        seizureTargets = seizureTargets.concat(others);
+                    }
+                }
+
+                // Seize gold from citizens (up to 10% of their wealth, max 5 citizens per tick)
+                var citizenSeized = 0;
+                var goodsSeized = 0;
+                var buildingSeized = 0;
+                var seizedFrom = 0;
+                var maxSeize = Math.min(5, seizureTargets.length);
+                for (var si = 0; si < maxSeize; si++) {
+                    var target = seizureTargets[si];
+                    var seizeRate = p.temperament === 'cruel' ? 0.15 : (p.greed === 'corrupt' ? 0.12 : 0.08);
+                    var seizeAmount = Math.floor((target.gold || 0) * seizeRate);
+                    if (seizeAmount > 2 && (target.gold || 0) >= seizeAmount) {
+                        target.gold -= seizeAmount;
+                        citizenSeized += seizeAmount;
+                        seizedFrom++;
+                    }
+                }
+                // Add citizen gold to treasury
+                k.gold += citizenSeized;
+
+                // Seize goods from town markets (if gold seizure wasn't enough)
+                if (citizenSeized < 100 && rng.chance(0.3)) {
+                    for (var _stid of k.territories) {
+                        var _sTown = findTown(_stid);
+                        if (!_sTown) continue;
+                        var valuableGoods = ['swords', 'armor', 'horses', 'jewelry', 'silk', 'wine'];
+                        for (var vgi = 0; vgi < valuableGoods.length; vgi++) {
+                            var gid = valuableGoods[vgi];
+                            var avail = (_sTown.market.supply[gid] || 0);
+                            var toSeize = Math.min(avail, 3);
+                            if (toSeize > 0) {
+                                _sTown.market.supply[gid] -= toSeize;
+                                var val = (_sTown.market.prices[gid] || 10) * toSeize;
+                                k.gold += Math.floor(val * 0.6); // sell at 60% value
+                                goodsSeized += Math.floor(val * 0.6);
+                            }
+                        }
+                        break; // one town per tick
+                    }
+                }
+
+                // Seize a building (rare, last resort — only cruel/corrupt kings or extreme desperation)
+                var totalSeized = citizenSeized + goodsSeized;
+                if (totalSeized < 50 && (p.temperament === 'cruel' || p.greed === 'corrupt' || (k._bankruptDays || 0) > 20) && rng.chance(0.08)) {
+                    for (var _btid of k.territories) {
+                        var _bTown = findTown(_btid);
+                        if (!_bTown) continue;
+                        // Find a privately-owned building to seize
+                        var seizable = _bTown.buildings.filter(function(bld) {
+                            return bld.ownerId && bld.ownerId !== k.id && bld.ownerId !== 'player';
+                        });
+                        if (seizable.length > 0) {
+                            var targetBld = rng.pick(seizable);
+                            var bldValue = (_bTown.market.prices[targetBld.type] || 200) * 2;
+                            var prevOwner = targetBld.ownerId;
+                            targetBld.ownerId = k.id; // crown seizes it
+                            k.gold += Math.floor(bldValue * 0.4); // immediate partial liquidation value
+                            buildingSeized += Math.floor(bldValue * 0.4);
+                            k._seizureCount = (k._seizureCount || 0) + 1;
+                            logEvent('👑⚠️ The crown of ' + k.name + ' seizes a ' + targetBld.type + ' in ' + _bTown.name + '!', {
+                                type: 'building_seizure', cause: 'Royal Requisition for war effort',
+                                effects: ['Building now crown property', 'Previous owner loses investment',
+                                          'Citizens grow fearful and resentful'],
+                                kingdomId: k.id, townId: _bTown.id
+                            }, 'my_kingdom');
+                            logKingAction(k, '👑 Seized a ' + targetBld.type + ' in ' + _bTown.name);
+                            break;
+                        }
+                    }
+                }
+
+                totalSeized = citizenSeized + goodsSeized + buildingSeized;
+
+                // Resentment accumulation
+                k._seizureResentment = (k._seizureResentment || 0) + seizedFrom * 2 + (k._seizureCount || 0) * 5;
+
+                if (totalSeized > 0) {
+                    logEvent('💰 The crown of ' + k.name + ' requisitions ' + Math.floor(totalSeized) + 'g worth of assets for the war effort.', {
+                        type: 'asset_seizure', cause: 'War funding crisis',
+                        effects: ['Treasury +' + Math.floor(totalSeized) + 'g', 'Citizen resentment grows (' + Math.floor(k._seizureResentment || 0) + ')'],
+                        kingdomId: k.id
+                    });
+                }
+
+                // REBELLION CHECK — seizure resentment can trigger rebellion
+                if ((k._seizureResentment || 0) > 50) {
+                    var rebellionChance = ((k._seizureResentment || 0) - 50) * 0.005;
+                    // Low happiness multiplies rebellion chance
+                    if (happiness < 30) rebellionChance *= 2;
+                    if (happiness < 15) rebellionChance *= 3;
+                    // Just kings get some grace
+                    if (p.justice === 'just') rebellionChance *= 0.5;
+                    rebellionChance = Math.min(0.3, rebellionChance);
+
+                    if (rng.chance(rebellionChance)) {
+                        logEvent('🔥⚔️ REBELLION in ' + k.name + '! Citizens revolt against the crown\'s seizure of assets!', {
+                            type: 'seizure_rebellion', cause: 'Excessive asset seizures (resentment: ' + Math.floor(k._seizureResentment) + ')',
+                            effects: ['Major happiness drop (-25)', 'Soldiers may defect', 'King faces overthrow risk',
+                                      'Seizure law repealed by force'],
+                            kingdomId: k.id
+                        }, 'my_kingdom');
+                        // Consequences
+                        boostKingdomHappiness(k, -25);
+                        k._seizureLawActive = false;
+                        k._seizureResentment = 0;
+                        // Some soldiers defect
+                        var defectors = Math.floor(_wfFs.soldierCount * rng.randFloat(0.05, 0.20));
+                        var defected = 0;
+                        var kSoldiers = world.people.filter(function(s) {
+                            return s.alive && s.kingdomId === k.id && s.occupation === 'soldier';
+                        });
+                        for (var di = 0; di < kSoldiers.length && defected < defectors; di++) {
+                            kSoldiers[di].occupation = 'laborer';
+                            var dTown = findTown(kSoldiers[di].townId);
+                            if (dTown && dTown.garrison > 0) dTown.garrison--;
+                            defected++;
+                        }
+                        // King may be overthrown
+                        if (rng.chance(0.25)) {
+                            logEvent('👑💀 The ruler of ' + k.name + ' is overthrown by the rebellion!', {
+                                type: 'seizure_overthrow', cause: 'Popular uprising against tyrannical seizures',
+                                effects: ['New ruler takes power', 'Seizure law permanently repealed', 'Period of instability']
+                            }, 'my_kingdom');
+                            handleKingDeath(k, 'rebellion');
+                        }
+                    }
+                }
+            }
+        } else {
+            // Peacetime: repeal seizure law if active, wind down resentment
+            if (k._seizureLawActive) {
+                k._seizureLawActive = false;
+                logEvent('⚖️ ' + k.name + ' repeals the Right of Royal Requisition as peace returns.', {
+                    type: 'seizure_law_repeal', cause: 'War ended', effects: ['Citizens relieved', 'Normal property rights restored']
+                }, 'my_kingdom');
+            }
+            if ((k._seizureResentment || 0) > 0) {
+                k._seizureResentment = Math.max(0, (k._seizureResentment || 0) - 1); // slowly decays in peacetime
             }
         }
 
@@ -8333,11 +9392,13 @@
         // =============================================
         // 11. SOCIAL/CIVIC ACTIONS
         // =============================================
+        // H-3: Festivals, public works, welfare only when treasury > 12 months upkeep
+        var _civicFs = getKingdomFinancialState(k);
         // a. Hold festivals (foolish/dim kings may party while broke, smart kings need healthy treasury, greedy never)
         var festCostCheck = CONFIG.KINGDOM_FESTIVAL_COST || 300;
         var grandFestGate = (p.intelligence === 'foolish' || p.intelligence === 'dim') ? festCostCheck : Math.max(2000, festCostCheck * 5);
         if (p.greed === 'greedy' || p.greed === 'corrupt') grandFestGate = Infinity;
-        if (k.gold > grandFestGate && rng.chance(0.08)) {
+        if (k.gold > grandFestGate && _civicFs.canFestival && rng.chance(0.08)) {
             const festCost = festCostCheck;
             const festHappy = CONFIG.KINGDOM_FESTIVAL_HAPPINESS || 8;
             k.gold -= festCost;
@@ -8368,8 +9429,8 @@
             });
         }
 
-        // d. Fund public works (require healthy treasury)
-        if (k.gold > Math.max(2000, (CONFIG.KINGDOM_PUBLIC_WORKS_COST || 200) * 5) && rng.chance(0.06)) {
+        // d. Fund public works (require healthy treasury + H-3 12-month threshold)
+        if (k.gold > Math.max(2000, (CONFIG.KINGDOM_PUBLIC_WORKS_COST || 200) * 5) && _civicFs.canFestival && rng.chance(0.06)) {
             const cost = CONFIG.KINGDOM_PUBLIC_WORKS_COST || 200;
             const happyBoost = CONFIG.KINGDOM_PUBLIC_WORKS_HAPPINESS || 3;
             k.gold -= cost;
@@ -8383,8 +9444,8 @@
             });
         }
 
-        // e. Establish welfare (generous/kind kings — require healthy treasury)
-        if ((p.generosity === 'generous' || p.temperament === 'kind') && k.gold > Math.max(2000, (CONFIG.KINGDOM_WELFARE_COST || 150) * 5) && happiness < 40 && rng.chance(0.10)) {
+        // e. Establish welfare (generous/kind kings — require healthy treasury + H-3 threshold)
+        if ((p.generosity === 'generous' || p.temperament === 'kind') && k.gold > Math.max(2000, (CONFIG.KINGDOM_WELFARE_COST || 150) * 5) && _civicFs.canFestival && happiness < 40 && rng.chance(0.10)) {
             const cost = CONFIG.KINGDOM_WELFARE_COST || 150;
             const happyBoost = CONFIG.KINGDOM_WELFARE_HAPPINESS || 5;
             k.gold -= cost;
@@ -8484,6 +9545,48 @@
             k.laws.specialLaws = k.laws.specialLaws.filter(function(l) { return l.id !== 'no_dual_citizenship'; });
             logKingAction(k, '🛡️ Repealed exclusive citizenship law');
             logEvent('🛡️ ' + k.name + ' now allows dual citizenship!', 'kingdom_politics', k.id);
+        }
+
+        // g. No Tent Camps — cruel/greedy kings ban tent camps, considering disease vs compassion
+        if (!hasSpecialLaw(k, 'no_tent_camps') && !hasSpecialLaw(k, 'right_to_camps')) {
+            var wantsBan = false;
+            if (p.temperament === 'cruel' && rng.chance(0.06)) wantsBan = true;
+            else if (p.greed === 'corrupt' && rng.chance(0.04)) wantsBan = true;
+            else if ((p.intelligence === 'brilliant' || p.intelligence === 'clever') && p.temperament !== 'kind') {
+                // Smart kings ban if disease is a real problem from tent camps
+                var diseaseFromCamps = 0;
+                for (var _tcti of k.territories) {
+                    var _tct = findTown(_tcti);
+                    if (_tct) diseaseFromCamps += getTentCampDiseaseMod(_tct);
+                }
+                if (diseaseFromCamps > 0.02 && rng.chance(0.08)) wantsBan = true;
+            }
+            if (wantsBan) {
+                k.laws.specialLaws.push({ id: 'no_tent_camps', name: 'No Tent Camps', desc: 'Tent camps are forbidden.', icon: '🚫' });
+                logKingAction(k, '🚫 Banned tent camps across the kingdom');
+                logEvent('🚫 ' + k.name + ' bans all tent camps! Soldiers will demolish existing camps.');
+            }
+        } else if (hasSpecialLaw(k, 'no_tent_camps') && (p.temperament === 'kind' || p.greed === 'generous') && rng.chance(0.10)) {
+            k.laws.specialLaws = k.laws.specialLaws.filter(function(l) { return l.id !== 'no_tent_camps'; });
+            logKingAction(k, '🚫 Lifted tent camp ban');
+            logEvent('⛺ ' + k.name + ' lifts the ban on tent camps. The homeless may shelter again.');
+        }
+
+        // h. Right to Camps — kind/generous kings allow citizens to self-build tent camps
+        if (!hasSpecialLaw(k, 'right_to_camps') && !hasSpecialLaw(k, 'no_tent_camps')) {
+            var wantsRight = false;
+            if (p.temperament === 'kind' && p.greed === 'generous' && rng.chance(0.08)) wantsRight = true;
+            else if (p.temperament === 'kind' && rng.chance(0.04)) wantsRight = true;
+            else if (p.tradition === 'progressive' && happiness < 40 && rng.chance(0.06)) wantsRight = true;
+            if (wantsRight) {
+                k.laws.specialLaws.push({ id: 'right_to_camps', name: 'Right to Camps', desc: 'Homeless citizens may build tent camps.', icon: '⛺' });
+                logKingAction(k, '⛺ Granted Right to Camps for the homeless');
+                logEvent('⛺ ' + k.name + ' grants the Right to Camps! Homeless citizens may build tent camps.');
+            }
+        } else if (hasSpecialLaw(k, 'right_to_camps') && (p.temperament === 'cruel' || p.greed === 'corrupt') && rng.chance(0.08)) {
+            k.laws.specialLaws = k.laws.specialLaws.filter(function(l) { return l.id !== 'right_to_camps'; });
+            logKingAction(k, '⛺ Revoked Right to Camps');
+            logEvent('🚫 ' + k.name + ' revokes the Right to Camps. Only the king may authorize shelter.');
         }
 
         // ── Kingdom Transport Decision (every 30 days) ──
@@ -8827,6 +9930,104 @@
                             };
                             world.people.push(newborn);
                             if (typeof registerPerson === 'function') registerPerson(newborn);
+
+                            // --- NPC Birth Housing: inherit parents' housing ---
+                            // Find a potential parent: adult with same last name in same town
+                            var potentialParents = townPeople.filter(function(tp) {
+                                return tp.alive && tp.age >= 30 && tp.lastName === newborn.lastName &&
+                                    tp.id !== newborn.id && tp.houseType;
+                            });
+                            var parent = potentialParents.length > 0 ? potentialParents[rng.randInt(0, potentialParents.length - 1)] : null;
+                            if (parent) {
+                                // Link parent ↔ child
+                                newborn.parentIds = [parent.id];
+                                if (parent.spouseId) newborn.parentIds.push(parent.spouseId);
+                                if (!parent.childrenIds) parent.childrenIds = [];
+                                parent.childrenIds.push(newborn.id);
+                                if (parent.spouseId) {
+                                    var _spouse = findPerson(parent.spouseId);
+                                    if (_spouse && _spouse.alive) {
+                                        if (!_spouse.childrenIds) _spouse.childrenIds = [];
+                                        _spouse.childrenIds.push(newborn.id);
+                                    }
+                                }
+
+                                // Inherit parent's housing type (share their home initially)
+                                if (parent.houseType === 'apartment' && parent._apartmentBuildingId) {
+                                    // Try to get own apartment unit in same building
+                                    var _pAptBld = null;
+                                    for (var _abi = 0; _abi < (town.buildings || []).length; _abi++) {
+                                        if (town.buildings[_abi]._id === parent._apartmentBuildingId) { _pAptBld = town.buildings[_abi]; break; }
+                                    }
+                                    if (_pAptBld && _pAptBld.units) {
+                                        var _aptCost = _pAptBld.unitPrice || 250;
+                                        // Parent helps with cost if they can afford it
+                                        var parentHelp = Math.min((parent.gold || 0) * 0.3, _aptCost * 0.5);
+                                        var childNeeds = _aptCost - parentHelp;
+                                        var vacantUnit = null;
+                                        for (var _aui = 0; _aui < _pAptBld.units.length; _aui++) {
+                                            if (!_pAptBld.units[_aui].occupantId) { vacantUnit = _pAptBld.units[_aui]; break; }
+                                        }
+                                        if (vacantUnit && (newborn.gold || 0) + parentHelp >= _aptCost) {
+                                            var childPays = Math.max(0, _aptCost - parentHelp);
+                                            newborn.gold -= childPays;
+                                            parent.gold -= parentHelp;
+                                            vacantUnit.occupantId = newborn.id;
+                                            vacantUnit.occupantType = 'npc';
+                                            vacantUnit.purchaseDay = world.day;
+                                            vacantUnit.purchasePrice = _aptCost;
+                                            newborn.houseType = 'apartment';
+                                            newborn._apartmentBuildingId = _pAptBld._id;
+                                        } else {
+                                            // Can't afford own unit — share parent's housing type
+                                            newborn.houseType = parent.houseType;
+                                        }
+                                    } else {
+                                        newborn.houseType = parent.houseType;
+                                    }
+                                } else if (parent.houseType === 'tent' && parent._tentCampId) {
+                                    // Try to get own tent in same camp
+                                    var _pTentCamp = null;
+                                    for (var _tci2 = 0; _tci2 < (town.buildings || []).length; _tci2++) {
+                                        if (town.buildings[_tci2]._id === parent._tentCampId) { _pTentCamp = town.buildings[_tci2]; break; }
+                                    }
+                                    if (_pTentCamp && _pTentCamp.tents) {
+                                        var _tentCost = _pTentCamp.tentUpfrontCost || 20;
+                                        for (var _tti2 = 0; _tti2 < _pTentCamp.tents.length; _tti2++) {
+                                            var _vTent = _pTentCamp.tents[_tti2];
+                                            if (!_vTent.occupantId && (newborn.gold || 0) >= _tentCost) {
+                                                _vTent.occupantId = newborn.id;
+                                                _vTent.occupantType = 'npc';
+                                                _vTent.rentStartDay = world.day;
+                                                _vTent.lastRentDay = world.day;
+                                                newborn.gold -= _tentCost;
+                                                newborn.houseType = 'tent';
+                                                newborn._tentCampId = _pTentCamp._id;
+                                                newborn._tentIndex = _tti2;
+                                                break;
+                                            }
+                                        }
+                                        // If no vacant tent, share parent's housing type
+                                        if (!newborn.houseType) newborn.houseType = parent.houseType;
+                                    } else {
+                                        newborn.houseType = parent.houseType;
+                                    }
+                                } else {
+                                    // Parent has a regular house — child starts with same type
+                                    newborn.houseType = parent.houseType;
+                                }
+
+                                // Parent gives small starting gold gift (10-30% of their gold, max 50g)
+                                var giftAmount = Math.min(Math.floor((parent.gold || 0) * rng.randFloat(0.1, 0.3)), 50);
+                                if (giftAmount > 0) {
+                                    parent.gold -= giftAmount;
+                                    newborn.gold += giftAmount;
+                                }
+
+                                // Inherit parent's wealth class
+                                newborn.wealthClass = parent.wealthClass || 'lower';
+                            }
+                            // If no parent found, newborn stays homeless — housing AI will handle them
                         }
                     } else if (netGrowth < 0) {
                         // Natural decline — kill elderly/sick people via killPerson for proper bookkeeping
@@ -8978,7 +10179,9 @@
                 }
 
                 // Disease outbreak — reduced severity, only in larger towns
-                var diseaseChance = (CONFIG.TOWN_CRISIS_DISEASE_CHANCE || 0.002) * crisisIntensity;
+                // Tent camps increase disease risk
+                var tentDiseaseMod = getTentCampDiseaseMod(town);
+                var diseaseChance = ((CONFIG.TOWN_CRISIS_DISEASE_CHANCE || 0.002) + tentDiseaseMod) * crisisIntensity;
                 if (rng.chance(diseaseChance) && pop > 40) {
                     var infected = rng.randInt(Math.ceil(pop * 0.03), Math.ceil(pop * 0.08));
                     var deaths = Math.floor(infected * rng.randFloat(0.1, 0.2));
@@ -9809,23 +11012,64 @@
 
         if (k.atWar.size > 0) {
             // Wartime AI: recruit soldiers, buy weapons, build balanced armies
+            // Budget-aware recruitment: estimate if army is sustainable before growing it
+            var _wFs = getKingdomFinancialState(k);
+            var _wPers = k.kingPersonality || {};
+            var _dailyMilitaryCost = _wFs.soldierCount * 1 + _wFs.soldierCount * CONFIG.KINGDOM_SOLDIER_DAILY_COST / 30;
+            var _dailyIncome = (k._lastSeasonTaxRevenue || 0) / 90; // rough daily income estimate
+            var _budgetSurplus = _dailyIncome - _dailyMilitaryCost - (_wFs.monthlyBuildingCost / 30);
+            // Recruitment cap based on budget sustainability + personality
+            var _maxNewRecruits = 0;
+            if (_budgetSurplus > 5) {
+                // Healthy surplus: recruit moderately
+                _maxNewRecruits = _wPers.courage === 'brave' ? 4 : (_wPers.courage === 'cautious' ? 1 : 2);
+            } else if (_budgetSurplus > 0) {
+                // Tight budget: recruit cautiously
+                _maxNewRecruits = _wPers.courage === 'brave' ? 2 : 1;
+            } else {
+                // Unsustainable: only desperate/foolish kings keep recruiting
+                if (_wPers.intelligence === 'foolish' || _wPers.courage === 'brave') {
+                    _maxNewRecruits = 1;
+                } else {
+                    _maxNewRecruits = 0;
+                }
+            }
+            // Smart kings further limit based on treasury reserves
+            if ((_wPers.intelligence === 'brilliant' || _wPers.intelligence === 'clever') && k.gold < _wFs.minReserve) {
+                _maxNewRecruits = Math.max(0, _maxNewRecruits - 1);
+            }
+            // RNG variability: sometimes recruit more or less than planned
+            if (rng.chance(0.15)) _maxNewRecruits += rng.randInt(0, 2);
+            if (rng.chance(0.10)) _maxNewRecruits = Math.max(0, _maxNewRecruits - 1);
+
+            var _wRecruited = 0;
             for (const townId of k.territories) {
                 const town = findTown(townId);
                 if (!town) continue;
+                if (_wRecruited >= _maxNewRecruits) break;
 
-                // Recruit idle people as soldiers
+                // Recruit idle people as soldiers (with gold cost)
                 var idle = (_tickCache.peopleByTown[town.id] || []).filter(function(p) {
                     return (p.occupation === 'laborer' || p.occupation === 'none') &&
                     p.age >= CONFIG.COMING_OF_AGE && p.age <= 50;
                 });
-                const toRecruit = Math.min(idle.length, 8);
+                const toRecruit = Math.min(idle.length, _maxNewRecruits - _wRecruited);
                 for (let i = 0; i < toRecruit; i++) {
+                    if (k.gold < 50) break; // need at least 50g to recruit
                     var uType = 'infantry';
                     var townSupply = town.market.supply || {};
                     if ((townSupply.horses || 0) > 0 && (townSupply.saddles || 0) > 0 && rng.chance(0.15)) uType = 'cavalry';
                     else if ((townSupply.bows || 0) > 0 && rng.chance(0.25)) uType = 'archer';
                     recruitSoldier(idle[i], town, k, uType);
+                    k.gold -= 50; // recruitment cost
+                    _wRecruited++;
                 }
+            }
+
+            // Wartime AI continued: conscription, watchtowers, army raising (per-town)
+            for (const townId of k.territories) {
+                const town = findTown(townId);
+                if (!town) continue;
 
                 // Conscription for desperate kingdoms (ratio computed in dynamic pay block below)
                 var _soldierRatio = k._soldierRatio || 1;
@@ -9865,8 +11109,10 @@
                                     town.market.supply[matId] -= qty;
                                 }
                             }
-                            town.buildings.push({ type: 'watchtower', level: 1, ownerId: null });
                             k.gold -= totalBuildCost;
+                            distributeConstructionWages(town.id, totalBuildCost, rng);
+                            var _wtBuildDays = (CONFIG.KINGDOM_BUILD_TIMES && CONFIG.KINGDOM_BUILD_TIMES.watchtower) ? CONFIG.KINGDOM_BUILD_TIMES.watchtower.build : 8;
+                            town.buildings.push({ type: 'watchtower', level: 1, ownerId: null, builtDay: world.day, condition: _wtBuildDays > 1 ? 'under_construction' : 'new', constructionComplete: _wtBuildDays > 1 ? world.day + _wtBuildDays : undefined, lastRepairDay: 0 });
                         }
                     }
                 }
@@ -9912,7 +11158,7 @@
 
                         for (var ci = 0; ci < candidates.length; ci++) {
                             var cand = candidates[ci];
-                            var route = findArmyRoute(town.id, cand.id);
+                            var route = findArmyRoute(town.id, cand.id, k.id);
                             if (!route) continue; // unreachable
 
                             // Score: prefer short routes, weak garrisons, high-value targets
@@ -9981,10 +11227,13 @@
                 const town = findTown(townId);
                 if (!town) continue;
 
-                // Upgrade walls if affordable
-                if (town.walls < 3 && k.gold > 500 && rng.chance(0.1)) {
-                    town.walls++;
+                // Upgrade walls if affordable (with construction time)
+                if (town.walls < 3 && !town._wallConstruction && k.gold > 500 && rng.chance(0.1)) {
+                    var _pwNextLevel = town.walls + 1;
+                    var _pwBuildDays = (CONFIG.KINGDOM_BUILD_TIMES && CONFIG.KINGDOM_BUILD_TIMES.wall_upgrade) ? CONFIG.KINGDOM_BUILD_TIMES.wall_upgrade.build : 30;
+                    town._wallConstruction = { targetLevel: _pwNextLevel, completeDay: world.day + _pwBuildDays, name: 'Wall Level ' + _pwNextLevel };
                     k.gold -= 300;
+                    distributeConstructionWages(town.id, 300, rng);
                 }
 
                 // ── Well management AI ──
@@ -10047,7 +11296,9 @@
                 }
 
                 // Build missing infrastructure (culture-aware) — uses material system
-                if (k.gold > 400 && rng.chance(0.05)) {
+                // H-3: Only if canConstruct; H-2: skip non-essential during war
+                var _aiFs = getKingdomFinancialState(k);
+                if (k.gold > 400 && rng.chance(0.05) && _aiFs.canConstruct && !_aiFs.atWar) {
                     const hasTypes = new Set(town.buildings.map(b => b.type));
                     let needed = ['wheat_farm', 'bakery', 'lumber_camp', 'sawmill', 'iron_mine', 'smelter'];
                     if (k.culture === 'military') needed.push('blacksmith', 'armorer', 'fletcher');
@@ -10143,17 +11394,43 @@
             }
         }
 
-        // Prosperity-based tax adjustments (nuanced)
-        var kingTemperament = (k.personality && k.personality.temperament) || 'moderate';
-        var kingAmbition = (k.personality && k.personality.ambition) || 50;
+        // Prosperity-based tax adjustments (H-4 enhanced — personality-driven oscillation)
+        var kPers = k.kingPersonality || {};
+        var kGreed = kPers.greed || 'fair';
+        var kIntel = kPers.intelligence || 'average';
+        var kingAmbition = kPers.ambition || 'content';
+        var _sg = k._startingGold || 10000;
+        var _maxTax = 0.25;
+        if (kGreed === 'generous') _maxTax = 0.10;
+        else if (kGreed === 'fair') _maxTax = 0.15;
+        else if (kGreed === 'greedy') _maxTax = 0.20;
+        var _minTax = kGreed === 'generous' ? 0.03 : (kGreed === 'corrupt' ? 0.10 : 0.05);
+
         if (k.prosperity > 70) {
-            if (k.gold < (k._startingGold || 10000) * 0.5 && k.taxRate > 0.06 && rngLocal.chance(0.03)) {
-                // High prosperity + low treasury: small raise is tolerable
-                k.taxRate = Math.min(0.15, k.taxRate + 0.01);
+            // High prosperity: natural oscillation — lower taxes to compound growth, or raise if broke
+            if (k.gold < _sg * 0.5 && k.taxRate < _maxTax && rngLocal.chance(0.06)) {
+                // Prosperity can absorb a modest raise
+                var raiseAmt = rngLocal.randFloat(0.005, 0.015);
+                k.taxRate = Math.min(_maxTax, k.taxRate + raiseAmt);
                 k.lastTaxIncreaseDay = world.day;
-                logEvent(`${k.name} modestly raised taxes — the prosperous economy can absorb it.`);
-            } else if (k.gold > (k._startingGold || 10000) * 1.5 && rngLocal.chance(0.04)) {
-                // High prosperity + healthy treasury: invest in infrastructure
+                logEvent(`${k.name} modestly raised taxes to ${Math.round(k.taxRate * 100)}% — the prosperous economy can absorb it.`);
+            } else if (k.gold > _sg * 2 && k.taxRate > 0.08) {
+                // KEY H-4: Wealthy + prosperous → lower taxes to compound prosperity and trade
+                var lowerChance = 0.04;
+                var lowerAmt = rngLocal.randFloat(0.01, 0.02);
+                if (kIntel === 'brilliant') { lowerChance = 0.15; lowerAmt = rngLocal.randFloat(0.015, 0.025); }
+                else if (kIntel === 'clever') { lowerChance = 0.10; lowerAmt = rngLocal.randFloat(0.01, 0.02); }
+                else if (kGreed === 'generous') { lowerChance = 0.18; lowerAmt = rngLocal.randFloat(0.02, 0.03); }
+                else if (kGreed === 'fair') lowerChance = 0.08;
+                // Greedy kings hoard, rarely lower even when wealthy
+                if (kGreed === 'greedy') lowerChance *= 0.25;
+                if (kGreed === 'corrupt') lowerChance *= 0.1;
+                if (rngLocal.chance(lowerChance)) {
+                    k.taxRate = Math.max(_minTax, k.taxRate - lowerAmt);
+                    logEvent(`📉 ${k.name} lowers taxes to ${Math.round(k.taxRate * 100)}% — strong treasury and prosperous economy.`);
+                }
+            } else if (k.gold > _sg * 1.5 && rngLocal.chance(0.05)) {
+                // Healthy treasury: invest in infrastructure instead of lowering
                 for (var tiIdx = 0; tiIdx < k.territories.length; tiIdx++) {
                     var investTown = findTown(k.territories[tiIdx]);
                     if (investTown && investTown.prosperity < 80) {
@@ -10162,30 +11439,46 @@
                     }
                 }
                 logEvent(`${k.name} invests treasury surplus into infrastructure improvements!`);
-            } else if (k.taxRate > 0.06 && rngLocal.chance(0.05)) {
-                k.taxRate = Math.max(0.05, k.taxRate - 0.02);
-                logEvent(`${k.name} has lowered taxes due to high prosperity!`);
+            } else if (k.taxRate > 0.08 && rngLocal.chance(0.06)) {
+                // Moderate wealth + high prosperity: still lower
+                k.taxRate = Math.max(_minTax, k.taxRate - rngLocal.randFloat(0.01, 0.02));
+                logEvent(`📉 ${k.name} has lowered taxes to ${Math.round(k.taxRate * 100)}% due to high prosperity!`);
             }
         } else if (k.prosperity < 30) {
-            // Low prosperity: aggressively lower taxes to stimulate economy
-            if (k.taxRate > 0.08 && rngLocal.chance(0.12)) {
-                k.taxRate = Math.max(0.05, k.taxRate - 0.03);
-                logEvent(`${k.name} has slashed taxes to stimulate the struggling economy!`);
-            } else if (k.taxRate <= 0.08 && k.taxRate < 0.19 && rngLocal.chance(0.04)) {
-                // Desperate: taxes already low, try raising slightly for revenue
-                k.taxRate = Math.min(0.20, k.taxRate + 0.01);
+            // Low prosperity: stimulate economy — smart kings aggressively cut taxes
+            if (k.taxRate > 0.08 && k.gold > 3000) {
+                var slashChance = 0.06;
+                var slashAmt = rngLocal.randFloat(0.01, 0.02);
+                if (kIntel === 'brilliant') { slashChance = 0.18; slashAmt = rngLocal.randFloat(0.02, 0.04); }
+                else if (kIntel === 'clever') { slashChance = 0.12; slashAmt = rngLocal.randFloat(0.02, 0.03); }
+                else if (kGreed === 'generous') { slashChance = 0.15; slashAmt = rngLocal.randFloat(0.02, 0.03); }
+                // Greedy kings resist lowering even with terrible prosperity
+                if (kGreed === 'greedy') slashChance *= 0.4;
+                if (kGreed === 'corrupt') slashChance *= 0.2;
+                if (rngLocal.chance(slashChance)) {
+                    k.taxRate = Math.max(_minTax, k.taxRate - slashAmt);
+                    logEvent(`📉 ${k.name} has slashed taxes to ${Math.round(k.taxRate * 100)}% to stimulate the struggling economy!`);
+                }
+            } else if (k.gold < 2000 && k.taxRate < _maxTax && rngLocal.chance(0.04)) {
+                // Low prosperity AND broke: desperate raise despite it hurting economy
+                k.taxRate = Math.min(_maxTax, k.taxRate + rngLocal.randFloat(0.005, 0.015));
                 k.lastTaxIncreaseDay = world.day;
-                logEvent(`${k.name} has reluctantly raised taxes despite low prosperity.`);
+                logEvent(`${k.name} has reluctantly raised taxes to ${Math.round(k.taxRate * 100)}% despite low prosperity.`);
             }
         } else {
             // Moderate prosperity (30-70): personality-driven
-            if (kingAmbition > 65 && k.taxRate < 0.18 && rngLocal.chance(0.04)) {
-                k.taxRate = Math.min(0.20, k.taxRate + 0.02);
+            if (kingAmbition === 'ambitious' && k.taxRate < _maxTax - 0.02 && rngLocal.chance(0.05)) {
+                k.taxRate = Math.min(_maxTax, k.taxRate + rngLocal.randFloat(0.01, 0.02));
                 k.lastTaxIncreaseDay = world.day;
-                logEvent(`${k.name}'s ambitious ruler has raised taxes to fund expansion.`);
-            } else if (kingAmbition < 35 && k.taxRate > 0.06 && rngLocal.chance(0.04)) {
-                k.taxRate = Math.max(0.05, k.taxRate - 0.01);
-                logEvent(`${k.name}'s cautious ruler has lowered taxes slightly.`);
+                logEvent(`${k.name}'s ambitious ruler has raised taxes to ${Math.round(k.taxRate * 100)}% to fund expansion.`);
+            } else if ((kingAmbition === 'lazy' || kGreed === 'generous') && k.taxRate > _minTax && rngLocal.chance(0.06)) {
+                k.taxRate = Math.max(_minTax, k.taxRate - rngLocal.randFloat(0.005, 0.015));
+                logEvent(`📉 ${k.name}'s ruler has eased taxes to ${Math.round(k.taxRate * 100)}%.`);
+            }
+            // Smart kings lower taxes proactively even at moderate prosperity if treasury is fat
+            if ((kIntel === 'brilliant' || kIntel === 'clever') && k.gold > _sg * 2.5 && k.taxRate > 0.08 && rngLocal.chance(0.08)) {
+                k.taxRate = Math.max(_minTax, k.taxRate - rngLocal.randFloat(0.01, 0.02));
+                logEvent(`📉 ${k.name}'s shrewd ruler lowers taxes to ${Math.round(k.taxRate * 100)}% to encourage trade growth.`);
             }
         }
     }
@@ -10860,6 +12153,22 @@
                 var legTo = findTown(leg.to);
                 if (!legFrom || !legTo) { toRemove.push(army.id); continue; }
 
+                // Embarkation check: army must have ships for sea legs
+                if (leg.type === 'sea' && !army.embarked) {
+                    var armyK = findKingdom(army.kingdomId);
+                    if (armyK) {
+                        var embarked = embarkArmyOnShips(army, legFrom, armyK);
+                        if (!embarked) {
+                            // No ships available — army is stuck at port, cannot cross sea
+                            army.legProgress = 0;
+                            continue;
+                        }
+                    } else {
+                        army.legProgress = 0;
+                        continue;
+                    }
+                }
+
                 var legDist = Math.hypot(legTo.x - legFrom.x, legTo.y - legFrom.y);
                 var baseSpeed = (army.speed || CONFIG.CARAVAN_BASE_SPEED * 0.5);
                 // Apply speed modifier based on leg type
@@ -10873,6 +12182,13 @@
                     // Completed this leg, move to next
                     army.legIndex = legIdx + 1;
                     army.legProgress = 0;
+
+                    // Disembark when finishing a sea leg
+                    if (leg.type === 'sea' && army.embarked) {
+                        var disembarkK = findKingdom(army.kingdomId);
+                        if (disembarkK) disembarkArmy(army, disembarkK);
+                    }
+
                     // Update overall progress for compatibility
                     army.progress = army.legIndex / army.route.legs.length;
 
@@ -12487,7 +13803,7 @@
             if (k.atWar.size === 0) continue;
 
             // Build warships at port towns if at war and can afford
-            if (rng.chance(0.05)) {
+            if (rng.chance(0.12)) {
                 for (const townId of k.territories) {
                     const town = findTown(townId);
                     if (!town || !town.isPort) continue;
@@ -12516,7 +13832,8 @@
                                 attack: config.attack,
                                 defense: config.defense,
                                 speed: config.speed,
-                                mission: null, // 'blockade' | 'patrol' | 'attack' | null
+                                cannons: config.cannons || 1,
+                                mission: null,
                                 targetTownId: null,
                             });
                             logEvent(`${k.name} has built a ${config.name} at ${town.name}!`, {
@@ -12536,28 +13853,21 @@
                 }
             }
 
-            // Assign missions to idle warships
-            for (const ship of k.navalFleet) {
-                if (ship.mission) continue;
-                // Find enemy port towns
-                const enemyPorts = world.towns.filter(t =>
-                    k.atWar.has(t.kingdomId) && t.isPort
-                );
-                if (enemyPorts.length > 0 && rng.chance(0.3)) {
-                    const target = rng.pick(enemyPorts);
-                    var missionPool = ['blockade', 'patrol', 'attack_ship'];
-                    // Siege ships can bombard towns
-                    var wsCfg = CONFIG.WARSHIP_TYPES[ship.type];
-                    if (wsCfg && wsCfg.canBombard) missionPool.push('bombard_town');
-                    // Large ships can transport troops
-                    if (ship.soldiers >= 40) missionPool.push('troop_transport');
-                    ship.mission = rng.pick(missionPool);
-                    ship.targetTownId = target.id;
-                }
-            }
+            // Assign missions to idle warships (enhanced AI)
+            assignNavalMissionsAI(k);
 
             // Process blockades — mark port towns as blockaded
             for (const ship of k.navalFleet) {
+                // Cancel missions targeting towns we now own (prevents friendly fire after conquest)
+                if (ship.targetTownId) {
+                    const ownerCheck = findTown(ship.targetTownId);
+                    if (ownerCheck && ownerCheck.kingdomId === k.id && ship.mission !== 'patrol') {
+                        ship.mission = null;
+                        ship.targetTownId = null;
+                        continue;
+                    }
+                }
+
                 if (ship.mission === 'blockade' && ship.targetTownId) {
                     const targetTown = findTown(ship.targetTownId);
                     if (targetTown) {
@@ -12568,32 +13878,29 @@
                     }
                 }
 
-                // Ship-to-ship combat: attack enemy warships at target
+                // Ship-to-ship combat: fleet battle at target port
                 if (ship.mission === 'attack_ship' && ship.targetTownId) {
                     var targetTown2 = findTown(ship.targetTownId);
                     if (!targetTown2) continue;
                     var targetKingdom = findKingdom(targetTown2.kingdomId);
                     if (!targetKingdom || !targetKingdom.navalFleet) continue;
-                    // Find enemy ship stationed at same town
-                    var enemyShip = targetKingdom.navalFleet.find(function(es) {
-                        return es.stationedAt === ship.targetTownId;
+                    // Gather all our ships attacking same target
+                    var ourAttackers = k.navalFleet.filter(function(s) {
+                        return s.mission === 'attack_ship' && s.targetTownId === ship.targetTownId;
                     });
-                    if (enemyShip && rng.chance(0.15)) {
-                        var atkRoll = (ship.attack || 10) + rng.randInt(0, 10);
-                        var defRoll = (enemyShip.defense || 5) + rng.randInt(0, 10);
-                        if (atkRoll > defRoll) {
-                            // Enemy ship destroyed
-                            targetKingdom.navalFleet = targetKingdom.navalFleet.filter(function(s) { return s.id !== enemyShip.id; });
-                            logEvent(k.name + '\'s ' + ship.name + ' sank ' + targetKingdom.name + '\'s ' + enemyShip.name + ' at ' + targetTown2.name + '!', {
-                                type: 'naval_combat', townId: targetTown2.id
-                            });
-                        } else {
-                            // Attacker damaged/destroyed
-                            if (rng.chance(0.4)) {
-                                k.navalFleet = k.navalFleet.filter(function(s) { return s.id !== ship.id; });
-                                logEvent(targetKingdom.name + '\'s ' + enemyShip.name + ' sank ' + k.name + '\'s ' + ship.name + '!', {
-                                    type: 'naval_combat', townId: targetTown2.id
-                                });
+                    // Find all enemy ships stationed at or targeting this town
+                    var enemyDefenders = targetKingdom.navalFleet.filter(function(es) {
+                        return es.stationedAt === ship.targetTownId ||
+                               es.targetTownId === ship.targetTownId;
+                    });
+                    if (enemyDefenders.length > 0 && rng.chance(0.15)) {
+                        // Fleet battle using enhanced system
+                        resolveNavalBattle(ourAttackers, enemyDefenders, k, targetKingdom);
+                        // Clear mission for surviving attack ships
+                        for (var asi = 0; asi < ourAttackers.length; asi++) {
+                            if (k.navalFleet.indexOf(ourAttackers[asi]) !== -1) {
+                                ourAttackers[asi].mission = null;
+                                ourAttackers[asi].targetTownId = null;
                             }
                         }
                     }
@@ -12628,36 +13935,41 @@
                     }
                 }
 
-                // Troop transport: land soldiers at enemy port town
-                if (ship.mission === 'troop_transport' && ship.targetTownId) {
+                // Troop transport: enhanced amphibious assault with bombardment phases
+                if (ship.mission === 'troop_transport' && ship.targetTownId && !ship._transportingArmy) {
                     var landTarget = findTown(ship.targetTownId);
                     if (landTarget && rng.chance(0.08)) {
-                        var troopsLanded = Math.floor(ship.soldiers * 0.8);
-                        // Add to garrison of the target (invasion force)
-                        // This simulates an amphibious assault — troops fight garrison
-                        var defenderGarrison = landTarget.garrison || 0;
-                        if (troopsLanded > defenderGarrison) {
-                            logEvent(k.name + ' landed ' + troopsLanded + ' soldiers at ' + landTarget.name + ' and overwhelmed the garrison!', {
-                                type: 'amphibious_assault', townId: landTarget.id
-                            });
-                            landTarget.garrison = Math.floor(troopsLanded * 0.3);
-                            // Transfer town if enough force
-                            if (troopsLanded > defenderGarrison * 1.5) {
-                                transferTown(landTarget.id, landTarget.kingdomId, k.id, 'naval_invasion');
+                        // Gather all ships assigned to troop transport at this target
+                        var assaultFleet = k.navalFleet.filter(function(s) {
+                            return s.mission === 'troop_transport' && s.targetTownId === ship.targetTownId && !s._transportingArmy;
+                        });
+                        if (assaultFleet.length >= 1) {
+                            // Check for defending fleet — naval battle first
+                            var defenderK2 = findKingdom(landTarget.kingdomId);
+                            if (defenderK2 && defenderK2.navalFleet) {
+                                var portDefenders = defenderK2.navalFleet.filter(function(es) {
+                                    return es.stationedAt === landTarget.id;
+                                });
+                                if (portDefenders.length > 0) {
+                                    var navalResult = resolveNavalBattle(assaultFleet, portDefenders, k, defenderK2);
+                                    // Re-filter assault fleet (some may have been sunk)
+                                    assaultFleet = k.navalFleet.filter(function(s) {
+                                        return s.mission === 'troop_transport' && s.targetTownId === ship.targetTownId && !s._transportingArmy;
+                                    });
+                                    if (assaultFleet.length === 0) continue;
+                                    if (!navalResult.attackerWon && !navalResult.draw) continue; // Lost at sea
+                                }
                             }
-                        } else {
-                            logEvent(k.name + ' attempted a naval invasion of ' + landTarget.name + ' but was repelled!', {
-                                type: 'amphibious_assault', townId: landTarget.id
-                            });
-                            landTarget.garrison = Math.max(0, defenderGarrison - Math.floor(troopsLanded * 0.5));
+                            // Proceed with amphibious assault
+                            resolveAmphibiousAssault(assaultFleet, landTarget, k);
                         }
-                        // Remove ship after troop deployment
-                        ship.mission = null;
-                        ship.soldiers = Math.floor(ship.soldiers * 0.2); // Remaining crew
                     }
                 }
             }
         }
+
+        // Sea route interception: patrol ships vs enemy armies/fleets
+        tickSeaRouteInterception();
 
         // Clear expired blockades (if fleet destroyed or peace)
         for (const town of world.towns) {
@@ -12710,6 +14022,766 @@
             }
         }
         return Math.min(100, threat);
+    }
+
+    // --------------------------------------------------------
+    // §15C.1 ENHANCED NAVAL BATTLE RESOLUTION
+    // --------------------------------------------------------
+    function computeShipHP(ship) {
+        const cfg = CONFIG.WARSHIP_TYPES[ship.type] || {};
+        const solMult = CONFIG.NAVAL_SHIP_HP_SOLDIER_MULT || 10;
+        const defMult = CONFIG.NAVAL_SHIP_HP_DEFENSE_MULT || 5;
+        return (ship.soldiers || cfg.soldiers || 10) * solMult + (ship.defense || cfg.defense || 5) * defMult;
+    }
+
+    function resolveNavalBattle(attackerFleet, defenderFleet, attackerK, defenderK) {
+        const rng = world.rng;
+        const maxRounds = CONFIG.NAVAL_BATTLE_MAX_ROUNDS || 8;
+        const moraleThreshold = CONFIG.NAVAL_MORALE_BREAK_THRESHOLD || 0.50;
+        const fleeChance = CONFIG.NAVAL_MORALE_FLEE_CHANCE || 0.60;
+        const dmgMin = CONFIG.NAVAL_CANNON_DAMAGE_MIN || 0.5;
+        const dmgMax = CONFIG.NAVAL_CANNON_DAMAGE_MAX || 1.5;
+        const dmgRatio = CONFIG.NAVAL_DAMAGE_REDUCTION_RATIO || 0.5;
+
+        // Initialize HP for all ships
+        const aShips = attackerFleet.map(function(s) {
+            return { ship: s, hp: s._battleHP || computeShipHP(s), maxHP: computeShipHP(s), alive: true };
+        });
+        const dShips = defenderFleet.map(function(s) {
+            return { ship: s, hp: s._battleHP || computeShipHP(s), maxHP: computeShipHP(s), alive: true };
+        });
+
+        const initialACount = aShips.length;
+        const initialDCount = dShips.length;
+        let round = 0;
+        let attackerFled = false;
+        let defenderFled = false;
+        const battleLog = [];
+
+        while (round < maxRounds) {
+            round++;
+            const aliveA = aShips.filter(function(s) { return s.alive; });
+            const aliveD = dShips.filter(function(s) { return s.alive; });
+            if (aliveA.length === 0 || aliveD.length === 0) break;
+
+            // Attackers fire on defenders
+            for (let ai = 0; ai < aliveA.length; ai++) {
+                const aEntry = aliveA[ai];
+                const cfg = CONFIG.WARSHIP_TYPES[aEntry.ship.type] || {};
+                const cannons = cfg.cannons || 1;
+                const dmgMult = rng.randFloat(dmgMin, dmgMax);
+                const damage = Math.floor(cannons * dmgMult * ((aEntry.ship.attack || cfg.attack || 5) / 10));
+                // Target a random defending ship
+                const target = rng.pick(aliveD.filter(function(s) { return s.alive; }));
+                if (target) {
+                    target.hp -= Math.max(1, damage);
+                    if (target.hp <= 0) {
+                        target.alive = false;
+                        battleLog.push(attackerK.name + '\'s ' + aEntry.ship.name + ' sank ' + defenderK.name + '\'s ' + target.ship.name);
+                    }
+                }
+            }
+
+            // Defenders fire on attackers
+            const stillAliveD = dShips.filter(function(s) { return s.alive; });
+            for (let di = 0; di < stillAliveD.length; di++) {
+                const dEntry = stillAliveD[di];
+                const cfg = CONFIG.WARSHIP_TYPES[dEntry.ship.type] || {};
+                const cannons = cfg.cannons || 1;
+                const dmgMult = rng.randFloat(dmgMin, dmgMax);
+                const damage = Math.floor(cannons * dmgMult * ((dEntry.ship.attack || cfg.attack || 5) / 10));
+                const target = rng.pick(aShips.filter(function(s) { return s.alive; }));
+                if (target) {
+                    target.hp -= Math.max(1, damage);
+                    if (target.hp <= 0) {
+                        target.alive = false;
+                        battleLog.push(defenderK.name + '\'s ' + dEntry.ship.name + ' sank ' + attackerK.name + '\'s ' + target.ship.name);
+                    }
+                }
+            }
+
+            // Morale check: if fleet lost 50%+ ships, chance to flee
+            const aAliveCount = aShips.filter(function(s) { return s.alive; }).length;
+            const dAliveCount = dShips.filter(function(s) { return s.alive; }).length;
+
+            if (aAliveCount > 0 && aAliveCount <= initialACount * (1 - moraleThreshold)) {
+                if (rng.chance(fleeChance)) {
+                    attackerFled = true;
+                    battleLog.push(attackerK.name + '\'s fleet broke and fled!');
+                    break;
+                }
+            }
+            if (dAliveCount > 0 && dAliveCount <= initialDCount * (1 - moraleThreshold)) {
+                if (rng.chance(fleeChance)) {
+                    defenderFled = true;
+                    battleLog.push(defenderK.name + '\'s fleet broke and fled!');
+                    break;
+                }
+            }
+        }
+
+        // Apply damage to surviving ships (reduce stats by HP-loss ratio)
+        const applyDamage = function(entries) {
+            for (let i = 0; i < entries.length; i++) {
+                const entry = entries[i];
+                if (entry.alive && entry.hp < entry.maxHP) {
+                    const hpRatio = entry.hp / entry.maxHP;
+                    const reduction = 1 - (1 - hpRatio) * dmgRatio;
+                    entry.ship.attack = Math.max(1, Math.floor((entry.ship.attack || 5) * reduction));
+                    entry.ship.defense = Math.max(1, Math.floor((entry.ship.defense || 5) * reduction));
+                    entry.ship.soldiers = Math.max(1, Math.floor((entry.ship.soldiers || 10) * reduction));
+                }
+            }
+        };
+        applyDamage(aShips);
+        applyDamage(dShips);
+
+        // Remove destroyed ships from kingdom fleets
+        const sunkAttackers = aShips.filter(function(s) { return !s.alive; }).map(function(s) { return s.ship.id; });
+        const sunkDefenders = dShips.filter(function(s) { return !s.alive; }).map(function(s) { return s.ship.id; });
+
+        if (sunkAttackers.length > 0) {
+            attackerK.navalFleet = (attackerK.navalFleet || []).filter(function(s) {
+                return sunkAttackers.indexOf(s.id) === -1;
+            });
+        }
+        if (sunkDefenders.length > 0) {
+            defenderK.navalFleet = (defenderK.navalFleet || []).filter(function(s) {
+                return sunkDefenders.indexOf(s.id) === -1;
+            });
+        }
+
+        const aSurvivors = aShips.filter(function(s) { return s.alive; }).length;
+        const dSurvivors = dShips.filter(function(s) { return s.alive; }).length;
+        const attackerWon = dSurvivors === 0 || defenderFled;
+        const defenderWon = aSurvivors === 0 || attackerFled;
+
+        const result = {
+            attackerWon: attackerWon && !defenderWon,
+            defenderWon: defenderWon && !attackerWon,
+            draw: !attackerWon && !defenderWon,
+            attackerFled: attackerFled,
+            defenderFled: defenderFled,
+            attackerShipsSunk: sunkAttackers.length,
+            defenderShipsSunk: sunkDefenders.length,
+            attackerSurvivors: aSurvivors,
+            defenderSurvivors: dSurvivors,
+            rounds: round,
+            log: battleLog
+        };
+
+        // Log the battle
+        const summary = attackerK.name + ' vs ' + defenderK.name + ' naval battle: ' +
+            result.rounds + ' rounds, ' + result.attackerShipsSunk + ' vs ' + result.defenderShipsSunk + ' ships sunk';
+        logEvent(summary, {
+            type: 'naval_battle',
+            attackerKingdom: attackerK.id,
+            defenderKingdom: defenderK.id,
+            cause: 'Fleets clashed at sea.',
+            effects: battleLog.slice(0, 5)
+        });
+
+        return result;
+    }
+
+    // --------------------------------------------------------
+    // §15C.2 ARMY EMBARKATION ON SHIPS
+    // --------------------------------------------------------
+    function embarkArmyOnShips(army, town, kingdom) {
+        if (!kingdom.navalFleet || kingdom.navalFleet.length === 0) return false;
+        if (!town || !town.isPort) return false;
+
+        const soldiersPerShip = CONFIG.ARMY_EMBARK_SOLDIERS_PER_SHIP || 50;
+        const soldiersNeeded = army.soldiers || 0;
+        if (soldiersNeeded <= 0) return false;
+
+        // Find available ships at this port (not on other missions, not already transporting)
+        const availableShips = kingdom.navalFleet.filter(function(s) {
+            return s.stationedAt === town.id &&
+                   (!s.mission || s.mission === 'troop_transport') &&
+                   !s._transportingArmy;
+        });
+
+        if (availableShips.length === 0) return false;
+
+        // Calculate capacity
+        let totalCapacity = 0;
+        for (let i = 0; i < availableShips.length; i++) {
+            totalCapacity += soldiersPerShip;
+        }
+        if (totalCapacity < soldiersNeeded) return false;
+
+        // Assign ships to transport
+        let remaining = soldiersNeeded;
+        const assignedShips = [];
+        for (let i = 0; i < availableShips.length && remaining > 0; i++) {
+            const ship = availableShips[i];
+            ship.mission = 'troop_transport';
+            ship._transportingArmy = army.id;
+            assignedShips.push(ship.id);
+            remaining -= soldiersPerShip;
+        }
+
+        army.embarked = true;
+        army.transportShips = assignedShips;
+
+        logEvent(kingdom.name + ' embarked ' + soldiersNeeded + ' soldiers on ' + assignedShips.length + ' ships at ' + town.name, {
+            type: 'army_embark', townId: town.id
+        });
+
+        return true;
+    }
+
+    function disembarkArmy(army, kingdom) {
+        if (!army.embarked) return;
+        army.embarked = false;
+        // Release transport ships back to idle
+        if (army.transportShips && kingdom.navalFleet) {
+            for (let i = 0; i < kingdom.navalFleet.length; i++) {
+                const ship = kingdom.navalFleet[i];
+                if (army.transportShips.indexOf(ship.id) !== -1) {
+                    ship.mission = null;
+                    ship._transportingArmy = null;
+                }
+            }
+        }
+        army.transportShips = null;
+    }
+
+    // Check if a kingdom has enough ships at a port for an army to embark
+    function canEmbarkAtPort(army, townId, kingdomId) {
+        const town = findTown(townId);
+        const kingdom = findKingdom(kingdomId);
+        if (!town || !town.isPort || !kingdom || !kingdom.navalFleet) return false;
+
+        const soldiersPerShip = CONFIG.ARMY_EMBARK_SOLDIERS_PER_SHIP || 50;
+        const soldiersNeeded = army.soldiers || 0;
+
+        const availableShips = kingdom.navalFleet.filter(function(s) {
+            return s.stationedAt === townId &&
+                   (!s.mission || s.mission === 'troop_transport') &&
+                   !s._transportingArmy;
+        });
+
+        let totalCapacity = 0;
+        for (let i = 0; i < availableShips.length; i++) {
+            totalCapacity += soldiersPerShip;
+        }
+        return totalCapacity >= soldiersNeeded;
+    }
+
+    // --------------------------------------------------------
+    // §15C.3 ENHANCED AMPHIBIOUS ASSAULT (Bombardment + Landing)
+    // --------------------------------------------------------
+    function resolveAmphibiousAssault(assaultFleet, targetTown, attackerK) {
+        const rng = world.rng;
+        const defenderK = findKingdom(targetTown.kingdomId);
+        if (!defenderK) return;
+
+        const landingPenalty = CONFIG.AMPHIBIOUS_LANDING_PENALTY || 0.70;
+        const bombardMin = CONFIG.AMPHIBIOUS_BOMBARDMENT_ROUNDS_MIN || 1;
+        const bombardMax = CONFIG.AMPHIBIOUS_BOMBARDMENT_ROUNDS_MAX || 3;
+        const fortressDmg = CONFIG.AMPHIBIOUS_FORTRESS_DAMAGE_PER_CANNON || 3;
+        const coveringFirePerCannon = CONFIG.AMPHIBIOUS_COVERING_FIRE_PER_CANNON || 0.10;
+        const dmgMin = CONFIG.NAVAL_CANNON_DAMAGE_MIN || 0.5;
+        const dmgMax = CONFIG.NAVAL_CANNON_DAMAGE_MAX || 1.5;
+
+        // --- Phase 1: Bombardment ---
+        const bombardRounds = rng.randInt(bombardMin, bombardMax);
+        let totalCannonPower = 0;
+        for (let i = 0; i < assaultFleet.length; i++) {
+            const cfg = CONFIG.WARSHIP_TYPES[assaultFleet[i].type] || {};
+            totalCannonPower += cfg.cannons || 1;
+        }
+
+        let defenderGarrison = targetTown.garrison || 0;
+        let wallDamage = 0;
+        const bombardLog = [];
+
+        // Does the town have a port fortress?
+        const hasFortress = targetTown.buildings.some(function(b) {
+            return (b.type === 'fortress' || b.type === 'port_fortress') && b.condition !== 'destroyed';
+        });
+        const fortressCannons = hasFortress ? 6 : 0;
+
+        for (let br = 0; br < bombardRounds; br++) {
+            // Fleet fires on town — diminishing returns for large fleets
+            const dmgMult = rng.randFloat(dmgMin, dmgMax);
+            let rawKills = Math.ceil(Math.sqrt(totalCannonPower) * 3 * dmgMult);
+            // Walls reduce bombardment casualties (garrison takes cover behind walls)
+            const wallProtection = targetTown.walls ? 1 - Math.min(targetTown.walls * 0.10, 0.40) : 1;
+            rawKills = Math.floor(rawKills * wallProtection);
+            // Fortress halves bombardment casualties (garrison retreats to fortified positions)
+            if (hasFortress) rawKills = Math.floor(rawKills * 0.50);
+            // Fortress walls absorb 75% of remaining kills as structural damage
+            var _fwBld = null;
+            for (var _fwi = 0; _fwi < targetTown.buildings.length; _fwi++) {
+                var _fwb = targetTown.buildings[_fwi];
+                if (_fwb.type === 'fortress_walls' && _fwb.condition !== 'destroyed' && _fwb.condition !== 'under_construction') {
+                    _fwBld = _fwb; break;
+                }
+            }
+            if (_fwBld && (_fwBld.fortressWallsHP || 0) > 0) {
+                var _fwCfg = CONFIG.FORTRESS_WALLS || {};
+                var _absorbRate = _fwCfg.bombardmentAbsorb || 0.75;
+                var _dmgPerKill = _fwCfg.damagePerAbsorbedKill || 8;
+                var _absorbedKills = Math.floor(rawKills * _absorbRate);
+                var _wallDmg = _absorbedKills * _dmgPerKill;
+                _fwBld.fortressWallsHP = Math.max(0, _fwBld.fortressWallsHP - _wallDmg);
+                rawKills = rawKills - _absorbedKills;
+                if (_fwBld.fortressWallsHP <= 0) {
+                    _fwBld.condition = 'destroyed';
+                    bombardLog.push('⚠️ Fortress walls breached!');
+                } else {
+                    bombardLog.push('Fortress walls absorb bombardment (HP: ' + Math.floor(_fwBld.fortressWallsHP) + '/' + (_fwBld.fortressWallsMaxHP || _fwCfg.maxHP || 600) + ')');
+                }
+            } else if (_fwBld && _fwBld.condition === 'destroyed') {
+                // Rubble still provides some cover
+                var _breachedEff = (CONFIG.FORTRESS_WALLS && CONFIG.FORTRESS_WALLS.breachedEfficiency) || 0.25;
+                rawKills = Math.floor(rawKills * (1 - _breachedEff));
+            }
+            const garrisonKills = Math.min(defenderGarrison, rawKills);
+            defenderGarrison = Math.max(0, defenderGarrison - garrisonKills);
+            bombardLog.push('Bombardment round ' + (br + 1) + ': killed ' + garrisonKills + ' garrison');
+
+            // Damage walls
+            if (targetTown.walls && targetTown.walls > 0) {
+                const wallHit = rng.chance(0.30) ? 1 : 0;
+                wallDamage += wallHit;
+                if (wallHit) bombardLog.push('Walls damaged!');
+            }
+
+            // Damage random building
+            if (rng.chance(0.20) && targetTown.buildings.length > 0) {
+                const bIdx = rng.randInt(0, targetTown.buildings.length - 1);
+                const bld = targetTown.buildings[bIdx];
+                if (bld.condition !== 'destroyed') {
+                    bld.condition = 'destroyed';
+                    bombardLog.push(bld.type + ' destroyed by bombardment');
+                }
+            }
+
+            // Fortress fires back at ships
+            if (fortressCannons > 0 && assaultFleet.length > 0) {
+                const targetShip = rng.pick(assaultFleet);
+                const shipHP = computeShipHP(targetShip);
+                const fortDmg = fortressCannons * fortressDmg;
+                targetShip._battleHP = (targetShip._battleHP || shipHP) - fortDmg;
+                if (targetShip._battleHP <= 0) {
+                    bombardLog.push('Port fortress sank ' + targetShip.name + '!');
+                    attackerK.navalFleet = (attackerK.navalFleet || []).filter(function(s) {
+                        return s.id !== targetShip.id;
+                    });
+                    assaultFleet = assaultFleet.filter(function(s) { return s.id !== targetShip.id; });
+                    // Recalculate cannon power
+                    totalCannonPower = 0;
+                    for (let ci = 0; ci < assaultFleet.length; ci++) {
+                        const ccfg = CONFIG.WARSHIP_TYPES[assaultFleet[ci].type] || {};
+                        totalCannonPower += ccfg.cannons || 1;
+                    }
+                }
+            }
+        }
+
+        // Apply bombardment results
+        targetTown.garrison = defenderGarrison;
+        if (wallDamage > 0 && targetTown.walls) {
+            targetTown.walls = Math.max(0, (targetTown.walls || 0) - wallDamage);
+        }
+
+        // If all ships sunk during bombardment, assault fails
+        if (assaultFleet.length === 0) {
+            logEvent(attackerK.name + '\'s amphibious assault on ' + targetTown.name + ' failed — all ships sunk during bombardment!', {
+                type: 'amphibious_assault', townId: targetTown.id,
+                effects: bombardLog
+            });
+            return;
+        }
+
+        // --- Phase 2: Landing ---
+        // Calculate total troops from fleet
+        let totalTroops = 0;
+        for (let i = 0; i < assaultFleet.length; i++) {
+            totalTroops += (assaultFleet[i].soldiers || 0);
+        }
+
+        // Apply landing penalty
+        const effectiveTroops = Math.floor(totalTroops * landingPenalty);
+
+        // Covering fire bonus from operational cannons (capped at +50%)
+        const coveringBonus = 1 + Math.min(totalCannonPower * coveringFirePerCannon, 0.50);
+        const attackPower = Math.floor(effectiveTroops * coveringBonus);
+
+        // Defender: garrison + wall bonus (20% per wall level, stronger than field battle)
+        const wallBonus = targetTown.walls ? 1 + (targetTown.walls * 0.20) : 1;
+        const defensePower = Math.floor(defenderGarrison * wallBonus);
+
+        // Resolve land battle
+        const attackRoll = attackPower + rng.randInt(0, Math.floor(attackPower * 0.2));
+        const defenseRoll = defensePower + rng.randInt(0, Math.floor(defensePower * 0.2));
+
+        // --- Phase 3: Resolution ---
+        if (attackRoll > defenseRoll) {
+            // Attackers win — transfer town
+            const survivingTroops = Math.max(1, Math.floor(effectiveTroops * 0.3));
+            targetTown.garrison = survivingTroops;
+            const prevKingdomId = targetTown.kingdomId;
+            transferTown(targetTown.id, prevKingdomId, attackerK.id, 'amphibious_assault');
+
+            logEvent(attackerK.name + ' conquered ' + targetTown.name + ' by amphibious assault!', {
+                type: 'amphibious_assault', townId: targetTown.id,
+                cause: attackerK.name + ' launched a coordinated naval invasion.',
+                effects: bombardLog.concat([
+                    'Landing force of ' + effectiveTroops + ' overwhelmed ' + defenderGarrison + ' defenders',
+                    targetTown.name + ' transferred to ' + attackerK.name,
+                    survivingTroops + ' troops garrison the town'
+                ])
+            });
+
+            // Return ships to nearest home port after assault
+            for (let i = 0; i < assaultFleet.length; i++) {
+                const ship = assaultFleet[i];
+                ship.mission = null;
+                ship.targetTownId = null;
+                delete ship._battleHP;
+                // Find nearest friendly port
+                let nearestPort = null;
+                let nearestDist = Infinity;
+                for (const tId of attackerK.territories) {
+                    const t = findTown(tId);
+                    if (t && t.isPort) {
+                        const d = Math.hypot((t.x || 0) - (targetTown.x || 0), (t.y || 0) - (targetTown.y || 0));
+                        if (d < nearestDist) { nearestDist = d; nearestPort = t; }
+                    }
+                }
+                ship.stationedAt = nearestPort ? nearestPort.id : targetTown.id;
+                ship.soldiers = Math.max(Math.floor((ship.soldiers || 10) * 0.5), 1);
+            }
+        } else {
+            // Defenders win — attackers retreat to ships and flee
+            targetTown.garrison = Math.max(0, defenderGarrison - Math.floor(effectiveTroops * 0.3));
+
+            logEvent(attackerK.name + '\'s amphibious assault on ' + targetTown.name + ' was repelled!', {
+                type: 'amphibious_assault', townId: targetTown.id,
+                cause: defenderK.name + '\'s garrison held firm against the landing.',
+                effects: bombardLog.concat([
+                    'Landing force of ' + effectiveTroops + ' failed against ' + defenderGarrison + ' defenders',
+                    'Surviving attackers retreated to ships'
+                ])
+            });
+
+            // Surviving ships return to home port
+            for (let i = 0; i < assaultFleet.length; i++) {
+                const ship = assaultFleet[i];
+                ship.mission = null;
+                ship.targetTownId = null;
+                delete ship._battleHP;
+                let nearestPort = null;
+                let nearestDist = Infinity;
+                for (const tId of attackerK.territories) {
+                    const t = findTown(tId);
+                    if (t && t.isPort) {
+                        const d = Math.hypot((t.x || 0) - (targetTown.x || 0), (t.y || 0) - (targetTown.y || 0));
+                        if (d < nearestDist) { nearestDist = d; nearestPort = t; }
+                    }
+                }
+                if (nearestPort) ship.stationedAt = nearestPort.id;
+            }
+        }
+
+        // Reduce happiness/prosperity from the assault
+        targetTown.happiness = Math.max(0, (targetTown.happiness || 50) - 8);
+        targetTown.prosperity = Math.max(0, (targetTown.prosperity || 50) - 5);
+    }
+
+    // --------------------------------------------------------
+    // §15C.4 KING AI NAVAL STRATEGY
+    // --------------------------------------------------------
+    function assignNavalMissionsAI(k) {
+        const rng = world.rng;
+        const p = k.kingPersonality || {};
+        const fleet = k.navalFleet || [];
+        if (fleet.length === 0) return;
+
+        const enemyPorts = world.towns.filter(function(t) {
+            return k.atWar.has(t.kingdomId) && t.isPort;
+        });
+        if (enemyPorts.length === 0) return;
+
+        // Compute our naval strength vs enemy naval strength
+        let ourNavalPower = 0;
+        for (let i = 0; i < fleet.length; i++) {
+            const cfg = CONFIG.WARSHIP_TYPES[fleet[i].type] || {};
+            ourNavalPower += (cfg.attack || 5) + (cfg.defense || 5) + (cfg.cannons || 1);
+        }
+
+        let enemyNavalPower = 0;
+        for (const ek of world.kingdoms) {
+            if (!k.atWar.has(ek.id)) continue;
+            const eFleet = ek.navalFleet || [];
+            for (let i = 0; i < eFleet.length; i++) {
+                const cfg = CONFIG.WARSHIP_TYPES[eFleet[i].type] || {};
+                enemyNavalPower += (cfg.attack || 5) + (cfg.defense || 5) + (cfg.cannons || 1);
+            }
+        }
+
+        const navalSuperiority = ourNavalPower > enemyNavalPower * 1.2;
+        const navalInferiority = enemyNavalPower > ourNavalPower * 1.2;
+
+        for (let si = 0; si < fleet.length; si++) {
+            const ship = fleet[si];
+            if (ship.mission) continue;
+            if (ship._transportingArmy) continue;
+
+            const wsCfg = CONFIG.WARSHIP_TYPES[ship.type] || {};
+            let chosenMission = null;
+            let chosenTarget = null;
+
+            // Defense priority: if naval inferiority, keep ships at home
+            if (navalInferiority) {
+                if (p.courage === 'cowardly' || p.courage === 'cautious') {
+                    // Stay home — don't assign a mission (defend home port)
+                    continue;
+                }
+                // Brave kings still attack sometimes
+                if (!rng.chance(0.3)) continue;
+            }
+
+            // Evaluate blockade value
+            let bestBlockadeTarget = null;
+            let bestBlockadeScore = -Infinity;
+            for (let ei = 0; ei < enemyPorts.length; ei++) {
+                const ep = enemyPorts[ei];
+                // Trade hub value: sum of supply and demand
+                let tradeValue = 0;
+                if (ep.market && ep.market.supply) {
+                    const supKeys = Object.keys(ep.market.supply);
+                    for (let ki2 = 0; ki2 < supKeys.length; ki2++) {
+                        tradeValue += ep.market.supply[supKeys[ki2]] || 0;
+                    }
+                }
+                if (ep.market && ep.market.demand) {
+                    const demKeys = Object.keys(ep.market.demand);
+                    for (let ki2 = 0; ki2 < demKeys.length; ki2++) {
+                        tradeValue += ep.market.demand[demKeys[ki2]] || 0;
+                    }
+                }
+                let score = tradeValue * 0.1;
+                score += (ep.population || 100) * 0.01;
+                if (ep.isCapital) score += 30;
+
+                // Already blockaded? Less value in adding more unless < 2 ships
+                const existingBlockade = fleet.filter(function(s) {
+                    return s.mission === 'blockade' && s.targetTownId === ep.id;
+                }).length;
+                if (existingBlockade >= 2) score -= 50;
+
+                if (score > bestBlockadeScore) {
+                    bestBlockadeScore = score;
+                    bestBlockadeTarget = ep;
+                }
+            }
+
+            // Personality-driven mission selection
+            if (p.courage === 'brave' || p.intelligence === 'dim' || p.intelligence === 'foolish') {
+                // Brave/aggressive: prefer attack
+                if (navalSuperiority && rng.chance(0.5)) {
+                    chosenMission = 'attack_ship';
+                    chosenTarget = rng.pick(enemyPorts);
+                } else if (wsCfg.canBombard && rng.chance(0.4)) {
+                    chosenMission = 'bombard_town';
+                    chosenTarget = rng.pick(enemyPorts);
+                } else {
+                    chosenMission = 'patrol';
+                    chosenTarget = rng.pick(enemyPorts);
+                }
+            } else if (p.courage === 'cautious' || p.intelligence === 'clever' || p.intelligence === 'brilliant') {
+                // Cautious/clever: prefer blockades
+                if (bestBlockadeTarget && bestBlockadeScore > 10) {
+                    // Check we have at least 2 ships for effective blockade
+                    const blockadeCount = fleet.filter(function(s) {
+                        return s.mission === 'blockade' && s.targetTownId === bestBlockadeTarget.id;
+                    }).length;
+                    if (blockadeCount < 2 || rng.chance(0.3)) {
+                        chosenMission = 'blockade';
+                        chosenTarget = bestBlockadeTarget;
+                    }
+                }
+                if (!chosenMission && navalInferiority) {
+                    chosenMission = 'patrol'; // Defensive patrol
+                    // Patrol own ports
+                    const ownPorts = world.towns.filter(function(t) {
+                        return (k.territories instanceof Set ? k.territories.has(t.id) : false) && t.isPort;
+                    });
+                    chosenTarget = ownPorts.length > 0 ? rng.pick(ownPorts) : rng.pick(enemyPorts);
+                }
+                if (!chosenMission) {
+                    chosenMission = rng.pick(['blockade', 'patrol', 'attack_ship']);
+                    chosenTarget = bestBlockadeTarget || rng.pick(enemyPorts);
+                }
+            } else {
+                // Average personality: balanced approach
+                const pool = ['blockade', 'patrol', 'attack_ship'];
+                if (wsCfg.canBombard) pool.push('bombard_town');
+                if (ship.soldiers >= 40) pool.push('troop_transport');
+                chosenMission = rng.pick(pool);
+                chosenTarget = rng.pick(enemyPorts);
+            }
+
+            // Override: amphibious assault consideration for clever/brilliant kings
+            if ((p.intelligence === 'clever' || p.intelligence === 'brilliant') && navalSuperiority) {
+                // Check if we have enough ships for amphibious assault
+                const transportShips = fleet.filter(function(s) {
+                    return !s.mission && s.soldiers >= 40;
+                });
+                if (transportShips.length >= 2) {
+                    // Find weakly defended enemy port
+                    const weakPort = enemyPorts.filter(function(ep) {
+                        return (ep.garrison || 0) < 30;
+                    });
+                    if (weakPort.length > 0 && rng.chance(0.25)) {
+                        chosenMission = 'troop_transport';
+                        chosenTarget = rng.pick(weakPort);
+                    }
+                }
+            }
+
+            if (chosenMission && chosenTarget) {
+                ship.mission = chosenMission;
+                ship.targetTownId = chosenTarget.id;
+            }
+        }
+    }
+
+    // --------------------------------------------------------
+    // §15C.5 SEA ROUTE INTERCEPTION
+    // --------------------------------------------------------
+    function tickSeaRouteInterception() {
+        const rng = world.rng;
+        const interceptChance = CONFIG.NAVAL_PATROL_INTERCEPT_CHANCE || 0.20;
+        const patrolRange = CONFIG.NAVAL_PATROL_RANGE || 2000;
+
+        // Check each army on a sea leg for interception by enemy patrols
+        for (let ai = 0; ai < world.armies.length; ai++) {
+            const army = world.armies[ai];
+            if (!army.route || !army.route.legs) continue;
+            const legIdx = army.legIndex || 0;
+            if (legIdx >= army.route.legs.length) continue;
+            const leg = army.route.legs[legIdx];
+            if (leg.type !== 'sea') continue;
+
+            const armyK = findKingdom(army.kingdomId);
+            if (!armyK) continue;
+
+            const legFrom = findTown(leg.from);
+            const legTo = findTown(leg.to);
+            if (!legFrom || !legTo) continue;
+
+            // Check for intercepting patrol ships
+            for (const ek of world.kingdoms) {
+                if (!armyK.atWar.has(ek.id)) continue;
+                if (!ek.navalFleet) continue;
+
+                const patrolShips = ek.navalFleet.filter(function(s) {
+                    if (s.mission !== 'patrol' && s.mission !== 'blockade') return false;
+                    const shipTown = findTown(s.stationedAt || s.targetTownId);
+                    if (!shipTown) return false;
+                    const distFrom = Math.hypot(shipTown.x - legFrom.x, shipTown.y - legFrom.y);
+                    const distTo = Math.hypot(shipTown.x - legTo.x, shipTown.y - legTo.y);
+                    return distFrom < patrolRange || distTo < patrolRange;
+                });
+
+                if (patrolShips.length === 0) continue;
+                if (!rng.chance(interceptChance)) continue;
+
+                // Interception! If army is embarked with transport ships, naval battle
+                if (army.embarked && army.transportShips) {
+                    const transportFleet = (armyK.navalFleet || []).filter(function(s) {
+                        return army.transportShips.indexOf(s.id) !== -1;
+                    });
+
+                    if (transportFleet.length > 0) {
+                        const battleResult = resolveNavalBattle(patrolShips, transportFleet, ek, armyK);
+
+                        if (battleResult.attackerWon) {
+                            // Interceptors won — army destroyed at sea
+                            logEvent(ek.name + '\'s patrol fleet intercepted and destroyed ' + armyK.name + '\'s army at sea!', {
+                                type: 'naval_interception',
+                                cause: 'Enemy patrol ships caught troop transports on a sea route.',
+                                effects: [army.soldiers + ' soldiers lost at sea']
+                            });
+                            disembarkArmy(army, armyK); // Release dead ship refs
+                            world.armies.splice(ai, 1);
+                            ai--;
+                            break;
+                        } else {
+                            // Transport fleet survived — continue route
+                            logEvent(armyK.name + '\'s transport fleet fought off ' + ek.name + '\'s patrol near ' + legFrom.name + '!', {
+                                type: 'naval_interception'
+                            });
+                        }
+                    }
+                } else {
+                    // Army on sea without transport ships — vulnerable, destroyed
+                    if (rng.chance(0.5)) {
+                        logEvent(ek.name + '\'s patrol intercepted ' + armyK.name + '\'s unescorted army crossing from ' + legFrom.name + '!', {
+                            type: 'naval_interception',
+                            effects: [army.soldiers + ' soldiers lost']
+                        });
+                        world.armies.splice(ai, 1);
+                        ai--;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Fleet-vs-fleet interception: patrol ships vs enemy fleets in transit
+        for (const k of world.kingdoms) {
+            if (!k.navalFleet) continue;
+            for (const ek of world.kingdoms) {
+                if (k.id === ek.id) continue;
+                if (!k.atWar.has(ek.id)) continue;
+                if (!ek.navalFleet || ek.navalFleet.length === 0) continue;
+
+                // Find our patrol ships
+                const ourPatrols = k.navalFleet.filter(function(s) {
+                    return s.mission === 'patrol' || s.mission === 'blockade';
+                });
+                if (ourPatrols.length === 0) continue;
+
+                // Find enemy ships that are moving (attack/bombard/transport missions targeting our territory)
+                const enemyMoving = ek.navalFleet.filter(function(s) {
+                    if (!s.mission || !s.targetTownId) return false;
+                    if (s.mission === 'patrol' || s.mission === 'blockade') return false;
+                    const targetTown = findTown(s.targetTownId);
+                    if (!targetTown) return false;
+                    // Is targeting one of our towns?
+                    return k.territories instanceof Set ? k.territories.has(targetTown.id) : false;
+                });
+                if (enemyMoving.length === 0) continue;
+
+                // Check if patrols are in range
+                let inRange = false;
+                for (let pi = 0; pi < ourPatrols.length && !inRange; pi++) {
+                    const pShip = ourPatrols[pi];
+                    const pTown = findTown(pShip.stationedAt || pShip.targetTownId);
+                    if (!pTown) continue;
+                    for (let ei = 0; ei < enemyMoving.length && !inRange; ei++) {
+                        const eTarget = findTown(enemyMoving[ei].targetTownId);
+                        if (!eTarget) continue;
+                        if (Math.hypot(pTown.x - eTarget.x, pTown.y - eTarget.y) < patrolRange) {
+                            inRange = true;
+                        }
+                    }
+                }
+
+                if (!inRange || !rng.chance(interceptChance * 0.5)) continue;
+
+                // Fleet battle: our patrols vs their moving ships
+                resolveNavalBattle(ourPatrols, enemyMoving, k, ek);
+            }
+        }
     }
 
     // ========================================================
@@ -14287,6 +16359,8 @@
             var sr = world.seaRoutes[si];
             var sfrom = sr.fromTownId || sr.from;
             var sto = sr.toTownId || sr.to;
+            // Skip blockaded sea routes (blockades cut connectivity)
+            if (isPortBlockaded(sfrom) || isPortBlockaded(sto)) continue;
             if (!adj[sfrom]) adj[sfrom] = [];
             if (!adj[sto]) adj[sto] = [];
             adj[sfrom].push(sto);
@@ -14388,6 +16462,30 @@
     }
 
     // ========================================================
+    // §18b-pre MARKET PRICE HISTORY SNAPSHOTS
+    // ========================================================
+    function tickMarketSnapshot() {
+        if (world.day % 30 !== 5) return; // Every 30 days, offset from other ticks
+        var _msTrackGoods = ['wood', 'stone', 'iron', 'planks', 'rope', 'bricks', 'tools', 'cloth', 'wool', 'leather', 'wheat', 'bread', 'clay', 'hemp'];
+        for (var ti = 0; ti < world.towns.length; ti++) {
+            var town = world.towns[ti];
+            if (!town.market || !town.market.prices) continue;
+            if (!town._priceHistory) town._priceHistory = [];
+
+            var snapshot = { day: world.day, prices: {} };
+            for (var gi = 0; gi < _msTrackGoods.length; gi++) {
+                var g = _msTrackGoods[gi];
+                if (town.market.prices[g] !== undefined) {
+                    snapshot.prices[g] = town.market.prices[g];
+                }
+            }
+            town._priceHistory.push(snapshot);
+            // Keep only last 24 snapshots (~2 years of data)
+            while (town._priceHistory.length > 24) town._priceHistory.shift();
+        }
+    }
+
+    // ========================================================
     // §18b DEGRADATION SYSTEM
     // ========================================================
     function tickDegradation() {
@@ -14428,6 +16526,30 @@
                 }
             }
         }
+
+        // Player houses — same degradation timeline as buildings
+        try {
+            var playerState = typeof Player !== 'undefined' ? Player.state : null;
+            if (playerState && playerState.houses) {
+                for (var _hi = 0; _hi < playerState.houses.length; _hi++) {
+                    var h = playerState.houses[_hi];
+                    // Retrofit existing houses without condition
+                    if (!h.builtDay && h.builtDay !== 0) h.builtDay = h.purchaseDay || 0;
+                    if (!h.condition) h.condition = 'new';
+                    if (h.lastRepairDay === undefined) h.lastRepairDay = 0;
+                    var hAge = day - (h.lastRepairDay || h.builtDay || 0);
+                    if (hAge >= 3600 && h.condition !== 'destroyed') {
+                        h.condition = 'destroyed';
+                        logEvent('🏚️ Your ' + (h.type || 'house') + ' in ' + (findTown(h.townId) ? findTown(h.townId).name : 'unknown') + ' has collapsed from neglect!', { townId: h.townId }, 'my_business');
+                    } else if (hAge >= 2160 && h.condition !== 'breaking' && h.condition !== 'destroyed') {
+                        h.condition = 'breaking';
+                        logEvent('⚠️ Your ' + (h.type || 'house') + ' in ' + (findTown(h.townId) ? findTown(h.townId).name : 'unknown') + ' is breaking down and needs urgent repair!', { townId: h.townId }, 'my_business');
+                    } else if (hAge >= 1080 && h.condition === 'new') {
+                        h.condition = 'used';
+                    }
+                }
+            }
+        } catch(e) {}
 
         // Helper: check if destroying a road would leave either endpoint town with no connections
         function wouldDisconnectTown(road) {
@@ -14973,75 +17095,78 @@
     function tickEliteMerchantDynamics() {
         if (!world || !world.eliteMerchants) return;
         
+        // Count only alive, active EMs (not dead/demoted ones still in the list)
+        var activeEmCount = 0;
+        for (var aei = 0; aei < world.eliteMerchants.length; aei++) {
+            if (world.eliteMerchants[aei].alive && world.eliteMerchants[aei].isEliteMerchant) activeEmCount++;
+        }
         var emTarget = Math.max(CONFIG.ELITE_MERCHANT_MIN, Math.min(CONFIG.ELITE_MERCHANT_MAX, Math.ceil(world.towns.length / CONFIG.ELITE_MERCHANT_PER_TOWNS)));
         
-        // ── Growth check: RARE EM emergence ──
-        if (world.day % (CONFIG.ELITE_MERCHANT_GROWTH_INTERVAL || 60) === 0 && world.eliteMerchants.length < emTarget) {
-            // Track economy for growth detection
-            var totalGold = 0;
-            for (var gi = 0; gi < world.people.length; gi++) {
-                if (world.people[gi].alive) totalGold += (world.people[gi].gold || 0);
-            }
-            for (var ki = 0; ki < world.kingdoms.length; ki++) {
-                totalGold += (world.kingdoms[ki].gold || 0);
-            }
-            if (!world._lastEconomyGold) world._lastEconomyGold = totalGold;
-            var growthRate = (totalGold - world._lastEconomyGold) / Math.max(1, world._lastEconomyGold);
-            world._lastEconomyGold = totalGold;
+        // ── Growth check: Organic EM emergence ──
+        // Check every growth interval if new EMs should emerge
+        if (world.day % (CONFIG.ELITE_MERCHANT_GROWTH_INTERVAL || 60) === 0) {
+            // Organic promotion: wealthy NPC merchants can rise to EM status
+            // target ~2 promotions/year = ~0.33 per 60-day check
+            var promotionChance = 0.35;
             
-            // STRICT CONDITIONS for EM emergence:
-            // 1. Find a qualifying town (prosperity > 75)
+            // Only do growth-based spawning if below target
+            var canGrowBeyondCurrent = activeEmCount < emTarget;
+            
+            // Find qualifying towns: any town with decent prosperity (>50) and tier city+
             var qualifyingTowns = world.towns.filter(function(t) {
-                return (t.prosperity || 0) > 75 && (t.tier === 'capital' || t.tier === 'city');
+                return (t.prosperity || 0) > 50 && (t.tier === 'capital' || t.tier === 'city' || (t.prosperity || 0) > 70);
             });
             
-            if (qualifyingTowns.length > 0 && growthRate > 0.15) {
-                // 2. Check that the kingdom of the qualifying town is also prosperous
-                var candidateTown = null;
-                for (var qi = 0; qi < qualifyingTowns.length; qi++) {
-                    var qt = qualifyingTowns[qi];
-                    var qk = findKingdom(qt.kingdomId);
-                    if (qk && (qk.gold || 0) > 3000) {
-                        // 3. Kingdom must not be at war
-                        var atWar = qk.atWar && qk.atWar.size > 0;
-                        if (!atWar) {
-                            candidateTown = qt;
-                            break;
-                        }
-                    }
-                }
+            if (qualifyingTowns.length > 0) {
+                // Pick a random qualifying town
+                var candidateTown = qualifyingTowns[Math.floor(world.rng.random() * qualifyingTowns.length)];
+                var qk = findKingdom(candidateTown.kingdomId);
                 
-                if (candidateTown) {
-                    // 4. Even with all conditions met, only 20% chance
-                    if (world.rng.random() < 0.20) {
-                        // Find the wealthiest NPC merchant in that town
-                        var candidates = world.people.filter(function(p) {
+                // Kingdom must exist and have some gold (relaxed from 3000)
+                if (qk && (qk.gold || 0) > 500) {
+                    // Find wealthy NPC merchants in that town or nearby
+                    var candidates = world.people.filter(function(p) {
+                        return p.alive && p.occupation === 'merchant' && !p.isEliteMerchant 
+                            && p.townId === candidateTown.id && (p.gold || 0) > 200;
+                    });
+                    // Also check connected towns if none found locally
+                    if (candidates.length === 0) {
+                        var connTowns = [];
+                        for (var cri = 0; cri < world.roads.length; cri++) {
+                            var cr = world.roads[cri];
+                            if (cr.fromTownId === candidateTown.id) connTowns.push(cr.toTownId);
+                            else if (cr.toTownId === candidateTown.id) connTowns.push(cr.fromTownId);
+                        }
+                        candidates = world.people.filter(function(p) {
                             return p.alive && p.occupation === 'merchant' && !p.isEliteMerchant 
-                                && p.townId === candidateTown.id && (p.gold || 0) > 300;
+                                && connTowns.indexOf(p.townId) >= 0 && (p.gold || 0) > 200;
                         });
-                        candidates.sort(function(a, b) { return (b.gold || 0) - (a.gold || 0); });
-                        
-                        if (candidates.length > 0) {
+                    }
+                    candidates.sort(function(a, b) { return (b.gold || 0) - (a.gold || 0); });
+                    
+                    if (candidates.length > 0 && world.rng.random() < promotionChance) {
+                        if (canGrowBeyondCurrent || activeEmCount < CONFIG.ELITE_MERCHANT_MAX) {
                             var promoted = candidates[0];
                             createEliteMerchantFromNPC(promoted);
                             world.eliteMerchants.push(promoted);
-                            logEvent('🌟 ' + (promoted.firstName || '') + ' ' + (promoted.lastName || '') + ' of ' + (candidateTown.name || 'unknown') + ' has risen to become a renowned elite merchant! The booming economy of ' + (candidateTown.name || 'the town') + ' breeds new merchant dynasties.', { townId: promoted.townId, category: 'npc_activity' });
-                        } else {
-                            // No local merchant to promote — generate fresh in that town
-                            var newElite = generateFreshEliteMerchant();
-                            if (newElite) {
-                                newElite.townId = candidateTown.id;
-                                newElite.kingdomId = candidateTown.kingdomId;
-                                world.eliteMerchants.push(newElite);
-                                logEvent('🌟 A new elite merchant, ' + (newElite.firstName || '') + ' ' + (newElite.lastName || '') + ', emerges in prosperous ' + (candidateTown.name || 'unknown') + '!', { townId: candidateTown.id, category: 'npc_activity' });
-                            }
+                            logEvent('🌟 ' + (promoted.firstName || '') + ' ' + (promoted.lastName || '') + ' of ' + (candidateTown.name || 'unknown') + ' has risen to become a renowned elite merchant! Their shrewd trading and growing wealth earned them a place among the elite.', { 
+                                type: 'elite_promotion',
+                                townId: promoted.townId, 
+                                category: 'npc_activity',
+                                cause: (promoted.firstName || '') + ' accumulated ' + (promoted.gold || 0) + 'g through trading.',
+                                effects: [
+                                    'A new elite merchant dynasty begins',
+                                    (promoted.firstName || '') + ' gains access to elite trade networks',
+                                    'Competition among elite merchants intensifies'
+                                ]
+                            });
                         }
                     }
                 }
             }
             
-            // Fallback: if BELOW minimum, still force-fill (game needs some EMs)
-            if (world.eliteMerchants.length < CONFIG.ELITE_MERCHANT_MIN) {
+            // Fallback: if BELOW minimum active EMs, still force-fill (game needs some EMs)
+            if (activeEmCount < CONFIG.ELITE_MERCHANT_MIN) {
                 var fallbackCandidates = world.people.filter(function(p) {
                     return p.alive && p.occupation === 'merchant' && !p.isEliteMerchant && (p.gold || 0) > 200;
                 });
@@ -15124,6 +17249,88 @@
     }
 
     // ========================================================
+    // §19A1B  ELITE MERCHANT GUILD AI
+    // ========================================================
+    // Maps EM strategies to relevant guild IDs
+    var STRATEGY_GUILDS = {
+        food_monopoly:     ['farmers', 'merchants'],
+        military_supplier: ['miners', 'armorsmiths', 'merchants'],
+        luxury_trader:     ['luxury', 'craftsmen', 'merchants'],
+        diversified:       ['merchants', 'artisans', 'farmers'],
+        political_climber: ['luxury', 'merchants'],
+        war_profiteer:     ['armorsmiths', 'miners', 'merchants'],
+        land_baron:        ['farmers', 'harvesters', 'miners'],
+        trade_network:     ['merchants', 'artisans', 'maritime'],
+        medical_supplier:  ['healers', 'harvesters'],
+    };
+
+    function tickEMGuildAI() {
+        if (!world) return;
+        if (world.day % 60 !== 25) return; // Every 60 days
+        var rng = world.rng;
+        if (!rng) return;
+
+        var guilds = CONFIG.GUILDS;
+        if (!guilds || guilds.length === 0) return;
+
+        var elites = world.people.filter(function(p) { return p.alive && p.isEliteMerchant; });
+        for (var i = 0; i < elites.length; i++) {
+            var em = elites[i];
+            if (!em.guilds) em.guilds = {};
+
+            // Determine which guilds this EM should join based on strategy
+            var targetGuildIds = STRATEGY_GUILDS[em.strategy] || ['merchants'];
+
+            for (var gi = 0; gi < targetGuildIds.length; gi++) {
+                var guildId = targetGuildIds[gi];
+                var membership = em.guilds[guildId];
+
+                // Already a member and not expired
+                if (membership && membership.expiresDay && membership.expiresDay > world.day) continue;
+
+                // Cost: yearly membership (200g for normal, 800g for merchants)
+                var cost = guildId === 'merchants' ? 800 : 200;
+                // Wealthy EMs always join; poorer ones only join primary guild
+                var isHighPriority = gi === 0; // First guild in list is highest priority
+                var minGold = isHighPriority ? cost * 2 : cost * 5;
+
+                if ((em.gold || 0) < minGold) continue;
+
+                // Join probability: high priority = 90%, secondary = 40%
+                if (!isHighPriority && !rng.chance(0.4)) continue;
+
+                em.gold -= cost;
+                em.guilds[guildId] = {
+                    joinedDay: world.day,
+                    expiresDay: world.day + 365,
+                    type: 'yearly'
+                };
+
+                // Guild benefits: production bonus, trade discount tracked on EM
+                if (!em._guildBonuses) em._guildBonuses = {};
+                em._guildBonuses[guildId] = {
+                    productionBonus: 0.10,   // 10% production efficiency
+                    tradeDiscount: 0.05,     // 5% better prices
+                    reputationBoost: 5       // +5 reputation in kingdom
+                };
+
+                // Small reputation boost for joining
+                if (em.kingdomId && em.reputation) {
+                    em.reputation[em.kingdomId] = Math.min(100, (em.reputation[em.kingdomId] || 50) + 3);
+                }
+            }
+
+            // Let expired memberships lapse — frugal EMs or struggling ones won't renew
+            for (var gk in em.guilds) {
+                if (em.guilds[gk].expiresDay && em.guilds[gk].expiresDay <= world.day) {
+                    delete em.guilds[gk];
+                    if (em._guildBonuses) delete em._guildBonuses[gk];
+                }
+            }
+        }
+    }
+
+    // ========================================================
     // §19A2  ELITE MERCHANT DEEP AI SIMULATION
     // ========================================================
     const ELITE_STRATEGIES = ['food_monopoly', 'military_supplier', 'luxury_trader', 'diversified', 'political_climber', 'war_profiteer', 'land_baron', 'trade_network', 'medical_supplier'];
@@ -15136,7 +17343,7 @@
         political_climber: ['wine', 'jewelry', 'silk', 'furniture', 'spices'],
         war_profiteer:     ['swords', 'armor', 'bows', 'bread', 'preserved_food', 'iron', 'weapons'],
         land_baron:        ['wheat', 'wood', 'stone', 'wool', 'iron_ore'],
-        trade_network:     ['cloth', 'tools', 'salt', 'spices', 'wine', 'dye'],
+        trade_network:     ['cloth', 'tools', 'salt', 'spices', 'wine', 'dye', 'leather', 'preserved_food', 'ale'],
     };
 
     const STRATEGY_BUILDINGS = {
@@ -15147,7 +17354,7 @@
         political_climber: ['vineyard', 'winery', 'jeweler', 'market_stall', 'jewelers_boutique', 'warehouse_small'],
         war_profiteer:     ['blacksmith', 'smelter', 'iron_mine', 'bakery', 'armory_shop', 'warehouse'],
         land_baron:        ['wheat_farm', 'cattle_ranch', 'sheep_farm', 'lumber_camp', 'iron_mine', 'pig_farm', 'restaurant', 'warehouse'],
-        trade_network:     ['market_stall', 'weaver', 'salt_works', 'rope_maker', 'general_store', 'tavern', 'warehouse'],
+        trade_network:     ['market_stall', 'weaver', 'salt_works', 'tanner', 'toolsmith', 'brewery', 'smokehouse', 'general_store', 'warehouse'],
         medical_supplier:  ['herb_garden', 'apothecary', 'bandage_workshop', 'clinic', 'herbalist_hut', 'warehouse_small'],
     };
 
@@ -15205,6 +17412,9 @@
         if (em._bountiesFulfilled === undefined) em._bountiesFulfilled = 0;
         if (em._kingRelationship === undefined) em._kingRelationship = {};
         if (em._competitorTracking === undefined) em._competitorTracking = {};
+        // Financial distress tracking
+        if (em._lowGoldDays === undefined) em._lowGoldDays = 0;
+        if (em._criticalGoldDays === undefined) em._criticalGoldDays = 0;
         // Elite merchant skill system
         if (!em.emSkills) em.emSkills = {};
         if (em.emXp === undefined) em.emXp = 0;
@@ -15751,7 +17961,14 @@
                     if (bld && bld.condition !== 'destroyed') {
                         var bldTown = findTown(bld.townId);
                         var prosper = bldTown ? (bldTown.prosperity || 30) / 100 : 0.3;
-                        buildingIncome += Math.floor(5 + 10 * prosper); // 5-15g per building per EM tick
+                        var biBt = findBuildingType(bld.type);
+                        if (biBt && biBt.produces) {
+                            // Production buildings earn real revenue via tickEconomy — small passive bonus only
+                            buildingIncome += Math.floor(2 + 3 * prosper);
+                        } else {
+                            // Non-producing buildings (warehouses, taverns, market stalls) earn passive income
+                            buildingIncome += Math.floor(5 + 10 * prosper);
+                        }
                     }
                 }
                 em.gold = (em.gold || 0) + buildingIncome;
@@ -15759,6 +17976,119 @@
             // Minimum sustenance: EMs always earn a small amount from their trade networks
             em.gold = (em.gold || 0) + Math.floor(3 + rng.random() * 5);
             grantEmXp(em, 1, 'daily');
+
+            // ---- FINANCIAL DISTRESS & BANKRUPTCY ----
+            if ((em.gold || 0) < 2000) {
+                em._lowGoldDays = (em._lowGoldDays || 0) + 1;
+            } else {
+                em._lowGoldDays = 0;
+            }
+            if ((em.gold || 0) < 1000) {
+                em._criticalGoldDays = (em._criticalGoldDays || 0) + 1;
+            } else {
+                em._criticalGoldDays = 0;
+            }
+
+            // Distress mode: < 2000g for 7+ days — sell buildings, do jobs
+            if ((em._lowGoldDays || 0) >= 7 && (em.gold || 0) < 2000) {
+                // Put buildings up for sale
+                if (em.buildings && em.buildings.length > 0) {
+                    for (var dbi = 0; dbi < em.buildings.length; dbi++) {
+                        var distBld = em.buildings[dbi];
+                        var distTown = findTown(distBld.townId);
+                        if (!distTown) continue;
+                        for (var dtbi = 0; dtbi < distTown.buildings.length; dtbi++) {
+                            if (distTown.buildings[dtbi].ownerId === em.id && distTown.buildings[dtbi].type === distBld.type && !distTown.buildings[dtbi].forSale) {
+                                var distBt = findBuildingType(distBld.type);
+                                var distVal = distBt ? Math.floor(distBt.cost * 0.6) : 200;
+                                distTown.buildings[dtbi].forSale = true;
+                                distTown.buildings[dtbi].salePrice = distVal;
+                                break;
+                            }
+                        }
+                    }
+                }
+                // Sell excess inventory to raise cash
+                var distInv = em.npcMerchantInventory || {};
+                var distTownRef = findTown(em.townId);
+                if (distTownRef && distTownRef.market) {
+                    for (var distGood in distInv) {
+                        if ((distInv[distGood] || 0) > 0) {
+                            var distSellQty = Math.min(distInv[distGood], rng.randInt(2, 6));
+                            var distPrice = distTownRef.market.prices[distGood] || 5;
+                            em.gold += Math.floor(distPrice * distSellQty * 0.8);
+                            distInv[distGood] -= distSellQty;
+                            distTownRef.market.supply[distGood] = (distTownRef.market.supply[distGood] || 0) + distSellQty;
+                        }
+                    }
+                }
+                // Do odd jobs for gold
+                em.gold += rng.randInt(5, 20);
+            }
+
+            // Bankruptcy: < 1000g for 30+ days — force sell to kingdom, demote to NPC
+            if ((em._criticalGoldDays || 0) >= 30 && (em.gold || 0) < 1000) {
+                var bankKingdom = findKingdom(em.kingdomId);
+                // Force-sell all buildings to kingdom at 50% value
+                if (em.buildings && em.buildings.length > 0 && bankKingdom) {
+                    var kingPers = bankKingdom.kingPersonality || {};
+                    for (var fsi = em.buildings.length - 1; fsi >= 0; fsi--) {
+                        var fsBld = em.buildings[fsi];
+                        var fsBt = findBuildingType(fsBld.type);
+                        var fsVal = fsBt ? Math.floor(fsBt.cost * 0.5) : 100;
+                        // King personality affects purchase chance (generous kings always buy, greedy sometimes refuse)
+                        var kingBuyChance = 0.85;
+                        if (kingPers.generosity === 'generous') kingBuyChance = 1.0;
+                        if (kingPers.greed === 'greedy') kingBuyChance = 0.6;
+                        if (kingPers.greed === 'corrupt') kingBuyChance = 0.4;
+                        if (rng.chance(kingBuyChance)) {
+                            em.gold += fsVal;
+                            bankKingdom.gold = Math.max(0, (bankKingdom.gold || 0) - fsVal);
+                            // Transfer building to kingdom
+                            var fsTown = findTown(fsBld.townId);
+                            if (fsTown) {
+                                for (var fsbi = 0; fsbi < fsTown.buildings.length; fsbi++) {
+                                    if (fsTown.buildings[fsbi].ownerId === em.id && fsTown.buildings[fsbi].type === fsBld.type) {
+                                        fsTown.buildings[fsbi].ownerId = 'kingdom_' + bankKingdom.id;
+                                        fsTown.buildings[fsbi].forSale = true;
+                                        fsTown.buildings[fsbi].salePrice = Math.floor(fsVal * 1.5);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        em.buildings.splice(fsi, 1);
+                    }
+                }
+                // Sell all remaining inventory
+                var bankInv = em.npcMerchantInventory || {};
+                var bankTown = findTown(em.townId);
+                if (bankTown && bankTown.market) {
+                    for (var bankGood in bankInv) {
+                        if ((bankInv[bankGood] || 0) > 0) {
+                            var bankPrice = bankTown.market.prices[bankGood] || 3;
+                            em.gold += Math.floor(bankPrice * bankInv[bankGood] * 0.5);
+                            bankTown.market.supply[bankGood] = (bankTown.market.supply[bankGood] || 0) + bankInv[bankGood];
+                            bankInv[bankGood] = 0;
+                        }
+                    }
+                }
+                // Demote: strip elite merchant status
+                logEvent('💸 ' + em.firstName + ' ' + (em.lastName || '') + ' goes bankrupt and is demoted from Elite Merchant status!', {
+                    type: 'elite_bankruptcy',
+                    cause: em.firstName + ' was below 1000g for 30+ days.',
+                    effects: [
+                        em.firstName + ' loses Elite Merchant status',
+                        'All buildings sold to the kingdom',
+                        em.firstName + ' becomes a common NPC'
+                    ]
+                });
+                em.isEliteMerchant = false;
+                em.occupation = 'laborer';
+                em._lowGoldDays = 0;
+                em._criticalGoldDays = 0;
+                continue; // skip rest of EM AI for this now-demoted NPC
+            }
 
             var town = findTown(em.townId);
             if (!town) continue;
@@ -15774,7 +18104,9 @@
             }
 
             // ---- 3. BUILDING DECISIONS (every 15 days) ----
-            if (day % 15 === 0) {
+            // ---- 3. BUILD DECISIONS (ambitious: 10 days, normal: 15 days) ----
+            var buildInterval = (personality.ambition || 50) > 65 ? 10 : 15;
+            if (day % buildInterval === 0) {
                 eliteBuildAI(em, town, rng, strategy);
             }
 
@@ -15788,14 +18120,34 @@
                 eliteSocialAI(em, town, rng, personality);
             }
 
-            // ---- 5. RANK ADVANCEMENT (every 60 days) ----
-            if (day % 60 === 0 && personality.ambition > 40) {
+            // ---- 5. RANK ADVANCEMENT (ambitious: 30 days, normal: 60 days) ----
+            var rankInterval = (personality.ambition || 50) > 60 ? 30 : 60;
+            if (day % rankInterval === 0 && (personality.ambition || 50) > 30) {
                 eliteRankAI(em, rng);
             }
 
             // ---- 5b. SKILL LEARNING (every 30 days) ----
             if (day % 30 === 0) {
                 eliteSkillAI(em, rng);
+            }
+
+            // ---- 5c. NPC SKILL GROWTH (every 15 days) ----
+            if (day % 15 === 0) {
+                if (!em.skills) em.skills = {};
+                // Trading activity grows trading skill
+                var tradeGrowth = (em.npcMerchantInventory && Object.keys(em.npcMerchantInventory).length > 0) ? 1 : 0;
+                if (tradeGrowth > 0) em.skills.trading = Math.min(100, (em.skills.trading || 5) + rng.randInt(1, 3));
+                // Building ownership grows crafting
+                if (em.buildings && em.buildings.length > 0) em.skills.crafting = Math.min(100, (em.skills.crafting || 3) + rng.randInt(0, 2));
+                // Traveling grows a general skill
+                if (em.traveling) em.skills.trading = Math.min(100, (em.skills.trading || 5) + 1);
+                // Gold accumulation grows general business sense (mining as proxy for resource management)
+                if ((em.gold || 0) > 2000) em.skills.mining = Math.min(100, (em.skills.mining || 3) + rng.randInt(0, 1));
+                // Farming skill grows if owns farms
+                if (em.buildings) {
+                    var ownsFarm = em.buildings.some(function(b) { return b.type && b.type.indexOf('farm') >= 0; });
+                    if (ownsFarm) em.skills.farming = Math.min(100, (em.skills.farming || 5) + rng.randInt(0, 2));
+                }
             }
 
             // ---- 6. CRIME DECISIONS (rare) ----
@@ -15860,6 +18212,8 @@
                             pref.completedOrders = (pref.completedOrders || 0) + 1;
                             k.procurement.preferredMerchants[em.id] = pref;
                             em.gold = (em.gold || 0) + (order.bonusOnCompletion || 0);
+                            em.ordersCompleted = (em.ordersCompleted || 0) + 1;
+                            grantEmXp(em, Math.max(5, Math.floor(order.qty / 10)), 'order');
                         }
                     }
                 }
@@ -15917,10 +18271,35 @@
         }
     }
 
+    // ── Elite Merchant Storage Capacity ──
+    function getEmStorageCapacity(em) {
+        var capacity = 50; // base capacity without warehouses
+        if (!em.buildings) return capacity;
+        for (var wi = 0; wi < em.buildings.length; wi++) {
+            var bRef = em.buildings[wi];
+            if (!bRef || !bRef.type) continue;
+            var bt = findBuildingType(bRef.type);
+            if (bt && bt.storage) {
+                capacity += bt.storage * (bRef.level || 1);
+            }
+        }
+        return capacity;
+    }
+
+    function getEmCurrentInventory(inv) {
+        var total = 0;
+        for (var key in inv) {
+            if (inv[key] > 0) total += inv[key];
+        }
+        return total;
+    }
+
     function eliteTradeAI(em, town, rng, strategy) {
         if (!town.market) return;
         var inv = em.npcMerchantInventory || {};
         var preferredGoods = STRATEGY_GOODS[strategy] || STRATEGY_GOODS.diversified;
+        var storageCapacity = getEmStorageCapacity(em);
+        var currentStock = getEmCurrentInventory(inv);
 
         // Check for active trade subsidies in this kingdom
         var kingdom = findKingdom(town.kingdomId);
@@ -15953,8 +18332,17 @@
         }
 
         // Buy goods aligned with strategy at good prices
-        if ((em.gold || 0) > 20) {
-            for (var gi = 0; gi < Math.min(preferredGoods.length, 3); gi++) {
+        var isTradeNetworkStrat = (strategy === 'trade_network');
+        // M-5: Personality-based trade modifiers
+        var pers = em.personality || {};
+        var greedMod = ((pers.greed || 50) > 65) ? 1.2 : 1.0; // greedy EMs hold for 20% higher sell prices
+        var frugalMod = ((pers.frugality || 50) > 65) ? 0.7 : 1.0; // frugal EMs spend 30% less per buy
+        var intelMod = ((pers.intelligence || 50) > 65) ? 1.15 : 1.0; // intelligent EMs detect 15% smaller arbitrage spreads
+        if ((em.gold || 0) > 20 && currentStock < storageCapacity) {
+            var buyAttempts = isTradeNetworkStrat ? Math.min(preferredGoods.length, 5) : Math.min(preferredGoods.length, 3);
+            for (var gi = 0; gi < buyAttempts; gi++) {
+                if (currentStock >= storageCapacity) break;
+                var remainingSpace = storageCapacity - currentStock;
                 var resId = preferredGoods[rng.randInt(0, preferredGoods.length - 1)];
                 var supply = (town.market.supply[resId] || 0);
                 var price = (town.market.prices[resId] || 999);
@@ -15971,9 +18359,9 @@
                 }
                 // Buy if price is below threshold and there's supply
                 if (supply > 3 && price < effectiveThreshold && em.gold >= price * 3) {
-                    var maxBudget = Math.floor(em.gold * 0.15); // spend up to 15% of gold
-                    if (subsidizedGoods[resId]) maxBudget = Math.floor(em.gold * 0.25); // spend more on subsidized goods
-                    var qty = Math.min(rng.randInt(2, 8), Math.floor(supply * 0.15), Math.floor(maxBudget / price));
+                    var maxBudget = Math.floor(em.gold * (isTradeNetworkStrat ? 0.25 : 0.15) * frugalMod);
+                    if (subsidizedGoods[resId]) maxBudget = Math.floor(em.gold * (isTradeNetworkStrat ? 0.35 : 0.25) * frugalMod);
+                    var qty = Math.min(rng.randInt(2, isTradeNetworkStrat ? 12 : 8), Math.floor(supply * (isTradeNetworkStrat ? 0.25 : 0.15)), Math.floor(maxBudget / price));
                     if (qty > 0) {
                         var buyMult = emHasSkill(em, 'master_haggler') ? 0.90 : emHasSkill(em, 'haggler') ? 0.95 : 1.0;
                         var adjBuyPrice = Math.floor(price * buyMult);
@@ -15988,28 +18376,31 @@
             }
         }
 
-        // Opportunistic buying: scarce goods elsewhere that we can trade (requires market_scout)
-        if (emHasSkill(em, 'market_scout') && (em.gold || 0) > 100) {
+        // Opportunistic buying: scarce goods elsewhere that we can trade (requires market_scout or trade_network strategy)
+        if ((emHasSkill(em, 'market_scout') || isTradeNetworkStrat) && (em.gold || 0) > 100 && currentStock < storageCapacity) {
             for (var resKey in town.market.supply) {
+                if (currentStock >= storageCapacity) break;
                 if ((town.market.supply[resKey] || 0) < 5) continue;
                 var scarcityPrice = town.market.prices[resKey] || 999;
                 var scarcityRes = findResourceById(resKey);
                 if (!scarcityRes) continue;
                 // Buy cheap goods that might be scarce in other towns
+                var remainOpp = storageCapacity - currentStock;
                 if (scarcityPrice < scarcityRes.basePrice * 0.7 && (inv[resKey] || 0) < 15) {
-                    var scarceQty = Math.min(rng.randInt(1, 4), Math.floor(em.gold * 0.05 / scarcityPrice));
+                    var scarceQty = Math.min(rng.randInt(1, 4), Math.floor(em.gold * 0.05 / scarcityPrice), remainOpp);
                     if (scarceQty > 0 && em.gold >= scarcityPrice * scarceQty) {
                         em.gold -= Math.floor(scarcityPrice * scarceQty);
                         inv[resKey] = (inv[resKey] || 0) + scarceQty;
                         town.market.supply[resKey] -= scarceQty;
+                        currentStock += scarceQty;
                         collectTradeTax(town.kingdomId, Math.floor(scarcityPrice * scarceQty), resKey);
                     }
                 }
             }
         }
 
-        // Demand exploitation: sell high-demand goods at premium (requires market_scout)
-        if (emHasSkill(em, 'market_scout') && (em.gold || 0) > 200 && town.market.demand) {
+        // Demand exploitation: sell high-demand goods at premium (requires market_scout or trade_network strategy)
+        if ((emHasSkill(em, 'market_scout') || isTradeNetworkStrat) && (em.gold || 0) > 200 && town.market.demand) {
             for (var demResId in town.market.demand) {
                 var demDemand = town.market.demand[demResId] || 0;
                 var demSupply = town.market.supply[demResId] || 0;
@@ -16043,9 +18434,13 @@
             if (!res2) continue;
             var isPreferred = preferredGoods.indexOf(resId2) >= 0;
             // Sell if price is 40%+ above base, or 80%+ for preferred (hoard preferred goods)
+            // Trade network EMs sell more aggressively — lower thresholds
             var sellThresh = isPreferred ? 1.8 : 1.4;
+            if (isTradeNetworkStrat) sellThresh = isPreferred ? 1.4 : 1.2;
             // Lower sell threshold for subsidized goods (bonus income makes selling more attractive)
             if (subsidizedGoods[resId2]) sellThresh = isPreferred ? 1.4 : 1.1;
+            // Greedy EMs hold out for higher prices
+            sellThresh *= greedMod;
             if (price2 > res2.basePrice * sellThresh) {
                 var sellQty = Math.min(inv[resId2], rng.randInt(1, 5));
                 if (isPreferred && !subsidizedGoods[resId2]) sellQty = Math.min(sellQty, Math.floor(inv[resId2] * 0.3)); // keep 70% of preferred
@@ -16091,19 +18486,22 @@
                 } else if (emHasSkill(em, 'trade_network')) {
                     // Not in a warring kingdom: buy military goods cheaply to sell in war zones (requires trade_network)
                     for (var wbi = 0; wbi < militaryGoods.length; wbi++) {
+                        if (currentStock >= storageCapacity) break;
                         var wbGood = militaryGoods[wbi];
                         var wbSupply = town.market.supply[wbGood] || 0;
                         var wbPrice = town.market.prices[wbGood] || 999;
                         var wbRes = findResourceById(wbGood);
                         if (!wbRes || wbSupply < 3) continue;
+                        var wbRemain = storageCapacity - currentStock;
                         // Buy aggressively at or below base price
                         if (wbPrice <= wbRes.basePrice * 1.3 && em.gold >= wbPrice * 3) {
                             var wbMaxBudget = Math.floor(em.gold * 0.2);
-                            var wbBuyQty = Math.min(rng.randInt(2, 10), Math.floor(wbSupply * 0.3), Math.floor(wbMaxBudget / wbPrice));
+                            var wbBuyQty = Math.min(rng.randInt(2, 10), Math.floor(wbSupply * 0.3), Math.floor(wbMaxBudget / wbPrice), wbRemain);
                             if (wbBuyQty > 0) {
                                 em.gold -= Math.floor(wbPrice * wbBuyQty);
                                 inv[wbGood] = (inv[wbGood] || 0) + wbBuyQty;
                                 town.market.supply[wbGood] -= wbBuyQty;
+                                currentStock += wbBuyQty;
                             }
                         }
                     }
@@ -16155,6 +18553,8 @@
             var tariffRate = (isCrossKingdom && destKingdom && destKingdom.laws) ? (destKingdom.laws.tradeTariff || 0) : 0;
 
             // Score based on trade opportunities
+            // Intelligence modifier: smarter EMs detect smaller price spreads
+            var travelIntelMod = ((em.personality || {}).intelligence || 50) > 65 ? 0.85 : 1.0;
             for (var pi2 = 0; pi2 < preferredGoods.length; pi2++) {
                 var gId = preferredGoods[pi2];
                 var destPrice = destTown.market.prices[gId] || 0;
@@ -16163,11 +18563,11 @@
                 var r = findResourceById(gId);
                 if (!r) continue;
                 // Good buy opportunity: cheap goods at dest
-                if (destSupply > 5 && destPrice < r.basePrice * 0.9) score += 10;
+                if (destSupply > 5 && destPrice < r.basePrice * (0.9 * travelIntelMod)) score += 10;
                 // Good sell opportunity: high price at dest, we have inventory
-                if (destPrice > r.basePrice * 1.5 && (em.npcMerchantInventory[gId] || 0) > 0) score += 20;
-                // Arbitrage: cheaper at dest than here
-                if (destPrice < localPrice * 0.7 && destSupply > 3) score += 15;
+                if (destPrice > r.basePrice * (1.5 * travelIntelMod) && (em.npcMerchantInventory[gId] || 0) > 0) score += 20;
+                // Arbitrage: cheaper at dest than here (intelligent EMs detect smaller spreads)
+                if (destPrice < localPrice * (0.7 / travelIntelMod) && destSupply > 3) score += 15;
                 // Trade subsidy bonus: prefer destinations where our goods are subsidized
                 if (subsidyMap[gId + '_' + destTown.kingdomId] && (em.npcMerchantInventory[gId] || 0) > 0) score += 12;
 
@@ -16501,6 +18901,8 @@
         }
 
         em.gold -= effectiveCost;
+        // Distribute construction wages to local NPCs (EM building)
+        distributeConstructionWages(buildTown.id, effectiveCost, world.rng);
         if (!em.buildings) em.buildings = [];
         var newBld = { type: bType, level: 1, ownerId: em.id, townId: buildTown.id, workers: [], upgrades: [], builtDay: world.day, _profitTracker: { revenue: 0, costs: 0, days: 0 } };
         buildTown.buildings.push(newBld);
@@ -16646,6 +19048,47 @@
                         totalFired++;
                     }
                 }
+            }
+        }
+
+        // M-4: Building upgrade AI — upgrade profitable buildings to higher levels
+        if (em.buildings && em.buildings.length > 0 && (em.gold || 0) > 200 && rng.chance(0.3)) {
+            for (var ugi = 0; ugi < em.buildings.length; ugi++) {
+                var ugRef = em.buildings[ugi];
+                var ugBt = findBuildingType(ugRef.type);
+                if (!ugBt) continue;
+                var ugLevel = ugRef.level || 1;
+                var ugMaxLevel = ugBt.maxLevel || 3;
+                if (ugLevel >= ugMaxLevel) continue;
+                var ugTown = findTown(ugRef.townId);
+                if (!ugTown) continue;
+                var ugBld = null;
+                for (var ugbi = 0; ugbi < ugTown.buildings.length; ugbi++) {
+                    if (ugTown.buildings[ugbi].ownerId === em.id && ugTown.buildings[ugbi].type === ugRef.type) {
+                        ugBld = ugTown.buildings[ugbi];
+                        break;
+                    }
+                }
+                if (!ugBld) continue;
+                var ugTracker = ugBld._profitTracker || {};
+                var ugAge = world.day - (ugBld.builtDay || 0);
+                var ugProfitable = (ugTracker.revenue || 0) > 0 || ugAge > 60;
+                if (!ugProfitable) continue;
+                var upgradeCost = Math.floor(ugBt.cost * ugLevel * 0.75);
+                if (em.gold < upgradeCost) continue;
+                var ugMaxR = 0;
+                for (var ugRkId in em.socialRank) { if ((em.socialRank[ugRkId] || 0) > ugMaxR) ugMaxR = em.socialRank[ugRkId]; }
+                if (ugMaxR < 2 && ugLevel >= 2) continue;
+                em.gold -= upgradeCost;
+                ugBld.level = ugLevel + 1;
+                ugRef.level = ugLevel + 1;
+                ugBld.maxWorkers = (ugBt.maxWorkers || 2) + ugLevel;
+                logEvent(em.firstName + ' ' + (em.lastName || '') + ' upgrades ' + ugBt.name + ' to level ' + (ugLevel + 1) + ' in ' + (ugTown.name || 'town') + '.', {
+                    type: 'elite_building_upgrade',
+                    cause: em.firstName + ' invests in expanding profitable operations.',
+                    effects: [ugBt.name + ' upgraded to level ' + (ugLevel + 1), 'Invested ' + upgradeCost + 'g in the upgrade', 'Increased production capacity and worker slots']
+                });
+                break;
             }
         }
 
@@ -17044,30 +19487,103 @@
     }
 
     function eliteCrimeAI(em, town, rng, personality) {
-        if (personality.honesty >= 40) return;
+        // Removed honesty >= 40 early return — tick gate already checks honesty < 40
         if ((em.gold || 0) < 100) return; // too poor to risk
+        var kingdom = findKingdom(em.kingdomId);
+        if (!kingdom) return;
+        if (!em.criminalRecord) em.criminalRecord = {};
+        var kId = em.kingdomId;
+        var detectionReduction = emHasSkill(em, 'master_smuggler') ? 0.4 : emHasSkill(em, 'discrete') ? 0.7 : 1.0;
 
-        // War profiteering
+        // War profiteering (existing)
         if (em.strategy === 'war_profiteer' && personality.risk_tolerance > 50) {
-            var kingdom = findKingdom(em.kingdomId);
-            if (kingdom && kingdom.atWar && kingdom.atWar.size > 0) {
-                // Bonus gold from war trading
+            if (kingdom.atWar && kingdom.atWar.size > 0) {
                 var profit = Math.floor(50 + rng.random() * 200);
                 em.gold += profit;
-                em.crimesCommitted++;
-                if (!em.criminalRecord[em.kingdomId]) em.criminalRecord[em.kingdomId] = 0;
-                // Small chance of getting caught
-                if (rng.chance(0.05)) {
-                    em.criminalRecord[em.kingdomId]++;
+                em.crimesCommitted = (em.crimesCommitted || 0) + 1;
+                if (!em.criminalRecord[kId]) em.criminalRecord[kId] = 0;
+                if (rng.chance(0.05 * detectionReduction)) {
+                    em.criminalRecord[kId]++;
                     var fine = Math.floor(profit * 2);
                     em.gold = Math.max(0, em.gold - fine);
-                    em.reputation[em.kingdomId] = Math.max(0, (em.reputation[em.kingdomId] || 50) - 10);
-                    logEvent(em.firstName + ' ' + (em.lastName || '') + ' was fined ' + fine + 'g for war profiteering!');
+                    em.reputation[kId] = Math.max(0, (em.reputation[kId] || 50) - 10);
+                    logEvent(em.firstName + ' ' + (em.lastName || '') + ' was fined ' + fine + 'g for war profiteering!', {
+                        type: 'elite_crime_caught', cause: 'War profiteering detected by kingdom authorities.',
+                        effects: [fine + 'g fine levied', 'Reputation damaged']
+                    });
                 }
             }
         }
 
-        // Bridge sabotage already handled in tickNPCMerchants
+        // Smuggling banned goods: buy banned goods cheaply elsewhere, sell at premium
+        if (personality.risk_tolerance > 55 && kingdom.laws && kingdom.laws.bannedGoods && kingdom.laws.bannedGoods.length > 0) {
+            var bannedList = kingdom.laws.bannedGoods;
+            var emInv = em.npcMerchantInventory || {};
+            // Sell banned goods we're holding at huge markup
+            for (var smi = 0; smi < bannedList.length; smi++) {
+                var smugGood = bannedList[smi];
+                if ((emInv[smugGood] || 0) > 0 && rng.chance(0.3)) {
+                    var smugQty = Math.min(emInv[smugGood], rng.randInt(1, 3));
+                    var smugRes = findResourceById(smugGood);
+                    var smugPrice = smugRes ? Math.floor(smugRes.basePrice * (2.0 + rng.random())) : 30;
+                    em.gold += smugPrice * smugQty;
+                    emInv[smugGood] -= smugQty;
+                    em.crimesCommitted = (em.crimesCommitted || 0) + 1;
+                    if (rng.chance(0.08 * detectionReduction)) {
+                        em.criminalRecord[kId] = (em.criminalRecord[kId] || 0) + 1;
+                        var smugFine = smugPrice * smugQty * 3;
+                        em.gold = Math.max(0, em.gold - smugFine);
+                        em.reputation[kId] = Math.max(0, (em.reputation[kId] || 50) - 15);
+                        logEvent('⚖️ ' + em.firstName + ' ' + (em.lastName || '') + ' caught smuggling ' + smugQty + ' ' + smugGood + '! Fined ' + smugFine + 'g.', {
+                            type: 'elite_crime_smuggling', cause: 'Smuggling banned goods: ' + smugGood,
+                            effects: [smugFine + 'g fine', 'Criminal record increased', 'Reputation severely damaged']
+                        });
+                    } else {
+                        logEvent(em.firstName + ' ' + (em.lastName || '') + ' secretly sells ' + smugQty + ' smuggled ' + smugGood + '.', {
+                            type: 'elite_smuggle_success', cause: 'Black market sale of banned goods.',
+                            effects: [smugPrice * smugQty + 'g earned from black market']
+                        });
+                    }
+                }
+            }
+        }
+
+        // Tax evasion: under-report trade income
+        if (personality.honesty < 30 && personality.greed > 50 && (em.gold || 0) > 500 && rng.chance(0.2)) {
+            var evadedTax = Math.floor(em.gold * 0.02);
+            em.gold += evadedTax; // keep what would have been taxed
+            em.crimesCommitted = (em.crimesCommitted || 0) + 1;
+            if (rng.chance(0.03 * detectionReduction)) {
+                em.criminalRecord[kId] = (em.criminalRecord[kId] || 0) + 1;
+                var taxPenalty = evadedTax * 5;
+                em.gold = Math.max(0, em.gold - taxPenalty);
+                em.reputation[kId] = Math.max(0, (em.reputation[kId] || 50) - 8);
+                logEvent('⚖️ ' + em.firstName + ' ' + (em.lastName || '') + ' audited for tax evasion! Penalty: ' + taxPenalty + 'g.', {
+                    type: 'elite_crime_tax_evasion', cause: 'Kingdom tax audit uncovered unreported income.',
+                    effects: [taxPenalty + 'g penalty', 'Criminal record increased']
+                });
+            }
+        }
+
+        // Bribery: spend gold to boost reputation or reduce criminal record
+        if (personality.honesty < 35 && (em.criminalRecord[kId] || 0) > 0 && (em.gold || 0) > 300 && rng.chance(0.15)) {
+            var bribeCost = Math.floor(100 + rng.random() * 200);
+            if (em.gold >= bribeCost) {
+                em.gold -= bribeCost;
+                em.crimesCommitted = (em.crimesCommitted || 0) + 1;
+                if (rng.chance(0.1 * detectionReduction)) {
+                    em.criminalRecord[kId] = (em.criminalRecord[kId] || 0) + 2;
+                    em.reputation[kId] = Math.max(0, (em.reputation[kId] || 50) - 20);
+                    logEvent('⚖️ ' + em.firstName + ' ' + (em.lastName || '') + ' caught bribing officials! Record worsened.', {
+                        type: 'elite_crime_bribery_caught', cause: 'Attempted bribery of kingdom officials failed.',
+                        effects: ['Criminal record increased by 2', 'Reputation severely damaged']
+                    });
+                } else {
+                    em.criminalRecord[kId] = Math.max(0, em.criminalRecord[kId] - 1);
+                    em.reputation[kId] = Math.min(100, (em.reputation[kId] || 50) + 5);
+                }
+            }
+        }
     }
 
     // ---- NET WORTH & LEADERBOARD ----
@@ -17188,7 +19704,7 @@
                     netWorth: m.netWorth || calculateNetWorth(m),
                     gold: m.gold || 0,
                     buildings: m.buildings ? m.buildings.length : 0,
-                    employees: typeof m.employees === 'number' ? m.employees : (function() {
+                    employees: (function() {
                         var count = 0;
                         if (m.id && world.towns) {
                             for (var ti = 0; ti < world.towns.length; ti++) {
@@ -17701,10 +20217,10 @@
             var ownedBld = em.buildings[bIdx2];
             var ownedBt = findBuildingType(ownedBld.type);
             if (!ownedBt) continue;
-            // Check if building requires inputs
-            if (ownedBt.inputs) {
-                for (var inputId in ownedBt.inputs) {
-                    inputNeeds[inputId] = (inputNeeds[inputId] || 0) + (ownedBt.inputs[inputId] || 1);
+            // Check if building consumes inputs (fixed: was checking .inputs which doesn't exist)
+            if (ownedBt.consumes) {
+                for (var inputId in ownedBt.consumes) {
+                    inputNeeds[inputId] = (inputNeeds[inputId] || 0) + (ownedBt.consumes[inputId] || 1);
                 }
             }
             // Check availableProducts for current production choice
@@ -17776,6 +20292,50 @@
                     ]
                 });
                 break; // One supply chain investment per cycle
+            }
+        }
+
+        // Buy building inputs from market if town supply is low (skill-gated visibility)
+        if (town.market && Object.keys(inputNeeds).length > 0 && (em.gold || 0) > 50) {
+            var scCap = getEmStorageCapacity(em);
+            var scUsed = getEmCurrentInventory(em.npcMerchantInventory || {});
+            for (var scNeedId in inputNeeds) {
+                if (scUsed >= scCap) break;
+                var scTownSupply = town.market.supply[scNeedId] || 0;
+                var scNeeded = inputNeeds[scNeedId] || 1;
+                var scInv = (em.npcMerchantInventory || {})[scNeedId] || 0;
+                // Only buy if we don't have enough and there's supply
+                if (scInv >= scNeeded * 3) continue;
+                // keen_eye = see own town market; market_scout = connected towns too
+                if (scTownSupply >= 3) {
+                    var scPrice = town.market.prices[scNeedId] || 999;
+                    var scRes = findResourceById(scNeedId);
+                    if (!scRes || scPrice > scRes.basePrice * 2.0) continue;
+                    var scBuyQty = Math.min(scNeeded * 2, Math.floor(scTownSupply * 0.3), scCap - scUsed, Math.floor(em.gold * 0.1 / scPrice));
+                    if (scBuyQty > 0 && em.gold >= scPrice * scBuyQty) {
+                        em.gold -= Math.floor(scPrice * scBuyQty);
+                        if (!em.npcMerchantInventory) em.npcMerchantInventory = {};
+                        em.npcMerchantInventory[scNeedId] = (em.npcMerchantInventory[scNeedId] || 0) + scBuyQty;
+                        town.market.supply[scNeedId] -= scBuyQty;
+                        scUsed += scBuyQty;
+                        collectTradeTax(town.kingdomId, Math.floor(scPrice * scBuyQty), scNeedId);
+                    }
+                } else if (emHasSkill(em, 'market_scout') && scTownSupply < scNeeded) {
+                    // Check connected towns for input materials
+                    var connRoads = town.roads || [];
+                    for (var scri = 0; scri < connRoads.length && scri < 3; scri++) {
+                        var scConnTown = findTown(connRoads[scri]);
+                        if (!scConnTown || !scConnTown.market) continue;
+                        var scConnSupply = scConnTown.market.supply[scNeedId] || 0;
+                        if (scConnSupply < 5) continue;
+                        var scConnPrice = scConnTown.market.prices[scNeedId] || 999;
+                        if (scConnPrice > (findResourceById(scNeedId) || {}).basePrice * 1.5) continue;
+                        // Flag this as a travel target for the EM
+                        if (!em._supplyChainTargets) em._supplyChainTargets = {};
+                        em._supplyChainTargets[scNeedId] = scConnTown.id;
+                        break;
+                    }
+                }
             }
         }
 
@@ -17911,6 +20471,81 @@
                             'Reduced direct competition with rival merchants'
                         ]
                     });
+                }
+            }
+        }
+
+        // Supply buyout: aggressive EMs buy up cheap goods before competitors can
+        if ((personality.greed || 50) > 60 && (em.gold || 0) > 500 && town.market && localCompetitors.length > 0) {
+            var storeCap = getEmStorageCapacity(em);
+            var storeUsed = getEmCurrentInventory(em.npcMerchantInventory || {});
+            if (storeUsed < storeCap * 0.8) {
+                for (var sbi = 0; sbi < preferredGoods.length && sbi < 2; sbi++) {
+                    var sbGood = preferredGoods[sbi];
+                    var sbSupply = town.market.supply[sbGood] || 0;
+                    var sbPrice = town.market.prices[sbGood] || 999;
+                    var sbRes = findResourceById(sbGood);
+                    if (!sbRes || sbSupply < 10) continue;
+                    // Buy up to 30% of supply to corner the market
+                    if (sbPrice < sbRes.basePrice * 1.1 && rng.chance(0.25)) {
+                        var sbQty = Math.min(Math.floor(sbSupply * 0.3), storeCap - storeUsed, Math.floor(em.gold * 0.2 / sbPrice));
+                        if (sbQty > 2) {
+                            em.gold -= Math.floor(sbPrice * sbQty);
+                            em.npcMerchantInventory[sbGood] = (em.npcMerchantInventory[sbGood] || 0) + sbQty;
+                            town.market.supply[sbGood] -= sbQty;
+                            storeUsed += sbQty;
+                            collectTradeTax(town.kingdomId, Math.floor(sbPrice * sbQty), sbGood);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Territorial response: if a competitor builds in our town, accelerate our own building
+        if (localCompetitors.length > 0 && (personality.ambition || 50) > 50 && em.buildings) {
+            var localCompBlds = 0;
+            for (var tci = 0; tci < localCompetitors.length; tci++) {
+                var tcBlds = localCompetitors[tci].buildings || [];
+                for (var tcbi = 0; tcbi < tcBlds.length; tcbi++) {
+                    if (tcBlds[tcbi].townId === town.id) localCompBlds++;
+                }
+            }
+            var myLocalBlds = 0;
+            for (var mbi = 0; mbi < em.buildings.length; mbi++) {
+                if (em.buildings[mbi].townId === town.id) myLocalBlds++;
+            }
+            // If competitors have more buildings here than us, mark for urgent building
+            if (localCompBlds > myLocalBlds && rng.chance(0.3)) {
+                em._urgentBuild = true;
+            }
+        }
+
+        // Price war: if losing market share, dump excess goods at a loss to drive competitors out
+        if ((personality.risk_tolerance || 50) > 65 && (em.gold || 0) > 2000 && localCompetitors.length > 1) {
+            var emInv = em.npcMerchantInventory || {};
+            for (var pwGood in emInv) {
+                if ((emInv[pwGood] || 0) < 8) continue;
+                // Check if competitors also hold this good
+                var competitorsHolding = 0;
+                for (var pwci = 0; pwci < localCompetitors.length; pwci++) {
+                    if (((localCompetitors[pwci].npcMerchantInventory || {})[pwGood] || 0) > 5) {
+                        competitorsHolding++;
+                    }
+                }
+                if (competitorsHolding >= 2 && rng.chance(0.15)) {
+                    var dumpQty = Math.min(emInv[pwGood], rng.randInt(3, 8));
+                    var dumpPrice = Math.floor((town.market.prices[pwGood] || 10) * 0.7);
+                    if (dumpQty > 0 && dumpPrice > 0) {
+                        em.gold += dumpPrice * dumpQty;
+                        emInv[pwGood] -= dumpQty;
+                        town.market.supply[pwGood] = (town.market.supply[pwGood] || 0) + dumpQty;
+                        logEvent(em.firstName + ' ' + (em.lastName || '') + ' dumps ' + dumpQty + ' ' + pwGood + ' to undercut competitors.', {
+                            type: 'elite_price_war',
+                            cause: 'Multiple competitors stockpiling ' + pwGood + ' in ' + (town.name || 'town'),
+                            effects: [pwGood + ' prices collapse in ' + (town.name || 'town'), 'Competitors forced to sell at lower margins']
+                        });
+                        break;
+                    }
                 }
             }
         }
@@ -18082,7 +20717,805 @@
             });
         }
 
+        // Petition for trade subsidies on goods we produce (requires social rank 2+ and good relationship)
+        var emRank = em.socialRank[kId] || 0;
+        if (emRank >= 2 && rel > 10 && (em.gold || 0) > 1000 && (personality.ambition || 50) > 40 && rng.chance(0.15)) {
+            // Find a good we produce that doesn't have an active subsidy
+            var emProduces = [];
+            if (em.buildings) {
+                for (var epbi = 0; epbi < em.buildings.length; epbi++) {
+                    var epBt = findBuildingType(em.buildings[epbi].type);
+                    if (epBt && epBt.produces && emProduces.indexOf(epBt.produces) < 0) {
+                        emProduces.push(epBt.produces);
+                    }
+                }
+            }
+            var existingSubGods = {};
+            if (kingdom.tradeSubsidies) {
+                for (var esi = 0; esi < kingdom.tradeSubsidies.length; esi++) {
+                    if (kingdom.tradeSubsidies[esi].expiresDay > world.day) {
+                        existingSubGods[kingdom.tradeSubsidies[esi].good] = true;
+                    }
+                }
+            }
+            for (var epi = 0; epi < emProduces.length; epi++) {
+                var petGood = emProduces[epi];
+                if (existingSubGods[petGood]) continue;
+                // Petition fee scales with rank
+                var petitionFee = Math.floor(50 + emRank * 100);
+                if (em.gold < petitionFee) continue;
+                // King decides based on their personality and kingdom needs
+                var kp3 = kingdom.kingPersonality || {};
+                var approvalChance = 0.15;
+                if (kp3.generosity === 'generous' || kp3.tradePolicy === 'free_market') approvalChance += 0.15;
+                if (kp3.greed === 'greedy' || kp3.greed === 'corrupt') approvalChance -= 0.10;
+                if (rel > 40) approvalChance += 0.10;
+                if (emRank >= 3) approvalChance += 0.10;
+                em.gold -= petitionFee;
+                kingdom.gold += petitionFee;
+                if (rng.chance(Math.max(0.05, approvalChance))) {
+                    if (!kingdom.tradeSubsidies) kingdom.tradeSubsidies = [];
+                    kingdom.tradeSubsidies.push({
+                        good: petGood,
+                        bonusPerUnit: rng.randInt(2, 5),
+                        expiresDay: world.day + rng.randInt(60, 180),
+                        maxUnits: rng.randInt(50, 200),
+                        unitsPaid: 0,
+                        requestedBy: em.id
+                    });
+                    rel += 5;
+                    logEvent(em.firstName + ' ' + (em.lastName || '') + ' persuades ' + kingdom.name + ' to subsidize ' + petGood + ' trade!', {
+                        type: 'elite_petition_subsidy',
+                        cause: em.firstName + ' lobbied the crown for trade subsidies.',
+                        effects: [petGood + ' trade subsidized in ' + kingdom.name, em.firstName + '\'s influence at court grows']
+                    });
+                } else {
+                    logEvent(em.firstName + ' ' + (em.lastName || '') + '\'s petition for ' + petGood + ' subsidies was denied by ' + kingdom.name + '.', {
+                        type: 'elite_petition_denied',
+                        cause: em.firstName + ' lobbied the crown, but was rebuffed.',
+                        effects: [petitionFee + 'g spent on failed petition']
+                    });
+                }
+                break; // one petition per cycle
+            }
+        }
+
+        // Lobby against high tariffs (social EMs with good relationship)
+        if (emRank >= 2 && rel > 15 && (personality.social || 50) > 55 && (kingdom.tariffRate || 0) > 0.10 && rng.chance(0.1)) {
+            var lobbyFee = Math.floor(100 + emRank * 150);
+            if ((em.gold || 0) >= lobbyFee) {
+                em.gold -= lobbyFee;
+                kingdom.gold += lobbyFee;
+                var kp4 = kingdom.kingPersonality || {};
+                var tariffReduceChance = 0.2;
+                if (kp4.tradePolicy === 'free_market') tariffReduceChance += 0.2;
+                if (kp4.greed === 'miserly') tariffReduceChance -= 0.15;
+                if (rel > 40) tariffReduceChance += 0.1;
+                if (rng.chance(Math.max(0.05, tariffReduceChance))) {
+                    var oldTariff = kingdom.tariffRate || 0;
+                    kingdom.tariffRate = Math.max(0.01, oldTariff - 0.02);
+                    rel += 3;
+                    logEvent(em.firstName + ' ' + (em.lastName || '') + ' successfully lobbies ' + kingdom.name + ' to reduce tariffs from ' + Math.round(oldTariff * 100) + '% to ' + Math.round(kingdom.tariffRate * 100) + '%.', {
+                        type: 'elite_lobby_tariff',
+                        cause: em.firstName + ' uses court influence to push for trade reform.',
+                        effects: ['Tariff reduced by 2%', 'All merchants benefit from lower trade costs']
+                    });
+                }
+            }
+        }
+
+        // Gift-giving for low-relationship EMs trying to get in good graces (more accessible than bribery)
+        if (rel <= 10 && (em.gold || 0) > 500 && (personality.social || 50) > 40 && rng.chance(0.2)) {
+            var giftAmount = Math.floor(Math.min(em.gold * 0.03, 200));
+            if (giftAmount >= 20) {
+                em.gold -= giftAmount;
+                kingdom.gold += giftAmount;
+                rel += Math.floor(giftAmount / 20);
+                em.reputation[kId] = Math.min(100, (em.reputation[kId] || 50) + 2);
+            }
+        }
+
         em._kingRelationship[kId] = Math.max(-100, Math.min(100, rel));
+    }
+
+    // ========================================================
+    // NPC HOUSING PURCHASE AI — NPCs buy/upgrade housing
+    // ========================================================
+
+    // Housing tiers NPCs can buy, ordered cheapest to most expensive
+    var NPC_HOUSING_TIERS = ['shack', 'cottage', 'farmstead', 'townhouse', 'merchant_house', 'manor'];
+    var TOWN_CAT_RANK = { outpost: 0, village: 1, town: 2, city: 3, capital_city: 4 };
+
+    function getNPCHousingCost(housingTypeId, town) {
+        var ht = CONFIG.HOUSING_TYPES.find(function(h) { return h.id === housingTypeId; });
+        if (!ht) return Infinity;
+        if (ht.notBuildable || ht.fromApartmentBuilding) return Infinity;
+        if (ht.requiresPort && !town.isPort) return Infinity;
+        if (ht.minRank) return Infinity; // NPCs don't have noble ranks
+
+        // Check town category requirement
+        var minCatRank = TOWN_CAT_RANK[ht.minTownCategory] || 0;
+        var townCatRank = TOWN_CAT_RANK[town.category] || 0;
+        if (townCatRank < minCatRank) return Infinity;
+
+        var cat = town.category || 'town';
+        var laborMult = (CONFIG.HOUSING_LABOR_MULTIPLIER && CONFIG.HOUSING_LABOR_MULTIPLIER[cat]) || 1.0;
+        var laborCost = Math.floor((ht.laborCost || 0) * laborMult);
+
+        if (!ht.materials) {
+            return (ht.baseCost || ht.cost || 0) + laborCost;
+        }
+
+        var materialCost = 0;
+        for (var matId in ht.materials) {
+            var qty = ht.materials[matId];
+            var price = 0;
+            try { price = getMarketPrice(town, matId) || 0; } catch(e) {}
+            if (price <= 0) {
+                var res = findResourceById(matId);
+                price = res ? (res.basePrice || 5) : 5;
+            }
+            materialCost += qty * price;
+        }
+
+        return materialCost + laborCost;
+    }
+
+    function getHousingTierIndex(houseType) {
+        if (!houseType) return -1;
+        return NPC_HOUSING_TIERS.indexOf(houseType);
+    }
+
+    function getHousingComfort(houseType) {
+        if (!houseType) return 0;
+        var ht = CONFIG.HOUSING_TYPES.find(function(h) { return h.id === houseType; });
+        return ht ? (ht.comfort || 0) : 0;
+    }
+
+    function tickNPCHousingAI() {
+        if (!world) return;
+        if (world.day % 7 !== 3) return; // Every 7 days, offset
+        var rng = world.rng;
+        if (!rng) return;
+
+        // Process a batch of NPCs per tick to limit performance impact
+        var batchSize = 300;
+        var offset = world._npcHousingOffset || 0;
+        var people = world.people;
+        if (!people || people.length === 0) return;
+
+        var processed = 0;
+        var purchased = 0;
+        var upgraded = 0;
+
+        for (var i = 0; i < batchSize && processed < batchSize; i++) {
+            var idx = (offset + i) % people.length;
+            var p = people[idx];
+            if (!p || !p.alive) continue;
+            if (p.age < 18) continue;
+            if (p.isEliteMerchant) continue; // EMs have their own housing logic
+            processed++;
+
+            var pGold = p.gold || 0;
+            if (pGold < 30) continue; // Can't afford anything
+
+            var town = findTown(p.townId);
+            if (!town) continue;
+
+            var currentTier = getHousingTierIndex(p.houseType);
+            var currentComfort = getHousingComfort(p.houseType);
+
+            // Determine target housing tier based on wealth and personality
+            var frugality = (p.personality && p.personality.frugality) || 50;
+            var ambition = (p.personality && p.personality.ambition) || 50;
+            // More ambitious NPCs aim higher; more frugal ones are conservative
+            var spendWillingness = (100 - frugality + ambition) / 200; // 0.0 to 1.0
+
+            // Find the best housing this NPC can afford and is willing to buy
+            var bestType = null;
+            var bestCost = 0;
+            var bestTierIdx = currentTier;
+
+            for (var t = NPC_HOUSING_TIERS.length - 1; t >= 0; t--) {
+                if (t <= currentTier) break; // Only upgrade, don't downgrade
+                var typeId = NPC_HOUSING_TIERS[t];
+                var cost = getNPCHousingCost(typeId, town);
+                if (cost === Infinity) continue;
+
+                // Must have at least 2× the cost as buffer
+                var minGold = cost * 2;
+                // Frugal NPCs want more buffer (up to 3×)
+                var bufferMult = 2.0 + (frugality / 100);
+                minGold = cost * bufferMult;
+
+                if (pGold >= minGold) {
+                    bestType = typeId;
+                    bestCost = cost;
+                    bestTierIdx = t;
+                    break; // Found best affordable option
+                }
+            }
+
+            // If homeless, also consider cheapest tier
+            if (!bestType && currentTier < 0) {
+                for (var t2 = 0; t2 < NPC_HOUSING_TIERS.length; t2++) {
+                    var typeId2 = NPC_HOUSING_TIERS[t2];
+                    var cost2 = getNPCHousingCost(typeId2, town);
+                    if (cost2 === Infinity) continue;
+                    var bufferMult2 = 2.0 + (frugality / 100);
+                    if (pGold >= cost2 * bufferMult2) {
+                        bestType = typeId2;
+                        bestCost = cost2;
+                        break;
+                    }
+                }
+            }
+
+            if (!bestType) {
+                // Can't afford to buy a house — consider apartment unit first, then tent
+                // Apartments are better than tents: check for vacant apartment units
+                if (currentTier < 0 || p.houseType === 'tent') {
+                    var townBlds2 = town.buildings || [];
+                    for (var api = 0; api < townBlds2.length; api++) {
+                        var aptBld = townBlds2[api];
+                        if (aptBld.type !== 'apartment_building' || !aptBld.units) continue;
+                        var unitPrice = aptBld.unitPrice || 250;
+                        var monthlyFee = aptBld.monthlyFee || 2;
+                        // Need unit price + 6 months of fees as buffer
+                        if (pGold >= unitPrice + monthlyFee * 6) {
+                            for (var aui = 0; aui < aptBld.units.length; aui++) {
+                                var unit = aptBld.units[aui];
+                                if (unit.occupantId) continue;
+                                // Buy the unit
+                                unit.occupantId = p.id;
+                                unit.occupantType = 'npc';
+                                unit.purchaseDay = world.day;
+                                unit.purchasePrice = unitPrice;
+                                p.gold -= unitPrice;
+                                // Clear old tent if upgrading from tent
+                                if (p.houseType === 'tent' && p._tentCampId) {
+                                    var oldTc = null;
+                                    for (var _otci = 0; _otci < townBlds2.length; _otci++) {
+                                        if (townBlds2[_otci]._id === p._tentCampId) { oldTc = townBlds2[_otci]; break; }
+                                    }
+                                    if (oldTc && oldTc.tents && p._tentIndex !== undefined) {
+                                        var oldTent = oldTc.tents[p._tentIndex];
+                                        if (oldTent && oldTent.occupantId === p.id) {
+                                            oldTent.occupantId = null;
+                                            oldTent.occupantType = null;
+                                        }
+                                    }
+                                }
+                                p.houseType = 'apartment';
+                                p._apartmentBuildingId = aptBld._id;
+                                delete p._tentCampId;
+                                delete p._tentIndex;
+                                purchased++;
+                                break;
+                            }
+                            if (p.houseType === 'apartment') break;
+                        }
+                    }
+                }
+                // If still homeless, try renting a tent
+                // But not if the kingdom has a No Tent Camps law
+                var _tcKingdom = findKingdom(town.kingdomId);
+                var _tcBanned = _tcKingdom && hasSpecialLaw(_tcKingdom, 'no_tent_camps');
+                if (currentTier < 0 && p.houseType !== 'tent' && p.houseType !== 'apartment' && pGold >= 25 && !_tcBanned) {
+                    var townBlds = town.buildings || [];
+                    for (var tci = 0; tci < townBlds.length; tci++) {
+                        var tc = townBlds[tci];
+                        if (tc.type !== 'tent_camp' || !tc.tents) continue;
+                        for (var tti = 0; tti < tc.tents.length; tti++) {
+                            var tent = tc.tents[tti];
+                            if (tent.occupantId) continue;
+                            var upfront = tc.tentUpfrontCost || 20;
+                            var monthly = tc.tentMonthlyCost || 5;
+                            if (pGold >= upfront + monthly * 2) {
+                                tent.occupantId = p.id;
+                                tent.occupantType = 'npc';
+                                tent.rentStartDay = world.day;
+                                tent.lastRentDay = world.day;
+                                p.gold -= upfront;
+                                p.houseType = 'tent';
+                                p._tentCampId = tc._id;
+                                p._tentIndex = tti;
+                                purchased++;
+                                break;
+                            }
+                        }
+                        if (p.houseType === 'tent') break;
+                    }
+                }
+                continue;
+            }
+
+            // Probability check — don't all buy on the same day
+            // Homeless NPCs are more eager (50-80%), upgraders less so (10-30%)
+            var buyChance = currentTier < 0 ? (0.5 + spendWillingness * 0.3) : (0.1 + spendWillingness * 0.2);
+            if (!rng.chance(buyChance)) continue;
+
+            // If upgrading, recover some value from old housing
+            var recoveredGold = 0;
+            if (p.houseType && currentTier >= 0) {
+                var oldCost = getNPCHousingCost(p.houseType, town);
+                if (oldCost !== Infinity) {
+                    recoveredGold = Math.floor(oldCost * (CONFIG.HOUSING_SELL_RATIO || 0.70));
+                }
+            }
+
+            var netCost = Math.max(0, bestCost - recoveredGold);
+            if (pGold < netCost) continue;
+
+            // Execute purchase
+            p.gold -= netCost;
+            var oldType = p.houseType;
+            p.houseType = bestType;
+
+            // Add gold to town economy (simulates paying builders/materials)
+            if (town.treasury !== undefined) {
+                town.treasury += Math.floor(netCost * 0.1); // 10% goes to town
+            }
+
+            if (oldType && currentTier >= 0) {
+                upgraded++;
+            } else {
+                purchased++;
+            }
+        }
+
+        // Advance offset for next batch
+        world._npcHousingOffset = (offset + batchSize) % people.length;
+
+        // Periodic logging
+        if ((purchased > 0 || upgraded > 0) && world.day % 30 === 3) {
+            // Silent — no log spam, but data tracked
+        }
+
+        // RIGHT TO CAMPS LAW: homeless NPCs can pool gold to self-build a tent camp
+        // They must buy the land too. Land and camp are owned by the kingdom.
+        // While Right to Camps is active, king will never destroy these camps.
+        if (world.day % 14 === 10) { // Every 2 weeks, offset
+            for (var _rtci = 0; _rtci < world.towns.length; _rtci++) {
+                var rtcTown = world.towns[_rtci];
+                if (!rtcTown) continue;
+                var rtcKingdom = findKingdom(rtcTown.kingdomId);
+                if (!rtcKingdom) continue;
+                // Must have Right to Camps law AND not have No Tent Camps law
+                if (!hasSpecialLaw(rtcKingdom, 'right_to_camps')) continue;
+                if (hasSpecialLaw(rtcKingdom, 'no_tent_camps')) continue;
+                // Count homeless adults with enough gold to chip in
+                var rtcPeople = _tickCache.peopleByTown[rtcTown.id] || [];
+                var homelessWithGold = [];
+                for (var _rpi = 0; _rpi < rtcPeople.length; _rpi++) {
+                    var _rp = rtcPeople[_rpi];
+                    if (_rp.alive && _rp.age >= 18 && !_rp.houseType && (_rp.gold || 0) >= 10) {
+                        homelessWithGold.push(_rp);
+                    }
+                }
+                // Need at least 5 homeless NPCs willing to pool resources
+                if (homelessWithGold.length < 5) continue;
+                // Check there's available land
+                var rtcUsedLand = 0;
+                for (var _rbi = 0; _rbi < rtcTown.buildings.length; _rbi++) {
+                    var _rbt = findBuildingType(rtcTown.buildings[_rbi].type);
+                    rtcUsedLand += (_rbt && _rbt.landSlots) || 1;
+                }
+                var rtcTotalLand = rtcTown.totalLand || (rtcTown.category === 'capital_city' ? 50 : rtcTown.category === 'city' ? 35 : rtcTown.category === 'town' ? 20 : 10);
+                if (rtcUsedLand >= rtcTotalLand - 1) continue;
+                // Cap at 5 tent camps per town
+                var rtcExisting = rtcTown.buildings.filter(function(b) { return b.type === 'tent_camp'; }).length;
+                if (rtcExisting >= 5) continue;
+                // Calculate total cost: land + building
+                var rtcCat = rtcTown.category || 'town';
+                var rtcLandMult = (CONFIG.LAND_COST_MULTIPLIER && CONFIG.LAND_COST_MULTIPLIER[rtcCat]) || 1.0;
+                var rtcProsperity = Math.max(0.5, (rtcTown.prosperity || 50) / 50);
+                var rtcLandCost = Math.floor((CONFIG.LAND_COST_BASE || 250) * rtcLandMult * rtcProsperity);
+                var rtcBuildCost = (BUILDING_TYPES['tent_camp'] && BUILDING_TYPES['tent_camp'].cost) || 50;
+                var rtcTotalCost = rtcLandCost + rtcBuildCost;
+                // Pool gold: each chips in proportional to their wealth
+                var pooled = 0;
+                var contributors = [];
+                for (var _rci = 0; _rci < homelessWithGold.length && pooled < rtcTotalCost; _rci++) {
+                    var chip = Math.min(Math.floor(rtcTotalCost / 5), Math.floor(homelessWithGold[_rci].gold * 0.25));
+                    if (chip >= 3) {
+                        pooled += chip;
+                        contributors.push({ person: homelessWithGold[_rci], amount: chip });
+                    }
+                }
+                if (pooled < rtcTotalCost) continue;
+                // Deduct gold from contributors (split evenly, cap at what each pledged)
+                var perPerson = Math.ceil(rtcTotalCost / contributors.length);
+                var remaining = rtcTotalCost;
+                for (var _cci = 0; _cci < contributors.length; _cci++) {
+                    var deduct = Math.min(perPerson, remaining, contributors[_cci].amount);
+                    contributors[_cci].person.gold -= deduct;
+                    remaining -= deduct;
+                }
+                // Build the tent camp — owned by the kingdom
+                var rtcBt = BUILDING_TYPES['tent_camp'];
+                var rtcNewCamp = {
+                    type: 'tent_camp',
+                    level: 1,
+                    ownerId: rtcKingdom.id, // kingdom-owned
+                    condition: 'new',
+                    _builtByLaw: 'right_to_camps', // track how it was built
+                    _id: 'tc_' + rtcTown.id + '_' + rtcTown.buildings.length,
+                    tents: [],
+                    tentUpfrontCost: (rtcBt && rtcBt.tentUpfrontCost) || 20,
+                    tentMonthlyCost: (rtcBt && rtcBt.tentMonthlyCost) || 5
+                };
+                var rtcNumTents = (rtcBt && rtcBt.tents) || 10;
+                for (var _rnti = 0; _rnti < rtcNumTents; _rnti++) {
+                    rtcNewCamp.tents.push({ tentIndex: _rnti, occupantId: null, occupantType: null, rentStartDay: null, lastRentDay: null });
+                }
+                rtcTown.buildings.push(rtcNewCamp);
+                logEvent('⛺ Homeless citizens of ' + rtcTown.name + ' pooled ' + rtcTotalCost + 'g (land: ' + rtcLandCost + 'g + build: ' + rtcBuildCost + 'g) and built a tent camp under the Right to Camps law.');
+            }
+        }
+    }
+
+    // ========================================================
+    // NPC/EM HOUSING RENTAL AI — evaluates available rentals and decides to rent
+    // ========================================================
+    function tickHousingRentalAI() {
+        if (!world) return;
+        if (world.day % 5 !== 2) return; // Run every 5 days, offset from other ticks
+        var rng = world.rng;
+        if (!rng) return;
+
+        // Get all player rental listings
+        var playerState = typeof Player !== 'undefined' ? Player.state : null;
+        if (!playerState || !playerState.houses) return;
+        var rentals = playerState.houses.filter(function(h) { return h.isRental && !h.tenantId && h.monthlyRent > 0; });
+        if (rentals.length === 0) return;
+
+        // Also collect apartment units available for rent from apartment buildings
+        // (handled separately)
+
+        // Evaluate NPCs/EMs who might want to rent
+        var candidates = world.people.filter(function(p) {
+            if (!p.alive || !p.townId) return false;
+            if (p.rentedHouseId) return false; // Already renting
+            // Only consider people who don't own good housing
+            if (p.houseType === 'manor' || p.houseType === 'merchant_house') return false;
+            return true;
+        });
+
+        // Shuffle and limit to prevent lag
+        for (var si = candidates.length - 1; si > 0; si--) {
+            var sj = Math.floor(rng.random() * (si + 1));
+            var tmp = candidates[si]; candidates[si] = candidates[sj]; candidates[sj] = tmp;
+        }
+        candidates = candidates.slice(0, 50); // Process up to 50 per tick
+
+        for (var ci = 0; ci < candidates.length; ci++) {
+            var npc = candidates[ci];
+            if (rentals.length === 0) break;
+
+            // Find rentals in NPC's town
+            var localRentals = rentals.filter(function(h) { return h.townId === npc.townId; });
+            if (localRentals.length === 0) continue;
+
+            // NPC evaluates affordability and value
+            var npcGold = npc.gold || 0;
+            var monthlyIncome = npc.monthlyIncome || (npc.isEliteMerchant ? 200 : (npc.wealthClass === 'upper' ? 100 : npc.wealthClass === 'middle' ? 50 : 20));
+            var maxAffordableRent = Math.floor(monthlyIncome * 0.4); // Spend up to 40% of income on rent
+
+            for (var ri = 0; ri < localRentals.length; ri++) {
+                var rental = localRentals[ri];
+                if (rental.monthlyRent > maxAffordableRent) continue;
+                if (npcGold < rental.monthlyRent * 3) continue; // Need at least 3 months reserve
+
+                var ht = CONFIG.HOUSING_TYPES.find(function(h) { return h.id === rental.type; });
+                if (!ht) continue;
+
+                // Compare rental quality to current housing
+                var currentComfort = 0;
+                var currentHt = npc.houseType ? CONFIG.HOUSING_TYPES.find(function(h) { return h.id === npc.houseType; }) : null;
+                if (currentHt) currentComfort = currentHt.comfort || 0;
+
+                if ((ht.comfort || 0) <= currentComfort && !npc.isEliteMerchant) continue; // Not an upgrade
+
+                // Decision: rent this place
+                rental.tenantId = npc.id;
+                rental.tenantType = npc.isEliteMerchant ? 'em' : 'npc';
+                rental.lastRentDay = world.day;
+                npc.rentedHouseId = rental.id;
+                npc.gold -= rental.monthlyRent; // First month's rent
+
+                // Pay player
+                if (playerState) {
+                    playerState.gold = (playerState.gold || 0) + rental.monthlyRent;
+                    playerState.stats.totalGoldEarned = (playerState.stats.totalGoldEarned || 0) + rental.monthlyRent;
+                }
+
+                var npcName = (npc.firstName || '') + ' ' + (npc.lastName || '');
+                logEvent('🏠 ' + npcName + (npc.isEliteMerchant ? ' (Elite Merchant)' : '') + ' rented your ' + (ht ? ht.name : 'property') + ' for ' + rental.monthlyRent + 'g/month.');
+
+                // Remove from available list
+                var rentIdx = rentals.indexOf(rental);
+                if (rentIdx >= 0) rentals.splice(rentIdx, 1);
+                break;
+            }
+        }
+    }
+
+    // EM evaluates buying homes for rental business — creates REAL buildings
+    function tickEMRentalBusiness() {
+        if (!world) return;
+        if (world.day % 30 !== 15) return; // Monthly check
+        var rng = world.rng;
+        if (!rng) return;
+
+        var elites = world.people.filter(function(p) { return p.alive && p.isEliteMerchant; });
+        for (var i = 0; i < elites.length; i++) {
+            var em = elites[i];
+            if (!em.rentalProperties) em.rentalProperties = [];
+
+            // --- RENT COLLECTION from existing EM rental properties ---
+            var totalRentIncome = 0;
+            for (var rpi = em.rentalProperties.length - 1; rpi >= 0; rpi--) {
+                var prop = em.rentalProperties[rpi];
+                if (!prop.tenantId) {
+                    // Try to find a tenant for vacant properties
+                    var propTown = findTown(prop.townId);
+                    if (propTown) {
+                        var seekers = (world.people || []).filter(function(p) {
+                            return p.alive && p.townId === prop.townId &&
+                                (!p.houseType || p.houseType === 'tent' || p.houseType === 'shack') &&
+                                !p.rentedHouseId && (p.gold || 0) >= prop.monthlyRent * 3;
+                        });
+                        if (seekers.length > 0) {
+                            var tenant = seekers[rng.randInt(0, seekers.length - 1)];
+                            prop.tenantId = tenant.id;
+                            prop.lastRentDay = world.day;
+                            tenant.rentedHouseId = prop.id;
+                            tenant.houseType = prop.type;
+                            tenant.gold -= prop.monthlyRent;
+                            em.gold = (em.gold || 0) + prop.monthlyRent;
+                            totalRentIncome += prop.monthlyRent;
+                        }
+                    }
+                    continue;
+                }
+                // Collect rent from existing tenant
+                var tenant = findPerson(prop.tenantId);
+                if (!tenant || !tenant.alive) {
+                    // Tenant died — vacate
+                    prop.tenantId = null;
+                    prop.lastRentDay = null;
+                    continue;
+                }
+                if ((tenant.gold || 0) >= prop.monthlyRent) {
+                    tenant.gold -= prop.monthlyRent;
+                    em.gold = (em.gold || 0) + prop.monthlyRent;
+                    prop.lastRentDay = world.day;
+                    totalRentIncome += prop.monthlyRent;
+                } else {
+                    // Tenant can't pay — track missed payments
+                    prop._missedPayments = (prop._missedPayments || 0) + 1;
+                    if (prop._missedPayments >= 2) {
+                        // Evict
+                        tenant.houseType = null;
+                        delete tenant.rentedHouseId;
+                        prop.tenantId = null;
+                        prop._missedPayments = 0;
+                    }
+                }
+            }
+            em.rentalIncome = totalRentIncome;
+
+            // --- EVALUATE NEW INVESTMENTS ---
+            if ((em.gold || 0) < 3000) continue; // Need capital
+            if (em.rentalProperties.length >= 5) continue; // Cap at 5 rentals per EM
+            if (!rng.chance(0.10)) continue; // Only 10% chance each month
+
+            var emTown = findTown(em.townId);
+            if (!emTown) continue;
+
+            // Check local housing demand
+            var townPop = emTown.population || 100;
+            var housingSupply = (emTown.buildings || []).filter(function(b) {
+                return b.type === 'apartment_building' || b.type === 'cottage' || b.type === 'townhouse';
+            }).length * 5;
+            if (housingSupply > townPop * 0.4) continue; // Enough housing
+
+            var rentalTypes = ['cottage', 'townhouse'];
+            var selectedType = rng.pick(rentalTypes);
+            var ht = CONFIG.HOUSING_TYPES.find(function(h) { return h.id === selectedType; });
+            if (!ht) continue;
+
+            var buildCost = (ht.baseCost || 500) * 1.5;
+            if (em.gold < buildCost) continue;
+
+            // --- EM evaluates profitability before building ---
+            var estimatedRent = Math.floor(buildCost * 0.02);
+            var monthsToBreakEven = Math.ceil(buildCost / estimatedRent);
+            // Only invest if break-even < 60 months and have enough capital buffer
+            if (monthsToBreakEven > 60 || em.gold < buildCost * 2) continue;
+
+            // --- Evaluate: should EM sell an underperforming property instead? ---
+            for (var _epi = em.rentalProperties.length - 1; _epi >= 0; _epi--) {
+                var _ep = em.rentalProperties[_epi];
+                if (!_ep.tenantId && _ep.builtDay && (world.day - _ep.builtDay) > 180) {
+                    // Vacant for 6+ months — sell it (recover 50% cost)
+                    var salePrice = Math.floor((_ep._buildCost || buildCost * 0.5) * 0.5);
+                    em.gold += salePrice;
+                    em.rentalProperties.splice(_epi, 1);
+                    logEvent('🏚️ ' + (em.firstName || '') + ' ' + (em.lastName || '') + ' sold an unprofitable rental property for ' + salePrice + 'g.');
+                    break; // Only sell one per cycle
+                }
+            }
+
+            em.gold -= buildCost;
+            var rentalProp = {
+                id: 'em_rental_' + em.id + '_' + world.day,
+                type: selectedType,
+                townId: em.townId,
+                monthlyRent: estimatedRent,
+                tenantId: null,
+                builtDay: world.day,
+                _buildCost: buildCost,
+                _missedPayments: 0,
+                lastRentDay: null
+            };
+            em.rentalProperties.push(rentalProp);
+            logEvent('🏘️ ' + (em.firstName || '') + ' ' + (em.lastName || '') + ' built a ' + (ht ? ht.name : selectedType) + ' as a rental investment in ' + emTown.name + '.');
+        }
+    }
+
+    // ========================================================
+    // TENT CAMP RENT COLLECTION & AUTO-EVICTION
+    // ========================================================
+    function tickTentCampRents() {
+        if (!world) return;
+        if (world.day % 30 !== 10) return; // Monthly, offset
+        for (var ti = 0; ti < world.towns.length; ti++) {
+            var town = world.towns[ti];
+            if (!town || !town.buildings) continue;
+            for (var bi = 0; bi < town.buildings.length; bi++) {
+                var bld = town.buildings[bi];
+                if (bld.type !== 'tent_camp' || !bld.tents) continue;
+                var monthly = bld.tentMonthlyCost || 5;
+                for (var tti = 0; tti < bld.tents.length; tti++) {
+                    var tent = bld.tents[tti];
+                    if (!tent.occupantId) continue;
+                    var person = findPerson(tent.occupantId);
+                    if (!person || !person.alive) {
+                        // Vacate stale tenants
+                        tent.occupantId = null;
+                        tent.occupantType = null;
+                        tent.rentStartDay = null;
+                        tent.lastRentDay = null;
+                        continue;
+                    }
+                    if ((person.gold || 0) >= monthly) {
+                        person.gold -= monthly;
+                        tent.lastRentDay = world.day;
+                        // Revenue goes to kingdom
+                        var kingdom = findKingdom(town.kingdomId);
+                        if (kingdom) kingdom.gold = (kingdom.gold || 0) + monthly;
+                    } else {
+                        // Auto-evict: can't pay
+                        person.houseType = null;
+                        person._tentCampId = null;
+                        person._tentIndex = null;
+                        tent.occupantId = null;
+                        tent.occupantType = null;
+                        tent.rentStartDay = null;
+                        tent.lastRentDay = null;
+                    }
+                }
+            }
+        }
+    }
+
+    // ========================================================
+    // APARTMENT MONTHLY FEE COLLECTION & DEATH CLEANUP
+    // ========================================================
+    function tickApartmentFees() {
+        if (!world) return;
+        if (world.day % 30 !== 15) return; // Monthly, offset from tent rent
+        for (var ti = 0; ti < world.towns.length; ti++) {
+            var town = world.towns[ti];
+            if (!town || !town.buildings) continue;
+            for (var bi = 0; bi < town.buildings.length; bi++) {
+                var bld = town.buildings[bi];
+                if (bld.type !== 'apartment_building' || !bld.units) continue;
+                var monthlyFee = bld.monthlyFee || 2;
+                for (var ui = 0; ui < bld.units.length; ui++) {
+                    var unit = bld.units[ui];
+                    if (!unit.occupantId) continue;
+                    // Player apartment unit
+                    if (unit.occupantType === 'player') {
+                        if (typeof Player !== 'undefined' && Player.state && Player.state.gold >= monthlyFee) {
+                            Player.state.gold -= monthlyFee;
+                        }
+                        continue;
+                    }
+                    // NPC apartment unit
+                    var person = findPerson(unit.occupantId);
+                    if (!person || !person.alive) {
+                        // Death cleanup — vacate unit
+                        unit.occupantId = null;
+                        unit.occupantType = null;
+                        unit.purchaseDay = null;
+                        unit.purchasePrice = 0;
+                        continue;
+                    }
+                    if ((person.gold || 0) >= monthlyFee) {
+                        person.gold -= monthlyFee;
+                        // Revenue goes to building owner (kingdom or EM)
+                        if (bld.ownerId) {
+                            var aptOwnerK = findKingdom(bld.ownerId);
+                            if (aptOwnerK) {
+                                aptOwnerK.gold = (aptOwnerK.gold || 0) + monthlyFee;
+                            } else {
+                                var aptOwnerP = findPerson(bld.ownerId);
+                                if (aptOwnerP && aptOwnerP.alive) {
+                                    aptOwnerP.gold = (aptOwnerP.gold || 0) + monthlyFee;
+                                }
+                            }
+                        }
+                    } else {
+                        // Can't pay maintenance — evict after 2 missed payments
+                        unit._missedPayments = (unit._missedPayments || 0) + 1;
+                        if (unit._missedPayments >= 2) {
+                            person.houseType = null;
+                            delete person._apartmentBuildingId;
+                            unit.occupantId = null;
+                            unit.occupantType = null;
+                            unit.purchaseDay = null;
+                            unit.purchasePrice = 0;
+                            unit._missedPayments = 0;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ========================================================
+    // TENT CAMP DISEASE SPREAD — tent dwellers get sick more
+    // ========================================================
+    function getTentCampDiseaseMod(town) {
+        if (!town || !town.buildings) return 0;
+        var tentPop = 0;
+        for (var bi = 0; bi < town.buildings.length; bi++) {
+            var bld = town.buildings[bi];
+            if (bld.type !== 'tent_camp' || !bld.tents) continue;
+            for (var ti = 0; ti < bld.tents.length; ti++) {
+                if (bld.tents[ti].occupantId) tentPop++;
+            }
+        }
+        // Each tent dweller adds a small plague risk boost to the town
+        return tentPop * 0.002; // 0.2% per tent dweller
+    }
+
+    // ========================================================
+    // TOWN HOUSING PRODUCTIVITY — average worker housing quality
+    // ========================================================
+    function getTownHousingProductivity(town) {
+        if (!town) return 1.0;
+        var prodConfig = CONFIG.HOUSING_PRODUCTIVITY;
+        if (!prodConfig) return 1.0;
+        var people = _tickCache.peopleByTown[town.id];
+        if (!people || people.length === 0) return 1.0;
+        var totalMod = 0;
+        var count = 0;
+        for (var i = 0; i < people.length; i++) {
+            var p = people[i];
+            if (!p.alive || p.age < 18) continue;
+            if (p.occupation === 'soldier' || p.occupation === 'guard') continue;
+            var ht = p.houseType || 'none';
+            var mod = prodConfig[ht];
+            if (mod === undefined) mod = (ht === 'none' ? prodConfig.none : 1.0);
+            if (mod === undefined) mod = 1.0;
+            totalMod += mod;
+            count++;
+        }
+        return count > 0 ? totalMod / count : 1.0;
     }
 
     // Elite merchant bidding on kingdom orders
@@ -18894,10 +22327,8 @@
             tryBuyFromMarket(person, town, 'wine');
         }
 
-        // NPC INCOME — daily income based on occupation
-        const incomeTable = CONFIG.NPC_DAILY_INCOME;
-        const income = (incomeTable[person.occupation] || 1) / CONFIG.TICKS_PER_DAY;
-        person.gold += income;
+        // NPC income is now handled once-per-day in tickPeople() via OCCUPATIONS wages
+        // Building workers are paid by their employer in tickEconomy()
     }
 
     function tickNPCPurchasing() {
@@ -19426,7 +22857,10 @@
     // ---- Income Tax Collection (seasonal) ----
     function collectIncomeTaxes(k) {
         if (!k || !k.territories) return;
-        const rate = k.incomeTaxRate || CONFIG.KINGDOM_DEFAULT_INCOME_TAX_RATE || 0.05;
+        // H-1: Now collected monthly (every 30 days) instead of quarterly (90 days)
+        // Use 1/3 of the full rate per collection to keep total revenue the same
+        const fullRate = k.incomeTaxRate || CONFIG.KINGDOM_DEFAULT_INCOME_TAX_RATE || 0.05;
+        const rate = fullRate / 3;
         let totalIncomeTax = 0;
 
         // Tax NPC citizens based on accumulated wealth
@@ -19474,7 +22908,196 @@
             s.alive && s.kingdomId === k.id && (s.occupation === 'soldier' || s.occupation === 'guard')
         );
 
-        // ---- LEVEL 1: Mild Adjustments (treasury < 2000g) ----
+        // ---- BUDGET SUSTAINABILITY REVIEW ----
+        // Kings periodically evaluate if their budget is sustainable and take corrective action
+        // Options: raise taxes, sell stockpile, encourage trade, cut expenses, or discharge soldiers
+        var _bsFs = getKingdomFinancialState(k);
+        var _bsDailyIncome = (_bsFs.lastSeasonRevenue || 0) / 90;
+        var _bsDailyCost = soldiers.length * 1 + soldiers.length * CONFIG.KINGDOM_SOLDIER_DAILY_COST / 30 + _bsFs.monthlyBuildingCost / 30;
+        var _bsBalance = _bsDailyIncome - _bsDailyCost;
+        // If expenses exceed income, kings take corrective action
+        if (_bsBalance < -2 && (soldiers.length > 5 || treasury < 3000)) {
+            // How urgently to react depends on intelligence and treasury buffer
+            var _monthsOfReserve = _bsDailyCost > 0 ? treasury / (_bsDailyCost * 30) : 99;
+            var _shouldAct = false;
+            if (p.intelligence === 'brilliant') _shouldAct = _monthsOfReserve < 4;
+            else if (p.intelligence === 'clever') _shouldAct = _monthsOfReserve < 3;
+            else if (p.intelligence === 'average') _shouldAct = _monthsOfReserve < 2;
+            else _shouldAct = _monthsOfReserve < 1; // foolish kings wait until near-crisis
+
+            if (_shouldAct) {
+                var _bsActionsTaken = 0;
+
+                // ---- REVENUE-GENERATING OPTIONS ----
+
+                // 1. Raise trade tax (if not already high)
+                // Greedy/corrupt kings jump to this first; generous kings avoid it
+                var _bsTaxRaiseChance = 0;
+                if (p.greed === 'greedy' || p.greed === 'corrupt') _bsTaxRaiseChance = 0.7;
+                else if (p.greed === 'generous') _bsTaxRaiseChance = 0.1;
+                else _bsTaxRaiseChance = 0.4;
+                if (k.taxRate < 0.20 && rng.chance(_bsTaxRaiseChance) && _bsActionsTaken < 2) {
+                    var _bsTaxInc = rng.randFloat(0.01, 0.03);
+                    if (p.intelligence === 'brilliant') _bsTaxInc = Math.min(_bsTaxInc, 0.02); // moderate
+                    k.taxRate = Math.min(0.20, k.taxRate + _bsTaxInc);
+                    k.lastTaxIncreaseDay = world.day;
+                    logEvent('📈 ' + k.name + ' raises trade taxes to ' + Math.round(k.taxRate * 100) + '% for budget sustainability.', {
+                        type: 'tax_increase', cause: 'Budget review', effects: ['Trade more expensive']
+                    });
+                    _bsActionsTaken++;
+                }
+
+                // 2. Raise property tax (slower revenue, but sustainable)
+                if ((k.propertyTaxRate || 0.02) < 0.05 && rng.chance(0.3) && _bsActionsTaken < 2) {
+                    k.propertyTaxRate = Math.min(0.05, (k.propertyTaxRate || 0.02) + rng.randFloat(0.005, 0.01));
+                    logEvent('📈 ' + k.name + ' raises property taxes to ' + Math.round(k.propertyTaxRate * 100) + '%.', {
+                        type: 'tax_increase', cause: 'Budget review', effects: ['Building owners pay more']
+                    });
+                    _bsActionsTaken++;
+                }
+
+                // 3. Raise income tax (smart kings use this as a last resort)
+                if ((k.incomeTaxRate || 0.05) < 0.10 && rng.chance(p.greed === 'corrupt' ? 0.5 : 0.15) && _bsActionsTaken < 2) {
+                    var _itInc = rng.randFloat(0.01, 0.02);
+                    k.incomeTaxRate = Math.min(0.10, (k.incomeTaxRate || 0.05) + _itInc);
+                    logEvent('📈 ' + k.name + ' raises income tax to ' + Math.round(k.incomeTaxRate * 100) + '%.', {
+                        type: 'tax_increase', cause: 'Budget review', effects: ['Citizens pay more income tax']
+                    });
+                    _bsActionsTaken++;
+                }
+
+                // 4. Sell surplus military stockpile for quick gold
+                if (k.militaryStockpile && rng.chance(0.5) && _bsActionsTaken < 3) {
+                    var _bsStockpile = k.militaryStockpile;
+                    var _bsSoldItems = 0;
+                    var _bsSoldGold = 0;
+                    var _sellItems = ['swords', 'armor', 'bows', 'arrows', 'horses'];
+                    for (var _bsi = 0; _bsi < _sellItems.length; _bsi++) {
+                        var _bsItemId = _sellItems[_bsi];
+                        var _bsQty = _bsStockpile[_bsItemId] || 0;
+                        // Keep some reserve; sell 30-60% of surplus depending on urgency
+                        var _bsSellPct = _monthsOfReserve < 1 ? 0.6 : 0.3;
+                        var _bsSurplus = Math.floor(_bsQty * _bsSellPct);
+                        if (_bsSurplus > 0) {
+                            var _bsKTowns = world.towns.filter(function(t) { return k.territories.has(t.id); });
+                            if (_bsKTowns.length > 0) {
+                                var _bsTown = rng.pick(_bsKTowns);
+                                var _bsPrice = (_bsTown.market.prices[_bsItemId] || 10) * _bsSurplus;
+                                _bsTown.market.supply[_bsItemId] = (_bsTown.market.supply[_bsItemId] || 0) + _bsSurplus;
+                                _bsStockpile[_bsItemId] -= _bsSurplus;
+                                var _bsGain = Math.floor(_bsPrice * 0.7);
+                                k.gold += _bsGain;
+                                _bsSoldItems += _bsSurplus;
+                                _bsSoldGold += _bsGain;
+                            }
+                        }
+                    }
+                    if (_bsSoldItems > 0) {
+                        logEvent('🏰 ' + k.name + ' sells ' + _bsSoldItems + ' surplus military items for ' + _bsSoldGold + 'g.', {
+                            type: 'stockpile_sale', cause: 'Budget sustainability', effects: ['Treasury bolstered']
+                        });
+                        _bsActionsTaken++;
+                    }
+                }
+
+                // 5. Lower tariffs to attract more merchants (clever/brilliant long-term strategy)
+                // Counter-intuitive: lower tax → more trade volume → more total revenue
+                if ((p.intelligence === 'brilliant' || p.intelligence === 'clever') && k.taxRate > 0.12 && rng.chance(0.2) && _bsActionsTaken < 1) {
+                    // Smart king realizes high taxes are driving merchants away
+                    k.taxRate = Math.max(0.08, k.taxRate - rng.randFloat(0.01, 0.03));
+                    logEvent('📉 ' + k.name + ' lowers trade taxes to ' + Math.round(k.taxRate * 100) + '% to attract more merchants.', {
+                        type: 'tax_decrease', cause: 'Trade stimulation strategy', effects: ['Trade more attractive', 'Long-term revenue growth']
+                    });
+                    _bsActionsTaken++;
+                }
+
+                // 6. Encourage production — smart kings ensure towns have productive buildings
+                if ((p.intelligence === 'brilliant' || p.intelligence === 'clever') && rng.chance(0.15) && _bsActionsTaken < 3) {
+                    // Check if any town lacks a market or key production building
+                    for (var _bsTid of k.territories) {
+                        var _bsPTown = findTown(_bsTid);
+                        if (!_bsPTown) continue;
+                        var _bsHasMarket = _bsPTown.buildings.some(function(b) { return b.type === 'market'; });
+                        if (!_bsHasMarket && k.gold > 400) {
+                            kingdomBuild(k, _bsPTown, 'market', rng);
+                            logEvent('🏗️ ' + k.name + ' builds a market in ' + _bsPTown.name + ' to boost trade revenue.', {
+                                type: 'construction', cause: 'Revenue strategy', effects: ['More trade in ' + _bsPTown.name]
+                            });
+                            _bsActionsTaken++;
+                            break;
+                        }
+                    }
+                }
+
+                // ---- EXPENSE-CUTTING OPTIONS ----
+
+                // 7. Reduce guard budget (if high)
+                if ((k.guardBudget || 0.15) > 0.05 && rng.chance(0.3) && _bsActionsTaken < 3) {
+                    k.guardBudget = Math.max(0.05, (k.guardBudget || 0.15) - 0.05);
+                    logEvent('🏰 ' + k.name + ' reduces guard spending.', {
+                        type: 'budget_cut', cause: 'Budget sustainability', effects: ['Fewer guards hired']
+                    });
+                    _bsActionsTaken++;
+                }
+
+                // 8. Discharge soldiers — personality determines how much
+                // Generous/peaceful kings discharge more readily; militaristic/brave resist
+                var _bsDischargeChance = 0.5;
+                if (p.militarism === 'warlike' || p.courage === 'brave') _bsDischargeChance = 0.2;
+                else if (p.militarism === 'peaceful' || p.courage === 'cautious') _bsDischargeChance = 0.7;
+                if (soldiers.length > 5 && rng.chance(_bsDischargeChance) && _bsActionsTaken < 3) {
+                    var _excessDailyCost = Math.abs(_bsBalance);
+                    var _costPerSoldier = 1 + CONFIG.KINGDOM_SOLDIER_DAILY_COST / 30;
+                    var _idealDischarge = Math.ceil(_excessDailyCost / _costPerSoldier);
+                    // If we already raised taxes or sold stockpile, discharge fewer
+                    if (_bsActionsTaken > 0) _idealDischarge = Math.max(1, Math.floor(_idealDischarge * 0.5));
+                    // Personality modifier
+                    if (p.courage === 'cautious') _idealDischarge = Math.ceil(_idealDischarge * 1.3);
+                    else if (p.courage === 'brave') _idealDischarge = Math.ceil(_idealDischarge * 0.5);
+                    if (p.intelligence === 'foolish') _idealDischarge = Math.max(1, Math.ceil(_idealDischarge * rng.randFloat(0.3, 0.8)));
+                    // RNG variability
+                    _idealDischarge = Math.max(1, _idealDischarge + rng.randInt(-1, 1));
+                    // Never discharge more than 15% of army at once
+                    _idealDischarge = Math.min(_idealDischarge, Math.max(1, Math.floor(soldiers.length * 0.15)));
+                    // Don't discharge below a minimum garrison
+                    var _minGarrison = Math.max(5, Math.floor(k.territories.size * 3));
+                    if (soldiers.length - _idealDischarge < _minGarrison) {
+                        _idealDischarge = Math.max(0, soldiers.length - _minGarrison);
+                    }
+                    // Discharge the least experienced soldiers first
+                    if (_idealDischarge > 0) {
+                        var sortedSoldiers = soldiers.slice().sort(function(a, b) {
+                            return (a.skills && a.skills.combat || 0) - (b.skills && b.skills.combat || 0);
+                        });
+                        var discharged = 0;
+                        for (var si = 0; si < sortedSoldiers.length && discharged < _idealDischarge; si++) {
+                            var s = sortedSoldiers[si];
+                            var sTown = findTown(s.townId);
+                            if (sTown) {
+                                dischargeSoldier(s, sTown);
+                                discharged++;
+                            }
+                        }
+                        if (discharged > 0) {
+                            logEvent('🏰 ' + k.name + ' discharges ' + discharged + ' soldiers to balance the budget.', {
+                                type: 'military_cut', cause: 'Budget sustainability review', effects: ['Army reduced', 'Budget pressure eased']
+                            });
+                        }
+                    }
+                }
+
+                // 9. Halt or reduce construction spending
+                if (k._buildQueue && k._buildQueue.length > 0 && rng.chance(0.3) && _bsActionsTaken < 3) {
+                    // Cancel lowest-priority queued construction
+                    var _cancelled = k._buildQueue.pop();
+                    if (_cancelled) {
+                        logEvent('🏗️ ' + k.name + ' cancels planned construction to save gold.', {
+                            type: 'budget_cut', cause: 'Budget sustainability', effects: ['Construction delayed']
+                        });
+                    }
+                }
+            }
+        }
         if (treasury < (CONFIG.KINGDOM_MILD_THRESHOLD || 2000)) {
             let actionsTaken = 0;
 
@@ -19757,6 +23380,69 @@
         }
     }
 
+    // Compute kingdom financial state — used by all spending decisions
+    function getKingdomFinancialState(k) {
+        var soldierCount = (_tickCache.soldiersByKingdom[k.id] || []).length;
+        if (!soldierCount) {
+            soldierCount = world.people.filter(function(p) {
+                return p.alive && p.kingdomId === k.id && (p.occupation === 'soldier' || p.occupation === 'guard');
+            }).length;
+        }
+        var totalBuildings = 0;
+        var totalPop = 0;
+        for (var _tid of k.territories) {
+            var _t = findTown(_tid);
+            if (_t) {
+                totalBuildings += _t.buildings.length;
+                totalPop += _t.population || 0;
+            }
+        }
+        // Monthly upkeep costs
+        var monthlySoldierCost = soldierCount * CONFIG.KINGDOM_SOLDIER_DAILY_COST;
+        var monthlyBuildingCost = totalBuildings * CONFIG.KINGDOM_BUILDING_DAILY_COST;
+        var monthlyUpkeep = monthlySoldierCost + monthlyBuildingCost;
+
+        // Personality-driven reserve multiplier
+        // Brilliant/clever kings save more, foolish save less, greedy save almost nothing
+        var p = k.kingPersonality || {};
+        var reserveMult = 1.0;
+        if (p.intelligence === 'brilliant') reserveMult = 1.5;
+        else if (p.intelligence === 'clever') reserveMult = 1.25;
+        else if (p.intelligence === 'dim') reserveMult = 0.7;
+        else if (p.intelligence === 'foolish') reserveMult = 0.4;
+        // Greedy kings raid reserves for spending, cautious kings pad them
+        if (p.greed === 'greedy' || p.greed === 'corrupt') reserveMult *= 0.6;
+        else if (p.greed === 'generous') reserveMult *= 0.9;
+        if (p.courage === 'cautious') reserveMult *= 1.2;
+
+        // Base reserve = 3 months building upkeep + 3 months soldier upkeep
+        var minReserve = Math.floor((totalBuildings * 30 + soldierCount * 90) * reserveMult);
+
+        // Spending thresholds (H-3 priority system)
+        var atWar = k.atWar && k.atWar.size > 0;
+        return {
+            soldierCount: soldierCount,
+            totalBuildings: totalBuildings,
+            totalPop: totalPop,
+            monthlyUpkeep: monthlyUpkeep,
+            monthlySoldierCost: monthlySoldierCost,
+            monthlyBuildingCost: monthlyBuildingCost,
+            minReserve: minReserve,
+            reserveMult: reserveMult,
+            atWar: atWar,
+            lastSeasonRevenue: k._lastSeasonTaxRevenue || 0,
+            // H-3 spending thresholds
+            canConstruct: k.gold > monthlyUpkeep * 3 || atWar,         // 3 months upkeep for peacetime construction
+            canHireGuards: k.gold > monthlyUpkeep * 6 && !atWar,       // 6 months upkeep, NOT during war
+            canFestival: k.gold > monthlyUpkeep * 12,                   // 12 months upkeep for festivals/tournaments/public works
+            // C-1 guard cap: 3% of total population
+            maxGuards: Math.max(20, Math.floor(totalPop * 0.03)),
+            // War budget (H-2): 40% of treasury reserved for military during war
+            warBudget: atWar ? Math.floor(k.gold * 0.4) : 0,
+            civilianBudget: atWar ? Math.floor(k.gold * 0.6) : k.gold
+        };
+    }
+
     function tickKingdomFinances(k) {
         var rng = world.rng;
         // Count soldiers and buildings
@@ -19769,7 +23455,7 @@
             if (town) totalBuildings += town.buildings.length;
         }
 
-        // Daily costs (deducted from treasury)
+        // Daily costs (deducted from treasury) — mandatory (H-3 priority 1 & 2)
         const soldierCost = soldiers.length * CONFIG.KINGDOM_SOLDIER_DAILY_COST / 30;
         const buildingCost = totalBuildings * CONFIG.KINGDOM_BUILDING_DAILY_COST / 30;
         k.gold -= (soldierCost + buildingCost);
@@ -19829,16 +23515,20 @@
             collectPropertyTaxes(k);
         }
 
-        // ---- Seasonal Income Tax Collection ----
+        // ---- Income Tax Collection (H-1: every 30 days instead of 90, at 1/3 rate) ----
         if (!k._lastIncomeTaxDay) k._lastIncomeTaxDay = 0;
-        if (world.day - k._lastIncomeTaxDay >= (CONFIG.KINGDOM_INCOME_TAX_INTERVAL || 90)) {
+        if (world.day - k._lastIncomeTaxDay >= 30) {
             k._lastIncomeTaxDay = world.day;
             collectIncomeTaxes(k);
         }
 
-        // ---- Smart Financial Strategy (monthly) ----
+        // ---- Smart Financial Strategy (C-2: 7 days during war, 30 during peace, 3 during crisis) ----
         if (!k._lastFinancialStrategyDay) k._lastFinancialStrategyDay = 0;
-        if (world.day - k._lastFinancialStrategyDay >= (CONFIG.KINGDOM_FINANCIAL_STRATEGY_INTERVAL || 30)) {
+        var finStrategyInterval = k.atWar && k.atWar.size > 0 ? 7 : (CONFIG.KINGDOM_FINANCIAL_STRATEGY_INTERVAL || 30);
+        // Emergency: review every 3 days if treasury critically low
+        if (k.gold < (CONFIG.KINGDOM_MODERATE_THRESHOLD || 500)) finStrategyInterval = 3;
+        else if (k.gold < (CONFIG.KINGDOM_MILD_THRESHOLD || 2000)) finStrategyInterval = Math.min(finStrategyInterval, 10);
+        if (world.day - k._lastFinancialStrategyDay >= finStrategyInterval) {
             k._lastFinancialStrategyDay = world.day;
             tickKingdomFinancialStrategy(k);
         }
@@ -20105,18 +23795,25 @@
             }
             k.king = prominentNPC.id;
             prominentNPC.occupation = 'king';
-            // Generate new personality based on the NPC
+            // Derive new personality from the NPC's actual personality traits
+            var _rkp = prominentNPC.personality || {};
+            var _rint = _rkp.intelligence || 50;
+            var _rwarm = _rkp.warmth || 50;
+            var _ramb = _rkp.ambition || 50;
+            var _rfrug = _rkp.frugality || 50;
+            var _rloy = _rkp.loyalty || 50;
+            var _rhon = _rkp.honesty || 50;
             k.kingPersonality = {
-                generosity: rng.pick(['generous', 'fair']),
-                militarism: rng.pick(['peaceful', 'defensive']),
-                justice: rng.pick(['just', 'pragmatic']),
-                tradition: rng.pick(['progressive', 'moderate']),
+                generosity: _rwarm >= 60 ? 'generous' : _rwarm >= 40 ? 'fair' : 'greedy',
+                militarism: _ramb >= 70 ? 'aggressive' : _rloy >= 60 ? 'defensive' : 'peaceful',
+                justice: _rhon >= 60 ? 'just' : 'pragmatic',
+                tradition: _rint >= 60 ? 'progressive' : 'moderate',
                 icon: '⚔️',
-                intelligence: rng.pick(['brilliant', 'clever', 'average']),
-                temperament: rng.pick(['kind', 'fair']),
-                ambition: rng.pick(['ambitious', 'content']),
-                greed: rng.pick(['fair', 'generous']),
-                courage: rng.pick(['brave', 'cautious']),
+                intelligence: _rint >= 80 ? 'brilliant' : _rint >= 60 ? 'clever' : _rint >= 40 ? 'average' : _rint >= 20 ? 'dim' : 'foolish',
+                temperament: _rwarm >= 75 ? 'kind' : _rwarm >= 50 ? 'fair' : _rwarm >= 25 ? 'stern' : 'cruel',
+                ambition: _ramb >= 70 ? 'ambitious' : _ramb >= 35 ? 'content' : 'lazy',
+                greed: _rhon >= 70 && _rfrug >= 60 ? 'generous' : _rhon >= 45 ? 'fair' : _rfrug <= 30 ? 'corrupt' : 'greedy',
+                courage: _rloy >= 65 && _ramb >= 50 ? 'brave' : _rloy >= 35 ? 'cautious' : 'cowardly',
             };
             k.gold = Math.max(500, Math.floor(prominentNPC.gold * 0.5));
             prominentNPC.gold = Math.max(500, Math.floor(prominentNPC.gold * 0.5)); // Keep half for the NPC
@@ -21028,6 +24725,188 @@
         return Math.floor(value);
     }
 
+    // Calculate the max price any NPC/EM/Kingdom would pay for a player property
+    function getPropertyMaxBuyPrice(buildingOrLand, townId) {
+        var town = findTown(townId);
+        if (!town) return 0;
+        var prosperity = town.prosperity || 50;
+        var cat = town.category || 'town';
+        var catMult = { village: 0.6, town: 1.0, city: 1.4, capital_city: 2.0 };
+        var mult = catMult[cat] || 1.0;
+        var prospMult = Math.max(0.5, prosperity / 50);
+
+        if (buildingOrLand.type === 'land') {
+            // Land value
+            var landBase = CONFIG.LAND_COST_BASE || 200;
+            return Math.floor(landBase * mult * prospMult * 1.1);
+        }
+
+        // Housing value (player houses — not buildings)
+        if (buildingOrLand._isHouse) {
+            var ht = CONFIG.HOUSING_TYPES ? CONFIG.HOUSING_TYPES.find(function(h) { return h.id === buildingOrLand.houseType; }) : null;
+            if (ht) {
+                // Base value from cost + materials estimate
+                var houseBase = (ht.cost || 0) + (ht.laborCost || 0);
+                if (ht.materials) {
+                    for (var matId in ht.materials) {
+                        var matQty = ht.materials[matId];
+                        var matPrice = town.market && town.market.prices ? (town.market.prices[matId] || 5) : 5;
+                        houseBase += matQty * matPrice;
+                    }
+                }
+                houseBase = houseBase * mult * prospMult;
+                // Apartments are worth less (no land)
+                if (ht.fromApartmentBuilding) houseBase *= 0.7;
+                // NPCs/EMs/kingdoms may pay up to 15% more for housing
+                return Math.floor(houseBase * 1.15);
+            }
+            return Math.floor(100 * mult * prospMult);
+        }
+
+        // Building value
+        var bt = findBuildingType(buildingOrLand.type);
+        if (!bt) return 100;
+        var baseValue = bt.cost * (buildingOrLand.level || 1);
+        // Condition affects value
+        if (buildingOrLand.condition === 'destroyed') baseValue *= 0.25;
+        else if (buildingOrLand.condition === 'breaking') baseValue *= 0.45;
+        else if (buildingOrLand.condition === 'used') baseValue *= 0.7;
+
+        // Town category and prosperity affect willingness to pay
+        baseValue = baseValue * mult * prospMult;
+
+        // Production buildings in demand are worth more
+        if (bt.produces && town.market && town.market.supply) {
+            var supply = town.market.supply[bt.produces] || 0;
+            var demand = (town.market.demand && town.market.demand[bt.produces]) || 10;
+            if (supply < demand) baseValue *= 1.3; // Scarce production = premium
+        }
+
+        // EMs and kingdoms may pay up to 20% more
+        return Math.floor(baseValue * 1.2);
+    }
+
+    // Tick: AI evaluates player property listings and buys them
+    function tickPlayerPropertySales() {
+        if (!world) return;
+        if (world.day % 3 !== 0) return; // Check every 3 days
+        var rng = world.rng;
+        if (!rng) return;
+
+        var playerState = typeof Player !== 'undefined' ? Player.state : null;
+        if (!playerState) return;
+
+        // Check player buildings for sale
+        var buildingsForSale = (playerState.buildings || []).filter(function(b) { return b.forSale && b.salePrice > 0; });
+
+        for (var bi = 0; bi < buildingsForSale.length; bi++) {
+            var bld = buildingsForSale[bi];
+            var town = findTown(bld.townId);
+            if (!town) continue;
+
+            var maxPrice = getPropertyMaxBuyPrice(bld, bld.townId);
+            if (bld.salePrice > maxPrice) continue; // Too expensive
+
+            // Find a buyer: EMs first, then kingdom, then NPCs
+            var buyer = null;
+            var buyerType = '';
+
+            // Elite merchants
+            var localEMs = world.people.filter(function(p) {
+                return p.alive && p.isEliteMerchant && p.townId === bld.townId && (p.gold || 0) >= bld.salePrice;
+            });
+            if (localEMs.length > 0 && rng.chance(0.4)) {
+                buyer = rng.pick(localEMs);
+                buyerType = 'em';
+            }
+
+            // Kingdom
+            if (!buyer) {
+                var kingdom = findKingdom(town.kingdomId);
+                if (kingdom && (kingdom.treasury || 0) >= bld.salePrice && rng.chance(0.2)) {
+                    buyer = kingdom;
+                    buyerType = 'kingdom';
+                }
+            }
+
+            // Wealthy NPCs
+            if (!buyer) {
+                var localNPCs = world.people.filter(function(p) {
+                    return p.alive && !p.isEliteMerchant && p.townId === bld.townId && p.wealthClass === 'upper' && (p.gold || 0) >= bld.salePrice;
+                });
+                if (localNPCs.length > 0 && rng.chance(0.15)) {
+                    buyer = rng.pick(localNPCs);
+                    buyerType = 'npc';
+                }
+            }
+
+            if (!buyer) continue;
+
+            // Execute sale
+            var salePrice = bld.salePrice;
+            playerState.gold = (playerState.gold || 0) + salePrice;
+            playerState.stats.totalGoldEarned = (playerState.stats.totalGoldEarned || 0) + salePrice;
+
+            if (buyerType === 'kingdom') {
+                buyer.treasury -= salePrice;
+            } else {
+                buyer.gold = (buyer.gold || 0) - salePrice;
+            }
+
+            // Find matching town building and transfer ownership
+            var townBld = town.buildings.find(function(tb) { return tb.ownerId === 'player' && tb.type === bld.type; });
+            if (townBld) {
+                townBld.ownerId = buyer.id;
+                townBld.forSale = false;
+            }
+
+            // Remove from player buildings
+            var pIdx = playerState.buildings.indexOf(bld);
+            if (pIdx >= 0) playerState.buildings.splice(pIdx, 1);
+
+            var buyerName = buyerType === 'kingdom' ? buyer.name : ((buyer.firstName || '') + ' ' + (buyer.lastName || ''));
+            logEvent('💰 ' + buyerName + ' bought your ' + (findBuildingType(bld.type) ? findBuildingType(bld.type).name : bld.type) + ' for ' + salePrice + 'g!');
+        }
+
+        // Check player land for sale
+        var landForSale = playerState.landForSale || [];
+        for (var li = 0; li < landForSale.length; li++) {
+            var landListing = landForSale[li];
+            var landTown = findTown(landListing.townId);
+            if (!landTown) continue;
+
+            var maxLandPrice = getPropertyMaxBuyPrice({ type: 'land' }, landListing.townId);
+            if (landListing.price > maxLandPrice) continue;
+
+            // Find buyer
+            var landBuyer = null;
+            var landBuyerType = '';
+            var localBuyers = world.people.filter(function(p) {
+                return p.alive && p.townId === landListing.townId && (p.gold || 0) >= landListing.price;
+            });
+            if (localBuyers.length > 0 && rng.chance(0.25)) {
+                landBuyer = rng.pick(localBuyers);
+                landBuyerType = 'npc';
+            }
+
+            if (!landBuyer) continue;
+
+            // Execute land sale
+            playerState.gold = (playerState.gold || 0) + landListing.price;
+            playerState.stats.totalGoldEarned = (playerState.stats.totalGoldEarned || 0) + landListing.price;
+            landBuyer.gold -= landListing.price;
+
+            playerState.landOwned[landListing.townId] = Math.max(0, (playerState.landOwned[landListing.townId] || 0) - 1);
+            if (playerState.landOwned[landListing.townId] <= 0) delete playerState.landOwned[landListing.townId];
+
+            var landBuyerName = (landBuyer.firstName || '') + ' ' + (landBuyer.lastName || '');
+            logEvent('💰 ' + landBuyerName + ' bought your land plot in ' + landTown.name + ' for ' + landListing.price + 'g!');
+
+            landForSale.splice(li, 1);
+            li--;
+        }
+    }
+
     function getNPCBuildingSaleOffers(townId) {
         const town = findTown(townId);
         if (!town) return [];
@@ -21530,6 +25409,37 @@
             }
             world.people = generatePeople(rng, world.towns, world.kingdoms);
 
+            // Replace apartment placeholder NPCs with real residents
+            for (const town of world.towns) {
+                for (const bld of (town.buildings || [])) {
+                    if (bld.type !== 'apartment_building' || !bld.units) continue;
+                    var townResidents = world.people.filter(function(p) {
+                        return p.alive && p.townId === town.id && !p.isEliteMerchant &&
+                            p.age >= (CONFIG.COMING_OF_AGE || 18) &&
+                            (p.houseType === 'shack' || p.houseType === null || !p.houseType);
+                    });
+                    for (var uIdx = 0; uIdx < bld.units.length; uIdx++) {
+                        var unit = bld.units[uIdx];
+                        if (unit.occupantId && unit.occupantId.indexOf('npc_placeholder') === 0) {
+                            // Replace placeholder with a real NPC who needs housing
+                            if (townResidents.length > 0) {
+                                var resident = townResidents.shift();
+                                unit.occupantId = resident.id;
+                                unit.occupantType = 'npc';
+                                resident.houseType = 'apartment';
+                                resident._apartmentBuildingId = bld._id;
+                            } else {
+                                // No more available NPCs — clear the placeholder
+                                unit.occupantId = null;
+                                unit.occupantType = null;
+                                unit.purchaseDay = null;
+                                unit.purchasePrice = 0;
+                            }
+                        }
+                    }
+                }
+            }
+
             // Populate world.eliteMerchants array (always 20)
             world.eliteMerchants = world.people.filter(function(p) { return p.alive && p.isEliteMerchant; });
 
@@ -21556,14 +25466,91 @@
                 updateRoyalAdvisors(k);
             }
 
+            // Seed starting naval fleets based on kingdom prosperity
+            for (const k of world.kingdoms) {
+                // Compute kingdom prosperity from its towns
+                const kTowns = world.towns.filter(t => t.kingdomId === k.id);
+                if (kTowns.length > 0) {
+                    k.prosperity = kTowns.reduce((s, t) => s + (t.prosperity || 50), 0) / kTowns.length;
+                }
+
+                // Find port towns sorted by population (highest first)
+                const ports = kTowns
+                    .filter(t => t.isPort && t.buildings.some(b => b.type === 'dock'))
+                    .sort((a, b) => (b.population || 0) - (a.population || 0));
+                if (ports.length === 0) continue;
+
+                // Determine fleet size by prosperity
+                let shipCount = 0;
+                if (k.prosperity > 55) {
+                    shipCount = 6; // Prosperous kingdom
+                } else if (k.prosperity >= 40) {
+                    shipCount = 3; // Moderately wealthy
+                }
+                if (shipCount === 0) continue;
+
+                // Choose ship types: weighted pool (stronger fleets for prosperous kingdoms)
+                const shipPool = shipCount === 6
+                    ? ['frigate', 'war_galley', 'war_galley', 'patrol_boat', 'patrol_boat', 'patrol_boat']
+                    : ['war_galley', 'patrol_boat', 'patrol_boat'];
+
+                // Distribute ships across ports by population weight
+                const totalPop = ports.reduce((s, t) => s + (t.population || 1), 0);
+                const portShipCounts = ports.map(() => 0);
+                let assigned = 0;
+                // First pass: proportional allocation
+                for (let pi = 0; pi < ports.length && assigned < shipCount; pi++) {
+                    const share = Math.round(shipCount * (ports[pi].population || 1) / totalPop);
+                    const give = Math.min(share, shipCount - assigned);
+                    portShipCounts[pi] = give;
+                    assigned += give;
+                }
+                // Distribute remainder to highest population ports
+                for (let pi = 0; pi < ports.length && assigned < shipCount; pi++) {
+                    portShipCounts[pi]++;
+                    assigned++;
+                }
+
+                // Create ships
+                let shipIdx = 0;
+                for (let pi = 0; pi < ports.length; pi++) {
+                    for (let si = 0; si < portShipCounts[pi] && shipIdx < shipPool.length; si++) {
+                        const typeId = shipPool[shipIdx];
+                        const cfg = CONFIG.WARSHIP_TYPES[typeId] || {};
+                        k.navalFleet.push({
+                            id: uid('warship'),
+                            type: typeId,
+                            name: cfg.name || typeId,
+                            stationedAt: ports[pi].id,
+                            soldiers: cfg.soldiers || 10,
+                            attack: cfg.attack || 5,
+                            defense: cfg.defense || 5,
+                            speed: cfg.speed || 1,
+                            cannons: cfg.cannons || 1,
+                            mission: null,
+                            targetTownId: null,
+                        });
+                        shipIdx++;
+                    }
+                }
+            }
+
             // Trigger starting wars (deferred from kingdom generation)
             for (const k of world.kingdoms) {
                 if (k._startWarWith) {
                     const other = findKingdom(k._startWarWith);
                     if (other && !k.atWar.has(other.id)) {
-                        declareWar(k, other);
+                        declareWar(k, other, true);
                     }
                     delete k._startWarWith;
+                }
+            }
+
+            // One-time 2000g war chest boost for kingdoms that start the game at war
+            for (const k of world.kingdoms) {
+                if (k.atWar && k.atWar.size > 0) {
+                    k.gold += 2000;
+                    k._startingGold = k.gold;
                 }
             }
 
@@ -21611,6 +25598,12 @@
             tickNPCRetailBuildings();
             npcOptimizeProduction();
             tickNPCPurchasing();
+            tickNPCHousingAI();
+            tickHousingRentalAI();
+            tickEMRentalBusiness();
+            tickTentCampRents();
+            tickApartmentFees();
+            tickPlayerPropertySales();
             tickDiplomacy();
             tickMilitary();
             tickEvents();
@@ -21697,6 +25690,9 @@
                 tickRoadConnectivity();
             }
 
+            // Market price history snapshots (every 30 days, offset)
+            tickMarketSnapshot();
+
             // Resource depletion (every 30 days)
             if (world.day % 30 === 0) {
                 tickResourceDepletion();
@@ -21733,6 +25729,7 @@
             if (world.day % 90 === 0) {
                 tickEliteMerchantDynamics();
                 ensureEliteMerchantCount();
+                tickEMGuildAI();
             }
 
             // Register any new people born this tick
@@ -21882,6 +25879,100 @@
             town.market.supply[resourceId] = Math.max(0, (town.market.supply[resourceId] || 0) - qty);
         },
 
+        // Real estate market analysis report
+        getRealEstateReport: function(townId) {
+            var town = findTown(townId);
+            if (!town || !town.market) return null;
+
+            var history = town._priceHistory || [];
+            var day = world.day;
+
+            function getPriceAtDay(good, targetDay) {
+                var closest = null, closestDist = Infinity;
+                for (var i = 0; i < history.length; i++) {
+                    var dist = Math.abs(history[i].day - targetDay);
+                    if (dist < closestDist && history[i].prices[good] !== undefined) {
+                        closestDist = dist;
+                        closest = history[i].prices[good];
+                    }
+                }
+                return closest;
+            }
+
+            function projectPrice(good, daysAhead) {
+                var points = [];
+                for (var i = 0; i < history.length; i++) {
+                    if (history[i].prices[good] !== undefined) {
+                        points.push({ day: history[i].day, price: history[i].prices[good] });
+                    }
+                }
+                if (points.length < 2) return null;
+                var n = points.length;
+                var sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+                for (var j = 0; j < n; j++) {
+                    sumX += points[j].day;
+                    sumY += points[j].price;
+                    sumXY += points[j].day * points[j].price;
+                    sumXX += points[j].day * points[j].day;
+                }
+                var denom = n * sumXX - sumX * sumX;
+                if (denom === 0) return points[n - 1].price;
+                var slope = (n * sumXY - sumX * sumY) / denom;
+                var intercept = (sumY - slope * sumX) / n;
+                var projected = slope * (day + daysAhead) + intercept;
+                return Math.max(1, Math.round(projected));
+            }
+
+            var trackGoods = ['wood', 'stone', 'iron', 'planks', 'rope', 'bricks', 'tools', 'cloth', 'wool', 'leather'];
+            var materials = [];
+            for (var gi = 0; gi < trackGoods.length; gi++) {
+                var g = trackGoods[gi];
+                var current = town.market.prices[g];
+                if (current === undefined) continue;
+                materials.push({
+                    id: g,
+                    name: g.charAt(0).toUpperCase() + g.slice(1),
+                    current: current,
+                    price90ago: getPriceAtDay(g, day - 90),
+                    price360ago: getPriceAtDay(g, day - 360),
+                    projected90: projectPrice(g, 90),
+                    projected360: projectPrice(g, 360)
+                });
+            }
+
+            var buildings = [];
+            for (var btKey in BUILDING_TYPES) {
+                var bt = BUILDING_TYPES[btKey];
+                if (!bt || !bt.cost) continue;
+                var matCost = 0;
+                if (bt.materials) {
+                    for (var mat in bt.materials) {
+                        var qty = bt.materials[mat];
+                        var price = town.market.prices[mat] || 0;
+                        matCost += qty * price;
+                    }
+                }
+                buildings.push({
+                    id: bt.id || btKey,
+                    name: bt.name || btKey,
+                    baseCost: bt.cost || 0,
+                    materialCost: matCost,
+                    totalCost: (bt.cost || 0) + matCost
+                });
+            }
+
+            buildings.sort(function(a, b) { return a.totalCost - b.totalCost; });
+
+            return {
+                townId: town.id,
+                townName: town.name,
+                category: town.category,
+                day: day,
+                materials: materials,
+                buildings: buildings
+            };
+        },
+
         // Kingdom economic analysis (for kings_log and UI)
         analyzeKingdomEconomy(kingdomId) {
             if (!world) return null;
@@ -21892,6 +25983,7 @@
         // NPC Building Sale System
         getNPCBuildingSaleOffers(townId) { return getNPCBuildingSaleOffers(townId); },
         getBuildingValue(bld) { return getBuildingValue(bld); },
+        getPropertyMaxBuyPrice(buildingOrLand, townId) { return getPropertyMaxBuyPrice(buildingOrLand, townId); },
         buyNPCBuilding(buildingIndex, townId) { return buyNPCBuilding(buildingIndex, townId); },
         // Building Conversion System
         convertBuilding: convertBuilding,
@@ -22053,6 +26145,11 @@
                 pref.reliability = Math.min(100, pref.reliability + 10);
                 pref.completedOrders = (pref.completedOrders || 0) + 1;
                 k.procurement.preferredMerchants[merchantId] = pref;
+                // Track on the merchant entity
+                var merchant = findPerson(merchantId);
+                if (merchant && merchant.isEliteMerchant) {
+                    merchant.ordersCompleted = (merchant.ordersCompleted || 0) + 1;
+                }
             }
             return { success: true, payment: payment, completed: completed, bonus: completed ? order.bonusOnCompletion : 0, qtyDelivered: deliverQty };
         },
@@ -22153,6 +26250,8 @@
         getTownCategory(pop) { return getTownCategory(pop); },
         isPortBlockaded(townId) { return isPortBlockaded(townId); },
         getNavalThreat(fromId, toId) { return getNavalThreat(fromId, toId); },
+        resolveNavalBattle(aFleet, dFleet, aK, dK) { return resolveNavalBattle(aFleet, dFleet, aK, dK); },
+        canEmbarkAtPort(army, townId, kingdomId) { return canEmbarkAtPort(army, townId, kingdomId); },
 
         // Outpost system
         foundOutpost(opts) { return foundOutpost(opts); },
@@ -22179,6 +26278,11 @@
 
         getWorkerHireCost(personId) {
             return getWorkerHireCost(personId);
+        },
+
+        distributeConstructionWages(townId, goldAmount) {
+            if (!world) return;
+            distributeConstructionWages(townId, goldAmount, world.rng);
         },
 
         getWorkerSkillTier(skill) {
