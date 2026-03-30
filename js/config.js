@@ -964,6 +964,7 @@ const CONFIG = {
     SOLDIER_BATTLE_XP_GAIN: 5,           // Combat skill boost for surviving a battle
     SOLDIER_MAX_COMBAT_SKILL: 100,
     SOLDIER_EQUIPMENT_QUALITY_MULT: { none: 0.4, basic: 1.0, good: 1.3, excellent: 1.6 },
+    EQUIPMENT_DEGRADE_DAYS: 90,          // Equipment degrades one tier every 90 days
 
     // Recruitment & Pay
     SOLDIER_BASE_PAY: 2,                 // Base daily pay per soldier
@@ -1067,7 +1068,7 @@ const CONFIG = {
 
     // ── Land Ownership ──
     LAND_PLOTS_BASE: { village: 30, town: 20, city: 10, capital_city: 5 },
-    LAND_COST_BASE: 500,
+    LAND_COST_BASE: 250,
     LAND_COST_MULTIPLIER: { village: 0.5, town: 1.0, city: 2.0, capital_city: 4.0 },
     LAND_SELL_RATIO: 0.80,
 
@@ -1442,7 +1443,7 @@ const BUILDING_TYPES = {
     },
     HUNTING_LODGE:    { id: 'hunting_lodge',    name: 'Hunting Lodge',   cost: 250,  workers: 2, produces: 'hide',           consumes: {},                          rate: 4, category: 'harvest',    villageOnly: true, materials: { wood: 15 } },
     // --- Water & Beverage Buildings ---
-    WELL:             { id: 'well',             name: 'Well',            cost: 80,   workers: 0, produces: 'water',          consumes: {},                          rate: 15, category: 'civic',     materials: { stone: 10, wood: 5 }, icon: '🪣', description: 'Draws fresh water. Free water for townsfolk.' },
+    WELL:             { id: 'well',             name: 'Well',            cost: 2000, workers: 0, produces: 'water',          consumes: {},                          rate: 15, category: 'civic',     materials: { stone: 10, wood: 5 }, icon: '🪣', description: 'Draws fresh water. Free water for townsfolk. Water supply depends on local soil fertility.', noLandRequired: true },
     CISTERN:          { id: 'cistern',          name: 'Cistern',         cost: 200,  workers: 0, produces: 'water',          consumes: {},                          rate: 8,  category: 'civic',     materials: { stone: 15, bricks: 10, clay: 5 }, icon: '🏛️', description: 'Stores rainwater. Supplements well output.' },
     BREWERY:          { id: 'brewery',          name: 'Brewery',         cost: 400,  workers: 3, produces: 'ale',            consumes: { wheat: 3, water: 2 },      rate: 6,  category: 'finished',  materials: { wood: 15, stone: 10, bricks: 5 }, icon: '🍺', description: 'Brews ale from wheat and water.',
         canProduce: ['ale', 'mead', 'cider'],
@@ -2127,6 +2128,154 @@ const THIRST_CONFIG = {
     DEHYDRATED_WORK_PENALTY: 0.15,   // -15% work pay
     WELL_DRAW_TICKS: 3,         // time cost to draw water from well
     WELL_DRAW_AMOUNT: 2,        // units of water per draw
+};
+
+// ========================================================
+// WELL WATER CAPACITY SYSTEM
+// ========================================================
+const WELL_CAPACITY_CONFIG = {
+    // Base water capacity range (sliding scale by fertility)
+    MIN_FERTILITY_CAPACITY: 10000,    // low fertility (rating ~5)
+    MAX_FERTILITY_CAPACITY: 40000,    // high fertility (rating ~100)
+    RANDOM_VARIANCE: 0.25,            // +/- 25% random per well
+    // How much water is consumed per unit produced (rate 15 = 15 water/day)
+    DAILY_DRAW_RATE: 15,              // water units consumed from well per day per production cycle
+    PLAYER_DRAW_COST: 2,              // water units consumed per player draw
+    LOW_WATER_THRESHOLD: 0.15,        // below 15% capacity = "running low" for king AI
+    REPLACEMENT_COST: 2000,           // gold for kingdom to dig a new well
+};
+const NPC_HEALTH_CONFIG = {
+    // --- Base illness chance (per NPC per day) ---
+    BASE_ILLNESS_CHANCE: 0.001,        // 0.1% daily baseline
+
+    // --- Seasonal multipliers ---
+    SEASON_MULT: {
+        spring: 1.0,
+        summer: 1.0,
+        autumn: 1.5,                   // +50%
+        winter: 3.0,                   // +200%
+    },
+
+    // --- Population density modifier (sliding scale) ---
+    POP_DENSITY_MIN: 300,              // no bonus below this
+    POP_DENSITY_MAX: 1000,             // +100% at this pop
+    POP_DENSITY_MAX_MULT: 1.0,        // max additional multiplier from density
+
+    // --- Building modifiers (reduce illness chance in town) ---
+    HOSPITAL_REDUCTION: 0.50,          // -50% per hospital
+    CLINIC_REDUCTION: 0.25,            // -25% per clinic
+    WELL_REDUCTION: 0.15,              // -15% per well (clean water)
+    AQUEDUCT_REDUCTION: 0.30,          // -30% for aqueduct
+
+    // --- Severity weights (must sum to 1.0) ---
+    SEVERITY_WEIGHTS: {
+        minor: 0.70,                   // 70% of illnesses are minor
+        moderate: 0.25,                // 25% moderate
+        serious: 0.04,                 // 4% serious
+        severe: 0.01,                  // 1% severe
+    },
+
+    // --- Illness types ---
+    ILLNESSES: {
+        cold:           { name: 'Common Cold',      severity: 'minor',    healthDrain: 0.3, daysToRecover: 7,   seasons: ['autumn', 'winter'] },
+        flu:            { name: 'Flu',               severity: 'minor',    healthDrain: 0.5, daysToRecover: 10,  seasons: ['autumn', 'winter'] },
+        food_poisoning: { name: 'Food Poisoning',    severity: 'minor',    healthDrain: 0.8, daysToRecover: 3,   seasons: ['spring', 'summer', 'autumn', 'winter'] },
+        fever:          { name: 'Fever',             severity: 'moderate', healthDrain: 1.0, daysToRecover: 14,  seasons: ['spring', 'summer', 'autumn', 'winter'] },
+        dysentery:      { name: 'Dysentery',         severity: 'moderate', healthDrain: 1.5, daysToRecover: 20,  seasons: ['summer', 'autumn'] },
+        pneumonia:      { name: 'Pneumonia',         severity: 'serious',  healthDrain: 2.0, daysToRecover: 30,  seasons: ['winter'] },
+        typhus:         { name: 'Typhus',            severity: 'serious',  healthDrain: 2.5, daysToRecover: 30,  seasons: ['spring', 'summer', 'autumn', 'winter'] },
+        plague:         { name: 'Plague',            severity: 'severe',   healthDrain: 4.0, daysToRecover: 45,  seasons: ['spring', 'summer', 'autumn', 'winter'], contagious: true, spreadChance: 0.02 },
+    },
+
+    // --- Health thresholds ---
+    DEATH_HEALTH: 0,                   // die at 0 health
+    NATURAL_RECOVERY_PER_DAY: 0.5,     // slow natural healing
+    DOCTOR_HEAL_PER_DAY: 3.0,          // health restored per doctor per patient per day
+    DOCTOR_PATIENTS_PER_DAY: 3,        // max patients a doctor can treat per day
+    DOCTOR_SKILL_BONUS: 0.02,          // per workerSkill point, extra heal rate
+
+    // --- Contagion / spread ---
+    TOWN_SPREAD_BASE: 0.005,           // base daily chance of spreading to adjacent town
+    TOWN_SPREAD_SICK_RATIO_MULT: 5.0,  // multiplied by (sickNPCs / totalPop) in source town
+    TRADE_ROUTE_SPREAD_MULT: 2.0,      // towns connected by active trade routes spread faster
+
+    // --- Treatment supplies consumed per patient per day ---
+    TREATMENT_SUPPLIES: {
+        minor:    { bandages: 1 },
+        moderate: { bandages: 1, herbal_remedy: 1 },
+        serious:  { bandages: 2, healing_tonic: 1 },
+        severe:   { bandages: 2, healing_tonic: 1, antidote: 1 },
+    },
+
+    // --- Plague event specific ---
+    PLAGUE_INFECTION_RATE: { min: 0.10, max: 0.30 }, // 10-30% of town gets sick
+    PLAGUE_DAILY_DEATH_UNTREATED: 0.03,               // 3% daily death if untreated
+    PLAGUE_SPREAD_MULT: 5.0,                           // plague spreads 5x faster than normal
+};
+
+// Kingdom health policies the king AI can enact
+const HEALTH_POLICIES = {
+    quarantine_town: {
+        id: 'quarantine_town',
+        name: 'Town Quarantine',
+        icon: '🔒',
+        desc: 'Seal off a sick town. Eliminates outbound spread but -40% trade in that town.',
+        scope: 'town',
+        effects: { spreadMult: 0.0, tradePenalty: 0.40 },
+        goldCostPerDay: 5,
+        enactThreshold: 0.05,          // >5% of town population sick
+    },
+    curfew: {
+        id: 'curfew',
+        name: 'Curfew',
+        icon: '🌙',
+        desc: 'Restrict movement at night. -30% spread, -10% happiness, -15% trade.',
+        scope: 'town',
+        effects: { spreadMult: 0.70, happinessPenalty: 10, tradePenalty: 0.15 },
+        goldCostPerDay: 2,
+        enactThreshold: 0.03,          // >3% sick
+    },
+    medical_funding: {
+        id: 'medical_funding',
+        name: 'Medical Funding',
+        icon: '💰',
+        desc: 'Fund doctors and supplies. +50% treatment speed, costs 10g/day per town.',
+        scope: 'kingdom',
+        effects: { treatmentSpeedMult: 1.5 },
+        goldCostPerDay: 10,
+        enactThreshold: 0.02,          // >2% kingdom-wide sick
+    },
+    herbal_distribution: {
+        id: 'herbal_distribution',
+        name: 'Herbal Distribution',
+        icon: '🌿',
+        desc: 'Distribute free remedies. -20% illness chance, consumes herbal_remedy from stockpile.',
+        scope: 'kingdom',
+        effects: { illnessChanceMult: 0.80 },
+        goldCostPerDay: 3,
+        supplyCostPerDay: { herbal_remedy: 2 },
+        enactThreshold: 0.02,
+    },
+    burn_the_dead: {
+        id: 'burn_the_dead',
+        name: 'Burn the Dead',
+        icon: '🔥',
+        desc: 'Cremate plague victims. -50% spread from deaths, -15% happiness.',
+        scope: 'town',
+        effects: { deathSpreadMult: 0.50, happinessPenalty: 15 },
+        goldCostPerDay: 1,
+        enactThreshold: 0.08,          // only when things are dire
+    },
+    close_borders: {
+        id: 'close_borders_health',
+        name: 'Health Border Closure',
+        icon: '🚧',
+        desc: 'Close kingdom borders to prevent import of disease. Eliminates cross-kingdom spread but -30% trade kingdom-wide.',
+        scope: 'kingdom',
+        effects: { crossKingdomSpread: 0.0, tradePenalty: 0.30 },
+        goldCostPerDay: 8,
+        enactThreshold: 0.10,          // >10% kingdom sick
+    },
 };
 
 const ENERGY_CONFIG = {

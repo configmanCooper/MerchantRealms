@@ -35,17 +35,44 @@ window.Game = (function () {
             _consoleLogs.push({ t: new Date().toISOString(), level: level, msg: msg });
             if (_consoleLogs.length > _consoleMaxEntries) _consoleLogs.shift();
         }
+        // Fire in-game debug notification for errors (respects error_alerts filter)
+        function _fireErrorNotif(errorMsg, source) {
+            try {
+                if (typeof Player === 'undefined' || !Player.getNotificationFilters) return;
+                var filters = Player.getNotificationFilters();
+                if (!filters.error_alerts) return;
+                var shortMsg = '🐛 ' + source + ': ' + (errorMsg.length > 120 ? errorMsg.substring(0, 120) + '…' : errorMsg);
+                if (typeof Engine !== 'undefined' && Engine.logEvent) {
+                    Engine.logEvent(shortMsg, { type: 'error_alert', fullError: errorMsg, source: source }, 'error_alerts');
+                }
+                if (typeof UI !== 'undefined' && UI.toast) {
+                    UI.toast(shortMsg, 'danger', 'error_alerts');
+                }
+            } catch(_) {}
+        }
         console.log = function() { capture('LOG', arguments); origLog.apply(console, arguments); };
         console.warn = function() { capture('WARN', arguments); origWarn.apply(console, arguments); };
-        console.error = function() { capture('ERROR', arguments); origError.apply(console, arguments); };
+        console.error = function() {
+            capture('ERROR', arguments);
+            origError.apply(console, arguments);
+            var errMsg = Array.prototype.slice.call(arguments).map(function(a) {
+                try { return typeof a === 'object' ? (a instanceof Error ? a.message + (a.stack ? '\n' + a.stack : '') : JSON.stringify(a)) : String(a); }
+                catch(e) { return String(a); }
+            }).join(' ');
+            _fireErrorNotif(errMsg, 'Console Error');
+        };
         console.info = function() { capture('INFO', arguments); origInfo.apply(console, arguments); };
         window.addEventListener('error', function(e) {
-            _consoleLogs.push({ t: new Date().toISOString(), level: 'UNCAUGHT', msg: e.message + ' at ' + (e.filename || '?') + ':' + (e.lineno || '?') + ':' + (e.colno || '?') });
+            var errDetail = e.message + ' at ' + (e.filename || '?') + ':' + (e.lineno || '?') + ':' + (e.colno || '?');
+            _consoleLogs.push({ t: new Date().toISOString(), level: 'UNCAUGHT', msg: errDetail });
             if (_consoleLogs.length > _consoleMaxEntries) _consoleLogs.shift();
+            _fireErrorNotif(errDetail, 'Uncaught Error');
         });
         window.addEventListener('unhandledrejection', function(e) {
-            _consoleLogs.push({ t: new Date().toISOString(), level: 'UNHANDLED_PROMISE', msg: String(e.reason) });
+            var reason = String(e.reason);
+            _consoleLogs.push({ t: new Date().toISOString(), level: 'UNHANDLED_PROMISE', msg: reason });
             if (_consoleLogs.length > _consoleMaxEntries) _consoleLogs.shift();
+            _fireErrorNotif(reason, 'Unhandled Promise');
         });
     })();
 
@@ -55,7 +82,7 @@ window.Game = (function () {
 
     // ── Sticky hover for shift-select (prevents tooltip flicker) ──
     let _lastPersonHover = null; // { data, sx, sy, time }
-    const PERSON_HOVER_STICKY_MS = 300;
+    const PERSON_HOVER_STICKY_MS = 1500;
 
     // ── Input state ──
     const input = {
@@ -256,9 +283,12 @@ window.Game = (function () {
             const lastNameInput = document.getElementById('charLastName');
             const sexRadio = document.querySelector('input[name="charSex"]:checked');
 
-            const playerFirstName = (firstNameInput && firstNameInput.value.trim()) || 'Unknown';
-            const playerLastName = (lastNameInput && lastNameInput.value.trim()) || 'Merchant';
             const playerSex = sexRadio ? sexRadio.value : 'M';
+            // If name left blank, pick a random NPC-style name from NAMES pool
+            const playerFirstName = (firstNameInput && firstNameInput.value.trim()) ||
+                (typeof NAMES !== 'undefined' ? NAMES[playerSex === 'F' ? 'female' : 'male'][Math.floor(Math.random() * NAMES[playerSex === 'F' ? 'female' : 'male'].length)] : 'Unknown');
+            const playerLastName = (lastNameInput && lastNameInput.value.trim()) ||
+                (typeof NAMES !== 'undefined' ? NAMES.surnames[Math.floor(Math.random() * NAMES.surnames.length)] : 'Merchant');
 
             // Hide character creation screen
             const charCreateScreen = document.getElementById('charCreateScreen');
@@ -906,11 +936,19 @@ window.Game = (function () {
         const hit = Renderer.hitTest(sx, sy, { shiftKey: shiftKey || false });
 
         // Sticky person hover when shift is held — prevents flicker
-        if (shiftKey && hit.type === 'none' && _lastPersonHover) {
+        if (shiftKey && (hit.type === 'empty' || hit.type === 'town') && _lastPersonHover) {
             if (Date.now() - _lastPersonHover.time < PERSON_HOVER_STICKY_MS) {
                 // Keep showing the last person tooltip
                 const p = _lastPersonHover.data;
-                UI.showTooltip(sx, sy, `${p.firstName || ''} ${p.lastName || ''}\n${(p.occupation || 'Unemployed')}`);
+                var stickyTip = `${p.firstName || ''} ${p.lastName || ''}`;
+                if (p.isEliteMerchant) {
+                    stickyTip += '\n⭐ Elite Merchant';
+                    if (p.heraldry && p.heraldry.name) stickyTip += ' (' + p.heraldry.symbol + ' ' + p.heraldry.name + ')';
+                    if (p.strategy) stickyTip += '\n🎯 ' + p.strategy.charAt(0).toUpperCase() + p.strategy.slice(1);
+                } else {
+                    stickyTip += '\n' + (p.occupation || 'Unemployed');
+                }
+                UI.showTooltip(sx, sy, stickyTip);
                 document.getElementById('gameCanvas').style.cursor = 'pointer';
                 return;
             }
@@ -975,7 +1013,15 @@ window.Game = (function () {
         } else if (hit.type === 'person' && hit.data) {
             const p = hit.data;
             Renderer.setHover({ type: 'person', data: p });
-            UI.showTooltip(sx, sy, `${p.firstName || ''} ${p.lastName || ''}\n${(p.occupation || 'Unemployed')}`);
+            var personTip = `${p.firstName || ''} ${p.lastName || ''}`;
+            if (p.isEliteMerchant) {
+                personTip += '\n⭐ Elite Merchant';
+                if (p.heraldry && p.heraldry.name) personTip += ' (' + p.heraldry.symbol + ' ' + p.heraldry.name + ')';
+                if (p.strategy) personTip += '\n🎯 ' + p.strategy.charAt(0).toUpperCase() + p.strategy.slice(1);
+            } else {
+                personTip += '\n' + (p.occupation || 'Unemployed');
+            }
+            UI.showTooltip(sx, sy, personTip);
             document.getElementById('gameCanvas').style.cursor = 'pointer';
             if (shiftKey) _lastPersonHover = { data: p, sx: sx, sy: sy, time: Date.now() };
         } else if (hit.type === 'road' && hit.data) {
@@ -1386,12 +1432,7 @@ window.Game = (function () {
             if (typeof UI !== 'undefined') UI.toast('Nothing to save.', 'warning');
             return;
         }
-        // Quick save: if we have a last used slot, save there directly
-        if (lastUsedSlot > 0) {
-            saveToSlot(lastUsedSlot);
-        } else {
-            showSaveSlotPicker();
-        }
+        showSaveSlotPicker();
     }
 
     function loadFromSlot(slotNum) {
@@ -1561,7 +1602,7 @@ window.Game = (function () {
 
             // 3. Game metadata
             debugData.meta = {
-                gameVersion: 'v0.39.0',
+                gameVersion: 'v0.40.0',
                 saveVersion: 3,
                 timestamp: new Date().toISOString(),
                 userAgent: navigator.userAgent,

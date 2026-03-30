@@ -204,6 +204,7 @@
         militaryBorderService: false,   // true if enlisted via closed borders to earn citizenship
         militaryRankProgress: 0,        // accumulates toward rank promotion thresholds
         militaryPendingEvent: null,     // { type:'battle'/'task', task?, enemyKingdomId?, day }
+        militaryIssuedEquipment: {},    // { weapon?: quality, armor?: quality } — issued from kingdom stockpile
         _militaryProvisionQuality: 0.7, // last computed provision quality (0.0-1.0)
 
         // ── Injuries & Illnesses ──
@@ -537,6 +538,7 @@
         player.militaryNextBattleDay = 0;
         player.militaryMandatory = false;
         player.militaryServiceEndDay = 0;
+        player.militaryIssuedEquipment = {};
         player.nursePostServiceJobs = [];
         // Guild membership
         player.guilds = {};  // { guildId: { joinedDay, rank, duesPaidUntilDay } }
@@ -1315,6 +1317,17 @@
             }
         }
 
+        // Check land requirement (wells don't need land)
+        if (!bt.noLandRequired) {
+            var ownedPlots = (player.landOwned && player.landOwned[tid]) || 0;
+            var usedPlots = player.buildings.filter(function(b) { return b.townId === tid; }).length;
+            var housePlots = (player.houses || []).filter(function(h) { return h.townId === tid && h.type !== 'apartment'; }).length;
+            if (usedPlots + housePlots >= ownedPlots) {
+                var landCost = getLandCost(tid);
+                return { success: false, message: '🏗️ No empty land plots! You need to buy land first (' + landCost + 'g) before building here.' };
+            }
+        }
+
         // bt.cost is now the labor cost; material cost is calculated from local prices
         var laborCost = bt.cost || 0;
         if (hasSkill('master_builder')) laborCost = Math.floor(laborCost * 0.80);
@@ -1450,7 +1463,22 @@
             transferEnabled: false,
         };
         player.buildings.push(bld);
-        town.buildings.push({ id: bld.id, type: buildingType, level: 1, ownerId: 'player', builtDay: Engine.getDay(), condition: 'new', lastRepairDay: 0 });
+        var townBld = { id: bld.id, type: buildingType, level: 1, ownerId: 'player', builtDay: Engine.getDay(), condition: 'new', lastRepairDay: 0 };
+        // Initialize well water capacity
+        if (buildingType === 'well') {
+            var _wFert = town.soilFertilityRating || 50;
+            var _wPct = Math.max(0, Math.min(1, (_wFert - 5) / 95));
+            var _wBase = 10000 + _wPct * 30000;
+            var _wRng = typeof Engine !== 'undefined' && Engine.getRng ? Engine.getRng() : null;
+            var _wVar = _wRng ? (1 + (_wRng.random() * 2 - 1) * 0.25) : 1;
+            var _wCap = Math.round(_wBase * _wVar);
+            townBld.waterCapacity = _wCap;
+            townBld.waterRemaining = _wCap;
+            townBld.depleted = false;
+            bld.waterCapacity = _wCap;
+            bld.waterRemaining = _wCap;
+        }
+        town.buildings.push(townBld);
         player.stats.buildingsOwned++;
 
         Engine.logEvent(`The merchant builds a ${bt.name} in ${town.name}.`);
@@ -7112,6 +7140,20 @@
 
 
     // ========================================================
+    // §8C-2  RENAME PLAYER
+    // ========================================================
+    function setPlayerName(newFirst, newLast) {
+        var first = (newFirst || '').trim();
+        var last = (newLast || '').trim();
+        if (!first && !last) return { success: false, message: 'Name cannot be empty.' };
+        if (first) player.firstName = first;
+        if (last) player.lastName = last;
+        player.fullName = player.firstName + ' ' + player.lastName;
+        return { success: true, message: 'You are now known as ' + player.fullName + '.' };
+    }
+
+
+    // ========================================================
     // §8D  DYNASTY MARRIAGES — arrange child marriages
     // ========================================================
     function arrangeChildMarriage(childId, targetId) {
@@ -9390,6 +9432,31 @@
         const rng = Engine.getRng();
         player.militaryNextBattleDay = Engine.getDay() + (rng ? rng.randInt(3, 5) : 4);
 
+        // Issue equipment from kingdom stockpile if player lacks weapon/armor
+        player.militaryIssuedEquipment = {};
+        if (!isNurse) {
+            var kingdom = Engine.findKingdom(kingdomId);
+            if (kingdom) {
+                var sp = kingdom.militaryStockpile;
+                if (sp && !player.weapon) {
+                    var wq = _takeFromStockpile(sp, 'swords');
+                    if (wq !== 'none') {
+                        var qualMult = wq === 'excellent' ? 0.4 : (wq === 'good' ? 0.3 : 0.2);
+                        player.weapon = { id: 'issued_sword', name: wq + ' Sword (Issued)', quality: wq, combatBonus: qualMult, issued: true };
+                        player.militaryIssuedEquipment.weapon = wq;
+                    }
+                }
+                if (sp && !player.armor) {
+                    var aq = _takeFromStockpile(sp, 'armor');
+                    if (aq !== 'none') {
+                        var armorMult = aq === 'excellent' ? 0.5 : (aq === 'good' ? 0.4 : 0.3);
+                        player.armor = { id: 'issued_armor', name: aq + ' Armor (Issued)', quality: aq, combatBonus: armorMult, issued: true };
+                        player.militaryIssuedEquipment.armor = aq;
+                    }
+                }
+            }
+        }
+
         var rankLabel = isNurse ? NURSE_RANK_LABELS[player.militaryRank] : MILITARY_RANK_LABELS[player.militaryRank];
         var kNameJ = Engine.findKingdom(kingdomId) ? Engine.findKingdom(kingdomId).name : 'the kingdom';
         autoJournalCapture('military', 'I have enlisted as a ' + rankLabel + ' in the service of ' + kNameJ + '. A new chapter of my life begins.', { mood: wasIndentured ? 'hopeful' : 'anxious' });
@@ -9399,9 +9466,24 @@
                 UI.toast((isNurse ? '🏥' : '⚔️') + ' Enlisted as ' + rankLabel + '!', 'success', 'military');
             }
         }
+
+        var equipMsg = '';
+        if (player.militaryIssuedEquipment.weapon) equipMsg += ' Issued: ' + player.militaryIssuedEquipment.weapon + ' sword.';
+        if (player.militaryIssuedEquipment.armor) equipMsg += ' Issued: ' + player.militaryIssuedEquipment.armor + ' armor.';
+        if (equipMsg && typeof UI !== 'undefined' && UI.toast) UI.toast('🛡️' + equipMsg, 'info', 'military');
+
         return { success: true, message: wasIndentured
             ? 'Your servant contract is void! You must serve 4 years of mandatory military duty.'
-            : 'Enlisted as ' + rankLabel + '.' };
+            : 'Enlisted as ' + rankLabel + '.' + equipMsg };
+    }
+
+    // Helper: take best quality item from kingdom stockpile
+    function _takeFromStockpile(stockpile, baseGood) {
+        if (!stockpile) return 'none';
+        if ((stockpile[baseGood + '_excellent'] || 0) > 0) { stockpile[baseGood + '_excellent']--; return 'excellent'; }
+        if ((stockpile[baseGood + '_good'] || 0) > 0) { stockpile[baseGood + '_good']--; return 'good'; }
+        if ((stockpile[baseGood] || 0) > 0) { stockpile[baseGood]--; return 'basic'; }
+        return 'none';
     }
 
     function quitMilitary() {
@@ -9416,6 +9498,10 @@
             return { success: false, message: 'You have a mandatory military commitment! ' + daysLeft + ' days remaining. Desertion means death.' };
         }
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.quit_military || 2);
+        
+        // Return issued equipment to kingdom stockpile
+        _returnIssuedEquipment();
+        
         player.militaryActive = false;
         player.militaryNextBattleDay = 0;
         Engine.logEvent(`${player.fullName} left military service as a ${MILITARY_RANK_LABELS[player.militaryRank] || 'soldier'}.`);
@@ -9423,6 +9509,60 @@
             UI.toast('🏠 Left military service. Rank preserved.', 'info', 'military');
         }
         return { success: true, message: 'Left military service. Your rank is preserved.' };
+    }
+
+    // Return any issued military equipment back to the kingdom stockpile
+    function _returnIssuedEquipment() {
+        var issued = player.militaryIssuedEquipment;
+        if (!issued) return;
+        var kingdom = Engine.findKingdom(player.militaryKingdomId);
+        if (!kingdom || !kingdom.militaryStockpile) return;
+        var sp = kingdom.militaryStockpile;
+        if (issued.weapon && player.weapon && player.weapon.issued) {
+            var wKey = issued.weapon === 'basic' ? 'swords' : 'swords_' + issued.weapon;
+            sp[wKey] = (sp[wKey] || 0) + 1;
+            player.weapon = null;
+        }
+        if (issued.armor && player.armor && player.armor.issued) {
+            var aKey = issued.armor === 'basic' ? 'armor' : 'armor_' + issued.armor;
+            sp[aKey] = (sp[aKey] || 0) + 1;
+            player.armor = null;
+        }
+        player.militaryIssuedEquipment = {};
+    }
+
+    // Degrade player equipment after battle — mirrors NPC degradation
+    var QUALITY_ORDER = ['excellent', 'good', 'basic'];
+    function _degradePlayerEquipmentAfterBattle() {
+        if (player.weapon && player.weapon.quality) {
+            var wIdx = QUALITY_ORDER.indexOf(player.weapon.quality);
+            if (wIdx >= 0 && wIdx < QUALITY_ORDER.length - 1) {
+                var newQ = QUALITY_ORDER[wIdx + 1];
+                player.weapon.quality = newQ;
+                player.weapon.combatBonus = newQ === 'good' ? 0.3 : 0.2;
+                player.weapon.name = player.weapon.name.replace(/excellent|good|basic/i, newQ);
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚔️ Your weapon degraded to ' + newQ + ' quality.', 'warning', 'military');
+            } else if (wIdx === QUALITY_ORDER.length - 1) {
+                // Basic quality weapon destroyed after battle
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('💔 Your weapon broke in battle!', 'danger', 'military');
+                player.weapon = null;
+                if (player.militaryIssuedEquipment) player.militaryIssuedEquipment.weapon = null;
+            }
+        }
+        if (player.armor && player.armor.quality) {
+            var aIdx = QUALITY_ORDER.indexOf(player.armor.quality);
+            if (aIdx >= 0 && aIdx < QUALITY_ORDER.length - 1) {
+                var newAQ = QUALITY_ORDER[aIdx + 1];
+                player.armor.quality = newAQ;
+                player.armor.combatBonus = newAQ === 'good' ? 0.4 : 0.3;
+                player.armor.name = player.armor.name.replace(/excellent|good|basic/i, newAQ);
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🛡️ Your armor degraded to ' + newAQ + ' quality.', 'warning', 'military');
+            } else if (aIdx === QUALITY_ORDER.length - 1) {
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('💔 Your armor broke in battle!', 'danger', 'military');
+                player.armor = null;
+                if (player.militaryIssuedEquipment) player.militaryIssuedEquipment.armor = null;
+            }
+        }
     }
 
     function tickMilitaryCareer() {
@@ -9815,6 +9955,9 @@
         if (rng && rng.random() < injuryChance) {
             inflictRandomInjury('battle');
         }
+
+        // Degrade player equipment after battle (matches NPC soldier degradation)
+        _degradePlayerEquipmentAfterBattle();
 
         // Pay
         var pay = MILITARY_PAY[rank] || 5;
@@ -10901,6 +11044,7 @@
         player.militaryMandatory = data.militaryMandatory || false;
         player.militaryServiceEndDay = data.militaryServiceEndDay || 0;
         player.militaryBorderService = data.militaryBorderService || false;
+        player.militaryIssuedEquipment = data.militaryIssuedEquipment || {};
         player.nursePostServiceJobs = data.nursePostServiceJobs || [];
         // Guilds & Permits
         player.guilds = data.guilds || {};
@@ -20979,9 +21123,18 @@
         var town = Engine.findTown(tid);
         if (!town) return { success: false, message: 'No town found.' };
 
-        // Check if town has a well
-        var hasWell = town.buildings && town.buildings.some(function(b) { return b.type === 'well' || b.type === 'cistern'; });
-        if (!hasWell) return { success: false, message: 'No well available in ' + (town.name || 'this town') + '.' };
+        // Find an active (non-depleted) well
+        var activeWell = null;
+        if (town.buildings) {
+            for (var i = 0; i < town.buildings.length; i++) {
+                var b = town.buildings[i];
+                if ((b.type === 'well' && !b.depleted) || b.type === 'cistern') {
+                    activeWell = b;
+                    break;
+                }
+            }
+        }
+        if (!activeWell) return { success: false, message: 'No active well in ' + (town.name || 'this town') + '. All wells have run dry!' };
 
         // Check kingdom law on well water
         var kingdom = Engine.findKingdom(town.kingdomId);
@@ -21008,17 +21161,33 @@
         // Advance time
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(THIRST_CONFIG.WELL_DRAW_TICKS);
 
+        // Deduct from well water supply
+        var drawAmount = THIRST_CONFIG.WELL_DRAW_AMOUNT;
+        if (activeWell.type === 'well' && activeWell.waterRemaining != null) {
+            var actualDraw = Math.min(drawAmount, activeWell.waterRemaining);
+            activeWell.waterRemaining -= actualDraw;
+            if (activeWell.waterRemaining <= 0) {
+                activeWell.waterRemaining = 0;
+                activeWell.depleted = true;
+            }
+        }
+
         // Give water
-        var amount = THIRST_CONFIG.WELL_DRAW_AMOUNT;
-        player.inventory.water = (player.inventory.water || 0) + amount;
+        player.inventory.water = (player.inventory.water || 0) + drawAmount;
 
         // Also drink immediately if thirsty
         if (player.thirst < 70) {
             player.thirst = Math.min(THIRST_CONFIG.MAX, player.thirst + THIRST_CONFIG.BEVERAGE_RESTORE.water);
         }
 
+        // Build status message with water remaining info
         var costMsg = isFree ? '(free well water)' : '(-' + cost + 'g)';
-        return { success: true, message: '💧 Drew ' + amount + ' water from the well. ' + costMsg };
+        var waterInfo = '';
+        if (activeWell.type === 'well' && activeWell.waterCapacity) {
+            var pct = Math.round((activeWell.waterRemaining / activeWell.waterCapacity) * 100);
+            waterInfo = ' Well: ' + Math.floor(activeWell.waterRemaining).toLocaleString() + '/' + activeWell.waterCapacity.toLocaleString() + ' (' + pct + '%)';
+        }
+        return { success: true, message: '💧 Drew ' + drawAmount + ' water from the well. ' + costMsg + waterInfo };
     }
 
     // ========================================================
@@ -28229,6 +28398,7 @@
         finalizeWedding,
         tickWeddingPlan,
         talkToSpouse,
+        setPlayerName,
         equipWeapon,
         equipArmor,
         getAvailableEquipment,

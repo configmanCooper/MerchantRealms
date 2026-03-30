@@ -4,6 +4,33 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.40.0] - 2026-03-30
+
+### Added — Medical Config, Well Depletion, Land, Map Interaction
+- **NPC health fields** on all person creation sites (health, sick, illness, injured)
+- **NPC_HEALTH_CONFIG** — 8 illness types, seasonal/density/building modifiers, severity weights
+- **HEALTH_POLICIES** — 6 kingdom policies (quarantine, curfew, medical_funding, etc.)
+- **Well water depletion** — Finite capacity based on fertility (10k-40k), ±25% variance, daily consumption
+- **Kingdom AI well management** — Replaces depleted wells, proactive building
+- **Well UI** — Per-well water levels with color coding
+- **Land requirement for building** — buildBuilding() enforces land ownership (wells exempt)
+- **Land prices 50% cheaper** — LAND_COST_BASE 500→250
+- **Player military equipment** — Issuance/return from kingdom stockpile, post-battle degradation
+- **God mode warp** — Instant teleport in travel UI
+- **Sea routes** — Walking/horse hidden for sea-only routes
+- **Elite merchant gold dots** — Larger distinct gold dots on map
+- **Elite merchant flag click** — Heraldry icons are clickable
+- **Rich NPC tooltips** — Elite merchants show heraldry/strategy on hover
+- **Fixed sticky tooltip** — Was broken (wrong type check), increased to 1500ms
+- **Clickable family members** — Spouse/parents/children as navigable links in info panel
+- **Elite merchant detail section** — Heraldry, strategy, caravans, inventory, track button
+- **Hunger/thirst skills** — Ironclad Stomach, Camel's Endurance, Desert Nomad
+
+### Bug Fixes
+- Fixed sticky tooltip (checked 'none' but hitTest returns 'empty')
+- Fixed family display (was count only, now individual clickable members)
+- Moved GameTestingCompany test files out of game folder
+
 ## [0.35.0] - 2026-03-28
 
 ### Added — Playthrough Campaign & Documentation

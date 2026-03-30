@@ -1537,6 +1537,46 @@ window.UI = (function () {
         }
         html += `</div>`;
 
+        // ── Elite Merchant Info ──
+        if (person.isEliteMerchant) {
+            html += `<div class="detail-section"><h3>⭐ Elite Merchant</h3>`;
+            if (person.heraldry) {
+                var hColors = (person.heraldry.colors || ['#888','#444']);
+                html += `<div class="detail-row"><span class="label">House</span>
+                    <span class="value"><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:linear-gradient(90deg,${hColors[0]} 50%,${hColors[1]} 50%);vertical-align:middle;margin-right:4px;border:1px solid #555;"></span>${person.heraldry.symbol || ''} ${person.heraldry.name || 'Unknown'}</span></div>`;
+            }
+            if (person.strategy) {
+                var stratLabel = person.strategy.charAt(0).toUpperCase() + person.strategy.slice(1);
+                html += `<div class="detail-row"><span class="label">Strategy</span>
+                    <span class="value">🎯 ${stratLabel}</span></div>`;
+            }
+            if (person.emCaravans && person.emCaravans.length > 0) {
+                html += `<div class="detail-row"><span class="label">Caravans</span>
+                    <span class="value">🐪 ${person.emCaravans.length} active</span></div>`;
+            }
+            if (person.npcMerchantInventory) {
+                var invKeys = Object.keys(person.npcMerchantInventory);
+                var invCount = 0;
+                for (var ik = 0; ik < invKeys.length; ik++) invCount += (person.npcMerchantInventory[invKeys[ik]] || 0);
+                if (invCount > 0) {
+                    html += `<div class="detail-row"><span class="label">Inventory</span>
+                        <span class="value">📦 ${invCount} goods (${invKeys.length} types)</span></div>`;
+                }
+            }
+            // Track/untrack button
+            if (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('merchant_tracker')) {
+                var isTrackedEM = Player.isTrackingMerchant && Player.isTrackingMerchant(person.id);
+                html += `<div style="margin-top:6px;">`;
+                if (isTrackedEM) {
+                    html += `<button class="btn-medieval" style="font-size:0.75rem;padding:4px 10px;" onclick="Player.untrackMerchant('${person.id}');UI.showPersonDetail(Engine.getPerson('${person.id}'));">⭐ Stop Tracking</button>`;
+                } else {
+                    html += `<button class="btn-medieval" style="font-size:0.75rem;padding:4px 10px;" onclick="Player.trackMerchant('${person.id}');UI.showPersonDetail(Engine.getPerson('${person.id}'));">☆ Track Merchant</button>`;
+                }
+                html += `</div>`;
+            }
+            html += `</div>`;
+        }
+
         // ── Needs Bars ──
         if (person.needs) {
             html += `<div class="detail-section"><h3>Needs</h3>`;
@@ -1569,16 +1609,42 @@ window.UI = (function () {
         if (person.spouseId) {
             let spouse;
             try { spouse = Engine.getPerson(person.spouseId); } catch (e) { /* no-op */ }
-            const spouseName = spouse ? `${spouse.firstName} ${spouse.lastName}` : 'Unknown';
-            html += `<div class="detail-row"><span class="label">Spouse</span>
-                <span class="value">${spouseName}</span></div>`;
+            if (spouse) {
+                var spBadge = spouse.isEliteMerchant ? '⭐ ' : '';
+                html += `<div class="detail-row"><span class="label">Spouse</span>
+                    <span class="value"><a href="#" style="color:var(--gold);text-decoration:underline;cursor:pointer;" onclick="event.preventDefault();UI.showPersonDetail(Engine.getPerson('${spouse.id}'));">${spBadge}${spouse.firstName} ${spouse.lastName}</a></span></div>`;
+            } else {
+                html += `<div class="detail-row"><span class="label">Spouse</span>
+                    <span class="value text-dim">Unknown</span></div>`;
+            }
         } else {
             html += `<div class="detail-row"><span class="label">Spouse</span>
                 <span class="value text-dim">None</span></div>`;
         }
+        if (person.parentIds && person.parentIds.length) {
+            for (var ppi = 0; ppi < person.parentIds.length; ppi++) {
+                var parent = null;
+                try { parent = Engine.getPerson(person.parentIds[ppi]); } catch (e) { /* no-op */ }
+                if (parent) {
+                    var parBadge = parent.isEliteMerchant ? '⭐ ' : '';
+                    var parAlive = parent.alive !== false ? '' : ' <span style="color:#888;font-size:0.75rem;">(deceased)</span>';
+                    html += `<div class="detail-row"><span class="label">${parent.sex === 'M' ? 'Father' : 'Mother'}</span>
+                        <span class="value"><a href="#" style="color:var(--gold);text-decoration:underline;cursor:pointer;" onclick="event.preventDefault();UI.showPersonDetail(Engine.getPerson('${parent.id}'));">${parBadge}${parent.firstName} ${parent.lastName}</a>${parAlive}</span></div>`;
+                }
+            }
+        }
         if (person.childrenIds && person.childrenIds.length) {
-            html += `<div class="detail-row"><span class="label">Children</span>
-                <span class="value">${person.childrenIds.length}</span></div>`;
+            for (var cci = 0; cci < person.childrenIds.length; cci++) {
+                var child = null;
+                try { child = Engine.getPerson(person.childrenIds[cci]); } catch (e) { /* no-op */ }
+                if (child) {
+                    var chBadge = child.isEliteMerchant ? '⭐ ' : '';
+                    var chAlive = child.alive !== false ? '' : ' <span style="color:#888;font-size:0.75rem;">(deceased)</span>';
+                    var chLabel = person.childrenIds.length === 1 ? 'Child' : (cci === 0 ? 'Children' : '');
+                    html += `<div class="detail-row"><span class="label">${chLabel}</span>
+                        <span class="value"><a href="#" style="color:var(--gold);text-decoration:underline;cursor:pointer;" onclick="event.preventDefault();UI.showPersonDetail(Engine.getPerson('${child.id}'));">${chBadge}${child.firstName} ${child.lastName}</a> (${child.age || '?'})${chAlive}</span></div>`;
+                }
+            }
         }
         html += `</div>`;
 
@@ -2448,6 +2514,7 @@ window.UI = (function () {
             }
 
             // Player-owned farm/livestock: conversion option
+            var playerBlds = (Player.buildings || []).filter(function(b) { return b.townId === town.id; });
             var farmBlds = playerBlds.filter(function(b) {
                 return (typeof Engine !== 'undefined') && (Engine.isCropFarm(b.type) || Engine.isLivestockFarm(b.type));
             });
@@ -2470,7 +2537,6 @@ window.UI = (function () {
             }
 
             // Player-owned buildings: demolish option
-            var playerBlds = (Player.buildings || []).filter(function(b) { return b.townId === town.id; });
             if (playerBlds.length > 0) {
                 saleHtml += '<div style="margin-top:12px;padding:8px;border:1px solid var(--border);border-radius:4px;">';
                 saleHtml += '<div style="font-weight:bold;font-size:0.85rem;margin-bottom:6px;">🧨 DEMOLISH YOUR BUILDINGS</div>';
@@ -4806,6 +4872,38 @@ window.UI = (function () {
 
     // ── CHARACTER DIALOG ──
 
+    function openRenamePlayer() {
+        const body = `<div style="text-align:center;">
+            <div style="margin-bottom:10px;">
+                <label style="display:block;margin-bottom:4px;font-weight:bold;">First Name</label>
+                <input type="text" id="renameFirst" class="char-input" maxlength="20" value="${Player.firstName || ''}" style="width:80%;padding:6px;font-size:1rem;" />
+            </div>
+            <div style="margin-bottom:10px;">
+                <label style="display:block;margin-bottom:4px;font-weight:bold;">Last Name</label>
+                <input type="text" id="renameLast" class="char-input" maxlength="20" value="${Player.lastName || ''}" style="width:80%;padding:6px;font-size:1rem;" />
+            </div>
+        </div>`;
+        const footer = `<button class="btn-medieval" onclick="UI.confirmRenamePlayer()">✅ Confirm</button>
+            <button class="btn-medieval" onclick="UI.closeModal()">Cancel</button>`;
+        openModal('✏️ Change Name', body, footer);
+    }
+
+    function confirmRenamePlayer() {
+        const firstEl = document.getElementById('renameFirst');
+        const lastEl = document.getElementById('renameLast');
+        const newFirst = firstEl ? firstEl.value.trim() : '';
+        const newLast = lastEl ? lastEl.value.trim() : '';
+        if (!newFirst && !newLast) { toast('Enter at least a first or last name.', 'warning'); return; }
+        const result = Player.setPlayerName(newFirst, newLast);
+        if (result.success) {
+            toast(result.message, 'info');
+            closeModal();
+            openCharacterDialog();
+        } else {
+            toast(result.message, 'warning');
+        }
+    }
+
     function openCharacterDialog() {
         if (typeof Player === 'undefined') return;
 
@@ -4847,7 +4945,7 @@ window.UI = (function () {
         let html = `<div class="detail-section">
             <h3>Identity</h3>
             <div class="detail-row"><span class="label">Name</span>
-                <span class="value">${Player.fullName || 'Unknown'}</span></div>
+                <span class="value">${Player.fullName || 'Unknown'} <button onclick="UI.openRenamePlayer()" style="cursor:pointer;background:none;border:none;padding:0 2px;font-size:0.85em;opacity:0.6;vertical-align:middle;" title="Change name">✏️</button></span></div>
             <div class="detail-row"><span class="label">Sex</span>
                 <span class="value">${sexIcon} ${Player.sex === 'F' ? 'Female' : 'Male'}</span></div>
             <div class="detail-row"><span class="label">Age</span>
@@ -5433,6 +5531,7 @@ window.UI = (function () {
                 npc_activity: '👥 NPCs',
                 travel_events: '🚶 Travel',
                 combat: '☠️ Combat',
+                error_alerts: '🐛 Debug',
             };
             var filters = (typeof Player !== 'undefined' && Player.getNotificationFilters) ? Player.getNotificationFilters() : {};
             for (var fKey in filterLabels) {
@@ -5626,6 +5725,14 @@ window.UI = (function () {
         html += '<div class="event-detail-day" style="color:var(--text-dim);margin-bottom:12px;">Day ' + (event.day || '?') + '</div>';
 
         if (event.details) {
+            // Error alert detail
+            if (event.details.type === 'error_alert') {
+                html += '<div style="margin-bottom:10px;">';
+                html += '<div style="color:#c44e52;font-weight:bold;margin-bottom:4px;">🐛 Error Source: ' + (event.details.source || 'Unknown') + '</div>';
+                html += '<pre style="color:var(--parchment);background:rgba(0,0,0,0.3);padding:8px;border-radius:4px;white-space:pre-wrap;word-break:break-all;font-size:0.8rem;max-height:300px;overflow-y:auto;">' + (event.details.fullError || 'No details') + '</pre>';
+                html += '</div>';
+            }
+
             // Cause
             if (event.details.cause) {
                 html += '<div style="margin-bottom:10px;">';
@@ -6622,7 +6729,9 @@ window.UI = (function () {
         var playerGold = Player.gold || 0;
 
         // ===== LAND OPTIONS =====
-        if (landRoute && landRoute.length > 0) {
+        // Only show walking/riding options if route has at least one non-sea segment
+        var isSeaOnly = landRoute && landRoute.length > 0 && landRoute.every(function(seg) { return seg.type === 'sea'; });
+        if (landRoute && landRoute.length > 0 && !isSeaOnly) {
             var baseDist = calculateRouteDist(landRoute);
             var baseSpeed = CONFIG.CARAVAN_BASE_SPEED * 1.5;
             if (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('road_knowledge')) baseSpeed *= 1.15;
@@ -6777,6 +6886,35 @@ window.UI = (function () {
             }
         }
 
+        // ===== GOD MODE: INSTANT WARP =====
+        if (typeof Game !== 'undefined' && Game.isGodMode && Game.isGodMode()) {
+            options.push({
+                id: 'god_warp',
+                icon: '⚡',
+                name: 'Warp (God Mode)',
+                desc: 'Instantly teleport to this town.',
+                cost: 0,
+                days: 0,
+                available: true,
+                action: function () {
+                    var ps = Player.state;
+                    ps.townId = townId;
+                    ps.traveling = false;
+                    ps.travelRoute = null;
+                    ps.travelProgress = 0;
+                    ps.travelDestination = null;
+                    ps.travelBySea = false;
+                    ps.travelOffroad = false;
+                    if (destTown) {
+                        ps.worldX = destTown.x;
+                        ps.worldY = destTown.y;
+                    }
+                    toast('⚡ Warped to ' + destTown.name + '!', 'success');
+                    closeModal();
+                }
+            });
+        }
+
         // ===== BUILD THE MODAL =====
         if (options.length === 0) {
             toast('No travel route available to ' + destTown.name + '.', 'warning');
@@ -6799,7 +6937,11 @@ window.UI = (function () {
             html += '<br><span style="font-size:0.8rem;color:var(--text-muted);">' + opt.desc + '</span>';
             html += '</div>';
             html += '<div style="text-align:right;">';
-            html += '<div style="font-size:0.9rem;color:var(--gold);">\u23F1\uFE0F ~' + opt.days + ' day' + (opt.days !== 1 ? 's' : '') + '</div>';
+            if (opt.days === 0) {
+                html += '<div style="font-size:0.9rem;color:#8f8;">⚡ Instant</div>';
+            } else {
+                html += '<div style="font-size:0.9rem;color:var(--gold);">\u23F1\uFE0F ~' + opt.days + ' day' + (opt.days !== 1 ? 's' : '') + '</div>';
+            }
             if (opt.cost > 0) {
                 html += '<div style="font-size:0.85rem;color:#c9a96e;">\u{1F4B0} ' + opt.cost + 'g</div>';
             } else {
@@ -8122,14 +8264,34 @@ window.UI = (function () {
             html += '<div style="margin:8px 0;"><button class="btn-medieval" onclick="UI.sleepOutsideUI()" style="padding:8px 20px;">🌙 Sleep Outside (free, disease risk)</button></div>';
         }
 
-        // Draw water button
+        // Draw water button — only if there's an active (non-depleted) well
         var town = Engine.findTown(Player.townId);
-        if (town && town.buildings && town.buildings.some(function(b) { return b.type === 'well'; })) {
-            var kingdom = Engine.findKingdom(town.kingdomId);
-            var isFree = kingdom && kingdom.laws && kingdom.laws.freeWellWater;
-            html += '<div style="margin:12px 0;border-top:1px solid #555;padding-top:8px;">';
-            html += '<button class="btn-medieval" onclick="UI.drawWaterUI()" style="padding:6px 16px;">💧 Draw Water from Well' + (isFree ? ' (Free)' : ' (1g)') + '</button>';
-            html += '</div>';
+        if (town && town.buildings) {
+            var activeWells = town.buildings.filter(function(b) { return b.type === 'well' && !b.depleted; });
+            var hasCistern = town.buildings.some(function(b) { return b.type === 'cistern'; });
+            if (activeWells.length > 0 || hasCistern) {
+                var kingdom = Engine.findKingdom(town.kingdomId);
+                var isFree = kingdom && kingdom.laws && kingdom.laws.freeWellWater;
+                html += '<div style="margin:12px 0;border-top:1px solid #555;padding-top:8px;">';
+                html += '<button class="btn-medieval" onclick="UI.drawWaterUI()" style="padding:6px 16px;">💧 Draw Water from Well' + (isFree ? ' (Free)' : ' (1g)') + '</button>';
+                // Show well water levels
+                for (var _wwi = 0; _wwi < activeWells.length; _wwi++) {
+                    var _w = activeWells[_wwi];
+                    if (_w.waterCapacity) {
+                        var _pct = Math.round((_w.waterRemaining / _w.waterCapacity) * 100);
+                        var _color = _pct > 50 ? '#5ac85a' : (_pct > 15 ? '#d4a844' : '#c44e52');
+                        html += '<div style="font-size:0.75rem;color:' + _color + ';margin-top:4px;">🪣 Well ' + (_wwi + 1) + ': ' + Math.floor(_w.waterRemaining).toLocaleString() + '/' + _w.waterCapacity.toLocaleString() + ' (' + _pct + '%)</div>';
+                    }
+                }
+                html += '</div>';
+            } else {
+                var depletedWells = town.buildings.filter(function(b) { return b.type === 'well' && b.depleted; });
+                if (depletedWells.length > 0) {
+                    html += '<div style="margin:12px 0;border-top:1px solid #555;padding-top:8px;">';
+                    html += '<div style="font-size:0.8rem;color:#c44e52;">🪣 All wells have run dry! No water available.</div>';
+                    html += '</div>';
+                }
+            }
         }
 
         // Armed escort
@@ -14629,6 +14791,8 @@ window.UI = (function () {
         openHireDialog,
         openCaravanDialog,
         openCharacterDialog,
+        openRenamePlayer,
+        confirmRenamePlayer,
         openEventLog,
         showEventDetail,
         clearEventLog,

@@ -1580,11 +1580,22 @@ window.Renderer = (function () {
                 var numId = _npcNumId(p, i);
                 var pos = _npcPosition(numId, cx, cy, _npcAnimTime);
 
-                const occ = (p.occupation || 'none').toLowerCase();
-                ctx.fillStyle = occColors[occ] || '#888';
-                ctx.beginPath();
-                ctx.arc(pos.x, pos.y, 1.8, 0, Math.PI * 2);
-                ctx.fill();
+                if (p.isEliteMerchant) {
+                    // Elite merchants get a distinct gold dot, slightly larger
+                    ctx.fillStyle = '#FFD700';
+                    ctx.beginPath();
+                    ctx.arc(pos.x, pos.y, 2.5, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = '#8B6914';
+                    ctx.lineWidth = 0.5;
+                    ctx.stroke();
+                } else {
+                    const occ = (p.occupation || 'none').toLowerCase();
+                    ctx.fillStyle = occColors[occ] || '#888';
+                    ctx.beginPath();
+                    ctx.arc(pos.x, pos.y, 1.8, 0, Math.PI * 2);
+                    ctx.fill();
+                }
             }
         }
     }
@@ -2317,6 +2328,39 @@ window.Renderer = (function () {
                     const d = Math.sqrt((w.x - pos.x) ** 2 + (w.y - pos.y) ** 2);
                     if (d < hitRadius) {
                         return { type: 'person', data: p };
+                    }
+                }
+            }
+        }
+
+        // Check elite merchant heraldry flag icons (always clickable, no zoom requirement)
+        if (towns && typeof Player !== 'undefined' && Player.canSeeEliteMerchantLocations && Player.canSeeEliteMerchantLocations()) {
+            var emWorld = typeof Engine !== 'undefined' ? Engine.getWorld() : null;
+            if (emWorld && emWorld.people) {
+                var playerTownHit = typeof Player !== 'undefined' ? Player.townId : null;
+                var roadsHit = typeof Engine !== 'undefined' ? Engine.getRoads() : [];
+                var connTownsHit = {};
+                if (playerTownHit != null) connTownsHit[playerTownHit] = true;
+                for (var rhi = 0; rhi < roadsHit.length; rhi++) {
+                    if (roadsHit[rhi].fromTownId === playerTownHit) connTownsHit[roadsHit[rhi].toTownId] = true;
+                    if (roadsHit[rhi].toTownId === playerTownHit) connTownsHit[roadsHit[rhi].fromTownId] = true;
+                }
+                var hitElites = emWorld.people.filter(function(p) { return p.alive && p.isEliteMerchant && p.heraldry; });
+                var hitEliteIdx = 0;
+                for (var hei = 0; hei < hitElites.length; hei++) {
+                    var hem = hitElites[hei];
+                    if (!hem.townId) continue;
+                    var hemVisible = !!connTownsHit[hem.townId] ||
+                        (hem.traveling && (connTownsHit[hem.travelDestination] || connTownsHit[hem.travelOrigin]));
+                    if (!hemVisible) continue;
+                    var hemTown = typeof Engine !== 'undefined' ? Engine.findTown(hem.townId) : null;
+                    if (!hemTown) continue;
+                    var flagHitX = hemTown.x + 15 + (hitEliteIdx % 4) * 18 + 7;
+                    var flagHitY = hemTown.y - 20 - Math.floor(hitEliteIdx / 4) * 18 - 3;
+                    hitEliteIdx++;
+                    var flagDist = Math.sqrt((w.x - flagHitX) ** 2 + (w.y - flagHitY) ** 2);
+                    if (flagDist < 12) {
+                        return { type: 'person', data: hem };
                     }
                 }
             }

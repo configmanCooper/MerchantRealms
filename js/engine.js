@@ -1630,6 +1630,26 @@
             }
         }
 
+        // Initialize well water capacity based on town soil fertility
+        var fertRating = town ? (town.soilFertilityRating || 50) : 50;
+        var wcfg = typeof WELL_CAPACITY_CONFIG !== 'undefined' ? WELL_CAPACITY_CONFIG : null;
+        if (wcfg) {
+            var fertRange = 100 - 5; // rating range 5-100
+            for (var wi = 0; wi < buildings.length; wi++) {
+                if (buildings[wi].type === 'well') {
+                    // Sliding scale: fertRating 5 → MIN_CAPACITY, fertRating 100 → MAX_CAPACITY
+                    var fertPct = Math.max(0, Math.min(1, (fertRating - 5) / fertRange));
+                    var baseCapacity = wcfg.MIN_FERTILITY_CAPACITY + fertPct * (wcfg.MAX_FERTILITY_CAPACITY - wcfg.MIN_FERTILITY_CAPACITY);
+                    // Random variance +/- 25%
+                    var variance = 1 + (rng.random() * 2 - 1) * wcfg.RANDOM_VARIANCE;
+                    var capacity = Math.round(baseCapacity * variance);
+                    buildings[wi].waterCapacity = capacity;
+                    buildings[wi].waterRemaining = capacity;
+                    buildings[wi].depleted = false;
+                }
+            }
+        }
+
         return buildings;
     }
 
@@ -2419,6 +2439,14 @@
                     person.medicalKnowledge = 'none';
                 }
 
+                // NPC Health & Illness fields
+                person.health = 100;
+                person.sick = false;
+                person.illness = null;
+                person.illnessDay = 0;
+                person.injured = false;
+                person.injuryDay = 0;
+
                 people.push(person);
                 townPeople.push(person);
             }
@@ -2495,6 +2523,12 @@
                         foodPreferences: { bread: 1, meat: 1, poultry: 1, fish: 1, eggs: 1, preserved_food: 1 },
                         recentFoods: [],
                         medicalKnowledge: rng.chance(0.25) ? (rng.chance(0.4) ? 'moderate' : 'minor') : 'none',
+                        health: 100,
+                        sick: false,
+                        illness: null,
+                        illnessDay: 0,
+                        injured: false,
+                        injuryDay: 0,
                         birthDay: -(childAge * 360 + rng.randInt(0, 359)), // Negative = born before game start
                     };
                     // Link parent-child
@@ -2741,6 +2775,12 @@
                     foodPreferences: { bread: 1, meat: 1, poultry: 1, fish: 1, eggs: 1, preserved_food: 1 },
                     recentFoods: [],
                     medicalKnowledge: rng.chance(0.25) ? (rng.chance(0.4) ? 'moderate' : 'minor') : 'none',
+                    health: 100,
+                    sick: false,
+                    illness: null,
+                    illnessDay: 0,
+                    injured: false,
+                    injuryDay: 0,
                     houseType: em.houseType,
                 };
                 em.spouseId = spouse.id;
@@ -2796,6 +2836,12 @@
                             foodPreferences: { bread: 1, meat: 1, poultry: 1, fish: 1, eggs: 1, preserved_food: 1 },
                             recentFoods: [],
                             medicalKnowledge: rng.chance(0.25) ? (rng.chance(0.4) ? 'moderate' : 'minor') : 'none',
+                            health: 100,
+                            sick: false,
+                            illness: null,
+                            illnessDay: 0,
+                            injured: false,
+                            injuryDay: 0,
                             birthDay: -(childAge * 360 + rng.randInt(0, 359)),
                         };
                         em.childrenIds.push(child.id);
@@ -3043,6 +3089,12 @@
                 foodPreferences: { bread: 1, meat: 1, poultry: 1, fish: 1, eggs: 1, preserved_food: 1 },
                 recentFoods: [],
                 medicalKnowledge: rng.chance(0.35) ? 'moderate' : (rng.chance(0.3) ? 'minor' : 'none'),
+                health: 100,
+                sick: false,
+                illness: null,
+                illnessDay: 0,
+                injured: false,
+                injuryDay: 0,
             };
             // Apply explicit overrides for sex/firstName/occupation/gold
             if (overrides.sex) person.sex = overrides.sex;
@@ -3639,10 +3691,47 @@
             var aleConsumed = Math.min(town.market.supply.ale || 0, Math.ceil(pop * 0.03));
             town.market.supply.ale = Math.max(0, (town.market.supply.ale || 0) - aleConsumed);
 
-            // Wells produce water daily (each well adds water to market)
-            var wellCount = town.buildings ? town.buildings.filter(function(b) { return b.type === 'well'; }).length : 0;
-            var cisternCount = town.buildings ? town.buildings.filter(function(b) { return b.type === 'cistern'; }).length : 0;
-            var wellProduction = wellCount * 15 + cisternCount * 8; // matches BUILDING_TYPES rates
+            // Wells produce water daily — each active well draws from its waterRemaining
+            var wellProduction = 0;
+            if (town.buildings) {
+                for (var _wi = 0; _wi < town.buildings.length; _wi++) {
+                    var _wb = town.buildings[_wi];
+                    if (_wb.type === 'well' && !_wb.depleted) {
+                        // Initialize legacy wells that lack waterRemaining
+                        if (_wb.waterCapacity == null) {
+                            var _fertR = town.soilFertilityRating || 50;
+                            var _fertPct = Math.max(0, Math.min(1, (_fertR - 5) / 95));
+                            var _baseCap = 10000 + _fertPct * 30000;
+                            var _var = 1 + (world.rng.random() * 2 - 1) * 0.25;
+                            _wb.waterCapacity = Math.round(_baseCap * _var);
+                            _wb.waterRemaining = _wb.waterCapacity;
+                            _wb.depleted = false;
+                        }
+                        var wellDraw = Math.min(15, _wb.waterRemaining);
+                        _wb.waterRemaining -= wellDraw;
+                        wellProduction += wellDraw;
+                        // Well runs dry
+                        if (_wb.waterRemaining <= 0) {
+                            _wb.waterRemaining = 0;
+                            _wb.depleted = true;
+                            logEvent('🪣 A well in ' + town.name + ' has run dry!', { type: 'infrastructure', townId: town.id }, 'local_town');
+                        }
+                        // Owner gets revenue from water sold to market
+                        if (_wb.ownerId && _wb.ownerId !== 'player') {
+                            var wellOwner = findPerson(_wb.ownerId);
+                            if (wellOwner && wellOwner.alive) {
+                                var waterPrice = (town.market.prices && town.market.prices.water) || 1;
+                                wellOwner.gold = (wellOwner.gold || 0) + wellDraw * waterPrice * 0.5;
+                            }
+                        } else if (_wb.ownerId === 'player') {
+                            // Player revenue handled by player tick or checked via building profits
+                            _wb._pendingRevenue = (_wb._pendingRevenue || 0) + wellDraw;
+                        }
+                    } else if (_wb.type === 'cistern') {
+                        wellProduction += 8;
+                    }
+                }
+            }
             town.market.supply.water = (town.market.supply.water || 0) + wellProduction;
             // Track water supply level for fire/plague use
             town.waterSupply = (town.market.supply.water || 0);
@@ -4571,6 +4660,12 @@
                         spouseId: null,
                         childrenIds: [],
                         parentIds: [p.id, father.id],
+                        health: 100,
+                        sick: false,
+                        illness: null,
+                        illnessDay: 0,
+                        injured: false,
+                        injuryDay: 0,
                     };
                     p.childrenIds.push(child.id);
                     father.childrenIds.push(child.id);
@@ -4734,6 +4829,7 @@
             }
         }
         p.alive = false;
+        p.causeOfDeath = cause || 'unknown';
         const town = findTown(p.townId);
         if (town) town.population = Math.max(0, town.population - 1);
         if (world._alivePopCount != null) world._alivePopCount--;
@@ -5747,9 +5843,9 @@
                 k._lastSeasonTaxRevenue = seasonalTotal; // Used by happiness consequences
                 k.tradeTaxRevenue = 0; // reset for next season
 
-                // Pay soldiers
+                // Pay soldiers (adjusted by dynamic pay multiplier)
                 var soldiers = (_tickCache.soldiersByKingdom[k.id] || []);
-                const soldierCost = soldiers.length * CONFIG.SOLDIER_UPKEEP;
+                const soldierCost = soldiers.length * CONFIG.SOLDIER_UPKEEP * (k.soldierPayMult || 1.0);
                 k.gold = Math.max(0, k.gold - soldierCost);
 
                 // Kingdom hires guards when wealthy
@@ -7945,6 +8041,59 @@
         }
 
         // =============================================
+        // 8B. DYNAMIC SOLDIER PAY (runs both war & peace, once per kingdom)
+        // =============================================
+        var totalSoldiers = (_tickCache.soldiersByKingdom[k.id] || []).length;
+        var desiredSoldiers = 0;
+        for (var _dti of k.territories) {
+            var _dt = findTown(_dti);
+            if (_dt) desiredSoldiers += Math.max(5, Math.floor((_tickCache.peopleByTown[_dt.id] || []).length * (atWar ? 0.12 : 0.06)));
+        }
+        var soldierRatio = desiredSoldiers > 0 ? totalSoldiers / desiredSoldiers : 1;
+        k._soldierRatio = soldierRatio; // cache for conscription checks
+
+        if (soldierRatio < 0.7) {
+            // Need more soldiers — raise pay
+            k.soldierPayMult = Math.min(3.0, (k.soldierPayMult || 1.0) + 0.03);
+        } else if (soldierRatio < 0.9 && atWar) {
+            // Wartime shortfall — slight pay bump
+            k.soldierPayMult = Math.min(2.0, (k.soldierPayMult || 1.0) + 0.01);
+        } else if (soldierRatio > 1.5) {
+            // Well overstaffed — decrease pay back toward baseline
+            k.soldierPayMult = Math.max(1.0, (k.soldierPayMult || 1.0) - 0.03);
+        } else if (soldierRatio > 1.1 && !atWar) {
+            // Peacetime surplus — slowly decrease
+            k.soldierPayMult = Math.max(1.0, (k.soldierPayMult || 1.0) - 0.01);
+        }
+
+        // Pay-driven peacetime recruitment: higher pay attracts volunteers
+        if (!atWar && soldierRatio < 0.9 && k.gold > 500) {
+            var payMult = k.soldierPayMult || 1.0;
+            // Higher pay = higher chance of volunteer per day (base 5%, up to 25% at 3x pay)
+            var volunteerChance = 0.05 + (payMult - 1.0) * 0.10;
+            if (rng.chance(volunteerChance)) {
+                for (var _rti of k.territories) {
+                    var _rt = findTown(_rti);
+                    if (!_rt) continue;
+                    var volunteerPool = (_tickCache.peopleByTown[_rt.id] || []).filter(function(vp) {
+                        return (vp.occupation === 'laborer' || vp.occupation === 'none') &&
+                            vp.age >= CONFIG.COMING_OF_AGE && vp.age <= 45;
+                    });
+                    if (volunteerPool.length > 0) {
+                        var vol = volunteerPool[Math.floor(rng.random() * volunteerPool.length)];
+                        var vType = 'infantry';
+                        var vSupply = _rt.market.supply || {};
+                        if ((vSupply.horses || 0) > 0 && (vSupply.saddles || 0) > 0 && rng.chance(0.15)) vType = 'cavalry';
+                        else if ((vSupply.bows || 0) > 0 && rng.chance(0.25)) vType = 'archer';
+                        recruitSoldier(vol, _rt, k, vType);
+                        k.gold -= 50;
+                        break; // one volunteer per day
+                    }
+                }
+            }
+        }
+
+        // =============================================
         // 9. DIPLOMATIC ACTIONS (enhanced king decisions)
         // =============================================
         // a. Propose trade agreements — reduce tariffs with ally
@@ -8669,6 +8818,12 @@
                                 foodPreferences: { bread: 1, meat: 1, poultry: 1, fish: 1, eggs: 1, preserved_food: 1 },
                                 recentFoods: [],
                                 medicalKnowledge: rng.chance(0.25) ? (rng.chance(0.4) ? 'moderate' : 'minor') : 'none',
+                                health: 100,
+                                sick: false,
+                                illness: null,
+                                illnessDay: 0,
+                                injured: false,
+                                injuryDay: 0,
                             };
                             world.people.push(newborn);
                             if (typeof registerPerson === 'function') registerPerson(newborn);
@@ -9672,19 +9827,9 @@
                     recruitSoldier(idle[i], town, k, uType);
                 }
 
-                // Dynamic soldier pay — increase pay when desperate for soldiers
-                var totalSoldiers = (_tickCache.soldiersByKingdom[k.id] || []).length;
-                var desiredSoldiers = 0;
-                for (var _dti of k.territories) { var _dt = findTown(_dti); if (_dt) desiredSoldiers += Math.max(5, Math.floor((_tickCache.peopleByTown[_dt.id] || []).length * 0.08)); }
-                var soldierRatio = desiredSoldiers > 0 ? totalSoldiers / desiredSoldiers : 1;
-                if (soldierRatio < 0.5) {
-                    k.soldierPayMult = Math.min(3.0, (k.soldierPayMult || 1.0) + 0.05);
-                } else if (soldierRatio > 1.2) {
-                    k.soldierPayMult = Math.max(1.0, (k.soldierPayMult || 1.0) - 0.02);
-                }
-
-                // Conscription for desperate kingdoms
-                if (soldierRatio < 0.3 && k.laws && k.laws.conscription && rng.chance(0.1)) {
+                // Conscription for desperate kingdoms (ratio computed in dynamic pay block below)
+                var _soldierRatio = k._soldierRatio || 1;
+                if (_soldierRatio < 0.3 && k.laws && k.laws.conscription && rng.chance(0.1)) {
                     var conscriptable = (_tickCache.peopleByTown[town.id] || []).filter(function(p) {
                         return p.occupation !== 'soldier' && p.occupation !== 'guard' &&
                                p.age >= CONFIG.COMING_OF_AGE && p.age <= 45;
@@ -9840,6 +9985,65 @@
                 if (town.walls < 3 && k.gold > 500 && rng.chance(0.1)) {
                     town.walls++;
                     k.gold -= 300;
+                }
+
+                // ── Well management AI ──
+                // Replace depleted wells and proactively build new ones
+                if (town.buildings) {
+                    var _activeWells = 0;
+                    var _depletedWells = 0;
+                    var _lowWells = 0;
+                    for (var _wai = 0; _wai < town.buildings.length; _wai++) {
+                        var _wab = town.buildings[_wai];
+                        if (_wab.type !== 'well') continue;
+                        if (_wab.depleted) { _depletedWells++; continue; }
+                        _activeWells++;
+                        if (_wab.waterCapacity && _wab.waterRemaining / _wab.waterCapacity < 0.15) _lowWells++;
+                    }
+                    var wellCost = (typeof WELL_CAPACITY_CONFIG !== 'undefined' ? WELL_CAPACITY_CONFIG.REPLACEMENT_COST : 2000);
+                    var king = k.king ? findPerson(k.king) : null;
+                    var kingIntelligence = (king && king.personality) ? (king.personality.intelligence || 50) : 50;
+                    var kingWarmth = (king && king.personality) ? (king.personality.warmth || 50) : 50;
+
+                    // Priority 1: Replace depleted wells (always try if affordable)
+                    if (_depletedWells > 0 && k.gold >= wellCost) {
+                        // Smart/kind kings replace immediately, others need more incentive
+                        var replaceChance = 0.3 + (kingIntelligence / 200) + (kingWarmth / 200);
+                        if (_activeWells === 0) replaceChance = 0.95; // urgent — no active wells
+                        if (rng.chance(replaceChance)) {
+                            k.gold -= wellCost;
+                            // Initialize the new well with fertility-based capacity
+                            var _fertR2 = town.soilFertilityRating || 50;
+                            var _fertPct2 = Math.max(0, Math.min(1, (_fertR2 - 5) / 95));
+                            var _baseCap2 = 10000 + _fertPct2 * 30000;
+                            var _var2 = 1 + (rng.random() * 2 - 1) * 0.25;
+                            var _newCap = Math.round(_baseCap2 * _var2);
+                            town.buildings.push({
+                                type: 'well', level: 1, ownerId: null,
+                                builtDay: world.day, condition: 'new',
+                                waterCapacity: _newCap, waterRemaining: _newCap, depleted: false
+                            });
+                            logEvent('🪣 ' + k.name + ' digs a new well in ' + town.name + ' (-' + wellCost + 'g).', { type: 'infrastructure', townId: town.id }, 'local_town');
+                        }
+                    }
+
+                    // Priority 2: Proactive — build extra well if low wells or high pop with few wells
+                    var townPop = town.population || 0;
+                    var wellsNeeded = Math.max(1, Math.ceil(townPop / 250)); // 1 well per 250 people
+                    if (_activeWells < wellsNeeded && _lowWells > 0 && k.gold >= wellCost * 1.5 && rng.chance(0.05 + kingIntelligence / 500)) {
+                        k.gold -= wellCost;
+                        var _fertR3 = town.soilFertilityRating || 50;
+                        var _fertPct3 = Math.max(0, Math.min(1, (_fertR3 - 5) / 95));
+                        var _baseCap3 = 10000 + _fertPct3 * 30000;
+                        var _var3 = 1 + (rng.random() * 2 - 1) * 0.25;
+                        var _newCap3 = Math.round(_baseCap3 * _var3);
+                        town.buildings.push({
+                            type: 'well', level: 1, ownerId: null,
+                            builtDay: world.day, condition: 'new',
+                            waterCapacity: _newCap3, waterRemaining: _newCap3, depleted: false
+                        });
+                        logEvent('🪣 ' + k.name + ' proactively digs an extra well in ' + town.name + ' (-' + wellCost + 'g).', { type: 'infrastructure', townId: town.id }, 'local_town');
+                    }
                 }
 
                 // Build missing infrastructure (culture-aware) — uses material system
@@ -10735,6 +10939,10 @@
 
         // --- PEACETIME SOLDIER ACTIVITIES ---
         tickPeacetimeSoldiers();
+
+        // --- EQUIPMENT DEGRADATION & RE-EQUIP ---
+        tickEquipmentDegradation();
+        if (world.day % 7 === 0) tickKingdomReequip(); // weekly re-equip from stockpile
     }
 
     // ========================================================
@@ -10838,45 +11046,122 @@
     // §15A-2 SOLDIER EQUIPMENT & EXPERIENCE SYSTEM
     // ========================================================
 
-    // Equip a soldier from town supply, returns quality tier string
+    // Helper: try to take an item from kingdom stockpile first, then town market
+    function _takeWeapon(stockpile, supply, baseGood) {
+        // Try stockpile first (best quality down)
+        if (stockpile && (stockpile[baseGood + '_excellent'] || 0) > 0) { stockpile[baseGood + '_excellent']--; return 'excellent'; }
+        if (stockpile && (stockpile[baseGood + '_good'] || 0) > 0) { stockpile[baseGood + '_good']--; return 'good'; }
+        if (stockpile && (stockpile[baseGood] || 0) > 0) { stockpile[baseGood]--; return 'basic'; }
+        // Fall back to town market
+        if (supply && (supply[baseGood + '_excellent'] || 0) > 0) { supply[baseGood + '_excellent']--; return 'excellent'; }
+        if (supply && (supply[baseGood + '_good'] || 0) > 0) { supply[baseGood + '_good']--; return 'good'; }
+        if (supply && (supply[baseGood] || 0) > 0) { supply[baseGood]--; return 'basic'; }
+        return 'none';
+    }
+
+    // Equip a soldier from kingdom stockpile first, then town market as fallback
     function equipSoldier(person, town, unitType) {
-        if (!person || !town || !town.market || !town.market.supply) return;
-        var supply = town.market.supply;
+        if (!person) return;
+        var kingdom = findKingdom(person.kingdomId || (town && town.kingdomId));
+        var stockpile = (kingdom && kingdom.militaryStockpile) || null;
+        var supply = (town && town.market && town.market.supply) || null;
         var equip = person.equipment || {};
 
         if (unitType === 'infantry' || unitType === 'cavalry') {
-            // Try best weapon first
-            if ((supply.swords_excellent || 0) > 0) { equip.weapon = 'excellent'; supply.swords_excellent--; }
-            else if ((supply.swords_good || 0) > 0) { equip.weapon = 'good'; supply.swords_good--; }
-            else if ((supply.swords || 0) > 0) { equip.weapon = 'basic'; supply.swords--; }
-            else { equip.weapon = 'none'; }
-
-            // Try best armor
-            if ((supply.armor_excellent || 0) > 0) { equip.armor = 'excellent'; supply.armor_excellent--; }
-            else if ((supply.armor_good || 0) > 0) { equip.armor = 'good'; supply.armor_good--; }
-            else if ((supply.armor || 0) > 0) { equip.armor = 'basic'; supply.armor--; }
-            else { equip.armor = 'none'; }
+            equip.weapon = _takeWeapon(stockpile, supply, 'swords');
+            equip.armor = _takeWeapon(stockpile, supply, 'armor');
         }
         if (unitType === 'archer') {
-            if ((supply.bows_excellent || 0) > 0) { equip.weapon = 'excellent'; supply.bows_excellent--; }
-            else if ((supply.bows_good || 0) > 0) { equip.weapon = 'good'; supply.bows_good--; }
-            else if ((supply.bows || 0) > 0) { equip.weapon = 'basic'; supply.bows--; }
-            else { equip.weapon = 'none'; }
-            // Archers get light armor
-            if ((supply.armor || 0) > 0) { equip.armor = 'basic'; supply.armor--; }
-            else { equip.armor = 'none'; }
-            // Consume arrows
+            equip.weapon = _takeWeapon(stockpile, supply, 'bows');
+            equip.armor = _takeWeapon(stockpile, supply, 'armor');
+            // Consume arrows from stockpile or market
             var arrowsNeeded = 5;
-            supply.arrows = Math.max(0, (supply.arrows || 0) - arrowsNeeded);
+            if (stockpile && (stockpile.arrows || 0) >= arrowsNeeded) { stockpile.arrows -= arrowsNeeded; }
+            else if (supply) { supply.arrows = Math.max(0, (supply.arrows || 0) - arrowsNeeded); }
         }
         if (unitType === 'cavalry') {
-            if ((supply.horses || 0) > 0 && (supply.saddles || 0) > 0) {
-                equip.mount = true; supply.horses--; supply.saddles--;
-            } else { equip.mount = false; }
+            var gotHorse = false;
+            if (stockpile && (stockpile.horses || 0) > 0) { stockpile.horses--; gotHorse = true; }
+            else if (supply && (supply.horses || 0) > 0) { supply.horses--; gotHorse = true; }
+            var gotSaddle = false;
+            if (supply && (supply.saddles || 0) > 0) { supply.saddles--; gotSaddle = true; }
+            equip.mount = gotHorse && gotSaddle;
+            if (!gotSaddle && gotHorse) {
+                // Return horse if no saddle
+                if (stockpile) stockpile.horses = (stockpile.horses || 0) + 1;
+                else if (supply) supply.horses = (supply.horses || 0) + 1;
+                equip.mount = false;
+            }
         }
 
         equip.unitType = unitType;
+        equip.lastDegradeDay = world.day; // track for degradation
         person.equipment = equip;
+    }
+
+    // Equipment quality tiers in degradation order
+    var EQUIP_TIERS = ['excellent', 'good', 'basic', 'none'];
+
+    // Degrade one tier: excellent→good, good→basic, basic→destroyed (none)
+    function _degradeQuality(tier) {
+        var idx = EQUIP_TIERS.indexOf(tier);
+        if (idx < 0 || idx >= EQUIP_TIERS.length - 1) return 'none';
+        return EQUIP_TIERS[idx + 1];
+    }
+
+    // Degrade a soldier's equipment after battle (one tier worse, or destroyed)
+    function degradeEquipmentAfterBattle(person) {
+        if (!person || !person.equipment) return;
+        var equip = person.equipment;
+        equip.weapon = _degradeQuality(equip.weapon || 'none');
+        equip.armor = _degradeQuality(equip.armor || 'none');
+        equip.lastDegradeDay = world.day;
+    }
+
+    // Daily tick: degrade equipment over time (every 90 days = 1 season)
+    function tickEquipmentDegradation() {
+        if (world.day % 15 !== 0) return; // check every 15 days for perf
+        var degradeInterval = CONFIG.EQUIPMENT_DEGRADE_DAYS || 90;
+        var allPeople = world.people;
+        for (var i = 0; i < allPeople.length; i++) {
+            var p = allPeople[i];
+            if (!p.alive || !p.equipment) continue;
+            if (p.occupation !== 'soldier' && p.occupation !== 'guard') continue;
+            var equip = p.equipment;
+            var lastDegrade = equip.lastDegradeDay || p.recruitDay || 0;
+            if (world.day - lastDegrade >= degradeInterval) {
+                equip.weapon = _degradeQuality(equip.weapon || 'none');
+                equip.armor = _degradeQuality(equip.armor || 'none');
+                equip.lastDegradeDay = world.day;
+            }
+        }
+    }
+
+    // Kingdom re-equips unequipped soldiers from stockpile (runs with procurement tick)
+    function tickKingdomReequip() {
+        for (var ki = 0; ki < world.kingdoms.length; ki++) {
+            var k = world.kingdoms[ki];
+            if (!k.militaryStockpile) continue;
+            var stockpile = k.militaryStockpile;
+            var soldiers = _tickCache.soldiersByKingdom[k.id] || [];
+            for (var si = 0; si < soldiers.length; si++) {
+                var s = soldiers[si];
+                if (!s.alive || !s.equipment) continue;
+                var equip = s.equipment;
+                var uType = equip.unitType || s.unitType || 'infantry';
+                // Re-equip weapon if none or worse than stockpile offers
+                if (equip.weapon === 'none' || !equip.weapon) {
+                    var baseGood = (uType === 'archer') ? 'bows' : 'swords';
+                    var newWeap = _takeWeapon(stockpile, null, baseGood);
+                    if (newWeap !== 'none') equip.weapon = newWeap;
+                }
+                // Re-equip armor if none
+                if (equip.armor === 'none' || !equip.armor) {
+                    var newArmor = _takeWeapon(stockpile, null, 'armor');
+                    if (newArmor !== 'none') equip.armor = newArmor;
+                }
+            }
+        }
     }
 
     // Get individual soldier combat effectiveness (0.2 - 2.5+)
@@ -10907,22 +11192,28 @@
 
     // Discharge a soldier back to civilian life
     function dischargeSoldier(person, town) {
-        // Return equipment to town supply if possible
+        // Return equipment to kingdom stockpile (preferred) or town market
         var equip = person.equipment || {};
-        if (town && town.market && town.market.supply) {
-            var supply = town.market.supply;
-            if (equip.weapon && equip.weapon !== 'none') {
-                var weaponType = equip.unitType === 'archer' ? 'bows' : 'swords';
-                if (equip.weapon === 'excellent') supply[weaponType + '_excellent'] = (supply[weaponType + '_excellent'] || 0) + 1;
-                else if (equip.weapon === 'good') supply[weaponType + '_good'] = (supply[weaponType + '_good'] || 0) + 1;
-                else supply[weaponType] = (supply[weaponType] || 0) + 1;
-            }
-            if (equip.armor && equip.armor !== 'none') {
-                if (equip.armor === 'excellent') supply.armor_excellent = (supply.armor_excellent || 0) + 1;
-                else if (equip.armor === 'good') supply.armor_good = (supply.armor_good || 0) + 1;
-                else supply.armor = (supply.armor || 0) + 1;
-            }
-            if (equip.mount) { supply.horses = (supply.horses || 0) + 1; supply.saddles = (supply.saddles || 0) + 1; }
+        var kingdom = findKingdom(person.kingdomId || (town && town.kingdomId));
+        var stockpile = (kingdom && kingdom.militaryStockpile) || null;
+        var supply = (town && town.market && town.market.supply) || null;
+
+        if (equip.weapon && equip.weapon !== 'none') {
+            var weaponType = equip.unitType === 'archer' ? 'bows' : 'swords';
+            var wKey = equip.weapon === 'excellent' ? weaponType + '_excellent' :
+                       equip.weapon === 'good' ? weaponType + '_good' : weaponType;
+            if (stockpile) stockpile[wKey] = (stockpile[wKey] || 0) + 1;
+            else if (supply) supply[wKey] = (supply[wKey] || 0) + 1;
+        }
+        if (equip.armor && equip.armor !== 'none') {
+            var aKey = equip.armor === 'excellent' ? 'armor_excellent' :
+                       equip.armor === 'good' ? 'armor_good' : 'armor';
+            if (stockpile) stockpile[aKey] = (stockpile[aKey] || 0) + 1;
+            else if (supply) supply[aKey] = (supply[aKey] || 0) + 1;
+        }
+        if (equip.mount) {
+            if (stockpile) stockpile.horses = (stockpile.horses || 0) + 1;
+            else if (supply) { supply.horses = (supply.horses || 0) + 1; supply.saddles = (supply.saddles || 0) + 1; }
         }
         person.occupation = person.previousOccupation || 'laborer';
         delete person.previousOccupation;
@@ -11151,6 +11442,8 @@
                     s.skills.combat = Math.min(CONFIG.SOLDIER_MAX_COMBAT_SKILL || 100,
                         (s.skills.combat || 0) + (CONFIG.SOLDIER_BATTLE_XP_GAIN || 5));
                 }
+                // Degrade equipment after battle (one tier worse)
+                degradeEquipmentAfterBattle(s);
             }
         }
     }
@@ -11695,6 +11988,12 @@
                             quirks: assignRandomQuirks(world.rng),
                             foodPreferences: { bread: 1, meat: 1, poultry: 1, fish: 1, eggs: 1, preserved_food: 1 },
                             recentFoods: [],
+                            health: 100,
+                            sick: false,
+                            illness: null,
+                            illnessDay: 0,
+                            injured: false,
+                            injuryDay: 0,
                         };
                         world.people.push(settler);
                         if (typeof registerPerson === 'function') registerPerson(settler);
@@ -12071,6 +12370,12 @@
                     quirks: assignRandomQuirks(world.rng),
                     foodPreferences: { bread: 1, meat: 1, poultry: 1, fish: 1, eggs: 1, preserved_food: 1 },
                     recentFoods: [],
+                    health: 100,
+                    sick: false,
+                    illness: null,
+                    illnessDay: 0,
+                    injured: false,
+                    injuryDay: 0,
                 };
                 world.people.push(settler);
                 if (typeof registerPerson === 'function') registerPerson(settler);
@@ -14626,6 +14931,12 @@
             foodPreferences: { bread: 1, meat: 1, poultry: 1, fish: 1, eggs: 1, preserved_food: 1 },
             recentFoods: [],
             medicalKnowledge: rng.chance(0.3) ? 'moderate' : (rng.chance(0.25) ? 'minor' : 'none'),
+            health: 100,
+            sick: false,
+            illness: null,
+            illnessDay: 0,
+            injured: false,
+            injuryDay: 0,
             houseType: gold > 5000 ? 'manor' : 'townhouse',
         };
         // Assign heraldry
@@ -21437,6 +21748,7 @@
         getSoldierEffectiveness: getSoldierEffectiveness,
         scoutEnemyStrength: scoutEnemyStrength,
         computeMilitaryStrength: computeMilitaryStrength,
+        logEvent: logEvent,
         demolishBuilding: demolishBuilding,
         buyBlastingPowderFromKingdom: buyBlastingPowderFromKingdom,
         getAlliances() {
