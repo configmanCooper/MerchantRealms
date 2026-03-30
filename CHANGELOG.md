@@ -4,6 +4,17 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.40.1] - 2026-03-30
+
+### Fixed — AI/Elite Merchant Unification
+- **Unified AI merchants with elite merchants** — Removed redundant AI merchant system (player.js) that created duplicate purple dots and double market impact. All rival merchants are now elite merchants in engine.js with proper heraldry, families, deep trading AI, gold dots, and clickable flag icons.
+- Removed `renderAIMerchants()` purple dot rendering — no more overlapping names/circles
+- `window.AIMerchants` and `Player.getAIMerchants()` now return elite merchants for backward compat
+- `tickAIMerchants()` and `initAIMerchants()` are no-ops — engine handles all merchant AI
+- Serialization stubs preserved for old save backward compat
+- Leaderboard, achievements, and schemes UI all use elite merchants
+- Fixed double market impact from two merchant systems trading simultaneously
+
 ## [0.40.0] - 2026-03-30
 
 ### Added — Medical Config, Well Depletion, Land, Map Interaction

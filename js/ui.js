@@ -11236,13 +11236,11 @@ window.UI = (function () {
     function buildTargetSelectUI(action, idx) {
         let html = '<div style="display:flex;gap:4px;align-items:center;margin-top:4px;">';
         html += '<select id="targetSelect_' + idx + '" style="font-size:0.7rem;padding:2px;flex:1;">';
-        // Populate with AI merchants or people in town
+        // Populate with elite merchants in the area
         try {
-            const aiMerchants = Player.getAIMerchants ? Player.getAIMerchants() : [];
-            for (const m of aiMerchants) {
-                if (m.alive !== false) {
-                    html += `<option value="${m.id}">${m.name || m.firstName || 'Merchant'}</option>`;
-                }
+            var elitesForTarget = (typeof Engine !== 'undefined' && Engine.getWorld) ? (Engine.getWorld().people || []).filter(function(p) { return p.alive && p.isEliteMerchant; }) : [];
+            for (const m of elitesForTarget) {
+                html += `<option value="${m.id}">${(m.firstName || '') + ' ' + (m.lastName || '')}</option>`;
             }
         } catch (e) { /* no-op */ }
         html += '</select>';

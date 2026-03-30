@@ -5214,225 +5214,15 @@
     const aiMerchants = [];
 
     function initAIMerchants() {
+        // UNIFIED: AI merchants are now elite merchants managed by engine.js.
+        // This function is intentionally a no-op — elite merchants are created
+        // in world generation and maintained via tickEliteMerchantAI().
         aiMerchants.length = 0;
-        const rng = Engine.getRng();
-        if (!rng) return;
-
-        const towns = Engine.getTowns();
-        const kingdoms = Engine.getKingdoms();
-        const maleNames = [...NAMES.male];
-        const femaleNames = [...NAMES.female];
-        const surnames = [...NAMES.surnames];
-        rng.shuffle(maleNames);
-        rng.shuffle(femaleNames);
-        rng.shuffle(surnames);
-
-        let maleIdx = 0, femaleIdx = 0;
-
-        for (let i = 0; i < CONFIG.NUM_AI_MERCHANTS; i++) {
-            const spec = SPECIALIZATIONS[i % SPECIALIZATIONS.length];
-            const sex = rng.chance(0.5) ? 'M' : 'F';
-            let firstName;
-            if (sex === 'M') {
-                firstName = maleNames[maleIdx % maleNames.length];
-                maleIdx++;
-            } else {
-                firstName = femaleNames[femaleIdx % femaleNames.length];
-                femaleIdx++;
-            }
-
-            // Determine wealth tier: 5 wealthy, 10 mid-tier, 5 starting
-            let gold, aggressiveness;
-            if (i < 5) {
-                gold = rng.randInt(2000, 5000);
-                aggressiveness = rng.randFloat(0.5, 0.9);
-            } else if (i < 15) {
-                gold = rng.randInt(500, 2000);
-                aggressiveness = rng.randFloat(0.3, 0.7);
-            } else {
-                gold = rng.randInt(100, 500);
-                aggressiveness = rng.randFloat(0.1, 0.5);
-            }
-
-            // Spread across kingdoms: 5 per kingdom
-            const kingdomIdx = i % kingdoms.length;
-            const kTowns = towns.filter(t => t.kingdomId === kingdoms[kingdomIdx].id);
-            const startTown = kTowns.length > 0 ? rng.pick(kTowns) : (towns.length > 0 ? rng.pick(towns) : null);
-
-            const merchant = {
-                id: 'ai_' + (i + 1),
-                name: firstName + ' ' + surnames[i % surnames.length],
-                sex: sex,
-                gold: gold,
-                kingdomId: kingdoms[kingdomIdx] ? kingdoms[kingdomIdx].id : null,
-                townId: startTown ? startTown.id : null,
-                inventory: {},
-                specialization: spec,
-                aggressiveness: aggressiveness,
-                buildings: [],
-                caravans: [],
-                travelCooldown: 0,
-                _buildCooldown: rng.randInt(30, 120),
-            };
-            // Init inventory
-            for (const key in RESOURCE_TYPES) {
-                merchant.inventory[RESOURCE_TYPES[key].id] = 0;
-            }
-            aiMerchants.push(merchant);
-        }
     }
 
     function tickAIMerchants() {
-        const rng = Engine.getRng();
-        if (!rng) return;
-        const towns = Engine.getTowns();
-        if (towns.length === 0) return;
-
-        for (const m of aiMerchants) {
-            if (m.travelCooldown > 0) { m.travelCooldown--; continue; }
-
-            const town = Engine.findTown(m.townId);
-            if (!town) { m.townId = rng.pick(towns).id; continue; }
-
-            // ---- Buy low ----
-            const specResources = getSpecResources(m.specialization);
-            for (const resId of specResources) {
-                const supply = town.market.supply[resId] || 0;
-                const price = town.market.prices[resId] || 999;
-                const res = findResource(resId);
-                if (!res) continue;
-
-                // Buy if supply is high (price is low) and merchant can afford it
-                if (supply > 20 && price <= res.basePrice * 1.2 && m.gold >= price * 5) {
-                    const qty = Math.min(
-                        Math.floor(m.gold * 0.3 / price),
-                        Math.floor(supply * 0.3),
-                        20
-                    );
-                    if (qty > 0) {
-                        const cost = Math.ceil(price * qty);
-                        m.gold -= cost;
-                        m.inventory[resId] = (m.inventory[resId] || 0) + qty;
-                        town.market.supply[resId] -= qty;
-                    }
-                }
-            }
-
-            // ---- Sell high ----
-            for (const resId in m.inventory) {
-                if ((m.inventory[resId] || 0) <= 0) continue;
-                const price = town.market.prices[resId] || 1;
-                const supply = town.market.supply[resId] || 0;
-                const demand = town.market.demand[resId] || 0;
-                const res = findResource(resId);
-                if (!res) continue;
-
-                // Sell if price is high (demand > supply) or we have excess
-                if (price >= res.basePrice * 1.3 || (supply < demand && price >= res.basePrice)) {
-                    let qty = Math.min(m.inventory[resId], 10);
-                    // Undercut player if aggressive
-                    if (m.aggressiveness > 0.6) {
-                        qty = Math.min(m.inventory[resId], 15);
-                    }
-                    if (qty > 0) {
-                        const revenue = Math.floor(price * qty);
-                        m.gold += revenue;
-                        m.inventory[resId] -= qty;
-                        town.market.supply[resId] = (town.market.supply[resId] || 0) + qty;
-                    }
-                }
-            }
-
-            // ---- Travel to another town ----
-            if (rng.chance(0.05)) {
-                // Find a town where our specialty is in demand
-                let bestTown = null;
-                let bestScore = -Infinity;
-                for (const t of towns) {
-                    if (t.id === m.townId) continue;
-                    let score = 0;
-                    for (const resId of specResources) {
-                        const demandHere = t.market.demand[resId] || 0;
-                        const supplyHere = t.market.supply[resId] || 0;
-                        score += (demandHere - supplyHere) * (t.market.prices[resId] || 1);
-                    }
-                    if (score > bestScore) {
-                        bestScore = score;
-                        bestTown = t;
-                    }
-                }
-                if (bestTown) {
-                    m.townId = bestTown.id;
-                    m.travelCooldown = rng.randInt(3, 8);
-                }
-            }
-
-            // ---- War profiteering ----
-            const w = Engine.getWorld();
-            if (w) {
-                const kingdom = Engine.findKingdom(town.kingdomId);
-                if (kingdom && kingdom.atWar && kingdom.atWar.size > 0) {
-                    // Try to stockpile military goods
-                    for (const milRes of ['swords', 'armor', 'horses']) {
-                        const supply = town.market.supply[milRes] || 0;
-                        const price = town.market.prices[milRes] || 999;
-                        if (supply > 5 && m.gold >= price * 3) {
-                            const qty = Math.min(5, supply, Math.floor(m.gold * 0.2 / price));
-                            if (qty > 0) {
-                                m.gold -= Math.floor(price * qty);
-                                m.inventory[milRes] = (m.inventory[milRes] || 0) + qty;
-                                town.market.supply[milRes] -= qty;
-                            }
-                        }
-                    }
-                }
-            }
-
-            // ---- Building investment (slowly over time) ----
-            if (m._buildCooldown > 0) {
-                m._buildCooldown--;
-            } else if (m.gold > 500 && rng.chance(0.01)) {
-                // Build a building related to specialization
-                if (!m.buildings) m.buildings = [];
-                const buildTypes = getSpecBuildingTypes(m.specialization);
-                const existing = new Set(m.buildings.map(b => b.type + '_' + b.townId));
-                for (const bType of buildTypes) {
-                    const key = bType + '_' + m.townId;
-                    if (existing.has(key)) continue;
-                    const bt = Engine.findBuildingType(bType);
-                    if (bt && m.gold >= bt.cost) {
-                        m.gold -= bt.cost;
-                        m.buildings.push({ type: bType, townId: m.townId, level: 1 });
-                        town.buildings.push({ type: bType, level: 1, ownerId: m.id });
-                        m._buildCooldown = rng.randInt(60, 180);
-                        break;
-                    }
-                }
-            }
-
-            // ---- AI building production ----
-            for (const bld of (m.buildings || [])) {
-                const bt = Engine.findBuildingType(bld.type);
-                if (!bt || !bt.produces) continue;
-                const bTown = Engine.findTown(bld.townId);
-                if (!bTown) continue;
-
-                // Check inputs
-                let canProduce = true;
-                for (const [resId, qty] of Object.entries(bt.consumes)) {
-                    if ((bTown.market.supply[resId] || 0) < qty) {
-                        canProduce = false;
-                        break;
-                    }
-                }
-                if (!canProduce) continue;
-                for (const [resId, qty] of Object.entries(bt.consumes)) {
-                    bTown.market.supply[resId] -= qty;
-                }
-                const output = bt.rate * bld.level;
-                m.inventory[bt.produces] = (m.inventory[bt.produces] || 0) + output;
-            }
-        }
+        // UNIFIED: Trading AI is now handled by engine.js tickEliteMerchantAI().
+        // This function is intentionally a no-op to prevent double market impact.
     }
 
     function getSpecResources(specialization) {
@@ -11243,16 +11033,15 @@
     }
 
     function serializeAIMerchants() {
-        return JSON.parse(JSON.stringify(aiMerchants));
+        // UNIFIED: Elite merchants are saved as part of world.people in engine state.
+        // Return empty array for backward compatibility with save format.
+        return [];
     }
 
     function deserializeAIMerchants(data) {
+        // UNIFIED: Elite merchants are loaded as part of world.people in engine state.
+        // Old AI merchant save data is ignored — elite merchants handle everything now.
         aiMerchants.length = 0;
-        if (data && Array.isArray(data)) {
-            for (const m of data) {
-                aiMerchants.push(m);
-            }
-        }
     }
 
     // ========================================================
@@ -15612,9 +15401,10 @@
         // Self made (generation 1 only)
         if (p.gold >= 10000 && (s.generation || 1) === 1) unlockAchievement('self_made');
 
-        // Penny pincher (more gold than all AI)
+        // Penny pincher (more gold than all elite merchants combined)
         try {
-            const totalAI = (typeof AIMerchants !== 'undefined' ? AIMerchants : []).reduce((a,m) => a + (m.gold || 0), 0);
+            var elitesForAch = (typeof Engine !== 'undefined' && Engine.getWorld) ? (Engine.getWorld().people || []).filter(function(ep) { return ep.alive && ep.isEliteMerchant; }) : [];
+            const totalAI = elitesForAch.reduce((a,m) => a + (m.gold || 0), 0);
             if (p.gold > totalAI && totalAI > 0) unlockAchievement('penny_pincher');
         } catch (e) { /* no-op */ }
 
@@ -15915,12 +15705,19 @@
             isPlayer: true,
         });
 
-        // Add AI merchants
-        for (const m of aiMerchants) {
+        // Add elite merchants (unified — was AI merchants)
+        var elitesForLb = [];
+        try {
+            var wLb = Engine.getWorld();
+            if (wLb && wLb.people) {
+                elitesForLb = wLb.people.filter(function(p) { return p.alive && p.isEliteMerchant; });
+            }
+        } catch (e) { /* no-op */ }
+        for (const m of elitesForLb) {
             merchants.push({
-                name: m.name,
+                name: (m.firstName || '') + ' ' + (m.lastName || ''),
                 kingdom: m.kingdomId || 'Unknown',
-                gold: m.gold,
+                gold: m.gold || 0,
                 buildings: (m.buildings || []).length,
                 isPlayer: false,
             });
@@ -28638,8 +28435,16 @@
         shouldShowSchemesButton,
         calculateCorruptDetection,
 
-        // AI Merchants access
-        getAIMerchants() { return aiMerchants; },
+        // AI Merchants access (unified — returns elite merchants from engine)
+        getAIMerchants() {
+            if (typeof Engine !== 'undefined' && Engine.getWorld) {
+                var w = Engine.getWorld();
+                if (w && w.people) {
+                    return w.people.filter(function(p) { return p.alive && p.isEliteMerchant; });
+                }
+            }
+            return [];
+        },
 
         // Crown & Royal Advisor
         becomeKing,
@@ -28771,8 +28576,20 @@
     };
 
     // ========================================================
-    // §14 PUBLIC API — window.AIMerchants
+    // §14 PUBLIC API — window.AIMerchants (unified with elite merchants)
     // ========================================================
-    window.AIMerchants = aiMerchants;
+    // AIMerchants now returns elite merchants from engine for backward compat
+    Object.defineProperty(window, 'AIMerchants', {
+        get: function() {
+            if (typeof Engine !== 'undefined' && Engine.getWorld) {
+                var w = Engine.getWorld();
+                if (w && w.people) {
+                    return w.people.filter(function(p) { return p.alive && p.isEliteMerchant; });
+                }
+            }
+            return [];
+        },
+        configurable: true
+    });
 
 })();

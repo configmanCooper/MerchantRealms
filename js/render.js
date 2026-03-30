@@ -338,8 +338,7 @@ window.Renderer = (function () {
         // 7. Player marker
         renderPlayerMarker(player);
 
-        // 8. AI Merchants
-        renderAIMerchants();
+        // 8. AI Merchants (unified with elite merchants — rendered via gold dots + flags)
 
         // 9. War indicators
         renderWarIndicators();
@@ -1894,37 +1893,9 @@ window.Renderer = (function () {
     // ═══════════════════════════════════════════════════════════
 
     function renderAIMerchants() {
-        if (typeof AIMerchants === 'undefined' || !AIMerchants) return;
-
-        const towns = _frameTowns;
-        if (!towns) return;
-        const townMap = _frameTownMap;
-        const ts = CONFIG.TILE_SIZE;
-
-        for (const merchant of AIMerchants) {
-            const town = townMap[merchant.townId];
-            if (!town) continue;
-
-            const mx = town.x + 15;
-            const my = town.y + 10;
-            if (!isVisible(mx, my, 50)) continue;
-
-            // Small merchant marker
-            ctx.fillStyle = '#8172b2';
-            ctx.beginPath();
-            ctx.arc(mx, my, 3.5, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-            ctx.lineWidth = 0.8;
-            ctx.stroke();
-
-            if (camera.zoom > 1.0) {
-                ctx.fillStyle = 'rgba(200,190,170,0.7)';
-                ctx.font = '7px serif';
-                ctx.textAlign = 'left';
-                ctx.fillText(merchant.name, mx + 6, my + 3);
-            }
-        }
+        // UNIFIED: AI merchants are now elite merchants in world.people.
+        // They render as gold dots in renderPeople() and heraldry flags in renderEliteMerchantIcons().
+        // This function is intentionally a no-op.
     }
 
     // ═══════════════════════════════════════════════════════════
