@@ -4,6 +4,23 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.44.1] - 2026-03-31
+
+### Fixed — Bug Fixes & Notification Category Overhaul
+
+- **Notification filters UI**: Removed stale localStorage overrides that were overwriting save data on load; save file is now sole source of truth for filter preferences
+- **Remembered prices persistence**: Added price snapshot on game load for current town, so old saves without price data get backfilled immediately
+- **Real estate report**: Fixed "no towns available" error — replaced non-existent `Engine.currentTown()` with `Engine.findTown(Player.townId)`
+- **Notification categories**: Complete overhaul of `inferEventCategory()` to distinguish player's kingdom vs foreign kingdoms
+  - Kingdom tax/law/festival/seizure events now check `details.kingdomId` against player's citizenship and current town kingdom
+  - Events about the player's kingdom → `my_kingdom`; other kingdoms → `foreign_kingdoms`
+  - Refugees now properly categorized based on source kingdom instead of hardcoded `local_town`
+  - Disasters check if they affect player's current town (`local_town`) vs elsewhere
+  - Added `kingdomId` to 40+ kingdom event details objects that were missing it
+  - Fixed 2 broken `logEvent()` calls (dual citizenship laws) with swapped arguments
+  - Removed all hardcoded `'my_kingdom'` explicit categories — all are now dynamic
+  - Added many new `dtype` matches: `tax_increase`, `tax_decrease`, `emergency_tax`, `festival`, `grand_festival`, `royal_pardon`, `crime_crackdown`, `public_works`, `welfare_distribution`, `forced_requisition`, `building_seizure`, `seizure_rebellion`, `seizure_overthrow`, `forced_loan`, `forced_labor`, `currency_debasement`, `elite_seizure`, `secession`, `coup_attempt`, `king_overthrown`, `coup_failed`, `conquest_citizenship`, `conquest_servitude`, `conquest_raid`, `kingdom_collapse_warning`, `kingdom_fragmentation`, `abdication`, `king_death`, `refugees`
+
 ## [0.44.0] - 2026-03-31
 
 ### Added — Equipment, Street Contraband, Journal & Save Fixes

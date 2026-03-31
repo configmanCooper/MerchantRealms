@@ -1803,6 +1803,7 @@ const SKILL_POINTS_PER_LEVEL = 4;
 const SKILLS = {
     // ── Commerce Branch (10) ──
     keen_eye:            { name: 'Keen Eye',            branch: 'commerce',   cost: 0, requires: [],                              desc: 'See buy/sell prices in your current town at a glance.',                    icon: '👁️' },
+    price_memory:        { name: 'Price Memory',        branch: 'commerce',   cost: 1, requires: ['keen_eye'],                    desc: 'Remember town prices for 60 days instead of 30 after visiting.',            icon: '🧠' },
     market_scout:        { name: 'Market Scout',        branch: 'commerce',   cost: 2, requires: ['keen_eye'],                    desc: 'See prices in towns where you have workers/buildings (updated every 30 days).', icon: '🔭' },
     trade_network:       { name: 'Trade Network',       branch: 'commerce',   cost: 5, requires: ['market_scout', 'silver_tongue'],   desc: 'See current prices in all towns of your home kingdom.',                    icon: '🗺️' },
     regional_survey:     { name: 'Regional Survey',     branch: 'commerce',   cost: 2, requires: ['trade_network'],               desc: 'See resource deposits and production info for all towns in your kingdom on hover.', icon: '📋' },

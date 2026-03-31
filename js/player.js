@@ -4286,7 +4286,7 @@
                 player.leftCart = null;
             }
 
-            // Snapshot town prices for stale price memory (90-day recall)
+            // Snapshot town prices for stale price memory (30-day base, 60 with Price Memory skill)
             if (town && town.market && town.market.prices) {
                 if (!player.rememberedPrices) player.rememberedPrices = {};
                 var pricesCopy = {};
@@ -11217,6 +11217,21 @@
         player.townStorage = data.townStorage || {};
         player.rememberedPrices = data.rememberedPrices || {};
         player._visitedTowns = data._visitedTowns || {};
+        // Snapshot current town prices on load (backfills old saves missing price data)
+        try {
+            if (player.townId && typeof Engine !== 'undefined' && Engine.findTown) {
+                var loadTown = Engine.findTown(player.townId);
+                if (loadTown && loadTown.market && loadTown.market.prices) {
+                    var loadPrices = {};
+                    var loadSupply = {};
+                    for (var lpk in loadTown.market.prices) loadPrices[lpk] = loadTown.market.prices[lpk];
+                    for (var lsk in (loadTown.market.supply || {})) loadSupply[lsk] = loadTown.market.supply[lsk];
+                    var loadDay = 0;
+                    try { loadDay = Engine.getDay(); } catch(e2) {}
+                    player.rememberedPrices[loadTown.id] = { day: loadDay, prices: loadPrices, supply: loadSupply };
+                }
+            }
+        } catch(e) {}
         // Passenger Transport
         player.activeTransport = data.activeTransport || null;
         // Toll Routes
@@ -11362,18 +11377,8 @@
         if (player.notificationFilters.error_alerts === undefined) {
             player.notificationFilters.error_alerts = false;
         }
-        // Merge localStorage overrides
-        try {
-            var savedFilters = localStorage.getItem('mr_notifFilters');
-            if (savedFilters) {
-                var parsed = JSON.parse(savedFilters);
-                for (var k in parsed) {
-                    if (player.notificationFilters.hasOwnProperty(k)) {
-                        player.notificationFilters[k] = parsed[k];
-                    }
-                }
-            }
-        } catch(e) {}
+        // Clear stale localStorage filter overrides — save file is source of truth
+        try { localStorage.removeItem('mr_notifFilters'); } catch(e) {}
     }
 
     function serializeAIMerchants() {
@@ -15581,13 +15586,11 @@
             // off -> smart (for military) or on (for others)
             player.notificationFilters[key] = key === 'military' ? 'smart' : true;
         }
-        try { localStorage.setItem('mr_notifFilters', JSON.stringify(player.notificationFilters)); } catch(e) {}
     }
 
     function setNotifFilter(key, value) {
         if (!player.notificationFilters) player.notificationFilters = {};
         player.notificationFilters[key] = value;
-        try { localStorage.setItem('mr_notifFilters', JSON.stringify(player.notificationFilters)); } catch(e) {}
     }
 
     function getNotificationFilters() {
@@ -29005,8 +29008,9 @@
         if (!mem) return null;
         var day = 0;
         try { day = Engine.getDay(); } catch(e) {}
-        // Expire after 90 days
-        if (day - mem.day > 90) {
+        // Base 30 days, Price Memory skill extends to 60
+        var maxDays = hasSkill('price_memory') ? 60 : 30;
+        if (day - mem.day > maxDays) {
             delete player.rememberedPrices[townId];
             return null;
         }
@@ -29018,8 +29022,9 @@
         if (!player.rememberedPrices) return;
         var day = 0;
         try { day = Engine.getDay(); } catch(e) {}
+        var maxDays = hasSkill('price_memory') ? 60 : 30;
         for (var tid in player.rememberedPrices) {
-            if (day - player.rememberedPrices[tid].day > 90) {
+            if (day - player.rememberedPrices[tid].day > maxDays) {
                 delete player.rememberedPrices[tid];
             }
         }

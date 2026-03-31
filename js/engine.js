@@ -5112,6 +5112,7 @@
                                 logEvent(`🏃 Refugees from ${town.name} are flooding into ${dest.name}!`, {
                                     type: 'refugees',
                                     townId: dest.id,
+                                    kingdomId: town.kingdomId,
                                     cause: hasPlague ? 'A plague in ' + town.name + ' is driving people away.' :
                                            migrateReason === 'war' ? 'War threatens ' + town.name + ', forcing civilians to flee.' :
                                            migrateReason === 'famine' ? 'Famine in ' + town.name + ' \u2014 people seek food elsewhere.' :
@@ -5123,7 +5124,7 @@
                                         'Housing pressure in ' + dest.name + ' may rise',
                                         'Some refugees may bring skills and trade goods'
                                     ]
-                                }, 'local_town');
+                                });
                             }
                         } else {
                             town._migrationCount = { day: world.day, count: 1, dest: dest.id };
@@ -5474,7 +5475,7 @@
                 .filter(a => a && a.alive);
 
             if (advisors.length > 0) {
-                logEvent(`${kingName} has died with no heir. The Royal Council of ${kingdom.name} convenes to elect a new ruler.`);
+                logEvent(`${kingName} has died with no heir. The Royal Council of ${kingdom.name} convenes to elect a new ruler.`, { type: 'succession', kingdomId: kingdom.id });
 
                 // Check if player is an advisor in this kingdom
                 const playerAdvisorId = _checkPlayerIsAdvisor(kingdom);
@@ -5537,14 +5538,14 @@
                     // Check if the elected advisor is the player
                     if (playerAdvisorId && elected.id === playerAdvisorId) {
                         // Player wins the election! Trigger player-as-king
-                        logEvent(`${elected.firstName} ${elected.lastName} (YOU) has been elected King/Queen of ${kingdom.name}!`);
+                        logEvent(`${elected.firstName} ${elected.lastName} (YOU) has been elected King/Queen of ${kingdom.name}!`, { type: 'succession', kingdomId: kingdom.id });
                         if (typeof Player !== 'undefined' && Player.becomeKing) {
                             Player.becomeKing(kingdom.id);
                         }
                         return;
                     }
                     newKing = elected;
-                    logEvent(`${elected.firstName} ${elected.lastName} has been elected King/Queen of ${kingdom.name}!`);
+                    logEvent(`${elected.firstName} ${elected.lastName} has been elected King/Queen of ${kingdom.name}!`, { type: 'succession', kingdomId: kingdom.id });
                 }
             }
         }
@@ -5591,7 +5592,7 @@
             installNewKing(kingdom, newKing, cause);
         } else {
             kingdom.king = null;
-            logEvent(`${kingdom.name} has no heir! The kingdom falls into chaos.`);
+            logEvent(`${kingdom.name} has no heir! The kingdom falls into chaos.`, { type: 'succession', kingdomId: kingdom.id });
         }
     }
 
@@ -5624,7 +5625,7 @@
         // Generate royal family with proper arguments
         const kTowns = world.towns.filter(t => t.kingdomId === kingdom.id);
         generateRoyalFamily(world.rng, newKing, world.people, kTowns);
-        logEvent(`👑 After a period of chaos, ${newKing.firstName} ${newKing.lastName} has seized the throne of ${kingdom.name}!`, null, 'kingdom');
+        logEvent(`👑 After a period of chaos, ${newKing.firstName} ${newKing.lastName} has seized the throne of ${kingdom.name}!`, { type: 'succession', kingdomId: kingdom.id });
         setKingMood(kingdom, 'ambitious', 'seized power during interregnum');
     }
 
@@ -5642,7 +5643,7 @@
             var otherK = world.kingdoms[ki];
             if (otherK !== kingdom && otherK.king === newKing.id) {
                 otherK.king = null;
-                logEvent(newKing.firstName + ' ' + newKing.lastName + ' abdicates ' + otherK.name + ' to rule ' + kingdom.name + '.', null, 'kingdom');
+                logEvent(newKing.firstName + ' ' + newKing.lastName + ' abdicates ' + otherK.name + ' to rule ' + kingdom.name + '.', { type: 'succession', kingdomId: otherK.id });
                 // Trigger emergency succession for the vacated kingdom
                 setTimeout(function() { attemptEmergencySuccession(otherK); }, 0);
             }
@@ -5651,7 +5652,7 @@
         newKing.occupation = 'noble';
         newKing.gold += 100;
         if (!cause || cause !== 'election') {
-            logEvent(`${newKing.firstName} ${newKing.lastName} becomes the new ruler of ${kingdom.name}.`);
+            logEvent(`${newKing.firstName} ${newKing.lastName} becomes the new ruler of ${kingdom.name}.`, { type: 'succession', kingdomId: kingdom.id });
         }
 
         // Derive kingdom kingPersonality from the new king's actual NPC personality traits
@@ -8299,7 +8300,7 @@
                     // Mark towns for festival afterglow
                     for (const tid of k.territories) { const t = findTown(tid); if (t) t._festivalDay = world.day; }
                     logEvent(`${k.name} holds a royal festival! Citizens rejoice.`, {
-                        type: 'festival',
+                        type: 'festival', kingdomId: k.id,
                         cause: 'The ruler of ' + k.name + ' noticed low happiness (' + Math.round(happiness) + '%) and spent 200g to boost morale.',
                         effects: [
                             'Kingdom happiness increased by 10 points',
@@ -8329,7 +8330,7 @@
                 if (!k.laws.specialLaws) k.laws.specialLaws = [];
                 k.laws.specialLaws.push({ id: 'forced_requisition', name: 'Forced Requisition', desc: 'Guards may seize goods from merchants.' });
                 logEvent(`${k.name} enacts Forced Requisition laws!`, {
-                    type: 'forced_requisition',
+                    type: 'forced_requisition', kingdomId: k.id,
                     cause: 'The corrupt ruler of ' + k.name + ' has authorized the seizure of merchant goods.',
                     effects: [
                         'Guards may seize goods from merchants',
@@ -8350,7 +8351,7 @@
             boostKingdomHappiness(k, 10);
             for (const tid of k.territories) { const t = findTown(tid); if (t) t._festivalDay = world.day; }
             logEvent(`The kind ruler of ${k.name} holds a festival for the people.`, {
-                type: 'festival',
+                type: 'festival', kingdomId: k.id,
                 cause: 'The generous ruler of ' + k.name + ' decided to celebrate with the people.',
                 effects: [
                     'Kingdom happiness increased by 10 points',
@@ -9056,7 +9057,7 @@
                     k.lastTaxIncreaseDay = world.day;
                     logKingAction(k, '📈 Raised wartime taxes to ' + Math.round(k.taxRate * 100) + '%');
                     logEvent('📈 ' + k.name + ' raises taxes to ' + Math.round(k.taxRate * 100) + '% to fund the war effort.', {
-                        type: 'wartime_tax_increase', cause: 'War expenses depleting treasury (' + Math.floor(k.gold) + 'g)',
+                        type: 'wartime_tax_increase', kingdomId: k.id, cause: 'War expenses depleting treasury (' + Math.floor(k.gold) + 'g)',
                         effects: ['Trade becomes more expensive', 'Citizens pay more taxes', 'War funding improved']
                     });
                 }
@@ -9086,7 +9087,7 @@
                                   'Citizens will grow resentful if seizures are frequent',
                                   'Rebellion may follow if the king goes too far'],
                         kingdomId: k.id
-                    }, 'my_kingdom');
+                    });
                     logKingAction(k, '⚖️ Enacted Right of Royal Requisition');
                 }
             }
@@ -9181,7 +9182,7 @@
                                 effects: ['Building now crown property', 'Previous owner loses investment',
                                           'Citizens grow fearful and resentful'],
                                 kingdomId: k.id, townId: _bTown.id
-                            }, 'my_kingdom');
+                            });
                             logKingAction(k, '👑 Seized a ' + targetBld.type + ' in ' + _bTown.name);
                             break;
                         }
@@ -9217,7 +9218,7 @@
                             effects: ['Major happiness drop (-25)', 'Soldiers may defect', 'King faces overthrow risk',
                                       'Seizure law repealed by force'],
                             kingdomId: k.id
-                        }, 'my_kingdom');
+                        });
                         // Consequences
                         boostKingdomHappiness(k, -25);
                         k._seizureLawActive = false;
@@ -9237,9 +9238,9 @@
                         // King may be overthrown
                         if (rng.chance(0.25)) {
                             logEvent('👑💀 The ruler of ' + k.name + ' is overthrown by the rebellion!', {
-                                type: 'seizure_overthrow', cause: 'Popular uprising against tyrannical seizures',
+                                type: 'seizure_overthrow', kingdomId: k.id, cause: 'Popular uprising against tyrannical seizures',
                                 effects: ['New ruler takes power', 'Seizure law permanently repealed', 'Period of instability']
-                            }, 'my_kingdom');
+                            });
                             handleKingDeath(k, 'rebellion');
                         }
                     }
@@ -9250,8 +9251,8 @@
             if (k._seizureLawActive) {
                 k._seizureLawActive = false;
                 logEvent('⚖️ ' + k.name + ' repeals the Right of Royal Requisition as peace returns.', {
-                    type: 'seizure_law_repeal', cause: 'War ended', effects: ['Citizens relieved', 'Normal property rights restored']
-                }, 'my_kingdom');
+                    type: 'seizure_law_repeal', kingdomId: k.id, cause: 'War ended', effects: ['Citizens relieved', 'Normal property rights restored']
+                });
             }
             if ((k._seizureResentment || 0) > 0) {
                 k._seizureResentment = Math.max(0, (k._seizureResentment || 0) - 1); // slowly decays in peacetime
@@ -9481,7 +9482,7 @@
         // c. Set price controls (intelligent kings only)
         if ((p.intelligence === 'brilliant') && rng.chance(0.05) && happiness < 35) {
             logEvent(`📜 ${k.name}'s wise king sets price controls on essential goods to protect citizens.`, {
-                type: 'price_controls', cause: 'Protecting citizens from price gouging', effects: ['Essential goods prices capped', 'Merchants may be discouraged']
+                type: 'price_controls', kingdomId: k.id, cause: 'Protecting citizens from price gouging', effects: ['Essential goods prices capped', 'Merchants may be discouraged']
             });
             const kTowns = world.towns.filter(t => k.territories.has(t.id));
             for (const town of kTowns) {
@@ -9511,7 +9512,7 @@
             boostKingdomHappiness(k, festHappy);
             for (const tid of k.territories) { const t = findTown(tid); if (t) t._festivalDay = world.day; }
             logEvent(`🎉 ${k.name} holds a grand festival! The people celebrate. (+${festHappy} happiness, -${festCost}g)`, {
-                type: 'grand_festival', cause: 'Royal celebration to boost morale', effects: ['Happiness +' + festHappy, 'Treasury -' + festCost + 'g']
+                type: 'grand_festival', kingdomId: k.id, cause: 'Royal celebration to boost morale', effects: ['Happiness +' + festHappy, 'Treasury -' + festCost + 'g']
             });
         }
 
@@ -9519,7 +9520,7 @@
         if ((p.justice === 'just' || p.temperament === 'kind') && rng.chance(0.05)) {
             boostKingdomHappiness(k, 3);
             logEvent(`⚖️ The king of ${k.name} issues royal pardons. Prisoners are freed. (+3 happiness)`, {
-                type: 'royal_pardon', cause: 'Act of mercy and justice', effects: ['Happiness +3', 'Some criminals released']
+                type: 'royal_pardon', kingdomId: k.id, cause: 'Act of mercy and justice', effects: ['Happiness +3', 'Some criminals released']
             });
         }
 
@@ -9531,7 +9532,7 @@
                 if (town) town.security = Math.min(100, (town.security || 50) + 10);
             }
             logEvent(`🛡️ ${k.name} cracks down on crime! Guards patrol the streets. (-200g, +10 security)`, {
-                type: 'crime_crackdown', cause: 'Royal order to restore order', effects: ['Security +10 in all towns', 'Treasury -200g']
+                type: 'crime_crackdown', kingdomId: k.id, cause: 'Royal order to restore order', effects: ['Security +10 in all towns', 'Treasury -200g']
             });
         }
 
@@ -9546,7 +9547,7 @@
                 if (town) town.prosperity = Math.min(100, town.prosperity + 2);
             }
             logEvent(`🏗️ ${k.name} funds public works projects. Roads and buildings are improved.`, {
-                type: 'public_works', cause: 'Investment in infrastructure', effects: ['Happiness +' + happyBoost, 'Prosperity +2', 'Treasury -' + cost + 'g']
+                type: 'public_works', kingdomId: k.id, cause: 'Investment in infrastructure', effects: ['Happiness +' + happyBoost, 'Prosperity +2', 'Treasury -' + cost + 'g']
             });
         }
 
@@ -9557,7 +9558,7 @@
             k.gold -= cost;
             boostKingdomHappiness(k, happyBoost);
             logEvent(`🤲 ${k.name}'s kind ruler distributes gold to the poorest citizens. (+${happyBoost} happiness)`, {
-                type: 'welfare_distribution', cause: 'Compassion for the less fortunate', effects: ['Happiness +' + happyBoost, 'Treasury -' + cost + 'g']
+                type: 'welfare_distribution', kingdomId: k.id, cause: 'Compassion for the less fortunate', effects: ['Happiness +' + happyBoost, 'Treasury -' + cost + 'g']
             });
             logKingAction(k, '🤲 Distributed gold to the poor (-' + cost + 'g, +' + happyBoost + ' happiness)');
         }
@@ -9579,11 +9580,11 @@
             && happiness < 30 && rng.chance(0.15 * (mood.conscriptMod || 1))) {
             k.laws.specialLaws.push({ id: 'price_controls', name: 'Price Controls', desc: 'Maximum prices on essential goods.', icon: '📊' });
             logKingAction(k, '📊 Enacted Price Controls to protect citizens');
-            logEvent('📊 ' + k.name + ' enacts price controls on essential goods!');
+            logEvent('📊 ' + k.name + ' enacts price controls on essential goods!', { type: 'law_change', kingdomId: k.id });
         } else if (hasSpecialLaw(k, 'price_controls') && happiness > 60 && rng.chance(0.1)) {
             k.laws.specialLaws = k.laws.specialLaws.filter(function(l) { return l.id !== 'price_controls'; });
             logKingAction(k, '📊 Repealed Price Controls — economy is stable');
-            logEvent('📊 ' + k.name + ' lifts price controls as prosperity returns.');
+            logEvent('📊 ' + k.name + ' lifts price controls as prosperity returns.', { type: 'law_change', kingdomId: k.id });
         }
 
         // b. Immigration Policy — traditionalist/paranoid kings close borders
@@ -9592,13 +9593,13 @@
             k.laws.specialLaws.push({ id: 'immigration_policy', name: 'Closed Borders', desc: 'Foreigners need citizenship to settle.', icon: '🚧' });
             k.immigrationPolicy = 'closed';
             logKingAction(k, '🚧 Closed borders to foreigners');
-            logEvent('🚧 ' + k.name + ' closes its borders! Foreigners must earn citizenship.');
+            logEvent('🚧 ' + k.name + ' closes its borders! Foreigners must earn citizenship.', { type: 'law_change', kingdomId: k.id });
         } else if (hasSpecialLaw(k, 'immigration_policy') && (p.tradition === 'progressive' || moodCurrent === 'jubilant')
             && rng.chance(0.1)) {
             k.laws.specialLaws = k.laws.specialLaws.filter(function(l) { return l.id !== 'immigration_policy'; });
             k.immigrationPolicy = 'open';
             logKingAction(k, '🚧 Opened borders to foreigners');
-            logEvent('🚧 ' + k.name + ' opens its borders! All are welcome.');
+            logEvent('🚧 ' + k.name + ' opens its borders! All are welcome.', { type: 'law_change', kingdomId: k.id });
         }
 
         // c. Inheritance Tax — greedy/corrupt kings impose, generous repeal
@@ -9612,11 +9613,11 @@
                 icon: '💀', rate: taxRate
             });
             logKingAction(k, '💀 Imposed ' + Math.round(taxRate * 100) + '% inheritance tax');
-            logEvent('💀 ' + k.name + ' enacts inheritance tax: ' + Math.round(taxRate * 100) + '% of inherited wealth goes to the crown!');
+            logEvent('💀 ' + k.name + ' enacts inheritance tax: ' + Math.round(taxRate * 100) + '% of inherited wealth goes to the crown!', { type: 'law_change', kingdomId: k.id });
         } else if (hasSpecialLaw(k, 'inheritance_tax') && p.greed === 'generous' && rng.chance(0.12)) {
             k.laws.specialLaws = k.laws.specialLaws.filter(function(l) { return l.id !== 'inheritance_tax'; });
             logKingAction(k, '💀 Repealed inheritance tax');
-            logEvent('💀 ' + k.name + ' abolishes the inheritance tax!');
+            logEvent('💀 ' + k.name + ' abolishes the inheritance tax!', { type: 'law_change', kingdomId: k.id });
         }
 
         // d. Draft Animal Law — traditionalist kings restrict horse ownership
@@ -9624,12 +9625,12 @@
             && (p.greed === 'greedy' || p.greed === 'corrupt') && rng.chance(0.05)) {
             k.laws.specialLaws.push({ id: 'draft_animal_law', name: 'Draft Animal Permits', desc: 'Commoners need permits for horses.', icon: '🐴' });
             logKingAction(k, '🐴 Restricted horse ownership — permits required');
-            logEvent('🐴 ' + k.name + ' now requires permits for horse ownership by commoners!');
+            logEvent('🐴 ' + k.name + ' now requires permits for horse ownership by commoners!', { type: 'law_change', kingdomId: k.id });
         } else if (hasSpecialLaw(k, 'draft_animal_law') && (p.tradition === 'progressive' || p.greed === 'generous')
             && rng.chance(0.1)) {
             k.laws.specialLaws = k.laws.specialLaws.filter(function(l) { return l.id !== 'draft_animal_law'; });
             logKingAction(k, '🐴 Lifted horse ownership restrictions');
-            logEvent('🐴 ' + k.name + ' lifts restrictions on horse ownership!');
+            logEvent('🐴 ' + k.name + ' lifts restrictions on horse ownership!', { type: 'law_change', kingdomId: k.id });
         }
 
         // e. Female Succession — progressive kings may allow, traditional may block
@@ -9637,7 +9638,7 @@
             && rng.chance(0.03)) {
             k.laws.specialLaws.push({ id: 'female_heir_law', name: 'Female Succession', desc: 'Women may inherit the throne.', icon: '👑' });
             logKingAction(k, '👑 Enacted female succession law');
-            logEvent('👑 ' + k.name + ' now allows women to inherit the throne!');
+            logEvent('👑 ' + k.name + ' now allows women to inherit the throne!', { type: 'law_change', kingdomId: k.id });
         }
 
         // f. Exclusive Citizenship — paranoid/traditional kings may forbid dual citizenship
@@ -9645,12 +9646,12 @@
             && rng.chance(0.04)) {
             k.laws.specialLaws.push({ id: 'no_dual_citizenship', name: 'Exclusive Citizenship', desc: 'Citizens may not hold citizenship in other kingdoms.', icon: '🛡️' });
             logKingAction(k, '🛡️ Enacted exclusive citizenship law');
-            logEvent('🛡️ ' + k.name + ' now forbids dual citizenship!', 'kingdom_politics', k.id);
+            logEvent('🛡️ ' + k.name + ' now forbids dual citizenship!', { type: 'law_change', kingdomId: k.id });
         } else if (hasSpecialLaw(k, 'no_dual_citizenship') && (p.tradition === 'progressive' || moodCurrent === 'jubilant')
             && rng.chance(0.08)) {
             k.laws.specialLaws = k.laws.specialLaws.filter(function(l) { return l.id !== 'no_dual_citizenship'; });
             logKingAction(k, '🛡️ Repealed exclusive citizenship law');
-            logEvent('🛡️ ' + k.name + ' now allows dual citizenship!', 'kingdom_politics', k.id);
+            logEvent('🛡️ ' + k.name + ' now allows dual citizenship!', { type: 'law_change', kingdomId: k.id });
         }
 
         // g. No Tent Camps — cruel/greedy kings ban tent camps, considering disease vs compassion
@@ -9670,12 +9671,12 @@
             if (wantsBan) {
                 k.laws.specialLaws.push({ id: 'no_tent_camps', name: 'No Tent Camps', desc: 'Tent camps are forbidden.', icon: '🚫' });
                 logKingAction(k, '🚫 Banned tent camps across the kingdom');
-                logEvent('🚫 ' + k.name + ' bans all tent camps! Soldiers will demolish existing camps.');
+                logEvent('🚫 ' + k.name + ' bans all tent camps! Soldiers will demolish existing camps.', { type: 'law_change', kingdomId: k.id });
             }
         } else if (hasSpecialLaw(k, 'no_tent_camps') && (p.temperament === 'kind' || p.greed === 'generous') && rng.chance(0.10)) {
             k.laws.specialLaws = k.laws.specialLaws.filter(function(l) { return l.id !== 'no_tent_camps'; });
             logKingAction(k, '🚫 Lifted tent camp ban');
-            logEvent('⛺ ' + k.name + ' lifts the ban on tent camps. The homeless may shelter again.');
+            logEvent('⛺ ' + k.name + ' lifts the ban on tent camps. The homeless may shelter again.', { type: 'law_change', kingdomId: k.id });
         }
 
         // h. Right to Camps — kind/generous kings allow citizens to self-build tent camps
@@ -9687,12 +9688,12 @@
             if (wantsRight) {
                 k.laws.specialLaws.push({ id: 'right_to_camps', name: 'Right to Camps', desc: 'Homeless citizens may build tent camps.', icon: '⛺' });
                 logKingAction(k, '⛺ Granted Right to Camps for the homeless');
-                logEvent('⛺ ' + k.name + ' grants the Right to Camps! Homeless citizens may build tent camps.');
+                logEvent('⛺ ' + k.name + ' grants the Right to Camps! Homeless citizens may build tent camps.', { type: 'law_change', kingdomId: k.id });
             }
         } else if (hasSpecialLaw(k, 'right_to_camps') && (p.temperament === 'cruel' || p.greed === 'corrupt') && rng.chance(0.08)) {
             k.laws.specialLaws = k.laws.specialLaws.filter(function(l) { return l.id !== 'right_to_camps'; });
             logKingAction(k, '⛺ Revoked Right to Camps');
-            logEvent('🚫 ' + k.name + ' revokes the Right to Camps. Only the king may authorize shelter.');
+            logEvent('🚫 ' + k.name + ' revokes the Right to Camps. Only the king may authorize shelter.', { type: 'law_change', kingdomId: k.id });
         }
 
         // ── Kingdom Transport Decision (every 30 days) ──
@@ -9723,7 +9724,7 @@
                     k.laws.kingdomTransport = true;
                     if (!k.laws.transportRate) k.laws.transportRate = rng.randInt(10, 25);
                     logEvent('👑 ' + k.name + ' has established a kingdom transport service! Setup cost: ' + setupCost + 'g',
-                        { type: 'law_change', kingdomId: k.id }, 'my_kingdom');
+                        { type: 'law_change', kingdomId: k.id });
                 }
             } else {
                 // Consider ending transport
@@ -9746,7 +9747,7 @@
                 if (wantEnd) {
                     k.laws.kingdomTransport = false;
                     logEvent('📢 ' + k.name + ' has ended its kingdom transport service.',
-                        { type: 'law_change', kingdomId: k.id }, 'my_kingdom');
+                        { type: 'law_change', kingdomId: k.id });
                 }
             }
         }
@@ -16424,6 +16425,30 @@
             return 'critical';
         }
 
+        // Helper: determine if a kingdom event involves the player's kingdom
+        var playerCitKingdom = typeof Player !== 'undefined' ? Player.citizenshipKingdomId : null;
+        var playerTownKingdom = null;
+        try {
+            if (typeof Player !== 'undefined' && Player.townId) {
+                var _pTown = findTown(Player.townId);
+                if (_pTown) playerTownKingdom = _pTown.kingdomId;
+            }
+        } catch(e) {}
+
+        function isMyKingdom() {
+            if (!details) return true; // no info, default to my_kingdom
+            if (details.kingdomId) {
+                return details.kingdomId === playerCitKingdom || details.kingdomId === playerTownKingdom;
+            }
+            if (details.kingdoms && details.kingdoms.length) {
+                for (var ki = 0; ki < details.kingdoms.length; ki++) {
+                    if (details.kingdoms[ki] === playerCitKingdom || details.kingdoms[ki] === playerTownKingdom) return true;
+                }
+                return false;
+            }
+            return true; // no kingdom info, default to my_kingdom for backward compat
+        }
+
         // War/military
         if (dtype === 'war_declared' || dtype === 'wardeclared' || dtype === 'warended' ||
             dtype === 'peace' || dtype === 'surrender' || dtype === 'battle' ||
@@ -16434,27 +16459,50 @@
             return 'military';
         }
 
-        // Disasters/events
+        // Disasters/events — check if in player's current town or kingdom
         if (dtype === 'flood' || dtype === 'fire' || dtype === 'plague' || dtype === 'earthquake' ||
             dtype === 'blight' || dtype === 'drought' || dtype === 'mine_collapse' ||
             dtype === 'famine' || dtype === 'storm' ||
             m.includes('plague') || m.includes('fire ') || m.includes('flood') ||
             m.includes('earthquake') || m.includes('famine') || m.includes('blight')) {
+            if (details && details.townId && typeof Player !== 'undefined') {
+                if (details.townId === Player.townId) return 'local_town';
+                return isMyKingdom() ? 'my_kingdom' : 'foreign_kingdoms';
+            }
             return 'local_town';
         }
 
-        // Kingdom political
+        // Refugees — categorize based on source/destination kingdom
+        if (dtype === 'refugees') {
+            return isMyKingdom() ? 'my_kingdom' : 'foreign_kingdoms';
+        }
+
+        // Kingdom political — distinguish my kingdom vs foreign
         if (dtype === 'law_change' || dtype === 'tax_change' || dtype === 'succession' ||
             dtype === 'economic_collapse' || dtype === 'revolt' || dtype === 'kingdom_collapse' ||
             dtype === 'territory_transfer' || dtype === 'alliance' || dtype === 'treaty' ||
+            dtype === 'tax_increase' || dtype === 'tax_decrease' || dtype === 'tax_levy' ||
+            dtype === 'tax_revolt' || dtype === 'property_tax' || dtype === 'income_tax' ||
+            dtype === 'festival' || dtype === 'grand_festival' || dtype === 'royal_pardon' ||
+            dtype === 'crime_crackdown' || dtype === 'public_works' || dtype === 'welfare_distribution' ||
+            dtype === 'price_controls' || dtype === 'forced_requisition' ||
+            dtype === 'seizure_law' || dtype === 'seizure_law_repeal' ||
+            dtype === 'asset_seizure' || dtype === 'seizure_rebellion' || dtype === 'seizure_overthrow' ||
+            dtype === 'building_seizure' || dtype === 'forced_loan' || dtype === 'forced_labor' ||
+            dtype === 'currency_debasement' || dtype === 'elite_seizure' ||
+            dtype === 'wartime_tax_increase' || dtype === 'king_death' || dtype === 'abdication' ||
+            dtype === 'kingdom_collapse_warning' || dtype === 'kingdom_fragmentation' ||
+            dtype === 'secession' || dtype === 'coup_attempt' || dtype === 'king_overthrown' || dtype === 'coup_failed' ||
+            dtype === 'conquest_citizenship' || dtype === 'conquest_servitude' || dtype === 'conquest_raid' ||
             m.includes('law ') || m.includes('tax ') || m.includes('festival') ||
             m.includes('succession') || m.includes('king ') || m.includes('regent') ||
             m.includes('commission') || m.includes('tournament') || m.includes('alliance')) {
-            return 'my_kingdom';
+            return isMyKingdom() ? 'my_kingdom' : 'foreign_kingdoms';
         }
 
         // Trade/economy
         if (dtype === 'trade' || dtype === 'trade_craze' || dtype === 'embargo' ||
+            dtype === 'trade_embargo' || dtype === 'embargo_lifted' ||
             dtype === 'price_control' || dtype === 'bounty' || dtype === 'tariff' ||
             m.includes('trade craze') || m.includes('embargo') || m.includes('price') ||
             m.includes('tariff') || m.includes('bounty')) {
@@ -23045,7 +23093,7 @@
         k.taxRevenue = (k.taxRevenue || 0) + totalPropertyTax;
         if (totalPropertyTax > 50) {
             logEvent(`📜 ${k.name} collects ${totalPropertyTax}g in property taxes.`, {
-                type: 'property_tax', cause: 'Monthly property tax collection', effects: []
+                type: 'property_tax', kingdomId: k.id, cause: 'Monthly property tax collection', effects: []
             });
         }
     }
@@ -23086,7 +23134,7 @@
         k.taxRevenue = (k.taxRevenue || 0) + totalIncomeTax;
         if (totalIncomeTax > 100) {
             logEvent(`📜 ${k.name} collects ${totalIncomeTax}g in seasonal income taxes.`, {
-                type: 'income_tax', cause: 'Seasonal income tax assessment', effects: []
+                type: 'income_tax', kingdomId: k.id, cause: 'Seasonal income tax assessment', effects: []
             });
         }
     }
@@ -23138,7 +23186,7 @@
                     k.taxRate = Math.min(0.20, k.taxRate + _bsTaxInc);
                     k.lastTaxIncreaseDay = world.day;
                     logEvent('📈 ' + k.name + ' raises trade taxes to ' + Math.round(k.taxRate * 100) + '% for budget sustainability.', {
-                        type: 'tax_increase', cause: 'Budget review', effects: ['Trade more expensive']
+                        type: 'tax_increase', kingdomId: k.id, cause: 'Budget review', effects: ['Trade more expensive']
                     });
                     _bsActionsTaken++;
                 }
@@ -23147,7 +23195,7 @@
                 if ((k.propertyTaxRate || 0.02) < 0.05 && rng.chance(0.3) && _bsActionsTaken < 2) {
                     k.propertyTaxRate = Math.min(0.05, (k.propertyTaxRate || 0.02) + rng.randFloat(0.005, 0.01));
                     logEvent('📈 ' + k.name + ' raises property taxes to ' + Math.round(k.propertyTaxRate * 100) + '%.', {
-                        type: 'tax_increase', cause: 'Budget review', effects: ['Building owners pay more']
+                        type: 'tax_increase', kingdomId: k.id, cause: 'Budget review', effects: ['Building owners pay more']
                     });
                     _bsActionsTaken++;
                 }
@@ -23157,7 +23205,7 @@
                     var _itInc = rng.randFloat(0.01, 0.02);
                     k.incomeTaxRate = Math.min(0.10, (k.incomeTaxRate || 0.05) + _itInc);
                     logEvent('📈 ' + k.name + ' raises income tax to ' + Math.round(k.incomeTaxRate * 100) + '%.', {
-                        type: 'tax_increase', cause: 'Budget review', effects: ['Citizens pay more income tax']
+                        type: 'tax_increase', kingdomId: k.id, cause: 'Budget review', effects: ['Citizens pay more income tax']
                     });
                     _bsActionsTaken++;
                 }
@@ -23303,7 +23351,7 @@
                 k.taxRate = Math.min(0.25, k.taxRate + increase);
                 k.lastTaxIncreaseDay = world.day;
                 logEvent(`📈 ${k.name} raises trade taxes to ${Math.round(k.taxRate * 100)}%.`, {
-                    type: 'tax_increase', cause: 'Low treasury (' + Math.floor(treasury) + 'g)', effects: ['Trade becomes more expensive', 'Merchants may avoid this kingdom']
+                    type: 'tax_increase', kingdomId: k.id, cause: 'Low treasury (' + Math.floor(treasury) + 'g)', effects: ['Trade becomes more expensive', 'Merchants may avoid this kingdom']
                 });
                 actionsTaken++;
             }
@@ -23312,7 +23360,7 @@
             if (actionsTaken < 2 && (k.propertyTaxRate || 0.02) < 0.06 && rng.chance(0.3)) {
                 k.propertyTaxRate = Math.min(0.06, (k.propertyTaxRate || 0.02) + rng.randFloat(0.005, 0.01));
                 logEvent(`📈 ${k.name} raises property taxes to ${Math.round(k.propertyTaxRate * 100)}%.`, {
-                    type: 'tax_increase', cause: 'Low treasury', effects: ['Building owners pay more']
+                    type: 'tax_increase', kingdomId: k.id, cause: 'Low treasury', effects: ['Building owners pay more']
                 });
                 actionsTaken++;
             }
@@ -23384,7 +23432,7 @@
                     k.gold += levy;
                     boostKingdomHappiness(k, -10);
                     logEvent(`💰 ${k.name} imposes an emergency wealth tax! ${levy}g collected from citizens.`, {
-                        type: 'emergency_tax', cause: 'Near-bankruptcy', effects: ['Happiness drops significantly (-10)', 'Citizens lose savings', 'Unrest may follow']
+                        type: 'emergency_tax', kingdomId: k.id, cause: 'Near-bankruptcy', effects: ['Happiness drops significantly (-10)', 'Citizens lose savings', 'Unrest may follow']
                     });
                 }
             }
@@ -23403,7 +23451,7 @@
                         town.buildings.splice(idx, 1);
                         k.gold += salePrice;
                         logEvent(`🏚️ ${k.name} sells a ${bt ? bt.name : bld.type} in ${town.name} for ${salePrice}g.`, {
-                            type: 'building_sale', cause: 'Desperate for gold', effects: ['Town loses building benefits']
+                            type: 'building_sale', kingdomId: k.id, cause: 'Desperate for gold', effects: ['Town loses building benefits']
                         });
                         break;
                     }
@@ -23421,7 +23469,7 @@
                     target.gold -= loan;
                     k.gold += loan;
                     logEvent(`👑 ${k.name}'s king demands a ${loan}g "loan" from ${target.firstName} ${target.lastName}.`, {
-                        type: 'forced_loan', cause: 'Royal decree to raise emergency funds', effects: ['Target loses gold', 'Relations strained']
+                        type: 'forced_loan', kingdomId: k.id, cause: 'Royal decree to raise emergency funds', effects: ['Target loses gold', 'Relations strained']
                     });
                 }
             }
@@ -23477,7 +23525,7 @@
                         npcBld.ownerId = k.id;
                         k.gold += value;
                         logEvent(`⚠️ ${k.name}'s king seizes a ${bt ? bt.name : npcBld.type} in ${town.name}! (${value}g)`, {
-                            type: 'asset_seizure', cause: 'Despotic measures to avoid collapse', effects: ['Building nationalized', 'Citizens fearful', 'Happiness drops']
+                            type: 'asset_seizure', kingdomId: k.id, cause: 'Despotic measures to avoid collapse', effects: ['Building nationalized', 'Citizens fearful', 'Happiness drops']
                         });
                         boostKingdomHappiness(k, -5);
                         break;
@@ -23500,7 +23548,7 @@
                     k.gold += seized;
                     localElite._seizureVictim = true;
                     logEvent(`⚠️ ${k.name}'s king seizes ${seized}g from the merchant house of ${localElite.firstName} ${localElite.lastName}!`, {
-                        type: 'elite_seizure', cause: 'Royal confiscation of merchant wealth', effects: ['Elite merchant may flee', 'Trade confidence shattered']
+                        type: 'elite_seizure', kingdomId: k.id, cause: 'Royal confiscation of merchant wealth', effects: ['Elite merchant may flee', 'Trade confidence shattered']
                     });
                     boostKingdomHappiness(k, -8);
                 }
@@ -23511,7 +23559,7 @@
                 boostKingdomHappiness(k, -20);
                 k.gold += rng.randInt(200, 500);
                 logEvent(`⛓️ ${k.name}'s king decrees forced labor! Citizens conscripted for kingdom projects.`, {
-                    type: 'forced_labor', cause: 'Desperate attempt to generate revenue', effects: ['Happiness plummets (-20)', 'Small amount of gold generated', 'Risk of rebellion']
+                    type: 'forced_labor', kingdomId: k.id, cause: 'Desperate attempt to generate revenue', effects: ['Happiness plummets (-20)', 'Small amount of gold generated', 'Risk of rebellion']
                 });
             }
 
@@ -23521,7 +23569,7 @@
                 k._debasementInflation = 0.30;
                 k.gold = Math.floor(k.gold * 1.20); // instant 20% boost
                 logEvent(`💰 ${k.name} debases its currency! The kingdom mints cheaper coins.`, {
-                    type: 'currency_debasement', cause: 'Desperate monetary policy', effects: ['Treasury gets 20% boost', 'All prices in kingdom rise 30%', 'Long-term economic damage']
+                    type: 'currency_debasement', kingdomId: k.id, cause: 'Desperate monetary policy', effects: ['Treasury gets 20% boost', 'All prices in kingdom rise 30%', 'Long-term economic damage']
                 });
                 // Inflate prices in all kingdom towns
                 for (const townId of k.territories) {
@@ -23670,7 +23718,7 @@
                 // If kingdom can't afford, they cancel it
                 if (k.gold < 0) {
                     k.laws.kingdomTransport = false;
-                    logEvent('📢 ' + k.name + ' can no longer afford public transport services.', { type: 'law_change', kingdomId: k.id }, 'my_kingdom');
+                    logEvent('📢 ' + k.name + ' can no longer afford public transport services.', { type: 'law_change', kingdomId: k.id });
                 }
             }
         }

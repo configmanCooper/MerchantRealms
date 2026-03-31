@@ -9023,7 +9023,7 @@ window.UI = (function () {
 
         // Determine available towns
         var allTowns = Engine.getTowns();
-        var playerTown = Engine.currentTown ? Engine.currentTown() : null;
+        var playerTown = (typeof Player !== 'undefined' && Player.townId) ? Engine.findTown(Player.townId) : null;
         var playerKingdomId = typeof Player !== 'undefined' ? Player.kingdomId : null;
         var availableTowns = [];
 
