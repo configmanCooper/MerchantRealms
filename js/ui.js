@@ -3186,8 +3186,16 @@ window.UI = (function () {
             // Output rate breakdown
             html += `<div style="font-size:0.72rem;color:#aaa;margin-top:4px;">Output: ${bt.rate} base × ${info.workerFraction.toFixed(2)} workers × ${info.seasonMod} season × ${bld.level} level × ${info.prodBonus.toFixed(2)} bonus = ${info.dailyOutput}</div>`;
 
-            // Current storage
-            html += `<div style="font-size:0.78rem;margin-top:4px;">📋 Current Storage: ${info.stored} ${prodName}</div>`;
+            // Current storage — show capacity from building type
+            var bldStorageCap = (bt.storage || 0) * (bld.level || 1);
+            if (bldStorageCap > 0) {
+                var storagePct = Math.min(100, Math.round((info.stored / bldStorageCap) * 100));
+                var storageColor = storagePct >= 90 ? '#e74c3c' : storagePct >= 60 ? '#e67e22' : '#55a868';
+                html += `<div style="font-size:0.78rem;margin-top:4px;">📋 Building Storage: ${info.stored} / ${bldStorageCap} ${prodName} <span style="color:${storageColor};">(${storagePct}%)</span></div>`;
+                html += `<div style="background:#333;border-radius:3px;height:6px;margin-top:2px;"><div style="background:${storageColor};height:100%;border-radius:3px;width:${storagePct}%;"></div></div>`;
+            } else {
+                html += `<div style="font-size:0.78rem;margin-top:4px;">📋 Current Storage: ${info.stored} ${prodName}</div>`;
+            }
 
             // Collect button
             if (info.stored > 0 && bld.townId === Player.townId) {
@@ -3441,8 +3449,11 @@ window.UI = (function () {
             html += `<div style="padding:8px;border:1px solid var(--border);border-radius:4px;margin-bottom:8px;">
                 <div style="font-weight:bold;font-size:0.8rem;margin-bottom:6px;">⬆️ UPGRADE</div>
                 <div style="font-size:0.78rem;">Level ${bld.level} → ${nextLevel} (Cost: ${upgradeCost}g)</div>
-                <div style="font-size:0.72rem;color:#aaa;">+50% production output per level</div>
-                <button class="btn-trade buy" style="font-size:0.7rem;margin-top:4px;" onclick="UI.upgradeBuildingUI('${bld.id}')">⬆️ Upgrade (${upgradeCost}g)</button>
+                <div style="font-size:0.72rem;color:#aaa;">+50% production output per level</div>`;
+            if (bt.storage) {
+                html += `<div style="font-size:0.72rem;color:#aaa;">Storage: ${bt.storage * bld.level} → ${bt.storage * nextLevel} units</div>`;
+            }
+            html += `<button class="btn-trade buy" style="font-size:0.7rem;margin-top:4px;" onclick="UI.upgradeBuildingUI('${bld.id}')">⬆️ Upgrade (${upgradeCost}g)</button>
             </div>`;
         }
 
@@ -5495,8 +5506,47 @@ window.UI = (function () {
             }
             html += '</div>';
         } else {
-            html += '<div style="margin-top:8px;font-size:0.75rem;color:#888;font-style:italic;">No swords or armor available at this market.</div>';
+            html += '<div style="margin-top:8px;font-size:0.75rem;color:#888;font-style:italic;">No weapons or armor available at this market.</div>';
         }
+
+        // Equippable items from inventory
+        var invEquipHtml = '';
+        var equipResources = ['swords', 'swords_good', 'swords_excellent', 'bows', 'bows_good', 'bows_excellent', 'armor', 'armor_good', 'armor_excellent'];
+        for (var ei = 0; ei < equipResources.length; ei++) {
+            var eResId = equipResources[ei];
+            var eHeld = (Player.inventory || {})[eResId] || 0;
+            if (eHeld <= 0) continue;
+            var eRes = findResource(eResId);
+            if (!eRes) continue;
+            // Check if already equipped
+            var isEquippedWeapon = Player.weapon && typeof Player.weapon === 'object' && CONFIG.EQUIPMENT_TYPES;
+            var matchW = false;
+            var matchA = false;
+            if (CONFIG.EQUIPMENT_TYPES) {
+                for (var mw = 0; mw < (CONFIG.EQUIPMENT_TYPES.weapons || []).length; mw++) {
+                    if (CONFIG.EQUIPMENT_TYPES.weapons[mw].resource === eResId && Player.weapon && Player.weapon.id === CONFIG.EQUIPMENT_TYPES.weapons[mw].id) matchW = true;
+                }
+                for (var ma = 0; ma < (CONFIG.EQUIPMENT_TYPES.armor || []).length; ma++) {
+                    if (CONFIG.EQUIPMENT_TYPES.armor[ma].resource === eResId && Player.armor && Player.armor.id === CONFIG.EQUIPMENT_TYPES.armor[ma].id) matchA = true;
+                }
+            }
+            var alreadyEquipped = matchW || matchA;
+            invEquipHtml += '<div style="display:flex;align-items:center;gap:8px;margin:3px 0;">';
+            invEquipHtml += '<span style="font-size:0.8rem;">' + (eRes.icon || '') + ' ' + eRes.name + ' ×' + eHeld + '</span>';
+            if (!alreadyEquipped) {
+                invEquipHtml += '<button class="btn-medieval" onclick="UI.equipFromInventoryUI(\'' + eResId + '\')" style="font-size:0.7rem;padding:3px 10px;margin-left:auto;">Equip</button>';
+            } else {
+                invEquipHtml += '<span style="font-size:0.7rem;color:#55a868;margin-left:auto;">✓ Equipped</span>';
+            }
+            invEquipHtml += '</div>';
+        }
+        if (invEquipHtml) {
+            html += '<div style="margin-top:10px;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px;">';
+            html += '<div style="font-size:0.8rem;color:var(--gold);margin-bottom:6px;">🎒 Equip from Inventory</div>';
+            html += invEquipHtml;
+            html += '</div>';
+        }
+
         html += '</div>';
 
         // Check port status for ship operations
@@ -6052,6 +6102,16 @@ window.UI = (function () {
             if (result.success) openCharacterDialog();
         } catch (e) {
             toast(e.message || 'Cannot unequip', 'danger');
+        }
+    }
+
+    function equipFromInventoryUI(resourceId) {
+        try {
+            var result = Player.equipFromInventory(resourceId);
+            toast(result.message, result.success ? 'success' : 'warning');
+            if (result.success) openCharacterDialog();
+        } catch (e) {
+            toast(e.message || 'Cannot equip', 'danger');
         }
     }
 
@@ -12254,6 +12314,43 @@ window.UI = (function () {
             }
         }
 
+        // Contraband SELL offers — sell your banned/restricted goods to shady NPCs
+        if (typeof Player !== 'undefined' && Player.getStreetContrabandOffers) {
+            var contrabandOffers = Player.getStreetContrabandOffers();
+            if (contrabandOffers.length > 0) {
+                html += '<hr style="border-color:#555;margin:12px 0;">';
+                html += '<p class="street-intro">🚫 <strong>Sell Contraband</strong> — Offload banned or restricted goods. Risk of detection and punishment!</p>';
+                html += '<div class="street-trade-list">';
+                for (var ci = 0; ci < contrabandOffers.length; ci++) {
+                    var co = contrabandOffers[ci];
+                    var coHeld = co.heldQty || 0;
+                    var coCanSell = coHeld > 0;
+                    var coTotal = co.pricePerUnit * coHeld;
+                    var coPremiumPct = co.marketPrice > 0 ? Math.round(((co.pricePerUnit - co.marketPrice) / co.marketPrice) * 100) : 0;
+                    var coLabel = co.isBanned ? '🚫 Banned' : '⚠️ No License';
+                    var coColor = co.isBanned ? '#c44e52' : '#d4a74a';
+                    html += '<div class="street-trade-item" style="border-left:3px solid ' + coColor + ';">';
+                    html += '<div class="street-trade-info">';
+                    html += '<span class="street-npc-name">' + co.npcName + '</span> will buy ';
+                    html += '<strong>' + co.resourceIcon + ' ' + co.resourceName + '</strong>';
+                    html += ' — <span class="street-price">' + co.pricePerUnit + 'g each</span>';
+                    html += ' <span style="color:' + (coPremiumPct >= 0 ? '#55a868' : '#c44e52') + ';font-weight:bold;font-size:0.85em;">';
+                    html += '(' + (coPremiumPct >= 0 ? '+' : '') + coPremiumPct + '% vs market)</span>';
+                    html += ' <span style="color:' + coColor + ';font-weight:bold;font-size:0.85em;">' + coLabel + '</span>';
+                    html += '</div>';
+                    html += '<div class="street-trade-actions">';
+                    html += '<span class="street-have">You have: ' + coHeld + '</span>';
+                    if (coCanSell && coHeld > 1) {
+                        html += '<button class="btn-medieval btn-street-sell" onclick="UI.executeStreetContrabandSellUI(' + ci + ',1)" style="font-size:0.7rem;padding:2px 6px;">Sell 1 (' + co.pricePerUnit + 'g)</button>';
+                    }
+                    html += '<button class="btn-medieval btn-street-sell" ' + (coCanSell ? 'onclick="UI.executeStreetContrabandSellUI(' + ci + ',' + coHeld + ')"' : 'disabled') + '>';
+                    html += 'Sell All ' + coHeld + ' (' + coTotal + 'g)</button>';
+                    html += '</div></div>';
+                }
+                html += '</div>';
+            }
+        }
+
         // Add NPC Chat section for indentured servants seeking escape hints
         if (typeof Player !== 'undefined' && Player.indentured && Player.indentured.active) {
             html += '<hr style="border-color:#555;margin:12px 0;">';
@@ -12333,6 +12430,17 @@ window.UI = (function () {
             openStreetTrading(); // refresh
         } else {
             toast(result.message, result.caught ? 'error' : 'warning');
+        }
+    }
+
+    function executeStreetContrabandSellUI(offerIndex, qty) {
+        var result = Player.executeStreetContrabandSell(offerIndex, qty);
+        if (result.success) {
+            toast(result.message, result.smuggled ? 'success' : 'success');
+            openStreetTrading(); // refresh
+        } else {
+            toast(result.message, result.caught ? 'error' : 'warning');
+            openStreetTrading(); // refresh to update quantities
         }
     }
 
@@ -16372,6 +16480,7 @@ window.UI = (function () {
         buyArmor,
         unequipWeapon: unequipWeaponUI,
         unequipArmor: unequipArmorUI,
+        equipFromInventoryUI,
         // New features
         openKingdomsDialog,
         petitionPromotion,
@@ -16442,6 +16551,7 @@ window.UI = (function () {
         openStreetTrading,
         executeStreetTrade: executeStreetTradeUI,
         executeStreetBuyUI,
+        executeStreetContrabandSellUI,
         chatWithNPC,
         // Dark Deeds / Schemes
         openSchemesDialog,

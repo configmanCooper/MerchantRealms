@@ -855,6 +855,12 @@
             player.achievementStats.kingdomsTraded[kingdom.id] = true;
         }
 
+        // Journal — significant purchases (50g+)
+        if (totalCost >= 50) {
+            var buyResName = res_info ? res_info.name : resourceId;
+            autoJournalCapture('trade', 'Purchased ' + qty + ' ' + buyResName + ' for ' + totalCost + 'g in ' + town.name + '.', { mood: 'reflective' });
+        }
+
         addTradeLog(resourceId, qty, price, tid, 'buy');
         consumeEnergy(ENERGY_CONFIG.TRADE_COST || 2);
         return {
@@ -1165,6 +1171,12 @@
 
         // War trade tracking — check if selling military goods to enemy
         checkWarTradeSale(resourceId, qty, town, kingdom);
+
+        // Journal — significant sales (50g+)
+        if (totalRevenue >= 50) {
+            var sellResName = res ? res.name : resourceId;
+            autoJournalCapture('trade', 'Sold ' + qty + ' ' + sellResName + ' for ' + totalRevenue + 'g in ' + town.name + '.' + (totalRevenue >= 500 ? ' A handsome profit!' : ''), { mood: totalRevenue >= 500 ? 'triumphant' : 'content' });
+        }
 
         addTradeLog(resourceId, qty, effectivePrice, tid, 'sell');
         consumeEnergy(ENERGY_CONFIG.TRADE_COST || 2);
@@ -2495,6 +2507,16 @@
         const offroadMsg = isOffroad ? ' 🥾 (Off-road — slow going!)' : '';
         const seaMsg = isSea ? ' ⛵ (Sea route!)' : '';
         Engine.logEvent(`You set out for ${dest ? dest.name : 'unknown'}.${horseMsg}${offroadMsg}${seaMsg}${cartMsg}${ambushMsg}`);
+
+        // Journal — travel departure
+        var originTown = Engine.findTown(player.travelOrigin);
+        var travelJText = 'Set out from ' + (originTown ? originTown.name : 'town') + ' heading for ' + (dest ? dest.name : 'parts unknown') + '. The journey should take about ' + estimatedDays + ' day' + (estimatedDays > 1 ? 's' : '') + '.';
+        if (hasHorse) travelJText += ' My horse should make the ride swifter.';
+        if (isOffroad) travelJText += ' The path is rough — no proper road to follow.';
+        if (isSea) travelJText += ' We set sail across the waters.';
+        if (ambushResult && ambushResult.ambushed) travelJText += ' We were ambushed on the road!';
+        autoJournalCapture('travel', travelJText, { mood: (ambushResult && ambushResult.ambushed) ? 'fearful' : 'hopeful' });
+
         return { success: true, message: `Traveling to ${dest ? dest.name : townId}.${horseMsg}${offroadMsg}${seaMsg}${cartMsg}${ambushMsg}`, estimatedDays: estimatedDays, ambush: ambushResult };
     }
 
@@ -4209,7 +4231,27 @@
 
             const town = Engine.findTown(player.townId);
             Engine.logEvent(`You have arrived at ${town ? town.name : 'your destination'}.`);
-            autoJournalCapture('arrival', 'The journey was long, but I have arrived at last.', { mood: 'content' });
+
+            // Auto-pause on arrival so the player can decide what to do
+            if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(0);
+
+            var arrivalText = town ? ('Arrived in ' + town.name + '.') : 'Arrived at my destination.';
+            if (town) {
+                var pop = town.population || 0;
+                if (pop > 3000) arrivalText += ' A bustling city — the streets are crowded with traders and townsfolk.';
+                else if (pop > 1000) arrivalText += ' A fair-sized town with plenty of activity.';
+                else arrivalText += ' A quiet settlement — peaceful, but modest.';
+                if (town.isPort) arrivalText += ' Ships line the harbor.';
+            }
+            // Check if first visit
+            if (town && !player._visitedTowns) player._visitedTowns = {};
+            if (town && !player._visitedTowns[town.id]) {
+                player._visitedTowns[town.id] = Engine.getDay();
+                arrivalText += ' This is my first time here — everything feels new.';
+                recordJournalEntry('arrival', arrivalText, { mood: 'curious' });
+            } else {
+                autoJournalCapture('arrival', arrivalText, { mood: 'content' });
+            }
 
             // Check for left-behind cart in this town
             if (player.leftCart && player.leftCart.townId === player.townId) {
@@ -9348,7 +9390,13 @@
 
     function unequipWeapon() {
         if (!player.weapon) return { success: false, message: 'No weapon equipped.' };
-        player.inventory.swords = (player.inventory.swords || 0) + 1;
+        // Return the correct resource to inventory based on equipment type
+        var resId = 'swords';
+        if (typeof player.weapon === 'object' && player.weapon.id) {
+            var eqDef = EQUIPMENT_TYPES.weapons.find(function(e) { return e.id === player.weapon.id; });
+            if (eqDef) resId = eqDef.resource;
+        }
+        player.inventory[resId] = (player.inventory[resId] || 0) + 1;
         var oldName = (typeof player.weapon === 'object') ? player.weapon.name : 'Sword';
         player.weapon = null;
         return { success: true, message: 'Unequipped ' + oldName + '. Added to inventory.' };
@@ -9356,10 +9404,60 @@
 
     function unequipArmor() {
         if (!player.armor) return { success: false, message: 'No armor equipped.' };
-        player.inventory.armor = (player.inventory.armor || 0) + 1;
+        var resId = 'armor';
+        if (typeof player.armor === 'object' && player.armor.id) {
+            var eqDef = EQUIPMENT_TYPES.armor.find(function(e) { return e.id === player.armor.id; });
+            if (eqDef) resId = eqDef.resource;
+        }
+        player.inventory[resId] = (player.inventory[resId] || 0) + 1;
         var oldName = (typeof player.armor === 'object') ? player.armor.name : 'Armor';
         player.armor = null;
         return { success: true, message: 'Unequipped ' + oldName + '. Added to inventory.' };
+    }
+
+    // Equip a weapon or armor directly from inventory (no gold cost)
+    function equipFromInventory(resourceId) {
+        if (!resourceId) return { success: false, message: 'No item specified.' };
+        var held = player.inventory[resourceId] || 0;
+        if (held <= 0) return { success: false, message: 'You don\'t have any in your inventory.' };
+
+        // Find matching equipment definition
+        var weaponDef = null;
+        var armorDef = null;
+        for (var wi = 0; wi < EQUIPMENT_TYPES.weapons.length; wi++) {
+            if (EQUIPMENT_TYPES.weapons[wi].resource === resourceId) {
+                // Pick the best quality match for this resource
+                if (!weaponDef || EQUIPMENT_TYPES.weapons[wi].combatBonus > weaponDef.combatBonus) {
+                    weaponDef = EQUIPMENT_TYPES.weapons[wi];
+                }
+            }
+        }
+        for (var ai = 0; ai < EQUIPMENT_TYPES.armor.length; ai++) {
+            if (EQUIPMENT_TYPES.armor[ai].resource === resourceId) {
+                if (!armorDef || EQUIPMENT_TYPES.armor[ai].combatBonus > armorDef.combatBonus) {
+                    armorDef = EQUIPMENT_TYPES.armor[ai];
+                }
+            }
+        }
+
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.equip || 2);
+
+        if (weaponDef) {
+            // Unequip current weapon first (return to inventory)
+            if (player.weapon) unequipWeapon();
+            player.inventory[resourceId] = Math.max(0, (player.inventory[resourceId] || 0) - 1);
+            if (player.inventory[resourceId] <= 0) delete player.inventory[resourceId];
+            player.weapon = { id: weaponDef.id, name: weaponDef.name, quality: weaponDef.quality, combatBonus: weaponDef.combatBonus };
+            return { success: true, message: 'Equipped ' + weaponDef.name + '! (+' + Math.round(weaponDef.combatBonus * 100) + '% combat survival)' };
+        } else if (armorDef) {
+            if (player.armor) unequipArmor();
+            player.inventory[resourceId] = Math.max(0, (player.inventory[resourceId] || 0) - 1);
+            if (player.inventory[resourceId] <= 0) delete player.inventory[resourceId];
+            player.armor = { id: armorDef.id, name: armorDef.name, quality: armorDef.quality, combatBonus: armorDef.combatBonus };
+            return { success: true, message: 'Equipped ' + armorDef.name + '! (+' + Math.round(armorDef.combatBonus * 100) + '% combat survival)' };
+        }
+
+        return { success: false, message: 'That item cannot be equipped.' };
     }
 
     /**
@@ -10196,6 +10294,10 @@
         };
         player.injuries.push(injury);
         Engine.logEvent(`${player.fullName} sustained ${type.name} (${severity}).`);
+
+        // Journal — injury
+        recordJournalEntry('injury', 'Suffered a ' + type.name + ' (' + severity + ') from ' + (source || 'an unfortunate incident') + '. Recovery will take some days.', { mood: 'weary' });
+
         if (typeof UI !== 'undefined' && UI.toast) {
             UI.toast(`🩹 Injury: ${type.name} (${severity})`, 'danger');
         }
@@ -10708,6 +10810,7 @@
             _lastDehydrateTick: player._lastDehydrateTick || 0,
             marketIntel: JSON.parse(JSON.stringify(player.marketIntel)),
             tradeTipLog: JSON.parse(JSON.stringify(player.tradeTipLog || [])),
+            journalEntries: JSON.parse(JSON.stringify(player.journalEntries || [])),
             achievementStats: JSON.parse(JSON.stringify(player.achievementStats)),
             _xpAccumulator: player._xpAccumulator,
             licenses: JSON.parse(JSON.stringify(player.licenses)),
@@ -10784,6 +10887,8 @@
             // Inventory Capacity
             storageContainer: player.storageContainer,
             townStorage: JSON.parse(JSON.stringify(player.townStorage || {})),
+            rememberedPrices: JSON.parse(JSON.stringify(player.rememberedPrices || {})),
+            _visitedTowns: JSON.parse(JSON.stringify(player._visitedTowns || {})),
             // Passenger Transport
             activeTransport: player.activeTransport ? JSON.parse(JSON.stringify(player.activeTransport)) : null,
             // Toll Routes
@@ -10994,6 +11099,7 @@
         player._lastDehydrateTick = data._lastDehydrateTick || 0;
         player.marketIntel = data.marketIntel || {};
         player.tradeTipLog = data.tradeTipLog || [];
+        player.journalEntries = data.journalEntries || [];
         player.achievementStats = data.achievementStats || {
             totalSells: {}, totalBuys: {}, giftsGiven: 0,
             smuggleSuccesses: 0, smuggleStreak: 0, smuggleGoldEarned: 0,
@@ -11109,6 +11215,8 @@
         // Inventory Capacity
         player.storageContainer = data.storageContainer || null;
         player.townStorage = data.townStorage || {};
+        player.rememberedPrices = data.rememberedPrices || {};
+        player._visitedTowns = data._visitedTowns || {};
         // Passenger Transport
         player.activeTransport = data.activeTransport || null;
         // Toll Routes
@@ -13487,6 +13595,9 @@
 
         try { Engine.logEvent(guild.icon + ' Joined ' + guild.name + ' (' + type + ', ' + price + 'g)', 'my_actions'); } catch(e) {}
 
+        // Journal — guild membership
+        recordJournalEntry('guild', 'Joined the ' + guild.name + ' as a ' + type + ' member for ' + price + 'g. New opportunities and connections await.', { mood: 'hopeful' });
+
         return { success: true, message: 'Joined ' + guild.name + '! Membership until Day ' + (currentExpiry + duration) + '.' };
     }
 
@@ -15526,6 +15637,10 @@
             UI.toast(`📚 Skill Learned: ${skill.icon} ${skill.name}`, 'success', 'my_actions');
         }
         Engine.logEvent(`${player.fullName} learned ${skill.name}.`);
+
+        // Journal — skill learning
+        recordJournalEntry('skill', 'Studied and mastered ' + skill.name + '. ' + (skill.desc || 'A useful ability that should serve me well.'), { mood: 'content' });
+
         return true;
     }
 
@@ -16883,6 +16998,10 @@
         player.pendingWorkName = '';
 
         var payPerTick = (finalPay / ticksRequired).toFixed(2);
+
+        // Journal — job completion
+        autoJournalCapture('job', 'Worked as ' + job.name + ' and earned ' + finalPay + 'g for ' + job.hours + ' hours of labor.' + (lootMsg ? ' Found some extra goods too.' : ''), { mood: finalPay >= 30 ? 'content' : 'weary' });
+
         return { success: true, message: `Completed ${job.name} (${job.hours}hrs, ${ticksRequired} ticks) — earned ${finalPay}g (${payPerTick}g/tick).${lootMsg}${spyEventMsg}${instrumentMsg}${customsMsg}` };
     }
 
@@ -16928,6 +17047,130 @@
             player._streetTradesDay = day;
         }
         return player._streetTradesCache || [];
+    }
+
+    // Generate contraband sell offers — NPCs willing to buy banned/restricted goods the player holds
+    function getStreetContrabandOffers() {
+        if (player.traveling) return [];
+        var town = Engine.findTown(player.townId);
+        if (!town) return [];
+        var kingdom = Engine.findKingdom(town.kingdomId);
+        if (!kingdom || !kingdom.laws) return [];
+        var rng = Engine.getRng();
+        if (!rng) return [];
+
+        var day = Engine.getDay();
+        if (player._streetContrabandCache && player._streetContrabandDay && day - player._streetContrabandDay < (CONFIG.STREET_TRADE_REFRESH_DAYS || 3)) {
+            // Refresh held qty each time (inventory changes)
+            var cached = player._streetContrabandCache;
+            for (var ci = 0; ci < cached.length; ci++) {
+                cached[ci].heldQty = player.inventory[cached[ci].resourceId] || 0;
+            }
+            return cached;
+        }
+
+        var bannedGoods = (kingdom.laws.bannedGoods) || [];
+        var restrictedGoods = (kingdom.laws.restrictedGoods) || [];
+
+        // Find goods the player holds that are banned or restricted (without license)
+        var contrabandItems = [];
+        for (var resId in player.inventory) {
+            if ((player.inventory[resId] || 0) <= 0) continue;
+            var isBanned = bannedGoods.indexOf(resId) !== -1;
+            var isRestricted = restrictedGoods.indexOf(resId) !== -1 && !hasLicense(kingdom.id, resId);
+            if (isBanned || isRestricted) {
+                contrabandItems.push({ resId: resId, isBanned: isBanned, isRestricted: isRestricted });
+            }
+        }
+        if (contrabandItems.length === 0) {
+            player._streetContrabandCache = [];
+            player._streetContrabandDay = day;
+            return [];
+        }
+
+        // Get shady NPCs willing to buy
+        var people = Engine.getPeople(town.id);
+        var candidates = [];
+        if (people && people.length > 0) {
+            for (var pi = 0; pi < people.length; pi++) {
+                var p = people[pi];
+                if (p && p.alive && p.occupation !== 'soldier' && p.occupation !== 'guard' && p.occupation !== 'noble') {
+                    candidates.push(p);
+                }
+            }
+        }
+        // Shuffle candidates
+        for (var si = candidates.length - 1; si > 0; si--) {
+            var j = rng.randInt(0, si);
+            var tmp = candidates[si];
+            candidates[si] = candidates[j];
+            candidates[j] = tmp;
+        }
+
+        var offers = [];
+        for (var ii = 0; ii < contrabandItems.length; ii++) {
+            var item = contrabandItems[ii];
+            var res = findResource(item.resId);
+            if (!res) continue;
+            var npc = candidates[ii % candidates.length];
+            if (!npc) continue;
+            var heldQty = player.inventory[item.resId] || 0;
+            // Banned goods get black market premium, restricted get a smaller markup
+            var premiumMin = item.isBanned ? 1.3 : 1.0;
+            var premiumMax = item.isBanned ? 2.0 : 1.3;
+            var premium = rng.randFloat(premiumMin, premiumMax);
+            var basePrice = (town.market && town.market.prices[item.resId]) || res.basePrice;
+            var pricePerUnit = Math.ceil(basePrice * premium);
+            offers.push({
+                npcName: npc.firstName + ' ' + npc.lastName,
+                npcId: npc.id,
+                resourceId: item.resId,
+                resourceName: res.name,
+                resourceIcon: res.icon || '📦',
+                heldQty: heldQty,
+                pricePerUnit: pricePerUnit,
+                marketPrice: basePrice,
+                isBanned: item.isBanned,
+                isRestricted: item.isRestricted,
+            });
+        }
+
+        player._streetContrabandCache = offers;
+        player._streetContrabandDay = day;
+        return offers;
+    }
+
+    // Execute a contraband street sell — same smuggling risk as market
+    function executeStreetContrabandSell(offerIndex, sellQty) {
+        var offers = getStreetContrabandOffers();
+        if (offerIndex < 0 || offerIndex >= offers.length) return { success: false, message: 'Invalid offer.' };
+        var offer = offers[offerIndex];
+        var held = player.inventory[offer.resourceId] || 0;
+        sellQty = Math.min(sellQty || held, held);
+        if (sellQty <= 0) return { success: false, message: 'You have no ' + offer.resourceName + ' to sell.' };
+
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.smuggle || 4);
+
+        var town = Engine.findTown(player.townId);
+        var kingdom = town ? Engine.findKingdom(town.kingdomId) : null;
+
+        if (offer.isBanned && kingdom) {
+            // Use full smuggling system — same detection/punishment as market
+            return attemptSmuggle(offer.resourceId, sellQty, town, kingdom, offer.pricePerUnit);
+        } else if (offer.isRestricted && kingdom) {
+            // Use restricted trade system
+            return attemptRestrictedTrade(offer.resourceId, sellQty, town, kingdom, offer.pricePerUnit);
+        }
+
+        // Fallback — normal sale (shouldn't reach here)
+        var totalRevenue = offer.pricePerUnit * sellQty;
+        player.gold += totalRevenue;
+        player.stats.totalGoldEarned += totalRevenue;
+        player.inventory[offer.resourceId] = Math.max(0, (player.inventory[offer.resourceId] || 0) - sellQty);
+        player.stats.tradesCompleted++;
+        grantXP(XP_REWARDS.SELL_TRADE, 'street_contraband');
+        Engine.logEvent(player.fullName + ' sold ' + sellQty + ' ' + offer.resourceName + ' on the street for ' + totalRevenue + 'g.');
+        return { success: true, message: 'Sold ' + sellQty + ' ' + offer.resourceName + ' for ' + totalRevenue + 'g.' };
     }
 
     function getStreetBuyOffers(townId) {
@@ -20128,6 +20371,10 @@
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(5);
         Engine.logEvent('🏗️ ' + player.fullName + ' built a ' + ht.name + ' in ' + town.name + ' (materials: ' + costInfo.materialCost + 'g, labor: ' + laborCost + 'g).');
         grantXP(5, 'build house');
+
+        // Journal — housing construction
+        recordJournalEntry('building', 'Built a ' + ht.name + ' in ' + town.name + ' for ' + totalGoldNeeded + 'g. A proper roof over my head is worth every coin.', { mood: 'hopeful' });
+
         return { success: true, message: '🏗️ Built ' + ht.name + ' for ' + totalGoldNeeded + 'g (materials: ' + costInfo.materialCost + 'g + labor: ' + laborCost + 'g)!', house: house, costBreakdown: costInfo };
     }
 
@@ -29342,6 +29589,7 @@
         setPlayerName,
         equipWeapon,
         equipArmor,
+        equipFromInventory,
         getAvailableEquipment,
         unequipWeapon,
         unequipArmor,
@@ -29523,6 +29771,8 @@
         executeStreetTrade,
         getStreetBuyOffers,
         executeStreetBuy,
+        getStreetContrabandOffers,
+        executeStreetContrabandSell,
 
         // Foraging & Off-road
         forage,

@@ -4,6 +4,34 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.44.0] - 2026-03-31
+
+### Added — Equipment, Street Contraband, Journal & Save Fixes
+
+#### Equipment System Overhaul
+- **Bows added as equippable weapons** — 4 tiers: Short Bow, Hunting Bow, Longbow, War Bow (+8-35% combat survival)
+- **Tiered weapons/armor use tiered resources** — Steel Sword/Plate Armor now use `swords_good`/`armor_good`, Masterwork/Royal use `excellent` tier
+- **Equip from inventory** — new "🎒 Equip from Inventory" section in character panel lets you equip owned weapons/armor at no cost
+- **All weapon/armor tiers tradeable on market** — swords_good, swords_excellent, bows, bows_good, bows_excellent, armor_good, armor_excellent all buy/sell like normal goods, subject to kingdom laws and permits
+
+#### Street Trading — Contraband Selling
+- **Sell banned/restricted goods on the street** — new "🚫 Sell Contraband" section shows NPCs willing to buy your illegal goods
+- Banned goods sell at 1.3-2x black market premium; restricted goods at 1.0-1.3x
+- **Same smuggling risk as market** — detection, fines, jail, confiscation all apply
+- Sell 1 or Sell All buttons with premium % vs market display
+
+#### Journal System Enhancements
+- **New journal events**: significant trades (50g+), travel departures, job completions, guild membership, skill learning, injuries, housing construction, land purchases
+- **Richer arrival entries** — describe town size, port status, first-visit excitement
+- **Travel departure entries** — record origin, destination, estimated days, horse/sea/offroad details
+- **Auto-pause on town arrival** — game pauses when you arrive so you can decide what to do
+
+### Fixed
+- **Remembered market prices now persist across saves** — was never being saved/loaded, causing all price memory to vanish on reload
+- **Journal entries now persist across saves** — same save/load bug fixed
+- **Visited towns tracking now persists** — first-visit detection survives save/load
+- **Unequip returns correct resource** — no longer always returns basic `swords`/`armor`; returns actual tier (e.g., `swords_excellent` for Masterwork Sword)
+
 ## [0.43.1] - 2026-03-31
 
 ### Added — Building Storage, Trade Tips, Transfer to Player
