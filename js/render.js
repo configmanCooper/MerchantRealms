@@ -2166,15 +2166,22 @@ window.Renderer = (function () {
             try { minimapRoadsAll = Engine.getRoads(); } catch (e) { minimapRoadsAll = null; }
             if (minimapRoadsAll) {
                 const townMap2 = _frameTownMap;
-                mctx.strokeStyle = 'rgba(0,0,0,0.7)';
                 mctx.lineWidth = 1;
                 for (const road of minimapRoadsAll) {
                     const from = townMap2[road.fromTownId];
                     const to = townMap2[road.toTownId];
                     if (!from || !to) continue;
+                    // Skip roads without valid waypoints (they aren't rendered on main map either)
+                    if (!road.waypoints || road.waypoints.length < 2) continue;
+                    mctx.strokeStyle = road.safe === false ? 'rgba(180,40,30,0.6)' : 'rgba(0,0,0,0.7)';
                     mctx.beginPath();
-                    mctx.moveTo(from.x * scaleX, from.y * scaleY);
-                    mctx.lineTo(to.x * scaleX, to.y * scaleY);
+                    // Draw simplified waypoint path on minimap
+                    mctx.moveTo(road.waypoints[0].x * scaleX, road.waypoints[0].y * scaleY);
+                    var wpStep = Math.max(1, Math.floor(road.waypoints.length / 6));
+                    for (var mri = wpStep; mri < road.waypoints.length - 1; mri += wpStep) {
+                        mctx.lineTo(road.waypoints[mri].x * scaleX, road.waypoints[mri].y * scaleY);
+                    }
+                    mctx.lineTo(road.waypoints[road.waypoints.length - 1].x * scaleX, road.waypoints[road.waypoints.length - 1].y * scaleY);
                     mctx.stroke();
                 }
             }
@@ -2191,8 +2198,17 @@ window.Renderer = (function () {
                     const to = towns.find(t => t.id === route.toTownId);
                     if (!from || !to) continue;
                     mctx.beginPath();
-                    mctx.moveTo(from.x * scaleX, from.y * scaleY);
-                    mctx.lineTo(to.x * scaleX, to.y * scaleY);
+                    if (route.waypoints && route.waypoints.length >= 2) {
+                        mctx.moveTo(route.waypoints[0].x * scaleX, route.waypoints[0].y * scaleY);
+                        var seaStep = Math.max(1, Math.floor(route.waypoints.length / 6));
+                        for (var msi = seaStep; msi < route.waypoints.length - 1; msi += seaStep) {
+                            mctx.lineTo(route.waypoints[msi].x * scaleX, route.waypoints[msi].y * scaleY);
+                        }
+                        mctx.lineTo(route.waypoints[route.waypoints.length - 1].x * scaleX, route.waypoints[route.waypoints.length - 1].y * scaleY);
+                    } else {
+                        mctx.moveTo(from.x * scaleX, from.y * scaleY);
+                        mctx.lineTo(to.x * scaleX, to.y * scaleY);
+                    }
                     mctx.stroke();
                 }
                 mctx.setLineDash([]);
@@ -2425,7 +2441,7 @@ window.Renderer = (function () {
             }
         }
 
-        // Check roads
+        // Check roads — test against waypoint polyline, not just town-to-town straight line
         let roads;
         try { roads = Engine.getRoads(); } catch (e) { roads = null; }
         if (roads && towns) {
@@ -2437,20 +2453,25 @@ window.Renderer = (function () {
                 const to = townMap[road.toTownId];
                 if (!from || !to) continue;
 
-                const fx = from.x;
-                const fy = from.y;
-                const tx = to.x;
-                const ty = to.y;
-
-                // Point-to-segment distance
-                const segDist = pointToSegmentDist(w.x, w.y, fx, fy, tx, ty);
-                if (segDist < 8) {
+                var minDist = Infinity;
+                if (road.waypoints && road.waypoints.length >= 2) {
+                    // Check each segment of the waypoint polyline
+                    for (var ri = 0; ri < road.waypoints.length - 1; ri++) {
+                        var d = pointToSegmentDist(w.x, w.y, road.waypoints[ri].x, road.waypoints[ri].y, road.waypoints[ri + 1].x, road.waypoints[ri + 1].y);
+                        if (d < minDist) minDist = d;
+                        if (minDist < 8) break;
+                    }
+                } else {
+                    // Fallback to straight line between towns
+                    minDist = pointToSegmentDist(w.x, w.y, from.x, from.y, to.x, to.y);
+                }
+                if (minDist < 8) {
                     return { type: 'road', data: { ...road, fromTown: from, toTown: to } };
                 }
             }
         }
 
-        // Check sea routes
+        // Check sea routes — test against waypoint polyline
         let seaRoutes;
         try { seaRoutes = Engine.getSeaRoutes ? Engine.getSeaRoutes() : []; } catch (e) { seaRoutes = []; }
         if (seaRoutes.length > 0 && towns) {
@@ -2462,8 +2483,18 @@ window.Renderer = (function () {
                 const to = townMap[route.toTownId];
                 if (!from || !to) continue;
 
-                const segDist = pointToSegmentDist(w.x, w.y, from.x, from.y, to.x, to.y);
-                if (segDist < 10) {
+                var minDist = Infinity;
+                if (route.waypoints && route.waypoints.length >= 2) {
+                    for (var si = 0; si < route.waypoints.length - 1; si++) {
+                        var d = pointToSegmentDist(w.x, w.y, route.waypoints[si].x, route.waypoints[si].y, route.waypoints[si + 1].x, route.waypoints[si + 1].y);
+                        if (d < minDist) minDist = d;
+                        if (minDist < 12) break;
+                    }
+                } else {
+                    // Fallback to straight line for routes without waypoints
+                    minDist = pointToSegmentDist(w.x, w.y, from.x, from.y, to.x, to.y);
+                }
+                if (minDist < 12) {
                     return { type: 'seaRoute', data: { ...route, fromTown: from, toTown: to } };
                 }
             }
@@ -3085,7 +3116,6 @@ window.Renderer = (function () {
             var townMap = {};
             for (var ti = 0; ti < towns.length; ti++) townMap[towns[ti].id] = towns[ti];
 
-            wctx.strokeStyle = '#8b7355';
             wctx.lineWidth = Math.max(1, fitW / 800);
             wctx.setLineDash([]);
 
@@ -3094,10 +3124,16 @@ window.Renderer = (function () {
                 var from = townMap[road.fromTownId];
                 var to = townMap[road.toTownId];
                 if (!from || !to) continue;
+                if (!road.waypoints || road.waypoints.length < 2) continue;
 
+                wctx.strokeStyle = road.safe === false ? 'rgba(180,40,30,0.5)' : '#8b7355';
                 wctx.beginPath();
-                wctx.moveTo(offsetX + from.x * scaleX, offsetY + from.y * scaleY);
-                wctx.lineTo(offsetX + to.x * scaleX, offsetY + to.y * scaleY);
+                wctx.moveTo(offsetX + road.waypoints[0].x * scaleX, offsetY + road.waypoints[0].y * scaleY);
+                var rwStep = Math.max(1, Math.floor(road.waypoints.length / 8));
+                for (var rwi = rwStep; rwi < road.waypoints.length - 1; rwi += rwStep) {
+                    wctx.lineTo(offsetX + road.waypoints[rwi].x * scaleX, offsetY + road.waypoints[rwi].y * scaleY);
+                }
+                wctx.lineTo(offsetX + road.waypoints[road.waypoints.length - 1].x * scaleX, offsetY + road.waypoints[road.waypoints.length - 1].y * scaleY);
                 wctx.stroke();
             }
         }
@@ -3120,8 +3156,17 @@ window.Renderer = (function () {
                 if (!sfrom || !sto) continue;
 
                 wctx.beginPath();
-                wctx.moveTo(offsetX + sfrom.x * scaleX, offsetY + sfrom.y * scaleY);
-                wctx.lineTo(offsetX + sto.x * scaleX, offsetY + sto.y * scaleY);
+                if (route.waypoints && route.waypoints.length >= 2) {
+                    wctx.moveTo(offsetX + route.waypoints[0].x * scaleX, offsetY + route.waypoints[0].y * scaleY);
+                    var swStep = Math.max(1, Math.floor(route.waypoints.length / 8));
+                    for (var swi = swStep; swi < route.waypoints.length - 1; swi += swStep) {
+                        wctx.lineTo(offsetX + route.waypoints[swi].x * scaleX, offsetY + route.waypoints[swi].y * scaleY);
+                    }
+                    wctx.lineTo(offsetX + route.waypoints[route.waypoints.length - 1].x * scaleX, offsetY + route.waypoints[route.waypoints.length - 1].y * scaleY);
+                } else {
+                    wctx.moveTo(offsetX + sfrom.x * scaleX, offsetY + sfrom.y * scaleY);
+                    wctx.lineTo(offsetX + sto.x * scaleX, offsetY + sto.y * scaleY);
+                }
                 wctx.stroke();
             }
             wctx.setLineDash([]);

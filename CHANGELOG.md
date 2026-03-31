@@ -4,6 +4,60 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.43.0] - 2026-03-31
+
+### Added — Travel Overhaul, Deposit Scanning, Auto-Travel Jobs, Cart Travel
+
+#### Smooth Per-Tick Travel
+- **Travel progress updates 60× per day** instead of once per day — player marker moves smoothly across the map
+- **Instant arrival** when progress hits 100% — no more waiting at the destination
+- Player world coordinates update every sub-tick for real-time marker movement
+
+#### 4× Faster Travel
+- All travel speeds increased 4× across the board (CARAVAN_BASE_SPEED: 30 → 120)
+- Affects walking, horse, sea, caravans, transport services, army marches
+
+#### Cart Travel System
+- **Bring or leave cart** option when traveling — leave heavy goods behind for faster travel
+- Left cart goods tracked with 15%/day theft risk while unattended
+- 85% chance cart is still there on return; goods restored on arrival
+- Speed penalty when traveling without horse but with cart (40% slower)
+
+#### Auto-Travel Job Transport
+- Jobs requiring travel now provide **temporary horse** (or ship for sea routes)
+- Temporary transport marked with `_temporary` flag, removed on job completion or quit
+- **Quit Job button** added to travel HUD during auto-travel missions
+
+#### Terrain-Aware Resource Deposits
+- Deposit assignment now **scans a 4-tile radius** around each town instead of just the tile under it
+- Nearby forests grant scaled wood deposits even for grassland/coastal towns
+- Nearby mountains grant iron/stone deposits proportionally
+- All non-coastal inland towns get at least a small wood deposit (scattered groves)
+- Fish deposits restricted to seaports only
+- Applies to both worldgen and newly founded towns/outposts
+
+#### Deposit-Based Building Generation
+- ~70% chance to auto-generate extraction buildings (mines, lumber camps, quarries, etc.) for each deposit
+- **Ownership mix** based on kingdom personality: militaristic kings claim war resources, greedy kings nationalize more
+- Elite merchants in town get ~40% of unclaimed buildings; rest are NPC/town-owned
+
+### Changed
+
+#### Trade & Economy
+- **Buy Max button** now accounts for carrying capacity + town storage, not just gold and shop stock
+- **Trade tip cost** reduced from 25g to 10g (CONFIG.INFO_BROKER_COST)
+- **Land ownership limits** increased: Citizen 1→3, Burgher 3→6, Guildmaster 10→15, Minor Noble 20→30
+
+#### UI Improvements
+- Housing dialog shows **global land count vs rank limit** (e.g., "global: 1/3 for Citizen")
+- Improved land limit error message shows current count and suggests advancing rank
+
+### Fixed
+- **Toast spam on new game** — `lastProcessedEventCount` now initialized to `events.length` instead of 0, preventing all worldgen events from replaying as toasts
+- **Trade tip button** — fixed `TypeError: rng is not a function` (Engine.getRng() returns object with .random() method)
+- **Trade tip duplicate notifications** — removed broken `showNotification` call and duplicate `Engine.logEvent`
+- **Travel stuck at 100%** — subtick now calls `tickTravel()` immediately on arrival instead of waiting for daily tick
+
 ## [0.42.0] - 2026-03-30
 
 ### Added — Budget-Aware King AI, Kingdom Panel Buttons, Tutorial Fixes

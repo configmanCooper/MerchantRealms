@@ -337,7 +337,9 @@ window.Game = (function () {
                     tickAccumulator = 0;
                     tickCounter = 0;
                     lastFrameTime = performance.now();
-                    lastProcessedEventCount = 0;
+                    // Skip worldgen events — only toast events that occur after game starts
+                    var _initEvents = Engine.getEvents ? Engine.getEvents() : [];
+                    lastProcessedEventCount = _initEvents ? _initEvents.length : 0;
 
                     if (!animFrameId) {
                         loop(performance.now());
@@ -438,6 +440,11 @@ window.Game = (function () {
                 if (w) {
                     w.hour = Math.floor((tickCounter / CONFIG.TICKS_PER_DAY) * 24) % 24;
                 }
+            }
+
+            // Sub-tick: advance player travel smoothly every tick
+            if (typeof Player !== 'undefined' && Player.subtick) {
+                Player.subtick();
             }
 
             // Engine.tick() advances one full day, so only call it every TICKS_PER_DAY sim ticks
@@ -1602,7 +1609,7 @@ window.Game = (function () {
 
             // 3. Game metadata
             debugData.meta = {
-                gameVersion: 'v0.42.0',
+                gameVersion: 'v0.43.0',
                 saveVersion: 3,
                 timestamp: new Date().toISOString(),
                 userAgent: navigator.userAgent,
@@ -1746,7 +1753,8 @@ window.Game = (function () {
             tickAccumulator = 0;
             tickCounter = 0;
             lastFrameTime = performance.now();
-            lastProcessedEventCount = 0;
+            var _slEvents = Engine.getEvents ? Engine.getEvents() : [];
+            lastProcessedEventCount = _slEvents ? _slEvents.length : 0;
             if (!animFrameId) {
                 loop(performance.now());
             }

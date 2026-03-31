@@ -1184,18 +1184,39 @@
 
         const culture = (kingdom && kingdom.culture) || 'agricultural';
 
-        // Determine terrain bias from town location
+        // Determine terrain bias from nearby tiles (scan radius)
         let terrainBias = 'grassland'; // default
+        let nearbyForestPct = 0, nearbyMountainPct = 0, nearbyWaterPct = 0;
         if (town) {
             const ttx = Math.floor(town.x / CONFIG.TILE_SIZE);
             const tty = Math.floor(town.y / CONFIG.TILE_SIZE);
             const gridCols = Math.floor(CONFIG.WORLD_WIDTH / CONFIG.TILE_SIZE);
+            const gridRows = Math.floor(CONFIG.WORLD_HEIGHT / CONFIG.TILE_SIZE);
             if (world.terrain) {
-                const idx = tty * gridCols + ttx;
-                const t = world.terrain[idx];
-                if (t === TERRAIN.MOUNTAIN.id) terrainBias = 'mountain';
-                else if (t === TERRAIN.FOREST.id) terrainBias = 'forest';
-                else if (t === TERRAIN.WATER.id || (town.isPort)) terrainBias = 'coastal';
+                // Scan nearby tiles in a radius (matches territory display circle)
+                var scanRadius = 4;
+                var totalTiles = 0, forestTiles = 0, mountainTiles = 0, waterTiles = 0;
+                for (var sdy = -scanRadius; sdy <= scanRadius; sdy++) {
+                    for (var sdx = -scanRadius; sdx <= scanRadius; sdx++) {
+                        var stx = ttx + sdx, sty = tty + sdy;
+                        if (stx < 0 || stx >= gridCols || sty < 0 || sty >= gridRows) continue;
+                        var st = world.terrain[sty * gridCols + stx];
+                        totalTiles++;
+                        if (st === TERRAIN.FOREST.id) forestTiles++;
+                        else if (st === TERRAIN.MOUNTAIN.id || st === TERRAIN.HILLS.id) mountainTiles++;
+                        else if (st === TERRAIN.WATER.id) waterTiles++;
+                    }
+                }
+                if (totalTiles > 0) {
+                    nearbyForestPct = forestTiles / totalTiles;
+                    nearbyMountainPct = mountainTiles / totalTiles;
+                    nearbyWaterPct = waterTiles / totalTiles;
+                }
+                // Primary terrain bias from dominant nearby type
+                if (town.isPort || town.isIsland) terrainBias = 'coastal';
+                else if (nearbyMountainPct > 0.35) terrainBias = 'mountain';
+                else if (nearbyForestPct > 0.35) terrainBias = 'forest';
+                else if (nearbyWaterPct > 0.30 && town.isPort) terrainBias = 'coastal';
             }
         }
 
@@ -1324,6 +1345,9 @@
             add('tent_camp');
             add('tent_camp');
 
+            // Guild hall (towns have 30% chance)
+            if (rng.chance(0.3)) add('guild_hall');
+
         // ================================================================
         // CITY: Diverse production, limited food (14-20 buildings)
         // Economy: net food importer, net goods exporter
@@ -1442,6 +1466,10 @@
             // Apartment buildings (cities get 1-2)
             add('apartment_building');
             if (rng.chance(0.5)) add('apartment_building');
+
+            // Guild halls (cities get 1-2)
+            add('guild_hall');
+            if (rng.chance(0.4)) add('guild_hall');
 
             // Tent camps (cities get 3)
             add('tent_camp');
@@ -1566,6 +1594,11 @@
             add('apartment_building');
             if (rng.chance(0.5)) add('apartment_building');
 
+            // Guild halls (capitals always get 2-3)
+            add('guild_hall');
+            add('guild_hall');
+            if (rng.chance(0.6)) add('guild_hall');
+
             // Tent camps (capitals get 3)
             add('tent_camp');
             add('tent_camp');
@@ -1644,8 +1677,29 @@
                 if (depRng.chance(0.25)) town.naturalDeposits.stone = depRng.randInt(Math.floor(ND.stone.min * 0.2), Math.floor(ND.stone.max * 0.35));
                 if (depRng.chance(0.15)) town.naturalDeposits.iron_ore = depRng.randInt(Math.floor(ND.iron_ore.min * 0.25), Math.floor(ND.iron_ore.max * 0.35));
                 if (depRng.chance(0.05)) town.naturalDeposits.gold_ore = depRng.randInt(Math.floor(ND.gold_ore.min * 0.2), Math.floor(ND.gold_ore.max * 0.25));
-                // Plains can have some wood from scattered groves
-                if (depRng.chance(0.20)) town.naturalDeposits.wood = depRng.randInt(Math.floor(ND.wood.min * 0.3), Math.floor(ND.wood.max * 0.4));
+            }
+
+            // Nearby terrain bonus: forests/mountains within scan radius grant scaled deposits
+            // even if the town's primary bias is different
+            if (terrainBias !== 'forest' && nearbyForestPct > 0.05) {
+                // Scale wood deposit by how much forest is nearby (5%-100% of tiles)
+                var woodScale = Math.min(1.0, nearbyForestPct / 0.35);
+                var woodMin = Math.max(1, Math.floor(ND.wood.min * woodScale));
+                var woodMax = Math.max(woodMin + 1, Math.floor(ND.wood.max * woodScale));
+                town.naturalDeposits.wood = (town.naturalDeposits.wood || 0) + depRng.randInt(woodMin, woodMax);
+            }
+            // Grassland always gets a small amount of wood from scattered groves
+            if (!town.naturalDeposits.wood && terrainBias !== 'coastal') {
+                town.naturalDeposits.wood = depRng.randInt(Math.floor(ND.wood.min * 0.15), Math.floor(ND.wood.max * 0.25));
+            }
+            if (terrainBias !== 'mountain' && nearbyMountainPct > 0.10) {
+                var mScale = Math.min(1.0, nearbyMountainPct / 0.35);
+                if (!town.naturalDeposits.iron_ore) town.naturalDeposits.iron_ore = depRng.randInt(Math.max(1, Math.floor(ND.iron_ore.min * mScale * 0.5)), Math.max(2, Math.floor(ND.iron_ore.max * mScale * 0.5)));
+                if (!town.naturalDeposits.stone) town.naturalDeposits.stone = depRng.randInt(Math.max(1, Math.floor(ND.stone.min * mScale * 0.5)), Math.max(2, Math.floor(ND.stone.max * mScale * 0.5)));
+            }
+            // Fish only for seaports
+            if (!town.isPort && !town.isIsland) {
+                delete town.naturalDeposits.fish;
             }
             // All towns can have clay
             town.naturalDeposits.clay = depRng.randInt(ND.clay.min, ND.clay.max);
@@ -1661,6 +1715,58 @@
             } else {
                 // grassland/plains
                 town.wildlifeAbundance = 0.7 + depRng.random() * 0.6; // 0.7-1.3
+            }
+        }
+
+        // Generate buildings to exploit natural deposits (~70% chance per deposit type)
+        if (town && town.naturalDeposits) {
+            var depBuildMap = [
+                { deposit: 'iron_ore', building: 'iron_mine', warRelated: true },
+                { deposit: 'gold_ore', building: 'gold_mine', warRelated: false },
+                { deposit: 'wood',     building: 'lumber_camp', warRelated: true },
+                { deposit: 'stone',    building: 'quarry', warRelated: true },
+                { deposit: 'fish',     building: 'fishery', warRelated: false },
+                { deposit: 'salt',     building: 'salt_works', warRelated: false },
+                { deposit: 'clay',     building: 'clay_pit', warRelated: false },
+            ];
+            var kPersonality = (kingdom && kingdom.kingPersonality) ? kingdom.kingPersonality : {};
+            var kMilitarism = kPersonality.militarism || 'peaceful';
+            var kGreed = kPersonality.greed || 'moderate';
+            var hasNationalized = kingdom && kingdom.nationalizedIndustries && kingdom.nationalizedIndustries.length > 0;
+            // Elite merchants in this town
+            var townEMs = [];
+            if (world.eliteMerchants) {
+                townEMs = world.eliteMerchants.filter(function(em) { return em.alive && em.townId === town.id; });
+            }
+            if (townEMs.length === 0 && world.people) {
+                townEMs = world.people.filter(function(p) { return p.alive && p.isEliteMerchant && p.townId === town.id; });
+            }
+
+            for (var dbi = 0; dbi < depBuildMap.length; dbi++) {
+                var dm = depBuildMap[dbi];
+                if (!town.naturalDeposits[dm.deposit] || town.naturalDeposits[dm.deposit] <= 0) continue;
+                // Already has this building type?
+                if (buildings.some(function(b) { return b.type === dm.building; })) continue;
+                // 70% chance to build
+                if (!rng.chance(0.70)) continue;
+
+                // Determine owner: kingdom, elite merchant, or NPC (null)
+                var depOwner = null;
+                // War-related resources: militaristic kings claim them more often
+                var kingdomClaimChance = 0.20;
+                if (dm.warRelated && kMilitarism === 'aggressive') kingdomClaimChance = 0.55;
+                else if (dm.warRelated && kMilitarism === 'defensive') kingdomClaimChance = 0.40;
+                else if (kGreed === 'greedy') kingdomClaimChance = 0.35;
+                if (hasNationalized) kingdomClaimChance += 0.15;
+
+                if (kingdom && rng.chance(kingdomClaimChance)) {
+                    depOwner = kingdom.id;
+                } else if (townEMs.length > 0 && rng.chance(0.40)) {
+                    depOwner = townEMs[Math.floor(rng.random() * townEMs.length)].id;
+                }
+                // else null = NPC/town-owned
+
+                buildings.push({ type: dm.building, level: 1, ownerId: depOwner });
             }
         }
 
@@ -10721,10 +10827,28 @@
         newTown.terrainType = classifyTownTerrain(newTown);
         computeLocalBasePrices(newTown);
 
-        // Assign natural deposits based on terrain (same logic as world gen)
+        // Assign natural deposits based on nearby terrain scan (same logic as world gen)
         var newTerrainBias = newTown.terrainType || 'plains';
         var foundND = CONFIG.NATURAL_DEPOSITS;
         newTown.naturalDeposits = {};
+        // Scan nearby tiles for terrain percentages
+        var nttx = Math.floor(foundX / CONFIG.TILE_SIZE);
+        var ntty = Math.floor(foundY / CONFIG.TILE_SIZE);
+        var nScanRadius = 4;
+        var nTotal = 0, nForest = 0, nMountain = 0;
+        for (var ndy = -nScanRadius; ndy <= nScanRadius; ndy++) {
+            for (var ndx = -nScanRadius; ndx <= nScanRadius; ndx++) {
+                var nsx = nttx + ndx, nsy = ntty + ndy;
+                if (nsx < 0 || nsx >= cols || nsy < 0 || nsy >= rows) continue;
+                var nst = world.terrain[nsy * cols + nsx];
+                nTotal++;
+                if (nst === TERRAIN.FOREST.id) nForest++;
+                else if (nst === TERRAIN.MOUNTAIN.id || nst === TERRAIN.HILLS.id) nMountain++;
+            }
+        }
+        var nForestPct = nTotal > 0 ? nForest / nTotal : 0;
+        var nMountainPct = nTotal > 0 ? nMountain / nTotal : 0;
+
         if (newTerrainBias === 'mountain') {
             newTown.naturalDeposits.iron_ore = rng.randInt(foundND.iron_ore.min, foundND.iron_ore.max);
             newTown.naturalDeposits.stone = rng.randInt(foundND.stone.min, foundND.stone.max);
@@ -10741,7 +10865,24 @@
             if (rng.chance(0.25)) newTown.naturalDeposits.stone = rng.randInt(Math.floor(foundND.stone.min * 0.2), Math.floor(foundND.stone.max * 0.35));
             if (rng.chance(0.15)) newTown.naturalDeposits.iron_ore = rng.randInt(Math.floor(foundND.iron_ore.min * 0.25), Math.floor(foundND.iron_ore.max * 0.35));
             if (rng.chance(0.05)) newTown.naturalDeposits.gold_ore = rng.randInt(Math.floor(foundND.gold_ore.min * 0.2), Math.floor(foundND.gold_ore.max * 0.25));
-            if (rng.chance(0.20)) newTown.naturalDeposits.wood = rng.randInt(Math.floor(foundND.wood.min * 0.3), Math.floor(foundND.wood.max * 0.4));
+        }
+        // Nearby terrain bonus deposits
+        if (newTerrainBias !== 'forest' && nForestPct > 0.05) {
+            var nwScale = Math.min(1.0, nForestPct / 0.35);
+            var nwMin = Math.max(1, Math.floor(foundND.wood.min * nwScale));
+            var nwMax = Math.max(nwMin + 1, Math.floor(foundND.wood.max * nwScale));
+            newTown.naturalDeposits.wood = (newTown.naturalDeposits.wood || 0) + rng.randInt(nwMin, nwMax);
+        }
+        if (!newTown.naturalDeposits.wood && newTerrainBias !== 'coastal') {
+            newTown.naturalDeposits.wood = rng.randInt(Math.floor(foundND.wood.min * 0.15), Math.floor(foundND.wood.max * 0.25));
+        }
+        if (newTerrainBias !== 'mountain' && nMountainPct > 0.10) {
+            var nmScale = Math.min(1.0, nMountainPct / 0.35);
+            if (!newTown.naturalDeposits.iron_ore) newTown.naturalDeposits.iron_ore = rng.randInt(Math.max(1, Math.floor(foundND.iron_ore.min * nmScale * 0.5)), Math.max(2, Math.floor(foundND.iron_ore.max * nmScale * 0.5)));
+            if (!newTown.naturalDeposits.stone) newTown.naturalDeposits.stone = rng.randInt(Math.max(1, Math.floor(foundND.stone.min * nmScale * 0.5)), Math.max(2, Math.floor(foundND.stone.max * nmScale * 0.5)));
+        }
+        if (!newTown.isPort && !newTown.isIsland) {
+            delete newTown.naturalDeposits.fish;
         }
         newTown.naturalDeposits.clay = rng.randInt(foundND.clay.min, foundND.clay.max);
         newTown.wildlifeAbundance = newTerrainBias === 'forest' ? (0.8 + rng.random() * 0.8) :
@@ -10749,12 +10890,36 @@
                                     (0.5 + rng.random() * 0.6);
         newTown.soilFertility = 1.0;
 
-        // Add deposit-appropriate buildings if the terrain supports it
-        if (newTown.naturalDeposits.iron_ore > 0 && rng.chance(0.5)) {
-            newTown.buildings.push({ type: 'iron_mine', level: 1, ownerId: null });
-        }
-        if (newTown.naturalDeposits.stone > 0 && rng.chance(0.4)) {
-            newTown.buildings.push({ type: 'quarry', level: 1, ownerId: null });
+        // Add deposit-appropriate buildings (~70% chance, with ownership mix)
+        var newDepBuildMap = [
+            { deposit: 'iron_ore', building: 'iron_mine', warRelated: true },
+            { deposit: 'gold_ore', building: 'gold_mine', warRelated: false },
+            { deposit: 'wood',     building: 'lumber_camp', warRelated: true },
+            { deposit: 'stone',    building: 'quarry', warRelated: true },
+            { deposit: 'fish',     building: 'fishery', warRelated: false },
+            { deposit: 'salt',     building: 'salt_works', warRelated: false },
+            { deposit: 'clay',     building: 'clay_pit', warRelated: false },
+        ];
+        var nkPers = (k && k.kingPersonality) ? k.kingPersonality : {};
+        var nkMil = nkPers.militarism || 'peaceful';
+        var nkGreed = nkPers.greed || 'moderate';
+        var nkNationalized = k && k.nationalizedIndustries && k.nationalizedIndustries.length > 0;
+        for (var ndbi = 0; ndbi < newDepBuildMap.length; ndbi++) {
+            var ndm = newDepBuildMap[ndbi];
+            if (!newTown.naturalDeposits[ndm.deposit] || newTown.naturalDeposits[ndm.deposit] <= 0) continue;
+            if (newTown.buildings.some(function(b) { return b.type === ndm.building; })) continue;
+            if (!rng.chance(0.70)) continue;
+            var ndOwner = null;
+            var nkClaimChance = 0.20;
+            if (ndm.warRelated && nkMil === 'aggressive') nkClaimChance = 0.55;
+            else if (ndm.warRelated && nkMil === 'defensive') nkClaimChance = 0.40;
+            else if (nkGreed === 'greedy') nkClaimChance = 0.35;
+            if (nkNationalized) nkClaimChance += 0.15;
+            if (k && rng.chance(nkClaimChance)) {
+                ndOwner = k.id;
+            }
+            // else null = NPC/town-owned (new villages rarely have EMs)
+            newTown.buildings.push({ type: ndm.building, level: 1, ownerId: ndOwner });
         }
 
         // Transfer settlers from most populated kingdom town
@@ -17281,6 +17446,23 @@
             // Determine which guilds this EM should join based on strategy
             var targetGuildIds = STRATEGY_GUILDS[em.strategy] || ['merchants'];
 
+            // Also add guilds matching any buildings the EM owns
+            var emTown = em.townId ? world.towns.find(function(t) { return t.id === em.townId; }) : null;
+            if (emTown) {
+                var emBuildings = emTown.buildings.filter(function(b) { return b.ownerId === em.id; });
+                for (var ebi = 0; ebi < emBuildings.length; ebi++) {
+                    var ebType = findBuildingType(emBuildings[ebi].type);
+                    if (ebType && ebType.category) {
+                        for (var _gKey in guilds) {
+                            var _gDef = guilds[_gKey];
+                            if (_gDef.categories && _gDef.categories.indexOf(ebType.category) >= 0 && targetGuildIds.indexOf(_gKey) < 0) {
+                                targetGuildIds.push(_gKey);
+                            }
+                        }
+                    }
+                }
+            }
+
             for (var gi = 0; gi < targetGuildIds.length; gi++) {
                 var guildId = targetGuildIds[gi];
                 var membership = em.guilds[guildId];
@@ -18861,7 +19043,21 @@
             }
         }
         var buildSkillMult = emHasSkill(em, 'master_builder') ? 0.80 : emHasSkill(em, 'efficient_builder') ? 0.90 : 1.0;
-        var laborCost = Math.floor(bt.cost * (1 - subsidyDiscount) * buildSkillMult);
+        // Guild member discount: 10% off labor for buildings in guild's category
+        var emGuildDiscount = 1.0;
+        if (bt.category && em.guilds && CONFIG.GUILDS) {
+            for (var _egk in CONFIG.GUILDS) {
+                var _eguild = CONFIG.GUILDS[_egk];
+                if (_eguild.categories && _eguild.categories.indexOf(bt.category) >= 0) {
+                    var _emMem = em.guilds[_egk];
+                    if (_emMem && _emMem.expiresDay && _emMem.expiresDay > world.day) {
+                        emGuildDiscount = 0.90;
+                        break;
+                    }
+                }
+            }
+        }
+        var laborCost = Math.floor(bt.cost * (1 - subsidyDiscount) * buildSkillMult * emGuildDiscount);
         var effectiveCost = laborCost + materialCost;
         if (em.gold < effectiveCost) return;
 

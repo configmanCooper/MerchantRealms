@@ -356,10 +356,10 @@
         spy: { days: 40, skill: 'discrete', name: 'Discrete' },
         night_watchman: { days: 25, skill: 'street_smart', name: 'Street Smart' },
         navigator: { days: 20, skill: 'expert_navigator', name: 'Expert Navigator' },
-        harvest_hand: { days: 15, skill: 'efficient_provisioning', name: 'Farming' },
+        harvest_hand: { days: 15, skill: 'soil_knowledge', name: 'Soil Knowledge' },
         shepherd: { days: 25, skill: 'animal_husbandry', name: 'Animal Husbandry' },
         well_digger: { days: 30, skill: 'efficient_builder', name: 'Builder' },
-        fence_mender: { days: 20, skill: 'efficient_provisioning', name: 'Farming' },
+        fence_mender: { days: 20, skill: 'soil_knowledge', name: 'Soil Knowledge' },
         royal_scribe: { days: 25, skill: 'literacy', name: 'Literacy' },
         temp_soldier: { days: 30, skill: 'combat_trained', name: 'Combat Trained' },
         market_crier: { days: 25, skill: 'street_smart', name: 'Street Smart' },
@@ -591,6 +591,8 @@
         player.armedEscort = null;
         // Toll Routes
         player.ownedRoutes = [];
+        // Left-behind cart storage
+        player.leftCart = null; // { townId, container, goods: { resId: qty }, leftDay }
         // Outposts
         player.outposts = [];
         // Conscription
@@ -1341,6 +1343,19 @@
         var laborCost = bt.cost || 0;
         if (hasSkill('master_builder')) laborCost = Math.floor(laborCost * 0.80);
         else if (hasSkill('efficient_builder')) laborCost = Math.floor(laborCost * 0.90);
+
+        // Guild member discount: 10% off labor for buildings in guild's category
+        var _guildDiscount = false;
+        if (bt.category && typeof CONFIG !== 'undefined' && CONFIG.GUILDS) {
+            for (var _gk in CONFIG.GUILDS) {
+                var _guild = CONFIG.GUILDS[_gk];
+                if (_guild.categories && _guild.categories.indexOf(bt.category) >= 0 && isGuildMember(_gk)) {
+                    laborCost = Math.floor(laborCost * 0.90);
+                    _guildDiscount = _guild.name;
+                    break;
+                }
+            }
+        }
 
         // Calculate material cost from market prices
         var materialCost = 0;
@@ -2379,6 +2394,50 @@
             totalDist *= (1 - Math.min(speedBonus, 0.7)); // Cap at 70% reduction
         }
 
+        // Cart travel handling
+        var container = player.storageContainer ? CONFIG.STORAGE_CONTAINERS[player.storageContainer] : null;
+        var isCartType = container && (player.storageContainer === 'cart' || player.storageContainer === 'small_wagon' || player.storageContainer === 'wagon' || player.storageContainer === 'large_wagon');
+        var cartMsg = '';
+
+        if (isCartType && options.leaveCart) {
+            // Leave cart behind — store it with goods
+            var leftGoods = {};
+            // Only goods that exceed personal carry capacity stay on the cart
+            var baseCarry = CONFIG.PLAYER_BASE_CARRY || 20;
+            var personalCap = baseCarry + (hasHorse ? (CONFIG.HORSE_CARRY_BONUS || 30) * player.horses.length : 0);
+            var currentWeight = getCarriedWeight();
+            if (currentWeight > personalCap) {
+                // Move excess goods to the cart storage
+                var excessWeight = currentWeight - personalCap;
+                for (var resId in player.inventory) {
+                    if (excessWeight <= 0) break;
+                    var res = findResource(resId);
+                    var itemWeight = res ? (res.weight || 1) : 1;
+                    var qty = player.inventory[resId];
+                    var toLeave = Math.min(qty, Math.ceil(excessWeight / itemWeight));
+                    if (toLeave > 0) {
+                        leftGoods[resId] = toLeave;
+                        player.inventory[resId] -= toLeave;
+                        if (player.inventory[resId] <= 0) delete player.inventory[resId];
+                        excessWeight -= toLeave * itemWeight;
+                    }
+                }
+            }
+            player.leftCart = {
+                townId: player.townId,
+                container: player.storageContainer,
+                goods: leftGoods,
+                leftDay: Engine.getDay()
+            };
+            player.storageContainer = null; // Travel without cart
+            var goodCount = Object.keys(leftGoods).length;
+            cartMsg = ' 🛒 Left ' + container.name + ' in town' + (goodCount > 0 ? ' with ' + goodCount + ' type(s) of goods' : '') + '.';
+        } else if (isCartType && !options.leaveCart && !hasHorse) {
+            // Bringing cart without horse — 40% slower
+            totalDist *= 1.4;
+            cartMsg = ' 🛒 Dragging ' + container.name + ' by hand — slower travel!';
+        }
+
         // If route includes sea segments, delegate to travelBySea for proper ship handling
         if (isSea && !isOffroad && route.length === 1 && route[0].type === 'sea') {
             // Pure sea route — use dedicated sea travel with ship checks, blockades, etc.
@@ -2432,8 +2491,8 @@
         const horseMsg = hasHorse ? (hasSaddle ? ' 🐴 (Horse + Saddle bonus!)' : ' 🐴 (Horse bonus!)') : '';
         const offroadMsg = isOffroad ? ' 🥾 (Off-road — slow going!)' : '';
         const seaMsg = isSea ? ' ⛵ (Sea route!)' : '';
-        Engine.logEvent(`You set out for ${dest ? dest.name : 'unknown'}.${horseMsg}${offroadMsg}${seaMsg}${ambushMsg}`);
-        return { success: true, message: `Traveling to ${dest ? dest.name : townId}.${horseMsg}${offroadMsg}${seaMsg}${ambushMsg}`, estimatedDays: estimatedDays, ambush: ambushResult };
+        Engine.logEvent(`You set out for ${dest ? dest.name : 'unknown'}.${horseMsg}${offroadMsg}${seaMsg}${cartMsg}${ambushMsg}`);
+        return { success: true, message: `Traveling to ${dest ? dest.name : townId}.${horseMsg}${offroadMsg}${seaMsg}${cartMsg}${ambushMsg}`, estimatedDays: estimatedDays, ambush: ambushResult };
     }
 
     /**
@@ -3838,6 +3897,32 @@
     // ========================================================
     // §6  PLAYER TRAVEL TICK
     // ========================================================
+    // Sub-tick: advance travel progress smoothly (called 60x per day from main loop)
+    function travelSubtick() {
+        if (!player.traveling || !player.travelTotalDist) return;
+        var ticksPerDay = CONFIG.TICKS_PER_DAY || 60;
+        var speedMult = player.travelBySea ? (CONFIG.SEA_SPEED_MULTIPLIER || 1.5) : 1.0;
+        var speed = CONFIG.CARAVAN_BASE_SPEED * 1.5 * speedMult;
+        if (player.travelBySea && hasSkill('expert_navigator')) speed *= 1.20;
+        if (!player.travelBySea && hasSkill('road_knowledge')) speed *= 1.15;
+        if (!player.travelBySea && hasSkill('cartographer')) speed *= 1.05;
+        if (player.hunger <= 0) speed *= 0.6;
+        // Advance by 1/ticksPerDay of daily progress
+        player.travelProgress += (speed / Math.max(player.travelTotalDist, 1)) / ticksPerDay;
+        if (player.travelProgress >= 1.0) {
+            // Arrive immediately — call tickTravel which handles arrival at >= 1.0
+            player.travelProgress = 1.0;
+            tickTravel();
+            return;
+        }
+        // Update world coordinates for smooth marker movement
+        var pos = getPlayerWorldPosition();
+        if (pos) {
+            player.worldX = pos.x;
+            player.worldY = pos.y;
+        }
+    }
+
     function tickTravel() {
         if (!player.traveling) return;
 
@@ -3858,7 +3943,7 @@
                 player.escort = null;
             }
         }
-        player.travelProgress += speed / Math.max(player.travelTotalDist || 1, 1);
+        // Progress is now advanced by travelSubtick() every sub-tick (60x per day)
 
         // Handle waypoint-based free travel: check if passing through a town
         if (player.travelWaypoints && player.travelWaypoints.length > 0 && !player.travelDestination && player.travelProgress < 1.0) {
@@ -4121,6 +4206,39 @@
             const town = Engine.findTown(player.townId);
             Engine.logEvent(`You have arrived at ${town ? town.name : 'your destination'}.`);
             autoJournalCapture('arrival', 'The journey was long, but I have arrived at last.', { mood: 'content' });
+
+            // Check for left-behind cart in this town
+            if (player.leftCart && player.leftCart.townId === player.townId) {
+                var lc = player.leftCart;
+                var cartContainer = CONFIG.STORAGE_CONTAINERS[lc.container];
+                var cartName = cartContainer ? cartContainer.name : 'Cart';
+                // 85% chance cart is still there
+                var rng = Engine.getRng ? Engine.getRng() : Math.random();
+                if (rng < 0.85) {
+                    player.storageContainer = lc.container;
+                    // Return goods that survived
+                    var returnedCount = 0;
+                    for (var resId in lc.goods) {
+                        var qty = lc.goods[resId];
+                        if (qty > 0) {
+                            player.inventory[resId] = (player.inventory[resId] || 0) + qty;
+                            returnedCount += qty;
+                        }
+                    }
+                    if (returnedCount > 0) {
+                        Engine.logEvent('🛒 Your ' + cartName + ' is still here! Retrieved your stored goods.');
+                    } else {
+                        Engine.logEvent('🛒 Your ' + cartName + ' is still here where you left it.');
+                    }
+                } else {
+                    // Cart stolen
+                    Engine.logEvent('⚠️ Your ' + cartName + ' has been stolen while you were away! All stored goods are gone.');
+                    if (typeof UI !== 'undefined' && UI.toast) {
+                        UI.toast('Your ' + cartName + ' was stolen!', 'danger', 'theft');
+                    }
+                }
+                player.leftCart = null;
+            }
 
             // Snapshot town prices for stale price memory (90-day recall)
             if (town && town.market && town.market.prices) {
@@ -4939,6 +5057,28 @@
             player.inventory[targetRes] -= stolen;
             var res = findResource(targetRes);
             Engine.logEvent('\u26A0\uFE0F Thieves raided your ' + container.name + '! Lost ' + stolen + ' ' + (res ? res.name : targetRes) + '.');
+        }
+    }
+
+    function tickLeftCartTheft() {
+        if (!player.leftCart) return;
+        var lc = player.leftCart;
+        var goodKeys = Object.keys(lc.goods).filter(function(k) { return (lc.goods[k] || 0) > 0; });
+        if (goodKeys.length === 0) return;
+        // High theft chance per day for unattended goods (~15% per day)
+        var rng = Engine.getRng ? Engine.getRng() : Math.random();
+        if (rng < 0.15) {
+            var targetRes = goodKeys[Math.floor((Engine.getRng ? Engine.getRng() : Math.random()) * goodKeys.length)];
+            var qty = lc.goods[targetRes];
+            // Lose 20-50% of one resource type
+            var stolen = Math.max(1, Math.floor(qty * (0.2 + (Engine.getRng ? Engine.getRng() : Math.random()) * 0.3)));
+            stolen = Math.min(stolen, qty);
+            lc.goods[targetRes] -= stolen;
+            if (lc.goods[targetRes] <= 0) delete lc.goods[targetRes];
+            var res = findResource(targetRes);
+            var cartContainer = CONFIG.STORAGE_CONTAINERS[lc.container];
+            var cartName = cartContainer ? cartContainer.name : 'Cart';
+            Engine.logEvent('⚠️ Thieves raided your unattended ' + cartName + '! Lost ' + stolen + ' ' + (res ? res.name : targetRes) + '.');
         }
     }
 
@@ -11790,6 +11930,7 @@
 
         // Storage theft (cart/wagon theft while traveling, worker theft from warehouses)
         tickStorageTheft();
+        tickLeftCartTheft();
         tickWorkerTheft();
 
         // Protection racket check
@@ -15128,11 +15269,12 @@
         // Tier 1: Critical — always show
         if (category === 'critical') return true;
 
-        // Suppress ALL toast popups in the first 5 days of any game (except critical)
-        // These events still go to the notification log, just not as popup toasts
+        // Suppress non-critical toast popups briefly at game start (new game or tutorial start)
+        // Events still go to the notification log, just not as popup toasts
         try {
             var gameDay = Engine.getDay();
-            if (gameDay <= 5) {
+            var gameHour = typeof Engine.getHour === 'function' ? Engine.getHour() : 0;
+            if (gameDay <= 1 && gameHour <= 6) {
                 return false;
             }
         } catch(e) {}
@@ -15730,7 +15872,8 @@
         if (!town) return null;
 
         player.gold -= brokerCost;
-        const tips = [];
+        player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + brokerCost;
+        const candidates = [];
         try {
             const towns = Engine.getTowns();
             for (const t of towns) {
@@ -15740,15 +15883,23 @@
                     const localPrice = town.market.prices[res.id] || res.basePrice;
                     const remotePrice = t.market.prices[res.id] || res.basePrice;
                     const profit = remotePrice - localPrice;
-                    if (profit > localPrice * 0.3) {
-                        tips.push({ resource: res, resourceName: res.name, town: t, townName: t.name, localPrice, remotePrice, profit });
+                    if (profit > localPrice * 0.3 && profit > 1) {
+                        candidates.push({ resource: res, resourceName: res.name, town: t, townName: t.name, localPrice, remotePrice, profit });
                     }
                 }
             }
         } catch (e) { /* no-op */ }
 
-        tips.sort((a, b) => b.profit - a.profit);
-        return tips.slice(0, 3);
+        if (candidates.length === 0) return [];
+
+        // Pick one good tip (weighted toward highest profit, with some RNG)
+        candidates.sort((a, b) => b.profit - a.profit);
+        var topN = Math.min(5, candidates.length);
+        var rngObj = Engine.getRng ? Engine.getRng() : null;
+        var randVal = rngObj ? rngObj.random() : Math.random();
+        var pick = candidates[Math.floor(randVal * topN)];
+
+        return [pick];
     }
 
     // ========================================================
@@ -16209,7 +16360,7 @@
                     jobs.push({
                         name: '🔍 Customs Inspector', hours: 12,
                         pay: Math.round(14 * payScale), ticks: 30, type: 'kingdom',
-                        xpReward: 4, repGain: 2,
+                        xpReward: 4, repGain: 0,
                         description: 'Inspect cargo for banned goods. 5-10% chance of finding contraband!',
                         jobTypeKey: 'customs_inspector',
                         bannedGoods: _ciBannedGoods, kingdomId: town.kingdomId
@@ -16456,21 +16607,74 @@
             grantXP(job.xpReward, job.name);
         }
 
-        // Kingdom reputation gain
+        // Kingdom reputation gain — occasional, not every job completion
+        // Rep is earned sometimes based on job type, with contextual triggers
         if (job.repGain) {
             const town = Engine.findTown(player.townId);
             if (town) {
-                var repGainAmount = job.repGain;
-                // Town Benefactor: +5% reputation bonus in towns where player owns buildings
-                if (hasSkill('town_benefactor')) {
-                    var playerOwnsBuilding = (town.buildings || []).some(function(b) { return b.ownerId === 'player'; });
-                    if (playerOwnsBuilding) {
-                        repGainAmount *= 1.05;
+                // Per-job-type chance of earning rep (default 30%)
+                var _repChances = {
+                    'tax_collector': 0.4,
+                    'road_repair': 0.35,
+                    'castle_servant': 0.25,
+                    'royal_scribe': 0.35,
+                    'royal_messenger': 0.5,
+                    'diplomats_aide': 0.5,
+                    'court_entertainer': 0.3,
+                    'town_guard': 0.25,
+                    'castle_guard': 0.25,
+                    'castle_work': 0.25,
+                    'plague_nurse': 0.45,
+                    'gravedigger': 0.25,
+                    'quarantine_enforcer': 0.35,
+                    'weapons_courier': 0.4,
+                    'siege_engineer': 0.4,
+                    'war_medic': 0.45,
+                    'spy': 0.5,
+                    'rebuilder': 0.4,
+                    'rescue_worker': 0.45,
+                    'privateer': 0.35,
+                    'night_watchman': 0.2,
+                    'guild_enforcer': 0.35,
+                    'customs_inspector': 0,
+                };
+                var _repChance = _repChances[job.jobTypeKey] !== undefined ? _repChances[job.jobTypeKey] : 0.3;
+                if (_repChance > 0 && rng.random() < _repChance) {
+                    var repGainAmount = job.repGain;
+                    if (hasSkill('town_benefactor')) {
+                        var playerOwnsBuilding = (town.buildings || []).some(function(b) { return b.ownerId === 'player'; });
+                        if (playerOwnsBuilding) repGainAmount *= 1.05;
                     }
+                    player.reputation[town.kingdomId] = Math.min(100,
+                        (player.reputation[town.kingdomId] || 50) + repGainAmount
+                    );
+                    // Contextual rep messages
+                    var _repMsgs = {
+                        'tax_collector': '📜 Efficient tax collection earned kingdom approval.',
+                        'road_repair': '🛤️ Road repairs noticed by local officials.',
+                        'castle_servant': '🏰 The court noticed your diligent service.',
+                        'royal_scribe': '📚 Your documents were well-received at court.',
+                        'town_guard': '🛡️ You prevented an incident — the watch commander approves.',
+                        'castle_guard': '🏰 Vigilant guard duty noted by the captain.',
+                        'plague_nurse': '🏥 You saved a life today — the kingdom is grateful.',
+                        'gravedigger': '⚰️ Somber but necessary — the town appreciates your service.',
+                        'quarantine_enforcer': '🚧 Effective quarantine enforcement gained official notice.',
+                        'weapons_courier': '📦 Timely weapons delivery impressed the garrison.',
+                        'siege_engineer': '🏗️ Your engineering work strengthened the siege effort.',
+                        'war_medic': '🏥 Battlefield medicine saved soldiers — command approves.',
+                        'spy': '🕵️ Intelligence gathered proved valuable to the crown.',
+                        'rebuilder': '🔨 Rebuilding efforts appreciated by the townspeople.',
+                        'rescue_worker': '🚑 Lives saved in the disaster earned official recognition.',
+                        'privateer': '🏴‍☠️ Successful privateering operation pleased the admiralty.',
+                        'night_watchman': '🔦 You caught a thief during your watch!',
+                        'guild_enforcer': '⚖️ Guild regulation enforcement impressed the council.',
+                        'court_entertainer': '🎭 The court was thoroughly entertained.',
+                        'diplomats_aide': '🤵 Diplomatic work advanced the kingdom\'s interests.',
+                        'castle_work': '🏗️ Construction work at the castle earned approval.',
+                    };
+                    var _repMsg = _repMsgs[job.jobTypeKey] || 'Your work earned kingdom recognition.';
+                    if (typeof UI !== 'undefined' && UI.toast) UI.toast('⬆️ +' + Math.round(repGainAmount) + ' Kingdom Rep: ' + _repMsg, 'success', 'my_actions');
                 }
-                player.reputation[town.kingdomId] = Math.min(100,
-                    (player.reputation[town.kingdomId] || 50) + repGainAmount
-                );
             }
         }
 
@@ -20419,7 +20623,7 @@
         var ownedTotal = 0;
         for (var tid in player.landOwned) ownedTotal += (player.landOwned[tid] || 0);
         if (rank && rank.maxLand !== undefined && ownedTotal >= rank.maxLand) {
-            return { success: false, message: 'Your rank (' + rank.name + ') limits you to ' + rank.maxLand + ' total land plots.' };
+            return { success: false, message: 'Your rank (' + rank.name + ') limits you to ' + rank.maxLand + ' total land plots. You own ' + ownedTotal + '. Advance your rank to buy more.' };
         }
         var cost = getLandCost(townId);
         // Check for kingdom land subsidies
@@ -28065,7 +28269,25 @@
 
         player.autoTravelJob = mission;
 
-        // Start traveling to first leg
+        // Provide temporary horse for land travel (or ship for sea legs)
+        var hasHorseAlready = player.horses && player.horses.length > 0;
+        var hasShipAlready = player.ships && player.ships.length > 0;
+        var hasSea = mission.legs.some(function(l) {
+            var route = null;
+            try { route = Engine.findPath(player.townId, l.townId); } catch(e) {}
+            return route && route.some(function(s) { return s.type === 'sea'; });
+        });
+        mission._tempHorse = false;
+        mission._tempShip = false;
+        if (!hasHorseAlready) {
+            player.horses.push({ id: '_job_horse', name: 'Job Horse', speed: 1.0, stamina: 80, maxStamina: 80, health: 100, _temporary: true });
+            mission._tempHorse = true;
+        }
+        if (hasSea && !hasShipAlready) {
+            if (!player.ships) player.ships = [];
+            player.ships.push({ id: '_job_ship', name: 'Job Vessel', hull: 100, maxHull: 100, speed: 1.0, cargo: 50, _temporary: true });
+            mission._tempShip = true;
+        }
         if (!mission.legs || mission.legs.length === 0) {
             player.autoTravelJob = null;
             return { success: false, message: 'Mission has no destinations.' };
@@ -28240,10 +28462,22 @@
         mission.status = 'advancing';
     }
 
+    // Remove temporary horse/ship provided for auto-travel jobs
+    function _removeJobTransport(mission) {
+        if (mission._tempHorse) {
+            player.horses = player.horses.filter(function(h) { return !h._temporary; });
+        }
+        if (mission._tempShip && player.ships) {
+            player.ships = player.ships.filter(function(s) { return !s._temporary; });
+        }
+    }
+
     // Complete the entire mission
     function completeAutoTravelMission(success) {
         var mission = player.autoTravelJob;
         if (!mission) return;
+
+        _removeJobTransport(mission);
 
         // Bonus XP and reputation on completion
         if (success) {
@@ -28268,6 +28502,8 @@
     function quitAutoTravelJob() {
         if (!player.autoTravelJob) return { success: false, message: 'No active auto-travel mission.' };
         var mission = player.autoTravelJob;
+
+        _removeJobTransport(mission);
 
         // Cancel any in-progress travel
         if (player.traveling) {
@@ -29315,6 +29551,7 @@
 
         // Tick
         tick() { playerTick(); },
+        subtick() { travelSubtick(); },
 
         // Conditions
         checkWinConditions,

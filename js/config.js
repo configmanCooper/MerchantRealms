@@ -329,7 +329,7 @@ const CONFIG = {
     NPC_BUSINESS_OPEN_PRICE_THRESHOLD: 2, // open if price > 2x base
 
     // Caravans
-    CARAVAN_BASE_SPEED: 30,
+    CARAVAN_BASE_SPEED: 120,
     CARAVAN_ROAD_MULTIPLIER: [0, 1.0, 1.5, 2.0],
     BANDIT_ATTACK_CHANCE: 0.03,
     GUARD_EFFECTIVENESS: 0.2,
@@ -416,21 +416,21 @@ const CONFIG = {
           abilities: ['work_jobs', 'forage', 'basic_trading'],
           description: 'A common laborer. Cannot own buildings or petition.' },
         { id: 'citizen', name: 'Citizen', index: 1, icon: '🏠',
-          maxWorkers: 4, maxBuildings: 2, maxLand: 1,
+          maxWorkers: 4, maxBuildings: 2, maxLand: 3,
           goldReq: 1000, repReq: 40, extraReq: 'Lived 90+ days, no criminal record',
           fee: 500, residencyDays: 90,
           taxDiscount: 0.05,
           abilities: ['own_basic_buildings', 'petition', 'trade_licenses', 'vote_town'],
           description: 'A recognized citizen. Can own farms and workshops, petition the king, and get trade licenses.' },
         { id: 'burgher', name: 'Burgher', index: 2, icon: '⚖️',
-          maxWorkers: 15, maxBuildings: 8, maxLand: 3,
+          maxWorkers: 15, maxBuildings: 8, maxLand: 6,
           goldReq: 5000, repReq: 55, extraReq: '1 year trading, 1+ building, 50+ trades',
           fee: 1000, minTrades: 50, minBuildings: 1, tradingDays: 360,
           taxDiscount: 0.10,
           abilities: ['own_processing_buildings', 'buy_luxury', 'hire_caravan_guards', 'supply_chains'],
           description: 'An established merchant. Can own processing buildings, buy luxury goods, and run supply chains.' },
         { id: 'guildmaster', name: 'Guildmaster', index: 3, icon: '🔨',
-          maxWorkers: 35, maxBuildings: 25, maxLand: 10,
+          maxWorkers: 35, maxBuildings: 25, maxLand: 15,
           goldReq: 20000, repReq: 75, extraReq: '3 production buildings, 8+ workers, buildings in 2+ towns',
           fee: 5000, minProductionBuildings: 3, minWorkers: 8, minTownsWithBuildings: 2,
           taxDiscount: 0.15,
@@ -438,7 +438,7 @@ const CONFIG = {
           abilities: ['build_toll_roads', 'trade_weapons', 'hire_petitioners', 'production_bonus'],
           description: 'Master of commerce. Can build toll roads, trade weapons, and hire petitioners. +10% production output.' },
         { id: 'minor_noble', name: 'Minor Noble', index: 4, icon: '👑',
-          maxWorkers: 70, maxBuildings: 50, maxLand: 20,
+          maxWorkers: 70, maxBuildings: 50, maxLand: 30,
           goldReq: 75000, repReq: 88, extraReq: 'Noble marriage OR king decree OR 3 petitions, 5 NPC endorsements, property in 3+ towns',
           fee: 15000, minPetitionsCompleted: 3, minEndorsements: 5, minEndorsementLevel: 60, minTownsWithProperty: 3,
           taxDiscount: 0.20,
@@ -2407,7 +2407,7 @@ const ENERGY_CONFIG = {
 
 // These belong in CONFIG, not HUNGER_CONFIG
 CONFIG.MARKET_INTEL_UPDATE_INTERVAL = 30;
-CONFIG.INFO_BROKER_COST = 25;
+CONFIG.INFO_BROKER_COST = 10;
 CONFIG.LOCAL_WORK_COOLDOWN_TICKS = 2;
 CONFIG.STREET_TRADE_REFRESH_DAYS = 5;
 CONFIG.STREET_TRADE_PREMIUM_MIN = 1.2;

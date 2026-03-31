@@ -623,9 +623,19 @@ window.UI = (function () {
                     var travelText = travelModeIcon + ' Traveling...';
                     if (!Player.travelPaid) {
                         travelText += ' ';
-                        el.playerTown.innerHTML = travelText + '<span onclick="UI.turnBackUI()" style="cursor:pointer;font-size:0.75rem;background:rgba(200,150,50,0.2);border:1px solid rgba(200,150,50,0.4);border-radius:4px;padding:1px 6px;margin-left:4px;">🔄 Turn Back</span>';
+                        var travelBtns = '<span onclick="UI.turnBackUI()" style="cursor:pointer;font-size:0.75rem;background:rgba(200,150,50,0.2);border:1px solid rgba(200,150,50,0.4);border-radius:4px;padding:1px 6px;margin-left:4px;">🔄 Turn Back</span>';
+                        // Show quit mission button during auto-travel jobs
+                        if (Player.autoTravelJob) {
+                            travelBtns += '<span onclick="UI.quitAutoTravelJobUI()" style="cursor:pointer;font-size:0.75rem;background:rgba(200,80,80,0.2);border:1px solid rgba(200,80,80,0.4);border-radius:4px;padding:1px 6px;margin-left:4px;">❌ Quit Job</span>';
+                        }
+                        el.playerTown.innerHTML = travelText + travelBtns;
                     } else {
-                        el.playerTown.textContent = travelText;
+                        // Paid travel (e.g. sea passage) — still show quit mission if on auto-travel
+                        if (Player.autoTravelJob) {
+                            el.playerTown.innerHTML = travelText + ' <span onclick="UI.quitAutoTravelJobUI()" style="cursor:pointer;font-size:0.75rem;background:rgba(200,80,80,0.2);border:1px solid rgba(200,80,80,0.4);border-radius:4px;padding:1px 6px;margin-left:4px;">❌ Quit Job</span>';
+                        } else {
+                            el.playerTown.textContent = travelText;
+                        }
                     }
                 } else {
                     el.playerTown.textContent = '🏕️ Wilderness';
@@ -2145,7 +2155,16 @@ window.UI = (function () {
                 if (match) trendTag = '<span style="color:#e67e22;font-size:0.7rem;margin-left:4px;">🔥 Trending! +' + match.demandBonus + '%</span>';
             }
 
-            const buyMaxQty = Math.max(0, Math.min(finalUnitPrice > 0 ? Math.floor(Player.gold / finalUnitPrice) : 0, qty));
+            var effectiveCap = carryCapacity;
+            if (Player.getTownStorageCapacity && Player.getTownStorageUsed) {
+                var freeStorage = (Player.getTownStorageCapacity() || 0) - (Player.getTownStorageUsed() || 0);
+                if (freeStorage > 0) effectiveCap += freeStorage;
+            }
+            const remainingCapacity = Math.max(0, effectiveCap - carriedWeight);
+            const resWeight = res.weight || 1;
+            const maxByCapacity = Math.floor(remainingCapacity / resWeight);
+            const maxByGold = finalUnitPrice > 0 ? Math.floor(Player.gold / finalUnitPrice) : 0;
+            const buyMaxQty = Math.max(0, Math.min(maxByGold, maxByCapacity, qty));
             const buyQtyBtns = [1, 5, 10, 25].map(q =>
                 `<button class="qty-btn${q === 1 ? ' qty-selected' : ''}" data-qty="${q}" onclick="UI.setTradeQty('buy','${resId}',${q},${finalUnitPrice.toFixed(4)})">${q}</button>`
             ).join('') + `<button class="qty-btn" data-qty="max" onclick="UI.setTradeQty('buy','${resId}',${buyMaxQty},${finalUnitPrice.toFixed(4)})">⬆Max</button>`;
@@ -7652,6 +7671,48 @@ window.UI = (function () {
                 }
             }
 
+            // Cart bring/leave options (if player has a cart-type container)
+            var playerContainer = Player.state ? Player.state.storageContainer : null;
+            var containerCfg = playerContainer ? CONFIG.STORAGE_CONTAINERS[playerContainer] : null;
+            var isCartType = containerCfg && (playerContainer === 'cart' || playerContainer === 'small_wagon' || playerContainer === 'wagon' || playerContainer === 'large_wagon');
+            if (isCartType) {
+                // Bring cart (with speed penalty if no horse)
+                var cartPenalty = hasHorse ? 1.0 : 1.4;
+                var bringSpeed = hasHorse ? (baseSpeed * (1 + (CONFIG.HORSE_TRAVEL_SPEED_BONUS || 0.3))) : baseSpeed;
+                var bringDays = Math.max(1, Math.ceil((baseDist * cartPenalty) / bringSpeed));
+                var bringDesc = hasHorse
+                    ? 'Your horse pulls the ' + containerCfg.name + '. No speed penalty.'
+                    : 'Drag the ' + containerCfg.name + ' by hand — 40% slower!';
+                options.push({
+                    id: 'bring_cart',
+                    icon: '🛒',
+                    name: 'Bring ' + containerCfg.name,
+                    desc: bringDesc,
+                    cost: 0,
+                    days: bringDays,
+                    available: true,
+                    action: (function(tid) { return function () {
+                        Player.travelTo(tid, { leaveCart: false });
+                    }; })(townId)
+                });
+                // Leave cart behind
+                var leaveDays = hasHorse
+                    ? Math.max(1, Math.ceil(baseDist / (baseSpeed * (1 + (CONFIG.HORSE_TRAVEL_SPEED_BONUS || 0.3)))))
+                    : walkDays;
+                options.push({
+                    id: 'leave_cart',
+                    icon: '🛒📦',
+                    name: 'Leave ' + containerCfg.name + ' Behind',
+                    desc: 'Travel light. Cart may be stolen (15%). Goods on it get raided daily.',
+                    cost: 0,
+                    days: leaveDays,
+                    available: true,
+                    action: (function(tid) { return function () {
+                        Player.travelTo(tid, { leaveCart: true });
+                    }; })(townId)
+                });
+            }
+
             // Land transport services
             var transportAvailable = getTransportServices(currentTown, destTown, 'land');
             for (var ti = 0; ti < transportAvailable.length; ti++) {
@@ -9102,7 +9163,12 @@ window.UI = (function () {
                 html += '<h3 style="margin-top:12px;">🏗️ Buy Housing in ' + town.name + '</h3>';
                 var ownedLand = Player.getOwnedLand(Player.townId);
                 var usedLand = Player.getUsedLandSlots ? Player.getUsedLandSlots(Player.townId) : 0;
-                html += '<div style="font-size:0.85rem;margin-bottom:8px;">Land plots: ' + usedLand + '/' + ownedLand + ' used | <button class="btn-medieval" onclick="UI.buyLandUI()" style="font-size:0.75rem;padding:2px 8px;">Buy Land (' + (Player.getLandCost ? Player.getLandCost(Player.townId) : '?') + 'g)</button></div>';
+                var _rankIdx = Player.getPlayerRankIndex ? Player.getPlayerRankIndex() : 0;
+                var _rankCfg = CONFIG.SOCIAL_RANKS[_rankIdx];
+                var _rankMaxLand = (_rankCfg && _rankCfg.maxLand !== undefined) ? _rankCfg.maxLand : '∞';
+                var _totalLandOwned = 0;
+                if (Player.state && Player.state.landOwned) { for (var _lk in Player.state.landOwned) _totalLandOwned += (Player.state.landOwned[_lk] || 0); }
+                html += '<div style="font-size:0.85rem;margin-bottom:8px;">Land plots: ' + usedLand + '/' + ownedLand + ' used (global: ' + _totalLandOwned + '/' + _rankMaxLand + ' for ' + (_rankCfg ? _rankCfg.name : 'your rank') + ') | <button class="btn-medieval" onclick="UI.buyLandUI()" style="font-size:0.75rem;padding:2px 8px;">Buy Land (' + (Player.getLandCost ? Player.getLandCost(Player.townId) : '?') + 'g)</button></div>';
 
                 for (var j = 0; j < CONFIG.HOUSING_TYPES.length; j++) {
                     var htype = CONFIG.HOUSING_TYPES[j];
@@ -9789,15 +9855,15 @@ window.UI = (function () {
         if (remoteTowns.length === 0 && !hasIntelSkill) {
             return `<div class="market-intel-section">
                 <h4>📊 Market Intel</h4>
-                <div class="text-dim" style="font-size:0.8rem;">No market intelligence available. Learn the Market Scout skill or pay an Information Broker (25g).</div>
-                <button class="btn-trade buy" style="margin-top:6px;" onclick="UI.buyInfoBrokerTip()">💡 Buy Trade Tip (25g)</button>
+                <div class="text-dim" style="font-size:0.8rem;">No market intelligence available. Learn the Market Scout skill or pay an Information Broker (${CONFIG.INFO_BROKER_COST || 10}g).</div>
+                <button class="btn-trade buy" style="margin-top:6px;" onclick="UI.buyInfoBrokerTip()">💡 Buy Trade Tip (${CONFIG.INFO_BROKER_COST || 10}g)</button>
             </div>`;
         }
 
         let html = '<div class="market-intel-section"><h4>📊 Market Intel</h4>';
 
         if (!hasIntelSkill) {
-            html += `<button class="btn-trade buy" style="margin-bottom:8px;" onclick="UI.buyInfoBrokerTip()">💡 Buy Trade Tip (25g)</button>`;
+            html += `<button class="btn-trade buy" style="margin-bottom:8px;" onclick="UI.buyInfoBrokerTip()">💡 Buy Trade Tip (${CONFIG.INFO_BROKER_COST || 10}g)</button>`;
         }
 
         if (remoteTowns.length > 0) {
@@ -9849,18 +9915,16 @@ window.UI = (function () {
         if (typeof Player === 'undefined' || !Player.getInfoBrokerTip) return;
         const tips = Player.getInfoBrokerTip();
         if (!tips) {
-            toast('Not enough gold for a tip (25g).', 'warning');
+            toast('Not enough gold for a tip (' + (CONFIG.INFO_BROKER_COST || 10) + 'g).', 'warning');
             return;
         }
         if (tips.length === 0) {
             toast('The broker has no useful tips right now.', 'info');
             return;
         }
-        let msg = '💡 Trade Tips:\n';
-        for (const tip of tips) {
-            msg += `• ${tip.resource.icon} ${tip.resource.name}: buy here for ${tip.localPrice}g, sell in ${tip.town.name} for ${tip.remotePrice}g (+${tip.profit}g profit)\n`;
-        }
-        toast(msg, 'info');
+        var tip = tips[0];
+        var msg = '💡 ' + tip.resource.icon + ' ' + tip.resource.name + ': buy here for ' + tip.localPrice + 'g, sell in ' + tip.town.name + ' for ' + tip.remotePrice + 'g (+' + tip.profit + 'g profit)';
+        toast(msg, 'success');
     }
 
     // ═══════════════════════════════════════════════════════════
