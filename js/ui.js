@@ -3403,7 +3403,8 @@ window.UI = (function () {
                 var selected = currentTarget === t.id ? 'selected' : '';
                 var warning = !t.makesSense ? ' ⚠️' : '';
                 var label;
-                if (t.id === 'warehouse') label = '📦 ' + t.name;
+                if (t.id === 'player') label = '🧑 ' + t.name;
+                else if (t.id === 'warehouse') label = '📦 ' + t.name;
                 else if (t.id === 'market') label = '🏪 ' + t.name;
                 else if (t.isWarehouse) label = '📦 ' + t.name + ' Lv.' + t.level;
                 else label = '🏭 ' + t.name + ' Lv.' + t.level + warning;
@@ -3417,8 +3418,8 @@ window.UI = (function () {
             html += '</div>';
             
             if (transferEnabled && currentTarget) {
-                var targetName = currentTarget === 'warehouse' ? 'Town Storage' : currentTarget === 'market' ? 'Town Market' : '?';
-                if (currentTarget !== 'warehouse' && currentTarget !== 'market') {
+                var targetName = currentTarget === 'player' ? 'Your Inventory' : currentTarget === 'warehouse' ? 'Town Storage' : currentTarget === 'market' ? 'Town Market' : '?';
+                if (currentTarget !== 'player' && currentTarget !== 'warehouse' && currentTarget !== 'market') {
                     var tb = Player.buildings.find(function(b) { return b.id === currentTarget; });
                     if (tb) {
                         var tbt = Engine.findBuildingType(tb.type);
@@ -9907,6 +9908,22 @@ window.UI = (function () {
             html += '</table></div>';
         }
 
+        // Trade tip log
+        const tipLog = (typeof Player !== 'undefined' && Player.tradeTipLog) ? Player.tradeTipLog : [];
+        if (tipLog.length > 0) {
+            const currentDay = (typeof Engine !== 'undefined' && Engine.getDay) ? Engine.getDay() : 0;
+            html += '<div style="margin-top:8px;"><div style="font-weight:bold;font-size:0.82rem;margin-bottom:4px;">📝 Trade Tips</div>';
+            html += '<div style="font-size:0.78rem;color:#bbb;">';
+            const recentTips = tipLog.slice(-10).reverse();
+            for (const tip of recentTips) {
+                const daysAgo = currentDay - (tip.day || 0);
+                const ageText = daysAgo <= 0 ? 'today' : daysAgo + 'd ago';
+                const freshClass = daysAgo <= 3 ? 'color:#c4a35a;' : daysAgo <= 10 ? 'color:#aaa;' : 'color:#777;';
+                html += '<div style="margin-bottom:2px;' + freshClass + '">' + tip.message + ' <span style="font-size:0.7rem;opacity:0.7;">(' + ageText + ')</span></div>';
+            }
+            html += '</div></div>';
+        }
+
         html += '</div>';
         return html;
     }
@@ -9923,8 +9940,10 @@ window.UI = (function () {
             return;
         }
         var tip = tips[0];
-        var msg = '💡 ' + tip.resource.icon + ' ' + tip.resource.name + ': buy here for ' + tip.localPrice + 'g, sell in ' + tip.town.name + ' for ' + tip.remotePrice + 'g (+' + tip.profit + 'g profit)';
+        var msg = '💡 ' + tip.resource.icon + ' ' + tip.resource.name + ' sells for ' + Math.round(tip.remotePrice) + 'g in ' + tip.town.name;
         toast(msg, 'success');
+        // Refresh trade panel to show new tip in market intel
+        if (typeof refreshTradePanel === 'function') refreshTradePanel();
     }
 
     // ═══════════════════════════════════════════════════════════

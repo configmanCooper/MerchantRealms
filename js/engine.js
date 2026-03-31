@@ -4645,7 +4645,7 @@
         return world.people.filter(p =>
             p.alive && p.townId === townId &&
             !p.employerId &&
-            p.age >= (CONFIG.COMING_OF_AGE || 14) &&
+            p.age >= 18 &&
             (p.occupation === 'laborer' || p.occupation === 'craftsman' || p.occupation === 'farmer' || p.occupation === 'none') &&
             !p.trainingUntilDay
         ).map(p => ({

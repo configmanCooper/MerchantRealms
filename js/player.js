@@ -115,6 +115,7 @@
         _lastDehydrateTick: 0,
         // Market intel
         marketIntel: {},        // townId → { prices: {}, updatedDay: N }
+        tradeTipLog: [],        // [{ day, message, resourceId, fromTown, toTown, profit }]
         // Tracking stats for achievements
         achievementStats: {
             totalSells: {},     // resourceId → qty sold
@@ -496,6 +497,7 @@
         player._lastStarveTick = 0;
         player._lastDehydrateTick = 0;
         player.marketIntel = {};
+        player.tradeTipLog = [];
         player.achievementStats = {
             totalSells: {}, totalBuys: {}, giftsGiven: 0,
             smuggleSuccesses: 0, smuggleStreak: 0, smuggleGoldEarned: 0,
@@ -1910,6 +1912,7 @@
         if (person.employerId) return { success: false, message: 'Person is already employed.' };
         // Prevent duplicate hire (belt-and-suspenders with employerId check)
         if (player.employees.includes(personId)) return { success: false, message: 'Person is already your employee.' };
+        if (person.age < 18) return { success: false, message: 'Cannot hire minors (under 18).' };
         if (person.occupation === 'noble' || person.occupation === 'soldier') {
             return { success: false, message: 'Cannot hire nobles or soldiers.' };
         }
@@ -2670,6 +2673,7 @@
         }
         
         // Special targets
+        targets.push({ id: 'player', name: 'Your Inventory', makesSense: true, isWarehouse: false, consumes: [] });
         targets.push({ id: 'warehouse', name: 'Town Storage', makesSense: true, isWarehouse: true, consumes: [] });
         targets.push({ id: 'market', name: 'Town Market (Sell)', makesSense: true, isWarehouse: false, consumes: [] });
         
@@ -4296,7 +4300,28 @@
         const town = Engine.findTown(sourceBld.townId);
         if (!town) return;
         
-        if (sourceBld.transferTarget === 'warehouse') {
+        if (sourceBld.transferTarget === 'player') {
+            // Transfer directly to player inventory (if in town)
+            if (player.townId === sourceBld.townId && !player.traveling) {
+                var res = findResource(resourceId);
+                var weight = res ? (res.weight || 1) : 1;
+                var freeCarry = getCarryCapacity() - getCarriedWeight();
+                var canCarry = Math.min(amount, Math.floor(freeCarry / weight));
+                if (canCarry > 0) {
+                    player.inventory[resourceId] = (player.inventory[resourceId] || 0) + canCarry;
+                }
+                // Overflow to town storage
+                var overflow = amount - canCarry;
+                if (overflow > 0) {
+                    if (!player.townStorage[sourceBld.townId]) player.townStorage[sourceBld.townId] = {};
+                    player.townStorage[sourceBld.townId][resourceId] = (player.townStorage[sourceBld.townId][resourceId] || 0) + overflow;
+                }
+            } else {
+                // Player not in town — fallback to town storage
+                if (!player.townStorage[sourceBld.townId]) player.townStorage[sourceBld.townId] = {};
+                player.townStorage[sourceBld.townId][resourceId] = (player.townStorage[sourceBld.townId][resourceId] || 0) + amount;
+            }
+        } else if (sourceBld.transferTarget === 'warehouse') {
             // Store in player's town storage
             if (!player.townStorage[sourceBld.townId]) player.townStorage[sourceBld.townId] = {};
             player.townStorage[sourceBld.townId][resourceId] = (player.townStorage[sourceBld.townId][resourceId] || 0) + amount;
@@ -4309,7 +4334,6 @@
             // Transfer to another building — put into town market supply so the target building can consume it
             const targetBld = player.buildings.find(b => b.id === sourceBld.transferTarget);
             if (targetBld && targetBld.townId === sourceBld.townId) {
-                // Put into town market supply — target building pulls from there automatically
                 if (town.market && town.market.supply) {
                     town.market.supply[resourceId] = (town.market.supply[resourceId] || 0) + amount;
                 }
@@ -4464,8 +4488,37 @@
                     }
                 }
             } else {
-                // Normal — store in town storage
-                player.townStorage[bld.townId][bt.produces] = (player.townStorage[bld.townId][bt.produces] || 0) + actualOutput;
+                // Normal — store in town storage, with overflow auto-sell
+                var storageCap = getTownStorageCapacity(bld.townId);
+                var storageUsed = getTownStorageUsed(bld.townId);
+                var res = findResource(bt.produces);
+                var resWeight = res ? (res.weight || 1) : 1;
+                var freeSpace = Math.max(0, Math.floor((storageCap - storageUsed) / resWeight));
+
+                if (freeSpace >= actualOutput) {
+                    // Fits — store it all
+                    player.townStorage[bld.townId][bt.produces] = (player.townStorage[bld.townId][bt.produces] || 0) + actualOutput;
+                } else {
+                    // Store what fits
+                    if (freeSpace > 0) {
+                        player.townStorage[bld.townId][bt.produces] = (player.townStorage[bld.townId][bt.produces] || 0) + freeSpace;
+                    }
+                    // Auto-sell overflow on town market at market price
+                    var overflow = actualOutput - freeSpace;
+                    if (overflow > 0) {
+                        var sellTown = Engine.findTown(bld.townId);
+                        if (sellTown && sellTown.market) {
+                            var basePrice = (res && res.basePrice) || 1;
+                            var marketPrice = (sellTown.market.prices && sellTown.market.prices[bt.produces]) || basePrice;
+                            var revenue = Math.floor(overflow * marketPrice * 0.75);
+                            player.gold += revenue;
+                            player.stats.totalGoldEarned += revenue;
+                            if (sellTown.market.supply) {
+                                sellTown.market.supply[bt.produces] = (sellTown.market.supply[bt.produces] || 0) + overflow;
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -4861,6 +4914,7 @@
     function getTownStorageCapacity(townId) {
         var tid = townId || player.townId;
         var total = 0;
+        // Warehouses and other buildings with storage
         for (var i = 0; i < player.buildings.length; i++) {
             var b = player.buildings[i];
             if (b.townId !== tid) continue;
@@ -4871,6 +4925,19 @@
             if (bt && bt.storage) {
                 total += bt.storage * (b.level || 1);
             }
+        }
+        // Housing storage (cottages, townhouses, caravan wagons, etc.)
+        for (var hi = 0; hi < (player.houses || []).length; hi++) {
+            var h = player.houses[hi];
+            if (h.townId !== tid) continue;
+            var ht = CONFIG.HOUSING_TYPES.find(function(x) { return x.id === h.type; });
+            if (ht && ht.storage) {
+                total += ht.storage;
+            }
+        }
+        // Player's own carry capacity counts if they are in this town
+        if (player.townId === tid && !player.traveling) {
+            total += getCarryCapacity() - getCarriedWeight();
         }
         return total;
     }
@@ -6483,6 +6550,7 @@
                 var towns = Engine.getTowns();
                 var bestTrade = null;
                 var bestProfit = 0;
+                var bestTown = null;
                 for (var ti = 0; ti < towns.length; ti++) {
                     var t = towns[ti];
                     if (!t.market || !t.market.prices) continue;
@@ -6497,17 +6565,21 @@
                         if (profit > bestProfit) {
                             bestProfit = profit;
                             bestTrade = { resId: resId, town: t.name, buyPrice: localPrice, sellPrice: remotePrice, profit: profit };
+                            bestTown = t;
                         }
                     }
                 }
                 if (bestTrade) {
                     var res = findResource(bestTrade.resId);
-                    message = '"Buy ' + (res ? res.name : bestTrade.resId) + ' here for ' + bestTrade.buyPrice + 'g, sell in ' + bestTrade.town + ' for ' + bestTrade.sellPrice + 'g. Profit: ' + bestTrade.profit + 'g each!"';
+                    message = '"' + (res ? res.name : bestTrade.resId) + ' sells for ' + bestTrade.sellPrice + 'g in ' + bestTrade.town + '."';
+                    // Log the tip persistently
+                    if (res && bestTown) {
+                        _logTradeTip({ resource: res, town: bestTown, townName: bestTrade.town, remotePrice: bestTrade.sellPrice, profit: bestTrade.profit });
+                    }
                 } else {
                     message = '"No great deals right now, check back later."';
                 }
                 grantXP(5, 'trade tip');
-                Engine.logEvent('\u{1F4CA} ' + person.firstName + ' shares a trade tip: ' + message);
                 break;
             }
 
@@ -10635,6 +10707,7 @@
             _lastStarveTick: player._lastStarveTick || 0,
             _lastDehydrateTick: player._lastDehydrateTick || 0,
             marketIntel: JSON.parse(JSON.stringify(player.marketIntel)),
+            tradeTipLog: JSON.parse(JSON.stringify(player.tradeTipLog || [])),
             achievementStats: JSON.parse(JSON.stringify(player.achievementStats)),
             _xpAccumulator: player._xpAccumulator,
             licenses: JSON.parse(JSON.stringify(player.licenses)),
@@ -10920,6 +10993,7 @@
         player._lastStarveTick = data._lastStarveTick || 0;
         player._lastDehydrateTick = data._lastDehydrateTick || 0;
         player.marketIntel = data.marketIntel || {};
+        player.tradeTipLog = data.tradeTipLog || [];
         player.achievementStats = data.achievementStats || {
             totalSells: {}, totalBuys: {}, giftsGiven: 0,
             smuggleSuccesses: 0, smuggleStreak: 0, smuggleGoldEarned: 0,
@@ -12001,6 +12075,9 @@
 
         // Supply chain tracking
         updateSupplyChains();
+
+        // Prune old trade tips (>30 days)
+        _pruneTradeTipLog();
 
         // Military career tick
         tickMilitaryCareer();
@@ -15899,7 +15976,52 @@
         var randVal = rngObj ? rngObj.random() : Math.random();
         var pick = candidates[Math.floor(randVal * topN)];
 
+        // Log the tip persistently
+        _logTradeTip(pick);
+
         return [pick];
+    }
+
+    /**
+     * Log a trade tip to tradeTipLog, marketIntel, and event log.
+     * Each tip is about one good in one location.
+     */
+    function _logTradeTip(tip) {
+        if (!tip || !tip.resource || !tip.town) return;
+        var day = Engine.getDay ? Engine.getDay() : 0;
+        var res = tip.resource;
+        var msg = res.icon + ' ' + res.name + ' sells for ' + Math.round(tip.remotePrice) + 'g in ' + tip.townName;
+
+        // Add to persistent tip log
+        if (!player.tradeTipLog) player.tradeTipLog = [];
+        player.tradeTipLog.push({
+            day: day,
+            message: msg,
+            resourceId: res.id,
+            townId: tip.town.id,
+            townName: tip.townName,
+            price: tip.remotePrice,
+            profit: tip.profit
+        });
+
+        // Update marketIntel for that specific town/resource
+        if (!player.marketIntel[tip.town.id]) {
+            player.marketIntel[tip.town.id] = { prices: {}, updatedDay: day };
+        }
+        player.marketIntel[tip.town.id].prices[res.id] = tip.remotePrice;
+        player.marketIntel[tip.town.id].updatedDay = day;
+
+        // Log to event/notification system
+        Engine.logEvent('📊 Trade tip: ' + msg, { type: 'trade_intel' }, 'my_actions');
+
+        // Prune tips older than 30 days
+        _pruneTradeTipLog();
+    }
+
+    function _pruneTradeTipLog() {
+        var day = Engine.getDay ? Engine.getDay() : 0;
+        if (!player.tradeTipLog) return;
+        player.tradeTipLog = player.tradeTipLog.filter(function(t) { return (day - t.day) <= 30; });
     }
 
     // ========================================================
@@ -16086,8 +16208,8 @@
         jobs.push({
             name: '⚔️ Temporary soldier duty', hours: 12,
             pay: Math.round((hasSkill('combat_trained') ? 8 : 6) * payScale), ticks: 30, type: 'kingdom',
-            xpReward: 3, repGain: 2, description: 'Serve the garrison for a day.' + skillProgressNote('temp_soldier'),
-            jobTypeKey: 'temp_soldier'
+            xpReward: 3, repGain: 2, description: '🩹 Medium injury risk. Serve the garrison for a day.' + skillProgressNote('temp_soldier'),
+            injuryRisk: 0.008, riskLevel: 'medium', jobTypeKey: 'temp_soldier'
         });
         // Tax collector: requires citizenship + (tax increase in this kingdom within 30 days OR spring season)
         if (isCitizen) {
@@ -22377,7 +22499,7 @@
         if (startConfig.startWorkers) {
             var townPeople = Engine.getPeople(player.townId);
             var hirable = townPeople.filter(function(p) {
-                return p.alive && !p.employerId && p.occupation !== 'noble' && p.occupation !== 'soldier' && p.age >= 14;
+                return p.alive && !p.employerId && p.occupation !== 'noble' && p.occupation !== 'soldier' && p.age >= 18;
             });
             for (var wi = 0; wi < Math.min(startConfig.startWorkers, hirable.length); wi++) {
                 var w = hirable[wi];
@@ -28929,6 +29051,7 @@
         get achievements() { return player.achievements; },
         get hunger() { return player.hunger; },
         get marketIntel() { return player.marketIntel; },
+        get tradeTipLog() { return player.tradeTipLog || []; },
         get rememberedPrices() { return player.rememberedPrices || {}; },
         getRememberedPrices,
         get achievementStats() { return player.achievementStats; },

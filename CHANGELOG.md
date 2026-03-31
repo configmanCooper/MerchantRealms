@@ -4,6 +4,30 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.43.1] - 2026-03-31
+
+### Added — Building Storage, Trade Tips, Transfer to Player
+
+#### Building Storage & Overflow
+- **Town storage capacity** now includes housing storage (cottages, wagons, etc.) and player carry capacity when in town
+- **Auto-sell overflow**: when storage is full and no transfer set, one day's production auto-sells on town market at 75% price
+- **"Your Inventory" transfer target** — buildings can now send output directly to your inventory (overflow goes to town storage)
+
+#### Trade Tip Persistence
+- **Trade tips now log permanently** under Market Intel → 📝 Trade Tips section (most recent 10 shown)
+- Tips update **marketIntel** for that town/resource immediately
+- Tips logged to **event/notification system** for history tracking
+- Tips **auto-expire after 30 days**
+- Both Info Broker tips and NPC merchant tips use the same logging system
+
+### Changed
+- **Temporary soldier duty** now has medium injury risk (0.8%, matching weapons courier)
+- Workers **under 18 can no longer be hired** (raised from 14 to 18 in all hiring paths)
+- Trade tip message format simplified: shows one good at one location
+
+### Fixed
+- NPC trade tip perk no longer creates duplicate event log entries
+
 ## [0.43.0] - 2026-03-31
 
 ### Added — Travel Overhaul, Deposit Scanning, Auto-Travel Jobs, Cart Travel
