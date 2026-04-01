@@ -164,6 +164,17 @@ window.Game = (function () {
             btnStartAdventure.addEventListener('click', startNewGame);
         }
 
+        // Character creation — Back to Main Menu
+        const btnBackToMenu = document.getElementById('btnBackToMenu');
+        if (btnBackToMenu) {
+            btnBackToMenu.addEventListener('click', function () {
+                var charScreen = document.getElementById('charCreateScreen');
+                var titleScr = document.getElementById('titleScreen');
+                if (charScreen) { charScreen.classList.add('hidden'); charScreen.style.display = 'none'; }
+                if (titleScr) { titleScr.classList.remove('hidden'); titleScr.style.display = 'flex'; }
+            });
+        }
+
         // End screen return button
         const btnEndOk = document.getElementById('btnEndOk');
         if (btnEndOk) {
