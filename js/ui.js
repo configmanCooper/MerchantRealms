@@ -2744,7 +2744,11 @@ window.UI = (function () {
 
     function executeBuild(buildingType, townId) {
         try {
-            Player.buildBuilding(buildingType, townId);
+            var result = Player.buildBuilding(buildingType, townId);
+            if (result && result.success === false) {
+                toast(result.message || 'Cannot build', 'danger');
+                return;
+            }
             toast(`Built ${findBuildingType(buildingType)?.name || buildingType}!`, 'success', 'my_business');
             closeModal();
         } catch (e) {
