@@ -2014,6 +2014,18 @@
             return { success: false, message: 'Building is fully staffed.' };
         }
 
+        // Check if worker is in the same town as the building
+        var person = Engine.findPerson(personId);
+        if (person && person.townId !== bld.townId) {
+            var bldTown = Engine.findTown(bld.townId);
+            return { success: false, message: (person.firstName || 'Worker') + ' is not in ' + (bldTown ? bldTown.name : 'the building\'s town') + '. Send them there first.' };
+        }
+
+        // Check if worker is still traveling
+        if (person && person._workerTraveling) {
+            return { success: false, message: (person.firstName || 'Worker') + ' is still traveling. Wait for them to arrive.' };
+        }
+
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.assign_worker || 1);
 
         // Remove from any other building first
@@ -2024,6 +2036,103 @@
 
         bld.workers.push(personId);
         return { success: true, message: `Assigned worker to ${bt.name}.` };
+    }
+
+    function sendWorkerToTown(personId, destTownId, travelMode) {
+        if (!player.employees.includes(personId)) {
+            return { success: false, message: 'Not your employee.' };
+        }
+        var person = Engine.findPerson(personId);
+        if (!person || !person.alive) return { success: false, message: 'Worker not found or not alive.' };
+        if (person.townId === destTownId) return { success: false, message: 'Worker is already in that town.' };
+        if (person._workerTraveling) return { success: false, message: 'Worker is already traveling.' };
+
+        var fromTown = Engine.findTown(person.townId);
+        var destTown = Engine.findTown(destTownId);
+        if (!fromTown || !destTown) return { success: false, message: 'Invalid town.' };
+
+        var route = Engine.findPath(person.townId, destTownId);
+        if (!route || route.length === 0) return { success: false, message: 'No route to ' + destTown.name + '.' };
+
+        // Calculate distance
+        var totalDist = 0;
+        for (var si = 0; si < route.length; si++) {
+            var a = Engine.findTown(route[si].fromTownId);
+            var b = Engine.findTown(route[si].toTownId);
+            if (a && b) totalDist += Math.hypot(a.x - b.x, a.y - b.y) / (CONFIG.CARAVAN_ROAD_MULTIPLIER[route[si].quality] || 1);
+        }
+
+        travelMode = travelMode || 'walk';
+        var travelCost = 0;
+        var speedMult = 1.0;
+        var satisfactionPenalty = 0;
+
+        if (travelMode === 'walk') {
+            // Free but slow, -5 satisfaction
+            speedMult = 0.5;
+            satisfactionPenalty = -5;
+        } else if (travelMode === 'horse') {
+            // Give them a horse from inventory — fast, no satisfaction penalty
+            if ((player.inventory['horses'] || 0) < 1) {
+                return { success: false, message: 'No horses in inventory.' };
+            }
+            player.inventory['horses'] -= 1;
+            person._playerHorse = true;
+            speedMult = 1.5;
+            satisfactionPenalty = 0;
+        } else if (travelMode === 'transport') {
+            // Pay for transport — NPC transport service price estimate
+            var transportCost = Math.max(10, Math.ceil(totalDist * 0.15));
+            if (player.gold < transportCost) {
+                return { success: false, message: 'Not enough gold for transport (' + transportCost + 'g).' };
+            }
+            player.gold -= transportCost;
+            player.stats.totalGoldSpent += transportCost;
+            travelCost = transportCost;
+            speedMult = 1.2;
+            satisfactionPenalty = 0;
+        }
+
+        // Calculate travel days
+        var baseSpeed = CONFIG.CARAVAN_BASE_SPEED || 120;
+        var travelDays = Math.max(1, Math.ceil(totalDist / (baseSpeed * speedMult)));
+
+        // Set worker traveling state
+        person._workerTraveling = {
+            fromTownId: person.townId,
+            toTownId: destTownId,
+            startDay: Engine.getDay(),
+            arrivalDay: Engine.getDay() + travelDays,
+            travelMode: travelMode
+        };
+
+        // Apply satisfaction penalty for walking
+        if (satisfactionPenalty !== 0) {
+            modifyWorkerSatisfaction(personId, satisfactionPenalty);
+        }
+
+        // Remove from any building assignment at current town
+        for (var bi = 0; bi < player.buildings.length; bi++) {
+            var wIdx = player.buildings[bi].workers.indexOf(personId);
+            if (wIdx !== -1) player.buildings[bi].workers.splice(wIdx, 1);
+        }
+
+        var modeLabel = travelMode === 'walk' ? 'walking' : travelMode === 'horse' ? 'riding' : 'transport';
+        Engine.logEvent('📍 ' + person.firstName + ' ' + person.lastName + ' sent to ' + destTown.name + ' (' + modeLabel + ', ~' + travelDays + ' days)' + (travelCost > 0 ? ' for ' + travelCost + 'g' : '') + '.');
+        return { success: true, message: person.firstName + ' heading to ' + destTown.name + ' (' + modeLabel + ', ~' + travelDays + ' days).' + (satisfactionPenalty < 0 ? ' Walking slightly reduced satisfaction.' : '') };
+    }
+
+    function takeHorseFromWorker(personId) {
+        if (!player.employees.includes(personId)) return { success: false, message: 'Not your employee.' };
+        var person = Engine.findPerson(personId);
+        if (!person) return { success: false, message: 'Worker not found.' };
+        if (!person._playerHorse) return { success: false, message: 'This worker does not have a horse from you.' };
+        if (person.townId !== player.townId) return { success: false, message: 'You must be in the same town to take the horse back.' };
+        if (person._workerTraveling) return { success: false, message: 'Cannot take horse while worker is traveling.' };
+
+        person._playerHorse = false;
+        player.inventory['horses'] = (player.inventory['horses'] || 0) + 1;
+        return { success: true, message: 'Took horse back from ' + person.firstName + '.' };
     }
 
     /**
@@ -2042,61 +2151,105 @@
         if (!fromTown || !toTown) return { success: false, message: 'Invalid town.' };
         if (fromTownId === toTownId) return { success: false, message: 'Origin and destination are the same.' };
 
-        // Validate goods — must have at least one item with qty > 0 (unless pickup orders exist)
-        if (!goods || typeof goods !== 'object') goods = {};
-        var hasValidGoods = false;
-        for (const [resId, gqty] of Object.entries(goods)) {
-            var nqty = Number(gqty);
-            if (!nqty || !isFinite(nqty) || nqty <= 0) return { success: false, message: `Invalid quantity for ${resId}.` };
-            goods[resId] = Math.floor(nqty);
-            hasValidGoods = true;
-        }
-        var hasPickupOrders = orders && orders.some(function(o) { return o.action === 'pickup'; });
-        if (!hasValidGoods && !hasPickupOrders) return { success: false, message: 'No goods specified for the caravan.' };
-
-        // Validate guards
-        guards = Number(guards) || 0;
-        if (!isFinite(guards) || guards < 0) return { success: false, message: 'Invalid guard count.' };
-        guards = Math.floor(guards);
-
         options = options || {};
-        const buyOrders = options.buyOrders || null;   // legacy { resId: { qty, maxPrice } }
-        const orders = options.orders || null;          // new: [{ good, action, location, qty, priceLimit }]
+        const buyOrders = options.buyOrders || null;
+        const orders = options.orders || null;
         const roundTrip = options.roundTrip || false;
         const recurring = options.recurring || false;
         const fortified = options.fortified || false;
         const decoy = options.decoy || false;
         const armedEscort = options.armedEscort || false;
 
+        // Crew & equipment (new system)
+        var carriers = Math.max(1, Math.floor(Number(options.carriers) || 1));
+        var guardCount = Math.max(0, Math.floor(Number(options.guardCount != null ? options.guardCount : guards) || 0));
+        var carrierHorses = Math.min(carriers, Math.max(0, Math.floor(Number(options.carrierHorses) || 0)));
+        var carts = Math.max(0, Math.floor(Number(options.carts) || 0));
+        var wagons = Math.max(0, Math.floor(Number(options.wagons) || 0));
+        if (carts + wagons > carrierHorses) {
+            return { success: false, message: 'Not enough horses for carts/wagons. Need 1 horse per cart or wagon.' };
+        }
+        var guardWeapons = Math.min(guardCount, Math.max(0, Math.floor(Number(options.guardWeapons) || 0)));
+        var guardArmor = Math.min(guardCount, Math.max(0, Math.floor(Number(options.guardArmor) || 0)));
+
+        // Validate goods — allow empty if pickup orders exist
+        if (!goods || typeof goods !== 'object') goods = {};
+        var hasValidGoods = false;
+        for (const [resId, gqty] of Object.entries(goods)) {
+            var nqty = Number(gqty);
+            if (!nqty || !isFinite(nqty) || nqty <= 0) return { success: false, message: 'Invalid quantity for ' + resId + '.' };
+            goods[resId] = Math.floor(nqty);
+            hasValidGoods = true;
+        }
+        var hasPickupOrders = orders && orders.some(function(o) { return o.action === 'pickup'; });
+        if (!hasValidGoods && !hasPickupOrders) return { success: false, message: 'No goods specified for the caravan.' };
+
+        // Calculate caravan capacity
+        var capacity = carriers * (CONFIG.CARAVAN_CARRIER_BASE_CAPACITY || 30);
+        capacity += carrierHorses * (CONFIG.CARAVAN_HORSE_EXTRA_CAPACITY || 30);
+        capacity += carts * (CONFIG.CARAVAN_CART_CAPACITY || 80);
+        capacity += wagons * (CONFIG.CARAVAN_WAGON_CAPACITY || 200);
+
+        // Check goods weight against capacity
+        var totalWeight = 0;
+        for (const [resId, qty] of Object.entries(goods)) {
+            var res = findResource(resId);
+            totalWeight += (res ? res.weight : 1) * qty;
+        }
+        if (totalWeight > capacity) {
+            return { success: false, message: 'Goods weight (' + totalWeight + ') exceeds caravan capacity (' + capacity + '). Add more carriers, horses, carts, or wagons.' };
+        }
+
+        // Check player has resources for equipment
+        var horsesInInv = player.inventory['horses'] || 0;
+        if (carrierHorses > horsesInInv) {
+            return { success: false, message: 'Not enough horses in inventory. Have: ' + horsesInInv + ', need: ' + carrierHorses };
+        }
+        if (guardWeapons > 0) {
+            var swordsInInv = player.inventory['swords'] || 0;
+            if (guardWeapons > swordsInInv) {
+                return { success: false, message: 'Not enough swords for guards. Have: ' + swordsInInv + ', need: ' + guardWeapons };
+            }
+        }
+        if (guardArmor > 0) {
+            var armorInInv = player.inventory['armor'] || 0;
+            if (guardArmor > armorInInv) {
+                return { success: false, message: 'Not enough armor for guards. Have: ' + armorInInv + ', need: ' + guardArmor };
+            }
+        }
+
         // Verify player has the goods (check both carried and town storage)
         for (const [resId, qty] of Object.entries(goods)) {
             var caravanCarried = player.inventory[resId] || 0;
             var caravanStored = (player.townStorage[fromTownId] || {})[resId] || 0;
             if (caravanCarried + caravanStored < qty) {
-                return { success: false, message: `Not enough ${resId}. Have: ${caravanCarried + caravanStored}` };
+                return { success: false, message: 'Not enough ' + resId + '. Have: ' + (caravanCarried + caravanStored) };
             }
         }
 
-        // Check horse availability for speed bonus
-        let horseBonus = false;
-        if (useHorse && player.horses.length > 0) {
-            horseBonus = true;
-        }
+        // Calculate costs — dynamic wages based on town economy
+        var hireRates = getCaravanHireRates(fromTownId);
+        var carrierWage = hireRates.carrierWage;
+        var guardWage = hireRates.guardWage;
+        var hireCost = carriers * (CONFIG.CARAVAN_CARRIER_HIRE_COST || 20) + guardCount * (CONFIG.CARAVAN_GUARD_HIRE_COST || 30);
 
-        // Guard cost
-        guards = Math.max(0, guards || 0);
-        let guardCost = guards * CONFIG.GUARD_WAGE * 5; // upfront payment for travel
-        if (hasSkill('cheap_security')) guardCost = Math.floor(guardCost * 0.80);
+        // Carts and wagons come from inventory
+        var invCarts = player.inventory['cart'] || 0;
+        var invWagons = player.inventory['wagon'] || 0;
+        if (carts > invCarts) return { success: false, message: 'Not enough carts in inventory. Have ' + invCarts + ', need ' + carts + '.' };
+        if (wagons > invWagons) return { success: false, message: 'Not enough wagons in inventory. Have ' + invWagons + ', need ' + wagons + '.' };
 
-        // Security upgrade costs
-        let securityCost = 0;
+        var securityCost = 0;
         if (fortified) securityCost += CONFIG.CARAVAN_FORTIFIED_WAGON_COST || 150;
         if (decoy) securityCost += CONFIG.CARAVAN_DECOY_COST || 50;
         if (armedEscort) securityCost += CONFIG.CARAVAN_ARMED_ESCORT_COST || 80;
-
-        const totalCost = guardCost + securityCost;
+        if (hasSkill('cheap_security')) {
+            hireCost = Math.floor(hireCost * 0.80);
+            securityCost = Math.floor(securityCost * 0.80);
+        }
+        var totalCost = hireCost + securityCost;
         if (player.gold < totalCost) {
-            return { success: false, message: `Not enough gold (need ${totalCost}g for guards + security).` };
+            return { success: false, message: 'Not enough gold. Need ' + totalCost + 'g (hire: ' + hireCost + 'g, security: ' + securityCost + 'g).' };
         }
 
         // Find route
@@ -2107,13 +2260,7 @@
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.send_caravan || 3);
 
-        // Calculate travel distance and weight
-        let totalWeight = 0;
-        for (const [resId, qty] of Object.entries(goods)) {
-            const res = findResource(resId);
-            totalWeight += (res ? res.weight : 1) * qty;
-        }
-
+        // Calculate travel distance
         let totalDist = 0;
         for (const seg of route) {
             const a = Engine.findTown(seg.fromTownId);
@@ -2123,13 +2270,20 @@
                 totalDist += segDist / (CONFIG.CARAVAN_ROAD_MULTIPLIER[seg.quality] || 1);
             }
         }
-
-        // Apply horse caravan speed bonus
-        if (horseBonus) {
-            totalDist *= (1 - (CONFIG.HORSE_CARAVAN_SPEED_BONUS || 0.25));
+        // Speed bonus from caravan horses
+        if (carrierHorses > 0) {
+            var horseSpeedMult = 1 - carrierHorses * (CONFIG.CARAVAN_HORSE_SPEED_BONUS || 0.10);
+            totalDist *= Math.max(0.4, horseSpeedMult); // cap at 60% reduction
         }
 
-        // Deduct goods and gold (take from carried first, then town storage)
+        // Deduct equipment from inventory
+        if (carrierHorses > 0) player.inventory['horses'] = (player.inventory['horses'] || 0) - carrierHorses;
+        if (guardWeapons > 0) player.inventory['swords'] = (player.inventory['swords'] || 0) - guardWeapons;
+        if (guardArmor > 0) player.inventory['armor'] = (player.inventory['armor'] || 0) - guardArmor;
+        if (carts > 0) { player.inventory['cart'] = (player.inventory['cart'] || 0) - carts; if (player.inventory['cart'] <= 0) delete player.inventory['cart']; }
+        if (wagons > 0) { player.inventory['wagon'] = (player.inventory['wagon'] || 0) - wagons; if (player.inventory['wagon'] <= 0) delete player.inventory['wagon']; }
+
+        // Deduct goods (take from carried first, then town storage)
         for (const [resId, qty] of Object.entries(goods)) {
             var fromCarried = Math.min(qty, player.inventory[resId] || 0);
             var fromStorage = qty - fromCarried;
@@ -2147,15 +2301,24 @@
             fromTownId,
             toTownId,
             goods: { ...goods },
-            guards,
+            guards: guardCount,
+            carriers: carriers,
+            carrierHorses: carrierHorses,
+            carts: carts,
+            wagons: wagons,
+            guardWeapons: guardWeapons,
+            guardArmor: guardArmor,
+            capacity: capacity,
             progress: 0.0,
             status: 'traveling',
             route,
             totalDist,
             totalWeight,
             daysSent: Engine.getDay(),
-            hasHorse: horseBonus,
-            // New fields
+            lastWageDay: Engine.getDay(),
+            carrierWage: carrierWage,
+            guardWage: guardWage,
+            hasHorse: carrierHorses > 0,
             buyOrders: buyOrders ? JSON.parse(JSON.stringify(buyOrders)) : null,
             orders: orders ? JSON.parse(JSON.stringify(orders)) : null,
             log: [],
@@ -2172,11 +2335,14 @@
             active: true,
         };
         player.caravans.push(caravan);
-        const horseMsg = horseBonus ? ' (🐴 Horse speed bonus!)' : '';
+        var crewMsg = ' (' + carriers + ' carriers, ' + guardCount + ' guards';
+        if (carrierHorses > 0) crewMsg += ', ' + carrierHorses + ' 🐴';
+        if (carts > 0) crewMsg += ', ' + carts + ' 🛒';
+        if (wagons > 0) crewMsg += ', ' + wagons + ' 🚛';
+        crewMsg += ')';
         const tripType = recurring ? ' [Recurring Route]' : (roundTrip ? ' [Round Trip]' : '');
-        const secMsg = fortified ? ' 🛡️' : '';
-        Engine.logEvent(`Caravan dispatched from ${fromTown.name} to ${toTown.name}.${horseMsg}${tripType}${secMsg}`);
-        return { success: true, message: `Caravan sent to ${toTown.name}.${horseMsg}${tripType}`, caravan };
+        Engine.logEvent('Caravan dispatched from ' + fromTown.name + ' to ' + toTown.name + '.' + crewMsg + tripType);
+        return { success: true, message: 'Caravan sent to ' + toTown.name + '.' + crewMsg + tripType, caravan: caravan };
     }
 
     // ========================================================
@@ -3191,6 +3357,20 @@
     // §5  CARAVAN TICK
     // ========================================================
 
+    function getCaravanHireRates(townId) {
+        var town = Engine.findTown(townId || player.townId);
+        var categoryMult = 1.0;
+        var prosperityMult = 1.0;
+        if (town) {
+            categoryMult = (CONFIG.JOB_PAY_SCALE && CONFIG.JOB_PAY_SCALE[town.category]) || 1.0;
+            prosperityMult = 0.5 + ((town.prosperity || 50) / 100);
+        }
+        var factor = categoryMult * prosperityMult;
+        var carrierWage = Math.max(1, Math.min(5, Math.round(3 * factor)));
+        var guardWage = Math.max(2, Math.min(10, Math.round(6 * factor)));
+        return { carrierWage: carrierWage, guardWage: guardWage, factor: factor };
+    }
+
     function logCaravan(caravan, message) {
         if (!caravan.log) caravan.log = [];
         caravan.log.push({ day: Engine.getDay(), message: message });
@@ -3212,7 +3392,15 @@
 
         var orders = caravan.orders || [];
         var locationFilter = isReturnLeg ? 'source' : 'destination';
-        var locationOrders = orders.filter(function(o) { return o.location === locationFilter; });
+        var locationOrders = orders.filter(function(o) {
+            if (o.location === locationFilter) return true;
+            // Waypoint orders: match if this town is the waypoint
+            if (o.location && o.location.indexOf('waypoint:') === 0) {
+                var wpTownId = o.location.replace('waypoint:', '');
+                return wpTownId === townId;
+            }
+            return false;
+        });
         if (locationOrders.length === 0) return false; // signal: no orders, use legacy
 
         // Process in order: pickup → buy → store → sell
@@ -3356,6 +3544,175 @@
         return { success: false, message: 'Caravan not found.' };
     }
 
+    // Calculate caravan stats for preview or display
+    function getCaravanStats(opts) {
+        var carriers = Math.max(1, Number(opts.carriers) || 1);
+        var guardCount = Math.max(0, Number(opts.guardCount) || 0);
+        var carrierHorses = Math.min(carriers, Math.max(0, Number(opts.carrierHorses) || 0));
+        var crt = Math.max(0, Number(opts.carts) || 0);
+        var wag = Math.max(0, Number(opts.wagons) || 0);
+        var guardWeapons = Math.min(guardCount, Math.max(0, Number(opts.guardWeapons) || 0));
+        var guardArmor = Math.min(guardCount, Math.max(0, Number(opts.guardArmor) || 0));
+
+        // Capacity
+        var capacity = carriers * (CONFIG.CARAVAN_CARRIER_BASE_CAPACITY || 30);
+        capacity += carrierHorses * (CONFIG.CARAVAN_HORSE_EXTRA_CAPACITY || 30);
+        capacity += crt * (CONFIG.CARAVAN_CART_CAPACITY || 80);
+        capacity += wag * (CONFIG.CARAVAN_WAGON_CAPACITY || 200);
+
+        // Estimate trip days
+        var fromTownId = opts.fromTownId || player.townId;
+        var toTownId = opts.toTownId;
+        var tripDays = 0;
+        if (fromTownId && toTownId) {
+            var route = Engine.findPath(fromTownId, toTownId);
+            if (route && route.length > 0) {
+                var dist = 0;
+                for (var si = 0; si < route.length; si++) {
+                    var a = Engine.findTown(route[si].fromTownId);
+                    var b = Engine.findTown(route[si].toTownId);
+                    if (a && b) dist += Math.hypot(a.x - b.x, a.y - b.y) / (CONFIG.CARAVAN_ROAD_MULTIPLIER[route[si].quality] || 1);
+                }
+                if (carrierHorses > 0) {
+                    dist *= Math.max(0.4, 1 - carrierHorses * (CONFIG.CARAVAN_HORSE_SPEED_BONUS || 0.10));
+                }
+                var speed = CONFIG.CARAVAN_BASE_SPEED || 120;
+                if (hasSkill('road_knowledge')) speed *= 1.15;
+                if (hasSkill('cartographer')) speed *= 1.05;
+                tripDays = Math.max(1, Math.ceil(dist / speed));
+            }
+        }
+
+        // Risk calculation — daily and yearly
+        var roadUnsafe = opts.roadUnsafe || false;
+        var atWar = opts.atWar || false;
+        var connUnsafe = opts.connUnsafe || false;
+        // Auto-detect from route if possible
+        if (fromTownId && toTownId && !opts._manualRisk) {
+            var rte = Engine.findPath(fromTownId, toTownId);
+            if (rte && rte.length > 0) {
+                for (var ri = 0; ri < rte.length; ri++) {
+                    if (rte[ri].safe === false || (rte[ri].banditThreat || 0) > (CONFIG.BANDIT_THREAT_DANGER_THRESHOLD || 50)) roadUnsafe = true;
+                }
+            }
+            var w = Engine.getWorld();
+            if (w) {
+                // Check if kingdoms at origin/dest are at war
+                var fromT = Engine.findTown(fromTownId);
+                var toT = Engine.findTown(toTownId);
+                if (fromT && toT && w.kingdoms) {
+                    for (var ki = 0; ki < w.kingdoms.length; ki++) {
+                        var k = w.kingdoms[ki];
+                        if (k.id === fromT.kingdomId || k.id === toT.kingdomId) {
+                            if (k.atWar && (k.atWar instanceof Set ? k.atWar.size > 0 : Array.isArray(k.atWar) ? k.atWar.length > 0 : !!k.atWar)) atWar = true;
+                        }
+                    }
+                }
+                // Check connection town security
+                if (rte) {
+                    for (var ci = 0; ci < rte.length; ci++) {
+                        var cTown = Engine.findTown(rte[ci].fromTownId);
+                        if (cTown && (cTown.security || 50) < 40) connUnsafe = true;
+                        cTown = Engine.findTown(rte[ci].toTownId);
+                        if (cTown && (cTown.security || 50) < 40) connUnsafe = true;
+                    }
+                }
+            }
+        }
+
+        var baseDailyTheft = CONFIG.CARAVAN_BASE_DAILY_THEFT || 0.0012;
+        var baseDailyKill = CONFIG.CARAVAN_BASE_DAILY_KILL || 0.0005;
+        var roadMult = roadUnsafe ? (CONFIG.CARAVAN_ROAD_UNSAFE_MULT || 2.0) : 1.0;
+        var warMult = atWar ? (CONFIG.CARAVAN_WAR_MULT || 1.5) : 1.0;
+        var connMult = connUnsafe ? (CONFIG.CARAVAN_UNSAFE_CONN_MULT || 1.2) : 1.0;
+        var guardMult = Math.pow(CONFIG.CARAVAN_PER_GUARD_MULT || 0.55, guardCount);
+        var weapMult = Math.pow(CONFIG.CARAVAN_PER_WEAPON_MULT || 0.85, guardWeapons);
+        var armMult = Math.pow(CONFIG.CARAVAN_PER_ARMOR_MULT || 0.90, guardArmor);
+        // More carriers = bigger target (each extra carrier adds ~8% risk)
+        var carrierRiskMult = 1 + (carriers - 1) * (CONFIG.CARAVAN_PER_CARRIER_RISK || 0.08);
+        // Legacy security bonuses
+        var decoyMult = opts.decoy ? 0.60 : 1.0;
+        var fortMult = opts.fortified ? 0.85 : 1.0;
+
+        var dailyTheft = baseDailyTheft * roadMult * warMult * connMult * carrierRiskMult * guardMult * weapMult * armMult * decoyMult * fortMult;
+        var dailyKill = baseDailyKill * roadMult * warMult * connMult * carrierRiskMult * guardMult * weapMult * armMult * fortMult;
+        var yearlyTheft = 1 - Math.pow(1 - dailyTheft, 365);
+        var yearlyKill = 1 - Math.pow(1 - dailyKill, 365);
+
+        // Daily wage cost — dynamic based on town economy
+        var wageRates = getCaravanHireRates(opts.fromTownId || player.townId);
+        var dailyWage = carriers * wageRates.carrierWage + guardCount * wageRates.guardWage;
+        if (hasSkill('cheap_security')) dailyWage = Math.floor(dailyWage * 0.80);
+
+        return {
+            capacity: capacity,
+            tripDays: tripDays,
+            roundTripDays: tripDays * 2,
+            dailyTheft: dailyTheft,
+            dailyKill: dailyKill,
+            yearlyTheftPct: Math.round(yearlyTheft * 1000) / 10,
+            yearlyKillPct: Math.round(yearlyKill * 1000) / 10,
+            dailyWage: dailyWage,
+            carrierWage: wageRates.carrierWage,
+            guardWage: wageRates.guardWage,
+            roadUnsafe: roadUnsafe,
+            atWar: atWar,
+            connUnsafe: connUnsafe
+        };
+    }
+
+    function editCaravanEquipment(caravanId, changes) {
+        var caravan = null;
+        for (var i = 0; i < player.caravans.length; i++) {
+            if (player.caravans[i].id === caravanId) { caravan = player.caravans[i]; break; }
+        }
+        if (!caravan) return { success: false, message: 'Caravan not found.' };
+        if (!caravan.active) return { success: false, message: 'Cannot edit a completed caravan.' };
+
+        var msgs = [];
+        // Add horses
+        if (changes.addHorses && changes.addHorses > 0) {
+            var maxH = (caravan.carriers || 1) - (caravan.carrierHorses || 0);
+            var addH = Math.min(changes.addHorses, maxH, player.inventory['horses'] || 0);
+            if (addH > 0) {
+                player.inventory['horses'] -= addH;
+                caravan.carrierHorses = (caravan.carrierHorses || 0) + addH;
+                msgs.push('+' + addH + ' 🐴 horses');
+            }
+        }
+        // Add weapons
+        if (changes.addWeapons && changes.addWeapons > 0) {
+            var maxW = (caravan.guards || 0) - (caravan.guardWeapons || 0);
+            var addW = Math.min(changes.addWeapons, maxW, player.inventory['swords'] || 0);
+            if (addW > 0) {
+                player.inventory['swords'] -= addW;
+                caravan.guardWeapons = (caravan.guardWeapons || 0) + addW;
+                msgs.push('+' + addW + ' ⚔️ weapons');
+            }
+        }
+        // Add armor
+        if (changes.addArmor && changes.addArmor > 0) {
+            var maxA = (caravan.guards || 0) - (caravan.guardArmor || 0);
+            var addA = Math.min(changes.addArmor, maxA, player.inventory['armor'] || 0);
+            if (addA > 0) {
+                player.inventory['armor'] -= addA;
+                caravan.guardArmor = (caravan.guardArmor || 0) + addA;
+                msgs.push('+' + addA + ' 🛡️ armor');
+            }
+        }
+        // Recalculate capacity
+        caravan.capacity = (caravan.carriers || 1) * (CONFIG.CARAVAN_CARRIER_BASE_CAPACITY || 30)
+            + (caravan.carrierHorses || 0) * (CONFIG.CARAVAN_HORSE_EXTRA_CAPACITY || 30)
+            + (caravan.carts || 0) * (CONFIG.CARAVAN_CART_CAPACITY || 80)
+            + (caravan.wagons || 0) * (CONFIG.CARAVAN_WAGON_CAPACITY || 200);
+
+        if (msgs.length > 0) {
+            logCaravan(caravan, '🔧 Equipment updated: ' + msgs.join(', '));
+            return { success: true, message: 'Caravan updated: ' + msgs.join(', ') };
+        }
+        return { success: false, message: 'No changes applied.' };
+    }
+
     function tickCaravans() {
         const rng = Engine.getRng();
         if (!rng) return;
@@ -3380,6 +3737,77 @@
                 if (hasSkill('cartographer')) caravanSpeed *= 1.05;
             }
             caravan.progress += caravanSpeed / Math.max(caravan.totalDist, 1);
+
+            // Daily wage payment for carriers and guards
+            var today = Engine.getDay();
+            if (today > (caravan.lastWageDay || 0)) {
+                var daysSinceWage = today - (caravan.lastWageDay || today);
+                var cWage = caravan.carrierWage || (CONFIG.CARAVAN_CARRIER_WAGE || 4);
+                var gWage = caravan.guardWage || (CONFIG.CARAVAN_GUARD_WAGE || 6);
+                var dailyCrew = (caravan.carriers || 1) * cWage + (caravan.guards || 0) * gWage;
+                if (hasSkill('cheap_security')) dailyCrew = Math.floor(dailyCrew * 0.80);
+                var wageBill = dailyCrew * daysSinceWage;
+                if (player.gold >= wageBill) {
+                    player.gold -= wageBill;
+                    player.stats.totalGoldSpent += wageBill;
+                    caravan.totalSpent = (caravan.totalSpent || 0) + wageBill;
+                    caravan.totalProfit = (caravan.totalProfit || 0) - wageBill;
+                    caravan.daysUnpaid = 0;
+                } else {
+                    // Can't afford wages — crew gets unhappy
+                    caravan.daysUnpaid = (caravan.daysUnpaid || 0) + daysSinceWage;
+
+                    // Workers steal goods proportional to unpaid time
+                    var stealRate = Math.min(0.05, 0.01 * caravan.daysUnpaid); // 1-5% per day
+                    var totalStolen = 0;
+                    for (var _sg in caravan.goods) {
+                        if (caravan.goods[_sg] > 0) {
+                            var stolen = Math.max(1, Math.ceil(caravan.goods[_sg] * stealRate));
+                            stolen = Math.min(stolen, caravan.goods[_sg]);
+                            caravan.goods[_sg] -= stolen;
+                            if (caravan.goods[_sg] <= 0) delete caravan.goods[_sg];
+                            totalStolen += stolen;
+                        }
+                    }
+                    if (totalStolen > 0) {
+                        logCaravan(caravan, '🤚 Unpaid crew stole ' + totalStolen + ' goods! (' + caravan.daysUnpaid + ' days unpaid)');
+                    }
+
+                    // After 7+ days unpaid, crew starts deserting
+                    if (caravan.daysUnpaid >= 7) {
+                        var desertedCarriers = 0;
+                        var desertedGuards = 0;
+                        // Each day over 7, 30% chance per crew member to desert
+                        var desertChance = Math.min(0.60, 0.30 + (caravan.daysUnpaid - 7) * 0.05);
+                        for (var _dc = 0; _dc < (caravan.carriers || 1); _dc++) {
+                            if (rng.chance(desertChance)) desertedCarriers++;
+                        }
+                        for (var _dg = 0; _dg < (caravan.guards || 0); _dg++) {
+                            if (rng.chance(desertChance)) desertedGuards++;
+                        }
+                        if (desertedCarriers > 0) {
+                            caravan.carriers = Math.max(0, (caravan.carriers || 1) - desertedCarriers);
+                            logCaravan(caravan, '🚪 ' + desertedCarriers + ' carrier(s) deserted! Remaining: ' + caravan.carriers);
+                        }
+                        if (desertedGuards > 0) {
+                            caravan.guards = Math.max(0, (caravan.guards || 0) - desertedGuards);
+                            logCaravan(caravan, '🚪 ' + desertedGuards + ' guard(s) deserted! Remaining: ' + caravan.guards);
+                        }
+
+                        // If all carriers are gone, caravan is destroyed
+                        if ((caravan.carriers || 0) <= 0) {
+                            logCaravan(caravan, '💀 All carriers deserted — caravan abandoned and destroyed!');
+                            Engine.logEvent('Your caravan to ' + (Engine.findTown(caravan.toTownId) || {}).name + ' was abandoned after all carriers deserted!');
+                            caravan.status = 'destroyed';
+                            caravan.active = false;
+                            caravan.recurring = false;
+                            caravan.goods = {};
+                            continue;
+                        }
+                    }
+                }
+                caravan.lastWageDay = today;
+            }
 
             if (caravan.routeType === 'sea') {
                 // Sea caravan — check for storms instead of bandits
@@ -3438,76 +3866,119 @@
                     }
                 }
             } else {
-                // Land caravan — bandit logic with security enhancements
+                // Land caravan — new crew-based theft/kill system
+                var cGuards = caravan.guards || 0;
+                var cWeapons = caravan.guardWeapons || 0;
+                var cArmor = caravan.guardArmor || 0;
+
+                // Determine road/war/connection factors
                 const currentSegIdx = Math.min(
                     Math.floor(caravan.progress * caravan.route.length),
                     caravan.route.length - 1
                 );
                 const currentSeg = caravan.route[currentSegIdx];
-                const unsafeRoad = currentSeg && !currentSeg.safe;
-
-                let attackChance = CONFIG.BANDIT_ATTACK_CHANCE;
-                if (unsafeRoad) attackChance *= 3;
-                // Skill-based bandit reduction
-                if (hasSkill('street_smart')) attackChance *= 0.90;
-                if (hasSkill('intimidating_presence')) attackChance *= 0.85;
-                // Security upgrades
-                if (caravan.decoy) attackChance *= 0.60;      // decoy reduces 40%
-                if (caravan.fortified) attackChance *= 0.85;   // fortified reduces 15% chance
-                // Check for bandit event
+                var isRoadUnsafe = currentSeg && (currentSeg.safe === false || (currentSeg.banditThreat || 0) > (CONFIG.BANDIT_THREAT_DANGER_THRESHOLD || 50));
+                var isAtWar = false;
+                var isConnUnsafe = false;
                 const w = Engine.getWorld();
                 if (w) {
-                    for (const ev of w.events) {
+                    // Check war status
+                    if (w.kingdoms) {
+                        var fTown = Engine.findTown(caravan.fromTownId);
+                        var tTown = Engine.findTown(caravan.toTownId);
+                        for (var wki = 0; wki < w.kingdoms.length; wki++) {
+                            if ((fTown && w.kingdoms[wki].id === fTown.kingdomId) || (tTown && w.kingdoms[wki].id === tTown.kingdomId)) {
+                                if (w.kingdoms[wki].atWar && (w.kingdoms[wki].atWar instanceof Set ? w.kingdoms[wki].atWar.size > 0 : Array.isArray(w.kingdoms[wki].atWar) ? w.kingdoms[wki].atWar.length > 0 : !!w.kingdoms[wki].atWar)) isAtWar = true;
+                            }
+                        }
+                    }
+                    // Check connection town security
+                    if (currentSeg) {
+                        var segFrom = Engine.findTown(currentSeg.fromTownId);
+                        var segTo = Engine.findTown(currentSeg.toTownId);
+                        if ((segFrom && (segFrom.security || 50) < 40) || (segTo && (segTo.security || 50) < 40)) isConnUnsafe = true;
+                    }
+                    // Bandit surge event multiplier
+                    for (var evi = 0; evi < w.events.length; evi++) {
+                        var ev = w.events[evi];
                         if (ev.active && ev.type === 'bandit_surge') {
                             if (currentSeg && (currentSeg.fromTownId === ev.townId || currentSeg.toTownId === ev.townId)) {
-                                attackChance *= 2;
+                                isRoadUnsafe = true; // force unsafe for surge
                             }
                         }
                     }
                 }
 
-                if (rng.chance(attackChance)) {
-                    // Bandit attack!
-                    let guardDefense = caravan.guards * CONFIG.GUARD_EFFECTIVENESS;
-                    if (hasSkill('fortified_caravans')) guardDefense += 0.20;
-                    if (hasSkill('veteran_guards')) guardDefense *= 1.30;
-                    if (caravan.fortified) guardDefense += 0.30;     // fortified wagon bonus
-                    if (caravan.armedEscort) guardDefense *= 1.50;   // armed escort bonus
-                    if (rng.random() < guardDefense) {
-                        Engine.logEvent('Bandits attacked your caravan but guards drove them off!');
-                        caravan.guards = Math.max(0, caravan.guards - rng.randInt(0, 1));
-                    } else {
-                        const lossRate = caravan.guards > 0 ? rng.randFloat(0.1, 0.3) : rng.randFloat(0.3, 0.8);
-                        let totalLost = 0;
-                        for (const resId in caravan.goods) {
-                            const lost = Math.ceil(caravan.goods[resId] * lossRate);
-                            caravan.goods[resId] = Math.max(0, caravan.goods[resId] - lost);
-                            totalLost += lost;
+                // Calculate daily theft and kill chances
+                var dTheft = CONFIG.CARAVAN_BASE_DAILY_THEFT || 0.0012;
+                var dKill = CONFIG.CARAVAN_BASE_DAILY_KILL || 0.0005;
+                var roadM = isRoadUnsafe ? (CONFIG.CARAVAN_ROAD_UNSAFE_MULT || 2.0) : 1.0;
+                var warM = isAtWar ? (CONFIG.CARAVAN_WAR_MULT || 1.5) : 1.0;
+                var connM = isConnUnsafe ? (CONFIG.CARAVAN_UNSAFE_CONN_MULT || 1.2) : 1.0;
+                var grdM = Math.pow(CONFIG.CARAVAN_PER_GUARD_MULT || 0.55, cGuards);
+                var wpnM = Math.pow(CONFIG.CARAVAN_PER_WEAPON_MULT || 0.85, cWeapons);
+                var armM = Math.pow(CONFIG.CARAVAN_PER_ARMOR_MULT || 0.90, cArmor);
+                // More carriers = bigger target
+                var crrM = 1 + ((caravan.carriers || 1) - 1) * (CONFIG.CARAVAN_PER_CARRIER_RISK || 0.08);
+                // Legacy security bonuses
+                var decM = caravan.decoy ? 0.60 : 1.0;
+                var frtM = caravan.fortified ? 0.85 : 1.0;
+                // Skill bonuses
+                if (hasSkill('street_smart')) { dTheft *= 0.90; dKill *= 0.90; }
+                if (hasSkill('intimidating_presence')) { dTheft *= 0.85; dKill *= 0.85; }
+
+                var theftChance = dTheft * roadM * warM * connM * crrM * grdM * wpnM * armM * decM * frtM;
+                var killChance = dKill * roadM * warM * connM * crrM * grdM * wpnM * armM * frtM;
+
+                // Theft check
+                if (rng.chance(theftChance)) {
+                    var lossRate = cGuards > 0 ? rng.randFloat(0.05, 0.20) : rng.randFloat(0.20, 0.60);
+                    var totalLost = 0;
+                    for (var _tr in caravan.goods) {
+                        var lost = Math.ceil((caravan.goods[_tr] || 0) * lossRate);
+                        caravan.goods[_tr] = Math.max(0, (caravan.goods[_tr] || 0) - lost);
+                        if (caravan.goods[_tr] <= 0) delete caravan.goods[_tr];
+                        totalLost += lost;
+                    }
+                    if (totalLost > 0) {
+                        logCaravan(caravan, '🏴‍☠️ Bandits raided the caravan! Lost ' + totalLost + ' goods.');
+                        // Guards may take casualties
+                        if (cGuards > 0 && rng.chance(0.15)) {
+                            caravan.guards = Math.max(0, caravan.guards - 1);
+                            logCaravan(caravan, '⚔️ A guard was injured in the attack. Guards: ' + caravan.guards);
                         }
-                        if (totalLost > 0) {
-                            Engine.logEvent(`Bandits raided your caravan! Lost ${totalLost} goods.`);
-                            if (caravan.guards === 0 && !caravan.fortified) {
-                                // Unprotected: 30% destroyed, 15% blocked (held hostage)
-                                const roll = rng.random();
-                                if (roll < 0.30) {
-                                    caravan.status = 'destroyed';
-                                } else if (roll < 0.45) {
-                                    caravan.status = 'blocked';
-                                    caravan.blockedReason = 'bandits';
-                                    Engine.logEvent('Your caravan has been captured by bandits! Pay ransom to rescue it.');
-                                }
-                            } else if (caravan.guards === 0) {
-                                caravan.status = rng.chance(0.15) ? 'blocked' : 'traveling';
-                                if (caravan.status === 'blocked') {
-                                    caravan.blockedReason = 'bandits';
-                                    Engine.logEvent('Your fortified caravan is being held by bandits!');
-                                }
+                    }
+                }
+
+                // Kill check (caravan destroyed)
+                if (rng.chance(killChance)) {
+                    logCaravan(caravan, '💀 The caravan was ambushed and destroyed!');
+                    caravan.status = 'destroyed';
+                    caravan.active = false;
+                    caravan.goods = {};
+                    continue;
+                }
+            }
+
+            // Waypoint order processing — check if caravan passed through intermediate towns
+            if (caravan.orders && caravan.orders.length > 0 && caravan.route && caravan.route.length > 1 && caravan.progress < 1.0) {
+                var hasWaypoints = caravan.orders.some(function(o) { return o.location && o.location.indexOf('waypoint:') === 0; });
+                if (hasWaypoints) {
+                    var cumDist = 0;
+                    var lastWp = caravan._lastWaypointIdx || 0;
+                    for (var wsi = 0; wsi < caravan.route.length; wsi++) {
+                        var seg = caravan.route[wsi];
+                        var segA = Engine.findTown(seg.fromTownId);
+                        var segB = Engine.findTown(seg.toTownId);
+                        if (segA && segB) cumDist += Math.hypot(segA.x - segB.x, segA.y - segB.y) / (CONFIG.CARAVAN_ROAD_MULTIPLIER[seg.quality] || 1);
+                        var segProgress = cumDist / Math.max(caravan.totalDist, 1);
+                        if (wsi > lastWp && caravan.progress >= segProgress) {
+                            // Caravan just passed through this segment's endpoint
+                            var waypointTownId = seg.toTownId;
+                            if (waypointTownId !== caravan.fromTownId && waypointTownId !== caravan.toTownId) {
+                                processCaravanOrders(caravan, waypointTownId, caravan.returnTrip);
+                                caravan._lastWaypointIdx = wsi;
                             }
-                        }
-                        if (caravan.status === 'destroyed') {
-                            Engine.logEvent('Your caravan was destroyed by bandits!');
-                            caravan.active = false;
-                            continue;
                         }
                     }
                 }
@@ -3525,6 +3996,52 @@
                 const originTown = Engine.findTown(originTownId);
 
                 if (destTown) {
+                    // Disbanding caravan: drop all goods to storage instead of selling
+                    if (caravan.disbanding) {
+                        var dropTownId = destTownId;
+                        var dropTownName = destTown.name || destTownId;
+                        if (!player.townStorage[dropTownId]) player.townStorage[dropTownId] = {};
+                        var totalDropped = 0;
+                        for (var _dk in caravan.goods) {
+                            if (caravan.goods[_dk] > 0) {
+                                if (player.townId === dropTownId) {
+                                    // Player is here — return to inventory
+                                    player.inventory[_dk] = (player.inventory[_dk] || 0) + caravan.goods[_dk];
+                                } else {
+                                    player.townStorage[dropTownId][_dk] = (player.townStorage[dropTownId][_dk] || 0) + caravan.goods[_dk];
+                                }
+                                totalDropped += caravan.goods[_dk];
+                            }
+                        }
+                        caravan.goods = {};
+                        if (totalDropped > 0) {
+                            logCaravan(caravan, '📦 Dropped off ' + totalDropped + ' goods at ' + dropTownName + (player.townId === dropTownId ? ' (to inventory).' : ' (to storage).'));
+                        }
+
+                        if (isReturnLeg) {
+                            // Back at origin — disband
+                            caravan.status = 'arrived';
+                            caravan.active = false;
+                            caravan.recurring = false;
+                            logCaravan(caravan, '🏳️ Caravan disbanded after final run.');
+                            Engine.logEvent('Caravan disbanded at ' + dropTownName + '. All goods dropped off.');
+                            continue;
+                        } else {
+                            // Outbound arrived — start return leg to drop off remaining/return home
+                            caravan.returnTrip = true;
+                            caravan.progress = 0.0;
+                            caravan._lastWaypointIdx = 0;
+                            caravan.status = 'traveling';
+                            if (caravan.route) {
+                                caravan.route = caravan.route.slice().reverse().map(function(seg) {
+                                    return { ...seg, fromTownId: seg.toTownId, toTownId: seg.fromTownId };
+                                });
+                            }
+                            logCaravan(caravan, '🔄 Returning to ' + (originTown ? originTown.name : 'origin') + ' for final disbandment.');
+                            continue;
+                        }
+                    }
+
                     // New order-based processing
                     if (caravan.orders && caravan.orders.length > 0) {
                         processCaravanOrders(caravan, destTownId, isReturnLeg);
@@ -3615,6 +4132,7 @@
                     // Outbound leg complete — start return trip
                     caravan.returnTrip = true;
                     caravan.progress = 0.0;
+                            caravan._lastWaypointIdx = 0;
                     caravan.status = 'traveling';
                     // Reverse the route
                     if (caravan.route) {
@@ -3659,6 +4177,7 @@
                             } else {
                                 caravan.returnTrip = false;
                                 caravan.progress = 0.0;
+                            caravan._lastWaypointIdx = 0;
                                 caravan.status = 'traveling';
                                 if (caravan.route) {
                                     caravan.route = caravan.route.slice().reverse().map(seg => ({
@@ -3724,6 +4243,7 @@
                                 caravan.goods = reloadedGoods;
                                 caravan.returnTrip = false;
                                 caravan.progress = 0.0;
+                            caravan._lastWaypointIdx = 0;
                                 caravan.status = 'traveling';
                                 if (caravan.route) {
                                     caravan.route = caravan.route.slice().reverse().map(seg => ({
@@ -3803,6 +4323,34 @@
         caravan.active = caravan.status === 'traveling';
         Engine.logEvent(`Recurring caravan route cancelled. Current trip will complete.`);
         return { success: true, message: 'Recurring route cancelled. Current trip will finish.' };
+    }
+
+    function disbandCaravan(caravanId) {
+        var caravan = player.caravans.find(function(c) { return c.id === caravanId && c.active; });
+        if (!caravan) return { success: false, message: 'No active caravan with that ID.' };
+        if (caravan.disbanding) return { success: false, message: 'Caravan is already disbanding.' };
+
+        caravan.disbanding = true;
+        caravan.recurring = false;
+
+        // Determine behavior based on current state:
+        // If on outbound leg → continue to destination, drop goods there, return to origin, disband
+        // If on return leg → continue to origin, drop goods there, disband
+        // The arrival logic will handle dropping goods instead of selling
+        var isReturn = caravan.returnTrip;
+        var destName = Engine.findTown(caravan.toTownId) ? Engine.findTown(caravan.toTownId).name : caravan.toTownId;
+        var originName = Engine.findTown(caravan.fromTownId) ? Engine.findTown(caravan.fromTownId).name : caravan.fromTownId;
+
+        logCaravan(caravan, '🏳️ Caravan set to disband. Will finish last run and drop off all goods.');
+        if (isReturn) {
+            Engine.logEvent('Caravan disbanding — finishing return to ' + originName + ', then will disband.');
+            return { success: true, message: 'Caravan disbanding. Finishing return to ' + originName + ' and will drop off all goods.' };
+        } else {
+            // Outbound: will go to destination, drop goods, return, disband
+            caravan.roundTrip = true; // ensure it does a return leg
+            Engine.logEvent('Caravan disbanding — finishing trip to ' + destName + ', returning goods to ' + originName + ', then will disband.');
+            return { success: true, message: 'Caravan disbanding. Will deliver to ' + destName + ', return to ' + originName + ', and drop off remaining goods.' };
+        }
     }
 
     function getActiveRoutes() {
@@ -5582,6 +6130,68 @@
         var msg = 'Bought ' + container.icon + ' ' + container.name + '!';
         if (refund > 0) msg += ' (Traded in ' + oldName + ' for ' + refund + 'g refund)';
         if (materialMarketCost > 0) msg += ' Materials from market: ' + materialMarketCost + 'g.';
+        Engine.logEvent(msg);
+        return { success: true, message: msg };
+    }
+
+    function mountContainer(containerId) {
+        var container = CONFIG.STORAGE_CONTAINERS[containerId];
+        if (!container) return { success: false, message: 'Unknown container type.' };
+
+        // Check inventory for this container type
+        var held = player.inventory[containerId] || 0;
+        if (held <= 0) return { success: false, message: 'No ' + container.name + ' in inventory.' };
+
+        // Check horse requirements
+        var horsesNeeded = container.horsesRequired || 0;
+        if (player.horses.length < horsesNeeded) {
+            return { success: false, message: 'A ' + container.name + ' requires ' + horsesNeeded + ' mounted horse(s). You have ' + player.horses.length + '.' };
+        }
+
+        // Dismount current container to inventory first
+        if (player.storageContainer) {
+            var oldC = CONFIG.STORAGE_CONTAINERS[player.storageContainer];
+            if (oldC && container.capacityMult <= oldC.capacityMult) {
+                return { success: false, message: 'You already have a better or equal container equipped.' };
+            }
+            player.inventory[player.storageContainer] = (player.inventory[player.storageContainer] || 0) + 1;
+            Engine.logEvent('Stored your ' + oldC.name + ' in inventory.');
+        }
+
+        player.inventory[containerId] -= 1;
+        if (player.inventory[containerId] <= 0) delete player.inventory[containerId];
+        player.storageContainer = containerId;
+
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.buy_container || 2);
+        var msg = container.icon + ' Equipped ' + container.name + ' from inventory!';
+        Engine.logEvent(msg);
+        return { success: true, message: msg };
+    }
+
+    function dismountContainer() {
+        if (!player.storageContainer) return { success: false, message: 'No container equipped.' };
+        var container = CONFIG.STORAGE_CONTAINERS[player.storageContainer];
+        if (!container) return { success: false, message: 'Unknown container.' };
+
+        // Check if inventory can hold all current goods without this container
+        var currentWeight = getCarriedWeight();
+        var baseCapacity = (CONFIG.PLAYER_BASE_CARRY || 20);
+        var horseBonus = 0;
+        for (var hi = 0; hi < player.horses.length; hi++) {
+            horseBonus += (CONFIG.HORSE_CARRY_BONUS || 20);
+        }
+        if (hasSkill('horse_mastery')) horseBonus = Math.floor(horseBonus * 1.25);
+        var newCapacity = baseCapacity + horseBonus;
+        if (currentWeight > newCapacity) {
+            return { success: false, message: 'Too much cargo. Lighten your load first (carrying ' + Math.round(currentWeight) + ', capacity without container: ' + newCapacity + ').' };
+        }
+
+        var oldId = player.storageContainer;
+        player.inventory[oldId] = (player.inventory[oldId] || 0) + 1;
+        player.storageContainer = null;
+
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.buy_container || 2);
+        var msg = container.icon + ' Dismounted ' + container.name + ' to inventory.';
         Engine.logEvent(msg);
         return { success: true, message: msg };
     }
@@ -12574,6 +13184,36 @@
             return p && p.alive;
         });
 
+        // Tick worker travel — check if any traveling workers have arrived
+        for (var _wti = 0; _wti < player.employees.length; _wti++) {
+            var _wtPerson = Engine.findPerson(player.employees[_wti]);
+            if (!_wtPerson || !_wtPerson._workerTraveling) continue;
+            var _wt = _wtPerson._workerTraveling;
+            if (day >= _wt.arrivalDay) {
+                // Worker arrived at destination
+                _wtPerson.townId = _wt.toTownId;
+                var _wtDestTown = Engine.findTown(_wt.toTownId);
+                delete _wtPerson._workerTraveling;
+
+                // Auto-assign to a building that needs workers in this town
+                var autoAssigned = false;
+                for (var _wbi = 0; _wbi < player.buildings.length; _wbi++) {
+                    var _wBld = player.buildings[_wbi];
+                    if (_wBld.townId !== _wt.toTownId) continue;
+                    var _wBt = Engine.findBuildingType(_wBld.type);
+                    if (_wBt && _wBld.workers.length < _wBt.workers) {
+                        _wBld.workers.push(_wtPerson.id);
+                        autoAssigned = true;
+                        Engine.logEvent('📍 ' + _wtPerson.firstName + ' arrived at ' + (_wtDestTown ? _wtDestTown.name : '?') + ' and was assigned to ' + _wBt.name + '.');
+                        break;
+                    }
+                }
+                if (!autoAssigned) {
+                    Engine.logEvent('📍 ' + _wtPerson.firstName + ' arrived at ' + (_wtDestTown ? _wtDestTown.name : '?') + '. No building assignment — assign them manually.');
+                }
+            }
+        }
+
         // Pay building maintenance weekly (3% of construction cost)
         if (day % 7 === 0) {
             for (const bld of player.buildings) {
@@ -17805,8 +18445,8 @@
                     else if (reason === 'scarce') { premiumMin = Math.max(premiumMin, 1.1); premiumMax = Math.max(premiumMax, 1.5); }
 
                     var premium = rng.randFloat(premiumMin, premiumMax);
-                    var pricePerUnit = Math.ceil(pickedRes.basePrice * premium);
                     var mktPrice = (town.market && town.market.prices) ? (town.market.prices[pickedRes.id] || pickedRes.basePrice) : pickedRes.basePrice;
+                    var pricePerUnit = Math.ceil(mktPrice * premium);
 
                     trades.push({
                         npcName: npc.firstName + ' ' + npc.lastName,
@@ -18147,7 +18787,22 @@
         // Build relationship with NPC
         if (trade.npcId) {
             const rel = player.relationships[trade.npcId] || { level: 0 };
-            rel.level = Math.min(100, (rel.level || 0) + 3);
+            var relBonus = 3;
+
+            // Bonus for selling below market price — generous deal
+            if (trade.pricePerUnit < trade.marketPrice) {
+                relBonus += 5;
+                var tradeRes = findResource(trade.resourceId);
+                var isBanned = kingdom && kingdom.laws && kingdom.laws.bannedGoods && kingdom.laws.bannedGoods.indexOf(trade.resourceId) !== -1;
+                var isWarGood = tradeRes && (tradeRes.category === 'military' || trade.resourceId === 'swords' || trade.resourceId === 'armor' || trade.resourceId === 'bows' || trade.resourceId === 'arrows' || trade.resourceId === 'shields' || trade.resourceId === 'blasting_powder');
+                if (isBanned && isWarGood) {
+                    relBonus += 10; // +15 total for banned war goods
+                } else if (isBanned) {
+                    relBonus += 5;  // +10 total for banned goods
+                }
+            }
+
+            rel.level = Math.min(100, (rel.level || 0) + relBonus);
             player.relationships[trade.npcId] = rel;
         }
 
@@ -30379,6 +31034,8 @@
         depositToStorage,
         withdrawFromStorage,
         buyContainer,
+        mountContainer,
+        dismountContainer,
 
         // Passenger Transport
         useNPCTransport,
@@ -30524,6 +31181,8 @@
         hireWorker,
         fireWorker,
         assignWorker,
+        sendWorkerToTown,
+        takeHorseFromWorker,
         getWorkerSatisfaction,
         modifyWorkerSatisfaction,
         giveWorkerRaise,
@@ -30533,9 +31192,13 @@
         sendCaravan,
         rescueCaravan,
         cancelRecurringRoute,
+        disbandCaravan,
         getActiveRoutes,
         getCaravanLog,
         editCaravanOrders,
+        getCaravanStats,
+        getCaravanHireRates,
+        editCaravanEquipment,
         travelTo,
         turnBack,
         stopTravel,

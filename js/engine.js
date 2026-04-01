@@ -1442,6 +1442,10 @@
                 if (rng.chance(0.4)) add('saddler');
                 if (rng.chance(0.3)) add('carpenter');
             }
+            // Wheelwright — cities with sawmills or rich cities
+            if (rng.chance(0.35) || (wealthTier === 'rich' && buildings.some(b => b.type === 'sawmill'))) {
+                add('wheelwright');
+            }
 
             // Wells and water (cities need multiple)
             add('well');
@@ -1563,6 +1567,8 @@
                 if (rng.chance(0.5)) add('saddler');
                 if (rng.chance(0.4)) add('carpenter');
             }
+            // Wheelwright — capitals always have one (kingdom-owned)
+            addKingdom('wheelwright');
 
             // Wells and water (capitals have the most)
             add('well');
@@ -1882,10 +1888,20 @@
             town.market.supply.wheat = Math.max(town.market.supply.wheat, town.population * 3);
             town.market.supply.bread = Math.max(town.market.supply.bread, town.population * 2);
             town.market.supply.eggs  = Math.max(town.market.supply.eggs,  town.population);
+            // Some towns have carts available
+            if ((town._seedRng || Math.random()) < 0.25) {
+                town.market.supply.cart = Math.max(town.market.supply.cart || 0, 2);
+            }
         } else if (cat === 'city') {
             // Cities: diverse goods, LIMITED food → must import
             town.market.supply.wheat = Math.max(town.market.supply.wheat, town.population);
             town.market.supply.bread = Math.max(town.market.supply.bread, Math.round(town.population * 0.5));
+            // Seed carts/wagons in some cities
+            if ((town._seedRng || Math.random()) < 0.33 || (town.buildings && town.buildings.some(function(b) { return b.type === 'wheelwright'; }))) {
+                town.market.supply.cart = Math.max(town.market.supply.cart || 0, 3);
+                town.market.supply.small_wagon = Math.max(town.market.supply.small_wagon || 0, 2);
+                town.market.supply.wagon = Math.max(town.market.supply.wagon || 0, 1);
+            }
         } else if (cat === 'capital_city') {
             // Capitals: luxury & military goods, food SCARCITY → heavy import dependency
             town.market.supply.wheat = Math.max(town.market.supply.wheat, Math.round(town.population * 0.5));
@@ -1903,6 +1919,11 @@
             town.market.supply.herbs         = Math.max(town.market.supply.herbs         || 0, 30);
             town.market.supply.fever_tonic   = Math.max(town.market.supply.fever_tonic   || 0, 5);
             town.market.supply.antidote      = Math.max(town.market.supply.antidote      || 0, 3);
+            // Seed carts/wagons in capitals
+            town.market.supply.cart = Math.max(town.market.supply.cart || 0, 5);
+            town.market.supply.small_wagon = Math.max(town.market.supply.small_wagon || 0, 3);
+            town.market.supply.wagon = Math.max(town.market.supply.wagon || 0, 2);
+            town.market.supply.large_wagon = Math.max(town.market.supply.large_wagon || 0, 1);
         }
 
         // Boost supply for towns with production chain buildings
@@ -1925,6 +1946,7 @@
             'bandage_workshop': { bandages: 15, splint: 8, herbal_poultice: 8 },
             'herb_garden': { herbs: 20 },
             'herbalist_hut': { herbal_tea: 10 },
+            'wheelwright': { cart: 5, small_wagon: 2, wagon: 1 },
         };
 
         const popScale = Math.max(town.population / 100, 0.3);

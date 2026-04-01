@@ -1693,6 +1693,17 @@ window.UI = (function () {
             html += `<div class="detail-row"><span class="label">Employer</span>
                 <span class="value">${employerName}</span></div>`;
         }
+        if (person._playerHorse) {
+            html += `<div class="detail-row"><span class="label">Horse</span>
+                <span class="value">🐴 Has your horse</span></div>`;
+        }
+        if (person._workerTraveling) {
+            var _wtDest = null;
+            try { _wtDest = Engine.findTown(person._workerTraveling.toTownId); } catch(e) {}
+            var _wtDaysLeft = Math.max(0, (person._workerTraveling.arrivalDay || 0) - (Engine.getDay ? Engine.getDay() : 0));
+            html += `<div class="detail-row"><span class="label">Status</span>
+                <span class="value" style="color:#d4a017;">📍 Traveling to ${_wtDest ? _wtDest.name : '?'} (~${_wtDaysLeft} days left)</span></div>`;
+        }
         html += `</div>`;
 
         // ── Elite Merchant Info ──
@@ -1842,6 +1853,14 @@ window.UI = (function () {
                 html += `<button class="btn-medieval" onclick="UI.hireInvestigator('${person.id}')" title="Hire an investigator to uncover secrets — costly and risky, they may find out!" style="font-size:0.75rem;padding:5px 10px;">🕵️ Investigate</button>`;
 
                 html += `</div></div>`;
+
+                // ── Employee Horse Management (if your employee, in same town, has horse) ──
+                if (person.employerId === 'player' && person._playerHorse) {
+                    html += `<div class="detail-section"><h3>🐴 Horse</h3>
+                        <div style="font-size:0.8rem;color:#aaa;margin-bottom:4px;">This worker is riding a horse you gave them.</div>
+                        <button class="btn-medieval" style="font-size:0.75rem;padding:5px 12px;" onclick="(function(){var r=Player.takeHorseFromWorker('${person.id}');UI.toast(r.message,r.success?'success':'warning');if(r.success){try{var p=Engine.findPerson('${person.id}');if(p)UI.showPersonDetail(p);}catch(e){}}})()">🐴 Take Horse Back</button>
+                    </div>`;
+                }
 
                 // ── Discovered Traits & Quirks ──
                 if (Player.getRevealedInfo) {
@@ -4003,8 +4022,89 @@ window.UI = (function () {
 
         let people;
         try { people = Engine.getPeople(Player.townId); } catch (e) { people = []; }
-        _cachedUnemployed = (people || []).filter(p => p.alive && !p.employerId && p.age >= 18 &&
+        var allUnemployed = (people || []).filter(p => p.alive && !p.employerId && p.age >= 18 &&
             p.occupation !== 'noble' && p.occupation !== 'soldier' && p.occupation !== 'king' && p.occupation !== 'guard');
+
+        // Guild-based skill tier gating
+        // No guild: only unskilled (0-30)
+        // Guild member: also skilled (31-60) in that guild's related categories
+        // Guildmaster rank 3+: also expert (61-80) and master (81-100)
+        var playerGuilds = Player.guildMemberships || {};
+        var playerRank = 0;
+        try {
+            var currentTown = Engine.findTown(Player.townId);
+            if (currentTown && Player.socialRank) playerRank = Player.socialRank[currentTown.kingdomId] || 0;
+        } catch(e) {}
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+
+        // Build map of active guild categories
+        var guildCategories = {};  // category → guildId
+        var activeGuildIds = {};
+        for (var gId in playerGuilds) {
+            var mem = playerGuilds[gId];
+            if (mem && mem.expiresDay > day) {
+                activeGuildIds[gId] = true;
+                var gDef = CONFIG.GUILDS ? CONFIG.GUILDS[gId] : null;
+                if (gDef && gDef.categories) {
+                    for (var ci = 0; ci < gDef.categories.length; ci++) {
+                        guildCategories[gDef.categories[ci]] = gId;
+                    }
+                }
+            }
+        }
+        var hasAnyGuild = Object.keys(activeGuildIds).length > 0;
+        var isGuildmaster = playerRank >= 3;
+
+        // Map worker occupation to guild categories for badge matching
+        var occToCats = {
+            farmer: ['farm'],
+            miner: ['mine'],
+            craftsman: ['processing', 'finished', 'luxury'],
+            laborer: ['farm', 'mine', 'harvest', 'processing', 'finished'],
+            woodcutter: ['harvest'],
+            none: []
+        };
+
+        // Store guild access info on each worker for badge rendering
+        _cachedUnemployed = [];
+        for (var wi = 0; wi < allUnemployed.length; wi++) {
+            var w = allUnemployed[wi];
+            var wSkill = w.workerSkill || 0;
+            var tier = wSkill >= 81 ? 'master' : wSkill >= 61 ? 'expert' : wSkill >= 31 ? 'skilled' : 'unskilled';
+
+            if (tier === 'unskilled') {
+                // Always visible
+                w._guildAccess = null;
+                _cachedUnemployed.push(w);
+            } else if (tier === 'skilled') {
+                // Need guild membership — check if any active guild matches worker's occupation
+                var wCats = occToCats[w.occupation] || [];
+                var matchedGuild = null;
+                for (var mci = 0; mci < wCats.length; mci++) {
+                    if (guildCategories[wCats[mci]]) { matchedGuild = guildCategories[wCats[mci]]; break; }
+                }
+                if (!matchedGuild && hasAnyGuild) {
+                    // Any guild membership gives general access to skilled workers
+                    for (var _agk in activeGuildIds) { matchedGuild = _agk; break; }
+                }
+                if (isGuildmaster) matchedGuild = matchedGuild || 'rank';
+                if (matchedGuild) {
+                    w._guildAccess = matchedGuild;
+                    _cachedUnemployed.push(w);
+                }
+            } else {
+                // Expert/Master — need Guildmaster rank 3+
+                if (isGuildmaster) {
+                    w._guildAccess = 'rank';
+                    _cachedUnemployed.push(w);
+                } else if (hasAnyGuild) {
+                    // Guild member but not guildmaster — show as locked hint
+                    w._guildAccess = 'locked';
+                    _cachedUnemployed.push(w);
+                }
+            }
+        }
 
         const availableHtml = buildWorkerListHtml(_cachedUnemployed);
 
@@ -4016,13 +4116,30 @@ window.UI = (function () {
             try { emp = Engine.getPerson(empId); } catch (e) { continue; }
             if (!emp) continue;
             const assigned = Player.buildings ? Player.buildings.find(b => b.workers && b.workers.includes(empId)) : null;
+            var empTown = null;
+            try { empTown = Engine.findTown(emp.townId); } catch(e) {}
+            var empTownName = empTown ? empTown.name : '?';
+            var empTraveling = emp._workerTraveling;
+            var empHasHorse = emp._playerHorse;
+            var statusText = '';
+            if (empTraveling) {
+                var _etDest = null;
+                try { _etDest = Engine.findTown(empTraveling.toTownId); } catch(e) {}
+                var _etDays = Math.max(0, (empTraveling.arrivalDay || 0) - (Engine.getDay ? Engine.getDay() : 0));
+                statusText = '<span style="color:#d4a017;">📍 Traveling to ' + (_etDest ? _etDest.name : '?') + ' (~' + _etDays + 'd)</span>';
+            } else if (assigned) {
+                statusText = 'Assigned to: ' + (findBuildingType(assigned.type)?.name || assigned.type);
+            } else {
+                statusText = 'Unassigned';
+            }
+
             employeeHtml += `<div class="worker-row">
                 <div class="worker-info">
-                    <div class="name">${emp.firstName || ''} ${emp.lastName || ''}</div>
-                    <div class="details">${assigned ? 'Assigned to: ' + (findBuildingType(assigned.type)?.name || assigned.type) : 'Unassigned'}</div>
+                    <div class="name">${emp.firstName || ''} ${emp.lastName || ''} <span style="font-size:0.68rem;color:#888;">📍${empTownName}${empHasHorse ? ' 🐴' : ''}</span></div>
+                    <div class="details">${statusText}</div>
                 </div>
                 <div>
-                    <button class="btn-assign" onclick="UI.showAssignDialog('${empId}')">Assign</button>
+                    <button class="btn-assign" onclick="UI.showAssignDialog('${empId}')"${empTraveling ? ' disabled style="opacity:0.4;"' : ''}>Assign</button>
                     <button class="btn-fire" onclick="UI.fireWorker('${empId}')">Fire</button>
                 </div>
             </div>`;
@@ -4120,6 +4237,23 @@ window.UI = (function () {
         const wage = getWorkerExpectedWage(p);
         const fits = getWorkerBuildingFit(p);
 
+        // Guild access badge
+        var guildBadge = '';
+        var isLocked = false;
+        if (p._guildAccess) {
+            if (p._guildAccess === 'locked') {
+                isLocked = true;
+                guildBadge = '<span style="display:inline-block;background:rgba(100,100,100,0.4);color:#888;font-size:0.6rem;padding:1px 6px;border-radius:8px;margin-left:6px;border:1px solid rgba(100,100,100,0.5);" title="Requires Guildmaster rank to hire">🔒 Guildmaster Only</span>';
+            } else if (p._guildAccess === 'rank') {
+                guildBadge = '<span style="display:inline-block;background:rgba(180,140,50,0.25);color:#d4a017;font-size:0.6rem;padding:1px 6px;border-radius:8px;margin-left:6px;border:1px solid rgba(180,140,50,0.4);" title="Available via Guildmaster rank">🔨 Guildmaster</span>';
+            } else {
+                var gDef = CONFIG.GUILDS ? CONFIG.GUILDS[p._guildAccess] : null;
+                if (gDef) {
+                    guildBadge = '<span style="display:inline-block;background:rgba(80,160,220,0.2);color:#5dade2;font-size:0.6rem;padding:1px 6px;border-radius:8px;margin-left:6px;border:1px solid rgba(80,160,220,0.35);" title="Available via ' + gDef.name + ' membership">' + gDef.icon + ' ' + gDef.name + '</span>';
+                }
+            }
+        }
+
         let skillBars = '<div style="display:flex;gap:3px;margin:4px 0;flex-wrap:wrap;">';
         for (const sk of ['farming', 'mining', 'crafting', 'trading', 'combat']) {
             const val = (p.skills && p.skills[sk]) || 0;
@@ -4127,7 +4261,7 @@ window.UI = (function () {
             skillBars += `<div style="flex:1;min-width:50px;" title="${sk}: ${val}">
                 <div style="font-size:0.6rem;color:${isBest ? '#ffd700' : '#888'};text-align:center;">${skillIcons[sk]}${isBest ? '★' : ''}</div>
                 <div style="height:4px;background:#333;border-radius:2px;overflow:hidden;">
-                    <div style="width:${val}%;height:100%;background:${skillColors[sk]};"></div>
+                    <div style="width:${val}%;height:100%;background:${skillColors[sk]};${isLocked ? 'opacity:0.4;' : ''}"></div>
                 </div>
             </div>`;
         }
@@ -4139,13 +4273,16 @@ window.UI = (function () {
         }
 
         const occText = p.occupation && p.occupation !== 'none' ? `<span style="color:#aaa;font-size:0.7rem;"> • ${p.occupation}</span>` : '';
+        var hireBtn = isLocked
+            ? '<button class="btn-hire" disabled style="opacity:0.4;cursor:not-allowed;" title="Requires Guildmaster rank">🔒</button>'
+            : `<button class="btn-hire" onclick="UI.hirePerson('${p.id}')">Hire</button>`;
 
-        return `<div class="worker-row" style="flex-direction:column;align-items:stretch;">
+        return `<div class="worker-row" style="flex-direction:column;align-items:stretch;${isLocked ? 'opacity:0.65;' : ''}">
             <div style="display:flex;justify-content:space-between;align-items:center;">
                 <div class="worker-info" style="flex:1;">
-                    <div class="name">${p.firstName || ''} ${p.lastName || ''} <span style="color:#888;font-size:0.75rem;">${sexIcon} Age ${p.age || '?'}</span>${occText}</div>
+                    <div class="name">${p.firstName || ''} ${p.lastName || ''} <span style="color:#888;font-size:0.75rem;">${sexIcon} Age ${p.age || '?'}</span>${occText}${guildBadge}</div>
                 </div>
-                <button class="btn-hire" onclick="UI.hirePerson('${p.id}')">Hire</button>
+                ${hireBtn}
             </div>
             ${skillBars}
             <div style="display:flex;justify-content:space-between;font-size:0.7rem;color:#aaa;">
@@ -5042,29 +5179,119 @@ window.UI = (function () {
             return;
         }
 
-        let html = '<div class="worker-list">';
+        var person = null;
+        try { person = Engine.findPerson(personId); } catch(e) {}
+        var personTownId = person ? person.townId : Player.townId;
+        var personName = person ? (person.firstName + ' ' + person.lastName) : 'Worker';
+        var isTraveling = person && person._workerTraveling;
+
+        if (isTraveling) {
+            var destTown = Engine.findTown(person._workerTraveling.toTownId);
+            toast(personName + ' is traveling to ' + (destTown ? destTown.name : '?') + '. Wait for arrival.', 'warning');
+            return;
+        }
+
+        var personTown = Engine.findTown(personTownId);
+        var personTownName = personTown ? personTown.name : '?';
+
+        let html = '<div style="margin-bottom:8px;font-size:0.8rem;color:#aaa;">Worker: <b>' + personName + '</b> — Currently in: <b>' + personTownName + '</b>';
+        if (person && person._playerHorse) html += ' 🐴';
+        html += '</div>';
+        html += '<div class="worker-list">';
+
         for (const building of Player.buildings) {
             const bt = findBuildingType(building.type);
-            html += `<div class="worker-row">
-                <div class="worker-info">
-                    <div class="name">${bt ? bt.name : building.type}</div>
-                    <div class="details">${building.active !== false ? 'Active' : 'Inactive'}</div>
-                </div>
-                <button class="btn-assign" onclick="UI.executeAssign('${personId}','${building.id}')">Assign</button>
-            </div>`;
+            var bldTown = Engine.findTown(building.townId);
+            var bldTownName = bldTown ? bldTown.name : '?';
+            var sameAsTown = personTownId === building.townId;
+            var isFull = bt && building.workers && building.workers.length >= bt.workers;
+            var staffText = bt ? (building.workers ? building.workers.length : 0) + '/' + bt.workers : '';
+
+            html += `<div class="worker-row" style="flex-direction:column;align-items:stretch;${sameAsTown ? '' : 'border-left:2px solid rgba(200,150,50,0.4);padding-left:8px;'}">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <div class="worker-info" style="flex:1;">
+                        <div class="name">${bt ? bt.name : building.type} <span style="font-size:0.7rem;color:#888;">📍${bldTownName} • ${staffText}${isFull ? ' (Full)' : ''}</span></div>
+                    </div>`;
+
+            if (sameAsTown && !isFull) {
+                html += `<button class="btn-assign" onclick="UI.executeAssign('${personId}','${building.id}')">Assign</button>`;
+            } else if (!sameAsTown && !isFull) {
+                html += `<button class="btn-assign" style="font-size:0.7rem;background:rgba(200,150,50,0.15);border-color:rgba(200,150,50,0.4);" onclick="UI.showSendWorkerOptions('${personId}','${building.townId}','${building.id}')">📍 Send There</button>`;
+            } else {
+                html += `<button class="btn-assign" disabled style="opacity:0.4;">Full</button>`;
+            }
+
+            html += `</div></div>`;
         }
         html += '</div>';
 
         openModal('📋 Assign Worker', html);
     }
 
+    function showSendWorkerOptions(personId, destTownId, buildingId) {
+        var person = null;
+        try { person = Engine.findPerson(personId); } catch(e) {}
+        var personName = person ? (person.firstName + ' ' + person.lastName) : 'Worker';
+        var destTown = Engine.findTown(destTownId);
+        var destName = destTown ? destTown.name : '?';
+        var horsesOwned = (Player.inventory || {})['horses'] || 0;
+
+        // Estimate transport cost
+        var route = null;
+        try { route = Engine.findPath(person ? person.townId : Player.townId, destTownId); } catch(e) {}
+        var totalDist = 0;
+        if (route) {
+            for (var si = 0; si < route.length; si++) {
+                var a = Engine.findTown(route[si].fromTownId);
+                var b = Engine.findTown(route[si].toTownId);
+                if (a && b) totalDist += Math.hypot(a.x - b.x, a.y - b.y);
+            }
+        }
+        var transportCost = Math.max(10, Math.ceil(totalDist * 0.15));
+        var walkDays = Math.max(1, Math.ceil(totalDist / ((CONFIG.CARAVAN_BASE_SPEED || 120) * 0.5)));
+        var horseDays = Math.max(1, Math.ceil(totalDist / ((CONFIG.CARAVAN_BASE_SPEED || 120) * 1.5)));
+        var transportDays = Math.max(1, Math.ceil(totalDist / ((CONFIG.CARAVAN_BASE_SPEED || 120) * 1.2)));
+
+        var html = '<div style="margin-bottom:10px;font-size:0.85rem;">Send <b>' + personName + '</b> to <b>' + destName + '</b></div>';
+        html += '<div style="display:flex;flex-direction:column;gap:8px;">';
+
+        // Walk option (free)
+        html += '<div style="padding:8px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:6px;display:flex;justify-content:space-between;align-items:center;">';
+        html += '<div><div style="font-weight:bold;font-size:0.8rem;">🚶 Walk (Free)</div>';
+        html += '<div style="font-size:0.7rem;color:#aaa;">~' + walkDays + ' days • ⚠️ -5 satisfaction</div></div>';
+        html += '<button class="btn-medieval" style="font-size:0.75rem;padding:4px 12px;" onclick="(function(){var r=Player.sendWorkerToTown(\'' + personId + '\',\'' + destTownId + '\',\'walk\');UI.toast(r.message,r.success?\'success\':\'warning\');if(r.success)UI.closeModal();})()">Send</button>';
+        html += '</div>';
+
+        // Horse option
+        html += '<div style="padding:8px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:6px;display:flex;justify-content:space-between;align-items:center;' + (horsesOwned < 1 ? 'opacity:0.5;' : '') + '">';
+        html += '<div><div style="font-weight:bold;font-size:0.8rem;">🐴 Give Horse & Ride</div>';
+        html += '<div style="font-size:0.7rem;color:#aaa;">~' + horseDays + ' days • Uses 1 horse from inventory' + (horsesOwned < 1 ? ' (none owned!)' : ' (' + horsesOwned + ' owned)') + '</div></div>';
+        if (horsesOwned >= 1) {
+            html += '<button class="btn-medieval" style="font-size:0.75rem;padding:4px 12px;" onclick="(function(){var r=Player.sendWorkerToTown(\'' + personId + '\',\'' + destTownId + '\',\'horse\');UI.toast(r.message,r.success?\'success\':\'warning\');if(r.success)UI.closeModal();})()">Send</button>';
+        } else {
+            html += '<button class="btn-medieval" disabled style="font-size:0.75rem;padding:4px 12px;opacity:0.4;">No Horse</button>';
+        }
+        html += '</div>';
+
+        // Transport option (paid)
+        html += '<div style="padding:8px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:6px;display:flex;justify-content:space-between;align-items:center;">';
+        html += '<div><div style="font-weight:bold;font-size:0.8rem;">🚐 Pay for Transport</div>';
+        html += '<div style="font-size:0.7rem;color:#aaa;">~' + transportDays + ' days • Costs ' + transportCost + 'g</div></div>';
+        html += '<button class="btn-medieval" style="font-size:0.75rem;padding:4px 12px;" onclick="(function(){var r=Player.sendWorkerToTown(\'' + personId + '\',\'' + destTownId + '\',\'transport\');UI.toast(r.message,r.success?\'success\':\'warning\');if(r.success)UI.closeModal();})()">Send</button>';
+        html += '</div>';
+
+        html += '</div>';
+        var footer = '<button class="btn-medieval" onclick="UI.showAssignDialog(\'' + personId + '\')">← Back</button>';
+        openModal('📍 Send Worker', html, footer);
+    }
+
     function executeAssign(personId, buildingId) {
-        try {
-            Player.assignWorker(personId, buildingId);
-            toast('Worker assigned!', 'success');
+        var result = Player.assignWorker(personId, buildingId);
+        if (result && result.success) {
+            toast(result.message || 'Worker assigned!', 'success');
             closeModal();
-        } catch (e) {
-            toast(e.message || 'Cannot assign', 'danger');
+        } else {
+            toast((result && result.message) || 'Cannot assign', 'warning');
         }
     }
 
@@ -5088,6 +5315,11 @@ window.UI = (function () {
         var resName = res ? (res.icon + ' ' + res.name) : order.good;
         var actionLabel = { buy: '🛒 Buy', sell: '💰 Sell', store: '📥 Store', pickup: '📦 Pickup' }[order.action] || order.action;
         var locLabel = order.location === 'source' ? '📍 Source' : '🏁 Dest';
+        if (order.location && order.location.indexOf('waypoint:') === 0) {
+            var wpTownId = order.location.replace('waypoint:', '');
+            var wpTown = Engine.findTown(wpTownId);
+            locLabel = '📍 ' + (wpTown ? wpTown.name : wpTownId);
+        }
         var qtyLabel = order.qty === 'max' ? 'Max' : order.qty;
         var priceLabel = '';
         if (order.action === 'buy' && order.priceLimit) priceLabel = ' (max ' + order.priceLimit + 'g)';
@@ -5171,24 +5403,44 @@ window.UI = (function () {
         const townMap = {};
         for (const t of towns) townMap[t.id] = t;
 
-        // Find connected towns (land)
+        // Find connected towns (land) — multi-hop if player has extended_routes or trade_network skill
+        var maxHops = 1;
+        if (typeof Player !== 'undefined' && Player.hasSkill) {
+            if (Player.hasSkill('trade_network')) maxHops = 5;
+            else if (Player.hasSkill('extended_routes')) maxHops = 3;
+        }
+
         const connectedTowns = [];
-        for (const road of roads) {
-            if (road.fromTownId === Player.townId && townMap[road.toTownId]) {
-                connectedTowns.push({ town: townMap[road.toTownId], road, routeType: 'land' });
-            } else if (road.toTownId === Player.townId && townMap[road.fromTownId]) {
-                connectedTowns.push({ town: townMap[road.fromTownId], road, routeType: 'land' });
+        const visitedTowns = {};
+        visitedTowns[Player.townId] = true;
+
+        // BFS to find towns up to maxHops away
+        var frontier = [{ townId: Player.townId, hops: 0 }];
+        while (frontier.length > 0) {
+            var current = frontier.shift();
+            if (current.hops >= maxHops) continue;
+            for (const road of roads) {
+                var neighborId = null;
+                if (road.fromTownId === current.townId && townMap[road.toTownId]) neighborId = road.toTownId;
+                else if (road.toTownId === current.townId && townMap[road.fromTownId]) neighborId = road.fromTownId;
+                if (neighborId && !visitedTowns[neighborId]) {
+                    visitedTowns[neighborId] = true;
+                    var hops = current.hops + 1;
+                    connectedTowns.push({ town: townMap[neighborId], road: road, routeType: 'land', hops: hops });
+                    if (hops < maxHops) frontier.push({ townId: neighborId, hops: hops });
+                }
             }
         }
 
         // Find sea route destinations
         const seaDestinations = (typeof Player !== 'undefined' && Player.getSeaDestinations) ? Player.getSeaDestinations() : [];
 
-        let destOptions = connectedTowns.map(({ town, road }) => {
+        let destOptions = connectedTowns.map(({ town, road, hops }) => {
             const safeStr = road.safe !== false ? '✓' : '⚠';
             const threat = road.banditThreat || 0;
             const dangerStr = threat > CONFIG.BANDIT_THREAT_DANGER_THRESHOLD ? ` ☠${Math.round(threat)}` : '';
-            return `<option value="${town.id}" data-route="land" data-threat="${threat}">🚶 ${town.name} (${safeStr} Q:${road.quality || 1}${dangerStr})</option>`;
+            const hopLabel = hops > 1 ? ` ${hops}🔗` : '';
+            return `<option value="${town.id}" data-route="land" data-threat="${threat}" data-hops="${hops}">🚶 ${town.name}${hopLabel} (${safeStr} Q:${road.quality || 1}${dangerStr})</option>`;
         }).join('');
 
         for (const sd of seaDestinations) {
@@ -5278,21 +5530,74 @@ window.UI = (function () {
             '</div>';
         }
 
+        // Get dynamic hire rates for current town
+        var hireRates = { carrierWage: 4, guardWage: 6 };
+        try { hireRates = Player.getCaravanHireRates(Player.townId); } catch(e) {}
+        var horsesOwned = (Player.inventory || {})['horses'] || 0;
+        var swordsOwned = (Player.inventory || {})['swords'] || 0;
+        var armorOwned = (Player.inventory || {})['armor'] || 0;
+
+        // Crew & Equipment section
+        var crewHtml = '<div style="margin-top:8px;padding:10px;background:rgba(140,100,40,0.08);border:1px solid rgba(140,100,40,0.2);border-radius:6px;">';
+        crewHtml += '<label style="font-size:0.85rem;color:var(--gold);font-weight:bold;">👥 Crew & Equipment</label>';
+        crewHtml += '<div class="text-dim" style="font-size:0.68rem;margin-bottom:8px;">Hire rates at this town — Carrier: ' + hireRates.carrierWage + 'g/day, Guard: ' + hireRates.guardWage + 'g/day</div>';
+
+        // Row: Carriers + Guards
+        crewHtml += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:6px;">';
+        crewHtml += '<div style="flex:1;min-width:120px;">';
+        crewHtml += '<label style="font-size:0.75rem;color:#ccc;">🧳 Carriers</label>';
+        crewHtml += '<input type="number" id="caravanCarriers" min="1" max="20" value="1" style="width:60px;padding:3px 5px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;margin-left:6px;" onchange="UI._updateCaravanPreview()">';
+        crewHtml += '<span style="font-size:0.65rem;color:#888;margin-left:4px;">' + (CONFIG.CARAVAN_CARRIER_BASE_CAPACITY || 30) + ' weight each</span>';
+        crewHtml += '</div>';
+        crewHtml += '<div style="flex:1;min-width:120px;">';
+        crewHtml += '<label style="font-size:0.75rem;color:#ccc;">⚔️ Guards</label>';
+        crewHtml += '<input type="number" id="caravanGuards" min="0" max="20" value="1" style="width:60px;padding:3px 5px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;margin-left:6px;" onchange="UI._updateCaravanPreview()">';
+        crewHtml += '<span style="font-size:0.65rem;color:#888;margin-left:4px;">reduce theft/kill chance</span>';
+        crewHtml += '</div>';
+        crewHtml += '</div>';
+
+        // Row: Carrier Equipment — Horses, Carts, Wagons
+        var cartsOwned = (Player.inventory && Player.inventory['cart']) || 0;
+        var wagonsOwned = (Player.inventory && Player.inventory['wagon']) || 0;
+        crewHtml += '<div style="border-top:1px solid rgba(255,255,255,0.06);padding-top:6px;margin-bottom:6px;">';
+        crewHtml += '<label style="font-size:0.75rem;color:#c9a84c;">🐴 Carrier Equipment</label>';
+        crewHtml += '<span style="font-size:0.6rem;color:#888;margin-left:6px;">(Own: 🐴' + horsesOwned + ' horses, 🛒' + cartsOwned + ' carts, 🚛' + wagonsOwned + ' wagons)</span>';
+        crewHtml += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px;">';
+        crewHtml += '<div><label style="font-size:0.7rem;color:#aaa;">Horses</label> <input type="number" id="caravanHorses" min="0" max="' + Math.min(20, horsesOwned) + '" value="0" style="width:50px;padding:2px 4px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;" onchange="UI._updateCaravanPreview()"> <span style="font-size:0.6rem;color:#666;">≤ carriers, +speed & capacity</span></div>';
+        crewHtml += '<div><label style="font-size:0.7rem;color:#aaa;">Carts</label> <input type="number" id="caravanCarts" min="0" max="' + Math.min(20, cartsOwned) + '" value="0" style="width:50px;padding:2px 4px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;" onchange="UI._updateCaravanPreview()"> <span style="font-size:0.6rem;color:#666;">+' + (CONFIG.CARAVAN_CART_CAPACITY || 80) + ' wt, from inv</span></div>';
+        crewHtml += '<div><label style="font-size:0.7rem;color:#aaa;">Wagons</label> <input type="number" id="caravanWagons" min="0" max="' + Math.min(20, wagonsOwned) + '" value="0" style="width:50px;padding:2px 4px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;" onchange="UI._updateCaravanPreview()"> <span style="font-size:0.6rem;color:#666;">+' + (CONFIG.CARAVAN_WAGON_CAPACITY || 200) + ' wt, from inv</span></div>';
+        crewHtml += '</div>';
+        crewHtml += '<div style="font-size:0.6rem;color:#777;margin-top:2px;">Carts + Wagons ≤ Horses (each needs a horse to pull)</div>';
+        crewHtml += '</div>';
+
+        // Row: Guard Equipment — Weapons, Armor
+        crewHtml += '<div style="border-top:1px solid rgba(255,255,255,0.06);padding-top:6px;">';
+        crewHtml += '<label style="font-size:0.75rem;color:#c9a84c;">🛡️ Guard Equipment</label>';
+        crewHtml += '<span style="font-size:0.6rem;color:#888;margin-left:6px;">(You own: ⚔' + swordsOwned + ' swords, 🛡️' + armorOwned + ' armor)</span>';
+        crewHtml += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px;">';
+        crewHtml += '<div><label style="font-size:0.7rem;color:#aaa;">Weapons</label> <input type="number" id="caravanWeapons" min="0" max="' + Math.min(20, swordsOwned) + '" value="0" style="width:50px;padding:2px 4px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;" onchange="UI._updateCaravanPreview()"> <span style="font-size:0.6rem;color:#666;">≤ guards, from swords inv</span></div>';
+        crewHtml += '<div><label style="font-size:0.7rem;color:#aaa;">Armor</label> <input type="number" id="caravanArmor" min="0" max="' + Math.min(20, armorOwned) + '" value="0" style="width:50px;padding:2px 4px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;" onchange="UI._updateCaravanPreview()"> <span style="font-size:0.6rem;color:#666;">≤ guards, from armor inv</span></div>';
+        crewHtml += '</div>';
+        crewHtml += '</div>';
+        crewHtml += '</div>';
+
+        // Preview panel
+        var previewHtml = '<div id="caravanPreview" style="margin-top:8px;padding:8px 10px;background:rgba(0,180,100,0.06);border:1px solid rgba(0,180,100,0.15);border-radius:6px;">';
+        previewHtml += '<label style="font-size:0.85rem;color:var(--gold);font-weight:bold;">📊 Caravan Preview</label>';
+        previewHtml += '<div id="caravanPreviewContent" style="font-size:0.75rem;color:#bbb;margin-top:4px;">Select a destination to see stats.</div>';
+        previewHtml += '</div>';
+
         const html = `<div class="caravan-form">
             <div class="form-group">
                 <label>Destination</label>
-                <select id="caravanDest">${destOptions}</select>
+                <select id="caravanDest" onchange="UI._updateCaravanPreview()">${destOptions}</select>
             </div>
             ${shipInfo}
             <div class="form-group">
                 <label>Goods to Load</label>
                 <div class="caravan-goods-list" style="max-height:120px;overflow-y:auto;">${goodsHtml}</div>
             </div>
-            <div class="form-group">
-                <label>Guards</label>
-                <input type="number" id="caravanGuards" min="0" max="20" value="2" class="qty-select" style="width:80px">
-                <span class="text-dim" style="font-size:0.75rem">Cost: ${CONFIG.GUARD_WAGE}g/day each</span>
-            </div>
+            ${crewHtml}
             <div class="form-group" style="margin-top:8px;">
                 <label style="font-size:0.8rem;">Route Type</label>
                 <div style="display:flex;gap:12px;flex-wrap:wrap;">
@@ -5310,9 +5615,7 @@ window.UI = (function () {
                     <label style="font-size:0.7rem;cursor:pointer;"><input type="checkbox" id="caravanArmedEscort"> Armed Escort (${CONFIG.CARAVAN_ARMED_ESCORT_COST || 80}g, +50% guard power)</label>
                 </div>
             </div>
-            <div class="risk-assessment" id="riskAssessment">
-                Select a destination and goods to see risk assessment.
-            </div>
+            ${previewHtml}
             <div class="caravan-danger-info" style="font-size:0.75rem;margin-top:6px;">
                 ${connectedTowns.filter(ct => (ct.road.banditThreat || 0) > CONFIG.BANDIT_THREAT_DANGER_THRESHOLD).map(ct => {
                     const threat = ct.road.banditThreat || 0;
@@ -5331,8 +5634,10 @@ window.UI = (function () {
 
         openModal('🐴 Caravan & Transport', html, footer);
 
-        // Wire up searchable goods dropdown
+        // Wire up searchable goods dropdown + trigger initial preview
         setTimeout(function() {
+            _updateCaravanPreview();
+
             var input = document.getElementById('orderGoodInput');
             var dropdown = document.getElementById('orderGoodDropdown');
             if (!input || !dropdown) return;
@@ -5553,6 +5858,111 @@ window.UI = (function () {
         if (result.success) openCaravanDialog();
     }
 
+    function _updateCaravanPreview() {
+        var container = document.getElementById('caravanPreviewContent');
+        if (!container) return;
+
+        var destEl = document.getElementById('caravanDest');
+        if (!destEl || !destEl.value) {
+            container.innerHTML = 'Select a destination to see stats.';
+            return;
+        }
+
+        // Update order location dropdown with waypoint towns if trade_network skill
+        var locSel = document.getElementById('orderLocation');
+        if (locSel) {
+            var prevVal = locSel.value;
+            var locHtml = '<option value="destination">🏁 Destination</option><option value="source">📍 Source</option>';
+            if (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('trade_network')) {
+                try {
+                    var route = Engine.findPath(Player.townId, destEl.value);
+                    if (route && route.length > 1) {
+                        var waypointSeen = {};
+                        for (var wi = 0; wi < route.length; wi++) {
+                            var wpIds = [route[wi].fromTownId, route[wi].toTownId];
+                            for (var wj = 0; wj < wpIds.length; wj++) {
+                                var wpId = wpIds[wj];
+                                if (wpId === Player.townId || wpId === destEl.value || waypointSeen[wpId]) continue;
+                                waypointSeen[wpId] = true;
+                                var wpTown = Engine.findTown(wpId);
+                                if (wpTown) locHtml += '<option value="waypoint:' + wpId + '">📍 ' + wpTown.name + ' (waypoint)</option>';
+                            }
+                        }
+                    }
+                } catch(e) {}
+            }
+            locSel.innerHTML = locHtml;
+            // Restore previous value if still valid
+            if (prevVal) {
+                for (var oi = 0; oi < locSel.options.length; oi++) {
+                    if (locSel.options[oi].value === prevVal) { locSel.value = prevVal; break; }
+                }
+            }
+        }
+
+        var carriers = parseInt((document.getElementById('caravanCarriers') || {}).value) || 1;
+        var guards = parseInt((document.getElementById('caravanGuards') || {}).value) || 0;
+        var horses = parseInt((document.getElementById('caravanHorses') || {}).value) || 0;
+        var carts = parseInt((document.getElementById('caravanCarts') || {}).value) || 0;
+        var wagons = parseInt((document.getElementById('caravanWagons') || {}).value) || 0;
+        var weapons = parseInt((document.getElementById('caravanWeapons') || {}).value) || 0;
+        var armor = parseInt((document.getElementById('caravanArmor') || {}).value) || 0;
+
+        // Enforce constraints visually
+        if (horses > carriers) { horses = carriers; document.getElementById('caravanHorses').value = horses; }
+        if (carts + wagons > horses) {
+            var excess = (carts + wagons) - horses;
+            if (wagons >= excess) { wagons -= excess; document.getElementById('caravanWagons').value = wagons; }
+            else { carts -= (excess - wagons); wagons = 0; document.getElementById('caravanCarts').value = carts; document.getElementById('caravanWagons').value = 0; }
+        }
+        if (weapons > guards) { weapons = guards; document.getElementById('caravanWeapons').value = weapons; }
+        if (armor > guards) { armor = guards; document.getElementById('caravanArmor').value = armor; }
+
+        try {
+            var stats = Player.getCaravanStats({
+                fromTownId: Player.townId,
+                toTownId: destEl.value,
+                carriers: carriers,
+                guardCount: guards,
+                carrierHorses: horses,
+                carts: carts,
+                wagons: wagons,
+                guardWeapons: weapons,
+                guardArmor: armor
+            });
+
+            var theftColor = stats.yearlyTheftPct > 50 ? '#e74c3c' : stats.yearlyTheftPct > 20 ? '#f39c12' : '#2ecc71';
+            var killColor = stats.yearlyKillPct > 30 ? '#e74c3c' : stats.yearlyKillPct > 10 ? '#f39c12' : '#2ecc71';
+
+            var h = '<div style="display:flex;gap:14px;flex-wrap:wrap;">';
+            h += '<div>📦 <b>Capacity:</b> ' + stats.capacity + ' weight</div>';
+            h += '<div>🕐 <b>Trip:</b> ' + stats.tripDays + ' days (RT: ' + stats.roundTripDays + ')</div>';
+            h += '<div>💵 <b>Daily wage:</b> ' + stats.dailyWage + 'g/day</div>';
+            h += '</div>';
+            h += '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:4px;">';
+            h += '<div style="color:' + theftColor + ';">🏴‍☠️ <b>Theft risk:</b> ' + stats.yearlyTheftPct + '%/yr</div>';
+            h += '<div style="color:' + killColor + ';">💀 <b>Kill risk:</b> ' + stats.yearlyKillPct + '%/yr</div>';
+            h += '</div>';
+            // Risk factors
+            var factors = [];
+            if (stats.roadUnsafe) factors.push('⚠️ Unsafe road');
+            if (stats.atWar) factors.push('⚔️ At war');
+            if (stats.connUnsafe) factors.push('🏚️ Unsafe connections');
+            if (factors.length > 0) {
+                h += '<div style="margin-top:3px;font-size:0.68rem;color:#e67e22;">' + factors.join(' • ') + '</div>';
+            }
+            // Hire cost estimate (carts/wagons now from inventory, not gold)
+            var hireCost = carriers * (CONFIG.CARAVAN_CARRIER_HIRE_COST || 20) + guards * (CONFIG.CARAVAN_GUARD_HIRE_COST || 30);
+            h += '<div style="margin-top:3px;font-size:0.68rem;color:#aaa;">💰 Hire cost: <b>' + hireCost + 'g</b>';
+            if (carts > 0 || wagons > 0) h += ' + ' + carts + ' 🛒 carts + ' + wagons + ' 🚛 wagons from inventory';
+            h += '</div>';
+
+            container.innerHTML = h;
+        } catch(e) {
+            container.innerHTML = '<span style="color:#888;">Could not calculate preview.</span>';
+        }
+    }
+
     function executeSendCaravan() {
         const destSelect = document.getElementById('caravanDest');
         if (!destSelect || !destSelect.value) {
@@ -5576,15 +5986,23 @@ window.UI = (function () {
             }
         }
 
-        // Allow empty goods if there are pickup orders
-        var hasPickupOrders = _caravanOrders.some(function(o) { return o.action === 'pickup'; });
-        if (Object.keys(goods).length === 0 && !hasPickupOrders) {
-            toast('Load goods or add pickup orders.', 'warning');
+        // Allow empty goods if there are pickup or buy orders
+        var hasPickupOrBuyOrders = _caravanOrders.some(function(o) { return o.action === 'pickup' || o.action === 'buy'; });
+        if (Object.keys(goods).length === 0 && !hasPickupOrBuyOrders && _caravanOrders.length === 0) {
+            toast('Load goods or add orders.', 'warning');
             return;
         }
 
         const guardsInput = document.getElementById('caravanGuards');
         const guards = guardsInput ? parseInt(guardsInput.value) || 0 : 0;
+
+        // Crew & equipment
+        var carriers = parseInt((document.getElementById('caravanCarriers') || {}).value) || 1;
+        var carrierHorses = parseInt((document.getElementById('caravanHorses') || {}).value) || 0;
+        var carts = parseInt((document.getElementById('caravanCarts') || {}).value) || 0;
+        var wagons = parseInt((document.getElementById('caravanWagons') || {}).value) || 0;
+        var guardWeapons = parseInt((document.getElementById('caravanWeapons') || {}).value) || 0;
+        var guardArmor = parseInt((document.getElementById('caravanArmor') || {}).value) || 0;
 
         // Route mode
         const routeModeRadio = document.querySelector('input[name="routeMode"]:checked');
@@ -5601,14 +6019,21 @@ window.UI = (function () {
         const selectedOption = destSelect.options[destSelect.selectedIndex];
         const routeType = selectedOption && selectedOption.dataset && selectedOption.dataset.route;
 
-        // Build options with new order system
+        // Build options with crew, equipment, and order system
         const options = {
             orders: _caravanOrders.length > 0 ? _caravanOrders.slice() : null,
             roundTrip: roundTrip,
             recurring: recurring,
             fortified: fortified,
             decoy: decoy,
-            armedEscort: armedEscort
+            armedEscort: armedEscort,
+            carriers: carriers,
+            guardCount: guards,
+            carrierHorses: carrierHorses,
+            carts: carts,
+            wagons: wagons,
+            guardWeapons: guardWeapons,
+            guardArmor: guardArmor
         };
 
         try {
@@ -5681,7 +6106,17 @@ window.UI = (function () {
             html += '<span>💰 Profit: ' + (c.totalProfit || 0) + 'g</span>';
             html += '<span>💸 Spent: ' + (c.totalSpent || 0) + 'g</span>';
             html += '<span>📊 Trips: ' + (c.tripCount || 0) + '</span>';
+            html += '<span>🧳 Carriers: ' + (c.carriers || 1) + '</span>';
             if (c.guards) html += '<span>⚔️ Guards: ' + c.guards + '</span>';
+            if (c.carrierHorses) html += '<span>🐴 Horses: ' + c.carrierHorses + '</span>';
+            if (c.carts) html += '<span>🛒 Carts: ' + c.carts + '</span>';
+            if (c.wagons) html += '<span>🚗 Wagons: ' + c.wagons + '</span>';
+            if (c.guardWeapons) html += '<span>⚔ Weapons: ' + c.guardWeapons + '</span>';
+            if (c.guardArmor) html += '<span>🛡️ Armor: ' + c.guardArmor + '</span>';
+            var cDailyWage = (c.carriers || 1) * (c.carrierWage || 4) + (c.guards || 0) * (c.guardWage || 6);
+            html += '<span>💵 Wage: ' + cDailyWage + 'g/day</span>';
+            if (c.daysUnpaid > 0) html += '<span style="color:#e74c3c;">⚠️ ' + c.daysUnpaid + ' days unpaid!</span>';
+            if (c.disbanding) html += '<span style="color:#d4a017;">🏳️ Disbanding</span>';
             html += '</div>';
 
             // Current cargo
@@ -5728,7 +6163,7 @@ window.UI = (function () {
             }
 
             // Action buttons
-            html += '<div style="display:flex;gap:6px;margin-top:6px;">';
+            html += '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">';
             if (c.status === 'blocked' && c.active !== false) {
                 html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;" onclick="(function(){var r=Player.rescueCaravan(\'' + c.id + '\');UI.toast(r.message,r.success?\'success\':\'warning\');UI.openCaravanManagement();})()">🆘 Rescue</button>';
             }
@@ -5737,6 +6172,13 @@ window.UI = (function () {
             }
             if (c.active && c.orders) {
                 html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;" onclick="UI.openEditCaravanOrders(\'' + c.id + '\')">📝 Edit Orders</button>';
+            }
+            if (c.active && !c.disbanding) {
+                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;background:rgba(180,140,50,0.3);" onclick="(function(){if(!confirm(\'Finish last run and disband this caravan? Goods will be dropped to storage, not sold.\'))return;var r=Player.disbandCaravan(\'' + c.id + '\');UI.toast(r.message,r.success?\'success\':\'warning\');UI.openCaravanManagement();})()">🏳️ Finish & Disband</button>';
+                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;" onclick="UI.openEditCaravanEquipment(\'' + c.id + '\')">⚙️ Equipment</button>';
+            }
+            if (c.disbanding && c.active) {
+                html += '<span style="font-size:0.7rem;color:#d4a017;padding:3px 6px;">🏳️ Disbanding…</span>';
             }
             html += '</div>';
 
@@ -5855,6 +6297,88 @@ window.UI = (function () {
 
     function _getCaravanOrders() {
         return _caravanOrders.slice();
+    }
+
+    function openEditCaravanEquipment(caravanId) {
+        var caravan = null;
+        for (var i = 0; i < Player.caravans.length; i++) {
+            if (Player.caravans[i].id === caravanId) { caravan = Player.caravans[i]; break; }
+        }
+        if (!caravan) { toast('Caravan not found.', 'warning'); return; }
+
+        var horsesOwned = (Player.inventory || {})['horses'] || 0;
+        var swordsOwned = (Player.inventory || {})['swords'] || 0;
+        var armorOwned = (Player.inventory || {})['armor'] || 0;
+        var carriers = caravan.carriers || 1;
+        var guards = caravan.guards || 0;
+        var curHorses = caravan.carrierHorses || 0;
+        var curWeapons = caravan.guardWeapons || 0;
+        var curArmor = caravan.guardArmor || 0;
+        var curCarts = caravan.carts || 0;
+        var curWagons = caravan.wagons || 0;
+        var maxAddHorses = Math.min(carriers - curHorses, horsesOwned);
+        var maxAddWeapons = Math.min(guards - curWeapons, swordsOwned);
+        var maxAddArmor = Math.min(guards - curArmor, armorOwned);
+
+        var toName = (Engine.findTown(caravan.toTownId) || {}).name || '?';
+        var html = '<div>';
+        html += '<div style="font-size:0.8rem;color:#aaa;margin-bottom:10px;">Caravan to <b>' + toName + '</b></div>';
+
+        // Current equipment display
+        html += '<div style="padding:8px;background:rgba(255,255,255,0.03);border-radius:6px;margin-bottom:10px;font-size:0.75rem;">';
+        html += '<div style="font-weight:bold;color:var(--gold);margin-bottom:4px;">Current Equipment</div>';
+        html += '<div style="display:flex;gap:12px;flex-wrap:wrap;color:#bbb;">';
+        html += '<span>🧳 Carriers: ' + carriers + '</span>';
+        html += '<span>⚔️ Guards: ' + guards + '</span>';
+        html += '<span>🐴 Horses: ' + curHorses + '/' + carriers + '</span>';
+        html += '<span>🛒 Carts: ' + curCarts + '</span>';
+        html += '<span>🚗 Wagons: ' + curWagons + '</span>';
+        html += '<span>⚔ Weapons: ' + curWeapons + '/' + guards + '</span>';
+        html += '<span>🛡️ Armor: ' + curArmor + '/' + guards + '</span>';
+        html += '</div></div>';
+
+        // Add equipment form
+        html += '<div style="font-weight:bold;color:var(--gold);margin-bottom:6px;font-size:0.8rem;">Add Equipment (from inventory)</div>';
+        html += '<div style="display:flex;gap:10px;flex-wrap:wrap;font-size:0.75rem;">';
+        if (maxAddHorses > 0) {
+            html += '<div>🐴 Add Horses: <input type="number" id="editEqHorses" min="0" max="' + maxAddHorses + '" value="0" style="width:50px;padding:2px 4px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;"> <span style="color:#888;">(own: ' + horsesOwned + ')</span></div>';
+        } else {
+            html += '<div style="color:#888;">🐴 No horses to add (' + (carriers <= curHorses ? 'all carriers equipped' : 'none in inventory') + ')</div>';
+        }
+        if (maxAddWeapons > 0) {
+            html += '<div>⚔ Add Weapons: <input type="number" id="editEqWeapons" min="0" max="' + maxAddWeapons + '" value="0" style="width:50px;padding:2px 4px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;"> <span style="color:#888;">(own: ' + swordsOwned + ')</span></div>';
+        } else {
+            html += '<div style="color:#888;">⚔ No weapons to add (' + (guards <= curWeapons ? 'all guards equipped' : 'none in inventory') + ')</div>';
+        }
+        if (maxAddArmor > 0) {
+            html += '<div>🛡️ Add Armor: <input type="number" id="editEqArmor" min="0" max="' + maxAddArmor + '" value="0" style="width:50px;padding:2px 4px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;"> <span style="color:#888;">(own: ' + armorOwned + ')</span></div>';
+        } else {
+            html += '<div style="color:#888;">🛡️ No armor to add (' + (guards <= curArmor ? 'all guards equipped' : 'none in inventory') + ')</div>';
+        }
+        html += '</div>';
+
+        // Daily wage info
+        var cWage = caravan.carrierWage || 4;
+        var gWage = caravan.guardWage || 6;
+        var dailyCost = carriers * cWage + guards * gWage;
+        html += '<div style="margin-top:8px;font-size:0.7rem;color:#aaa;">💵 Daily wage: ' + dailyCost + 'g/day (Carrier: ' + cWage + 'g, Guard: ' + gWage + 'g)</div>';
+        if (caravan.daysUnpaid > 0) {
+            html += '<div style="font-size:0.7rem;color:#e74c3c;">⚠️ ' + caravan.daysUnpaid + ' days unpaid!</div>';
+        }
+        html += '</div>';
+
+        var footer = '<button class="btn-medieval" onclick="(function(){' +
+            'var h=parseInt((document.getElementById(\'editEqHorses\')||{}).value)||0;' +
+            'var w=parseInt((document.getElementById(\'editEqWeapons\')||{}).value)||0;' +
+            'var a=parseInt((document.getElementById(\'editEqArmor\')||{}).value)||0;' +
+            'if(h===0&&w===0&&a===0){UI.toast(\'No equipment changes.\',\'warning\');return;}' +
+            'var r=Player.editCaravanEquipment(\'' + caravanId + '\',{addHorses:h,addWeapons:w,addArmor:a});' +
+            'UI.toast(r.message,r.success?\'success\':\'warning\');' +
+            'if(r.success)UI.openCaravanManagement();' +
+            '})()" style="margin-right:8px;">✅ Apply</button>';
+        footer += '<button class="btn-medieval" onclick="UI.openCaravanManagement()">Cancel</button>';
+
+        openModal('⚙️ Edit Caravan Equipment', html, footer);
     }
 
     // ── CHARACTER DIALOG ──
@@ -6234,8 +6758,31 @@ window.UI = (function () {
             ? CONFIG.STORAGE_CONTAINERS[Player.storageContainer] : null;
         const charContainerLabel = charContainer ? (charContainer.icon + ' ' + charContainer.name) : '🚶 None (on person)';
         html += `<div class="detail-row"><span class="label">Container</span><span class="value">${charContainerLabel}</span></div>`;
+        // Dismount current container button
+        if (charContainer) {
+            html += `<div style="margin-top:3px;"><button class="btn-medieval" onclick="UI.dismountContainerUI()" style="font-size:0.7rem;padding:2px 8px;">⬇️ Dismount ${charContainer.name} to Inventory</button></div>`;
+        }
         html += `<div class="detail-row"><span class="label">Carrying</span><span class="value">${Math.round(charCarriedWeight)} / ${charCarryCap} weight</span></div>`;
-        // Available upgrades
+
+        // Mount from inventory — show containers the player has in inventory
+        let mountHtml = '';
+        var containerTypes = ['cart', 'small_wagon', 'wagon', 'large_wagon', 'backpack'];
+        for (var mci = 0; mci < containerTypes.length; mci++) {
+            var mcId = containerTypes[mci];
+            var mcCfg = CONFIG.STORAGE_CONTAINERS[mcId];
+            if (!mcCfg) continue;
+            var invCount = (Player.inventory && Player.inventory[mcId]) || 0;
+            if (invCount <= 0) continue;
+            if (charContainer && mcCfg.capacityMult <= charContainer.capacityMult) continue;
+            var horsesOk = (Player.horses ? Player.horses.length : 0) >= (mcCfg.horsesRequired || 0);
+            var horseNote = !horsesOk ? ' (need ' + mcCfg.horsesRequired + ' 🐴)' : '';
+            mountHtml += `<button class="btn-medieval" onclick="UI.mountContainerUI('${mcId}')" style="font-size:0.7rem;padding:3px 10px;margin:2px;${!horsesOk ? 'opacity:0.5;' : ''}" ${!horsesOk ? 'disabled' : ''}>${mcCfg.icon} Mount ${mcCfg.name} (${invCount} owned) — ${mcCfg.capacityMult * (CONFIG.PLAYER_BASE_CARRY || 20)} cap${horseNote}</button>`;
+        }
+        if (mountHtml) {
+            html += `<div style="margin-top:4px;"><div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:3px;">📦 Mount from inventory:</div><div style="display:flex;flex-wrap:wrap;gap:4px;">${mountHtml}</div></div>`;
+        }
+
+        // Available upgrades (craft from materials)
         let upgradeHtml = '';
         for (const [cId, cCfg] of Object.entries(CONFIG.STORAGE_CONTAINERS)) {
             if (charContainer && cCfg.capacityMult <= charContainer.capacityMult) continue;
@@ -6619,6 +7166,18 @@ window.UI = (function () {
         } catch (e) {
             toast(e.message || 'Cannot buy container', 'danger');
         }
+    }
+
+    function mountContainerUI(containerId) {
+        var result = Player.mountContainer(containerId);
+        toast(result.message, result.success ? 'success' : 'warning');
+        if (result.success) openCharacterDialog();
+    }
+
+    function dismountContainerUI() {
+        var result = Player.dismountContainer();
+        toast(result.message, result.success ? 'success' : 'warning');
+        if (result.success) openCharacterDialog();
     }
 
     function sellHorse(horseId) {
@@ -8938,6 +9497,28 @@ window.UI = (function () {
             const avgSecurity = kTowns.length > 0 ? kTowns.reduce((s, t) => s + (t.security || 0), 0) / kTowns.length : 0;
             const guardLevel = avgSecurity > 70 ? '🛡️🛡️🛡️' : avgSecurity > 40 ? '🛡️🛡️' : avgSecurity > 15 ? '🛡️' : '⚠️';
 
+            // War and alliance status
+            var warStatusHtml = '';
+            if (k.atWar && Array.isArray(k.atWar) && k.atWar.length > 0) {
+                warStatusHtml = '<div class="kc-row" style="color:var(--danger);font-weight:bold;">⚔️ At War with: ' + warList + '</div>';
+            } else {
+                warStatusHtml = '<div class="kc-row" style="color:#55a868;">☮️ At Peace</div>';
+            }
+
+            var allianceHtml = '';
+            var allies = k.alliances || [];
+            if (allies.length > 0) {
+                var allyNames = allies.map(function(aId) {
+                    var ak = kingdoms.find(function(kk) { return kk.id === aId; });
+                    var aType = (k.allianceMeta && k.allianceMeta[aId]) ? k.allianceMeta[aId].type : '';
+                    var typeLabel = aType === 'offensive' ? '⚔' : aType === 'defensive' ? '🛡' : '';
+                    return (ak ? ak.name : aId) + (typeLabel ? ' ' + typeLabel : '');
+                }).join(', ');
+                allianceHtml = '<div class="kc-row" style="color:#5dade2;">🤝 Allies: ' + allyNames + '</div>';
+            } else {
+                allianceHtml = '<div class="kc-row" style="color:#888;">🤝 No Alliances</div>';
+            }
+
             cardsHtml += `<div class="kingdom-card ${isHome ? 'kingdom-home' : ''}" style="border-left: 4px solid ${k.color};">
                 <div class="kc-header" style="color:${k.color};">${k.name}</div>
                 <div class="kc-row">👑 King: ${kingName}</div>
@@ -8947,11 +9528,12 @@ window.UI = (function () {
                 <div class="kc-row">${wealthLabel}</div>
                 <div class="kc-row" style="font-size:0.85rem;font-weight:bold;color:var(--gold);">📜 Tax: ${Math.round((k.taxRate || 0.1) * 100)}%</div>
                 <div class="kc-row">Guard Strength: ${guardLevel}</div>
+                ${warStatusHtml}
+                ${allianceHtml}
                 ${goodsTaxHtml}
                 ${restrictedHtml}
                 ${lawsHtml ? `<div class="kc-laws">${lawsHtml}</div>` : ''}
                 ${playerLicHtml}
-                ${warList ? `<div class="kc-row" style="color:var(--danger);">💀 At War: ${warList}</div>` : ''}
                 ${isHome ? '<div class="kc-home-badge">★ YOUR HOME</div>' : ''}
                 <div class="kc-row">Rep: ${Math.floor(rep)} | Rank: ${rank.icon} ${rank.name}</div>
                 <div class="kc-buttons" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">
@@ -17046,6 +17628,8 @@ window.UI = (function () {
         _addCaravanOrder,
         _removeCaravanOrder,
         _getCaravanOrders,
+        _updateCaravanPreview,
+        openEditCaravanEquipment,
         openCharacterDialog,
         openFinancialReport,
         openRenamePlayer,
@@ -17090,6 +17674,7 @@ window.UI = (function () {
         hirePerson,
         fireWorker,
         showAssignDialog,
+        showSendWorkerOptions,
         executeAssign,
         filterWorkerList,
         executeSendCaravan,
@@ -17229,6 +17814,8 @@ window.UI = (function () {
         askTavernFashionTrends,
         // Inventory Capacity System
         buyContainer: buyContainerUI,
+        mountContainerUI,
+        dismountContainerUI,
         setBuildingProductUI,
         purchaseNPCBuildingUI,
         openConvertBuildingUI,

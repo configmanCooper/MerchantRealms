@@ -4,6 +4,54 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.48.0] - 2026-04-01
+
+### Added — Caravan Crew, Equipment & Multi-Hop Routes
+
+#### Caravan Crew & Equipment System
+- **Carriers & Guards** — hire crew with dynamic wages based on town economy (carriers: 1-5g/day, guards: 2-10g/day)
+- **Carrier equipment:** assign horses (+speed, +capacity), carts (+80 wt), wagons (+200 wt) from inventory
+- **Guard equipment:** assign swords (-15% risk each) and armor (-10% risk each) from inventory
+- **Equipment constraints:** horses ≤ carriers, carts+wagons ≤ horses, weapons/armor ≤ guards
+- **Live preview panel** showing capacity, trip days, daily wage, yearly theft/kill risk, risk factors
+- **Equipment edit** — add horses/weapons/armor to active caravans mid-journey
+- **Crew theft & desertion** — unpaid crew steals 1-5% goods/day; after 7 days unpaid, crew deserts
+- **Carrier risk scaling** — each extra carrier adds ~8% theft/kill risk (bigger target)
+- **🏳️ Finish & Disband** button — caravan completes last round trip, drops all goods, disbands
+
+#### Multi-Hop Caravan Routes (Skill-Gated)
+- **Extended Routes** skill (2 SP, requires Road Knowledge) — caravans reach towns up to 3 hops away
+- **Trade Network** skill (3 SP, requires Extended Routes) — reach 5 hops, trade at waypoint towns en route
+- **BFS destination discovery** — UI shows all reachable towns with hop count indicators
+- **Waypoint orders** — with Trade Network, add buy/sell/store/pickup orders at intermediate towns along the route
+- **Dynamic order location dropdown** updates with waypoint towns when destination changes
+
+#### Carts & Wagons as Tradeable Goods
+- **New resource types:** Cart, Small Wagon, Wagon, Large Wagon — buyable/sellable at markets
+- **Wheelwright building** — produces carts, small wagons, wagons, large wagons from planks/iron/rope/leather
+- **Mount/dismount containers** — equip carts/wagons from inventory (like mounting horses)
+- **Dismount to inventory** — unequip current container back to inventory for trading or caravan use
+- **Caravan carts/wagons from inventory** — no longer purchased with gold, consumed from player inventory
+- **World gen seeding:** capitals always have wheelwright + carts/wagons in market; ~1/3 of cities have carts/wagons; ~1/4 of towns have carts; 3-4 wheelwright buildings placed in cities
+
+#### Guild-Based Worker Access
+- **Skill tier gating** — no guild: unskilled workers only; guild member: +skilled workers; guildmaster rank 3+: +expert/master
+- **Guild badges** on worker cards — blue for guild member, gold for guildmaster, grey locked for inaccessible tiers
+- **Worker occupation → guild mapping** for accurate skill tier unlocking
+
+#### Worker Travel & Remote Assignment
+- **Send workers to remote buildings** — walk (free, slow, -5 satisfaction), horse (from inventory, fast), transport (paid)
+- **Worker traveling status** — visible in hire dialog, person detail, employee tab
+- **Auto-assignment** on arrival — worker joins first available building in destination town
+- **Take horse back** from worker when in same town
+- **Town check on assign** — workers must be in the building's town (with helpful "send there" suggestion)
+
+### Changed
+- **Street trading pricing** — NPC offers now based on market price (was base price); ~75% above market, ~25% below
+- **Below-market relationship bonus** — selling below market: +5 rep; +10 for banned goods; +15 for banned war goods
+- **Kingdom UI** — each kingdom card now always shows ☮️ At Peace / ⚔️ At War with names, and 🤝 Allies with defensive/offensive type
+- **War status bug fix** — `kingdom.atWar` is a Set in memory (not array/boolean); fixed in caravan preview, tick, and kingdom UI
+
 ## [0.47.0] - 2026-04-01
 
 ### Added — Caravan Order System & Management

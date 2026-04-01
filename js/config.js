@@ -331,15 +331,38 @@ const CONFIG = {
     // Caravans
     CARAVAN_BASE_SPEED: 120,
     CARAVAN_ROAD_MULTIPLIER: [0, 1.0, 1.5, 2.0],
-    BANDIT_ATTACK_CHANCE: 0.03,
-    GUARD_EFFECTIVENESS: 0.2,
-    CARAVAN_RECURRING_MAINTENANCE_PER_TRIP: 15, // gold per recurring trip (guard re-hire, feed, repairs)
-    CARAVAN_FORTIFIED_WAGON_COST: 150,          // one-time cost for +30% defense
-    CARAVAN_DECOY_COST: 50,                     // per-trip cost, -40% attack chance
-    CARAVAN_ARMED_ESCORT_COST: 80,              // per-trip cost, +50% guard effectiveness
-    CARAVAN_BLOCKED_RESCUE_COST: 100,           // gold to rescue a blocked caravan
-    CARAVAN_MAX_BUY_BUDGET_PER_GOOD: 500,       // default max gold for auto-buy per good
-    BACKGROUND_TRADE_RATE: 0.005,               // 0.5% price convergence per tick between connected towns
+    BANDIT_ATTACK_CHANCE: 0.03,                 // legacy — kept for backward compat
+    GUARD_EFFECTIVENESS: 0.2,                   // legacy
+    CARAVAN_RECURRING_MAINTENANCE_PER_TRIP: 15,
+    CARAVAN_FORTIFIED_WAGON_COST: 150,
+    CARAVAN_DECOY_COST: 50,
+    CARAVAN_ARMED_ESCORT_COST: 80,
+    CARAVAN_BLOCKED_RESCUE_COST: 100,
+    CARAVAN_MAX_BUY_BUDGET_PER_GOOD: 500,
+    BACKGROUND_TRADE_RATE: 0.005,
+
+    // Caravan crew & equipment
+    CARAVAN_CARRIER_BASE_CAPACITY: 30,          // weight capacity per carrier
+    CARAVAN_CARRIER_HIRE_COST: 20,              // one-time hire cost per carrier
+    CARAVAN_CARRIER_WAGE: 4,                    // gold per day per carrier
+    CARAVAN_GUARD_HIRE_COST: 30,                // one-time hire cost per guard
+    CARAVAN_GUARD_WAGE: 6,                      // gold per day per guard
+    CARAVAN_HORSE_SPEED_BONUS: 0.10,            // 10% speed per horse on caravan
+    CARAVAN_HORSE_EXTRA_CAPACITY: 30,           // extra weight per horse
+    CARAVAN_CART_CAPACITY: 80,                  // weight per cart
+    CARAVAN_CART_COST: 30,                      // gold to buy a cart for the caravan
+    CARAVAN_WAGON_CAPACITY: 200,                // weight per wagon
+    CARAVAN_WAGON_COST: 120,                    // gold to buy a wagon for the caravan
+    // Daily theft/kill chances (calibrated: worst=80%/50% yearly, best=2%/0.5% yearly)
+    CARAVAN_BASE_DAILY_THEFT: 0.0012,
+    CARAVAN_BASE_DAILY_KILL: 0.0005,
+    CARAVAN_ROAD_UNSAFE_MULT: 2.0,
+    CARAVAN_WAR_MULT: 1.5,
+    CARAVAN_UNSAFE_CONN_MULT: 1.2,
+    CARAVAN_PER_GUARD_MULT: 0.55,               // multiplicative per guard
+    CARAVAN_PER_WEAPON_MULT: 0.85,              // per equipped weapon on guard
+    CARAVAN_PER_ARMOR_MULT: 0.90,               // per equipped armor on guard
+    CARAVAN_PER_CARRIER_RISK: 0.08,             // each extra carrier adds ~8% risk
 
     // Notoriety
     NOTORIETY_WEAPON_SALE: 5,
@@ -1247,6 +1270,10 @@ const RESOURCE_TYPES = {
     SWORDS:   { id: 'swords',   name: 'Swords',    category: 'military',  basePrice: 55, icon: '⚔️', weight: 3, tier: 'basic' },
     ARMOR:    { id: 'armor',    name: 'Armor',     category: 'military',  basePrice: 90, icon: '🛡️', weight: 5, tier: 'basic' },
     HORSES:   { id: 'horses',   name: 'Horses',    category: 'military',  basePrice: 60, icon: '🐴', weight: 10 },
+    CART:     { id: 'cart',     name: 'Cart',      category: 'finished',  basePrice: 35, icon: '🛒', weight: 8 },
+    SMALL_WAGON: { id: 'small_wagon', name: 'Small Wagon', category: 'finished', basePrice: 80, icon: '🛞', weight: 15 },
+    WAGON:    { id: 'wagon',    name: 'Wagon',     category: 'finished',  basePrice: 130, icon: '🚛', weight: 20 },
+    LARGE_WAGON: { id: 'large_wagon', name: 'Large Wagon', category: 'finished', basePrice: 200, icon: '🚚', weight: 25 },
     EGGS:     { id: 'eggs',     name: 'Eggs',      category: 'food',      basePrice: 2,  icon: '🥚', weight: 0.5 },
     POULTRY:  { id: 'poultry',  name: 'Poultry',   category: 'food',      basePrice: 10, icon: '🍗', weight: 1 },
     FISH:     { id: 'fish',     name: 'Fish',      category: 'food',      basePrice: 5,  icon: '🐟', weight: 1 },
@@ -1412,6 +1439,15 @@ const BUILDING_TYPES = {
     },
     BRICK_KILN:    { id: 'brick_kiln',    name: 'Brick Kiln',    cost: 300,  workers: 2, produces: 'bricks',         consumes: { clay: 3, wood: 1 },        rate: 5, category: 'processing', storage: 60, materials: { stone: 15, wood: 10 } },
     SADDLER:       { id: 'saddler',       name: 'Saddler',       cost: 400,  workers: 2, produces: 'saddles',        consumes: { leather: 2, wood: 1 },     rate: 3, category: 'finished',   storage: 40, materials: { wood: 10, planks: 5, stone: 5 } },
+    WHEELWRIGHT:   { id: 'wheelwright',   name: 'Wheelwright',   cost: 500,  workers: 3, produces: 'cart',           consumes: { planks: 3, iron: 1 },      rate: 2, category: 'finished',   storage: 30, materials: { wood: 15, planks: 8, iron: 5, stone: 5 },
+        canProduce: ['cart', 'small_wagon', 'wagon', 'large_wagon'],
+        availableProducts: {
+            cart:         { produces: 'cart',         consumes: { planks: 3, iron: 1 },                     rate: 2 },
+            small_wagon:  { produces: 'small_wagon',  consumes: { planks: 5, iron: 2, rope: 1 },            rate: 1 },
+            wagon:        { produces: 'wagon',        consumes: { planks: 8, iron: 3, rope: 2, leather: 2 }, rate: 1 },
+            large_wagon:  { produces: 'large_wagon',  consumes: { planks: 12, iron: 5, rope: 3, leather: 3 }, rate: 1 },
+        },
+    },
     ROPE_MAKER:    { id: 'rope_maker',    name: 'Rope Maker',    cost: 200,  workers: 1, produces: 'rope',           consumes: { hemp: 3 },                 rate: 5, category: 'processing', storage: 50, materials: { wood: 8 } },
     HEMP_FARM:     { id: 'hemp_farm',     name: 'Hemp Farm',     cost: 180,  workers: 2, produces: 'hemp',           consumes: {},                          rate: 7, category: 'farm',       storage: 80, materials: { wood: 8, stone: 3 } },
     HERB_GARDEN:   { id: 'herb_garden',   name: 'Herb Garden',   cost: 150,  workers: 1, produces: 'herbs',          consumes: {},                          rate: 5, category: 'farm',       storage: 50, materials: { wood: 6, clay: 2 }, icon: '🌿', description: 'Cultivates medicinal herbs. Output affected by soil fertility and season.' },
@@ -1864,6 +1900,8 @@ const SKILLS = {
     veteran_guards:      { name: 'Veteran Guards',      branch: 'transport',  cost: 3, requires: ['cheap_security'],              desc: 'Security is 30% more effective in combat.',                                 icon: '⚔️' },
     efficient_provisioning: { name: 'Efficient Provisioning', branch: 'transport', cost: 2, requires: [],                         desc: 'Food consumption for travel reduced 25%.',                                 icon: '🍞' },
     trade_route_mastery: { name: 'Trade Route Mastery', branch: 'transport',  cost: 2, requires: ['caravan_master','fleet_admiral'], desc: 'Automated caravans earn 10% more profit.',                              icon: '🏆' },
+    extended_routes:     { name: 'Extended Routes',     branch: 'transport',  cost: 2, requires: ['road_knowledge'],              desc: 'Caravans can reach towns up to 3 hops away.',                              icon: '🗺️' },
+    trade_network:       { name: 'Trade Network',       branch: 'transport',  cost: 3, requires: ['extended_routes'],             desc: 'Caravans reach 5 hops away and can trade at waypoint towns en route.',      icon: '🌐' },
     pack_mule:           { name: 'Pack Mule',           branch: 'transport',  cost: 1, requires: [],                              desc: '+20 carrying capacity.',                                                   icon: '🎒' },
     beast_of_burden:     { name: 'Beast of Burden',     branch: 'transport',  cost: 2, requires: ['pack_mule'],                   desc: '+20 additional carrying capacity.',                                         icon: '🐂' },
     iron_back:           { name: 'Iron Back',           branch: 'transport',  cost: 3, requires: ['beast_of_burden'],             desc: '+30 additional carrying capacity.',                                         icon: '💪' },
@@ -2429,8 +2467,8 @@ CONFIG.MARKET_INTEL_UPDATE_INTERVAL = 30;
 CONFIG.INFO_BROKER_COST = 10;
 CONFIG.LOCAL_WORK_COOLDOWN_TICKS = 2;
 CONFIG.STREET_TRADE_REFRESH_DAYS = 5;
-CONFIG.STREET_TRADE_PREMIUM_MIN = 1.2;
-CONFIG.STREET_TRADE_PREMIUM_MAX = 1.5;
+CONFIG.STREET_TRADE_PREMIUM_MIN = 0.80;
+CONFIG.STREET_TRADE_PREMIUM_MAX = 1.60;
 CONFIG.STREET_TRADE_MAX_QTY = 5;
 CONFIG.ODD_JOB_XP = 2;
 
