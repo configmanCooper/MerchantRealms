@@ -4,6 +4,36 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.51.0] - 2026-04-01
+
+### Added
+- House addons system: Workshop, Storage Expansion, Stables, Garden, Guest Quarters
+- Dynasty Founder skill reworked: repeatable (1 SP each), creates SP bank for heirs
+- Licenses button in kingdoms panel for direct license purchasing
+- Tutorial interaction flags for minimap, small talk, eat/drink, rest
+- Glow effect on hunger/thirst bars during tutorial eat/drink step
+- Dynasty SP bank display in skills panel header
+
+### Changed
+- Complete tutorial rewrite: 16 interactive chapters (8 basic, 8 advanced)
+- Skills chapter moved from advanced to basics
+- Street trading now prioritizes legal scarce goods over banned/restricted
+- Schemes button always visible (removed notoriety requirement)
+- Petition button glows green when all requirements met
+- All tutorial steps reference "bottom panel" for button locations
+
+### Fixed
+- Health bar (and hunger/thirst/energy bars) duplicating on UI re-init
+- Tutorial save detection now uses timestamps (works with slot overwrites)
+- Town detail action button text color (was gray, now #e8dcc8)
+- XP bar duplication guard on re-init
+
+### Removed
+- War profiteering tutorial panel
+- Fleet management tutorial panel
+- Trade or die tutorial panel
+- Economy death spiral tutorial panel
+
 ## [0.50.0] - 2026-04-01
 
 ### Added — MP3 Music, UI Improvements
