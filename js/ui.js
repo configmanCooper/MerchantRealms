@@ -1520,11 +1520,10 @@ window.UI = (function () {
             html += `</div>`;
         }
 
-        // Kingdom Trade Requests (street-trade style)
+        // Kingdom Trade Requests (street-trade style — per item, any qty)
         if (typeof Player !== 'undefined' && Player.getKingdomTradeRequests) {
             var kTradeRequests = [];
             try { kTradeRequests = Player.getKingdomTradeRequests() || []; } catch(e) {}
-            // Only show if player is in a town belonging to this kingdom
             var _playerTown = null;
             try { _playerTown = Engine.findTown(Player.townId); } catch(e) {}
             var _inThisKingdom = _playerTown && _playerTown.kingdomId === kingdom.id && !Player.traveling;
@@ -1535,26 +1534,37 @@ window.UI = (function () {
             } else if (kTradeRequests.length === 0) {
                 html += '<div style="font-size:0.78rem;color:var(--text-dim);">The kingdom has no trade requests right now. Check back in a week.</div>';
             } else {
-                html += '<div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:6px;">The crown seeks goods. Sell for gold (+0.1 rep) or donate for favor (+1 rep).</div>';
+                html += '<div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:6px;">The crown wants these goods. Sell for gold (+0.001 rep/item) or donate (+0.01 rep/item).</div>';
                 for (var _kti = 0; _kti < kTradeRequests.length; _kti++) {
                     var _kr = kTradeRequests[_kti];
                     var _krHeld = (Player.inventory[_kr.resourceId] || 0);
-                    var _krCanFulfill = _krHeld >= _kr.qty;
-                    var _krTotal = _kr.pricePerUnit * _kr.qty;
+                    var _krHasAny = _krHeld > 0;
                     var _krPremPct = _kr.marketPrice > 0 ? Math.round(((_kr.pricePerUnit - _kr.marketPrice) / _kr.marketPrice) * 100) : 0;
                     var _krPremColor = _krPremPct >= 0 ? '#55a868' : '#c44e52';
-                    var _krUrgencyColor = _kr.urgency > 60 ? '#e74c3c' : _kr.urgency > 30 ? '#ff9f43' : '#6bff6b';
-                    html += '<div style="background:rgba(255,215,0,0.06);padding:8px;border-radius:5px;margin-bottom:6px;border-left:3px solid ' + _krUrgencyColor + ';">';
-                    html += '<div style="font-size:0.8rem;">';
-                    html += '<strong>' + (_kr.resourceIcon || '') + ' ' + _kr.resourceName + '</strong> × ' + _kr.qty;
+                    html += '<div style="background:rgba(255,215,0,0.06);padding:8px;border-radius:5px;margin-bottom:6px;border-left:3px solid rgba(255,215,0,0.3);">';
+                    html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+                    html += '<span style="font-size:0.8rem;"><strong>' + (_kr.resourceIcon || '') + ' ' + _kr.resourceName + '</strong>';
                     html += ' — <span style="color:#ffd700;">' + _kr.pricePerUnit + 'g each</span>';
-                    html += ' <span style="color:' + _krPremColor + ';font-size:0.75rem;font-weight:bold;">(' + (_krPremPct >= 0 ? '+' : '') + _krPremPct + '% vs market)</span>';
-                    html += '</div>';
-                    html += '<div style="font-size:0.72rem;color:var(--text-dim);margin:2px 0;">' + (_kr.desc || '') + '</div>';
-                    html += '<div style="display:flex;gap:5px;align-items:center;margin-top:4px;flex-wrap:wrap;">';
+                    html += ' <span style="color:' + _krPremColor + ';font-size:0.72rem;font-weight:bold;">(' + (_krPremPct >= 0 ? '+' : '') + _krPremPct + '%)</span></span>';
                     html += '<span style="font-size:0.72rem;color:var(--text-dim);">You have: ' + _krHeld + '</span>';
-                    html += '<button class="btn btn-sm" style="font-size:0.7rem;padding:2px 8px;" ' + (_krCanFulfill ? '' : 'disabled') + ' onclick="(function(){var r=Player.sellToKingdomRequest(' + _kti + ');if(r.success){UI.toast(r.message,\'success\');}else{UI.toast(r.message,\'warning\');}UI.showKingdomDetail(Engine.getKingdom(\'' + kingdom.id + '\'));})()">💰 Sell for ' + _krTotal + 'g</button>';
-                    html += '<button class="btn btn-sm" style="font-size:0.7rem;padding:2px 8px;" ' + (_krCanFulfill ? '' : 'disabled') + ' onclick="(function(){var r=Player.donateToKingdomGoods(' + _kti + ');if(r.success){UI.toast(r.message,\'success\');}else{UI.toast(r.message,\'warning\');}UI.showKingdomDetail(Engine.getKingdom(\'' + kingdom.id + '\'));})()">🎁 Donate (+1 rep)</button>';
+                    html += '</div>';
+                    html += '<div style="font-size:0.68rem;color:var(--text-dim);margin:2px 0;">' + (_kr.desc || '') + '</div>';
+                    html += '<div style="display:flex;gap:4px;align-items:center;margin-top:4px;flex-wrap:wrap;">';
+                    // Qty buttons: 1, 5, 10, All
+                    var _qtyOpts = [1, 5, 10];
+                    for (var _qi = 0; _qi < _qtyOpts.length; _qi++) {
+                        var _q = _qtyOpts[_qi];
+                        var _canQ = _krHeld >= _q;
+                        html += '<button class="btn btn-sm" style="font-size:0.65rem;padding:1px 5px;" ' + (_canQ ? '' : 'disabled') + ' onclick="(function(){var r=Player.sellToKingdomRequest(' + _kti + ',' + _q + ');UI.toast(r.message,r.success?\'success\':\'warning\');UI.showKingdomDetail(Engine.getKingdom(\'' + kingdom.id + '\'));})()">💰 Sell ' + _q + '</button>';
+                    }
+                    html += '<button class="btn btn-sm" style="font-size:0.65rem;padding:1px 5px;" ' + (_krHasAny ? '' : 'disabled') + ' onclick="(function(){var r=Player.sellToKingdomRequest(' + _kti + ',' + _krHeld + ');UI.toast(r.message,r.success?\'success\':\'warning\');UI.showKingdomDetail(Engine.getKingdom(\'' + kingdom.id + '\'));})()">💰 Sell All</button>';
+                    html += '<span style="color:rgba(255,255,255,0.15);">|</span>';
+                    for (var _di = 0; _di < _qtyOpts.length; _di++) {
+                        var _dq = _qtyOpts[_di];
+                        var _canDq = _krHeld >= _dq;
+                        html += '<button class="btn btn-sm" style="font-size:0.65rem;padding:1px 5px;" ' + (_canDq ? '' : 'disabled') + ' onclick="(function(){var r=Player.donateToKingdomGoods(' + _kti + ',' + _dq + ');UI.toast(r.message,r.success?\'success\':\'warning\');UI.showKingdomDetail(Engine.getKingdom(\'' + kingdom.id + '\'));})()">🎁 Donate ' + _dq + '</button>';
+                    }
+                    html += '<button class="btn btn-sm" style="font-size:0.65rem;padding:1px 5px;" ' + (_krHasAny ? '' : 'disabled') + ' onclick="(function(){var r=Player.donateToKingdomGoods(' + _kti + ',' + _krHeld + ');UI.toast(r.message,r.success?\'success\':\'warning\');UI.showKingdomDetail(Engine.getKingdom(\'' + kingdom.id + '\'));})()">🎁 Donate All</button>';
                     html += '</div></div>';
                 }
             }
@@ -2269,7 +2279,7 @@ window.UI = (function () {
                 var freeStorage = (Player.getTownStorageCapacity() || 0) - (Player.getTownStorageUsed() || 0);
                 if (freeStorage > 0) effectiveCap += freeStorage;
             }
-            const remainingCapacity = Math.max(0, effectiveCap - carriedWeight);
+            const remainingCapacity = Math.max(0, carryCapacity - carriedWeight);
             const resWeight = res.weight || 1;
             const maxByCapacity = Math.floor(remainingCapacity / resWeight);
             const maxByGold = finalUnitPrice > 0 ? Math.floor(Player.gold / finalUnitPrice) : 0;
@@ -3416,7 +3426,12 @@ window.UI = (function () {
 
         // WORKERS section
         html += `<div style="padding:8px;border:1px solid var(--border);border-radius:4px;margin-bottom:8px;">
-            <div style="font-weight:bold;font-size:0.8rem;margin-bottom:6px;">👷 WORKERS (${info.workerCount}/${info.workerMax} staffed)</div>`;
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                <span style="font-weight:bold;font-size:0.8rem;">👷 WORKERS (${info.workerCount}/${info.workerMax} staffed)</span>
+                <label style="font-size:0.7rem;color:var(--text-dim);cursor:pointer;">
+                    <input type="checkbox" ${Player.autoRaiseWages ? 'checked' : ''} onchange="Player.autoRaiseWages=this.checked;"> Auto-raise wages
+                </label>
+            </div>`;
 
         if (bld.workers.length > 0) {
             for (const wId of bld.workers) {
@@ -3429,9 +3444,26 @@ window.UI = (function () {
                 else if (skill >= 40) skillLabel = 'Skilled';
                 else if (skill >= 20) skillLabel = 'Trained';
 
-                html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:0.78rem;">
-                    <span>• ${pName} — Skill: ${skill} (${skillLabel})</span>
-                    <button class="btn-trade sell" style="font-size:0.7rem;padding:2px 6px;" onclick="UI.removeWorkerUI('${wId}','${bld.id}')">Remove</button>
+                var _wSat = typeof Player.getWorkerSatisfaction === 'function' ? Player.getWorkerSatisfaction(wId) : 50;
+                var _wSatRound = Math.round(_wSat);
+                var _wSatColor = _wSat >= 70 ? '#55a868' : _wSat >= 40 ? '#ccb974' : '#c44e52';
+                var _wSatIcon = _wSat >= 70 ? '😊' : _wSat >= 40 ? '😐' : _wSat >= 20 ? '😠' : '🤬';
+
+                html += `<div style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+                    <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.78rem;">
+                        <span>• ${pName} — Skill: ${skill} (${skillLabel})</span>
+                        <span style="font-size:0.72rem;">${_wSatIcon} <span style="color:${_wSatColor};font-weight:bold;">${_wSatRound}%</span></span>
+                    </div>
+                    <div style="height:3px;background:#333;border-radius:2px;margin:2px 0;overflow:hidden;">
+                        <div style="width:${_wSatRound}%;height:100%;background:${_wSatColor};"></div>
+                    </div>
+                    <div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:3px;">
+                        <button class="btn btn-sm" style="font-size:0.65rem;padding:1px 5px;" onclick="(function(){var r=Player.praiseWorker('${wId}');UI.toast(r.message,r.success?'success':'warning');UI.showBuildingDetail('${bld.id}');})()">👏 Praise</button>
+                        <button class="btn btn-sm" style="font-size:0.65rem;padding:1px 5px;" onclick="(function(){var r=Player.giveWorkerDayOff('${wId}');UI.toast(r.message,r.success?'success':'warning');UI.showBuildingDetail('${bld.id}');})()">🏖️ Day Off</button>
+                        <button class="btn btn-sm" style="font-size:0.65rem;padding:1px 5px;" onclick="(function(){var r=Player.giveWorkerBonus('${wId}');UI.toast(r.message,r.success?'success':'warning');UI.showBuildingDetail('${bld.id}');})()">💰 Bonus</button>
+                        <button class="btn btn-sm" style="font-size:0.65rem;padding:1px 5px;" onclick="(function(){var r=Player.giveWorkerRaise('${wId}');UI.toast(r.message,r.success?'success':'warning');UI.showBuildingDetail('${bld.id}');})()">⬆️ Raise</button>
+                        <button class="btn-trade sell" style="font-size:0.65rem;padding:1px 5px;" onclick="UI.removeWorkerUI('${wId}','${bld.id}')">✕ Remove</button>
+                    </div>
                 </div>`;
             }
         } else {
@@ -8512,7 +8544,9 @@ window.UI = (function () {
                     <button class="kc-btn" data-action="laws" data-kid="${k.id}" title="View Laws">📜 Laws</button>
                     <button class="kc-btn" data-action="trade" data-kid="${k.id}" title="Trade Routes">🏛️ Trade</button>
                     ${isHome ? '<button class="kc-btn" data-action="orders" data-kid="' + k.id + '" title="Kingdom Orders">📋 Orders</button>' : ''}
+                    <button class="kc-btn" data-action="commissions" data-kid="${k.id}" title="Royal Commissions">📦 Commissions</button>
                     ${isHome ? '<button class="kc-btn" data-action="petition" data-kid="' + k.id + '" title="Submit Petition">📝 Petition</button>' : ''}
+                    <button class="kc-btn" data-action="donate" data-kid="${k.id}" title="Donate Gold">💰 Donate</button>
                 </div>
             </div>`;
         }
@@ -8598,7 +8632,9 @@ window.UI = (function () {
                 if (action === 'laws') openKingdomLawsPanel(kid);
                 else if (action === 'trade') showKingdomTradePanel(kid);
                 else if (action === 'orders') showKingdomOrdersPanel(kid);
+                else if (action === 'commissions') openRoyalCommissionsPanel(kid);
                 else if (action === 'petition') showPetitionsPanel();
+                else if (action === 'donate') openKingdomDonateDialog(kid);
             });
         }
     }
@@ -15564,6 +15600,35 @@ window.UI = (function () {
         }
     }
 
+    function openKingdomDonateDialog(kingdomId) {
+        var kingdom = null;
+        try { kingdom = Engine.findKingdom(kingdomId); } catch(e) {}
+        if (!kingdom) { toast('Kingdom not found.', 'warning'); return; }
+        var playerGold = (typeof Player !== 'undefined') ? (Player.gold || 0) : 0;
+        var playerRep = (typeof Player !== 'undefined' && Player.reputation) ? Math.floor(Player.reputation[kingdomId] || 50) : 50;
+
+        var html = '<div style="max-height:400px;overflow-y:auto;">';
+        html += '<div style="font-size:0.85rem;margin-bottom:8px;">Your gold: <strong style="color:#ffd700;">' + playerGold + 'g</strong> &nbsp;|&nbsp; Rep with ' + kingdom.name + ': <strong>' + playerRep + '/100</strong></div>';
+        html += '<div style="font-size:0.78rem;color:var(--text-dim);margin-bottom:10px;">Donate gold to the kingdom treasury. Each 500g gives +1 reputation.</div>';
+        html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">';
+
+        var amounts = [
+            { gold: 500, rep: 1 },
+            { gold: 1000, rep: 2 },
+            { gold: 2500, rep: 5 },
+            { gold: 5000, rep: 10 },
+        ];
+        for (var i = 0; i < amounts.length; i++) {
+            var a = amounts[i];
+            var canAfford = playerGold >= a.gold;
+            html += '<button class="btn-medieval" style="font-size:0.8rem;padding:6px 12px;" ' + (canAfford ? '' : 'disabled') + ' onclick="(function(){var r=Player.donateToKingdom(\'' + kingdomId + '\',' + a.rep + ');if(!r.success){UI.toast(r.message,\'warning\');}else{UI.openKingdomDonateDialog(\'' + kingdomId + '\');}})()">💰 ' + a.gold + 'g (+' + a.rep + ' rep)</button>';
+        }
+        html += '</div></div>';
+
+        openModal('💰 Donate to ' + kingdom.name, html,
+            '<button class="btn-medieval" onclick="UI.closeModal()">Close</button>');
+    }
+
     // ============================================================
     // §CD — CONSCRIPTION DIALOG
     // ============================================================
@@ -16537,6 +16602,7 @@ window.UI = (function () {
         openLawComparisonPanel,
         openRoyalCommissionsPanel,
         fulfillCommissionUI,
+        openKingdomDonateDialog,
         openConscriptionDialog,
         respondConscription,
         openJailDialog,

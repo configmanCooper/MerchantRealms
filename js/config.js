@@ -431,8 +431,8 @@ const CONFIG = {
           description: 'An established merchant. Can own processing buildings, buy luxury goods, and run supply chains.' },
         { id: 'guildmaster', name: 'Guildmaster', index: 3, icon: '🔨',
           maxWorkers: 35, maxBuildings: 25, maxLand: 15,
-          goldReq: 20000, repReq: 75, extraReq: '3 production buildings, 8+ workers, buildings in 2+ towns',
-          fee: 5000, minProductionBuildings: 3, minWorkers: 8, minTownsWithBuildings: 2,
+          goldReq: 20000, repReq: 75, extraReq: '3 production buildings, 8+ workers, buildings in 2+ towns, 180 days trading, 2+ caravans sent',
+          fee: 5000, minProductionBuildings: 3, minWorkers: 8, minTownsWithBuildings: 2, tradingDays: 180, minCaravans: 2,
           taxDiscount: 0.15,
           productionBonus: 0.10,
           abilities: ['build_toll_roads', 'trade_weapons', 'hire_petitioners', 'production_bonus'],
@@ -1197,6 +1197,19 @@ CONFIG.WORKER_WAGE_DEMAND_MIN_INTERVAL = 30;
 CONFIG.WORKER_WAGE_DEMAND_MAX_INTERVAL = 90;
 CONFIG.WORKER_WAGE_DEMAND_MIN_SKILL = 30;
 
+// Worker Satisfaction
+CONFIG.WORKER_SATISFACTION_BASE = 60;          // Starting satisfaction when hired
+CONFIG.WORKER_SATISFACTION_DAILY_DECAY = 0.15; // Natural daily decay
+CONFIG.WORKER_SATISFACTION_PAID_BOOST = 3;     // Boost when paid on time
+CONFIG.WORKER_SATISFACTION_UNPAID_PENALTY = 8; // Penalty when unpaid
+CONFIG.WORKER_SATISFACTION_RAISE_BOOST = 10;   // Boost from a raise
+CONFIG.WORKER_SATISFACTION_BONUS_BOOST = 15;   // Boost from a bonus
+CONFIG.WORKER_SATISFACTION_DAYOFF_BOOST = 8;   // Boost from a paid day off
+CONFIG.WORKER_SATISFACTION_PRAISE_BOOST = 3;   // Boost from praise (free)
+CONFIG.WORKER_SATISFACTION_QUIT_THRESHOLD = 15; // Below this, chance to quit daily
+CONFIG.WORKER_SATISFACTION_QUIT_CHANCE = 0.03; // 3% daily quit chance when below threshold
+CONFIG.WORKER_SATISFACTION_POACH_BONUS = 0.02; // Extra poach chance per point below 50
+
 // ============================================================
 // Workshop Upgrades
 // ============================================================
@@ -1851,6 +1864,9 @@ const SKILLS = {
     veteran_guards:      { name: 'Veteran Guards',      branch: 'transport',  cost: 3, requires: ['cheap_security'],              desc: 'Security is 30% more effective in combat.',                                 icon: '⚔️' },
     efficient_provisioning: { name: 'Efficient Provisioning', branch: 'transport', cost: 2, requires: [],                         desc: 'Food consumption for travel reduced 25%.',                                 icon: '🍞' },
     trade_route_mastery: { name: 'Trade Route Mastery', branch: 'transport',  cost: 2, requires: ['caravan_master','fleet_admiral'], desc: 'Automated caravans earn 10% more profit.',                              icon: '🏆' },
+    pack_mule:           { name: 'Pack Mule',           branch: 'transport',  cost: 1, requires: [],                              desc: '+20 carrying capacity.',                                                   icon: '🎒' },
+    beast_of_burden:     { name: 'Beast of Burden',     branch: 'transport',  cost: 2, requires: ['pack_mule'],                   desc: '+20 additional carrying capacity.',                                         icon: '🐂' },
+    iron_back:           { name: 'Iron Back',           branch: 'transport',  cost: 3, requires: ['beast_of_burden'],             desc: '+30 additional carrying capacity.',                                         icon: '💪' },
 
     // ── Exploration/Travel Branch (3) ──
     wilderness_survival: { name: 'Wilderness Survival', branch: 'transport', cost: 2, requires: [],                               desc: 'Better rest while traveling (+50%). Foraging gives 50% more food.',         icon: '🏕️' },

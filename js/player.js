@@ -14,6 +14,8 @@
         inventory: {},          // resourceId → qty
         buildings: [],          // { id, type, townId, workers: [personIds], active, level }
         employees: [],          // personIds hired by the player
+        _workerSatisfaction: {}, // personId → 0-100 satisfaction level
+        _autoRaiseWages: false, // auto-raise wages for unhappy workers
         caravans: [],           // caravan objects
         ships: [],              // ship objects { id, name, type, capacity, speed, condition }
         reputation: {},         // kingdomId → 0-100
@@ -4454,6 +4456,78 @@
         return Math.max(5, Math.min(100, Math.round(raw)));
     }
 
+    // Worker satisfaction helpers
+    function getWorkerSatisfaction(personId) {
+        if (!player._workerSatisfaction) player._workerSatisfaction = {};
+        if (player._workerSatisfaction[personId] === undefined) {
+            player._workerSatisfaction[personId] = CONFIG.WORKER_SATISFACTION_BASE || 60;
+        }
+        return player._workerSatisfaction[personId];
+    }
+
+    function modifyWorkerSatisfaction(personId, amount) {
+        if (!player._workerSatisfaction) player._workerSatisfaction = {};
+        var current = getWorkerSatisfaction(personId);
+        player._workerSatisfaction[personId] = Math.max(0, Math.min(100, current + amount));
+        return player._workerSatisfaction[personId];
+    }
+
+    function giveWorkerRaise(personId) {
+        if (!player.employees.includes(personId)) return { success: false, message: 'Not your employee.' };
+        var person = Engine.findPerson(personId);
+        if (!person) return { success: false, message: 'Worker not found.' };
+        // Raise costs 1 week of their current wage
+        var wage = _calculateWorkerWage(person);
+        var raiseCost = Math.ceil(wage * 0.5);
+        if (player.gold < raiseCost) return { success: false, message: 'Not enough gold. Raise costs ' + raiseCost + 'g.' };
+        player.gold -= raiseCost;
+        // Permanently increase their base pay expectation slightly
+        person._wageBonus = (person._wageBonus || 0) + Math.ceil(wage * 0.1);
+        var newSat = modifyWorkerSatisfaction(personId, CONFIG.WORKER_SATISFACTION_RAISE_BOOST || 10);
+        Engine.logEvent(person.firstName + ' received a raise! Satisfaction now ' + Math.round(newSat) + '.');
+        return { success: true, message: person.firstName + ' got a raise! (+' + (CONFIG.WORKER_SATISFACTION_RAISE_BOOST || 10) + ' satisfaction, costs ' + raiseCost + 'g)' };
+    }
+
+    function giveWorkerBonus(personId) {
+        if (!player.employees.includes(personId)) return { success: false, message: 'Not your employee.' };
+        var person = Engine.findPerson(personId);
+        if (!person) return { success: false, message: 'Worker not found.' };
+        var wage = _calculateWorkerWage(person);
+        var bonusCost = wage; // 1 week wage as bonus
+        if (player.gold < bonusCost) return { success: false, message: 'Not enough gold. Bonus costs ' + bonusCost + 'g.' };
+        player.gold -= bonusCost;
+        person.gold = (person.gold || 0) + bonusCost;
+        var newSat = modifyWorkerSatisfaction(personId, CONFIG.WORKER_SATISFACTION_BONUS_BOOST || 15);
+        Engine.logEvent(person.firstName + ' received a ' + bonusCost + 'g bonus! Satisfaction now ' + Math.round(newSat) + '.');
+        return { success: true, message: person.firstName + ' got a ' + bonusCost + 'g bonus! (+' + (CONFIG.WORKER_SATISFACTION_BONUS_BOOST || 15) + ' satisfaction)' };
+    }
+
+    function giveWorkerDayOff(personId) {
+        if (!player.employees.includes(personId)) return { success: false, message: 'Not your employee.' };
+        var person = Engine.findPerson(personId);
+        if (!person) return { success: false, message: 'Worker not found.' };
+        var wage = _calculateWorkerWage(person);
+        var dayOffCost = Math.ceil(wage / 7); // 1 day of pay
+        if (player.gold < dayOffCost) return { success: false, message: 'Not enough gold. Paid day off costs ' + dayOffCost + 'g.' };
+        player.gold -= dayOffCost;
+        person._dayOff = Engine.getDay();
+        var newSat = modifyWorkerSatisfaction(personId, CONFIG.WORKER_SATISFACTION_DAYOFF_BOOST || 8);
+        return { success: true, message: person.firstName + ' got a paid day off! (+' + (CONFIG.WORKER_SATISFACTION_DAYOFF_BOOST || 8) + ' satisfaction, costs ' + dayOffCost + 'g)' };
+    }
+
+    function praiseWorker(personId) {
+        if (!player.employees.includes(personId)) return { success: false, message: 'Not your employee.' };
+        var person = Engine.findPerson(personId);
+        if (!person) return { success: false, message: 'Worker not found.' };
+        // Can only praise once per week
+        if (person._lastPraiseDay && Engine.getDay() - person._lastPraiseDay < 7) {
+            return { success: false, message: 'Already praised this week.' };
+        }
+        person._lastPraiseDay = Engine.getDay();
+        var newSat = modifyWorkerSatisfaction(personId, CONFIG.WORKER_SATISFACTION_PRAISE_BOOST || 3);
+        return { success: true, message: person.firstName + ' appreciated the praise! (+' + (CONFIG.WORKER_SATISFACTION_PRAISE_BOOST || 3) + ' satisfaction)' };
+    }
+
     function tickBuildings() {
         const day = Engine.getDay();
         const season = Engine.getSeason();
@@ -5089,6 +5163,10 @@
 
     function getCarryCapacity() {
         var base = CONFIG.PLAYER_BASE_CARRY || 20;
+        // Carry capacity skills
+        if (hasSkill('pack_mule')) base += 20;
+        if (hasSkill('beast_of_burden')) base += 20;
+        if (hasSkill('iron_back')) base += 30;
         // Horse bonus: each horse adds flat carry bonus
         var horseCarry = CONFIG.HORSE_CARRY_BONUS || 40;
         if (hasSkill('horse_mastery')) horseCarry = Math.floor(horseCarry * 1.25);
@@ -10911,6 +10989,8 @@
             inventory: { ...player.inventory },
             buildings: JSON.parse(JSON.stringify(player.buildings)),
             employees: [...player.employees],
+            _workerSatisfaction: { ...player._workerSatisfaction },
+            _autoRaiseWages: player._autoRaiseWages || false,
             caravans: JSON.parse(JSON.stringify(player.caravans)),
             ships: JSON.parse(JSON.stringify(player.ships)),
             horses: JSON.parse(JSON.stringify(player.horses || [])),
@@ -11174,6 +11254,8 @@
         }
         player.buildings = data.buildings || [];
         player.employees = data.employees || [];
+        player._workerSatisfaction = data._workerSatisfaction || {};
+        player._autoRaiseWages = data._autoRaiseWages || false;
         player.caravans = data.caravans || [];
         player.ships = data.ships || [];
         player.horses = data.horses || [];
@@ -12193,6 +12275,51 @@
 
         // Pay employee wages weekly (workers quit if unpaid too long)
         const day = Engine.getDay();
+
+        // Daily satisfaction decay + quit check for all employees
+        var rng = Engine.getRng();
+        var satQuitters = [];
+        for (var _si = 0; _si < player.employees.length; _si++) {
+            var _sEmpId = player.employees[_si];
+            // Natural daily satisfaction decay
+            modifyWorkerSatisfaction(_sEmpId, -(CONFIG.WORKER_SATISFACTION_DAILY_DECAY || 0.15));
+            // Auto-raise: if enabled, and satisfaction below 40, give small raise
+            if (player._autoRaiseWages) {
+                var _sSat = getWorkerSatisfaction(_sEmpId);
+                if (_sSat < 40) {
+                    var _sPerson = Engine.findPerson(_sEmpId);
+                    if (_sPerson) {
+                        var _sRaiseCost = Math.ceil(_calculateWorkerWage(_sPerson) * 0.05);
+                        if (player.gold >= _sRaiseCost) {
+                            player.gold -= _sRaiseCost;
+                            _sPerson._wageBonus = (_sPerson._wageBonus || 0) + Math.ceil(_calculateWorkerWage(_sPerson) * 0.02);
+                            modifyWorkerSatisfaction(_sEmpId, 2);
+                        }
+                    }
+                }
+            }
+            // Quit check: low satisfaction
+            var _curSat = getWorkerSatisfaction(_sEmpId);
+            if (_curSat < (CONFIG.WORKER_SATISFACTION_QUIT_THRESHOLD || 15) && rng) {
+                var _quitChance = CONFIG.WORKER_SATISFACTION_QUIT_CHANCE || 0.03;
+                if (rng.chance(_quitChance)) {
+                    var _qPerson = Engine.findPerson(_sEmpId);
+                    if (_qPerson) {
+                        _qPerson.employerId = null;
+                        satQuitters.push(_sEmpId);
+                        Engine.logEvent((_qPerson.firstName || 'A worker') + ' quit due to low satisfaction (' + Math.round(_curSat) + ')!');
+                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('😤 ' + (_qPerson.firstName || 'Worker') + ' quit! (satisfaction: ' + Math.round(_curSat) + ')', 'danger');
+                    }
+                }
+            }
+        }
+        if (satQuitters.length > 0) {
+            player.employees = player.employees.filter(function(id) { return !satQuitters.includes(id); });
+            for (var _sb = 0; _sb < player.buildings.length; _sb++) {
+                player.buildings[_sb].workers = player.buildings[_sb].workers.filter(function(wId) { return !satQuitters.includes(wId); });
+            }
+        }
+
         if (day % 7 === 0) {
             const quitters = [];
             for (const empId of player.employees) {
@@ -12206,9 +12333,13 @@
                     person.needs.wealth = Math.min(100, person.needs.wealth + 10);
                     person.needs.food = Math.min(100, person.needs.food + 5);
                     person._daysUnpaid = 0;
+                    // Satisfaction boost for being paid
+                    modifyWorkerSatisfaction(empId, CONFIG.WORKER_SATISFACTION_PAID_BOOST || 3);
                 } else {
                     // Track unpaid weeks — worker quits after 4 weeks without pay (6 with loyalty_bonus)
                     person._daysUnpaid = (person._daysUnpaid || 0) + 7;
+                    // Satisfaction penalty for not being paid
+                    modifyWorkerSatisfaction(empId, -(CONFIG.WORKER_SATISFACTION_UNPAID_PENALTY || 8));
                     var quitThreshold = hasSkill('loyalty_bonus') ? 42 : 28;
                     if (person._daysUnpaid >= quitThreshold) {
                         person.employerId = null;
@@ -13197,6 +13328,12 @@
             if (workersInKingdom < (nextRank.minWorkers || 8)) reasons.push(`Need ${nextRank.minWorkers || 8}+ workers in kingdom (have ${workersInKingdom})`);
             var townsWithBuildings = new Set(player.buildings.filter(function(b) { var t = Engine.findTown(b.townId); return t && t.kingdomId === kId; }).map(function(b) { return b.townId; })).size;
             if (townsWithBuildings < (nextRank.minTownsWithBuildings || 2)) reasons.push(`Need buildings in ${nextRank.minTownsWithBuildings || 2}+ towns (have ${townsWithBuildings})`);
+            // Trading days requirement
+            var gmTradeDays = Engine.getDay() - (player.tradingStartDay || Engine.getDay());
+            if (gmTradeDays < (nextRank.tradingDays || 180)) reasons.push(`Need ${nextRank.tradingDays || 180} days of trading (${gmTradeDays} so far)`);
+            // Caravans requirement
+            var caravansSent = (player.stats && player.stats.caravansSent) || 0;
+            if (caravansSent < (nextRank.minCaravans || 2)) reasons.push(`Need ${nextRank.minCaravans || 2}+ caravans sent (have ${caravansSent})`);
         }
 
         if (nextRank.id === 'minor_noble') {
@@ -17701,9 +17838,10 @@
         var proc = kingdom.procurement || {};
         var needs = proc.needs || {};
         var isAtWar = kingdom.atWar && kingdom.atWar.size > 0;
-        var requests = [];
+        var wantedGoods = [];
+        var usedIds = {};
 
-        // 1. Goods the kingdom actually needs (from procurement system)
+        // 1. Goods the kingdom actually needs
         var needKeys = Object.keys(needs);
         for (var ni = 0; ni < needKeys.length; ni++) {
             var resId = needKeys[ni];
@@ -17712,177 +17850,73 @@
             var res = findResource(resId);
             if (!res) continue;
             var basePrice = (town.market && town.market.prices) ? (town.market.prices[resId] || res.basePrice) : res.basePrice;
-            // Kingdom pays a premium based on urgency
-            var urgencyMult = 1.0 + (need.urgency / 100) * 0.5; // 1.0-1.5x
-            var offerPrice = Math.ceil(basePrice * urgencyMult);
-            var qty = Math.min(need.qtyNeeded, rng.randInt(5, 30));
-            requests.push({
-                resourceId: resId, resourceName: res.name, resourceIcon: res.icon || '',
-                qty: qty, pricePerUnit: offerPrice, marketPrice: basePrice,
-                urgency: need.urgency, reason: 'need',
-                desc: need.urgency > 60 ? 'Urgently needed' : 'Requested by the crown',
-            });
+            var urgencyMult = 1.0 + (need.urgency / 100) * 0.5;
+            if (!usedIds[resId]) {
+                wantedGoods.push({
+                    resourceId: resId, resourceName: res.name, resourceIcon: res.icon || '',
+                    pricePerUnit: Math.ceil(basePrice * urgencyMult), marketPrice: basePrice,
+                    desc: need.urgency > 60 ? 'Urgently needed' : 'Requested by the crown',
+                });
+                usedIds[resId] = true;
+            }
         }
 
-        // 2. King personality-driven desires
-        var personalityRequests = [];
-
-        // Warlike/aggressive kings want military goods even when not at war
+        // 2. King personality-driven wants
+        var personalityWants = [];
         if (kp.militarism === 'warlike' || kp.militarism === 'aggressive') {
-            var milGoods = ['swords', 'armor', 'bows', 'arrows', 'shields'];
-            var milPick = rng.pick(milGoods);
-            var milRes = findResource(milPick);
-            if (milRes && !needs[milPick]) {
-                personalityRequests.push({
-                    resourceId: milPick, resourceName: milRes.name, resourceIcon: milRes.icon || '',
-                    qty: rng.randInt(5, 20),
-                    pricePerUnit: Math.ceil((milRes.basePrice || 10) * rng.randFloat(1.1, 1.4)),
-                    marketPrice: (town.market && town.market.prices) ? (town.market.prices[milPick] || milRes.basePrice) : milRes.basePrice,
-                    urgency: 30, reason: 'personality',
-                    desc: 'The king seeks to bolster the armory',
-                });
-            }
+            personalityWants.push({ pool: ['swords', 'armor', 'bows', 'arrows', 'shields'], desc: 'The king seeks to bolster the armory', mult: [1.1, 1.4] });
         }
-
-        // Generous/kind kings want food to distribute to subjects
         if (kp.generosity === 'generous' || kp.temperament === 'kind') {
-            var foodGoods = ['bread', 'meat', 'fish', 'poultry', 'vegetables'];
-            var foodPick = rng.pick(foodGoods);
-            var foodRes = findResource(foodPick);
-            if (foodRes && !needs[foodPick]) {
-                personalityRequests.push({
-                    resourceId: foodPick, resourceName: foodRes.name, resourceIcon: foodRes.icon || '',
-                    qty: rng.randInt(10, 40),
-                    pricePerUnit: Math.ceil((foodRes.basePrice || 3) * rng.randFloat(1.05, 1.25)),
-                    marketPrice: (town.market && town.market.prices) ? (town.market.prices[foodPick] || foodRes.basePrice) : foodRes.basePrice,
-                    urgency: 15, reason: 'personality',
-                    desc: 'The king wishes to feed the people',
-                });
-            }
+            personalityWants.push({ pool: ['bread', 'meat', 'fish', 'poultry', 'vegetables'], desc: 'The king wishes to feed the people', mult: [1.05, 1.25] });
         }
-
-        // Ambitious/greedy kings want luxury goods
         if (kp.ambition === 'ambitious' || kp.greed === 'greedy' || kp.greed === 'corrupt') {
-            var luxGoods = ['silk', 'jewelry', 'spices', 'wine', 'pearls', 'gold_ore', 'gems'];
-            var luxPick = rng.pick(luxGoods);
-            var luxRes = findResource(luxPick);
-            if (luxRes) {
-                personalityRequests.push({
-                    resourceId: luxPick, resourceName: luxRes.name, resourceIcon: luxRes.icon || '',
-                    qty: rng.randInt(2, 10),
-                    pricePerUnit: Math.ceil((luxRes.basePrice || 15) * rng.randFloat(1.15, 1.5)),
-                    marketPrice: (town.market && town.market.prices) ? (town.market.prices[luxPick] || luxRes.basePrice) : luxRes.basePrice,
-                    urgency: 20, reason: 'personality',
-                    desc: kp.greed === 'corrupt' ? 'The king desires personal luxuries' : 'The crown seeks fine goods',
-                });
-            }
+            personalityWants.push({ pool: ['silk', 'jewelry', 'spices', 'wine', 'pearls', 'gems'], desc: 'The crown desires fine goods', mult: [1.15, 1.5] });
         }
-
-        // Traditional kings want cultural/religious goods
         if (kp.tradition === 'traditional') {
-            var tradGoods = ['books', 'candles', 'incense', 'wine', 'honey'];
-            var tradPick = rng.pick(tradGoods);
-            var tradRes = findResource(tradPick);
-            if (tradRes && !needs[tradPick]) {
-                personalityRequests.push({
-                    resourceId: tradPick, resourceName: tradRes.name, resourceIcon: tradRes.icon || '',
-                    qty: rng.randInt(3, 15),
-                    pricePerUnit: Math.ceil((tradRes.basePrice || 5) * rng.randFloat(1.1, 1.35)),
-                    marketPrice: (town.market && town.market.prices) ? (town.market.prices[tradPick] || tradRes.basePrice) : tradRes.basePrice,
-                    urgency: 15, reason: 'personality',
-                    desc: 'The king honors tradition',
-                });
-            }
+            personalityWants.push({ pool: ['books', 'candles', 'incense', 'wine', 'honey'], desc: 'The king honors tradition', mult: [1.1, 1.35] });
         }
-
-        // Progressive kings want tools and building materials
         if (kp.tradition === 'progressive') {
-            var progGoods = ['tools', 'iron', 'bricks', 'glass', 'planks'];
-            var progPick = rng.pick(progGoods);
-            var progRes = findResource(progPick);
-            if (progRes && !needs[progPick]) {
-                personalityRequests.push({
-                    resourceId: progPick, resourceName: progRes.name, resourceIcon: progRes.icon || '',
-                    qty: rng.randInt(5, 25),
-                    pricePerUnit: Math.ceil((progRes.basePrice || 5) * rng.randFloat(1.1, 1.3)),
-                    marketPrice: (town.market && town.market.prices) ? (town.market.prices[progPick] || progRes.basePrice) : progRes.basePrice,
-                    urgency: 20, reason: 'personality',
-                    desc: 'The king invests in progress',
-                });
-            }
+            personalityWants.push({ pool: ['tools', 'iron', 'bricks', 'glass', 'planks'], desc: 'The king invests in progress', mult: [1.1, 1.3] });
         }
 
-        // 3. Culture-driven desires
+        // Culture wants
         var culture = kingdom.culture || '';
-        if (culture === 'military' && !isAtWar) {
-            var cmPick = rng.pick(['swords', 'armor', 'horses', 'leather']);
-            var cmRes = findResource(cmPick);
-            if (cmRes && !needs[cmPick]) {
-                personalityRequests.push({
-                    resourceId: cmPick, resourceName: cmRes.name, resourceIcon: cmRes.icon || '',
-                    qty: rng.randInt(5, 15),
-                    pricePerUnit: Math.ceil((cmRes.basePrice || 8) * rng.randFloat(1.05, 1.3)),
-                    marketPrice: (town.market && town.market.prices) ? (town.market.prices[cmPick] || cmRes.basePrice) : cmRes.basePrice,
-                    urgency: 25, reason: 'culture',
-                    desc: 'Military tradition demands readiness',
-                });
-            }
-        } else if (culture === 'mercantile') {
-            var mmPick = rng.pick(['silk', 'spices', 'cloth', 'jewelry', 'dyes']);
-            var mmRes = findResource(mmPick);
-            if (mmRes && !needs[mmPick]) {
-                personalityRequests.push({
-                    resourceId: mmPick, resourceName: mmRes.name, resourceIcon: mmRes.icon || '',
-                    qty: rng.randInt(5, 20),
-                    pricePerUnit: Math.ceil((mmRes.basePrice || 10) * rng.randFloat(1.1, 1.4)),
-                    marketPrice: (town.market && town.market.prices) ? (town.market.prices[mmPick] || mmRes.basePrice) : mmRes.basePrice,
-                    urgency: 20, reason: 'culture',
-                    desc: 'The mercantile kingdom trades in fine goods',
-                });
-            }
-        } else if (culture === 'agricultural') {
-            var caPick = rng.pick(['wheat', 'vegetables', 'grapes', 'honey', 'eggs']);
-            var caRes = findResource(caPick);
-            if (caRes && !needs[caPick]) {
-                personalityRequests.push({
-                    resourceId: caPick, resourceName: caRes.name, resourceIcon: caRes.icon || '',
-                    qty: rng.randInt(10, 40),
-                    pricePerUnit: Math.ceil((caRes.basePrice || 3) * rng.randFloat(1.05, 1.2)),
-                    marketPrice: (town.market && town.market.prices) ? (town.market.prices[caPick] || caRes.basePrice) : caRes.basePrice,
-                    urgency: 15, reason: 'culture',
-                    desc: 'The agricultural kingdom stockpiles harvests',
-                });
-            }
+        if (culture === 'military') personalityWants.push({ pool: ['swords', 'armor', 'horses', 'leather'], desc: 'Military tradition demands readiness', mult: [1.05, 1.3] });
+        else if (culture === 'mercantile') personalityWants.push({ pool: ['silk', 'spices', 'cloth', 'jewelry', 'dyes'], desc: 'A mercantile kingdom trades in fine goods', mult: [1.1, 1.4] });
+        else if (culture === 'agricultural') personalityWants.push({ pool: ['wheat', 'vegetables', 'grapes', 'honey', 'eggs'], desc: 'The agricultural kingdom stockpiles harvests', mult: [1.05, 1.2] });
+        else if (culture === 'industrial') personalityWants.push({ pool: ['tools', 'iron', 'coal', 'steel', 'bricks'], desc: 'Industry fuels the kingdom', mult: [1.1, 1.3] });
+
+        // Pick from personality/culture pools
+        personalityWants = rng.shuffle(personalityWants);
+        for (var pwi = 0; pwi < personalityWants.length && wantedGoods.length < 8; pwi++) {
+            var pw = personalityWants[pwi];
+            var pick = rng.pick(pw.pool);
+            if (usedIds[pick]) continue;
+            var pRes = findResource(pick);
+            if (!pRes) continue;
+            var pBasePrice = (town.market && town.market.prices) ? (town.market.prices[pick] || pRes.basePrice) : pRes.basePrice;
+            wantedGoods.push({
+                resourceId: pick, resourceName: pRes.name, resourceIcon: pRes.icon || '',
+                pricePerUnit: Math.ceil(pBasePrice * rng.randFloat(pw.mult[0], pw.mult[1])),
+                marketPrice: pBasePrice,
+                desc: pw.desc,
+            });
+            usedIds[pick] = true;
         }
 
-        // Shuffle personality requests and take up to 3
-        personalityRequests = rng.shuffle(personalityRequests).slice(0, 3);
-
-        // Deduplicate: don't add personality requests for resources already in needs
-        var usedIds = {};
-        for (var ui = 0; ui < requests.length; ui++) usedIds[requests[ui].resourceId] = true;
-        for (var pi = 0; pi < personalityRequests.length; pi++) {
-            if (!usedIds[personalityRequests[pi].resourceId]) {
-                requests.push(personalityRequests[pi]);
-                usedIds[personalityRequests[pi].resourceId] = true;
-            }
-        }
-
-        // Limit to 6 total requests
-        requests = requests.slice(0, 6);
-
-        player._kingdomTradeCache = requests;
+        player._kingdomTradeCache = wantedGoods;
         player._kingdomTradeCacheKey = cacheKey;
         player._kingdomTradeDay = day;
-        return requests;
+        return wantedGoods;
     }
 
-    function sellToKingdomRequest(requestIndex) {
+    function sellToKingdomRequest(requestIndex, qty) {
         var requests = getKingdomTradeRequests();
         if (requestIndex < 0 || requestIndex >= requests.length) return { success: false, message: 'Invalid request.' };
         var req = requests[requestIndex];
+        qty = Math.max(1, Math.floor(qty || 1));
         var held = player.inventory[req.resourceId] || 0;
-        if (held < req.qty) return { success: false, message: 'Not enough ' + req.resourceName + '. Need ' + req.qty + ', have ' + held + '.' };
+        if (held < qty) return { success: false, message: 'Not enough ' + req.resourceName + '. Have ' + held + '.' };
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.street_trade || 3);
 
@@ -17890,35 +17924,32 @@
         var kingdom = town ? Engine.findKingdom(town.kingdomId) : null;
         if (!kingdom) return { success: false, message: 'No kingdom found.' };
 
-        var totalPrice = req.pricePerUnit * req.qty;
-        // Kingdom pays from treasury
+        var totalPrice = req.pricePerUnit * qty;
         var kingdomCanPay = Math.min(totalPrice, kingdom.gold || 0);
-        if (kingdomCanPay < totalPrice * 0.5) return { success: false, message: 'The kingdom treasury cannot afford this right now.' };
+        if (kingdomCanPay < totalPrice * 0.5) return { success: false, message: 'The kingdom treasury cannot afford this.' };
 
-        player.inventory[req.resourceId] -= req.qty;
+        player.inventory[req.resourceId] -= qty;
         player.gold += kingdomCanPay;
         player.stats.totalGoldEarned += kingdomCanPay;
         player.stats.tradesCompleted++;
         kingdom.gold = Math.max(0, (kingdom.gold || 0) - kingdomCanPay);
 
-        // +0.1 kingdom reputation
-        player.reputation[kingdom.id] = Math.min(100, (player.reputation[kingdom.id] || 50) + 0.1);
-
-        // Remove from cache
-        requests.splice(requestIndex, 1);
-        player._kingdomTradeCache = requests;
+        // +0.001 per item sold
+        var repGain = qty * 0.001;
+        player.reputation[kingdom.id] = Math.min(100, (player.reputation[kingdom.id] || 50) + repGain);
 
         grantXP(XP_REWARDS.SELL_TRADE, 'kingdom_trade');
-        Engine.logEvent('Sold ' + req.qty + ' ' + req.resourceName + ' to ' + kingdom.name + ' for ' + kingdomCanPay + 'g. Reputation +0.1.');
-        return { success: true, message: 'Sold ' + req.qty + ' ' + req.resourceName + ' to ' + kingdom.name + ' for ' + kingdomCanPay + 'g. (Rep +0.1)' };
+        Engine.logEvent('Sold ' + qty + ' ' + req.resourceName + ' to ' + kingdom.name + ' for ' + kingdomCanPay + 'g.');
+        return { success: true, message: 'Sold ' + qty + ' ' + req.resourceName + ' to ' + kingdom.name + ' for ' + kingdomCanPay + 'g. (Rep +' + repGain.toFixed(3) + ')' };
     }
 
-    function donateToKingdomGoods(requestIndex) {
+    function donateToKingdomGoods(requestIndex, qty) {
         var requests = getKingdomTradeRequests();
         if (requestIndex < 0 || requestIndex >= requests.length) return { success: false, message: 'Invalid request.' };
         var req = requests[requestIndex];
+        qty = Math.max(1, Math.floor(qty || 1));
         var held = player.inventory[req.resourceId] || 0;
-        if (held < req.qty) return { success: false, message: 'Not enough ' + req.resourceName + '. Need ' + req.qty + ', have ' + held + '.' };
+        if (held < qty) return { success: false, message: 'Not enough ' + req.resourceName + '. Have ' + held + '.' };
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.street_trade || 3);
 
@@ -17926,19 +17957,16 @@
         var kingdom = town ? Engine.findKingdom(town.kingdomId) : null;
         if (!kingdom) return { success: false, message: 'No kingdom found.' };
 
-        player.inventory[req.resourceId] -= req.qty;
+        player.inventory[req.resourceId] -= qty;
 
-        // +1 kingdom reputation for donation
-        player.reputation[kingdom.id] = Math.min(100, (player.reputation[kingdom.id] || 50) + 1);
-
-        // Remove from cache
-        requests.splice(requestIndex, 1);
-        player._kingdomTradeCache = requests;
+        // +0.01 per item donated
+        var repGain = qty * 0.01;
+        player.reputation[kingdom.id] = Math.min(100, (player.reputation[kingdom.id] || 50) + repGain);
 
         grantXP(XP_REWARDS.SELL_TRADE, 'kingdom_donation');
-        Engine.logEvent('Donated ' + req.qty + ' ' + req.resourceName + ' to ' + kingdom.name + '. Reputation +1.');
-        if (typeof UI !== 'undefined' && UI.toast) UI.toast('🎁 Donated to ' + kingdom.name + '! Rep +1', 'success');
-        return { success: true, message: 'Donated ' + req.qty + ' ' + req.resourceName + ' to ' + kingdom.name + '. (Rep +1)' };
+        Engine.logEvent('Donated ' + qty + ' ' + req.resourceName + ' to ' + kingdom.name + '. Rep +' + repGain.toFixed(2) + '.');
+        if (typeof UI !== 'undefined' && UI.toast) UI.toast('🎁 Donated ' + qty + ' to ' + kingdom.name + '! Rep +' + repGain.toFixed(2), 'success');
+        return { success: true, message: 'Donated ' + qty + ' ' + req.resourceName + ' to ' + kingdom.name + '. (Rep +' + repGain.toFixed(2) + ')' };
     }
 
     // ========================================================
@@ -29821,6 +29849,8 @@
         get inventory() { return player.inventory; },
         get buildings() { return player.buildings; },
         get employees() { return player.employees; },
+        get autoRaiseWages() { return player._autoRaiseWages; },
+        set autoRaiseWages(v) { player._autoRaiseWages = !!v; },
         get caravans() { return player.caravans; },
         get reputation() { return player.reputation; },
         get notoriety() { return player.notoriety; },
@@ -30144,6 +30174,12 @@
         hireWorker,
         fireWorker,
         assignWorker,
+        getWorkerSatisfaction,
+        modifyWorkerSatisfaction,
+        giveWorkerRaise,
+        giveWorkerBonus,
+        giveWorkerDayOff,
+        praiseWorker,
         sendCaravan,
         rescueCaravan,
         cancelRecurringRoute,
