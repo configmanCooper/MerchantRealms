@@ -4,6 +4,25 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.49.0] - 2026-04-01
+
+### Added — Storage Transfers, Music Toggle, Bug Fixes
+
+#### Home & Building Storage Transfers
+- **Home storage UI** — deposit/withdraw goods to any owned home (📦 Transfer Goods button)
+- **Building storage UI** — store any goods in owned buildings (not just production items)
+- **Horse stabling** — houses hold 2 horses (4 with horse_mastery), stable/take buttons
+- Livestock restricted to farm/livestock buildings; horses to stables/cavalry buildings
+
+#### Music & UI
+- **Music toggle on title screen** — 🔊/🔇 button on main menu for immediate mute control
+- **Housing material indicators** — shows green ✓ owned, yellow 🛒 auto-buy from market, red ✗ unavailable
+- **Tutorial** — Done button no longer auto-advances; player must click to continue
+
+#### Bug Fixes
+- **Backpack + cart stacking** — backpack persists when mounting vehicles (tracked via `_backpack` flag)
+- **Container dismount** — now accounts for pack_mule/beast_of_burden/iron_back skill bonuses
+
 ## [0.48.0] - 2026-04-01
 
 ### Added — Caravan Crew, Equipment & Multi-Hop Routes

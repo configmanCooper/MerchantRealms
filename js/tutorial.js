@@ -144,13 +144,7 @@ window.Tutorial = (function () {
                         btn.style.background = 'linear-gradient(135deg, #2d5a1d, #3a7a24)';
                         btn.style.borderColor = '#5aad35';
                     }
-                    // Auto-advance after 5 seconds if not clicked
-                    doneTimeout = setTimeout(function () {
-                        var fn = doneAdvanceFn;
-                        doneAdvanceFn = null;
-                        doneTimeout = null;
-                        if (fn) fn();
-                    }, 5000);
+                    // Player must click Done to continue (no auto-advance)
                 }
             } catch (e) {
                 console.error('Tutorial poll error:', e);

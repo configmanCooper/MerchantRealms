@@ -186,6 +186,9 @@ window.Game = (function () {
                 if (volSlider) volSlider.value = Math.round(Music.getVolume() * 100);
                 var btn = document.getElementById('btnMusicToggle');
                 if (btn) btn.textContent = Music.isMuted() ? '🔇' : '🔊';
+                // Sync title screen toggle button
+                var titleBtn = document.getElementById('btnTitleMusicToggle');
+                if (titleBtn) titleBtn.textContent = Music.isMuted() ? '🔇 Music: Off' : '🔊 Music: On';
             }
             document.removeEventListener('click', startTitleMusic);
             document.removeEventListener('keydown', startTitleMusic);
@@ -212,6 +215,21 @@ window.Game = (function () {
                 Music.init();
                 Music.toggleMute();
                 btnToggle.textContent = Music.isMuted() ? '🔇' : '🔊';
+                // Sync title screen button if visible
+                var titleBtn = document.getElementById('btnTitleMusicToggle');
+                if (titleBtn) titleBtn.textContent = Music.isMuted() ? '🔇 Music: Off' : '🔊 Music: On';
+            });
+        }
+        // Title screen music toggle
+        var btnTitleToggle = document.getElementById('btnTitleMusicToggle');
+        if (btnTitleToggle) {
+            btnTitleToggle.addEventListener('click', function (e) {
+                e.stopPropagation(); // Don't trigger startTitleMusic again
+                if (typeof Music === 'undefined') return;
+                Music.init();
+                Music.toggleMute();
+                btnTitleToggle.textContent = Music.isMuted() ? '🔇 Music: Off' : '🔊 Music: On';
+                if (btnToggle) btnToggle.textContent = Music.isMuted() ? '🔇' : '🔊';
             });
         }
         var volSlider = document.getElementById('musicVolume');
