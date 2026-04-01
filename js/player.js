@@ -16,6 +16,7 @@
         employees: [],          // personIds hired by the player
         _workerSatisfaction: {}, // personId → 0-100 satisfaction level
         _autoRaiseWages: false, // auto-raise wages for unhappy workers
+        _guildGracePeriods: {}, // buildingId → { deadline, warned, kingdomId, guildId, guildName }
         caravans: [],           // caravan objects
         ships: [],              // ship objects { id, name, type, capacity, speed, condition }
         reputation: {},         // kingdomId → 0-100
@@ -1457,11 +1458,16 @@
             }
         }
 
-        // Special law: guild_monopoly — Guildmaster+ required for production buildings
+        // Special law: guild_monopoly — must be guild member for that category OR Guildmaster rank 3+
         if (hasSpecialLaw(kingdom, 'guild_monopoly')) {
-            const rankIdx = player.socialRank[kingdom.id] || 0;
-            if (rankIdx < 3 && (bt.category === 'processing' || bt.category === 'finished' || bt.category === 'military')) {
-                return { success: false, message: `Guild Monopoly: Only Guildmasters may own production buildings in ${kingdom.name}.` };
+            if (bt.category === 'processing' || bt.category === 'finished' || bt.category === 'military') {
+                const rankIdx = player.socialRank[kingdom.id] || 0;
+                var _guildForCat = getGuildForCategory(bt.category);
+                var _inGuild = _guildForCat && isGuildMember(_guildForCat.id);
+                if (rankIdx < 3 && !_inGuild) {
+                    var _guildName = _guildForCat ? _guildForCat.name : 'the relevant guild';
+                    return { success: false, message: `Guild Monopoly: You must join ${_guildName} or reach Guildmaster rank to build ${bt.category} buildings in ${kingdom.name}.` };
+                }
             }
         }
 
@@ -10991,6 +10997,7 @@
             employees: [...player.employees],
             _workerSatisfaction: { ...player._workerSatisfaction },
             _autoRaiseWages: player._autoRaiseWages || false,
+            _guildGracePeriods: JSON.parse(JSON.stringify(player._guildGracePeriods || {})),
             caravans: JSON.parse(JSON.stringify(player.caravans)),
             ships: JSON.parse(JSON.stringify(player.ships)),
             horses: JSON.parse(JSON.stringify(player.horses || [])),
@@ -11256,6 +11263,7 @@
         player.employees = data.employees || [];
         player._workerSatisfaction = data._workerSatisfaction || {};
         player._autoRaiseWages = data._autoRaiseWages || false;
+        player._guildGracePeriods = data._guildGracePeriods || {};
         player.caravans = data.caravans || [];
         player.ships = data.ships || [];
         player.horses = data.horses || [];
@@ -12384,6 +12392,103 @@
                 const p = Engine.findPerson(wId);
                 return p && p.alive && player.employees.includes(wId);
             });
+        }
+
+        // Guild monopoly enforcement — seize building helper
+        function _gSeizeBld(bld, town, kingdom, bt) {
+            bld.active = false;
+            // Fire workers from this building
+            if (bld.workers && bld.workers.length > 0) {
+                for (var _wi = 0; _wi < bld.workers.length; _wi++) {
+                    var _wp = Engine.findPerson(bld.workers[_wi]);
+                    if (_wp) _wp.employerId = null;
+                    player.employees = player.employees.filter(function(id) { return id !== bld.workers[_wi]; });
+                }
+                bld.workers = [];
+            }
+            // Put the building up for sale in the town at 50% of build cost
+            if (town) {
+                var townBldIdx = (town.buildings || []).findIndex(function(tb) { return tb.id === bld.id || (tb.ownerId === 'player' && tb.type === bld.type); });
+                if (townBldIdx !== -1) {
+                    town.buildings[townBldIdx].ownerId = kingdom.id;
+                    town.buildings[townBldIdx].forSale = true;
+                    town.buildings[townBldIdx].salePrice = Math.floor((bt.cost || 200) * 0.5);
+                } else {
+                    // Add as kingdom-owned for sale
+                    town.buildings.push({ id: bld.id, type: bld.type, level: bld.level || 1, ownerId: kingdom.id, builtDay: bld.builtDay, condition: bld.condition || 'used', forSale: true, salePrice: Math.floor((bt.cost || 200) * 0.5) });
+                }
+            }
+            Engine.logEvent('🏛️ ' + kingdom.name + ' has seized your ' + bt.name + ' in ' + (town ? town.name : 'unknown') + ' for violating the Guild Monopoly law! It is now for sale.');
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('🏛️ ' + kingdom.name + ' seized your ' + bt.name + '!', 'danger', 'critical');
+        }
+
+        // Guild monopoly enforcement — check guild membership for production buildings
+        var _guildSeized = [];
+        for (var _gbi = 0; _gbi < player.buildings.length; _gbi++) {
+            var _gbld = player.buildings[_gbi];
+            if (!_gbld.active) continue;
+            var _gbt = Engine.findBuildingType(_gbld.type);
+            if (!_gbt) continue;
+            // Only applies to processing/finished/military categories
+            if (_gbt.category !== 'processing' && _gbt.category !== 'finished' && _gbt.category !== 'military') continue;
+            var _gtown = Engine.findTown(_gbld.townId);
+            if (!_gtown) continue;
+            var _gkingdom = Engine.findKingdom(_gtown.kingdomId);
+            if (!_gkingdom) continue;
+            if (!hasSpecialLaw(_gkingdom, 'guild_monopoly')) continue;
+
+            // Guildmaster rank 3+ is always exempt
+            var _gRankIdx = player.socialRank[_gkingdom.id] || 0;
+            if (_gRankIdx >= 3) {
+                // Clear any grace period for this building
+                if (player._guildGracePeriods[_gbld.id]) delete player._guildGracePeriods[_gbld.id];
+                continue;
+            }
+
+            // Check if player is in the appropriate guild
+            var _gGuild = getGuildForCategory(_gbt.category);
+            if (_gGuild && isGuildMember(_gGuild.id)) {
+                // Membership active — clear grace period
+                if (player._guildGracePeriods[_gbld.id]) delete player._guildGracePeriods[_gbld.id];
+                continue;
+            }
+
+            // Not in guild and not Guildmaster rank — start or check grace period
+            var _gGrace = player._guildGracePeriods[_gbld.id];
+            if (!_gGrace) {
+                // Start 30-day grace period
+                var _gDeadline = day + 30;
+                var _gGuildName = _gGuild ? _gGuild.name : 'the relevant guild';
+                player._guildGracePeriods[_gbld.id] = { deadline: _gDeadline, warned: false, kingdomId: _gkingdom.id, guildId: _gGuild ? _gGuild.id : null, guildName: _gGuildName, buildingName: _gbt.name };
+                Engine.logEvent('⚠️ Guild Monopoly: Your ' + _gbt.name + ' in ' + _gtown.name + ' requires membership in ' + _gGuildName + '. You have 30 days to join or the kingdom will seize it.');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚠️ Guild warning: Join ' + _gGuildName + ' within 30 days or lose your ' + _gbt.name + '!', 'warning', 'critical');
+            } else {
+                var _gDaysLeft = _gGrace.deadline - day;
+                // Warn again at 7 days left
+                if (_gDaysLeft <= 7 && !_gGrace.warned) {
+                    _gGrace.warned = true;
+                    Engine.logEvent('🚨 Guild Monopoly: Only ' + _gDaysLeft + ' days left to rejoin ' + (_gGrace.guildName || 'the guild') + ' or your ' + (_gGrace.buildingName || 'building') + ' will be seized!');
+                    if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚨 ' + _gDaysLeft + ' days to rejoin guild or lose ' + (_gGrace.buildingName || 'building') + '!', 'danger', 'critical');
+                }
+                // Grace period expired — seize the building
+                if (_gDaysLeft <= 0) {
+                    _gSeizeBld(_gbld, _gtown, _gkingdom, _gbt);
+                    _guildSeized.push(_gbld.id);
+                }
+            }
+        }
+        // Remove seized buildings and clean up grace periods
+        if (_guildSeized.length > 0) {
+            player.buildings = player.buildings.filter(function(b) { return _guildSeized.indexOf(b.id) < 0; });
+            for (var _gsi = 0; _gsi < _guildSeized.length; _gsi++) {
+                delete player._guildGracePeriods[_guildSeized[_gsi]];
+            }
+        }
+        // Clean up grace periods for buildings that no longer exist
+        for (var _gpk in player._guildGracePeriods) {
+            if (!player.buildings.find(function(b) { return b.id === _gpk; })) {
+                delete player._guildGracePeriods[_gpk];
+            }
         }
 
         // Advance caravans

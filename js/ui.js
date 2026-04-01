@@ -2663,10 +2663,37 @@ window.UI = (function () {
                 depositWarning = `<br><span style="color:#c44e52;">⛔ No ${depReq.label.toLowerCase()} here</span>`;
             }
 
+            // Guild monopoly warning
+            var guildWarning = '';
+            if (town && (bt.category === 'processing' || bt.category === 'finished' || bt.category === 'military')) {
+                var _gmKingdom = null;
+                try { _gmKingdom = Engine.findKingdom(town.kingdomId); } catch(e) {}
+                if (_gmKingdom && _gmKingdom.laws && _gmKingdom.laws.specialLaws) {
+                    var _hasGM = _gmKingdom.laws.specialLaws.some(function(sl) { return sl.id === 'guild_monopoly' || sl.effect === 'build_rank_3'; });
+                    if (_hasGM) {
+                        var _gmRank = (Player.socialRank && Player.socialRank[_gmKingdom.id]) || 0;
+                        var _gmGuild = null;
+                        if (CONFIG.GUILDS) {
+                            for (var _gk in CONFIG.GUILDS) {
+                                if (CONFIG.GUILDS[_gk].categories && CONFIG.GUILDS[_gk].categories.indexOf(bt.category) >= 0) { _gmGuild = CONFIG.GUILDS[_gk]; break; }
+                            }
+                        }
+                        var _gmInGuild = _gmGuild && Player.isGuildMember && Player.isGuildMember(_gmGuild.id);
+                        if (_gmRank >= 3) {
+                            guildWarning = '<br><span style="font-size:0.68rem;color:#55a868;">✅ Guildmaster rank exempts you from guild requirement</span>';
+                        } else if (_gmInGuild) {
+                            guildWarning = '<br><span style="font-size:0.68rem;color:#55a868;">✅ ' + _gmGuild.icon + ' ' + _gmGuild.name + ' member</span>';
+                        } else {
+                            guildWarning = '<br><span style="font-size:0.68rem;color:#ff9f43;">⚠️ Requires ' + (_gmGuild ? _gmGuild.icon + ' ' + _gmGuild.name + ' membership' : 'guild membership') + ' or Guildmaster rank</span>';
+                        }
+                    }
+                }
+            }
+
             gridHtml += `<div class="build-card ${canAfford && hasDeposit ? '' : 'cant-afford'}" data-category="${bt.category}" onclick="UI.executeBuild('${bt.id}','${town ? town.id : ''}')">
                 <div class="build-name">${bt.name}</div>
                 <div class="build-cost">🪙 ${Math.ceil(totalBuildCost)}g (labor: ${Math.ceil(laborCost)}g${matCost > 0 ? ' + materials: ' + Math.ceil(matCost) + 'g' : ''}) | 👥 ${bt.workers} workers</div>
-                <div class="build-info">Produces: ${producesStr}<br>Consumes: ${consumesStr}<br>Rate: ${bt.rate}/day${materialsStr ? '<br>🔨 Materials: ' + materialsStr : ''}${!matsOk ? '<br><span style="color:#c44e52;">⚠ Not enough materials in inventory + market!</span>' : (matCost > 0 ? '<br><span style="font-size:0.68rem;color:#ffd700;">🛒 Will auto-buy missing materials from market (' + Math.ceil(matCost) + 'g)</span>' : '')}${depositWarning}</div>
+                <div class="build-info">Produces: ${producesStr}<br>Consumes: ${consumesStr}<br>Rate: ${bt.rate}/day${materialsStr ? '<br>🔨 Materials: ' + materialsStr : ''}${!matsOk ? '<br><span style="color:#c44e52;">⚠ Not enough materials in inventory + market!</span>' : (matCost > 0 ? '<br><span style="font-size:0.68rem;color:#ffd700;">🛒 Will auto-buy missing materials from market (' + Math.ceil(matCost) + 'g)</span>' : '')}${depositWarning}${guildWarning}</div>
             </div>`;
         }
 
