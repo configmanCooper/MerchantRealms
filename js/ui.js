@@ -3690,6 +3690,40 @@ window.UI = (function () {
             }
         }
 
+        // ── GENERAL STORAGE TRANSFER ──
+        if (bld.townId === Player.townId) {
+            var _bldCap = (bt.storage || 0) * (bld.level || 1);
+            var _bldUsed = 0;
+            if (bld.inventory) { for (var _bk in bld.inventory) { var _br = findResource(_bk); _bldUsed += (bld.inventory[_bk] || 0) * (_br ? (_br.weight || 1) : 1); } }
+            var _prodStored = bld.storedOutput || 0;
+            if (bt.produces) { var _pr = findResource(bt.produces); _bldUsed += _prodStored * (_pr ? (_pr.weight || 1) : 1); }
+            if (_bldCap > 0) {
+                html += '<div style="padding:8px;border:1px solid var(--border);border-radius:4px;margin-bottom:8px;">';
+                html += '<div style="font-weight:bold;font-size:0.85rem;margin-bottom:4px;">📦 BUILDING STORAGE (' + Math.round(_bldUsed) + '/' + _bldCap + ')</div>';
+                // Show stored items (non-production)
+                if (bld.inventory) {
+                    var _hasItems = false;
+                    for (var _ik in bld.inventory) {
+                        if (bld.inventory[_ik] <= 0) continue;
+                        _hasItems = true;
+                        var _ir = findResource(_ik);
+                        var _iName = _ir ? ((_ir.icon || '') + ' ' + _ir.name) : _ik;
+                        html += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-size:0.78rem;">';
+                        html += '<span style="min-width:130px;">' + _iName + ': ' + bld.inventory[_ik] + '</span>';
+                        html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldWithdraw(\'' + bld.id + '\',\'' + _ik + '\',1)">Take 1</button>';
+                        if (bld.inventory[_ik] >= 5) html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldWithdraw(\'' + bld.id + '\',\'' + _ik + '\',5)">5</button>';
+                        html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldWithdraw(\'' + bld.id + '\',\'' + _ik + '\',' + bld.inventory[_ik] + ')">All</button>';
+                        html += '</div>';
+                    }
+                    if (!_hasItems) html += '<div style="font-size:0.75rem;color:#888;">No extra items stored.</div>';
+                } else {
+                    html += '<div style="font-size:0.75rem;color:#888;">No extra items stored.</div>';
+                }
+                html += '<button class="btn-medieval" onclick="UI.openBuildingStorageUI(\'' + bld.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin-top:6px;">📦 Transfer Goods</button>';
+                html += '</div>';
+            }
+        }
+
         // Demolish button
         if (town && bld.townId === Player.townId) {
             var _demBldIdx = town.buildings.findIndex(function(b) { return b.ownerId === 'player' && b.type === bld.type; });
@@ -3742,6 +3776,85 @@ window.UI = (function () {
         var result = Player.collectRetailRevenue(buildingId);
         toast(result.message, result.success ? 'success' : 'warning');
         if (result.success) showBuildingDetail(buildingId);
+    }
+
+    // ── BUILDING STORAGE TRANSFER UI ──
+    function openBuildingStorageUI(buildingId) {
+        var bld = (Player.buildings || []).find(function(b) { return b.id === buildingId; });
+        if (!bld) { toast('Building not found.', 'error'); return; }
+        var bt = null;
+        for (var key in CONFIG.BUILDING_TYPES) { if (CONFIG.BUILDING_TYPES[key].id === bld.type) { bt = CONFIG.BUILDING_TYPES[key]; break; } }
+        var bName = bt ? bt.name : bld.type;
+        var bldCap = (bt ? (bt.storage || 0) : 0) * (bld.level || 1);
+        var bldUsed = 0;
+        if (bld.inventory) { for (var bk in bld.inventory) { var br = findResource(bk); bldUsed += (bld.inventory[bk] || 0) * (br ? (br.weight || 1) : 1); } }
+        var prodStored = bld.storedOutput || 0;
+        if (bt && bt.produces) { var pr = findResource(bt.produces); bldUsed += prodStored * (pr ? (pr.weight || 1) : 1); }
+
+        var isLivestockBld = bt && (bt.category === 'farming' || bt.livestockCapacity || (bt.id && bt.id.indexOf('livestock') >= 0));
+        var isHorseBld = bt && (bt.cavalryCapacity || bt.id === 'horse_market' || bt.id === 'stable' || (bt.id && bt.id.indexOf('horse') >= 0) || (bt.id && bt.id.indexOf('cavalry') >= 0));
+
+        var html = '<div style="max-height:400px;overflow-y:auto;">';
+        html += '<div style="font-size:0.85rem;margin-bottom:8px;">📦 Building Storage: <strong>' + Math.round(bldUsed) + '/' + bldCap + '</strong></div>';
+
+        // Stored items — withdraw
+        html += '<h4 style="margin:8px 0 4px;">Stored in Building</h4>';
+        var hasStored = false;
+        if (bld.inventory) {
+            for (var sk in bld.inventory) {
+                if (bld.inventory[sk] <= 0) continue;
+                hasStored = true;
+                var sr = findResource(sk);
+                var sName = sr ? ((sr.icon || '') + ' ' + sr.name) : sk;
+                var sQty = bld.inventory[sk];
+                html += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-size:0.8rem;">';
+                html += '<span style="min-width:140px;">' + sName + ': ' + sQty + '</span>';
+                html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldWithdraw(\'' + buildingId + '\',\'' + sk + '\',1)">Take 1</button>';
+                if (sQty >= 5) html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldWithdraw(\'' + buildingId + '\',\'' + sk + '\',5)">5</button>';
+                html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldWithdraw(\'' + buildingId + '\',\'' + sk + '\',' + sQty + ')">All</button>';
+                html += '</div>';
+            }
+        }
+        if (!hasStored) html += '<div style="color:#888;font-size:0.8rem;">Empty</div>';
+
+        // Player inventory — deposit
+        html += '<h4 style="margin:12px 0 4px;">Your Inventory</h4>';
+        var hasInv = false;
+        var inv = Player.inventory || {};
+        for (var ik in inv) {
+            if (inv[ik] <= 0) continue;
+            var ir = findResource(ik);
+            if (!ir) continue;
+            // Filter: livestock only to livestock buildings, horses only to horse buildings
+            if (ir.category === 'livestock' && !isLivestockBld) continue;
+            if (ik === 'horses' && !isHorseBld) continue;
+            hasInv = true;
+            var iName = (ir.icon || '') + ' ' + ir.name;
+            var iQty = inv[ik];
+            html += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-size:0.8rem;">';
+            html += '<span style="min-width:140px;">' + iName + ': ' + iQty + '</span>';
+            html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldDeposit(\'' + buildingId + '\',\'' + ik + '\',1)">Store 1</button>';
+            if (iQty >= 5) html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldDeposit(\'' + buildingId + '\',\'' + ik + '\',5)">5</button>';
+            html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldDeposit(\'' + buildingId + '\',\'' + ik + '\',' + iQty + ')">All</button>';
+            html += '</div>';
+        }
+        if (!hasInv) html += '<div style="color:#888;font-size:0.8rem;">Nothing transferable</div>';
+
+        html += '</div>';
+        openModal('📦 ' + bName + ' Storage', html,
+            '<button class="btn-medieval" onclick="UI.showBuildingDetail(\'' + buildingId + '\')">Back</button>');
+    }
+
+    function _bldDeposit(buildingId, resId, qty) {
+        var result = Player.depositToBuilding(buildingId, resId, qty);
+        toast(result.message, result.success ? 'success' : 'error');
+        openBuildingStorageUI(buildingId);
+    }
+
+    function _bldWithdraw(buildingId, resId, qty) {
+        var result = Player.withdrawFromBuilding(buildingId, resId, qty);
+        toast(result.message, result.success ? 'success' : 'error');
+        openBuildingStorageUI(buildingId);
     }
 
     function toggleAutoBuyUI(buildingId) {
@@ -10371,6 +10484,44 @@ window.UI = (function () {
                 html += '<div><strong>' + ht.icon + ' ' + ht.name + '</strong> in ' + (town ? town.name : '?') + (isPrimary ? ' ⭐ Primary' : '') + '</div>';
                 html += '<div style="font-size:0.8rem;color:#aaa;">' + ht.description + '</div>';
                 html += '<div style="font-size:0.8rem;">Storage: ' + ht.storage + ' | Comfort: ' + ht.comfort + ' | Security: ' + Math.round(ht.security * 100) + '%</div>';
+                // Home storage contents + transfer UI
+                var _hsUsed = Player.getHomeStorageUsed ? Player.getHomeStorageUsed(h) : 0;
+                var _hsCap = Player.getHomeStorageCapacity ? Player.getHomeStorageCapacity(h) : (ht.storage || 0);
+                var _hsPct = _hsCap > 0 ? Math.round(_hsUsed / _hsCap * 100) : 0;
+                var _hsColor = _hsPct >= 90 ? '#e74c3c' : _hsPct >= 60 ? '#e67e22' : '#55a868';
+                html += '<div style="font-size:0.78rem;margin-top:2px;">📦 Stored: <span style="color:' + _hsColor + ';">' + Math.round(_hsUsed) + '/' + _hsCap + '</span>';
+                if (h.homeStorage) {
+                    var _hItems = [];
+                    for (var _hk in h.homeStorage) {
+                        if (h.homeStorage[_hk] > 0) {
+                            var _hr = typeof findResource === 'function' ? findResource(_hk) : null;
+                            if (!_hr && typeof Player.findResource === 'function') _hr = Player.findResource(_hk);
+                            _hItems.push((_hr ? (_hr.icon || '') + ' ' + _hr.name : _hk) + ': ' + h.homeStorage[_hk]);
+                        }
+                    }
+                    if (_hItems.length > 0) html += ' — ' + _hItems.join(', ');
+                }
+                html += '</div>';
+                // Horses stabled at home
+                var _maxHomeHorses = (Player.hasSkill && Player.hasSkill('horse_mastery')) ? 4 : 2;
+                var _homeHorses = h.horses || [];
+                html += '<div style="font-size:0.78rem;">🐴 Horses: ' + _homeHorses.length + '/' + _maxHomeHorses;
+                if (_homeHorses.length > 0) {
+                    html += ' — ';
+                    for (var _hhi = 0; _hhi < _homeHorses.length; _hhi++) {
+                        var _hh = _homeHorses[_hhi];
+                        html += (_hh.name || 'Horse') + ' ';
+                        if (h.townId === Player.townId) html += '<button class="btn-medieval" onclick="UI.unstableHorseUI(\'' + h.id + '\',' + _hhi + ')" style="font-size:0.65rem;padding:1px 5px;">Take</button> ';
+                    }
+                }
+                html += '</div>';
+                // Transfer buttons (only when in same town)
+                if (h.townId === Player.townId) {
+                    html += '<button class="btn-medieval" onclick="UI.openHomeStorageUI(\'' + h.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin:2px;">📦 Transfer Goods</button>';
+                    if (Player.horses && Player.horses.length > 0 && _homeHorses.length < _maxHomeHorses) {
+                        html += '<button class="btn-medieval" onclick="UI.stableHorseUI(\'' + h.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin:2px;">🐴 Stable Horse</button>';
+                    }
+                }
                 if (h.isRental) {
                     html += '<div style="color:#5ac85a;font-size:0.8rem;">💰 Rented — ' + (h.monthlyRent || 0) + 'g/month (total earned: ' + (h.rentAccumulated || 0) + 'g)</div>';
                     if (h.tenantId) {
@@ -10485,6 +10636,88 @@ window.UI = (function () {
 
         html += '</div>';
         openModal('🏠 Housing & Property', html);
+    }
+
+    // ── HOME STORAGE TRANSFER UI ──
+    function openHomeStorageUI(houseId) {
+        var houses = Player.state.houses || Player.houses || [];
+        var house = houses.find(function(h) { return h.id === houseId; });
+        if (!house) { toast('House not found.', 'error'); return; }
+        var ht = CONFIG.HOUSING_TYPES.find(function(t) { return t.id === house.type; });
+        var cap = Player.getHomeStorageCapacity ? Player.getHomeStorageCapacity(house) : (ht ? ht.storage : 0);
+        var used = Player.getHomeStorageUsed ? Player.getHomeStorageUsed(house) : 0;
+
+        var html = '<div style="max-height:400px;overflow-y:auto;">';
+        html += '<div style="font-size:0.85rem;margin-bottom:8px;">📦 Storage: <strong>' + Math.round(used) + '/' + cap + '</strong></div>';
+
+        // Items stored in home — withdraw buttons
+        html += '<h4 style="margin:8px 0 4px;">Stored at Home</h4>';
+        var hasStored = false;
+        if (house.homeStorage) {
+            for (var sk in house.homeStorage) {
+                if (house.homeStorage[sk] <= 0) continue;
+                hasStored = true;
+                var sr = findResource(sk);
+                var sName = sr ? (sr.icon || '') + ' ' + sr.name : sk;
+                var sQty = house.homeStorage[sk];
+                html += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-size:0.8rem;">';
+                html += '<span style="min-width:140px;">' + sName + ': ' + sQty + '</span>';
+                html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._homeWithdraw(\'' + houseId + '\',\'' + sk + '\',1)">Take 1</button>';
+                if (sQty >= 5) html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._homeWithdraw(\'' + houseId + '\',\'' + sk + '\',5)">5</button>';
+                html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._homeWithdraw(\'' + houseId + '\',\'' + sk + '\',' + sQty + ')">All</button>';
+                html += '</div>';
+            }
+        }
+        if (!hasStored) html += '<div style="color:#888;font-size:0.8rem;">Empty</div>';
+
+        // Player inventory — deposit buttons
+        html += '<h4 style="margin:12px 0 4px;">Your Inventory</h4>';
+        var hasInv = false;
+        var inv = Player.inventory || {};
+        for (var ik in inv) {
+            if (inv[ik] <= 0) continue;
+            var ir = findResource(ik);
+            if (!ir) continue;
+            if (ir.category === 'livestock' || ik === 'horses') continue;
+            hasInv = true;
+            var iName = (ir.icon || '') + ' ' + ir.name;
+            var iQty = inv[ik];
+            html += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-size:0.8rem;">';
+            html += '<span style="min-width:140px;">' + iName + ': ' + iQty + '</span>';
+            html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._homeDeposit(\'' + houseId + '\',\'' + ik + '\',1)">Store 1</button>';
+            if (iQty >= 5) html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._homeDeposit(\'' + houseId + '\',\'' + ik + '\',5)">5</button>';
+            html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._homeDeposit(\'' + houseId + '\',\'' + ik + '\',' + iQty + ')">All</button>';
+            html += '</div>';
+        }
+        if (!hasInv) html += '<div style="color:#888;font-size:0.8rem;">Nothing to store</div>';
+
+        html += '</div>';
+        openModal('📦 ' + (ht ? ht.name : 'Home') + ' Storage', html,
+            '<button class="btn-medieval" onclick="UI.openHousingDialog()">Back</button>');
+    }
+
+    function _homeDeposit(houseId, resId, qty) {
+        var result = Player.depositToHome(houseId, resId, qty);
+        toast(result.message, result.success ? 'success' : 'error');
+        openHomeStorageUI(houseId);
+    }
+
+    function _homeWithdraw(houseId, resId, qty) {
+        var result = Player.withdrawFromHome(houseId, resId, qty);
+        toast(result.message, result.success ? 'success' : 'error');
+        openHomeStorageUI(houseId);
+    }
+
+    function stableHorseUI(houseId) {
+        var result = Player.stableHorseAtHome(houseId);
+        toast(result.message, result.success ? 'success' : 'error');
+        if (result.success) openHousingDialog();
+    }
+
+    function unstableHorseUI(houseId, horseIdx) {
+        var result = Player.unstableHorseFromHome(houseId, horseIdx);
+        toast(result.message, result.success ? 'success' : 'error');
+        if (result.success) openHousingDialog();
     }
 
     function buyHouseUI(housingTypeId) {
@@ -17670,6 +17903,9 @@ window.UI = (function () {
         stockRetailUI,
         unstockRetailUI,
         collectRetailRevenueUI,
+        openBuildingStorageUI,
+        _bldDeposit,
+        _bldWithdraw,
         toggleAutoBuyUI,
         setTransferTarget: setTransferTargetUI,
         clearTransfer: clearTransferUI,
@@ -17916,6 +18152,11 @@ window.UI = (function () {
         // Housing & Rest
         openHousingDialog,
         openRealEstateReport,
+        openHomeStorageUI,
+        _homeDeposit,
+        _homeWithdraw,
+        stableHorseUI,
+        unstableHorseUI,
         buyHouseUI,
         sellHouseUI,
         confirmSellHouseUI,

@@ -6043,6 +6043,157 @@
         return { success: true, message: 'Withdrew ' + qty + ' ' + (res ? res.name : resId) + '.' };
     }
 
+    // ── HOME STORAGE TRANSFER ──
+    function getHomeStorageUsed(house) {
+        if (!house || !house.homeStorage) return 0;
+        var total = 0;
+        for (var k in house.homeStorage) total += (house.homeStorage[k] || 0) * ((findResource(k) || {}).weight || 1);
+        return total;
+    }
+
+    function getHomeStorageCapacity(house) {
+        if (!house) return 0;
+        var ht = CONFIG.HOUSING_TYPES.find(function(x) { return x.id === house.type; });
+        return ht ? (ht.storage || 0) : 0;
+    }
+
+    function depositToHome(houseId, resId, qty) {
+        qty = Math.floor(Number(qty));
+        if (!qty || qty <= 0) return { success: false, message: 'Invalid quantity.' };
+        var house = (player.houses || []).find(function(h) { return h.id === houseId; });
+        if (!house) return { success: false, message: 'House not found.' };
+        if (house.townId !== player.townId) return { success: false, message: 'You must be in the same town as this property.' };
+        var res = findResource(resId);
+        // Block livestock & horses from homes
+        if (res && res.category === 'livestock') return { success: false, message: 'Livestock cannot be stored in a home. Use a livestock building.' };
+        if (resId === 'horses') return { success: false, message: 'Use the stable button to house horses.' };
+        var available = player.inventory[resId] || 0;
+        if (available < qty) return { success: false, message: 'Not enough in inventory.' };
+        var cap = getHomeStorageCapacity(house);
+        var used = getHomeStorageUsed(house);
+        var weight = res ? (res.weight || 1) : 1;
+        if (used + qty * weight > cap) {
+            var canFit = Math.floor((cap - used) / weight);
+            if (canFit <= 0) return { success: false, message: 'Home storage is full (' + used + '/' + cap + ').' };
+            return { success: false, message: 'Only room for ' + canFit + ' more. Storage: ' + used + '/' + cap + '.' };
+        }
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(1);
+        player.inventory[resId] -= qty;
+        if (player.inventory[resId] <= 0) player.inventory[resId] = 0;
+        if (!house.homeStorage) house.homeStorage = {};
+        house.homeStorage[resId] = (house.homeStorage[resId] || 0) + qty;
+        return { success: true, message: 'Stored ' + qty + ' ' + (res ? res.name : resId) + ' in your home.' };
+    }
+
+    function withdrawFromHome(houseId, resId, qty) {
+        qty = Math.floor(Number(qty));
+        if (!qty || qty <= 0) return { success: false, message: 'Invalid quantity.' };
+        var house = (player.houses || []).find(function(h) { return h.id === houseId; });
+        if (!house) return { success: false, message: 'House not found.' };
+        if (house.townId !== player.townId) return { success: false, message: 'You must be in the same town as this property.' };
+        var stored = (house.homeStorage && house.homeStorage[resId]) || 0;
+        if (stored < qty) return { success: false, message: 'Not enough stored.' };
+        var res = findResource(resId);
+        var weight = res ? (res.weight || 1) : 1;
+        if (getCarriedWeight() + qty * weight > getCarryCapacity()) return { success: false, message: 'Too heavy to carry.' };
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(1);
+        house.homeStorage[resId] -= qty;
+        if (house.homeStorage[resId] <= 0) delete house.homeStorage[resId];
+        player.inventory[resId] = (player.inventory[resId] || 0) + qty;
+        return { success: true, message: 'Took ' + qty + ' ' + (res ? res.name : resId) + ' from home.' };
+    }
+
+    function stableHorseAtHome(houseId) {
+        var house = (player.houses || []).find(function(h) { return h.id === houseId; });
+        if (!house) return { success: false, message: 'House not found.' };
+        if (house.townId !== player.townId) return { success: false, message: 'You must be in the same town.' };
+        if (!player.horses || player.horses.length === 0) return { success: false, message: 'You have no mounted horses.' };
+        var maxHorses = hasSkill('horse_mastery') ? 4 : 2;
+        if (!house.horses) house.horses = [];
+        if (house.horses.length >= maxHorses) return { success: false, message: 'Home can hold ' + maxHorses + ' horses (has ' + house.horses.length + ').' };
+        var horse = player.horses.pop();
+        house.horses.push(horse);
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(1);
+        return { success: true, message: '🐴 Stabled ' + (horse.name || 'horse') + ' at home.' };
+    }
+
+    function unstableHorseFromHome(houseId, horseIdx) {
+        var house = (player.houses || []).find(function(h) { return h.id === houseId; });
+        if (!house) return { success: false, message: 'House not found.' };
+        if (house.townId !== player.townId) return { success: false, message: 'You must be in the same town.' };
+        if (!house.horses || house.horses.length === 0) return { success: false, message: 'No horses stabled here.' };
+        var idx = Number(horseIdx) || 0;
+        if (idx < 0 || idx >= house.horses.length) return { success: false, message: 'Invalid horse.' };
+        var horse = house.horses.splice(idx, 1)[0];
+        if (!player.horses) player.horses = [];
+        player.horses.push(horse);
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(1);
+        return { success: true, message: '🐴 Took ' + (horse.name || 'horse') + ' from home.' };
+    }
+
+    // ── BUILDING STORAGE TRANSFER ──
+    function depositToBuilding(buildingId, resId, qty) {
+        qty = Math.floor(Number(qty));
+        if (!qty || qty <= 0) return { success: false, message: 'Invalid quantity.' };
+        var bld = (player.buildings || []).find(function(b) { return b.id === buildingId; });
+        if (!bld) return { success: false, message: 'Building not found.' };
+        if (bld.townId !== player.townId) return { success: false, message: 'You must be in the same town as this building.' };
+        var res = findResource(resId);
+        // Block livestock except to livestock buildings, horses except to cavalry/stable buildings
+        var bt = null;
+        for (var key in BUILDING_TYPES) { if (BUILDING_TYPES[key].id === bld.type) { bt = BUILDING_TYPES[key]; break; } }
+        if (res && res.category === 'livestock') {
+            var isLivestockBld = bt && (bt.category === 'farming' || bt.livestockCapacity || (bt.id && bt.id.indexOf('livestock') >= 0));
+            if (!isLivestockBld) return { success: false, message: 'Livestock can only be stored in livestock/farm buildings.' };
+        }
+        if (resId === 'horses') {
+            var isHorseBld = bt && (bt.cavalryCapacity || bt.id === 'horse_market' || bt.id === 'stable' || (bt.id && bt.id.indexOf('horse') >= 0) || (bt.id && bt.id.indexOf('cavalry') >= 0));
+            if (!isHorseBld) return { success: false, message: 'Horses can only be stored in stables, horse markets, or cavalry buildings.' };
+        }
+        var available = player.inventory[resId] || 0;
+        if (available < qty) return { success: false, message: 'Not enough in inventory.' };
+        var bldCap = bt ? (bt.storage || 0) * (bld.level || 1) : 0;
+        if (bldCap > 0) {
+            var bldUsed = 0;
+            if (bld.inventory) { for (var bk in bld.inventory) bldUsed += (bld.inventory[bk] || 0) * ((findResource(bk) || {}).weight || 1); }
+            var prodStored = bld.storedOutput || 0;
+            var prodRes = bt.produces ? findResource(bt.produces) : null;
+            bldUsed += prodStored * (prodRes ? (prodRes.weight || 1) : 1);
+            var weight = res ? (res.weight || 1) : 1;
+            if (bldUsed + qty * weight > bldCap) {
+                var canFit = Math.floor((bldCap - bldUsed) / weight);
+                if (canFit <= 0) return { success: false, message: 'Building storage full (' + Math.round(bldUsed) + '/' + bldCap + ').' };
+                return { success: false, message: 'Only room for ' + canFit + ' more. Storage: ' + Math.round(bldUsed) + '/' + bldCap + '.' };
+            }
+        }
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(1);
+        player.inventory[resId] -= qty;
+        if (player.inventory[resId] <= 0) player.inventory[resId] = 0;
+        if (!bld.inventory) bld.inventory = {};
+        bld.inventory[resId] = (bld.inventory[resId] || 0) + qty;
+        return { success: true, message: 'Stored ' + qty + ' ' + (res ? res.name : resId) + ' in ' + (bt ? bt.name : 'building') + '.' };
+    }
+
+    function withdrawFromBuilding(buildingId, resId, qty) {
+        qty = Math.floor(Number(qty));
+        if (!qty || qty <= 0) return { success: false, message: 'Invalid quantity.' };
+        var bld = (player.buildings || []).find(function(b) { return b.id === buildingId; });
+        if (!bld) return { success: false, message: 'Building not found.' };
+        if (bld.townId !== player.townId) return { success: false, message: 'You must be in the same town.' };
+        var stored = (bld.inventory && bld.inventory[resId]) || 0;
+        if (stored < qty) return { success: false, message: 'Not enough stored.' };
+        var res = findResource(resId);
+        var weight = res ? (res.weight || 1) : 1;
+        if (getCarriedWeight() + qty * weight > getCarryCapacity()) return { success: false, message: 'Too heavy to carry.' };
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(1);
+        bld.inventory[resId] -= qty;
+        if (bld.inventory[resId] <= 0) delete bld.inventory[resId];
+        player.inventory[resId] = (player.inventory[resId] || 0) + qty;
+        var bt = null;
+        for (var key in BUILDING_TYPES) { if (BUILDING_TYPES[key].id === bld.type) { bt = BUILDING_TYPES[key]; break; } }
+        return { success: true, message: 'Took ' + qty + ' ' + (res ? res.name : resId) + ' from ' + (bt ? bt.name : 'building') + '.' };
+    }
+
     function buyContainer(containerId) {
         var container = CONFIG.STORAGE_CONTAINERS[containerId];
         if (!container) return { success: false, message: 'Unknown container.' };
@@ -31058,6 +31209,14 @@
         getEffectiveCapacity,
         depositToStorage,
         withdrawFromStorage,
+        depositToHome,
+        withdrawFromHome,
+        getHomeStorageUsed,
+        getHomeStorageCapacity,
+        stableHorseAtHome,
+        unstableHorseFromHome,
+        depositToBuilding,
+        withdrawFromBuilding,
         buyContainer,
         mountContainer,
         dismountContainer,
