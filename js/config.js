@@ -424,8 +424,8 @@ const CONFIG = {
           description: 'A recognized citizen. Can own farms and workshops, petition the king, and get trade licenses.' },
         { id: 'burgher', name: 'Burgher', index: 2, icon: '⚖️',
           maxWorkers: 15, maxBuildings: 8, maxLand: 6,
-          goldReq: 5000, repReq: 55, extraReq: '1 year trading, 1+ building, 50+ trades',
-          fee: 1000, minTrades: 50, minBuildings: 1, tradingDays: 360,
+          goldReq: 5000, repReq: 55, extraReq: '90 days trading, 1+ building, 50+ trades',
+          fee: 1000, minTrades: 50, minBuildings: 1, tradingDays: 90,
           taxDiscount: 0.10,
           abilities: ['own_processing_buildings', 'buy_luxury', 'hire_caravan_guards', 'supply_chains'],
           description: 'An established merchant. Can own processing buildings, buy luxury goods, and run supply chains.' },
@@ -481,7 +481,8 @@ const CONFIG = {
     SMUGGLING_SKILL_MAX_REDUCTION: 0.20,
     SMUGGLING_BLACK_MARKET_PREMIUM: 1.5,
     SMUGGLING_FINE_MULTIPLIER: 2,
-    SMUGGLING_REP_PENALTY: 15,
+    SMUGGLING_REP_PENALTY: 1,
+    SMUGGLING_REP_PENALTY_WAR_GOODS: 5,
     SMUGGLING_JAIL_DAYS_MIN: 3,
     SMUGGLING_JAIL_DAYS_MAX: 7,
     CONSCRIPTION_CHANCE: 0.10,
@@ -2157,8 +2158,8 @@ const HUNGER_CONFIG = {
     DECAY_PER_DAY: 5,  // Was 10 — 20 days to starve instead of 10
     FOOD_RESTORE: 30,
     STARVING_HEALTH_LOSS: 1,
-    FOOD_TYPES: ['bread', 'meat', 'poultry', 'fish', 'eggs', 'preserved_food'],
-    RAW_FOOD_TYPES: ['wheat', 'flour'], // flour can make flatbread
+    FOOD_TYPES: ['bread', 'meat', 'poultry', 'fish', 'eggs', 'preserved_food', 'vegetables', 'grapes', 'honey'],
+    RAW_FOOD_TYPES: [],
     RAW_FOOD_RESTORE: 15,
     GUARD_FOOD_PER_DAY: 1,
 };
@@ -2646,7 +2647,7 @@ CONFIG.ROYAL_COMMISSIONS = {
     maxActivePerKingdom: 3,
     checkInterval: 30,         // king reviews commissions every 30 days
     baseReward: 1.5,           // 150% of goods value as reward
-    repReward: 15,             // reputation reward per commission filled
+    repReward: 1,              // reputation reward per commission filled
     expirationDays: 90,        // commissions expire after 90 days
     types: {
         goods_delivery: { name: 'Goods Delivery', desc: 'Deliver goods to the crown', icon: '📦' },

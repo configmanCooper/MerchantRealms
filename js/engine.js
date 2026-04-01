@@ -2551,11 +2551,12 @@
         }
 
         function generateWorkerSkill(rng) {
+            // Most workers are low-skill; average in single digits
             const roll = rng.random();
-            if (roll < 0.70) return rng.randInt(0, 30);
-            if (roll < 0.90) return rng.randInt(31, 60);
-            if (roll < 0.98) return rng.randInt(61, 80);
-            return rng.randInt(81, 100);
+            if (roll < 0.60) return rng.randInt(0, 5);
+            if (roll < 0.85) return rng.randInt(6, 15);
+            if (roll < 0.95) return rng.randInt(16, 30);
+            return rng.randInt(31, 50);
         }
 
         for (const town of towns) {

@@ -1519,6 +1519,114 @@ window.UI = (function () {
             }
             html += `</div>`;
         }
+
+        // Kingdom Trade Requests (street-trade style)
+        if (typeof Player !== 'undefined' && Player.getKingdomTradeRequests) {
+            var kTradeRequests = [];
+            try { kTradeRequests = Player.getKingdomTradeRequests() || []; } catch(e) {}
+            // Only show if player is in a town belonging to this kingdom
+            var _playerTown = null;
+            try { _playerTown = Engine.findTown(Player.townId); } catch(e) {}
+            var _inThisKingdom = _playerTown && _playerTown.kingdomId === kingdom.id && !Player.traveling;
+
+            html += '<div class="detail-section"><h3>🏪 Kingdom Trade</h3>';
+            if (!_inThisKingdom) {
+                html += '<div style="font-size:0.78rem;color:var(--text-dim);">Visit a town in this kingdom to trade with the crown.</div>';
+            } else if (kTradeRequests.length === 0) {
+                html += '<div style="font-size:0.78rem;color:var(--text-dim);">The kingdom has no trade requests right now. Check back in a week.</div>';
+            } else {
+                html += '<div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:6px;">The crown seeks goods. Sell for gold (+0.1 rep) or donate for favor (+1 rep).</div>';
+                for (var _kti = 0; _kti < kTradeRequests.length; _kti++) {
+                    var _kr = kTradeRequests[_kti];
+                    var _krHeld = (Player.inventory[_kr.resourceId] || 0);
+                    var _krCanFulfill = _krHeld >= _kr.qty;
+                    var _krTotal = _kr.pricePerUnit * _kr.qty;
+                    var _krPremPct = _kr.marketPrice > 0 ? Math.round(((_kr.pricePerUnit - _kr.marketPrice) / _kr.marketPrice) * 100) : 0;
+                    var _krPremColor = _krPremPct >= 0 ? '#55a868' : '#c44e52';
+                    var _krUrgencyColor = _kr.urgency > 60 ? '#e74c3c' : _kr.urgency > 30 ? '#ff9f43' : '#6bff6b';
+                    html += '<div style="background:rgba(255,215,0,0.06);padding:8px;border-radius:5px;margin-bottom:6px;border-left:3px solid ' + _krUrgencyColor + ';">';
+                    html += '<div style="font-size:0.8rem;">';
+                    html += '<strong>' + (_kr.resourceIcon || '') + ' ' + _kr.resourceName + '</strong> × ' + _kr.qty;
+                    html += ' — <span style="color:#ffd700;">' + _kr.pricePerUnit + 'g each</span>';
+                    html += ' <span style="color:' + _krPremColor + ';font-size:0.75rem;font-weight:bold;">(' + (_krPremPct >= 0 ? '+' : '') + _krPremPct + '% vs market)</span>';
+                    html += '</div>';
+                    html += '<div style="font-size:0.72rem;color:var(--text-dim);margin:2px 0;">' + (_kr.desc || '') + '</div>';
+                    html += '<div style="display:flex;gap:5px;align-items:center;margin-top:4px;flex-wrap:wrap;">';
+                    html += '<span style="font-size:0.72rem;color:var(--text-dim);">You have: ' + _krHeld + '</span>';
+                    html += '<button class="btn btn-sm" style="font-size:0.7rem;padding:2px 8px;" ' + (_krCanFulfill ? '' : 'disabled') + ' onclick="(function(){var r=Player.sellToKingdomRequest(' + _kti + ');if(r.success){UI.toast(r.message,\'success\');}else{UI.toast(r.message,\'warning\');}UI.showKingdomDetail(Engine.getKingdom(\'' + kingdom.id + '\'));})()">💰 Sell for ' + _krTotal + 'g</button>';
+                    html += '<button class="btn btn-sm" style="font-size:0.7rem;padding:2px 8px;" ' + (_krCanFulfill ? '' : 'disabled') + ' onclick="(function(){var r=Player.donateToKingdomGoods(' + _kti + ');if(r.success){UI.toast(r.message,\'success\');}else{UI.toast(r.message,\'warning\');}UI.showKingdomDetail(Engine.getKingdom(\'' + kingdom.id + '\'));})()">🎁 Donate (+1 rep)</button>';
+                    html += '</div></div>';
+                }
+            }
+            html += '</div>';
+        }
+
+        // Royal Commissions & Orders (inline summary)
+        var _commissions = [];
+        try { _commissions = Engine.getRoyalCommissions(kingdom.id) || []; } catch(e) {}
+        var _openComms = _commissions.filter(function(c) { return c.status === 'open'; });
+
+        var _proc = kingdom.procurement || {};
+        var _openOrders = (_proc.orders || []).filter(function(o) { return o.status === 'open'; });
+
+        if (_openComms.length > 0 || _openOrders.length > 0) {
+            html += '<div class="detail-section"><h3>📋 Active Commissions & Orders</h3>';
+
+            if (_openComms.length > 0) {
+                html += '<div style="font-size:0.78rem;font-weight:bold;margin-bottom:4px;">📦 Commissions (' + _openComms.length + ')</div>';
+                for (var _cci = 0; _cci < Math.min(_openComms.length, 3); _cci++) {
+                    var _cc = _openComms[_cci];
+                    var _ccDaysLeft = _cc.expiresDay - (Engine.getDay ? Engine.getDay() : 0);
+                    html += '<div style="font-size:0.75rem;padding:4px 6px;background:rgba(255,215,0,0.06);border-radius:4px;margin-bottom:3px;">';
+                    html += '📜 ' + _cc.description;
+                    html += ' <span style="color:#ffd700;">💰' + _cc.reward + 'g</span>';
+                    html += ' <span style="color:#6bff6b;">⭐+' + _cc.repReward + '</span>';
+                    html += ' <span class="text-dim">⏳' + _ccDaysLeft + 'd</span>';
+                    html += '</div>';
+                }
+                if (_openComms.length > 3) {
+                    html += '<div style="font-size:0.72rem;color:var(--text-dim);">+' + (_openComms.length - 3) + ' more...</div>';
+                }
+                html += '<button class="btn btn-sm" style="font-size:0.72rem;padding:2px 8px;margin-top:3px;" onclick="UI.openRoyalCommissionsPanel(\'' + kingdom.id + '\')">View All Commissions</button>';
+            }
+
+            if (_openOrders.length > 0) {
+                html += '<div style="font-size:0.78rem;font-weight:bold;margin:6px 0 4px 0;">📋 Orders (' + _openOrders.length + ')</div>';
+                for (var _ooi = 0; _ooi < Math.min(_openOrders.length, 3); _ooi++) {
+                    var _oo = _openOrders[_ooi];
+                    var _ooRes = null;
+                    try { _ooRes = typeof findResource !== 'undefined' ? findResource(_oo.resourceId) : null; } catch(e) {}
+                    if (!_ooRes) try { _ooRes = RESOURCE_TYPES[_oo.resourceId]; } catch(e) {}
+                    var _ooName = _ooRes ? _ooRes.name : _oo.resourceId;
+                    html += '<div style="font-size:0.75rem;padding:4px 6px;background:rgba(180,120,200,0.08);border-radius:4px;margin-bottom:3px;">';
+                    html += '📦 ' + _oo.qty + ' ' + _ooName;
+                    html += ' <span style="color:#ffd700;">≤' + _oo.maxPricePerUnit + 'g/ea</span>';
+                    html += ' <span class="text-dim">Bids: ' + (_oo.bids ? _oo.bids.length : 0) + '</span>';
+                    html += '</div>';
+                }
+                if (_openOrders.length > 3) {
+                    html += '<div style="font-size:0.72rem;color:var(--text-dim);">+' + (_openOrders.length - 3) + ' more...</div>';
+                }
+                html += '<button class="btn btn-sm" style="font-size:0.72rem;padding:2px 8px;margin-top:3px;" onclick="UI.showKingdomOrdersPanel(\'' + kingdom.id + '\')">View All Orders</button>';
+            }
+
+            html += '</div>';
+        }
+
+        // Donation to kingdom
+        var playerRep = (typeof Player !== 'undefined' && Player.reputation) ? (Player.reputation[kingdom.id] || 50) : 50;
+        var playerGold = (typeof Player !== 'undefined') ? (Player.gold || 0) : 0;
+        var canDonate = playerGold >= 500;
+        html += `<div class="detail-section"><h3>💰 Donate to Kingdom</h3>
+            <div style="font-size:0.78rem;color:var(--text-dim);margin-bottom:6px;">
+                Your Reputation: ${playerRep}/100 &nbsp;|&nbsp; 500g per +1 rep
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                <button class="btn btn-sm" style="font-size:0.75rem;" ${canDonate ? '' : 'disabled'} onclick="(function(){var r=Player.donateToKingdom('${kingdom.id}',1);if(!r.success){UI.toast(r.message,'warning');}else{UI.showKingdomDetail(Engine.getKingdom('${kingdom.id}'));}})()">Donate 500g (+1)</button>
+                <button class="btn btn-sm" style="font-size:0.75rem;" ${playerGold >= 2500 ? '' : 'disabled'} onclick="(function(){var r=Player.donateToKingdom('${kingdom.id}',5);if(!r.success){UI.toast(r.message,'warning');}else{UI.showKingdomDetail(Engine.getKingdom('${kingdom.id}'));}})()">Donate 2,500g (+5)</button>
+                <button class="btn btn-sm" style="font-size:0.75rem;" ${playerGold >= 5000 ? '' : 'disabled'} onclick="(function(){var r=Player.donateToKingdom('${kingdom.id}',10);if(!r.success){UI.toast(r.message,'warning');}else{UI.showKingdomDetail(Engine.getKingdom('${kingdom.id}'));}})()">Donate 5,000g (+10)</button>
+            </div>
+        </div>`;
 
         showRightPanel(`👑 ${kingdom.name}`, html);
     }
@@ -3823,7 +3931,8 @@ window.UI = (function () {
 
         let people;
         try { people = Engine.getPeople(Player.townId); } catch (e) { people = []; }
-        _cachedUnemployed = (people || []).filter(p => p.alive && (p.occupation === 'none' || !p.occupation || !p.employerId));
+        _cachedUnemployed = (people || []).filter(p => p.alive && !p.employerId && p.age >= 18 &&
+            p.occupation !== 'noble' && p.occupation !== 'soldier' && p.occupation !== 'king' && p.occupation !== 'guard');
 
         const availableHtml = buildWorkerListHtml(_cachedUnemployed);
 
@@ -3897,10 +4006,14 @@ window.UI = (function () {
     }
 
     function getWorkerExpectedWage(p) {
-        const best = getWorkerBestSkill(p);
-        if (best.value >= 70) return CONFIG.WORKER_WEEKLY_WAGES ? CONFIG.WORKER_WEEKLY_WAGES.expert : 50;
-        if (best.value >= 40) return CONFIG.WORKER_WEEKLY_WAGES ? CONFIG.WORKER_WEEKLY_WAGES.skilled : 18;
-        return CONFIG.WORKER_WEEKLY_WAGES ? CONFIG.WORKER_WEEKLY_WAGES.unskilled : 5;
+        // Use Player's wage calculator if available, else estimate
+        if (typeof Player !== 'undefined' && Player.calculateWorkerWage) {
+            return Player.calculateWorkerWage(p);
+        }
+        // Fallback estimate based on workerSkill
+        var skill = p.workerSkill || 0;
+        var base = 8 + skill * 0.8;
+        return Math.max(5, Math.min(100, Math.round(base)));
     }
 
     function getWorkerBuildingFit(p) {
@@ -3965,7 +4078,7 @@ window.UI = (function () {
             ${skillBars}
             <div style="display:flex;justify-content:space-between;font-size:0.7rem;color:#aaa;">
                 <span>Best: <b style="color:${skillColors[best.skill] || '#ddd'}">${skillIcons[best.skill] || ''} ${best.skill} (${best.value})</b></span>
-                <span>Overall: ${overall}</span>
+                <span>Work Skill: <b>${p.workerSkill || 0}</b></span>
                 <span>Wage: <b style="color:#ffd700;">~${wage}g/wk</b></span>
             </div>
             ${fitHtml}
@@ -4825,8 +4938,12 @@ window.UI = (function () {
 
     function hirePerson(personId) {
         try {
-            Player.hireWorker(personId);
-            toast('Worker hired!', 'success', 'my_business');
+            var result = Player.hireWorker(personId);
+            if (result && result.success === false) {
+                toast(result.message || 'Cannot hire this worker.', 'danger');
+            } else {
+                toast(result && result.message ? result.message : 'Worker hired!', 'success', 'my_business');
+            }
             openHireDialog(); // refresh
         } catch (e) {
             toast(e.message || 'Cannot hire', 'danger');
@@ -4835,8 +4952,12 @@ window.UI = (function () {
 
     function fireWorker(personId) {
         try {
-            Player.fireWorker(personId);
-            toast('Worker dismissed.', 'info');
+            var result = Player.fireWorker(personId);
+            if (result && result.success === false) {
+                toast(result.message || 'Cannot fire this worker.', 'danger');
+            } else {
+                toast(result && result.message ? result.message : 'Worker dismissed.', 'info');
+            }
             openHireDialog(); // refresh
         } catch (e) {
             toast(e.message || 'Cannot fire', 'danger');
