@@ -4,6 +4,39 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.53.0] - 2026-04-01
+
+### Added
+- Saddle mount system: equip/remove saddles on individual horses via character panel
+- Luxury sea travel: premium cabins at city/capital ports (+0.5 energy/tick, 1.6x speed)
+- Goods supply chain in Help menu: shows production chain (Made from → Produced at → Used to make)
+- Dual building storage: separate Input Storage and Output Storage per building
+- Input storage market-like transfer UI: capacity bar, deposit/withdraw with qty buttons (1/5/10/25/All)
+- `inputOnly` toggle on building input storage: restricts to goods the building consumes
+- Building auto-buy: purchases consumed goods from market into building inventory (pays gold)
+- Caravan overflow sell toggle: per-caravan checkbox to sell overflow to market or keep on caravan
+- Caravan map icons: brown diamond markers on roads with route name, goods count, pulsing glow
+- Caravan click-to-manage: click caravan icons on map to open their management panel
+- Caravan hover tooltips: route, direction, progress %, goods count
+- Force disband button for stuck caravans
+
+### Changed
+- Building production now ONLY consumes from building input storage (not town market)
+- Buildings with empty input storage show "blocked" with specific resource needs
+- Caravan "store" action delivers to building inventory; overflow sells to market or stays on caravan
+- Eliminated phantom `player.townStorage` writes from caravan input delivery
+- Travel energy tiers: walking (0.35/tick), horse no saddle (0.30), horse+saddle (0.25 passive only), luxury (+0.25 net restore)
+- Consumes display shows building storage amount, days of supply, and market availability hint
+- Blocked status shows specific needs: "need: Hemp (have 0, need 3)"
+
+### Fixed
+- Caravan disband not completing (added force disband mechanism)
+- Caravan icons not showing on map (complete render rewrite with road-following waypoints)
+- Schemes "Dark Deeds" toast appearing every page load (removed misleading unlock toast)
+- Removed orphaned "Demolish Your Buildings" section from Build panel
+- Rope maker showing "producing" when input storage was empty
+- Extra closing brace in building input consumption loop
+
 ## [0.52.0] - 2026-04-01
 
 ### Added

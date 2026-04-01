@@ -946,6 +946,10 @@ window.Game = (function () {
         const hit = Renderer.hitTest(sx, sy, { shiftKey: shiftKey || false });
 
         switch (hit.type) {
+            case 'caravan':
+                UI.openCaravanManagement();
+                Renderer.setSelected(hit);
+                break;
             case 'town':
                 UI.showTownDetail(hit.data);
                 Renderer.setSelected(hit);
@@ -999,7 +1003,26 @@ window.Game = (function () {
             _lastPersonHover = null;
         }
 
-        if (hit.type === 'town' && hit.data) {
+        if (hit.type === 'caravan' && hit.data) {
+            var hc = hit.data;
+            var hcFrom = '', hcTo = '';
+            try {
+                var hcFromTown = Engine.findTown(hc.fromTownId);
+                var hcToTown = Engine.findTown(hc.toTownId);
+                hcFrom = hcFromTown ? hcFromTown.name : '?';
+                hcTo = hcToTown ? hcToTown.name : '?';
+            } catch(e) {}
+            var hcProgress = Math.round((hc.progress || 0) * 100);
+            var hcGoods = hc.goods ? Object.values(hc.goods).reduce(function(a,b){return a+b;}, 0) : 0;
+            var hcTip = '🛒 Caravan: ' + hcFrom + ' → ' + hcTo;
+            hcTip += '\n' + (hc.returnTrip ? '↩️ Returning' : '→ Outbound') + ' — ' + hcProgress + '%';
+            if (hcGoods > 0) hcTip += '\n📦 ' + hcGoods + ' goods';
+            if (hc.disbanding) hcTip += '\n🏳️ Disbanding...';
+            hcTip += '\n💡 Click to manage';
+            Renderer.setHover({ type: 'caravan', data: hc });
+            UI.showTooltip(sx, sy, hcTip);
+            document.getElementById('gameCanvas').style.cursor = 'pointer';
+        } else if (hit.type === 'town' && hit.data) {
             const town = hit.data;
             Renderer.setHover({ type: 'town', data: town });
             let tip = `${town.name}${town.isPort ? ' ⚓' : ''}${town.isIsland ? ' 🏝' : ''}\nPop: ${town.population || 0} | Prosperity: ${Math.round(town.prosperity || 0)}%`;
@@ -1662,7 +1685,7 @@ window.Game = (function () {
 
             // 3. Game metadata
             debugData.meta = {
-                gameVersion: 'v0.52.0',
+                gameVersion: 'v0.53.0',
                 saveVersion: 3,
                 timestamp: new Date().toISOString(),
                 userAgent: navigator.userAgent,

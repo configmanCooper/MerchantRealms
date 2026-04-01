@@ -52,6 +52,9 @@ window.Renderer = (function () {
     let _minimapTerrainCanvas = null; // Permanent terrain cache — never changes after init
     let showDeposits = false; // toggled by player with Regional Survey skill
 
+    // ── Caravan position cache for hit testing ──
+    var _caravanPositions = []; // [{id, x, y, caravan}]
+
     // ── Per-frame render cache (avoid repeated Engine calls) ──
     let _frameTowns = null;
     let _frameTownMap = null;
@@ -1606,67 +1609,201 @@ window.Renderer = (function () {
     // ═══════════════════════════════════════════════════════════
 
     function renderCaravans(player) {
+        _caravanPositions = [];
         if (!player || !player.caravans) return;
 
         const towns = _frameTowns;
         if (!towns) return;
         const townMap = _frameTownMap;
-        const ts = CONFIG.TILE_SIZE;
+
+        // Get roads/sea routes for waypoint lookup
+        var roads = null;
+        var seaRoutes = null;
+        try { roads = Engine.getRoads(); } catch (e) { /* no-op */ }
+        try { seaRoutes = Engine.getSeaRoutes(); } catch (e) { /* no-op */ }
 
         for (const caravan of player.caravans) {
+            if (caravan.status !== 'traveling') continue;
             const from = townMap[caravan.fromTownId];
             const to = townMap[caravan.toTownId];
             if (!from || !to) continue;
 
             const progress = caravan.progress || 0;
-            const fx = from.x;
-            const fy = from.y;
-            const tx = to.x;
-            const ty = to.y;
 
-            // Position along the road
-            const cx = fx + (tx - fx) * progress;
-            const cy = fy + (ty - fy) * progress;
+            // Determine actual start/end based on return trip
+            var startTown, endTown;
+            if (caravan.returnTrip) {
+                startTown = to; endTown = from;
+            } else {
+                startTown = from; endTown = to;
+            }
+
+            // Build complete polyline of waypoints (same logic as player marker)
+            var allWaypoints = [];
+
+            if (caravan.route && caravan.route.length > 0) {
+                for (var ri = 0; ri < caravan.route.length; ri++) {
+                    var seg = caravan.route[ri];
+                    var segFrom = townMap[seg.fromTownId];
+                    var segTo = townMap[seg.toTownId];
+                    if (!segFrom || !segTo) continue;
+
+                    // Determine direction
+                    var lastWP = allWaypoints.length > 0 ? allWaypoints[allWaypoints.length - 1] : null;
+                    var forward = true;
+                    if (lastWP) {
+                        var dFrom = Math.hypot(lastWP.x - segFrom.x, lastWP.y - segFrom.y);
+                        var dTo = Math.hypot(lastWP.x - segTo.x, lastWP.y - segTo.y);
+                        forward = dFrom <= dTo;
+                    } else {
+                        forward = seg.fromTownId === (caravan.returnTrip ? caravan.toTownId : caravan.fromTownId);
+                    }
+
+                    // Look for waypoints in segment data or engine roads
+                    var roadWaypoints = null;
+                    if (seg.waypoints && seg.waypoints.length > 0) {
+                        roadWaypoints = seg.waypoints;
+                    } else {
+                        var routeList = seg.type === 'sea' ? seaRoutes : roads;
+                        if (routeList) {
+                            for (var rri = 0; rri < routeList.length; rri++) {
+                                var rd = routeList[rri];
+                                if ((rd.fromTownId === seg.fromTownId && rd.toTownId === seg.toTownId) ||
+                                    (rd.toTownId === seg.fromTownId && rd.fromTownId === seg.toTownId)) {
+                                    if (rd.waypoints && rd.waypoints.length > 0) {
+                                        roadWaypoints = rd.waypoints;
+                                        if (rd.fromTownId !== seg.fromTownId) {
+                                            roadWaypoints = roadWaypoints.slice().reverse();
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (roadWaypoints && roadWaypoints.length > 1) {
+                        var wp = forward ? roadWaypoints : roadWaypoints.slice().reverse();
+                        var startIdx = allWaypoints.length > 0 ? 1 : 0;
+                        for (var wi = startIdx; wi < wp.length; wi++) {
+                            allWaypoints.push({ x: wp[wi].x || wp[wi][0], y: wp[wi].y || wp[wi][1] });
+                        }
+                    } else {
+                        var sPt = forward ? segFrom : segTo;
+                        var ePt = forward ? segTo : segFrom;
+                        if (allWaypoints.length === 0) {
+                            allWaypoints.push({ x: sPt.x, y: sPt.y });
+                        }
+                        allWaypoints.push({ x: ePt.x, y: ePt.y });
+                    }
+                }
+            }
+
+            // Fallback if no waypoints gathered
+            if (allWaypoints.length < 2) {
+                allWaypoints = [
+                    { x: startTown.x, y: startTown.y },
+                    { x: endTown.x, y: endTown.y }
+                ];
+            }
+
+            // Calculate position along polyline at progress
+            var totalLen = 0;
+            var segLens = [];
+            for (var si = 1; si < allWaypoints.length; si++) {
+                var dx = allWaypoints[si].x - allWaypoints[si-1].x;
+                var dy = allWaypoints[si].y - allWaypoints[si-1].y;
+                var sl = Math.sqrt(dx*dx + dy*dy);
+                segLens.push(sl);
+                totalLen += sl;
+            }
+
+            var cx, cy;
+            if (totalLen > 0) {
+                var targetDist = progress * totalLen;
+                var cumDist = 0;
+                cx = allWaypoints[0].x;
+                cy = allWaypoints[0].y;
+                for (var si2 = 0; si2 < segLens.length; si2++) {
+                    if (cumDist + segLens[si2] >= targetDist) {
+                        var t = segLens[si2] > 0 ? (targetDist - cumDist) / segLens[si2] : 0;
+                        cx = allWaypoints[si2].x + (allWaypoints[si2+1].x - allWaypoints[si2].x) * t;
+                        cy = allWaypoints[si2].y + (allWaypoints[si2+1].y - allWaypoints[si2].y) * t;
+                        break;
+                    }
+                    cumDist += segLens[si2];
+                    cx = allWaypoints[si2 + 1].x;
+                    cy = allWaypoints[si2 + 1].y;
+                }
+            } else {
+                cx = startTown.x;
+                cy = startTown.y;
+            }
+
+            // Store position for hit testing
+            _caravanPositions.push({ id: caravan.id, x: cx, y: cy, caravan: caravan });
 
             if (!isVisible(cx, cy, 50)) continue;
 
-            // Cart body
-            ctx.fillStyle = '#8b6914';
-            ctx.fillRect(cx - 6, cy - 3, 12, 6);
+            // Draw caravan marker — brown diamond (distinct from gold player marker)
+            var pulse = Math.sin(frameCount * 0.06) * 1.5;
+            var size = 6 + pulse;
 
-            // Wheels
-            ctx.fillStyle = '#5a4a38';
+            ctx.save();
+            ctx.translate(cx, cy);
+
+            // Glow
+            ctx.shadowColor = caravan.disbanding ? '#c06060' : '#8b6914';
+            ctx.shadowBlur = 8 + pulse;
+
+            // Diamond shape
+            ctx.fillStyle = caravan.disbanding ? '#c06060' : '#8b6914';
             ctx.beginPath();
-            ctx.arc(cx - 4, cy + 4, 2.5, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.beginPath();
-            ctx.arc(cx + 4, cy + 4, 2.5, 0, Math.PI * 2);
+            ctx.moveTo(0, -size);
+            ctx.lineTo(size * 0.6, 0);
+            ctx.lineTo(0, size);
+            ctx.lineTo(-size * 0.6, 0);
+            ctx.closePath();
             ctx.fill();
 
-            // Canvas cover
-            ctx.fillStyle = '#c2b280';
+            ctx.shadowBlur = 0;
+
+            // Inner lighter diamond
+            ctx.fillStyle = caravan.disbanding ? '#e0a0a0' : '#c2a050';
+            var inner = size * 0.45;
             ctx.beginPath();
-            ctx.arc(cx, cy - 3, 6, Math.PI, 0);
+            ctx.moveTo(0, -inner);
+            ctx.lineTo(inner * 0.6, 0);
+            ctx.lineTo(0, inner);
+            ctx.lineTo(-inner * 0.6, 0);
+            ctx.closePath();
             ctx.fill();
 
-            // Goods / guard indicators
-            if (camera.zoom > 0.8) {
-                const goodsCount = caravan.goods ? Object.values(caravan.goods).reduce((a, b) => a + b, 0) : 0;
-                const guards = caravan.guards || 0;
+            // Cart icon on top (small wagon at zoom)
+            if (camera.zoom > 0.6) {
+                ctx.font = Math.max(8, Math.round(9 / Math.max(camera.zoom, 0.7))) + 'px serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'bottom';
                 ctx.fillStyle = '#e8dcc8';
+                ctx.fillText('🛒', 0, -size - 2);
+            }
+
+            // Caravan name / goods at higher zoom
+            if (camera.zoom > 1.0) {
+                var goodsCount = caravan.goods ? Object.values(caravan.goods).reduce(function(a, b) { return a + b; }, 0) : 0;
                 ctx.font = '7px serif';
                 ctx.textAlign = 'center';
-                ctx.fillText(`📦${goodsCount} 🛡${guards}`, cx, cy - 10);
+                ctx.textBaseline = 'top';
+                ctx.fillStyle = '#e8dcc8';
+                var fromName = from ? from.name : '?';
+                var toName = to ? to.name : '?';
+                ctx.fillText(fromName + '→' + toName, 0, size + 3);
+                if (goodsCount > 0) {
+                    ctx.fillText('📦' + goodsCount, 0, size + 12);
+                }
             }
 
-            // Status colors
-            if (caravan.status === 'attacked') {
-                ctx.strokeStyle = 'rgba(200,40,30,0.8)';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.arc(cx, cy, 12, 0, Math.PI * 2);
-                ctx.stroke();
-            }
+            ctx.restore();
         }
     }
 
@@ -2334,6 +2471,15 @@ window.Renderer = (function () {
 
         // When shift is held, prioritize people over towns
         const prioritizePeople = options.shiftKey || false;
+
+        // Check caravans first — they're small clickable icons on roads
+        for (var ci = 0; ci < _caravanPositions.length; ci++) {
+            var cp = _caravanPositions[ci];
+            var cdist = Math.sqrt((w.x - cp.x) * (w.x - cp.x) + (w.y - cp.y) * (w.y - cp.y));
+            if (cdist < 12) {
+                return { type: 'caravan', data: cp.caravan };
+            }
+        }
 
         if (!prioritizePeople) {
             // Check towns first (normal behavior)

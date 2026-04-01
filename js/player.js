@@ -556,6 +556,7 @@
         player.guilds = {};  // { guildId: { joinedDay, rank, duesPaidUntilDay } }
         player.guildMemberships = {};  // guildId → { expiresDay, type }
         player.horsePermit = {};  // { kingdomId: { purchasedDay, expiresDay } }
+        player.autoRest = true;  // Auto-rest when energy < 10
         // Injuries & illnesses
         player.injuries = [];
         player.illnesses = [];
@@ -2183,8 +2184,8 @@
             goods[resId] = Math.floor(nqty);
             hasValidGoods = true;
         }
-        var hasPickupOrders = orders && orders.some(function(o) { return o.action === 'pickup'; });
-        if (!hasValidGoods && !hasPickupOrders) return { success: false, message: 'No goods specified for the caravan.' };
+        var hasPickupOrders = orders && orders.some(function(o) { return o.action === 'pickup' || o.action === 'buy'; });
+        if (!hasValidGoods && !hasPickupOrders && (!orders || orders.length === 0)) return { success: false, message: 'No goods or orders specified for the caravan.' };
 
         // Calculate caravan capacity
         var capacity = carriers * (CONFIG.CARAVAN_CARRIER_BASE_CAPACITY || 30);
@@ -2335,6 +2336,7 @@
             totalProfit: 0,
             totalSpent: totalCost,
             active: true,
+            overflowSell: options.overflowSell || false,
         };
         player.caravans.push(caravan);
         var crewMsg = ' (' + carriers + ' carriers, ' + guardCount + ' guards';
@@ -2590,7 +2592,7 @@
 
         // Horse travel speed bonus
         const hasHorse = player.horses.length > 0;
-        const hasSaddle = (player.inventory.saddles || 0) > 0;
+        const hasSaddle = player.horses.some(function(h) { return h.saddled; });
         if (hasHorse) {
             let speedBonus = CONFIG.HORSE_TRAVEL_SPEED_BONUS || 0.3;
             // Average speed of all horses
@@ -2681,17 +2683,7 @@
             }
         }
 
-        // Add travel energy cost (horses dramatically reduce this)
-        var estimatedDays = Math.ceil(totalDist / CONFIG.CARAVAN_BASE_SPEED);
-        var travelEnergyCost = estimatedDays * 2;
-        if (hasHorse) {
-            if (hasSaddle) {
-                travelEnergyCost *= (ENERGY_CONFIG.HORSE_SADDLE_ENERGY_MULTIPLIER || 0.25);
-            } else {
-                travelEnergyCost *= (ENERGY_CONFIG.HORSE_ENERGY_MULTIPLIER || 0.4);
-            }
-        }
-        addFatigue(travelEnergyCost);
+        // Travel energy is now handled per-tick in tickTravel (no upfront cost)
 
         const dest = Engine.findTown(townId);
         const horseMsg = hasHorse ? (hasSaddle ? ' 🐴 (Horse + Saddle bonus!)' : ' 🐴 (Horse bonus!)') : '';
@@ -2923,8 +2915,8 @@
         var missingInputs = [];
         if (bt.consumes) {
             for (const [resId, qty] of Object.entries(bt.consumes)) {
-                const available = (town && town.market && town.market.supply[resId]) || 0;
-                if (available < qty) missingInputs.push({ id: resId, needed: qty, available: available });
+                const bldAvail = (bld.inventory && bld.inventory[resId]) || 0;
+                if (bldAvail < qty) missingInputs.push({ id: resId, needed: qty, available: bldAvail });
             }
         }
 
@@ -3218,11 +3210,7 @@
         player.travelMode = hasShip ? 'sail_own' : 'sea_passage';
         player.travelRestBonus = false;
 
-        // Sea travel energy cost (ship provides comfort, less tiring than walking)
-        var seaEstDays = Math.ceil(player.travelTotalDist / (CONFIG.CARAVAN_BASE_SPEED * 1.5));
-        var seaEnergyCost = seaEstDays * 1.5; // Less than land (2/day) since you're riding
-        if (bestPlayerShip && bestPlayerShip.restBonus > 0) seaEnergyCost *= 0.5; // Ships with rest reduce cost further
-        addFatigue(seaEnergyCost);
+        // Sea travel energy is now handled per-tick in tickTravel (no upfront cost)
 
         Engine.logEvent('You set sail for ' + (destTown ? destTown.name : 'unknown') + '.');
 
@@ -3464,11 +3452,103 @@
                     logCaravan(caravan, '📥 No ' + resName + ' on caravan to store at ' + townName + '.');
                     continue;
                 }
-                if (!player.townStorage[townId]) player.townStorage[townId] = {};
-                player.townStorage[townId][o.good] = (player.townStorage[townId][o.good] || 0) + storeQty;
-                caravan.goods[o.good] = (caravan.goods[o.good] || 0) - storeQty;
-                if (caravan.goods[o.good] <= 0) delete caravan.goods[o.good];
-                logCaravan(caravan, '📥 Stored ' + storeQty + ' ' + resName + ' at ' + townName + '.');
+                var stored = 0;
+                if (o.buildingId) {
+                    // Store in specific building
+                    var bld = (player.buildings || []).find(function(b) { return b.id === o.buildingId; });
+                    if (bld && bld.townId === townId) {
+                        var bt = null;
+                        for (var bk in BUILDING_TYPES) { if (BUILDING_TYPES[bk].id === bld.type) { bt = BUILDING_TYPES[bk]; break; } }
+                        // Check inputOnly filter
+                        if (bld.inputOnly !== false && bt && bt.produces) {
+                            var consumed = getBuildingConsumedGoods(bt);
+                            if (!consumed[o.good]) {
+                                logCaravan(caravan, '⚠️ ' + resName + ' not accepted by ' + (bt ? bt.name : 'building') + ' — input filter is on. Keeping on caravan.');
+                                continue;
+                            }
+                        }
+                        var bldCap = bt ? (bt.storage || 0) * (bld.level || 1) : 0;
+                        var bldUsed = 0;
+                        if (bld.inventory) { for (var bi in bld.inventory) { var bw = (findResource(bi) || {}).weight || 1; bldUsed += (bld.inventory[bi] || 0) * bw; } }
+                        bldUsed += bld.storedOutput || 0;
+                        var resWeight = (findResource(o.good) || {}).weight || 1;
+                        var canFit = Math.floor((bldCap - bldUsed) / resWeight);
+                        var bldQty = Math.min(storeQty, canFit);
+                        if (bldQty > 0) {
+                            if (!bld.inventory) bld.inventory = {};
+                            bld.inventory[o.good] = (bld.inventory[o.good] || 0) + bldQty;
+                            stored += bldQty;
+                            var bldName = bt ? bt.name : 'building';
+                            logCaravan(caravan, '📥 Stored ' + bldQty + ' ' + resName + ' in ' + bldName + ' at ' + townName + '.');
+                        }
+                        var remainder = storeQty - stored;
+                        if (remainder > 0 && caravan.overflowSell) {
+                            // Sell overflow to market
+                            var _ovP = town.market.prices[o.good] || 1;
+                            var _ovR = Math.floor(_ovP * remainder);
+                            player.gold += _ovR;
+                            player.stats.totalGoldEarned += _ovR;
+                            caravan.totalProfit = (caravan.totalProfit || 0) + _ovR;
+                            town.market.supply[o.good] = (town.market.supply[o.good] || 0) + remainder;
+                            stored += remainder;
+                            logCaravan(caravan, '💰 Building full — sold overflow ' + remainder + ' ' + resName + ' for ' + _ovR + 'g.');
+                        } else if (remainder > 0) {
+                            logCaravan(caravan, '⚠️ ' + remainder + ' ' + resName + ' could not be stored — building full. Keeping on caravan.');
+                        }
+                    } else {
+                        logCaravan(caravan, '⚠️ Target building not found in ' + townName + '. Keeping goods on caravan.');
+                    }
+                } else {
+                    // No specific building — try to store in any suitable building at this town
+                    var _storeRemaining = storeQty;
+                    var _townBuildings = (player.buildings || []).filter(function(b) { return b.townId === townId; });
+                    for (var _tbi = 0; _tbi < _townBuildings.length && _storeRemaining > 0; _tbi++) {
+                        var _tBld = _townBuildings[_tbi];
+                        var _tBt = null;
+                        for (var _tbk in BUILDING_TYPES) { if (BUILDING_TYPES[_tbk].id === _tBld.type) { _tBt = BUILDING_TYPES[_tbk]; break; } }
+                        if (!_tBt) continue;
+                        // Check inputOnly filter
+                        if (_tBld.inputOnly !== false && _tBt.produces) {
+                            var _consumed = getBuildingConsumedGoods(_tBt);
+                            if (!_consumed[o.good]) continue;
+                        }
+                        var _tBldCap = (_tBt.storage || 0) * (_tBld.level || 1);
+                        var _tBldUsed = 0;
+                        if (_tBld.inventory) { for (var _tbi2 in _tBld.inventory) { var _tbw = (findResource(_tbi2) || {}).weight || 1; _tBldUsed += (_tBld.inventory[_tbi2] || 0) * _tbw; } }
+                        _tBldUsed += _tBld.storedOutput || 0;
+                        var _tResWeight = (findResource(o.good) || {}).weight || 1;
+                        var _tCanFit = Math.floor((_tBldCap - _tBldUsed) / _tResWeight);
+                        var _tStoreQty = Math.min(_storeRemaining, _tCanFit);
+                        if (_tStoreQty > 0) {
+                            if (!_tBld.inventory) _tBld.inventory = {};
+                            _tBld.inventory[o.good] = (_tBld.inventory[o.good] || 0) + _tStoreQty;
+                            _storeRemaining -= _tStoreQty;
+                            stored += _tStoreQty;
+                            logCaravan(caravan, '📥 Stored ' + _tStoreQty + ' ' + resName + ' in ' + (_tBt.name || _tBld.type) + ' at ' + townName + '.');
+                        }
+                    }
+                    // Overflow: sell to market or keep on caravan
+                    if (_storeRemaining > 0) {
+                        if (caravan.overflowSell) {
+                            // Sell overflow to town market
+                            var _ovPrice = town.market.prices[o.good] || 1;
+                            var _ovRevenue = Math.floor(_ovPrice * _storeRemaining);
+                            player.gold += _ovRevenue;
+                            player.stats.totalGoldEarned += _ovRevenue;
+                            caravan.totalProfit = (caravan.totalProfit || 0) + _ovRevenue;
+                            town.market.supply[o.good] = (town.market.supply[o.good] || 0) + _storeRemaining;
+                            stored += _storeRemaining;
+                            logCaravan(caravan, '💰 Overflow: sold ' + _storeRemaining + ' ' + resName + ' for ' + _ovRevenue + 'g at ' + townName + ' market.');
+                        } else {
+                            // Keep on caravan — notify player
+                            logCaravan(caravan, '⚠️ No building space for ' + _storeRemaining + ' ' + resName + ' at ' + townName + '. Keeping on caravan.');
+                        }
+                    }
+                }
+                if (stored > 0) {
+                    caravan.goods[o.good] = (caravan.goods[o.good] || 0) - stored;
+                    if (caravan.goods[o.good] <= 0) delete caravan.goods[o.good];
+                }
             } else if (o.action === 'sell') {
                 var sellCarried = caravan.goods[o.good] || 0;
                 var sellQty = Math.min(qty, sellCarried);
@@ -4355,6 +4435,60 @@
         }
     }
 
+    function forceDisbandCaravan(caravanId) {
+        var caravan = player.caravans.find(function(c) { return c.id === caravanId && c.active; });
+        if (!caravan) return { success: false, message: 'No active caravan with that ID.' };
+
+        // Drop goods at origin town storage (or player inventory if in same town)
+        var dropTownId = caravan.fromTownId;
+        if (!player.townStorage[dropTownId]) player.townStorage[dropTownId] = {};
+        var totalDropped = 0;
+        for (var gk in caravan.goods) {
+            if (caravan.goods[gk] > 0) {
+                if (player.townId === dropTownId) {
+                    player.inventory[gk] = (player.inventory[gk] || 0) + caravan.goods[gk];
+                } else {
+                    player.townStorage[dropTownId][gk] = (player.townStorage[dropTownId][gk] || 0) + caravan.goods[gk];
+                }
+                totalDropped += caravan.goods[gk];
+            }
+        }
+
+        // Return equipment to origin town storage
+        if (caravan.carrierHorses > 0) {
+            if (player.townId === dropTownId) {
+                player.inventory['horses'] = (player.inventory['horses'] || 0) + caravan.carrierHorses;
+            } else {
+                player.townStorage[dropTownId]['horses'] = (player.townStorage[dropTownId]['horses'] || 0) + caravan.carrierHorses;
+            }
+        }
+        if (caravan.carts > 0) {
+            if (player.townId === dropTownId) {
+                player.inventory['cart'] = (player.inventory['cart'] || 0) + caravan.carts;
+            } else {
+                player.townStorage[dropTownId]['cart'] = (player.townStorage[dropTownId]['cart'] || 0) + caravan.carts;
+            }
+        }
+        if (caravan.wagons > 0) {
+            if (player.townId === dropTownId) {
+                player.inventory['wagon'] = (player.inventory['wagon'] || 0) + caravan.wagons;
+            } else {
+                player.townStorage[dropTownId]['wagon'] = (player.townStorage[dropTownId]['wagon'] || 0) + caravan.wagons;
+            }
+        }
+
+        caravan.goods = {};
+        caravan.status = 'arrived';
+        caravan.active = false;
+        caravan.recurring = false;
+        caravan.disbanding = false;
+
+        var originName = Engine.findTown(dropTownId) ? Engine.findTown(dropTownId).name : 'origin';
+        logCaravan(caravan, '❌ Caravan force-disbanded. ' + (totalDropped > 0 ? totalDropped + ' goods dropped at ' + originName + '.' : 'No goods to drop.'));
+        Engine.logEvent('Caravan force-disbanded. Equipment returned to ' + originName + '.');
+        return { success: true, message: 'Caravan disbanded immediately. Goods & equipment returned to ' + originName + '.' };
+    }
+
     function getActiveRoutes() {
         return player.caravans.filter(c => c.active && (c.status === 'traveling' || c.recurring));
     }
@@ -4498,7 +4632,7 @@
         // Apply horse bonus
         if (player.horses && player.horses.length > 0) {
             effectiveDist *= (1 - (CONFIG.HORSE_TRAVEL_SPEED_BONUS || 0.3));
-            if (player.hasSaddle) effectiveDist *= (1 - 0.3);
+            if (player.horses.some(function(h) { return h.saddled; })) effectiveDist *= (1 - 0.3);
         }
 
         // Set travel state
@@ -4645,6 +4779,7 @@
         else if (service.type === 'npc_luxury') speedFactor = 2.0;
         else if (service.type === 'kingdom') speedFactor = (CONFIG.KINGDOM_TRANSPORT ? CONFIG.KINGDOM_TRANSPORT.speedMultiplier : 1.7);
         else if (service.type === 'npc_vessel') speedFactor = 1.4;
+        else if (service.type === 'npc_luxury_sea') speedFactor = 1.6;
 
         player.traveling = true;
         player.travelDestination = townId;
@@ -4654,7 +4789,7 @@
         player.travelPaid = true; // Cannot turn back on paid transport
         player.travelMode = service.type;
         player.travelTotalDist = totalDist / speedFactor;
-        player.travelBySea = service.type === 'npc_vessel';
+        player.travelBySea = service.type === 'npc_vessel' || service.type === 'npc_luxury_sea';
         player.travelOffroad = false;
 
         // Luxury wagon restores some energy
@@ -4759,12 +4894,28 @@
             }
         }
 
-        // Luxury wagon/transport energy restoration
-        if (player.travelRestBonus) {
+        // Per-tick travel energy cost based on travel mode
+        // Walking: -0.1/tick, Horse: -0.05/tick, Horse+Saddle: 0, Paid carriage: 0, Luxury: +0.5/tick
+        var mode = player.travelMode || 'walk';
+        if (player.travelRestBonus || mode === 'npc_luxury' || mode === 'npc_luxury_sea') {
+            // Luxury travel: restore energy
             if (typeof player.energy === 'number') {
                 var maxE = (typeof getMaxEnergy === 'function') ? getMaxEnergy() : 100;
                 player.energy = Math.min(maxE, player.energy + 0.5);
             }
+        } else if (mode === 'npc_carriage' || mode === 'kingdom' || mode === 'sea_passage' || mode === 'npc_vessel') {
+            // Paid transport: no extra drain (just passive 0.25)
+        } else if (mode === 'horse' || mode === 'sail_own') {
+            // Horse+saddle: no extra drain; horse only / own ship: light drain
+            var _hasSaddle = player.horses && player.horses.some(function(h) { return h.saddled; });
+            if (mode === 'horse' && _hasSaddle) {
+                // Horse + saddle: passive drain only
+            } else {
+                consumeEnergy(0.05);
+            }
+        } else {
+            // Walking (default): extra drain
+            consumeEnergy(0.1);
         }
 
         // Sea travel hazards: pirates, storms
@@ -5322,36 +5473,47 @@
                 else if (season === 'Spring' || season === 'Summer') seasonMod = 1.2;
             }
 
-            // Auto-buy missing inputs if enabled
+            // Auto-buy missing inputs if enabled — buys from market INTO building inventory
             if (bld.autoBuy && bt.consumes) {
                 for (const [resId, qty] of Object.entries(bt.consumes)) {
-                    const available = town.market.supply[resId] || 0;
-                    if (available < qty) {
-                        const needed = qty - available;
-                        const price = (town.market.prices && town.market.prices[resId]) || 5;
-                        const totalCost = needed * price;
-                        if (player.gold >= totalCost) {
-                            player.gold -= totalCost;
-                            player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + totalCost;
-                            town.market.supply[resId] = (town.market.supply[resId] || 0) + needed;
+                    const bldHasAB = (bld.inventory && bld.inventory[resId]) || 0;
+                    if (bldHasAB < qty) {
+                        const needed = qty - bldHasAB;
+                        const townHasAB = town.market.supply[resId] || 0;
+                        const canBuyAB = Math.min(needed, townHasAB);
+                        if (canBuyAB > 0) {
+                            const price = (town.market.prices && town.market.prices[resId]) || 5;
+                            const totalCost = Math.floor(canBuyAB * price);
+                            if (player.gold >= totalCost) {
+                                player.gold -= totalCost;
+                                player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + totalCost;
+                                town.market.supply[resId] = Math.max(0, townHasAB - canBuyAB);
+                                if (!bld.inventory) bld.inventory = {};
+                                bld.inventory[resId] = (bld.inventory[resId] || 0) + canBuyAB;
+                            }
                         }
                     }
                 }
             }
 
-            // Check inputs from town market
+            // Check inputs from building inventory ONLY
             let canProduce = true;
-            for (const [resId, qty] of Object.entries(bt.consumes)) {
-                if ((town.market.supply[resId] || 0) < qty) {
+            var _consumes = bt.consumes || {};
+            for (const [resId, qty] of Object.entries(_consumes)) {
+                const bldHas = (bld.inventory && bld.inventory[resId]) || 0;
+                if (bldHas < qty) {
                     canProduce = false;
                     break;
                 }
             }
             if (!canProduce) continue;
 
-            // Consume inputs
-            for (const [resId, qty] of Object.entries(bt.consumes)) {
-                town.market.supply[resId] -= qty;
+            // Consume inputs from building inventory only
+            for (const [resId, qty] of Object.entries(_consumes)) {
+                if (bld.inventory && bld.inventory[resId] > 0) {
+                    bld.inventory[resId] -= qty;
+                    if (bld.inventory[resId] <= 0) delete bld.inventory[resId];
+                }
             }
 
             // Produce output → player inventory
@@ -5819,10 +5981,14 @@
 
         player.gold += price;
         player.stats.totalGoldEarned += price;
+        // Return saddle to inventory if horse was saddled
+        if (horse.saddled) {
+            player.inventory.saddles = (player.inventory.saddles || 0) + 1;
+        }
         player.horses.splice(idx, 1);
         if (player.horses.length === 0) player.travelMode = 'walk';
         Engine.logEvent('🐴 You sold ' + horse.name + ' for ' + price + 'g.');
-        return { success: true, message: 'Sold ' + horse.name + ' for ' + price + 'g.' };
+        return { success: true, message: 'Sold ' + horse.name + ' for ' + price + 'g.' + (horse.saddled ? ' Saddle returned.' : '') };
     }
 
     function mountHorse() {
@@ -5886,11 +6052,38 @@
         }
 
         var horse = player.horses[idx];
+        // Return saddle to inventory if horse was saddled
+        if (horse.saddled) {
+            player.inventory.saddles = (player.inventory.saddles || 0) + 1;
+        }
         player.horses.splice(idx, 1);
         player.inventory.horses = (player.inventory.horses || 0) + 1;
         if (player.horses.length === 0) player.travelMode = 'walk';
         Engine.logEvent('🐴 You dismounted ' + horse.name + '.');
-        return { success: true, message: '🐴 Dismounted ' + horse.name + '. Horse added to inventory.' };
+        return { success: true, message: '🐴 Dismounted ' + horse.name + '. Horse added to inventory.' + (horse.saddled ? ' Saddle returned.' : '') };
+    }
+
+    function mountSaddle(horseId) {
+        var horse = player.horses.find(function(h) { return h.id === horseId; });
+        if (!horse) return { success: false, message: 'Horse not found.' };
+        if (horse.saddled) return { success: false, message: horse.name + ' already has a saddle.' };
+        var saddles = player.inventory.saddles || 0;
+        if (saddles <= 0) return { success: false, message: 'No saddles in inventory.' };
+        player.inventory.saddles -= 1;
+        if (player.inventory.saddles <= 0) delete player.inventory.saddles;
+        horse.saddled = true;
+        Engine.logEvent('🪑 Saddle mounted on ' + horse.name + '.');
+        return { success: true, message: '🪑 Saddle mounted on ' + horse.name + '! Travel energy reduced.' };
+    }
+
+    function unmountSaddle(horseId) {
+        var horse = player.horses.find(function(h) { return h.id === horseId; });
+        if (!horse) return { success: false, message: 'Horse not found.' };
+        if (!horse.saddled) return { success: false, message: horse.name + ' has no saddle.' };
+        horse.saddled = false;
+        player.inventory.saddles = (player.inventory.saddles || 0) + 1;
+        Engine.logEvent('🪑 Saddle removed from ' + horse.name + '.');
+        return { success: true, message: '🪑 Saddle removed from ' + horse.name + '. Returned to inventory.' };
     }
 
     function buyHorsePermit(kingdomId, durationType) {
@@ -6230,6 +6423,31 @@
         return base;
     }
 
+    // ── BUILDING STORAGE HELPERS ──
+    // Get all resource ids a building type can consume (across all available products)
+    function getBuildingConsumedGoods(bt) {
+        var goods = {};
+        if (bt.consumes) {
+            for (var k in bt.consumes) goods[k] = true;
+        }
+        if (bt.availableProducts) {
+            for (var pk in bt.availableProducts) {
+                var ap = bt.availableProducts[pk];
+                if (ap.consumes) {
+                    for (var ak in ap.consumes) goods[ak] = true;
+                }
+            }
+        }
+        return goods;
+    }
+
+    function toggleBuildingInputOnly(buildingId) {
+        var bld = (player.buildings || []).find(function(b) { return b.id === buildingId; });
+        if (!bld) return { success: false, message: 'Building not found.' };
+        bld.inputOnly = !bld.inputOnly;
+        return { success: true, message: bld.inputOnly ? 'Storage restricted to consumed goods only.' : 'Storage now accepts any goods.' };
+    }
+
     // ── BUILDING STORAGE TRANSFER ──
     function depositToBuilding(buildingId, resId, qty) {
         qty = Math.floor(Number(qty));
@@ -6248,6 +6466,13 @@
         if (resId === 'horses') {
             var isHorseBld = bt && (bt.cavalryCapacity || bt.id === 'horse_market' || bt.id === 'stable' || (bt.id && bt.id.indexOf('horse') >= 0) || (bt.id && bt.id.indexOf('cavalry') >= 0));
             if (!isHorseBld) return { success: false, message: 'Horses can only be stored in stables, horse markets, or cavalry buildings.' };
+        }
+        // Input-only filter: if enabled, only accept goods this building consumes
+        if (bld.inputOnly !== false && bt && bt.produces) {
+            var consumed = getBuildingConsumedGoods(bt);
+            if (!consumed[resId]) {
+                return { success: false, message: 'This building only accepts goods it uses. Uncheck "Only accept consumed goods" to store other items.' };
+            }
         }
         var available = player.inventory[resId] || 0;
         if (available < qty) return { success: false, message: 'Not enough in inventory.' };
@@ -12254,6 +12479,7 @@
             guilds: JSON.parse(JSON.stringify(player.guilds || {})),
             guildMemberships: JSON.parse(JSON.stringify(player.guildMemberships || {})),
             horsePermit: JSON.parse(JSON.stringify(player.horsePermit || {})),
+            autoRest: player.autoRest !== false,
             // Injuries & Illnesses
             injuries: JSON.parse(JSON.stringify(player.injuries || [])),
             illnesses: JSON.parse(JSON.stringify(player.illnesses || [])),
@@ -12562,6 +12788,7 @@
         player.guilds = data.guilds || {};
         player.guildMemberships = data.guildMemberships || {};
         player.horsePermit = data.horsePermit || {};
+        player.autoRest = data.autoRest !== false;  // Default true
         // Injuries & Illnesses
         player.injuries = data.injuries || [];
         player.illnesses = data.illnesses || [];
@@ -22981,6 +23208,8 @@
         player.energy = Math.max(0, (player.energy || ENERGY_CONFIG.START) - amount);
         // Sync legacy fatigue for backward compat
         player.fatigue = Math.max(0, getMaxEnergy() - player.energy);
+        // Mark that energy was consumed this tick (prevents double-drain with passive decay)
+        player._energyConsumedThisTick = true;
     }
 
     function restoreEnergy(amount) {
@@ -23086,7 +23315,34 @@
     }
 
     function tickEnergy() {
-        // Natural daily passive recovery
+        // Passive energy drain (0.25 per tick) — skip if an action already consumed energy this tick
+        if (!player._energyConsumedThisTick && !player.resting) {
+            player.energy = Math.max(0, (player.energy || ENERGY_CONFIG.START) - 0.25);
+            player.fatigue = Math.max(0, getMaxEnergy() - player.energy);
+        }
+        player._energyConsumedThisTick = false;
+
+        // Auto-rest: if enabled and energy below 10, start resting automatically
+        if (player.autoRest !== false && !player.resting && (player.energy || 0) < 10) {
+            var opts = getAvailableRestOptions();
+            if (opts.length > 0) {
+                // Pick best option player can afford (highest energyPerTick)
+                var best = null;
+                for (var ri = 0; ri < opts.length; ri++) {
+                    var opt = opts[ri];
+                    if (opt.cost > 0 && player.gold < opt.cost) continue;
+                    if (!best || opt.energyPerTick > best.energyPerTick) best = opt;
+                }
+                if (best) {
+                    var result = restForTicks(best.id, 8);
+                    if (result && result.success) {
+                        Engine.logEvent('💤 Auto-rest: ' + best.name + (best.cost > 0 ? ' (' + best.cost + 'g)' : ''));
+                    }
+                }
+            }
+        }
+
+        // Natural daily passive recovery (only when housed and idle)
         var house = getHouseInTown(player.townId);
         var recovery = house ? ENERGY_CONFIG.PASSIVE_RECOVERY_HOUSED : ENERGY_CONFIG.PASSIVE_RECOVERY_HOMELESS;
         // Reduce recovery when hungry or thirsty
@@ -31393,6 +31649,8 @@
         sellHorse,
         mountHorse,
         dismountHorse,
+        mountSaddle,
+        unmountSaddle,
         calculateWorkerWage: _calculateWorkerWage,
         buyHorsePermit,
         payHorsePermitFine,
@@ -31414,6 +31672,8 @@
         getHouseEffectiveStorage,
         depositToBuilding,
         withdrawFromBuilding,
+        toggleBuildingInputOnly,
+        getBuildingConsumedGoods: function(bt) { return getBuildingConsumedGoods(bt); },
         buyContainer,
         mountContainer,
         dismountContainer,
@@ -31481,6 +31741,8 @@
         getJobEnergyCostPerTick,
         getAvailableRestOptions,
         restForTicks,
+        setAutoRest: function(v) { player.autoRest = !!v; return { success: true, message: v ? 'Auto-rest enabled.' : 'Auto-rest disabled.' }; },
+        get autoRest() { return player.autoRest !== false; },
 
         // Thirst System
         tickThirst,
@@ -31574,6 +31836,7 @@
         rescueCaravan,
         cancelRecurringRoute,
         disbandCaravan,
+        forceDisbandCaravan,
         getActiveRoutes,
         getCaravanLog,
         editCaravanOrders,

@@ -628,6 +628,7 @@ window.UI = (function () {
                     else if (Player.travelMode === 'sail_own' || Player.travelMode === 'sea_passage') travelModeIcon = '⛵';
                     else if (Player.travelMode === 'npc_carriage') travelModeIcon = '🏇';
                     else if (Player.travelMode === 'npc_luxury') travelModeIcon = '🎪';
+                    else if (Player.travelMode === 'npc_luxury_sea') travelModeIcon = '🛳️';
                     else if (Player.travelMode === 'kingdom') travelModeIcon = '👑';
                     else if (Player.travelMode === 'npc_vessel') travelModeIcon = '⛴️';
                     else if (Player.travelBySea) travelModeIcon = '⛵';
@@ -700,17 +701,12 @@ window.UI = (function () {
                     }
                 }
 
-                // Schemes button visibility (with one-time unlock toast)
+                // Schemes button — always visible (basic crimes available to all)
                 const btnSchemes = document.getElementById('btnSchemes');
                 const schemesDivider = document.getElementById('schemesDivider');
                 if (btnSchemes) {
-                    const shouldShow = Player.shouldShowSchemesButton();
-                    btnSchemes.style.display = shouldShow ? '' : 'none';
-                    if (schemesDivider) schemesDivider.style.display = shouldShow ? '' : 'none';
-                    if (shouldShow && !window._schemesUnlockShown) {
-                        window._schemesUnlockShown = true;
-                        toast('🗡️ Dark Deeds unlocked! Your growing notoriety has attracted the criminal underworld.', 'warning');
-                    }
+                    btnSchemes.style.display = '';
+                    if (schemesDivider) schemesDivider.style.display = '';
                 }
 
                 // God Mode button visibility
@@ -2858,25 +2854,6 @@ window.UI = (function () {
                 saleHtml += '</div>';
             }
 
-            // Player-owned buildings: demolish option
-            if (playerBlds.length > 0) {
-                saleHtml += '<div style="margin-top:12px;padding:8px;border:1px solid var(--border);border-radius:4px;">';
-                saleHtml += '<div style="font-weight:bold;font-size:0.85rem;margin-bottom:6px;">🧨 DEMOLISH YOUR BUILDINGS</div>';
-                for (let di = 0; di < playerBlds.length; di++) {
-                    var pBld = playerBlds[di];
-                    var pBt = Engine.findBuildingType(pBld.type);
-                    var pBldName = pBt ? pBt.name : pBld.type;
-                    var demoBldIdx = town.buildings.findIndex(function(tb) { return tb.ownerId === 'player' && tb.type === pBld.type; });
-                    if (demoBldIdx < 0) continue;
-                    var canAffordDemo = (Player.gold || 0) >= 500;
-                    saleHtml += `<div class="build-card" style="display:flex;flex-direction:column;gap:4px;">
-                        <div class="build-name">${pBldName} (Lv.${pBld.level || 1})</div>
-                        <div class="build-info">Your building — demolish to free the slot</div>
-                        <button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;" ${canAffordDemo ? '' : 'disabled'} onclick="UI.demolishBuildingUI(${demoBldIdx},'${town.id}')">🧨 Demolish (500g + 💥)</button>
-                    </div>`;
-                }
-                saleHtml += '</div>';
-            }
         }
 
         const html = `<div class="build-categories">${catHtml}</div>
@@ -3417,8 +3394,8 @@ window.UI = (function () {
         };
         let statusText = statusLabels[info.status] || info.status;
         if (info.status === 'blocked' && info.missingInputs.length > 0) {
-            const missing = info.missingInputs.map(m => { const r = findResource(m.id); return r ? r.name : m.id; }).join(', ');
-            statusText += ' (no ' + missing + ')';
+            const missing = info.missingInputs.map(m => { const r = findResource(m.id); return (r ? r.name : m.id) + ' (have ' + m.available + ', need ' + m.needed + ')'; }).join(', ');
+            statusText += ' — need: ' + missing;
         }
 
         let html = '<div style="max-height:70vh;overflow-y:auto;">';
@@ -3456,13 +3433,19 @@ window.UI = (function () {
                 </div>`;
             }
 
-            // Consumes
+            // Consumes (from building input storage only)
             if (Object.keys(info.consumes).length > 0) {
                 for (const [resId, qty] of Object.entries(info.consumes)) {
                     const r = findResource(resId);
                     const rName = r ? r.name : resId;
+                    const bldSupply = (bld.inventory && bld.inventory[resId]) || 0;
                     const townSupply = (town && town.market && town.market.supply[resId]) || 0;
-                    html += `<div style="font-size:0.78rem;">⚙️ Consumes: ${qty} ${rName}/day (town supply: ${Math.floor(townSupply)})</div>`;
+                    const supplyColor = bldSupply >= qty ? '#55a868' : '#c44e52';
+                    const daysLeft = qty > 0 ? Math.floor(bldSupply / qty) : 0;
+                    html += `<div style="font-size:0.78rem;">⚙️ Consumes: ${qty} ${rName}/day <span style="color:${supplyColor};">— 📥 ${bldSupply} in storage</span>`;
+                    if (daysLeft > 0 && daysLeft < 999) html += ` <span style="font-size:0.68rem;color:#aaa;">(~${daysLeft} days)</span>`;
+                    if (bldSupply < qty) html += ` <span style="font-size:0.68rem;color:#aaa;">(market has ${Math.floor(townSupply)}${bld.autoBuy ? ' — auto-buy on' : ''})</span>`;
+                    html += `</div>`;
                 }
             }
 
@@ -3798,7 +3781,7 @@ window.UI = (function () {
             }
         }
 
-        // ── GENERAL STORAGE TRANSFER ──
+        // ── BUILDING STORAGE (split: output + input/general) ──
         if (bld.townId === Player.townId) {
             var _bldCap = (bt.storage || 0) * (bld.level || 1);
             var _bldUsed = 0;
@@ -3806,28 +3789,132 @@ window.UI = (function () {
             var _prodStored = bld.storedOutput || 0;
             if (bt.produces) { var _pr = findResource(bt.produces); _bldUsed += _prodStored * (_pr ? (_pr.weight || 1) : 1); }
             if (_bldCap > 0) {
+                // Gather consumed goods set for this building
+                var _consumedSet = Player.getBuildingConsumedGoods ? Player.getBuildingConsumedGoods(bt) : {};
+                var _producesId = bt.produces || null;
+                var _inputOnly = bld.inputOnly !== false;
+
                 html += '<div style="padding:8px;border:1px solid var(--border);border-radius:4px;margin-bottom:8px;">';
                 html += '<div style="font-weight:bold;font-size:0.85rem;margin-bottom:4px;">📦 BUILDING STORAGE (' + Math.round(_bldUsed) + '/' + _bldCap + ')</div>';
-                // Show stored items (non-production)
+
+                // ── Output Storage ──
+                if (_producesId) {
+                    var _outputGoods = {};
+                    // Gather all goods this building can produce
+                    if (_producesId) _outputGoods[_producesId] = true;
+                    if (bt.canProduce) { for (var _ci = 0; _ci < bt.canProduce.length; _ci++) _outputGoods[bt.canProduce[_ci]] = true; }
+
+                    html += '<div style="margin-bottom:6px;">';
+                    html += '<div style="font-size:0.78rem;font-weight:bold;color:#7cb342;margin-bottom:2px;">📤 Output (Produced Goods)</div>';
+                    var _hasOutput = false;
+                    if (bld.inventory) {
+                        for (var _ok in bld.inventory) {
+                            if (!_outputGoods[_ok] || bld.inventory[_ok] <= 0) continue;
+                            _hasOutput = true;
+                            var _or = findResource(_ok);
+                            var _oName = _or ? ((_or.icon || '') + ' ' + _or.name) : _ok;
+                            html += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-size:0.78rem;">';
+                            html += '<span style="min-width:130px;">' + _oName + ': ' + bld.inventory[_ok] + '</span>';
+                            html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldWithdraw(\'' + bld.id + '\',\'' + _ok + '\',1)">Take 1</button>';
+                            if (bld.inventory[_ok] >= 5) html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldWithdraw(\'' + bld.id + '\',\'' + _ok + '\',5)">5</button>';
+                            html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldWithdraw(\'' + bld.id + '\',\'' + _ok + '\',' + bld.inventory[_ok] + ')">All</button>';
+                            html += '</div>';
+                        }
+                    }
+                    if (!_hasOutput) html += '<div style="font-size:0.72rem;color:#888;">No output stored.</div>';
+                    html += '</div>';
+                }
+
+                // ── Input / General Storage (Market-like UI) ──
+                // Calculate input-only capacity
+                var _outputWeight = 0;
+                if (_producesId) {
+                    var _outputSet2 = {};
+                    if (_producesId) _outputSet2[_producesId] = true;
+                    if (bt.canProduce) { for (var _ci2 = 0; _ci2 < bt.canProduce.length; _ci2++) _outputSet2[bt.canProduce[_ci2]] = true; }
+                    if (bld.inventory) { for (var _owk in bld.inventory) { if (_outputSet2[_owk]) { var _owr = findResource(_owk); _outputWeight += (bld.inventory[_owk] || 0) * (_owr ? (_owr.weight || 1) : 1); } } }
+                } else {
+                    var _outputSet2 = {};
+                }
+                var _inputWeight = _bldUsed - _outputWeight;
+                var _inputCap = _bldCap - _outputWeight;
+
+                html += '<div style="margin-bottom:6px;">';
+                html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">';
+                html += '<span style="font-size:0.78rem;font-weight:bold;color:#64b5f6;">📥 Input Storage</span>';
+                html += '<span style="font-size:0.72rem;color:#aaa;">' + Math.round(_inputWeight) + ' / ' + Math.round(_inputCap) + ' (' + Math.round(Math.max(0, _inputCap - _inputWeight)) + ' free)</span>';
+                if (_producesId) {
+                    html += '<label style="font-size:0.68rem;color:#aaa;cursor:pointer;"><input type="checkbox" ' + (_inputOnly ? 'checked' : '') + ' onchange="(function(){var r=Player.toggleBuildingInputOnly(\'' + bld.id + '\');UI.toast(r.message,r.success?\'success\':\'warning\');UI.showBuildingDetail(\'' + bld.id + '\');})()" style="margin-right:3px;vertical-align:middle;"> Only accept consumed goods</label>';
+                }
+                html += '</div>';
+                // Capacity bar
+                var _inputPct = _inputCap > 0 ? Math.min(100, Math.round((_inputWeight / _inputCap) * 100)) : 0;
+                var _inputBarColor = _inputPct >= 90 ? '#e74c3c' : _inputPct >= 60 ? '#e67e22' : '#64b5f6';
+                html += '<div style="height:5px;background:#333;border-radius:3px;margin-bottom:6px;"><div style="height:100%;width:' + _inputPct + '%;background:' + _inputBarColor + ';border-radius:3px;"></div></div>';
+
+                // Items currently in input storage — withdraw section
+                var _hasInput = false;
                 if (bld.inventory) {
-                    var _hasItems = false;
                     for (var _ik in bld.inventory) {
-                        if (bld.inventory[_ik] <= 0) continue;
-                        _hasItems = true;
+                        if (_outputSet2[_ik] || bld.inventory[_ik] <= 0) continue;
+                        _hasInput = true;
                         var _ir = findResource(_ik);
                         var _iName = _ir ? ((_ir.icon || '') + ' ' + _ir.name) : _ik;
-                        html += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-size:0.78rem;">';
-                        html += '<span style="min-width:130px;">' + _iName + ': ' + bld.inventory[_ik] + '</span>';
-                        html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldWithdraw(\'' + bld.id + '\',\'' + _ik + '\',1)">Take 1</button>';
-                        if (bld.inventory[_ik] >= 5) html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldWithdraw(\'' + bld.id + '\',\'' + _ik + '\',5)">5</button>';
-                        html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldWithdraw(\'' + bld.id + '\',\'' + _ik + '\',' + bld.inventory[_ik] + ')">All</button>';
+                        var _isConsumed = _consumedSet[_ik];
+                        var _iQty = bld.inventory[_ik];
+                        html += '<div style="display:flex;align-items:center;gap:4px;margin:3px 0;font-size:0.78rem;flex-wrap:wrap;">';
+                        html += '<span style="min-width:120px;">' + _iName + ': <strong>' + _iQty + '</strong>' + (_isConsumed ? ' <span style="color:#7cb342;font-size:0.6rem;">(used)</span>' : '') + '</span>';
+                        html += '<span style="display:flex;gap:2px;align-items:center;">';
+                        var _wQtys = [1, 5, 10];
+                        for (var _qi = 0; _qi < _wQtys.length; _qi++) {
+                            if (_iQty >= _wQtys[_qi]) html += '<button class="btn-trade buy" style="font-size:0.6rem;padding:1px 5px;" onclick="UI._bldWithdraw(\'' + bld.id + '\',\'' + _ik + '\',' + _wQtys[_qi] + ')">' + _wQtys[_qi] + '</button>';
+                        }
+                        html += '<button class="btn-trade buy" style="font-size:0.6rem;padding:1px 5px;" onclick="UI._bldWithdraw(\'' + bld.id + '\',\'' + _ik + '\',' + _iQty + ')">All</button>';
+                        html += '</span>';
                         html += '</div>';
                     }
-                    if (!_hasItems) html += '<div style="font-size:0.75rem;color:#888;">No extra items stored.</div>';
-                } else {
-                    html += '<div style="font-size:0.75rem;color:#888;">No extra items stored.</div>';
                 }
-                html += '<button class="btn-medieval" onclick="UI.openBuildingStorageUI(\'' + bld.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin-top:6px;">📦 Transfer Goods</button>';
+                if (!_hasInput) html += '<div style="font-size:0.72rem;color:#888;">No input items stored.</div>';
+
+                // Deposit from player inventory — market-like section
+                if (bld.townId === Player.townId) {
+                    html += '<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px;">';
+                    html += '<div style="font-size:0.72rem;font-weight:bold;color:#aaa;margin-bottom:4px;">📤 Deposit from Inventory</div>';
+                    var _hasDepositable = false;
+                    var _inv = Player.inventory || {};
+                    for (var _dk in _inv) {
+                        if (_inv[_dk] <= 0) continue;
+                        var _dr = findResource(_dk);
+                        if (!_dr) continue;
+                        // Filter: livestock only to livestock buildings, horses only to horse buildings
+                        if (_dr.category === 'livestock') continue;
+                        if (_dk === 'horses') continue;
+                        // Input-only filter
+                        if (_inputOnly && _producesId && !_consumedSet[_dk]) continue;
+                        // Skip output goods (these belong in output storage)
+                        if (_outputSet2[_dk]) continue;
+                        _hasDepositable = true;
+                        var _dName = (_dr.icon || '') + ' ' + _dr.name;
+                        var _dQty = _inv[_dk];
+                        var _dWeight = _dr.weight || 1;
+                        var _dMaxFit = _inputCap > _inputWeight ? Math.floor((_inputCap - _inputWeight) / _dWeight) : 0;
+                        var _dMax = Math.min(_dQty, _dMaxFit);
+                        var _dIsConsumed = _consumedSet[_dk];
+                        html += '<div style="display:flex;align-items:center;gap:4px;margin:3px 0;font-size:0.78rem;flex-wrap:wrap;">';
+                        html += '<span style="min-width:120px;">' + _dName + ': ' + _dQty + (_dIsConsumed ? ' <span style="color:#7cb342;font-size:0.6rem;">(used)</span>' : '') + '</span>';
+                        html += '<span style="display:flex;gap:2px;align-items:center;">';
+                        var _sQtys = [1, 5, 10, 25];
+                        for (var _si = 0; _si < _sQtys.length; _si++) {
+                            if (_dMax >= _sQtys[_si]) html += '<button class="btn-trade sell" style="font-size:0.6rem;padding:1px 5px;" onclick="UI._bldDeposit(\'' + bld.id + '\',\'' + _dk + '\',' + _sQtys[_si] + ')">' + _sQtys[_si] + '</button>';
+                        }
+                        if (_dMax > 0) html += '<button class="btn-trade sell" style="font-size:0.6rem;padding:1px 5px;" onclick="UI._bldDeposit(\'' + bld.id + '\',\'' + _dk + '\',' + _dMax + ')">All (' + _dMax + ')</button>';
+                        html += '</span>';
+                        html += '</div>';
+                    }
+                    if (!_hasDepositable) html += '<div style="font-size:0.72rem;color:#888;">Nothing to deposit' + (_inputOnly && _producesId ? ' (input filter on)' : '') + '</div>';
+                    html += '</div>';
+                }
+                html += '</div>';
                 html += '</div>';
             }
         }
@@ -3927,6 +4014,13 @@ window.UI = (function () {
 
         // Player inventory — deposit
         html += '<h4 style="margin:12px 0 4px;">Your Inventory</h4>';
+        // inputOnly filter info
+        var inputOnly = bld.inputOnly !== false;
+        var consumedGoods = Player.getBuildingConsumedGoods ? Player.getBuildingConsumedGoods(bt) : {};
+        var producesId = bt ? bt.produces : null;
+        if (inputOnly && producesId) {
+            html += '<div style="font-size:0.7rem;color:#aaa;margin-bottom:4px;">🔒 Filtered to goods this building consumes. Uncheck "Only accept consumed goods" in building detail to accept all.</div>';
+        }
         var hasInv = false;
         var inv = Player.inventory || {};
         for (var ik in inv) {
@@ -3936,17 +4030,20 @@ window.UI = (function () {
             // Filter: livestock only to livestock buildings, horses only to horse buildings
             if (ir.category === 'livestock' && !isLivestockBld) continue;
             if (ik === 'horses' && !isHorseBld) continue;
+            // Input-only filter: skip goods this building doesn't consume
+            if (inputOnly && producesId && !consumedGoods[ik]) continue;
             hasInv = true;
             var iName = (ir.icon || '') + ' ' + ir.name;
             var iQty = inv[ik];
+            var isConsumedGood = consumedGoods[ik];
             html += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-size:0.8rem;">';
-            html += '<span style="min-width:140px;">' + iName + ': ' + iQty + '</span>';
+            html += '<span style="min-width:140px;">' + iName + ': ' + iQty + (isConsumedGood ? ' <span style="color:#7cb342;font-size:0.6rem;">(used)</span>' : '') + '</span>';
             html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldDeposit(\'' + buildingId + '\',\'' + ik + '\',1)">Store 1</button>';
             if (iQty >= 5) html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldDeposit(\'' + buildingId + '\',\'' + ik + '\',5)">5</button>';
             html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldDeposit(\'' + buildingId + '\',\'' + ik + '\',' + iQty + ')">All</button>';
             html += '</div>';
         }
-        if (!hasInv) html += '<div style="color:#888;font-size:0.8rem;">Nothing transferable</div>';
+        if (!hasInv) html += '<div style="color:#888;font-size:0.8rem;">Nothing transferable' + (inputOnly && producesId ? ' (input filter on)' : '') + '</div>';
 
         html += '</div>';
         openModal('📦 ' + bName + ' Storage', html,
@@ -3956,13 +4053,13 @@ window.UI = (function () {
     function _bldDeposit(buildingId, resId, qty) {
         var result = Player.depositToBuilding(buildingId, resId, qty);
         toast(result.message, result.success ? 'success' : 'error');
-        openBuildingStorageUI(buildingId);
+        showBuildingDetail(buildingId);
     }
 
     function _bldWithdraw(buildingId, resId, qty) {
         var result = Player.withdrawFromBuilding(buildingId, resId, qty);
         toast(result.message, result.success ? 'success' : 'error');
-        openBuildingStorageUI(buildingId);
+        showBuildingDetail(buildingId);
     }
 
     function toggleAutoBuyUI(buildingId) {
@@ -5856,6 +5953,16 @@ window.UI = (function () {
         orderBuilderHtml += '<option value="destination">🏁 Destination</option><option value="source">📍 Source</option>';
         orderBuilderHtml += '</select>';
         orderBuilderHtml += '</div>';
+        // Row 1b: Building target (shown only for Store action)
+        orderBuilderHtml += '<div id="orderBuildingRow" style="display:none;margin-bottom:6px;">';
+        orderBuilderHtml += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">';
+        orderBuilderHtml += '<label style="font-size:0.7rem;color:#aaa;">Store in:</label>';
+        orderBuilderHtml += '<select id="orderBuilding" style="flex:1;padding:4px 6px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;">';
+        orderBuilderHtml += '<option value="">📦 Any (general storage)</option>';
+        orderBuilderHtml += '</select>';
+        orderBuilderHtml += '<label style="font-size:0.7rem;color:#aaa;cursor:pointer;"><input type="checkbox" id="orderOverflow" checked> Overflow</label>';
+        orderBuilderHtml += '</div>';
+        orderBuilderHtml += '</div>';
         // Row 2: Qty + Max + Price + Add button
         orderBuilderHtml += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">';
         orderBuilderHtml += '<label style="font-size:0.7rem;color:#aaa;">Qty:</label>';
@@ -5937,6 +6044,7 @@ window.UI = (function () {
         previewHtml += '</div>';
 
         const html = `<div class="caravan-form">
+            ${mgmtLink}
             <div class="form-group">
                 <label>Destination</label>
                 <select id="caravanDest" onchange="UI._updateCaravanPreview()">${destOptions}</select>
@@ -5973,7 +6081,6 @@ window.UI = (function () {
                 }).join('')}
             </div>
         </div>
-        ${mgmtLink}
         ${buildTransportSection(connectedTowns, seaDestinations)}
         ${buildNPCTransportSection()}`;
 
@@ -6511,6 +6618,14 @@ window.UI = (function () {
                 html += '</div></details>';
             }
 
+            // Overflow sell toggle
+            if (c.active) {
+                var _ovChecked = c.overflowSell ? 'checked' : '';
+                html += '<div style="margin-top:6px;font-size:0.7rem;">';
+                html += '<label style="color:#aaa;cursor:pointer;"><input type="checkbox" ' + _ovChecked + ' onchange="(function(){var cv=Player.caravans.find(function(x){return x.id===\'' + c.id + '\'});if(cv){cv.overflowSell=!cv.overflowSell;UI.toast(cv.overflowSell?\'Overflow: sell to market\':\'Overflow: keep on caravan\',\'info\');UI.openCaravanManagement();}})()" style="margin-right:4px;vertical-align:middle;"> Sell overflow to market (when buildings are full)</label>';
+                html += '</div>';
+            }
+
             // Action buttons
             html += '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">';
             if (c.status === 'blocked' && c.active !== false) {
@@ -6528,6 +6643,7 @@ window.UI = (function () {
             }
             if (c.disbanding && c.active) {
                 html += '<span style="font-size:0.7rem;color:#d4a017;padding:3px 6px;">🏳️ Disbanding…</span>';
+                html += '<button class="btn-medieval" style="font-size:0.65rem;padding:2px 8px;background:rgba(200,50,50,0.3);" onclick="(function(){if(!confirm(\'Force disband immediately? Goods will be dropped at nearest town or lost.\'))return;var r=Player.forceDisbandCaravan(\'' + c.id + '\');UI.toast(r.message,r.success?\'success\':\'warning\');UI.openCaravanManagement();})()">❌ Force Now</button>';
             }
             html += '</div>';
 
@@ -6577,6 +6693,16 @@ window.UI = (function () {
         html += '<select id="orderLocation" style="padding:4px 6px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;">';
         html += '<option value="destination">🏁 Destination</option><option value="source">📍 Source</option>';
         html += '</select>';
+        html += '</div>';
+        // Building target row (shown only for Store)
+        html += '<div id="orderBuildingRow" style="display:none;margin-bottom:6px;">';
+        html += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">';
+        html += '<label style="font-size:0.7rem;color:#aaa;">Store in:</label>';
+        html += '<select id="orderBuilding" style="flex:1;padding:4px 6px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;">';
+        html += '<option value="">📦 Any (general storage)</option>';
+        html += '</select>';
+        html += '<label style="font-size:0.7rem;color:#aaa;cursor:pointer;"><input type="checkbox" id="orderOverflow" checked> Overflow</label>';
+        html += '</div>';
         html += '</div>';
         html += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">';
         html += '<label style="font-size:0.7rem;color:#aaa;">Qty:</label>';
@@ -7055,13 +7181,24 @@ window.UI = (function () {
         var maxHorsesDisp = (CONFIG.MAX_HORSES || 2) + (Player.hasSkill && Player.hasSkill('horse_mastery') ? 2 : 0);
         html += `<div style="margin-bottom:8px;"><strong>🐴 Mounted Horses (${Player.horses ? Player.horses.length : 0}/${maxHorsesDisp})</strong></div>`;
         if (Player.horses && Player.horses.length > 0) {
+            var invSaddles = (Player.inventory && Player.inventory.saddles) || 0;
             for (const horse of Player.horses) {
                 html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:0.75rem;">`;
-                html += `<span>🐴 <strong>${horse.name}</strong> — Stamina: ${horse.stamina}, Speed: ${horse.speed.toFixed(1)}x</span>`;
+                html += `<span>🐴 <strong>${horse.name}</strong> — Stamina: ${horse.stamina}, Speed: ${horse.speed.toFixed(1)}x`;
+                if (horse.saddled) html += ` <span style="color:#7cb342;">🪑 Saddled</span>`;
+                html += `</span>`;
                 html += `<div style="display:flex;gap:4px;">`;
+                if (horse.saddled) {
+                    html += `<button class="btn-medieval" onclick="(function(){var r=Player.unmountSaddle('${horse.id}');UI.toast(r.message,r.success?'success':'warning');UI.openCharacterPanel();})()" style="font-size:0.7rem;padding:2px 6px;">🪑 Remove Saddle</button>`;
+                } else if (invSaddles > 0) {
+                    html += `<button class="btn-medieval" onclick="(function(){var r=Player.mountSaddle('${horse.id}');UI.toast(r.message,r.success?'success':'warning');UI.openCharacterPanel();})()" style="font-size:0.7rem;padding:2px 6px;">🪑 Saddle</button>`;
+                }
                 html += `<button class="btn-medieval" onclick="UI.dismountHorseUI('${horse.id}')" style="font-size:0.7rem;padding:2px 6px;">⬇️ Dismount</button>`;
                 html += `<button class="btn-medieval" onclick="UI.sellHorse('${horse.id}')" style="font-size:0.7rem;padding:2px 6px;">💰 Sell</button>`;
                 html += `</div></div>`;
+            }
+            if (invSaddles > 0) {
+                html += `<div style="font-size:0.65rem;color:#aaa;margin-top:2px;">🪑 ${invSaddles} saddle${invSaddles > 1 ? 's' : ''} in inventory</div>`;
             }
         } else {
             html += `<div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:4px;">No horses mounted. Buy or mount from inventory. (+${CONFIG.HORSE_CARRY_BONUS || 40} carry each).</div>`;
@@ -8854,6 +8991,20 @@ window.UI = (function () {
                     type: 'npc_vessel'
                 });
             }
+
+            // Luxury cabin (sea, cities and capitals with ports)
+            if (type === 'sea' && fromTown.isPort && (tier === 'city' || tier === 'capital')) {
+                var luxSeaPrice = Math.round(50 + baseDays * 18);
+                services.push({
+                    icon: '🛳️',
+                    name: 'Luxury Cabin (' + luxSeaPrice + 'g)',
+                    desc: 'Private cabin on a galleon. Restores energy during the voyage.',
+                    price: luxSeaPrice,
+                    days: Math.max(1, Math.ceil(baseDays * 0.6)),
+                    type: 'npc_luxury_sea',
+                    restBonus: true
+                });
+            }
         }
 
         return services;
@@ -10432,16 +10583,19 @@ window.UI = (function () {
                 html += '<div style="color:#c55;font-size:0.85em;margin:2px 0;">❌ No guild buildings of this type here</div>';
             }
 
-            // Join/Extend buttons
+            // Join/Extend buttons with auto-renew next to active type
             html += '<div style="margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">';
-            html += '<button class="btn-medieval" onclick="UI.guildJoin(\'' + gId + '\', \'monthly\')">' + (isMember ? '🔄 Extend' : '📜 Join') + ' Monthly (' + monthlyPrice + 'g)</button>';
-            html += '<button class="btn-medieval" onclick="UI.guildJoin(\'' + gId + '\', \'yearly\')">' + (isMember ? '🔄 Extend' : '📜 Join') + ' Yearly (' + yearlyPrice + 'g)</button>';
+            var _arLabel = '';
             if (isMember) {
                 var _arChecked = membership.autoRenew ? 'checked' : '';
-                html += '<label style="font-size:0.8em;color:#ccc;cursor:pointer;display:flex;align-items:center;gap:4px;">';
-                html += '<input type="checkbox" ' + _arChecked + ' onchange="(function(cb){var r=Player.setGuildAutoRenew(\'' + gId + '\',cb.checked);UI.toast(r.message,r.success?\'success\':\'warning\');UI.openGuildsPanel();})(this)">';
-                html += '🔄 Auto-renew</label>';
+                _arLabel = '<label style="font-size:0.8em;color:#ccc;cursor:pointer;display:inline-flex;align-items:center;gap:3px;margin-left:2px;">' +
+                    '<input type="checkbox" ' + _arChecked + ' onchange="(function(cb){var r=Player.setGuildAutoRenew(\'' + gId + '\',cb.checked);UI.toast(r.message,r.success?\'success\':\'warning\');UI.openGuildsPanel();})(this)">' +
+                    '🔄 Auto</label>';
             }
+            html += '<button class="btn-medieval" onclick="UI.guildJoin(\'' + gId + '\', \'monthly\')">' + (isMember ? '🔄 Extend' : '📜 Join') + ' Monthly (' + monthlyPrice + 'g)</button>';
+            if (isMember && membership.type === 'monthly') html += _arLabel;
+            html += '<button class="btn-medieval" onclick="UI.guildJoin(\'' + gId + '\', \'yearly\')">' + (isMember ? '🔄 Extend' : '📜 Join') + ' Yearly (' + yearlyPrice + 'g)</button>';
+            if (isMember && membership.type !== 'monthly') html += _arLabel;
             html += '</div>';
 
             // If member, show craftable items at current town
@@ -11339,6 +11493,14 @@ window.UI = (function () {
         if (Player.getAvailableRestOptions) {
             restOptions = Player.getAvailableRestOptions();
         }
+
+        // Auto-rest toggle
+        var arChecked = Player.autoRest ? 'checked' : '';
+        html += '<div style="margin:10px 0 6px;padding:6px 12px;background:rgba(85,168,104,0.1);border:1px solid rgba(85,168,104,0.25);border-radius:6px;display:inline-flex;align-items:center;gap:8px;">';
+        html += '<label style="font-size:0.85rem;color:#ccc;cursor:pointer;display:flex;align-items:center;gap:6px;">';
+        html += '<input type="checkbox" ' + arChecked + ' onchange="(function(cb){var r=Player.setAutoRest(cb.checked);UI.toast(r.message,r.success?\'success\':\'info\');})(this)">';
+        html += '💤 Auto-rest when energy &lt; 10 (picks best option)</label>';
+        html += '</div>';
 
         if (restOptions.length > 0) {
             html += '<h4 style="margin-top:12px;">🛏️ Rest Options</h4>';
@@ -15003,13 +15165,24 @@ window.UI = (function () {
         var RT = typeof RESOURCE_TYPES !== 'undefined' ? RESOURCE_TYPES : (typeof CONFIG !== 'undefined' ? CONFIG.RESOURCE_TYPES : {});
 
         // Build producer/consumer lookup
-        var producedBy = {};
-        var consumedBy = {};
+        var producedBy = {};  // good -> [building names]
+        var consumedBy = {};  // good -> [building names]
+        var madeFrom = {};    // good -> { ingredientId: qty, ... } (recipe inputs)
+        var usedToMake = {};  // good -> [{ outputId, buildingName }] (downstream products)
         for (var bk in BT) {
             var b = BT[bk];
+            // Default recipe
             if (b.produces) {
                 if (!producedBy[b.produces]) producedBy[b.produces] = [];
                 producedBy[b.produces].push(b.name);
+                if (b.consumes) {
+                    if (!madeFrom[b.produces]) madeFrom[b.produces] = {};
+                    for (var ci3a in b.consumes) {
+                        madeFrom[b.produces][ci3a] = b.consumes[ci3a];
+                        if (!usedToMake[ci3a]) usedToMake[ci3a] = [];
+                        usedToMake[ci3a].push({ output: b.produces, building: b.name });
+                    }
+                }
             }
             if (b.consumes) {
                 for (var cId in b.consumes) {
@@ -15017,17 +15190,26 @@ window.UI = (function () {
                     consumedBy[cId].push(b.name);
                 }
             }
+            // Alternative recipes
             if (b.availableProducts) {
                 for (var apk in b.availableProducts) {
                     var ap = b.availableProducts[apk];
                     if (ap.produces) {
                         if (!producedBy[ap.produces]) producedBy[ap.produces] = [];
                         producedBy[ap.produces].push(b.name);
+                        if (ap.consumes) {
+                            if (!madeFrom[ap.produces]) madeFrom[ap.produces] = {};
+                            for (var acId in ap.consumes) {
+                                madeFrom[ap.produces][acId] = ap.consumes[acId];
+                                if (!usedToMake[acId]) usedToMake[acId] = [];
+                                usedToMake[acId].push({ output: ap.produces, building: b.name });
+                            }
+                        }
                     }
                     if (ap.consumes) {
-                        for (var acId in ap.consumes) {
-                            if (!consumedBy[acId]) consumedBy[acId] = [];
-                            consumedBy[acId].push(b.name);
+                        for (var acId2 in ap.consumes) {
+                            if (!consumedBy[acId2]) consumedBy[acId2] = [];
+                            consumedBy[acId2].push(b.name);
                         }
                     }
                 }
@@ -15040,31 +15222,87 @@ window.UI = (function () {
             }
         }
 
+        // Helper: resource name lookup
+        var resName = {};
+        for (var rnk in RT) { resName[RT[rnk].id] = (RT[rnk].icon || '') + ' ' + RT[rnk].name; }
+
         // Build use descriptions per good
         for (var rk in RT) {
             var r = RT[rk];
-            var uses = [];
-            if (producedBy[r.id]) uses.push('Made by: ' + producedBy[r.id].filter(function(v,i,a){return a.indexOf(v)===i;}).join(', '));
-            if (consumedBy[r.id]) uses.push('Used by: ' + consumedBy[r.id].filter(function(v,i,a){return a.indexOf(v)===i;}).slice(0, 6).join(', '));
-            // Special-case descriptions
+            var lines = [];
+            // Category description
             var desc = '';
-            if (r.category === 'food') desc = 'Consumed by population for sustenance. ';
-            else if (r.category === 'beverage') desc = 'Consumed for thirst and morale. ';
-            else if (r.category === 'military') desc = 'Used to equip garrisons and armies. ';
-            else if (r.category === 'luxury') desc = 'Boosts town prosperity and happiness. ';
-            else if (r.category === 'contraband') desc = 'Illegal in most kingdoms — high risk, high reward. ';
-            else if (r.category === 'livestock') desc = 'Livestock for breeding and production. ';
-            else if (r.category === 'supplies') desc = 'Travel and camping supplies. ';
-            else if (r.category === 'raw') desc = 'Raw material for processing and construction. ';
-            else if (r.category === 'processed') desc = 'Processed material for crafting and building. ';
-            else if (r.category === 'finished') desc = 'Finished goods for sale to population. ';
-            desc += uses.join('. ');
+            if (r.category === 'food') desc = 'Consumed by population for sustenance.';
+            else if (r.category === 'beverage') desc = 'Consumed for thirst and morale.';
+            else if (r.category === 'military') desc = 'Used to equip garrisons and armies.';
+            else if (r.category === 'luxury') desc = 'Boosts town prosperity and happiness.';
+            else if (r.category === 'contraband') desc = 'Illegal in most kingdoms — high risk, high reward.';
+            else if (r.category === 'livestock') desc = 'Livestock for breeding and production.';
+            else if (r.category === 'supplies') desc = 'Travel and camping supplies.';
+            else if (r.category === 'raw') desc = 'Raw material for processing and construction.';
+            else if (r.category === 'processed') desc = 'Processed material for crafting and building.';
+            else if (r.category === 'finished') desc = 'Finished goods for sale to population.';
+            else if (r.category === 'medical') desc = 'Medical supplies for treating injuries and illness.';
+            else if (r.category === 'quest') desc = 'Rare quest item.';
+
+            // Supply chain section
+            var chainHtml = '<div style="margin-top:4px; padding:4px 8px; background:rgba(255,255,255,0.04); border-radius:4px; font-size:11px; line-height:1.6;">';
+            var hasChain = false;
+
+            // Ingredients (what this good is made from)
+            if (madeFrom[r.id] && Object.keys(madeFrom[r.id]).length > 0) {
+                hasChain = true;
+                var ingList = [];
+                for (var ik in madeFrom[r.id]) {
+                    ingList.push((resName[ik] || ik) + ' ×' + madeFrom[r.id][ik]);
+                }
+                chainHtml += '<div>📥 <span style="color:#7cb342;">Made from:</span> ' + ingList.join(', ') + '</div>';
+            } else if (producedBy[r.id] && producedBy[r.id].length > 0) {
+                hasChain = true;
+                chainHtml += '<div>📥 <span style="color:#7cb342;">Source:</span> Gathered/harvested (no inputs)</div>';
+            }
+
+            // Produced at
+            if (producedBy[r.id] && producedBy[r.id].length > 0) {
+                hasChain = true;
+                var unique = producedBy[r.id].filter(function(v,i,a){return a.indexOf(v)===i;});
+                chainHtml += '<div>🏭 <span style="color:#64b5f6;">Produced at:</span> ' + unique.join(', ') + '</div>';
+            }
+
+            // Used to make (downstream goods)
+            if (usedToMake[r.id] && usedToMake[r.id].length > 0) {
+                hasChain = true;
+                var outputs = {};
+                for (var ui2 = 0; ui2 < usedToMake[r.id].length; ui2++) {
+                    var out = usedToMake[r.id][ui2].output;
+                    if (!outputs[out]) outputs[out] = [];
+                    outputs[out].push(usedToMake[r.id][ui2].building);
+                }
+                var outList = [];
+                for (var ok in outputs) {
+                    var uniqueB = outputs[ok].filter(function(v,i,a){return a.indexOf(v)===i;});
+                    outList.push((resName[ok] || ok) + ' <span style="color:#888;">(' + uniqueB.join(', ') + ')</span>');
+                }
+                chainHtml += '<div>📤 <span style="color:#ffb74d;">Used to make:</span> ' + outList.join(' · ') + '</div>';
+            }
+
+            // Consumed by buildings (non-production uses like construction)
+            var buildConsumers = consumedBy[r.id] ? consumedBy[r.id].filter(function(v,i,a){return a.indexOf(v)===i;}) : [];
+            var constructionUses = buildConsumers.filter(function(n){ return n.indexOf('(construction)') >= 0; });
+            if (constructionUses.length > 0) {
+                hasChain = true;
+                chainHtml += '<div>🏗️ <span style="color:#ba68c8;">Construction:</span> ' + constructionUses.slice(0, 8).join(', ') + (constructionUses.length > 8 ? ' +' + (constructionUses.length - 8) + ' more' : '') + '</div>';
+            }
+
+            chainHtml += '</div>';
+
+            desc += (hasChain ? chainHtml : '');
 
             goodsData.push({ id: r.id, name: r.name, icon: r.icon || '', category: r.category || '?', basePrice: r.basePrice || 0, weight: r.weight || 1, desc: desc });
         }
 
         // Sort by category then name
-        var catOrder = ['raw', 'processed', 'food', 'beverage', 'finished', 'military', 'luxury', 'supplies', 'livestock', 'contraband'];
+        var catOrder = ['raw', 'processed', 'food', 'beverage', 'finished', 'military', 'luxury', 'medical', 'supplies', 'livestock', 'contraband'];
         goodsData.sort(function(a, b) {
             var ai = catOrder.indexOf(a.category); if (ai < 0) ai = 99;
             var bi = catOrder.indexOf(b.category); if (bi < 0) bi = 99;
@@ -15081,7 +15319,7 @@ window.UI = (function () {
         // Filter bar
         header += '<div style="padding:8px 16px; border-bottom:1px solid #333; display:flex; flex-wrap:wrap; align-items:center;">';
         header += '<input id="goods-search" type="text" placeholder="Search goods..." style="width:200px; background:#2a2a3e; color:#fff; border:1px solid #555; padding:6px 10px; border-radius:4px; margin-right:8px;" />';
-        var catLabels = { raw: '🪨 Raw', processed: '⚙️ Processed', food: '🍞 Food', beverage: '🍺 Beverage', finished: '🏭 Finished', military: '⚔️ Military', luxury: '💎 Luxury', supplies: '🏕️ Supplies', livestock: '🐄 Livestock', contraband: '☠️ Contraband' };
+        var catLabels = { raw: '🪨 Raw', processed: '⚙️ Processed', food: '🍞 Food', beverage: '🍺 Beverage', finished: '🏭 Finished', military: '⚔️ Military', luxury: '💎 Luxury', medical: '🩹 Medical', supplies: '🏕️ Supplies', livestock: '🐄 Livestock', contraband: '☠️ Contraband' };
         header += '<button onclick="window._goodsCat=\'all\'; window._filterGoods()" style="margin:2px; padding:3px 8px; background:#FFD700; color:#000; border:1px solid #555; border-radius:3px; cursor:pointer; font-size:11px;" id="goods-cat-all">All</button>';
         for (var ci2 = 0; ci2 < catOrder.length; ci2++) {
             var cat = catOrder[ci2];
@@ -15114,7 +15352,7 @@ window.UI = (function () {
         var html = '';
         var lastCat = '';
         var shown = 0;
-        var catLabels = { raw: '🪨 Raw Materials', processed: '⚙️ Processed Materials', food: '🍞 Food', beverage: '🍺 Beverages', finished: '🏭 Finished Goods', military: '⚔️ Military', luxury: '💎 Luxury', supplies: '🏕️ Supplies', livestock: '🐄 Livestock', contraband: '☠️ Contraband' };
+        var catLabels = { raw: '🪨 Raw Materials', processed: '⚙️ Processed Materials', food: '🍞 Food', beverage: '🍺 Beverages', finished: '🏭 Finished Goods', military: '⚔️ Military', luxury: '💎 Luxury', medical: '🩹 Medical', supplies: '🏕️ Supplies', livestock: '🐄 Livestock', contraband: '☠️ Contraband' };
 
         for (var i = 0; i < data.length; i++) {
             var g = data[i];
@@ -15139,7 +15377,7 @@ window.UI = (function () {
         list.innerHTML = html;
 
         // Update category button highlights
-        var allCats = ['all', 'raw', 'processed', 'food', 'beverage', 'finished', 'military', 'luxury', 'supplies', 'livestock', 'contraband'];
+        var allCats = ['all', 'raw', 'processed', 'food', 'beverage', 'finished', 'military', 'luxury', 'medical', 'supplies', 'livestock', 'contraband'];
         for (var ci3 = 0; ci3 < allCats.length; ci3++) {
             var btn = document.getElementById('goods-cat-' + allCats[ci3]);
             if (btn) {
