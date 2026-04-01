@@ -645,10 +645,6 @@
         if (!qty || !isFinite(qty) || qty <= 0) return { success: false, message: 'Invalid quantity.' };
         qty = Math.floor(qty);
         if (qty <= 0) return { success: false, message: 'Invalid quantity.' };
-        if (resourceId === 'horses') {
-            // Redirect to horse system
-            return buyHorse(player.townId);
-        }
         if (player.traveling) return { success: false, message: 'Cannot trade while traveling.' };
         if (player.jailedUntilDay > 0 && Engine.getDay() < player.jailedUntilDay) {
             return { success: false, message: `You are in jail until day ${player.jailedUntilDay}.` };
@@ -787,18 +783,29 @@
         const totalCost = Math.ceil(price * qty);
         if (player.gold < totalCost) return { success: false, message: `Not enough gold. Need ${totalCost}, have ${player.gold}.` };
 
-        // Check carry capacity
-        const buyRes = findResource(resourceId);
-        const buyWeight = buyRes ? (buyRes.weight || 1) : 1;
-        const currentWeight = getCarriedWeight();
-        const maxCarry = getCarryCapacity();
-        var effectiveCap = maxCarry;
-        if (player.townId) {
-            var freeStorage = getTownStorageCapacity(player.townId) - getTownStorageUsed(player.townId);
-            if (freeStorage > 0) effectiveCap += freeStorage;
+        // Horses: enforce max count (mounted + inventory), skip weight check
+        if (resourceId === 'horses') {
+            var maxHorses = (CONFIG.MAX_HORSES || 2) + (hasSkill('horse_mastery') ? 2 : 0);
+            var totalHorses = player.horses.length + (player.inventory.horses || 0);
+            if (totalHorses + qty > maxHorses) {
+                return { success: false, message: 'You can only have ' + maxHorses + ' horses total (mounted + inventory). You have ' + totalHorses + '.' };
+            }
         }
-        if (currentWeight + qty * buyWeight > effectiveCap) {
-            return { success: false, message: 'Not enough storage space! Weight: ' + Math.round(currentWeight) + '/' + Math.round(effectiveCap) + ' capacity. Buy a bigger container or build a warehouse.' };
+
+        // Check carry capacity (skip for horses — they walk themselves)
+        var buyRes = findResource(resourceId);
+        var buyWeight = buyRes ? (buyRes.weight || 1) : 1;
+        var currentWeight = getCarriedWeight();
+        var maxCarry = getCarryCapacity();
+        if (resourceId !== 'horses') {
+            var effectiveCap = maxCarry;
+            if (player.townId) {
+                var freeStorage = getTownStorageCapacity(player.townId) - getTownStorageUsed(player.townId);
+                if (freeStorage > 0) effectiveCap += freeStorage;
+            }
+            if (currentWeight + qty * buyWeight > effectiveCap) {
+                return { success: false, message: 'Not enough storage space! Weight: ' + Math.round(currentWeight) + '/' + Math.round(effectiveCap) + ' capacity. Buy a bigger container or build a warehouse.' };
+            }
         }
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.buy || 2);
@@ -824,6 +831,10 @@
             town.market.supply[resourceId] = Math.max(0, (town.market.supply[resourceId] || 0) - qty);
         }
         player.inventory[resourceId] = (player.inventory[resourceId] || 0) + qty;
+        // Auto-mount horse if player has no equipped horses
+        if (resourceId === 'horses' && player.horses.length === 0) {
+            mountHorse();
+        }
         player.stats.tradesCompleted++;
 
         // Player trade prosperity boost
@@ -880,9 +891,6 @@
         if (!qty || !isFinite(qty) || qty <= 0) return { success: false, message: 'Invalid quantity.' };
         qty = Math.floor(qty);
         if (qty <= 0) return { success: false, message: 'Invalid quantity.' };
-        if (resourceId === 'horses') {
-            return { success: false, message: 'Use the Character panel to manage your horses.' };
-        }
         if (player.traveling) return { success: false, message: 'Cannot trade while traveling.' };
         if (player.jailedUntilDay > 0 && Engine.getDay() < player.jailedUntilDay) {
             return { success: false, message: `You are in jail until day ${player.jailedUntilDay}.` };
@@ -4896,8 +4904,77 @@
         player.gold += price;
         player.stats.totalGoldEarned += price;
         player.horses.splice(idx, 1);
+        if (player.horses.length === 0) player.travelMode = 'walk';
         Engine.logEvent('🐴 You sold ' + horse.name + ' for ' + price + 'g.');
         return { success: true, message: 'Sold ' + horse.name + ' for ' + price + 'g.' };
+    }
+
+    function mountHorse() {
+        var maxHorses = (CONFIG.MAX_HORSES || 2) + (hasSkill('horse_mastery') ? 2 : 0);
+        if (player.horses.length >= maxHorses) {
+            return { success: false, message: 'You can only have ' + maxHorses + ' horses mounted at once.' };
+        }
+        var held = player.inventory.horses || 0;
+        if (held <= 0) return { success: false, message: 'No horses in inventory to mount.' };
+
+        // Draft Animal Law check
+        try {
+            var town = Engine.findTown(player.townId);
+            if (town && town.kingdomId) {
+                var horseKingdom = Engine.findKingdom(town.kingdomId);
+                if (horseKingdom && horseKingdom.laws && horseKingdom.laws.specialLaws &&
+                    horseKingdom.laws.specialLaws.some(function(l) { return l.id === 'draft_animal_law'; })) {
+                    var cfg = CONFIG.DRAFT_ANIMAL_LAW;
+                    var playerRank = (player.socialRank && player.socialRank[horseKingdom.id]) || 0;
+                    if (cfg && playerRank < (cfg.minRankExempt || 2)) {
+                        var permit = player.horsePermit && player.horsePermit[horseKingdom.id];
+                        if (!permit || permit.expiresDay <= Engine.getDay()) {
+                            return { success: false, message: '🐴 ' + horseKingdom.name + ' requires a horse permit for commoners. Buy a permit or achieve Burgher rank.' };
+                        }
+                    }
+                }
+            }
+        } catch(e) {}
+
+        player.inventory.horses -= 1;
+        if (player.inventory.horses <= 0) delete player.inventory.horses;
+
+        var names = ['Shadow', 'Thunder', 'Storm', 'Blaze', 'Spirit', 'Midnight', 'Copper', 'Arrow', 'Dusty', 'Noble', 'Whisper', 'Ember', 'Frost', 'Chestnut', 'Maple'];
+        var hrng = Engine.getRng();
+        var name = names[hrng ? hrng.randInt(0, names.length - 1) : Math.floor(Math.random() * names.length)];
+        while (player.horses.some(function(h) { return h.name === name; })) {
+            name = names[hrng ? hrng.randInt(0, names.length - 1) : Math.floor(Math.random() * names.length)] + ' ' + (hrng ? hrng.randInt(0, 99) : Math.floor(Math.random() * 100));
+        }
+
+        var horse = {
+            id: 'horse_' + Date.now() + '_' + (hrng ? hrng.randInt(0, 999) : Math.floor(Math.random() * 1000)),
+            name: name,
+            stamina: 80 + (hrng ? hrng.randInt(0, 20) : Math.floor(Math.random() * 21)),
+            speed: 0.8 + (hrng ? hrng.random() * 0.4 : Math.random() * 0.4)
+        };
+        player.horses.push(horse);
+        player.travelMode = 'horse';
+        Engine.logEvent('🐴 You mounted ' + horse.name + '!');
+        return { success: true, message: '🐴 Mounted ' + horse.name + '! (Stamina: ' + horse.stamina + ', Speed: ' + horse.speed.toFixed(1) + 'x)' };
+    }
+
+    function dismountHorse(horseId) {
+        var idx = player.horses.findIndex(function(h) { return h.id === horseId; });
+        if (idx === -1) return { success: false, message: 'Horse not found.' };
+
+        // Check if container requires this horse
+        var container = player.storageContainer ? CONFIG.STORAGE_CONTAINERS[player.storageContainer] : null;
+        var required = container ? (container.horsesRequired || 0) : 0;
+        if (player.horses.length - 1 < required) {
+            return { success: false, message: 'Your ' + container.name + ' requires ' + required + ' horse(s). Downgrade container first.' };
+        }
+
+        var horse = player.horses[idx];
+        player.horses.splice(idx, 1);
+        player.inventory.horses = (player.inventory.horses || 0) + 1;
+        if (player.horses.length === 0) player.travelMode = 'walk';
+        Engine.logEvent('🐴 You dismounted ' + horse.name + '.');
+        return { success: true, message: '🐴 Dismounted ' + horse.name + '. Horse added to inventory.' };
     }
 
     function buyHorsePermit(kingdomId, durationType) {
@@ -13916,6 +13993,7 @@
             var buildings = town.buildings || [];
             for (var i = 0; i < buildings.length; i++) {
                 var bldg = buildings[i];
+                if (!bldg.inGuild) continue;
                 var bType = Engine.findBuildingType(bldg.type);
                 if (!bType) continue;
                 var guild = getGuildForCategory(bType.category);
@@ -13972,9 +14050,9 @@
         if (!town) return { success: false, message: 'You are not in a town.' };
         var found = false;
         for (var bi = 0; bi < (town.buildings || []).length; bi++) {
-            if (town.buildings[bi].type === buildingType) { found = true; break; }
+            if (town.buildings[bi].type === buildingType && town.buildings[bi].inGuild) { found = true; break; }
         }
-        if (!found) return { success: false, message: 'No ' + bType.name + ' in this town.' };
+        if (!found) return { success: false, message: 'No guild-member ' + bType.name + ' in this town.' };
 
         // Find recipe
         var recipe = null;
@@ -14001,17 +14079,24 @@
         // Entry fee
         var entryFee = CONFIG.GUILD_BUILDING_ENTRY_FEE_MIN + Math.floor(Math.random() * (CONFIG.GUILD_BUILDING_ENTRY_FEE_MAX - CONFIG.GUILD_BUILDING_ENTRY_FEE_MIN + 1));
 
-        // Per-item crafting fee for no-input crafts (e.g. wheat, wood — 1g per item)
+        // Per-item crafting fee for no-input crafts (farming, mining — 10% of local market price)
         var consumes = recipe.consumes || {};
         var hasInputs = Object.keys(consumes).length > 0;
         var perItemFee = 0;
         if (!hasInputs) {
-            perItemFee = qty * 1; // 1g per item
+            var localPrice = 1;
+            if (town && town.market && town.market.prices && town.market.prices[recipe.produces]) {
+                localPrice = town.market.prices[recipe.produces];
+            } else {
+                var feeRes = findResource(recipe.produces);
+                if (feeRes) localPrice = feeRes.basePrice || 1;
+            }
+            perItemFee = Math.max(1, Math.floor(localPrice * 0.10)) * qty;
         }
         var totalFee = entryFee + perItemFee;
         if (player.gold < totalFee) {
             var feeMsg = 'Cannot afford fees: ' + entryFee + 'g entry';
-            if (perItemFee > 0) feeMsg += ' + ' + perItemFee + 'g crafting (' + qty + ' × 1g)';
+            if (perItemFee > 0) feeMsg += ' + ' + perItemFee + 'g crafting (' + qty + ' × 10% market price)';
             feeMsg += ' = ' + totalFee + 'g total.';
             return { success: false, message: feeMsg };
         }
@@ -26299,10 +26384,21 @@
         var person = Engine.findPerson(npcId);
         if (!person || !person.alive) return { success: false, message: 'Family member not found.' };
         var rel = (player.relationships[npcId] && player.relationships[npcId].level) || 0;
-        if (rel < 50) return { success: false, message: member.name + ' refuses. "We\'re not that close..."' };
+        if (rel < 30) return { success: false, message: member.name + ' refuses. "We\'re not that close..."' };
         var day = Engine.getDay();
-        if (person._lastFamilyMoneyDay && day - person._lastFamilyMoneyDay < 30) {
-            return { success: false, message: 'You already asked recently. Wait 30 days.' };
+        if (person._lastFamilyMoneyDay && day - person._lastFamilyMoneyDay < 60) {
+            var daysLeft = 60 - (day - person._lastFamilyMoneyDay);
+            return { success: false, message: 'You already asked recently. Wait ' + daysLeft + ' more days.' };
+        }
+        // RNG: chance of agreeing based on relationship
+        var rng = Engine.getRng();
+        var agreeChance = Math.min(0.95, rel / 100); // rel 30 = 30%, rel 80 = 80%, rel 95 = 95%
+        if (!rng.chance(agreeChance)) {
+            // Refused — still costs relationship and sets cooldown
+            modifyRelationship(npcId, -5);
+            person._lastFamilyMoneyDay = day;
+            if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.ask_family_money || 2);
+            return { success: false, message: member.name + ' says: "I\'m sorry, I just can\'t right now." (-5 relationship)' };
         }
         var pct = rel >= 75 ? 0.50 : (rel >= 60 ? 0.30 : 0.10);
         var amount = Math.floor((person.gold || 0) * pct);
@@ -26311,8 +26407,11 @@
         player.gold += amount;
         player.stats.totalGoldEarned += amount;
         person._lastFamilyMoneyDay = day;
+        // Asking for money strains the relationship
+        var relPenalty = amount > 100 ? -10 : (amount > 50 ? -7 : -3);
+        modifyRelationship(npcId, relPenalty);
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.ask_family_money || 2);
-        return { success: true, message: member.name + ' gave you ' + amount + 'g.' };
+        return { success: true, message: member.name + ' gave you ' + amount + 'g. (' + relPenalty + ' relationship)' };
     }
 
     function askFamilyToWork(npcId) {
@@ -26320,18 +26419,23 @@
         if (!member) return { success: false, message: 'Not a family member.' };
         var person = Engine.findPerson(npcId);
         if (!person || !person.alive) return { success: false, message: 'Family member not found.' };
+        if (person.age < 14) return { success: false, message: member.name + ' is too young to work (must be at least 14).' };
         var rel = (player.relationships[npcId] && player.relationships[npcId].level) || 0;
         if (rel < 60) return { success: false, message: 'Relationship must be 60+ to ask for work.' };
+        // Check if already your employee
+        if (player.employees.includes(npcId)) return { success: false, message: member.name + ' is already working for you.' };
         // Check if any family already working
         var alreadyWorking = player.familyMembers.some(function(m) {
-            var p = Engine.findPerson(m.npcId);
-            return p && p.employerId === 'player_family';
+            return player.employees.includes(m.npcId);
         });
         if (alreadyWorking) return { success: false, message: 'A family member is already working for you.' };
-        person.employerId = 'player_family';
+        person.employerId = 'player';
+        player.employees.push(person.id);
         person._familyWorkStartDay = Engine.getDay();
+        person._isFamilyWorker = true;
+        var effPct = person.age < 18 ? 30 : 50;
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.ask_family_work || 2);
-        return { success: true, message: member.name + ' agrees to work for you for 30 days (50% efficiency, free).' };
+        return { success: true, message: member.name + ' agrees to work for you for 30 days (' + effPct + '% efficiency, free).' };
     }
 
     function familyDinner() {
@@ -29410,6 +29514,8 @@
         getCarriedWeight,
         buyHorse,
         sellHorse,
+        mountHorse,
+        dismountHorse,
         buyHorsePermit,
         payHorsePermitFine,
         refuseHorsePermitFine,

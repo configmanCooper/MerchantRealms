@@ -1835,6 +1835,23 @@
             }
         }
 
+        // Assign guild membership to production buildings based on town size
+        var guildChance = 0.30; // village default
+        if (town) {
+            var pop = town.population || 0;
+            if (pop >= 5000) guildChance = 0.75;      // capital
+            else if (pop >= 2000) guildChance = 0.60;  // city
+            else if (pop >= 500) guildChance = 0.45;   // town
+        }
+        var civicTypes = ['guild_hall', 'marketplace_royal', 'well', 'cistern', 'tavern', 'restaurant',
+            'general_store', 'clothing_shop', 'armory_shop', 'jewelers_boutique', 'warehouse',
+            'apartment_building', 'tent_camp', 'barracks', 'watchtower', 'cathedral', 'university',
+            'hospital', 'clinic', 'dock'];
+        for (var gbi = 0; gbi < buildings.length; gbi++) {
+            if (civicTypes.indexOf(buildings[gbi].type) !== -1) continue; // civic buildings don't need guild
+            buildings[gbi].inGuild = rng.chance(guildChance);
+        }
+
         return buildings;
     }
 
@@ -1999,6 +2016,12 @@
         add('market_stall');
         if (rng.chance(0.5)) add('lumber_camp');
         if (rng.chance(0.3)) add('jeweler'); // pearls → jewelry
+        // Island guild membership — low chance (small communities)
+        var islandCivic = ['dock', 'market_stall'];
+        for (var ibi = 0; ibi < buildings.length; ibi++) {
+            if (islandCivic.indexOf(buildings[ibi].type) !== -1) continue;
+            buildings[ibi].inGuild = rng.chance(0.25);
+        }
         return buildings;
     }
 
@@ -4483,9 +4506,10 @@
         var buildTimes = CONFIG.KINGDOM_BUILD_TIMES ? CONFIG.KINGDOM_BUILD_TIMES[buildingTypeId] : null;
         var buildDays = buildTimes ? buildTimes.build : 0;
         if (buildDays > 1) {
-            town.buildings.push({ type: buildingTypeId, level: 1, ownerId: null, builtDay: world.day, condition: 'under_construction', constructionComplete: world.day + buildDays, lastRepairDay: 0 });
+            town.buildings.push({ type: buildingTypeId, level: 1, ownerId: null, builtDay: world.day, condition: 'under_construction', constructionComplete: world.day + buildDays, lastRepairDay: 0, inGuild: false });
         } else {
-            town.buildings.push({ type: buildingTypeId, level: 1, ownerId: null, builtDay: world.day, condition: 'new', lastRepairDay: 0 });
+            var newBldGuildChance = town.population >= 5000 ? 0.75 : town.population >= 2000 ? 0.60 : town.population >= 500 ? 0.45 : 0.30;
+            town.buildings.push({ type: buildingTypeId, level: 1, ownerId: null, builtDay: world.day, condition: 'new', lastRepairDay: 0, inGuild: world.rng ? world.rng.chance(newBldGuildChance) : Math.random() < newBldGuildChance });
         }
         return true;
     }
@@ -4502,6 +4526,11 @@
                 if (bld.condition === 'under_construction' && bld.constructionComplete && world.day >= bld.constructionComplete) {
                     bld.condition = 'new';
                     delete bld.constructionComplete;
+                    // Assign guild membership on completion
+                    if (bld.inGuild === undefined || bld.inGuild === false) {
+                        var conGuildChance = town.population >= 5000 ? 0.75 : town.population >= 2000 ? 0.60 : town.population >= 500 ? 0.45 : 0.30;
+                        bld.inGuild = world.rng ? world.rng.chance(conGuildChance) : Math.random() < conGuildChance;
+                    }
                     var btName = bld.type.replace(/_/g, ' ');
                     logEvent('🏗️ Construction of ' + btName + ' completed in ' + town.name + '!', {
                         type: 'construction_complete', townId: town.id
@@ -17548,6 +17577,21 @@
                 if (em.kingdomId && em.reputation) {
                     em.reputation[em.kingdomId] = Math.min(100, (em.reputation[em.kingdomId] || 50) + 3);
                 }
+
+                // Mark EM-owned buildings in this guild's categories as inGuild
+                if (emTown) {
+                    var gDef = guilds[guildId];
+                    if (gDef && gDef.categories) {
+                        for (var mbi = 0; mbi < emTown.buildings.length; mbi++) {
+                            var mbld = emTown.buildings[mbi];
+                            if (mbld.ownerId !== em.id) continue;
+                            var mbType = findBuildingType(mbld.type);
+                            if (mbType && gDef.categories.indexOf(mbType.category) >= 0) {
+                                mbld.inGuild = true;
+                            }
+                        }
+                    }
+                }
             }
 
             // Let expired memberships lapse — frugal EMs or struggling ones won't renew
@@ -17555,6 +17599,20 @@
                 if (em.guilds[gk].expiresDay && em.guilds[gk].expiresDay <= world.day) {
                     delete em.guilds[gk];
                     if (em._guildBonuses) delete em._guildBonuses[gk];
+                    // Remove inGuild from EM buildings in this guild's categories
+                    if (emTown) {
+                        var expGDef = guilds[gk];
+                        if (expGDef && expGDef.categories) {
+                            for (var xbi = 0; xbi < emTown.buildings.length; xbi++) {
+                                var xbld = emTown.buildings[xbi];
+                                if (xbld.ownerId !== em.id) continue;
+                                var xbType = findBuildingType(xbld.type);
+                                if (xbType && expGDef.categories.indexOf(xbType.category) >= 0) {
+                                    xbld.inGuild = false;
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -19148,7 +19206,8 @@
         // Distribute construction wages to local NPCs (EM building)
         distributeConstructionWages(buildTown.id, effectiveCost, world.rng);
         if (!em.buildings) em.buildings = [];
-        var newBld = { type: bType, level: 1, ownerId: em.id, townId: buildTown.id, workers: [], upgrades: [], builtDay: world.day, _profitTracker: { revenue: 0, costs: 0, days: 0 } };
+        var emGuildChance = buildTown.population >= 5000 ? 0.75 : buildTown.population >= 2000 ? 0.60 : buildTown.population >= 500 ? 0.45 : 0.30;
+        var newBld = { type: bType, level: 1, ownerId: em.id, townId: buildTown.id, workers: [], upgrades: [], builtDay: world.day, _profitTracker: { revenue: 0, costs: 0, days: 0 }, inGuild: world.rng ? world.rng.chance(emGuildChance) : Math.random() < emGuildChance };
         buildTown.buildings.push(newBld);
         em.buildings.push({ type: bType, townId: buildTown.id, level: 1 });
         var subsidyNote = subsidyDiscount > 0 ? ' (with ' + Math.round(subsidyDiscount * 100) + '% land subsidy)' : '';
@@ -26987,6 +27046,20 @@
                     if (bld.fallow === undefined) bld.fallow = false;
                     if (bld.breedProgress === undefined) bld.breedProgress = 0;
                     if (bld.securityUpgrades === undefined) bld.securityUpgrades = [];
+                    // Guild membership migration — assign to old saves
+                    if (bld.inGuild === undefined) {
+                        var civicNoGuild = ['guild_hall', 'marketplace_royal', 'well', 'cistern', 'tavern', 'restaurant',
+                            'general_store', 'clothing_shop', 'armory_shop', 'jewelers_boutique', 'warehouse',
+                            'apartment_building', 'tent_camp', 'barracks', 'watchtower', 'cathedral', 'university',
+                            'hospital', 'clinic', 'dock', 'market_stall'];
+                        if (civicNoGuild.indexOf(bld.type) !== -1) {
+                            bld.inGuild = false;
+                        } else {
+                            var pop = town.population || 0;
+                            var gChance = pop >= 5000 ? 0.75 : pop >= 2000 ? 0.60 : pop >= 500 ? 0.45 : 0.30;
+                            bld.inGuild = world.rng ? world.rng.chance(gChance) : Math.random() < gChance;
+                        }
+                    }
                 }
             }
             world.roads = data.roads || [];

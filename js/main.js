@@ -525,6 +525,11 @@ window.Game = (function () {
             const events = Engine.getEvents ? Engine.getEvents() : [];
             if (!events) return;
 
+            // Guard against event log pruning making our counter stale
+            if (lastProcessedEventCount > events.length) {
+                lastProcessedEventCount = events.length;
+            }
+
             // Only process new events
             if (events.length > lastProcessedEventCount) {
                 const newEvents = events.slice(lastProcessedEventCount);
@@ -572,8 +577,9 @@ window.Game = (function () {
                     // Don't double-toast warDeclared/warEnded (they have their own UI handling)
                     if (type !== 'wardeclared' && type !== 'warended' && type !== 'kingoverthrown') {
                         // Pass event category so notification filter can suppress non-player toasts
+                        // Pass _skipEventLog=true to prevent circular toast→logEvent→processEvents→toast loop
                         var evtCategory = event.category || 'local_town';
-                        UI.toast(msg, toastType, evtCategory);
+                        UI.toast(msg, toastType, evtCategory, true);
                     }
                     emit('eventOccurred', event);
                 }
@@ -595,6 +601,7 @@ window.Game = (function () {
         } else if (state === 'paused') {
             state = 'playing';
         }
+        updateSpeedButtons();
         emit('speedChanged', { speed: s });
     }
 

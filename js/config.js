@@ -2806,11 +2806,11 @@ const GUILDS = {
     healers:     { id: 'healers',     name: "Healers' Guild",         icon: '⚕️', categories: ['medical'] },
 };
 CONFIG.GUILDS = GUILDS;
-CONFIG.GUILD_BASE_MONTHLY = 25;
-CONFIG.GUILD_BASE_YEARLY = 200;
-// Merchants Guild uses 4x base prices (100 monthly / 800 yearly)
-CONFIG.MERCHANTS_GUILD_BASE_MONTHLY = 100;
-CONFIG.MERCHANTS_GUILD_BASE_YEARLY = 800;
+CONFIG.GUILD_BASE_MONTHLY = 100;
+CONFIG.GUILD_BASE_YEARLY = 800;
+// Merchants Guild uses 4x base prices (400 monthly / 3200 yearly)
+CONFIG.MERCHANTS_GUILD_BASE_MONTHLY = 400;
+CONFIG.MERCHANTS_GUILD_BASE_YEARLY = 3200;
 CONFIG.MERCHANTS_GUILD_REPORT_FEE = 25;
 CONFIG.MERCHANTS_GUILD_PROSPERITY_CAP = 3.0; // max multiplier on membership price
 CONFIG.GUILD_BUILDING_ENTRY_FEE_MIN = 5;

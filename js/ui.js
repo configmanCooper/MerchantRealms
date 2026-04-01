@@ -5611,16 +5611,24 @@ window.UI = (function () {
         html += `<div class="detail-section"><h3>📦 Storage & Capacity</h3>`;
 
         // ── Horses Section ──
-        html += `<div style="margin-bottom:8px;"><strong>🐴 Horses (${Player.horses ? Player.horses.length : 0}/${CONFIG.MAX_HORSES || 2})</strong></div>`;
+        var maxHorsesDisp = (CONFIG.MAX_HORSES || 2) + (Player.hasSkill && Player.hasSkill('horse_mastery') ? 2 : 0);
+        html += `<div style="margin-bottom:8px;"><strong>🐴 Mounted Horses (${Player.horses ? Player.horses.length : 0}/${maxHorsesDisp})</strong></div>`;
         if (Player.horses && Player.horses.length > 0) {
             for (const horse of Player.horses) {
                 html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:0.75rem;">`;
                 html += `<span>🐴 <strong>${horse.name}</strong> — Stamina: ${horse.stamina}, Speed: ${horse.speed.toFixed(1)}x</span>`;
-                html += `<button class="btn-medieval" onclick="UI.sellHorse('${horse.id}')" style="font-size:0.7rem;padding:2px 6px;">Sell</button>`;
-                html += `</div>`;
+                html += `<div style="display:flex;gap:4px;">`;
+                html += `<button class="btn-medieval" onclick="UI.dismountHorseUI('${horse.id}')" style="font-size:0.7rem;padding:2px 6px;">⬇️ Dismount</button>`;
+                html += `<button class="btn-medieval" onclick="UI.sellHorse('${horse.id}')" style="font-size:0.7rem;padding:2px 6px;">💰 Sell</button>`;
+                html += `</div></div>`;
             }
         } else {
-            html += `<div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:4px;">No horses. Buy from market to increase carry capacity (+${CONFIG.HORSE_CARRY_BONUS || 40} each).</div>`;
+            html += `<div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:4px;">No horses mounted. Buy or mount from inventory. (+${CONFIG.HORSE_CARRY_BONUS || 40} carry each).</div>`;
+        }
+        // Mount from inventory
+        var invHorses = (Player.inventory && Player.inventory.horses) || 0;
+        if (invHorses > 0) {
+            html += `<div style="margin-top:4px;"><button class="btn-medieval" onclick="UI.mountHorseUI()" style="font-size:0.75rem;padding:4px 10px;">🐴 Mount Horse from Inventory (${invHorses} available)</button></div>`;
         }
 
         // ── Horse Permit (Draft Animal Law) ──
@@ -6049,6 +6057,18 @@ window.UI = (function () {
         var result = Player.sellHorse(horseId);
         toast(result.message, result.success ? 'success' : 'error');
         if (result.success) openCharacterDialog(); // Refresh
+    }
+
+    function mountHorseUI() {
+        var result = Player.mountHorse();
+        toast(result.message, result.success ? 'success' : 'warning');
+        if (result.success) openCharacterDialog();
+    }
+
+    function dismountHorseUI(horseId) {
+        var result = Player.dismountHorse(horseId);
+        toast(result.message, result.success ? 'success' : 'warning');
+        if (result.success) openCharacterDialog();
     }
 
     function depositToStorageUI(resId, qty) {
@@ -6563,28 +6583,30 @@ window.UI = (function () {
     //  TOASTS / NOTIFICATIONS
     // ═══════════════════════════════════════════════════════════
 
-    function toast(message, type, category) {
+    function toast(message, type, category, _skipEventLog) {
         type = type || 'info';
         category = category || 'my_actions';
 
-        // Always log to engine event log (dedup: check if a matching event was already logged this tick)
-        try {
-            if (typeof Engine !== 'undefined' && Engine.getEvents && Engine.logEvent) {
-                var events = Engine.getEvents();
-                var day = Engine.getDay ? Engine.getDay() : 0;
-                var alreadyLogged = false;
-                // Check last 5 events for a duplicate within same day
-                for (var _di = events.length - 1; _di >= Math.max(0, events.length - 5); _di--) {
-                    if (events[_di].day === day && events[_di].message === message) {
-                        alreadyLogged = true;
-                        break;
+        // Log to engine event log unless called from processEvents (prevents circular toast→log→process→toast loop)
+        if (!_skipEventLog) {
+            try {
+                if (typeof Engine !== 'undefined' && Engine.getEvents && Engine.logEvent) {
+                    var events = Engine.getEvents();
+                    var day = Engine.getDay ? Engine.getDay() : 0;
+                    var alreadyLogged = false;
+                    // Check last 5 events for a duplicate within same day
+                    for (var _di = events.length - 1; _di >= Math.max(0, events.length - 5); _di--) {
+                        if (events[_di].day === day && events[_di].message === message) {
+                            alreadyLogged = true;
+                            break;
+                        }
+                    }
+                    if (!alreadyLogged) {
+                        Engine.logEvent(message, null, category);
                     }
                 }
-                if (!alreadyLogged) {
-                    Engine.logEvent(message, null, category);
-                }
-            }
-        } catch(e) { /* ignore logging errors */ }
+            } catch(e) { /* ignore logging errors */ }
+        }
 
         // Check notification filter for popup suppression (toasts can be suppressed but log entry persists)
         if (typeof Player !== 'undefined' && Player.shouldShowNotification) {
@@ -7678,7 +7700,7 @@ window.UI = (function () {
                 cost: 0,
                 days: walkDays,
                 available: true,
-                action: function () { Player.travelTo(townId); }
+                action: function () { return Player.travelTo(townId); }
             });
 
             // Option: Ride Horse (if player has horse)
@@ -7694,7 +7716,7 @@ window.UI = (function () {
                     cost: 0,
                     days: horseDays,
                     available: true,
-                    action: function () { Player.travelTo(townId, { mode: 'horse' }); }
+                    action: function () { return Player.travelTo(townId, { mode: 'horse' }); }
                 });
             }
 
@@ -7727,7 +7749,7 @@ window.UI = (function () {
                         days: buyHorseDays,
                         available: canAffordHorse,
                         unavailableReason: !canAffordHorse ? 'Not enough gold' : '',
-                        action: (function (hCost) { return function () { Player.buyHorseForTravel(townId, hCost); }; })(horseCost)
+                        action: (function (hCost) { return function () { return Player.buyHorseForTravel(townId, hCost); }; })(horseCost)
                     });
                 }
             }
@@ -7753,7 +7775,7 @@ window.UI = (function () {
                     days: bringDays,
                     available: true,
                     action: (function(tid) { return function () {
-                        Player.travelTo(tid, { leaveCart: false });
+                        return Player.travelTo(tid, { leaveCart: false });
                     }; })(townId)
                 });
                 // Leave cart behind
@@ -7769,7 +7791,7 @@ window.UI = (function () {
                     days: leaveDays,
                     available: true,
                     action: (function(tid) { return function () {
-                        Player.travelTo(tid, { leaveCart: true });
+                        return Player.travelTo(tid, { leaveCart: true });
                     }; })(townId)
                 });
             }
@@ -7787,7 +7809,7 @@ window.UI = (function () {
                     days: svc.days,
                     available: playerGold >= svc.price,
                     unavailableReason: playerGold < svc.price ? 'Not enough gold' : '',
-                    action: (function (service) { return function () { Player.useTransportService(townId, service); }; })(svc)
+                    action: (function (service) { return function () { return Player.useTransportService(townId, service); }; })(svc)
                 });
             }
         }
@@ -7821,7 +7843,7 @@ window.UI = (function () {
                     cost: 0,
                     days: sailDays,
                     available: true,
-                    action: function () { Player.travelBySea(townId); }
+                    action: function () { return Player.travelBySea(townId); }
                 });
             }
 
@@ -7838,7 +7860,7 @@ window.UI = (function () {
                 days: passageDays,
                 available: playerGold >= passageCost,
                 unavailableReason: playerGold < passageCost ? 'Not enough gold' : '',
-                action: function () { Player.travelBySea(townId, { paid: true }); }
+                action: function () { return Player.travelBySea(townId, { paid: true }); }
             });
 
             // Sea transport services
@@ -7854,7 +7876,7 @@ window.UI = (function () {
                     days: ssvc.days,
                     available: playerGold >= ssvc.price,
                     unavailableReason: playerGold < ssvc.price ? 'Not enough gold' : '',
-                    action: (function (service) { return function () { Player.useTransportService(townId, service); }; })(ssvc)
+                    action: (function (service) { return function () { return Player.useTransportService(townId, service); }; })(ssvc)
                 });
             }
         }
@@ -7947,7 +7969,16 @@ window.UI = (function () {
         if (opt && opt.available && opt.action) {
             closeModal();
             closeRightPanel();
-            opt.action();
+            try {
+                var result = opt.action();
+                if (result && result.success === false) {
+                    toast(result.message || 'Travel failed.', 'danger');
+                    return;
+                }
+            } catch (e) {
+                toast('Travel error: ' + (e.message || e), 'danger');
+                return;
+            }
             if (typeof Renderer !== 'undefined') {
                 var town = Engine.getTown(townId);
                 if (town) Renderer.panTo(town.x, town.y);
@@ -8861,14 +8892,14 @@ window.UI = (function () {
                 html += '<div style="color:#aaa;font-size:0.85em;margin:4px 0;">Gives Access to: <span style="color:#ddd;">Market Stalls, Transport Guild Halls, & Daily Market Intelligence Reports</span></div>';
             }
 
-            // Local availability indicator (show for non-members too)
+            // Local availability indicator — only count buildings whose owner is in the guild
             var localTown = null;
             try { localTown = Engine.findTown(Player.townId); } catch(e2) {}
             var localGuildBuildings = 0;
             if (localTown && localTown.buildings) {
                 for (var lbi = 0; lbi < localTown.buildings.length; lbi++) {
                     var lb = localTown.buildings[lbi];
-                    if (!lb.active) continue;
+                    if (!lb.inGuild) continue;
                     var lbt = null;
                     for (var lbk in BT_G) { if (BT_G[lbk].id === lb.type) { lbt = BT_G[lbk]; break; } }
                     if (lbt && g.categories.indexOf(lbt.category) !== -1) localGuildBuildings++;
@@ -16598,6 +16629,8 @@ window.UI = (function () {
         evictTenantUI,
         showRentNegotiations,
         sellHorse,
+        mountHorseUI,
+        dismountHorseUI,
         depositToStorage: depositToStorageUI,
         withdrawFromStorage: withdrawFromStorageUI,
         // Passenger Transport
