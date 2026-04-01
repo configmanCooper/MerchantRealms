@@ -4,6 +4,40 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.47.0] - 2026-04-01
+
+### Added — Caravan Order System & Management
+
+#### Caravan Order Builder
+- **Full order system** replacing old buy-orders — each order specifies: Good, Action, Location, Quantity, Price Limit
+- **Actions:** 🛒 Buy (from market), 💰 Sell (to market), 📥 Store (into player town storage), 📦 Pickup (from player town storage)
+- **Location:** Source or Destination — orders execute at the correct town on arrival
+- **Searchable goods dropdown** — type to filter ~80+ goods by name or category, click to select
+- **Max quantity** option — checkbox sets qty to "max available"
+- **Price limits** — max price for buy orders, min price for sell orders (caravan skips if price doesn't meet limit)
+- **Order builder UI** with ➕ Add button, per-order ✕ remove, live order list
+- **Backward compatible** — old caravans without orders use legacy sell-all behavior
+
+#### Caravan Management Panel
+- **📊 Manage Caravans** button opens dedicated management view
+- Each caravan shows: route, status, progress bar, profit/spent/trips stats, current cargo
+- **Collapsible orders view** — see all orders on each caravan
+- **Collapsible log view** — per-caravan action log with timestamps
+- **Edit Orders** button — modify orders on active caravans mid-route
+- **Action buttons** — Rescue blocked caravans, Stop recurring routes
+
+#### Per-Caravan Logging
+- Every caravan action is logged: buys, sells, stores, pickups, failures, restarts
+- Log entries auto-cleaned after 90 days
+- Icons per action type (🛒 buy, 💰 sell, 📥 store, 📦 pickup, ⚠️ warnings, ⛔ stops)
+
+#### Smart Order Execution
+- Orders processed in optimal sequence: Pickup → Buy → Store → Sell
+- Graceful error handling: market empty, can't afford, no storage — logged and skipped
+- Remaining unordered goods auto-sold at market (backward compat)
+- Recurring routes with orders: source orders reload cargo, destination orders run every trip
+- Empty caravans allowed if pickup orders exist (caravan goes to collect goods)
+
 ## [0.46.0] - 2026-04-01
 
 ### Added — Kingdom Trade Redesign, Worker Satisfaction, Guild Monopoly Overhaul

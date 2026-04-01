@@ -5070,11 +5070,101 @@ window.UI = (function () {
 
     // ── CARAVAN DIALOG ──
 
+    // ── Caravan order state ──
+    var _caravanOrders = []; // current order list being built
+
+    function _getAllResourceList() {
+        var list = [];
+        for (var key in RESOURCE_TYPES) {
+            var r = RESOURCE_TYPES[key];
+            if (r && r.id) list.push(r);
+        }
+        list.sort(function(a, b) { return a.name.localeCompare(b.name); });
+        return list;
+    }
+
+    function _buildOrderRow(order, index) {
+        var res = findResource(order.good);
+        var resName = res ? (res.icon + ' ' + res.name) : order.good;
+        var actionLabel = { buy: '🛒 Buy', sell: '💰 Sell', store: '📥 Store', pickup: '📦 Pickup' }[order.action] || order.action;
+        var locLabel = order.location === 'source' ? '📍 Source' : '🏁 Dest';
+        var qtyLabel = order.qty === 'max' ? 'Max' : order.qty;
+        var priceLabel = '';
+        if (order.action === 'buy' && order.priceLimit) priceLabel = ' (max ' + order.priceLimit + 'g)';
+        if (order.action === 'sell' && order.priceLimit) priceLabel = ' (min ' + order.priceLimit + 'g)';
+        return '<div style="display:flex;align-items:center;gap:6px;padding:4px 6px;background:rgba(255,255,255,0.03);border-radius:4px;margin-bottom:3px;font-size:0.75rem;">' +
+            '<span style="flex:1;">' + resName + '</span>' +
+            '<span style="color:var(--gold);min-width:60px;">' + actionLabel + '</span>' +
+            '<span style="min-width:50px;">' + qtyLabel + priceLabel + '</span>' +
+            '<span style="color:#888;min-width:55px;">' + locLabel + '</span>' +
+            '<button onclick="UI._removeCaravanOrder(' + index + ')" style="background:rgba(200,50,50,0.3);border:1px solid rgba(200,50,50,0.5);color:#fff;border-radius:3px;cursor:pointer;padding:1px 6px;font-size:0.7rem;">✕</button>' +
+        '</div>';
+    }
+
+    function _removeCaravanOrder(index) {
+        _caravanOrders.splice(index, 1);
+        _refreshOrderList();
+    }
+
+    function _refreshOrderList() {
+        var container = document.getElementById('caravanOrderList');
+        if (!container) return;
+        if (_caravanOrders.length === 0) {
+            container.innerHTML = '<div class="text-dim" style="text-align:center;font-size:0.75rem;">No orders added yet. Use ➕ to add orders.</div>';
+        } else {
+            var html = '';
+            for (var i = 0; i < _caravanOrders.length; i++) {
+                html += _buildOrderRow(_caravanOrders[i], i);
+            }
+            container.innerHTML = html;
+        }
+    }
+
+    function _addCaravanOrder() {
+        var goodInput = document.getElementById('orderGoodInput');
+        var actionSel = document.getElementById('orderAction');
+        var locSel = document.getElementById('orderLocation');
+        var qtyInput = document.getElementById('orderQty');
+        var maxCheck = document.getElementById('orderMaxQty');
+        var priceInput = document.getElementById('orderPriceLimit');
+
+        if (!goodInput || !actionSel) return;
+        var goodId = goodInput.dataset.selectedId || '';
+        if (!goodId) { toast('Select a good first.', 'warning'); return; }
+        var action = actionSel.value;
+        var location = locSel ? locSel.value : 'destination';
+        var qty = maxCheck && maxCheck.checked ? 'max' : (parseInt(qtyInput.value) || 0);
+        if (qty !== 'max' && qty <= 0) { toast('Enter a quantity or check Max.', 'warning'); return; }
+        var priceLimit = parseInt(priceInput.value) || 0;
+        if (priceLimit <= 0) priceLimit = null;
+
+        _caravanOrders.push({
+            good: goodId,
+            action: action,
+            location: location,
+            qty: qty,
+            priceLimit: priceLimit
+        });
+
+        // Reset inputs
+        goodInput.value = '';
+        goodInput.dataset.selectedId = '';
+        if (qtyInput) qtyInput.value = '';
+        if (maxCheck) maxCheck.checked = false;
+        if (priceInput) priceInput.value = '';
+        var dropdown = document.getElementById('orderGoodDropdown');
+        if (dropdown) dropdown.style.display = 'none';
+
+        _refreshOrderList();
+    }
+
     function openCaravanDialog() {
         if (typeof Player === 'undefined' || Player.townId == null) {
             toast('You must be in a town to send caravans.', 'warning', 'my_business');
             return;
         }
+
+        _caravanOrders = [];
 
         const roads = Engine.getRoads ? Engine.getRoads() : [];
         const towns = Engine.getTowns ? Engine.getTowns() : [];
@@ -5126,7 +5216,7 @@ window.UI = (function () {
                 <input type="number" class="qty-select" id="caravanGood_${resId}" min="0" max="${qty}" value="0" style="width:60px">
             </div>`;
         }
-        if (!goodsHtml) goodsHtml = '<div class="text-dim text-center">No goods available</div>';
+        if (!goodsHtml) goodsHtml = '<div class="text-dim text-center">No goods available to load</div>';
 
         // Ship capacity info
         let shipInfo = '';
@@ -5140,55 +5230,52 @@ window.UI = (function () {
             }
         }
 
-        // Buy orders section — what to auto-buy at destination for return trip
-        let buyOrdersHtml = '<div id="buyOrdersSection" style="display:none;margin-top:8px;padding:8px;background:rgba(0,100,200,0.08);border-radius:6px;">';
-        buyOrdersHtml += '<label style="font-size:0.8rem;color:var(--gold);">📦 Buy Orders at Destination</label>';
-        buyOrdersHtml += '<div class="text-dim" style="font-size:0.7rem;margin-bottom:4px;">Specify goods to purchase at destination for the return trip</div>';
-        // List all possible goods (from all known resources)
-        const allResources = typeof CONFIG !== 'undefined' && CONFIG.RESOURCES ? CONFIG.RESOURCES : [];
-        const resourceList = Object.keys(towns.length > 0 && towns[0].market && towns[0].market.prices ? towns[0].market.prices : {});
-        for (var ri = 0; ri < Math.min(resourceList.length, 20); ri++) {
-            const rId = resourceList[ri];
-            const rr = findResource(rId);
-            if (!rr) continue;
-            buyOrdersHtml += `<div class="caravan-good-row" style="font-size:0.75rem;">
-                <span>${rr.icon || '📦'} ${rr.name}</span>
-                <input type="number" class="qty-select" id="buyOrder_${rId}" min="0" max="100" value="0" style="width:50px" placeholder="qty">
-                <span style="color:#888;">max</span>
-                <input type="number" class="qty-select" id="buyMaxPrice_${rId}" min="0" max="999" value="0" style="width:50px" placeholder="price">
-                <span style="color:#888;">g</span>
-            </div>`;
-        }
-        buyOrdersHtml += '</div>';
+        // Build order builder (searchable dropdown + action + location + qty + price)
+        var orderBuilderHtml = '<div style="margin-top:10px;padding:10px;background:rgba(0,100,200,0.06);border:1px solid rgba(0,100,200,0.15);border-radius:6px;">';
+        orderBuilderHtml += '<label style="font-size:0.85rem;color:var(--gold);font-weight:bold;">📋 Caravan Orders</label>';
+        orderBuilderHtml += '<div class="text-dim" style="font-size:0.7rem;margin-bottom:6px;">Orders tell the caravan what to buy, sell, store, or pick up at each location.</div>';
 
-        // Active caravans with enhanced display
-        let activeHtml = '';
-        if (Player.caravans && Player.caravans.length) {
-            for (const c of Player.caravans) {
-                const from = townMap[c.fromTownId];
-                const to = townMap[c.toTownId];
-                const progress = Math.round((c.progress || 0) * 100);
-                const routeIcon = c.routeType === 'sea' ? '⛵' : '🐴';
-                const returnIcon = c.returnTrip ? ' ↩️' : '';
-                const recurIcon = c.recurring ? ' 🔄' : '';
-                const statusIcon = c.status === 'blocked' ? ' ⛔' : (c.status === 'destroyed' ? ' 💀' : '');
-                const profitStr = c.totalProfit ? ` | 💰 ${c.totalProfit}g` : '';
-                const tripStr = c.tripCount ? ` | Trip #${c.tripCount}` : '';
-                activeHtml += `<div class="caravan-active-row">
-                    <span>${routeIcon} ${from ? from.name : '?'} → ${to ? to.name : '?'}${returnIcon}${recurIcon}${statusIcon}</span>
-                    <div class="caravan-progress-track">
-                        <div class="caravan-progress-fill" style="width:${progress}%${c.routeType === 'sea' ? ';background:rgba(0,180,200,0.6)' : ''}"></div>
-                    </div>
-                    <span>${progress}%${profitStr}${tripStr}</span>`;
-                // Action buttons for active caravans
-                if (c.status === 'blocked' && c.active !== false) {
-                    activeHtml += `<button class="btn-action btn-small" style="font-size:0.65rem;margin-left:4px;" onclick="(function(){var r=Player.rescueCaravan('${c.id}');UI.toast(r.message,r.success?'success':'warning');UI.openCaravanDialog();})()">🆘 Rescue (${CONFIG.CARAVAN_BLOCKED_RESCUE_COST || 100}g)</button>`;
-                }
-                if (c.recurring && c.active) {
-                    activeHtml += `<button class="btn-action btn-small" style="font-size:0.65rem;margin-left:4px;background:rgba(200,60,50,0.3);" onclick="(function(){var r=Player.cancelRecurringRoute('${c.id}');UI.toast(r.message,r.success?'success':'warning');UI.openCaravanDialog();})()">⏹️ Stop Route</button>`;
-                }
-                activeHtml += `</div>`;
-            }
+        // Order list
+        orderBuilderHtml += '<div id="caravanOrderList" style="max-height:150px;overflow-y:auto;margin-bottom:8px;">';
+        orderBuilderHtml += '<div class="text-dim" style="text-align:center;font-size:0.75rem;">No orders added yet. Use ➕ to add orders.</div>';
+        orderBuilderHtml += '</div>';
+
+        // Add order form
+        orderBuilderHtml += '<div style="border-top:1px solid rgba(255,255,255,0.08);padding-top:8px;">';
+        // Row 1: Good search + Action
+        orderBuilderHtml += '<div style="display:flex;gap:6px;align-items:flex-start;flex-wrap:wrap;margin-bottom:6px;">';
+        orderBuilderHtml += '<div style="position:relative;flex:1;min-width:140px;">';
+        orderBuilderHtml += '<input type="text" id="orderGoodInput" placeholder="🔍 Search goods..." autocomplete="off" style="width:100%;padding:4px 8px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;">';
+        orderBuilderHtml += '<div id="orderGoodDropdown" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:160px;overflow-y:auto;background:rgba(20,20,30,0.98);border:1px solid rgba(255,255,255,0.2);border-radius:0 0 4px 4px;z-index:100;"></div>';
+        orderBuilderHtml += '</div>';
+        orderBuilderHtml += '<select id="orderAction" style="padding:4px 6px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;">';
+        orderBuilderHtml += '<option value="buy">🛒 Buy</option><option value="sell">💰 Sell</option><option value="store">📥 Store</option><option value="pickup">📦 Pickup</option>';
+        orderBuilderHtml += '</select>';
+        orderBuilderHtml += '<select id="orderLocation" style="padding:4px 6px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;">';
+        orderBuilderHtml += '<option value="destination">🏁 Destination</option><option value="source">📍 Source</option>';
+        orderBuilderHtml += '</select>';
+        orderBuilderHtml += '</div>';
+        // Row 2: Qty + Max + Price + Add button
+        orderBuilderHtml += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">';
+        orderBuilderHtml += '<label style="font-size:0.7rem;color:#aaa;">Qty:</label>';
+        orderBuilderHtml += '<input type="number" id="orderQty" min="1" max="9999" value="" placeholder="amt" style="width:55px;padding:3px 5px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;">';
+        orderBuilderHtml += '<label style="font-size:0.7rem;color:#aaa;cursor:pointer;"><input type="checkbox" id="orderMaxQty"> Max</label>';
+        orderBuilderHtml += '<label style="font-size:0.7rem;color:#aaa;margin-left:6px;">Price:</label>';
+        orderBuilderHtml += '<input type="number" id="orderPriceLimit" min="0" max="9999" value="" placeholder="limit" style="width:55px;padding:3px 5px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;">';
+        orderBuilderHtml += '<span style="font-size:0.65rem;color:#666;">g</span>';
+        orderBuilderHtml += '<button onclick="UI._addCaravanOrder()" style="padding:4px 12px;font-size:0.75rem;background:rgba(0,150,80,0.3);border:1px solid rgba(0,150,80,0.5);color:#fff;border-radius:4px;cursor:pointer;font-weight:bold;">➕ Add</button>';
+        orderBuilderHtml += '</div>';
+        orderBuilderHtml += '<div class="text-dim" style="font-size:0.6rem;margin-top:4px;">Buy/Pickup load onto caravan. Sell/Store unload from caravan. Price = max buy or min sell price.</div>';
+        orderBuilderHtml += '</div></div>';
+
+        // Active caravans — link to management panel
+        let activeCount = Player.caravans ? Player.caravans.filter(function(c) { return c.active; }).length : 0;
+        let totalCount = Player.caravans ? Player.caravans.length : 0;
+        var mgmtLink = '';
+        if (totalCount > 0) {
+            mgmtLink = '<div style="margin-top:10px;text-align:center;">' +
+                '<button class="btn-medieval" onclick="UI.openCaravanManagement()" style="font-size:0.8rem;padding:6px 16px;">📊 Manage Caravans (' + activeCount + ' active / ' + totalCount + ' total)</button>' +
+            '</div>';
         }
 
         const html = `<div class="caravan-form">
@@ -5198,8 +5285,8 @@ window.UI = (function () {
             </div>
             ${shipInfo}
             <div class="form-group">
-                <label>Goods to Send</label>
-                <div class="caravan-goods-list">${goodsHtml}</div>
+                <label>Goods to Load</label>
+                <div class="caravan-goods-list" style="max-height:120px;overflow-y:auto;">${goodsHtml}</div>
             </div>
             <div class="form-group">
                 <label>Guards</label>
@@ -5213,9 +5300,8 @@ window.UI = (function () {
                     <label style="font-size:0.75rem;cursor:pointer;"><input type="radio" name="routeMode" value="roundtrip"> Round Trip</label>
                     <label style="font-size:0.75rem;cursor:pointer;"><input type="radio" name="routeMode" value="recurring"> 🔄 Recurring Route</label>
                 </div>
-                <div class="text-dim" style="font-size:0.65rem;margin-top:2px;">Round trip & recurring routes can auto-buy goods at destination for return.</div>
             </div>
-            ${buyOrdersHtml}
+            ${orderBuilderHtml}
             <div class="form-group" style="margin-top:8px;">
                 <label style="font-size:0.8rem;">🛡️ Security Options</label>
                 <div style="display:flex;gap:10px;flex-wrap:wrap;">
@@ -5235,7 +5321,7 @@ window.UI = (function () {
                 }).join('')}
             </div>
         </div>
-        ${activeHtml ? '<div class="caravan-active-list"><h3 style="font-family:var(--font-display);font-size:0.8rem;color:var(--gold-dark);margin-bottom:8px;">Active Caravans & Routes</h3>' + activeHtml + '</div>' : ''}
+        ${mgmtLink}
         ${buildTransportSection(connectedTowns, seaDestinations)}
         ${buildNPCTransportSection()}`;
 
@@ -5245,13 +5331,78 @@ window.UI = (function () {
 
         openModal('🐴 Caravan & Transport', html, footer);
 
-        // Wire up route mode radio buttons to show/hide buy orders
+        // Wire up searchable goods dropdown
         setTimeout(function() {
-            var radios = document.querySelectorAll('input[name="routeMode"]');
-            var buySection = document.getElementById('buyOrdersSection');
-            for (var r = 0; r < radios.length; r++) {
-                radios[r].addEventListener('change', function() {
-                    if (buySection) buySection.style.display = (this.value === 'roundtrip' || this.value === 'recurring') ? 'block' : 'none';
+            var input = document.getElementById('orderGoodInput');
+            var dropdown = document.getElementById('orderGoodDropdown');
+            if (!input || !dropdown) return;
+
+            var allRes = _getAllResourceList();
+
+            function renderDropdown(filter) {
+                var filtered = filter ? allRes.filter(function(r) {
+                    return r.name.toLowerCase().indexOf(filter.toLowerCase()) !== -1 ||
+                           r.id.toLowerCase().indexOf(filter.toLowerCase()) !== -1 ||
+                           (r.category && r.category.toLowerCase().indexOf(filter.toLowerCase()) !== -1);
+                }) : allRes;
+                if (filtered.length === 0) {
+                    dropdown.innerHTML = '<div style="padding:6px 8px;color:#888;font-size:0.7rem;">No matches</div>';
+                    dropdown.style.display = 'block';
+                    return;
+                }
+                var html = '';
+                for (var i = 0; i < Math.min(filtered.length, 40); i++) {
+                    var r = filtered[i];
+                    html += '<div class="order-good-option" data-id="' + r.id + '" style="padding:4px 8px;cursor:pointer;font-size:0.75rem;border-bottom:1px solid rgba(255,255,255,0.05);" ' +
+                        'onmouseover="this.style.background=\'rgba(200,170,80,0.15)\'" onmouseout="this.style.background=\'none\'">' +
+                        r.icon + ' ' + r.name + ' <span style="color:#666;font-size:0.65rem;">(' + r.category + ')</span></div>';
+                }
+                if (filtered.length > 40) html += '<div style="padding:4px 8px;color:#888;font-size:0.65rem;">...and ' + (filtered.length - 40) + ' more. Type to filter.</div>';
+                dropdown.innerHTML = html;
+                dropdown.style.display = 'block';
+
+                // Attach click handlers
+                var opts = dropdown.querySelectorAll('.order-good-option');
+                for (var j = 0; j < opts.length; j++) {
+                    opts[j].addEventListener('click', function() {
+                        var rid = this.dataset.id;
+                        var res = findResource(rid);
+                        input.value = res ? (res.icon + ' ' + res.name) : rid;
+                        input.dataset.selectedId = rid;
+                        dropdown.style.display = 'none';
+                    });
+                }
+            }
+
+            input.addEventListener('focus', function() { renderDropdown(input.value); });
+            input.addEventListener('input', function() {
+                input.dataset.selectedId = '';
+                renderDropdown(input.value);
+            });
+
+            // Close dropdown when clicking outside
+            document.addEventListener('click', function(e) {
+                if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+                    dropdown.style.display = 'none';
+                }
+            });
+
+            // Qty/Max interaction
+            var maxCheck = document.getElementById('orderMaxQty');
+            var qtyInput = document.getElementById('orderQty');
+            if (maxCheck && qtyInput) {
+                maxCheck.addEventListener('change', function() {
+                    qtyInput.disabled = maxCheck.checked;
+                    if (maxCheck.checked) qtyInput.value = '';
+                });
+            }
+
+            // Update price label based on action
+            var actionSel = document.getElementById('orderAction');
+            var priceInput = document.getElementById('orderPriceLimit');
+            if (actionSel && priceInput) {
+                actionSel.addEventListener('change', function() {
+                    priceInput.placeholder = (actionSel.value === 'buy') ? 'max price' : (actionSel.value === 'sell') ? 'min price' : 'limit';
                 });
             }
         }, 50);
@@ -5425,8 +5576,10 @@ window.UI = (function () {
             }
         }
 
-        if (Object.keys(goods).length === 0) {
-            toast('Select goods to send.', 'warning');
+        // Allow empty goods if there are pickup orders
+        var hasPickupOrders = _caravanOrders.some(function(o) { return o.action === 'pickup'; });
+        if (Object.keys(goods).length === 0 && !hasPickupOrders) {
+            toast('Load goods or add pickup orders.', 'warning');
             return;
         }
 
@@ -5439,21 +5592,6 @@ window.UI = (function () {
         const roundTrip = routeMode === 'roundtrip';
         const recurring = routeMode === 'recurring';
 
-        // Buy orders (for round-trip / recurring)
-        let buyOrders = null;
-        if (roundTrip || recurring) {
-            buyOrders = {};
-            const buyInputs = document.querySelectorAll('[id^="buyOrder_"]');
-            for (const inp of buyInputs) {
-                const rId = inp.id.replace('buyOrder_', '');
-                const qty = parseInt(inp.value) || 0;
-                const maxPriceEl = document.getElementById('buyMaxPrice_' + rId);
-                const maxPrice = maxPriceEl ? (parseInt(maxPriceEl.value) || 999) : 999;
-                if (qty > 0) buyOrders[rId] = { qty, maxPrice };
-            }
-            if (Object.keys(buyOrders).length === 0) buyOrders = null;
-        }
-
         // Security options
         const fortified = document.getElementById('caravanFortified') ? document.getElementById('caravanFortified').checked : false;
         const decoy = document.getElementById('caravanDecoy') ? document.getElementById('caravanDecoy').checked : false;
@@ -5463,7 +5601,15 @@ window.UI = (function () {
         const selectedOption = destSelect.options[destSelect.selectedIndex];
         const routeType = selectedOption && selectedOption.dataset && selectedOption.dataset.route;
 
-        const options = { buyOrders, roundTrip, recurring, fortified, decoy, armedEscort };
+        // Build options with new order system
+        const options = {
+            orders: _caravanOrders.length > 0 ? _caravanOrders.slice() : null,
+            roundTrip: roundTrip,
+            recurring: recurring,
+            fortified: fortified,
+            decoy: decoy,
+            armedEscort: armedEscort
+        };
 
         try {
             let result;
@@ -5474,6 +5620,7 @@ window.UI = (function () {
             }
             if (result && result.success) {
                 toast(result.message || 'Caravan dispatched!', 'success', 'my_business');
+                _caravanOrders = [];
                 closeModal();
             } else {
                 toast((result && result.message) || 'Cannot send caravan', 'warning');
@@ -5481,6 +5628,233 @@ window.UI = (function () {
         } catch (e) {
             toast(e.message || 'Cannot send caravan', 'danger');
         }
+    }
+
+    // ── CARAVAN MANAGEMENT PANEL ──
+
+    function openCaravanManagement() {
+        if (!Player.caravans || Player.caravans.length === 0) {
+            toast('No caravans to manage.', 'info');
+            return;
+        }
+
+        var towns = Engine.getTowns ? Engine.getTowns() : [];
+        var townMap = {};
+        for (var i = 0; i < towns.length; i++) townMap[towns[i].id] = towns[i];
+
+        var html = '<div style="max-height:400px;overflow-y:auto;">';
+
+        // Active caravans first, then completed
+        var sorted = Player.caravans.slice().sort(function(a, b) {
+            if (a.active && !b.active) return -1;
+            if (!a.active && b.active) return 1;
+            return (b.daysSent || 0) - (a.daysSent || 0);
+        });
+
+        for (var ci = 0; ci < sorted.length; ci++) {
+            var c = sorted[ci];
+            var from = townMap[c.fromTownId];
+            var to = townMap[c.toTownId];
+            var progress = Math.round((c.progress || 0) * 100);
+            var routeIcon = c.routeType === 'sea' ? '⛵' : '🐴';
+            var statusColor = c.active ? (c.status === 'blocked' ? 'var(--danger)' : 'rgba(0,180,100,0.8)') : '#888';
+            var statusLabel = c.active ? (c.status === 'blocked' ? '⛔ Blocked' : (c.returnTrip ? '↩️ Returning' : '→ Outbound')) : (c.status === 'destroyed' ? '💀 Destroyed' : '✅ Complete');
+            var recurLabel = c.recurring ? ' 🔄' : (c.roundTrip ? ' ↔️' : '');
+
+            html += '<div style="border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:10px;margin-bottom:8px;background:rgba(255,255,255,0.02);">';
+
+            // Header row
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">';
+            html += '<span style="font-weight:bold;font-size:0.85rem;">' + routeIcon + ' ' + (from ? from.name : '?') + ' → ' + (to ? to.name : '?') + recurLabel + '</span>';
+            html += '<span style="font-size:0.75rem;color:' + statusColor + ';">' + statusLabel + '</span>';
+            html += '</div>';
+
+            // Progress bar (if active)
+            if (c.active) {
+                html += '<div style="background:rgba(255,255,255,0.1);border-radius:3px;height:6px;margin-bottom:6px;">';
+                html += '<div style="background:var(--gold);border-radius:3px;height:100%;width:' + progress + '%;"></div>';
+                html += '</div>';
+            }
+
+            // Stats row
+            html += '<div style="display:flex;gap:12px;font-size:0.7rem;color:#aaa;margin-bottom:6px;flex-wrap:wrap;">';
+            html += '<span>💰 Profit: ' + (c.totalProfit || 0) + 'g</span>';
+            html += '<span>💸 Spent: ' + (c.totalSpent || 0) + 'g</span>';
+            html += '<span>📊 Trips: ' + (c.tripCount || 0) + '</span>';
+            if (c.guards) html += '<span>⚔️ Guards: ' + c.guards + '</span>';
+            html += '</div>';
+
+            // Current cargo
+            var cargoEntries = Object.entries(c.goods || {}).filter(function(e) { return e[1] > 0; });
+            if (cargoEntries.length > 0) {
+                html += '<div style="font-size:0.7rem;color:#bbb;margin-bottom:4px;">📦 Cargo: ';
+                html += cargoEntries.map(function(e) {
+                    var r = findResource(e[0]);
+                    return (r ? r.icon + ' ' : '') + (r ? r.name : e[0]) + ' ×' + e[1];
+                }).join(', ');
+                html += '</div>';
+            }
+
+            // Orders summary
+            if (c.orders && c.orders.length > 0) {
+                html += '<details style="margin-bottom:4px;"><summary style="font-size:0.7rem;color:var(--gold);cursor:pointer;">📋 ' + c.orders.length + ' Orders</summary>';
+                html += '<div style="padding:4px 0;">';
+                for (var oi = 0; oi < c.orders.length; oi++) {
+                    var o = c.orders[oi];
+                    var oRes = findResource(o.good);
+                    var oName = oRes ? (oRes.icon + ' ' + oRes.name) : o.good;
+                    var oAction = { buy: '🛒 Buy', sell: '💰 Sell', store: '📥 Store', pickup: '📦 Pickup' }[o.action] || o.action;
+                    var oLoc = o.location === 'source' ? 'Source' : 'Dest';
+                    var oQty = o.qty === 'max' ? 'Max' : o.qty;
+                    var oPrice = '';
+                    if (o.action === 'buy' && o.priceLimit) oPrice = ' max ' + o.priceLimit + 'g';
+                    if (o.action === 'sell' && o.priceLimit) oPrice = ' min ' + o.priceLimit + 'g';
+                    html += '<div style="font-size:0.68rem;padding:1px 0;">' + oAction + ' ' + oQty + ' ' + oName + ' @ ' + oLoc + oPrice + '</div>';
+                }
+                html += '</div></details>';
+            }
+
+            // Log (collapsible)
+            if (c.log && c.log.length > 0) {
+                var recentLog = c.log.slice(-15).reverse();
+                html += '<details><summary style="font-size:0.7rem;color:#888;cursor:pointer;">📜 Log (' + c.log.length + ' entries)</summary>';
+                html += '<div style="max-height:120px;overflow-y:auto;padding:4px;background:rgba(0,0,0,0.2);border-radius:4px;margin-top:4px;">';
+                for (var li = 0; li < recentLog.length; li++) {
+                    html += '<div style="font-size:0.65rem;color:#999;padding:1px 0;border-bottom:1px solid rgba(255,255,255,0.03);">';
+                    html += '<span style="color:#666;">Day ' + recentLog[li].day + ':</span> ' + recentLog[li].message;
+                    html += '</div>';
+                }
+                html += '</div></details>';
+            }
+
+            // Action buttons
+            html += '<div style="display:flex;gap:6px;margin-top:6px;">';
+            if (c.status === 'blocked' && c.active !== false) {
+                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;" onclick="(function(){var r=Player.rescueCaravan(\'' + c.id + '\');UI.toast(r.message,r.success?\'success\':\'warning\');UI.openCaravanManagement();})()">🆘 Rescue</button>';
+            }
+            if (c.recurring && c.active) {
+                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;background:rgba(200,60,50,0.3);" onclick="(function(){var r=Player.cancelRecurringRoute(\'' + c.id + '\');UI.toast(r.message,r.success?\'success\':\'warning\');UI.openCaravanManagement();})()">⏹️ Stop Route</button>';
+            }
+            if (c.active && c.orders) {
+                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;" onclick="UI.openEditCaravanOrders(\'' + c.id + '\')">📝 Edit Orders</button>';
+            }
+            html += '</div>';
+
+            html += '</div>';
+        }
+
+        html += '</div>';
+
+        var footer = '<button class="btn-medieval" onclick="UI.openCaravanDialog()">← Back to Send</button>';
+        openModal('📊 Caravan Management', html, footer);
+    }
+
+    function openEditCaravanOrders(caravanId) {
+        var caravan = null;
+        for (var i = 0; i < Player.caravans.length; i++) {
+            if (Player.caravans[i].id === caravanId) { caravan = Player.caravans[i]; break; }
+        }
+        if (!caravan) { toast('Caravan not found.', 'warning'); return; }
+
+        // Load existing orders into the order builder
+        _caravanOrders = caravan.orders ? caravan.orders.slice() : [];
+
+        var html = '<div>';
+        html += '<div style="margin-bottom:8px;font-size:0.8rem;color:#aaa;">Editing orders for caravan to ' + (Engine.findTown(caravan.toTownId) || {}).name + '</div>';
+
+        // Order list
+        html += '<div id="caravanOrderList" style="max-height:200px;overflow-y:auto;margin-bottom:10px;">';
+        if (_caravanOrders.length === 0) {
+            html += '<div class="text-dim" style="text-align:center;font-size:0.75rem;">No orders. Use ➕ to add.</div>';
+        } else {
+            for (var j = 0; j < _caravanOrders.length; j++) {
+                html += _buildOrderRow(_caravanOrders[j], j);
+            }
+        }
+        html += '</div>';
+
+        // Add order form (same as in caravan dialog)
+        html += '<div style="border-top:1px solid rgba(255,255,255,0.08);padding-top:8px;">';
+        html += '<div style="display:flex;gap:6px;align-items:flex-start;flex-wrap:wrap;margin-bottom:6px;">';
+        html += '<div style="position:relative;flex:1;min-width:140px;">';
+        html += '<input type="text" id="orderGoodInput" placeholder="🔍 Search goods..." autocomplete="off" style="width:100%;padding:4px 8px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;">';
+        html += '<div id="orderGoodDropdown" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:160px;overflow-y:auto;background:rgba(20,20,30,0.98);border:1px solid rgba(255,255,255,0.2);border-radius:0 0 4px 4px;z-index:100;"></div>';
+        html += '</div>';
+        html += '<select id="orderAction" style="padding:4px 6px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;">';
+        html += '<option value="buy">🛒 Buy</option><option value="sell">💰 Sell</option><option value="store">📥 Store</option><option value="pickup">📦 Pickup</option>';
+        html += '</select>';
+        html += '<select id="orderLocation" style="padding:4px 6px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;">';
+        html += '<option value="destination">🏁 Destination</option><option value="source">📍 Source</option>';
+        html += '</select>';
+        html += '</div>';
+        html += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">';
+        html += '<label style="font-size:0.7rem;color:#aaa;">Qty:</label>';
+        html += '<input type="number" id="orderQty" min="1" max="9999" value="" placeholder="amt" style="width:55px;padding:3px 5px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;">';
+        html += '<label style="font-size:0.7rem;color:#aaa;cursor:pointer;"><input type="checkbox" id="orderMaxQty"> Max</label>';
+        html += '<label style="font-size:0.7rem;color:#aaa;margin-left:6px;">Price:</label>';
+        html += '<input type="number" id="orderPriceLimit" min="0" max="9999" value="" placeholder="limit" style="width:55px;padding:3px 5px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;">';
+        html += '<button onclick="UI._addCaravanOrder()" style="padding:4px 12px;font-size:0.75rem;background:rgba(0,150,80,0.3);border:1px solid rgba(0,150,80,0.5);color:#fff;border-radius:4px;cursor:pointer;font-weight:bold;">➕ Add</button>';
+        html += '</div>';
+        html += '</div>';
+        html += '</div>';
+
+        var footer = '<button class="btn-medieval" onclick="(function(){var r=Player.editCaravanOrders(\'' + caravanId + '\',UI._getCaravanOrders());UI.toast(r.message,r.success?\'success\':\'warning\');UI.openCaravanManagement();})()" style="margin-right:8px;">✅ Save Orders</button>';
+        footer += '<button class="btn-medieval" onclick="UI.openCaravanManagement()">Cancel</button>';
+
+        openModal('📝 Edit Caravan Orders', html, footer);
+
+        // Wire up searchable dropdown (same setup)
+        setTimeout(function() {
+            var input = document.getElementById('orderGoodInput');
+            var dropdown = document.getElementById('orderGoodDropdown');
+            if (!input || !dropdown) return;
+            var allRes = _getAllResourceList();
+            function renderDropdown(filter) {
+                var filtered = filter ? allRes.filter(function(r) {
+                    return r.name.toLowerCase().indexOf(filter.toLowerCase()) !== -1 ||
+                           r.id.toLowerCase().indexOf(filter.toLowerCase()) !== -1 ||
+                           (r.category && r.category.toLowerCase().indexOf(filter.toLowerCase()) !== -1);
+                }) : allRes;
+                if (filtered.length === 0) {
+                    dropdown.innerHTML = '<div style="padding:6px 8px;color:#888;font-size:0.7rem;">No matches</div>';
+                    dropdown.style.display = 'block';
+                    return;
+                }
+                var dhtml = '';
+                for (var i = 0; i < Math.min(filtered.length, 40); i++) {
+                    var r = filtered[i];
+                    dhtml += '<div class="order-good-option" data-id="' + r.id + '" style="padding:4px 8px;cursor:pointer;font-size:0.75rem;border-bottom:1px solid rgba(255,255,255,0.05);" ' +
+                        'onmouseover="this.style.background=\'rgba(200,170,80,0.15)\'" onmouseout="this.style.background=\'none\'">' +
+                        r.icon + ' ' + r.name + ' <span style="color:#666;font-size:0.65rem;">(' + r.category + ')</span></div>';
+                }
+                dropdown.innerHTML = dhtml;
+                dropdown.style.display = 'block';
+                var opts = dropdown.querySelectorAll('.order-good-option');
+                for (var j = 0; j < opts.length; j++) {
+                    opts[j].addEventListener('click', function() {
+                        var rid = this.dataset.id;
+                        var res = findResource(rid);
+                        input.value = res ? (res.icon + ' ' + res.name) : rid;
+                        input.dataset.selectedId = rid;
+                        dropdown.style.display = 'none';
+                    });
+                }
+            }
+            input.addEventListener('focus', function() { renderDropdown(input.value); });
+            input.addEventListener('input', function() { input.dataset.selectedId = ''; renderDropdown(input.value); });
+            document.addEventListener('click', function(e) {
+                if (!input.contains(e.target) && !dropdown.contains(e.target)) dropdown.style.display = 'none';
+            });
+            var maxCheck = document.getElementById('orderMaxQty');
+            var qtyInput = document.getElementById('orderQty');
+            if (maxCheck && qtyInput) {
+                maxCheck.addEventListener('change', function() { qtyInput.disabled = maxCheck.checked; if (maxCheck.checked) qtyInput.value = ''; });
+            }
+        }, 50);
+    }
+
+    function _getCaravanOrders() {
+        return _caravanOrders.slice();
     }
 
     // ── CHARACTER DIALOG ──
@@ -16667,6 +17041,11 @@ window.UI = (function () {
         openBuildDialog,
         openHireDialog,
         openCaravanDialog,
+        openCaravanManagement,
+        openEditCaravanOrders,
+        _addCaravanOrder,
+        _removeCaravanOrder,
+        _getCaravanOrders,
         openCharacterDialog,
         openFinancialReport,
         openRenamePlayer,
