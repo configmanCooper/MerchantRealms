@@ -415,6 +415,7 @@
         player.caravans = [];
         player.ships = [];
         player.storageContainer = null; // 'backpack', 'cart', 'small_wagon', 'wagon', 'large_wagon'
+        player._backpack = false; // true if player owns a backpack (worn under vehicles)
         player.townStorage = {}; // { townId: { resourceId: qty, ... }, ... }
         player.horses = []; // Array of horse objects: { id, name, stamina, speed }
         player.notoriety = 0;
@@ -6125,6 +6126,13 @@
         player.gold -= totalGoldCost;
         player.stats.totalGoldSpent += totalGoldCost;
         var oldName = player.storageContainer ? CONFIG.STORAGE_CONTAINERS[player.storageContainer].name : 'nothing';
+        // Track backpack ownership separately — backpack is worn, vehicles override it
+        if (containerId === 'backpack') {
+            player._backpack = true;
+        } else if (player.storageContainer === 'backpack') {
+            // Switching from backpack to a vehicle — save backpack
+            player._backpack = true;
+        }
         player.storageContainer = containerId;
 
         var msg = 'Bought ' + container.icon + ' ' + container.name + '!';
@@ -6148,11 +6156,14 @@
             return { success: false, message: 'A ' + container.name + ' requires ' + horsesNeeded + ' mounted horse(s). You have ' + player.horses.length + '.' };
         }
 
-        // Dismount current container to inventory first
-        if (player.storageContainer) {
+        // If current container is backpack, save it (backpack is worn under vehicle)
+        if (player.storageContainer === 'backpack') {
+            player._backpack = true;
+        } else if (player.storageContainer && player.storageContainer !== 'backpack') {
+            // Switching vehicles — put old vehicle in inventory
             var oldC = CONFIG.STORAGE_CONTAINERS[player.storageContainer];
             if (oldC && container.capacityMult <= oldC.capacityMult) {
-                return { success: false, message: 'You already have a better or equal container equipped.' };
+                return { success: false, message: 'You already have a better or equal vehicle equipped.' };
             }
             player.inventory[player.storageContainer] = (player.inventory[player.storageContainer] || 0) + 1;
             Engine.logEvent('Stored your ' + oldC.name + ' in inventory.');
@@ -6173,25 +6184,35 @@
         var container = CONFIG.STORAGE_CONTAINERS[player.storageContainer];
         if (!container) return { success: false, message: 'Unknown container.' };
 
-        // Check if inventory can hold all current goods without this container
-        var currentWeight = getCarriedWeight();
-        var baseCapacity = (CONFIG.PLAYER_BASE_CARRY || 20);
-        var horseBonus = 0;
-        for (var hi = 0; hi < player.horses.length; hi++) {
-            horseBonus += (CONFIG.HORSE_CARRY_BONUS || 20);
+        // Can't dismount backpack (it's always worn, not a vehicle)
+        if (player.storageContainer === 'backpack') {
+            return { success: false, message: 'Your backpack is worn, not a vehicle. Sell it from a shop instead.' };
         }
-        if (hasSkill('horse_mastery')) horseBonus = Math.floor(horseBonus * 1.25);
-        var newCapacity = baseCapacity + horseBonus;
+
+        // Calculate capacity without this vehicle but keeping backpack if owned
+        var currentWeight = getCarriedWeight();
+        var base = CONFIG.PLAYER_BASE_CARRY || 20;
+        if (hasSkill('pack_mule')) base += 20;
+        if (hasSkill('beast_of_burden')) base += 20;
+        if (hasSkill('iron_back')) base += 30;
+        var horseCarry = CONFIG.HORSE_CARRY_BONUS || 40;
+        if (hasSkill('horse_mastery')) horseCarry = Math.floor(horseCarry * 1.25);
+        var horseBonus = player.horses.length * horseCarry;
+        // Fall back to backpack if player has one
+        var fallbackContainer = player._backpack ? CONFIG.STORAGE_CONTAINERS['backpack'] : null;
+        var newCapacity = fallbackContainer ? (base * fallbackContainer.capacityMult + horseBonus) : (base + horseBonus);
         if (currentWeight > newCapacity) {
-            return { success: false, message: 'Too much cargo. Lighten your load first (carrying ' + Math.round(currentWeight) + ', capacity without container: ' + newCapacity + ').' };
+            return { success: false, message: 'Too much cargo. Lighten your load first (carrying ' + Math.round(currentWeight) + ', capacity without vehicle: ' + newCapacity + ').' };
         }
 
         var oldId = player.storageContainer;
         player.inventory[oldId] = (player.inventory[oldId] || 0) + 1;
-        player.storageContainer = null;
+        // Restore backpack if player had one
+        player.storageContainer = player._backpack ? 'backpack' : null;
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.buy_container || 2);
         var msg = container.icon + ' Dismounted ' + container.name + ' to inventory.';
+        if (player._backpack) msg += ' Backpack re-equipped.';
         Engine.logEvent(msg);
         return { success: true, message: msg };
     }
@@ -11965,6 +11986,7 @@
             autoTravelJob: player.autoTravelJob ? JSON.parse(JSON.stringify(player.autoTravelJob)) : null,
             // Inventory Capacity
             storageContainer: player.storageContainer,
+            _backpack: player._backpack || false,
             townStorage: JSON.parse(JSON.stringify(player.townStorage || {})),
             rememberedPrices: JSON.parse(JSON.stringify(player.rememberedPrices || {})),
             _visitedTowns: JSON.parse(JSON.stringify(player._visitedTowns || {})),
@@ -12296,6 +12318,9 @@
         player._streetTradesDay = 0;
         // Inventory Capacity
         player.storageContainer = data.storageContainer || null;
+        // Backward compat: infer _backpack from save data
+        player._backpack = data._backpack || false;
+        if (!player._backpack && player.storageContainer === 'backpack') player._backpack = true;
         player.townStorage = data.townStorage || {};
         player.rememberedPrices = data.rememberedPrices || {};
         player._visitedTowns = data._visitedTowns || {};
