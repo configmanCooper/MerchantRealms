@@ -810,6 +810,7 @@ window.Game = (function () {
 
     function onMinimapClick(e) {
         Renderer.minimapClick(e.clientX, e.clientY);
+        window._tutorialMinimapClicked = true;
     }
 
     function onKeyDown(e) {

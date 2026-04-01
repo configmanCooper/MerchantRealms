@@ -4772,6 +4772,8 @@ window.UI = (function () {
                 var result = Player.interactWithNPC(pid, iid);
                 if (result && result.success) {
                     toast(result.message, 'success');
+                    window._tutorialSocialInteracted = true;
+                    if (iid === 'small_talk') window._tutorialSmallTalkDone = true;
                     closeModal();
                     try {
                         var p = Engine.getPerson(pid);
@@ -7469,6 +7471,7 @@ window.UI = (function () {
         var result = Player.eatUntilFull();
         if (result.success) {
             toast('🍴 ' + result.message, 'success');
+            window._tutorialAteFood = true;
             updateHungerBar();
             update();
         } else {
@@ -7481,6 +7484,7 @@ window.UI = (function () {
         var result = Player.drinkUntilFull();
         if (result.success) {
             toast('🥤 ' + result.message, 'success');
+            window._tutorialDrankWater = true;
             updateFatigueBar();
             update();
         } else {
@@ -11217,6 +11221,7 @@ window.UI = (function () {
         if (ticksNeeded < 1) ticksNeeded = 1;
         var result = Player.restForTicks(locationId, ticksNeeded);
         toast(result.message, result.success ? 'success' : 'error');
+        if (result.success) window._tutorialRested = true;
         closeModal();
     }
 
