@@ -2591,19 +2591,22 @@ window.UI = (function () {
             // Calculate dynamic material cost from local market
             var matCost = 0;
             var matsOk = true;
+            var matDetails = [];
             if (bt.materials && town) {
                 for (var matId in bt.materials) {
                     var qty = bt.materials[matId];
-                    var pHas = (Player.state && Player.state.inventory && Player.state.inventory[matId]) || 0;
+                    var pHas = (Player.inventory && Player.inventory[matId]) || 0;
                     var mHas = (town.market && town.market.supply[matId]) || 0;
                     if (pHas + mHas < qty) matsOk = false;
                     var needBuy = Math.max(0, qty - pHas);
+                    var mp = 0;
                     if (needBuy > 0) {
-                        var mp = 0;
                         try { mp = Engine.getMarketPrice(town.id, matId) || 0; } catch(e2) {}
                         if (mp <= 0) { var r2 = findResource(matId); mp = r2 ? (r2.basePrice || 5) : 5; }
                         matCost += needBuy * mp;
                     }
+                    var matRes = findResource(matId);
+                    matDetails.push({ id: matId, name: matRes ? matRes.name : matId, icon: matRes ? (matRes.icon || '') : '', qty: qty, have: Math.min(pHas, qty), toBuy: needBuy, price: mp, inMarket: mHas });
                 }
             }
             var laborCost = bt.cost || 0;
@@ -2639,12 +2642,18 @@ window.UI = (function () {
                 producesStr = producesRes ? `${producesRes.icon} ${producesRes.name}` : (bt.storage ? `📦 +${bt.storage} storage` : bt.salesBonus ? `📈 +${Math.round(bt.salesBonus * 100)}% sales` : bt.livestockCapacity ? `🐄 Holds ${bt.livestockCapacity} livestock` : bt.archerBonus ? `🏹 Archer +${Math.round(bt.archerBonus * 100)}%` : '—');
             }
 
-            // Material requirements string
+            // Material requirements string with auto-buy details
             let materialsStr = '';
-            if (bt.materials && Object.keys(bt.materials).length > 0) {
-                materialsStr = Object.entries(bt.materials).map(([r, q]) => {
-                    const matRes = findResource(r);
-                    return `${matRes ? matRes.icon : ''} ${matRes ? matRes.name : r} ×${q}`;
+            if (matDetails.length > 0) {
+                materialsStr = matDetails.map(function(m) {
+                    var clr = m.have >= m.qty ? '#55a868' : (m.have + m.inMarket >= m.qty ? '#ffd700' : '#c44e52');
+                    var s = m.icon + ' ' + m.name + ' <span style="color:' + clr + ';">' + m.have + '/' + m.qty + '</span>';
+                    if (m.toBuy > 0 && m.inMarket >= m.toBuy) {
+                        s += ' <span style="font-size:0.65rem;color:#ffd700;">(auto-buy ' + m.toBuy + ' @ ' + m.price + 'g)</span>';
+                    } else if (m.toBuy > 0) {
+                        s += ' <span style="font-size:0.65rem;color:#c44e52;">(need ' + m.toBuy + ', market has ' + m.inMarket + ')</span>';
+                    }
+                    return s;
                 }).join(', ');
             }
 
@@ -2657,7 +2666,7 @@ window.UI = (function () {
             gridHtml += `<div class="build-card ${canAfford && hasDeposit ? '' : 'cant-afford'}" data-category="${bt.category}" onclick="UI.executeBuild('${bt.id}','${town ? town.id : ''}')">
                 <div class="build-name">${bt.name}</div>
                 <div class="build-cost">🪙 ${Math.ceil(totalBuildCost)}g (labor: ${Math.ceil(laborCost)}g${matCost > 0 ? ' + materials: ' + Math.ceil(matCost) + 'g' : ''}) | 👥 ${bt.workers} workers</div>
-                <div class="build-info">Produces: ${producesStr}<br>Consumes: ${consumesStr}<br>Rate: ${bt.rate}/day${materialsStr ? '<br>🔨 Materials: ' + materialsStr : ''}${!matsOk ? '<br><span style="color:#c44e52;">⚠ Materials unavailable!</span>' : ''}${depositWarning}</div>
+                <div class="build-info">Produces: ${producesStr}<br>Consumes: ${consumesStr}<br>Rate: ${bt.rate}/day${materialsStr ? '<br>🔨 Materials: ' + materialsStr : ''}${!matsOk ? '<br><span style="color:#c44e52;">⚠ Not enough materials in inventory + market!</span>' : (matCost > 0 ? '<br><span style="font-size:0.68rem;color:#ffd700;">🛒 Will auto-buy missing materials from market (' + Math.ceil(matCost) + 'g)</span>' : '')}${depositWarning}</div>
             </div>`;
         }
 

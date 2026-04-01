@@ -4929,9 +4929,10 @@
                 if (p.age >= CONFIG.WORKER_RETIRE_AGE_MIN && p.employerId) {
                     const retireAge = CONFIG.WORKER_RETIRE_AGE_MIN + world.rng.randInt(0, CONFIG.WORKER_RETIRE_AGE_MAX - CONFIG.WORKER_RETIRE_AGE_MIN);
                     if (p.age >= retireAge) {
+                        var _wasPlayerEmp = p.employerId === 'player';
                         removeWorkerFromBuilding(p);
                         p.employerId = null;
-                        logEvent(`${p.firstName} ${p.lastName} has retired from work.`);
+                        if (_wasPlayerEmp) logEvent(`${p.firstName} ${p.lastName} has retired from work.`);
                     }
                 }
             }
@@ -4941,7 +4942,7 @@
                 if (p.workerSkill == null) p.workerSkill = 0;
                 p.workerSkill = Math.min(100, p.workerSkill + CONFIG.WORKER_TRAINING_SKILL_GAIN);
                 delete p.trainingUntilDay;
-                logEvent(`${p.firstName} ${p.lastName} returned from training (skill: ${Math.floor(p.workerSkill)}).`);
+                if (p.employerId === 'player') logEvent(`${p.firstName} ${p.lastName} returned from training (skill: ${Math.floor(p.workerSkill)}).`);
             }
 
             // ---- Wage demands (skilled workers periodically demand raises) ----
@@ -4964,12 +4965,13 @@
 
             // ---- Wage demand deadline reached without response ----
             if (p.wageDemand && day >= p.wageDemand.deadline) {
+                var _wasPlayerWorker = p.employerId === 'player';
                 const roll = world.rng.random();
                 if (roll < 0.50) {
                     // Leave
                     removeWorkerFromBuilding(p);
                     p.employerId = null;
-                    logEvent(`${p.firstName} ${p.lastName} quit over wages.`);
+                    if (_wasPlayerWorker) logEvent(`${p.firstName} ${p.lastName} quit over wages.`);
                 } else if (roll < 0.80) {
                     // Stay unhappy — productivity penalty for 30 days
                     p.unhappyUntilDay = day + 30;
