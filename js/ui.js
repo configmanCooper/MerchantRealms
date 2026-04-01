@@ -10449,16 +10449,25 @@ window.UI = (function () {
                     if (costInfo.laborCost) html += ' <span class="text-dim" style="font-size:0.75rem;">(materials: ' + costInfo.materialCost.toFixed(2) + 'g + labor: ' + costInfo.laborCost.toFixed(2) + 'g)</span>';
                     html += '</div>';
                     html += '<div style="font-size:0.75rem;color:#aaa;">' + htype.description + '</div>';
-                    // Material list
+                    // Material list — shows owned + market availability
                     if (htype.materials) {
                         html += '<div style="font-size:0.7rem;margin-top:2px;">';
                         var matParts = [];
                         for (var mid in costInfo.breakdown) {
                             var mb = costInfo.breakdown[mid];
                             var hasEnough = mb.playerHas >= mb.needed;
-                            var matColor = hasEnough ? '#55a868' : '#c44e52';
-                            var indicator = hasEnough ? ' ✓' : ' ✗ — need ' + (mb.needed - mb.playerHas) + ' more';
-                            matParts.push('<span style="color:' + matColor + ';font-weight:bold;">' + mid + ': ' + mb.needed + ' required (<strong>' + mb.playerHas + ' owned</strong>' + indicator + ')</span>');
+                            var matColor, indicator;
+                            if (hasEnough) {
+                                matColor = '#55a868';
+                                indicator = ' ✓ owned';
+                            } else if (mb.needToBuy <= mb.marketHas) {
+                                matColor = '#d4a843';
+                                indicator = ' 🛒 buy ' + mb.needToBuy + ' @ ' + mb.unitPrice.toFixed(1) + 'g ea';
+                            } else {
+                                matColor = '#c44e52';
+                                indicator = ' ✗ need ' + mb.needToBuy + ', market has ' + mb.marketHas;
+                            }
+                            matParts.push('<span style="color:' + matColor + ';">' + mid + ': ' + mb.needed + ' (' + mb.playerHas + ' owned' + indicator + ')</span>');
                         }
                         html += '📦 ' + matParts.join(', ') + '</div>';
                     }
