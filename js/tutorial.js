@@ -288,19 +288,45 @@ window.Tutorial = (function () {
                     text: '\uD83D\uDCBE <strong>Save/Load</strong> from the menu at any time. You have <strong>5 save slots</strong> to experiment with different strategies. Each slot has a <strong>Download</strong> button (\u2B07\uFE0F) to save your game as a file to your computer, and an <strong>Import</strong> button (\uD83D\uDCC2) to upload a previously downloaded save. This way your progress is safe even if browser data is cleared! Try saving now \u2014 click the <strong>Save Game</strong> button.',
                     highlight: '#btnSave',
                     onEnter: function () {
-                        // Snapshot save count so we detect a NEW save, not a pre-existing one
-                        var count = 0;
+                        // Snapshot save timestamps so we detect a NEW or OVERWRITTEN save
+                        snapshotState.saveTimestamps = {};
                         for (var i = 1; i <= 5; i++) {
-                            if (localStorage.getItem('merchantRealms_slot_' + i)) count++;
+                            var raw = localStorage.getItem('merchantRealms_slot_' + i);
+                            if (raw) {
+                                try {
+                                    var decompressed = raw;
+                                    if (typeof LZString !== 'undefined') {
+                                        var attempt = LZString.decompressFromUTF16(raw);
+                                        if (attempt) decompressed = attempt;
+                                    }
+                                    var parsed = JSON.parse(decompressed);
+                                    snapshotState.saveTimestamps[i] = parsed.savedAt || 0;
+                                } catch(e) {
+                                    snapshotState.saveTimestamps[i] = -1;
+                                }
+                            }
                         }
-                        snapshotState.saveCountBefore = count;
                     },
                     waitFor: function () {
-                        var count = 0;
                         for (var i = 1; i <= 5; i++) {
-                            if (localStorage.getItem('merchantRealms_slot_' + i)) count++;
+                            var raw = localStorage.getItem('merchantRealms_slot_' + i);
+                            if (!raw) {
+                                // New slot that didn't exist before
+                                if (!snapshotState.saveTimestamps[i]) return true;
+                                continue;
+                            }
+                            try {
+                                var decompressed = raw;
+                                if (typeof LZString !== 'undefined') {
+                                    var attempt = LZString.decompressFromUTF16(raw);
+                                    if (attempt) decompressed = attempt;
+                                }
+                                var parsed = JSON.parse(decompressed);
+                                var oldTs = snapshotState.saveTimestamps[i] || 0;
+                                if ((parsed.savedAt || 0) > oldTs) return true;
+                            } catch(e) {}
                         }
-                        return count > (snapshotState.saveCountBefore || 0);
+                        return false;
                     },
                     skipAfter: 4000
                 }

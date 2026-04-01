@@ -261,6 +261,8 @@ window.UI = (function () {
             // Add XP bar after gold
             const goldGroup = leftPanelBody.querySelector('.stat-group:nth-child(3)');
             if (goldGroup) {
+                var _oldXp = document.getElementById('xpBarGroup');
+                if (_oldXp) _oldXp.remove();
                 const xpGroup = document.createElement('div');
                 xpGroup.className = 'stat-group';
                 xpGroup.id = 'xpBarGroup';
@@ -279,6 +281,16 @@ window.UI = (function () {
             const notorietyGroup = leftPanelBody.querySelector('.stat-group:nth-child(7)');
             const insertPoint = notorietyGroup || leftPanelBody.lastElementChild;
             if (insertPoint) {
+                // Guard against duplicate bars on re-init
+                var _oldHunger = document.getElementById('hungerBarGroup');
+                if (_oldHunger) _oldHunger.remove();
+                var _oldFatigue = document.getElementById('fatigueBarGroup');
+                if (_oldFatigue) _oldFatigue.remove();
+                var _oldThirst = document.getElementById('thirstBarGroup');
+                if (_oldThirst) _oldThirst.remove();
+                var _oldHealth = document.getElementById('healthBarGroup');
+                if (_oldHealth) _oldHealth.remove();
+
                 const hungerGroup = document.createElement('div');
                 hungerGroup.className = 'stat-group';
                 hungerGroup.id = 'hungerBarGroup';
@@ -1072,29 +1084,30 @@ window.UI = (function () {
 
             // ⚒️ Actions section (toll roads, petitions, orders, forage)
             if (isPlayerHere && typeof Player !== 'undefined') {
+                var _actBtnStyle = 'font-size:0.8rem;padding:6px 14px;color:#e8dcc8;';
                 html += `<div class="detail-section"><h3>⚒️ Actions</h3>`;
                 html += `<div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;">`;
-                html += `<button class="btn-medieval" onclick="UI.showBuildRouteSelector('toll_road')" style="font-size:0.8rem;padding:6px 14px;background:rgba(180,140,50,0.15);border-color:rgba(180,140,50,0.4);">
+                html += `<button class="btn-medieval" onclick="UI.showBuildRouteSelector('toll_road')" style="${_actBtnStyle}background:rgba(180,140,50,0.15);border-color:rgba(180,140,50,0.4);">
                     \uD83D\uDEE4\uFE0F Build Toll Road
                 </button>`;
                 if (town.isPort) {
-                    html += `<button class="btn-medieval" onclick="UI.showBuildRouteSelector('sea_route')" style="font-size:0.8rem;padding:6px 14px;background:rgba(0,180,200,0.15);border-color:rgba(0,180,200,0.4);">
+                    html += `<button class="btn-medieval" onclick="UI.showBuildRouteSelector('sea_route')" style="${_actBtnStyle}background:rgba(0,180,200,0.15);border-color:rgba(0,180,200,0.4);">
                         \u2693 Build Sea Route
                     </button>`;
                 }
-                html += `<button class="btn-medieval" onclick="UI.showBuildRouteSelector('petition')" style="font-size:0.8rem;padding:6px 14px;background:rgba(255,215,0,0.15);border-color:rgba(255,215,0,0.4);">
+                html += `<button class="btn-medieval" onclick="UI.showBuildRouteSelector('petition')" style="${_actBtnStyle}background:rgba(255,215,0,0.15);border-color:rgba(255,215,0,0.4);">
                     \uD83D\uDC51 Petition King for Road
                 </button>`;
-                html += `<button class="btn-medieval" onclick="UI.showTollRoutesPanel()" style="font-size:0.8rem;padding:6px 14px;background:rgba(100,200,100,0.15);border-color:rgba(100,200,100,0.4);">
+                html += `<button class="btn-medieval" onclick="UI.showTollRoutesPanel()" style="${_actBtnStyle}background:rgba(100,200,100,0.15);border-color:rgba(100,200,100,0.4);">
                     \uD83D\uDCCA My Toll Routes
                 </button>`;
                 if (typeof Player !== 'undefined' && Player.isPlayerCitizenOf && Player.citizenshipKingdomId) {
-                    html += `<button class="btn-medieval" onclick="UI.showPetitionsPanel()" style="font-size:0.8rem;padding:6px 14px;background:rgba(212,160,23,0.15);border-color:rgba(212,160,23,0.4);">
+                    html += `<button class="btn-medieval" onclick="UI.showPetitionsPanel()" style="${_actBtnStyle}background:rgba(212,160,23,0.15);border-color:rgba(212,160,23,0.4);">
                         📜 Petitions
                     </button>`;
                 }
                 if (typeof Player !== 'undefined' && Player.isPlayerCitizenOf && Player.isPlayerCitizenOf(town.kingdomId)) {
-                    html += `<button class="btn-medieval" onclick="UI.showKingdomOrdersPanel('${town.kingdomId}')" style="font-size:0.8rem;padding:6px 14px;background:rgba(180,120,200,0.15);border-color:rgba(180,120,200,0.4);">
+                    html += `<button class="btn-medieval" onclick="UI.showKingdomOrdersPanel('${town.kingdomId}')" style="${_actBtnStyle}background:rgba(180,120,200,0.15);border-color:rgba(180,120,200,0.4);">
                         📋 Kingdom Orders
                     </button>`;
                 }
@@ -1104,7 +1117,7 @@ window.UI = (function () {
                     var tchance = Math.round(10 + (tfert / 100) * 70);
                     forageText = '\uD83C\uDF3F Forage Nearby (' + tchance + '% chance)';
                 }
-                html += '<button class="btn-medieval" onclick="UI.forageNearby()" style="font-size:0.8rem;padding:6px 14px;background:rgba(85,168,104,0.15);border-color:rgba(85,168,104,0.3);">';
+                html += '<button class="btn-medieval" onclick="UI.forageNearby()" style="' + _actBtnStyle + 'background:rgba(85,168,104,0.15);border-color:rgba(85,168,104,0.3);">';
                 html += forageText;
                 html += '</button>';
                 html += `</div></div>`;
@@ -2578,7 +2591,39 @@ window.UI = (function () {
         } else {
             toast(result.message, 'warning');
         }
-        openTradeDialog(); // refresh
+        openKingdomLicenses(kingdomId); // refresh license dialog
+    }
+
+    function openKingdomLicenses(kingdomId) {
+        var kingdoms = Engine.getKingdoms ? Engine.getKingdoms() : [];
+        var k = kingdoms.find(function(kk) { return kk.id === kingdomId; });
+        if (!k) { toast('Kingdom not found.', 'error'); return; }
+        var restricted = (k.laws && k.laws.restrictedGoods) || [];
+        if (restricted.length === 0) { toast('No restricted goods in this kingdom.', 'info'); return; }
+
+        var html = '<div style="max-height:400px;overflow-y:auto;">';
+        html += '<div style="font-size:0.85rem;margin-bottom:8px;">Restricted goods require a license to trade legally in <strong>' + k.name + '</strong>.</div>';
+
+        for (var i = 0; i < restricted.length; i++) {
+            var gId = restricted[i];
+            var res = Object.values(RESOURCE_TYPES).find(function(r) { return r.id === gId; });
+            var gName = res ? (res.icon || '') + ' ' + res.name : gId;
+            var hasLic = Player.hasLicense(k.id, gId);
+            var cost = CONFIG.LICENSE_COST || 100;
+
+            html += '<div style="border:1px solid #444;padding:6px;margin:4px 0;border-radius:4px;display:flex;align-items:center;justify-content:space-between;">';
+            html += '<span>' + gName + '</span>';
+            if (hasLic) {
+                html += '<span style="color:#55a868;font-size:0.8rem;">✅ Licensed</span>';
+            } else {
+                html += '<button class="btn-medieval" onclick="UI.buyLicense(\'' + k.id + '\',\'' + gId + '\')" style="font-size:0.75rem;padding:3px 10px;color:#e8dcc8;background:rgba(180,140,50,0.2);border-color:rgba(180,140,50,0.4);">Buy License (' + cost + 'g)</button>';
+            }
+            html += '</div>';
+        }
+
+        html += '</div>';
+        openModal('📜 Licenses — ' + k.name, html,
+            '<button class="btn-medieval" onclick="UI.openKingdomsDialog()">Back to Kingdoms</button>');
     }
 
     // ── BUILD DIALOG ──
@@ -9603,6 +9648,14 @@ window.UI = (function () {
                 }).join(', ');
                 playerLicHtml = `<div class="kc-row" style="font-size:0.75rem;color:#55a868;">📜 Your Licenses: ${licNames}</div>`;
             }
+            // Buy licenses button — show if kingdom has restricted goods with unlicensed items
+            let licenseBtnHtml = '';
+            if (k.laws && k.laws.restrictedGoods && k.laws.restrictedGoods.length > 0) {
+                var _unlicensed = k.laws.restrictedGoods.filter(function(g) { return !Player.hasLicense(k.id, g); });
+                if (_unlicensed.length > 0) {
+                    licenseBtnHtml = '<div class="kc-row"><button class="btn-medieval" onclick="UI.openKingdomLicenses(\'' + k.id + '\')" style="font-size:0.75rem;padding:4px 12px;color:#e8dcc8;background:rgba(180,140,50,0.2);border-color:rgba(180,140,50,0.4);">📜 Buy Licenses (' + _unlicensed.length + ' available)</button></div>';
+                }
+            }
 
             // Guard strength indicator
             let guardIcons = '';
@@ -9647,6 +9700,7 @@ window.UI = (function () {
                 ${restrictedHtml}
                 ${lawsHtml ? `<div class="kc-laws">${lawsHtml}</div>` : ''}
                 ${playerLicHtml}
+                ${licenseBtnHtml}
                 ${isHome ? '<div class="kc-home-badge">★ YOUR HOME</div>' : ''}
                 <div class="kc-row">Rep: ${Math.floor(rep)} | Rank: ${rank.icon} ${rank.name}</div>
                 <div class="kc-buttons" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">
@@ -9818,6 +9872,7 @@ window.UI = (function () {
 
             // Check detailed requirements
             let reqChecklist = '';
+            let _canPetition = false;
             if (Player.canPetitionForPromotion) {
                 const check = Player.canPetitionForPromotion(citizenKId);
                 if (check.reasons && check.reasons.length > 0) {
@@ -9827,21 +9882,26 @@ window.UI = (function () {
                     }
                     reqChecklist += '</div>';
                 } else if (check.can) {
+                    _canPetition = true;
                     reqChecklist = '<div style="margin-top:8px;font-size:0.8rem;color:#66ff88;">\u2705 All requirements met!</div>';
                 }
             }
+
+            var _petBtnStyle = _canPetition
+                ? 'margin-top:8px;font-size:0.85rem;padding:6px 16px;background:linear-gradient(180deg,#5aad35,#3a7a24);border-color:#5aad35;color:#fff;animation:petitionGlow 1.5s ease-in-out infinite;'
+                : 'margin-top:8px;font-size:0.85rem;padding:6px 16px;';
 
             html += `<div class="detail-section"><h3>Next: ${nextRank.icon} ${nextRank.name}</h3>
                 <div class="progress-row"><span class="label">Gold Earned</span>
                     <div class="progress-bar"><div class="progress-fill" style="width:${goldPct}%"></div></div>
                     <span class="value">${Math.floor(goldEarned).toLocaleString()}/${nextRank.goldReq.toLocaleString()}</span></div>
-                <div class="progress-row"><span class="label">Reputation</span>
+                <div class="progress-row"><span class="label">Kingdom Reputation</span>
                     <div class="progress-bar"><div class="progress-fill" style="width:${repPct}%"></div></div>
                     <span class="value">${Math.floor(rep)}/${nextRank.repReq}</span></div>
                 ${nextRank.fee ? `<div class="detail-row"><span class="label">Fee</span><span class="value">${nextRank.fee.toLocaleString()}g</span></div>` : ''}
                 ${nextRank.extraReq ? `<div class="detail-row"><span class="label">Requirements</span><span class="value" style="font-size:0.8rem;">${nextRank.extraReq}</span></div>` : ''}
                 ${reqChecklist}
-                <button class="btn-medieval" onclick="UI.petitionPromotion()" style="margin-top:8px;font-size:0.85rem;padding:6px 16px;">\uD83D\uDCDC Petition for Promotion</button>
+                <button class="btn-medieval" onclick="UI.petitionPromotion()" style="${_petBtnStyle}">\uD83D\uDCDC Petition for Promotion</button>
             </div>`;
         }
 
@@ -10484,6 +10544,15 @@ window.UI = (function () {
                 html += '<div><strong>' + ht.icon + ' ' + ht.name + '</strong> in ' + (town ? town.name : '?') + (isPrimary ? ' ⭐ Primary' : '') + '</div>';
                 html += '<div style="font-size:0.8rem;color:#aaa;">' + ht.description + '</div>';
                 html += '<div style="font-size:0.8rem;">Storage: ' + ht.storage + ' | Comfort: ' + ht.comfort + ' | Security: ' + Math.round(ht.security * 100) + '%</div>';
+                // Show installed addons
+                if (h.addons && h.addons.length > 0 && CONFIG.HOUSE_ADDONS) {
+                    var _addonNames = [];
+                    for (var _ai = 0; _ai < h.addons.length; _ai++) {
+                        var _aDef = CONFIG.HOUSE_ADDONS[h.addons[_ai]];
+                        if (_aDef) _addonNames.push(_aDef.icon + ' ' + _aDef.name);
+                    }
+                    html += '<div style="font-size:0.78rem;color:#5ac85a;">Addons: ' + _addonNames.join(', ') + '</div>';
+                }
                 // Home storage contents + transfer UI
                 var _hsUsed = Player.getHomeStorageUsed ? Player.getHomeStorageUsed(h) : 0;
                 var _hsCap = Player.getHomeStorageCapacity ? Player.getHomeStorageCapacity(h) : (ht.storage || 0);
@@ -10520,6 +10589,10 @@ window.UI = (function () {
                     html += '<button class="btn-medieval" onclick="UI.openHomeStorageUI(\'' + h.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin:2px;">📦 Transfer Goods</button>';
                     if (Player.horses && Player.horses.length > 0 && _homeHorses.length < _maxHomeHorses) {
                         html += '<button class="btn-medieval" onclick="UI.stableHorseUI(\'' + h.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin:2px;">🐴 Stable Horse</button>';
+                    }
+                    var _availAddons = Player.getAvailableAddons ? Player.getAvailableAddons(h.id) : [];
+                    if (_availAddons.length > 0) {
+                        html += '<button class="btn-medieval" onclick="UI.openHouseAddonsUI(\'' + h.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin:2px;">🔧 Addons (' + _availAddons.length + ')</button>';
                     }
                 }
                 if (h.isRental) {
@@ -10636,6 +10709,74 @@ window.UI = (function () {
 
         html += '</div>';
         openModal('🏠 Housing & Property', html);
+    }
+
+    // ── HOUSE ADDONS UI ──
+    function openHouseAddonsUI(houseId) {
+        var houses = Player.state.houses || Player.houses || [];
+        var house = houses.find(function(h) { return h.id === houseId; });
+        if (!house) { toast('House not found.', 'error'); return; }
+        var ht = CONFIG.HOUSING_TYPES.find(function(t) { return t.id === house.type; });
+        var available = Player.getAvailableAddons ? Player.getAvailableAddons(houseId) : [];
+        var installed = house.addons || [];
+
+        var html = '<div style="max-height:450px;overflow-y:auto;">';
+        html += '<div style="font-size:0.85rem;margin-bottom:8px;">' + (ht ? ht.icon : '🏠') + ' <strong>' + (ht ? ht.name : 'House') + '</strong></div>';
+
+        // Installed addons
+        if (installed.length > 0) {
+            html += '<h4 style="margin:8px 0 4px;color:#5ac85a;">Installed Addons</h4>';
+            for (var ii = 0; ii < installed.length; ii++) {
+                var iDef = CONFIG.HOUSE_ADDONS ? CONFIG.HOUSE_ADDONS[installed[ii]] : null;
+                if (!iDef) continue;
+                html += '<div style="border:1px solid #3a5a3a;padding:4px 6px;margin:3px 0;border-radius:3px;background:rgba(90,200,90,0.08);">';
+                html += '<strong>' + iDef.icon + ' ' + iDef.name + '</strong> ✅';
+                html += '<div style="font-size:0.78rem;color:#aaa;">' + iDef.description + '</div>';
+                html += '</div>';
+            }
+        }
+
+        // Available addons
+        if (available.length > 0) {
+            html += '<h4 style="margin:12px 0 4px;">Available Addons</h4>';
+            for (var ai = 0; ai < available.length; ai++) {
+                var addon = available[ai];
+                html += '<div style="border:1px solid #555;padding:6px;margin:4px 0;border-radius:4px;background:rgba(0,0,0,0.2);">';
+                html += '<div><strong>' + addon.icon + ' ' + addon.name + '</strong></div>';
+                html += '<div style="font-size:0.78rem;color:#aaa;">' + addon.desc + '</div>';
+                html += '<div style="font-size:0.78rem;margin-top:2px;">';
+                html += '💰 ' + addon.goldCost + 'g';
+                if (addon.materials) {
+                    var matParts = [];
+                    for (var mk in addon.materials) {
+                        var mRes = Object.values(RESOURCE_TYPES).find(function(r) { return r.id === mk; });
+                        matParts.push((mRes ? mRes.icon + ' ' : '') + addon.materials[mk] + ' ' + (mRes ? mRes.name : mk));
+                    }
+                    html += ' | ' + matParts.join(', ');
+                }
+                html += '</div>';
+                html += '<button class="btn-medieval" onclick="UI.doInstallAddon(\'' + houseId + '\',\'' + addon.id + '\')" style="font-size:0.75rem;padding:3px 10px;margin-top:4px;color:#e8dcc8;">🔧 Install</button>';
+                html += '</div>';
+            }
+        } else if (installed.length === 0) {
+            html += '<div style="font-size:0.8rem;color:#888;">No addons available for this house type.</div>';
+        } else {
+            html += '<div style="font-size:0.8rem;color:#888;margin-top:8px;">All available addons installed! ✅</div>';
+        }
+
+        html += '</div>';
+        openModal('🔧 House Addons', html,
+            '<button class="btn-medieval" onclick="UI.openHousingDialog()">Back to Housing</button>');
+    }
+
+    function doInstallAddon(houseId, addonId) {
+        var result = Player.installAddon(houseId, addonId);
+        if (result.success) {
+            toast(result.message, 'success');
+        } else {
+            toast(result.message, 'warning');
+        }
+        openHouseAddonsUI(houseId); // refresh
     }
 
     // ── HOME STORAGE TRANSFER UI ──
@@ -11210,15 +11351,25 @@ window.UI = (function () {
             const canUnlock = Player.canUnlockSkill ? Player.canUnlockSkill(skill.id) : false;
             const reqsMet = skill.requires.every(r => playerSkills[r]);
             const costAffordable = sp >= skill.cost;
+            const isRepeatable = !!skill.repeatable;
 
             let stateClass = 'skill-locked';
             let stateLabel = '🔒';
-            if (isUnlocked) {
+            if (isUnlocked && !isRepeatable) {
                 stateClass = 'skill-unlocked';
                 stateLabel = '✅';
+            } else if (isUnlocked && isRepeatable) {
+                stateClass = 'skill-unlocked';
+                stateLabel = '🔄';
             } else if (canUnlock) {
                 stateClass = 'skill-available';
                 stateLabel = '';
+            }
+
+            // Show dynasty bank info for dynasty_founder
+            let extraInfo = '';
+            if (skill.id === 'dynasty_founder' && Player.dynastySPBank > 0) {
+                extraInfo = '<div style="font-size:0.72rem;color:#ffd700;margin-top:2px;">🏰 Bank: ' + Player.dynastySPBank + ' SP</div>';
             }
 
             const reqNames = skill.requires.map(r => SKILLS[r] ? SKILLS[r].name : r).join(', ');
@@ -11240,10 +11391,11 @@ window.UI = (function () {
             skillsHtml += `<div class="skill-node ${stateClass}" title="${skill.desc}">
                 <div class="skill-icon">${skill.icon}</div>
                 <div class="skill-name">${skill.name} ${stateLabel}</div>
-                <div class="skill-cost">${skill.cost > 0 ? skill.cost + ' SP' : 'FREE'}</div>
+                <div class="skill-cost">${skill.cost > 0 ? skill.cost + ' SP' : 'FREE'}${isRepeatable ? ' (repeatable)' : ''}</div>
                 <div class="skill-desc">${skill.desc}</div>
+                ${extraInfo}
                 ${reqHtml}
-                ${!isUnlocked && canUnlock ? `<button class="btn-trade buy skill-learn-btn" onclick="UI.learnSkill('${skill.id}')">Learn</button>` : ''}
+                ${(!isUnlocked || isRepeatable) && canUnlock ? `<button class="btn-trade buy skill-learn-btn" onclick="UI.learnSkill('${skill.id}')">${isRepeatable && isUnlocked ? 'Invest Again' : 'Learn'}</button>` : ''}
             </div>`;
         }
         skillsHtml += '</div>';
@@ -11251,6 +11403,7 @@ window.UI = (function () {
         const html = `
             <div class="skill-header">
                 <span class="skill-sp-display">📚 Skill Points: <strong>${sp}</strong></span>
+                ${Player.dynastySPBank > 0 ? '<span style="color:#ffd700;font-size:0.8rem;margin-left:8px;">🏰 Dynasty Bank: ' + Player.dynastySPBank + ' SP</span>' : ''}
                 <span class="skill-level-display">Level ${Player.level || 1} ${Player.getMerchantTitle ? Player.getMerchantTitle() : ''}</span>
             </div>
             <div class="skill-tabs">${tabsHtml}</div>
@@ -17896,6 +18049,7 @@ window.UI = (function () {
         executeBuild,
         filterBuildings,
         buyLicense,
+        openKingdomLicenses,
         openBuildingManagement,
         showBuildingDetail,
         supplyBuildingUI,
@@ -18153,6 +18307,8 @@ window.UI = (function () {
         openHousingDialog,
         openRealEstateReport,
         openHomeStorageUI,
+        openHouseAddonsUI,
+        doInstallAddon,
         _homeDeposit,
         _homeWithdraw,
         stableHorseUI,

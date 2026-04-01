@@ -1115,6 +1115,45 @@ const CONFIG = {
     HOUSING_LABOR_MULTIPLIER: { village: 0.7, town: 1.0, city: 1.3, capital_city: 1.8 },
     HOUSING_SELL_RATIO: 0.70,
     HOUSING_UPGRADE_DISCOUNT: 0.60, // when upgrading in-place, recover 60% of old materials value
+
+    // ── House Addons ──
+    HOUSE_ADDONS: {
+        workshop: {
+            id: 'workshop', name: 'Workshop', icon: '🔨',
+            description: 'Craft items at home. Enables home crafting recipes.',
+            goldCost: 150, materials: { planks: 8, iron: 3, stone: 2 },
+            minHouseId: ['cottage', 'farmstead', 'townhouse', 'harbor_house'],
+            grants: 'hasWorkshop'
+        },
+        storage_expansion: {
+            id: 'storage_expansion', name: 'Storage Expansion', icon: '📦',
+            description: 'Expand home storage by 50%.',
+            goldCost: 100, materials: { planks: 6, iron: 2 },
+            minHouseId: null, // any house
+            grants: 'storageBonus', grantValue: 0.5
+        },
+        stables: {
+            id: 'stables', name: 'Stables', icon: '🐴',
+            description: 'Stable up to 4 horses at home (8 with Horse Mastery).',
+            goldCost: 200, materials: { wood: 10, planks: 6, rope: 3 },
+            minHouseId: ['cottage', 'farmstead', 'townhouse', 'harbor_house'],
+            grants: 'hasStables'
+        },
+        garden: {
+            id: 'garden', name: 'Garden', icon: '🌿',
+            description: 'Grow herbs and vegetables at home.',
+            goldCost: 80, materials: { wood: 4 },
+            minHouseId: ['shack', 'townhouse', 'harbor_house'],
+            grants: 'hasGarden'
+        },
+        guest_quarters: {
+            id: 'guest_quarters', name: 'Guest Quarters', icon: '🛏️',
+            description: 'Add +4 max occupants to the home.',
+            goldCost: 250, materials: { planks: 10, stone: 5, cloth: 3 },
+            minHouseId: ['townhouse', 'harbor_house'],
+            grants: 'occupantBonus', grantValue: 4
+        }
+    },
     // Worker productivity modifiers based on housing quality
     HOUSING_PRODUCTIVITY: { none: 0.70, tent: 0.85, shack: 0.92, cottage: 1.0, farmstead: 1.0, townhouse: 1.0, apartment: 1.0, merchant_house: 1.0, harbor_house: 1.0, manor: 1.0, estate: 1.0, fortress: 1.0, castle: 1.0, caravan_wagon: 0.95, bedroll: 0.75, inn_room: 0.90 },
 
@@ -1919,7 +1958,7 @@ const SKILLS = {
     romantic:            { name: 'Romantic',            branch: 'social',     cost: 2, requires: ['charming'],                    desc: 'Courtship relationship requirement reduced to 50 (from 60).',               icon: '💕' },
     noble_bearing:       { name: 'Noble Bearing',       branch: 'social',     cost: 3, requires: ['romantic'],                    desc: 'Easier to marry above your social rank.',                                   icon: '👑' },
     good_parent:         { name: 'Good Parent',         branch: 'social',     cost: 2, requires: [],                              desc: 'Children inherit +10% more gold and reputation.',                           icon: '👨‍👧' },
-    dynasty_founder:     { name: 'Dynasty Founder',     branch: 'social',     cost: 4, requires: ['good_parent'],                 desc: 'Heir starts with 1 bonus skill point.',                                     icon: '🏰' },
+    dynasty_founder:     { name: 'Dynasty Founder',     branch: 'social',     cost: 1, requires: ['good_parent'], repeatable: true, desc: 'Each purchase adds 1 SP to your dynasty bank. Heirs withdraw on succession (1:1).', icon: '🏰' },
     political_connections: { name: 'Political Connections', branch: 'social', cost: 3, requires: [],                              desc: 'Reputation gains +25%.',                                                   icon: '🤵' },
     royal_favor:         { name: 'Royal Favor',         branch: 'social',     cost: 4, requires: ['political_connections'],        desc: 'Petition for social rank costs 25% less reputation requirement.',            icon: '👸' },
     diplomatic_immunity: { name: 'Diplomatic Immunity', branch: 'social',     cost: 4, requires: ['political_connections'],        desc: '40% chance to talk guards out of forced requisition without losing goods.',  icon: '🕊️' },

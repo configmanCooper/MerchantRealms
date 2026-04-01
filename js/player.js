@@ -493,6 +493,7 @@
         player.totalXp = 0;
         player.level = 1;
         player.skillPoints = 0;
+        player.dynastySPBank = 0;
         player.skills = { keen_eye: true }; // everyone starts with keen_eye
         player.achievements = {};
         player.hunger = HUNGER_CONFIG.START;
@@ -6054,7 +6055,11 @@
     function getHomeStorageCapacity(house) {
         if (!house) return 0;
         var ht = CONFIG.HOUSING_TYPES.find(function(x) { return x.id === house.type; });
-        return ht ? (ht.storage || 0) : 0;
+        var base = ht ? (ht.storage || 0) : 0;
+        if ((house.addons || []).indexOf('storage_expansion') >= 0) {
+            base = Math.floor(base * 1.5);
+        }
+        return base;
     }
 
     function depositToHome(houseId, resId, qty) {
@@ -6129,6 +6134,100 @@
         player.horses.push(horse);
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(1);
         return { success: true, message: '🐴 Took ' + (horse.name || 'horse') + ' from home.' };
+    }
+
+    // ── HOUSE ADDONS ──
+    function getAvailableAddons(houseId) {
+        var house = (player.houses || []).find(function(h) { return h.id === houseId; });
+        if (!house) return [];
+        var hType = CONFIG.HOUSING_TYPES.find(function(ht) { return ht.id === house.type; });
+        if (!hType) return [];
+        var addons = CONFIG.HOUSE_ADDONS;
+        if (!addons) return [];
+        var existing = house.addons || [];
+        var result = [];
+        for (var aId in addons) {
+            var addon = addons[aId];
+            if (existing.indexOf(aId) >= 0) continue; // already installed
+            // Skip if house already has the feature built-in
+            if (addon.grants === 'hasWorkshop' && hType.hasWorkshop) continue;
+            if (addon.grants === 'hasStables' && hType.hasStables) continue;
+            if (addon.grants === 'hasGarden' && (hType.hasGarden || (hType.canGrow && hType.canGrow.length > 0))) continue;
+            // Check house type compatibility
+            if (addon.minHouseId && addon.minHouseId.indexOf(house.type) < 0) continue;
+            result.push({ id: aId, name: addon.name, icon: addon.icon, desc: addon.description, goldCost: addon.goldCost, materials: addon.materials });
+        }
+        return result;
+    }
+
+    function installAddon(houseId, addonId) {
+        var house = (player.houses || []).find(function(h) { return h.id === houseId; });
+        if (!house) return { success: false, message: 'House not found.' };
+        if (house.townId !== player.townId) return { success: false, message: 'You must be in the same town.' };
+        var addon = CONFIG.HOUSE_ADDONS ? CONFIG.HOUSE_ADDONS[addonId] : null;
+        if (!addon) return { success: false, message: 'Unknown addon.' };
+        if (!house.addons) house.addons = [];
+        if (house.addons.indexOf(addonId) >= 0) return { success: false, message: 'Already installed.' };
+        if (player.gold < addon.goldCost) return { success: false, message: 'Need ' + addon.goldCost + ' gold (have ' + Math.floor(player.gold) + ').' };
+        // Check materials
+        if (addon.materials) {
+            for (var matId in addon.materials) {
+                var need = addon.materials[matId];
+                var have = player.inventory[matId] || 0;
+                // Also check home storage and market
+                var houseHas = (house.homeStorage && house.homeStorage[matId]) ? house.homeStorage[matId] : 0;
+                var town = Engine.findTown(player.townId);
+                var mktHas = (town && town.market && town.market.supply) ? (town.market.supply[matId] || 0) : 0;
+                if (have + houseHas + mktHas < need) {
+                    var res = findResource(matId);
+                    return { success: false, message: 'Need ' + need + ' ' + (res ? res.name : matId) + ' (have ' + have + ', home ' + houseHas + ', market ' + mktHas + ').' };
+                }
+            }
+            // Deduct materials: from inventory first, then home storage, then buy from market
+            for (var matId2 in addon.materials) {
+                var need2 = addon.materials[matId2];
+                var fromInv = Math.min(need2, player.inventory[matId2] || 0);
+                if (fromInv > 0) { player.inventory[matId2] -= fromInv; need2 -= fromInv; }
+                if (need2 > 0 && house.homeStorage && house.homeStorage[matId2]) {
+                    var fromHome = Math.min(need2, house.homeStorage[matId2]);
+                    house.homeStorage[matId2] -= fromHome; need2 -= fromHome;
+                    if (house.homeStorage[matId2] <= 0) delete house.homeStorage[matId2];
+                }
+                if (need2 > 0) {
+                    // Buy from market
+                    var town2 = Engine.findTown(player.townId);
+                    if (town2 && town2.market && town2.market.supply) {
+                        var bought = Math.min(need2, town2.market.supply[matId2] || 0);
+                        if (bought > 0) {
+                            var mktPrice = (town2.market.prices && town2.market.prices[matId2]) || 10;
+                            player.gold -= bought * mktPrice;
+                            town2.market.supply[matId2] = (town2.market.supply[matId2] || 0) - bought;
+                            need2 -= bought;
+                        }
+                    }
+                }
+            }
+        }
+        player.gold -= addon.goldCost;
+        house.addons.push(addonId);
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.build || 3);
+        Engine.logEvent(player.fullName + ' installed ' + addon.icon + ' ' + addon.name + ' in their ' + house.type + '.');
+        return { success: true, message: addon.icon + ' ' + addon.name + ' installed!' };
+    }
+
+    function houseHasAddon(houseId, addonId) {
+        var house = (player.houses || []).find(function(h) { return h.id === houseId; });
+        if (!house) return false;
+        return (house.addons || []).indexOf(addonId) >= 0;
+    }
+
+    function getHouseEffectiveStorage(house) {
+        var hType = CONFIG.HOUSING_TYPES.find(function(ht) { return ht.id === house.type; });
+        var base = hType ? (hType.storage || 0) : 0;
+        if ((house.addons || []).indexOf('storage_expansion') >= 0) {
+            base = Math.floor(base * 1.5);
+        }
+        return base;
     }
 
     // ── BUILDING STORAGE TRANSFER ──
@@ -7003,7 +7102,8 @@
         }
         player.level = 1;
         player.skillPoints = 0;
-        var hadDynastyFounder = player.skills && player.skills['dynasty_founder'];
+        var dynastyBank = player.dynastySPBank || 0;
+        player.dynastySPBank = 0; // bank consumed on inheritance
         player.skills = { keen_eye: true };
         player.achievements = {};
         player.hunger = HUNGER_CONFIG.START;
@@ -7021,7 +7121,10 @@
         player.generation = prevGen + 1;
         player._xpAccumulator = 0;
         checkLevelUp();
-        player.skillPoints = Math.min(player.skillPoints, 3 + (hadDynastyFounder ? 1 : 0));
+        player.skillPoints = Math.min(player.skillPoints, 3) + dynastyBank;
+        if (dynastyBank > 0) {
+            Engine.logEvent('🏰 ' + player.fullName + ' inherited ' + dynastyBank + ' skill points from the dynasty bank!');
+        }
 
         // Reset various tracking
         player.warAllegiances = {};
@@ -7145,7 +7248,8 @@
         }
         player.level = 1;
         player.skillPoints = 0;
-        var hadDynastyFounder = player.skills && player.skills['dynasty_founder'];
+        var dynastyBank2 = player.dynastySPBank || 0;
+        player.dynastySPBank = 0;
         player.skills = { keen_eye: true };
         player.achievements = {};
         player.hunger = HUNGER_CONFIG.START;
@@ -7163,7 +7267,10 @@
         player.generation = prevGen + 1;
         player._xpAccumulator = 0;
         checkLevelUp();
-        player.skillPoints = Math.min(player.skillPoints, 3 + (hadDynastyFounder ? 1 : 0));
+        player.skillPoints = Math.min(player.skillPoints, 3) + dynastyBank2;
+        if (dynastyBank2 > 0) {
+            Engine.logEvent('🏰 ' + player.fullName + ' inherited ' + dynastyBank2 + ' skill points from the dynasty bank!');
+        }
 
         // Reset various tracking
         player.warAllegiances = {};
@@ -10373,7 +10480,8 @@
         player.xp = xpTransfer;
         player.totalXp = xpTransfer;
         player.level = 1;
-        var hadDynastyFounder = player.skills && player.skills['dynasty_founder'];
+        var dynastyBank3 = player.dynastySPBank || 0;
+        player.dynastySPBank = 0;
         player.skills = { keen_eye: true };
         player.achievements = {};
         player.hunger = HUNGER_CONFIG.START;
@@ -10420,7 +10528,10 @@
             }
         }
 
-        player.skillPoints = Math.max(0, (hadDynastyFounder ? 1 : 0) + bonusPoints);
+        player.skillPoints = Math.max(0, bonusPoints) + dynastyBank3;
+        if (dynastyBank3 > 0) {
+            Engine.logEvent('🏰 ' + player.fullName + ' inherited ' + dynastyBank3 + ' skill points from the dynasty bank!');
+        }
         checkLevelUp();
 
         // Reputation
@@ -12051,6 +12162,7 @@
             xpBank: player.xpBank || 0,
             level: player.level,
             skillPoints: player.skillPoints,
+            dynastySPBank: player.dynastySPBank || 0,
             skills: { ...player.skills },
             notificationFilters: JSON.parse(JSON.stringify(player.notificationFilters || {})),
             achievements: JSON.parse(JSON.stringify(player.achievements)),
@@ -12345,6 +12457,7 @@
         player.xpBank = data.xpBank || 0;
         player.level = data.level || 1;
         player.skillPoints = data.skillPoints || 0;
+        player.dynastySPBank = data.dynastySPBank || 0;
         player.skills = data.skills || { keen_eye: true };
         player.achievements = data.achievements || {};
         player.hunger = data.hunger != null ? data.hunger : HUNGER_CONFIG.START;
@@ -17154,7 +17267,13 @@
 
     function canUnlockSkill(skillId) {
         const skill = SKILLS[skillId];
-        if (!skill || player.skills[skillId]) return false;
+        if (!skill) return false;
+        // Repeatable skills can be purchased again
+        if (skill.repeatable) {
+            if (player.skillPoints < skill.cost) return false;
+            return skill.requires.every(r => player.skills[r]);
+        }
+        if (player.skills[skillId]) return false;
         if (player.skillPoints < skill.cost) return false;
         return skill.requires.every(r => player.skills[r]);
     }
@@ -17163,6 +17282,22 @@
         if (!canUnlockSkill(skillId)) return false;
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.unlock_skill || 1);
         const skill = SKILLS[skillId];
+
+        // Handle repeatable skills (e.g., dynasty_founder → SP bank)
+        if (skill.repeatable) {
+            if (skillId === 'dynasty_founder') {
+                player.dynastySPBank = (player.dynastySPBank || 0) + 1;
+                player.skills[skillId] = true;
+                player.skillPoints -= skill.cost;
+                if (typeof UI !== 'undefined' && UI.toast) {
+                    UI.toast('🏰 Dynasty Bank: +1 SP (total bank: ' + player.dynastySPBank + ')', 'success', 'my_actions');
+                }
+                Engine.logEvent(player.fullName + ' invested in the dynasty bank (total: ' + player.dynastySPBank + ' SP).');
+                recordJournalEntry('skill', 'Invested in the family legacy. Dynasty SP bank now holds ' + player.dynastySPBank + ' skill points for future heirs.', { mood: 'content' });
+                return true;
+            }
+        }
+
         player.skills[skillId] = true;
         player.skillPoints -= skill.cost;
         if (typeof UI !== 'undefined' && UI.toast) {
@@ -18557,12 +18692,15 @@
             var restrictedList = (kingdom && kingdom.laws && kingdom.laws.restrictedGoods) || [];
 
             // Build list of goods NOT available in town market (supply 0 or very low)
+            // Exclude banned/restricted — those have their own pool entries
             var scarceGoods = [];
             var allResKeys = Object.keys(RESOURCE_TYPES);
             for (var ri = 0; ri < allResKeys.length; ri++) {
                 var rKey = allResKeys[ri];
                 var rDef = RESOURCE_TYPES[rKey];
                 if (!rDef || !rDef.id) continue;
+                if (bannedList.indexOf(rDef.id) >= 0) continue;
+                if (restrictedList.indexOf(rDef.id) >= 0) continue;
                 var supply = (town.market && town.market.supply) ? (town.market.supply[rDef.id] || 0) : 0;
                 if (supply <= 2) scarceGoods.push(rDef.id);
             }
@@ -18579,7 +18717,7 @@
             }
             for (var si = 0; si < scarceGoods.length; si++) {
                 var sRes = findResource(scarceGoods[si]);
-                if (sRes) { weightedPool.push({ id: sRes.id, weight: 1, reason: 'scarce' }); }
+                if (sRes) { weightedPool.push({ id: sRes.id, weight: 2, reason: 'scarce' }); }
             }
 
             if (people && people.length > 0) {
@@ -21890,9 +22028,7 @@
     }
 
     function shouldShowSchemesButton() {
-        return player.notoriety > 0 ||
-            player.corruptActions > 0 ||
-            Object.keys(player.skills).some(s => SKILLS[s] && SKILLS[s].branch === 'underworld');
+        return true; // Always show — player discovers dark deeds exist
     }
 
     // ========================================================
@@ -31215,6 +31351,10 @@
         getHomeStorageCapacity,
         stableHorseAtHome,
         unstableHorseFromHome,
+        getAvailableAddons,
+        installAddon,
+        houseHasAddon,
+        getHouseEffectiveStorage,
         depositToBuilding,
         withdrawFromBuilding,
         buyContainer,

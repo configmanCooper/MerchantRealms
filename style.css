@@ -181,6 +181,11 @@ body {
     font-size: 1.2rem;
 }
 
+@keyframes petitionGlow {
+    0%, 100% { box-shadow: 0 0 8px rgba(90, 173, 53, 0.4); }
+    50% { box-shadow: 0 0 20px rgba(90, 173, 53, 0.8), 0 0 40px rgba(90, 173, 53, 0.3); }
+}
+
 .btn-close {
     background: none;
     border: none;
