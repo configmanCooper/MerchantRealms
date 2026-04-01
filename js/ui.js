@@ -9054,7 +9054,8 @@ window.UI = (function () {
             html += '<span style="font-size:1.2em;">' + g.icon + ' <strong>' + escapeHtml(g.name) + '</strong></span>';
 
             if (isMember) {
-                html += '<span style="color:#4a7;font-size:0.9em;">✅ Member until Day ' + membership.expiresDay + '</span>';
+                var _arStatus = membership.autoRenew ? ' <span style="color:#ffd700;font-size:0.8em;">🔄 Auto-renew ON</span>' : '';
+                html += '<span style="color:#4a7;font-size:0.9em;">✅ Member until Day ' + membership.expiresDay + _arStatus + '</span>';
             } else {
                 html += '<span style="color:#888;font-size:0.9em;">Not a member</span>';
             }
@@ -9110,9 +9111,15 @@ window.UI = (function () {
             }
 
             // Join/Extend buttons
-            html += '<div style="margin-top:6px;">';
-            html += '<button class="btn-medieval" style="margin-right:6px;" onclick="UI.guildJoin(\'' + gId + '\', \'monthly\')">' + (isMember ? '🔄 Extend' : '📜 Join') + ' Monthly (' + monthlyPrice + 'g)</button>';
+            html += '<div style="margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">';
+            html += '<button class="btn-medieval" onclick="UI.guildJoin(\'' + gId + '\', \'monthly\')">' + (isMember ? '🔄 Extend' : '📜 Join') + ' Monthly (' + monthlyPrice + 'g)</button>';
             html += '<button class="btn-medieval" onclick="UI.guildJoin(\'' + gId + '\', \'yearly\')">' + (isMember ? '🔄 Extend' : '📜 Join') + ' Yearly (' + yearlyPrice + 'g)</button>';
+            if (isMember) {
+                var _arChecked = membership.autoRenew ? 'checked' : '';
+                html += '<label style="font-size:0.8em;color:#ccc;cursor:pointer;display:flex;align-items:center;gap:4px;">';
+                html += '<input type="checkbox" ' + _arChecked + ' onchange="(function(cb){var r=Player.setGuildAutoRenew(\'' + gId + '\',cb.checked);UI.toast(r.message,r.success?\'success\':\'warning\');UI.openGuildsPanel();})(this)">';
+                html += '🔄 Auto-renew</label>';
+            }
             html += '</div>';
 
             // If member, show craftable items at current town

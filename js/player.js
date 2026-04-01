@@ -12491,6 +12491,35 @@
             }
         }
 
+        // Guild membership auto-renew check (daily)
+        for (var _arGuildId in player.guildMemberships) {
+            var _arMem = player.guildMemberships[_arGuildId];
+            if (!_arMem || !_arMem.autoRenew) continue;
+            // Check if expiring today or already expired (within 1 day)
+            if (_arMem.expiresDay > day) continue;
+            var _arGuild = CONFIG.GUILDS ? CONFIG.GUILDS[_arGuildId] : null;
+            var _arType = _arMem.type || 'monthly';
+            if (_arType === 'loan') _arType = 'monthly'; // loan memberships renew as monthly
+            var _arPrice = _arMem.lastPaidPrice || getGuildPrice(_arGuildId, _arType);
+            if (player.gold >= _arPrice) {
+                var _arDuration = _arType === 'yearly' ? 365 : 30;
+                player.gold -= _arPrice;
+                player.stats.totalGoldSpent += _arPrice;
+                _arMem.expiresDay = day + _arDuration;
+                _arMem.lastPaidPrice = _arPrice;
+                var _arName = _arGuild ? _arGuild.name : _arGuildId;
+                var _arIcon = _arGuild ? (_arGuild.icon || '') : '';
+                Engine.logEvent(_arIcon + ' Auto-renewed ' + _arName + ' membership (' + _arType + ', ' + _arPrice + 'g)');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🔄 ' + _arName + ' auto-renewed (' + _arPrice + 'g)', 'info');
+            } else {
+                // Can't afford — cancel auto-renew and notify
+                _arMem.autoRenew = false;
+                var _arName2 = _arGuild ? _arGuild.name : _arGuildId;
+                Engine.logEvent('⚠️ Could not auto-renew ' + _arName2 + ' — not enough gold (' + _arPrice + 'g needed). Auto-renew disabled.');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚠️ ' + _arName2 + ' expired — not enough gold to renew!', 'warning', 'critical');
+            }
+        }
+
         // Advance caravans
         tickCaravans();
 
@@ -14048,14 +14077,17 @@
         var duration = type === 'yearly' ? 365 : 30;
 
         // If already a member, extend from expiration
-        var currentExpiry = (player.guildMemberships[guildId] && player.guildMemberships[guildId].expiresDay > day)
-            ? player.guildMemberships[guildId].expiresDay : day;
+        var existing = player.guildMemberships[guildId];
+        var currentExpiry = (existing && existing.expiresDay > day) ? existing.expiresDay : day;
+        var prevAutoRenew = existing ? (existing.autoRenew || false) : false;
 
         player.gold -= price;
         player.stats.totalGoldSpent += price;
         player.guildMemberships[guildId] = {
             expiresDay: currentExpiry + duration,
-            type: type
+            type: type,
+            autoRenew: prevAutoRenew,
+            lastPaidPrice: price
         };
 
         try { Engine.logEvent(guild.icon + ' Joined ' + guild.name + ' (' + type + ', ' + price + 'g)', 'my_actions'); } catch(e) {}
@@ -14064,6 +14096,15 @@
         recordJournalEntry('guild', 'Joined the ' + guild.name + ' as a ' + type + ' member for ' + price + 'g. New opportunities and connections await.', { mood: 'hopeful' });
 
         return { success: true, message: 'Joined ' + guild.name + '! Membership until Day ' + (currentExpiry + duration) + '.' };
+    }
+
+    function setGuildAutoRenew(guildId, enabled) {
+        var membership = player.guildMemberships[guildId];
+        if (!membership) return { success: false, message: 'Not a member of this guild.' };
+        membership.autoRenew = !!enabled;
+        var guild = CONFIG.GUILDS[guildId];
+        var gName = guild ? guild.name : guildId;
+        return { success: true, message: 'Auto-renew ' + (enabled ? 'enabled' : 'disabled') + ' for ' + gName + '.' };
     }
 
     // ========================================================
@@ -30438,6 +30479,7 @@
         // Guild Membership
         isGuildMember,
         joinGuild,
+        setGuildAutoRenew,
         getGuildPrice,
         getGuildCraftableItems,
         craftAtGuildBuilding,

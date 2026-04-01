@@ -4,6 +4,74 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.46.0] - 2026-04-01
+
+### Added — Kingdom Trade Redesign, Worker Satisfaction, Guild Monopoly Overhaul
+
+#### Guild Auto-Renew
+- **Auto-renew toggle** on each guild membership — pays at the previously paid rate when membership expires
+- If auto-renew is on but player can't afford it, auto-renew is disabled and player is notified
+- Auto-renew status shown in guild panel (🔄 Auto-renew ON) with checkbox toggle
+- `lastPaidPrice` stored on membership for consistent renewal pricing
+
+#### Kingdom Trade v2 — Per-Item Casual System
+- **Redesigned kingdom trade** from fixed-quantity requests to per-item casual system
+- Kingdom wants certain resource types (not fixed amounts) based on procurement needs, king personality, and kingdom culture
+- Sell any quantity at the kingdom's offered price → **+0.001 rep per item sold**
+- Donate any quantity for free → **+0.01 rep per item donated**
+- UI shows quick qty buttons (1/5/10/All) for both Sell and Donate per resource
+- Street-trade-like layout with price premium % display
+
+#### Worker Satisfaction System
+- Workers have satisfaction level (0-100), starting at 60
+- Daily natural decay (-0.15/day), weekly boost when paid (+3), penalty when unpaid (-8)
+- **Player actions:** Praise (+3, free, 1x/week), Day Off (+8, 1 day wage), Bonus (+15, 1 week wage), Raise (+10, permanent +10% wage)
+- **Auto-raise wages** toggle: workers below 40 satisfaction get small auto-raise
+- Workers below 15 satisfaction have 3% daily quit chance
+- Building detail UI shows satisfaction bars per worker with emoji indicators and action buttons
+
+#### Carry Capacity Skills
+- 🎒 Pack Mule (1 SP): +20 carry capacity
+- 🐂 Beast of Burden (2 SP, requires Pack Mule): +20 more
+- 💪 Iron Back (3 SP, requires Beast of Burden): +30 more
+
+#### Guild Monopoly Overhaul
+- **Guild members can now build** processing/finished/military buildings in guild_monopoly kingdoms (not just Guildmaster rank 3+)
+- Guildmaster rank 3+ still always exempt
+- **30-day grace period** if guild membership lapses while owning production buildings
+- 7-day warning reminder before deadline
+- Kingdom seizes building after grace period (fires workers, puts building for sale at 50% cost)
+- Grace periods persist across saves
+- **Build dialog** shows guild requirement status: ✅ member, ✅ exempt (Guildmaster), or ⚠️ requires membership
+
+#### Kingdoms UI
+- 📦 Commissions button on each kingdom card (between Orders and Petition)
+- 💰 Donate button on each kingdom card (after Petition)
+- Kingdom gold donation dialog with 4 tiers (500g/1000g/2500g/5000g)
+- Commissions and orders shown inline in kingdom detail panel
+
+### Changed — Reputation Balance
+- Military service rep: +1 per 90 days served (was +1/day)
+- Smuggling rep penalty: -1 normal, -5 for war-related goods (was flat -15)
+- War winner rep: +5 (was +30)
+- Alliance join rep: +2 (was +10)
+- Commission rep reward: +1 (was +15)
+- Reputation decay above 70: -0.1/month toward 70; above 90: extra -0.1/month
+- Town→Kingdom reputation spillover: each 10 town rep above/below 50 → ±1 kingdom rep monthly
+- Guildmaster promotion now requires 180 trading days and 2+ caravans sent
+
+### Changed — Smarter Street Trade
+- Street trade NPCs now preferentially want banned (3x weight), restricted (2x), and scarce (1x) goods
+- Above-market premiums: banned 1.3-2.0x, restricted 1.2-1.7x, scarce 1.1-1.5x
+- 75% chance to pick from weighted pool, 25% random
+
+### Fixed
+- **Build dialog silently swallowing failures** — executeBuild now checks return value and shows actual error message
+- **Build dialog inventory access bug** — Player.state.inventory → Player.inventory (was showing 0 for all materials)
+- **Build dialog auto-buy display** — shows per-material breakdown (have/need, auto-buy qty + cost from market)
+- **Buy Max ignoring carry capacity** — now uses personal carry capacity only (not warehouse storage)
+- **NPC quit/retire/training notifications** — only fire for player's workers, not all NPCs
+
 ## [0.44.1] - 2026-03-31
 
 ### Fixed — Bug Fixes & Notification Category Overhaul
