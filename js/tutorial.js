@@ -10,6 +10,7 @@ window.Tutorial = (function () {
     var currentStep = 0;
     var panelEl = null;
     var highlightedEls = [];
+    var completedSteps = {}; // Track completed interactive steps: "chapter:step" → true
 
     // Polling / waitFor state
     var pollInterval = null;
@@ -18,6 +19,7 @@ window.Tutorial = (function () {
     var doneAdvanceFn = null;
     var modalObserver = null;
     var snapshotState = {};
+    var waitingClickCount = 0;
 
     // ═══════════════════════════════════════════════════════════
     //  HELPERS
@@ -121,6 +123,24 @@ window.Tutorial = (function () {
 
     function startWatching(conditionFn, onComplete) {
         stopWatching();
+        waitingClickCount = 0;
+
+        // If this step was already completed, show Done immediately
+        var stepKey = currentChapter + ':' + currentStep;
+        if (completedSteps[stepKey]) {
+            doneAdvanceFn = onComplete || function () { nextStep(); };
+            var btn = document.getElementById('tutBtnNext');
+            if (btn) {
+                btn.textContent = '\u2705 Completed \u2014 Continue \u2192';
+                btn.disabled = false;
+                btn.dataset.waiting = 'false';
+                btn.style.opacity = '1';
+                btn.style.cursor = 'pointer';
+                btn.style.background = 'linear-gradient(135deg, #2d5a1d, #3a7a24)';
+                btn.style.borderColor = '#5aad35';
+            }
+            return;
+        }
 
         // Show waiting state
         updateNextButton('\u23F3 Complete the action above...', true);
@@ -133,12 +153,17 @@ window.Tutorial = (function () {
             try {
                 if (conditionFn()) {
                     stopWatching();
+                    // Clear highlights (removes glow + un-greys bottom bar buttons)
+                    clearHighlights();
+                    // Mark step as completed
+                    completedSteps[currentChapter + ':' + currentStep] = true;
                     // Show Done as clickable button with green highlight
                     doneAdvanceFn = onComplete || function () { nextStep(); };
                     var btn = document.getElementById('tutBtnNext');
                     if (btn) {
                         btn.textContent = '\u2705 Done! Continue \u2192';
                         btn.disabled = false;
+                        btn.dataset.waiting = 'false';
                         btn.style.opacity = '1';
                         btn.style.cursor = 'pointer';
                         btn.style.background = 'linear-gradient(135deg, #2d5a1d, #3a7a24)';
@@ -162,14 +187,19 @@ window.Tutorial = (function () {
         if (skipTimeout) { clearTimeout(skipTimeout); skipTimeout = null; }
         if (doneTimeout) { clearTimeout(doneTimeout); doneTimeout = null; }
         doneAdvanceFn = null;
+        // Clean up marriage propose glow timer
+        if (snapshotState._proposeGlowTimer) { clearInterval(snapshotState._proposeGlowTimer); snapshotState._proposeGlowTimer = null; }
+        var propBtn = document.getElementById('btnPropose');
+        if (propBtn) propBtn.classList.remove('tutorial-highlight');
     }
 
-    function updateNextButton(label, disabled) {
+    function updateNextButton(label, isWaiting) {
         var btn = document.getElementById('tutBtnNext');
         if (!btn) return;
         btn.textContent = label;
-        btn.disabled = !!disabled;
-        if (disabled) {
+        btn.disabled = false;
+        btn.dataset.waiting = isWaiting ? 'true' : 'false';
+        if (isWaiting) {
             btn.style.opacity = '0.5';
             btn.style.cursor = 'not-allowed';
         } else {
@@ -208,6 +238,13 @@ window.Tutorial = (function () {
                     title: 'Your Player Icon',
                     text: '\uD83D\uDD36 See that <strong>golden pulsing diamond</strong>? That\u2019s <strong>you</strong>! If you ever lose track of yourself, click the <strong>\uD83D\uDCCD Find</strong> button on the bottom panel. Try it now \u2014 pan away with W/A/S/D, then click <strong>\uD83D\uDCCD Find</strong>!',
                     highlight: '#btnLocate',
+                    onEnter: function () {
+                        // Zoom to 3x and center on player
+                        try {
+                            if (Renderer.setZoom) Renderer.setZoom(3.0);
+                            if (Renderer.centerOnTown && Player.state.townId) Renderer.centerOnTown(Player.state.townId);
+                        } catch (e) {}
+                    },
                     waitFor: function () {
                         if (window._tutorialLocateUsed) return true;
                         var toasts = document.querySelectorAll('.toast');
@@ -220,7 +257,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Minimap',
-                    text: '\uD83D\uDDFA\uFE0F Great! Now try clicking the <strong>minimap</strong> in the bottom-right corner to move the camera to a different area of the map. It\u2019s a quick way to jump around the world!',
+                    text: '\uD83D\uDDFA\uFE0F Great! Notice the <strong>blinking dot</strong> on the minimap in the bottom-right \u2014 that\u2019s your position! Try <strong>clicking the minimap</strong> to move the camera to a different area of the map. It\u2019s a quick way to jump around the world!',
                     onEnter: function () {
                         try {
                             var cam = Renderer.getCamera();
@@ -253,7 +290,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Meeting Townsfolk',
-                    text: '\uD83D\uDC65 Click an NPC and say <strong>Small Talk</strong> to them! <strong>Zoom in</strong> past 1.5x to see NPCs walking around. Try <strong>clicking an NPC</strong> now!',
+                    text: '\uD83D\uDC65 The <strong>colored dots</strong> moving around a town are <strong>NPCs</strong> \u2014 real people living and working there! <strong>Zoom in</strong> past 1.5x to see them clearly. Click an NPC and say <strong>Small Talk</strong> to them! <strong>Tip:</strong> If an NPC is in the center of town, hold <strong>Shift + Click</strong> to select the person instead of the town.',
                     highlight: '#gameCanvas',
                     waitFor: function () {
                         var modal = document.getElementById('modalOverlay');
@@ -272,12 +309,22 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'The Talk Button',
-                    text: '\uD83D\uDCAC The <strong>\uD83D\uDCAC Talk</strong> button on the bottom panel lets you talk to random locals and get information. Use it to hear rumors about prices, wars, or trade tips around town.'
+                    text: '\uD83D\uDCAC The <strong>\uD83D\uDCAC Talk</strong> button on the bottom panel lets you talk to random locals and get information. Use it to hear rumors about prices, wars, or trade tips around town.',
+                    highlight: '#btnTalk'
                 },
                 {
                     title: 'Town Info & People',
                     text: '\uD83C\uDFD8\uFE0F Click on <strong>Rustbridge</strong> on the map to see its details \u2014 population, market prices, buildings, and townspeople.',
                     highlight: '#gameCanvas',
+                    onEnter: function () {
+                        // Pan to Rustbridge (starting town) and zoom to 2x
+                        try {
+                            if (Renderer.setZoom) Renderer.setZoom(2.0);
+                            var towns = Engine.getTowns();
+                            var rustbridge = towns.find(function(t) { return t.name === 'Rustbridge'; }) || towns[0];
+                            if (rustbridge && Renderer.panTo) Renderer.panTo(rustbridge.x, rustbridge.y);
+                        } catch (e) {}
+                    },
                     waitFor: function () {
                         var rp = document.getElementById('rightPanel');
                         if (rp && !rp.classList.contains('hidden')) {
@@ -371,10 +418,46 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Sell for Profit',
-                    text: '\uD83C\uDF3E Now sell your wheat! The <strong>market spread</strong> means sell prices are lower in the same town \u2014 real profit comes from <strong>trading between towns</strong>. Sell all your wheat now!',
+                    text: '\uD83D\uDCB0 Loading market data...',
+                    highlight: '#btnTrade',
+                    onEnter: function () {
+                        // Find a high-demand, low/zero-stock good at this market
+                        var town = null;
+                        try { town = Engine.findTown(Player.townId); } catch (e) {}
+                        var bestRes = 'iron';
+                        var bestName = 'Iron';
+                        if (town && town.market) {
+                            var demand = town.market.demand || {};
+                            var supply = town.market.supply || {};
+                            var bestScore = -1;
+                            for (var resId in demand) {
+                                var d = demand[resId] || 0;
+                                var s = supply[resId] || 0;
+                                if (d > 0 && s < d * 0.3 && d > bestScore) {
+                                    bestScore = d;
+                                    bestRes = resId;
+                                }
+                            }
+                            // Pretty name from config
+                            try {
+                                var rt = Config.RESOURCE_TYPES;
+                                for (var k in rt) {
+                                    if (rt[k].id === bestRes) { bestName = rt[k].name || bestRes; break; }
+                                }
+                            } catch (e) { bestName = bestRes.replace(/_/g, ' '); }
+                        }
+                        snapshotState.sellRes = bestRes;
+                        giveItem(bestRes, 10);
+                        // Update step text dynamically (step object, renderPanel reads it)
+                        var ch = chapters[currentChapter];
+                        if (ch && ch.steps[currentStep]) {
+                            ch.steps[currentStep].text = '\uD83D\uDCB0 We\u2019ve given you <strong>10 ' + bestName + '</strong> \u2014 this market has high demand but low stock, so you\u2019ll get a great price! Open the trade menu and <strong>sell your ' + bestName + '</strong>. Price colors: <span style="color:#5a5;">green</span> = good deal, <span style="color:#c44;">red</span> = bad deal, <span style="color:#ccc;">white</span> = average.';
+                        }
+                    },
                     waitFor: function () {
                         var inv = getPlayerInventory();
-                        return (inv.wheat || 0) === 0;
+                        var res = snapshotState.sellRes || 'iron';
+                        return (inv[res] || 0) === 0;
                     },
                     onComplete: function () {
                         closeModal();
@@ -383,7 +466,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Trading Tips',
-                    text: '\uD83D\uDCA1 <strong>Key concepts</strong>:<br>\u2022 \uD83D\uDCC8 <strong>Supply/demand</strong> \u2014 prices swing based on local stock<br>\u2022 \uD83D\uDCC5 <strong>Seasons</strong> affect crop prices \u2014 buy grain after harvest, sell in winter<br>\u2022 \uD83C\uDFDB\uFE0F <strong>Tariffs</strong> \u2014 foreign traders pay extra in some kingdoms<br>\u2022 Higher <strong>rank</strong> = tax discount (up to 30%!)<br>\u2022 \uD83E\uDDE0 <strong>Price Memory</strong> \u2014 you recall prices from towns visited in the last 90 days'
+                    text: '\uD83D\uDCA1 <strong>Key concepts</strong>:<br>\u2022 \uD83D\uDCC8 <strong>Arbitrage</strong> \u2014 buy where prices are low, sell where they\u2019re high. Compare prices across towns!<br>\u2022 \uD83D\uDCC5 <strong>Seasons</strong> affect crop prices \u2014 buy grain after harvest, sell in winter<br>\u2022 \uD83C\uDFDB\uFE0F <strong>Taxes & tariffs</strong> \u2014 each kingdom sets trade taxes; foreign traders may pay extra tariffs on top. Higher <strong>rank</strong> reduces your tax rate (up to 30% off!)<br>\u2022 \uD83E\uDDE0 <strong>Price Memory</strong> \u2014 you recall prices from towns visited in the last 90 days. Learn trade skills to see live prices remotely!'
                 },
                 {
                     title: 'Street Trading',
@@ -402,12 +485,23 @@ window.Tutorial = (function () {
                     highlight: '#btnKingdoms',
                     onEnter: function () {
                         giveGold(200);
-                        snapshotState.licensesBeforeBuy = 0;
-                        try { snapshotState.licensesBeforeBuy = (Player.state.licenses || []).length; } catch (e) {}
+                        // Count total licenses across all kingdoms
+                        snapshotState.totalLicensesBefore = 0;
+                        try {
+                            var lics = Player.state.licenses || {};
+                            for (var kId in lics) {
+                                if (Array.isArray(lics[kId])) snapshotState.totalLicensesBefore += lics[kId].length;
+                            }
+                        } catch (e) {}
                     },
                     waitFor: function () {
                         try {
-                            return (Player.state.licenses || []).length > (snapshotState.licensesBeforeBuy || 0);
+                            var total = 0;
+                            var lics = Player.state.licenses || {};
+                            for (var kId in lics) {
+                                if (Array.isArray(lics[kId])) total += lics[kId].length;
+                            }
+                            return total > (snapshotState.totalLicensesBefore || 0);
                         } catch (e) { return false; }
                     },
                     onComplete: function () {
@@ -436,7 +530,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Buy a Skill',
-                    text: '\uD83C\uDF1F <strong>Buy any skill!</strong> Try <strong>Keen Eye</strong> (reveals prices), <strong>Charming</strong> (+25% relationships), or <strong>Haggling</strong> (better trade prices).',
+                    text: '\uD83C\uDF1F <strong>Buy any skill!</strong> Try <strong>Price Memory</strong> (remember prices from visited towns), <strong>Market Scout</strong> (see nearby town prices), or <strong>Haggling</strong> (better trade prices).',
                     waitFor: function () {
                         return getPlayerSkillCount() > (snapshotState.skillCountBefore || 0);
                     },
@@ -447,7 +541,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'XP & Leveling',
-                    text: '\uD83D\uDCC8 Earn <strong>XP</strong> from trading, jobs, and kingdom orders. There are <strong>10 levels</strong>, each granting <strong>3 SP</strong>. Invest in skills early \u2014 they compound your earnings over time!'
+                    text: '\uD83D\uDCC8 Earn <strong>XP</strong> from trading, jobs, and kingdom orders. There are <strong>15 levels</strong>, each granting <strong>4 SP</strong> (with <strong>6 bonus SP</strong> at level 15!). Invest in skills early \u2014 they compound your earnings over time!'
                 },
                 {
                     title: 'Dynasty Founder',
@@ -465,15 +559,37 @@ window.Tutorial = (function () {
                     title: 'Road Travel',
                     text: '\uD83D\uDEB6 Two ways to travel: Click the <strong>\uD83D\uDDFA\uFE0F Routes</strong> button on the bottom panel to see road connections, or <strong>right-click</strong> a town and select <strong>Travel Here</strong>. Road quality affects speed. Try the <strong>\uD83D\uDDFA\uFE0F Routes</strong> button first!',
                     highlight: '#btnRoutes',
-                    waitFor: function () { return isModalOpen(); },
+                    onEnter: function () {
+                        closeModal();
+                        snapshotState.routesOpened = false;
+                    },
+                    waitFor: function () {
+                        if (!snapshotState.routesOpened && isModalOpen()) {
+                            snapshotState.routesOpened = true;
+                        }
+                        return snapshotState.routesOpened;
+                    },
                     skipAfter: 8000
                 },
                 {
                     title: 'Travel by Routes',
-                    text: '\uD83D\uDEB6 Close the routes panel. Now <strong>right-click</strong> on a connected town and choose <strong>Travel Here</strong>. For the tutorial, we\u2019ve given you a speed boost!',
+                    text: '\uD83D\uDEB6 Now <strong>right-click</strong> on <strong>Inkwell Cross</strong> (centered in view) and choose <strong>Travel Here</strong>. Use the <strong>speed controls</strong> (press 3 or higher) to travel faster! We\u2019ve given you a tutorial speed boost.',
                     onEnter: function () {
                         closeModal();
-                        if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(10);
+                        if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(5);
+                        // Zoom to 1.5 and pan to Inkwell Cross
+                        try {
+                            if (typeof Renderer !== 'undefined') {
+                                if (Renderer.setZoom) Renderer.setZoom(1.5);
+                                var towns = Engine.getTowns ? Engine.getTowns() : [];
+                                for (var i = 0; i < towns.length; i++) {
+                                    if (towns[i].name && towns[i].name.toLowerCase().indexOf('inkwell') >= 0) {
+                                        if (Renderer.panTo) Renderer.panTo(towns[i].x, towns[i].y);
+                                        break;
+                                    }
+                                }
+                            }
+                        } catch (e) {}
                     },
                     waitFor: function () {
                         try { return Player.traveling; } catch (e) { return false; }
@@ -493,20 +609,33 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Off-Road Travel',
-                    text: '\uD83E\uDD7E <strong>Right-click anywhere</strong> on the map to travel off-road (0.25x speed, no roads needed). Try it: right-click a point <strong>near</strong> your current town and travel there, then come back.',
+                    text: '\uD83E\uDD7E You can also travel <strong>off-road</strong>! <strong>Right-click</strong> on an empty spot on the map near you and select <strong>Travel Off-road</strong>. It\u2019s 4\u00D7 slower than roads but lets you go anywhere. Use <strong>speed 5+</strong> to make it faster! Try a short off-road trip now.',
                     highlight: '#gameCanvas',
                     onEnter: function () {
-                        snapshotState.offRoadStarted = false;
+                        snapshotState.offRoadPhase = 0; // 0 = waiting to leave, 1 = traveling out, 2 = arrived out, 3 = traveling back
+                        if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(10);
                     },
                     waitFor: function () {
                         try {
-                            if (Player.traveling) {
-                                snapshotState.offRoadStarted = true;
+                            var phase = snapshotState.offRoadPhase || 0;
+                            if (phase === 0 && Player.traveling) {
+                                snapshotState.offRoadPhase = 1;
+                            } else if (phase === 1 && !Player.traveling) {
+                                snapshotState.offRoadPhase = 2;
+                                // Update text to tell them to come back
+                                var textEl = document.querySelector('.tutorial-step-text');
+                                if (textEl) {
+                                    textEl.innerHTML = '\uD83E\uDD7E Great! Now <strong>right-click</strong> on the town you came from (or any town) and select <strong>Travel Off-road</strong> to travel back. Use <strong>speed 5+</strong> to make it faster!';
+                                }
+                            } else if (phase === 2 && Player.traveling) {
+                                snapshotState.offRoadPhase = 3;
+                            } else if (phase === 3 && !Player.traveling) {
+                                return true;
                             }
-                            return snapshotState.offRoadStarted && !Player.traveling;
+                            return false;
                         } catch (e) { return false; }
                     },
-                    skipAfter: 12000
+                    skipAfter: 20000
                 },
                 {
                     title: 'Sea Travel',
@@ -528,34 +657,59 @@ window.Tutorial = (function () {
                         Player.state.thirst = 80;
                         giveItem('bread', 5);
                         giveItem('water', 3);
-                        // Add glow to hunger/thirst displays
+                        // Heavy slow-pulse glow ONLY on the Eat and Drink buttons; dim rest of ledger
                         try {
                             var style = document.createElement('style');
                             style.id = 'tutorialGlowStyle';
-                            style.textContent = '.tutorial-glow { text-shadow: 0 0 8px #ff9900, 0 0 16px #ff9900 !important; animation: tutGlow 1s ease-in-out infinite alternate; } @keyframes tutGlow { from { text-shadow: 0 0 8px #ff9900, 0 0 16px #ff9900; } to { text-shadow: 0 0 12px #ffcc00, 0 0 24px #ffcc00; } }';
+                            style.textContent =
+                                '#leftPanelBody { opacity: 0.45; transition: opacity 0.4s; }' +
+                                '#leftPanelBody .btn-supply { opacity: 1 !important; }' +
+                                '.tutorial-btn-glow {' +
+                                '  animation: tutBtnGlow 2s ease-in-out infinite alternate !important;' +
+                                '  box-shadow: 0 0 12px 4px #ff9900, 0 0 24px 8px rgba(255,153,0,0.5) !important;' +
+                                '  border-color: #ffcc00 !important;' +
+                                '  position: relative; z-index: 10; opacity: 1 !important;' +
+                                '}' +
+                                '@keyframes tutBtnGlow {' +
+                                '  0%   { box-shadow: 0 0 8px 2px #ff9900, 0 0 16px 4px rgba(255,153,0,0.3); }' +
+                                '  100% { box-shadow: 0 0 20px 8px #ffcc00, 0 0 40px 16px rgba(255,204,0,0.5); }' +
+                                '}';
                             document.head.appendChild(style);
-                            var ledger = document.getElementById('ledger') || document.getElementById('leftPanel');
-                            if (ledger) {
-                                var spans = ledger.querySelectorAll('span, div, td');
-                                for (var i = 0; i < spans.length; i++) {
-                                    var txt = spans[i].textContent.toLowerCase();
-                                    if (txt.indexOf('hunger') >= 0 || txt.indexOf('thirst') >= 0) {
-                                        spans[i].classList.add('tutorial-glow');
-                                    }
-                                }
-                            }
+                            var eatBtn = document.getElementById('btnEatUntilFull');
+                            var drinkBtn = document.getElementById('btnDrinkUntilFull');
+                            if (eatBtn) eatBtn.classList.add('tutorial-btn-glow');
+                            if (drinkBtn) drinkBtn.classList.add('tutorial-btn-glow');
                         } catch (e) {}
                         if (typeof UI !== 'undefined' && UI.update) UI.update();
                     },
                     waitFor: function () {
                         try {
-                            return Player.state.hunger > 90 || Player.state.thirst > 90;
+                            var ate = window._tutorialAteFood;
+                            var drank = window._tutorialDrankWater;
+                            // Remove glow from Eat button once they've eaten
+                            if (ate) {
+                                var eatBtn = document.getElementById('btnEatUntilFull');
+                                if (eatBtn) eatBtn.classList.remove('tutorial-btn-glow');
+                            }
+                            // Remove glow from Drink button once they've drunk
+                            if (drank) {
+                                var drinkBtn = document.getElementById('btnDrinkUntilFull');
+                                if (drinkBtn) drinkBtn.classList.remove('tutorial-btn-glow');
+                            }
+                            // Both done — un-dim ledger
+                            if (ate && drank) {
+                                var glowStyle = document.getElementById('tutorialGlowStyle');
+                                if (glowStyle) glowStyle.remove();
+                                return true;
+                            }
+                            return false;
                         } catch (e) { return false; }
                     },
                     onComplete: function () {
+                        // Cleanup any remaining glow
                         try {
-                            var glowEls = document.querySelectorAll('.tutorial-glow');
-                            for (var gi = 0; gi < glowEls.length; gi++) glowEls[gi].classList.remove('tutorial-glow');
+                            var glowEls = document.querySelectorAll('.tutorial-btn-glow');
+                            for (var gi = 0; gi < glowEls.length; gi++) glowEls[gi].classList.remove('tutorial-btn-glow');
                             var glowStyle = document.getElementById('tutorialGlowStyle');
                             if (glowStyle) glowStyle.remove();
                         } catch (e) {}
@@ -575,22 +729,6 @@ window.Tutorial = (function () {
                     onComplete: function () {
                         closeModal();
                         nextStep();
-                    },
-                    skipAfter: 8000
-                },
-                {
-                    title: 'Rest & Sleep',
-                    text: '\uD83D\uDE34 Click the <strong>\uD83D\uDE34 Rest</strong> button on the bottom panel to rest and recover energy. Resting at home is free; inns cost gold but work while traveling.',
-                    highlight: '#btnRest',
-                    onEnter: function () {
-                        snapshotState.energyBefore = 0;
-                        try { snapshotState.energyBefore = Player.state.energy || 0; } catch (e) {}
-                    },
-                    waitFor: function () {
-                        try {
-                            if (Player.state.resting) return true;
-                            return (Player.state.energy || 0) > (snapshotState.energyBefore || 0);
-                        } catch (e) { return false; }
                     },
                     skipAfter: 8000
                 }
@@ -632,7 +770,19 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Rest at Home',
-                    text: '\uD83D\uDCA4 <strong>Rest at home for free</strong> with full recovery. Better housing means faster rest times. A shack is slow, but a townhouse or manor is much quicker. Always rest at home when possible \u2014 inns cost gold!'
+                    text: '\uD83D\uDCA4 Now that you own a home, <strong>rest there for free</strong>! Click the <strong>\uD83D\uDE34 Rest</strong> button on the bottom panel. Resting at home gives full recovery at no cost. Better housing means faster rest. Inns cost gold, so always rest at home when possible!',
+                    highlight: '#btnRest',
+                    onEnter: function () {
+                        // Drain energy so rest is meaningful
+                        try { Player.state.energy = Math.min(Player.state.energy || 100, 50); } catch (e) {}
+                        window._tutorialRested = false;
+                    },
+                    waitFor: function () {
+                        try {
+                            return window._tutorialRested || Player.state.resting;
+                        } catch (e) { return false; }
+                    },
+                    skipAfter: 10000
                 }
             ]
         },
@@ -654,31 +804,56 @@ window.Tutorial = (function () {
                     title: 'Interactive Marriage',
                     text: '\uD83D\uDC8D Finding you a match...',
                     onEnter: function () {
-                        var town = Engine.findTown(Player.state.townId);
-                        var npcs = (town && town.npcs) ? town.npcs : [];
+                        var townId = Player.state.townId;
+                        var npcs = [];
+                        try { npcs = Engine.getPeople(townId) || []; } catch (e) {}
                         var rng = Engine.getRng();
                         var candidate = null;
                         for (var i = 0; i < npcs.length; i++) {
                             var idx = (i + rng.randInt(0, npcs.length - 1)) % npcs.length;
                             var npc = npcs[idx];
-                            if (npc && !npc.spouse) {
+                            if (npc && npc.alive !== false && !npc.spouseId && !npc.spouse && npc.age >= 16) {
                                 candidate = npc;
                                 break;
                             }
                         }
-                        if (!candidate && npcs.length > 0) candidate = npcs[0];
+                        if (!candidate) {
+                            // Fallback: any adult alive NPC
+                            for (var j = 0; j < npcs.length; j++) {
+                                if (npcs[j] && npcs[j].alive !== false && npcs[j].age >= 16) {
+                                    candidate = npcs[j];
+                                    break;
+                                }
+                            }
+                        }
                         if (candidate) {
-                            if (!candidate.relationships) candidate.relationships = {};
-                            candidate.relationships.player = 95;
-                            if (typeof candidate.relationship !== 'undefined') candidate.relationship = 95;
-                            snapshotState.marriageCandidate = candidate.name || 'a townsperson';
+                            // Set PLAYER-side relationship to 95
+                            if (!Player.state.relationships) Player.state.relationships = {};
+                            Player.state.relationships[candidate.id] = { level: 95, type: 'romantic' };
+                            // Also set NPC-side
+                            if (candidate.relationships) candidate.relationships.player = 95;
+                            snapshotState.marriageCandidateId = candidate.id;
+                            snapshotState.marriageCandidate = ((candidate.firstName || '') + ' ' + (candidate.lastName || '')).trim() || 'a townsperson';
                         }
                         var step = chapters[currentChapter].steps[currentStep];
                         var name = snapshotState.marriageCandidate || 'a townsperson';
-                        step.text = '\uD83D\uDC8D We\u2019ve arranged things so <strong>' + name + '</strong> is very interested in you (relationship 95)! Find them in town \u2014 click on NPCs or use <strong>\uD83D\uDC65 View Townspeople</strong> in the town panel. Once you find them, click <strong>Propose</strong>!';
+                        step.text = '\uD83D\uDC8D We\u2019ve arranged things so <strong>' + name + '</strong> is very interested in you (relationship 95)! Find them in town \u2014 click on NPCs or use <strong>\uD83D\uDC65 View Townspeople</strong> in the town panel. Once you find them, click <strong>\uD83D\uDC8D Propose Marriage</strong>!';
+                        // Periodically highlight the Propose button when it appears
+                        snapshotState._proposeGlowTimer = setInterval(function () {
+                            var btn = document.getElementById('btnPropose');
+                            if (btn && !btn.classList.contains('tutorial-highlight')) {
+                                btn.classList.add('tutorial-highlight');
+                            }
+                        }, 500);
                     },
                     waitFor: function () {
-                        try { return Player.state.spouse != null; } catch (e) { return false; }
+                        try { return Player.state.weddingPlan != null || Player.state.spouseId != null; } catch (e) { return false; }
+                    },
+                    onComplete: function () {
+                        if (snapshotState._proposeGlowTimer) { clearInterval(snapshotState._proposeGlowTimer); snapshotState._proposeGlowTimer = null; }
+                        var btn = document.getElementById('btnPropose');
+                        if (btn) btn.classList.remove('tutorial-highlight');
+                        nextStep();
                     },
                     skipAfter: 12000
                 },
@@ -1217,13 +1392,39 @@ window.Tutorial = (function () {
         var btnNext = document.getElementById('tutBtnNext');
         if (btnNext) {
             if (hasWaitFor) {
-                btnNext.disabled = true;
-                btnNext.style.opacity = '0.5';
-                btnNext.style.cursor = 'not-allowed';
-                btnNext.textContent = '\u23F3 Complete the action above...';
+                // Check if this step was already completed
+                var stepKey = currentChapter + ':' + currentStep;
+                if (completedSteps[stepKey]) {
+                    btnNext.dataset.waiting = 'false';
+                    btnNext.style.opacity = '1';
+                    btnNext.style.cursor = 'pointer';
+                    btnNext.textContent = '\u2705 Completed \u2014 Continue \u2192';
+                    btnNext.style.background = 'linear-gradient(135deg, #2d5a1d, #3a7a24)';
+                    btnNext.style.borderColor = '#5aad35';
+                } else {
+                    btnNext.dataset.waiting = 'true';
+                    btnNext.style.opacity = '0.5';
+                    btnNext.style.cursor = 'not-allowed';
+                    btnNext.textContent = '\u23F3 Complete the action above...';
+                }
             }
             btnNext.addEventListener('click', function () {
-                if (btnNext.disabled) return;
+                if (btnNext.dataset.waiting === 'true') {
+                    waitingClickCount++;
+                    if (waitingClickCount >= 3) {
+                        // Convert to skip button after 3 frustrated clicks
+                        btnNext.dataset.waiting = 'false';
+                        btnNext.disabled = false;
+                        updateNextButton('Skip this step \u2192', false);
+                    }
+                    return;
+                }
+                waitingClickCount = 0;
+                // Mark this interactive step as completed (whether Done or Skip)
+                var step = chapters[currentChapter] && chapters[currentChapter].steps[currentStep];
+                if (step && typeof step.waitFor === 'function') {
+                    completedSteps[currentChapter + ':' + currentStep] = true;
+                }
                 if (doneAdvanceFn) {
                     if (doneTimeout) { clearTimeout(doneTimeout); doneTimeout = null; }
                     var fn = doneAdvanceFn;
@@ -1248,8 +1449,21 @@ window.Tutorial = (function () {
     function clearHighlights() {
         for (var i = 0; i < highlightedEls.length; i++) {
             highlightedEls[i].classList.remove('tutorial-highlight');
+            // Remove click-to-clear handler if attached
+            if (highlightedEls[i]._tutHighlightHandler) {
+                highlightedEls[i].removeEventListener('click', highlightedEls[i]._tutHighlightHandler);
+                delete highlightedEls[i]._tutHighlightHandler;
+            }
         }
         highlightedEls = [];
+        // Remove greyed-out state from bottom bar buttons
+        var dimmed = document.querySelectorAll('#bottomBar .btn-action.tutorial-dimmed');
+        for (var j = 0; j < dimmed.length; j++) {
+            dimmed[j].classList.remove('tutorial-dimmed');
+            dimmed[j].style.opacity = '';
+            dimmed[j].style.pointerEvents = '';
+            dimmed[j].style.filter = '';
+        }
     }
 
     function highlightElement(selector) {
@@ -1257,9 +1471,34 @@ window.Tutorial = (function () {
         if (!selector) return;
         try {
             var els = document.querySelectorAll(selector);
+            var isBottomBarBtn = false;
             for (var i = 0; i < els.length; i++) {
                 els[i].classList.add('tutorial-highlight');
                 highlightedEls.push(els[i]);
+                if (els[i].closest && els[i].closest('#bottomBar')) isBottomBarBtn = true;
+            }
+            // Grey out all other bottom bar buttons when highlighting one
+            if (isBottomBarBtn) {
+                var allBtns = document.querySelectorAll('#bottomBar .btn-action');
+                for (var j = 0; j < allBtns.length; j++) {
+                    if (!allBtns[j].classList.contains('tutorial-highlight')) {
+                        allBtns[j].classList.add('tutorial-dimmed');
+                        allBtns[j].style.opacity = '0.3';
+                        allBtns[j].style.filter = 'grayscale(100%)';
+                    }
+                }
+                // Clear glow + grey as soon as the highlighted button is clicked
+                for (var k = 0; k < els.length; k++) {
+                    (function (el) {
+                        var handler = function () {
+                            el.removeEventListener('click', handler);
+                            clearHighlights();
+                        };
+                        el.addEventListener('click', handler);
+                        // Store for cleanup if step changes before click
+                        el._tutHighlightHandler = handler;
+                    })(els[k]);
+                }
             }
         } catch (e) {
             // Invalid selector, ignore
@@ -1294,7 +1533,7 @@ window.Tutorial = (function () {
         // Auto-move panel if it overlaps a modal
         avoidOverlap();
 
-        // Start watching if step has waitFor
+        // Start watching if step has waitFor (and not already completed)
         if (typeof step.waitFor === 'function') {
             startWatching(step.waitFor, step.onComplete || null);
         }

@@ -689,7 +689,7 @@ window.UI = (function () {
 
                 // Rest button — always visible; grey out when traveling
                 const btnRest = document.getElementById('btnRest');
-                if (btnRest) {
+                if (btnRest && !btnRest.classList.contains('tutorial-dimmed')) {
                     btnRest.style.display = '';
                     if (Player.traveling) {
                         btnRest.style.opacity = '0.4';
@@ -1975,7 +1975,7 @@ window.UI = (function () {
 
                     // Propose button
                     if (rel.level >= 60 && !person.spouseId && !playerSpouseId) {
-                        html += `<button class="btn-medieval" onclick="UI.proposeTo('${person.id}')" style="font-size:0.75rem;padding:5px 10px;background:rgba(200,150,50,0.2);border-color:rgba(200,150,50,0.5);margin-top:4px;">
+                        html += `<button id="btnPropose" class="btn-medieval" onclick="UI.proposeTo('${person.id}')" style="font-size:0.75rem;padding:5px 10px;margin-top:4px;">
                             💍 Propose Marriage</button>`;
                     } else if (rel.level < 60 && !person.spouseId && !playerSpouseId) {
                         html += `<div class="text-dim" style="font-size:0.7rem;margin-top:4px;">💍 Propose requires relationship 60+</div>`;
@@ -2053,6 +2053,51 @@ window.UI = (function () {
     //  MODAL DIALOGS
     // ═══════════════════════════════════════════════════════════
 
+    var _modalDragState = null;
+
+    function _makeModalDraggable(dlgEl) {
+        var header = dlgEl.querySelector('.modal-header');
+        if (!header) return;
+        // Avoid re-binding if already draggable
+        if (header._dragBound) return;
+        header._dragBound = true;
+        header.style.cursor = 'grab';
+
+        header.addEventListener('mousedown', function (e) {
+            if (e.target.tagName === 'BUTTON') return;
+            e.preventDefault();
+            var rect = dlgEl.getBoundingClientRect();
+            _modalDragState = {
+                el: dlgEl,
+                startMouseX: e.clientX,
+                startMouseY: e.clientY,
+                startLeft: rect.left,
+                startTop: rect.top
+            };
+            header.style.cursor = 'grabbing';
+        });
+    }
+
+    // Global listeners for modal dragging (once)
+    document.addEventListener('mousemove', function (e) {
+        if (!_modalDragState) return;
+        var dx = e.clientX - _modalDragState.startMouseX;
+        var dy = e.clientY - _modalDragState.startMouseY;
+        var dlg = _modalDragState.el;
+        dlg.style.position = 'fixed';
+        dlg.style.left = (_modalDragState.startLeft + dx) + 'px';
+        dlg.style.top = (_modalDragState.startTop + dy) + 'px';
+        dlg.style.transform = 'none';
+        dlg.style.margin = '0';
+    });
+
+    document.addEventListener('mouseup', function () {
+        if (!_modalDragState) return;
+        var header = _modalDragState.el.querySelector('.modal-header');
+        if (header) header.style.cursor = 'grab';
+        _modalDragState = null;
+    });
+
     function openModal(title, bodyHtml, footerHtml) {
         // Block opening non-bankruptcy modals while bankruptcy decision pending
         if (_isBankruptcyBlocked()) {
@@ -2070,12 +2115,30 @@ window.UI = (function () {
         if (mb) mb.innerHTML = bodyHtml;
         if (mf) mf.innerHTML = footerHtml || '';
         if (mo) mo.classList.remove('hidden');
+
+        // Reset position and make draggable
+        var dlg = document.getElementById('modalDialog');
+        if (dlg) {
+            dlg.style.transform = '';
+            dlg.style.left = '';
+            dlg.style.top = '';
+            _makeModalDraggable(dlg);
+        }
     }
 
     function closeModal() {
         if (_isBankruptcyBlocked()) return;
         const mo = el.modalOverlay || document.getElementById('modalOverlay');
         if (mo) mo.classList.add('hidden');
+        // Reset drag position so next modal opens centered
+        var dlg = document.getElementById('modalDialog');
+        if (dlg) {
+            dlg.style.position = '';
+            dlg.style.left = '';
+            dlg.style.top = '';
+            dlg.style.transform = '';
+            dlg.style.margin = '';
+        }
         // Flush trade batch summary when trade dialog closes
         if (tradeDialogOpen && tradeBatch.length > 0) {
             const buys = tradeBatch.filter(t => t.type === 'buy');
@@ -5090,63 +5153,189 @@ window.UI = (function () {
         const town = Engine.getTown(townId);
         const townName = town ? town.name : 'Unknown';
 
-        // Sort: alive first, then by occupation, then alphabetically
-        const sorted = people.filter(p => p.alive !== false).sort((a, b) => {
-            if (a.occupation !== b.occupation) return (a.occupation || 'z').localeCompare(b.occupation || 'z');
-            return (a.firstName || '').localeCompare(b.firstName || '');
+        // Store for re-render
+        window._townPeopleData = { townId: townId, people: people, townName: townName };
+        _renderTownPeople('name-asc', 'all', '');
+    }
+
+    function _renderTownPeople(sortBy, filterBy, searchQuery, page) {
+        var data = window._townPeopleData;
+        if (!data) return;
+        var people = data.people;
+        var townName = data.townName;
+        page = page || 0;
+        window._townPeoplePage = page;
+
+        // Filter alive only
+        var filtered = people.filter(function (p) { return p.alive !== false; });
+        var totalAlive = filtered.length;
+
+        // Apply filter
+        if (filterBy === 'known') {
+            filtered = filtered.filter(function (p) {
+                var rel = Player.getRelationship ? Player.getRelationship(p.id) : null;
+                return rel && rel.level > 0;
+            });
+        } else if (filterBy === 'friends') {
+            filtered = filtered.filter(function (p) {
+                var rel = Player.getRelationship ? Player.getRelationship(p.id) : null;
+                return rel && rel.level >= 20;
+            });
+        } else if (filterBy === 'close-friends') {
+            filtered = filtered.filter(function (p) {
+                var rel = Player.getRelationship ? Player.getRelationship(p.id) : null;
+                return rel && rel.level >= 60;
+            });
+        } else if (filterBy === 'employed-by-me') {
+            filtered = filtered.filter(function (p) { return p.employerId === 'player'; });
+        } else if (filterBy === 'unmarried') {
+            filtered = filtered.filter(function (p) { return !p.spouse && !p.spouseId && p.age >= 16; });
+        } else if (filterBy === 'merchants') {
+            filtered = filtered.filter(function (p) { return p.occupation === 'merchant' || p.occupation === 'trader'; });
+        } else if (filterBy === 'nobles') {
+            filtered = filtered.filter(function (p) { return p.occupation === 'noble' || p.occupation === 'lord' || p.occupation === 'royal'; });
+        } else if (filterBy === 'elite-merchants') {
+            filtered = filtered.filter(function (p) { return p.isEliteMerchant || p.eliteMerchant || (p.gold && p.gold > 500 && (p.occupation === 'merchant' || p.occupation === 'trader')); });
+        } else if (filterBy === 'workers') {
+            filtered = filtered.filter(function (p) { return p.occupation === 'laborer' || p.occupation === 'craftsman' || p.occupation === 'artisan' || p.occupation === 'worker'; });
+        } else if (filterBy === 'unemployed') {
+            filtered = filtered.filter(function (p) { return !p.occupation || p.occupation === 'none' || p.occupation === 'unemployed'; });
+        } else if (filterBy === 'adults') {
+            filtered = filtered.filter(function (p) { return p.age >= 16; });
+        } else if (filterBy === 'children') {
+            filtered = filtered.filter(function (p) { return p.age < 16; });
+        } else if (filterBy === 'male') {
+            filtered = filtered.filter(function (p) { return p.sex === 'M'; });
+        } else if (filterBy === 'female') {
+            filtered = filtered.filter(function (p) { return p.sex === 'F'; });
+        }
+
+        // Apply search
+        if (searchQuery) {
+            var q = searchQuery.toLowerCase();
+            filtered = filtered.filter(function (p) {
+                return ((p.firstName || '') + ' ' + (p.lastName || '')).toLowerCase().indexOf(q) >= 0;
+            });
+        }
+
+        // Sort
+        filtered.sort(function (a, b) {
+            if (sortBy === 'name-asc') {
+                return (a.firstName || '').localeCompare(b.firstName || '');
+            } else if (sortBy === 'name-desc') {
+                return (b.firstName || '').localeCompare(a.firstName || '');
+            } else if (sortBy === 'age-asc') {
+                return (a.age || 0) - (b.age || 0);
+            } else if (sortBy === 'age-desc') {
+                return (b.age || 0) - (a.age || 0);
+            } else if (sortBy === 'relationship') {
+                var ra = Player.getRelationship ? Player.getRelationship(a.id) : { level: 0 };
+                var rb = Player.getRelationship ? Player.getRelationship(b.id) : { level: 0 };
+                return (rb.level || 0) - (ra.level || 0);
+            } else if (sortBy === 'occupation') {
+                return (a.occupation || 'z').localeCompare(b.occupation || 'z');
+            } else if (sortBy === 'gold') {
+                return (b.gold || 0) - (a.gold || 0);
+            }
+            return 0;
         });
 
-        // Group by occupation
-        const groups = {};
-        for (const p of sorted) {
-            const occ = p.occupation || 'none';
-            if (!groups[occ]) groups[occ] = [];
-            groups[occ].push(p);
+        // Pagination
+        var perPage = 100;
+        var totalPages = Math.ceil(filtered.length / perPage);
+        if (page >= totalPages) page = Math.max(0, totalPages - 1);
+        var startIdx = page * perPage;
+        var pageItems = filtered.slice(startIdx, startIdx + perPage);
+
+        var html = '<div style="max-height:520px;overflow-y:auto;">';
+
+        // Controls bar
+        html += '<div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;align-items:center;">';
+        html += '<input type="text" id="people-search" placeholder="Search name..." value="' + (searchQuery || '').replace(/"/g, '&quot;') + '" oninput="UI._reTownPeople()" style="flex:1;min-width:100px;padding:5px 8px;background:rgba(0,0,0,0.3);border:1px solid rgba(200,170,100,0.3);color:var(--text);border-radius:4px;font-size:0.78rem;">';
+        html += '<select id="people-sort" onchange="UI._reTownPeople()" style="padding:5px;background:rgba(0,0,0,0.4);border:1px solid rgba(200,170,100,0.3);color:var(--text);border-radius:4px;font-size:0.75rem;">';
+        var sorts = [['name-asc','Name A→Z'],['name-desc','Name Z→A'],['relationship','Relationship ↓'],['age-asc','Age ↑'],['age-desc','Age ↓'],['occupation','Occupation'],['gold','Wealth ↓']];
+        for (var si = 0; si < sorts.length; si++) {
+            html += '<option value="' + sorts[si][0] + '"' + (sortBy === sorts[si][0] ? ' selected' : '') + '>' + sorts[si][1] + '</option>';
         }
-
-        let html = `<div style="max-height:500px;overflow-y:auto;">`;
-
-        // Filter bar
-        html += `<div style="margin-bottom:8px;">
-            <input type="text" id="people-search" placeholder="Search by name..."
-                oninput="UI.filterTownPeople()"
-                style="width:100%;padding:6px 10px;background:rgba(0,0,0,0.3);border:1px solid rgba(200,170,100,0.3);color:var(--text);border-radius:4px;font-size:0.8rem;">
-        </div>`;
-
-        html += `<div id="people-list">`;
-        for (const [occ, ppl] of Object.entries(groups)) {
-            const occInfo = OCCUPATIONS[occ.toUpperCase()] || { name: capitalize(occ) };
-            html += `<div class="detail-section" style="margin-bottom:6px;">
-                <h3 style="font-size:0.8rem;margin-bottom:4px;">${occInfo.name || capitalize(occ)} (${ppl.length})</h3>`;
-
-            for (const p of ppl) {
-                const age = p.age || '?';
-                const sex = p.sex === 'M' ? '♂' : p.sex === 'F' ? '♀' : '?';
-                const isChildAge = p.age < 14;
-                const employed = p.employerId ? (p.employerId === 'player' ? ' ⭐' : ' 👤') : '';
-                html += `<div class="person-list-row" onclick="UI.showPersonDetail(Engine.getPerson('${p.id}'))"
-                    style="cursor:pointer;padding:4px 8px;border-bottom:1px solid rgba(200,170,100,0.1);display:flex;justify-content:space-between;align-items:center;"
-                    data-name="${(p.firstName || '').toLowerCase()} ${(p.lastName || '').toLowerCase()}">
-                    <span style="font-size:0.8rem;">${sex} ${p.firstName || ''} ${p.lastName || ''}${employed}${isChildAge ? ' 👶' : ''}</span>
-                    <span class="text-dim" style="font-size:0.7rem;">Age ${age}</span>
-                </div>`;
-            }
-            html += `</div>`;
+        html += '</select>';
+        html += '<select id="people-filter" onchange="UI._reTownPeople()" style="padding:5px;background:rgba(0,0,0,0.4);border:1px solid rgba(200,170,100,0.3);color:var(--text);border-radius:4px;font-size:0.75rem;">';
+        var filters = [
+            ['all','All'],['known','Known'],['friends','Friends (20+)'],['close-friends','Close Friends (60+)'],
+            ['employed-by-me','My Workers'],['unmarried','Unmarried Adults'],
+            ['nobles','Nobles'],['merchants','Merchants'],['elite-merchants','Elite Merchants'],
+            ['workers','Workers/Crafters'],['unemployed','Unemployed'],
+            ['adults','Adults'],['children','Children'],
+            ['male','Male'],['female','Female']
+        ];
+        for (var fi = 0; fi < filters.length; fi++) {
+            html += '<option value="' + filters[fi][0] + '"' + (filterBy === filters[fi][0] ? ' selected' : '') + '>' + filters[fi][1] + '</option>';
         }
-        html += `</div></div>`;
+        html += '</select>';
+        html += '</div>';
 
-        openModal(`👥 People of ${townName}`, html, '');
+        // Results count + pagination
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">';
+        html += '<span style="font-size:0.72rem;color:#888;">Showing ' + (startIdx + 1) + '-' + Math.min(startIdx + perPage, filtered.length) + ' of ' + filtered.length + ' (total: ' + totalAlive + ')</span>';
+        if (totalPages > 1) {
+            html += '<span style="font-size:0.72rem;">';
+            if (page > 0) html += '<button class="btn-medieval" style="font-size:0.65rem;padding:2px 6px;" onclick="UI._reTownPeoplePage(' + (page - 1) + ')">← Prev</button> ';
+            html += 'Page ' + (page + 1) + '/' + totalPages;
+            if (page < totalPages - 1) html += ' <button class="btn-medieval" style="font-size:0.65rem;padding:2px 6px;" onclick="UI._reTownPeoplePage(' + (page + 1) + ')">Next →</button>';
+            html += '</span>';
+        }
+        html += '</div>';
+
+        html += '<div id="people-list">';
+        for (var i = 0; i < pageItems.length; i++) {
+            var p = pageItems[i];
+            var age = p.age || '?';
+            var sex = p.sex === 'M' ? '♂' : p.sex === 'F' ? '♀' : '?';
+            var isChildAge = p.age < 14;
+            var employed = p.employerId ? (p.employerId === 'player' ? ' ⭐' : ' 👤') : '';
+            var rel = Player.getRelationship ? Player.getRelationship(p.id) : { level: 0, type: 'stranger' };
+            var relLevel = rel.level || 0;
+            var relColor = relLevel >= 70 ? '#55a868' : relLevel >= 40 ? '#ccb974' : relLevel > 0 ? '#aaa' : '#666';
+            var relText = relLevel > 0 ? relLevel : '';
+            var occLabel = p.occupation ? capitalize(p.occupation) : 'None';
+
+            html += '<div class="person-list-row" onclick="UI.showPersonDetail(Engine.getPerson(\'' + p.id + '\'))" style="cursor:pointer;padding:5px 8px;border-bottom:1px solid rgba(200,170,100,0.1);display:flex;justify-content:space-between;align-items:center;">';
+            html += '<span style="font-size:0.8rem;">' + sex + ' ' + (p.firstName || '') + ' ' + (p.lastName || '') + employed + (isChildAge ? ' 👶' : '') + '</span>';
+            html += '<span style="font-size:0.7rem;display:flex;gap:8px;align-items:center;">';
+            html += '<span class="text-dim">' + occLabel + '</span>';
+            html += '<span class="text-dim">Age ' + age + '</span>';
+            if (relText) html += '<span style="color:' + relColor + ';">❤ ' + relText + '</span>';
+            html += '</span></div>';
+        }
+        if (pageItems.length === 0) {
+            html += '<div class="text-dim" style="padding:12px;text-align:center;">No people match your filters.</div>';
+        }
+        html += '</div></div>';
+
+        openModal('👥 People of ' + townName, html, '');
+    }
+
+    function _reTownPeople() {
+        var sortEl = document.getElementById('people-sort');
+        var filterEl = document.getElementById('people-filter');
+        var searchEl = document.getElementById('people-search');
+        var sortBy = sortEl ? sortEl.value : 'name-asc';
+        var filterBy = filterEl ? filterEl.value : 'all';
+        var searchQuery = searchEl ? searchEl.value : '';
+        _renderTownPeople(sortBy, filterBy, searchQuery, 0);
+    }
+
+    function _reTownPeoplePage(page) {
+        var sortEl = document.getElementById('people-sort');
+        var filterEl = document.getElementById('people-filter');
+        var searchEl = document.getElementById('people-search');
+        var sortBy = sortEl ? sortEl.value : 'name-asc';
+        var filterBy = filterEl ? filterEl.value : 'all';
+        var searchQuery = searchEl ? searchEl.value : '';
+        _renderTownPeople(sortBy, filterBy, searchQuery, page);
     }
 
     function filterTownPeople() {
-        const search = document.getElementById('people-search');
-        if (!search) return;
-        const query = search.value.toLowerCase();
-        const rows = document.querySelectorAll('.person-list-row');
-        for (const row of rows) {
-            const name = row.getAttribute('data-name') || '';
-            row.style.display = name.includes(query) ? '' : 'none';
-        }
+        _reTownPeople();
     }
 
     function askTavernFoodTrends() {
@@ -17343,8 +17532,21 @@ window.UI = (function () {
                 var dest = Engine.findTown(Player.travelDestination);
                 destText.textContent = '\uD83D\uDCCD To: ' + (dest ? dest.name : 'Unknown');
             } else if (Player.travelDestCoords) {
-                destText.textContent = '\uD83D\uDCCD To: Wilderness location';
-            } else {
+                // Check if destination is near a town
+                var nearTownName = null;
+                try {
+                    var towns = Engine.getTowns();
+                    var dc = Player.travelDestCoords;
+                    for (var ti = 0; ti < towns.length; ti++) {
+                        var td = Math.hypot(towns[ti].x - dc.x, towns[ti].y - dc.y);
+                        if (td < (CONFIG.TILE_SIZE || 32) * 4) {
+                            nearTownName = towns[ti].name;
+                            break;
+                        }
+                    }
+                } catch (e) {}
+                destText.textContent = '\uD83D\uDCCD To: ' + (nearTownName || 'Wilderness location');
+            }else {
                 destText.textContent = '\uD83D\uDCCD Traveling...';
             }
         }
@@ -18256,6 +18458,8 @@ window.UI = (function () {
         framePerson,
         showTownPeople,
         filterTownPeople,
+        _reTownPeople,
+        _reTownPeoplePage,
         // Toll Routes
         showTollRoutesPanel,
         changeTollRate,

@@ -814,10 +814,10 @@ window.Game = (function () {
     }
 
     function onKeyDown(e) {
-        input.keys[e.key] = true;
-
         // Skip if typing in input/select
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+
+        input.keys[e.key] = true;
 
         // Ctrl+S to save (quick save to last slot, or show picker)
         if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
@@ -1104,9 +1104,14 @@ window.Game = (function () {
 
             items.push({ icon: '👁', label: 'View Details', action: `UI.showTownDetail(Engine.getTown('${town.id}'))` });
             if (!isHere) {
-                items.push({ icon: '🗺️', label: 'Travel Here...', action: `UI.openTravelOptions('${town.id}')` });
+                // Road travel options only available when in a town (not mid-travel/offroad)
+                if (Player.townId && !Player.traveling) {
+                    items.push({ icon: '🗺️', label: 'Travel Here...', action: `UI.openTravelOptions('${town.id}')` });
+                }
+                // Offroad travel always available
+                items.push({ icon: '🥾', label: 'Travel Off-road to ' + town.name, action: 'UI.confirmFreeTravel(' + town.x + ',' + town.y + ')' });
                 items.push({ icon: '🐴', label: 'Send Caravan', action: `UI.openCaravanDialog()` });
-            } else {
+            }else {
                 items.push({ icon: '📊', label: 'Trade', action: 'UI.openTradeDialog()' });
                 items.push({ icon: '🏗️', label: 'Build', action: 'UI.openBuildDialog()' });
                 items.push({ icon: '👥', label: 'Hire Workers', action: 'UI.openHireDialog()' });
@@ -1119,6 +1124,17 @@ window.Game = (function () {
             }
         } else if (hit.type === 'road') {
             items.push({ icon: '👁', label: 'View Road Info', action: 'void(0)' });
+            // Offroad travel to this point on the road
+            if (typeof Player !== 'undefined') {
+                var roadWorldCoords = Renderer.screenToWorld(x, y);
+                if (roadWorldCoords) {
+                    items.push({
+                        icon: '🥾',
+                        label: Player.traveling ? 'Go Off-road Here (Leave Route)' : 'Travel Here (Off-road)',
+                        action: 'UI.confirmFreeTravel(' + roadWorldCoords.x + ',' + roadWorldCoords.y + ')'
+                    });
+                }
+            }
         } else {
             items.push({ icon: '🗺️', label: 'Map Overview', action: 'UI.openMapView()' });
             // Free travel: "Travel Here" when right-clicking empty map (works while traveling too)
@@ -1646,7 +1662,7 @@ window.Game = (function () {
 
             // 3. Game metadata
             debugData.meta = {
-                gameVersion: 'v0.44.1',
+                gameVersion: 'v0.52.0',
                 saveVersion: 3,
                 timestamp: new Date().toISOString(),
                 userAgent: navigator.userAgent,

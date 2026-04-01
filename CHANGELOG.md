@@ -4,6 +4,43 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.52.0] - 2026-04-01
+
+### Added
+- Dynamic inn/tavern pricing based on town prosperity and category (inn 3-15g, tavern 4-20g)
+- Tavern vs inn differentiation: taverns cost more, recover less energy, but boost relationship with 2-4 random NPCs
+- Townspeople view: 15 filters (friends, nobles, elite merchants, etc.), 7 sorts, 100/page pagination
+- Completed step tracking in tutorial (green checkmark for already-done steps)
+- Skip-after-3-clicks: frustrated clicking on waiting button converts to skip
+- Bottom panel button grey-out during tutorial highlights
+- Per-button eat/drink glow removal in tutorial
+- Draggable modal dialogs (drag by header)
+- Propose Marriage button glows during marriage tutorial step
+- Courtship daily limit: 2 actions per NPC per day
+- Rest at Home tutorial step (moved after Buy a Home)
+
+### Changed
+- Top bar always interactive (z-index 2000, above modals)
+- Right panel interactive alongside modals (z-index 1600)
+- Modal overlay allows click-through to panels beneath
+- Toasts render above all panels and modals (z-index 10000)
+- WASD/keyboard shortcuts ignored when typing in input fields
+- Tutorial "Travel by Routes" auto-pans camera to Inkwell Cross
+- Off-road travel shows nearby town name instead of "Wilderness location"
+- "Travel Here..." option hidden when player is already traveling
+- Propose Marriage button styled consistently with other buttons
+- Tutorial marriage detection: recognizes wedding plan (not just spouse)
+
+### Fixed
+- Rest button appearing different color when tutorial dims bottom panel
+- Talk button glow persisting after tutorial step completed/skipped
+- Trade Licenses tutorial treating licenses object as array
+- Buy a Skill suggesting keen_eye (player starts with it)
+- Road Travel tutorial showing "done" prematurely due to modal detection
+- Marriage tutorial not finding NPCs (used town.npcs instead of Engine.getPeople)
+- Marriage tutorial not setting player-side relationship
+- Marriage tutorial using nonexistent candidate.name property
+
 ## [0.51.0] - 2026-04-01
 
 ### Added

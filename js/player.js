@@ -9011,6 +9011,15 @@
             return { success: false, message: 'This person will never speak to you again.' };
         }
 
+        // Limit to 2 courtship actions per NPC per day
+        var today = (typeof Engine !== 'undefined' && Engine.getDay) ? Engine.getDay() : 0;
+        if (!player._dateActionsToday) player._dateActionsToday = {};
+        var key = personId + '_' + today;
+        var count = player._dateActionsToday[key] || 0;
+        if (count >= 2) {
+            return { success: false, message: 'You can only court someone twice per day. Try again tomorrow.' };
+        }
+
         const activity = (typeof DATING_ACTIVITIES !== 'undefined') ? DATING_ACTIVITIES.find(a => a.id === activityId) : null;
         if (!activity) return { success: false, message: 'Unknown activity.' };
 
@@ -9023,6 +9032,13 @@
         // Check cost
         if (player.gold < activity.cost) {
             return { success: false, message: `Need ${activity.cost}g (have ${player.gold}g).` };
+        }
+
+        // Track daily courtship count
+        player._dateActionsToday[key] = count + 1;
+        // Clean up old day entries
+        for (var dk in player._dateActionsToday) {
+            if (!dk.endsWith('_' + today)) delete player._dateActionsToday[dk];
         }
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.go_on_date || 15);
@@ -23086,6 +23102,24 @@
         tickEnergy();
     }
 
+    function getLodgingCost(type) {
+        var town = Engine.findTown(player.townId);
+        var prosperity = (town && town.prosperity) || 50;
+        var catMult = { village: 0.5, town: 1.0, city: 1.8, capital_city: 3.0 };
+        var cat = (town && town.category) || 'town';
+        var cm = catMult[cat] || 1.0;
+        // prosperity 0-100 maps to 0.5-1.5 multiplier
+        var pm = 0.5 + (prosperity / 100);
+        if (type === 'inn_room') {
+            // Base 3g, range 3-15g
+            return Math.max(3, Math.min(15, Math.round(3 * cm * pm)));
+        } else if (type === 'tavern') {
+            // Base 4g, range 4-20g
+            return Math.max(4, Math.min(20, Math.round(4 * cm * pm)));
+        }
+        return 0;
+    }
+
     function getRestEnergyRate(locationId) {
         var rate = ENERGY_CONFIG.REST_ENERGY_PER_TICK[locationId] || ENERGY_CONFIG.REST_ENERGY_PER_TICK.outside;
         // Wilderness Survival: +50% rest while traveling
@@ -23252,9 +23286,10 @@
                     options.push({
                         id: 'tavern',
                         name: '🍻 Tavern',
-                        cost: 2,
+                        cost: getLodgingCost('tavern'),
                         energyPerTick: getRestEnergyRate('tavern'),
                         risks: [],
+                        desc: 'Socialize while you rest — meet locals!',
                     });
                 }
             }
@@ -23265,7 +23300,7 @@
             options.push({
                 id: 'inn_room',
                 name: '🏨 Inn Room',
-                cost: 3,
+                cost: getLodgingCost('inn_room'),
                 energyPerTick: getRestEnergyRate('inn_room'),
                 risks: [],
             });
@@ -23301,12 +23336,12 @@
 
         // Handle costs (only in-town lodging)
         if (locationId === 'inn_room') {
-            var innCost = 3;
+            var innCost = getLodgingCost('inn_room');
             if (player.gold < innCost) return { success: false, message: 'Need ' + innCost + 'g for an inn room.' };
             player.gold -= innCost;
             player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + innCost;
         } else if (locationId === 'tavern') {
-            var tavCost = 2;
+            var tavCost = getLodgingCost('tavern');
             if (player.gold < tavCost) return { success: false, message: 'Need ' + tavCost + 'g for a tavern room.' };
             player.gold -= tavCost;
             player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + tavCost;
@@ -23407,6 +23442,28 @@
                 player.illnesses.push({ type: 'cold', severity: 'mild', dayOccurred: Engine.getDay(), treated: false });
                 messages.push('🤧 You caught a cold while camping.');
             }
+        }
+
+        // Tavern socializing — boost relationships with random locals
+        if (locationId === 'tavern' && player.townId) {
+            try {
+                var rngTav = Engine.getRng();
+                var townNpcs = Engine.getPeople(player.townId);
+                if (townNpcs && townNpcs.length > 0) {
+                    var alive = townNpcs.filter(function(n) { return n.alive !== false && n.age >= 14; });
+                    if (alive.length > 0) {
+                        var numToMeet = rngTav.randInt(2, Math.min(4, alive.length));
+                        var shuffled = rngTav.shuffle(alive.slice());
+                        var metNames = [];
+                        for (var ti = 0; ti < numToMeet; ti++) {
+                            var boost = rngTav.randInt(2, 5);
+                            modifyRelationship(shuffled[ti].id, boost);
+                            metNames.push((shuffled[ti].firstName || 'someone'));
+                        }
+                        messages.push('🍻 Socialized with ' + metNames.join(', ') + ' at the tavern!');
+                    }
+                }
+            } catch (e) {}
         }
 
         var icon = isTravelRest ? '🏕️' : isRoadsideRest ? '🌙' : locationId === 'outside' ? '🌙' : locationId === 'inn_room' ? '🏨' : locationId === 'tavern' ? '🍻' : locationId === 'barracks' ? '⚔️' : '🏠';
