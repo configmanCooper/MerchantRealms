@@ -772,10 +772,11 @@ window.UI = (function () {
         if (!el.quickInventory || !Player.inventory) return;
         const entries = Object.entries(Player.inventory).filter(([, qty]) => qty > 0);
         entries.sort((a, b) => b[1] - a[1]);
-        const top5 = entries.slice(0, 5);
+        const maxItems = 10;
+        const topItems = entries.slice(0, maxItems);
 
         let html = '';
-        for (const [resId, qty] of top5) {
+        for (const [resId, qty] of topItems) {
             const res = findResource(resId);
             const icon = res ? res.icon : '📦';
             const name = res ? res.name : resId;
@@ -8867,12 +8868,12 @@ window.UI = (function () {
                 if (!isMember) {
                     html += '<div style="background:rgba(255,215,0,0.08);border:1px solid #5a4a20;border-radius:4px;padding:8px;margin:6px 0;">';
                     html += '<div style="color:#d4a74a;font-size:0.9em;font-weight:bold;margin-bottom:4px;">📊 Exclusive Benefit: Daily Market Intelligence</div>';
-                    html += '<div style="color:#bbb;font-size:0.82em;line-height:1.4;">Members gain access to the guild\'s <strong>Daily Market Report</strong> — a curated list of 10 trade tips compiled by guild agents across all towns. Tips include the best prices for goods, profitable trade routes, cheapest labor markets, building costs, resource shortages, and more. A new report is generated each day. Reading the report costs a small fee of ' + (CONFIG.MERCHANTS_GUILD_REPORT_FEE || 10) + 'g.</div>';
+                    html += '<div style="color:#bbb;font-size:0.82em;line-height:1.4;">Members gain access to the guild\'s <strong>Daily Market Report</strong> — a curated list of 10 trade tips compiled by guild agents across all towns. Tips include the best prices for goods, profitable trade routes, cheapest labor markets, building costs, resource shortages, and more. A new report is generated each day. Reading the report costs a small fee of ' + (CONFIG.MERCHANTS_GUILD_REPORT_FEE || 25) + 'g.</div>';
                     html += '</div>';
                 } else {
                     // Member: show report button
                     html += '<div style="margin:6px 0;text-align:center;">';
-                    html += '<button class="btn-medieval" style="background:linear-gradient(135deg,#3a2a10,#5a4a20);border-color:#d4a74a;color:#FFD700;padding:6px 16px;" onclick="UI.openMerchantGuildReport()">📊 Read Today\'s Market Report (' + (CONFIG.MERCHANTS_GUILD_REPORT_FEE || 10) + 'g)</button>';
+                    html += '<button class="btn-medieval" style="background:linear-gradient(135deg,#3a2a10,#5a4a20);border-color:#d4a74a;color:#FFD700;padding:6px 16px;" onclick="UI.openMerchantGuildReport()">📊 Read Today\'s Market Report (' + (CONFIG.MERCHANTS_GUILD_REPORT_FEE || 25) + 'g)</button>';
                     html += '</div>';
                 }
             }
@@ -10008,9 +10009,11 @@ window.UI = (function () {
             const recentTips = tipLog.slice(-10).reverse();
             for (const tip of recentTips) {
                 const daysAgo = currentDay - (tip.day || 0);
+                const daysLeft = 30 - daysAgo;
                 const ageText = daysAgo <= 0 ? 'today' : daysAgo + 'd ago';
+                const expiryText = daysLeft <= 5 ? ' · expires in ' + daysLeft + 'd' : '';
                 const freshClass = daysAgo <= 3 ? 'color:#c4a35a;' : daysAgo <= 10 ? 'color:#aaa;' : 'color:#777;';
-                html += '<div style="margin-bottom:2px;' + freshClass + '">' + tip.message + ' <span style="font-size:0.7rem;opacity:0.7;">(' + ageText + ')</span></div>';
+                html += '<div style="margin-bottom:2px;' + freshClass + '">' + tip.message + ' <span style="font-size:0.7rem;opacity:0.7;">(' + ageText + expiryText + ')</span></div>';
             }
             html += '</div></div>';
         }

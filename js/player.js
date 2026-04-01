@@ -13974,7 +13974,7 @@
         if (!isGuildMember('merchants')) {
             return { success: false, message: 'You must be a member of the Merchants\' Guild to read the daily report.' };
         }
-        var fee = CONFIG.MERCHANTS_GUILD_REPORT_FEE || 10;
+        var fee = CONFIG.MERCHANTS_GUILD_REPORT_FEE || 25;
         if (player.gold < fee) {
             return { success: false, message: 'The report costs ' + fee + 'g to read. You only have ' + Math.floor(player.gold) + 'g.' };
         }

@@ -689,18 +689,24 @@ body {
 
 .quick-inventory {
     display: flex;
-    gap: 10px;
+    flex-wrap: wrap;
+    flex-direction: column;
+    gap: 2px;
     font-size: 0.8rem;
     color: var(--parchment-dark);
+    max-height: 52px;
+    overflow: hidden;
 }
 
 .inv-item {
     display: flex;
     align-items: center;
-    gap: 3px;
-    padding: 2px 6px;
+    gap: 2px;
+    padding: 1px 4px;
     background: rgba(90, 69, 48, 0.3);
     border-radius: 3px;
+    white-space: nowrap;
+    font-size: 0.75rem;
 }
 
 .inv-item .qty {
