@@ -4,6 +4,30 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.50.0] - 2026-04-01
+
+### Added — MP3 Music, UI Improvements
+
+#### Music System Overhaul
+- **MP3 tracks** — replaced procedural Web Audio synth with 5 real MP3 tracks (Title, Peaceful, Exploration, Tension, Prosperity)
+- **2-second crossfade** between mood transitions
+- **Title screen music toggle** — 🔊/🔇 button on main menu
+- Fixed browser autoplay blocking issue
+
+#### UI Improvements
+- **Back to Main Menu** button on character creation screen
+- **Tutorial** — Done button no longer auto-advances after 5 seconds
+- **Housing build UI** — material indicators show auto-buy from market status (green/yellow/red)
+
+#### Home & Building Storage
+- **Home storage transfers** — deposit/withdraw goods via Transfer Goods button
+- **Building storage transfers** — store any goods in owned buildings
+- **Horse stabling** — houses hold 2 horses (4 with horse_mastery skill)
+
+#### Bug Fixes
+- **Backpack + cart stacking** — backpack persists when mounting vehicles (`_backpack` flag)
+- **Container dismount** — respects pack_mule/beast_of_burden/iron_back skill bonuses
+
 ## [0.49.0] - 2026-04-01
 
 ### Added — Storage Transfers, Music Toggle, Bug Fixes
