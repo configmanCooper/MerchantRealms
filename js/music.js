@@ -49,7 +49,7 @@ window.Music = (function () {
         if (_fadeInterval) { clearInterval(_fadeInterval); _fadeInterval = null; }
 
         var newAudio = tracks[mood];
-        if (!newAudio) return;
+        if (!newAudio) { console.warn('Music: no track for mood', mood); return; }
 
         var oldAudio = currentAudio;
         currentAudio = newAudio;
@@ -59,7 +59,14 @@ window.Music = (function () {
         newAudio.volume = 0;
         newAudio.currentTime = 0;
         var playPromise = newAudio.play();
-        if (playPromise && playPromise.catch) playPromise.catch(function() {});
+        if (playPromise && playPromise.then) {
+            playPromise.then(function() {
+                console.log('Music: playing', mood);
+            }).catch(function(e) {
+                console.warn('Music: play blocked for', mood, e.message);
+                playing = false;
+            });
+        }
 
         // Crossfade
         var steps = 40;
@@ -99,7 +106,8 @@ window.Music = (function () {
 
     function playTitleMusic() {
         init();
-        if (currentMood === 'title' && playing) return;
+        // Always retry play — browser may have blocked the first attempt
+        if (currentMood === 'title' && playing && currentAudio && !currentAudio.paused) return;
         stopAllExcept(null);
         currentMood = 'title';
         playing = true;
@@ -109,7 +117,7 @@ window.Music = (function () {
     function playGameMusic(mood) {
         init();
         mood = mood || 'peaceful';
-        if (currentMood === mood && playing) return;
+        if (currentMood === mood && playing && currentAudio && !currentAudio.paused) return;
         var now = Date.now();
         if (currentMood && currentMood !== 'title' && now - _moodSwitchCooldown < 60000) return;
         _moodSwitchCooldown = now;
