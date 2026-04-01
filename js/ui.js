@@ -77,7 +77,7 @@ window.UI = (function () {
         }
 
         // Remove any existing dynamically-created elements to prevent duplication on load
-        ['btnWork','btnStreet','btnBuildings','btnRoutes','btnHousing','btnRest','btnTalk','btnSkills','btnAchievements','btnRankings','btnSchemes','btnHelp','btnFamily'].forEach(id => {
+        ['btnWork','btnStreet','btnBuildings','btnRoutes','btnHousing','btnGuilds','btnRest','btnTalk','btnSkills','btnAchievements','btnRankings','btnSchemes','btnHelp','btnFamily'].forEach(id => {
             const existing = document.getElementById(id);
             if (existing) existing.remove();
         });
