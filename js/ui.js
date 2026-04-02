@@ -6411,7 +6411,10 @@ window.UI = (function () {
         if (transport) {
             const destTown = Engine.findTown(transport.toTownId);
             manifestHtml = `<div style="background:rgba(0,180,100,0.1);border:1px solid rgba(0,180,100,0.3);border-radius:6px;padding:8px;margin-bottom:10px;">
-                <div style="font-weight:bold;color:var(--gold);">\uD83D\uDE8C Active Transport to ${destTown ? destTown.name : '?'}</div>
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <div style="font-weight:bold;color:var(--gold);">\uD83D\uDE8C Active Transport to ${destTown ? destTown.name : '?'}</div>
+                    <button class="btn-medieval" style="font-size:0.65rem;padding:2px 8px;color:#e74c3c;" onclick="UI.cancelTransportUI()">❌ Cancel</button>
+                </div>
                 <div style="font-size:0.75rem;color:#ccc;">${transport.passengers.length} passengers | ${transport.totalRevenue}g revenue on arrival</div>
                 <div style="font-size:0.7rem;margin-top:4px;">${transport.passengers.map(function(p) {
                     var icon = p.wealthClass === 'upper' ? '\uD83D\uDC51' : p.wealthClass === 'middle' ? '\uD83D\uDCBC' : '\uD83D\uDC64';
@@ -6535,6 +6538,12 @@ window.UI = (function () {
         var price = parseInt(priceInput ? priceInput.value : 20);
         if (isNaN(price) || price < 1) { toast('Enter a valid price.', 'warning'); return; }
         var result = Player.setupTransport(Player.townId, destTownId, price, isSea);
+        toast(result.message, result.success ? 'success' : 'error');
+        if (result.success) openCaravanDialog();
+    }
+
+    function cancelTransportUI() {
+        var result = Player.cancelTransport();
         toast(result.message, result.success ? 'success' : 'error');
         if (result.success) openCaravanDialog();
     }
@@ -19759,6 +19768,7 @@ window.UI = (function () {
         withdrawFromStorage: withdrawFromStorageUI,
         // Passenger Transport
         setupTransportUI,
+        cancelTransportUI,
         useNPCTransportUI,
         // NPC Interaction
         talkToPerson,

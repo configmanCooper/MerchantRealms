@@ -19313,14 +19313,23 @@
             }
         }
         // If there's a specific subsidized building type, prefer it
+        // NPCs that take the subsidy MUST build the subsidized building type
+        var subsidizedBuildingType = null;
         if (subsidyDiscount > 0 && kingdom && kingdom.landSubsidies) {
             for (var lsi2 = 0; lsi2 < kingdom.landSubsidies.length; lsi2++) {
                 var ls2 = kingdom.landSubsidies[lsi2];
-                if (ls2.townId === buildTown.id && ls2.expiresDay > world.day && preferredBuildings.indexOf(ls2.buildingType) >= 0) {
-                    bType = ls2.buildingType;
+                if (ls2.townId === buildTown.id && ls2.expiresDay > world.day) {
+                    subsidizedBuildingType = ls2.buildingType;
+                    if (preferredBuildings.indexOf(ls2.buildingType) >= 0) {
+                        bType = ls2.buildingType;
+                    }
                     break;
                 }
             }
+        }
+        // Subsidy discount only applies if building the subsidized building type
+        if (bType !== subsidizedBuildingType) {
+            subsidyDiscount = 0;
         }
 
         var bt = findBuildingType(bType);

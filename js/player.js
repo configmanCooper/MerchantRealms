@@ -2416,8 +2416,11 @@
     function getTransportCapacity() {
         var container = player.storageContainer;
         if (!container) return 0;
-        var capacities = { cart: 2, small_wagon: 4, wagon: 6, large_wagon: 8 };
-        return capacities[container] || 0;
+        // Must have a wagon (not just a cart) for passenger transport
+        if (container !== 'wagon' && container !== 'large_wagon' && container !== 'small_wagon') return 0;
+        var cargoCapacities = { small_wagon: 120, wagon: 200, large_wagon: 300 };
+        var cargo = cargoCapacities[container] || 0;
+        return Math.floor(cargo / 30); // Each passenger takes 30 capacity
     }
 
     function getSeaTransportCapacity() {
@@ -2597,6 +2600,34 @@
         Engine.logEvent('\uD83D\uDE8C Delivered ' + passengerCount + ' passengers to ' + (destTown ? destTown.name : 'destination') + '. Earned ' + transport.totalRevenue + 'g!');
         grantXP(5 + passengerCount * 2, 'Passenger transport');
         player.activeTransport = null;
+    }
+
+    function cancelTransport() {
+        if (!player.activeTransport) return { success: false, message: 'No active transport.' };
+        var transport = player.activeTransport;
+        // Return passengers to origin town's travel demand
+        var originTown = Engine.findTown(transport.fromTownId);
+        if (originTown) {
+            if (!originTown.travelDemand) originTown.travelDemand = [];
+            var destTown = Engine.findTown(transport.toTownId);
+            for (var i = 0; i < transport.passengers.length; i++) {
+                var p = transport.passengers[i];
+                originTown.travelDemand.push({
+                    personId: p.personId,
+                    personName: p.name,
+                    wealthClass: p.wealthClass,
+                    destinationTownId: transport.toTownId,
+                    destinationName: destTown ? destTown.name : '?',
+                    maxPrice: p.fare,
+                    urgency: 1,
+                    createdDay: Engine.getDay ? Engine.getDay() : 0
+                });
+            }
+        }
+        var count = transport.passengers.length;
+        player.activeTransport = null;
+        Engine.logEvent('🚌 Transport cancelled. ' + count + ' passengers returned to ' + (originTown ? originTown.name : 'origin') + '.');
+        return { success: true, message: 'Transport cancelled. ' + count + ' passengers returned to waiting.' };
     }
 
     /**
@@ -32361,6 +32392,7 @@
         getTransportCapacity,
         getSeaTransportCapacity,
         completeTransport,
+        cancelTransport,
         get activeTransport() { return player.activeTransport; },
 
         // Housing System
