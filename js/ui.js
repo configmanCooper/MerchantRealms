@@ -6675,7 +6675,9 @@ window.UI = (function () {
 
             // Header row
             html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">';
-            html += '<span style="font-weight:bold;font-size:0.85rem;">' + routeIcon + ' ' + (from ? from.name : '?') + ' → ' + (to ? to.name : '?') + recurLabel + '</span>';
+            var displayFrom = c.returnTrip ? to : from;
+            var displayTo = c.returnTrip ? from : to;
+            html += '<span style="font-weight:bold;font-size:0.85rem;">' + routeIcon + ' ' + (displayFrom ? displayFrom.name : '?') + ' → ' + (displayTo ? displayTo.name : '?') + recurLabel + '</span>';
             html += '<span style="font-size:0.75rem;color:' + statusColor + ';">' + statusLabel + '</span>';
             html += '</div>';
 

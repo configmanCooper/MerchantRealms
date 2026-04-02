@@ -3505,6 +3505,7 @@
                 }
                 var cost = Math.floor(marketPrice * buyQty);
                 player.gold -= cost;
+                logFinance(-cost, 'caravan_costs', 'Caravan bought ' + buyQty + ' ' + res.name);
                 player.stats.totalGoldSpent += cost;
                 caravan.totalSpent = (caravan.totalSpent || 0) + cost;
                 caravan.totalProfit = (caravan.totalProfit || 0) - cost;
@@ -3553,6 +3554,7 @@
                             var _ovP = town.market.prices[o.good] || 1;
                             var _ovR = Math.floor(_ovP * remainder);
                             player.gold += _ovR;
+                            logFinance(_ovR, 'caravan_sales', 'Caravan overflow sold ' + remainder + ' ' + res.name);
                             player.stats.totalGoldEarned += _ovR;
                             caravan.totalProfit = (caravan.totalProfit || 0) + _ovR;
                             town.market.supply[o.good] = (town.market.supply[o.good] || 0) + remainder;
@@ -3600,6 +3602,7 @@
                             var _ovPrice = town.market.prices[o.good] || 1;
                             var _ovRevenue = Math.floor(_ovPrice * _storeRemaining);
                             player.gold += _ovRevenue;
+                            logFinance(_ovRevenue, 'caravan_sales', 'Caravan overflow sold ' + _storeRemaining + ' ' + res.name);
                             player.stats.totalGoldEarned += _ovRevenue;
                             caravan.totalProfit = (caravan.totalProfit || 0) + _ovRevenue;
                             town.market.supply[o.good] = (town.market.supply[o.good] || 0) + _storeRemaining;
@@ -3631,6 +3634,7 @@
                 }
                 var revenue = Math.floor(sellPrice * sellQty);
                 player.gold += revenue;
+                logFinance(revenue, 'caravan_sales', 'Caravan sold ' + sellQty + ' ' + res.name);
                 player.stats.totalGoldEarned += revenue;
                 caravan.totalProfit = (caravan.totalProfit || 0) + revenue;
                 town.market.supply[o.good] = (town.market.supply[o.good] || 0) + sellQty;
@@ -3656,6 +3660,7 @@
                 if (hasSkill('trade_route_mastery')) remPrice *= 1.10;
                 var remRev = Math.floor(remPrice * remQty);
                 player.gold += remRev;
+                logFinance(remRev, 'caravan_sales', 'Caravan auto-sold ' + (findResource(gId) ? findResource(gId).name : gId));
                 player.stats.totalGoldEarned += remRev;
                 caravan.totalProfit = (caravan.totalProfit || 0) + remRev;
                 town.market.supply[gId] = (town.market.supply[gId] || 0) + remQty;

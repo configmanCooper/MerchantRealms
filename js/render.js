@@ -1911,8 +1911,8 @@ window.Renderer = (function () {
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'top';
                 ctx.fillStyle = '#e8dcc8';
-                var fromName = from ? from.name : '?';
-                var toName = to ? to.name : '?';
+                var fromName = caravan.returnTrip ? (to ? to.name : '?') : (from ? from.name : '?');
+                var toName = caravan.returnTrip ? (from ? from.name : '?') : (to ? to.name : '?');
                 ctx.fillText(fromName + '→' + toName, 0, 10);
                 if (goodsCount > 0) {
                     ctx.fillText('📦' + goodsCount, 0, 19);
