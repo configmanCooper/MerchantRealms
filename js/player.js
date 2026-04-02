@@ -5914,12 +5914,22 @@
             if (!player.townStorage[bld.townId]) player.townStorage[bld.townId] = {};
             
             if (bld.transferEnabled && bld.transferTarget) {
-                // Check if Transport Guild Hall exists and is staffed in this town
+                // Check if Transport Guild Hall exists and is staffed in this town (player-owned)
                 const hasTransportGuild = player.buildings.some(b => 
                     b.type === 'transport_guild' && b.townId === bld.townId && b.active && b.workers.length > 0
                 );
+                // Or: player is a merchants guild member and there's ANY transport guild in town
+                var hasTownTransportGuild = false;
+                if (!hasTransportGuild && isGuildMember('merchants')) {
+                    var _town = Engine.findTown(bld.townId);
+                    if (_town && _town.buildings) {
+                        hasTownTransportGuild = _town.buildings.some(function(tb) {
+                            return tb.type === 'transport_guild' && (tb.workers && tb.workers.length > 0);
+                        });
+                    }
+                }
                 
-                if (hasTransportGuild) {
+                if (hasTransportGuild || hasTownTransportGuild) {
                     // Instant transfer — Transport Guild handles delivery
                     _executeTransfer(bld, bt.produces, actualOutput);
                 } else {
