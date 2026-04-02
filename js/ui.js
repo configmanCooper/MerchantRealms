@@ -5879,7 +5879,7 @@ window.UI = (function () {
         var maxCheck = document.getElementById('orderMaxQty');
         var priceInput = document.getElementById('orderPriceLimit');
 
-        if (!goodInput || !actionSel) return;
+        if (!goodInput || !actionSel) return false;
         var goodId = goodInput.dataset.selectedId || '';
 
         // Auto-resolve: if user typed a name but didn't click dropdown, try to match
@@ -5897,11 +5897,11 @@ window.UI = (function () {
             }
         }
 
-        if (!goodId) { toast('Select a good first.', 'warning'); return; }
+        if (!goodId) { toast('Select a good first.', 'warning'); return false; }
         var action = actionSel.value;
         var location = locSel ? locSel.value : 'destination';
         var qty = maxCheck && maxCheck.checked ? 'max' : (parseInt(qtyInput.value) || 0);
-        if (qty !== 'max' && qty <= 0) { toast('Enter a quantity or check Max.', 'warning'); return; }
+        if (qty !== 'max' && qty <= 0) { toast('Enter a quantity or check Max.', 'warning'); return false; }
         var priceLimit = parseInt(priceInput.value) || 0;
         if (priceLimit <= 0) priceLimit = null;
 
@@ -5929,6 +5929,23 @@ window.UI = (function () {
         if (dropdown) dropdown.style.display = 'none';
 
         _refreshOrderList();
+        return true;
+    }
+
+    // Auto-add any partially filled order form before send/save.
+    // Returns true if OK to proceed (no pending input, or it was added).
+    // Returns false if there IS pending input but it failed validation — stay in UI.
+    function _autoAddPendingOrder() {
+        var goodInput = document.getElementById('orderGoodInput');
+        if (!goodInput) return true;
+        // Detect if user has typed anything at all
+        var hasText = goodInput.value.trim().length > 0;
+        var hasSelectedId = !!(goodInput.dataset.selectedId);
+        if (!hasText && !hasSelectedId) return true; // form is empty — nothing pending
+        // There's something in the form — try to add it
+        var result = _addCaravanOrder();
+        if (result === false) return false; // validation failed — stay in UI
+        return true;
     }
 
     function openCaravanDialog() {
@@ -6529,6 +6546,9 @@ window.UI = (function () {
     }
 
     function executeSendCaravan() {
+        // Auto-add any pending order the user typed but didn't click Add
+        if (!_autoAddPendingOrder()) return;
+
         const destSelect = document.getElementById('caravanDest');
         if (!destSelect || !destSelect.value) {
             toast('Select a destination.', 'warning');
@@ -7031,7 +7051,7 @@ window.UI = (function () {
         html += '</div>';
         html += '</div>';
 
-        var footer = '<button class="btn-medieval" onclick="(function(){var r=Player.editCaravanOrders(\'' + caravanId + '\',UI._getCaravanOrders());UI.toast(r.message,r.success?\'success\':\'warning\');UI.openCaravanManagement();})()" style="margin-right:8px;">✅ Save Orders</button>';
+        var footer = '<button class="btn-medieval" onclick="(function(){if(!UI._autoAddPendingOrder())return;var r=Player.editCaravanOrders(\'' + caravanId + '\',UI._getCaravanOrders());UI.toast(r.message,r.success?\'success\':\'warning\');UI.openCaravanManagement();})()" style="margin-right:8px;">✅ Save Orders</button>';
         footer += '<button class="btn-medieval" onclick="UI.openCaravanManagement()">Cancel</button>';
 
         openModal('📝 Edit Caravan Orders', html, footer);
@@ -7657,243 +7677,153 @@ window.UI = (function () {
     function openFinancialReport() {
         if (typeof Player === 'undefined') return;
 
-        const state = Player.state;
-        const buildings = state.buildings || [];
-        const houses = state.houses || [];
-        const stats = state.stats || {};
-        const loan = state.activeLoan;
-        const guilds = state.guilds || {};
-        const guildMemberships = state.guildMemberships || {};
-        const baseWage = (typeof CONFIG !== 'undefined' && CONFIG.BASE_WAGE) || 4;
+        var ledger = Player.state.financialLedger || [];
+        var currentDay = Engine.getDay();
+        var cutoff = currentDay - 30;
 
-        // Resolve town name helper
-        function townName(townId) {
-            try {
-                const t = Engine.getTown(townId);
-                return t ? t.name : townId;
-            } catch (e) { return townId || '?'; }
+        if (ledger.length === 0) {
+            openModal('📊 Financial Report', '<div style="padding:20px;text-align:center;color:#aaa;">No financial data yet. Transactions will be tracked going forward.</div>');
+            return;
         }
 
-        // Resolve kingdom for player's current town
-        function getPlayerKingdom() {
-            try {
-                const t = Engine.getTown(Player.townId);
-                if (t && t.kingdomId) return Engine.getKingdom(t.kingdomId);
-            } catch (e) { /* no-op */ }
-            return null;
+        // Filter to last 30 days
+        var recent = [];
+        for (var i = 0; i < ledger.length; i++) {
+            if (ledger[i].day >= cutoff) recent.push(ledger[i]);
         }
 
-        // Color helpers
+        // Category display config
+        var categoryInfo = {
+            trading: '📈 Trading',
+            jobs: '💼 Jobs',
+            rent_income: '🏠 Rental Income',
+            caravan_sales: '🐪 Caravan Sales',
+            kingdom_sales: '👑 Kingdom Sales',
+            land: '🏞️ Land',
+            loans: '💰 Loans',
+            buildings: '🏭 Buildings',
+            wages: '👷 Wages',
+            caravan_wages: '🐪 Caravan Wages',
+            caravan_costs: '🐪 Caravan Costs',
+            travel: '🗺️ Travel',
+            taxes: '🏛️ Taxes',
+            fines: '⚖️ Fines',
+            licenses: '📜 Licenses',
+            food_drink: '🍞 Food & Drink',
+            housing: '🏠 Housing',
+            guild: '⚔️ Guild Fees',
+            other: '❓ Other'
+        };
+
+        // Group by category
+        var incomeGroups = {};
+        var expenseGroups = {};
+        var totalIncome = 0;
+        var totalExpenses = 0;
+
+        for (var j = 0; j < recent.length; j++) {
+            var entry = recent[j];
+            var cat = entry.category || 'other';
+            if (entry.amount >= 0) {
+                if (!incomeGroups[cat]) incomeGroups[cat] = { total: 0, count: 0 };
+                incomeGroups[cat].total += entry.amount;
+                incomeGroups[cat].count++;
+                totalIncome += entry.amount;
+            } else {
+                if (!expenseGroups[cat]) expenseGroups[cat] = { total: 0, count: 0 };
+                expenseGroups[cat].total += Math.abs(entry.amount);
+                expenseGroups[cat].count++;
+                totalExpenses += Math.abs(entry.amount);
+            }
+        }
+
+        function fmtGold(val) { return formatGold(Math.round(val)); }
         function posNeg(val) {
             if (val > 0) return 'color:#5ac85a';
             if (val < 0) return 'color:#e74c3c';
             return 'color:#aaa';
         }
 
-        function fmtGold(val) {
-            return formatGold(Math.round(val));
+        // Build income rows
+        var incomeRows = '';
+        var incCats = Object.keys(incomeGroups).sort(function(a, b) { return incomeGroups[b].total - incomeGroups[a].total; });
+        for (var ic = 0; ic < incCats.length; ic++) {
+            var ck = incCats[ic];
+            var g = incomeGroups[ck];
+            var label = categoryInfo[ck] || ('❓ ' + ck);
+            incomeRows += '<div class="detail-row"><span class="label">' + label + ' <span style="color:#666;font-size:0.75rem;">(' + g.count + ')</span></span><span class="value" style="color:#5ac85a">' + fmtGold(g.total) + '</span></div>';
+        }
+        if (!incomeRows) incomeRows = '<div class="detail-row"><span class="label" style="color:#aaa;">No income in last 30 days</span><span class="value">—</span></div>';
+
+        // Build expense rows
+        var expenseRows = '';
+        var expCats = Object.keys(expenseGroups).sort(function(a, b) { return expenseGroups[b].total - expenseGroups[a].total; });
+        for (var ec = 0; ec < expCats.length; ec++) {
+            var ek = expCats[ec];
+            var ge = expenseGroups[ek];
+            var elabel = categoryInfo[ek] || ('❓ ' + ek);
+            expenseRows += '<div class="detail-row"><span class="label">' + elabel + ' <span style="color:#666;font-size:0.75rem;">(' + ge.count + ')</span></span><span class="value" style="color:#e74c3c">-' + fmtGold(ge.total) + '</span></div>';
+        }
+        if (!expenseRows) expenseRows = '<div class="detail-row"><span class="label" style="color:#aaa;">No expenses in last 30 days</span><span class="value">—</span></div>';
+
+        // Summary calculations
+        var netIncome = totalIncome - totalExpenses;
+        var currentGold = Player.gold || 0;
+        var projected30 = Math.round(currentGold + netIncome);
+
+        // Recent transactions (last 20)
+        var recentTx = '';
+        var txList = ledger.slice(-20).reverse();
+        for (var t = 0; t < txList.length; t++) {
+            var tx = txList[t];
+            var txColor = tx.amount >= 0 ? '#5ac85a' : '#e74c3c';
+            var txSign = tx.amount >= 0 ? '+' : '';
+            var txCatLabel = categoryInfo[tx.category] || ('❓ ' + (tx.category || 'other'));
+            recentTx += '<div style="display:flex;justify-content:space-between;padding:2px 0;font-size:0.78rem;border-bottom:1px solid #222;">'
+                + '<span style="color:#999;">Day ' + tx.day + '</span>'
+                + '<span style="color:#ccc;flex:1;margin:0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (tx.desc || txCatLabel) + '</span>'
+                + '<span style="color:' + txColor + ';font-weight:bold;white-space:nowrap;">' + txSign + fmtGold(tx.amount) + '</span>'
+                + '</div>';
         }
 
-        // ── INCOME ──
-        let totalIncome = 0;
-        let incomeRows = '';
+        var reportStyle = '<style>'
+            + '.fin-report { font-size: 0.85rem; }'
+            + '.fin-report h3 { color: #FFD700; margin: 14px 0 6px; border-bottom: 1px solid #333; padding-bottom: 4px; font-size: 0.95rem; }'
+            + '.fin-report .detail-row { display: flex; justify-content: space-between; padding: 3px 0; }'
+            + '.fin-report .label { color: #ccc; }'
+            + '.fin-report .value { font-weight: bold; }'
+            + '.fin-report .summary-box { background: #111122; border: 1px solid #333; border-radius: 6px; padding: 10px; margin-top: 12px; }'
+            + '.fin-report .summary-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 0.9rem; }'
+            + '.fin-report .summary-row.big { font-size: 1rem; border-top: 1px solid #444; padding-top: 8px; margin-top: 4px; }'
+            + '</style>';
 
-        // Building revenue
-        for (let i = 0; i < buildings.length; i++) {
-            const bld = buildings[i];
-            const bt = Engine.findBuildingType ? Engine.findBuildingType(bld.type) : null;
-            const name = (bt && bt.name) || bld.type;
-            const town = townName(bld.townId);
-            let rev = 0;
-            if (bld._profitTracker && bld._profitTracker.revenue) {
-                const days = bld._profitTracker.days || 1;
-                rev = bld._profitTracker.revenue / days; // avg per day
-            } else if (bld.revenue) {
-                rev = bld.revenue / 30; // rough daily estimate
-            }
-            if (rev > 0) {
-                totalIncome += rev;
-                incomeRows += `<div class="detail-row"><span class="label">🏭 ${name} (${town})</span><span class="value" style="color:#5ac85a">${fmtGold(rev)}/day</span></div>`;
-            }
-        }
+        var reportHtml = reportStyle + '<div class="fin-report" style="background:#1a1a2e;padding:12px;border-radius:8px;">'
+            + '<h3>💰 Income (Last 30 Days)</h3>'
+            + incomeRows
+            + '<div class="detail-row" style="border-top:1px solid #333;margin-top:6px;padding-top:6px;">'
+            + '<span class="label" style="color:#FFD700;font-weight:bold;">Total Income</span>'
+            + '<span class="value" style="color:#5ac85a;font-weight:bold;">' + fmtGold(totalIncome) + '</span></div>'
 
-        // Rental income from houses
-        for (let i = 0; i < houses.length; i++) {
-            const h = houses[i];
-            if (h.isRental && h.tenantId && h.monthlyRent) {
-                const dailyRent = h.monthlyRent / 30;
-                totalIncome += dailyRent;
-                incomeRows += `<div class="detail-row"><span class="label">🏠 Rental — ${townName(h.townId)}</span><span class="value" style="color:#5ac85a">${fmtGold(dailyRent)}/day (${h.monthlyRent}g/mo)</span></div>`;
-            }
-        }
+            + '<h3>📉 Expenses (Last 30 Days)</h3>'
+            + expenseRows
+            + '<div class="detail-row" style="border-top:1px solid #333;margin-top:6px;padding-top:6px;">'
+            + '<span class="label" style="color:#FFD700;font-weight:bold;">Total Expenses</span>'
+            + '<span class="value" style="color:#e74c3c;font-weight:bold;">-' + fmtGold(totalExpenses) + '</span></div>'
 
-        // Apartment income (player-owned apartment buildings that earn from NPC tenants)
-        for (let i = 0; i < buildings.length; i++) {
-            const bld = buildings[i];
-            if (bld.type === 'apartment_building' && bld.units) {
-                let occupiedUnits = 0;
-                for (let u = 0; u < bld.units.length; u++) {
-                    if (bld.units[u].occupantId && bld.units[u].occupantType !== 'player') occupiedUnits++;
-                }
-                if (occupiedUnits > 0) {
-                    const monthlyFee = bld.monthlyFee || 2;
-                    const dailyAptIncome = (monthlyFee * occupiedUnits) / 30;
-                    totalIncome += dailyAptIncome;
-                    incomeRows += `<div class="detail-row"><span class="label">🏢 Apartment (${townName(bld.townId)}) — ${occupiedUnits} tenants</span><span class="value" style="color:#5ac85a">${fmtGold(dailyAptIncome)}/day</span></div>`;
-                }
-            }
-        }
+            + '<div class="summary-box">'
+            + '<div class="summary-row"><span style="color:#ccc;">Total Income (30d)</span><span style="color:#5ac85a;font-weight:bold;">' + fmtGold(totalIncome) + '</span></div>'
+            + '<div class="summary-row"><span style="color:#ccc;">Total Expenses (30d)</span><span style="color:#e74c3c;font-weight:bold;">-' + fmtGold(totalExpenses) + '</span></div>'
+            + '<div class="summary-row"><span style="color:#ccc;">Net Income (30d)</span><span style="' + posNeg(netIncome) + ';font-weight:bold;">' + (netIncome >= 0 ? '+' : '') + fmtGold(netIncome) + '</span></div>'
+            + '<div class="summary-row"><span style="color:#ccc;">Current Gold</span><span style="color:#FFD700;font-weight:bold;">🪙 ' + fmtGold(currentGold) + '</span></div>'
+            + '<div class="summary-row big"><span style="color:#FFD700;">Projected Gold (30 days)</span><span style="' + posNeg(projected30) + ';font-weight:bold;">🪙 ' + fmtGold(projected30) + '</span></div>'
+            + '</div>'
 
-        // Trading profits estimate
-        const tradingEarned = stats.totalGoldEarned || 0;
-        const tradingSpent = stats.totalGoldSpent || 0;
-        const daysPlayed = Math.max(stats.daysPlayed || 1, 1);
-        const tradingDailyEst = Math.max(0, (tradingEarned - tradingSpent) / daysPlayed);
-        if (tradingDailyEst > 0) {
-            incomeRows += `<div class="detail-row"><span class="label">📈 Trading profit (est.)</span><span class="value" style="color:#5ac85a">~${fmtGold(tradingDailyEst)}/day</span></div>`;
-        }
+            + '<details style="margin-top:14px;"><summary style="cursor:pointer;color:#FFD700;font-size:0.9rem;padding:4px 0;">📋 Recent Transactions (' + txList.length + ')</summary>'
+            + '<div style="max-height:250px;overflow-y:auto;margin-top:6px;padding:4px;">' + recentTx + '</div></details>'
 
-        if (!incomeRows) {
-            incomeRows = `<div class="detail-row"><span class="label" style="color:#aaa;">No income sources found</span><span class="value">—</span></div>`;
-        }
-
-        // ── EXPENSES ──
-        let totalExpenses = 0;
-        let expenseRows = '';
-
-        // Building wages
-        for (let i = 0; i < buildings.length; i++) {
-            const bld = buildings[i];
-            const bt = Engine.findBuildingType ? Engine.findBuildingType(bld.type) : null;
-            const name = (bt && bt.name) || bld.type;
-            const workerCount = (bld.workers && bld.workers.length) || 0;
-            if (workerCount > 0) {
-                const dailyWage = baseWage * workerCount;
-                totalExpenses += dailyWage;
-                expenseRows += `<div class="detail-row"><span class="label">👷 ${name} wages (${workerCount})</span><span class="value" style="color:#e74c3c">${fmtGold(dailyWage)}/day</span></div>`;
-            }
-        }
-
-        // Building maintenance estimate (from condition system)
-        const weeklyMaintRate = (typeof CONFIG !== 'undefined' && CONFIG.BUILDING_WEEKLY_MAINTENANCE) || 0.03;
-        for (let i = 0; i < buildings.length; i++) {
-            const bld = buildings[i];
-            const bt = Engine.findBuildingType ? Engine.findBuildingType(bld.type) : null;
-            const baseCost = (bt && bt.cost) || 0;
-            if (baseCost > 0 && bld.condition && bld.condition !== 'new') {
-                const condMultiplier = bld.condition === 'destroyed' ? 0.5 : bld.condition === 'breaking' ? 0.3 : 0.2;
-                const repairCostEst = Math.floor(baseCost * condMultiplier);
-                const dailyMaint = (baseCost * weeklyMaintRate) / 7;
-                totalExpenses += dailyMaint;
-                const name = (bt && bt.name) || bld.type;
-                expenseRows += `<div class="detail-row"><span class="label">🔧 ${name} upkeep</span><span class="value" style="color:#e74c3c">${fmtGold(dailyMaint)}/day (repair: ~${repairCostEst}g)</span></div>`;
-            }
-        }
-
-        // House maintenance (apartment monthly fees the player pays)
-        for (let i = 0; i < houses.length; i++) {
-            const h = houses[i];
-            if (h.monthlyMaintenance && h.monthlyMaintenance > 0) {
-                const dailyMaint = h.monthlyMaintenance / 30;
-                totalExpenses += dailyMaint;
-                expenseRows += `<div class="detail-row"><span class="label">🏢 Apt maintenance (${townName(h.townId)})</span><span class="value" style="color:#e74c3c">${fmtGold(dailyMaint)}/day (${h.monthlyMaintenance}g/mo)</span></div>`;
-            }
-        }
-
-        // Tax burden estimate
-        const kingdom = getPlayerKingdom();
-        if (kingdom) {
-            const propertyTaxRate = kingdom.propertyTaxRate || 0.02;
-            const incomeTaxRate = kingdom.incomeTaxRate || 0.05;
-            // Property tax: rate × net worth, paid monthly (every 30 days)
-            const netWorth = Player.getNetWorth ? Player.getNetWorth() : Player.gold;
-            const dailyPropertyTax = (netWorth * propertyTaxRate) / 30;
-            // Income tax: rate × seasonal income, paid every 90 days
-            const seasonalIncome = totalIncome * 90;
-            const dailyIncomeTax = (seasonalIncome * incomeTaxRate) / 90;
-            const totalDailyTax = dailyPropertyTax + dailyIncomeTax;
-            if (totalDailyTax > 0) {
-                totalExpenses += totalDailyTax;
-                expenseRows += `<div class="detail-row"><span class="label">🏛️ Taxes (${kingdom.name})</span><span class="value" style="color:#e74c3c">~${fmtGold(totalDailyTax)}/day</span></div>`;
-                expenseRows += `<div style="font-size:0.72rem;color:#888;margin-left:12px;">Property ${(propertyTaxRate * 100).toFixed(1)}% · Income ${(incomeTaxRate * 100).toFixed(1)}%</div>`;
-            }
-        }
-
-        // Loan payments
-        if (loan) {
-            const dailyLoan = loan.monthlyPayment / 30;
-            totalExpenses += dailyLoan;
-            expenseRows += `<div class="detail-row"><span class="label">💰 Loan payment</span><span class="value" style="color:#e74c3c">${fmtGold(dailyLoan)}/day (${loan.monthlyPayment}g/mo)</span></div>`;
-            expenseRows += `<div style="font-size:0.72rem;color:#888;margin-left:12px;">Remaining balance: ${fmtGold(loan.remainingBalance)}</div>`;
-        }
-
-        // Guild dues (estimate from membership count)
-        const guildIds = Object.keys(guildMemberships);
-        if (guildIds.length > 0) {
-            // Guilds charge small recurring fees; estimate ~2g per day per guild
-            const guildDailyEst = guildIds.length * 2;
-            totalExpenses += guildDailyEst;
-            expenseRows += `<div class="detail-row"><span class="label">⚔️ Guild dues (${guildIds.length} guild${guildIds.length > 1 ? 's' : ''})</span><span class="value" style="color:#e74c3c">~${fmtGold(guildDailyEst)}/day</span></div>`;
-        }
-
-        if (!expenseRows) {
-            expenseRows = `<div class="detail-row"><span class="label" style="color:#aaa;">No expenses found</span><span class="value">—</span></div>`;
-        }
-
-        // ── SUMMARY ──
-        // Net income uses building/rental/apartment income minus expenses (not trading estimate)
-        const operatingIncome = totalIncome - tradingDailyEst; // income from assets only
-        const netIncome = totalIncome - totalExpenses;
-        const currentGold = Player.gold || 0;
-        const projected30 = Math.round(currentGold + netIncome * 30);
-
-        const reportStyle = `
-            <style>
-                .fin-report { font-size: 0.85rem; }
-                .fin-report h3 { color: #FFD700; margin: 14px 0 6px; border-bottom: 1px solid #333; padding-bottom: 4px; font-size: 0.95rem; }
-                .fin-report .detail-row { display: flex; justify-content: space-between; padding: 3px 0; }
-                .fin-report .label { color: #ccc; }
-                .fin-report .value { font-weight: bold; }
-                .fin-report .summary-box { background: #111122; border: 1px solid #333; border-radius: 6px; padding: 10px; margin-top: 12px; }
-                .fin-report .summary-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 0.9rem; }
-                .fin-report .summary-row.big { font-size: 1rem; border-top: 1px solid #444; padding-top: 8px; margin-top: 4px; }
-            </style>
-        `;
-
-        const reportHtml = `${reportStyle}<div class="fin-report" style="background:#1a1a2e;padding:12px;border-radius:8px;">
-            <h3>💰 Income Streams</h3>
-            ${incomeRows}
-            <div class="detail-row" style="border-top:1px solid #333;margin-top:6px;padding-top:6px;">
-                <span class="label" style="color:#FFD700;font-weight:bold;">Total Income</span>
-                <span class="value" style="color:#5ac85a;font-weight:bold;">${fmtGold(totalIncome)}/day</span>
-            </div>
-
-            <h3>📉 Expenses</h3>
-            ${expenseRows}
-            <div class="detail-row" style="border-top:1px solid #333;margin-top:6px;padding-top:6px;">
-                <span class="label" style="color:#FFD700;font-weight:bold;">Total Expenses</span>
-                <span class="value" style="color:#e74c3c;font-weight:bold;">${fmtGold(totalExpenses)}/day</span>
-            </div>
-
-            <div class="summary-box">
-                <div class="summary-row">
-                    <span style="color:#ccc;">Net Income</span>
-                    <span style="${posNeg(netIncome)};font-weight:bold;">${netIncome >= 0 ? '+' : ''}${fmtGold(netIncome)}/day</span>
-                </div>
-                <div class="summary-row">
-                    <span style="color:#ccc;">Current Gold</span>
-                    <span style="color:#FFD700;font-weight:bold;">🪙 ${fmtGold(currentGold)}</span>
-                </div>
-                <div class="summary-row big">
-                    <span style="color:#FFD700;">Projected Gold (30 days)</span>
-                    <span style="${posNeg(projected30)};font-weight:bold;">🪙 ${fmtGold(projected30)}</span>
-                </div>
-            </div>
-
-            <div style="text-align:center;margin-top:10px;font-size:0.7rem;color:#666;">
-                Estimates based on current assets · ${daysPlayed} day${daysPlayed !== 1 ? 's' : ''} played
-            </div>
-        </div>`;
+            + '<div style="text-align:center;margin-top:10px;font-size:0.7rem;color:#666;">'
+            + 'Based on tracked transactions · Last 30 of ' + currentDay + ' days'
+            + '</div></div>';
 
         openModal('📊 Financial Report', reportHtml);
     }
@@ -18902,6 +18832,7 @@ window.UI = (function () {
         openCaravanManagement,
         openEditCaravanOrders,
         _addCaravanOrder,
+        _autoAddPendingOrder,
         _removeCaravanOrder,
         _getCaravanOrders,
         _updateCaravanPreview,

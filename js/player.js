@@ -37,6 +37,7 @@
         },
         supplyChains: [],       // completed chain descriptions
         tradeLog: [],           // last 50 trades
+        financialLedger: [],    // transaction history for financial report
         // Character fields
         firstName: 'Unknown',
         lastName: 'Merchant',
@@ -303,6 +304,20 @@
 
     let _nextCaravanId = 1;
     function caravanUid() { return 'caravan_' + (_nextCaravanId++); }
+
+    // ── Financial Ledger Helper ──
+    function logFinance(amount, category, description) {
+        player.financialLedger.push({
+            day: Engine.getDay(),
+            amount: amount,
+            category: category,
+            desc: description
+        });
+        var cutoff = Engine.getDay() - 60;
+        while (player.financialLedger.length > 0 && player.financialLedger[0].day < cutoff) {
+            player.financialLedger.shift();
+        }
+    }
 
     // ========================================================
     // §1B INJURY & ILLNESS TYPE DEFINITIONS
@@ -691,6 +706,7 @@
                 const fine = Math.floor((town.market.prices[resourceId] || 1) * qty * CONFIG.EMBARGO_FINE_MULTIPLIER);
                 const actualFine = Math.min(fine, player.gold);
                 player.gold -= actualFine;
+                logFinance(-actualFine, 'fines', 'Fine');
                 if (kingdom) {
                     kingdom.gold = (kingdom.gold || 0) + actualFine;
                     player.reputation[kingdom.id] = Math.max(0, (player.reputation[kingdom.id] || 50) - CONFIG.EMBARGO_REP_PENALTY);
@@ -821,6 +837,7 @@
 
         // Execute trade
         player.gold -= totalCost;
+        logFinance(-totalCost, 'trading', 'Bought ' + qty + ' ' + resourceId);
 
         // Track tax revenue for kingdom
         if (kingdom) {
@@ -1101,6 +1118,7 @@
 
         // Execute trade
         player.gold += totalRevenue;
+        logFinance(totalRevenue, 'trading', 'Sold ' + qty + ' ' + resourceId);
 
         // Track tax revenue for kingdom
         if (kingdom) {
@@ -1507,8 +1525,8 @@
         }
 
         player.gold -= buildCost;
+        logFinance(-buildCost, 'buildings', 'Built ' + buildingType);
         player.stats.totalGoldSpent += buildCost;
-        // Distribute construction wages to local NPCs (player building)
         if (typeof Engine !== 'undefined' && Engine.distributeConstructionWages) {
             Engine.distributeConstructionWages(tid, buildCost);
         }
@@ -2301,6 +2319,7 @@
             }
         }
         player.gold -= totalCost;
+        logFinance(-totalCost, 'caravan_costs', 'Caravan dispatch');
         player.stats.totalGoldSpent += totalCost;
 
         const caravan = {
@@ -2682,6 +2701,7 @@
                 return { success: false, message: 'Not enough gold for sea passage (' + seaPassageCost + 'g needed).' };
             }
             player.gold -= seaPassageCost;
+            logFinance(-seaPassageCost, 'travel', 'Sea passage');
             player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + seaPassageCost;
         }
 
@@ -2762,8 +2782,8 @@
         }
 
         player.gold -= upgradeCost;
+        logFinance(-upgradeCost, 'buildings', 'Upgraded building');
         player.stats.totalGoldSpent += upgradeCost;
-        bld.level++;
 
         // Also update the town's matching building record
         const town = Engine.findTown(bld.townId);
@@ -3366,6 +3386,7 @@
             }
         }
         player.gold -= totalCost;
+        logFinance(-totalCost, 'caravan_costs', 'Caravan dispatch');
         player.stats.totalGoldSpent += totalCost;
 
         const caravan = {
@@ -3887,6 +3908,7 @@
                 var wageBill = dailyCrew * daysSinceWage;
                 if (player.gold >= wageBill) {
                     player.gold -= wageBill;
+                    logFinance(-wageBill, 'caravan_wages', 'Caravan crew wages');
                     player.stats.totalGoldSpent += wageBill;
                     caravan.totalSpent = (caravan.totalSpent || 0) + wageBill;
                     caravan.totalProfit = (caravan.totalProfit || 0) - wageBill;
@@ -4195,6 +4217,7 @@
                                 if (hasSkill('trade_route_mastery')) price *= 1.10;
                                 const revenue = Math.floor(price * qty);
                                 player.gold += revenue;
+                                logFinance(revenue, 'caravan_sales', 'Caravan sold goods');
                                 player.stats.totalGoldEarned += revenue;
                                 tripRevenue += revenue;
                                 destTown.market.supply[resId] = (destTown.market.supply[resId] || 0) + qty;
@@ -5061,6 +5084,7 @@
         // Escort costs gold daily while traveling
         if (player.escort) {
             player.gold -= player.escort.dailyCost || 10;
+            logFinance(-(player.escort.dailyCost || 10), 'travel', 'Armed escort');
             if (player.gold < 0) {
                 player.gold = 0;
                 Engine.logEvent('\u{1F4B8} ' + player.escort.personName + ' leaves \u2014 you can\'t afford the escort fee.');
@@ -6295,6 +6319,7 @@
         var duration = isAnnual ? (cfg.permitDurationAnnual || 360) : (cfg.permitDurationMonthly || 30);
         if (player.gold < cost) return { success: false, message: 'Not enough gold. Permit costs ' + cost + 'g.' };
         player.gold -= cost;
+        logFinance(-cost, 'licenses', 'Horse permit');
         player.stats.totalGoldSpent += cost;
         if (!player.horsePermit) player.horsePermit = {};
         player.horsePermit[kingdomId] = { purchasedDay: Engine.getDay(), expiresDay: Engine.getDay() + duration };
@@ -7495,6 +7520,7 @@
                 var taxAmount = Math.floor(player.gold * taxRate);
                 if (taxAmount > 0) {
                     player.gold -= taxAmount;
+                    logFinance(-taxAmount, 'taxes', 'Tax payment');
                     inheritKingdom.gold = (inheritKingdom.gold || 0) + taxAmount;
                     Engine.logEvent('💀 ' + inheritKingdom.name + ' collects ' + taxAmount + 'g inheritance tax (' + Math.round(taxRate * 100) + '%) from the estate of ' + oldName + '.');
                 }
@@ -12551,6 +12577,7 @@
             stats: { ...player.stats },
             supplyChains: [...player.supplyChains],
             tradeLog: JSON.parse(JSON.stringify(player.tradeLog)),
+            financialLedger: player.financialLedger ? player.financialLedger.slice(-500) : [],
             firstName: player.firstName,
             lastName: player.lastName,
             sex: player.sex,
@@ -12823,6 +12850,7 @@
         player.stats = Object.assign({}, player.stats, data.stats || {});
         player.supplyChains = data.supplyChains || [];
         player.tradeLog = data.tradeLog || [];
+        player.financialLedger = data.financialLedger || [];
         player.firstName = data.firstName || 'Unknown';
         player.lastName = data.lastName || 'Merchant';
         player.sex = data.sex || 'M';
@@ -13229,6 +13257,7 @@
         if (player.gold < cost) return { success: false, message: `Repair costs ${cost}g. Not enough gold.` };
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.visit_hospital || 5);
         player.gold -= cost;
+        logFinance(-cost, 'buildings', 'Repaired building');
         player.stats.totalGoldSpent += cost;
         bld.condition = 'new';
         bld.lastRepairDay = Engine.getDay();
@@ -13891,6 +13920,7 @@
                 const wage = Math.floor(_calculateWorkerWage(person) * (player.spouseCostMod || 1.0));
                 if (player.gold >= wage) {
                     player.gold -= wage;
+                    logFinance(-wage, 'wages', 'Employee wages');
                     player.stats.totalGoldSpent += wage;
                     person.gold += wage;
                     person.needs.wealth = Math.min(100, person.needs.wealth + 10);
@@ -14908,6 +14938,7 @@
         // Execute sale
         kingdom.gold -= totalPrice;
         player.gold += totalPrice;
+        logFinance(totalPrice, 'kingdom_sales', 'Sold to kingdom');
         player.stats.totalGoldEarned += totalPrice;
 
         // Deduct from inventory
@@ -15667,6 +15698,7 @@
         var prevAutoRenew = existing ? (existing.autoRenew || false) : false;
 
         player.gold -= price;
+        logFinance(-price, 'guild', 'Guild membership');
         player.stats.totalGoldSpent += price;
         player.guildMemberships[guildId] = {
             expiresDay: currentExpiry + duration,
@@ -16752,6 +16784,7 @@
         var currentDay = (typeof Engine !== 'undefined') ? Engine.getDay() : 0;
         var duration = CONFIG.LICENSE_DURATION || 360;
         player.gold -= fee;
+        logFinance(-fee, 'licenses', 'License fee');
         kingdom.gold = (kingdom.gold || 0) + fee;
         if (!player.licenses[kingdomId]) player.licenses[kingdomId] = [];
         player.licenses[kingdomId].push({
@@ -18059,6 +18092,7 @@
                         if (supply > 0 && player.gold >= price) {
                             town.market.supply[foodId]--;
                             player.gold -= price;
+                            logFinance(-price, 'food_drink', 'Bought food/drink');
                             const restore = HUNGER_CONFIG.RAW_FOOD_TYPES.includes(foodId) ? HUNGER_CONFIG.RAW_FOOD_RESTORE : HUNGER_CONFIG.FOOD_RESTORE;
                             player.hunger = Math.min(HUNGER_CONFIG.MAX, player.hunger + restore);
                             bought = true;
@@ -19076,6 +19110,7 @@
             Engine.logEvent(`Work complete: ${job.name} — ${finalPay}g paid to ${servK ? servK.name : 'the kingdom'} (servitude).`);
         } else {
             player.gold += finalPay;
+            logFinance(finalPay, 'jobs', job.name);
             player.stats.totalGoldEarned += finalPay;
             Engine.logEvent(`Work complete: ${job.name} — earned ${finalPay}g.`);
         }
@@ -22765,6 +22800,7 @@
 
         // Charge gold (material purchase cost + labor)
         player.gold -= totalGoldNeeded;
+        logFinance(-totalGoldNeeded, 'housing', 'Bought house');
         player.stats.totalGoldSpent += totalGoldNeeded;
 
         var house = { id: houseUid(), type: housingTypeId, townId: townId, purchaseDay: Engine.getDay(), occupants: [], homeStorage: {}, isRental: false, rentAccumulated: 0, purchaseCost: totalGoldNeeded, condition: 'new', builtDay: Engine.getDay(), lastRepairDay: 0 };
@@ -23046,6 +23082,7 @@
             if ((tenant.gold || 0) >= rent) {
                 tenant.gold -= rent;
                 player.gold += rent;
+                logFinance(rent, 'rent_income', 'Rent from ' + ((Engine.findTown(house.townId) || {}).name || 'property'));
                 player.stats.totalGoldEarned += rent;
                 house.rentAccumulated = (house.rentAccumulated || 0) + rent;
                 house.lastRentDay = day;
@@ -23421,6 +23458,7 @@
         }
         if (player.gold < cost) return { success: false, message: 'Need ' + cost + 'g to buy land.' };
         player.gold -= cost;
+        logFinance(-cost, 'land', 'Bought land');
         player.stats.totalGoldSpent += cost;
         player.landOwned = player.landOwned || {};
         player.landOwned[townId] = (player.landOwned[townId] || 0) + 1;
@@ -23440,6 +23478,7 @@
         }
         var sellPrice = Math.floor(getLandCost(townId) * CONFIG.LAND_SELL_RATIO);
         player.gold += sellPrice;
+        logFinance(sellPrice, 'land', 'Sold land');
         player.stats.totalGoldEarned += sellPrice;
         player.landOwned[townId]--;
         if (player.landOwned[townId] <= 0) delete player.landOwned[townId];
@@ -24258,6 +24297,7 @@
                     if (supply > 0 && player.gold >= price) {
                         town.market.supply[bevId]--;
                         player.gold -= price;
+                        logFinance(-price, 'food_drink', 'Bought food/drink');
                         var restore = THIRST_CONFIG.BEVERAGE_RESTORE[bevId] || 20;
                         player.thirst = Math.min(THIRST_CONFIG.MAX, player.thirst + restore);
                         // Apply beverage effects
@@ -29210,6 +29250,7 @@
 
         // Give loan gold to player (clear debt)
         player.gold += offer.amount;
+        logFinance(offer.amount, 'loans', 'Guild loan received');
         player.bankruptDays = 0;
 
         // Set bankruptcy state
@@ -29251,6 +29292,7 @@
         if (player.gold >= loan.monthlyPayment) {
             // Make payment
             player.gold -= loan.monthlyPayment;
+            logFinance(-loan.monthlyPayment, 'loans', 'Loan repayment');
             loan.remainingBalance -= loan.monthlyPayment;
             player.stats.totalGoldSpent += loan.monthlyPayment;
 
@@ -31750,6 +31792,7 @@
         get stats() { return player.stats; },
         get supplyChains() { return player.supplyChains; },
         get tradeLog() { return player.tradeLog; },
+        get financialLedger() { return player.financialLedger; },
         get traveling() { return player.traveling; },
         get travelProgress() { return player.travelProgress; },
         get travelBySea() { return player.travelBySea; },
