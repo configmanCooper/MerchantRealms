@@ -2337,6 +2337,7 @@
             totalSpent: totalCost,
             active: true,
             overflowSell: options.overflowSell || false,
+            autoDisbandConditions: options.autoDisbandConditions ? JSON.parse(JSON.stringify(options.autoDisbandConditions)) : [],
         };
         player.caravans.push(caravan);
         var crewMsg = ' (' + carriers + ' carriers, ' + guardCount + ' guards';
@@ -2554,7 +2555,25 @@
             return { success: false, message: 'You are carrying too much! (' + Math.round(carriedWeight) + '/' + portableCapacity + '). Deposit items to warehouse storage first.' };
         }
 
-        const route = Engine.findPath(player.townId, townId);
+        // If in wilderness (stopped on road), find nearest town as origin
+        var originTownId = player.townId;
+        if (!originTownId && player.worldX && player.worldY) {
+            var towns = Engine.getTowns();
+            var nearestDist = Infinity;
+            for (var ni = 0; ni < towns.length; ni++) {
+                var nd = Math.hypot(towns[ni].x - player.worldX, towns[ni].y - player.worldY);
+                if (nd < nearestDist) { nearestDist = nd; originTownId = towns[ni].id; }
+            }
+            // If nearest town IS the destination, travel directly to its coords
+            if (originTownId === townId) {
+                var destTown = Engine.findTown(townId);
+                if (destTown) return travelToCoords(destTown.x, destTown.y);
+                return { success: false, message: 'Cannot find destination.' };
+            }
+        }
+        if (!originTownId) return { success: false, message: 'Cannot determine current location.' };
+
+        const route = Engine.findPath(originTownId, townId);
         if (!route || route.length === 0) return { success: false, message: 'No route to that town. It may be across water with no sea route.' };
 
         // Check for closed border at destination
@@ -2659,7 +2678,7 @@
         player.travelTotalDist = totalDist;
         player.travelOffroad = isOffroad;
         player.travelBySea = isSea;
-        player.travelOrigin = player.townId;
+        player.travelOrigin = player.townId || originTownId;
         player.travelPaid = false;
         // Set travel mode based on route type
         if (isSea && player.ships && player.ships.length > 0) {
@@ -2684,6 +2703,8 @@
         }
 
         // Travel energy is now handled per-tick in tickTravel (no upfront cost)
+
+        var estimatedDays = Math.max(1, Math.ceil(totalDist / (CONFIG.CARAVAN_BASE_SPEED * 1.5)));
 
         const dest = Engine.findTown(townId);
         const horseMsg = hasHorse ? (hasSaddle ? ' 🐴 (Horse + Saddle bonus!)' : ' 🐴 (Horse bonus!)') : '';
@@ -4209,6 +4230,65 @@
                 player.achievementStats.caravanDestinations[destTownId] = true;
                 player.stats.caravansCompleted = (player.stats.caravansCompleted || 0) + 1;
 
+                // ═══════════════════════════════════════════
+                // CHECK AUTO-DISBAND CONDITIONS
+                // ═══════════════════════════════════════════
+                var autoDisbandReason = checkAutoDisbandConditions(caravan, destTownId);
+                if (autoDisbandReason) {
+                    logCaravan(caravan, autoDisbandReason);
+                    Engine.logEvent(autoDisbandReason);
+                    // Process any remaining orders at current town first
+                    if (caravan.orders && caravan.orders.length > 0) {
+                        processCaravanOrders(caravan, destTownId, isReturnLeg);
+                    }
+                    // Drop goods or sell, then disband
+                    for (var _adk in caravan.goods) {
+                        if (caravan.goods[_adk] > 0) {
+                            if (player.townId === destTownId) {
+                                player.inventory[_adk] = (player.inventory[_adk] || 0) + caravan.goods[_adk];
+                            } else if (caravan.overflowSell && destTown && destTown.market) {
+                                var _adPrice = destTown.market.prices[_adk] || 1;
+                                var _adRev = Math.floor(_adPrice * caravan.goods[_adk]);
+                                player.gold += _adRev;
+                                player.stats.totalGoldEarned += _adRev;
+                                caravan.totalProfit = (caravan.totalProfit || 0) + _adRev;
+                                destTown.market.supply[_adk] = (destTown.market.supply[_adk] || 0) + caravan.goods[_adk];
+                            } else {
+                                if (!player.townStorage[destTownId]) player.townStorage[destTownId] = {};
+                                player.townStorage[destTownId][_adk] = (player.townStorage[destTownId][_adk] || 0) + caravan.goods[_adk];
+                            }
+                        }
+                    }
+                    caravan.goods = {};
+                    caravan.status = 'arrived';
+                    caravan.active = false;
+                    caravan.recurring = false;
+                    logCaravan(caravan, '🛑 Caravan auto-disbanded.');
+                    // Return equipment to player inventory or town storage
+                    var _adAtTown = player.townId === destTownId;
+                    if (caravan.carrierHorses > 0) {
+                        if (_adAtTown) player.inventory['horses'] = (player.inventory['horses'] || 0) + caravan.carrierHorses;
+                        else { if (!player.townStorage[destTownId]) player.townStorage[destTownId] = {}; player.townStorage[destTownId]['horses'] = (player.townStorage[destTownId]['horses'] || 0) + caravan.carrierHorses; }
+                    }
+                    if (caravan.guardWeapons > 0) {
+                        if (_adAtTown) player.inventory['swords'] = (player.inventory['swords'] || 0) + caravan.guardWeapons;
+                        else { if (!player.townStorage[destTownId]) player.townStorage[destTownId] = {}; player.townStorage[destTownId]['swords'] = (player.townStorage[destTownId]['swords'] || 0) + caravan.guardWeapons; }
+                    }
+                    if (caravan.guardArmor > 0) {
+                        if (_adAtTown) player.inventory['armor'] = (player.inventory['armor'] || 0) + caravan.guardArmor;
+                        else { if (!player.townStorage[destTownId]) player.townStorage[destTownId] = {}; player.townStorage[destTownId]['armor'] = (player.townStorage[destTownId]['armor'] || 0) + caravan.guardArmor; }
+                    }
+                    if (caravan.carts > 0) {
+                        if (_adAtTown) player.inventory['cart'] = (player.inventory['cart'] || 0) + caravan.carts;
+                        else { if (!player.townStorage[destTownId]) player.townStorage[destTownId] = {}; player.townStorage[destTownId]['cart'] = (player.townStorage[destTownId]['cart'] || 0) + caravan.carts; }
+                    }
+                    if (caravan.wagons > 0) {
+                        if (_adAtTown) player.inventory['wagon'] = (player.inventory['wagon'] || 0) + caravan.wagons;
+                        else { if (!player.townStorage[destTownId]) player.townStorage[destTownId] = {}; player.townStorage[destTownId]['wagon'] = (player.townStorage[destTownId]['wagon'] || 0) + caravan.wagons; }
+                    }
+                    continue;
+                }
+
                 // Handle round-trip / recurring logic
                 if ((caravan.roundTrip || caravan.recurring) && !isReturnLeg) {
                     // Outbound leg complete — start return trip
@@ -4381,6 +4461,78 @@
 
         // Clean old log entries (>90 days)
         cleanCaravanLogs();
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // AUTO-DISBAND CONDITION CHECKER
+    // ═══════════════════════════════════════════════════════════
+    function checkAutoDisbandConditions(caravan, currentTownId) {
+        if (!caravan.autoDisbandConditions || caravan.autoDisbandConditions.length === 0) return null;
+        for (var i = 0; i < caravan.autoDisbandConditions.length; i++) {
+            var cond = caravan.autoDisbandConditions[i];
+            var checkTownId = cond.location === 'source' ? caravan.fromTownId : caravan.toTownId;
+            // Only check conditions relevant to the town we just arrived at
+            if (checkTownId !== currentTownId) continue;
+            var town = Engine.findTown(checkTownId);
+            if (!town) continue;
+            var townName = town.name || checkTownId;
+            var resObj = cond.good ? findResource(cond.good) : null;
+            var resName = resObj ? resObj.name : (cond.good || '');
+
+            if (cond.type === 'no_supply') {
+                var supply = (town.market && town.market.supply && town.market.supply[cond.good]) || 0;
+                if (supply <= 0) {
+                    return '📦 Auto-disband: no ' + resName + ' available at ' + townName;
+                }
+            } else if (cond.type === 'storage_full') {
+                // Check if ALL player buildings at this town have full input storage
+                var townBuildings = player.buildings.filter(function(b) { return b.townId === checkTownId && b.active; });
+                if (townBuildings.length === 0) {
+                    return '🏭 Auto-disband: no buildings at ' + townName;
+                }
+                var allFull = true;
+                for (var bi = 0; bi < townBuildings.length; bi++) {
+                    var bld = townBuildings[bi];
+                    var bt = null;
+                    for (var bk in BUILDING_TYPES) { if (BUILDING_TYPES[bk].id === bld.type) { bt = BUILDING_TYPES[bk]; break; } }
+                    var cap = bt ? (bt.storage || 0) * (bld.level || 1) : 0;
+                    var used = 0;
+                    if (bld.inventory) { for (var ik in bld.inventory) { var rw = (findResource(ik) || {}).weight || 1; used += (bld.inventory[ik] || 0) * rw; } }
+                    if (used < cap) { allFull = false; break; }
+                }
+                if (allFull) {
+                    return '🏭 Auto-disband: all building storage full at ' + townName;
+                }
+            } else if (cond.type === 'price_above') {
+                var priceA = (town.market && town.market.prices && town.market.prices[cond.good]) || 0;
+                if (priceA > 0 && priceA >= cond.price) {
+                    return '📈 Auto-disband: ' + resName + ' price (' + Math.floor(priceA) + 'g) ≥ ' + cond.price + 'g at ' + townName;
+                }
+            } else if (cond.type === 'price_below') {
+                var priceB = (town.market && town.market.prices && town.market.prices[cond.good]) || 0;
+                if (priceB > 0 && priceB <= cond.price) {
+                    return '📉 Auto-disband: ' + resName + ' price (' + Math.floor(priceB) + 'g) ≤ ' + cond.price + 'g at ' + townName;
+                }
+            } else if (cond.type === 'trip_count') {
+                if ((caravan.tripCount || 0) >= (cond.count || 1)) {
+                    return '🔢 Auto-disband: completed ' + caravan.tripCount + ' trips (limit: ' + cond.count + ')';
+                }
+            } else if (cond.type === 'profit_below') {
+                var avgProfit = (caravan.tripCount > 0) ? Math.floor((caravan.totalProfit || 0) / caravan.tripCount) : 0;
+                if (caravan.tripCount >= 2 && avgProfit < (cond.amount || 0)) {
+                    return '💰 Auto-disband: avg profit/trip (' + avgProfit + 'g) below ' + cond.amount + 'g';
+                }
+            }
+        }
+        return null;
+    }
+
+    function setAutoDisbandConditions(caravanId, conditions) {
+        var caravan = player.caravans.find(function(c) { return c.id === caravanId && c.active; });
+        if (!caravan) return { success: false, message: 'No active caravan with that ID.' };
+        caravan.autoDisbandConditions = conditions ? JSON.parse(JSON.stringify(conditions)) : [];
+        logCaravan(caravan, '⚙️ Auto-disband conditions updated (' + caravan.autoDisbandConditions.length + ' rules).');
+        return { success: true, message: 'Auto-disband conditions set (' + caravan.autoDisbandConditions.length + ' rules).' };
     }
 
     function rescueCaravan(caravanId) {
@@ -4661,44 +4813,37 @@
         if (player.travelPaid) return { success: false, message: 'Cannot stop paid transport.' };
 
         var pos = getPlayerWorldPosition();
-        var savedOrigin = player.travelOrigin || player.townId;
 
         player.traveling = false;
         player.travelProgress = 0;
 
         if (pos) {
+            // Check if very close to a town — snap to it
             var towns = Engine.getTowns();
-            var nearestTown = null;
-            var nearestDist = Infinity;
             for (var i = 0; i < towns.length; i++) {
                 var d = Math.hypot(towns[i].x - pos.x, towns[i].y - pos.y);
-                if (d < nearestDist) {
-                    nearestDist = d;
-                    nearestTown = towns[i];
-                }
                 if (d < CONFIG.TILE_SIZE * 3) {
                     player.townId = towns[i].id;
+                    player.worldX = null;
+                    player.worldY = null;
                     Engine.logEvent('You stopped at ' + towns[i].name + '.', { type: 'travel_stop' }, 'travel_events');
                     cleanupTravelState();
                     return { success: true, atTown: towns[i].name };
                 }
             }
-            // In wilderness — place at nearest town to avoid null townId
-            if (nearestTown) {
-                player.townId = nearestTown.id;
-                Engine.logEvent('You stopped traveling and made your way to ' + nearestTown.name + '.', { type: 'travel_stop' }, 'travel_events');
-            } else {
-                // Absolute fallback: return to origin
-                player.townId = player.travelOrigin || savedOrigin;
-                Engine.logEvent('You stopped traveling and returned to your origin.', { type: 'travel_stop' }, 'travel_events');
-            }
+            // Not near any town — stop at current world position on the road
+            player.townId = null;
+            player.worldX = pos.x;
+            player.worldY = pos.y;
+            Engine.logEvent('🛑 You stopped on the road.', { type: 'travel_stop' }, 'travel_events');
         } else {
             // No position could be calculated — return to origin
-            player.townId = player.travelOrigin || savedOrigin;
+            var savedOrigin = player.travelOrigin || player.townId;
+            player.townId = savedOrigin;
         }
 
         cleanupTravelState();
-        return { success: true, atTown: player.townId ? (Engine.findTown(player.townId) || { name: 'unknown' }).name : null };
+        return { success: true, atTown: player.townId ? ((Engine.findTown(player.townId) || {}).name || null) : null, inWilderness: !player.townId };
     }
 
     function turnBack() {
@@ -31837,6 +31982,7 @@
         cancelRecurringRoute,
         disbandCaravan,
         forceDisbandCaravan,
+        setAutoDisbandConditions,
         getActiveRoutes,
         getCaravanLog,
         editCaravanOrders,

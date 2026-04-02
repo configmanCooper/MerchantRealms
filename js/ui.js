@@ -918,9 +918,39 @@ window.UI = (function () {
             html += `<div class="detail-row"><span class="label">Your Reputation</span>
                 <span class="value"><div class="bar-small"><div class="bar-small-fill" style="width:${rep}%;background:${repColor}"></div></div> ${rep}</span></div>`;
         }
+        // Active events affecting this town
+        if (typeof Engine !== 'undefined' && Engine.getEvents) {
+            var activeEvents = Engine.getEvents().filter(function(ev) { return ev.active && ev.townId === town.id; });
+            if (activeEvents.length > 0) {
+                var eventIcons = {
+                    drought: { icon: '☀️', color: '#ccb974', label: 'Drought' },
+                    blight: { icon: '🌾', color: '#c44e52', label: 'Crop Blight' },
+                    bountiful: { icon: '🌻', color: '#55a868', label: 'Bountiful Harvest' },
+                    trade_festival: { icon: '🎪', color: '#6c9bd1', label: 'Trade Festival' },
+                    plague: { icon: '🦠', color: '#9b59b6', label: 'Plague' },
+                    bandit_surge: { icon: '🗡️', color: '#c44e52', label: 'Bandit Uprising' },
+                    fire: { icon: '🔥', color: '#e74c3c', label: 'Fire' },
+                    flood: { icon: '🌊', color: '#3498db', label: 'Flood' },
+                    earthquake: { icon: '💥', color: '#95a5a6', label: 'Earthquake' },
+                    famine: { icon: '💀', color: '#c44e52', label: 'Famine' },
+                    festival: { icon: '🎉', color: '#f1c40f', label: 'Festival' },
+                    religious_revival: { icon: '⛪', color: '#daa520', label: 'Religious Revival' },
+                    migration_wave: { icon: '🚶', color: '#1abc9c', label: 'Migration Wave' },
+                    gold_rush: { icon: '⛏️', color: '#f1c40f', label: 'Gold Rush' }
+                };
+                var evHtml = '';
+                for (var ei = 0; ei < activeEvents.length; ei++) {
+                    var ev = activeEvents[ei];
+                    var evCfg = eventIcons[ev.type] || { icon: '⚡', color: '#aaa', label: ev.name || ev.type };
+                    var evName = ev.name || evCfg.label;
+                    var daysLeft = ev.daysRemaining != null ? ev.daysRemaining : '?';
+                    var tooltip = evName + ' — ' + daysLeft + ' days remaining';
+                    evHtml += '<span title="' + tooltip + '" style="cursor:help;font-size:1.1rem;margin-right:4px;filter:drop-shadow(0 0 2px ' + evCfg.color + ');">' + evCfg.icon + '</span>';
+                }
+                html += '<div class="detail-row"><span class="label">Events</span><span class="value">' + evHtml + '</span></div>';
+            }
+        }
         html += `</div>`;
-
-        // Market prices — gated by location and skills
         // Player can see CURRENT prices if: in this town, OR has appropriate skill
         const hasMarketScout = typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('market_scout');
         const hasTradeNetwork = typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('trade_network');
@@ -6626,6 +6656,25 @@ window.UI = (function () {
                 html += '</div>';
             }
 
+            // Auto-disband conditions summary
+            if (c.autoDisbandConditions && c.autoDisbandConditions.length > 0) {
+                html += '<div style="margin-top:4px;font-size:0.65rem;color:#8ab;padding:3px 6px;background:rgba(80,120,180,0.15);border-radius:4px;border-left:2px solid rgba(80,120,180,0.5);">';
+                html += '<span style="color:#9cc;">🔄 Auto-disband (' + c.autoDisbandConditions.length + '):</span> ';
+                var condStrs = [];
+                for (var _ci = 0; _ci < c.autoDisbandConditions.length; _ci++) {
+                    var _cond = c.autoDisbandConditions[_ci];
+                    var _loc = _cond.location === 'source' ? 'src' : 'dest';
+                    if (_cond.type === 'no_supply') condStrs.push('no ' + _cond.good + ' @ ' + _loc);
+                    else if (_cond.type === 'storage_full') condStrs.push('storage full @ ' + _loc);
+                    else if (_cond.type === 'price_above') condStrs.push(_cond.good + ' ≥ ' + _cond.price + 'g @ ' + _loc);
+                    else if (_cond.type === 'price_below') condStrs.push(_cond.good + ' ≤ ' + _cond.price + 'g @ ' + _loc);
+                    else if (_cond.type === 'trip_count') condStrs.push('after ' + _cond.count + ' trips');
+                    else if (_cond.type === 'profit_below') condStrs.push('avg profit < ' + _cond.amount + 'g');
+                }
+                html += condStrs.join(', ');
+                html += '</div>';
+            }
+
             // Action buttons
             html += '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">';
             if (c.status === 'blocked' && c.active !== false) {
@@ -6640,6 +6689,7 @@ window.UI = (function () {
             if (c.active && !c.disbanding) {
                 html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;background:rgba(180,140,50,0.3);" onclick="(function(){if(!confirm(\'Finish last run and disband this caravan? Goods will be dropped to storage, not sold.\'))return;var r=Player.disbandCaravan(\'' + c.id + '\');UI.toast(r.message,r.success?\'success\':\'warning\');UI.openCaravanManagement();})()">🏳️ Finish & Disband</button>';
                 html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;" onclick="UI.openEditCaravanEquipment(\'' + c.id + '\')">⚙️ Equipment</button>';
+                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;background:rgba(80,120,180,0.3);" onclick="UI.openAutoDisbandEditor(\'' + c.id + '\')">🔄 Auto-Disband</button>';
             }
             if (c.disbanding && c.active) {
                 html += '<span style="font-size:0.7rem;color:#d4a017;padding:3px 6px;">🏳️ Disbanding…</span>';
@@ -6654,6 +6704,193 @@ window.UI = (function () {
 
         var footer = '<button class="btn-medieval" onclick="UI.openCaravanDialog()">← Back to Send</button>';
         openModal('📊 Caravan Management', html, footer);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // AUTO-DISBAND CONDITION EDITOR
+    // ═══════════════════════════════════════════════════════════
+    var _adConditions = []; // temp state for editor
+
+    function openAutoDisbandEditor(caravanId) {
+        var caravan = null;
+        for (var i = 0; i < Player.caravans.length; i++) {
+            if (Player.caravans[i].id === caravanId) { caravan = Player.caravans[i]; break; }
+        }
+        if (!caravan) { toast('Caravan not found.', 'warning'); return; }
+
+        _adConditions = caravan.autoDisbandConditions ? JSON.parse(JSON.stringify(caravan.autoDisbandConditions)) : [];
+
+        _renderAutoDisbandEditor(caravanId);
+    }
+
+    function _renderAutoDisbandEditor(caravanId) {
+        var caravan = null;
+        for (var i = 0; i < Player.caravans.length; i++) {
+            if (Player.caravans[i].id === caravanId) { caravan = Player.caravans[i]; break; }
+        }
+        if (!caravan) return;
+
+        var fromTown = Engine.findTown(caravan.fromTownId);
+        var toTown = Engine.findTown(caravan.toTownId);
+        var fromName = fromTown ? fromTown.name : caravan.fromTownId;
+        var toName = toTown ? toTown.name : caravan.toTownId;
+
+        // Build goods list for dropdown
+        var allGoods = [];
+        if (typeof CONFIG !== 'undefined' && CONFIG.RESOURCES) {
+            for (var rk in CONFIG.RESOURCES) {
+                var r = CONFIG.RESOURCES[rk];
+                if (r && r.id) allGoods.push({ id: r.id, name: r.name || r.id });
+            }
+        }
+        allGoods.sort(function(a, b) { return a.name.localeCompare(b.name); });
+
+        var html = '<div style="max-height:400px;overflow-y:auto;">';
+
+        // Existing conditions
+        if (_adConditions.length > 0) {
+            html += '<div style="margin-bottom:10px;">';
+            html += '<div style="font-size:0.75rem;color:#d4a017;margin-bottom:4px;">Current Conditions:</div>';
+            for (var ci = 0; ci < _adConditions.length; ci++) {
+                var cond = _adConditions[ci];
+                var desc = _describeCondition(cond, fromName, toName);
+                html += '<div style="display:flex;align-items:center;gap:6px;padding:3px 6px;margin:2px 0;background:rgba(80,120,180,0.15);border-radius:4px;font-size:0.7rem;">';
+                html += '<span style="flex:1;color:#bcd;">' + desc + '</span>';
+                html += '<button class="btn-medieval" style="font-size:0.6rem;padding:1px 6px;background:rgba(200,50,50,0.3);" onclick="UI._removeADCondition(' + ci + ',\'' + caravanId + '\')">✕</button>';
+                html += '</div>';
+            }
+            html += '</div>';
+        } else {
+            html += '<div style="font-size:0.7rem;color:#888;margin-bottom:10px;font-style:italic;">No auto-disband conditions set. Caravan runs until manually stopped.</div>';
+        }
+
+        // Add new condition form
+        html += '<div style="border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:8px;background:rgba(0,0,0,0.2);">';
+        html += '<div style="font-size:0.75rem;color:#d4a017;margin-bottom:6px;">➕ Add Condition</div>';
+
+        // Condition type
+        html += '<div style="margin-bottom:6px;">';
+        html += '<label style="font-size:0.65rem;color:#999;">Type:</label><br>';
+        html += '<select id="ad-type" style="width:100%;padding:3px;font-size:0.7rem;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;" onchange="UI._adTypeChanged()">';
+        html += '<option value="no_supply">No supply of a good</option>';
+        html += '<option value="storage_full">All building storage full</option>';
+        html += '<option value="price_above">Price goes above threshold</option>';
+        html += '<option value="price_below">Price drops below threshold</option>';
+        html += '<option value="trip_count">After X trips</option>';
+        html += '<option value="profit_below">Average profit per trip below</option>';
+        html += '</select>';
+        html += '</div>';
+
+        // Good selector (for supply/price conditions)
+        html += '<div id="ad-good-row" style="margin-bottom:6px;">';
+        html += '<label style="font-size:0.65rem;color:#999;">Good:</label><br>';
+        html += '<select id="ad-good" style="width:100%;padding:3px;font-size:0.7rem;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;">';
+        for (var gi = 0; gi < allGoods.length; gi++) {
+            html += '<option value="' + allGoods[gi].id + '">' + allGoods[gi].name + '</option>';
+        }
+        html += '</select>';
+        html += '</div>';
+
+        // Location selector
+        html += '<div id="ad-loc-row" style="margin-bottom:6px;">';
+        html += '<label style="font-size:0.65rem;color:#999;">Location:</label><br>';
+        html += '<select id="ad-location" style="width:100%;padding:3px;font-size:0.7rem;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;">';
+        html += '<option value="source">Source (' + fromName + ')</option>';
+        html += '<option value="destination">Destination (' + toName + ')</option>';
+        html += '</select>';
+        html += '</div>';
+
+        // Price/amount input (for price/trip/profit conditions)
+        html += '<div id="ad-value-row" style="margin-bottom:6px;display:none;">';
+        html += '<label id="ad-value-label" style="font-size:0.65rem;color:#999;">Price threshold:</label><br>';
+        html += '<input id="ad-value" type="number" min="1" value="10" style="width:80px;padding:3px;font-size:0.7rem;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;">';
+        html += '</div>';
+
+        html += '<button class="btn-medieval" style="font-size:0.7rem;padding:4px 12px;margin-top:4px;" onclick="UI._addADCondition(\'' + caravanId + '\')">➕ Add</button>';
+        html += '</div>';
+
+        html += '</div>';
+
+        var footer = '<button class="btn-medieval" onclick="(function(){var r=Player.setAutoDisbandConditions(\'' + caravanId + '\',UI._getADConditions());UI.toast(r.message,r.success?\'success\':\'warning\');UI.openCaravanManagement();})()" style="background:rgba(50,150,80,0.3);">✅ Save & Close</button>';
+        footer += ' <button class="btn-medieval" onclick="UI.openCaravanManagement()">← Back</button>';
+        openModal('🔄 Auto-Disband Conditions', html, footer);
+
+        // Initialize visibility
+        setTimeout(function() { _adTypeChanged(); }, 50);
+    }
+
+    function _describeCondition(cond, fromName, toName) {
+        var locName = cond.location === 'source' ? fromName : toName;
+        var resObj = cond.good ? (CONFIG.RESOURCES ? CONFIG.RESOURCES[Object.keys(CONFIG.RESOURCES).find(function(k) { return CONFIG.RESOURCES[k].id === cond.good; })] : null) : null;
+        var goodName = resObj ? resObj.name : (cond.good || '');
+        if (cond.type === 'no_supply') return '📦 Disband if no <b>' + goodName + '</b> at <b>' + locName + '</b>';
+        if (cond.type === 'storage_full') return '🏭 Disband if all building storage full at <b>' + locName + '</b>';
+        if (cond.type === 'price_above') return '📈 Disband if <b>' + goodName + '</b> ≥ <b>' + cond.price + 'g</b> at <b>' + locName + '</b>';
+        if (cond.type === 'price_below') return '📉 Disband if <b>' + goodName + '</b> ≤ <b>' + cond.price + 'g</b> at <b>' + locName + '</b>';
+        if (cond.type === 'trip_count') return '🔢 Disband after <b>' + cond.count + '</b> trips';
+        if (cond.type === 'profit_below') return '💰 Disband if avg profit/trip below <b>' + cond.amount + 'g</b>';
+        return '❓ Unknown condition';
+    }
+
+    function _adTypeChanged() {
+        var typeEl = document.getElementById('ad-type');
+        var goodRow = document.getElementById('ad-good-row');
+        var locRow = document.getElementById('ad-loc-row');
+        var valRow = document.getElementById('ad-value-row');
+        var valLabel = document.getElementById('ad-value-label');
+        if (!typeEl) return;
+        var t = typeEl.value;
+        // Show/hide good selector
+        if (goodRow) goodRow.style.display = (t === 'no_supply' || t === 'price_above' || t === 'price_below') ? '' : 'none';
+        // Show/hide location
+        if (locRow) locRow.style.display = (t === 'trip_count' || t === 'profit_below') ? 'none' : '';
+        // Show/hide value input
+        if (valRow) valRow.style.display = (t === 'price_above' || t === 'price_below' || t === 'trip_count' || t === 'profit_below') ? '' : 'none';
+        if (valLabel) {
+            if (t === 'price_above' || t === 'price_below') valLabel.textContent = 'Price threshold (gold):';
+            else if (t === 'trip_count') valLabel.textContent = 'Trip count:';
+            else if (t === 'profit_below') valLabel.textContent = 'Min avg profit/trip (gold):';
+        }
+    }
+
+    function _addADCondition(caravanId) {
+        var typeEl = document.getElementById('ad-type');
+        var goodEl = document.getElementById('ad-good');
+        var locEl = document.getElementById('ad-location');
+        var valEl = document.getElementById('ad-value');
+        if (!typeEl) return;
+
+        var t = typeEl.value;
+        var cond = { type: t };
+
+        if (t === 'no_supply' || t === 'price_above' || t === 'price_below') {
+            cond.good = goodEl ? goodEl.value : '';
+            cond.location = locEl ? locEl.value : 'destination';
+        }
+        if (t === 'storage_full') {
+            cond.location = locEl ? locEl.value : 'destination';
+        }
+        if (t === 'price_above' || t === 'price_below') {
+            cond.price = Math.max(1, Math.floor(Number(valEl ? valEl.value : 10)));
+        }
+        if (t === 'trip_count') {
+            cond.count = Math.max(1, Math.floor(Number(valEl ? valEl.value : 5)));
+        }
+        if (t === 'profit_below') {
+            cond.amount = Math.max(0, Math.floor(Number(valEl ? valEl.value : 10)));
+        }
+
+        _adConditions.push(cond);
+        _renderAutoDisbandEditor(caravanId);
+    }
+
+    function _removeADCondition(index, caravanId) {
+        _adConditions.splice(index, 1);
+        _renderAutoDisbandEditor(caravanId);
+    }
+
+    function _getADConditions() {
+        return _adConditions;
     }
 
     function openEditCaravanOrders(caravanId) {
@@ -9620,8 +9857,24 @@ window.UI = (function () {
         var result = Player.turnBack();
         if (result && result.success) {
             toast('🔄 Turning back...', 'info', 'travel_events');
+            update(); // refresh travel panel immediately
         } else {
             toast((result && result.message) || 'Cannot turn back', 'warning');
+        }
+    }
+
+    function stopTravelUI() {
+        if (typeof Player === 'undefined' || !Player.stopTravel) return;
+        var result = Player.stopTravel();
+        if (result && result.success) {
+            if (result.atTown) {
+                toast('🛑 Stopped at ' + result.atTown + '.', 'info', 'travel_events');
+            } else {
+                toast('🛑 Stopped on the road.', 'info', 'travel_events');
+            }
+            update(); // refresh UI to show town/wilderness view
+        } else {
+            toast((result && result.message) || 'Cannot stop', 'warning');
         }
     }
 
@@ -17806,8 +18059,8 @@ window.UI = (function () {
         if (actionsDiv) {
             var btns = '';
             if (!Player.travelPaid) {
-                btns += '<button class="btn-travel" onclick="Player.turnBack()">\uD83D\uDD04 Turn Back</button>';
-                btns += '<button class="btn-travel" onclick="Player.stopTravel()">\u23F9\uFE0F Stop Here</button>';
+                btns += '<button class="btn-travel" onclick="UI.turnBackUI()">\uD83D\uDD04 Turn Back</button>';
+                btns += '<button class="btn-travel" onclick="UI.stopTravelUI()">\u23F9\uFE0F Stop Here</button>';
             }
             btns += '<button class="btn-travel" onclick="UI.openTravelRest()">\uD83C\uDFD5\uFE0F Camp</button>';
             btns += '<button class="btn-travel" onclick="UI.openCharacterDialog()">\uD83D\uDC64 Status</button>';
@@ -18470,6 +18723,11 @@ window.UI = (function () {
         _getCaravanOrders,
         _updateCaravanPreview,
         openEditCaravanEquipment,
+        openAutoDisbandEditor,
+        _removeADCondition,
+        _addADCondition,
+        _getADConditions,
+        _adTypeChanged,
         openCharacterDialog,
         openFinancialReport,
         openRenamePlayer,
@@ -18528,6 +18786,7 @@ window.UI = (function () {
         confirmTravel,
         getTransportServices,
         turnBackUI,
+        stopTravelUI,
         _enlistForCitizenship,
         _smuggleBorder,
         showRequisitionDialog,
