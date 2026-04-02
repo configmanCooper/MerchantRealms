@@ -13564,13 +13564,27 @@
         });
     }
 
-    /** Calculate daily rental cost for a ship type at a town */
+    /** Calculate daily rental cost for a ship type at a town.
+     *  Rental is a fraction of the build cost — shorter payback than full
+     *  durability so the renter charges a profitable markup.  Town prosperity
+     *  and kingdom dock-tax also push the price around. */
     function getShipRentalCost(shipTypeId, townId) {
         var st = CONFIG.SHIP_TYPES[shipTypeId];
         if (!st) return 0;
         var buildCost = getShipPrice(shipTypeId, townId);
-        var dailyAmortized = buildCost / ((st.durabilityYears || 3) * 365);
-        return Math.max(2, Math.round(dailyAmortized * (CONFIG.SHIP_RENTAL_MARKUP || 1.5)));
+        // Payback in ~120 days (≈ a season) so the renter profits quickly
+        var baseDailyRate = buildCost / 120;
+        // Town prosperity multiplier (0.7 – 1.4)
+        var town = Engine.findTown ? Engine.findTown(townId) : null;
+        var prosperity = town ? (town.prosperity || 30) : 30;
+        var prosperityMult = 0.7 + (prosperity / 100) * 0.7; // 30 → 0.91, 80 → 1.26
+        // Kingdom dock tax rate nudges rental price
+        var kingdom = town ? (Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null) : null;
+        var dockTax = kingdom && kingdom.dockTaxRate !== undefined ? kingdom.dockTaxRate : 1.0;
+        var taxMult = 0.8 + dockTax * 0.4; // dockTaxRate 1.0 → 1.2, 0.5 → 1.0, 2.0 → 1.6
+        var daily = baseDailyRate * prosperityMult * taxMult * (CONFIG.SHIP_RENTAL_MARKUP || 1.5);
+        // Clamp: rowboat ≥ 2g, man-o-war can hit 50g
+        return Math.max(2, Math.min(50, Math.round(daily * 10) / 10));
     }
 
     /** Monthly docking fee tick — charges per ship based on size and town prosperity */
