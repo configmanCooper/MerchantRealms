@@ -3954,24 +3954,32 @@ window.UI = (function () {
 
         // UPGRADE section
         if (bt.cost) {
-            let upgradeCost = Math.floor(bt.cost * 0.5);
-            if (Player.hasSkill && Player.hasSkill('building_upgrade_discount')) upgradeCost = Math.floor(upgradeCost * 0.75);
-            const nextLevel = bld.level + 1;
-            var curWorkerMax = bt.workers + ((bld.level || 1) - 1);
-            var nextWorkerMax = bt.workers + (nextLevel - 1);
-            var curStorageCap = Math.floor((bt.storage || 0) * (1 + ((bld.level - 1) * 0.50)));
-            var nextStorageCap = Math.floor((bt.storage || 0) * (1 + ((nextLevel - 1) * 0.50)));
+            var currentLevel = bld.level || 1;
+            if (currentLevel >= 5) {
+                html += `<div style="padding:8px;border:1px solid var(--border);border-radius:4px;margin-bottom:8px;">
+                    <div style="font-weight:bold;font-size:0.8rem;margin-bottom:6px;">⬆️ UPGRADE</div>
+                    <div style="font-size:0.78rem;color:#55a868;">✅ Maximum level reached (Level 5)</div>
+                </div>`;
+            } else {
+                var upgradeInfo = (Player.getUpgradeCost) ? Player.getUpgradeCost(bld.id) : null;
+                var upgradeCost = upgradeInfo ? upgradeInfo.cost : '?';
+                const nextLevel = currentLevel + 1;
+                var curWorkerMax = bt.workers + (currentLevel - 1);
+                var nextWorkerMax = bt.workers + (nextLevel - 1);
+                var curStorageCap = Math.floor((bt.storage || 0) * (1 + ((currentLevel - 1) * 0.50)));
+                var nextStorageCap = Math.floor((bt.storage || 0) * (1 + ((nextLevel - 1) * 0.50)));
 
-            html += `<div style="padding:8px;border:1px solid var(--border);border-radius:4px;margin-bottom:8px;">
-                <div style="font-weight:bold;font-size:0.8rem;margin-bottom:6px;">⬆️ UPGRADE</div>
-                <div style="font-size:0.78rem;">Level ${bld.level} → ${nextLevel} (Cost: ${upgradeCost}g)</div>
-                <div style="font-size:0.72rem;color:#aaa;">+10% production output per level</div>
-                <div style="font-size:0.72rem;color:#aaa;">Workers: ${curWorkerMax} → ${nextWorkerMax} slots</div>`;
-            if (bt.storage) {
-                html += `<div style="font-size:0.72rem;color:#aaa;">Storage: ${curStorageCap} → ${nextStorageCap} units</div>`;
+                html += `<div style="padding:8px;border:1px solid var(--border);border-radius:4px;margin-bottom:8px;">
+                    <div style="font-weight:bold;font-size:0.8rem;margin-bottom:6px;">⬆️ UPGRADE (${currentLevel}/5)</div>
+                    <div style="font-size:0.78rem;">Level ${currentLevel} → ${nextLevel} (Cost: ${upgradeCost}g)</div>
+                    <div style="font-size:0.72rem;color:#aaa;">+10% production output per level</div>
+                    <div style="font-size:0.72rem;color:#aaa;">Workers: ${curWorkerMax} → ${nextWorkerMax} slots</div>`;
+                if (bt.storage) {
+                    html += `<div style="font-size:0.72rem;color:#aaa;">Storage: ${curStorageCap} → ${nextStorageCap} units</div>`;
+                }
+                html += `<button class="btn-trade buy" style="font-size:0.7rem;margin-top:4px;" onclick="UI.upgradeBuildingUI('${bld.id}')">⬆️ Upgrade (${upgradeCost}g)</button>
+                </div>`;
             }
-            html += `<button class="btn-trade buy" style="font-size:0.7rem;margin-top:4px;" onclick="UI.upgradeBuildingUI('${bld.id}')">⬆️ Upgrade (${upgradeCost}g)</button>
-            </div>`;
         }
 
         // MAINTENANCE section

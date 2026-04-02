@@ -20450,8 +20450,7 @@
                 var ugBt = findBuildingType(ugRef.type);
                 if (!ugBt) continue;
                 var ugLevel = ugRef.level || 1;
-                var ugMaxLevel = ugBt.maxLevel || 3;
-                if (ugLevel >= ugMaxLevel) continue;
+                if (ugLevel >= 5) continue;
                 var ugTown = findTown(ugRef.townId);
                 if (!ugTown) continue;
                 var ugBld = null;
@@ -20466,7 +20465,18 @@
                 var ugAge = world.day - (ugBld.builtDay || 0);
                 var ugProfitable = (ugTracker.revenue || 0) > 0 || ugAge > 60;
                 if (!ugProfitable) continue;
-                var upgradeCost = Math.floor(ugBt.cost * 0.5);
+                var _ugBaseLaborHalf = Math.floor((ugBt.cost || 0) * 0.5);
+                var _ugBaseMaterialHalf = 0;
+                if (ugBt.materials) {
+                    for (var _ugMatId in ugBt.materials) {
+                        var _ugQty = ugBt.materials[_ugMatId];
+                        var _ugMatPrice = 0;
+                        try { _ugMatPrice = getMarketPrice(ugRef.townId, _ugMatId) || 0; } catch(e) {}
+                        if (_ugMatPrice <= 0) { var _ugRes = findResource(_ugMatId); _ugMatPrice = _ugRes ? (_ugRes.basePrice || 5) : 5; }
+                        _ugBaseMaterialHalf += Math.floor(_ugQty * _ugMatPrice * 0.5);
+                    }
+                }
+                var upgradeCost = Math.floor((_ugBaseLaborHalf + _ugBaseMaterialHalf) * Math.pow(2, ugLevel - 1));
                 if (em.gold < upgradeCost) continue;
                 var ugMaxR = 0;
                 for (var ugRkId in em.socialRank) { if ((em.socialRank[ugRkId] || 0) > ugMaxR) ugMaxR = em.socialRank[ugRkId]; }

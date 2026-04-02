@@ -2853,6 +2853,31 @@
         return Math.floor((baseStorage || 0) * (1 + (((level || 1) - 1) * 0.50)));
     }
 
+    function getUpgradeCost(buildingId) {
+        var bld = player.buildings.find(function(b) { return b.id === buildingId; });
+        if (!bld) return null;
+        var bt = Engine.findBuildingType(bld.type);
+        if (!bt) return null;
+        var currentLevel = bld.level || 1;
+        if (currentLevel >= 5) return { cost: 0, maxed: true };
+        var baseLaborHalf = Math.floor((bt.cost || 0) * 0.5);
+        var baseMaterialHalf = 0;
+        if (bt.materials) {
+            for (var matId in bt.materials) {
+                var qty = bt.materials[matId];
+                var matPrice = 0;
+                try { matPrice = Engine.getMarketPrice(bld.townId, matId) || 0; } catch(e) {}
+                if (matPrice <= 0) { var res = findResource(matId); matPrice = res ? (res.basePrice || 5) : 5; }
+                baseMaterialHalf += Math.floor(qty * matPrice * 0.5);
+            }
+        }
+        var baseHalf = baseLaborHalf + baseMaterialHalf;
+        var levelMultiplier = Math.pow(2, currentLevel - 1);
+        var cost = Math.floor(baseHalf * levelMultiplier);
+        if (hasSkill('building_upgrade_discount')) cost = Math.floor(cost * 0.75);
+        return { cost: cost, maxed: false };
+    }
+
     function upgradeBuilding(buildingId) {
         const bld = player.buildings.find(b => b.id === buildingId);
         if (!bld) return { success: false, message: 'Building not found.' };
@@ -2860,8 +2885,26 @@
         const bt = Engine.findBuildingType(bld.type);
         if (!bt) return { success: false, message: 'Unknown building type.' };
 
-        // Cost = half of what building costs to build in this location
-        let upgradeCost = Math.floor(bt.cost * 0.5);
+        var currentLevel = bld.level || 1;
+        if (currentLevel >= 5) return { success: false, message: 'Building is already at maximum level (5).' };
+
+        // Cost = half of (labor + materials at local market) × 2^(currentLevel-1)
+        var town = Engine.findTown(bld.townId);
+        var baseLaborHalf = Math.floor((bt.cost || 0) * 0.5);
+        var baseMaterialHalf = 0;
+        if (bt.materials) {
+            for (var matId in bt.materials) {
+                var qty = bt.materials[matId];
+                var matPrice = 0;
+                try { matPrice = Engine.getMarketPrice(bld.townId, matId) || 0; } catch(e) {}
+                if (matPrice <= 0) { var res = findResource(matId); matPrice = res ? (res.basePrice || 5) : 5; }
+                baseMaterialHalf += Math.floor(qty * matPrice * 0.5);
+            }
+        }
+        var baseHalf = baseLaborHalf + baseMaterialHalf;
+        // Each upgrade doubles cost: level 1→2 = 1×, level 2→3 = 2×, level 3→4 = 4×, level 4→5 = 8×
+        var levelMultiplier = Math.pow(2, currentLevel - 1);
+        let upgradeCost = Math.floor(baseHalf * levelMultiplier);
         if (hasSkill('building_upgrade_discount')) upgradeCost = Math.floor(upgradeCost * 0.75);
         if (player.gold < upgradeCost) {
             return { success: false, message: 'Upgrade costs ' + upgradeCost + ' gold.' };
@@ -2871,10 +2914,9 @@
         logFinance(-upgradeCost, 'buildings', 'Upgraded building');
         player.stats.totalGoldSpent += upgradeCost;
 
-        bld.level = (bld.level || 1) + 1;
+        bld.level = currentLevel + 1;
 
         // Also update the town's matching building record
-        const town = Engine.findTown(bld.townId);
         if (town) {
             const townBld = town.buildings.find(b =>
                 (b.id && b.id === bld.id) || (b.type === bld.type && b.ownerId === 'player')
@@ -34106,6 +34148,7 @@
         useTransportService,
         buyHorseForTravel,
         upgradeBuilding,
+        getUpgradeCost,
         buyShip,
         travelBySea,
         sendSeaCaravan,
