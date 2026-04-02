@@ -23450,10 +23450,9 @@
             return { success: false, message: 'You can only change the sale price once per day.' };
         }
 
-        // Calculate recommended price
+        // Calculate recommended price (deterministic: 85% of max buyer price)
         var maxPrice = Engine.getPropertyMaxBuyPrice(bld, bld.townId);
-        var discountPct = 0.05 + Math.random() * 0.25; // 5-30% below max
-        var recommendedPrice = Math.max(1, Math.floor(maxPrice * (1 - discountPct)));
+        var recommendedPrice = Math.max(1, Math.floor(maxPrice * 0.85));
 
         if (price === undefined || price === null) {
             price = recommendedPrice;
@@ -23499,8 +23498,7 @@
         }
 
         var maxPrice = Engine.getPropertyMaxBuyPrice({ type: 'land' }, townId);
-        var discountPct = 0.05 + Math.random() * 0.25;
-        var recommendedPrice = Math.max(1, Math.floor(maxPrice * (1 - discountPct)));
+        var recommendedPrice = Math.max(1, Math.floor(maxPrice * 0.85));
 
         if (price === undefined || price === null) price = recommendedPrice;
         price = Math.max(0, Math.floor(price));

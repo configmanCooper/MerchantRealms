@@ -25340,6 +25340,10 @@
             var maxPrice = getPropertyMaxBuyPrice(bld, bld.townId);
             if (bld.salePrice > maxPrice) continue; // Too expensive
 
+            // Better deals attract buyers faster (price/maxPrice ratio)
+            var priceRatio = maxPrice > 0 ? bld.salePrice / maxPrice : 1;
+            var dealBonus = priceRatio < 0.5 ? 2.0 : priceRatio < 0.7 ? 1.5 : priceRatio < 0.85 ? 1.2 : 1.0;
+
             // Find a buyer: EMs first, then kingdom, then NPCs
             var buyer = null;
             var buyerType = '';
@@ -25348,7 +25352,7 @@
             var localEMs = world.people.filter(function(p) {
                 return p.alive && p.isEliteMerchant && p.townId === bld.townId && (p.gold || 0) >= bld.salePrice;
             });
-            if (localEMs.length > 0 && rng.chance(0.4)) {
+            if (localEMs.length > 0 && rng.chance(Math.min(0.9, 0.4 * dealBonus))) {
                 buyer = rng.pick(localEMs);
                 buyerType = 'em';
             }
@@ -25356,7 +25360,7 @@
             // Kingdom
             if (!buyer) {
                 var kingdom = findKingdom(town.kingdomId);
-                if (kingdom && (kingdom.treasury || 0) >= bld.salePrice && rng.chance(0.2)) {
+                if (kingdom && (kingdom.treasury || 0) >= bld.salePrice && rng.chance(Math.min(0.7, 0.2 * dealBonus))) {
                     buyer = kingdom;
                     buyerType = 'kingdom';
                 }
@@ -25367,7 +25371,7 @@
                 var localNPCs = world.people.filter(function(p) {
                     return p.alive && !p.isEliteMerchant && p.townId === bld.townId && p.wealthClass === 'upper' && (p.gold || 0) >= bld.salePrice;
                 });
-                if (localNPCs.length > 0 && rng.chance(0.15)) {
+                if (localNPCs.length > 0 && rng.chance(Math.min(0.6, 0.15 * dealBonus))) {
                     buyer = rng.pick(localNPCs);
                     buyerType = 'npc';
                 }
