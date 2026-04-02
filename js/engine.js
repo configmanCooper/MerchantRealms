@@ -18251,7 +18251,7 @@
                         var esp = (esmTown.market.prices[esm2] || 10);
                         estCost += (estDef.materials[esm2] || 0) * esp;
                     }
-                    if ((esm.gold || 0) >= estCost * 3 && rng.chance(0.15)) { // must have 3x cost and 15% chance
+                    if ((esm.gold || 0) >= estCost * 3 && world.rng && world.rng.chance(0.15)) { // must have 3x cost and 15% chance
                         var matOk = true;
                         for (var esm3 in (estDef.materials || {})) {
                             if ((esmTown.market.supply[esm3] || 0) < (estDef.materials[esm3] || 0)) { matOk = false; break; }

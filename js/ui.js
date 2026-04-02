@@ -3894,14 +3894,7 @@ window.UI = (function () {
 
         // Demolish button (inside MAINTENANCE section)
         if (town && bld.townId === Player.townId) {
-            var _demBldIdx = -1;
-            if (town.buildings) {
-                _demBldIdx = town.buildings.findIndex(function(b) { return b.id && b.id === bld.id; });
-                if (_demBldIdx < 0) _demBldIdx = town.buildings.findIndex(function(b) { return b.ownerId === 'player' && b.type === bld.type; });
-            }
-            if (_demBldIdx >= 0) {
-                html += '<button class="btn-trade sell" style="font-size:0.7rem;background:rgba(200,50,50,0.15);border-color:rgba(200,50,50,0.3);" onclick="UI.confirmDemolishUI(\'' + bld.id + '\',' + _demBldIdx + ',\'' + bld.townId + '\')">💥 Demolish (500g + blasting powder)</button>';
-            }
+            html += '<button class="btn-trade sell" style="font-size:0.7rem;background:rgba(200,50,50,0.15);border-color:rgba(200,50,50,0.3);" onclick="UI.confirmDemolishUI(\'' + bld.id + '\',\'' + bld.townId + '\')">💥 Demolish (500g + blasting powder)</button>';
         }
 
         // List building for sale button (inside MAINTENANCE section)
@@ -4264,7 +4257,23 @@ window.UI = (function () {
         }
     }
 
-    function demolishBuildingUI(buildingIndex, townId) {
+    function _findTownBuildingIndex(buildingId, townId) {
+        var town = Engine.findTown(townId);
+        if (!town || !town.buildings) return -1;
+        // Try by id first
+        var idx = town.buildings.findIndex(function(b) { return b.id && b.id === buildingId; });
+        if (idx >= 0) return idx;
+        // Fallback: find by player building type match
+        var pBld = Player.state && Player.state.buildings ? Player.state.buildings.find(function(b) { return b.id === buildingId; }) : null;
+        if (pBld) {
+            idx = town.buildings.findIndex(function(b) { return b.ownerId === 'player' && b.type === pBld.type; });
+        }
+        return idx;
+    }
+
+    function demolishBuildingUI(buildingId, townId) {
+        var buildingIndex = _findTownBuildingIndex(buildingId, townId);
+        if (buildingIndex < 0) { toast('Building not found in town records.', 'warning'); return; }
         var result = Player.playerDemolishBuilding(buildingIndex, townId);
         toast(result.message, result.success ? 'success' : 'warning');
         if (result.success) {
@@ -4272,11 +4281,13 @@ window.UI = (function () {
         }
     }
 
-    function confirmDemolishUI(buildingId, buildingIndex, townId) {
+    function confirmDemolishUI(buildingId, townId) {
+        var buildingIndex = _findTownBuildingIndex(buildingId, townId);
         var town = Engine.findTown(townId);
-        var bld = town ? town.buildings[buildingIndex] : null;
-        var bt = bld ? Engine.findBuildingType(bld.type) : null;
-        var bName = bt ? bt.name : (bld ? bld.type : 'Building');
+        var bld = (buildingIndex >= 0 && town) ? town.buildings[buildingIndex] : null;
+        var pBld = Player.state && Player.state.buildings ? Player.state.buildings.find(function(b) { return b.id === buildingId; }) : null;
+        var bt = bld ? Engine.findBuildingType(bld.type) : (pBld ? Engine.findBuildingType(pBld.type) : null);
+        var bName = bt ? bt.name : 'Building';
         var hasPowder = (Player.inventory && (Player.inventory.blasting_powder || 0) >= 1);
         var powderNote = hasPowder ? '(from inventory)' : '(will buy from market/kingdom)';
         var html = '<div style="padding:10px;">';
@@ -4284,7 +4295,7 @@ window.UI = (function () {
         html += '<p style="font-size:0.85rem;">Cost: <strong>500g</strong> + <strong>1 blasting powder</strong> ' + powderNote + '</p>';
         html += '<p style="font-size:0.8rem;color:#c44e52;">⚠️ This action cannot be undone. The building will be destroyed and the land plot freed.</p>';
         html += '<div style="display:flex;gap:8px;margin-top:12px;">';
-        html += '<button class="btn-medieval" style="flex:1;background:rgba(200,50,50,0.3);" onclick="UI.demolishBuildingUI(' + buildingIndex + ',\'' + townId + '\')">💥 Confirm Demolish</button>';
+        html += '<button class="btn-medieval" style="flex:1;background:rgba(200,50,50,0.3);" onclick="UI.demolishBuildingUI(\'' + buildingId + '\',\'' + townId + '\')">💥 Confirm Demolish</button>';
         html += '<button class="btn-medieval" style="flex:1;" onclick="UI.showBuildingDetail(\'' + buildingId + '\')">Cancel</button>';
         html += '</div></div>';
         openModal('💥 Demolish ' + bName + '?', html);
