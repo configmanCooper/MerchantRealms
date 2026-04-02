@@ -26146,6 +26146,11 @@
             return world.eventLog.filter(e => world.day - e.day <= 30);
         },
 
+        getActiveEvents() {
+            if (!world) return [];
+            return (world.events || []).filter(e => e.active);
+        },
+
         getDay() { return world ? world.day : 0; },
 
         getHour() { return world ? (world.hour || 0) : 0; },

@@ -919,8 +919,8 @@ window.UI = (function () {
                 <span class="value"><div class="bar-small"><div class="bar-small-fill" style="width:${rep}%;background:${repColor}"></div></div> ${rep}</span></div>`;
         }
         // Active events affecting this town
-        if (typeof Engine !== 'undefined' && Engine.getEvents) {
-            var activeEvents = Engine.getEvents().filter(function(ev) { return ev.active && ev.townId === town.id; });
+        if (typeof Engine !== 'undefined' && Engine.getActiveEvents) {
+            var activeEvents = Engine.getActiveEvents().filter(function(ev) { return ev.townId === town.id; });
             if (activeEvents.length > 0) {
                 var eventIcons = {
                     drought: { icon: '☀️', color: '#ccb974', label: 'Drought' },
