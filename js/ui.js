@@ -2021,6 +2021,31 @@ window.UI = (function () {
                     }
                 }
 
+                // ── Petition Signature Request ──
+                if (typeof Player !== 'undefined' && Player.state && Player.state.petitions) {
+                    var activePetitions = Player.state.petitions.filter(function(p) { return p.status === 'active'; });
+                    if (activePetitions.length > 0) {
+                        var eligiblePetitions = activePetitions.filter(function(p) {
+                            return person.kingdomId === p.kingdomId && !(p.signatures && p.signatures.includes(person.id));
+                        });
+                        if (eligiblePetitions.length > 0) {
+                            html += '<div class="detail-section"><h3>📜 Petition</h3>';
+                            var sigToday = Player.state._signatureRequestsToday || { day: 0, count: 0 };
+                            var currentDay = Engine.getDay ? Engine.getDay() : 0;
+                            var requestsLeft = sigToday.day === currentDay ? Math.max(0, 2 - sigToday.count) : 2;
+                            html += '<div style="font-size:0.7rem;color:var(--text-muted);margin-bottom:4px;">Requests today: ' + (2 - requestsLeft) + '/2</div>';
+                            for (var _pi = 0; _pi < eligiblePetitions.length; _pi++) {
+                                var _pet = eligiblePetitions[_pi];
+                                var _petType = (typeof PETITION_TYPES !== 'undefined') ? PETITION_TYPES.find(function(t) { return t.id === _pet.typeId; }) : null;
+                                var _petName = _petType ? _petType.name : _pet.typeId;
+                                var _disabledSig = requestsLeft <= 0;
+                                html += '<button class="btn-medieval" onclick="(function(){var r=Player.requestSignature(\'' + _pet.id + '\',\'' + person.id + '\');UI.toast(r.message,r.signed?\'success\':\'warning\');try{var p=Engine.getPerson(\'' + person.id + '\');if(p)UI.showPersonDetail(p);}catch(e){}})()" style="font-size:0.75rem;padding:4px 10px;margin:2px 0;' + (_disabledSig ? 'opacity:0.5;cursor:not-allowed;' : '') + '"' + (_disabledSig ? ' disabled' : '') + ' title="Ask ' + (person.firstName || 'them') + ' to sign your petition">✍️ Ask to sign: ' + _petName + '</button>';
+                            }
+                            html += '</div>';
+                        }
+                    }
+                }
+
                 // ── Dark Actions ──
                 html += `<div class="detail-section"><h3>🏴 Schemes</h3>
                     <div style="display:flex;flex-wrap:wrap;gap:4px;">`;

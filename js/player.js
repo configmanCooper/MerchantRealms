@@ -20525,6 +20525,7 @@
         player._signatureRequestsToday.count++;
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(1);
+        consumeEnergy(0.25);
 
         var rel = getRelationship(npcId);
         var relLevel = rel ? (rel.level || 0) : 0;
