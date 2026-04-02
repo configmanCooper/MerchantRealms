@@ -25315,6 +25315,12 @@
             if (supply < demand) baseValue *= 1.3; // Scarce production = premium
         }
 
+        // Building sale includes the land it sits on — land value is a floor
+        var landSlots = (bt.landSlots || 1);
+        var landBase = CONFIG.LAND_COST_BASE || 200;
+        var landValue = landBase * mult * prospMult * landSlots;
+        baseValue = Math.max(baseValue, landValue) + landValue * 0.25; // At minimum land value + 25% for the structure
+
         // EMs and kingdoms may pay up to 20% more
         return Math.floor(baseValue * 1.2);
     }
