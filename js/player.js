@@ -17109,6 +17109,12 @@
         // Apply town reputation boost
         modifyTownReputation(quest.townId, repBoost);
 
+        // Apply 1/4 kingdom reputation boost
+        if (town && town.kingdomId && player.reputation) {
+            var kingdomRepBoost = repBoost / 4;
+            player.reputation[town.kingdomId] = Math.max(0, Math.min(100, (player.reputation[town.kingdomId] || 50) + kingdomRepBoost));
+        }
+
         // Boost relationships with random NPCs in town
         var relCount = rng.randInt(quest.relGainMin, quest.relGainMax);
         var townPeople = [];
