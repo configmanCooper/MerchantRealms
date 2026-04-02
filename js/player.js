@@ -2234,6 +2234,10 @@
         var hireRates = getCaravanHireRates(fromTownId);
         var carrierWage = hireRates.carrierWage;
         var guardWage = hireRates.guardWage;
+        if (hasSkill('thrifty_caravanner')) {
+            carrierWage = Math.max(1, Math.floor(carrierWage * 0.75));
+            guardWage = Math.max(1, Math.floor(guardWage * 0.75));
+        }
         var hireCost = carriers * (CONFIG.CARAVAN_CARRIER_HIRE_COST || 20) + guardCount * (CONFIG.CARAVAN_GUARD_HIRE_COST || 30);
 
         // Carts and wagons come from inventory
@@ -3765,6 +3769,7 @@
         // Daily wage cost — dynamic based on town economy
         var wageRates = getCaravanHireRates(opts.fromTownId || player.townId);
         var dailyWage = carriers * wageRates.carrierWage + guardCount * wageRates.guardWage;
+        if (hasSkill('thrifty_caravanner')) dailyWage = Math.floor(dailyWage * 0.75);
         if (hasSkill('cheap_security')) dailyWage = Math.floor(dailyWage * 0.80);
 
         return {
@@ -3877,6 +3882,7 @@
                 var cWage = caravan.carrierWage || (CONFIG.CARAVAN_CARRIER_WAGE || 4);
                 var gWage = caravan.guardWage || (CONFIG.CARAVAN_GUARD_WAGE || 6);
                 var dailyCrew = (caravan.carriers || 1) * cWage + (caravan.guards || 0) * gWage;
+                if (hasSkill('thrifty_caravanner')) dailyCrew = Math.floor(dailyCrew * 0.75);
                 if (hasSkill('cheap_security')) dailyCrew = Math.floor(dailyCrew * 0.80);
                 var wageBill = dailyCrew * daysSinceWage;
                 if (player.gold >= wageBill) {

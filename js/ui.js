@@ -5944,11 +5944,10 @@ window.UI = (function () {
         const townMap = {};
         for (const t of towns) townMap[t.id] = t;
 
-        // Find connected towns (land) — multi-hop if player has extended_routes or trade_network skill
+        // Find connected towns (land) — multi-hop if player has extended_routes or caravan_network skill
         var maxHops = 1;
         var hasExtended = typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('extended_routes');
-        var hasTradeNet = typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('trade_network');
-        if (hasTradeNet) maxHops = 5;
+        var hasTradeNet = typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('caravan_network');        if (hasTradeNet) maxHops = 5;
         else if (hasExtended) maxHops = 3;
 
         // Always BFS up to 5 hops to show locked destinations
@@ -5990,7 +5989,7 @@ window.UI = (function () {
             var requiredSkill = '';
             if (locked) {
                 if (hops <= 3) requiredSkill = 'Extended Routes';
-                else requiredSkill = 'Trade Network';
+                else requiredSkill = 'Caravan Network';
             }
 
             if (locked) {
@@ -6434,12 +6433,12 @@ window.UI = (function () {
             return;
         }
 
-        // Update order location dropdown with waypoint towns if trade_network skill
+        // Update order location dropdown with waypoint towns if caravan_network skill
         var locSel = document.getElementById('orderLocation');
         if (locSel) {
             var prevVal = locSel.value;
             var locHtml = '<option value="destination">🏁 Destination</option><option value="source">📍 Source</option>';
-            if (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('trade_network')) {
+            if (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('caravan_network')) {
                 try {
                     var route = Engine.findPath(Player.townId, destEl.value);
                     if (route && route.length > 1) {
