@@ -3874,7 +3874,21 @@ window.UI = (function () {
         if (bt && (Engine.isCropFarm(bld.type) || Engine.isLivestockFarm(bld.type)) && town && bld.townId === Player.townId) {
             var _convBldIdx = town.buildings.findIndex(function(b) { return b.ownerId === 'player' && b.type === bld.type; });
             if (_convBldIdx >= 0) {
-                html += '<button class="btn-trade" style="font-size:0.7rem;background:rgba(100,160,220,0.15);border-color:rgba(100,160,220,0.3);" onclick="UI.openFarmConvertUI(' + _convBldIdx + ',\'' + bld.townId + '\')">🔄 Convert Farm Type</button>';
+                var _isCrop = Engine.isCropFarm(bld.type);
+                var _curYear = Math.floor((Engine.getDay ? Engine.getDay() : 0) / 360);
+                var _convYear = bld._conversionYear || -1;
+                var _convCount = (_convYear === _curYear) ? (bld._conversionsThisYear || 0) : 0;
+                var _freeMax = _isCrop ? (CONFIG.FARM_FREE_CONVERSIONS_PER_YEAR || 1) : 0;
+                var _maxPer = _isCrop ? 999 : (CONFIG.LIVESTOCK_CONVERSIONS_PER_YEAR || 2);
+                var _convHint = '';
+                if (_isCrop && _convCount < _freeMax) {
+                    _convHint = ' (FREE — ' + (_freeMax - _convCount) + ' left this year)';
+                } else if (!_isCrop && _convCount < _maxPer) {
+                    _convHint = ' (' + (_maxPer - _convCount) + '/' + _maxPer + ' left this year)';
+                } else if (!_isCrop) {
+                    _convHint = ' (none left this year)';
+                }
+                html += '<button class="btn-trade" style="font-size:0.7rem;background:rgba(100,160,220,0.15);border-color:rgba(100,160,220,0.3);" onclick="UI.openFarmConvertUI(' + _convBldIdx + ',\'' + bld.townId + '\')">🔄 Convert Farm Type' + _convHint + '</button>';
             }
         }
 
