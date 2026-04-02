@@ -3867,6 +3867,357 @@
         return { success: false, message: 'No changes applied.' };
     }
 
+    // Process caravan arrival — extracted so it can be called from subtick for instant turnaround
+    function _processCaravanArrival(caravan) {
+                caravan.progress = 1.0;
+                caravan.tripCount = (caravan.tripCount || 0) + 1;
+
+                const isReturnLeg = caravan.returnTrip;
+                const destTownId = isReturnLeg ? caravan.fromTownId : caravan.toTownId;
+                const originTownId = isReturnLeg ? caravan.toTownId : caravan.fromTownId;
+                const destTown = Engine.findTown(destTownId);
+                const originTown = Engine.findTown(originTownId);
+
+                if (destTown) {
+                    // Disbanding caravan: drop all goods to storage instead of selling
+                    if (caravan.disbanding) {
+                        var dropTownId = destTownId;
+                        var dropTownName = destTown.name || destTownId;
+                        if (!player.townStorage[dropTownId]) player.townStorage[dropTownId] = {};
+                        var totalDropped = 0;
+                        for (var _dk in caravan.goods) {
+                            if (caravan.goods[_dk] > 0) {
+                                if (player.townId === dropTownId) {
+                                    player.inventory[_dk] = (player.inventory[_dk] || 0) + caravan.goods[_dk];
+                                } else {
+                                    player.townStorage[dropTownId][_dk] = (player.townStorage[dropTownId][_dk] || 0) + caravan.goods[_dk];
+                                }
+                                totalDropped += caravan.goods[_dk];
+                            }
+                        }
+                        caravan.goods = {};
+                        if (totalDropped > 0) {
+                            logCaravan(caravan, '📦 Dropped off ' + totalDropped + ' goods at ' + dropTownName + (player.townId === dropTownId ? ' (to inventory).' : ' (to storage).'));
+                        }
+
+                        if (isReturnLeg) {
+                            caravan.status = 'arrived';
+                            caravan.active = false;
+                            caravan.recurring = false;
+                            logCaravan(caravan, '🏳️ Caravan disbanded after final run.');
+                            Engine.logEvent('Caravan disbanded at ' + dropTownName + '. All goods dropped off.');
+                            return;
+                        } else {
+                            caravan.returnTrip = true;
+                            caravan.progress = 0.0;
+                            caravan._lastWaypointIdx = 0;
+                            caravan.status = 'traveling';
+                            if (caravan.route) {
+                                caravan.route = caravan.route.slice().reverse().map(function(seg) {
+                                    return { ...seg, fromTownId: seg.toTownId, toTownId: seg.fromTownId,
+                                        waypoints: seg.waypoints ? seg.waypoints.slice().reverse() : seg.waypoints };
+                                });
+                            }
+                            logCaravan(caravan, '🔄 Returning to ' + (originTown ? originTown.name : 'origin') + ' for final disbandment.');
+                            return;
+                        }
+                    }
+
+                    // New order-based processing
+                    if (caravan.orders && caravan.orders.length > 0) {
+                        processCaravanOrders(caravan, destTownId, isReturnLeg);
+                    } else {
+                        // Legacy behavior: sell all goods at destination
+                        let tripRevenue = 0;
+                        for (const [resId, qty] of Object.entries(caravan.goods)) {
+                            if (qty <= 0) continue;
+                            if (player.townId === destTownId) {
+                                player.inventory[resId] = (player.inventory[resId] || 0) + qty;
+                            } else {
+                                let price = destTown.market.prices[resId] || 1;
+                                if (hasSkill('trade_route_mastery')) price *= 1.10;
+                                const revenue = Math.floor(price * qty);
+                                player.gold += revenue;
+                                logFinance(revenue, 'caravan_sales', 'Caravan sold goods');
+                                player.stats.totalGoldEarned += revenue;
+                                tripRevenue += revenue;
+                                destTown.market.supply[resId] = (destTown.market.supply[resId] || 0) + qty;
+                                Engine.logEvent(`Caravan goods sold at ${destTown.name}: ${qty} ${resId} for ${revenue}g.`);
+                            }
+                        }
+                        caravan.totalProfit = (caravan.totalProfit || 0) + tripRevenue;
+                        caravan.goods = {};
+
+                        // Legacy auto-buy at destination if buyOrders configured
+                        if (caravan.buyOrders && (caravan.roundTrip || caravan.recurring)) {
+                            let buySpent = 0;
+                            const boughtGoods = {};
+                            for (const [resId, order] of Object.entries(caravan.buyOrders)) {
+                                const wantQty = order.qty || 0;
+                                const maxPrice = order.maxPrice || Infinity;
+                                const marketPrice = destTown.market.prices[resId] || 0;
+                                const marketSupply = destTown.market.supply[resId] || 0;
+                                if (marketPrice <= 0 || marketPrice > maxPrice || marketSupply <= 0) continue;
+                                const canAfford = Math.floor((player.gold - buySpent) / marketPrice);
+                                const buyQty = Math.min(wantQty, marketSupply, canAfford);
+                                if (buyQty <= 0) continue;
+                                const cost = Math.floor(marketPrice * buyQty);
+                                boughtGoods[resId] = buyQty;
+                                buySpent += cost;
+                                destTown.market.supply[resId] = Math.max(0, marketSupply - buyQty);
+                                Engine.logEvent(`Caravan bought ${buyQty} ${resId} at ${destTown.name} for ${cost}g.`);
+                            }
+                            if (buySpent > 0) {
+                                player.gold -= buySpent;
+                                player.stats.totalGoldSpent += buySpent;
+                                caravan.totalProfit = (caravan.totalProfit || 0) - buySpent;
+                                caravan.totalSpent = (caravan.totalSpent || 0) + buySpent;
+                            }
+                            caravan.goods = boughtGoods;
+                            let returnWeight = 0;
+                            for (const [resId, qty] of Object.entries(boughtGoods)) {
+                                const res = findResource(resId);
+                                returnWeight += (res ? res.weight : 1) * qty;
+                            }
+                            caravan.totalWeight = returnWeight;
+                        }
+                    }
+                } else {
+                    // Destination town no longer exists — return cargo and stop caravan
+                    for (const [resId, qty] of Object.entries(caravan.goods)) {
+                        if (qty > 0) player.inventory[resId] = (player.inventory[resId] || 0) + qty;
+                    }
+                    caravan.goods = {};
+                    caravan.status = 'arrived';
+                    caravan.active = false;
+                    caravan.recurring = false;
+                    Engine.logEvent('Caravan destination no longer exists — cargo returned to inventory.');
+                    return;
+                }
+
+                const routeLabel = caravan.routeType === 'sea' ? 'Sea caravan' : 'Caravan';
+                Engine.logEvent(`${routeLabel} arrived at ${destTown ? destTown.name : 'destination'}.`);
+
+                // XP for caravan/voyage completion
+                if (caravan.routeType === 'sea') {
+                    grantXP(XP_REWARDS.SEA_VOYAGE, 'sea voyage');
+                    player.achievementStats.seaVoyagesCompleted = (player.achievementStats.seaVoyagesCompleted || 0) + 1;
+                } else {
+                    grantXP(XP_REWARDS.CARAVAN_COMPLETE, 'caravan');
+                }
+                if (!player.achievementStats.caravanDestinations) player.achievementStats.caravanDestinations = {};
+                player.achievementStats.caravanDestinations[destTownId] = true;
+                player.stats.caravansCompleted = (player.stats.caravansCompleted || 0) + 1;
+
+                // CHECK AUTO-DISBAND CONDITIONS
+                var autoDisbandReason = checkAutoDisbandConditions(caravan, destTownId);
+                if (autoDisbandReason) {
+                    logCaravan(caravan, autoDisbandReason);
+                    Engine.logEvent(autoDisbandReason);
+                    if (caravan.orders && caravan.orders.length > 0) {
+                        processCaravanOrders(caravan, destTownId, isReturnLeg);
+                    }
+                    for (var _adk in caravan.goods) {
+                        if (caravan.goods[_adk] > 0) {
+                            if (player.townId === destTownId) {
+                                player.inventory[_adk] = (player.inventory[_adk] || 0) + caravan.goods[_adk];
+                            } else if (caravan.overflowSell && destTown && destTown.market) {
+                                var _adPrice = destTown.market.prices[_adk] || 1;
+                                var _adRev = Math.floor(_adPrice * caravan.goods[_adk]);
+                                player.gold += _adRev;
+                                player.stats.totalGoldEarned += _adRev;
+                                caravan.totalProfit = (caravan.totalProfit || 0) + _adRev;
+                                destTown.market.supply[_adk] = (destTown.market.supply[_adk] || 0) + caravan.goods[_adk];
+                            } else {
+                                if (!player.townStorage[destTownId]) player.townStorage[destTownId] = {};
+                                player.townStorage[destTownId][_adk] = (player.townStorage[destTownId][_adk] || 0) + caravan.goods[_adk];
+                            }
+                        }
+                    }
+                    caravan.goods = {};
+                    caravan.status = 'arrived';
+                    caravan.active = false;
+                    caravan.recurring = false;
+                    logCaravan(caravan, '🛑 Caravan auto-disbanded.');
+                    var _adAtTown = player.townId === destTownId;
+                    if (caravan.carrierHorses > 0) {
+                        if (_adAtTown) player.inventory['horses'] = (player.inventory['horses'] || 0) + caravan.carrierHorses;
+                        else { if (!player.townStorage[destTownId]) player.townStorage[destTownId] = {}; player.townStorage[destTownId]['horses'] = (player.townStorage[destTownId]['horses'] || 0) + caravan.carrierHorses; }
+                    }
+                    if (caravan.guardWeapons > 0) {
+                        if (_adAtTown) player.inventory['swords'] = (player.inventory['swords'] || 0) + caravan.guardWeapons;
+                        else { if (!player.townStorage[destTownId]) player.townStorage[destTownId] = {}; player.townStorage[destTownId]['swords'] = (player.townStorage[destTownId]['swords'] || 0) + caravan.guardWeapons; }
+                    }
+                    if (caravan.guardArmor > 0) {
+                        if (_adAtTown) player.inventory['armor'] = (player.inventory['armor'] || 0) + caravan.guardArmor;
+                        else { if (!player.townStorage[destTownId]) player.townStorage[destTownId] = {}; player.townStorage[destTownId]['armor'] = (player.townStorage[destTownId]['armor'] || 0) + caravan.guardArmor; }
+                    }
+                    if (caravan.carts > 0) {
+                        if (_adAtTown) player.inventory['cart'] = (player.inventory['cart'] || 0) + caravan.carts;
+                        else { if (!player.townStorage[destTownId]) player.townStorage[destTownId] = {}; player.townStorage[destTownId]['cart'] = (player.townStorage[destTownId]['cart'] || 0) + caravan.carts; }
+                    }
+                    if (caravan.wagons > 0) {
+                        if (_adAtTown) player.inventory['wagon'] = (player.inventory['wagon'] || 0) + caravan.wagons;
+                        else { if (!player.townStorage[destTownId]) player.townStorage[destTownId] = {}; player.townStorage[destTownId]['wagon'] = (player.townStorage[destTownId]['wagon'] || 0) + caravan.wagons; }
+                    }
+                    return;
+                }
+
+                // Handle round-trip / recurring logic
+                if ((caravan.roundTrip || caravan.recurring) && !isReturnLeg) {
+                    caravan.returnTrip = true;
+                    caravan.progress = 0.0;
+                    caravan._lastWaypointIdx = 0;
+                    caravan.status = 'traveling';
+                    if (caravan.route) {
+                        caravan.route = caravan.route.slice().reverse().map(seg => ({
+                            ...seg,
+                            fromTownId: seg.toTownId,
+                            toTownId: seg.fromTownId,
+                            waypoints: seg.waypoints ? seg.waypoints.slice().reverse() : seg.waypoints
+                        }));
+                    }
+                    Engine.logEvent(`${routeLabel} starting return trip to ${originTown ? originTown.name : 'origin'}.`);
+                } else if (caravan.recurring && isReturnLeg) {
+                    const maintenanceCost = CONFIG.CARAVAN_RECURRING_MAINTENANCE_PER_TRIP || 15;
+                    let totalMaint = maintenanceCost + (caravan.guards * CONFIG.GUARD_WAGE * 2);
+                    if (caravan.decoy) totalMaint += CONFIG.CARAVAN_DECOY_COST || 50;
+                    if (caravan.armedEscort) totalMaint += CONFIG.CARAVAN_ARMED_ESCORT_COST || 80;
+                    if (hasSkill('cheap_security')) totalMaint = Math.floor(totalMaint * 0.80);
+
+                    if (player.gold < totalMaint) {
+                        caravan.status = 'arrived';
+                        caravan.active = false;
+                        caravan.recurring = false;
+                        logCaravan(caravan, '⛔ Recurring route stopped — insufficient funds for maintenance (' + totalMaint + 'g).');
+                    } else {
+                        player.gold -= totalMaint;
+                        player.stats.totalGoldSpent += totalMaint;
+                        caravan.totalSpent = (caravan.totalSpent || 0) + totalMaint;
+
+                        if (caravan.orders && caravan.orders.length > 0) {
+                            var hasCargoForNext = false;
+                            for (var _ck in caravan.goods) { if (caravan.goods[_ck] > 0) { hasCargoForNext = true; break; } }
+                            var hasDestOrders = caravan.orders.some(function(o) { return o.location === 'destination'; });
+                            if (!hasCargoForNext && !hasDestOrders) {
+                                caravan.status = 'arrived';
+                                caravan.active = false;
+                                caravan.recurring = false;
+                                logCaravan(caravan, '⛔ Recurring route stopped — no cargo and no destination orders.');
+                            } else {
+                                caravan.returnTrip = false;
+                                caravan.progress = 0.0;
+                                caravan._lastWaypointIdx = 0;
+                                caravan.status = 'traveling';
+                                if (caravan.route) {
+                                    caravan.route = caravan.route.slice().reverse().map(seg => ({
+                                        ...seg, fromTownId: seg.toTownId, toTownId: seg.fromTownId,
+                                        waypoints: seg.waypoints ? seg.waypoints.slice().reverse() : seg.waypoints
+                                    }));
+                                }
+                                var rWeight = 0;
+                                for (var _rk in caravan.goods) {
+                                    var _rr = findResource(_rk);
+                                    rWeight += (_rr ? _rr.weight : 1) * (caravan.goods[_rk] || 0);
+                                }
+                                caravan.totalWeight = rWeight;
+                                logCaravan(caravan, '🔄 Recurring caravan departing again (maintenance: ' + totalMaint + 'g). Trip #' + (caravan.tripCount + 1));
+                            }
+                        } else {
+                            const originId = caravan.fromTownId;
+                            const reloadedGoods = {};
+                            let reloaded = false;
+                            for (const [resId, qty] of Object.entries(caravan.originalGoods || {})) {
+                                const carried = player.inventory[resId] || 0;
+                                const stored = (player.townStorage[originId] || {})[resId] || 0;
+                                const available = carried + stored;
+                                const loadQty = Math.min(qty, available);
+                                if (loadQty > 0) {
+                                    const fromC = Math.min(loadQty, carried);
+                                    const fromS = loadQty - fromC;
+                                    if (fromC > 0) player.inventory[resId] = (player.inventory[resId] || 0) - fromC;
+                                    if (fromS > 0 && player.townStorage[originId]) {
+                                        player.townStorage[originId][resId] = (player.townStorage[originId][resId] || 0) - fromS;
+                                        if (player.townStorage[originId][resId] <= 0) delete player.townStorage[originId][resId];
+                                    }
+                                    reloadedGoods[resId] = loadQty;
+                                    reloaded = true;
+                                }
+                            }
+                            for (const [resId, qty] of Object.entries(caravan.goods)) {
+                                if (qty <= 0) continue;
+                                if (player.townId === originId) {
+                                    player.inventory[resId] = (player.inventory[resId] || 0) + qty;
+                                } else {
+                                    const originTownObj = Engine.findTown(originId);
+                                    if (originTownObj) {
+                                        let price = originTownObj.market.prices[resId] || 1;
+                                        if (hasSkill('trade_route_mastery')) price *= 1.10;
+                                        const rev = Math.floor(price * qty);
+                                        player.gold += rev;
+                                        player.stats.totalGoldEarned += rev;
+                                        caravan.totalProfit = (caravan.totalProfit || 0) + rev;
+                                        originTownObj.market.supply[resId] = (originTownObj.market.supply[resId] || 0) + qty;
+                                        Engine.logEvent(`Recurring caravan sold return goods: ${qty} ${resId} for ${rev}g.`);
+                                    }
+                                }
+                            }
+
+                            if (!reloaded) {
+                                caravan.status = 'arrived';
+                                caravan.active = false;
+                                caravan.recurring = false;
+                                Engine.logEvent(`Recurring route stopped — no goods available to reload at ${originTown ? originTown.name : 'origin'}.`);
+                            } else {
+                                caravan.goods = reloadedGoods;
+                                caravan.returnTrip = false;
+                                caravan.progress = 0.0;
+                                caravan._lastWaypointIdx = 0;
+                                caravan.status = 'traveling';
+                                if (caravan.route) {
+                                    caravan.route = caravan.route.slice().reverse().map(seg => ({
+                                        ...seg, fromTownId: seg.toTownId, toTownId: seg.fromTownId,
+                                        waypoints: seg.waypoints ? seg.waypoints.slice().reverse() : seg.waypoints
+                                    }));
+                                }
+                                let legacyWeight = 0;
+                                for (const [resId, qty] of Object.entries(reloadedGoods)) {
+                                    const res = findResource(resId);
+                                    legacyWeight += (res ? res.weight : 1) * qty;
+                                }
+                                caravan.totalWeight = legacyWeight;
+                                Engine.logEvent(`Recurring caravan reloaded and departing again (maintenance: ${totalMaint}g). Trip #${caravan.tripCount + 1}`);
+                            }
+                        }
+                    }
+                } else {
+                    // Simple one-way or return leg of one-time round-trip — done
+                    caravan.status = 'arrived';
+                    caravan.active = false;
+                    if (isReturnLeg) {
+                        for (const [resId, qty] of Object.entries(caravan.goods)) {
+                            if (qty <= 0) continue;
+                            if (player.townId === caravan.fromTownId) {
+                                player.inventory[resId] = (player.inventory[resId] || 0) + qty;
+                            } else {
+                                const originTownObj = Engine.findTown(caravan.fromTownId);
+                                if (originTownObj) {
+                                    let price = originTownObj.market.prices[resId] || 1;
+                                    if (hasSkill('trade_route_mastery')) price *= 1.10;
+                                    const rev = Math.floor(price * qty);
+                                    player.gold += rev;
+                                    player.stats.totalGoldEarned += rev;
+                                    caravan.totalProfit = (caravan.totalProfit || 0) + rev;
+                                    originTownObj.market.supply[resId] = (originTownObj.market.supply[resId] || 0) + qty;
+                                    Engine.logEvent(`Return caravan sold goods at ${originTownObj.name}: ${qty} ${resId} for ${rev}g.`);
+                                }
+                            }
+                        }
+                        caravan.goods = {};
+                    }
+                }
+    }
+
     // Advance caravan positions smoothly (called 60x per day from subtick)
     function caravanSubtick() {
         var ticksPerDay = CONFIG.TICKS_PER_DAY || 60;
@@ -3888,7 +4239,10 @@
                 if (hasSkill('cartographer')) caravanSpeed *= 1.05;
             }
             caravan.progress += (caravanSpeed / Math.max(caravan.totalDist, 1)) / ticksPerDay;
-            if (caravan.progress > 1.0) caravan.progress = 1.0;
+            if (caravan.progress >= 1.0) {
+                caravan.progress = 1.0;
+                _processCaravanArrival(caravan);
+            }
         }
     }
 
@@ -4149,373 +4503,9 @@
                 }
             }
 
-            // Check arrival
+            // Check arrival (fallback — normally processed instantly in caravanSubtick)
             if (caravan.progress >= 1.0) {
-                caravan.progress = 1.0;
-                caravan.tripCount = (caravan.tripCount || 0) + 1;
-
-                const isReturnLeg = caravan.returnTrip;
-                const destTownId = isReturnLeg ? caravan.fromTownId : caravan.toTownId;
-                const originTownId = isReturnLeg ? caravan.toTownId : caravan.fromTownId;
-                const destTown = Engine.findTown(destTownId);
-                const originTown = Engine.findTown(originTownId);
-
-                if (destTown) {
-                    // Disbanding caravan: drop all goods to storage instead of selling
-                    if (caravan.disbanding) {
-                        var dropTownId = destTownId;
-                        var dropTownName = destTown.name || destTownId;
-                        if (!player.townStorage[dropTownId]) player.townStorage[dropTownId] = {};
-                        var totalDropped = 0;
-                        for (var _dk in caravan.goods) {
-                            if (caravan.goods[_dk] > 0) {
-                                if (player.townId === dropTownId) {
-                                    // Player is here — return to inventory
-                                    player.inventory[_dk] = (player.inventory[_dk] || 0) + caravan.goods[_dk];
-                                } else {
-                                    player.townStorage[dropTownId][_dk] = (player.townStorage[dropTownId][_dk] || 0) + caravan.goods[_dk];
-                                }
-                                totalDropped += caravan.goods[_dk];
-                            }
-                        }
-                        caravan.goods = {};
-                        if (totalDropped > 0) {
-                            logCaravan(caravan, '📦 Dropped off ' + totalDropped + ' goods at ' + dropTownName + (player.townId === dropTownId ? ' (to inventory).' : ' (to storage).'));
-                        }
-
-                        if (isReturnLeg) {
-                            // Back at origin — disband
-                            caravan.status = 'arrived';
-                            caravan.active = false;
-                            caravan.recurring = false;
-                            logCaravan(caravan, '🏳️ Caravan disbanded after final run.');
-                            Engine.logEvent('Caravan disbanded at ' + dropTownName + '. All goods dropped off.');
-                            continue;
-                        } else {
-                            // Outbound arrived — start return leg to drop off remaining/return home
-                            caravan.returnTrip = true;
-                            caravan.progress = 0.0;
-                            caravan._lastWaypointIdx = 0;
-                            caravan.status = 'traveling';
-                            if (caravan.route) {
-                                caravan.route = caravan.route.slice().reverse().map(function(seg) {
-                                    return { ...seg, fromTownId: seg.toTownId, toTownId: seg.fromTownId,
-                                        waypoints: seg.waypoints ? seg.waypoints.slice().reverse() : seg.waypoints };
-                                });
-                            }
-                            logCaravan(caravan, '🔄 Returning to ' + (originTown ? originTown.name : 'origin') + ' for final disbandment.');
-                            continue;
-                        }
-                    }
-
-                    // New order-based processing
-                    if (caravan.orders && caravan.orders.length > 0) {
-                        processCaravanOrders(caravan, destTownId, isReturnLeg);
-                    } else {
-                        // Legacy behavior: sell all goods at destination
-                        let tripRevenue = 0;
-                        for (const [resId, qty] of Object.entries(caravan.goods)) {
-                            if (qty <= 0) continue;
-                            if (player.townId === destTownId) {
-                                player.inventory[resId] = (player.inventory[resId] || 0) + qty;
-                            } else {
-                                let price = destTown.market.prices[resId] || 1;
-                                if (hasSkill('trade_route_mastery')) price *= 1.10;
-                                const revenue = Math.floor(price * qty);
-                                player.gold += revenue;
-                                logFinance(revenue, 'caravan_sales', 'Caravan sold goods');
-                                player.stats.totalGoldEarned += revenue;
-                                tripRevenue += revenue;
-                                destTown.market.supply[resId] = (destTown.market.supply[resId] || 0) + qty;
-                                Engine.logEvent(`Caravan goods sold at ${destTown.name}: ${qty} ${resId} for ${revenue}g.`);
-                            }
-                        }
-                        caravan.totalProfit = (caravan.totalProfit || 0) + tripRevenue;
-                        caravan.goods = {};
-
-                        // Legacy auto-buy at destination if buyOrders configured
-                        if (caravan.buyOrders && (caravan.roundTrip || caravan.recurring)) {
-                            let buySpent = 0;
-                            const boughtGoods = {};
-                            for (const [resId, order] of Object.entries(caravan.buyOrders)) {
-                                const wantQty = order.qty || 0;
-                                const maxPrice = order.maxPrice || Infinity;
-                                const marketPrice = destTown.market.prices[resId] || 0;
-                                const marketSupply = destTown.market.supply[resId] || 0;
-                                if (marketPrice <= 0 || marketPrice > maxPrice || marketSupply <= 0) continue;
-                                const canAfford = Math.floor((player.gold - buySpent) / marketPrice);
-                                const buyQty = Math.min(wantQty, marketSupply, canAfford);
-                                if (buyQty <= 0) continue;
-                                const cost = Math.floor(marketPrice * buyQty);
-                                boughtGoods[resId] = buyQty;
-                                buySpent += cost;
-                                destTown.market.supply[resId] = Math.max(0, marketSupply - buyQty);
-                                Engine.logEvent(`Caravan bought ${buyQty} ${resId} at ${destTown.name} for ${cost}g.`);
-                            }
-                            if (buySpent > 0) {
-                                player.gold -= buySpent;
-                                player.stats.totalGoldSpent += buySpent;
-                                caravan.totalProfit = (caravan.totalProfit || 0) - buySpent;
-                                caravan.totalSpent = (caravan.totalSpent || 0) + buySpent;
-                            }
-                            caravan.goods = boughtGoods;
-                            let returnWeight = 0;
-                            for (const [resId, qty] of Object.entries(boughtGoods)) {
-                                const res = findResource(resId);
-                                returnWeight += (res ? res.weight : 1) * qty;
-                            }
-                            caravan.totalWeight = returnWeight;
-                        }
-                    }
-                } else {
-                    // Destination town no longer exists — return cargo and stop caravan
-                    for (const [resId, qty] of Object.entries(caravan.goods)) {
-                        if (qty > 0) player.inventory[resId] = (player.inventory[resId] || 0) + qty;
-                    }
-                    caravan.goods = {};
-                    caravan.status = 'arrived';
-                    caravan.active = false;
-                    caravan.recurring = false;
-                    Engine.logEvent('Caravan destination no longer exists — cargo returned to inventory.');
-                    continue;
-                }
-
-                const routeLabel = caravan.routeType === 'sea' ? 'Sea caravan' : 'Caravan';
-                Engine.logEvent(`${routeLabel} arrived at ${destTown ? destTown.name : 'destination'}.`);
-
-                // XP for caravan/voyage completion
-                if (caravan.routeType === 'sea') {
-                    grantXP(XP_REWARDS.SEA_VOYAGE, 'sea voyage');
-                    player.achievementStats.seaVoyagesCompleted = (player.achievementStats.seaVoyagesCompleted || 0) + 1;
-                } else {
-                    grantXP(XP_REWARDS.CARAVAN_COMPLETE, 'caravan');
-                }
-                if (!player.achievementStats.caravanDestinations) player.achievementStats.caravanDestinations = {};
-                player.achievementStats.caravanDestinations[destTownId] = true;
-                player.stats.caravansCompleted = (player.stats.caravansCompleted || 0) + 1;
-
-                // ═══════════════════════════════════════════
-                // CHECK AUTO-DISBAND CONDITIONS
-                // ═══════════════════════════════════════════
-                var autoDisbandReason = checkAutoDisbandConditions(caravan, destTownId);
-                if (autoDisbandReason) {
-                    logCaravan(caravan, autoDisbandReason);
-                    Engine.logEvent(autoDisbandReason);
-                    // Process any remaining orders at current town first
-                    if (caravan.orders && caravan.orders.length > 0) {
-                        processCaravanOrders(caravan, destTownId, isReturnLeg);
-                    }
-                    // Drop goods or sell, then disband
-                    for (var _adk in caravan.goods) {
-                        if (caravan.goods[_adk] > 0) {
-                            if (player.townId === destTownId) {
-                                player.inventory[_adk] = (player.inventory[_adk] || 0) + caravan.goods[_adk];
-                            } else if (caravan.overflowSell && destTown && destTown.market) {
-                                var _adPrice = destTown.market.prices[_adk] || 1;
-                                var _adRev = Math.floor(_adPrice * caravan.goods[_adk]);
-                                player.gold += _adRev;
-                                player.stats.totalGoldEarned += _adRev;
-                                caravan.totalProfit = (caravan.totalProfit || 0) + _adRev;
-                                destTown.market.supply[_adk] = (destTown.market.supply[_adk] || 0) + caravan.goods[_adk];
-                            } else {
-                                if (!player.townStorage[destTownId]) player.townStorage[destTownId] = {};
-                                player.townStorage[destTownId][_adk] = (player.townStorage[destTownId][_adk] || 0) + caravan.goods[_adk];
-                            }
-                        }
-                    }
-                    caravan.goods = {};
-                    caravan.status = 'arrived';
-                    caravan.active = false;
-                    caravan.recurring = false;
-                    logCaravan(caravan, '🛑 Caravan auto-disbanded.');
-                    // Return equipment to player inventory or town storage
-                    var _adAtTown = player.townId === destTownId;
-                    if (caravan.carrierHorses > 0) {
-                        if (_adAtTown) player.inventory['horses'] = (player.inventory['horses'] || 0) + caravan.carrierHorses;
-                        else { if (!player.townStorage[destTownId]) player.townStorage[destTownId] = {}; player.townStorage[destTownId]['horses'] = (player.townStorage[destTownId]['horses'] || 0) + caravan.carrierHorses; }
-                    }
-                    if (caravan.guardWeapons > 0) {
-                        if (_adAtTown) player.inventory['swords'] = (player.inventory['swords'] || 0) + caravan.guardWeapons;
-                        else { if (!player.townStorage[destTownId]) player.townStorage[destTownId] = {}; player.townStorage[destTownId]['swords'] = (player.townStorage[destTownId]['swords'] || 0) + caravan.guardWeapons; }
-                    }
-                    if (caravan.guardArmor > 0) {
-                        if (_adAtTown) player.inventory['armor'] = (player.inventory['armor'] || 0) + caravan.guardArmor;
-                        else { if (!player.townStorage[destTownId]) player.townStorage[destTownId] = {}; player.townStorage[destTownId]['armor'] = (player.townStorage[destTownId]['armor'] || 0) + caravan.guardArmor; }
-                    }
-                    if (caravan.carts > 0) {
-                        if (_adAtTown) player.inventory['cart'] = (player.inventory['cart'] || 0) + caravan.carts;
-                        else { if (!player.townStorage[destTownId]) player.townStorage[destTownId] = {}; player.townStorage[destTownId]['cart'] = (player.townStorage[destTownId]['cart'] || 0) + caravan.carts; }
-                    }
-                    if (caravan.wagons > 0) {
-                        if (_adAtTown) player.inventory['wagon'] = (player.inventory['wagon'] || 0) + caravan.wagons;
-                        else { if (!player.townStorage[destTownId]) player.townStorage[destTownId] = {}; player.townStorage[destTownId]['wagon'] = (player.townStorage[destTownId]['wagon'] || 0) + caravan.wagons; }
-                    }
-                    continue;
-                }
-
-                // Handle round-trip / recurring logic
-                if ((caravan.roundTrip || caravan.recurring) && !isReturnLeg) {
-                    // Outbound leg complete — start return trip
-                    caravan.returnTrip = true;
-                    caravan.progress = 0.0;
-                            caravan._lastWaypointIdx = 0;
-                    caravan.status = 'traveling';
-                    // Reverse the route
-                    if (caravan.route) {
-                        caravan.route = caravan.route.slice().reverse().map(seg => ({
-                            ...seg,
-                            fromTownId: seg.toTownId,
-                            toTownId: seg.fromTownId,
-                            waypoints: seg.waypoints ? seg.waypoints.slice().reverse() : seg.waypoints
-                        }));
-                    }
-                    Engine.logEvent(`${routeLabel} starting return trip to ${originTown ? originTown.name : 'origin'}.`);
-                } else if (caravan.recurring && isReturnLeg) {
-                    // Return leg complete on a recurring route — charge maintenance and restart
-                    const maintenanceCost = CONFIG.CARAVAN_RECURRING_MAINTENANCE_PER_TRIP || 15;
-                    let totalMaint = maintenanceCost + (caravan.guards * CONFIG.GUARD_WAGE * 2);
-                    if (caravan.decoy) totalMaint += CONFIG.CARAVAN_DECOY_COST || 50;
-                    if (caravan.armedEscort) totalMaint += CONFIG.CARAVAN_ARMED_ESCORT_COST || 80;
-                    if (hasSkill('cheap_security')) totalMaint = Math.floor(totalMaint * 0.80);
-
-                    if (player.gold < totalMaint) {
-                        caravan.status = 'arrived';
-                        caravan.active = false;
-                        caravan.recurring = false;
-                        logCaravan(caravan, '⛔ Recurring route stopped — insufficient funds for maintenance (' + totalMaint + 'g).');
-                    } else {
-                        player.gold -= totalMaint;
-                        player.stats.totalGoldSpent += totalMaint;
-                        caravan.totalSpent = (caravan.totalSpent || 0) + totalMaint;
-
-                        if (caravan.orders && caravan.orders.length > 0) {
-                            // New order system: source orders already processed above via processCaravanOrders.
-                            // Remaining goods on caravan are what gets carried on next outbound trip.
-                            // Check if caravan has anything to carry
-                            var hasCargoForNext = false;
-                            for (var _ck in caravan.goods) { if (caravan.goods[_ck] > 0) { hasCargoForNext = true; break; } }
-                            // Also check if there are destination orders that don't need outbound cargo (buy/pickup at dest)
-                            var hasDestOrders = caravan.orders.some(function(o) { return o.location === 'destination'; });
-                            if (!hasCargoForNext && !hasDestOrders) {
-                                caravan.status = 'arrived';
-                                caravan.active = false;
-                                caravan.recurring = false;
-                                logCaravan(caravan, '⛔ Recurring route stopped — no cargo and no destination orders.');
-                            } else {
-                                caravan.returnTrip = false;
-                                caravan.progress = 0.0;
-                            caravan._lastWaypointIdx = 0;
-                                caravan.status = 'traveling';
-                                if (caravan.route) {
-                                    caravan.route = caravan.route.slice().reverse().map(seg => ({
-                                        ...seg, fromTownId: seg.toTownId, toTownId: seg.fromTownId,
-                                        waypoints: seg.waypoints ? seg.waypoints.slice().reverse() : seg.waypoints
-                                    }));
-                                }
-                                var rWeight = 0;
-                                for (var _rk in caravan.goods) {
-                                    var _rr = findResource(_rk);
-                                    rWeight += (_rr ? _rr.weight : 1) * (caravan.goods[_rk] || 0);
-                                }
-                                caravan.totalWeight = rWeight;
-                                logCaravan(caravan, '🔄 Recurring caravan departing again (maintenance: ' + totalMaint + 'g). Trip #' + (caravan.tripCount + 1));
-                            }
-                        } else {
-                            // Legacy reload: reload original goods from player storage/inventory at origin
-                            const originId = caravan.fromTownId;
-                            const reloadedGoods = {};
-                            let reloaded = false;
-                            for (const [resId, qty] of Object.entries(caravan.originalGoods || {})) {
-                                const carried = player.inventory[resId] || 0;
-                                const stored = (player.townStorage[originId] || {})[resId] || 0;
-                                const available = carried + stored;
-                                const loadQty = Math.min(qty, available);
-                                if (loadQty > 0) {
-                                    const fromC = Math.min(loadQty, carried);
-                                    const fromS = loadQty - fromC;
-                                    if (fromC > 0) player.inventory[resId] = (player.inventory[resId] || 0) - fromC;
-                                    if (fromS > 0 && player.townStorage[originId]) {
-                                        player.townStorage[originId][resId] = (player.townStorage[originId][resId] || 0) - fromS;
-                                        if (player.townStorage[originId][resId] <= 0) delete player.townStorage[originId][resId];
-                                    }
-                                    reloadedGoods[resId] = loadQty;
-                                    reloaded = true;
-                                }
-                            }
-                            // Deliver any return goods to player
-                            for (const [resId, qty] of Object.entries(caravan.goods)) {
-                                if (qty <= 0) continue;
-                                if (player.townId === originId) {
-                                    player.inventory[resId] = (player.inventory[resId] || 0) + qty;
-                                } else {
-                                    const originTownObj = Engine.findTown(originId);
-                                    if (originTownObj) {
-                                        let price = originTownObj.market.prices[resId] || 1;
-                                        if (hasSkill('trade_route_mastery')) price *= 1.10;
-                                        const rev = Math.floor(price * qty);
-                                        player.gold += rev;
-                                        player.stats.totalGoldEarned += rev;
-                                        caravan.totalProfit = (caravan.totalProfit || 0) + rev;
-                                        originTownObj.market.supply[resId] = (originTownObj.market.supply[resId] || 0) + qty;
-                                        Engine.logEvent(`Recurring caravan sold return goods: ${qty} ${resId} for ${rev}g.`);
-                                    }
-                                }
-                            }
-
-                            if (!reloaded) {
-                                caravan.status = 'arrived';
-                                caravan.active = false;
-                                caravan.recurring = false;
-                                Engine.logEvent(`Recurring route stopped — no goods available to reload at ${originTown ? originTown.name : 'origin'}.`);
-                            } else {
-                                caravan.goods = reloadedGoods;
-                                caravan.returnTrip = false;
-                                caravan.progress = 0.0;
-                            caravan._lastWaypointIdx = 0;
-                                caravan.status = 'traveling';
-                                if (caravan.route) {
-                                    caravan.route = caravan.route.slice().reverse().map(seg => ({
-                                        ...seg, fromTownId: seg.toTownId, toTownId: seg.fromTownId,
-                                        waypoints: seg.waypoints ? seg.waypoints.slice().reverse() : seg.waypoints
-                                    }));
-                                }
-                                let legacyWeight = 0;
-                                for (const [resId, qty] of Object.entries(reloadedGoods)) {
-                                    const res = findResource(resId);
-                                    legacyWeight += (res ? res.weight : 1) * qty;
-                                }
-                                caravan.totalWeight = legacyWeight;
-                                Engine.logEvent(`Recurring caravan reloaded and departing again (maintenance: ${totalMaint}g). Trip #${caravan.tripCount + 1}`);
-                            }
-                        }
-                    }
-                } else {
-                    // Simple one-way or return leg of one-time round-trip — done
-                    caravan.status = 'arrived';
-                    caravan.active = false;
-                    // If return leg, deliver goods at origin
-                    if (isReturnLeg) {
-                        for (const [resId, qty] of Object.entries(caravan.goods)) {
-                            if (qty <= 0) continue;
-                            if (player.townId === caravan.fromTownId) {
-                                player.inventory[resId] = (player.inventory[resId] || 0) + qty;
-                            } else {
-                                const originTownObj = Engine.findTown(caravan.fromTownId);
-                                if (originTownObj) {
-                                    let price = originTownObj.market.prices[resId] || 1;
-                                    if (hasSkill('trade_route_mastery')) price *= 1.10;
-                                    const rev = Math.floor(price * qty);
-                                    player.gold += rev;
-                                    player.stats.totalGoldEarned += rev;
-                                    caravan.totalProfit = (caravan.totalProfit || 0) + rev;
-                                    originTownObj.market.supply[resId] = (originTownObj.market.supply[resId] || 0) + qty;
-                                    Engine.logEvent(`Return caravan sold goods at ${originTownObj.name}: ${qty} ${resId} for ${rev}g.`);
-                                }
-                            }
-                        }
-                        caravan.goods = {};
-                    }
-                }
+                _processCaravanArrival(caravan);
             }
         }
 
