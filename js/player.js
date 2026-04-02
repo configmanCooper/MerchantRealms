@@ -5689,11 +5689,44 @@
                 town.market.supply[resourceId] = (town.market.supply[resourceId] || 0) + amount;
             }
         } else {
-            // Transfer to another building — put into town market supply so the target building can consume it
+            // Transfer to another building — deposit directly into target building's input inventory
             const targetBld = player.buildings.find(b => b.id === sourceBld.transferTarget);
             if (targetBld && targetBld.townId === sourceBld.townId) {
-                if (town.market && town.market.supply) {
-                    town.market.supply[resourceId] = (town.market.supply[resourceId] || 0) + amount;
+                const targetBt = Engine.findBuildingType(targetBld.type);
+                // Check target building storage capacity
+                var tBldCap = targetBt ? (targetBt.storage || 0) * (targetBld.level || 1) : 0;
+                var tBldUsed = 0;
+                if (targetBld.inventory) {
+                    for (var _tbk in targetBld.inventory) {
+                        var _tbr = findResource(_tbk);
+                        tBldUsed += (targetBld.inventory[_tbk] || 0) * (_tbr ? (_tbr.weight || 1) : 1);
+                    }
+                }
+                var resObj = findResource(resourceId);
+                var resWeight = resObj ? (resObj.weight || 1) : 1;
+                var canFitAmount = tBldCap > 0 ? Math.floor((tBldCap - tBldUsed) / resWeight) : amount;
+                // Smart ratio limiting: if target consumes multiple inputs, keep a balanced ratio
+                if (targetBt && targetBt.consumes && Object.keys(targetBt.consumes).length > 1 && targetBt.consumes[resourceId]) {
+                    var myRatio = targetBt.consumes[resourceId];
+                    var totalRatioParts = 0;
+                    for (var _rk in targetBt.consumes) totalRatioParts += targetBt.consumes[_rk];
+                    // Allow this input to use at most its proportional share of capacity (+50% buffer for timing)
+                    var myShare = myRatio / totalRatioParts;
+                    var maxForBalance = Math.floor(tBldCap / resWeight * myShare * 1.5);
+                    var currentStored = (targetBld.inventory && targetBld.inventory[resourceId]) || 0;
+                    var balanceRoom = Math.max(0, maxForBalance - currentStored);
+                    canFitAmount = Math.min(canFitAmount, balanceRoom);
+                }
+                var actualAmount = Math.min(amount, Math.max(0, canFitAmount));
+                if (actualAmount > 0) {
+                    if (!targetBld.inventory) targetBld.inventory = {};
+                    targetBld.inventory[resourceId] = (targetBld.inventory[resourceId] || 0) + actualAmount;
+                }
+                // Overflow: whatever doesn't fit goes to town storage
+                var overflow2 = amount - actualAmount;
+                if (overflow2 > 0) {
+                    if (!player.townStorage[sourceBld.townId]) player.townStorage[sourceBld.townId] = {};
+                    player.townStorage[sourceBld.townId][resourceId] = (player.townStorage[sourceBld.townId][resourceId] || 0) + overflow2;
                 }
             } else {
                 // Target not found or wrong town — fallback to town storage
@@ -6879,7 +6912,13 @@
             }
         }
         var available = player.inventory[resId] || 0;
-        if (available < qty) return { success: false, message: 'Not enough in inventory.' };
+        // Also check town storage for buildings in the same town
+        var townStoreAvail = 0;
+        if (bld.townId && player.townStorage && player.townStorage[bld.townId]) {
+            townStoreAvail = player.townStorage[bld.townId][resId] || 0;
+        }
+        var totalAvailable = available + townStoreAvail;
+        if (totalAvailable < qty) return { success: false, message: 'Not enough. Inventory: ' + available + ', Town storage: ' + townStoreAvail + '.' };
         var bldCap = bt ? (bt.storage || 0) * (bld.level || 1) : 0;
         if (bldCap > 0) {
             var bldUsed = 0;
@@ -6895,11 +6934,21 @@
             }
         }
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(1);
-        player.inventory[resId] -= qty;
-        if (player.inventory[resId] <= 0) player.inventory[resId] = 0;
+        // Draw from personal inventory first, then town storage
+        var fromInv = Math.min(qty, available);
+        var fromTown = qty - fromInv;
+        if (fromInv > 0) {
+            player.inventory[resId] = (player.inventory[resId] || 0) - fromInv;
+            if (player.inventory[resId] <= 0) player.inventory[resId] = 0;
+        }
+        if (fromTown > 0 && player.townStorage && player.townStorage[bld.townId]) {
+            player.townStorage[bld.townId][resId] = (player.townStorage[bld.townId][resId] || 0) - fromTown;
+            if (player.townStorage[bld.townId][resId] <= 0) delete player.townStorage[bld.townId][resId];
+        }
         if (!bld.inventory) bld.inventory = {};
         bld.inventory[resId] = (bld.inventory[resId] || 0) + qty;
-        return { success: true, message: 'Stored ' + qty + ' ' + (res ? res.name : resId) + ' in ' + (bt ? bt.name : 'building') + '.' };
+        var sourceNote = fromTown > 0 ? ' (' + fromInv + ' from inventory, ' + fromTown + ' from town storage)' : '';
+        return { success: true, message: 'Stored ' + qty + ' ' + (res ? res.name : resId) + ' in ' + (bt ? bt.name : 'building') + '.' + sourceNote };
     }
 
     function withdrawFromBuilding(buildingId, resId, qty) {

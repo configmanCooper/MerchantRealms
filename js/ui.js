@@ -4014,14 +4014,22 @@ window.UI = (function () {
                 }
                 if (!_hasInput) html += '<div style="font-size:0.72rem;color:#888;">No input items stored.</div>';
 
-                // Deposit from player inventory — market-like section
+                // Deposit from player inventory + town storage
                 if (bld.townId === Player.townId) {
                     html += '<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px;">';
-                    html += '<div style="font-size:0.72rem;font-weight:bold;color:#aaa;margin-bottom:4px;">📤 Deposit from Inventory</div>';
+                    html += '<div style="font-size:0.72rem;font-weight:bold;color:#aaa;margin-bottom:4px;">📤 Deposit from Inventory / Town Storage</div>';
                     var _hasDepositable = false;
                     var _inv = Player.inventory || {};
-                    for (var _dk in _inv) {
-                        if (_inv[_dk] <= 0) continue;
+                    var _townSt = (Player.state && Player.state.townStorage && Player.state.townStorage[bld.townId]) || {};
+                    // Merge keys from both inventory and town storage
+                    var _allDepKeys = {};
+                    for (var _ik2 in _inv) { if (_inv[_ik2] > 0) _allDepKeys[_ik2] = true; }
+                    for (var _tk2 in _townSt) { if (_townSt[_tk2] > 0) _allDepKeys[_tk2] = true; }
+                    for (var _dk in _allDepKeys) {
+                        var _invQty = _inv[_dk] || 0;
+                        var _tsQty = _townSt[_dk] || 0;
+                        var _totalQty = _invQty + _tsQty;
+                        if (_totalQty <= 0) continue;
                         var _dr = findResource(_dk);
                         if (!_dr) continue;
                         // Filter: livestock only to livestock buildings, horses only to horse buildings
@@ -4033,13 +4041,13 @@ window.UI = (function () {
                         if (_outputSet2[_dk]) continue;
                         _hasDepositable = true;
                         var _dName = (_dr.icon || '') + ' ' + _dr.name;
-                        var _dQty = _inv[_dk];
                         var _dWeight = _dr.weight || 1;
                         var _dMaxFit = _inputCap > _inputWeight ? Math.floor((_inputCap - _inputWeight) / _dWeight) : 0;
-                        var _dMax = Math.min(_dQty, _dMaxFit);
+                        var _dMax = Math.min(_totalQty, _dMaxFit);
                         var _dIsConsumed = _consumedSet[_dk];
+                        var _srcNote = _invQty > 0 && _tsQty > 0 ? ' <span style="color:#aaa;font-size:0.6rem;">(' + _invQty + ' inv + ' + _tsQty + ' storage)</span>' : (_tsQty > 0 && _invQty === 0 ? ' <span style="color:#64b5f6;font-size:0.6rem;">(town storage)</span>' : '');
                         html += '<div style="display:flex;align-items:center;gap:4px;margin:3px 0;font-size:0.78rem;flex-wrap:wrap;">';
-                        html += '<span style="min-width:120px;">' + _dName + ': ' + _dQty + (_dIsConsumed ? ' <span style="color:#7cb342;font-size:0.6rem;">(used)</span>' : '') + '</span>';
+                        html += '<span style="min-width:120px;">' + _dName + ': ' + _totalQty + _srcNote + (_dIsConsumed ? ' <span style="color:#7cb342;font-size:0.6rem;">(used)</span>' : '') + '</span>';
                         html += '<span style="display:flex;gap:2px;align-items:center;">';
                         var _sQtys = [1, 5, 10, 25];
                         for (var _si = 0; _si < _sQtys.length; _si++) {
@@ -4138,8 +4146,8 @@ window.UI = (function () {
         }
         if (!hasStored) html += '<div style="color:#888;font-size:0.8rem;">Empty</div>';
 
-        // Player inventory — deposit
-        html += '<h4 style="margin:12px 0 4px;">Your Inventory</h4>';
+        // Player inventory + town storage — deposit
+        html += '<h4 style="margin:12px 0 4px;">Your Inventory / Town Storage</h4>';
         // inputOnly filter info
         var inputOnly = bld.inputOnly !== false;
         var consumedGoods = Player.getBuildingConsumedGoods ? Player.getBuildingConsumedGoods(bt) : {};
@@ -4149,8 +4157,15 @@ window.UI = (function () {
         }
         var hasInv = false;
         var inv = Player.inventory || {};
-        for (var ik in inv) {
-            if (inv[ik] <= 0) continue;
+        var _tsModal = (Player.state && Player.state.townStorage && Player.state.townStorage[bld.townId]) || {};
+        var _allModalKeys = {};
+        for (var _mk1 in inv) { if (inv[_mk1] > 0) _allModalKeys[_mk1] = true; }
+        for (var _mk2 in _tsModal) { if (_tsModal[_mk2] > 0) _allModalKeys[_mk2] = true; }
+        for (var ik in _allModalKeys) {
+            var _mInvQty = inv[ik] || 0;
+            var _mTsQty = _tsModal[ik] || 0;
+            var iQty = _mInvQty + _mTsQty;
+            if (iQty <= 0) continue;
             var ir = findResource(ik);
             if (!ir) continue;
             // Filter: livestock only to livestock buildings, horses only to horse buildings
@@ -4160,10 +4175,10 @@ window.UI = (function () {
             if (inputOnly && producesId && !consumedGoods[ik]) continue;
             hasInv = true;
             var iName = (ir.icon || '') + ' ' + ir.name;
-            var iQty = inv[ik];
             var isConsumedGood = consumedGoods[ik];
+            var _mSrcNote = _mInvQty > 0 && _mTsQty > 0 ? ' <span style="font-size:0.6rem;color:#aaa;">(' + _mInvQty + ' inv + ' + _mTsQty + ' stored)</span>' : (_mTsQty > 0 && _mInvQty === 0 ? ' <span style="font-size:0.6rem;color:#64b5f6;">📦 stored</span>' : '');
             html += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-size:0.8rem;">';
-            html += '<span style="min-width:140px;">' + iName + ': ' + iQty + (isConsumedGood ? ' <span style="color:#7cb342;font-size:0.6rem;">(used)</span>' : '') + '</span>';
+            html += '<span style="min-width:140px;">' + iName + ': ' + iQty + _mSrcNote + (isConsumedGood ? ' <span style="color:#7cb342;font-size:0.6rem;">(used)</span>' : '') + '</span>';
             html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldDeposit(\'' + buildingId + '\',\'' + ik + '\',1)">Store 1</button>';
             if (iQty >= 5) html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldDeposit(\'' + buildingId + '\',\'' + ik + '\',5)">5</button>';
             html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldDeposit(\'' + buildingId + '\',\'' + ik + '\',' + iQty + ')">All</button>';
