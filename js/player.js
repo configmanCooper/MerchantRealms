@@ -20443,9 +20443,25 @@
         if (!player.petitions) player.petitions = [];
         const pType = PETITION_TYPES.find(t => t.id === typeId);
         if (!pType) return { success: false, message: 'Invalid petition type.' };
+
+        // Yearly petition limit based on social rank
+        var petitionKingdomId = player.citizenshipKingdomId;
+        var rankIdx = petitionKingdomId ? (player.socialRank[petitionKingdomId] || 0) : 0;
+        var yearlyLimits = [0, 1, 2, 4, 6, 12, -1]; // peasant, citizen, burgher, guildmaster, minor noble, lord, royal advisor (-1 = unlimited)
+        var maxPerYear = yearlyLimits[Math.min(rankIdx, yearlyLimits.length - 1)];
+        if (maxPerYear === 0) return { success: false, message: 'Peasants cannot create petitions. Become a Citizen first.' };
+        var currentDay = Engine.getDay();
+        if (maxPerYear > 0) {
+            var yearStart = currentDay - 360;
+            var petitionsThisYear = player.petitions.filter(function(p) { return p.createdDay >= yearStart; }).length;
+            var rankName = CONFIG.SOCIAL_RANKS[rankIdx] ? CONFIG.SOCIAL_RANKS[rankIdx].name : 'your rank';
+            if (petitionsThisYear >= maxPerYear) {
+                return { success: false, message: 'As a ' + rankName + ', you may only create ' + maxPerYear + ' petition' + (maxPerYear > 1 ? 's' : '') + ' per year. You\'ve used ' + petitionsThisYear + '/' + maxPerYear + '.' };
+            }
+        }
+
         const active = player.petitions.filter(p => p.status === 'active');
         if (active.length >= CONFIG.PETITION_MAX_ACTIVE) return { success: false, message: 'You already have ' + CONFIG.PETITION_MAX_ACTIVE + ' active petitions. Submit or cancel one first.' };
-        const currentDay = Engine.getDay();
         const cooldownEnd = player.petitions
             .filter(p => p.typeId === typeId && (p.status === 'approved' || p.status === 'rejected'))
             .reduce((latest, p) => Math.max(latest, (p.submittedDay || p.createdDay) + CONFIG.PETITION_COOLDOWN_DAYS), 0);
