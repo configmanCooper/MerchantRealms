@@ -2686,7 +2686,9 @@
         } else if (isSea) {
             player.travelMode = 'sea_passage';
         } else {
-            player.travelMode = options.mode || (hasHorse ? 'horse' : 'walk');
+            // Horse riding only allowed on land routes
+            var requestedMode = options.mode || (hasHorse ? 'horse' : 'walk');
+            player.travelMode = requestedMode;
         }
         player.travelRestBonus = false;
 

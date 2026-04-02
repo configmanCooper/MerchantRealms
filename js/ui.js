@@ -9592,7 +9592,7 @@ window.UI = (function () {
 
         // ===== LAND OPTIONS =====
         // Only show walking/riding options if route has at least one non-sea segment
-        var isSeaOnly = landRoute && landRoute.length > 0 && landRoute.every(function(seg) { return seg.type === 'sea'; });
+        var isSeaOnly = !landRoute || landRoute.length === 0 || landRoute.every(function(seg) { return seg.type === 'sea'; });
         if (landRoute && landRoute.length > 0 && !isSeaOnly) {
             var baseDist = calculateRouteDist(landRoute);
             var baseSpeed = CONFIG.CARAVAN_BASE_SPEED * 1.5;
