@@ -163,6 +163,64 @@ window.Renderer = (function () {
 
     function centerOnPlayer() {
         if (typeof Player === 'undefined') return;
+
+        // If traveling, center on interpolated position along route
+        if (Player.traveling && Player.travelProgress != null) {
+            const route = Player.travelRoute || [];
+            const progress = Player.travelProgress || 0;
+            if (route.length >= 2) {
+                let totalDist = 0;
+                const segDists = [];
+                for (let i = 1; i < route.length; i++) {
+                    const d = Math.hypot(route[i].x - route[i - 1].x, route[i].y - route[i - 1].y);
+                    segDists.push(d);
+                    totalDist += d;
+                }
+                if (totalDist > 0) {
+                    let targetDist = progress * totalDist;
+                    let accumulated = 0;
+                    let px = route[0].x, py = route[0].y;
+                    for (let i = 0; i < segDists.length; i++) {
+                        if (accumulated + segDists[i] >= targetDist) {
+                            const sp = (targetDist - accumulated) / segDists[i];
+                            px = route[i].x + (route[i + 1].x - route[i].x) * sp;
+                            py = route[i].y + (route[i + 1].y - route[i].y) * sp;
+                            break;
+                        }
+                        accumulated += segDists[i];
+                        px = route[i + 1].x;
+                        py = route[i + 1].y;
+                    }
+                    camera.targetX = px;
+                    camera.targetY = py;
+                    camera.x = camera.targetX;
+                    camera.y = camera.targetY;
+                    return;
+                }
+            }
+            // Fallback: linear interpolation between origin and destination
+            let originTown, destTown;
+            try { originTown = Engine.getTown(Player.travelOrigin || Player.townId); } catch (e) { /* no-op */ }
+            try { destTown = Engine.getTown(Player.travelDestination); } catch (e) { /* no-op */ }
+            if (originTown && destTown) {
+                camera.targetX = originTown.x + (destTown.x - originTown.x) * progress;
+                camera.targetY = originTown.y + (destTown.y - originTown.y) * progress;
+                camera.x = camera.targetX;
+                camera.y = camera.targetY;
+                return;
+            }
+        }
+
+        // Wilderness (stopped on road, no townId)
+        if (Player.worldX && Player.worldY) {
+            camera.targetX = Player.worldX;
+            camera.targetY = Player.worldY;
+            camera.x = camera.targetX;
+            camera.y = camera.targetY;
+            return;
+        }
+
+        // At a town
         const townId = Player.townId;
         if (townId == null) return;
         let town = null;
