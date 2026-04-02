@@ -1026,6 +1026,29 @@ window.UI = (function () {
             }
         }
 
+        // Town Quests button (only when player is in this town)
+        if (isPlayerHere) {
+            var _questCount = 0;
+            try {
+                if (typeof Player !== 'undefined' && Player.getTownQuestsForTown) {
+                    _questCount = Player.getTownQuestsForTown(town.id).length;
+                }
+            } catch(e) {}
+            var _activeCount = 0;
+            try {
+                if (typeof Player !== 'undefined' && Player.getActiveQuests) {
+                    _activeCount = Player.getActiveQuests().filter(function(q) { return q.townId === town.id; }).length;
+                }
+            } catch(e) {}
+            var _questBadge = _questCount > 0 ? ' <span style="background:#4a7c3f;color:#fff;border-radius:8px;padding:1px 6px;font-size:0.7rem;margin-left:4px;">' + _questCount + ' available</span>' : '';
+            var _activeBadge = _activeCount > 0 ? ' <span style="background:#8b6914;color:#fff;border-radius:8px;padding:1px 6px;font-size:0.7rem;margin-left:4px;">' + _activeCount + ' active</span>' : '';
+            html += '<div class="text-center mt-sm">';
+            html += '<button class="btn-medieval" onclick="UI.openTownQuests(\'' + town.id + '\')" style="font-size:0.8rem;padding:6px 16px;">';
+            html += '📋 Town Quests' + _questBadge + _activeBadge;
+            html += '</button>';
+            html += '</div>';
+        }
+
         // Land & Housing section (only when player is in town)
         if (isPlayerHere && typeof Player !== 'undefined') {
             var playerTownCat = town.category || 'village';
@@ -5226,6 +5249,190 @@ window.UI = (function () {
             if (result.success) closeModal();
         } catch(e) {
             toast(e.message || 'Cannot advise', 'danger');
+        }
+    }
+
+    // ========================================================
+    // TOWN QUESTS UI
+    // ========================================================
+    function openTownQuests(townId) {
+        if (typeof Player === 'undefined') return;
+        var town = null;
+        try { town = Engine.getTown(townId); } catch(e) {}
+        if (!town) { try { town = Engine.findTown(townId); } catch(e) {} }
+        if (!town) { toast('Town not found.', 'warning'); return; }
+
+        // Generate quests if needed
+        if (Player.generateTownQuests) Player.generateTownQuests(townId);
+
+        var available = Player.getTownQuestsForTown ? Player.getTownQuestsForTown(townId) : [];
+        var allActive = Player.getActiveQuests ? Player.getActiveQuests() : [];
+        var activeHere = allActive.filter(function(q) { return q.townId === townId; });
+        var activeElsewhere = allActive.filter(function(q) { return q.townId !== townId; });
+        var completedCount = Player.getCompletedQuestCount ? Player.getCompletedQuestCount() : 0;
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+
+        var html = '<div style="max-width:560px;max-height:500px;overflow-y:auto;padding:4px;">';
+
+        // Stats bar
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding:6px 10px;background:#1a2a1a;border-radius:6px;border:1px solid #3a5a3a;">';
+        html += '<span style="color:#aaa;font-size:0.8rem;">📋 Active: <b style="color:#ffd700;">' + allActive.length + '/5</b></span>';
+        html += '<span style="color:#aaa;font-size:0.8rem;">✅ Completed: <b style="color:#4a7c3f;">' + completedCount + '</b></span>';
+        html += '</div>';
+
+        // Active quests in this town
+        if (activeHere.length > 0) {
+            html += '<h3 style="margin:4px 0 6px;color:#ffd700;font-size:0.95rem;">⚡ Active Quests in ' + town.name + '</h3>';
+            for (var ai = 0; ai < activeHere.length; ai++) {
+                html += _renderQuestCard(activeHere[ai], day, 'active', townId);
+            }
+        }
+
+        // Active quests elsewhere
+        if (activeElsewhere.length > 0) {
+            html += '<h3 style="margin:10px 0 6px;color:#ccaa44;font-size:0.85rem;">📌 Active Quests Elsewhere</h3>';
+            for (var oi = 0; oi < activeElsewhere.length; oi++) {
+                var oTown = null;
+                try { oTown = Engine.findTown(activeElsewhere[oi].townId); } catch(e) {}
+                html += _renderQuestCard(activeElsewhere[oi], day, 'active-elsewhere', townId, oTown);
+            }
+        }
+
+        // Available quests
+        html += '<h3 style="margin:10px 0 6px;color:#88cc88;font-size:0.95rem;">📜 Available Quests in ' + town.name + '</h3>';
+        if (available.length === 0) {
+            html += '<div style="color:#888;font-size:0.85rem;padding:10px;text-align:center;">No quests available right now. Check back tomorrow!</div>';
+        } else {
+            for (var vi = 0; vi < available.length; vi++) {
+                html += _renderQuestCard(available[vi], day, 'available', townId);
+            }
+        }
+
+        html += '</div>';
+        openModal('📋 Town Quests — ' + town.name, html);
+    }
+
+    function _renderQuestCard(quest, day, mode, currentTownId, otherTown) {
+        var diffStars = '';
+        for (var di = 0; di < quest.difficulty; di++) diffStars += '⭐';
+        var diffColor = quest.difficulty <= 3 ? '#4a7c3f' : quest.difficulty <= 6 ? '#ccaa44' : '#cc4444';
+
+        var html = '<div style="border:1px solid #555;border-radius:8px;padding:10px;margin:6px 0;background:#1a1a2a;">';
+
+        // Title row
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">';
+        html += '<span style="color:#ffd700;font-weight:bold;font-size:0.9rem;">' + (quest.title || 'Quest') + '</span>';
+        html += '<span style="color:' + diffColor + ';font-size:0.7rem;" title="Difficulty: ' + quest.difficulty + '/10">' + diffStars + '</span>';
+        html += '</div>';
+
+        // Description
+        html += '<div style="color:#ccc;font-size:0.8rem;margin-bottom:6px;line-height:1.3;">' + quest.description + '</div>';
+
+        // Reason tag if contextual
+        if (quest.reason) {
+            html += '<div style="color:#88aacc;font-size:0.72rem;font-style:italic;margin-bottom:4px;">ℹ️ ' + quest.reason + '</div>';
+        }
+
+        // Other town label
+        if (otherTown) {
+            html += '<div style="color:#ccaa44;font-size:0.75rem;margin-bottom:4px;">📍 ' + otherTown.name + '</div>';
+        }
+
+        // Resource & quantity (non-performance)
+        if (!quest.isPerformance && quest.resource) {
+            var resName = quest.resource;
+            var resIcon = '';
+            for (var rk in RESOURCE_TYPES) {
+                if (RESOURCE_TYPES[rk].id === quest.resource) {
+                    resName = RESOURCE_TYPES[rk].name;
+                    resIcon = RESOURCE_TYPES[rk].icon || '';
+                    break;
+                }
+            }
+            var playerHas = 0;
+            try {
+                playerHas = (Player.inventory[quest.resource] || 0) + ((Player.townStorage[currentTownId] || {})[quest.resource] || 0);
+            } catch(e) {}
+            var hasColor = playerHas >= quest.quantity ? '#4a7c3f' : '#cc6644';
+            html += '<div style="display:flex;justify-content:space-between;font-size:0.8rem;margin-bottom:4px;">';
+            html += '<span style="color:#aaa;">Need: ' + resIcon + ' ' + quest.quantity + ' ' + resName + '</span>';
+            html += '<span style="color:' + hasColor + ';">You have: ' + playerHas + '</span>';
+            html += '</div>';
+        }
+
+        // Performance quest requirements
+        if (quest.isPerformance) {
+            var minSkill = quest.skillReq ? quest.skillReq.min : 0;
+            var tierName = minSkill >= 76 ? 'Master' : minSkill >= 51 ? 'Expert' : minSkill >= 26 ? 'Competent' : 'Novice';
+            html += '<div style="color:#aaa;font-size:0.8rem;margin-bottom:4px;">🎵 Requires: Any instrument + ' + tierName + ' skill (' + minSkill + '+)</div>';
+        }
+
+        // Rewards info
+        html += '<div style="display:flex;gap:12px;font-size:0.75rem;margin-bottom:4px;color:#aaa;">';
+        if (!quest.isPerformance && quest.resource) {
+            html += '<span>💰 Sell: +' + quest.smallRepBoost + ' rep + market gold</span>';
+        }
+        html += '<span>🎁 Donate: +' + quest.bigRepBoost + ' rep</span>';
+        html += '<span>👥 ' + quest.relGainMin + '-' + quest.relGainMax + ' NPCs helped</span>';
+        html += '</div>';
+
+        // Time info
+        if (mode === 'active' || mode === 'active-elsewhere') {
+            var daysLeft = quest.expiresDay - day;
+            var timeColor = daysLeft <= 3 ? '#cc4444' : daysLeft <= 7 ? '#ccaa44' : '#4a7c3f';
+            html += '<div style="font-size:0.8rem;margin-bottom:6px;"><span style="color:' + timeColor + ';">⏰ ' + daysLeft + ' days remaining</span></div>';
+        } else {
+            html += '<div style="font-size:0.75rem;color:#888;margin-bottom:6px;">⏱️ Time limit: ' + quest.timeLimit + ' days (starts when accepted)</div>';
+        }
+
+        // Action buttons
+        html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">';
+        if (mode === 'available') {
+            html += '<button class="btn-medieval" onclick="UI.acceptQuest(\'' + quest.id + '\')" style="font-size:0.75rem;padding:4px 12px;background:#2a4a2a;">✅ Accept Quest</button>';
+        } else if (mode === 'active') {
+            // Complete buttons — only show if player is in the quest's town
+            html += '<button class="btn-medieval" onclick="UI.completeQuest(\'' + quest.id + '\', false)" style="font-size:0.75rem;padding:4px 12px;background:#2a3a4a;">💰 Sell to Town</button>';
+            html += '<button class="btn-medieval" onclick="UI.completeQuest(\'' + quest.id + '\', true)" style="font-size:0.75rem;padding:4px 12px;background:#2a4a2a;">🎁 Donate</button>';
+            html += '<button class="btn-medieval" onclick="UI.abandonQuest(\'' + quest.id + '\')" style="font-size:0.75rem;padding:4px 8px;background:#4a2a2a;opacity:0.7;">❌</button>';
+        } else if (mode === 'active-elsewhere') {
+            html += '<span style="color:#888;font-size:0.75rem;">Must be in ' + (otherTown ? otherTown.name : 'the quest town') + ' to complete</span>';
+            html += '<button class="btn-medieval" onclick="UI.abandonQuest(\'' + quest.id + '\')" style="font-size:0.75rem;padding:4px 8px;background:#4a2a2a;opacity:0.7;">❌ Abandon</button>';
+        }
+        html += '</div>';
+
+        html += '</div>';
+        return html;
+    }
+
+    function acceptQuest(questId) {
+        if (!Player.acceptTownQuest) return;
+        var result = Player.acceptTownQuest(questId);
+        toast(result.message, result.success ? 'success' : 'warning');
+        if (result.success) {
+            // Refresh the dialog
+            var townId = result.quest ? result.quest.townId : Player.townId;
+            openTownQuests(townId);
+        }
+    }
+
+    function completeQuest(questId, donate) {
+        if (!Player.completeTownQuest) return;
+        var result = Player.completeTownQuest(questId, donate);
+        if (result.success) {
+            // Refresh
+            openTownQuests(Player.townId);
+        } else {
+            toast(result.message, 'warning');
+        }
+    }
+
+    function abandonQuest(questId) {
+        if (!Player.abandonTownQuest) return;
+        var result = Player.abandonTownQuest(questId);
+        toast(result.message, result.success ? 'info' : 'warning');
+        if (result.success) {
+            openTownQuests(Player.townId);
         }
     }
 
@@ -20043,6 +20250,11 @@ window.UI = (function () {
         requestSameRankIntro,
         openAdviseKingDirectDialog,
         executeAdviseKing,
+        // Town Quests
+        openTownQuests,
+        acceptQuest,
+        completeQuest,
+        abandonQuest,
         usePerk,
         dateAction,
         proposeTo,

@@ -489,6 +489,9 @@
         player.introductions = {};  // personId → { introducedBy, day, rank }
         player.introductionCooldowns = {};  // personId → day of last introduction request
         player.adviseCooldown = 0;  // day of last advise king action
+        player.townQuests = {};     // townId → { available: [], lastGenDay: 0 }
+        player.activeQuests = [];   // quests the player has accepted
+        player.completedQuestCount = 0;
         player.smugglingSkill = 0;
         player.jailedUntilDay = 0;
         player.aiMerchantSiblings = [];
@@ -13061,6 +13064,10 @@
             politicalCapitalResetDay: player.politicalCapitalResetDay || 0,
             // Town Reputation
             townReputation: JSON.parse(JSON.stringify(player.townReputation || {})),
+            // Town Quests
+            townQuests: JSON.parse(JSON.stringify(player.townQuests || {})),
+            activeQuests: JSON.parse(JSON.stringify(player.activeQuests || [])),
+            completedQuestCount: player.completedQuestCount || 0,
             wartimeGoldEarned: player.wartimeGoldEarned || 0,
             // Military Career
             militaryRank: player.militaryRank,
@@ -13408,6 +13415,24 @@
         player.politicalCapitalResetDay = data.politicalCapitalResetDay || 0;
         // Town Reputation
         player.townReputation = data.townReputation || {};
+        // Town Quests
+        player.townQuests = data.townQuests || {};
+        player.activeQuests = data.activeQuests || [];
+        player.completedQuestCount = data.completedQuestCount || 0;
+        // Restore quest ID counter
+        var _maxQId = 0;
+        for (var _tqk in player.townQuests) {
+            var _tqAvail = (player.townQuests[_tqk] || {}).available || [];
+            for (var _tqi = 0; _tqi < _tqAvail.length; _tqi++) {
+                var _qnum = parseInt((_tqAvail[_tqi].id || '').replace('tq_', ''), 10);
+                if (_qnum > _maxQId) _maxQId = _qnum;
+            }
+        }
+        for (var _aqi = 0; _aqi < player.activeQuests.length; _aqi++) {
+            var _aqnum = parseInt((player.activeQuests[_aqi].id || '').replace('tq_', ''), 10);
+            if (_aqnum > _maxQId) _maxQId = _aqnum;
+        }
+        _nextQuestId = _maxQId + 1;
         player.wartimeGoldEarned = data.wartimeGoldEarned || 0;
         // Military Career
         player.militaryRank = data.militaryRank || null;
@@ -14666,6 +14691,9 @@
 
         // Advance caravans
         tickCaravans();
+
+        // Town quests: check expirations and generate new
+        tickTownQuests();
 
         // Travel progress
         tickTravel();
@@ -16506,6 +16534,619 @@
             modifyRelationship(kingPerson ? kingPerson.id : '', -1);
             return { success: false, message: 'The king considers your words but says: "I appreciate your counsel, but I must decline this time."' };
         }
+    }
+
+    // ========================================================
+    // §16B TOWN QUESTS SYSTEM
+    // ========================================================
+
+    var _nextQuestId = 1;
+
+    // Quest type definitions: ~50 types across categories
+    var TOWN_QUEST_TYPES = [
+        // ---- GENERIC (always available) ----
+        { id: 'food_drive', category: 'generic', title: 'Food Drive', resources: ['bread','meat','eggs','poultry','fish','vegetables'], qtyRange: [8,30], timeRange: [20,40],
+          descFn: function(t,r,q) { return 'Many in '+t.name+' are struggling to feed their families. The town council is calling for donations of '+q+' '+r.name+' to distribute to the needy.'; } },
+        { id: 'fuel_supply', category: 'generic', title: 'Fuel for Hearths', resources: ['wood'], qtyRange: [15,50], timeRange: [20,45],
+          descFn: function(t,r,q) { return 'Firewood stores in '+t.name+' are running low. Residents need '+q+' '+r.name+' to keep their hearths burning.'; } },
+        { id: 'tool_request', category: 'generic', title: 'Tools for Craftsmen', resources: ['tools'], qtyRange: [3,12], timeRange: [25,45],
+          descFn: function(t,r,q) { return 'Local craftsmen in '+t.name+' are in desperate need of '+q+' sets of '+r.name+'. Their old ones have worn out and workshops sit idle.'; } },
+        { id: 'cloth_donation', category: 'generic', title: 'Clothing the Needy', resources: ['cloth','clothes'], qtyRange: [5,20], timeRange: [20,40],
+          descFn: function(t,r,q) { return 'With the changing seasons, many in '+t.name+' lack proper attire. '+q+' units of '+r.name+' would help clothe those in need.'; } },
+        { id: 'construction_aid', category: 'generic', title: 'Town Construction Project', resources: ['planks','stone','bricks'], qtyRange: [10,40], timeRange: [25,50],
+          descFn: function(t,r,q) { return t.name+' has begun a public construction project but lacks materials. They need '+q+' '+r.name+' to proceed.'; } },
+        { id: 'salt_preservation', category: 'generic', title: 'Salt for Preservation', resources: ['salt'], qtyRange: [8,25], timeRange: [20,40],
+          descFn: function(t,r,q) { return 'Butchers and fishmongers in '+t.name+' need '+q+' '+r.name+' to preserve their stock before it spoils.'; } },
+        { id: 'leather_goods', category: 'generic', title: 'Leather for the Cobbler', resources: ['leather','hide'], qtyRange: [5,18], timeRange: [20,40],
+          descFn: function(t,r,q) { return 'The cobbler and saddlemaker in '+t.name+' are running low on materials. They need '+q+' '+r.name+' to fill orders.'; } },
+        { id: 'tavern_restock', category: 'generic', title: 'Tavern Running Dry', resources: ['ale','wine','mead','cider'], qtyRange: [6,25], timeRange: [15,35],
+          descFn: function(t,r,q) { return 'The tavern in '+t.name+' is nearly out of drinks! The tavernkeep urgently needs '+q+' '+r.name+' before patrons riot.'; } },
+        { id: 'rope_needed', category: 'generic', title: 'Rope for the Docks', resources: ['rope','hemp'], qtyRange: [5,20], timeRange: [20,40],
+          descFn: function(t,r,q) { return 'Workers in '+t.name+' need '+q+' '+r.name+' for construction and rigging. Can you supply them?'; } },
+        { id: 'iron_request', category: 'generic', title: 'Iron for the Smith', resources: ['iron','iron_ore'], qtyRange: [5,18], timeRange: [25,45],
+          descFn: function(t,r,q) { return 'The blacksmith in '+t.name+' has run out of raw materials. '+q+' '+r.name+' would get the forge roaring again.'; } },
+        { id: 'honey_request', category: 'generic', title: 'Honey for the Healers', resources: ['honey'], qtyRange: [4,15], timeRange: [20,40],
+          descFn: function(t,r,q) { return 'Apothecaries in '+t.name+' use honey in many remedies. They are requesting '+q+' '+r.name+' from any willing merchant.'; } },
+        { id: 'furniture_needed', category: 'generic', title: 'Furnishing New Homes', resources: ['furniture'], qtyRange: [3,10], timeRange: [25,50],
+          descFn: function(t,r,q) { return 'New families have moved to '+t.name+' and need furniture. '+q+' pieces of '+r.name+' are needed for their homes.'; } },
+
+        // ---- WAR/CONFLICT ----
+        { id: 'war_bandages', category: 'war', title: 'Bandages for the Wounded', resources: ['bandages'], qtyRange: [10,40], timeRange: [15,30],
+          descFn: function(t,r,q) { return '⚔️ War rages and wounded soldiers pour into '+t.name+'. The healers desperately need '+q+' '+r.name+' to treat the injured.'; } },
+        { id: 'war_weapons', category: 'war', title: 'Arms for the Militia', resources: ['swords','bows'], qtyRange: [4,15], timeRange: [20,40],
+          descFn: function(t,r,q) { return '⚔️ With war threatening '+t.name+', the town guard needs '+q+' '+r.name+' to arm the local militia.'; } },
+        { id: 'war_armor', category: 'war', title: 'Armor for Defenders', resources: ['armor'], qtyRange: [3,10], timeRange: [25,45],
+          descFn: function(t,r,q) { return '⚔️ '+t.name+'\'s defenders lack proper protection. They urgently request '+q+' sets of '+r.name+'.'; } },
+        { id: 'war_provisions', category: 'war', title: 'Provisions for Troops', resources: ['preserved_food','bread','meat'], qtyRange: [10,35], timeRange: [15,35],
+          descFn: function(t,r,q) { return '⚔️ Soldiers stationed near '+t.name+' are running low on rations. Supply '+q+' '+r.name+' to feed the troops.'; } },
+        { id: 'war_horses', category: 'war', title: 'Horses for the Cavalry', resources: ['horses'], qtyRange: [2,6], timeRange: [25,45],
+          descFn: function(t,r,q) { return '⚔️ The cavalry is undermounted! '+t.name+' needs '+q+' war '+r.name+' to bolster the kingdom\'s mounted forces.'; } },
+        { id: 'war_arrows', category: 'war', title: 'Arrows for the Archers', resources: ['arrows'], qtyRange: [15,50], timeRange: [15,30],
+          descFn: function(t,r,q) { return '⚔️ Archers defending '+t.name+' are running low on ammunition. They need '+q+' bundles of '+r.name+' immediately.'; } },
+
+        // ---- PLAGUE/ILLNESS ----
+        { id: 'plague_medicine', category: 'plague', title: 'Medicine for the Sick', resources: ['herbal_remedy','healing_tonic'], qtyRange: [5,20], timeRange: [15,30],
+          descFn: function(t,r,q) { return '🏥 A plague ravages '+t.name+'! Healers urgently need '+q+' '+r.name+' to treat the afflicted.'; } },
+        { id: 'plague_bandages', category: 'plague', title: 'Bandages for Plague Victims', resources: ['bandages'], qtyRange: [10,35], timeRange: [15,30],
+          descFn: function(t,r,q) { return '🏥 The plague in '+t.name+' has overwhelmed the infirmary. '+q+' '+r.name+' are desperately needed.'; } },
+        { id: 'plague_tonics', category: 'plague', title: 'Fever Tonics Needed', resources: ['fever_tonic','healing_tonic'], qtyRange: [4,15], timeRange: [15,30],
+          descFn: function(t,r,q) { return '🏥 Fever has gripped '+t.name+'. Apothecaries need '+q+' '+r.name+' before more people succumb.'; } },
+        { id: 'plague_antidotes', category: 'plague', title: 'Antidotes Required', resources: ['antidote'], qtyRange: [3,10], timeRange: [20,35],
+          descFn: function(t,r,q) { return '🏥 A mysterious ailment in '+t.name+' requires rare antidotes. '+q+' '+r.name+' could save dozens of lives.'; } },
+        { id: 'plague_herbs', category: 'plague', title: 'Herbs for the Apothecary', resources: ['herbs'], qtyRange: [8,30], timeRange: [15,30],
+          descFn: function(t,r,q) { return '🏥 The apothecary in '+t.name+' has exhausted their supply of herbs fighting the plague. '+q+' '+r.name+' are needed.'; } },
+
+        // ---- BLIGHT/DROUGHT ----
+        { id: 'blight_wheat', category: 'blight', title: 'Seed Grain Needed', resources: ['wheat'], qtyRange: [20,60], timeRange: [20,40],
+          descFn: function(t,r,q) { return '🌾 A crop blight has destroyed harvests in '+t.name+'. Farmers need '+q+' '+r.name+' for replanting.'; } },
+        { id: 'blight_food', category: 'blight', title: 'Famine Relief', resources: ['bread','meat','eggs','fish','vegetables'], qtyRange: [12,40], timeRange: [20,40],
+          descFn: function(t,r,q) { return '🌾 With crops ruined by blight, '+t.name+' faces famine. '+q+' '+r.name+' would help feed the starving populace.'; } },
+        { id: 'drought_water', category: 'drought', title: 'Water for the Thirsty', resources: ['water'], qtyRange: [20,60], timeRange: [20,40],
+          descFn: function(t,r,q) { return '☀️ Drought has parched '+t.name+'. Wells are running dry and '+q+' '+r.name+' would bring much-needed relief.'; } },
+        { id: 'drought_provisions', category: 'drought', title: 'Drought Emergency Rations', resources: ['preserved_food','bread'], qtyRange: [10,30], timeRange: [20,40],
+          descFn: function(t,r,q) { return '☀️ The drought in '+t.name+' has ruined crops and livestock are dying. '+q+' '+r.name+' are needed to prevent starvation.'; } },
+
+        // ---- FESTIVAL/CELEBRATION ----
+        { id: 'festival_ale', category: 'festival', title: 'Ale for the Festival', resources: ['ale','mead'], qtyRange: [8,30], timeRange: [15,30],
+          descFn: function(t,r,q) { return '🎉 A festival is coming to '+t.name+'! The organizers need '+q+' barrels of '+r.name+' to keep the celebrations flowing.'; } },
+        { id: 'festival_wine', category: 'festival', title: 'Wine for the Feast', resources: ['wine'], qtyRange: [5,18], timeRange: [15,30],
+          descFn: function(t,r,q) { return '🎉 '+t.name+' is preparing a grand feast! '+q+' bottles of '+r.name+' are needed for the banquet tables.'; } },
+        { id: 'festival_food', category: 'festival', title: 'Feast Provisions', resources: ['meat','bread','poultry','fish'], qtyRange: [10,35], timeRange: [15,30],
+          descFn: function(t,r,q) { return '🎉 The upcoming festival in '+t.name+' needs food! Bring '+q+' '+r.name+' for the community feast.'; } },
+        { id: 'festival_decorations', category: 'festival', title: 'Festival Decorations', resources: ['cloth','tapestry','silk'], qtyRange: [3,12], timeRange: [15,30],
+          descFn: function(t,r,q) { return '🎉 '+t.name+' is decorating for their festival. They need '+q+' '+r.name+' to adorn the town square.'; } },
+        { id: 'festival_instruments', category: 'music_festival', title: 'Instruments for Musicians', resources: ['drum','flute','lute','harp','hurdy_gurdy'], qtyRange: [2,6], timeRange: [15,30],
+          descFn: function(t,r,q) { return '🎵 A music festival in '+t.name+' needs instruments! Supply '+q+' '+r.name+' so more musicians can join the celebration.'; } },
+        { id: 'festival_luxury', category: 'festival', title: 'Gifts for Visiting Dignitaries', resources: ['jewelry','perfume','silk','fine_clothes','gold_goblet'], qtyRange: [2,6], timeRange: [20,35],
+          descFn: function(t,r,q) { return '🎉 Visiting dignitaries are expected in '+t.name+'! The town needs '+q+' '+r.name+' as welcoming gifts.'; } },
+
+        // ---- MARKET/ECONOMIC ----
+        { id: 'price_crisis', category: 'economic', title: 'Price Crisis', resources: null, qtyRange: [8,30], timeRange: [20,40],
+          descFn: function(t,r,q) { return '📈 The price of '+r.name+' in '+t.name+' has skyrocketed! Bring '+q+' '+r.name+' to help stabilize the market and ease the burden on residents.'; } },
+        { id: 'shortage_response', category: 'economic', title: 'Market Shortage', resources: null, qtyRange: [10,35], timeRange: [20,40],
+          descFn: function(t,r,q) { return '📦 '+t.name+'\'s market has completely run out of '+r.name+'! Bring '+q+' units to restock the shelves.'; } },
+        { id: 'prosperity_drive', category: 'economic', title: 'Prosperity Drive', resources: ['jewelry','wine','silk','fine_clothes','perfume','tapestry'], qtyRange: [3,10], timeRange: [25,45],
+          descFn: function(t,r,q) { return '💰 '+t.name+' is trying to attract wealthier residents. Bring '+q+' '+r.name+' to establish a luxury market.'; } },
+        { id: 'guild_supply', category: 'economic', title: 'Guild Supply Request', resources: ['iron','planks','leather','cloth','rope','tools'], qtyRange: [6,20], timeRange: [20,40],
+          descFn: function(t,r,q) { return '🏛️ The local guild in '+t.name+' has a large order to fill. They need '+q+' '+r.name+' and will pay handsomely.'; } },
+
+        // ---- BUILDING/INFRASTRUCTURE ----
+        { id: 'road_materials', category: 'infrastructure', title: 'Road Repair Materials', resources: ['stone','bricks'], qtyRange: [12,40], timeRange: [25,45],
+          descFn: function(t,r,q) { return '🛤️ Roads near '+t.name+' have fallen into disrepair. '+q+' '+r.name+' are needed for restoration work.'; } },
+        { id: 'building_materials', category: 'infrastructure', title: 'Materials for New Building', resources: ['planks','bricks','stone','iron'], qtyRange: [10,35], timeRange: [25,50],
+          descFn: function(t,r,q) { return '🏗️ A new building is being constructed in '+t.name+' but work has stalled. '+q+' '+r.name+' are needed to continue.'; } },
+        { id: 'wall_repair', category: 'infrastructure', title: 'Repair the Town Walls', resources: ['stone','bricks'], qtyRange: [15,50], timeRange: [25,50],
+          descFn: function(t,r,q) { return '🧱 The walls of '+t.name+' have crumbled in places. '+q+' '+r.name+' are needed to shore up defenses.'; } },
+        { id: 'dock_repair', category: 'port', title: 'Dock Repairs Needed', resources: ['planks','rope'], qtyRange: [8,25], timeRange: [20,40],
+          descFn: function(t,r,q) { return '⚓ The docks in '+t.name+' are rotting and dangerous. '+q+' '+r.name+' are needed for urgent repairs.'; } },
+
+        // ---- CULTURAL/SOCIAL ----
+        { id: 'noble_gift', category: 'cultural', title: 'Gift for a Noble Visitor', resources: ['jewelry','gold_goblet','pearl_jewelry','wine','silk'], qtyRange: [1,4], timeRange: [15,30],
+          descFn: function(t,r,q) { return '👑 A noble is visiting '+t.name+' and the town wishes to present a gift. They need '+q+' '+r.name+' of fine quality.'; } },
+        { id: 'church_supplies', category: 'cultural', title: 'Supplies for the Temple', resources: ['honey','wine','herbs'], qtyRange: [5,18], timeRange: [20,40],
+          descFn: function(t,r,q) { return '⛪ The local temple in '+t.name+' needs supplies for their ceremonies. '+q+' '+r.name+' would be greatly appreciated.'; } },
+        { id: 'fine_clothing_ceremony', category: 'cultural', title: 'Finery for a Ceremony', resources: ['fine_clothes','silk','cloth'], qtyRange: [3,10], timeRange: [20,40],
+          descFn: function(t,r,q) { return '👗 A grand ceremony is being planned in '+t.name+'. '+q+' units of '+r.name+' are needed for ceremonial garments.'; } },
+
+        // ---- SEASONAL ----
+        { id: 'winter_prep', category: 'seasonal', title: 'Winter Preparations', resources: ['wood','wool','preserved_food'], qtyRange: [10,35], timeRange: [20,40],
+          descFn: function(t,r,q) { return '❄️ Winter approaches '+t.name+' and stockpiles are thin. '+q+' '+r.name+' would help the town survive the cold months.'; } },
+        { id: 'harvest_celebration', category: 'seasonal', title: 'Harvest Festival Supplies', resources: ['wheat','vegetables','ale','bread'], qtyRange: [10,30], timeRange: [20,35],
+          descFn: function(t,r,q) { return '🍂 '+t.name+' is celebrating the harvest! Bring '+q+' '+r.name+' for the festivities.'; } },
+        { id: 'spring_planting', category: 'seasonal', title: 'Seeds for Spring', resources: ['wheat','herbs','hemp'], qtyRange: [12,40], timeRange: [20,40],
+          descFn: function(t,r,q) { return '🌱 Spring has come to '+t.name+' and farmers need seed stock. '+q+' '+r.name+' would get the fields planted.'; } },
+        { id: 'summer_fair', category: 'seasonal', title: 'Summer Fair Goods', resources: ['wine','jewelry','perfume','silk','fine_clothes'], qtyRange: [3,10], timeRange: [20,35],
+          descFn: function(t,r,q) { return '☀️ '+t.name+' is hosting a summer fair! Merchants are seeking '+q+' '+r.name+' to sell at the event.'; } },
+
+        // ---- PERFORMANCE (music quests) ----
+        { id: 'concert_performance', category: 'performance', title: 'Town Concert', resources: null, qtyRange: [0,0], timeRange: [15,30], isPerformance: true,
+          skillReq: { min: 26 },
+          descFn: function(t,r,q) { return '🎵 The people of '+t.name+' are in need of entertainment! Perform a concert in the town square. You\'ll need a musical instrument and at least Competent skill level.'; } },
+        { id: 'tavern_show', category: 'performance', title: 'Tavern Entertainment', resources: null, qtyRange: [0,0], timeRange: [15,25], isPerformance: true,
+          skillReq: { min: 0 },
+          descFn: function(t,r,q) { return '🎵 The tavernkeep in '+t.name+' is looking for a bard to liven up the evenings. Bring any instrument and play for the patrons!'; } },
+        { id: 'noble_recital', category: 'performance', title: 'Recital for the Nobility', resources: null, qtyRange: [0,0], timeRange: [20,35], isPerformance: true,
+          skillReq: { min: 51 },
+          descFn: function(t,r,q) { return '🎵 A local noble in '+t.name+' desires a private musical recital. You\'ll need an instrument and Expert-level skill to impress.'; } },
+        { id: 'festival_bard', category: 'performance', title: 'Festival Bard', resources: null, qtyRange: [0,0], timeRange: [15,25], isPerformance: true,
+          skillReq: { min: 26 },
+          descFn: function(t,r,q) { return '🎵 The festival in '+t.name+' needs a bard! Bring your instrument and perform for the crowds. Competent skill or better required.'; } },
+    ];
+
+    function generateTownQuests(townId) {
+        var town = Engine.findTown(townId);
+        if (!town) return;
+        var rng = Engine.getRng();
+        var day = Engine.getDay();
+
+        if (!player.townQuests) player.townQuests = {};
+        if (!player.townQuests[townId]) player.townQuests[townId] = { available: [], lastGenDay: 0 };
+        var tq = player.townQuests[townId];
+
+        // Don't regenerate too often — at most once per day
+        if (tq.lastGenDay >= day) return;
+        tq.lastGenDay = day;
+
+        // Remove expired available quests (unclaimed quests expire after 7 days)
+        tq.available = tq.available.filter(function(q) {
+            return q.status === 'available' && (day - q.postedDay) < 7;
+        });
+
+        // Target 3-6 available quests per town (scale with town size)
+        var pop = town.population || 50;
+        var maxQuests = pop >= 300 ? 6 : pop >= 150 ? 5 : pop >= 60 ? 4 : 3;
+        if (tq.available.length >= maxQuests) return;
+
+        var needed = maxQuests - tq.available.length;
+
+        // Gather context for quest selection
+        var kingdom = town.kingdomId ? Engine.findKingdom(town.kingdomId) : null;
+        var isAtWar = kingdom && kingdom.atWar && kingdom.atWar.size > 0;
+        var season = Engine.getSeason ? Engine.getSeason() : 'Summer';
+        var seasonLower = season.toLowerCase();
+        var activeEvents = [];
+        try {
+            var w = Engine.getWorld();
+            if (w && w.events) {
+                activeEvents = w.events.filter(function(ev) { return ev.active && ev.townId === townId; });
+            }
+        } catch(e) {}
+        var hasPlague = activeEvents.some(function(ev) { return ev.type === 'plague' || ev.type === 'plague_disaster'; });
+        var hasBlight = activeEvents.some(function(ev) { return ev.type === 'blight'; });
+        var hasDrought = activeEvents.some(function(ev) { return ev.type === 'drought'; });
+        var hasFestival = activeEvents.some(function(ev) { return ev.type === 'trade_festival' || ev.type === 'festival' || ev.type === 'grand_festival'; });
+        var hasMusicFestival = activeEvents.some(function(ev) { return ev.type === 'instrument_festival'; });
+        var isPort = town.isPort || false;
+        var lowProsperity = (town.prosperity || 50) < 35;
+
+        // Find market shortages and price spikes
+        var shortages = [];
+        var priceSpikes = [];
+        if (town.market) {
+            var supply = town.market.supply || {};
+            var prices = town.market.prices || {};
+            for (var rid in RESOURCE_TYPES) {
+                var res = RESOURCE_TYPES[rid];
+                var resId = res.id;
+                if (res.category === 'livestock' || res.category === 'contraband' || res.category === 'quest' || res.category === 'supplies') continue;
+                var s = supply[resId] || 0;
+                var bp = res.basePrice || 1;
+                var mp = prices[resId] || bp;
+                if (s <= 0 && (town.market.demand || {})[resId] > 0) shortages.push(resId);
+                if (mp > bp * 2.5) priceSpikes.push(resId);
+            }
+        }
+
+        // Build weighted candidate pool
+        var candidates = [];
+        var existingTypes = {};
+        for (var ei = 0; ei < tq.available.length; ei++) existingTypes[tq.available[ei].typeId] = true;
+        // Also exclude types from active quests
+        var activeQuests = player.activeQuests || [];
+        for (var ai = 0; ai < activeQuests.length; ai++) {
+            if (activeQuests[ai].townId === townId) existingTypes[activeQuests[ai].typeId] = true;
+        }
+
+        for (var qi = 0; qi < TOWN_QUEST_TYPES.length; qi++) {
+            var qt = TOWN_QUEST_TYPES[qi];
+            if (existingTypes[qt.id]) continue;
+
+            var weight = 0;
+            switch (qt.category) {
+                case 'generic': weight = 10; break;
+                case 'war': weight = isAtWar ? 25 : 0; break;
+                case 'plague': weight = hasPlague ? 30 : 0; break;
+                case 'blight': weight = hasBlight ? 30 : 0; break;
+                case 'drought': weight = hasDrought ? 30 : 0; break;
+                case 'festival': weight = hasFestival ? 25 : 0; break;
+                case 'music_festival': weight = hasMusicFestival ? 25 : 0; break;
+                case 'economic':
+                    if (qt.id === 'price_crisis') weight = priceSpikes.length > 0 ? 20 : 0;
+                    else if (qt.id === 'shortage_response') weight = shortages.length > 0 ? 20 : 0;
+                    else if (qt.id === 'prosperity_drive') weight = lowProsperity ? 15 : 3;
+                    else weight = 8;
+                    break;
+                case 'infrastructure': weight = 6; break;
+                case 'port': weight = isPort ? 12 : 0; break;
+                case 'cultural': weight = 5; break;
+                case 'seasonal':
+                    if (qt.id === 'winter_prep' && seasonLower === 'autumn') weight = 20;
+                    else if (qt.id === 'harvest_celebration' && seasonLower === 'autumn') weight = 18;
+                    else if (qt.id === 'spring_planting' && seasonLower === 'spring') weight = 18;
+                    else if (qt.id === 'summer_fair' && seasonLower === 'summer') weight = 18;
+                    else weight = 0;
+                    break;
+                case 'performance':
+                    weight = hasMusicFestival ? 15 : hasFestival ? 10 : 4;
+                    break;
+                default: weight = 5;
+            }
+
+            if (weight > 0) candidates.push({ qt: qt, weight: weight });
+        }
+
+        // Select quests using weighted random
+        for (var gi = 0; gi < needed && candidates.length > 0; gi++) {
+            var totalWeight = 0;
+            for (var wi = 0; wi < candidates.length; wi++) totalWeight += candidates[wi].weight;
+            var roll = rng.random() * totalWeight;
+            var chosen = null;
+            var chosenIdx = -1;
+            var acc = 0;
+            for (var ci = 0; ci < candidates.length; ci++) {
+                acc += candidates[ci].weight;
+                if (roll <= acc) { chosen = candidates[ci]; chosenIdx = ci; break; }
+            }
+            if (!chosen) break;
+            candidates.splice(chosenIdx, 1);
+
+            var quest = createQuestFromType(chosen.qt, town, rng, day, shortages, priceSpikes);
+            if (quest) tq.available.push(quest);
+        }
+    }
+
+    function createQuestFromType(qt, town, rng, day, shortages, priceSpikes) {
+        var resource = null;
+        var quantity = 0;
+
+        if (qt.isPerformance) {
+            // Performance quests don't need resources
+            var timeLimit = rng.randInt(qt.timeRange[0], qt.timeRange[1]);
+            var perfDifficulty = qt.skillReq ? Math.ceil(qt.skillReq.min / 25) + 1 : 1;
+            perfDifficulty = Math.max(1, Math.min(10, perfDifficulty));
+            var perfSmallBoost = Math.ceil(perfDifficulty / 2);
+            var perfRelMin = Math.max(2, perfDifficulty);
+            var perfRelMax = Math.min(20, perfDifficulty * 3);
+
+            return {
+                id: 'tq_' + (_nextQuestId++),
+                typeId: qt.id,
+                townId: town.id,
+                title: qt.title,
+                description: qt.descFn(town, {name:''}, 0),
+                resource: null,
+                quantity: 0,
+                difficulty: perfDifficulty,
+                timeLimit: timeLimit,
+                postedDay: day,
+                acceptedDay: null,
+                expiresDay: null,
+                smallRepBoost: perfSmallBoost,
+                bigRepBoost: perfSmallBoost * 4,
+                relGainMin: perfRelMin,
+                relGainMax: perfRelMax,
+                isPerformance: true,
+                skillReq: qt.skillReq || { min: 0 },
+                status: 'available',
+                category: qt.category,
+                reason: _getQuestReason(qt, town)
+            };
+        }
+
+        // Determine resource
+        var resPool = qt.resources;
+        if (qt.id === 'price_crisis' && priceSpikes.length > 0) {
+            resPool = priceSpikes;
+        } else if (qt.id === 'shortage_response' && shortages.length > 0) {
+            resPool = shortages;
+        }
+        if (!resPool || resPool.length === 0) return null;
+
+        var resId = resPool[rng.randInt(0, resPool.length - 1)];
+        var resObj = null;
+        for (var rk in RESOURCE_TYPES) {
+            if (RESOURCE_TYPES[rk].id === resId) { resObj = RESOURCE_TYPES[rk]; break; }
+        }
+        if (!resObj) return null;
+
+        // Determine quantity (scale with town pop)
+        var popScale = Math.max(0.5, Math.min(2.0, (town.population || 100) / 200));
+        var minQty = Math.max(1, Math.round(qt.qtyRange[0] * popScale));
+        var maxQty = Math.max(minQty, Math.round(qt.qtyRange[1] * popScale));
+        quantity = rng.randInt(minQty, maxQty);
+
+        // Calculate difficulty based on total cost
+        var totalCost = quantity * (resObj.basePrice || 1);
+        var difficulty;
+        if (totalCost < 50) difficulty = rng.randInt(1, 2);
+        else if (totalCost < 200) difficulty = rng.randInt(2, 4);
+        else if (totalCost < 500) difficulty = rng.randInt(4, 6);
+        else if (totalCost < 1000) difficulty = rng.randInt(6, 8);
+        else difficulty = rng.randInt(8, 10);
+
+        var smallRepBoost = Math.max(1, Math.ceil(difficulty / 2));
+        var bigRepBoost = smallRepBoost * 4;
+        var timeLimit = rng.randInt(qt.timeRange[0], qt.timeRange[1]);
+        // More difficult quests get extra time
+        if (difficulty >= 6) timeLimit = Math.round(timeLimit * 1.3);
+        if (difficulty >= 8) timeLimit = Math.round(timeLimit * 1.2);
+
+        var relGainMin = Math.max(2, Math.floor(difficulty * 0.8));
+        var relGainMax = Math.min(20, Math.ceil(difficulty * 2.5));
+
+        var description = qt.descFn(town, resObj, quantity);
+        var reason = _getQuestReason(qt, town);
+
+        return {
+            id: 'tq_' + (_nextQuestId++),
+            typeId: qt.id,
+            townId: town.id,
+            title: qt.title,
+            description: description,
+            resource: resId,
+            quantity: quantity,
+            difficulty: difficulty,
+            timeLimit: timeLimit,
+            postedDay: day,
+            acceptedDay: null,
+            expiresDay: null,
+            smallRepBoost: smallRepBoost,
+            bigRepBoost: bigRepBoost,
+            relGainMin: relGainMin,
+            relGainMax: relGainMax,
+            isPerformance: false,
+            skillReq: null,
+            status: 'available',
+            category: qt.category,
+            reason: reason
+        };
+    }
+
+    function _getQuestReason(qt, town) {
+        switch (qt.category) {
+            case 'war': return 'The kingdom is at war and ' + town.name + ' needs support.';
+            case 'plague': return 'A plague is ravaging ' + town.name + '.';
+            case 'blight': return 'A crop blight has struck the farms around ' + town.name + '.';
+            case 'drought': return 'A drought has dried up water sources near ' + town.name + '.';
+            case 'festival': case 'music_festival': return 'A festival is being held in ' + town.name + '.';
+            case 'seasonal': return 'Seasonal needs in ' + town.name + '.';
+            case 'port': return town.name + ' is a port town with maritime needs.';
+            case 'economic':
+                if (qt.id === 'price_crisis') return 'Market prices have spiked in ' + town.name + '.';
+                if (qt.id === 'shortage_response') return 'A market shortage has hit ' + town.name + '.';
+                if (qt.id === 'prosperity_drive') return town.name + '\'s prosperity is declining.';
+                return 'Economic opportunity in ' + town.name + '.';
+            default: return null;
+        }
+    }
+
+    function acceptTownQuest(questId) {
+        if (!player.townQuests) return { success: false, message: 'No quests available.' };
+        if (!player.activeQuests) player.activeQuests = [];
+
+        // Max 5 active quests
+        if (player.activeQuests.length >= 5) {
+            return { success: false, message: 'You can only have 5 active quests at a time. Complete or abandon one first.' };
+        }
+
+        // Find the quest in available pools
+        var found = null;
+        var foundTownId = null;
+        for (var tid in player.townQuests) {
+            var avail = player.townQuests[tid].available;
+            for (var i = 0; i < avail.length; i++) {
+                if (avail[i].id === questId && avail[i].status === 'available') {
+                    found = avail[i];
+                    foundTownId = tid;
+                    break;
+                }
+            }
+            if (found) break;
+        }
+        if (!found) return { success: false, message: 'Quest not found or already taken.' };
+
+        var day = Engine.getDay();
+        found.status = 'accepted';
+        found.acceptedDay = day;
+        found.expiresDay = day + found.timeLimit;
+
+        // Move from available to active
+        player.townQuests[foundTownId].available = player.townQuests[foundTownId].available.filter(function(q) { return q.id !== questId; });
+        player.activeQuests.push(found);
+
+        Engine.logEvent('📋 Accepted town quest: ' + found.title + ' in ' + (Engine.findTown(foundTownId) || {}).name);
+        return { success: true, message: 'Quest accepted! You have ' + found.timeLimit + ' days to complete it.', quest: found };
+    }
+
+    function completeTownQuest(questId, donate) {
+        if (!player.activeQuests) return { success: false, message: 'No active quests.' };
+        var idx = -1;
+        for (var i = 0; i < player.activeQuests.length; i++) {
+            if (player.activeQuests[i].id === questId) { idx = i; break; }
+        }
+        if (idx === -1) return { success: false, message: 'Quest not found in active quests.' };
+
+        var quest = player.activeQuests[idx];
+        var town = Engine.findTown(quest.townId);
+        var rng = Engine.getRng();
+        var day = Engine.getDay();
+
+        // Check if expired
+        if (quest.expiresDay && day > quest.expiresDay) {
+            return { success: false, message: 'This quest has expired!' };
+        }
+
+        if (quest.isPerformance) {
+            // Performance quest: check instrument and skill
+            var bestInst = null;
+            var bestSkill = 0;
+            var instSkill = player.instrumentSkill || {};
+            for (var iid in instSkill) {
+                var qty = (player.inventory[iid] || 0) + ((player.townStorage[player.townId] || {})[iid] || 0);
+                if (qty > 0 && instSkill[iid] >= (quest.skillReq ? quest.skillReq.min : 0)) {
+                    if (instSkill[iid] > bestSkill) { bestSkill = instSkill[iid]; bestInst = iid; }
+                }
+            }
+            if (!bestInst) {
+                return { success: false, message: 'You need a musical instrument in your inventory and sufficient skill level (' + (quest.skillReq ? quest.skillReq.min : 0) + '+) to complete this quest.' };
+            }
+
+            // Advance time for performance
+            if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(5);
+        } else {
+            // Resource quest: check inventory + town storage
+            var invQty = player.inventory[quest.resource] || 0;
+            var tsQty = (player.townStorage[quest.townId] || {})[quest.resource] || 0;
+            var totalAvail = invQty + tsQty;
+
+            if (totalAvail < quest.quantity) {
+                return { success: false, message: 'You need ' + quest.quantity + ' ' + quest.resource + ' but only have ' + totalAvail + '. Check your inventory and town storage.' };
+            }
+
+            // Remove resources: prioritize town storage, then inventory
+            var remaining = quest.quantity;
+            if (tsQty > 0 && remaining > 0) {
+                var fromTs = Math.min(tsQty, remaining);
+                if (!player.townStorage[quest.townId]) player.townStorage[quest.townId] = {};
+                player.townStorage[quest.townId][quest.resource] = (player.townStorage[quest.townId][quest.resource] || 0) - fromTs;
+                if (player.townStorage[quest.townId][quest.resource] <= 0) delete player.townStorage[quest.townId][quest.resource];
+                remaining -= fromTs;
+            }
+            if (remaining > 0) {
+                player.inventory[quest.resource] = (player.inventory[quest.resource] || 0) - remaining;
+                if (player.inventory[quest.resource] <= 0) player.inventory[quest.resource] = 0;
+            }
+        }
+
+        // Calculate rewards
+        var repBoost = donate ? quest.bigRepBoost : quest.smallRepBoost;
+        var goldReward = 0;
+
+        if (!donate && !quest.isPerformance) {
+            // Sell at market price
+            var resObj = null;
+            for (var rk in RESOURCE_TYPES) { if (RESOURCE_TYPES[rk].id === quest.resource) { resObj = RESOURCE_TYPES[rk]; break; } }
+            var marketPrice = resObj ? resObj.basePrice : 5;
+            if (town && town.market && town.market.prices && town.market.prices[quest.resource]) {
+                marketPrice = town.market.prices[quest.resource];
+            }
+            goldReward = Math.floor(quest.quantity * marketPrice);
+            player.gold += goldReward;
+        }
+
+        // Apply town reputation boost
+        modifyTownReputation(quest.townId, repBoost);
+
+        // Boost relationships with random NPCs in town
+        var relCount = rng.randInt(quest.relGainMin, quest.relGainMax);
+        var townPeople = [];
+        try {
+            var w = Engine.getWorld();
+            if (w && w.people) {
+                townPeople = w.people.filter(function(p) { return p.alive && p.townId === quest.townId; });
+            }
+        } catch(e) {}
+        // Shuffle and pick
+        var shuffled = townPeople.slice();
+        for (var si = shuffled.length - 1; si > 0; si--) {
+            var sj = rng.randInt(0, si);
+            var tmp = shuffled[si]; shuffled[si] = shuffled[sj]; shuffled[sj] = tmp;
+        }
+        var relBoostAmount = donate ? 3 : 1;
+        var boosted = 0;
+        for (var ri = 0; ri < Math.min(relCount, shuffled.length); ri++) {
+            modifyRelationship(shuffled[ri].id, relBoostAmount);
+            boosted++;
+        }
+
+        // Remove from active
+        player.activeQuests.splice(idx, 1);
+
+        // Track completed
+        if (!player.completedQuestCount) player.completedQuestCount = 0;
+        player.completedQuestCount++;
+
+        var resultMsg;
+        if (quest.isPerformance) {
+            if (donate) {
+                resultMsg = '🎵 Your performance delighted the people of ' + (town ? town.name : 'the town') + '! Town reputation +' + repBoost + '. ' + boosted + ' people now think more highly of you.';
+            } else {
+                resultMsg = '🎵 You performed well in ' + (town ? town.name : 'the town') + '! Town reputation +' + repBoost + '. ' + boosted + ' people appreciated the show.';
+            }
+        } else if (donate) {
+            resultMsg = '🎁 You generously donated ' + quest.quantity + ' ' + quest.resource + ' to ' + (town ? town.name : 'the town') + '! Town reputation +' + repBoost + '. ' + boosted + ' grateful residents think better of you.';
+        } else {
+            resultMsg = '💰 You sold ' + quest.quantity + ' ' + quest.resource + ' to ' + (town ? town.name : 'the town') + ' for ' + goldReward + 'g. Town reputation +' + repBoost + '. ' + boosted + ' residents noticed your help.';
+        }
+
+        Engine.logEvent('✅ Completed quest: ' + quest.title + (donate ? ' (donated)' : ' (sold)'));
+        if (typeof UI !== 'undefined' && UI.toast) UI.toast(resultMsg, 'success', 'critical');
+
+        return { success: true, message: resultMsg, goldReward: goldReward, repBoost: repBoost, boosted: boosted };
+    }
+
+    function abandonTownQuest(questId) {
+        if (!player.activeQuests) return { success: false, message: 'No active quests.' };
+        var idx = -1;
+        for (var i = 0; i < player.activeQuests.length; i++) {
+            if (player.activeQuests[i].id === questId) { idx = i; break; }
+        }
+        if (idx === -1) return { success: false, message: 'Quest not found.' };
+
+        var quest = player.activeQuests[idx];
+        player.activeQuests.splice(idx, 1);
+
+        // Small rep penalty for abandoning
+        modifyTownReputation(quest.townId, -0.5);
+
+        Engine.logEvent('❌ Abandoned quest: ' + quest.title);
+        return { success: true, message: 'Quest abandoned. (-0.5 town reputation)' };
+    }
+
+    function tickTownQuests() {
+        var day = Engine.getDay();
+        if (!player.activeQuests) player.activeQuests = [];
+
+        // Check for expired active quests
+        for (var i = player.activeQuests.length - 1; i >= 0; i--) {
+            var q = player.activeQuests[i];
+            if (q.expiresDay && day > q.expiresDay) {
+                var town = Engine.findTown(q.townId);
+                var townName = town ? town.name : 'the town';
+                modifyTownReputation(q.townId, -1);
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('⏰ Quest expired: ' + q.title + ' in ' + townName + ' (-1 reputation)', 'warning');
+                Engine.logEvent('⏰ Quest expired: ' + q.title + ' in ' + townName);
+                player.activeQuests.splice(i, 1);
+            }
+        }
+
+        // Generate quests for current town
+        if (player.townId && !player.traveling) {
+            generateTownQuests(player.townId);
+        }
+    }
+
+    function getTownQuestsForTown(townId) {
+        if (!player.townQuests || !player.townQuests[townId]) return [];
+        return player.townQuests[townId].available.filter(function(q) { return q.status === 'available'; });
+    }
+
+    function getActiveQuests() {
+        return player.activeQuests || [];
+    }
+
+    function getCompletedQuestCount() {
+        return player.completedQuestCount || 0;
     }
 
     function getAvailableInteractions(personId) {
@@ -33441,6 +34082,14 @@
         requestIntroduction,
         requestSameRankIntroduction,
         adviseKingDirect,
+        // Town Quests
+        generateTownQuests,
+        getTownQuestsForTown,
+        getActiveQuests,
+        getCompletedQuestCount,
+        acceptTownQuest,
+        completeTownQuest,
+        abandonTownQuest,
         getCourtshipCandidates,
         getRelationshipPerks,
         useRelationshipPerk,
