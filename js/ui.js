@@ -77,7 +77,7 @@ window.UI = (function () {
         }
 
         // Remove any existing dynamically-created elements to prevent duplication on load
-        ['btnWork','btnStreet','btnBuildings','btnRoutes','btnHousing','btnGuilds','btnRest','btnTalk','btnSkills','btnAchievements','btnRankings','btnSchemes','btnHelp','btnFamily'].forEach(id => {
+        ['btnWork','btnStreet','btnBuildings','btnShips','btnRoutes','btnHousing','btnGuilds','btnRest','btnTalk','btnSkills','btnAchievements','btnRankings','btnSchemes','btnHelp','btnFamily'].forEach(id => {
             const existing = document.getElementById(id);
             if (existing) existing.remove();
         });
@@ -165,6 +165,15 @@ window.UI = (function () {
             btnBuildings.textContent = '🏠 Buildings';
             btnBuildings.addEventListener('click', openBuildingManagement);
             if (rowManage) rowManage.appendChild(btnBuildings);
+
+            // Ships & Vessels button → Manage row
+            const btnShips = document.createElement('button');
+            btnShips.className = 'btn-action';
+            btnShips.id = 'btnShips';
+            btnShips.title = 'Ships & Vessels';
+            btnShips.textContent = '⛵ Ships';
+            btnShips.addEventListener('click', openShipsDialog);
+            if (rowManage) rowManage.appendChild(btnShips);
 
             // Toll Routes button → Manage row
             const btnRoutes = document.createElement('button');
@@ -698,6 +707,21 @@ window.UI = (function () {
                     } else {
                         btnRest.style.opacity = '';
                         btnRest.title = 'Rest & Recovery';
+                    }
+                }
+
+                // Ships button — only enabled at seaport towns
+                var btnShips = document.getElementById('btnShips');
+                if (btnShips) {
+                    var currentTown = Engine.findTown(Player.state.townId);
+                    if (currentTown && currentTown.isPort && !Player.traveling) {
+                        btnShips.style.opacity = '1';
+                        btnShips.disabled = false;
+                        btnShips.title = 'Ships & Vessels';
+                    } else {
+                        btnShips.style.opacity = '0.4';
+                        btnShips.disabled = true;
+                        btnShips.title = 'Ships (only at seaports)';
                     }
                 }
 
@@ -6169,6 +6193,33 @@ window.UI = (function () {
         previewHtml += '<div id="caravanPreviewContent" style="font-size:0.75rem;color:#bbb;margin-top:4px;">Select a destination to see stats.</div>';
         previewHtml += '</div>';
 
+        // Ship selection for sea caravans (hidden by default, shown when sea route selected)
+        var shipSelectHtml = '<div id="caravanShipSection" style="display:none;margin-top:6px;padding:8px 10px;background:rgba(0,100,180,0.08);border:1px solid rgba(0,100,180,0.18);border-radius:6px;">';
+        shipSelectHtml += '<label style="font-size:0.85rem;color:var(--gold);font-weight:bold;">⛵ Ship Selection</label>';
+        shipSelectHtml += '<select id="caravanShipSelect" style="width:100%;padding:4px 6px;font-size:0.8rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;margin-top:4px;" onchange="UI._updateCaravanPreview()">';
+        // Own ships at port
+        var _ownShips = Player.getAvailableShipsAtPort ? Player.getAvailableShipsAtPort(Player.townId) : [];
+        if (_ownShips.length > 0) {
+            shipSelectHtml += '<optgroup label="Your Ships at Port">';
+            for (var _osi = 0; _osi < _ownShips.length; _osi++) {
+                var _os = _ownShips[_osi];
+                var _ost = CONFIG.SHIP_TYPES[_os.type] || {};
+                shipSelectHtml += '<option value="own:' + _os.id + '">' + (_ost.icon || '⛵') + ' ' + (_os.name || _ost.name) + ' (Cap:' + (_ost.capacity || 0) + ', Spd:' + (_ost.speed || 1).toFixed(1) + ')</option>';
+            }
+            shipSelectHtml += '</optgroup>';
+        }
+        // Rental ships
+        shipSelectHtml += '<optgroup label="Rent a Ship">';
+        for (var _rtId in CONFIG.SHIP_TYPES) {
+            var _rtt = CONFIG.SHIP_TYPES[_rtId];
+            var _rCost = Player.getShipRentalCost ? Player.getShipRentalCost(_rtId, Player.townId) : 0;
+            shipSelectHtml += '<option value="rent:' + _rtId + '">' + (_rtt.icon || '⛵') + ' ' + _rtt.name + ' (Cap:' + _rtt.capacity + ', Spd:' + _rtt.speed + ') — ' + _rCost.toFixed(1) + 'g/day</option>';
+        }
+        shipSelectHtml += '</optgroup>';
+        shipSelectHtml += '</select>';
+        shipSelectHtml += '<div id="caravanShipCrewInfo" style="font-size:0.72rem;color:#aaa;margin-top:3px;"></div>';
+        shipSelectHtml += '</div>';
+
         const html = `<div class="caravan-form">
             ${mgmtLink}
             <div class="form-group">
@@ -6176,6 +6227,7 @@ window.UI = (function () {
                 <select id="caravanDest" onchange="UI._updateCaravanPreview()">${destOptions}</select>
             </div>
             ${shipInfo}
+            ${shipSelectHtml}
             <div class="form-group">
                 <label>Goods to Load</label>
                 <div class="caravan-goods-list" style="max-height:120px;overflow-y:auto;">${goodsHtml}</div>
@@ -6482,6 +6534,68 @@ window.UI = (function () {
             }
         }
 
+        // Detect sea vs land route and toggle ship selection / land equipment
+        var _selectedOpt = destEl.options[destEl.selectedIndex];
+        var _isSeaRoute = _selectedOpt && _selectedOpt.dataset && _selectedOpt.dataset.route === 'sea';
+        var _shipSection = document.getElementById('caravanShipSection');
+        var _horsesInput = document.getElementById('caravanHorses');
+        var _cartsInput = document.getElementById('caravanCarts');
+        var _wagonsInput = document.getElementById('caravanWagons');
+        var _carrierLabel = document.querySelector('label[for="caravanCarriers"]') || (document.getElementById('caravanCarriers') ? document.getElementById('caravanCarriers').previousElementSibling : null);
+        var _shipCrewInfo = document.getElementById('caravanShipCrewInfo');
+
+        if (_isSeaRoute) {
+            if (_shipSection) _shipSection.style.display = '';
+            // Hide land equipment inputs
+            if (_horsesInput) _horsesInput.parentElement.style.display = 'none';
+            if (_cartsInput) _cartsInput.parentElement.style.display = 'none';
+            if (_wagonsInput) _wagonsInput.parentElement.style.display = 'none';
+            // Update carrier label to "Crew"
+            if (_carrierLabel) _carrierLabel.textContent = '👥 Crew';
+            // Show min crew info for selected ship
+            var _shipSelect = document.getElementById('caravanShipSelect');
+            if (_shipSelect && _shipCrewInfo) {
+                var _shipVal = _shipSelect.value || '';
+                var _minCrew = 1;
+                var _shipName = '';
+                if (_shipVal.indexOf('own:') === 0) {
+                    var _ownId = _shipVal.substring(4);
+                    var _ownShipsList = Player.getAvailableShipsAtPort ? Player.getAvailableShipsAtPort(Player.townId) : [];
+                    for (var _si = 0; _si < _ownShipsList.length; _si++) {
+                        if (_ownShipsList[_si].id === _ownId) {
+                            var _st = CONFIG.SHIP_TYPES[_ownShipsList[_si].type] || {};
+                            _minCrew = _st.minCrew || 1;
+                            _shipName = _ownShipsList[_si].name || _st.name || 'Ship';
+                            break;
+                        }
+                    }
+                } else if (_shipVal.indexOf('rent:') === 0) {
+                    var _rentType = _shipVal.substring(5);
+                    var _rentST = CONFIG.SHIP_TYPES[_rentType] || {};
+                    _minCrew = _rentST.minCrew || 1;
+                    _shipName = _rentST.name || 'Ship';
+                }
+                _shipCrewInfo.innerHTML = '👥 Min crew: ' + _minCrew + ' for ' + _shipName;
+                // Enforce min crew on carriers input
+                var _carrierInput = document.getElementById('caravanCarriers');
+                if (_carrierInput) {
+                    _carrierInput.min = _minCrew;
+                    if (parseInt(_carrierInput.value) < _minCrew) _carrierInput.value = _minCrew;
+                }
+            }
+        } else {
+            if (_shipSection) _shipSection.style.display = 'none';
+            // Restore land equipment inputs
+            if (_horsesInput) _horsesInput.parentElement.style.display = '';
+            if (_cartsInput) _cartsInput.parentElement.style.display = '';
+            if (_wagonsInput) _wagonsInput.parentElement.style.display = '';
+            // Restore carrier label
+            if (_carrierLabel) _carrierLabel.textContent = '🧳 Carriers';
+            // Reset min crew
+            var _carrierInputLand = document.getElementById('caravanCarriers');
+            if (_carrierInputLand) _carrierInputLand.min = 1;
+        }
+
         var carriers = parseInt((document.getElementById('caravanCarriers') || {}).value) || 1;
         var guards = parseInt((document.getElementById('caravanGuards') || {}).value) || 0;
         var horses = parseInt((document.getElementById('caravanHorses') || {}).value) || 0;
@@ -6624,7 +6738,21 @@ window.UI = (function () {
         try {
             let result;
             if (routeType === 'sea' && Player.sendSeaCaravan) {
-                result = Player.sendSeaCaravan(Player.townId, destSelect.value, goods, guards);
+                var shipSelect = document.getElementById('caravanShipSelect');
+                var shipVal = shipSelect ? shipSelect.value : '';
+                var seaOptions = {
+                    carriers: parseInt((document.getElementById('caravanCarriers') || {}).value) || 1,
+                    orders: _caravanOrders.length > 0 ? _caravanOrders.slice() : null,
+                    roundTrip: roundTrip,
+                    recurring: recurring,
+                    overflowSell: false
+                };
+                if (shipVal.indexOf('own:') === 0) {
+                    seaOptions.shipId = shipVal.substring(4);
+                } else if (shipVal.indexOf('rent:') === 0) {
+                    seaOptions.rentalShipType = shipVal.substring(5);
+                }
+                result = Player.sendSeaCaravan(Player.townId, destSelect.value, goods, guards, seaOptions);
             } else {
                 result = Player.sendCaravan(Player.townId, destSelect.value, goods, guards, false, options);
             }
@@ -11227,6 +11355,161 @@ window.UI = (function () {
 
         openModal('📊 Real Estate Report', html,
             '<button class="btn-medieval" onclick="UI.closeModal()">Close</button>');
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  SHIPS & VESSELS DIALOG
+    // ═══════════════════════════════════════════════════════════
+    function openShipsDialog() {
+        if (typeof Player === 'undefined') return;
+        if (Player.traveling) { toast('Cannot manage ships while traveling.', 'warning'); return; }
+
+        var townId = Player.state.townId;
+        var town = Engine.findTown(townId);
+        if (!town || !town.isPort) { toast('You must be at a seaport to manage ships.', 'warning'); return; }
+
+        var html = '<div style="max-height:500px;overflow-y:auto;">';
+
+        // ── Section 1: Your Ships at this Port ──
+        var shipsHere = Player.getShipsAtPort ? Player.getShipsAtPort(townId) : [];
+        var maxShips = CONFIG.MAX_SHIPS_PER_PORT || 5;
+        html += '<h3>⚓ Your Ships at ' + town.name + ' (' + shipsHere.length + '/' + maxShips + ' docked)</h3>';
+
+        if (shipsHere.length === 0) {
+            html += '<p style="color:#aaa;">No ships docked here. Build or sail one to this port.</p>';
+        } else {
+            for (var si = 0; si < shipsHere.length; si++) {
+                var ship = shipsHere[si];
+                var sType = CONFIG.SHIP_TYPES[ship.type] || {};
+                var condition = ship.condition !== undefined ? ship.condition : 100;
+                var condColor = condition >= 60 ? '#55a868' : condition >= 30 ? '#e67e22' : '#e74c3c';
+                var condPct = Math.max(0, Math.min(100, condition));
+                var dockFee = CONFIG.DOCKING_FEE_BASE[sType.sizeCategory || 'small'] || 10;
+
+                // Status
+                var status = '🟢 Idle';
+                if (ship.assignedCaravan) status = '🔵 Assigned to caravan';
+                if (ship.unpaidDocking) status = '⚠️ Unpaid docking';
+
+                html += '<div style="border:1px solid #555;padding:8px;margin:4px 0;border-radius:4px;background:rgba(0,0,0,0.2);">';
+                html += '<div><strong>' + (sType.icon || '⛵') + ' ' + (ship.name || sType.name || 'Ship') + '</strong> <span style="color:#aaa;font-size:0.8rem;">(' + (sType.name || ship.type) + ')</span></div>';
+                html += '<div style="font-size:0.8rem;margin-top:2px;">📦 Cap: ' + (sType.capacity || 0) + ' | ⚡ Spd: ' + (sType.speed || 1).toFixed(1) + 'x | 🛡️ Def: ' + (sType.defense || 0) + ' | 👥 Min Crew: ' + (sType.minCrew || 1) + '</div>';
+
+                // Condition bar
+                html += '<div style="margin-top:4px;font-size:0.78rem;">🔧 Condition: <span style="color:' + condColor + ';">' + condPct + '%</span>';
+                html += ' <div style="display:inline-block;width:80px;height:8px;background:rgba(255,255,255,0.1);border-radius:4px;vertical-align:middle;">';
+                html += '<div style="width:' + condPct + '%;height:100%;background:' + condColor + ';border-radius:4px;"></div></div></div>';
+
+                html += '<div style="font-size:0.78rem;color:#aaa;">' + status + ' | Docking: ' + dockFee + 'g/month</div>';
+
+                // Buttons
+                html += '<div style="margin-top:4px;">';
+                html += '<button class="btn-medieval" onclick="Player.repairShip(\'' + ship.id + '\'); UI.openShipsDialog();" style="font-size:0.75rem;padding:3px 8px;margin:2px;"' + (condition >= 100 ? ' disabled' : '') + '>🔧 Repair</button>';
+                if ((sType.maxAddons || 0) > 0) {
+                    html += '<button class="btn-medieval" onclick="UI.showShipAddons(\'' + ship.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin:2px;">📦 Addons';
+                    if (ship.addons) html += ' (' + ship.addons.length + '/' + sType.maxAddons + ')';
+                    html += '</button>';
+                }
+                html += '</div></div>';
+            }
+        }
+
+        // ── Section 2: Build a Ship ──
+        html += '<h3 style="margin-top:12px;">🏗️ Build a Ship</h3>';
+        var atLimit = shipsHere.length >= maxShips;
+        if (atLimit) {
+            html += '<div style="font-size:0.8rem;color:#e67e22;margin-bottom:6px;">⚠️ Port is full (' + maxShips + '/' + maxShips + '). Sail a ship away to build more here.</div>';
+        }
+
+        for (var typeId in CONFIG.SHIP_TYPES) {
+            var st = CONFIG.SHIP_TYPES[typeId];
+            var totalCost = Player.getShipPrice ? Player.getShipPrice(typeId, townId) : 0;
+            var canAfford = Player.gold >= totalCost;
+
+            // Check materials
+            var allMatsAvailable = true;
+            var matParts = [];
+            for (var matId in (st.materials || {})) {
+                var needed = st.materials[matId];
+                var playerHas = (Player.inventory && Player.inventory[matId]) || 0;
+                var marketPrice = Engine.getResourcePrice ? Engine.getResourcePrice(townId, matId) : 0;
+                var marketQty = Engine.getResourceQty ? Engine.getResourceQty(townId, matId) : 0;
+                var needToBuy = Math.max(0, needed - playerHas);
+                var hasEnough = playerHas >= needed;
+                var marketHasEnough = needToBuy <= marketQty;
+                if (!hasEnough && !marketHasEnough) allMatsAvailable = false;
+
+                var matColor, indicator;
+                if (hasEnough) {
+                    matColor = '#55a868';
+                    indicator = ' ✓ owned';
+                } else if (marketHasEnough) {
+                    matColor = '#d4a843';
+                    indicator = ' 🛒 buy ' + needToBuy + ' @ ' + (marketPrice || 0).toFixed(1) + 'g ea';
+                } else {
+                    matColor = '#c44e52';
+                    indicator = ' ✗ need ' + needToBuy + ', market has ' + marketQty;
+                }
+                matParts.push('<span style="color:' + matColor + ';">' + matId + ': ' + playerHas + '/' + needed + indicator + '</span>');
+            }
+
+            var canBuild = canAfford && allMatsAvailable && !atLimit;
+            html += '<div style="border:1px solid #444;padding:6px;margin:3px 0;border-radius:4px;opacity:' + (canBuild ? '1' : '0.6') + ';">';
+            html += '<div>' + (st.icon || '⛵') + ' <strong>' + st.name + '</strong> — <span style="color:#ffd700;">' + totalCost.toFixed(2) + 'g</span></div>';
+            html += '<div style="font-size:0.75rem;color:#aaa;">' + (st.description || '') + '</div>';
+            html += '<div style="font-size:0.8rem;margin-top:2px;">📦 Cap:' + st.capacity + ' ⚡ Spd:' + st.speed + ' 🛡️ Def:' + st.defense + ' 👥 Crew:' + st.minCrew + '</div>';
+
+            if (matParts.length > 0) {
+                html += '<div style="font-size:0.7rem;margin-top:2px;">📦 ' + matParts.join(', ') + '</div>';
+            }
+
+            html += '<button class="btn-medieval" onclick="Player.buyShip(\'' + typeId + '\'); UI.openShipsDialog();" style="font-size:0.75rem;padding:3px 8px;margin-top:3px;"' + (canBuild ? '' : ' disabled') + '>🏗️ Build</button>';
+            if (atLimit) html += ' <span style="color:#c44e52;font-size:0.75rem;">Port full!</span>';
+            if (!allMatsAvailable) html += ' <span style="color:#c44e52;font-size:0.75rem;">Missing materials!</span>';
+            html += '</div>';
+        }
+
+        // ── Section 3: Ship Rentals Info ──
+        html += '<h3 style="margin-top:12px;">📋 Ship Rentals</h3>';
+        html += '<div style="font-size:0.8rem;color:#aaa;margin-bottom:6px;">Rent a ship per day for sea caravans without owning one.</div>';
+        for (var rTypeId in CONFIG.SHIP_TYPES) {
+            var rt = CONFIG.SHIP_TYPES[rTypeId];
+            var rentalCost = Player.getShipRentalCost ? Player.getShipRentalCost(rTypeId, townId) : 0;
+            html += '<div style="font-size:0.78rem;padding:2px 0;">' + (rt.icon || '⛵') + ' ' + rt.name + ' — <span style="color:#ffd700;">' + rentalCost.toFixed(1) + 'g/day</span> rental</div>';
+        }
+        html += '<div style="font-size:0.7rem;color:#888;margin-top:4px;">Select rental when creating a sea caravan.</div>';
+
+        // ── Section 4: Ships at Other Ports (collapsible) ──
+        var allShips = Player.state.ships || [];
+        var otherShips = [];
+        for (var oi = 0; oi < allShips.length; oi++) {
+            if (allShips[oi].townId !== townId) otherShips.push(allShips[oi]);
+        }
+        if (otherShips.length > 0) {
+            html += '<h3 style="margin-top:12px;cursor:pointer;" onclick="var el=document.getElementById(\'otherShipsSection\');el.style.display=el.style.display===\'none\'?\'block\':\'none\';">📍 Ships at Other Ports ▾</h3>';
+            html += '<div id="otherShipsSection" style="display:none;">';
+            var grouped = {};
+            for (var gi = 0; gi < otherShips.length; gi++) {
+                var gTownId = otherShips[gi].townId || 'unknown';
+                if (!grouped[gTownId]) grouped[gTownId] = [];
+                grouped[gTownId].push(otherShips[gi]);
+            }
+            for (var gKey in grouped) {
+                var gTown = Engine.findTown(gKey);
+                var gTownName = gTown ? gTown.name : gKey;
+                var gNames = [];
+                for (var gni = 0; gni < grouped[gKey].length; gni++) {
+                    var gs = grouped[gKey][gni];
+                    var gst = CONFIG.SHIP_TYPES[gs.type] || {};
+                    gNames.push((gst.icon || '⛵') + ' ' + (gs.name || gst.name || 'Ship'));
+                }
+                html += '<div style="font-size:0.8rem;padding:2px 0;"><strong>' + gTownName + ':</strong> ' + gNames.join(', ') + '</div>';
+            }
+            html += '</div>';
+        }
+
+        html += '</div>';
+        openModal('⛵ Ships & Vessels', html);
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -19125,6 +19408,8 @@ window.UI = (function () {
         openMerchantGuildReport,
         // Journal
         openJournal,
+        // Ships & Vessels
+        openShipsDialog,
         // Housing & Rest
         openHousingDialog,
         openRealEstateReport,
