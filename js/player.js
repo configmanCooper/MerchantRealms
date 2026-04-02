@@ -75,6 +75,7 @@
         heirTraits: [],         // permanent heir traits from regency
         dateProgress: {},       // personId → { traitProgress: 0, quirkProgress: 0 }
         _npcInteractions: {},   // personId → { day: N, count: N } — daily interaction cooldowns
+        _giftCooldowns: {},     // personId → day — 1 gift per NPC per day
         investigatorCaught: {}, // personId → count (0, 1, or 2 = permanent rejection)
         // Wedding planning
         weddingPlan: null,      // { fianceId, venue, feast, vows, planDay, weddingDay, guests }
@@ -15648,6 +15649,15 @@
         const person = Engine.findPerson(personId);
         if (!person) return { success: false, message: 'Person not found.' };
         if (person.townId !== player.townId) return { success: false, message: 'Not in same town.' };
+
+        // Limit 1 gift per NPC per day
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+        if (!player._giftCooldowns) player._giftCooldowns = {};
+        if (player._giftCooldowns[personId] === day) {
+            return { success: false, message: 'You already gave ' + person.firstName + ' a gift today. Wait until tomorrow.' };
+        }
+
         const held = player.inventory[resourceId] || 0;
         if (held < qty) return { success: false, message: 'Not enough in inventory.' };
         const res = findResource(resourceId);
@@ -15655,6 +15665,7 @@
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.give_gift || 2);
 
+        player._giftCooldowns[personId] = day;
         player.inventory[resourceId] -= qty;
         const giftValue = res.basePrice * qty;
         const gain = Math.min(CONFIG.RELATIONSHIP_GIFT_MAX_GAIN, CONFIG.RELATIONSHIP_GIFT_MIN_GAIN + Math.floor(giftValue / 10))
@@ -29246,9 +29257,20 @@
         qty = Math.floor(qty);
         var member = player.familyMembers.find(function(m) { return m.npcId === npcId; });
         if (!member) return { success: false, message: 'Not a family member.' };
+
+        // Limit 1 gift per NPC per day
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+        if (!player._giftCooldowns) player._giftCooldowns = {};
+        if (player._giftCooldowns[npcId] === day) {
+            return { success: false, message: 'You already gave ' + member.name + ' a gift today. Wait until tomorrow.' };
+        }
+
         if (!player.inventory[resourceId] || player.inventory[resourceId] < qty) return { success: false, message: 'Not enough resources.' };
         var person = Engine.findPerson(npcId);
         if (!person || !person.alive) return { success: false, message: 'Family member not found.' };
+
+        player._giftCooldowns[npcId] = day;
         player.inventory[resourceId] -= qty;
         var res = findResource(resourceId);
         var value = res ? res.basePrice * qty : qty;
