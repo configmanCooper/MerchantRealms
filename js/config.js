@@ -640,8 +640,8 @@ const CONFIG = {
     TOLL_MAX_RATE: 50,                     // Max toll rate
     TOLL_MIN_RATE: 1,                      // Min toll rate
     TOLL_COLLECTION_INTERVAL: 1,           // Days between toll collection
-    TRANSFER_WORKER_DELIVERY_DAYS: 2,      // Days workers spend delivering goods (no production)
-    TRANSFER_STORAGE_THRESHOLD: 30,        // Storage amount that triggers worker delivery
+    TRANSFER_WORKER_DELIVERY_DAYS: 1,      // Days workers spend delivering goods (no production)
+    TRANSFER_STORAGE_THRESHOLD: 1,         // Transfer after any production (daily)
     KING_INFLUENCE_COST_FRACTION: 0.10,    // Player pays 10% of road cost
     KING_INFLUENCE_MIN_REP: 70,            // Min kingdom reputation needed
     KING_INFLUENCE_MIN_RANK: 4,            // Min social rank index (Minor Noble)

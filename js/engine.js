@@ -3733,7 +3733,7 @@
                     var avgWorkerSkillStd = getAverageWorkerSkill(bld, town);
                     var workerSkillMod = 0.90 + avgWorkerSkillStd * 0.01;
 
-                    const output = Math.floor(activeRate * workerFraction * seasonMod * (bld.level || 1) * conditionEff * apprenticePenalty * fertilityMod * wildlifeMod * warZonePenalty * happyMod * _townHousingProd * workerSkillMod);
+                    const output = Math.round(activeRate * workerFraction * seasonMod * (bld.level || 1) * conditionEff * apprenticePenalty * fertilityMod * wildlifeMod * warZonePenalty * happyMod * _townHousingProd * workerSkillMod);
                     // Animal Husbandry: player livestock buildings produce 10% more
                     var livestockTypes = ['cattle_ranch', 'sheep_farm', 'chicken_farm', 'pig_farm', 'horse_ranch'];
                     var animalBonus = 0;
@@ -3751,6 +3751,18 @@
 
                     // Minor XP for non-military work
                     applyWorkerXP(bld, town, 'basic', output, 0);
+                }
+
+                // Passive worker skill gain for ALL buildings: ~0.055/day
+                // (player buildings get this in player.js tickBuildings instead)
+                if (bld.ownerId !== 'player' && bld.workers && bld.workers.length > 0) {
+                    for (var _wsi = 0; _wsi < bld.workers.length; _wsi++) {
+                        var _wsPerson = findPerson(bld.workers[_wsi]);
+                        if (_wsPerson && _wsPerson.alive) {
+                            if (_wsPerson.workerSkill == null) _wsPerson.workerSkill = 0;
+                            _wsPerson.workerSkill = Math.min(100, _wsPerson.workerSkill + 0.055);
+                        }
+                    }
                 }
 
                 // --- Worker wage payment & goods flow (once per day) ---
