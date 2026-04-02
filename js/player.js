@@ -12917,6 +12917,29 @@
             }
         }
         player.buildings = data.buildings || [];
+        // Migration: ensure player buildings are synced with town buildings (ownerId + id)
+        for (var _bi = 0; _bi < player.buildings.length; _bi++) {
+            var _pb = player.buildings[_bi];
+            if (!_pb || !_pb.townId) continue;
+            var _pbTown = Engine.findTown ? Engine.findTown(_pb.townId) : null;
+            if (!_pbTown || !_pbTown.buildings) continue;
+            // Find matching town building by id first, then by type
+            var _tbMatch = null;
+            for (var _tj = 0; _tj < _pbTown.buildings.length; _tj++) {
+                if (_pbTown.buildings[_tj].id && _pbTown.buildings[_tj].id === _pb.id) { _tbMatch = _pbTown.buildings[_tj]; break; }
+            }
+            if (!_tbMatch) {
+                for (var _tk = 0; _tk < _pbTown.buildings.length; _tk++) {
+                    if (_pbTown.buildings[_tk].type === _pb.type && (!_pbTown.buildings[_tk].ownerId || _pbTown.buildings[_tk].ownerId === 'player')) {
+                        _tbMatch = _pbTown.buildings[_tk]; break;
+                    }
+                }
+            }
+            if (_tbMatch) {
+                if (!_tbMatch.id) _tbMatch.id = _pb.id;
+                if (_tbMatch.ownerId !== 'player') _tbMatch.ownerId = 'player';
+            }
+        }
         player.employees = data.employees || [];
         player._workerSatisfaction = data._workerSatisfaction || {};
         player._autoRaiseWages = data._autoRaiseWages || false;

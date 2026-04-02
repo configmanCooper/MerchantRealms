@@ -3892,6 +3892,23 @@ window.UI = (function () {
             }
         }
 
+        // Demolish button (inside MAINTENANCE section)
+        if (town && bld.townId === Player.townId) {
+            var _demBldIdx = -1;
+            if (town.buildings) {
+                _demBldIdx = town.buildings.findIndex(function(b) { return b.id && b.id === bld.id; });
+                if (_demBldIdx < 0) _demBldIdx = town.buildings.findIndex(function(b) { return b.ownerId === 'player' && b.type === bld.type; });
+            }
+            if (_demBldIdx >= 0) {
+                html += '<button class="btn-trade sell" style="font-size:0.7rem;background:rgba(200,50,50,0.15);border-color:rgba(200,50,50,0.3);" onclick="UI.confirmDemolishUI(\'' + bld.id + '\',' + _demBldIdx + ',\'' + bld.townId + '\')">💥 Demolish (500g + blasting powder)</button>';
+            }
+        }
+
+        // List building for sale button (inside MAINTENANCE section)
+        html += '<button class="btn-trade" style="font-size:0.7rem;background:rgba(80,180,80,0.15);border-color:rgba(80,180,80,0.3);" onclick="UI.listBuildingForSaleUI(\'' + bld.id + '\')">' + (bld.forSale ? '🚫 Remove Listing' : '📋 List For Sale') + '</button>';
+
+        html += '</div></div>'; // close MAINTENANCE flex + border container
+
         // ── BUILDING STORAGE (split: output + input/general) ──
         if (bld.townId === Player.townId) {
             var _bldCap = (bt.storage || 0) * (bld.level || 1);
@@ -4030,18 +4047,6 @@ window.UI = (function () {
             }
         }
 
-        // Demolish button
-        if (town && bld.townId === Player.townId) {
-            var _demBldIdx = town.buildings.findIndex(function(b) { return b.ownerId === 'player' && b.type === bld.type; });
-            if (_demBldIdx >= 0) {
-                html += '<button class="btn-trade sell" style="font-size:0.7rem;background:rgba(200,50,50,0.15);border-color:rgba(200,50,50,0.3);" onclick="UI.confirmDemolishUI(\'' + bld.id + '\',' + _demBldIdx + ',\'' + bld.townId + '\')">💥 Demolish (500g + blasting powder)</button>';
-            }
-        }
-
-        // List building for sale button
-        html += '<button class="btn-trade" style="font-size:0.7rem;background:rgba(80,180,80,0.15);border-color:rgba(80,180,80,0.3);" onclick="UI.listBuildingForSaleUI(\'' + bld.id + '\')">' + (bld.forSale ? '🚫 Remove Listing' : '📋 List For Sale') + '</button>';
-
-        html += `</div></div>`;
         html += `<div style="text-align:center;margin-top:8px;">
             <button class="btn-trade" style="font-size:0.75rem;" onclick="UI.openBuildingManagement()">← Back to All Buildings</button>
         </div>`;
