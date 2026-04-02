@@ -10439,6 +10439,91 @@ window.UI = (function () {
 
     // ── KINGDOMS PAGE ──
 
+    function showKingdomTowns(kingdomId) {
+        var kingdom = Engine.findKingdom(kingdomId);
+        if (!kingdom) { toast('Kingdom not found.', 'error'); return; }
+        var allTowns = Engine.getTowns();
+        var towns = allTowns.filter(function(t) { return t.kingdomId === kingdomId; });
+        var roads = [];
+        var seaRoutes = [];
+        try { roads = Engine.getRoads(); } catch(e) {}
+        try { seaRoutes = Engine.getSeaRoutes(); } catch(e) {}
+
+        var html = '<div style="margin-bottom:10px;">';
+        html += '<button class="btn-medieval" onclick="UI.openKingdomsDialog()" style="font-size:0.8rem;padding:4px 12px;">← Back to Kingdoms</button>';
+        html += ' <span style="font-size:0.9rem;color:' + (kingdom.color || '#ccc') + ';font-weight:bold;margin-left:8px;">' + kingdom.name + ' — ' + towns.length + ' towns</span>';
+        html += '</div>';
+
+        html += '<div style="display:flex;flex-direction:column;gap:8px;max-height:60vh;overflow-y:auto;">';
+        for (var ti = 0; ti < towns.length; ti++) {
+            var town = towns[ti];
+            var pop = town.population || 0;
+            var prosp = Math.round(town.prosperity || 0);
+            var cat = town.category || 'village';
+            var catLabel = cat.charAt(0).toUpperCase() + cat.slice(1).replace('_', ' ');
+
+            // Road connections
+            var connNames = [];
+            for (var ri = 0; ri < roads.length; ri++) {
+                var rd = roads[ri];
+                if (rd.fromTownId === town.id || rd.toTownId === town.id) {
+                    var otherId = rd.fromTownId === town.id ? rd.toTownId : rd.fromTownId;
+                    var other = Engine.findTown(otherId);
+                    if (other) connNames.push(other.name);
+                }
+            }
+            // Sea connections
+            var seaNames = [];
+            for (var si = 0; si < seaRoutes.length; si++) {
+                var sr = seaRoutes[si];
+                if (sr.fromTownId === town.id || sr.toTownId === town.id) {
+                    var seaOtherId = sr.fromTownId === town.id ? sr.toTownId : sr.fromTownId;
+                    var seaOther = Engine.findTown(seaOtherId);
+                    if (seaOther) seaNames.push(seaOther.name);
+                }
+            }
+
+            // Key buildings (unique types, max 6)
+            var bldNames = [];
+            var seenBld = {};
+            for (var bi = 0; bi < (town.buildings || []).length; bi++) {
+                var bt = Engine.findBuildingType(town.buildings[bi].type);
+                var bName = bt ? bt.name : town.buildings[bi].type;
+                if (!seenBld[bName]) { seenBld[bName] = true; bldNames.push(bName); }
+                if (bldNames.length >= 6) break;
+            }
+
+            // Security and happiness
+            var security = Math.round(town.security || 0);
+            var happiness = Math.round(town.happiness || 50);
+
+            // Is player here?
+            var isHere = typeof Player !== 'undefined' && Player.townId === town.id;
+
+            html += '<div style="border:1px solid var(--border);border-radius:6px;padding:10px;' + (isHere ? 'border-left:3px solid #55a868;' : '') + '">';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+            html += '<strong style="font-size:0.95rem;">' + town.name + '</strong>';
+            html += '<span style="font-size:0.8rem;color:var(--text-muted);">' + catLabel + '</span>';
+            html += '</div>';
+            html += '<div style="display:flex;flex-wrap:wrap;gap:10px;font-size:0.82rem;margin:4px 0;color:var(--text-muted);">';
+            html += '<span>👥 ' + pop + '</span>';
+            html += '<span>📊 ' + prosp + '%</span>';
+            html += '<span>🛡️ ' + security + '</span>';
+            html += '<span>😊 ' + happiness + '</span>';
+            if (town.isPort) html += '<span>🚢 Port</span>';
+            if (town.isIsland) html += '<span>🏝️ Island</span>';
+            if (isHere) html += '<span style="color:#55a868;font-weight:bold;">📍 You are here</span>';
+            html += '</div>';
+            if (connNames.length > 0) html += '<div style="font-size:0.78rem;color:var(--text-muted);">🛤️ Roads: ' + connNames.join(', ') + '</div>';
+            if (seaNames.length > 0) html += '<div style="font-size:0.78rem;color:var(--text-muted);">⚓ Sea: ' + seaNames.join(', ') + '</div>';
+            if (bldNames.length > 0) html += '<div style="font-size:0.78rem;color:var(--text-muted);">🏗️ ' + bldNames.join(', ') + (Object.keys(seenBld).length < (town.buildings || []).length ? '…' : '') + '</div>';
+            html += '</div>';
+        }
+        html += '</div>';
+
+        openModal('🏘️ ' + kingdom.name + ' — Towns', html);
+    }
+
     function openKingdomsDialog() {
         let kingdoms;
         try { kingdoms = Engine.getKingdoms(); } catch (e) { kingdoms = []; }
@@ -10570,6 +10655,7 @@ window.UI = (function () {
                 ${isHome ? '<div class="kc-home-badge">★ YOUR HOME</div>' : ''}
                 <div class="kc-row">Rep: ${Math.floor(rep)} | Rank: ${rank.icon} ${rank.name}</div>
                 <div class="kc-buttons" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">
+                    <button class="kc-btn" data-action="towns" data-kid="${k.id}" title="View Towns">🏘️ Towns</button>
                     <button class="kc-btn" data-action="laws" data-kid="${k.id}" title="View Laws">📜 Laws</button>
                     <button class="kc-btn" data-action="trade" data-kid="${k.id}" title="Trade Routes">🏛️ Trade</button>
                     ${isHome ? '<button class="kc-btn" data-action="orders" data-kid="' + k.id + '" title="Kingdom Orders">📋 Orders</button>' : ''}
@@ -10658,7 +10744,8 @@ window.UI = (function () {
             kcBtns[bi].addEventListener('click', function(e) {
                 var action = this.getAttribute('data-action');
                 var kid = this.getAttribute('data-kid');
-                if (action === 'laws') openKingdomLawsPanel(kid);
+                if (action === 'towns') showKingdomTowns(kid);
+                else if (action === 'laws') openKingdomLawsPanel(kid);
                 else if (action === 'trade') showKingdomTradePanel(kid);
                 else if (action === 'orders') showKingdomOrdersPanel(kid);
                 else if (action === 'commissions') openRoyalCommissionsPanel(kid);
@@ -15143,7 +15230,8 @@ window.UI = (function () {
                 html += `<div style="display:flex;justify-content:space-between;align-items:center;">`;
                 html += `<strong style="font-size:0.95rem;">${a.name}</strong>`;
                 if (a.detection > 0) {
-                    html += `<span style="font-size:0.85rem;color:${detColor};font-weight:bold;">${detPct}% detection</span>`;
+                    var detSpanId = (a.id === 'steal_goods') ? ` id="stealDetect_${ai}"` : '';
+                    html += `<span${detSpanId} style="font-size:0.85rem;color:${detColor};font-weight:bold;">${detPct}% detection</span>`;
                 } else {
                     html += '<span style="font-size:0.85rem;color:#55a868;">No detection</span>';
                 }
@@ -15219,7 +15307,7 @@ window.UI = (function () {
 
     function buildStealGoodsUI(action, idx) {
         let html = '<div style="display:flex;gap:4px;align-items:center;margin-top:4px;">';
-        html += '<select id="stealRes_' + idx + '" style="font-size:0.7rem;padding:2px;flex:1;">';
+        html += '<select id="stealRes_' + idx + '" style="font-size:0.7rem;padding:2px;flex:1;" onchange="UI.updateStealDetection(' + idx + ')">';
         const town = Engine.findTown(Player.townId);
         if (town && town.market) {
             for (const key in RESOURCE_TYPES) {
@@ -15231,10 +15319,12 @@ window.UI = (function () {
             }
         }
         html += '</select>';
-        html += `<input type="number" id="stealQty_${idx}" value="5" min="1" max="20" style="width:45px;font-size:0.7rem;padding:2px;">`;
+        html += `<input type="number" id="stealQty_${idx}" value="5" min="1" max="20" style="width:45px;font-size:0.7rem;padding:2px;" oninput="UI.updateStealDetection(${idx})">`;
         html += `<button class="btn-trade sell" style="font-size:0.7rem;" `
             + `onclick="UI.executeStealGoods(${idx})">⚡ Steal</button>`;
         html += '</div>';
+        // Trigger initial detection update after render
+        html += `<script>setTimeout(function(){ if(UI.updateStealDetection) UI.updateStealDetection(${idx}); }, 50);<\/script>`;
         return html;
     }
 
@@ -15320,6 +15410,43 @@ window.UI = (function () {
             toast(result.message, 'warning');
         }
         openSchemesDialog();
+    }
+
+    function updateStealDetection(idx) {
+        var resEl = document.getElementById('stealRes_' + idx);
+        var qtyEl = document.getElementById('stealQty_' + idx);
+        var detEl = document.getElementById('stealDetect_' + idx);
+        if (!resEl || !qtyEl || !detEl) return;
+
+        var resourceId = resEl.value;
+        var qty = Math.max(1, Math.min(20, parseInt(qtyEl.value) || 1));
+        var town = Engine.findTown(Player.townId);
+        if (!town || !town.market) return;
+
+        // Mirror the detection logic from stealGoods in player.js
+        var w = Engine.getWorld ? Engine.getWorld() : null;
+        var hour = w ? (w.hour || 0) : 12;
+        var isNight = (hour >= 20 || hour <= 5);
+        var baseDetect = isNight ? 0.20 : 0.35;
+
+        // Value-based detection multiplier
+        var res = null;
+        for (var key in RESOURCE_TYPES) { if (RESOURCE_TYPES[key].id === resourceId) { res = RESOURCE_TYPES[key]; break; } }
+        var localPrice = (town.market.prices && town.market.prices[resourceId]) || (res ? res.basePrice : 10);
+        var value = Math.floor(localPrice * qty);
+        var valueDetectMult = 1.0;
+        if (value > 200) valueDetectMult = 1.5;
+        else if (value > 100) valueDetectMult = 1.3;
+        else if (value > 50) valueDetectMult = 1.15;
+
+        var detection = Player.calculateCorruptDetection(baseDetect * valueDetectMult, town);
+        var detPct = Math.round(detection * 100);
+        var detColor = getDetectionColor(detection);
+
+        detEl.style.color = detColor;
+        detEl.textContent = detPct + '% detection';
+        // Also show estimated value
+        detEl.title = 'Estimated value: ~' + value + 'g';
     }
 
     function executeCounterfeit(idx) {
@@ -19248,6 +19375,7 @@ window.UI = (function () {
         equipFromInventoryUI,
         // New features
         openKingdomsDialog,
+        showKingdomTowns,
         petitionPromotion,
         changeCitizenship,
         openGiftDialog,
