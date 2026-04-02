@@ -485,6 +485,7 @@
             player.kingdomResidencyStart[player.citizenshipKingdomId] = 0;
         }
         player.relationships = {};
+        player.isNoble = false;
         player.smugglingSkill = 0;
         player.jailedUntilDay = 0;
         player.aiMerchantSiblings = [];
@@ -8221,6 +8222,10 @@
         // Set social rank to royal_advisor (index 6)
         player.socialRank[kingdomId] = 6;
         player.rankSince[kingdomId] = Engine.getDay();
+        if (!player.isNoble) {
+            player.isNoble = true;
+            player.occupation = 'noble';
+        }
         // Initialize political capital
         player.politicalCapital = CONFIG.ADVISE_KING_POLITICAL_CAPITAL_MAX;
         player.politicalCapitalResetDay = Engine.getDay();
@@ -12956,6 +12961,7 @@
             hasSuppliedMilitary: player.hasSuppliedMilitary || false,
             tradesCompleted: player.tradesCompleted || 0,
             relationships: JSON.parse(JSON.stringify(player.relationships)),
+            isNoble: player.isNoble || false,
             smugglingSkill: player.smugglingSkill,
             jailedUntilDay: player.jailedUntilDay,
             aiMerchantSiblings: JSON.parse(JSON.stringify(player.aiMerchantSiblings)),
@@ -13289,6 +13295,7 @@
         player.tradesCompleted = data.tradesCompleted || 0;
         player.relationships = data.relationships || {};
         player.smugglingSkill = data.smugglingSkill || 0;
+        player.isNoble = data.isNoble || false;
         player.jailedUntilDay = data.jailedUntilDay || 0;
         player.aiMerchantSiblings = data.aiMerchantSiblings || [];
         // XP & Progression
@@ -14743,8 +14750,48 @@
             }
         }
 
-        // Tick guild fee distribution
-        tickGuildFees();
+        // Monthly: NPC relationships influence town reputation
+        // Sum relationship points above 10 per town, divide by population, add small rep gain
+        if (Engine.getDay() > 0 && Engine.getDay() % 30 === 0) {
+            var _relByTown = {};
+            for (var _personId in player.relationships) {
+                var _rel = player.relationships[_personId];
+                if (!_rel || (_rel.level || 0) <= 10) continue;
+                var _person = Engine.findPerson ? Engine.findPerson(_personId) : null;
+                if (!_person || !_person.alive || !_person.townId) continue;
+                if (!_relByTown[_person.townId]) _relByTown[_person.townId] = 0;
+                var _relPts = _rel.level - 10;
+                // Small bonus for nobles and elite merchants
+                if (_person.occupation === 'noble') _relPts *= 1.3;
+                else if (_person.wealthClass === 'upper' || _person._eliteCandidate) _relPts *= 1.15;
+                _relByTown[_person.townId] += _relPts;
+            }
+            // Also check elite merchants
+            var _ems = Engine.getEliteMerchants ? Engine.getEliteMerchants() : [];
+            for (var _ei = 0; _ei < _ems.length; _ei++) {
+                var _em = _ems[_ei];
+                if (!_em || !_em.alive || !_em.townId) continue;
+                var _emRel = player.relationships[_em.id];
+                if (!_emRel || (_emRel.level || 0) <= 10) continue;
+                // Only add if not already counted as a person
+                if (!Engine.findPerson || !Engine.findPerson(_em.id)) {
+                    if (!_relByTown[_em.townId]) _relByTown[_em.townId] = 0;
+                    var _emPts = _emRel.level - 10;
+                    _emPts *= 1.15; // elite merchant bonus
+                    _relByTown[_em.townId] += _emPts;
+                }
+            }
+            for (var _rtId in _relByTown) {
+                var _rtTown = Engine.findTown(_rtId);
+                if (!_rtTown) continue;
+                var _pop = _rtTown.population || 50;
+                // Divide summed points by population, scale down to a small monthly gain
+                var _repGain = (_relByTown[_rtId] / _pop) * 0.15;
+                if (_repGain > 0.01) {
+                    modifyTownReputation(_rtId, _repGain);
+                }
+            }
+        }
 
         // Check for exile
         checkExile();
@@ -15648,6 +15695,14 @@
         }
         player.socialRank[kId] = newIdx;
         player.rankSince[kId] = Engine.getDay();
+
+        // Reaching Minor Noble makes the player a noble
+        if (newIdx >= 4 && !player.isNoble) {
+            player.isNoble = true;
+            player.occupation = 'noble';
+            Engine.logEvent('🏰 ' + player.fullName + ' has entered the aristocracy!');
+        }
+
         const rank = CONFIG.SOCIAL_RANKS[newIdx];
         grantXP(XP_REWARDS.NEW_RANK || 100, 'rank');
         Engine.logEvent(`\uD83C\uDF96\uFE0F ${player.fullName} has been promoted to ${rank.name} in ${Engine.findKingdom(kId) ? Engine.findKingdom(kId).name : 'the kingdom'}!`);

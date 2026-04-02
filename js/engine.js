@@ -3283,6 +3283,9 @@
             // Generate a proper royal family for this king
             generateRoyalFamily(rng, king, people, kTowns);
 
+            // Generate non-royal nobles (scaled by population/prosperity)
+            generateNobles(rng, k, people, kTowns);
+
             // Build succession list: sons, then brothers, then other males
             const allKPeople = people.filter(p => p.kingdomId === k.id && p.alive);
             const males = allKPeople.filter(p => p.sex === 'M' && p.id !== king.id && p.age >= 14);
@@ -3474,9 +3477,166 @@
         }
     }
 
-    // ========================================================
-    // §11 SEASON / TIME HELPERS
-    // ========================================================
+    /**
+     * Generate non-royal nobles for a kingdom, scaled by population and prosperity.
+     * Royal family members get their socialRank assigned here too.
+     * Target counts: 2-3 royal advisors, 5-6 lords, 12-18 minor nobles (scaled).
+     */
+    function generateNobles(rng, kingdom, people, kTowns) {
+        var kId = kingdom.id;
+        var kPeople = people.filter(function(p) { return p.kingdomId === kId && p.alive; });
+        var totalPop = 0;
+        for (var ti = 0; ti < kTowns.length; ti++) totalPop += (kTowns[ti].population || 0);
+        var avgProsperity = 0;
+        for (var pi = 0; pi < kTowns.length; pi++) avgProsperity += (kTowns[pi].prosperity || 50);
+        avgProsperity = kTowns.length > 0 ? avgProsperity / kTowns.length : 50;
+
+        // Scale factor: 0.5 at low pop/prosperity, 1.5 at high
+        var popFactor = Math.max(0.5, Math.min(1.5, totalPop / 200));
+        var prosFactor = Math.max(0.5, Math.min(1.5, avgProsperity / 50));
+        var scale = (popFactor + prosFactor) / 2;
+
+        var numRoyalAdvisors = Math.round(2 + scale);  // 2-3
+        var numLords = Math.round(4 + scale * 2);       // 5-6
+        var numMinorNobles = Math.round(10 + scale * 8); // 12-18
+
+        numRoyalAdvisors = Math.max(2, Math.min(4, numRoyalAdvisors));
+        numLords = Math.max(4, Math.min(8, numLords));
+        numMinorNobles = Math.max(10, Math.min(22, numMinorNobles));
+
+        // Assign social ranks to existing royal family nobles first
+        var royalNobles = kPeople.filter(function(p) { return p.occupation === 'noble'; });
+        var assignedAdvisors = 0, assignedLords = 0, assignedMinors = 0;
+
+        // King gets royal_advisor rank
+        var king = people.find(function(p) { return p.id === kingdom.king; });
+        if (king) {
+            if (!king.socialRank) king.socialRank = {};
+            king.socialRank[kId] = 6; // royal_advisor
+            assignedAdvisors++;
+        }
+
+        // King's spouse = lord
+        if (king && king.spouseId) {
+            var spouse = people.find(function(p) { return p.id === king.spouseId; });
+            if (spouse && spouse.occupation === 'noble') {
+                if (!spouse.socialRank) spouse.socialRank = {};
+                spouse.socialRank[kId] = 5; // lord
+                assignedLords++;
+            }
+        }
+
+        // Remaining existing royal nobles get ranks based on relationship to king
+        for (var ri = 0; ri < royalNobles.length; ri++) {
+            var rn = royalNobles[ri];
+            if (rn.id === kingdom.king) continue;
+            if (king && rn.id === king.spouseId) continue;
+            if (!rn.socialRank) rn.socialRank = {};
+            if (rn.socialRank[kId] != null) continue;
+
+            // King's siblings → lord, king's children → minor noble, others → minor noble
+            var isKingSibling = king && rn.parentIds && king.parentIds &&
+                rn.parentIds.length > 0 && king.parentIds.length > 0 &&
+                rn.parentIds[0] === king.parentIds[0];
+            if (isKingSibling && assignedLords < numLords) {
+                rn.socialRank[kId] = 5; // lord
+                assignedLords++;
+            } else {
+                rn.socialRank[kId] = 4; // minor_noble
+                assignedMinors++;
+            }
+        }
+
+        // Generate additional nobles to fill the target counts
+        var capitalTown = kTowns.find(function(t) { return t.isCapital; }) || kTowns[0];
+        if (!capitalTown) return;
+
+        function makeNoble(rank, townId) {
+            var sex = rng.chance(0.5) ? 'M' : 'F';
+            var firstName = sex === 'M' ? rng.pick(NAMES.male) : rng.pick(NAMES.female);
+            var lastNames = kPeople.length > 0 ? kPeople.map(function(p) { return p.lastName; }).filter(Boolean) : ['Noble'];
+            var lastName = rng.pick(lastNames);
+            var ageMin = rank >= 6 ? 40 : (rank >= 5 ? 35 : 25);
+            var ageMax = rank >= 6 ? 65 : (rank >= 5 ? 60 : 55);
+            var age = rng.randInt(ageMin, ageMax);
+            var goldMin = rank >= 6 ? 200 : (rank >= 5 ? 100 : 50);
+            var goldMax = rank >= 6 ? 500 : (rank >= 5 ? 300 : 150);
+            var sr = {};
+            sr[kId] = rank;
+            var person = {
+                id: uid('p'),
+                firstName: firstName,
+                lastName: lastName,
+                age: age,
+                sex: sex,
+                alive: true,
+                townId: townId,
+                kingdomId: kId,
+                occupation: 'noble',
+                employerId: null,
+                needs: {
+                    food: rng.randInt(50, 80),
+                    shelter: rng.randInt(55, 85),
+                    safety: rng.randInt(50, 80),
+                    wealth: rng.randInt(40, 70),
+                    happiness: rng.randInt(50, 75),
+                },
+                gold: rng.randInt(goldMin, goldMax),
+                skills: { farming: 5, mining: 5, crafting: 5, trading: rng.randInt(10, 30), combat: rng.randInt(10, 30) },
+                workerSkill: 0,
+                spouseId: null,
+                childrenIds: [],
+                parentIds: [],
+                wealthClass: 'upper',
+                houseType: rank >= 5 ? 'manor' : rng.pick(['manor', 'townhouse']),
+                socialRank: sr,
+                personality: {
+                    loyalty:      Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
+                    ambition:     Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
+                    frugality:    Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
+                    intelligence: Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
+                    warmth:       Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
+                    honesty:      Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
+                },
+                quirks: assignRandomQuirks(rng),
+                foodPreferences: { bread: 1, meat: 1, poultry: 1, fish: 1, eggs: 1, preserved_food: 1 },
+                recentFoods: [],
+                medicalKnowledge: rng.chance(0.2) ? 'moderate' : 'none',
+                health: 100,
+                sick: false,
+                illness: null,
+                illnessDay: 0,
+                injured: false,
+                injuryDay: 0,
+            };
+            people.push(person);
+            var town = kTowns.find(function(t) { return t.id === townId; });
+            if (town) town.population = (town.population || 0) + 1;
+            return person;
+        }
+
+        // Fill royal advisors — place in capital
+        while (assignedAdvisors < numRoyalAdvisors) {
+            makeNoble(6, capitalTown.id);
+            assignedAdvisors++;
+        }
+
+        // Fill lords — spread across major towns
+        var majorTowns = kTowns.filter(function(t) { return t.category === 'city' || t.category === 'capital_city' || t.isCapital; });
+        if (majorTowns.length === 0) majorTowns = kTowns;
+        while (assignedLords < numLords) {
+            var lordTown = rng.pick(majorTowns);
+            makeNoble(5, lordTown.id);
+            assignedLords++;
+        }
+
+        // Fill minor nobles — spread across all towns
+        while (assignedMinors < numMinorNobles) {
+            var nobleTown = rng.pick(kTowns);
+            makeNoble(4, nobleTown.id);
+            assignedMinors++;
+        }
+    }
     function getSeason(day) {
         const idx = Math.floor((day % (CONFIG.DAYS_PER_SEASON * 4)) / CONFIG.DAYS_PER_SEASON);
         return CONFIG.SEASONS[idx];
@@ -19882,6 +20042,13 @@
         em.socialRank[kId] = currentRank + 1;
         logEvent(em.firstName + ' ' + (em.lastName || '') + ' has been elevated to ' + nextRank.name + '!');
         grantEmXp(em, 50, 'rank_up');
+
+        // Becoming a Minor Noble makes an elite merchant a noble
+        if (currentRank + 1 >= 4 && em.occupation !== 'noble') {
+            em.occupation = 'noble';
+            em.wealthClass = 'upper';
+            logEvent('🏰 ' + em.firstName + ' ' + (em.lastName || '') + ' has entered the aristocracy!');
+        }
     }
 
     function eliteSkillAI(em, rng) {
