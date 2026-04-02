@@ -21623,10 +21623,18 @@
         const hour = w ? (w.hour || 0) : 12;
         const baseDetect = (hour >= 20 || hour <= 5) ? 0.20 : 0.35;
         const rng = Engine.getRng();
-        const detection = calculateCorruptDetection(baseDetect, town);
-        const caught = rng && rng.chance(detection);
         const res = findResource(resourceId);
-        const value = res ? res.basePrice * qty : 10 * qty;
+        // Use local market price for value and detection scaling
+        const localPrice = (town.market && town.market.prices && town.market.prices[resourceId]) || (res ? res.basePrice : 10);
+        const value = Math.floor(localPrice * qty);
+        // Higher-value theft = higher detection (merchants watch expensive goods more closely)
+        // Under 50g: no extra detection; 50-200g: moderate; 200g+: significant
+        var valueDetectMult = 1.0;
+        if (value > 200) valueDetectMult = 1.5;
+        else if (value > 100) valueDetectMult = 1.3;
+        else if (value > 50) valueDetectMult = 1.15;
+        const detection = calculateCorruptDetection(baseDetect * valueDetectMult, town);
+        const caught = rng && rng.chance(detection);
 
         if (caught) {
             const kingdom = Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null;
@@ -21703,7 +21711,15 @@
 
         if (caught) {
             const kingdom = Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null;
-            const actualFine = applyCorruptPenalty(town, kingdom, 500, 20, 10, false);
+            // Estimate value of what would have been stolen for fine calculation
+            var estValue = 0;
+            for (var _ek = 0; _ek < Math.min(3, marketKeys.length); _ek++) {
+                var _eResId = marketKeys[_ek];
+                var _ePrice = (town.market.prices && town.market.prices[_eResId]) || 10;
+                estValue += _ePrice * 20;
+            }
+            var heistFine = Math.max(200, Math.floor(estValue * 2));
+            const actualFine = applyCorruptPenalty(town, kingdom, heistFine, 20, 10, false);
             recordCorruptAction('warehouse_heist', true);
             player.notoriety += 10;
             Engine.logEvent(`${player.fullName} was caught breaking into a warehouse in ${town.name}!`);
@@ -21722,7 +21738,8 @@
             town.market.supply[resId] -= qty;
             player.inventory[resId] = (player.inventory[resId] || 0) + qty;
             const res = findResource(resId);
-            totalValue += (res ? res.basePrice : 10) * qty;
+            const localP = (town.market && town.market.prices && town.market.prices[resId]) || (res ? res.basePrice : 10);
+            totalValue += Math.floor(localP * qty);
             stolenMsg.push(`${qty} ${res ? res.name : resId}`);
         }
 
