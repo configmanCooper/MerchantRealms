@@ -1686,7 +1686,7 @@ window.Renderer = (function () {
             const to = townMap[caravan.toTownId];
             if (!from || !to) continue;
 
-            const progress = caravan.progress || 0;
+            const progress = Math.min(1.0, Math.max(0, caravan.progress || 0));
 
             // Determine actual start/end based on return trip
             var startTown, endTown;

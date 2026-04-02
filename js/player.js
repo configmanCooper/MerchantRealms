@@ -3857,6 +3857,7 @@
                 if (hasSkill('cartographer')) caravanSpeed *= 1.05;
             }
             caravan.progress += (caravanSpeed / Math.max(caravan.totalDist, 1)) / ticksPerDay;
+            if (caravan.progress > 1.0) caravan.progress = 1.0;
         }
     }
 
