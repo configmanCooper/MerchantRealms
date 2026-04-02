@@ -25474,7 +25474,11 @@
             }
 
             var buyerName = buyerType === 'kingdom' ? buyer.name : ((buyer.firstName || '') + ' ' + (buyer.lastName || ''));
-            logEvent('💰 ' + buyerName + ' bought your ' + (findBuildingType(bld.type) ? findBuildingType(bld.type).name : bld.type) + ' for ' + salePrice + 'g!');
+            var soldBldName = findBuildingType(bld.type) ? findBuildingType(bld.type).name : bld.type;
+            logEvent('💰 ' + buyerName + ' bought your ' + soldBldName + ' in ' + town.name + ' for ' + salePrice + 'g!');
+            if (typeof UI !== 'undefined' && UI.toast) {
+                UI.toast('💰 ' + buyerName + ' bought your ' + soldBldName + ' for ' + salePrice + 'g! (+' + salePrice + 'g)', 'success', 'critical');
+            }
         }
 
         // Check player land for sale
@@ -25513,6 +25517,9 @@
 
             var landBuyerName = (landBuyer.firstName || '') + ' ' + (landBuyer.lastName || '');
             logEvent('💰 ' + landBuyerName + ' bought your land plot in ' + landTown.name + ' for ' + landListing.price + 'g!');
+            if (typeof UI !== 'undefined' && UI.toast) {
+                UI.toast('💰 ' + landBuyerName + ' bought your land in ' + landTown.name + ' for ' + landListing.price + 'g! (+' + landListing.price + 'g)', 'success', 'critical');
+            }
 
             landForSale.splice(li, 1);
             li--;
