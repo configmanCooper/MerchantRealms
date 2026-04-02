@@ -3918,8 +3918,10 @@ window.UI = (function () {
             var _bldCap = (bt.storage || 0) * (bld.level || 1);
             var _bldUsed = 0;
             if (bld.inventory) { for (var _bk in bld.inventory) { var _br = findResource(_bk); _bldUsed += (bld.inventory[_bk] || 0) * (_br ? (_br.weight || 1) : 1); } }
-            var _prodStored = bld.storedOutput || 0;
-            if (bt.produces) { var _pr = findResource(bt.produces); _bldUsed += _prodStored * (_pr ? (_pr.weight || 1) : 1); }
+            // Count output stored in townStorage for this building's produced goods
+            var _tsOut = (Player.state && Player.state.townStorage && Player.state.townStorage[bld.townId]) || {};
+            if (bt.produces && _tsOut[bt.produces]) { var _pr = findResource(bt.produces); _bldUsed += (_tsOut[bt.produces] || 0) * (_pr ? (_pr.weight || 1) : 1); }
+            if (bt.canProduce) { for (var _cpi = 0; _cpi < bt.canProduce.length; _cpi++) { var _cpId = bt.canProduce[_cpi]; if (_tsOut[_cpId]) { var _cpr = findResource(_cpId); _bldUsed += (_tsOut[_cpId] || 0) * (_cpr ? (_cpr.weight || 1) : 1); } } }
             if (_bldCap > 0) {
                 // Gather consumed goods set for this building
                 var _consumedSet = Player.getBuildingConsumedGoods ? Player.getBuildingConsumedGoods(bt) : {};
@@ -3939,19 +3941,20 @@ window.UI = (function () {
                     html += '<div style="margin-bottom:6px;">';
                     html += '<div style="font-size:0.78rem;font-weight:bold;color:#7cb342;margin-bottom:2px;">📤 Output (Produced Goods)</div>';
                     var _hasOutput = false;
-                    if (bld.inventory) {
-                        for (var _ok in bld.inventory) {
-                            if (!_outputGoods[_ok] || bld.inventory[_ok] <= 0) continue;
-                            _hasOutput = true;
-                            var _or = findResource(_ok);
-                            var _oName = _or ? ((_or.icon || '') + ' ' + _or.name) : _ok;
-                            html += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-size:0.78rem;">';
-                            html += '<span style="min-width:130px;">' + _oName + ': ' + bld.inventory[_ok] + '</span>';
-                            html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldWithdraw(\'' + bld.id + '\',\'' + _ok + '\',1)">Take 1</button>';
-                            if (bld.inventory[_ok] >= 5) html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldWithdraw(\'' + bld.id + '\',\'' + _ok + '\',5)">5</button>';
-                            html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldWithdraw(\'' + bld.id + '\',\'' + _ok + '\',' + bld.inventory[_ok] + ')">All</button>';
-                            html += '</div>';
-                        }
+                    // Output is stored in player.townStorage, not bld.inventory
+                    var _townStore = (Player.state && Player.state.townStorage && Player.state.townStorage[bld.townId]) || {};
+                    for (var _ok in _outputGoods) {
+                        var _oQty = _townStore[_ok] || 0;
+                        if (_oQty <= 0) continue;
+                        _hasOutput = true;
+                        var _or = findResource(_ok);
+                        var _oName = _or ? ((_or.icon || '') + ' ' + _or.name) : _ok;
+                        html += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-size:0.78rem;">';
+                        html += '<span style="min-width:130px;">' + _oName + ': ' + _oQty + '</span>';
+                        html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI.collectOutputUI(\'' + bld.id + '\',\'' + _ok + '\',1)">Take 1</button>';
+                        if (_oQty >= 5) html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI.collectOutputUI(\'' + bld.id + '\',\'' + _ok + '\',5)">5</button>';
+                        html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI.collectOutputUI(\'' + bld.id + '\',\'' + _ok + '\',' + _oQty + ')">All</button>';
+                        html += '</div>';
                     }
                     if (!_hasOutput) html += '<div style="font-size:0.72rem;color:#888;">No output stored.</div>';
                     html += '</div>';
