@@ -11819,7 +11819,12 @@ window.UI = (function () {
     function buyLandUI() {
         var result = Player.buyLand(Player.townId);
         toast(result.message, result.success ? 'success' : 'error');
-        if (result.success) openHousingDialog();
+        if (result.success) {
+            // Refresh town detail panel to show updated land count
+            var town = Engine.findTown(Player.townId);
+            if (town) showTownDetail(town);
+            update();
+        }
     }
 
     function sellLandUI() {
