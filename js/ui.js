@@ -3797,7 +3797,7 @@ window.UI = (function () {
             if (hasGuild) {
                 html += '✅ Transport Guild active — instant transfers';
             } else {
-                html += '⚠️ No Transport Guild — workers will pause production for ' + (CONFIG.TRANSFER_WORKER_DELIVERY_DAYS || 1) + ' day after each delivery';
+                html += '⚠️ No Transport Guild — workers will pause production for ' + (CONFIG.TRANSFER_WORKER_DELIVERY_DAYS || 1) + ' day to deliver when output storage is full';
             }
             html += '</div>';
             

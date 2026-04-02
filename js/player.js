@@ -5933,12 +5933,13 @@
                     // Instant transfer — Transport Guild handles delivery
                     _executeTransfer(bld, bt.produces, actualOutput);
                 } else {
-                    // No Transport Guild — accumulate until threshold, then workers deliver
+                    // No Transport Guild — accumulate in storage, deliver when full
                     bld._transferBuffer = (bld._transferBuffer || 0) + actualOutput;
                     // Also store in townStorage so it shows up
                     player.townStorage[bld.townId][bt.produces] = (player.townStorage[bld.townId][bt.produces] || 0) + actualOutput;
                     
-                    if (bld._transferBuffer >= (CONFIG.TRANSFER_STORAGE_THRESHOLD || 30)) {
+                    var buildingStorageCap = bt.storage || 100;
+                    if (bld._transferBuffer >= buildingStorageCap) {
                         // Workers need to deliver — mark building for delivery pause
                         bld._delivering = true;
                         bld._deliveryDaysLeft = CONFIG.TRANSFER_WORKER_DELIVERY_DAYS || 2;
