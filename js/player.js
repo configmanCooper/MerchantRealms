@@ -5420,6 +5420,8 @@
                 }
                 if (nearestDist < CONFIG.TILE_SIZE * 3 && nearestTown) {
                     player.townId = nearestTown.id;
+                    player.worldX = null;
+                    player.worldY = null;
                     Engine.logEvent('Arrived near ' + nearestTown.name + '.', { type: 'travel_arrive' }, 'travel_events');
                 } else {
                     player.townId = null;
@@ -5439,6 +5441,8 @@
 
             // Standard town-to-town arrival
             player.townId = player.travelDestination;
+            player.worldX = null;
+            player.worldY = null;
             var wasSea = player.travelBySea; // Save before reset for XP check
             player.traveling = false;
             player.travelProgress = 0;

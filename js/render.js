@@ -212,7 +212,7 @@ window.Renderer = (function () {
         }
 
         // Wilderness (stopped on road, no townId)
-        if (Player.worldX && Player.worldY) {
+        if (!Player.townId && Player.worldX && Player.worldY) {
             camera.targetX = Player.worldX;
             camera.targetY = Player.worldY;
             camera.x = camera.targetX;
