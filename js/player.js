@@ -3104,7 +3104,9 @@
         const town = Engine.findTown(bld.townId);
 
         var effectiveWorkerMax = bt.workers + ((bld.level || 1) - 1);
-        const workerFraction = Math.min(1, bld.workers.length / Math.max(effectiveWorkerMax, 1));
+        // Workers scale production proportionally against base worker count
+        var baseWorkers = Math.max(bt.workers, 1);
+        const workerFraction = Math.min(bld.workers.length, effectiveWorkerMax) / baseWorkers;
         var missingInputs = [];
         if (bt.consumes) {
             for (const [resId, qty] of Object.entries(bt.consumes)) {
@@ -3141,7 +3143,19 @@
             }
         }
 
-        const dailyOutput = bt.produces ? Math.floor(bt.rate * workerFraction * seasonMod * (1 + ((bld.level || 1) - 1) * 0.10) * prodBonus * (player.spouseProdMod || 1.0)) : 0;
+        // Worker skill modifier (matches production tick)
+        var avgWorkerSkill = 10;
+        if (bld.workers.length > 0) {
+            var _totalSkill = 0;
+            for (var _wi = 0; _wi < bld.workers.length; _wi++) {
+                var _wPerson = Engine.findPerson(bld.workers[_wi]);
+                _totalSkill += (_wPerson && _wPerson.workerSkill != null) ? _wPerson.workerSkill : 0;
+            }
+            avgWorkerSkill = _totalSkill / bld.workers.length;
+        }
+        var workerSkillMod = 0.90 + avgWorkerSkill * 0.01;
+
+        const dailyOutput = bt.produces ? Math.round(bt.rate * workerFraction * seasonMod * (1 + ((bld.level || 1) - 1) * 0.10) * prodBonus * workerSkillMod * (player.spouseProdMod || 1.0)) : 0;
         const stored = (player.townStorage[bld.townId] && bt.produces && player.townStorage[bld.townId][bt.produces]) || 0;
 
         var status = 'idle';
@@ -5951,9 +5965,10 @@
             const town = Engine.findTown(bld.townId);
             if (!town) continue;
 
-            // Worker fraction
+            // Worker fraction: extra workers from upgrades scale proportionally against base
             var effectiveWorkerCap = bt.workers + ((bld.level || 1) - 1);
-            const workerFraction = Math.min(1, bld.workers.length / Math.max(effectiveWorkerCap, 1));
+            var _baseWorkers = Math.max(bt.workers, 1);
+            const workerFraction = Math.min(bld.workers.length, effectiveWorkerCap) / _baseWorkers;
             if (workerFraction <= 0) continue;
 
             // Seasonal modifier
