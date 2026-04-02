@@ -3104,6 +3104,8 @@
             id: shipUid(),
             name: shipType.name,
             type: type,
+            townId: player.townId,
+            assignedCaravanId: null,
             capacity: shipType.capacity,
             speed: shipType.speed || 1.0,
             passengers: shipType.passengers || 0,
@@ -3117,6 +3119,8 @@
             builtDay: Engine.getDay(),
             degradeCondition: 'new',
             lastRepairDay: 0,
+            lastDockFeeDay: Engine.getDay(),
+            unpaidDocking: false,
         };
         player.ships.push(ship);
         consumeEnergy(ENERGY_CONFIG.BUILD_COST || 5);
@@ -3300,8 +3304,10 @@
 
     /**
      * Send a caravan by sea route between two port towns.
+     * Requires either an owned ship (shipId) or a rental (rentalShipType).
      */
-    function sendSeaCaravan(fromTownId, toTownId, goods, guards) {
+    function sendSeaCaravan(fromTownId, toTownId, goods, guards, options) {
+        options = options || {};
         if (fromTownId !== player.townId) {
             return { success: false, message: 'You can only send caravans from your current town.' };
         }
@@ -3310,6 +3316,41 @@
         if (!fromTown || !toTown) return { success: false, message: 'Invalid town.' };
         if (fromTownId === toTownId) return { success: false, message: 'Origin and destination are the same.' };
         if (!fromTown.isPort || !toTown.isPort) return { success: false, message: 'Both towns must be ports for sea trade.' };
+
+        // Resolve ship: owned or rental
+        var shipId = options.shipId || null;
+        var rentalShipType = options.rentalShipType || null;
+        var ownedShip = null;
+        var rentalDailyCost = 0;
+        var shipTypeDef = null;
+        var shipCapacity = 0;
+        var shipSpeed = 1.0;
+        var shipDefense = 0;
+        var shipMinCrew = 1;
+
+        if (shipId) {
+            ownedShip = player.ships.find(function(s) { return s.id === shipId; });
+            if (!ownedShip) return { success: false, message: 'Ship not found.' };
+            if (ownedShip.townId !== fromTownId) return { success: false, message: 'That ship is not docked at this port.' };
+            if (ownedShip.assignedCaravanId) return { success: false, message: 'That ship is already assigned to another caravan.' };
+            if (ownedShip.unpaidDocking) return { success: false, message: 'That ship has unpaid docking fees.' };
+            if (ownedShip.degradeCondition === 'destroyed') return { success: false, message: 'That ship is destroyed.' };
+            shipTypeDef = CONFIG.SHIP_TYPES[ownedShip.type];
+            shipCapacity = getShipEffectiveCapacity(ownedShip);
+            shipSpeed = getShipSpeed(ownedShip);
+            shipDefense = getShipDefense(ownedShip);
+            shipMinCrew = shipTypeDef ? (shipTypeDef.minCrew || 1) : 1;
+        } else if (rentalShipType) {
+            shipTypeDef = CONFIG.SHIP_TYPES[rentalShipType];
+            if (!shipTypeDef) return { success: false, message: 'Unknown ship type for rental.' };
+            rentalDailyCost = getShipRentalCost(rentalShipType, fromTownId);
+            shipCapacity = shipTypeDef.capacity || 50;
+            shipSpeed = shipTypeDef.speed || 1.0;
+            shipDefense = shipTypeDef.defense || 0;
+            shipMinCrew = shipTypeDef.minCrew || 1;
+        } else {
+            return { success: false, message: 'A ship is required for sea caravans. Select an owned ship or rent one.' };
+        }
 
         // Validate goods
         if (!goods || typeof goods !== 'object') return { success: false, message: 'No goods specified.' };
@@ -3321,17 +3362,13 @@
             hasSeaGoods = true;
         }
         if (!hasSeaGoods) return { success: false, message: 'No goods specified for the sea caravan.' };
+
+        // Validate crew and guards
+        var carriers = Number(options.carriers) || shipMinCrew;
+        if (carriers < shipMinCrew) return { success: false, message: 'Not enough crew. Minimum: ' + shipMinCrew + ' for this ship.' };
         guards = Number(guards) || 0;
         if (!isFinite(guards) || guards < 0) return { success: false, message: 'Invalid guard count.' };
         guards = Math.floor(guards);
-
-        const hasShip = player.ships.length > 0;
-        if (!hasShip) {
-            // Pay passage for goods
-            if (player.gold < CONFIG.SEA_PASSAGE_COST) {
-                return { success: false, message: `Not enough gold. Need ${CONFIG.SEA_PASSAGE_COST}g for sea passage.` };
-            }
-        }
 
         // Find sea route
         const seaRoutes = Engine.getSeaRoutes ? Engine.getSeaRoutes() : [];
@@ -3356,26 +3393,27 @@
             const res = findResource(resId);
             totalWeight += (res ? res.weight : 1) * qty;
         }
-        if (hasShip) {
-            if (!player.ships || player.ships.length === 0) {
-                return { success: false, message: 'No ships available.' };
-            }
-            const bestShip = player.ships.reduce((a, b) => a.capacity > b.capacity ? a : b);
-            if (totalWeight > bestShip.capacity) {
-                return { success: false, message: `Goods exceed ship capacity (${bestShip.capacity}). Weight: ${totalWeight}` };
-            }
+        if (totalWeight > shipCapacity) {
+            return { success: false, message: `Goods exceed ship capacity (${shipCapacity}). Weight: ${totalWeight}` };
         }
 
-        // Guard cost
-        guards = Math.max(0, guards || 0);
-        const guardCost = guards * CONFIG.GUARD_WAGE * 5;
-        const passageCost = hasShip ? 0 : CONFIG.SEA_PASSAGE_COST;
-        const totalCost = guardCost + passageCost;
+        // Calculate costs: crew hire + guard hire + guard advance + rental estimate
+        var seaCrewWage = CONFIG.CARAVAN_SEA_CARRIER_WAGE || 2;
+        var seaCrewHire = (CONFIG.CARAVAN_SEA_CARRIER_HIRE_COST || 10) * carriers;
+        var guardHireCost = guards * (CONFIG.CARAVAN_GUARD_HIRE_COST || 30);
+        var guardAdvance = guards * (CONFIG.CARAVAN_GUARD_WAGE || 6) * 5;
+        var totalCost = seaCrewHire + guardHireCost + guardAdvance;
+
+        // Rental ships: prepay 5 days
+        if (rentalShipType) {
+            totalCost += rentalDailyCost * 5;
+        }
+
         if (player.gold < totalCost) {
-            return { success: false, message: `Not enough gold (need ${totalCost}).` };
+            return { success: false, message: `Not enough gold (need ${totalCost}g).` };
         }
 
-        // Deduct goods and gold (take from carried first, then town storage)
+        // Deduct goods (take from carried first, then town storage)
         for (const [resId, qty] of Object.entries(goods)) {
             var seaFromCarried = Math.min(qty, player.inventory[resId] || 0);
             var seaFromStorage = qty - seaFromCarried;
@@ -3386,27 +3424,59 @@
             }
         }
         player.gold -= totalCost;
-        logFinance(-totalCost, 'caravan_costs', 'Caravan dispatch');
+        logFinance(-totalCost, 'caravan_costs', 'Sea caravan dispatch');
         player.stats.totalGoldSpent += totalCost;
 
+        // Apply orders from options
+        var caravanOrders = options.orders || [];
+        var roundTrip = options.roundTrip || false;
+        var recurring = options.recurring || false;
+        var overflowSell = options.overflowSell || false;
+
+        var cId = caravanUid();
+
+        // Assign owned ship to caravan
+        if (ownedShip) {
+            ownedShip.assignedCaravanId = cId;
+        }
+
         const caravan = {
-            id: caravanUid(),
+            id: cId,
             fromTownId,
             toTownId,
             goods: { ...goods },
+            carriers: carriers,
+            carrierWage: seaCrewWage,
             guards,
+            guardWage: CONFIG.CARAVAN_GUARD_WAGE || 6,
             progress: 0.0,
             status: 'traveling',
             route: [seaRoute],
             routeType: 'sea',
-            totalDist: seaRoute.distance / (CONFIG.SEA_SPEED_MULTIPLIER || 1.5),
+            totalDist: seaRoute.distance / shipSpeed,
             totalWeight,
             daysSent: Engine.getDay(),
+            lastWageDay: Engine.getDay(),
             active: true,
+            shipId: ownedShip ? ownedShip.id : null,
+            rentalShipType: rentalShipType || null,
+            rentalDailyCost: rentalDailyCost,
+            shipSpeed: shipSpeed,
+            shipCapacity: shipCapacity,
+            shipDefense: shipDefense,
+            orders: caravanOrders,
+            roundTrip: roundTrip,
+            recurring: recurring,
+            returnTrip: false,
+            overflowSell: overflowSell,
+            totalSpent: totalCost,
+            totalProfit: -totalCost,
+            tripCount: 0,
         };
         player.caravans.push(caravan);
-        Engine.logEvent(`Sea caravan dispatched from ${fromTown.name} to ${toTown.name}.`);
-        return { success: true, message: `Sea caravan sent to ${toTown.name}.`, caravan };
+        var shipLabel = ownedShip ? ownedShip.name : (shipTypeDef ? shipTypeDef.name + ' (rented)' : 'rented ship');
+        Engine.logEvent('Sea caravan dispatched from ' + fromTown.name + ' to ' + toTown.name + ' on ' + shipLabel + '.');
+        return { success: true, message: 'Sea caravan sent to ' + toTown.name + ' on ' + shipLabel + '.', caravan: caravan };
     }
 
     // ========================================================
@@ -3868,9 +3938,25 @@
     }
 
     // Process caravan arrival — extracted so it can be called from subtick for instant turnaround
+    // Release ship assignment when a caravan completes/deactivates
+    function _releaseCaravanShip(caravan) {
+        if (caravan.shipId) {
+            var ship = player.ships.find(function(s) { return s.id === caravan.shipId; });
+            if (ship) ship.assignedCaravanId = null;
+            caravan.shipId = null;
+        }
+    }
+
     function _processCaravanArrival(caravan) {
                 caravan.progress = 1.0;
                 caravan.tripCount = (caravan.tripCount || 0) + 1;
+
+                // Handle ship arrival: move owned ship to destination, release assignment
+                var _arrDestId = caravan.returnTrip ? caravan.fromTownId : caravan.toTownId;
+                if (caravan.routeType === 'sea' && caravan.shipId) {
+                    var _arrShip = player.ships.find(function(s) { return s.id === caravan.shipId; });
+                    if (_arrShip) _arrShip.townId = _arrDestId;
+                }
 
                 const isReturnLeg = caravan.returnTrip;
                 const destTownId = isReturnLeg ? caravan.fromTownId : caravan.toTownId;
@@ -4228,12 +4314,16 @@
             var weightPenalty = 1 / (1 + caravan.totalWeight * 0.005);
             var caravanSpeed = CONFIG.CARAVAN_BASE_SPEED * weightPenalty;
             if (caravan.routeType === 'sea') {
+                // Sea speed based on the caravan's assigned or rented ship
                 if (hasSkill('expert_navigator')) caravanSpeed *= 1.20;
-                if (player.ships.length > 0) {
-                    var bestShip = player.ships[0];
-                    var shipCondEff = CONFIG.CONDITION_LEVELS[bestShip.degradeCondition || 'new'] ? CONFIG.CONDITION_LEVELS[bestShip.degradeCondition || 'new'].efficiency : 1.0;
-                    caravanSpeed *= Math.max(0.1, shipCondEff);
+                if (caravan.shipId) {
+                    var assignedShip = player.ships.find(function(s) { return s.id === caravan.shipId; });
+                    if (assignedShip) {
+                        var shipCondEff = CONFIG.CONDITION_LEVELS[assignedShip.degradeCondition || 'new'] ? CONFIG.CONDITION_LEVELS[assignedShip.degradeCondition || 'new'].efficiency : 1.0;
+                        caravanSpeed *= Math.max(0.1, shipCondEff);
+                    }
                 }
+                // Rental ships have no condition degradation — use stored speed
             } else {
                 if (hasSkill('road_knowledge')) caravanSpeed *= 1.15;
                 if (hasSkill('cartographer')) caravanSpeed *= 1.05;
@@ -4262,9 +4352,11 @@
                 var cWage = caravan.carrierWage || (CONFIG.CARAVAN_CARRIER_WAGE || 4);
                 var gWage = caravan.guardWage || (CONFIG.CARAVAN_GUARD_WAGE || 6);
                 var dailyCrew = (caravan.carriers || 1) * cWage + (caravan.guards || 0) * gWage;
+                // Add ship rental cost for sea caravans with rented ships
+                var dailyRental = (caravan.rentalDailyCost || 0);
                 if (hasSkill('thrifty_caravanner')) dailyCrew = Math.floor(dailyCrew * 0.75);
                 if (hasSkill('cheap_security')) dailyCrew = Math.floor(dailyCrew * 0.80);
-                var wageBill = dailyCrew * daysSinceWage;
+                var wageBill = (dailyCrew + dailyRental) * daysSinceWage;
                 if (player.gold >= wageBill) {
                     player.gold -= wageBill;
                     logFinance(-wageBill, 'caravan_wages', 'Caravan crew wages');
@@ -4507,6 +4599,12 @@
             if (caravan.progress >= 1.0) {
                 _processCaravanArrival(caravan);
             }
+        }
+
+        // Release ships from any inactive caravans
+        for (var _rc = 0; _rc < player.caravans.length; _rc++) {
+            var _rcc = player.caravans[_rc];
+            if (!_rcc.active && _rcc.shipId) _releaseCaravanShip(_rcc);
         }
 
         // Clean up old arrived/destroyed/blocked caravans (keep last 20, only non-active)
@@ -12825,6 +12923,14 @@
         player._guildGracePeriods = data._guildGracePeriods || {};
         player.caravans = data.caravans || [];
         player.ships = data.ships || [];
+        // Migration: add townId and new fields to legacy ships
+        for (var _si = 0; _si < player.ships.length; _si++) {
+            var _s = player.ships[_si];
+            if (!_s.townId) _s.townId = player.townId;
+            if (_s.assignedCaravanId === undefined) _s.assignedCaravanId = null;
+            if (_s.lastDockFeeDay === undefined) _s.lastDockFeeDay = Engine.getDay ? Engine.getDay() : 0;
+            if (_s.unpaidDocking === undefined) _s.unpaidDocking = false;
+        }
         player.horses = data.horses || [];
         player.reputation = data.reputation || {};
         player.notoriety = data.notoriety || 0;
@@ -13440,6 +13546,101 @@
             if (!best || (s.capacity || 0) > (best.capacity || 0)) best = s;
         }
         return best;
+    }
+
+    /** Get ships docked at a specific port town */
+    function getShipsAtPort(townId) {
+        if (!player.ships) return [];
+        var tid = townId || player.townId;
+        return player.ships.filter(function(s) {
+            return s.townId === tid && s.degradeCondition !== 'destroyed';
+        });
+    }
+
+    /** Get available (idle, not assigned) ships at a port */
+    function getAvailableShipsAtPort(townId) {
+        return getShipsAtPort(townId).filter(function(s) {
+            return !s.assignedCaravanId && !s.unpaidDocking;
+        });
+    }
+
+    /** Calculate daily rental cost for a ship type at a town */
+    function getShipRentalCost(shipTypeId, townId) {
+        var st = CONFIG.SHIP_TYPES[shipTypeId];
+        if (!st) return 0;
+        var buildCost = getShipPrice(shipTypeId, townId);
+        var dailyAmortized = buildCost / ((st.durabilityYears || 3) * 365);
+        return Math.max(2, Math.round(dailyAmortized * (CONFIG.SHIP_RENTAL_MARKUP || 1.5)));
+    }
+
+    /** Monthly docking fee tick — charges per ship based on size and town prosperity */
+    function tickShipDockingFees() {
+        var day = Engine.getDay();
+        var interval = CONFIG.DOCKING_FEE_INTERVAL || 30;
+        var grace = CONFIG.DOCKING_FEE_UNPAID_GRACE || 30;
+
+        for (var i = player.ships.length - 1; i >= 0; i--) {
+            var ship = player.ships[i];
+            if (ship.degradeCondition === 'destroyed') continue;
+            if (!ship.townId) continue;
+            if (ship.assignedCaravanId) continue; // on a voyage, no docking fee
+
+            var daysSinceFee = day - (ship.lastDockFeeDay || 0);
+            if (daysSinceFee < interval) continue;
+
+            var st = CONFIG.SHIP_TYPES[ship.type];
+            var cat = st ? (st.sizeCategory || 'small') : 'small';
+            var baseFee = (CONFIG.DOCKING_FEE_BASE || {})[cat] || 10;
+
+            // Scale by town prosperity
+            var town = Engine.findTown(ship.townId);
+            var prosperityMult = 1.0;
+            if (town) {
+                var prosperity = town.prosperity || 50;
+                prosperityMult = 0.5 + (prosperity / 100); // 0.5x-1.5x
+            }
+
+            // Scale by kingdom dock tax rate
+            var kingdomMult = 1.0;
+            if (town && town.kingdomId) {
+                var w = Engine.getWorld();
+                if (w && w.kingdoms) {
+                    var k = w.kingdoms.find(function(kk) { return kk.id === town.kingdomId; });
+                    if (k && k.dockTaxRate !== undefined) kingdomMult = k.dockTaxRate;
+                }
+            }
+
+            var fee = Math.round(baseFee * prosperityMult * kingdomMult);
+            if (fee < 1) fee = 1;
+
+            if (player.gold >= fee) {
+                player.gold -= fee;
+                player.stats.totalGoldSpent += fee;
+                logFinance(-fee, 'ship_docking', 'Docking fee: ' + (st ? st.name : ship.type) + ' at ' + (town ? town.name : ship.townId));
+                ship.lastDockFeeDay = day;
+                ship.unpaidDocking = false;
+
+                // Pay to kingdom
+                if (town && town.kingdomId) {
+                    var w2 = Engine.getWorld();
+                    if (w2 && w2.kingdoms) {
+                        var k2 = w2.kingdoms.find(function(kk) { return kk.id === town.kingdomId; });
+                        if (k2) k2.gold = (k2.gold || 0) + fee;
+                    }
+                }
+            } else {
+                // Can't afford — flag as unpaid
+                if (!ship.unpaidDocking) {
+                    ship.unpaidDocking = true;
+                    ship.unpaidSinceDay = day;
+                    Engine.logEvent('⚠️ Cannot afford docking fee for ' + (st ? st.name : ship.type) + ' at ' + (town ? town.name : ship.townId) + ' (' + fee + 'g).');
+                } else if (day - (ship.unpaidSinceDay || 0) >= grace) {
+                    // Seized by kingdom
+                    Engine.logEvent('⚓ Your ' + (st ? st.name : ship.type) + ' at ' + (town ? town.name : ship.townId) + ' was seized for unpaid docking fees!');
+                    player.ships.splice(i, 1);
+                }
+            }
+        }
     }
 
     /** Calculate dynamic ship price at current town */
@@ -17156,6 +17357,7 @@
         if (day % (CONFIG.DEGRADATION_TICK_INTERVAL || 30) === 0) {
             tickPlayerBuildingDegradation();
             tickShipDegradation();
+            tickShipDockingFees();
         }
 
         // Theft check (once per season)
@@ -32269,6 +32471,9 @@
         getShipSpeed,
         installShipAddon,
         getShipRestBonus,
+        getShipsAtPort,
+        getAvailableShipsAtPort,
+        getShipRentalCost,
         handlePirateEncounter,
         attemptBorderCrossing,
 

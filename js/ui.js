@@ -11433,7 +11433,7 @@ window.UI = (function () {
                 var needed = st.materials[matId];
                 var playerHas = (Player.inventory && Player.inventory[matId]) || 0;
                 var marketPrice = Engine.getResourcePrice ? Engine.getResourcePrice(townId, matId) : 0;
-                var marketQty = Engine.getResourceQty ? Engine.getResourceQty(townId, matId) : 0;
+                var marketQty = Engine.getResourceSupply ? Engine.getResourceSupply(townId, matId) : 0;
                 var needToBuy = Math.max(0, needed - playerHas);
                 var hasEnough = playerHas >= needed;
                 var marketHasEnough = needToBuy <= marketQty;

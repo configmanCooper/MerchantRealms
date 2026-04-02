@@ -345,6 +345,8 @@ const CONFIG = {
     CARAVAN_CARRIER_BASE_CAPACITY: 30,          // weight capacity per carrier
     CARAVAN_CARRIER_HIRE_COST: 20,              // one-time hire cost per carrier
     CARAVAN_CARRIER_WAGE: 4,                    // gold per day per carrier
+    CARAVAN_SEA_CARRIER_WAGE: 2,                // gold per day per sea crew member (half land wage)
+    CARAVAN_SEA_CARRIER_HIRE_COST: 10,          // one-time hire cost per sea crew member
     CARAVAN_GUARD_HIRE_COST: 30,                // one-time hire cost per guard
     CARAVAN_GUARD_WAGE: 6,                      // gold per day per guard
     CARAVAN_HORSE_SPEED_BONUS: 0.10,            // 10% speed per horse on caravan
@@ -386,25 +388,25 @@ const CONFIG = {
     },
     PORT_WATER_PROXIMITY: 3,
     SHIP_TYPES: {
-        rowboat:       { name: 'Rowboat',           laborCost: 20,   capacity: 10,   speed: 0.8,  passengers: 2,  restBonus: 0,   maxAddons: 0, cannons: 0, defense: 0,  durabilityYears: 2,
+        rowboat:       { name: 'Rowboat',           laborCost: 20,   capacity: 10,   speed: 0.8,  passengers: 2,  restBonus: 0,   maxAddons: 0, cannons: 0, defense: 0,  durabilityYears: 2, minCrew: 1, sizeCategory: 'small',
                          materials: { wood: 5, rope: 2 },                                                          icon: '🚣', description: 'A simple rowboat. Slow but cheap. Coastal travel only.' },
-        fishing_boat:  { name: 'Fishing Boat',      laborCost: 40,   capacity: 25,   speed: 1.0,  passengers: 3,  restBonus: 0,   maxAddons: 0, cannons: 0, defense: 1,  durabilityYears: 3, canFish: true,
+        fishing_boat:  { name: 'Fishing Boat',      laborCost: 40,   capacity: 25,   speed: 1.0,  passengers: 3,  restBonus: 0,   maxAddons: 0, cannons: 0, defense: 1,  durabilityYears: 3, minCrew: 2, sizeCategory: 'small', canFish: true,
                          materials: { wood: 10, rope: 4, iron: 1 },                                                icon: '🎣', description: 'A sturdy fishing vessel. Can catch fish while docked.' },
-        sloop:         { name: 'Sloop',             laborCost: 80,   capacity: 40,   speed: 1.8,  passengers: 5,  restBonus: 0,   maxAddons: 0, cannons: 0, defense: 2,  durabilityYears: 3,
+        sloop:         { name: 'Sloop',             laborCost: 80,   capacity: 40,   speed: 1.8,  passengers: 5,  restBonus: 0,   maxAddons: 0, cannons: 0, defense: 2,  durabilityYears: 3, minCrew: 3, sizeCategory: 'medium',
                          materials: { planks: 12, rope: 6, cloth: 4, iron: 2 },                                    icon: '⛵', description: 'Fast and nimble. Excellent for quick trade runs.' },
-        cog:           { name: 'Trading Cog',       laborCost: 120,  capacity: 80,   speed: 1.3,  passengers: 8,  restBonus: 0.3, maxAddons: 1, cannons: 0, defense: 4,  durabilityYears: 4,
+        cog:           { name: 'Trading Cog',       laborCost: 120,  capacity: 80,   speed: 1.3,  passengers: 8,  restBonus: 0.3, maxAddons: 1, cannons: 0, defense: 4,  durabilityYears: 4, minCrew: 4, sizeCategory: 'medium',
                          materials: { planks: 20, rope: 8, cloth: 6, iron: 4 },                                    icon: '🚢', description: 'The workhorse merchant vessel. Reliable and spacious.' },
-        caravel:       { name: 'Caravel',           laborCost: 200,  capacity: 120,  speed: 1.6,  passengers: 12, restBonus: 0.4, maxAddons: 2, cannons: 0, defense: 5,  durabilityYears: 4,
+        caravel:       { name: 'Caravel',           laborCost: 200,  capacity: 120,  speed: 1.6,  passengers: 12, restBonus: 0.4, maxAddons: 2, cannons: 0, defense: 5,  durabilityYears: 4, minCrew: 5, sizeCategory: 'medium',
                          materials: { planks: 30, rope: 12, cloth: 10, iron: 6 },                                  icon: '🚢', description: 'Versatile explorer vessel. Fast with good cargo space.' },
-        brigantine:    { name: 'Brigantine',        laborCost: 250,  capacity: 100,  speed: 1.7,  passengers: 15, restBonus: 0.4, maxAddons: 2, cannons: 1, defense: 8,  durabilityYears: 4,
+        brigantine:    { name: 'Brigantine',        laborCost: 250,  capacity: 100,  speed: 1.7,  passengers: 15, restBonus: 0.4, maxAddons: 2, cannons: 1, defense: 8,  durabilityYears: 4, minCrew: 5, sizeCategory: 'medium',
                          materials: { planks: 35, rope: 15, cloth: 12, iron: 8 },                                  icon: '⛵', description: 'Fast and armed. One cannon for defense. A smuggler\'s favorite.' },
-        carrack:       { name: 'Carrack',           laborCost: 400,  capacity: 200,  speed: 1.2,  passengers: 20, restBonus: 0.5, maxAddons: 3, cannons: 2, defense: 12, durabilityYears: 5,
+        carrack:       { name: 'Carrack',           laborCost: 400,  capacity: 200,  speed: 1.2,  passengers: 20, restBonus: 0.5, maxAddons: 3, cannons: 2, defense: 12, durabilityYears: 5, minCrew: 8, sizeCategory: 'large',
                          materials: { planks: 50, rope: 18, cloth: 14, iron: 10 },                                 icon: '🚢', description: 'Heavy merchant ship. Two cannons and room for crew quarters.' },
-        fluyt:         { name: 'Merchant Fluyt',    laborCost: 500,  capacity: 280,  speed: 1.1,  passengers: 25, restBonus: 0.5, maxAddons: 3, cannons: 1, defense: 8,  durabilityYears: 5,
+        fluyt:         { name: 'Merchant Fluyt',    laborCost: 500,  capacity: 280,  speed: 1.1,  passengers: 25, restBonus: 0.5, maxAddons: 3, cannons: 1, defense: 8,  durabilityYears: 5, minCrew: 6, sizeCategory: 'large',
                          materials: { planks: 60, rope: 20, cloth: 16, iron: 12 },                                 icon: '🚢', description: 'Maximum cargo efficiency. The merchant\'s dream ship.' },
-        galleon:       { name: 'Merchant Galleon',  laborCost: 800,  capacity: 350,  speed: 1.0,  passengers: 30, restBonus: 0.6, maxAddons: 4, cannons: 4, defense: 18, durabilityYears: 6,
+        galleon:       { name: 'Merchant Galleon',  laborCost: 800,  capacity: 350,  speed: 1.0,  passengers: 30, restBonus: 0.6, maxAddons: 4, cannons: 4, defense: 18, durabilityYears: 6, minCrew: 10, sizeCategory: 'large',
                          materials: { planks: 80, rope: 25, cloth: 20, iron: 15 },                                 icon: '🚢', description: 'Massive trader. Four cannons, crew quarters, workshop potential.' },
-        man_o_war:     { name: 'Man-o\'-War',      laborCost: 1500, capacity: 250,  speed: 0.9,  passengers: 40, restBonus: 0.7, maxAddons: 5, cannons: 8, defense: 30, durabilityYears: 7,
+        man_o_war:     { name: 'Man-o\'-War',      laborCost: 1500, capacity: 250,  speed: 0.9,  passengers: 40, restBonus: 0.7, maxAddons: 5, cannons: 8, defense: 30, durabilityYears: 7, minCrew: 15, sizeCategory: 'massive',
                          materials: { planks: 120, rope: 40, cloth: 30, iron: 30 },                                icon: '⚓', description: 'A floating fortress. Eight cannons, supreme defense. The ultimate vessel.' },
     },
 
@@ -418,6 +420,15 @@ const CONFIG = {
         smuggling_hold: { name: 'Hidden Compartment',  materials: { planks: 6, iron: 4 },            effect: 'smuggle',   value: 0.50, description: '-50% smuggling detection at sea.' },
         fishing_nets:   { name: 'Fishing Nets',        materials: { rope: 8, cloth: 4 },             effect: 'fishing',   value: 2,   description: 'Catch fish while traveling (2/day).' },
     },
+
+    // Ship docking fees (monthly, per ship) — scaled by town prosperity
+    DOCKING_FEE_BASE: { small: 10, medium: 30, large: 60, massive: 100 },
+    DOCKING_FEE_INTERVAL: 30,           // days between fee charges
+    DOCKING_FEE_UNPAID_GRACE: 30,       // days before unpaid ship is seized
+    MAX_SHIPS_PER_PORT: 5,              // max player ships docked at one port
+
+    // Ship rental for caravans (daily cost multiplier over amortized build cost)
+    SHIP_RENTAL_MARKUP: 1.5,            // 50% markup over base amortized daily cost
 
     // Win conditions
     WIN_GOLD: 100000,

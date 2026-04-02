@@ -11590,6 +11590,60 @@
                     }
                 }
             }
+
+            // Kingdom invests in trading ships at port towns (peacetime economic growth)
+            if (k.gold > 2000 && !k.atWar.size && rng.chance(0.02)) {
+                for (const townId of k.territories) {
+                    const town = findTown(townId);
+                    if (!town || !town.isPort) continue;
+                    const hasDock = town.buildings.some(b => b.type === 'dock');
+                    if (!hasDock) continue;
+
+                    // Count kingdom trading ships at this port
+                    if (!k.tradingShips) k.tradingShips = [];
+                    var portShips = k.tradingShips.filter(function(s) { return s.townId === townId; });
+                    if (portShips.length >= 3) continue; // max 3 trading ships per port
+
+                    // Pick ship type based on wealth: cog < caravel < fluyt
+                    var shipTypes = ['cog', 'caravel', 'fluyt'];
+                    var picked = null;
+                    for (var sti = shipTypes.length - 1; sti >= 0; sti--) {
+                        var stDef = CONFIG.SHIP_TYPES[shipTypes[sti]];
+                        if (!stDef) continue;
+                        var sCost = stDef.laborCost || 100;
+                        for (var sm in (stDef.materials || {})) {
+                            var sp = (town.market.prices[sm] || 10);
+                            sCost += (stDef.materials[sm] || 0) * sp;
+                        }
+                        if (k.gold >= sCost * 2) { // must have 2x cost to invest
+                            // Check materials available
+                            var matsOk = true;
+                            for (var sm2 in (stDef.materials || {})) {
+                                if ((town.market.supply[sm2] || 0) < (stDef.materials[sm2] || 0)) { matsOk = false; break; }
+                            }
+                            if (matsOk) { picked = { type: shipTypes[sti], def: stDef, cost: sCost }; break; }
+                        }
+                    }
+
+                    if (picked) {
+                        // Consume materials and gold
+                        for (var sm3 in (picked.def.materials || {})) {
+                            town.market.supply[sm3] = (town.market.supply[sm3] || 0) - (picked.def.materials[sm3] || 0);
+                        }
+                        k.gold -= picked.cost;
+                        k.tradingShips.push({
+                            id: uid('kship'),
+                            type: picked.type,
+                            name: picked.def.name,
+                            townId: townId,
+                            capacity: picked.def.capacity,
+                            speed: picked.def.speed || 1.0,
+                        });
+                        logEvent(k.name + ' has commissioned a ' + picked.def.name + ' at ' + town.name + ' for trade.');
+                        break; // one per tick
+                    }
+                }
+            }
         }
 
         // ---- Dynamic Law Changes ----
@@ -18155,6 +18209,73 @@
 
         // Cleanup completed caravans
         world.npcCaravans = world.npcCaravans.filter(function(c) { return c.status !== 'completed'; });
+
+        // Elite merchants consider buying ships at port towns
+        if (world.day % 30 === 0) {
+            for (var esi = 0; esi < world.eliteMerchants.length; esi++) {
+                var esm = world.eliteMerchants[esi];
+                if (!esm || !esm.alive) continue;
+                var esmTown = findTown(esm.townId);
+                if (!esmTown || !esmTown.isPort) continue;
+                if ((esm.gold || 0) < 500) continue;
+
+                // Count EM ships
+                if (!esm.ships) esm.ships = [];
+                if (esm.ships.length >= 2) continue; // max 2 ships per EM
+
+                // Only buy if they have active sea trade
+                var hasSeaTrade = false;
+                for (var eci = 0; eci < world.npcCaravans.length; eci++) {
+                    if (world.npcCaravans[eci].ownerId === esm.id && world.npcCaravans[eci].routeType === 'sea') {
+                        hasSeaTrade = true; break;
+                    }
+                }
+                // Or if there are sea routes from this port
+                if (!hasSeaTrade) {
+                    var sr = world.seaRoutes || [];
+                    for (var sri = 0; sri < sr.length; sri++) {
+                        if (sr[sri].fromTownId === esm.townId || sr[sri].toTownId === esm.townId) {
+                            hasSeaTrade = true; break;
+                        }
+                    }
+                }
+                if (!hasSeaTrade) continue;
+
+                // Pick affordable ship: sloop → cog → caravel based on wealth
+                var emShipTypes = ['sloop', 'cog', 'caravel'];
+                for (var esti = emShipTypes.length - 1; esti >= 0; esti--) {
+                    var estDef = CONFIG.SHIP_TYPES[emShipTypes[esti]];
+                    if (!estDef) continue;
+                    var estCost = estDef.laborCost || 80;
+                    for (var esm2 in (estDef.materials || {})) {
+                        var esp = (esmTown.market.prices[esm2] || 10);
+                        estCost += (estDef.materials[esm2] || 0) * esp;
+                    }
+                    if ((esm.gold || 0) >= estCost * 3 && rng.chance(0.15)) { // must have 3x cost and 15% chance
+                        var matOk = true;
+                        for (var esm3 in (estDef.materials || {})) {
+                            if ((esmTown.market.supply[esm3] || 0) < (estDef.materials[esm3] || 0)) { matOk = false; break; }
+                        }
+                        if (matOk) {
+                            for (var esm4 in (estDef.materials || {})) {
+                                esmTown.market.supply[esm4] = (esmTown.market.supply[esm4] || 0) - (estDef.materials[esm4] || 0);
+                            }
+                            esm.gold -= estCost;
+                            esm.ships.push({
+                                id: uid('emship'),
+                                type: emShipTypes[esti],
+                                name: estDef.name,
+                                townId: esm.townId,
+                                capacity: estDef.capacity,
+                                speed: estDef.speed || 1.0,
+                            });
+                            emitTrackedEMNotification(esm, 'bought a ' + estDef.name + ' at ' + esmTown.name, { townId: esm.townId });
+                            break;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     function tickKingdomCaravans() {
