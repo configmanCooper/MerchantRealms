@@ -1248,7 +1248,6 @@ window.Game = (function () {
             rank: data.rank || '',
             gold: data.gold || 0,
             savedAt: data.savedAt || 0,
-            isTutorial: data.isTutorial || false,
         };
     }
 
@@ -1340,7 +1339,6 @@ window.Game = (function () {
                     '<span class="save-slot-name">' + meta.playerName + '</span>' +
                     '</div>' +
                     '<div class="save-slot-details">' +
-                    (meta.isTutorial ? '📖 Tutorial — ' : '') +
                     'Day ' + meta.day + ' — ' + meta.season + ', Year ' + meta.year +
                     '</div>' +
                     '<div class="save-slot-meta">' +
@@ -1493,9 +1491,6 @@ window.Game = (function () {
                 engine: engineData,
                 player: playerData,
                 aiMerchants: Player.serializeAI ? Player.serializeAI() : null,
-                isTutorial: typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive(),
-                tutorialChapter: typeof Tutorial !== 'undefined' && Tutorial.getCurrentChapter ? Tutorial.getCurrentChapter() : null,
-                tutorialStep: typeof Tutorial !== 'undefined' && Tutorial.getCurrentStep ? Tutorial.getCurrentStep() : null,
             };
             const jsonStr = JSON.stringify(data);
             // Compress save data to fit more in localStorage's 5MB limit
@@ -1595,18 +1590,7 @@ window.Game = (function () {
             lastUsedSlot = slotNum;
             localStorage.setItem('merchantRealms_lastSlot', String(slotNum));
 
-            // Resume tutorial if save was made during tutorial
-            if (data.isTutorial && typeof Tutorial !== 'undefined' && Tutorial.resume) {
-                try {
-                    Tutorial.resume(data.tutorialChapter, data.tutorialStep);
-                    UI.toast('Loaded Slot ' + slotNum + ' — Tutorial resumed!', 'success');
-                } catch (e) {
-                    console.error('Tutorial resume failed:', e);
-                    UI.toast('Loaded Slot ' + slotNum + '!', 'success');
-                }
-            } else {
-                UI.toast('Loaded Slot ' + slotNum + '!', 'success');
-            }
+            UI.toast('Loaded Slot ' + slotNum + '!', 'success');
         } catch (e) {
             console.error('Load failed:', e);
             if (typeof UI !== 'undefined') UI.toast('Load failed: ' + (e.message || 'Unknown error'), 'danger');

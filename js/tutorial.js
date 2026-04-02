@@ -1804,31 +1804,12 @@ window.Tutorial = (function () {
         destroyPanel();
     }
 
-    // Resume tutorial from a loaded save (world already restored, just restore tutorial UI)
-    function resume(chapter, step) {
-        if (chapter == null || step == null) return;
-        active = true;
-        currentChapter = chapter;
-        currentStep = step;
-        snapshotState = {};
-
-        createPanel();
-        enterStep();
-
-        if (typeof UI !== 'undefined' && UI.toast) {
-            setTimeout(function () {
-                UI.toast('\uD83D\uDCD6 Tutorial resumed from save!', 'info');
-            }, 500);
-        }
-    }
-
     // ═══════════════════════════════════════════════════════════
     //  PUBLIC API
     // ═══════════════════════════════════════════════════════════
 
     return {
         start: start,
-        resume: resume,
         isActive: function () { return active; },
         nextStep: nextStep,
         prevStep: prevStep,
