@@ -2422,18 +2422,70 @@ window.Renderer = (function () {
         minimapCtx.clearRect(0, 0, mw, mh);
         minimapCtx.drawImage(_minimapCacheCanvas, 0, 0);
 
-        // Player position (blinking gold)
-        if (player && player.townId != null) {
-            let playerTown;
-            try { playerTown = Engine.getTown(player.townId); } catch (e) { /* no-op */ }
-            if (!playerTown && _frameTowns) playerTown = _frameTowns.find(t => t.id === player.townId);
+        // Player position (blinking gold dot — follows player diamond)
+        if (player) {
+            let ppx = null, ppy = null;
 
-            if (playerTown) {
+            if (player.traveling && player.travelProgress != null) {
+                // Traveling: interpolate along route (same logic as main diamond)
+                let originTown, destTown;
+                try { originTown = Engine.getTown(player.travelOrigin || player.townId); } catch (e) { /* no-op */ }
+                try { destTown = Engine.getTown(player.travelDestination); } catch (e) { /* no-op */ }
+                const route = player.travelRoute || [];
+                const progress = player.travelProgress || 0;
+
+                if (route.length >= 2) {
+                    let totalDist = 0;
+                    const segDists = [];
+                    for (let i = 1; i < route.length; i++) {
+                        const d = Math.hypot(route[i].x - route[i - 1].x, route[i].y - route[i - 1].y);
+                        segDists.push(d);
+                        totalDist += d;
+                    }
+                    if (totalDist > 0) {
+                        let targetDist = progress * totalDist;
+                        let accumulated = 0;
+                        let wx = route[0].x, wy = route[0].y;
+                        for (let i = 0; i < segDists.length; i++) {
+                            if (accumulated + segDists[i] >= targetDist) {
+                                const sp = (targetDist - accumulated) / segDists[i];
+                                wx = route[i].x + (route[i + 1].x - route[i].x) * sp;
+                                wy = route[i].y + (route[i + 1].y - route[i].y) * sp;
+                                break;
+                            }
+                            accumulated += segDists[i];
+                            wx = route[i + 1].x;
+                            wy = route[i + 1].y;
+                        }
+                        ppx = wx * scaleX;
+                        ppy = wy * scaleY;
+                    }
+                }
+                if (ppx == null && originTown && destTown) {
+                    ppx = (originTown.x + (destTown.x - originTown.x) * progress) * scaleX;
+                    ppy = (originTown.y + (destTown.y - originTown.y) * progress) * scaleY;
+                }
+            }
+
+            if (ppx == null && player.worldX && player.worldY) {
+                ppx = player.worldX * scaleX;
+                ppy = player.worldY * scaleY;
+            }
+
+            if (ppx == null && player.townId != null) {
+                let playerTown;
+                try { playerTown = Engine.getTown(player.townId); } catch (e) { /* no-op */ }
+                if (!playerTown && _frameTowns) playerTown = _frameTowns.find(t => t.id === player.townId);
+                if (playerTown) {
+                    ppx = playerTown.x * scaleX;
+                    ppy = playerTown.y * scaleY;
+                }
+            }
+
+            if (ppx != null && ppy != null) {
                 const blink = Math.sin(frameCount * 0.1) > 0;
                 if (blink) {
                     minimapCtx.fillStyle = '#e8d48b';
-                    const ppx = playerTown.x * scaleX;
-                    const ppy = playerTown.y * scaleY;
                     minimapCtx.beginPath();
                     minimapCtx.arc(ppx, ppy, 4, 0, Math.PI * 2);
                     minimapCtx.fill();
