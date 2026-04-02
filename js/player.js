@@ -23588,15 +23588,17 @@
             }
         }
 
-        // Natural daily passive recovery (only when housed and idle)
-        var house = getHouseInTown(player.townId);
-        var recovery = house ? ENERGY_CONFIG.PASSIVE_RECOVERY_HOUSED : ENERGY_CONFIG.PASSIVE_RECOVERY_HOMELESS;
-        // Reduce recovery when hungry or thirsty
-        if ((player.hunger || 0) <= 0) recovery *= 0.25;  // Starving: 75% less recovery
-        else if ((player.hunger || 0) <= 20) recovery *= 0.5;  // Very hungry: 50% less
-        if ((player.thirst || 0) <= 0) recovery *= 0.25;  // Dehydrated: 75% less
-        else if ((player.thirst || 0) <= 20) recovery *= 0.5;  // Very thirsty: 50% less
-        restoreEnergy(recovery);
+        // Natural daily passive recovery (only when housed/idle — NOT while traveling)
+        if (!player.traveling) {
+            var house = getHouseInTown(player.townId);
+            var recovery = house ? ENERGY_CONFIG.PASSIVE_RECOVERY_HOUSED : ENERGY_CONFIG.PASSIVE_RECOVERY_HOMELESS;
+            // Reduce recovery when hungry or thirsty
+            if ((player.hunger || 0) <= 0) recovery *= 0.25;  // Starving: 75% less recovery
+            else if ((player.hunger || 0) <= 20) recovery *= 0.5;  // Very hungry: 50% less
+            if ((player.thirst || 0) <= 0) recovery *= 0.25;  // Dehydrated: 75% less
+            else if ((player.thirst || 0) <= 20) recovery *= 0.5;  // Very thirsty: 50% less
+            restoreEnergy(recovery);
+        }
     }
 
     // Keep old name as alias

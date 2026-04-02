@@ -16941,17 +16941,23 @@
                 const newDist = dist[current] + edge.cost;
                 if (newDist < dist[edge.town]) {
                     dist[edge.town] = newDist;
-                    prev[edge.town] = { from: current, road: edge.road };
+                    prev[edge.town] = { from: current, road: edge.road, type: edge.type };
                     queue.push({ id: edge.town, cost: newDist });
                 }
             }
         }
 
-        // Reconstruct path
+        // Reconstruct path — ensure every segment has a `type` property
         const path = [];
         let current = toTownId;
         while (prev[current]) {
-            path.unshift(prev[current].road);
+            var seg = prev[current].road;
+            if (!seg.type && prev[current].type) {
+                // Road objects from world.roads don't have type — tag them
+                seg = Object.assign({}, seg);
+                seg.type = prev[current].type;
+            }
+            path.unshift(seg);
             current = prev[current].from;
         }
         return path.length > 0 ? path : null;
