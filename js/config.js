@@ -534,7 +534,14 @@ const CONFIG = {
     // Restricted Goods / License System
     RESTRICTED_GOODS_COUNT_MIN: 1,
     RESTRICTED_GOODS_COUNT_MAX: 3,
-    LICENSE_FEE: 500,
+    LICENSE_FEE: 500,              // Base fee for non-war goods
+    LICENSE_FEE_WAR: 1000,         // Base fee for war-related goods (swords, armor, blasting_powder, demolition_tools)
+    LICENSE_DURATION: 360,         // License expires after ~1 year (360 days)
+    LICENSE_FEE_MIN: 300,          // Minimum a king can set license fees
+    LICENSE_FEE_MAX: 3000,         // Maximum a king can set license fees
+    LICENSE_FEE_WAR_MIN: 500,      // Minimum for war goods
+    LICENSE_FEE_WAR_MAX: 5000,     // Maximum for war goods
+    WAR_GOODS: ['swords', 'armor', 'blasting_powder', 'demolition_tools'],
     LICENSE_MIN_REPUTATION: 40,
     LICENSE_MIN_RANK: 1,           // Freeman (index 1)
     LICENSE_WEAPON_MIN_RANK: 3,    // Guildmaster (index 3) for weapons

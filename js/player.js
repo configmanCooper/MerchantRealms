@@ -13775,7 +13775,23 @@
         // Pay employee wages weekly (workers quit if unpaid too long)
         const day = Engine.getDay();
 
-        // Daily satisfaction decay + quit check for all employees
+        // Expire old licenses and notify player
+        for (var _lkId in player.licenses) {
+            var _lList = player.licenses[_lkId];
+            if (!_lList || !_lList.length) continue;
+            for (var _li = _lList.length - 1; _li >= 0; _li--) {
+                var _lic = _lList[_li];
+                if (typeof _lic === 'object' && _lic.expiresDay && day > _lic.expiresDay) {
+                    var _lRes = Object.values(RESOURCE_TYPES).find(function(r) { return r.id === _lic.resourceId; });
+                    var _lName = _lRes ? _lRes.name : _lic.resourceId;
+                    var _lKingdom = Engine.findKingdom(_lkId);
+                    var _lKName = _lKingdom ? _lKingdom.name : _lkId;
+                    _lList.splice(_li, 1);
+                    Engine.logEvent('📜 Your license to trade ' + _lName + ' in ' + _lKName + ' has expired.');
+                    if (typeof UI !== 'undefined' && UI.toast) UI.toast('📜 License expired: ' + _lName + ' in ' + _lKName, 'warning', 'my_business');
+                }
+            }
+        }
         var rng = Engine.getRng();
         var satQuitters = [];
         for (var _si = 0; _si < player.employees.length; _si++) {
@@ -16639,7 +16655,20 @@
     // §12G LICENSE SYSTEM
     // ========================================================
     function hasLicense(kingdomId, resourceId) {
-        return player.licenses[kingdomId] && player.licenses[kingdomId].includes(resourceId);
+        if (!player.licenses[kingdomId]) return false;
+        var list = player.licenses[kingdomId];
+        var day = typeof Engine !== 'undefined' ? Engine.getDay() : 0;
+        for (var i = 0; i < list.length; i++) {
+            var lic = list[i];
+            // Support both old format (string) and new format (object)
+            if (typeof lic === 'string') {
+                if (lic === resourceId) return true;
+            } else if (lic.resourceId === resourceId) {
+                if (lic.expiresDay && day > lic.expiresDay) continue; // expired
+                return true;
+            }
+        }
+        return false;
     }
 
     function petitionForLicense(kingdomId, resourceId) {
@@ -16658,27 +16687,38 @@
             return { success: false, message: `Need rank ${rankName} or higher for this license.` };
         }
 
-        if (player.gold < CONFIG.LICENSE_FEE) {
-            return { success: false, message: `Need ${CONFIG.LICENSE_FEE} gold for the license fee.` };
+        // Get kingdom-specific fee (AI-adjusted)
+        var fee = (typeof Engine !== 'undefined' && Engine.getLicenseFee) ? Engine.getLicenseFee(kingdomId, resourceId) : (CONFIG.LICENSE_FEE || 500);
+
+        if (player.gold < fee) {
+            return { success: false, message: `Need ${fee} gold for the license fee.` };
         }
 
         if (hasLicense(kingdomId, resourceId)) {
-            return { success: false, message: 'You already hold this license.' };
+            return { success: false, message: 'You already hold a valid license for this good.' };
         }
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.petition_license || 3);
 
-        // Grant license
-        player.gold -= CONFIG.LICENSE_FEE;
-        kingdom.gold = (kingdom.gold || 0) + CONFIG.LICENSE_FEE;
+        // Grant license with expiry
+        var currentDay = (typeof Engine !== 'undefined') ? Engine.getDay() : 0;
+        var duration = CONFIG.LICENSE_DURATION || 360;
+        player.gold -= fee;
+        kingdom.gold = (kingdom.gold || 0) + fee;
         if (!player.licenses[kingdomId]) player.licenses[kingdomId] = [];
-        player.licenses[kingdomId].push(resourceId);
+        player.licenses[kingdomId].push({
+            resourceId: resourceId,
+            purchasedDay: currentDay,
+            expiresDay: currentDay + duration,
+            feePaid: fee
+        });
 
         const res = Object.values(RESOURCE_TYPES).find(r => r.id === resourceId);
         const resName = res ? res.name : resourceId;
-        Engine.logEvent(`${player.fullName} obtained a license to trade ${resName} in ${kingdom.name}.`);
+        var durationYears = Math.round(duration / 360);
+        Engine.logEvent(`${player.fullName} obtained a ${durationYears}-year license to trade ${resName} in ${kingdom.name} for ${fee}g.`);
         if (typeof UI !== 'undefined' && UI.toast) {
-            UI.toast(`📜 License obtained: ${resName} in ${kingdom.name}`, 'success', 'my_business');
+            UI.toast(`📜 License obtained: ${resName} in ${kingdom.name} (expires in ${duration} days)`, 'success', 'my_business');
         }
 
         // Achievement tracking
@@ -16686,7 +16726,7 @@
         const totalKingdomsLicensed = Object.keys(player.licenses).filter(k => player.licenses[k].length > 0).length;
         if (totalKingdomsLicensed >= 3) unlockAchievement('licensed_dealer');
 
-        return { success: true, message: `License for ${resName} in ${kingdom.name} obtained!` };
+        return { success: true, message: `License for ${resName} in ${kingdom.name} obtained for ${fee}g! Expires in ${duration} days.` };
     }
 
     // §12H PRODUCTION PERMIT SYSTEM — permits to produce banned goods
@@ -20473,7 +20513,18 @@
         if (npc.kingdomId !== petition.kingdomId) return { signed: false, chance: 0, message: 'That person is not a citizen of the petition\'s kingdom.' };
         if (petition.signatures.includes(npcId)) return { signed: false, chance: 0, message: npc.firstName + ' has already signed this petition.' };
 
-        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.request_signature || 3);
+        // Daily limit: can only ask NPCs to sign twice per day
+        var currentDay = (typeof Engine !== 'undefined') ? Engine.getDay() : 0;
+        if (!player._signatureRequestsToday) player._signatureRequestsToday = { day: 0, count: 0 };
+        if (player._signatureRequestsToday.day !== currentDay) {
+            player._signatureRequestsToday = { day: currentDay, count: 0 };
+        }
+        if (player._signatureRequestsToday.count >= 2) {
+            return { signed: false, chance: 0, message: 'You\'ve already asked for signatures twice today. Try again tomorrow.' };
+        }
+        player._signatureRequestsToday.count++;
+
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(1);
 
         var rel = getRelationship(npcId);
         var relLevel = rel ? (rel.level || 0) : 0;

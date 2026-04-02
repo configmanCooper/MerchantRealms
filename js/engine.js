@@ -759,6 +759,7 @@
                     freeWellWater: rng.chance(0.65), // 65% of kingdoms offer free well water
                     kingdomTransport: rng.chance(0.4), // 40% chance of public transport service
                     transportRate: rng.randInt(10, 25), // Rate charged to travelers
+                    licenseFees: {},  // goodId → custom fee; empty = use CONFIG defaults
                 },
                 flavorText: '',     // filled below
                 crimePunishments: {},  // filled below
@@ -23706,9 +23707,86 @@
                 }
             }
         }
-    }
 
-    // Compute kingdom financial state — used by all spending decisions
+        // ---- LICENSE FEE ADJUSTMENT AI ----
+        // Kings periodically review and adjust license fees for restricted goods
+        // Factors: treasury health, supply needs, personality, war status
+        if (!k.laws) k.laws = {};
+        if (!k.laws.licenseFees) k.laws.licenseFees = {};
+        var restricted = k.laws.restrictedGoods || [];
+        if (restricted.length > 0 && rng.chance(0.10)) { // ~10% chance per tick to review fees
+            var warGoods = CONFIG.WAR_GOODS || ['swords', 'armor', 'blasting_powder', 'demolition_tools'];
+            var atWar = k.atWar && k.atWar.size > 0;
+            var treasuryRatio = treasury / ((k._startingGold || 10000) || 10000);
+            // Personality modifiers
+            var greedMod = p.greed === 'corrupt' ? 1.4 : p.greed === 'greedy' ? 1.25 : p.greed === 'fair' ? 1.0 : 0.85;
+            var smartDiscount = (p.intelligence === 'brilliant' || p.intelligence === 'clever') ? 0.9 : 1.0;
+
+            for (var ri = 0; ri < restricted.length; ri++) {
+                var goodId = restricted[ri];
+                var isWarGood = warGoods.indexOf(goodId) !== -1;
+                var baseFee = isWarGood ? (CONFIG.LICENSE_FEE_WAR || 1000) : (CONFIG.LICENSE_FEE || 500);
+                var feeMin = isWarGood ? (CONFIG.LICENSE_FEE_WAR_MIN || 500) : (CONFIG.LICENSE_FEE_MIN || 300);
+                var feeMax = isWarGood ? (CONFIG.LICENSE_FEE_WAR_MAX || 5000) : (CONFIG.LICENSE_FEE_MAX || 3000);
+                var currentFee = k.laws.licenseFees[goodId] || baseFee;
+
+                var targetFee = baseFee;
+
+                // Low treasury → raise fees for revenue
+                if (treasuryRatio < 0.3) targetFee *= 1.3;
+                else if (treasuryRatio < 0.5) targetFee *= 1.15;
+                else if (treasuryRatio > 1.5) targetFee *= 0.9;
+
+                // Greed modifier
+                targetFee *= greedMod;
+
+                // Smart kings moderate fees to encourage trade
+                targetFee *= smartDiscount;
+
+                // War status affects war goods
+                if (isWarGood && atWar) {
+                    // At war: need weapons produced → lower war-good license fees to encourage supply
+                    if (p.intelligence === 'brilliant' || p.intelligence === 'clever') {
+                        targetFee *= 0.6; // smart kings slash war-good fees during war
+                    } else if (p.intelligence === 'average') {
+                        targetFee *= 0.8;
+                    }
+                    // But greedy/corrupt kings might still keep fees high
+                    if (p.greed === 'corrupt') targetFee *= 1.3;
+                } else if (isWarGood && !atWar) {
+                    // Peacetime: war goods are luxury permits, charge more
+                    if (p.militarism === 'peaceful') targetFee *= 1.2;
+                }
+
+                // Check supply need: if kingdom towns are short on this good, lower fees to encourage trade
+                var totalSupply = 0, totalDemand = 0;
+                for (var ti = 0; ti < world.towns.length; ti++) {
+                    var town = world.towns[ti];
+                    if (!k.territories.has(town.id)) continue;
+                    totalSupply += (town.market.supply[goodId] || 0);
+                    totalDemand += (town.market.demand[goodId] || 0);
+                }
+                if (totalDemand > 0 && totalSupply < totalDemand * 0.5) {
+                    // Severe shortage → lower fees to attract merchants
+                    targetFee *= 0.75;
+                } else if (totalDemand > 0 && totalSupply > totalDemand * 2) {
+                    // Oversupply → raise fees (less need for more traders)
+                    targetFee *= 1.2;
+                }
+
+                // Clamp to bounds
+                targetFee = Math.max(feeMin, Math.min(feeMax, Math.round(targetFee)));
+
+                // Gradual adjustment toward target (don't jump instantly)
+                var step = Math.max(25, Math.floor(Math.abs(targetFee - currentFee) * 0.3));
+                if (targetFee > currentFee) {
+                    k.laws.licenseFees[goodId] = Math.min(targetFee, currentFee + step);
+                } else if (targetFee < currentFee) {
+                    k.laws.licenseFees[goodId] = Math.max(targetFee, currentFee - step);
+                }
+            }
+        }
+    }
     function getKingdomFinancialState(k) {
         var soldierCount = (_tickCache.soldiersByKingdom[k.id] || []).length;
         if (!soldierCount) {
@@ -26149,6 +26227,18 @@
         getActiveEvents() {
             if (!world) return [];
             return (world.events || []).filter(e => e.active);
+        },
+
+        getLicenseFee(kingdomId, goodId) {
+            const k = findKingdom(kingdomId);
+            if (!k) return CONFIG.LICENSE_FEE || 500;
+            var warGoods = CONFIG.WAR_GOODS || ['swords', 'armor', 'blasting_powder', 'demolition_tools'];
+            var isWarGood = warGoods.indexOf(goodId) !== -1;
+            var baseFee = isWarGood ? (CONFIG.LICENSE_FEE_WAR || 1000) : (CONFIG.LICENSE_FEE || 500);
+            if (k.laws && k.laws.licenseFees && k.laws.licenseFees[goodId] != null) {
+                return k.laws.licenseFees[goodId];
+            }
+            return baseFee;
         },
 
         getDay() { return world ? world.day : 0; },

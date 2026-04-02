@@ -2690,20 +2690,38 @@ window.UI = (function () {
         var restricted = (k.laws && k.laws.restrictedGoods) || [];
         if (restricted.length === 0) { toast('No restricted goods in this kingdom.', 'info'); return; }
 
+        var currentDay = Engine.getDay ? Engine.getDay() : 0;
         var html = '<div style="max-height:400px;overflow-y:auto;">';
-        html += '<div style="font-size:0.85rem;margin-bottom:8px;">Restricted goods require a license to trade legally in <strong>' + k.name + '</strong>.</div>';
+        html += '<div style="font-size:0.85rem;margin-bottom:8px;">Restricted goods require a license to trade legally in <strong>' + k.name + '</strong>. Licenses expire after ' + (CONFIG.LICENSE_DURATION || 360) + ' days.</div>';
 
         for (var i = 0; i < restricted.length; i++) {
             var gId = restricted[i];
             var res = Object.values(RESOURCE_TYPES).find(function(r) { return r.id === gId; });
             var gName = res ? (res.icon || '') + ' ' + res.name : gId;
             var hasLic = Player.hasLicense(k.id, gId);
-            var cost = CONFIG.LICENSE_COST || 100;
+            var cost = (Engine.getLicenseFee) ? Engine.getLicenseFee(k.id, gId) : (CONFIG.LICENSE_FEE || 500);
 
             html += '<div style="border:1px solid #444;padding:6px;margin:4px 0;border-radius:4px;display:flex;align-items:center;justify-content:space-between;">';
             html += '<span>' + gName + '</span>';
             if (hasLic) {
-                html += '<span style="color:#55a868;font-size:0.8rem;">✅ Licensed</span>';
+                // Find the license to show expiry
+                var licList = (typeof Player !== 'undefined' && Player.state && Player.state.licenses) ? Player.state.licenses[k.id] : null;
+                var expiryStr = '';
+                if (licList) {
+                    for (var li = 0; li < licList.length; li++) {
+                        var lic = licList[li];
+                        if (typeof lic === 'object' && lic.resourceId === gId && lic.expiresDay) {
+                            var daysLeft = lic.expiresDay - currentDay;
+                            if (daysLeft > 0) {
+                                expiryStr = ' (' + daysLeft + ' days left)';
+                                if (daysLeft <= 30) expiryStr = ' <span style="color:#c44e52;">(' + daysLeft + ' days left!)</span>';
+                            }
+                        } else if (typeof lic === 'string' && lic === gId) {
+                            expiryStr = ' (no expiry)';
+                        }
+                    }
+                }
+                html += '<span style="color:#55a868;font-size:0.8rem;">✅ Licensed' + expiryStr + '</span>';
             } else {
                 html += '<button class="btn-medieval" onclick="UI.buyLicense(\'' + k.id + '\',\'' + gId + '\')" style="font-size:0.75rem;padding:3px 10px;color:#e8dcc8;background:rgba(180,140,50,0.2);border-color:rgba(180,140,50,0.4);">Buy License (' + cost + 'g)</button>';
             }
