@@ -2079,7 +2079,8 @@
         const bt = Engine.findBuildingType(bld.type);
         if (!bt) return { success: false, message: 'Unknown building type.' };
 
-        if (bld.workers.length >= bt.workers) {
+        var _effMax = bt.workers + ((bld.level || 1) - 1);
+        if (bld.workers.length >= _effMax) {
             return { success: false, message: 'Building is fully staffed.' };
         }
 
@@ -2847,6 +2848,11 @@
     /**
      * Upgrade a player-owned building (increases level and production).
      */
+    // Helper: storage capacity with 50% bump per level
+    function _bldStorageCap(baseStorage, level) {
+        return Math.floor((baseStorage || 0) * (1 + (((level || 1) - 1) * 0.50)));
+    }
+
     function upgradeBuilding(buildingId) {
         const bld = player.buildings.find(b => b.id === buildingId);
         if (!bld) return { success: false, message: 'Building not found.' };
@@ -2854,15 +2860,18 @@
         const bt = Engine.findBuildingType(bld.type);
         if (!bt) return { success: false, message: 'Unknown building type.' };
 
-        let upgradeCost = Math.floor(bt.cost * bld.level * 0.75);
+        // Cost = half of what building costs to build in this location
+        let upgradeCost = Math.floor(bt.cost * 0.5);
         if (hasSkill('building_upgrade_discount')) upgradeCost = Math.floor(upgradeCost * 0.75);
         if (player.gold < upgradeCost) {
-            return { success: false, message: `Upgrade costs ${upgradeCost} gold.` };
+            return { success: false, message: 'Upgrade costs ' + upgradeCost + ' gold.' };
         }
 
         player.gold -= upgradeCost;
         logFinance(-upgradeCost, 'buildings', 'Upgraded building');
         player.stats.totalGoldSpent += upgradeCost;
+
+        bld.level = (bld.level || 1) + 1;
 
         // Also update the town's matching building record
         const town = Engine.findTown(bld.townId);
@@ -2873,7 +2882,7 @@
             if (townBld) townBld.level = bld.level;
         }
 
-        return { success: true, message: `Upgraded ${bt.name} to level ${bld.level}.` };
+        return { success: true, message: 'Upgraded ' + bt.name + ' to level ' + bld.level + '.' };
     }
 
     // ========================================================
@@ -3052,7 +3061,8 @@
         if (!bt) return null;
         const town = Engine.findTown(bld.townId);
 
-        const workerFraction = Math.min(1, bld.workers.length / Math.max(bt.workers, 1));
+        var effectiveWorkerMax = bt.workers + ((bld.level || 1) - 1);
+        const workerFraction = Math.min(1, bld.workers.length / Math.max(effectiveWorkerMax, 1));
         var missingInputs = [];
         if (bt.consumes) {
             for (const [resId, qty] of Object.entries(bt.consumes)) {
@@ -3089,7 +3099,7 @@
             }
         }
 
-        const dailyOutput = bt.produces ? Math.floor(bt.rate * workerFraction * seasonMod * bld.level * prodBonus * (player.spouseProdMod || 1.0)) : 0;
+        const dailyOutput = bt.produces ? Math.floor(bt.rate * workerFraction * seasonMod * (1 + ((bld.level || 1) - 1) * 0.10) * prodBonus * (player.spouseProdMod || 1.0)) : 0;
         const stored = (player.townStorage[bld.townId] && bt.produces && player.townStorage[bld.townId][bt.produces]) || 0;
 
         var status = 'idle';
@@ -3107,7 +3117,7 @@
             town: town,
             status: status,
             workerCount: bld.workers.length,
-            workerMax: bt.workers,
+            workerMax: bt.workers + ((bld.level || 1) - 1),
             workerFraction: workerFraction,
             missingInputs: missingInputs,
             dailyOutput: dailyOutput,
@@ -3683,7 +3693,7 @@
                                 continue;
                             }
                         }
-                        var bldCap = bt ? (bt.storage || 0) * (bld.level || 1) : 0;
+                        var bldCap = bt ? _bldStorageCap(bt.storage, bld.level) : 0;
                         var bldUsed = 0;
                         if (bld.inventory) { for (var bi in bld.inventory) { var bw = (findResource(bi) || {}).weight || 1; bldUsed += (bld.inventory[bi] || 0) * bw; } }
                         bldUsed += bld.storedOutput || 0;
@@ -3729,7 +3739,7 @@
                             var _consumed = getBuildingConsumedGoods(_tBt);
                             if (!_consumed[o.good]) continue;
                         }
-                        var _tBldCap = (_tBt.storage || 0) * (_tBld.level || 1);
+                        var _tBldCap = _bldStorageCap(_tBt.storage, _tBld.level);
                         var _tBldUsed = 0;
                         if (_tBld.inventory) { for (var _tbi2 in _tBld.inventory) { var _tbw = (findResource(_tbi2) || {}).weight || 1; _tBldUsed += (_tBld.inventory[_tbi2] || 0) * _tbw; } }
                         _tBldUsed += _tBld.storedOutput || 0;
@@ -4729,7 +4739,7 @@
                     var bld = townBuildings[bi];
                     var bt = null;
                     for (var bk in BUILDING_TYPES) { if (BUILDING_TYPES[bk].id === bld.type) { bt = BUILDING_TYPES[bk]; break; } }
-                    var cap = bt ? (bt.storage || 0) * (bld.level || 1) : 0;
+                    var cap = bt ? _bldStorageCap(bt.storage, bld.level) : 0;
                     var used = 0;
                     if (bld.inventory) { for (var ik in bld.inventory) { var rw = (findResource(ik) || {}).weight || 1; used += (bld.inventory[ik] || 0) * rw; } }
                     if (used < cap) { allFull = false; break; }
@@ -5706,7 +5716,7 @@
             if (targetBld && targetBld.townId === sourceBld.townId) {
                 const targetBt = Engine.findBuildingType(targetBld.type);
                 // Check target building storage capacity
-                var tBldCap = targetBt ? (targetBt.storage || 0) * (targetBld.level || 1) : 0;
+                var tBldCap = targetBt ? _bldStorageCap(targetBt.storage, targetBld.level) : 0;
                 var tBldUsed = 0;
                 if (targetBld.inventory) {
                     for (var _tbk in targetBld.inventory) {
@@ -5900,7 +5910,8 @@
             if (!town) continue;
 
             // Worker fraction
-            const workerFraction = Math.min(1, bld.workers.length / Math.max(bt.workers, 1));
+            var effectiveWorkerCap = bt.workers + ((bld.level || 1) - 1);
+            const workerFraction = Math.min(1, bld.workers.length / Math.max(effectiveWorkerCap, 1));
             if (workerFraction <= 0) continue;
 
             // Seasonal modifier
@@ -5995,7 +6006,7 @@
                 }
             }
 
-            const rawOutput = bt.rate * workerFraction * seasonMod * bld.level * prodBonus * workerSkillMod * (player.spouseProdMod || 1.0);
+            const rawOutput = bt.rate * workerFraction * seasonMod * (1 + ((bld.level || 1) - 1) * 0.10) * prodBonus * workerSkillMod * (player.spouseProdMod || 1.0);
             const output = Math.round(rawOutput);
 
             // ═══════════════════════════════════════════════════════════
@@ -6606,13 +6617,13 @@
             if (!bt || !bt.storage) continue;
             if (bt.category === 'storage') {
                 // Warehouses always contribute
-                total += bt.storage * (b.level || 1);
+                total += _bldStorageCap(bt.storage, b.level);
             } else if (bt.produces && b.inputOnly === false) {
                 // Production buildings with inputOnly OFF contribute
-                total += bt.storage * (b.level || 1);
+                total += _bldStorageCap(bt.storage, b.level);
             } else if (!bt.produces) {
                 // Non-production buildings (e.g. guild halls) contribute
-                total += bt.storage * (b.level || 1);
+                total += _bldStorageCap(bt.storage, b.level);
             }
             // inputOnly ON (default for production buildings) = excluded
         }
@@ -7037,7 +7048,7 @@
         }
         var totalAvailable = available + townStoreAvail;
         if (totalAvailable < qty) return { success: false, message: 'Not enough. Inventory: ' + available + ', Town storage: ' + townStoreAvail + '.' };
-        var bldCap = bt ? (bt.storage || 0) * (bld.level || 1) : 0;
+        var bldCap = bt ? _bldStorageCap(bt.storage, bld.level) : 0;
         if (bldCap > 0) {
             var bldUsed = 0;
             if (bld.inventory) { for (var bk in bld.inventory) bldUsed += (bld.inventory[bk] || 0) * ((findResource(bk) || {}).weight || 1); }
@@ -12612,7 +12623,6 @@
         const town = Engine.findTown(player.townId);
         if (!town) return { success: false, message: 'Not in a town.' };
 
-        // Check for hospital: building type or city+
         const hasHospital = (town.buildings && town.buildings.some(b =>
             b.type === 'hospital' || (b.type && b.type.includes('medical'))
         )) || town.category === 'city' || town.category === 'capital_city';
@@ -12628,8 +12638,11 @@
             : INJURY_TYPES.find(t => t.id === condition.type);
         if (!typeDef) return { success: false, message: 'Unknown condition type.' };
 
-        const cost = typeDef.productCost * 5;
-        if (player.gold < cost) return { success: false, message: `Not enough gold. Hospital costs ${cost}g.` };
+        const cost = getHospitalCost(typeDef, condition.severity);
+        if (player.gold < cost) return { success: false, message: 'Not enough gold. Hospital costs ' + cost + 'g.' };
+
+        // Consume medical supplies from town market
+        _consumeMedicalSupplies(town, condition.severity);
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.visit_hospital || 5);
 
@@ -12637,8 +12650,97 @@
         player.stats.totalGoldSpent += cost;
         list.splice(conditionIndex, 1);
 
-        Engine.logEvent(`${player.fullName} was treated at the hospital for ${condition.name} (${cost}g).`);
-        return { success: true, message: `Treated ${condition.name} at the hospital for ${cost}g.` };
+        Engine.logEvent(player.fullName + ' was treated at the hospital for ' + condition.name + ' (' + cost + 'g).');
+        return { success: true, message: 'Treated ' + condition.name + ' at the hospital for ' + cost + 'g.' };
+    }
+
+    function visitClinic(conditionIndex, isIllness) {
+        const town = Engine.findTown(player.townId);
+        if (!town) return { success: false, message: 'Not in a town.' };
+
+        const hasClinic = town.buildings && town.buildings.some(function(b) {
+            return b.type === 'clinic';
+        });
+        if (!hasClinic) return { success: false, message: 'No clinic in this town.' };
+
+        const list = isIllness ? player.illnesses : player.injuries;
+        if (conditionIndex < 0 || conditionIndex >= list.length) return { success: false, message: 'Invalid condition.' };
+
+        const condition = list[conditionIndex];
+        if (condition.severity === 'severe') return { success: false, message: 'Clinics cannot treat severe conditions. Visit a hospital.' };
+
+        const typeDef = isIllness
+            ? ILLNESS_TYPES.find(t => t.id === condition.type)
+            : INJURY_TYPES.find(t => t.id === condition.type);
+        if (!typeDef) return { success: false, message: 'Unknown condition type.' };
+
+        const cost = getClinicCost(typeDef, condition.severity);
+        if (player.gold < cost) return { success: false, message: 'Not enough gold. Clinic costs ' + cost + 'g.' };
+
+        _consumeMedicalSupplies(town, condition.severity);
+
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.visit_clinic || 3);
+
+        player.gold -= cost;
+        player.stats.totalGoldSpent += cost;
+
+        if (condition.severity === 'minor') {
+            // Clinic cures minor instantly
+            list.splice(conditionIndex, 1);
+            Engine.logEvent(player.fullName + ' was treated at the clinic for ' + condition.name + ' (' + cost + 'g).');
+            return { success: true, message: 'Treated ' + condition.name + ' at the clinic for ' + cost + 'g.' };
+        } else {
+            // Moderate: clinic marks as treated, heals over time
+            condition.treated = true;
+            condition.healDay = Engine.getDay() + Math.ceil((typeDef.healDays || 7) / 2);
+            Engine.logEvent(player.fullName + ' received clinic treatment for ' + condition.name + ' (' + cost + 'g). Recovery underway.');
+            return { success: true, message: 'Clinic treated ' + condition.name + ' for ' + cost + 'g. You\'ll recover in ' + Math.ceil((typeDef.healDays || 7) / 2) + ' days.' };
+        }
+    }
+
+    function getHospitalCost(typeDef, severity) {
+        var base = (typeDef && typeDef.productCost) ? typeDef.productCost : 10;
+        if (severity === 'severe') return base * 8;
+        if (severity === 'moderate') return base * 5;
+        return base * 3;
+    }
+
+    function getClinicCost(typeDef, severity) {
+        var base = (typeDef && typeDef.productCost) ? typeDef.productCost : 10;
+        if (severity === 'moderate') return base * 3;
+        return base * 2;
+    }
+
+    function _consumeMedicalSupplies(town, severity) {
+        if (!town || !town.market || !town.market.supply) return;
+        var supply = town.market.supply;
+        // Consume based on severity
+        if (severity === 'severe') {
+            if ((supply.healing_tonic || 0) > 0) supply.healing_tonic--;
+            if ((supply.antidote || 0) > 0) supply.antidote--;
+            if ((supply.bandages || 0) >= 2) supply.bandages -= 2;
+        } else if (severity === 'moderate' || severity === 'serious') {
+            if ((supply.bandages || 0) > 0) supply.bandages--;
+            if ((supply.herbal_remedy || 0) > 0) supply.herbal_remedy--;
+        } else {
+            if ((supply.bandages || 0) > 0) supply.bandages--;
+        }
+    }
+
+    function getMedicalFacilities(townId) {
+        var town = Engine.findTown(townId || player.townId);
+        if (!town) return { hasHospital: false, hasClinic: false };
+        var hasHospital = false, hasClinic = false;
+        if (town.buildings) {
+            for (var i = 0; i < town.buildings.length; i++) {
+                var bt = town.buildings[i].type || '';
+                if (bt === 'hospital') hasHospital = true;
+                if (bt === 'clinic') hasClinic = true;
+            }
+        }
+        // Cities/capitals always have implicit hospital
+        if (town.category === 'city' || town.category === 'capital_city') hasHospital = true;
+        return { hasHospital: hasHospital, hasClinic: hasClinic };
     }
 
     function selfTreat(conditionIndex, isIllness) {
@@ -34047,10 +34149,14 @@
 
         // Injury & Illness
         visitHospital,
+        visitClinic,
         selfTreat,
         treatOther,
         getWorstConditionSeverity,
         getWorkEfficiencyModifier,
+        getHospitalCost,
+        getClinicCost,
+        getMedicalFacilities,
         getInjuryTypes() { return INJURY_TYPES; },
         getIllnessTypes() { return ILLNESS_TYPES; },
 

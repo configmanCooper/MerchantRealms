@@ -1049,6 +1049,25 @@ window.UI = (function () {
             html += '</div>';
         }
 
+        // Hospital / Clinic button (only when player is here and sick/injured)
+        if (isPlayerHere && typeof Player !== 'undefined') {
+            var _medFacilities = Player.getMedicalFacilities ? Player.getMedicalFacilities(town.id) : { hasHospital: false, hasClinic: false };
+            var _playerSick = (Player.illnesses && Player.illnesses.length > 0) || (Player.injuries && Player.injuries.length > 0);
+            if (_medFacilities.hasHospital || _medFacilities.hasClinic) {
+                var _medIcon = _medFacilities.hasHospital ? '🏥' : '⚕️';
+                var _medLabel = _medFacilities.hasHospital ? 'Visit Hospital' : 'Visit Clinic';
+                var _medStyle = _playerSick
+                    ? 'background:rgba(231,76,60,0.2);border-color:rgba(231,76,60,0.6);animation:pulse 2s infinite;'
+                    : 'background:rgba(46,204,113,0.1);border-color:rgba(46,204,113,0.3);';
+                html += '<div class="text-center mt-sm">';
+                html += '<button class="btn-medieval" onclick="UI.openHealthDialog()" style="font-size:0.8rem;padding:6px 16px;' + _medStyle + '">';
+                html += _medIcon + ' ' + _medLabel;
+                if (_playerSick) html += ' <span style="color:#e74c3c;font-size:0.7rem;">(You need treatment!)</span>';
+                html += '</button>';
+                html += '</div>';
+            }
+        }
+
         // Land & Housing section (only when player is in town)
         if (isPlayerHere && typeof Player !== 'undefined') {
             var playerTownCat = town.category || 'village';
@@ -3654,10 +3673,11 @@ window.UI = (function () {
             html += `<div style="font-size:0.78rem;">🔨 Produces: ${info.dailyOutput} ${prodName}/day</div>`;
 
             // Output rate breakdown
-            html += `<div style="font-size:0.72rem;color:#aaa;margin-top:4px;">Output: ${bt.rate} base × ${info.workerFraction.toFixed(2)} workers × ${info.seasonMod} season × ${bld.level} level × ${info.prodBonus.toFixed(2)} bonus = ${info.dailyOutput}</div>`;
+            var _lvlMod = (1 + ((bld.level || 1) - 1) * 0.10).toFixed(2);
+            html += `<div style="font-size:0.72rem;color:#aaa;margin-top:4px;">Output: ${bt.rate} base × ${info.workerFraction.toFixed(2)} workers × ${info.seasonMod} season × ${_lvlMod} level × ${info.prodBonus.toFixed(2)} bonus = ${info.dailyOutput}</div>`;
 
             // Current storage — show capacity from building type
-            var bldStorageCap = (bt.storage || 0) * (bld.level || 1);
+            var bldStorageCap = Math.floor((bt.storage || 0) * (1 + (((bld.level || 1) - 1) * 0.50)));
             if (bldStorageCap > 0) {
                 var storagePct = Math.min(100, Math.round((info.stored / bldStorageCap) * 100));
                 var storageColor = storagePct >= 90 ? '#e74c3c' : storagePct >= 60 ? '#e67e22' : '#55a868';
@@ -3934,16 +3954,21 @@ window.UI = (function () {
 
         // UPGRADE section
         if (bt.cost) {
-            let upgradeCost = Math.floor(bt.cost * bld.level * 0.75);
+            let upgradeCost = Math.floor(bt.cost * 0.5);
             if (Player.hasSkill && Player.hasSkill('building_upgrade_discount')) upgradeCost = Math.floor(upgradeCost * 0.75);
             const nextLevel = bld.level + 1;
+            var curWorkerMax = bt.workers + ((bld.level || 1) - 1);
+            var nextWorkerMax = bt.workers + (nextLevel - 1);
+            var curStorageCap = Math.floor((bt.storage || 0) * (1 + ((bld.level - 1) * 0.50)));
+            var nextStorageCap = Math.floor((bt.storage || 0) * (1 + ((nextLevel - 1) * 0.50)));
 
             html += `<div style="padding:8px;border:1px solid var(--border);border-radius:4px;margin-bottom:8px;">
                 <div style="font-weight:bold;font-size:0.8rem;margin-bottom:6px;">⬆️ UPGRADE</div>
                 <div style="font-size:0.78rem;">Level ${bld.level} → ${nextLevel} (Cost: ${upgradeCost}g)</div>
-                <div style="font-size:0.72rem;color:#aaa;">+50% production output per level</div>`;
+                <div style="font-size:0.72rem;color:#aaa;">+10% production output per level</div>
+                <div style="font-size:0.72rem;color:#aaa;">Workers: ${curWorkerMax} → ${nextWorkerMax} slots</div>`;
             if (bt.storage) {
-                html += `<div style="font-size:0.72rem;color:#aaa;">Storage: ${bt.storage * bld.level} → ${bt.storage * nextLevel} units</div>`;
+                html += `<div style="font-size:0.72rem;color:#aaa;">Storage: ${curStorageCap} → ${nextStorageCap} units</div>`;
             }
             html += `<button class="btn-trade buy" style="font-size:0.7rem;margin-top:4px;" onclick="UI.upgradeBuildingUI('${bld.id}')">⬆️ Upgrade (${upgradeCost}g)</button>
             </div>`;
@@ -4009,7 +4034,7 @@ window.UI = (function () {
 
         // ── BUILDING STORAGE (split: output + input/general) ──
         if (bld.townId === Player.townId) {
-            var _bldCap = (bt.storage || 0) * (bld.level || 1);
+            var _bldCap = Math.floor((bt.storage || 0) * (1 + (((bld.level || 1) - 1) * 0.50)));
             var _bldUsed = 0;
             if (bld.inventory) { for (var _bk in bld.inventory) { var _br = findResource(_bk); _bldUsed += (bld.inventory[_bk] || 0) * (_br ? (_br.weight || 1) : 1); } }
             // Count output stored in townStorage for this building's produced goods
@@ -4205,7 +4230,7 @@ window.UI = (function () {
         var bt = null;
         for (var key in CONFIG.BUILDING_TYPES) { if (CONFIG.BUILDING_TYPES[key].id === bld.type) { bt = CONFIG.BUILDING_TYPES[key]; break; } }
         var bName = bt ? bt.name : bld.type;
-        var bldCap = (bt ? (bt.storage || 0) : 0) * (bld.level || 1);
+        var bldCap = Math.floor((bt ? (bt.storage || 0) : 0) * (1 + (((bld.level || 1) - 1) * 0.50)));
         var bldUsed = 0;
         if (bld.inventory) { for (var bk in bld.inventory) { var br = findResource(bk); bldUsed += (bld.inventory[bk] || 0) * (br ? (br.weight || 1) : 1); } }
         var prodStored = bld.storedOutput || 0;
@@ -6224,8 +6249,9 @@ window.UI = (function () {
             var bldTown = Engine.findTown(building.townId);
             var bldTownName = bldTown ? bldTown.name : '?';
             var sameAsTown = personTownId === building.townId;
-            var isFull = bt && building.workers && building.workers.length >= bt.workers;
-            var staffText = bt ? (building.workers ? building.workers.length : 0) + '/' + bt.workers : '';
+            var _effWorkerMax = bt ? bt.workers + ((building.level || 1) - 1) : 0;
+            var isFull = bt && building.workers && building.workers.length >= _effWorkerMax;
+            var staffText = bt ? (building.workers ? building.workers.length : 0) + '/' + _effWorkerMax : '';
 
             html += `<div class="worker-row" style="flex-direction:column;align-items:stretch;${sameAsTown ? '' : 'border-left:2px solid rgba(200,150,50,0.4);padding-left:8px;'}">
                 <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -15352,18 +15378,23 @@ window.UI = (function () {
             return;
         }
 
-        // Check hospital availability
-        let hasHospital = false;
-        try {
-            const town = Engine.findTown(Player.townId);
-            if (town) {
-                hasHospital = (town.buildings && town.buildings.some(function(b) {
-                    return b.type === 'hospital' || (b.type && b.type.indexOf('medical') !== -1);
-                })) || town.category === 'city' || town.category === 'capital_city';
-            }
-        } catch (e) { /* no-op */ }
+        // Check medical facility availability
+        var medFacilities = Player.getMedicalFacilities ? Player.getMedicalFacilities() : { hasHospital: false, hasClinic: false };
+        var hasHospital = medFacilities.hasHospital;
+        var hasClinic = medFacilities.hasClinic;
 
         const hasDoctor = Player.hasSkill && Player.hasSkill('doctor');
+        const hasFieldMedic = Player.hasSkill && Player.hasSkill('field_medic');
+        const hasFirstAid = Player.hasSkill && Player.hasSkill('first_aid');
+        var canSelfTreat = hasDoctor || hasFieldMedic || hasFirstAid;
+
+        // Facility info
+        if (hasHospital || hasClinic) {
+            html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:8px;">';
+            if (hasHospital) html += '🏥 Hospital available — treats all conditions (instant cure). ';
+            if (hasClinic) html += '⚕️ Clinic available — treats minor (instant) and moderate (faster recovery). ';
+            html += '</div>';
+        }
 
         // Injuries
         if (injuries.length > 0) {
@@ -15372,17 +15403,21 @@ window.UI = (function () {
                 var inj = injuries[i];
                 var injTypes = Player.getInjuryTypes ? Player.getInjuryTypes() : [];
                 var typeDef = injTypes.find(function(t) { return t.id === inj.type; });
-                var hospCost = typeDef ? typeDef.productCost * 5 : '?';
+                var hospCost = typeDef ? Player.getHospitalCost(typeDef, inj.severity) : '?';
+                var clinicCost = typeDef ? Player.getClinicCost(typeDef, inj.severity) : '?';
                 var sevColor = inj.severity === 'severe' ? 'var(--danger)' : inj.severity === 'moderate' ? '#e67e22' : '#2ecc71';
 
                 html += '<div style="border:1px solid var(--border);padding:6px;margin-bottom:6px;border-radius:4px;">';
                 html += '<div class="detail-row"><span class="label">' + inj.name + '</span>';
                 html += '<span class="value" style="color:' + sevColor + ';">' + inj.severity + (inj.treated ? ' ✓ treating' : '') + '</span></div>';
-                html += '<div style="display:flex;gap:4px;margin-top:4px;">';
+                html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">';
                 if (hasHospital) {
                     html += '<button class="btn-medieval" onclick="UI.treatAtHospital(' + i + ',false)" style="font-size:0.7rem;padding:3px 8px;">🏥 Hospital (' + hospCost + 'g)</button>';
                 }
-                if (hasDoctor && !inj.treated && typeDef) {
+                if (hasClinic && inj.severity !== 'severe') {
+                    html += '<button class="btn-medieval" onclick="UI.treatAtClinic(' + i + ',false)" style="font-size:0.7rem;padding:3px 8px;">⚕️ Clinic (' + clinicCost + 'g)</button>';
+                }
+                if (canSelfTreat && !inj.treated && typeDef) {
                     html += '<button class="btn-medieval" onclick="UI.selfTreatCondition(' + i + ',false)" style="font-size:0.7rem;padding:3px 8px;">💊 Self-Treat (needs ' + typeDef.product + ')</button>';
                 }
                 html += '</div></div>';
@@ -15396,28 +15431,34 @@ window.UI = (function () {
                 var ill = illnesses[i];
                 var illTypes = Player.getIllnessTypes ? Player.getIllnessTypes() : [];
                 var illTypeDef = illTypes.find(function(t) { return t.id === ill.type; });
-                var illHospCost = illTypeDef ? illTypeDef.productCost * 5 : '?';
+                var illHospCost = illTypeDef ? Player.getHospitalCost(illTypeDef, ill.severity) : '?';
+                var illClinicCost = illTypeDef ? Player.getClinicCost(illTypeDef, ill.severity) : '?';
                 var illSevColor = ill.severity === 'severe' ? 'var(--danger)' : ill.severity === 'moderate' ? '#e67e22' : '#2ecc71';
 
                 html += '<div style="border:1px solid var(--border);padding:6px;margin-bottom:6px;border-radius:4px;">';
                 html += '<div class="detail-row"><span class="label">' + ill.name + '</span>';
                 html += '<span class="value" style="color:' + illSevColor + ';">' + ill.severity + (ill.treated ? ' ✓ treating' : '') + '</span></div>';
-                html += '<div style="display:flex;gap:4px;margin-top:4px;">';
+                html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">';
                 if (hasHospital) {
                     html += '<button class="btn-medieval" onclick="UI.treatAtHospital(' + i + ',true)" style="font-size:0.7rem;padding:3px 8px;">🏥 Hospital (' + illHospCost + 'g)</button>';
                 }
-                if (hasDoctor && !ill.treated && illTypeDef) {
+                if (hasClinic && ill.severity !== 'severe') {
+                    html += '<button class="btn-medieval" onclick="UI.treatAtClinic(' + i + ',true)" style="font-size:0.7rem;padding:3px 8px;">⚕️ Clinic (' + illClinicCost + 'g)</button>';
+                }
+                if (canSelfTreat && !ill.treated && illTypeDef) {
                     html += '<button class="btn-medieval" onclick="UI.selfTreatCondition(' + i + ',true)" style="font-size:0.7rem;padding:3px 8px;">💊 Self-Treat (needs ' + illTypeDef.product + ')</button>';
                 }
                 html += '</div></div>';
             }
         }
 
-        if (!hasHospital) {
-            html += '<p class="text-dim" style="font-size:0.72rem;">No hospital here. Visit a city or capital for hospital treatment.</p>';
+        if (!hasHospital && !hasClinic) {
+            html += '<p class="text-dim" style="font-size:0.72rem;">No hospital or clinic here. Visit a town with medical facilities for treatment.</p>';
+        } else if (!hasHospital && hasClinic) {
+            html += '<p class="text-dim" style="font-size:0.72rem;">Only a clinic here — severe conditions require a hospital (cities/capitals).</p>';
         }
-        if (!hasDoctor) {
-            html += '<p class="text-dim" style="font-size:0.72rem;">Learn the Doctor skill to self-treat with medical supplies.</p>';
+        if (!canSelfTreat) {
+            html += '<p class="text-dim" style="font-size:0.72rem;">Learn First Aid, Field Medic, or Doctor skill to self-treat with medical supplies.</p>';
         }
 
         openModal('🏥 Health', html);
@@ -15426,6 +15467,17 @@ window.UI = (function () {
     function treatAtHospital(index, isIllness) {
         if (typeof Player === 'undefined' || !Player.visitHospital) return;
         var result = Player.visitHospital(index, isIllness);
+        if (result.success) {
+            toast(result.message, 'success');
+            openHealthDialog(); // refresh
+        } else {
+            toast(result.message, 'warning');
+        }
+    }
+
+    function treatAtClinic(index, isIllness) {
+        if (typeof Player === 'undefined' || !Player.visitClinic) return;
+        var result = Player.visitClinic(index, isIllness);
         if (result.success) {
             toast(result.message, 'success');
             openHealthDialog(); // refresh
@@ -20174,6 +20226,7 @@ window.UI = (function () {
         // Health / Medical
         openHealthDialog,
         treatAtHospital,
+        treatAtClinic,
         selfTreatCondition,
         // Teach Child
         openTeachChildDialog,

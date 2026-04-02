@@ -15664,7 +15664,6 @@
 
         // Asymptomatic carriers: no health drain, but still contagious
         if (person.asymptomatic) {
-            // Asymptomatics recover after the illness duration with no harm
             if (daysSick >= (illDef.daysToRecover || 14)) {
                 person.sick = false;
                 person.illness = null;
@@ -15674,10 +15673,42 @@
             return;
         }
 
-        // Treatment: hospitals/clinics boost recovery and reduce drain
+        // Treatment: hospitals/clinics actively treat NPCs (charge gold, consume supplies)
         var treated = false;
-        if (hasHospital) { healthDrain *= 0.3; treated = true; }
-        else if (hasClinic) { healthDrain *= 0.6; treated = true; }
+        if ((hasHospital || hasClinic) && !person._illnessTreatPaid) {
+            var sev = person.illnessSeverity || 'minor';
+            // Clinics can't treat severe
+            if (sev === 'severe' && !hasHospital) {
+                // no treatment available
+            } else {
+                var treatCost = hasHospital
+                    ? (sev === 'severe' ? 20 : sev === 'moderate' ? 12 : 6)
+                    : (sev === 'moderate' ? 8 : 4);
+                if (person.gold >= treatCost) {
+                    person.gold -= treatCost;
+                    person._illnessTreatPaid = true;
+                    treated = true;
+                    // Consume supplies from town market
+                    var town = findTown(person.townId);
+                    if (town && town.market && town.market.supply) {
+                        var supply = town.market.supply;
+                        if ((supply.bandages || 0) > 0) supply.bandages--;
+                        if (sev !== 'minor' && (supply.herbal_remedy || 0) > 0) supply.herbal_remedy--;
+                    }
+                    // Pay to town economy (kingdom treasury gets a cut)
+                    if (town) {
+                        var kingdom = findKingdom(town.kingdomId);
+                        if (kingdom) kingdom.gold = (kingdom.gold || 0) + Math.floor(treatCost * 0.3);
+                    }
+                }
+            }
+        }
+        if (person._illnessTreatPaid) treated = true;
+
+        if (treated) {
+            if (hasHospital) healthDrain *= 0.3;
+            else if (hasClinic) healthDrain *= 0.6;
+        }
         // NPC medical self-treatment
         if (person.medicalKnowledge && person.medicalKnowledge !== 'none') {
             healthDrain *= 0.7;
@@ -15691,11 +15722,11 @@
         // Recovery check
         var recoveryDays = illDef.daysToRecover || 14;
         if (treated) recoveryDays = Math.floor(recoveryDays * 0.6);
-        // Natural recovery with randomness
         if (daysSick >= recoveryDays && rng.chance(0.3 * tickScale)) {
             person.sick = false;
             person.illness = null;
             person.asymptomatic = false;
+            person._illnessTreatPaid = false;
             person.health = Math.min(100, person.health + 10);
             return;
         }
@@ -19617,7 +19648,7 @@
             if (!bRef || !bRef.type) continue;
             var bt = findBuildingType(bRef.type);
             if (bt && bt.storage) {
-                capacity += bt.storage * (bRef.level || 1);
+                capacity += Math.floor(bt.storage * (1 + (((bRef.level || 1) - 1) * 0.50)));
             }
         }
         return capacity;
@@ -20435,7 +20466,7 @@
                 var ugAge = world.day - (ugBld.builtDay || 0);
                 var ugProfitable = (ugTracker.revenue || 0) > 0 || ugAge > 60;
                 if (!ugProfitable) continue;
-                var upgradeCost = Math.floor(ugBt.cost * ugLevel * 0.75);
+                var upgradeCost = Math.floor(ugBt.cost * 0.5);
                 if (em.gold < upgradeCost) continue;
                 var ugMaxR = 0;
                 for (var ugRkId in em.socialRank) { if ((em.socialRank[ugRkId] || 0) > ugMaxR) ugMaxR = em.socialRank[ugRkId]; }
