@@ -1861,7 +1861,7 @@
         if (!bld) return { success: false, message: 'Building not found.' };
         if (bld.ownerId !== 'player') return { success: false, message: 'You can only demolish buildings you own.' };
 
-        var conversionCost = 500;
+        var conversionCost = Math.floor(getLandCost(tid) / 2);
         var blastingPowderCost = 0;
         var blastingPowderSource = 'inventory';
 
