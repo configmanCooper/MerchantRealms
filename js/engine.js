@@ -18392,6 +18392,33 @@
             // Skip if jailed
             if (em.jailedUntilDay && em.jailedUntilDay > day) continue;
 
+            // ---- SYNC em.buildings with town.buildings (catch untracked purchases/transfers) ----
+            if (!em.buildings) em.buildings = [];
+            if (day % 30 === 0) {
+                // Monthly reconciliation: scan all towns for buildings owned by this EM
+                for (var sti = 0; sti < world.towns.length; sti++) {
+                    var syncTown = world.towns[sti];
+                    if (!syncTown.buildings) continue;
+                    for (var sbi = 0; sbi < syncTown.buildings.length; sbi++) {
+                        if (syncTown.buildings[sbi].ownerId === em.id) {
+                            var syncType = syncTown.buildings[sbi].type;
+                            var syncTracked = em.buildings.some(function(bb) { return bb.townId === syncTown.id && bb.type === syncType; });
+                            if (!syncTracked) {
+                                em.buildings.push({ townId: syncTown.id, type: syncType });
+                            }
+                        }
+                    }
+                }
+                // Prune stale entries (building no longer exists or no longer owned)
+                for (var pbi = em.buildings.length - 1; pbi >= 0; pbi--) {
+                    var pRef = em.buildings[pbi];
+                    var pTown = findTown(pRef.townId);
+                    if (!pTown) { em.buildings.splice(pbi, 1); continue; }
+                    var stillOwns = pTown.buildings.some(function(tb) { return tb.ownerId === em.id && tb.type === pRef.type; });
+                    if (!stillOwns) em.buildings.splice(pbi, 1);
+                }
+            }
+
             // ---- 0. PASSIVE BUILDING REVENUE (every tick) ----
             // EMs earn passive income from their buildings based on town prosperity
             var emBuildings = em.buildings || [];
@@ -25354,13 +25381,30 @@
             var buyer = null;
             var buyerType = '';
 
-            // Elite merchants
+            // Elite merchants — filter to those who can actually use the building
             var localEMs = world.people.filter(function(p) {
-                return p.alive && p.isEliteMerchant && p.townId === bld.townId && (p.gold || 0) >= bld.salePrice;
+                if (!p.alive || !p.isEliteMerchant || p.townId !== bld.townId) return false;
+                if ((p.gold || 0) < bld.salePrice) return false;
+                // Respect building limit from social rank
+                var maxRank = 0;
+                if (p.socialRank) { for (var kId in p.socialRank) { if ((p.socialRank[kId] || 0) > maxRank) maxRank = p.socialRank[kId]; } }
+                var rankDef = CONFIG.SOCIAL_RANKS[maxRank] || CONFIG.SOCIAL_RANKS[0];
+                var maxBuildings = rankDef.maxBuildings || 2;
+                if ((p.buildings || []).length >= maxBuildings) return false;
+                return true;
             });
-            if (localEMs.length > 0 && rng.chance(Math.min(0.9, 0.4 * dealBonus))) {
-                buyer = rng.pick(localEMs);
-                buyerType = 'em';
+            // Prefer EMs whose strategy matches the building type
+            if (localEMs.length > 0) {
+                var strategyMatches = localEMs.filter(function(p) {
+                    var strat = p.tradeStrategy || 'diversified';
+                    var preferred = STRATEGY_BUILDINGS[strat] || STRATEGY_BUILDINGS.diversified || [];
+                    return preferred.indexOf(bld.type) >= 0;
+                });
+                var emPool = strategyMatches.length > 0 ? strategyMatches : localEMs;
+                if (rng.chance(Math.min(0.9, 0.4 * dealBonus))) {
+                    buyer = rng.pick(emPool);
+                    buyerType = 'em';
+                }
             }
 
             // Kingdom
@@ -25401,6 +25445,16 @@
             if (townBld) {
                 townBld.ownerId = buyer.id;
                 townBld.forSale = false;
+            }
+
+            // Add to buyer's building tracking list so AI management works
+            if (buyerType === 'em' || buyerType === 'npc') {
+                if (!buyer.buildings) buyer.buildings = [];
+                // Avoid duplicates
+                var alreadyTracked = buyer.buildings.some(function(bb) { return bb.townId === bld.townId && bb.type === bld.type; });
+                if (!alreadyTracked) {
+                    buyer.buildings.push({ townId: bld.townId, type: bld.type });
+                }
             }
 
             // Remove from player buildings
