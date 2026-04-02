@@ -1134,7 +1134,7 @@ window.UI = (function () {
 
             // ⚒️ Actions section (toll roads, petitions, orders, forage)
             if (isPlayerHere && typeof Player !== 'undefined') {
-                var _actBtnStyle = 'font-size:0.8rem;padding:6px 14px;color:#e8dcc8;';
+                var _actBtnStyle = 'font-size:0.8rem;padding:6px 14px;color:#f5ead0;text-shadow:0 1px 2px rgba(0,0,0,0.5);';
                 html += `<div class="detail-section"><h3>⚒️ Actions</h3>`;
                 html += `<div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;">`;
                 html += `<button class="btn-medieval" onclick="UI.showBuildRouteSelector('toll_road')" style="${_actBtnStyle}background:rgba(180,140,50,0.15);border-color:rgba(180,140,50,0.4);">
@@ -10667,6 +10667,7 @@ window.UI = (function () {
                 <div class="kc-buttons" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">
                     <button class="kc-btn" data-action="towns" data-kid="${k.id}" title="View Towns">🏘️ Towns</button>
                     <button class="kc-btn" data-action="laws" data-kid="${k.id}" title="View Laws">📜 Laws</button>
+                    <button class="kc-btn" data-action="licenses" data-kid="${k.id}" title="Trade Licenses">🪪 Licenses</button>
                     <button class="kc-btn" data-action="trade" data-kid="${k.id}" title="Trade Routes">🏛️ Trade</button>
                     ${isHome ? '<button class="kc-btn" data-action="orders" data-kid="' + k.id + '" title="Kingdom Orders">📋 Orders</button>' : ''}
                     <button class="kc-btn" data-action="commissions" data-kid="${k.id}" title="Royal Commissions">📦 Commissions</button>
@@ -10756,6 +10757,7 @@ window.UI = (function () {
                 var kid = this.getAttribute('data-kid');
                 if (action === 'towns') showKingdomTowns(kid);
                 else if (action === 'laws') openKingdomLawsPanel(kid);
+                else if (action === 'licenses') openKingdomLicenses(kid);
                 else if (action === 'trade') showKingdomTradePanel(kid);
                 else if (action === 'orders') showKingdomOrdersPanel(kid);
                 else if (action === 'commissions') openRoyalCommissionsPanel(kid);
