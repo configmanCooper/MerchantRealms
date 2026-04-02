@@ -18451,7 +18451,7 @@
         jobs.push({
             name: '⚔️ Temporary soldier duty', hours: 12,
             pay: Math.round((hasSkill('combat_trained') ? 8 : 6) * payScale), ticks: 30, type: 'kingdom',
-            xpReward: 3, repGain: 2, description: '🩹 Medium injury risk. Serve the garrison for a day.' + skillProgressNote('temp_soldier'),
+            xpReward: 3, repGain: 1, description: '🩹 Medium injury risk. Serve the garrison for a day.' + skillProgressNote('temp_soldier'),
             injuryRisk: 0.008, riskLevel: 'medium', jobTypeKey: 'temp_soldier'
         });
         // Tax collector: requires citizenship + (tax increase in this kingdom within 30 days OR spring season)
@@ -18463,7 +18463,7 @@
                 jobs.push({
                     name: '📜 Tax collector', hours: 8,
                     pay: Math.round(12 * payScale), ticks: 20, type: 'kingdom',
-                    xpReward: 4, repGain: 3,
+                    xpReward: 4, repGain: 2,
                     description: _recentTaxIncrease
                         ? 'Collect taxes — the crown recently raised rates'
                         : 'Collect taxes — spring tax season'
@@ -18473,7 +18473,7 @@
         jobs.push({
             name: '🛤️ Road repair crew', hours: 8,
             pay: Math.round(7 * payScale), ticks: 20, type: 'kingdom',
-            xpReward: 2, repGain: 2, description: 'Improve road quality in the area — backbreaking work'
+            xpReward: 2, repGain: 1, description: 'Improve road quality in the area — backbreaking work'
         });
 
         // Capital-only jobs
@@ -18491,14 +18491,14 @@
                     jobs.push({
                         name: '🏰 Castle servant', hours: 16,
                         pay: Math.round(20 * payScale), ticks: 40, type: 'castle',
-                        xpReward: 5, repGain: 5, description: 'Serve in the royal castle'
+                        xpReward: 5, repGain: 2, description: 'Serve in the royal castle'
                     });
                 }
                 if (isCitizen && hasCastleStanding && hasSkill('literacy')) {
                     jobs.push({
                         name: '📚 Royal scribe', hours: 12,
                         pay: Math.round(25 * payScale), ticks: 30, type: 'castle',
-                        xpReward: 8, repGain: 3, description: 'Record kingdom affairs — learn political secrets',
+                        xpReward: 8, repGain: 2, description: 'Record kingdom affairs — learn political secrets',
                         jobTypeKey: 'royal_scribe'
                     });
                 }
@@ -18506,7 +18506,7 @@
                     jobs.push({
                         name: '📮 Royal Messenger', hours: 16,
                         pay: Math.round(24 * payScale), ticks: 40, type: 'castle',
-                        xpReward: 10, repGain: 4, description: '🗺️ Auto-travel — Deliver royal letters to towns across the kingdom.',
+                        xpReward: 10, repGain: 2, description: '🗺️ Auto-travel — Deliver royal letters to towns across the kingdom.',
                         jobTypeKey: 'royal_messenger', autoTravel: true, payScale: payScale
                     });
                 }
@@ -18514,7 +18514,7 @@
                     jobs.push({
                         name: '🤵 Diplomat\'s Aide', hours: 16,
                         pay: Math.round(30 * payScale), ticks: 40, type: 'castle',
-                        xpReward: 12, repGain: 5, description: 'Assist in diplomatic negotiations'
+                        xpReward: 12, repGain: 3, description: 'Assist in diplomatic negotiations'
                     });
                 }
                 // Court Entertainer — instrument system affects pay
@@ -18531,7 +18531,7 @@
                 jobs.push({
                     name: '🎭 Court Entertainer', hours: 8,
                     pay: _courtBase, ticks: 20, type: 'castle',
-                    xpReward: 5, repGain: 2, description: _courtDesc,
+                    xpReward: 5, repGain: 1, description: _courtDesc,
                     jobTypeKey: 'court_entertainer',
                     isEntertainment: true
                 });
@@ -18562,7 +18562,7 @@
                 jobs.push({
                     name: '🛡️ Town Guard', hours: 16,
                     pay: Math.round(10 * payScale), ticks: 40, type: 'kingdom',
-                    xpReward: 4, repGain: 2, description: '🩹 Low injury risk. Guard the town gates.',
+                    xpReward: 4, repGain: 1, description: '🩹 Low injury risk. Guard the town gates.',
                     injuryRisk: 0.002, riskLevel: 'low', jobTypeKey: 'town_guard'
                 });
             }
@@ -18570,13 +18570,13 @@
                 jobs.push({
                     name: '🏰 Castle Guard', hours: 16,
                     pay: Math.round(18 * payScale), ticks: 40, type: 'castle',
-                    xpReward: 6, repGain: 3, description: '🩹 Low injury risk. Protect the castle.',
+                    xpReward: 6, repGain: 2, description: '🩹 Low injury risk. Protect the castle.',
                     injuryRisk: 0.003, riskLevel: 'low', jobTypeKey: 'castle_guard'
                 });
                 jobs.push({
                     name: '🏗️ Castle Work', hours: 12,
                     pay: Math.round(14 * payScale), ticks: 30, type: 'castle',
-                    xpReward: 5, repGain: 2, description: 'Manage castle operations. No risk.'
+                    xpReward: 5, repGain: 1, description: 'Manage castle operations. No risk.'
                 });
             }
         }
@@ -18587,8 +18587,8 @@
             jobs.push({
                 name: '🏥 Plague Nurse', hours: 16,
                 pay: Math.round(nursePay * payScale), ticks: 40, type: 'kingdom',
-                xpReward: 8, repGain: 3, dangerous: true,
-                description: '⚠️ DANGEROUS — Plague in town — Nurses needed! 🤒 5% illness risk.' + (hasSkill('doctor') ? ' (Doctor: 2x pay!)' : '') + skillProgressNote('plague_nurse'),
+                xpReward: 8, repGain: 2, dangerous: true,
+                description: '⚠️ DANGEROUS — Plague in town — Nurses needed! 🤒 5% illness risk.'+ (hasSkill('doctor') ? ' (Doctor: 2x pay!)' : '') + skillProgressNote('plague_nurse'),
                 illnessRisk: 0.05, riskLevel: 'high', jobTypeKey: 'plague_nurse', contextReason: '⚠️ Plague in town'
             });
             jobs.push({
@@ -18602,7 +18602,7 @@
                 jobs.push({
                     name: '🚧 Quarantine Enforcer', hours: 12,
                     pay: Math.round(20 * payScale), ticks: 30, type: 'kingdom',
-                    xpReward: 5, repGain: 3,
+                    xpReward: 5, repGain: 2,
                     description: '⚠️ Plague in town. 🤒 2% illness risk. Enforce quarantine.',
                     illnessRisk: 0.02, riskLevel: 'low', contextReason: '⚠️ Plague in town'
                 });
@@ -18614,7 +18614,7 @@
             jobs.push({
                 name: '📦 Weapons Courier', hours: 16,
                 pay: Math.round(25 * payScale), ticks: 40, type: 'kingdom',
-                xpReward: 7, repGain: 2,
+                xpReward: 7, repGain: 1,
                 description: '🩹 Medium injury risk. 🗺️ Auto-travel — Deliver weapons to the front.',
                 injuryRisk: 0.008, riskLevel: 'medium', jobTypeKey: 'weapons_courier', autoTravel: true, payScale: payScale,
                 contextReason: '⚔️ War effort'
@@ -18623,7 +18623,7 @@
                 jobs.push({
                     name: '🏗️ Siege Engineer', hours: 16,
                     pay: Math.round(40 * payScale), ticks: 40, type: 'kingdom',
-                    xpReward: 10, repGain: 3,
+                    xpReward: 10, repGain: 2,
                     description: '🩹 High injury risk. Build siege equipment. Needs crafting.',
                     injuryRisk: 0.011, riskLevel: 'high', contextReason: '⚔️ War effort'
                 });
@@ -18632,7 +18632,7 @@
                 jobs.push({
                     name: '🏥 War Medic', hours: 16,
                     pay: Math.round(30 * payScale), ticks: 40, type: 'kingdom',
-                    xpReward: 8, repGain: 3,
+                    xpReward: 8, repGain: 2,
                     description: '🩹 Medium injury risk. Tend to wounded soldiers.' + skillProgressNote('war_medic'),
                     injuryRisk: 0.005, riskLevel: 'medium', jobTypeKey: 'war_medic', contextReason: '⚔️ War effort'
                 });
@@ -18646,7 +18646,7 @@
                     jobs.push({
                         name: '🕵️ Spy for the Crown', hours: 24,
                         pay: Math.round(70 * payScale), ticks: 60, type: 'castle',
-                        xpReward: 15, repGain: 5,
+                        xpReward: 15, repGain: 3,
                         description: '☠️ DANGEROUS — High death risk. 🗺️ Auto-travel — Infiltrate enemy territory. Chance of special events!' + skillProgressNote('spy'),
                         deathRisk: 0.0013, injuryRisk: 0.008, riskLevel: 'high', jobTypeKey: 'spy', autoTravel: true, payScale: payScale,
                         contextReason: '⚔️ War effort'
@@ -18660,7 +18660,7 @@
             jobs.push({
                 name: '🔨 Rebuilder', hours: 8,
                 pay: Math.round((hasSkill('efficient_builder') ? 12 : 10) * payScale), ticks: 20, type: 'kingdom',
-                xpReward: 4, repGain: 2,
+                xpReward: 4, repGain: 1,
                 description: '🩹 Low injury risk. Help rebuild after disaster.' + skillProgressNote('rebuilder'),
                 injuryRisk: 0.003, riskLevel: 'low', contextReason: '🌊 Disaster recovery',
                 jobTypeKey: 'rebuilder'
@@ -18668,7 +18668,7 @@
             jobs.push({
                 name: '🚑 Rescue Worker', hours: 16,
                 pay: Math.round((hasSkill('doctor') ? 22 : 17) * payScale), ticks: 40, type: 'kingdom',
-                xpReward: 7, repGain: 3, dangerous: true,
+                xpReward: 7, repGain: 2, dangerous: true,
                 description: '⚠️ DANGEROUS — 🩹 High injury risk! Search for survivors.' + skillProgressNote('rescue_worker'),
                 injuryRisk: 0.011, riskLevel: 'high', contextReason: '🌊 Disaster recovery',
                 jobTypeKey: 'rescue_worker'
@@ -18711,7 +18711,7 @@
                 jobs.push({
                     name: '🏴‍☠️ Privateer', hours: 24,
                     pay: Math.round(50 * payScale), ticks: 60, type: 'kingdom',
-                    xpReward: 12, repGain: 2,
+                    xpReward: 12, repGain: 1,
                     description: '☠️ High death risk + 🩹 High injury risk. 🗺️ Auto-travel — Raid enemy shipping. Chance of loot!',
                     deathRisk: 0.0013, injuryRisk: 0.011, riskLevel: 'high', autoTravel: true, payScale: payScale,
                     contextReason: '⚔️ Wartime privateering', jobTypeKey: 'privateer'
@@ -18811,7 +18811,7 @@
                 jobs.push({
                     name: '⚖️ Guild Enforcer', hours: 12,
                     pay: Math.round(18 * payScale), ticks: 30, type: 'kingdom',
-                    xpReward: 5, repGain: 2, description: 'Enforce guild rules. Requires citizenship.'
+                    xpReward: 5, repGain: 1, description: 'Enforce guild rules. Requires citizenship.'
                 });
             }
             if (canPhysical) {
@@ -18845,7 +18845,7 @@
                 jobs.push({
                     name: '🏪 Traveling Merchant\'s Agent', hours: 16,
                     pay: Math.round(22 * payScale), ticks: 30, type: 'merchant',
-                    xpReward: 8, repGain: 2,
+                    xpReward: 8, repGain: 1,
                     description: '🗺️ Auto-travel — Buy and sell goods at markets across the land.',
                     autoTravel: true, payScale: payScale,
                     jobTypeKey: 'traveling_merchant'
@@ -18856,7 +18856,7 @@
             jobs.push({
                 name: '🏥 Itinerant Healer', hours: 16,
                 pay: Math.round(18 * payScale), ticks: 30, type: 'kingdom',
-                xpReward: 8, repGain: 4,
+                xpReward: 8, repGain: 2,
                 description: '🗺️ Auto-travel — Travel between villages treating the sick and wounded.',
                 illnessRisk: 0.01, autoTravel: true, payScale: payScale,
                 jobTypeKey: 'itinerant_healer'
@@ -30767,7 +30767,7 @@
                     totalPaid: 0,
                     status: 'traveling',
                     xpReward: 10,
-                    repGain: 4,
+                    repGain: 2,
                     risks: { deathRisk: 0, injuryRisk: 0.002 },
                     jobTypeKey: 'royal_messenger'
                 };
@@ -30832,7 +30832,7 @@
                     totalPaid: 0,
                     status: 'traveling',
                     xpReward: 15,
-                    repGain: 5,
+                    repGain: 3,
                     risks: { deathRisk: 0.0013, injuryRisk: 0.008 },
                     bonusEvents: true,
                     jobTypeKey: 'spy'
@@ -30883,7 +30883,7 @@
                     totalPaid: 0,
                     status: 'traveling',
                     xpReward: 7,
-                    repGain: 2,
+                    repGain: 1,
                     risks: { deathRisk: 0, injuryRisk: 0.008 },
                     jobTypeKey: 'weapons_courier'
                 };
@@ -30944,7 +30944,7 @@
                     totalPaid: 0,
                     status: 'traveling',
                     xpReward: 12,
-                    repGain: 2,
+                    repGain: 1,
                     risks: { deathRisk: 0.0013, injuryRisk: 0.011 },
                     bonusLoot: true,
                     jobTypeKey: 'privateer'
@@ -31044,7 +31044,7 @@
                     totalPaid: 0,
                     status: 'traveling',
                     xpReward: 10,
-                    repGain: 2,
+                    repGain: 1,
                     risks: { deathRisk: 0, injuryRisk: 0.002 },
                     jobTypeKey: 'traveling_merchant'
                 };
@@ -31094,7 +31094,7 @@
                     totalPaid: 0,
                     status: 'traveling',
                     xpReward: 8,
-                    repGain: 4,
+                    repGain: 2,
                     risks: { deathRisk: 0, injuryRisk: 0, illnessRisk: 0.01 },
                     jobTypeKey: 'itinerant_healer'
                 };
