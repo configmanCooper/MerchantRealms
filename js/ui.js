@@ -5946,20 +5946,23 @@ window.UI = (function () {
 
         // Find connected towns (land) — multi-hop if player has extended_routes or trade_network skill
         var maxHops = 1;
-        if (typeof Player !== 'undefined' && Player.hasSkill) {
-            if (Player.hasSkill('trade_network')) maxHops = 5;
-            else if (Player.hasSkill('extended_routes')) maxHops = 3;
-        }
+        var hasExtended = typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('extended_routes');
+        var hasTradeNet = typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('trade_network');
+        if (hasTradeNet) maxHops = 5;
+        else if (hasExtended) maxHops = 3;
+
+        // Always BFS up to 5 hops to show locked destinations
+        var searchHops = 5;
 
         const connectedTowns = [];
         const visitedTowns = {};
         visitedTowns[Player.townId] = true;
 
-        // BFS to find towns up to maxHops away
+        // BFS to find all towns up to searchHops away
         var frontier = [{ townId: Player.townId, hops: 0 }];
         while (frontier.length > 0) {
             var current = frontier.shift();
-            if (current.hops >= maxHops) continue;
+            if (current.hops >= searchHops) continue;
             for (const road of roads) {
                 var neighborId = null;
                 if (road.fromTownId === current.townId && townMap[road.toTownId]) neighborId = road.toTownId;
@@ -5968,7 +5971,7 @@ window.UI = (function () {
                     visitedTowns[neighborId] = true;
                     var hops = current.hops + 1;
                     connectedTowns.push({ town: townMap[neighborId], road: road, routeType: 'land', hops: hops });
-                    if (hops < maxHops) frontier.push({ townId: neighborId, hops: hops });
+                    if (hops < searchHops) frontier.push({ townId: neighborId, hops: hops });
                 }
             }
         }
@@ -5981,6 +5984,18 @@ window.UI = (function () {
             const threat = road.banditThreat || 0;
             const dangerStr = threat > CONFIG.BANDIT_THREAT_DANGER_THRESHOLD ? ` ☠${Math.round(threat)}` : '';
             const hopLabel = hops > 1 ? ` ${hops}🔗` : '';
+
+            // Determine if this destination is locked behind a skill
+            var locked = hops > maxHops;
+            var requiredSkill = '';
+            if (locked) {
+                if (hops <= 3) requiredSkill = 'Extended Routes';
+                else requiredSkill = 'Trade Network';
+            }
+
+            if (locked) {
+                return `<option value="${town.id}" disabled style="color:#666;">🔒 ${town.name}${hopLabel} — requires ${requiredSkill} skill</option>`;
+            }
             return `<option value="${town.id}" data-route="land" data-threat="${threat}" data-hops="${hops}">🚶 ${town.name}${hopLabel} (${safeStr} Q:${road.quality || 1}${dangerStr})</option>`;
         }).join('');
 
