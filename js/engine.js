@@ -3729,7 +3729,11 @@
                     if (bld.type === 'hunting_lodge' && town.wildlifeAbundance != null) {
                         wildlifeMod = town.wildlifeAbundance;
                     }
-                    const output = Math.floor(activeRate * workerFraction * seasonMod * (bld.level || 1) * conditionEff * apprenticePenalty * fertilityMod * wildlifeMod * warZonePenalty * happyMod * _townHousingProd);
+                    // Worker skill production modifier: skill 0 = 0.90x, skill 50 = 1.40x, skill 100 = 1.90x
+                    var avgWorkerSkillStd = getAverageWorkerSkill(bld, town);
+                    var workerSkillMod = 0.90 + avgWorkerSkillStd * 0.01;
+
+                    const output = Math.floor(activeRate * workerFraction * seasonMod * (bld.level || 1) * conditionEff * apprenticePenalty * fertilityMod * wildlifeMod * warZonePenalty * happyMod * _townHousingProd * workerSkillMod);
                     // Animal Husbandry: player livestock buildings produce 10% more
                     var livestockTypes = ['cattle_ranch', 'sheep_farm', 'chicken_farm', 'pig_farm', 'horse_ranch'];
                     var animalBonus = 0;
