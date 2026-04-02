@@ -612,6 +612,7 @@
         player.lastRestDay = 0;
         player.thirst = THIRST_CONFIG.START;
         player.landOwned = {};
+        player.subsidizedLand = {};
         player.armedEscort = null;
         // Toll Routes
         player.ownedRoutes = [];
@@ -1387,6 +1388,28 @@
                 var landCost = getLandCost(tid);
                 return { success: false, message: '🏗️ Not enough land! Need ' + _neededSlotsBuild + ' plot(s) but only ' + Math.max(0, ownedPlots - _usedSlotsBuild) + ' available. Buy land first (' + landCost + 'g).' };
             }
+            // Check subsidized land restrictions — count free normal vs subsidized slots
+            var freeSlots = ownedPlots - _usedSlotsBuild;
+            var subPlots = (player.subsidizedLand && player.subsidizedLand[tid]) || [];
+            var subCount = subPlots.length;
+            var freeNormal = Math.max(0, freeSlots - subCount);
+            // If building matches a subsidized slot, consume it
+            var matchIdx = -1;
+            for (var _spi = 0; _spi < subPlots.length; _spi++) {
+                if (subPlots[_spi].buildingType === buildingType) { matchIdx = _spi; break; }
+            }
+            if (matchIdx >= 0) {
+                // Will consume this subsidized slot after build succeeds (handled below)
+            } else if (freeNormal < _neededSlotsBuild) {
+                // All free slots are subsidized for other building types
+                var lockedNames = [];
+                for (var _spi2 = 0; _spi2 < subPlots.length; _spi2++) {
+                    var _sbt = Engine.findBuildingType(subPlots[_spi2].buildingType);
+                    var _sn = _sbt ? _sbt.name : subPlots[_spi2].buildingType;
+                    if (lockedNames.indexOf(_sn) < 0) lockedNames.push(_sn);
+                }
+                return { success: false, message: '🏗️ Your remaining land plot(s) are subsidized and locked to: ' + lockedNames.join(', ') + '. Buy unsubsidized land for other buildings.' };
+            }
         }
 
         // bt.cost is now the labor cost; material cost is calculated from local prices
@@ -1563,6 +1586,18 @@
         }
         town.buildings.push(townBld);
         player.stats.buildingsOwned++;
+
+        // Consume a subsidized land slot if building type matches
+        if (!bt.noLandRequired && player.subsidizedLand && player.subsidizedLand[tid]) {
+            var _subSlots = player.subsidizedLand[tid];
+            for (var _sci = 0; _sci < _subSlots.length; _sci++) {
+                if (_subSlots[_sci].buildingType === buildingType) {
+                    _subSlots.splice(_sci, 1);
+                    if (_subSlots.length <= 0) delete player.subsidizedLand[tid];
+                    break;
+                }
+            }
+        }
 
         Engine.logEvent(`The merchant builds a ${bt.name} in ${town.name}.`);
         autoJournalCapture('building', 'I built a ' + bt.name + ' in ' + town.name + '. My empire grows.', { mood: 'hopeful' });
@@ -12853,6 +12888,7 @@
             lastRestDay: player.lastRestDay || 0,
             thirst: player.thirst != null ? player.thirst : THIRST_CONFIG.START,
             landOwned: JSON.parse(JSON.stringify(player.landOwned || {})),
+            subsidizedLand: JSON.parse(JSON.stringify(player.subsidizedLand || {})),
             armedEscort: player.armedEscort ? JSON.parse(JSON.stringify(player.armedEscort)) : null,
             // Kingdom Orders & Supply Deals
             ordersCompleted: player.ordersCompleted || 0,
@@ -13254,6 +13290,7 @@
         // Thirst
         player.thirst = data.thirst != null ? data.thirst : THIRST_CONFIG.START;
         player.landOwned = data.landOwned || {};
+        player.subsidizedLand = data.subsidizedLand || {};
         player.armedEscort = data.armedEscort || null;
         // Kingdom Orders & Supply Deals
         player.ordersCompleted = data.ordersCompleted || 0;
@@ -23706,7 +23743,28 @@
         return Math.floor(CONFIG.LAND_COST_BASE * sizeMultiplier * prosperityMultiplier);
     }
 
-    function buyLand(townId) {
+    function getActiveSubsidy(townId) {
+        var town = Engine.findTown(townId);
+        if (!town || !town.kingdomId) return null;
+        var world = Engine.getWorld();
+        if (!world) return null;
+        var kingdom = Engine.findKingdom(town.kingdomId);
+        if (!kingdom || !kingdom.landSubsidies) return null;
+        for (var si = 0; si < kingdom.landSubsidies.length; si++) {
+            var sub = kingdom.landSubsidies[si];
+            if (sub.townId === townId && sub.expiresDay > world.day) return sub;
+        }
+        return null;
+    }
+
+    function getSubsidizedLandCost(townId) {
+        var base = getLandCost(townId);
+        var sub = getActiveSubsidy(townId);
+        if (!sub) return base;
+        return Math.floor(base * (1 - sub.discount));
+    }
+
+    function buyLand(townId, useSubsidy) {
         if (isJailed()) return { success: false, message: 'You are in jail.' };
         var town = Engine.findTown(townId);
         if (!town) return { success: false, message: 'Town not found.' };
@@ -23729,30 +23787,34 @@
         if (rank && rank.maxLand !== undefined && ownedTotal >= rank.maxLand) {
             return { success: false, message: 'Your rank (' + rank.name + ') limits you to ' + rank.maxLand + ' total land plots. You own ' + ownedTotal + '. Advance your rank to buy more.' };
         }
-        var cost = getLandCost(townId);
-        // Check for kingdom land subsidies
-        var world = Engine.getWorld();
-        if (world && town.kingdomId) {
-            var kingdom = Engine.findKingdom(town.kingdomId);
-            if (kingdom && kingdom.landSubsidies) {
-                for (var si = 0; si < kingdom.landSubsidies.length; si++) {
-                    var sub = kingdom.landSubsidies[si];
-                    if (sub.townId === townId && sub.expiresDay > world.day) {
-                        cost = Math.floor(cost * (1 - sub.discount));
-                        break;
-                    }
-                }
-            }
+        var cost;
+        var lockedType = null;
+        if (useSubsidy) {
+            var sub = getActiveSubsidy(townId);
+            if (!sub) return { success: false, message: 'No active land subsidy in this town.' };
+            cost = getSubsidizedLandCost(townId);
+            lockedType = sub.buildingType;
+        } else {
+            cost = getLandCost(townId);
         }
         if (player.gold < cost) return { success: false, message: 'Need ' + cost + 'g to buy land.' };
         player.gold -= cost;
-        logFinance(-cost, 'land', 'Bought land');
+        logFinance(-cost, 'land', 'Bought land' + (lockedType ? ' (subsidized: ' + lockedType + ')' : ''));
         player.stats.totalGoldSpent += cost;
         player.landOwned = player.landOwned || {};
         player.landOwned[townId] = (player.landOwned[townId] || 0) + 1;
+        if (lockedType) {
+            player.subsidizedLand = player.subsidizedLand || {};
+            player.subsidizedLand[townId] = player.subsidizedLand[townId] || [];
+            player.subsidizedLand[townId].push({ buildingType: lockedType });
+        }
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(3);
-        Engine.logEvent(player.fullName + ' purchased a land plot in ' + town.name + ' for ' + cost + 'g.');
-        return { success: true, message: 'Bought land in ' + town.name + ' for ' + cost + 'g. 🏗️' };
+        var btName = lockedType ? (Engine.findBuildingType(lockedType) || {}).name || lockedType : null;
+        var msg = lockedType
+            ? 'Bought subsidized land in ' + town.name + ' for ' + cost + 'g (must build: ' + btName + '). 🏗️'
+            : 'Bought land in ' + town.name + ' for ' + cost + 'g. 🏗️';
+        Engine.logEvent(player.fullName + ' purchased a land plot in ' + town.name + ' for ' + cost + 'g.' + (lockedType ? ' (Subsidized — ' + btName + ' only)' : ''));
+        return { success: true, message: msg };
     }
 
     function sellLand(townId) {
@@ -23764,13 +23826,22 @@
         if (usedSlots >= player.landOwned[townId]) {
             return { success: false, message: 'All land plots are occupied. Sell buildings/houses first.' };
         }
-        var sellPrice = Math.floor(getLandCost(townId) * CONFIG.LAND_SELL_RATIO);
+        // Sell subsidized (locked) plots first — they have lower value
+        var isSubsidized = false;
+        if (player.subsidizedLand && player.subsidizedLand[townId] && player.subsidizedLand[townId].length > 0) {
+            // Only sell a subsidized plot if it's unoccupied (free slots > subsidized count isn't needed — just pop one)
+            isSubsidized = true;
+            player.subsidizedLand[townId].pop();
+            if (player.subsidizedLand[townId].length <= 0) delete player.subsidizedLand[townId];
+        }
+        var basePrice = isSubsidized ? getSubsidizedLandCost(townId) : getLandCost(townId);
+        var sellPrice = Math.floor(basePrice * CONFIG.LAND_SELL_RATIO);
         player.gold += sellPrice;
-        logFinance(sellPrice, 'land', 'Sold land');
+        logFinance(sellPrice, 'land', 'Sold land' + (isSubsidized ? ' (subsidized)' : ''));
         player.stats.totalGoldEarned += sellPrice;
         player.landOwned[townId]--;
         if (player.landOwned[townId] <= 0) delete player.landOwned[townId];
-        return { success: true, message: 'Sold land for ' + sellPrice + 'g. 💰' };
+        return { success: true, message: 'Sold land for ' + sellPrice + 'g.' + (isSubsidized ? ' (Subsidized plot)' : '') + ' 💰' };
     }
 
     function getOwnedLand(townId) {
@@ -32330,6 +32401,8 @@
         sellLand,
         getOwnedLand,
         getLandCost,
+        getSubsidizedLandCost,
+        getActiveSubsidy,
         getUsedLandSlots,
         hireArmedEscort,
         addFatigue,

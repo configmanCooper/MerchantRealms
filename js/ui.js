@@ -1049,7 +1049,10 @@ window.UI = (function () {
                 html += '<button class="btn-medieval" onclick="UI.openRealEstateReport()" style="font-size:0.8rem;padding:4px 12px;">📊 Real Estate Report</button> ';
             }
             if (ownedLand < maxPlots) {
-                html += '<button class="btn-medieval" onclick="UI.buyLandUI()" style="font-size:0.8rem;padding:4px 12px;">🏗️ Buy Land (' + landCost + 'g)</button>';
+                var _activeSub = Player.getActiveSubsidy ? Player.getActiveSubsidy(town.id) : null;
+                var _btnLabel = '🏗️ Buy Land (' + landCost + 'g)';
+                if (_activeSub) _btnLabel = '🏗️ Buy Land (' + landCost + 'g) ⭐ Subsidy Available!';
+                html += '<button class="btn-medieval" onclick="UI.buyLandUI()" style="font-size:0.8rem;padding:4px 12px;">' + _btnLabel + '</button>';
             }
             html += '</div></div>';
         }
@@ -11769,7 +11772,22 @@ window.UI = (function () {
                 var _rankMaxLand = (_rankCfg && _rankCfg.maxLand !== undefined) ? _rankCfg.maxLand : '∞';
                 var _totalLandOwned = 0;
                 if (Player.state && Player.state.landOwned) { for (var _lk in Player.state.landOwned) _totalLandOwned += (Player.state.landOwned[_lk] || 0); }
-                html += '<div style="font-size:0.85rem;margin-bottom:8px;">Land plots: ' + usedLand + '/' + ownedLand + ' used (global: ' + _totalLandOwned + '/' + _rankMaxLand + ' for ' + (_rankCfg ? _rankCfg.name : 'your rank') + ') | <button class="btn-medieval" onclick="UI.buyLandUI()" style="font-size:0.75rem;padding:2px 8px;">Buy Land (' + (Player.getLandCost ? Player.getLandCost(Player.townId) : '?') + 'g)</button></div>';
+                var _hdSub = Player.getActiveSubsidy ? Player.getActiveSubsidy(Player.townId) : null;
+                var _hdCost = Player.getLandCost ? Player.getLandCost(Player.townId) : '?';
+                var _hdBtnTxt = 'Buy Land (' + _hdCost + 'g)';
+                if (_hdSub) _hdBtnTxt = 'Buy Land (' + _hdCost + 'g) ⭐ Subsidy!';
+                html += '<div style="font-size:0.85rem;margin-bottom:8px;">Land plots: ' + usedLand + '/' + ownedLand + ' used (global: ' + _totalLandOwned + '/' + _rankMaxLand + ' for ' + (_rankCfg ? _rankCfg.name : 'your rank') + ') | <button class="btn-medieval" onclick="UI.buyLandUI()" style="font-size:0.75rem;padding:2px 8px;">' + _hdBtnTxt + '</button></div>';
+                // Show subsidized (locked) plots
+                var _subLand = (Player.state && Player.state.subsidizedLand && Player.state.subsidizedLand[Player.townId]) || [];
+                if (_subLand.length > 0) {
+                    html += '<div style="font-size:0.78rem;color:#55a868;margin-bottom:6px;">🔒 Subsidized plots: ';
+                    var _slNames = [];
+                    for (var _sli = 0; _sli < _subLand.length; _sli++) {
+                        var _slBt = Engine.findBuildingType(_subLand[_sli].buildingType);
+                        _slNames.push(_slBt ? _slBt.name : _subLand[_sli].buildingType);
+                    }
+                    html += _slNames.join(', ') + '</div>';
+                }
 
                 for (var j = 0; j < CONFIG.HOUSING_TYPES.length; j++) {
                     var htype = CONFIG.HOUSING_TYPES[j];
@@ -12199,10 +12217,49 @@ window.UI = (function () {
     }
 
     function buyLandUI() {
-        var result = Player.buyLand(Player.townId);
+        var townId = Player.townId;
+        var sub = Player.getActiveSubsidy ? Player.getActiveSubsidy(townId) : null;
+        if (sub) {
+            // Show choice dialog: subsidized vs full price
+            var fullCost = Player.getLandCost(townId);
+            var subCost = Player.getSubsidizedLandCost ? Player.getSubsidizedLandCost(townId) : fullCost;
+            var bt = Engine.findBuildingType(sub.buildingType);
+            var btName = bt ? bt.name : sub.buildingType;
+            var discount = Math.round(sub.discount * 100);
+            var html = '<div style="padding:8px;">';
+            html += '<p style="margin-bottom:12px;">This town has an active <strong>Royal Land Subsidy</strong>! You can buy land at a discount, but it will be <strong>locked</strong> to building a <strong>' + btName + '</strong>.</p>';
+            html += '<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;">';
+            html += '<button class="btn-medieval" style="padding:8px 16px;font-size:0.85rem;" onclick="UI._buyLandSubsidized()">🏗️ Subsidized Land<br><span style="font-size:0.75rem;color:#55a868;">' + subCost + 'g (' + discount + '% off) — locked to ' + btName + '</span></button>';
+            html += '<button class="btn-medieval" style="padding:8px 16px;font-size:0.85rem;" onclick="UI._buyLandFull()">🏗️ Regular Land<br><span style="font-size:0.75rem;color:#ccc;">' + fullCost + 'g — build anything</span></button>';
+            html += '</div></div>';
+            openModal('🏗️ Buy Land', html);
+        } else {
+            var result = Player.buyLand(Player.townId, false);
+            toast(result.message, result.success ? 'success' : 'error');
+            if (result.success) {
+                var town = Engine.findTown(Player.townId);
+                if (town) showTownDetail(town);
+                update();
+            }
+        }
+    }
+
+    function _buyLandSubsidized() {
+        closeModal();
+        var result = Player.buyLand(Player.townId, true);
         toast(result.message, result.success ? 'success' : 'error');
         if (result.success) {
-            // Refresh town detail panel to show updated land count
+            var town = Engine.findTown(Player.townId);
+            if (town) showTownDetail(town);
+            update();
+        }
+    }
+
+    function _buyLandFull() {
+        closeModal();
+        var result = Player.buyLand(Player.townId, false);
+        toast(result.message, result.success ? 'success' : 'error');
+        if (result.success) {
             var town = Engine.findTown(Player.townId);
             if (town) showTownDetail(town);
             update();
@@ -19793,6 +19850,8 @@ window.UI = (function () {
         setPrimaryHouseUI,
         rentOutHouseUI,
         buyLandUI,
+        _buyLandSubsidized,
+        _buyLandFull,
         sellLandUI,
         openRestDialog,
         restUI,
