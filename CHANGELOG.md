@@ -4,6 +4,29 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.54.0] - 2026-04-02
+
+### Added
+- Kingdoms & Notables encyclopedia UI in Help menu (Kings tab, searchable Locations, searchable Nobles)
+- Clickable town name in town detail auto-pans camera to that town
+- Towns button on each kingdom card in Kingdoms of the Realm UI
+- Worker skill passive growth for NPC building workers (+0.055/day in engine.js)
+- Transport guild membership bypass: merchants guild members can use any town transport guild for instant transfers
+
+### Changed
+- Supply chain transfer: daily transfers (was 30-unit batch), 1-day production halt (was 2 days)
+- Supply chain: no production halt if player owns a transport guild or is merchants guild member with town transport guild
+- Engine.js standard production uses Math.round (was Math.floor) for fairer rounding at ≥0.5
+
+### Fixed
+- AI building buyers now properly added to elite merchant's buildings array
+- Building sale now decrements player land owned count
+- Building and land sales now logged to financial ledger
+- Toast notifications for building and land sales (buyer name + amount)
+- Travel energy drain moved to subtick: passive 0.25 base + mode modifier per subtick
+- Gift limit: 1 gift per NPC per day
+- Worker skill multiplier applied in engine.js tickEconomy standard production
+
 ## [0.53.0] - 2026-04-01
 
 ### Added
