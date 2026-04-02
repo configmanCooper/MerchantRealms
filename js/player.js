@@ -5153,6 +5153,36 @@
         if (player.hunger <= 0) speed *= 0.6;
         // Advance by 1/ticksPerDay of daily progress
         player.travelProgress += (speed / Math.max(player.travelTotalDist, 1)) / ticksPerDay;
+
+        // Per-subtick travel energy drain: passive 0.25 base + mode modifier
+        // Walking: 0.25 + 0.10 = 0.35/tick (21/day), Horse: 0.25 + 0.05 = 0.30/tick (18/day)
+        // Horse+Saddle: 0.25 + 0 = 0.25/tick (15/day), Paid: 0.25/tick (15/day), Luxury: restores
+        var mode = player.travelMode || 'walk';
+        var travelDrain = 0.25; // passive base always applies
+        if (player.travelRestBonus || mode === 'npc_luxury' || mode === 'npc_luxury_sea') {
+            // Luxury travel: restore energy instead of draining
+            if (typeof player.energy === 'number') {
+                var maxE = (typeof getMaxEnergy === 'function') ? getMaxEnergy() : 100;
+                player.energy = Math.min(maxE, player.energy + 0.5 / ticksPerDay);
+            }
+            travelDrain = 0; // no drain
+        } else if (mode === 'npc_carriage' || mode === 'kingdom' || mode === 'sea_passage' || mode === 'npc_vessel') {
+            // Paid transport: just passive drain, no extra
+        } else if (mode === 'horse' || mode === 'sail_own') {
+            var _hasSaddle = player.horses && player.horses.some(function(h) { return h.saddled; });
+            if (mode === 'horse' && _hasSaddle) {
+                // Horse + saddle: just passive, no extra
+            } else {
+                travelDrain += 0.05; // horse without saddle or own ship
+            }
+        } else {
+            // Walking: heaviest drain
+            travelDrain += 0.1;
+        }
+        if (travelDrain > 0) {
+            consumeEnergy(travelDrain);
+        }
+
         if (player.travelProgress >= 1.0) {
             // Arrive immediately — call tickTravel which handles arrival at >= 1.0
             player.travelProgress = 1.0;
@@ -5205,29 +5235,8 @@
             }
         }
 
-        // Per-tick travel energy cost based on travel mode
-        // Walking: -0.1/tick, Horse: -0.05/tick, Horse+Saddle: 0, Paid carriage: 0, Luxury: +0.5/tick
-        var mode = player.travelMode || 'walk';
-        if (player.travelRestBonus || mode === 'npc_luxury' || mode === 'npc_luxury_sea') {
-            // Luxury travel: restore energy
-            if (typeof player.energy === 'number') {
-                var maxE = (typeof getMaxEnergy === 'function') ? getMaxEnergy() : 100;
-                player.energy = Math.min(maxE, player.energy + 0.5);
-            }
-        } else if (mode === 'npc_carriage' || mode === 'kingdom' || mode === 'sea_passage' || mode === 'npc_vessel') {
-            // Paid transport: no extra drain (just passive 0.25)
-        } else if (mode === 'horse' || mode === 'sail_own') {
-            // Horse+saddle: no extra drain; horse only / own ship: light drain
-            var _hasSaddle = player.horses && player.horses.some(function(h) { return h.saddled; });
-            if (mode === 'horse' && _hasSaddle) {
-                // Horse + saddle: passive drain only
-            } else {
-                consumeEnergy(0.05);
-            }
-        } else {
-            // Walking (default): extra drain
-            consumeEnergy(0.1);
-        }
+        // Per-tick travel energy cost is now handled in travelSubtick() (60x/day)
+        // Daily tick only handles: escorts, waypoints, sea hazards, arrival
 
         // Sea travel hazards: pirates, storms
         if (player.travelBySea) {
