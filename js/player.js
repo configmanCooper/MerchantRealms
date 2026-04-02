@@ -613,6 +613,7 @@
         player.thirst = THIRST_CONFIG.START;
         player.landOwned = {};
         player.subsidizedLand = {};
+        player.parkedVehicles = {};  // townId → [{type: 'cart'|'wagon'|etc}]
         player.armedEscort = null;
         // Toll Routes
         player.ownedRoutes = [];
@@ -6583,7 +6584,7 @@
     function getTownStorageCapacity(townId) {
         var tid = townId || player.townId;
         var total = 0;
-        // Warehouses and other buildings with storage
+        // Warehouses (category: 'storage') always count, other buildings only if inputOnly is OFF
         for (var i = 0; i < player.buildings.length; i++) {
             var b = player.buildings[i];
             if (b.townId !== tid) continue;
@@ -6591,11 +6592,20 @@
             for (var key in BUILDING_TYPES) {
                 if (BUILDING_TYPES[key].id === b.type) { bt = BUILDING_TYPES[key]; break; }
             }
-            if (bt && bt.storage) {
+            if (!bt || !bt.storage) continue;
+            if (bt.category === 'storage') {
+                // Warehouses always contribute
+                total += bt.storage * (b.level || 1);
+            } else if (bt.produces && b.inputOnly === false) {
+                // Production buildings with inputOnly OFF contribute
+                total += bt.storage * (b.level || 1);
+            } else if (!bt.produces) {
+                // Non-production buildings (e.g. guild halls) contribute
                 total += bt.storage * (b.level || 1);
             }
+            // inputOnly ON (default for production buildings) = excluded
         }
-        // Housing storage (cottages, townhouses, caravan wagons, etc.)
+        // Housing storage (cottages, townhouses, etc.)
         for (var hi = 0; hi < (player.houses || []).length; hi++) {
             var h = player.houses[hi];
             if (h.townId !== tid) continue;
@@ -6604,9 +6614,11 @@
                 total += ht.storage;
             }
         }
-        // Player's own carry capacity counts if they are in this town
-        if (player.townId === tid && !player.traveling) {
-            total += getCarryCapacity() - getCarriedWeight();
+        // Parked vehicles (unmounted carts/wagons left in town)
+        var parked = (player.parkedVehicles && player.parkedVehicles[tid]) || [];
+        var vehicleCaps = { cart: 80, small_wagon: 120, wagon: 200, large_wagon: 300 };
+        for (var vi = 0; vi < parked.length; vi++) {
+            total += vehicleCaps[parked[vi].type] || 0;
         }
         return total;
     }
@@ -6672,6 +6684,101 @@
         if (player.townStorage[player.townId][resId] <= 0) delete player.townStorage[player.townId][resId];
         player.inventory[resId] = (player.inventory[resId] || 0) + qty;
         return { success: true, message: 'Withdrew ' + qty + ' ' + (res ? res.name : resId) + '.' };
+    }
+
+    function parkVehicle(vehicleType) {
+        if (!player.townId) return { success: false, message: 'Must be in a town.' };
+        var validTypes = { cart: 80, small_wagon: 120, wagon: 200, large_wagon: 300 };
+        if (!validTypes[vehicleType]) return { success: false, message: 'Invalid vehicle type.' };
+        var invQty = player.inventory[vehicleType] || 0;
+        if (invQty <= 0) return { success: false, message: 'You don\'t have a ' + vehicleType.replace(/_/g, ' ') + ' in your inventory.' };
+        // If this is the player's mounted container, can't park it
+        if (player.storageContainer === vehicleType) {
+            return { success: false, message: 'You are currently using this as your storage container. Unmount it first.' };
+        }
+        player.inventory[vehicleType] = invQty - 1;
+        if (player.inventory[vehicleType] <= 0) player.inventory[vehicleType] = 0;
+        if (!player.parkedVehicles) player.parkedVehicles = {};
+        if (!player.parkedVehicles[player.townId]) player.parkedVehicles[player.townId] = [];
+        player.parkedVehicles[player.townId].push({ type: vehicleType, parkedDay: Engine.getDay ? Engine.getDay() : 0 });
+        var cap = validTypes[vehicleType];
+        var name = vehicleType.replace(/_/g, ' ');
+        return { success: true, message: '🛒 Parked ' + name + ' in town (+' + cap + ' storage). ⚠️ Unguarded vehicles risk theft!' };
+    }
+
+    function unparkVehicle(vehicleType) {
+        if (!player.townId) return { success: false, message: 'Must be in a town.' };
+        var parked = (player.parkedVehicles && player.parkedVehicles[player.townId]) || [];
+        var idx = -1;
+        for (var i = 0; i < parked.length; i++) {
+            if (parked[i].type === vehicleType) { idx = i; break; }
+        }
+        if (idx < 0) return { success: false, message: 'No parked ' + vehicleType.replace(/_/g, ' ') + ' in this town.' };
+        // Check if town storage would overflow
+        var vehicleCaps = { cart: 80, small_wagon: 120, wagon: 200, large_wagon: 300 };
+        var removingCap = vehicleCaps[vehicleType] || 0;
+        var currentCap = getTownStorageCapacity(player.townId);
+        var currentUsed = getTownStorageUsed(player.townId);
+        if (currentUsed > currentCap - removingCap) {
+            return { success: false, message: 'Town storage would overflow. Withdraw goods first.' };
+        }
+        parked.splice(idx, 1);
+        if (parked.length <= 0) delete player.parkedVehicles[player.townId];
+        player.inventory[vehicleType] = (player.inventory[vehicleType] || 0) + 1;
+        var name = vehicleType.replace(/_/g, ' ');
+        return { success: true, message: '🛒 Retrieved ' + name + ' from town.' };
+    }
+
+    function getParkedVehicles(townId) {
+        var tid = townId || player.townId;
+        return (player.parkedVehicles && player.parkedVehicles[tid]) || [];
+    }
+
+    function tickParkedVehicleTheft() {
+        // ~70% per year = ~0.33% per day (1 - (1-r)^365 = 0.70 → r ≈ 0.0033)
+        var dailyTheftChance = 0.0033;
+        var rng = Engine.getRng ? Engine.getRng() : null;
+        if (!rng) return;
+        for (var tid in (player.parkedVehicles || {})) {
+            var parked = player.parkedVehicles[tid];
+            if (!parked || parked.length === 0) continue;
+            var town = Engine.findTown(tid);
+            // Safer towns have lower theft (prosperity reduces theft)
+            var prosperity = town ? (town.prosperity || 50) : 50;
+            var safetyMod = 1.0 - (prosperity - 50) * 0.005; // 0.75x at 100 prosperity, 1.25x at 0
+            safetyMod = Math.max(0.5, Math.min(1.5, safetyMod));
+            for (var vi = parked.length - 1; vi >= 0; vi--) {
+                if (rng.chance(dailyTheftChance * safetyMod)) {
+                    var stolen = parked[vi];
+                    var name = stolen.type.replace(/_/g, ' ');
+                    var townName = town ? town.name : 'unknown town';
+                    parked.splice(vi, 1);
+                    // Also steal some goods from town storage
+                    var stolenGoods = [];
+                    var ts = player.townStorage[tid];
+                    if (ts) {
+                        var stolenWeight = 0;
+                        var maxSteal = 30 + Math.floor(rng.random() * 50);
+                        for (var rk in ts) {
+                            if (ts[rk] <= 0 || stolenWeight >= maxSteal) continue;
+                            var sr = findResource(rk);
+                            var sw = sr ? (sr.weight || 1) : 1;
+                            var stealQty = Math.min(ts[rk], Math.floor((maxSteal - stolenWeight) / sw));
+                            if (stealQty > 0) {
+                                ts[rk] -= stealQty;
+                                if (ts[rk] <= 0) delete ts[rk];
+                                stolenGoods.push(stealQty + ' ' + (sr ? sr.name : rk));
+                                stolenWeight += stealQty * sw;
+                            }
+                        }
+                    }
+                    var goodsMsg = stolenGoods.length > 0 ? ' Along with: ' + stolenGoods.join(', ') + '.' : '';
+                    Engine.logEvent('🏴‍☠️ Your parked ' + name + ' was stolen in ' + townName + '!' + goodsMsg);
+                    if (typeof UI !== 'undefined' && UI.toast) UI.toast('🏴‍☠️ Your ' + name + ' was stolen in ' + townName + '!' + goodsMsg, 'error', 'critical');
+                }
+            }
+            if (parked.length <= 0) delete player.parkedVehicles[tid];
+        }
     }
 
     // ── HOME STORAGE TRANSFER ──
@@ -12969,6 +13076,7 @@
             thirst: player.thirst != null ? player.thirst : THIRST_CONFIG.START,
             landOwned: JSON.parse(JSON.stringify(player.landOwned || {})),
             subsidizedLand: JSON.parse(JSON.stringify(player.subsidizedLand || {})),
+            parkedVehicles: JSON.parse(JSON.stringify(player.parkedVehicles || {})),
             armedEscort: player.armedEscort ? JSON.parse(JSON.stringify(player.armedEscort)) : null,
             // Kingdom Orders & Supply Deals
             ordersCompleted: player.ordersCompleted || 0,
@@ -13371,6 +13479,7 @@
         player.thirst = data.thirst != null ? data.thirst : THIRST_CONFIG.START;
         player.landOwned = data.landOwned || {};
         player.subsidizedLand = data.subsidizedLand || {};
+        player.parkedVehicles = data.parkedVehicles || {};
         player.armedEscort = data.armedEscort || null;
         // Kingdom Orders & Supply Deals
         player.ordersCompleted = data.ordersCompleted || 0;
@@ -14553,6 +14662,7 @@
         tickStorageTheft();
         tickLeftCartTheft();
         tickWorkerTheft();
+        tickParkedVehicleTheft();
 
         // Protection racket check
         tickProtectionRacket();
@@ -32417,6 +32527,9 @@
         getEffectiveCapacity,
         depositToStorage,
         withdrawFromStorage,
+        parkVehicle,
+        unparkVehicle,
+        getParkedVehicles,
         depositToHome,
         withdrawFromHome,
         getHomeStorageUsed,

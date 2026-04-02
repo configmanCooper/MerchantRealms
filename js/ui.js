@@ -2644,6 +2644,41 @@ window.UI = (function () {
             }
             if (!depositItems) depositItems = '<div class="text-dim" style="font-size:0.72rem;">Nothing to deposit</div>';
             if (!withdrawItems) withdrawItems = '<div class="text-dim" style="font-size:0.72rem;">Nothing to withdraw</div>';
+            // Parked vehicles section
+            var parkedVehicles = Player.getParkedVehicles ? Player.getParkedVehicles() : [];
+            var vehicleCaps = { cart: 80, small_wagon: 120, wagon: 200, large_wagon: 300 };
+            var vehicleIcons = { cart: '🛒', small_wagon: '🛞', wagon: '🚛', large_wagon: '🚚' };
+            var parkedHtml = '';
+            if (parkedVehicles.length > 0) {
+                parkedHtml += '<div style="font-size:0.75rem;font-weight:bold;margin:6px 0 4px;">🛒 Parked Vehicles</div>';
+                for (var pvi = 0; pvi < parkedVehicles.length; pvi++) {
+                    var pv = parkedVehicles[pvi];
+                    var pvName = pv.type.replace(/_/g, ' ');
+                    var pvCap = vehicleCaps[pv.type] || 0;
+                    var pvIcon = vehicleIcons[pv.type] || '📦';
+                    parkedHtml += '<div style="display:flex;justify-content:space-between;align-items:center;font-size:0.72rem;padding:2px 4px;background:rgba(200,150,50,0.1);border-radius:4px;margin:2px 0;">' +
+                        '<span>' + pvIcon + ' ' + pvName + ' (+' + pvCap + ' cap)</span>' +
+                        '<button class="qty-btn" onclick="UI.unparkVehicle(\'' + pv.type + '\')" style="font-size:0.65rem;padding:1px 5px;">Retrieve</button>' +
+                    '</div>';
+                }
+                parkedHtml += '<div style="font-size:0.65rem;color:var(--text-dim);margin-top:2px;">⚠️ ~70%/year theft risk for unguarded vehicles</div>';
+            }
+            // Parkable vehicles from inventory
+            var parkableTypes = ['cart', 'small_wagon', 'wagon', 'large_wagon'];
+            var parkBtns = '';
+            for (var pt = 0; pt < parkableTypes.length; pt++) {
+                var pvt = parkableTypes[pt];
+                var pInv = (Player.getState ? Player.getState().inventory[pvt] : 0) || 0;
+                if (pInv > 0 && (!Player.getState || Player.getState().storageContainer !== pvt)) {
+                    var pName = pvt.replace(/_/g, ' ');
+                    var pCap = vehicleCaps[pvt] || 0;
+                    var pIcon = vehicleIcons[pvt] || '📦';
+                    parkBtns += '<button class="qty-btn" onclick="UI.parkVehicle(\'' + pvt + '\')" style="font-size:0.65rem;padding:2px 6px;">' + pIcon + ' Park ' + pName + ' (+' + pCap + ')</button> ';
+                }
+            }
+            if (parkBtns) {
+                parkedHtml += '<div style="font-size:0.75rem;font-weight:bold;margin:6px 0 4px;">📥 Park a Vehicle</div><div style="display:flex;gap:4px;flex-wrap:wrap;">' + parkBtns + '</div>';
+            }
             storageManageHtml = `<details style="border-top:1px solid var(--border);padding-top:6px;margin-top:6px;">
                 <summary style="cursor:pointer;font-size:0.8rem;font-weight:bold;">📦 Warehouse Storage (${Math.round(townStorageUsed)}/${townStorageCap})</summary>
                 <div style="display:flex;gap:12px;margin-top:6px;flex-wrap:wrap;">
@@ -2656,6 +2691,7 @@ window.UI = (function () {
                         ${withdrawItems}
                     </div>
                 </div>
+                ${parkedHtml}
             </details>`;
         }
 
@@ -8148,6 +8184,26 @@ window.UI = (function () {
             if (result.success) openTradeDialog();
         } catch (e) {
             toast(e.message || 'Cannot withdraw', 'danger');
+        }
+    }
+
+    function parkVehicleUI(vehicleType) {
+        try {
+            const result = Player.parkVehicle(vehicleType);
+            toast(result.message, result.success ? 'success' : 'warning');
+            if (result.success) openTradeDialog();
+        } catch (e) {
+            toast(e.message || 'Cannot park vehicle', 'danger');
+        }
+    }
+
+    function unparkVehicleUI(vehicleType) {
+        try {
+            const result = Player.unparkVehicle(vehicleType);
+            toast(result.message, result.success ? 'success' : 'warning');
+            if (result.success) openTradeDialog();
+        } catch (e) {
+            toast(e.message || 'Cannot retrieve vehicle', 'danger');
         }
     }
 
@@ -19781,6 +19837,8 @@ window.UI = (function () {
         dismountHorseUI,
         depositToStorage: depositToStorageUI,
         withdrawFromStorage: withdrawFromStorageUI,
+        parkVehicle: parkVehicleUI,
+        unparkVehicle: unparkVehicleUI,
         // Passenger Transport
         setupTransportUI,
         cancelTransportUI,
