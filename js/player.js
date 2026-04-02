@@ -12497,6 +12497,65 @@
         }
     }
 
+    function tickPlayerIllnessExposure() {
+        if (!player.townId || player.traveling) return;
+        if (player.illnesses && player.illnesses.length > 0) return; // already sick
+        var rng = Engine.getRng();
+        if (!rng) return;
+        var day = Engine.getDay();
+
+        // Only check every 3 days
+        if (day % 3 !== 0) return;
+
+        try {
+            var w = Engine.getWorld();
+            if (!w || !w.people) return;
+            var townPeople = w.people.filter(function(p) { return p.alive && p.townId === player.townId; });
+            if (townPeople.length === 0) return;
+            var sickCount = 0;
+            var contagiousSick = {};
+            for (var i = 0; i < townPeople.length; i++) {
+                if (townPeople[i].sick) {
+                    sickCount++;
+                    var ill = townPeople[i].illness;
+                    if (ill === 'plague' || ill === 'cold' || ill === 'flu') {
+                        if (!contagiousSick[ill]) contagiousSick[ill] = 0;
+                        contagiousSick[ill]++;
+                    }
+                }
+            }
+            if (sickCount === 0) return;
+
+            var pop = townPeople.length;
+            // Housing protection
+            var housingProtection = getHousingDiseaseReduction();
+            // Medical skills give protection
+            var skillProtection = 0;
+            if (hasSkill('doctor')) skillProtection += 0.3;
+            else if (hasSkill('first_aid')) skillProtection += 0.15;
+            else if (hasSkill('field_medic')) skillProtection += 0.10;
+            var protectionMult = Math.max(0.1, 1.0 - housingProtection - skillProtection);
+
+            for (var illId in contagiousSick) {
+                var illSickRatio = contagiousSick[illId] / pop;
+                // Player exposure rate: lower than NPC contagion (player takes more precautions)
+                var exposureChance = illSickRatio * 0.03 * 3 * protectionMult; // *3 for 3-day tick
+                if (illId === 'plague') exposureChance *= 2; // plague is more aggressive
+
+                if (rng.chance(exposureChance)) {
+                    // Map NPC illness to player illness type
+                    var playerIllId = null;
+                    if (illId === 'plague') playerIllId = 'plague';
+                    else if (illId === 'flu' || illId === 'cold') playerIllId = 'common_cold';
+                    if (playerIllId) {
+                        inflictSpecificIllness(playerIllId, 'town_exposure');
+                    }
+                    break; // only one illness per tick
+                }
+            }
+        } catch(e) {}
+    }
+
     function inflictRandomIllness(source) {
         const rng = Engine.getRng();
         if (!rng) return;
@@ -14694,6 +14753,9 @@
 
         // Town quests: check expirations and generate new
         tickTownQuests();
+
+        // Player exposure to town illness
+        tickPlayerIllnessExposure();
 
         // Travel progress
         tickTravel();

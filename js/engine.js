@@ -778,6 +778,7 @@
                 successionCrisis: null,
                 immigrationPolicy: 'open',
                 warExhaustion: 0,           // 0-100 scale, accumulates during war, recovers during peace
+                healthPolicies: [],         // active health/quarantine policies
             });
             // Bug 5: store starting gold for crisis detection
             kingdoms[kingdoms.length - 1]._startingGold = kingdoms[kingdoms.length - 1].gold;
@@ -5042,53 +5043,57 @@
             }
 
             // ---- NPC medical self-treatment (every 7 days) ----
-            // NPCs with medicalKnowledge buy supplies from market to self-treat
-            if (day % 7 === 0 && p.medicalKnowledge && p.medicalKnowledge !== 'none') {
+            // NPCs who are actually sick buy supplies from market to self-treat
+            if (day % 7 === 0 && p.sick && p.medicalKnowledge && p.medicalKnowledge !== 'none') {
                 var medTown = findTown(p.townId);
                 if (medTown && medTown.market && medTown.market.supply) {
                     var medSupply = medTown.market.supply;
                     var medPrices = medTown.market.prices || {};
-                    // Chance NPC is sick/injured scales with plague, war, and general risk
-                    var medKingdom = findKingdom(p.kingdomId);
-                    var medAtWar = medKingdom && medKingdom.atWar && medKingdom.atWar.size > 0;
-                    var medHasPlague = medTown.plague && medTown.plague.active;
-                    var sickChance = medHasPlague ? 0.35 : (medAtWar ? 0.15 : 0.06);
-                    // Tent dwellers get sick much more often
-                    if (p.houseType === 'tent') sickChance = Math.min(0.5, sickChance * 2.5);
-                    else if (!p.houseType) sickChance = Math.min(0.45, sickChance * 1.8); // Homeless also elevated
-                    if (world.rng.chance(sickChance)) {
-                        // Determine severity of ailment
-                        var sevRoll = world.rng.random();
-                        var ailSeverity = sevRoll < 0.6 ? 'minor' : (sevRoll < 0.85 ? 'moderate' : 'severe');
-                        // Can they self-treat this severity?
-                        var canTreat = ailSeverity === 'minor' ||
-                            (ailSeverity === 'moderate' && p.medicalKnowledge === 'moderate');
-                        if (canTreat) {
-                            // Pick appropriate supply to buy
-                            var medItem = null;
-                            if (ailSeverity === 'minor') {
-                                // Try bandages or herbal_remedy
-                                if ((medSupply.bandages || 0) > 0) medItem = 'bandages';
-                                else if ((medSupply.herbal_remedy || 0) > 0) medItem = 'herbal_remedy';
-                                else if ((medSupply.herbal_poultice || 0) > 0) medItem = 'herbal_poultice';
-                            } else {
-                                // Moderate: try splint, fever_tonic, herbal_remedy
-                                if ((medSupply.fever_tonic || 0) > 0) medItem = 'fever_tonic';
-                                else if ((medSupply.splint || 0) > 0) medItem = 'splint';
-                                else if ((medSupply.herbal_remedy || 0) > 0) medItem = 'herbal_remedy';
-                                else if ((medSupply.healing_tonic || 0) > 0) medItem = 'healing_tonic';
-                            }
-                            if (medItem) {
-                                var medCost = medPrices[medItem] || 10;
-                                if (p.gold >= medCost) {
-                                    p.gold -= medCost;
-                                    medSupply[medItem] = (medSupply[medItem] || 0) - 1;
-                                    // Revenue goes to town economy
-                                    if (medKingdom) medKingdom.gold = (medKingdom.gold || 0) + Math.floor(medCost * 0.05);
-                                }
+                    var ailSeverity = p.illnessSeverity || 'minor';
+                    // Can they self-treat this severity?
+                    var canTreat = ailSeverity === 'minor' ||
+                        (ailSeverity === 'moderate' && p.medicalKnowledge === 'moderate');
+                    if (canTreat) {
+                        // Pick appropriate supply to buy
+                        var medItem = null;
+                        if (ailSeverity === 'minor') {
+                            if ((medSupply.bandages || 0) > 0) medItem = 'bandages';
+                            else if ((medSupply.herbal_remedy || 0) > 0) medItem = 'herbal_remedy';
+                            else if ((medSupply.herbal_poultice || 0) > 0) medItem = 'herbal_poultice';
+                        } else {
+                            if ((medSupply.fever_tonic || 0) > 0) medItem = 'fever_tonic';
+                            else if ((medSupply.splint || 0) > 0) medItem = 'splint';
+                            else if ((medSupply.herbal_remedy || 0) > 0) medItem = 'herbal_remedy';
+                            else if ((medSupply.healing_tonic || 0) > 0) medItem = 'healing_tonic';
+                        }
+                        if (medItem) {
+                            var medCost = medPrices[medItem] || 10;
+                            if (p.gold >= medCost) {
+                                p.gold -= medCost;
+                                medSupply[medItem] = (medSupply[medItem] || 0) - 1;
+                                var medKingdom = findKingdom(p.kingdomId);
+                                if (medKingdom) medKingdom.gold = (medKingdom.gold || 0) + Math.floor(medCost * 0.05);
+                                // Boost recovery
+                                p.health = Math.min(100, (p.health || 50) + 5);
                             }
                         }
-                        // NPCs who can't self-treat seek clinic/hospital (already handled by retail system)
+                    }
+                }
+            }
+            // Non-medical NPCs who are sick also seek treatment from market (buy bandages/remedy)
+            if (day % 7 === 0 && p.sick && (!p.medicalKnowledge || p.medicalKnowledge === 'none')) {
+                var nmTown = findTown(p.townId);
+                if (nmTown && nmTown.market && nmTown.market.supply) {
+                    var nmSupply = nmTown.market.supply;
+                    var nmPrices = nmTown.market.prices || {};
+                    var nmItem = null;
+                    if ((nmSupply.herbal_remedy || 0) > 0) nmItem = 'herbal_remedy';
+                    else if ((nmSupply.bandages || 0) > 0) nmItem = 'bandages';
+                    if (nmItem && p.gold >= (nmPrices[nmItem] || 10)) {
+                        var nmCost = nmPrices[nmItem] || 10;
+                        p.gold -= nmCost;
+                        nmSupply[nmItem] = (nmSupply[nmItem] || 0) - 1;
+                        p.health = Math.min(100, (p.health || 50) + 3);
                     }
                 }
             }
@@ -15414,11 +15419,11 @@
 
         switch (ev.type) {
             case 'plague': {
-                // Kill some people each day
+                // Infect people with plague illness instead of instant-killing
                 const townPeople = world.people.filter(p => p.alive && p.townId === ev.townId);
                 for (const p of townPeople) {
-                    if (rng.chance(ev.killRate)) {
-                        killPerson(p, 'plague');
+                    if (!p.sick && rng.chance(ev.killRate * 2)) {
+                        infectNPC(p, 'plague', rng, world.day, 'plague_event');
                     }
                 }
                 town.happiness = Math.max(0, town.happiness - 1);
@@ -15458,11 +15463,11 @@
                 break;
             }
             case 'plague_disaster': {
-                // Kill people each day based on severity
+                // Infect people with plague illness; deaths come from illness progression
                 const townPeople = world.people.filter(p => p.alive && p.townId === ev.townId);
                 for (const p of townPeople) {
-                    if (rng.chance(ev.killRate)) {
-                        killPerson(p, 'plague');
+                    if (!p.sick && rng.chance(ev.killRate * 2.5)) {
+                        infectNPC(p, 'plague', rng, world.day, 'plague_disaster');
                     }
                 }
                 town.happiness = Math.max(0, town.happiness - 1);
@@ -15472,6 +15477,694 @@
                 // Farms produce nothing — handled by getEventProductionMod
                 town.happiness = Math.max(0, town.happiness - 0.2);
                 break;
+            }
+        }
+    }
+
+    // ========================================================
+    // §16B NPC HEALTH & ILLNESS SYSTEM
+    // ========================================================
+
+    var NPC_ILLNESSES_BY_SEVERITY = null; // lazy-init cache
+
+    function _getIllnessesBySeverity() {
+        if (NPC_ILLNESSES_BY_SEVERITY) return NPC_ILLNESSES_BY_SEVERITY;
+        var ills = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.ILLNESSES) ? NPC_HEALTH_CONFIG.ILLNESSES : {};
+        var result = { minor: [], moderate: [], serious: [], severe: [] };
+        for (var key in ills) {
+            var ill = ills[key];
+            ill._id = key;
+            if (result[ill.severity]) result[ill.severity].push(ill);
+        }
+        NPC_ILLNESSES_BY_SEVERITY = result;
+        return result;
+    }
+
+    function _isImmuneToIllness(personId, illnessId) {
+        // ~10% deterministic immunity per person per illness
+        var hash = 0;
+        var str = personId + ':' + illnessId;
+        for (var i = 0; i < str.length; i++) hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+        return (Math.abs(hash) % 100) < 10;
+    }
+
+    function _isAsymptomatic(personId, illnessId) {
+        // ~20% of infected are asymptomatic carriers
+        var hash = 0;
+        var str = 'asym:' + personId + ':' + illnessId;
+        for (var i = 0; i < str.length; i++) hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+        return (Math.abs(hash) % 100) < 20;
+    }
+
+    function _pickIllnessForSeverity(severity, seasonLower, rng) {
+        var pool = _getIllnessesBySeverity();
+        var candidates = (pool[severity] || []).filter(function(ill) {
+            return !ill.seasons || ill.seasons.indexOf(seasonLower) >= 0;
+        });
+        if (candidates.length === 0) {
+            // Fallback: pick any of that severity
+            candidates = pool[severity] || [];
+        }
+        if (candidates.length === 0) return null;
+        return candidates[rng.randInt(0, candidates.length - 1)];
+    }
+
+    function infectNPC(person, illnessId, rng, day, source) {
+        if (!person || !person.alive || person.sick) return false;
+        if (_isImmuneToIllness(person.id, illnessId)) return false;
+
+        var ills = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.ILLNESSES) ? NPC_HEALTH_CONFIG.ILLNESSES : {};
+        var ill = ills[illnessId];
+        if (!ill) return false;
+
+        person.sick = true;
+        person.illness = illnessId;
+        person.illnessDay = day;
+        person.illnessSeverity = ill.severity;
+        person.asymptomatic = _isAsymptomatic(person.id, illnessId);
+        person.illnessSource = source || 'random';
+        person.illnessTreated = false;
+        return true;
+    }
+
+    function _infectRandomSeverity(person, severity, seasonLower, rng, day, source) {
+        var ill = _pickIllnessForSeverity(severity, seasonLower, rng);
+        if (!ill) return false;
+        return infectNPC(person, ill._id, rng, day, source || 'random');
+    }
+
+    function tickNPCHealth() {
+        if (!world || !world.people) return;
+        var rng = world.rng;
+        var day = world.day;
+
+        // Tick every 3 days for performance, scale rates accordingly
+        if (day % 3 !== 0) return;
+        var tickScale = 3;
+
+        var daysPerYear = (CONFIG.DAYS_PER_SEASON || 90) * 4;
+        var season = getSeason(day);
+        var seasonLower = season.toLowerCase();
+        var seasonMult = 1.0;
+        if (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.SEASON_MULT) {
+            seasonMult = NPC_HEALTH_CONFIG.SEASON_MULT[seasonLower] || 1.0;
+        }
+
+        // Per-NPC daily rates (annualized → daily → scaled by tick interval)
+        var minorRate = (0.10 / daysPerYear) * tickScale * seasonMult;
+        var moderateRate = (0.05 / daysPerYear) * tickScale * seasonMult;
+        var severeRate = (0.01 / daysPerYear) * tickScale * seasonMult;
+
+        // Pre-calculate town health infrastructure modifier
+        var townHealthMod = {};
+        var townHasHospital = {};
+        var townHasClinic = {};
+        for (var ti = 0; ti < world.towns.length; ti++) {
+            var t = world.towns[ti];
+            var mod = 1.0;
+            var hasHosp = false, hasClin = false;
+            var blds = t.buildings || [];
+            for (var bi = 0; bi < blds.length; bi++) {
+                var btId = typeof blds[bi] === 'string' ? blds[bi] : (blds[bi].type || blds[bi].id || '');
+                if (btId === 'hospital') { mod -= 0.50; hasHosp = true; }
+                else if (btId === 'clinic') { mod -= 0.25; hasClin = true; }
+                else if (btId === 'well' || btId === 'cistern') mod -= 0.15;
+                else if (btId === 'bathhouse') mod -= 0.10;
+            }
+            // Prosperity: higher = healthier. 50 prosp = 1.0x, 100 prosp = 0.7x
+            var prosp = (t.prosperity || 50) / 100;
+            mod *= Math.max(0.5, 1.2 - prosp * 0.5);
+            // Population density: bigger towns = slightly higher illness
+            if ((t.population || 0) > 300) mod *= 1.15;
+            else if ((t.population || 0) > 150) mod *= 1.05;
+            // Kingdom health policies
+            var kd = t.kingdomId ? findKingdom(t.kingdomId) : null;
+            if (kd && kd.healthPolicies) {
+                for (var hp = 0; hp < kd.healthPolicies.length; hp++) {
+                    var pol = kd.healthPolicies[hp];
+                    if (!pol.active || (pol.expiresDay && day > pol.expiresDay)) continue;
+                    if (pol.type === 'public_hygiene' && (!pol.townId || pol.townId === t.id)) mod *= 0.70;
+                    if (pol.type === 'medical_funding' && (!pol.townId || pol.townId === t.id)) mod *= 0.85;
+                    if (pol.type === 'martial_quarantine' && pol.townId === t.id) mod *= 0.40;
+                }
+            }
+            mod = Math.max(0.05, mod);
+            townHealthMod[t.id] = mod;
+            townHasHospital[t.id] = hasHosp;
+            townHasClinic[t.id] = hasClin;
+        }
+
+        // Track sick counts per town for contagion
+        var townSick = {};   // townId → [person, ...]
+        var townHealthy = {}; // townId → [person, ...]
+
+        // Main pass: tick existing illness + roll new random illness
+        for (var i = 0; i < world.people.length; i++) {
+            var p = world.people[i];
+            if (!p.alive) continue;
+            var tid = p.townId;
+            if (!tid) continue;
+
+            if (p.sick) {
+                if (!townSick[tid]) townSick[tid] = [];
+                townSick[tid].push(p);
+                _tickPersonIllness(p, rng, day, tickScale, townHasHospital[tid], townHasClinic[tid]);
+            } else {
+                if (!townHealthy[tid]) townHealthy[tid] = [];
+                townHealthy[tid].push(p);
+                // Roll for new random illness
+                var tMod = townHealthMod[tid] || 1.0;
+                var roll = rng.random();
+                if (roll < severeRate * tMod) {
+                    _infectRandomSeverity(p, 'severe', seasonLower, rng, day, 'random');
+                } else if (roll < (severeRate + moderateRate) * tMod) {
+                    _infectRandomSeverity(p, 'moderate', seasonLower, rng, day, 'random');
+                } else if (roll < (severeRate + moderateRate + minorRate) * tMod) {
+                    _infectRandomSeverity(p, 'minor', seasonLower, rng, day, 'random');
+                }
+            }
+        }
+
+        // Contagion: spread within towns
+        _spreadContagionWithinTowns(townSick, townHealthy, townHealthMod, rng, day, seasonLower);
+
+        // Contagion: spread between connected towns (slow, only for plague)
+        if (day % 9 === 0) {
+            _spreadContagionBetweenTowns(townSick, townHealthy, rng, day, seasonLower);
+        }
+    }
+
+    function _tickPersonIllness(person, rng, day, tickScale, hasHospital, hasClinic) {
+        var ills = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.ILLNESSES) ? NPC_HEALTH_CONFIG.ILLNESSES : {};
+        var illDef = ills[person.illness];
+        if (!illDef) { person.sick = false; person.illness = null; return; }
+
+        var daysSick = day - (person.illnessDay || day);
+        var healthDrain = (illDef.healthDrain || 0.5) * tickScale;
+
+        // Asymptomatic carriers: no health drain, but still contagious
+        if (person.asymptomatic) {
+            // Asymptomatics recover after the illness duration with no harm
+            if (daysSick >= (illDef.daysToRecover || 14)) {
+                person.sick = false;
+                person.illness = null;
+                person.asymptomatic = false;
+                person.health = Math.min(100, person.health + 5);
+            }
+            return;
+        }
+
+        // Treatment: hospitals/clinics boost recovery and reduce drain
+        var treated = false;
+        if (hasHospital) { healthDrain *= 0.3; treated = true; }
+        else if (hasClinic) { healthDrain *= 0.6; treated = true; }
+        // NPC medical self-treatment
+        if (person.medicalKnowledge && person.medicalKnowledge !== 'none') {
+            healthDrain *= 0.7;
+            treated = true;
+        }
+        person.illnessTreated = treated;
+
+        // Apply health drain
+        person.health = Math.max(0, person.health - healthDrain);
+
+        // Recovery check
+        var recoveryDays = illDef.daysToRecover || 14;
+        if (treated) recoveryDays = Math.floor(recoveryDays * 0.6);
+        // Natural recovery with randomness
+        if (daysSick >= recoveryDays && rng.chance(0.3 * tickScale)) {
+            person.sick = false;
+            person.illness = null;
+            person.asymptomatic = false;
+            person.health = Math.min(100, person.health + 10);
+            return;
+        }
+
+        // Natural health recovery (slow, even while sick if treated)
+        if (treated) {
+            person.health = Math.min(100, person.health + (NPC_HEALTH_CONFIG.DOCTOR_HEAL_PER_DAY || 3.0) * tickScale * 0.3);
+        }
+
+        // Death check
+        if (person.health <= 0) {
+            killPerson(person, 'illness');
+            var town = findTown(person.townId);
+            logEvent('💀 ' + person.firstName + ' ' + (person.lastName || '') + ' of ' + (town ? town.name : 'unknown') + ' died of ' + (illDef.name || person.illness) + '.', {
+                type: 'npc_illness_death', townId: person.townId
+            });
+        }
+    }
+
+    function _spreadContagionWithinTowns(townSick, townHealthy, townHealthMod, rng, day, seasonLower) {
+        var ills = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.ILLNESSES) ? NPC_HEALTH_CONFIG.ILLNESSES : {};
+
+        for (var tid in townSick) {
+            var sickList = townSick[tid];
+            var healthyList = townHealthy[tid] || [];
+            if (healthyList.length === 0) continue;
+
+            var town = findTown(tid);
+            var pop = (town ? town.population : sickList.length + healthyList.length) || 1;
+            var prosp = town ? (town.prosperity || 50) : 50;
+
+            // Count contagious sick by illness
+            var contagiousCounts = {};
+            for (var si = 0; si < sickList.length; si++) {
+                var sp = sickList[si];
+                var sIll = ills[sp.illness];
+                if (!sIll) continue;
+                // Only flu, cold, and plague are contagious
+                var isContagious = (sIll.contagious) || sp.illness === 'cold' || sp.illness === 'flu';
+                if (!isContagious) continue;
+                if (!contagiousCounts[sp.illness]) contagiousCounts[sp.illness] = 0;
+                contagiousCounts[sp.illness]++;
+            }
+
+            for (var illId in contagiousCounts) {
+                var sickCount = contagiousCounts[illId];
+                var illDef = ills[illId];
+                if (!illDef) continue;
+
+                // Base contagion rate per healthy person
+                var sickRatio = sickCount / pop;
+                var baseRate;
+                if (illDef.contagious) {
+                    // Plague: moderate spread
+                    baseRate = (illDef.spreadChance || 0.02) * sickRatio * 15;
+                } else {
+                    // Cold/flu: slow spread
+                    baseRate = 0.003 * sickRatio * 10;
+                }
+
+                // Population modifier: bigger towns spread faster
+                if (pop > 300) baseRate *= 1.3;
+                else if (pop < 60) baseRate *= 0.5;
+
+                // Prosperity slows spread
+                baseRate *= Math.max(0.4, 1.3 - (prosp / 100) * 0.6);
+
+                // Town health infrastructure
+                var tMod = townHealthMod[tid] || 1.0;
+                baseRate *= tMod;
+
+                // Kingdom quarantine policies
+                var kingdom = town && town.kingdomId ? findKingdom(town.kingdomId) : null;
+                if (kingdom && kingdom.healthPolicies) {
+                    for (var hp = 0; hp < kingdom.healthPolicies.length; hp++) {
+                        var pol = kingdom.healthPolicies[hp];
+                        if (!pol.active || (pol.expiresDay && day > pol.expiresDay)) continue;
+                        if (pol.type === 'martial_quarantine' && pol.townId === tid) baseRate *= 0.05;
+                        else if (pol.type === 'quarantine_town' && pol.townId === tid) baseRate *= 0.20;
+                    }
+                }
+
+                // Expected new infections (scaled by tick interval already baked into sickRatio time)
+                var expectedNew = Math.max(0, healthyList.length * baseRate * 3); // *3 for tick interval
+                var newCases = Math.floor(expectedNew);
+                if (rng.chance(expectedNew - newCases)) newCases++;
+
+                if (newCases > 0) {
+                    // Shuffle healthy list and infect first N
+                    var shuffled = healthyList.slice();
+                    for (var shi = shuffled.length - 1; shi > 0; shi--) {
+                        var shj = rng.randInt(0, shi);
+                        var tmp = shuffled[shi]; shuffled[shi] = shuffled[shj]; shuffled[shj] = tmp;
+                    }
+                    var infected = 0;
+                    for (var ni = 0; ni < Math.min(newCases, shuffled.length); ni++) {
+                        if (infectNPC(shuffled[ni], illId, rng, day, 'contagion')) {
+                            infected++;
+                            // Remove from healthy pool
+                            var hIdx = healthyList.indexOf(shuffled[ni]);
+                            if (hIdx >= 0) healthyList.splice(hIdx, 1);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    function _spreadContagionBetweenTowns(townSick, townHealthy, rng, day, seasonLower) {
+        var ills = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.ILLNESSES) ? NPC_HEALTH_CONFIG.ILLNESSES : {};
+
+        // All contagious illnesses can spread between towns (cold, flu, plague)
+        for (var tid in townSick) {
+            var sickList = townSick[tid];
+            var town = findTown(tid);
+            if (!town) continue;
+
+            var pop = town.population || 1;
+
+            // Count contagious sick by illness type
+            var contagiousByIll = {};
+            for (var si = 0; si < sickList.length; si++) {
+                var sp = sickList[si];
+                var sIll = ills[sp.illness];
+                if (!sIll) continue;
+                var isContagious = (sIll.contagious) || sp.illness === 'cold' || sp.illness === 'flu';
+                if (!isContagious) continue;
+                if (!contagiousByIll[sp.illness]) contagiousByIll[sp.illness] = 0;
+                contagiousByIll[sp.illness]++;
+            }
+
+            // Check quarantine policies blocking outbound spread
+            var kingdom = town.kingdomId ? findKingdom(town.kingdomId) : null;
+            var isQuarantined = false;
+            var portClosed = false;
+            if (kingdom && kingdom.healthPolicies) {
+                for (var hp = 0; hp < kingdom.healthPolicies.length; hp++) {
+                    var pol = kingdom.healthPolicies[hp];
+                    if (!pol.active || (pol.expiresDay && day > pol.expiresDay)) continue;
+                    if ((pol.type === 'quarantine_town' || pol.type === 'martial_quarantine') && pol.townId === tid) isQuarantined = true;
+                    if (pol.type === 'close_port' && pol.townId === tid) portClosed = true;
+                }
+            }
+
+            for (var illId in contagiousByIll) {
+                var sickCount = contagiousByIll[illId];
+                var illDef = ills[illId];
+                if (!illDef) continue;
+                var sickRatio = sickCount / pop;
+
+                // Need a meaningful sick ratio before it can jump towns
+                var minRatioForSpread = (illDef.contagious) ? 0.02 : 0.05;
+                if (sickRatio < minRatioForSpread) continue;
+
+                // Base cross-town rate: much lower than within-town
+                // Plague: moderate, cold/flu: very slow
+                var baseXTownRate = (illDef.contagious) ? 0.006 : 0.001;
+                baseXTownRate *= sickRatio;
+                baseXTownRate *= 9; // scale for every-9-day tick
+
+                // ---- Spread via roads ----
+                if (!isQuarantined) {
+                    var roads = world.roads || [];
+                    for (var ri = 0; ri < roads.length; ri++) {
+                        var road = roads[ri];
+                        var neighborId = null;
+                        if (road.fromTownId === tid) neighborId = road.toTownId;
+                        else if (road.toTownId === tid) neighborId = road.fromTownId;
+                        if (!neighborId) continue;
+
+                        var nTown = findTown(neighborId);
+                        if (!nTown) continue;
+
+                        // Check if destination is blocking incoming
+                        var nBlocked = _isTownBlockingIncoming(nTown, day);
+                        if (nBlocked) continue;
+
+                        // Distance factor: longer routes = slower spread
+                        var dx = (town.x || 0) - (nTown.x || 0);
+                        var dy = (town.y || 0) - (nTown.y || 0);
+                        var dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                        var distFactor = Math.max(0.1, 1.0 / (1 + dist / 50)); // halved at dist 50, quartered at dist 150
+
+                        // Prosperity of destination slows spread
+                        var nProsp = (nTown.prosperity || 50) / 100;
+                        var prospFactor = Math.max(0.3, 1.2 - nProsp * 0.5);
+
+                        // Lower population destinations = slower spread
+                        var popFactor = (nTown.population || 50) < 60 ? 0.5 : 1.0;
+
+                        var roadChance = baseXTownRate * distFactor * prospFactor * popFactor;
+
+                        if (rng.chance(roadChance)) {
+                            var nHealthy = (townHealthy[neighborId] && townHealthy[neighborId].length > 0) ? townHealthy[neighborId] :
+                                world.people.filter(function(np) { return np.alive && np.townId === neighborId && !np.sick; });
+                            if (nHealthy.length > 0) {
+                                var nToInfect = (illDef.contagious) ? rng.randInt(1, Math.min(3, nHealthy.length)) : 1;
+                                for (var nii = 0; nii < nToInfect; nii++) {
+                                    var nTarget = nHealthy[rng.randInt(0, nHealthy.length - 1)];
+                                    infectNPC(nTarget, illId, rng, day, 'road_spread');
+                                }
+                                if (illDef.contagious) {
+                                    logEvent('🦠 Plague has spread along the road from ' + town.name + ' to ' + nTown.name + '!', {
+                                        type: 'plague_spread', townId: neighborId
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ---- Spread via sea routes (slightly worse — cramped ships) ----
+                if (town.isPort && !portClosed && (illDef.contagious || illId === 'flu')) {
+                    var seaRoutes = world.seaRoutes || [];
+                    for (var sri = 0; sri < seaRoutes.length; sri++) {
+                        var sr = seaRoutes[sri];
+                        var seaNeighborId = null;
+                        if (sr.fromTownId === tid) seaNeighborId = sr.toTownId;
+                        else if (sr.toTownId === tid) seaNeighborId = sr.fromTownId;
+                        if (!seaNeighborId) continue;
+
+                        var seaTown = findTown(seaNeighborId);
+                        if (!seaTown) continue;
+
+                        // Check if destination port is blocking incoming
+                        var seaBlocked = _isTownBlockingIncoming(seaTown, day);
+                        if (seaBlocked) continue;
+
+                        // Sea distance factor (longer voyages = slightly slower, but ships are cramped so 1.4x worse)
+                        var sdx = (town.x || 0) - (seaTown.x || 0);
+                        var sdy = (town.y || 0) - (seaTown.y || 0);
+                        var seaDist = Math.sqrt(sdx * sdx + sdy * sdy) || 1;
+                        var seaDistFactor = Math.max(0.15, 1.0 / (1 + seaDist / 80));
+                        var seaCrampedBonus = 1.4; // ships are cramped, illness spreads easier
+
+                        var seaProspFactor = Math.max(0.3, 1.2 - ((seaTown.prosperity || 50) / 100) * 0.5);
+                        var seaPopFactor = (seaTown.population || 50) < 60 ? 0.5 : 1.0;
+
+                        var seaChance = baseXTownRate * seaDistFactor * seaCrampedBonus * seaProspFactor * seaPopFactor;
+
+                        if (rng.chance(seaChance)) {
+                            var seaHealthy = (townHealthy[seaNeighborId] && townHealthy[seaNeighborId].length > 0) ? townHealthy[seaNeighborId] :
+                                world.people.filter(function(np) { return np.alive && np.townId === seaNeighborId && !np.sick; });
+                            if (seaHealthy.length > 0) {
+                                var seaToInfect = (illDef.contagious) ? rng.randInt(1, Math.min(4, seaHealthy.length)) : rng.randInt(1, 2);
+                                for (var seaii = 0; seaii < seaToInfect; seaii++) {
+                                    var seaTarget = seaHealthy[rng.randInt(0, seaHealthy.length - 1)];
+                                    infectNPC(seaTarget, illId, rng, day, 'sea_spread');
+                                }
+                                logEvent('🦠 ' + (illDef.name || illId) + ' arrived by ship to ' + seaTown.name + ' from ' + town.name + '!', {
+                                    type: 'illness_spread', townId: seaNeighborId
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    function _isTownBlockingIncoming(town, day) {
+        if (!town || !town.kingdomId) return false;
+        var kd = findKingdom(town.kingdomId);
+        if (!kd || !kd.healthPolicies) return false;
+        for (var i = 0; i < kd.healthPolicies.length; i++) {
+            var pol = kd.healthPolicies[i];
+            if (!pol.active || (pol.expiresDay && day > pol.expiresDay)) continue;
+            if ((pol.type === 'quarantine_town' || pol.type === 'martial_quarantine') && pol.townId === town.id) return true;
+            if (pol.type === 'close_roads' && pol.townId === town.id) return true;
+        }
+        return false;
+    }
+
+    // ---- King AI Health Policy System ----
+
+    function tickKingHealthPolicy(kingdom) {
+        if (!kingdom) return;
+        var day = world.day;
+        var rng = world.rng;
+        var kp = kingdom.kingPersonality || {};
+
+        // Initialize health policies array
+        if (!kingdom.healthPolicies) kingdom.healthPolicies = [];
+
+        // Expire old policies
+        for (var ei = kingdom.healthPolicies.length - 1; ei >= 0; ei--) {
+            var pol = kingdom.healthPolicies[ei];
+            if (pol.expiresDay && day > pol.expiresDay) {
+                kingdom.healthPolicies.splice(ei, 1);
+            }
+        }
+
+        // Calculate sickness stats per kingdom town
+        var kingdomTowns = world.towns.filter(function(t) { return t.kingdomId === kingdom.id; });
+        var totalPop = 0;
+        var totalSick = 0;
+        var townStats = [];
+        for (var ti = 0; ti < kingdomTowns.length; ti++) {
+            var t = kingdomTowns[ti];
+            var pop = 0, sick = 0, plagueCount = 0;
+            for (var pi = 0; pi < world.people.length; pi++) {
+                var pr = world.people[pi];
+                if (!pr.alive || pr.townId !== t.id) continue;
+                pop++;
+                if (pr.sick) {
+                    sick++;
+                    var ills = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.ILLNESSES) ? NPC_HEALTH_CONFIG.ILLNESSES : {};
+                    var prIll = ills[pr.illness];
+                    if (prIll && prIll.contagious) plagueCount++;
+                }
+            }
+            totalPop += pop;
+            totalSick += sick;
+            if (pop > 0) {
+                townStats.push({ town: t, pop: pop, sick: sick, plagueCount: plagueCount, sickRatio: sick / pop, plagueRatio: plagueCount / pop });
+            }
+        }
+        if (totalPop === 0) return;
+
+        var kingdomSickRatio = totalSick / totalPop;
+
+        // Personality thresholds: proactive kings (high justice, high intelligence) react earlier
+        var proactiveness = ((kp.justice || 50) + (kp.intelligence || 50) - 50) / 100; // -0.5 to 0.5
+        var greedFactor = (kp.greed || 50) / 100; // 0-1, greedy kings resist spending
+
+        // Sort towns by sickness severity
+        townStats.sort(function(a, b) { return b.sickRatio - a.sickRatio; });
+
+        for (var tsi = 0; tsi < townStats.length; tsi++) {
+            var ts = townStats[tsi];
+            var alreadyHasPolicy = kingdom.healthPolicies.some(function(p) { return p.townId === ts.town.id && p.active; });
+
+            // ---- DIAL-DOWN: Remove/weaken policies if town is recovering ----
+            if (ts.sickRatio < 0.02) {
+                // Town is nearly healthy — lift all policies for this town
+                for (var ri = kingdom.healthPolicies.length - 1; ri >= 0; ri--) {
+                    var rPol = kingdom.healthPolicies[ri];
+                    if (rPol.townId === ts.town.id && rPol.active) {
+                        rPol.active = false;
+                        rPol.expiresDay = day;
+                        logEvent('✅ ' + kingdom.name + ' lifted health measures in ' + ts.town.name + ' — sickness has subsided.', {
+                            type: 'health_policy_lifted', townId: ts.town.id, kingdomId: kingdom.id
+                        });
+                    }
+                }
+                continue;
+            }
+
+            if (ts.sickRatio < 0.05 && alreadyHasPolicy) {
+                // Getting better but not gone — downgrade policies
+                for (var di = kingdom.healthPolicies.length - 1; di >= 0; di--) {
+                    var dPol = kingdom.healthPolicies[di];
+                    if (dPol.townId === ts.town.id && dPol.active) {
+                        if (dPol.type === 'martial_quarantine') {
+                            // Downgrade to regular quarantine
+                            dPol.type = 'quarantine_town';
+                            dPol.expiresDay = day + 30;
+                            logEvent('📉 ' + kingdom.name + ' relaxed martial quarantine to standard quarantine in ' + ts.town.name + '.', {
+                                type: 'health_policy_relaxed', townId: ts.town.id, kingdomId: kingdom.id
+                            });
+                        } else if (dPol.type === 'quarantine_town' && ts.plagueRatio < 0.01) {
+                            // Downgrade to just medical funding
+                            dPol.type = 'medical_funding';
+                            dPol.expiresDay = day + 30;
+                            logEvent('📉 ' + kingdom.name + ' lifted quarantine in ' + ts.town.name + ', continuing medical support.', {
+                                type: 'health_policy_relaxed', townId: ts.town.id, kingdomId: kingdom.id
+                            });
+                        }
+                    }
+                }
+                continue;
+            }
+
+            // ---- ESCALATION: Only act if sickness affects their kingdom ----
+            // Reactive kings need higher thresholds to act
+            var actionThreshold = 0.08 - proactiveness * 0.04; // proactive: 0.06, reactive: 0.10
+            if (ts.sickRatio < actionThreshold && !alreadyHasPolicy) continue;
+
+            // Don't act if can't afford it (greedy kings are more reluctant)
+            var treasuryThreshold = greedFactor * 500 + 100;
+            if (kingdom.gold < treasuryThreshold) continue;
+
+            // ---- DECIDE POLICY based on severity ----
+            var bestPolicy = null;
+
+            if (ts.plagueRatio > 0.15) {
+                // Severe plague outbreak — martial quarantine
+                if (!alreadyHasPolicy || !kingdom.healthPolicies.some(function(p) { return p.townId === ts.town.id && p.type === 'martial_quarantine' && p.active; })) {
+                    bestPolicy = { type: 'martial_quarantine', cost: 15, duration: 60, tradePenalty: 0.80, happinessPenalty: 15 };
+                }
+            } else if (ts.plagueRatio > 0.05) {
+                // Moderate plague — quarantine + medical
+                if (!alreadyHasPolicy || !kingdom.healthPolicies.some(function(p) { return p.townId === ts.town.id && p.type === 'quarantine_town' && p.active; })) {
+                    bestPolicy = { type: 'quarantine_town', cost: 8, duration: 45, tradePenalty: 0.40, happinessPenalty: 8 };
+                }
+            } else if (ts.sickRatio > 0.10) {
+                // Lots of general sickness — public hygiene + medical funding
+                if (!alreadyHasPolicy) {
+                    bestPolicy = { type: 'public_hygiene', cost: 5, duration: 30, tradePenalty: 0, happinessPenalty: 2 };
+                }
+            } else if (ts.sickRatio > actionThreshold) {
+                // Growing sickness — medical funding
+                if (!alreadyHasPolicy) {
+                    bestPolicy = { type: 'medical_funding', cost: 10, duration: 30, tradePenalty: 0, happinessPenalty: 0 };
+                }
+            }
+
+            // Port towns: close port if plague is spreading
+            if (ts.town.isPort && ts.plagueRatio > 0.05) {
+                var hasPortPolicy = kingdom.healthPolicies.some(function(p) { return p.townId === ts.town.id && p.type === 'close_port' && p.active; });
+                if (!hasPortPolicy && kingdom.gold >= 100) {
+                    kingdom.healthPolicies.push({
+                        type: 'close_port', townId: ts.town.id, active: true,
+                        startDay: day, expiresDay: day + 45, costPerDay: 3
+                    });
+                    logEvent('⚓ ' + kingdom.name + ' closed the port in ' + ts.town.name + ' to prevent plague spread by sea.', {
+                        type: 'health_policy', townId: ts.town.id, kingdomId: kingdom.id
+                    });
+                }
+            }
+
+            if (bestPolicy && kingdom.gold >= bestPolicy.cost * bestPolicy.duration * 0.5) {
+                // Remove existing lower-tier policy for this town before adding
+                for (var oi = kingdom.healthPolicies.length - 1; oi >= 0; oi--) {
+                    if (kingdom.healthPolicies[oi].townId === ts.town.id && kingdom.healthPolicies[oi].active) {
+                        kingdom.healthPolicies[oi].active = false;
+                    }
+                }
+
+                kingdom.healthPolicies.push({
+                    type: bestPolicy.type, townId: ts.town.id, active: true,
+                    startDay: day, expiresDay: day + bestPolicy.duration,
+                    costPerDay: bestPolicy.cost
+                });
+
+                // Apply consequences
+                if (bestPolicy.happinessPenalty > 0) {
+                    ts.town.happiness = Math.max(0, (ts.town.happiness || 50) - bestPolicy.happinessPenalty);
+                }
+
+                var policyNames = {
+                    medical_funding: '🏥 medical funding',
+                    public_hygiene: '🧹 public hygiene measures',
+                    quarantine_town: '🔒 quarantine',
+                    martial_quarantine: '⚔️ martial quarantine',
+                    close_port: '⚓ port closure'
+                };
+                logEvent((policyNames[bestPolicy.type] || bestPolicy.type) + ' enacted in ' + ts.town.name + ' by ' + kingdom.name + '.', {
+                    type: 'health_policy', townId: ts.town.id, kingdomId: kingdom.id
+                });
+            }
+        }
+
+        // Pay daily costs for active policies
+        for (var ci = 0; ci < kingdom.healthPolicies.length; ci++) {
+            var cPol = kingdom.healthPolicies[ci];
+            if (!cPol.active) continue;
+            var cost = cPol.costPerDay || 0;
+            if (cost > 0) {
+                kingdom.gold -= cost;
+                // If kingdom runs out of gold, force-expire policy
+                if (kingdom.gold < 0) {
+                    kingdom.gold = 0;
+                    cPol.active = false;
+                    cPol.expiresDay = day;
+                    logEvent('💸 ' + kingdom.name + ' can no longer afford health measures — policies lifted.', {
+                        type: 'health_policy_expired', kingdomId: kingdom.id
+                    });
+                }
             }
         }
     }
@@ -26418,6 +27111,7 @@
             tickDiplomacy();
             tickMilitary();
             tickEvents();
+            tickNPCHealth();
             tickSecurity();
             tickTownCategories();
             tickOutposts();
@@ -26470,6 +27164,13 @@
             if (world.day % 7 === 0) {
                 for (const k of world.kingdoms) {
                     tickKingEconomicStrategy(k);
+                }
+            }
+
+            // King health policy AI (every 7 days)
+            if (world.day % 7 === 0) {
+                for (const k of world.kingdoms) {
+                    tickKingHealthPolicy(k);
                 }
             }
 
@@ -27399,6 +28100,7 @@
                 successionCrisis: k.successionCrisis || null,
                 royalCommissions: k.royalCommissions || [],
                 immigrationPolicy: k.immigrationPolicy || 'open',
+                healthPolicies: JSON.parse(JSON.stringify(k.healthPolicies || [])),
                 laws: k.laws ? {
                     ...k.laws,
                     bannedGoods: [...(k.laws.bannedGoods || [])],
@@ -27494,6 +28196,7 @@
                 immigrationIncentives: k.immigrationIncentives || [],
                 productionQuotas: k.productionQuotas || [],
                 exportRestrictions: k.exportRestrictions || [],
+                healthPolicies: k.healthPolicies || [],
                 lastTaxIncreaseDay: k.lastTaxIncreaseDay || 0,
                 tournament: k.tournament || null,
                 laws: k.laws ? {
@@ -27803,6 +28506,11 @@
                 if (p.status === undefined) p.status = 'citizen';
                 // Migration tracking defaults
                 if (p._unemployedDays === undefined) p._unemployedDays = 0;
+                // NPC health backward compat
+                if (p.health === undefined) p.health = 100;
+                if (p.sick === undefined) p.sick = false;
+                if (p.illness === undefined) p.illness = null;
+                if (p.illnessDay === undefined) p.illnessDay = 0;
             }
             world.events = data.events || [];
             world.eventLog = data.eventLog || [];
