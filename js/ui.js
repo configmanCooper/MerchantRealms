@@ -1432,6 +1432,16 @@ window.UI = (function () {
         }
 
         showRightPanel(`🏘 ${town.name}`, html);
+        // Make the panel title clickable to pan camera to this town
+        if (el.rightPanelTitle && town.x != null && town.y != null) {
+            el.rightPanelTitle.style.cursor = 'pointer';
+            el.rightPanelTitle.title = 'Click to center view on ' + town.name;
+            el.rightPanelTitle.onclick = function() {
+                if (typeof Renderer !== 'undefined' && Renderer.panTo) {
+                    Renderer.panTo(town.x, town.y);
+                }
+            };
+        }
     }
 
     function showKingdomDetail(kingdom) {
@@ -15522,12 +15532,199 @@ window.UI = (function () {
     //  HELP DIALOG
     // ═══════════════════════════════════════════════════════════
 
+    // ═══════════════════════════════════════════════════════════
+    //  KINGDOMS & NOTABLES DIRECTORY
+    // ═══════════════════════════════════════════════════════════
+
+    function openKingdomsAndNotables() {
+        var kingdoms = [];
+        var allTowns = [];
+        var allPeople = [];
+        try { kingdoms = Engine.getKingdoms(); } catch(e) {}
+        try { allTowns = Engine.getTowns(); } catch(e) {}
+        try { allPeople = Engine.getPeople(); } catch(e) {}
+
+        var html = '';
+
+        // ── TAB BAR ──
+        html += '<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">';
+        html += '<button class="btn-medieval _kn-tab" data-tab="kings" style="font-size:0.85rem;padding:5px 14px;" onclick="UI._switchKNTab(\'kings\')">👑 Kings</button>';
+        html += '<button class="btn-medieval _kn-tab" data-tab="locations" style="font-size:0.85rem;padding:5px 14px;" onclick="UI._switchKNTab(\'locations\')">🏘️ Locations</button>';
+        html += '<button class="btn-medieval _kn-tab" data-tab="nobles" style="font-size:0.85rem;padding:5px 14px;" onclick="UI._switchKNTab(\'nobles\')">🎖️ Nobles</button>';
+        html += '</div>';
+
+        // ── KINGS SECTION ──
+        html += '<div id="_kn_kings" class="_kn-section">';
+        html += '<div style="display:flex;flex-direction:column;gap:8px;max-height:55vh;overflow-y:auto;">';
+        for (var ki = 0; ki < kingdoms.length; ki++) {
+            var k = kingdoms[ki];
+            var kingPerson = k.king ? Engine.getPerson(k.king) : null;
+            var kingName = kingPerson ? (kingPerson.firstName + ' ' + kingPerson.lastName) : 'Unknown';
+            var numTowns = k.territories ? k.territories.length : 0;
+            var kColor = k.color || '#ccc';
+
+            html += '<div style="border:1px solid var(--border);border-left:3px solid ' + kColor + ';border-radius:6px;padding:10px;cursor:pointer;" ';
+            if (kingPerson) {
+                html += 'onclick="UI.showPersonDetail(Engine.getPerson(\'' + k.king + '\'));UI.closeModal();"';
+            }
+            html += '>';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+            html += '<strong style="color:' + kColor + ';">' + k.name + '</strong>';
+            html += '<span style="font-size:0.8rem;color:var(--text-muted);">' + numTowns + ' towns</span>';
+            html += '</div>';
+            html += '<div style="font-size:0.85rem;margin-top:4px;">👑 ' + kingName;
+            if (kingPerson) html += ' <span style="color:var(--text-muted);">(Age ' + (kingPerson.age || '?') + ')</span>';
+            html += '</div>';
+            var traits = [];
+            if (k.kingPersonality) {
+                for (var trait in k.kingPersonality) {
+                    if (k.kingPersonality[trait]) traits.push(k.kingPersonality[trait]);
+                }
+            }
+            if (traits.length > 0) html += '<div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px;">Traits: ' + traits.slice(0, 4).join(', ') + '</div>';
+            html += '<div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px;">💰 Tax: ' + Math.round((k.taxRate || 0.1) * 100) + '% | ⚔️ Military: ' + (k.militaryStrength || 0) + '</div>';
+            html += '</div>';
+        }
+        html += '</div></div>';
+
+        // ── LOCATIONS SECTION ──
+        html += '<div id="_kn_locations" class="_kn-section" style="display:none;">';
+        html += '<input type="text" id="_kn_loc_search" placeholder="Search towns..." oninput="UI._filterKNList(\'loc\')" style="width:100%;padding:6px 10px;margin-bottom:8px;font-size:0.85rem;border:1px solid var(--border);border-radius:4px;background:var(--bg-dark);color:var(--text);">';
+        html += '<div id="_kn_loc_list" style="display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow-y:auto;">';
+
+        // Sort towns by kingdom then name
+        var sortedTowns = allTowns.slice().sort(function(a, b) {
+            var ka = kingdoms.find(function(k) { return k.id === a.kingdomId; });
+            var kb = kingdoms.find(function(k) { return k.id === b.kingdomId; });
+            var na = (ka ? ka.name : 'ZZZ') + a.name;
+            var nb = (kb ? kb.name : 'ZZZ') + b.name;
+            return na.localeCompare(nb);
+        });
+
+        for (var ti = 0; ti < sortedTowns.length; ti++) {
+            var town = sortedTowns[ti];
+            var tKingdom = kingdoms.find(function(k) { return k.id === town.kingdomId; });
+            var tColor = tKingdom ? (tKingdom.color || '#ccc') : '#888';
+            var tKName = tKingdom ? tKingdom.name : 'Unknown';
+            var cat = town.category || 'village';
+            var catLabel = cat.charAt(0).toUpperCase() + cat.slice(1).replace('_', ' ');
+            var isHere = typeof Player !== 'undefined' && Player.townId === town.id;
+
+            html += '<div class="_kn-loc-item" data-name="' + town.name.toLowerCase() + '" style="border:1px solid var(--border);border-left:3px solid ' + tColor + ';border-radius:4px;padding:8px;cursor:pointer;' + (isHere ? 'background:rgba(85,168,104,0.1);' : '') + '" onclick="UI.showTownDetail(Engine.findTown(\'' + town.id + '\'));UI.closeModal();">';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+            html += '<strong style="font-size:0.9rem;">' + town.name + '</strong>';
+            html += '<span style="font-size:0.75rem;color:var(--text-muted);">' + catLabel + '</span>';
+            html += '</div>';
+            html += '<div style="font-size:0.78rem;color:var(--text-muted);">';
+            html += tKName + ' · 👥 ' + (town.population || 0) + ' · 📊 ' + Math.round(town.prosperity || 0) + '%';
+            if (town.isPort) html += ' · 🚢 Port';
+            if (isHere) html += ' · <span style="color:#55a868;">📍 You</span>';
+            html += '</div></div>';
+        }
+        html += '</div></div>';
+
+        // ── NOBLES SECTION ──
+        html += '<div id="_kn_nobles" class="_kn-section" style="display:none;">';
+        html += '<input type="text" id="_kn_noble_search" placeholder="Search nobles..." oninput="UI._filterKNList(\'noble\')" style="width:100%;padding:6px 10px;margin-bottom:8px;font-size:0.85rem;border:1px solid var(--border);border-radius:4px;background:var(--bg-dark);color:var(--text);">';
+        html += '<div id="_kn_noble_list" style="display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow-y:auto;">';
+
+        // Collect nobles: anyone with socialRank >= 4 in any kingdom, plus elite merchants
+        var nobles = [];
+        for (var pi = 0; pi < allPeople.length; pi++) {
+            var p = allPeople[pi];
+            if (!p.alive) continue;
+            var highestRank = 0;
+            var rankKingdomId = null;
+            if (p.socialRank) {
+                for (var kId in p.socialRank) {
+                    if ((p.socialRank[kId] || 0) > highestRank) {
+                        highestRank = p.socialRank[kId];
+                        rankKingdomId = kId;
+                    }
+                }
+            }
+            if (highestRank >= 3 || p.isEliteMerchant) {
+                nobles.push({ person: p, rank: highestRank, kingdomId: rankKingdomId });
+            }
+        }
+        // Sort by rank descending, then name
+        nobles.sort(function(a, b) {
+            if (b.rank !== a.rank) return b.rank - a.rank;
+            var na = (a.person.firstName || '') + ' ' + (a.person.lastName || '');
+            var nb = (b.person.firstName || '') + ' ' + (b.person.lastName || '');
+            return na.localeCompare(nb);
+        });
+
+        for (var ni = 0; ni < nobles.length; ni++) {
+            var noble = nobles[ni];
+            var np = noble.person;
+            var nRank = CONFIG.SOCIAL_RANKS[noble.rank] || CONFIG.SOCIAL_RANKS[0];
+            var nKingdom = noble.kingdomId ? kingdoms.find(function(k) { return k.id === noble.kingdomId; }) : null;
+            var nColor = nKingdom ? (nKingdom.color || '#ccc') : '#888';
+            var nKName = nKingdom ? nKingdom.name : 'Unknown';
+            var nTown = np.townId ? Engine.findTown(np.townId) : null;
+            var nTownName = nTown ? nTown.name : 'Unknown';
+            var fullName = (np.firstName || '') + ' ' + (np.lastName || '');
+            var emLabel = np.isEliteMerchant ? ' 💼 Merchant' : '';
+
+            html += '<div class="_kn-noble-item" data-name="' + fullName.toLowerCase() + '" style="border:1px solid var(--border);border-left:3px solid ' + nColor + ';border-radius:4px;padding:8px;cursor:pointer;" onclick="UI.showPersonDetail(Engine.getPerson(\'' + np.id + '\'));UI.closeModal();">';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+            html += '<strong style="font-size:0.9rem;">' + (nRank.icon || '') + ' ' + fullName + '</strong>';
+            html += '<span style="font-size:0.75rem;color:var(--text-muted);">' + nRank.name + emLabel + '</span>';
+            html += '</div>';
+            html += '<div style="font-size:0.78rem;color:var(--text-muted);">';
+            html += nKName + ' · 📍 ' + nTownName;
+            if (np.age) html += ' · Age ' + np.age;
+            if (np.gold != null) html += ' · 💰 ' + Math.floor(np.gold) + 'g';
+            html += '</div></div>';
+        }
+        html += '</div></div>';
+
+        openModal('👑 Kingdoms & Notables', html);
+        // Default to kings tab active
+        _switchKNTab('kings');
+    }
+
+    function _switchKNTab(tab) {
+        // Hide all sections
+        var sections = document.querySelectorAll('._kn-section');
+        for (var i = 0; i < sections.length; i++) sections[i].style.display = 'none';
+        // Deactivate all tab buttons
+        var tabs = document.querySelectorAll('._kn-tab');
+        for (var j = 0; j < tabs.length; j++) {
+            tabs[j].style.opacity = '0.6';
+            tabs[j].style.borderColor = 'var(--border)';
+        }
+        // Show selected section
+        var target = document.getElementById('_kn_' + tab);
+        if (target) target.style.display = '';
+        // Highlight active tab
+        var activeTab = document.querySelector('._kn-tab[data-tab="' + tab + '"]');
+        if (activeTab) {
+            activeTab.style.opacity = '1';
+            activeTab.style.borderColor = 'var(--gold, #d4a017)';
+        }
+    }
+
+    function _filterKNList(type) {
+        var searchEl = document.getElementById(type === 'loc' ? '_kn_loc_search' : '_kn_noble_search');
+        var itemClass = type === 'loc' ? '_kn-loc-item' : '_kn-noble-item';
+        if (!searchEl) return;
+        var query = searchEl.value.toLowerCase().trim();
+        var items = document.querySelectorAll('.' + itemClass);
+        for (var i = 0; i < items.length; i++) {
+            var name = items[i].getAttribute('data-name') || '';
+            items[i].style.display = (!query || name.indexOf(query) >= 0) ? '' : 'none';
+        }
+    }
+
     function openHelpDialog() {
         const html = `
         <div class="help-section" style="display:flex; gap:10px; margin-bottom:8px;">
             <button class="btn btn-primary" onclick="UI.openIconsGlossary()" style="flex:1; padding:10px; font-size:14px; cursor:pointer;">🗺️ Icons Guide</button>
             <button class="btn btn-primary" onclick="UI.openGameGuide()" style="flex:1; padding:10px; font-size:14px; cursor:pointer;">📖 Game Guide</button>
             <button class="btn btn-primary" onclick="UI.openGoodsGuide()" style="flex:1; padding:10px; font-size:14px; cursor:pointer;">📦 Goods Guide</button>
+            <button class="btn btn-primary" onclick="UI.openKingdomsAndNotables()" style="flex:1; padding:10px; font-size:14px; cursor:pointer;">👑 Kingdoms & Notables</button>
         </div>
         <div class="help-section">
             <h3 class="help-heading">⌨️ Keyboard Shortcuts</h3>
@@ -19457,6 +19654,9 @@ window.UI = (function () {
         executeBribeAdvisor,
         // Help
         openHelpDialog,
+        openKingdomsAndNotables,
+        _switchKNTab,
+        _filterKNList,
         openIconsGlossary,
         openGameGuide,
         openGoodsGuide,
