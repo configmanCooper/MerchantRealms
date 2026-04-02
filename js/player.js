@@ -486,6 +486,9 @@
         }
         player.relationships = {};
         player.isNoble = false;
+        player.introductions = {};  // personId → { introducedBy, day, rank }
+        player.introductionCooldowns = {};  // personId → day of last introduction request
+        player.adviseCooldown = 0;  // day of last advise king action
         player.smugglingSkill = 0;
         player.jailedUntilDay = 0;
         player.aiMerchantSiblings = [];
@@ -901,6 +904,8 @@
 
         addTradeLog(resourceId, qty, price, tid, 'buy');
         consumeEnergy(ENERGY_CONFIG.TRADE_COST || 2);
+        // Trading builds slight town reputation: +0.1 per 100g traded
+        if (totalCost > 0) modifyTownReputation(tid, totalCost / 1000);
         return {
             success: true,
             message: `Bought ${qty} ${resourceId} for ${totalCost} gold.`,
@@ -1216,6 +1221,8 @@
 
         addTradeLog(resourceId, qty, effectivePrice, tid, 'sell');
         consumeEnergy(ENERGY_CONFIG.TRADE_COST || 2);
+        // Trading builds slight town reputation: +0.1 per 100g traded
+        if (totalRevenue > 0) modifyTownReputation(tid, totalRevenue / 1000);
         return {
             success: true,
             message: `Sold ${qty} ${resourceId} for ${totalRevenue} gold.`,
@@ -10026,6 +10033,24 @@
         }
         player.dateProgress[personId].quirkProgress += 8;
 
+        // Small chance to discover gift preference during observation (~15%)
+        var _obsRng = Engine.getRng ? Engine.getRng() : null;
+        if (_obsRng && _obsRng.chance(0.15)) {
+            var _obsPrefs = getNPCGiftPreferences(personId);
+            if (!player.discoveredGiftPrefs) player.discoveredGiftPrefs = {};
+            if (!player.discoveredGiftPrefs[personId]) player.discoveredGiftPrefs[personId] = {};
+            var _obsDisc = player.discoveredGiftPrefs[personId];
+            if (!_obsDisc.favorite && _obsRng.chance(0.5)) {
+                _obsDisc.favorite = _obsPrefs.favoriteGift;
+                var _ofRes = findResource(_obsPrefs.favoriteGift);
+                return { success: true, message: '💡 While watching, you noticed ' + person.firstName + ' admiring some ' + (_ofRes ? _ofRes.name : _obsPrefs.favoriteGift) + '. They seem to love it!', noticed: true };
+            } else if (!_obsDisc.hated) {
+                _obsDisc.hated = _obsPrefs.hatedGift;
+                var _ohRes = findResource(_obsPrefs.hatedGift);
+                return { success: true, message: '💡 While watching, you noticed ' + person.firstName + ' turning away from some ' + (_ohRes ? _ohRes.name : _obsPrefs.hatedGift) + '. They seem to hate it.', noticed: true };
+            }
+        }
+
         return { success: true, message: 'You spent the day watching from afar. Nothing obvious today.', noticed: false };
     }
 
@@ -12962,6 +12987,9 @@
             tradesCompleted: player.tradesCompleted || 0,
             relationships: JSON.parse(JSON.stringify(player.relationships)),
             isNoble: player.isNoble || false,
+            introductions: JSON.parse(JSON.stringify(player.introductions || {})),
+            introductionCooldowns: JSON.parse(JSON.stringify(player.introductionCooldowns || {})),
+            adviseCooldown: player.adviseCooldown || 0,
             smugglingSkill: player.smugglingSkill,
             jailedUntilDay: player.jailedUntilDay,
             aiMerchantSiblings: JSON.parse(JSON.stringify(player.aiMerchantSiblings)),
@@ -13015,6 +13043,7 @@
             rumorTargets: JSON.parse(JSON.stringify(player.rumorTargets || {})),
             // Spouse personality / dating / regency
             revealedTraits: JSON.parse(JSON.stringify(player.revealedTraits || {})),
+            discoveredGiftPrefs: JSON.parse(JSON.stringify(player.discoveredGiftPrefs || {})),
             regencyMode: player.regencyMode || false,
             regencyData: player.regencyData ? JSON.parse(JSON.stringify(player.regencyData)) : null,
             spouseRelHighDays: player.spouseRelHighDays || 0,
@@ -13230,6 +13259,7 @@
         player.maintenanceDiscount = data.maintenanceDiscount || null;
         player.xpBonus = data.xpBonus || null;
         player.revealedTraits = data.revealedTraits || {};
+        player.discoveredGiftPrefs = data.discoveredGiftPrefs || {};
         player.stats = Object.assign({}, player.stats, data.stats || {});
         player.supplyChains = data.supplyChains || [];
         player.tradeLog = data.tradeLog || [];
@@ -13296,6 +13326,9 @@
         player.relationships = data.relationships || {};
         player.smugglingSkill = data.smugglingSkill || 0;
         player.isNoble = data.isNoble || false;
+        player.introductions = data.introductions || {};
+        player.introductionCooldowns = data.introductionCooldowns || {};
+        player.adviseCooldown = data.adviseCooldown || 0;
         player.jailedUntilDay = data.jailedUntilDay || 0;
         player.aiMerchantSiblings = data.aiMerchantSiblings || [];
         // XP & Progression
@@ -13357,6 +13390,7 @@
         player.rumorTargets = data.rumorTargets || {};
         // Spouse personality / dating / regency
         player.revealedTraits = data.revealedTraits || {};
+        player.discoveredGiftPrefs = data.discoveredGiftPrefs || {};
         player.regencyMode = data.regencyMode || false;
         player.regencyData = data.regencyData || null;
         player.spouseRelHighDays = data.spouseRelHighDays || 0;
@@ -15943,6 +15977,10 @@
         if (!person) return { success: false, message: 'Person not found.' };
         if (person.townId !== player.townId) return { success: false, message: 'Not in same town.' };
 
+        // Noble access check
+        var talkCheck = canTalkTo(personId);
+        if (!talkCheck.canTalk) return { success: false, message: talkCheck.reason };
+
         // Limit 1 gift per NPC per day
         var day = 0;
         try { day = Engine.getDay(); } catch(e) {}
@@ -15960,13 +15998,81 @@
 
         player._giftCooldowns[personId] = day;
         player.inventory[resourceId] -= qty;
-        const giftValue = res.basePrice * qty;
-        const gain = Math.min(CONFIG.RELATIONSHIP_GIFT_MAX_GAIN, CONFIG.RELATIONSHIP_GIFT_MIN_GAIN + Math.floor(giftValue / 10))
-            + (hasSkill('musician') ? 2 : 0);
+
+        // Gift preference system
+        var prefs = getNPCGiftPreferences(personId);
+        var gain;
+        var prefMessage = '';
+        if (prefs.favoriteGift === resourceId) {
+            gain = 10 * qty;
+            prefMessage = ' ' + person.firstName + '\'s eyes light up — they love ' + res.name + '! 💖';
+            // Discovering preference through gift
+            if (!player.discoveredGiftPrefs) player.discoveredGiftPrefs = {};
+            if (!player.discoveredGiftPrefs[personId]) player.discoveredGiftPrefs[personId] = {};
+            player.discoveredGiftPrefs[personId].favorite = resourceId;
+        } else if (prefs.hatedGift === resourceId) {
+            gain = -5 * qty;
+            prefMessage = ' ' + person.firstName + ' looks offended — they hate ' + res.name + '! 😠';
+            if (!player.discoveredGiftPrefs) player.discoveredGiftPrefs = {};
+            if (!player.discoveredGiftPrefs[personId]) player.discoveredGiftPrefs[personId] = {};
+            player.discoveredGiftPrefs[personId].hated = resourceId;
+        } else {
+            // Normal gift: 1-8 based on market value at location
+            var town = Engine.findTown(player.townId);
+            var marketPrice = res.basePrice;
+            if (town && town.market && town.market.prices && town.market.prices[resourceId]) {
+                marketPrice = town.market.prices[resourceId];
+            }
+            var giftValue = marketPrice * qty;
+            gain = Math.max(1, Math.min(8, Math.floor(giftValue / 8)));
+        }
+
+        gain += (hasSkill('musician') ? 2 : 0);
         modifyRelationship(personId, gain);
         grantXP(XP_REWARDS.GIFT, 'gift');
         player.achievementStats.giftsGiven = (player.achievementStats.giftsGiven || 0) + 1;
-        return { success: true, message: `Gave ${qty} ${res.name} to ${person.firstName}. Relationship +${gain}.` };
+        var gainStr = gain >= 0 ? '+' + gain : '' + gain;
+        return { success: true, message: 'Gave ' + qty + ' ' + res.name + ' to ' + person.firstName + '. Relationship ' + gainStr + '.' + prefMessage };
+    }
+
+    /**
+     * Deterministic gift preferences for an NPC, derived from their ID.
+     * No storage needed — same ID always produces same preferences.
+     */
+    function getNPCGiftPreferences(personId) {
+        // Giftable resources (exclude raw materials, livestock, military, contraband, quest, supplies)
+        var giftableIds = [];
+        for (var rk in RESOURCE_TYPES) {
+            var r = RESOURCE_TYPES[rk];
+            var cat = r.category;
+            if (cat === 'livestock' || cat === 'contraband' || cat === 'quest' || cat === 'supplies' || cat === 'military') continue;
+            if (r.id === 'water' || r.id === 'blasting_powder' || r.id === 'demolition_tools' || r.id === 'poison') continue;
+            giftableIds.push(r.id);
+        }
+        // Deterministic hash from person ID
+        var hash = 0;
+        for (var i = 0; i < personId.length; i++) {
+            hash = ((hash << 5) - hash + personId.charCodeAt(i)) | 0;
+        }
+        hash = Math.abs(hash);
+        var favIdx = hash % giftableIds.length;
+        var hateIdx = ((hash >>> 8) + 7) % giftableIds.length;
+        if (hateIdx === favIdx) hateIdx = (hateIdx + 1) % giftableIds.length;
+        return {
+            favoriteGift: giftableIds[favIdx],
+            hatedGift: giftableIds[hateIdx]
+        };
+    }
+
+    /**
+     * Get known gift preferences for an NPC (only what player has discovered).
+     */
+    function getKnownGiftPreferences(personId) {
+        var discovered = (player.discoveredGiftPrefs && player.discoveredGiftPrefs[personId]) || {};
+        return {
+            favorite: discovered.favorite || null,
+            hated: discovered.hated || null
+        };
     }
 
     // ── Social Interaction System ──────────────────────────────
@@ -16018,6 +16124,390 @@
         return gain;
     }
 
+    // ── NOBLE ACCESS / INTRODUCTION SYSTEM ──
+
+    /**
+     * Get the social rank of an NPC (noble rank 4-6, or 0 if not noble).
+     * Checks socialRank field, occupation, and elite merchant status.
+     */
+    function getNPCSocialRank(person) {
+        if (!person) return 0;
+        // Check socialRank object (nobles get this at world gen)
+        if (person.socialRank) {
+            var maxRank = 0;
+            for (var kId in person.socialRank) {
+                if (person.socialRank[kId] > maxRank) maxRank = person.socialRank[kId];
+            }
+            if (maxRank > 0) return maxRank;
+        }
+        // Nobles without explicit socialRank are minor nobles
+        if (person.occupation === 'noble') return 4;
+        return 0;
+    }
+
+    /**
+     * Check if the player can directly talk to a person.
+     * Returns { canTalk: true } or { canTalk: false, reason: '...', needsIntroduction: true, introRank: N }
+     */
+    function canTalkTo(personId) {
+        var person = Engine.findPerson(personId);
+        if (!person) return { canTalk: true }; // not found = allow (failsafe)
+
+        // Check if this person is a king
+        var isKing = false;
+        var kingdoms = Engine.getWorld ? (Engine.getWorld().kingdoms || []) : [];
+        for (var ki = 0; ki < kingdoms.length; ki++) {
+            if (kingdoms[ki].king === personId) { isKing = true; break; }
+        }
+
+        var npcRank = getNPCSocialRank(person);
+        // Kings are treated as rank 7 for access purposes
+        var effectiveRank = isKing ? 7 : npcRank;
+        if (effectiveRank < 4) return { canTalk: true }; // not a noble, anyone can talk
+
+        // Check if player has been introduced to this specific person
+        if (player.introductions && player.introductions[personId]) {
+            return { canTalk: true };
+        }
+
+        // Get player's highest social rank across all kingdoms
+        var playerMaxRank = 0;
+        for (var kId in player.socialRank) {
+            if ((player.socialRank[kId] || 0) > playerMaxRank) playerMaxRank = player.socialRank[kId];
+        }
+
+        // Access rules by NPC rank:
+        // Minor Noble (4): need guildmaster rank (3) to talk directly
+        // Lord (5): need minor noble rank (4) to talk directly
+        // Royal Advisor (6): need lord rank (5) to talk directly
+        // King (7): need royal advisor rank (6) to talk directly
+        var requiredRank = effectiveRank - 1; // one rank below to talk directly
+
+        if (playerMaxRank >= requiredRank) return { canTalk: true };
+
+        // Player can't talk directly — needs introduction
+        var rankNames = { 4: 'Minor Noble', 5: 'Lord', 6: 'Royal Advisor', 7: 'the King' };
+        var introRankNames = { 4: 'Guildmaster', 5: 'Minor Noble', 6: 'Lord', 7: 'Royal Advisor' };
+        var requiredRankName = CONFIG.SOCIAL_RANKS[requiredRank] ? CONFIG.SOCIAL_RANKS[requiredRank].name : introRankNames[effectiveRank] || 'higher rank';
+
+        // Special: below burgher can't even get introductions to nobles
+        if (playerMaxRank < 2 && effectiveRank >= 4) {
+            return { canTalk: false, reason: 'You must be at least a Burgher to seek introductions to ' + (rankNames[effectiveRank] || 'nobles') + '.', needsIntroduction: false };
+        }
+
+        // King requires royal advisor — introduction from a royal advisor if player is lord
+        if (isKing) {
+            if (playerMaxRank >= 5) {
+                return {
+                    canTalk: false,
+                    reason: 'Only Royal Advisors may speak directly with the King. As a Lord, you may seek an introduction from a Royal Advisor.',
+                    needsIntroduction: true,
+                    introRank: 7
+                };
+            } else {
+                return { canTalk: false, reason: 'Only Royal Advisors may speak directly with the King.', needsIntroduction: false };
+            }
+        }
+
+        return {
+            canTalk: false,
+            reason: 'You need to be a ' + requiredRankName + ' to speak directly with a ' + (rankNames[effectiveRank] || 'noble') + '. Seek an introduction through someone of appropriate rank.',
+            needsIntroduction: true,
+            introRank: effectiveRank
+        };
+    }
+
+    /**
+     * Get NPCs who could introduce the player to a noble of given rank.
+     * For minor nobles (4): guildmaster-rank elite merchants with relationship >= 60
+     * For lords (5): minor nobles with relationship >= 60
+     * For royal advisors (6): lords with relationship >= 60
+     * Also: anyone of the same rank as the target can introduce (30-day cooldown).
+     */
+    function getAvailableIntroducers(targetRank, townId) {
+        var tid = townId || player.townId;
+        if (!tid) return [];
+        var introducers = [];
+        var today = Engine.getDay ? Engine.getDay() : 0;
+
+        // Determine what rank the introducer needs to be
+        // To meet a minor noble (4): need a guildmaster (rank 3) — but guildmasters are not NPCs with occupation
+        // Instead: elite merchants with socialRank >= 3, or known NPCs of rank = targetRank
+        var introducerMinRank = targetRank - 1; // one below the target
+
+        // Check elite merchants in this town
+        var ems = Engine.getEliteMerchants ? Engine.getEliteMerchants() : [];
+        for (var ei = 0; ei < ems.length; ei++) {
+            var em = ems[ei];
+            if (!em || !em.alive || em.townId !== tid) continue;
+            var emRank = getNPCSocialRank(em);
+            // Elite merchants with appropriate rank
+            if (emRank >= introducerMinRank && emRank <= targetRank) {
+                var emRel = getRelationship(em.id);
+                var cooldown = player.introductionCooldowns[em.id] || 0;
+                var canAsk = emRel.level >= 60 && (today - cooldown >= 30 || cooldown === 0);
+                // About a third of guildmaster-level NPCs "know" nobles (seeded by id hash)
+                var knowsTarget = true;
+                if (emRank === introducerMinRank && emRank < targetRank) {
+                    // Only ~33% of lower-rank NPCs know someone of target rank
+                    var hash = 0;
+                    for (var hi = 0; hi < em.id.length; hi++) hash = ((hash << 5) - hash + em.id.charCodeAt(hi)) | 0;
+                    knowsTarget = (Math.abs(hash) % 3) === 0;
+                }
+                introducers.push({
+                    id: em.id,
+                    name: em.firstName + ' ' + (em.lastName || ''),
+                    rank: emRank,
+                    relationship: emRel.level,
+                    canAsk: canAsk,
+                    knowsTarget: knowsTarget,
+                    revealed: player.socialRank && getMaxPlayerRank() >= 2 && emRel.level >= 60,
+                    cooldownDaysLeft: cooldown > 0 ? Math.max(0, 30 - (today - cooldown)) : 0,
+                    isEliteMerchant: true
+                });
+            }
+        }
+
+        // Check regular people (nobles) in town
+        var people = Engine.getPeople ? Engine.getPeople(tid) : [];
+        for (var pi = 0; pi < people.length; pi++) {
+            var p = people[pi];
+            if (!p || !p.alive || p.townId !== tid) continue;
+            var pRank = getNPCSocialRank(p);
+            if (pRank < introducerMinRank || pRank > targetRank) continue;
+            // Must be able to talk to this person already
+            var talkCheck = canTalkTo(p.id);
+            if (!talkCheck.canTalk) continue;
+            var pRel = getRelationship(p.id);
+            var pCooldown = player.introductionCooldowns[p.id] || 0;
+            var pCanAsk = pRel.level >= 60 && (today - pCooldown >= 30 || pCooldown === 0);
+            var pKnows = true;
+            if (pRank === introducerMinRank && pRank < targetRank) {
+                var pHash = 0;
+                for (var phi = 0; phi < p.id.length; phi++) pHash = ((pHash << 5) - pHash + p.id.charCodeAt(phi)) | 0;
+                pKnows = (Math.abs(pHash) % 3) === 0;
+            }
+            introducers.push({
+                id: p.id,
+                name: p.firstName + ' ' + (p.lastName || ''),
+                rank: pRank,
+                relationship: pRel.level,
+                canAsk: pCanAsk,
+                knowsTarget: pKnows,
+                revealed: getMaxPlayerRank() >= 2 && pRel.level >= 60,
+                cooldownDaysLeft: pCooldown > 0 ? Math.max(0, 30 - (today - pCooldown)) : 0,
+                isEliteMerchant: false
+            });
+        }
+
+        return introducers;
+    }
+
+    function getMaxPlayerRank() {
+        var max = 0;
+        for (var kId in player.socialRank) {
+            if ((player.socialRank[kId] || 0) > max) max = player.socialRank[kId];
+        }
+        return max;
+    }
+
+    /**
+     * Request an introduction to a specific noble from an introducer.
+     */
+    function requestIntroduction(introducerId, targetId) {
+        if (!player.townId) return { success: false, message: 'Must be in a town.' };
+        var introducer = Engine.findPerson(introducerId);
+        if (!introducer) return { success: false, message: 'Person not found.' };
+        if (introducer.townId !== player.townId) return { success: false, message: 'Not in the same town.' };
+
+        var target = Engine.findPerson(targetId);
+        if (!target) return { success: false, message: 'Target person not found.' };
+        if (target.townId !== player.townId) return { success: false, message: 'Target not in the same town.' };
+
+        // Already introduced
+        if (player.introductions && player.introductions[targetId]) {
+            return { success: false, message: 'You already know ' + target.firstName + '.' };
+        }
+
+        var rel = getRelationship(introducerId);
+        if (rel.level < 60) {
+            return { success: false, message: 'Need 60+ relationship with ' + introducer.firstName + ' to ask for an introduction (have ' + Math.floor(rel.level) + ').' };
+        }
+
+        // Check cooldown
+        var today = Engine.getDay ? Engine.getDay() : 0;
+        var lastAsk = player.introductionCooldowns[introducerId] || 0;
+        if (lastAsk > 0 && today - lastAsk < 30) {
+            var daysLeft = 30 - (today - lastAsk);
+            return { success: false, message: introducer.firstName + ' says: "I already made an introduction for you recently. Give it ' + daysLeft + ' more days."' };
+        }
+
+        // Check if introducer knows nobles of target's rank
+        var targetRank = getNPCSocialRank(target);
+        var introRank = getNPCSocialRank(introducer);
+        var hash = 0;
+        for (var hi = 0; hi < introducer.id.length; hi++) hash = ((hash << 5) - hash + introducer.id.charCodeAt(hi)) | 0;
+        var knowsTargetRank = (introRank >= targetRank) || (Math.abs(hash) % 3) === 0;
+        if (!knowsTargetRank) {
+            // Set cooldown even on failure so they can't spam-ask
+            player.introductionCooldowns[introducerId] = today;
+            return { success: false, message: introducer.firstName + ' says: "I\'m sorry, I don\'t know any ' + (CONFIG.SOCIAL_RANKS[targetRank] ? CONFIG.SOCIAL_RANKS[targetRank].name + 's' : 'nobles') + ' personally."' };
+        }
+
+        // Set cooldown
+        player.introductionCooldowns[introducerId] = today;
+
+        // Advance time
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(5);
+
+        // Success chance based on relationship: 60 rel = ~40%, 80 rel = ~70%, 100 rel = ~95%
+        var rng = Engine.getRng ? Engine.getRng() : null;
+        var chance = 0.1 + (rel.level - 50) * 0.017;
+        chance = Math.max(0.15, Math.min(0.95, chance));
+
+        if (rng ? rng.chance(chance) : Math.random() < chance) {
+            // Success!
+            if (!player.introductions) player.introductions = {};
+            player.introductions[targetId] = {
+                introducedBy: introducerId,
+                day: today,
+                rank: targetRank
+            };
+            Engine.logEvent('🤝 ' + introducer.firstName + ' introduced you to ' + target.firstName + ' ' + (target.lastName || '') + '!');
+            // Start with a small relationship
+            if (!player.relationships[targetId]) {
+                player.relationships[targetId] = { level: 10, type: 'introduction' };
+            } else if (player.relationships[targetId].level < 10) {
+                player.relationships[targetId].level = 10;
+            }
+            return { success: true, message: '🤝 ' + introducer.firstName + ' introduces you to ' + target.firstName + '! "' + target.firstName + ', meet my associate ' + player.fullName + '."' };
+        } else {
+            return { success: false, message: introducer.firstName + ' says: "I\'ll try to arrange a meeting, but ' + target.firstName + ' is quite busy right now. Perhaps another time."' };
+        }
+    }
+
+    /**
+     * Request an introduction to another person of the SAME rank as the introducer.
+     * 30-day cooldown per introducer.
+     */
+    function requestSameRankIntroduction(introducerId) {
+        if (!player.townId) return { success: false, message: 'Must be in a town.' };
+        var introducer = Engine.findPerson(introducerId);
+        if (!introducer) return { success: false, message: 'Person not found.' };
+        if (introducer.townId !== player.townId) return { success: false, message: 'Not in the same town.' };
+
+        var introRank = getNPCSocialRank(introducer);
+        if (introRank < 4) return { success: false, message: 'This person has no noble connections.' };
+
+        var rel = getRelationship(introducerId);
+        if (rel.level < 60) {
+            return { success: false, message: 'Need 60+ relationship to ask for introductions (have ' + Math.floor(rel.level) + ').' };
+        }
+
+        var today = Engine.getDay ? Engine.getDay() : 0;
+        var lastAsk = player.introductionCooldowns[introducerId] || 0;
+        if (lastAsk > 0 && today - lastAsk < 30) {
+            return { success: false, message: introducer.firstName + ' says: "Give me some time before asking again. ' + Math.max(1, 30 - (today - lastAsk)) + ' days."' };
+        }
+
+        // Find a same-rank person in this town the player hasn't been introduced to
+        var people = Engine.getPeople ? Engine.getPeople(player.townId) : [];
+        var candidates = [];
+        for (var i = 0; i < people.length; i++) {
+            var p = people[i];
+            if (!p || !p.alive || p.id === introducerId) continue;
+            if (getNPCSocialRank(p) !== introRank) continue;
+            if (player.introductions && player.introductions[p.id]) continue;
+            // If player can already talk to them by rank, skip
+            var check = canTalkTo(p.id);
+            if (check.canTalk) continue;
+            candidates.push(p);
+        }
+
+        if (candidates.length === 0) {
+            return { success: false, message: introducer.firstName + ' says: "You already know everyone of my standing in this town."' };
+        }
+
+        player.introductionCooldowns[introducerId] = today;
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(5);
+
+        var chance = 0.1 + (rel.level - 50) * 0.017;
+        chance = Math.max(0.15, Math.min(0.95, chance));
+        var rng = Engine.getRng ? Engine.getRng() : null;
+
+        if (rng ? rng.chance(chance) : Math.random() < chance) {
+            var target = rng ? rng.pick(candidates) : candidates[Math.floor(Math.random() * candidates.length)];
+            if (!player.introductions) player.introductions = {};
+            player.introductions[target.id] = { introducedBy: introducerId, day: today, rank: introRank };
+            if (!player.relationships[target.id]) {
+                player.relationships[target.id] = { level: 10, type: 'introduction' };
+            }
+            Engine.logEvent('🤝 ' + introducer.firstName + ' introduced you to fellow ' + (CONFIG.SOCIAL_RANKS[introRank] ? CONFIG.SOCIAL_RANKS[introRank].name : 'noble') + ' ' + target.firstName + ' ' + (target.lastName || '') + '!');
+            return { success: true, message: '🤝 ' + introducer.firstName + ' introduces you to ' + target.firstName + ' ' + (target.lastName || '') + '!', targetId: target.id };
+        } else {
+            return { success: false, message: introducer.firstName + ' says: "Not a good time right now. Ask me again later."' };
+        }
+    }
+
+    /**
+     * Advise the king (royal advisor mechanic) — like petitions but direct.
+     */
+    function adviseKingDirect(kingdomId, actionId, targetData) {
+        if (!kingdomId) return { success: false, message: 'No kingdom specified.' };
+        var kRank = player.socialRank[kingdomId] || 0;
+        if (kRank < 6) return { success: false, message: 'Only Royal Advisors can advise the king directly.' };
+
+        var today = Engine.getDay ? Engine.getDay() : 0;
+        if (player.adviseCooldown && today - player.adviseCooldown < 7) {
+            var daysLeft = 7 - (today - player.adviseCooldown);
+            return { success: false, message: 'The king says: "I have considered your last advice. Return in ' + daysLeft + ' days."' };
+        }
+
+        var kingdom = Engine.findKingdom(kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+
+        // Find king person for relationship check
+        var kingPerson = kingdom.king ? Engine.findPerson(kingdom.king) : null;
+        var kingRel = kingPerson ? getRelationship(kingPerson.id).level : 50;
+        var kRep = player.reputation[kingdomId] || 50;
+        var kingPersonality = kingPerson ? (kingPerson.personality || {}) : {};
+
+        // Base acceptance chance from relationship and reputation
+        // rel 50 + rep 50 = ~40% base, rel 80 + rep 80 = ~75%, rel 100 + rep 100 = ~95%
+        var baseChance = 0.1 + (kingRel / 200) + (kRep / 200);
+
+        // Personality modifiers
+        var warmth = kingPersonality.warmth || 50;
+        var intelligence = kingPersonality.intelligence || 50;
+        baseChance += (warmth - 50) * 0.002; // warm kings more receptive
+        baseChance += (intelligence - 50) * 0.001; // smart kings weigh advice better
+
+        baseChance = Math.max(0.1, Math.min(0.95, baseChance));
+
+        // Advance time
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(10);
+        player.adviseCooldown = today;
+
+        var rng = Engine.getRng ? Engine.getRng() : null;
+        var roll = rng ? rng.random() : Math.random();
+
+        if (roll < baseChance) {
+            // King accepts the advice — execute like a petition
+            var fakePetition = { typeId: actionId, kingdomId: kingdomId, targetData: targetData || {} };
+            if (typeof executePetitionAction === 'function') {
+                executePetitionAction(fakePetition);
+            }
+            Engine.logEvent('📜 The king of ' + (kingdom.name || 'the kingdom') + ' accepted your advice on ' + actionId + '!');
+            modifyRelationship(kingPerson ? kingPerson.id : '', 3);
+            grantXP(50, 'advise_king');
+            return { success: true, message: '📜 The king nods thoughtfully and agrees with your counsel!' };
+        } else {
+            Engine.logEvent('📜 The king of ' + (kingdom.name || 'the kingdom') + ' dismissed your advice on ' + actionId + '.');
+            modifyRelationship(kingPerson ? kingPerson.id : '', -1);
+            return { success: false, message: 'The king considers your words but says: "I appreciate your counsel, but I must decline this time."' };
+        }
+    }
+
     function getAvailableInteractions(personId) {
         var person = Engine.findPerson(personId);
         if (!person) return [];
@@ -16063,6 +16553,10 @@
         if (!person) return { success: false, message: 'Person not found.' };
         if (person.townId !== player.townId) return { success: false, message: 'Not in same town.' };
         if (player.traveling) return { success: false, message: 'Cannot interact while traveling.' };
+
+        // Noble access check
+        var talkCheck = canTalkTo(personId);
+        if (!talkCheck.canTalk) return { success: false, message: talkCheck.reason };
 
         // Investigator rejection
         if ((player.investigatorCaught[personId] || 0) >= 2) {
@@ -16138,6 +16632,25 @@
             }
         }
 
+        // Small chance to discover gift preference during interaction (~10%)
+        var giftDiscoverMsg = '';
+        var _giftRng = Engine.getRng ? Engine.getRng() : null;
+        if (_giftRng && _giftRng.chance(0.10)) {
+            var _prefs = getNPCGiftPreferences(personId);
+            if (!player.discoveredGiftPrefs) player.discoveredGiftPrefs = {};
+            if (!player.discoveredGiftPrefs[personId]) player.discoveredGiftPrefs[personId] = {};
+            var _disc = player.discoveredGiftPrefs[personId];
+            if (!_disc.favorite && _giftRng.chance(0.5)) {
+                _disc.favorite = _prefs.favoriteGift;
+                var _fRes = findResource(_prefs.favoriteGift);
+                giftDiscoverMsg = ' 💡 You noticed ' + person.firstName + ' seems to really like ' + (_fRes ? _fRes.name : _prefs.favoriteGift) + '!';
+            } else if (!_disc.hated) {
+                _disc.hated = _prefs.hatedGift;
+                var _hRes = findResource(_prefs.hatedGift);
+                giftDiscoverMsg = ' 💡 You got the sense ' + person.firstName + ' dislikes ' + (_hRes ? _hRes.name : _prefs.hatedGift) + '.';
+            }
+        }
+
         // Track cooldown
         if (!player._npcInteractions) player._npcInteractions = {};
         var day = 0;
@@ -16157,6 +16670,7 @@
         if (remainingToday > 0) msg += ' (' + remainingToday + ' interaction' + (remainingToday !== 1 ? 's' : '') + ' left today)';
         else msg += ' (No more interactions today)';
         msg += revealMsg;
+        msg += giftDiscoverMsg;
 
         grantXP(2, 'social_interaction');
         return { success: true, message: msg, gain: gain };
@@ -32916,8 +33430,17 @@
         modifyRelationship,
         getRelationshipLabel,
         giveGift,
+        getNPCGiftPreferences,
+        getKnownGiftPreferences,
         interactWithNPC,
         getAvailableInteractions,
+        canTalkTo,
+        getNPCSocialRank,
+        getAvailableIntroducers,
+        getMaxPlayerRank,
+        requestIntroduction,
+        requestSameRankIntroduction,
+        adviseKingDirect,
         getCourtshipCandidates,
         getRelationshipPerks,
         useRelationshipPerk,

@@ -1352,6 +1352,9 @@ window.UI = (function () {
                 <button class="btn-medieval" onclick="UI.openAdviseKingDialog('${town.kingdomId}')" style="font-size:0.85rem;padding:8px 24px;background:rgba(255,215,0,0.15);border-color:rgba(255,215,0,0.4);">
                     👑 Advise the King (${Player.politicalCapital || 0} uses left)
                 </button>
+                <button class="btn-medieval" onclick="UI.openAdviseKingDirectDialog('${town.kingdomId}')" style="font-size:0.85rem;padding:8px 24px;background:rgba(100,150,255,0.15);border-color:rgba(100,150,255,0.4);margin-left:4px;">
+                    📜 Royal Counsel
+                </button>
             </div>`;
         }
 
@@ -1918,17 +1921,46 @@ window.UI = (function () {
             </div>`;
 
             if (isInSameTown) {
+                // ── Noble Access Check ──
+                var _talkCheck = Player.canTalkTo ? Player.canTalkTo(person.id) : { canTalk: true };
+
                 // ── Social Actions ──
-                html += `<div class="detail-section"><h3>🤝 Social</h3>
-                    <div style="display:flex;flex-wrap:wrap;gap:4px;">`;
+                html += `<div class="detail-section"><h3>🤝 Social</h3>`;
 
-                html += `<button class="btn-medieval" onclick="UI.openGiftDialog('${person.id}')" title="Give a gift to improve your relationship" style="font-size:0.75rem;padding:5px 10px;">🎁 Gift</button>`;
-                html += `<button class="btn-medieval" onclick="UI.talkToPerson('${person.id}')" title="Have a conversation to build rapport" style="font-size:0.75rem;padding:5px 10px;">💬 Talk</button>`;
-                html += `<button class="btn-medieval" onclick="UI.observePerson('${person.id}')" title="Spend 8 hours watching this person — 30% chance to discover a hidden quirk (free)" style="font-size:0.75rem;padding:5px 10px;">👀 Observe</button>`;
-                html += `<button class="btn-medieval" onclick="UI.askTavernAbout('${person.id}')" title="Ask around at the tavern for gossip about this person (5g)" style="font-size:0.75rem;padding:5px 10px;">🍺 Ask Around</button>`;
-                html += `<button class="btn-medieval" onclick="UI.hireInvestigator('${person.id}')" title="Hire an investigator to uncover secrets — costly and risky, they may find out!" style="font-size:0.75rem;padding:5px 10px;">🕵️ Investigate</button>`;
-
-                html += `</div></div>`;
+                if (!_talkCheck.canTalk) {
+                    // Locked — show why and introduction options
+                    var _npcRank = Player.getNPCSocialRank ? Player.getNPCSocialRank(person) : 0;
+                    var _rankName = _npcRank >= 4 ? (['', '', '', '', 'Minor Noble', 'Lord', 'Royal Advisor'][_npcRank] || 'Noble') : 'Noble';
+                    html += `<div style="background:rgba(200,50,50,0.1);border:1px solid rgba(200,50,50,0.3);border-radius:6px;padding:8px;margin-bottom:6px;">`;
+                    html += `<div style="font-size:0.85rem;font-weight:bold;color:#cc6666;">🔒 Cannot Interact — ${_rankName}</div>`;
+                    html += `<div style="font-size:0.75rem;color:#aaa;margin-top:4px;">${_talkCheck.reason}</div>`;
+                    if (_talkCheck.needsIntroduction) {
+                        html += `<button class="btn-medieval" onclick="UI.showIntroductionOptions('${person.id}', ${_npcRank})" style="font-size:0.75rem;padding:5px 10px;margin-top:6px;">🤝 Find Someone to Introduce Me</button>`;
+                    }
+                    html += `</div>`;
+                    // Still allow observe and ask around (non-direct interaction)
+                    html += `<div style="display:flex;flex-wrap:wrap;gap:4px;">`;
+                    html += `<button class="btn-medieval" onclick="UI.observePerson('${person.id}')" title="Spend 8 hours watching this person" style="font-size:0.75rem;padding:5px 10px;">👀 Observe</button>`;
+                    html += `<button class="btn-medieval" onclick="UI.askTavernAbout('${person.id}')" title="Ask around at the tavern (5g)" style="font-size:0.75rem;padding:5px 10px;">🍺 Ask Around</button>`;
+                    html += `</div>`;
+                } else {
+                    html += `<div style="display:flex;flex-wrap:wrap;gap:4px;">`;
+                    html += `<button class="btn-medieval" onclick="UI.openGiftDialog('${person.id}')" title="Give a gift to improve your relationship" style="font-size:0.75rem;padding:5px 10px;">🎁 Gift</button>`;
+                    html += `<button class="btn-medieval" onclick="UI.talkToPerson('${person.id}')" title="Have a conversation to build rapport" style="font-size:0.75rem;padding:5px 10px;">💬 Talk</button>`;
+                    html += `<button class="btn-medieval" onclick="UI.observePerson('${person.id}')" title="Spend 8 hours watching this person — 30% chance to discover a hidden quirk (free)" style="font-size:0.75rem;padding:5px 10px;">👀 Observe</button>`;
+                    html += `<button class="btn-medieval" onclick="UI.askTavernAbout('${person.id}')" title="Ask around at the tavern for gossip about this person (5g)" style="font-size:0.75rem;padding:5px 10px;">🍺 Ask Around</button>`;
+                    html += `<button class="btn-medieval" onclick="UI.hireInvestigator('${person.id}')" title="Hire an investigator to uncover secrets — costly and risky, they may find out!" style="font-size:0.75rem;padding:5px 10px;">🕵️ Investigate</button>`;
+                    // Introduction request for same-rank peers (if this is a noble you already know)
+                    var _introNpcRank = Player.getNPCSocialRank ? Player.getNPCSocialRank(person) : 0;
+                    if (_introNpcRank >= 4) {
+                        var _introRel = Player.getRelationship ? Player.getRelationship(person.id) : { level: 0 };
+                        if (_introRel.level >= 60) {
+                            html += `<button class="btn-medieval" onclick="UI.requestSameRankIntro('${person.id}')" title="Ask to be introduced to another ${_introNpcRank >= 6 ? 'Royal Advisor' : _introNpcRank >= 5 ? 'Lord' : 'Minor Noble'}" style="font-size:0.75rem;padding:5px 10px;background:rgba(100,200,100,0.15);border-color:rgba(100,200,100,0.3);">🤝 Ask for Introduction</button>`;
+                        }
+                    }
+                    html += `</div>`;
+                }
+                html += `</div>`;
 
                 // ── Employee Horse Management (if your employee, in same town, has horse) ──
                 if (person.employerId === 'player' && person._playerHorse) {
@@ -5054,6 +5086,146 @@ window.UI = (function () {
             _refreshPersonView(personId);
         } catch (e) {
             toast(e.message || 'Cannot ask', 'danger');
+        }
+    }
+
+    // ── INTRODUCTION SYSTEM UI ──
+
+    function showIntroductionOptions(targetId, targetRank) {
+        if (!Player.getAvailableIntroducers) { toast('Introduction system not available.', 'warning'); return; }
+        var introducers = Player.getAvailableIntroducers(targetRank);
+        var target = null;
+        try { target = Engine.getPerson(targetId); } catch(e) {}
+        var targetName = target ? target.firstName + ' ' + (target.lastName || '') : 'this noble';
+        var rankNames = { 4: 'Minor Noble', 5: 'Lord', 6: 'Royal Advisor' };
+
+        var html = '<div style="max-width:450px;padding:6px;">';
+        html += '<h3 style="margin:0 0 8px;color:#ffd700;">🤝 Seek Introduction to ' + targetName + '</h3>';
+        html += '<div style="font-size:0.8rem;color:#aaa;margin-bottom:8px;">You need someone who knows ' + (rankNames[targetRank] || 'nobles') + ' to introduce you. They must have 60+ relationship with you.</div>';
+
+        if (introducers.length === 0) {
+            html += '<div style="color:#cc6666;font-size:0.85rem;padding:10px;">No one in town can introduce you. Build relationships with higher-ranking people first.</div>';
+        } else {
+            for (var i = 0; i < introducers.length; i++) {
+                var intro = introducers[i];
+                var relColor = intro.relationship >= 80 ? '#2ecc40' : intro.relationship >= 60 ? '#88cc44' : '#cc6666';
+                var statusText = '';
+                var canClick = false;
+
+                if (!intro.revealed) {
+                    statusText = '<span style="color:#888;">??? (need Burgher rank + 60 relationship to find out)</span>';
+                } else if (intro.cooldownDaysLeft > 0) {
+                    statusText = '<span style="color:#e67e22;">⏳ Cooldown: ' + intro.cooldownDaysLeft + ' days</span>';
+                } else if (intro.relationship < 60) {
+                    statusText = '<span style="color:#cc6666;">Need 60+ relationship (have ' + Math.floor(intro.relationship) + ')</span>';
+                } else if (!intro.knowsTarget) {
+                    statusText = '<span style="color:#888;">Does not know any ' + (rankNames[targetRank] || 'nobles') + '</span>';
+                } else {
+                    statusText = '<span style="color:#2ecc40;">✅ Can introduce you!</span>';
+                    canClick = true;
+                }
+
+                var iRankName = intro.rank >= 6 ? 'Royal Advisor' : intro.rank >= 5 ? 'Lord' : intro.rank >= 4 ? 'Minor Noble' : intro.rank >= 3 ? 'Guildmaster' : 'Merchant';
+                var badge = intro.isEliteMerchant ? '⭐ ' : '';
+
+                html += '<div style="display:flex;align-items:center;gap:8px;padding:8px;margin:4px 0;border:1px solid ' + (canClick ? '#4a6' : '#555') + ';border-radius:6px;background:' + (canClick ? 'rgba(50,150,80,0.1)' : '#2a2a2a') + ';cursor:' + (canClick ? 'pointer' : 'default') + ';" ' + (canClick ? 'onclick="UI.doRequestIntroduction(\'' + intro.id + '\',\'' + targetId + '\')"' : '') + '>';
+                html += '<div style="flex:1;">';
+                html += '<div style="font-weight:bold;color:#eee;">' + badge + intro.name + ' <span style="font-size:0.75rem;color:#aaa;">(' + iRankName + ')</span></div>';
+                html += '<div style="font-size:0.78rem;color:' + relColor + ';">Relationship: ' + Math.floor(intro.relationship) + '/100</div>';
+                html += '<div style="font-size:0.75rem;">' + statusText + '</div>';
+                html += '</div></div>';
+            }
+        }
+
+        html += '</div>';
+        openModal('🤝 Seek Introduction', html, '');
+    }
+
+    function doRequestIntroduction(introducerId, targetId) {
+        if (!Player.requestIntroduction) { toast('Not available.', 'warning'); return; }
+        try {
+            var result = Player.requestIntroduction(introducerId, targetId);
+            toast(result.message, result.success ? 'success' : 'warning');
+            if (result.success) {
+                closeModal();
+                var target = null;
+                try { target = Engine.getPerson(targetId); } catch(e) {}
+                if (target) showPersonDetail(target);
+            }
+        } catch(e) {
+            toast(e.message || 'Cannot request introduction', 'danger');
+        }
+    }
+
+    function requestSameRankIntro(introducerId) {
+        if (!Player.requestSameRankIntroduction) { toast('Not available.', 'warning'); return; }
+        try {
+            var result = Player.requestSameRankIntroduction(introducerId);
+            toast(result.message, result.success ? 'success' : 'warning');
+            if (result.success && result.targetId) {
+                closeModal();
+                var target = null;
+                try { target = Engine.getPerson(result.targetId); } catch(e) {}
+                if (target) showPersonDetail(target);
+            }
+        } catch(e) {
+            toast(e.message || 'Cannot request introduction', 'danger');
+        }
+    }
+
+    // ── ADVISE KING UI (Royal Advisors) ──
+
+    function openAdviseKingDirectDialog(kingdomId) {
+        if (!Player.adviseKingDirect) { toast('Not available.', 'warning'); return; }
+        var kingdom = null;
+        try { kingdom = Engine.findKingdom(kingdomId); } catch(e) {}
+        if (!kingdom) { toast('Kingdom not found.', 'warning'); return; }
+
+        var playerRank = Player.getMaxPlayerRank ? Player.getMaxPlayerRank() : 0;
+        if (playerRank < 6) { toast('Only Royal Advisors can advise the king.', 'warning'); return; }
+
+        var cooldownDays = 0;
+        var state = Player.getState ? Player.getState() : {};
+        if (state.adviseCooldown) {
+            var today = Engine.getDay ? Engine.getDay() : 0;
+            cooldownDays = Math.max(0, 7 - (today - state.adviseCooldown));
+        }
+
+        // Petition types that can be advised — only non-target ones for now
+        var petitionTypes = (typeof PETITION_TYPES !== 'undefined') ? PETITION_TYPES : [];
+
+        var html = '<div style="max-width:480px;padding:6px;">';
+        html += '<h3 style="margin:0 0 8px;color:#ffd700;">📜 Advise the King of ' + (kingdom.name || 'the Kingdom') + '</h3>';
+        html += '<div style="font-size:0.8rem;color:#aaa;margin-bottom:8px;">As Royal Advisor, you can counsel the king directly without petitions. Success depends on your relationship with the king, kingdom reputation, and the king\'s personality.</div>';
+
+        if (cooldownDays > 0) {
+            html += '<div style="color:#e67e22;font-size:0.85rem;padding:10px;border:1px solid rgba(230,126,34,0.3);border-radius:6px;background:rgba(230,126,34,0.1);margin-bottom:8px;">⏳ The king needs time to consider. Return in ' + cooldownDays + ' days.</div>';
+        }
+
+        for (var pi = 0; pi < petitionTypes.length; pi++) {
+            var pt = petitionTypes[pi];
+            if (pt.requiresTarget) continue; // Skip target-requiring ones for direct counsel
+            var canClick = cooldownDays === 0;
+            html += '<div style="display:flex;align-items:center;gap:8px;padding:8px;margin:4px 0;border:1px solid ' + (canClick ? '#4a6' : '#555') + ';border-radius:6px;background:' + (canClick ? 'rgba(50,150,80,0.1)' : '#2a2a2a') + ';cursor:' + (canClick ? 'pointer' : 'not-allowed') + ';opacity:' + (canClick ? '1' : '0.5') + ';" ' + (canClick ? 'onclick="UI.executeAdviseKing(\'' + kingdomId + '\',\'' + pt.id + '\')"' : '') + '>';
+            html += '<span style="font-size:1.2em;">' + (pt.icon || '📜') + '</span>';
+            html += '<div style="flex:1;">';
+            html += '<div style="font-weight:bold;color:#eee;">' + (pt.name || pt.id) + '</div>';
+            html += '<div style="font-size:0.78rem;color:#aaa;">' + (pt.desc || '') + '</div>';
+            html += '</div></div>';
+        }
+
+        html += '</div>';
+        openModal('📜 Royal Counsel', html, '');
+    }
+
+    function executeAdviseKing(kingdomId, actionId) {
+        if (!Player.adviseKingDirect) return;
+        try {
+            var result = Player.adviseKingDirect(kingdomId, actionId);
+            toast(result.message, result.success ? 'success' : 'warning');
+            if (result.success) closeModal();
+        } catch(e) {
+            toast(e.message || 'Cannot advise', 'danger');
         }
     }
 
@@ -11005,13 +11177,33 @@ window.UI = (function () {
         const rel = Player.getRelationship(personId);
         const relLabel = Player.getRelationshipLabel(rel.level);
 
+        // Gift preferences
+        var knownPrefs = Player.getKnownGiftPreferences ? Player.getKnownGiftPreferences(personId) : {};
+        var prefHtml = '';
+        if (knownPrefs.favorite || knownPrefs.hated) {
+            prefHtml += '<div style="padding:6px;margin:4px 0;border:1px solid rgba(255,215,0,0.3);border-radius:6px;background:rgba(255,215,0,0.05);font-size:0.8rem;">';
+            prefHtml += '<div style="font-weight:bold;margin-bottom:2px;">🔍 Known Preferences</div>';
+            if (knownPrefs.favorite) {
+                var favRes = Object.values(RESOURCE_TYPES).find(function(r) { return r.id === knownPrefs.favorite; });
+                prefHtml += '<div style="color:#2ecc40;">💖 Loves: ' + (favRes ? favRes.icon + ' ' + favRes.name : knownPrefs.favorite) + ' (+10 per item!)</div>';
+            }
+            if (knownPrefs.hated) {
+                var hateRes = Object.values(RESOURCE_TYPES).find(function(r) { return r.id === knownPrefs.hated; });
+                prefHtml += '<div style="color:#e74c3c;">😠 Hates: ' + (hateRes ? hateRes.icon + ' ' + hateRes.name : knownPrefs.hated) + ' (-5 per item!)</div>';
+            }
+            prefHtml += '</div>';
+        }
+
         let itemsHtml = '';
         for (const [resId, qty] of Object.entries(Player.inventory || {})) {
             if (qty <= 0) continue;
             const res = Object.values(RESOURCE_TYPES).find(r => r.id === resId);
             if (!res) continue;
+            var badge = '';
+            if (knownPrefs.favorite === resId) badge = ' <span style="color:#2ecc40;font-size:0.75rem;">💖 Loves!</span>';
+            else if (knownPrefs.hated === resId) badge = ' <span style="color:#e74c3c;font-size:0.75rem;">😠 Hates!</span>';
             itemsHtml += `<div class="trade-item">
-                <div class="res-info">${res.icon} ${res.name} (${qty})</div>
+                <div class="res-info">${res.icon} ${res.name} (${qty})${badge}</div>
                 <div class="trade-controls">
                     <button class="btn-trade buy" onclick="UI.executeGift('${personId}','${resId}',1)">Gift 1</button>
                 </div>
@@ -11025,6 +11217,7 @@ window.UI = (function () {
                 <span class="value">${relLabel.icon} ${relLabel.name} (${Math.floor(rel.level)})</span></div>
             <div class="detail-row"><span class="label">Type</span>
                 <span class="value">${rel.type}</span></div>
+            ${prefHtml}
         </div>
         <div class="detail-section">${itemsHtml}</div>`;
 
@@ -19845,6 +20038,11 @@ window.UI = (function () {
         useNPCTransportUI,
         // NPC Interaction
         talkToPerson,
+        showIntroductionOptions,
+        doRequestIntroduction,
+        requestSameRankIntro,
+        openAdviseKingDirectDialog,
+        executeAdviseKing,
         usePerk,
         dateAction,
         proposeTo,
