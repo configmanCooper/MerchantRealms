@@ -32384,6 +32384,7 @@
         playerConvertBuilding,
         playerConvertFarm,
         playerDemolishBuilding,
+        logFinance,
         revitalizeTown,
         hireWorker,
         fireWorker,

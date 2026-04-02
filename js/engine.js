@@ -25433,6 +25433,11 @@
             var salePrice = bld.salePrice;
             playerState.gold = (playerState.gold || 0) + salePrice;
             playerState.stats.totalGoldEarned = (playerState.stats.totalGoldEarned || 0) + salePrice;
+            // Log to financial ledger
+            if (typeof Player !== 'undefined' && Player.logFinance) {
+                var saleBldName = findBuildingType(bld.type) ? findBuildingType(bld.type).name : bld.type;
+                Player.logFinance(salePrice, 'buildings', 'Sold ' + saleBldName);
+            }
 
             if (buyerType === 'kingdom') {
                 buyer.treasury -= salePrice;
@@ -25457,9 +25462,16 @@
                 }
             }
 
-            // Remove from player buildings
+            // Remove from player buildings and release the land plot
             var pIdx = playerState.buildings.indexOf(bld);
             if (pIdx >= 0) playerState.buildings.splice(pIdx, 1);
+            // Building sale transfers the land too — decrement player's land count
+            var soldBt = findBuildingType(bld.type);
+            var slotsFreed = (soldBt && soldBt.landSlots) ? soldBt.landSlots : 1;
+            if (playerState.landOwned && playerState.landOwned[bld.townId]) {
+                playerState.landOwned[bld.townId] = Math.max(0, playerState.landOwned[bld.townId] - slotsFreed);
+                if (playerState.landOwned[bld.townId] <= 0) delete playerState.landOwned[bld.townId];
+            }
 
             var buyerName = buyerType === 'kingdom' ? buyer.name : ((buyer.firstName || '') + ' ' + (buyer.lastName || ''));
             logEvent('💰 ' + buyerName + ' bought your ' + (findBuildingType(bld.type) ? findBuildingType(bld.type).name : bld.type) + ' for ' + salePrice + 'g!');
@@ -25491,6 +25503,9 @@
             // Execute land sale
             playerState.gold = (playerState.gold || 0) + landListing.price;
             playerState.stats.totalGoldEarned = (playerState.stats.totalGoldEarned || 0) + landListing.price;
+            if (typeof Player !== 'undefined' && Player.logFinance) {
+                Player.logFinance(landListing.price, 'land', 'Sold land in ' + landTown.name);
+            }
             landBuyer.gold -= landListing.price;
 
             playerState.landOwned[landListing.townId] = Math.max(0, (playerState.landOwned[landListing.townId] || 0) - 1);
