@@ -3836,6 +3836,30 @@
         return { success: false, message: 'No changes applied.' };
     }
 
+    // Advance caravan positions smoothly (called 60x per day from subtick)
+    function caravanSubtick() {
+        var ticksPerDay = CONFIG.TICKS_PER_DAY || 60;
+        for (var ci = 0; ci < player.caravans.length; ci++) {
+            var caravan = player.caravans[ci];
+            if (caravan.status !== 'traveling') continue;
+
+            var weightPenalty = 1 / (1 + caravan.totalWeight * 0.005);
+            var caravanSpeed = CONFIG.CARAVAN_BASE_SPEED * weightPenalty;
+            if (caravan.routeType === 'sea') {
+                if (hasSkill('expert_navigator')) caravanSpeed *= 1.20;
+                if (player.ships.length > 0) {
+                    var bestShip = player.ships[0];
+                    var shipCondEff = CONFIG.CONDITION_LEVELS[bestShip.degradeCondition || 'new'] ? CONFIG.CONDITION_LEVELS[bestShip.degradeCondition || 'new'].efficiency : 1.0;
+                    caravanSpeed *= Math.max(0.1, shipCondEff);
+                }
+            } else {
+                if (hasSkill('road_knowledge')) caravanSpeed *= 1.15;
+                if (hasSkill('cartographer')) caravanSpeed *= 1.05;
+            }
+            caravan.progress += (caravanSpeed / Math.max(caravan.totalDist, 1)) / ticksPerDay;
+        }
+    }
+
     function tickCaravans() {
         const rng = Engine.getRng();
         if (!rng) return;
@@ -3843,23 +3867,7 @@
         for (const caravan of player.caravans) {
             if (caravan.status !== 'traveling') continue;
 
-            // Advance progress
-            const weightPenalty = 1 / (1 + caravan.totalWeight * 0.005);
-            let caravanSpeed = CONFIG.CARAVAN_BASE_SPEED * weightPenalty;
-            // Apply transport skills
-            if (caravan.routeType === 'sea') {
-                if (hasSkill('expert_navigator')) caravanSpeed *= 1.20;
-                // Apply ship condition efficiency to speed
-                if (player.ships.length > 0) {
-                    const bestShip = player.ships[0];
-                    const shipCondEff = CONFIG.CONDITION_LEVELS[bestShip.degradeCondition || 'new'] ? CONFIG.CONDITION_LEVELS[bestShip.degradeCondition || 'new'].efficiency : 1.0;
-                    caravanSpeed *= Math.max(0.1, shipCondEff);
-                }
-            } else {
-                if (hasSkill('road_knowledge')) caravanSpeed *= 1.15;
-                if (hasSkill('cartographer')) caravanSpeed *= 1.05;
-            }
-            caravan.progress += caravanSpeed / Math.max(caravan.totalDist, 1);
+            // Progress is now advanced per-subtick in caravanSubtick() for smooth map movement
 
             // Daily wage payment for carriers and guards
             var today = Engine.getDay();
@@ -32461,7 +32469,7 @@
 
         // Tick
         tick() { playerTick(); },
-        subtick() { travelSubtick(); },
+        subtick() { travelSubtick(); caravanSubtick(); },
 
         // Conditions
         checkWinConditions,

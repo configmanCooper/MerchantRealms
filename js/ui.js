@@ -5881,6 +5881,22 @@ window.UI = (function () {
 
         if (!goodInput || !actionSel) return;
         var goodId = goodInput.dataset.selectedId || '';
+
+        // Auto-resolve: if user typed a name but didn't click dropdown, try to match
+        if (!goodId && goodInput.value.trim()) {
+            var typed = goodInput.value.trim().toLowerCase();
+            var allRes = _getAllResourceList();
+            for (var ri = 0; ri < allRes.length; ri++) {
+                if (allRes[ri].name.toLowerCase() === typed ||
+                    allRes[ri].id.toLowerCase() === typed ||
+                    (allRes[ri].icon + ' ' + allRes[ri].name).toLowerCase() === typed) {
+                    goodId = allRes[ri].id;
+                    goodInput.dataset.selectedId = goodId;
+                    break;
+                }
+            }
+        }
+
         if (!goodId) { toast('Select a good first.', 'warning'); return; }
         var action = actionSel.value;
         var location = locSel ? locSel.value : 'destination';
@@ -5888,6 +5904,10 @@ window.UI = (function () {
         if (qty !== 'max' && qty <= 0) { toast('Enter a quantity or check Max.', 'warning'); return; }
         var priceLimit = parseInt(priceInput.value) || 0;
         if (priceLimit <= 0) priceLimit = null;
+
+        var actionLabel = { buy: 'Buy', sell: 'Sell', store: 'Store', pickup: 'Pickup' }[action] || action;
+        var res = findResource(goodId);
+        var resLabel = res ? res.name : goodId;
 
         _caravanOrders.push({
             good: goodId,
@@ -5897,10 +5917,12 @@ window.UI = (function () {
             priceLimit: priceLimit
         });
 
-        // Reset inputs
+        toast('✅ Order added: ' + actionLabel + ' ' + (qty === 'max' ? 'Max' : qty) + ' ' + resLabel, 'success');
+
+        // Reset inputs for next order
         goodInput.value = '';
         goodInput.dataset.selectedId = '';
-        if (qtyInput) qtyInput.value = '';
+        if (qtyInput) { qtyInput.value = ''; qtyInput.disabled = false; }
         if (maxCheck) maxCheck.checked = false;
         if (priceInput) priceInput.value = '';
         var dropdown = document.getElementById('orderGoodDropdown');
