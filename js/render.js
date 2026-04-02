@@ -1913,9 +1913,9 @@ window.Renderer = (function () {
                 ctx.fillStyle = '#e8dcc8';
                 var fromName = from ? from.name : '?';
                 var toName = to ? to.name : '?';
-                ctx.fillText(fromName + '→' + toName, 0, size + 3);
+                ctx.fillText(fromName + '→' + toName, 0, 10);
                 if (goodsCount > 0) {
-                    ctx.fillText('📦' + goodsCount, 0, size + 12);
+                    ctx.fillText('📦' + goodsCount, 0, 19);
                 }
             }
 
