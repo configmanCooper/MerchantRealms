@@ -9575,13 +9575,13 @@ window.UI = (function () {
             }
         }
 
-        var options = [];
+        // ===== CALCULATE ROUTES =====
+        var mixedRoute = null;
+        try { mixedRoute = Engine.findPath(Player.townId, townId); } catch (e) { /* ignore */ }
 
-        // Calculate land route info
         var landRoute = null;
-        try { landRoute = Engine.findPath(Player.townId, townId); } catch (e) { /* ignore */ }
+        try { landRoute = Engine.findPath(Player.townId, townId, { excludeSea: true }); } catch (e) { /* ignore */ }
 
-        // Calculate sea route info
         var canSea = false;
         try { canSea = Player.canTravelBySea(townId); } catch (e) { /* ignore */ }
 
@@ -9590,141 +9590,229 @@ window.UI = (function () {
         var hasShip = Player.ships && Player.ships.length > 0;
         var playerGold = Player.gold || 0;
 
-        // ===== LAND OPTIONS =====
-        // Only show walking/riding options if route has at least one non-sea segment
-        var isSeaOnly = !landRoute || landRoute.length === 0 || landRoute.every(function(seg) { return seg.type === 'sea'; });
-        if (landRoute && landRoute.length > 0 && !isSeaOnly) {
-            var baseDist = calculateRouteDist(landRoute);
-            var baseSpeed = CONFIG.CARAVAN_BASE_SPEED * 1.5;
-            if (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('road_knowledge')) baseSpeed *= 1.15;
-            if (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('cartographer')) baseSpeed *= 1.05;
+        // Cart state
+        var playerContainer = Player.state ? Player.state.storageContainer : null;
+        var containerCfg = playerContainer ? CONFIG.STORAGE_CONTAINERS[playerContainer] : null;
+        var isCartType = containerCfg && (playerContainer === 'cart' || playerContainer === 'small_wagon' || playerContainer === 'wagon' || playerContainer === 'large_wagon');
 
-            // Option: Walk
-            var walkDays = Math.max(1, Math.ceil(baseDist / baseSpeed));
+        // Horse purchase info
+        var horseCost = 80;
+        var horseAvailable = false;
+        if (!hasHorse) {
+            try {
+                var horsePrice = currentTown.market && currentTown.market.prices && currentTown.market.prices.horses ? currentTown.market.prices.horses : 80;
+                horseCost = Math.ceil(horsePrice);
+            } catch (e) { /* ignore */ }
+            var horseLegal = true;
+            try {
+                var hKingdom = Engine.findKingdom(currentTown.kingdomId);
+                if (hKingdom && hKingdom.laws && hKingdom.laws.bannedGoods && hKingdom.laws.bannedGoods.indexOf('horses') !== -1) {
+                    horseLegal = Player.licenses && Player.licenses[currentTown.kingdomId] && Player.licenses[currentTown.kingdomId].indexOf('horses') !== -1;
+                }
+            } catch (e) { /* ignore */ }
+            horseAvailable = horseLegal && currentTown.market && currentTown.market.supply && (currentTown.market.supply.horses || 0) > 0;
+        }
+
+        // ===== SPEED / DISTANCE HELPERS =====
+        var baseSpeed = CONFIG.CARAVAN_BASE_SPEED * 1.5;
+        if (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('road_knowledge')) baseSpeed *= 1.15;
+        if (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('cartographer')) baseSpeed *= 1.05;
+        var horseSpd = baseSpeed * (1 + (CONFIG.HORSE_TRAVEL_SPEED_BONUS || 0.3));
+        if (hasSaddle) horseSpd *= CONFIG.SADDLE_BONUS_MULTIPLIER || 2;
+        var seaSpd = CONFIG.CARAVAN_BASE_SPEED * 1.5 * (CONFIG.SEA_SPEED_MULTIPLIER || 1.5);
+        if (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('expert_navigator')) seaSpd *= 1.2;
+        var passageSpd = seaSpd * 0.8;
+
+        function _splitRouteDists(route) {
+            var ld = 0, sd = 0;
+            if (!route) return { land: 0, sea: 0 };
+            for (var i = 0; i < route.length; i++) {
+                var s = route[i], a = Engine.findTown(s.fromTownId), b = Engine.findTown(s.toTownId);
+                if (!a || !b) continue;
+                var d = Math.hypot(a.x - b.x, a.y - b.y);
+                if (s.type === 'sea') sd += d / (CONFIG.SEA_SPEED_MULTIPLIER || 1.5);
+                else if (s.type === 'offroad') ld += d / (CONFIG.OFFROAD_SPEED_MULTIPLIER || 0.25);
+                else ld += d / (CONFIG.CARAVAN_ROAD_MULTIPLIER[s.quality || 1] || 1);
+            }
+            return { land: ld, sea: sd };
+        }
+
+        function _calcDays(landDist, seaDist, landMode, seaMode) {
+            var ls = (landMode === 'horse' || landMode === 'buy_horse') ? horseSpd : baseSpeed;
+            var ss = seaMode === 'sail_own' ? seaSpd : passageSpd;
+            var time = (landDist > 0 ? landDist / ls : 0) + (seaDist > 0 ? seaDist / ss : 0);
+            return Math.max(1, Math.ceil(time));
+        }
+
+        // ===== SEGMENT CHAIN DISPLAY =====
+        function _segChain(route) {
+            if (!route || !route.length) return '';
+            var icons = { road: '🚶', sea: '⛵', offroad: '🥾' };
+            var chain = '';
+            var first = Engine.findTown(route[0].fromTownId);
+            chain += '<span style="white-space:nowrap;">' + (icons[route[0].type] || '🚶') + ' ' + (first ? first.name : '?') + '</span>';
+            for (var i = 0; i < route.length; i++) {
+                var to = Engine.findTown(route[i].toTownId);
+                chain += ' <span style="color:var(--text-muted);">→</span> ';
+                chain += '<span style="white-space:nowrap;">' + (icons[route[i].type] || '🚶') + ' ' + (to ? to.name : '?') + '</span>';
+            }
+            return chain;
+        }
+
+        // ===== CLASSIFY ROUTES =====
+        var mixedHasSea = mixedRoute && mixedRoute.some(function(s) { return s.type === 'sea'; });
+        var mixedHasLand = mixedRoute && mixedRoute.some(function(s) { return s.type !== 'sea'; });
+        var landValid = landRoute && landRoute.length > 0 && !landRoute.every(function(s) { return s.type === 'sea'; });
+
+        var showLand = landValid;
+        var showMixed = mixedRoute && mixedRoute.length > 0 && mixedHasSea && mixedHasLand;
+        var showSea = canSea;
+
+        // If mixed has no sea, it's same as land
+        if (!mixedHasSea) showMixed = false;
+
+        // Deduplicate land vs mixed
+        if (showLand && showMixed && landRoute.length === mixedRoute.length) {
+            var _same = true;
+            for (var ci = 0; ci < landRoute.length; ci++) {
+                if (landRoute[ci].fromTownId !== mixedRoute[ci].fromTownId ||
+                    landRoute[ci].toTownId !== mixedRoute[ci].toTownId ||
+                    landRoute[ci].type !== mixedRoute[ci].type) { _same = false; break; }
+            }
+            if (_same) showMixed = false;
+        }
+
+        // Fallback: no categorized routes, try mixed as generic
+        if (!showLand && !showSea && !showMixed && mixedRoute && mixedRoute.length > 0) showMixed = true;
+
+        // ===== BUILD OPTIONS (tagged with route category) =====
+        var options = [];
+        var routeLabels = { land: '🚶 Land Route', mixed: '🗺️ Mixed Route', sea: '⛵ Sea Route', god: '⚡ God Mode' };
+
+        // --- LAND ROUTE OPTIONS ---
+        if (showLand) {
+            var lDists = _splitRouteDists(landRoute);
+            var lChain = _segChain(landRoute);
+
+            // Walk
             options.push({
-                id: 'walk',
-                icon: '🚶',
-                name: 'Walk',
+                id: 'land_walk', icon: '🚶', name: 'Walk',
                 desc: 'Travel on foot. Slow but free.',
-                cost: 0,
-                days: walkDays,
-                available: true,
+                cost: 0, days: _calcDays(lDists.land, lDists.sea, 'walk', 'sail_own'),
+                available: true, route: 'land', routeChain: lChain,
                 action: function () { return Player.travelTo(townId); }
             });
 
-            // Option: Ride Horse (if player has horse)
+            // Ride Horse
             if (hasHorse) {
-                var horseSpeed = baseSpeed * (1 + (CONFIG.HORSE_TRAVEL_SPEED_BONUS || 0.3));
-                if (hasSaddle) horseSpeed *= CONFIG.SADDLE_BONUS_MULTIPLIER || 2;
-                var horseDays = Math.max(1, Math.ceil(baseDist / horseSpeed));
                 options.push({
-                    id: 'ride_horse',
-                    icon: '🐴',
-                    name: 'Ride Your Horse',
+                    id: 'land_horse', icon: '🐴', name: 'Ride Your Horse',
                     desc: 'Much faster travel. Less tiring.',
-                    cost: 0,
-                    days: horseDays,
-                    available: true,
+                    cost: 0, days: _calcDays(lDists.land, lDists.sea, 'horse', 'sail_own'),
+                    available: true, route: 'land', routeChain: lChain,
                     action: function () { return Player.travelTo(townId, { mode: 'horse' }); }
                 });
             }
 
-            // Option: Buy a horse and ride (if not already owned)
-            if (!hasHorse) {
-                var horseCost = 80;
-                try {
-                    var horsePrice = currentTown.market && currentTown.market.prices && currentTown.market.prices.horses ? currentTown.market.prices.horses : 80;
-                    horseCost = Math.ceil(horsePrice);
-                } catch (e) { /* ignore */ }
-                var horseLegal = true;
-                try {
-                    var hKingdom = Engine.findKingdom(currentTown.kingdomId);
-                    if (hKingdom && hKingdom.laws && hKingdom.laws.bannedGoods && hKingdom.laws.bannedGoods.indexOf('horses') !== -1) {
-                        horseLegal = Player.licenses && Player.licenses[currentTown.kingdomId] && Player.licenses[currentTown.kingdomId].indexOf('horses') !== -1;
-                    }
-                } catch (e) { /* ignore */ }
+            // Buy Horse & Ride
+            if (!hasHorse && horseAvailable) {
                 var canAffordHorse = playerGold >= horseCost;
-                var horseAvailable = currentTown.market && currentTown.market.supply && (currentTown.market.supply.horses || 0) > 0;
-
-                if (horseLegal && horseAvailable) {
-                    var buyHorseSpeed = baseSpeed * (1 + (CONFIG.HORSE_TRAVEL_SPEED_BONUS || 0.3));
-                    var buyHorseDays = Math.max(1, Math.ceil(baseDist / buyHorseSpeed));
-                    options.push({
-                        id: 'buy_horse',
-                        icon: '🐴💰',
-                        name: 'Buy Horse & Ride (' + horseCost + 'g)',
-                        desc: 'Purchase a horse first, then ride. You keep the horse after.',
-                        cost: horseCost,
-                        days: buyHorseDays,
-                        available: canAffordHorse,
-                        unavailableReason: !canAffordHorse ? 'Not enough gold' : '',
-                        action: (function (hCost) { return function () { return Player.buyHorseForTravel(townId, hCost); }; })(horseCost)
-                    });
-                }
+                options.push({
+                    id: 'land_buy_horse', icon: '🐴💰',
+                    name: 'Buy Horse & Ride (' + horseCost + 'g)',
+                    desc: 'Purchase a horse first, then ride. You keep the horse after.',
+                    cost: horseCost, days: _calcDays(lDists.land, lDists.sea, 'horse', 'sail_own'),
+                    available: canAffordHorse,
+                    unavailableReason: !canAffordHorse ? 'Not enough gold' : '',
+                    route: 'land', routeChain: lChain,
+                    action: (function (hCost) { return function () { return Player.buyHorseForTravel(townId, hCost); }; })(horseCost)
+                });
             }
 
-            // Cart bring/leave options (if player has a cart-type container)
-            var playerContainer = Player.state ? Player.state.storageContainer : null;
-            var containerCfg = playerContainer ? CONFIG.STORAGE_CONTAINERS[playerContainer] : null;
-            var isCartType = containerCfg && (playerContainer === 'cart' || playerContainer === 'small_wagon' || playerContainer === 'wagon' || playerContainer === 'large_wagon');
+            // Cart options
             if (isCartType) {
-                // Bring cart (with speed penalty if no horse)
                 var cartPenalty = hasHorse ? 1.0 : 1.4;
-                var bringSpeed = hasHorse ? (baseSpeed * (1 + (CONFIG.HORSE_TRAVEL_SPEED_BONUS || 0.3))) : baseSpeed;
-                var bringDays = Math.max(1, Math.ceil((baseDist * cartPenalty) / bringSpeed));
-                var bringDesc = hasHorse
-                    ? 'Your horse pulls the ' + containerCfg.name + '. No speed penalty.'
-                    : 'Drag the ' + containerCfg.name + ' by hand — 40% slower!';
+                var bringSpeed = hasHorse ? horseSpd : baseSpeed;
+                var bringDays = Math.max(1, Math.ceil((lDists.land * cartPenalty) / bringSpeed));
                 options.push({
-                    id: 'bring_cart',
-                    icon: '🛒',
+                    id: 'land_bring_cart', icon: '🛒',
                     name: 'Bring ' + containerCfg.name,
-                    desc: bringDesc,
-                    cost: 0,
-                    days: bringDays,
-                    available: true,
-                    action: (function(tid) { return function () {
-                        return Player.travelTo(tid, { leaveCart: false });
-                    }; })(townId)
+                    desc: hasHorse ? 'Your horse pulls the ' + containerCfg.name + '. No speed penalty.' : 'Drag the ' + containerCfg.name + ' by hand — 40% slower!',
+                    cost: 0, days: bringDays,
+                    available: true, route: 'land', routeChain: lChain,
+                    action: (function (tid) { return function () { return Player.travelTo(tid, { leaveCart: false }); }; })(townId)
                 });
-                // Leave cart behind
+
                 var leaveDays = hasHorse
-                    ? Math.max(1, Math.ceil(baseDist / (baseSpeed * (1 + (CONFIG.HORSE_TRAVEL_SPEED_BONUS || 0.3)))))
-                    : walkDays;
+                    ? _calcDays(lDists.land, lDists.sea, 'horse', 'sail_own')
+                    : _calcDays(lDists.land, lDists.sea, 'walk', 'sail_own');
                 options.push({
-                    id: 'leave_cart',
-                    icon: '🛒📦',
+                    id: 'land_leave_cart', icon: '🛒📦',
                     name: 'Leave ' + containerCfg.name + ' Behind',
                     desc: 'Travel light. Cart may be stolen (15%). Goods on it get raided daily.',
-                    cost: 0,
-                    days: leaveDays,
-                    available: true,
-                    action: (function(tid) { return function () {
-                        return Player.travelTo(tid, { leaveCart: true });
-                    }; })(townId)
+                    cost: 0, days: leaveDays,
+                    available: true, route: 'land', routeChain: lChain,
+                    action: (function (tid) { return function () { return Player.travelTo(tid, { leaveCart: true }); }; })(townId)
                 });
             }
 
             // Land transport services
-            var transportAvailable = getTransportServices(currentTown, destTown, 'land');
-            for (var ti = 0; ti < transportAvailable.length; ti++) {
-                var svc = transportAvailable[ti];
+            var landTransport = getTransportServices(currentTown, destTown, 'land');
+            for (var ti = 0; ti < landTransport.length; ti++) {
+                var svc = landTransport[ti];
                 options.push({
-                    id: 'transport_land_' + ti,
-                    icon: svc.icon || '🏇',
-                    name: svc.name,
-                    desc: svc.desc,
-                    cost: svc.price,
-                    days: svc.days,
+                    id: 'land_transport_' + ti, icon: svc.icon || '🏇', name: svc.name,
+                    desc: svc.desc, cost: svc.price, days: svc.days,
                     available: playerGold >= svc.price,
                     unavailableReason: playerGold < svc.price ? 'Not enough gold' : '',
+                    route: 'land', routeChain: lChain,
                     action: (function (service) { return function () { return Player.useTransportService(townId, service); }; })(svc)
                 });
             }
         }
 
-        // ===== SEA OPTIONS =====
-        if (canSea) {
+        // --- MIXED ROUTE OPTIONS ---
+        if (showMixed) {
+            var mDists = _splitRouteDists(mixedRoute);
+            var mChain = _segChain(mixedRoute);
+
+            // Land modes available for mixed route
+            var _landModes = [{ id: 'walk', icon: '🚶', name: 'Walk' }];
+            if (hasHorse) _landModes.push({ id: 'horse', icon: '🐴', name: 'Ride' });
+
+            // Sea modes available for mixed route
+            var _seaModes = [];
+            if (hasShip) _seaModes.push({ id: 'sail_own', icon: '⛵', name: 'Sail Own Ship', cost: 0 });
+            _seaModes.push({ id: 'sea_passage', icon: '🚢', name: 'Book Passage', cost: CONFIG.SEA_PASSAGE_COST || 50 });
+
+            // Generate one option per land×sea combination
+            for (var mli = 0; mli < _landModes.length; mli++) {
+                for (var msi = 0; msi < _seaModes.length; msi++) {
+                    var lm = _landModes[mli], sm = _seaModes[msi];
+                    var mixedCost = sm.cost;
+                    var mixedDays = _calcDays(mDists.land, mDists.sea, lm.id, sm.id);
+                    var mixedAvail = mixedCost === 0 || playerGold >= mixedCost;
+                    options.push({
+                        id: 'mixed_' + lm.id + '_' + sm.id,
+                        icon: lm.icon + sm.icon,
+                        name: lm.name + ' + ' + sm.name,
+                        desc: lm.name + ' on land, ' + sm.name.toLowerCase() + ' at sea.',
+                        cost: mixedCost, days: mixedDays,
+                        available: mixedAvail,
+                        unavailableReason: !mixedAvail ? 'Not enough gold' : '',
+                        route: 'mixed', routeChain: mChain,
+                        action: (function (lMode, sMode) {
+                            return function () {
+                                return Player.travelTo(townId, { mode: lMode, seaMode: sMode });
+                            };
+                        })(lm.id, sm.id)
+                    });
+                }
+            }
+        }
+
+        // --- SEA ROUTE OPTIONS ---
+        if (showSea) {
             var seaDist = 500;
             try {
                 var seaRoutes = Engine.getSeaRoutes();
@@ -9739,36 +9827,33 @@ window.UI = (function () {
                 if (sr) seaDist = sr.distance || 500;
             } catch (e) { /* ignore */ }
 
-            // Option: Sail own ship
+            var seaChain = '<span style="white-space:nowrap;">⛵ ' + (currentTown.name || '?') + '</span>'
+                + ' <span style="color:var(--text-muted);">→</span> '
+                + '<span style="white-space:nowrap;">⛵ ' + (destTown.name || '?') + '</span>';
+
+            // Sail own ship
             if (hasShip) {
-                var shipSpeed = CONFIG.CARAVAN_BASE_SPEED * 1.5 * (CONFIG.SEA_SPEED_MULTIPLIER || 1.5);
-                if (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('expert_navigator')) shipSpeed *= 1.2;
-                var sailDays = Math.max(1, Math.ceil(seaDist / shipSpeed));
+                var sailDays = Math.max(1, Math.ceil(seaDist / seaSpd));
                 options.push({
-                    id: 'sail_own',
-                    icon: '⛵',
-                    name: 'Sail Your Ship',
+                    id: 'sea_sail', icon: '⛵', name: 'Sail Your Ship',
                     desc: 'Use your own vessel. Risk of pirates and storms.',
-                    cost: 0,
-                    days: sailDays,
-                    available: true,
+                    cost: 0, days: sailDays,
+                    available: true, route: 'sea', routeChain: seaChain,
                     action: function () { return Player.travelBySea(townId); }
                 });
             }
 
-            // Option: Pay for sea passage
+            // Paid passage
             var passageCost = CONFIG.SEA_PASSAGE_COST || 50;
-            var passageSpeed = CONFIG.CARAVAN_BASE_SPEED * 1.5 * (CONFIG.SEA_SPEED_MULTIPLIER || 1.5) * 0.8;
-            var passageDays = Math.max(1, Math.ceil(seaDist / passageSpeed));
+            var passageDays = Math.max(1, Math.ceil(seaDist / passageSpd));
             options.push({
-                id: 'sea_passage',
-                icon: '🚢',
+                id: 'sea_passage', icon: '🚢',
                 name: 'Book Passage (' + passageCost + 'g)',
                 desc: 'Pay for passage on a merchant vessel. Safer than solo.',
-                cost: passageCost,
-                days: passageDays,
+                cost: passageCost, days: passageDays,
                 available: playerGold >= passageCost,
                 unavailableReason: playerGold < passageCost ? 'Not enough gold' : '',
+                route: 'sea', routeChain: seaChain,
                 action: function () { return Player.travelBySea(townId, { paid: true }); }
             });
 
@@ -9777,29 +9862,23 @@ window.UI = (function () {
             for (var sti = 0; sti < seaTransport.length; sti++) {
                 var ssvc = seaTransport[sti];
                 options.push({
-                    id: 'transport_sea_' + sti,
-                    icon: ssvc.icon || '🚢',
-                    name: ssvc.name,
-                    desc: ssvc.desc,
-                    cost: ssvc.price,
-                    days: ssvc.days,
+                    id: 'sea_transport_' + sti, icon: ssvc.icon || '🚢', name: ssvc.name,
+                    desc: ssvc.desc, cost: ssvc.price, days: ssvc.days,
                     available: playerGold >= ssvc.price,
                     unavailableReason: playerGold < ssvc.price ? 'Not enough gold' : '',
+                    route: 'sea', routeChain: seaChain,
                     action: (function (service) { return function () { return Player.useTransportService(townId, service); }; })(ssvc)
                 });
             }
         }
 
-        // ===== GOD MODE: INSTANT WARP =====
+        // --- GOD MODE ---
         if (typeof Game !== 'undefined' && Game.isGodMode && Game.isGodMode()) {
             options.push({
-                id: 'god_warp',
-                icon: '⚡',
-                name: 'Warp (God Mode)',
+                id: 'god_warp', icon: '⚡', name: 'Warp (God Mode)',
                 desc: 'Instantly teleport to this town.',
-                cost: 0,
-                days: 0,
-                available: true,
+                cost: 0, days: 0,
+                available: true, route: 'god', routeChain: '⚡ Instant teleport',
                 action: function () {
                     var ps = Player.state;
                     ps.townId = townId;
@@ -9828,38 +9907,58 @@ window.UI = (function () {
         var html = '<div style="max-height:450px;overflow-y:auto;">';
         html += '<p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:10px;">\u{1F4CD} ' + (currentTown.name || '?') + ' \u2192 ' + (destTown.name || '?') + '</p>';
 
-        for (var oi = 0; oi < options.length; oi++) {
-            var opt = options[oi];
-            var isAvail = opt.available;
-            var opacity = isAvail ? '1' : '0.4';
+        // Group options by route category
+        var _routeOrder = ['land', 'mixed', 'sea', 'god'];
+        for (var ro = 0; ro < _routeOrder.length; ro++) {
+            var routeKey = _routeOrder[ro];
+            var routeOpts = [];
+            for (var oi = 0; oi < options.length; oi++) {
+                if (options[oi].route === routeKey) routeOpts.push(options[oi]);
+            }
+            if (routeOpts.length === 0) continue;
 
-            html += '<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:10px;margin-bottom:8px;opacity:' + opacity + ';">';
-            html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
-            html += '<div>';
-            html += '<span style="font-size:1.1rem;">' + opt.icon + '</span> ';
-            html += '<strong>' + opt.name + '</strong>';
-            html += '<br><span style="font-size:0.8rem;color:var(--text-muted);">' + opt.desc + '</span>';
-            html += '</div>';
-            html += '<div style="text-align:right;">';
-            if (opt.days === 0) {
-                html += '<div style="font-size:0.9rem;color:#8f8;">⚡ Instant</div>';
-            } else {
-                html += '<div style="font-size:0.9rem;color:var(--gold);">\u23F1\uFE0F ~' + opt.days + ' day' + (opt.days !== 1 ? 's' : '') + '</div>';
+            // Route category card
+            html += '<div style="background:rgba(139,115,85,0.08);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:10px;margin-bottom:10px;">';
+            html += '<div style="font-size:0.95rem;font-weight:bold;margin-bottom:4px;">' + (routeLabels[routeKey] || routeKey) + '</div>';
+            html += '<div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:8px;line-height:1.5;">' + routeOpts[0].routeChain + '</div>';
+
+            // Options within this category
+            for (var oi2 = 0; oi2 < routeOpts.length; oi2++) {
+                var opt = routeOpts[oi2];
+                var isAvail = opt.available;
+                var opacity = isAvail ? '1' : '0.4';
+
+                html += '<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:5px;padding:8px;margin-bottom:6px;opacity:' + opacity + ';">';
+                html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+                html += '<div style="flex:1;min-width:0;">';
+                html += '<span style="font-size:1rem;">' + opt.icon + '</span> ';
+                html += '<strong style="font-size:0.88rem;">' + opt.name + '</strong>';
+                html += '<br><span style="font-size:0.75rem;color:var(--text-muted);">' + opt.desc + '</span>';
+                html += '</div>';
+                html += '<div style="text-align:right;min-width:75px;margin-left:8px;">';
+                if (opt.days === 0) {
+                    html += '<div style="font-size:0.85rem;color:#8f8;">⚡ Instant</div>';
+                } else {
+                    html += '<div style="font-size:0.85rem;color:var(--gold);">\u23F1\uFE0F ~' + opt.days + ' day' + (opt.days !== 1 ? 's' : '') + '</div>';
+                }
+                if (opt.cost > 0) {
+                    html += '<div style="font-size:0.8rem;color:#c9a96e;">\u{1F4B0} ' + opt.cost + 'g</div>';
+                } else {
+                    html += '<div style="font-size:0.8rem;color:#8f8;">Free</div>';
+                }
+                html += '</div>';
+                html += '</div>';
+                if (isAvail) {
+                    html += '<button class="btn-medieval" style="width:100%;margin-top:5px;padding:5px;font-size:0.85rem;" onclick="UI.confirmTravel(\'' + townId + '\',\'' + opt.id + '\')">Select</button>';
+                } else {
+                    html += '<div style="text-align:center;margin-top:3px;font-size:0.78rem;color:#c44e52;">' + (opt.unavailableReason || 'Unavailable') + '</div>';
+                }
+                html += '</div>';
             }
-            if (opt.cost > 0) {
-                html += '<div style="font-size:0.85rem;color:#c9a96e;">\u{1F4B0} ' + opt.cost + 'g</div>';
-            } else {
-                html += '<div style="font-size:0.85rem;color:#8f8;">Free</div>';
-            }
-            html += '</div>';
-            html += '</div>';
-            if (isAvail) {
-                html += '<button class="btn-medieval" style="width:100%;margin-top:6px;padding:6px;" onclick="UI.confirmTravel(\'' + townId + '\',\'' + opt.id + '\')">Select</button>';
-            } else {
-                html += '<div style="text-align:center;margin-top:4px;font-size:0.8rem;color:#c44e52;">' + (opt.unavailableReason || 'Unavailable') + '</div>';
-            }
-            html += '</div>';
+
+            html += '</div>'; // end route card
         }
+
         html += '</div>';
 
         // Store options for confirm handler

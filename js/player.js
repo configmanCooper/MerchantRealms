@@ -2668,7 +2668,17 @@
         // If route includes sea segments, delegate to travelBySea for proper ship handling
         if (isSea && !isOffroad && route.length === 1 && route[0].type === 'sea') {
             // Pure sea route — use dedicated sea travel with ship checks, blockades, etc.
-            return travelBySea(townId);
+            return travelBySea(townId, options.seaMode === 'sea_passage' ? { paid: true } : {});
+        }
+
+        // Handle paid sea passage for mixed routes (check gold before committing)
+        if (isSea && options.seaMode === 'sea_passage') {
+            var seaPassageCost = CONFIG.SEA_PASSAGE_COST || 50;
+            if (player.gold < seaPassageCost) {
+                return { success: false, message: 'Not enough gold for sea passage (' + seaPassageCost + 'g needed).' };
+            }
+            player.gold -= seaPassageCost;
+            player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + seaPassageCost;
         }
 
         player.traveling = true;
@@ -2681,14 +2691,19 @@
         player.travelOrigin = player.townId || originTownId;
         player.travelPaid = false;
         // Set travel mode based on route type
-        if (isSea && player.ships && player.ships.length > 0) {
-            player.travelMode = 'sail_own';
+        var requestedMode = options.mode || (hasHorse ? 'horse' : 'walk');
+        if (isSea && route.every(function(s) { return s.type === 'sea'; })) {
+            // All-sea multi-segment route
+            player.travelMode = (player.ships && player.ships.length > 0) ? 'sail_own' : 'sea_passage';
+            player.travelSeaMode = player.travelMode;
         } else if (isSea) {
-            player.travelMode = 'sea_passage';
-        } else {
-            // Horse riding only allowed on land routes
-            var requestedMode = options.mode || (hasHorse ? 'horse' : 'walk');
+            // Mixed route (land + sea segments) — land mode for energy, sea mode stored separately
             player.travelMode = requestedMode;
+            player.travelSeaMode = options.seaMode || (player.ships && player.ships.length > 0 ? 'sail_own' : 'sea_passage');
+        } else {
+            // Pure land/offroad route
+            player.travelMode = requestedMode;
+            player.travelSeaMode = null;
         }
         player.travelRestBonus = false;
 
@@ -3131,7 +3146,8 @@
     /**
      * Travel to a port town by sea.
      */
-    function travelBySea(townId) {
+    function travelBySea(townId, options) {
+        options = options || {};
         if (player.traveling) return { success: false, message: 'Already traveling.' };
         if (townId === player.townId) return { success: false, message: 'Already there.' };
 
@@ -3192,7 +3208,8 @@
         }
 
         const hasShip = player.ships.length > 0;
-        if (!hasShip) {
+        const forcePaid = options.paid === true;
+        if (!hasShip || forcePaid) {
             if (player.gold < CONFIG.SEA_PASSAGE_COST) {
                 return { success: false, message: 'Not enough gold for sea passage. Need ' + CONFIG.SEA_PASSAGE_COST + 'g.' };
             }
@@ -3229,8 +3246,9 @@
         player.travelTotalDist = route ? route.distance / shipSpeedMult : 500;
         player.travelBySea = true;
         player.travelOrigin = player.townId;
-        player.travelPaid = !hasShip; // Paid passage if no ship
-        player.travelMode = hasShip ? 'sail_own' : 'sea_passage';
+        player.travelPaid = !hasShip || forcePaid;
+        player.travelMode = (!hasShip || forcePaid) ? 'sea_passage' : 'sail_own';
+        player.travelSeaMode = player.travelMode;
         player.travelRestBonus = false;
 
         // Sea travel energy is now handled per-tick in tickTravel (no upfront cost)
@@ -4711,6 +4729,7 @@
         player.travelOffroad = false;
         player.travelPaid = false;
         player.travelMode = null;
+        player.travelSeaMode = null;
         player.travelRestBonus = false;
         player.travelOrigin = null;
     }
@@ -4875,16 +4894,25 @@
             }
         }
 
-        // Reverse the route
+        // Reverse the route — create copies to avoid mutating world road/seaRoute data
         if (player.travelRoute && player.travelRoute.length > 0) {
-            player.travelRoute = player.travelRoute.slice().reverse();
-            // Swap from/to in each segment
-            for (var i = 0; i < player.travelRoute.length; i++) {
+            var reversed = [];
+            for (var i = player.travelRoute.length - 1; i >= 0; i--) {
                 var seg = player.travelRoute[i];
-                var tmp = seg.fromTownId;
-                seg.fromTownId = seg.toTownId;
-                seg.toTownId = tmp;
+                var copy = {};
+                for (var key in seg) {
+                    if (seg.hasOwnProperty(key)) copy[key] = seg[key];
+                }
+                // Swap from/to
+                copy.fromTownId = seg.toTownId;
+                copy.toTownId = seg.fromTownId;
+                // Reverse waypoints so they flow in the new travel direction
+                if (seg.waypoints && seg.waypoints.length > 0) {
+                    copy.waypoints = seg.waypoints.slice().reverse();
+                }
+                reversed.push(copy);
             }
+            player.travelRoute = reversed;
         }
 
         Engine.logEvent('🔄 You turned back on the road.', { type: 'travel_turnback' }, 'travel_events');
@@ -5286,6 +5314,7 @@
             player.travelOrigin = null;
             player.travelPaid = false;
             player.travelMode = null;
+            player.travelSeaMode = null;
             player.travelRestBonus = false;
             player.travelWaypoints = null;
             player.travelDestCoords = null;
@@ -12697,6 +12726,7 @@
             travelOrigin: player.travelOrigin || null,
             travelPaid: player.travelPaid || 0,
             travelMode: player.travelMode || null,
+            travelSeaMode: player.travelSeaMode || null,
             travelWaypoints: player.travelWaypoints ? JSON.parse(JSON.stringify(player.travelWaypoints)) : null,
             travelDestCoords: player.travelDestCoords || null,
             travelRestBonus: player.travelRestBonus || 0,
@@ -12763,6 +12793,7 @@
         player.travelRoute = data.travelRoute || null;
         player.travelTotalDist = data.travelTotalDist || 0;
         player.travelBySea = data.travelBySea || false;
+        player.travelSeaMode = data.travelSeaMode || null;
         player.travelOffroad = data.travelOffroad || false;
         player.perkCooldowns = data.perkCooldowns || {};
         player.escort = data.escort || null;
@@ -31712,6 +31743,7 @@
         get travelOrigin() { return player.travelOrigin; },
         get travelPaid() { return player.travelPaid; },
         get travelMode() { return player.travelMode; },
+        get travelSeaMode() { return player.travelSeaMode; },
         get travelRestBonus() { return player.travelRestBonus; },
         get travelDestCoords() { return player.travelDestCoords; },
         get travelWaypoints() { return player.travelWaypoints; },

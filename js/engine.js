@@ -16867,7 +16867,7 @@
     // ========================================================
     // §19 PATHFINDING (Dijkstra over road graph)
     // ========================================================
-    function findPath(fromTownId, toTownId) {
+    function findPath(fromTownId, toTownId, options) {
         const adjacency = {};
         for (const town of world.towns) adjacency[town.id] = [];
         for (const road of world.roads) {
@@ -16885,8 +16885,8 @@
             adjacency[road.toTownId].push({ town: road.fromTownId, cost, road, type: 'road' });
         }
 
-        // Also include sea routes in pathfinding
-        if (world.seaRoutes) {
+        // Also include sea routes in pathfinding (skip if excludeSea option set)
+        if (world.seaRoutes && !(options && options.excludeSea)) {
             for (const route of world.seaRoutes) {
                 const fromT = findTown(route.fromTownId);
                 const toT = findTown(route.toTownId);
@@ -26267,7 +26267,7 @@
         findNearestTown(x, y) { return findNearestTown(x, y); },
         findKingdom(id) { return findKingdom(id); },
         findPerson(id) { return findPerson(id); },
-        findPath(a, b) { return findPath(a, b); },
+        findPath(a, b, opts) { return findPath(a, b, opts); },
         findBuildingType(id) { return findBuildingType(id); },
         logEvent(msg, details, category) { logEvent(msg, details, category); },
         getRng() { return world ? world.rng : null; },
