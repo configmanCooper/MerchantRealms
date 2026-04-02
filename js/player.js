@@ -4199,7 +4199,8 @@
                             caravan.status = 'traveling';
                             if (caravan.route) {
                                 caravan.route = caravan.route.slice().reverse().map(function(seg) {
-                                    return { ...seg, fromTownId: seg.toTownId, toTownId: seg.fromTownId };
+                                    return { ...seg, fromTownId: seg.toTownId, toTownId: seg.fromTownId,
+                                        waypoints: seg.waypoints ? seg.waypoints.slice().reverse() : seg.waypoints };
                                 });
                             }
                             logCaravan(caravan, '🔄 Returning to ' + (originTown ? originTown.name : 'origin') + ' for final disbandment.');
@@ -4364,7 +4365,8 @@
                         caravan.route = caravan.route.slice().reverse().map(seg => ({
                             ...seg,
                             fromTownId: seg.toTownId,
-                            toTownId: seg.fromTownId
+                            toTownId: seg.fromTownId,
+                            waypoints: seg.waypoints ? seg.waypoints.slice().reverse() : seg.waypoints
                         }));
                     }
                     Engine.logEvent(`${routeLabel} starting return trip to ${originTown ? originTown.name : 'origin'}.`);
@@ -4406,7 +4408,8 @@
                                 caravan.status = 'traveling';
                                 if (caravan.route) {
                                     caravan.route = caravan.route.slice().reverse().map(seg => ({
-                                        ...seg, fromTownId: seg.toTownId, toTownId: seg.fromTownId
+                                        ...seg, fromTownId: seg.toTownId, toTownId: seg.fromTownId,
+                                        waypoints: seg.waypoints ? seg.waypoints.slice().reverse() : seg.waypoints
                                     }));
                                 }
                                 var rWeight = 0;
@@ -4472,7 +4475,8 @@
                                 caravan.status = 'traveling';
                                 if (caravan.route) {
                                     caravan.route = caravan.route.slice().reverse().map(seg => ({
-                                        ...seg, fromTownId: seg.toTownId, toTownId: seg.fromTownId
+                                        ...seg, fromTownId: seg.toTownId, toTownId: seg.fromTownId,
+                                        waypoints: seg.waypoints ? seg.waypoints.slice().reverse() : seg.waypoints
                                     }));
                                 }
                                 let legacyWeight = 0;
