@@ -729,6 +729,8 @@
                 taxRate: rng.randFloat(0.05, 0.20),
                 propertyTaxRate: rng.randFloat(CONFIG.KINGDOM_PROPERTY_TAX_MIN || 0.01, CONFIG.KINGDOM_DEFAULT_PROPERTY_TAX_RATE || 0.02),
                 incomeTaxRate: rng.randFloat(CONFIG.KINGDOM_INCOME_TAX_MIN || 0.01, CONFIG.KINGDOM_DEFAULT_INCOME_TAX_RATE || 0.05),
+                healthcareTaxRate: rng.randFloat(CONFIG.KINGDOM_HEALTHCARE_TAX_MIN || 0, CONFIG.KINGDOM_DEFAULT_HEALTHCARE_TAX_RATE || 0.10),
+                healthcareTaxRevenue: 0,
                 tradeTaxRevenue: 0,
                 propertyTaxRevenue: 0,
                 incomeTaxRevenue: 0,
@@ -3734,6 +3736,10 @@
                 // Deposit depletion — only applies to extraction buildings
                 if (bld.depositDepleted) { continue; }
 
+                // Player-owned buildings are fully handled by player.js tickBuildings
+                // Skip input consumption and output here to avoid double-processing
+                if (bld.ownerId === 'player') continue;
+
                 // Check inputs available
                 let canProduce = true;
                 for (const [resId, qty] of Object.entries(activeConsumes)) {
@@ -3866,7 +3872,9 @@
                     }
 
                     if (produced > 0) {
-                        town.market.supply[tierOutputId] = (town.market.supply[tierOutputId] || 0) + produced;
+                        if (bld.ownerId !== 'player') {
+                            town.market.supply[tierOutputId] = (town.market.supply[tierOutputId] || 0) + produced;
+                        }
                         actualOutput = produced;
                         actualOutputId = tierOutputId;
                     }
@@ -3902,10 +3910,13 @@
                         animalBonus = Math.max(1, Math.floor(output * 0.10));
                     }
                     actualOutput = output + animalBonus;
-                    town.market.supply[activeProduces] = (town.market.supply[activeProduces] || 0) + output + animalBonus;
+                    // Player buildings are handled by player.js tickBuildings — don't add to market here
+                    if (bld.ownerId !== 'player') {
+                        town.market.supply[activeProduces] = (town.market.supply[activeProduces] || 0) + output + animalBonus;
+                    }
 
                     // Cattle Ranch secondary output: hide from slaughter
-                    if (bld.type === 'cattle_ranch' && output > 0) {
+                    if (bld.type === 'cattle_ranch' && output > 0 && bld.ownerId !== 'player') {
                         var hideOutput = Math.max(1, Math.floor(output * 0.4));
                         town.market.supply.hide = (town.market.supply.hide || 0) + hideOutput;
                     }
@@ -15464,13 +15475,64 @@
             }
             case 'plague_disaster': {
                 // Infect people with plague illness; deaths come from illness progression
-                const townPeople = world.people.filter(p => p.alive && p.townId === ev.townId);
-                for (const p of townPeople) {
-                    if (!p.sick && rng.chance(ev.killRate * 2.5)) {
+                var townPeople = world.people.filter(function(p) { return p.alive && p.townId === ev.townId; });
+                var sickCount = 0;
+                var totalHere = townPeople.length;
+                // Aggressive daily infection — killRate scales with remaining uninfected
+                var baseInfectChance = ev.killRate * (ev.isSevere ? 4.0 : 2.5);
+                for (var pi = 0; pi < townPeople.length; pi++) {
+                    var p = townPeople[pi];
+                    if (p.sick) { sickCount++; continue; }
+                    // Higher chance when more people are already sick (overcrowded hospitals)
+                    var sickRatio = totalHere > 0 ? sickCount / totalHere : 0;
+                    var infectChance = baseInfectChance * (1 + sickRatio * 2);
+                    if (rng.chance(infectChance)) {
                         infectNPC(p, 'plague', rng, world.day, 'plague_disaster');
+                        sickCount++;
                     }
                 }
-                town.happiness = Math.max(0, town.happiness - 1);
+                town.happiness = Math.max(0, town.happiness - (ev.isSevere ? 2 : 1));
+
+                // Spread to adjacent towns — daily check
+                var spreadMult = ev.spreadMult || NPC_HEALTH_CONFIG.PLAGUE_SPREAD_MULT;
+                var spreadBase = NPC_HEALTH_CONFIG.TOWN_SPREAD_BASE * spreadMult;
+                var sickPct = totalHere > 0 ? sickCount / totalHere : 0;
+                var spreadChance = spreadBase + sickPct * NPC_HEALTH_CONFIG.TOWN_SPREAD_SICK_RATIO_MULT * spreadBase;
+                // Check if quarantine policy is active for this town
+                var quarantined = false;
+                if (town.activePolicies) {
+                    for (var qp = 0; qp < town.activePolicies.length; qp++) {
+                        if (town.activePolicies[qp].id === 'quarantine_town') { quarantined = true; break; }
+                    }
+                }
+                if (!quarantined) {
+                    // Find adjacent towns via roads
+                    var adjRoads = world.roads.filter(function(r) { return r.fromTownId === ev.townId || r.toTownId === ev.townId; });
+                    for (var ri = 0; ri < adjRoads.length; ri++) {
+                        var adjTownId = adjRoads[ri].fromTownId === ev.townId ? adjRoads[ri].toTownId : adjRoads[ri].fromTownId;
+                        // Don't spread if already has active plague
+                        var alreadyPlagued = world.events.some(function(e2) {
+                            return e2.active && (e2.type === 'plague' || e2.type === 'plague_disaster') && e2.townId === adjTownId;
+                        });
+                        if (alreadyPlagued) continue;
+                        // Trade routes increase spread
+                        var hasTradeRoute = world.caravans ? world.caravans.some(function(c) {
+                            return c.active && ((c.fromTownId === ev.townId && c.toTownId === adjTownId) ||
+                                                (c.fromTownId === adjTownId && c.toTownId === ev.townId));
+                        }) : false;
+                        var finalSpread = spreadChance * (hasTradeRoute ? NPC_HEALTH_CONFIG.TRADE_ROUTE_SPREAD_MULT : 1);
+                        if (rng.chance(finalSpread)) {
+                            var adjTown = findTown(adjTownId);
+                            if (adjTown) {
+                                // Spread plague to adjacent town — slightly weaker
+                                triggerPlague(adjTown);
+                                logEvent('🦠 The plague spreads from ' + town.name + ' to ' + adjTown.name + '!', {
+                                    type: 'plague_spread', townId: adjTownId, sourceTownId: ev.townId
+                                });
+                            }
+                        }
+                    }
+                }
                 break;
             }
             case 'blight': {
@@ -15673,37 +15735,8 @@
             return;
         }
 
-        // Treatment: hospitals/clinics actively treat NPCs (charge gold, consume supplies)
-        var treated = false;
-        if ((hasHospital || hasClinic) && !person._illnessTreatPaid) {
-            var sev = person.illnessSeverity || 'minor';
-            // Clinics can't treat severe
-            if (sev === 'severe' && !hasHospital) {
-                // no treatment available
-            } else {
-                var treatCost = hasHospital
-                    ? (sev === 'severe' ? 20 : sev === 'moderate' ? 12 : 6)
-                    : (sev === 'moderate' ? 8 : 4);
-                if (person.gold >= treatCost) {
-                    person.gold -= treatCost;
-                    person._illnessTreatPaid = true;
-                    treated = true;
-                    // Consume supplies from town market
-                    var town = findTown(person.townId);
-                    if (town && town.market && town.market.supply) {
-                        var supply = town.market.supply;
-                        if ((supply.bandages || 0) > 0) supply.bandages--;
-                        if (sev !== 'minor' && (supply.herbal_remedy || 0) > 0) supply.herbal_remedy--;
-                    }
-                    // Pay to town economy (kingdom treasury gets a cut)
-                    if (town) {
-                        var kingdom = findKingdom(town.kingdomId);
-                        if (kingdom) kingdom.gold = (kingdom.gold || 0) + Math.floor(treatCost * 0.3);
-                    }
-                }
-            }
-        }
-        if (person._illnessTreatPaid) treated = true;
+        // Treatment: check if person is being treated via hospital queue system
+        var treated = person._illnessTreatPaid || false;
 
         if (treated) {
             if (hasHospital) healthDrain *= 0.3;
@@ -15722,7 +15755,8 @@
         // Recovery check
         var recoveryDays = illDef.daysToRecover || 14;
         if (treated) recoveryDays = Math.floor(recoveryDays * 0.6);
-        if (daysSick >= recoveryDays && rng.chance(0.3 * tickScale)) {
+        var recovChance = (illDef.recoveryChance || 0.3) * tickScale;
+        if (daysSick >= recoveryDays && rng.chance(recovChance)) {
             person.sick = false;
             person.illness = null;
             person.asymptomatic = false;
@@ -15734,6 +15768,18 @@
         // Natural health recovery (slow, even while sick if treated)
         if (treated) {
             person.health = Math.min(100, person.health + (NPC_HEALTH_CONFIG.DOCTOR_HEAL_PER_DAY || 3.0) * tickScale * 0.3);
+        }
+
+        // Natural immune recovery — some people fight it off even untreated
+        if (illDef.naturalRecoveryDay && illDef.naturalRecoveryChance) {
+            if (daysSick >= illDef.naturalRecoveryDay && rng.chance(illDef.naturalRecoveryChance * tickScale)) {
+                person.sick = false;
+                person.illness = null;
+                person.asymptomatic = false;
+                person._illnessTreatPaid = false;
+                person.health = Math.min(100, Math.max(5, person.health) + 5);
+                return;
+            }
         }
 
         // Death check
@@ -16198,6 +16244,242 @@
                 }
             }
         }
+    }
+
+    // ========================================================
+    // §16b HOSPITAL / CLINIC TREATMENT SYSTEM
+    // ========================================================
+
+    /**
+     * Get AI-driven treatment fee for a medical facility.
+     * Owner considers: local wages, capacity utilization, severity.
+     */
+    function getHospitalTreatmentFee(town, bld, bt, severity) {
+        // Base fee by severity
+        var baseFee = { minor: 5, moderate: 15, serious: 30, severe: 50 };
+        var fee = baseFee[severity] || 10;
+
+        // Local economy modifier: use average food price as wage proxy
+        var econMod = 1.0;
+        if (town && town.market && town.market.prices) {
+            var foodPrices = ['wheat', 'bread', 'fish', 'meat'];
+            var totalFoodPrice = 0, foodCount = 0;
+            for (var fi = 0; fi < foodPrices.length; fi++) {
+                var fp = town.market.prices[foodPrices[fi]];
+                if (fp && fp > 0) { totalFoodPrice += fp; foodCount++; }
+            }
+            if (foodCount > 0) {
+                var avgFoodPrice = totalFoodPrice / foodCount;
+                econMod = Math.max(0.5, Math.min(2.5, avgFoodPrice / 7.5));
+            }
+        }
+        // Prosperity modifier
+        var prospMod = 0.7 + ((town.prosperity || 50) / 100) * 0.8;
+
+        // Capacity utilization — more patients waiting = higher price
+        var queue = bld._treatmentQueue || [];
+        var maxHealers = (bt && bt.maxHealers) || (bt && bt.workers) || 2;
+        var utilization = queue.length / Math.max(maxHealers, 1);
+        var demandMod = 1.0 + Math.min(1.0, utilization) * 0.5; // up to +50% at full capacity
+
+        fee = Math.round(fee * econMod * prospMod * demandMod);
+        return Math.max(1, fee);
+    }
+
+    /**
+     * Process hospital/clinic treatment queues for all towns.
+     * Called every game tick (60/day) from main loop via Engine.tickHospitals().
+     */
+    function tickHospitalTreatment() {
+        if (!world || !world.towns) return;
+        var rng = world.rng;
+        var day = world.day;
+
+        for (var ti = 0; ti < world.towns.length; ti++) {
+            var town = world.towns[ti];
+            if (!town.buildings) continue;
+
+            for (var bi = 0; bi < town.buildings.length; bi++) {
+                var bld = town.buildings[bi];
+                if (bld.type !== 'hospital' && bld.type !== 'clinic') continue;
+
+                // Init treatment queue if needed
+                if (!bld._treatmentQueue) bld._treatmentQueue = [];
+                if (bld._treatmentFee == null) bld._treatmentFee = 10;
+                if (!bld._lastPriceUpdateDay) bld._lastPriceUpdateDay = 0;
+
+                var bt = findBuildingType(bld.type);
+                var maxHealers = (bt && bt.maxHealers) || 2;
+                var kingdom = findKingdom(town.kingdomId);
+                var isKingdomOwned = bld.ownerId && kingdom && bld.ownerId === kingdom.id;
+                var isPlayerOwned = bld.ownerId === 'player';
+                var healthcareTaxRate = (kingdom && kingdom.healthcareTaxRate != null) ? kingdom.healthcareTaxRate : 0.10;
+
+                // --- Owner AI updates treatment pricing every 7 days ---
+                if (day - (bld._lastPriceUpdateDay || 0) >= 7 && !isPlayerOwned) {
+                    // AI sets fee for each severity level
+                    bld._treatmentFees = {
+                        minor:    getHospitalTreatmentFee(town, bld, bt, 'minor'),
+                        moderate: getHospitalTreatmentFee(town, bld, bt, 'moderate'),
+                        serious:  getHospitalTreatmentFee(town, bld, bt, 'serious'),
+                        severe:   getHospitalTreatmentFee(town, bld, bt, 'severe'),
+                    };
+                    bld._lastPriceUpdateDay = day;
+                }
+                if (!bld._treatmentFees) {
+                    bld._treatmentFees = {
+                        minor:    getHospitalTreatmentFee(town, bld, bt, 'minor'),
+                        moderate: getHospitalTreatmentFee(town, bld, bt, 'moderate'),
+                        serious:  getHospitalTreatmentFee(town, bld, bt, 'serious'),
+                        severe:   getHospitalTreatmentFee(town, bld, bt, 'severe'),
+                    };
+                }
+
+                // --- Process treatment queue: decrement ticks for patients being treated ---
+                var activePatients = 0;
+                for (var qi = bld._treatmentQueue.length - 1; qi >= 0; qi--) {
+                    var patient = bld._treatmentQueue[qi];
+                    if (activePatients >= maxHealers) break; // only maxHealers patients treated simultaneously
+
+                    patient.ticksRemaining = (patient.ticksRemaining || 0) - 1;
+                    activePatients++;
+
+                    if (patient.ticksRemaining <= 0) {
+                        // Treatment complete — cure the NPC
+                        var person = findPerson(patient.personId);
+                        if (person && person.alive) {
+                            person.sick = false;
+                            person.illness = null;
+                            person.asymptomatic = false;
+                            person._illnessTreatPaid = false;
+                            person.health = Math.min(100, (person.health || 50) + 20);
+                        }
+                        bld._treatmentQueue.splice(qi, 1);
+                    }
+                }
+
+                // --- Admit new patients: sick NPCs in town who can afford treatment ---
+                // Only admit up to (maxHealers * 2) patients in queue at once
+                var maxQueue = maxHealers * 2;
+                if (bld._treatmentQueue.length < maxQueue) {
+                    var sickInTown = [];
+                    for (var pi = 0; pi < world.people.length; pi++) {
+                        var p = world.people[pi];
+                        if (!p.alive || !p.sick || p.townId !== town.id) continue;
+                        if (p.asymptomatic) continue;
+                        // Already in queue?
+                        var alreadyQueued = false;
+                        for (var qc = 0; qc < bld._treatmentQueue.length; qc++) {
+                            if (bld._treatmentQueue[qc].personId === p.id) { alreadyQueued = true; break; }
+                        }
+                        if (alreadyQueued) continue;
+                        if (p._illnessTreatPaid) continue; // already treated elsewhere
+                        sickInTown.push(p);
+                    }
+
+                    // Admit patients who can afford it (limited per tick to avoid lag)
+                    var admitLimit = Math.min(3, maxQueue - bld._treatmentQueue.length, sickInTown.length);
+                    for (var ai = 0; ai < admitLimit; ai++) {
+                        var idx = Math.floor(rng.random() * sickInTown.length);
+                        var sick = sickInTown[idx];
+                        sickInTown.splice(idx, 1);
+
+                        var sev = sick.illnessSeverity || 'minor';
+                        // Clinics can't treat severe
+                        if (bld.type === 'clinic' && sev === 'severe') continue;
+
+                        var fee = (bld._treatmentFees && bld._treatmentFees[sev]) || 10;
+                        if ((sick.gold || 0) < fee) continue; // can't afford
+
+                        var treatTicks = (NPC_HEALTH_CONFIG.TREATMENT_TICKS && NPC_HEALTH_CONFIG.TREATMENT_TICKS[sev]) || 25;
+
+                        // Pay fee
+                        sick.gold -= fee;
+                        sick._illnessTreatPaid = true;
+
+                        // Revenue split
+                        var taxAmount = Math.floor(fee * healthcareTaxRate);
+                        if (isKingdomOwned) {
+                            // Kingdom owns: full revenue to kingdom
+                            if (kingdom) {
+                                kingdom.gold = (kingdom.gold || 0) + fee;
+                                kingdom.healthcareTaxRevenue = (kingdom.healthcareTaxRevenue || 0) + fee;
+                            }
+                        } else {
+                            // Private owner: keep revenue minus healthcare tax
+                            var ownerRevenue = fee - taxAmount;
+                            if (kingdom && taxAmount > 0) {
+                                kingdom.gold = (kingdom.gold || 0) + taxAmount;
+                                kingdom.healthcareTaxRevenue = (kingdom.healthcareTaxRevenue || 0) + taxAmount;
+                            }
+                            if (isPlayerOwned) {
+                                // Player revenue handled via building retail revenue
+                                bld.retailRevenue = (bld.retailRevenue || 0) + ownerRevenue;
+                            } else if (bld.ownerId) {
+                                var owner = findPerson(bld.ownerId);
+                                if (owner && owner.alive) owner.gold = (owner.gold || 0) + ownerRevenue;
+                            }
+                        }
+
+                        // Consume medical supplies from town market
+                        var supplyDef = NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES ? NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES[sev] : null;
+                        if (supplyDef && town.market && town.market.supply) {
+                            for (var supKey in supplyDef) {
+                                var needed = supplyDef[supKey];
+                                if ((town.market.supply[supKey] || 0) >= needed) {
+                                    town.market.supply[supKey] -= needed;
+                                }
+                            }
+                        }
+
+                        // Add to treatment queue
+                        bld._treatmentQueue.push({
+                            personId: sick.id,
+                            severity: sev,
+                            ticksRemaining: treatTicks,
+                            fee: fee,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Get treatment fees for a facility in a given town (for player UI).
+     */
+    function getHospitalFees(townId) {
+        var town = findTown(townId);
+        if (!town || !town.buildings) return null;
+        var result = { hospital: null, clinic: null };
+        for (var i = 0; i < town.buildings.length; i++) {
+            var bld = town.buildings[i];
+            if (bld.type === 'hospital' || bld.type === 'clinic') {
+                var bt = findBuildingType(bld.type);
+                if (!bld._treatmentFees) {
+                    bld._treatmentFees = {
+                        minor:    getHospitalTreatmentFee(town, bld, bt, 'minor'),
+                        moderate: getHospitalTreatmentFee(town, bld, bt, 'moderate'),
+                        serious:  getHospitalTreatmentFee(town, bld, bt, 'serious'),
+                        severe:   getHospitalTreatmentFee(town, bld, bt, 'severe'),
+                    };
+                }
+                var kingdom = findKingdom(town.kingdomId);
+                var taxRate = (kingdom && kingdom.healthcareTaxRate != null) ? kingdom.healthcareTaxRate : 0.10;
+                var queueLen = bld._treatmentQueue ? bld._treatmentQueue.length : 0;
+                var maxHealers = (bt && bt.maxHealers) || 2;
+                result[bld.type] = {
+                    fees: bld._treatmentFees,
+                    ownerId: bld.ownerId,
+                    isKingdomOwned: bld.ownerId && kingdom && bld.ownerId === kingdom.id,
+                    healthcareTaxRate: taxRate,
+                    queueLength: queueLen,
+                    maxHealers: maxHealers,
+                    treatmentTicks: NPC_HEALTH_CONFIG.TREATMENT_TICKS || { minor: 5, moderate: 25, serious: 70, severe: 120 },
+                };
+            }
+        }
+        return result;
     }
 
     // ========================================================
@@ -20472,7 +20754,7 @@
                         var _ugQty = ugBt.materials[_ugMatId];
                         var _ugMatPrice = 0;
                         try { _ugMatPrice = getMarketPrice(ugRef.townId, _ugMatId) || 0; } catch(e) {}
-                        if (_ugMatPrice <= 0) { var _ugRes = findResource(_ugMatId); _ugMatPrice = _ugRes ? (_ugRes.basePrice || 5) : 5; }
+                        if (_ugMatPrice <= 0) { var _ugRes = findResourceById(_ugMatId); _ugMatPrice = _ugRes ? (_ugRes.basePrice || 5) : 5; }
                         _ugBaseMaterialHalf += Math.floor(_ugQty * _ugMatPrice * 0.5);
                     }
                 }
@@ -23902,45 +24184,72 @@
         var waterAvail = town.market.supply.water || 0;
         var hasBathhouse = town.buildings ? town.buildings.some(function(b) { return b.type === 'bathhouse'; }) : false;
         var clinicCount = town.buildings ? town.buildings.filter(function(b) { return b.type === 'clinic'; }).length : 0;
+        var hospitalCount = town.buildings ? town.buildings.filter(function(b) { return b.type === 'hospital'; }).length : 0;
 
         var plagueMitigation = 0;
-        plagueMitigation += Math.min(0.2, (waterAvail / 300) * 0.2); // water helps wash, max 20%
-        if (hasBathhouse) plagueMitigation += 0.15; // bathhouse reduces plague 15%
-        plagueMitigation += Math.min(0.2, clinicCount * 0.1); // clinics help treat, max 20%
-        plagueMitigation = Math.min(0.5, plagueMitigation); // max 50% reduction
+        plagueMitigation += Math.min(0.15, (waterAvail / 300) * 0.15);
+        if (hasBathhouse) plagueMitigation += 0.10;
+        plagueMitigation += Math.min(0.15, clinicCount * 0.08);
+        plagueMitigation += Math.min(0.20, hospitalCount * 0.15);
+        plagueMitigation = Math.min(0.40, plagueMitigation); // max 40% reduction
 
         // Consume water for sanitation
         var waterUsed = Math.min(waterAvail, Math.floor(30 + rng.random() * 60));
         town.market.supply.water = Math.max(0, waterAvail - waterUsed);
 
-        // Set plague flag — kills over 30 days via applyOngoingEvent
-        const baseSeverity = rng.randInt(10, 30);
-        const severity = Math.max(5, Math.floor(baseSeverity * (1 - plagueMitigation)));
-        const plagueDays = Math.max(15, Math.floor(30 * (1 - plagueMitigation * 0.5)));
-        const plagueEvent = {
+        // Determine plague type: severe (decade) or moderate (5-year)
+        var isSeverePlague = rng.chance(0.3); // 30% chance it's the big one
+        var infRate = isSeverePlague ? NPC_HEALTH_CONFIG.PLAGUE_INFECTION_RATE : NPC_HEALTH_CONFIG.MODERATE_PLAGUE_INFECTION_RATE;
+        var spreadMult = isSeverePlague ? NPC_HEALTH_CONFIG.PLAGUE_SPREAD_MULT : NPC_HEALTH_CONFIG.MODERATE_PLAGUE_SPREAD_MULT;
+
+        // Infect initial population
+        var infectionPct = rng.randFloat(infRate.min, infRate.max) * (1 - plagueMitigation);
+        var townPeople = world.people.filter(function(p) { return p.alive && p.townId === town.id && !p.sick; });
+        var toInfect = Math.floor(townPeople.length * infectionPct);
+        // Shuffle and infect
+        for (var si = townPeople.length - 1; si > 0; si--) {
+            var sj = rng.randInt(0, si);
+            var tmp = townPeople[si]; townPeople[si] = townPeople[sj]; townPeople[sj] = tmp;
+        }
+        var infected = 0;
+        for (var ii = 0; ii < Math.min(toInfect, townPeople.length); ii++) {
+            infectNPC(townPeople[ii], 'plague', rng, world.day, 'plague_event');
+            infected++;
+        }
+
+        // Set plague event — ongoing daily infection + spread
+        var baseSeverity = isSeverePlague ? rng.randInt(30, 60) : rng.randInt(15, 30);
+        var severity = Math.max(10, Math.floor(baseSeverity * (1 - plagueMitigation)));
+        var plagueDays = isSeverePlague ? rng.randInt(45, 90) : rng.randInt(25, 50);
+        plagueDays = Math.max(20, Math.floor(plagueDays * (1 - plagueMitigation * 0.3)));
+
+        var plagueEvent = {
             id: uid('ev'),
             type: 'plague_disaster',
-            name: 'Plague Outbreak',
+            name: isSeverePlague ? 'Great Plague' : 'Plague Outbreak',
             townId: town.id,
             startDay: world.day,
             active: true,
             daysRemaining: plagueDays,
-            killRate: severity / 100 / plagueDays, // spread over duration
+            killRate: severity / 100 / plagueDays * (isSeverePlague ? 2.5 : 1.5),
             severity: severity,
+            isSevere: isSeverePlague,
+            spreadMult: spreadMult,
         };
         world.events.push(plagueEvent);
-        town.happiness = Math.max(0, town.happiness - Math.floor(20 * (1 - plagueMitigation * 0.5)));
+        town.happiness = Math.max(0, town.happiness - Math.floor((isSeverePlague ? 35 : 20) * (1 - plagueMitigation * 0.5)));
         var sanitNote = plagueMitigation > 0.15 ? ' Sanitation infrastructure helps limit the spread.' : '';
-        logEvent(`🦠 Plague breaks out in ${town.name}! People flee in terror.` + sanitNote, {
+        var plagueLabel = isSeverePlague ? '☠️ A GREAT PLAGUE' : '🦠 Plague';
+        logEvent(plagueLabel + ' breaks out in ' + town.name + '! ' + infected + ' infected initially.' + sanitNote, {
             type: 'plague',
             townId: town.id,
-            cause: 'Poor sanitation and overcrowding in ' + town.name + ' (population: ' + town.population + ') led to disease outbreak.',
+            cause: (isSeverePlague ? 'A devastating plague' : 'A plague outbreak') + ' in ' + town.name + ' (population: ' + town.population + ')',
             effects: [
-                'Population will decline over ' + plagueDays + ' days (severity: ' + severity + '%)',
+                infected + ' people infected immediately (' + Math.round(infectionPct * 100) + '% of population)',
+                'Plague will rage for ~' + plagueDays + ' days (severity: ' + severity + '%)',
                 'Town happiness drops significantly',
-                'Trade may slow as merchants avoid the area',
-                'People may flee to neighboring towns',
-                plagueMitigation > 0 ? 'Water and sanitation reduced plague severity by ' + Math.round(plagueMitigation * 100) + '%' : 'No sanitation infrastructure to fight the plague!'
+                isSeverePlague ? 'This plague spreads rapidly to neighboring towns!' : 'Plague may spread to connected towns',
+                plagueMitigation > 0 ? 'Sanitation reduced severity by ' + Math.round(plagueMitigation * 100) + '%' : 'No sanitation infrastructure!'
             ]
         }, 'local_town');
     }
@@ -24372,6 +24681,14 @@
                     logEvent('📈 ' + k.name + ' raises income tax to ' + Math.round(k.incomeTaxRate * 100) + '%.', {
                         type: 'tax_increase', kingdomId: k.id, cause: 'Budget review', effects: ['Citizens pay more income tax']
                     });
+                    _bsActionsTaken++;
+                }
+
+                // 3b. Raise healthcare tax (if illness is widespread or budget tight)
+                if ((k.healthcareTaxRate || 0.10) < (CONFIG.KINGDOM_HEALTHCARE_TAX_MAX || 0.30) && rng.chance(0.2) && _bsActionsTaken < 2) {
+                    var _htInc = rng.randFloat(0.02, 0.05);
+                    k.healthcareTaxRate = Math.min(CONFIG.KINGDOM_HEALTHCARE_TAX_MAX || 0.30, (k.healthcareTaxRate || 0.10) + _htInc);
+                    logKingAction(k, '📈 Raised healthcare tax to ' + Math.round(k.healthcareTaxRate * 100) + '%');
                     _bsActionsTaken++;
                 }
 
@@ -27785,6 +28102,8 @@
             return town ? getMarketPrice(town, resourceId) : 0;
         },
         collectTradeTax(kingdomId, amount) { collectTradeTax(kingdomId, amount); },
+        tickHospitals() { tickHospitalTreatment(); },
+        getHospitalFees(townId) { return getHospitalFees(townId); },
         computeMilitaryStrength(id) {
             if (!world) return 0;
             const k = findKingdom(id);
@@ -28123,6 +28442,8 @@
                 _happinessTier: k._happinessTier || 'neutral',
                 propertyTaxRate: k.propertyTaxRate || 0.02,
                 incomeTaxRate: k.incomeTaxRate || 0.05,
+                healthcareTaxRate: k.healthcareTaxRate || 0.10,
+                healthcareTaxRevenue: k.healthcareTaxRevenue || 0,
                 tradeTaxRevenue: k.tradeTaxRevenue || 0,
                 propertyTaxRevenue: k.propertyTaxRevenue || 0,
                 incomeTaxRevenue: k.incomeTaxRevenue || 0,
@@ -28226,6 +28547,8 @@
                 _happinessTier: k._happinessTier || 'neutral',
                 propertyTaxRate: k.propertyTaxRate || CONFIG.KINGDOM_DEFAULT_PROPERTY_TAX_RATE || 0.02,
                 incomeTaxRate: k.incomeTaxRate || CONFIG.KINGDOM_DEFAULT_INCOME_TAX_RATE || 0.05,
+                healthcareTaxRate: k.healthcareTaxRate || CONFIG.KINGDOM_DEFAULT_HEALTHCARE_TAX_RATE || 0.10,
+                healthcareTaxRevenue: k.healthcareTaxRevenue || 0,
                 tradeTaxRevenue: k.tradeTaxRevenue || 0,
                 propertyTaxRevenue: k.propertyTaxRevenue || 0,
                 incomeTaxRevenue: k.incomeTaxRevenue || 0,

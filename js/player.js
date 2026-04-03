@@ -2940,20 +2940,43 @@
         if (bld.townId !== player.townId) return { success: false, message: 'Must be in the same town as the building.' };
 
         const available = player.inventory[resourceId] || 0;
-        const qty = Math.min(quantity, available);
+        var qty = Math.min(quantity, available);
         if (qty <= 0) return { success: false, message: 'No ' + resourceId + ' in inventory.' };
 
         const town = Engine.findTown(bld.townId);
         if (!town || !town.market) return { success: false, message: 'Town market not found.' };
 
+        // Check building input storage capacity (independent pool — excludes output items)
+        const bt = Engine.findBuildingType(bld.type);
+        var inputCap = bt ? _bldStorageCap(bt.storage || 50, bld.level) : 50;
+        var _outSet = {};
+        if (bt && bt.produces) _outSet[bt.produces] = true;
+        if (bt && bt.canProduce) { for (var _si = 0; _si < bt.canProduce.length; _si++) _outSet[bt.canProduce[_si]] = true; }
+        var inputUsed = 0;
+        if (bld.inventory) {
+            for (var k in bld.inventory) {
+                if (!_outSet[k]) {
+                    var r = findResource(k);
+                    inputUsed += (bld.inventory[k] || 0) * (r ? (r.weight || 1) : 1);
+                }
+            }
+        }
+        var resObj = findResource(resourceId);
+        var resWeight = resObj ? (resObj.weight || 1) : 1;
+        var freeSpace = Math.max(0, Math.floor((inputCap - inputUsed) / resWeight));
+        qty = Math.min(qty, freeSpace);
+        if (qty <= 0) return { success: false, message: 'Building input storage is full.' };
+
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.supply_building || 2);
 
         player.inventory[resourceId] = (player.inventory[resourceId] || 0) - qty;
         if (player.inventory[resourceId] <= 0) delete player.inventory[resourceId];
-        town.market.supply[resourceId] = (town.market.supply[resourceId] || 0) + qty;
+        // Deposit directly into building input storage
+        if (!bld.inventory) bld.inventory = {};
+        bld.inventory[resourceId] = (bld.inventory[resourceId] || 0) + qty;
 
         const res = findResource(resourceId);
-        return { success: true, message: 'Supplied ' + qty + ' ' + (res ? res.name : resourceId) + ' to market for building use.' };
+        return { success: true, message: 'Supplied ' + qty + ' ' + (res ? res.name : resourceId) + ' to building.' };
     }
 
     function collectBuildingOutput(buildingId, resourceId, quantity) {
@@ -2965,7 +2988,8 @@
         if (player.traveling) return { success: false, message: 'Cannot collect while traveling.' };
         if (bld.townId !== player.townId) return { success: false, message: 'Must be in the same town.' };
 
-        const stored = (player.townStorage[bld.townId] && player.townStorage[bld.townId][resourceId]) || 0;
+        // Collect from building's own inventory (output storage)
+        const stored = (bld.inventory && bld.inventory[resourceId]) || 0;
         const qty = Math.min(quantity, stored);
         if (qty <= 0) return { success: false, message: 'Nothing to collect.' };
 
@@ -2976,8 +3000,8 @@
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.collect_output || 2);
 
-        player.townStorage[bld.townId][resourceId] -= canCarry;
-        if (player.townStorage[bld.townId][resourceId] <= 0) delete player.townStorage[bld.townId][resourceId];
+        bld.inventory[resourceId] -= canCarry;
+        if (bld.inventory[resourceId] <= 0) delete bld.inventory[resourceId];
         player.inventory[resourceId] = (player.inventory[resourceId] || 0) + canCarry;
 
         const res = findResource(resourceId);
@@ -3006,7 +3030,7 @@
             bld.transferTarget = null;
             bld.transferEnabled = false;
             bld._transferBuffer = 0;
-            return { success: true, message: 'Transfer disabled. Output goes to town storage.' };
+            return { success: true, message: 'Transfer disabled. Output stored in building.' };
         }
         
         let warning = '';
@@ -3038,6 +3062,63 @@
         }
         
         return { success: true, message: 'Transfer set: ' + bt.produces + ' → ' + targetName + '.' + warning };
+    }
+
+    function deliverNow(buildingId) {
+        var bld = player.buildings.find(function(b) { return b.id === buildingId; });
+        if (!bld) return { success: false, message: 'Building not found.' };
+        var bt = Engine.findBuildingType(bld.type);
+        if (!bt || !bt.produces) return { success: false, message: 'This building does not produce goods.' };
+        if (!bld.transferEnabled || !bld.transferTarget) return { success: false, message: 'No transfer target set.' };
+
+        // Gather what the building has: check townStorage for the produced resource + transferBuffer
+        var townId = bld.townId;
+        var resId = bt.produces;
+        var bufferAmt = bld._transferBuffer || 0;
+        var storageAmt = (player.townStorage[townId] && player.townStorage[townId][resId]) || 0;
+        // Also check building's own output inventory if it has one
+        var bldInvAmt = (bld.inventory && bld.inventory[resId]) || 0;
+        var totalToDeliver = bufferAmt + bldInvAmt;
+
+        // For non-guild deliveries, the buffer is also reflected in townStorage, so we need
+        // to pull from townStorage too (the buffer amount was already added there)
+        // We deliver the buffer amount from townStorage
+        if (bufferAmt > 0 && storageAmt >= bufferAmt) {
+            // Remove buffer amount from town storage (it was staged there)
+            player.townStorage[townId][resId] = Math.max(0, storageAmt - bufferAmt);
+            if (player.townStorage[townId][resId] <= 0) delete player.townStorage[townId][resId];
+        } else if (bufferAmt > 0) {
+            // Buffer exceeds storage somehow — just remove what we can
+            var removeAmt = Math.min(bufferAmt, storageAmt);
+            if (removeAmt > 0 && player.townStorage[townId]) {
+                player.townStorage[townId][resId] = Math.max(0, (player.townStorage[townId][resId] || 0) - removeAmt);
+                if (player.townStorage[townId][resId] <= 0) delete player.townStorage[townId][resId];
+            }
+        }
+
+        if (totalToDeliver <= 0) return { success: false, message: 'No goods to deliver.' };
+
+        // Execute the transfer
+        _executeTransfer(bld, resId, totalToDeliver);
+        bld._transferBuffer = 0;
+        if (bld.inventory && bld.inventory[resId]) {
+            bld.inventory[resId] = 0;
+        }
+
+        // Clear any delivering state
+        bld._delivering = false;
+        bld._deliveryDaysLeft = 0;
+
+        var targetName = bld.transferTarget === 'player' ? 'your inventory' : bld.transferTarget === 'warehouse' ? 'town storage' : bld.transferTarget === 'market' ? 'the market' : '?';
+        if (targetName === '?') {
+            var tb = player.buildings.find(function(b) { return b.id === bld.transferTarget; });
+            if (tb) {
+                var tbt = Engine.findBuildingType(tb.type);
+                targetName = tbt ? tbt.name : bld.transferTarget;
+            }
+        }
+
+        return { success: true, message: 'Delivered ' + totalToDeliver + ' ' + resId + ' to ' + targetName + '.' };
     }
     
     function getTransferTargets(buildingId) {
@@ -3071,7 +3152,11 @@
         
         // Special targets
         targets.push({ id: 'player', name: 'Your Inventory', makesSense: true, isWarehouse: false, consumes: [] });
-        targets.push({ id: 'warehouse', name: 'Town Storage', makesSense: true, isWarehouse: true, consumes: [] });
+        // Only show Town Storage if there's actual storage capacity (warehouses, homes, etc.)
+        var townStorageCap = getTownStorageCapacity(bld.townId);
+        if (townStorageCap > 0) {
+            targets.push({ id: 'warehouse', name: 'Town Storage (' + townStorageCap + ' cap)', makesSense: true, isWarehouse: true, consumes: [] });
+        }
         targets.push({ id: 'market', name: 'Town Market (Sell)', makesSense: true, isWarehouse: false, consumes: [] });
         
         // Sort: sensible targets first
@@ -3108,10 +3193,24 @@
         var baseWorkers = Math.max(bt.workers, 1);
         const workerFraction = Math.min(bld.workers.length, effectiveWorkerMax) / baseWorkers;
         var missingInputs = [];
+        var autoBuyCanCover = true;
         if (bt.consumes) {
             for (const [resId, qty] of Object.entries(bt.consumes)) {
                 const bldAvail = (bld.inventory && bld.inventory[resId]) || 0;
-                if (bldAvail < qty) missingInputs.push({ id: resId, needed: qty, available: bldAvail });
+                if (bldAvail < qty) {
+                    // Check if auto-buy could cover the gap
+                    if (bld.autoBuy && town && town.market && town.market.supply) {
+                        var mktAvail = town.market.supply[resId] || 0;
+                        var mktPrice = (town.market.prices && town.market.prices[resId]) || 5;
+                        var needed = qty - bldAvail;
+                        if (mktAvail >= needed && player.gold >= Math.floor(needed * mktPrice)) {
+                            // Auto-buy will cover this — don't list as missing
+                            continue;
+                        }
+                    }
+                    missingInputs.push({ id: resId, needed: qty, available: bldAvail });
+                    autoBuyCanCover = false;
+                }
             }
         }
 
@@ -3156,7 +3255,7 @@
         var workerSkillMod = 0.90 + avgWorkerSkill * 0.01;
 
         const dailyOutput = bt.produces ? Math.round(bt.rate * workerFraction * seasonMod * (1 + ((bld.level || 1) - 1) * 0.10) * prodBonus * workerSkillMod * (player.spouseProdMod || 1.0)) : 0;
-        const stored = (player.townStorage[bld.townId] && bt.produces && player.townStorage[bld.townId][bt.produces]) || 0;
+        const stored = (bld.inventory && bt.produces && bld.inventory[bt.produces]) || 0;
 
         var status = 'idle';
         if (bld._delivering) status = 'delivering';
@@ -3773,6 +3872,7 @@
                             player.stats.totalGoldEarned += _ovR;
                             caravan.totalProfit = (caravan.totalProfit || 0) + _ovR;
                             town.market.supply[o.good] = (town.market.supply[o.good] || 0) + remainder;
+                            player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + remainder;
                             stored += remainder;
                             logCaravan(caravan, '💰 Building full — sold overflow ' + remainder + ' ' + resName + ' for ' + _ovR + 'g.');
                         } else if (remainder > 0) {
@@ -3821,6 +3921,7 @@
                             player.stats.totalGoldEarned += _ovRevenue;
                             caravan.totalProfit = (caravan.totalProfit || 0) + _ovRevenue;
                             town.market.supply[o.good] = (town.market.supply[o.good] || 0) + _storeRemaining;
+                            player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + _storeRemaining;
                             stored += _storeRemaining;
                             logCaravan(caravan, '💰 Overflow: sold ' + _storeRemaining + ' ' + resName + ' for ' + _ovRevenue + 'g at ' + townName + ' market.');
                         } else {
@@ -3832,6 +3933,7 @@
                 if (stored > 0) {
                     caravan.goods[o.good] = (caravan.goods[o.good] || 0) - stored;
                     if (caravan.goods[o.good] <= 0) delete caravan.goods[o.good];
+                    player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + stored;
                 }
             } else if (o.action === 'sell') {
                 var sellCarried = caravan.goods[o.good] || 0;
@@ -3855,6 +3957,7 @@
                 town.market.supply[o.good] = (town.market.supply[o.good] || 0) + sellQty;
                 caravan.goods[o.good] = (caravan.goods[o.good] || 0) - sellQty;
                 if (caravan.goods[o.good] <= 0) delete caravan.goods[o.good];
+                player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + sellQty;
                 logCaravan(caravan, '💰 Sold ' + sellQty + ' ' + resName + ' for ' + revenue + 'g at ' + townName + '.');
             }
         }
@@ -3869,6 +3972,7 @@
             if (player.townId === townId) {
                 // Player is here — return to inventory
                 player.inventory[gId] = (player.inventory[gId] || 0) + remQty;
+                player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + remQty;
                 logCaravan(caravan, '📋 Returned ' + remQty + ' ' + (findResource(gId) ? findResource(gId).name : gId) + ' to inventory.');
             } else {
                 var remPrice = town.market.prices[gId] || 1;
@@ -3879,6 +3983,7 @@
                 player.stats.totalGoldEarned += remRev;
                 caravan.totalProfit = (caravan.totalProfit || 0) + remRev;
                 town.market.supply[gId] = (town.market.supply[gId] || 0) + remQty;
+                player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + remQty;
                 logCaravan(caravan, '💰 Auto-sold ' + remQty + ' ' + (findResource(gId) ? findResource(gId).name : gId) + ' for ' + remRev + 'g at ' + townName + '.');
             }
             delete caravan.goods[gId];
@@ -5746,51 +5851,118 @@
                 if (canCarry > 0) {
                     player.inventory[resourceId] = (player.inventory[resourceId] || 0) + canCarry;
                 }
-                // Overflow to town storage
+                // Overflow to building storage, then market
                 var overflow = amount - canCarry;
                 if (overflow > 0) {
-                    if (!player.townStorage[sourceBld.townId]) player.townStorage[sourceBld.townId] = {};
-                    player.townStorage[sourceBld.townId][resourceId] = (player.townStorage[sourceBld.townId][resourceId] || 0) + overflow;
+                    if (!sourceBld.inventory) sourceBld.inventory = {};
+                    var _pBt = Engine.findBuildingType(sourceBld.type);
+                    var _pCap = _pBt ? _bldStorageCap(_pBt.storage || 50, sourceBld.level) : 50;
+                    var _pStored = sourceBld.inventory[resourceId] || 0;
+                    var _pSpace = Math.max(0, _pCap - _pStored);
+                    var _pStore = Math.min(overflow, _pSpace);
+                    if (_pStore > 0) sourceBld.inventory[resourceId] = _pStored + _pStore;
+                    var _pOverflow = overflow - _pStore;
+                    if (_pOverflow > 0 && town.market && town.market.supply) {
+                        town.market.supply[resourceId] = (town.market.supply[resourceId] || 0) + _pOverflow;
+                        var _pPrice = (town.market.prices && town.market.prices[resourceId]) || (res && res.basePrice) || 1;
+                        var _pRev = Math.floor(_pOverflow * _pPrice);
+                        player.gold += _pRev;
+                        player.stats.totalGoldEarned = (player.stats.totalGoldEarned || 0) + _pRev;
+                        player.stats.totalGoodsSold = (player.stats.totalGoodsSold || 0) + _pOverflow;
+                        var _pResName = res ? res.name : resourceId;
+                        logFinance(_pRev, 'building_sales', 'Sold ' + _pOverflow + ' ' + _pResName + ' (overflow)');
+                    }
                 }
             } else {
-                // Player not in town — fallback to town storage
-                if (!player.townStorage[sourceBld.townId]) player.townStorage[sourceBld.townId] = {};
-                player.townStorage[sourceBld.townId][resourceId] = (player.townStorage[sourceBld.townId][resourceId] || 0) + amount;
+                // Player not in town — store in building, overflow sells
+                if (!sourceBld.inventory) sourceBld.inventory = {};
+                var _pBt2 = Engine.findBuildingType(sourceBld.type);
+                var _pCap2 = _pBt2 ? _bldStorageCap(_pBt2.storage || 50, sourceBld.level) : 50;
+                var _pStored2 = sourceBld.inventory[resourceId] || 0;
+                var _pSpace2 = Math.max(0, _pCap2 - _pStored2);
+                var _pStore2 = Math.min(amount, _pSpace2);
+                if (_pStore2 > 0) sourceBld.inventory[resourceId] = _pStored2 + _pStore2;
+                var _pOverflow2 = amount - _pStore2;
+                if (_pOverflow2 > 0 && town.market && town.market.supply) {
+                    town.market.supply[resourceId] = (town.market.supply[resourceId] || 0) + _pOverflow2;
+                    var _pRes2 = findResource(resourceId);
+                    var _pPrice2 = (town.market.prices && town.market.prices[resourceId]) || (_pRes2 && _pRes2.basePrice) || 1;
+                    var _pRev2 = Math.floor(_pOverflow2 * _pPrice2);
+                    player.gold += _pRev2;
+                    player.stats.totalGoldEarned = (player.stats.totalGoldEarned || 0) + _pRev2;
+                    player.stats.totalGoodsSold = (player.stats.totalGoodsSold || 0) + _pOverflow2;
+                    var _pResName2 = _pRes2 ? _pRes2.name : resourceId;
+                    logFinance(_pRev2, 'building_sales', 'Sold ' + _pOverflow2 + ' ' + _pResName2 + ' (overflow)');
+                }
             }
         } else if (sourceBld.transferTarget === 'warehouse') {
-            // Store in player's town storage
+            // Store in player's town storage — overflow sells to market at full price
             if (!player.townStorage[sourceBld.townId]) player.townStorage[sourceBld.townId] = {};
-            player.townStorage[sourceBld.townId][resourceId] = (player.townStorage[sourceBld.townId][resourceId] || 0) + amount;
+            var storageCap = getTownStorageCapacity(sourceBld.townId);
+            var storageUsed = getTownStorageUsed(sourceBld.townId);
+            var _whRes = findResource(resourceId);
+            var _whWeight = _whRes ? (_whRes.weight || 1) : 1;
+            var freeSpace = Math.max(0, Math.floor((storageCap - storageUsed) / _whWeight));
+            var storeAmt = Math.min(amount, freeSpace);
+            if (storeAmt > 0) {
+                player.townStorage[sourceBld.townId][resourceId] = (player.townStorage[sourceBld.townId][resourceId] || 0) + storeAmt;
+            }
+            // Overflow sells at full market price
+            var whOverflow = amount - storeAmt;
+            if (whOverflow > 0 && town.market && town.market.supply) {
+                town.market.supply[resourceId] = (town.market.supply[resourceId] || 0) + whOverflow;
+                var _whPrice = (town.market.prices && town.market.prices[resourceId]) || (_whRes && _whRes.basePrice) || 1;
+                var _whRevenue = Math.floor(whOverflow * _whPrice);
+                player.gold += _whRevenue;
+                player.stats.totalGoldEarned = (player.stats.totalGoldEarned || 0) + _whRevenue;
+                player.stats.totalGoodsSold = (player.stats.totalGoodsSold || 0) + whOverflow;
+                var _whResName = _whRes ? _whRes.name : resourceId;
+                logFinance(_whRevenue, 'building_sales', 'Sold ' + whOverflow + ' ' + _whResName + ' (storage overflow)');
+            }
         } else if (sourceBld.transferTarget === 'market') {
-            // Sell to town market at full price
+            // Sell to town market at market price
             if (town.market && town.market.supply) {
                 town.market.supply[resourceId] = (town.market.supply[resourceId] || 0) + amount;
+                // Pay player at market price
+                var mktPrice = (town.market.prices && town.market.prices[resourceId]) || 1;
+                var revenue = Math.floor(amount * mktPrice);
+                player.gold += revenue;
+                player.stats.totalGoldEarned = (player.stats.totalGoldEarned || 0) + revenue;
+                player.stats.totalGoodsSold = (player.stats.totalGoodsSold || 0) + amount;
+                var _mktRes = findResource(resourceId);
+                var _mktResName = _mktRes ? _mktRes.name : resourceId;
+                logFinance(revenue, 'building_sales', 'Sold ' + amount + ' ' + _mktResName + ' to market');
             }
         } else {
             // Transfer to another building — deposit directly into target building's input inventory
             const targetBld = player.buildings.find(b => b.id === sourceBld.transferTarget);
             if (targetBld && targetBld.townId === sourceBld.townId) {
                 const targetBt = Engine.findBuildingType(targetBld.type);
-                // Check target building storage capacity
+                // Input capacity is an independent pool — only count non-output items
                 var tBldCap = targetBt ? _bldStorageCap(targetBt.storage, targetBld.level) : 0;
-                var tBldUsed = 0;
+                var _tOutSet = {};
+                if (targetBt && targetBt.produces) _tOutSet[targetBt.produces] = true;
+                if (targetBt && targetBt.canProduce) { for (var _toi = 0; _toi < targetBt.canProduce.length; _toi++) _tOutSet[targetBt.canProduce[_toi]] = true; }
+                var tInputUsed = 0;
                 if (targetBld.inventory) {
                     for (var _tbk in targetBld.inventory) {
-                        var _tbr = findResource(_tbk);
-                        tBldUsed += (targetBld.inventory[_tbk] || 0) * (_tbr ? (_tbr.weight || 1) : 1);
+                        if (!_tOutSet[_tbk]) {
+                            var _tbr = findResource(_tbk);
+                            tInputUsed += (targetBld.inventory[_tbk] || 0) * (_tbr ? (_tbr.weight || 1) : 1);
+                        }
                     }
                 }
                 var resObj = findResource(resourceId);
                 var resWeight = resObj ? (resObj.weight || 1) : 1;
-                var canFitAmount = tBldCap > 0 ? Math.floor((tBldCap - tBldUsed) / resWeight) : amount;
+                var canFitAmount = tBldCap > 0 ? Math.floor((tBldCap - tInputUsed) / resWeight) : amount;
                 // Smart ratio limiting: if target consumes multiple inputs, keep a balanced ratio
                 if (targetBt && targetBt.consumes && Object.keys(targetBt.consumes).length > 1 && targetBt.consumes[resourceId]) {
                     var myRatio = targetBt.consumes[resourceId];
                     var totalRatioParts = 0;
                     for (var _rk in targetBt.consumes) totalRatioParts += targetBt.consumes[_rk];
-                    // Allow this input to use at most its proportional share of capacity (+50% buffer for timing)
+                    // Allow this input to use at most its proportional share of capacity (+15% buffer)
                     var myShare = myRatio / totalRatioParts;
-                    var maxForBalance = Math.floor(tBldCap / resWeight * myShare * 1.5);
+                    var maxForBalance = Math.floor(tBldCap / resWeight * myShare * 1.15);
                     var currentStored = (targetBld.inventory && targetBld.inventory[resourceId]) || 0;
                     var balanceRoom = Math.max(0, maxForBalance - currentStored);
                     canFitAmount = Math.min(canFitAmount, balanceRoom);
@@ -5800,16 +5972,31 @@
                     if (!targetBld.inventory) targetBld.inventory = {};
                     targetBld.inventory[resourceId] = (targetBld.inventory[resourceId] || 0) + actualAmount;
                 }
-                // Overflow: whatever doesn't fit goes to town storage
+                // Overflow: sell to market at full price
                 var overflow2 = amount - actualAmount;
-                if (overflow2 > 0) {
-                    if (!player.townStorage[sourceBld.townId]) player.townStorage[sourceBld.townId] = {};
-                    player.townStorage[sourceBld.townId][resourceId] = (player.townStorage[sourceBld.townId][resourceId] || 0) + overflow2;
+                if (overflow2 > 0 && town.market && town.market.supply) {
+                    town.market.supply[resourceId] = (town.market.supply[resourceId] || 0) + overflow2;
+                    var _b2bPrice = (town.market.prices && town.market.prices[resourceId]) || (resObj && resObj.basePrice) || 1;
+                    var _b2bRev = Math.floor(overflow2 * _b2bPrice);
+                    player.gold += _b2bRev;
+                    player.stats.totalGoldEarned = (player.stats.totalGoldEarned || 0) + _b2bRev;
+                    player.stats.totalGoodsSold = (player.stats.totalGoodsSold || 0) + overflow2;
+                    var _b2bResName = resObj ? resObj.name : resourceId;
+                    logFinance(_b2bRev, 'building_sales', 'Sold ' + overflow2 + ' ' + _b2bResName + ' (transfer overflow)');
                 }
             } else {
-                // Target not found or wrong town — fallback to town storage
-                if (!player.townStorage[sourceBld.townId]) player.townStorage[sourceBld.townId] = {};
-                player.townStorage[sourceBld.townId][resourceId] = (player.townStorage[sourceBld.townId][resourceId] || 0) + amount;
+                // Target not found or wrong town — sell to market at full price
+                if (town.market && town.market.supply) {
+                    town.market.supply[resourceId] = (town.market.supply[resourceId] || 0) + amount;
+                    var _fbRes = findResource(resourceId);
+                    var _fbPrice = (town.market.prices && town.market.prices[resourceId]) || (_fbRes && _fbRes.basePrice) || 1;
+                    var _fbRev = Math.floor(amount * _fbPrice);
+                    player.gold += _fbRev;
+                    player.stats.totalGoldEarned = (player.stats.totalGoldEarned || 0) + _fbRev;
+                    player.stats.totalGoodsSold = (player.stats.totalGoodsSold || 0) + amount;
+                    var _fbResName = _fbRes ? _fbRes.name : resourceId;
+                    logFinance(_fbRev, 'building_sales', 'Sold ' + amount + ' ' + _fbResName + ' (fallback)');
+                }
             }
         }
     }
@@ -5978,14 +6165,45 @@
                 else if (season === 'Spring' || season === 'Summer') seasonMod = 1.2;
             }
 
-            // Auto-buy missing inputs if enabled — buys from market INTO building inventory
+            // Auto-buy inputs — stockpile buffer from market INTO building input storage
             if (bld.autoBuy && bt.consumes) {
+                var _abCap = _bldStorageCap(bt.storage || 50, bld.level);
+                // Count only input items (exclude output) for input capacity
+                var _abOutSet = {};
+                if (bt.produces) _abOutSet[bt.produces] = true;
+                if (bt.canProduce) { for (var _abi = 0; _abi < bt.canProduce.length; _abi++) _abOutSet[bt.canProduce[_abi]] = true; }
+                var _abInputUsed = 0;
+                if (bld.inventory) {
+                    for (var _abk in bld.inventory) {
+                        if (!_abOutSet[_abk]) {
+                            var _abr = findResource(_abk);
+                            _abInputUsed += (bld.inventory[_abk] || 0) * (_abr ? (_abr.weight || 1) : 1);
+                        }
+                    }
+                }
+                var _abNumInputs = Object.keys(bt.consumes).length;
+                var _abTotalRatio = 0;
+                for (var _abrk in bt.consumes) _abTotalRatio += bt.consumes[_abrk];
+
                 for (const [resId, qty] of Object.entries(bt.consumes)) {
                     const bldHasAB = (bld.inventory && bld.inventory[resId]) || 0;
-                    if (bldHasAB < qty) {
-                        const needed = qty - bldHasAB;
+                    var _abResObj = findResource(resId);
+                    var _abResWeight = _abResObj ? (_abResObj.weight || 1) : 1;
+                    // Ratio-balanced max: each input gets its proportional share (+15% buffer)
+                    var _abMaxForInput;
+                    if (_abNumInputs > 1 && _abTotalRatio > 0) {
+                        var _abMyShare = bt.consumes[resId] / _abTotalRatio;
+                        _abMaxForInput = Math.floor(_abCap / _abResWeight * _abMyShare * 1.15);
+                    } else {
+                        _abMaxForInput = Math.floor(_abCap / _abResWeight * 0.8);
+                    }
+                    // Buy up to balanced max, respecting overall input capacity
+                    var _abWant = Math.max(0, _abMaxForInput - bldHasAB);
+                    var _abFreeInput = Math.max(0, Math.floor((_abCap - _abInputUsed) / _abResWeight));
+                    _abWant = Math.min(_abWant, _abFreeInput);
+                    if (_abWant > 0) {
                         const townHasAB = town.market.supply[resId] || 0;
-                        const canBuyAB = Math.min(needed, townHasAB);
+                        const canBuyAB = Math.min(_abWant, townHasAB);
                         if (canBuyAB > 0) {
                             const price = (town.market.prices && town.market.prices[resId]) || 5;
                             const totalCost = Math.floor(canBuyAB * price);
@@ -5995,6 +6213,7 @@
                                 town.market.supply[resId] = Math.max(0, townHasAB - canBuyAB);
                                 if (!bld.inventory) bld.inventory = {};
                                 bld.inventory[resId] = (bld.inventory[resId] || 0) + canBuyAB;
+                                _abInputUsed += canBuyAB * _abResWeight;
                             }
                         }
                     }
@@ -6132,34 +6351,50 @@
                     }
                 }
             } else {
-                // Normal — store in town storage, with overflow auto-sell
-                var storageCap = getTownStorageCapacity(bld.townId);
-                var storageUsed = getTownStorageUsed(bld.townId);
-                var res = findResource(bt.produces);
-                var resWeight = res ? (res.weight || 1) : 1;
-                var freeSpace = Math.max(0, Math.floor((storageCap - storageUsed) / resWeight));
+                // No transfer target — store in building's own output storage (independent pool)
+                // When full, overflow sells directly to market at market price
+                var bldStorageCap = _bldStorageCap(bt.storage || 50, bld.level);
+                if (!bld.inventory) bld.inventory = {};
+                // Count all output items by weight against output cap
+                var _oOutSet = {};
+                _oOutSet[bt.produces] = true;
+                if (bt.canProduce) { for (var _oi = 0; _oi < bt.canProduce.length; _oi++) _oOutSet[bt.canProduce[_oi]] = true; }
+                var _outputUsedW = 0;
+                for (var _ok2 in bld.inventory) {
+                    if (_oOutSet[_ok2]) {
+                        var _or2 = findResource(_ok2);
+                        _outputUsedW += (bld.inventory[_ok2] || 0) * (_or2 ? (_or2.weight || 1) : 1);
+                    }
+                }
+                var _outRes = findResource(bt.produces);
+                var _outWeight = _outRes ? (_outRes.weight || 1) : 1;
+                var spaceInBld = Math.max(0, Math.floor((bldStorageCap - _outputUsedW) / _outWeight));
 
-                if (freeSpace >= actualOutput) {
-                    // Fits — store it all
-                    player.townStorage[bld.townId][bt.produces] = (player.townStorage[bld.townId][bt.produces] || 0) + actualOutput;
+                if (spaceInBld >= actualOutput) {
+                    // Fits in building storage
+                    bld.inventory[bt.produces] = (bld.inventory[bt.produces] || 0) + actualOutput;
                 } else {
                     // Store what fits
-                    if (freeSpace > 0) {
-                        player.townStorage[bld.townId][bt.produces] = (player.townStorage[bld.townId][bt.produces] || 0) + freeSpace;
+                    if (spaceInBld > 0) {
+                        bld.inventory[bt.produces] = (bld.inventory[bt.produces] || 0) + spaceInBld;
                     }
-                    // Auto-sell overflow on town market at market price
-                    var overflow = actualOutput - freeSpace;
+                    // Overflow sells directly to market at full market price
+                    var overflow = actualOutput - spaceInBld;
                     if (overflow > 0) {
                         var sellTown = Engine.findTown(bld.townId);
                         if (sellTown && sellTown.market) {
+                            var res = findResource(bt.produces);
                             var basePrice = (res && res.basePrice) || 1;
                             var marketPrice = (sellTown.market.prices && sellTown.market.prices[bt.produces]) || basePrice;
-                            var revenue = Math.floor(overflow * marketPrice * 0.75);
+                            var revenue = Math.floor(overflow * marketPrice);
                             player.gold += revenue;
                             player.stats.totalGoldEarned += revenue;
+                            player.stats.totalGoodsSold = (player.stats.totalGoodsSold || 0) + overflow;
                             if (sellTown.market.supply) {
                                 sellTown.market.supply[bt.produces] = (sellTown.market.supply[bt.produces] || 0) + overflow;
                             }
+                            var _ovResName = res ? res.name : bt.produces;
+                            logFinance(revenue, 'building_sales', 'Sold ' + overflow + ' ' + _ovResName + ' (storage full)');
                         }
                     }
                 }
@@ -7107,16 +7342,17 @@
         if (totalAvailable < qty) return { success: false, message: 'Not enough. Inventory: ' + available + ', Town storage: ' + townStoreAvail + '.' };
         var bldCap = bt ? _bldStorageCap(bt.storage, bld.level) : 0;
         if (bldCap > 0) {
-            var bldUsed = 0;
-            if (bld.inventory) { for (var bk in bld.inventory) bldUsed += (bld.inventory[bk] || 0) * ((findResource(bk) || {}).weight || 1); }
-            var prodStored = bld.storedOutput || 0;
-            var prodRes = bt.produces ? findResource(bt.produces) : null;
-            bldUsed += prodStored * (prodRes ? (prodRes.weight || 1) : 1);
+            // Input capacity is independent of output — only count non-output items
+            var _dOutSet = {};
+            if (bt && bt.produces) _dOutSet[bt.produces] = true;
+            if (bt && bt.canProduce) { for (var _di = 0; _di < bt.canProduce.length; _di++) _dOutSet[bt.canProduce[_di]] = true; }
+            var inputUsed = 0;
+            if (bld.inventory) { for (var bk in bld.inventory) { if (!_dOutSet[bk]) inputUsed += (bld.inventory[bk] || 0) * ((findResource(bk) || {}).weight || 1); } }
             var weight = res ? (res.weight || 1) : 1;
-            if (bldUsed + qty * weight > bldCap) {
-                var canFit = Math.floor((bldCap - bldUsed) / weight);
-                if (canFit <= 0) return { success: false, message: 'Building storage full (' + Math.round(bldUsed) + '/' + bldCap + ').' };
-                return { success: false, message: 'Only room for ' + canFit + ' more. Storage: ' + Math.round(bldUsed) + '/' + bldCap + '.' };
+            if (inputUsed + qty * weight > bldCap) {
+                var canFit = Math.floor((bldCap - inputUsed) / weight);
+                if (canFit <= 0) return { success: false, message: 'Building input storage full (' + Math.round(inputUsed) + '/' + bldCap + ').' };
+                return { success: false, message: 'Only room for ' + canFit + ' more. Input storage: ' + Math.round(inputUsed) + '/' + bldCap + '.' };
             }
         }
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(1);
@@ -12695,20 +12931,35 @@
             : INJURY_TYPES.find(t => t.id === condition.type);
         if (!typeDef) return { success: false, message: 'Unknown condition type.' };
 
-        const cost = getHospitalCost(typeDef, condition.severity);
+        // Get AI-driven fee from the hospital
+        var fees = Engine.getHospitalFees ? Engine.getHospitalFees(player.townId) : null;
+        var hospInfo = fees ? (fees.hospital || fees.clinic) : null;
+        var cost = hospInfo && hospInfo.fees ? (hospInfo.fees[condition.severity] || getHospitalCost(typeDef, condition.severity)) : getHospitalCost(typeDef, condition.severity);
         if (player.gold < cost) return { success: false, message: 'Not enough gold. Hospital costs ' + cost + 'g.' };
 
-        // Consume medical supplies from town market
+        // Treatment processing time
+        var treatTicks = CONFIG.TREATMENT_TICKS ? (CONFIG.TREATMENT_TICKS[condition.severity] || 25) : 25;
+        // Also check NPC_HEALTH_CONFIG
+        if (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.TREATMENT_TICKS) {
+            treatTicks = NPC_HEALTH_CONFIG.TREATMENT_TICKS[condition.severity] || treatTicks;
+        }
+
         _consumeMedicalSupplies(town, condition.severity);
 
-        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.visit_hospital || 5);
+        // Advance ticks for processing time
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(treatTicks);
 
         player.gold -= cost;
         player.stats.totalGoldSpent += cost;
+
+        // Revenue split: healthcare tax to kingdom, remainder to owner
+        _payHealthcareRevenue(town, cost);
+
         list.splice(conditionIndex, 1);
 
-        Engine.logEvent(player.fullName + ' was treated at the hospital for ' + condition.name + ' (' + cost + 'g).');
-        return { success: true, message: 'Treated ' + condition.name + ' at the hospital for ' + cost + 'g.' };
+        var timeDesc = treatTicks <= 10 ? 'a quick visit' : treatTicks <= 60 ? 'half a day' : 'a couple days';
+        Engine.logEvent(player.fullName + ' was treated at the hospital for ' + condition.name + ' (' + cost + 'g, ' + timeDesc + ').');
+        return { success: true, message: 'Treated ' + condition.name + ' at the hospital for ' + cost + 'g (' + timeDesc + ').' };
     }
 
     function visitClinic(conditionIndex, isIllness) {
@@ -12731,27 +12982,78 @@
             : INJURY_TYPES.find(t => t.id === condition.type);
         if (!typeDef) return { success: false, message: 'Unknown condition type.' };
 
-        const cost = getClinicCost(typeDef, condition.severity);
+        // Get AI-driven fee from the clinic
+        var fees = Engine.getHospitalFees ? Engine.getHospitalFees(player.townId) : null;
+        var clinicInfo = fees ? fees.clinic : null;
+        var cost = clinicInfo && clinicInfo.fees ? (clinicInfo.fees[condition.severity] || getClinicCost(typeDef, condition.severity)) : getClinicCost(typeDef, condition.severity);
         if (player.gold < cost) return { success: false, message: 'Not enough gold. Clinic costs ' + cost + 'g.' };
+
+        var treatTicks = 5; // clinic minor is quick
+        if (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.TREATMENT_TICKS) {
+            treatTicks = NPC_HEALTH_CONFIG.TREATMENT_TICKS[condition.severity] || 5;
+        }
 
         _consumeMedicalSupplies(town, condition.severity);
 
-        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.visit_clinic || 3);
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(treatTicks);
 
         player.gold -= cost;
         player.stats.totalGoldSpent += cost;
 
+        _payHealthcareRevenue(town, cost);
+
         if (condition.severity === 'minor') {
-            // Clinic cures minor instantly
             list.splice(conditionIndex, 1);
             Engine.logEvent(player.fullName + ' was treated at the clinic for ' + condition.name + ' (' + cost + 'g).');
             return { success: true, message: 'Treated ' + condition.name + ' at the clinic for ' + cost + 'g.' };
         } else {
-            // Moderate: clinic marks as treated, heals over time
             condition.treated = true;
             condition.healDay = Engine.getDay() + Math.ceil((typeDef.healDays || 7) / 2);
             Engine.logEvent(player.fullName + ' received clinic treatment for ' + condition.name + ' (' + cost + 'g). Recovery underway.');
             return { success: true, message: 'Clinic treated ' + condition.name + ' for ' + cost + 'g. You\'ll recover in ' + Math.ceil((typeDef.healDays || 7) / 2) + ' days.' };
+        }
+    }
+
+    function _payHealthcareRevenue(town, fee) {
+        if (!town) return;
+        var kingdom = Engine.findKingdom(town.kingdomId);
+        var healthcareTaxRate = (kingdom && kingdom.healthcareTaxRate != null) ? kingdom.healthcareTaxRate : 0.10;
+        var taxAmount = Math.floor(fee * healthcareTaxRate);
+
+        // Find the medical building
+        var medBld = null;
+        if (town.buildings) {
+            for (var i = 0; i < town.buildings.length; i++) {
+                if (town.buildings[i].type === 'hospital' || town.buildings[i].type === 'clinic') {
+                    medBld = town.buildings[i]; break;
+                }
+            }
+        }
+
+        var isKingdomOwned = medBld && kingdom && medBld.ownerId === kingdom.id;
+        var isPlayerOwned = medBld && medBld.ownerId === 'player';
+
+        if (isKingdomOwned) {
+            // Kingdom gets full revenue
+            if (kingdom) {
+                kingdom.gold = (kingdom.gold || 0) + fee;
+                kingdom.healthcareTaxRevenue = (kingdom.healthcareTaxRevenue || 0) + fee;
+            }
+        } else {
+            // Owner keeps fee minus healthcare tax
+            var ownerRevenue = fee - taxAmount;
+            if (kingdom && taxAmount > 0) {
+                kingdom.gold = (kingdom.gold || 0) + taxAmount;
+                kingdom.healthcareTaxRevenue = (kingdom.healthcareTaxRevenue || 0) + taxAmount;
+            }
+            if (isPlayerOwned) {
+                // Player-owned: credit to player directly
+                player.gold += ownerRevenue;
+                player.stats.totalGoldEarned = (player.stats.totalGoldEarned || 0) + ownerRevenue;
+            } else if (medBld && medBld.ownerId) {
+                var owner = Engine.findPerson(medBld.ownerId);
+                if (owner && owner.alive) owner.gold = (owner.gold || 0) + ownerRevenue;
+            }
         }
     }
 
@@ -15900,9 +16202,9 @@
             // Trading days requirement
             var gmTradeDays = Engine.getDay() - (player.tradingStartDay || Engine.getDay());
             if (gmTradeDays < (nextRank.tradingDays || 180)) reasons.push(`Need ${nextRank.tradingDays || 180} days of trading (${gmTradeDays} so far)`);
-            // Caravans requirement
-            var caravansSent = (player.stats && player.stats.caravansSent) || 0;
-            if (caravansSent < (nextRank.minCaravans || 2)) reasons.push(`Need ${nextRank.minCaravans || 2}+ caravans sent (have ${caravansSent})`);
+            // Caravan goods moved requirement
+            var caravanGoodsMoved = (player.stats && player.stats.caravanGoodsMoved) || 0;
+            if (caravanGoodsMoved < (nextRank.minCaravanGoodsMoved || 500)) reasons.push(`Need ${nextRank.minCaravanGoodsMoved || 500}+ goods moved by caravan (have ${caravanGoodsMoved})`);
         }
 
         if (nextRank.id === 'minor_noble') {
@@ -17108,6 +17410,18 @@
         var description = qt.descFn(town, resObj, quantity);
         var reason = _getQuestReason(qt, town);
 
+        // Check if resource is already in local market — donate only, easier quest
+        var donateOnly = false;
+        if (town && town.market && town.market.supply && (town.market.supply[resId] || 0) >= quantity) {
+            donateOnly = true;
+            var marketValue = quantity * (town.market.prices && town.market.prices[resId] ? town.market.prices[resId] : (resObj.basePrice || 1));
+            difficulty = marketValue > 1000 ? 2 : 1;
+            smallRepBoost = Math.max(1, Math.ceil(difficulty / 2));
+            bigRepBoost = smallRepBoost * 4;
+            relGainMin = Math.max(2, Math.floor(difficulty * 0.8));
+            relGainMax = Math.min(20, Math.ceil(difficulty * 2.5));
+        }
+
         return {
             id: 'tq_' + (_nextQuestId++),
             typeId: qt.id,
@@ -17126,6 +17440,7 @@
             relGainMin: relGainMin,
             relGainMax: relGainMax,
             isPerformance: false,
+            donateOnly: donateOnly,
             skillReq: null,
             status: 'available',
             category: qt.category,
@@ -17201,6 +17516,9 @@
         var town = Engine.findTown(quest.townId);
         var rng = Engine.getRng();
         var day = Engine.getDay();
+
+        // Force donate if quest is donate-only (item was in market when posted)
+        if (quest.donateOnly) donate = true;
 
         // Check if expired
         if (quest.expiresDay && day > quest.expiresDay) {
@@ -17322,6 +17640,38 @@
         return { success: true, message: resultMsg, goldReward: goldReward, repBoost: repBoost, boosted: boosted };
     }
 
+    function _applyQuestFailurePenalty(quest, reason) {
+        // Lose half the rep you would've gained by donating
+        var repPenalty = Math.ceil((quest.bigRepBoost || 2) / 2);
+        modifyTownReputation(quest.townId, -repPenalty);
+
+        // Lose 1/4 kingdom reputation (mirrors the 1/4 kingdom rep bonus from completing)
+        var town = Engine.findTown(quest.townId);
+        if (town && town.kingdomId && player.reputation) {
+            var kingdomRepPenalty = Math.ceil(repPenalty / 4);
+            player.reputation[town.kingdomId] = Math.max(0, (player.reputation[town.kingdomId] || 50) - kingdomRepPenalty);
+        }
+
+        // Negative relationship with NPCs you would've helped
+        var rng = Engine.getRng();
+        var relCount = rng.randInt(quest.relGainMin || 2, quest.relGainMax || 5);
+        var townPeople = [];
+        try {
+            var w = Engine.getWorld();
+            if (w && w.people) {
+                townPeople = w.people.filter(function(p) { return p.alive && p.townId === quest.townId; });
+            }
+        } catch(e) {}
+        var shuffled = townPeople.slice();
+        for (var si = shuffled.length - 1; si > 0; si--) {
+            var sj = rng.randInt(0, si);
+            var tmp = shuffled[si]; shuffled[si] = shuffled[sj]; shuffled[sj] = tmp;
+        }
+        for (var ri = 0; ri < Math.min(relCount, shuffled.length); ri++) {
+            modifyRelationship(shuffled[ri].id, -2);
+        }
+    }
+
     function abandonTownQuest(questId) {
         if (!player.activeQuests) return { success: false, message: 'No active quests.' };
         var idx = -1;
@@ -17333,11 +17683,11 @@
         var quest = player.activeQuests[idx];
         player.activeQuests.splice(idx, 1);
 
-        // Small rep penalty for abandoning
-        modifyTownReputation(quest.townId, -0.5);
+        _applyQuestFailurePenalty(quest, 'abandoned');
 
         Engine.logEvent('❌ Abandoned quest: ' + quest.title);
-        return { success: true, message: 'Quest abandoned. (-0.5 town reputation)' };
+        var repLoss = Math.ceil((quest.bigRepBoost || 2) / 2);
+        return { success: true, message: 'Quest abandoned. (-' + repLoss + ' town rep, -' + Math.ceil(repLoss / 4) + ' kingdom rep)' };
     }
 
     function tickTownQuests() {
@@ -17350,8 +17700,9 @@
             if (q.expiresDay && day > q.expiresDay) {
                 var town = Engine.findTown(q.townId);
                 var townName = town ? town.name : 'the town';
-                modifyTownReputation(q.townId, -1);
-                if (typeof UI !== 'undefined' && UI.toast) UI.toast('⏰ Quest expired: ' + q.title + ' in ' + townName + ' (-1 reputation)', 'warning');
+                _applyQuestFailurePenalty(q, 'expired');
+                var _expRepLoss = Math.ceil((q.bigRepBoost || 2) / 2);
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('⏰ Quest expired: ' + q.title + ' in ' + townName + ' (-' + _expRepLoss + ' rep)', 'warning');
                 Engine.logEvent('⏰ Quest expired: ' + q.title + ' in ' + townName);
                 player.activeQuests.splice(i, 1);
             }
@@ -34290,6 +34641,7 @@
         collectBuildingOutput,
         toggleAutoBuy,
         setTransferTarget,
+        deliverNow,
         getTransferTargets,
         hasTransportGuild,
         removeWorkerFromBuilding,

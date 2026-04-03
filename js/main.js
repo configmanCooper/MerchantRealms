@@ -476,6 +476,11 @@ window.Game = (function () {
                 Player.subtick();
             }
 
+            // Sub-tick: process hospital treatment queues every tick
+            if (typeof Engine !== 'undefined' && Engine.tickHospitals) {
+                Engine.tickHospitals();
+            }
+
             // Engine.tick() advances one full day, so only call it every TICKS_PER_DAY sim ticks
             if (tickCounter >= CONFIG.TICKS_PER_DAY) {
                 tickCounter = 0;

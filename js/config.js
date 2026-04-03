@@ -174,13 +174,13 @@ const CONFIG = {
     DISASTER_CHECK_INTERVAL: 30,  // check every 30 days
     DISASTER_FLOOD_CHANCE: 0.02,
     DISASTER_FIRE_CHANCE: 0.015,
-    DISASTER_PLAGUE_CHANCE: 0.01,
+    DISASTER_PLAGUE_CHANCE: 0.0015,
     DISASTER_BLIGHT_CHANCE: 0.03,
     DISASTER_MINE_COLLAPSE_CHANCE: 0.01,
     DISASTER_RESOURCE_DISCOVERY_CHANCE: 0.005,
     DISASTER_FIRE_POP_SCALE: 100,         // fire more likely in towns > 100 pop
-    DISASTER_PLAGUE_CAPITAL_MULT: 2,
-    DISASTER_PLAGUE_CITY_MULT: 1.5,
+    DISASTER_PLAGUE_CAPITAL_MULT: 3,
+    DISASTER_PLAGUE_CITY_MULT: 2,
 
     // Kingdom Finances & Bankruptcy
     KINGDOM_SOLDIER_DAILY_COST: 2,       // 2g per soldier per day (paid monthly)
@@ -204,6 +204,11 @@ const CONFIG = {
     KINGDOM_INCOME_TAX_MAX: 0.15,
     KINGDOM_PROPERTY_TAX_INTERVAL: 30,        // every 30 days
     KINGDOM_INCOME_TAX_INTERVAL: 90,          // every 90 days (seasonal)
+
+    // Healthcare Tax
+    KINGDOM_DEFAULT_HEALTHCARE_TAX_RATE: 0.10,  // 10% default tax on healthcare revenue
+    KINGDOM_HEALTHCARE_TAX_MIN: 0.0,
+    KINGDOM_HEALTHCARE_TAX_MAX: 0.30,
 
     // Kingdom Financial Strategy Thresholds
     KINGDOM_FINANCIAL_STRATEGY_INTERVAL: 30,  // check every 30 days
@@ -465,15 +470,15 @@ const CONFIG = {
           description: 'An established merchant. Can own processing buildings, buy luxury goods, and run supply chains.' },
         { id: 'guildmaster', name: 'Guildmaster', index: 3, icon: '🔨',
           maxWorkers: 35, maxBuildings: 25, maxLand: 15,
-          goldReq: 20000, repReq: 75, extraReq: '3 production buildings, 8+ workers, buildings in 2+ towns, 180 days trading, 2+ caravans sent',
-          fee: 5000, minProductionBuildings: 3, minWorkers: 8, minTownsWithBuildings: 2, tradingDays: 180, minCaravans: 2,
+          goldReq: 20000, repReq: 70, extraReq: '3 production buildings, 8+ workers, buildings in 2+ towns, 180 days trading, 500+ goods moved by caravan',
+          fee: 5000, minProductionBuildings: 3, minWorkers: 8, minTownsWithBuildings: 2, tradingDays: 180, minCaravanGoodsMoved: 500,
           taxDiscount: 0.15,
           productionBonus: 0.10,
           abilities: ['build_toll_roads', 'trade_weapons', 'hire_petitioners', 'production_bonus'],
           description: 'Master of commerce. Can build toll roads, trade weapons, and hire petitioners. +10% production output.' },
         { id: 'minor_noble', name: 'Minor Noble', index: 4, icon: '👑',
           maxWorkers: 70, maxBuildings: 50, maxLand: 30,
-          goldReq: 75000, repReq: 88, extraReq: 'Noble marriage OR king decree OR 3 petitions, 5 NPC endorsements, property in 3+ towns',
+          goldReq: 75000, repReq: 80, extraReq: 'Noble marriage OR king decree OR 3 petitions, 5 NPC endorsements, property in 3+ towns',
           fee: 15000, minPetitionsCompleted: 3, minEndorsements: 5, minEndorsementLevel: 60, minTownsWithProperty: 3,
           taxDiscount: 0.20,
           signatureBonus: 0.15,
@@ -481,14 +486,14 @@ const CONFIG = {
           description: 'Entered the aristocracy. Can influence the king directly, get production permits, and attend court. +15% signature success.' },
         { id: 'lord', name: 'Lord', index: 5, icon: '🏰',
           maxWorkers: 200, maxBuildings: 9999, maxLand: 9999,
-          goldReq: 250000, repReq: 95, extraReq: 'Property in 4+ towns, 40+ workers, 2+ infrastructure projects, 2+ years as Minor Noble',
+          goldReq: 250000, repReq: 90, extraReq: 'Property in 4+ towns, 40+ workers, 2+ infrastructure projects, 2+ years as Minor Noble',
           fee: 50000, minTownsWithProperty: 4, minTotalWorkers: 40, minInfrastructure: 2, minYearsAtPrevRank: 2,
           taxDiscount: 0.25,
           abilities: ['build_anywhere', 'revitalize_towns', 'raise_militia', 'local_trade_policies', 'crime_immunity'],
           description: 'Landed elite. Can build freely, revitalize towns, and raise private militia. Near-immune to petty crime accusations.' },
         { id: 'royal_advisor', name: 'Royal Advisor', index: 6, icon: '📜',
           maxWorkers: 9999, maxBuildings: 9999, maxLand: 9999,
-          goldReq: 600000, repReq: 100, extraReq: 'Lord 3+ years, war supply, 5+ petitions, 3+ noble friends',
+          goldReq: 600000, repReq: 99, extraReq: 'Lord 3+ years, war supply, 5+ petitions, 3+ noble friends',
           fee: 100000, minYearsAtPrevRank: 3, minPetitionsCompleted: 5, minNobleFriends: 3, minNobleFriendLevel: 80,
           taxDiscount: 0.30,
           petitionBonus: 0.25,
@@ -2014,6 +2019,8 @@ const SKILLS = {
     herbalist:           { name: 'Herbalist',           branch: 'survival',   cost: 3, requires: ['first_aid'],                   desc: 'Craft healing potions from herbs. Foraged herbs yield doubled.',             icon: '🌿' },
     field_medic:         { name: 'Field Medic',         branch: 'survival',   cost: 3, requires: ['first_aid'],                   desc: 'Treat others for gold as a job. Self-treat moderate injuries too.',          icon: '⛑️' },
     doctor:              { name: 'Doctor',              branch: 'survival',   cost: 4, requires: ['field_medic'],                 desc: 'Treat ALL injury severities. 2x nurse pay. Unlocks itinerant healer job.',  icon: '⚕️' },
+    disease_awareness:   { name: 'Disease Awareness',   branch: 'survival',   cost: 1, requires: [],                              desc: 'See illness breakdown in towns: minor, moderate, and severe sick counts.',   icon: '🔬' },
+    epidemiologist:      { name: 'Epidemiologist',      branch: 'survival',   cost: 2, requires: ['disease_awareness'],            desc: 'See contagion risk level in towns — know your chances of getting sick.',     icon: '🦠' },
     soil_knowledge:      { name: 'Soil Knowledge',      branch: 'survival',   cost: 2, requires: ['herbalist'],                   desc: 'See soil fertility ratings on the map and forage chances. Better foraging yields in fertile land.', icon: '🌾' },
 
     // ── Underworld Branch (7) ──
@@ -2357,7 +2364,7 @@ const NPC_HEALTH_CONFIG = {
         dysentery:      { name: 'Dysentery',         severity: 'moderate', healthDrain: 1.5, daysToRecover: 20,  seasons: ['summer', 'autumn'] },
         pneumonia:      { name: 'Pneumonia',         severity: 'serious',  healthDrain: 2.0, daysToRecover: 30,  seasons: ['winter'] },
         typhus:         { name: 'Typhus',            severity: 'serious',  healthDrain: 2.5, daysToRecover: 30,  seasons: ['spring', 'summer', 'autumn', 'winter'] },
-        plague:         { name: 'Plague',            severity: 'severe',   healthDrain: 4.0, daysToRecover: 45,  seasons: ['spring', 'summer', 'autumn', 'winter'], contagious: true, spreadChance: 0.02 },
+        plague:         { name: 'Plague',            severity: 'severe',   healthDrain: 3.5, daysToRecover: 35,  seasons: ['spring', 'summer', 'autumn', 'winter'], contagious: true, spreadChance: 0.04, naturalRecoveryDay: 14, naturalRecoveryChance: 0.025, recoveryChance: 0.10 },
     },
 
     // --- Health thresholds ---
@@ -2368,9 +2375,9 @@ const NPC_HEALTH_CONFIG = {
     DOCTOR_SKILL_BONUS: 0.02,          // per workerSkill point, extra heal rate
 
     // --- Contagion / spread ---
-    TOWN_SPREAD_BASE: 0.005,           // base daily chance of spreading to adjacent town
-    TOWN_SPREAD_SICK_RATIO_MULT: 5.0,  // multiplied by (sickNPCs / totalPop) in source town
-    TRADE_ROUTE_SPREAD_MULT: 2.0,      // towns connected by active trade routes spread faster
+    TOWN_SPREAD_BASE: 0.01,            // base daily chance of spreading to adjacent town
+    TOWN_SPREAD_SICK_RATIO_MULT: 8.0,  // multiplied by (sickNPCs / totalPop) in source town
+    TRADE_ROUTE_SPREAD_MULT: 3.0,      // towns connected by active trade routes spread faster
 
     // --- Treatment supplies consumed per patient per day ---
     TREATMENT_SUPPLIES: {
@@ -2380,10 +2387,22 @@ const NPC_HEALTH_CONFIG = {
         severe:   { bandages: 2, healing_tonic: 1, antidote: 1 },
     },
 
+    // --- Treatment processing time (in game ticks, 60 ticks = 1 day) ---
+    TREATMENT_TICKS: {
+        minor:    5,     // ~2 hours
+        moderate: 25,    // ~10 hours
+        serious:  70,    // ~1.2 days
+        severe:   120,   // 2 days
+    },
+
     // --- Plague event specific ---
-    PLAGUE_INFECTION_RATE: { min: 0.10, max: 0.30 }, // 10-30% of town gets sick
-    PLAGUE_DAILY_DEATH_UNTREATED: 0.03,               // 3% daily death if untreated
-    PLAGUE_SPREAD_MULT: 5.0,                           // plague spreads 5x faster than normal
+    PLAGUE_INFECTION_RATE: { min: 0.08, max: 0.20 }, // 8-20% of town gets sick initially
+    PLAGUE_DAILY_DEATH_UNTREATED: 0.05,               // 5% daily death if untreated
+    PLAGUE_SPREAD_MULT: 8.0,                           // plague spreads 8x faster than normal
+
+    // --- Moderate plague (5-year event) ---
+    MODERATE_PLAGUE_INFECTION_RATE: { min: 0.04, max: 0.10 },
+    MODERATE_PLAGUE_SPREAD_MULT: 4.0,
 };
 
 // Kingdom health policies the king AI can enact

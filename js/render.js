@@ -44,6 +44,7 @@ window.Renderer = (function () {
     let _lastFrameTimestamp = 0;
     let hoverTarget = null; // { type, id, x, y }
     let selectedTarget = null;
+    let _lastSeason = null; // Track season for terrain color changes
 
     // ── Minimap cache (redrawn once per game day) ──
     let _minimapCacheCanvas = null;
@@ -97,7 +98,15 @@ window.Renderer = (function () {
 
     // ── Terrain color look-up ──
     const terrainColors = {};
+    // Winter-tinted terrain: grass/forest/hills get desaturated, lighter, frosty
+    const _winterTerrainOverrides = {
+        0: '#7a9a78', // Grass: faded pale green
+        1: '#4a6e50', // Forest: muted cold green
+        4: '#8a9a7e', // Hills: faded grey-green
+    };
     function getTerrainColor(id) {
+        var isWinter = (typeof Engine !== 'undefined' && Engine.getSeason && Engine.getSeason() === 'Winter');
+        if (isWinter && _winterTerrainOverrides[id]) return _winterTerrainOverrides[id];
         if (terrainColors[id]) return terrainColors[id];
         for (const key in TERRAIN) {
             if (TERRAIN[key].id === id) {
@@ -331,6 +340,12 @@ window.Renderer = (function () {
         if (!worldData || !ctx) return;
 
         frameCount++;
+        // Check for season change — redraw terrain if needed
+        var _curSeason = (typeof Engine !== 'undefined' && Engine.getSeason) ? Engine.getSeason() : null;
+        if (_curSeason !== _lastSeason) {
+            terrainDirty = true;
+            _lastSeason = _curSeason;
+        }
         // Advance NPC animation clock based on game speed (NPCs freeze when paused)
         var now = performance.now();
         if (_lastFrameTimestamp > 0) {
@@ -471,7 +486,8 @@ window.Renderer = (function () {
                     // Special terrain decorations
                     if (tileId === 1) { // Forest — small tree triangles
                         const treeCount = 1 + Math.floor(h * 2);
-                        offscreenCtx.fillStyle = rgbShift('#1a4020', shift);
+                        const _isWinter = (typeof Engine !== 'undefined' && Engine.getSeason && Engine.getSeason() === 'Winter');
+                        offscreenCtx.fillStyle = rgbShift(_isWinter ? '#3a5a48' : '#1a4020', shift);
                         for (let t = 0; t < treeCount; t++) {
                             const tx = x + (h * 37 + t * 5.7) % ts;
                             const ty = y + (h * 23 + t * 7.3) % ts;
@@ -517,7 +533,8 @@ window.Renderer = (function () {
                             offscreenCtx.fill();
                         }
                     } else if (tileId === 4) { // Hills — gentle bumps
-                        offscreenCtx.fillStyle = rgbShift('#5a7a42', shift - 8);
+                        const _hillWinter = (typeof Engine !== 'undefined' && Engine.getSeason && Engine.getSeason() === 'Winter');
+                        offscreenCtx.fillStyle = rgbShift(_hillWinter ? '#7a8a6a' : '#5a7a42', shift - 8);
                         offscreenCtx.beginPath();
                         offscreenCtx.arc(x + ts * 0.35, y + ts * 0.65, ts * 0.25, Math.PI, 0);
                         offscreenCtx.fill();
