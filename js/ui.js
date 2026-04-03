@@ -4199,6 +4199,9 @@ window.UI = (function () {
                         html += '</div>';
                     }
                     if (!_hasOutput) html += '<div style="font-size:0.72rem;color:#888;">No output stored.</div>';
+                    if (_outputPct >= 100 && !bld.transferEnabled) {
+                        html += '<div style="font-size:0.72rem;color:#7cb342;margin-top:2px;">💰 Storage full — overflow auto-selling to market</div>';
+                    }
                     html += '</div>';
                 }
 

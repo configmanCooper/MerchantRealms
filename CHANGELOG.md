@@ -49,6 +49,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - Caravan store orders ignoring building input capacity (counting output items like rope against input pool)
   - Both specific-building and any-building store paths now use input-only capacity check
   - Matches pattern used in auto-buy, _executeTransfer, depositToBuilding
+- Caravans exceeding capacity: pickup, buy, legacy buyOrders, and recurring reload all lacked capacity checks
+  - Added `_getCaravanCapacity()` / `_caravanCanFit()` helpers for weight-aware capacity enforcement
+  - All cargo-loading paths now clamp to remaining capacity; log message when caravan is full
+- Building output overflow now shows visible event log notification and UI indicator when auto-selling to market
 - View Location button in event details sending camera to wrong coordinates
   - Removed erroneous `* CONFIG.TILE_SIZE` multiplication in clickTown()
 - Disease awareness skill: healthy towns now show "No illness detected" + nearby plague warnings

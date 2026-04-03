@@ -3845,9 +3845,14 @@
 
             if (o.action === 'pickup') {
                 var stored = (player.townStorage[townId] || {})[o.good] || 0;
-                var pickupQty = Math.min(qty, stored);
+                var canFit = _caravanCanFit(caravan, o.good);
+                var pickupQty = Math.min(qty, stored, canFit);
                 if (pickupQty <= 0) {
-                    logCaravan(caravan, '📦 No ' + resName + ' in storage at ' + townName + ' to pick up.');
+                    if (canFit <= 0 && stored > 0) {
+                        logCaravan(caravan, '📦 Caravan full — cannot pick up ' + resName + ' at ' + townName + '.');
+                    } else {
+                        logCaravan(caravan, '📦 No ' + resName + ' in storage at ' + townName + ' to pick up.');
+                    }
                     continue;
                 }
                 if (!player.townStorage[townId]) player.townStorage[townId] = {};
@@ -3868,9 +3873,14 @@
                     continue;
                 }
                 var canAfford = Math.floor(player.gold / marketPrice);
-                var buyQty = Math.min(qty, marketSupply, canAfford);
+                var canFitBuy = _caravanCanFit(caravan, o.good);
+                var buyQty = Math.min(qty, marketSupply, canAfford, canFitBuy);
                 if (buyQty <= 0) {
-                    logCaravan(caravan, '🛒 Cannot afford ' + resName + ' at ' + townName + ' (' + Math.floor(marketPrice) + 'g each).');
+                    if (canFitBuy <= 0) {
+                        logCaravan(caravan, '🛒 Caravan full — cannot buy ' + resName + ' at ' + townName + '.');
+                    } else {
+                        logCaravan(caravan, '🛒 Cannot afford ' + resName + ' at ' + townName + ' (' + Math.floor(marketPrice) + 'g each).');
+                    }
                     continue;
                 }
                 var cost = Math.floor(marketPrice * buyQty);
@@ -4278,6 +4288,30 @@
         return (caravan.carriers || 1) + (caravan.carts || 0) * 4 + (caravan.wagons || 0) * 8;
     }
 
+    function _getCaravanCurrentWeight(caravan) {
+        var w = 0;
+        if (caravan.goods) { for (var k in caravan.goods) { if (caravan.goods.hasOwnProperty(k)) { var r = findResource(k); w += (r ? r.weight : 1) * (caravan.goods[k] || 0); } } }
+        return w;
+    }
+
+    function _getCaravanCapacity(caravan) {
+        return (caravan.carriers || 1) * (CONFIG.CARAVAN_CARRIER_BASE_CAPACITY || 30)
+            + (caravan.carrierHorses || 0) * (CONFIG.CARAVAN_HORSE_EXTRA_CAPACITY || 30)
+            + (caravan.carts || 0) * (CONFIG.CARAVAN_CART_CAPACITY || 80)
+            + (caravan.wagons || 0) * (CONFIG.CARAVAN_WAGON_CAPACITY || 200);
+    }
+
+    // Returns how many units of a given resource can still fit on caravan
+    function _caravanCanFit(caravan, resId) {
+        var cap = _getCaravanCapacity(caravan);
+        var cur = _getCaravanCurrentWeight(caravan);
+        var remaining = cap - cur;
+        if (remaining <= 0) return 0;
+        var r = findResource(resId);
+        var w = (r ? r.weight : 1);
+        return Math.floor(remaining / w);
+    }
+
     function _processCaravanPassengers(caravan, townId) {
         if (!caravan.autoPickupTravelers) return;
         if (!caravan.passengers) caravan.passengers = [];
@@ -4441,6 +4475,8 @@
                         if (caravan.buyOrders && (caravan.roundTrip || caravan.recurring)) {
                             let buySpent = 0;
                             const boughtGoods = {};
+                            let boughtWeight = 0;
+                            const legacyCap = _getCaravanCapacity(caravan);
                             for (const [resId, order] of Object.entries(caravan.buyOrders)) {
                                 const wantQty = order.qty || 0;
                                 const maxPrice = order.maxPrice || Infinity;
@@ -4448,10 +4484,13 @@
                                 const marketSupply = destTown.market.supply[resId] || 0;
                                 if (marketPrice <= 0 || marketPrice > maxPrice || marketSupply <= 0) continue;
                                 const canAfford = Math.floor((player.gold - buySpent) / marketPrice);
-                                const buyQty = Math.min(wantQty, marketSupply, canAfford);
+                                const rw = (findResource(resId) || {}).weight || 1;
+                                const fitQty = Math.floor((legacyCap - boughtWeight) / rw);
+                                const buyQty = Math.min(wantQty, marketSupply, canAfford, fitQty);
                                 if (buyQty <= 0) continue;
                                 const cost = Math.floor(marketPrice * buyQty);
                                 boughtGoods[resId] = buyQty;
+                                boughtWeight += buyQty * rw;
                                 buySpent += cost;
                                 destTown.market.supply[resId] = Math.max(0, marketSupply - buyQty);
                                 Engine.logEvent(`Caravan bought ${buyQty} ${resId} at ${destTown.name} for ${cost}g.`);
@@ -4619,11 +4658,15 @@
                             const originId = caravan.fromTownId;
                             const reloadedGoods = {};
                             let reloaded = false;
+                            let reloadWeight = 0;
+                            const reloadCap = _getCaravanCapacity(caravan);
                             for (const [resId, qty] of Object.entries(caravan.originalGoods || {})) {
                                 const carried = player.inventory[resId] || 0;
                                 const stored = (player.townStorage[originId] || {})[resId] || 0;
                                 const available = carried + stored;
-                                const loadQty = Math.min(qty, available);
+                                const rw = (findResource(resId) || {}).weight || 1;
+                                const fitQty = Math.floor((reloadCap - reloadWeight) / rw);
+                                const loadQty = Math.min(qty, available, fitQty);
                                 if (loadQty > 0) {
                                     const fromC = Math.min(loadQty, carried);
                                     const fromS = loadQty - fromC;
@@ -4633,6 +4676,7 @@
                                         if (player.townStorage[originId][resId] <= 0) delete player.townStorage[originId][resId];
                                     }
                                     reloadedGoods[resId] = loadQty;
+                                    reloadWeight += loadQty * rw;
                                     reloaded = true;
                                 }
                             }
@@ -6151,6 +6195,9 @@
                     player.stats.totalGoodsSold = (player.stats.totalGoodsSold || 0) + overflow2;
                     var _b2bResName = resObj ? resObj.name : resourceId;
                     logFinance(_b2bRev, 'building_sales', 'Sold ' + overflow2 + ' ' + _b2bResName + ' (transfer overflow)');
+                    // Track and notify periodically
+                    sourceBld._overflowSold = (sourceBld._overflowSold || 0) + overflow2;
+                    sourceBld._overflowRevenue = (sourceBld._overflowRevenue || 0) + _b2bRev;
                 }
             } else {
                 // Target not found or wrong town — sell to market at full price
@@ -6563,6 +6610,14 @@
                             }
                             var _ovResName = res ? res.name : bt.produces;
                             logFinance(revenue, 'building_sales', 'Sold ' + overflow + ' ' + _ovResName + ' (storage full)');
+                            // Track cumulative overflow for periodic notification
+                            bld._overflowSold = (bld._overflowSold || 0) + overflow;
+                            bld._overflowRevenue = (bld._overflowRevenue || 0) + revenue;
+                            if (bld._overflowSold >= 10 || (day % 7 === 0 && bld._overflowSold > 0)) {
+                                Engine.logEvent('🏭 ' + bt.name + ' in ' + sellTown.name + ': sold ' + bld._overflowSold + ' ' + _ovResName + ' to market for ' + bld._overflowRevenue + 'g (output storage full).');
+                                bld._overflowSold = 0;
+                                bld._overflowRevenue = 0;
+                            }
                         }
                     }
                 }
