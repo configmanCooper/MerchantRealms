@@ -2352,8 +2352,16 @@
         for (var ri = 0; ri < world.roads.length; ri++) {
             var road = world.roads[ri];
             if (road.condition === 'destroyed') continue;
-            // Skip roads with destroyed bridges
-            if (road.hasBridge && road.bridgeDestroyed) continue;
+            // Skip roads with destroyed bridges (check individual bridges first, legacy fallback)
+            var _rdHasDestBr = false;
+            if (road.bridges && road.bridges.length > 0) {
+                for (var _rbi = 0; _rbi < road.bridges.length; _rbi++) {
+                    if (road.bridges[_rbi].destroyed) { _rdHasDestBr = true; break; }
+                }
+            } else if (road.hasBridge && road.bridgeDestroyed) {
+                _rdHasDestBr = true;
+            }
+            if (_rdHasDestBr) continue;
             var rFrom = findTown(road.fromTownId);
             var rTo = findTown(road.toTownId);
             if (!rFrom || !rTo) continue;
@@ -26506,25 +26514,79 @@
     // §19b BRIDGE & ROAD MANAGEMENT
     // ========================================================
 
-    function destroyBridge(roadIndex) {
+    // Sync road.bridgeDestroyed from individual bridges[] state
+    function _syncBridgeDestroyed(road) {
+        if (!road.bridges || road.bridges.length === 0) return;
+        var anyDestroyed = false;
+        for (var i = 0; i < road.bridges.length; i++) {
+            if (road.bridges[i].destroyed) { anyDestroyed = true; break; }
+        }
+        road.bridgeDestroyed = anyDestroyed;
+    }
+
+    function destroyBridge(roadIndex, bridgeId) {
         const road = world.roads[roadIndex];
         if (!road || !road.hasBridge) return { success: false, message: 'This road has no bridge.' };
+        // Per-bridge destruction
+        if (bridgeId && road.bridges) {
+            for (var bi = 0; bi < road.bridges.length; bi++) {
+                if (road.bridges[bi].id === bridgeId) {
+                    if (road.bridges[bi].destroyed) return { success: false, message: 'Bridge is already destroyed.' };
+                    road.bridges[bi].destroyed = true;
+                    road.bridges[bi].destroyedDay = world.day;
+                    _syncBridgeDestroyed(road);
+                    logEvent('\u26A0\uFE0F A bridge on the road between ' + (findTown(road.fromTownId) || {}).name + ' and ' + (findTown(road.toTownId) || {}).name + ' has been destroyed!');
+                    return { success: true, message: 'Bridge destroyed.' };
+                }
+            }
+            return { success: false, message: 'Bridge not found.' };
+        }
+        // Legacy: destroy all bridges on road
         if (road.bridgeDestroyed) return { success: false, message: 'Bridge is already destroyed.' };
         road.bridgeDestroyed = true;
         road.bridgeDestroyedDay = world.day;
-        logEvent(`\u26A0\uFE0F The bridge on the road between ${findTown(road.fromTownId)?.name || '?'} and ${findTown(road.toTownId)?.name || '?'} has been destroyed!`);
+        if (road.bridges) {
+            for (var bj = 0; bj < road.bridges.length; bj++) {
+                road.bridges[bj].destroyed = true;
+                road.bridges[bj].destroyedDay = world.day;
+            }
+        }
+        logEvent('\u26A0\uFE0F The bridge on the road between ' + (findTown(road.fromTownId) || {}).name + ' and ' + (findTown(road.toTownId) || {}).name + ' has been destroyed!');
         return { success: true, message: 'Bridge destroyed.' };
     }
 
-    function rebuildBridge(roadIndex) {
+    function rebuildBridge(roadIndex, bridgeId) {
         const road = world.roads[roadIndex];
         if (!road || !road.hasBridge) return { success: false, message: 'This road has no bridge.' };
+        // Per-bridge rebuild
+        if (bridgeId && road.bridges) {
+            for (var bi = 0; bi < road.bridges.length; bi++) {
+                if (road.bridges[bi].id === bridgeId) {
+                    if (!road.bridges[bi].destroyed) return { success: false, message: 'Bridge is not destroyed.' };
+                    road.bridges[bi].destroyed = false;
+                    road.bridges[bi].destroyedDay = null;
+                    road.bridges[bi].repairedDay = world.day;
+                    _syncBridgeDestroyed(road);
+                    logEvent('\uD83D\uDD28 A bridge on the road between ' + (findTown(road.fromTownId) || {}).name + ' and ' + (findTown(road.toTownId) || {}).name + ' has been rebuilt!');
+                    return { success: true, message: 'Bridge rebuilt.' };
+                }
+            }
+            return { success: false, message: 'Bridge not found.' };
+        }
+        // Legacy: rebuild all bridges on road
         if (!road.bridgeDestroyed) return { success: false, message: 'Bridge is not destroyed.' };
         road.bridgeDestroyed = false;
         road.bridgeDestroyedDay = null;
         road.bridgeRebuiltDay = world.day;
         road.condition = 'new';
-        logEvent(`\uD83D\uDD28 The bridge on the road between ${findTown(road.fromTownId)?.name || '?'} and ${findTown(road.toTownId)?.name || '?'} has been rebuilt!`);
+        if (road.bridges) {
+            for (var bj = 0; bj < road.bridges.length; bj++) {
+                road.bridges[bj].destroyed = false;
+                road.bridges[bj].destroyedDay = null;
+                road.bridges[bj].repairedDay = world.day;
+            }
+        }
+        logEvent('\uD83D\uDD28 The bridge on the road between ' + (findTown(road.fromTownId) || {}).name + ' and ' + (findTown(road.toTownId) || {}).name + ' has been rebuilt!');
         return { success: true, message: 'Bridge rebuilt.' };
     }
 
@@ -28859,6 +28921,23 @@
             world.roads = data.roads || [];
             world.seaRoutes = data.seaRoutes || [];
 
+            // Bridge migration: generate bridges[] for old saves lacking it
+            for (var _bmi = 0; _bmi < world.roads.length; _bmi++) {
+                var _bmRoad = world.roads[_bmi];
+                if (!_bmRoad.bridges && _bmRoad.hasBridge && _bmRoad.waypoints && _bmRoad.waypoints.length >= 2) {
+                    _bmRoad.bridges = createBridgeObjects(_bmRoad.waypoints);
+                    // If road was already destroyed in old save, mark all bridges destroyed
+                    if (_bmRoad.bridgeDestroyed) {
+                        for (var _bmj = 0; _bmj < _bmRoad.bridges.length; _bmj++) {
+                            _bmRoad.bridges[_bmj].destroyed = true;
+                            _bmRoad.bridges[_bmj].destroyedDay = _bmRoad.bridgeDestroyedDay || null;
+                        }
+                    }
+                }
+                if (!_bmRoad.bridges) _bmRoad.bridges = [];
+            }
+            _initBridgeIdCounter();
+
             // Fixup: connect any port towns that have no sea routes
             var portTowns = world.towns.filter(function(t) { return t.isPort; });
             var connectedSea = new Set();
@@ -28948,7 +29027,14 @@
             }
             for (var _ri = 0; _ri < world.roads.length; _ri++) {
                 var _fr = world.roads[_ri];
-                if (_fr.condition === 'destroyed' || (_fr.hasBridge && _fr.bridgeDestroyed)) continue;
+                if (_fr.condition === 'destroyed') continue;
+                var _frBrDest = false;
+                if (_fr.bridges && _fr.bridges.length > 0) {
+                    for (var _fbi = 0; _fbi < _fr.bridges.length; _fbi++) {
+                        if (_fr.bridges[_fbi].destroyed) { _frBrDest = true; break; }
+                    }
+                } else if (_fr.hasBridge && _fr.bridgeDestroyed) { _frBrDest = true; }
+                if (_frBrDest) continue;
                 if (_fixAdj[_fr.fromTownId]) _fixAdj[_fr.fromTownId].push(_fr.toTownId);
                 if (_fixAdj[_fr.toTownId]) _fixAdj[_fr.toTownId].push(_fr.fromTownId);
             }

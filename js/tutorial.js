@@ -480,7 +480,10 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Keep Shopping',
-                    text: '\uD83D\uDED2 Don\u2019t close the trade menu yet! Notice the <strong>right side</strong> shows <strong>your inventory</strong> \u2014 items you own that you can sell back to the market. Browse around to see what\u2019s available.'
+                    text: '🛒 Don\u2019t close the trade menu yet! Notice the <strong>right side</strong> shows <strong>your inventory</strong> \u2014 items you own that you can sell back to the market. Browse around to see what\u2019s available.',
+                    onEnter: function () {
+                        giveItem('meat', 3);
+                    }
                 },
                 {
                     title: 'Sell for Profit',
