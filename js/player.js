@@ -3860,20 +3860,52 @@
             if (qty <= 0 && o.qty !== 'max') { logCaravan(caravan, '⚠️ Invalid qty for ' + resName + ' — skipped.'); continue; }
 
             if (o.action === 'pickup') {
+                // Check town storage first
                 var stored = (player.townStorage[townId] || {})[o.good] || 0;
+                // Also check player buildings at this town (output + input storage)
+                var buildingStored = 0;
+                var buildingSources = [];
+                for (var bi = 0; bi < player.buildings.length; bi++) {
+                    var bld = player.buildings[bi];
+                    if (bld.townId !== townId) continue;
+                    var bldOut = (bld.outputStorage || {})[o.good] || 0;
+                    var bldIn = (bld.inputStorage || {})[o.good] || 0;
+                    if (bldOut > 0) buildingSources.push({ bld: bld, pool: 'output', qty: bldOut });
+                    if (bldIn > 0) buildingSources.push({ bld: bld, pool: 'input', qty: bldIn });
+                    buildingStored += bldOut + bldIn;
+                }
+                var totalAvail = stored + buildingStored;
                 var canFit = _caravanCanFit(caravan, o.good);
-                var pickupQty = Math.min(qty, stored, canFit);
+                var pickupQty = Math.min(qty, totalAvail, canFit);
                 if (pickupQty <= 0) {
-                    if (canFit <= 0 && stored > 0) {
+                    if (canFit <= 0 && totalAvail > 0) {
                         logCaravan(caravan, '📦 Caravan full — cannot pick up ' + resName + ' at ' + townName + '.');
                     } else {
                         logCaravan(caravan, '📦 No ' + resName + ' in storage at ' + townName + ' to pick up.');
                     }
                     continue;
                 }
-                if (!player.townStorage[townId]) player.townStorage[townId] = {};
-                player.townStorage[townId][o.good] = (player.townStorage[townId][o.good] || 0) - pickupQty;
-                if (player.townStorage[townId][o.good] <= 0) delete player.townStorage[townId][o.good];
+                // Pick up from town storage first, then building output, then building input
+                var remaining = pickupQty;
+                if (stored > 0 && remaining > 0) {
+                    var fromTown = Math.min(remaining, stored);
+                    if (!player.townStorage[townId]) player.townStorage[townId] = {};
+                    player.townStorage[townId][o.good] = (player.townStorage[townId][o.good] || 0) - fromTown;
+                    if (player.townStorage[townId][o.good] <= 0) delete player.townStorage[townId][o.good];
+                    remaining -= fromTown;
+                }
+                for (var bsi = 0; bsi < buildingSources.length && remaining > 0; bsi++) {
+                    var bs = buildingSources[bsi];
+                    var fromBld = Math.min(remaining, bs.qty);
+                    if (bs.pool === 'output') {
+                        bs.bld.outputStorage[o.good] = (bs.bld.outputStorage[o.good] || 0) - fromBld;
+                        if (bs.bld.outputStorage[o.good] <= 0) delete bs.bld.outputStorage[o.good];
+                    } else {
+                        bs.bld.inputStorage[o.good] = (bs.bld.inputStorage[o.good] || 0) - fromBld;
+                        if (bs.bld.inputStorage[o.good] <= 0) delete bs.bld.inputStorage[o.good];
+                    }
+                    remaining -= fromBld;
+                }
                 caravan.goods[o.good] = (caravan.goods[o.good] || 0) + pickupQty;
                 logCaravan(caravan, '📦 Picked up ' + pickupQty + ' ' + resName + ' from storage at ' + townName + '.');
             } else if (o.action === 'buy') {
@@ -23701,6 +23733,17 @@
                 }
                 break;
             }
+            case 'build_sea_route': {
+                if (td.fromTownId && td.toTownId) {
+                    var result = Engine.buildNewSeaRoute(td.fromTownId, td.toTownId, petition.kingdomId, {});
+                    if (result && result.success) {
+                        Engine.logEvent('⚓ The kingdom established a sea route between ' + (td.fromName || td.fromTownId) + ' and ' + (td.toName || td.toTownId) + '!');
+                    } else {
+                        Engine.logEvent('⚓ The king tried to establish a sea route but ' + (result ? result.message : 'it was not possible') + '.');
+                    }
+                }
+                break;
+            }
         }
     }
 
@@ -28041,13 +28084,35 @@
     function resolveFight(rng, winChance, isSea, isWartime, enemyName) {
         var result = { success: false, goldLost: 0, goodsLost: {}, injured: false, injurySeverity: null, shipDamaged: false, died: false };
 
-        // Escape Artist: 30% chance to flee without losses
-        if (hasSkill('escape_artist') && rng.chance(0.30)) {
-            result.success = true;
-            result.fled = true;
-            Engine.logEvent('🏃 You used your wits to escape the ' + enemyName + ' without a fight!');
-            autoJournalCapture('encounter', 'Managed to slip away from ' + enemyName + ' before the fighting started.', { mood: 'relieved' });
-            return result;
+        // Escape Artist: variable flee chance (5-30%) based on circumstances
+        if (hasSkill('escape_artist')) {
+            var fleeChance = 0.15; // base 15%
+            // Horse gives big bonus on land
+            if (!isSea && player.horses && player.horses.length > 0) fleeChance += 0.08;
+            // High energy helps
+            if ((player.energy || 100) >= 70) fleeChance += 0.05;
+            else if ((player.energy || 100) < 30) fleeChance -= 0.05;
+            // Good hunger/thirst helps
+            if ((player.hunger || 100) >= 50 && (player.thirst || 100) >= 50) fleeChance += 0.03;
+            else if ((player.hunger || 100) < 20 || (player.thirst || 100) < 20) fleeChance -= 0.03;
+            // Sea is harder to flee on
+            if (isSea) fleeChance -= 0.05;
+            // Wartime soldiers are more organized
+            if (isWartime) fleeChance -= 0.04;
+            // Light armor bonus (no armor = nimble)
+            if (!player.armor) fleeChance += 0.02;
+            // Street smart helps
+            if (hasSkill('street_smart')) fleeChance += 0.03;
+            fleeChance = Math.max(0.05, Math.min(0.30, fleeChance));
+            if (rng.chance(fleeChance)) {
+                result.success = true;
+                result.fled = true;
+                Engine.logEvent('🏃 You used your wits to escape the ' + enemyName + ' without a fight!');
+                autoJournalCapture('encounter', 'Managed to slip away from ' + enemyName + ' before the fighting started.', { mood: 'relieved' });
+                return result;
+            }
+            // Flee failed — must fight
+            Engine.logEvent('🏃 You tried to escape but the ' + enemyName + ' cut off your retreat!');
         }
 
         var won = rng.chance(winChance);

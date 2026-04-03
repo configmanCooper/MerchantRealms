@@ -6483,6 +6483,17 @@ window.UI = (function () {
         var resName = res ? (res.icon + ' ' + res.name) : order.good;
         var actionLabel = { buy: '🛒 Buy', sell: '💰 Sell', store: '📥 Store', pickup: '📦 Pickup' }[order.action] || order.action;
         var locLabel = order.location === 'source' ? '📍 Source' : '🏁 Dest';
+        // Resolve to actual town names if possible
+        try {
+            var destEl2 = document.getElementById('caravanDest');
+            if (order.location === 'destination' && destEl2) {
+                var dT = Engine.findTown(destEl2.value);
+                if (dT) locLabel = '🏁 ' + dT.name;
+            } else if (order.location === 'source') {
+                var sT = Engine.findTown(Player.townId);
+                if (sT) locLabel = '📍 ' + sT.name;
+            }
+        } catch(e) {}
         if (order.location && order.location.indexOf('waypoint:') === 0) {
             var wpTownId = order.location.replace('waypoint:', '');
             var wpTown = Engine.findTown(wpTownId);
@@ -6725,7 +6736,9 @@ window.UI = (function () {
         orderBuilderHtml += '<option value="buy">🛒 Buy</option><option value="sell">💰 Sell</option><option value="store">📥 Store</option><option value="pickup">📦 Pickup</option>';
         orderBuilderHtml += '</select>';
         orderBuilderHtml += '<select id="orderLocation" style="padding:4px 6px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;">';
-        orderBuilderHtml += '<option value="destination">🏁 Destination</option><option value="source">📍 Source</option>';
+        var _srcTown = Engine.findTown(Player.townId);
+        var _srcName = _srcTown ? _srcTown.name : 'Source';
+        orderBuilderHtml += '<option value="destination">🏁 Destination</option><option value="source">📍 ' + _srcName + '</option>';
         orderBuilderHtml += '</select>';
         orderBuilderHtml += '</div>';
         // Row 1b: Building target (shown only for Store action)
@@ -7146,25 +7159,28 @@ window.UI = (function () {
         var locSel = document.getElementById('orderLocation');
         if (locSel) {
             var prevVal = locSel.value;
-            var locHtml = '<option value="destination">🏁 Destination</option><option value="source">📍 Source</option>';
-            if (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('caravan_network')) {
-                try {
-                    var route = Engine.findPath(Player.townId, destEl.value);
-                    if (route && route.length > 1) {
-                        var waypointSeen = {};
-                        for (var wi = 0; wi < route.length; wi++) {
-                            var wpIds = [route[wi].fromTownId, route[wi].toTownId];
-                            for (var wj = 0; wj < wpIds.length; wj++) {
-                                var wpId = wpIds[wj];
-                                if (wpId === Player.townId || wpId === destEl.value || waypointSeen[wpId]) continue;
-                                waypointSeen[wpId] = true;
-                                var wpTown = Engine.findTown(wpId);
-                                if (wpTown) locHtml += '<option value="waypoint:' + wpId + '">📍 ' + wpTown.name + ' (waypoint)</option>';
+            var _destTown = Engine.findTown(destEl.value);
+            var _srcTown2 = Engine.findTown(Player.townId);
+            var _destLabel = _destTown ? _destTown.name : 'Destination';
+            var _srcLabel = _srcTown2 ? _srcTown2.name : 'Source';
+            var locHtml = '<option value="destination">🏁 ' + _destLabel + '</option><option value="source">📍 ' + _srcLabel + '</option>';
+            // Show waypoint towns for multi-hop routes
+            try {
+                var route = Engine.findPath(Player.townId, destEl.value);
+                if (route && route.length > 1) {
+                    var waypointSeen = {};
+                    for (var wi = 0; wi < route.length; wi++) {
+                        var wpIds = [route[wi].fromTownId, route[wi].toTownId];
+                        for (var wj = 0; wj < wpIds.length; wj++) {
+                            var wpId = wpIds[wj];
+                            if (wpId === Player.townId || wpId === destEl.value || waypointSeen[wpId]) continue;
+                            waypointSeen[wpId] = true;
+                            var wpTown = Engine.findTown(wpId);
+                            if (wpTown) locHtml += '<option value="waypoint:' + wpId + '">📍 ' + wpTown.name + ' (waypoint)</option>';
                             }
                         }
                     }
                 } catch(e) {}
-            }
             locSel.innerHTML = locHtml;
             // Restore previous value if still valid
             if (prevVal) {
@@ -7506,7 +7522,11 @@ window.UI = (function () {
                     var oRes = findResource(o.good);
                     var oName = oRes ? (oRes.icon + ' ' + oRes.name) : o.good;
                     var oAction = { buy: '🛒 Buy', sell: '💰 Sell', store: '📥 Store', pickup: '📦 Pickup' }[o.action] || o.action;
-                    var oLoc = o.location === 'source' ? 'Source' : 'Dest';
+                    var oLoc = o.location === 'source' ? (from ? from.name : 'Source') : o.location === 'destination' ? (to ? to.name : 'Dest') : o.location;
+                    if (o.location && o.location.indexOf('waypoint:') === 0) {
+                        var wpT = Engine.findTown(o.location.replace('waypoint:', ''));
+                        oLoc = wpT ? wpT.name : o.location;
+                    }
                     var oQty = o.qty === 'max' ? 'Max' : o.qty;
                     var oPrice = '';
                     if (o.action === 'buy' && o.priceLimit) oPrice = ' max ' + o.priceLimit + 'g';
@@ -7815,7 +7835,9 @@ window.UI = (function () {
         html += '<option value="buy">🛒 Buy</option><option value="sell">💰 Sell</option><option value="store">📥 Store</option><option value="pickup">📦 Pickup</option>';
         html += '</select>';
         html += '<select id="orderLocation" style="padding:4px 6px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;">';
-        html += '<option value="destination">🏁 Destination</option><option value="source">📍 Source</option>';
+        var _editDestTown = Engine.findTown(caravan.toTownId);
+        var _editSrcTown = Engine.findTown(caravan.fromTownId);
+        html += '<option value="destination">🏁 ' + (_editDestTown ? _editDestTown.name : 'Destination') + '</option><option value="source">📍 ' + (_editSrcTown ? _editSrcTown.name : 'Source') + '</option>';
         html += '</select>';
         html += '</div>';
         // Building target row (shown only for Store)
@@ -17930,6 +17952,27 @@ window.UI = (function () {
             }
             html += '</select></div>';
             html += '<button class="btn-medieval" style="padding:6px 16px;" onclick="UI.confirmCreatePetitionTownPair(\'' + typeId + '\')">Create Petition</button>';
+        } else if (pt.targetType === 'port_pair') {
+            html += '<h4 style="color:#ccc;">Select Port Towns:</h4>';
+            var towns = (typeof Engine !== 'undefined' && Engine.getTowns) ? Engine.getTowns() : [];
+            var portTowns = towns.filter(function(t) { return t.isPort && t.kingdomId === playerKingdomId; });
+            if (portTowns.length < 2) {
+                html += '<div style="color:#888;">Not enough port towns in your kingdom.</div>';
+            } else {
+                html += '<div style="margin-bottom:8px;"><label style="color:#aaa;">From Port: </label>';
+                html += '<select id="petFromTown" style="background:#333;color:#eee;border:1px solid #555;padding:4px;border-radius:3px;">';
+                for (var i = 0; i < portTowns.length; i++) {
+                    html += '<option value="' + portTowns[i].id + '">⚓ ' + portTowns[i].name + '</option>';
+                }
+                html += '</select></div>';
+                html += '<div style="margin-bottom:8px;"><label style="color:#aaa;">To Port: </label>';
+                html += '<select id="petToTown" style="background:#333;color:#eee;border:1px solid #555;padding:4px;border-radius:3px;">';
+                for (var i = 0; i < portTowns.length; i++) {
+                    html += '<option value="' + portTowns[i].id + '"' + (i === 1 ? ' selected' : '') + '>⚓ ' + portTowns[i].name + '</option>';
+                }
+                html += '</select></div>';
+                html += '<button class="btn-medieval" style="padding:6px 16px;" onclick="UI.confirmCreatePetitionTownPair(\'' + typeId + '\')">Create Petition</button>';
+            }
         } else if (pt.targetType === 'road') {
             html += '<h4 style="color:#ccc;">Select a Road:</h4>';
             var roads = (typeof Engine !== 'undefined' && Engine.getRoads) ? Engine.getRoads() : [];
