@@ -552,11 +552,10 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Trade Licenses',
-                    text: '\uD83D\uDCDC Some valuable goods require a <strong>Trade License</strong>. Click the <strong>\uD83D\uDC51 Kingdoms</strong> button on the bottom panel, then click <strong>\uD83D\uDCDC Buy Licenses</strong> on any kingdom card to purchase one. We\u2019ve given you <strong>200 gold</strong> for the license fee.',
+                    text: '📜 Some valuable goods require a <strong>Trade License</strong>. Click the <strong>👑 Kingdoms</strong> button on the bottom panel, then click <strong>📜 Buy Licenses</strong> on any kingdom card to purchase one. We\u2019ve given you <strong>500 gold</strong> for the license fee.',
                     highlight: '#btnKingdoms',
                     onEnter: function () {
-                        giveGold(200);
-                        // Count total licenses across all kingdoms
+                        giveGold(500);
                         snapshotState.totalLicensesBefore = 0;
                         try {
                             var lics = Player.state.licenses || {};
@@ -1096,10 +1095,10 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Kingdom Licenses',
-                    text: '\uD83D\uDCDC Click <strong>\uD83D\uDC51 Kingdoms</strong> on the bottom panel, then click <strong>\uD83D\uDCDC Buy Licenses</strong> on a kingdom card to purchase a trade license. We\u2019ve given you <strong>200 gold</strong>.',
+                    text: '📜 Click <strong>👑 Kingdoms</strong> on the bottom panel, then click <strong>📜 Buy Licenses</strong> on a kingdom card to purchase a trade license. We\u2019ve given you <strong>500 gold</strong>.',
                     highlight: '#btnKingdoms',
                     onEnter: function () {
-                        giveGold(200);
+                        giveGold(500);
                         snapshotState.licensesBeforeAdv = 0;
                         try { snapshotState.licensesBeforeAdv = (Player.state.licenses || []).length; } catch (e) {}
                     },
