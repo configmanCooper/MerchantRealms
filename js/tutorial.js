@@ -1,5 +1,5 @@
 // ============================================================
-// Merchant Realms — Interactive Tutorial System (14 Chapters)
+// Merchant Realms — Interactive Tutorial System (16 Chapters)
 // ============================================================
 
 window.Tutorial = (function () {
@@ -314,15 +314,22 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Town Info & People',
-                    text: '\uD83C\uDFD8\uFE0F Click on <strong>Rustbridge</strong> on the map to see its details \u2014 population, market prices, buildings, and townspeople.',
+                    text: '\uD83C\uDFD8\uFE0F Click on your <strong>starting town</strong> on the map to see its details \u2014 population, market prices, buildings, and townspeople.',
                     highlight: '#gameCanvas',
                     onEnter: function () {
-                        // Pan to Rustbridge (starting town) and zoom to 2x
+                        // Pan to starting town and zoom to 2x
                         try {
                             if (Renderer.setZoom) Renderer.setZoom(2.0);
                             var towns = Engine.getTowns();
-                            var rustbridge = towns.find(function(t) { return t.name === 'Rustbridge'; }) || towns[0];
-                            if (rustbridge && Renderer.panTo) Renderer.panTo(rustbridge.x, rustbridge.y);
+                            var startTown = towns.find(function(t) { return t.id === Player.state.townId; }) || towns[0];
+                            snapshotState.startTownName = startTown ? startTown.name : 'your town';
+                            if (startTown && Renderer.panTo) Renderer.panTo(startTown.x, startTown.y);
+                            // Update text with actual town name
+                            var ch = chapters[currentChapter];
+                            if (ch && ch.steps[currentStep]) {
+                                ch.steps[currentStep].text = '\uD83C\uDFD8\uFE0F Click on <strong>' + snapshotState.startTownName + '</strong> on the map to see its details \u2014 population, market prices, buildings, and townspeople.';
+                                renderPanel();
+                            }
                         } catch (e) {}
                     },
                     waitFor: function () {
@@ -331,7 +338,8 @@ window.Tutorial = (function () {
                             var rpTitle = document.getElementById('rightPanelTitle');
                             if (rpTitle) {
                                 var t = rpTitle.textContent;
-                                if (t.indexOf('Rustbridge') >= 0 || t.indexOf('\uD83C\uDFD8') >= 0 || t.indexOf('Town') >= 0) return true;
+                                var tn = snapshotState.startTownName || '';
+                                if ((tn && t.indexOf(tn) >= 0) || t.indexOf('\uD83C\uDFD8') >= 0 || t.indexOf('Town') >= 0) return true;
                             }
                         }
                         return false;
@@ -470,7 +478,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Street Trading',
-                    text: '\uD83E\uDD1D Click the <strong>\uD83E\uDD1D Street</strong> button on the bottom panel to trade directly with townspeople! Some items on the street aren\u2019t banned \u2014 they\u2019re just not available in the local market. Try it now!',
+                    text: '\uD83E\uDD1D Click the <strong>\uD83E\uDD1D Street</strong> button on the bottom panel to trade directly with townspeople! Street trading lets you find items that may be scarce or unavailable at the regular market. Try it now!',
                     highlight: '#btnStreet',
                     waitFor: function () { return isModalOpen(); },
                     onComplete: function () {
@@ -573,17 +581,17 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Travel by Routes',
-                    text: '\uD83D\uDEB6 Now <strong>right-click</strong> on <strong>Inkwell Cross</strong> (centered in view) and choose <strong>Travel Here</strong>. Use the <strong>speed controls</strong> (press 3 or higher) to travel faster! We\u2019ve given you a tutorial speed boost.',
+                    text: '\uD83D\uDEB6 Now <strong>right-click</strong> on <strong>Yewdale</strong> (centered in view) and choose <strong>Travel Here</strong>. Use the <strong>speed controls</strong> (press 3 or higher) to travel faster! We\u2019ve given you a tutorial speed boost.',
                     onEnter: function () {
                         closeModal();
                         if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(5);
-                        // Zoom to 1.5 and pan to Inkwell Cross
+                        // Zoom to 1.5 and pan to Yewdale
                         try {
                             if (typeof Renderer !== 'undefined') {
                                 if (Renderer.setZoom) Renderer.setZoom(1.5);
                                 var towns = Engine.getTowns ? Engine.getTowns() : [];
                                 for (var i = 0; i < towns.length; i++) {
-                                    if (towns[i].name && towns[i].name.toLowerCase().indexOf('inkwell') >= 0) {
+                                    if (towns[i].name && towns[i].name.toLowerCase().indexOf('yewdale') >= 0) {
                                         if (Renderer.panTo) Renderer.panTo(towns[i].x, towns[i].y);
                                         break;
                                     }
@@ -947,15 +955,25 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'See Resource Deposits',
-                    text: '\u26CF\uFE0F Click on <strong>Rustbridge</strong> on the map and scroll down to see its <strong>natural resource deposits</strong>. Build mines and farms in towns with matching deposits for bonus output!',
+                    text: '\u26CF\uFE0F Click on your <strong>starting town</strong> on the map and scroll down to see its <strong>natural resource deposits</strong>. Build mines and farms in towns with matching deposits for bonus output!',
                     highlight: '#gameCanvas',
+                    onEnter: function () {
+                        // Update text with actual town name
+                        var tn = snapshotState.startTownName || 'your town';
+                        var ch = chapters[currentChapter];
+                        if (ch && ch.steps[currentStep]) {
+                            ch.steps[currentStep].text = '\u26CF\uFE0F Click on <strong>' + tn + '</strong> on the map and scroll down to see its <strong>natural resource deposits</strong>. Build mines and farms in towns with matching deposits for bonus output!';
+                            renderPanel();
+                        }
+                    },
                     waitFor: function () {
                         var rp = document.getElementById('rightPanel');
                         if (rp && !rp.classList.contains('hidden')) {
                             var rpTitle = document.getElementById('rightPanelTitle');
                             if (rpTitle) {
                                 var t = rpTitle.textContent;
-                                if (t.indexOf('Rustbridge') >= 0 || t.indexOf('\uD83C\uDFD8') >= 0 || t.indexOf('Town') >= 0) return true;
+                                var tn = snapshotState.startTownName || '';
+                                if ((tn && t.indexOf(tn) >= 0) || t.indexOf('\uD83C\uDFD8') >= 0 || t.indexOf('Town') >= 0) return true;
                             }
                         }
                         return false;
@@ -1653,6 +1671,7 @@ window.Tutorial = (function () {
         var world = Engine.getWorld();
         var towns = Engine.getTowns();
         var startTownId = towns.length > 0 ? towns[0].id : null;
+        snapshotState.startTownName = towns.length > 0 ? towns[0].name : 'your town';
 
         // Init UI first so DOM elements are cached
         UI.init();
@@ -1771,10 +1790,10 @@ window.Tutorial = (function () {
         }
 
         // Show welcome toast
-        var townName = towns.length > 0 ? towns[0].name : 'your town';
         if (typeof UI !== 'undefined' && UI.toast) {
+            var welcomeTownName = snapshotState.startTownName || 'your town';
             setTimeout(function () {
-                UI.toast('\uD83D\uDCD6 Tutorial started! You are in ' + townName + '.', 'info');
+                UI.toast('\uD83D\uDCD6 Tutorial started! You are in ' + welcomeTownName + '.', 'info');
             }, 500);
         }
     }
