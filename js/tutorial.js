@@ -1377,19 +1377,32 @@ window.Tutorial = (function () {
     function nudgePanelsFromTutorial() {
         if (!panelEl || !active) return;
         var tRect = panelEl.getBoundingClientRect();
-        // Find panels that might overlap (left-panel, right-panel, trade panels, etc.)
+        // Find panels that might overlap (side panels + modal dialog)
         var candidates = document.querySelectorAll('.left-panel, .right-panel, .side-panel, .info-panel');
         for (var i = 0; i < candidates.length; i++) {
             var p = candidates[i];
             if (p === panelEl || p.offsetParent === null) continue;
             var pRect = p.getBoundingClientRect();
-            // Check overlap
             if (pRect.right > tRect.left && pRect.left < tRect.right &&
                 pRect.bottom > tRect.top && pRect.top < tRect.bottom) {
-                // Shift panel right so its left edge clears the tutorial panel
                 var newLeft = tRect.right + 10;
                 p.style.left = newLeft + 'px';
                 p.dataset.tutNudged = 'true';
+            }
+        }
+        // Also nudge modal dialog if it overlaps
+        var modalOverlay = document.getElementById('modalOverlay');
+        if (modalOverlay && !modalOverlay.classList.contains('hidden')) {
+            var dlg = document.getElementById('modalDialog');
+            if (dlg) {
+                var dRect = dlg.getBoundingClientRect();
+                if (dRect.right > tRect.left && dRect.left < tRect.right &&
+                    dRect.bottom > tRect.top && dRect.top < tRect.bottom) {
+                    var shiftX = tRect.right - dRect.left + 10;
+                    dlg.style.position = 'relative';
+                    dlg.style.left = shiftX + 'px';
+                    dlg.dataset.tutNudged = 'true';
+                }
             }
         }
     }
