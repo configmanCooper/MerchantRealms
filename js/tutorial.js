@@ -271,6 +271,8 @@ window.Tutorial = (function () {
                     title: 'Minimap',
                     text: '\uD83D\uDDFA\uFE0F Great! Notice the <strong>blinking dot</strong> on the minimap in the bottom-right \u2014 that\u2019s your position! Try <strong>clicking the minimap</strong> to move the camera to a different area of the map. It\u2019s a quick way to jump around the world!',
                     onEnter: function () {
+                        // Close any city view panel the player may have open
+                        try { UI.closeModal(); } catch (e) {}
                         try {
                             var cam = Renderer.getCamera();
                             snapshotState.cameraX = cam.x;
@@ -1934,6 +1936,16 @@ window.Tutorial = (function () {
 
         // Initialize player WITH a town (5th param is critical)
         Player.init(world, 'Tutorial', 'Merchant', 'M', startTownId);
+
+        // Turn off all notification filters except My Actions for cleaner tutorial
+        if (typeof Player !== 'undefined' && Player.setNotifFilter) {
+            var tutFilterKeys = ['my_actions', 'my_business', 'my_kingdom', 'local_town',
+                'foreign_kingdoms', 'world_economy', 'military', 'npc_activity',
+                'travel_events', 'illness', 'combat', 'tracked', 'error_alerts'];
+            for (var fi = 0; fi < tutFilterKeys.length; fi++) {
+                Player.setNotifFilter(tutFilterKeys[fi], tutFilterKeys[fi] === 'my_actions');
+            }
+        }
 
         // Set player to Citizen rank so they can build things in the tutorial
         var startTown = towns.length > 0 ? towns[0] : null;
