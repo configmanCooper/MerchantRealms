@@ -380,7 +380,7 @@ const CONFIG = {
 
     // Naval / Sea travel
     SEA_ROUTE_MAX_DISTANCE: 3000,
-    SEA_ROUTE_MIN_WATER_FRACTION: 0.95,    // Sea routes must be >=95% water
+    SEA_ROUTE_MIN_WATER_FRACTION: 0.90,    // Sea routes must be >=90% water (excluding coastal approach tiles)
     SEA_SPEED_MULTIPLIER: 1.5,
     STORM_RISK_PER_TRIP: 0.05,
     STORM_LOSS_MIN: 0.10,
