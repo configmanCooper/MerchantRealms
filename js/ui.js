@@ -18095,10 +18095,13 @@ window.UI = (function () {
             html += '<h4 style="color:#ddd;margin:0 0 5px;">✍️ Request Signatures (NPCs in town)</h4>';
             var world = (typeof Engine !== 'undefined') ? Engine.getWorld() : null;
             if (world && world.people) {
+                var _askDay = (typeof Engine !== 'undefined') ? Engine.getDay() : 0;
+                var _askCounts = (petition._askCountsDay === _askDay && petition._askCounts) ? petition._askCounts : {};
                 var townNpcs = world.people.filter(function(p) {
                     return p.alive && p.townId === Player.townId &&
                            p.kingdomId === petition.kingdomId &&
-                           !petition.signatures.includes(p.id);
+                           !petition.signatures.includes(p.id) &&
+                           (_askCounts[p.id] || 0) < 2;
                 });
                 if (townNpcs.length === 0) {
                     html += '<p style="color:#aaa;font-size:0.85em;">No eligible NPCs in this town to ask.</p>';

@@ -23232,16 +23232,17 @@
         if (npc.kingdomId !== petition.kingdomId) return { signed: false, chance: 0, message: 'That person is not a citizen of the petition\'s kingdom.' };
         if (petition.signatures.includes(npcId)) return { signed: false, chance: 0, message: npc.firstName + ' has already signed this petition.' };
 
-        // Daily limit: can only ask NPCs to sign twice per day
+        // Per-NPC daily limit: can ask each NPC twice per day
         var currentDay = (typeof Engine !== 'undefined') ? Engine.getDay() : 0;
-        if (!player._signatureRequestsToday) player._signatureRequestsToday = { day: 0, count: 0 };
-        if (player._signatureRequestsToday.day !== currentDay) {
-            player._signatureRequestsToday = { day: currentDay, count: 0 };
+        if (!petition._askCounts || petition._askCountsDay !== currentDay) {
+            petition._askCounts = {};
+            petition._askCountsDay = currentDay;
         }
-        if (player._signatureRequestsToday.count >= 2) {
-            return { signed: false, chance: 0, message: 'You\'ve already asked for signatures twice today. Try again tomorrow.' };
+        var askedCount = petition._askCounts[npcId] || 0;
+        if (askedCount >= 2) {
+            return { signed: false, chance: 0, message: 'You\'ve already asked ' + npc.firstName + ' twice today. Try again tomorrow.' };
         }
-        player._signatureRequestsToday.count++;
+        petition._askCounts[npcId] = askedCount + 1;
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(1);
         consumeEnergy(0.25);
