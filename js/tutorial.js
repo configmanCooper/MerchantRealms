@@ -683,7 +683,8 @@ window.Tutorial = (function () {
                     highlight: '#gameCanvas',
                     onEnter: function () {
                         snapshotState.offRoadPhase = 0; // 0 = waiting to leave, 1 = traveling out, 2 = arrived out, 3 = traveling back
-                        if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(10);
+                        snapshotState.startTownId = Player.townId;
+                        if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(5);
                     },
                     waitFor: function () {
                         try {
@@ -691,11 +692,20 @@ window.Tutorial = (function () {
                             if (phase === 0 && Player.traveling) {
                                 snapshotState.offRoadPhase = 1;
                             } else if (phase === 1 && !Player.traveling) {
-                                snapshotState.offRoadPhase = 2;
-                                // Update text to tell them to come back
-                                var textEl = document.querySelector('.tutorial-step-text');
-                                if (textEl) {
-                                    textEl.innerHTML = '\uD83E\uDD7E Great! Now <strong>right-click</strong> on the town you came from (or any town) and select <strong>Travel Off-road</strong> to travel back. Use <strong>speed 5+</strong> to make it faster!';
+                                // Only count as "arrived out" if NOT back at starting town
+                                if (Player.townId && Player.townId === snapshotState.startTownId) {
+                                    // Snapped back to start town — reset, they need to go farther
+                                    snapshotState.offRoadPhase = 0;
+                                    var textEl = document.querySelector('.tutorial-step-text');
+                                    if (textEl) {
+                                        textEl.innerHTML = '🥾 You ended up back at your starting town! <strong>Right-click</strong> on a spot <strong>farther away</strong> from the town and select <strong>Travel Off-road</strong>. Try going somewhere new!';
+                                    }
+                                } else {
+                                    snapshotState.offRoadPhase = 2;
+                                    var textEl = document.querySelector('.tutorial-step-text');
+                                    if (textEl) {
+                                        textEl.innerHTML = '🥾 Great! Now <strong>right-click</strong> on your starting town and select <strong>Travel Off-road</strong> to travel back!';
+                                    }
                                 }
                             } else if (phase === 2 && Player.traveling) {
                                 snapshotState.offRoadPhase = 3;
@@ -705,7 +715,7 @@ window.Tutorial = (function () {
                             return false;
                         } catch (e) { return false; }
                     },
-                    skipAfter: 20000
+                    skipAfter: 60000
                 },
                 {
                     title: 'Sea Travel',
