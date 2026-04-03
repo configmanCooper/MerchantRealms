@@ -1765,7 +1765,7 @@ window.Tutorial = (function () {
                 var _rrFrom = Engine.findTown(_rr.fromTownId);
                 var _rrTo = Engine.findTown(_rr.toTownId);
                 if (_rrFrom && _rrTo) {
-                    var _bSteps = 40;
+                    var _bSteps = 80;
                     var _bSegs = [];
                     var _bInWater = false;
                     var _bSegStart = 0;
@@ -1785,6 +1785,10 @@ window.Tutorial = (function () {
                         }
                     }
                     if (_bInWater) _bSegs.push({ startT: _bSegStart, endT: 1.0 });
+                    // Only keep short bridge segments (little river/channel crossings)
+                    // Filter out large water spans — those are ocean, not bridgeable
+                    var _maxBridgeSpan = 0.15; // max 15% of road length
+                    _bSegs = _bSegs.filter(function(s) { return (s.endT - s.startT) <= _maxBridgeSpan; });
                     _rr.hasBridge = _bSegs.length > 0;
                     _rr.bridgeSegments = _bSegs;
                     _rr.bridgeDestroyed = false;
