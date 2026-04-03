@@ -715,8 +715,21 @@ window.Renderer = (function () {
             const tx = to.x;
             const ty = to.y;
 
-            // skip if entirely off-screen
-            if (!isVisible(fx, fy, 200) && !isVisible(tx, ty, 200)) continue;
+            // skip if road bounding box (endpoints + waypoints) is entirely off-screen
+            var _rdMinX = Math.min(fx, tx), _rdMaxX = Math.max(fx, tx);
+            var _rdMinY = Math.min(fy, ty), _rdMaxY = Math.max(fy, ty);
+            if (road.waypoints) {
+                for (var _rwi = 0; _rwi < road.waypoints.length; _rwi++) {
+                    var _rwp = road.waypoints[_rwi];
+                    if (_rwp.x < _rdMinX) _rdMinX = _rwp.x;
+                    if (_rwp.x > _rdMaxX) _rdMaxX = _rwp.x;
+                    if (_rwp.y < _rdMinY) _rdMinY = _rwp.y;
+                    if (_rwp.y > _rdMaxY) _rdMaxY = _rwp.y;
+                }
+            }
+            var _rdVb = getVisibleBounds();
+            if (_rdMaxX < _rdVb.left - 200 || _rdMinX > _rdVb.right + 200 ||
+                _rdMaxY < _rdVb.top - 200 || _rdMinY > _rdVb.bottom + 200) continue;
 
             const quality = road.quality || 1;
             const safe = road.safe !== false;
@@ -921,10 +934,21 @@ window.Renderer = (function () {
             const tx = to.x;
             const ty = to.y;
 
-            // skip if entirely off-screen
-            if (!isVisible(fx, fy, 200) && !isVisible(tx, ty, 200)) continue;
-
-            // Dashed line — bright yellow-gold stands out over water
+            // skip if route bounding box is entirely off-screen
+            var _srMinX = Math.min(fx, tx), _srMaxX = Math.max(fx, tx);
+            var _srMinY = Math.min(fy, ty), _srMaxY = Math.max(fy, ty);
+            if (route.waypoints) {
+                for (var _swi = 0; _swi < route.waypoints.length; _swi++) {
+                    var _swp = route.waypoints[_swi];
+                    if (_swp.x < _srMinX) _srMinX = _swp.x;
+                    if (_swp.x > _srMaxX) _srMaxX = _swp.x;
+                    if (_swp.y < _srMinY) _srMinY = _swp.y;
+                    if (_swp.y > _srMaxY) _srMaxY = _swp.y;
+                }
+            }
+            var _srVb = getVisibleBounds();
+            if (_srMaxX < _srVb.left - 200 || _srMinX > _srVb.right + 200 ||
+                _srMaxY < _srVb.top - 200 || _srMinY > _srVb.bottom + 200) continue;
             ctx.strokeStyle = 'rgba(255,200,50,0.7)';
             ctx.lineWidth = 2.5;
             ctx.setLineDash([10, 6]);
