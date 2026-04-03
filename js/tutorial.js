@@ -1279,10 +1279,10 @@ window.Tutorial = (function () {
         var pw = panelEl.offsetWidth, ph = panelEl.offsetHeight;
         var vw = window.innerWidth, vh = window.innerHeight;
         var spots = [
-            { x: vw - pw - 10, y: vh - ph - 10 },
-            { x: 10, y: vh - ph - 10 },
+            { x: 10, y: 60 },
             { x: vw - pw - 10, y: 60 },
-            { x: 10, y: 60 }
+            { x: 10, y: vh - ph - 10 },
+            { x: vw - pw - 10, y: vh - ph - 10 }
         ];
         for (var i = 0; i < spots.length; i++) {
             var s = spots[i];
@@ -1294,7 +1294,7 @@ window.Tutorial = (function () {
                 return;
             }
         }
-        panelEl.style.left = (vw - pw - 10) + 'px';
+        panelEl.style.left = '10px';
         panelEl.style.top = '60px';
         panelEl.style.bottom = 'auto';
         panelEl.style.transform = 'none';
