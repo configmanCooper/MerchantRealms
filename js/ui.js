@@ -934,7 +934,48 @@ window.UI = (function () {
             }
             html += '<div class="detail-row"><span class="label">Health</span><span class="value" style="color:' + _sickColor + ';">' + _sickVal + '</span></div>';
         } else {
-            html += '<div class="detail-row"><span class="label">Health</span><span class="value" style="color:#55a868;">💚 Healthy</span></div>';
+            // No sick people — show skill-aware healthy status
+            var _hasDiseaseAwareness2 = typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('disease_awareness');
+            var _hasEpidemiologist2 = typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('epidemiologist');
+            if (_hasDiseaseAwareness2) {
+                // Check for nearby plague risk
+                var _nearbyPlague = false;
+                var _nearbyPlagueTown = '';
+                try {
+                    var _wEvt = Engine.getWorld();
+                    if (_wEvt && _wEvt.events) {
+                        for (var _ei = 0; _ei < _wEvt.events.length; _ei++) {
+                            var _evt = _wEvt.events[_ei];
+                            if (_evt.active && (_evt.type === 'plague' || _evt.type === 'plague_disaster') && _evt.townId !== town.id) {
+                                // Check if adjacent via roads
+                                if (_wEvt.roads) {
+                                    for (var _ri = 0; _ri < _wEvt.roads.length; _ri++) {
+                                        var _rd = _wEvt.roads[_ri];
+                                        if ((_rd.fromTownId === town.id && _rd.toTownId === _evt.townId) ||
+                                            (_rd.toTownId === town.id && _rd.fromTownId === _evt.townId)) {
+                                            _nearbyPlague = true;
+                                            var _pt = Engine.findTown(_evt.townId);
+                                            _nearbyPlagueTown = _pt ? _pt.name : 'nearby';
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            if (_nearbyPlague) break;
+                        }
+                    }
+                } catch(e) {}
+                var _healthyMsg = '💚 No illness detected (0 sick)';
+                if (_nearbyPlague) {
+                    _healthyMsg += ' — <span style="color:#e67e22;">⚠️ Plague nearby (' + _nearbyPlagueTown + ')</span>';
+                }
+                if (_hasEpidemiologist2) {
+                    _healthyMsg += ' — <span style="color:#55a868;">🦠 Contagion: None</span>';
+                }
+                html += '<div class="detail-row"><span class="label">Health</span><span class="value" style="color:#55a868;">' + _healthyMsg + '</span></div>';
+            } else {
+                html += '<div class="detail-row"><span class="label">Health</span><span class="value" style="color:#55a868;">💚 Healthy</span></div>';
+            }
         }
 
         // Port / Island indicators
@@ -8810,9 +8851,10 @@ window.UI = (function () {
     function inferCategoryFromMessage(event) {
         var m = ((event.message || event.description || '') + ' ' + ((event.details && event.details.type) || '')).toLowerCase();
         if (m.includes('war') || m.includes('army') || m.includes('siege') || m.includes('battle')) return 'military';
+        if (m.includes('plague') || m.includes('illness') || m.includes('infected') || m.includes('quarantine') || m.includes('sick') || m.includes('disease') || m.includes('died of') || m.includes('health policy') || m.includes('epidemic')) return 'illness';
         if (m.includes('trade') || m.includes('sold') || m.includes('bought')) return 'my_actions';
         if (m.includes('caravan') || m.includes('warehouse') || m.includes('building')) return 'my_business';
-        if (m.includes('plague') || m.includes('fire') || m.includes('flood')) return 'local_town';
+        if (m.includes('fire') || m.includes('flood')) return 'local_town';
         if (m.includes('law') || m.includes('tax') || m.includes('festival') || m.includes('king')) return 'my_kingdom';
         if (m.includes('pirate') || m.includes('bandit') || m.includes('ambush')) return 'combat';
         if (m.includes('elite merchant') || m.includes('married') || m.includes('retired')) return 'npc_activity';
@@ -8838,7 +8880,7 @@ window.UI = (function () {
         var tabGroups = {
             all:      { label: '📋 All',      categories: null },
             personal: { label: '🧑 Personal', categories: ['my_actions', 'my_business', 'travel_events', 'combat'] },
-            local:    { label: '🏘️ Local',    categories: ['local_town', 'npc_activity'] },
+            local:    { label: '🏘️ Local',    categories: ['local_town', 'npc_activity', 'illness'] },
             world:    { label: '🌍 World',     categories: ['my_kingdom', 'foreign_kingdoms', 'world_economy', 'military'] },
         };
         if (!openEventLog._activeTab) openEventLog._activeTab = 'all';
@@ -8870,6 +8912,7 @@ window.UI = (function () {
                 military: '⚔️ Military',
                 npc_activity: '👥 NPCs',
                 travel_events: '🚶 Travel',
+                illness: '🦠 Illness',
                 combat: '☠️ Combat',
                 error_alerts: '🐛 Debug',
             };
@@ -9056,6 +9099,7 @@ window.UI = (function () {
             { key: 'military', label: '⚔️ Military/War', desc: 'Troop movements, battles, sieges', hasSmart: true },
             { key: 'npc_activity', label: '👥 NPC Activity', desc: 'Elite merchant moves, NPC events' },
             { key: 'travel_events', label: '🚶 Travel Events', desc: 'Foraging, terrain encounters, ambushes' },
+            { key: 'illness', label: '🦠 Illness/Health', desc: 'Plague outbreaks, disease spread, quarantines, health policies, NPC deaths from illness' },
             { key: 'combat', label: '☠️ Combat/Piracy', desc: 'Pirate raids, blockades, attacks near you' },
             { key: 'tracked', label: '⭐ Tracked Merchants', desc: 'Activities of elite merchants you are tracking' },
             { key: 'error_alerts', label: '🐛 Error Alerts', desc: 'Get notified when the game detects console errors (for bug reporting)' },
@@ -10975,7 +11019,7 @@ window.UI = (function () {
         if (town) {
             closeModal(); // close any modal that spawned this FIRST
             if (typeof Renderer !== 'undefined') {
-                Renderer.panTo(town.x * CONFIG.TILE_SIZE, town.y * CONFIG.TILE_SIZE);
+                Renderer.panTo(town.x, town.y);
             }
             showTownDetail(town); // then open town detail
         }

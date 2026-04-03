@@ -4,6 +4,44 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.55.0] - 2026-04-03
+
+### Added
+- Illness notification filter: new 🦠 Illness toggle in Settings and Event Log filter bar
+  - Controls plague outbreaks, disease spread, quarantines, health policies, notable illness deaths
+  - Illness events tagged with explicit `illness` category for reliable filtering
+  - Save migration: older saves get `illness: true` by default
+- Illness events appear under Local tab in Event Log alongside Local Town and NPC Activity
+
+### Changed
+- Plague frequency drastically reduced to target ~1 outbreak per 5 years:
+  - Base trigger chance: 0.0015 → 0.0003 (5x reduction)
+  - Capital multiplier: 3x → 2x, City multiplier: 2x → 1.5x
+  - World cooldown: no new random plagues for 360 days after any plague triggers
+  - Concurrent plague cap: spread blocked if 3+ towns already have active plague
+  - Great Plague chance: 30% → 15% of any plague being severe
+- Plague spread rates reduced to prevent world-wide cascades:
+  - Town spread base: 0.01 → 0.003, sick ratio multiplier: 8x → 2x
+  - Trade route spread multiplier: 3x → 1.5x
+  - Great Plague spread multiplier: 8x → 2x, Regular: 4x → 1x
+- Illness death notifications: only notable people (family, nobles, EMs, kings, relationship >20)
+  - Batch town summaries removed — non-notable deaths are now silent
+  - Relationship threshold for notable deaths: 10 → 20
+- Quest relationship boost increased: per-NPC 1/3 → 4/8, affected NPCs min 2→3, max 20→30
+- Guildmaster rank caravan goods requirement: 500 → 250
+- Quarantine bypass: nobles (rank ≥4) pass freely, guildmasters on business, others 40% sneak chance
+- Guild auto-renew now runs before monopoly enforcement (fixes false warnings)
+
+### Fixed
+- Guild membership warnings appearing despite active membership with auto-renew
+  - Root cause: monopoly check ran before auto-renew, briefly seeing expired membership
+- View Location button in event details sending camera to wrong coordinates
+  - Removed erroneous `* CONFIG.TILE_SIZE` multiplication in clickTown()
+- Disease awareness skill: healthy towns now show "No illness detected" + nearby plague warnings
+- Building input/output storage now independent pools (output no longer eats input capacity)
+- Supply Inputs buttons now deposit directly to building inventory (was dumping to town market)
+- Auto-buy upgraded: ratio-balanced stockpiling with input-only capacity awareness
+
 ## [0.54.0] - 2026-04-02
 
 ### Added

@@ -10552,7 +10552,7 @@
                     logEvent('🦠 Disease outbreak in ' + town.name + '! ' + killed + ' dead. Poor conditions breed illness. (Happiness: ' + Math.round(h) + '%)', {
                         type: 'disease_outbreak', cause: 'Crisis conditions and poor sanitation',
                         effects: [killed + ' people died', infected + ' infected', 'Prosperity drops']
-                    });
+                    }, 'illness');
                 }
             }
 
@@ -15494,6 +15494,11 @@
                 town.happiness = Math.max(0, town.happiness - (ev.isSevere ? 2 : 1));
 
                 // Spread to adjacent towns — daily check
+                // Cap: if 3+ towns already plagued, no further spread
+                var _activePlagueCount = world.events.filter(function(e2) {
+                    return e2.active && (e2.type === 'plague' || e2.type === 'plague_disaster');
+                }).length;
+                if (_activePlagueCount < 3) {
                 var spreadMult = ev.spreadMult || NPC_HEALTH_CONFIG.PLAGUE_SPREAD_MULT;
                 var spreadBase = NPC_HEALTH_CONFIG.TOWN_SPREAD_BASE * spreadMult;
                 var sickPct = totalHere > 0 ? sickCount / totalHere : 0;
@@ -15505,7 +15510,8 @@
                         if (town.activePolicies[qp].id === 'quarantine_town') { quarantined = true; break; }
                     }
                 }
-                if (!quarantined) {
+                // Quarantine is 95% effective — nobles, EMs, and officials slip through
+                if (!quarantined || rng.chance(0.05)) {
                     // Find adjacent towns via roads
                     var adjRoads = world.roads.filter(function(r) { return r.fromTownId === ev.townId || r.toTownId === ev.townId; });
                     for (var ri = 0; ri < adjRoads.length; ri++) {
@@ -15521,18 +15527,22 @@
                                                 (c.fromTownId === adjTownId && c.toTownId === ev.townId));
                         }) : false;
                         var finalSpread = spreadChance * (hasTradeRoute ? NPC_HEALTH_CONFIG.TRADE_ROUTE_SPREAD_MULT : 1);
+                        // If quarantined, reduce spread further — only a few travelers leaked through
+                        if (quarantined) finalSpread *= 0.3;
                         if (rng.chance(finalSpread)) {
                             var adjTown = findTown(adjTownId);
                             if (adjTown) {
                                 // Spread plague to adjacent town — slightly weaker
                                 triggerPlague(adjTown);
-                                logEvent('🦠 The plague spreads from ' + town.name + ' to ' + adjTown.name + '!', {
+                                var leakMsg = quarantined ? ' despite quarantine efforts' : '';
+                                logEvent('🦠 The plague spreads from ' + town.name + ' to ' + adjTown.name + leakMsg + '!', {
                                     type: 'plague_spread', townId: adjTownId, sourceTownId: ev.townId
-                                });
+                                }, 'illness');
                             }
                         }
                     }
                 }
+                } // end plague spread cap
                 break;
             }
             case 'blight': {
@@ -15614,6 +15624,8 @@
         if (!ill) return false;
         return infectNPC(person, ill._id, rng, day, source || 'random');
     }
+
+    // Notable illness deaths only — no batch accumulation needed
 
     function tickNPCHealth() {
         if (!world || !world.people) return;
@@ -15714,6 +15726,8 @@
         if (day % 9 === 0) {
             _spreadContagionBetweenTowns(townSick, townHealthy, rng, day, seasonLower);
         }
+
+        // (Batch illness death notifications removed — only notable deaths are reported individually)
     }
 
     function _tickPersonIllness(person, rng, day, tickScale, hasHospital, hasClinic) {
@@ -15785,10 +15799,31 @@
         // Death check
         if (person.health <= 0) {
             killPerson(person, 'illness');
-            var town = findTown(person.townId);
-            logEvent('💀 ' + person.firstName + ' ' + (person.lastName || '') + ' of ' + (town ? town.name : 'unknown') + ' died of ' + (illDef.name || person.illness) + '.', {
-                type: 'npc_illness_death', townId: person.townId
-            });
+            var _dTown = findTown(person.townId);
+            var _dIllName = (illDef.name || person.illness || 'illness');
+            // Notable deaths get individual notifications
+            var _isNotable = false;
+            if (person.isKing || person.isNoble || person.isEliteMerchant) _isNotable = true;
+            // Check if family or relationship >= 10 with player
+            if (!_isNotable && typeof Player !== 'undefined') {
+                try {
+                    var _pState = Player.state || Player;
+                    if (_pState.familyMembers) {
+                        for (var _fi = 0; _fi < _pState.familyMembers.length; _fi++) {
+                            if (_pState.familyMembers[_fi] === person.id || (_pState.familyMembers[_fi].id && _pState.familyMembers[_fi].id === person.id)) { _isNotable = true; break; }
+                        }
+                    }
+                    if (!_isNotable && _pState.spouseId === person.id) _isNotable = true;
+                    if (!_isNotable && _pState.relationships && (_pState.relationships[person.id] || 0) > 20) _isNotable = true;
+                } catch(e) {}
+            }
+            if (_isNotable) {
+                var _roleTag = person.isKing ? '👑 King ' : person.isNoble ? '🏰 Noble ' : person.isEliteMerchant ? '💰 Elite Merchant ' : '';
+                logEvent('💀 ' + _roleTag + person.firstName + ' ' + (person.lastName || '') + ' of ' + (_dTown ? _dTown.name : 'unknown') + ' died of ' + _dIllName + '.', {
+                    type: 'npc_illness_death', townId: person.townId
+                }, 'illness');
+            }
+            // Non-notable deaths are silent — no notification
         }
     }
 
@@ -15977,7 +16012,7 @@
                                 if (illDef.contagious) {
                                     logEvent('🦠 Plague has spread along the road from ' + town.name + ' to ' + nTown.name + '!', {
                                         type: 'plague_spread', townId: neighborId
-                                    });
+                                    }, 'illness');
                                 }
                             }
                         }
@@ -24059,10 +24094,16 @@
             }
 
             // PLAGUE — any town, more likely in cities/capitals
-            const plagueMult = town.category === 'capital_city' ? CONFIG.DISASTER_PLAGUE_CAPITAL_MULT
-                             : town.category === 'city' ? CONFIG.DISASTER_PLAGUE_CITY_MULT : 1;
-            if (rng.chance(CONFIG.DISASTER_PLAGUE_CHANCE * plagueMult)) {
-                triggerPlague(town);
+            // World cooldown: no new random plagues for 360 days after the last one triggered
+            var _plagueCooldownDays = 360;
+            var _lastPlagueDay = world._lastPlagueTriggerDay || 0;
+            if (world.day - _lastPlagueDay >= _plagueCooldownDays) {
+                const plagueMult = town.category === 'capital_city' ? CONFIG.DISASTER_PLAGUE_CAPITAL_MULT
+                                 : town.category === 'city' ? CONFIG.DISASTER_PLAGUE_CITY_MULT : 1;
+                if (rng.chance(CONFIG.DISASTER_PLAGUE_CHANCE * plagueMult)) {
+                    triggerPlague(town);
+                    world._lastPlagueTriggerDay = world.day;
+                }
             }
 
             // CROP BLIGHT — towns with farms, spring/summer only
@@ -24198,7 +24239,7 @@
         town.market.supply.water = Math.max(0, waterAvail - waterUsed);
 
         // Determine plague type: severe (decade) or moderate (5-year)
-        var isSeverePlague = rng.chance(0.3); // 30% chance it's the big one
+        var isSeverePlague = rng.chance(0.15); // 15% chance it's a Great Plague
         var infRate = isSeverePlague ? NPC_HEALTH_CONFIG.PLAGUE_INFECTION_RATE : NPC_HEALTH_CONFIG.MODERATE_PLAGUE_INFECTION_RATE;
         var spreadMult = isSeverePlague ? NPC_HEALTH_CONFIG.PLAGUE_SPREAD_MULT : NPC_HEALTH_CONFIG.MODERATE_PLAGUE_SPREAD_MULT;
 
@@ -24251,7 +24292,7 @@
                 isSeverePlague ? 'This plague spreads rapidly to neighboring towns!' : 'Plague may spread to connected towns',
                 plagueMitigation > 0 ? 'Sanitation reduced severity by ' + Math.round(plagueMitigation * 100) + '%' : 'No sanitation infrastructure!'
             ]
-        }, 'local_town');
+        }, 'illness');
     }
 
     function triggerBlight(town) {

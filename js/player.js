@@ -103,6 +103,7 @@
             world_economy: false,
             military: 'smart',   // 'smart' = auto-on during war
             npc_activity: false,
+            illness: true,       // plague, disease, quarantine, health policy
             travel_events: true,
             combat: true,
             tracked: true, // tracked elite merchant activities
@@ -2643,6 +2644,51 @@
         return { success: true, message: 'Transport cancelled. ' + count + ' passengers returned to waiting.' };
     }
 
+    // Quarantine travel check — nobles pass freely, others can try to sneak through
+    function _checkRouteQuarantine(route, originTownId, destTownId) {
+        // Collect all town IDs along the route
+        var routeTownIds = {};
+        routeTownIds[originTownId] = true;
+        routeTownIds[destTownId] = true;
+        for (var si = 0; si < route.length; si++) {
+            if (route[si].fromTownId) routeTownIds[route[si].fromTownId] = true;
+            if (route[si].toTownId) routeTownIds[route[si].toTownId] = true;
+        }
+        // Check each town for quarantine
+        for (var tid in routeTownIds) {
+            var t = Engine.findTown(tid);
+            if (!t || !t.activePolicies) continue;
+            var isQuarantined = false;
+            for (var qi = 0; qi < t.activePolicies.length; qi++) {
+                if (t.activePolicies[qi].id === 'quarantine_town') { isQuarantined = true; break; }
+            }
+            if (!isQuarantined) continue;
+            // Nobles (minor noble, rank >= 4) pass freely — official privilege
+            if (player.isNoble) {
+                return { allowed: true, message: 'Your noble status grants passage through the quarantine at ' + t.name + '.' };
+            }
+            // Guildmasters (rank 3) can talk their way through on trade business
+            var playerRankInKingdom = 0;
+            if (t.kingdomId && player.socialRank) {
+                playerRankInKingdom = player.socialRank[t.kingdomId] || 0;
+            }
+            if (playerRankInKingdom >= 3) {
+                return { allowed: true, message: 'Your merchant standing lets you pass the quarantine at ' + t.name + ' on official trade business.' };
+            }
+            // Others can try to sneak through — 40% base chance
+            var sneakChance = 0.40;
+            if (hasSkill('smuggler') || hasSkill('streetwise')) sneakChance += 0.20;
+            if (hasSkill('cartographer')) sneakChance += 0.10;
+            var rng = Engine.getRng();
+            if (rng.chance(sneakChance)) {
+                return { allowed: true, message: '🤫 You slipped past the quarantine guards at ' + t.name + '.' };
+            } else {
+                return { allowed: false, message: '🚧 ' + t.name + ' is under quarantine. The guards turned you away. (Nobles and elite merchants may pass freely.)' };
+            }
+        }
+        return null; // no quarantine on route
+    }
+
     /**
      * Player travels to another town (takes time).
      */
@@ -2686,6 +2732,12 @@
                 return { success: false, message: borderResult.message };
             }
             return { success: false, message: borderResult.message };
+        }
+
+        // Check quarantine on route (source town, destination, and intermediaries)
+        var quarantineCheck = _checkRouteQuarantine(route, originTownId, townId);
+        if (quarantineCheck && !quarantineCheck.allowed) {
+            return { success: false, message: quarantineCheck.message };
         }
 
         // Determine travel type from route segments
@@ -14169,13 +14221,18 @@
         var defaultFilters = {
             my_actions: true, my_business: true, my_kingdom: true,
             local_town: true, foreign_kingdoms: false, world_economy: false,
-            military: 'smart', npc_activity: false, travel_events: true, combat: true,
+            military: 'smart', npc_activity: false, illness: true,
+            travel_events: true, combat: true,
             tracked: true, error_alerts: false,
         };
         player.notificationFilters = data.notificationFilters || defaultFilters;
         // Ensure error_alerts exists for older saves
         if (player.notificationFilters.error_alerts === undefined) {
             player.notificationFilters.error_alerts = false;
+        }
+        // Ensure illness filter exists for older saves
+        if (player.notificationFilters.illness === undefined) {
+            player.notificationFilters.illness = true;
         }
         // Clear stale localStorage filter overrides — save file is source of truth
         try { localStorage.removeItem('mr_notifFilters'); } catch(e) {}
@@ -15111,6 +15168,35 @@
             if (typeof UI !== 'undefined' && UI.toast) UI.toast('🏛️ ' + kingdom.name + ' seized your ' + bt.name + '!', 'danger', 'critical');
         }
 
+        // Guild membership auto-renew check (daily) — BEFORE monopoly enforcement
+        for (var _arGuildId in player.guildMemberships) {
+            var _arMem = player.guildMemberships[_arGuildId];
+            if (!_arMem || !_arMem.autoRenew) continue;
+            // Check if expiring today or already expired (within 1 day)
+            if (_arMem.expiresDay > day) continue;
+            var _arGuild = CONFIG.GUILDS ? CONFIG.GUILDS[_arGuildId] : null;
+            var _arType = _arMem.type || 'monthly';
+            if (_arType === 'loan') _arType = 'monthly'; // loan memberships renew as monthly
+            var _arPrice = _arMem.lastPaidPrice || getGuildPrice(_arGuildId, _arType);
+            if (player.gold >= _arPrice) {
+                var _arDuration = _arType === 'yearly' ? 365 : 30;
+                player.gold -= _arPrice;
+                player.stats.totalGoldSpent += _arPrice;
+                _arMem.expiresDay = day + _arDuration;
+                _arMem.lastPaidPrice = _arPrice;
+                var _arName = _arGuild ? _arGuild.name : _arGuildId;
+                var _arIcon = _arGuild ? (_arGuild.icon || '') : '';
+                Engine.logEvent(_arIcon + ' Auto-renewed ' + _arName + ' membership (' + _arType + ', ' + _arPrice + 'g)');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🔄 ' + _arName + ' auto-renewed (' + _arPrice + 'g)', 'info');
+            } else {
+                // Can't afford — cancel auto-renew and notify
+                _arMem.autoRenew = false;
+                var _arName2 = _arGuild ? _arGuild.name : _arGuildId;
+                Engine.logEvent('⚠️ Could not auto-renew ' + _arName2 + ' — not enough gold (' + _arPrice + 'g needed). Auto-renew disabled.');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚠️ ' + _arName2 + ' expired — not enough gold to renew!', 'warning', 'critical');
+            }
+        }
+
         // Guild monopoly enforcement — check guild membership for production buildings
         var _guildSeized = [];
         for (var _gbi = 0; _gbi < player.buildings.length; _gbi++) {
@@ -15177,35 +15263,6 @@
         for (var _gpk in player._guildGracePeriods) {
             if (!player.buildings.find(function(b) { return b.id === _gpk; })) {
                 delete player._guildGracePeriods[_gpk];
-            }
-        }
-
-        // Guild membership auto-renew check (daily)
-        for (var _arGuildId in player.guildMemberships) {
-            var _arMem = player.guildMemberships[_arGuildId];
-            if (!_arMem || !_arMem.autoRenew) continue;
-            // Check if expiring today or already expired (within 1 day)
-            if (_arMem.expiresDay > day) continue;
-            var _arGuild = CONFIG.GUILDS ? CONFIG.GUILDS[_arGuildId] : null;
-            var _arType = _arMem.type || 'monthly';
-            if (_arType === 'loan') _arType = 'monthly'; // loan memberships renew as monthly
-            var _arPrice = _arMem.lastPaidPrice || getGuildPrice(_arGuildId, _arType);
-            if (player.gold >= _arPrice) {
-                var _arDuration = _arType === 'yearly' ? 365 : 30;
-                player.gold -= _arPrice;
-                player.stats.totalGoldSpent += _arPrice;
-                _arMem.expiresDay = day + _arDuration;
-                _arMem.lastPaidPrice = _arPrice;
-                var _arName = _arGuild ? _arGuild.name : _arGuildId;
-                var _arIcon = _arGuild ? (_arGuild.icon || '') : '';
-                Engine.logEvent(_arIcon + ' Auto-renewed ' + _arName + ' membership (' + _arType + ', ' + _arPrice + 'g)');
-                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🔄 ' + _arName + ' auto-renewed (' + _arPrice + 'g)', 'info');
-            } else {
-                // Can't afford — cancel auto-renew and notify
-                _arMem.autoRenew = false;
-                var _arName2 = _arGuild ? _arGuild.name : _arGuildId;
-                Engine.logEvent('⚠️ Could not auto-renew ' + _arName2 + ' — not enough gold (' + _arPrice + 'g needed). Auto-renew disabled.');
-                if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚠️ ' + _arName2 + ' expired — not enough gold to renew!', 'warning', 'critical');
             }
         }
 
@@ -17404,8 +17461,8 @@
         if (difficulty >= 6) timeLimit = Math.round(timeLimit * 1.3);
         if (difficulty >= 8) timeLimit = Math.round(timeLimit * 1.2);
 
-        var relGainMin = Math.max(2, Math.floor(difficulty * 0.8));
-        var relGainMax = Math.min(20, Math.ceil(difficulty * 2.5));
+        var relGainMin = Math.max(3, Math.floor(difficulty * 1.5));
+        var relGainMax = Math.min(30, Math.ceil(difficulty * 4));
 
         var description = qt.descFn(town, resObj, quantity);
         var reason = _getQuestReason(qt, town);
@@ -17418,8 +17475,8 @@
             difficulty = marketValue > 1000 ? 2 : 1;
             smallRepBoost = Math.max(1, Math.ceil(difficulty / 2));
             bigRepBoost = smallRepBoost * 4;
-            relGainMin = Math.max(2, Math.floor(difficulty * 0.8));
-            relGainMax = Math.min(20, Math.ceil(difficulty * 2.5));
+            relGainMin = Math.max(3, Math.floor(difficulty * 1.5));
+            relGainMax = Math.min(30, Math.ceil(difficulty * 4));
         }
 
         return {
@@ -17607,7 +17664,7 @@
             var sj = rng.randInt(0, si);
             var tmp = shuffled[si]; shuffled[si] = shuffled[sj]; shuffled[sj] = tmp;
         }
-        var relBoostAmount = donate ? 3 : 1;
+        var relBoostAmount = donate ? 8 : 4;
         var boosted = 0;
         for (var ri = 0; ri < Math.min(relCount, shuffled.length); ri++) {
             modifyRelationship(shuffled[ri].id, relBoostAmount);

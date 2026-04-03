@@ -174,13 +174,13 @@ const CONFIG = {
     DISASTER_CHECK_INTERVAL: 30,  // check every 30 days
     DISASTER_FLOOD_CHANCE: 0.02,
     DISASTER_FIRE_CHANCE: 0.015,
-    DISASTER_PLAGUE_CHANCE: 0.0015,
+    DISASTER_PLAGUE_CHANCE: 0.0003,
     DISASTER_BLIGHT_CHANCE: 0.03,
     DISASTER_MINE_COLLAPSE_CHANCE: 0.01,
     DISASTER_RESOURCE_DISCOVERY_CHANCE: 0.005,
     DISASTER_FIRE_POP_SCALE: 100,         // fire more likely in towns > 100 pop
-    DISASTER_PLAGUE_CAPITAL_MULT: 3,
-    DISASTER_PLAGUE_CITY_MULT: 2,
+    DISASTER_PLAGUE_CAPITAL_MULT: 2,
+    DISASTER_PLAGUE_CITY_MULT: 1.5,
 
     // Kingdom Finances & Bankruptcy
     KINGDOM_SOLDIER_DAILY_COST: 2,       // 2g per soldier per day (paid monthly)
@@ -470,8 +470,8 @@ const CONFIG = {
           description: 'An established merchant. Can own processing buildings, buy luxury goods, and run supply chains.' },
         { id: 'guildmaster', name: 'Guildmaster', index: 3, icon: '🔨',
           maxWorkers: 35, maxBuildings: 25, maxLand: 15,
-          goldReq: 20000, repReq: 70, extraReq: '3 production buildings, 8+ workers, buildings in 2+ towns, 180 days trading, 500+ goods moved by caravan',
-          fee: 5000, minProductionBuildings: 3, minWorkers: 8, minTownsWithBuildings: 2, tradingDays: 180, minCaravanGoodsMoved: 500,
+          goldReq: 20000, repReq: 70, extraReq: '3 production buildings, 8+ workers, buildings in 2+ towns, 180 days trading, 250+ goods moved by caravan',
+          fee: 5000, minProductionBuildings: 3, minWorkers: 8, minTownsWithBuildings: 2, tradingDays: 180, minCaravanGoodsMoved: 250,
           taxDiscount: 0.15,
           productionBonus: 0.10,
           abilities: ['build_toll_roads', 'trade_weapons', 'hire_petitioners', 'production_bonus'],
@@ -2375,9 +2375,9 @@ const NPC_HEALTH_CONFIG = {
     DOCTOR_SKILL_BONUS: 0.02,          // per workerSkill point, extra heal rate
 
     // --- Contagion / spread ---
-    TOWN_SPREAD_BASE: 0.01,            // base daily chance of spreading to adjacent town
-    TOWN_SPREAD_SICK_RATIO_MULT: 8.0,  // multiplied by (sickNPCs / totalPop) in source town
-    TRADE_ROUTE_SPREAD_MULT: 3.0,      // towns connected by active trade routes spread faster
+    TOWN_SPREAD_BASE: 0.003,            // base daily chance of spreading to adjacent town
+    TOWN_SPREAD_SICK_RATIO_MULT: 2.0,  // multiplied by (sickNPCs / totalPop) in source town
+    TRADE_ROUTE_SPREAD_MULT: 1.5,      // towns connected by active trade routes spread faster
 
     // --- Treatment supplies consumed per patient per day ---
     TREATMENT_SUPPLIES: {
@@ -2398,11 +2398,11 @@ const NPC_HEALTH_CONFIG = {
     // --- Plague event specific ---
     PLAGUE_INFECTION_RATE: { min: 0.08, max: 0.20 }, // 8-20% of town gets sick initially
     PLAGUE_DAILY_DEATH_UNTREATED: 0.05,               // 5% daily death if untreated
-    PLAGUE_SPREAD_MULT: 8.0,                           // plague spreads 8x faster than normal
+    PLAGUE_SPREAD_MULT: 2.0,                           // plague spreads 2x faster than normal
 
     // --- Moderate plague (5-year event) ---
     MODERATE_PLAGUE_INFECTION_RATE: { min: 0.04, max: 0.10 },
-    MODERATE_PLAGUE_SPREAD_MULT: 4.0,
+    MODERATE_PLAGUE_SPREAD_MULT: 1.0,
 };
 
 // Kingdom health policies the king AI can enact
