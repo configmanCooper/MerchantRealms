@@ -8240,6 +8240,30 @@ window.UI = (function () {
 
         html += '</div>';
 
+        // Personal Guards section
+        var guardCount = Player.personalGuards || 0;
+        var maxGuards = CONFIG.PLAYER_GUARD_MAX || 4;
+        var guardHireCost = CONFIG.PLAYER_GUARD_HIRE_COST || 30;
+        if (Player.hasSkill && Player.hasSkill('cheap_security')) guardHireCost = Math.floor(guardHireCost * 0.80);
+        var guardDailyWage = (CONFIG.PLAYER_GUARD_DAILY_WAGE || 6) * guardCount;
+
+        html += '<div class="detail-section">';
+        html += '<h3>🛡️ Personal Guards</h3>';
+        html += '<div class="detail-row"><span class="label">Guards</span><span class="value">' + guardCount + ' / ' + maxGuards + '</span></div>';
+        if (guardCount > 0) {
+            html += '<div class="detail-row"><span class="label">Daily Wages</span><span class="value" style="color:#e67e22;">' + guardDailyWage + 'g/day</span></div>';
+        }
+        html += '<div style="font-size:0.75rem;color:var(--text-muted);margin:6px 0;">Guards protect you from bandits and pirates during travel. They reduce encounter chance and greatly increase your odds in a fight.</div>';
+        html += '<div style="display:flex;gap:8px;margin-top:8px;">';
+        if (guardCount < maxGuards) {
+            html += '<button class="btn-medieval" onclick="UI.hireGuardUI()" style="font-size:0.75rem;padding:4px 12px;">🛡️ Hire Guard (' + guardHireCost + 'g)</button>';
+        }
+        if (guardCount > 0) {
+            html += '<button class="btn-medieval" onclick="UI.dismissGuardUI()" style="font-size:0.75rem;padding:4px 12px;background:rgba(200,50,50,0.1);border-color:rgba(200,50,50,0.3);">❌ Dismiss Guard</button>';
+        }
+        html += '</div>';
+        html += '</div>';
+
         // Check port status for ship operations
         let isAtPort = false;
         try {
@@ -15512,6 +15536,174 @@ window.UI = (function () {
     }
 
     // ═══════════════════════════════════════════════════════════
+    //  ENCOUNTER DIALOG (Bandits / Pirates / Wartime Ambush)
+    // ═══════════════════════════════════════════════════════════
+
+    function showEncounterDialog(encounter) {
+        if (!encounter) return;
+        var isSea = encounter.isSea;
+        var isWartime = encounter.isWartime;
+        var enemyName = isWartime ? (isSea ? 'Enemy Navy' : 'Enemy Soldiers') : (isSea ? 'Pirates' : 'Bandits');
+        var enemyIcon = isWartime ? (isSea ? '⚓' : '⚔️') : (isSea ? '🏴‍☠️' : '🗡️');
+
+        var fightPct = Math.round(encounter.fightWinChance * 100);
+        var negPct = Math.round(encounter.negotiateChance * 100);
+
+        // Surrender cost description
+        var goldForSurrender = Math.min(Math.floor((Player.gold || 0) * 0.50), 500);
+        var invCount = 0;
+        var inv = Player.inventory || {};
+        for (var k in inv) { if (inv[k] > 0) invCount += inv[k]; }
+
+        // Negotiate cost description
+        var goldForNeg = Math.min(Math.floor((Player.gold || 0) * 0.10), 250);
+
+        var html = '<div style="text-align:center;margin-bottom:16px;">';
+        html += '<div style="font-size:2.5rem;margin-bottom:8px;">' + enemyIcon + '</div>';
+        html += '<h2 style="margin:0;color:var(--danger);">' + enemyName + ' Encounter!</h2>';
+
+        if (isWartime) {
+            html += '<p style="color:#e67e22;font-size:0.9rem;margin:8px 0;">';
+            if (isSea) {
+                html += 'An enemy warship has intercepted you! Their navy crew is well-armed and disciplined.';
+            } else {
+                html += 'Enemy soldiers have ambushed you on the road! They are well-trained and dangerous.';
+            }
+            html += '</p>';
+        } else {
+            html += '<p style="color:var(--text-muted);font-size:0.9rem;margin:8px 0;">';
+            if (isSea) {
+                html += 'A pirate vessel has spotted you and is closing in! They fly the black flag.';
+            } else {
+                html += 'A group of bandits has blocked the road ahead! They demand your valuables.';
+            }
+            html += '</p>';
+        }
+        html += '</div>';
+
+        // Three choices
+        html += '<div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">';
+
+        // Surrender
+        html += '<button class="btn-medieval" onclick="UI.resolveEncounterChoice(\'surrender\')" style="padding:12px;text-align:left;background:rgba(200,50,50,0.1);border-color:rgba(200,50,50,0.4);">';
+        html += '<div style="font-size:1rem;font-weight:bold;">🏳️ Surrender</div>';
+        html += '<div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px;">Give up all goods' + (invCount > 0 ? ' (' + invCount + ' items)' : '') + ' and ' + goldForSurrender + 'g. They let you pass unharmed.</div>';
+        html += '</button>';
+
+        // Negotiate
+        html += '<button class="btn-medieval" onclick="UI.resolveEncounterChoice(\'negotiate\')" style="padding:12px;text-align:left;background:rgba(241,196,15,0.1);border-color:rgba(241,196,15,0.4);">';
+        html += '<div style="font-size:1rem;font-weight:bold;">🤝 Negotiate <span style="font-size:0.8rem;color:#f1c40f;">(' + negPct + '% chance)</span></div>';
+        html += '<div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px;">Offer half your goods and ' + goldForNeg + 'g. If they refuse, it becomes a fight (with penalty).</div>';
+        html += '</button>';
+
+        // Fight
+        var fightColor = fightPct >= 60 ? '#2ecc71' : fightPct >= 35 ? '#f39c12' : '#e74c3c';
+        html += '<button class="btn-medieval" onclick="UI.resolveEncounterChoice(\'fight\')" style="padding:12px;text-align:left;background:rgba(46,204,113,0.1);border-color:rgba(46,204,113,0.4);">';
+        html += '<div style="font-size:1rem;font-weight:bold;">⚔️ Fight <span style="font-size:0.8rem;color:' + fightColor + ';">(' + fightPct + '% chance to win)</span></div>';
+        html += '<div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px;">';
+        if (isSea) {
+            html += 'Fight them off! If you lose, you wash ashore ill with nothing.';
+        } else {
+            html += 'Fight your way through! If you lose, suffer injuries and lose all goods.';
+        }
+        html += '</div>';
+        html += '</button>';
+
+        html += '</div>';
+
+        // Modifiers info
+        html += '<div style="margin-top:16px;padding:8px;background:rgba(0,0,0,0.2);border-radius:4px;font-size:0.75rem;color:var(--text-muted);">';
+        html += '<strong>Your advantages:</strong> ';
+        var advantages = [];
+        if ((Player.personalGuards || 0) > 0) advantages.push('🛡️ ' + Player.personalGuards + ' guard' + (Player.personalGuards > 1 ? 's' : ''));
+        if (Player.weapon) advantages.push('⚔️ Armed');
+        if (Player.armor) advantages.push('🛡️ Armored');
+        if (Player.hasSkill && Player.hasSkill('battle_hardened')) advantages.push('💪 Battle Hardened');
+        else if (Player.hasSkill && Player.hasSkill('combat_trained')) advantages.push('🗡️ Combat Trained');
+        if (isSea) {
+            var ship = Player.getBestShip ? Player.getBestShip() : null;
+            if (ship) {
+                var st = CONFIG.SHIP_TYPES ? CONFIG.SHIP_TYPES[ship.type] : null;
+                advantages.push('⛵ ' + (st ? st.name : ship.type));
+            }
+        }
+        if (advantages.length === 0) advantages.push('None');
+        html += advantages.join(' · ');
+        html += '</div>';
+
+        openModal('⚠️ ' + enemyName + ' Encounter!', html, '');
+    }
+
+    function resolveEncounterChoice(choice) {
+        if (typeof Player === 'undefined' || !Player.resolveEncounter) return;
+        var result = Player.resolveEncounter(choice);
+
+        // Show result in the same modal
+        var resultHtml = '<div style="text-align:center;margin-bottom:12px;">';
+
+        if (result.choice === 'surrender') {
+            resultHtml += '<div style="font-size:2rem;">🏳️</div>';
+            resultHtml += '<h3 style="color:var(--gold);">Surrendered</h3>';
+            resultHtml += '<p>You gave up your goods and ' + (result.goldLost || 0) + 'g. They let you pass.</p>';
+        } else if (result.choice === 'negotiate' || result.choice === 'negotiate_failed') {
+            if (result.choice === 'negotiate') {
+                resultHtml += '<div style="font-size:2rem;">🤝</div>';
+                resultHtml += '<h3 style="color:#f1c40f;">Negotiation Successful</h3>';
+                resultHtml += '<p>You talked your way out, losing some goods and ' + (result.goldLost || 0) + 'g.</p>';
+            } else {
+                resultHtml += '<div style="font-size:2rem;">❌</div>';
+                resultHtml += '<h3 style="color:var(--danger);">Negotiation Failed!</h3>';
+                if (result.success) {
+                    resultHtml += '<p>They rejected your offer — but you won the ensuing fight!</p>';
+                } else {
+                    resultHtml += '<p>They rejected your offer and attacked! You lost the fight.</p>';
+                }
+            }
+        } else if (result.choice === 'fight') {
+            if (result.success) {
+                resultHtml += '<div style="font-size:2rem;">⚔️</div>';
+                resultHtml += '<h3 style="color:#2ecc71;">Victory!</h3>';
+                resultHtml += '<p>You fought them off!</p>';
+                if (result.shipDamaged) resultHtml += '<p style="color:#e67e22;">Your ship took damage in the fight.</p>';
+            } else {
+                resultHtml += '<div style="font-size:2rem;">💀</div>';
+                resultHtml += '<h3 style="color:var(--danger);">Defeated!</h3>';
+                if (result.died) {
+                    resultHtml += '<p style="color:var(--danger);font-weight:bold;">You were killed.</p>';
+                } else if (result.injured) {
+                    resultHtml += '<p>You suffered a <strong style="color:' + (result.injurySeverity === 'severe' ? 'var(--danger)' : '#e67e22') + ';">' + result.injurySeverity + '</strong> injury and lost all your goods.</p>';
+                }
+            }
+        }
+
+        resultHtml += '</div>';
+
+        // Losses summary
+        var lossKeys = Object.keys(result.goodsLost || {});
+        if (lossKeys.length > 0 || result.goldLost > 0) {
+            resultHtml += '<div style="padding:8px;background:rgba(200,50,50,0.1);border-radius:4px;font-size:0.8rem;">';
+            resultHtml += '<strong>Losses:</strong><br>';
+            if (result.goldLost > 0) resultHtml += '💰 ' + result.goldLost + ' gold<br>';
+            for (var li = 0; li < Math.min(lossKeys.length, 8); li++) {
+                var lKey = lossKeys[li];
+                var res = null;
+                try { res = findResource(lKey); } catch (e) {}
+                var lName = res ? res.name : lKey;
+                resultHtml += (res ? (res.icon || '') : '') + ' ' + lName + ' ×' + result.goodsLost[lKey] + '<br>';
+            }
+            if (lossKeys.length > 8) resultHtml += '...and ' + (lossKeys.length - 8) + ' more types of goods.<br>';
+            resultHtml += '</div>';
+        }
+
+        resultHtml += '<div style="text-align:center;margin-top:16px;"><button class="btn-medieval" onclick="UI.closeModal();" style="padding:8px 24px;">Continue Journey</button></div>';
+
+        openModal('Encounter Result', resultHtml, '');
+    }
+
+    // Register the encounter dialog callback for player.js to call
+    window._showEncounterDialog = showEncounterDialog;
+
+    // ═══════════════════════════════════════════════════════════
     //  HEALTH DIALOG
     // ═══════════════════════════════════════════════════════════
 
@@ -19577,6 +19769,28 @@ window.UI = (function () {
             eta.textContent = '~' + daysLeft + ' day' + (daysLeft !== 1 ? 's' : '') + ' left';
         }
 
+        // Risk indicator for encounters
+        var riskDiv = document.getElementById('travelRiskIndicator');
+        if (!riskDiv) {
+            // Create risk indicator element next to ETA
+            var etaParent = eta ? eta.parentNode : null;
+            if (etaParent) {
+                riskDiv = document.createElement('span');
+                riskDiv.id = 'travelRiskIndicator';
+                riskDiv.style.cssText = 'margin-left:12px;font-size:0.8rem;font-weight:bold;';
+                etaParent.appendChild(riskDiv);
+            }
+        }
+        if (riskDiv && typeof Player !== 'undefined' && Player.getEncounterRiskLabel) {
+            var riskInfo = Player.getEncounterRiskLabel();
+            if (riskInfo) {
+                riskDiv.innerHTML = riskInfo.icon + ' <span style="color:' + riskInfo.color + ';">' + riskInfo.label + '</span> <span style="font-size:0.7rem;color:var(--text-muted);">' + riskInfo.typeLabel + ' risk</span>';
+                riskDiv.style.display = '';
+            } else {
+                riskDiv.style.display = 'none';
+            }
+        }
+
         var actionsDiv = document.getElementById('travelActions');
         if (actionsDiv) {
             var btns = '';
@@ -20405,6 +20619,21 @@ window.UI = (function () {
         treatAtHospital,
         treatAtClinic,
         selfTreatCondition,
+        // Encounter System
+        showEncounterDialog,
+        resolveEncounterChoice,
+        hireGuardUI: function() {
+            if (typeof Player === 'undefined' || !Player.hirePersonalGuard) return;
+            var result = Player.hirePersonalGuard();
+            if (result.success) { toast(result.message, 'success'); openCharacterDialog(); }
+            else { toast(result.message, 'danger'); }
+        },
+        dismissGuardUI: function() {
+            if (typeof Player === 'undefined' || !Player.dismissPersonalGuard) return;
+            var result = Player.dismissPersonalGuard();
+            if (result.success) { toast(result.message, 'success'); openCharacterDialog(); }
+            else { toast(result.message, 'danger'); }
+        },
         // Teach Child
         openTeachChildDialog,
         executeTeachChild,

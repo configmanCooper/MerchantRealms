@@ -436,6 +436,9 @@
         player.townStorage = {}; // { townId: { resourceId: qty, ... }, ... }
         player.horses = []; // Array of horse objects: { id, name, stamina, speed }
         player.notoriety = 0;
+        player.personalGuards = 0;
+        player.guards = [];  // [{id, name, hiredDay}]
+        player.encounterPending = null; // pending encounter awaiting player choice
         player.traveling = false;
         player.travelProgress = 0;
         player.travelDestination = null;
@@ -2871,17 +2874,8 @@
         }
         player.travelRestBonus = false;
 
-        // Wartime ambush check
-        var ambushResult = checkWartimeAmbush(route);
-        var ambushMsg = '';
-        if (ambushResult && ambushResult.ambushed) {
-            ambushMsg = ' ⚠️ AMBUSHED! Lost ' + ambushResult.goldLost + 'g and goods.';
-            if (ambushResult.injured) ambushMsg += ' You were injured!';
-            if (ambushResult.died) {
-                if (window._godInvincible) { ambushResult.died = false; }
-                else { player.alive = false; return { success: true, message: 'You were killed in a wartime ambush.', ambush: ambushResult }; }
-            }
-        }
+        // Wartime ambush is now handled by the daily encounter system during travel
+        // (no longer instant at departure — happens each day on the road)
 
         // Travel energy is now handled per-tick in tickTravel (no upfront cost)
 
@@ -2891,7 +2885,10 @@
         const horseMsg = hasHorse ? (hasSaddle ? ' 🐴 (Horse + Saddle bonus!)' : ' 🐴 (Horse bonus!)') : '';
         const offroadMsg = isOffroad ? ' 🥾 (Off-road — slow going!)' : '';
         const seaMsg = isSea ? ' ⛵ (Sea route!)' : '';
-        Engine.logEvent(`You set out for ${dest ? dest.name : 'unknown'}.${horseMsg}${offroadMsg}${seaMsg}${cartMsg}${ambushMsg}`);
+        // Show risk level in departure message
+        var riskInfo = getEncounterChance();
+        var riskMsg = riskInfo.chance > 0 ? (' ' + (riskInfo.riskLevel === 'high' ? '🔴' : riskInfo.riskLevel === 'medium' ? '🟡' : '🟢') + ' ' + riskInfo.riskLevel.charAt(0).toUpperCase() + riskInfo.riskLevel.slice(1) + ' risk') : '';
+        Engine.logEvent(`You set out for ${dest ? dest.name : 'unknown'}.${horseMsg}${offroadMsg}${seaMsg}${cartMsg}${riskMsg}`);
 
         // Journal — travel departure
         var originTown = Engine.findTown(player.travelOrigin);
@@ -2899,10 +2896,9 @@
         if (hasHorse) travelJText += ' My horse should make the ride swifter.';
         if (isOffroad) travelJText += ' The path is rough — no proper road to follow.';
         if (isSea) travelJText += ' We set sail across the waters.';
-        if (ambushResult && ambushResult.ambushed) travelJText += ' We were ambushed on the road!';
-        autoJournalCapture('travel', travelJText, { mood: (ambushResult && ambushResult.ambushed) ? 'fearful' : 'hopeful' });
+        autoJournalCapture('travel', travelJText, { mood: 'hopeful' });
 
-        return { success: true, message: `Traveling to ${dest ? dest.name : townId}.${horseMsg}${offroadMsg}${seaMsg}${cartMsg}${ambushMsg}`, estimatedDays: estimatedDays, ambush: ambushResult };
+        return { success: true, message: `Traveling to ${dest ? dest.name : townId}.${horseMsg}${offroadMsg}${seaMsg}${cartMsg}${riskMsg}`, estimatedDays: estimatedDays };
     }
 
     /**
@@ -5628,6 +5624,7 @@
     // Sub-tick: advance travel progress smoothly (called 60x per day from main loop)
     function travelSubtick() {
         if (!player.traveling || !player.travelTotalDist) return;
+        if (player.encounterPending) return; // freeze travel during encounter
         var ticksPerDay = CONFIG.TICKS_PER_DAY || 60;
         var speedMult = player.travelBySea ? (CONFIG.SEA_SPEED_MULTIPLIER || 1.5) : 1.0;
         var speed = CONFIG.CARAVAN_BASE_SPEED * 1.5 * speedMult;
@@ -5720,30 +5717,17 @@
         }
 
         // Per-tick travel energy cost is now handled in travelSubtick() (60x/day)
-        // Daily tick only handles: escorts, waypoints, sea hazards, arrival
+        // Daily tick only handles: escorts, waypoints, encounters, sea hazards, arrival
 
-        // Sea travel hazards: pirates, storms
+        // Daily encounter check (bandits / pirates / wartime ambush)
+        // This replaces the old per-tick pirate check with a unified daily system
+        checkDailyEncounter();
+        if (player.encounterPending) return; // paused for player decision
+
+        // Sea travel hazards: storms (pirates now handled by encounter system)
         if (player.travelBySea) {
-            // Pirate encounter check (per-tick)
-            var pirateChance = (CONFIG.SHIP_PIRATE_BASE_CHANCE || 0.08) / 30; // Per-tick from per-trip
             var bestSeaShip = getBestShip();
-            // Cannon defense reduces pirate chance
-            if (bestSeaShip && bestSeaShip.cannons > 0) {
-                pirateChance *= Math.max(0.1, 1.0 - bestSeaShip.cannons * (CONFIG.SHIP_CANNON_DEFENSE_BONUS || 0.05));
-            }
-            // World pirate events multiply risk
             var w2 = Engine.getWorld();
-            if (w2) {
-                for (var ei = 0; ei < w2.events.length; ei++) {
-                    var ev2 = w2.events[ei];
-                    if (!ev2.active) continue;
-                    if (ev2.type === 'pirates') pirateChance *= (ev2.seaRiskMultiplier || 3);
-                }
-            }
-            var _travelRng = Engine.getRng();
-            if (_travelRng && _travelRng.random() < pirateChance) {
-                handlePirateEncounter();
-            }
 
             // Storm hull damage per-tick
             var stormChancePlayer = 0.05 / 30;
@@ -5759,6 +5743,7 @@
                 }
             }
             if (hasSkill('expert_navigator')) stormChancePlayer *= 0.90;
+            var _travelRng = Engine.getRng();
             if (_travelRng && _travelRng.random() < stormChancePlayer && bestSeaShip) {
                 var stormDmg = CONFIG.SHIP_STORM_HULL_DAMAGE || 10;
                 bestSeaShip.hullHealth = Math.max(0, (bestSeaShip.hullHealth || 100) - stormDmg);
@@ -13723,6 +13708,8 @@
             horses: JSON.parse(JSON.stringify(player.horses || [])),
             reputation: { ...player.reputation },
             notoriety: player.notoriety,
+            personalGuards: (player.guards || []).length,
+            guards: JSON.parse(JSON.stringify(player.guards || [])),
             traveling: player.traveling,
             travelProgress: player.travelProgress,
             travelDestination: player.travelDestination,
@@ -14036,6 +14023,8 @@
         player.horses = data.horses || [];
         player.reputation = data.reputation || {};
         player.notoriety = data.notoriety || 0;
+        player.personalGuards = data.personalGuards || 0;
+        player.encounterPending = null;
         player.traveling = data.traveling || false;
         player.travelProgress = data.travelProgress || 0;
         player.travelDestination = data.travelDestination || null;
@@ -14244,6 +14233,15 @@
         // Injuries & Illnesses
         player.injuries = data.injuries || [];
         player.illnesses = data.illnesses || [];
+        // Personal guards (array)
+        player.guards = data.guards || [];
+        // Backward compat: migrate numeric personalGuards to guards array
+        if (data.personalGuards && typeof data.personalGuards === 'number' && data.personalGuards > 0 && player.guards.length === 0) {
+            for (var _pgi = 0; _pgi < data.personalGuards; _pgi++) {
+                player.guards.push({ id: 'guard_legacy_' + _pgi, name: 'Guard ' + (_pgi + 1), hiredDay: 0 });
+            }
+        }
+        player.personalGuards = player.guards.length; // keep in sync
         // Job Experience
         player.jobExperience = data.jobExperience || {};
         // Skill Point Passing
@@ -15490,6 +15488,9 @@
 
         // Player exposure to town illness
         tickPlayerIllnessExposure();
+
+        // Personal guard wages (daily)
+        tickPersonalGuardWages();
 
         // Travel progress
         tickTravel();
@@ -27656,6 +27657,514 @@
         return { success: true, message: '⚔️ Armed escort hired for ' + days + ' days. (-' + cost + 'g)' };
     }
 
+    // ========================================================
+    // §12K-NEW  PLAYER ENCOUNTER SYSTEM (Bandits / Pirates / Wartime)
+    // ========================================================
+
+    function hirePersonalGuard() {
+        if (!player.townId || player.traveling) return { success: false, message: 'Must be in a town to hire guards.' };
+        var maxGuards = CONFIG.PLAYER_GUARD_MAX || 4;
+        player.guards = player.guards || [];
+        if (player.guards.length >= maxGuards) return { success: false, message: 'Already at maximum ' + maxGuards + ' guards.' };
+        var cost = CONFIG.PLAYER_GUARD_HIRE_COST || 30;
+        if (hasSkill('cheap_security')) cost = Math.floor(cost * 0.80);
+        if (player.gold < cost) return { success: false, message: 'Need ' + cost + 'g to hire a guard.' };
+        player.gold -= cost;
+        logFinance(-cost, 'guards', 'Hired personal guard');
+        var rng = Engine.getRng();
+        var guard = {
+            id: 'guard_' + Date.now() + '_' + (rng ? rng.randInt(0, 9999) : Math.floor(Math.random() * 9999)),
+            name: Engine.generatePersonName ? Engine.generatePersonName(rng) : ('Guard ' + (player.guards.length + 1)),
+            hiredDay: Engine.getDay()
+        };
+        player.guards.push(guard);
+        player.personalGuards = player.guards.length;
+        Engine.logEvent('\uD83D\uDEE1\uFE0F Hired ' + guard.name + ' as a personal guard for ' + cost + 'g. (' + player.guards.length + '/' + maxGuards + ')');
+        return { success: true, message: '\uD83D\uDEE1\uFE0F ' + guard.name + ' hired for ' + cost + 'g. (' + player.guards.length + '/' + maxGuards + ')', guard: guard };
+    }
+
+    function dismissPersonalGuard(guardId) {
+        player.guards = player.guards || [];
+        if (player.guards.length === 0) return { success: false, message: 'No guards to dismiss.' };
+        var idx = -1;
+        if (guardId) {
+            for (var i = 0; i < player.guards.length; i++) {
+                if (player.guards[i].id === guardId) { idx = i; break; }
+            }
+        }
+        if (idx === -1) idx = player.guards.length - 1; // dismiss last if no id
+        var name = player.guards[idx].name;
+        player.guards.splice(idx, 1);
+        player.personalGuards = player.guards.length;
+        Engine.logEvent('\uD83D\uDEE1\uFE0F Dismissed guard ' + name + '. (' + player.guards.length + '/' + (CONFIG.PLAYER_GUARD_MAX || 4) + ')');
+        return { success: true, message: '\uD83D\uDEE1\uFE0F Dismissed ' + name + '. (' + player.guards.length + '/' + (CONFIG.PLAYER_GUARD_MAX || 4) + ')' };
+    }
+
+    function tickPersonalGuardWages() {
+        player.guards = player.guards || [];
+        if (player.guards.length === 0) return;
+        var wage = (CONFIG.PLAYER_GUARD_DAILY_WAGE || 6) * player.guards.length;
+        player.gold -= wage;
+        logFinance(-wage, 'guards', 'Guard wages (' + player.guards.length + ')');
+        if (player.gold < 0) {
+            while (player.gold < 0 && player.guards.length > 0) {
+                var dismissed = player.guards.pop();
+                player.gold += (CONFIG.PLAYER_GUARD_DAILY_WAGE || 6);
+                Engine.logEvent('\uD83D\uDCB8 ' + dismissed.name + ' leaves \u2014 you can\'t afford the wages. (' + player.guards.length + ' remaining)');
+            }
+            if (player.gold < 0) player.gold = 0;
+        }
+        player.personalGuards = player.guards.length;
+    }
+
+    function getEncounterChance() {
+        var rng = Engine.getRng();
+        if (!rng) return { chance: 0, riskLevel: 'none', isWartime: false, isSea: false };
+
+        var isSea = !!player.travelBySea;
+        var isWartime = isInWarzone();
+        var chance;
+
+        if (isSea) {
+            // Sea: ship defense is main factor
+            chance = CONFIG.ENCOUNTER_SEA_BASE_CHANCE || 0.04;
+            var ship = getBestShip();
+            if (ship) {
+                var def = getShipDefense(ship);
+                var factor = CONFIG.ENCOUNTER_SEA_SHIP_DEFENSE_FACTOR || 0.06;
+                chance *= Math.max(0.05, 1.0 - def * factor);
+            }
+            // Guards moderate help at sea
+            var guards = (player.guards || []).length;            for (var g = 0; g < guards; g++) {
+                chance *= (CONFIG.ENCOUNTER_SEA_GUARD_REDUCTION || 0.70);
+            }
+            if (hasSkill('veteran_guards') && guards > 0) chance *= 0.70;
+            // Weapons/armor tiny help at sea
+            if (player.weapon) chance *= (CONFIG.ENCOUNTER_SEA_WEAPON_REDUCTION || 0.97);
+            if (player.armor) chance *= (CONFIG.ENCOUNTER_SEA_ARMOR_REDUCTION || 0.98);
+            // Skills
+            if (hasSkill('street_smart')) chance *= (CONFIG.ENCOUNTER_SKILL_STREET_SMART || 0.90);
+            if (hasSkill('intimidating_presence')) chance *= (CONFIG.ENCOUNTER_SKILL_INTIMIDATING || 0.85);
+            if (hasSkill('expert_navigator')) chance *= 0.90;
+            // Pirate events
+            var w = Engine.getWorld();
+            if (w) {
+                for (var ei = 0; ei < w.events.length; ei++) {
+                    if (w.events[ei].active && w.events[ei].type === 'pirates') chance *= (w.events[ei].seaRiskMultiplier || 3);
+                }
+            }
+            // Clamp
+            chance = Math.max(CONFIG.ENCOUNTER_SEA_MIN_CHANCE || 0.0001, Math.min(CONFIG.ENCOUNTER_SEA_MAX_CHANCE || 0.10, chance));
+        } else {
+            // Land encounters
+            chance = CONFIG.ENCOUNTER_LAND_BASE_CHANCE || 0.05;
+            // Road danger
+            if (player.travelRoute && player.travelRoute.length > 0) {
+                var currentSegIdx = Math.min(Math.floor(player.travelProgress * player.travelRoute.length), player.travelRoute.length - 1);
+                var seg = player.travelRoute[currentSegIdx];
+                if (seg) {
+                    if (seg.safe === false || (seg.banditThreat || 0) > 50) {
+                        chance *= (CONFIG.ENCOUNTER_ROAD_DANGER_MULT || 1.5);
+                    }
+                    // Check connected town security
+                    var destTown = Engine.findTown(seg.toTownId);
+                    var fromTown = Engine.findTown(seg.fromTownId);
+                    if (destTown && (destTown.security || 50) < 30) chance *= (CONFIG.ENCOUNTER_POOR_SECURITY_MULT || 1.3);
+                    if (fromTown && (fromTown.security || 50) < 30) chance *= (CONFIG.ENCOUNTER_POOR_SECURITY_MULT || 1.3);
+                }
+            }
+            // Guards
+            var guards2 = (player.guards || []).length;
+            for (var g2 = 0; g2 < guards2; g2++) {
+                chance *= (1.0 - (CONFIG.ENCOUNTER_GUARD_REDUCTION || 0.40));
+            }
+            if (hasSkill('veteran_guards') && guards2 > 0) chance *= 0.70;
+            // Horse
+            if (player.horses && player.horses.length > 0) chance *= (CONFIG.ENCOUNTER_HORSE_REDUCTION || 0.85);
+            // Paid transit
+            if (player.travelPaid) chance *= (CONFIG.ENCOUNTER_PAID_TRANSIT_REDUCTION || 0.25);
+            // Weapons/armor
+            if (player.weapon) chance *= (CONFIG.ENCOUNTER_WEAPON_REDUCTION || 0.90);
+            if (player.armor) chance *= (CONFIG.ENCOUNTER_ARMOR_REDUCTION || 0.93);
+            // Skills
+            if (hasSkill('street_smart')) chance *= (CONFIG.ENCOUNTER_SKILL_STREET_SMART || 0.90);
+            if (hasSkill('intimidating_presence')) chance *= (CONFIG.ENCOUNTER_SKILL_INTIMIDATING || 0.85);
+            if (hasSkill('road_knowledge')) chance *= 0.92;
+            // Clamp
+            chance = Math.max(CONFIG.ENCOUNTER_LAND_MIN_CHANCE || 0.001, Math.min(CONFIG.ENCOUNTER_LAND_MAX_CHANCE || 0.15, chance));
+        }
+
+        // Wartime multiplier
+        if (isWartime) {
+            chance *= (CONFIG.ENCOUNTER_WARTIME_CHANCE_MULT || 1.8);
+            // Re-clamp after wartime mult
+            var maxChance = isSea ? (CONFIG.ENCOUNTER_SEA_MAX_CHANCE || 0.10) : (CONFIG.ENCOUNTER_LAND_MAX_CHANCE || 0.15);
+            chance = Math.min(maxChance, chance);
+        }
+
+        // Determine risk level
+        var riskLevel = 'low';
+        if (chance >= 0.06) riskLevel = 'high';
+        else if (chance >= 0.025) riskLevel = 'medium';
+
+        return { chance: chance, riskLevel: riskLevel, isWartime: isWartime, isSea: isSea };
+    }
+
+    function isInWarzone() {
+        if (!player.travelRoute || player.travelRoute.length === 0) return false;
+        var activeWars = Engine.getActiveWars ? Engine.getActiveWars() : {};
+        if (!activeWars || Object.keys(activeWars).length === 0) return false;
+        for (var i = 0; i < player.travelRoute.length; i++) {
+            var seg = player.travelRoute[i];
+            var fromTown = Engine.findTown(seg.fromTownId);
+            var toTown = Engine.findTown(seg.toTownId);
+            if (!fromTown || !toTown) continue;
+            for (var warId in activeWars) {
+                var war = activeWars[warId];
+                if (!war) continue;
+                var sides = war.sides || [war.attackerId, war.defenderId];
+                if (sides.length < 2) continue;
+                var fromSide = sides.indexOf(fromTown.kingdomId);
+                var toSide = sides.indexOf(toTown.kingdomId);
+                if (fromSide >= 0 && toSide >= 0 && fromSide !== toSide) return true;
+            }
+        }
+        return false;
+    }
+
+    function checkDailyEncounter() {
+        if (!player.traveling) return;
+        if (player.encounterPending) return; // already awaiting resolution
+        var rng = Engine.getRng();
+        if (!rng) return;
+
+        var info = getEncounterChance();
+        if (info.chance <= 0) return;
+
+        if (!rng.chance(info.chance)) return;
+
+        // Encounter triggered! Pause game and show choice dialog
+        var isSea = info.isSea;
+        var isWartime = info.isWartime;
+
+        // Determine bandit strength (RNG element)
+        var banditStrength = (CONFIG.ENCOUNTER_FIGHT_BANDIT_STRENGTH_MIN || 0.10) +
+            rng.random() * ((CONFIG.ENCOUNTER_FIGHT_BANDIT_STRENGTH_MAX || 0.30) - (CONFIG.ENCOUNTER_FIGHT_BANDIT_STRENGTH_MIN || 0.10));
+        if (isWartime) banditStrength *= (CONFIG.ENCOUNTER_WARTIME_FIGHT_DIFFICULTY || 1.4);
+
+        // Calculate fight win chance
+        var fightWin = calculateFightWinChance(isSea, isWartime, banditStrength);
+
+        // Calculate negotiate success chance
+        var negotiateChance = CONFIG.ENCOUNTER_NEGOTIATE_BASE_SUCCESS || 0.40;
+        if (hasSkill('silver_tongue') || (player.heirTraits && player.heirTraits.indexOf('silver_tongue') >= 0)) negotiateChance += (CONFIG.ENCOUNTER_NEGOTIATE_SKILL_BONUS || 0.15);
+        if (hasSkill('escape_artist')) negotiateChance += 0.10;
+        if (hasSkill('street_smart')) negotiateChance += 0.10;
+        negotiateChance = Math.min(0.90, Math.max(0.10, negotiateChance));
+
+        player.encounterPending = {
+            isSea: isSea,
+            isWartime: isWartime,
+            banditStrength: banditStrength,
+            fightWinChance: fightWin,
+            negotiateChance: negotiateChance,
+            day: Engine.getDay()
+        };
+
+        // Pause the game so player can make their choice
+        if (typeof Engine.pause === 'function') Engine.pause();
+
+        // Trigger the UI dialog
+        if (typeof window._showEncounterDialog === 'function') {
+            window._showEncounterDialog(player.encounterPending);
+        }
+    }
+
+    function calculateFightWinChance(isSea, isWartime, banditStrength) {
+        var win = CONFIG.ENCOUNTER_FIGHT_BASE_WIN || 0.35;
+
+        // Guards
+        var guards = (player.guards || []).length;
+        if (isSea) {
+            win += guards * (CONFIG.ENCOUNTER_SEA_FIGHT_GUARD_BONUS || 0.08);
+        } else {
+            win += guards * (CONFIG.ENCOUNTER_FIGHT_GUARD_BONUS || 0.12);
+        }
+        if (hasSkill('veteran_guards') && guards > 0) win += 0.10;
+
+        // Weapons
+        if (player.weapon) {
+            var wBonus = isSea ? (CONFIG.ENCOUNTER_SEA_FIGHT_WEAPON_BONUS || 0.02) : (CONFIG.ENCOUNTER_FIGHT_WEAPON_BONUS || 0.10);
+            if (typeof player.weapon === 'object') {
+                win += wBonus * (player.weapon.combatBonus || 0.2) / 0.2;
+            } else {
+                win += wBonus;
+            }
+        }
+
+        // Armor
+        if (player.armor) {
+            var aBonus = CONFIG.ENCOUNTER_FIGHT_ARMOR_BONUS || 0.05;
+            if (typeof player.armor === 'object') {
+                win += aBonus * (player.armor.combatBonus || 0.3) / 0.3;
+            } else {
+                win += aBonus;
+            }
+        }
+
+        // Ship defense (sea only)
+        if (isSea) {
+            var ship = getBestShip();
+            if (ship) {
+                var def = getShipDefense(ship);
+                win += def * (CONFIG.ENCOUNTER_SEA_FIGHT_SHIP_DEFENSE_BONUS || 0.02);
+                win += (ship.cannons || 0) * (CONFIG.ENCOUNTER_SEA_FIGHT_CANNON_BONUS || 0.06);
+            }
+        }
+
+        // Skills
+        if (hasSkill('battle_hardened')) {
+            win += (CONFIG.ENCOUNTER_FIGHT_SKILL_BATTLE_HARDENED || 0.20);
+        } else if (hasSkill('combat_trained')) {
+            win += (CONFIG.ENCOUNTER_FIGHT_SKILL_COMBAT_TRAINED || 0.10);
+        }
+        if (hasSkill('combat_proficiency')) win += (CONFIG.ENCOUNTER_FIGHT_SKILL_COMBAT_PROFICIENCY || 0.10);
+
+        // Low needs penalty
+        var penalty = CONFIG.ENCOUNTER_FIGHT_LOW_NEEDS_PENALTY || 0.08;
+        if ((player.hunger || 100) < 20) win -= penalty;
+        if ((player.thirst || 100) < 20) win -= penalty;
+        if ((player.energy || 100) < 20) win -= penalty;
+
+        // Bandit strength (RNG difficulty)
+        win -= banditStrength;
+
+        // Clamp
+        win = Math.max(CONFIG.ENCOUNTER_FIGHT_MIN_WIN || 0.05, Math.min(CONFIG.ENCOUNTER_FIGHT_MAX_WIN || 0.95, win));
+        return win;
+    }
+
+    function resolveEncounter(choice) {
+        var enc = player.encounterPending;
+        if (!enc) return { success: false, message: 'No encounter pending.' };
+
+        var rng = Engine.getRng();
+        if (!rng) rng = { random: Math.random, chance: function(c) { return Math.random() < c; } };
+
+        var result = { choice: choice, success: false, goldLost: 0, goodsLost: {}, injured: false, injurySeverity: null, shipDamaged: false, died: false };
+        var isSea = enc.isSea;
+        var isWartime = enc.isWartime;
+        var enemyName = isWartime ? (isSea ? 'enemy navy' : 'enemy soldiers') : (isSea ? 'pirates' : 'bandits');
+
+        if (choice === 'surrender') {
+            // Surrender: lose all goods + 50% gold capped at 500g
+            var goldPct = CONFIG.ENCOUNTER_SURRENDER_GOLD_PCT || 0.50;
+            var goldCap = CONFIG.ENCOUNTER_SURRENDER_GOLD_CAP || 500;
+            var goldLost = Math.min(Math.floor(player.gold * goldPct), goldCap);
+            player.gold -= goldLost;
+            result.goldLost = goldLost;
+            logFinance(-goldLost, 'encounter', 'Surrendered to ' + enemyName);
+
+            // Lose all inventory
+            for (var key in player.inventory) {
+                if (player.inventory[key] > 0) {
+                    result.goodsLost[key] = player.inventory[key];
+                    player.inventory[key] = 0;
+                }
+            }
+
+            result.success = true;
+            var emoji = isWartime ? '🏳️' : '💰';
+            Engine.logEvent(emoji + ' You surrendered to ' + enemyName + '. Lost ' + goldLost + 'g and all goods.');
+            autoJournalCapture('encounter', 'Surrendered to ' + enemyName + ' on the ' + (isSea ? 'seas' : 'road') + '. They took everything.', { mood: 'defeated' });
+
+        } else if (choice === 'negotiate') {
+            var negSuccess = rng.chance(enc.negotiateChance);
+
+            if (negSuccess) {
+                // Successful negotiation: lose 50% of goods (random) + 10% gold (cap 250g)
+                var goldPct2 = CONFIG.ENCOUNTER_NEGOTIATE_GOLD_PCT || 0.10;
+                var goldCap2 = CONFIG.ENCOUNTER_NEGOTIATE_GOLD_CAP || 250;
+                var goldLost2 = Math.min(Math.floor(player.gold * goldPct2), goldCap2);
+                player.gold -= goldLost2;
+                result.goldLost = goldLost2;
+                logFinance(-goldLost2, 'encounter', 'Negotiated with ' + enemyName);
+
+                var goodsPct = CONFIG.ENCOUNTER_NEGOTIATE_GOODS_PCT || 0.50;
+                var invKeys = Object.keys(player.inventory).filter(function(k) { return player.inventory[k] > 0; });
+                // Randomly select half the inventory types to lose
+                var shuffled = rng.shuffle ? rng.shuffle(invKeys.slice()) : invKeys.sort(function() { return rng.random() - 0.5; });
+                var typesToLose = Math.ceil(shuffled.length * goodsPct);
+                for (var ni = 0; ni < typesToLose; ni++) {
+                    var nkey = shuffled[ni];
+                    var loseQty = player.inventory[nkey];
+                    result.goodsLost[nkey] = loseQty;
+                    player.inventory[nkey] = 0;
+                }
+
+                result.success = true;
+                Engine.logEvent('🤝 You negotiated with the ' + enemyName + '. Lost ' + goldLost2 + 'g and some goods, but kept the rest.');
+                autoJournalCapture('encounter', 'Managed to talk my way through a ' + enemyName + ' encounter. Lost some goods but kept my life.', { mood: 'relieved' });
+            } else {
+                // Failed negotiation — becomes a fight (with penalty)
+                var fightWin = Math.max(CONFIG.ENCOUNTER_FIGHT_MIN_WIN || 0.05, enc.fightWinChance - 0.10);
+                result = resolveFight(rng, fightWin, isSea, isWartime, enemyName);
+                result.choice = 'negotiate_failed';
+                Engine.logEvent('❌ Negotiation failed! The ' + enemyName + ' attacked!');
+            }
+
+        } else if (choice === 'fight') {
+            result = resolveFight(rng, enc.fightWinChance, isSea, isWartime, enemyName);
+            result.choice = 'fight';
+        }
+
+        player.encounterPending = null;
+        // Resume game
+        if (typeof Engine.unpause === 'function') Engine.unpause();
+        return result;
+    }
+
+    function resolveFight(rng, winChance, isSea, isWartime, enemyName) {
+        var result = { success: false, goldLost: 0, goodsLost: {}, injured: false, injurySeverity: null, shipDamaged: false, died: false };
+
+        // Escape Artist: 30% chance to flee without losses
+        if (hasSkill('escape_artist') && rng.chance(0.30)) {
+            result.success = true;
+            result.fled = true;
+            Engine.logEvent('🏃 You used your wits to escape the ' + enemyName + ' without a fight!');
+            autoJournalCapture('encounter', 'Managed to slip away from ' + enemyName + ' before the fighting started.', { mood: 'relieved' });
+            return result;
+        }
+
+        var won = rng.chance(winChance);
+
+        // God mode invincibility
+        if (window._godInvincible) won = true;
+
+        if (won) {
+            // Won the fight!
+            result.success = true;
+            Engine.logEvent('⚔️ You fought off the ' + enemyName + '!');
+            grantXP(15); // combat XP
+
+            // Sea: ship may take damage even on win
+            if (isSea) {
+                var dmgChance = CONFIG.ENCOUNTER_FIGHT_WIN_SHIP_DAMAGE_CHANCE || 0.40;
+                if (rng.chance(dmgChance)) {
+                    var ship = getBestShip();
+                    if (ship) {
+                        var dmg = 5 + Math.floor(rng.random() * 15);
+                        ship.hullHealth = Math.max(0, (ship.hullHealth || 100) - dmg);
+                        result.shipDamaged = true;
+                        Engine.logEvent('🔨 Your ship took ' + dmg + ' hull damage in the fight.');
+                    }
+                }
+            }
+
+            autoJournalCapture('encounter', 'Fought off ' + enemyName + ' on the ' + (isSea ? 'seas' : 'road') + '. Victory!', { mood: 'proud' });
+        } else {
+            // Lost the fight
+            result.success = false;
+
+            if (isSea) {
+                // Sea loss: wash up at destination with severe illness, lose all goods
+                for (var key in player.inventory) {
+                    if (player.inventory[key] > 0) {
+                        result.goodsLost[key] = player.inventory[key];
+                        player.inventory[key] = 0;
+                    }
+                }
+                // Severe illness from washing ashore
+                player.illnesses = player.illnesses || [];
+                var seaIllness = { name: 'Waterlogged Fever', type: 'waterlogged_fever', severity: 'severe', dayOccurred: Engine.getDay(), treated: false, contagious: false, daysRemaining: 30 + Math.floor(rng.random() * 20) };
+                player.illnesses.push(seaIllness);
+                result.injured = true;
+                result.injurySeverity = 'severe';
+                // Ship may be damaged or destroyed
+                var ship2 = getBestShip();
+                if (ship2) {
+                    var heavyDmg = 30 + Math.floor(rng.random() * 40);
+                    ship2.hullHealth = Math.max(0, (ship2.hullHealth || 100) - heavyDmg);
+                    result.shipDamaged = true;
+                    if (ship2.hullHealth <= 0) {
+                        Engine.logEvent('💀 Your ' + ship2.name + ' was destroyed by ' + enemyName + '!');
+                        player.ships = player.ships.filter(function(s) { return s.id !== ship2.id; });
+                    }
+                }
+                Engine.logEvent('💀 You lost the fight against ' + enemyName + '! You washed ashore ill and with nothing.');
+                autoJournalCapture('encounter', 'Defeated by ' + enemyName + ' at sea. Washed ashore half-drowned with a terrible fever.', { mood: 'desperate' });
+            } else {
+                // Land loss: moderate or severe injury + lose all goods
+                for (var key2 in player.inventory) {
+                    if (player.inventory[key2] > 0) {
+                        result.goodsLost[key2] = player.inventory[key2];
+                        player.inventory[key2] = 0;
+                    }
+                }
+
+                // Injury: moderate or severe
+                var injuryMult = isWartime ? (CONFIG.ENCOUNTER_WARTIME_INJURY_MULT || 1.5) : 1.0;
+                var severeChance = (CONFIG.ENCOUNTER_FIGHT_LOSS_INJURY_MODERATE_CHANCE || 0.50);
+                // Armor reduces severe chance
+                if (player.armor) {
+                    var armorReduction = (typeof player.armor === 'object') ? (player.armor.combatBonus || 0.3) : 0.3;
+                    severeChance *= (1.0 - armorReduction * 0.5);
+                }
+                if (isWartime) severeChance *= injuryMult;
+                severeChance = Math.min(0.90, severeChance);
+
+                var severity = rng.chance(severeChance) ? 'severe' : 'moderate';
+                player.injuries = player.injuries || [];
+                var injuryNames = isWartime
+                    ? ['Sword Wound', 'Arrow Wound', 'Battle Trauma', 'Spear Wound', 'Shield Bash Concussion']
+                    : ['Knife Wound', 'Blunt Trauma', 'Bandit Beating', 'Club Injury', 'Road Ambush Wound'];
+                var injName = rng.pick ? rng.pick(injuryNames) : injuryNames[Math.floor(rng.random() * injuryNames.length)];
+                player.injuries.push({ name: injName, type: 'encounter_wound', severity: severity, dayOccurred: Engine.getDay(), treated: false });
+                result.injured = true;
+                result.injurySeverity = severity;
+
+                // Small gold loss too
+                var goldLost3 = Math.min(Math.floor(player.gold * 0.20), 200);
+                player.gold -= goldLost3;
+                result.goldLost = goldLost3;
+                logFinance(-goldLost3, 'encounter', 'Robbed by ' + enemyName);
+
+                // Death check (very small chance, higher in wartime)
+                var deathChance = isWartime ? 0.05 : 0.02;
+                if (player.armor) deathChance *= 0.5;
+                if (hasSkill('battle_hardened')) deathChance *= 0.3;
+                if (window._godInvincible) deathChance = 0;
+                if (rng.chance(deathChance)) {
+                    result.died = true;
+                    player.alive = false;
+                    Engine.logEvent('💀 ' + player.fullName + ' was killed by ' + enemyName + '!');
+                } else {
+                    Engine.logEvent('⚔️ You lost the fight against ' + enemyName + '! Suffered a ' + severity + ' ' + injName + ' and lost all your goods.');
+                }
+
+                autoJournalCapture('encounter', 'Defeated by ' + enemyName + '. Suffered a ' + severity + ' injury. Lost everything I was carrying.', { mood: 'defeated' });
+            }
+        }
+
+        return result;
+    }
+
+    function getEncounterRiskLabel() {
+        if (!player.traveling) return null;
+        var info = getEncounterChance();
+        if (info.chance <= 0) return null;
+        var label, color, icon;
+        if (info.riskLevel === 'high') {
+            label = 'High'; color = '#e74c3c'; icon = '🔴';
+        } else if (info.riskLevel === 'medium') {
+            label = 'Medium'; color = '#f39c12'; icon = '🟡';
+        } else {
+            label = 'Low'; color = '#2ecc71'; icon = '🟢';
+        }
+        var typeLabel = info.isSea ? (info.isWartime ? 'Navy' : 'Pirate') : (info.isWartime ? 'Ambush' : 'Bandit');
+        return { label: label, color: color, icon: icon, typeLabel: typeLabel, chance: info.chance };
+    }
+
     function checkWartimeAmbush(route) {
         if (!route || route.length === 0) return null;
         var rng = Engine.getRng();
@@ -34921,6 +35430,16 @@
         getShipRentalCost,
         handlePirateEncounter,
         attemptBorderCrossing,
+
+        // Encounter System (Bandits/Pirates/Wartime)
+        hirePersonalGuard,
+        dismissPersonalGuard,
+        getEncounterChance,
+        getEncounterRiskLabel,
+        resolveEncounter,
+        get personalGuards() { return (player.guards || []).length; },
+        get guards() { return player.guards || []; },
+        get encounterPending() { return player.encounterPending; },
 
         // Building Management
         supplyBuilding,

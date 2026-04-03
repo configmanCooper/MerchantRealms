@@ -1209,6 +1209,76 @@ const CONFIG = {
     WARTIME_ESCORT_REDUCTION: 0.15,
     WARTIME_FRONTLINE_DISTANCE: 500,
 
+    // ── Player Encounter System (Bandits / Pirates / Wartime Ambush) ──
+    // Land encounters
+    ENCOUNTER_LAND_BASE_CHANCE: 0.05,       // 5% per day base
+    ENCOUNTER_LAND_MIN_CHANCE: 0.001,       // 0.1% per day floor
+    ENCOUNTER_LAND_MAX_CHANCE: 0.15,        // 15% per day ceiling
+    ENCOUNTER_ROAD_DANGER_MULT: 1.5,        // dangerous roads multiplier
+    ENCOUNTER_POOR_SECURITY_MULT: 1.3,      // poor town security on connected locations
+    ENCOUNTER_GUARD_REDUCTION: 0.40,        // each guard reduces chance by this mult (stacks multiplicatively)
+    ENCOUNTER_HORSE_REDUCTION: 0.85,        // riding a horse slightly reduces chance
+    ENCOUNTER_PAID_TRANSIT_REDUCTION: 0.25, // paid transit greatly reduces chance (mult)
+    ENCOUNTER_WEAPON_REDUCTION: 0.90,       // having a weapon slightly reduces encounter chance
+    ENCOUNTER_ARMOR_REDUCTION: 0.93,        // having armor slightly reduces encounter chance
+    ENCOUNTER_SKILL_STREET_SMART: 0.90,     // street_smart skill 10% reduction
+    ENCOUNTER_SKILL_INTIMIDATING: 0.85,     // intimidating_presence 15% reduction
+
+    // Sea encounters
+    ENCOUNTER_SEA_BASE_CHANCE: 0.04,        // 4% per day base (slightly lower than land)
+    ENCOUNTER_SEA_MIN_CHANCE: 0.0001,       // 0.01% per day floor (best ship + all buffs)
+    ENCOUNTER_SEA_MAX_CHANCE: 0.10,         // 10% per day ceiling (worst ship)
+    // Ship defense factor: defense 0=no reduction, 30=~85% reduction
+    ENCOUNTER_SEA_SHIP_DEFENSE_FACTOR: 0.06, // each defense point reduces chance by this mult (1 - def*factor)
+    ENCOUNTER_SEA_GUARD_REDUCTION: 0.70,    // guards give moderate help at sea (per guard)
+    ENCOUNTER_SEA_WEAPON_REDUCTION: 0.97,   // weapons/armor only tiny help at sea
+    ENCOUNTER_SEA_ARMOR_REDUCTION: 0.98,
+
+    // Wartime encounter modifiers
+    ENCOUNTER_WARTIME_CHANCE_MULT: 1.8,     // wartime encounters are more frequent
+    ENCOUNTER_WARTIME_FIGHT_DIFFICULTY: 1.4, // wartime fights are harder
+    ENCOUNTER_WARTIME_INJURY_MULT: 1.5,     // higher injury risk in wartime
+
+    // Fight resolution
+    ENCOUNTER_FIGHT_MIN_WIN: 0.05,          // 5% minimum win chance
+    ENCOUNTER_FIGHT_MAX_WIN: 0.95,          // 95% maximum win chance
+    ENCOUNTER_FIGHT_BASE_WIN: 0.35,         // 35% base fight win chance
+    ENCOUNTER_FIGHT_GUARD_BONUS: 0.12,      // each guard adds 12% win chance
+    ENCOUNTER_FIGHT_WEAPON_BONUS: 0.10,     // weapon adds up to 10% (scaled by combatBonus)
+    ENCOUNTER_FIGHT_ARMOR_BONUS: 0.05,      // armor adds up to 5% (reduces injury chance instead)
+    ENCOUNTER_FIGHT_SKILL_COMBAT_TRAINED: 0.10, // combat_trained adds 10%
+    ENCOUNTER_FIGHT_SKILL_BATTLE_HARDENED: 0.20, // battle_hardened replaces combat_trained
+    ENCOUNTER_FIGHT_SKILL_COMBAT_PROFICIENCY: 0.10, // stacks
+    ENCOUNTER_FIGHT_LOW_NEEDS_PENALTY: 0.08, // low hunger/thirst/energy each reduce by 8%
+    ENCOUNTER_FIGHT_BANDIT_STRENGTH_MIN: 0.10, // RNG: weakest bandits remove 10% from win
+    ENCOUNTER_FIGHT_BANDIT_STRENGTH_MAX: 0.30, // RNG: strongest bandits remove 30% from win
+
+    // Sea fight specifics
+    ENCOUNTER_SEA_FIGHT_SHIP_DEFENSE_BONUS: 0.02, // each ship defense point adds 2% win
+    ENCOUNTER_SEA_FIGHT_CANNON_BONUS: 0.06,  // each cannon adds 6% win chance
+    ENCOUNTER_SEA_FIGHT_GUARD_BONUS: 0.08,   // guards moderate help at sea (per guard)
+    ENCOUNTER_SEA_FIGHT_WEAPON_BONUS: 0.02,  // weapons tiny help at sea
+
+    // Surrender: lose all goods + 50% gold (cap 500g)
+    ENCOUNTER_SURRENDER_GOLD_PCT: 0.50,
+    ENCOUNTER_SURRENDER_GOLD_CAP: 500,
+
+    // Negotiate: lose 50% goods + 10% gold (cap 250g)
+    ENCOUNTER_NEGOTIATE_GOODS_PCT: 0.50,
+    ENCOUNTER_NEGOTIATE_GOLD_PCT: 0.10,
+    ENCOUNTER_NEGOTIATE_GOLD_CAP: 250,
+    ENCOUNTER_NEGOTIATE_BASE_SUCCESS: 0.40,  // 40% base negotiation success
+    ENCOUNTER_NEGOTIATE_SKILL_BONUS: 0.15,   // silver_tongue/haggling each add 15%
+
+    // Fight loss penalties
+    ENCOUNTER_FIGHT_LOSS_INJURY_MODERATE_CHANCE: 0.50, // 50% moderate, 50% severe on loss
+    ENCOUNTER_FIGHT_WIN_SHIP_DAMAGE_CHANCE: 0.40,      // 40% chance ship takes damage on sea fight win
+
+    // Guard hiring (player personal guards)
+    PLAYER_GUARD_HIRE_COST: 30,             // same as caravan guards
+    PLAYER_GUARD_DAILY_WAGE: 6,             // same as caravan guards
+    PLAYER_GUARD_MAX: 4,                    // max 4 personal guards
+
     // ── Kingdom Ban Policy ──
     KINGDOM_BAN_POLICY_INTERVAL: 30,
 };
