@@ -1760,38 +1760,45 @@ window.Tutorial = (function () {
                 // Redirect endpoint to Rustbridge
                 if (_rrFromInk) _rr.fromTownId = _tutStart.id;
                 else _rr.toTownId = _tutStart.id;
-                _rr.waypoints = [];
-                // Compute bridge segments for water crossings
+                // Generate actual A* waypoints, then compute bridges along them
                 var _rrFrom = Engine.findTown(_rr.fromTownId);
                 var _rrTo = Engine.findTown(_rr.toTownId);
                 if (_rrFrom && _rrTo) {
-                    var _bSteps = 80;
-                    var _bSegs = [];
-                    var _bInWater = false;
-                    var _bSegStart = 0;
-                    for (var _bs = 0; _bs <= _bSteps; _bs++) {
-                        var _bt = _bs / _bSteps;
-                        var _bpx = _rrFrom.x + (_rrTo.x - _rrFrom.x) * _bt;
-                        var _bpy = _rrFrom.y + (_rrTo.y - _rrFrom.y) * _bt;
-                        var _bTerr = Engine.getTerrainAtPixel(_bpx, _bpy);
-                        var _bIsWater = (_bTerr === 2); // TERRAIN.WATER.id
-                        if (_bIsWater) {
-                            if (!_bInWater) { _bSegStart = _bt; _bInWater = true; }
-                        } else {
-                            if (_bInWater) {
-                                _bSegs.push({ startT: _bSegStart, endT: _bt });
-                                _bInWater = false;
+                    try {
+                        var _pathResult = Engine.findTerrainPath(_rrFrom.x, _rrFrom.y, _rrTo.x, _rrTo.y, 'land');
+                        if (_pathResult && _pathResult.waypoints && _pathResult.waypoints.length >= 2) {
+                            _rr.waypoints = _pathResult.waypoints;
+                        }
+                    } catch (e) { /* pathfinding unavailable */ }
+
+                    // Compute bridge segments along actual waypoints
+                    var _wps = _rr.waypoints;
+                    if (_wps && _wps.length >= 2) {
+                        var _bSegs = [];
+                        var _bInWater = false;
+                        var _bSegStart = 0;
+                        var _wpN = _wps.length - 1;
+                        for (var _wi = 0; _wi <= _wpN; _wi++) {
+                            var _wt = _wi / _wpN;
+                            var _bTerr = Engine.getTerrainAtPixel(_wps[_wi].x, _wps[_wi].y);
+                            var _bIsWater = (_bTerr === 2); // TERRAIN.WATER.id
+                            if (_bIsWater) {
+                                if (!_bInWater) { _bSegStart = _wt; _bInWater = true; }
+                            } else {
+                                if (_bInWater) {
+                                    _bSegs.push({ startT: _bSegStart, endT: _wt });
+                                    _bInWater = false;
+                                }
                             }
                         }
+                        if (_bInWater) _bSegs.push({ startT: _bSegStart, endT: 1.0 });
+                        // Only keep short bridge segments (rivers/channels, not ocean)
+                        var _maxBridgeSpan = 0.15;
+                        _bSegs = _bSegs.filter(function(s) { return (s.endT - s.startT) <= _maxBridgeSpan; });
+                        _rr.hasBridge = _bSegs.length > 0;
+                        _rr.bridgeSegments = _bSegs;
+                        _rr.bridgeDestroyed = false;
                     }
-                    if (_bInWater) _bSegs.push({ startT: _bSegStart, endT: 1.0 });
-                    // Only keep short bridge segments (little river/channel crossings)
-                    // Filter out large water spans — those are ocean, not bridgeable
-                    var _maxBridgeSpan = 0.15; // max 15% of road length
-                    _bSegs = _bSegs.filter(function(s) { return (s.endT - s.startT) <= _maxBridgeSpan; });
-                    _rr.hasBridge = _bSegs.length > 0;
-                    _rr.bridgeSegments = _bSegs;
-                    _rr.bridgeDestroyed = false;
                 }
                 // Update connectedTowns
                 if (_tutStart.connectedTowns && _tutStart.connectedTowns.indexOf(_rrOther) === -1) {
