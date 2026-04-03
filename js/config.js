@@ -659,8 +659,8 @@ const CONFIG = {
     PETITION_MIN_SIGNATURES_PCT: 5,     // Need 5% of kingdom pop to even have a chance
     PETITION_GOOD_CHANCE_PCT: 15,       // 15% gives good chance
     PETITION_GREAT_CHANCE_PCT: 25,      // 25%+ gives great chance
-    PETITION_BASE_CHANCE: 0.15,         // Base 15% chance (much lower than direct influence)
-    PETITION_PER_PCT_BONUS: 0.025,     // +2.5% chance per 1% of population signed
+    PETITION_BASE_CHANCE: 0.05,         // Base 5% chance — signatures are essential
+    PETITION_PER_PCT_BONUS: 0.035,     // +3.5% chance per 1% of population signed
     PETITION_ELITE_SIGNATURE_WEIGHT: 5, // Elite merchant signature = 5 normal
     PETITION_NOBLE_SIGNATURE_WEIGHT: 10,// Noble signature = 10 normal
     PETITION_MAX_ACTIVE: 3,            // Max 3 active petitions at once
