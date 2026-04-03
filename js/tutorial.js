@@ -1403,7 +1403,7 @@ window.Tutorial = (function () {
         var candidates = document.querySelectorAll('.left-panel, .right-panel, .side-panel, .info-panel');
         for (var i = 0; i < candidates.length; i++) {
             var p = candidates[i];
-            if (p === panelEl || p.offsetParent === null) continue;
+            if (p === panelEl || p.offsetParent === null || p.dataset.tutNudged) continue;
             var pRect = p.getBoundingClientRect();
             if (pRect.right > tRect.left && pRect.left < tRect.right &&
                 pRect.bottom > tRect.top && pRect.top < tRect.bottom) {
@@ -1416,14 +1416,13 @@ window.Tutorial = (function () {
         var modalOverlay = document.getElementById('modalOverlay');
         if (modalOverlay && !modalOverlay.classList.contains('hidden')) {
             var dlg = document.getElementById('modalDialog');
-            if (dlg) {
+            if (dlg && !dlg.dataset.tutNudged) {
                 var dRect = dlg.getBoundingClientRect();
                 if (dRect.right > tRect.left && dRect.left < tRect.right &&
                     dRect.bottom > tRect.top && dRect.top < tRect.bottom) {
-                    // Shift just enough to clear the tutorial panel
-                    var overlap = tRect.right - dRect.left + 10;
+                    // Place left edge just past tutorial panel
                     dlg.style.position = 'fixed';
-                    dlg.style.left = (dRect.left + overlap) + 'px';
+                    dlg.style.left = (tRect.right + 10) + 'px';
                     dlg.style.top = dRect.top + 'px';
                     dlg.style.transform = 'none';
                     dlg.style.margin = '0';
