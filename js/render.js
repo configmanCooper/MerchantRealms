@@ -675,7 +675,7 @@ window.Renderer = (function () {
                 var segEnd = (i + 1) / n;
                 // Check if this segment is fully inside a bridge (with margin so road tucks under bridge edges)
                 var inBridge = false;
-                var bridgeMargin = 1.5 / n; // overlap road ~1.5 waypoint segments into bridge
+                var bridgeMargin = 0.5 / n; // slight overlap so road meets bridge edges
                 for (var b = 0; b < bridgeSegs.length; b++) {
                     var bs = bridgeSegs[b];
                     if (bs.startT !== undefined && segStart >= (bs.startT + bridgeMargin) && segEnd <= (bs.endT - bridgeMargin)) {
