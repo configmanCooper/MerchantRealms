@@ -2073,7 +2073,9 @@ const SKILLS = {
     street_smart:        { name: 'Street Smart',        branch: 'survival',   cost: 2, requires: [],                              desc: '10% less chance of bandit encounters.',                                     icon: '🏙️' },
     combat_trained:      { name: 'Combat Trained',      branch: 'survival',   cost: 2, requires: [],                              desc: '+15% survival in combat encounters.',                                       icon: '🗡️' },
     battle_hardened:     { name: 'Battle Hardened',     branch: 'survival',   cost: 4, requires: ['combat_trained'],              desc: '+30% survival (replaces Combat Trained).',                                  icon: '💪' },
-    escape_artist:       { name: 'Escape Artist',       branch: 'survival',   cost: 3, requires: ['street_smart'],                desc: '30% chance to flee combat without losses.',                                 icon: '🏃' },
+    escape_artist:       { name: 'Escape Artist',       branch: 'survival',   cost: 3, requires: ['street_smart'],                desc: 'Variable chance (5-30%) to flee combat without losses.',                    icon: '🏃' },
+    bandit_evasion:      { name: 'Bandit Evasion',      branch: 'survival',   cost: 2, requires: ['street_smart'],                desc: '25% less chance of bandit encounters (non-wartime).',                        icon: '👁️' },
+    bandit_mastery:      { name: 'Bandit Mastery',       branch: 'survival',   cost: 3, requires: ['bandit_evasion'],              desc: '50% less bandit encounters (non-wartime) + 25% less during wartime.',        icon: '🥷' },
     fighting_retreat:    { name: 'Fighting Retreat',    branch: 'survival',   cost: 3, requires: ['combat_trained'],              desc: 'Fight guards and flee during forced requisition. Success scales with combat level.', icon: '🛡️' },
     fortified_caravans:  { name: 'Fortified Caravans',  branch: 'survival',   cost: 3, requires: [],                              desc: 'Caravans have +20% defense against bandits.',                               icon: '🏰' },
     endurance_1:         { name: 'Endurance I',         branch: 'survival',   cost: 2, requires: [],                              desc: 'Max energy +15 (115 total). Hardened body.',                                icon: '🫀' },
@@ -3064,6 +3066,7 @@ const PETITION_TYPES = [
     { id: 'seek_peace', name: 'Seek Peace', icon: '🕊️', desc: 'Urge the kingdom to seek peace in an active war', requiresTarget: true, targetType: 'kingdom', costFactor: 0 },
     { id: 'fund_festival', name: 'Fund a Festival', icon: '🎉', desc: 'Request the kingdom fund a festival in a town', requiresTarget: true, targetType: 'town', costFactor: 0.01 },
     { id: 'demolish_tent_camps', name: 'Demolish Tent Camps', icon: '🔥', desc: 'Request the king to demolish all tent camps in a specific town', requiresTarget: true, targetType: 'town', costFactor: 0 },
+    { id: 'build_sea_route', name: 'Establish Sea Route', icon: '⚓', desc: 'Request the kingdom to establish a sea trade route between two port towns', requiresTarget: true, targetType: 'port_pair', costFactor: 0.08 },
 ];
 
 // ============================================================

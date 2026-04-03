@@ -8240,29 +8240,8 @@ window.UI = (function () {
 
         html += '</div>';
 
-        // Personal Guards section
-        var guardCount = Player.personalGuards || 0;
-        var maxGuards = CONFIG.PLAYER_GUARD_MAX || 4;
-        var guardHireCost = CONFIG.PLAYER_GUARD_HIRE_COST || 30;
-        if (Player.hasSkill && Player.hasSkill('cheap_security')) guardHireCost = Math.floor(guardHireCost * 0.80);
-        var guardDailyWage = (CONFIG.PLAYER_GUARD_DAILY_WAGE || 6) * guardCount;
-
-        html += '<div class="detail-section">';
-        html += '<h3>🛡️ Personal Guards</h3>';
-        html += '<div class="detail-row"><span class="label">Guards</span><span class="value">' + guardCount + ' / ' + maxGuards + '</span></div>';
-        if (guardCount > 0) {
-            html += '<div class="detail-row"><span class="label">Daily Wages</span><span class="value" style="color:#e67e22;">' + guardDailyWage + 'g/day</span></div>';
-        }
-        html += '<div style="font-size:0.75rem;color:var(--text-muted);margin:6px 0;">Guards protect you from bandits and pirates during travel. They reduce encounter chance and greatly increase your odds in a fight.</div>';
-        html += '<div style="display:flex;gap:8px;margin-top:8px;">';
-        if (guardCount < maxGuards) {
-            html += '<button class="btn-medieval" onclick="UI.hireGuardUI()" style="font-size:0.75rem;padding:4px 12px;">🛡️ Hire Guard (' + guardHireCost + 'g)</button>';
-        }
-        if (guardCount > 0) {
-            html += '<button class="btn-medieval" onclick="UI.dismissGuardUI()" style="font-size:0.75rem;padding:4px 12px;background:rgba(200,50,50,0.1);border-color:rgba(200,50,50,0.3);">❌ Dismiss Guard</button>';
-        }
-        html += '</div>';
-        html += '</div>';
+        // Personal Guards section (array-based with names)
+        html += buildGuardSectionHTML();
 
         // Check port status for ship operations
         let isAtPort = false;
@@ -15615,7 +15594,16 @@ window.UI = (function () {
         html += '<div style="margin-top:16px;padding:8px;background:rgba(0,0,0,0.2);border-radius:4px;font-size:0.75rem;color:var(--text-muted);">';
         html += '<strong>Your advantages:</strong> ';
         var advantages = [];
-        if ((Player.personalGuards || 0) > 0) advantages.push('🛡️ ' + Player.personalGuards + ' guard' + (Player.personalGuards > 1 ? 's' : ''));
+        var guardNum = Player.guards ? Player.guards.length : (Player.personalGuards || 0);
+        if (guardNum > 0) {
+            var guardNames = [];
+            if (Player.guards) {
+                for (var gi = 0; gi < Player.guards.length; gi++) {
+                    guardNames.push(Player.guards[gi].name || 'Guard');
+                }
+            }
+            advantages.push('\uD83D\uDEE1\uFE0F ' + guardNum + ' guard' + (guardNum > 1 ? 's' : '') + (guardNames.length > 0 ? ' (' + guardNames.join(', ') + ')' : ''));
+        }
         if (Player.weapon) advantages.push('⚔️ Armed');
         if (Player.armor) advantages.push('🛡️ Armored');
         if (Player.hasSkill && Player.hasSkill('battle_hardened')) advantages.push('💪 Battle Hardened');
@@ -20416,6 +20404,47 @@ window.UI = (function () {
         return html;
     }
 
+    // ========================================================
+    // GUARD HIRING UI IN CHARACTER PANEL
+    // ========================================================
+
+    function buildGuardSectionHTML() {
+        var guards = Player.guards || [];
+        var maxGuards = CONFIG.PLAYER_GUARD_MAX || 4;
+        var cost = CONFIG.PLAYER_GUARD_HIRE_COST || 30;
+        if (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('cheap_security')) cost = Math.floor(cost * 0.80);
+        var dailyWage = CONFIG.PLAYER_GUARD_DAILY_WAGE || 6;
+
+        var html = '<div class="detail-section">';
+        html += '<h3>\uD83D\uDEE1\uFE0F Personal Guards</h3>';
+        html += '<p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;">Guards protect you while traveling, reducing encounter chance and increasing combat effectiveness. Daily wage: ' + dailyWage + 'g each.</p>';
+
+        if (guards.length > 0) {
+            for (var i = 0; i < guards.length; i++) {
+                var g = guards[i];
+                html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);">';
+                html += '<span style="font-size:0.85rem;">\uD83D\uDEE1\uFE0F ' + (g.name || 'Guard') + '</span>';
+                html += '<button class="btn-medieval" onclick="UI.dismissGuardUI(\'' + g.id + '\')" style="font-size:0.7rem;padding:3px 8px;">\u274C Dismiss</button>';
+                html += '</div>';
+            }
+        } else {
+            html += '<div style="font-size:0.8rem;color:#888;font-style:italic;margin:4px 0;">No guards hired.</div>';
+        }
+
+        html += '<div style="margin-top:8px;">';
+        html += '<span style="font-size:0.8rem;color:var(--text-muted);">' + guards.length + '/' + maxGuards + ' guards</span>';
+        if (guards.length < maxGuards) {
+            var canAfford = (Player.gold || 0) >= cost;
+            var inTown = !!Player.townId && !Player.traveling;
+            var btnStyle = (canAfford && inTown) ? 'background:#2a5a2a;border-color:#4a8a4a;' : 'opacity:0.5;cursor:not-allowed;';
+            var btnTitle = !inTown ? 'Must be in a town' : (!canAfford ? 'Need ' + cost + 'g' : 'Hire a guard for ' + cost + 'g');
+            html += ' <button class="btn-medieval" onclick="UI.hireGuardUI()" style="font-size:0.75rem;padding:4px 10px;' + btnStyle + '" title="' + btnTitle + '">\uD83D\uDEE1\uFE0F Hire Guard (' + cost + 'g)</button>';
+        }
+        html += '</div>';
+        html += '</div>';
+        return html;
+    }
+
     return {
         init,
         update,
@@ -20628,9 +20657,9 @@ window.UI = (function () {
             if (result.success) { toast(result.message, 'success'); openCharacterDialog(); }
             else { toast(result.message, 'danger'); }
         },
-        dismissGuardUI: function() {
+        dismissGuardUI: function(guardId) {
             if (typeof Player === 'undefined' || !Player.dismissPersonalGuard) return;
-            var result = Player.dismissPersonalGuard();
+            var result = Player.dismissPersonalGuard(guardId);
             if (result.success) { toast(result.message, 'success'); openCharacterDialog(); }
             else { toast(result.message, 'danger'); }
         },

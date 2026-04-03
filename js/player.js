@@ -27746,6 +27746,13 @@
             if (hasSkill('street_smart')) chance *= (CONFIG.ENCOUNTER_SKILL_STREET_SMART || 0.90);
             if (hasSkill('intimidating_presence')) chance *= (CONFIG.ENCOUNTER_SKILL_INTIMIDATING || 0.85);
             if (hasSkill('expert_navigator')) chance *= 0.90;
+            // Bandit evasion skills (sea pirates too)
+            if (!isWartime) {
+                if (hasSkill('bandit_mastery')) chance *= 0.50;
+                else if (hasSkill('bandit_evasion')) chance *= 0.75;
+            } else {
+                if (hasSkill('bandit_mastery')) chance *= 0.75;
+            }
             // Pirate events
             var w = Engine.getWorld();
             if (w) {
@@ -27774,7 +27781,7 @@
                 }
             }
             // Guards
-            var guards2 = (player.guards || []).length;
+            var guards2 = player.personalGuards || 0;
             for (var g2 = 0; g2 < guards2; g2++) {
                 chance *= (1.0 - (CONFIG.ENCOUNTER_GUARD_REDUCTION || 0.40));
             }
@@ -27790,6 +27797,13 @@
             if (hasSkill('street_smart')) chance *= (CONFIG.ENCOUNTER_SKILL_STREET_SMART || 0.90);
             if (hasSkill('intimidating_presence')) chance *= (CONFIG.ENCOUNTER_SKILL_INTIMIDATING || 0.85);
             if (hasSkill('road_knowledge')) chance *= 0.92;
+            // Bandit evasion skills
+            if (!isWartime) {
+                if (hasSkill('bandit_mastery')) chance *= 0.50;
+                else if (hasSkill('bandit_evasion')) chance *= 0.75;
+            } else {
+                if (hasSkill('bandit_mastery')) chance *= 0.75;
+            }
             // Clamp
             chance = Math.max(CONFIG.ENCOUNTER_LAND_MIN_CHANCE || 0.001, Math.min(CONFIG.ENCOUNTER_LAND_MAX_CHANCE || 0.15, chance));
         }
