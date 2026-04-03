@@ -27233,17 +27233,25 @@
             world.rng = createRNG(seed);
             const rng = world.rng;
 
+            // Phase-isolated sub-RNGs: each generation phase gets its own
+            // deterministic sequence derived from the master seed, so changes
+            // in one phase (e.g. adding king personality traits) don't shift
+            // town names or other downstream results.
+            var phaseRngTerrain  = createRNG(seed * 3 + 1);
+            var phaseRngKingdoms = createRNG(seed * 3 + 2);
+            var phaseRngTowns    = createRNG(seed * 3 + 3);
+
             // Terrain
-            const { grid, cols, rows } = generateTerrain(rng, seed);
+            const { grid, cols, rows } = generateTerrain(phaseRngTerrain, seed);
             world.terrain = grid;
             world.gridCols = cols;
             world.gridRows = rows;
 
             // Kingdoms
-            world.kingdoms = generateKingdoms(rng);
+            world.kingdoms = generateKingdoms(phaseRngKingdoms);
 
             // Towns
-            world.towns = generateTowns(rng, world.kingdoms, cols, rows);
+            world.towns = generateTowns(phaseRngTowns, world.kingdoms, cols, rows);
 
             // Post-generation safety: ensure every kingdom has at least 1 town
             for (const k of world.kingdoms) {
@@ -27270,7 +27278,8 @@
             }
 
             // Roads
-            world.roads = generateRoads(rng, world.towns, world.kingdoms);
+            var phaseRngRoads = createRNG(seed * 3 + 4);
+            world.roads = generateRoads(phaseRngRoads, world.towns, world.kingdoms);
 
             // Record starting town count for war immunity calculations
             for (const k of world.kingdoms) {
@@ -27278,7 +27287,8 @@
             }
 
             // Sea routes
-            world.seaRoutes = generateSeaRoutes(rng, world.towns);
+            var phaseRngSea = createRNG(seed * 3 + 5);
+            world.seaRoutes = generateSeaRoutes(phaseRngSea, world.towns);
 
             // Pre-compute town connectivity for price convergence and pathfinding
             for (var ci = 0; ci < world.towns.length; ci++) {
@@ -27304,13 +27314,14 @@
             }
 
             // People — _popOverride assigned in generateTowns for non-island towns
+            var phaseRngPeople = createRNG(seed * 3 + 6);
             for (const town of world.towns) {
                 if (town.isIsland && !town._popOverride) {
-                    town._popOverride = rng.randInt(CONFIG.ISLAND_POP_MIN, CONFIG.ISLAND_POP_MAX);
+                    town._popOverride = phaseRngPeople.randInt(CONFIG.ISLAND_POP_MIN, CONFIG.ISLAND_POP_MAX);
                 }
                 // Non-island towns already have _popOverride from generateTowns
             }
-            world.people = generatePeople(rng, world.towns, world.kingdoms);
+            world.people = generatePeople(phaseRngPeople, world.towns, world.kingdoms);
 
             // Replace apartment placeholder NPCs with real residents
             for (const town of world.towns) {
