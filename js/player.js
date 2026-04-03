@@ -23259,6 +23259,8 @@
         chance += _calcNpcQuirkModifier(npc, petition.typeId);
         // loyal_heart quirk bonus
         if ((npc.quirks || []).includes('loyal_heart') && relLevel > 50) chance += 0.10;
+        // Strangers are less willing to sign
+        if (relLevel < 10) chance -= 0.10;
 
         if (chance < 0.05) {
             return { signed: false, chance: Math.max(0, chance), message: npc.firstName + ' refuses outright to sign your petition. They seem strongly opposed to the idea.' };
