@@ -712,7 +712,7 @@ window.UI = (function () {
 
                 // Ships button — only enabled at seaport towns
                 var btnShips = document.getElementById('btnShips');
-                if (btnShips) {
+                if (btnShips && !btnShips.classList.contains('tutorial-dimmed')) {
                     var currentTown = Engine.findTown(Player.state.townId);
                     if (currentTown && currentTown.isPort && !Player.traveling) {
                         btnShips.style.opacity = '1';
