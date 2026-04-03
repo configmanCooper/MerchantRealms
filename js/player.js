@@ -26281,12 +26281,18 @@
         return checkEnergyForAction(0);
     }
 
-    function tickEnergy() {
-        // Passive energy drain (0.25 per tick) — skip if an action already consumed energy this tick
-        if (!player._energyConsumedThisTick && !player.resting) {
+    // Passive energy drain per subtick (0.25 × 60 = 15/day)
+    // Applies always when not resting — sitting in town, traveling, etc.
+    function energySubtick() {
+        if (!player.resting) {
             player.energy = Math.max(0, (player.energy || ENERGY_CONFIG.START) - 0.25);
             player.fatigue = Math.max(0, getMaxEnergy() - player.energy);
         }
+    }
+
+    function tickEnergy() {
+        // Passive energy drain is now handled in energySubtick() (60x/day)
+        // This daily tick only handles: auto-rest and passive recovery
         player._energyConsumedThisTick = false;
 
         // Auto-rest: if enabled and energy below 10, start resting automatically
@@ -35784,7 +35790,7 @@
 
         // Tick
         tick() { playerTick(); },
-        subtick() { travelSubtick(); caravanSubtick(); },
+        subtick() { travelSubtick(); caravanSubtick(); energySubtick(); },
 
         // Conditions
         checkWinConditions,
