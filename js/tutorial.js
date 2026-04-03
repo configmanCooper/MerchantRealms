@@ -1366,11 +1366,44 @@ window.Tutorial = (function () {
             });
             modalObserver.observe(overlay, { attributes: true, attributeFilter: ['class'] });
         }
+        // Watch for panels that overlap the tutorial panel and nudge them right
+        var panelNudgeObserver = new MutationObserver(function () {
+            setTimeout(nudgePanelsFromTutorial, 150);
+        });
+        panelNudgeObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
+        panelEl._panelNudgeObserver = panelNudgeObserver;
+    }
+
+    function nudgePanelsFromTutorial() {
+        if (!panelEl || !active) return;
+        var tRect = panelEl.getBoundingClientRect();
+        // Find panels that might overlap (left-panel, right-panel, trade panels, etc.)
+        var candidates = document.querySelectorAll('.left-panel, .right-panel, .side-panel, .info-panel');
+        for (var i = 0; i < candidates.length; i++) {
+            var p = candidates[i];
+            if (p === panelEl || p.offsetParent === null) continue;
+            var pRect = p.getBoundingClientRect();
+            // Check overlap
+            if (pRect.right > tRect.left && pRect.left < tRect.right &&
+                pRect.bottom > tRect.top && pRect.top < tRect.bottom) {
+                // Shift panel right so its left edge clears the tutorial panel
+                var newLeft = tRect.right + 10;
+                p.style.left = newLeft + 'px';
+                p.dataset.tutNudged = 'true';
+            }
+        }
     }
 
     function destroyPanel() {
         if (modalObserver) { modalObserver.disconnect(); modalObserver = null; }
         if (panelEl) {
+            if (panelEl._panelNudgeObserver) { panelEl._panelNudgeObserver.disconnect(); }
+            // Restore any panels we nudged
+            var nudged = document.querySelectorAll('[data-tut-nudged]');
+            for (var i = 0; i < nudged.length; i++) {
+                nudged[i].style.left = '';
+                delete nudged[i].dataset.tutNudged;
+            }
             panelEl.remove();
             panelEl = null;
         }
