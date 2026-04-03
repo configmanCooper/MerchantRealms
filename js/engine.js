@@ -2098,29 +2098,34 @@
             );
             if (!hasRoute) {
                 // Connect to nearest port that already has a route (prefer connected), else nearest port
+                // BUT only if the path is ≥95% water — no sea routes over land
                 let nearest = null;
                 let nearDist = Infinity;
+                let nearPath = null;
                 const connectedPorts = portTowns.filter(p => p.id !== port.id && seaRoutes.some(r => r.fromTownId === p.id || r.toTownId === p.id));
                 const candidates = connectedPorts.length > 0 ? connectedPorts : portTowns.filter(p => p.id !== port.id);
                 for (const p of candidates) {
                     const d = Math.hypot(p.x - port.x, p.y - port.y);
                     if (d < nearDist) {
-                        nearDist = d;
-                        nearest = p;
+                        const seaPath = findTerrainPath(port.x, port.y, p.x, p.y, 'sea');
+                        if (seaPath && seaPath.waterFraction >= (CONFIG.SEA_ROUTE_MIN_WATER_FRACTION || 0.95)) {
+                            nearDist = d;
+                            nearest = p;
+                            nearPath = seaPath;
+                        }
                     }
                 }
-                if (nearest) {
+                if (nearest && nearPath) {
                     const key = [port.id, nearest.id].sort().join('-');
                     if (!connected.has(key)) {
                         connected.add(key);
-                        const seaPath = findTerrainPath(port.x, port.y, nearest.x, nearest.y, 'sea');
                         seaRoutes.push({
                             fromTownId: port.id,
                             toTownId: nearest.id,
                             type: 'sea',
                             distance: nearDist,
                             safe: true,
-                            waypoints: seaPath ? seaPath.waypoints : [],
+                            waypoints: nearPath.waypoints,
                         });
                     }
                 }
@@ -11206,17 +11211,19 @@
         if (newTown.isPort) {
             const portTowns = world.towns.filter(t => t.isPort && t.id !== newTown.id);
             const maxDist = CONFIG.SEA_ROUTE_MAX_DISTANCE || 3000;
+            const minWater = CONFIG.SEA_ROUTE_MIN_WATER_FRACTION || 0.95;
             for (const pt of portTowns) {
                 const dist = Math.hypot(pt.x - newTown.x, pt.y - newTown.y);
                 if (dist <= maxDist) {
-                    const waterFraction = checkWaterPath(newTown.x, newTown.y, pt.x, pt.y);
-                    if (waterFraction >= 0.3) {
+                    const seaPath = findTerrainPath(newTown.x, newTown.y, pt.x, pt.y, 'sea');
+                    if (seaPath && seaPath.waterFraction >= minWater) {
                         world.seaRoutes.push({
                             fromTownId: newTown.id,
                             toTownId: pt.id,
                             type: 'sea',
                             distance: dist,
                             safe: true,
+                            waypoints: seaPath.waypoints,
                         });
                     }
                 }
@@ -26488,6 +26495,13 @@
         );
         if (exists) return { success: false, message: 'Sea route already exists.' };
 
+        // Validate that the path is ≥95% water tiles
+        const seaPath = findTerrainPath(fromT.x, fromT.y, toT.x, toT.y, 'sea');
+        const minWater = CONFIG.SEA_ROUTE_MIN_WATER_FRACTION || 0.95;
+        if (!seaPath || seaPath.waterFraction < minWater) {
+            return { success: false, message: 'Not enough open water between these ports to establish a sea route.' };
+        }
+
         const dist = Math.hypot(fromT.x - toT.x, fromT.y - toT.y);
         options = options || {};
         world.seaRoutes.push({
@@ -26502,6 +26516,7 @@
             docks: options.docks || { from: true, to: true },
             builtDay: world.day,
             builtBy: builtBy || null,
+            waypoints: seaPath.waypoints,
         });
 
         logEvent(`\u2693 A new sea route has been established between ${fromT.name} and ${toT.name}!`);
@@ -28732,15 +28747,19 @@
                     if (d < nearDist) { nearDist = d; nearestPort = portTowns[np]; }
                 }
                 if (nearestPort) {
-                    world.seaRoutes.push({
-                        fromTownId: port.id,
-                        toTownId: nearestPort.id,
-                        type: 'sea',
-                        distance: nearDist,
-                        safe: true,
-                        waypoints: []
-                    });
-                    connectedSea.add(port.id);
+                    var seaPath = findTerrainPath(port.x, port.y, nearestPort.x, nearestPort.y, 'sea');
+                    var minWaterFrac = CONFIG.SEA_ROUTE_MIN_WATER_FRACTION || 0.95;
+                    if (seaPath && seaPath.waterFraction >= minWaterFrac) {
+                        world.seaRoutes.push({
+                            fromTownId: port.id,
+                            toTownId: nearestPort.id,
+                            type: 'sea',
+                            distance: nearDist,
+                            safe: true,
+                            waypoints: seaPath.waypoints
+                        });
+                        connectedSea.add(port.id);
+                    }
                 }
             }
 
