@@ -23254,7 +23254,7 @@
         if ((pers.frugality || 0) > 60) {
             if (typeId === 'lower_taxes') mod += 0.10;
             if (typeId === 'raise_taxes') mod -= 0.10;
-            if (typeId === 'build_market' || typeId === 'build_road' || typeId === 'build_bridge' || typeId === 'fund_festival') mod -= 0.05;
+            if (typeId === 'build_market' || typeId === 'build_road' || typeId === 'repair_bridge' || typeId === 'fund_festival') mod -= 0.05;
         }
         if ((pers.warmth || 0) > 60) {
             if (typeId === 'fund_festival' || typeId === 'seek_peace') mod += 0.05;
@@ -23704,15 +23704,14 @@
                 }
                 break;
             }
-            case 'build_bridge': {
+            case 'repair_bridge': {
                 if (td.roadIndex != null) {
                     var roads = Engine.getRoads();
                     if (roads && roads[td.roadIndex]) {
-                        roads[td.roadIndex].hasBridge = true;
-                        roads[td.roadIndex].bridgeDestroyed = false;
+                        Engine.rebuildBridge(td.roadIndex);
                         var fromT = Engine.findTown(roads[td.roadIndex].fromTownId);
                         var toT = Engine.findTown(roads[td.roadIndex].toTownId);
-                        Engine.logEvent('🌉 A bridge was built on the road between ' + (fromT ? fromT.name : '?') + ' and ' + (toT ? toT.name : '?') + '!');
+                        Engine.logEvent('🌉 The king repaired all bridges on the road between ' + (fromT ? fromT.name : '?') + ' and ' + (toT ? toT.name : '?') + '!');
                     }
                 }
                 break;

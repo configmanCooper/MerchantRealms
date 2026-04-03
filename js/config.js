@@ -3063,7 +3063,7 @@ const PETITION_TYPES = [
     { id: 'establish_trade_agreement', name: 'Establish Trade Agreement', icon: '🤝', desc: 'Push for a trade agreement with another kingdom', requiresTarget: true, targetType: 'kingdom', costFactor: 0 },
     { id: 'ban_goods', name: 'Ban a Good', icon: '🚫', desc: 'Request the kingdom to ban a specific trade good', requiresTarget: true, targetType: 'resource', costFactor: 0 },
     { id: 'unban_goods', name: 'Unban a Good', icon: '✅', desc: 'Request the kingdom to unban a specific trade good', requiresTarget: true, targetType: 'resource', costFactor: 0 },
-    { id: 'build_bridge', name: 'Build a Bridge', icon: '🌉', desc: 'Request the kingdom build a bridge on a road', requiresTarget: true, targetType: 'road', costFactor: 0.04 },
+    { id: 'repair_bridge', name: 'Repair a Bridge', icon: '🌉', desc: 'Request the kingdom repair destroyed bridges on a road', requiresTarget: true, targetType: 'road', costFactor: 0.04 },
     { id: 'declare_war', name: 'Declare War', icon: '⚔️', desc: 'Urge the kingdom to declare war on another kingdom', requiresTarget: true, targetType: 'kingdom', costFactor: 0 },
     { id: 'seek_peace', name: 'Seek Peace', icon: '🕊️', desc: 'Urge the kingdom to seek peace in an active war', requiresTarget: true, targetType: 'kingdom', costFactor: 0 },
     { id: 'fund_festival', name: 'Fund a Festival', icon: '🎉', desc: 'Request the kingdom fund a festival in a town', requiresTarget: true, targetType: 'town', costFactor: 0.01 },
