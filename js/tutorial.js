@@ -581,17 +581,17 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Travel by Routes',
-                    text: '\uD83D\uDEB6 Now <strong>right-click</strong> on <strong>Yewdale</strong> (centered in view) and choose <strong>Travel Here</strong>. Use the <strong>speed controls</strong> (press 3 or higher) to travel faster! We\u2019ve given you a tutorial speed boost.',
+                    text: '\uD83D\uDEB6 Now <strong>right-click</strong> on <strong>Inkwell Cross</strong> (centered in view) and choose <strong>Travel Here</strong>. Use the <strong>speed controls</strong> (press 3 or higher) to travel faster! We\u2019ve given you a tutorial speed boost.',
                     onEnter: function () {
                         closeModal();
                         if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(5);
-                        // Zoom to 1.5 and pan to Yewdale
+                        // Zoom to 1.5 and pan to Inkwell Cross
                         try {
                             if (typeof Renderer !== 'undefined') {
                                 if (Renderer.setZoom) Renderer.setZoom(1.5);
                                 var towns = Engine.getTowns ? Engine.getTowns() : [];
                                 for (var i = 0; i < towns.length; i++) {
-                                    if (towns[i].name && towns[i].name.toLowerCase().indexOf('yewdale') >= 0) {
+                                    if (towns[i].name === 'Inkwell Cross') {
                                         if (Renderer.panTo) Renderer.panTo(towns[i].x, towns[i].y);
                                         break;
                                     }
@@ -958,13 +958,18 @@ window.Tutorial = (function () {
                     text: '\u26CF\uFE0F Click on your <strong>starting town</strong> on the map and scroll down to see its <strong>natural resource deposits</strong>. Build mines and farms in towns with matching deposits for bonus output!',
                     highlight: '#gameCanvas',
                     onEnter: function () {
-                        // Update text with actual town name
+                        // Update text with actual town name and pan camera to starting town
                         var tn = snapshotState.startTownName || 'your town';
                         var ch = chapters[currentChapter];
                         if (ch && ch.steps[currentStep]) {
                             ch.steps[currentStep].text = '\u26CF\uFE0F Click on <strong>' + tn + '</strong> on the map and scroll down to see its <strong>natural resource deposits</strong>. Build mines and farms in towns with matching deposits for bonus output!';
                             renderPanel();
                         }
+                        try {
+                            if (Renderer.setZoom) Renderer.setZoom(2.0);
+                            var startTown = Engine.findTown(Player.state.townId);
+                            if (startTown && Renderer.panTo) Renderer.panTo(startTown.x, startTown.y);
+                        } catch (e) {}
                     },
                     waitFor: function () {
                         var rp = document.getElementById('rightPanel');
@@ -1671,7 +1676,52 @@ window.Tutorial = (function () {
         var world = Engine.getWorld();
         var towns = Engine.getTowns();
         var startTownId = towns.length > 0 ? towns[0].id : null;
-        snapshotState.startTownName = towns.length > 0 ? towns[0].name : 'your town';
+
+        // ── Tutorial map customization ──────────────────────────
+        // Rename starting town to Rustbridge and its nearest connected
+        // neighbor to Inkwell Cross, positioned west (~2 days travel).
+        var _tutStart = towns.length > 0 ? towns[0] : null;
+        if (_tutStart) {
+            _tutStart.name = 'Rustbridge';
+
+            // Find road-connected neighbor
+            var _tutRoads = Engine.getRoads ? Engine.getRoads() : [];
+            var _tutNeighbor = null;
+            var _tutRoad = null;
+            for (var _ri = 0; _ri < _tutRoads.length; _ri++) {
+                var _rd = _tutRoads[_ri];
+                var _adjId = null;
+                if (_rd.fromTownId === _tutStart.id) _adjId = _rd.toTownId;
+                else if (_rd.toTownId === _tutStart.id) _adjId = _rd.fromTownId;
+                if (_adjId) {
+                    _tutNeighbor = Engine.findTown(_adjId);
+                    _tutRoad = _rd;
+                    break;
+                }
+            }
+            if (_tutNeighbor) {
+                _tutNeighbor.name = 'Inkwell Cross';
+                // Move Inkwell Cross to ~800px west of Rustbridge (~2 days travel)
+                _tutNeighbor.x = _tutStart.x - 800;
+                _tutNeighbor.y = _tutStart.y + 80; // slightly south for natural feel
+                // Clear road waypoints and bridge data (original road may
+                // have crossed water before we repositioned the town)
+                if (_tutRoad) {
+                    _tutRoad.waypoints = [];
+                    _tutRoad.hasBridge = false;
+                    _tutRoad.bridgeSegments = [];
+                    _tutRoad.bridgeDestroyed = false;
+                }
+                // Update connectedTowns references
+                if (_tutStart.connectedTowns && _tutStart.connectedTowns.indexOf(_tutNeighbor.id) === -1) {
+                    _tutStart.connectedTowns.push(_tutNeighbor.id);
+                }
+                if (_tutNeighbor.connectedTowns && _tutNeighbor.connectedTowns.indexOf(_tutStart.id) === -1) {
+                    _tutNeighbor.connectedTowns.push(_tutStart.id);
+                }
+            }
+        }
+        snapshotState.startTownName = 'Rustbridge';
 
         // Init UI first so DOM elements are cached
         UI.init();
