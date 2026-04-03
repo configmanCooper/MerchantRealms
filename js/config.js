@@ -577,6 +577,8 @@ const CONFIG = {
     BRIDGE_DESTROY_COST: 500,              // Gold cost for player to destroy a bridge
     BRIDGE_REBUILD_COST: 1000,             // Gold cost to rebuild a destroyed bridge
     BRIDGE_REBUILD_DAYS: 30,               // Days to rebuild a bridge
+    BRIDGE_REPAIR_MATERIALS: { wood: 20, stone: 10 }, // Materials needed per bridge repair
+    BRIDGE_ARMY_DESTROYED_SPEED_MULT: 0.3, // Armies cross destroyed bridges at 30% speed
 
     // Bridge Destruction Methods
     BRIDGE_DESTROY_METHODS: {

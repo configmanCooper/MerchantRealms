@@ -2192,6 +2192,67 @@
         return { waterFraction: waterCount / (steps + 1), waterTileCount: waterCount, bridgeSegments };
     }
 
+    // Create individual bridge objects from a road's waypoints by scanning terrain
+    var _nextBridgeId = 1;
+    function createBridgeObjects(waypoints) {
+        if (!waypoints || waypoints.length < 2) return [];
+        var bridges = [];
+        var inWater = false;
+        var startIdx = 0;
+        var TS = CONFIG.TILE_SIZE;
+        for (var i = 0; i < waypoints.length; i++) {
+            var wp = waypoints[i];
+            var isWater = terrainAt(Math.floor(wp.x / TS), Math.floor(wp.y / TS)) === TERRAIN.WATER.id;
+            if (isWater && !inWater) {
+                startIdx = Math.max(0, i - 1); // slight land overhang
+                inWater = true;
+            } else if (!isWater && inWater) {
+                bridges.push({
+                    id: 'bridge_' + (_nextBridgeId++),
+                    startWpIdx: startIdx,
+                    endWpIdx: Math.min(waypoints.length - 1, i),
+                    destroyed: false,
+                    destroyedDay: null,
+                    destroyedBy: null,
+                    repairedDay: null
+                });
+                inWater = false;
+            }
+        }
+        if (inWater) {
+            bridges.push({
+                id: 'bridge_' + (_nextBridgeId++),
+                startWpIdx: startIdx,
+                endWpIdx: waypoints.length - 1,
+                destroyed: false,
+                destroyedDay: null,
+                destroyedBy: null,
+                repairedDay: null
+            });
+        }
+        return bridges;
+    }
+
+    // Initialize bridge ID counter from existing bridges (call after load)
+    function _initBridgeIdCounter() {
+        var maxId = 0;
+        if (world && world.roads) {
+            for (var r = 0; r < world.roads.length; r++) {
+                var road = world.roads[r];
+                if (road.bridges) {
+                    for (var b = 0; b < road.bridges.length; b++) {
+                        var bid = road.bridges[b].id;
+                        if (bid) {
+                            var num = parseInt(bid.replace('bridge_', ''), 10);
+                            if (num > maxId) maxId = num;
+                        }
+                    }
+                }
+            }
+        }
+        _nextBridgeId = maxId + 1;
+    }
+
     // Compute terrain-aware off-road travel cost between two pixel positions
     function getOffroadCost(ax, ay, bx, by) {
         const steps = 30;
@@ -2480,14 +2541,16 @@
             a.routeCount = (a.routeCount || 0) + 1;
             b.routeCount = (b.routeCount || 0) + 1;
             const hasBridge = pathResult.bridgeSegments.length > 0;
+            var _roadBridges = createBridgeObjects(pathResult.waypoints);
             roads.push({
                 fromTownId: a.id,
                 toTownId: b.id,
                 quality: rng.randInt(1, 3),
                 safe: true,
-                hasBridge: hasBridge,
+                hasBridge: hasBridge || _roadBridges.length > 0,
                 bridgeDestroyed: false,
                 bridgeSegments: hasBridge ? pathResult.bridgeSegments : [],
+                bridges: _roadBridges,
                 waypoints: pathResult.waypoints,
             });
             return true;
@@ -18163,8 +18226,18 @@
         const adjacency = {};
         for (const town of world.towns) adjacency[town.id] = [];
         for (const road of world.roads) {
-            // Skip roads with destroyed bridges — they're unusable
-            if (road.hasBridge && road.bridgeDestroyed) continue;
+            // Skip roads with any destroyed bridge — unusable for normal travel
+            var _hasDestroyedBridge = false;
+            if (road.bridges && road.bridges.length > 0) {
+                for (var _bi = 0; _bi < road.bridges.length; _bi++) {
+                    if (road.bridges[_bi].destroyed) { _hasDestroyedBridge = true; break; }
+                }
+            } else if (road.hasBridge && road.bridgeDestroyed) {
+                _hasDestroyedBridge = true; // legacy fallback
+            }
+            // Armies can still use roads with destroyed bridges (slower)
+            var _isArmyRoute = options && options.armyRoute;
+            if (_hasDestroyedBridge && !_isArmyRoute) continue;
             const fromT = findTown(road.fromTownId);
             const toT = findTown(road.toTownId);
             if (!fromT || !toT) continue;
@@ -26473,17 +26546,22 @@
             }
         }
 
-        // Analyze water for bridges
+        // Analyze water for bridges and generate waypoints
         const waterInfo = analyzeRoadWater(fromT.x, fromT.y, toT.x, toT.y);
         const hasBridge = waterInfo.bridgeSegments.length > 0;
+        var _pathResult = findTerrainPath(fromT.x, fromT.y, toT.x, toT.y, 'land');
+        var _roadWaypoints = (_pathResult && _pathResult.waypoints) ? _pathResult.waypoints : [];
+        var _roadBridges = createBridgeObjects(_roadWaypoints);
         options = options || {};
         world.roads.push({
             fromTownId, toTownId,
             quality: options.quality || 2,
             safe: true,
-            hasBridge,
+            hasBridge: hasBridge || _roadBridges.length > 0,
             bridgeDestroyed: false,
             bridgeSegments: hasBridge ? waterInfo.bridgeSegments : [],
+            bridges: _roadBridges,
+            waypoints: _roadWaypoints,
             condition: 'new',
             builtDay: world.day,
             builtBy: builtBy || null,

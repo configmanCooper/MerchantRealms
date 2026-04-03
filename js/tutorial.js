@@ -1289,33 +1289,18 @@ window.Tutorial = (function () {
         if (!panelEl || !active) return;
         var overlay = document.getElementById('modalOverlay');
         if (!overlay || overlay.classList.contains('hidden')) return;
-        var modalBox = overlay.querySelector('.modal-content') || overlay.children[0];
+        var modalBox = document.getElementById('modalDialog') || overlay.querySelector('.modal-content') || overlay.children[0];
         if (!modalBox) return;
         var pr = panelEl.getBoundingClientRect();
         var mr = modalBox.getBoundingClientRect();
-        if (pr.right < mr.left || pr.left > mr.right || pr.bottom < mr.top || pr.top > mr.bottom) return;
+        // Always move to top-left when a modal opens
         var pw = panelEl.offsetWidth, ph = panelEl.offsetHeight;
-        var vw = window.innerWidth, vh = window.innerHeight;
-        var spots = [
-            { x: 10, y: 60 },
-            { x: vw - pw - 10, y: 60 },
-            { x: 10, y: vh - ph - 10 },
-            { x: vw - pw - 10, y: vh - ph - 10 }
-        ];
-        for (var i = 0; i < spots.length; i++) {
-            var s = spots[i];
-            if (s.x + pw < mr.left || s.x > mr.right || s.y + ph < mr.top || s.y > mr.bottom) {
-                panelEl.style.left = Math.max(0, Math.min(vw - pw, s.x)) + 'px';
-                panelEl.style.top = Math.max(0, Math.min(vh - ph, s.y)) + 'px';
-                panelEl.style.bottom = 'auto';
-                panelEl.style.transform = 'none';
-                return;
-            }
-        }
         panelEl.style.left = '10px';
         panelEl.style.top = '60px';
         panelEl.style.bottom = 'auto';
         panelEl.style.transform = 'none';
+        // Then nudge the modal away from the tutorial panel
+        setTimeout(nudgePanelsFromTutorial, 50);
     }
 
     function createPanel() {
