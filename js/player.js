@@ -14336,6 +14336,7 @@
         player.ownedRoutes = data.ownedRoutes || [];
         // Petitions
         player.petitions = data.petitions || [];
+        _initPetitionIdCounter();
         player.spouseProdMod = data.spouseProdMod != null ? data.spouseProdMod : 1.0;
         player.spouseCostMod = data.spouseCostMod != null ? data.spouseCostMod : 1.0;
         player.spouseRepMod = data.spouseRepMod != null ? data.spouseRepMod : 1.0;
@@ -23127,6 +23128,16 @@
     // ========================================================
 
     let _nextPetitionId = 1;
+
+    function _initPetitionIdCounter() {
+        if (player.petitions && player.petitions.length > 0) {
+            for (var i = 0; i < player.petitions.length; i++) {
+                var idStr = (player.petitions[i].id || '').replace('pet_', '');
+                var num = parseInt(idStr, 10);
+                if (num >= _nextPetitionId) _nextPetitionId = num + 1;
+            }
+        }
+    }
 
     function createPetition(typeId, targetData) {
         if (!player.citizenshipKingdomId && !Object.keys(player.socialRank).some(function(k) { return (player.socialRank[k] || 0) >= 1; })) {

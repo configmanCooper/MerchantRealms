@@ -18042,7 +18042,9 @@ window.UI = (function () {
 
     function showPetitionDetail(petitionId) {
         var petitions = Player.getPetitionHistory();
-        var petition = petitions.find(function(p) { return p.id === petitionId; });
+        // Prefer active petition when duplicate IDs exist
+        var petition = petitions.find(function(p) { return p.id === petitionId && p.status === 'active'; })
+                    || petitions.find(function(p) { return p.id === petitionId; });
         if (!petition) { toast('Petition not found.', 'warning', 'my_kingdom'); return; }
 
         var pType = (typeof PETITION_TYPES !== 'undefined') ? PETITION_TYPES.find(function(t) { return t.id === petition.typeId; }) : null;
