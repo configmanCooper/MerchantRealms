@@ -1383,16 +1383,10 @@ window.Tutorial = (function () {
                 var dRect = dlg.getBoundingClientRect();
                 if (dRect.right > tRect.left && dRect.left < tRect.right &&
                     dRect.bottom > tRect.top && dRect.top < tRect.bottom) {
-                    // Position modal so its left edge is just past tutorial panel
-                    var targetLeft = tRect.right + 10;
-                    // Center remaining space: put modal midway between tutorial right edge and viewport right
-                    var vw = window.innerWidth;
-                    var dw = dRect.width;
-                    var centeredLeft = targetLeft + ((vw - targetLeft - dw) / 2);
-                    // Don't push off-screen; at minimum just clear the tutorial panel
-                    var finalLeft = Math.max(targetLeft, Math.min(centeredLeft, vw - dw - 10));
+                    // Shift just enough to clear the tutorial panel
+                    var overlap = tRect.right - dRect.left + 10;
                     dlg.style.position = 'fixed';
-                    dlg.style.left = finalLeft + 'px';
+                    dlg.style.left = (dRect.left + overlap) + 'px';
                     dlg.style.top = dRect.top + 'px';
                     dlg.style.transform = 'none';
                     dlg.style.margin = '0';
