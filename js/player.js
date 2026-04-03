@@ -3053,10 +3053,13 @@
         const qty = Math.min(quantity, stored);
         if (qty <= 0) return { success: false, message: 'Nothing to collect.' };
 
-        const totalCarried = Object.values(player.inventory).reduce((s, v) => s + v, 0);
+        const res = findResource(resourceId);
+        const resWeight = res ? (res.weight || 1) : 1;
+        const carriedWeight = getCarriedWeight();
         const capacity = getCarryCapacity();
-        const canCarry = Math.min(qty, capacity - totalCarried);
-        if (canCarry <= 0) return { success: false, message: 'Inventory full! Buy a bigger container.' };
+        const freeWeight = Math.max(0, capacity - carriedWeight);
+        const canCarry = Math.min(qty, Math.floor(freeWeight / resWeight));
+        if (canCarry <= 0) return { success: false, message: 'Too heavy to carry! Free capacity: ' + Math.round(freeWeight) + '/' + capacity + '.' };
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.collect_output || 2);
 
@@ -3064,7 +3067,6 @@
         if (bld.inventory[resourceId] <= 0) delete bld.inventory[resourceId];
         player.inventory[resourceId] = (player.inventory[resourceId] || 0) + canCarry;
 
-        const res = findResource(resourceId);
         return { success: true, message: 'Collected ' + canCarry + ' ' + (res ? res.name : resourceId) + '.' };
     }
 
@@ -6089,10 +6091,16 @@
                     if (!sourceBld.inventory) sourceBld.inventory = {};
                     var _pBt = Engine.findBuildingType(sourceBld.type);
                     var _pCap = _pBt ? _bldStorageCap(_pBt.storage || 50, sourceBld.level) : 50;
-                    var _pStored = sourceBld.inventory[resourceId] || 0;
-                    var _pSpace = Math.max(0, _pCap - _pStored);
+                    // Weight-aware output pool capacity
+                    var _pOutSet = {};
+                    if (_pBt && _pBt.produces) _pOutSet[_pBt.produces] = true;
+                    if (_pBt && _pBt.canProduce) { for (var _poi = 0; _poi < _pBt.canProduce.length; _poi++) _pOutSet[_pBt.canProduce[_poi]] = true; }
+                    var _pOutputUsed = 0;
+                    for (var _pok in sourceBld.inventory) { if (_pOutSet[_pok]) { var _por = findResource(_pok); _pOutputUsed += (sourceBld.inventory[_pok] || 0) * (_por ? (_por.weight || 1) : 1); } }
+                    var _pResW = res ? (res.weight || 1) : 1;
+                    var _pSpace = Math.max(0, Math.floor((_pCap - _pOutputUsed) / _pResW));
                     var _pStore = Math.min(overflow, _pSpace);
-                    if (_pStore > 0) sourceBld.inventory[resourceId] = _pStored + _pStore;
+                    if (_pStore > 0) sourceBld.inventory[resourceId] = (sourceBld.inventory[resourceId] || 0) + _pStore;
                     var _pOverflow = overflow - _pStore;
                     if (_pOverflow > 0 && town.market && town.market.supply) {
                         town.market.supply[resourceId] = (town.market.supply[resourceId] || 0) + _pOverflow;
@@ -6110,10 +6118,17 @@
                 if (!sourceBld.inventory) sourceBld.inventory = {};
                 var _pBt2 = Engine.findBuildingType(sourceBld.type);
                 var _pCap2 = _pBt2 ? _bldStorageCap(_pBt2.storage || 50, sourceBld.level) : 50;
-                var _pStored2 = sourceBld.inventory[resourceId] || 0;
-                var _pSpace2 = Math.max(0, _pCap2 - _pStored2);
+                // Weight-aware output pool capacity
+                var _pOutSet2 = {};
+                if (_pBt2 && _pBt2.produces) _pOutSet2[_pBt2.produces] = true;
+                if (_pBt2 && _pBt2.canProduce) { for (var _poi2 = 0; _poi2 < _pBt2.canProduce.length; _poi2++) _pOutSet2[_pBt2.canProduce[_poi2]] = true; }
+                var _pOutputUsed2 = 0;
+                for (var _pok2 in sourceBld.inventory) { if (_pOutSet2[_pok2]) { var _por2 = findResource(_pok2); _pOutputUsed2 += (sourceBld.inventory[_pok2] || 0) * (_por2 ? (_por2.weight || 1) : 1); } }
+                var _pRes2 = findResource(resourceId);
+                var _pResW2 = _pRes2 ? (_pRes2.weight || 1) : 1;
+                var _pSpace2 = Math.max(0, Math.floor((_pCap2 - _pOutputUsed2) / _pResW2));
                 var _pStore2 = Math.min(amount, _pSpace2);
-                if (_pStore2 > 0) sourceBld.inventory[resourceId] = _pStored2 + _pStore2;
+                if (_pStore2 > 0) sourceBld.inventory[resourceId] = (sourceBld.inventory[resourceId] || 0) + _pStore2;
                 var _pOverflow2 = amount - _pStore2;
                 if (_pOverflow2 > 0 && town.market && town.market.supply) {
                     town.market.supply[resourceId] = (town.market.supply[resourceId] || 0) + _pOverflow2;
