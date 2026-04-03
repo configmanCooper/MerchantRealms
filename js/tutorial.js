@@ -1721,6 +1721,35 @@ window.Tutorial = (function () {
                 }
             }
         }
+        // Add a land road from Rustbridge to Driftwood Cay
+        var _driftwood = Engine.getTowns().find(function(t) { return t.name === 'Driftwood Cay'; });
+        if (_driftwood && _tutStart) {
+            var _hasDriftRoad = Engine.getRoads().some(function(r) {
+                return (r.fromTownId === _tutStart.id && r.toTownId === _driftwood.id) ||
+                       (r.fromTownId === _driftwood.id && r.toTownId === _tutStart.id);
+            });
+            if (!_hasDriftRoad) {
+                Engine.getRoads().push({
+                    fromTownId: _tutStart.id,
+                    toTownId: _driftwood.id,
+                    type: 'land',
+                    quality: 0.7,
+                    safe: true,
+                    hasBridge: false,
+                    bridgeSegments: [],
+                    bridgeDestroyed: false,
+                    waypoints: [],
+                    condition: 'good'
+                });
+            }
+            if (_tutStart.connectedTowns && _tutStart.connectedTowns.indexOf(_driftwood.id) === -1) {
+                _tutStart.connectedTowns.push(_driftwood.id);
+            }
+            if (_driftwood.connectedTowns && _driftwood.connectedTowns.indexOf(_tutStart.id) === -1) {
+                _driftwood.connectedTowns.push(_tutStart.id);
+            }
+        }
+
         snapshotState.startTownName = 'Rustbridge';
 
         // Init UI first so DOM elements are cached
