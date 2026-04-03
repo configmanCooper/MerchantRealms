@@ -4,6 +4,41 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.56.0] - 2026-04-03
+
+### Added
+- **Bandit/Pirate Encounter System**: Full encounter system during land and sea travel
+  - Daily encounter chance based on route danger, wartime, guards, ship type, skills
+  - 3-choice resolution: surrender goods/gold, negotiate (skill-based), or fight
+  - Fight outcome based on weapons, armor, guards, ship, hunger/thirst/energy, bandit RNG
+  - Sea fight loss: wash ashore with "Waterlogged Fever" severe illness
+  - Personal guard hire/dismiss system with daily wages and named guards
+  - Risk indicator (🟢/🟡/🔴) next to travel ETA
+- **Bandit Evasion Skills**: `bandit_evasion` (2 SP, requires street_smart) -25% non-wartime encounters; `bandit_mastery` (3 SP) -50% non-wartime, -25% wartime
+- **Variable Escape Artist**: Flee chance now 5-30% based on horse, energy, hunger, armor, skills
+- **Sea Route Petition**: Petition the king to establish sea routes between port towns
+- **Route Feasibility Validation**: Petitioner's office validates road/sea route feasibility before creation
+- **Sea Route Terrain Conversion**: Land tiles along sea routes converted to water on build, load, and world gen
+- **Sea Route Waypoint Regeneration**: Old routes without waypoints get waypoints on load
+- **Passive Energy Subtick Drain**: 0.25 energy per subtick (15/day)
+
+### Changed
+- Caravan pickup searches building inventory (output + input) in addition to town storage
+- Caravan order labels show actual town names instead of "Source"/"Dest"
+- Waypoint orders available for all multi-hop routes (removed caravan_network gate)
+- Petition approval rebalanced: base 5% (was 15%), per-signature bonus 3.5% (was 2.5%)
+- NPCs with relationship < 10 have -10% petition signing penalty
+- Petition signature asks cost 0.35 energy (was 0.25)
+- Signature limit: 2 asks per NPC per day (was 2 total per day)
+- Sea route pathfinder: land cost 100 (was 999), water fraction skips coastal approach
+- Building storage display shows weight-based values
+
+### Fixed
+- Passive energy drain negligible (0.25/day) — now 15/day via subtick
+- Caravan couldn't pick up from buildings (checked non-existent `outputStorage`)
+- Petition ID collision on page reload causing Manage to open wrong petition
+- Building storage showed misleading items vs weight cap
+
 ## [0.55.0] - 2026-04-03
 
 ### Added
