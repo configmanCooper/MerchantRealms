@@ -790,46 +790,53 @@ window.Renderer = (function () {
                 ctx.restore();
             }
 
-            // Draw bridge segments
+            // Draw bridge segments (following waypoint path)
             if ((road.hasBridge || false) && road.bridgeSegments && road.bridgeSegments.length > 0) {
                 for (const seg of road.bridgeSegments) {
-                    let bStart, bEnd;
+                    // Collect waypoints within this bridge segment
+                    var bWps = [];
+                    var wps = road.waypoints;
+                    var wn = wps.length - 1;
 
                     if (seg.startIdx !== undefined) {
-                        // Waypoint-indexed bridge segments
-                        bStart = road.waypoints[seg.startIdx] || road.waypoints[0];
-                        bEnd = road.waypoints[seg.endIdx] || road.waypoints[road.waypoints.length - 1];
-                    } else if (seg.startT !== undefined) {
-                        // Legacy t-value bridge segments — interpolate along waypoints
-                        function wpLerp(t) {
-                            var wps = road.waypoints;
-                            var idx = t * (wps.length - 1);
-                            var i = Math.min(Math.floor(idx), wps.length - 2);
-                            var frac = idx - i;
-                            return {
-                                x: wps[i].x + (wps[i+1].x - wps[i].x) * frac,
-                                y: wps[i].y + (wps[i+1].y - wps[i].y) * frac,
-                            };
+                        for (var bwi = seg.startIdx; bwi <= seg.endIdx && bwi < wps.length; bwi++) {
+                            bWps.push(wps[bwi]);
                         }
-                        bStart = wpLerp(seg.startT);
-                        bEnd = wpLerp(seg.endT);
+                    } else if (seg.startT !== undefined) {
+                        // Interpolate start point
+                        var sIdx = seg.startT * wn;
+                        var si = Math.min(Math.floor(sIdx), wn - 1);
+                        var sf = sIdx - si;
+                        bWps.push({ x: wps[si].x + (wps[si+1].x - wps[si].x) * sf, y: wps[si].y + (wps[si+1].y - wps[si].y) * sf });
+                        // Add all intermediate waypoints
+                        for (var bwi = si + 1; bwi < wps.length; bwi++) {
+                            var wt = bwi / wn;
+                            if (wt >= seg.endT) break;
+                            bWps.push(wps[bwi]);
+                        }
+                        // Interpolate end point
+                        var eIdx = seg.endT * wn;
+                        var ei = Math.min(Math.floor(eIdx), wn - 1);
+                        var ef = eIdx - ei;
+                        bWps.push({ x: wps[ei].x + (wps[ei+1].x - wps[ei].x) * ef, y: wps[ei].y + (wps[ei+1].y - wps[ei].y) * ef });
                     } else {
                         continue;
                     }
 
+                    if (bWps.length < 2) continue;
+
                     if (road.bridgeDestroyed) {
-                        // Destroyed bridge: red dashed line + X
+                        // Destroyed bridge: red dashed line + X along path
                         ctx.strokeStyle = '#cc3333';
                         ctx.lineWidth = width + 2;
                         ctx.setLineDash([3, 3]);
                         ctx.beginPath();
-                        ctx.moveTo(bStart.x, bStart.y);
-                        ctx.lineTo(bEnd.x, bEnd.y);
+                        ctx.moveTo(bWps[0].x, bWps[0].y);
+                        for (var bdi = 1; bdi < bWps.length; bdi++) ctx.lineTo(bWps[bdi].x, bWps[bdi].y);
                         ctx.stroke();
                         ctx.setLineDash([]);
-                        // Red X at midpoint
-                        const bmx = (bStart.x + bEnd.x) / 2;
-                        const bmy = (bStart.y + bEnd.y) / 2;
+                        var bmx = (bWps[0].x + bWps[bWps.length-1].x) / 2;
+                        var bmy = (bWps[0].y + bWps[bWps.length-1].y) / 2;
                         ctx.strokeStyle = '#ff0000';
                         ctx.lineWidth = 2;
                         ctx.beginPath();
@@ -837,30 +844,45 @@ window.Renderer = (function () {
                         ctx.moveTo(bmx + 4, bmy - 4); ctx.lineTo(bmx - 4, bmy + 4);
                         ctx.stroke();
                     } else {
-                        // Intact bridge: brown wooden planks look
+                        // Intact bridge: brown wooden planks along waypoint path
                         ctx.strokeStyle = '#8B6914';
                         ctx.lineWidth = width + 3;
                         ctx.setLineDash([]);
                         ctx.beginPath();
-                        ctx.moveTo(bStart.x, bStart.y);
-                        ctx.lineTo(bEnd.x, bEnd.y);
+                        ctx.moveTo(bWps[0].x, bWps[0].y);
+                        for (var bli = 1; bli < bWps.length; bli++) ctx.lineTo(bWps[bli].x, bWps[bli].y);
                         ctx.stroke();
-                        // Plank lines perpendicular
+                        // Plank lines perpendicular to each sub-segment
                         ctx.strokeStyle = '#6B4F12';
                         ctx.lineWidth = 1;
-                        const bLen = Math.hypot(bEnd.x - bStart.x, bEnd.y - bStart.y);
-                        if (bLen > 0) {
-                            const numPlanks = Math.max(2, Math.floor(bLen / 4));
-                            for (let pl = 0; pl <= numPlanks; pl++) {
-                                const pt = pl / numPlanks;
-                                const ppx = bStart.x + (bEnd.x - bStart.x) * pt;
-                                const ppy = bStart.y + (bEnd.y - bStart.y) * pt;
-                                const perpX = -(bEnd.y - bStart.y) / bLen * (width/2 + 2);
-                                const perpY = (bEnd.x - bStart.x) / bLen * (width/2 + 2);
-                                ctx.beginPath();
-                                ctx.moveTo(ppx + perpX, ppy + perpY);
-                                ctx.lineTo(ppx - perpX, ppy - perpY);
-                                ctx.stroke();
+                        // Walk along the bridge path at regular intervals
+                        var totalBLen = 0;
+                        for (var bsi = 1; bsi < bWps.length; bsi++) {
+                            totalBLen += Math.hypot(bWps[bsi].x - bWps[bsi-1].x, bWps[bsi].y - bWps[bsi-1].y);
+                        }
+                        if (totalBLen > 0) {
+                            var numPlanks = Math.max(2, Math.floor(totalBLen / 4));
+                            for (var pl = 0; pl <= numPlanks; pl++) {
+                                var targetDist = (pl / numPlanks) * totalBLen;
+                                var walked = 0;
+                                for (var bpi = 1; bpi < bWps.length; bpi++) {
+                                    var dx = bWps[bpi].x - bWps[bpi-1].x;
+                                    var dy = bWps[bpi].y - bWps[bpi-1].y;
+                                    var segLen = Math.hypot(dx, dy);
+                                    if (walked + segLen >= targetDist || bpi === bWps.length - 1) {
+                                        var frac = segLen > 0 ? (targetDist - walked) / segLen : 0;
+                                        var ppx = bWps[bpi-1].x + dx * frac;
+                                        var ppy = bWps[bpi-1].y + dy * frac;
+                                        var perpX = segLen > 0 ? -(dy / segLen) * (width/2 + 2) : 0;
+                                        var perpY = segLen > 0 ? (dx / segLen) * (width/2 + 2) : 0;
+                                        ctx.beginPath();
+                                        ctx.moveTo(ppx + perpX, ppy + perpY);
+                                        ctx.lineTo(ppx - perpX, ppy - perpY);
+                                        ctx.stroke();
+                                        break;
+                                    }
+                                    walked += segLen;
+                                }
                             }
                         }
                     }
