@@ -760,23 +760,20 @@ window.Renderer = (function () {
 
             ctx.lineWidth = width;
 
-            // Determine active bridge segments for path clipping
-            var _activeBridgeSegs = (road.hasBridge && !road.bridgeDestroyed && road.bridgeSegments && road.bridgeSegments.length > 0) ? road.bridgeSegments : null;
-
             if (!safe) {
                 ctx.strokeStyle = '#8b4513';
                 ctx.setLineDash([6, 4]);
-                drawWaypointPathSkipBridges(road.waypoints, _activeBridgeSegs);
+                drawWaypointPath(road.waypoints);
 
                 // Red overlay for unsafe
                 ctx.strokeStyle = 'rgba(180,40,30,0.45)';
                 ctx.lineWidth = width + 1;
-                drawWaypointPathSkipBridges(road.waypoints, _activeBridgeSegs);
+                drawWaypointPath(road.waypoints);
                 ctx.setLineDash([]);
             } else {
                 ctx.strokeStyle = quality >= 3 ? '#a08050' : quality >= 2 ? '#8b7355' : '#6b5b4f';
                 ctx.setLineDash([]);
-                drawWaypointPathSkipBridges(road.waypoints, _activeBridgeSegs);
+                drawWaypointPath(road.waypoints);
             }
 
             // Gold overlay for player-owned toll roads
@@ -785,7 +782,7 @@ window.Renderer = (function () {
                 ctx.strokeStyle = 'rgba(212,175,55,0.45)';
                 ctx.lineWidth = width + 2;
                 ctx.setLineDash([8, 4]);
-                drawWaypointPathSkipBridges(road.waypoints, _activeBridgeSegs);
+                drawWaypointPath(road.waypoints);
                 ctx.setLineDash([]);
                 ctx.restore();
             }
