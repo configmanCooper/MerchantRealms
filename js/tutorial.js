@@ -1721,6 +1721,18 @@ window.Tutorial = (function () {
                 }
             }
         }
+        // Remove any sea route between Rustbridge and Inkwell Cross
+        if (_tutStart && _tutNeighbor) {
+            var _seaRoutes = Engine.getSeaRoutes();
+            for (var _si = _seaRoutes.length - 1; _si >= 0; _si--) {
+                var _sr = _seaRoutes[_si];
+                if ((_sr.fromTownId === _tutStart.id && _sr.toTownId === _tutNeighbor.id) ||
+                    (_sr.fromTownId === _tutNeighbor.id && _sr.toTownId === _tutStart.id)) {
+                    _seaRoutes.splice(_si, 1);
+                }
+            }
+        }
+
         // Add a land road from Rustbridge to Driftwood Cay
         var _driftwood = Engine.getTowns().find(function(t) { return t.name === 'Driftwood Cay'; });
         if (_driftwood && _tutStart) {
