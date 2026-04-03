@@ -319,8 +319,8 @@
             const t = terrainAt(tx, ty);
             if (mode === 'sea') {
                 if (t === TERRAIN.WATER.id) return 1.0;
-                if (t === TERRAIN.SAND.id) return 50.0;
-                return 999.0;
+                if (t === TERRAIN.SAND.id) return 8.0;
+                return 100.0;  // Heavily discourage land; pathfinder still reaches coastal water
             } else {
                 // land mode
                 if (t === TERRAIN.GRASS.id) return 1.0;
