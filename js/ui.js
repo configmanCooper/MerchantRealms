@@ -6872,6 +6872,12 @@ window.UI = (function () {
                     <label style="font-size:0.7rem;cursor:pointer;"><input type="checkbox" id="caravanArmedEscort"> Armed Escort (${CONFIG.CARAVAN_ARMED_ESCORT_COST || 80}g, +50% guard power)</label>
                 </div>
             </div>
+            <div class="form-group" style="margin-top:8px;">
+                <label style="font-size:0.8rem;">🚌 Passenger Options</label>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <label style="font-size:0.7rem;cursor:pointer;"><input type="checkbox" id="caravanAutoPickup"> Auto-pickup travelers (earn fares from NPCs traveling along your route)</label>
+                </div>
+            </div>
             ${previewHtml}
             <div class="caravan-danger-info" style="font-size:0.75rem;margin-top:6px;">
                 ${connectedTowns.filter(ct => (ct.road.banditThreat || 0) > CONFIG.BANDIT_THREAT_DANGER_THRESHOLD).map(ct => {
@@ -7344,6 +7350,7 @@ window.UI = (function () {
         const fortified = document.getElementById('caravanFortified') ? document.getElementById('caravanFortified').checked : false;
         const decoy = document.getElementById('caravanDecoy') ? document.getElementById('caravanDecoy').checked : false;
         const armedEscort = document.getElementById('caravanArmedEscort') ? document.getElementById('caravanArmedEscort').checked : false;
+        const autoPickupTravelers = document.getElementById('caravanAutoPickup') ? document.getElementById('caravanAutoPickup').checked : false;
 
         // Detect if sea route was selected
         const selectedOption = destSelect.options[destSelect.selectedIndex];
@@ -7363,7 +7370,8 @@ window.UI = (function () {
             carts: carts,
             wagons: wagons,
             guardWeapons: guardWeapons,
-            guardArmor: guardArmor
+            guardArmor: guardArmor,
+            autoPickupTravelers: autoPickupTravelers
         };
 
         try {
@@ -7376,7 +7384,8 @@ window.UI = (function () {
                     orders: _caravanOrders.length > 0 ? _caravanOrders.slice() : null,
                     roundTrip: roundTrip,
                     recurring: recurring,
-                    overflowSell: false
+                    overflowSell: false,
+                    autoPickupTravelers: autoPickupTravelers
                 };
                 if (shipVal.indexOf('own:') === 0) {
                     seaOptions.shipId = shipVal.substring(4);
@@ -7476,6 +7485,15 @@ window.UI = (function () {
                 html += '</div>';
             }
 
+            // Passengers
+            if (c.passengers && c.passengers.length > 0) {
+                html += '<div style="font-size:0.7rem;color:#bbb;margin-bottom:4px;">🚌 Passengers: ';
+                html += c.passengers.map(function(p) {
+                    return p.name + ' → ' + (p.destinationName || '?');
+                }).join(', ');
+                html += '</div>';
+            }
+
             // Orders summary
             if (c.orders && c.orders.length > 0) {
                 html += '<details style="margin-bottom:4px;"><summary style="font-size:0.7rem;color:var(--gold);cursor:pointer;">📋 ' + c.orders.length + ' Orders</summary>';
@@ -7513,6 +7531,12 @@ window.UI = (function () {
                 var _ovChecked = c.overflowSell ? 'checked' : '';
                 html += '<div style="margin-top:6px;font-size:0.7rem;">';
                 html += '<label style="color:#aaa;cursor:pointer;"><input type="checkbox" ' + _ovChecked + ' onchange="(function(){var cv=Player.caravans.find(function(x){return x.id===\'' + c.id + '\'});if(cv){cv.overflowSell=!cv.overflowSell;UI.toast(cv.overflowSell?\'Overflow: sell to market\':\'Overflow: keep on caravan\',\'info\');UI.openCaravanManagement();}})()" style="margin-right:4px;vertical-align:middle;"> Sell overflow to market (when buildings are full)</label>';
+                html += '</div>';
+                var _apChecked = c.autoPickupTravelers ? 'checked' : '';
+                var _apCap = (c.carriers || 1) + (c.carts || 0) * 4 + (c.wagons || 0) * 8;
+                var _apCount = c.passengers ? c.passengers.length : 0;
+                html += '<div style="margin-top:3px;font-size:0.7rem;">';
+                html += '<label style="color:#aaa;cursor:pointer;"><input type="checkbox" ' + _apChecked + ' onchange="(function(){var cv=Player.caravans.find(function(x){return x.id===\'' + c.id + '\'});if(cv){cv.autoPickupTravelers=!cv.autoPickupTravelers;if(!cv.passengers)cv.passengers=[];UI.toast(cv.autoPickupTravelers?\'Auto-pickup: ON\':\'Auto-pickup: OFF\',\'info\');UI.openCaravanManagement();}})()" style="margin-right:4px;vertical-align:middle;"> 🚌 Auto-pickup travelers (' + _apCount + '/' + _apCap + ' seats)</label>';
                 html += '</div>';
             }
 

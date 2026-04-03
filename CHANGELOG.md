@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [0.55.0] - 2026-04-03
 
 ### Added
+- Caravan passenger system: caravans auto-pickup travelers along their route
+  - Toggle per caravan: "Auto-Pickup Travelers" in creation dialog and management panel
+  - Capacity based on vehicle types: +1 per carrier, +4 per cart, +8 per wagon
+  - Passengers board at stops if their destination is on the route, disembark at destination
+  - Fare collected from traveler's max price, logged as `caravan_passenger` in financial ledger
+  - NPCs physically relocated to destination town
+  - Passenger list displayed in caravan cargo section (names → destinations)
+  - Passengers safely stranded on caravan destroy/force-disband
 - Illness notification filter: new 🦠 Illness toggle in Settings and Event Log filter bar
   - Controls plague outbreaks, disease spread, quarantines, health policies, notable illness deaths
   - Illness events tagged with explicit `illness` category for reliable filtering
@@ -35,6 +43,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ### Fixed
 - Guild membership warnings appearing despite active membership with auto-renew
   - Root cause: monopoly check ran before auto-renew, briefly seeing expired membership
+- Quest acceptance across towns: defensive fixes for "quest not found" errors
+  - Removed overly strict status filter, added null safety and hasOwnProperty guards
+  - Better error messaging and console debug logging
+- Caravan store orders ignoring building input capacity (counting output items like rope against input pool)
+  - Both specific-building and any-building store paths now use input-only capacity check
+  - Matches pattern used in auto-buy, _executeTransfer, depositToBuilding
 - View Location button in event details sending camera to wrong coordinates
   - Removed erroneous `* CONFIG.TILE_SIZE` multiplication in clickTown()
 - Disease awareness skill: healthy towns now show "No illness detected" + nearby plague warnings

@@ -2410,6 +2410,8 @@
             totalSpent: totalCost,
             active: true,
             overflowSell: options.overflowSell || false,
+            autoPickupTravelers: options.autoPickupTravelers || false,
+            passengers: [],
             autoDisbandConditions: options.autoDisbandConditions ? JSON.parse(JSON.stringify(options.autoDisbandConditions)) : [],
         };
         player.caravans.push(caravan);
@@ -3768,6 +3770,8 @@
             totalSpent: totalCost,
             totalProfit: -totalCost,
             tripCount: 0,
+            autoPickupTravelers: options.autoPickupTravelers || false,
+            passengers: [],
         };
         player.caravans.push(caravan);
         var shipLabel = ownedShip ? ownedShip.name : (shipTypeDef ? shipTypeDef.name + ' (rented)' : 'rented ship');
@@ -3901,9 +3905,12 @@
                             }
                         }
                         var bldCap = bt ? _bldStorageCap(bt.storage, bld.level) : 0;
+                        // Input-only capacity: exclude output items from count
+                        var _csOutSet = {};
+                        if (bt && bt.produces) { _csOutSet[bt.produces] = true; }
+                        if (bt && bt.canProduce) { for (var _cpi = 0; _cpi < bt.canProduce.length; _cpi++) _csOutSet[bt.canProduce[_cpi]] = true; }
                         var bldUsed = 0;
-                        if (bld.inventory) { for (var bi in bld.inventory) { var bw = (findResource(bi) || {}).weight || 1; bldUsed += (bld.inventory[bi] || 0) * bw; } }
-                        bldUsed += bld.storedOutput || 0;
+                        if (bld.inventory) { for (var bi in bld.inventory) { if (_csOutSet[bi]) continue; var bw = (findResource(bi) || {}).weight || 1; bldUsed += (bld.inventory[bi] || 0) * bw; } }
                         var resWeight = (findResource(o.good) || {}).weight || 1;
                         var canFit = Math.floor((bldCap - bldUsed) / resWeight);
                         var bldQty = Math.min(storeQty, canFit);
@@ -3948,9 +3955,12 @@
                             if (!_consumed[o.good]) continue;
                         }
                         var _tBldCap = _bldStorageCap(_tBt.storage, _tBld.level);
+                        // Input-only capacity: exclude output items
+                        var _tOutSet = {};
+                        if (_tBt.produces) { _tOutSet[_tBt.produces] = true; }
+                        if (_tBt.canProduce) { for (var _tcpi = 0; _tcpi < _tBt.canProduce.length; _tcpi++) _tOutSet[_tBt.canProduce[_tcpi]] = true; }
                         var _tBldUsed = 0;
-                        if (_tBld.inventory) { for (var _tbi2 in _tBld.inventory) { var _tbw = (findResource(_tbi2) || {}).weight || 1; _tBldUsed += (_tBld.inventory[_tbi2] || 0) * _tbw; } }
-                        _tBldUsed += _tBld.storedOutput || 0;
+                        if (_tBld.inventory) { for (var _tbi2 in _tBld.inventory) { if (_tOutSet[_tbi2]) continue; var _tbw = (findResource(_tbi2) || {}).weight || 1; _tBldUsed += (_tBld.inventory[_tbi2] || 0) * _tbw; } }
                         var _tResWeight = (findResource(o.good) || {}).weight || 1;
                         var _tCanFit = Math.floor((_tBldCap - _tBldUsed) / _tResWeight);
                         var _tStoreQty = Math.min(_storeRemaining, _tCanFit);
@@ -4249,6 +4259,97 @@
         }
     }
 
+    // ── Caravan passenger system ──────────────────────────────
+    function _getCaravanRouteTownIds(caravan) {
+        var towns = {};
+        if (caravan.fromTownId) towns[caravan.fromTownId] = true;
+        if (caravan.toTownId) towns[caravan.toTownId] = true;
+        if (caravan.route) {
+            for (var i = 0; i < caravan.route.length; i++) {
+                if (caravan.route[i].fromTownId) towns[caravan.route[i].fromTownId] = true;
+                if (caravan.route[i].toTownId) towns[caravan.route[i].toTownId] = true;
+            }
+        }
+        return towns;
+    }
+
+    function _getCaravanPassengerCap(caravan) {
+        // 1 passenger per carrier, +4 per cart, +8 per wagon
+        return (caravan.carriers || 1) + (caravan.carts || 0) * 4 + (caravan.wagons || 0) * 8;
+    }
+
+    function _processCaravanPassengers(caravan, townId) {
+        if (!caravan.autoPickupTravelers) return;
+        if (!caravan.passengers) caravan.passengers = [];
+        var town = Engine.findTown(townId);
+        if (!town) return;
+        var townName = town.name || townId;
+
+        // 1. Drop off passengers whose destination is this town
+        var dropped = [];
+        var remaining = [];
+        var fareEarned = 0;
+        for (var i = 0; i < caravan.passengers.length; i++) {
+            var p = caravan.passengers[i];
+            if (p.destinationTownId === townId) {
+                fareEarned += p.fare || 0;
+                dropped.push(p);
+                // Move the NPC to destination
+                if (Engine.findPerson) {
+                    var person = Engine.findPerson(p.personId);
+                    if (person) person.townId = townId;
+                }
+            } else {
+                remaining.push(p);
+            }
+        }
+        caravan.passengers = remaining;
+        if (dropped.length > 0) {
+            player.gold += fareEarned;
+            player.stats.totalGoldEarned += fareEarned;
+            caravan.totalProfit = (caravan.totalProfit || 0) + fareEarned;
+            logFinance(fareEarned, 'caravan_passenger', 'Caravan passenger fares');
+            logCaravan(caravan, '🚌 Delivered ' + dropped.length + ' passenger' + (dropped.length > 1 ? 's' : '') + ' to ' + townName + '. Earned ' + fareEarned + 'g.');
+            player.stats.caravanPassengersDelivered = (player.stats.caravanPassengersDelivered || 0) + dropped.length;
+        }
+
+        // 2. Pick up travelers whose destination is on the caravan's route
+        var demand = town.travelDemand || [];
+        if (demand.length === 0) return;
+        var routeTowns = _getCaravanRouteTownIds(caravan);
+        var cap = _getCaravanPassengerCap(caravan);
+        var currentCount = caravan.passengers.length;
+        var pickedUp = [];
+
+        for (var j = 0; j < demand.length && currentCount < cap; j++) {
+            var d = demand[j];
+            // Destination must be on this caravan's route and NOT the current town
+            if (d.destinationTownId === townId) continue;
+            if (!routeTowns[d.destinationTownId]) continue;
+            pickedUp.push(d);
+            caravan.passengers.push({
+                personId: d.personId,
+                name: d.personName || 'Traveler',
+                wealthClass: d.wealthClass || 'lower',
+                destinationTownId: d.destinationTownId,
+                destinationName: d.destinationName || d.destinationTownId,
+                fare: d.maxPrice || 5,
+                boardedDay: Engine.getDay ? Engine.getDay() : 0
+            });
+            currentCount++;
+        }
+
+        // Remove picked-up travelers from town demand
+        for (var k = 0; k < pickedUp.length; k++) {
+            var idx = town.travelDemand.indexOf(pickedUp[k]);
+            if (idx !== -1) town.travelDemand.splice(idx, 1);
+        }
+
+        if (pickedUp.length > 0) {
+            logCaravan(caravan, '🚌 Picked up ' + pickedUp.length + ' passenger' + (pickedUp.length > 1 ? 's' : '') + ' at ' + townName + '. (' + currentCount + '/' + cap + ' seats)');
+        }
+    }
+
     function _processCaravanArrival(caravan) {
                 caravan.progress = 1.0;
                 caravan.tripCount = (caravan.tripCount || 0) + 1;
@@ -4382,6 +4483,9 @@
                     Engine.logEvent('Caravan destination no longer exists — cargo returned to inventory.');
                     return;
                 }
+
+                // Process passengers: drop off arrivals, pick up new travelers
+                _processCaravanPassengers(caravan, destTownId);
 
                 const routeLabel = caravan.routeType === 'sea' ? 'Sea caravan' : 'Caravan';
                 Engine.logEvent(`${routeLabel} arrived at ${destTown ? destTown.name : 'destination'}.`);
@@ -4869,6 +4973,11 @@
                     caravan.status = 'destroyed';
                     caravan.active = false;
                     caravan.goods = {};
+                    // Strand passengers — return them to their origin towns
+                    if (caravan.passengers && caravan.passengers.length > 0) {
+                        logCaravan(caravan, '🚌 ' + caravan.passengers.length + ' passengers stranded by attack.');
+                        caravan.passengers = [];
+                    }
                     continue;
                 }
             }
@@ -4890,6 +4999,7 @@
                             var waypointTownId = seg.toTownId;
                             if (waypointTownId !== caravan.fromTownId && waypointTownId !== caravan.toTownId) {
                                 processCaravanOrders(caravan, waypointTownId, caravan.returnTrip);
+                                _processCaravanPassengers(caravan, waypointTownId);
                                 caravan._lastWaypointIdx = wsi;
                             }
                         }
@@ -5091,6 +5201,12 @@
         caravan.active = false;
         caravan.recurring = false;
         caravan.disbanding = false;
+
+        // Strand passengers
+        if (caravan.passengers && caravan.passengers.length > 0) {
+            logCaravan(caravan, '🚌 ' + caravan.passengers.length + ' passengers stranded by force-disband.');
+            caravan.passengers = [];
+        }
 
         var originName = Engine.findTown(dropTownId) ? Engine.findTown(dropTownId).name : 'origin';
         logCaravan(caravan, '❌ Caravan force-disbanded. ' + (totalDropped > 0 ? totalDropped + ' goods dropped at ' + originName + '.' : 'No goods to drop.'));
@@ -17524,7 +17640,7 @@
     }
 
     function acceptTownQuest(questId) {
-        if (!player.townQuests) return { success: false, message: 'No quests available.' };
+        if (!player.townQuests) player.townQuests = {};
         if (!player.activeQuests) player.activeQuests = [];
 
         // Max 5 active quests
@@ -17532,13 +17648,23 @@
             return { success: false, message: 'You can only have 5 active quests at a time. Complete or abandon one first.' };
         }
 
+        // Check if already accepted
+        for (var _aci = 0; _aci < player.activeQuests.length; _aci++) {
+            if (player.activeQuests[_aci].id === questId) {
+                return { success: false, message: 'You have already accepted this quest!' };
+            }
+        }
+
         // Find the quest in available pools
         var found = null;
         var foundTownId = null;
         for (var tid in player.townQuests) {
-            var avail = player.townQuests[tid].available;
+            if (!player.townQuests.hasOwnProperty(tid)) continue;
+            var tqObj = player.townQuests[tid];
+            if (!tqObj || !tqObj.available) continue;
+            var avail = tqObj.available;
             for (var i = 0; i < avail.length; i++) {
-                if (avail[i].id === questId && avail[i].status === 'available') {
+                if (avail[i].id === questId) {
                     found = avail[i];
                     foundTownId = tid;
                     break;
@@ -17546,7 +17672,10 @@
             }
             if (found) break;
         }
-        if (!found) return { success: false, message: 'Quest not found or already taken.' };
+        if (!found) {
+            console.warn('[QuestBug] acceptTownQuest failed for', questId, 'townQuests keys:', Object.keys(player.townQuests), 'activeQuests:', player.activeQuests.map(function(q) { return q.id; }));
+            return { success: false, message: 'Quest not found — it may have expired. Try refreshing the quest panel.' };
+        }
 
         var day = Engine.getDay();
         found.status = 'accepted';
