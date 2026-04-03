@@ -489,11 +489,15 @@
         var simplified = douglasPeucker(pixelPath, TS);
 
         // Compute water fraction from raw path for validation
+        // Skip first/last few tiles near towns (coastal land shouldn't disqualify sea routes)
         var waterTiles = 0;
         var rawBridgeSpans = [];
         var inWaterRaw = false;
         var rawBridgeStart = 0;
-        for (var ri = 0; ri < rawPath.length; ri++) {
+        var skipTiles = (mode === 'sea') ? Math.min(4, Math.floor(rawPath.length * 0.05)) : 0;
+        var checkStart = skipTiles;
+        var checkEnd = rawPath.length - skipTiles;
+        for (var ri = checkStart; ri < checkEnd; ri++) {
             var isWaterRaw = terrainAt(rawPath[ri].tx, rawPath[ri].ty) === TERRAIN.WATER.id;
             if (isWaterRaw) {
                 waterTiles++;
@@ -505,9 +509,10 @@
                 }
             }
         }
-        if (inWaterRaw) rawBridgeSpans.push(rawPath.length - rawBridgeStart);
+        if (inWaterRaw) rawBridgeSpans.push(checkEnd - rawBridgeStart);
 
-        var waterFraction = rawPath.length > 0 ? waterTiles / rawPath.length : 0;
+        var checkedLength = checkEnd - checkStart;
+        var waterFraction = checkedLength > 0 ? waterTiles / checkedLength : 0;
 
         // For land mode: validate constraints using raw path data
         if (mode === 'land') {
