@@ -18,6 +18,7 @@ window.Tutorial = (function () {
     var doneTimeout = null;
     var doneAdvanceFn = null;
     var modalObserver = null;
+    var minimapNudgeObserver = null;
     var snapshotState = {};
     var waitingClickCount = 0;
 
@@ -187,6 +188,14 @@ window.Tutorial = (function () {
         if (skipTimeout) { clearTimeout(skipTimeout); skipTimeout = null; }
         if (doneTimeout) { clearTimeout(doneTimeout); doneTimeout = null; }
         doneAdvanceFn = null;
+        // Clean up minimap nudge observer and restore nudged elements
+        if (minimapNudgeObserver) { minimapNudgeObserver.disconnect(); minimapNudgeObserver = null; }
+        var mmNudged = document.querySelectorAll('[data-mm-nudged]');
+        for (var i = 0; i < mmNudged.length; i++) {
+            mmNudged[i].style.right = '';
+            mmNudged[i].style.left = '';
+            delete mmNudged[i].dataset.mmNudged;
+        }
         // Clean up marriage propose glow timer
         if (snapshotState._proposeGlowTimer) { clearInterval(snapshotState._proposeGlowTimer); snapshotState._proposeGlowTimer = null; }
         var propBtn = document.getElementById('btnPropose');
@@ -267,24 +276,49 @@ window.Tutorial = (function () {
                             snapshotState.cameraX = cam.x;
                             snapshotState.cameraY = cam.y;
                         } catch (e) {}
-                        // Move any panels covering the minimap to the left
-                        var minimap = document.getElementById('minimapCanvas');
-                        if (minimap) {
+
+                        // Nudge any panels/modals covering the minimap to the left
+                        function nudgeFromMinimap() {
+                            var minimap = document.getElementById('minimapCanvas');
+                            if (!minimap) return;
                             var mmRect = minimap.getBoundingClientRect();
-                            var panels = document.querySelectorAll('.right-panel, .side-panel, .info-panel');
+                            // Check CSS panels
+                            var panels = document.querySelectorAll('.right-panel, .side-panel, .info-panel, .left-panel');
                             for (var pi = 0; pi < panels.length; pi++) {
                                 var p = panels[pi];
-                                if (p.offsetParent === null) continue; // hidden
+                                if (p.offsetParent === null) continue;
                                 var pRect = p.getBoundingClientRect();
                                 if (pRect.right > mmRect.left && pRect.left < mmRect.right &&
                                     pRect.bottom > mmRect.top && pRect.top < mmRect.bottom) {
-                                    // Shift panel left so its right edge clears the minimap
-                                    var shift = pRect.right - mmRect.left + 10;
-                                    p.style.right = shift + 'px';
-                                    p.dataset.tutShifted = 'true';
+                                    var overlap = pRect.right - mmRect.left + 10;
+                                    p.style.right = (parseInt(p.style.right, 10) || 0) + overlap + 'px';
+                                    p.dataset.mmNudged = 'true';
+                                }
+                            }
+                            // Check modal dialog
+                            var modalOverlay = document.getElementById('modalOverlay');
+                            if (modalOverlay && !modalOverlay.classList.contains('hidden')) {
+                                var dlg = document.getElementById('modalDialog');
+                                if (dlg && !dlg.dataset.mmNudged) {
+                                    var dRect = dlg.getBoundingClientRect();
+                                    if (dRect.right > mmRect.left && dRect.left < mmRect.right &&
+                                        dRect.bottom > mmRect.top && dRect.top < mmRect.bottom) {
+                                        var shift = dRect.right - mmRect.left + 10;
+                                        dlg.style.position = 'fixed';
+                                        dlg.style.left = (dRect.left - shift) + 'px';
+                                        dlg.style.top = dRect.top + 'px';
+                                        dlg.style.transform = 'none';
+                                        dlg.style.margin = '0';
+                                        dlg.dataset.mmNudged = 'true';
+                                    }
                                 }
                             }
                         }
+                        nudgeFromMinimap();
+                        // Watch for new panels/modals appearing during this step
+                        if (minimapNudgeObserver) { minimapNudgeObserver.disconnect(); minimapNudgeObserver = null; }
+                        minimapNudgeObserver = new MutationObserver(function () { nudgeFromMinimap(); });
+                        minimapNudgeObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
                     },
                     waitFor: function () {
                         if (window._tutorialMinimapClicked) return true;
