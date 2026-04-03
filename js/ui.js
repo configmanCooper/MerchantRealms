@@ -2342,9 +2342,23 @@ window.UI = (function () {
         var dx = e.clientX - _modalDragState.startMouseX;
         var dy = e.clientY - _modalDragState.startMouseY;
         var dlg = _modalDragState.el;
+        var newLeft = _modalDragState.startLeft + dx;
+        var newTop = _modalDragState.startTop + dy;
+        // During tutorial, prevent dragging modal over the tutorial panel
+        var tutPanel = document.getElementById('tutorialPanel');
+        if (tutPanel && tutPanel.offsetParent !== null) {
+            var tRect = tutPanel.getBoundingClientRect();
+            var dw = dlg.offsetWidth || dlg.getBoundingClientRect().width;
+            var dh = dlg.offsetHeight || dlg.getBoundingClientRect().height;
+            // If modal would overlap tutorial panel, clamp left edge
+            if (newLeft < tRect.right + 10 && newLeft + dw > tRect.left &&
+                newTop < tRect.bottom && newTop + dh > tRect.top) {
+                newLeft = tRect.right + 10;
+            }
+        }
         dlg.style.position = 'fixed';
-        dlg.style.left = (_modalDragState.startLeft + dx) + 'px';
-        dlg.style.top = (_modalDragState.startTop + dy) + 'px';
+        dlg.style.left = newLeft + 'px';
+        dlg.style.top = newTop + 'px';
         dlg.style.transform = 'none';
         dlg.style.margin = '0';
     });
