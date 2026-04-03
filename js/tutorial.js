@@ -267,6 +267,24 @@ window.Tutorial = (function () {
                             snapshotState.cameraX = cam.x;
                             snapshotState.cameraY = cam.y;
                         } catch (e) {}
+                        // Move any panels covering the minimap to the left
+                        var minimap = document.getElementById('minimapCanvas');
+                        if (minimap) {
+                            var mmRect = minimap.getBoundingClientRect();
+                            var panels = document.querySelectorAll('.right-panel, .side-panel, .info-panel');
+                            for (var pi = 0; pi < panels.length; pi++) {
+                                var p = panels[pi];
+                                if (p.offsetParent === null) continue; // hidden
+                                var pRect = p.getBoundingClientRect();
+                                if (pRect.right > mmRect.left && pRect.left < mmRect.right &&
+                                    pRect.bottom > mmRect.top && pRect.top < mmRect.bottom) {
+                                    // Shift panel left so its right edge clears the minimap
+                                    var shift = pRect.right - mmRect.left + 10;
+                                    p.style.right = shift + 'px';
+                                    p.dataset.tutShifted = 'true';
+                                }
+                            }
+                        }
                     },
                     waitFor: function () {
                         if (window._tutorialMinimapClicked) return true;
