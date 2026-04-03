@@ -23277,7 +23277,7 @@
         petition._askCounts[npcId] = askedCount + 1;
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(1);
-        consumeEnergy(0.25);
+        consumeEnergy(0.35);
 
         var rel = getRelationship(npcId);
         var relLevel = rel ? (rel.level || 0) : 0;
