@@ -760,20 +760,145 @@ window.Renderer = (function () {
 
             ctx.lineWidth = width;
 
-            if (!safe) {
-                ctx.strokeStyle = '#8b4513';
-                ctx.setLineDash([6, 4]);
-                drawWaypointPath(road.waypoints);
+            // Draw road with real-time terrain check: bridge over water, road over land
+            var _wps = road.waypoints;
+            var _hasBridgeData = (road.hasBridge || false) && !road.bridgeDestroyed;
+            if (_hasBridgeData && _wps.length >= 2) {
+                // Per-segment terrain-aware rendering
+                var _roadColor = quality >= 3 ? '#a08050' : quality >= 2 ? '#8b7355' : '#6b5b4f';
+                var _inWaterRun = false;
+                var _waterRunStart = -1;
 
-                // Red overlay for unsafe
-                ctx.strokeStyle = 'rgba(180,40,30,0.45)';
-                ctx.lineWidth = width + 1;
-                drawWaypointPath(road.waypoints);
+                // First pass: draw road segments (only over land)
+                if (!safe) {
+                    ctx.strokeStyle = '#8b4513';
+                    ctx.setLineDash([6, 4]);
+                } else {
+                    ctx.strokeStyle = _roadColor;
+                    ctx.setLineDash([]);
+                }
+                ctx.lineWidth = width;
+                var _drawing = false;
+                for (var _si = 0; _si < _wps.length - 1; _si++) {
+                    var _mx = (_wps[_si].x + _wps[_si+1].x) / 2;
+                    var _my = (_wps[_si].y + _wps[_si+1].y) / 2;
+                    var _terr = Engine.getTerrainAtPixel(_mx, _my);
+                    if (_terr === 2) { // water
+                        if (_drawing) { ctx.stroke(); _drawing = false; }
+                    } else {
+                        if (!_drawing) {
+                            ctx.beginPath();
+                            ctx.moveTo(_wps[_si].x, _wps[_si].y);
+                            _drawing = true;
+                        }
+                        ctx.lineTo(_wps[_si+1].x, _wps[_si+1].y);
+                    }
+                }
+                if (_drawing) ctx.stroke();
                 ctx.setLineDash([]);
+
+                if (!safe) {
+                    // Red overlay for unsafe (land only)
+                    ctx.strokeStyle = 'rgba(180,40,30,0.45)';
+                    ctx.lineWidth = width + 1;
+                    _drawing = false;
+                    for (var _si = 0; _si < _wps.length - 1; _si++) {
+                        var _mx = (_wps[_si].x + _wps[_si+1].x) / 2;
+                        var _my = (_wps[_si].y + _wps[_si+1].y) / 2;
+                        var _terr = Engine.getTerrainAtPixel(_mx, _my);
+                        if (_terr === 2) {
+                            if (_drawing) { ctx.stroke(); _drawing = false; }
+                        } else {
+                            if (!_drawing) { ctx.beginPath(); ctx.moveTo(_wps[_si].x, _wps[_si].y); _drawing = true; }
+                            ctx.lineTo(_wps[_si+1].x, _wps[_si+1].y);
+                        }
+                    }
+                    if (_drawing) ctx.stroke();
+                }
+
+                // Second pass: draw bridge segments (only over water)
+                ctx.strokeStyle = '#8B6914';
+                ctx.lineWidth = width + 3;
+                ctx.setLineDash([]);
+                _drawing = false;
+                var _bridgeSegs = []; // collect water runs for planks
+                var _curBridge = [];
+                for (var _si = 0; _si < _wps.length - 1; _si++) {
+                    var _mx = (_wps[_si].x + _wps[_si+1].x) / 2;
+                    var _my = (_wps[_si].y + _wps[_si+1].y) / 2;
+                    var _terr = Engine.getTerrainAtPixel(_mx, _my);
+                    if (_terr === 2) { // water — bridge
+                        if (!_drawing) {
+                            ctx.beginPath();
+                            ctx.moveTo(_wps[_si].x, _wps[_si].y);
+                            _drawing = true;
+                            _curBridge = [_wps[_si]];
+                        }
+                        ctx.lineTo(_wps[_si+1].x, _wps[_si+1].y);
+                        _curBridge.push(_wps[_si+1]);
+                    } else {
+                        if (_drawing) {
+                            ctx.stroke();
+                            _drawing = false;
+                            if (_curBridge.length >= 2) _bridgeSegs.push(_curBridge);
+                            _curBridge = [];
+                        }
+                    }
+                }
+                if (_drawing) {
+                    ctx.stroke();
+                    if (_curBridge.length >= 2) _bridgeSegs.push(_curBridge);
+                }
+
+                // Draw planks on each water bridge run
+                ctx.strokeStyle = '#6B4F12';
+                ctx.lineWidth = 1;
+                for (var _bi = 0; _bi < _bridgeSegs.length; _bi++) {
+                    var _bpts = _bridgeSegs[_bi];
+                    var _tLen = 0;
+                    for (var _bj = 1; _bj < _bpts.length; _bj++) {
+                        _tLen += Math.hypot(_bpts[_bj].x - _bpts[_bj-1].x, _bpts[_bj].y - _bpts[_bj-1].y);
+                    }
+                    if (_tLen <= 0) continue;
+                    var _nPlanks = Math.max(2, Math.floor(_tLen / 4));
+                    for (var _pl = 0; _pl <= _nPlanks; _pl++) {
+                        var _target = (_pl / _nPlanks) * _tLen;
+                        var _walked = 0;
+                        for (var _bk = 1; _bk < _bpts.length; _bk++) {
+                            var _dx = _bpts[_bk].x - _bpts[_bk-1].x;
+                            var _dy = _bpts[_bk].y - _bpts[_bk-1].y;
+                            var _sLen = Math.hypot(_dx, _dy);
+                            if (_walked + _sLen >= _target || _bk === _bpts.length - 1) {
+                                var _f = _sLen > 0 ? (_target - _walked) / _sLen : 0;
+                                var _px = _bpts[_bk-1].x + _dx * _f;
+                                var _py = _bpts[_bk-1].y + _dy * _f;
+                                var _prpX = _sLen > 0 ? -(_dy / _sLen) * (width/2 + 2) : 0;
+                                var _prpY = _sLen > 0 ? (_dx / _sLen) * (width/2 + 2) : 0;
+                                ctx.beginPath();
+                                ctx.moveTo(_px + _prpX, _py + _prpY);
+                                ctx.lineTo(_px - _prpX, _py - _prpY);
+                                ctx.stroke();
+                                break;
+                            }
+                            _walked += _sLen;
+                        }
+                    }
+                }
             } else {
-                ctx.strokeStyle = quality >= 3 ? '#a08050' : quality >= 2 ? '#8b7355' : '#6b5b4f';
-                ctx.setLineDash([]);
-                drawWaypointPath(road.waypoints);
+                // No bridge data — normal road rendering
+                if (!safe) {
+                    ctx.strokeStyle = '#8b4513';
+                    ctx.setLineDash([6, 4]);
+                    drawWaypointPath(road.waypoints);
+                    ctx.strokeStyle = 'rgba(180,40,30,0.45)';
+                    ctx.lineWidth = width + 1;
+                    drawWaypointPath(road.waypoints);
+                    ctx.setLineDash([]);
+                } else {
+                    ctx.strokeStyle = quality >= 3 ? '#a08050' : quality >= 2 ? '#8b7355' : '#6b5b4f';
+                    ctx.setLineDash([]);
+                    drawWaypointPath(road.waypoints);
+                }
             }
 
             // Gold overlay for player-owned toll roads
@@ -785,105 +910,6 @@ window.Renderer = (function () {
                 drawWaypointPath(road.waypoints);
                 ctx.setLineDash([]);
                 ctx.restore();
-            }
-
-            // Draw bridge segments (following waypoint path)
-            if ((road.hasBridge || false) && road.bridgeSegments && road.bridgeSegments.length > 0) {
-                for (const seg of road.bridgeSegments) {
-                    // Collect waypoints within this bridge segment
-                    var bWps = [];
-                    var wps = road.waypoints;
-                    var wn = wps.length - 1;
-
-                    if (seg.startIdx !== undefined) {
-                        for (var bwi = seg.startIdx; bwi <= seg.endIdx && bwi < wps.length; bwi++) {
-                            bWps.push(wps[bwi]);
-                        }
-                    } else if (seg.startT !== undefined) {
-                        // Interpolate start point
-                        var sIdx = seg.startT * wn;
-                        var si = Math.min(Math.floor(sIdx), wn - 1);
-                        var sf = sIdx - si;
-                        bWps.push({ x: wps[si].x + (wps[si+1].x - wps[si].x) * sf, y: wps[si].y + (wps[si+1].y - wps[si].y) * sf });
-                        // Add all intermediate waypoints
-                        for (var bwi = si + 1; bwi < wps.length; bwi++) {
-                            var wt = bwi / wn;
-                            if (wt >= seg.endT) break;
-                            bWps.push(wps[bwi]);
-                        }
-                        // Interpolate end point
-                        var eIdx = seg.endT * wn;
-                        var ei = Math.min(Math.floor(eIdx), wn - 1);
-                        var ef = eIdx - ei;
-                        bWps.push({ x: wps[ei].x + (wps[ei+1].x - wps[ei].x) * ef, y: wps[ei].y + (wps[ei+1].y - wps[ei].y) * ef });
-                    } else {
-                        continue;
-                    }
-
-                    if (bWps.length < 2) continue;
-
-                    if (road.bridgeDestroyed) {
-                        // Destroyed bridge: red dashed line + X along path
-                        ctx.strokeStyle = '#cc3333';
-                        ctx.lineWidth = width + 2;
-                        ctx.setLineDash([3, 3]);
-                        ctx.beginPath();
-                        ctx.moveTo(bWps[0].x, bWps[0].y);
-                        for (var bdi = 1; bdi < bWps.length; bdi++) ctx.lineTo(bWps[bdi].x, bWps[bdi].y);
-                        ctx.stroke();
-                        ctx.setLineDash([]);
-                        var bmx = (bWps[0].x + bWps[bWps.length-1].x) / 2;
-                        var bmy = (bWps[0].y + bWps[bWps.length-1].y) / 2;
-                        ctx.strokeStyle = '#ff0000';
-                        ctx.lineWidth = 2;
-                        ctx.beginPath();
-                        ctx.moveTo(bmx - 4, bmy - 4); ctx.lineTo(bmx + 4, bmy + 4);
-                        ctx.moveTo(bmx + 4, bmy - 4); ctx.lineTo(bmx - 4, bmy + 4);
-                        ctx.stroke();
-                    } else {
-                        // Intact bridge: brown wooden planks along waypoint path
-                        ctx.strokeStyle = '#8B6914';
-                        ctx.lineWidth = width + 3;
-                        ctx.setLineDash([]);
-                        ctx.beginPath();
-                        ctx.moveTo(bWps[0].x, bWps[0].y);
-                        for (var bli = 1; bli < bWps.length; bli++) ctx.lineTo(bWps[bli].x, bWps[bli].y);
-                        ctx.stroke();
-                        // Plank lines perpendicular to each sub-segment
-                        ctx.strokeStyle = '#6B4F12';
-                        ctx.lineWidth = 1;
-                        // Walk along the bridge path at regular intervals
-                        var totalBLen = 0;
-                        for (var bsi = 1; bsi < bWps.length; bsi++) {
-                            totalBLen += Math.hypot(bWps[bsi].x - bWps[bsi-1].x, bWps[bsi].y - bWps[bsi-1].y);
-                        }
-                        if (totalBLen > 0) {
-                            var numPlanks = Math.max(2, Math.floor(totalBLen / 4));
-                            for (var pl = 0; pl <= numPlanks; pl++) {
-                                var targetDist = (pl / numPlanks) * totalBLen;
-                                var walked = 0;
-                                for (var bpi = 1; bpi < bWps.length; bpi++) {
-                                    var dx = bWps[bpi].x - bWps[bpi-1].x;
-                                    var dy = bWps[bpi].y - bWps[bpi-1].y;
-                                    var segLen = Math.hypot(dx, dy);
-                                    if (walked + segLen >= targetDist || bpi === bWps.length - 1) {
-                                        var frac = segLen > 0 ? (targetDist - walked) / segLen : 0;
-                                        var ppx = bWps[bpi-1].x + dx * frac;
-                                        var ppy = bWps[bpi-1].y + dy * frac;
-                                        var perpX = segLen > 0 ? -(dy / segLen) * (width/2 + 2) : 0;
-                                        var perpY = segLen > 0 ? (dx / segLen) * (width/2 + 2) : 0;
-                                        ctx.beginPath();
-                                        ctx.moveTo(ppx + perpX, ppy + perpY);
-                                        ctx.lineTo(ppx - perpX, ppy - perpY);
-                                        ctx.stroke();
-                                        break;
-                                    }
-                                    walked += segLen;
-                                }
-                            }
-                        }
-                    }
-                }
             }
 
             // Bandit threat indicator for high-threat roads — subtle, only at higher zoom
