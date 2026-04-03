@@ -762,8 +762,21 @@ window.Renderer = (function () {
 
             // Draw road with real-time terrain check: bridge over water, road over land
             var _wps = road.waypoints;
-            var _hasBridgeData = (road.hasBridge || false) && !road.bridgeDestroyed;
-            if (_hasBridgeData && _wps.length >= 2) {
+            // Check if road has any bridge data (even if some are destroyed)
+            var _hasBridgeData = (road.hasBridge || false) && _wps.length >= 2;
+            // Build a lookup of which waypoint indices are in a destroyed bridge
+            var _destroyedWpSet = null;
+            if (_hasBridgeData && road.bridges && road.bridges.length > 0) {
+                _destroyedWpSet = {};
+                for (var _dbi = 0; _dbi < road.bridges.length; _dbi++) {
+                    if (road.bridges[_dbi].destroyed) {
+                        for (var _dwi = road.bridges[_dbi].startWpIdx; _dwi <= road.bridges[_dbi].endWpIdx; _dwi++) {
+                            _destroyedWpSet[_dwi] = true;
+                        }
+                    }
+                }
+            }
+            if (_hasBridgeData) {
                 // Per-segment terrain-aware rendering
                 var _roadColor = quality >= 3 ? '#a08050' : quality >= 2 ? '#8b7355' : '#6b5b4f';
                 var _inWaterRun = false;
@@ -817,37 +830,81 @@ window.Renderer = (function () {
                 }
 
                 // Second pass: draw bridge segments (only over water)
-                ctx.strokeStyle = '#8B6914';
-                ctx.lineWidth = width + 3;
-                ctx.setLineDash([]);
+                // Separate intact and destroyed bridge segments
                 _drawing = false;
-                var _bridgeSegs = []; // collect water runs for planks
+                var _bridgeSegs = []; // intact water runs for planks
+                var _destroyedSegs = []; // destroyed water runs for X markers
                 var _curBridge = [];
+                var _curDestroyed = [];
+                var _lastWasDestroyed = false;
                 for (var _si = 0; _si < _wps.length - 1; _si++) {
                     var _mx = (_wps[_si].x + _wps[_si+1].x) / 2;
                     var _my = (_wps[_si].y + _wps[_si+1].y) / 2;
                     var _terr = Engine.getTerrainAtPixel(_mx, _my);
-                    if (_terr === 2) { // water — bridge
-                        if (!_drawing) {
-                            ctx.beginPath();
-                            ctx.moveTo(_wps[_si].x, _wps[_si].y);
-                            _drawing = true;
-                            _curBridge = [_wps[_si]];
-                        }
-                        ctx.lineTo(_wps[_si+1].x, _wps[_si+1].y);
-                        _curBridge.push(_wps[_si+1]);
-                    } else {
-                        if (_drawing) {
-                            ctx.stroke();
-                            _drawing = false;
+                    var _segDestroyed = _destroyedWpSet && (_destroyedWpSet[_si] || _destroyedWpSet[_si+1]);
+                    if (_terr === 2) { // water
+                        if (_segDestroyed) {
+                            // Flush intact run
                             if (_curBridge.length >= 2) _bridgeSegs.push(_curBridge);
                             _curBridge = [];
+                            if (_curDestroyed.length === 0) _curDestroyed.push(_wps[_si]);
+                            _curDestroyed.push(_wps[_si+1]);
+                        } else {
+                            // Flush destroyed run
+                            if (_curDestroyed.length >= 2) _destroyedSegs.push(_curDestroyed);
+                            _curDestroyed = [];
+                            if (_curBridge.length === 0) _curBridge.push(_wps[_si]);
+                            _curBridge.push(_wps[_si+1]);
                         }
+                    } else {
+                        if (_curBridge.length >= 2) _bridgeSegs.push(_curBridge);
+                        if (_curDestroyed.length >= 2) _destroyedSegs.push(_curDestroyed);
+                        _curBridge = [];
+                        _curDestroyed = [];
                     }
                 }
-                if (_drawing) {
+                if (_curBridge.length >= 2) _bridgeSegs.push(_curBridge);
+                if (_curDestroyed.length >= 2) _destroyedSegs.push(_curDestroyed);
+
+                // Draw intact bridges (brown)
+                ctx.strokeStyle = '#8B6914';
+                ctx.lineWidth = width + 3;
+                ctx.setLineDash([]);
+                for (var _ib = 0; _ib < _bridgeSegs.length; _ib++) {
+                    var _pts = _bridgeSegs[_ib];
+                    ctx.beginPath();
+                    ctx.moveTo(_pts[0].x, _pts[0].y);
+                    for (var _ip = 1; _ip < _pts.length; _ip++) ctx.lineTo(_pts[_ip].x, _pts[_ip].y);
                     ctx.stroke();
-                    if (_curBridge.length >= 2) _bridgeSegs.push(_curBridge);
+                }
+
+                // Draw destroyed bridges (red dashed)
+                ctx.strokeStyle = '#c44e52';
+                ctx.lineWidth = width + 2;
+                ctx.setLineDash([6, 4]);
+                for (var _db = 0; _db < _destroyedSegs.length; _db++) {
+                    var _dpts = _destroyedSegs[_db];
+                    ctx.beginPath();
+                    ctx.moveTo(_dpts[0].x, _dpts[0].y);
+                    for (var _dp = 1; _dp < _dpts.length; _dp++) ctx.lineTo(_dpts[_dp].x, _dpts[_dp].y);
+                    ctx.stroke();
+                }
+                ctx.setLineDash([]);
+
+                // Draw ❌ markers at center of destroyed bridges
+                for (var _dm = 0; _dm < _destroyedSegs.length; _dm++) {
+                    var _dms = _destroyedSegs[_dm];
+                    var _midIdx = Math.floor(_dms.length / 2);
+                    var _cmx = _dms[_midIdx].x, _cmy = _dms[_midIdx].y;
+                    var _markSize = Math.max(6, width + 2);
+                    ctx.strokeStyle = '#ff3333';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(_cmx - _markSize, _cmy - _markSize);
+                    ctx.lineTo(_cmx + _markSize, _cmy + _markSize);
+                    ctx.moveTo(_cmx + _markSize, _cmy - _markSize);
+                    ctx.lineTo(_cmx - _markSize, _cmy + _markSize);
+                    ctx.stroke();
                 }
 
                 // Draw planks on each water bridge run
