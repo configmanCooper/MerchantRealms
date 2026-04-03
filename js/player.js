@@ -23170,6 +23170,38 @@
             .reduce((latest, p) => Math.max(latest, (p.submittedDay || p.createdDay) + CONFIG.PETITION_COOLDOWN_DAYS), 0);
         if (currentDay < cooldownEnd) return { success: false, message: 'Cooldown: you must wait ' + (cooldownEnd - currentDay) + ' more days before creating another ' + pType.name + ' petition.' };
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.create_petition || 3);
+
+        // Validate route feasibility for road/sea route petitions before creating
+        if ((typeId === 'build_road' || typeId === 'build_sea_route') && targetData) {
+            var _fromT = Engine.findTown(targetData.fromTownId);
+            var _toT = Engine.findTown(targetData.toTownId);
+            if (!_fromT || !_toT) return { success: false, message: 'The petitioner\'s office could not locate one of the specified towns.' };
+            if (typeId === 'build_sea_route') {
+                if (!_fromT.isPort || !_toT.isPort) return { success: false, message: 'The petitioner\'s office reports both towns must be ports for a sea route.' };
+                var _existsSea = Engine.getWorld().seaRoutes.some(function(r) {
+                    return (r.fromTownId === targetData.fromTownId && r.toTownId === targetData.toTownId) ||
+                           (r.fromTownId === targetData.toTownId && r.toTownId === targetData.fromTownId);
+                });
+                if (_existsSea) return { success: false, message: 'The petitioner\'s office reports a sea route already exists between these ports.' };
+                var _seaPath = Engine.findTerrainPath(_fromT.x, _fromT.y, _toT.x, _toT.y, 'sea');
+                var _minWater = CONFIG.SEA_ROUTE_MIN_WATER_FRACTION || 0.95;
+                if (!_seaPath || _seaPath.waterFraction < _minWater) {
+                    return { success: false, message: 'The petitioner\'s office found this sea route is not feasible — not enough open water between these ports.' };
+                }
+            } else {
+                var _existsRoad = Engine.getWorld().roads.some(function(r) {
+                    return ((r.fromTownId === targetData.fromTownId && r.toTownId === targetData.toTownId) ||
+                            (r.fromTownId === targetData.toTownId && r.toTownId === targetData.fromTownId)) &&
+                           r.condition !== 'destroyed';
+                });
+                if (_existsRoad) return { success: false, message: 'The petitioner\'s office reports a road already exists between these towns.' };
+                var _landPath = Engine.findTerrainPath(_fromT.x, _fromT.y, _toT.x, _toT.y, 'land');
+                if (!_landPath) {
+                    return { success: false, message: 'The petitioner\'s office found this road is not feasible — the terrain does not allow it.' };
+                }
+            }
+        }
+
         const petition = {
             id: 'pet_' + (_nextPetitionId++),
             typeId: typeId,
