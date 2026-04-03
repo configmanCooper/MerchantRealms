@@ -669,21 +669,24 @@ window.Renderer = (function () {
                 return;
             }
             var n = pts.length - 1;
-            var drawing = false;
+            // Pre-compute which segments are inside bridges
+            var skipSeg = new Array(n);
+            var bridgeMargin = 0.5 / n;
             for (var i = 0; i < n; i++) {
                 var segStart = i / n;
                 var segEnd = (i + 1) / n;
-                // Check if this segment is fully inside a bridge (with margin so road tucks under bridge edges)
-                var inBridge = false;
-                var bridgeMargin = 0.5 / n; // slight overlap so road meets bridge edges
+                skipSeg[i] = false;
                 for (var b = 0; b < bridgeSegs.length; b++) {
                     var bs = bridgeSegs[b];
                     if (bs.startT !== undefined && segStart >= (bs.startT + bridgeMargin) && segEnd <= (bs.endT - bridgeMargin)) {
-                        inBridge = true;
+                        skipSeg[i] = true;
                         break;
                     }
                 }
-                if (inBridge) {
+            }
+            var drawing = false;
+            for (var i = 0; i < n; i++) {
+                if (skipSeg[i]) {
                     if (drawing) { ctx.stroke(); drawing = false; }
                     continue;
                 }
@@ -694,8 +697,9 @@ window.Renderer = (function () {
                     ctx.moveTo(p1.x, p1.y);
                     drawing = true;
                 }
-                var p0 = pts[i === 0 ? 0 : i - 1];
-                var p3 = pts[i + 1 >= n ? n : i + 2];
+                // Clamp p0/p3 so bezier control points don't reach into skipped bridge segments
+                var p0 = (i === 0 || skipSeg[i - 1]) ? p1 : pts[i - 1];
+                var p3 = (i + 1 >= n || skipSeg[i]) ? p2 : (i + 2 > n ? pts[n] : ((i + 1 < n && skipSeg[i + 1]) ? p2 : pts[i + 2]));
                 var cp1x = p1.x + (p2.x - p0.x) / 6;
                 var cp1y = p1.y + (p2.y - p0.y) / 6;
                 var cp2x = p2.x - (p3.x - p1.x) / 6;
