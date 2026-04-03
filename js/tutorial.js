@@ -231,7 +231,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Camera & Map',
-                    text: '\uD83C\uDFA5 <strong>Pan</strong> the map with <strong>W/A/S/D</strong> or <strong>arrow keys</strong>. <strong>Zoom</strong> with the <strong>scroll wheel</strong> (0.5x\u20134x). Click any <strong>town</strong> on the map to inspect it.',
+                    text: '\uD83C\uDFA5 <strong>Pan</strong> the map with <strong>W/A/S/D</strong> or <strong>arrow keys</strong>. <strong>Zoom</strong> with the <strong>scroll wheel</strong> (0.5x\u20134x).',
                     highlight: '#gameCanvas'
                 },
                 {
