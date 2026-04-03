@@ -10897,6 +10897,15 @@ window.UI = (function () {
         }
     }
 
+    function repairBridgeUI(roadIdx, bridgeId) {
+        try {
+            var result = Player.playerRebuildBridge(roadIdx, bridgeId);
+            toast(result.message, result.success ? 'success' : 'warning');
+        } catch (e) {
+            toast(e.message || 'Cannot repair bridge', 'warning');
+        }
+    }
+
     function destroyBridge(roadIdx) {
         // Check if already destroying a bridge
         if (Player.bridgeDestruction) {
@@ -20831,6 +20840,7 @@ window.UI = (function () {
         // Free-form travel: forage & bridges
         forageNearby,
         rebuildBridge,
+        repairBridgeUI,
         destroyBridge,
         // Petitions
         showPetitionsPanel,

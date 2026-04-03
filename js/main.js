@@ -1152,6 +1152,49 @@ window.Game = (function () {
             }
         } else if (hit.type === 'road') {
             items.push({ icon: '👁', label: 'View Road Info', action: 'void(0)' });
+            // Bridge-specific options
+            var _road = hit.data;
+            if (_road.bridges && _road.bridges.length > 0) {
+                var _clickWorld = Renderer.screenToWorld(x, y);
+                if (_clickWorld) {
+                    // Find nearest bridge to click point
+                    var _nearBridge = null, _nearDist = Infinity;
+                    for (var _bci = 0; _bci < _road.bridges.length; _bci++) {
+                        var _br = _road.bridges[_bci];
+                        if (!_road.waypoints) continue;
+                        // Get bridge midpoint
+                        var _bmid = Math.floor((_br.startWpIdx + _br.endWpIdx) / 2);
+                        if (_bmid < _road.waypoints.length) {
+                            var _bwp = _road.waypoints[_bmid];
+                            var _bd = Math.hypot(_clickWorld.x - _bwp.x, _clickWorld.y - _bwp.y);
+                            if (_bd < _nearDist) { _nearDist = _bd; _nearBridge = _br; }
+                        }
+                    }
+                    if (_nearBridge && _nearDist < 40) {
+                        // Find road index for engine calls
+                        var _roads = Engine.getRoads();
+                        var _roadIdx = -1;
+                        for (var _rfi = 0; _rfi < _roads.length; _rfi++) {
+                            if (_roads[_rfi].fromTownId === _road.fromTownId && _roads[_rfi].toTownId === _road.toTownId) {
+                                _roadIdx = _rfi; break;
+                            }
+                        }
+                        if (_nearBridge.destroyed && _roadIdx >= 0) {
+                            var _repMats = (typeof CONFIG !== 'undefined' && CONFIG.BRIDGE_REPAIR_MATERIALS) || { wood: 20, stone: 10 };
+                            var _repCost = (typeof CONFIG !== 'undefined' && CONFIG.BRIDGE_REBUILD_COST) || 1000;
+                            var _costStr = _repCost + 'g';
+                            for (var _mk in _repMats) { _costStr += ' + ' + _repMats[_mk] + ' ' + _mk; }
+                            items.push({
+                                icon: '🔨',
+                                label: 'Repair Bridge (' + _costStr + ')',
+                                action: 'UI.repairBridgeUI(' + _roadIdx + ',\'' + _nearBridge.id + '\')'
+                            });
+                        } else if (!_nearBridge.destroyed) {
+                            items.push({ icon: '🌉', label: 'Bridge (Intact)', action: 'void(0)' });
+                        }
+                    }
+                }
+            }
             // Offroad travel to this point on the road
             if (typeof Player !== 'undefined') {
                 var roadWorldCoords = Renderer.screenToWorld(x, y);

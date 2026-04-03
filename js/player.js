@@ -22743,23 +22743,40 @@
         };
     }
 
-    function playerRebuildBridge(roadIndex) {
+    function playerRebuildBridge(roadIndex, bridgeId) {
         if (player.traveling) return { success: false, message: 'Cannot do this while traveling.' };
         const roads = Engine.getRoads();
         const road = roads[roadIndex];
         if (!road || !(road.hasBridge || false)) return { success: false, message: 'No bridge on this road.' };
-        if (!road.bridgeDestroyed) return { success: false, message: 'Bridge is not destroyed.' };
-        const cost = CONFIG.BRIDGE_REBUILD_COST || 1000;
-        if (player.gold < cost) return { success: false, message: `Need ${cost}g to rebuild.` };
+        // Per-bridge check
+        if (bridgeId && road.bridges) {
+            var bridge = null;
+            for (var bi = 0; bi < road.bridges.length; bi++) {
+                if (road.bridges[bi].id === bridgeId) { bridge = road.bridges[bi]; break; }
+            }
+            if (!bridge) return { success: false, message: 'Bridge not found.' };
+            if (!bridge.destroyed) return { success: false, message: 'Bridge is not destroyed.' };
+        } else if (!road.bridgeDestroyed) {
+            return { success: false, message: 'Bridge is not destroyed.' };
+        }
+        var cost = CONFIG.BRIDGE_REBUILD_COST || 1000;
+        if (player.gold < cost) return { success: false, message: 'Need ' + cost + 'g to rebuild.' };
         if (player.townId !== road.fromTownId && player.townId !== road.toTownId) {
             return { success: false, message: 'You must be in a town connected to this bridge.' };
         }
-        const timberNeeded = 5;
-        if ((player.inventory.timber || 0) < timberNeeded) return { success: false, message: `Need ${timberNeeded} timber to rebuild.` };
+        // Check materials
+        var mats = CONFIG.BRIDGE_REPAIR_MATERIALS || { wood: 20, stone: 10 };
+        for (var matId in mats) {
+            if ((player.inventory[matId] || 0) < mats[matId]) {
+                return { success: false, message: 'Need ' + mats[matId] + ' ' + matId + ' to rebuild.' };
+            }
+        }
         player.gold -= cost;
-        player.inventory.timber -= timberNeeded;
+        for (var matId2 in mats) {
+            player.inventory[matId2] = (player.inventory[matId2] || 0) - mats[matId2];
+        }
         player.stats.totalGoldSpent += cost;
-        const result = Engine.rebuildBridge(roadIndex);
+        const result = Engine.rebuildBridge(roadIndex, bridgeId);
         if (result.success) {
             grantXP(15, 'construction');
             const town = Engine.findTown(player.townId);
