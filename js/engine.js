@@ -26533,6 +26533,26 @@
             waypoints: seaPath.waypoints,
         });
 
+        // Convert any non-water tiles along the route to water for visual consistency
+        // Interpolate between waypoints to fill gaps
+        var TS = CONFIG.TILE_SIZE;
+        for (var wi = 0; wi < seaPath.waypoints.length - 1; wi++) {
+            var wpA = seaPath.waypoints[wi];
+            var wpB = seaPath.waypoints[wi + 1];
+            var txA = Math.floor(wpA.x / TS), tyA = Math.floor(wpA.y / TS);
+            var txB = Math.floor(wpB.x / TS), tyB = Math.floor(wpB.y / TS);
+            var steps = Math.max(Math.abs(txB - txA), Math.abs(tyB - tyA));
+            for (var si = 0; si <= steps; si++) {
+                var tx = Math.round(txA + (txB - txA) * si / Math.max(1, steps));
+                var ty = Math.round(tyA + (tyB - tyA) * si / Math.max(1, steps));
+                if (tx >= 0 && tx < world.gridCols && ty >= 0 && ty < world.gridRows) {
+                    if (world.terrain[ty * world.gridCols + tx] !== TERRAIN.WATER.id) {
+                        world.terrain[ty * world.gridCols + tx] = TERRAIN.WATER.id;
+                    }
+                }
+            }
+        }
+
         logEvent(`\u2693 A new sea route has been established between ${fromT.name} and ${toT.name}!`);
         return { success: true, message: `Sea route built between ${fromT.name} and ${toT.name}.` };
     }
@@ -27318,6 +27338,29 @@
             // Sea routes
             var phaseRngSea = createRNG(seed * 3 + 5);
             world.seaRoutes = generateSeaRoutes(phaseRngSea, world.towns);
+
+            // Convert land tiles under sea routes to water for visual consistency
+            var _wgTS = CONFIG.TILE_SIZE;
+            for (var _wgi = 0; _wgi < world.seaRoutes.length; _wgi++) {
+                var _wgR = world.seaRoutes[_wgi];
+                if (!_wgR.waypoints || _wgR.waypoints.length < 2) continue;
+                for (var _wgw = 0; _wgw < _wgR.waypoints.length - 1; _wgw++) {
+                    var _wgA = _wgR.waypoints[_wgw];
+                    var _wgB = _wgR.waypoints[_wgw + 1];
+                    var _wgxA = Math.floor(_wgA.x / _wgTS), _wgyA = Math.floor(_wgA.y / _wgTS);
+                    var _wgxB = Math.floor(_wgB.x / _wgTS), _wgyB = Math.floor(_wgB.y / _wgTS);
+                    var _wgSteps = Math.max(Math.abs(_wgxB - _wgxA), Math.abs(_wgyB - _wgyA));
+                    for (var _wgs = 0; _wgs <= _wgSteps; _wgs++) {
+                        var _wgtx = Math.round(_wgxA + (_wgxB - _wgxA) * _wgs / Math.max(1, _wgSteps));
+                        var _wgty = Math.round(_wgyA + (_wgyB - _wgyA) * _wgs / Math.max(1, _wgSteps));
+                        if (_wgtx >= 0 && _wgtx < world.gridCols && _wgty >= 0 && _wgty < world.gridRows) {
+                            if (world.terrain[_wgty * world.gridCols + _wgtx] !== TERRAIN.WATER.id) {
+                                world.terrain[_wgty * world.gridCols + _wgtx] = TERRAIN.WATER.id;
+                            }
+                        }
+                    }
+                }
+            }
 
             // Pre-compute town connectivity for price convergence and pathfinding
             for (var ci = 0; ci < world.towns.length; ci++) {
@@ -28778,6 +28821,42 @@
             }
 
             // Rebuild town connectivity for price convergence (backward compat)
+            // First: regenerate waypoints for old sea routes that don't have them
+            for (var _rwi = 0; _rwi < world.seaRoutes.length; _rwi++) {
+                var _rwR = world.seaRoutes[_rwi];
+                if (_rwR.waypoints && _rwR.waypoints.length >= 2) continue;
+                var _rwFrom = world.towns.find(function(t) { return t.id === _rwR.fromTownId; });
+                var _rwTo = world.towns.find(function(t) { return t.id === _rwR.toTownId; });
+                if (_rwFrom && _rwTo) {
+                    var _rwPath = findTerrainPath(_rwFrom.x, _rwFrom.y, _rwTo.x, _rwTo.y, 'sea');
+                    if (_rwPath && _rwPath.waypoints) {
+                        _rwR.waypoints = _rwPath.waypoints;
+                    }
+                }
+            }
+            // Then: convert land tiles under all sea routes to water for visual consistency
+            var _srTS = CONFIG.TILE_SIZE;
+            for (var _sri = 0; _sri < world.seaRoutes.length; _sri++) {
+                var _srRoute = world.seaRoutes[_sri];
+                if (!_srRoute.waypoints || _srRoute.waypoints.length < 2) continue;
+                for (var _srw = 0; _srw < _srRoute.waypoints.length - 1; _srw++) {
+                    var _wpA = _srRoute.waypoints[_srw];
+                    var _wpB = _srRoute.waypoints[_srw + 1];
+                    var _txA = Math.floor(_wpA.x / _srTS), _tyA = Math.floor(_wpA.y / _srTS);
+                    var _txB = Math.floor(_wpB.x / _srTS), _tyB = Math.floor(_wpB.y / _srTS);
+                    var _srSteps = Math.max(Math.abs(_txB - _txA), Math.abs(_tyB - _tyA));
+                    for (var _srs = 0; _srs <= _srSteps; _srs++) {
+                        var _stx = Math.round(_txA + (_txB - _txA) * _srs / Math.max(1, _srSteps));
+                        var _sty = Math.round(_tyA + (_tyB - _tyA) * _srs / Math.max(1, _srSteps));
+                        if (_stx >= 0 && _stx < world.gridCols && _sty >= 0 && _sty < world.gridRows) {
+                            if (world.terrain[_sty * world.gridCols + _stx] !== TERRAIN.WATER.id) {
+                                world.terrain[_sty * world.gridCols + _stx] = TERRAIN.WATER.id;
+                            }
+                        }
+                    }
+                }
+            }
+
             for (var ci = 0; ci < world.towns.length; ci++) {
                 world.towns[ci].connectedTowns = [];
             }
