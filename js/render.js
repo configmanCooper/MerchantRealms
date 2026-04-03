@@ -662,6 +662,48 @@ window.Renderer = (function () {
             ctx.stroke();
         }
 
+        // Draw waypoint path but skip segments that overlap bridge t-ranges
+        function drawWaypointPathSkipBridges(pts, bridgeSegs) {
+            if (pts.length < 2 || !bridgeSegs || bridgeSegs.length === 0) {
+                drawWaypointPath(pts);
+                return;
+            }
+            var n = pts.length - 1;
+            var drawing = false;
+            for (var i = 0; i < n; i++) {
+                var segStart = i / n;
+                var segEnd = (i + 1) / n;
+                // Check if this segment overlaps any bridge
+                var inBridge = false;
+                for (var b = 0; b < bridgeSegs.length; b++) {
+                    var bs = bridgeSegs[b];
+                    if (bs.startT !== undefined && segEnd > bs.startT && segStart < bs.endT) {
+                        inBridge = true;
+                        break;
+                    }
+                }
+                if (inBridge) {
+                    if (drawing) { ctx.stroke(); drawing = false; }
+                    continue;
+                }
+                var p1 = pts[i];
+                var p2 = pts[i + 1];
+                if (!drawing) {
+                    ctx.beginPath();
+                    ctx.moveTo(p1.x, p1.y);
+                    drawing = true;
+                }
+                var p0 = pts[i === 0 ? 0 : i - 1];
+                var p3 = pts[i + 1 >= n ? n : i + 2];
+                var cp1x = p1.x + (p2.x - p0.x) / 6;
+                var cp1y = p1.y + (p2.y - p0.y) / 6;
+                var cp2x = p2.x - (p3.x - p1.x) / 6;
+                var cp2y = p2.y - (p3.y - p1.y) / 6;
+                ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
+            }
+            if (drawing) ctx.stroke();
+        }
+
         for (const road of roads) {
             const from = townMap[road.fromTownId];
             const to = townMap[road.toTownId];
@@ -700,20 +742,23 @@ window.Renderer = (function () {
 
             ctx.lineWidth = width;
 
+            // Determine active bridge segments for path clipping
+            var _activeBridgeSegs = (road.hasBridge && !road.bridgeDestroyed && road.bridgeSegments && road.bridgeSegments.length > 0) ? road.bridgeSegments : null;
+
             if (!safe) {
                 ctx.strokeStyle = '#8b4513';
                 ctx.setLineDash([6, 4]);
-                drawWaypointPath(road.waypoints);
+                drawWaypointPathSkipBridges(road.waypoints, _activeBridgeSegs);
 
                 // Red overlay for unsafe
                 ctx.strokeStyle = 'rgba(180,40,30,0.45)';
                 ctx.lineWidth = width + 1;
-                drawWaypointPath(road.waypoints);
+                drawWaypointPathSkipBridges(road.waypoints, _activeBridgeSegs);
                 ctx.setLineDash([]);
             } else {
                 ctx.strokeStyle = quality >= 3 ? '#a08050' : quality >= 2 ? '#8b7355' : '#6b5b4f';
                 ctx.setLineDash([]);
-                drawWaypointPath(road.waypoints);
+                drawWaypointPathSkipBridges(road.waypoints, _activeBridgeSegs);
             }
 
             // Gold overlay for player-owned toll roads
@@ -722,7 +767,7 @@ window.Renderer = (function () {
                 ctx.strokeStyle = 'rgba(212,175,55,0.45)';
                 ctx.lineWidth = width + 2;
                 ctx.setLineDash([8, 4]);
-                drawWaypointPath(road.waypoints);
+                drawWaypointPathSkipBridges(road.waypoints, _activeBridgeSegs);
                 ctx.setLineDash([]);
                 ctx.restore();
             }
