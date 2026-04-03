@@ -1325,19 +1325,49 @@ window.Tutorial = (function () {
     function avoidOverlap() {
         if (!panelEl || !active) return;
         var overlay = document.getElementById('modalOverlay');
-        if (!overlay || overlay.classList.contains('hidden')) return;
-        var modalBox = document.getElementById('modalDialog') || overlay.querySelector('.modal-content') || overlay.children[0];
-        if (!modalBox) return;
-        var pr = panelEl.getBoundingClientRect();
-        var mr = modalBox.getBoundingClientRect();
-        // Always move to top-left when a modal opens
-        var pw = panelEl.offsetWidth, ph = panelEl.offsetHeight;
+        if (!overlay || overlay.classList.contains('hidden')) {
+            // Modal closed — restore any nudged elements
+            var nudged = document.querySelectorAll('[data-tut-nudged]');
+            for (var i = 0; i < nudged.length; i++) {
+                nudged[i].style.left = '';
+                nudged[i].style.position = '';
+                nudged[i].style.transform = '';
+                nudged[i].style.margin = '';
+                delete nudged[i].dataset.tutNudged;
+            }
+            return;
+        }
+        // Move tutorial panel to top-left
         panelEl.style.left = '10px';
         panelEl.style.top = '60px';
         panelEl.style.bottom = 'auto';
         panelEl.style.transform = 'none';
-        // Then nudge the modal away from the tutorial panel
-        setTimeout(nudgePanelsFromTutorial, 50);
+        // Nudge modal dialog if it overlaps (after a brief delay for layout)
+        setTimeout(function () {
+            if (!panelEl || !active) return;
+            var tRect = panelEl.getBoundingClientRect();
+            var dlg = document.getElementById('modalDialog');
+            if (dlg) {
+                // Clear any previous nudge first so we measure natural position
+                if (dlg.dataset.tutNudged) {
+                    dlg.style.left = '';
+                    dlg.style.position = '';
+                    dlg.style.transform = '';
+                    dlg.style.margin = '';
+                    delete dlg.dataset.tutNudged;
+                }
+                var dRect = dlg.getBoundingClientRect();
+                if (dRect.left < tRect.right && dRect.right > tRect.left &&
+                    dRect.top < tRect.bottom && dRect.bottom > tRect.top) {
+                    dlg.style.position = 'fixed';
+                    dlg.style.left = (tRect.right + 10) + 'px';
+                    dlg.style.top = dRect.top + 'px';
+                    dlg.style.transform = 'none';
+                    dlg.style.margin = '0';
+                    dlg.dataset.tutNudged = 'true';
+                }
+            }
+        }, 50);
     }
 
     function createPanel() {
@@ -1380,7 +1410,7 @@ window.Tutorial = (function () {
             }
         });
 
-        // Watch for modal open/close to auto-reposition panel
+        // Watch for modal open/close to auto-reposition panel and nudge modal
         var overlay = document.getElementById('modalOverlay');
         if (overlay) {
             modalObserver = new MutationObserver(function () {
@@ -1388,58 +1418,22 @@ window.Tutorial = (function () {
             });
             modalObserver.observe(overlay, { attributes: true, attributeFilter: ['class'] });
         }
-        // Watch for panels that overlap the tutorial panel and nudge them right
-        var panelNudgeObserver = new MutationObserver(function () {
-            setTimeout(nudgePanelsFromTutorial, 150);
-        });
-        panelNudgeObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
-        panelEl._panelNudgeObserver = panelNudgeObserver;
     }
 
     function nudgePanelsFromTutorial() {
-        if (!panelEl || !active) return;
-        var tRect = panelEl.getBoundingClientRect();
-        // Find panels that might overlap (side panels + modal dialog)
-        var candidates = document.querySelectorAll('.left-panel, .right-panel, .side-panel, .info-panel');
-        for (var i = 0; i < candidates.length; i++) {
-            var p = candidates[i];
-            if (p === panelEl || p.offsetParent === null || p.dataset.tutNudged) continue;
-            var pRect = p.getBoundingClientRect();
-            if (pRect.right > tRect.left && pRect.left < tRect.right &&
-                pRect.bottom > tRect.top && pRect.top < tRect.bottom) {
-                var newLeft = tRect.right + 10;
-                p.style.left = newLeft + 'px';
-                p.dataset.tutNudged = 'true';
-            }
-        }
-        // Also nudge modal dialog if it overlaps
-        var modalOverlay = document.getElementById('modalOverlay');
-        if (modalOverlay && !modalOverlay.classList.contains('hidden')) {
-            var dlg = document.getElementById('modalDialog');
-            if (dlg && !dlg.dataset.tutNudged) {
-                var dRect = dlg.getBoundingClientRect();
-                if (dRect.right > tRect.left && dRect.left < tRect.right &&
-                    dRect.bottom > tRect.top && dRect.top < tRect.bottom) {
-                    // Place left edge just past tutorial panel
-                    dlg.style.position = 'fixed';
-                    dlg.style.left = (tRect.right + 10) + 'px';
-                    dlg.style.top = dRect.top + 'px';
-                    dlg.style.transform = 'none';
-                    dlg.style.margin = '0';
-                    dlg.dataset.tutNudged = 'true';
-                }
-            }
-        }
+        // Kept for external callers but now a no-op — nudging handled by avoidOverlap
     }
 
     function destroyPanel() {
         if (modalObserver) { modalObserver.disconnect(); modalObserver = null; }
         if (panelEl) {
-            if (panelEl._panelNudgeObserver) { panelEl._panelNudgeObserver.disconnect(); }
             // Restore any panels we nudged
             var nudged = document.querySelectorAll('[data-tut-nudged]');
             for (var i = 0; i < nudged.length; i++) {
                 nudged[i].style.left = '';
+                nudged[i].style.position = '';
+                nudged[i].style.transform = '';
+                nudged[i].style.margin = '';
                 delete nudged[i].dataset.tutNudged;
             }
             panelEl.remove();
