@@ -1724,14 +1724,78 @@ window.Tutorial = (function () {
                 }
             }
         }
-        // Remove any sea route between Rustbridge and Inkwell Cross
+        // Redirect sea routes from Inkwell Cross → Rustbridge so Rustbridge is the port
         if (_tutStart && _tutNeighbor) {
+            _tutStart.isPort = true;
             var _seaRoutes = Engine.getSeaRoutes();
             for (var _si = _seaRoutes.length - 1; _si >= 0; _si--) {
                 var _sr = _seaRoutes[_si];
-                if ((_sr.fromTownId === _tutStart.id && _sr.toTownId === _tutNeighbor.id) ||
-                    (_sr.fromTownId === _tutNeighbor.id && _sr.toTownId === _tutStart.id)) {
+                var _fromInk = _sr.fromTownId === _tutNeighbor.id;
+                var _toInk = _sr.toTownId === _tutNeighbor.id;
+                if (!_fromInk && !_toInk) continue;
+                // If the OTHER endpoint is already Rustbridge, remove (no self-route)
+                var _otherId = _fromInk ? _sr.toTownId : _sr.fromTownId;
+                if (_otherId === _tutStart.id) {
                     _seaRoutes.splice(_si, 1);
+                    continue;
+                }
+                // Redirect Inkwell Cross endpoint to Rustbridge
+                if (_fromInk) _sr.fromTownId = _tutStart.id;
+                else _sr.toTownId = _tutStart.id;
+                _sr.waypoints = []; // clear — will be regenerated on load
+            }
+        }
+
+        // Redirect roads from Inkwell Cross → Rustbridge (e.g. Coalhurst road)
+        if (_tutStart && _tutNeighbor) {
+            var _allRoads = Engine.getRoads();
+            for (var _rri = 0; _rri < _allRoads.length; _rri++) {
+                var _rr = _allRoads[_rri];
+                var _rrFromInk = _rr.fromTownId === _tutNeighbor.id;
+                var _rrToInk = _rr.toTownId === _tutNeighbor.id;
+                if (!_rrFromInk && !_rrToInk) continue;
+                var _rrOther = _rrFromInk ? _rr.toTownId : _rr.fromTownId;
+                // Skip Rustbridge↔Inkwell (already exists as the main tutorial road)
+                if (_rrOther === _tutStart.id) continue;
+                // Redirect endpoint to Rustbridge
+                if (_rrFromInk) _rr.fromTownId = _tutStart.id;
+                else _rr.toTownId = _tutStart.id;
+                _rr.waypoints = [];
+                // Compute bridge segments for water crossings
+                var _rrFrom = Engine.findTown(_rr.fromTownId);
+                var _rrTo = Engine.findTown(_rr.toTownId);
+                if (_rrFrom && _rrTo) {
+                    var _bSteps = 40;
+                    var _bSegs = [];
+                    var _bInWater = false;
+                    var _bSegStart = 0;
+                    for (var _bs = 0; _bs <= _bSteps; _bs++) {
+                        var _bt = _bs / _bSteps;
+                        var _bpx = _rrFrom.x + (_rrTo.x - _rrFrom.x) * _bt;
+                        var _bpy = _rrFrom.y + (_rrTo.y - _rrFrom.y) * _bt;
+                        var _bTerr = Engine.getTerrainAtPixel(_bpx, _bpy);
+                        var _bIsWater = (_bTerr === 2); // TERRAIN.WATER.id
+                        if (_bIsWater) {
+                            if (!_bInWater) { _bSegStart = _bt; _bInWater = true; }
+                        } else {
+                            if (_bInWater) {
+                                _bSegs.push({ startT: _bSegStart, endT: _bt });
+                                _bInWater = false;
+                            }
+                        }
+                    }
+                    if (_bInWater) _bSegs.push({ startT: _bSegStart, endT: 1.0 });
+                    _rr.hasBridge = _bSegs.length > 0;
+                    _rr.bridgeSegments = _bSegs;
+                    _rr.bridgeDestroyed = false;
+                }
+                // Update connectedTowns
+                if (_tutStart.connectedTowns && _tutStart.connectedTowns.indexOf(_rrOther) === -1) {
+                    _tutStart.connectedTowns.push(_rrOther);
+                }
+                var _rrOtherTown = Engine.findTown(_rrOther);
+                if (_rrOtherTown && _rrOtherTown.connectedTowns && _rrOtherTown.connectedTowns.indexOf(_tutStart.id) === -1) {
+                    _rrOtherTown.connectedTowns.push(_tutStart.id);
                 }
             }
         }
