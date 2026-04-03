@@ -487,15 +487,46 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Sell for Profit',
-                    text: '💰 We\u2019ve given you <strong>10 Meat</strong> to sell! Open the trade menu and <strong>sell your Meat</strong>. Price colors: <span style="color:#5a5;">green</span> = good deal, <span style="color:#c44;">red</span> = bad deal, <span style="color:#ccc;">white</span> = average.',
+                    text: '\uD83D\uDCB0 Loading market data...',
                     highlight: '#btnTrade',
                     onEnter: function () {
-                        giveItem('meat', 10);
-                        snapshotState.sellRes = 'meat';
+                        // Find a high-demand, low/zero-stock good at this market
+                        var town = null;
+                        try { town = Engine.findTown(Player.townId); } catch (e) {}
+                        var bestRes = 'iron';
+                        var bestName = 'Iron';
+                        if (town && town.market) {
+                            var demand = town.market.demand || {};
+                            var supply = town.market.supply || {};
+                            var bestScore = -1;
+                            for (var resId in demand) {
+                                var d = demand[resId] || 0;
+                                var s = supply[resId] || 0;
+                                if (d > 0 && s < d * 0.3 && d > bestScore) {
+                                    bestScore = d;
+                                    bestRes = resId;
+                                }
+                            }
+                            // Pretty name from config
+                            try {
+                                var rt = Config.RESOURCE_TYPES;
+                                for (var k in rt) {
+                                    if (rt[k].id === bestRes) { bestName = rt[k].name || bestRes; break; }
+                                }
+                            } catch (e) { bestName = bestRes.replace(/_/g, ' '); }
+                        }
+                        snapshotState.sellRes = bestRes;
+                        giveItem(bestRes, 10);
+                        // Update step text dynamically (step object, renderPanel reads it)
+                        var ch = chapters[currentChapter];
+                        if (ch && ch.steps[currentStep]) {
+                            ch.steps[currentStep].text = '\uD83D\uDCB0 We\u2019ve given you <strong>10 ' + bestName + '</strong> \u2014 this market has high demand but low stock, so you\u2019ll get a great price! Open the trade menu and <strong>sell your ' + bestName + '</strong>. Price colors: <span style="color:#5a5;">green</span> = good deal, <span style="color:#c44;">red</span> = bad deal, <span style="color:#ccc;">white</span> = average.';
+                        }
                     },
                     waitFor: function () {
                         var inv = getPlayerInventory();
-                        return (inv.meat || 0) === 0;
+                        var res = snapshotState.sellRes || 'iron';
+                        return (inv[res] || 0) === 0;
                     },
                     onComplete: function () {
                         closeModal();
