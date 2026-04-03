@@ -13077,8 +13077,7 @@
         if (!rng) return;
         var day = Engine.getDay();
 
-        // Only check every 3 days
-        if (day % 3 !== 0) return;
+        // Check every day
 
         try {
             var w = Engine.getWorld();
@@ -13112,7 +13111,7 @@
             for (var illId in contagiousSick) {
                 var illSickRatio = contagiousSick[illId] / pop;
                 // Player exposure rate: lower than NPC contagion (player takes more precautions)
-                var exposureChance = illSickRatio * 0.03 * 3 * protectionMult; // *3 for 3-day tick
+                var exposureChance = illSickRatio * 0.03 * protectionMult;
                 if (illId === 'plague') exposureChance *= 2; // plague is more aggressive
 
                 if (rng.chance(exposureChance)) {
