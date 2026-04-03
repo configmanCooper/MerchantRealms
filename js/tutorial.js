@@ -239,10 +239,13 @@ window.Tutorial = (function () {
                     text: '\uD83D\uDD36 See that <strong>golden pulsing diamond</strong>? That\u2019s <strong>you</strong>! If you ever lose track of yourself, click the <strong>\uD83D\uDCCD Find</strong> button on the bottom panel. Try it now \u2014 pan away with W/A/S/D, then click <strong>\uD83D\uDCCD Find</strong>!',
                     highlight: '#btnLocate',
                     onEnter: function () {
-                        // Zoom to 3x and center on player
+                        // Pan to player's town and zoom to 3x
                         try {
+                            var _playerTown = Player.state.townId && Engine.findTown(Player.state.townId);
+                            if (_playerTown && Renderer.panTo) {
+                                Renderer.panTo(_playerTown.x, _playerTown.y);
+                            }
                             if (Renderer.setZoom) Renderer.setZoom(3.0);
-                            if (Renderer.centerOnTown && Player.state.townId) Renderer.centerOnTown(Player.state.townId);
                         } catch (e) {}
                     },
                     waitFor: function () {
