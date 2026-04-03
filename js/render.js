@@ -803,23 +803,19 @@ window.Renderer = (function () {
                             bWps.push(wps[bwi]);
                         }
                     } else if (seg.startT !== undefined) {
-                        // Pad bridge t-range slightly so it overlaps the road at edges
-                        var bPad = 1.5 / wn;
-                        var bStartT = Math.max(0, seg.startT - bPad);
-                        var bEndT = Math.min(1, seg.endT + bPad);
                         // Interpolate start point
-                        var sIdx = bStartT * wn;
+                        var sIdx = seg.startT * wn;
                         var si = Math.min(Math.floor(sIdx), wn - 1);
                         var sf = sIdx - si;
                         bWps.push({ x: wps[si].x + (wps[si+1].x - wps[si].x) * sf, y: wps[si].y + (wps[si+1].y - wps[si].y) * sf });
                         // Add all intermediate waypoints
                         for (var bwi = si + 1; bwi < wps.length; bwi++) {
                             var wt = bwi / wn;
-                            if (wt >= bEndT) break;
+                            if (wt >= seg.endT) break;
                             bWps.push(wps[bwi]);
                         }
                         // Interpolate end point
-                        var eIdx = bEndT * wn;
+                        var eIdx = seg.endT * wn;
                         var ei = Math.min(Math.floor(eIdx), wn - 1);
                         var ef = eIdx - ei;
                         bWps.push({ x: wps[ei].x + (wps[ei+1].x - wps[ei].x) * ef, y: wps[ei].y + (wps[ei+1].y - wps[ei].y) * ef });
