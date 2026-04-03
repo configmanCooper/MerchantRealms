@@ -20,6 +20,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   - Illness events tagged with explicit `illness` category for reliable filtering
   - Save migration: older saves get `illness: true` by default
 - Illness events appear under Local tab in Event Log alongside Local Town and NPC Activity
+- Tutorial map customization: permanent custom map for seed 7777
+  - Starting town renamed to "Rustbridge", travel destination renamed to "Inkwell Cross" (west, ~2 days)
+  - Land road added from Rustbridge to Driftwood Cay
+  - Sea route removed between Rustbridge and Inkwell Cross (land-only connection)
+- Phase-isolated RNG for world generation stability
+  - Each generation phase (terrain, kingdoms, towns, roads, sea, people) gets its own deterministic sub-RNG
+  - Adding/removing RNG calls in one phase no longer shifts results in other phases
 
 ### Changed
 - Plague frequency drastically reduced to target ~1 outbreak per 5 years:
@@ -39,6 +46,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - Guildmaster rank caravan goods requirement: 500 → 250
 - Quarantine bypass: nobles (rank ≥4) pass freely, guildmasters on business, others 40% sneak chance
 - Guild auto-renew now runs before monopoly enforcement (fixes false warnings)
+- Sea routes now require ≥95% water tiles in all code paths
+  - Town founding was using 30% threshold — fixed to 95%
+  - `buildNewSeaRoute()` had no water validation — now validates and returns error message
+  - Post-load orphan port fixup had no water check — now validates
+- Tutorial "Your Player Icon" step now pans camera to player's town before zooming to 3x
 
 ### Fixed
 - Guild membership warnings appearing despite active membership with auto-renew
@@ -59,6 +71,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - Building input/output storage now independent pools (output no longer eats input capacity)
 - Supply Inputs buttons now deposit directly to building inventory (was dumping to town market)
 - Auto-buy upgraded: ratio-balanced stockpiling with input-only capacity awareness
+- Tutorial text: hardcoded town names replaced with dynamic `snapshotState.startTownName`
+- Tutorial "See Resource Deposits" step now pans camera to starting town (was missing)
+- Ships button now properly greys out during tutorial highlights (UI tick was overriding opacity)
+- Road bridge artifact on tutorial map: cleared stale bridge data after town repositioning
 
 ## [0.54.0] - 2026-04-02
 
