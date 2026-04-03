@@ -9144,7 +9144,6 @@ window.UI = (function () {
             el.notifCount.classList.add('hidden');
         }
         closeModal();
-        toast('Event log cleared', 'info');
     }
 
     function toggleNotifFilter(key) {
