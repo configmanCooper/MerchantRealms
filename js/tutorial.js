@@ -273,6 +273,7 @@ window.Tutorial = (function () {
                     onEnter: function () {
                         // Close any city view panel the player may have open
                         try { UI.closeModal(); } catch (e) {}
+                        try { UI.closeRightPanel(); } catch (e) {}
                         try {
                             var cam = Renderer.getCamera();
                             snapshotState.cameraX = cam.x;
