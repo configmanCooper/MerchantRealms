@@ -1806,7 +1806,10 @@
         // If player owned the old building, remove it from player.buildings
         if (bld.ownerId === 'player') {
             var pIdx = player.buildings.findIndex(function(pb) { return pb.townId === tid && pb.type === bld.type; });
-            if (pIdx >= 0) player.buildings.splice(pIdx, 1);
+            if (pIdx >= 0) {
+                _clearTransferTargetsFor(player.buildings[pIdx].id);
+                player.buildings.splice(pIdx, 1);
+            }
         }
 
         // Perform conversion via Engine
@@ -1959,7 +1962,10 @@
         // Remove from player buildings
         var bt = Engine.findBuildingType(bld.type);
         var pIdx = player.buildings.findIndex(function(pb) { return pb.townId === tid && pb.type === bld.type; });
-        if (pIdx >= 0) player.buildings.splice(pIdx, 1);
+        if (pIdx >= 0) {
+            _clearTransferTargetsFor(player.buildings[pIdx].id);
+            player.buildings.splice(pIdx, 1);
+        }
 
         // Perform demolition via Engine
         var result = Engine.demolishBuilding(town, buildingIndex, 'player', 'player');
@@ -3068,6 +3074,18 @@
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.toggle_auto_buy || 1);
         bld.autoBuy = !bld.autoBuy;
         return { success: true, message: bld.autoBuy ? 'Auto-buy enabled.' : 'Auto-buy disabled.' };
+    }
+
+    // Clear stale transfer targets when a building is removed/converted/demolished
+    function _clearTransferTargetsFor(removedBuildingId) {
+        for (var i = 0; i < player.buildings.length; i++) {
+            var b = player.buildings[i];
+            if (b.transferTarget === removedBuildingId) {
+                b.transferTarget = null;
+                b.transferEnabled = false;
+                b._transferBuffer = 0;
+            }
+        }
     }
 
     function setTransferTarget(buildingId, targetId) {
@@ -4295,6 +4313,8 @@
     }
 
     function _getCaravanCapacity(caravan) {
+        // Sea caravans use ship capacity
+        if (caravan.shipCapacity) return caravan.shipCapacity;
         return (caravan.carriers || 1) * (CONFIG.CARAVAN_CARRIER_BASE_CAPACITY || 30)
             + (caravan.carrierHorses || 0) * (CONFIG.CARAVAN_HORSE_EXTRA_CAPACITY || 30)
             + (caravan.carts || 0) * (CONFIG.CARAVAN_CART_CAPACITY || 80)
@@ -6200,7 +6220,10 @@
                     sourceBld._overflowRevenue = (sourceBld._overflowRevenue || 0) + _b2bRev;
                 }
             } else {
-                // Target not found or wrong town — sell to market at full price
+                // Target not found or wrong town — sell to market and clear stale target
+                sourceBld.transferTarget = null;
+                sourceBld.transferEnabled = false;
+                sourceBld._transferBuffer = 0;
                 if (town.market && town.market.supply) {
                     town.market.supply[resourceId] = (town.market.supply[resourceId] || 0) + amount;
                     var _fbRes = findResource(resourceId);
@@ -6618,6 +6641,14 @@
                                 bld._overflowSold = 0;
                                 bld._overflowRevenue = 0;
                             }
+                        } else if (overflow > 0) {
+                            // Town missing — give player gold at base price to avoid silent loss
+                            var _fbRes2 = findResource(bt.produces);
+                            var _fbPrice2 = (_fbRes2 && _fbRes2.basePrice) || 1;
+                            var _fbRev2 = Math.floor(overflow * _fbPrice2);
+                            player.gold += _fbRev2;
+                            player.stats.totalGoldEarned += _fbRev2;
+                            logFinance(_fbRev2, 'building_sales', 'Sold ' + overflow + ' ' + ((_fbRes2 && _fbRes2.name) || bt.produces) + ' (town missing fallback)');
                         }
                     }
                 }
