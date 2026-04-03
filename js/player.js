@@ -3862,17 +3862,24 @@
             if (o.action === 'pickup') {
                 // Check town storage first
                 var stored = (player.townStorage[townId] || {})[o.good] || 0;
-                // Also check player buildings at this town (output + input storage)
+                // Also check player buildings at this town (inventory: output + input items)
                 var buildingStored = 0;
                 var buildingSources = [];
                 for (var bi = 0; bi < player.buildings.length; bi++) {
                     var bld = player.buildings[bi];
                     if (bld.townId !== townId) continue;
-                    var bldOut = (bld.outputStorage || {})[o.good] || 0;
-                    var bldIn = (bld.inputStorage || {})[o.good] || 0;
-                    if (bldOut > 0) buildingSources.push({ bld: bld, pool: 'output', qty: bldOut });
-                    if (bldIn > 0) buildingSources.push({ bld: bld, pool: 'input', qty: bldIn });
-                    buildingStored += bldOut + bldIn;
+                    if (!bld.inventory) continue;
+                    var bldBt = Engine.findBuildingType(bld.type);
+                    // Determine which items are output vs input
+                    var _outGoods = {};
+                    if (bldBt && bldBt.produces) _outGoods[bldBt.produces] = true;
+                    if (bldBt && bldBt.canProduce) { for (var _oi2 = 0; _oi2 < bldBt.canProduce.length; _oi2++) _outGoods[bldBt.canProduce[_oi2]] = true; }
+                    var bldAmt = bld.inventory[o.good] || 0;
+                    if (bldAmt > 0) {
+                        var pool = _outGoods[o.good] ? 'output' : 'input';
+                        buildingSources.push({ bld: bld, pool: pool, qty: bldAmt });
+                        buildingStored += bldAmt;
+                    }
                 }
                 var totalAvail = stored + buildingStored;
                 var canFit = _caravanCanFit(caravan, o.good);
@@ -3897,13 +3904,8 @@
                 for (var bsi = 0; bsi < buildingSources.length && remaining > 0; bsi++) {
                     var bs = buildingSources[bsi];
                     var fromBld = Math.min(remaining, bs.qty);
-                    if (bs.pool === 'output') {
-                        bs.bld.outputStorage[o.good] = (bs.bld.outputStorage[o.good] || 0) - fromBld;
-                        if (bs.bld.outputStorage[o.good] <= 0) delete bs.bld.outputStorage[o.good];
-                    } else {
-                        bs.bld.inputStorage[o.good] = (bs.bld.inputStorage[o.good] || 0) - fromBld;
-                        if (bs.bld.inputStorage[o.good] <= 0) delete bs.bld.inputStorage[o.good];
-                    }
+                    bs.bld.inventory[o.good] = (bs.bld.inventory[o.good] || 0) - fromBld;
+                    if (bs.bld.inventory[o.good] <= 0) delete bs.bld.inventory[o.good];
                     remaining -= fromBld;
                 }
                 caravan.goods[o.good] = (caravan.goods[o.good] || 0) + pickupQty;

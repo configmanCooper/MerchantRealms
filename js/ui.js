@@ -3772,12 +3772,15 @@ window.UI = (function () {
             var _lvlMod = (1 + ((bld.level || 1) - 1) * 0.10).toFixed(2);
             html += `<div style="font-size:0.72rem;color:#aaa;margin-top:4px;">Output: ${bt.rate} base × ${info.workerFraction.toFixed(2)} workers × ${info.seasonMod} season × ${_lvlMod} level × ${info.prodBonus.toFixed(2)} bonus = ${info.dailyOutput}</div>`;
 
-            // Current storage — show capacity from building type
+            // Current storage — show capacity from building type (weight-aware)
             var bldStorageCap = Math.floor((bt.storage || 0) * (1 + (((bld.level || 1) - 1) * 0.50)));
             if (bldStorageCap > 0) {
-                var storagePct = Math.min(100, Math.round((info.stored / bldStorageCap) * 100));
+                var _prodRes = (typeof findResource !== 'undefined') ? findResource(bt.produces) : null;
+                var _prodWeight = (_prodRes && _prodRes.weight) || 1;
+                var storedWeight = info.stored * _prodWeight;
+                var storagePct = Math.min(100, Math.round((storedWeight / bldStorageCap) * 100));
                 var storageColor = storagePct >= 90 ? '#e74c3c' : storagePct >= 60 ? '#e67e22' : '#55a868';
-                html += `<div style="font-size:0.78rem;margin-top:4px;">📋 Building Storage: ${info.stored} / ${bldStorageCap} ${prodName} <span style="color:${storageColor};">(${storagePct}%)</span></div>`;
+                html += `<div style="font-size:0.78rem;margin-top:4px;">📋 Building Storage: ${info.stored} ${prodName} — ${storedWeight} / ${bldStorageCap} wt <span style="color:${storageColor};">(${storagePct}%)</span></div>`;
                 html += `<div style="background:#333;border-radius:3px;height:6px;margin-top:2px;"><div style="background:${storageColor};height:100%;border-radius:3px;width:${storagePct}%;"></div></div>`;
             } else {
                 html += `<div style="font-size:0.78rem;margin-top:4px;">📋 Current Storage: ${info.stored} ${prodName}</div>`;
