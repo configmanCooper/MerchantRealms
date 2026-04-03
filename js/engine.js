@@ -12524,8 +12524,31 @@
         let bestTown = null;
         let bestScore = -Infinity;
 
+        // Build set of reachable neighbors (roads without destroyed bridges + sea routes)
+        var _migReachable = {};
+        for (var _mri = 0; _mri < world.roads.length; _mri++) {
+            var _mr = world.roads[_mri];
+            if (_mr.condition === 'destroyed') continue;
+            var _mBrDest = false;
+            if (_mr.bridges && _mr.bridges.length > 0) {
+                for (var _mbi = 0; _mbi < _mr.bridges.length; _mbi++) {
+                    if (_mr.bridges[_mbi].destroyed) { _mBrDest = true; break; }
+                }
+            } else if (_mr.hasBridge && _mr.bridgeDestroyed) { _mBrDest = true; }
+            if (_mBrDest) continue;
+            if (_mr.fromTownId === currentTown.id) _migReachable[_mr.toTownId] = true;
+            if (_mr.toTownId === currentTown.id) _migReachable[_mr.fromTownId] = true;
+        }
+        for (var _msi = 0; _msi < (world.seaRoutes || []).length; _msi++) {
+            var _msr = world.seaRoutes[_msi];
+            if ((_msr.fromTownId || _msr.from) === currentTown.id) _migReachable[_msr.toTownId || _msr.to] = true;
+            if ((_msr.toTownId || _msr.to) === currentTown.id) _migReachable[_msr.fromTownId || _msr.from] = true;
+        }
+
         for (const town of world.towns) {
             if (town.id === currentTown.id) continue;
+            // NPCs can only migrate to directly connected towns with intact routes
+            if (!_migReachable[town.id]) continue;
 
             // Prefer same kingdom, or friendly kingdoms
             const sameKingdom = town.kingdomId === person.kingdomId;
@@ -16087,6 +16110,15 @@
                         else if (road.toTownId === tid) neighborId = road.fromTownId;
                         if (!neighborId) continue;
 
+                        // Disease cannot spread across destroyed bridges
+                        var _dsBridgeOut = false;
+                        if (road.bridges && road.bridges.length > 0) {
+                            for (var _dsbi = 0; _dsbi < road.bridges.length; _dsbi++) {
+                                if (road.bridges[_dsbi].destroyed) { _dsBridgeOut = true; break; }
+                            }
+                        } else if (road.hasBridge && road.bridgeDestroyed) { _dsBridgeOut = true; }
+                        if (_dsBridgeOut) continue;
+
                         var nTown = findTown(neighborId);
                         if (!nTown) continue;
 
@@ -18270,7 +18302,8 @@
             const roadCondEff = CONFIG.CONDITION_LEVELS[road.condition || 'new'] ? CONFIG.CONDITION_LEVELS[road.condition || 'new'].efficiency : 1.0;
             if (roadCondEff <= 0) continue; // Skip fully destroyed roads
             const effectiveMultiplier = CONFIG.CARAVAN_ROAD_MULTIPLIER[road.quality] * Math.max(0.1, roadCondEff);
-            const cost = dist / effectiveMultiplier;
+            var _bridgePenalty = (_hasDestroyedBridge && _isArmyRoute) ? (CONFIG.BRIDGE_ARMY_DESTROYED_SPEED_MULT || 0.3) : 1.0;
+            const cost = dist / (effectiveMultiplier * _bridgePenalty);
             adjacency[road.fromTownId].push({ town: road.toTownId, cost, road, type: 'road' });
             adjacency[road.toTownId].push({ town: road.fromTownId, cost, road, type: 'road' });
         }
