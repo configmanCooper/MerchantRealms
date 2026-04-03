@@ -517,6 +517,8 @@ window.Tutorial = (function () {
                         }
                         snapshotState.sellRes = bestRes;
                         giveItem(bestRes, 10);
+                        // Refresh the trade menu if open so new items appear
+                        try { if (isModalOpen()) UI.openTradeDialog(); } catch (e) {}
                         // Update step text dynamically (step object, renderPanel reads it)
                         var ch = chapters[currentChapter];
                         if (ch && ch.steps[currentStep]) {
