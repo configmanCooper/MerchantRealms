@@ -8511,20 +8511,32 @@
             }
         }
 
-        // Kings rebuild destroyed bridges
+        // Kings rebuild destroyed bridges (per-bridge)
         if (p.intelligence !== 'foolish' && p.intelligence !== 'dim') {
             for (let ri = 0; ri < world.roads.length; ri++) {
                 const road = world.roads[ri];
-                if (!(road.hasBridge || false) || !road.bridgeDestroyed) continue;
+                if (!road.hasBridge) continue;
                 const fromT = findTown(road.fromTownId);
                 const toT = findTown(road.toTownId);
                 if (!fromT && !toT) continue;
                 if ((fromT && k.territories.has(fromT.id)) || (toT && k.territories.has(toT.id))) {
                     const rebuildCost = CONFIG.BRIDGE_REBUILD_COST || 1000;
-                    const daysSinceDestroyed = world.day - (road.bridgeDestroyedDay || 0);
-                    if (daysSinceDestroyed >= (CONFIG.BRIDGE_REBUILD_DAYS || 30) && k.gold >= rebuildCost) {
-                        k.gold -= rebuildCost;
-                        rebuildBridge(ri);
+                    if (road.bridges && road.bridges.length > 0) {
+                        for (var _kbi = 0; _kbi < road.bridges.length; _kbi++) {
+                            var _kb = road.bridges[_kbi];
+                            if (!_kb.destroyed) continue;
+                            var _kbDays = world.day - (_kb.destroyedDay || 0);
+                            if (_kbDays >= (CONFIG.BRIDGE_REBUILD_DAYS || 30) && k.gold >= rebuildCost) {
+                                k.gold -= rebuildCost;
+                                rebuildBridge(ri, _kb.id);
+                            }
+                        }
+                    } else if (road.bridgeDestroyed) {
+                        const daysSinceDestroyed = world.day - (road.bridgeDestroyedDay || 0);
+                        if (daysSinceDestroyed >= (CONFIG.BRIDGE_REBUILD_DAYS || 30) && k.gold >= rebuildCost) {
+                            k.gold -= rebuildCost;
+                            rebuildBridge(ri);
+                        }
                     }
                 }
             }
@@ -9223,8 +9235,13 @@
 
                     // Only destroy if score is convincingly positive
                     if (destroyScore >= 3) {
-                        _road.bridgeDestroyed = true;
-                        _road.bridgeDestroyedDay = world.day;
+                        // Destroy all bridges on this road (wartime scorched earth)
+                        destroyBridge(_bri);
+                        if (_road.bridges) {
+                            for (var _wbi = 0; _wbi < _road.bridges.length; _wbi++) {
+                                _road.bridges[_wbi].destroyedBy = k.id;
+                            }
+                        }
                         _road.bridgeDestroyedBy = k.id;
                         logEvent('💥 ' + k.name + ' destroyed the bridge between ' + ourTown.name + ' and ' + enemyTown.name + '! ' +
                             (theirMilStr > myMilStr ? 'A desperate defensive measure.' : 'A strategic strike to cut off the enemy.'), {
@@ -28350,8 +28367,8 @@
         setKingMood: setKingMood,
 
         // Bridge & Road management
-        destroyBridge(idx) { return destroyBridge(idx); },
-        rebuildBridge(idx) { return rebuildBridge(idx); },
+        destroyBridge(idx, bridgeId) { return destroyBridge(idx, bridgeId); },
+        rebuildBridge(idx, bridgeId) { return rebuildBridge(idx, bridgeId); },
         buildNewRoad(from, to, by, opts) { return buildNewRoad(from, to, by, opts); },
         buildNewSeaRoute(from, to, by, opts) { return buildNewSeaRoute(from, to, by, opts); },
         collectTolls() { collectTolls(); },
