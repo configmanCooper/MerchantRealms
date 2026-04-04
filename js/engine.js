@@ -8602,6 +8602,16 @@
             var _brEffMinDays = Math.max(10, Math.floor(_brMinDays * _brDayMult));
             // Treasury threshold: don't repair if it would drop treasury below 20% of starting
             var _brTreasuryFloor = Math.floor((CONFIG.KINGDOM_STARTING_TREASURY_MIN || 8000) * 0.2);
+            // Build petition lookup: which roads have active petitions?
+            var _brPetitions = {};
+            if (k.petitions) {
+                for (var _bpi = 0; _bpi < k.petitions.length; _bpi++) {
+                    var _bpet = k.petitions[_bpi];
+                    if (_bpet.typeId === 'repair_bridge' && _bpet.status === 'open') {
+                        _brPetitions[_bpet.roadIndex] = (_brPetitions[_bpet.roadIndex] || 0) + (_bpet.support || 30);
+                    }
+                }
+            }
             // Collect all destroyed bridges in kingdom territory
             for (var _bri = 0; _bri < world.roads.length; _bri++) {
                 var _brRoad = world.roads[_bri];
@@ -8611,23 +8621,29 @@
                 if (!_brFromT && !_brToT) continue;
                 if (!(((_brFromT && k.territories.has(_brFromT.id)) || (_brToT && k.territories.has(_brToT.id))))) continue;
                 var _brImportance = computeRoadImportance(_brFromT, _brToT);
+                // Petition boost: petitions add urgency and halve the minimum wait
+                var _brHasPetition = _brPetitions[_bri] || 0;
+                var _brMinDaysForRoad = _brHasPetition > 0 ? Math.floor(_brEffMinDays * 0.5) : _brEffMinDays;
                 if (_brRoad.bridges && _brRoad.bridges.length > 0) {
                     for (var _bri2 = 0; _bri2 < _brRoad.bridges.length; _bri2++) {
                         var _brB = _brRoad.bridges[_bri2];
                         if (!_brB.destroyed) continue;
                         var _brDaysDown = world.day - (_brB.destroyedDay || 0);
-                        if (_brDaysDown < _brEffMinDays) continue;
+                        if (_brDaysDown < _brMinDaysForRoad) continue;
                         // Urgency increases with time — long-destroyed bridges get priority boost
                         var _brUrgency = _brImportance + Math.min(50, _brDaysDown * 0.15);
                         // Capital connections get urgent priority
                         if ((_brFromT && _brFromT.isCapital) || (_brToT && _brToT.isCapital)) _brUrgency += 40;
+                        // Petition support boosts priority
+                        _brUrgency += _brHasPetition * 0.5;
                         _brCandidates.push({ ri: _bri, bridgeId: _brB.id, importance: _brUrgency });
                     }
                 } else if (_brRoad.bridgeDestroyed) {
                     var _brDaysDown2 = world.day - (_brRoad.bridgeDestroyedDay || 0);
-                    if (_brDaysDown2 < _brEffMinDays) continue;
+                    if (_brDaysDown2 < _brMinDaysForRoad) continue;
                     var _brUrgency2 = _brImportance + Math.min(50, _brDaysDown2 * 0.15);
                     if ((_brFromT && _brFromT.isCapital) || (_brToT && _brToT.isCapital)) _brUrgency2 += 40;
+                    _brUrgency2 += _brHasPetition * 0.5;
                     _brCandidates.push({ ri: _bri, bridgeId: null, importance: _brUrgency2 });
                 }
             }
@@ -8643,6 +8659,15 @@
                 _brSpent += _brRebuildCost;
                 k.gold -= _brRebuildCost;
                 rebuildBridge(_brCandidates[_brc].ri, _brCandidates[_brc].bridgeId);
+                // Mark any petitions for this road as fulfilled
+                if (k.petitions) {
+                    for (var _bpc = k.petitions.length - 1; _bpc >= 0; _bpc--) {
+                        if (k.petitions[_bpc].typeId === 'repair_bridge' && k.petitions[_bpc].roadIndex === _brCandidates[_brc].ri && k.petitions[_bpc].status === 'open') {
+                            k.petitions[_bpc].status = 'fulfilled';
+                            k.petitions[_bpc].fulfilledDay = world.day;
+                        }
+                    }
+                }
             }
         }
 
