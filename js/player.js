@@ -8834,6 +8834,7 @@
 
         const advKingdom = Engine.findKingdom(kingdomId);
         Engine.logEvent(`${player.fullName} becomes Royal Advisor of ${advKingdom ? advKingdom.name : 'the kingdom'} with special privileges!`);
+        autoJournalCapture('rank', 'I have been appointed Royal Advisor of ' + (advKingdom ? advKingdom.name : 'the kingdom') + '! The king himself seeks my counsel. I stand at the pinnacle of power.', { mood: 'triumphant' });
         if (typeof UI !== 'undefined' && UI.toast) {
             UI.toast('👑 You are now a Royal Advisor with special benefits!', 'achievement', 'my_actions');
         }
@@ -16675,6 +16676,7 @@
 
         const kingdom = Engine.findKingdom(kingdomId);
         Engine.logEvent(`\uD83C\uDFE0 ${player.fullName} became a Citizen of ${kingdom ? kingdom.name : kingdomId}.`);
+        autoJournalCapture('rank', 'I have been granted citizenship in ' + (kingdom ? kingdom.name : 'a new kingdom') + '. A new chapter begins.', { mood: 'hopeful' });
         // Achievement tracking
         if (existingCitizenships.length > 0) unlockAchievement('dual_citizen');
         if (player.achievementStats && player.achievementStats.wasExiled) {
@@ -16698,6 +16700,7 @@
                 if ((player.socialRank[kId] || 0) >= 1) { player.citizenshipKingdomId = kId; break; }
             }
             Engine.logEvent(`${player.fullName} has been exiled from ${kingdom ? kingdom.name : 'their kingdom'}!`);
+            autoJournalCapture('rank', 'I have been exiled from ' + (kingdom ? kingdom.name : 'my kingdom') + '. Everything I built there is lost. I must start anew.', { mood: 'devastated' });
             if (player.achievementStats) player.achievementStats.wasExiled = true;
             unlockAchievement('exiled');
             if (typeof UI !== 'undefined' && UI.toast) {
