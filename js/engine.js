@@ -26227,7 +26227,6 @@
             if (forestTiles.length > 0) {
                 var toConvert = Math.min(forestTiles.length, rng.randInt(3, 4));
                 rng.shuffle(forestTiles);
-                var cols = world.gridCols || Math.floor(CONFIG.WORLD_WIDTH / CONFIG.TILE_SIZE);
                 for (var i = 0; i < toConvert; i++) {
                     var t = forestTiles[i];
                     world.terrain[t.idx] = TERRAIN.GRASS.id;
@@ -26239,7 +26238,6 @@
         // REFORESTATION: wood > 60% of max → convert stored grass tiles back to forest
         if (pct > 0.60 && town._convertedForestTiles.length > 0) {
             var toRestore = Math.min(town._convertedForestTiles.length, rng.randInt(3, 4));
-            var cols2 = world.gridCols || Math.floor(CONFIG.WORLD_WIDTH / CONFIG.TILE_SIZE);
             for (var j = 0; j < toRestore; j++) {
                 var rt = town._convertedForestTiles.shift();
                 if (rt && world.terrain[rt.idx] === TERRAIN.GRASS.id) {
