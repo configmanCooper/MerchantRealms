@@ -8118,7 +8118,8 @@ window.UI = (function () {
             for (let i = 0; i < illnesses.length; i++) {
                 const ill = illnesses[i];
                 const sevColor = ill.severity === 'severe' ? 'var(--danger)' : ill.severity === 'moderate' ? '#e67e22' : '#2ecc71';
-                html += '<div class="detail-row"><span class="label">🤒 ' + ill.name + '</span>';
+                const illName = ill.name || (ill.type ? ill.type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'Unknown Illness');
+                html += '<div class="detail-row"><span class="label">🤒 ' + illName + '</span>';
                 html += '<span class="value" style="color:' + sevColor + ';">' + ill.severity + (ill.treated ? ' (treating)' : ' (untreated!)') + '</span></div>';
             }
             // Treatment buttons
@@ -10426,7 +10427,7 @@ window.UI = (function () {
             try {
                 var hKingdom = Engine.findKingdom(currentTown.kingdomId);
                 if (hKingdom && hKingdom.laws && hKingdom.laws.bannedGoods && hKingdom.laws.bannedGoods.indexOf('horses') !== -1) {
-                    horseLegal = Player.licenses && Player.licenses[currentTown.kingdomId] && Player.licenses[currentTown.kingdomId].indexOf('horses') !== -1;
+                    horseLegal = Player.hasLicense && Player.hasLicense(currentTown.kingdomId, 'horses');
                 }
             } catch (e) { /* ignore */ }
             horseAvailable = horseLegal && currentTown.market && currentTown.market.supply && (currentTown.market.supply.horses || 0) > 0;
@@ -11295,8 +11296,9 @@ window.UI = (function () {
             const myLicenses = Player.licenses[k.id] || [];
             if (myLicenses.length > 0) {
                 const licNames = myLicenses.map(g => {
-                    const r = Object.values(RESOURCE_TYPES).find(rr => rr.id === g);
-                    return r ? r.icon + ' ' + r.name : g;
+                    var resId = typeof g === 'string' ? g : g.resourceId;
+                    const r = Object.values(RESOURCE_TYPES).find(rr => rr.id === resId);
+                    return r ? r.icon + ' ' + r.name : resId;
                 }).join(', ');
                 playerLicHtml = `<div class="kc-row" style="font-size:0.75rem;color:#55a868;">📜 Your Licenses: ${licNames}</div>`;
             }
@@ -15838,7 +15840,8 @@ window.UI = (function () {
                 var illSevColor = ill.severity === 'severe' ? 'var(--danger)' : ill.severity === 'moderate' ? '#e67e22' : '#2ecc71';
 
                 html += '<div style="border:1px solid var(--border);padding:6px;margin-bottom:6px;border-radius:4px;">';
-                html += '<div class="detail-row"><span class="label">' + ill.name + '</span>';
+                var illDisplayName = ill.name || (illTypeDef ? illTypeDef.name : (ill.type ? ill.type.replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); }) : 'Unknown Illness'));
+                html += '<div class="detail-row"><span class="label">' + illDisplayName + '</span>';
                 html += '<span class="value" style="color:' + illSevColor + ';">' + ill.severity + (ill.treated ? ' ✓ treating' : '') + '</span></div>';
                 html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">';
                 if (hasHospital) {

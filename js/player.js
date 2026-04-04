@@ -12932,7 +12932,7 @@
         var infectionChance = 0.015 * approachCfg.injuryMult;
         if (rng && rng.chance(infectionChance)) {
             player.illnesses = player.illnesses || [];
-            player.illnesses.push({ type: 'infection', severity: 'mild', dayOccurred: day, treated: false, source: 'nursing' });
+            player.illnesses.push({ type: 'infection', name: 'Infection', severity: 'mild', dayOccurred: day, treated: false, source: 'nursing' });
             Engine.logEvent('🤒 ' + player.fullName + ' contracted an infection while treating wounded soldiers.');
         }
 
@@ -26705,11 +26705,11 @@
             }
             if (rng && rng.chance(diseaseChance)) {
                 player.illnesses = player.illnesses || [];
-                player.illnesses.push({ type: 'cold', severity: 'mild', dayOccurred: Engine.getDay(), treated: false });
+                player.illnesses.push({ type: 'cold', name: 'Common Cold', severity: 'mild', dayOccurred: Engine.getDay(), treated: false });
                 messages.push('🤧 You caught a cold!');
             } else if (rng && rng.chance(0.02)) {
                 player.illnesses = player.illnesses || [];
-                player.illnesses.push({ type: 'fever', severity: 'moderate', dayOccurred: Engine.getDay(), treated: false });
+                player.illnesses.push({ type: 'fever', name: 'Fever', severity: 'moderate', dayOccurred: Engine.getDay(), treated: false });
                 messages.push('🤒 You developed a fever!');
             }
             if (rng && rng.chance(injuryChance)) {
@@ -26734,7 +26734,7 @@
             }
             if (rng2 && gearDisease > 0 && rng2.chance(gearDisease)) {
                 player.illnesses = player.illnesses || [];
-                player.illnesses.push({ type: 'cold', severity: 'mild', dayOccurred: Engine.getDay(), treated: false });
+                player.illnesses.push({ type: 'cold', name: 'Common Cold', severity: 'mild', dayOccurred: Engine.getDay(), treated: false });
                 messages.push('🤧 You caught a cold while camping.');
             }
         }
