@@ -256,11 +256,15 @@
     ];
 
     // Create multiple wood deposit objects from a total wood amount and forest tile count
-    function _createWoodDeposits(totalWood, forestTiles, rng) {
+    function _createWoodDeposits(totalWood, forestTiles, rng, fertility) {
         var numDeposits = Math.max(1, Math.floor(forestTiles / 3));
         numDeposits = Math.min(numDeposits, 8); // Cap at 8 groves
         // Don't create more groves than we can reasonably fill
         if (totalWood > 0) numDeposits = Math.min(numDeposits, Math.max(1, Math.floor(totalWood / 100)));
+        // Starting fill: 30-100% based on soil fertility (1.0 = baseline)
+        var fert = fertility || 1.0;
+        var fillMin = 0.30;
+        var fillMax = Math.min(1.0, 0.50 + fert * 0.50); // fertility 1.0 → max 100%, fertility 0.5 → max 75%
         var deposits = [];
         var remaining = totalWood;
         var usedNames = {};
@@ -281,12 +285,17 @@
                 if (!usedNames[name]) break;
             }
             usedNames[name] = true;
-            deposits.push({ name: name, amount: share, maxAmount: Math.max(share, 100) });
+            // maxAmount is the grove's capacity; amount is current fill (30-100%)
+            var fillPct = fillMin + rng.random() * (fillMax - fillMin);
+            var groveMax = Math.max(share, 100);
+            var groveAmt = Math.max(0, Math.floor(groveMax * fillPct));
+            deposits.push({ name: name, amount: groveAmt, maxAmount: groveMax });
         }
         // Remove empty deposits (if remaining ran out early)
         deposits = deposits.filter(function(d) { return d.amount > 0 || d.maxAmount > 0; });
         if (deposits.length === 0 && totalWood > 0) {
-            deposits.push({ name: rng.pick(_groveNames), amount: totalWood, maxAmount: totalWood });
+            var _fallbackFill = fillMin + rng.random() * (fillMax - fillMin);
+            deposits.push({ name: rng.pick(_groveNames), amount: Math.floor(totalWood * _fallbackFill), maxAmount: totalWood });
         }
         return deposits;
     }
@@ -1745,7 +1754,7 @@
                 var _woodBase = Math.max(ND.wood.min, Math.min(ND.wood.max, _forestDeposit * depRng.randInt(80, 120)));
                 town.naturalDeposits.wood = _woodBase;
                 town._forestTileCount = forestTiles;
-                town.woodDeposits = _createWoodDeposits(_woodBase, forestTiles, depRng);
+                town.woodDeposits = _createWoodDeposits(_woodBase, forestTiles, depRng, town.soilFertility);
                 // Forests can have iron veins (~20%) or stone outcrops (~15%)
                 if (depRng.chance(0.20)) town.naturalDeposits.iron_ore = depRng.randInt(Math.floor(ND.iron_ore.min * 0.4), Math.floor(ND.iron_ore.max * 0.5));
                 if (depRng.chance(0.15)) town.naturalDeposits.stone = depRng.randInt(Math.floor(ND.stone.min * 0.3), Math.floor(ND.stone.max * 0.4));
@@ -1774,7 +1783,7 @@
                 var _nfWood = Math.max(_nfBase, _nfDeposit * depRng.randInt(60, 100));
                 town.naturalDeposits.wood = (town.naturalDeposits.wood || 0) + _nfWood;
                 town._forestTileCount = forestTiles;
-                town.woodDeposits = _createWoodDeposits(town.naturalDeposits.wood, forestTiles, depRng);
+                town.woodDeposits = _createWoodDeposits(town.naturalDeposits.wood, forestTiles, depRng, town.soilFertility);
             }
             // Grassland always gets a small amount of wood from scattered groves
             if (!town.naturalDeposits.wood && terrainBias !== 'coastal') {
@@ -11343,7 +11352,7 @@
             var _nfWoodBase = Math.max(foundND.wood.min, Math.min(foundND.wood.max, _nfDeposit2 * rng.randInt(80, 120)));
             newTown.naturalDeposits.wood = _nfWoodBase;
             newTown._forestTileCount = nForest;
-            newTown.woodDeposits = _createWoodDeposits(_nfWoodBase, nForest, rng);
+            newTown.woodDeposits = _createWoodDeposits(_nfWoodBase, nForest, rng, newTown.soilFertility);
             if (rng.chance(0.20)) newTown.naturalDeposits.iron_ore = rng.randInt(Math.floor(foundND.iron_ore.min * 0.4), Math.floor(foundND.iron_ore.max * 0.5));
             if (rng.chance(0.15)) newTown.naturalDeposits.stone = rng.randInt(Math.floor(foundND.stone.min * 0.3), Math.floor(foundND.stone.max * 0.4));
         } else if (newTerrainBias === 'coastal') {
@@ -11365,7 +11374,7 @@
             var _nfWood2 = Math.max(_nfBase2, _nfDeposit3 * rng.randInt(60, 100));
             newTown.naturalDeposits.wood = (newTown.naturalDeposits.wood || 0) + _nfWood2;
             newTown._forestTileCount = nForest;
-            newTown.woodDeposits = _createWoodDeposits(newTown.naturalDeposits.wood, nForest, rng);
+            newTown.woodDeposits = _createWoodDeposits(newTown.naturalDeposits.wood, nForest, rng, newTown.soilFertility);
         }
         if (!newTown.naturalDeposits.wood && newTerrainBias !== 'coastal') {
             newTown.naturalDeposits.wood = rng.randInt(Math.floor(foundND.wood.min * 0.15), Math.floor(foundND.wood.max * 0.25));
@@ -29365,7 +29374,7 @@
                 var _wdmTown = world.towns[_wdmi];
                 if (_wdmTown.naturalDeposits && _wdmTown.naturalDeposits.wood > 0 && !_wdmTown.woodDeposits) {
                     var _wdmForest = _wdmTown._forestTileCount || 6; // default: assume ~2 groves
-                    _wdmTown.woodDeposits = _createWoodDeposits(_wdmTown.naturalDeposits.wood, _wdmForest, world.rng || { random: Math.random, pick: function(a) { return a[Math.floor(Math.random() * a.length)]; }, randInt: function(a,b) { return a + Math.floor(Math.random() * (b - a + 1)); } });
+                    _wdmTown.woodDeposits = _createWoodDeposits(_wdmTown.naturalDeposits.wood, _wdmForest, world.rng || { random: Math.random, pick: function(a) { return a[Math.floor(Math.random() * a.length)]; }, randInt: function(a,b) { return a + Math.floor(Math.random() * (b - a + 1)); } }, _wdmTown.soilFertility);
                 }
             }
 
