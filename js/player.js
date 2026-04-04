@@ -27782,18 +27782,55 @@
         var cost = CONFIG.PLAYER_GUARD_HIRE_COST || 30;
         if (hasSkill('cheap_security')) cost = Math.floor(cost * 0.80);
         if (player.gold < cost) return { success: false, message: 'Need ' + cost + 'g to hire a guard.' };
+
+        // Find a suitable NPC from the current town
+        var townPeople = Engine.getPeople ? Engine.getPeople(player.townId) : [];
+        var existingGuardIds = {};
+        for (var gi = 0; gi < player.guards.length; gi++) {
+            if (player.guards[gi].personId) existingGuardIds[player.guards[gi].personId] = true;
+        }
+        // Filter: alive, adult, not already a guard, not the player's spouse, not a child
+        var candidates = [];
+        for (var ci = 0; ci < townPeople.length; ci++) {
+            var p = townPeople[ci];
+            if (!p.alive || p.age < 18) continue;
+            if (existingGuardIds[p.id]) continue;
+            if (p.id === player.spouseId) continue;
+            if (p.isPlayerGuard) continue;
+            // Prefer unemployed or soldiers
+            candidates.push(p);
+        }
+        if (candidates.length === 0) return { success: false, message: 'No one available to hire in this town.' };
+
+        // Pick a candidate — prefer soldiers/unemployed
+        var rng = Engine.getRng();
+        var preferred = candidates.filter(function(c) {
+            return c.occupation === 'soldier' || c.occupation === 'guard' || c.occupation === 'unemployed' || !c.occupation;
+        });
+        var chosen = preferred.length > 0 ? (rng.pick ? rng.pick(preferred) : preferred[Math.floor(rng.random() * preferred.length)])
+            : (rng.pick ? rng.pick(candidates) : candidates[Math.floor(rng.random() * candidates.length)]);
+
         player.gold -= cost;
         logFinance(-cost, 'guards', 'Hired personal guard');
-        var rng = Engine.getRng();
+
+        // Mark NPC as player guard
+        chosen.isPlayerGuard = true;
+        chosen.previousOccupation = chosen.occupation;
+        chosen.previousTownId = chosen.townId;
+        chosen.occupation = 'player_guard';
+
+        var guardName = (chosen.firstName || '') + (chosen.lastName ? ' ' + chosen.lastName : '');
+        if (!guardName.trim()) guardName = 'Guard ' + (player.guards.length + 1);
         var guard = {
             id: 'guard_' + Date.now() + '_' + (rng ? rng.randInt(0, 9999) : Math.floor(Math.random() * 9999)),
-            name: Engine.generatePersonName ? Engine.generatePersonName(rng) : ('Guard ' + (player.guards.length + 1)),
+            personId: chosen.id,
+            name: guardName,
             hiredDay: Engine.getDay()
         };
         player.guards.push(guard);
         player.personalGuards = player.guards.length;
-        Engine.logEvent('\uD83D\uDEE1\uFE0F Hired ' + guard.name + ' as a personal guard for ' + cost + 'g. (' + player.guards.length + '/' + maxGuards + ')');
-        return { success: true, message: '\uD83D\uDEE1\uFE0F ' + guard.name + ' hired for ' + cost + 'g. (' + player.guards.length + '/' + maxGuards + ')', guard: guard };
+        Engine.logEvent('\uD83D\uDEE1\uFE0F Hired ' + guardName + ' as a personal guard for ' + cost + 'g. (' + player.guards.length + '/' + maxGuards + ')');
+        return { success: true, message: '\uD83D\uDEE1\uFE0F ' + guardName + ' hired for ' + cost + 'g. (' + player.guards.length + '/' + maxGuards + ')', guard: guard };
     }
 
     function dismissPersonalGuard(guardId) {
@@ -27805,8 +27842,22 @@
                 if (player.guards[i].id === guardId) { idx = i; break; }
             }
         }
-        if (idx === -1) idx = player.guards.length - 1; // dismiss last if no id
-        var name = player.guards[idx].name;
+        if (idx === -1) idx = player.guards.length - 1;
+        var dismissed = player.guards[idx];
+        var name = dismissed.name;
+
+        // Return NPC to current town
+        if (dismissed.personId && Engine.getPerson) {
+            var npc = Engine.getPerson(dismissed.personId);
+            if (npc && npc.alive) {
+                npc.isPlayerGuard = false;
+                npc.occupation = npc.previousOccupation || 'unemployed';
+                npc.townId = player.townId || npc.previousTownId || npc.townId;
+                delete npc.previousOccupation;
+                delete npc.previousTownId;
+            }
+        }
+
         player.guards.splice(idx, 1);
         player.personalGuards = player.guards.length;
         Engine.logEvent('\uD83D\uDEE1\uFE0F Dismissed guard ' + name + '. (' + player.guards.length + '/' + (CONFIG.PLAYER_GUARD_MAX || 4) + ')');
@@ -27816,6 +27867,24 @@
     function tickPersonalGuardWages() {
         player.guards = player.guards || [];
         if (player.guards.length === 0) return;
+
+        // Sync guard NPC locations with player + remove dead guards
+        for (var gi = player.guards.length - 1; gi >= 0; gi--) {
+            var g = player.guards[gi];
+            if (g.personId && Engine.getPerson) {
+                var npc = Engine.getPerson(g.personId);
+                if (!npc || !npc.alive) {
+                    Engine.logEvent('💀 Your guard ' + g.name + ' has died.');
+                    player.guards.splice(gi, 1);
+                    continue;
+                }
+                // Guard follows player
+                npc.townId = player.townId;
+            }
+        }
+        player.personalGuards = player.guards.length;
+        if (player.guards.length === 0) return;
+
         var wage = (CONFIG.PLAYER_GUARD_DAILY_WAGE || 6) * player.guards.length;
         player.gold -= wage;
         logFinance(-wage, 'guards', 'Guard wages (' + player.guards.length + ')');
@@ -27823,6 +27892,17 @@
             while (player.gold < 0 && player.guards.length > 0) {
                 var dismissed = player.guards.pop();
                 player.gold += (CONFIG.PLAYER_GUARD_DAILY_WAGE || 6);
+                // Return NPC to current town
+                if (dismissed.personId && Engine.getPerson) {
+                    var dnpc = Engine.getPerson(dismissed.personId);
+                    if (dnpc && dnpc.alive) {
+                        dnpc.isPlayerGuard = false;
+                        dnpc.occupation = dnpc.previousOccupation || 'unemployed';
+                        dnpc.townId = player.townId || dnpc.previousTownId || dnpc.townId;
+                        delete dnpc.previousOccupation;
+                        delete dnpc.previousTownId;
+                    }
+                }
                 Engine.logEvent('\uD83D\uDCB8 ' + dismissed.name + ' leaves \u2014 you can\'t afford the wages. (' + player.guards.length + ' remaining)');
             }
             if (player.gold < 0) player.gold = 0;
@@ -28293,6 +28373,33 @@
 
                 autoJournalCapture('encounter', 'Defeated by ' + enemyName + '. Suffered a ' + severity + ' injury. Lost everything I was carrying.', { mood: 'defeated' });
             }
+        }
+
+        // Guard casualties — same death/injury chance as player
+        player.guards = player.guards || [];
+        if (player.guards.length > 0) {
+            result.guardCasualties = [];
+            var deathChanceGuard = isWartime ? 0.05 : 0.02;
+            var injuryChanceGuard = won ? 0.15 : 0.50;
+            if (isSea && !won) injuryChanceGuard = 0.60;
+            for (var _gi = player.guards.length - 1; _gi >= 0; _gi--) {
+                var _guard = player.guards[_gi];
+                var guardNpc = (_guard.personId && Engine.getPerson) ? Engine.getPerson(_guard.personId) : null;
+                if (!won && rng.chance(deathChanceGuard)) {
+                    // Guard killed
+                    if (guardNpc) { guardNpc.alive = false; guardNpc.deathDay = Engine.getDay(); guardNpc.deathCause = 'combat'; guardNpc.isPlayerGuard = false; }
+                    result.guardCasualties.push({ name: _guard.name, outcome: 'killed' });
+                    Engine.logEvent('💀 Your guard ' + _guard.name + ' was killed by ' + enemyName + '!');
+                    player.guards.splice(_gi, 1);
+                } else if (rng.chance(injuryChanceGuard)) {
+                    // Guard injured
+                    var gSeverity = rng.chance(0.4) ? 'severe' : 'moderate';
+                    if (guardNpc) { guardNpc.injured = true; guardNpc.injurySeverity = gSeverity; }
+                    result.guardCasualties.push({ name: _guard.name, outcome: 'injured', severity: gSeverity });
+                    Engine.logEvent('🩹 Your guard ' + _guard.name + ' suffered a ' + gSeverity + ' injury in the fight.');
+                }
+            }
+            player.personalGuards = player.guards.length;
         }
 
         return result;

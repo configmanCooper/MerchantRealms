@@ -15773,6 +15773,22 @@ window.UI = (function () {
             resultHtml += '</div>';
         }
 
+        // Guard casualties
+        if (result.guardCasualties && result.guardCasualties.length > 0) {
+            resultHtml += '<div style="padding:8px;background:rgba(200,50,50,0.15);border-radius:4px;font-size:0.8rem;margin-top:6px;">';
+            resultHtml += '<strong>🛡️ Guard Casualties:</strong><br>';
+            for (var gci = 0; gci < result.guardCasualties.length; gci++) {
+                var gc = result.guardCasualties[gci];
+                if (gc.outcome === 'killed') {
+                    resultHtml += '💀 ' + gc.name + ' — <span style="color:var(--danger);">killed</span><br>';
+                } else if (gc.outcome === 'injured') {
+                    var gcColor = gc.severity === 'severe' ? 'var(--danger)' : '#e67e22';
+                    resultHtml += '🩹 ' + gc.name + ' — <span style="color:' + gcColor + ';">' + gc.severity + ' injury</span><br>';
+                }
+            }
+            resultHtml += '</div>';
+        }
+
         resultHtml += '<div style="text-align:center;margin-top:16px;"><button class="btn-medieval" onclick="UI.closeModal();" style="padding:8px 24px;">Continue Journey</button></div>';
 
         openModal('Encounter Result', resultHtml, '');
