@@ -17014,7 +17014,7 @@
         var person = Engine.findPerson(personId);
         if (!person) return { canTalk: true }; // not found = allow (failsafe)
 
-        if (person.age < 18) return { canTalk: false, reason: 'This person is too young to interact with.' };
+        if (person.age < 10) return { canTalk: false, reason: 'This person is too young to interact with.' };
 
         // Check if this person is a king
         var isKing = false;
