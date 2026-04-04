@@ -11040,7 +11040,11 @@ window.UI = (function () {
         // Route conditions
         html += '<div style="padding:8px;background:rgba(0,0,0,0.2);border-radius:4px;font-size:0.78rem;color:var(--text-muted);">';
         html += '<strong>Route Conditions:</strong><br>';
-        html += '☠️ Max bandit threat: ' + info.bandits + '/100<br>';
+        if (info.bandits > 0) {
+            html += '☠️ Max bandit threat: ' + info.bandits + '/100<br>';
+        } else if (!info.hasPirates) {
+            html += '☠️ Bandit threat: None<br>';
+        }
         if (info.atWar) html += '⚔️ <span style="color:#e74c3c;">Passes through war zone!</span><br>';
         if (info.hasPirates) html += '🏴‍☠️ <span style="color:#e67e22;">Sea segment — pirates possible</span><br>';
         html += '</div>';
