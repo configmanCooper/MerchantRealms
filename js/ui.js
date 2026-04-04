@@ -10904,15 +10904,13 @@ window.UI = (function () {
             var _rdInfo = routeDanger[routeKey];
             var _dangerHtml = '';
             if (_rdInfo && routeKey !== 'god') {
-                var _dangerTip;
-                if (_rdInfo.hasPirates && _rdInfo.bandits === 0) {
-                    _dangerTip = 'Pirate risk — Click for details';
-                } else if (_rdInfo.atWar) {
-                    _dangerTip = 'War zone! Bandit threat: ' + _rdInfo.bandits + '/100';
-                } else {
-                    _dangerTip = 'Bandit threat: ' + _rdInfo.bandits + '/100';
-                }
-                if (_rdInfo.hasPirates && _rdInfo.bandits > 0) _dangerTip += ', Pirates possible';
+                var _dangerTip = _rdInfo.level.charAt(0).toUpperCase() + _rdInfo.level.slice(1) + ' risk';
+                var _tipParts = [];
+                if (_rdInfo.bandits > 0) _tipParts.push('Bandit threat: ' + _rdInfo.bandits + '/100');
+                if (_rdInfo.atWar) _tipParts.push('War zone');
+                if (_rdInfo.hasPirates) _tipParts.push('Pirates active');
+                _dangerTip += _tipParts.length ? ' (' + _tipParts.join(', ') + ')' : '';
+                _dangerTip += ' — Click for details';
                 var _riskTypeLabel = _rdInfo.hasPirates && _rdInfo.bandits === 0 ? 'Pirate Risk' : (_rdInfo.atWar ? 'War Risk' : 'Bandit Risk');
                 _dangerHtml = ' <span onclick="UI.showRouteDangerDetail(\'' + routeKey + '\')" style="font-size:0.75rem;margin-left:6px;cursor:pointer;" title="' + _dangerTip + '">⚔️ <span style="color:' + _rdInfo.color + ';font-weight:bold;">' + _rdInfo.level.charAt(0).toUpperCase() + _rdInfo.level.slice(1) + '</span> <span style="color:#ddd;">' + _riskTypeLabel + '</span></span>';
             }
