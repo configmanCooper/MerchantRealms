@@ -259,18 +259,19 @@
     function _createWoodDeposits(totalWood, forestTiles, rng) {
         var numDeposits = Math.max(1, Math.floor(forestTiles / 3));
         numDeposits = Math.min(numDeposits, 8); // Cap at 8 groves
+        // Don't create more groves than we can reasonably fill
+        if (totalWood > 0) numDeposits = Math.min(numDeposits, Math.max(1, Math.floor(totalWood / 100)));
         var deposits = [];
         var remaining = totalWood;
         var usedNames = {};
         for (var i = 0; i < numDeposits; i++) {
-            // Distribute unevenly for variety
             var share;
-            if (i === numDeposits - 1) {
-                share = remaining;
+            if (i === numDeposits - 1 || remaining <= 0) {
+                share = Math.max(0, remaining);
             } else {
                 var avg = remaining / (numDeposits - i);
                 share = Math.floor(avg * (0.7 + rng.random() * 0.6));
-                share = Math.max(100, Math.min(remaining - (numDeposits - i - 1) * 100, share));
+                share = Math.max(0, Math.min(remaining, share));
             }
             remaining -= share;
             // Pick a unique name
@@ -280,7 +281,12 @@
                 if (!usedNames[name]) break;
             }
             usedNames[name] = true;
-            deposits.push({ name: name, amount: share, maxAmount: share });
+            deposits.push({ name: name, amount: share, maxAmount: Math.max(share, 100) });
+        }
+        // Remove empty deposits (if remaining ran out early)
+        deposits = deposits.filter(function(d) { return d.amount > 0 || d.maxAmount > 0; });
+        if (deposits.length === 0 && totalWood > 0) {
+            deposits.push({ name: rng.pick(_groveNames), amount: totalWood, maxAmount: totalWood });
         }
         return deposits;
     }
