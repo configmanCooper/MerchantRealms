@@ -151,7 +151,7 @@ const CONFIG = {
     FOOD_CONSUMPTION_PER_DAY: 1,
     CHILD_FOOD_MULTIPLIER: 0.25,    // Children (age < COMING_OF_AGE) eat 1/4 of adult food
     NEED_DECAY_RATE: 2,
-    MARRIAGE_MIN_AGE: 16,
+    MARRIAGE_MIN_AGE: 18,
     CHILD_PROBABILITY: 0.03,    // ~3%/day → avg ~33 days to conceive (user wants 30-100 day range)
     PREGNANCY_DURATION: 270,    // ~9 months in game days (360 days/year)
     MAX_CHILDREN: 8,            // Cap on total children per lifetime

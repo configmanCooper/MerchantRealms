@@ -9603,6 +9603,7 @@
         const person = Engine.findPerson(personId);
         if (!person) return { success: false, message: 'Person not found.' };
         if (!person.alive) return { success: false, message: 'Person is not alive.' };
+        if (person.age < 18) return { success: false, message: 'Person is too young to marry.' };
         if (person.spouseId) return { success: false, message: 'Person is already married.' };
         if (person.townId !== player.townId) return { success: false, message: 'Person is not in your town.' };
 
@@ -17012,6 +17013,8 @@
     function canTalkTo(personId) {
         var person = Engine.findPerson(personId);
         if (!person) return { canTalk: true }; // not found = allow (failsafe)
+
+        if (person.age < 18) return { canTalk: false, reason: 'This person is too young to interact with.' };
 
         // Check if this person is a king
         var isKing = false;
