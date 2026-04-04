@@ -2627,13 +2627,13 @@ CONFIG.ODD_JOB_XP = 2;
 // Resource Depletion
 // ============================================================
 CONFIG.NATURAL_DEPOSITS = {
-    iron_ore:  { min: 3000, max: 8000, terrain: 'mountain', renewable: false },
-    gold_ore:  { min: 1000, max: 3000, terrain: 'mountain', renewable: false },
-    stone:     { min: 5000, max: 15000, terrain: 'mountain', renewable: false },
-    clay:      { min: 4000, max: 10000, terrain: 'any', renewable: false },
-    salt:      { min: 2000, max: 6000, terrain: 'coastal', renewable: false },
-    wood:      { min: 3000, max: 8000, terrain: 'forest', renewable: true, regenPerDay: 1, canPlant: true },
-    fish:      { min: 1000, max: 3000, terrain: 'coastal', renewable: true, regenPerDay: 2, overfishRecoveryDays: 30 },
+    iron_ore:  { min: 6000, max: 16000, terrain: 'mountain', renewable: false },
+    gold_ore:  { min: 2000, max: 6000, terrain: 'mountain', renewable: false },
+    stone:     { min: 10000, max: 30000, terrain: 'mountain', renewable: false },
+    clay:      { min: 8000, max: 20000, terrain: 'any', renewable: false },
+    salt:      { min: 4000, max: 12000, terrain: 'coastal', renewable: false },
+    wood:      { min: 6000, max: 16000, terrain: 'forest', renewable: true, regenPerDay: 1, canPlant: true },
+    fish:      { min: 2000, max: 6000, terrain: 'coastal', renewable: true, regenPerDay: 2, overfishRecoveryDays: 30 },
 };
 // Building-to-deposit requirements: buildings that extract from natural deposits
 CONFIG.DEPOSIT_REQUIREMENTS = {
