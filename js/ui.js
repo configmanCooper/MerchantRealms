@@ -8648,9 +8648,33 @@ window.UI = (function () {
             + '<div class="summary-row"><span style="color:#ccc;">Net Income (30d)</span><span style="' + posNeg(netIncome) + ';font-weight:bold;">' + (netIncome >= 0 ? '+' : '') + fmtGold(netIncome) + '</span></div>'
             + '<div class="summary-row"><span style="color:#ccc;">Current Gold</span><span style="color:#FFD700;font-weight:bold;">🪙 ' + fmtGold(currentGold) + '</span></div>'
             + '<div class="summary-row big"><span style="color:#FFD700;">Projected Gold (30 days)</span><span style="' + posNeg(projected30) + ';font-weight:bold;">🪙 ' + fmtGold(projected30) + '</span></div>'
-            + '</div>'
+            + '</div>';
 
-            + '<details style="margin-top:14px;"><summary style="cursor:pointer;color:#FFD700;font-size:0.9rem;padding:4px 0;">📋 Recent Transactions (' + txList.length + ')</summary>'
+        // Health status indicator (only if injured or sick)
+        var _injuries = Player.injuries || [];
+        var _illnesses = Player.illnesses || [];
+        if (_injuries.length > 0 || _illnesses.length > 0) {
+            reportHtml += '<div style="background:rgba(200,50,50,0.08);border:1px solid rgba(200,50,50,0.3);border-radius:6px;padding:8px 10px;margin-top:12px;">';
+            reportHtml += '<div style="font-size:0.85rem;color:#e74c3c;font-weight:bold;margin-bottom:4px;">⚠️ Health Alert</div>';
+            for (var _hi = 0; _hi < _injuries.length; _hi++) {
+                var _hinj = _injuries[_hi];
+                var _hinjSevColor = _hinj.severity === 'severe' ? '#e74c3c' : _hinj.severity === 'moderate' ? '#e67e22' : '#2ecc71';
+                reportHtml += '<div style="display:flex;justify-content:space-between;padding:2px 0;font-size:0.8rem;">'
+                    + '<span style="color:#ccc;">🩹 ' + (_hinj.name || 'Injury') + '</span>'
+                    + '<span style="color:' + _hinjSevColor + ';font-weight:bold;">' + (_hinj.severity || 'mild') + '</span></div>';
+            }
+            for (var _si = 0; _si < _illnesses.length; _si++) {
+                var _sill = _illnesses[_si];
+                var _sillSevColor = _sill.severity === 'severe' ? '#e74c3c' : _sill.severity === 'moderate' ? '#e67e22' : '#2ecc71';
+                var _sillName = _sill.name || (_sill.type ? _sill.type.replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); }) : 'Unknown Illness');
+                reportHtml += '<div style="display:flex;justify-content:space-between;padding:2px 0;font-size:0.8rem;">'
+                    + '<span style="color:#ccc;">🤒 ' + _sillName + '</span>'
+                    + '<span style="color:' + _sillSevColor + ';font-weight:bold;">' + (_sill.severity || 'mild') + '</span></div>';
+            }
+            reportHtml += '</div>';
+        }
+
+        reportHtml += '<details style="margin-top:14px;"><summary style="cursor:pointer;color:#FFD700;font-size:0.9rem;padding:4px 0;">📋 Recent Transactions (' + txList.length + ')</summary>'
             + '<div style="max-height:250px;overflow-y:auto;margin-top:6px;padding:4px;">' + recentTx + '</div></details>'
 
             + '<div style="text-align:center;margin-top:10px;font-size:0.7rem;color:#666;">'
