@@ -1349,9 +1349,9 @@ window.UI = (function () {
             if (deposits && Object.keys(deposits).length > 0) {
                 html += `<div class="detail-section"><h3>⛏️ Natural Deposits</h3>`;
                 for (const [resId, info] of Object.entries(deposits)) {
-                    const res = findResource(resId);
-                    const icon = res ? res.icon : '🪨';
-                    const name = res ? res.name : resId;
+                    const res = info.isWoodGrove ? null : findResource(resId);
+                    const icon = info.isWoodGrove ? '🌲' : (res ? res.icon : '🪨');
+                    const name = info.isWoodGrove ? info.groveName : (res ? res.name : resId);
                     const pct = info.pct;
                     const barColor = pct > 50 ? '#55a868' : pct > 20 ? '#ccb974' : pct > 0 ? '#c44e52' : '#555';
                     const label = pct <= 0 ? 'Exhausted' : info.renewable ? pct + '% (renewable)' : pct + '%';

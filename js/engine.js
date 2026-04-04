@@ -247,6 +247,54 @@
         return world.terrain[ty * world.gridCols + tx];
     }
 
+    // Grove name pools for wood deposits
+    var _groveNames = [
+        'Ancient Forest', 'Deep Woods', 'Pine Grove', 'Oak Forest', 'Birch Stand',
+        'Shaded Thicket', 'Mossy Hollow', 'Wildwood', 'Cedar Ridge', 'Elm Copse',
+        'Timber Stand', 'Dark Forest', 'Greenwood', 'Old Growth', 'Fern Glade',
+        'Spruce Wood', 'Ash Grove', 'Maple Stand', 'Linden Wood', 'Hazel Thicket'
+    ];
+
+    // Create multiple wood deposit objects from a total wood amount and forest tile count
+    function _createWoodDeposits(totalWood, forestTiles, rng) {
+        var numDeposits = Math.max(1, Math.floor(forestTiles / 3));
+        numDeposits = Math.min(numDeposits, 8); // Cap at 8 groves
+        var deposits = [];
+        var remaining = totalWood;
+        var usedNames = {};
+        for (var i = 0; i < numDeposits; i++) {
+            // Distribute unevenly for variety
+            var share;
+            if (i === numDeposits - 1) {
+                share = remaining;
+            } else {
+                var avg = remaining / (numDeposits - i);
+                share = Math.floor(avg * (0.7 + rng.random() * 0.6));
+                share = Math.max(100, Math.min(remaining - (numDeposits - i - 1) * 100, share));
+            }
+            remaining -= share;
+            // Pick a unique name
+            var name;
+            for (var _ni = 0; _ni < 40; _ni++) {
+                name = rng.pick(_groveNames);
+                if (!usedNames[name]) break;
+            }
+            usedNames[name] = true;
+            deposits.push({ name: name, amount: share, maxAmount: share });
+        }
+        return deposits;
+    }
+
+    // Sync town.naturalDeposits.wood from woodDeposits array total
+    function _syncWoodDepositTotal(town) {
+        if (!town.woodDeposits || town.woodDeposits.length === 0) return;
+        var total = 0;
+        for (var i = 0; i < town.woodDeposits.length; i++) {
+            total += town.woodDeposits[i].amount;
+        }
+        town.naturalDeposits.wood = total;
+    }
+
     // ========================================================
     // §6b  HELPER: TERRAIN-BASED TOWN CLASSIFICATION
     // ========================================================
@@ -1690,7 +1738,8 @@
                 var _forestDeposit = Math.floor(forestTiles / 3);
                 var _woodBase = Math.max(ND.wood.min, Math.min(ND.wood.max, _forestDeposit * depRng.randInt(80, 120)));
                 town.naturalDeposits.wood = _woodBase;
-                town._forestTileCount = forestTiles; // Track for terrain sync
+                town._forestTileCount = forestTiles;
+                town.woodDeposits = _createWoodDeposits(_woodBase, forestTiles, depRng);
                 // Forests can have iron veins (~20%) or stone outcrops (~15%)
                 if (depRng.chance(0.20)) town.naturalDeposits.iron_ore = depRng.randInt(Math.floor(ND.iron_ore.min * 0.4), Math.floor(ND.iron_ore.max * 0.5));
                 if (depRng.chance(0.15)) town.naturalDeposits.stone = depRng.randInt(Math.floor(ND.stone.min * 0.3), Math.floor(ND.stone.max * 0.4));
@@ -1716,12 +1765,19 @@
                 var woodMin = Math.max(1, Math.floor(ND.wood.min * woodScale));
                 var woodMax = Math.max(woodMin + 1, Math.floor(ND.wood.max * woodScale));
                 var _nfBase = depRng.randInt(woodMin, woodMax);
-                town.naturalDeposits.wood = (town.naturalDeposits.wood || 0) + Math.max(_nfBase, _nfDeposit * depRng.randInt(60, 100));
+                var _nfWood = Math.max(_nfBase, _nfDeposit * depRng.randInt(60, 100));
+                town.naturalDeposits.wood = (town.naturalDeposits.wood || 0) + _nfWood;
                 town._forestTileCount = forestTiles;
+                town.woodDeposits = _createWoodDeposits(town.naturalDeposits.wood, forestTiles, depRng);
             }
             // Grassland always gets a small amount of wood from scattered groves
             if (!town.naturalDeposits.wood && terrainBias !== 'coastal') {
                 town.naturalDeposits.wood = depRng.randInt(Math.floor(ND.wood.min * 0.15), Math.floor(ND.wood.max * 0.25));
+                town.woodDeposits = [{ name: 'Scattered Groves', amount: town.naturalDeposits.wood, maxAmount: town.naturalDeposits.wood }];
+            }
+            // Ensure woodDeposits exists if wood deposit was set but array wasn't created
+            if (town.naturalDeposits.wood && !town.woodDeposits) {
+                town.woodDeposits = [{ name: 'Forest', amount: town.naturalDeposits.wood, maxAmount: town.naturalDeposits.wood }];
             }
             if (terrainBias !== 'mountain' && nearbyMountainPct > 0.10) {
                 var mScale = Math.min(1.0, nearbyMountainPct / 0.35);
@@ -11256,6 +11312,7 @@
             var _nfWoodBase = Math.max(foundND.wood.min, Math.min(foundND.wood.max, _nfDeposit2 * rng.randInt(80, 120)));
             newTown.naturalDeposits.wood = _nfWoodBase;
             newTown._forestTileCount = nForest;
+            newTown.woodDeposits = _createWoodDeposits(_nfWoodBase, nForest, rng);
             if (rng.chance(0.20)) newTown.naturalDeposits.iron_ore = rng.randInt(Math.floor(foundND.iron_ore.min * 0.4), Math.floor(foundND.iron_ore.max * 0.5));
             if (rng.chance(0.15)) newTown.naturalDeposits.stone = rng.randInt(Math.floor(foundND.stone.min * 0.3), Math.floor(foundND.stone.max * 0.4));
         } else if (newTerrainBias === 'coastal') {
@@ -11274,11 +11331,17 @@
             var nwMin = Math.max(1, Math.floor(foundND.wood.min * nwScale));
             var nwMax = Math.max(nwMin + 1, Math.floor(foundND.wood.max * nwScale));
             var _nfBase2 = rng.randInt(nwMin, nwMax);
-            newTown.naturalDeposits.wood = (newTown.naturalDeposits.wood || 0) + Math.max(_nfBase2, _nfDeposit3 * rng.randInt(60, 100));
+            var _nfWood2 = Math.max(_nfBase2, _nfDeposit3 * rng.randInt(60, 100));
+            newTown.naturalDeposits.wood = (newTown.naturalDeposits.wood || 0) + _nfWood2;
             newTown._forestTileCount = nForest;
+            newTown.woodDeposits = _createWoodDeposits(newTown.naturalDeposits.wood, nForest, rng);
         }
         if (!newTown.naturalDeposits.wood && newTerrainBias !== 'coastal') {
             newTown.naturalDeposits.wood = rng.randInt(Math.floor(foundND.wood.min * 0.15), Math.floor(foundND.wood.max * 0.25));
+            newTown.woodDeposits = [{ name: 'Scattered Groves', amount: newTown.naturalDeposits.wood, maxAmount: newTown.naturalDeposits.wood }];
+        }
+        if (!newTown.woodDeposits && newTown.naturalDeposits.wood) {
+            newTown.woodDeposits = [{ name: 'Forest', amount: newTown.naturalDeposits.wood, maxAmount: newTown.naturalDeposits.wood }];
         }
         if (newTerrainBias !== 'mountain' && nMountainPct > 0.10) {
             var nmScale = Math.min(1.0, nMountainPct / 0.35);
@@ -26203,7 +26266,20 @@
                 if (workerFraction <= 0) continue;
                 
                 const extracted = Math.floor(bt.rate * workerFraction * daysSinceCheck * (bld.level || 1));
-                town.naturalDeposits[resId] = Math.max(0, town.naturalDeposits[resId] - extracted);
+                
+                // For wood: extract from individual grove deposits
+                if (resId === 'wood' && town.woodDeposits && town.woodDeposits.length > 0) {
+                    var _wdRemain = extracted;
+                    for (var _wdi = 0; _wdi < town.woodDeposits.length && _wdRemain > 0; _wdi++) {
+                        var _wd = town.woodDeposits[_wdi];
+                        var _take = Math.min(_wd.amount, _wdRemain);
+                        _wd.amount -= _take;
+                        _wdRemain -= _take;
+                    }
+                    _syncWoodDepositTotal(town);
+                } else {
+                    town.naturalDeposits[resId] = Math.max(0, town.naturalDeposits[resId] - extracted);
+                }
                 
                 const depositCfg = CONFIG.NATURAL_DEPOSITS[resId];
                 if (!depositCfg) continue;
@@ -26236,7 +26312,17 @@
                     continue;
                 }
                 
-                town.naturalDeposits[resId] = Math.min(cfg.max, amount + cfg.regenPerDay * daysSinceCheck);
+                // For wood: regenerate into individual grove deposits
+                if (resId === 'wood' && town.woodDeposits && town.woodDeposits.length > 0) {
+                    var _regenAmt = cfg.regenPerDay * daysSinceCheck;
+                    var _perGrove = Math.max(1, Math.floor(_regenAmt / town.woodDeposits.length));
+                    for (var _rgi = 0; _rgi < town.woodDeposits.length; _rgi++) {
+                        town.woodDeposits[_rgi].amount = Math.min(town.woodDeposits[_rgi].maxAmount, town.woodDeposits[_rgi].amount + _perGrove);
+                    }
+                    _syncWoodDepositTotal(town);
+                } else {
+                    town.naturalDeposits[resId] = Math.min(cfg.max, amount + cfg.regenPerDay * daysSinceCheck);
+                }
             }
             
             // Tree plantation: 10 trees/day per worker, builds deposits even from nothing
@@ -26254,8 +26340,15 @@
                         var _hasSoil = _townHasGrassTiles(town);
                         if (_hasSoil) {
                             if (town.naturalDeposits.wood == null) town.naturalDeposits.wood = 0;
-                            // Slow initial growth: half rate when creating from nothing
-                            town.naturalDeposits.wood = Math.min(woodCfg.max, town.naturalDeposits.wood + Math.floor(_tpRegen * 0.5) * daysSinceCheck);
+                            var _tpAdd = Math.floor(_tpRegen * 0.5) * daysSinceCheck;
+                            town.naturalDeposits.wood = Math.min(woodCfg.max, town.naturalDeposits.wood + _tpAdd);
+                            // Create a new grove deposit
+                            if (!town.woodDeposits) town.woodDeposits = [];
+                            if (town.woodDeposits.length === 0) {
+                                town.woodDeposits.push({ name: 'New Plantation', amount: town.naturalDeposits.wood, maxAmount: Math.floor(woodCfg.max / 4) });
+                            } else {
+                                town.woodDeposits[0].amount = town.naturalDeposits.wood;
+                            }
                             // Unflag depleted lumber camps since deposit is returning
                             for (var _ufb = 0; _ufb < town.buildings.length; _ufb++) {
                                 if (town.buildings[_ufb].type === 'lumber_camp' && town.buildings[_ufb].depositDepleted) {
@@ -26264,6 +26357,14 @@
                                 }
                             }
                         }
+                    } else if (town.woodDeposits && town.woodDeposits.length > 0) {
+                        // Distribute plantation growth evenly across groves
+                        var _tpTotal = _tpRegen * daysSinceCheck;
+                        var _tpPerGrove = Math.max(1, Math.floor(_tpTotal / town.woodDeposits.length));
+                        for (var _tpg = 0; _tpg < town.woodDeposits.length; _tpg++) {
+                            town.woodDeposits[_tpg].amount = Math.min(town.woodDeposits[_tpg].maxAmount, town.woodDeposits[_tpg].amount + _tpPerGrove);
+                        }
+                        _syncWoodDepositTotal(town);
                     } else {
                         town.naturalDeposits.wood = Math.min(woodCfg.max, town.naturalDeposits.wood + _tpRegen * daysSinceCheck);
                     }
@@ -28925,6 +29026,22 @@
             if (!town || !town.naturalDeposits) return null;
             const result = {};
             for (const [resId, amount] of Object.entries(town.naturalDeposits)) {
+                // For wood: return individual grove deposits instead of single aggregate
+                if (resId === 'wood' && town.woodDeposits && town.woodDeposits.length > 0) {
+                    for (var _wdi = 0; _wdi < town.woodDeposits.length; _wdi++) {
+                        var _wd = town.woodDeposits[_wdi];
+                        var _wdKey = 'wood_grove_' + _wdi;
+                        result[_wdKey] = {
+                            current: _wd.amount,
+                            max: _wd.maxAmount,
+                            pct: _wd.maxAmount > 0 ? Math.round((_wd.amount / _wd.maxAmount) * 100) : 0,
+                            renewable: true,
+                            groveName: _wd.name,
+                            isWoodGrove: true,
+                        };
+                    }
+                    continue;
+                }
                 const cfg = CONFIG.NATURAL_DEPOSITS[resId];
                 result[resId] = {
                     current: amount,
@@ -29213,6 +29330,15 @@
                 if (!_bmRoad.bridges) _bmRoad.bridges = [];
             }
             _initBridgeIdCounter();
+
+            // Wood deposit migration: generate woodDeposits[] for old saves
+            for (var _wdmi = 0; _wdmi < world.towns.length; _wdmi++) {
+                var _wdmTown = world.towns[_wdmi];
+                if (_wdmTown.naturalDeposits && _wdmTown.naturalDeposits.wood > 0 && !_wdmTown.woodDeposits) {
+                    var _wdmForest = _wdmTown._forestTileCount || 6; // default: assume ~2 groves
+                    _wdmTown.woodDeposits = _createWoodDeposits(_wdmTown.naturalDeposits.wood, _wdmForest, world.rng || { random: Math.random, pick: function(a) { return a[Math.floor(Math.random() * a.length)]; }, randInt: function(a,b) { return a + Math.floor(Math.random() * (b - a + 1)); } });
+                }
+            }
 
             // Fixup: connect any port towns that have no sea routes
             var portTowns = world.towns.filter(function(t) { return t.isPort; });
