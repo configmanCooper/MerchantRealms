@@ -19935,6 +19935,75 @@
             // ---- 1. TRADING LOGIC ----
             eliteTradeAI(em, town, rng, strategy);
 
+            // ---- 1b. BRIDGE REPAIR AI ----
+            // If EM wants to reach a town but a bridge is destroyed, decide to repair or petition
+            if (day % 7 === 0 && !em.traveling && (em.gold || 0) > 3000) {
+                var _emRoads = world.roads;
+                for (var _eri = 0; _eri < _emRoads.length; _eri++) {
+                    var _eRoad = _emRoads[_eri];
+                    if (_eRoad.fromTownId !== em.townId && _eRoad.toTownId !== em.townId) continue;
+                    if (!_eRoad.bridges || _eRoad.bridges.length === 0) continue;
+                    var _needsRepair = false;
+                    for (var _ebri = 0; _ebri < _eRoad.bridges.length; _ebri++) {
+                        if (_eRoad.bridges[_ebri].destroyed) { _needsRepair = true; break; }
+                    }
+                    if (!_needsRepair) continue;
+                    // This road has a destroyed bridge — decide what to do
+                    var _repCost = CONFIG.BRIDGE_REBUILD_COST || 1000;
+                    var _repMats = CONFIG.BRIDGE_REPAIR_MATERIALS || { wood: 20, stone: 10 };
+                    // Check if town market has materials
+                    var _hasMats = true;
+                    for (var _mk in _repMats) {
+                        if ((town.market && town.market.supply && (town.market.supply[_mk] || 0) >= _repMats[_mk])) continue;
+                        _hasMats = false; break;
+                    }
+                    // Wealthy + smart EMs repair themselves; others petition king
+                    var _intel = (personality.intelligence || 50);
+                    var _amb = (personality.ambition || 50);
+                    if ((em.gold || 0) >= _repCost * 2 && _hasMats && (_intel > 40 || _amb > 60)) {
+                        // Self-repair: deduct gold and materials from market
+                        em.gold -= _repCost;
+                        for (var _mk2 in _repMats) {
+                            if (town.market && town.market.supply) {
+                                town.market.supply[_mk2] = Math.max(0, (town.market.supply[_mk2] || 0) - _repMats[_mk2]);
+                            }
+                        }
+                        rebuildBridge(_eri);
+                        var _brFromT = findTown(_eRoad.fromTownId);
+                        var _brToT = findTown(_eRoad.toTownId);
+                        logEvent('🌉 ' + (em.firstName || em.name || 'An elite merchant') + ' repaired the bridge between ' +
+                            (_brFromT ? _brFromT.name : '?') + ' and ' + (_brToT ? _brToT.name : '?') + '.', { type: 'bridge_repaired' }, 'npc_activity');
+                        break; // One repair per tick
+                    } else if (rng.chance(0.3)) {
+                        // Petition the king — need citizenship
+                        var _emKingdom = findKingdom(em.kingdomId);
+                        if (_emKingdom) {
+                            if (!_emKingdom.petitions) _emKingdom.petitions = [];
+                            // Check if a repair petition already exists for this road
+                            var _petExists = _emKingdom.petitions.some(function(pet) {
+                                return pet.typeId === 'repair_bridge' && pet.roadIndex === _eri && pet.status === 'open';
+                            });
+                            if (!_petExists) {
+                                _emKingdom.petitions.push({
+                                    id: 'pet_' + uid('pet'),
+                                    typeId: 'repair_bridge',
+                                    creatorId: em.id,
+                                    creatorName: em.firstName + ' ' + (em.lastName || ''),
+                                    kingdomId: _emKingdom.id,
+                                    roadIndex: _eri,
+                                    signatures: 1,
+                                    requiredSignatures: 3,
+                                    status: 'open',
+                                    createdDay: day,
+                                    support: Math.floor(30 + rng.random() * 40)
+                                });
+                                logEvent('📜 ' + (em.firstName || 'An elite merchant') + ' petitioned ' + _emKingdom.name + ' to repair a bridge.', { type: 'petition' }, 'npc_activity');
+                            }
+                        }
+                    }
+                }
+            }
+
             // ---- 2. TRAVEL DECISIONS ----
             if (day % 7 === 0 && !em.traveling) {
                 eliteTravelAI(em, town, rng, strategy);
@@ -20357,6 +20426,15 @@
         var connected = [];
         for (var ri = 0; ri < world.roads.length; ri++) {
             var road = world.roads[ri];
+            if (road.condition === 'destroyed') continue;
+            // Skip roads with destroyed bridges
+            var _emBrDest = false;
+            if (road.bridges && road.bridges.length > 0) {
+                for (var _ebi = 0; _ebi < road.bridges.length; _ebi++) {
+                    if (road.bridges[_ebi].destroyed) { _emBrDest = true; break; }
+                }
+            } else if (road.hasBridge && road.bridgeDestroyed) { _emBrDest = true; }
+            if (_emBrDest) continue;
             if (road.fromTownId === em.townId) connected.push(road.toTownId);
             else if (road.toTownId === em.townId) connected.push(road.fromTownId);
         }
