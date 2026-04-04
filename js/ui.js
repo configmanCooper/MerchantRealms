@@ -10113,6 +10113,7 @@ window.UI = (function () {
     // Store state for travel options dialog
     var _travelOptions = [];
     var _travelDestTownId = null;
+    var _travelRouteDanger = {};
 
     /** Closed borders dialog — offers military service or smuggling */
     function _showClosedBordersDialog(destTown, destKingdom, townId) {
@@ -10481,7 +10482,7 @@ window.UI = (function () {
 
         // ===== ROUTE DANGER ASSESSMENT =====
         function _routeDangerInfo(route) {
-            if (!route || !route.length) return { level: 'low', label: '🟢 Low', color: '#2ecc71', bandits: 0, atWar: false };
+            if (!route || !route.length) return { level: 'low', label: '🟢 Low', color: '#2ecc71', bandits: 0, atWar: false, modifiers: [], potentialModifiers: [] };
             var maxBandit = 0;
             var atWar = false;
             var hasPirates = false;
@@ -10496,45 +10497,127 @@ window.UI = (function () {
                 var bt = seg.banditThreat || 0;
                 if (bt > maxBandit) maxBandit = bt;
                 if (seg.safe === false) { atWar = true; worstSegSafe = false; }
-                // Check town security along route
                 var fromT = Engine.findTown(seg.fromTownId);
                 var toT = Engine.findTown(seg.toTownId);
                 if (fromT && (fromT.security || 50) < worstTownSecurity) worstTownSecurity = fromT.security || 50;
                 if (toT && (toT.security || 50) < worstTownSecurity) worstTownSecurity = toT.security || 50;
             }
 
-            // Compute effective encounter chance similar to getEncounterChance()
             var baseLand = CONFIG.ENCOUNTER_LAND_BASE_CHANCE || 0.05;
             var baseSea = CONFIG.ENCOUNTER_SEA_BASE_CHANCE || 0.04;
             var chance = hasPirates ? baseSea : baseLand;
+            var modifiers = [];
+            var potentialModifiers = [];
 
             // Road danger
-            if (maxBandit > 50 || !worstSegSafe) chance *= (CONFIG.ENCOUNTER_ROAD_DANGER_MULT || 1.5);
-            if (worstTownSecurity < 30) chance *= (CONFIG.ENCOUNTER_POOR_SECURITY_MULT || 1.3);
+            if (maxBandit > 50 || !worstSegSafe) {
+                var rdm = CONFIG.ENCOUNTER_ROAD_DANGER_MULT || 1.5;
+                chance *= rdm;
+                modifiers.push({ name: atWar ? '⚔️ War zone road' : '☠️ High bandit activity', effect: '+' + Math.round((rdm - 1) * 100) + '%', bad: true });
+            }
+            if (worstTownSecurity < 30) {
+                var psm = CONFIG.ENCOUNTER_POOR_SECURITY_MULT || 1.3;
+                chance *= psm;
+                modifiers.push({ name: '🏚️ Poor town security', effect: '+' + Math.round((psm - 1) * 100) + '%', bad: true });
+            }
+            if (atWar) {
+                var wtm = CONFIG.ENCOUNTER_WARTIME_CHANCE_MULT || 1.8;
+                chance *= wtm;
+                modifiers.push({ name: '⚔️ Wartime multiplier', effect: '+' + Math.round((wtm - 1) * 100) + '%', bad: true });
+            }
 
-            // Player modifiers
+            // Guards
             var guards = (Player.guards || []).length;
             var guardReduction = hasPirates ? (CONFIG.ENCOUNTER_SEA_GUARD_REDUCTION || 0.70) : (1.0 - (CONFIG.ENCOUNTER_GUARD_REDUCTION || 0.40));
-            for (var g = 0; g < guards; g++) chance *= guardReduction;
-            if (Player.hasSkill && Player.hasSkill('veteran_guards') && guards > 0) chance *= 0.70;
+            if (guards > 0) {
+                for (var g = 0; g < guards; g++) chance *= guardReduction;
+                var totalGuardPct = Math.round((1 - Math.pow(guardReduction, guards)) * 100);
+                modifiers.push({ name: '🛡️ Personal guards (' + guards + ')', effect: '-' + totalGuardPct + '%', bad: false });
+            } else {
+                potentialModifiers.push({ name: '🛡️ Hire guards', desc: 'Each guard reduces encounter chance by ' + Math.round((1 - guardReduction) * 100) + '%', source: 'Character panel → Guards' });
+            }
+            if (Player.hasSkill && Player.hasSkill('veteran_guards') && guards > 0) {
+                chance *= 0.70;
+                modifiers.push({ name: '🎖️ Veteran Guards skill', effect: '-30%', bad: false });
+            } else if (guards > 0) {
+                potentialModifiers.push({ name: '🎖️ Veteran Guards skill', desc: 'Additional -30% with guards', source: 'Learn skill' });
+            }
 
-            // Horse (land only)
-            if (!hasPirates && Player.horses && Player.horses.length > 0) chance *= (CONFIG.ENCOUNTER_HORSE_REDUCTION || 0.85);
-            // Weapon/armor
-            if (Player.weapon) chance *= hasPirates ? (CONFIG.ENCOUNTER_SEA_WEAPON_REDUCTION || 0.97) : (CONFIG.ENCOUNTER_WEAPON_REDUCTION || 0.90);
-            if (Player.armor) chance *= hasPirates ? (CONFIG.ENCOUNTER_SEA_ARMOR_REDUCTION || 0.98) : (CONFIG.ENCOUNTER_ARMOR_REDUCTION || 0.93);
+            // Horse
+            if (!hasPirates && Player.horses && Player.horses.length > 0) {
+                var hr = CONFIG.ENCOUNTER_HORSE_REDUCTION || 0.85;
+                chance *= hr;
+                modifiers.push({ name: '🐴 Riding horse', effect: '-' + Math.round((1 - hr) * 100) + '%', bad: false });
+            } else if (!hasPirates) {
+                potentialModifiers.push({ name: '🐴 Horse', desc: '-' + Math.round((1 - (CONFIG.ENCOUNTER_HORSE_REDUCTION || 0.85)) * 100) + '% encounter chance', source: 'Buy at market or stable' });
+            }
+
+            // Weapon
+            var wepRed = hasPirates ? (CONFIG.ENCOUNTER_SEA_WEAPON_REDUCTION || 0.97) : (CONFIG.ENCOUNTER_WEAPON_REDUCTION || 0.90);
+            if (Player.weapon) {
+                chance *= wepRed;
+                modifiers.push({ name: '⚔️ Carrying weapon', effect: '-' + Math.round((1 - wepRed) * 100) + '%', bad: false });
+            } else {
+                potentialModifiers.push({ name: '⚔️ Weapon', desc: '-' + Math.round((1 - wepRed) * 100) + '% encounter chance', source: 'Buy at market' });
+            }
+
+            // Armor
+            var armRed = hasPirates ? (CONFIG.ENCOUNTER_SEA_ARMOR_REDUCTION || 0.98) : (CONFIG.ENCOUNTER_ARMOR_REDUCTION || 0.93);
+            if (Player.armor) {
+                chance *= armRed;
+                modifiers.push({ name: '🛡️ Wearing armor', effect: '-' + Math.round((1 - armRed) * 100) + '%', bad: false });
+            } else {
+                potentialModifiers.push({ name: '🛡️ Armor', desc: '-' + Math.round((1 - armRed) * 100) + '% encounter chance', source: 'Buy at market' });
+            }
+
             // Skills
-            if (Player.hasSkill && Player.hasSkill('street_smart')) chance *= (CONFIG.ENCOUNTER_SKILL_STREET_SMART || 0.90);
-            if (Player.hasSkill && Player.hasSkill('intimidating_presence')) chance *= (CONFIG.ENCOUNTER_SKILL_INTIMIDATING || 0.85);
-            if (!hasPirates && Player.hasSkill && Player.hasSkill('road_knowledge')) chance *= 0.92;
-            if (hasPirates && Player.hasSkill && Player.hasSkill('expert_navigator')) chance *= 0.90;
+            if (Player.hasSkill && Player.hasSkill('street_smart')) {
+                var ss = CONFIG.ENCOUNTER_SKILL_STREET_SMART || 0.90;
+                chance *= ss;
+                modifiers.push({ name: '🧠 Street Smart', effect: '-' + Math.round((1 - ss) * 100) + '%', bad: false });
+            } else {
+                potentialModifiers.push({ name: '🧠 Street Smart', desc: '-' + Math.round((1 - (CONFIG.ENCOUNTER_SKILL_STREET_SMART || 0.90)) * 100) + '% encounter chance', source: 'Learn skill' });
+            }
+            if (Player.hasSkill && Player.hasSkill('intimidating_presence')) {
+                var ip = CONFIG.ENCOUNTER_SKILL_INTIMIDATING || 0.85;
+                chance *= ip;
+                modifiers.push({ name: '💪 Intimidating Presence', effect: '-' + Math.round((1 - ip) * 100) + '%', bad: false });
+            } else {
+                potentialModifiers.push({ name: '💪 Intimidating Presence', desc: '-' + Math.round((1 - (CONFIG.ENCOUNTER_SKILL_INTIMIDATING || 0.85)) * 100) + '% encounter chance', source: 'Learn skill' });
+            }
+            if (!hasPirates) {
+                if (Player.hasSkill && Player.hasSkill('road_knowledge')) {
+                    chance *= 0.92;
+                    modifiers.push({ name: '🗺️ Road Knowledge', effect: '-8%', bad: false });
+                } else {
+                    potentialModifiers.push({ name: '🗺️ Road Knowledge', desc: '-8% encounter chance on land', source: 'Learn skill' });
+                }
+            }
+            if (hasPirates) {
+                if (Player.hasSkill && Player.hasSkill('expert_navigator')) {
+                    chance *= 0.90;
+                    modifiers.push({ name: '🧭 Expert Navigator', effect: '-10%', bad: false });
+                } else {
+                    potentialModifiers.push({ name: '🧭 Expert Navigator', desc: '-10% encounter chance at sea', source: 'Learn skill' });
+                }
+            }
             // Bandit evasion
             if (!atWar) {
-                if (Player.hasSkill && Player.hasSkill('bandit_mastery')) chance *= 0.50;
-                else if (Player.hasSkill && Player.hasSkill('bandit_evasion')) chance *= 0.75;
+                if (Player.hasSkill && Player.hasSkill('bandit_mastery')) {
+                    chance *= 0.50;
+                    modifiers.push({ name: '🎯 Bandit Mastery', effect: '-50%', bad: false });
+                } else if (Player.hasSkill && Player.hasSkill('bandit_evasion')) {
+                    chance *= 0.75;
+                    modifiers.push({ name: '🏃 Bandit Evasion', effect: '-25%', bad: false });
+                } else {
+                    potentialModifiers.push({ name: '🏃 Bandit Evasion', desc: '-25% encounter chance', source: 'Learn skill' });
+                    potentialModifiers.push({ name: '🎯 Bandit Mastery', desc: '-50% encounter chance', source: 'Learn skill (advanced)' });
+                }
             } else {
-                if (Player.hasSkill && Player.hasSkill('bandit_mastery')) chance *= 0.75;
-                chance *= (CONFIG.ENCOUNTER_WARTIME_CHANCE_MULT || 1.8);
+                if (Player.hasSkill && Player.hasSkill('bandit_mastery')) {
+                    chance *= 0.75;
+                    modifiers.push({ name: '🎯 Bandit Mastery (wartime)', effect: '-25%', bad: false });
+                }
             }
 
             // Clamp
@@ -10542,7 +10625,6 @@ window.UI = (function () {
             var maxC = hasPirates ? (CONFIG.ENCOUNTER_SEA_MAX_CHANCE || 0.10) : (CONFIG.ENCOUNTER_LAND_MAX_CHANCE || 0.15);
             chance = Math.max(minC, Math.min(maxC, chance));
 
-            // Same thresholds as getEncounterRiskLabel
             var level = 'low';
             var label = '🟢 Low';
             var color = '#2ecc71';
@@ -10551,7 +10633,7 @@ window.UI = (function () {
             } else if (chance >= 0.025) {
                 level = 'medium'; label = '🟡 Medium'; color = '#e67e22';
             }
-            return { level: level, label: label, color: color, bandits: maxBandit, atWar: atWar, hasPirates: hasPirates };
+            return { level: level, label: label, color: color, bandits: maxBandit, atWar: atWar, hasPirates: hasPirates, chance: chance, modifiers: modifiers, potentialModifiers: potentialModifiers };
         }
 
         // ===== CLASSIFY ROUTES =====
@@ -10824,7 +10906,7 @@ window.UI = (function () {
             if (_rdInfo && routeKey !== 'god') {
                 var _dangerTip = _rdInfo.atWar ? 'War zone!' : ('Bandit threat: ' + _rdInfo.bandits + '/100');
                 if (_rdInfo.hasPirates) _dangerTip += (_rdInfo.atWar || _rdInfo.bandits > 0 ? ', ' : '') + 'Pirates possible';
-                _dangerHtml = ' <span style="font-size:0.75rem;color:' + _rdInfo.color + ';margin-left:6px;" title="' + _dangerTip + '">⚔️ ' + _rdInfo.label + '</span>';
+                _dangerHtml = ' <span onclick="UI.showRouteDangerDetail(\'' + routeKey + '\')" style="font-size:0.75rem;color:' + _rdInfo.color + ';margin-left:6px;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;" title="' + _dangerTip + ' — Click for details">⚔️ ' + _rdInfo.label + '</span>';
             }
             html += '<div style="font-size:0.95rem;font-weight:bold;margin-bottom:4px;">' + (routeLabels[routeKey] || routeKey) + _dangerHtml + '</div>';
             html += '<div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:8px;line-height:1.5;">' + routeOpts[0].routeChain + '</div>';
@@ -10871,6 +10953,7 @@ window.UI = (function () {
         // Store options for confirm handler
         _travelOptions = options;
         _travelDestTownId = townId;
+        _travelRouteDanger = routeDanger;
 
         openModal('\u{1F5FA}\uFE0F Travel to ' + destTown.name, html);
     }
@@ -10899,6 +10982,64 @@ window.UI = (function () {
                 if (town) Renderer.panTo(town.x, town.y);
             }
         }
+    }
+
+    function showRouteDangerDetail(routeKey) {
+        var info = _travelRouteDanger[routeKey];
+        if (!info) return;
+        var routeNames = { land: 'Land Route', mixed: 'Mixed Route', sea: 'Sea Route' };
+        var html = '<div style="max-height:400px;overflow-y:auto;">';
+
+        // Header
+        html += '<div style="text-align:center;margin-bottom:12px;">';
+        html += '<div style="font-size:1.5rem;">' + info.label + '</div>';
+        html += '<div style="font-size:0.85rem;color:var(--text-muted);">' + (routeNames[routeKey] || routeKey) + ' — Encounter Risk</div>';
+        html += '<div style="font-size:0.8rem;color:' + info.color + ';margin-top:4px;">Daily encounter chance: ~' + (info.chance * 100).toFixed(1) + '%</div>';
+        html += '</div>';
+
+        // Active modifiers
+        html += '<div style="margin-bottom:12px;">';
+        html += '<div style="font-size:0.85rem;font-weight:bold;margin-bottom:6px;color:var(--gold);">Active Modifiers</div>';
+        if (info.modifiers && info.modifiers.length > 0) {
+            for (var i = 0; i < info.modifiers.length; i++) {
+                var m = info.modifiers[i];
+                var mColor = m.bad ? '#e74c3c' : '#2ecc71';
+                html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 6px;margin-bottom:3px;background:rgba(' + (m.bad ? '200,50,50' : '46,204,113') + ',0.08);border-radius:4px;border-left:3px solid ' + mColor + ';">';
+                html += '<span style="font-size:0.8rem;">' + m.name + '</span>';
+                html += '<span style="font-size:0.8rem;font-weight:bold;color:' + mColor + ';">' + m.effect + '</span>';
+                html += '</div>';
+            }
+        } else {
+            html += '<div style="font-size:0.8rem;color:#888;font-style:italic;">No active modifiers — base risk only.</div>';
+        }
+        html += '</div>';
+
+        // How to reduce risk
+        html += '<div style="margin-bottom:12px;">';
+        html += '<div style="font-size:0.85rem;font-weight:bold;margin-bottom:6px;color:var(--gold);">How to Reduce Risk</div>';
+        if (info.potentialModifiers && info.potentialModifiers.length > 0) {
+            for (var j = 0; j < info.potentialModifiers.length; j++) {
+                var pm = info.potentialModifiers[j];
+                html += '<div style="padding:4px 6px;margin-bottom:3px;background:rgba(255,255,255,0.04);border-radius:4px;border-left:3px solid #555;">';
+                html += '<div style="font-size:0.8rem;color:#aaa;">' + pm.name + ' <span style="color:#6a9;">' + pm.desc + '</span></div>';
+                html += '<div style="font-size:0.72rem;color:#777;margin-top:1px;">📍 ' + pm.source + '</div>';
+                html += '</div>';
+            }
+        } else {
+            html += '<div style="font-size:0.8rem;color:#2ecc71;">✅ You have all available protections!</div>';
+        }
+        html += '</div>';
+
+        // Route conditions
+        html += '<div style="padding:8px;background:rgba(0,0,0,0.2);border-radius:4px;font-size:0.78rem;color:var(--text-muted);">';
+        html += '<strong>Route Conditions:</strong><br>';
+        html += '☠️ Max bandit threat: ' + info.bandits + '/100<br>';
+        if (info.atWar) html += '⚔️ <span style="color:#e74c3c;">Passes through war zone!</span><br>';
+        if (info.hasPirates) html += '🏴‍☠️ <span style="color:#e67e22;">Sea segment — pirates possible</span><br>';
+        html += '</div>';
+
+        html += '</div>';
+        openModal('⚔️ Route Danger: ' + (routeNames[routeKey] || routeKey), html, '<button class="btn-medieval" onclick="UI.closeModal()">Close</button>');
     }
 
     function turnBackUI() {
@@ -20739,6 +20880,7 @@ window.UI = (function () {
         travelBySea: travelBySeaUI,
         openTravelOptions,
         confirmTravel,
+        showRouteDangerDetail,
         getTransportServices,
         turnBackUI,
         stopTravelUI,
