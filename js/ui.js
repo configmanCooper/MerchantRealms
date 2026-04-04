@@ -1888,8 +1888,12 @@ window.UI = (function () {
             <div class="detail-row"><span class="label">Age</span>
                 <span class="value">${person.age || '?'}</span></div>
             <div class="detail-row"><span class="label">Sex</span>
-                <span class="value">${person.sex === 'M' ? '♂ Male' : person.sex === 'F' ? '♀ Female' : '?'}</span></div>
-            <div class="detail-row"><span class="label">Occupation</span>
+                <span class="value">${person.sex === 'M' ? '♂ Male' : person.sex === 'F' ? '♀ Female' : '?'}</span></div>`;
+        var _npcSR = Player.getNPCSocialRank ? Player.getNPCSocialRank(person) : 0;
+        var _npcSRDef = CONFIG.SOCIAL_RANKS[_npcSR] || CONFIG.SOCIAL_RANKS[0];
+        html += `<div class="detail-row"><span class="label">Social Rank</span>
+                <span class="value">${_npcSRDef.icon || ''} ${_npcSRDef.name || 'Peasant'}</span></div>`;
+        html += `<div class="detail-row"><span class="label">Occupation</span>
                 <span class="value">${occInfo.name || occ}</span></div>
             <div class="detail-row"><span class="label">Town</span>
                 <span class="value">${townName}</span></div>
