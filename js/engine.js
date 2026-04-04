@@ -8511,34 +8511,69 @@
             }
         }
 
-        // Kings rebuild destroyed bridges (per-bridge)
-        if (p.intelligence !== 'foolish' && p.intelligence !== 'dim') {
-            for (let ri = 0; ri < world.roads.length; ri++) {
-                const road = world.roads[ri];
-                if (!road.hasBridge) continue;
-                const fromT = findTown(road.fromTownId);
-                const toT = findTown(road.toTownId);
-                if (!fromT && !toT) continue;
-                if ((fromT && k.territories.has(fromT.id)) || (toT && k.territories.has(toT.id))) {
-                    const rebuildCost = CONFIG.BRIDGE_REBUILD_COST || 1000;
-                    if (road.bridges && road.bridges.length > 0) {
-                        for (var _kbi = 0; _kbi < road.bridges.length; _kbi++) {
-                            var _kb = road.bridges[_kbi];
-                            if (!_kb.destroyed) continue;
-                            var _kbDays = world.day - (_kb.destroyedDay || 0);
-                            if (_kbDays >= (CONFIG.BRIDGE_REBUILD_DAYS || 30) && k.gold >= rebuildCost) {
-                                k.gold -= rebuildCost;
-                                rebuildBridge(ri, _kb.id);
-                            }
-                        }
-                    } else if (road.bridgeDestroyed) {
-                        const daysSinceDestroyed = world.day - (road.bridgeDestroyedDay || 0);
-                        if (daysSinceDestroyed >= (CONFIG.BRIDGE_REBUILD_DAYS || 30) && k.gold >= rebuildCost) {
-                            k.gold -= rebuildCost;
-                            rebuildBridge(ri);
-                        }
+        // Kings rebuild destroyed bridges — smart AI with prioritization
+        if (p.intelligence !== 'foolish') {
+            var _brCandidates = [];
+            var _brRebuildCost = CONFIG.BRIDGE_REBUILD_COST || 1000;
+            var _brMinDays = CONFIG.BRIDGE_REBUILD_DAYS || 30;
+            // Personality modifiers for bridge repair urgency
+            var _brGreed = p.greed || 'fair';
+            var _brAmb = p.ambition || 'content';
+            var _brIntel = p.intelligence || 'average';
+            // Greedy/corrupt kings wait longer; ambitious/brilliant kings act faster
+            var _brDayMult = 1.0;
+            if (_brGreed === 'greedy') _brDayMult = 1.5;
+            else if (_brGreed === 'corrupt') _brDayMult = 2.0;
+            else if (_brGreed === 'generous') _brDayMult = 0.7;
+            if (_brAmb === 'ambitious') _brDayMult *= 0.8;
+            else if (_brAmb === 'lazy') _brDayMult *= 1.5;
+            if (_brIntel === 'brilliant') _brDayMult *= 0.7;
+            else if (_brIntel === 'clever') _brDayMult *= 0.85;
+            else if (_brIntel === 'dim') _brDayMult *= 1.4;
+            var _brEffMinDays = Math.max(10, Math.floor(_brMinDays * _brDayMult));
+            // Treasury threshold: don't repair if it would drop treasury below 20% of starting
+            var _brTreasuryFloor = Math.floor((CONFIG.KINGDOM_STARTING_TREASURY_MIN || 8000) * 0.2);
+            // Collect all destroyed bridges in kingdom territory
+            for (var _bri = 0; _bri < world.roads.length; _bri++) {
+                var _brRoad = world.roads[_bri];
+                if (!_brRoad.hasBridge) continue;
+                var _brFromT = findTown(_brRoad.fromTownId);
+                var _brToT = findTown(_brRoad.toTownId);
+                if (!_brFromT && !_brToT) continue;
+                if (!(((_brFromT && k.territories.has(_brFromT.id)) || (_brToT && k.territories.has(_brToT.id))))) continue;
+                var _brImportance = computeRoadImportance(_brFromT, _brToT);
+                if (_brRoad.bridges && _brRoad.bridges.length > 0) {
+                    for (var _bri2 = 0; _bri2 < _brRoad.bridges.length; _bri2++) {
+                        var _brB = _brRoad.bridges[_bri2];
+                        if (!_brB.destroyed) continue;
+                        var _brDaysDown = world.day - (_brB.destroyedDay || 0);
+                        if (_brDaysDown < _brEffMinDays) continue;
+                        // Urgency increases with time — long-destroyed bridges get priority boost
+                        var _brUrgency = _brImportance + Math.min(50, _brDaysDown * 0.15);
+                        // Capital connections get urgent priority
+                        if ((_brFromT && _brFromT.isCapital) || (_brToT && _brToT.isCapital)) _brUrgency += 40;
+                        _brCandidates.push({ ri: _bri, bridgeId: _brB.id, importance: _brUrgency });
                     }
+                } else if (_brRoad.bridgeDestroyed) {
+                    var _brDaysDown2 = world.day - (_brRoad.bridgeDestroyedDay || 0);
+                    if (_brDaysDown2 < _brEffMinDays) continue;
+                    var _brUrgency2 = _brImportance + Math.min(50, _brDaysDown2 * 0.15);
+                    if ((_brFromT && _brFromT.isCapital) || (_brToT && _brToT.isCapital)) _brUrgency2 += 40;
+                    _brCandidates.push({ ri: _bri, bridgeId: null, importance: _brUrgency2 });
                 }
+            }
+            // Sort by importance: fix the most critical bridges first
+            _brCandidates.sort(function(a, b) { return b.importance - a.importance; });
+            // Budget cap: spend at most 30% of treasury on bridges per tick
+            var _brBudget = Math.floor(k.gold * 0.3);
+            var _brSpent = 0;
+            for (var _brc = 0; _brc < _brCandidates.length; _brc++) {
+                if (k.gold - _brSpent < _brRebuildCost) break;
+                if (_brSpent + _brRebuildCost > _brBudget) break;
+                if (k.gold - _brSpent - _brRebuildCost < _brTreasuryFloor) break;
+                _brSpent += _brRebuildCost;
+                k.gold -= _brRebuildCost;
+                rebuildBridge(_brCandidates[_brc].ri, _brCandidates[_brc].bridgeId);
             }
         }
 
