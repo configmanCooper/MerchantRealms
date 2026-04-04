@@ -1860,6 +1860,10 @@ window.UI = (function () {
 
     function showPersonDetail(person) {
         if (!person) return;
+        if (typeof person === 'string') {
+            person = Engine.getPerson(person);
+            if (!person) return;
+        }
         selectedPersonId = person.id;
         const occ = person.occupation || 'none';
         const occInfo = OCCUPATIONS[occ.toUpperCase()] || { name: occ };
