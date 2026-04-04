@@ -10485,6 +10485,8 @@ window.UI = (function () {
             var maxBandit = 0;
             var atWar = false;
             var hasPirates = false;
+            var worstSegSafe = true;
+            var worstTownSecurity = 100;
             for (var i = 0; i < route.length; i++) {
                 var seg = route[i];
                 if (seg.type === 'sea') {
@@ -10493,16 +10495,60 @@ window.UI = (function () {
                 }
                 var bt = seg.banditThreat || 0;
                 if (bt > maxBandit) maxBandit = bt;
-                if (seg.safe === false) atWar = true;
+                if (seg.safe === false) { atWar = true; worstSegSafe = false; }
+                // Check town security along route
+                var fromT = Engine.findTown(seg.fromTownId);
+                var toT = Engine.findTown(seg.toTownId);
+                if (fromT && (fromT.security || 50) < worstTownSecurity) worstTownSecurity = fromT.security || 50;
+                if (toT && (toT.security || 50) < worstTownSecurity) worstTownSecurity = toT.security || 50;
             }
+
+            // Compute effective encounter chance similar to getEncounterChance()
+            var baseLand = CONFIG.ENCOUNTER_LAND_BASE_CHANCE || 0.05;
+            var baseSea = CONFIG.ENCOUNTER_SEA_BASE_CHANCE || 0.04;
+            var chance = hasPirates ? baseSea : baseLand;
+
+            // Road danger
+            if (maxBandit > 50 || !worstSegSafe) chance *= (CONFIG.ENCOUNTER_ROAD_DANGER_MULT || 1.5);
+            if (worstTownSecurity < 30) chance *= (CONFIG.ENCOUNTER_POOR_SECURITY_MULT || 1.3);
+
+            // Player modifiers
+            var guards = (Player.guards || []).length;
+            var guardReduction = hasPirates ? (CONFIG.ENCOUNTER_SEA_GUARD_REDUCTION || 0.70) : (1.0 - (CONFIG.ENCOUNTER_GUARD_REDUCTION || 0.40));
+            for (var g = 0; g < guards; g++) chance *= guardReduction;
+            if (Player.hasSkill && Player.hasSkill('veteran_guards') && guards > 0) chance *= 0.70;
+
+            // Horse (land only)
+            if (!hasPirates && Player.horses && Player.horses.length > 0) chance *= (CONFIG.ENCOUNTER_HORSE_REDUCTION || 0.85);
+            // Weapon/armor
+            if (Player.weapon) chance *= hasPirates ? (CONFIG.ENCOUNTER_SEA_WEAPON_REDUCTION || 0.97) : (CONFIG.ENCOUNTER_WEAPON_REDUCTION || 0.90);
+            if (Player.armor) chance *= hasPirates ? (CONFIG.ENCOUNTER_SEA_ARMOR_REDUCTION || 0.98) : (CONFIG.ENCOUNTER_ARMOR_REDUCTION || 0.93);
+            // Skills
+            if (Player.hasSkill && Player.hasSkill('street_smart')) chance *= (CONFIG.ENCOUNTER_SKILL_STREET_SMART || 0.90);
+            if (Player.hasSkill && Player.hasSkill('intimidating_presence')) chance *= (CONFIG.ENCOUNTER_SKILL_INTIMIDATING || 0.85);
+            if (!hasPirates && Player.hasSkill && Player.hasSkill('road_knowledge')) chance *= 0.92;
+            if (hasPirates && Player.hasSkill && Player.hasSkill('expert_navigator')) chance *= 0.90;
+            // Bandit evasion
+            if (!atWar) {
+                if (Player.hasSkill && Player.hasSkill('bandit_mastery')) chance *= 0.50;
+                else if (Player.hasSkill && Player.hasSkill('bandit_evasion')) chance *= 0.75;
+            } else {
+                if (Player.hasSkill && Player.hasSkill('bandit_mastery')) chance *= 0.75;
+                chance *= (CONFIG.ENCOUNTER_WARTIME_CHANCE_MULT || 1.8);
+            }
+
+            // Clamp
+            var minC = hasPirates ? (CONFIG.ENCOUNTER_SEA_MIN_CHANCE || 0.0001) : (CONFIG.ENCOUNTER_LAND_MIN_CHANCE || 0.001);
+            var maxC = hasPirates ? (CONFIG.ENCOUNTER_SEA_MAX_CHANCE || 0.10) : (CONFIG.ENCOUNTER_LAND_MAX_CHANCE || 0.15);
+            chance = Math.max(minC, Math.min(maxC, chance));
+
+            // Same thresholds as getEncounterRiskLabel
             var level = 'low';
             var label = '🟢 Low';
             var color = '#2ecc71';
-            if (atWar) {
+            if (chance >= 0.06) {
                 level = 'high'; label = '🔴 High'; color = '#e74c3c';
-            } else if (maxBandit >= 60) {
-                level = 'high'; label = '🔴 High'; color = '#e74c3c';
-            } else if (maxBandit >= 30) {
+            } else if (chance >= 0.025) {
                 level = 'medium'; label = '🟡 Medium'; color = '#e67e22';
             }
             return { level: level, label: label, color: color, bandits: maxBandit, atWar: atWar, hasPirates: hasPirates };
@@ -19933,7 +19979,11 @@ window.UI = (function () {
                 }
             }
             btns += '<button class="btn-travel" onclick="UI.forageNearby()" style="background:rgba(85,168,104,0.15);border-color:rgba(85,168,104,0.3);">' + forageLabel + '</button>';
-            actionsDiv.innerHTML = btns;
+            // Only rebuild DOM when content changes to prevent button flicker
+            if (actionsDiv._lastBtns !== btns) {
+                actionsDiv.innerHTML = btns;
+                actionsDiv._lastBtns = btns;
+            }
         }
     }
 
@@ -20555,12 +20605,18 @@ window.UI = (function () {
         if (guards.length > 0) {
             for (var i = 0; i < guards.length; i++) {
                 var g = guards[i];
+                var guardNameHtml;
+                if (g.personId) {
+                    guardNameHtml = '<span onclick="UI.showPersonDetail(\'' + g.personId + '\')" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;color:var(--gold);" title="View NPC details">' + (g.name || 'Guard') + '</span>';
+                } else {
+                    guardNameHtml = (g.name || 'Guard');
+                }
                 html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);">';
-                html += '<span style="font-size:0.85rem;">\uD83D\uDEE1\uFE0F ' + (g.name || 'Guard') + '</span>';
+                html += '<span style="font-size:0.85rem;">\uD83D\uDEE1\uFE0F ' + guardNameHtml + '</span>';
                 html += '<button class="btn-medieval" onclick="UI.dismissGuardUI(\'' + g.id + '\')" style="font-size:0.7rem;padding:3px 8px;">\u274C Dismiss</button>';
                 html += '</div>';
             }
-        } else {
+        }else {
             html += '<div style="font-size:0.8rem;color:#888;font-style:italic;margin:4px 0;">No guards hired.</div>';
         }
 
