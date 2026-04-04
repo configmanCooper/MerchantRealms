@@ -10479,6 +10479,35 @@ window.UI = (function () {
             return chain;
         }
 
+        // ===== ROUTE DANGER ASSESSMENT =====
+        function _routeDangerInfo(route) {
+            if (!route || !route.length) return { level: 'low', label: '🟢 Low', color: '#2ecc71', bandits: 0, atWar: false };
+            var maxBandit = 0;
+            var atWar = false;
+            var hasPirates = false;
+            for (var i = 0; i < route.length; i++) {
+                var seg = route[i];
+                if (seg.type === 'sea') {
+                    hasPirates = true;
+                    continue;
+                }
+                var bt = seg.banditThreat || 0;
+                if (bt > maxBandit) maxBandit = bt;
+                if (seg.safe === false) atWar = true;
+            }
+            var level = 'low';
+            var label = '🟢 Low';
+            var color = '#2ecc71';
+            if (atWar) {
+                level = 'high'; label = '🔴 High'; color = '#e74c3c';
+            } else if (maxBandit >= 60) {
+                level = 'high'; label = '🔴 High'; color = '#e74c3c';
+            } else if (maxBandit >= 30) {
+                level = 'medium'; label = '🟡 Medium'; color = '#e67e22';
+            }
+            return { level: level, label: label, color: color, bandits: maxBandit, atWar: atWar, hasPirates: hasPirates };
+        }
+
         // ===== CLASSIFY ROUTES =====
         var mixedHasSea = mixedRoute && mixedRoute.some(function(s) { return s.type === 'sea'; });
         var mixedHasLand = mixedRoute && mixedRoute.some(function(s) { return s.type !== 'sea'; });
@@ -10508,6 +10537,11 @@ window.UI = (function () {
         // ===== BUILD OPTIONS (tagged with route category) =====
         var options = [];
         var routeLabels = { land: '🚶 Land Route', mixed: '🗺️ Mixed Route', sea: '⛵ Sea Route', god: '⚡ God Mode' };
+        var routeDanger = {};
+        if (landRoute) routeDanger.land = _routeDangerInfo(landRoute);
+        if (mixedRoute) routeDanger.mixed = _routeDangerInfo(mixedRoute);
+        if (canSea) routeDanger.sea = { level: 'medium', label: '🟡 Medium', color: '#e67e22', bandits: 0, atWar: false, hasPirates: true };
+        routeDanger.god = { level: 'low', label: '🟢 Low', color: '#2ecc71', bandits: 0, atWar: false, hasPirates: false };
 
         // --- LAND ROUTE OPTIONS ---
         if (showLand) {
@@ -10739,7 +10773,14 @@ window.UI = (function () {
 
             // Route category card
             html += '<div style="background:rgba(139,115,85,0.08);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:10px;margin-bottom:10px;">';
-            html += '<div style="font-size:0.95rem;font-weight:bold;margin-bottom:4px;">' + (routeLabels[routeKey] || routeKey) + '</div>';
+            var _rdInfo = routeDanger[routeKey];
+            var _dangerHtml = '';
+            if (_rdInfo && routeKey !== 'god') {
+                var _dangerTip = _rdInfo.atWar ? 'War zone!' : ('Bandit threat: ' + _rdInfo.bandits + '/100');
+                if (_rdInfo.hasPirates) _dangerTip += (_rdInfo.atWar || _rdInfo.bandits > 0 ? ', ' : '') + 'Pirates possible';
+                _dangerHtml = ' <span style="font-size:0.75rem;color:' + _rdInfo.color + ';margin-left:6px;" title="' + _dangerTip + '">⚔️ ' + _rdInfo.label + '</span>';
+            }
+            html += '<div style="font-size:0.95rem;font-weight:bold;margin-bottom:4px;">' + (routeLabels[routeKey] || routeKey) + _dangerHtml + '</div>';
             html += '<div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:8px;line-height:1.5;">' + routeOpts[0].routeChain + '</div>';
 
             // Options within this category
