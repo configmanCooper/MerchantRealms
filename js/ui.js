@@ -10913,7 +10913,8 @@ window.UI = (function () {
                     _dangerTip = 'Bandit threat: ' + _rdInfo.bandits + '/100';
                 }
                 if (_rdInfo.hasPirates && _rdInfo.bandits > 0) _dangerTip += ', Pirates possible';
-                _dangerHtml = ' <span onclick="UI.showRouteDangerDetail(\'' + routeKey + '\')" style="font-size:0.75rem;color:' + _rdInfo.color + ';margin-left:6px;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;" title="' + _dangerTip + '">⚔️ ' + _rdInfo.label + '</span>';
+                var _riskTypeLabel = _rdInfo.hasPirates && _rdInfo.bandits === 0 ? 'Pirate Risk' : (_rdInfo.atWar ? 'War Risk' : 'Bandit Risk');
+                _dangerHtml = ' <span onclick="UI.showRouteDangerDetail(\'' + routeKey + '\')" style="font-size:0.75rem;margin-left:6px;cursor:pointer;" title="' + _dangerTip + '">⚔️ <span style="color:' + _rdInfo.color + ';font-weight:bold;">' + _rdInfo.level.charAt(0).toUpperCase() + _rdInfo.level.slice(1) + '</span> <span style="color:#ddd;">' + _riskTypeLabel + '</span></span>';
             }
             html += '<div style="font-size:0.95rem;font-weight:bold;margin-bottom:4px;">' + (routeLabels[routeKey] || routeKey) + _dangerHtml + '</div>';
             html += '<div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:8px;line-height:1.5;">' + routeOpts[0].routeChain + '</div>';
