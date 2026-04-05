@@ -5961,6 +5961,11 @@
                     }
                     newKing = elected;
                     logEvent(`${elected.firstName} ${elected.lastName} has been elected King/Queen of ${kingdom.name}!`, { type: 'succession', kingdomId: kingdom.id });
+                    // If player was an advisor and participated in the election, they helped elect this king
+                    if (playerAdvisorId) {
+                        kingdom._playerInfluencedKingDay = world.day;
+                        logEvent('🤝 As Royal Advisor, ' + (typeof Player !== 'undefined' && Player.fullName ? Player.fullName : 'you') + ' helped elect the new ruler. Expect increased influence for 1 year.');
+                    }
                 }
             }
         }
@@ -6143,6 +6148,54 @@
                 UI.toast('👑 ' + newKing.firstName + ' ' + newKing.lastName + ' ' + howText + ' of ' + kingdom.name + traitStr, 'warning', 'critical');
             } else {
                 UI.toast('👑 ' + newKing.firstName + ' ' + newKing.lastName + ' is the new ruler of ' + kingdom.name + traitStr, 'info', 'critical');
+            }
+        }
+
+        // ========================================================
+        // §N-8: REGIME CHANGE CONSEQUENCES for player
+        // When king dies from coup, rebellion, or war:
+        // - Lord → demoted to Guildmaster, possible jail + gold seizure
+        // - Royal Advisor → demoted to Citizen, harsh fate decided by new king
+        // ========================================================
+        var isRegimeChange = (cause === 'coup' || cause === 'rebellion' || cause === 'battle' || cause === 'assassination');
+        if (isRegimeChange && typeof Player !== 'undefined' && Player.state && Player.state.alive) {
+            var pState = Player.state;
+            var pRank = (pState.socialRank && pState.socialRank[kingdom.id]) || 0;
+            var newKingPers = newKing.personality || {};
+            var isMerciful = (newKingPers.warmth || 50) > 60;
+            var isRuthless = (newKingPers.warmth || 50) < 30;
+
+            if (pRank >= 6) {
+                // Royal Advisor: demoted to Citizen, fate decided by new ruler
+                var fateRoll = rng.random();
+                var executionThresh = isRuthless ? 0.35 : isMerciful ? 0.08 : 0.20;
+                var jailThresh = executionThresh + (isRuthless ? 0.35 : isMerciful ? 0.50 : 0.40);
+
+                if (fateRoll < executionThresh) {
+                    logEvent('⚔️💀 The new ruler of ' + kingdom.name + ' has ordered the execution of former Royal Advisor ' + (pState.fullName || 'the player') + '!');
+                    if (Player._handleRegimeChangeConsequence) {
+                        Player._handleRegimeChangeConsequence(kingdom.id, 'execution', {});
+                    }
+                } else if (fateRoll < jailThresh) {
+                    var rcJailDays = rng.randInt(60, 180);
+                    var rcGoldPct = rng.randFloat(0.50, 0.80);
+                    logEvent('⛓️ The new ruler of ' + kingdom.name + ' has imprisoned former Royal Advisor ' + (pState.fullName || 'the player') + ' for ' + rcJailDays + ' days and seized their assets.');
+                    if (Player._handleRegimeChangeConsequence) {
+                        Player._handleRegimeChangeConsequence(kingdom.id, 'jail_seize', { jailDays: rcJailDays, goldSeizePct: rcGoldPct, seizeBuildings: true });
+                    }
+                } else {
+                    logEvent('🚪 The new ruler of ' + kingdom.name + ' has exiled former Royal Advisor ' + (pState.fullName || 'the player') + '. They keep their gold but lose all property.');
+                    if (Player._handleRegimeChangeConsequence) {
+                        Player._handleRegimeChangeConsequence(kingdom.id, 'exile', { seizeBuildings: true });
+                    }
+                }
+            } else if (pRank >= 5) {
+                var rcLordJail = isRuthless ? rng.randInt(30, 90) : (isMerciful ? 0 : rng.randInt(0, 60));
+                var rcLordGold = rng.randFloat(0.20, 0.50);
+                logEvent('📉 The new ruler of ' + kingdom.name + ' has stripped Lord ' + (pState.fullName || 'the player') + ' of their title.');
+                if (Player._handleRegimeChangeConsequence) {
+                    Player._handleRegimeChangeConsequence(kingdom.id, 'lord_demotion', { jailDays: rcLordJail, goldSeizePct: rcLordGold });
+                }
             }
         }
     }
@@ -6795,6 +6848,9 @@
 
             // ---- Process pending RA consultation decisions (daily) ----
             tickPendingKingDecisions(k);
+
+            // ---- Directed player commissions (daily deadline check) ----
+            checkDirectedCommissionDeadline(k);
 
             // ---- Update military strength and soldier count ----
             k.militaryStrength = computeMilitaryStrength(k);
@@ -8307,6 +8363,572 @@
         k.royalCommissions.push(commission);
         logKingAction(k, '📜 Royal commission posted: ' + commission.description + ' (reward: ' + reward + 'g)');
         logEvent('📜 ' + k.name + ' seeks: ' + commission.description + ' — Reward: ' + reward + 'g + reputation!');
+    }
+
+    // ========================================================
+    // §14A-1B DIRECTED KING COMMISSIONS (Player-targeted)
+    // ========================================================
+    // When the player is Minor Noble (rank 4+), the king may assign
+    // them personal commissions based on their production capabilities.
+    // Minor Nobles can refuse (rep penalty). Lords MUST fulfill or be demoted.
+
+    function tickDirectedPlayerCommission(k) {
+        if (typeof Player === 'undefined') return;
+        var cfg = CONFIG.ROYAL_COMMISSIONS;
+        if (!cfg) return;
+        var rng = world.rng;
+
+        // Initialize directed commission array
+        if (!k.directedPlayerCommission) k.directedPlayerCommission = null;
+
+        // Check if player is Minor Noble (4+) in this kingdom
+        var pState = Player.state;
+        if (!pState || !pState.socialRank) return;
+        var playerRank = pState.socialRank[k.id] || 0;
+        if (playerRank < 4) return; // Must be Minor Noble or higher
+
+        // Only check every 45-90 days (less frequent than open commissions)
+        var commInterval = playerRank >= 5 ? 45 : 60; // Lords get commissions more often
+        if (world.day % commInterval !== 0) return;
+
+        // Don't assign if player already has an active directed commission from this kingdom
+        if (k.directedPlayerCommission && (k.directedPlayerCommission.status === 'pending' || k.directedPlayerCommission.status === 'accepted')) return;
+
+        // Don't issue during extreme crises
+        if (k.successionCrisis && k.successionCrisis.active && k.successionCrisis.severity === 'extreme') return;
+
+        var p = k.kingPersonality || {};
+        var isAtWar = k.atWar && k.atWar.size > 0;
+
+        // Analyze what the player produces
+        var playerProduction = {};
+        var playerBuildingTypes = {};
+        for (var ti = 0; ti < world.towns.length; ti++) {
+            var town = world.towns[ti];
+            if (!k.territories || !k.territories.has(town.id)) continue;
+            for (var bi = 0; bi < town.buildings.length; bi++) {
+                var bld = town.buildings[bi];
+                if (bld.ownerId !== 'player') continue;
+                playerBuildingTypes[bld.type] = (playerBuildingTypes[bld.type] || 0) + 1;
+                var bt = findBuildingType(bld.type);
+                if (bt && bt.produces) {
+                    playerProduction[bt.produces] = (playerProduction[bt.produces] || 0) + (bt.rate || 1) * (bld.level || 1);
+                }
+                // Check recipes too
+                if (bt && bt.recipes) {
+                    for (var ri = 0; ri < bt.recipes.length; ri++) {
+                        var recipe = bt.recipes[ri];
+                        if (recipe.output) {
+                            playerProduction[recipe.output] = (playerProduction[recipe.output] || 0) + (recipe.rate || 1) * (bld.level || 1);
+                        }
+                    }
+                }
+            }
+        }
+
+        var producedItems = Object.keys(playerProduction);
+
+        // Build candidate commissions
+        var candidates = [];
+
+        // 1. Military supplies during war (high priority, matches player production)
+        if (isAtWar) {
+            var milGoods = ['swords', 'armor', 'bows', 'arrows', 'shields'];
+            for (var mi = 0; mi < milGoods.length; mi++) {
+                var mg = milGoods[mi];
+                var stock = k.militaryStockpile ? (k.militaryStockpile[mg] || 0) : 0;
+                if (stock < 80) {
+                    var matchesProduction = playerProduction[mg] > 0;
+                    var qty = matchesProduction ? rng.randInt(30, 80) : rng.randInt(10, 30);
+                    candidates.push({
+                        type: 'military_supply',
+                        resourceId: mg,
+                        quantity: qty,
+                        priority: matchesProduction ? 'high' : 'medium',
+                        urgency: stock < 20 ? 'desperate' : (stock < 50 ? 'urgent' : 'normal'),
+                        matchesProduction: matchesProduction,
+                        deadlineDays: matchesProduction ? rng.randInt(30, 60) : rng.randInt(45, 90),
+                    });
+                }
+            }
+        }
+
+        // 2. Goods the player actually produces (king knows what you make)
+        for (var pi = 0; pi < producedItems.length; pi++) {
+            var item = producedItems[pi];
+            // Skip if it's a military item already covered
+            if (['swords', 'armor', 'bows', 'arrows', 'shields'].indexOf(item) >= 0 && isAtWar) continue;
+            var res = findResourceById(item);
+            if (!res) continue;
+            candidates.push({
+                type: 'goods_delivery',
+                resourceId: item,
+                quantity: rng.randInt(20, Math.max(30, Math.floor(playerProduction[item] * 15))),
+                priority: 'normal',
+                urgency: 'normal',
+                matchesProduction: true,
+                deadlineDays: rng.randInt(30, 60),
+            });
+        }
+
+        // 3. Food if kingdom is hungry (even if player doesn't produce it)
+        var totalPop = 0;
+        var kTowns = world.towns.filter(function(t) { return k.territories && k.territories.has(t.id); });
+        for (var fti = 0; fti < kTowns.length; fti++) totalPop += kTowns[fti].population || 0;
+        if (totalPop > 200) {
+            var foodGoods = ['bread', 'wheat', 'meat', 'fish', 'preserved_food'];
+            var food = rng.pick(foodGoods);
+            var foodMatch = playerProduction[food] > 0;
+            candidates.push({
+                type: 'goods_delivery',
+                resourceId: food,
+                quantity: foodMatch ? rng.randInt(30, 80) : rng.randInt(15, 40),
+                priority: 'low',
+                urgency: 'normal',
+                matchesProduction: foodMatch,
+                deadlineDays: rng.randInt(45, 90),
+            });
+        }
+
+        if (candidates.length === 0) return;
+
+        // Score and pick: prefer matching production + higher priority
+        var scored = candidates.map(function(c) {
+            var score = 0;
+            if (c.matchesProduction) score += 50;
+            if (c.priority === 'high') score += 30;
+            else if (c.priority === 'medium') score += 15;
+            if (c.urgency === 'desperate') score += 20;
+            else if (c.urgency === 'urgent') score += 10;
+            score += rng.randInt(0, 20); // some randomness
+            return { candidate: c, score: score };
+        });
+        scored.sort(function(a, b) { return b.score - a.score; });
+        var chosen = scored[0].candidate;
+
+        var res = chosen.resourceId ? findResourceById(chosen.resourceId) : null;
+        var baseValue = res ? (res.basePrice || 5) * chosen.quantity : 500;
+        // Directed commissions pay better than open ones (1.8x base vs 1.5x)
+        var reward = Math.floor(baseValue * 1.8);
+        // Rep reward scales with urgency
+        var repReward = chosen.urgency === 'desperate' ? rng.randInt(8, 15) : (chosen.urgency === 'urgent' ? rng.randInt(5, 10) : rng.randInt(3, 7));
+
+        var commission = {
+            id: 'dpc_' + k.id + '_' + world.day,
+            kingdomId: k.id,
+            type: chosen.type,
+            resourceId: chosen.resourceId || null,
+            quantity: chosen.quantity || 0,
+            reward: reward,
+            repReward: repReward,
+            issuedDay: world.day,
+            deadlineDay: world.day + chosen.deadlineDays,
+            status: 'pending', // pending → accepted → completed/failed OR pending → refused
+            urgency: chosen.urgency || 'normal',
+            matchesProduction: chosen.matchesProduction || false,
+            description: chosen.type === 'military_supply'
+                ? 'Supply ' + chosen.quantity + ' ' + (res ? res.name : chosen.resourceId) + ' for the war effort'
+                : 'Deliver ' + chosen.quantity + ' ' + (res ? res.name : chosen.resourceId) + ' to the crown',
+            lordMandatory: playerRank >= 5, // Lords cannot refuse
+        };
+
+        k.directedPlayerCommission = commission;
+        logKingAction(k, '👑 King directs ' + (pState.fullName || 'the player') + ': ' + commission.description);
+        logEvent('👑 The King of ' + k.name + ' has a personal commission for you: ' + commission.description);
+    }
+
+    function getDirectedPlayerCommission(kingdomId) {
+        var k = findKingdom(kingdomId);
+        if (!k) return null;
+        return k.directedPlayerCommission || null;
+    }
+
+    function respondToDirectedCommission(kingdomId, accepted) {
+        var k = findKingdom(kingdomId);
+        if (!k || !k.directedPlayerCommission) return { success: false, reason: 'No active commission' };
+        var comm = k.directedPlayerCommission;
+        if (comm.status !== 'pending') return { success: false, reason: 'Commission already responded to' };
+
+        if (accepted) {
+            comm.status = 'accepted';
+            logKingAction(k, '✅ ' + (typeof Player !== 'undefined' && Player.state ? Player.state.fullName : 'Player') + ' accepted commission: ' + comm.description);
+            return { success: true, status: 'accepted' };
+        } else {
+            // Refusing: Minor Noble loses 5-10 rep, Lord+ loses even more and gets demoted
+            var repLoss = comm.urgency === 'desperate' ? 10 : (comm.urgency === 'urgent' ? 8 : 5);
+            comm.status = 'refused';
+
+            if (comm.lordMandatory) {
+                // Lord MUST fulfill — refusing means immediate demotion
+                logKingAction(k, '❌ ' + (typeof Player !== 'undefined' && Player.state ? Player.state.fullName : 'Player') + ' REFUSED mandatory commission! Demotion pending.');
+                return { success: true, status: 'refused', repLoss: 20, demotionTriggered: true };
+            } else {
+                logKingAction(k, '❌ ' + (typeof Player !== 'undefined' && Player.state ? Player.state.fullName : 'Player') + ' refused commission: ' + comm.description + ' (rep -' + repLoss + ')');
+                return { success: true, status: 'refused', repLoss: repLoss, demotionTriggered: false };
+            }
+        }
+    }
+
+    function deliverDirectedCommission(kingdomId) {
+        var k = findKingdom(kingdomId);
+        if (!k || !k.directedPlayerCommission) return { success: false, reason: 'No active commission' };
+        var comm = k.directedPlayerCommission;
+        if (comm.status !== 'accepted') return { success: false, reason: 'Commission not accepted' };
+
+        // Check if player has the goods
+        if (typeof Player === 'undefined' || !Player.state) return { success: false, reason: 'Player not available' };
+        var inv = Player.state.inventory || {};
+        var has = comm.resourceId ? (inv[comm.resourceId] || 0) : 0;
+        if (has < comm.quantity) return { success: false, reason: 'Not enough ' + (comm.resourceId || 'goods') + ' (have ' + has + ', need ' + comm.quantity + ')' };
+
+        // Deduct goods
+        Player.state.inventory[comm.resourceId] -= comm.quantity;
+
+        // Grant rewards
+        comm.status = 'completed';
+        Player.state.gold = (Player.state.gold || 0) + comm.reward;
+
+        // Add to military stockpile if military supply
+        if (comm.type === 'military_supply' && k.militaryStockpile) {
+            k.militaryStockpile[comm.resourceId] = (k.militaryStockpile[comm.resourceId] || 0) + comm.quantity;
+        }
+
+        logKingAction(k, '✅ Commission completed: ' + comm.description + ' (+' + comm.reward + 'g, +' + comm.repReward + ' rep)');
+        logEvent('✅ Commission fulfilled for ' + k.name + '! Reward: ' + comm.reward + 'g + ' + comm.repReward + ' reputation!');
+
+        return { success: true, reward: comm.reward, repReward: comm.repReward };
+    }
+
+    function checkDirectedCommissionDeadline(k) {
+        if (!k.directedPlayerCommission) return;
+        var comm = k.directedPlayerCommission;
+        // Auto-expire pending commissions after 3 days (if not accepted/refused)
+        if (comm.status === 'pending' && world.day > comm.issuedDay + 3) {
+            comm.status = 'expired';
+            logKingAction(k, '⏳ Commission ignored by player: ' + comm.description);
+            logEvent('⏳ You ignored the king\'s commission. The king is displeased. (-3 reputation)');
+            return { expired: true, repLoss: 3 };
+        }
+        // Check deadline for accepted commissions
+        if (comm.status === 'accepted' && world.day > comm.deadlineDay) {
+            comm.status = 'failed';
+            if (comm.lordMandatory) {
+                logKingAction(k, '❌ Lord failed to complete mandatory commission: ' + comm.description + '. Demotion!');
+                logEvent('❌ You failed to fulfill the king\'s commission on time! As a Lord, this means immediate demotion!');
+                return { failed: true, demotionTriggered: true, repLoss: 20 };
+            } else {
+                var repLoss = comm.urgency === 'desperate' ? 10 : (comm.urgency === 'urgent' ? 7 : 5);
+                logKingAction(k, '❌ Commission deadline passed: ' + comm.description + ' (rep -' + repLoss + ')');
+                logEvent('❌ The king\'s commission has expired unfulfilled. (-' + repLoss + ' reputation)');
+                return { failed: true, demotionTriggered: false, repLoss: repLoss };
+            }
+        }
+        return null;
+    }
+
+    // ========================================================
+    // §14A-1C ROYAL ADVISOR — PROPOSE LAWS SYSTEM
+    // ========================================================
+    // Royal Advisors can draft and propose laws to the king.
+    // The king evaluates based on personality, kingdom needs, and relationship.
+
+    var PROPOSABLE_LAWS = [
+        {
+            id: 'lower_tax', category: 'taxation', name: 'Lower Trade Tax',
+            description: 'Reduce the kingdom trade tax rate by 3%',
+            icon: '📉', effect: function(k) { k.taxRate = Math.max(0.02, (k.taxRate || 0.10) - 0.03); },
+            kingFavor: function(k, p) { return p.generosity === 'generous' ? 0.3 : (p.greed === 'greedy' ? -0.3 : 0); },
+            requiresGold: 0
+        },
+        {
+            id: 'raise_tax', category: 'taxation', name: 'Raise Trade Tax',
+            description: 'Increase the kingdom trade tax rate by 3%',
+            icon: '📈', effect: function(k) { k.taxRate = Math.min(0.30, (k.taxRate || 0.10) + 0.03); },
+            kingFavor: function(k, p) { return p.greed === 'greedy' ? 0.3 : (p.generosity === 'generous' ? -0.2 : 0.1); },
+            requiresGold: 0
+        },
+        {
+            id: 'lower_tariff', category: 'trade', name: 'Lower Foreign Tariffs',
+            description: 'Reduce tariffs on foreign goods, boosting trade',
+            icon: '🌍', effect: function(k) { if (k.laws) k.laws.tradeTariff = Math.max(0, (k.laws.tradeTariff || 0.10) - 0.05); },
+            kingFavor: function(k, p) { return p.tradePolicy === 'free_market' ? 0.3 : (p.tradePolicy === 'protectionist' ? -0.3 : 0); },
+            requiresGold: 0
+        },
+        {
+            id: 'raise_tariff', category: 'trade', name: 'Raise Foreign Tariffs',
+            description: 'Increase tariffs on foreign goods, protecting local producers',
+            icon: '🛡️', effect: function(k) { if (k.laws) k.laws.tradeTariff = Math.min(0.40, (k.laws.tradeTariff || 0.10) + 0.05); },
+            kingFavor: function(k, p) { return p.tradePolicy === 'protectionist' ? 0.3 : (p.tradePolicy === 'free_market' ? -0.2 : 0.1); },
+            requiresGold: 0
+        },
+        {
+            id: 'trade_subsidy', category: 'trade', name: 'Establish Trade Subsidies',
+            description: 'Subsidize merchants to encourage commerce (costs 500g from treasury)',
+            icon: '💰', effect: function(k) {
+                if (!k.tradeSubsidies) k.tradeSubsidies = [];
+                k.tradeSubsidies.push({ startDay: world.day, duration: 90, bonus: 0.10 });
+            },
+            kingFavor: function(k, p) { return k.gold > 3000 ? 0.1 : -0.3; },
+            requiresGold: 500
+        },
+        {
+            id: 'tax_holiday', category: 'taxation', name: 'Declare Tax Holiday',
+            description: 'Suspend trade taxes for 30 days to attract merchants',
+            icon: '🎉', effect: function(k) {
+                if (!k.taxHolidays) k.taxHolidays = [];
+                k.taxHolidays.push({ startDay: world.day, duration: 30 });
+            },
+            kingFavor: function(k, p) { return p.generosity === 'generous' ? 0.2 : (k.gold > 5000 ? 0 : -0.4); },
+            requiresGold: 0
+        },
+        {
+            id: 'ban_weapons', category: 'security', name: 'Ban Weapons Trade',
+            description: 'Prohibit sale of weapons to protect kingdom security',
+            icon: '⚔️', effect: function(k) {
+                if (k.laws && k.laws.bannedGoods) {
+                    var weapons = ['swords', 'armor', 'bows'];
+                    for (var i = 0; i < weapons.length; i++) {
+                        if (k.laws.bannedGoods.indexOf(weapons[i]) < 0) k.laws.bannedGoods.push(weapons[i]);
+                    }
+                }
+            },
+            kingFavor: function(k, p) { return (k.atWar && k.atWar.size > 0) ? 0.3 : (p.militarism === 'militarist' ? 0.1 : -0.1); },
+            requiresGold: 0
+        },
+        {
+            id: 'lift_weapons_ban', category: 'trade', name: 'Lift Weapons Ban',
+            description: 'Allow free trade of weapons again',
+            icon: '🔓', effect: function(k) {
+                if (k.laws && k.laws.bannedGoods) {
+                    var weapons = ['swords', 'armor', 'bows'];
+                    k.laws.bannedGoods = k.laws.bannedGoods.filter(function(g) { return weapons.indexOf(g) < 0; });
+                }
+            },
+            kingFavor: function(k, p) { return (k.atWar && k.atWar.size > 0) ? -0.4 : 0.1; },
+            requiresGold: 0
+        },
+        {
+            id: 'price_controls', category: 'economy', name: 'Enact Price Controls',
+            description: 'Cap prices on essential goods (bread, wheat, medicine)',
+            icon: '⚖️', effect: function(k) {
+                if (!k.laws) k.laws = {};
+                if (!k.laws.specialLaws) k.laws.specialLaws = {};
+                k.laws.specialLaws.price_controls = true;
+            },
+            kingFavor: function(k, p) { return p.generosity === 'generous' ? 0.2 : (p.greed === 'greedy' ? -0.3 : 0); },
+            requiresGold: 0
+        },
+        {
+            id: 'remove_price_controls', category: 'economy', name: 'Remove Price Controls',
+            description: 'Let the free market determine prices',
+            icon: '📊', effect: function(k) {
+                if (k.laws && k.laws.specialLaws) k.laws.specialLaws.price_controls = false;
+            },
+            kingFavor: function(k, p) { return p.tradePolicy === 'free_market' ? 0.3 : -0.1; },
+            requiresGold: 0
+        },
+        {
+            id: 'land_subsidy', category: 'economy', name: 'Land Purchase Subsidies',
+            description: 'Subsidize land purchases to encourage development (costs 1000g)',
+            icon: '🏗️', effect: function(k) {
+                if (!k.landSubsidies) k.landSubsidies = [];
+                k.landSubsidies.push({ startDay: world.day, duration: 120, discount: 0.20 });
+            },
+            kingFavor: function(k, p) { return k.gold > 5000 ? 0.1 : -0.3; },
+            requiresGold: 1000
+        },
+        {
+            id: 'export_restriction', category: 'trade', name: 'Restrict Food Exports',
+            description: 'Prevent food from being exported during shortages',
+            icon: '🚫', effect: function(k) {
+                if (!k.exportRestrictions) k.exportRestrictions = [];
+                var foods = ['bread', 'wheat', 'meat', 'fish'];
+                for (var i = 0; i < foods.length; i++) {
+                    if (k.exportRestrictions.indexOf(foods[i]) < 0) k.exportRestrictions.push(foods[i]);
+                }
+            },
+            kingFavor: function(k, p) {
+                var foodCrisis = false;
+                var kTowns = world.towns.filter(function(t) { return k.territories && k.territories.has(t.id); });
+                for (var i = 0; i < kTowns.length; i++) {
+                    if (kTowns[i].famine || (kTowns[i].prosperity || 50) < 30) foodCrisis = true;
+                }
+                return foodCrisis ? 0.4 : -0.1;
+            },
+            requiresGold: 0
+        },
+        {
+            id: 'lift_export_restriction', category: 'trade', name: 'Lift Export Restrictions',
+            description: 'Remove food export restrictions to boost trade',
+            icon: '📦', effect: function(k) { k.exportRestrictions = []; },
+            kingFavor: function(k, p) { return p.tradePolicy === 'free_market' ? 0.3 : 0; },
+            requiresGold: 0
+        },
+        {
+            id: 'open_immigration', category: 'social', name: 'Open Immigration Policy',
+            description: 'Welcome immigrants to boost population and workforce',
+            icon: '🏠', effect: function(k) { k.immigrationPolicy = 'open'; },
+            kingFavor: function(k, p) { return p.tradition === 'progressive' ? 0.3 : (p.tradition === 'traditionalist' ? -0.3 : 0); },
+            requiresGold: 0
+        },
+        {
+            id: 'restrict_immigration', category: 'social', name: 'Restrict Immigration',
+            description: 'Limit immigration to protect local jobs and culture',
+            icon: '🚧', effect: function(k) { k.immigrationPolicy = 'restricted'; },
+            kingFavor: function(k, p) { return p.tradition === 'traditionalist' ? 0.3 : (p.tradition === 'progressive' ? -0.2 : 0.1); },
+            requiresGold: 0
+        },
+        {
+            id: 'female_heir', category: 'succession', name: 'Allow Female Heirs',
+            description: 'Permit women to inherit the throne',
+            icon: '👑', effect: function(k) {
+                if (!k.laws) k.laws = {};
+                if (!k.laws.specialLaws) k.laws.specialLaws = {};
+                k.laws.specialLaws.female_heir_law = true;
+            },
+            kingFavor: function(k, p) { return p.tradition === 'progressive' ? 0.3 : (p.tradition === 'traditionalist' ? -0.4 : -0.1); },
+            requiresGold: 0
+        },
+        {
+            id: 'military_draft', category: 'military', name: 'Enact Forced Conscription',
+            description: 'Draft civilians into the army during wartime',
+            icon: '⚔️', effect: function(k) {
+                if (k.laws) k.laws.conscription = 'mandatory';
+            },
+            kingFavor: function(k, p) { return (k.atWar && k.atWar.size > 0) ? 0.4 : (p.militarism === 'pacifist' ? -0.4 : -0.1); },
+            requiresGold: 0
+        },
+        {
+            id: 'end_draft', category: 'military', name: 'End Forced Conscription',
+            description: 'Return to voluntary military service',
+            icon: '🕊️', effect: function(k) {
+                if (k.laws) k.laws.conscription = 'voluntary';
+            },
+            kingFavor: function(k, p) { return p.militarism === 'pacifist' ? 0.3 : ((k.atWar && k.atWar.size > 0) ? -0.4 : 0.1); },
+            requiresGold: 0
+        },
+    ];
+
+    function proposeLaw(kingdomId, lawId) {
+        var k = findKingdom(kingdomId);
+        if (!k) return { success: false, reason: 'Kingdom not found.' };
+        if (typeof Player === 'undefined') return { success: false, reason: 'Player not available.' };
+
+        // Must be Royal Advisor of this kingdom
+        var pState = Player.state;
+        if (!pState || !pState.socialRank || (pState.socialRank[k.id] || 0) < 6) {
+            return { success: false, reason: 'Only Royal Advisors can propose laws.' };
+        }
+
+        // Check political capital
+        if (typeof Player.state.politicalCapital !== 'undefined' && Player.state.politicalCapital <= 0) {
+            return { success: false, reason: 'No political capital remaining this season.' };
+        }
+
+        var law = null;
+        for (var i = 0; i < PROPOSABLE_LAWS.length; i++) {
+            if (PROPOSABLE_LAWS[i].id === lawId) { law = PROPOSABLE_LAWS[i]; break; }
+        }
+        if (!law) return { success: false, reason: 'Unknown law proposal.' };
+
+        // Check treasury requirement
+        if (law.requiresGold > 0 && (k.gold || 0) < law.requiresGold) {
+            return { success: false, reason: 'The kingdom treasury lacks the ' + law.requiresGold + 'g needed for this policy.' };
+        }
+
+        // Calculate king's acceptance chance
+        var pers = k.kingPersonality || {};
+        var rng = world.rng;
+
+        // Base: 40% for smart kings, 60% for average, 75% for dim
+        var baseChance = pers.intelligence === 'brilliant' ? 0.35 :
+                         pers.intelligence === 'clever' ? 0.45 :
+                         pers.intelligence === 'dim' ? 0.70 :
+                         pers.intelligence === 'foolish' ? 0.80 : 0.55;
+
+        // King personality modifier for this specific law
+        var favor = typeof law.kingFavor === 'function' ? law.kingFavor(k, pers) : 0;
+        baseChance += favor;
+
+        // Relationship with king bonus
+        var kingRel = 0;
+        if (k.kingNpcId) {
+            var npcs = world.npcs || [];
+            for (var ni = 0; ni < npcs.length; ni++) {
+                if (npcs[ni].id === k.kingNpcId) {
+                    kingRel = npcs[ni].relationship || 0;
+                    break;
+                }
+            }
+        }
+        baseChance += kingRel * 0.002; // 100 rel = +0.2
+
+        // Player-influenced king bonus
+        if (k._playerInfluencedKingDay && (world.day - k._playerInfluencedKingDay) < 365) {
+            baseChance += 0.20;
+        }
+
+        // Clamp
+        baseChance = Math.max(0.10, Math.min(0.95, baseChance));
+
+        // Spend political capital
+        if (typeof Player.state.politicalCapital !== 'undefined') {
+            Player.state.politicalCapital--;
+        }
+
+        var accepted = rng ? rng.chance(baseChance) : Math.random() < baseChance;
+
+        if (accepted) {
+            // Apply the law
+            if (typeof law.effect === 'function') law.effect(k);
+            if (law.requiresGold > 0) k.gold -= law.requiresGold;
+
+            logKingAction(k, '📜 Law enacted on RA counsel: ' + law.name + ' — ' + law.description);
+            logEvent('📜 The King of ' + k.name + ' accepts your proposal: ' + law.name + '!');
+            return { success: true, accepted: true, chance: Math.round(baseChance * 100), law: law.name };
+        } else {
+            logKingAction(k, '📜 Law proposal rejected: ' + law.name);
+            logEvent('📜 The King of ' + k.name + ' rejects your proposal for ' + law.name + '.');
+            return { success: true, accepted: false, chance: Math.round(baseChance * 100), law: law.name };
+        }
+    }
+
+    function getProposableLaws(kingdomId) {
+        var k = findKingdom(kingdomId);
+        if (!k) return [];
+        var pers = k.kingPersonality || {};
+        var result = [];
+        for (var i = 0; i < PROPOSABLE_LAWS.length; i++) {
+            var law = PROPOSABLE_LAWS[i];
+            var favor = typeof law.kingFavor === 'function' ? law.kingFavor(k, pers) : 0;
+            var baseChance = pers.intelligence === 'brilliant' ? 0.35 :
+                             pers.intelligence === 'clever' ? 0.45 :
+                             pers.intelligence === 'dim' ? 0.70 :
+                             pers.intelligence === 'foolish' ? 0.80 : 0.55;
+            baseChance += favor;
+            // Relationship
+            var kingRel = 0;
+            if (k.kingNpcId) {
+                var npcs = world.npcs || [];
+                for (var ni = 0; ni < npcs.length; ni++) {
+                    if (npcs[ni].id === k.kingNpcId) { kingRel = npcs[ni].relationship || 0; break; }
+                }
+            }
+            baseChance += kingRel * 0.002;
+            if (k._playerInfluencedKingDay && (world.day - k._playerInfluencedKingDay) < 365) baseChance += 0.20;
+            baseChance = Math.max(0.10, Math.min(0.95, baseChance));
+            result.push({
+                id: law.id,
+                category: law.category,
+                name: law.name,
+                description: law.description,
+                icon: law.icon,
+                chance: Math.round(baseChance * 100),
+                requiresGold: law.requiresGold || 0,
+                canAfford: (law.requiresGold || 0) <= (k.gold || 0),
+            });
+        }
+        return result;
     }
 
     // ========================================================
@@ -28940,6 +29562,11 @@
                 }
             }
 
+            // Directed player commissions (runs daily internally, interval checked inside)
+            for (const k of world.kingdoms) {
+                tickDirectedPlayerCommission(k);
+            }
+
             // Kingdom ban policy review (every 30 days)
             if (world.day % (CONFIG.KINGDOM_BAN_POLICY_INTERVAL || 30) === 0) {
                 for (const k of world.kingdoms) {
@@ -29517,6 +30144,16 @@
         // Royal Advisor Consultation API
         getPendingKingDecisions: getPendingKingDecisions,
         respondToKingDecision: respondToKingDecision,
+
+        // Directed Player Commission API
+        getDirectedPlayerCommission: getDirectedPlayerCommission,
+        respondToDirectedCommission: respondToDirectedCommission,
+        deliverDirectedCommission: deliverDirectedCommission,
+        checkDirectedCommissionDeadline: checkDirectedCommissionDeadline,
+
+        // Royal Advisor — Propose Laws API
+        proposeLaw: proposeLaw,
+        getProposableLaws: getProposableLaws,
 
         // Bridge & Road management
         destroyBridge(idx, bridgeId) { return destroyBridge(idx, bridgeId); },

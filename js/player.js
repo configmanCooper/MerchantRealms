@@ -191,6 +191,8 @@
         royalAdvisorBenefits: null,     // { noTaxes, immuneToLaws, kingdomNeverSeizes, swayOverKing }
         politicalCapital: 0,            // uses per season for advising king
         politicalCapitalResetDay: 0,
+        lordTownId: null,               // town where player is Lord (crime immunity applies here)
+        _repWarnDay: {},                // kingdomId → day when rep first dropped below threshold (for 30-day demotion timer)
 
         // ── Town Reputation ──
         townReputation: {},             // townId → 0-100
@@ -1274,6 +1276,22 @@
         }
 
         if (rng && rng.chance(detectionChance)) {
+            // Crime immunity check — Lords in lord town, RA kingdom-wide
+            var smugImmunity = checkCrimeImmunity(town.id, kingdom.id);
+            if (smugImmunity.immune) {
+                // Immune: still sell goods at normal price, just lose some rep
+                var smugRepLoss = Math.min(_smugRepPenalty, 3);
+                player.reputation[kingdom.id] = Math.max(0, (player.reputation[kingdom.id] || 50) - smugRepLoss);
+                var normalRevenue = Math.floor(basePrice * qty);
+                player.gold += normalRevenue;
+                player.stats.totalGoldEarned += normalRevenue;
+                deductGoodsFromPools(resourceId, qty);
+                player.stats.tradesCompleted++;
+                var scopeLabel = smugImmunity.scope === 'kingdom' ? 'Royal Advisor' : 'Lord of this town';
+                Engine.logEvent('🔓 ' + player.fullName + ' was caught smuggling but is immune as ' + scopeLabel + '. (-' + smugRepLoss + ' rep)');
+                return { success: true, message: 'Caught smuggling, but your ' + scopeLabel + ' status grants immunity! (-' + smugRepLoss + ' rep). Sold for ' + normalRevenue + 'g.', totalRevenue: normalRevenue, immune: true };
+            }
+
             // Caught! Check trial_combat special law first
             if (hasSpecialLaw(kingdom, 'trial_combat')) {
                 let combatChance = 0.30;
@@ -2424,7 +2442,16 @@
             autoDisbandConditions: options.autoDisbandConditions ? JSON.parse(JSON.stringify(options.autoDisbandConditions)) : [],
         };
         player.caravans.push(caravan);
-        var crewMsg = ' (' + carriers + ' carriers, ' + guardCount + ' guards';
+
+        // Lord bonus: 2 kingdom-paid guards per caravan
+        var _fromKId = fromTown ? fromTown.kingdomId : null;
+        if (_fromKId && (player.socialRank[_fromKId] || 0) >= 5) {
+            caravan.guards = (caravan.guards || 0) + 2;
+            caravan._kingdomGuards = 2;
+            Engine.logEvent('🛡️ As a Lord, 2 kingdom-paid guards join your caravan.');
+        }
+
+        var crewMsg = ' (' + carriers + ' carriers, ' + caravan.guards + ' guards';
         if (carrierHorses > 0) crewMsg += ', ' + carrierHorses + ' 🐴';
         if (carts > 0) crewMsg += ', ' + carts + ' 🛒';
         if (wagons > 0) crewMsg += ', ' + wagons + ' 🚛';
@@ -3790,6 +3817,15 @@
             passengers: [],
         };
         player.caravans.push(caravan);
+
+        // Lord bonus: 2 kingdom-paid guards per caravan
+        var _seaFromKId = fromTown ? fromTown.kingdomId : null;
+        if (_seaFromKId && (player.socialRank[_seaFromKId] || 0) >= 5) {
+            caravan.guards = (caravan.guards || 0) + 2;
+            caravan._kingdomGuards = 2;
+            Engine.logEvent('🛡️ As a Lord, 2 kingdom-paid guards join your sea caravan.');
+        }
+
         var shipLabel = ownedShip ? ownedShip.name : (shipTypeDef ? shipTypeDef.name + ' (rented)' : 'rented ship');
         Engine.logEvent('Sea caravan dispatched from ' + fromTown.name + ' to ' + toTown.name + ' on ' + shipLabel + '.');
         return { success: true, message: 'Sea caravan sent to ' + toTown.name + ' on ' + shipLabel + '.', caravan: caravan };
@@ -8954,6 +8990,412 @@
     }
 
     // ========================================================
+    // §11.5B2 DIRECTED KING COMMISSIONS (Player-side)
+    // ========================================================
+
+    function checkKingCommissions() {
+        if (!player.socialRank) return;
+        var kingdoms = [];
+        try { kingdoms = Engine.getKingdoms ? Engine.getKingdoms() : []; } catch(e) {}
+
+        for (var ki = 0; ki < kingdoms.length; ki++) {
+            var k = kingdoms[ki];
+            var rank = player.socialRank[k.id] || 0;
+            if (rank < 4) continue;
+
+            // Check for deadline failures
+            if (typeof Engine.checkDirectedCommissionDeadline === 'function') {
+                var deadlineResult = Engine.checkDirectedCommissionDeadline(k.id);
+                if (deadlineResult && deadlineResult.expired) {
+                    player.reputation[k.id] = Math.max(0, (player.reputation[k.id] || 50) - deadlineResult.repLoss);
+                    if (typeof UI !== 'undefined' && UI.toast) UI.toast('⏳ You ignored the king\'s commission! (-' + deadlineResult.repLoss + ' reputation)', 'danger');
+                }
+                if (deadlineResult && deadlineResult.failed) {
+                    player.reputation[k.id] = Math.max(0, (player.reputation[k.id] || 50) - deadlineResult.repLoss);
+                    if (deadlineResult.demotionTriggered) {
+                        // Lord demotion for failing mandatory commission
+                        player.socialRank[k.id] = 4; // demote to Minor Noble
+                        player.reputation[k.id] = Math.min(player.reputation[k.id] || 50, 60);
+                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('❌ You failed the king\'s commission! Demoted to Minor Noble!', 'danger');
+                        autoJournalCapture('politics', 'I failed the king\'s commission. My lordship has been revoked.', { mood: 'devastated' });
+                    } else {
+                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('❌ Commission deadline passed! (-' + deadlineResult.repLoss + ' reputation)', 'warning');
+                    }
+                }
+            }
+
+            // Check for new commission notification
+            var comm = null;
+            try { comm = Engine.getDirectedPlayerCommission(k.id); } catch(e) {}
+            if (comm && comm.status === 'pending' && !player._lastCommNotified) {
+                player._lastCommNotified = comm.id;
+                if (typeof UI !== 'undefined' && UI.toast) {
+                    UI.toast('👑 The King of ' + k.name + ' has a personal commission for you!', 'info', 'commission');
+                }
+                autoJournalCapture('politics', 'The king has personally tasked me with: ' + comm.description, { mood: 'dutiful' });
+            } else if (!comm || comm.status !== 'pending') {
+                if (player._lastCommNotified) player._lastCommNotified = null;
+            }
+        }
+    }
+
+    function acceptKingCommission(kingdomId) {
+        if (!kingdomId) kingdomId = player.citizenshipKingdomId;
+        if (!kingdomId) return { success: false, message: 'No kingdom specified.' };
+        var result = Engine.respondToDirectedCommission(kingdomId, true);
+        if (result && result.success) {
+            autoJournalCapture('politics', 'I have accepted the king\'s commission. Time to deliver.', { mood: 'determined' });
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('✅ Commission accepted!', 'success');
+        }
+        return result;
+    }
+
+    function refuseKingCommission(kingdomId) {
+        if (!kingdomId) kingdomId = player.citizenshipKingdomId;
+        if (!kingdomId) return { success: false, message: 'No kingdom specified.' };
+        var result = Engine.respondToDirectedCommission(kingdomId, false);
+        if (result && result.success) {
+            player.reputation[kingdomId] = Math.max(0, (player.reputation[kingdomId] || 50) - result.repLoss);
+            if (result.demotionTriggered) {
+                // Lord refused mandatory commission — immediate demotion
+                player.socialRank[kingdomId] = 4; // Minor Noble
+                player.reputation[kingdomId] = Math.min(player.reputation[kingdomId] || 50, 60);
+                autoJournalCapture('politics', 'I refused the king\'s commission as a Lord. I have been stripped of my lordship.', { mood: 'devastated' });
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('❌ You refused a mandatory commission! Demoted to Minor Noble! (-20 rep)', 'danger');
+            } else {
+                autoJournalCapture('politics', 'I refused the king\'s commission. He is displeased.', { mood: 'anxious' });
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('❌ Commission refused. (-' + result.repLoss + ' reputation)', 'warning');
+            }
+        }
+        return result;
+    }
+
+    function deliverKingCommission(kingdomId) {
+        if (!kingdomId) kingdomId = player.citizenshipKingdomId;
+        if (!kingdomId) return { success: false, message: 'No kingdom specified.' };
+        var result = Engine.deliverDirectedCommission(kingdomId);
+        if (result && result.success) {
+            player.reputation[kingdomId] = Math.min(100, (player.reputation[kingdomId] || 50) + result.repReward);
+            player.gold += result.reward;
+            grantXP(result.reward / 10, 'commission');
+            autoJournalCapture('politics', 'I delivered on the king\'s commission! Earned ' + result.reward + 'g and the king\'s favor.', { mood: 'proud' });
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('✅ Commission delivered! +' + result.reward + 'g, +' + result.repReward + ' rep!', 'success');
+        }
+        return result;
+    }
+
+    function getActiveKingCommission(kingdomId) {
+        if (!kingdomId) kingdomId = player.citizenshipKingdomId;
+        if (!kingdomId) return null;
+        try { return Engine.getDirectedPlayerCommission(kingdomId); } catch(e) { return null; }
+    }
+
+    // ========================================================
+    // §11.5B3 ROYAL ADVISOR — PROPOSE LAWS (Player-side)
+    // ========================================================
+
+    function proposeLaw(kingdomId, lawId) {
+        if (!kingdomId) kingdomId = player.royalAdvisorKingdomId || player.citizenshipKingdomId;
+        if (!kingdomId) return { success: false, message: 'No kingdom specified.' };
+        var rank = player.socialRank[kingdomId] || 0;
+        if (rank < 6) return { success: false, message: 'Only Royal Advisors can propose laws.' };
+
+        if (player.politicalCapital <= 0) return { success: false, message: 'No political capital remaining this season.' };
+
+        var result = Engine.proposeLaw(kingdomId, lawId);
+        if (result && result.success) {
+            if (result.accepted) {
+                grantXP(75, 'propose_law');
+                autoJournalCapture('politics', 'I proposed ' + result.law + ' and the king agreed! The law is now in effect.', { mood: 'triumphant' });
+            } else {
+                autoJournalCapture('politics', 'I proposed ' + result.law + ' but the king rejected it. Perhaps I should try a different approach.', { mood: 'disappointed' });
+            }
+        }
+        return result;
+    }
+
+    function getProposableLaws(kingdomId) {
+        if (!kingdomId) kingdomId = player.royalAdvisorKingdomId || player.citizenshipKingdomId;
+        if (!kingdomId) return [];
+        try { return Engine.getProposableLaws(kingdomId); } catch(e) { return []; }
+    }
+
+    // ========================================================
+    // §11.5B4 GRADUATION CEREMONIES — Rank Promotion Events
+    // ========================================================
+
+    var RANK_CEREMONIES = {
+        1: {
+            title: '🏛️ Citizenship Ceremony',
+            narrative: function(name, kingdom) {
+                return '<div style="padding:15px;">' +
+                    '<div style="text-align:center;margin-bottom:15px;">' +
+                    '<div style="font-size:2.5em;">🏛️</div>' +
+                    '<h3 style="color:var(--gold);margin:5px 0;">Citizenship Granted!</h3>' +
+                    '</div>' +
+                    '<p style="font-style:italic;color:var(--text-secondary);margin:10px 0;text-align:center;">' +
+                    'A warm spring morning. The town square is lined with well-wishers as you approach the registry office.</p>' +
+                    '<p>A grey-bearded clerk adjusts his spectacles and unrolls a parchment. ' +
+                    '"By decree of the crown of ' + kingdom + ', let it be recorded that <b>' + name + '</b>, ' +
+                    'having dwelt among us lawfully for the required duration, having demonstrated good character ' +
+                    'and honest conduct, is hereby granted the full rights of citizenship."</p>' +
+                    '<p>He dips a quill in ink and slides the ledger toward you. Your hand is steady as you sign your name. ' +
+                    'The small crowd applauds politely. A merchant you\'ve traded with raises a mug in your direction. ' +
+                    'A neighbor clasps your shoulder. It\'s a modest ceremony — but the parchment in your hands changes everything.</p>' +
+                    '<p style="text-align:center;margin-top:5px;">You are no longer a stranger here. <b>' + kingdom + ' is your home.</b></p>' +
+                    '<div style="margin-top:15px;padding:12px;background:rgba(100,200,100,0.08);border:1px solid rgba(100,200,100,0.3);border-radius:6px;">' +
+                    '<div style="color:var(--gold);font-weight:bold;margin-bottom:8px;">📜 Rights of Citizenship</div>' +
+                    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:0.9em;">' +
+                    '<div>🏠 Own up to 2 buildings</div>' +
+                    '<div>🌾 Own up to 3 land plots</div>' +
+                    '<div>📜 File 1 petition per year</div>' +
+                    '<div>🪙 Purchase trade licenses</div>' +
+                    '<div>🗳️ Vote in town matters</div>' +
+                    '<div>👥 Hire up to 4 workers</div>' +
+                    '<div>📉 5% trade tax discount</div>' +
+                    '<div>🛡️ Legal protections</div>' +
+                    '</div></div></div>';
+            }
+        },
+        2: {
+            title: '⚖️ Burgher Investiture',
+            narrative: function(name, kingdom) {
+                return '<div style="padding:15px;">' +
+                    '<div style="text-align:center;margin-bottom:15px;">' +
+                    '<div style="font-size:2.5em;">⚖️🏪</div>' +
+                    '<h3 style="color:var(--gold);margin:5px 0;">Burgher of ' + kingdom + '!</h3>' +
+                    '</div>' +
+                    '<p style="font-style:italic;color:var(--text-secondary);margin:10px 0;text-align:center;">' +
+                    'The Guild Hall smells of oak and old money. Chandeliers cast amber light across carved rafters.</p>' +
+                    '<p>Every seat is taken — merchants in fine coats, wives in their best dresses, apprentices peering from the balcony. ' +
+                    'The Guild Master, a stout woman with sharp eyes and rings on every finger, rises from her chair and strikes ' +
+                    'the oak table three times with a silver-headed gavel.</p>' +
+                    '<p>"The Guild of Merchants and Tradespeople has reviewed the petition of <b>' + name + '</b>. ' +
+                    'Fifty trades completed. A building stands in this kingdom bearing their name. ' +
+                    'Ninety days of honest commerce recorded. The council votes... <b>unanimously in favor.</b>"</p>' +
+                    '<p>She lifts a heavy silver medallion from a velvet cushion — the Burgher\'s Seal, ' +
+                    'engraved with scales and a merchant ship — and places it around your neck. ' +
+                    'The hall erupts in applause. Established traders study you with newfound interest. ' +
+                    'The apprentices whisper about what kind of merchant you\'ll become.</p>' +
+                    '<p style="text-align:center;margin-top:5px;">You are no longer a small trader. <b>You are part of the merchant class.</b></p>' +
+                    '<div style="margin-top:15px;padding:12px;background:rgba(100,200,100,0.08);border:1px solid rgba(100,200,100,0.3);border-radius:6px;">' +
+                    '<div style="color:var(--gold);font-weight:bold;margin-bottom:8px;">📜 Burgher Privileges</div>' +
+                    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:0.9em;">' +
+                    '<div>🏭 Build processing workshops</div>' +
+                    '<div>💎 Buy & sell luxury goods</div>' +
+                    '<div>⚔️ Hire caravan guards</div>' +
+                    '<div>🔗 Manage supply chains</div>' +
+                    '<div>📜 File 2 petitions per year</div>' +
+                    '<div>👥 Hire up to 15 workers</div>' +
+                    '<div>🏠 Own up to 8 buildings</div>' +
+                    '<div>📉 5% trade tax discount</div>' +
+                    '</div></div></div>';
+            }
+        },
+        3: {
+            title: '🏆 Guildmaster Elevation',
+            narrative: function(name, kingdom) {
+                return '<div style="padding:15px;">' +
+                    '<div style="text-align:center;margin-bottom:15px;">' +
+                    '<div style="font-size:2.5em;">🏆⚜️</div>' +
+                    '<h3 style="color:var(--gold);margin:5px 0;">Guildmaster ' + name + '!</h3>' +
+                    '</div>' +
+                    '<p style="font-style:italic;color:var(--text-secondary);margin:10px 0;text-align:center;">' +
+                    'A grand feast in the largest hall in the city. The aroma of roasted boar and spiced wine fills the air.</p>' +
+                    '<p>The hall overflows — merchants, workers, minor nobles, even a representative of the crown. ' +
+                    'Banners bearing the seals of every guild hang from the rafters. ' +
+                    'Your workers sit at a long table near the front, scrubbed clean and looking proud.</p>' +
+                    '<p>The Lord Mayor steps onto the dais, unfurling an illuminated scroll. ' +
+                    '"<b>' + name + '</b> has built a trade empire spanning multiple towns. Three production buildings. ' +
+                    'Eight loyal workers. Two hundred and fifty goods moved by caravan across the realm. ' +
+                    'By the power vested in this council, and with the blessing of the crown of ' + kingdom + ', ' +
+                    'I proclaim them <b>Guildmaster</b>!"</p>' +
+                    '<p>A golden scepter, symbol of guild authority, is placed in your hands. The crowd rises to their feet. ' +
+                    'Your longest-serving worker leads the cheer. A minor noble nods with grudging respect. ' +
+                    'The tax collector looks slightly nervous. Outside, a caravan driver raises a lantern in salute.</p>' +
+                    '<p style="text-align:center;margin-top:5px;"><b>The trade routes of ' + kingdom + ' now answer to you.</b></p>' +
+                    '<div style="margin-top:15px;padding:12px;background:rgba(100,200,100,0.08);border:1px solid rgba(100,200,100,0.3);border-radius:6px;">' +
+                    '<div style="color:var(--gold);font-weight:bold;margin-bottom:8px;">📜 Guildmaster Privileges</div>' +
+                    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:0.9em;">' +
+                    '<div>🛤️ Build roads between towns</div>' +
+                    '<div>💰 Build toll roads</div>' +
+                    '<div>⛵ Establish sea routes</div>' +
+                    '<div>🔓 Exempt from guild monopolies</div>' +
+                    '<div>⚔️ Trade weapons legally</div>' +
+                    '<div>📜 File 4 petitions per year</div>' +
+                    '<div>👥 Hire up to 35 workers</div>' +
+                    '<div>📉 5% trade tax discount</div>' +
+                    '</div></div></div>';
+            }
+        },
+        4: {
+            title: '⚔️ Knighting Ceremony',
+            narrative: function(name, kingdom) {
+                return '<div style="padding:15px;">' +
+                    '<div style="text-align:center;margin-bottom:15px;">' +
+                    '<div style="font-size:2.5em;">⚔️👑🛡️</div>' +
+                    '<h3 style="color:var(--gold);margin:5px 0;">Arise, Noble ' + name + '!</h3>' +
+                    '</div>' +
+                    '<p style="font-style:italic;color:var(--text-secondary);margin:10px 0;text-align:center;">' +
+                    'The throne room. Marble pillars reach toward a vaulted ceiling painted with constellations. Hundreds watch in silence.</p>' +
+                    '<p>You walk the long aisle between ranks of armored knights, past rows of nobles in silk and velvet, ' +
+                    'past courtiers who have spent lifetimes jockeying for the position you are about to receive. ' +
+                    'Your footsteps echo against stone.</p>' +
+                    '<p>At the foot of the throne, you kneel. The king draws the royal sword — its blade catches the light ' +
+                    'from stained glass windows. The court holds its breath.</p>' +
+                    '<p>The blade touches your right shoulder. Then your left. ' +
+                    '"By the authority vested in me as sovereign of ' + kingdom + ', for service to crown and realm, ' +
+                    'I hereby elevate <b>' + name + '</b> to the rank of <b>Minor Noble</b>. ' +
+                    'Rise, and serve this realm with honor and duty."</p>' +
+                    '<p>As you stand, four armored guards in royal livery march forward and kneel before you — ' +
+                    'your personal escort, sworn to your protection and paid by the crown. ' +
+                    'The herald announces your name and new title. The court bows. ' +
+                    'From the gallery, you catch the envious glances of those who dreamed of standing where you stand now.</p>' +
+                    '<p style="text-align:center;margin-top:5px;"><b>You have entered the aristocracy of ' + kingdom + '.</b></p>' +
+                    '<div style="margin-top:15px;padding:12px;background:rgba(100,200,100,0.08);border:1px solid rgba(100,200,100,0.3);border-radius:6px;">' +
+                    '<div style="color:var(--gold);font-weight:bold;margin-bottom:8px;">📜 Noble Privileges</div>' +
+                    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:0.9em;">' +
+                    '<div>🛡️ 4 kingdom-paid personal guards</div>' +
+                    '<div>👑 Influence the king directly</div>' +
+                    '<div>📋 Request production permits</div>' +
+                    '<div>💍 Noble marriage opportunities</div>' +
+                    '<div>🌍 Foreign Minor Noble status</div>' +
+                    '<div>📜 File 6 petitions per year</div>' +
+                    '<div>👥 Hire up to 70 workers</div>' +
+                    '<div>📉 5% trade tax discount</div>' +
+                    '</div></div>' +
+                    '<div style="margin-top:10px;padding:12px;background:rgba(200,100,100,0.08);border:1px solid rgba(200,100,100,0.3);border-radius:6px;">' +
+                    '<div style="color:#ff8888;font-weight:bold;margin-bottom:8px;">⚠️ Noble Responsibilities</div>' +
+                    '<div style="font-size:0.9em;">' +
+                    '<div style="margin:3px 0;">👑 The king may assign you personal commissions — refusal costs 5-10 reputation</div>' +
+                    '<div style="margin:3px 0;">📊 Kingdom reputation must stay above 60 — or risk demotion to Guildmaster</div>' +
+                    '<div style="margin:3px 0;">⚔️ Selling weapons to enemy kingdoms risks execution if caught</div>' +
+                    '<div style="margin:3px 0;">🌍 Foreign status revoked if your kingdom goes to war with that kingdom</div>' +
+                    '<div style="margin:3px 0;">🏛️ You are now a public figure — criminal actions cost reputation</div>' +
+                    '</div></div></div>';
+            }
+        },
+        5: {
+            title: '🏰 Lord\'s Investiture',
+            narrative: function(name, kingdom) {
+                return '<div style="padding:15px;">' +
+                    '<div style="text-align:center;margin-bottom:15px;">' +
+                    '<div style="font-size:2.5em;">🏰👑⚜️</div>' +
+                    '<h3 style="color:var(--gold);margin:5px 0;">Lord ' + name + ' of ' + kingdom + '!</h3>' +
+                    '</div>' +
+                    '<p style="font-style:italic;color:var(--text-secondary);margin:10px 0;text-align:center;">' +
+                    'The cathedral bells ring across the entire kingdom. This day will be remembered.</p>' +
+                    '<p>Every noble, knight, and dignitary in the realm has gathered in the great cathedral. ' +
+                    'Sunlight streams through the rose window, casting jeweled patterns across the marble floor. ' +
+                    'Soldiers in polished armor line the walls. The choir falls silent as you approach the altar.</p>' +
+                    '<p>The king himself descends two steps from the throne — a gesture reserved for the highest honors. ' +
+                    'A velvet cloak, deep crimson trimmed with ermine, is draped across your shoulders by two attendants.</p>' +
+                    '<p>"For years of faithful service, for an enterprise that has enriched every corner of this realm, ' +
+                    'for infrastructure that binds our towns together, and for unwavering loyalty through trial and triumph — ' +
+                    'I name <b>' + name + '</b> a <b>Lord</b> of ' + kingdom + '."</p>' +
+                    '<p>The king presses a sealed deed of lordship into your hands, bearing the royal sigil in red wax. ' +
+                    'The herald reads the titles: Lord, Protector, Governor. ' +
+                    'Outside, the people of your town hear the cathedral bells and know — their lord has come.</p>' +
+                    '<p style="text-align:center;margin-top:5px;"><b>You are among the most powerful people in ' + kingdom + '.</b></p>' +
+                    '<div style="margin-top:15px;padding:12px;background:rgba(100,200,100,0.08);border:1px solid rgba(100,200,100,0.3);border-radius:6px;">' +
+                    '<div style="color:var(--gold);font-weight:bold;margin-bottom:8px;">📜 Lord Privileges</div>' +
+                    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:0.9em;">' +
+                    '<div>🏰 Govern a town of your choice</div>' +
+                    '<div>🏗️ Build anywhere in the kingdom</div>' +
+                    '<div>🔓 Criminal immunity in your lord town</div>' +
+                    '<div>⚔️ Raise militia for defense</div>' +
+                    '<div>🚫 Legally trade banned goods</div>' +
+                    '<div>🌍 Foreign Noble status (Burgher abroad)</div>' +
+                    '<div>🛡️ Caravan guards paid by the crown</div>' +
+                    '<div>📜 File 12 petitions per year</div>' +
+                    '<div>👥 Unlimited workers & buildings</div>' +
+                    '<div>📉 5% trade tax discount</div>' +
+                    '</div></div>' +
+                    '<div style="margin-top:10px;padding:12px;background:rgba(200,100,100,0.08);border:1px solid rgba(200,100,100,0.3);border-radius:6px;">' +
+                    '<div style="color:#ff8888;font-weight:bold;margin-bottom:8px;">⚠️ Lord Responsibilities</div>' +
+                    '<div style="font-size:0.9em;">' +
+                    '<div style="margin:3px 0;">👑 <b>King commissions are MANDATORY</b> — refusal means immediate demotion to Minor Noble</div>' +
+                    '<div style="margin:3px 0;">⚔️ During war, you MUST produce weapons/armor for the king on schedule — failure means demotion</div>' +
+                    '<div style="margin:3px 0;">📊 Kingdom reputation must stay above 60 — or face demotion</div>' +
+                    '<div style="margin:3px 0;">⚠️ Higher chance of being caught selling weapons to enemies</div>' +
+                    '<div style="margin:3px 0;">💀 If the kingdom falls in war, you may be jailed and stripped of rank</div>' +
+                    '<div style="margin:3px 0;">🌍 Foreign Noble status revoked during wartime — assets may be seized</div>' +
+                    '</div></div></div>';
+            }
+        },
+        6: {
+            title: '👑 Royal Advisor Ascension',
+            narrative: function(name, kingdom) {
+                return '<div style="padding:15px;">' +
+                    '<div style="text-align:center;margin-bottom:15px;">' +
+                    '<div style="font-size:2.5em;">👑✨🏛️⚜️</div>' +
+                    '<h3 style="color:var(--gold);margin:5px 0;">Royal Advisor ' + name + '!</h3>' +
+                    '<div style="color:var(--text-secondary);font-style:italic;">The Pinnacle of Power</div>' +
+                    '</div>' +
+                    '<p style="font-style:italic;color:var(--text-secondary);margin:10px 0;text-align:center;">' +
+                    'The throne room has never been so full. This ceremony has not been performed in living memory.</p>' +
+                    '<p>Every noble house is represented. Lords stand in their finest armor. Foreign ambassadors watch from a screened gallery. ' +
+                    'The air is thick with incense and history. A thousand candles burn in the great chandelier overhead.</p>' +
+                    '<p>The king does something no one in the hall has ever seen — he descends fully from the throne and walks to meet you ' +
+                    'on the floor of the court, as an equal. Gasps ripple through the congregation.</p>' +
+                    '<p>He takes both your hands. His voice carries to every corner of the silent hall:</p>' +
+                    '<p style="margin:10px 20px;font-style:italic;">"In all my years upon this throne, I have never met a mind so sharp, ' +
+                    'a spirit so loyal, or a will so tireless. <b>' + name + '</b>, you have fed the hungry, armed the soldiers, ' +
+                    'built roads where there were none, and brought prosperity to every town you touched. ' +
+                    'There is no greater honor left for me to give."</p>' +
+                    '<p>He lifts a golden circlet — thin, elegant, set with a single sapphire — and places it upon your brow. ' +
+                    'Then he gestures to the empty seat beside the throne.</p>' +
+                    '<p>"From this day, you sit at my right hand. You are my voice when I am silent, my eyes when I cannot see, ' +
+                    'my judgment when I falter. You are the <b>Royal Advisor</b> of ' + kingdom + '."</p>' +
+                    '<p>The cathedral erupts. Every lord, knight, and dignitary rises. The bells begin to ring — ' +
+                    'not the single toll of ceremony, but a full peal that will echo across the kingdom for an hour. ' +
+                    'As you take your seat beside the throne, you look out across the sea of faces and understand: ' +
+                    'there is only one person in this room more powerful than you.</p>' +
+                    '<p style="text-align:center;margin-top:5px;font-weight:bold;color:var(--gold);">You are the second most powerful person in ' + kingdom + '.</p>' +
+                    '<div style="margin-top:15px;padding:12px;background:rgba(100,200,100,0.08);border:1px solid rgba(100,200,100,0.3);border-radius:6px;">' +
+                    '<div style="color:var(--gold);font-weight:bold;margin-bottom:8px;">📜 Royal Advisor Privileges</div>' +
+                    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:0.9em;">' +
+                    '<div>📜 Propose and enact new laws</div>' +
+                    '<div>👑 King consults you on ALL decisions</div>' +
+                    '<div>💰 Complete tax immunity</div>' +
+                    '<div>🔓 Full criminal immunity</div>' +
+                    '<div>🏛️ Kingdom can never seize your assets</div>' +
+                    '<div>🗳️ Vote in royal succession</div>' +
+                    '<div>👑 Sway over the king\'s decisions</div>' +
+                    '<div>📜 Unlimited petitions per year</div>' +
+                    '<div>📉 5% trade tax discount</div>' +
+                    '<div>♾️ No limits on workers or buildings</div>' +
+                    '</div></div>' +
+                    '<div style="margin-top:10px;padding:12px;background:rgba(200,100,100,0.08);border:1px solid rgba(200,100,100,0.3);border-radius:6px;">' +
+                    '<div style="color:#ff8888;font-weight:bold;margin-bottom:8px;">⚠️ The Weight of the Crown</div>' +
+                    '<div style="font-size:0.9em;">' +
+                    '<div style="margin:3px 0;">👑 <b>All king commissions are mandatory</b> — failure means demotion</div>' +
+                    '<div style="margin:3px 0;">⚔️ During war, you must produce weapons on the king\'s schedule or lose your title</div>' +
+                    '<div style="margin:3px 0;">📊 Kingdom reputation must stay above <b>80</b> — falling below means demotion to Lord</div>' +
+                    '<div style="margin:3px 0;">🌍 You cannot hold any rank higher than Foreign Noble in other kingdoms</div>' +
+                    '<div style="margin:3px 0;">⚠️ Very high chance of being caught selling weapons to enemies — execution if caught</div>' +
+                    '<div style="margin:3px 0;">💀 <b>If the kingdom falls</b>, the new ruler decides your fate — imprisonment, exile, or execution</div>' +
+                    '<div style="margin:3px 0;">🏛️ You are now bound to this kingdom — your fate is tied to the king\'s</div>' +
+                    '</div></div></div>';
+            }
+        }
+    };
+
+    function showRankCeremony(newRank, kingdomId) {
+        var ceremony = RANK_CEREMONIES[newRank];
+        if (!ceremony) return;
+        var kingdom = null;
+        try { kingdom = Engine.findKingdom(kingdomId); } catch(e) {}
+        var kingdomName = kingdom ? kingdom.name : 'the kingdom';
+        var playerName = player.fullName || (player.firstName + ' ' + player.lastName) || 'Merchant';
+
+        var html = ceremony.narrative(playerName, kingdomName);
+        if (typeof UI !== 'undefined' && UI.openModal) {
+            UI.openModal(ceremony.title, html, '<button class="btn-medieval" onclick="UI.closeModal()">Continue</button>');
+        }
+    }
+
+    // ========================================================
     // §11.5C TOWN REPUTATION
     // ========================================================
     function modifyTownReputation(townId, amount) {
@@ -13904,6 +14346,8 @@
             royalAdvisorBenefits: player.royalAdvisorBenefits ? JSON.parse(JSON.stringify(player.royalAdvisorBenefits)) : null,
             politicalCapital: player.politicalCapital || 0,
             politicalCapitalResetDay: player.politicalCapitalResetDay || 0,
+            lordTownId: player.lordTownId || null,
+            _repWarnDay: JSON.parse(JSON.stringify(player._repWarnDay || {})),
             // Town Reputation
             townReputation: JSON.parse(JSON.stringify(player.townReputation || {})),
             // Town Quests
@@ -14257,6 +14701,8 @@
         player.royalAdvisorBenefits = data.royalAdvisorBenefits || null;
         player.politicalCapital = data.politicalCapital || 0;
         player.politicalCapitalResetDay = data.politicalCapitalResetDay || 0;
+        player.lordTownId = data.lordTownId || null;
+        player._repWarnDay = data._repWarnDay || {};
         // Town Reputation
         player.townReputation = data.townReputation || {};
         // Town Quests
@@ -15265,6 +15711,9 @@
         // Special start scenario ticks
         tickSpecialStarts();
 
+        // Check for king-directed commissions (Minor Noble+)
+        checkKingCommissions();
+
         // Pay employee wages weekly (workers quit if unpaid too long)
         const day = Engine.getDay();
 
@@ -15423,6 +15872,95 @@
                 const p = Engine.findPerson(wId);
                 return p && p.alive && player.employees.includes(wId);
             });
+        }
+
+        // ========================================================
+        // §N-2: Kingdom Reputation Demotion Check (weekly)
+        // Minor Noble (rank 4): rep < 60 for 30 days → demoted to Guildmaster (rank 3)
+        // Royal Advisor (rank 6): rep < 80 for 30 days → demoted to Lord (rank 5)
+        // ========================================================
+        if (day % 7 === 0) {
+            for (var _dkId in player.socialRank) {
+                var _dRank = player.socialRank[_dkId] || 0;
+                var _dRep = player.reputation[_dkId] || 50;
+                var _dThreshold = 0;
+                var _dDemoteTo = 0;
+                var _dLabel = '';
+
+                if (_dRank === 4 && _dRep < 60) {
+                    _dThreshold = 60; _dDemoteTo = 3; _dLabel = 'Minor Noble';
+                } else if (_dRank === 6 && _dRep < 80) {
+                    _dThreshold = 80; _dDemoteTo = 5; _dLabel = 'Royal Advisor';
+                } else if (_dRank === 5 && _dRep < 60) {
+                    // Lords also lose rank if rep drops below 60
+                    _dThreshold = 60; _dDemoteTo = 3; _dLabel = 'Lord';
+                }
+
+                if (_dThreshold > 0) {
+                    if (!player._repWarnDay[_dkId]) {
+                        // First time below threshold — start the 30-day timer
+                        player._repWarnDay[_dkId] = day;
+                        var _dkName = 'the kingdom';
+                        try { var _dk = Engine.findKingdom(_dkId); if (_dk) _dkName = _dk.name; } catch(e) {}
+                        Engine.logEvent('⚠️ ' + player.fullName + '\'s reputation in ' + _dkName + ' has fallen below ' + _dThreshold + '! If it stays below for 30 days, they will be demoted from ' + _dLabel + '.');
+                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚠️ Rep below ' + _dThreshold + ' in ' + _dkName + '! 30 days to recover or lose ' + _dLabel + ' status.', 'danger');
+                    } else if (day - player._repWarnDay[_dkId] >= 30) {
+                        // 30 days have passed below threshold — demote!
+                        var _oldRankName = (CONFIG.SOCIAL_RANKS[_dRank] || {}).name || _dLabel;
+                        var _newRankName = (CONFIG.SOCIAL_RANKS[_dDemoteTo] || {}).name || 'lower rank';
+                        player.socialRank[_dkId] = _dDemoteTo;
+                        player.rankSince[_dkId] = day;
+                        delete player._repWarnDay[_dkId];
+
+                        // If demoted from Lord, clear lord town and return kingdom buildings
+                        if (_dRank >= 5 && _dDemoteTo < 5) {
+                            _handleLordDemotion(_dkId);
+                        }
+                        // If demoted from RA, clear RA state
+                        if (_dRank >= 6 && _dDemoteTo < 6) {
+                            if (player.royalAdvisorKingdomId === _dkId) {
+                                player.royalAdvisorKingdomId = null;
+                                player.isRoyalAdvisorFromKing = false;
+                                player.royalAdvisorBenefits = null;
+                            }
+                        }
+
+                        var _dkName2 = 'the kingdom';
+                        try { var _dk2 = Engine.findKingdom(_dkId); if (_dk2) _dkName2 = _dk2.name; } catch(e) {}
+                        Engine.logEvent('📉 ' + player.fullName + ' has been demoted from ' + _oldRankName + ' to ' + _newRankName + ' in ' + _dkName2 + ' due to sustained low reputation!');
+                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('📉 Demoted from ' + _oldRankName + ' to ' + _newRankName + '! Reputation too low for too long.', 'danger');
+                        autoJournalCapture('politics', 'I have been stripped of my ' + _oldRankName + ' status in ' + _dkName2 + '. My reputation fell too low.', { mood: 'devastated' });
+                    }
+                } else {
+                    // Rep is above threshold — clear any warning timer
+                    if (player._repWarnDay[_dkId]) {
+                        delete player._repWarnDay[_dkId];
+                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('✅ Reputation recovered! Demotion threat lifted.', 'success');
+                    }
+                }
+            }
+        }
+
+        // Helper: handle lord demotion — clear lordTownId, return kingdom buildings
+        function _handleLordDemotion(kingdomId) {
+            if (player.lordTownId) {
+                var lordTown = Engine.findTown(player.lordTownId);
+                if (lordTown && lordTown.kingdomId === kingdomId) {
+                    // Return player-owned kingdom buildings back to kingdom
+                    var kingdom = null;
+                    try { kingdom = Engine.findKingdom(kingdomId); } catch(e) {}
+                    if (kingdom && lordTown.buildings) {
+                        for (var _bi = 0; _bi < lordTown.buildings.length; _bi++) {
+                            var _b = lordTown.buildings[_bi];
+                            if (_b._wasKingdomOwned && _b.ownerId === 'player') {
+                                _b.ownerId = kingdom.id;
+                                delete _b._wasKingdomOwned;
+                            }
+                        }
+                    }
+                }
+                player.lordTownId = null;
+            }
         }
 
         // Guild monopoly enforcement — seize building helper
@@ -16730,7 +17268,261 @@
         grantXP(XP_REWARDS.NEW_RANK || 100, 'rank');
         Engine.logEvent(`\uD83C\uDF96\uFE0F ${player.fullName} has been promoted to ${rank.name} in ${Engine.findKingdom(kId) ? Engine.findKingdom(kId).name : 'the kingdom'}!`);
         autoJournalCapture('rank', 'I have been promoted to ' + rank.name + '! The kingdom recognizes my worth.', { mood: 'triumphant' });
+
+        // Show graduation ceremony
+        showRankCeremony(newIdx, kId);
+
+        // Lord promotion (rank 5): king offers choice of 3 towns
+        if (newIdx === 5) {
+            _offerLordTownChoice(kId);
+        }
+
+        // Royal Advisor promotion (rank 6): set RA state, enforce foreign rank cap
+        if (newIdx === 6) {
+            player.royalAdvisorKingdomId = kId;
+            player.isRoyalAdvisorFromKing = true;
+            player.royalAdvisorBenefits = { noTaxes: true, immuneToLaws: true, kingdomNeverSeizes: true, swayOverKing: true };
+            // Enforce: RA cannot hold rank higher than foreign noble status elsewhere
+            for (var _raFk in player.socialRank) {
+                if (_raFk !== kId && (player.socialRank[_raFk] || 0) > 2) {
+                    var _raOldRank = player.socialRank[_raFk];
+                    var _foreignLevel = (_raOldRank >= 5) ? 2 : (_raOldRank >= 4) ? 1 : 0;
+                    player.socialRank[_raFk] = _foreignLevel;
+                    var _raFkName = 'another kingdom';
+                    try { var _raFkObj = Engine.findKingdom(_raFk); if (_raFkObj) _raFkName = _raFkObj.name; } catch(e) {}
+                    Engine.logEvent('📉 As Royal Advisor, ' + player.fullName + '\'s rank in ' + _raFkName + ' has been reduced to their foreign noble status level.');
+                }
+            }
+        }
+
         return { success: true, message: `Promoted to ${rank.icon} ${rank.name}! Fee: ${(nextRank.fee || 0).toLocaleString()}g` };
+    }
+
+    // Lord Town Choice — king offers 3 towns when player becomes Lord
+    function _offerLordTownChoice(kingdomId) {
+        var kingdom = null;
+        try { kingdom = Engine.findKingdom(kingdomId); } catch(e) {}
+        if (!kingdom) return;
+
+        var allTowns = (typeof Engine !== 'undefined' && Engine.getTowns) ? Engine.getTowns() : [];
+        var kTowns = allTowns.filter(function(t) {
+            return t.kingdomId === kingdomId && !t.destroyed && !t.abandoned;
+        });
+
+        // Pick 3 towns: prefer towns with buildings, avoid capital if possible
+        var candidates = kTowns.filter(function(t) {
+            return !t.isCapital && t.buildings && t.buildings.length > 2;
+        });
+        if (candidates.length < 3) candidates = kTowns.filter(function(t) { return !t.isCapital; });
+        if (candidates.length < 3) candidates = kTowns;
+
+        // Shuffle and pick 3
+        var rng = Engine.getRng();
+        var shuffled = candidates.slice();
+        if (rng && rng.shuffle) rng.shuffle(shuffled);
+        else { for (var si = shuffled.length - 1; si > 0; si--) { var sj = Math.floor(Math.random() * (si + 1)); var st = shuffled[si]; shuffled[si] = shuffled[sj]; shuffled[sj] = st; } }
+        var choices = shuffled.slice(0, Math.min(3, shuffled.length));
+
+        if (choices.length === 0) {
+            // Fallback: just assign current town
+            player.lordTownId = player.townId;
+            Engine.logEvent('👑 ' + player.fullName + ' has been made Lord of ' + (Engine.findTown(player.townId) || {}).name + '!');
+            return;
+        }
+
+        // Build choice UI
+        if (typeof UI !== 'undefined' && UI.openModal) {
+            var html = '<div style="max-width:500px;padding:8px">';
+            html += '<p style="color:#ccc;margin-bottom:12px">The king speaks: <em style="color:#ffd700">"As a new Lord, I grant you dominion over one of these towns. Choose wisely — you shall govern it, enjoy its taxes, and command its buildings."</em></p>';
+
+            for (var ci = 0; ci < choices.length; ci++) {
+                var ct = choices[ci];
+                var kBldCount = 0;
+                var bldTypes = [];
+                if (ct.buildings) {
+                    for (var bi = 0; bi < ct.buildings.length; bi++) {
+                        if (ct.buildings[bi].ownerId === kingdom.id) {
+                            kBldCount++;
+                            if (bldTypes.indexOf(ct.buildings[bi].type) === -1) bldTypes.push(ct.buildings[bi].type);
+                        }
+                    }
+                }
+                var pop = ct.population || 0;
+                html += '<div onclick="Player._selectLordTown(\'' + ct.id + '\', \'' + kingdomId + '\')" ';
+                html += 'style="padding:12px;margin:8px 0;border:2px solid #8b6914;border-radius:8px;background:rgba(139,105,20,0.1);cursor:pointer;transition:all 0.2s" ';
+                html += 'onmouseover="this.style.borderColor=\'#ffd700\';this.style.background=\'rgba(255,215,0,0.15)\'" ';
+                html += 'onmouseout="this.style.borderColor=\'#8b6914\';this.style.background=\'rgba(139,105,20,0.1)\'">';
+                html += '<div style="font-size:1.1em;font-weight:bold;color:#ffd700">🏰 ' + ct.name + '</div>';
+                html += '<div style="font-size:0.85em;color:#aaa;margin-top:4px">';
+                html += 'Population: ' + pop + ' · Kingdom buildings: ' + kBldCount;
+                if (bldTypes.length > 0) html += '<br>Types: ' + bldTypes.slice(0, 4).join(', ') + (bldTypes.length > 4 ? '...' : '');
+                if (ct.isPort) html += ' · 🚢 Seaport';
+                html += '</div></div>';
+            }
+
+            html += '</div>';
+            UI.openModal('👑 Choose Your Domain', html, '');
+        }
+    }
+
+    // Called from UI when player selects lord town
+    function _selectLordTown(townId, kingdomId) {
+        player.lordTownId = townId;
+        var town = Engine.findTown(townId);
+        var kingdom = null;
+        try { kingdom = Engine.findKingdom(kingdomId); } catch(e) {}
+        var townName = town ? town.name : 'the town';
+
+        // Transfer kingdom-owned buildings to player
+        var transferred = 0;
+        if (town && town.buildings && kingdom) {
+            for (var bi = 0; bi < town.buildings.length; bi++) {
+                var bld = town.buildings[bi];
+                if (bld.ownerId === kingdom.id) {
+                    bld._wasKingdomOwned = true;
+                    bld.ownerId = 'player';
+                    transferred++;
+                }
+            }
+        }
+
+        Engine.logEvent('👑 ' + player.fullName + ' has been made Lord of ' + townName + '! ' + transferred + ' kingdom buildings transferred.');
+        if (typeof UI !== 'undefined') {
+            if (UI.toast) UI.toast('👑 You are now Lord of ' + townName + '! ' + transferred + ' buildings transferred to you.', 'success');
+            if (UI.closeModal) UI.closeModal();
+        }
+        autoJournalCapture('rank', 'The king has made me Lord of ' + townName + '. I now govern this town and its buildings.', { mood: 'proud' });
+    }
+
+    // ========================================================
+    // §N-8: REGIME CHANGE CONSEQUENCES — Player-side handler
+    // Called by engine.js installNewKing() when a regime change affects the player
+    // ========================================================
+    function _handleRegimeChangeConsequence(kingdomId, fate, details) {
+        var kName = 'the kingdom';
+        try { var _k = Engine.findKingdom(kingdomId); if (_k) kName = _k.name; } catch(e) {}
+        var day = Engine.getDay();
+
+        if (fate === 'execution') {
+            // Royal Advisor executed — player dies, triggers inheritance
+            player.socialRank[kingdomId] = 1; // Citizen before death
+            player.rankSince[kingdomId] = day;
+            if (player.royalAdvisorKingdomId === kingdomId) {
+                player.royalAdvisorKingdomId = null;
+                player.isRoyalAdvisorFromKing = false;
+                player.royalAdvisorBenefits = null;
+            }
+            player.lordTownId = null;
+            autoJournalCapture('politics', 'The new ruler of ' + kName + ' has ordered my execution. This is the end.', { mood: 'devastated' });
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('💀 EXECUTED by the new ruler of ' + kName + '!', 'danger');
+            // Trigger player death
+            player.alive = false;
+            player.deathDay = day;
+            player.deathCause = 'Executed by the new ruler of ' + kName;
+            Engine.logEvent('💀 ' + player.fullName + ' was executed by the new ruler of ' + kName + '.');
+
+        } else if (fate === 'jail_seize') {
+            // RA: demoted to Citizen, jailed, gold + buildings seized
+            player.socialRank[kingdomId] = 1;
+            player.rankSince[kingdomId] = day;
+            if (player.royalAdvisorKingdomId === kingdomId) {
+                player.royalAdvisorKingdomId = null;
+                player.isRoyalAdvisorFromKing = false;
+                player.royalAdvisorBenefits = null;
+            }
+            player.lordTownId = null;
+            // Jail
+            var jailDays = details.jailDays || 90;
+            player.jailedUntilDay = day + jailDays;
+            // Seize gold
+            var goldPct = details.goldSeizePct || 0.60;
+            var goldTaken = Math.floor(player.gold * goldPct);
+            player.gold -= goldTaken;
+            player.stats.totalGoldSpent += goldTaken;
+            // Seize buildings in this kingdom
+            if (details.seizeBuildings) {
+                _seizePlayerBuildingsInKingdom(kingdomId);
+            }
+            autoJournalCapture('politics', 'The new ruler of ' + kName + ' has imprisoned me for ' + jailDays + ' days and seized ' + goldTaken + 'g and my buildings. I have been stripped of all titles.', { mood: 'devastated' });
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('⛓️ Imprisoned ' + jailDays + ' days! ' + goldTaken + 'g seized! Demoted to Citizen.', 'danger');
+
+        } else if (fate === 'exile') {
+            // RA: demoted to Citizen, exiled, lose buildings but keep gold
+            player.socialRank[kingdomId] = 1;
+            player.rankSince[kingdomId] = day;
+            if (player.royalAdvisorKingdomId === kingdomId) {
+                player.royalAdvisorKingdomId = null;
+                player.isRoyalAdvisorFromKing = false;
+                player.royalAdvisorBenefits = null;
+            }
+            player.lordTownId = null;
+            if (details.seizeBuildings) {
+                _seizePlayerBuildingsInKingdom(kingdomId);
+            }
+            autoJournalCapture('politics', 'The new ruler of ' + kName + ' has exiled me and seized my property. At least I keep my gold.', { mood: 'devastated' });
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚪 Exiled from ' + kName + '! Buildings seized, gold kept. Demoted to Citizen.', 'danger');
+
+        } else if (fate === 'lord_demotion') {
+            // Lord: demoted to Guildmaster
+            player.socialRank[kingdomId] = 3;
+            player.rankSince[kingdomId] = day;
+            // Return lord town buildings
+            if (player.lordTownId) {
+                var lordTown = Engine.findTown(player.lordTownId);
+                if (lordTown && lordTown.kingdomId === kingdomId) {
+                    var kingdom = null;
+                    try { kingdom = Engine.findKingdom(kingdomId); } catch(e) {}
+                    if (kingdom && lordTown.buildings) {
+                        for (var bi = 0; bi < lordTown.buildings.length; bi++) {
+                            var bld = lordTown.buildings[bi];
+                            if (bld._wasKingdomOwned && bld.ownerId === 'player') {
+                                bld.ownerId = kingdom.id;
+                                delete bld._wasKingdomOwned;
+                            }
+                        }
+                    }
+                }
+                player.lordTownId = null;
+            }
+            // Possible jail + gold seizure
+            if (details.jailDays && details.jailDays > 0) {
+                player.jailedUntilDay = day + details.jailDays;
+            }
+            if (details.goldSeizePct && details.goldSeizePct > 0) {
+                var goldTakenLord = Math.floor(player.gold * details.goldSeizePct);
+                player.gold -= goldTakenLord;
+                player.stats.totalGoldSpent += goldTakenLord;
+            }
+            var jailMsg = (details.jailDays && details.jailDays > 0) ? ' Jailed for ' + details.jailDays + ' days.' : '';
+            autoJournalCapture('politics', 'The new ruler of ' + kName + ' has stripped me of my lordship. Demoted to Guildmaster.' + jailMsg, { mood: 'devastated' });
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('📉 Demoted to Guildmaster in ' + kName + '!' + jailMsg, 'danger');
+        }
+    }
+
+    // Seize all player buildings in towns of the given kingdom
+    function _seizePlayerBuildingsInKingdom(kingdomId) {
+        var allTowns = (typeof Engine !== 'undefined' && Engine.getTowns) ? Engine.getTowns() : [];
+        var seized = 0;
+        for (var ti = 0; ti < allTowns.length; ti++) {
+            var t = allTowns[ti];
+            if (t.kingdomId !== kingdomId || !t.buildings) continue;
+            for (var bi = 0; bi < t.buildings.length; bi++) {
+                var bld = t.buildings[bi];
+                if (bld.ownerId === 'player') {
+                    bld.ownerId = kingdomId;
+                    delete bld._wasKingdomOwned;
+                    seized++;
+                }
+            }
+        }
+        // Also remove from player.buildings array
+        player.buildings = player.buildings.filter(function(b) {
+            var bTown = Engine.findTown(b.townId);
+            return !(bTown && bTown.kingdomId === kingdomId);
+        });
+        if (seized > 0) {
+            Engine.logEvent('🏚️ ' + seized + ' of ' + player.fullName + '\'s buildings were seized by the new regime.');
+        }
     }
 
     // ========================================================
@@ -24345,8 +25137,54 @@
         if (player.corruptionStreak >= 20) unlockAchievement('untouchable_crimes');
     }
 
+    // ========================================================
+    // CRIME IMMUNITY — Lords (in lord town) & Royal Advisors (kingdom-wide)
+    // ========================================================
+    // Returns { immune: true/false, scope: 'lord_town'|'kingdom'|null, repPenalty: 1-5 }
+    function checkCrimeImmunity(townId, kingdomId) {
+        var kId = kingdomId || null;
+        if (!kId && townId) {
+            var t = Engine.findTown(townId);
+            if (t) kId = t.kingdomId;
+        }
+        if (!kId) return { immune: false, scope: null, repPenalty: 0 };
+
+        var rank = player.socialRank[kId] || 0;
+
+        // Royal Advisor (rank 6): immune throughout entire kingdom
+        if (rank >= 6) {
+            return { immune: true, scope: 'kingdom', repPenalty: 2 };
+        }
+
+        // Lord (rank 5): immune only in their lord town
+        if (rank >= 5 && player.lordTownId && player.lordTownId === townId) {
+            return { immune: true, scope: 'lord_town', repPenalty: 3 };
+        }
+
+        return { immune: false, scope: null, repPenalty: 0 };
+    }
+
     function applyCorruptPenalty(town, kingdom, fine, repLoss, jailDays, exile, crimeId) {
         const kId = kingdom ? kingdom.id : (town ? town.kingdomId : null);
+        var townId = town ? (town.id || town) : player.townId;
+
+        // Crime immunity check — Lords in lord town, Royal Advisors kingdom-wide
+        var immunity = checkCrimeImmunity(townId, kId);
+        if (immunity.immune) {
+            // Immune: no fine, no jail, no exile — but still lose reputation
+            var immuneRepLoss = Math.max(immunity.repPenalty, repLoss > 0 ? Math.min(repLoss, 5) : immunity.repPenalty);
+            if (kId) player.reputation[kId] = Math.max(0, (player.reputation[kId] || 50) - immuneRepLoss);
+            var scopeLabel = immunity.scope === 'kingdom' ? 'Royal Advisor' : 'Lord of this town';
+            Engine.logEvent('🔓 ' + player.fullName + ' committed a crime but is immune as ' + scopeLabel + '. (-' + immuneRepLoss + ' reputation)');
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('🔓 Crime immunity! (-' + immuneRepLoss + ' rep)', 'info');
+            // Still track criminal record for RP purposes
+            if (crimeId && kId) {
+                if (!player.criminalRecord) player.criminalRecord = {};
+                if (!player.criminalRecord[kId]) player.criminalRecord[kId] = {};
+                player.criminalRecord[kId][crimeId] = (player.criminalRecord[kId][crimeId] || 0) + 1;
+            }
+            return 0;
+        }
 
         // If a crimeId is specified, look up the kingdom's punishment
         if (crimeId && kId) {
@@ -35765,6 +36603,10 @@
         get isRoyalAdvisorFromKing() { return player.isRoyalAdvisorFromKing || false; },
         get royalAdvisorKingdomId() { return player.royalAdvisorKingdomId; },
         get royalAdvisorBenefits() { return player.royalAdvisorBenefits; },
+        get lordTownId() { return player.lordTownId; },
+        checkCrimeImmunity,
+        _selectLordTown,
+        _handleRegimeChangeConsequence,
         get politicalCapital() { return player.politicalCapital || 0; },
         // Town Reputation
         get townReputation() { return player.townReputation || {}; },
@@ -36365,6 +37207,19 @@
         adviseKing,
         getPendingKingDecisions,
         respondToKingDecision,
+
+        // King Directed Commissions
+        acceptKingCommission,
+        refuseKingCommission,
+        deliverKingCommission,
+        getActiveKingCommission,
+
+        // Royal Advisor — Propose Laws
+        proposeLaw,
+        getProposableLaws,
+
+        // Graduation Ceremonies
+        showRankCeremony,
 
         // Town Reputation
         modifyTownReputation,

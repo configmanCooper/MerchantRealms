@@ -1493,6 +1493,22 @@ window.UI = (function () {
                 <button class="btn-medieval" onclick="UI.openAdviseKingDirectDialog('${town.kingdomId}')" style="font-size:0.85rem;padding:8px 24px;background:rgba(100,150,255,0.15);border-color:rgba(100,150,255,0.4);margin-left:4px;">
                     📜 Royal Counsel
                 </button>
+                <button class="btn-medieval" onclick="UI.openProposeLawsDialog('${town.kingdomId}')" style="font-size:0.85rem;padding:8px 24px;background:rgba(150,100,255,0.15);border-color:rgba(150,100,255,0.4);margin-left:4px;">
+                    ⚖️ Propose Laws
+                </button>
+            </div>`;
+        }
+
+        // King's Commission button (if player is Minor Noble+ in this kingdom)
+        if (isPlayerHere && typeof Player !== 'undefined' && Player.state && Player.state.socialRank &&
+            (Player.state.socialRank[town.kingdomId] || 0) >= 4) {
+            var _comm = Player.getActiveKingCommission ? Player.getActiveKingCommission(town.kingdomId) : null;
+            var _commLabel = _comm ? (_comm.status === 'pending' ? '⚠️ New Commission!' : (_comm.status === 'accepted' ? '📦 Active Commission' : '👑 Commission')) : '👑 King\'s Commission';
+            var _commColor = _comm && _comm.status === 'pending' ? 'rgba(255,165,0,0.15)' : 'rgba(200,200,200,0.1)';
+            html += `<div class="text-center mt-sm">
+                <button class="btn-medieval" onclick="UI.openKingCommissionDialog('${town.kingdomId}')" style="font-size:0.85rem;padding:8px 24px;background:${_commColor};border-color:rgba(255,215,0,0.3);">
+                    ${_commLabel}
+                </button>
             </div>`;
         }
 
@@ -5608,6 +5624,255 @@ window.UI = (function () {
         }
     }
 
+    // NPC greeting based on rank comparison and personality
+    function _getNpcGreeting(person, personName) {
+        if (!person) return '';
+        var pers = person.personality || {};
+        var warmth = pers.warmth || 50;
+        var honesty = pers.honesty || 50;
+        var ambition = pers.ambition || 50;
+        var isWarm = warmth > 60;
+        var isCold = warmth < 40;
+        var isHonest = honesty > 60;
+        var isAmbitious = ambition > 60;
+
+        var npcRank = 0;
+        if (person.socialRank) {
+            for (var kId in person.socialRank) {
+                if ((person.socialRank[kId] || 0) > npcRank) npcRank = person.socialRank[kId];
+            }
+        }
+        if (npcRank === 0 && person.occupation === 'noble') npcRank = 4;
+        if (person.isKing) npcRank = 7;
+
+        var playerRank = 0;
+        if (typeof Player !== 'undefined' && Player.state && Player.state.socialRank) {
+            for (var pk in Player.state.socialRank) {
+                if ((Player.state.socialRank[pk] || 0) > playerRank) playerRank = Player.state.socialRank[pk];
+            }
+        }
+
+        var greetings = [];
+        var occ = person.occupation || '';
+        var fn = personName || 'friend';
+
+        // King greeting player
+        if (npcRank >= 7) {
+            if (playerRank >= 6) greetings = [
+                '"Ah, my trusted advisor. What counsel do you bring me today?"',
+                '"' + fn + '! Come, sit beside me. There are matters of state to discuss."',
+                '"My right hand arrives. Speak freely — your wisdom is always welcome."'
+            ];
+            else if (playerRank >= 5) greetings = [
+                '"Lord ' + (Player.state ? Player.state.lastName : '') + '. I trust your lands prosper?"',
+                '"Ah, one of my lords. What business brings you before the throne?"',
+                '"Welcome, my lord. I hope you bring good tidings from your domain."'
+            ];
+            else if (playerRank >= 4) greetings = [
+                '"Noble ' + (Player.state ? Player.state.lastName : '') + '. You may approach."',
+                '"A minor noble seeks audience. Speak, and be brief."',
+                '"Ah yes, one of our newer nobles. What is it you need?"'
+            ];
+            else greetings = [
+                '"A commoner seeks the king\'s attention? You have one minute."',
+                '"State your business quickly, merchant. The crown\'s time is precious."',
+                '"You are bold to approach me directly. I respect that. What do you want?"'
+            ];
+        }
+        // Noble NPC greeting player
+        else if (npcRank >= 4) {
+            if (playerRank >= 6) greetings = isWarm ? [
+                '"Royal Advisor! What an honor. Please, how may I serve the crown?"',
+                '"My lord advisor! I was just thinking of you. What brings you here?"',
+                '"The king\'s own counsel graces us! How can I be of assistance?"'
+            ] : isCold ? [
+                '"Advisor. I trust this visit has purpose."',
+                '"The Royal Advisor, here? To what do I owe... this."',
+                '"Hmph. The king\'s shadow. What do you want?"'
+            ] : [
+                '"Royal Advisor, welcome. An unexpected pleasure."',
+                '"Advisor ' + (Player.state ? Player.state.lastName : '') + '. Always good to see you."',
+                '"The king\'s advisor visits! I am at your service."'
+            ];
+            else if (playerRank >= 5) greetings = isWarm ? [
+                '"Lord ' + (Player.state ? Player.state.lastName : '') + '! Wonderful to see a fellow lord."',
+                '"A pleasure, my lord. Shall we discuss the affairs of the realm?"',
+                '"Welcome, my peer! The nobility is stronger with allies like you."'
+            ] : isCold ? [
+                '"Lord ' + (Player.state ? Player.state.lastName : '') + '. We meet again."',
+                '"Another lord. I hope your lands are in order."',
+                '"Ah. You. What brings a lord to my company?"'
+            ] : [
+                '"Lord ' + (Player.state ? Player.state.lastName : '') + ', good day. How fare your holdings?"',
+                '"Well met, my lord. A fellow noble is always welcome."',
+                '"Good to see you. The court could use more sensible nobles."'
+            ];
+            else if (playerRank >= 4) greetings = isWarm ? [
+                '"Ah, a fellow noble! Welcome, welcome. We must look out for one another."',
+                '"Noble ' + (Player.state ? Player.state.lastName : '') + '! Splendid to see you."',
+                '"One of our own! Come, let us talk — the nobility must stay united."'
+            ] : isAmbitious ? [
+                '"Another minor noble. I trust you have ambitions beyond this rank?"',
+                '"Noble ' + (Player.state ? Player.state.lastName : '') + '. Still minor, I see. Work harder."',
+                '"Welcome. I remember when I was newly noble too. It gets better."'
+            ] : [
+                '"Good day, noble. The court grows ever more crowded."',
+                '"Noble ' + (Player.state ? Player.state.lastName : '') + '. A pleasure."',
+                '"Ah, a peer. What news from your corner of the realm?"'
+            ];
+            else if (playerRank >= 3) greetings = isWarm ? [
+                '"Guildmaster! I\'ve heard of your achievements. Impressive for a commoner."',
+                '"A guildmaster approaches! Your reputation precedes you."',
+                '"Well now, a guildmaster. You\'re doing well for yourself, aren\'t you?"'
+            ] : isCold ? [
+                '"A merchant? I suppose even tradespeople need something now and then."',
+                '"Guildmaster... yes, I\'ve heard the name. What do you want?"',
+                '"You may speak, merchant. But do make it worth my time."'
+            ] : [
+                '"Ah, the guildmaster. Trade must be treating you well."',
+                '"A merchant of some standing, I see. What can I do for you?"',
+                '"Guildmaster ' + (Player.state ? Player.state.lastName : '') + '. Your reputation grows."'
+            ];
+            else greetings = isWarm ? [
+                '"Good day, friend. Even commoners deserve a kind word."',
+                '"Hello there! Don\'t be nervous — I don\'t bite. Usually."',
+                '"A visitor! How refreshing. The company of nobles can be so tedious."'
+            ] : isCold ? [
+                '"A peasant approaches a noble? How... unusual."',
+                '"Do you have business here, commoner? I am quite busy."',
+                '"I see my guards have let just anyone through today."'
+            ] : [
+                '"Yes? What brings a commoner to my attention?"',
+                '"Good day. I assume you have business to discuss?"',
+                '"Speak up. What can this noble do for a common merchant?"'
+            ];
+        }
+        // Merchant/Guildmaster NPC greeting player
+        else if (occ === 'merchant' || occ === 'trader' || npcRank >= 2) {
+            if (playerRank >= 5) greetings = [
+                '"My lord! It is an honor to have you in my shop!"',
+                '"Lord ' + (Player.state ? Player.state.lastName : '') + '! Please, take your pick — finest goods for finest people."',
+                '"A lord visits! Business must be good when nobility comes calling."'
+            ];
+            else if (playerRank >= 4) greetings = isWarm ? [
+                '"Noble ' + (Player.state ? Player.state.lastName : '') + '! Welcome, welcome! Best prices for you!"',
+                '"A noble in my shop! What an honor. How can I help?"',
+                '"My favorite noble customer! What are you looking for today?"'
+            ] : [
+                '"Ah, a noble. I have some fine goods that might interest someone of your station."',
+                '"Welcome, noble. My prices are fair, as always."',
+                '"A noble customer. I trust you have coin to match your title?"'
+            ];
+            else greetings = isWarm ? [
+                '"Welcome, friend! Come, let me show you what I have today."',
+                '"Ah, a fellow merchant! Always good to see a friendly face."',
+                '"Hello! Looking for a deal? You\'ve come to the right place."'
+            ] : isHonest ? [
+                '"Good day. I deal honestly — what you see is what you get."',
+                '"Another trader. My prices are posted plainly. No haggling."',
+                '"Welcome. Fair goods at fair prices, that\'s my way."'
+            ] : [
+                '"Hmm, a customer. Or competition? Either way, what do you need?"',
+                '"Come to trade? I might have something that interests you."',
+                '"Well well. Another merchant sniffing around. What\'ll it be?"'
+            ];
+        }
+        // Guard/Soldier NPC
+        else if (occ === 'guard' || occ === 'soldier') {
+            if (playerRank >= 5) greetings = [
+                '"My lord! *salutes* All is well on my watch."',
+                '"Lord ' + (Player.state ? Player.state.lastName : '') + '! *stands at attention* How may I serve?"',
+                '"*snaps to attention* My lord! The town is secure."'
+            ];
+            else if (playerRank >= 4) greetings = [
+                '"Noble ' + (Player.state ? Player.state.lastName : '') + '. *nods respectfully* All quiet on the walls."',
+                '"*salutes* Good day, noble. Need an escort somewhere?"',
+                '"Ah, one of our nobles. Rest assured, the watch is vigilant."'
+            ];
+            else greetings = isWarm ? [
+                '"Hey there, citizen. Staying out of trouble, I hope?"',
+                '"Good day! The streets are safe today, thanks to us."',
+                '"Hello friend. If you see anything suspicious, you come find me."'
+            ] : [
+                '"Move along, citizen. Unless you have something to report."',
+                '"What do you want? I\'m on duty."',
+                '"Keep your hands where I can see them. Just routine."'
+            ];
+        }
+        // Craftsman/Worker NPC
+        else if (occ === 'blacksmith' || occ === 'carpenter' || occ === 'baker' || occ === 'craftsman' || occ === 'farmer' || occ === 'fisher') {
+            if (playerRank >= 4) greetings = [
+                '"My noble! *wipes hands on apron* What can this humble ' + occ + ' do for you?"',
+                '"A noble visits my workshop! This is quite the honor."',
+                '"*bows awkwardly* Noble ' + (Player.state ? Player.state.lastName : '') + '! How can I serve?"'
+            ];
+            else greetings = isWarm ? [
+                '"Good day! Hard work makes for honest living, that\'s what I always say."',
+                '"Welcome! Take a look around — finest ' + occ + ' work in town."',
+                '"Ah, hello! Nice to take a break and chat for a moment."'
+            ] : [
+                '"*nods* What do you need? I\'m busy."',
+                '"Make it quick — I\'ve got work to finish."',
+                '"Another visitor. Well, I suppose everyone needs a ' + occ + ' eventually."'
+            ];
+        }
+        // Doctor/Healer NPC
+        else if (occ === 'doctor' || occ === 'healer' || occ === 'herbalist') {
+            greetings = isWarm ? [
+                '"Come in, come in! Are you well? Let me take a look at you."',
+                '"Ah, a visitor! I hope this is social, not medical."',
+                '"Welcome! Prevention is the best medicine, I always say."'
+            ] : [
+                '"Are you sick? No? Then what do you want?"',
+                '"I have patients to attend to. Make it brief."',
+                '"If you\'re healthy, count your blessings and don\'t waste my time."'
+            ];
+        }
+        // Scholar/Priest NPC
+        else if (occ === 'scholar' || occ === 'priest' || occ === 'teacher' || occ === 'monk') {
+            greetings = [
+                '"Ah, a seeker of knowledge! Or perhaps just company? Either way, welcome."',
+                '"Blessings upon you. What brings you to my humble presence?"',
+                '"Knowledge is best shared. What would you like to discuss?"'
+            ];
+        }
+        // Innkeeper/Tavern
+        else if (occ === 'innkeeper' || occ === 'barkeep' || occ === 'tavern_keeper') {
+            greetings = [
+                '"Welcome! Pull up a seat. What\'ll it be?"',
+                '"Ah, a familiar face! Or is it new? I see so many. Drink?"',
+                '"Come in from the cold! We\'ve got warm ale and warmer company."'
+            ];
+        }
+        // Default commoner/peasant
+        else {
+            if (playerRank >= 5) greetings = [
+                '"M-my lord! *bows deeply* I didn\'t expect to see someone like you here!"',
+                '"A lord speaks to the likes of me? What an honor!"',
+                '"*stares in awe* My lord... how can a humble person like me help?"'
+            ];
+            else if (playerRank >= 4) greetings = [
+                '"Noble ' + (Player.state ? Player.state.lastName : '') + '! *curtsies* What brings you to us common folk?"',
+                '"A noble! *straightens clothes* Good day, my noble friend."',
+                '"*looks nervous* A noble wants to talk to me? I-I hope I didn\'t do anything wrong!"'
+            ];
+            else greetings = isWarm ? [
+                '"Hey there, neighbor! How\'s the day treating you?"',
+                '"Oh hello! Always nice to see a friendly face around here."',
+                '"Good day, friend! Come to chat? I could use the company."'
+            ] : [
+                '"What do you want?"',
+                '"Hmph. Another day, another person wanting something."',
+                '"I\'m busy. But fine — what is it?"'
+            ];
+        }
+
+        if (greetings.length === 0) return '';
+        var pick = greetings[Math.floor(Math.random() * greetings.length)];
+        return '<div style="padding:8px 12px;margin-bottom:10px;background:rgba(255,215,0,0.06);border-left:3px solid rgba(255,215,0,0.3);border-radius:0 6px 6px 0;font-style:italic;color:var(--text-secondary,#ccc);font-size:0.9em;">' +
+            '<span style="color:var(--gold,#ffd700);font-weight:bold;">' + fn + ':</span> ' + pick + '</div>';
+    }
+
     function talkToPerson(personId) {
         if (typeof Player === 'undefined' || !Player.getAvailableInteractions) return;
         var interactions = Player.getAvailableInteractions(personId);
@@ -5621,6 +5886,9 @@ window.UI = (function () {
 
         var html = '<div style="max-width:420px;padding:6px">';
         html += '<h3 style="margin:0 0 8px;color:#ffd700">💬 Interact with ' + personName + '</h3>';
+
+        // NPC greeting based on rank and personality
+        html += _getNpcGreeting(person, personName);
 
         var cooldownCount = 0;
         for (var i = 0; i < interactions.length; i++) {
@@ -17757,6 +18025,208 @@ window.UI = (function () {
     }
 
     // ========================================================
+    // KING DIRECTED COMMISSION UI
+    // ========================================================
+    function openKingCommissionDialog(kingdomId) {
+        if (typeof Player === 'undefined') return;
+        if (!kingdomId) {
+            var ps = Player.state;
+            if (ps) kingdomId = ps.citizenshipKingdomId;
+        }
+        if (!kingdomId) { toast('No kingdom.', 'warning'); return; }
+
+        var comm = Player.getActiveKingCommission(kingdomId);
+        var kingdom = null;
+        try { kingdom = Engine.findKingdom(kingdomId); } catch(e) {}
+        var kName = kingdom ? kingdom.name : 'the kingdom';
+
+        var html = '<div class="detail-section">';
+        html += '<h3 style="color:var(--gold);">👑 Royal Commission from ' + kName + '</h3>';
+
+        if (!comm) {
+            html += '<p style="color:var(--text-secondary);">No active commission from the king at this time.</p>';
+            html += '<p class="text-dim">The king may assign you a commission based on your production capabilities.</p>';
+            html += '</div>';
+            openModal('👑 King\'s Commission', html);
+            return;
+        }
+
+        // Urgency colors
+        var urgColor = comm.urgency === 'desperate' ? 'var(--danger)' : (comm.urgency === 'urgent' ? '#ffa500' : 'var(--text-secondary)');
+        var urgLabel = comm.urgency === 'desperate' ? '🔴 DESPERATE' : (comm.urgency === 'urgent' ? '🟠 URGENT' : '🟢 Normal');
+        var daysLeft = comm.deadlineDay - (Engine.getDay ? Engine.getDay() : 0);
+
+        html += '<div style="margin:10px 0;padding:10px;background:rgba(0,0,0,0.3);border-radius:6px;">';
+        html += '<div style="font-size:1.1em;font-weight:bold;">' + comm.description + '</div>';
+        html += '<div style="margin-top:8px;">';
+        html += '<span style="color:' + urgColor + ';">' + urgLabel + '</span> | ';
+        html += '<span style="color:#ffd700;">💰 Reward: ' + comm.reward + 'g</span> | ';
+        html += '<span style="color:#6bff6b;">⭐ Rep: +' + comm.repReward + '</span>';
+        html += '</div>';
+        html += '<div style="margin-top:5px;color:var(--text-secondary);">⏳ ' + (daysLeft > 0 ? daysLeft + ' days remaining' : '<span style="color:var(--danger);">OVERDUE!</span>') + '</div>';
+        if (comm.matchesProduction) {
+            html += '<div style="margin-top:5px;color:#6bff6b;">✅ Matches your production capabilities</div>';
+        }
+        html += '</div>';
+
+        if (comm.status === 'pending') {
+            // Player needs to accept or refuse
+            if (comm.lordMandatory) {
+                html += '<div style="margin:10px 0;padding:8px;background:rgba(255,0,0,0.1);border:1px solid var(--danger);border-radius:4px;">';
+                html += '⚠️ <b>As a Lord, this commission is mandatory.</b> Refusing will result in immediate demotion to Minor Noble and -20 reputation.';
+                html += '</div>';
+            } else {
+                html += '<div style="margin:10px 0;color:var(--text-secondary);">';
+                html += 'As a Minor Noble, you may refuse this commission, but your reputation will suffer.';
+                html += '</div>';
+            }
+            html += '<div style="display:flex;gap:10px;margin-top:10px;">';
+            html += '<button class="btn-medieval" style="flex:1;background:var(--accent-green,#2a7a2a);" onclick="UI.acceptCommissionUI(\'' + kingdomId + '\')">✅ Accept Commission</button>';
+            html += '<button class="btn-medieval" style="flex:1;background:var(--danger,#8a2a2a);" onclick="UI.refuseCommissionUI(\'' + kingdomId + '\')">❌ Refuse</button>';
+            html += '</div>';
+        } else if (comm.status === 'accepted') {
+            // Show delivery status
+            var inv = Player.state ? Player.state.inventory || {} : {};
+            var has = comm.resourceId ? (inv[comm.resourceId] || 0) : 0;
+            var pct = comm.quantity > 0 ? Math.min(100, Math.floor((has / comm.quantity) * 100)) : 0;
+            var canDeliver = has >= comm.quantity;
+
+            html += '<div style="margin:10px 0;">';
+            html += '<div style="margin-bottom:5px;"><b>Progress:</b> ' + has + ' / ' + comm.quantity + ' (' + pct + '%)</div>';
+            html += '<div style="background:rgba(255,255,255,0.1);border-radius:4px;height:12px;overflow:hidden;">';
+            html += '<div style="background:' + (canDeliver ? '#4caf50' : '#ffa500') + ';height:100%;width:' + pct + '%;transition:width 0.3s;"></div>';
+            html += '</div>';
+            html += '</div>';
+
+            if (canDeliver) {
+                html += '<button class="btn-medieval" style="width:100%;background:var(--accent-green,#2a7a2a);" onclick="UI.deliverCommissionUI(\'' + kingdomId + '\')">📦 Deliver Commission</button>';
+            } else {
+                html += '<p style="color:var(--text-secondary);">Gather the required goods and return to deliver.</p>';
+            }
+        } else {
+            html += '<p style="color:var(--text-secondary);">Status: ' + (comm.status || 'unknown') + '</p>';
+        }
+        html += '</div>';
+        openModal('👑 King\'s Commission', html);
+    }
+
+    function acceptCommissionUI(kingdomId) {
+        var result = Player.acceptKingCommission(kingdomId);
+        if (result && result.success) {
+            closeModal();
+            openKingCommissionDialog(kingdomId);
+        }
+    }
+
+    function refuseCommissionUI(kingdomId) {
+        var result = Player.refuseKingCommission(kingdomId);
+        closeModal();
+    }
+
+    function deliverCommissionUI(kingdomId) {
+        var result = Player.deliverKingCommission(kingdomId);
+        if (result && result.success) {
+            closeModal();
+        }
+    }
+
+    // ========================================================
+    // ROYAL ADVISOR — PROPOSE LAWS UI
+    // ========================================================
+    function openProposeLawsDialog(kingdomId) {
+        if (typeof Player === 'undefined') return;
+        if (!kingdomId) {
+            var ps = Player.state;
+            if (ps) kingdomId = ps.royalAdvisorKingdomId || ps.citizenshipKingdomId;
+        }
+        if (!kingdomId) { toast('No kingdom.', 'warning'); return; }
+
+        var pState = Player.state;
+        if (!pState || (pState.socialRank[kingdomId] || 0) < 6) {
+            toast('Only Royal Advisors can propose laws.', 'warning');
+            return;
+        }
+
+        var laws = Player.getProposableLaws(kingdomId);
+        var capital = (pState.politicalCapital !== undefined) ? pState.politicalCapital : 0;
+        var kingdom = null;
+        try { kingdom = Engine.findKingdom(kingdomId); } catch(e) {}
+        var kName = kingdom ? kingdom.name : 'the kingdom';
+
+        var html = '<div class="detail-section">';
+        html += '<p>As Royal Advisor, you can propose new laws and policies to the King of ' + kName + '.</p>';
+        html += '<p><b>Political Capital:</b> ' + capital + ' remaining this season</p>';
+        if (capital <= 0) {
+            html += '<p style="color:var(--danger);">No political capital remaining. Wait until next season.</p>';
+        }
+        html += '</div>';
+
+        // Group by category
+        var categories = {};
+        for (var i = 0; i < laws.length; i++) {
+            var law = laws[i];
+            if (!categories[law.category]) categories[law.category] = [];
+            categories[law.category].push(law);
+        }
+
+        var catNames = {
+            taxation: '💰 Taxation',
+            trade: '🌍 Trade & Commerce',
+            economy: '📊 Economic Policy',
+            security: '🛡️ Security',
+            social: '🏠 Social Policy',
+            succession: '👑 Succession',
+            military: '⚔️ Military'
+        };
+
+        for (var cat in categories) {
+            html += '<div class="detail-section">';
+            html += '<h3>' + (catNames[cat] || cat) + '</h3>';
+            var catLaws = categories[cat];
+            for (var ci = 0; ci < catLaws.length; ci++) {
+                var cl = catLaws[ci];
+                var chanceColor = cl.chance >= 70 ? '#6bff6b' : (cl.chance >= 40 ? '#ffa500' : 'var(--danger)');
+                var disabled = capital <= 0 || !cl.canAfford;
+                var disabledStyle = disabled ? 'opacity:0.5;pointer-events:none;' : 'cursor:pointer;';
+                html += '<div class="detail-row" style="' + disabledStyle + 'padding:8px;margin:4px 0;border-radius:4px;background:rgba(255,255,255,0.03);" ' +
+                    (disabled ? '' : 'onclick="UI.executeProposeLaw(\'' + kingdomId + '\',\'' + cl.id + '\')"') + '>';
+                html += '<div style="flex:1;">';
+                html += '<span class="label">' + cl.icon + ' ' + cl.name + '</span>';
+                html += '<div style="color:var(--text-secondary);font-size:0.85em;">' + cl.description + '</div>';
+                if (cl.requiresGold > 0) {
+                    html += '<div style="font-size:0.8em;color:' + (cl.canAfford ? '#ffd700' : 'var(--danger)') + ';">Treasury cost: ' + cl.requiresGold + 'g' + (cl.canAfford ? '' : ' (insufficient)') + '</div>';
+                }
+                html += '</div>';
+                html += '<div style="text-align:right;min-width:60px;">';
+                html += '<div style="color:' + chanceColor + ';font-weight:bold;">' + cl.chance + '%</div>';
+                html += '<div style="font-size:0.75em;color:var(--text-secondary);">approval</div>';
+                html += '</div>';
+                html += '</div>';
+            }
+            html += '</div>';
+        }
+
+        openModal('📜 Propose Laws', html);
+    }
+
+    function executeProposeLaw(kingdomId, lawId) {
+        if (typeof Player === 'undefined' || !Player.proposeLaw) return;
+        var result = Player.proposeLaw(kingdomId, lawId);
+        if (result && result.success) {
+            if (result.accepted) {
+                toast('📜 Law enacted: ' + result.law + '! (' + result.chance + '% chance)', 'success');
+            } else {
+                toast('📜 Law rejected: ' + result.law + '. (' + result.chance + '% chance)', 'warning');
+            }
+        } else {
+            toast(result ? result.message : 'Failed to propose law.', 'danger');
+        }
+        closeModal();
+        // Reopen to show updated state
+        setTimeout(function() { openProposeLawsDialog(kingdomId); }, 300);
+    }
+
+    // ========================================================
     // ROYAL CONSULTATION DIALOG — Respond to king's pending decisions
     // ========================================================
     function openKingConsultationDialog(kingdomId, decisionId) {
@@ -21168,6 +21638,14 @@ window.UI = (function () {
         showKingSuccessionPopup,
         openKingConsultationDialog,
         respondToKingDecision: respondToKingDecisionUI,
+        // King Directed Commissions
+        openKingCommissionDialog,
+        acceptCommissionUI,
+        refuseCommissionUI,
+        deliverCommissionUI,
+        // Royal Advisor — Propose Laws
+        openProposeLawsDialog,
+        executeProposeLaw,
         // Degradation & Repair
         repairBuilding: repairBuildingUI,
         repairShip: repairShipUI,
