@@ -16529,11 +16529,14 @@
                 for (var pid in player.relationships) {
                     if (player.relationships[pid].level >= (nextRank.minEndorsementLevel || 60)) {
                         var person = Engine.findPerson(pid);
-                        if (person && person.alive && person.kingdomId === kId) endorsements++;
+                        if (person && person.alive && person.kingdomId === kId) {
+                            var pRank = (person.socialRank && person.socialRank[kId]) ? person.socialRank[kId] : (person.occupation === 'noble' ? 4 : 0);
+                            if (pRank >= 4) endorsements++;
+                        }
                     }
                 }
             }
-            if (endorsements < (nextRank.minEndorsements || 5)) reasons.push(`Need ${nextRank.minEndorsements || 5} NPC endorsements (60+ relationship) \u2014 have ${endorsements}`);
+            if (endorsements < (nextRank.minEndorsements || 5)) reasons.push(`Need ${nextRank.minEndorsements || 5} noble endorsements (Minor Noble+ with 60+ relationship) \u2014 have ${endorsements}`);
             var townsWithPropNoble = new Set(player.buildings.filter(function(b) { var t = Engine.findTown(b.townId); return t && t.kingdomId === kId; }).map(function(b) { return b.townId; })).size;
             if (townsWithPropNoble < (nextRank.minTownsWithProperty || 3)) reasons.push(`Need property in ${nextRank.minTownsWithProperty || 3}+ towns (have ${townsWithPropNoble})`);
         }
