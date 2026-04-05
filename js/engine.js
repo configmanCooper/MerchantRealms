@@ -3792,9 +3792,32 @@
             assignedAdvisors++;
         }
 
-        // Fill lords — spread across major towns
+        // Fill lords — spread across major towns, ensure at least 1 male + 1 female
         var majorTowns = kTowns.filter(function(t) { return t.category === 'city' || t.category === 'capital_city' || t.isCapital; });
         if (majorTowns.length === 0) majorTowns = kTowns;
+        var hasMaleLord = false, hasFemaleLord = false;
+        // Check existing lords for gender
+        for (var eli = 0; eli < people.length; eli++) {
+            if (people[eli].socialRank && people[eli].socialRank[kId] === 5 && people[eli].alive) {
+                if (people[eli].sex === 'M') hasMaleLord = true;
+                if (people[eli].sex === 'F') hasFemaleLord = true;
+            }
+        }
+        // Ensure we meet minimum 1M + 1F lord
+        if (!hasMaleLord && assignedLords < numLords) {
+            var maleLord = makeNoble(5, rng.pick(majorTowns).id);
+            maleLord.sex = 'M';
+            maleLord.firstName = rng.pick(NAMES.male);
+            assignedLords++;
+            hasMaleLord = true;
+        }
+        if (!hasFemaleLord && assignedLords < numLords) {
+            var femaleLord = makeNoble(5, rng.pick(majorTowns).id);
+            femaleLord.sex = 'F';
+            femaleLord.firstName = rng.pick(NAMES.female);
+            assignedLords++;
+            hasFemaleLord = true;
+        }
         while (assignedLords < numLords) {
             var lordTown = rng.pick(majorTowns);
             makeNoble(5, lordTown.id);
@@ -3806,6 +3829,38 @@
             var nobleTown = rng.pick(kTowns);
             makeNoble(4, nobleTown.id);
             assignedMinors++;
+        }
+
+        // Build noble knowledge graph: Minor Nobles know 1-2 Lords, Lords know 1 RA
+        var kLords = people.filter(function(p) { return p.alive && p.socialRank && p.socialRank[kId] === 5; });
+        var kRAs = people.filter(function(p) { return p.alive && p.socialRank && p.socialRank[kId] === 6; });
+        var kMinorNobles = people.filter(function(p) { return p.alive && p.socialRank && p.socialRank[kId] === 4; });
+
+        // Each Minor Noble knows 1-2 specific Lords
+        for (var mni = 0; mni < kMinorNobles.length; mni++) {
+            var mn = kMinorNobles[mni];
+            mn._knowsNobles = mn._knowsNobles || [];
+            var numKnown = kLords.length >= 2 ? rng.randInt(1, 2) : Math.min(1, kLords.length);
+            var shuffledLords = kLords.slice();
+            rng.shuffle(shuffledLords);
+            for (var lki = 0; lki < numKnown; lki++) {
+                mn._knowsNobles.push(shuffledLords[lki].id);
+            }
+        }
+
+        // Each Lord knows 1 specific Royal Advisor
+        for (var li = 0; li < kLords.length; li++) {
+            var lord = kLords[li];
+            lord._knowsNobles = lord._knowsNobles || [];
+            if (kRAs.length > 0) {
+                lord._knowsNobles.push(rng.pick(kRAs).id);
+            }
+        }
+
+        // Each RA knows the king
+        for (var rai = 0; rai < kRAs.length; rai++) {
+            kRAs[rai]._knowsNobles = kRAs[rai]._knowsNobles || [];
+            if (kingdom.king) kRAs[rai]._knowsNobles.push(kingdom.king);
         }
     }
     function getSeason(day) {
@@ -6841,6 +6896,8 @@
                 tickRebellion(k);
                 tickKingdomHappinessConsequences(k);
                 tickSurrender(k);
+                tickNobleAI(k);
+                tickKingFamilyAI(k);
             }
 
             // ---- Kingdom purchasing from market (daily) ----
@@ -7963,6 +8020,226 @@
         if (!k.kingMood || !CONFIG.KING_MOOD) return { taxMod: 0, festivalMod: 1, petitionMod: 1, warMod: 1, conscriptMod: 1 };
         var moodData = CONFIG.KING_MOOD.moods[k.kingMood.current];
         return moodData || CONFIG.KING_MOOD.moods.content;
+    }
+
+    // ========================================================
+    // §N-8a NOBILITY AI — Rank promotions, replacement chain, families
+    // ========================================================
+    function tickNobleAI(k) {
+        if (!k || !k.king) return;
+        var rng = world.rng;
+        var kId = k.id;
+
+        // Only run every 30 days
+        if (world.day % 30 !== 0) return;
+
+        var kPeople = world.people.filter(function(p) {
+            return p.alive && p.kingdomId === kId;
+        });
+        var kLords = kPeople.filter(function(p) { return p.socialRank && p.socialRank[kId] === 5; });
+        var kMinorNobles = kPeople.filter(function(p) { return p.socialRank && p.socialRank[kId] === 4; });
+        var kRAs = kPeople.filter(function(p) { return p.socialRank && p.socialRank[kId] === 6; });
+
+        // Target counts
+        var numLordTarget = Math.max(2, Math.floor(k.territories.size * 0.4));
+        var numMinorTarget = Math.max(3, Math.floor(k.territories.size * 0.6));
+
+        // Noble rank-up AI: ambitious Minor Nobles try to become Lords
+        if (kLords.length < numLordTarget && kMinorNobles.length > 0) {
+            // Find best Minor Noble candidate
+            var bestCandidate = null;
+            var bestScore = -1;
+            for (var ci = 0; ci < kMinorNobles.length; ci++) {
+                var mn = kMinorNobles[ci];
+                var pers = mn.personality || {};
+                var score = (pers.ambition || 50) * 0.5 + (mn.gold || 0) * 0.01 + (pers.intelligence || 50) * 0.3;
+                if (mn.age >= 30 && score > bestScore) {
+                    bestScore = score;
+                    bestCandidate = mn;
+                }
+            }
+            if (bestCandidate && rng.chance(0.15)) {
+                if (!bestCandidate.socialRank) bestCandidate.socialRank = {};
+                bestCandidate.socialRank[kId] = 5;
+                bestCandidate.houseType = 'manor';
+                logEvent('🏰 ' + bestCandidate.firstName + ' ' + bestCandidate.lastName + ' has been elevated to Lord in ' + k.name + '.');
+            }
+        }
+
+        // If Minor Noble count is low, promote an elite merchant guildmaster
+        if (kMinorNobles.length < numMinorTarget) {
+            var eliteCandidates = world.eliteMerchants ? world.eliteMerchants.filter(function(em) {
+                return em && em.alive && em.kingdomId === kId && (!em.socialRank || !em.socialRank[kId] || em.socialRank[kId] < 4);
+            }) : [];
+
+            for (var ei = 0; ei < eliteCandidates.length && kMinorNobles.length < numMinorTarget; ei++) {
+                var em = eliteCandidates[ei];
+                var emPers = em.personality || {};
+                // Elite merchant AI decision: ambitious, wealthy, loyal ones want nobility
+                var wantsNobility = (emPers.ambition || 50) > 40 && (emPers.loyalty || 50) > 35 && (em.gold || 0) > 50;
+                // Some won't want to tie down to a specific kingdom
+                if ((emPers.ambition || 50) > 75 && (emPers.loyalty || 50) < 30) wantsNobility = false;
+
+                if (wantsNobility && rng.chance(0.10)) {
+                    if (!em.socialRank) em.socialRank = {};
+                    em.socialRank[kId] = 4;
+                    em.occupation = 'noble';
+                    em.wealthClass = 'upper';
+                    // Set up knowledge graph
+                    em._knowsNobles = em._knowsNobles || [];
+                    if (kLords.length > 0) {
+                        var knownLord = rng.pick(kLords);
+                        em._knowsNobles.push(knownLord.id);
+                    }
+                    logEvent('👑 Elite merchant ' + em.firstName + ' ' + em.lastName + ' has been elevated to Minor Noble in ' + k.name + '.');
+                    kMinorNobles.push(em);
+                }
+            }
+        }
+
+        // Noble family AI — nobles try to have children and find spouses
+        var allNobles = kLords.concat(kMinorNobles).concat(kRAs);
+        for (var ni = 0; ni < allNobles.length; ni++) {
+            var noble = allNobles[ni];
+            // Find spouse if unmarried
+            if (!noble.spouseId && noble.age >= 18 && noble.age <= 50 && rng.chance(0.02)) {
+                var spouseCandidates = kPeople.filter(function(c) {
+                    return c.alive && !c.spouseId && c.sex !== noble.sex &&
+                        c.age >= 18 && c.age <= 55 && c.id !== noble.id &&
+                        (c.occupation === 'noble' || c.wealthClass === 'upper' || (c.personality && (c.personality.ambition || 0) > 60));
+                });
+                if (spouseCandidates.length > 0) {
+                    var spouse = rng.pick(spouseCandidates);
+                    noble.spouseId = spouse.id;
+                    spouse.spouseId = noble.id;
+                    // Non-noble spouse gains one rank below
+                    var nobleRank = (noble.socialRank && noble.socialRank[kId]) || 0;
+                    var spouseRank = (spouse.socialRank && spouse.socialRank[kId]) || 0;
+                    if (nobleRank >= 4 && spouseRank < nobleRank) {
+                        if (!spouse.socialRank) spouse.socialRank = {};
+                        if (spouse.occupation !== 'noble') {
+                            spouse.socialRank[kId] = nobleRank; // non-noble marries noble = same rank
+                            spouse.occupation = 'noble';
+                            spouse.wealthClass = 'upper';
+                        } else {
+                            spouse.socialRank[kId] = Math.max(spouseRank, nobleRank - 1); // noble marries noble = one below
+                        }
+                    }
+                }
+            }
+        }
+
+        // Emergency noble replenishment — king elevates prominent citizens when nobility is critically low
+        var totalNobles = kLords.length + kMinorNobles.length + kRAs.length;
+        if (totalNobles < 3 && k.territories.size > 0) {
+            var kTowns = [];
+            for (var _tid of k.territories) { var _t = findTown(_tid); if (_t) kTowns.push(_t); }
+            // Elevate a wealthy/ambitious person from the kingdom's population
+            var elevationCandidates = kPeople.filter(function(c) {
+                return c.alive && c.age >= 25 && c.age <= 55 &&
+                    (!c.socialRank || !c.socialRank[kId] || c.socialRank[kId] < 4) &&
+                    (c.gold || 0) > 20 &&
+                    c.occupation !== 'noble';
+            });
+            if (elevationCandidates.length > 0 && rng.chance(0.50)) {
+                var elevated = rng.pick(elevationCandidates);
+                if (!elevated.socialRank) elevated.socialRank = {};
+                elevated.socialRank[kId] = kMinorNobles.length < 2 ? 4 : (kLords.length < 1 ? 5 : 4);
+                elevated.occupation = 'noble';
+                elevated.wealthClass = 'upper';
+                elevated._knowsNobles = [];
+                logEvent('👑 ' + k.name + ' has elevated ' + elevated.firstName + ' ' + elevated.lastName + ' to nobility to fill vacant positions.');
+            }
+        }
+    }
+
+    // ========================================================
+    // §N-9a KING FAMILY AI — King remarriage + RA special favors
+    // ========================================================
+    function tickKingFamilyAI(k) {
+        if (!k || !k.king) return;
+        var rng = world.rng;
+
+        // Only run every season
+        if (world.day % CONFIG.DAYS_PER_SEASON !== 0) return;
+
+        var king = findPerson(k.king);
+        if (!king || !king.alive) return;
+
+        var kp = king.personality || {};
+
+        // King remarriage AI — if spouse died, may seek a new one
+        if (!king.spouseId && king.age < 60) {
+            var hasChildren = king.childrenIds && king.childrenIds.length > 0;
+            var wantsRemarriage = true;
+
+            // Personality check: old kings with children may not want to remarry
+            if (hasChildren && king.age > 50 && (kp.warmth || 50) < 40) wantsRemarriage = false;
+            if (king.age > 55 && (kp.ambition || 50) < 30) wantsRemarriage = false;
+            // Grieving period: 90 days minimum
+            if (k._kingSpouseDeathDay && (world.day - k._kingSpouseDeathDay) < 90) wantsRemarriage = false;
+
+            if (wantsRemarriage && rng.chance(0.05)) {
+                var candidates = world.people.filter(function(p) {
+                    return p.alive && !p.spouseId && p.sex !== king.sex &&
+                        p.age >= 18 && p.age <= 50 && p.kingdomId === k.id &&
+                        p.id !== k.king &&
+                        (p.occupation === 'noble' || p.wealthClass === 'upper');
+                });
+                if (candidates.length > 0) {
+                    var bride = rng.pick(candidates);
+                    king.spouseId = bride.id;
+                    bride.spouseId = king.id;
+                    if (!bride.socialRank) bride.socialRank = {};
+                    bride.socialRank[k.id] = 5; // King's spouse = Lord rank
+                    bride.occupation = 'noble';
+                    logEvent('💒 The ruler of ' + k.name + ' has married ' + bride.firstName + ' ' + bride.lastName + '!');
+                    if (typeof UI !== 'undefined' && UI.toast) UI.toast('💒 The ruler of ' + k.name + ' has remarried!', 'info', 'critical');
+                }
+            }
+        }
+
+        // RA special favor system — king asks RA for favors periodically
+        if (typeof Player !== 'undefined' && Player.state && Player.state.alive) {
+            var pState = Player.state;
+            var pRank = (pState.socialRank && pState.socialRank[k.id]) || 0;
+            if (pRank >= 6 && pState.royalAdvisorKingdomId === k.id) {
+                // King asks RA for a special favor every ~120 days
+                if (!k._lastRAFavorDay || (world.day - k._lastRAFavorDay) >= 120) {
+                    if (rng.chance(0.30)) {
+                        k._lastRAFavorDay = world.day;
+                        var favorTypes = [
+                            { id: 'gold_donation', desc: 'donate gold to the treasury', amount: Math.floor(200 + (k.gold || 0) * 0.01), repGain: 3, relGain: 5 },
+                            { id: 'spy_mission', desc: 'investigate a rival noble', repGain: 2, relGain: 8 },
+                            { id: 'diplomatic_gift', desc: 'send a diplomatic gift to a foreign kingdom', amount: 150, repGain: 4, relGain: 6 },
+                            { id: 'host_feast', desc: 'host a feast for the kingdom\'s nobility', amount: 300, repGain: 5, relGain: 4 },
+                        ];
+                        var favor = rng.pick(favorTypes);
+                        k._pendingRAFavor = {
+                            type: favor.id,
+                            description: favor.desc,
+                            goldCost: favor.amount || 0,
+                            repGain: favor.repGain,
+                            relGain: favor.relGain,
+                            askedDay: world.day,
+                            expiresDay: world.day + 30
+                        };
+                        logEvent('👑 The King of ' + k.name + ' asks their Royal Advisor to ' + favor.desc + '.');
+                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('👑 The King asks you to ' + favor.desc + '.', 'warning');
+                    }
+                }
+
+                // Check if pending favor expired — hurts relationship
+                if (k._pendingRAFavor && world.day > k._pendingRAFavor.expiresDay) {
+                    logEvent('😤 The King of ' + k.name + ' is displeased that their Royal Advisor ignored their request.');
+                    if (typeof Player !== 'undefined' && Player.modifyRelationship) {
+                        Player.modifyRelationship(k.king, -8, 'ignored_king_favor');
+                    }
+                    if (typeof UI !== 'undefined' && UI.toast) UI.toast('😤 King displeased! -8 relationship for ignoring favor.', 'danger');
+                    k._pendingRAFavor = null;
+                }
+            }
+        }
     }
 
     function tickKingMood(k) {

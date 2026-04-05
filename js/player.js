@@ -9091,6 +9091,193 @@
     }
 
     // ========================================================
+    // §11.5B2a LORD/RA — KINGDOM BUILDING CONSTRUCTION
+    // Lords can build kingdom buildings in their lord town with king permission.
+    // Royal Advisors can do this in any town (harder outside their lord town).
+    // ========================================================
+    var KINGDOM_BUILDING_TYPES = ['walls', 'barracks', 'watchtower', 'castle', 'granary', 'marketplace', 'temple', 'library', 'stables', 'armory', 'harbor_fortification'];
+
+    function getKingdomBuildableTypes(townId) {
+        var town = Engine.findTown(townId || player.townId);
+        if (!town) return [];
+        var existing = {};
+        if (town.buildings) {
+            for (var i = 0; i < town.buildings.length; i++) {
+                existing[town.buildings[i].type] = true;
+            }
+        }
+        var available = [];
+        for (var bi = 0; bi < KINGDOM_BUILDING_TYPES.length; bi++) {
+            var bType = KINGDOM_BUILDING_TYPES[bi];
+            if (existing[bType]) continue;
+            var bt = Engine.findBuildingType ? Engine.findBuildingType(bType) : null;
+            if (!bt) continue;
+            if (bType === 'harbor_fortification' && !town.isPort) continue;
+            available.push({ id: bType, name: bt.name || bType, cost: bt.cost || 500, description: bt.description || '' });
+        }
+        return available;
+    }
+
+    function requestKingdomBuilding(townId, buildingType, playerContribution) {
+        var kId = player.citizenshipKingdomId;
+        var rank = player.socialRank[kId] || 0;
+        if (rank < 5) return { success: false, message: 'Must be at least a Lord to request kingdom buildings.' };
+
+        var town = Engine.findTown(townId);
+        if (!town) return { success: false, message: 'Invalid town.' };
+        if (town.kingdomId !== kId) return { success: false, message: 'Town is not in your kingdom.' };
+
+        // Lords can only build in their lord town; RAs can build anywhere
+        var isLordTown = (player.lordTownId === townId);
+        if (rank === 5 && !isLordTown) {
+            return { success: false, message: 'As a Lord, you can only request kingdom buildings in your lord town (' + (Engine.findTown(player.lordTownId) || {}).name + ').' };
+        }
+
+        var bt = Engine.findBuildingType ? Engine.findBuildingType(buildingType) : null;
+        if (!bt) return { success: false, message: 'Unknown building type.' };
+        var totalCost = bt.cost || 500;
+        playerContribution = Math.max(0, Math.min(totalCost, Math.floor(playerContribution || 0)));
+        var kingdomCost = totalCost - playerContribution;
+
+        // Check player can afford their contribution
+        if (player.gold < playerContribution) return { success: false, message: 'Cannot afford your ' + playerContribution + 'g contribution.' };
+
+        // King approval AI
+        var kingdom = null;
+        try { kingdom = Engine.findKingdom(kId); } catch(e) {}
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+
+        var kingPerson = kingdom.king ? Engine.findPerson(kingdom.king) : null;
+        var kingRel = kingPerson ? getRelationship(kingPerson.id).level : 50;
+        var kRep = player.reputation[kId] || 50;
+        var kGold = kingdom.gold || 0;
+        var kp = kingdom.kingPersonality || {};
+
+        // Base approval chance
+        var approval = 0.20;
+
+        // Relationship factor (0-30%)
+        approval += (kingRel / 100) * 0.30;
+
+        // Reputation factor (0-15%)
+        approval += (kRep / 100) * 0.15;
+
+        // Player contribution factor (huge — paying more = much more likely)
+        var contributionRatio = playerContribution / totalCost;
+        approval += contributionRatio * 0.30;
+
+        // Kingdom treasury — can they afford it?
+        if (kingdomCost > kGold * 0.3) approval -= 0.20;
+        else if (kingdomCost > kGold * 0.1) approval -= 0.05;
+        if (kingdomCost === 0) approval += 0.15;
+
+        // King personality
+        if (kp.generosity === 'generous') approval += 0.10;
+        else if (kp.generosity === 'greedy') approval -= 0.15;
+        if (kp.tradition === 'progressive') approval += 0.05;
+
+        // Military buildings during wartime
+        var isAtWar = kingdom.atWar && kingdom.atWar.size > 0;
+        var isMilitary = ['barracks', 'watchtower', 'armory', 'walls', 'harbor_fortification'].indexOf(buildingType) >= 0;
+        if (isAtWar && isMilitary) approval += 0.20;
+        if (isAtWar && !isMilitary) approval -= 0.10;
+
+        // RA building outside lord town — harder
+        if (rank >= 6 && !isLordTown) approval -= 0.15;
+
+        // Player-influenced king bonus
+        if (kingdom._playerInfluencedKingDay && (Engine.getDay() - kingdom._playerInfluencedKingDay) < 365) {
+            approval += 0.15;
+        }
+
+        approval = Math.max(0.05, Math.min(0.95, approval));
+
+        var rng = Engine.getRng();
+        var approved = rng && rng.chance ? rng.chance(approval) : Math.random() < approval;
+
+        if (approved) {
+            // Deduct costs
+            player.gold -= playerContribution;
+            player.stats.totalGoldSpent += playerContribution;
+            if (kingdom.gold >= kingdomCost) kingdom.gold -= kingdomCost;
+
+            // Build it
+            town.buildings = town.buildings || [];
+            town.buildings.push({
+                type: buildingType,
+                level: 1,
+                ownerId: kingdom.id,
+                builtDay: Engine.getDay(),
+                condition: 100,
+                lastRepairDay: 0,
+                _requestedByPlayer: true
+            });
+
+            Engine.logEvent('🏗️ The king approved ' + player.fullName + '\'s request to build a ' + (bt.name || buildingType) + ' in ' + town.name + '! (Player: ' + playerContribution + 'g, Kingdom: ' + kingdomCost + 'g)');
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('🏗️ ' + (bt.name || buildingType) + ' approved! Building in ' + town.name + '.', 'success');
+            autoJournalCapture('politics', 'The king approved my request to build a ' + (bt.name || buildingType) + ' in ' + town.name + '.', { mood: 'pleased' });
+            grantXP(25, 'Kingdom building request');
+            return { success: true, approved: true, message: 'The king approved your request! A ' + (bt.name || buildingType) + ' is being built in ' + town.name + '. (Player: ' + playerContribution + 'g, Kingdom: ' + kingdomCost + 'g)', approvalChance: Math.round(approval * 100) };
+        } else {
+            Engine.logEvent('❌ The king denied ' + player.fullName + '\'s request to build a ' + (bt.name || buildingType) + ' in ' + town.name + '.');
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('❌ King denied building request.', 'warning');
+            return { success: true, approved: false, message: 'The king denied your request to build a ' + (bt.name || buildingType) + '. Try improving your relationship or offering more gold. (Chance was ~' + Math.round(approval * 100) + '%)', approvalChance: Math.round(approval * 100) };
+        }
+    }
+
+    // ========================================================
+    // §11.5B2b RA — KING SPECIAL FAVORS (Player-side)
+    // ========================================================
+    function getKingFavor(kingdomId) {
+        var kId = kingdomId || player.royalAdvisorKingdomId || player.citizenshipKingdomId;
+        if (!kId) return null;
+        try {
+            var kingdom = Engine.findKingdom(kId);
+            return kingdom ? kingdom._pendingRAFavor : null;
+        } catch(e) { return null; }
+    }
+
+    function respondToKingFavor(kingdomId, accept) {
+        var kId = kingdomId || player.royalAdvisorKingdomId || player.citizenshipKingdomId;
+        if (!kId) return { success: false, message: 'No kingdom.' };
+        var kingdom = null;
+        try { kingdom = Engine.findKingdom(kId); } catch(e) {}
+        if (!kingdom || !kingdom._pendingRAFavor) return { success: false, message: 'No pending favor.' };
+
+        var favor = kingdom._pendingRAFavor;
+
+        if (accept) {
+            // Check if player can afford
+            if (favor.goldCost && player.gold < favor.goldCost) {
+                return { success: false, message: 'Cannot afford the ' + favor.goldCost + 'g cost.' };
+            }
+            if (favor.goldCost) {
+                player.gold -= favor.goldCost;
+                player.stats.totalGoldSpent += favor.goldCost;
+                if (kingdom.gold != null) kingdom.gold += favor.goldCost;
+            }
+            // Rewards
+            player.reputation[kId] = Math.min(100, (player.reputation[kId] || 50) + (favor.repGain || 3));
+            if (kingdom.king) modifyRelationship(kingdom.king, favor.relGain || 5, 'king_favor_accepted');
+            kingdom._pendingRAFavor = null;
+
+            Engine.logEvent('✅ ' + player.fullName + ' fulfilled the king\'s request: ' + favor.description + '.');
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('✅ Favor fulfilled! +' + (favor.repGain || 3) + ' rep, +' + (favor.relGain || 5) + ' king relationship.', 'success');
+            autoJournalCapture('politics', 'I fulfilled the king\'s request to ' + favor.description + '. The king is pleased.', { mood: 'pleased' });
+            return { success: true, message: 'Favor fulfilled!' };
+        } else {
+            // Decline — hurts relationship
+            if (kingdom.king) modifyRelationship(kingdom.king, -5, 'king_favor_declined');
+            kingdom._pendingRAFavor = null;
+
+            Engine.logEvent('❌ ' + player.fullName + ' declined the king\'s request: ' + favor.description + '.');
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('❌ Favor declined. -5 king relationship.', 'warning');
+            autoJournalCapture('politics', 'I declined the king\'s request to ' + favor.description + '. The king was displeased.', { mood: 'worried' });
+            return { success: true, message: 'Favor declined. King relationship -5.' };
+        }
+    }
+
+    // ========================================================
     // §11.5B3 ROYAL ADVISOR — PROPOSE LAWS (Player-side)
     // ========================================================
 
@@ -10078,6 +10265,15 @@
         if (!person) return { success: false, message: 'Person not found.' };
         if (!person.alive) return { success: false, message: 'Person is not alive.' };
         if (person.age < 18) return { success: false, message: 'Person is too young to marry.' };
+
+        // King marriage is impossible for the player — check before spouse status
+        var kingdoms = Engine.getKingdoms ? Engine.getKingdoms() : [];
+        for (var ki = 0; ki < kingdoms.length; ki++) {
+            if (kingdoms[ki].king === personId) {
+                return { success: false, message: 'The ruler of ' + kingdoms[ki].name + ' is beyond your reach for marriage.' };
+            }
+        }
+
         if (person.spouseId) return { success: false, message: 'Person is already married.' };
         if (person.townId !== player.townId) return { success: false, message: 'Person is not in your town.' };
 
@@ -10260,7 +10456,39 @@
         // Clear wedding plan
         player.weddingPlan = null;
 
+        // ===== Noble Marriage Rank System =====
+        // Non-noble marrying a noble => same rank as the noble
+        // Noble marrying a noble => one rank below the higher-ranked spouse
+        // King marriage impossible (enforced in marry())
         var spouseKingdom = person.kingdomId;
+        var spouseRank = (person.socialRank && spouseKingdom) ? (person.socialRank[spouseKingdom] || 0) : 0;
+        var playerKingdomForMarriage = spouseKingdom || player.citizenshipKingdomId;
+        var playerCurrentRank = playerKingdomForMarriage ? (player.socialRank[playerKingdomForMarriage] || 0) : 0;
+
+        if (spouseRank >= 4 && playerKingdomForMarriage) { // Spouse is at least Minor Noble
+            var newRank = playerCurrentRank;
+            if (playerCurrentRank < 4) {
+                // Non-noble marrying a noble = same rank as the noble
+                newRank = spouseRank;
+            } else {
+                // Noble marrying a noble = one below the higher-ranked
+                newRank = Math.max(playerCurrentRank, spouseRank - 1);
+            }
+
+            if (newRank > playerCurrentRank) {
+                player.socialRank[playerKingdomForMarriage] = newRank;
+                var rankName = CONFIG.SOCIAL_RANKS[newRank] ? CONFIG.SOCIAL_RANKS[newRank].name : 'noble';
+                Engine.logEvent('🏰 Through marriage, ' + player.fullName + ' has been elevated to ' + rankName + '!');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('👑 Your marriage elevates you to ' + rankName + '!', 'success', 'critical');
+                // Set waived requirements flag for easier next-rank promotion
+                player._marriageRankWaiver = player._marriageRankWaiver || {};
+                player._marriageRankWaiver[playerKingdomForMarriage] = {
+                    rank: newRank,
+                    spouseRank: spouseRank,
+                    day: Engine.getDay()
+                };
+            }
+        }
         var msg = '💒 You married ' + person.firstName + ' ' + person.lastName + '! ' + venue.icon + ' at ' + venue.name + ', ' + feast.icon + ' ' + feast.name + ' feast. (Cost: ' + totalCost + 'g)';
         if (spouseKingdom && spouseKingdom !== player.citizenshipKingdomId) {
             msg += ' Your spouse is from another kingdom — you may change citizenship.';
@@ -14348,6 +14576,8 @@
             politicalCapitalResetDay: player.politicalCapitalResetDay || 0,
             lordTownId: player.lordTownId || null,
             _repWarnDay: JSON.parse(JSON.stringify(player._repWarnDay || {})),
+            _tournamentAccessDay: player._tournamentAccessDay || null,
+            _marriageRankWaiver: player._marriageRankWaiver ? JSON.parse(JSON.stringify(player._marriageRankWaiver)) : null,
             // Town Reputation
             townReputation: JSON.parse(JSON.stringify(player.townReputation || {})),
             // Town Quests
@@ -14703,6 +14933,8 @@
         player.politicalCapitalResetDay = data.politicalCapitalResetDay || 0;
         player.lordTownId = data.lordTownId || null;
         player._repWarnDay = data._repWarnDay || {};
+        player._tournamentAccessDay = data._tournamentAccessDay || null;
+        player._marriageRankWaiver = data._marriageRankWaiver || null;
         // Town Reputation
         player.townReputation = data.townReputation || {};
         // Town Quests
@@ -15875,9 +16107,10 @@
         }
 
         // ========================================================
-        // §N-2: Kingdom Reputation Demotion Check (weekly)
+        // §N-2: Kingdom Rank Maintenance Check (weekly)
         // Minor Noble (rank 4): rep < 60 for 30 days → demoted to Guildmaster (rank 3)
-        // Royal Advisor (rank 6): rep < 80 for 30 days → demoted to Lord (rank 5)
+        // Lord (rank 5): rep < 70 OR king relationship < 60 for 30 days → demoted to Minor Noble (rank 4)
+        // Royal Advisor (rank 6): rep < 80 OR king relationship < 70 for 30 days → demoted to Lord (rank 5)
         // ========================================================
         if (day % 7 === 0) {
             for (var _dkId in player.socialRank) {
@@ -15886,37 +16119,60 @@
                 var _dThreshold = 0;
                 var _dDemoteTo = 0;
                 var _dLabel = '';
+                var _dReason = '';
+
+                // Get king relationship for this kingdom
+                var _dKingRel = 50;
+                var _dKingRelReq = 0;
+                try {
+                    var _dKingdom = Engine.findKingdom(_dkId);
+                    if (_dKingdom && _dKingdom.king) {
+                        var _dKingRelObj = getRelationship(_dKingdom.king);
+                        _dKingRel = _dKingRelObj ? _dKingRelObj.level : 50;
+                    }
+                } catch(e) {}
 
                 if (_dRank === 4 && _dRep < 60) {
                     _dThreshold = 60; _dDemoteTo = 3; _dLabel = 'Minor Noble';
-                } else if (_dRank === 6 && _dRep < 80) {
-                    _dThreshold = 80; _dDemoteTo = 5; _dLabel = 'Royal Advisor';
-                } else if (_dRank === 5 && _dRep < 60) {
-                    // Lords also lose rank if rep drops below 60
-                    _dThreshold = 60; _dDemoteTo = 3; _dLabel = 'Lord';
+                    _dReason = 'reputation below 60';
+                } else if (_dRank === 6) {
+                    _dKingRelReq = 70;
+                    if (_dRep < 80 || _dKingRel < _dKingRelReq) {
+                        _dThreshold = 80; _dDemoteTo = 5; _dLabel = 'Royal Advisor';
+                        _dReason = _dRep < 80 ? 'reputation below 80' : 'king relationship below 70';
+                        if (_dRep < 80 && _dKingRel < _dKingRelReq) _dReason = 'reputation below 80 and king relationship below 70';
+                    }
+                } else if (_dRank === 5) {
+                    _dKingRelReq = 60;
+                    if (_dRep < 70 || _dKingRel < _dKingRelReq) {
+                        _dThreshold = 70; _dDemoteTo = 4; _dLabel = 'Lord';
+                        _dReason = _dRep < 70 ? 'reputation below 70' : 'king relationship below 60';
+                        if (_dRep < 70 && _dKingRel < _dKingRelReq) _dReason = 'reputation below 70 and king relationship below 60';
+                    }
                 }
 
-                if (_dThreshold > 0) {
+                var _belowThreshold = false;
+                if (_dRank === 4 && _dRep < 60) _belowThreshold = true;
+                else if (_dRank === 5 && (_dRep < 70 || _dKingRel < 60)) _belowThreshold = true;
+                else if (_dRank === 6 && (_dRep < 80 || _dKingRel < 70)) _belowThreshold = true;
+
+                if (_belowThreshold) {
                     if (!player._repWarnDay[_dkId]) {
-                        // First time below threshold — start the 30-day timer
                         player._repWarnDay[_dkId] = day;
                         var _dkName = 'the kingdom';
                         try { var _dk = Engine.findKingdom(_dkId); if (_dk) _dkName = _dk.name; } catch(e) {}
-                        Engine.logEvent('⚠️ ' + player.fullName + '\'s reputation in ' + _dkName + ' has fallen below ' + _dThreshold + '! If it stays below for 30 days, they will be demoted from ' + _dLabel + '.');
-                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚠️ Rep below ' + _dThreshold + ' in ' + _dkName + '! 30 days to recover or lose ' + _dLabel + ' status.', 'danger');
+                        Engine.logEvent('⚠️ ' + player.fullName + '\'s standing in ' + _dkName + ' is in jeopardy (' + _dReason + ')! 30 days to recover or lose ' + _dLabel + ' status.');
+                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚠️ ' + _dReason + ' in ' + _dkName + '! 30 days to recover or lose ' + _dLabel + ' status.', 'danger');
                     } else if (day - player._repWarnDay[_dkId] >= 30) {
-                        // 30 days have passed below threshold — demote!
                         var _oldRankName = (CONFIG.SOCIAL_RANKS[_dRank] || {}).name || _dLabel;
                         var _newRankName = (CONFIG.SOCIAL_RANKS[_dDemoteTo] || {}).name || 'lower rank';
                         player.socialRank[_dkId] = _dDemoteTo;
                         player.rankSince[_dkId] = day;
                         delete player._repWarnDay[_dkId];
 
-                        // If demoted from Lord, clear lord town and return kingdom buildings
                         if (_dRank >= 5 && _dDemoteTo < 5) {
                             _handleLordDemotion(_dkId);
                         }
-                        // If demoted from RA, clear RA state
                         if (_dRank >= 6 && _dDemoteTo < 6) {
                             if (player.royalAdvisorKingdomId === _dkId) {
                                 player.royalAdvisorKingdomId = null;
@@ -15927,15 +16183,14 @@
 
                         var _dkName2 = 'the kingdom';
                         try { var _dk2 = Engine.findKingdom(_dkId); if (_dk2) _dkName2 = _dk2.name; } catch(e) {}
-                        Engine.logEvent('📉 ' + player.fullName + ' has been demoted from ' + _oldRankName + ' to ' + _newRankName + ' in ' + _dkName2 + ' due to sustained low reputation!');
-                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('📉 Demoted from ' + _oldRankName + ' to ' + _newRankName + '! Reputation too low for too long.', 'danger');
-                        autoJournalCapture('politics', 'I have been stripped of my ' + _oldRankName + ' status in ' + _dkName2 + '. My reputation fell too low.', { mood: 'devastated' });
+                        Engine.logEvent('📉 ' + player.fullName + ' has been demoted from ' + _oldRankName + ' to ' + _newRankName + ' in ' + _dkName2 + ' (' + _dReason + ')!');
+                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('📉 Demoted from ' + _oldRankName + ' to ' + _newRankName + '! ' + _dReason, 'danger');
+                        autoJournalCapture('politics', 'I have been stripped of my ' + _oldRankName + ' status in ' + _dkName2 + '. ' + _dReason + '.', { mood: 'devastated' });
                     }
                 } else {
-                    // Rep is above threshold — clear any warning timer
                     if (player._repWarnDay[_dkId]) {
                         delete player._repWarnDay[_dkId];
-                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('✅ Reputation recovered! Demotion threat lifted.', 'success');
+                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('✅ Standing recovered! Demotion threat lifted.', 'success');
                     }
                 }
             }
@@ -17135,24 +17390,37 @@
         }
 
         if (nextRank.id === 'minor_noble') {
-            var hasNobleSpouse = player.spouseId ? (function() { var s = Engine.findPerson(player.spouseId); return s && (s.occupation === 'noble' || s.wealthClass === 'upper'); })() : false;
-            var completedPetitions = player.petitions ? player.petitions.filter(function(p) { return p.status === 'approved' && p.kingdomId === kId; }).length : 0;
-            if (!hasNobleSpouse && completedPetitions < (nextRank.minPetitionsCompleted || 3)) {
-                reasons.push(`Must marry a noble OR complete ${nextRank.minPetitionsCompleted || 3} petitions (have ${completedPetitions})`);
-            }
-            var endorsements = 0;
-            if (player.relationships) {
-                for (var pid in player.relationships) {
-                    if (player.relationships[pid].level >= (nextRank.minEndorsementLevel || 60)) {
-                        var person = Engine.findPerson(pid);
-                        if (person && person.alive && person.kingdomId === kId) {
-                            var pRank = (person.socialRank && person.socialRank[kId]) ? person.socialRank[kId] : (person.occupation === 'noble' ? 4 : 0);
-                            if (pRank >= 4) endorsements++;
+            // Alternate path: marry a Lord to become Minor Noble (waives petitions + endorsements)
+            var hasLordSpouse = player.spouseId ? (function() {
+                var s = Engine.findPerson(player.spouseId);
+                if (!s || !s.alive) return false;
+                var sMaxRank = 0;
+                if (s.socialRank) { for (var sk in s.socialRank) { if ((s.socialRank[sk] || 0) > sMaxRank) sMaxRank = s.socialRank[sk]; } }
+                return sMaxRank >= 5; // Lord or above
+            })() : false;
+            var hasNobleSpouse = hasLordSpouse || (player.spouseId ? (function() { var s = Engine.findPerson(player.spouseId); return s && (s.occupation === 'noble' || s.wealthClass === 'upper'); })() : false);
+
+            if (!hasLordSpouse) {
+                // Standard path: 3 petitions + 5 noble endorsements
+                var completedPetitions = player.petitions ? player.petitions.filter(function(p) { return p.status === 'approved' && p.kingdomId === kId; }).length : 0;
+                if (!hasNobleSpouse && completedPetitions < (nextRank.minPetitionsCompleted || 3)) {
+                    reasons.push(`Must marry a Lord/noble OR complete ${nextRank.minPetitionsCompleted || 3} petitions (have ${completedPetitions})`);
+                }
+                var endorsements = 0;
+                if (player.relationships) {
+                    for (var pid in player.relationships) {
+                        if (player.relationships[pid].level >= (nextRank.minEndorsementLevel || 60)) {
+                            var person = Engine.findPerson(pid);
+                            if (person && person.alive && person.kingdomId === kId) {
+                                var pRank = (person.socialRank && person.socialRank[kId]) ? person.socialRank[kId] : (person.occupation === 'noble' ? 4 : 0);
+                                if (pRank >= 4) endorsements++;
+                            }
                         }
                     }
                 }
+                if (!hasNobleSpouse && endorsements < (nextRank.minEndorsements || 5)) reasons.push(`Need ${nextRank.minEndorsements || 5} noble endorsements (Minor Noble+ with 60+ relationship) \u2014 have ${endorsements}`);
             }
-            if (endorsements < (nextRank.minEndorsements || 5)) reasons.push(`Need ${nextRank.minEndorsements || 5} noble endorsements (Minor Noble+ with 60+ relationship) \u2014 have ${endorsements}`);
+            // Property requirement still applies regardless of marriage
             var townsWithPropNoble = new Set(player.buildings.filter(function(b) { var t = Engine.findTown(b.townId); return t && t.kingdomId === kId; }).map(function(b) { return b.townId; })).size;
             if (townsWithPropNoble < (nextRank.minTownsWithProperty || 3)) reasons.push(`Need property in ${nextRank.minTownsWithProperty || 3}+ towns (have ${townsWithPropNoble})`);
         }
@@ -17164,9 +17432,37 @@
             if (totalWorkers < (nextRank.minTotalWorkers || 40)) reasons.push(`Need ${nextRank.minTotalWorkers || 40}+ workers (have ${totalWorkers})`);
             var infraCount = (player.roadsBuilt || 0) + (player.bridgesBuilt || 0) + (player.seaRoutesBuilt || 0);
             if (infraCount < (nextRank.minInfrastructure || 2)) reasons.push(`Need ${nextRank.minInfrastructure || 2}+ infrastructure projects (roads/bridges/sea routes) \u2014 have ${infraCount}`);
-            var rankSinceLord = player.rankSince ? (player.rankSince[kId] || Engine.getDay()) : Engine.getDay();
-            var yearsAtRankLord = (Engine.getDay() - rankSinceLord) / 360;
-            if (yearsAtRankLord < (nextRank.minYearsAtPrevRank || 2)) reasons.push(`Need ${nextRank.minYearsAtPrevRank || 2}+ years at current rank (${yearsAtRankLord.toFixed(1)} years)`);
+
+            // Marriage to Royal Advisor waives year-at-rank and lord friendship requirements
+            var hasRASpouse = player.spouseId ? (function() {
+                var s = Engine.findPerson(player.spouseId);
+                if (!s || !s.alive) return false;
+                var sMaxR = 0;
+                if (s.socialRank) { for (var sk in s.socialRank) { if ((s.socialRank[sk] || 0) > sMaxR) sMaxR = s.socialRank[sk]; } }
+                return sMaxR >= 6;
+            })() : false;
+
+            if (!hasRASpouse) {
+                // 1 year as Minor Noble (changed from 2)
+                var rankSinceLord = player.rankSince ? (player.rankSince[kId] || Engine.getDay()) : Engine.getDay();
+                var yearsAtRankLord = (Engine.getDay() - rankSinceLord) / 360;
+                if (yearsAtRankLord < 1) reasons.push(`Need 1+ year as Minor Noble (${yearsAtRankLord.toFixed(1)} years)`);
+
+                // 60+ relationship with 3 Lords
+                var lordFriends = 0;
+                if (player.relationships) {
+                    for (var lPid in player.relationships) {
+                        if (player.relationships[lPid].level >= 60) {
+                            var lPerson = Engine.findPerson(lPid);
+                            if (lPerson && lPerson.alive && lPerson.kingdomId === kId) {
+                                var lRank = (lPerson.socialRank && lPerson.socialRank[kId]) ? lPerson.socialRank[kId] : 0;
+                                if (lRank >= 5) lordFriends++;
+                            }
+                        }
+                    }
+                }
+                if (lordFriends < 3) reasons.push(`Need 60+ relationship with 3 Lords \u2014 have ${lordFriends}`);
+            }
         }
 
         if (nextRank.id === 'royal_advisor') {
@@ -17186,6 +17482,17 @@
                 }
             }
             if (nobleFriends < (nextRank.minNobleFriends || 3)) reasons.push(`Need ${nextRank.minNobleFriends || 3} noble friends (80+ relationship) \u2014 have ${nobleFriends}`);
+
+            // Must have 80+ relationship with the king
+            var raKingRel = 0;
+            try {
+                var raKingdom = Engine.findKingdom(kId);
+                if (raKingdom && raKingdom.king) {
+                    var raKingRelObj = getRelationship(raKingdom.king);
+                    raKingRel = raKingRelObj ? raKingRelObj.level : 0;
+                }
+            } catch(e) {}
+            if (raKingRel < 80) reasons.push(`Need 80+ relationship with the King (have ${Math.floor(raKingRel)})`);
         }
 
         if (reasons.length > 0) return { can: false, reason: reasons.join('; '), reasons: reasons };
@@ -18264,7 +18571,7 @@
      */
     function canTalkTo(personId) {
         var person = Engine.findPerson(personId);
-        if (!person) return { canTalk: true }; // not found = allow (failsafe)
+        if (!person) return { canTalk: true };
 
         if (person.age < 10) return { canTalk: false, reason: 'This person is too young to interact with.' };
 
@@ -18276,9 +18583,15 @@
         }
 
         var npcRank = getNPCSocialRank(person);
-        // Kings are treated as rank 7 for access purposes
         var effectiveRank = isKing ? 7 : npcRank;
         if (effectiveRank < 4) return { canTalk: true }; // not a noble, anyone can talk
+
+        // Tournament day exception: winning a tournament grants 1-day access to all nobility + king
+        var today = 0;
+        try { today = Engine.getDay(); } catch(e) {}
+        if (player._tournamentAccessDay && player._tournamentAccessDay === today) {
+            return { canTalk: true };
+        }
 
         // Check if player has been introduced to this specific person
         if (player.introductions && player.introductions[personId]) {
@@ -18291,42 +18604,44 @@
             if ((player.socialRank[kId] || 0) > playerMaxRank) playerMaxRank = player.socialRank[kId];
         }
 
-        // Access rules by NPC rank:
-        // Minor Noble (4): need guildmaster rank (3) to talk directly
-        // Lord (5): need minor noble rank (4) to talk directly
-        // Royal Advisor (6): need lord rank (5) to talk directly
-        // King (7): need royal advisor rank (6) to talk directly
+        // TIERED ACCESS SYSTEM:
+        // 1 rank below noble = direct talk (Guildmaster→Minor Noble, Minor Noble→Lord, Lord→RA, RA→King)
+        // 2 ranks below = can use "introduce me" mechanic
+        // 3+ ranks below = cannot interact at all
         var requiredRank = effectiveRank - 1; // one rank below to talk directly
+        var introMaxGap = 2; // max 2 ranks below for introductions
 
         if (playerMaxRank >= requiredRank) return { canTalk: true };
 
-        // Player can't talk directly — needs introduction
         var rankNames = { 4: 'Minor Noble', 5: 'Lord', 6: 'Royal Advisor', 7: 'the King' };
-        var introRankNames = { 4: 'Guildmaster', 5: 'Minor Noble', 6: 'Lord', 7: 'Royal Advisor' };
-        var requiredRankName = CONFIG.SOCIAL_RANKS[requiredRank] ? CONFIG.SOCIAL_RANKS[requiredRank].name : introRankNames[effectiveRank] || 'higher rank';
+        var rankGap = effectiveRank - playerMaxRank;
 
-        // Special: below burgher can't even get introductions to nobles
-        if (playerMaxRank < 2 && effectiveRank >= 4) {
-            return { canTalk: false, reason: 'You must be at least a Burgher to seek introductions to ' + (rankNames[effectiveRank] || 'nobles') + '.', needsIntroduction: false };
+        // 3+ ranks below: cannot talk at all, no introduction possible
+        if (rankGap > introMaxGap) {
+            return {
+                canTalk: false,
+                reason: 'Your status is too far below a ' + (rankNames[effectiveRank] || 'noble') + ' to speak with or seek an introduction. You need to rise in rank first.',
+                needsIntroduction: false
+            };
         }
 
-        // King requires royal advisor — introduction from a royal advisor if player is lord
-        if (isKing) {
-            if (playerMaxRank >= 5) {
-                return {
-                    canTalk: false,
-                    reason: 'Only Royal Advisors may speak directly with the King. As a Lord, you may seek an introduction from a Royal Advisor.',
-                    needsIntroduction: true,
-                    introRank: 7
-                };
-            } else {
-                return { canTalk: false, reason: 'Only Royal Advisors may speak directly with the King.', needsIntroduction: false };
-            }
+        // Exactly 2 ranks below: can seek introduction
+        if (rankGap === 2) {
+            var introFromRank = effectiveRank - 1;
+            var introFromName = CONFIG.SOCIAL_RANKS[introFromRank] ? CONFIG.SOCIAL_RANKS[introFromRank].name : rankNames[introFromRank] || 'higher noble';
+            return {
+                canTalk: false,
+                reason: 'You cannot speak directly with a ' + (rankNames[effectiveRank] || 'noble') + '. Ask a ' + introFromName + ' you know well to introduce you.',
+                needsIntroduction: true,
+                introRank: effectiveRank
+            };
         }
 
+        // Exactly 1 rank below but doesn't meet the rank check (shouldn't happen, but fallback)
+        var requiredRankName = CONFIG.SOCIAL_RANKS[requiredRank] ? CONFIG.SOCIAL_RANKS[requiredRank].name : 'higher rank';
         return {
             canTalk: false,
-            reason: 'You need to be a ' + requiredRankName + ' to speak directly with a ' + (rankNames[effectiveRank] || 'noble') + '. Seek an introduction through someone of appropriate rank.',
+            reason: 'You need to be a ' + requiredRankName + ' to speak directly with a ' + (rankNames[effectiveRank] || 'noble') + '.',
             needsIntroduction: true,
             introRank: effectiveRank
         };
@@ -18398,9 +18713,22 @@
             var pCanAsk = pRel.level >= 60 && (today - pCooldown >= 30 || pCooldown === 0);
             var pKnows = true;
             if (pRank === introducerMinRank && pRank < targetRank) {
-                var pHash = 0;
-                for (var phi = 0; phi < p.id.length; phi++) pHash = ((pHash << 5) - pHash + p.id.charCodeAt(phi)) | 0;
-                pKnows = (Math.abs(pHash) % 3) === 0;
+                // First check worldgen knowledge graph
+                if (p._knowsNobles && p._knowsNobles.length > 0) {
+                    pKnows = false;
+                    for (var nki = 0; nki < p._knowsNobles.length; nki++) {
+                        var knownPerson = Engine.findPerson(p._knowsNobles[nki]);
+                        if (knownPerson && knownPerson.alive) {
+                            var knownRank = getNPCSocialRank(knownPerson);
+                            if (knownRank >= targetRank) { pKnows = true; break; }
+                        }
+                    }
+                } else {
+                    // Fallback: hash-based (~33% chance)
+                    var pHash = 0;
+                    for (var phi = 0; phi < p.id.length; phi++) pHash = ((pHash << 5) - pHash + p.id.charCodeAt(phi)) | 0;
+                    pKnows = (Math.abs(pHash) % 3) === 0;
+                }
             }
             introducers.push({
                 id: p.id,
@@ -35304,6 +35632,9 @@
             player.tournamentsWon = (player.tournamentsWon || 0) + 1;
             player.tournamentState = null;
 
+            // Grant 1-day access to all nobility including king
+            player._tournamentAccessDay = Engine.getDay();
+
             // Reputation boosts
             var town = Engine.findTown(player.townId);
             if (town) {
@@ -35321,6 +35652,10 @@
 
             Engine.logEvent('🏆 ' + player.fullName + ' has won the Royal Tournament! Champion\'s prize: ' + prize + 'g! The crowd roars!');
             if (typeof UI !== 'undefined' && UI.toast) UI.toast('🏆 TOURNAMENT CHAMPION! Won ' + prize + 'g!', 'success', 'my_actions');
+
+            // Show tournament feast UI
+            _showTournamentFeast(prize, town, kingdom);
+
             return { success: true, message: '🏆 TOURNAMENT CHAMPION! Won all 3 rounds! Prize: ' + prize + 'g. Kingdom reputation +8, King relationship +15. (Combat Level: ' + combatLvl + ')' };
         }
 
@@ -35361,6 +35696,73 @@
         Engine.logEvent('🏟️ ' + player.fullName + ' has withdrawn from the tournament before Round ' + round + '.');
         if (typeof UI !== 'undefined' && UI.toast) UI.toast('🏟️ Withdrew from tournament.', 'info', 'my_actions');
         return { success: true, message: 'Withdrew from tournament. Keeping winnings from previous rounds.' };
+    }
+
+    // Tournament Feast — shows all nobles + king with 1-day access
+    function _showTournamentFeast(prize, town, kingdom) {
+        if (typeof UI === 'undefined' || !UI.openModal) return;
+        var kId = kingdom ? kingdom.id : (town ? town.kingdomId : null);
+        if (!kId) return;
+
+        var html = '<div style="max-width:550px;padding:8px">';
+        html += '<div style="text-align:center;margin-bottom:12px">';
+        html += '<div style="font-size:2em">🏆🎉🍷</div>';
+        html += '<div style="font-size:1.2em;color:#ffd700;font-weight:bold;margin:6px 0">Champion\'s Feast</div>';
+        html += '<div style="color:#ccc;font-size:0.9em">The kingdom celebrates your victory! You have been honored with a feast among the nobility.</div>';
+        html += '<div style="color:#88ff88;font-size:0.95em;margin-top:6px">🏆 Prize: <strong>' + prize + 'g</strong> · Kingdom Rep +8 · King Relationship +15</div>';
+        html += '</div>';
+
+        html += '<div style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.3);border-radius:8px;padding:10px;margin:10px 0">';
+        html += '<div style="color:#ffd700;font-weight:bold;margin-bottom:6px">⚠️ Make the most of this day!</div>';
+        html += '<div style="color:#ccc;font-size:0.85em">As tournament champion, you have been granted access to <strong>all nobility and the King</strong> for today only. Build relationships, seek introductions, and advance your standing!</div>';
+        html += '</div>';
+
+        // List nobles present at the feast
+        html += '<div style="margin-top:12px"><div style="color:#ffd700;font-weight:bold;margin-bottom:8px">🏰 Nobles Present at the Feast:</div>';
+
+        var allPeople = (typeof Engine !== 'undefined' && Engine.getPeople) ? Engine.getPeople() : [];
+        var nobles = [];
+        for (var ni = 0; ni < allPeople.length; ni++) {
+            var np = allPeople[ni];
+            if (!np || !np.alive) continue;
+            if (np.kingdomId !== kId && !(np.socialRank && np.socialRank[kId])) continue;
+            var npRank = getNPCSocialRank(np);
+            if (npRank >= 4) nobles.push({ person: np, rank: npRank });
+        }
+        // Add king
+        if (kingdom && kingdom.king) {
+            var kingP = Engine.findPerson(kingdom.king);
+            if (kingP && kingP.alive) {
+                var already = nobles.some(function(n) { return n.person.id === kingP.id; });
+                if (!already) nobles.push({ person: kingP, rank: 7 });
+            }
+        }
+
+        // Sort by rank descending
+        nobles.sort(function(a, b) { return b.rank - a.rank; });
+
+        var rankIcons = { 7: '👑', 6: '📜', 5: '🏰', 4: '👑' };
+        var rankLabels = { 7: 'King', 6: 'Royal Advisor', 5: 'Lord', 4: 'Minor Noble' };
+
+        for (var fi = 0; fi < Math.min(nobles.length, 15); fi++) {
+            var fn = nobles[fi];
+            var fnName = (fn.person.firstName || '') + ' ' + (fn.person.lastName || '');
+            var fnIcon = rankIcons[fn.rank] || '👤';
+            var fnLabel = rankLabels[fn.rank] || 'Noble';
+            html += '<div onclick="UI.closeModal(); UI.talkToPerson(\'' + fn.person.id + '\')" ';
+            html += 'style="display:flex;align-items:center;gap:8px;padding:6px 8px;margin:3px 0;border:1px solid #555;border-radius:6px;background:rgba(40,40,40,0.8);cursor:pointer;transition:background 0.15s" ';
+            html += 'onmouseover="this.style.background=\'rgba(255,215,0,0.12)\'" onmouseout="this.style.background=\'rgba(40,40,40,0.8)\'">';
+            html += '<span style="font-size:1.2em">' + fnIcon + '</span>';
+            html += '<div style="flex:1"><span style="color:#eee;font-weight:bold">' + fnName.trim() + '</span>';
+            html += ' <span style="color:#888;font-size:0.8em">(' + fnLabel + ')</span></div>';
+            html += '</div>';
+        }
+        if (nobles.length === 0) {
+            html += '<div style="color:#888;font-style:italic">No nobles could attend the feast.</div>';
+        }
+        html += '</div></div>';
+
+        UI.openModal('🏆 Champion\'s Feast', html, '<button class="btn-medieval" onclick="UI.closeModal()">Leave the Feast</button>');
     }
 
     // ========================================================
@@ -37218,8 +37620,16 @@
         proposeLaw,
         getProposableLaws,
 
+        // Lord/RA — Kingdom Building Construction
+        requestKingdomBuilding,
+        getKingdomBuildableTypes,
+
         // Graduation Ceremonies
         showRankCeremony,
+
+        // King's Favor (RA Special Favors)
+        getKingFavor,
+        respondToKingFavor,
 
         // Town Reputation
         modifyTownReputation,

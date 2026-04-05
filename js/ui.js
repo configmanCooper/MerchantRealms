@@ -1512,7 +1512,33 @@ window.UI = (function () {
             </div>`;
         }
 
-        // Kingdom Economic Policies section (bounties, subsidies, etc.)
+        // Kingdom Building Construction button (Lords in their town, RAs in any town)
+        if (isPlayerHere && typeof Player !== 'undefined' && Player.state && Player.state.socialRank &&
+            (Player.state.socialRank[town.kingdomId] || 0) >= 5) {
+            var _canBuild = false;
+            var _playerRank = Player.state.socialRank[town.kingdomId] || 0;
+            if (_playerRank >= 6) _canBuild = true; // RA can build anywhere
+            else if (_playerRank >= 5 && Player.state.lordTownId === town.id) _canBuild = true; // Lord only in own town
+            if (_canBuild) {
+                html += `<div class="text-center mt-sm">
+                    <button class="btn-medieval" onclick="UI.openKingdomBuildDialog('${town.id}', '${town.kingdomId}')" style="font-size:0.85rem;padding:8px 24px;background:rgba(100,200,150,0.15);border-color:rgba(100,200,150,0.4);">
+                        🏗️ Kingdom Construction
+                    </button>
+                </div>`;
+            }
+        }
+
+        // King's Favor button (if RA with pending favor)
+        if (isPlayerHere && typeof Player !== 'undefined' && Player.getKingFavor) {
+            var _favor = Player.getKingFavor(town.kingdomId);
+            if (_favor) {
+                html += `<div class="text-center mt-sm">
+                    <button class="btn-medieval" onclick="UI.openKingFavorDialog('${town.kingdomId}')" style="font-size:0.85rem;padding:8px 24px;background:rgba(255,200,50,0.2);border-color:rgba(255,200,50,0.5);animation:pulse 2s infinite;">
+                        👑 King's Request (Respond!)
+                    </button>
+                </div>`;
+            }
+        }
         if (kingdom) {
             const kFull = Engine.getWorld() ? Engine.getWorld().kingdoms.find(kk => kk.id === kingdom.id) : kingdom;
             const bounties = (kFull && kFull.productionBounties || []).filter(b => b.townId === town.id && !b.fulfilled && b.expiresDay > (Engine.getDay() || 0));
@@ -18133,6 +18159,96 @@ window.UI = (function () {
     // ========================================================
     // ROYAL ADVISOR — PROPOSE LAWS UI
     // ========================================================
+    // ========================================================
+    // KINGDOM BUILDING CONSTRUCTION DIALOG
+    // ========================================================
+    function openKingdomBuildDialog(townId, kingdomId) {
+        if (typeof Player === 'undefined' || !Player.getKingdomBuildableTypes || !Player.requestKingdomBuilding) {
+            toast('Kingdom construction not available.', 'warning'); return;
+        }
+        var buildable = Player.getKingdomBuildableTypes(townId);
+        if (!buildable || buildable.length === 0) {
+            toast('No kingdom buildings available for this town.', 'info'); return;
+        }
+        var kingdom = null;
+        try { kingdom = Engine.findKingdom(kingdomId); } catch(e) {}
+        var treasuryStr = kingdom ? Math.floor(kingdom.gold) + 'g' : '?';
+
+        var body = '<div style="padding:10px;max-height:400px;overflow-y:auto;">';
+        body += '<p style="color:#aaa;margin-bottom:10px;">Request the king to fund a construction project. Higher contribution and reputation improve approval chances.</p>';
+        body += '<p style="color:#d4a017;font-size:0.85rem;">Kingdom Treasury: ' + treasuryStr + '</p>';
+
+        for (var bi = 0; bi < buildable.length; bi++) {
+            var b = buildable[bi];
+            body += '<div style="background:rgba(100,200,150,0.08);border:1px solid rgba(100,200,150,0.2);border-radius:8px;padding:10px;margin-bottom:8px;">';
+            body += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+            body += '<strong style="color:#b3e5c8;">' + b.name + '</strong>';
+            body += '<span style="color:#aaa;font-size:0.8rem;">Cost: ' + b.cost + 'g</span>';
+            body += '</div>';
+            body += '<p style="color:#999;font-size:0.8rem;margin:4px 0;">' + (b.description || b.effect || '') + '</p>';
+            body += '<div style="display:flex;gap:8px;align-items:center;margin-top:6px;">';
+            body += '<label style="color:#aaa;font-size:0.8rem;">Your contribution:</label>';
+            body += '<input type="range" id="kb-contrib-' + b.id + '" min="0" max="' + b.cost + '" value="' + Math.floor(b.cost * 0.3) + '" step="10" style="flex:1;" oninput="document.getElementById(\'kb-val-' + b.id + '\').textContent=this.value+\'g (\'+Math.round(this.value/' + b.cost + '*100)+\'%)\'"/>';
+            body += '<span id="kb-val-' + b.id + '" style="color:#d4a017;font-size:0.8rem;min-width:80px;">' + Math.floor(b.cost * 0.3) + 'g (30%)</span>';
+            body += '</div>';
+            body += '<button class="btn-medieval" onclick="UI._submitKingdomBuild(\'' + townId + '\',\'' + b.id + '\')" style="margin-top:6px;font-size:0.8rem;padding:4px 16px;">🏗️ Request</button>';
+            body += '</div>';
+        }
+        body += '</div>';
+
+        openModal('🏗️ Kingdom Construction', body, '<button class="btn-medieval" onclick="closeModal()">Close</button>');
+    }
+
+    function _submitKingdomBuild(townId, buildingType) {
+        var slider = document.getElementById('kb-contrib-' + buildingType);
+        var contribution = slider ? parseInt(slider.value) : 0;
+        var result = Player.requestKingdomBuilding(townId, buildingType, contribution);
+        if (result && result.success) {
+            toast('✅ ' + result.message, 'success');
+            closeModal();
+        } else {
+            toast('❌ ' + (result ? result.message : 'Request failed.'), 'warning');
+        }
+    }
+
+    // ========================================================
+    // KING'S FAVOR (RA SPECIAL FAVOR) DIALOG
+    // ========================================================
+    function openKingFavorDialog(kingdomId) {
+        if (typeof Player === 'undefined' || !Player.getKingFavor) return;
+        var favor = Player.getKingFavor(kingdomId);
+        if (!favor) { toast('No pending request from the king.', 'info'); return; }
+
+        var daysLeft = favor.expiresDay - (Engine.getDay ? Engine.getDay() : 0);
+        var body = '<div style="padding:15px;">';
+        body += '<p style="color:#d4a017;font-size:1.1rem;">👑 The King requests your service:</p>';
+        body += '<p style="color:#e8d8b8;font-size:1rem;margin:12px 0;padding:10px;background:rgba(255,215,0,0.1);border-radius:8px;border:1px solid rgba(255,215,0,0.2);">"' + favor.description.charAt(0).toUpperCase() + favor.description.slice(1) + '"</p>';
+        if (favor.goldCost > 0) {
+            body += '<p style="color:#ffcc44;">💰 Cost: <strong>' + favor.goldCost + 'g</strong></p>';
+        }
+        body += '<p style="color:#88cc88;">✅ Accept: +' + (favor.repGain || 3) + ' kingdom reputation, +' + (favor.relGain || 5) + ' king relationship</p>';
+        body += '<p style="color:#cc8888;">❌ Decline: -5 king relationship</p>';
+        body += '<p style="color:#aaa;font-size:0.85rem;">⏰ Expires in ' + Math.max(0, daysLeft) + ' days (ignored = -8 relationship)</p>';
+        body += '</div>';
+
+        var footer = '<button class="btn-medieval" onclick="UI._respondKingFavor(\'' + kingdomId + '\', true)" style="background:rgba(100,200,100,0.2);border-color:rgba(100,200,100,0.4);">✅ Accept</button>';
+        footer += '<button class="btn-medieval" onclick="UI._respondKingFavor(\'' + kingdomId + '\', false)" style="background:rgba(200,100,100,0.2);border-color:rgba(200,100,100,0.4);margin-left:8px;">❌ Decline</button>';
+        footer += '<button class="btn-medieval" onclick="closeModal()" style="margin-left:8px;">Later</button>';
+
+        openModal('👑 King\'s Request', body, footer);
+    }
+
+    function _respondKingFavor(kingdomId, accept) {
+        if (typeof Player === 'undefined' || !Player.respondToKingFavor) return;
+        var result = Player.respondToKingFavor(kingdomId, accept);
+        if (result && result.success) {
+            toast(result.message, accept ? 'success' : 'warning');
+        } else {
+            toast(result ? result.message : 'Failed.', 'danger');
+        }
+        closeModal();
+    }
+
     function openProposeLawsDialog(kingdomId) {
         if (typeof Player === 'undefined') return;
         if (!kingdomId) {
@@ -21646,6 +21762,12 @@ window.UI = (function () {
         // Royal Advisor — Propose Laws
         openProposeLawsDialog,
         executeProposeLaw,
+        // Kingdom Construction
+        openKingdomBuildDialog,
+        _submitKingdomBuild,
+        // King's Favor (RA)
+        openKingFavorDialog,
+        _respondKingFavor,
         // Degradation & Repair
         repairBuilding: repairBuildingUI,
         repairShip: repairShipUI,
