@@ -15194,6 +15194,9 @@
             player.pendingWarChoice = warConflict;
         }
 
+        // Check for foreign noble status revocation and building freeze during war
+        tickWarRevocation();
+
         // Track daily profit (before any gold changes this tick)
         const goldAtStartOfDay = player.gold;
         if (player.achievementStats) {
@@ -16093,12 +16096,13 @@
     // ========================================================
     function getForeignNobleStatus(kingdomId) {
         if (!kingdomId) return false;
-        // Check if player is Lord+ (rank 5+) in ANY kingdom
+        // Check if player is Minor Noble+ (rank 4+) in ANY kingdom
         const activeWars = (typeof Engine !== 'undefined' && Engine.getActiveWars) ? Engine.getActiveWars() : {};
+        var bestStatus = null; // 'minor_noble' or 'lord'
         for (const kId in player.socialRank) {
-            if ((player.socialRank[kId] || 0) < 5) continue; // Not Lord+
+            if ((player.socialRank[kId] || 0) < 4) continue; // Not Minor Noble+
             if (kId === kingdomId) continue; // Same kingdom
-            // Check target kingdom is not at war with the Lord+ kingdom
+            // Check target kingdom is not at war with our kingdom
             var atWar = false;
             for (var wId in activeWars) {
                 var w = activeWars[wId];
@@ -16107,17 +16111,29 @@
                 if (sides.includes(kId) && sides.includes(kingdomId)) { atWar = true; break; }
             }
             if (atWar) continue;
-            // Check player doesn't already hold Burgher+ in target
-            if ((player.socialRank[kingdomId] || 0) >= 2) return false;
-            return true;
+            var rank = player.socialRank[kId];
+            if (rank >= 5 && (player.socialRank[kingdomId] || 0) < 2) {
+                bestStatus = 'lord'; // Lord+ = Burgher-level privileges
+            } else if (rank >= 4 && !bestStatus && (player.socialRank[kingdomId] || 0) < 1) {
+                bestStatus = 'minor_noble'; // Minor Noble = Citizen-level privileges
+            }
         }
-        return false;
+        return bestStatus || false;
+    }
+
+    // Returns the effective privilege level granted by foreign noble status
+    function getForeignNoblePrivilegeLevel(kingdomId) {
+        var status = getForeignNobleStatus(kingdomId);
+        if (status === 'lord') return 2; // Burgher-level
+        if (status === 'minor_noble') return 1; // Citizen-level
+        return 0;
     }
 
     function getEffectiveRank(kingdomId) {
         var kId = kingdomId || player.citizenshipKingdomId;
         var rawRank = (kId && player.socialRank[kId] != null) ? player.socialRank[kId] : 0;
-        return Math.max(rawRank, getForeignNobleStatus(kId) ? 2 : 0);
+        var foreignLevel = getForeignNoblePrivilegeLevel(kId);
+        return Math.max(rawRank, foreignLevel);
     }
 
     // ========================================================
@@ -16154,10 +16170,11 @@
             return { paid: true, fine: fine, paidBy: 'player' };
         }
 
-        // Try to get Lord+ kingdom king to pay
+        // Try to get a patron kingdom's king to pay
         var activeWars = (typeof Engine !== 'undefined' && Engine.getActiveWars) ? Engine.getActiveWars() : {};
+        var minPatronRank = getForeignNobleStatus(kingdomId) === 'lord' ? 5 : 4;
         for (var kId in player.socialRank) {
-            if ((player.socialRank[kId] || 0) < 5) continue;
+            if ((player.socialRank[kId] || 0) < minPatronRank) continue;
             if (kId === kingdomId) continue;
             var kingdom = Engine.findKingdom(kId);
             if (!kingdom) continue;
@@ -16238,11 +16255,22 @@
 
             // Detection chance
             var detectionChance = 0.15;
+            var playerRankInEnemy = (player.socialRank[enemyKingdomId] || 0);
+            // Higher rank = more visible = higher detection
+            if (playerRankInEnemy >= 6) detectionChance += 0.35; // Royal Advisor: very high
+            else if (playerRankInEnemy >= 5) detectionChance += 0.20; // Lord: high
+            else if (playerRankInEnemy >= 4) detectionChance += 0.10; // Minor Noble
             if ((player.socialRank[kingdom.id] || 0) >= 4) detectionChance += 0.10;
             // Check trade agreements
             var enemyK = Engine.findKingdom(enemyKingdomId);
             if (enemyK && kingdom.relations && kingdom.relations[enemyKingdomId] > 0) detectionChance += 0.20;
+            // Skill reductions
             if (hasSkill('discrete')) detectionChance -= 0.10;
+            if (hasSkill('master_smuggler')) detectionChance -= 0.10;
+            if (hasSkill('blockade_runner')) detectionChance -= 0.08;
+            if (hasSkill('ghost')) detectionChance -= 0.15;
+            if (hasSkill('master_disguise')) detectionChance -= 0.07;
+            if (hasSkill('shadow_dealings')) detectionChance -= 0.05;
             var smugSkillReduction = Math.min(0.15, (player.smugglingSkill || 0) * 0.05);
             detectionChance -= smugSkillReduction;
             // Weapons/armor = +15% detection, horses = +5%
@@ -16273,13 +16301,22 @@
                     applyCorruptPenalty(town, kingdom, punishment.fine, 0, punishment.jailDays, false);
                 }
 
-                // For Minor Noble+: additional treason in citizen kingdom
+                // For Minor Noble+: treason = EXECUTION in citizen kingdom
                 if ((player.socialRank[enemyKingdomId] || 0) >= 4) {
-                    var treasonPunishment = getCrimePunishment(enemyKingdomId, 'treason');
-                    player.reputation[enemyKingdomId] = Math.max(0, (player.reputation[enemyKingdomId] || 50) - 30);
+                    player.reputation[enemyKingdomId] = 0;
                     if (!player.criminalRecord[enemyKingdomId]) player.criminalRecord[enemyKingdomId] = {};
                     player.criminalRecord[enemyKingdomId]['treason'] = (player.criminalRecord[enemyKingdomId]['treason'] || 0) + 1;
-                    Engine.logEvent(player.fullName + ' has been charged with treason by ' + (enemyK ? enemyK.name : enemyKingdomId) + ' for war profiteering!');
+                    Engine.logEvent('⚖️ ' + player.fullName + ' has been charged with HIGH TREASON by ' + (enemyK ? enemyK.name : enemyKingdomId) + ' for selling arms to the enemy!');
+                    Engine.logEvent('💀 As a noble of ' + (enemyK ? enemyK.name : 'the kingdom') + ', ' + player.fullName + ' is sentenced to EXECUTION for treason!');
+                    autoJournalCapture('crime', 'I was caught selling weapons to the enemy. My own kingdom has sentenced me to death for treason.', { mood: 'desperate' });
+                    // Execute the player
+                    if (typeof Engine !== 'undefined' && Engine.killPerson) {
+                        var playerPerson = Engine.findPerson(player.id);
+                        if (playerPerson) Engine.killPerson(playerPerson, 'executed_treason');
+                    }
+                    player.alive = false;
+                    player.health = 0;
+                    return; // Player is dead
                 }
 
                 Engine.logEvent(player.fullName + ' was caught selling war materials to ' + (kingdom.name || kingdom.id) + ' during wartime!');
@@ -16303,15 +16340,25 @@
             for (var s = 0; s < sides.length; s++) {
                 if (sides[s] !== kingdom.id && (player.socialRank[sides[s]] || 0) >= 1) {
                     var detectionChance = 0.15;
+                    var playerRankInEnemy = (player.socialRank[sides[s]] || 0);
+                    if (playerRankInEnemy >= 6) detectionChance += 0.35;
+                    else if (playerRankInEnemy >= 5) detectionChance += 0.20;
+                    else if (playerRankInEnemy >= 4) detectionChance += 0.10;
                     if ((player.socialRank[kingdom.id] || 0) >= 4) detectionChance += 0.10;
                     var enemyK = Engine.findKingdom(sides[s]);
                     if (enemyK && kingdom.relations && kingdom.relations[sides[s]] > 0) detectionChance += 0.20;
                     if (hasSkill('discrete')) detectionChance -= 0.10;
+                    if (hasSkill('master_smuggler')) detectionChance -= 0.10;
+                    if (hasSkill('blockade_runner')) detectionChance -= 0.08;
+                    if (hasSkill('ghost')) detectionChance -= 0.15;
+                    if (hasSkill('master_disguise')) detectionChance -= 0.07;
+                    if (hasSkill('shadow_dealings')) detectionChance -= 0.05;
                     var smugSkillReduction = Math.min(0.15, (player.smugglingSkill || 0) * 0.05);
                     detectionChance -= smugSkillReduction;
                     if (resourceId === 'swords' || resourceId === 'armor') detectionChance += 0.15;
                     else if (resourceId === 'horses') detectionChance += 0.05;
-                    return { chance: Math.max(0.02, Math.min(0.95, detectionChance)), enemyKingdomId: sides[s] };
+                    var isLethal = playerRankInEnemy >= 4;
+                    return { chance: Math.max(0.02, Math.min(0.95, detectionChance)), enemyKingdomId: sides[s], isLethal: isLethal };
                 }
             }
         }
@@ -16841,6 +16888,336 @@
 
     function getPendingWarChoice() {
         return player.pendingWarChoice || null;
+    }
+
+    // ========================================================
+    // §12C-3 WAR REVOCATION: Foreign noble status & asset freeze
+    // ========================================================
+    function tickWarRevocation() {
+        var day = Engine.getDay();
+        if (day % 7 !== 0) return; // Check weekly
+        var activeWars = (typeof Engine !== 'undefined' && Engine.getActiveWars) ? Engine.getActiveWars() : {};
+        if (!activeWars || Object.keys(activeWars).length === 0) {
+            // No wars — restore any frozen assets
+            if (player._warFrozenAssets && player._warFrozenAssets.length > 0) {
+                for (var rfi = 0; rfi < player._warFrozenAssets.length; rfi++) {
+                    var frozen = player._warFrozenAssets[rfi];
+                    // Unfreeze buildings
+                    for (var bfi = 0; bfi < player.buildings.length; bfi++) {
+                        if (player.buildings[bfi].townId === frozen.townId && player.buildings[bfi]._warFrozen) {
+                            player.buildings[bfi]._warFrozen = false;
+                            player.buildings[bfi].active = true;
+                        }
+                    }
+                }
+                Engine.logEvent('☮️ Peace restored — your foreign assets are no longer frozen.');
+                player._warFrozenAssets = [];
+            }
+            return;
+        }
+
+        // Find kingdoms player has rank 4+ in
+        var nobleKingdoms = [];
+        for (var kId in player.socialRank) {
+            if ((player.socialRank[kId] || 0) >= 4) nobleKingdoms.push(kId);
+        }
+        if (nobleKingdoms.length === 0) return;
+
+        // Check each war for foreign asset impacts
+        for (var wId in activeWars) {
+            var w = activeWars[wId];
+            if (!w.active && w.active !== undefined) continue;
+            var sides = [w.kingdomA, w.kingdomB, w.attackerId, w.defenderId].filter(Boolean);
+
+            for (var nki = 0; nki < nobleKingdoms.length; nki++) {
+                var myKingdom = nobleKingdoms[nki];
+                if (!sides.includes(myKingdom)) continue;
+
+                // Find enemy kingdoms in this war
+                for (var si = 0; si < sides.length; si++) {
+                    var enemyKId = sides[si];
+                    if (enemyKId === myKingdom) continue;
+
+                    // Check if player has assets in enemy kingdom
+                    var assetsInEnemy = [];
+                    for (var bi = 0; bi < player.buildings.length; bi++) {
+                        var bld = player.buildings[bi];
+                        var bTown = Engine.findTown ? Engine.findTown(bld.townId) : null;
+                        if (bTown && bTown.kingdomId === enemyKId) {
+                            assetsInEnemy.push(bld);
+                        }
+                    }
+                    var housesInEnemy = (player.houses || []).filter(function(h) {
+                        var hTown = Engine.findTown ? Engine.findTown(h.townId) : null;
+                        return hTown && hTown.kingdomId === enemyKId;
+                    });
+                    var shipsInEnemy = (player.ships || []).filter(function(s) {
+                        var sTown = Engine.findTown ? Engine.findTown(s.portTownId || s.townId) : null;
+                        return sTown && sTown.kingdomId === enemyKId;
+                    });
+
+                    if (assetsInEnemy.length === 0 && housesInEnemy.length === 0 && shipsInEnemy.length === 0) continue;
+
+                    // Already processed this war-enemy pair?
+                    if (!player._warFrozenAssets) player._warFrozenAssets = [];
+                    var alreadyFrozen = player._warFrozenAssets.some(function(f) {
+                        return f.warId === wId && f.enemyKingdomId === enemyKId;
+                    });
+                    if (alreadyFrozen) continue;
+
+                    // Freeze all buildings in enemy kingdom (stop production)
+                    for (var fbi = 0; fbi < assetsInEnemy.length; fbi++) {
+                        assetsInEnemy[fbi]._warFrozen = true;
+                        assetsInEnemy[fbi].active = false;
+                    }
+
+                    // Calculate total asset value
+                    var totalValue = 0;
+                    for (var avi = 0; avi < assetsInEnemy.length; avi++) {
+                        var avBt = Engine.findBuildingType ? Engine.findBuildingType(assetsInEnemy[avi].type) : null;
+                        totalValue += avBt ? avBt.cost * (assetsInEnemy[avi].level || 1) : 500;
+                    }
+                    for (var hvi = 0; hvi < housesInEnemy.length; hvi++) {
+                        totalValue += housesInEnemy[hvi].value || 500;
+                    }
+                    for (var svi = 0; svi < shipsInEnemy.length; svi++) {
+                        totalValue += shipsInEnemy[svi].value || 1000;
+                    }
+
+                    player._warFrozenAssets.push({
+                        warId: wId,
+                        enemyKingdomId: enemyKId,
+                        myKingdomId: myKingdom,
+                        frozenDay: day,
+                        totalValue: totalValue,
+                        buildingCount: assetsInEnemy.length,
+                        houseCount: housesInEnemy.length,
+                        shipCount: shipsInEnemy.length,
+                        dealOffered: false,
+                        dealAccepted: false,
+                        seized: false
+                    });
+
+                    var enemyK = Engine.findKingdom ? Engine.findKingdom(enemyKId) : null;
+                    var myK = Engine.findKingdom ? Engine.findKingdom(myKingdom) : null;
+                    Engine.logEvent('⚠️ WAR: ' + (enemyK ? enemyK.name : enemyKId) + ' has frozen your ' + assetsInEnemy.length +
+                        ' building(s) and assets due to war with ' + (myK ? myK.name : myKingdom) + '!');
+                    autoJournalCapture('war', 'War has broken out between ' + (myK ? myK.name : 'my kingdom') + ' and ' +
+                        (enemyK ? enemyK.name : 'a rival kingdom') + '. My properties there have been frozen.', { mood: 'worried' });
+
+                    // King may offer a deal or seize (handled in next phase)
+                    triggerWarAssetDeal(wId, enemyKId, myKingdom, totalValue, assetsInEnemy, housesInEnemy, shipsInEnemy);
+                }
+            }
+        }
+
+        // Execute seizures for expired grace periods
+        if (player._warFrozenAssets) {
+            for (var szi = player._warFrozenAssets.length - 1; szi >= 0; szi--) {
+                var szRecord = player._warFrozenAssets[szi];
+                if (szRecord.seized || szRecord.dealAccepted) continue;
+                if (!szRecord.seizureDay || day < szRecord.seizureDay) continue;
+
+                // Seize all buildings in enemy kingdom
+                var szKingdom = Engine.findKingdom ? Engine.findKingdom(szRecord.enemyKingdomId) : null;
+                var seized = 0;
+                for (var sbi = player.buildings.length - 1; sbi >= 0; sbi--) {
+                    var szBld = player.buildings[sbi];
+                    var szTown = Engine.findTown ? Engine.findTown(szBld.townId) : null;
+                    if (szTown && szTown.kingdomId === szRecord.enemyKingdomId) {
+                        // Transfer building to kingdom in world.towns
+                        for (var tbi = 0; tbi < szTown.buildings.length; tbi++) {
+                            if (szTown.buildings[tbi].ownerId === player.id && szTown.buildings[tbi].type === szBld.type) {
+                                szTown.buildings[tbi].ownerId = 'kingdom_' + szRecord.enemyKingdomId;
+                                break;
+                            }
+                        }
+                        player.buildings.splice(sbi, 1);
+                        seized++;
+                    }
+                }
+                // Seize houses
+                if (player.houses) {
+                    for (var shi = player.houses.length - 1; shi >= 0; shi--) {
+                        var szHouse = player.houses[shi];
+                        var shTown = Engine.findTown ? Engine.findTown(szHouse.townId) : null;
+                        if (shTown && shTown.kingdomId === szRecord.enemyKingdomId) {
+                            player.houses.splice(shi, 1);
+                        }
+                    }
+                }
+                // Seize ships
+                if (player.ships) {
+                    for (var ssi = player.ships.length - 1; ssi >= 0; ssi--) {
+                        var szShip = player.ships[ssi];
+                        var ssTown = Engine.findTown ? Engine.findTown(szShip.portTownId || szShip.townId) : null;
+                        if (ssTown && ssTown.kingdomId === szRecord.enemyKingdomId) {
+                            player.ships.splice(ssi, 1);
+                        }
+                    }
+                }
+                szRecord.seized = true;
+                if (seized > 0 || szRecord.houseCount > 0 || szRecord.shipCount > 0) {
+                    Engine.logEvent('💀 ' + (szKingdom ? szKingdom.name : szRecord.enemyKingdomId) + ' has SEIZED your ' + seized + ' building(s) and other assets!');
+                    autoJournalCapture('war', (szKingdom ? szKingdom.name : 'The enemy kingdom') + ' has confiscated all my properties in their territory.', { mood: 'devastated' });
+                }
+            }
+        }
+    }
+
+    // ========================================================
+    // §12C-4 WAR ASSET DEAL: King decides to seize or offer a deal
+    // ========================================================
+    function triggerWarAssetDeal(warId, enemyKId, myKingdomId, totalValue, buildings, houses, ships) {
+        var enemyK = Engine.findKingdom ? Engine.findKingdom(enemyKId) : null;
+        if (!enemyK) return;
+        var kp = enemyK.kingPersonality || {};
+        var rng = Engine.getRng();
+        if (!rng) return;
+
+        // King decides based on personality and war needs
+        var dealChance = 0.40; // base chance king offers a deal instead of seizing
+
+        // Generous/diplomatic kings more likely to deal
+        if (kp.generosity === 'generous') dealChance += 0.25;
+        if (kp.diplomacy === 'diplomatic' || kp.diplomacy === 'peaceful') dealChance += 0.15;
+        // Greedy/warlike kings more likely to seize
+        if (kp.greed === 'greedy') dealChance -= 0.15;
+        if (kp.greed === 'corrupt') dealChance -= 0.25;
+        if (kp.militarism === 'warlike' || kp.militarism === 'aggressive') dealChance -= 0.15;
+        // Low value = not worth dealing, just seize
+        if (totalValue < 500) dealChance -= 0.20;
+        // High value = king prefers deal (gets ongoing tribute)
+        if (totalValue > 5000) dealChance += 0.15;
+        // Player reputation in enemy kingdom helps
+        var rep = (player.reputation && player.reputation[enemyKId]) || 0;
+        if (rep > 60) dealChance += 0.10;
+        if (rep < 20) dealChance -= 0.15;
+
+        dealChance = Math.max(0.05, Math.min(0.90, dealChance));
+
+        // Find frozen asset record
+        var frozenRecord = null;
+        for (var fri = 0; fri < (player._warFrozenAssets || []).length; fri++) {
+            if (player._warFrozenAssets[fri].warId === warId && player._warFrozenAssets[fri].enemyKingdomId === enemyKId) {
+                frozenRecord = player._warFrozenAssets[fri];
+                break;
+            }
+        }
+        if (!frozenRecord) return;
+
+        if (rng.chance(dealChance)) {
+            // King offers a deal — player pays tribute to keep assets
+            // Calculate deal price based on value, king's needs, and war situation
+            var dealPriceBase = Math.floor(totalValue * 0.3);
+            // King needs military goods? Increase price
+            if (enemyK.militaryStockpile) {
+                var needsSwords = (enemyK.militaryStockpile.swords || 0) < 50;
+                var needsArmor = (enemyK.militaryStockpile.armor || 0) < 50;
+                if (needsSwords || needsArmor) dealPriceBase = Math.floor(dealPriceBase * 1.5);
+            }
+            // Greedy kings charge more
+            if (kp.greed === 'greedy') dealPriceBase = Math.floor(dealPriceBase * 1.4);
+            if (kp.greed === 'corrupt') dealPriceBase = Math.floor(dealPriceBase * 1.8);
+            if (kp.generosity === 'generous') dealPriceBase = Math.floor(dealPriceBase * 0.7);
+
+            frozenRecord.dealOffered = true;
+            frozenRecord.dealPrice = dealPriceBase;
+            frozenRecord.dealGoodsRequested = [];
+
+            // King may also request specific military goods
+            if (enemyK.militaryStockpile) {
+                if ((enemyK.militaryStockpile.swords || 0) < 50) {
+                    frozenRecord.dealGoodsRequested.push({ id: 'swords', qty: Math.min(20, Math.floor(totalValue / 200)) });
+                }
+                if ((enemyK.militaryStockpile.armor || 0) < 50) {
+                    frozenRecord.dealGoodsRequested.push({ id: 'armor', qty: Math.min(15, Math.floor(totalValue / 300)) });
+                }
+            }
+
+            Engine.logEvent('📜 ' + (enemyK.name || enemyKId) + ' offers a deal: pay ' + dealPriceBase + 'g' +
+                (frozenRecord.dealGoodsRequested.length > 0 ? ' plus supplies' : '') +
+                ' to keep your ' + buildings.length + ' building(s) operating during the war.');
+            if (typeof UI !== 'undefined' && UI.toast) {
+                UI.toast('⚖️ ' + (enemyK.name || 'Enemy king') + ' offers a wartime deal for your assets!', 'warning', 'critical');
+            }
+        } else {
+            // King seizes assets after 30-day grace period
+            frozenRecord.seizureDay = Engine.getDay() + 30;
+            Engine.logEvent('⚔️ ' + (enemyK.name || enemyKId) + ' will seize your frozen assets in 30 days unless the war ends!');
+            if (typeof UI !== 'undefined' && UI.toast) {
+                UI.toast('⚔️ ' + (enemyK.name || 'Enemy king') + ' will seize your assets in 30 days!', 'danger', 'critical');
+            }
+        }
+    }
+
+    function acceptWarAssetDeal(enemyKingdomId) {
+        if (!player._warFrozenAssets) return { success: false, message: 'No frozen assets.' };
+        var record = null;
+        for (var i = 0; i < player._warFrozenAssets.length; i++) {
+            if (player._warFrozenAssets[i].enemyKingdomId === enemyKingdomId && player._warFrozenAssets[i].dealOffered) {
+                record = player._warFrozenAssets[i];
+                break;
+            }
+        }
+        if (!record) return { success: false, message: 'No deal available for this kingdom.' };
+        if (record.dealAccepted) return { success: false, message: 'Deal already accepted.' };
+
+        var price = record.dealPrice || 0;
+        if (player.gold < price) return { success: false, message: 'Not enough gold. Need ' + price + 'g.' };
+
+        // Check goods requirements
+        var goodsReq = record.dealGoodsRequested || [];
+        for (var gi = 0; gi < goodsReq.length; gi++) {
+            if ((player.inventory[goodsReq[gi].id] || 0) < goodsReq[gi].qty) {
+                return { success: false, message: 'Need ' + goodsReq[gi].qty + ' ' + goodsReq[gi].id + ' (have ' + (player.inventory[goodsReq[gi].id] || 0) + ').' };
+            }
+        }
+
+        // Pay
+        player.gold -= price;
+        logFinance(-price, 'war_deal', 'Wartime asset deal');
+        var enemyK = Engine.findKingdom ? Engine.findKingdom(enemyKingdomId) : null;
+        if (enemyK) enemyK.gold = (enemyK.gold || 0) + price;
+
+        // Deliver goods
+        for (var dgi = 0; dgi < goodsReq.length; dgi++) {
+            player.inventory[goodsReq[dgi].id] -= goodsReq[dgi].qty;
+            if (enemyK && enemyK.militaryStockpile) {
+                enemyK.militaryStockpile[goodsReq[dgi].id] = (enemyK.militaryStockpile[goodsReq[dgi].id] || 0) + goodsReq[dgi].qty;
+            }
+        }
+
+        // Unfreeze buildings
+        record.dealAccepted = true;
+        for (var ubi = 0; ubi < player.buildings.length; ubi++) {
+            var ubTown = Engine.findTown ? Engine.findTown(player.buildings[ubi].townId) : null;
+            if (ubTown && ubTown.kingdomId === enemyKingdomId && player.buildings[ubi]._warFrozen) {
+                player.buildings[ubi]._warFrozen = false;
+                player.buildings[ubi].active = true;
+            }
+        }
+
+        Engine.logEvent('🤝 Deal accepted with ' + (enemyK ? enemyK.name : enemyKingdomId) + '. Your assets are unfrozen for ' + price + 'g.');
+        autoJournalCapture('war', 'I struck a deal with ' + (enemyK ? enemyK.name : 'the enemy kingdom') + ' to keep my properties running during the war.', { mood: 'relieved' });
+        return { success: true, message: 'Deal accepted! ' + price + 'g paid. Buildings unfrozen.' };
+    }
+
+    function rejectWarAssetDeal(enemyKingdomId) {
+        if (!player._warFrozenAssets) return { success: false, message: 'No frozen assets.' };
+        var record = null;
+        for (var i = 0; i < player._warFrozenAssets.length; i++) {
+            if (player._warFrozenAssets[i].enemyKingdomId === enemyKingdomId && player._warFrozenAssets[i].dealOffered) {
+                record = player._warFrozenAssets[i];
+                break;
+            }
+        }
+        if (!record) return { success: false, message: 'No deal to reject.' };
+        record.dealOffered = false;
+        record.seizureDay = Engine.getDay() + 30;
+        var enemyK = Engine.findKingdom ? Engine.findKingdom(enemyKingdomId) : null;
+        Engine.logEvent('❌ Deal rejected. ' + (enemyK ? enemyK.name : enemyKingdomId) + ' will seize your assets in 30 days.');
+        return { success: true, message: 'Deal rejected. Assets will be seized in 30 days if war continues.' };
     }
 
     // ========================================================
@@ -35702,11 +36079,14 @@
         getPlayerRankIndex,
         getEffectiveRank,
         getForeignNobleStatus,
+        getForeignNoblePrivilegeLevel,
         getCrimePunishment,
         handleForeignNobleCrime,
         getWarTradeDetectionChance,
         sellToKingdom,
         getKingdomBuyInfo,
+        acceptWarAssetDeal,
+        rejectWarAssetDeal,
         canPetitionForPromotion,
         petitionForPromotion,
         petitionCitizenship,
