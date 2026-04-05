@@ -21659,6 +21659,18 @@
             em.occupation = 'noble';
             em.wealthClass = 'upper';
             logEvent('🏰 ' + em.firstName + ' ' + (em.lastName || '') + ' has entered the aristocracy!');
+            // Kingdom grants 4 personal guards
+            if (!em.guards) em.guards = [];
+            var guardsToAdd = Math.min(4, 4 - em.guards.length);
+            for (var egi = 0; egi < guardsToAdd; egi++) {
+                em.guards.push({
+                    id: 'emguard_' + em.id + '_' + egi,
+                    name: 'Royal Guard ' + (egi + 1),
+                    hiredDay: world.day,
+                    kingdomPaid: true
+                });
+            }
+            logEvent('🛡️ ' + em.firstName + ' ' + (em.lastName || '') + ' has been granted ' + guardsToAdd + ' guards by the kingdom.');
         }
     }
 

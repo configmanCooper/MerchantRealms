@@ -16600,6 +16600,52 @@
             player.isNoble = true;
             player.occupation = 'noble';
             Engine.logEvent('🏰 ' + player.fullName + ' has entered the aristocracy!');
+
+            // Kingdom grants 4 personal guards as a noble privilege
+            player.guards = player.guards || [];
+            var rng = Engine.getRng();
+            var townPeople = Engine.getPeople ? Engine.getPeople(player.townId) : [];
+            var existingGuardIds = {};
+            for (var ngi = 0; ngi < player.guards.length; ngi++) {
+                if (player.guards[ngi].personId) existingGuardIds[player.guards[ngi].personId] = true;
+            }
+            var guardCandidates = [];
+            for (var nci = 0; nci < townPeople.length; nci++) {
+                var nc = townPeople[nci];
+                if (!nc.alive || nc.age < 18 || existingGuardIds[nc.id] || nc.id === player.spouseId || nc.isPlayerGuard) continue;
+                guardCandidates.push(nc);
+            }
+            var guardsToGrant = Math.min(4, (CONFIG.PLAYER_GUARD_MAX || 4) - player.guards.length);
+            var guardsGranted = 0;
+            for (var ggi = 0; ggi < guardsToGrant && guardCandidates.length > 0; ggi++) {
+                var preferred = guardCandidates.filter(function(c) {
+                    return c.occupation === 'soldier' || c.occupation === 'guard' || c.occupation === 'unemployed' || !c.occupation;
+                });
+                var pool = preferred.length > 0 ? preferred : guardCandidates;
+                var chosen = rng && rng.pick ? rng.pick(pool) : pool[Math.floor(Math.random() * pool.length)];
+                chosen.isPlayerGuard = true;
+                chosen.previousOccupation = chosen.occupation;
+                chosen.previousTownId = chosen.townId;
+                chosen.occupation = 'player_guard';
+                var gName = (chosen.firstName || '') + (chosen.lastName ? ' ' + chosen.lastName : '');
+                if (!gName.trim()) gName = 'Royal Guard ' + (player.guards.length + 1);
+                player.guards.push({
+                    id: 'guard_' + Date.now() + '_' + (rng ? rng.randInt(0, 9999) : Math.floor(Math.random() * 9999)),
+                    personId: chosen.id,
+                    name: gName,
+                    hiredDay: Engine.getDay(),
+                    kingdomPaid: true
+                });
+                guardCandidates = guardCandidates.filter(function(c) { return c.id !== chosen.id; });
+                guardsGranted++;
+            }
+            player.personalGuards = player.guards.length;
+            if (guardsGranted > 0) {
+                var promoK = Engine.findKingdom(kId);
+                if (promoK) promoK.gold = Math.max(0, (promoK.gold || 0) - guardsGranted * (CONFIG.PLAYER_GUARD_HIRE_COST || 30));
+                Engine.logEvent('🛡️ As a new noble, ' + player.fullName + ' has been granted ' + guardsGranted + ' personal guards by the kingdom!');
+                autoJournalCapture('rank', 'The kingdom has assigned ' + guardsGranted + ' personal guards to protect me as a noble.', { mood: 'proud' });
+            }
         }
 
         const rank = CONFIG.SOCIAL_RANKS[newIdx];
@@ -27895,8 +27941,21 @@
         if (player.guards.length === 0) return;
 
         var wage = (CONFIG.PLAYER_GUARD_DAILY_WAGE || 6) * player.guards.length;
-        player.gold -= wage;
-        logFinance(-wage, 'guards', 'Guard wages (' + player.guards.length + ')');
+        // Kingdom-paid guards (granted on noble promotion) have wages paid by the kingdom
+        var kingdomPaidGuards = player.guards.filter(function(g) { return g.kingdomPaid; });
+        var playerPaidWage = (CONFIG.PLAYER_GUARD_DAILY_WAGE || 6) * (player.guards.length - kingdomPaidGuards.length);
+        var kingdomPaidWage = (CONFIG.PLAYER_GUARD_DAILY_WAGE || 6) * kingdomPaidGuards.length;
+        if (kingdomPaidWage > 0 && player.citizenshipKingdomId) {
+            var guardKingdom = Engine.findKingdom(player.citizenshipKingdomId);
+            if (guardKingdom && (guardKingdom.gold || 0) >= kingdomPaidWage) {
+                guardKingdom.gold -= kingdomPaidWage;
+            } else {
+                // Kingdom can't afford — player must pay
+                playerPaidWage += kingdomPaidWage;
+            }
+        }
+        player.gold -= playerPaidWage;
+        if (playerPaidWage > 0) logFinance(-playerPaidWage, 'guards', 'Guard wages (' + (player.guards.length - kingdomPaidGuards.length) + ')');
         if (player.gold < 0) {
             while (player.gold < 0 && player.guards.length > 0) {
                 var dismissed = player.guards.pop();
