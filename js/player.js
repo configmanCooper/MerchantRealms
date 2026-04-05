@@ -8923,6 +8923,37 @@
     }
 
     // ========================================================
+    // §11.5B ROYAL ADVISOR CONSULTATION RESPONSES
+    // ========================================================
+    function getPendingKingDecisions() {
+        var kId = player.royalAdvisorKingdomId || player.citizenshipKingdomId;
+        if (!kId) return [];
+        if (typeof Engine !== 'undefined' && Engine.getPendingKingDecisions) {
+            return Engine.getPendingKingDecisions(kId);
+        }
+        return [];
+    }
+
+    function respondToKingDecision(decisionId, response) {
+        var kId = player.royalAdvisorKingdomId || player.citizenshipKingdomId;
+        if (!kId) return { success: false, message: 'Not associated with any kingdom.' };
+        if ((player.socialRank[kId] || 0) < 6) return { success: false, message: 'Only Royal Advisors can respond to king consultations.' };
+        if (typeof Engine !== 'undefined' && Engine.respondToKingDecision) {
+            var result = Engine.respondToKingDecision(kId, decisionId, response);
+            if (result.success) {
+                autoJournalCapture('politics', response === 'agree'
+                    ? 'I supported the king\'s decision. Our alliance remains strong.'
+                    : (result.swayed
+                        ? 'I counseled the king against his plan, and he listened. My influence at court grows.'
+                        : 'I opposed the king\'s plan, but he overruled me. A reminder that even advisors have limits.'),
+                    { mood: result.swayed ? 'confident' : (response === 'agree' ? 'content' : 'frustrated') });
+            }
+            return result;
+        }
+        return { success: false, message: 'Engine not available.' };
+    }
+
+    // ========================================================
     // §11.5C TOWN REPUTATION
     // ========================================================
     function modifyTownReputation(townId, amount) {
@@ -36332,6 +36363,8 @@
         // Crown & Royal Advisor
         becomeKing,
         adviseKing,
+        getPendingKingDecisions,
+        respondToKingDecision,
 
         // Town Reputation
         modifyTownReputation,

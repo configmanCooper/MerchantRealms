@@ -6422,7 +6422,17 @@
                     var ourStrength = computeMilitaryStrength(k);
                     // Only declare if we think we're at least 70% of their strength
                     if (ourStrength >= scoutedEnemy * 0.7) {
-                        declareWar(k, other);
+                        if (isPlayerRoyalAdvisorOf(k)) {
+                            proposeKingDecision(k, {
+                                type: 'declare_war',
+                                description: 'Declare war on ' + other.name,
+                                details: 'Our military strength: ' + Math.floor(ourStrength) + '. Enemy estimate: ' + Math.floor(scoutedEnemy) + '. Relations: ' + Math.floor(k.relations[other.id] || 0),
+                                conviction: Math.min(0.9, 0.5 + ((k.kingPersonality || {}).ambition === 'ambitious' ? 0.15 : 0) + ((k.kingPersonality || {}).temperament === 'aggressive' ? 0.15 : 0)),
+                                execute: (function(kRef, otherRef) { return function() { declareWar(kRef, otherRef); }; })(k, other)
+                            });
+                        } else {
+                            declareWar(k, other);
+                        }
                     }
                 }
             }
@@ -6782,6 +6792,9 @@
 
             // ---- Kingdom purchasing from market (daily) ----
             tickKingdomPurchasing(k);
+
+            // ---- Process pending RA consultation decisions (daily) ----
+            tickPendingKingDecisions(k);
 
             // ---- Update military strength and soldier count ----
             k.militaryStrength = computeMilitaryStrength(k);
@@ -8297,6 +8310,230 @@
     }
 
     // ========================================================
+    // §14A-2 ROYAL ADVISOR CONSULTATION SYSTEM
+    // ========================================================
+    // When the player is a Royal Advisor, king decisions are queued for
+    // consultation instead of executing immediately. The player has 1 day
+    // to agree or oppose before the king proceeds.
+
+    function isPlayerRoyalAdvisorOf(kingdom) {
+        if (typeof Player === 'undefined') return false;
+        var raKId = Player.royalAdvisorKingdomId;
+        if (!raKId) return false;
+        return raKId === kingdom.id;
+    }
+
+    /**
+     * proposeKingDecision — Queue a king decision for RA consultation or execute immediately.
+     * @param {object} k - the kingdom object
+     * @param {object} decision - { type, description, conviction (0-1), execute: function }
+     * @returns {boolean} true if executed now, false if queued for RA
+     */
+    function proposeKingDecision(k, decision) {
+        // If player is not RA of this kingdom, execute immediately
+        if (!isPlayerRoyalAdvisorOf(k)) {
+            if (typeof decision.execute === 'function') decision.execute();
+            return true;
+        }
+
+        // Queue for RA consultation
+        if (!k.pendingKingDecisions) k.pendingKingDecisions = [];
+        var rng = world.rng;
+        var decisionObj = {
+            id: 'kd_' + k.id + '_' + world.day + '_' + (rng ? rng.randInt(0, 9999) : Math.floor(Math.random() * 9999)),
+            type: decision.type || 'policy',
+            description: decision.description || 'Unknown decision',
+            details: decision.details || '',
+            conviction: Math.max(0, Math.min(1, decision.conviction || 0.5)),
+            createdDay: world.day,
+            resolved: false,
+            playerResponse: null, // 'agree' | 'oppose' | null (timeout)
+            _executeFn: decision.execute // stored for deferred execution
+        };
+
+        k.pendingKingDecisions.push(decisionObj);
+
+        // Notify player via toast and log
+        var kingPerson = findPerson(k.king);
+        var kingName = kingPerson ? (kingPerson.firstName || 'The King') : 'The King';
+        var toastMsg = '👑 ' + kingName + ' seeks your counsel: ' + decisionObj.description;
+        if (typeof UI !== 'undefined' && UI.toast) {
+            UI.toast(toastMsg, 'info', 'my_kingdom');
+        }
+        logEvent('👑📜 [Royal Consultation] ' + kingName + ' of ' + k.name + ' proposes: ' + decisionObj.description + ' (Click to respond)', {
+            type: 'royal_consultation',
+            kingdomId: k.id,
+            decisionId: decisionObj.id,
+            conviction: decisionObj.conviction
+        }, 'my_kingdom');
+
+        return false; // queued, not executed
+    }
+
+    /**
+     * tickPendingKingDecisions — Process pending decisions (1-day timeout).
+     */
+    function tickPendingKingDecisions(k) {
+        if (!k.pendingKingDecisions || k.pendingKingDecisions.length === 0) return;
+
+        for (var pdi = k.pendingKingDecisions.length - 1; pdi >= 0; pdi--) {
+            var pd = k.pendingKingDecisions[pdi];
+            if (pd.resolved) {
+                k.pendingKingDecisions.splice(pdi, 1);
+                continue;
+            }
+
+            // 1-day timeout — king proceeds with original plan
+            if (world.day > pd.createdDay + 1) {
+                pd.resolved = true;
+                pd.playerResponse = 'timeout';
+                if (typeof pd._executeFn === 'function') pd._executeFn();
+                logEvent('👑 The king proceeded with: ' + pd.description + ' (no response from advisor)', null, 'my_kingdom');
+                k.pendingKingDecisions.splice(pdi, 1);
+            }
+        }
+    }
+
+    /**
+     * respondToKingDecision — Player responds to a pending king decision.
+     * @param {string} kingdomId
+     * @param {string} decisionId
+     * @param {string} response - 'agree' or 'oppose'
+     * @returns {object} { success, message, swayed }
+     */
+    function respondToKingDecision(kingdomId, decisionId, response) {
+        var k = findKingdom(kingdomId);
+        if (!k) return { success: false, message: 'Kingdom not found.' };
+        if (!k.pendingKingDecisions) return { success: false, message: 'No pending decisions.' };
+
+        var pd = null;
+        for (var i = 0; i < k.pendingKingDecisions.length; i++) {
+            if (k.pendingKingDecisions[i].id === decisionId && !k.pendingKingDecisions[i].resolved) {
+                pd = k.pendingKingDecisions[i];
+                break;
+            }
+        }
+        if (!pd) return { success: false, message: 'Decision not found or already resolved.' };
+
+        pd.resolved = true;
+        pd.playerResponse = response;
+        var rng = world.rng;
+
+        if (response === 'agree') {
+            // Player agrees — execute and gain small rep
+            if (typeof pd._executeFn === 'function') pd._executeFn();
+            var repGain = rng ? rng.randInt(1, 3) : 2;
+            if (typeof Player !== 'undefined' && Player.modifyReputation) {
+                Player.modifyReputation(kingdomId, repGain);
+            }
+            logEvent('✅ You agreed with the king\'s decision: ' + pd.description, null, 'my_kingdom');
+            // Remove from queue
+            for (var ri = k.pendingKingDecisions.length - 1; ri >= 0; ri--) {
+                if (k.pendingKingDecisions[ri].id === decisionId) { k.pendingKingDecisions.splice(ri, 1); break; }
+            }
+            return { success: true, message: 'You supported the king\'s decision. (+' + repGain + ' reputation)', swayed: false };
+        }
+
+        // Player opposes — attempt to sway king
+        var conviction = pd.conviction;
+
+        // Calculate player influence
+        var playerInfluence = 0.3; // base
+        // Political capital bonus
+        if (typeof Player !== 'undefined') {
+            var polCap = Player.politicalCapital || 0;
+            var maxCap = (typeof CONFIG !== 'undefined' && CONFIG.ADVISE_KING_POLITICAL_CAPITAL_MAX) || 5;
+            playerInfluence += (polCap / maxCap) * 0.2;
+        }
+        // Relationship with king
+        if (typeof Player !== 'undefined' && Player.getRelationship && k.king) {
+            var kingRel = Player.getRelationship(k.king);
+            if (kingRel && kingRel.level) playerInfluence += (kingRel.level / 100) * 0.25;
+        }
+        // Diplomacy skill bonus
+        if (typeof Player !== 'undefined' && Player.skills) {
+            var skills = Player.skills;
+            if (skills.diplomacy) playerInfluence += 0.05;
+            if (skills.master_diplomat) playerInfluence += 0.08;
+            if (skills.persuasion) playerInfluence += 0.05;
+            if (skills.court_etiquette) playerInfluence += 0.03;
+        }
+        // If player-influenced king is within first year of reign, big bonus
+        if (k._playerInfluencedKingDay && (world.day - k._playerInfluencedKingDay) < 360) {
+            playerInfluence += 0.30;
+        }
+
+        // Sway chance: higher influence + lower conviction = better odds
+        var swayChance = Math.max(0.05, Math.min(0.90, playerInfluence * (1 - conviction)));
+
+        var swayed = rng ? rng.chance(swayChance) : Math.random() < swayChance;
+        var kingPerson = findPerson(k.king);
+        var kingTitle = kingPerson ? (kingPerson.firstName || 'The King') : 'The King';
+
+        if (swayed) {
+            // King is swayed — decision NOT executed
+            logEvent('🛡️ ' + kingTitle + ' heeded your counsel and reconsidered: ' + pd.description, null, 'my_kingdom');
+            if (typeof UI !== 'undefined' && UI.toast) {
+                UI.toast('🛡️ The king accepted your counsel!', 'success', 'my_kingdom');
+            }
+            var repGainS = rng ? rng.randInt(2, 5) : 3;
+            if (typeof Player !== 'undefined' && Player.modifyReputation) {
+                Player.modifyReputation(kingdomId, repGainS);
+            }
+            // Spend 1 political capital
+            if (typeof Player !== 'undefined' && Player.serialize) {
+                var _ps = Player.serialize();
+                _ps.politicalCapital = Math.max(0, (_ps.politicalCapital || 0) - 1);
+                Player.deserialize(_ps);
+            }
+            // Remove from queue
+            for (var ri2 = k.pendingKingDecisions.length - 1; ri2 >= 0; ri2--) {
+                if (k.pendingKingDecisions[ri2].id === decisionId) { k.pendingKingDecisions.splice(ri2, 1); break; }
+            }
+            return { success: true, message: kingTitle + ' heeded your counsel and reconsidered. (+' + repGainS + ' rep, -1 political capital)', swayed: true, swayChance: Math.round(swayChance * 100) };
+        } else {
+            // King was not swayed — execute decision anyway
+            if (typeof pd._executeFn === 'function') pd._executeFn();
+            logEvent('❌ ' + kingTitle + ' considered your objection but proceeded: ' + pd.description, null, 'my_kingdom');
+            if (typeof UI !== 'undefined' && UI.toast) {
+                UI.toast('❌ The king was not swayed.', 'warning', 'my_kingdom');
+            }
+            // Small rep loss for failed opposition
+            var repLoss = rng ? rng.randInt(1, 2) : 1;
+            if (typeof Player !== 'undefined' && Player.modifyReputation) {
+                Player.modifyReputation(kingdomId, -repLoss);
+            }
+            // Spend 1 political capital
+            if (typeof Player !== 'undefined' && Player.serialize) {
+                var _ps2 = Player.serialize();
+                _ps2.politicalCapital = Math.max(0, (_ps2.politicalCapital || 0) - 1);
+                Player.deserialize(_ps2);
+            }
+            // Remove from queue
+            for (var ri3 = k.pendingKingDecisions.length - 1; ri3 >= 0; ri3--) {
+                if (k.pendingKingDecisions[ri3].id === decisionId) { k.pendingKingDecisions.splice(ri3, 1); break; }
+            }
+            return { success: true, message: kingTitle + ' was not swayed and proceeded. (-' + repLoss + ' rep, -1 political capital)', swayed: false, swayChance: Math.round(swayChance * 100) };
+        }
+    }
+
+    function getPendingKingDecisions(kingdomId) {
+        var k = findKingdom(kingdomId);
+        if (!k || !k.pendingKingDecisions) return [];
+        return k.pendingKingDecisions.filter(function(d) { return !d.resolved; }).map(function(d) {
+            return {
+                id: d.id,
+                type: d.type,
+                description: d.description,
+                details: d.details,
+                conviction: d.conviction,
+                createdDay: d.createdDay,
+                deadlineDay: d.createdDay + 1
+            };
+        });
+    }
+
+    // ========================================================
     // §14B KING DECISIONS (called each season)
     // ========================================================
     function tickKingDecisions(k) {
@@ -8413,12 +8650,38 @@
         k.taxRate = Math.min(k.taxRate, maxTaxRate);
         k.taxRate = Math.max(0.02, k.taxRate); // absolute floor
 
-        // Log significant changes
-        if (k.taxRate > _prevTaxRate + 0.005) {
-            k.lastTaxIncreaseDay = world.day;
-            logKingAction(k, '📈 Raised taxes to ' + Math.round(k.taxRate * 100) + '%');
-        } else if (k.taxRate < _prevTaxRate - 0.005) {
-            logKingAction(k, '📉 Lowered taxes to ' + Math.round(k.taxRate * 100) + '%');
+        // RA CONSULTATION: Intercept significant tax changes
+        if (isPlayerRoyalAdvisorOf(k)) {
+            var _taxDelta = k.taxRate - _prevTaxRate;
+            if (Math.abs(_taxDelta) > 0.005) {
+                var _capturedNewRate = k.taxRate;
+                k.taxRate = _prevTaxRate; // revert — let RA decide
+                var _taxDir = _taxDelta > 0 ? 'raise' : 'lower';
+                var _taxConviction = _taxDir === 'raise' ? (k.gold < (k._startingGold || 10000) * 0.3 ? 0.85 : 0.5) : 0.3;
+                proposeKingDecision(k, {
+                    type: 'tax_change',
+                    description: (_taxDir === 'raise' ? 'Raise' : 'Lower') + ' taxes from ' + Math.round(_prevTaxRate * 100) + '% to ' + Math.round(_capturedNewRate * 100) + '%',
+                    details: _taxDir === 'raise' ? 'The treasury needs more revenue.' : 'The economy would benefit from lower taxes.',
+                    conviction: _taxConviction,
+                    execute: (function(kRef, newRate) { return function() {
+                        kRef.taxRate = newRate;
+                        if (newRate > _prevTaxRate) {
+                            kRef.lastTaxIncreaseDay = world.day;
+                            logKingAction(kRef, '📈 Raised taxes to ' + Math.round(newRate * 100) + '%');
+                        } else {
+                            logKingAction(kRef, '📉 Lowered taxes to ' + Math.round(newRate * 100) + '%');
+                        }
+                    }; })(k, _capturedNewRate)
+                });
+            }
+        } else {
+            // Log significant changes (non-RA path)
+            if (k.taxRate > _prevTaxRate + 0.005) {
+                k.lastTaxIncreaseDay = world.day;
+                logKingAction(k, '📈 Raised taxes to ' + Math.round(k.taxRate * 100) + '%');
+            } else if (k.taxRate < _prevTaxRate - 0.005) {
+                logKingAction(k, '📉 Lowered taxes to ' + Math.round(k.taxRate * 100) + '%');
+            }
         }
 
         // 2. MILITARY(ambitious/brave kings build more military, with budget awareness)
@@ -11576,7 +11839,17 @@
             if (rng.chance(surrenderChance)) {
                 const enemy = findKingdom(enemyId);
                 if (enemy) {
-                    makePeace(k, enemy, true, k);
+                    if (isPlayerRoyalAdvisorOf(k)) {
+                        proposeKingDecision(k, {
+                            type: 'surrender',
+                            description: 'Surrender to ' + enemy.name,
+                            details: 'We have lost ' + Math.round(townLossRatio * 100) + '% of our territory. Continued war may mean total defeat.',
+                            conviction: Math.min(0.95, 0.6 + townLossRatio * 0.3),
+                            execute: (function(kRef, eRef) { return function() { makePeace(kRef, eRef, true, kRef); }; })(k, enemy)
+                        });
+                    } else {
+                        makePeace(k, enemy, true, k);
+                    }
                 }
                 break; // Only one surrender per tick
             }
@@ -16523,6 +16796,37 @@
             }
 
             if (bestPolicy && kingdom.gold >= bestPolicy.cost * bestPolicy.duration * 0.5) {
+                var _shouldConsultRA = isPlayerRoyalAdvisorOf(kingdom) && (bestPolicy.type === 'quarantine_town' || bestPolicy.type === 'martial_quarantine' || bestPolicy.type === 'close_port');
+                if (_shouldConsultRA) {
+                    var _policyNames2 = {
+                        quarantine_town: 'quarantine',
+                        martial_quarantine: 'martial quarantine',
+                        close_port: 'port closure'
+                    };
+                    proposeKingDecision(kingdom, {
+                        type: 'health_policy',
+                        description: 'Impose ' + (_policyNames2[bestPolicy.type] || bestPolicy.type) + ' on ' + ts.town.name,
+                        details: 'Sickness ratio: ' + Math.round(ts.sickRatio * 100) + '%. Plague: ' + Math.round((ts.plagueRatio || 0) * 100) + '%. Cost: ' + bestPolicy.cost + 'g/day.',
+                        conviction: bestPolicy.type === 'martial_quarantine' ? 0.8 : 0.5,
+                        execute: (function(kRef, bp, tsRef) { return function() {
+                            for (var oi2 = kRef.healthPolicies.length - 1; oi2 >= 0; oi2--) {
+                                if (kRef.healthPolicies[oi2].townId === tsRef.town.id && kRef.healthPolicies[oi2].active) {
+                                    kRef.healthPolicies[oi2].active = false;
+                                }
+                            }
+                            kRef.healthPolicies.push({
+                                type: bp.type, townId: tsRef.town.id, active: true,
+                                startDay: world.day, expiresDay: world.day + bp.duration,
+                                costPerDay: bp.cost
+                            });
+                            if (bp.happinessPenalty > 0) {
+                                tsRef.town.happiness = Math.max(0, (tsRef.town.happiness || 50) - bp.happinessPenalty);
+                            }
+                            var _pn = { medical_funding: '🏥 medical funding', public_hygiene: '🧹 public hygiene measures', quarantine_town: '🔒 quarantine', martial_quarantine: '⚔️ martial quarantine', close_port: '⚓ port closure' };
+                            logEvent((_pn[bp.type] || bp.type) + ' enacted in ' + tsRef.town.name + ' by ' + kRef.name + '.', { type: 'health_policy', townId: tsRef.town.id, kingdomId: kRef.id });
+                        }; })(kingdom, bestPolicy, ts)
+                    });
+                } else {
                 // Remove existing lower-tier policy for this town before adding
                 for (var oi = kingdom.healthPolicies.length - 1; oi >= 0; oi--) {
                     if (kingdom.healthPolicies[oi].townId === ts.town.id && kingdom.healthPolicies[oi].active) {
@@ -16551,6 +16855,7 @@
                 logEvent((policyNames[bestPolicy.type] || bestPolicy.type) + ' enacted in ' + ts.town.name + ' by ' + kingdom.name + '.', {
                     type: 'health_policy', townId: ts.town.id, kingdomId: kingdom.id
                 });
+                } // close else (non-RA path)
             }
         }
 
@@ -18024,7 +18329,27 @@
             }
         }
 
-        if (changed) kingdom.laws.bannedGoods = currentBanned;
+        if (changed) {
+            if (isPlayerRoyalAdvisorOf(kingdom)) {
+                // Revert and propose
+                var _prevBanned = kingdom.laws.bannedGoods ? kingdom.laws.bannedGoods.slice() : [];
+                var _newBanned = currentBanned.slice();
+                var _addedBans = _newBanned.filter(function(g) { return _prevBanned.indexOf(g) === -1; });
+                var _liftedBans = _prevBanned.filter(function(g) { return _newBanned.indexOf(g) === -1; });
+                var banDesc = [];
+                if (_addedBans.length > 0) banDesc.push('Ban ' + _addedBans.join(', '));
+                if (_liftedBans.length > 0) banDesc.push('Lift ban on ' + _liftedBans.join(', '));
+                proposeKingDecision(kingdom, {
+                    type: 'trade_ban',
+                    description: banDesc.join('; ') || 'Adjust trade bans',
+                    details: 'Current bans: ' + (_prevBanned.length > 0 ? _prevBanned.join(', ') : 'none') + '. Proposed: ' + (_newBanned.length > 0 ? _newBanned.join(', ') : 'none'),
+                    conviction: _addedBans.some(function(g) { return ['swords', 'armor', 'bows', 'arrows'].indexOf(g) >= 0; }) ? 0.6 : 0.35,
+                    execute: (function(kRef, nb) { return function() { kRef.laws.bannedGoods = nb; }; })(kingdom, _newBanned)
+                });
+            } else {
+                kingdom.laws.bannedGoods = currentBanned;
+            }
+        }
     }
 
     // ========================================================
@@ -29188,6 +29513,10 @@
         },
         applyPriceControls: applyPriceControls,
         setKingMood: setKingMood,
+
+        // Royal Advisor Consultation API
+        getPendingKingDecisions: getPendingKingDecisions,
+        respondToKingDecision: respondToKingDecision,
 
         // Bridge & Road management
         destroyBridge(idx, bridgeId) { return destroyBridge(idx, bridgeId); },

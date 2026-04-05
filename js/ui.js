@@ -9278,6 +9278,11 @@ window.UI = (function () {
                 html += '</div>';
             }
 
+            // Royal Consultation — open consultation dialog
+            if (event.details.type === 'royal_consultation' && event.details.kingdomId && event.details.decisionId) {
+                html += '<div style="margin:12px 0;"><button class="btn-medieval" style="background:rgba(255,215,0,0.15);border-color:rgba(255,215,0,0.4);font-size:1rem;" onclick="UI.closeModal();UI.openKingConsultationDialog(\'' + event.details.kingdomId + '\',\'' + event.details.decisionId + '\')">👑 Respond to King\'s Proposal</button></div>';
+            }
+
             // Cause
             if (event.details.cause) {
                 html += '<div style="margin-bottom:10px;">';
@@ -17751,6 +17756,102 @@ window.UI = (function () {
         closeModal();
     }
 
+    // ========================================================
+    // ROYAL CONSULTATION DIALOG — Respond to king's pending decisions
+    // ========================================================
+    function openKingConsultationDialog(kingdomId, decisionId) {
+        if (typeof Player === 'undefined' || !Player.getPendingKingDecisions) return;
+        var decisions = Player.getPendingKingDecisions();
+        var decision = null;
+        for (var i = 0; i < decisions.length; i++) {
+            if (decisions[i].id === decisionId) { decision = decisions[i]; break; }
+        }
+        if (!decision) {
+            // Try showing all pending decisions
+            if (decisions.length === 0) {
+                toast('No pending decisions from the king.', 'info');
+                return;
+            }
+            decision = decisions[0];
+        }
+
+        var kingdom;
+        try { kingdom = Engine.getKingdom(kingdomId || Player.royalAdvisorKingdomId); } catch (e) { return; }
+        if (!kingdom) return;
+
+        var convictionLabel = decision.conviction >= 0.8 ? '🔴 Very Determined' :
+                              decision.conviction >= 0.6 ? '🟠 Determined' :
+                              decision.conviction >= 0.4 ? '🟡 Moderate' : '🟢 Open to persuasion';
+
+        var typeIcons = {
+            tax_change: '💰',
+            declare_war: '⚔️',
+            surrender: '🏳️',
+            trade_ban: '🚫',
+            health_policy: '🏥',
+            peace: '🕊️',
+            policy: '📜'
+        };
+        var icon = typeIcons[decision.type] || '📜';
+
+        var html = '<div class="detail-section">';
+        html += '<p style="font-size:1.1rem;margin-bottom:12px;">' + icon + ' <b>The King proposes:</b></p>';
+        html += '<div style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.3);border-radius:6px;padding:12px;margin-bottom:12px;">';
+        html += '<p style="font-size:1.05rem;margin:0 0 8px 0;"><b>' + decision.description + '</b></p>';
+        if (decision.details) {
+            html += '<p style="color:var(--text-dim);margin:0;font-size:0.9rem;">' + decision.details + '</p>';
+        }
+        html += '</div>';
+        html += '<p><b>King\'s conviction:</b> ' + convictionLabel + ' (' + Math.round(decision.conviction * 100) + '%)</p>';
+        html += '<p style="color:var(--text-dim);font-size:0.85rem;">If you do nothing, the king will proceed on Day ' + decision.deadlineDay + '.</p>';
+        html += '</div>';
+
+        // Show all pending decisions if more than one
+        if (decisions.length > 1) {
+            html += '<div class="detail-section"><h3>Other Pending Decisions (' + (decisions.length - 1) + ')</h3>';
+            for (var oi = 0; oi < decisions.length; oi++) {
+                if (decisions[oi].id === decision.id) continue;
+                var od = decisions[oi];
+                html += '<div class="detail-row" style="cursor:pointer" onclick="UI.openKingConsultationDialog(\'' + kingdom.id + '\',\'' + od.id + '\')">';
+                html += '<span class="label">' + (typeIcons[od.type] || '📜') + ' ' + od.description + '</span>';
+                html += '<span class="value text-dim">Deadline: Day ' + od.deadlineDay + '</span>';
+                html += '</div>';
+            }
+            html += '</div>';
+        }
+
+        var footer = '<button class="btn-medieval" style="background:rgba(0,180,0,0.2);border-color:rgba(0,180,0,0.5);margin-right:8px;" onclick="UI.respondToKingDecision(\'' + kingdom.id + '\',\'' + decision.id + '\',\'agree\')">✅ Agree</button>';
+        footer += '<button class="btn-medieval" style="background:rgba(200,50,50,0.2);border-color:rgba(200,50,50,0.5);margin-right:8px;" onclick="UI.respondToKingDecision(\'' + kingdom.id + '\',\'' + decision.id + '\',\'oppose\')">🛡️ Oppose</button>';
+        footer += '<button class="btn-medieval" onclick="UI.closeModal()">Decide Later</button>';
+
+        openModal('👑 Royal Consultation — ' + kingdom.name, html, footer);
+    }
+
+    function respondToKingDecisionUI(kingdomId, decisionId, response) {
+        if (typeof Player === 'undefined' || !Player.respondToKingDecision) return;
+        var result = Player.respondToKingDecision(decisionId, response);
+        if (result && result.success) {
+            if (result.swayed) {
+                toast('🛡️ ' + result.message, 'success');
+            } else if (response === 'agree') {
+                toast('✅ ' + result.message, 'success');
+            } else {
+                toast('❌ ' + result.message, 'warning');
+            }
+        } else {
+            toast(result ? result.message : 'Failed to respond.', 'warning');
+        }
+        closeModal();
+
+        // Check if there are more pending decisions
+        var remaining = Player.getPendingKingDecisions ? Player.getPendingKingDecisions() : [];
+        if (remaining.length > 0) {
+            setTimeout(function() {
+                openKingConsultationDialog(kingdomId, remaining[0].id);
+            }, 500);
+        }
+    }
+
     function showKingSuccessionPopup(kingdomName, newKingName, cause) {
         const html = `<div class="detail-section">
             <p>The ruler of <b>${kingdomName}</b> has ${cause === 'old_age' ? 'died of old age' : cause === 'coup' ? 'been overthrown in a coup' : cause === 'war' ? 'fallen in battle' : 'died'}.</p>
@@ -21065,6 +21166,8 @@ window.UI = (function () {
         openAdviseKingDialog,
         executeAdvice,
         showKingSuccessionPopup,
+        openKingConsultationDialog,
+        respondToKingDecision: respondToKingDecisionUI,
         // Degradation & Repair
         repairBuilding: repairBuildingUI,
         repairShip: repairShipUI,
