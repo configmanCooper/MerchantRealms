@@ -19404,6 +19404,18 @@
             em.emTotalXp = em.emLevel * 500;
         }
 
+        // Land ownership tracking (mirrors player.landOwned)
+        if (!em.landOwned) {
+            em.landOwned = {};
+            // Backfill: count existing buildings as owned land
+            if (em.buildings) {
+                for (var _li = 0; _li < em.buildings.length; _li++) {
+                    var _lt = em.buildings[_li].townId;
+                    if (_lt) em.landOwned[_lt] = (em.landOwned[_lt] || 0) + 1;
+                }
+            }
+        }
+
         em._eliteFieldsInit = true;
 
         // Heraldry assignment (fallback for merchants without heraldry)
@@ -20084,8 +20096,41 @@
             var personality = em.personality;
             var strategy = em.strategy || 'diversified';
 
+            // ── Strategy-driven personality modifiers ──
+            // Each strategy type gets behavioral biases that affect how frequently they use various AI systems
+            var stratMods = {
+                food_monopoly:     { tradeFreq: 5, buildFreq: 12, socialFreq: 45, travelFreq: 10 },
+                military_supplier: { tradeFreq: 5, buildFreq: 10, socialFreq: 30, travelFreq: 7 },
+                luxury_trader:     { tradeFreq: 3, buildFreq: 15, socialFreq: 20, travelFreq: 5 },
+                diversified:       { tradeFreq: 7, buildFreq: 15, socialFreq: 30, travelFreq: 7 },
+                political_climber: { tradeFreq: 7, buildFreq: 15, socialFreq: 10, travelFreq: 7 },
+                war_profiteer:     { tradeFreq: 3, buildFreq: 10, socialFreq: 30, travelFreq: 5 },
+                land_baron:        { tradeFreq: 10, buildFreq: 8, socialFreq: 30, travelFreq: 10 },
+                trade_network:     { tradeFreq: 3, buildFreq: 12, socialFreq: 25, travelFreq: 3 },
+                medical_supplier:  { tradeFreq: 5, buildFreq: 12, socialFreq: 30, travelFreq: 7 }
+            };
+            var sMod = stratMods[strategy] || stratMods.diversified;
+
+            // political_climber: boost relationship building & rank attempts
+            if (strategy === 'political_climber') {
+                if (personality.ambition < 70) personality.ambition = 70;
+                if (personality.social < 65) personality.social = 65;
+            }
+            // war_profiteer: more aggressive in wartime, seeks war zones
+            if (strategy === 'war_profiteer' && world.activeWars) {
+                var atWarNow = Object.values(world.activeWars).some(function(w) { return w.active !== false; });
+                if (atWarNow) {
+                    sMod.tradeFreq = 2; // trade every 2 days during war
+                    sMod.buildFreq = 7; // build more urgently
+                }
+            }
+            // land_baron: prioritize land & building acquisition
+            if (strategy === 'land_baron' && personality.ambition < 60) personality.ambition = 60;
+
             // ---- 1. TRADING LOGIC ----
-            eliteTradeAI(em, town, rng, strategy);
+            if (day % sMod.tradeFreq === 0) {
+                eliteTradeAI(em, town, rng, strategy);
+            }
 
             // ---- 1b. BRIDGE REPAIR AI ----
             // If EM wants to reach a town but a bridge is destroyed, decide to repair or petition
@@ -20157,13 +20202,12 @@
             }
 
             // ---- 2. TRAVEL DECISIONS ----
-            if (day % 7 === 0 && !em.traveling) {
+            if (day % sMod.travelFreq === 0 && !em.traveling) {
                 eliteTravelAI(em, town, rng, strategy);
             }
 
-            // ---- 3. BUILDING DECISIONS (every 15 days) ----
-            // ---- 3. BUILD DECISIONS (ambitious: 10 days, normal: 15 days) ----
-            var buildInterval = (personality.ambition || 50) > 65 ? 10 : 15;
+            // ---- 3. BUILD DECISIONS (strategy + ambition driven) ----
+            var buildInterval = Math.max(5, Math.floor(sMod.buildFreq * ((personality.ambition || 50) > 65 ? 0.7 : 1.0)));
             if (day % buildInterval === 0) {
                 eliteBuildAI(em, town, rng, strategy);
             }
@@ -20173,8 +20217,8 @@
                 eliteWorkerAI(em, town, rng);
             }
 
-            // ---- 4. SOCIAL DECISIONS (every 30 days) ----
-            if (day % 30 === 0) {
+            // ---- 4. SOCIAL DECISIONS (strategy-driven frequency) ----
+            if (day % sMod.socialFreq === 0) {
                 eliteSocialAI(em, town, rng, personality);
             }
 
@@ -20888,6 +20932,28 @@
 
         var bType = rng.pick(preferredBuildings);
 
+        // ── Clinic/Hospital intelligence: ANY EM considers building medical facilities if town lacks them ──
+        var townHasClinic = buildTown.buildings.some(function(b) {
+            return b.type === 'clinic' || b.type === 'hospital';
+        });
+        if (!townHasClinic && buildTown.population > 100) {
+            // Medical strategy EMs always prioritize clinics
+            if (strategy === 'medical_supplier') {
+                bType = 'clinic';
+            }
+            // Other EMs consider it if town health is poor or population is large
+            else if ((buildTown.healthRating || 50) < 40 || buildTown.population > 300) {
+                if (rng.chance(0.25)) bType = 'clinic';
+            }
+        }
+        // Hospital upgrade: medical EMs with enough capital build hospitals in large towns
+        if (strategy === 'medical_supplier' && townHasClinic && (em.gold || 0) > 3000 && buildTown.population > 250) {
+            var townHasHospital = buildTown.buildings.some(function(b) { return b.type === 'hospital'; });
+            if (!townHasHospital && rng.chance(0.3)) {
+                bType = 'hospital';
+            }
+        }
+
         // If we found a high-value demand gap, prefer building that over random strategy building
         if (demandGapType && demandGapScore > 15 && rng.chance(0.4)) {
             bType = demandGapType;
@@ -20953,6 +21019,39 @@
         }
         var laborCost = Math.floor(bt.cost * (1 - subsidyDiscount) * buildSkillMult * emGuildDiscount);
         var effectiveCost = laborCost + materialCost;
+
+        // Land purchase requirement (mirrors player system)
+        if (!em.landOwned) em.landOwned = {};
+        var emLandInTown = em.landOwned[buildTown.id] || 0;
+        var emBuildingsInTown = 0;
+        for (var _eli = 0; _eli < buildTown.buildings.length; _eli++) {
+            if (buildTown.buildings[_eli].ownerId === em.id) emBuildingsInTown++;
+        }
+        if (emBuildingsInTown >= emLandInTown) {
+            // Need to buy land first — check rank-based land cap
+            var emMaxRank = 0;
+            for (var _erk in em.socialRank) { if ((em.socialRank[_erk] || 0) > emMaxRank) emMaxRank = em.socialRank[_erk]; }
+            var emRankDef = CONFIG.SOCIAL_RANKS[emMaxRank] || CONFIG.SOCIAL_RANKS[0];
+            var emTotalLand = 0;
+            for (var _etl in em.landOwned) emTotalLand += (em.landOwned[_etl] || 0);
+            if (emRankDef.maxLand !== undefined && emTotalLand >= emRankDef.maxLand) return; // at land cap
+
+            // Calculate land cost
+            var emLandCat = buildTown.category || 'town';
+            var emLandSizeMult = (CONFIG.LAND_COST_MULTIPLIER && CONFIG.LAND_COST_MULTIPLIER[emLandCat]) || (CONFIG.HOUSING_LABOR_MULTIPLIER && CONFIG.HOUSING_LABOR_MULTIPLIER[emLandCat]) || 1.0;
+            var emLandProspMult = Math.max(0.5, (buildTown.prosperity || 50) / 50);
+            var emLandCost = Math.floor((CONFIG.LAND_COST_BASE || 250) * emLandSizeMult * emLandProspMult);
+            if (subsidyDiscount > 0) emLandCost = Math.floor(emLandCost * (1 - subsidyDiscount));
+
+            var totalNeeded = effectiveCost + emLandCost;
+            if (em.gold < totalNeeded) return; // can't afford land + building
+
+            // Buy the land
+            em.gold -= emLandCost;
+            em.landOwned[buildTown.id] = (em.landOwned[buildTown.id] || 0) + 1;
+            effectiveCost += emLandCost; // include in total spend for logging
+        }
+
         if (em.gold < effectiveCost) return;
 
         // Check town slots
@@ -21460,19 +21559,98 @@
         var kId = em.citizenshipKingdomId || em.kingdomId;
         if (!kId) return;
         var currentRank = (em.socialRank[kId] || 0);
-        if (currentRank >= 4) return; // NPC max rank cap at Minor Noble
+        if (currentRank >= 6) return; // Royal Advisor is max
         var nextRank = CONFIG.SOCIAL_RANKS[currentRank + 1];
         if (!nextRank) return;
 
-        // Check basic requirements
-        if ((em.gold || 0) < (nextRank.goldReq || 0)) return;
+        // Basic requirements: gold earned, reputation, fee
+        var goldEarned = em.goldEarnedInKingdom ? (em.goldEarnedInKingdom[kId] || 0) : (em.gold || 0);
+        if (goldEarned < (nextRank.goldReq || 0)) return;
         if ((em.reputation[kId] || 0) < (nextRank.repReq || 0)) return;
         var fee = nextRank.fee || 0;
-        if (em.gold < fee) return;
+        if (em.gold < fee * 1.5) return; // EMs keep a buffer
+
+        // Rank-specific requirements (mirrors player canPetitionForPromotion)
+        if (nextRank.id === 'citizen') {
+            var tradingStart = em.tradingStartDay || 0;
+            if (world.day - tradingStart < 90) return;
+        }
+        if (nextRank.id === 'burgher') {
+            var emBldCountBurgher = (em.buildings || []).filter(function(b) {
+                var t = findTown(b.townId); return t && t.kingdomId === kId;
+            }).length;
+            if (emBldCountBurgher < 1) return;
+            if (world.day - (em.tradingStartDay || world.day) < 90) return;
+        }
+        if (nextRank.id === 'guildmaster') {
+            var emProdBlds = (em.buildings || []).filter(function(b) {
+                var bt = findBuildingType(b.type);
+                var t = findTown(b.townId);
+                return bt && (bt.category === 'processing' || bt.category === 'finished') && t && t.kingdomId === kId;
+            }).length;
+            if (emProdBlds < 3) return;
+            var emWorkerCount = em.employees ? em.employees.length : 0;
+            if (emWorkerCount < 8) return;
+            var emTownsWithBlds = new Set((em.buildings || []).filter(function(b) {
+                var t = findTown(b.townId); return t && t.kingdomId === kId;
+            }).map(function(b) { return b.townId; })).size;
+            if (emTownsWithBlds < 2) return;
+        }
+        if (nextRank.id === 'minor_noble') {
+            // Need 5 noble endorsements (friends with rank >= 4, rel >= 60)
+            var emEndorsements = 0;
+            if (em.relationships) {
+                for (var epid in em.relationships) {
+                    if (em.relationships[epid].level >= 60) {
+                        var endorser = findPerson(epid);
+                        if (endorser && endorser.alive) {
+                            var eRank = (endorser.socialRank && endorser.socialRank[kId]) ? endorser.socialRank[kId] : (endorser.occupation === 'noble' ? 4 : 0);
+                            if (eRank >= 4) emEndorsements++;
+                        }
+                    }
+                }
+            }
+            if (emEndorsements < 5) return;
+            var emTownsWithPropMN = new Set((em.buildings || []).filter(function(b) {
+                var t = findTown(b.townId); return t && t.kingdomId === kId;
+            }).map(function(b) { return b.townId; })).size;
+            if (emTownsWithPropMN < 3) return;
+        }
+        if (nextRank.id === 'lord') {
+            var emTownsLord = new Set((em.buildings || []).filter(function(b) {
+                var t = findTown(b.townId); return t && t.kingdomId === kId;
+            }).map(function(b) { return b.townId; })).size;
+            if (emTownsLord < 4) return;
+            var emTotalWorkers = em.employees ? em.employees.length : 0;
+            if (emTotalWorkers < 40) return;
+            var emInfra = (em.roadsBuilt || 0) + (em.bridgesBuilt || 0) + (em.seaRoutesBuilt || 0);
+            if (emInfra < 2) return;
+            var emRankSince = em.rankSince ? (em.rankSince[kId] || world.day) : world.day;
+            if ((world.day - emRankSince) / 360 < 2) return;
+        }
+        if (nextRank.id === 'royal_advisor') {
+            var emRankSinceRA = em.rankSince ? (em.rankSince[kId] || world.day) : world.day;
+            if ((world.day - emRankSinceRA) / 360 < 3) return;
+            if (!em.hasSuppliedMilitary) return;
+            var emNobleFriends = 0;
+            if (em.relationships) {
+                for (var enf in em.relationships) {
+                    if (em.relationships[enf].level >= 80) {
+                        var nfPerson = findPerson(enf);
+                        if (nfPerson && nfPerson.alive && (nfPerson.occupation === 'noble' || nfPerson.wealthClass === 'upper')) {
+                            emNobleFriends++;
+                        }
+                    }
+                }
+            }
+            if (emNobleFriends < 3) return;
+        }
 
         // Pay fee and advance
         em.gold -= fee;
         em.socialRank[kId] = currentRank + 1;
+        if (!em.rankSince) em.rankSince = {};
+        em.rankSince[kId] = world.day;
         logEvent(em.firstName + ' ' + (em.lastName || '') + ' has been elevated to ' + nextRank.name + '!');
         grantEmXp(em, 50, 'rank_up');
 
@@ -22447,14 +22625,65 @@
             }
         }
 
+        // ── Enhanced: Dispatch caravans for scarce inputs ──
+        if (emHasSkill(em, 'supply_chain_expert') && em._supplyChainTargets && (em.gold || 0) > 300) {
+            for (var scTarget in em._supplyChainTargets) {
+                var scTargetTownId = em._supplyChainTargets[scTarget];
+                // Check if we already have a caravan going there
+                var hasCaravan = (world.npcCaravans || []).some(function(c) {
+                    return c.ownerId === em.id && c.toTownId === scTargetTownId && !c.completed;
+                });
+                if (hasCaravan) continue;
+                var scTargetTown = findTown(scTargetTownId);
+                if (!scTargetTown || !scTargetTown.market) continue;
+                var scTargetSupply = scTargetTown.market.supply[scTarget] || 0;
+                if (scTargetSupply < 5) continue;
+                var scTargetPrice = scTargetTown.market.prices[scTarget] || 5;
+                var scCaravanQty = Math.min(scTargetSupply - 2, 20, Math.floor(em.gold * 0.15 / scTargetPrice));
+                if (scCaravanQty < 3) continue;
+                var scCaravanCost = Math.floor(scTargetPrice * scCaravanQty + 50); // goods + carrier fee
+                if (em.gold < scCaravanCost) continue;
+                em.gold -= scCaravanCost;
+                if (!world.npcCaravans) world.npcCaravans = [];
+                world.npcCaravans.push({
+                    id: 'em_sc_' + em.id + '_' + world.day,
+                    ownerId: em.id,
+                    fromTownId: scTargetTownId,
+                    toTownId: town.id,
+                    goods: [{ id: scTarget, qty: scCaravanQty }],
+                    carriers: 2,
+                    progress: 0,
+                    startDay: world.day,
+                    completed: false,
+                    isSupplyChain: true
+                });
+                scTargetTown.market.supply[scTarget] -= scCaravanQty;
+                delete em._supplyChainTargets[scTarget];
+                logEvent('📦 ' + em.firstName + ' dispatches a caravan from ' + scTargetTown.name + ' to import ' + scCaravanQty + ' ' + scTarget + '.',
+                    { type: 'elite_supply_caravan' }, 'npc_activity');
+                break; // one supply caravan per cycle
+            }
+        }
+
         // Check for supply gaps in current town (town needs something but has no producer)
         if (town.market && rng.chance(0.1)) {
-            for (var gapRes in town.market.demand) {
-                var gapDemand = town.market.demand[gapRes] || 0;
-                var gapSupply = town.market.supply[gapRes] || 0;
+            // ── Enhanced: Multi-town gap analysis for market_scout EMs ──
+            var gapCheckTowns = [town];
+            if (emHasSkill(em, 'market_scout') && town.connectedTowns) {
+                for (var gcti = 0; gcti < Math.min(town.connectedTowns.length, 4); gcti++) {
+                    var gcTown = findTown(town.connectedTowns[gcti]);
+                    if (gcTown && gcTown.market && gcTown.kingdomId === town.kingdomId) gapCheckTowns.push(gcTown);
+                }
+            }
+            for (var gcIdx = 0; gcIdx < gapCheckTowns.length; gcIdx++) {
+                var gapTown = gapCheckTowns[gcIdx];
+                if (!gapTown.market) continue;
+            for (var gapRes in gapTown.market.demand) {
+                var gapDemand = gapTown.market.demand[gapRes] || 0;
+                var gapSupply = gapTown.market.supply[gapRes] || 0;
                 if (gapDemand <= 0 || gapSupply >= gapDemand * 0.5) continue;
                 // No local producer
-                var hasLocalProducer = town.buildings.some(function(b) {
+                var hasLocalProducer = gapTown.buildings.some(function(b) {
                     var bt3 = findBuildingType(b.type);
                     return bt3 && bt3.produces === gapRes;
                 });
@@ -22479,15 +22708,15 @@
                 if (gapProducer) {
                     var gapBt = findBuildingType(gapProducer);
                     if (gapBt && em.gold >= gapBt.cost) {
-                        var maxSlots3 = CONFIG.TOWN_CATEGORIES[town.category] ? CONFIG.TOWN_CATEGORIES[town.category].maxBuildingSlots : 10;
-                        if (town.buildings.length < maxSlots3) {
+                        var maxSlots3 = CONFIG.TOWN_CATEGORIES[gapTown.category] ? CONFIG.TOWN_CATEGORIES[gapTown.category].maxBuildingSlots : 10;
+                        if (gapTown.buildings.length < maxSlots3) {
                             em.gold -= gapBt.cost;
-                            var gapBld = { type: gapProducer, level: 1, ownerId: em.id, townId: town.id, workers: [], upgrades: [], builtDay: world.day };
-                            town.buildings.push(gapBld);
-                            em.buildings.push({ type: gapProducer, townId: town.id, level: 1 });
-                            logEvent(em.firstName + ' ' + (em.lastName || '') + ' identifies supply gap: builds ' + gapBt.name + ' in ' + town.name + '.', {
+                            var gapBld = { type: gapProducer, level: 1, ownerId: em.id, townId: gapTown.id, workers: [], upgrades: [], builtDay: world.day };
+                            gapTown.buildings.push(gapBld);
+                            em.buildings.push({ type: gapProducer, townId: gapTown.id, level: 1 });
+                            logEvent(em.firstName + ' ' + (em.lastName || '') + ' identifies supply gap: builds ' + gapBt.name + ' in ' + gapTown.name + '.', {
                                 type: 'elite_supply_gap',
-                                cause: town.name + ' lacks local production of ' + gapRes + ' despite high demand.',
+                                cause: gapTown.name + ' lacks local production of ' + gapRes + ' despite high demand.',
                                 effects: [
                                     'New ' + gapBt.name + ' fills supply gap',
                                     em.firstName + ' invested ' + gapBt.cost + 'g to fill market need',
@@ -22498,6 +22727,7 @@
                         }
                     }
                 }
+            }
             }
         }
     }
@@ -22920,6 +23150,91 @@
                 kingdom.gold += giftAmount;
                 rel += Math.floor(giftAmount / 20);
                 em.reputation[kId] = Math.min(100, (em.reputation[kId] || 50) + 2);
+            }
+        }
+
+        // ── Enhanced Petition Types ──
+
+        // Road construction petition (EMs want better trade routes)
+        if (emRank >= 1 && rel > 5 && (em.gold || 0) > 500 && (personality.ambition || 50) > 30 && rng.chance(0.05)) {
+            var emTown = findTown(em.townId);
+            if (emTown) {
+                var connectedTowns = world.roads.filter(function(r) { return r.fromTownId === emTown.id || r.toTownId === emTown.id; })
+                    .map(function(r) { return r.fromTownId === emTown.id ? r.toTownId : r.fromTownId; });
+                var unconnectedTowns = world.towns.filter(function(t) {
+                    return t.id !== emTown.id && t.kingdomId === kId && connectedTowns.indexOf(t.id) < 0;
+                });
+                if (unconnectedTowns.length > 0) {
+                    var targetTown = unconnectedTowns.sort(function(a, b) { return (b.prosperity || 0) - (a.prosperity || 0); })[0];
+                    var roadPetFee = Math.floor(100 + emRank * 200);
+                    if ((em.gold || 0) >= roadPetFee) {
+                        em.gold -= roadPetFee;
+                        kingdom.gold += roadPetFee;
+                        if (!kingdom.petitions) kingdom.petitions = [];
+                        var roadPetExists = kingdom.petitions.some(function(pe) {
+                            return pe.type === 'build_road' && pe.fromTownId === emTown.id && pe.toTownId === targetTown.id;
+                        });
+                        if (!roadPetExists) {
+                            kingdom.petitions.push({
+                                type: 'build_road',
+                                fromTownId: emTown.id,
+                                toTownId: targetTown.id,
+                                petitionerId: em.id,
+                                signatures: rng.randInt(1, 3),
+                                day: world.day,
+                                status: 'pending'
+                            });
+                            logEvent('📜 ' + em.firstName + ' ' + (em.lastName || '') + ' petitions ' + kingdom.name + ' to build a road between ' +
+                                emTown.name + ' and ' + targetTown.name + '.', { type: 'petition' }, 'npc_activity');
+                        }
+                    }
+                }
+            }
+        }
+
+        // Tax relief petition (EMs with many buildings want lower taxes)
+        if (emRank >= 3 && rel > 20 && (em.buildings || []).length >= 5 && (kingdom.taxRate || 0) > 0.10 && rng.chance(0.06)) {
+            var taxPetFee = Math.floor(200 + emRank * 200);
+            if ((em.gold || 0) >= taxPetFee) {
+                em.gold -= taxPetFee;
+                kingdom.gold += taxPetFee;
+                var kp5 = kingdom.kingPersonality || {};
+                var taxRelief = 0.2;
+                if (kp5.tradePolicy === 'free_market') taxRelief += 0.15;
+                if (kp5.greed === 'greedy' || kp5.greed === 'corrupt') taxRelief -= 0.10;
+                if (rel > 50) taxRelief += 0.10;
+                if (rng.chance(Math.max(0.05, taxRelief))) {
+                    var oldTax = kingdom.taxRate || 0;
+                    kingdom.taxRate = Math.max(0.02, oldTax - 0.02);
+                    logEvent('📜 ' + em.firstName + ' ' + (em.lastName || '') + ' secures a tax reduction in ' + kingdom.name +
+                        ' (' + Math.round(oldTax * 100) + '% → ' + Math.round(kingdom.taxRate * 100) + '%).', {
+                        type: 'elite_petition_tax',
+                        effects: ['Business taxes reduced', 'Economic growth encouraged']
+                    });
+                } else {
+                    logEvent(em.firstName + '\'s tax relief petition to ' + kingdom.name + ' was denied.', { type: 'elite_petition_denied' });
+                }
+            }
+        }
+
+        // Market building petition (EMs want marketplace in their town)
+        if (emRank >= 2 && rel > 10 && (em.gold || 0) > 800 && rng.chance(0.04)) {
+            var petTown = findTown(em.townId);
+            if (petTown && !petTown.hasMarketplace) {
+                var mktPetFee = Math.floor(150 + emRank * 100);
+                em.gold -= mktPetFee;
+                kingdom.gold += mktPetFee;
+                if (!kingdom.petitions) kingdom.petitions = [];
+                kingdom.petitions.push({
+                    type: 'build_marketplace',
+                    townId: em.townId,
+                    petitionerId: em.id,
+                    signatures: rng.randInt(2, 5),
+                    day: world.day,
+                    status: 'pending'
+                });
+                logEvent('📜 ' + em.firstName + ' ' + (em.lastName || '') + ' petitions ' + kingdom.name +
+                    ' to build a marketplace in ' + petTown.name + '.', { type: 'petition' }, 'npc_activity');
             }
         }
 
@@ -23705,6 +24020,104 @@
             if (p.traveling) {
                 var progressRate = p.isEliteMerchant ? (p.travelOffroad ? 0.07 : 0.15) : 0.05; // NPCs are slower
                 p.travelProgress = (p.travelProgress || 0) + progressRate;
+
+                // ── EM Travel Encounters (bandits/pirates/soldiers) ──
+                if (p.isEliteMerchant && rng.chance(0.08)) {
+                    var emOriginTown = findTown(p.travelOriginTown || p.townId);
+                    var emDestTown = findTown(p.travelDestination);
+                    var encounterType = null;
+                    var encounterChance = 0;
+
+                    // Check road danger between origin and destination
+                    if (emOriginTown && emDestTown) {
+                        var emRoad = world.roads.find(function(r) {
+                            return (r.fromTownId === emOriginTown.id && r.toTownId === emDestTown.id) ||
+                                   (r.toTownId === emOriginTown.id && r.fromTownId === emDestTown.id);
+                        });
+                        var roadThreat = emRoad ? (emRoad.banditThreat || 0) : 0;
+
+                        // Sea travel: pirates
+                        if (p.travelBySea || (emRoad && emRoad.seaRoute)) {
+                            encounterType = 'pirate';
+                            encounterChance = 0.15;
+                        }
+                        // War zone: soldiers
+                        else if (emOriginTown.kingdomId !== emDestTown.kingdomId) {
+                            var atWar = world.activeWars ? Object.values(world.activeWars).some(function(w) {
+                                return w.active !== false &&
+                                    ((w.kingdomA === emOriginTown.kingdomId && w.kingdomB === emDestTown.kingdomId) ||
+                                     (w.kingdomA === emDestTown.kingdomId && w.kingdomB === emOriginTown.kingdomId));
+                            }) : false;
+                            if (atWar) {
+                                encounterType = 'soldier';
+                                encounterChance = 0.25;
+                            } else if (roadThreat > 0) {
+                                encounterType = 'bandit';
+                                encounterChance = Math.min(0.35, roadThreat / 100);
+                            }
+                        }
+                        // Normal road: bandits based on threat
+                        else if (roadThreat > 0) {
+                            encounterType = 'bandit';
+                            encounterChance = Math.min(0.35, roadThreat / 100);
+                        }
+                        // Off-road: higher bandit chance
+                        if (p.travelOffroad && !encounterType) {
+                            encounterType = 'bandit';
+                            encounterChance = 0.12;
+                        }
+                    }
+
+                    if (encounterType && rng.chance(encounterChance)) {
+                        // Resolve encounter based on EM skills and resources
+                        var emCombatSkill = (p.skills && p.skills.combat) || 0;
+                        var emGuardCount = 0;
+                        if (p.guards && Array.isArray(p.guards)) emGuardCount = p.guards.length;
+                        var emDefense = emCombatSkill * 2 + emGuardCount * 15;
+
+                        // Skill bonuses
+                        if (emHasSkill(p, 'combat_trained')) emDefense += 20;
+                        if (emHasSkill(p, 'street_smart')) emDefense += 15;
+                        if (emHasSkill(p, 'fortified_caravans')) emDefense += 25;
+                        if (encounterType === 'pirate' && emHasSkill(p, 'fleet_admiral')) emDefense += 30;
+
+                        var threatStrength = 20 + rng.randInt(0, 40);
+                        if (encounterType === 'soldier') threatStrength += 20;
+
+                        if (emDefense >= threatStrength) {
+                            // Victory — EM fought off the encounter
+                            logEvent('⚔️ ' + p.firstName + ' ' + (p.lastName || '') + ' fought off ' +
+                                (encounterType === 'pirate' ? 'pirates' : encounterType === 'soldier' ? 'enemy soldiers' : 'bandits') +
+                                ' while traveling.', { type: 'encounter' }, 'npc_activity');
+                            grantEmXp(p, 5, 'combat');
+                        } else {
+                            // Defeat — lose gold and possibly goods
+                            var goldLoss = Math.floor(p.gold * (0.05 + rng.random() * 0.15));
+                            p.gold = Math.max(0, p.gold - goldLoss);
+                            // Lose some inventory
+                            if (p.npcMerchantInventory) {
+                                for (var invKey in p.npcMerchantInventory) {
+                                    if (p.npcMerchantInventory[invKey] > 0 && rng.chance(0.3)) {
+                                        var lostQty = Math.ceil(p.npcMerchantInventory[invKey] * (0.1 + rng.random() * 0.2));
+                                        p.npcMerchantInventory[invKey] = Math.max(0, p.npcMerchantInventory[invKey] - lostQty);
+                                    }
+                                }
+                            }
+                            // Guard casualties
+                            if (emGuardCount > 0 && p.guards && rng.chance(0.3)) {
+                                p.guards.pop(); // lose one guard
+                            }
+                            logEvent('💀 ' + p.firstName + ' ' + (p.lastName || '') + ' was robbed by ' +
+                                (encounterType === 'pirate' ? 'pirates' : encounterType === 'soldier' ? 'enemy soldiers' : 'bandits') +
+                                ', losing ' + goldLoss + 'g.', { type: 'encounter', goldLoss: goldLoss }, 'npc_activity');
+                            // Bribe option for street_smart EMs
+                            if (emHasSkill(p, 'bribe_expert') && encounterType === 'bandit') {
+                                p.gold += Math.floor(goldLoss * 0.5); // recovered half via bribery
+                            }
+                        }
+                    }
+                }
+
                 if (p.travelProgress >= 1.0) {
                     p.townId = p.travelDestination;
                     p.traveling = false;
