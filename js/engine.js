@@ -13433,6 +13433,35 @@
             }
         }
 
+        // 5c. Handle player lord/RA status if their lord town or kingdom is affected
+        if (typeof Player !== 'undefined' && Player.state) {
+            var _ps = Player.state;
+            // If this is the player's lord town being conquered
+            if (_ps.lordTownId === townId && fromKingdomId && _ps.socialRank) {
+                var _pRank = _ps.socialRank[fromKingdomId] || 0;
+                if (_pRank >= 5) {
+                    // Lord loses their town — demoted to Minor Noble in old kingdom
+                    _ps.socialRank[fromKingdomId] = Math.min(_pRank, 4);
+                    // Return kingdom buildings
+                    if (typeof Player._handleLordDemotion === 'function') {
+                        Player._handleLordDemotion(fromKingdomId);
+                    } else {
+                        _ps.lordTownId = null;
+                    }
+                    logEvent('⚔️ ' + (_ps.fullName || 'The player') + ' has lost lordship of ' + town.name + ' to ' + toK.name + '\'s conquest!');
+                    if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚔️ You lost lordship of ' + town.name + '! Demoted to Minor Noble.', 'danger', 'critical');
+                }
+            }
+            // If the player is in the conquered town, update citizenship kingdom
+            if (_ps.townId === townId) {
+                // Player is now in the new kingdom's territory
+                if (_ps.citizenshipKingdomId === fromKingdomId) {
+                    logEvent('📜 ' + (_ps.fullName || 'The player') + ' is now under the rule of ' + toK.name + '.');
+                    if (typeof UI !== 'undefined' && UI.toast) UI.toast('📜 Your town is now under ' + toK.name + '\'s rule.', 'warning', 'critical');
+                }
+            }
+        }
+
         // 6. Log rich event
         const methodLabels = {
             'peace_deal': 'as part of a peace treaty',
@@ -30066,6 +30095,7 @@
         findPerson(id) { return findPerson(id); },
         findPath(a, b, opts) { return findPath(a, b, opts); },
         findBuildingType(id) { return findBuildingType(id); },
+        transferTown(townId, fromKingdomId, toKingdomId, method) { return transferTown(townId, fromKingdomId, toKingdomId, method); },
         logEvent(msg, details, category) { logEvent(msg, details, category); },
         getRng() { return world ? world.rng : null; },
         killPerson(p, cause) { return killPerson(p, cause); },

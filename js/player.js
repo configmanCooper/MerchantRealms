@@ -9095,6 +9095,28 @@
     // Lords can build kingdom buildings in their lord town with king permission.
     // Royal Advisors can do this in any town (harder outside their lord town).
     // ========================================================
+
+    // Top-level lord demotion handler — clears lordTownId and returns kingdom buildings
+    function handleLordDemotion(kingdomId) {
+        if (player.lordTownId) {
+            var lordTown = Engine.findTown(player.lordTownId);
+            if (lordTown && lordTown.kingdomId === kingdomId) {
+                var kingdom = null;
+                try { kingdom = Engine.findKingdom(kingdomId); } catch(e) {}
+                if (kingdom && lordTown.buildings) {
+                    for (var _bi = 0; _bi < lordTown.buildings.length; _bi++) {
+                        var _b = lordTown.buildings[_bi];
+                        if (_b._wasKingdomOwned && _b.ownerId === 'player') {
+                            _b.ownerId = kingdom.id;
+                            delete _b._wasKingdomOwned;
+                        }
+                    }
+                }
+            }
+            player.lordTownId = null;
+        }
+    }
+
     var KINGDOM_BUILDING_TYPES = ['walls', 'barracks', 'watchtower', 'castle', 'granary', 'marketplace', 'temple', 'library', 'stables', 'armory', 'harbor_fortification'];
 
     function getKingdomBuildableTypes(townId) {
@@ -16196,26 +16218,9 @@
             }
         }
 
-        // Helper: handle lord demotion — clear lordTownId, return kingdom buildings
+        // Helper: handle lord demotion — delegates to top-level handleLordDemotion
         function _handleLordDemotion(kingdomId) {
-            if (player.lordTownId) {
-                var lordTown = Engine.findTown(player.lordTownId);
-                if (lordTown && lordTown.kingdomId === kingdomId) {
-                    // Return player-owned kingdom buildings back to kingdom
-                    var kingdom = null;
-                    try { kingdom = Engine.findKingdom(kingdomId); } catch(e) {}
-                    if (kingdom && lordTown.buildings) {
-                        for (var _bi = 0; _bi < lordTown.buildings.length; _bi++) {
-                            var _b = lordTown.buildings[_bi];
-                            if (_b._wasKingdomOwned && _b.ownerId === 'player') {
-                                _b.ownerId = kingdom.id;
-                                delete _b._wasKingdomOwned;
-                            }
-                        }
-                    }
-                }
-                player.lordTownId = null;
-            }
+            handleLordDemotion(kingdomId);
         }
 
         // Guild monopoly enforcement — seize building helper
@@ -37009,6 +37014,7 @@
         checkCrimeImmunity,
         _selectLordTown,
         _handleRegimeChangeConsequence,
+        _handleLordDemotion: handleLordDemotion,
         get politicalCapital() { return player.politicalCapital || 0; },
         // Town Reputation
         get townReputation() { return player.townReputation || {}; },
