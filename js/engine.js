@@ -4952,11 +4952,11 @@
         }
         // Player buildings track workers explicitly — handled by player.js
         if (bld.ownerId === 'player') {
-            return bld.workers ? bld.workers.length : 0;
+            return Array.isArray(bld.workers) ? bld.workers.length : 0;
         }
         // Bug 3/4 fix: Kingdom-owned and NPC-owned buildings use explicit
         // workers if assigned, otherwise auto-staff from community
-        if (bld.workers && bld.workers.length > 0) {
+        if (Array.isArray(bld.workers) && bld.workers.length > 0) {
             return bld.workers.length;
         }
         const bt = findBuildingType(bld.type);
@@ -5565,7 +5565,7 @@
         // Remove from any building's worker list and apprentice pairs
         for (const town of world.towns) {
             for (const bld of town.buildings) {
-                if (bld.workers) {
+                if (Array.isArray(bld.workers)) {
                     const idx = bld.workers.indexOf(p.id);
                     if (idx !== -1) bld.workers.splice(idx, 1);
                 }

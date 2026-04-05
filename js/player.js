@@ -35173,10 +35173,13 @@
     // Auto-capture hook — call from key game moments
     function autoJournalCapture(type, text, opts) {
         // Skip if journal is getting too frequent (max 1 per type per 3 days)
-        var entries = player.journalEntries || [];
-        var day = Engine.getDay();
-        for (var i = entries.length - 1; i >= Math.max(0, entries.length - 5); i--) {
-            if (entries[i] && entries[i].type === type && day - entries[i].day < 3) return;
+        // Exception: rank changes always get recorded
+        if (type !== 'rank') {
+            var entries = player.journalEntries || [];
+            var day = Engine.getDay();
+            for (var i = entries.length - 1; i >= Math.max(0, entries.length - 5); i--) {
+                if (entries[i] && entries[i].type === type && day - entries[i].day < 3) return;
+            }
         }
         recordJournalEntry(type, text, opts);
     }
