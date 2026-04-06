@@ -20250,7 +20250,8 @@
         }
 
         if (candidates.length === 0) {
-            return { success: false, message: introducer.firstName + ' says: "You already know everyone of my standing in this town."' };
+            var _rankLabel = (CONFIG.SOCIAL_RANKS && CONFIG.SOCIAL_RANKS[introRank]) ? CONFIG.SOCIAL_RANKS[introRank].name : 'that rank';
+            return { success: false, message: introducer.firstName + ' doesn\'t know anyone of ' + _rankLabel + ' rank in this town that you haven\'t already met.' };
         }
 
         player.introductionCooldowns[introducerId] = today;

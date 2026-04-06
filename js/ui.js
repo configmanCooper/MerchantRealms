@@ -2283,7 +2283,8 @@ window.UI = (function () {
                     if (_introNpcRank >= 4) {
                         var _introRel = Player.getRelationship ? Player.getRelationship(person.id) : { level: 0 };
                         if (_introRel.level >= 60) {
-                            html += `<button class="btn-medieval" onclick="UI.requestSameRankIntro('${person.id}')" title="Ask to be introduced to another ${_introNpcRank >= 6 ? 'Royal Advisor' : _introNpcRank >= 5 ? 'Lord' : 'Minor Noble'}" style="font-size:0.75rem;padding:5px 10px;background:rgba(100,200,100,0.15);border-color:rgba(100,200,100,0.3);">🤝 Ask for Introduction</button>`;
+                            var _targetRankName = _introNpcRank >= 6 ? 'Royal Advisor' : _introNpcRank >= 5 ? 'Lord' : _introNpcRank >= 4 ? 'Minor Noble' : 'Noble';
+                            html += `<button class="btn-medieval" onclick="UI.requestSameRankIntro('${person.id}')" title="Ask to be introduced to a ${_targetRankName}" style="font-size:0.75rem;padding:5px 10px;">🤝 Ask for Introduction to ${_targetRankName}</button>`;
                         }
                     }
                     html += `</div>`;
