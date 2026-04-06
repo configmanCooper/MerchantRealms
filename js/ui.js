@@ -27,6 +27,7 @@ window.UI = (function () {
     let _encounterLocked = false; // When true, encounter dialog cannot be closed — must resolve
     var _rightPanelTownId = null; // Track which town is shown in right panel for auto-refresh
     var _rightPanelRefreshCounter = 0;
+    var _townPanelExpandedSections = {}; // Track expanded collapsible sections across refreshes
     var _toastsMuted = false; // When true, toast popups are suppressed but events still log
     try { _toastsMuted = localStorage.getItem('mr_toasts_muted') === 'true'; } catch(e) {}
 
@@ -532,6 +533,9 @@ window.UI = (function () {
             showWarConflictChoice();
         }
 
+        // Check for pending succession election
+        _checkPendingElection();
+
         // Check for conquest events affecting player
         try { checkConquestEvents(); } catch (e) { /* no-op */ }
 
@@ -777,6 +781,10 @@ window.UI = (function () {
                     btnGodMode.style.display = (typeof Game !== 'undefined' && Game.isGodMode && Game.isGodMode()) ? '' : 'none';
                 }
 
+                // Resource Deposits button — hidden (moved to Skill Abilities tab)
+                const btnDeposits = document.getElementById('btnDeposits');
+                if (btnDeposits) btnDeposits.style.display = 'none';
+
                 // Nobility button — visible at rank 4+ (Minor Noble), glow on actionable items
                 const btnNobility = document.getElementById('btnNobility');
                 if (btnNobility) {
@@ -946,9 +954,21 @@ window.UI = (function () {
         _rightPanelTownId = null;
     }
 
+    function _toggleCollapse(h3El) {
+        var body = h3El.nextElementSibling;
+        var id = h3El.getAttribute('data-collapse-id');
+        var isNowHidden = body.style.display !== 'none';
+        body.style.display = isNowHidden ? 'none' : '';
+        var arrow = h3El.querySelector('.collapse-arrow');
+        if (arrow) arrow.textContent = isNowHidden ? '▶' : '▼';
+        if (id) _townPanelExpandedSections[id] = !isNowHidden;
+    }
+
     function showTownDetail(town) {
         if (!town) return;
         if (_isBankruptcyBlocked()) { toast('💸 You must resolve your bankruptcy first!', 'danger', 'critical'); return; }
+        // Reset expanded sections when switching towns
+        if (_rightPanelTownId !== town.id) _townPanelExpandedSections = {};
         _rightPanelTownId = town.id;
         let kingdom;
         try { kingdom = Engine.getKingdom(town.kingdomId); } catch (e) { /* no-op */ }
@@ -1314,8 +1334,8 @@ window.UI = (function () {
         if (town.market && town.market.prices && canSeePrices) {
             const isRemote = !isPlayerHere;
             html += `<div class="detail-section">
-                <h3 style="cursor:pointer;user-select:none;" onclick="var b=this.nextElementSibling;b.style.display=b.style.display==='none'?'':'none';this.querySelector('.collapse-arrow').textContent=b.style.display==='none'?'▶':'▼';">📊 Market Prices${isRemote ? ' <span class="text-dim" style="font-size:0.7rem;">(Intel)</span>' : ''} <span class="collapse-arrow" style="font-size:0.7rem;opacity:0.6;">▶</span></h3>
-                <div style="display:none;">`;
+                <h3 data-collapse-id="market-prices" style="cursor:pointer;user-select:none;" onclick="UI._toggleCollapse(this)">📊 Market Prices${isRemote ? ' <span class="text-dim" style="font-size:0.7rem;">(Intel)</span>' : ''} <span class="collapse-arrow" style="font-size:0.7rem;opacity:0.6;">${_townPanelExpandedSections['market-prices'] ? '▼' : '▶'}</span></h3>
+                <div style="display:${_townPanelExpandedSections['market-prices'] ? '' : 'none'};">`;
             html += `<table class="price-table"><tr><th>Item</th><th>Price</th><th>Supply</th><th style="font-size:0.7rem;">Source</th>`;
             if (isPlayerHere) html += `<th></th>`;
             html += `</tr>`;
@@ -1427,8 +1447,8 @@ window.UI = (function () {
         } else if (town.market && town.market.prices && !canSeePrices && showStale && rememberedData) {
             // STALE REMEMBERED PRICES — from player's last visit
             html += `<div class="detail-section">
-                <h3 style="cursor:pointer;user-select:none;" onclick="var b=this.nextElementSibling;b.style.display=b.style.display==='none'?'':'none';this.querySelector('.collapse-arrow').textContent=b.style.display==='none'?'▶':'▼';">📊 Market Prices <span style="color:#c9a84c;font-size:0.7rem;">(Remembered)</span> <span class="collapse-arrow" style="font-size:0.7rem;opacity:0.6;">▶</span></h3>
-                <div style="display:none;">`;
+                <h3 data-collapse-id="market-prices-remembered" style="cursor:pointer;user-select:none;" onclick="UI._toggleCollapse(this)">📊 Market Prices <span style="color:#c9a84c;font-size:0.7rem;">(Remembered)</span> <span class="collapse-arrow" style="font-size:0.7rem;opacity:0.6;">${_townPanelExpandedSections['market-prices-remembered'] ? '▼' : '▶'}</span></h3>
+                <div style="display:${_townPanelExpandedSections['market-prices-remembered'] ? '' : 'none'};">`;
             html += `<div style="background:rgba(200,160,50,0.1);border:1px solid #5a4a20;border-radius:4px;padding:6px 8px;margin-bottom:8px;">
                 <span style="color:#c9a84c;font-size:0.8rem;">⚠️ These prices are from <strong>${rememberedData.daysAgo} day${rememberedData.daysAgo !== 1 ? 's' : ''} ago</strong> (Day ${rememberedData.day}). Actual prices may have changed. Learn <b>Trade Network</b> or <b>Global Trade Intel</b> to see current prices.</span>
             </div>`;
@@ -1560,12 +1580,24 @@ window.UI = (function () {
             }
         }
 
-        // Travel button
+        // Travel button — show when player is not in this town (including while traveling or stopped on road)
         if (!isPlayerHere) {
-            // Route info preview
-            if (typeof Engine !== 'undefined' && Engine.findPath && typeof Player !== 'undefined' && Player.townId) {
+            // Route info preview — use nearest town to current position if no townId
+            var _routeOriginId = (typeof Player !== 'undefined') ? Player.townId : null;
+            if (!_routeOriginId && typeof Player !== 'undefined' && Player.getPlayerWorldPosition) {
+                var _rPos = Player.getPlayerWorldPosition();
+                if (_rPos) {
+                    var _rTowns = Engine.getTowns();
+                    var _rNearest = Infinity;
+                    for (var _ri = 0; _ri < _rTowns.length; _ri++) {
+                        var _rd = Math.hypot(_rTowns[_ri].x - _rPos.x, _rTowns[_ri].y - _rPos.y);
+                        if (_rd < _rNearest) { _rNearest = _rd; _routeOriginId = _rTowns[_ri].id; }
+                    }
+                }
+            }
+            if (typeof Engine !== 'undefined' && Engine.findPath && _routeOriginId && _routeOriginId !== town.id) {
                 try {
-                    const route = Engine.findPath(Player.townId, town.id);
+                    const route = Engine.findPath(_routeOriginId, town.id);
                     if (route && route.length > 0) {
                         let routeDesc = '';
                         const types = new Set(route.map(s => s.type || 'road'));
@@ -1579,9 +1611,11 @@ window.UI = (function () {
                 } catch (e) { /* findPath may throw if towns unreachable */ }
             }
 
+            var _isTraveling = typeof Player !== 'undefined' && Player.traveling;
+            var _travelLabel = _isTraveling ? '🔄 Redirect Travel' : '🗺️ Travel Options';
             html += `<div class="text-center mt-sm">
                 <button class="btn-medieval" onclick="UI.openTravelOptions('${town.id}')" style="font-size:0.85rem;padding:8px 24px;">
-                    🗺️ Travel Options
+                    ${_travelLabel}
                 </button>`;
 
             html += `</div>`;
@@ -3243,9 +3277,9 @@ window.UI = (function () {
             town = towns ? towns.find(t => t.id === Player.townId) : null;
         }
 
-        const categories = ['farm', 'mine', 'harvest', 'processing', 'finished', 'military', 'luxury', 'storage', 'trade'];
+        const categories = ['farm', 'mine', 'harvest', 'processing', 'finished', 'retail', 'medical', 'military', 'luxury', 'storage', 'trade'];
         const catNames = { farm: '🌾 Farms', mine: '⛏ Mines', harvest: '🪓 Harvest', processing: '⚙ Processing',
-                           finished: '🏭 Finished', military: '⚔ Military', luxury: '👗 Luxury', storage: '📦 Storage', trade: '🏪 Trade', port: '⚓ Port' };
+                           finished: '🏭 Finished', retail: '🏪 Retail', medical: '🏥 Medical', military: '⚔ Military', luxury: '👗 Luxury', storage: '📦 Storage', trade: '🏪 Trade', port: '⚓ Port' };
 
         let catHtml = '';
         for (const cat of categories) {
@@ -3629,13 +3663,11 @@ window.UI = (function () {
                 var bldName = obt ? obt.name : offer.building.type;
                 var condLabel = offer.building.condition || 'new';
                 var canAffordOffer = (Player.gold || 0) >= offer.price;
-                var canAffordConvert = (Player.gold || 0) >= (offer.price + 500);
                 html += '<div style="border:1px solid #444;padding:6px;margin:3px 0;border-radius:4px;opacity:' + (canAffordOffer ? '1' : '0.6') + ';">';
                 html += '<div><strong>' + bldName + '</strong> (Lv.' + (offer.building.level || 1) + ') — <span style="color:#ffd700;">' + Math.ceil(+offer.price) + 'g</span> | ' + condLabel + '</div>';
                 html += '<div style="font-size:0.75rem;color:#aaa;">' + offer.reason + '</div>';
                 html += '<div style="display:flex;gap:4px;margin-top:4px;">';
                 html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;" ' + (canAffordOffer ? '' : 'disabled') + ' onclick="UI.purchaseNPCBuildingUI(' + bldIdx + ',\'' + town.id + '\')">🏠 Buy</button>';
-                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;" ' + (canAffordConvert ? '' : 'disabled') + ' onclick="UI.openConvertBuildingUI(' + bldIdx + ',\'' + town.id + '\')">🔄 Convert (500g + 💥)</button>';
                 html += '</div></div>';
             }
         }
@@ -3962,6 +3994,7 @@ window.UI = (function () {
             // Product selection dropdown for multi-product buildings
             const productOptions = bt.canProduce || (bt.availableProducts ? Object.keys(bt.availableProducts) : null);
             if (productOptions && productOptions.length > 1) {
+                var _bldLevel = bld.level || 1;
                 html += `<div style="margin-bottom:6px;font-size:0.78rem;">
                     <span>Producing: </span>
                     <select id="productSelect" style="font-size:0.75rem;padding:2px 4px;background:#2a2520;color:#e8dcc8;border:1px solid #555;border-radius:4px;">`;
@@ -3969,7 +4002,14 @@ window.UI = (function () {
                     const pRes = findResource(pId);
                     const pName = pRes ? pRes.name : pId;
                     const selected = pId === currentProduct ? 'selected' : '';
-                    html += `<option value="${pId}" ${selected}>${pName}</option>`;
+                    // Check minLevel requirement
+                    var _recipe = bt.availableProducts && bt.availableProducts[pId];
+                    var _locked = _recipe && _recipe.minLevel && _bldLevel < _recipe.minLevel;
+                    if (_locked) {
+                        html += `<option value="${pId}" disabled ${selected}>${pName} (Lv${_recipe.minLevel}+)</option>`;
+                    } else {
+                        html += `<option value="${pId}" ${selected}>${pName}</option>`;
+                    }
                 }
                 html += `</select>
                     <button class="btn-trade buy" style="font-size:0.7rem;margin-left:4px;" onclick="UI.setBuildingProductUI('${bld.id}')">Set</button>
@@ -4117,6 +4157,220 @@ window.UI = (function () {
                     html += '<div style="font-size:0.72rem;color:#888;">Consumes per service: ' + consumeList.join(', ') + '</div>';
                 }
             }
+
+            html += '</div>';
+        }
+
+        // MEDICAL PREPAREDNESS section (for hospitals/clinics)
+        if (bld.type === 'hospital' || bld.type === 'clinic') {
+            // Engine stores _treatmentQueue, _medicalStock, etc. on the town copy, not player.buildings
+            var _engBld = null;
+            if (town && town.buildings) {
+                for (var _ebi = 0; _ebi < town.buildings.length; _ebi++) {
+                    if (town.buildings[_ebi].id === bld.id) { _engBld = town.buildings[_ebi]; break; }
+                }
+            }
+            var _medBld = _engBld || bld; // use engine copy if available, else fallback
+            html += '<div style="padding:8px;border:1px solid var(--border);border-radius:4px;margin-bottom:8px;">';
+            html += '<div style="font-weight:bold;font-size:0.8rem;margin-bottom:6px;">🏥 MEDICAL PREPAREDNESS</div>';
+
+            // Autobuy toggle
+            var _abEnabled = _medBld._autobuyEnabled !== false;
+            html += '<div style="margin-bottom:6px;font-size:0.78rem;">';
+            html += '<label style="cursor:pointer;"><input type="checkbox" ' + (_abEnabled ? 'checked' : '') + ' onchange="Engine.toggleMedicalAutobuy(\'' + bld.townId + '\',\'' + bld.id + '\');UI.showBuildingDetail(\'' + bld.id + '\');"> 🛒 Auto-buy medical supplies from local market</label>';
+            html += '</div>';
+
+            // Current medical stock (combine _medicalStock + retailStock for treatment readiness)
+            var _medStock = _medBld._medicalStock || {};
+            var _retStock = _medBld.retailStock || bld.retailStock || {};
+            var _medGoods = ['bandages', 'herbal_remedy', 'healing_tonic', 'herbal_poultice', 'fever_tonic', 'antidote', 'splint'];
+            var _medStockTotal = 0;
+            for (var _msi = 0; _msi < _medGoods.length; _msi++) _medStockTotal += (_medStock[_medGoods[_msi]] || 0) + (_retStock[_medGoods[_msi]] || 0);
+            var _medStorageCap = (bt && bt.medicalStorage) || 40;
+            var _medPct = _medStorageCap > 0 ? Math.round(_medStockTotal / _medStorageCap * 100) : 0;
+            var _medColor = _medPct >= 60 ? '#55a868' : _medPct >= 25 ? 'var(--gold)' : 'var(--danger)';
+
+            html += '<div style="font-size:0.78rem;margin-bottom:4px;">📦 Medical Stock: <span style="color:' + _medColor + ';">' + _medStockTotal + '/' + _medStorageCap + '</span> <span style="font-size:0.68rem;color:#888;">(dedicated + retail)</span></div>';
+            html += '<div style="background:#333;border-radius:3px;height:6px;margin-bottom:8px;overflow:hidden;">';
+            html += '<div style="background:' + _medColor + ';height:100%;width:' + Math.min(100, _medPct) + '%;"></div></div>';
+
+            // Show each medical item with combined count
+            html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">';
+            for (var _mgi = 0; _mgi < _medGoods.length; _mgi++) {
+                var _mgId = _medGoods[_mgi];
+                var _mgDed = _medStock[_mgId] || 0;
+                var _mgRet = _retStock[_mgId] || 0;
+                var _mgQty = _mgDed + _mgRet;
+                var _mgRes = findResource(_mgId);
+                var _mgName = _mgRes ? _mgRes.name : _mgId;
+                var _mgIcon = _mgRes ? (_mgRes.icon || '💊') : '💊';
+                var _mgCol = _mgQty > 0 ? '#55a868' : '#666';
+                var _mgDetail = _mgDed > 0 && _mgRet > 0 ? ' (' + _mgDed + '+' + _mgRet + ')' : '';
+                html += '<span style="font-size:0.72rem;padding:2px 5px;border:1px solid #444;border-radius:3px;color:' + _mgCol + ';">' + _mgIcon + ' ' + _mgName + ': ' + _mgQty + _mgDetail + '</span>';
+            }
+            html += '</div>';
+
+            // Treatment types table
+            var _treatSuppliesInjury = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_INJURY) ? NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_INJURY : {};
+            var _treatSuppliesIllness = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_ILLNESS) ? NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_ILLNESS : {};
+            var _treatTicks = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.TREATMENT_TICKS) ? NPC_HEALTH_CONFIG.TREATMENT_TICKS : {};
+            var _isClinc = bld.type === 'clinic';
+
+            html += '<div style="font-weight:bold;font-size:0.75rem;margin-bottom:4px;">Treatment Capabilities:</div>';
+            html += '<table style="width:100%;font-size:0.72rem;border-collapse:collapse;">';
+            html += '<tr style="border-bottom:1px solid #444;"><th style="text-align:left;padding:3px;">Severity</th><th style="text-align:left;padding:3px;">Injury Supplies</th><th style="text-align:left;padding:3px;">Illness Supplies</th><th style="text-align:center;padding:3px;">Time</th><th style="text-align:center;padding:3px;">Ready?</th></tr>';
+
+            var _sevLevels = ['minor', 'moderate', 'serious', 'severe'];
+            var _sevLabels = { minor: '🟢 Minor', moderate: '🟡 Moderate', serious: '🟠 Serious', severe: '🔴 Severe' };
+            var _medRank = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.MEDICINE_RANK) ? NPC_HEALTH_CONFIG.MEDICINE_RANK : ['herbal_remedy', 'fever_tonic', 'healing_tonic', 'antidote'];
+            for (var _si = 0; _si < _sevLevels.length; _si++) {
+                var _sev = _sevLevels[_si];
+                var _blocked = false;
+                var _isClinicSevere = _isClinc && _sev === 'severe';
+                var _injSupplies = _treatSuppliesInjury[_sev] || {};
+                var _illSupplies = _treatSuppliesIllness[_sev] || {};
+                var _ticks = _treatTicks[_sev] || 0;
+                if (_isClinicSevere) _ticks = _ticks * 2;
+                var _hours = Math.round(_ticks / 2.5);
+
+                // Check if we have all supplies (both types)
+                var _readyInj = true, _readyIll = true;
+
+                var _buildInjList = function(supplies) {
+                    var list = [];
+                    for (var _supRes in supplies) {
+                        var _supQty = supplies[_supRes];
+                        var _supHave = (_medStock[_supRes] || 0) + (_retStock[_supRes] || 0);
+                        var _supMkt = (town && town.market && town.market.supply[_supRes]) || 0;
+                        var _supAvail = _supHave + _supMkt;
+                        // Check substitution for medicine
+                        var _rIdx = _medRank.indexOf(_supRes);
+                        if (!(_supAvail >= _supQty) && _rIdx >= 0) {
+                            for (var _ssi = _rIdx + 1; _ssi < _medRank.length; _ssi++) {
+                                var _altHave = (_medStock[_medRank[_ssi]] || 0) + (_retStock[_medRank[_ssi]] || 0);
+                                var _altMkt = (town && town.market && town.market.supply[_medRank[_ssi]]) || 0;
+                                if (_altHave + _altMkt >= _supQty) { _supAvail = _supQty; break; }
+                            }
+                        }
+                        var _supOk = _supAvail >= _supQty;
+                        var _supRe = findResource(_supRes);
+                        var _supName = _supRe ? _supRe.name : _supRes;
+                        list.push('<span style="color:' + (_supOk ? '#55a868' : 'var(--danger)') + ';">' + _supQty + ' ' + _supName + (_supOk ? ' ✓' : ' ✗') + '</span>');
+                        if (!_supOk) return { list: list, ready: false };
+                    }
+                    return { list: list, ready: true };
+                };
+
+                var _injResult = _buildInjList(_injSupplies);
+                var _illResult = _buildInjList(_illSupplies);
+
+                var _rowStyle = _blocked ? 'color:#555;' : '';
+                html += '<tr style="border-bottom:1px solid #333;' + _rowStyle + '">';
+                html += '<td style="padding:3px;">' + (_blocked ? '🚫 ' : '') + _sevLabels[_sev] + (_isClinicSevere ? ' <span style="font-size:0.65rem;color:#e67e22;">(2x time)</span>' : '') + '</td>';
+                html += '<td style="padding:3px;">' + (_injResult.list.length > 0 ? _injResult.list.join(', ') : '<span style="color:#555;">—</span>') + '</td>';
+                html += '<td style="padding:3px;">' + (_illResult.list.length > 0 ? _illResult.list.join(', ') : '<span style="color:#555;">—</span>') + '</td>';
+                html += '<td style="text-align:center;padding:3px;">' + (_blocked ? '—' : '~' + _hours + 'h') + '</td>';
+                html += '<td style="text-align:center;padding:3px;">' + (_blocked ? '🚫' : ((_injResult.ready && _illResult.ready) ? '<span style="color:#55a868;">✅</span>' : '<span style="color:var(--danger);">❌</span>')) + '</td>';
+                html += '</tr>';
+            }
+            html += '</table>';
+
+            // Illness/Injury type info
+            html += '<div style="font-weight:bold;font-size:0.75rem;margin-top:8px;margin-bottom:4px;">Common Conditions & Treatment:</div>';
+            html += '<table style="width:100%;font-size:0.70rem;border-collapse:collapse;">';
+            html += '<tr style="border-bottom:1px solid #444;"><th style="text-align:left;padding:2px;">Condition</th><th style="text-align:left;padding:2px;">Type</th><th style="text-align:center;padding:2px;">Severity</th><th style="text-align:left;padding:2px;">Key Supply</th><th style="text-align:right;padding:2px;">Fee</th><th style="text-align:right;padding:2px;">Supply Cost</th></tr>';
+            var _condTable = [
+                { name: 'Common Cold', type: 'Illness', sev: 'minor', supply: 'herbal_remedy' },
+                { name: 'Food Poisoning', type: 'Illness', sev: 'minor', supply: 'herbal_remedy' },
+                { name: 'Influenza', type: 'Illness', sev: 'moderate', supply: 'fever_tonic' },
+                { name: 'Dysentery', type: 'Illness', sev: 'moderate', supply: 'fever_tonic' },
+                { name: 'Pneumonia', type: 'Illness', sev: 'serious', supply: 'healing_tonic' },
+                { name: 'Plague', type: 'Illness', sev: 'severe', supply: 'antidote' },
+                { name: 'Minor Wound', type: 'Injury', sev: 'minor', supply: 'bandages' },
+                { name: 'Broken Bone', type: 'Injury', sev: 'moderate', supply: 'splint' },
+                { name: 'Severe Trauma', type: 'Injury', sev: 'serious', supply: 'herbal_poultice' },
+                { name: 'Crushed Limb', type: 'Injury', sev: 'severe', supply: 'healing_tonic' },
+            ];
+            var _tFees = _medBld._treatmentFees || {};
+            var _tSupInjury = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_INJURY) ? NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_INJURY : {};
+            var _tSupIllness = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_ILLNESS) ? NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_ILLNESS : {};
+            var _sevColors = { minor: '#55a868', moderate: 'var(--gold)', serious: '#e67e22', severe: 'var(--danger)' };
+            for (var _ci = 0; _ci < _condTable.length; _ci++) {
+                var _cond = _condTable[_ci];
+                var _cBlocked = false;
+                var _cIsClinicSevere = _isClinc && _cond.sev === 'severe';
+                var _cSupRes = findResource(_cond.supply);
+                var _cSupName = _cSupRes ? _cSupRes.name : _cond.supply;
+                var _cHaveSupply = ((_medStock[_cond.supply] || 0) + (_retStock[_cond.supply] || 0) + ((town && town.market && town.market.supply[_cond.supply]) || 0)) > 0;
+                // Treatment fee charged to patient
+                var _cFee = _tFees[_cond.sev] || 0;
+                // Supply cost at local market prices — use correct supply set based on type
+                var _cSupCost = 0;
+                var _cSupDef = _cond.type === 'Illness' ? (_tSupIllness[_cond.sev] || {}) : (_tSupInjury[_cond.sev] || {});
+                for (var _csk in _cSupDef) {
+                    var _cPrice = (Engine.getMarketPrice ? Engine.getMarketPrice(town, _csk) : 5) || 5;
+                    _cSupCost += _cPrice * _cSupDef[_csk];
+                }
+                var _cProfit = _cFee - _cSupCost;
+                var _cProfitColor = _cProfit > 0 ? '#55a868' : _cProfit < 0 ? 'var(--danger)' : '#888';
+                html += '<tr style="border-bottom:1px solid #222;' + (_cBlocked ? 'color:#555;' : '') + '">';
+                html += '<td style="padding:2px;">' + _cond.name + '</td>';
+                html += '<td style="padding:2px;">' + (_cond.type === 'Illness' ? '🤒' : '🩹') + ' ' + _cond.type + '</td>';
+                html += '<td style="text-align:center;padding:2px;color:' + (_sevColors[_cond.sev] || '#aaa') + ';">' + _cond.sev + (_cIsClinicSevere ? ' (2x)' : '') + '</td>';
+                html += '<td style="padding:2px;">' + (_cBlocked ? '🚫' : (_cHaveSupply ? '✅ ' : '❌ ') + _cSupName) + '</td>';
+                html += '<td style="text-align:right;padding:2px;color:var(--gold);">' + _cFee + 'g</td>';
+                html += '<td style="text-align:right;padding:2px;color:' + _cProfitColor + ';">' + Math.round(_cSupCost * 100) / 100 + 'g</td>';
+                html += '</tr>';
+            }
+            html += '</table>';
+
+            // Queue info
+            var _queue = _medBld._treatmentQueue || [];
+            var _maxH = (bt && bt.maxHealers) || 2;
+            html += '<div style="font-size:0.75rem;margin-top:8px;">📋 Treatment Queue: <strong>' + _queue.length + '</strong> patients | Capacity: ' + _maxH + ' simultaneous</div>';
+            if (_queue.length > 0) {
+                html += '<div style="margin-top:4px;max-height:160px;overflow-y:auto;font-size:0.72rem;">';
+                html += '<div style="display:grid;grid-template-columns:2fr 1.2fr 0.8fr 0.8fr 24px;gap:2px;padding:2px 4px;border-bottom:1px solid #444;color:#888;font-size:0.68rem;">';
+                html += '<span>Patient</span><span>Condition</span><span>Severity</span><span style="text-align:right;">Time</span><span></span>';
+                html += '</div>';
+                for (var _qi = 0; _qi < _queue.length; _qi++) {
+                    var _qp = _queue[_qi];
+                    var _qPerson = Engine.findPerson ? Engine.findPerson(_qp.personId) : null;
+                    var _qName = _qPerson ? (_qPerson.firstName + ' ' + (_qPerson.lastName || '')) : _qp.personId;
+                    var _qActive = _qi < _maxH;
+                    var _qDaysLeft = Math.round((_qp.ticksRemaining || 0) / 60 * 10) / 10;
+                    var _qSev = _qp.severity || (_qPerson ? (_qPerson.injurySeverity || _qPerson.illnessSeverity || 'minor') : 'minor');
+                    var _qIsIll = _qp.isIllness != null ? (_qp.isIllness !== false) : (_qPerson ? !!_qPerson.sick : true);
+                    var _qSevColor = _qSev === 'severe' ? 'var(--danger)' : _qSev === 'serious' ? '#e67e22' : _qSev === 'moderate' ? 'var(--gold)' : '#55a868';
+                    var _qCondition = '';
+                    if (_qPerson) {
+                        if (_qIsIll && _qPerson.illness) _qCondition = _qPerson.illness;
+                        else if (!_qIsIll && _qPerson.injuryName) _qCondition = _qPerson.injuryName;
+                    }
+                    var _qTypeIcon = _qIsIll ? '🤒' : '🩹';
+                    html += '<div style="display:grid;grid-template-columns:2fr 1.2fr 0.8fr 0.8fr 24px;gap:2px;padding:2px 4px;border-bottom:1px solid #333;align-items:center;">';
+                    html += '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (_qActive ? '💊 ' : '⏳ ') + '<a href="#" onclick="UI.showNPCDetail(\'' + _qp.personId + '\');return false;" style="color:var(--link);text-decoration:underline;cursor:pointer;">' + _qName + '</a></span>';
+                    html += '<span style="font-size:0.68rem;color:#aaa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + _qTypeIcon + ' ' + (_qCondition || (_qIsIll ? 'Illness' : 'Injury')) + '</span>';
+                    html += '<span style="color:' + _qSevColor + ';">' + _qSev + '</span>';
+                    html += '<span style="color:#aaa;text-align:right;">~' + _qDaysLeft + 'd</span>';
+                    html += '<span style="text-align:center;"><a href="#" onclick="Engine.kickPatientFromQueue(\'' + bld.townId + '\',\'' + bld.id + '\',\'' + _qp.personId + '\');UI.showBuildingDetail(\'' + bld.id + '\');return false;" style="color:#888;text-decoration:none;cursor:pointer;font-size:0.8rem;" title="Remove from queue">✕</a></span>';
+                    html += '</div>';
+                }
+                html += '</div>';
+            }
+
+            // Treatment statistics log
+            var _tStats = _medBld._treatmentStats || { treated: 0, feeEarned: 0, supplyCost: 0 };
+            var _netProfit = _tStats.feeEarned - _tStats.supplyCost;
+            var _profitColor = _netProfit > 0 ? '#55a868' : _netProfit < 0 ? 'var(--danger)' : '#aaa';
+            html += '<div style="margin-top:8px;padding:6px;background:rgba(0,0,0,0.2);border-radius:4px;">';
+            html += '<div style="font-weight:bold;font-size:0.75rem;margin-bottom:4px;">📊 Treatment Log</div>';
+            html += '<div style="font-size:0.73rem;display:flex;flex-wrap:wrap;gap:8px;">';
+            html += '<span>🩺 Patients Treated: <strong>' + _tStats.treated + '</strong></span>';
+            html += '<span>💰 Fees Earned: <strong style="color:var(--gold);">' + Math.round(_tStats.feeEarned) + 'g</strong></span>';
+            html += '<span>📦 Supply Cost: <strong style="color:#e67e22;">' + Math.round(_tStats.supplyCost) + 'g</strong></span>';
+            html += '<span>📈 Net Profit: <strong style="color:' + _profitColor + ';">' + ((_netProfit >= 0 ? '+' : '') + Math.round(_netProfit)) + 'g</strong></span>';
+            html += '</div></div>';
 
             html += '</div>';
         }
@@ -4280,7 +4534,7 @@ window.UI = (function () {
                 var _deliverable = _bufferAmt + _bldInvAmt;
                 html += '<div style="margin-top:6px;">';
                 if (_deliverable > 0) {
-                    html += '<button class="btn-medieval" onclick="(function(){var r=Player.deliverNow(\'' + buildingId + '\');UI.toast(r.message,r.success?\'success\':\'warning\');UI.showBuildingDetails(\'' + buildingId + '\');})()" style="font-size:0.75rem;padding:4px 12px;background:rgba(85,168,104,0.2);border-color:rgba(85,168,104,0.4);">📦 Deliver Now (' + _deliverable + ' ' + bt.produces + ')</button>';
+                    html += '<button class="btn-medieval" onclick="(function(){var r=Player.deliverNow(\'' + buildingId + '\');UI.toast(r.message,r.success?\'success\':\'warning\');UI.showBuildingDetail(\'' + buildingId + '\');})()" style="font-size:0.75rem;padding:4px 12px;background:rgba(85,168,104,0.2);border-color:rgba(85,168,104,0.4);">📦 Deliver Now (' + _deliverable + ' ' + bt.produces + ')</button>';
                 } else {
                     html += '<button class="btn-medieval" disabled style="font-size:0.75rem;padding:4px 12px;opacity:0.5;">📦 Deliver Now (nothing to deliver)</button>';
                 }
@@ -11059,10 +11313,24 @@ window.UI = (function () {
         if (_isBankruptcyBlocked()) { toast('💸 You must resolve your bankruptcy first!', 'danger', 'critical'); return; }
         var destTown = Engine.findTown(townId);
         if (!destTown) return;
-        var currentTown = Engine.findTown(Player.townId);
+
+        // Determine origin — use townId if in town, or nearest town if on road/traveling
+        var _originTownId = Player.townId;
+        if (!_originTownId && Player.getPlayerWorldPosition) {
+            var _oPos = Player.getPlayerWorldPosition();
+            if (_oPos) {
+                var _oTowns = Engine.getTowns();
+                var _oBest = Infinity;
+                for (var _oi = 0; _oi < _oTowns.length; _oi++) {
+                    var _od = Math.hypot(_oTowns[_oi].x - _oPos.x, _oTowns[_oi].y - _oPos.y);
+                    if (_od < _oBest) { _oBest = _od; _originTownId = _oTowns[_oi].id; }
+                }
+            }
+        }
+        var currentTown = Engine.findTown(_originTownId);
         if (!currentTown) return;
-        if (Player.townId === townId) { toast('You are already here.', 'info'); return; }
-        if (Player.traveling) { toast('You are already traveling.', 'warning'); return; }
+        if (_originTownId === townId && !Player.traveling) { toast('You are already here.', 'info'); return; }
+        if (Player.traveling && Player.travelPaid) { toast('Cannot redirect while on paid transport.', 'warning'); return; }
 
         // ===== CLOSED BORDERS CHECK =====
         var destKingdom = null;
@@ -11098,10 +11366,10 @@ window.UI = (function () {
 
         // ===== CALCULATE ROUTES =====
         var mixedRoute = null;
-        try { mixedRoute = Engine.findPath(Player.townId, townId); } catch (e) { /* ignore */ }
+        try { mixedRoute = Engine.findPath(_originTownId, townId); } catch (e) { /* ignore */ }
 
         var landRoute = null;
-        try { landRoute = Engine.findPath(Player.townId, townId, { excludeSea: true }); } catch (e) { /* ignore */ }
+        try { landRoute = Engine.findPath(_originTownId, townId, { excludeSea: true }); } catch (e) { /* ignore */ }
 
         var canSea = false;
         try { canSea = Player.canTravelBySea(townId); } catch (e) { /* ignore */ }
@@ -12308,6 +12576,94 @@ window.UI = (function () {
         openModal('🏘️ ' + kingdom.name + ' — Towns', html);
     }
 
+    // ═══════════════════════════════════════════════════════════
+    //  SUCCESSION ELECTION VOTING UI
+    // ═══════════════════════════════════════════════════════════
+
+    var _electionShown = {};
+
+    function _checkPendingElection() {
+        if (typeof Player === 'undefined' || typeof Engine === 'undefined') return;
+        var playerKingdomId = Player.citizenshipKingdomId || Player.kingdomId;
+        if (!playerKingdomId) return;
+        try {
+            var election = Engine.getPendingElection(playerKingdomId);
+            if (!election) { _electionShown[playerKingdomId] = false; return; }
+            if (_electionShown[playerKingdomId]) return; // already shown this election
+            _electionShown[playerKingdomId] = true;
+            // Small delay so toast renders first
+            setTimeout(function() { showElectionVotingModal(playerKingdomId, election); }, 500);
+        } catch (e) { /* engine not ready */ }
+    }
+
+    function showElectionVotingModal(kingdomId, election) {
+        if (!election || !election.candidates) return;
+        var kingdom = Engine.getKingdom ? Engine.getKingdom(kingdomId) : Engine.findKingdom(kingdomId);
+        var kName = kingdom ? kingdom.name : 'the Kingdom';
+        var daysLeft = Math.max(0, 30 - (Engine.getDay() - election.startDay));
+
+        var html = '';
+        html += '<div style="text-align:center;margin-bottom:12px;">';
+        html += '<div style="font-size:1.1rem;color:#ffd700;margin-bottom:4px;">👑 Succession Election</div>';
+        html += '<div style="font-size:0.85rem;color:#ccc;">' + election.deadKingName + ' has died with no heir.</div>';
+        html += '<div style="font-size:0.8rem;color:#aaa;">The Royal Council of ' + kName + ' must elect a new ruler.</div>';
+        html += '<div style="font-size:0.75rem;color:#888;margin-top:4px;">⏳ ' + daysLeft + ' days until auto-resolution</div>';
+        html += '</div>';
+
+        html += '<div style="display:grid;gap:8px;max-height:400px;overflow-y:auto;padding:4px;">';
+        // Sort: player first, then by score descending
+        var sorted = election.candidates.slice().sort(function(a, b) {
+            if (a.isPlayer) return -1;
+            if (b.isPlayer) return 1;
+            return b.score - a.score;
+        });
+        for (var i = 0; i < sorted.length; i++) {
+            var c = sorted[i];
+            var borderColor = c.isPlayer ? 'rgba(100,200,255,0.6)' : 'rgba(180,160,120,0.4)';
+            var bgColor = c.isPlayer ? 'rgba(100,200,255,0.08)' : 'rgba(40,35,25,0.6)';
+            var youTag = c.isPlayer ? ' <span style="color:#4dc8ff;font-size:0.7rem;">(YOU)</span>' : '';
+            html += '<div style="background:' + bgColor + ';border:1px solid ' + borderColor + ';border-radius:6px;padding:10px 12px;cursor:pointer;transition:background 0.15s;" ';
+            html += 'onmouseover="this.style.background=\'rgba(255,215,0,0.12)\'" onmouseout="this.style.background=\'' + bgColor + '\'" ';
+            html += 'onclick="UI._castElectionVote(\'' + kingdomId + '\',\'' + c.id + '\',\'' + c.name.replace(/'/g, "\\'") + '\')">';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+            html += '<div>';
+            html += '<div style="font-size:0.95rem;color:#e8d5a3;font-weight:bold;">' + c.name + youTag + '</div>';
+            html += '<div style="font-size:0.75rem;color:#aaa;">' + (c.occupation.charAt(0).toUpperCase() + c.occupation.slice(1)) + ', Age ' + c.age + '</div>';
+            html += '</div>';
+            html += '<div style="text-align:right;">';
+            html += '<div style="font-size:0.8rem;color:#ffd700;">💰 ' + Math.round(c.gold).toLocaleString() + 'g</div>';
+            html += '</div>';
+            html += '</div>';
+            // Stats bar
+            html += '<div style="display:flex;gap:12px;margin-top:6px;font-size:0.7rem;color:#999;">';
+            html += '<span>🧠 Int: ' + c.intelligence + '</span>';
+            html += '<span>⚔️ Ambition: ' + c.ambition + '</span>';
+            html += '<span>👥 Charisma: ' + c.charisma + '</span>';
+            html += '</div>';
+            html += '</div>';
+        }
+        html += '</div>';
+
+        html += '<div style="text-align:center;margin-top:10px;font-size:0.75rem;color:#888;">';
+        html += 'Click a candidate to cast your vote. Your endorsement carries great weight as Royal Advisor.';
+        html += '</div>';
+
+        var footer = '<button class="btn-medieval" onclick="UI.closeModal()" style="font-size:0.8rem;padding:5px 18px;opacity:0.6;">Abstain (Let Others Decide)</button>';
+
+        openModal('👑 Royal Election — ' + kName, html, footer);
+    }
+
+    function _castElectionVote(kingdomId, candidateId, candidateName) {
+        var result = Engine.castElectionVote(kingdomId, candidateId);
+        closeModal();
+        if (result && result.success) {
+            toast('👑 You cast your vote for ' + candidateName + '. The council deliberates...', 'success', 'critical');
+        } else {
+            toast('Election has already been resolved.', 'warning');
+        }
+        _electionShown[kingdomId] = false;
+    }
+
     function openKingdomsDialog() {
         let kingdoms;
         try { kingdoms = Engine.getKingdoms(); } catch (e) { kingdoms = []; }
@@ -13035,7 +13391,7 @@ window.UI = (function () {
             if (inj.severity !== 'severe') {
                 html += '🩺 <strong>Clinic</strong> — Treats minor/moderate. Cheaper than hospital. Requires clinic in town.<br>';
             } else {
-                html += '🩺 <strong>Clinic</strong> — <span style="color:#888;">Cannot treat severe injuries.</span><br>';
+                html += '🩺 <strong>Clinic</strong> — <span style="color:#e67e22;">Can treat severe, but takes 2x longer with lower success rate.</span><br>';
             }
             html += '🧑‍⚕️ <strong>Self-treat</strong> — Requires ';
             if (inj.severity === 'minor') html += 'First Aid skill';
@@ -13109,7 +13465,7 @@ window.UI = (function () {
             if (ill.severity !== 'severe') {
                 html += '🩺 <strong>Clinic</strong> — Treats minor/moderate. Cheaper than hospital.<br>';
             } else {
-                html += '🩺 <strong>Clinic</strong> — <span style="color:#888;">Cannot treat severe illnesses.</span><br>';
+                html += '🩺 <strong>Clinic</strong> — <span style="color:#e67e22;">Can treat severe, but takes 2x longer with lower success rate.</span><br>';
             }
             html += '🧑‍⚕️ <strong>Self-treat</strong> — Requires ';
             if (ill.severity === 'minor') html += 'First Aid skill';
@@ -14530,6 +14886,11 @@ window.UI = (function () {
         const sp = Player.skillPoints || 0;
         const playerSkills = Player.skills || {};
 
+        // Build skill ability definitions — toggle features unlocked by skills
+        var _abilities = [];
+        if (playerSkills['regional_survey']) _abilities.push({ id: 'deposits', icon: '⛏️', name: 'Resource Deposits', desc: 'Show resource deposit icons scattered around towns on the map.' + (playerSkills['world_survey'] ? ' (World Survey: shows ALL towns)<br>💡 Right-click anywhere on the map to survey deposits in that area.' : ' (Your kingdom only)'), skill: 'Regional Survey', toggle: "Renderer.toggleDeposits()", isOn: typeof Renderer !== 'undefined' && Renderer.isDepositsOn && Renderer.isDepositsOn() });
+        if (playerSkills['soil_knowledge']) _abilities.push({ id: 'fertility', icon: '🌾', name: 'Soil Fertility', desc: 'Show soil fertility colored regions and ratings around all towns.<br>💡 Right-click anywhere on the map to check fertility in that area.', skill: 'Soil Knowledge', toggle: "Renderer.toggleFertility()", isOn: typeof Renderer !== 'undefined' && Renderer.isFertilityOn && Renderer.isFertilityOn() });
+
         let tabsHtml = '';
         for (const [branchId, info] of Object.entries(SKILL_BRANCHES)) {
             const active = branchId === _skillBranch ? 'active' : '';
@@ -14539,68 +14900,100 @@ window.UI = (function () {
                 ${info.icon} ${info.name} <span class="skill-tab-count">${unlocked}/${branchSkills.length}</span>
             </button>`;
         }
-
-        const branchSkills = [];
-        for (const id in SKILLS) {
-            if (SKILLS[id].branch === _skillBranch) {
-                branchSkills.push({ id, ...SKILLS[id] });
-            }
+        // Add Abilities tab if any abilities unlocked
+        if (_abilities.length > 0) {
+            var _abActive = _skillBranch === '_abilities' ? 'active' : '';
+            tabsHtml += '<button class="skill-tab ' + _abActive + '" onclick="UI.openSkillsDialog(\'_abilities\')" style="border-bottom:3px solid ' + (_abActive ? '#9b59b6' : 'transparent') + '">⚡ Abilities</button>';
         }
 
-        let skillsHtml = '<div class="skill-grid">';
-        for (const skill of branchSkills) {
-            const isUnlocked = playerSkills[skill.id];
-            const canUnlock = Player.canUnlockSkill ? Player.canUnlockSkill(skill.id) : false;
-            const reqsMet = skill.requires.every(r => playerSkills[r]);
-            const costAffordable = sp >= skill.cost;
-            const isRepeatable = !!skill.repeatable;
-
-            let stateClass = 'skill-locked';
-            let stateLabel = '🔒';
-            if (isUnlocked && !isRepeatable) {
-                stateClass = 'skill-unlocked';
-                stateLabel = '✅';
-            } else if (isUnlocked && isRepeatable) {
-                stateClass = 'skill-unlocked';
-                stateLabel = '🔄';
-            } else if (canUnlock) {
-                stateClass = 'skill-available';
-                stateLabel = '';
+        var contentHtml = '';
+        if (_skillBranch === '_abilities') {
+            // Show toggle abilities
+            contentHtml += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;padding:8px 0;">';
+            for (var _ai = 0; _ai < _abilities.length; _ai++) {
+                var _ab = _abilities[_ai];
+                var _abOn = _ab.isOn;
+                var _abBorder = _abOn ? '1px solid #55a868' : '1px solid #555';
+                var _abBg = _abOn ? 'rgba(85,168,104,0.12)' : 'rgba(255,255,255,0.03)';
+                var _abStatusText = _abOn ? '<span style="color:#55a868;font-weight:bold;">● ON</span>' : '<span style="color:#888;">○ OFF</span>';
+                var _abBtnClass = _abOn ? 'sell' : 'buy';
+                var _abBtnText = _abOn ? '🔴 Turn Off' : '🟢 Turn On';
+                contentHtml += '<div style="background:' + _abBg + ';border:' + _abBorder + ';border-radius:6px;padding:12px;">';
+                contentHtml += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">';
+                contentHtml += '<span style="font-size:0.9rem;font-weight:bold;">' + _ab.icon + ' ' + _ab.name + '</span>';
+                contentHtml += _abStatusText;
+                contentHtml += '</div>';
+                contentHtml += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:8px;">' + _ab.desc + '</div>';
+                contentHtml += '<div style="font-size:0.68rem;color:#777;margin-bottom:8px;">Skill: ' + _ab.skill + '</div>';
+                contentHtml += '<button class="btn-trade ' + _abBtnClass + '" style="font-size:0.78rem;padding:4px 16px;width:100%;" onclick="' + _ab.toggle + ';UI.openSkillsDialog(\'_abilities\');">' + _abBtnText + '</button>';
+                contentHtml += '</div>';
+            }
+            contentHtml += '</div>';
+        } else {
+            // Normal branch skill grid
+            const branchSkills = [];
+            for (const id in SKILLS) {
+                if (SKILLS[id].branch === _skillBranch) {
+                    branchSkills.push({ id, ...SKILLS[id] });
+                }
             }
 
-            // Show dynasty bank info for dynasty_founder
-            let extraInfo = '';
-            if (skill.id === 'dynasty_founder' && Player.dynastySPBank > 0) {
-                extraInfo = '<div style="font-size:0.72rem;color:#ffd700;margin-top:2px;">🏰 Bank: ' + Player.dynastySPBank + ' SP</div>';
-            }
+            let skillsHtml = '<div class="skill-grid">';
+            for (const skill of branchSkills) {
+                const isUnlocked = playerSkills[skill.id];
+                const canUnlock = Player.canUnlockSkill ? Player.canUnlockSkill(skill.id) : false;
+                const reqsMet = skill.requires.every(r => playerSkills[r]);
+                const costAffordable = sp >= skill.cost;
+                const isRepeatable = !!skill.repeatable;
 
-            const reqNames = skill.requires.map(r => SKILLS[r] ? SKILLS[r].name : r).join(', ');
-            const missingReqs = skill.requires.filter(r => !playerSkills[r]);
-            let reqHtml = '';
-            if (skill.requires.length > 0) {
-                reqHtml = '<div class="skill-requires">Requires: ' + reqNames;
-                if (!isUnlocked && missingReqs.length > 0) {
-                    for (const mr of missingReqs) {
-                        const mrSkill = SKILLS[mr];
-                        if (mrSkill && sp >= mrSkill.cost) {
-                            reqHtml += ` <button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;margin-left:4px;" onclick="UI.learnSkill('${mr}')">Learn ${mrSkill.name} (${mrSkill.cost} SP)</button>`;
+                let stateClass = 'skill-locked';
+                let stateLabel = '🔒';
+                if (isUnlocked && !isRepeatable) {
+                    stateClass = 'skill-unlocked';
+                    stateLabel = '✅';
+                } else if (isUnlocked && isRepeatable) {
+                    stateClass = 'skill-unlocked';
+                    stateLabel = '🔄';
+                } else if (canUnlock) {
+                    stateClass = 'skill-available';
+                    stateLabel = '';
+                }
+
+                // Show dynasty bank info for dynasty_founder
+                let extraInfo = '';
+                if (skill.id === 'dynasty_founder' && Player.dynastySPBank > 0) {
+                    extraInfo = '<div style="font-size:0.72rem;color:#ffd700;margin-top:2px;">🏰 Bank: ' + Player.dynastySPBank + ' SP</div>';
+                }
+
+                const reqNames = skill.requires.map(r => SKILLS[r] ? SKILLS[r].name : r).join(', ');
+                const missingReqs = skill.requires.filter(r => !playerSkills[r]);
+                let reqHtml = '';
+                if (skill.requires.length > 0) {
+                    reqHtml = '<div class="skill-requires">Requires: ' + reqNames;
+                    if (!isUnlocked && missingReqs.length > 0) {
+                        for (const mr of missingReqs) {
+                            const mrSkill = SKILLS[mr];
+                            if (mrSkill && sp >= mrSkill.cost) {
+                                reqHtml += ` <button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;margin-left:4px;" onclick="UI.learnSkill('${mr}')">Learn ${mrSkill.name} (${mrSkill.cost} SP)</button>`;
+                            }
                         }
                     }
+                    reqHtml += '</div>';
                 }
-                reqHtml += '</div>';
-            }
 
-            skillsHtml += `<div class="skill-node ${stateClass}" title="${skill.desc}">
-                <div class="skill-icon">${skill.icon}</div>
-                <div class="skill-name">${skill.name} ${stateLabel}</div>
-                <div class="skill-cost">${skill.cost > 0 ? skill.cost + ' SP' : 'FREE'}${isRepeatable ? ' (repeatable)' : ''}</div>
-                <div class="skill-desc">${skill.desc}</div>
-                ${extraInfo}
-                ${reqHtml}
-                ${(!isUnlocked || isRepeatable) && canUnlock ? `<button class="btn-trade buy skill-learn-btn" onclick="UI.learnSkill('${skill.id}')">${isRepeatable && isUnlocked ? 'Invest Again' : 'Learn'}</button>` : ''}
-            </div>`;
+                skillsHtml += `<div class="skill-node ${stateClass}" title="${skill.desc}">
+                    <div class="skill-icon">${skill.icon}</div>
+                    <div class="skill-name">${skill.name} ${stateLabel}</div>
+                    <div class="skill-cost">${skill.cost > 0 ? skill.cost + ' SP' : 'FREE'}${isRepeatable ? ' (repeatable)' : ''}</div>
+                    <div class="skill-desc">${skill.desc}</div>
+                    ${extraInfo}
+                    ${reqHtml}
+                    ${(!isUnlocked || isRepeatable) && canUnlock ? `<button class="btn-trade buy skill-learn-btn" onclick="UI.learnSkill('${skill.id}')">${isRepeatable && isUnlocked ? 'Invest Again' : 'Learn'}</button>` : ''}
+                </div>`;
+            }
+            skillsHtml += '</div>';
+            contentHtml = skillsHtml;
         }
-        skillsHtml += '</div>';
 
         const html = `
             <div class="skill-header">
@@ -14609,7 +15002,7 @@ window.UI = (function () {
                 <span class="skill-level-display">Level ${Player.level || 1} ${Player.getMerchantTitle ? Player.getMerchantTitle() : ''}</span>
             </div>
             <div class="skill-tabs">${tabsHtml}</div>
-            ${skillsHtml}
+            ${contentHtml}
         `;
 
         openModal('📚 Skills', html);
@@ -14619,6 +15012,11 @@ window.UI = (function () {
         if (typeof Player !== 'undefined' && Player.unlockSkill) {
             const success = Player.unlockSkill(skillId);
             if (success) {
+                // Special toast for skills with toggle abilities
+                var _abilitySkills = ['regional_survey', 'world_survey', 'soil_knowledge'];
+                if (_abilitySkills.indexOf(skillId) >= 0) {
+                    toast('Skill learned! Toggle it in the ⚡ Abilities tab.', 'success');
+                }
                 openSkillsDialog(_skillBranch);
             } else {
                 toast('Cannot learn this skill.', 'warning');
@@ -17119,18 +17517,33 @@ window.UI = (function () {
             html += '</div>';
         }
 
-        // Helper to get fee and time description
+        // Helper to get fee and time description (includes queue wait)
         function _getFeeAndTime(facilityType, severity) {
             var info = hospFees ? hospFees[facilityType] : null;
             var fallbackFee = severity === 'severe' ? 40 : severity === 'moderate' ? 20 : 10;
             var fee = info && info.fees ? (info.fees[severity] || fallbackFee) : fallbackFee;
             var ticks = info && info.treatmentTicks ? (info.treatmentTicks[severity] || 25) : 25;
-            var timeStr = ticks <= 10 ? '~' + Math.round(ticks / 60 * 24) + 'h' : ticks <= 60 ? '~' + Math.round(ticks / 60 * 24) + 'h' : '~' + (ticks / 60).toFixed(1) + 'd';
-            if (ticks <= 5) timeStr = 'quick';
-            else if (ticks <= 15) timeStr = '~' + Math.round(ticks * 24 / 60) + 'h';
-            else if (ticks <= 60) timeStr = '~' + Math.round(ticks * 24 / 60) + 'h';
-            else timeStr = '~' + Math.round(ticks / 60 * 10) / 10 + ' days';
-            return { fee: fee, time: timeStr };
+            // Clinics take 2x for severe
+            if (facilityType === 'clinic' && severity === 'severe') ticks = ticks * 2;
+            // Queue wait estimate
+            var qLen = info ? (info.queueLength || 0) : 0;
+            var maxH = info ? (info.maxHealers || 2) : 2;
+            var _pIsNoble = Player.state && Player.state.isNoble;
+            if (!_pIsNoble && Player.state && Player.state.socialRank) {
+                var _pTown = Engine.findTown ? Engine.findTown(Player.townId) : null;
+                if (_pTown && Player.state.socialRank[_pTown.kingdomId] >= 4) _pIsNoble = true;
+            }
+            var queueWait = _pIsNoble ? 0 : Math.max(0, Math.ceil((qLen / maxH) * 30));
+            var totalTicks = ticks + queueWait;
+            var timeStr;
+            if (totalTicks <= 5) timeStr = 'quick';
+            else if (totalTicks <= 15) timeStr = '~' + Math.round(totalTicks * 24 / 60) + 'h';
+            else if (totalTicks <= 60) timeStr = '~' + Math.round(totalTicks * 24 / 60) + 'h';
+            else timeStr = '~' + Math.round(totalTicks / 60 * 10) / 10 + ' days';
+            var queueNote = '';
+            if (_pIsNoble && qLen > 0) queueNote = ' 👑';
+            else if (queueWait > 0) queueNote = ' +wait';
+            return { fee: fee, time: timeStr + queueNote };
         }
 
         // Injuries
@@ -17150,9 +17563,10 @@ window.UI = (function () {
                     var hft = _getFeeAndTime('hospital', inj.severity);
                     html += '<button class="btn-medieval" onclick="UI.treatAtHospital(' + i + ',false)" style="font-size:0.7rem;padding:3px 8px;">🏥 Hospital (' + hft.fee + 'g, ' + hft.time + ')</button>';
                 }
-                if (hasClinic && inj.severity !== 'severe') {
+                if (hasClinic) {
                     var cft = _getFeeAndTime('clinic', inj.severity);
-                    html += '<button class="btn-medieval" onclick="UI.treatAtClinic(' + i + ',false)" style="font-size:0.7rem;padding:3px 8px;">⚕️ Clinic (' + cft.fee + 'g, ' + cft.time + ')</button>';
+                    var _clinSevNote = inj.severity === 'severe' ? ' ⚠️ 2x time' : '';
+                    html += '<button class="btn-medieval" onclick="UI.treatAtClinic(' + i + ',false)" style="font-size:0.7rem;padding:3px 8px;">⚕️ Clinic (' + cft.fee + 'g, ' + cft.time + _clinSevNote + ')</button>';
                 }
                 if (canSelfTreat && !inj.treated && typeDef) {
                     html += '<button class="btn-medieval" onclick="UI.selfTreatCondition(' + i + ',false)" style="font-size:0.7rem;padding:3px 8px;">💊 Self-Treat (needs ' + typeDef.product + ')</button>';
@@ -17179,9 +17593,10 @@ window.UI = (function () {
                     var ihft = _getFeeAndTime('hospital', ill.severity);
                     html += '<button class="btn-medieval" onclick="UI.treatAtHospital(' + i + ',true)" style="font-size:0.7rem;padding:3px 8px;">🏥 Hospital (' + ihft.fee + 'g, ' + ihft.time + ')</button>';
                 }
-                if (hasClinic && ill.severity !== 'severe') {
+                if (hasClinic) {
                     var icft = _getFeeAndTime('clinic', ill.severity);
-                    html += '<button class="btn-medieval" onclick="UI.treatAtClinic(' + i + ',true)" style="font-size:0.7rem;padding:3px 8px;">⚕️ Clinic (' + icft.fee + 'g, ' + icft.time + ')</button>';
+                    var _clinSevNote2 = ill.severity === 'severe' ? ' ⚠️ 2x time' : '';
+                    html += '<button class="btn-medieval" onclick="UI.treatAtClinic(' + i + ',true)" style="font-size:0.7rem;padding:3px 8px;">⚕️ Clinic (' + icft.fee + 'g, ' + icft.time + _clinSevNote2 + ')</button>';
                 }
                 if (canSelfTreat && !ill.treated && illTypeDef) {
                     html += '<button class="btn-medieval" onclick="UI.selfTreatCondition(' + i + ',true)" style="font-size:0.7rem;padding:3px 8px;">💊 Self-Treat (needs ' + illTypeDef.product + ')</button>';
@@ -17193,7 +17608,7 @@ window.UI = (function () {
         if (!hasHospital && !hasClinic) {
             html += '<p class="text-dim" style="font-size:0.72rem;">No hospital or clinic here. Visit a town with medical facilities for treatment.</p>';
         } else if (!hasHospital && hasClinic) {
-            html += '<p class="text-dim" style="font-size:0.72rem;">Only a clinic here — severe conditions require a hospital (cities/capitals).</p>';
+            html += '<p class="text-dim" style="font-size:0.72rem;">Only a clinic here — severe conditions take 2x longer with reduced success rate. A hospital (cities/capitals) is faster.</p>';
         }
         if (!canSelfTreat) {
             html += '<p class="text-dim" style="font-size:0.72rem;">Learn First Aid, Field Medic, or Doctor skill to self-treat with medical supplies.</p>';
@@ -18906,8 +19321,9 @@ window.UI = (function () {
         { cat: 'Elite Merchants', title: 'EM Caravans', text: 'Elite Merchants hire their own caravans to transport goods. These caravans follow profitable routes and can affect market prices in towns they visit. Watch their movements for trade intelligence.' },
         { cat: 'Elite Merchants', title: 'Becoming an EM', text: 'With enough wealth, buildings, and influence, you may eventually rival the Elite Merchants in power. Your gold and business empire are tracked on the leaderboard alongside theirs.' },
         // HEALTH & DANGER
-        { cat: 'Health', title: 'Health Conditions', text: 'You may contract illnesses from poor housing, contaminated water, or plague events. Conditions reduce your effectiveness. Better housing provides disease resistance. Visit a hospital or use medicine skills to treat conditions.' },
-        { cat: 'Health', title: 'Injuries', text: 'Combat and dangerous travel can cause injuries. Minor injuries heal over time, but serious injuries need treatment. The First Aid skill lets you self-treat minor injuries; Field Medic handles more severe cases.' },
+        { cat: 'Health', title: 'Health Conditions', text: 'You may contract illnesses from poor housing, contaminated water, or plague events. Conditions reduce your effectiveness. Better housing provides disease resistance. Visit a hospital or clinic for treatment. Illnesses require medicines: Herbal Remedy (minor), Fever Tonic (moderate), Healing Tonic (serious), Antidote (severe). Higher-tier medicines can substitute for lower-tier.' },
+        { cat: 'Health', title: 'Injuries', text: 'Combat and dangerous travel can cause injuries. Injuries require physical supplies: Bandages (all severities), Splint (moderate+), Herbal Poultice (serious+), Healing Tonic (severe). The First Aid skill lets you self-treat minor injuries; Field Medic handles moderate; Doctor handles all.' },
+        { cat: 'Health', title: 'Medical Supplies', text: 'Injuries and illnesses use different supplies. Injuries: bandages + splint + poultice. Illnesses: herbal remedy → fever tonic → healing tonic → antidote (ranked by tier, higher can substitute lower). Healing Tonics require Apothecary Lv3+ to produce. Antidotes can only be made at an Advanced Apothecary.' },
         { cat: 'Health', title: 'Starvation', text: 'If hunger drops to 0, you begin starving. Starvation drains health every tick and can be fatal. Always carry emergency food. Bread and preserved food are lightweight and prevent starvation.' },
         { cat: 'Health', title: 'Plague Events', text: 'Plagues can sweep through towns, killing population and disrupting trade. During a plague, town happiness drops and prices for medicine spike. Stay away from plagued towns or stock up on medicine.' },
         // COMBAT & DANGER
@@ -19161,6 +19577,35 @@ window.UI = (function () {
             }
 
             chainHtml += '</div>';
+
+            // Medical treatment usage — show which conditions each medical good treats
+            if (r.category === 'medical') {
+                var _medUsage = {
+                    bandages:        '🩹 Treats all injury severities. Basic wound care supply.',
+                    splint:          '🦴 Treats moderate+ injuries. Stabilizes fractures.',
+                    herbal_poultice: '🌱 Treats serious+ injuries. Reduces swelling and infection.',
+                    herbal_remedy:   '🧪 Treats minor illness. Lowest-tier medicine.',
+                    fever_tonic:     '🌡️ Treats moderate illness. Can substitute for Herbal Remedy.',
+                    healing_tonic:   '⚗️ Treats serious illness and severe injuries. Requires Apothecary Lv3+ or Advanced Apothecary to produce. Can substitute for Fever Tonic or Herbal Remedy.',
+                    antidote:        '💊 Treats severe illness (plagues). Only produced at Advanced Apothecary. Can substitute for any lower-tier medicine.',
+                };
+                var _medSub = {
+                    antidote:      'Can replace: Healing Tonic, Fever Tonic, Herbal Remedy',
+                    healing_tonic: 'Can replace: Fever Tonic, Herbal Remedy',
+                    fever_tonic:   'Can replace: Herbal Remedy',
+                };
+                if (_medUsage[r.id]) {
+                    hasChain = true;
+                    chainHtml = chainHtml.replace('</div><!--med-->', '');
+                    var _medHtml = '<div style="margin-top:4px; padding:4px 8px; background:rgba(100,255,100,0.04); border-left:2px solid #55a868; border-radius:4px; font-size:11px; line-height:1.6;">';
+                    _medHtml += '<div>💉 <span style="color:#55a868;">Treatment use:</span> ' + _medUsage[r.id] + '</div>';
+                    if (_medSub[r.id]) {
+                        _medHtml += '<div>🔄 <span style="color:#64b5f6;">Substitution:</span> ' + _medSub[r.id] + '</div>';
+                    }
+                    _medHtml += '</div>';
+                    desc += _medHtml;
+                }
+            }
 
             desc += (hasChain ? chainHtml : '');
 
@@ -21944,7 +22389,7 @@ window.UI = (function () {
             // Mid-travel: estimate current position
             var curPos = null;
             try { curPos = Player.getPlayerWorldPosition ? Player.getPlayerWorldPosition() : null; } catch(e) {}
-            if (!curPos && Player.worldX) curPos = { x: Player.worldX, y: Player.worldY };
+            if (!curPos && Player.worldX != null) curPos = { x: Player.worldX, y: Player.worldY };
             if (!curPos) {
                 var t = Engine.findTown(Player.townId || Player.travelOrigin);
                 curPos = t ? { x: t.x, y: t.y } : null;
@@ -21957,7 +22402,7 @@ window.UI = (function () {
             if (!currentTown) { toast('Cannot determine current location.', 'warning'); return; }
             startX = currentTown.x;
             startY = currentTown.y;
-        } else if (Player.worldX && Player.worldY) {
+        } else if (Player.worldX != null && Player.worldY != null) {
             startX = Player.worldX;
             startY = Player.worldY;
         } else {
@@ -22133,7 +22578,7 @@ window.UI = (function () {
         }
 
         // Auto-open camp UI when player is exhausted while traveling
-        if (typeof Player !== 'undefined' && Player._campPromptNeeded && !Player.resting) {
+        if (typeof Player !== 'undefined' && Player._campPromptNeeded && Player.traveling && !Player.resting) {
             Player._campPromptNeeded = false;
             openTravelRest();
         }
@@ -22191,9 +22636,10 @@ window.UI = (function () {
 
     function startTravelRest(locationId) {
         if (typeof Player !== 'undefined' && Player.restForTicks) {
-            Player.restForTicks(locationId, 8);
+            // Rest until fully energized (restForTicks auto-caps at energy needed)
+            Player.restForTicks(locationId, 999);
             closeModal();
-            toast('\uD83D\uDCA4 Resting...', 'info', 'travel_events');
+            toast('\uD83D\uDCA4 Resting until fully energized...', 'info', 'travel_events');
         }
     }
 
@@ -22351,6 +22797,32 @@ window.UI = (function () {
         html += '</optgroup></select>';
         html += '<button onclick="(function(){ var sel=document.getElementById(\'gm-inflict-type\'); if(!sel||!sel.value){UI.toast(\'Select a condition\',\'error\');return;} var parts=sel.value.split(\':\'); var cat=parts[0]; var id=parts[1]; if(cat===\'illness\'){ Player.inflictSpecificIllness(id, \'god_mode\'); UI.toast(\'🤒 Inflicted illness: \'+id,\'warning\'); } else { var types=Player.getInjuryTypes(); var t=null; for(var i=0;i<types.length;i++){if(types[i].id===id){t=types[i];break;}} if(t){ Player.state.injuries=Player.state.injuries||[]; Player.state.injuries.push({type:t.id, name:t.name, severity:t.severity, dayOccurred:Engine.getDay(), treated:false, source:\'god_mode\'}); var hpHit=t.severity===\'severe\'?20:t.severity===\'moderate\'?10:5; Player.state.health=Math.max(0,(Player.state.health||100)-hpHit); UI.toast(\'🤕 Inflicted \'+t.name+\' (\'+t.severity+\', -\'+hpHit+\' HP)\',\'warning\'); } } })()" style="margin:2px; padding:3px 8px; background:#8b4000; color:#fff; border:1px solid #f84; cursor:pointer; font-size:11px;">Inflict on Player</button>';
         html += '<button onclick="Player.state.injuries=[]; Player.state.illnesses=[]; Player.state.health=100; UI.toast(\'💚 All conditions cleared & health restored\',\'success\')" style="margin:2px; padding:3px 8px; background:#006400; color:#fff; border:1px solid #0a0; cursor:pointer; font-size:11px;">Cure All</button>';
+        html += '</div>';
+
+        // Add Goods to Inventory
+        html += '<div style="margin-top:6px; padding-top:6px; border-top:1px solid #444;">';
+        html += '<span style="color:#4fc; font-weight:bold; font-size:11px;">📦 ADD GOODS TO INVENTORY</span><br>';
+        html += '<select id="gm-add-good" style="background:#333; color:#fff; border:1px solid #666; margin:2px; padding:2px; font-size:11px; max-width:180px;">';
+        html += '<option value="">— Select Good —</option>';
+        var _gmCats = {};
+        for (var _gmrk in RESOURCE_TYPES) {
+            var _gmr = RESOURCE_TYPES[_gmrk];
+            if (!_gmCats[_gmr.category]) _gmCats[_gmr.category] = [];
+            _gmCats[_gmr.category].push(_gmr);
+        }
+        var _gmCatOrder = ['raw','processed','food','beverage','finished','luxury','military','medical','supplies','livestock','contraband','quest'];
+        for (var _gci = 0; _gci < _gmCatOrder.length; _gci++) {
+            var _gcItems = _gmCats[_gmCatOrder[_gci]];
+            if (!_gcItems || _gcItems.length === 0) continue;
+            html += '<optgroup label="' + _gmCatOrder[_gci].charAt(0).toUpperCase() + _gmCatOrder[_gci].slice(1) + '">';
+            for (var _gii = 0; _gii < _gcItems.length; _gii++) {
+                html += '<option value="' + _gcItems[_gii].id + '">' + _gcItems[_gii].icon + ' ' + _gcItems[_gii].name + '</option>';
+            }
+            html += '</optgroup>';
+        }
+        html += '</select> ';
+        html += '<input id="gm-add-good-qty" type="number" value="50" min="1" style="width:60px; background:#333; color:#fff; border:1px solid #666; padding:2px 4px; margin:2px;" /> ';
+        html += '<button onclick="(function(){ var sel=document.getElementById(\'gm-add-good\'); var qtyEl=document.getElementById(\'gm-add-good-qty\'); if(!sel||!sel.value){UI.toast(\'Select a good\',\'error\');return;} var qty=parseInt(qtyEl.value,10); if(isNaN(qty)||qty<=0)qty=50; Player.state.inventory=Player.state.inventory||{}; Player.state.inventory[sel.value]=(Player.state.inventory[sel.value]||0)+qty; var r=null; for(var k in RESOURCE_TYPES){if(RESOURCE_TYPES[k].id===sel.value){r=RESOURCE_TYPES[k];break;}} UI.toast(\'📦 +\'+qty+\' \'+(r?r.icon+\' \'+r.name:sel.value)+\' added to inventory\',\'success\'); })()" style="margin:2px; padding:3px 8px; background:#1a4a3a; color:#fff; border:1px solid #4a8; cursor:pointer; font-size:11px;">Add to Inventory</button>';
         html += '</div>';
 
         html += '</div>';
@@ -23015,7 +23487,10 @@ window.UI = (function () {
         showContextMenu,
         hideContextMenu,
         showTownDetail,
+        _toggleCollapse,
         showKingdomDetail,
+        showElectionVotingModal,
+        _castElectionVote,
         openKingdomLawsPanel,
         openKingActionLog,
         openProsperityBreakdown,

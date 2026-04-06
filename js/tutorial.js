@@ -378,7 +378,7 @@ window.Tutorial = (function () {
                         // Pan to starting town and zoom to 2x
                         try {
                             if (Renderer.setZoom) Renderer.setZoom(2.0);
-                            var towns = Engine.getTowns();
+                            var towns = Engine.getTowns() || [];
                             var startTown = towns.find(function(t) { return t.id === Player.state.townId; }) || towns[0];
                             snapshotState.startTownName = startTown ? startTown.name : 'your town';
                             if (startTown && Renderer.panTo) Renderer.panTo(startTown.x, startTown.y);
@@ -509,7 +509,7 @@ window.Tutorial = (function () {
                             }
                             // Pretty name from config
                             try {
-                                var rt = Config.RESOURCE_TYPES;
+                                var rt = CONFIG.RESOURCE_TYPES;
                                 for (var k in rt) {
                                     if (rt[k].id === bestRes) { bestName = rt[k].name || bestRes; break; }
                                 }
@@ -1924,7 +1924,7 @@ window.Tutorial = (function () {
         // Redirect sea routes from Inkwell Cross → Rustbridge so Rustbridge is the port
         if (_tutStart && _tutNeighbor) {
             _tutStart.isPort = true;
-            var _seaRoutes = Engine.getSeaRoutes();
+            var _seaRoutes = Engine.getSeaRoutes() || [];
             for (var _si = _seaRoutes.length - 1; _si >= 0; _si--) {
                 var _sr = _seaRoutes[_si];
                 var _fromInk = _sr.fromTownId === _tutNeighbor.id;
@@ -1945,7 +1945,7 @@ window.Tutorial = (function () {
 
         // Redirect roads from Inkwell Cross → Rustbridge (e.g. Coalhurst road)
         if (_tutStart && _tutNeighbor) {
-            var _allRoads = Engine.getRoads();
+            var _allRoads = Engine.getRoads() || [];
             for (var _rri = 0; _rri < _allRoads.length; _rri++) {
                 var _rr = _allRoads[_rri];
                 var _rrFromInk = _rr.fromTownId === _tutNeighbor.id;

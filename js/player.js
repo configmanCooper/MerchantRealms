@@ -389,7 +389,7 @@
     const JOB_SKILL_THRESHOLDS = {
         dockworker: { days: 30, skill: 'expert_navigator', name: 'Seafaring' },
         herb_gatherer: { days: 20, skill: 'herbalism', name: 'Herbalism' },
-        war_medic: { days: 25, skill: 'doctor', name: 'Doctor' },
+        war_medic: { days: 20, skill: 'first_aid', name: 'First Aid' },
         plague_nurse: { days: 25, skill: 'doctor', name: 'Doctor' },
         ship_repair: { days: 30, skill: 'efficient_builder', name: 'Crafting' },
         arena_fighter: { days: 20, skill: 'combat_trained', name: 'Combat Trained' },
@@ -2953,7 +2953,18 @@
      */
     function travelTo(townId, options) {
         options = options || {};
-        if (player.traveling) return { success: false, message: 'Already traveling.' };
+        if (player.traveling) {
+            // Allow redirecting travel — stop current and use current position
+            if (player.travelPaid) return { success: false, message: 'Cannot redirect while on paid transport.' };
+            var currentPos = getPlayerWorldPosition();
+            if (!currentPos) return { success: false, message: 'Cannot determine current position.' };
+            player.traveling = false;
+            player.travelProgress = 0;
+            player.townId = null;
+            player.worldX = currentPos.x;
+            player.worldY = currentPos.y;
+            cleanupTravelState();
+        }
         if (townId === player.townId) return { success: false, message: 'Already there.' };
 
         // Check carry capacity before traveling
@@ -2965,7 +2976,7 @@
 
         // If in wilderness (stopped on road), find nearest town as origin
         var originTownId = player.townId;
-        if (!originTownId && player.worldX && player.worldY) {
+        if (!originTownId && player.worldX != null && player.worldY != null) {
             var towns = Engine.getTowns();
             var nearestDist = Infinity;
             for (var ni = 0; ni < towns.length; ni++) {
@@ -5660,7 +5671,7 @@
 
     function getPlayerWorldPosition() {
         if (!player.traveling) {
-            if (player.worldX && player.worldY) return { x: player.worldX, y: player.worldY };
+            if (player.worldX != null && player.worldY != null) return { x: player.worldX, y: player.worldY };
             var town = Engine.findTown(player.townId);
             return town ? { x: town.x, y: town.y } : null;
         }
@@ -5715,6 +5726,7 @@
         player.travelPaid = false;
         player.travelMode = null;
         player.travelSeaMode = null;
+        player._campPromptNeeded = false;
         player.travelRestBonus = false;
         player.travelOrigin = null;
     }
@@ -5735,7 +5747,7 @@
 
         // Get current position (town center or wilderness)
         var startX, startY;
-        if (player.worldX && player.worldY && !player.townId) {
+        if (player.worldX != null && player.worldY != null && !player.townId) {
             startX = player.worldX;
             startY = player.worldY;
         } else {
@@ -6311,6 +6323,7 @@
             player.travelRestBonus = false;
             player.travelWaypoints = null;
             player.travelDestCoords = null;
+            player._campPromptNeeded = false;
 
             // Dismiss escort on arrival
             if (player.escort) {
@@ -15005,11 +15018,14 @@
         const town = Engine.findTown(player.townId);
         if (!town) return { success: false, message: 'Not in a town.' };
 
-        const hasHospital = (town.buildings && town.buildings.some(b =>
-            b.type === 'hospital' || (b.type && b.type.includes('medical'))
-        )) || town.category === 'city' || town.category === 'capital_city';
-
-        if (!hasHospital) return { success: false, message: 'No hospital in this town. Try a city or capital.' };
+        // Find the actual hospital building
+        var hospBld = null;
+        if (town.buildings) {
+            for (var _hbi = 0; _hbi < town.buildings.length; _hbi++) {
+                if (town.buildings[_hbi].type === 'hospital') { hospBld = town.buildings[_hbi]; break; }
+            }
+        }
+        if (!hospBld) return { success: false, message: 'No hospital in this town. Try a city or capital.' };
 
         const list = isIllness ? player.illnesses : player.injuries;
         if (conditionIndex < 0 || conditionIndex >= list.length) return { success: false, message: 'Invalid condition.' };
@@ -15018,7 +15034,6 @@
         const typeDef = isIllness
             ? ILLNESS_TYPES.find(t => t.id === condition.type)
             : INJURY_TYPES.find(t => t.id === condition.type);
-        // Fallback type definition for unregistered conditions
         var effectiveTypeDef = typeDef || { id: condition.type, name: condition.name || 'Unknown', severity: condition.severity || 'minor', healDays: condition.severity === 'severe' ? 15 : condition.severity === 'moderate' ? 7 : 3, product: 'antidote', productCost: condition.severity === 'severe' ? 30 : condition.severity === 'moderate' ? 15 : 8 };
 
         // Get AI-driven fee from the hospital
@@ -15029,43 +15044,66 @@
 
         // Treatment processing time
         var treatTicks = CONFIG.TREATMENT_TICKS ? (CONFIG.TREATMENT_TICKS[condition.severity] || 25) : 25;
-        // Also check NPC_HEALTH_CONFIG
         if (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.TREATMENT_TICKS) {
             treatTicks = NPC_HEALTH_CONFIG.TREATMENT_TICKS[condition.severity] || treatTicks;
         }
 
-        _consumeMedicalSupplies(town, condition.severity);
+        // Queue wait time — player must wait in line
+        var _queue = hospBld._treatmentQueue || [];
+        var _bt = Engine.findBuildingType('hospital');
+        var _baseH = (_bt && _bt.maxHealers) || 2;
+        var _wCount = (hospBld.workers && hospBld.workers.length) || 0;
+        var _maxH = _baseH + Math.floor(_wCount / 2);
+        var _playerIsNoble = player.isNoble || (player.socialRank && player.socialRank[town.kingdomId] >= 4);
+        var _queueWaitTicks = 0;
+        if (!_playerIsNoble) {
+            // Non-nobles wait behind everyone in queue
+            var _patientsAhead = _queue.length;
+            _queueWaitTicks = Math.max(0, Math.ceil((_patientsAhead / _maxH) * 30)); // ~30 ticks per batch ahead
+        }
+        // else: nobles skip to front, no wait
 
-        // Advance ticks for processing time
-        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(treatTicks);
+        var totalTicks = treatTicks + _queueWaitTicks;
+
+        _consumeMedicalSupplies(town, condition.severity, isIllness);
+
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(totalTicks);
 
         player.gold -= cost;
         player.stats.totalGoldSpent += cost;
 
-        // Revenue split: healthcare tax to kingdom, remainder to owner
         _payHealthcareRevenue(town, cost);
+
+        // Track stats on building
+        if (!hospBld._treatmentStats) hospBld._treatmentStats = { treated: 0, feeEarned: 0, supplyCost: 0 };
+        hospBld._treatmentStats.treated++;
+        hospBld._treatmentStats.feeEarned += cost;
 
         list.splice(conditionIndex, 1);
 
-        var timeDesc = treatTicks <= 10 ? 'a quick visit' : treatTicks <= 60 ? 'half a day' : 'a couple days';
-        Engine.logEvent(player.fullName + ' was treated at the hospital for ' + condition.name + ' (' + cost + 'g, ' + timeDesc + ').');
-        return { success: true, message: 'Treated ' + condition.name + ' at the hospital for ' + cost + 'g (' + timeDesc + ').' };
+        var waitDesc = _queueWaitTicks > 0 ? ', waited ~' + Math.round(_queueWaitTicks / 60 * 10) / 10 + ' days in queue' : '';
+        var timeDesc = totalTicks <= 10 ? 'a quick visit' : totalTicks <= 60 ? 'half a day' : '~' + (Math.round(totalTicks / 60 * 10) / 10) + ' days';
+        Engine.logEvent(player.fullName + ' was treated at the hospital for ' + condition.name + ' (' + cost + 'g, ' + timeDesc + ').' + (_playerIsNoble ? ' Noble priority — skipped the queue.' : ''));
+        return { success: true, message: 'Treated ' + condition.name + ' at the hospital for ' + cost + 'g (' + timeDesc + ').' + waitDesc + (_playerIsNoble ? ' 👑 Noble priority.' : '') };
     }
 
     function visitClinic(conditionIndex, isIllness) {
         const town = Engine.findTown(player.townId);
         if (!town) return { success: false, message: 'Not in a town.' };
 
-        const hasClinic = town.buildings && town.buildings.some(function(b) {
-            return b.type === 'clinic';
-        });
-        if (!hasClinic) return { success: false, message: 'No clinic in this town.' };
+        // Find the actual clinic building
+        var clinicBld = null;
+        if (town.buildings) {
+            for (var _cbi = 0; _cbi < town.buildings.length; _cbi++) {
+                if (town.buildings[_cbi].type === 'clinic') { clinicBld = town.buildings[_cbi]; break; }
+            }
+        }
+        if (!clinicBld) return { success: false, message: 'No clinic in this town.' };
 
         const list = isIllness ? player.illnesses : player.injuries;
         if (conditionIndex < 0 || conditionIndex >= list.length) return { success: false, message: 'Invalid condition.' };
 
         const condition = list[conditionIndex];
-        if (condition.severity === 'severe') return { success: false, message: 'Clinics cannot treat severe conditions. Visit a hospital.' };
 
         const typeDef = isIllness
             ? ILLNESS_TYPES.find(t => t.id === condition.type)
@@ -15078,29 +15116,57 @@
         var cost = clinicInfo && clinicInfo.fees ? (clinicInfo.fees[condition.severity] || getClinicCost(effectiveTypeDef, condition.severity)) : getClinicCost(effectiveTypeDef, condition.severity);
         if (player.gold < cost) return { success: false, message: 'Not enough gold. Clinic costs ' + cost + 'g.' };
 
-        var treatTicks = 5; // clinic minor is quick
+        var treatTicks = 5;
         if (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.TREATMENT_TICKS) {
             treatTicks = NPC_HEALTH_CONFIG.TREATMENT_TICKS[condition.severity] || 5;
         }
+        // Severe at clinic takes 2x longer
+        if (condition.severity === 'severe') treatTicks = treatTicks * 2;
 
-        _consumeMedicalSupplies(town, condition.severity);
+        // Queue wait time — player must wait in line
+        var _queue = clinicBld._treatmentQueue || [];
+        var _bt = Engine.findBuildingType('clinic');
+        var _baseH = (_bt && _bt.maxHealers) || 2;
+        var _wCount = (clinicBld.workers && clinicBld.workers.length) || 0;
+        var _maxH = _baseH + Math.floor(_wCount / 2);
+        var _playerIsNoble = player.isNoble || (player.socialRank && player.socialRank[town.kingdomId] >= 4);
+        var _queueWaitTicks = 0;
+        if (!_playerIsNoble) {
+            var _patientsAhead = _queue.length;
+            _queueWaitTicks = Math.max(0, Math.ceil((_patientsAhead / _maxH) * 30));
+        }
 
-        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(treatTicks);
+        var totalTicks = treatTicks + _queueWaitTicks;
+
+        _consumeMedicalSupplies(town, condition.severity, isIllness);
+
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(totalTicks);
 
         player.gold -= cost;
         player.stats.totalGoldSpent += cost;
 
         _payHealthcareRevenue(town, cost);
 
+        // Track stats on building
+        if (!clinicBld._treatmentStats) clinicBld._treatmentStats = { treated: 0, feeEarned: 0, supplyCost: 0 };
+        clinicBld._treatmentStats.treated++;
+        clinicBld._treatmentStats.feeEarned += cost;
+
+        var waitDesc = _queueWaitTicks > 0 ? ', waited ~' + Math.round(_queueWaitTicks / 60 * 10) / 10 + ' days in queue' : '';
+        var nobleNote = _playerIsNoble ? ' 👑 Noble priority.' : '';
+
         if (condition.severity === 'minor') {
             list.splice(conditionIndex, 1);
-            Engine.logEvent(player.fullName + ' was treated at the clinic for ' + condition.name + ' (' + cost + 'g).');
-            return { success: true, message: 'Treated ' + condition.name + ' at the clinic for ' + cost + 'g.' };
+            Engine.logEvent(player.fullName + ' was treated at the clinic for ' + condition.name + ' (' + cost + 'g).' + nobleNote);
+            return { success: true, message: 'Treated ' + condition.name + ' at the clinic for ' + cost + 'g.' + waitDesc + nobleNote };
         } else {
             condition.treated = true;
-            condition.healDay = Engine.getDay() + Math.ceil((effectiveTypeDef.healDays || 7) / 2);
-            Engine.logEvent(player.fullName + ' received clinic treatment for ' + condition.name + ' (' + cost + 'g). Recovery underway.');
-            return { success: true, message: 'Clinic treated ' + condition.name + ' for ' + cost + 'g. You\'ll recover in ' + Math.ceil((effectiveTypeDef.healDays || 7) / 2) + ' days.' };
+            var _recovDays = Math.ceil((effectiveTypeDef.healDays || 7) / 2);
+            if (condition.severity === 'severe') _recovDays = _recovDays * 2;
+            condition.healDay = Engine.getDay() + _recovDays;
+            var _sevNote = condition.severity === 'severe' ? ' (severe — treatment takes longer at a clinic)' : '';
+            Engine.logEvent(player.fullName + ' received clinic treatment for ' + condition.name + ' (' + cost + 'g). Recovery underway.' + _sevNote + nobleNote);
+            return { success: true, message: 'Clinic treated ' + condition.name + ' for ' + cost + 'g. You\'ll recover in ' + _recovDays + ' days.' + waitDesc + _sevNote + nobleNote };
         }
     }
 
@@ -15160,19 +15226,43 @@
         return base * 2;
     }
 
-    function _consumeMedicalSupplies(town, severity) {
+    function _consumeMedicalSupplies(town, severity, isIllness) {
         if (!town || !town.market || !town.market.supply) return;
         var supply = town.market.supply;
-        // Consume based on severity
-        if (severity === 'severe') {
-            if ((supply.healing_tonic || 0) > 0) supply.healing_tonic--;
-            if ((supply.antidote || 0) > 0) supply.antidote--;
-            if ((supply.bandages || 0) >= 2) supply.bandages -= 2;
-        } else if (severity === 'moderate' || severity === 'serious') {
-            if ((supply.bandages || 0) > 0) supply.bandages--;
-            if ((supply.herbal_remedy || 0) > 0) supply.herbal_remedy--;
+        var NPC_HEALTH_CONFIG = (typeof CONFIG !== 'undefined' && CONFIG.NPC_HEALTH_CONFIG) ? CONFIG.NPC_HEALTH_CONFIG : {};
+        var supplyDef;
+        if (isIllness) {
+            supplyDef = (NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_ILLNESS && NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_ILLNESS[severity]) || null;
         } else {
-            if ((supply.bandages || 0) > 0) supply.bandages--;
+            supplyDef = (NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_INJURY && NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_INJURY[severity]) || null;
+        }
+        if (!supplyDef) {
+            // Legacy fallback
+            supplyDef = (NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES && NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES[severity]) || null;
+        }
+        if (!supplyDef) return;
+
+        var medRank = NPC_HEALTH_CONFIG.MEDICINE_RANK || ['herbal_remedy', 'fever_tonic', 'healing_tonic', 'antidote'];
+
+        for (var key in supplyDef) {
+            var needed = supplyDef[key];
+            var rankIdx = medRank.indexOf(key);
+            var consumed = false;
+            // Try exact match first
+            if ((supply[key] || 0) >= needed) {
+                supply[key] -= needed;
+                consumed = true;
+            } else if (rankIdx >= 0) {
+                // Try higher-tier substitutes
+                for (var si = rankIdx + 1; si < medRank.length; si++) {
+                    if ((supply[medRank[si]] || 0) >= needed) {
+                        supply[medRank[si]] -= needed;
+                        consumed = true;
+                        break;
+                    }
+                }
+            }
+            // If not consumed, treatment still proceeds (shortage)
         }
     }
 
@@ -15330,7 +15420,7 @@
             }
         }
 
-        // Health recovery: +1/day if no conditions AND energy, hunger, thirst all > 50
+        // Health recovery: +2/day if no conditions AND energy, hunger, thirst all > 50; +1 bonus if all > 80
         if ((player.injuries || []).length === 0 && (player.illnesses || []).length === 0) {
             var hp = player.health || 100;
             var maxHp = player.maxHealth || 100;
@@ -15338,9 +15428,10 @@
                 var energy = player.energy != null ? player.energy : 100;
                 var hunger = player.hunger != null ? player.hunger : 100;
                 var thirst = player.thirst != null ? player.thirst : 100;
-                if (energy > 50 && hunger > 50 && thirst > 50) {
-                    player.health = Math.min(maxHp, hp + 1);
-                }
+                var healAmt = 0;
+                if (energy > 50 && hunger > 50 && thirst > 50) healAmt += 2;
+                if (energy > 80 && hunger > 80 && thirst > 80) healAmt += 1;
+                if (healAmt > 0) player.health = Math.min(maxHp, hp + healAmt);
             }
         }
 
@@ -23590,7 +23681,7 @@
             player.energy = Math.max(0, (player.energy || 0) - 1);
         }
 
-        // Health recovery — only when no injuries/illnesses AND hunger, thirst, energy > 50
+        // Health recovery — +2/day when no conditions and vitals > 50, +1 bonus when vitals > 80
         // (Moved to tickInjuriesAndIllnesses for centralized health management)
 
         // Low hunger/thirst health drain: -1 per day per stat below 10
@@ -24078,16 +24169,55 @@
             }
         }
 
+        // ── Hospital/Clinic Worker Job ──
+        // Available when town has a clinic or hospital, player has field_medic or doctor,
+        // and there's at least one NPC with illness/injury who can afford treatment
+        var _townHasClinicOrHospital = (town.buildings || []).some(function(b) {
+            return b.type === 'hospital' || b.type === 'clinic';
+        });
+        var _medicalBuilding = null;
+        var _medicalBuildingOwner = null;
+        if (_townHasClinicOrHospital && (hasSkill('field_medic') || hasSkill('doctor'))) {
+            _medicalBuilding = (town.buildings || []).find(function(b) {
+                return b.type === 'hospital' || b.type === 'clinic';
+            });
+            if (_medicalBuilding) {
+                _medicalBuildingOwner = _medicalBuilding.ownerId || null;
+                // Check for treatable NPCs (sick or injured, can afford treatment)
+                var _treatableFee = (_medicalBuilding._treatmentFees && _medicalBuilding._treatmentFees.minor) || 10;
+                var _sickNpcsCanPay = (Engine.getPeople ? Engine.getPeople() : []).filter(function(p) {
+                    return p.alive && p.townId === town.id && (p.sick || p.injured) && (p.gold || 0) >= _treatableFee;
+                });
+                if (_sickNpcsCanPay.length > 0) {
+                    var isDoctor = hasSkill('doctor');
+                    var bldName = _medicalBuilding.type === 'hospital' ? 'Hospital' : 'Clinic';
+                    var healCount = isDoctor ? 2 : 1;
+                    var baseMedPay = isDoctor ? 30 : 15;
+                    jobs.push({
+                        name: '🏥 ' + bldName + ' Worker', hours: 12,
+                        pay: Math.round(baseMedPay * payScale), ticks: 30, type: 'kingdom',
+                        xpReward: 6, repGain: 0,
+                        description: 'Treat ' + healCount + ' patient' + (healCount > 1 ? 's' : '') + ' per shift at the ' + bldName.toLowerCase() + '.' + (isDoctor ? ' (Doctor: 2x patients, 2x pay!)' : '') + ' ' + _sickNpcsCanPay.length + ' patient' + (_sickNpcsCanPay.length > 1 ? 's' : '') + ' waiting.',
+                        illnessRisk: 0.01, jobTypeKey: 'hospital_worker',
+                        _healCount: healCount, _medicalBuildingType: _medicalBuilding.type, _medicalBuildingOwnerId: _medicalBuildingOwner,
+                        contextReason: '🏥 ' + bldName + ' in town'
+                    });
+                }
+            }
+        }
+
         // ── Plague Context Jobs ──
         if (townPlague) {
-            const nursePay = hasSkill('doctor') ? 80 : 40;
-            jobs.push({
-                name: '🏥 Plague Nurse', hours: 16,
-                pay: Math.round(nursePay * payScale), ticks: 40, type: 'kingdom',
-                xpReward: 8, repGain: 2, dangerous: true,
-                description: '⚠️ DANGEROUS — Plague in town — Nurses needed! 🤒 5% illness risk.'+ (hasSkill('doctor') ? ' (Doctor: 2x pay!)' : '') + skillProgressNote('plague_nurse'),
-                illnessRisk: 0.05, riskLevel: 'high', jobTypeKey: 'plague_nurse', contextReason: '⚠️ Plague in town'
-            });
+            // Plague nurse only available if NO clinic/hospital in town and player has doctor skill
+            if (!_townHasClinicOrHospital && hasSkill('doctor')) {
+                jobs.push({
+                    name: '🏥 Plague Nurse', hours: 16,
+                    pay: Math.round(80 * payScale), ticks: 40, type: 'kingdom',
+                    xpReward: 8, repGain: 2, dangerous: true,
+                    description: '⚠️ DANGEROUS — Plague in town — Nurses needed! 🤒 5% illness risk. (Requires Doctor skill)' + skillProgressNote('plague_nurse'),
+                    illnessRisk: 0.05, riskLevel: 'high', jobTypeKey: 'plague_nurse', contextReason: '⚠️ Plague in town'
+                });
+            }
             jobs.push({
                 name: '⚰️ Gravedigger', hours: 8,
                 pay: Math.round(16 * payScale), ticks: 20, type: 'kingdom',
@@ -24349,15 +24479,21 @@
                 });
             }
         }
+        // Itinerant Healer: no pay, available if any sick/injured NPC in town (regardless of gold)
         if (hasSkill('doctor') || hasSkill('herbalist')) {
-            jobs.push({
-                name: '🏥 Itinerant Healer', hours: 16,
-                pay: Math.round(18 * payScale), ticks: 30, type: 'kingdom',
-                xpReward: 8, repGain: 2,
-                description: '🗺️ Auto-travel — Travel between villages treating the sick and wounded.',
-                illnessRisk: 0.01, autoTravel: true, payScale: payScale,
-                jobTypeKey: 'itinerant_healer'
+            var _sickOrInjuredNpcs = (Engine.getPeople ? Engine.getPeople() : []).filter(function(p) {
+                return p.alive && p.townId === town.id && (p.sick || p.injured);
             });
+            if (_sickOrInjuredNpcs.length > 0) {
+                jobs.push({
+                    name: '🏥 Itinerant Healer', hours: 16,
+                    pay: 0, ticks: 30, type: 'kingdom',
+                    xpReward: 8, repGain: 3,
+                    description: '🤲 Heal the sick and injured for free. No pay. ' + _sickOrInjuredNpcs.length + ' patient' + (_sickOrInjuredNpcs.length > 1 ? 's' : '') + ' in need.',
+                    illnessRisk: 0.01, jobTypeKey: 'itinerant_healer',
+                    _healCount: 1, _isFreeHealing: true
+                });
+            }
         }
 
         // Add odd jobs
@@ -24488,6 +24624,7 @@
                     'castle_guard': 0.25,
                     'castle_work': 0.25,
                     'plague_nurse': 0.45,
+                    'hospital_worker': 0.40,
                     'gravedigger': 0.25,
                     'quarantine_enforcer': 0.35,
                     'weapons_courier': 0.4,
@@ -24520,6 +24657,7 @@
                         'town_guard': '🛡️ You prevented an incident — the watch commander approves.',
                         'castle_guard': '🏰 Vigilant guard duty noted by the captain.',
                         'plague_nurse': '🏥 You saved a life today — the kingdom is grateful.',
+                        'hospital_worker': '🏥 Your medical work at the hospital earned community respect.',
                         'gravedigger': '⚰️ Somber but necessary — the town appreciates your service.',
                         'quarantine_enforcer': '🚧 Effective quarantine enforcement gained official notice.',
                         'weapons_courier': '📦 Timely weapons delivery impressed the garrison.',
@@ -24619,6 +24757,133 @@
             }
         }
 
+        // Hospital/Clinic Worker — heal NPCs, they pay the building owner
+        var medHealMsg = '';
+        if (job.jobTypeKey === 'hospital_worker' && job._healCount) {
+            var _healTown = Engine.findTown(player.townId);
+            var _healPeople = _healTown ? (Engine.getPeople ? Engine.getPeople() : []).filter(function(p) {
+                return p.alive && p.townId === _healTown.id && (p.sick || p.injured) && (p.gold || 0) >= 10;
+            }) : [];
+            var healed = 0;
+            var failCount = 0;
+            var _isDocSkill = hasSkill('doctor');
+            var _failChance = _isDocSkill ? 0.10 : 0.20;
+            for (var _hi = 0; _hi < Math.min(job._healCount, _healPeople.length); _hi++) {
+                var _patient = _healPeople[_hi];
+                var _sev = _patient.injured ? (_patient.injurySeverity || _patient.illnessSeverity || 'minor') : (_patient.illnessSeverity || 'minor');
+                // Find the medical building for fee lookup
+                var _mBld = (_healTown.buildings || []).find(function(b) { return b.type === 'hospital' || b.type === 'clinic'; });
+                var _fee = (_mBld && _mBld._treatmentFees && _mBld._treatmentFees[_sev]) || ({ minor: 10, moderate: 20, severe: 40 })[_sev] || 10;
+                if ((_patient.gold || 0) < _fee) continue;
+                // Patient pays regardless of treatment success
+                _patient.gold -= _fee;
+                // Revenue to building owner
+                if (job._medicalBuildingOwnerId) {
+                    if (job._medicalBuildingOwnerId === 'player') {
+                        if (_mBld) _mBld.retailRevenue = (_mBld.retailRevenue || 0) + _fee;
+                    } else {
+                        var _allPeople = Engine.getPeople ? Engine.getPeople() : [];
+                        var _bldOwner = null;
+                        for (var _oi = 0; _oi < _allPeople.length; _oi++) {
+                            if (_allPeople[_oi].id === job._medicalBuildingOwnerId) { _bldOwner = _allPeople[_oi]; break; }
+                        }
+                        if (!_bldOwner) {
+                            var _bldKingdom = Engine.findKingdom ? Engine.findKingdom(job._medicalBuildingOwnerId) : null;
+                            if (_bldKingdom) _bldKingdom.gold = (_bldKingdom.gold || 0) + _fee;
+                        } else if (_bldOwner.alive) {
+                            _bldOwner.gold = (_bldOwner.gold || 0) + _fee;
+                        }
+                    }
+                }
+                // Healing failure chance (50% higher at clinic for severe patients)
+                var _actualFailChance = _failChance;
+                if (_mBld && _mBld.type === 'clinic' && _sev === 'severe') {
+                    _actualFailChance = _actualFailChance + (1 - _actualFailChance) * 0.5;
+                }
+                if (rng.random() < _actualFailChance) {
+                    failCount++;
+                    continue; // treatment failed, patient not cured but still paid
+                }
+                // Cure the NPC
+                if (_patient.sick) {
+                    _patient.sick = false;
+                    _patient.illness = null;
+                    _patient.illnessDay = 0;
+                    _patient.illnessSeverity = null;
+                    _patient.asymptomatic = false;
+                    _patient._illnessTreatPaid = false;
+                }
+                if (_patient.injured) {
+                    _patient.injured = false;
+                    _patient.injuryDay = 0;
+                    _patient.injuryType = null;
+                    _patient.injurySeverity = null;
+                }
+                _patient.health = Math.min(100, (_patient.health || 50) + 20);
+                healed++;
+                // +1 town reputation per person healed
+                if (_healTown && _healTown.kingdomId) {
+                    player.reputation[_healTown.kingdomId] = Math.min(100,
+                        (player.reputation[_healTown.kingdomId] || 50) + 1);
+                }
+                // Kingdom reputation by social rank
+                if (_healTown && _healTown.kingdomId && _patient.socialRank) {
+                    var _patRank = _patient.socialRank[_healTown.kingdomId] || 0;
+                    var _kingdomRepBonus = 0;
+                    if (_patRank >= 7) _kingdomRepBonus = 10;       // king
+                    else if (_patRank >= 6) _kingdomRepBonus = 6;   // royal advisor
+                    else if (_patRank >= 5) _kingdomRepBonus = 4;   // lord
+                    else if (_patRank >= 4) _kingdomRepBonus = 2;   // minor noble
+                    else if (_patRank >= 3) _kingdomRepBonus = 1;   // guildmaster
+                    if (_kingdomRepBonus > 0) {
+                        player.reputation[_healTown.kingdomId] = Math.min(100,
+                            (player.reputation[_healTown.kingdomId] || 50) + _kingdomRepBonus);
+                    }
+                }
+                // +4 relationship with healed person
+                if (_patient.id) {
+                    if (!player.relationships[_patient.id]) {
+                        player.relationships[_patient.id] = { level: 0, type: 'acquaintance' };
+                    }
+                    player.relationships[_patient.id].level = Math.min(100, (player.relationships[_patient.id].level || 0) + 4);
+                    if (player.relationships[_patient.id].level >= 60) {
+                        player.relationships[_patient.id].type = 'friend';
+                    }
+                }
+            }
+            if (healed > 0 || failCount > 0) {
+                medHealMsg = ' 💉 Treated ' + healed + ' patient' + (healed > 1 ? 's' : '') + '.';
+                if (failCount > 0) medHealMsg += ' ⚠️ ' + failCount + ' treatment' + (failCount > 1 ? 's' : '') + ' failed.';
+            }
+        }
+
+        // Itinerant Healer — heal 1 NPC for free (no pay to anyone)
+        if (job.jobTypeKey === 'itinerant_healer' && job._isFreeHealing) {
+            var _freeTown = Engine.findTown(player.townId);
+            var _freePatients = _freeTown ? (Engine.getPeople ? Engine.getPeople() : []).filter(function(p) {
+                return p.alive && p.townId === _freeTown.id && (p.sick || p.injured);
+            }) : [];
+            if (_freePatients.length > 0) {
+                var _fp = _freePatients[rng ? rng.randInt(0, _freePatients.length - 1) : 0];
+                if (_fp.sick) {
+                    _fp.sick = false;
+                    _fp.illness = null;
+                    _fp.illnessDay = 0;
+                    _fp.illnessSeverity = null;
+                    _fp.asymptomatic = false;
+                    _fp._illnessTreatPaid = false;
+                }
+                if (_fp.injured) {
+                    _fp.injured = false;
+                    _fp.injuryDay = 0;
+                    _fp.injuryType = null;
+                    _fp.injurySeverity = null;
+                }
+                _fp.health = Math.min(100, (_fp.health || 50) + 20);
+                medHealMsg = ' 🤲 Healed ' + (_fp.firstName || 'a villager') + ' for free.';
+            }
+        }
+
         // Clear any leftover working state
         player.workingUntilTick = 0;
         player.pendingWorkPay = 0;
@@ -24629,7 +24894,7 @@
         // Journal — job completion
         autoJournalCapture('job', 'Worked as ' + job.name + ' and earned ' + finalPay + 'g for ' + job.hours + ' hours of labor.' + (lootMsg ? ' Found some extra goods too.' : ''), { mood: finalPay >= 30 ? 'content' : 'weary' });
 
-        return { success: true, message: `Completed ${job.name} (${job.hours}hrs, ${ticksRequired} ticks) — earned ${finalPay}g (${payPerTick}g/tick).${lootMsg}${spyEventMsg}${instrumentMsg}${customsMsg}` };
+        return { success: true, message: `Completed ${job.name} (${job.hours}hrs, ${ticksRequired} ticks) — earned ${finalPay}g (${payPerTick}g/tick).${lootMsg}${spyEventMsg}${instrumentMsg}${customsMsg}${medHealMsg}` };
     }
 
     // ========================================================

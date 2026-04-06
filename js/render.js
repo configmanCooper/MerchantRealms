@@ -52,6 +52,8 @@ window.Renderer = (function () {
     let _minimapCacheDay = -1;
     let _minimapTerrainCanvas = null; // Permanent terrain cache — never changes after init
     let showDeposits = false; // toggled by player with Regional Survey skill
+    let showFertility = false; // toggled by player with Soil Knowledge skill
+    let _surveyCircle = null; // { type: 'fertility'|'deposits', wx, wy, startFrame, duration }
 
     // ── Caravan position cache for hit testing ──
     var _caravanPositions = []; // [{id, x, y, caravan}]
@@ -400,10 +402,14 @@ window.Renderer = (function () {
         // 4b. Elite merchant heraldry flags
         renderEliteMerchantIcons();
 
-        // 4c. Resource deposits overlay (Regional Survey skill)
-        if (camera.zoom > 0.5) {
-            renderDeposits();
-        }
+        // 4c. Soil fertility overlay (Soil Knowledge skill)
+        renderFertility();
+
+        // 4d. Resource deposits overlay (Regional Survey skill)
+        renderDeposits();
+
+        // 4e. Survey circle (right-click survey)
+        renderSurveyCircle();
 
         // 5. People (only when zoomed in)
         if (camera.zoom > 1.5) {
@@ -1167,33 +1173,6 @@ window.Renderer = (function () {
                     ctx.fill();
                 }
 
-                // Fertility overlay ring (skill-gated)
-                if (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('soil_knowledge')) {
-                    var fert = town.soilFertilityRating != null ? town.soilFertilityRating : (town.soilFertility != null ? Math.round(town.soilFertility * 50) : 50);
-                    // Dark red (0) → yellow (50) → dark green (100)
-                    var fr, fg, fb;
-                    if (fert <= 50) {
-                        var t = fert / 50;
-                        fr = Math.round(139 * (1 - t) + 200 * t);
-                        fg = Math.round(0 * (1 - t) + 180 * t);
-                        fb = Math.round(0 * (1 - t) + 0 * t);
-                    } else {
-                        var t2 = (fert - 50) / 50;
-                        fr = Math.round(200 * (1 - t2) + 0 * t2);
-                        fg = Math.round(180 * (1 - t2) + 100 * t2);
-                        fb = Math.round(0 * (1 - t2) + 0 * t2);
-                    }
-                    ctx.fillStyle = 'rgba(' + fr + ',' + fg + ',' + fb + ',0.25)';
-                    ctx.beginPath();
-                    ctx.arc(cx, cy, r + 10, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.strokeStyle = 'rgba(' + fr + ',' + fg + ',' + fb + ',0.6)';
-                    ctx.lineWidth = 1;
-                    ctx.beginPath();
-                    ctx.arc(cx, cy, r + 10, 0, Math.PI * 2);
-                    ctx.stroke();
-                }
-
                 ctx.fillStyle = kColor;
                 if (cat === 'capital_city') {
                     // Star/diamond shape for capitals
@@ -1699,6 +1678,73 @@ window.Renderer = (function () {
     }
 
     // ═══════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════
+    //  4d. SOIL FERTILITY OVERLAY
+    // ═══════════════════════════════════════════════════════════
+
+    function _fertColor(fert) {
+        var r, g, b;
+        if (fert <= 50) {
+            var t = fert / 50;
+            r = Math.round(180 * (1 - t) + 200 * t);
+            g = Math.round(40 * (1 - t) + 180 * t);
+            b = Math.round(40 * (1 - t) + 0 * t);
+        } else {
+            var t2 = (fert - 50) / 50;
+            r = Math.round(200 * (1 - t2) + 30 * t2);
+            g = Math.round(180 * (1 - t2) + 160 * t2);
+            b = Math.round(0 * (1 - t2) + 30 * t2);
+        }
+        return { r: r, g: g, b: b };
+    }
+
+    function renderFertility() {
+        if (!showFertility) return;
+        const towns = _frameTowns;
+        if (!towns) return;
+        if (typeof Player === 'undefined' || !Player.hasSkill || !Player.hasSkill('soil_knowledge')) return;
+
+        for (var i = 0; i < towns.length; i++) {
+            var town = towns[i];
+            if (!isVisible(town.x, town.y, 400)) continue;
+            var fert = town.soilFertilityRating != null ? town.soilFertilityRating : (town.soilFertility != null ? Math.round(town.soilFertility * 50) : 50);
+            var c = _fertColor(fert);
+            var pop = town.population || 100;
+            var territoryR = Math.max(50, 30 + Math.sqrt(pop) * 4);
+
+            // Large territory fill
+            var grad = ctx.createRadialGradient(town.x, town.y, territoryR * 0.2, town.x, town.y, territoryR);
+            grad.addColorStop(0, 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',0.30)');
+            grad.addColorStop(0.7, 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',0.15)');
+            grad.addColorStop(1, 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',0)');
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(town.x, town.y, territoryR, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Border ring
+            ctx.strokeStyle = 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',0.5)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(town.x, town.y, territoryR * 0.85, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Fertility label
+            var _fLabel = fert <= 25 ? 'Barren' : fert <= 40 ? 'Poor' : fert <= 55 ? 'Fair' : fert <= 70 ? 'Good' : fert <= 85 ? 'Rich' : 'Lush';
+            var fontSize = Math.max(8, Math.min(14, 11 * camera.zoom));
+            ctx.font = 'bold ' + fontSize + 'px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+            ctx.lineWidth = 2.5;
+            ctx.fillStyle = 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',0.95)';
+            var labelY = town.y - territoryR * 0.65;
+            ctx.strokeText('🌾 ' + fert + ' ' + _fLabel, town.x, labelY);
+            ctx.fillText('🌾 ' + fert + ' ' + _fLabel, town.x, labelY);
+        }
+        ctx.textBaseline = 'alphabetic';
+    }
+
     //  4c. RESOURCE DEPOSITS OVERLAY
     // ═══════════════════════════════════════════════════════════
 
@@ -1706,39 +1752,286 @@ window.Renderer = (function () {
         if (!showDeposits) return;
         const towns = _frameTowns;
         if (!towns) return;
-        if (typeof Player === 'undefined' || !Player.hasSkill || !Player.hasSkill('regional_survey')) return;
+        if (typeof Player === 'undefined' || !Player.hasSkill) return;
+        var hasRegional = Player.hasSkill('regional_survey');
+        var hasWorld = Player.hasSkill('world_survey');
+        if (!hasRegional && !hasWorld) return;
 
         var playerKingdom = Player.kingdomId;
         var depositIcons = {
-            wheat: '\uD83C\uDF3E', iron_ore: '\u26CF', wood: '\uD83E\uDEB5',
-            stone: '\uD83E\uDEA8', wool: '\uD83D\uDC11', hide: '\uD83D\uDC04',
-            grapes: '\uD83C\uDF47', gold_ore: '\u2728', hemp: '\uD83C\uDF3F',
-            clay: '\uD83C\uDFFA', salt: '\uD83E\uDDC2', fish: '\uD83D\uDC1F',
-            herbs: '\uD83C\uDF3F', honey: '\uD83C\uDF6F', silk: '\uD83E\uDDE3',
-            pearls: '\uD83E\uDEE7'
+            wheat: '🌾', iron_ore: '⛏', wood: '🪵',
+            stone: '🪨', wool: '🐑', hide: '🐄',
+            grapes: '🍇', gold_ore: '✨', hemp: '🌿',
+            clay: '🏺', salt: '🧂', fish: '🐟',
+            herbs: '🌿', honey: '🍯', silk: '🧣',
+            pearls: '🫧', coal: '⬛', copper_ore: '🟤'
+        };
+        var depositColors = {
+            iron_ore: '#8b7355', stone: '#9a9a9a', gold_ore: '#ffd700',
+            wheat: '#c8a84e', wood: '#2d6b2d', wool: '#d0c8b0',
+            hide: '#8b6914', grapes: '#6a3d9a', hemp: '#4a7a3a',
+            clay: '#b87333', salt: '#e8e8e8', fish: '#4a90c4',
+            herbs: '#3a8a3a', honey: '#daa520', silk: '#c0a0d0',
+            pearls: '#b0c4de', coal: '#333', copper_ore: '#b87333'
         };
 
         for (var t = 0; t < towns.length; t++) {
             var town = towns[t];
             if (!town.naturalDeposits) continue;
-            // Only show for player's kingdom or towns the player is in
-            if (town.kingdomId !== playerKingdom && Player.townId !== town.id) continue;
-            if (!isVisible(town.x, town.y, 200)) continue;
+            // Regional = kingdom only; World = all towns
+            if (!hasWorld) {
+                if (town.kingdomId !== playerKingdom && Player.townId !== town.id) continue;
+            }
+            if (!isVisible(town.x, town.y, 300)) continue;
 
             var keys = Object.keys(town.naturalDeposits);
-            var icons = '';
+            var resources = [];
             for (var k = 0; k < keys.length; k++) {
-                if (town.naturalDeposits[keys[k]] > 0 && depositIcons[keys[k]]) {
-                    icons += depositIcons[keys[k]];
+                if (town.naturalDeposits[keys[k]] > 0) {
+                    resources.push({ id: keys[k], amount: town.naturalDeposits[keys[k]] });
                 }
             }
-            if (!icons) continue;
+            if (resources.length === 0) continue;
 
-            var baseSize = (town.category === 'city' ? 14 : town.category === 'town' ? 11 : 8);
-            var yOff = town.y - baseSize - 12;
-            ctx.font = '7px sans-serif';
-            ctx.fillStyle = 'rgba(40,80,40,0.95)';
-            ctx.fillText(icons, town.x - ctx.measureText(icons).width / 2, yOff);
+            var pop = town.population || 100;
+            var territoryR = Math.max(40, 25 + Math.sqrt(pop) * 3);
+
+            // Scatter deposit icons around the town territory
+            for (var ri = 0; ri < resources.length; ri++) {
+                var res = resources[ri];
+                var icon = depositIcons[res.id] || '📦';
+                var col = depositColors[res.id] || '#888';
+                // Place 1-3 icons per resource based on amount
+                var numIcons = res.amount >= 80 ? 3 : res.amount >= 30 ? 2 : 1;
+                for (var ni = 0; ni < numIcons; ni++) {
+                    // Deterministic scatter using tileHash
+                    var seed1 = tileHash(town.x + ri * 17, town.y + ni * 31);
+                    var seed2 = tileHash(town.y + ri * 23, town.x + ni * 13);
+                    var angle = seed1 * Math.PI * 2;
+                    var dist = territoryR * 0.3 + seed2 * territoryR * 0.7;
+                    var ix = town.x + Math.cos(angle) * dist;
+                    var iy = town.y + Math.sin(angle) * dist;
+
+                    // Background pill
+                    var fontSize = Math.max(10, Math.min(16, 12 * camera.zoom));
+                    ctx.font = fontSize + 'px sans-serif';
+                    var tw = ctx.measureText(icon).width;
+                    ctx.fillStyle = 'rgba(20,20,15,0.7)';
+                    ctx.beginPath();
+                    ctx.arc(ix, iy, fontSize * 0.7, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = col;
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.arc(ix, iy, fontSize * 0.7, 0, Math.PI * 2);
+                    ctx.stroke();
+
+                    // Icon
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillStyle = '#fff';
+                    ctx.fillText(icon, ix, iy);
+                }
+            }
+
+            // Label under the scattered area with resource summary
+            if (camera.zoom > 0.8) {
+                var label = resources.map(function(r) { return (depositIcons[r.id] || '') + r.amount; }).join(' ');
+                ctx.font = 'bold ' + Math.max(7, 9 * camera.zoom) + 'px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'top';
+                ctx.fillStyle = 'rgba(180,170,140,0.9)';
+                ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+                ctx.lineWidth = 2;
+                ctx.strokeText(label, town.x, town.y + territoryR * 0.5 + 4);
+                ctx.fillText(label, town.x, town.y + territoryR * 0.5 + 4);
+            }
+        }
+        ctx.textBaseline = 'alphabetic';
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  4e. SURVEY CIRCLE (right-click "Check Fertility" / "Find Deposits")
+    // ═══════════════════════════════════════════════════════════
+
+    function _surveyTerrainFertility(wx, wy, radius) {
+        if (typeof Engine !== 'undefined' && Engine.surveyFertilityAtPoint) {
+            return Engine.surveyFertilityAtPoint(wx, wy, radius);
+        }
+        return 50;
+    }
+
+    function _surveyTerrainDeposits(wx, wy, radius) {
+        if (typeof Engine !== 'undefined' && Engine.surveyDepositsAtPoint) {
+            return Engine.surveyDepositsAtPoint(wx, wy, radius);
+        }
+        return {};
+    }
+
+    function startFertilitySurvey(wx, wy) {
+        _surveyCircle = { type: 'fertility', wx: wx, wy: wy, startFrame: frameCount, duration: 600 };
+    }
+
+    function startDepositSurvey(wx, wy) {
+        _surveyCircle = { type: 'deposits', wx: wx, wy: wy, startFrame: frameCount, duration: 600 };
+    }
+
+    function renderSurveyCircle() {
+        if (!_surveyCircle) return;
+        var elapsed = frameCount - _surveyCircle.startFrame;
+        if (elapsed > _surveyCircle.duration) { _surveyCircle = null; return; }
+
+        var wx = _surveyCircle.wx, wy = _surveyCircle.wy;
+        if (!isVisible(wx, wy, 500)) return;
+
+        // Fade in/out
+        var alpha = 1.0;
+        if (elapsed < 20) alpha = elapsed / 20;
+        else if (elapsed > _surveyCircle.duration - 60) alpha = (_surveyCircle.duration - elapsed) / 60;
+
+        var surveyR = 200; // world-unit radius of the survey circle
+
+        if (_surveyCircle.type === 'fertility') {
+            var fert = _surveyTerrainFertility(wx, wy, surveyR);
+            var c = _fertColor(fert);
+            var _fLabel = fert <= 25 ? 'Barren' : fert <= 40 ? 'Poor' : fert <= 55 ? 'Fair' : fert <= 70 ? 'Good' : fert <= 85 ? 'Rich' : 'Lush';
+
+            // Large survey circle
+            var grad = ctx.createRadialGradient(wx, wy, surveyR * 0.1, wx, wy, surveyR);
+            grad.addColorStop(0, 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',' + (0.35 * alpha) + ')');
+            grad.addColorStop(0.7, 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',' + (0.18 * alpha) + ')');
+            grad.addColorStop(1, 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',0)');
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(wx, wy, surveyR, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Dashed border
+            ctx.save();
+            ctx.setLineDash([8, 6]);
+            ctx.strokeStyle = 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',' + (0.7 * alpha) + ')';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.arc(wx, wy, surveyR, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+
+            // Center label
+            var fontSize = Math.max(12, Math.min(20, 16 * camera.zoom));
+            ctx.font = 'bold ' + fontSize + 'px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.globalAlpha = alpha;
+            ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+            ctx.lineWidth = 3;
+            ctx.fillStyle = 'rgb(' + c.r + ',' + c.g + ',' + c.b + ')';
+            ctx.strokeText('🌾 Fertility: ' + fert + ' (' + _fLabel + ')', wx, wy);
+            ctx.fillText('🌾 Fertility: ' + fert + ' (' + _fLabel + ')', wx, wy);
+            ctx.globalAlpha = 1.0;
+
+        } else if (_surveyCircle.type === 'deposits') {
+            var deposits = _surveyTerrainDeposits(wx, wy, surveyR);
+            var depositIcons = {
+                wheat: '🌾', iron_ore: '⛏', wood: '🪵', stone: '🪨', wool: '🐑', hide: '🐄',
+                grapes: '🍇', gold_ore: '✨', hemp: '🌿', clay: '🏺', salt: '🧂', fish: '🐟',
+                herbs: '🌿', honey: '🍯', silk: '🧣', pearls: '🫧', coal: '⬛', copper_ore: '🟤'
+            };
+            var depositColors = {
+                iron_ore: '#8b7355', stone: '#9a9a9a', gold_ore: '#ffd700', wheat: '#c8a84e',
+                wood: '#2d6b2d', wool: '#d0c8b0', hide: '#8b6914', grapes: '#6a3d9a',
+                hemp: '#4a7a3a', clay: '#b87333', salt: '#e8e8e8', fish: '#4a90c4',
+                herbs: '#3a8a3a', honey: '#daa520', silk: '#c0a0d0', pearls: '#b0c4de',
+                coal: '#333', copper_ore: '#b87333'
+            };
+
+            // Survey circle outline
+            ctx.save();
+            ctx.setLineDash([8, 6]);
+            ctx.strokeStyle = 'rgba(200,180,120,' + (0.7 * alpha) + ')';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.arc(wx, wy, surveyR, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+
+            // Subtle fill
+            var dGrad = ctx.createRadialGradient(wx, wy, 0, wx, wy, surveyR);
+            dGrad.addColorStop(0, 'rgba(180,160,100,' + (0.12 * alpha) + ')');
+            dGrad.addColorStop(1, 'rgba(180,160,100,0)');
+            ctx.fillStyle = dGrad;
+            ctx.beginPath();
+            ctx.arc(wx, wy, surveyR, 0, Math.PI * 2);
+            ctx.fill();
+
+            var depKeys = Object.keys(deposits);
+            if (depKeys.length === 0) {
+                // No deposits label
+                var fontSize2 = Math.max(10, Math.min(16, 13 * camera.zoom));
+                ctx.font = 'bold ' + fontSize2 + 'px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.globalAlpha = alpha;
+                ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+                ctx.lineWidth = 2.5;
+                ctx.fillStyle = '#aaa';
+                ctx.strokeText('⛏ No deposits found nearby', wx, wy);
+                ctx.fillText('⛏ No deposits found nearby', wx, wy);
+                ctx.globalAlpha = 1.0;
+            } else {
+                // Show deposit icons in a ring around the center
+                var dAngleStep = (Math.PI * 2) / depKeys.length;
+                var dRingR = surveyR * 0.45;
+                var dFontSize = Math.max(11, Math.min(18, 14 * camera.zoom));
+                ctx.font = dFontSize + 'px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.globalAlpha = alpha;
+
+                for (var di = 0; di < depKeys.length; di++) {
+                    var dKey = depKeys[di];
+                    var dIcon = depositIcons[dKey] || '📦';
+                    var dColor = depositColors[dKey] || '#888';
+                    var dAngle = -Math.PI / 2 + di * dAngleStep;
+                    var dx = wx + Math.cos(dAngle) * dRingR;
+                    var dy = wy + Math.sin(dAngle) * dRingR;
+
+                    // Background circle
+                    ctx.fillStyle = 'rgba(20,20,15,0.75)';
+                    ctx.beginPath();
+                    ctx.arc(dx, dy, dFontSize * 0.85, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = dColor;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(dx, dy, dFontSize * 0.85, 0, Math.PI * 2);
+                    ctx.stroke();
+
+                    // Icon
+                    ctx.fillStyle = '#fff';
+                    ctx.fillText(dIcon, dx, dy);
+
+                    // Amount label below
+                    ctx.font = 'bold ' + Math.max(8, dFontSize * 0.65) + 'px sans-serif';
+                    ctx.fillStyle = dColor;
+                    ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+                    ctx.lineWidth = 2;
+                    var dName = dKey.replace(/_/g, ' ');
+                    var dAmt = deposits[dKey] >= 1000 ? Math.round(deposits[dKey] / 1000) + 'k' : deposits[dKey];
+                    ctx.strokeText(dAmt + ' ' + dName, dx, dy + dFontSize * 1.1);
+                    ctx.fillText(dAmt + ' ' + dName, dx, dy + dFontSize * 1.1);
+                    ctx.font = dFontSize + 'px sans-serif';
+                }
+
+                // Center header
+                var hFontSize = Math.max(10, Math.min(15, 12 * camera.zoom));
+                ctx.font = 'bold ' + hFontSize + 'px sans-serif';
+                ctx.fillStyle = 'rgba(220,200,150,' + alpha + ')';
+                ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+                ctx.lineWidth = 2.5;
+                ctx.strokeText('⛏ Deposits Survey', wx, wy);
+                ctx.fillText('⛏ Deposits Survey', wx, wy);
+                ctx.globalAlpha = 1.0;
+            }
         }
     }
 
@@ -3205,6 +3498,18 @@ window.Renderer = (function () {
         return showDeposits;
     }
 
+    function toggleFertility() {
+        if (typeof Player === 'undefined' || !Player.hasSkill || !Player.hasSkill('soil_knowledge')) {
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('You need the Soil Knowledge skill to view fertility.', 'warning');
+            return false;
+        }
+        showFertility = !showFertility;
+        if (typeof UI !== 'undefined' && UI.toast) {
+            UI.toast('Soil fertility overlay ' + (showFertility ? 'shown' : 'hidden') + '.', 'info');
+        }
+        return showFertility;
+    }
+
     // ── Strategic Map (Mode 1): enhanced town labels ──
 
     function renderStrategicTownOverlays() {
@@ -3876,5 +4181,10 @@ window.Renderer = (function () {
         locatePlayer,
         markMinimapDirty,
         toggleDeposits,
+        toggleFertility,
+        isDepositsOn() { return showDeposits; },
+        isFertilityOn() { return showFertility; },
+        startFertilitySurvey,
+        startDepositSurvey,
     };
 })();

@@ -356,6 +356,7 @@ const CONFIG = {
     CARAVAN_GUARD_WAGE: 6,                      // gold per day per guard
     CARAVAN_HORSE_SPEED_BONUS: 0.10,            // 10% speed per horse on caravan
     CARAVAN_HORSE_EXTRA_CAPACITY: 30,           // extra weight per horse
+    MARKET_HORSE_CAP: { village: 50, town: 100, city: 150, capital_city: 200 },
     CARAVAN_CART_CAPACITY: 80,                  // weight per cart
     CARAVAN_CART_COST: 30,                      // gold to buy a cart for the caravan
     CARAVAN_WAGON_CAPACITY: 200,                // weight per wagon
@@ -1664,15 +1665,28 @@ const BUILDING_TYPES = {
     TRANSPORT_GUILD:  { id: 'transport_guild',  name: 'Transport Guild Hall', cost: 800, workers: 4, produces: null,       consumes: {},                           rate: 0, category: 'trade',      materials: { wood: 25, stone: 15, planks: 10 }, icon: '🚚', description: 'Transporters handle goods delivery between your buildings automatically.' },
     // --- Goods audit buildings ---
     PEARL_DIVER:      { id: 'pearl_diver',      name: 'Pearl Diver',     cost: 350,  workers: 2, produces: 'pearls',         consumes: {},                          rate: 2, category: 'harvest',    storage: 20, portOnly: true, materials: { wood: 12, rope: 3 } },
-    APOTHECARY:       { id: 'apothecary',       name: 'Apothecary',      cost: 400,  workers: 1, produces: 'herbal_remedy',  consumes: { herbs: 3 },                rate: 2, category: 'medical',   storage: 30, materials: { wood: 8, stone: 5 }, icon: '⚗️', description: 'Produces medicines and remedies from herbs. Can also make poisons.',
-        canProduce: ['herbal_remedy', 'healing_tonic', 'fever_tonic', 'antidote', 'poison', 'blasting_powder'],
+    APOTHECARY:       { id: 'apothecary',       name: 'Apothecary',      cost: 400,  workers: 1, produces: 'herbal_remedy',  consumes: { herbs: 3 },                rate: 2, category: 'medical',   storage: 30, materials: { wood: 8, stone: 5 }, icon: '⚗️', description: 'Produces medicines and remedies from herbs. Healing Tonic requires level 3+. Antidotes require an Advanced Apothecary.',
+        canProduce: ['herbal_remedy', 'herbal_poultice', 'healing_tonic', 'fever_tonic', 'poison', 'blasting_powder'],
         availableProducts: {
             herbal_remedy:   { produces: 'herbal_remedy',   consumes: { herbs: 3 },                 rate: 2 },
-            healing_tonic:   { produces: 'healing_tonic',   consumes: { herbs: 4, honey: 1 },       rate: 1 },
+            herbal_poultice: { produces: 'herbal_poultice', consumes: { herbs: 2, cloth: 1 },       rate: 2 },
+            healing_tonic:   { produces: 'healing_tonic',   consumes: { herbs: 4, honey: 1 },       rate: 1, minLevel: 3 },
             fever_tonic:     { produces: 'fever_tonic',     consumes: { herbs: 3, water: 2 },       rate: 1 },
-            antidote:        { produces: 'antidote',        consumes: { herbs: 5, honey: 2 },       rate: 1 },
             poison:          { produces: 'poison',          consumes: { hemp: 2 },                  rate: 1 },
             blasting_powder: { produces: 'blasting_powder', consumes: { salt: 4, hemp: 2 },         rate: 2 },
+        },
+    },
+    ADVANCED_APOTHECARY: { id: 'advanced_apothecary', name: 'Advanced Apothecary', cost: 800, workers: 3, produces: 'healing_tonic', consumes: { herbs: 4, honey: 1 }, rate: 2, category: 'medical', storage: 60, materials: { stone: 15, wood: 12, planks: 8, iron: 3 }, icon: '🧬', description: 'A full-service medical laboratory. Produces all medicines including antidotes and tonics at higher rates.', minTownCategory: 'town',
+        canProduce: ['herbal_remedy', 'herbal_poultice', 'healing_tonic', 'fever_tonic', 'splint', 'antidote', 'poison', 'blasting_powder'],
+        availableProducts: {
+            herbal_remedy:   { produces: 'herbal_remedy',   consumes: { herbs: 3 },                 rate: 3 },
+            herbal_poultice: { produces: 'herbal_poultice', consumes: { herbs: 2, cloth: 1 },       rate: 3 },
+            healing_tonic:   { produces: 'healing_tonic',   consumes: { herbs: 4, honey: 1 },       rate: 2 },
+            fever_tonic:     { produces: 'fever_tonic',     consumes: { herbs: 3, water: 2 },       rate: 2 },
+            splint:          { produces: 'splint',          consumes: { wood: 2, cloth: 1 },        rate: 3 },
+            antidote:        { produces: 'antidote',        consumes: { herbs: 5, honey: 2 },       rate: 2 },
+            poison:          { produces: 'poison',          consumes: { hemp: 2 },                  rate: 2 },
+            blasting_powder: { produces: 'blasting_powder', consumes: { salt: 4, hemp: 2 },         rate: 3 },
         },
     },
     HUNTING_LODGE:    { id: 'hunting_lodge',    name: 'Hunting Lodge',   cost: 250,  workers: 2, produces: 'hide',           consumes: {},                          rate: 4, category: 'harvest',    storage: 50, villageOnly: true, materials: { wood: 15 } },
@@ -2000,7 +2014,8 @@ const SKILLS = {
     price_memory:        { name: 'Price Memory',        branch: 'commerce',   cost: 1, requires: ['keen_eye'],                    desc: 'Remember town prices for 60 days instead of 30 after visiting.',            icon: '🧠' },
     market_scout:        { name: 'Market Scout',        branch: 'commerce',   cost: 2, requires: ['keen_eye'],                    desc: 'See prices in towns where you have workers/buildings (updated every 30 days).', icon: '🔭' },
     trade_network:       { name: 'Trade Network',       branch: 'commerce',   cost: 5, requires: ['market_scout', 'silver_tongue'],   desc: 'See current prices in all towns of your home kingdom.',                    icon: '🗺️' },
-    regional_survey:     { name: 'Regional Survey',     branch: 'commerce',   cost: 2, requires: ['trade_network'],               desc: 'See resource deposits and production info for all towns in your kingdom on hover.', icon: '📋' },
+    regional_survey:     { name: 'Regional Survey',     branch: 'commerce',   cost: 2, requires: ['trade_network'],               desc: 'See resource deposits for towns in your kingdom. Toggle in the ⚡ Abilities tab of Skills.', icon: '📋' },
+    world_survey:        { name: 'World Survey',        branch: 'commerce',   cost: 2, requires: ['regional_survey'],             desc: 'See resource deposits for ALL towns across the entire map. Toggle in the ⚡ Abilities tab of Skills. Right-click the map to survey an area.', icon: '🗺️' },
     foreign_intelligence: { name: 'Foreign Intelligence', branch: 'commerce', cost: 4, requires: ['regional_survey', 'haggler'], desc: 'Your trade contacts keep you informed of foreign kingdom events — wars, laws, embargoes, plagues.', icon: '🌐' },
     global_trade_intel:  { name: 'Global Trade Intel',  branch: 'commerce',   cost: 8, requires: ['trade_network', 'foreign_intelligence'], desc: 'See current prices in ALL towns across all kingdoms.',                     icon: '🌍' },
     haggler:             { name: 'Haggler',             branch: 'commerce',   cost: 2, requires: [],                              desc: '5% discount when buying goods.',                                           icon: '🤝' },
@@ -2105,7 +2120,7 @@ const SKILLS = {
     doctor:              { name: 'Doctor',              branch: 'survival',   cost: 4, requires: ['field_medic'],                 desc: 'Treat ALL injury severities. 2x nurse pay. Unlocks itinerant healer job.',  icon: '⚕️' },
     disease_awareness:   { name: 'Disease Awareness',   branch: 'survival',   cost: 1, requires: [],                              desc: 'See illness breakdown in towns: minor, moderate, and severe sick counts.',   icon: '🔬' },
     epidemiologist:      { name: 'Epidemiologist',      branch: 'survival',   cost: 2, requires: ['disease_awareness'],            desc: 'See contagion risk level in towns — know your chances of getting sick.',     icon: '🦠' },
-    soil_knowledge:      { name: 'Soil Knowledge',      branch: 'survival',   cost: 2, requires: ['herbalist'],                   desc: 'See soil fertility ratings on the map and forage chances. Better foraging yields in fertile land.', icon: '🌾' },
+    soil_knowledge:      { name: 'Soil Knowledge',      branch: 'survival',   cost: 2, requires: ['herbalist'],                   desc: 'See soil fertility ratings on the map. Toggle in the ⚡ Abilities tab of Skills. Right-click the map to check an area.', icon: '🌾' },
 
     // ── Underworld Branch (7) ──
     discrete:            { name: 'Discrete',            branch: 'underworld', cost: 2, requires: [],                              desc: 'Smuggling detection reduced by 10%.',                                       icon: '🤫' },
@@ -2441,14 +2456,19 @@ const NPC_HEALTH_CONFIG = {
 
     // --- Illness types ---
     ILLNESSES: {
-        cold:           { name: 'Common Cold',      severity: 'minor',    healthDrain: 0.3, daysToRecover: 7,   seasons: ['autumn', 'winter'] },
-        flu:            { name: 'Flu',               severity: 'minor',    healthDrain: 0.5, daysToRecover: 10,  seasons: ['autumn', 'winter'] },
-        food_poisoning: { name: 'Food Poisoning',    severity: 'minor',    healthDrain: 0.8, daysToRecover: 3,   seasons: ['spring', 'summer', 'autumn', 'winter'] },
-        fever:          { name: 'Fever',             severity: 'moderate', healthDrain: 1.0, daysToRecover: 14,  seasons: ['spring', 'summer', 'autumn', 'winter'] },
-        dysentery:      { name: 'Dysentery',         severity: 'moderate', healthDrain: 1.5, daysToRecover: 20,  seasons: ['summer', 'autumn'] },
-        pneumonia:      { name: 'Pneumonia',         severity: 'serious',  healthDrain: 2.0, daysToRecover: 30,  seasons: ['winter'] },
-        typhus:         { name: 'Typhus',            severity: 'serious',  healthDrain: 2.5, daysToRecover: 30,  seasons: ['spring', 'summer', 'autumn', 'winter'] },
-        plague:         { name: 'Plague',            severity: 'severe',   healthDrain: 3.5, daysToRecover: 35,  seasons: ['spring', 'summer', 'autumn', 'winter'], contagious: true, spreadChance: 0.04, naturalRecoveryDay: 14, naturalRecoveryChance: 0.025, recoveryChance: 0.10 },
+        cold:           { name: 'Common Cold',       severity: 'minor',    healthDrain: 0.3, daysToRecover: 10,  seasons: ['autumn', 'winter'] },
+        flu:            { name: 'Flu',                severity: 'minor',    healthDrain: 0.5, daysToRecover: 12,  seasons: ['autumn', 'winter'] },
+        food_poisoning: { name: 'Food Poisoning',     severity: 'minor',    healthDrain: 0.8, daysToRecover: 5,   seasons: ['spring', 'summer', 'autumn', 'winter'] },
+        headaches:      { name: 'Chronic Headaches',   severity: 'minor',    healthDrain: 0.2, daysToRecover: 14,  seasons: ['spring', 'summer', 'autumn', 'winter'] },
+        stomach_bug:    { name: 'Stomach Bug',         severity: 'minor',    healthDrain: 0.4, daysToRecover: 8,   seasons: ['spring', 'summer', 'autumn', 'winter'] },
+        cough:          { name: 'Persistent Cough',    severity: 'minor',    healthDrain: 0.3, daysToRecover: 14,  seasons: ['spring', 'summer', 'autumn', 'winter'] },
+        fever:          { name: 'Fever',               severity: 'moderate', healthDrain: 1.0, daysToRecover: 18,  seasons: ['spring', 'summer', 'autumn', 'winter'] },
+        dysentery:      { name: 'Dysentery',           severity: 'moderate', healthDrain: 1.5, daysToRecover: 22,  seasons: ['summer', 'autumn'] },
+        infection:      { name: 'Infection',           severity: 'moderate', healthDrain: 1.2, daysToRecover: 20,  seasons: ['spring', 'summer', 'autumn', 'winter'] },
+        rash:           { name: 'Severe Rash',         severity: 'moderate', healthDrain: 0.8, daysToRecover: 16,  seasons: ['spring', 'summer', 'autumn', 'winter'] },
+        pneumonia:      { name: 'Pneumonia',           severity: 'serious',  healthDrain: 2.0, daysToRecover: 30,  seasons: ['winter'] },
+        typhus:         { name: 'Typhus',              severity: 'serious',  healthDrain: 2.5, daysToRecover: 30,  seasons: ['spring', 'summer', 'autumn', 'winter'] },
+        plague:         { name: 'Plague',              severity: 'severe',   healthDrain: 3.5, daysToRecover: 35,  seasons: ['spring', 'summer', 'autumn', 'winter'], contagious: true, spreadChance: 0.04, naturalRecoveryDay: 14, naturalRecoveryChance: 0.025, recoveryChance: 0.10 },
     },
 
     // --- Health thresholds ---
@@ -2463,7 +2483,25 @@ const NPC_HEALTH_CONFIG = {
     TOWN_SPREAD_SICK_RATIO_MULT: 2.0,  // multiplied by (sickNPCs / totalPop) in source town
     TRADE_ROUTE_SPREAD_MULT: 1.5,      // towns connected by active trade routes spread faster
 
-    // --- Treatment supplies consumed per patient per day ---
+    // --- Treatment supplies consumed per severity ---
+    // Injuries use bandages + physical supplies; illnesses use medicines
+    TREATMENT_SUPPLIES_INJURY: {
+        minor:    { bandages: 1 },
+        moderate: { bandages: 1, splint: 1 },
+        serious:  { bandages: 2, splint: 1, herbal_poultice: 1 },
+        severe:   { bandages: 2, splint: 1, herbal_poultice: 1, healing_tonic: 1 },
+    },
+    TREATMENT_SUPPLIES_ILLNESS: {
+        minor:    { herbal_remedy: 1 },
+        moderate: { fever_tonic: 1 },
+        serious:  { healing_tonic: 1 },
+        severe:   { antidote: 1 },
+    },
+    // Medicine substitution: higher-tier can replace lower-tier
+    // antidote > healing_tonic > fever_tonic > herbal_remedy
+    MEDICINE_RANK: ['herbal_remedy', 'fever_tonic', 'healing_tonic', 'antidote'],
+
+    // Legacy combined (kept for backwards compat, but engine should use _INJURY/_ILLNESS)
     TREATMENT_SUPPLIES: {
         minor:    { bandages: 1 },
         moderate: { bandages: 1, herbal_remedy: 1 },
@@ -3159,7 +3197,8 @@ CONFIG.ACTION_TICK_COSTS = {
 CONFIG.KINGDOM_BUILDING_TYPES = [
     'barracks', 'armory', 'watchtower', 'blacksmith', 'armorer', 'bakery', 'flour_mill',
     'castle', 'training_grounds', 'siege_workshop', 'stables',
-    'hospital', 'clinic', 'granary', 'treasury_vault', 'courthouse',
+    'hospital', 'clinic', 'herb_garden', 'apothecary', 'advanced_apothecary', 'bandage_workshop',
+    'granary', 'treasury_vault', 'courthouse',
     'guild_hall', 'marketplace_royal', 'cathedral', 'university',
     'port_fortress', 'wall_upgrade', 'fortress_walls'
 ];
@@ -3176,6 +3215,10 @@ CONFIG.KINGDOM_BUILD_TIMES = {
     // Small structures (5-12 days build, 2-5 days repair)
     watchtower:        { build: 8,  repair: 3  },
     clinic:            { build: 10, repair: 4  },
+    herb_garden:       { build: 5,  repair: 2  },
+    apothecary:        { build: 10, repair: 4  },
+    advanced_apothecary: { build: 18, repair: 7 },
+    bandage_workshop:  { build: 8,  repair: 3  },
     bakery:            { build: 8,  repair: 3  },
     flour_mill:        { build: 10, repair: 4  },
     blacksmith:        { build: 10, repair: 4  },

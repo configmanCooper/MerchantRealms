@@ -1224,6 +1224,19 @@ window.Game = (function () {
             }
         }
 
+        // Survey options (available on any right-click when overlays are active)
+        if (typeof Renderer !== 'undefined') {
+            var _surveyWorld = Renderer.screenToWorld(x, y);
+            if (_surveyWorld) {
+                if (Renderer.isFertilityOn && Renderer.isFertilityOn()) {
+                    items.push({ icon: '🌾', label: 'Check Fertility Here', action: 'Renderer.startFertilitySurvey(' + _surveyWorld.x + ',' + _surveyWorld.y + ')' });
+                }
+                if (Renderer.isDepositsOn && Renderer.isDepositsOn() && typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('world_survey')) {
+                    items.push({ icon: '⛏️', label: 'Find Deposits Here', action: 'Renderer.startDepositSurvey(' + _surveyWorld.x + ',' + _surveyWorld.y + ')' });
+                }
+            }
+        }
+
         if (items.length > 0) {
             UI.showContextMenu(x, y, items);
         }

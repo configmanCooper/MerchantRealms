@@ -247,6 +247,111 @@
         return world.terrain[ty * world.gridCols + tx];
     }
 
+    /**
+     * Survey terrain deposits at a world-pixel point within a radius.
+     * Each terrain tile has a chance to yield deposits (deterministic from tile hash).
+     * Per-tile chances: Mountain: iron 25%, stone 30%, gold 8%, coal 12%, copper 10%
+     *   Hills: iron 10%, stone 20%, copper 8%, clay 15%
+     *   Forest: wood 60%, herbs 12%, honey 8%, hemp 10%, hide 15%
+     *   Grass: wheat 20%, wool 10%, hide 8%, grapes 5%, clay 10%, hemp 6%
+     *   Sand: salt 15%, clay 20%, stone 5%   Water: fish 35%, salt 10%, pearls 3%
+     * Each hit adds 3-8 units.
+     */
+    function _surveyDepositsAtPoint(wx, wy, radius) {
+        if (!world || !world.terrain) return {};
+        var ts = CONFIG.TILE_SIZE;
+        var step = ts * 2;
+        var result = {};
+        var totalLand = 0;
+
+        var mountainChances = [['iron_ore',0.25],['stone',0.30],['gold_ore',0.08],['coal',0.12],['copper_ore',0.10]];
+        var hillsChances =    [['iron_ore',0.10],['stone',0.20],['copper_ore',0.08],['clay',0.15]];
+        var forestChances =   [['wood',0.60],['herbs',0.12],['honey',0.08],['hemp',0.10],['hide',0.15]];
+        var grassChances =    [['wheat',0.20],['wool',0.10],['hide',0.08],['grapes',0.05],['clay',0.10],['hemp',0.06]];
+        var sandChances =     [['salt',0.15],['clay',0.20],['stone',0.05]];
+        var waterChances =    [['fish',0.35],['salt',0.10],['pearls',0.03]];
+        var terrainTables = [grassChances, forestChances, waterChances, mountainChances, hillsChances, sandChances];
+
+        // Count raw tile hits per resource
+        var rawHits = {};
+        for (var sy = wy - radius; sy <= wy + radius; sy += step) {
+            for (var sx = wx - radius; sx <= wx + radius; sx += step) {
+                var ddx = sx - wx, ddy = sy - wy;
+                if (ddx * ddx + ddy * ddy > radius * radius) continue;
+                var _tx = Math.floor(sx / ts), _ty = Math.floor(sy / ts);
+                var tid = terrainAt(_tx, _ty);
+                if (tid < 0 || tid > 5) continue;
+                if (tid !== 2) totalLand++;
+
+                var chances = terrainTables[tid];
+                if (!chances) continue;
+
+                var tHash = ((_tx * 73856093) ^ (_ty * 19349663)) >>> 0;
+                for (var ci = 0; ci < chances.length; ci++) {
+                    var resId = chances[ci][0];
+                    var chance = chances[ci][1];
+                    var roll = ((tHash >>> (ci * 3)) % 1000) / 1000;
+                    if (roll < chance) {
+                        rawHits[resId] = (rawHits[resId] || 0) + 1;
+                    }
+                }
+            }
+        }
+        if (totalLand === 0) return {};
+
+        // Scale raw hits to realistic deposit amounts using NATURAL_DEPOSITS config
+        var ND = CONFIG.NATURAL_DEPOSITS;
+        for (var resId in rawHits) {
+            var hits = rawHits[resId];
+            var cfg = ND[resId];
+            if (cfg) {
+                // Scale: each hit = portion of min..max range, with some variance from hash
+                var basePerHit = Math.floor((cfg.min + cfg.max) / 2 / Math.max(8, totalLand * 0.3));
+                result[resId] = Math.max(cfg.min, Math.min(cfg.max, hits * basePerHit));
+            } else {
+                // Non-config resources (herbs, honey, wheat etc) — use moderate amounts
+                result[resId] = hits * 200;
+            }
+        }
+        for (var k in result) { if (result[k] <= 0) delete result[k]; }
+        return result;
+    }
+
+    function _surveyFertilityAtPoint(wx, wy, radius) {
+        if (!world || !world.terrain) return 50;
+        var ts = CONFIG.TILE_SIZE;
+        var step = ts * 2;
+        var terrFert = [65, 55, 0, 20, 50, 25];
+        var totalWeight = 0, weightedSum = 0;
+        for (var sy = wy - radius; sy <= wy + radius; sy += step) {
+            for (var sx = wx - radius; sx <= wx + radius; sx += step) {
+                var ddx = sx - wx, ddy = sy - wy;
+                if (ddx * ddx + ddy * ddy > radius * radius) continue;
+                var tid = terrainAt(Math.floor(sx / ts), Math.floor(sy / ts));
+                if (tid === 2) continue;
+                var f = terrFert[tid] || 50;
+                var _tx2 = Math.floor(sx / ts), _ty2 = Math.floor(sy / ts);
+                var h = (((_tx2 * 73856093) ^ (_ty2 * 19349663)) >>> 0) % 10000 / 10000;
+                f += Math.floor((h - 0.5) * 30);
+                totalWeight++;
+                weightedSum += f;
+            }
+        }
+        if (world.towns) {
+            for (var i = 0; i < world.towns.length; i++) {
+                var t = world.towns[i];
+                var tdx = t.x - wx, tdy = t.y - wy;
+                var dist = Math.sqrt(tdx * tdx + tdy * tdy);
+                if (dist > radius * 2) continue;
+                var tw = Math.max(1, Math.floor(radius / (dist + 1) * 3));
+                var tf = t.soilFertilityRating != null ? t.soilFertilityRating : (t.soilFertility != null ? Math.round(t.soilFertility * 50) : 50);
+                weightedSum += tf * tw;
+                totalWeight += tw;
+            }
+        }
+        return totalWeight > 0 ? Math.max(0, Math.min(100, Math.round(weightedSum / totalWeight))) : 50;
+    }
+
     // Grove name pools for wood deposits
     var _groveNames = [
         'Ancient Forest', 'Deep Woods', 'Pine Grove', 'Oak Forest', 'Birch Stand',
@@ -1199,6 +1304,33 @@
             islandsPlaced++;
         }
 
+        // --- Post-processing: enforce 0-2 advanced apothecaries per kingdom ---
+        // Count per kingdom; remove extras, ensure at least cities/capitals have them
+        for (var _kki = 0; _kki < kingdoms.length; _kki++) {
+            var _kk = kingdoms[_kki];
+            var _kTowns = towns.filter(function(t) { return _kk.territories.has(t.id); });
+            var _maxAdvApoth = rng.randInt(0, 2);
+            var _advApothCount = 0;
+
+            // Count existing and remove excess from smaller towns first
+            var _kTownsSorted = _kTowns.slice().sort(function(a, b) {
+                // Remove from villages/towns first, keep in capitals/cities
+                var _catR = { capital_city: 4, city: 3, town: 2, village: 1, outpost: 0 };
+                return (_catR[a.category] || 0) - (_catR[b.category] || 0);
+            });
+            for (var _kti = 0; _kti < _kTownsSorted.length; _kti++) {
+                var _kt = _kTownsSorted[_kti];
+                for (var _kbi = _kt.buildings.length - 1; _kbi >= 0; _kbi--) {
+                    if (_kt.buildings[_kbi].type === 'advanced_apothecary') {
+                        _advApothCount++;
+                        if (_advApothCount > _maxAdvApoth) {
+                            _kt.buildings.splice(_kbi, 1);
+                        }
+                    }
+                }
+            }
+        }
+
         return towns;
     }
 
@@ -1546,6 +1678,7 @@
             add('clinic');
             add('herb_garden');
             add('apothecary');
+            if (rng.chance(0.5)) add('advanced_apothecary');
             if (rng.chance(0.5)) add('bandage_workshop');
             if (rng.chance(0.3)) add('herb_garden');
 
@@ -1674,6 +1807,7 @@
             add('herb_garden');
             add('herb_garden');
             add('apothecary');
+            add('advanced_apothecary');
             add('bandage_workshop');
             if (rng.chance(0.4)) add('clinic');
 
@@ -1873,6 +2007,13 @@
             }
         }
 
+        // Ensure ~50% of smelter towns also have a lumber camp for wood input
+        if (buildings.some(function(b) { return b.type === 'smelter'; }) &&
+            !buildings.some(function(b) { return b.type === 'lumber_camp'; }) &&
+            rng.chance(0.5)) {
+            buildings.push({ type: 'lumber_camp', level: 1, ownerId: null });
+        }
+
         // Initialize well water capacity based on town soil fertility
         var fertRating = town ? (town.soilFertilityRating || 50) : 50;
         var wcfg = typeof WELL_CAPACITY_CONFIG !== 'undefined' ? WELL_CAPACITY_CONFIG : null;
@@ -1970,7 +2111,12 @@
         for (const building of town.buildings) {
             const bt = findBuildingType(building.type);
             if (bt && bt.produces) {
-                town.market.supply[bt.produces] = (town.market.supply[bt.produces] || 0) + bt.rate * 10 * (building.level || 1);
+                var _seedAmount = bt.rate * 10 * (building.level || 1);
+                if (bt.produces === 'horses' && CONFIG.MARKET_HORSE_CAP) {
+                    var _hCap = CONFIG.MARKET_HORSE_CAP[town.category] || 200;
+                    _seedAmount = Math.min(_seedAmount, Math.max(0, _hCap - (town.market.supply.horses || 0)));
+                }
+                town.market.supply[bt.produces] = (town.market.supply[bt.produces] || 0) + _seedAmount;
             }
         }
 
@@ -2039,7 +2185,8 @@
             'brewery': { ale: 20 },
             'carpenter': { furniture: 10 },
             'smokehouse': { preserved_food: 15 },
-            'apothecary': { herbal_remedy: 10, healing_tonic: 5, fever_tonic: 5, antidote: 3 },
+            'apothecary': { herbal_remedy: 10, healing_tonic: 5, fever_tonic: 5, antidote: 3, herbal_poultice: 5 },
+            'advanced_apothecary': { herbal_remedy: 15, healing_tonic: 10, fever_tonic: 10, antidote: 8, herbal_poultice: 10, splint: 10 },
             'bandage_workshop': { bandages: 15, splint: 8, herbal_poultice: 8 },
             'herb_garden': { herbs: 20 },
             'herbalist_hut': { herbal_tea: 10 },
@@ -2870,6 +3017,7 @@
                 person.illnessDay = 0;
                 person.injured = false;
                 person.injuryDay = 0;
+                person.injurySeverity = null;
 
                 people.push(person);
                 townPeople.push(person);
@@ -3029,6 +3177,8 @@
             'armory_shop', 'jewelers_boutique', 'clinic', 'bathhouse',
             // Water production
             'brewery', 'apiary', 'herbalist_hut',
+            // Medical
+            'apothecary', 'advanced_apothecary', 'bandage_workshop',
             // Military production
             'armorer', 'fletcher', 'arrow_maker',
             // Instruments
@@ -3949,17 +4099,30 @@
                 if (bld.currentProduct && bld.currentProduct !== bt.produces) {
                     if (bt.availableProducts && bt.availableProducts[bld.currentProduct]) {
                         const recipe = bt.availableProducts[bld.currentProduct];
-                        activeProduces = recipe.produces;
-                        activeConsumes = recipe.consumes;
-                        activeRate = recipe.rate;
+                        // Enforce minLevel requirement
+                        if (recipe.minLevel && (bld.level || 1) < recipe.minLevel) {
+                            activeProduces = bt.produces; // fall back to default product
+                            activeConsumes = bt.consumes;
+                            activeRate = bt.rate;
+                        } else {
+                            activeProduces = recipe.produces;
+                            activeConsumes = recipe.consumes;
+                            activeRate = recipe.rate;
+                        }
                     } else if (bt.canProduce && bt.canProduce.includes(bld.currentProduct)) {
                         activeProduces = bld.currentProduct;
                     }
                 } else if (bt.availableProducts && bld.productionChoice && bt.availableProducts[bld.productionChoice]) {
                     const recipe = bt.availableProducts[bld.productionChoice];
-                    activeProduces = recipe.produces;
-                    activeConsumes = recipe.consumes;
-                    activeRate = recipe.rate;
+                    if (recipe.minLevel && (bld.level || 1) < recipe.minLevel) {
+                        activeProduces = bt.produces;
+                        activeConsumes = bt.consumes;
+                        activeRate = bt.rate;
+                    } else {
+                        activeProduces = recipe.produces;
+                        activeConsumes = recipe.consumes;
+                        activeRate = recipe.rate;
+                    }
                 }
                 // Skip if no product selected (e.g. canvas_workshop with no productionChoice)
                 if (!activeProduces) continue;
@@ -4152,7 +4315,16 @@
                     actualOutput = output + animalBonus;
                     // Player buildings are handled by player.js tickBuildings — don't add to market here
                     if (bld.ownerId !== 'player') {
-                        town.market.supply[activeProduces] = (town.market.supply[activeProduces] || 0) + output + animalBonus;
+                        var _prodAmount = output + animalBonus;
+                        // Horse market cap: limit horses based on town category
+                        if (activeProduces === 'horses' && CONFIG.MARKET_HORSE_CAP) {
+                            var _horseCap = CONFIG.MARKET_HORSE_CAP[town.category] || 200;
+                            var _currentHorses = town.market.supply.horses || 0;
+                            _prodAmount = Math.max(0, Math.min(_prodAmount, _horseCap - _currentHorses));
+                        }
+                        if (_prodAmount > 0) {
+                            town.market.supply[activeProduces] = (town.market.supply[activeProduces] || 0) + _prodAmount;
+                        }
                     }
 
                     // Cattle Ranch secondary output: hide from slaughter
@@ -5294,20 +5466,25 @@
             }
 
             // ---- NPC medical self-treatment (every 7 days) ----
-            // NPCs who are actually sick buy supplies from market to self-treat
-            if (day % 7 === 0 && p.sick && p.medicalKnowledge && p.medicalKnowledge !== 'none') {
+            // NPCs who are sick or injured buy supplies from market to self-treat
+            if (day % 7 === 0 && (p.sick || p.injured) && p.medicalKnowledge && p.medicalKnowledge !== 'none') {
                 var medTown = findTown(p.townId);
                 if (medTown && medTown.market && medTown.market.supply) {
                     var medSupply = medTown.market.supply;
                     var medPrices = medTown.market.prices || {};
-                    var ailSeverity = p.illnessSeverity || 'minor';
+                    var ailSeverity = p.injured ? (p.injurySeverity || p.illnessSeverity || 'minor') : (p.illnessSeverity || 'minor');
                     // Can they self-treat this severity?
                     var canTreat = ailSeverity === 'minor' ||
                         (ailSeverity === 'moderate' && p.medicalKnowledge === 'moderate');
                     if (canTreat) {
                         // Pick appropriate supply to buy
                         var medItem = null;
-                        if (ailSeverity === 'minor') {
+                        if (p.injured) {
+                            // Injuries need bandages primarily
+                            if ((medSupply.bandages || 0) > 0) medItem = 'bandages';
+                            else if (ailSeverity !== 'minor' && (medSupply.splint || 0) > 0) medItem = 'splint';
+                            else if ((medSupply.herbal_poultice || 0) > 0) medItem = 'herbal_poultice';
+                        } else if (ailSeverity === 'minor') {
                             if ((medSupply.bandages || 0) > 0) medItem = 'bandages';
                             else if ((medSupply.herbal_remedy || 0) > 0) medItem = 'herbal_remedy';
                             else if ((medSupply.herbal_poultice || 0) > 0) medItem = 'herbal_poultice';
@@ -5967,7 +6144,43 @@
                 // Check if player is an advisor in this kingdom
                 const playerAdvisorId = _checkPlayerIsAdvisor(kingdom);
 
-                // Advisors vote: each votes for the advisor with highest combined score
+                // If player is a Royal Advisor, pause for voting UI
+                if (playerAdvisorId) {
+                    // Build candidate list with scores for UI
+                    const candidates = [];
+                    for (const adv of advisors) {
+                        var advScore = (adv.gold || 0) * 0.001 +
+                            (adv.personality ? adv.personality.intelligence || 0 : 50) * 0.5 +
+                            (adv.personality ? adv.personality.ambition || 0 : 50) * 0.3;
+                        candidates.push({
+                            id: adv.id,
+                            name: adv.firstName + ' ' + (adv.lastName || ''),
+                            gold: adv.gold || 0,
+                            age: adv.age || 0,
+                            occupation: adv.occupation || 'unknown',
+                            intelligence: adv.personality ? (adv.personality.intelligence || 50) : 50,
+                            ambition: adv.personality ? (adv.personality.ambition || 50) : 50,
+                            charisma: adv.personality ? (adv.personality.charisma || 50) : 50,
+                            score: Math.round(advScore),
+                            isPlayer: adv.id === playerAdvisorId
+                        });
+                    }
+                    kingdom._pendingElection = {
+                        candidates: candidates,
+                        playerAdvisorId: playerAdvisorId,
+                        deadKingName: kingName,
+                        startDay: world.day,
+                        cause: cause
+                    };
+                    kingdom._kingDeathCause = cause;
+                    if (typeof UI !== 'undefined' && UI.toast) {
+                        UI.toast('👑 A succession election is underway in ' + kingdom.name + '! As Royal Advisor, you may cast your vote.', 'info', 'critical');
+                    }
+                    // Don't resolve yet — wait for player vote or auto-resolve after 30 days
+                    return;
+                }
+
+                // NPC-only election: auto-resolve immediately
                 const scores = {};
                 for (const adv of advisors) {
                     scores[adv.id] = (adv.gold || 0) * 0.001 +
@@ -5975,17 +6188,12 @@
                         (adv.personality ? adv.personality.ambition || 0 : 50) * 0.3 +
                         rng.randFloat(0, 20);
                 }
-                // If player is advisor, boost their score
-                if (playerAdvisorId) {
-                    scores[playerAdvisorId] = (scores[playerAdvisorId] || 0) + 30;
-                }
 
                 // Multiple rounds until majority
                 let elected = null;
                 for (let round = 0; round < CONFIG.SUCCESSION_ELECTION_ROUNDS_MAX; round++) {
                     const votes = {};
                     for (const voter of advisors) {
-                        // Each advisor votes for the highest-scoring other advisor
                         let bestId = null;
                         let bestScore = -1;
                         for (const candidate of advisors) {
@@ -5995,7 +6203,6 @@
                         }
                         if (bestId) votes[bestId] = (votes[bestId] || 0) + 1;
                     }
-                    // Check for majority
                     const majority = Math.ceil(advisors.length / 2);
                     for (const [id, count] of Object.entries(votes)) {
                         if (count >= majority) {
@@ -6004,7 +6211,6 @@
                         }
                     }
                     if (elected) break;
-                    // Eliminate lowest vote-getter for next round
                     let lowestId = null, lowestVotes = Infinity;
                     for (const adv of advisors) {
                         const v = votes[adv.id] || 0;
@@ -6022,22 +6228,8 @@
                 }
 
                 if (elected) {
-                    // Check if the elected advisor is the player
-                    if (playerAdvisorId && elected.id === playerAdvisorId) {
-                        // Player wins the election! Trigger player-as-king
-                        logEvent(`${elected.firstName} ${elected.lastName} (YOU) has been elected King/Queen of ${kingdom.name}!`, { type: 'succession', kingdomId: kingdom.id });
-                        if (typeof Player !== 'undefined' && Player.becomeKing) {
-                            Player.becomeKing(kingdom.id);
-                        }
-                        return;
-                    }
                     newKing = elected;
                     logEvent(`${elected.firstName} ${elected.lastName} has been elected King/Queen of ${kingdom.name}!`, { type: 'succession', kingdomId: kingdom.id });
-                    // If player was an advisor and participated in the election, they helped elect this king
-                    if (playerAdvisorId) {
-                        kingdom._playerInfluencedKingDay = world.day;
-                        logEvent('🤝 As Royal Advisor, ' + (typeof Player !== 'undefined' && Player.fullName ? Player.fullName : 'you') + ' helped elect the new ruler. Expect increased influence for 1 year.');
-                    }
                 }
             }
         }
@@ -6085,6 +6277,98 @@
         } else {
             kingdom.king = null;
             logEvent(`${kingdom.name} has no heir! The kingdom falls into chaos.`, { type: 'succession', kingdomId: kingdom.id });
+        }
+    }
+
+    // Resolve a pending succession election (player voted or timeout)
+    function _resolvePendingElection(kingdom, playerVoteId) {
+        var election = kingdom._pendingElection;
+        if (!election) return;
+        var rng = world.rng;
+        var candidates = election.candidates;
+        var playerAdvisorId = election.playerAdvisorId;
+
+        // Rebuild live advisor list from candidates
+        var advisors = candidates.map(function(c) { return findPerson(c.id); }).filter(function(a) { return a && a.alive; });
+        if (advisors.length === 0) { kingdom._pendingElection = null; return; }
+
+        // Build scores
+        var scores = {};
+        for (var ai = 0; ai < advisors.length; ai++) {
+            var adv = advisors[ai];
+            scores[adv.id] = (adv.gold || 0) * 0.001 +
+                (adv.personality ? adv.personality.intelligence || 0 : 50) * 0.5 +
+                (adv.personality ? adv.personality.ambition || 0 : 50) * 0.3 +
+                rng.randFloat(0, 20);
+        }
+
+        // Player's vote gives a major boost (+40) to their chosen candidate
+        if (playerVoteId && scores[playerVoteId] !== undefined) {
+            scores[playerVoteId] += 40;
+        }
+
+        // Run ranked elimination voting
+        var elected = null;
+        var voterPool = advisors.slice();
+        for (var round = 0; round < (CONFIG.SUCCESSION_ELECTION_ROUNDS_MAX || 5); round++) {
+            var votes = {};
+            for (var vi = 0; vi < voterPool.length; vi++) {
+                var voter = voterPool[vi];
+                var bestId = null, bestScore = -1;
+                for (var ci = 0; ci < voterPool.length; ci++) {
+                    var cand = voterPool[ci];
+                    if (cand.id === voter.id) continue;
+                    var s = (scores[cand.id] || 0) + rng.randFloat(-5, 5);
+                    if (s > bestScore) { bestScore = s; bestId = cand.id; }
+                }
+                if (bestId) votes[bestId] = (votes[bestId] || 0) + 1;
+            }
+            var majority = Math.ceil(voterPool.length / 2);
+            for (var eid in votes) {
+                if (votes[eid] >= majority) { elected = findPerson(eid); break; }
+            }
+            if (elected) break;
+            var lowestId = null, lowestVotes = Infinity;
+            for (var li = 0; li < voterPool.length; li++) {
+                var v = votes[voterPool[li].id] || 0;
+                if (v < lowestVotes) { lowestVotes = v; lowestId = voterPool[li].id; }
+            }
+            if (lowestId) {
+                var idx = voterPool.findIndex(function(a) { return a.id === lowestId; });
+                if (idx >= 0) voterPool.splice(idx, 1);
+            }
+            if (voterPool.length <= 1) { elected = voterPool[0] || null; break; }
+        }
+        if (!elected && voterPool.length > 0) {
+            voterPool.sort(function(a, b) { return (scores[b.id] || 0) - (scores[a.id] || 0); });
+            elected = voterPool[0];
+        }
+
+        kingdom._pendingElection = null;
+
+        if (elected) {
+            // Check if elected is the player
+            if (playerAdvisorId && elected.id === playerAdvisorId) {
+                logEvent(elected.firstName + ' ' + elected.lastName + ' (YOU) has been elected King/Queen of ' + kingdom.name + '!', { type: 'succession', kingdomId: kingdom.id });
+                if (typeof Player !== 'undefined' && Player.becomeKing) {
+                    Player.becomeKing(kingdom.id);
+                }
+                return;
+            }
+            installNewKing(kingdom, elected, election.cause);
+            logEvent(elected.firstName + ' ' + elected.lastName + ' has been elected King/Queen of ' + kingdom.name + '!', { type: 'succession', kingdomId: kingdom.id });
+            if (playerAdvisorId) {
+                kingdom._playerInfluencedKingDay = world.day;
+                var playerName = (typeof Player !== 'undefined' && Player.fullName) ? Player.fullName : 'you';
+                if (playerVoteId === elected.id) {
+                    logEvent('🤝 Your candidate won the election! As Royal Advisor, ' + playerName + ' wields great influence over the new ruler.');
+                } else {
+                    logEvent('🤝 As Royal Advisor, ' + playerName + ' participated in the election of the new ruler.');
+                }
+            }
+        } else {
+            kingdom.king = null;
+            logEvent(kingdom.name + ' has no heir! The kingdom falls into chaos.', { type: 'succession', kingdomId: kingdom.id });
         }
     }
 
@@ -6983,6 +7267,10 @@
                 }
                 tickKingMood(k);
                 tickSuccessionCrisis(k);
+                // Auto-resolve pending election after 30 days
+                if (k._pendingElection && (world.day - k._pendingElection.startDay) >= 30) {
+                    _resolvePendingElection(k, null);
+                }
                 tickKingDecisions(k);
                 tickRebellion(k);
                 tickKingdomHappinessConsequences(k);
@@ -11222,6 +11510,29 @@
                 if (!hasType('herb_garden') && k.gold >= 150) priorities.push({ town, type: 'herb_garden', cost: 150 });
                 if (!hasType('apothecary') && hasType('herb_garden') && k.gold >= 400) priorities.push({ town, type: 'apothecary', cost: 400 });
                 if (!hasType('bandage_workshop') && k.gold >= 250) priorities.push({ town, type: 'bandage_workshop', cost: 250 });
+
+                // Supply chain gap: processing buildings missing input sources
+                var _inputSourceMap = {
+                    wood: 'lumber_camp', iron_ore: 'iron_mine', wool: 'sheep_farm',
+                    hide: 'hunting_lodge', hemp: 'hemp_farm', clay: 'clay_pit',
+                    herbs: 'herb_garden', wheat: 'wheat_farm', flour: 'flour_mill'
+                };
+                for (var _sci = 0; _sci < town.buildings.length; _sci++) {
+                    var _scBld = town.buildings[_sci];
+                    var _scBt = findBuildingType(_scBld.type);
+                    if (!_scBt || !_scBt.consumes || !_scBt.produces) continue;
+                    for (var _scInput in _scBt.consumes) {
+                        if ((town.market.supply[_scInput] || 0) < _scBt.consumes[_scInput] * 5) {
+                            var _srcType = _inputSourceMap[_scInput];
+                            if (_srcType && !hasType(_srcType)) {
+                                var _srcBt = findBuildingType(_srcType);
+                                if (_srcBt && k.gold >= _srcBt.cost) {
+                                    priorities.push({ town: town, type: _srcType, cost: _srcBt.cost });
+                                }
+                            }
+                        }
+                    }
+                }
             }
             if (priorities.length > 0) {
                 const chosen = rng.pick(priorities);
@@ -12637,82 +12948,37 @@
         newTown.terrainType = classifyTownTerrain(newTown);
         computeLocalBasePrices(newTown);
 
-        // Assign natural deposits based on nearby terrain scan (same logic as world gen)
-        var newTerrainBias = newTown.terrainType || 'plains';
+        // Assign natural deposits based on terrain survey (consistent with right-click survey)
+        var _newTownR = 120;
+        newTown.naturalDeposits = _surveyDepositsAtPoint(foundX, foundY, _newTownR);
+        // Guarantee clay
         var foundND = CONFIG.NATURAL_DEPOSITS;
-        newTown.naturalDeposits = {};
-        // Scan nearby tiles for terrain percentages
-        var nttx = Math.floor(foundX / CONFIG.TILE_SIZE);
-        var ntty = Math.floor(foundY / CONFIG.TILE_SIZE);
-        var nScanRadius = 4;
-        var nTotal = 0, nForest = 0, nMountain = 0;
-        for (var ndy = -nScanRadius; ndy <= nScanRadius; ndy++) {
-            for (var ndx = -nScanRadius; ndx <= nScanRadius; ndx++) {
-                var nsx = nttx + ndx, nsy = ntty + ndy;
-                if (nsx < 0 || nsx >= cols || nsy < 0 || nsy >= rows) continue;
-                var nst = world.terrain[nsy * cols + nsx];
-                nTotal++;
-                if (nst === TERRAIN.FOREST.id) nForest++;
-                else if (nst === TERRAIN.MOUNTAIN.id || nst === TERRAIN.HILLS.id) nMountain++;
-            }
+        if (!newTown.naturalDeposits.clay) {
+            newTown.naturalDeposits.clay = rng.randInt(foundND.clay.min, foundND.clay.max);
         }
-        var nForestPct = nTotal > 0 ? nForest / nTotal : 0;
-        var nMountainPct = nTotal > 0 ? nMountain / nTotal : 0;
-
-        if (newTerrainBias === 'mountain') {
-            newTown.naturalDeposits.iron_ore = rng.randInt(foundND.iron_ore.min, foundND.iron_ore.max);
-            newTown.naturalDeposits.stone = rng.randInt(foundND.stone.min, foundND.stone.max);
-            if (rng.chance(0.65)) newTown.naturalDeposits.gold_ore = rng.randInt(foundND.gold_ore.min, foundND.gold_ore.max);
-        } else if (newTerrainBias === 'forest') {
-            // Scale wood deposit by actual forest tile count: 1 deposit per ~3 tiles
-            var _nfDeposit2 = Math.floor(nForest / 3);
-            var _nfWoodBase = Math.max(foundND.wood.min, Math.min(foundND.wood.max, _nfDeposit2 * rng.randInt(80, 120)));
-            newTown.naturalDeposits.wood = _nfWoodBase;
-            newTown._forestTileCount = nForest;
-            newTown.woodDeposits = _createWoodDeposits(_nfWoodBase, nForest, rng, newTown.soilFertility);
-            if (rng.chance(0.20)) newTown.naturalDeposits.iron_ore = rng.randInt(Math.floor(foundND.iron_ore.min * 0.4), Math.floor(foundND.iron_ore.max * 0.5));
-            if (rng.chance(0.15)) newTown.naturalDeposits.stone = rng.randInt(Math.floor(foundND.stone.min * 0.3), Math.floor(foundND.stone.max * 0.4));
-        } else if (newTerrainBias === 'coastal') {
-            newTown.naturalDeposits.fish = rng.randInt(foundND.fish.min, foundND.fish.max);
-            newTown.naturalDeposits.salt = rng.randInt(foundND.salt.min, foundND.salt.max);
-            if (rng.chance(0.20)) newTown.naturalDeposits.stone = rng.randInt(Math.floor(foundND.stone.min * 0.3), Math.floor(foundND.stone.max * 0.4));
-        } else {
-            if (rng.chance(0.25)) newTown.naturalDeposits.stone = rng.randInt(Math.floor(foundND.stone.min * 0.2), Math.floor(foundND.stone.max * 0.35));
-            if (rng.chance(0.15)) newTown.naturalDeposits.iron_ore = rng.randInt(Math.floor(foundND.iron_ore.min * 0.25), Math.floor(foundND.iron_ore.max * 0.35));
-            if (rng.chance(0.05)) newTown.naturalDeposits.gold_ore = rng.randInt(Math.floor(foundND.gold_ore.min * 0.2), Math.floor(foundND.gold_ore.max * 0.25));
-        }
-        // Nearby terrain bonus deposits
-        if (newTerrainBias !== 'forest' && nForestPct > 0.05) {
-            var _nfDeposit3 = Math.floor(nForest / 4);
-            var nwScale = Math.min(1.0, nForestPct / 0.35);
-            var nwMin = Math.max(1, Math.floor(foundND.wood.min * nwScale));
-            var nwMax = Math.max(nwMin + 1, Math.floor(foundND.wood.max * nwScale));
-            var _nfBase2 = rng.randInt(nwMin, nwMax);
-            var _nfWood2 = Math.max(_nfBase2, _nfDeposit3 * rng.randInt(60, 100));
-            newTown.naturalDeposits.wood = (newTown.naturalDeposits.wood || 0) + _nfWood2;
-            newTown._forestTileCount = nForest;
-            newTown.woodDeposits = _createWoodDeposits(newTown.naturalDeposits.wood, nForest, rng, newTown.soilFertility);
-        }
-        if (!newTown.naturalDeposits.wood && newTerrainBias !== 'coastal') {
-            newTown.naturalDeposits.wood = rng.randInt(Math.floor(foundND.wood.min * 0.15), Math.floor(foundND.wood.max * 0.25));
-            newTown.woodDeposits = [{ name: 'Scattered Groves', amount: newTown.naturalDeposits.wood, maxAmount: newTown.naturalDeposits.wood }];
-        }
-        if (!newTown.woodDeposits && newTown.naturalDeposits.wood) {
-            newTown.woodDeposits = [{ name: 'Forest', amount: newTown.naturalDeposits.wood, maxAmount: newTown.naturalDeposits.wood }];
-        }
-        if (newTerrainBias !== 'mountain' && nMountainPct > 0.10) {
-            var nmScale = Math.min(1.0, nMountainPct / 0.35);
-            if (!newTown.naturalDeposits.iron_ore) newTown.naturalDeposits.iron_ore = rng.randInt(Math.max(1, Math.floor(foundND.iron_ore.min * nmScale * 0.5)), Math.max(2, Math.floor(foundND.iron_ore.max * nmScale * 0.5)));
-            if (!newTown.naturalDeposits.stone) newTown.naturalDeposits.stone = rng.randInt(Math.max(1, Math.floor(foundND.stone.min * nmScale * 0.5)), Math.max(2, Math.floor(foundND.stone.max * nmScale * 0.5)));
-        }
+        // Fish only for ports/islands
         if (!newTown.isPort && !newTown.isIsland) {
             delete newTown.naturalDeposits.fish;
         }
-        newTown.naturalDeposits.clay = rng.randInt(foundND.clay.min, foundND.clay.max);
-        newTown.wildlifeAbundance = newTerrainBias === 'forest' ? (0.8 + rng.random() * 0.8) :
-                                    newTerrainBias === 'mountain' ? (0.3 + rng.random() * 0.4) :
+        // Wood deposits array for logging
+        if (newTown.naturalDeposits.wood) {
+            var nScanRadius = 4, nttx = Math.floor(foundX / CONFIG.TILE_SIZE), ntty = Math.floor(foundY / CONFIG.TILE_SIZE);
+            var nForest = 0;
+            for (var ndy = -nScanRadius; ndy <= nScanRadius; ndy++) {
+                for (var ndx = -nScanRadius; ndx <= nScanRadius; ndx++) {
+                    var nsx = nttx + ndx, nsy = ntty + ndy;
+                    if (nsx >= 0 && nsx < cols && nsy >= 0 && nsy < rows && world.terrain[nsy * cols + nsx] === TERRAIN.FOREST.id) nForest++;
+                }
+            }
+            newTown._forestTileCount = nForest;
+            newTown.woodDeposits = _createWoodDeposits(newTown.naturalDeposits.wood, Math.max(1, nForest), rng, newTown.soilFertility || 1.0);
+        }
+        newTown.wildlifeAbundance = (newTown.terrainType || 'plains') === 'forest' ? (0.8 + rng.random() * 0.8) :
+                                    (newTown.terrainType || 'plains') === 'mountain' ? (0.3 + rng.random() * 0.4) :
                                     (0.5 + rng.random() * 0.6);
-        newTown.soilFertility = 1.0;
+        // Fertility from terrain survey
+        newTown.soilFertilityRating = _surveyFertilityAtPoint(foundX, foundY, _newTownR);
+        newTown.soilFertility = newTown.soilFertilityRating / ((CONFIG.SOIL_FERTILITY && CONFIG.SOIL_FERTILITY.baselineFertility) || 50);
 
         // Add deposit-appropriate buildings (~70% chance, with ownership mix)
         var newDepBuildMap = [
@@ -14636,7 +14902,11 @@
         }
         if (equip.mount) {
             if (stockpile) stockpile.horses = (stockpile.horses || 0) + 1;
-            else if (supply) { supply.horses = (supply.horses || 0) + 1; supply.saddles = (supply.saddles || 0) + 1; }
+            else if (supply) {
+                var _hReturnCap = (CONFIG.MARKET_HORSE_CAP && CONFIG.MARKET_HORSE_CAP[town.category]) || 200;
+                if ((supply.horses || 0) < _hReturnCap) supply.horses = (supply.horses || 0) + 1;
+                supply.saddles = (supply.saddles || 0) + 1;
+            }
         }
         person.occupation = person.previousOccupation || 'laborer';
         delete person.previousOccupation;
@@ -15527,9 +15797,23 @@
             level: 1,
         });
 
+        // Generate natural deposits from terrain survey at this location
+        var _outpostR = 120;
+        outpost.naturalDeposits = _surveyDepositsAtPoint(outpost.x, outpost.y, _outpostR);
+        // Clay guaranteed for all settlements
+        if (!outpost.naturalDeposits.clay) {
+            var ND = CONFIG.NATURAL_DEPOSITS;
+            outpost.naturalDeposits.clay = world.rng.randInt(ND.clay.min, ND.clay.max);
+        }
+        // Generate soil fertility from terrain survey
+        outpost.soilFertilityRating = _surveyFertilityAtPoint(outpost.x, outpost.y, _outpostR);
+        outpost.soilFertility = outpost.soilFertilityRating / ((CONFIG.SOIL_FERTILITY && CONFIG.SOIL_FERTILITY.baselineFertility) || 50);
+
         world.towns.push(outpost);
 
-        // Create a basic road to nearest town
+        // Classify terrain and compute local base prices (needed for market pricing)
+        outpost.terrainType = classifyTownTerrain(outpost);
+        computeLocalBasePrices(outpost);
         var nearestTown = null;
         var nearestDist = Infinity;
         for (var ti2 = 0; ti2 < world.towns.length; ti2++) {
@@ -17293,8 +17577,9 @@
         }
 
         // Per-NPC daily rates (annualized → daily → scaled by tick interval)
-        var minorRate = (0.10 / daysPerYear) * tickScale * seasonMult;
-        var moderateRate = (0.05 / daysPerYear) * tickScale * seasonMult;
+        // Incidence tuned so that ACTIVE cases show a healthy minor > moderate > severe distribution
+        var minorRate = (0.18 / daysPerYear) * tickScale * seasonMult;
+        var moderateRate = (0.08 / daysPerYear) * tickScale * seasonMult;
         var severeRate = (0.01 / daysPerYear) * tickScale * seasonMult;
 
         // Pre-calculate town health infrastructure modifier
@@ -17306,13 +17591,16 @@
             var mod = 1.0;
             var hasHosp = false, hasClin = false;
             var blds = t.buildings || [];
+            // Medical infrastructure reduces illness incidence (capped at -55%)
+            var infraReduction = 0;
             for (var bi = 0; bi < blds.length; bi++) {
                 var btId = typeof blds[bi] === 'string' ? blds[bi] : (blds[bi].type || blds[bi].id || '');
-                if (btId === 'hospital') { mod -= 0.50; hasHosp = true; }
-                else if (btId === 'clinic') { mod -= 0.25; hasClin = true; }
-                else if (btId === 'well' || btId === 'cistern') mod -= 0.15;
-                else if (btId === 'bathhouse') mod -= 0.10;
+                if (btId === 'hospital') { infraReduction += 0.20; hasHosp = true; }
+                else if (btId === 'clinic') { infraReduction += 0.10; hasClin = true; }
+                else if (btId === 'well' || btId === 'cistern') infraReduction += 0.05;
+                else if (btId === 'bathhouse') infraReduction += 0.05;
             }
+            mod -= Math.min(0.55, infraReduction);
             // Prosperity: higher = healthier. 50 prosp = 1.0x, 100 prosp = 0.7x
             var prosp = (t.prosperity || 50) / 100;
             mod *= Math.max(0.5, 1.2 - prosp * 0.5);
@@ -17330,7 +17618,7 @@
                     if (pol.type === 'martial_quarantine' && pol.townId === t.id) mod *= 0.40;
                 }
             }
-            mod = Math.max(0.05, mod);
+            mod = Math.max(0.30, mod);
             townHealthMod[t.id] = mod;
             townHasHospital[t.id] = hasHosp;
             townHasClinic[t.id] = hasClin;
@@ -17364,6 +17652,76 @@
                 } else if (roll < (severeRate + moderateRate + minorRate) * tMod) {
                     _infectRandomSeverity(p, 'minor', seasonLower, rng, day, 'random');
                 }
+            }
+            // Tick existing injuries (independent of illness)
+            if (p.injured) {
+                _tickPersonInjury(p, rng, day, tickScale);
+            }
+        }
+
+        // ---- NPC Random Injuries ----
+        // Target rates per year: ~10% minor, ~5% moderate, ~1% severe
+        var injMinorRate = (0.10 / daysPerYear) * tickScale;
+        var injModRate = (0.05 / daysPerYear) * tickScale;
+        var injSevRate = (0.01 / daysPerYear) * tickScale;
+
+        // Injury type pools by severity
+        var _injPool = {
+            minor: [
+                { id: 'cuts', name: 'Cuts & Bruises' },
+                { id: 'bruise', name: 'Bruise' },
+                { id: 'exhaustion_collapse', name: 'Exhaustion Collapse' }
+            ],
+            moderate: [
+                { id: 'broken_bone', name: 'Broken Bone' },
+                { id: 'concussion', name: 'Concussion' },
+                { id: 'ambush_wound', name: 'Work Injury' }
+            ],
+            severe: [
+                { id: 'deep_wound', name: 'Deep Wound' },
+                { id: 'encounter_wound_severe', name: 'Severe Injury' }
+            ]
+        };
+
+        // Dangerous occupations get higher injury rates
+        var _dangerousJobs = {
+            soldier: 3.0, guard: 2.5, miner: 2.0, lumberjack: 1.8,
+            blacksmith: 1.5, hunter: 1.8, sailor: 1.6, construction: 1.5,
+            quarry_worker: 1.8, fisherman: 1.3
+        };
+
+        for (var ii = 0; ii < world.people.length; ii++) {
+            var ip = world.people[ii];
+            if (!ip.alive || ip.injured || !ip.townId) continue;
+
+            var injMult = _dangerousJobs[ip.occupation] || 1.0;
+            // Soldiers in warring kingdoms get extra risk
+            if ((ip.occupation === 'soldier' || ip.occupation === 'guard') && ip.kingdomId) {
+                var ipKingdom = findKingdom(ip.kingdomId);
+                if (ipKingdom && ipKingdom.atWar && ipKingdom.atWar.size > 0) injMult *= 1.5;
+            }
+
+            var injRoll = rng.random();
+            var sev = null;
+            if (injRoll < injSevRate * injMult) {
+                sev = 'severe';
+            } else if (injRoll < (injSevRate + injModRate) * injMult) {
+                sev = 'moderate';
+            } else if (injRoll < (injSevRate + injModRate + injMinorRate) * injMult) {
+                sev = 'minor';
+            }
+
+            if (sev) {
+                var pool = _injPool[sev];
+                var picked = pool[rng.randInt(0, pool.length - 1)];
+                ip.injured = true;
+                ip.injuryDay = day;
+                ip.injuryType = picked.id;
+                ip.injuryName = picked.name;
+                ip.injurySeverity = sev;
+                // Health hit
+                var hpHit = sev === 'severe' ? 20 : sev === 'moderate' ? 10 : 5;
+                ip.health = Math.max(1, (ip.health || 100) - hpHit);
             }
         }
 
@@ -17472,6 +17830,99 @@
                 }, 'illness');
             }
             // Non-notable deaths are silent — no notification
+        }
+    }
+
+    // Tick NPC injury: minor heals 7-14d, moderate 14-30d (can escalate), severe never heals naturally (fatal 30-60d)
+    function _tickPersonInjury(person, rng, day, tickScale) {
+        var daysInjured = day - (person.injuryDay || day);
+        var sev = person.injurySeverity || person.illnessSeverity || 'minor';
+
+        if (sev === 'minor') {
+            // Minor: heals on its own in 7-14 days
+            if (daysInjured >= 7) {
+                var minorChance = Math.min(0.5, 0.10 + (daysInjured - 7) * 0.06) * tickScale;
+                if (rng.chance(minorChance)) {
+                    person.injured = false;
+                    person.injuryType = null;
+                    person.injuryName = null;
+                    person.injurySeverity = null;
+                    person._illnessTreatPaid = false;
+                    person.health = Math.min(100, (person.health || 50) + 5);
+                    return;
+                }
+            }
+            // Guaranteed heal by day 14
+            if (daysInjured >= 14) {
+                person.injured = false;
+                person.injuryType = null;
+                person.injuryName = null;
+                person.injurySeverity = null;
+                person._illnessTreatPaid = false;
+                person.health = Math.min(100, (person.health || 50) + 5);
+                return;
+            }
+        } else if (sev === 'moderate') {
+            // Moderate: heals in 14-30 days, but chance to escalate to severe
+            // Escalation chance: ~2% per 3-day tick after day 10 if untreated
+            if (!person._illnessTreatPaid && daysInjured >= 10) {
+                var escalateChance = 0.02 * tickScale;
+                if (rng.chance(escalateChance)) {
+                    person.injurySeverity = 'severe';
+                    person.injuryName = (person.injuryName || 'Injury') + ' (worsened)';
+                    person.health = Math.max(1, (person.health || 100) - 15);
+                    return;
+                }
+            }
+            // Natural healing after 14 days
+            if (daysInjured >= 14) {
+                var modChance = Math.min(0.4, 0.08 + (daysInjured - 14) * 0.03) * tickScale;
+                if (rng.chance(modChance)) {
+                    person.injured = false;
+                    person.injuryType = null;
+                    person.injuryName = null;
+                    person.injurySeverity = null;
+                    person._illnessTreatPaid = false;
+                    person.health = Math.min(100, (person.health || 50) + 10);
+                    return;
+                }
+            }
+            // Guaranteed heal by day 30
+            if (daysInjured >= 30) {
+                person.injured = false;
+                person.injuryType = null;
+                person.injuryName = null;
+                person.injurySeverity = null;
+                person._illnessTreatPaid = false;
+                person.health = Math.min(100, (person.health || 50) + 10);
+                return;
+            }
+        } else if (sev === 'severe') {
+            // Severe: never heals naturally, kills in 30-60 days untreated
+            // Slow health drain
+            var drainRate = 0.5 * tickScale; // ~0.5 HP per day
+            if (person._illnessTreatPaid) drainRate *= 0.2; // treatment slows drain dramatically
+            person.health = Math.max(0, (person.health || 100) - drainRate);
+
+            // Death: after 30 days, increasing chance; guaranteed by ~60 days via health drain
+            if (person.health <= 0) {
+                killPerson(person, 'injury');
+                var _injTown = findTown(person.townId);
+                var _isNotable = person.isKing || person.isNoble || person.isEliteMerchant;
+                if (!_isNotable && typeof Player !== 'undefined') {
+                    try {
+                        var _ps = Player.state || Player;
+                        if (_ps.spouseId === person.id) _isNotable = true;
+                        if (!_isNotable && _ps.relationships && (_ps.relationships[person.id] || 0) > 20) _isNotable = true;
+                    } catch(e) {}
+                }
+                if (_isNotable) {
+                    var _roleTag = person.isKing ? '👑 King ' : person.isNoble ? '🏰 Noble ' : person.isEliteMerchant ? '💰 Elite Merchant ' : '';
+                    logEvent('💀 ' + _roleTag + person.firstName + ' ' + (person.lastName || '') + ' of ' + (_injTown ? _injTown.name : 'unknown') + ' died from ' + (person.injuryName || 'severe injuries') + '.', {
+                        type: 'npc_injury_death', townId: person.townId
+                    }, 'illness');
+                }
+            }
         }
     }
 
@@ -17968,6 +18419,40 @@
                 }
             }
         }
+
+        // Kingdom AI: build medical infrastructure when needed
+        if (kingdom.gold > 500 && rng.chance(0.02)) {
+            for (var _mbi = 0; _mbi < kingdom.territories.length; _mbi++) {
+                var _mbTown = findTown(kingdom.territories[_mbi]);
+                if (!_mbTown) continue;
+                var _hasSickNpcs = people.some(function(p) { return p.alive && p.townId === _mbTown.id && p.sick; });
+                if (!_hasSickNpcs && !rng.chance(0.1)) continue;
+                var _hasApoth = _mbTown.buildings.some(function(b) { return b.type === 'apothecary'; });
+                var _hasAdvApoth = _mbTown.buildings.some(function(b) { return b.type === 'advanced_apothecary'; });
+                var _hasHerbGarden = _mbTown.buildings.some(function(b) { return b.type === 'herb_garden'; });
+                var _hasBandageWs = _mbTown.buildings.some(function(b) { return b.type === 'bandage_workshop'; });
+                if (!_hasHerbGarden && kingdom.gold >= 200) {
+                    if (kingdomBuild(kingdom, _mbTown, 'herb_garden', rng)) {
+                        logEvent('🌿 ' + kingdom.name + ' built an herb garden in ' + _mbTown.name + '.'); break;
+                    }
+                }
+                if (!_hasApoth && _hasHerbGarden && kingdom.gold >= 500) {
+                    if (kingdomBuild(kingdom, _mbTown, 'apothecary', rng)) {
+                        logEvent('⚗️ ' + kingdom.name + ' built an apothecary in ' + _mbTown.name + '.'); break;
+                    }
+                }
+                if (!_hasBandageWs && kingdom.gold >= 300) {
+                    if (kingdomBuild(kingdom, _mbTown, 'bandage_workshop', rng)) {
+                        logEvent('🩹 ' + kingdom.name + ' built a bandage workshop in ' + _mbTown.name + '.'); break;
+                    }
+                }
+                if (_hasApoth && !_hasAdvApoth && (_mbTown.category === 'city' || _mbTown.category === 'capital_city') && kingdom.gold >= 900) {
+                    if (kingdomBuild(kingdom, _mbTown, 'advanced_apothecary', rng)) {
+                        logEvent('🧬 ' + kingdom.name + ' built an advanced apothecary in ' + _mbTown.name + '.'); break;
+                    }
+                }
+            }
+        }
     }
 
     // ========================================================
@@ -17980,7 +18465,7 @@
      */
     function getHospitalTreatmentFee(town, bld, bt, severity) {
         // Base fee by severity
-        var baseFee = { minor: 5, moderate: 15, serious: 30, severe: 50 };
+        var baseFee = { minor: 10, moderate: 30, serious: 60, severe: 100 };
         var fee = baseFee[severity] || 10;
 
         // Local economy modifier: use average food price as wage proxy
@@ -18002,12 +18487,161 @@
 
         // Capacity utilization — more patients waiting = higher price
         var queue = bld._treatmentQueue || [];
-        var maxHealers = (bt && bt.maxHealers) || (bt && bt.workers) || 2;
+        var baseHealers2 = (bt && bt.maxHealers) || (bt && bt.workers) || 2;
+        var workerCount2 = (bld.workers && bld.workers.length) || 0;
+        var maxHealers = baseHealers2 + Math.floor(workerCount2 / 2);
         var utilization = queue.length / Math.max(maxHealers, 1);
         var demandMod = 1.0 + Math.min(1.0, utilization) * 0.5; // up to +50% at full capacity
 
         fee = Math.round(fee * econMod * prospMod * demandMod);
         return Math.max(1, fee);
+    }
+
+    /**
+     * Consume medical supplies from building stock, retail stock, or market.
+     * Supports medicine substitution: higher-tier meds can replace lower-tier.
+     * Returns the total market-value cost of supplies consumed.
+     */
+    function _consumeTreatmentSupplies(bld, town, severity, isIllness) {
+        var supplyDef;
+        if (isIllness) {
+            supplyDef = (NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_ILLNESS && NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_ILLNESS[severity]) || null;
+        } else {
+            supplyDef = (NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_INJURY && NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_INJURY[severity]) || null;
+        }
+        if (!supplyDef) supplyDef = (NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES && NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES[severity]) || null;
+        var totalCost = 0;
+        if (!supplyDef) return totalCost;
+
+        var medRank = NPC_HEALTH_CONFIG.MEDICINE_RANK || ['herbal_remedy', 'fever_tonic', 'healing_tonic', 'antidote'];
+
+        // Preflight: determine what will be consumed for each required item
+        var plan = []; // [{key, needed, resolvedKey}]
+        for (var supKey in supplyDef) {
+            var needed = supplyDef[supKey];
+            var resolved = null;
+            // Try exact match first
+            if (_checkStockAvailable(bld, town, supKey, needed)) {
+                resolved = supKey;
+            } else {
+                // Try higher-tier substitutes
+                var rankIdx = medRank.indexOf(supKey);
+                if (rankIdx >= 0) {
+                    for (var si = rankIdx + 1; si < medRank.length; si++) {
+                        if (_checkStockAvailable(bld, town, medRank[si], needed)) {
+                            resolved = medRank[si];
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!resolved) return 0; // cannot fulfill — consume nothing
+            plan.push({ key: supKey, needed: needed, resolvedKey: resolved });
+        }
+
+        // All items available — now actually consume
+        for (var pi = 0; pi < plan.length; pi++) {
+            _tryConsumeFromStocks(bld, town, plan[pi].resolvedKey, plan[pi].needed);
+            totalCost += (getMarketPrice(town, plan[pi].resolvedKey) || 5) * plan[pi].needed;
+        }
+        return totalCost;
+    }
+
+    // Check if sufficient stock exists (without consuming)
+    function _checkStockAvailable(bld, town, goodId, qty) {
+        var available = 0;
+        if (bld._medicalStock && bld._medicalStock[goodId]) available += bld._medicalStock[goodId];
+        // Check player building retail stock
+        if (bld.ownerId === 'player' || !bld.ownerId) {
+            if (typeof Player !== 'undefined' && Player.buildings) {
+                for (var _pi = 0; _pi < Player.buildings.length; _pi++) {
+                    if (Player.buildings[_pi].id === bld.id) {
+                        var _prs = Player.buildings[_pi].retailStock;
+                        if (_prs && _prs[goodId]) available += _prs[goodId];
+                        break;
+                    }
+                }
+            }
+        }
+        if (bld.retailStock && bld.retailStock[goodId]) available += bld.retailStock[goodId];
+        if (town.market && town.market.supply && town.market.supply[goodId]) available += town.market.supply[goodId];
+        return available >= qty;
+    }
+
+    function _checkSuppliesAvailable(bld, town, severity, isIllness) {
+        var supplyDef;
+        if (isIllness) {
+            supplyDef = (NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_ILLNESS && NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_ILLNESS[severity]) || null;
+        } else {
+            supplyDef = (NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_INJURY && NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_INJURY[severity]) || null;
+        }
+        if (!supplyDef) supplyDef = (NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES && NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES[severity]) || null;
+        if (!supplyDef) return true; // no supplies required
+
+        var medRank = NPC_HEALTH_CONFIG.MEDICINE_RANK || ['herbal_remedy', 'fever_tonic', 'healing_tonic', 'antidote'];
+        // Resolve Player building's retailStock for player-owned buildings
+        var _pRetail = null;
+        if (bld && bld.ownerId === 'player' && typeof Player !== 'undefined' && Player.buildings) {
+            for (var _pi = 0; _pi < Player.buildings.length; _pi++) {
+                if (Player.buildings[_pi].id === bld.id) { _pRetail = Player.buildings[_pi].retailStock || null; break; }
+            }
+        }
+
+        for (var supKey in supplyDef) {
+            var needed = supplyDef[supKey];
+            if (bld && bld._medicalStock && (bld._medicalStock[supKey] || 0) >= needed) continue;
+            if (bld && bld.retailStock && (bld.retailStock[supKey] || 0) >= needed) continue;
+            if (_pRetail && (_pRetail[supKey] || 0) >= needed) continue;
+            if (town && town.market && town.market.supply && (town.market.supply[supKey] || 0) >= needed) continue;
+            // Try substitutes (medicine only)
+            var rankIdx = medRank.indexOf(supKey);
+            if (rankIdx >= 0) {
+                var found = false;
+                for (var si = rankIdx + 1; si < medRank.length; si++) {
+                    var sub = medRank[si];
+                    if ((bld && bld._medicalStock && (bld._medicalStock[sub] || 0) >= needed) ||
+                        (bld && bld.retailStock && (bld.retailStock[sub] || 0) >= needed) ||
+                        (_pRetail && (_pRetail[sub] || 0) >= needed) ||
+                        (town && town.market && town.market.supply && (town.market.supply[sub] || 0) >= needed)) {
+                        found = true; break;
+                    }
+                }
+                if (found) continue;
+            }
+            return false;
+        }
+        return true;
+    }
+
+    function _tryConsumeFromStocks(bld, town, resId, qty) {
+        if (bld && bld._medicalStock && (bld._medicalStock[resId] || 0) >= qty) {
+            bld._medicalStock[resId] -= qty;
+            return true;
+        }
+        if (bld && bld.retailStock && (bld.retailStock[resId] || 0) >= qty) {
+            bld.retailStock[resId] -= qty;
+            if (bld.retailStock[resId] <= 0) delete bld.retailStock[resId];
+            return true;
+        }
+        // Player-owned buildings: also check Player.buildings copy's retailStock
+        if (bld && bld.ownerId === 'player' && typeof Player !== 'undefined' && Player.buildings) {
+            for (var _pbi = 0; _pbi < Player.buildings.length; _pbi++) {
+                if (Player.buildings[_pbi].id === bld.id && Player.buildings[_pbi].retailStock) {
+                    var _pRet = Player.buildings[_pbi].retailStock;
+                    if ((_pRet[resId] || 0) >= qty) {
+                        _pRet[resId] -= qty;
+                        if (_pRet[resId] <= 0) delete _pRet[resId];
+                        return true;
+                    }
+                    break;
+                }
+            }
+        }
+        if (town && town.market && town.market.supply && (town.market.supply[resId] || 0) >= qty) {
+            town.market.supply[resId] -= qty;
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -18033,11 +18667,80 @@
                 if (!bld._lastPriceUpdateDay) bld._lastPriceUpdateDay = 0;
 
                 var bt = findBuildingType(bld.type);
-                var maxHealers = (bt && bt.maxHealers) || 2;
+                var baseHealers = (bt && bt.maxHealers) || 2;
+                var workerCount = (bld.workers && bld.workers.length) || 0;
+                var maxHealers = baseHealers + Math.floor(workerCount / 2);
                 var kingdom = findKingdom(town.kingdomId);
                 var isKingdomOwned = bld.ownerId && kingdom && bld.ownerId === kingdom.id;
                 var isPlayerOwned = bld.ownerId === 'player';
                 var healthcareTaxRate = (kingdom && kingdom.healthcareTaxRate != null) ? kingdom.healthcareTaxRate : 0.10;
+
+                // --- Medical supply autobuy from local market ---
+                if (!bld._medicalStock) bld._medicalStock = {};
+                var medStorage = (bt && bt.medicalStorage) || 40;
+                var _autobuyEnabled = bld._autobuyEnabled !== false; // default on for NPC, configurable for player
+                if (_autobuyEnabled && day % 3 === 0 && town.market && town.market.supply) { // check every 3 days
+                    var _medGoods = ['bandages', 'herbal_remedy', 'healing_tonic', 'herbal_poultice', 'fever_tonic', 'antidote', 'splint'];
+                    var _medTotal = 0;
+                    for (var _mi = 0; _mi < _medGoods.length; _mi++) _medTotal += (bld._medicalStock[_medGoods[_mi]] || 0);
+                    if (_medTotal < medStorage * 0.6) {
+                        // Determine which goods are most needed based on treatment supply config
+                        var _treatInjury = NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_INJURY || {};
+                        var _treatIllness = NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_ILLNESS || {};
+                        var _needMap = {};
+                        var _sev, _res;
+                        for (_sev in _treatInjury) {
+                            for (_res in _treatInjury[_sev]) {
+                                _needMap[_res] = (_needMap[_res] || 0) + _treatInjury[_sev][_res];
+                            }
+                        }
+                        for (_sev in _treatIllness) {
+                            for (_res in _treatIllness[_sev]) {
+                                _needMap[_res] = (_needMap[_res] || 0) + _treatIllness[_sev][_res];
+                            }
+                        }
+                        for (var _mi2 = 0; _mi2 < _medGoods.length; _mi2++) {
+                            var _gid = _medGoods[_mi2];
+                            var _currentStock = bld._medicalStock[_gid] || 0;
+                            var _targetStock = Math.max(3, Math.floor(medStorage / _medGoods.length * (_needMap[_gid] ? 1.5 : 0.5)));
+                            if (_currentStock >= _targetStock) continue;
+                            var _toBuy = Math.min(_targetStock - _currentStock, (town.market.supply[_gid] || 0));
+                            // Clamp so total stock never exceeds storage capacity
+                            var _remainingCapacity = medStorage - _medTotal;
+                            if (_remainingCapacity <= 0) break;
+                            _toBuy = Math.min(_toBuy, _remainingCapacity);
+                            if (_toBuy <= 0) continue;
+                            // Pay for supplies
+                            var _unitPrice = getMarketPrice(town, _gid) || 5;
+                            var _totalCost = _toBuy * _unitPrice;
+                            if (isKingdomOwned && kingdom) {
+                                if (kingdom.gold >= _totalCost) {
+                                    kingdom.gold -= _totalCost;
+                                } else continue;
+                            } else if (isPlayerOwned) {
+                                // Player pays from building revenue balance
+                                if ((bld.retailRevenue || 0) >= _totalCost) {
+                                    bld.retailRevenue -= _totalCost;
+                                } else continue;
+                            } else if (bld.ownerId) {
+                                var _medOwner = findPerson(bld.ownerId);
+                                if (_medOwner && (_medOwner.gold || 0) >= _totalCost) {
+                                    _medOwner.gold -= _totalCost;
+                                } else continue;
+                            } else {
+                                // No explicit owner — community/town-funded: buy from market at reduced cost
+                                // Town absorbs the cost (small drain on prosperity)
+                                if ((town.market.supply[_gid] || 0) >= _toBuy) {
+                                    // Slight prosperity impact for community-funded healthcare
+                                    if (town.prosperity > 20) town.prosperity -= 0.01 * _toBuy;
+                                } else continue;
+                            }
+                            consumeFromMarket(town, _gid, _toBuy);
+                            bld._medicalStock[_gid] = (_currentStock + _toBuy);
+                            _medTotal += _toBuy;
+                        }
+                    }
+                }
 
                 // --- Owner AI updates treatment pricing every 7 days ---
                 if (day - (bld._lastPriceUpdateDay || 0) >= 7 && !isPlayerOwned) {
@@ -18059,9 +18762,19 @@
                     };
                 }
 
-                // --- Process treatment queue: decrement ticks for patients being treated ---
+                // --- Process treatment queue: clean stale entries, then decrement ticks ---
+                // Remove patients who are no longer alive or sick/injured (naturally recovered, cured elsewhere)
+                for (var _cqi = bld._treatmentQueue.length - 1; _cqi >= 0; _cqi--) {
+                    var _cqp = findPerson(bld._treatmentQueue[_cqi].personId);
+                    var _cqIsIllness = bld._treatmentQueue[_cqi].isIllness !== false;
+                    var _cqStale = !_cqp || !_cqp.alive || (_cqIsIllness && !_cqp.sick) || (!_cqIsIllness && !_cqp.injured);
+                    if (_cqStale) {
+                        if (_cqp) _cqp._illnessTreatPaid = false;
+                        bld._treatmentQueue.splice(_cqi, 1);
+                    }
+                }
                 var activePatients = 0;
-                for (var qi = bld._treatmentQueue.length - 1; qi >= 0; qi--) {
+                for (var qi = 0; qi < bld._treatmentQueue.length; qi++) {
                     var patient = bld._treatmentQueue[qi];
                     if (activePatients >= maxHealers) break; // only maxHealers patients treated simultaneously
 
@@ -18069,28 +18782,65 @@
                     activePatients++;
 
                     if (patient.ticksRemaining <= 0) {
-                        // Treatment complete — cure the NPC
+                        // Treatment timer done — consume supplies before curing
                         var person = findPerson(patient.personId);
+                        // Resolve severity from queue entry OR from the actual person (backwards compat for old saves)
+                        var _cureSev = patient.severity || (person ? (person.injurySeverity || person.illnessSeverity || 'minor') : 'minor');
+                        var _cureIsIll = patient.isIllness != null ? (patient.isIllness !== false) : (person ? !!person.sick : true);
+                        var _cureCost = _consumeTreatmentSupplies(bld, town, _cureSev, _cureIsIll);
+                        if (_cureCost === 0) {
+                            // Supplies unavailable — can't complete treatment yet, wait
+                            patient._noSupplyRetries = (patient._noSupplyRetries || 0) + 1;
+                            if (patient._noSupplyRetries > 30) {
+                                // Too many retries — discharge patient untreated
+                                var _dischPerson = findPerson(patient.personId);
+                                if (_dischPerson) _dischPerson._illnessTreatPaid = false;
+                                bld._treatmentQueue.splice(qi, 1);
+                                qi--;
+                            } else {
+                                patient.ticksRemaining = 3;
+                            }
+                            // Backfill severity/isIllness on old queue entries for next time
+                            if (!patient.severity) patient.severity = _cureSev;
+                            if (patient.isIllness == null) patient.isIllness = _cureIsIll;
+                            continue;
+                        }
+                        // Track supply cost
+                        if (!bld._treatmentStats) bld._treatmentStats = { treated: 0, feeEarned: 0, supplyCost: 0 };
+                        bld._treatmentStats.supplyCost += _cureCost;
+
+                        // Treatment complete — cure the NPC
                         if (person && person.alive) {
-                            person.sick = false;
-                            person.illness = null;
-                            person.asymptomatic = false;
+                            if (_cureIsIll) {
+                                person.sick = false;
+                                person.illness = null;
+                                person.asymptomatic = false;
+                            }
+                            if (!_cureIsIll) {
+                                person.injured = false;
+                                person.injuryDay = 0;
+                                person.injuryType = null;
+                                person.injuryName = null;
+                                person.injurySeverity = null;
+                            }
                             person._illnessTreatPaid = false;
                             person.health = Math.min(100, (person.health || 50) + 20);
                         }
                         bld._treatmentQueue.splice(qi, 1);
+                        qi--; // adjust index after removal
                     }
                 }
 
-                // --- Admit new patients: sick NPCs in town who can afford treatment ---
+                // --- Admit new patients: sick or injured NPCs in town who can afford treatment ---
                 // Only admit up to (maxHealers * 2) patients in queue at once
                 var maxQueue = maxHealers * 2;
                 if (bld._treatmentQueue.length < maxQueue) {
                     var sickInTown = [];
                     for (var pi = 0; pi < world.people.length; pi++) {
                         var p = world.people[pi];
-                        if (!p.alive || !p.sick || p.townId !== town.id) continue;
-                        if (p.asymptomatic) continue;
+                        if (!p.alive || p.townId !== town.id) continue;
+                        if (!p.sick && !p.injured) continue;
+                        if (p.sick && p.asymptomatic) continue;
                         // Already in queue?
                         var alreadyQueued = false;
                         for (var qc = 0; qc < bld._treatmentQueue.length; qc++) {
@@ -18108,14 +18858,25 @@
                         var sick = sickInTown[idx];
                         sickInTown.splice(idx, 1);
 
-                        var sev = sick.illnessSeverity || 'minor';
-                        // Clinics can't treat severe
-                        if (bld.type === 'clinic' && sev === 'severe') continue;
+                        var _admitIsIllness = !!sick.sick;
+                        var sev = _admitIsIllness ? (sick.illnessSeverity || 'minor') : (sick.injurySeverity || sick.illnessSeverity || 'minor');
+
+                        // Minor injuries: common NPCs less likely to seek treatment (heals on its own)
+                        // Kings, nobles, and elite merchants always seek treatment
+                        if (!_admitIsIllness && sick.injured && sev === 'minor') {
+                            var _isImportant = sick.isKing || sick.isNoble || sick.isEliteMerchant;
+                            if (!_isImportant && !rng.chance(0.20)) continue;
+                        }
 
                         var fee = (bld._treatmentFees && bld._treatmentFees[sev]) || 10;
                         if ((sick.gold || 0) < fee) continue; // can't afford
 
+                        // Check if required supplies are available before admitting
+                        if (!_checkSuppliesAvailable(bld, town, sev, _admitIsIllness)) continue;
+
                         var treatTicks = (NPC_HEALTH_CONFIG.TREATMENT_TICKS && NPC_HEALTH_CONFIG.TREATMENT_TICKS[sev]) || 25;
+                        // Clinics treat severe but take twice as long
+                        if (bld.type === 'clinic' && sev === 'severe') treatTicks = treatTicks * 2;
 
                         // Pay fee
                         sick.gold -= fee;
@@ -18145,26 +18906,204 @@
                             }
                         }
 
-                        // Consume medical supplies from town market
-                        var supplyDef = NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES ? NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES[sev] : null;
-                        if (supplyDef && town.market && town.market.supply) {
-                            for (var supKey in supplyDef) {
-                                var needed = supplyDef[supKey];
-                                if ((town.market.supply[supKey] || 0) >= needed) {
-                                    town.market.supply[supKey] -= needed;
-                                }
-                            }
-                        }
+                        // Track treatment stats for building detail log
+                        if (!bld._treatmentStats) bld._treatmentStats = { treated: 0, feeEarned: 0, supplyCost: 0 };
+                        bld._treatmentStats.treated++;
+                        bld._treatmentStats.feeEarned += fee;
 
-                        // Add to treatment queue
-                        bld._treatmentQueue.push({
+                        // Add to treatment queue — nobles skip to front
+                        var _qEntry = {
                             personId: sick.id,
                             severity: sev,
                             ticksRemaining: treatTicks,
                             fee: fee,
-                        });
+                            isIllness: _admitIsIllness,
+                        };
+                        var _isNoble = sick.isNoble || sick.isKing || (sick.socialRank && sick.socialRank[town.kingdomId] >= 4);
+                        if (_isNoble) {
+                            bld._treatmentQueue.unshift(_qEntry);
+                        } else {
+                            bld._treatmentQueue.push(_qEntry);
+                        }
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * NPC, EM, and King treatment-seeking AI.
+     * - Regular NPCs: already handled by tickHospitalTreatment admission
+     * - Elite Merchants: proactively seek treatment, will travel if no local facility
+     * - Kings/Royal family: use kingdom funds, travel for treatment
+     */
+    function tickNPCTreatmentSeeking() {
+        if (!world || !world.people) return;
+        if (world.day % 3 !== 0) return; // every 3 days
+        var rng = world.rng;
+
+        // Pre-compute towns with medical facilities
+        var townMedFacilities = {};
+        for (var ti = 0; ti < world.towns.length; ti++) {
+            var t = world.towns[ti];
+            var hasMed = false;
+            if (t.buildings) {
+                for (var bi = 0; bi < t.buildings.length; bi++) {
+                    if (t.buildings[bi].type === 'hospital' || t.buildings[bi].type === 'clinic') {
+                        hasMed = true; break;
+                    }
+                }
+            }
+            townMedFacilities[t.id] = hasMed;
+        }
+
+        for (var i = 0; i < world.people.length; i++) {
+            var p = world.people[i];
+            if (!p.alive || !p.townId) continue;
+            if (!p.sick && !p.injured) continue;
+            if (p._illnessTreatPaid) continue; // already being treated
+
+            var isEM = p.isEliteMerchant;
+            var isKing = p.isKing;
+            var isRoyal = false;
+            if (!isKing && !isEM && p.socialRank) {
+                for (var kId in p.socialRank) {
+                    if (p.socialRank[kId] >= 4) { isRoyal = true; break; }
+                }
+            }
+
+            // Regular NPCs: 30% chance to actively seek treatment each tick
+            // EMs: 80% chance, Kings/Royals: 95% chance
+            var seekChance = 0.30;
+            if (isEM) seekChance = 0.80;
+            if (isKing || isRoyal) seekChance = 0.95;
+            if (!rng.chance(seekChance)) continue;
+
+            var town = findTown(p.townId);
+            if (!town) continue;
+            var hasFacility = townMedFacilities[p.townId];
+
+            // If facility exists locally, try to join queue
+            if (hasFacility) {
+                // Find the facility and check if already queued
+                for (var fbi = 0; fbi < town.buildings.length; fbi++) {
+                    var fBld = town.buildings[fbi];
+                    if (fBld.type !== 'hospital' && fBld.type !== 'clinic') continue;
+                    if (!fBld._treatmentQueue) fBld._treatmentQueue = [];
+
+                    // Check if already in queue
+                    var alreadyQueued = false;
+                    for (var qi = 0; qi < fBld._treatmentQueue.length; qi++) {
+                        if (fBld._treatmentQueue[qi].personId === p.id) { alreadyQueued = true; break; }
+                    }
+                    if (alreadyQueued) break;
+
+                    var _admit2IsIll = !!p.sick;
+                    var sev = _admit2IsIll ? (p.illnessSeverity || 'minor') : (p.injurySeverity || p.illnessSeverity || 'minor');
+                    var fee = (fBld._treatmentFees && fBld._treatmentFees[sev]) || 10;
+
+                    // Check supplies available BEFORE payment
+                    var _isIllness2pre = !!p.sick;
+                    if (!_checkSuppliesAvailable(fBld, town, sev, _isIllness2pre)) continue;
+
+                    // Payment: kings/royals can use kingdom funds
+                    var canPay = false;
+                    if (isKing || isRoyal) {
+                        var pKingdom = findKingdom(town.kingdomId);
+                        if (pKingdom && (pKingdom.gold || 0) >= fee) {
+                            pKingdom.gold -= fee;
+                            canPay = true;
+                        } else if ((p.gold || 0) >= fee) {
+                            p.gold -= fee;
+                            canPay = true;
+                        }
+                    } else if ((p.gold || 0) >= fee) {
+                        p.gold -= fee;
+                        canPay = true;
+                    }
+                    if (!canPay) continue;
+
+                    p._illnessTreatPaid = true;
+                    var bt = findBuildingType(fBld.type);
+                    var treatTicks = (NPC_HEALTH_CONFIG.TREATMENT_TICKS && NPC_HEALTH_CONFIG.TREATMENT_TICKS[sev]) || 25;
+                    // Clinics treat severe but take twice as long
+                    if (fBld.type === 'clinic' && sev === 'severe') treatTicks = treatTicks * 2;
+
+                    // Revenue to building owner
+                    var ownerKingdom = findKingdom(town.kingdomId);
+                    var healthcareTaxRate = (ownerKingdom && ownerKingdom.healthcareTaxRate != null) ? ownerKingdom.healthcareTaxRate : 0.10;
+                    var isKingdomOwned = fBld.ownerId && ownerKingdom && fBld.ownerId === ownerKingdom.id;
+                    if (isKingdomOwned) {
+                        if (ownerKingdom) {
+                            ownerKingdom.gold = (ownerKingdom.gold || 0) + fee;
+                            ownerKingdom.healthcareTaxRevenue = (ownerKingdom.healthcareTaxRevenue || 0) + fee;
+                        }
+                    } else if (fBld.ownerId === 'player') {
+                        fBld.retailRevenue = (fBld.retailRevenue || 0) + (fee - Math.floor(fee * healthcareTaxRate));
+                        if (ownerKingdom) ownerKingdom.gold = (ownerKingdom.gold || 0) + Math.floor(fee * healthcareTaxRate);
+                    } else if (fBld.ownerId) {
+                        var facOwner = findPerson(fBld.ownerId);
+                        if (facOwner && facOwner.alive) facOwner.gold = (facOwner.gold || 0) + (fee - Math.floor(fee * healthcareTaxRate));
+                        if (ownerKingdom) ownerKingdom.gold = (ownerKingdom.gold || 0) + Math.floor(fee * healthcareTaxRate);
+                    }
+
+                    // Track treatment stats
+                    if (!fBld._treatmentStats) fBld._treatmentStats = { treated: 0, feeEarned: 0, supplyCost: 0 };
+                    fBld._treatmentStats.treated++;
+                    fBld._treatmentStats.feeEarned += fee;
+
+                    // Nobles skip to front of queue
+                    var _isIllness2 = !!p.sick;
+                    var _qEntry2 = {
+                        personId: p.id,
+                        severity: sev,
+                        ticksRemaining: treatTicks,
+                        fee: fee,
+                        isIllness: _isIllness2,
+                    };
+                    var _isNoble2 = p.isNoble || p.isKing || (p.socialRank && p.socialRank[town.kingdomId] >= 4);
+                    if (_isNoble2) {
+                        fBld._treatmentQueue.unshift(_qEntry2);
+                    } else {
+                        fBld._treatmentQueue.push(_qEntry2);
+                    }
+                    break; // admitted to one facility
+                }
+            } else if (isEM || isKing || isRoyal) {
+                // Travel to nearest town with medical facility
+                if (p._travelingForTreatment) continue; // already traveling
+                if (!town.connectedTowns) continue;
+                var bestMedTown = null;
+                var bestDist = Infinity;
+                for (var cti = 0; cti < town.connectedTowns.length; cti++) {
+                    var connId = town.connectedTowns[cti];
+                    if (!townMedFacilities[connId]) continue;
+                    var connTown = findTown(connId);
+                    if (!connTown) continue;
+                    var dx = (connTown.x || 0) - (town.x || 0);
+                    var dy = (connTown.y || 0) - (town.y || 0);
+                    var dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < bestDist) { bestDist = dist; bestMedTown = connTown; }
+                }
+                if (bestMedTown) {
+                    p.townId = bestMedTown.id;
+                    p._travelingForTreatment = true;
+                    p._treatmentOriginTown = town.id;
+                }
+            }
+        }
+
+        // Return healed travelers to their origin towns
+        for (var ri = 0; ri < world.people.length; ri++) {
+            var rp = world.people[ri];
+            if (!rp.alive || !rp._travelingForTreatment) continue;
+            if (!rp.sick && !rp.injured && !rp._illnessTreatPaid) {
+                // Healed — return home
+                if (rp._treatmentOriginTown) {
+                    rp.townId = rp._treatmentOriginTown;
+                }
+                delete rp._travelingForTreatment;
+                delete rp._treatmentOriginTown;
             }
         }
     }
@@ -18191,7 +19130,9 @@
                 var kingdom = findKingdom(town.kingdomId);
                 var taxRate = (kingdom && kingdom.healthcareTaxRate != null) ? kingdom.healthcareTaxRate : 0.10;
                 var queueLen = bld._treatmentQueue ? bld._treatmentQueue.length : 0;
-                var maxHealers = (bt && bt.maxHealers) || 2;
+                var _fBaseHealers = (bt && bt.maxHealers) || 2;
+                var _fWorkerCount = (bld.workers && bld.workers.length) || 0;
+                var maxHealers = _fBaseHealers + Math.floor(_fWorkerCount / 2);
                 result[bld.type] = {
                     fees: bld._treatmentFees,
                     ownerId: bld.ownerId,
@@ -18200,10 +19141,48 @@
                     queueLength: queueLen,
                     maxHealers: maxHealers,
                     treatmentTicks: NPC_HEALTH_CONFIG.TREATMENT_TICKS || { minor: 5, moderate: 25, serious: 70, severe: 120 },
+                    medicalStock: bld._medicalStock || {},
+                    autobuyEnabled: bld._autobuyEnabled !== false,
+                    buildingId: bld.id,
                 };
             }
         }
         return result;
+    }
+
+    /**
+     * Toggle medical supply autobuy for a specific building.
+     */
+    function toggleMedicalAutobuy(townId, buildingId) {
+        var town = findTown(townId);
+        if (!town || !town.buildings) return false;
+        for (var i = 0; i < town.buildings.length; i++) {
+            var bld = town.buildings[i];
+            if (bld.id === buildingId && (bld.type === 'hospital' || bld.type === 'clinic')) {
+                bld._autobuyEnabled = bld._autobuyEnabled === false ? true : false;
+                return bld._autobuyEnabled;
+            }
+        }
+        return false;
+    }
+
+    function kickPatientFromQueue(townId, buildingId, personId) {
+        var town = findTown(townId);
+        if (!town || !town.buildings) return false;
+        for (var i = 0; i < town.buildings.length; i++) {
+            var bld = town.buildings[i];
+            if (bld.id === buildingId && bld._treatmentQueue) {
+                for (var qi = 0; qi < bld._treatmentQueue.length; qi++) {
+                    if (bld._treatmentQueue[qi].personId === personId) {
+                        var person = findPerson(personId);
+                        if (person) person._illnessTreatPaid = false;
+                        bld._treatmentQueue.splice(qi, 1);
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     // ========================================================
@@ -18348,6 +19327,23 @@
                 kingdomDemand[res] = (kingdomDemand[res] || 0) + qty;
                 if ((town.market.supply[res] || 0) < qty * 3) {
                     deficits.push({ good: res, shortfall: qty * 3 - (town.market.supply[res] || 0) });
+                }
+            }
+
+            // Medical supply demand: based on sick/injured NPCs in town
+            var _analysisPop = _tickCache.peopleByTown[town.id] || [];
+            var _analysisSick = 0;
+            for (var _ai = 0; _ai < _analysisPop.length; _ai++) {
+                if (_analysisPop[_ai].sick || _analysisPop[_ai].injured) _analysisSick++;
+            }
+            if (_analysisSick > 0) {
+                var _medDemandGoods = { bandages: 1.0, herbal_remedy: 0.5, healing_tonic: 0.3, antidote: 0.15, fever_tonic: 0.2 };
+                for (var _mdg in _medDemandGoods) {
+                    var _medDem = Math.ceil(_analysisSick * _medDemandGoods[_mdg]);
+                    kingdomDemand[_mdg] = (kingdomDemand[_mdg] || 0) + _medDem;
+                    if ((town.market.supply[_mdg] || 0) < _medDem) {
+                        deficits.push({ good: _mdg, shortfall: _medDem - (town.market.supply[_mdg] || 0) });
+                    }
                 }
             }
 
@@ -18649,24 +19645,52 @@
         // f) Infrastructure — build roads between complementary towns (handled by existing road AI, just boost priority)
 
         // l) Strategic Building — fill supply chain gaps
+        var _scInputSourceMap = {
+            wood: 'lumber_camp', iron_ore: 'iron_mine', wool: 'sheep_farm',
+            hide: 'hunting_lodge', hemp: 'hemp_farm', clay: 'clay_pit',
+            herbs: 'herb_garden', wheat: 'wheat_farm'
+        };
         for (const gap of analysis.supplyChainGaps) {
-            if (gap.type !== 'missing_processor') continue;
-            const bt = findBuildingType(gap.building);
-            if (!bt || bt.cost > treasury * 0.4) continue;
-            // Find best town to place it (one that produces the input)
-            const bestTown = analysis.towns.find(t => t.produces[gap.input] > 0 && t.slotsAvailable > 0);
-            if (bestTown) {
-                carrotStrategies.push({
-                    type: 'strategic_building',
-                    townId: bestTown.id,
-                    townName: bestTown.name,
-                    buildingType: bt.id,
-                    buildingName: bt.name,
-                    input: gap.input,
-                    output: gap.output,
-                    cost: bt.cost,
-                    priority: 80,
+            if (gap.type === 'missing_processor') {
+                const bt = findBuildingType(gap.building);
+                if (!bt || bt.cost > treasury * 0.4) continue;
+                const bestTown = analysis.towns.find(t => t.produces[gap.input] > 0 && t.slotsAvailable > 0);
+                if (bestTown) {
+                    carrotStrategies.push({
+                        type: 'strategic_building',
+                        townId: bestTown.id,
+                        townName: bestTown.name,
+                        buildingType: bt.id,
+                        buildingName: bt.name,
+                        input: gap.input,
+                        output: gap.output,
+                        cost: bt.cost,
+                        priority: 80,
+                    });
+                }
+            } else if (gap.type === 'missing_source') {
+                // Processor exists but no raw input source — build the source
+                var _srcType = _scInputSourceMap[gap.input];
+                if (!_srcType) continue;
+                var _srcBt = findBuildingType(_srcType);
+                if (!_srcBt || _srcBt.cost > treasury * 0.4) continue;
+                // Place in the town that has the processor
+                var _srcTown = analysis.towns.find(function(t) {
+                    return t.slotsAvailable > 0 && t.buildings[gap.building] > 0;
                 });
+                if (_srcTown) {
+                    carrotStrategies.push({
+                        type: 'strategic_building',
+                        townId: _srcTown.id,
+                        townName: _srcTown.name,
+                        buildingType: _srcType,
+                        buildingName: _srcBt.name,
+                        input: gap.input,
+                        output: gap.output,
+                        cost: _srcBt.cost,
+                        priority: 85,
+                    });
+                }
             }
         }
 
@@ -20085,6 +21109,44 @@
             }
         }
 
+        // Medical supplies when health crisis detected
+        var _totalSick = 0, _totalInjured = 0;
+        for (var _hti = 0; _hti < kingdomTowns.length; _hti++) {
+            var _htPop = _tickCache.peopleByTown[kingdomTowns[_hti].id] || [];
+            for (var _hpi = 0; _hpi < _htPop.length; _hpi++) {
+                if (_htPop[_hpi].sick) _totalSick++;
+                if (_htPop[_hpi].injured) _totalInjured++;
+            }
+        }
+        var _sickRatio = totalPop > 0 ? (_totalSick + _totalInjured) / totalPop : 0;
+        if (_sickRatio > 0.05 || _totalSick > 10) {
+            var _medUrgency = Math.round(Math.min(100, _sickRatio * 300));
+            var _medNeeded = Math.max(5, _totalSick + Math.floor(_totalInjured * 0.5));
+            var _medSupplyGoods = [
+                { id: 'bandages', factor: 1.0 },
+                { id: 'herbal_remedy', factor: 0.6 },
+                { id: 'healing_tonic', factor: 0.3 },
+                { id: 'antidote', factor: 0.2 },
+                { id: 'fever_tonic', factor: 0.3 },
+                { id: 'splint', factor: 0.15 },
+            ];
+            for (var _msi = 0; _msi < _medSupplyGoods.length; _msi++) {
+                var _msg = _medSupplyGoods[_msi];
+                var _medQtyNeeded = Math.max(3, Math.ceil(_medNeeded * _msg.factor));
+                // Check current kingdom-wide supply
+                var _medKingdomSupply = 0;
+                for (var _mkt = 0; _mkt < kingdomTowns.length; _mkt++) {
+                    _medKingdomSupply += (kingdomTowns[_mkt].market.supply[_msg.id] || 0);
+                }
+                if (_medKingdomSupply < _medQtyNeeded) {
+                    proc.needs[_msg.id] = proc.needs[_msg.id] || {
+                        urgency: _medUrgency,
+                        qtyNeeded: _medQtyNeeded - _medKingdomSupply,
+                    };
+                }
+            }
+        }
+
         // --- 2. Try local market first ---
         for (const resId in proc.needs) {
             const need = proc.needs[resId];
@@ -20097,6 +21159,7 @@
                 const toBuy = Math.min(available, need.qtyNeeded - bought, canAfford, Math.floor(available * 0.5));
                 if (toBuy > 0) {
                     const cost = toBuy * price;
+                    if (kingdom.gold < cost) continue; // guard against negative gold
                     kingdom.gold -= cost;
                     t.market.supply[resId] = (t.market.supply[resId] || 0) - toBuy;
                     bought += toBuy;
@@ -20666,7 +21729,7 @@
         war_profiteer:     ['blacksmith', 'smelter', 'iron_mine', 'bakery', 'armory_shop', 'warehouse'],
         land_baron:        ['wheat_farm', 'cattle_ranch', 'sheep_farm', 'lumber_camp', 'iron_mine', 'pig_farm', 'restaurant', 'warehouse'],
         trade_network:     ['market_stall', 'weaver', 'salt_works', 'tanner', 'toolsmith', 'brewery', 'smokehouse', 'general_store', 'warehouse'],
-        medical_supplier:  ['herb_garden', 'apothecary', 'bandage_workshop', 'clinic', 'herbalist_hut', 'warehouse_small'],
+        medical_supplier:  ['herb_garden', 'apothecary', 'advanced_apothecary', 'bandage_workshop', 'clinic', 'herbalist_hut', 'warehouse_small'],
     };
 
     function ensureEliteMerchantFields(em) {
@@ -21310,7 +22373,8 @@
 
             // Find biggest supply gap between kingdom towns
             var bestFrom = null, bestTo = null, bestGap = 0, bestResource = null;
-            var stapleGoods = ['wheat', 'bread', 'wood', 'stone', 'planks', 'tools', 'iron', 'meat'];
+            var stapleGoods = ['wheat', 'bread', 'wood', 'stone', 'planks', 'tools', 'iron', 'meat',
+                'bandages', 'herbal_remedy', 'healing_tonic', 'antidote', 'herbal_poultice', 'fever_tonic', 'splint'];
 
             for (var fi = 0; fi < kTowns.length; fi++) {
                 for (var ti = 0; ti < kTowns.length; ti++) {
@@ -21327,6 +22391,19 @@
                         var fromSupply = fromT.market.supply[good] || 0;
                         var toSupply = toT.market.supply[good] || 0;
                         var gap = fromSupply - toSupply;
+                        // Medical goods get priority weighting during health crises
+                        var _isMedGood = si >= 8; // medical goods start at index 8
+                        if (_isMedGood) {
+                            var _toSickPct = 0;
+                            var _toPop = _tickCache.peopleByTown[toT.id] || [];
+                            if (_toPop.length > 0) {
+                                var _toSick = 0;
+                                for (var _sp = 0; _sp < _toPop.length; _sp++) { if (_toPop[_sp].sick || _toPop[_sp].injured) _toSick++; }
+                                _toSickPct = _toSick / _toPop.length;
+                            }
+                            // Boost gap score for medical goods in sick towns
+                            if (_toSickPct > 0.1) gap *= (1 + _toSickPct * 5);
+                        }
                         if (gap > 30 && gap > bestGap) {
                             bestGap = gap;
                             bestFrom = fromT.id;
@@ -21368,6 +22445,126 @@
                     returnGoods: {},
                     tripCount: 0,
                 });
+            }
+        }
+    }
+
+    /**
+     * King AI: emergency medical supply transport via soldiers.
+     * When a town has high illness/injury rates and low medical supplies,
+     * the king dispatches soldier escorts to move medical goods from surplus towns.
+     */
+    function tickKingdomMedicalLogistics() {
+        if (!world) return;
+        if (world.day % 7 !== 0) return; // check weekly
+        if (!world.npcCaravans) world.npcCaravans = [];
+        var rng = world.rng;
+        if (!rng) return;
+
+        var medGoods = ['bandages', 'herbal_remedy', 'healing_tonic', 'antidote', 'herbal_poultice', 'fever_tonic', 'splint'];
+
+        for (var ki = 0; ki < world.kingdoms.length; ki++) {
+            var k = world.kingdoms[ki];
+            if (!k || !k.id) continue;
+            if ((k.gold || 0) < 300) continue;
+
+            var kTowns = world.towns.filter(function(t) { return t.kingdomId === k.id; });
+            if (kTowns.length < 2) continue;
+
+            // Count active medical caravans for this kingdom
+            var activeMedCaravans = 0;
+            for (var aci = 0; aci < world.npcCaravans.length; aci++) {
+                if (world.npcCaravans[aci].ownerId === k.id && world.npcCaravans[aci]._isMedical) {
+                    activeMedCaravans++;
+                }
+            }
+            if (activeMedCaravans >= 3) continue;
+
+            // Find towns in medical crisis (>15% sick/injured, low medical supply)
+            var crisisTowns = [];
+            for (var cti = 0; cti < kTowns.length; cti++) {
+                var ct = kTowns[cti];
+                var ctPop = _tickCache.peopleByTown[ct.id] || [];
+                if (ctPop.length < 5) continue;
+                var sickCount = 0;
+                for (var cpi = 0; cpi < ctPop.length; cpi++) {
+                    if (ctPop[cpi].sick || ctPop[cpi].injured) sickCount++;
+                }
+                var sickPct = sickCount / ctPop.length;
+                if (sickPct < 0.15) continue;
+                // Check medical supply levels
+                var medSupply = 0;
+                for (var mgi = 0; mgi < medGoods.length; mgi++) {
+                    medSupply += (ct.market.supply[medGoods[mgi]] || 0);
+                }
+                if (medSupply < sickCount * 2) {
+                    crisisTowns.push({ town: ct, sickPct: sickPct, sickCount: sickCount, medSupply: medSupply });
+                }
+            }
+            if (crisisTowns.length === 0) continue;
+
+            // Sort by severity
+            crisisTowns.sort(function(a, b) { return b.sickPct - a.sickPct; });
+
+            // For the worst crisis town, find a surplus source
+            var crisis = crisisTowns[0];
+            var bestSource = null;
+            var bestMedSurplus = 0;
+            for (var sti = 0; sti < kTowns.length; sti++) {
+                var st = kTowns[sti];
+                if (st.id === crisis.town.id) continue;
+                if (!st.connectedTowns || st.connectedTowns.indexOf(crisis.town.id) === -1) continue;
+                var surplus = 0;
+                for (var mgi2 = 0; mgi2 < medGoods.length; mgi2++) {
+                    surplus += (st.market.supply[medGoods[mgi2]] || 0);
+                }
+                if (surplus > bestMedSurplus) {
+                    bestMedSurplus = surplus;
+                    bestSource = st;
+                }
+            }
+
+            if (!bestSource || bestMedSurplus < 5) continue;
+
+            // Dispatch military medical supply convoy
+            var convoyGoods = {};
+            var totalSent = 0;
+            var maxSend = Math.min(50, bestMedSurplus);
+            for (var mgi3 = 0; mgi3 < medGoods.length && totalSent < maxSend; mgi3++) {
+                var mgId = medGoods[mgi3];
+                var avail = bestSource.market.supply[mgId] || 0;
+                var toSend = Math.min(avail, Math.ceil((maxSend - totalSent) / (medGoods.length - mgi3)));
+                if (toSend > 0) {
+                    bestSource.market.supply[mgId] -= toSend;
+                    convoyGoods[mgId] = toSend;
+                    totalSent += toSend;
+                }
+            }
+
+            if (totalSent > 0) {
+                var convoyCost = Math.floor(totalSent * 2); // soldier escort cost
+                if ((k.gold || 0) < convoyCost) continue;
+                k.gold -= convoyCost;
+
+                world.npcCaravans.push({
+                    id: 'k_med_' + world.day + '_' + ki,
+                    ownerId: k.id,
+                    ownerType: 'kingdom',
+                    fromTownId: bestSource.id,
+                    toTownId: crisis.town.id,
+                    goods: convoyGoods,
+                    capacity: 50,
+                    progress: 0,
+                    speed: (CONFIG.KINGDOM_CARAVAN_SPEED || 0.10) * 1.5, // soldier escorts move faster
+                    startDay: world.day,
+                    status: 'traveling',
+                    mode: 'one_way',
+                    returnGoods: {},
+                    tripCount: 0,
+                    _isMedical: true,
+                });
+
+                logEvent('⚕️ ' + k.name + ' dispatched medical supplies from ' + bestSource.name + ' to ' + crisis.town.name + ' (' + totalSent + ' units).');
             }
         }
     }
@@ -21820,6 +23017,11 @@
             // ---- 14. SUPPLY CHAIN AI (every 15 days) ----
             if (day % 15 === 0) {
                 eliteSupplyChainAI(em, town, rng, strategy);
+            }
+
+            // ---- 14b. MEDICAL SUPPLY AI (every 10 days) ----
+            if (day % 10 === 0) {
+                eliteMedicalSupplyAI(em, town, rng);
             }
 
             // ---- 15. COMPETITION AI (every 20 days) ----
@@ -22419,6 +23621,15 @@
                 bType = 'hospital';
             }
         }
+        // Advanced Apothecary: medical EMs consider building one in cities/capitals that lack it
+        if (strategy === 'medical_supplier' && (em.gold || 0) > 2000) {
+            var _bCat = buildTown.category || 'village';
+            var _hasAdvApoth = buildTown.buildings.some(function(b) { return b.type === 'advanced_apothecary'; });
+            var _hasApoth = buildTown.buildings.some(function(b) { return b.type === 'apothecary'; });
+            if (!_hasAdvApoth && _hasApoth && (_bCat === 'city' || _bCat === 'capital_city' || _bCat === 'town') && rng.chance(0.35)) {
+                bType = 'advanced_apothecary';
+            }
+        }
 
         // If we found a high-value demand gap, prefer building that over random strategy building
         if (demandGapType && demandGapScore > 15 && rng.chance(0.4)) {
@@ -22449,6 +23660,14 @@
 
         var bt = findBuildingType(bType);
         if (!bt) return;
+
+        // Check minTownCategory requirement
+        if (bt.minTownCategory) {
+            var _tcRank = { outpost: 0, village: 1, town: 2, city: 3, capital_city: 4 };
+            var _btMinRank = _tcRank[bt.minTownCategory] || 0;
+            var _btTownRank = _tcRank[buildTown.category] || 0;
+            if (_btTownRank < _btMinRank) return;
+        }
 
         // Check natural deposit requirement
         var depReq = CONFIG.DEPOSIT_REQUIREMENTS ? CONFIG.DEPOSIT_REQUIREMENTS[bt.id] : null;
@@ -22758,6 +23977,47 @@
             }
         }
 
+        // M-4b: Apothecary upgrade priority — upgrade to level 3 to unlock Healing Tonic production
+        if (em.buildings && em.buildings.length > 0 && (em.gold || 0) > 150 && rng.chance(0.4)) {
+            for (var _api = 0; _api < em.buildings.length; _api++) {
+                var _apRef = em.buildings[_api];
+                if (_apRef.type !== 'apothecary') continue;
+                var _apLvl = _apRef.level || 1;
+                if (_apLvl >= 3) continue; // already can make healing tonic
+                var _apTown = findTown(_apRef.townId);
+                if (!_apTown || !_apTown.market) continue;
+                // Check if healing tonic has demand and ingredients are available
+                var _htDemand = _apTown.market.demand.healing_tonic || 0;
+                var _htSupply = _apTown.market.supply.healing_tonic || 0;
+                var _herbsAvail = (_apTown.market.supply.herbs || 0) >= 4;
+                var _honeyAvail = (_apTown.market.supply.honey || 0) >= 1;
+                if (_htDemand > _htSupply && _herbsAvail && _honeyAvail) {
+                    // Find the actual building and upgrade it
+                    var _apBld = null;
+                    for (var _abi = 0; _abi < _apTown.buildings.length; _abi++) {
+                        if (_apTown.buildings[_abi].ownerId === em.id && _apTown.buildings[_abi].type === 'apothecary') {
+                            _apBld = _apTown.buildings[_abi]; break;
+                        }
+                    }
+                    if (!_apBld) continue;
+                    var _apBt = findBuildingType('apothecary');
+                    var _apUpCost = Math.floor(((_apBt.cost || 400) * 0.5) * Math.pow(2, _apLvl - 1));
+                    if (em.gold >= _apUpCost) {
+                        em.gold -= _apUpCost;
+                        _apBld.level = _apLvl + 1;
+                        _apRef.level = _apLvl + 1;
+                        var _unlockMsg = (_apLvl + 1 >= 3) ? ' 🔓 Can now produce Healing Tonics!' : '';
+                        logEvent(em.firstName + ' ' + (em.lastName || '') + ' upgrades Apothecary to level ' + (_apLvl + 1) + ' in ' + (_apTown.name || 'town') + '.' + _unlockMsg, {
+                            type: 'elite_building_upgrade',
+                            cause: 'High demand for Healing Tonics motivates investment.',
+                            effects: ['Apothecary upgraded to level ' + (_apLvl + 1), _unlockMsg || 'Closer to unlocking Healing Tonic production']
+                        });
+                        break;
+                    }
+                }
+            }
+        }
+
         // Update em.employees count for display
         var empCount = 0;
         for (var eci = 0; eci < allEmBuildings.length; eci++) {
@@ -22795,6 +24055,8 @@
                     for (var prodKey in bt.availableProducts) {
                         var recipe = bt.availableProducts[prodKey];
                         if (!recipe.produces) continue;
+                        // Enforce minLevel requirement for AI buildings
+                        if (recipe.minLevel && (bld.level || 1) < recipe.minLevel) continue;
                         var sellPrice = getMarketPrice(town, recipe.produces) || 0;
                         var outputRes = findResourceById(recipe.produces);
                         if (!outputRes) continue;
@@ -24206,6 +25468,84 @@
                     }
                 }
             }
+            }
+        }
+    }
+
+    /**
+     * EM medical facility supply AI: EMs that own hospitals/clinics
+     * proactively source medical supplies their facilities need.
+     */
+    function eliteMedicalSupplyAI(em, town, rng) {
+        if (!em.buildings || em.buildings.length === 0) return;
+        var medGoods = ['bandages', 'herbal_remedy', 'healing_tonic', 'herbal_poultice', 'fever_tonic', 'antidote', 'splint'];
+
+        for (var mbi = 0; mbi < em.buildings.length; mbi++) {
+            var emBld = em.buildings[mbi];
+            if (emBld.type !== 'hospital' && emBld.type !== 'clinic') continue;
+            // Find the actual town building
+            var bldTown = findTown(emBld.townId);
+            if (!bldTown) continue;
+            var actualBld = null;
+            for (var abi = 0; abi < bldTown.buildings.length; abi++) {
+                if (bldTown.buildings[abi].ownerId === em.id &&
+                    (bldTown.buildings[abi].type === 'hospital' || bldTown.buildings[abi].type === 'clinic')) {
+                    actualBld = bldTown.buildings[abi]; break;
+                }
+            }
+            if (!actualBld) continue;
+            if (!actualBld._medicalStock) actualBld._medicalStock = {};
+
+            // Assess what's needed based on treatment supply config
+            var treatSupplies = NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES || {};
+            var neededGoods = {};
+            for (var sev in treatSupplies) {
+                for (var res in treatSupplies[sev]) {
+                    neededGoods[res] = (neededGoods[res] || 0) + treatSupplies[sev][res];
+                }
+            }
+
+            // Check stock levels and buy what's low
+            for (var ngi = 0; ngi < medGoods.length; ngi++) {
+                var mgId = medGoods[ngi];
+                var currentStock = actualBld._medicalStock[mgId] || 0;
+                var targetStock = Math.max(5, (neededGoods[mgId] || 1) * 3);
+                if (currentStock >= targetStock) continue;
+
+                var deficit = targetStock - currentStock;
+                // Try local market first
+                var localAvail = (bldTown.market && bldTown.market.supply[mgId]) || 0;
+                if (localAvail > 0 && (em.gold || 0) > 20) {
+                    var toBuy = Math.min(deficit, localAvail, Math.floor(em.gold * 0.05 / (getMarketPrice(bldTown, mgId) || 5)));
+                    if (toBuy > 0) {
+                        var cost = toBuy * (getMarketPrice(bldTown, mgId) || 5);
+                        if (em.gold >= cost) {
+                            em.gold -= cost;
+                            consumeFromMarket(bldTown, mgId, toBuy);
+                            actualBld._medicalStock[mgId] = currentStock + toBuy;
+                        }
+                    }
+                } else if (emHasSkill(em, 'market_scout') && bldTown.connectedTowns) {
+                    // Check connected towns for medical supplies
+                    for (var cmi = 0; cmi < Math.min(bldTown.connectedTowns.length, 3); cmi++) {
+                        var connMedTown = findTown(bldTown.connectedTowns[cmi]);
+                        if (!connMedTown || !connMedTown.market) continue;
+                        var connAvail = connMedTown.market.supply[mgId] || 0;
+                        if (connAvail < 3) continue;
+                        // Dispatch supply caravan
+                        if ((em.gold || 0) < 100) break;
+                        var caravanQty = Math.min(deficit, connAvail - 1, 15);
+                        if (caravanQty < 2) continue;
+                        var caravanCost = caravanQty * (getMarketPrice(connMedTown, mgId) || 5) + 30;
+                        if (em.gold < caravanCost) continue;
+                        em.gold -= caravanCost;
+                        connMedTown.market.supply[mgId] -= caravanQty;
+                        // Deliver directly to medical stock (simplified — no travel delay for EM)
+                        actualBld._medicalStock[mgId] = (actualBld._medicalStock[mgId] || 0) + caravanQty;
+                        collectTradeTax(connMedTown.kingdomId, caravanQty * (getMarketPrice(connMedTown, mgId) || 5), mgId);
+                        break;
+                    }
+                }
             }
         }
     }
@@ -25907,6 +27247,8 @@
             for (var ci = 0; ci < checkCount; ci++) {
                 var neighbor = findTown(town.connectedTowns[ci]);
                 if (!neighbor || !neighbor.market) continue;
+                // Skip destinations under trade embargo
+                if (town.kingdomId && neighbor.kingdomId && town.kingdomId !== neighbor.kingdomId && hasEmbargo(town.kingdomId, neighbor.kingdomId)) continue;
                 
                 // Check inventory for selling opportunities
                 var inv = m.npcMerchantInventory || {};
@@ -26196,6 +27538,7 @@
     // §19C  INDIVIDUAL NPC PURCHASING (batched round-robin)
     // ========================================================
     function getMarketPrice(town, resourceId) {
+        if (!town || !town.market || !town.market.prices) return (findResourceById(resourceId) || {}).basePrice || 1;
         var rawPrice = town.market.prices[resourceId] || (findResourceById(resourceId) || {}).basePrice || 1;
         // Apply price controls if kingdom has the law
         var kingdom = findKingdom(town.kingdomId);
@@ -29886,6 +31229,96 @@
             // Populate world.eliteMerchants array (always 20)
             world.eliteMerchants = world.people.filter(function(p) { return p.alive && p.isEliteMerchant; });
 
+            // ── Assign ownership to unowned buildings ──
+            // ~70% NPC, ~20% EM, ~10% kingdom. Kingdom always owns military & civic buildings.
+            var _kingdomOnlyTypes = ['barracks', 'watchtower', 'cathedral', 'university'];
+            var _civicTypes = ['well', 'cistern', 'tent_camp', 'apartment_building', 'guild_hall', 'dock'];
+            for (var _oti = 0; _oti < world.towns.length; _oti++) {
+                var _oTown = world.towns[_oti];
+                if (!_oTown.buildings) continue;
+                var _oKingdom = findKingdom(_oTown.kingdomId);
+                var _oKingdomId = _oKingdom ? _oKingdom.id : null;
+                // Get EMs and regular NPCs in this town
+                var _oTownEMs = world.eliteMerchants.filter(function(em) { return em.alive && em.townId === _oTown.id; });
+                // All kingdom EMs as fallback if none local
+                if (_oTownEMs.length === 0 && _oKingdom) {
+                    _oTownEMs = world.eliteMerchants.filter(function(em) {
+                        return em.alive && _oKingdom.territories.has(em.townId);
+                    });
+                }
+                var _oTownNPCs = world.people.filter(function(p) {
+                    return p.alive && p.townId === _oTown.id && !p.isEliteMerchant && !p.isKing &&
+                        p.age >= (CONFIG.COMING_OF_AGE || 18) && (p.gold || 0) >= 50;
+                });
+                // Banned goods that are ONLY produced by a single-product building
+                var _oBannedGoods = (_oKingdom && _oKingdom.laws && _oKingdom.laws.bannedGoods) || [];
+
+                for (var _obi = 0; _obi < _oTown.buildings.length; _obi++) {
+                    var _oBld = _oTown.buildings[_obi];
+                    var _oBt = findBuildingType(_oBld.type);
+
+                    // Kingdom-only types always go to kingdom (override any prior owner)
+                    if (_kingdomOnlyTypes.indexOf(_oBld.type) >= 0) {
+                        _oBld.ownerId = _oKingdomId;
+                        continue;
+                    }
+
+                    // Civic types: kingdom-owned (override any prior owner)
+                    if (_civicTypes.indexOf(_oBld.type) >= 0) {
+                        _oBld.ownerId = _oKingdomId;
+                        continue;
+                    }
+
+                    // Hospitals and clinics: kingdom-owned (override retail assignment)
+                    if (_oBld.type === 'hospital' || _oBld.type === 'clinic') {
+                        _oBld.ownerId = _oKingdomId;
+                        continue;
+                    }
+
+                    // Advanced apothecary: EM or kingdom only
+                    if (_oBld.type === 'advanced_apothecary') {
+                        if (_oTownEMs.length > 0 && phaseRngPeople.chance(0.6)) {
+                            var _aaEM = _oTownEMs[Math.floor(phaseRngPeople.random() * _oTownEMs.length)];
+                            _oBld.ownerId = _aaEM.id;
+                            if (!_aaEM.buildings) _aaEM.buildings = [];
+                            _aaEM.buildings.push({ type: _oBld.type, townId: _oTown.id, level: _oBld.level || 1 });
+                        } else {
+                            _oBld.ownerId = _oKingdomId;
+                        }
+                        continue;
+                    }
+
+                    if (_oBld.ownerId) continue; // already has owner
+
+                    // Banned-goods-only buildings (single product matches banned): kingdom-owned
+                    if (_oBt && _oBt.produces && _oBannedGoods.indexOf(_oBt.produces) >= 0 && !_oBt.canProduce) {
+                        _oBld.ownerId = _oKingdomId;
+                        continue;
+                    }
+
+                    // Normal ownership distribution: ~70% NPC, ~20% EM, ~10% kingdom
+                    var _oRoll = phaseRngPeople.random();
+                    if (_oRoll < 0.10) {
+                        // Kingdom
+                        _oBld.ownerId = _oKingdomId;
+                    } else if (_oRoll < 0.30 && _oTownEMs.length > 0) {
+                        // Elite merchant
+                        var _oEM = _oTownEMs[Math.floor(phaseRngPeople.random() * _oTownEMs.length)];
+                        _oBld.ownerId = _oEM.id;
+                        // Track in EM's buildings list
+                        if (!_oEM.buildings) _oEM.buildings = [];
+                        _oEM.buildings.push({ type: _oBld.type, townId: _oTown.id, level: _oBld.level || 1 });
+                    } else if (_oTownNPCs.length > 0) {
+                        // Regular NPC
+                        var _oNPC = _oTownNPCs[Math.floor(phaseRngPeople.random() * _oTownNPCs.length)];
+                        _oBld.ownerId = _oNPC.id;
+                    } else {
+                        // Fallback: kingdom
+                        _oBld.ownerId = _oKingdomId;
+                    }
+                }
+            }
+
             // Initialize alive population cache
             world._alivePopCount = world.people.filter(p => p.alive).length;
 
@@ -30038,6 +31471,7 @@
             tickNPCCaravans();     // Process caravan movement
             tickEMCaravans();      // EM caravan hiring decisions
             tickKingdomCaravans(); // Kingdom supply caravans
+            tickKingdomMedicalLogistics(); // Emergency medical supply transport
             tickNPCRetailBuildings();
             npcOptimizeProduction();
             tickNPCPurchasing();
@@ -30051,6 +31485,7 @@
             tickMilitary();
             tickEvents();
             tickNPCHealth();
+            tickNPCTreatmentSeeking();
             tickSecurity();
             tickTownCategories();
             tickOutposts();
@@ -30335,6 +31770,9 @@
         // Free travel: expose A* pathfinding and terrain lookup
         findTerrainPath: function(sx, sy, ex, ey, mode) { return findTerrainPath(sx, sy, ex, ey, mode); },
         getTerrainAtPixel: function(px, py) { return terrainAt(Math.floor(px / CONFIG.TILE_SIZE), Math.floor(py / CONFIG.TILE_SIZE)); },
+
+        surveyDepositsAtPoint: function(wx, wy, radius) { return _surveyDepositsAtPoint(wx, wy, radius); },
+        surveyFertilityAtPoint: function(wx, wy, radius) { return _surveyFertilityAtPoint(wx, wy, radius); },
 
         // Resource helpers for ship/building dynamic pricing
         getResourcePrice(townId, resourceId) {
@@ -30666,6 +32104,15 @@
         getKingMood: function(kingdomId) { var k = findKingdom(kingdomId); return k ? (k.kingMood || { current: 'content', since: 0 }) : null; },
         getKingActionLog: function(kingdomId) { var k = findKingdom(kingdomId); return k ? (k.kingActionLog || []) : []; },
         getSuccessionCrisis: function(kingdomId) { var k = findKingdom(kingdomId); return k ? k.successionCrisis : null; },
+        getPendingElection: function(kingdomId) { var k = findKingdom(kingdomId); return k ? (k._pendingElection || null) : null; },
+        castElectionVote: function(kingdomId, candidateId) {
+            var k = findKingdom(kingdomId);
+            if (!k || !k._pendingElection) return { success: false, reason: 'No pending election' };
+            var validCandidate = k._pendingElection.candidates.some(function(c) { return c.id === candidateId; });
+            if (!validCandidate) return { success: false, reason: 'Invalid candidate' };
+            _resolvePendingElection(k, candidateId);
+            return { success: true };
+        },
         getRoyalCommissions: function(kingdomId) { var k = findKingdom(kingdomId); return k ? (k.royalCommissions || []) : []; },
         fulfillRoyalCommission: function(kingdomId, commissionId, playerId) {
             var k = findKingdom(kingdomId);
@@ -30724,6 +32171,9 @@
         collectTradeTax(kingdomId, amount) { collectTradeTax(kingdomId, amount); },
         tickHospitals() { tickHospitalTreatment(); },
         getHospitalFees(townId) { return getHospitalFees(townId); },
+        toggleMedicalAutobuy(townId, buildingId) { return toggleMedicalAutobuy(townId, buildingId); },
+        kickPatientFromQueue(townId, buildingId, personId) { return kickPatientFromQueue(townId, buildingId, personId); },
+        getMarketPrice(town, resourceId) { return getMarketPrice(town, resourceId); },
         computeMilitaryStrength(id) {
             if (!world) return 0;
             const k = findKingdom(id);
@@ -31096,6 +32546,7 @@
                 kingMood: k.kingMood || { current: 'content', since: 0, reason: '' },
                 kingActionLog: (k.kingActionLog || []).slice(-50),
                 successionCrisis: k.successionCrisis || null,
+                _pendingElection: k._pendingElection || null,
                 royalCommissions: k.royalCommissions || [],
                 immigrationPolicy: k.immigrationPolicy || 'open',
                 healthPolicies: JSON.parse(JSON.stringify(k.healthPolicies || [])),
@@ -31159,6 +32610,14 @@
             }
             world.gridCols = data.gridCols;
             world.gridRows = data.gridRows;
+            // Validate terrain grid dimensions
+            if (world.terrain && world.gridCols && world.gridRows) {
+                var expectedLen = world.gridCols * world.gridRows;
+                if (world.terrain.length !== expectedLen) {
+                    console.warn('[Load] Terrain grid size mismatch: expected ' + expectedLen + ', got ' + world.terrain.length + '. Regenerating terrain.');
+                    world.terrain = null;
+                }
+            }
 
             // Restore kingdoms (convert arrays back to Sets)
             world.kingdoms = (data.kingdoms || []).map(k => ({
@@ -31221,6 +32680,7 @@
                 kingMood: k.kingMood || { current: 'content', since: 0, reason: '' },
                 kingActionLog: k.kingActionLog || [],
                 successionCrisis: k.successionCrisis || null,
+                _pendingElection: k._pendingElection || null,
                 royalCommissions: k.royalCommissions || [],
                 immigrationPolicy: k.immigrationPolicy || 'open',
                 nationalizedIndustries: k.nationalizedIndustries || [],
@@ -31286,6 +32746,13 @@
                             var pop = town.population || 0;
                             var gChance = pop >= 5000 ? 0.75 : pop >= 2000 ? 0.60 : pop >= 500 ? 0.45 : 0.30;
                             bld.inGuild = world.rng ? world.rng.chance(gChance) : Math.random() < gChance;
+                        }
+                    }
+                    // Treatment queue migration — ensure _noSupplyRetries exists
+                    if (bld._treatmentQueue && bld._treatmentQueue.length > 0) {
+                        for (var _tqi = 0; _tqi < bld._treatmentQueue.length; _tqi++) {
+                            var _tqe = bld._treatmentQueue[_tqi];
+                            if (_tqe._noSupplyRetries === undefined) _tqe._noSupplyRetries = 0;
                         }
                     }
                 }
@@ -31584,6 +33051,10 @@
                 if (p.sick === undefined) p.sick = false;
                 if (p.illness === undefined) p.illness = null;
                 if (p.illnessDay === undefined) p.illnessDay = 0;
+                // Injury severity migration (backward compat — old saves only have illnessSeverity)
+                if (p.injured && p.injurySeverity === undefined) {
+                    p.injurySeverity = p.illnessSeverity || 'minor';
+                }
             }
             world.events = data.events || [];
             world.eventLog = data.eventLog || [];
