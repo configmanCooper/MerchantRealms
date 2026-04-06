@@ -193,6 +193,7 @@
         politicalCapitalResetDay: 0,
         lordTownId: null,               // town where player is Lord (crime immunity applies here)
         _repWarnDay: {},                // kingdomId → day when rep first dropped below threshold (for 30-day demotion timer)
+        _nobleStatusNeverExpires: false, // god mode: skip rank maintenance checks
 
         // ── Town Reputation ──
         townReputation: {},             // townId → 0-100
@@ -14758,6 +14759,7 @@
             politicalCapitalResetDay: player.politicalCapitalResetDay || 0,
             lordTownId: player.lordTownId || null,
             _repWarnDay: JSON.parse(JSON.stringify(player._repWarnDay || {})),
+            _nobleStatusNeverExpires: player._nobleStatusNeverExpires || false,
             _tournamentAccessDay: player._tournamentAccessDay || null,
             _marriageRankWaiver: player._marriageRankWaiver ? JSON.parse(JSON.stringify(player._marriageRankWaiver)) : null,
             // Town Reputation
@@ -15115,6 +15117,7 @@
         player.politicalCapitalResetDay = data.politicalCapitalResetDay || 0;
         player.lordTownId = data.lordTownId || null;
         player._repWarnDay = data._repWarnDay || {};
+        player._nobleStatusNeverExpires = data._nobleStatusNeverExpires || false;
         player._tournamentAccessDay = data._tournamentAccessDay || null;
         player._marriageRankWaiver = data._marriageRankWaiver || null;
         // Town Reputation
@@ -16294,7 +16297,7 @@
         // Lord (rank 5): rep < 70 OR king relationship < 60 for 30 days → demoted to Minor Noble (rank 4)
         // Royal Advisor (rank 6): rep < 80 OR king relationship < 70 for 30 days → demoted to Lord (rank 5)
         // ========================================================
-        if (day % 7 === 0) {
+        if (day % 7 === 0 && !player._nobleStatusNeverExpires) {
             for (var _dkId in player.socialRank) {
                 var _dRank = player.socialRank[_dkId] || 0;
                 var _dRep = player.reputation[_dkId] || 50;
