@@ -1766,19 +1766,10 @@ window.Renderer = (function () {
             herbs: '🌿', honey: '🍯', silk: '🧣',
             pearls: '🫧', coal: '⬛', copper_ore: '🟤'
         };
-        var depositColors = {
-            iron_ore: '#8b7355', stone: '#9a9a9a', gold_ore: '#ffd700',
-            wheat: '#c8a84e', wood: '#2d6b2d', wool: '#d0c8b0',
-            hide: '#8b6914', grapes: '#6a3d9a', hemp: '#4a7a3a',
-            clay: '#b87333', salt: '#e8e8e8', fish: '#4a90c4',
-            herbs: '#3a8a3a', honey: '#daa520', silk: '#c0a0d0',
-            pearls: '#b0c4de', coal: '#333', copper_ore: '#b87333'
-        };
 
         for (var t = 0; t < towns.length; t++) {
             var town = towns[t];
             if (!town.naturalDeposits) continue;
-            // Regional = kingdom only; World = all towns
             if (!hasWorld) {
                 if (town.kingdomId !== playerKingdom && Player.townId !== town.id) continue;
             }
@@ -1793,58 +1784,31 @@ window.Renderer = (function () {
             }
             if (resources.length === 0) continue;
 
-            var pop = town.population || 100;
-            var territoryR = Math.max(40, 25 + Math.sqrt(pop) * 3);
+            // Compact label below town: icon amount  icon amount ...
+            var fontSize = Math.max(8, Math.min(12, 10 * camera.zoom));
+            ctx.font = 'bold ' + fontSize + 'px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
 
-            // Scatter deposit icons around the town territory
-            for (var ri = 0; ri < resources.length; ri++) {
-                var res = resources[ri];
-                var icon = depositIcons[res.id] || '📦';
-                var col = depositColors[res.id] || '#888';
-                // Place 1-3 icons per resource based on amount
-                var numIcons = res.amount >= 80 ? 3 : res.amount >= 30 ? 2 : 1;
-                for (var ni = 0; ni < numIcons; ni++) {
-                    // Deterministic scatter using tileHash
-                    var seed1 = tileHash(town.x + ri * 17, town.y + ni * 31);
-                    var seed2 = tileHash(town.y + ri * 23, town.x + ni * 13);
-                    var angle = seed1 * Math.PI * 2;
-                    var dist = territoryR * 0.3 + seed2 * territoryR * 0.7;
-                    var ix = town.x + Math.cos(angle) * dist;
-                    var iy = town.y + Math.sin(angle) * dist;
-
-                    // Background pill
-                    var fontSize = Math.max(10, Math.min(16, 12 * camera.zoom));
-                    ctx.font = fontSize + 'px sans-serif';
-                    var tw = ctx.measureText(icon).width;
-                    ctx.fillStyle = 'rgba(20,20,15,0.7)';
-                    ctx.beginPath();
-                    ctx.arc(ix, iy, fontSize * 0.7, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.strokeStyle = col;
-                    ctx.lineWidth = 1.5;
-                    ctx.beginPath();
-                    ctx.arc(ix, iy, fontSize * 0.7, 0, Math.PI * 2);
-                    ctx.stroke();
-
-                    // Icon
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    ctx.fillStyle = '#fff';
-                    ctx.fillText(icon, ix, iy);
+            // Build label entries: split into rows of up to 4 resources each
+            var rowSize = 4;
+            var yOff = 18;
+            for (var row = 0; row < Math.ceil(resources.length / rowSize); row++) {
+                var rowItems = resources.slice(row * rowSize, (row + 1) * rowSize);
+                var label = '';
+                for (var ri = 0; ri < rowItems.length; ri++) {
+                    var r = rowItems[ri];
+                    var icon = depositIcons[r.id] || '📦';
+                    var amt = r.amount >= 1000 ? Math.round(r.amount / 1000) + 'k' : r.amount;
+                    label += (ri > 0 ? '  ' : '') + icon + amt;
                 }
-            }
-
-            // Label under the scattered area with resource summary
-            if (camera.zoom > 0.8) {
-                var label = resources.map(function(r) { return (depositIcons[r.id] || '') + r.amount; }).join(' ');
-                ctx.font = 'bold ' + Math.max(7, 9 * camera.zoom) + 'px sans-serif';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'top';
-                ctx.fillStyle = 'rgba(180,170,140,0.9)';
-                ctx.strokeStyle = 'rgba(0,0,0,0.7)';
-                ctx.lineWidth = 2;
-                ctx.strokeText(label, town.x, town.y + territoryR * 0.5 + 4);
-                ctx.fillText(label, town.x, town.y + territoryR * 0.5 + 4);
+                // Draw with dark outline for readability
+                var ly = town.y + yOff + row * (fontSize + 3);
+                ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+                ctx.lineWidth = 2.5;
+                ctx.fillStyle = 'rgba(220,210,180,0.95)';
+                ctx.strokeText(label, town.x, ly);
+                ctx.fillText(label, town.x, ly);
             }
         }
         ctx.textBaseline = 'alphabetic';
