@@ -9412,11 +9412,17 @@
                 continue;
             }
 
+            // Clean up decisions that lost their execute function (e.g. after save/load)
+            if (typeof pd._executeFn !== 'function') {
+                k.pendingKingDecisions.splice(pdi, 1);
+                continue;
+            }
+
             // 1-day timeout — king proceeds with original plan
             if (world.day > pd.createdDay + 1) {
                 pd.resolved = true;
                 pd.playerResponse = 'timeout';
-                if (typeof pd._executeFn === 'function') pd._executeFn();
+                pd._executeFn();
                 logEvent('👑 The king proceeded with: ' + pd.description + ' (no response from advisor)', null, 'my_kingdom');
                 k.pendingKingDecisions.splice(pdi, 1);
             }
@@ -9449,18 +9455,14 @@
         var rng = world.rng;
 
         if (response === 'agree') {
-            // Player agrees — execute and gain small rep
+            // Player agrees — execute decision (no rep/relationship reward for supporting)
             if (typeof pd._executeFn === 'function') pd._executeFn();
-            var repGain = rng ? rng.randInt(1, 3) : 2;
-            if (typeof Player !== 'undefined' && Player.modifyReputation) {
-                Player.modifyReputation(kingdomId, repGain);
-            }
             logEvent('✅ You agreed with the king\'s decision: ' + pd.description, null, 'my_kingdom');
             // Remove from queue
             for (var ri = k.pendingKingDecisions.length - 1; ri >= 0; ri--) {
                 if (k.pendingKingDecisions[ri].id === decisionId) { k.pendingKingDecisions.splice(ri, 1); break; }
             }
-            return { success: true, message: 'You supported the king\'s decision. (+' + repGain + ' reputation)', swayed: false };
+            return { success: true, message: 'You supported the king\'s decision.', swayed: false };
         }
 
         // Player opposes — attempt to sway king
@@ -9527,10 +9529,12 @@
             if (typeof UI !== 'undefined' && UI.toast) {
                 UI.toast('❌ The king was not swayed.', 'warning', 'my_kingdom');
             }
-            // Small rep loss for failed opposition
-            var repLoss = rng ? rng.randInt(1, 2) : 1;
+            // Failed opposition penalty: -2 king relationship, -0.5 kingdom reputation
+            if (typeof Player !== 'undefined' && Player.modifyRelationship && k.king) {
+                Player.modifyRelationship(k.king, -2);
+            }
             if (typeof Player !== 'undefined' && Player.modifyReputation) {
-                Player.modifyReputation(kingdomId, -repLoss);
+                Player.modifyReputation(kingdomId, -0.5);
             }
             // Spend 1 political capital
             if (typeof Player !== 'undefined' && Player.serialize) {
@@ -9542,7 +9546,7 @@
             for (var ri3 = k.pendingKingDecisions.length - 1; ri3 >= 0; ri3--) {
                 if (k.pendingKingDecisions[ri3].id === decisionId) { k.pendingKingDecisions.splice(ri3, 1); break; }
             }
-            return { success: true, message: kingTitle + ' was not swayed and proceeded. (-' + repLoss + ' rep, -1 political capital)', swayed: false, swayChance: Math.round(swayChance * 100) };
+            return { success: true, message: kingTitle + ' was not swayed and proceeded. (-2 king relationship, -0.5 rep, -1 political capital)', swayed: false, swayChance: Math.round(swayChance * 100) };
         }
     }
 
@@ -16902,6 +16906,14 @@
             if (ev.daysRemaining <= 0) {
                 ev.active = false;
                 logEvent(`${ev.name} event has ended.`);
+                // Restore road safety after events that made roads unsafe (e.g. bandit_surge)
+                if (ev.type === 'bandit_surge') {
+                    for (const road of world.roads) {
+                        if (road.fromTownId === ev.townId || road.toTownId === ev.townId) {
+                            road.safe = isRoadSafe(road);
+                        }
+                    }
+                }
                 continue;
             }
             // Ongoing effects

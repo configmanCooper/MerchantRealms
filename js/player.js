@@ -194,6 +194,7 @@
         lordTownId: null,               // town where player is Lord (crime immunity applies here)
         _repWarnDay: {},                // kingdomId → day when rep first dropped below threshold (for 30-day demotion timer)
         _nobleStatusNeverExpires: false, // god mode: skip rank maintenance checks
+        _marriedToRoyalChild: null, // { kingdomId, personId } — 25% king/kingdom rep boost
 
         // ── Town Reputation ──
         townReputation: {},             // townId → 0-100
@@ -2737,39 +2738,104 @@
             if (route[si].fromTownId) routeTownIds[route[si].fromTownId] = true;
             if (route[si].toTownId) routeTownIds[route[si].toTownId] = true;
         }
-        // Check each town for quarantine
+        // Check each town for quarantine (regular or martial)
         for (var tid in routeTownIds) {
             var t = Engine.findTown(tid);
             if (!t || !t.activePolicies) continue;
-            var isQuarantined = false;
+            var qType = null; // 'quarantine_town' or 'martial_quarantine'
             for (var qi = 0; qi < t.activePolicies.length; qi++) {
-                if (t.activePolicies[qi].id === 'quarantine_town') { isQuarantined = true; break; }
+                if (t.activePolicies[qi].id === 'martial_quarantine') { qType = 'martial'; break; }
+                if (t.activePolicies[qi].id === 'quarantine_town') { qType = 'standard'; }
             }
-            if (!isQuarantined) continue;
-            // Nobles (minor noble, rank >= 4) pass freely — official privilege
+            if (!qType) continue;
+
+            var isMartial = qType === 'martial';
+            var qLabel = isMartial ? 'martial quarantine' : 'quarantine';
+
+            // Nobles (minor noble+, rank >= 4) pass freely
             if (player.isNoble) {
-                return { allowed: true, message: 'Your noble status grants passage through the quarantine at ' + t.name + '.' };
+                return { allowed: true, message: 'Your noble status grants passage through the ' + qLabel + ' at ' + t.name + '.' };
             }
-            // Guildmasters (rank 3) can talk their way through on trade business
+            // Guildmasters (rank 3) can pass standard quarantine on trade business, but NOT martial
             var playerRankInKingdom = 0;
             if (t.kingdomId && player.socialRank) {
                 playerRankInKingdom = player.socialRank[t.kingdomId] || 0;
             }
-            if (playerRankInKingdom >= 3) {
+            if (!isMartial && playerRankInKingdom >= 3) {
                 return { allowed: true, message: 'Your merchant standing lets you pass the quarantine at ' + t.name + ' on official trade business.' };
             }
-            // Others can try to sneak through — 40% base chance
-            var sneakChance = 0.40;
+
+            // Sneak attempt — 40% for standard, 20% for martial
+            var sneakChance = isMartial ? 0.20 : 0.40;
             if (hasSkill('smuggler') || hasSkill('streetwise')) sneakChance += 0.20;
             if (hasSkill('cartographer')) sneakChance += 0.10;
             var rng = Engine.getRng();
             if (rng.chance(sneakChance)) {
-                return { allowed: true, message: '🤫 You slipped past the quarantine guards at ' + t.name + '.' };
+                return { allowed: true, message: '🤫 You slipped past the ' + qLabel + ' guards at ' + t.name + '.' };
+            }
+
+            // Caught — kingdom decides fine or jail based on king personality
+            var kingdom = t.kingdomId ? Engine.findKingdom(t.kingdomId) : null;
+            var kp = kingdom ? kingdom.kingPersonality : null;
+            var punishment = _quarantinePunishment(kingdom, kp, isMartial, rng);
+
+            if (punishment.type === 'jail') {
+                var jailDays = punishment.days;
+                if (hasSkill('jail_break')) jailDays = Math.max(1, Math.floor(jailDays * 0.5));
+                player.jailedUntilDay = Engine.getDay() + jailDays;
+                player.jailReason = 'Violating ' + qLabel;
+                if (punishment.fine > 0) {
+                    var actualFine = Math.min(punishment.fine, player.gold);
+                    player.gold -= actualFine;
+                    if (kingdom) kingdom.gold = (kingdom.gold || 0) + actualFine;
+                }
+                Engine.logEvent('🚔 ' + player.fullName + ' was caught violating ' + qLabel + ' at ' + t.name + '! Jailed for ' + jailDays + ' days' + (punishment.fine > 0 ? ' and fined ' + punishment.fine + 'g' : '') + '.');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚔 Caught! Jailed ' + jailDays + ' days for violating ' + qLabel + '.', 'error', 'critical');
+                return { allowed: false, message: '🚧 Caught violating ' + qLabel + ' at ' + t.name + '! Jailed for ' + jailDays + ' days' + (punishment.fine > 0 ? ', fined ' + punishment.fine + 'g' : '') + '.' };
             } else {
-                return { allowed: false, message: '🚧 ' + t.name + ' is under quarantine. The guards turned you away. (Nobles and elite merchants may pass freely.)' };
+                // Fine only
+                var actualFine2 = Math.min(punishment.fine, player.gold);
+                player.gold -= actualFine2;
+                if (kingdom) kingdom.gold = (kingdom.gold || 0) + actualFine2;
+                Engine.logEvent('🚧 ' + player.fullName + ' was caught at ' + t.name + ' ' + qLabel + ' and fined ' + actualFine2 + 'g.');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚧 Caught! Fined ' + actualFine2 + 'g for violating ' + qLabel + '.', 'warning', 'critical');
+                return { allowed: false, message: '🚧 Caught at ' + t.name + ' ' + qLabel + '! Fined ' + actualFine2 + 'g and turned away.' };
             }
         }
         return null; // no quarantine on route
+    }
+
+    // Determine quarantine violation punishment based on kingdom personality
+    function _quarantinePunishment(kingdom, kp, isMartial, rng) {
+        // Base fine scales with martial vs standard
+        var baseFine = isMartial ? 100 : 40;
+        var baseJailDays = isMartial ? 5 : 2;
+
+        if (kp) {
+            // Harsh/tyrannical kings jail more and fine higher
+            if (kp.temperament === 'cruel' || kp.temperament === 'tyrannical') {
+                baseFine = Math.floor(baseFine * 1.5);
+                baseJailDays = Math.floor(baseJailDays * 1.5);
+            } else if (kp.temperament === 'merciful' || kp.temperament === 'kind') {
+                baseFine = Math.floor(baseFine * 0.6);
+                baseJailDays = Math.max(1, Math.floor(baseJailDays * 0.5));
+            }
+            // Greedy kings prefer fines over jail (they want gold)
+            if (kp.greed === 'greedy' || kp.greed === 'corrupt') {
+                baseFine = Math.floor(baseFine * 1.4);
+            }
+        }
+
+        // Martial quarantine: always jail. Standard: 40% chance jail, 60% fine only
+        var jailChance = isMartial ? 0.85 : 0.40;
+        if (kp && (kp.temperament === 'cruel' || kp.temperament === 'tyrannical')) jailChance += 0.20;
+        if (kp && (kp.temperament === 'merciful' || kp.temperament === 'kind')) jailChance -= 0.25;
+        jailChance = Math.max(0.1, Math.min(0.95, jailChance));
+
+        if (rng.chance(jailChance)) {
+            return { type: 'jail', days: baseJailDays, fine: baseFine };
+        }
+        return { type: 'fine', fine: baseFine };
     }
 
     /**
@@ -5911,10 +5977,14 @@
         // Per-tick travel energy cost is now handled in travelSubtick() (60x/day)
         // Daily tick only handles: escorts, waypoints, encounters, sea hazards, arrival
 
-        // Daily encounter check (bandits / pirates / wartime ambush)
-        // This replaces the old per-tick pirate check with a unified daily system
-        checkDailyEncounter();
-        if (player.encounterPending) return; // paused for player decision
+        // If already at destination, skip encounters and go straight to arrival
+        if (player.travelProgress >= 1.0) {
+            // Fall through to arrival logic below — no encounters on the last step
+        } else {
+            // Daily encounter check (bandits / pirates / wartime ambush)
+            checkDailyEncounter();
+            if (player.encounterPending) return; // paused for player decision
+        }
 
         // Sea travel hazards: storms (pirates now handled by encounter system)
         if (player.travelBySea) {
@@ -9085,6 +9155,516 @@
     }
 
     // ========================================================
+    // §11.5A2 PROPOSE KING ACTION (Royal Advisor)
+    // ========================================================
+    function getProposableActions(kingdomId) {
+        var kingdom = Engine.findKingdom ? Engine.findKingdom(kingdomId) : null;
+        if (!kingdom) return [];
+        var kp = kingdom.kingPersonality || {};
+        var treasury = kingdom.gold || 0;
+        var atWar = kingdom.atWar && kingdom.atWar.size > 0;
+        var happiness = kingdom.happiness != null ? kingdom.happiness : 50;
+        var kingRel = 50;
+        try {
+            var kingRelObj = getRelationship(kingdom.king);
+            kingRel = kingRelObj ? kingRelObj.level : 50;
+        } catch(e) {}
+        var kingdomRep = player.reputation[kingdomId] || 50;
+        var towns = [];
+        try { towns = Engine.getTowns ? Engine.getTowns().filter(function(t) { return t.kingdomId === kingdomId; }) : []; } catch(e) {}
+        var otherKingdoms = [];
+        try { otherKingdoms = Engine.getKingdoms ? Engine.getKingdoms().filter(function(k) { return k.id !== kingdomId; }) : []; } catch(e) {}
+        var actions = [];
+
+        // ── ECONOMIC ──
+        actions.push({
+            category: 'economic', id: 'lower_taxes',
+            icon: '📉', name: 'Lower Taxes',
+            desc: 'Reduce the kingdom tax rate by 3%, boosting trade and happiness.',
+            baseChance: 0.50,
+            modifiers: function() {
+                var m = [];
+                if (kp.greed === 'generous') m.push({ name: 'Generous king', val: 0.20 });
+                else if (kp.greed === 'greedy') m.push({ name: 'Greedy king', val: -0.25 });
+                else if (kp.greed === 'corrupt') m.push({ name: 'Corrupt king', val: -0.35 });
+                if (treasury > 15000) m.push({ name: 'Healthy treasury', val: 0.10 });
+                else if (treasury < 3000) m.push({ name: 'Low treasury', val: -0.20 });
+                if (happiness < 30) m.push({ name: 'Unhappy populace', val: 0.15 });
+                return m;
+            },
+            execute: function() { kingdom.taxRate = Math.max(0.02, kingdom.taxRate - 0.03); Engine.logEvent('📉 On the Royal Advisor\'s proposal, ' + kingdom.name + ' lowers taxes to ' + Math.round(kingdom.taxRate * 100) + '%.'); }
+        });
+        actions.push({
+            category: 'economic', id: 'raise_taxes',
+            icon: '📈', name: 'Raise Taxes',
+            desc: 'Increase kingdom tax rate by 3% for more revenue.',
+            baseChance: 0.40,
+            modifiers: function() {
+                var m = [];
+                if (kp.greed === 'greedy' || kp.greed === 'corrupt') m.push({ name: 'Greedy king', val: 0.25 });
+                else if (kp.greed === 'generous') m.push({ name: 'Generous king', val: -0.30 });
+                if (treasury < 3000) m.push({ name: 'Desperate treasury', val: 0.25 });
+                if (happiness > 70) m.push({ name: 'Happy populace (can afford it)', val: 0.10 });
+                else if (happiness < 30) m.push({ name: 'Unhappy populace (risky)', val: -0.15 });
+                return m;
+            },
+            execute: function() { kingdom.taxRate = Math.min(0.25, kingdom.taxRate + 0.03); Engine.logEvent('📈 On the Royal Advisor\'s proposal, ' + kingdom.name + ' raises taxes to ' + Math.round(kingdom.taxRate * 100) + '%.'); }
+        });
+        actions.push({
+            category: 'economic', id: 'lower_tariffs',
+            icon: '🏪', name: 'Lower Trade Tariffs',
+            desc: 'Reduce tariffs to attract foreign merchants and boost trade.',
+            baseChance: 0.45,
+            modifiers: function() {
+                var m = [];
+                if (kp.greed === 'generous') m.push({ name: 'Generous king', val: 0.15 });
+                else if (kp.greed === 'corrupt') m.push({ name: 'Corrupt king', val: -0.20 });
+                if (kp.intelligence === 'brilliant' || kp.intelligence === 'clever') m.push({ name: 'Smart king sees trade benefit', val: 0.10 });
+                return m;
+            },
+            execute: function() {
+                if (!kingdom.laws) kingdom.laws = {};
+                kingdom.laws.tradeTariff = Math.max(0, (kingdom.laws.tradeTariff || 0.05) - 0.02);
+                Engine.logEvent('🏪 ' + kingdom.name + ' reduces trade tariffs to ' + Math.round((kingdom.laws.tradeTariff || 0) * 100) + '%.');
+            }
+        });
+        actions.push({
+            category: 'economic', id: 'raise_tariffs',
+            icon: '🛃', name: 'Raise Trade Tariffs',
+            desc: 'Increase tariffs to protect local merchants and raise revenue.',
+            baseChance: 0.40,
+            modifiers: function() {
+                var m = [];
+                if (kp.greed === 'greedy' || kp.greed === 'corrupt') m.push({ name: 'Greedy king', val: 0.20 });
+                if (treasury < 5000) m.push({ name: 'Low treasury', val: 0.15 });
+                return m;
+            },
+            execute: function() {
+                if (!kingdom.laws) kingdom.laws = {};
+                kingdom.laws.tradeTariff = Math.min(0.20, (kingdom.laws.tradeTariff || 0.05) + 0.02);
+                Engine.logEvent('🛃 ' + kingdom.name + ' raises trade tariffs to ' + Math.round(kingdom.laws.tradeTariff * 100) + '%.');
+            }
+        });
+        actions.push({
+            category: 'economic', id: 'royal_festival',
+            icon: '🎉', name: 'Hold Royal Festival',
+            desc: 'Organize a kingdom festival (+5 happiness, costs treasury gold).',
+            baseChance: 0.55,
+            modifiers: function() {
+                var m = [];
+                var cost = Math.min(2000, Math.max(500, treasury * 0.05));
+                if (treasury < cost * 2) m.push({ name: 'Tight treasury', val: -0.25 });
+                if (happiness < 40) m.push({ name: 'Unhappy people need boost', val: 0.20 });
+                if (kp.temperament === 'kind' || kp.temperament === 'merciful') m.push({ name: 'Kind king', val: 0.15 });
+                if (kp.temperament === 'cruel') m.push({ name: 'Cruel king dislikes festivities', val: -0.20 });
+                return m;
+            },
+            execute: function() {
+                var cost = Math.min(2000, Math.max(500, treasury * 0.05));
+                kingdom.gold = Math.max(0, kingdom.gold - cost);
+                kingdom.happiness = Math.min(100, (kingdom.happiness || 50) + 5);
+                Engine.logEvent('🎉 ' + kingdom.name + ' holds a grand festival! (+5 happiness, -' + Math.floor(cost) + 'g)');
+            }
+        });
+        actions.push({
+            category: 'economic', id: 'welfare_distribution',
+            icon: '🍞', name: 'Distribute Welfare',
+            desc: 'Give food and goods to the poor (+3 happiness, costs treasury).',
+            baseChance: 0.45,
+            modifiers: function() {
+                var m = [];
+                if (kp.temperament === 'kind' || kp.temperament === 'merciful') m.push({ name: 'Merciful king', val: 0.25 });
+                if (kp.greed === 'corrupt') m.push({ name: 'Corrupt king hoards wealth', val: -0.30 });
+                if (happiness < 30) m.push({ name: 'Desperate populace', val: 0.20 });
+                if (treasury < 2000) m.push({ name: 'Low treasury', val: -0.20 });
+                return m;
+            },
+            execute: function() {
+                var cost = Math.min(1000, Math.max(300, treasury * 0.03));
+                kingdom.gold = Math.max(0, kingdom.gold - cost);
+                kingdom.happiness = Math.min(100, (kingdom.happiness || 50) + 3);
+                Engine.logEvent('🍞 ' + kingdom.name + ' distributes welfare to the people. (+3 happiness)');
+            }
+        });
+
+        // ── MILITARY / DIPLOMACY ──
+        // Declare war on each other kingdom
+        for (var _wki = 0; _wki < otherKingdoms.length; _wki++) {
+            var target = otherKingdoms[_wki];
+            if (kingdom.atWar && kingdom.atWar.has(target.id)) continue;
+            actions.push({
+                category: 'military', id: 'declare_war_' + target.id,
+                icon: '⚔️', name: 'Declare War on ' + target.name,
+                desc: 'Start a war with ' + target.name + '. Risky but can gain territory.',
+                baseChance: 0.25,
+                modifiers: (function(t) { return function() {
+                    var m = [];
+                    var rel = kingdom.relations ? (kingdom.relations[t.id] || 0) : 0;
+                    if (rel < -50) m.push({ name: 'Poor relations', val: 0.25 });
+                    else if (rel > 30) m.push({ name: 'Good relations (reluctant)', val: -0.30 });
+                    if (kp.ambition === 'expansionist' || kp.ambition === 'conquering') m.push({ name: 'Ambitious king', val: 0.25 });
+                    else if (kp.ambition === 'content' || kp.ambition === 'peaceful') m.push({ name: 'Peaceful king', val: -0.30 });
+                    if (kp.courage === 'brave') m.push({ name: 'Brave king', val: 0.10 });
+                    else if (kp.courage === 'cowardly') m.push({ name: 'Cowardly king', val: -0.20 });
+                    if (treasury > 15000) m.push({ name: 'War chest ready', val: 0.10 });
+                    else if (treasury < 5000) m.push({ name: 'Cannot afford war', val: -0.25 });
+                    return m;
+                }; })(target),
+                execute: (function(t) { return function() {
+                    kingdom.relations[t.id] = Math.max(-100, (kingdom.relations[t.id] || 0) - 40);
+                    Engine.logEvent('⚔️ On the Royal Advisor\'s urging, ' + kingdom.name + ' moves toward war with ' + t.name + '.');
+                }; })(target)
+            });
+        }
+        // Make peace with enemies
+        if (kingdom.atWar) {
+            kingdom.atWar.forEach(function(enemyId) {
+                var enemy = Engine.findKingdom ? Engine.findKingdom(enemyId) : null;
+                if (!enemy) return;
+                actions.push({
+                    category: 'military', id: 'make_peace_' + enemyId,
+                    icon: '🕊️', name: 'Make Peace with ' + enemy.name,
+                    desc: 'End the war with ' + enemy.name + ' through negotiation.',
+                    baseChance: 0.35,
+                    modifiers: (function(e) { return function() {
+                        var m = [];
+                        if (kp.ambition === 'peaceful' || kp.ambition === 'content') m.push({ name: 'Peaceful king', val: 0.25 });
+                        else if (kp.ambition === 'conquering') m.push({ name: 'Conquering king (wants to fight)', val: -0.30 });
+                        if (happiness < 30) m.push({ name: 'War-weary populace', val: 0.20 });
+                        if (treasury < 2000) m.push({ name: 'War is too expensive', val: 0.20 });
+                        if (kp.temperament === 'merciful') m.push({ name: 'Merciful king', val: 0.15 });
+                        return m;
+                    }; })(enemy),
+                    execute: (function(eId, e) { return function() {
+                        kingdom.relations[eId] = Math.min(0, (kingdom.relations[eId] || -50) + 30);
+                        Engine.logEvent('🕊️ On the Royal Advisor\'s counsel, ' + kingdom.name + ' seeks peace with ' + e.name + '.');
+                    }; })(enemyId, enemy)
+                });
+            });
+        }
+        // Form alliance
+        for (var _aki = 0; _aki < otherKingdoms.length; _aki++) {
+            var ally = otherKingdoms[_aki];
+            if (kingdom.atWar && kingdom.atWar.has(ally.id)) continue;
+            if (kingdom.alliances && kingdom.alliances.has(ally.id)) continue;
+            var allyRel = kingdom.relations ? (kingdom.relations[ally.id] || 0) : 0;
+            if (allyRel < 20) continue; // must have decent relations
+            actions.push({
+                category: 'military', id: 'form_alliance_' + ally.id,
+                icon: '🤝', name: 'Form Alliance with ' + ally.name,
+                desc: 'Propose a defensive alliance with ' + ally.name + '.',
+                baseChance: 0.40,
+                modifiers: (function(a, aRel) { return function() {
+                    var m = [];
+                    if (aRel > 60) m.push({ name: 'Strong relations', val: 0.25 });
+                    else if (aRel > 40) m.push({ name: 'Good relations', val: 0.10 });
+                    if (kp.intelligence === 'brilliant' || kp.intelligence === 'clever') m.push({ name: 'Smart king values alliances', val: 0.10 });
+                    if (atWar) m.push({ name: 'Needs allies (at war)', val: 0.20 });
+                    return m;
+                }; })(ally, allyRel),
+                execute: (function(a) { return function() {
+                    kingdom.relations[a.id] = Math.min(100, (kingdom.relations[a.id] || 0) + 15);
+                    Engine.logEvent('🤝 On the Royal Advisor\'s proposal, ' + kingdom.name + ' opens alliance talks with ' + a.name + '.');
+                }; })(ally)
+            });
+        }
+
+        // ── INFRASTRUCTURE ──
+        for (var _bti = 0; _bti < towns.length; _bti++) {
+            var bTown = towns[_bti];
+            // Build walls
+            if (!bTown.hasWall) {
+                actions.push({
+                    category: 'infrastructure', id: 'build_walls_' + bTown.id,
+                    icon: '🏰', name: 'Build Walls in ' + bTown.name,
+                    desc: 'Fortify ' + bTown.name + ' with defensive walls (costs ~800g).',
+                    baseChance: 0.45,
+                    modifiers: (function(t) { return function() {
+                        var m = [];
+                        if (treasury < 1000) m.push({ name: 'Low treasury', val: -0.25 });
+                        if (atWar) m.push({ name: 'War makes defense urgent', val: 0.25 });
+                        if (kp.courage === 'cautious') m.push({ name: 'Cautious king values defense', val: 0.10 });
+                        if (t.isCapital) m.push({ name: 'Capital city priority', val: 0.15 });
+                        return m;
+                    }; })(bTown),
+                    execute: (function(t) { return function() {
+                        Engine.logEvent('🏰 ' + kingdom.name + ' begins building walls in ' + t.name + '.');
+                    }; })(bTown)
+                });
+            }
+            // Build market
+            if (!bTown.hasMarket) {
+                actions.push({
+                    category: 'infrastructure', id: 'build_market_' + bTown.id,
+                    icon: '🏪', name: 'Build Market in ' + bTown.name,
+                    desc: 'Construct a public market to boost trade in ' + bTown.name + '.',
+                    baseChance: 0.50,
+                    modifiers: (function(t) { return function() {
+                        var m = [];
+                        if (treasury > 5000) m.push({ name: 'Healthy treasury', val: 0.10 });
+                        else if (treasury < 2000) m.push({ name: 'Low treasury', val: -0.20 });
+                        if (kp.intelligence === 'brilliant') m.push({ name: 'Smart king invests in trade', val: 0.15 });
+                        return m;
+                    }; })(bTown),
+                    execute: (function(t) { return function() {
+                        Engine.logEvent('🏪 ' + kingdom.name + ' begins building a market in ' + t.name + '.');
+                    }; })(bTown)
+                });
+            }
+        }
+        // General infrastructure
+        actions.push({
+            category: 'infrastructure', id: 'repair_roads',
+            icon: '🛤️', name: 'Repair Kingdom Roads',
+            desc: 'Invest in road maintenance across the kingdom (costs ~500g).',
+            baseChance: 0.55,
+            modifiers: function() {
+                var m = [];
+                if (treasury > 5000) m.push({ name: 'Healthy treasury', val: 0.10 });
+                else if (treasury < 2000) m.push({ name: 'Low treasury', val: -0.20 });
+                if (kp.intelligence === 'brilliant' || kp.intelligence === 'clever') m.push({ name: 'Smart king maintains infrastructure', val: 0.10 });
+                return m;
+            },
+            execute: function() {
+                var cost = Math.min(500, treasury * 0.03);
+                kingdom.gold = Math.max(0, kingdom.gold - cost);
+                Engine.logEvent('🛤️ ' + kingdom.name + ' invests in road repairs across the kingdom.');
+            }
+        });
+
+        // ── POLICY / LAWS ──
+        actions.push({
+            category: 'policy', id: 'ban_good',
+            icon: '🚫', name: 'Ban a Trade Good',
+            desc: 'The king bans a specific good from being traded in the kingdom.',
+            baseChance: 0.35,
+            modifiers: function() {
+                var m = [];
+                if (kp.temperament === 'cruel' || kp.temperament === 'tyrannical') m.push({ name: 'Authoritarian king', val: 0.20 });
+                else if (kp.temperament === 'merciful') m.push({ name: 'Merciful king dislikes bans', val: -0.15 });
+                return m;
+            },
+            needsSubChoice: 'good',
+            execute: function() { Engine.logEvent('🚫 The king considers banning goods on the Royal Advisor\'s recommendation.'); }
+        });
+        actions.push({
+            category: 'policy', id: 'lift_ban',
+            icon: '✅', name: 'Lift a Trade Ban',
+            desc: 'Remove an existing trade ban to restore commerce.',
+            baseChance: 0.50,
+            available: kingdom.laws && kingdom.laws.bannedGoods && kingdom.laws.bannedGoods.length > 0,
+            modifiers: function() {
+                var m = [];
+                if (kp.greed === 'generous') m.push({ name: 'Generous king', val: 0.15 });
+                if (happiness < 40) m.push({ name: 'Unhappy people want more goods', val: 0.15 });
+                return m;
+            },
+            execute: function() { Engine.logEvent('✅ The king considers lifting a trade ban.'); }
+        });
+        actions.push({
+            category: 'policy', id: 'conscription',
+            icon: '⚔️', name: kingdom.laws && kingdom.laws.conscription ? 'End Conscription' : 'Start Conscription',
+            desc: kingdom.laws && kingdom.laws.conscription ? 'Propose ending forced military conscription.' : 'Propose forcing citizens into military service.',
+            baseChance: 0.35,
+            modifiers: function() {
+                var m = [];
+                var isConscripting = kingdom.laws && kingdom.laws.conscription;
+                if (atWar && !isConscripting) m.push({ name: 'War demands soldiers', val: 0.30 });
+                if (!atWar && isConscripting) m.push({ name: 'Peace — no need for conscription', val: 0.25 });
+                if (kp.ambition === 'conquering' && !isConscripting) m.push({ name: 'Warlike king', val: 0.20 });
+                if (happiness < 30 && isConscripting) m.push({ name: 'People are suffering', val: 0.15 });
+                return m;
+            },
+            execute: function() {
+                if (!kingdom.laws) kingdom.laws = {};
+                kingdom.laws.conscription = !kingdom.laws.conscription;
+                Engine.logEvent('⚔️ ' + kingdom.name + (kingdom.laws.conscription ? ' enacts conscription!' : ' ends conscription.'));
+            }
+        });
+
+        // ── HEALTH ──
+        actions.push({
+            category: 'health', id: 'medical_funding',
+            icon: '🏥', name: 'Increase Medical Funding',
+            desc: 'Fund healers and hospitals across the kingdom.',
+            baseChance: 0.50,
+            modifiers: function() {
+                var m = [];
+                if (kp.temperament === 'kind' || kp.temperament === 'merciful') m.push({ name: 'Compassionate king', val: 0.20 });
+                if (treasury > 8000) m.push({ name: 'Can afford it', val: 0.10 });
+                else if (treasury < 3000) m.push({ name: 'Low treasury', val: -0.20 });
+                // Check for active plague
+                var hasPlague = false;
+                try { for (var ti = 0; ti < towns.length; ti++) { if (towns[ti].plagueActive) { hasPlague = true; break; } } } catch(e) {}
+                if (hasPlague) m.push({ name: 'Plague outbreak!', val: 0.30 });
+                return m;
+            },
+            execute: function() {
+                var cost = Math.min(800, treasury * 0.04);
+                kingdom.gold = Math.max(0, kingdom.gold - cost);
+                Engine.logEvent('🏥 ' + kingdom.name + ' increases medical funding across the kingdom.');
+            }
+        });
+        actions.push({
+            category: 'health', id: 'quarantine_town',
+            icon: '🔒', name: 'Quarantine a Town',
+            desc: 'Lock down a plague-affected town to prevent spread.',
+            baseChance: 0.55,
+            modifiers: function() {
+                var m = [];
+                var hasPlague = false;
+                try { for (var ti = 0; ti < towns.length; ti++) { if (towns[ti].plagueActive) { hasPlague = true; break; } } } catch(e) {}
+                if (hasPlague) m.push({ name: 'Active plague (urgent)', val: 0.25 });
+                else m.push({ name: 'No plague (unnecessary)', val: -0.30 });
+                if (kp.intelligence === 'brilliant') m.push({ name: 'Smart king acts preventively', val: 0.10 });
+                return m;
+            },
+            needsSubChoice: 'town',
+            execute: function() { Engine.logEvent('🔒 The king considers quarantine on the Royal Advisor\'s recommendation.'); }
+        });
+        actions.push({
+            category: 'health', id: 'close_port',
+            icon: '⚓', name: 'Close Ports',
+            desc: 'Close kingdom ports to prevent disease or enemy ships.',
+            baseChance: 0.35,
+            modifiers: function() {
+                var m = [];
+                if (atWar) m.push({ name: 'War — deny enemy sea access', val: 0.25 });
+                if (kp.courage === 'cautious') m.push({ name: 'Cautious king', val: 0.10 });
+                if (kp.intelligence === 'dim') m.push({ name: 'Dim king doesn\'t see trade loss', val: 0.10 });
+                else if (kp.intelligence === 'brilliant') m.push({ name: 'Smart king worries about trade loss', val: -0.15 });
+                return m;
+            },
+            execute: function() {
+                Engine.logEvent('⚓ On the Royal Advisor\'s advice, ' + kingdom.name + ' closes its ports.');
+            }
+        });
+
+        // ── NOBLE / KINGDOM ──
+        actions.push({
+            category: 'kingdom', id: 'stockpile_weapons',
+            icon: '🗡️', name: 'Stockpile Weapons',
+            desc: 'Order the kingdom to buy and stockpile military goods.',
+            baseChance: 0.45,
+            modifiers: function() {
+                var m = [];
+                if (atWar) m.push({ name: 'War demands weapons', val: 0.30 });
+                if (kp.ambition === 'conquering' || kp.ambition === 'expansionist') m.push({ name: 'Military-minded king', val: 0.15 });
+                if (kp.ambition === 'peaceful') m.push({ name: 'Peaceful king (wasteful)', val: -0.15 });
+                if (treasury > 10000) m.push({ name: 'Can afford it', val: 0.10 });
+                else if (treasury < 3000) m.push({ name: 'Low treasury', val: -0.20 });
+                return m;
+            },
+            execute: function() {
+                Engine.logEvent('🗡️ ' + kingdom.name + ' begins stockpiling weapons on the Royal Advisor\'s advice.');
+            }
+        });
+        actions.push({
+            category: 'kingdom', id: 'recruit_soldiers',
+            icon: '🪖', name: 'Recruit More Soldiers',
+            desc: 'Order a recruitment drive to bolster the military.',
+            baseChance: 0.45,
+            modifiers: function() {
+                var m = [];
+                if (atWar) m.push({ name: 'War demands soldiers', val: 0.30 });
+                if (kp.courage === 'brave') m.push({ name: 'Brave king builds armies', val: 0.10 });
+                if (kp.courage === 'cowardly') m.push({ name: 'Cowardly king avoids military', val: -0.15 });
+                if (treasury < 3000) m.push({ name: 'Cannot afford recruits', val: -0.20 });
+                return m;
+            },
+            execute: function() {
+                Engine.logEvent('🪖 ' + kingdom.name + ' launches a recruitment drive on the Royal Advisor\'s advice.');
+            }
+        });
+        actions.push({
+            category: 'kingdom', id: 'open_borders',
+            icon: '🌍', name: kingdom.immigrationPolicy === 'closed' ? 'Open Borders' : 'Close Borders',
+            desc: kingdom.immigrationPolicy === 'closed' ? 'Allow free travel and immigration.' : 'Restrict travel in and out of the kingdom.',
+            baseChance: 0.40,
+            modifiers: function() {
+                var m = [];
+                if (atWar) m.push({ name: 'War (close borders)', val: kingdom.immigrationPolicy === 'closed' ? -0.20 : 0.20 });
+                if (kp.temperament === 'cruel' || kp.temperament === 'tyrannical') m.push({ name: 'Authoritarian king', val: kingdom.immigrationPolicy === 'closed' ? -0.15 : 0.15 });
+                if (kp.temperament === 'merciful' || kp.temperament === 'kind') m.push({ name: 'Open-minded king', val: kingdom.immigrationPolicy === 'closed' ? 0.15 : -0.15 });
+                return m;
+            },
+            execute: function() {
+                kingdom.immigrationPolicy = kingdom.immigrationPolicy === 'closed' ? 'open' : 'closed';
+                Engine.logEvent('🌍 ' + kingdom.name + (kingdom.immigrationPolicy === 'open' ? ' opens its borders.' : ' closes its borders.'));
+            }
+        });
+
+        // Filter out unavailable actions
+        actions = actions.filter(function(a) { return a.available !== false; });
+
+        // Calculate final success chance for each action
+        for (var ai = 0; ai < actions.length; ai++) {
+            var a = actions[ai];
+            var chance = a.baseChance;
+            var mods = typeof a.modifiers === 'function' ? a.modifiers() : [];
+            // Apply modifiers
+            for (var mi = 0; mi < mods.length; mi++) chance += mods[mi].val;
+            // King relationship bonus (0-15%)
+            chance += (kingRel / 100) * 0.15;
+            // Kingdom reputation bonus (0-10%)
+            chance += (kingdomRep / 100) * 0.10;
+            // Clamp
+            chance = Math.max(0.05, Math.min(0.95, chance));
+            a.finalChance = chance;
+            a.displayMods = mods;
+        }
+
+        return actions;
+    }
+
+    function proposeKingAction(kingdomId, actionId) {
+        if (!player.royalAdvisorBenefits || !player.royalAdvisorBenefits.swayOverKing) return { success: false, message: 'Not a royal advisor.' };
+        if (kingdomId !== player.royalAdvisorKingdomId) return { success: false, message: 'No sway in this kingdom.' };
+        if (player.politicalCapital <= 0) return { success: false, message: 'No political capital remaining.' };
+
+        // Regen check
+        if (Engine.getDay() - player.politicalCapitalResetDay >= CONFIG.ADVISE_KING_CAPITAL_REGEN_DAYS) {
+            var maxCap = CONFIG.ADVISE_KING_POLITICAL_CAPITAL_MAX;
+            var houses = player.houses || [];
+            for (var hi = 0; hi < houses.length; hi++) {
+                var hType = CONFIG.HOUSING_TYPES.find(function(h) { return h.id === houses[hi].type; });
+                if (hType && hType.politicalInfluence) maxCap += hType.politicalInfluence;
+            }
+            player.politicalCapital = maxCap;
+            player.politicalCapitalResetDay = Engine.getDay();
+        }
+
+        var actions = getProposableActions(kingdomId);
+        var action = null;
+        for (var i = 0; i < actions.length; i++) {
+            if (actions[i].id === actionId) { action = actions[i]; break; }
+        }
+        if (!action) return { success: false, message: 'Action not available.' };
+
+        player.politicalCapital--;
+
+        var rng = Engine.getRng();
+        var accepted = rng && rng.chance(action.finalChance);
+
+        if (!accepted) {
+            var kingdom = Engine.findKingdom(kingdomId);
+            var kingName = 'The King';
+            try { var kp = Engine.findPerson(kingdom.king); kingName = kp ? kp.firstName : 'The King'; } catch(e) {}
+            // Failed proposal: -2 king relationship, -0.5 kingdom rep
+            modifyRelationship(kingdom.king, -2);
+            modifyKingdomReputation(kingdomId, -0.5);
+            Engine.logEvent('❌ ' + kingName + ' rejected the Royal Advisor\'s proposal: ' + action.name);
+            return { success: false, message: kingName + ' rejected your proposal: ' + action.name + '. (-1 political capital, -2 king relationship)', chance: Math.round(action.finalChance * 100) };
+        }
+
+        // Execute the action
+        if (typeof action.execute === 'function') action.execute();
+
+        autoJournalCapture('politics', 'I proposed ' + action.name + ' to the king, and it was accepted! My influence at court grows.', { mood: 'confident' });
+        return { success: true, message: 'The king accepted: ' + action.name + '! (-1 political capital)', chance: Math.round(action.finalChance * 100) };
+    }
+
+    // ========================================================
     // §11.5B ROYAL ADVISOR CONSULTATION RESPONSES
     // ========================================================
     function getPendingKingDecisions() {
@@ -10445,6 +11025,38 @@
         if (person.spouseId) return { success: false, message: 'Person is already married.' };
         if (person.townId !== player.townId) return { success: false, message: 'Person is not in your town.' };
 
+        // King's children marriage restriction: must be guildmaster+ introduced by noble, or minor noble+
+        var _isKingChild = false;
+        var _kcKingdomId = null;
+        for (var _kci2 = 0; _kci2 < kingdoms.length; _kci2++) {
+            var _kcKing = Engine.findPerson ? Engine.findPerson(kingdoms[_kci2].king) : null;
+            if (_kcKing && _kcKing.childrenIds && _kcKing.childrenIds.indexOf(personId) >= 0) {
+                _isKingChild = true;
+                _kcKingdomId = kingdoms[_kci2].id;
+                break;
+            }
+        }
+        if (_isKingChild) {
+            var _pRankForKC = getPlayerRankIndex();
+            if (_pRankForKC >= 4) {
+                // Minor noble+ can marry king's children directly
+            } else if (_pRankForKC >= 3) {
+                // Guildmaster needs a noble introduction — check if player knows any nobles well enough
+                var _hasNobleIntro = false;
+                for (var _nIntId in player.relationships) {
+                    if (player.relationships[_nIntId].level >= 50) {
+                        var _nIntPerson = Engine.findPerson ? Engine.findPerson(_nIntId) : null;
+                        if (_nIntPerson && getNPCSocialRank(_nIntPerson) >= 4) { _hasNobleIntro = true; break; }
+                    }
+                }
+                if (!_hasNobleIntro) {
+                    return { success: false, message: 'As a Guildmaster, you need a noble friend (relationship 50+) to introduce you to the king\'s children.' };
+                }
+            } else {
+                return { success: false, message: 'You must be at least a Guildmaster to court the king\'s children.' };
+            }
+        }
+
         // Check courtship requirement — romantic skill reduces threshold
         const rel = getRelationship(personId);
         let minRel = person.occupation === 'noble' ? CONFIG.COURTSHIP_NOBLE_MIN_RELATIONSHIP : CONFIG.COURTSHIP_MIN_RELATIONSHIP;
@@ -10623,6 +11235,26 @@
 
         // Clear wedding plan
         player.weddingPlan = null;
+
+        // Check if married a king's child — 25% boost to king/kingdom relationship gains
+        var _marriedKingChild = false;
+        var _mkKingdomId = null;
+        try {
+            var _mkKingdoms = Engine.getKingdoms ? Engine.getKingdoms() : [];
+            for (var _mki = 0; _mki < _mkKingdoms.length; _mki++) {
+                var _mkKing = Engine.findPerson ? Engine.findPerson(_mkKingdoms[_mki].king) : null;
+                if (_mkKing && _mkKing.childrenIds && _mkKing.childrenIds.indexOf(plan.fianceId) >= 0) {
+                    _marriedKingChild = true;
+                    _mkKingdomId = _mkKingdoms[_mki].id;
+                    break;
+                }
+            }
+        } catch(e) {}
+        if (_marriedKingChild && _mkKingdomId) {
+            player._marriedToRoyalChild = { kingdomId: _mkKingdomId, personId: plan.fianceId };
+            Engine.logEvent('👑 ' + player.fullName + ' has married into the royal family of ' + (Engine.findKingdom(_mkKingdomId) ? Engine.findKingdom(_mkKingdomId).name : 'the kingdom') + '! +25% relationship gains with the king and kingdom.');
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('👑 You married into the royal family! +25% king & kingdom relationship gains!', 'success', 'critical');
+        }
 
         // ===== Marriage Rank System =====
         // Non-noble marrying a noble => same rank as the noble
@@ -14779,6 +15411,7 @@
             lordTownId: player.lordTownId || null,
             _repWarnDay: JSON.parse(JSON.stringify(player._repWarnDay || {})),
             _nobleStatusNeverExpires: player._nobleStatusNeverExpires || false,
+            _marriedToRoyalChild: player._marriedToRoyalChild || null,
             _tournamentAccessDay: player._tournamentAccessDay || null,
             _marriageRankWaiver: player._marriageRankWaiver ? JSON.parse(JSON.stringify(player._marriageRankWaiver)) : null,
             // Town Reputation
@@ -15137,6 +15770,7 @@
         player.lordTownId = data.lordTownId || null;
         player._repWarnDay = data._repWarnDay || {};
         player._nobleStatusNeverExpires = data._nobleStatusNeverExpires || false;
+        player._marriedToRoyalChild = data._marriedToRoyalChild || null;
         player._tournamentAccessDay = data._tournamentAccessDay || null;
         player._marriageRankWaiver = data._marriageRankWaiver || null;
         // Town Reputation
@@ -18618,6 +19252,18 @@
                 }
             }
         }
+
+        // Royal family marriage bonus: +25% to king relationship gains
+        if (amount > 0 && player._marriedToRoyalChild) {
+            var _mrcKid = player._marriedToRoyalChild.kingdomId;
+            try {
+                var _mrcKingdom = Engine.findKingdom ? Engine.findKingdom(_mrcKid) : null;
+                if (_mrcKingdom && _mrcKingdom.king === personId) {
+                    amount *= 1.25;
+                }
+            } catch(e) {}
+        }
+
         const rel = player.relationships[personId];
         rel.level = Math.max(0, Math.min(100, rel.level + amount));
         if (type) rel.type = type;
@@ -18638,6 +19284,16 @@
             if (level >= lvl.min && level < lvl.max) return lvl;
         }
         return CONFIG.RELATIONSHIP_LEVELS[CONFIG.RELATIONSHIP_LEVELS.length - 1];
+    }
+
+    // Central function for kingdom reputation changes — applies royal marriage bonus
+    function modifyKingdomReputation(kingdomId, amount) {
+        if (!kingdomId || !amount) return;
+        // Royal family marriage bonus: +25% to positive kingdom rep gains
+        if (amount > 0 && player._marriedToRoyalChild && player._marriedToRoyalChild.kingdomId === kingdomId) {
+            amount *= 1.25;
+        }
+        player.reputation[kingdomId] = Math.max(0, Math.min(100, (player.reputation[kingdomId] || 50) + amount));
     }
 
     function giveGift(personId, resourceId, qty) {
@@ -29980,6 +30636,9 @@
             chance = Math.min(maxChance, chance);
         }
 
+        // God mode: force 95% encounter chance
+        if (typeof window !== 'undefined' && window._godBanditBoost) chance = 0.95;
+
         // Determine risk level
         var riskLevel = 'low';
         if (chance >= 0.06) riskLevel = 'high';
@@ -37339,6 +37998,7 @@
         get lordTownId() { return player.lordTownId; },
         checkCrimeImmunity,
         _selectLordTown,
+        _offerLordTownChoice,
         _handleRegimeChangeConsequence,
         _handleLordDemotion: handleLordDemotion,
         get politicalCapital() { return player.politicalCapital || 0; },
@@ -37773,6 +38433,7 @@
         // Relationships & courtship
         getRelationship,
         modifyRelationship,
+        modifyReputation: modifyKingdomReputation,
         getRelationshipLabel,
         giveGift,
         getNPCGiftPreferences,
@@ -37942,6 +38603,10 @@
         adviseKing,
         getPendingKingDecisions,
         respondToKingDecision,
+
+        // Royal Advisor — Propose Actions
+        getProposableActions,
+        proposeKingAction,
 
         // King Directed Commissions
         acceptKingCommission,

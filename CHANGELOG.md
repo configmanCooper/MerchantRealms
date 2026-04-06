@@ -4,6 +4,37 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.57.0] - 2026-04-06
+
+### Added
+- **Propose Action UI for Royal Advisors**: 20+ king actions across 6 categories (Economic, Military/Diplomacy, Infrastructure, Policy, Health, Kingdom) with personality-aware success chances, king relationship and kingdom reputation modifiers
+- **Encounter Modal Lock**: Bandit/pirate encounter dialog cannot be dismissed — must choose surrender/negotiate/fight. Only save, load, and home buttons work during encounters
+- **Marriage to King's Children**: Requires guildmaster+ with noble introduction or minor noble+ status; grants 25% boost to king relationship and kingdom reputation gains
+- **Quarantine Travel Blocking Overhaul**: Both standard and martial quarantine now block travel; nobles pass freely, guildmasters blocked by martial; sneak chances (40% standard, 20% martial) with punishment system (fines/jail based on king personality)
+- **Noble Relationship Passive Drain**: -1 every 30 days if above 60, -2 every 30 days if above 80
+- **Queen/Consort Occupations**: Reigning Queen, Queen, The Queen's Lord special noble statuses and occupations
+- **King Succession Voting**: When king dies without heir, RA gets voting UI to pick new king from kingdom nobles
+- **God Mode Bandit Boost**: Toggle for 95% daily encounter chance for testing
+- **God Mode RA Benefits**: Setting rank to Royal Advisor now properly grants full RA benefits (noTaxes, immuneToLaws, swayOverKing)
+- **God Mode Lord Town Choice**: Setting rank to Lord now shows 3-town choice UI instead of silent assignment
+- **Kingdom Guards in Character Panel**: Guards granted by kingdom now show "(Kingdom)" label
+
+### Changed
+- King decision agree: no longer gives reputation/relationship reward
+- King decision failed opposition: -2 king relationship, -0.5 kingdom reputation (was random -1 to -2 rep)
+- Tax discount: 5% for citizens+, 10% for minor nobles+, lords exempt in their town, RAs exempt from all kingdom taxes
+- Encounter dialog auto-pauses game
+- Encounter dialog buttons use brighter text (#f0d0a0 titles, #ccc descriptions)
+- Propose Action buttons use green-tinted background with cream text for readability
+
+### Fixed
+- **Travel stall at 100%**: Encounters no longer fire when travel progress >= 1.0, preventing infinite encounter loop that blocked arrival
+- **Route danger "war" false positive**: UI now checks live `kingdom.atWar.has()` instead of `road.safe` flag; bandit_surge events now restore road safety on expiry
+- **King decisions lost on save/load**: `_executeFn` (JS function) can't survive JSON serialization — stale decisions now cleaned up on tick
+- **Player.modifyReputation silent no-op**: Function was never exposed on Player API — all kingdom reputation changes were silently failing
+- **God mode Set Rank missing guards**: Now grants kingdom guards and sets isNoble when rank >= 4
+- **Propose law empty menu**: Fixed law proposal system
+
 ## [0.56.0] - 2026-04-03
 
 ### Added

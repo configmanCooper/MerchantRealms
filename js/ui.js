@@ -24,6 +24,7 @@ window.UI = (function () {
     let _eventsInitialized = false;
     let selectedPersonId = null;
     let _bankruptcyLock = false; // When true, player must resolve bankruptcy before accessing menus
+    let _encounterLocked = false; // When true, encounter dialog cannot be closed — must resolve
 
     function _isBankruptcyBlocked() {
         if (!_bankruptcyLock) return false;
@@ -2504,6 +2505,14 @@ window.UI = (function () {
     });
 
     function openModal(title, bodyHtml, footerHtml) {
+        // Block opening non-encounter modals while encounter decision pending
+        if (_encounterLocked) {
+            var etl = (title || '').toLowerCase();
+            if (etl.indexOf('encounter') === -1) {
+                toast('⚠️ You must resolve the encounter first!', 'warning');
+                return;
+            }
+        }
         // Block opening non-bankruptcy modals while bankruptcy decision pending
         if (_isBankruptcyBlocked()) {
             var tl = (title || '').toLowerCase();
@@ -2533,6 +2542,7 @@ window.UI = (function () {
 
     function closeModal() {
         if (_isBankruptcyBlocked()) return;
+        if (_encounterLocked) return;
         const mo = el.modalOverlay || document.getElementById('modalOverlay');
         if (mo) mo.classList.add('hidden');
         // Reset drag position so next modal opens centered
@@ -10950,9 +10960,16 @@ window.UI = (function () {
                 }
                 var bt = seg.banditThreat || 0;
                 if (bt > maxBandit) maxBandit = bt;
-                if (seg.safe === false) { atWar = true; worstSegSafe = false; }
+                if (seg.safe === false) worstSegSafe = false;
+                // Check actual war status between the two towns' kingdoms
                 var fromT = Engine.findTown(seg.fromTownId);
                 var toT = Engine.findTown(seg.toTownId);
+                if (fromT && toT && fromT.kingdomId !== toT.kingdomId) {
+                    var _rdFromK = typeof Engine.findKingdom === 'function' ? Engine.findKingdom(fromT.kingdomId) : null;
+                    if (_rdFromK && _rdFromK.atWar && _rdFromK.atWar.has && _rdFromK.atWar.has(toT.kingdomId)) {
+                        atWar = true;
+                    }
+                }
                 if (fromT && (fromT.security || 50) < worstTownSecurity) worstTownSecurity = fromT.security || 50;
                 if (toT && (toT.security || 50) < worstTownSecurity) worstTownSecurity = toT.security || 50;
             }
@@ -16261,6 +16278,10 @@ window.UI = (function () {
 
     function showEncounterDialog(encounter) {
         if (!encounter) return;
+
+        // Auto-pause the game for encounters
+        if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(0);
+
         var isSea = encounter.isSea;
         var isWartime = encounter.isWartime;
         var enemyName = isWartime ? (isSea ? 'Enemy Navy' : 'Enemy Soldiers') : (isSea ? 'Pirates' : 'Bandits');
@@ -16291,7 +16312,7 @@ window.UI = (function () {
             }
             html += '</p>';
         } else {
-            html += '<p style="color:var(--text-muted);font-size:0.9rem;margin:8px 0;">';
+            html += '<p style="color:#d4c9a0;font-size:0.9rem;margin:8px 0;">';
             if (isSea) {
                 html += 'A pirate vessel has spotted you and is closing in! They fly the black flag.';
             } else {
@@ -16305,22 +16326,22 @@ window.UI = (function () {
         html += '<div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">';
 
         // Surrender
-        html += '<button class="btn-medieval" onclick="UI.resolveEncounterChoice(\'surrender\')" style="padding:12px;text-align:left;background:rgba(200,50,50,0.1);border-color:rgba(200,50,50,0.4);">';
-        html += '<div style="font-size:1rem;font-weight:bold;">🏳️ Surrender</div>';
-        html += '<div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px;">Give up all goods' + (invCount > 0 ? ' (' + invCount + ' items)' : '') + ' and ' + goldForSurrender + 'g. They let you pass unharmed.</div>';
+        html += '<button class="btn-medieval" onclick="UI.resolveEncounterChoice(\'surrender\')" style="padding:14px 16px;text-align:left;background:rgba(200,50,50,0.15);border-color:rgba(200,50,50,0.5);border-width:2px;">';
+        html += '<div style="font-size:1.05rem;font-weight:bold;color:#f0d0a0;">🏳️ Surrender</div>';
+        html += '<div style="font-size:0.82rem;color:#ccc;margin-top:4px;">Give up all goods' + (invCount > 0 ? ' (' + invCount + ' items)' : '') + ' and ' + goldForSurrender + 'g. They let you pass unharmed.</div>';
         html += '</button>';
 
         // Negotiate
-        html += '<button class="btn-medieval" onclick="UI.resolveEncounterChoice(\'negotiate\')" style="padding:12px;text-align:left;background:rgba(241,196,15,0.1);border-color:rgba(241,196,15,0.4);">';
-        html += '<div style="font-size:1rem;font-weight:bold;">🤝 Negotiate <span style="font-size:0.8rem;color:#f1c40f;">(' + negPct + '% chance)</span></div>';
-        html += '<div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px;">Offer half your goods and ' + goldForNeg + 'g. If they refuse, it becomes a fight (with penalty).</div>';
+        html += '<button class="btn-medieval" onclick="UI.resolveEncounterChoice(\'negotiate\')" style="padding:14px 16px;text-align:left;background:rgba(241,196,15,0.12);border-color:rgba(241,196,15,0.5);border-width:2px;">';
+        html += '<div style="font-size:1.05rem;font-weight:bold;color:#f0d0a0;">🤝 Negotiate <span style="font-size:0.85rem;color:#f1c40f;font-weight:bold;">(' + negPct + '% chance)</span></div>';
+        html += '<div style="font-size:0.82rem;color:#ccc;margin-top:4px;">Offer half your goods and ' + goldForNeg + 'g. If they refuse, it becomes a fight (with penalty).</div>';
         html += '</button>';
 
         // Fight
         var fightColor = fightPct >= 60 ? '#2ecc71' : fightPct >= 35 ? '#f39c12' : '#e74c3c';
-        html += '<button class="btn-medieval" onclick="UI.resolveEncounterChoice(\'fight\')" style="padding:12px;text-align:left;background:rgba(46,204,113,0.1);border-color:rgba(46,204,113,0.4);">';
-        html += '<div style="font-size:1rem;font-weight:bold;">⚔️ Fight <span style="font-size:0.8rem;color:' + fightColor + ';">(' + fightPct + '% chance to win)</span></div>';
-        html += '<div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px;">';
+        html += '<button class="btn-medieval" onclick="UI.resolveEncounterChoice(\'fight\')" style="padding:14px 16px;text-align:left;background:rgba(46,204,113,0.12);border-color:rgba(46,204,113,0.5);border-width:2px;">';
+        html += '<div style="font-size:1.05rem;font-weight:bold;color:#f0d0a0;">⚔️ Fight <span style="font-size:0.85rem;color:' + fightColor + ';font-weight:bold;">(' + fightPct + '% chance to win)</span></div>';
+        html += '<div style="font-size:0.82rem;color:#ccc;margin-top:4px;">';
         if (isSea) {
             html += 'Fight them off! If you lose, you wash ashore ill with nothing.';
         } else {
@@ -16361,10 +16382,21 @@ window.UI = (function () {
         html += '</div>';
 
         openModal('⚠️ ' + enemyName + ' Encounter!', html, '');
+
+        // Lock the encounter modal — cannot be closed or dismissed
+        _encounterLocked = true;
+        var closeBtn = document.getElementById('btnCloseModal');
+        if (closeBtn) closeBtn.style.display = 'none';
     }
 
     function resolveEncounterChoice(choice) {
         if (typeof Player === 'undefined' || !Player.resolveEncounter) return;
+
+        // Unlock the encounter modal so result can be closed
+        _encounterLocked = false;
+        var closeBtn = document.getElementById('btnCloseModal');
+        if (closeBtn) closeBtn.style.display = '';
+
         var result = Player.resolveEncounter(choice);
 
         // Show result in the same modal
@@ -17179,9 +17211,10 @@ window.UI = (function () {
             }
             html += '</div>';
 
-            // Propose law
-            html += '<div style="margin-top:8px;">';
+            // Propose law & Propose action
+            html += '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">';
             html += '<button class="btn-medieval" onclick="UI._nobilityProposeLaw(\'' + citizenKingdomId + '\')" style="font-size:0.75rem;padding:5px 12px;" ' + (polCap <= 0 ? 'disabled style="font-size:0.75rem;padding:5px 12px;opacity:0.4;cursor:not-allowed;"' : '') + '>📜 Propose New Law</button>';
+            html += '<button class="btn-medieval" onclick="UI._nobilityProposeAction(\'' + citizenKingdomId + '\')" style="font-size:0.75rem;padding:5px 12px;background:rgba(44,100,60,0.5) !important;border:2px solid rgba(80,180,100,0.5) !important;color:#f0e0c0 !important;" ' + (polCap <= 0 ? 'disabled' : '') + '>👑 Propose Action</button>';
             html += '</div>';
 
             // Crime immunity note
@@ -17328,6 +17361,80 @@ window.UI = (function () {
         }
         html += '</div>';
         openModal('📜 Propose Law', html, '<button class="btn-medieval" onclick="UI.closeModal();UI.openNobilityDialog();">Back</button>');
+    }
+
+    // Helper: Propose action from nobility panel (Royal Advisor)
+    var _proposeActionTab = 'economic';
+    function _nobilityProposeAction(kingdomId) {
+        if (!Player.getProposableActions) { toast('Feature not available.', 'warning'); return; }
+        var actions = Player.getProposableActions(kingdomId);
+        if (!actions || actions.length === 0) { toast('No actions available.', 'warning'); return; }
+
+        var categories = [
+            { id: 'economic', icon: '💰', name: 'Economic' },
+            { id: 'military', icon: '⚔️', name: 'Military & Diplomacy' },
+            { id: 'infrastructure', icon: '🏗️', name: 'Infrastructure' },
+            { id: 'policy', icon: '📋', name: 'Policy & Laws' },
+            { id: 'health', icon: '🏥', name: 'Health' },
+            { id: 'kingdom', icon: '👑', name: 'Kingdom' }
+        ];
+
+        var html = '<div style="font-size:0.8rem;color:#ccc;margin-bottom:8px;">Propose an action to the king (costs 1 political capital). Success depends on king personality, treasury, and your influence.</div>';
+
+        // Category tabs
+        html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px;">';
+        for (var ci = 0; ci < categories.length; ci++) {
+            var cat = categories[ci];
+            var catCount = actions.filter(function(a) { return a.category === cat.id; }).length;
+            if (catCount === 0) continue;
+            var isActive = _proposeActionTab === cat.id;
+            html += '<button class="btn-medieval" onclick="UI._switchProposeActionTab(\'' + cat.id + '\',\'' + kingdomId + '\')" style="font-size:0.7rem;padding:4px 8px;' + (isActive ? 'background:rgba(201,168,76,0.25);border-color:rgba(201,168,76,0.5);color:#f0d0a0;' : '') + '">' + cat.icon + ' ' + cat.name + ' (' + catCount + ')</button>';
+        }
+        html += '</div>';
+
+        // Actions for current tab
+        var tabActions = actions.filter(function(a) { return a.category === _proposeActionTab; });
+        html += '<div style="max-height:350px;overflow-y:auto;">';
+        if (tabActions.length === 0) {
+            html += '<div style="font-size:0.78rem;color:#888;font-style:italic;">No actions in this category.</div>';
+        }
+        for (var ai = 0; ai < tabActions.length; ai++) {
+            var a = tabActions[ai];
+            var pct = Math.round(a.finalChance * 100);
+            var pctColor = pct >= 60 ? '#2ecc71' : pct >= 35 ? '#e67e22' : '#e74c3c';
+
+            html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:8px;margin-bottom:6px;">';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">';
+            html += '<span style="font-size:0.82rem;font-weight:bold;color:#f0d0a0;">' + a.icon + ' ' + a.name + '</span>';
+            html += '<span style="font-size:0.85rem;font-weight:bold;color:' + pctColor + ';">' + pct + '%</span>';
+            html += '</div>';
+            html += '<div style="font-size:0.72rem;color:#bbb;margin-bottom:6px;">' + a.desc + '</div>';
+
+            // Show modifiers breakdown
+            if (a.displayMods && a.displayMods.length > 0) {
+                html += '<div style="font-size:0.65rem;color:#999;margin-bottom:6px;">';
+                for (var mi = 0; mi < a.displayMods.length; mi++) {
+                    var mod = a.displayMods[mi];
+                    var modSign = mod.val >= 0 ? '+' : '';
+                    var modColor = mod.val >= 0 ? '#55a868' : '#c44e52';
+                    html += '<span style="color:' + modColor + ';">' + modSign + Math.round(mod.val * 100) + '% ' + mod.name + '</span>';
+                    if (mi < a.displayMods.length - 1) html += ' · ';
+                }
+                html += '</div>';
+            }
+
+            // Confirm button
+            html += '<button class="btn-medieval" onclick="(function(){var r=Player.proposeKingAction(\'' + kingdomId + '\',\'' + a.id + '\');UI.toast(r&&r.message?r.message:\'Action proposed.\',r&&r.success?\'success\':\'warning\');UI.closeModal();UI.openNobilityDialog();})()" style="font-size:0.75rem;padding:5px 14px;background:rgba(44,100,60,0.5) !important;border:2px solid rgba(80,180,100,0.5) !important;color:#f0e0c0 !important;">👑 Propose (' + pct + '% chance)</button>';
+            html += '</div>';
+        }
+        html += '</div>';
+
+        openModal('👑 Propose Action to the King', html, '<button class="btn-medieval" onclick="UI.closeModal();UI.openNobilityDialog();">Back</button>');
+    }
+
+    function _switchProposeActionTab(tabId, kingdomId) {
+        _proposeActionTab = tabId;
+        _nobilityProposeAction(kingdomId);
     }
 
     function openSchemesDialog() {
@@ -21571,6 +21678,7 @@ window.UI = (function () {
 
         // Invincibility toggle
         html += '<br><button id="gm-invincible-btn" onclick="window._godInvincible=!window._godInvincible; var b=this; b.textContent=window._godInvincible?\'🛡️ Invincible ON\':\'🛡️ Invincible OFF\'; b.style.background=window._godInvincible?\'#8b0000\':\'#16305d\'; b.style.borderColor=window._godInvincible?\'#f44\':\'#48a\'; UI.toast(window._godInvincible?\'🛡️ INVINCIBLE — Cannot die or lose\':\'Invincibility OFF\', window._godInvincible?\'success\':\'info\')" style="margin:2px; padding:3px 8px; background:' + (window._godInvincible ? '#8b0000' : '#16305d') + '; color:#fff; border:1px solid ' + (window._godInvincible ? '#f44' : '#48a') + '; cursor:pointer;">' + (window._godInvincible ? '🛡️ Invincible ON' : '🛡️ Invincible OFF') + '</button> ';
+        html += '<button id="gm-bandit-boost-btn" onclick="window._godBanditBoost=!window._godBanditBoost; var b=this; b.textContent=window._godBanditBoost?\'☠️ Bandits 95% ON\':\'☠️ Bandits 95% OFF\'; b.style.background=window._godBanditBoost?\'#8b4500\':\'#16305d\'; b.style.borderColor=window._godBanditBoost?\'#f84\':\'#48a\'; UI.toast(window._godBanditBoost?\'☠️ 95% daily bandit/pirate encounters!\':\'Bandit/pirate encounters normal\', window._godBanditBoost?\'warning\':\'info\')" style="margin:2px; padding:3px 8px; background:' + (window._godBanditBoost ? '#8b4500' : '#16305d') + '; color:#fff; border:1px solid ' + (window._godBanditBoost ? '#f84' : '#48a') + '; cursor:pointer;">' + (window._godBanditBoost ? '☠️ Bandits 95% ON' : '☠️ Bandits 95% OFF') + '</button> ';
 
         // Set rank (pre-select current rank)
         var _gmCurrentRank = 0;
@@ -21589,7 +21697,7 @@ window.UI = (function () {
             html += '<option value="' + _gri + '"' + (_gri === _gmCurrentRank ? ' selected' : '') + '>' + _gmRankNames[_gri] + '</option>';
         }
         html += '</select>';
-        html += '<button onclick="var sel=document.getElementById(\'gm-set-rank\'); var r=parseInt(sel.value,10); if(isNaN(r)||r<0||r>6){UI.toast(\'Invalid rank\',\'error\');return;} var kid=Player.state.citizenshipKingdomId||Object.keys(Player.state.socialRank||{})[0]||\'k_1\'; if(!Player.state.socialRank)Player.state.socialRank={}; Player.state.socialRank[kid]=r; if(r>=6){Player.state.politicalCapital=3; Player.state.royalAdvisorKingdomId=kid; Player.state.isRoyalAdvisorFromKing=true;} if(r>=5&&!Player.state.lordTownId){Player.state.lordTownId=Player.state.townId||null;} if(r>=4){Player.state.occupation=\'noble\';} var names=[\'Peasant\',\'Citizen\',\'Burgher\',\'Guildmaster\',\'Minor Noble\',\'Lord\',\'Royal Advisor\']; UI.toast(\'Set rank to \'+(names[r]||r)+\' in \'+kid+(r>=6?\' (+3 political capital)\':\'\')+\'\',\'success\'); if(r>=1&&typeof Player.showRankCeremony===\'function\'){Player.showRankCeremony(r,kid);}" style="margin:2px; padding:3px 8px; background:#5d1630; color:#fff; border:1px solid #a48; cursor:pointer;">Set Rank</button> ';
+        html += '<button onclick="UI._godModeSetRank()" style="margin:2px; padding:3px 8px; background:#5d1630; color:#fff; border:1px solid #a48; cursor:pointer;">Set Rank</button> ';
 
         // Noble status never expires checkbox
         var _gmNoExpire = (Player.state && Player.state._nobleStatusNeverExpires) || false;
@@ -22078,7 +22186,7 @@ window.UI = (function () {
                     guardNameHtml = (g.name || 'Guard');
                 }
                 html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);">';
-                html += '<span style="font-size:0.85rem;">\uD83D\uDEE1\uFE0F ' + guardNameHtml + '</span>';
+                html += '<span style="font-size:0.85rem;">\uD83D\uDEE1\uFE0F ' + guardNameHtml + (g.kingdomPaid ? ' <span style="font-size:0.7rem;color:#8ba;font-style:italic;">(Kingdom)</span>' : '') + '</span>';
                 html += '<button class="btn-medieval" onclick="UI.dismissGuardUI(\'' + g.id + '\')" style="font-size:0.7rem;padding:3px 8px;">\u274C Dismiss</button>';
                 html += '</div>';
             }
@@ -22098,6 +22206,95 @@ window.UI = (function () {
         html += '</div>';
         html += '</div>';
         return html;
+    }
+
+    // God mode: set social rank with full side effects (guards, isNoble, etc.)
+    function _godModeSetRank() {
+        var sel = document.getElementById('gm-set-rank');
+        var r = parseInt(sel.value, 10);
+        if (isNaN(r) || r < 0 || r > 6) { toast('Invalid rank', 'error'); return; }
+        var kid = Player.state.citizenshipKingdomId || Object.keys(Player.state.socialRank || {})[0] || 'k_1';
+        if (!Player.state.socialRank) Player.state.socialRank = {};
+        var prevRank = Player.state.socialRank[kid] || 0;
+        Player.state.socialRank[kid] = r;
+
+        if (r >= 6) {
+            Player.state.politicalCapital = 3;
+            Player.state.royalAdvisorKingdomId = kid;
+            Player.state.isRoyalAdvisorFromKing = true;
+            Player.state.royalAdvisorBenefits = { noTaxes: true, immuneToLaws: true, kingdomNeverSeizes: true, swayOverKing: true };
+        }
+        if (r >= 5 && !Player.state.lordTownId) {
+            // Show the lord town choice UI (same as normal promotion)
+            if (typeof Player._offerLordTownChoice === 'function') {
+                Player._offerLordTownChoice(kid);
+            } else {
+                Player.state.lordTownId = Player.state.townId || null;
+            }
+        }
+        if (r >= 4) {
+            Player.state.occupation = 'noble';
+            Player.state.isNoble = true;
+
+            // Grant kingdom guards if player has none
+            if (!Player.state.guards || Player.state.guards.length === 0) {
+                Player.state.guards = Player.state.guards || [];
+                var maxGuards = (typeof CONFIG !== 'undefined' && CONFIG.PLAYER_GUARD_MAX) || 4;
+                var guardsToGrant = maxGuards - Player.state.guards.length;
+                var rng = typeof Engine !== 'undefined' && Engine.getRng ? Engine.getRng() : null;
+                var townPeople = typeof Engine !== 'undefined' && Engine.getPeople ? Engine.getPeople(Player.state.townId) : [];
+                var existingGuardIds = {};
+                for (var gi = 0; gi < Player.state.guards.length; gi++) {
+                    if (Player.state.guards[gi].personId) existingGuardIds[Player.state.guards[gi].personId] = true;
+                }
+                var candidates = [];
+                for (var ci = 0; ci < townPeople.length; ci++) {
+                    var c = townPeople[ci];
+                    if (!c.alive || c.age < 18 || existingGuardIds[c.id] || c.id === Player.state.spouseId || c.isPlayerGuard) continue;
+                    candidates.push(c);
+                }
+                var granted = 0;
+                for (var gg = 0; gg < guardsToGrant && candidates.length > 0; gg++) {
+                    var preferred = candidates.filter(function(cc) {
+                        return cc.occupation === 'soldier' || cc.occupation === 'guard' || cc.occupation === 'unemployed' || !cc.occupation;
+                    });
+                    var pool = preferred.length > 0 ? preferred : candidates;
+                    var chosen = rng && rng.pick ? rng.pick(pool) : pool[Math.floor(Math.random() * pool.length)];
+                    chosen.isPlayerGuard = true;
+                    chosen.previousOccupation = chosen.occupation;
+                    chosen.occupation = 'player_guard';
+                    var gName = (chosen.firstName || '') + (chosen.lastName ? ' ' + chosen.lastName : '');
+                    if (!gName.trim()) gName = 'Royal Guard ' + (Player.state.guards.length + 1);
+                    Player.state.guards.push({
+                        id: 'guard_' + Date.now() + '_' + (rng ? rng.randInt(0, 9999) : Math.floor(Math.random() * 9999)),
+                        personId: chosen.id,
+                        name: gName,
+                        hiredDay: typeof Engine !== 'undefined' && Engine.getDay ? Engine.getDay() : 0,
+                        kingdomPaid: true
+                    });
+                    candidates = candidates.filter(function(cc2) { return cc2.id !== chosen.id; });
+                    granted++;
+                }
+                Player.state.personalGuards = Player.state.guards.length;
+                if (granted > 0) {
+                    toast('🛡️ Granted ' + granted + ' kingdom guards as a noble privilege!', 'success');
+                }
+            }
+        } else {
+            if (prevRank >= 4) {
+                Player.state.isNoble = false;
+                if (Player.state.occupation === 'noble') Player.state.occupation = 'merchant';
+            }
+        }
+
+        if (!Player.state.rankSince) Player.state.rankSince = {};
+        Player.state.rankSince[kid] = typeof Engine !== 'undefined' && Engine.getDay ? Engine.getDay() : 0;
+
+        var names = ['Peasant', 'Citizen', 'Burgher', 'Guildmaster', 'Minor Noble', 'Lord', 'Royal Advisor'];
+        toast('Set rank to ' + (names[r] || r) + ' in ' + kid + (r >= 6 ? ' (+3 political capital)' : ''), 'success');
+        if (r >= 1 && typeof Player.showRankCeremony === 'function') {
+            Player.showRankCeremony(r, kid);
+        }
     }
 
     return {
@@ -22270,6 +22467,8 @@ window.UI = (function () {
         openNobilityDialog,
         _nobilityRequestBuilding,
         _nobilityProposeLaw,
+        _nobilityProposeAction,
+        _switchProposeActionTab,
         // Special Start
         openSpecialStartPanel,
         openStartJournal,
@@ -22323,6 +22522,7 @@ window.UI = (function () {
             if (result.success) { toast(result.message, 'success'); openCharacterDialog(); }
             else { toast(result.message, 'danger'); }
         },
+        _godModeSetRank,
         // Teach Child
         openTeachChildDialog,
         executeTeachChild,
