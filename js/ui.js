@@ -21516,8 +21516,11 @@ window.UI = (function () {
 
         window._godModeRefreshInterval = setInterval(function() {
             var c = document.getElementById('god-mode-content');
-            if (c) c.innerHTML = buildGodModeHTML();
-            else clearInterval(window._godModeRefreshInterval);
+            if (!c) { clearInterval(window._godModeRefreshInterval); return; }
+            // Don't refresh if user is interacting with a select/input inside god mode
+            var active = document.activeElement;
+            if (active && c.contains(active) && (active.tagName === 'SELECT' || active.tagName === 'INPUT')) return;
+            c.innerHTML = buildGodModeHTML();
         }, 2000);
     }
 
@@ -21549,9 +21552,24 @@ window.UI = (function () {
         // Invincibility toggle
         html += '<br><button id="gm-invincible-btn" onclick="window._godInvincible=!window._godInvincible; var b=this; b.textContent=window._godInvincible?\'🛡️ Invincible ON\':\'🛡️ Invincible OFF\'; b.style.background=window._godInvincible?\'#8b0000\':\'#16305d\'; b.style.borderColor=window._godInvincible?\'#f44\':\'#48a\'; UI.toast(window._godInvincible?\'🛡️ INVINCIBLE — Cannot die or lose\':\'Invincibility OFF\', window._godInvincible?\'success\':\'info\')" style="margin:2px; padding:3px 8px; background:' + (window._godInvincible ? '#8b0000' : '#16305d') + '; color:#fff; border:1px solid ' + (window._godInvincible ? '#f44' : '#48a') + '; cursor:pointer;">' + (window._godInvincible ? '🛡️ Invincible ON' : '🛡️ Invincible OFF') + '</button> ';
 
-        // Set rank
-        html += '<select id="gm-set-rank" style="background:#333; color:#fff; border:1px solid #666; margin:2px; padding:2px;"><option value="0">Peasant</option><option value="1">Citizen</option><option value="2">Burgher</option><option value="3">Guildmaster</option><option value="4">Minor Noble</option><option value="5">Lord</option><option value="6">Royal Advisor</option></select>';
-        html += '<button onclick="var sel=document.getElementById(\'gm-set-rank\'); var r=parseInt(sel.value,10); if(isNaN(r)||r<0||r>6){UI.toast(\'Invalid rank\',\'error\');return;} var kid=Player.state.citizenshipKingdomId||Object.keys(Player.state.socialRank||{})[0]||\'k_1\'; if(!Player.state.socialRank)Player.state.socialRank={}; Player.state.socialRank[kid]=r; var names=[\'Peasant\',\'Citizen\',\'Burgher\',\'Guildmaster\',\'Minor Noble\',\'Lord\',\'Royal Advisor\']; UI.toast(\'Set rank to \'+(names[r]||r)+\' in \'+kid,\'success\')" style="margin:2px; padding:3px 8px; background:#5d1630; color:#fff; border:1px solid #a48; cursor:pointer;">Set Rank</button> ';
+        // Set rank (pre-select current rank)
+        var _gmCurrentRank = 0;
+        try {
+            var _gmKid = (Player.state && Player.state.citizenshipKingdomId) || '';
+            if (_gmKid && Player.state && Player.state.socialRank) _gmCurrentRank = Player.state.socialRank[_gmKid] || 0;
+            if (Player.state && Player.state.socialRank) {
+                for (var _gmk in Player.state.socialRank) {
+                    if ((Player.state.socialRank[_gmk] || 0) > _gmCurrentRank) _gmCurrentRank = Player.state.socialRank[_gmk];
+                }
+            }
+        } catch(e) {}
+        html += '<select id="gm-set-rank" style="background:#333; color:#fff; border:1px solid #666; margin:2px; padding:2px;">';
+        var _gmRankNames = ['Peasant','Citizen','Burgher','Guildmaster','Minor Noble','Lord','Royal Advisor'];
+        for (var _gri = 0; _gri < _gmRankNames.length; _gri++) {
+            html += '<option value="' + _gri + '"' + (_gri === _gmCurrentRank ? ' selected' : '') + '>' + _gmRankNames[_gri] + '</option>';
+        }
+        html += '</select>';
+        html += '<button onclick="var sel=document.getElementById(\'gm-set-rank\'); var r=parseInt(sel.value,10); if(isNaN(r)||r<0||r>6){UI.toast(\'Invalid rank\',\'error\');return;} var kid=Player.state.citizenshipKingdomId||Object.keys(Player.state.socialRank||{})[0]||\'k_1\'; if(!Player.state.socialRank)Player.state.socialRank={}; Player.state.socialRank[kid]=r; if(r>=6){Player.state.politicalCapital=3; Player.state.royalAdvisorKingdomId=kid; Player.state.isRoyalAdvisorFromKing=true;} if(r>=5&&!Player.state.lordTownId){Player.state.lordTownId=Player.state.townId||null;} if(r>=4){Player.state.occupation=\'noble\';} var names=[\'Peasant\',\'Citizen\',\'Burgher\',\'Guildmaster\',\'Minor Noble\',\'Lord\',\'Royal Advisor\']; UI.toast(\'Set rank to \'+(names[r]||r)+\' in \'+kid+(r>=6?\' (+3 political capital)\':\'\')+\'\',\'success\')" style="margin:2px; padding:3px 8px; background:#5d1630; color:#fff; border:1px solid #a48; cursor:pointer;">Set Rank</button> ';
 
         // Unlock all skills
         html += '<button onclick="if(typeof SKILLS!==\'undefined\'){var count=0; for(var sk in SKILLS){if(!Player.state.unlockedSkills)Player.state.unlockedSkills=[];if(Player.state.unlockedSkills.indexOf(sk)===-1){Player.state.unlockedSkills.push(sk); count++;}} UI.toast(\'🧠 Unlocked \'+count+\' skills! (\'+Player.state.unlockedSkills.length+\' total)\',\'success\');}else{UI.toast(\'SKILLS config not found\',\'error\');}" style="margin:2px; padding:3px 8px; background:#5d4016; color:#fff; border:1px solid #a84; cursor:pointer;">Unlock All Skills</button> ';
