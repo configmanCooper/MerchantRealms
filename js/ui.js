@@ -17313,13 +17313,13 @@ window.UI = (function () {
         html += '<div style="max-height:350px;overflow-y:auto;">';
         for (var i = 0; i < specialLaws.length; i++) {
             var law = specialLaws[i];
-            html += '<button class="btn-medieval" onclick="(function(){var r=Player.proposeLaw(\'' + kingdomId + '\',\'' + law.id + '\');UI.toast(r&&r.message?r.message:\'Law proposed.\',r&&r.success?\'success\':\'warning\');closeModal();UI.openNobilityDialog();})()" style="display:block;width:100%;text-align:left;font-size:0.75rem;padding:6px 10px;margin-bottom:3px;">';
+            html += '<button class="btn-medieval" onclick="(function(){var r=Player.proposeLaw(\'' + kingdomId + '\',\'' + law.id + '\');UI.toast(r&&r.message?r.message:\'Law proposed.\',r&&r.success?\'success\':\'warning\');UI.closeModal();UI.openNobilityDialog();})()" style="display:block;width:100%;text-align:left;font-size:0.75rem;padding:6px 10px;margin-bottom:3px;">';
             html += '<span>' + (law.icon || '📜') + ' <strong>' + law.name + '</strong></span><br>';
             html += '<span style="font-size:0.68rem;color:#aaa;">' + (law.desc || '') + '</span>';
             html += '</button>';
         }
         html += '</div>';
-        openModal('📜 Propose Law', html, '<button class="btn-medieval" onclick="closeModal();UI.openNobilityDialog();">Back</button>');
+        openModal('📜 Propose Law', html, '<button class="btn-medieval" onclick="UI.closeModal();UI.openNobilityDialog();">Back</button>');
     }
 
     function openSchemesDialog() {

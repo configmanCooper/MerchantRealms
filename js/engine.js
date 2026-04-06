@@ -6566,22 +6566,53 @@
                 if (rel >= CONFIG.RELATION_ALLIANCE_THRESHOLD && !k.alliances.has(other.id) && !k.atWar.has(other.id)) {
                     // Form alliance — most alliances are defensive by default
                     var newAllianceType = rel >= 90 && rng.chance(0.25) ? 'offensive' : 'defensive';
-                    k.alliances.add(other.id);
-                    other.alliances.add(k.id);
-                    k.allianceMeta[other.id] = { type: newAllianceType, formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0 };
-                    other.allianceMeta[k.id] = { type: newAllianceType, formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0 };
-                    logEvent(`🤝 ${k.name} and ${other.name} have formed a ${newAllianceType} alliance!`, {
-                        type: 'alliance_formed',
-                        cause: 'Relations between ' + k.name + ' and ' + other.name + ' reached ' + Math.round(rel) + ' (threshold: ' + CONFIG.RELATION_ALLIANCE_THRESHOLD + ').',
-                        effects: [
-                            newAllianceType === 'defensive'
-                                ? 'Both kingdoms will defend each other when attacked (after 30-day delay)'
-                                : 'Both kingdoms will support each other in all wars (after 30-day delay)',
-                            'Trade between allied kingdoms is boosted',
-                            'Diplomatic relations are strengthened'
-                        ],
-                        kingdoms: [k.id, other.id]
-                    });
+                    if (isPlayerRoyalAdvisorOf(k)) {
+                        var _alOther = other;
+                        var _alType = newAllianceType;
+                        proposeKingDecision(k, {
+                            type: 'alliance_proposal',
+                            description: 'Form ' + _alType + ' alliance with ' + _alOther.name,
+                            details: 'Relations: ' + Math.round(rel) + '. ' + (_alType === 'offensive' ? 'Both kingdoms will support each other in ALL wars.' : 'Both kingdoms will defend each other when attacked.') + ' Their military strength: ~' + Math.floor(computeMilitaryStrength(_alOther)) + '. Treasury: ' + Math.floor(_alOther.gold || 0) + 'g.',
+                            conviction: Math.min(0.85, 0.5 + (rel >= 85 ? 0.2 : 0.05) + (_alType === 'defensive' ? 0.1 : 0)),
+                            execute: (function(kRef, otherRef, alType) { return function() {
+                                kRef.alliances.add(otherRef.id);
+                                otherRef.alliances.add(kRef.id);
+                                if (!kRef.allianceMeta) kRef.allianceMeta = {};
+                                if (!otherRef.allianceMeta) otherRef.allianceMeta = {};
+                                kRef.allianceMeta[otherRef.id] = { type: alType, formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0 };
+                                otherRef.allianceMeta[kRef.id] = { type: alType, formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0 };
+                                logEvent('🤝 ' + kRef.name + ' and ' + otherRef.name + ' have formed a ' + alType + ' alliance!', {
+                                    type: 'alliance_formed',
+                                    cause: 'Relations reached ' + Math.round(kRef.relations[otherRef.id] || 0) + ' (approved by Royal Advisor).',
+                                    effects: [
+                                        alType === 'defensive'
+                                            ? 'Both kingdoms will defend each other when attacked (after 30-day delay)'
+                                            : 'Both kingdoms will support each other in all wars (after 30-day delay)',
+                                        'Trade between allied kingdoms is boosted',
+                                        'Diplomatic relations are strengthened'
+                                    ],
+                                    kingdoms: [kRef.id, otherRef.id]
+                                });
+                            }; })(k, _alOther, _alType)
+                        });
+                    } else {
+                        k.alliances.add(other.id);
+                        other.alliances.add(k.id);
+                        k.allianceMeta[other.id] = { type: newAllianceType, formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0 };
+                        other.allianceMeta[k.id] = { type: newAllianceType, formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0 };
+                        logEvent(`🤝 ${k.name} and ${other.name} have formed a ${newAllianceType} alliance!`, {
+                            type: 'alliance_formed',
+                            cause: 'Relations between ' + k.name + ' and ' + other.name + ' reached ' + Math.round(rel) + ' (threshold: ' + CONFIG.RELATION_ALLIANCE_THRESHOLD + ').',
+                            effects: [
+                                newAllianceType === 'defensive'
+                                    ? 'Both kingdoms will defend each other when attacked (after 30-day delay)'
+                                    : 'Both kingdoms will support each other in all wars (after 30-day delay)',
+                                'Trade between allied kingdoms is boosted',
+                                'Diplomatic relations are strengthened'
+                            ],
+                            kingdoms: [k.id, other.id]
+                        });
+                    }
                 }
                 // Alliance breaks if relations drop too low
                 if (k.alliances.has(other.id) && rel < (CONFIG.ALLIANCE_BREAK_THRESHOLD || 40)) {
@@ -8069,10 +8100,27 @@
                 }
             }
             if (bestCandidate && rng.chance(0.15)) {
-                if (!bestCandidate.socialRank) bestCandidate.socialRank = {};
-                bestCandidate.socialRank[kId] = 5;
-                bestCandidate.houseType = 'manor';
-                logEvent('🏰 ' + bestCandidate.firstName + ' ' + bestCandidate.lastName + ' has been elevated to Lord in ' + k.name + '.');
+                if (isPlayerRoyalAdvisorOf(k)) {
+                    var _naCand = bestCandidate;
+                    var _naKId = kId;
+                    proposeKingDecision(k, {
+                        type: 'noble_appointment',
+                        description: 'Elevate ' + _naCand.firstName + ' ' + _naCand.lastName + ' to Lord',
+                        details: 'Age: ' + _naCand.age + '. Ambition: ' + ((_naCand.personality || {}).ambition || 'unknown') + '. Gold: ' + Math.floor(_naCand.gold || 0) + 'g. Currently a Minor Noble seeking greater influence.',
+                        conviction: Math.min(0.85, 0.4 + (kLords.length < 2 ? 0.3 : 0.1) + (((_naCand.personality || {}).ambition === 'ambitious') ? 0.1 : 0)),
+                        execute: (function(cand, kid) { return function() {
+                            if (!cand.socialRank) cand.socialRank = {};
+                            cand.socialRank[kid] = 5;
+                            cand.houseType = 'manor';
+                            logEvent('🏰 ' + cand.firstName + ' ' + cand.lastName + ' has been elevated to Lord in ' + (findKingdom(kid) ? findKingdom(kid).name : 'the kingdom') + '.');
+                        }; })(_naCand, _naKId)
+                    });
+                } else {
+                    if (!bestCandidate.socialRank) bestCandidate.socialRank = {};
+                    bestCandidate.socialRank[kId] = 5;
+                    bestCandidate.houseType = 'manor';
+                    logEvent('🏰 ' + bestCandidate.firstName + ' ' + bestCandidate.lastName + ' has been elevated to Lord in ' + k.name + '.');
+                }
             }
         }
 
@@ -8091,18 +8139,40 @@
                 if ((emPers.ambition || 50) > 75 && (emPers.loyalty || 50) < 30) wantsNobility = false;
 
                 if (wantsNobility && rng.chance(0.10)) {
-                    if (!em.socialRank) em.socialRank = {};
-                    em.socialRank[kId] = 4;
-                    em.occupation = 'noble';
-                    em.wealthClass = 'upper';
-                    // Set up knowledge graph
-                    em._knowsNobles = em._knowsNobles || [];
-                    if (kLords.length > 0) {
-                        var knownLord = rng.pick(kLords);
-                        em._knowsNobles.push(knownLord.id);
+                    if (isPlayerRoyalAdvisorOf(k)) {
+                        var _emCand = em;
+                        var _emKId = kId;
+                        proposeKingDecision(k, {
+                            type: 'noble_appointment',
+                            description: 'Elevate merchant ' + _emCand.firstName + ' ' + (_emCand.lastName || '') + ' to Minor Noble',
+                            details: 'A wealthy merchant seeks noble status. Gold: ' + Math.floor(_emCand.gold || 0) + 'g. Ambition: ' + (emPers.ambition || 'unknown') + '. Loyalty: ' + (emPers.loyalty || 'unknown') + '.',
+                            conviction: Math.min(0.8, 0.35 + (kMinorNobles.length < 5 ? 0.25 : 0.05) + ((emPers.loyalty || 50) > 60 ? 0.1 : 0)),
+                            execute: (function(cand, kid, kLordsRef) { return function() {
+                                if (!cand.socialRank) cand.socialRank = {};
+                                cand.socialRank[kid] = 4;
+                                cand.occupation = 'noble';
+                                cand.wealthClass = 'upper';
+                                cand._knowsNobles = cand._knowsNobles || [];
+                                if (kLordsRef.length > 0) {
+                                    var rl = world.rng ? world.rng.pick(kLordsRef) : kLordsRef[0];
+                                    cand._knowsNobles.push(rl.id);
+                                }
+                                logEvent('👑 Elite merchant ' + cand.firstName + ' ' + (cand.lastName || '') + ' has been elevated to Minor Noble in ' + (findKingdom(kid) ? findKingdom(kid).name : 'the kingdom') + '.');
+                            }; })(_emCand, _emKId, kLords)
+                        });
+                    } else {
+                        if (!em.socialRank) em.socialRank = {};
+                        em.socialRank[kId] = 4;
+                        em.occupation = 'noble';
+                        em.wealthClass = 'upper';
+                        em._knowsNobles = em._knowsNobles || [];
+                        if (kLords.length > 0) {
+                            var knownLord = rng.pick(kLords);
+                            em._knowsNobles.push(knownLord.id);
+                        }
+                        logEvent('👑 Elite merchant ' + em.firstName + ' ' + em.lastName + ' has been elevated to Minor Noble in ' + k.name + '.');
+                        kMinorNobles.push(em);
                     }
-                    logEvent('👑 Elite merchant ' + em.firstName + ' ' + em.lastName + ' has been elevated to Minor Noble in ' + k.name + '.');
-                    kMinorNobles.push(em);
                 }
             }
         }
@@ -11114,11 +11184,32 @@
                     }
                 }
                 if (canBuild && k.gold >= chosen.cost) {
-                    chosen.town.buildings.push({ type: chosen.type, level: 1, ownerId: k.id, builtDay: world.day, condition: 'new', lastRepairDay: 0 });
-                    k.gold -= chosen.cost;
-                    logEvent(`🏗️ ${k.name} commissions a new ${bt ? bt.name : chosen.type} in ${chosen.town.name}!`, {
-                        type: 'construction_project', cause: 'Royal investment in infrastructure', effects: ['New building provides benefits', 'Treasury -' + chosen.cost + 'g']
-                    });
+                    // RA consultation for major infrastructure (cost >= 800g)
+                    if (chosen.cost >= 800 && isPlayerRoyalAdvisorOf(k)) {
+                        var _ipTown = chosen.town;
+                        var _ipType = chosen.type;
+                        var _ipCost = chosen.cost;
+                        var _ipBt = bt;
+                        proposeKingDecision(k, {
+                            type: 'infrastructure_project',
+                            description: 'Build ' + (_ipBt ? _ipBt.name : _ipType) + ' in ' + _ipTown.name,
+                            details: 'Cost: ' + _ipCost + 'g. Treasury: ' + Math.floor(k.gold) + 'g. Town population: ' + (_ipTown.population || 0) + '. This would strengthen ' + _ipTown.name + '\'s capabilities.',
+                            conviction: Math.min(0.85, 0.4 + (_ipCost >= 2000 ? 0.2 : 0.1) + (p.intelligence === 'brilliant' ? 0.15 : 0)),
+                            execute: (function(kRef, townRef, typeId, cost, btRef) { return function() {
+                                townRef.buildings.push({ type: typeId, level: 1, ownerId: kRef.id, builtDay: world.day, condition: 'new', lastRepairDay: 0 });
+                                kRef.gold -= cost;
+                                logEvent('🏗️ ' + kRef.name + ' commissions a new ' + (btRef ? btRef.name : typeId) + ' in ' + townRef.name + '!', {
+                                    type: 'construction_project', cause: 'Royal investment in infrastructure (approved by Royal Advisor)', effects: ['New building provides benefits', 'Treasury -' + cost + 'g']
+                                });
+                            }; })(k, _ipTown, _ipType, _ipCost, _ipBt)
+                        });
+                    } else {
+                        chosen.town.buildings.push({ type: chosen.type, level: 1, ownerId: k.id, builtDay: world.day, condition: 'new', lastRepairDay: 0 });
+                        k.gold -= chosen.cost;
+                        logEvent(`🏗️ ${k.name} commissions a new ${bt ? bt.name : chosen.type} in ${chosen.town.name}!`, {
+                            type: 'construction_project', cause: 'Royal investment in infrastructure', effects: ['New building provides benefits', 'Treasury -' + chosen.cost + 'g']
+                        });
+                    }
                 }
             }
         }

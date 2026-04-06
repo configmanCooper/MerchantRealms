@@ -2743,6 +2743,7 @@ const SPECIAL_LAWS = [
     { id: 'no_tent_camps',       name: 'No Tent Camps',         desc: 'Tent camps are forbidden. Existing camps will be demolished by soldiers.', icon: '🚫', effect: 'no_tent_camps' },
     { id: 'right_to_camps',      name: 'Right to Camps',        desc: 'Homeless citizens may pool resources to build tent camps in any town.', icon: '⛺', effect: 'right_to_camps' },
 ];
+CONFIG.SPECIAL_LAWS = SPECIAL_LAWS;
 
 // ============================================================
 // King Mood System
