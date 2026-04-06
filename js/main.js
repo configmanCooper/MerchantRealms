@@ -1574,6 +1574,28 @@ window.Game = (function () {
                 return;
             }
 
+            // Clean up tutorial if it was running (prevents panel leaking into loaded game)
+            if (typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive()) {
+                try { Tutorial.cleanup(); } catch(e) {}
+            }
+            // Also destroy leftover tutorial panel even if Tutorial.isActive is false
+            var tutPanel = document.getElementById('tutorialPanel');
+            if (tutPanel) tutPanel.remove();
+
+            // Clear all tutorial window flags from a prior session
+            delete window._tutorialMinimapClicked;
+            delete window._tutorialLocateUsed;
+            delete window._tutorialAteFood;
+            delete window._tutorialDrankWater;
+            delete window._tutorialSocialInteracted;
+            delete window._tutorialSmallTalkDone;
+            delete window._tutorialRested;
+
+            // Close any open modal from previous game
+            if (typeof UI !== 'undefined' && UI.closeModal) {
+                try { UI.closeModal(); } catch(e) {}
+            }
+
             // Restore engine state
             if (data.engine && Engine.deserialize) {
                 Engine.deserialize(data.engine);
