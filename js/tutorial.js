@@ -1,5 +1,5 @@
 // ============================================================
-// Merchant Realms — Interactive Tutorial System (18 Chapters)
+// Merchant Realms — Interactive Tutorial System (19 Chapters)
 // ============================================================
 
 window.Tutorial = (function () {

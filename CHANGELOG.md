@@ -4,6 +4,32 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.58.0] - 2026-04-06
+
+### Added
+- **Tutorial Intro Chapters**: Two new opening chapters — "What Do I Do In This Game?" (8 open-ended goals) and "How Do I Achieve My Goals?" (early/mid/late game strategies)
+- **Deposit Overlay for Towns**: Toggle-mode map overlay shows actual resource amounts per town (e.g. ⛏8k 🪨12k) from real naturalDeposits data
+- **Succession Voting UI**: When king dies without heir, Royal Advisor gets candidate cards showing name, gold, age, occupation, intelligence, ambition, charisma — endorsed candidate gets +40 score boost
+
+### Changed
+- Terrain deposit survey now scales results to realistic NATURAL_DEPOSITS config ranges (thousands) instead of raw tile-hit counts (single digits)
+- Survey circle renders amounts with "k" suffix for thousands
+- Deposit overlay shows only resources each town actually has access to
+
+### Fixed
+- **Medical supply consumption non-atomic**: Rewrote `_consumeTreatmentSupplies()` with preflight check — all items resolved before consuming any, returns 0 if any missing
+- **Autobuy overfill**: Medical autobuy now clamped to remaining storage capacity
+- **Kingdom gold negative guard**: Procurement buy loop skips when kingdom can't afford
+- **Embargo enforcement**: NPC merchants now skip embargoed destinations
+- **Terrain load validation**: Validates terrain array length matches grid dimensions on load
+- **Outpost terrain/prices init**: New outposts now get `classifyTownTerrain()` and `computeLocalBasePrices()` on creation
+- **Load migration**: Added `injurySeverity` for injured people and `_noSupplyRetries` for treatment queues in old saves
+- **NPC treatment admission**: Supply check now runs before gold deduction (was charging before verifying supplies)
+- **Player travel at coordinate 0,0**: Fixed truthy checks for worldX/worldY that failed at origin → `!= null`
+- **UI showBuildingDetails typo**: Fixed `showBuildingDetails` → `showBuildingDetail`
+- **Keyboard focus during tutorial**: Canvas gets `tabindex="0"`, tutorial buttons get `tabindex="-1"`, focus restored after every click
+- **Tutorial Main Menu location text**: Fixed "bottom panel" → "upper-right corner of this panel, or on the right side of the top panel"
+
 ## [0.57.0] - 2026-04-06
 
 ### Added
