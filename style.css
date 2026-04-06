@@ -186,6 +186,16 @@ body {
     50% { box-shadow: 0 0 20px rgba(90, 173, 53, 0.8), 0 0 40px rgba(90, 173, 53, 0.3); }
 }
 
+@keyframes nobilityGlow {
+    0%, 100% { box-shadow: 0 0 8px rgba(201, 168, 76, 0.4); border-color: rgba(201, 168, 76, 0.6); }
+    50% { box-shadow: 0 0 18px rgba(201, 168, 76, 0.9), 0 0 36px rgba(201, 168, 76, 0.3); border-color: rgba(201, 168, 76, 1.0); }
+}
+
+.btn-nobility-glow {
+    animation: nobilityGlow 2s ease-in-out infinite;
+    background: rgba(201, 168, 76, 0.12) !important;
+}
+
 .btn-close {
     background: none;
     border: none;

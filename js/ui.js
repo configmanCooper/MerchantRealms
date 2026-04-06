@@ -203,6 +203,16 @@ window.UI = (function () {
             btnFamily.style.display = 'none';
             if (rowManage) rowManage.appendChild(btnFamily);
 
+            // Nobility button → Manage row (hidden until Minor Noble rank 4+)
+            const btnNobility = document.createElement('button');
+            btnNobility.className = 'btn-action';
+            btnNobility.id = 'btnNobility';
+            btnNobility.title = 'Nobility — Privileges, Commissions & Standing';
+            btnNobility.textContent = '👑 Nobility';
+            btnNobility.addEventListener('click', openNobilityDialog);
+            btnNobility.style.display = 'none';
+            if (rowManage) rowManage.appendChild(btnNobility);
+
             // === Row 3: World (Kingdoms, Map, Log already static) ===
 
             // Feats → World row
@@ -536,6 +546,27 @@ window.UI = (function () {
             var timeIcon = isNight ? '🌙' : '☀️';
             el.dayDisplay.textContent = `${timeIcon} Day ${day} — ${season}, Year ${year}`;
 
+            // Market Day indicator — show for kingdoms with market_day law
+            var marketDayEl = document.getElementById('marketDayIndicator');
+            var isMarketDay = day % 7 === 0;
+            var playerTownKingdom = null;
+            if (isMarketDay && typeof Player !== 'undefined' && Player.townId != null) {
+                try {
+                    var pTown = Engine.getTown ? Engine.getTown(Player.townId) : null;
+                    if (pTown) playerTownKingdom = Engine.findKingdom ? Engine.findKingdom(pTown.kingdomId) : null;
+                } catch(e) {}
+            }
+            var showMarketDay = isMarketDay && playerTownKingdom && playerTownKingdom.laws && playerTownKingdom.laws.specialLaws &&
+                playerTownKingdom.laws.specialLaws.some(function(l) { return (typeof l === 'string' ? l : (l.id || '')) === 'market_day'; });
+            if (!marketDayEl) {
+                marketDayEl = document.createElement('span');
+                marketDayEl.id = 'marketDayIndicator';
+                marketDayEl.style.cssText = 'margin-left:8px;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:bold;background:rgba(255,215,0,0.2);color:#ffd700;border:1px solid rgba(255,215,0,0.4);display:none;';
+                marketDayEl.textContent = '📅 Market Day — Tax Free!';
+                if (el.dayDisplay && el.dayDisplay.parentNode) el.dayDisplay.parentNode.insertBefore(marketDayEl, el.dayDisplay.nextSibling);
+            }
+            marketDayEl.style.display = showMarketDay ? 'inline' : 'none';
+
             // Update zoom display
             const zoomEl = document.getElementById('zoomLevel');
             if (zoomEl && typeof Renderer !== 'undefined' && Renderer.getCamera) {
@@ -737,6 +768,51 @@ window.UI = (function () {
                 const btnGodMode = document.getElementById('btnGodMode');
                 if (btnGodMode) {
                     btnGodMode.style.display = (typeof Game !== 'undefined' && Game.isGodMode && Game.isGodMode()) ? '' : 'none';
+                }
+
+                // Nobility button — visible at rank 4+ (Minor Noble), glow on actionable items
+                const btnNobility = document.getElementById('btnNobility');
+                if (btnNobility) {
+                    var _nobleRank = 0;
+                    if (Player.citizenshipKingdomId && Player.socialRank) {
+                        _nobleRank = Player.socialRank[Player.citizenshipKingdomId] || 0;
+                    }
+                    if (Player.socialRank) {
+                        for (var _nk in Player.socialRank) {
+                            if ((Player.socialRank[_nk] || 0) > _nobleRank) _nobleRank = Player.socialRank[_nk];
+                        }
+                    }
+                    btnNobility.style.display = _nobleRank >= 4 ? '' : 'none';
+                    if (_nobleRank >= 4) {
+                        var _nobilityGlow = false;
+                        try {
+                            var _nKingdoms = Engine.getKingdoms ? Engine.getKingdoms() : [];
+                            for (var _nki = 0; _nki < _nKingdoms.length; _nki++) {
+                                var _nk2 = _nKingdoms[_nki];
+                                // Pending commission
+                                if (_nk2.directedPlayerCommission && _nk2.directedPlayerCommission.status === 'pending') { _nobilityGlow = true; break; }
+                                // Commission deadline approaching (< 10 days)
+                                if (_nk2.directedPlayerCommission && _nk2.directedPlayerCommission.status === 'accepted') {
+                                    var _daysLeft = (_nk2.directedPlayerCommission.deadlineDay || 0) - (Engine.getDay ? Engine.getDay() : 0);
+                                    if (_daysLeft <= 10 && _daysLeft > 0) { _nobilityGlow = true; break; }
+                                }
+                                // Pending RA decisions
+                                if (_nobleRank >= 6 && _nk2.pendingKingDecisions && _nk2.pendingKingDecisions.length > 0) {
+                                    for (var _pdi = 0; _pdi < _nk2.pendingKingDecisions.length; _pdi++) {
+                                        if (!_nk2.pendingKingDecisions[_pdi].resolved) { _nobilityGlow = true; break; }
+                                    }
+                                    if (_nobilityGlow) break;
+                                }
+                            }
+                            // Demotion warning
+                            if (Player._repWarnDay) _nobilityGlow = true;
+                        } catch (e) { /* ignore */ }
+                        if (_nobilityGlow) {
+                            btnNobility.classList.add('btn-nobility-glow');
+                        } else {
+                            btnNobility.classList.remove('btn-nobility-glow');
+                        }
+                    }
                 }
 
                 // Pause indicator
@@ -2118,7 +2194,7 @@ window.UI = (function () {
                 if (!_talkCheck.canTalk) {
                     // Locked — show why and introduction options
                     var _npcRank = Player.getNPCSocialRank ? Player.getNPCSocialRank(person) : 0;
-                    var _rankName = _npcRank >= 4 ? (['', '', '', '', 'Minor Noble', 'Lord', 'Royal Advisor'][_npcRank] || 'Noble') : 'Noble';
+                    var _rankName = _npcRank >= 7 ? 'King' : _npcRank >= 4 ? (['', '', '', '', 'Minor Noble', 'Lord', 'Royal Advisor'][_npcRank] || 'Noble') : 'Noble';
                     html += `<div style="background:rgba(200,50,50,0.1);border:1px solid rgba(200,50,50,0.3);border-radius:6px;padding:8px;margin-bottom:6px;">`;
                     html += `<div style="font-size:0.85rem;font-weight:bold;color:#cc6666;">🔒 Cannot Interact — ${_rankName}</div>`;
                     html += `<div style="font-size:0.75rem;color:#aaa;margin-top:4px;">${_talkCheck.reason}</div>`;
@@ -2238,8 +2314,15 @@ window.UI = (function () {
                     }
                 }
 
-                // ── Dating Actions (if eligible) ──
-                const canDate = person.age >= 16 && !isChild;
+                // ── Dating Actions (if eligible, not a king) ──
+                var _isKingNPC = person.occupation === 'king';
+                if (!_isKingNPC && Engine.getKingdoms) {
+                    var _kkList = Engine.getKingdoms();
+                    for (var _kki = 0; _kki < _kkList.length; _kki++) {
+                        if (_kkList[_kki].king === person.id) { _isKingNPC = true; break; }
+                    }
+                }
+                const canDate = person.age >= 16 && !isChild && !_isKingNPC;
                 if (canDate && typeof DATING_ACTIVITIES !== 'undefined') {
                     html += `<div class="detail-section"><h3>💕 Courtship</h3>
                         <div style="display:flex;flex-direction:column;gap:3px;">`;
@@ -2547,9 +2630,33 @@ window.UI = (function () {
         const taxRate = (kingdom && kingdom.taxRate) || 0;
         const isForeign = typeof Player !== 'undefined' && Player.isPlayerCitizenOf ? !Player.isPlayerCitizenOf(town.kingdomId) : (typeof Player !== 'undefined' && Player.citizenshipKingdomId ? town.kingdomId !== Player.citizenshipKingdomId : false);
 
+        // Check for market day
+        const _isMarketDay = Engine.getDay() % 7 === 0 && kingdom && kingdom.laws && kingdom.laws.specialLaws &&
+            kingdom.laws.specialLaws.some(l => (typeof l === 'string' ? l : (l.id || '')) === 'market_day');
+        const _marketDayTaxFree = _isMarketDay && !isForeign;
+
+        let marketDayBanner = '';
+        if (_isMarketDay) {
+            if (_marketDayTaxFree) {
+                marketDayBanner = `<div style="background:linear-gradient(90deg,rgba(255,215,0,0.15),rgba(255,215,0,0.05));border:1px solid rgba(255,215,0,0.4);border-radius:6px;padding:8px 12px;margin-bottom:8px;text-align:center;">
+                    <span style="font-size:1rem;font-weight:bold;color:#ffd700;">📅 Market Day — Tax Free!</span>
+                    <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">As a citizen, all your trades today are tax-free</div>
+                </div>`;
+            } else {
+                marketDayBanner = `<div style="background:linear-gradient(90deg,rgba(255,215,0,0.08),rgba(255,215,0,0.02));border:1px solid rgba(255,215,0,0.2);border-radius:6px;padding:6px 12px;margin-bottom:8px;text-align:center;">
+                    <span style="font-size:0.85rem;color:#ffd700;">📅 Market Day</span>
+                    <div style="font-size:0.7rem;color:var(--text-muted);margin-top:2px;">Citizens trade tax-free today (not available to foreigners)</div>
+                </div>`;
+            }
+        }
+
         let taxDetailsInner = '';
         // Tax info
-        taxDetailsInner += `<div class="text-dim" style="margin-bottom:4px;font-size:0.78rem;">📜 Kingdom Tax: ${Math.round(taxRate * 100)}%</div>`;
+        if (_marketDayTaxFree) {
+            taxDetailsInner += `<div style="color:#ffd700;margin-bottom:4px;font-size:0.78rem;font-weight:bold;">📅 Market Day — All taxes waived!</div>`;
+        } else {
+            taxDetailsInner += `<div class="text-dim" style="margin-bottom:4px;font-size:0.78rem;">📜 Kingdom Tax: ${Math.round(taxRate * 100)}%</div>`;
+        }
         if (isForeign && tariff > 0) {
             taxDetailsInner += `<div class="text-dim" style="margin-bottom:4px;font-size:0.78rem;">⚠️ Foreign kingdom — ${Math.round(tariff * 100)}% tariff + ${Math.round((CONFIG.FOREIGN_TAX_SURCHARGE || 0) * 100)}% surcharge</div>`;
         }
@@ -2646,13 +2753,24 @@ window.UI = (function () {
                 if (kingdom && kingdom.laws && kingdom.laws.specialLaws && kingdom.laws.specialLaws.some(l => l.id === 'foreign_ban')) buySurcharge += 0.25;
             }
             else { buyCitDiscount = CONFIG.CITIZEN_TAX_DISCOUNT || 0; }
-            // Special law: market_day
-            let marketDayDisc = 0;
-            if (kingdom && kingdom.laws && kingdom.laws.specialLaws && kingdom.laws.specialLaws.some(l => l.id === 'market_day') && Engine.getDay() % 7 === 0) marketDayDisc = 0.15;
+            // Special law: market_day — citizens trade tax-free on market day
+            let buyTotalTax = taxRate + gTax + buyTariff + buySurcharge;
+            let buyMarketDayFree = false;
+            if (_marketDayTaxFree) {
+                buyMarketDayFree = true;
+                buyTotalTax = 0;
+            }
+            // Special law: maritime_privilege — 50% tax break on sea goods in port towns
+            let buyPortDisc = 0;
+            if (!buyMarketDayFree && kingdom && kingdom.laws && kingdom.laws.specialLaws && kingdom.laws.specialLaws.some(l => (typeof l === 'string' ? l : (l.id || '')) === 'maritime_privilege') && town.isPort) {
+                if (['fish', 'salt', 'pearls', 'rope', 'hemp', 'pearl_jewelry'].includes(resId)) {
+                    buyPortDisc = buyTotalTax * 0.50;
+                }
+            }
             let skillDiscPct = 0;
             if (Player.hasSkill('master_haggler')) skillDiscPct = 10;
             else if (Player.hasSkill('haggler')) skillDiscPct = 5;
-            const finalUnitPrice = price * (1 + taxRate + gTax + buyTariff + buySurcharge - buyCitDiscount - marketDayDisc) * (1 - skillDiscPct / 100);
+            const finalUnitPrice = price * (1 + buyTotalTax - buyCitDiscount - buyPortDisc) * (1 - skillDiscPct / 100);
 
             const priceDiff = price - res.basePrice;
             const _hasKeenEye = typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('keen_eye');
@@ -2663,11 +2781,16 @@ window.UI = (function () {
 
             // Build price tooltip
             let breakdownLines = [`Base: ${price.toFixed(1)}g`];
-            if (taxRate > 0) breakdownLines.push(`Tax (${Math.round(taxRate * 100)}%): +${(price * taxRate).toFixed(1)}g`);
-            if (gTax > 0) breakdownLines.push(`Goods Tax (${Math.round(gTax * 100)}%): +${(price * gTax).toFixed(1)}g`);
-            if (buyTariff > 0) breakdownLines.push(`Tariff (${Math.round(buyTariff * 100)}%): +${(price * buyTariff).toFixed(1)}g`);
-            if (buySurcharge > 0) breakdownLines.push(`Surcharge (${Math.round(buySurcharge * 100)}%): +${(price * buySurcharge).toFixed(1)}g`);
-            if (buyCitDiscount > 0) breakdownLines.push(`Citizen Disc: -${(price * buyCitDiscount).toFixed(1)}g`);
+            if (buyMarketDayFree) {
+                breakdownLines.push('📅 Market Day: Tax Free!');
+            } else {
+                if (taxRate > 0) breakdownLines.push(`Tax (${Math.round(taxRate * 100)}%): +${(price * taxRate).toFixed(1)}g`);
+                if (gTax > 0) breakdownLines.push(`Goods Tax (${Math.round(gTax * 100)}%): +${(price * gTax).toFixed(1)}g`);
+                if (buyTariff > 0) breakdownLines.push(`Tariff (${Math.round(buyTariff * 100)}%): +${(price * buyTariff).toFixed(1)}g`);
+                if (buySurcharge > 0) breakdownLines.push(`Surcharge (${Math.round(buySurcharge * 100)}%): +${(price * buySurcharge).toFixed(1)}g`);
+                if (buyPortDisc > 0) breakdownLines.push(`⚓ Maritime (-50% tax): -${(price * buyPortDisc).toFixed(1)}g`);
+            }
+            if (buyCitDiscount > 0 && !buyMarketDayFree) breakdownLines.push(`Citizen Disc: -${(price * buyCitDiscount).toFixed(1)}g`);
             if (skillDiscPct > 0) breakdownLines.push(`Haggler (-${skillDiscPct}%): -${(finalUnitPrice * skillDiscPct / (100 - skillDiscPct)).toFixed(1)}g`);
             breakdownLines.push(`Final: ${finalUnitPrice.toFixed(1)}g`);
             const breakdownTooltip = breakdownLines.join('&#10;');
@@ -2929,7 +3052,7 @@ window.UI = (function () {
             </details>`;
         }
 
-        const html = `${capacityHtml}${tradeInfoHtml}<div class="trade-columns">
+        const html = `${marketDayBanner}${capacityHtml}${tradeInfoHtml}<div class="trade-columns">
             <div class="trade-column"><h3>Buy from Market</h3>${buyHtml}</div>
             <div class="trade-column"><h3>Sell to Market</h3>${sellHtml}</div>
         </div>
@@ -16777,6 +16900,416 @@ window.UI = (function () {
         return '#c44e52';
     }
 
+    // ============================================================
+    // §NOBILITY — Nobility Panel (rank 4+ privileges, commissions, standing)
+    // ============================================================
+
+    function openNobilityDialog() {
+        var playerRank = 0;
+        var citizenKingdomId = Player.citizenshipKingdomId || '';
+        if (citizenKingdomId && Player.socialRank) {
+            playerRank = Player.socialRank[citizenKingdomId] || 0;
+        }
+        if (Player.socialRank) {
+            for (var _nk in Player.socialRank) {
+                if ((Player.socialRank[_nk] || 0) > playerRank) {
+                    playerRank = Player.socialRank[_nk];
+                    citizenKingdomId = _nk;
+                }
+            }
+        }
+        if (playerRank < 4) {
+            toast('You must be at least a Minor Noble to access this panel.', 'warning');
+            return;
+        }
+
+        var rankDef = CONFIG.SOCIAL_RANKS[playerRank] || CONFIG.SOCIAL_RANKS[4];
+        var kingdom = null;
+        var kingPerson = null;
+        var kingRel = 0;
+        var kingdoms = [];
+        try {
+            kingdoms = Engine.getKingdoms ? Engine.getKingdoms() : [];
+            kingdom = kingdoms.find(function(k) { return k.id === citizenKingdomId; });
+            if (kingdom && kingdom.king) {
+                kingPerson = Engine.findPerson(kingdom.king);
+                var kRel = Player.getRelationship ? Player.getRelationship(kingdom.king) : null;
+                kingRel = kRel ? kRel.level : 0;
+            }
+        } catch (e) { /* ignore */ }
+
+        var rep = Player.reputation ? (Player.reputation[citizenKingdomId] || 0) : 0;
+        var day = 0;
+        try { day = Engine.getDay(); } catch (e) {}
+        var polCap = Player.politicalCapital || 0;
+        var maxPolCap = CONFIG.ADVISE_KING_POLITICAL_CAPITAL_MAX || 3;
+        var lordTownId = Player.lordTownId || null;
+        var lordTown = lordTownId ? Engine.findTown(lordTownId) : null;
+
+        // Determine demotion danger
+        var demotionDanger = false;
+        var demotionDaysLeft = 0;
+        var demotionReason = '';
+        var repThreshold = playerRank >= 6 ? 80 : playerRank >= 5 ? 70 : 60;
+        var kingRelThreshold = playerRank >= 6 ? 70 : playerRank >= 5 ? 60 : 0;
+        if (rep < repThreshold) {
+            demotionDanger = true;
+            demotionReason = 'Kingdom reputation (' + Math.floor(rep) + ') is below ' + repThreshold;
+        }
+        if (kingRelThreshold > 0 && kingRel < kingRelThreshold) {
+            demotionDanger = true;
+            demotionReason += (demotionReason ? ' AND ' : '') + 'King relationship (' + Math.floor(kingRel) + ') is below ' + kingRelThreshold;
+        }
+        var _repWarn = Player._repWarnDay || {};
+        if (_repWarn[citizenKingdomId]) {
+            demotionDaysLeft = Math.max(0, 30 - (day - _repWarn[citizenKingdomId]));
+        }
+
+        // Commission data
+        var commission = kingdom ? kingdom.directedPlayerCommission : null;
+
+        // Pending RA decisions
+        var pendingDecisions = [];
+        if (playerRank >= 6 && Player.getPendingKingDecisions) {
+            try { pendingDecisions = Player.getPendingKingDecisions() || []; } catch (e) {}
+            pendingDecisions = pendingDecisions.filter(function(d) { return !d.resolved; });
+        }
+
+        // === Build HTML ===
+        var html = '';
+
+        // ── Status Header ──
+        html += '<div style="background:linear-gradient(135deg,rgba(201,168,76,0.15),rgba(201,168,76,0.05));border:1px solid rgba(201,168,76,0.3);border-radius:8px;padding:12px;margin-bottom:10px;">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">';
+        html += '<div>';
+        html += '<div style="font-size:1.1rem;font-weight:bold;color:var(--gold);">' + (rankDef.icon || '👑') + ' ' + (rankDef.name || 'Noble') + '</div>';
+        html += '<div style="font-size:0.78rem;color:#aaa;">Kingdom of ' + (kingdom ? kingdom.name : '?') + '</div>';
+        html += '</div>';
+        html += '<div style="text-align:right;">';
+        html += '<div style="font-size:0.75rem;color:#aaa;">Kingdom Rep: <span style="color:' + (rep >= repThreshold ? '#55a868' : rep >= repThreshold - 10 ? '#ccb974' : '#c44e52') + ';font-weight:bold;">' + Math.floor(rep) + '</span></div>';
+        if (kingPerson) {
+            html += '<div style="font-size:0.75rem;color:#aaa;">King ' + kingPerson.firstName + ': <span style="color:' + (kingRel >= (kingRelThreshold || 60) ? '#55a868' : kingRel >= 40 ? '#ccb974' : '#c44e52') + ';font-weight:bold;">' + Math.floor(kingRel) + '</span></div>';
+        }
+        if (playerRank >= 6) {
+            html += '<div style="font-size:0.75rem;color:#aaa;">Political Capital: <span style="color:var(--gold);font-weight:bold;">' + polCap + '/' + maxPolCap + '</span></div>';
+        }
+        html += '</div></div>';
+
+        // Rep bar with threshold marker
+        html += '<div style="margin-top:8px;">';
+        html += '<div style="position:relative;height:8px;background:rgba(0,0,0,0.3);border-radius:4px;overflow:visible;">';
+        html += '<div style="height:100%;width:' + Math.min(100, rep) + '%;background:linear-gradient(90deg,' + (rep >= repThreshold ? '#55a868' : '#c44e52') + ',var(--gold));border-radius:4px;transition:width 0.3s;"></div>';
+        html += '<div style="position:absolute;top:-2px;left:' + repThreshold + '%;width:2px;height:12px;background:#fff;opacity:0.6;" title="Demotion threshold: ' + repThreshold + '"></div>';
+        html += '</div>';
+        html += '<div style="display:flex;justify-content:space-between;font-size:0.65rem;color:#666;margin-top:2px;"><span>0</span><span style="color:#aaa;">Threshold: ' + repThreshold + '</span><span>100</span></div>';
+        html += '</div></div>';
+
+        // ── DEMOTION WARNING ──
+        if (demotionDanger) {
+            html += '<div style="background:rgba(196,78,82,0.15);border:2px solid rgba(196,78,82,0.5);border-radius:8px;padding:10px;margin-bottom:10px;animation:pulse 2s infinite;">';
+            html += '<div style="font-size:0.9rem;font-weight:bold;color:#c44e52;">⚠️ DEMOTION DANGER</div>';
+            html += '<div style="font-size:0.78rem;color:#ccc;margin-top:4px;">' + demotionReason + '</div>';
+            if (demotionDaysLeft > 0) {
+                html += '<div style="font-size:0.85rem;font-weight:bold;color:#e74c3c;margin-top:6px;">⏰ ' + demotionDaysLeft + ' days until demotion!</div>';
+                html += '<div style="font-size:0.7rem;color:#aaa;">Raise your reputation above ' + repThreshold + ' to cancel the countdown.</div>';
+            } else if (_repWarn[citizenKingdomId]) {
+                html += '<div style="font-size:0.85rem;font-weight:bold;color:#e74c3c;margin-top:6px;">⏰ Demotion imminent!</div>';
+            }
+            html += '</div>';
+        }
+
+        // ── ALERTS SECTION ──
+        var alerts = [];
+        if (commission && commission.status === 'pending') {
+            alerts.push({ icon: '📜', text: 'New commission from the king awaits your response!', color: '#6c9bd1' });
+        }
+        if (commission && commission.status === 'accepted') {
+            var _dLeft = (commission.deadlineDay || 0) - day;
+            if (_dLeft <= 10 && _dLeft > 0) {
+                alerts.push({ icon: '⏳', text: 'Commission deadline in ' + _dLeft + ' days!', color: '#ccb974' });
+            } else if (_dLeft <= 0) {
+                alerts.push({ icon: '❗', text: 'Commission deadline PASSED!', color: '#c44e52' });
+            }
+        }
+        if (pendingDecisions.length > 0) {
+            alerts.push({ icon: '👑', text: pendingDecisions.length + ' pending king decision' + (pendingDecisions.length > 1 ? 's' : '') + ' await your counsel!', color: '#6c9bd1' });
+        }
+        // Check for wars affecting foreign noble status
+        for (var _wi = 0; _wi < kingdoms.length; _wi++) {
+            var _wk = kingdoms[_wi];
+            if (_wk.id !== citizenKingdomId && _wk.atWar && _wk.warTarget === citizenKingdomId) {
+                alerts.push({ icon: '⚔️', text: _wk.name + ' is at war with your kingdom!', color: '#c44e52' });
+            }
+        }
+
+        if (alerts.length > 0) {
+            html += '<div style="margin-bottom:10px;">';
+            for (var _ai = 0; _ai < alerts.length; _ai++) {
+                html += '<div style="background:rgba(' + (alerts[_ai].color === '#c44e52' ? '196,78,82' : alerts[_ai].color === '#ccb974' ? '204,185,116' : '108,155,209') + ',0.12);border:1px solid ' + alerts[_ai].color + '33;border-radius:6px;padding:6px 10px;margin-bottom:4px;font-size:0.78rem;">';
+                html += '<span style="margin-right:4px;">' + alerts[_ai].icon + '</span><span style="color:' + alerts[_ai].color + ';">' + alerts[_ai].text + '</span></div>';
+            }
+            html += '</div>';
+        }
+
+        // ── KING'S COMMISSION (rank 4+) ──
+        html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:10px;margin-bottom:10px;">';
+        html += '<h3 style="margin:0 0 8px 0;font-size:0.9rem;color:var(--gold);">📜 King\'s Commission</h3>';
+        if (commission && commission.status !== 'completed' && commission.status !== 'failed' && commission.status !== 'refused' && commission.status !== 'expired') {
+            var _commItem = commission.item || commission.goodId || '?';
+            var _commQty = commission.quantity || commission.amount || 0;
+            var _commDeadline = commission.deadlineDay || 0;
+            var _commReward = commission.reward || commission.rewardGold || 0;
+            var _commStatus = commission.status || 'pending';
+            var _commDaysLeft = _commDeadline - day;
+            var _commDelivered = commission.delivered || 0;
+            var _commProgress = _commQty > 0 ? Math.min(100, Math.floor((_commDelivered / _commQty) * 100)) : 0;
+
+            var _itemName = _commItem;
+            if (CONFIG.GOODS && CONFIG.GOODS[_commItem]) _itemName = CONFIG.GOODS[_commItem].name || _commItem;
+
+            html += '<div style="font-size:0.8rem;color:#ccc;">';
+            html += '<div style="margin-bottom:6px;"><strong>Deliver:</strong> ' + _commQty + 'x ' + _itemName + '</div>';
+            html += '<div style="margin-bottom:6px;"><strong>Deadline:</strong> Day ' + _commDeadline + ' <span style="color:' + (_commDaysLeft <= 5 ? '#c44e52' : _commDaysLeft <= 15 ? '#ccb974' : '#55a868') + ';">(' + (_commDaysLeft > 0 ? _commDaysLeft + ' days left' : 'OVERDUE!') + ')</span></div>';
+            html += '<div style="margin-bottom:6px;"><strong>Reward:</strong> <span class="gold-value">' + formatGold(_commReward) + '</span></div>';
+            if (_commStatus === 'accepted') {
+                html += '<div style="margin-bottom:4px;"><strong>Progress:</strong> ' + _commDelivered + '/' + _commQty + '</div>';
+                html += '<div style="height:6px;background:rgba(0,0,0,0.3);border-radius:3px;margin-bottom:8px;"><div style="height:100%;width:' + _commProgress + '%;background:' + (_commProgress >= 100 ? '#55a868' : 'var(--gold)') + ';border-radius:3px;transition:width 0.3s;"></div></div>';
+            }
+            html += '</div>';
+
+            if (_commStatus === 'pending') {
+                var _isLord = playerRank >= 5;
+                html += '<div style="display:flex;gap:6px;margin-top:4px;">';
+                html += '<button class="btn-medieval" onclick="(function(){var r=Player.acceptKingCommission?Player.acceptKingCommission():{success:false};UI.toast(r.message||\'Commission accepted!\',r.success?\'success\':\'warning\');UI.openNobilityDialog();})()" style="font-size:0.75rem;padding:5px 12px;background:rgba(85,168,104,0.15);border-color:rgba(85,168,104,0.3);">✅ Accept</button>';
+                if (!_isLord) {
+                    html += '<button class="btn-medieval" onclick="(function(){var r=Player.refuseKingCommission?Player.refuseKingCommission():{success:false};UI.toast(r.message||\'Commission refused.\',r.success?\'success\':\'warning\');UI.openNobilityDialog();})()" style="font-size:0.75rem;padding:5px 12px;background:rgba(196,78,82,0.15);border-color:rgba(196,78,82,0.3);">🚫 Refuse</button>';
+                } else {
+                    html += '<div style="font-size:0.7rem;color:#c44e52;padding:5px;">⚠️ As a Lord, refusal means demotion!</div>';
+                }
+                html += '</div>';
+            }
+        } else {
+            html += '<div style="font-size:0.78rem;color:#888;font-style:italic;">No active commission. The king may assign you a task when the kingdom has need.</div>';
+        }
+        html += '</div>';
+
+        // ── LORDSHIP SECTION (rank 5+) ──
+        if (playerRank >= 5) {
+            html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:10px;margin-bottom:10px;">';
+            html += '<h3 style="margin:0 0 8px 0;font-size:0.9rem;color:var(--gold);">🏰 Your Lordship</h3>';
+            if (lordTown) {
+                html += '<div style="font-size:0.8rem;color:#ccc;">';
+                html += '<div style="margin-bottom:4px;"><strong>Lord of:</strong> ' + lordTown.name + '</div>';
+                html += '<div style="margin-bottom:4px;"><strong>Population:</strong> ' + (lordTown.population || '?') + '</div>';
+                html += '<div style="margin-bottom:4px;"><strong>Prosperity:</strong> ' + Math.floor(lordTown.prosperity || 0) + '</div>';
+                html += '<div style="margin-bottom:4px;"><strong>Crime Immunity:</strong> <span style="color:#55a868;">✓ Active in ' + lordTown.name + '</span></div>';
+                html += '</div>';
+                // Kingdom building request
+                html += '<div style="margin-top:8px;">';
+                html += '<button class="btn-medieval" onclick="UI._nobilityRequestBuilding(\'' + lordTown.id + '\')" style="font-size:0.75rem;padding:5px 12px;">🏗️ Request Kingdom Building</button>';
+                html += '</div>';
+            } else {
+                html += '<div style="font-size:0.78rem;color:#888;font-style:italic;">You have not yet been assigned a town. The king will offer you a choice of towns to govern.</div>';
+            }
+            html += '</div>';
+        }
+
+        // ── ROYAL ADVISORY (rank 6) ──
+        if (playerRank >= 6) {
+            html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:10px;margin-bottom:10px;">';
+            html += '<h3 style="margin:0 0 8px 0;font-size:0.9rem;color:var(--gold);">👑 Royal Advisory</h3>';
+
+            // Political capital bar
+            html += '<div style="margin-bottom:8px;">';
+            html += '<div style="font-size:0.75rem;color:#aaa;margin-bottom:3px;">Political Capital: ' + polCap + '/' + maxPolCap + '</div>';
+            html += '<div style="height:6px;background:rgba(0,0,0,0.3);border-radius:3px;"><div style="height:100%;width:' + (maxPolCap > 0 ? Math.floor((polCap / maxPolCap) * 100) : 0) + '%;background:var(--gold);border-radius:3px;"></div></div>';
+            html += '</div>';
+
+            // Pending decisions
+            if (pendingDecisions.length > 0) {
+                html += '<div style="font-size:0.78rem;color:#6c9bd1;font-weight:bold;margin-bottom:6px;">📋 ' + pendingDecisions.length + ' Pending Decision' + (pendingDecisions.length > 1 ? 's' : '') + '</div>';
+                for (var _di = 0; _di < pendingDecisions.length; _di++) {
+                    var _dec = pendingDecisions[_di];
+                    var _convPct = Math.floor((_dec.conviction || 0) * 100);
+                    var _convColor = _convPct >= 80 ? '#c44e52' : _convPct >= 50 ? '#ccb974' : '#55a868';
+                    html += '<div style="background:rgba(108,155,209,0.08);border:1px solid rgba(108,155,209,0.2);border-radius:6px;padding:8px;margin-bottom:6px;">';
+                    html += '<div style="font-size:0.8rem;font-weight:bold;color:#ddd;">' + (_dec.description || _dec.type || 'Unknown Decision') + '</div>';
+                    if (_dec.details) html += '<div style="font-size:0.72rem;color:#aaa;margin-top:2px;">' + _dec.details + '</div>';
+                    html += '<div style="font-size:0.7rem;color:#aaa;margin-top:4px;">King\'s conviction: <span style="color:' + _convColor + ';font-weight:bold;">' + _convPct + '%</span> ' + (_convPct >= 80 ? '(Very determined)' : _convPct >= 50 ? '(Moderate)' : '(Easily swayed)') + '</div>';
+                    html += '<div style="display:flex;gap:6px;margin-top:6px;">';
+                    html += '<button class="btn-medieval" onclick="(function(){var r=Player.respondToKingDecision(\'' + _dec.id + '\',\'agree\');UI.toast(r&&r.message?r.message:\'Agreed.\',\'success\');UI.openNobilityDialog();})()" style="font-size:0.72rem;padding:4px 10px;background:rgba(85,168,104,0.15);border-color:rgba(85,168,104,0.3);">✅ Agree</button>';
+                    html += '<button class="btn-medieval" onclick="(function(){var r=Player.respondToKingDecision(\'' + _dec.id + '\',\'oppose\');UI.toast(r&&r.message?r.message:\'Opposed.\',r&&r.success?\'success\':\'warning\');UI.openNobilityDialog();})()" style="font-size:0.72rem;padding:4px 10px;background:rgba(196,78,82,0.15);border-color:rgba(196,78,82,0.3);">🚫 Oppose</button>';
+                    html += '</div></div>';
+                }
+            } else {
+                html += '<div style="font-size:0.78rem;color:#888;font-style:italic;margin-bottom:8px;">No pending king decisions. The king will consult you on major policy changes.</div>';
+            }
+
+            // Direct advice
+            html += '<div style="margin-top:8px;border-top:1px solid rgba(201,168,76,0.15);padding-top:8px;">';
+            html += '<div style="font-size:0.78rem;font-weight:bold;color:#ddd;margin-bottom:6px;">🗣️ Advise the King</div>';
+            var _adviceTypes = [
+                { id: 'lower_taxes', icon: '📉', label: 'Lower Taxes', tip: 'Suggest the king lower taxes to boost trade' },
+                { id: 'raise_taxes', icon: '📈', label: 'Raise Taxes', tip: 'Suggest the king raise taxes for more revenue' },
+                { id: 'build_walls', icon: '🏰', label: 'Build Walls', tip: 'Suggest fortifying towns' },
+                { id: 'make_peace', icon: '🕊️', label: 'Make Peace', tip: 'Urge the king to seek peace' },
+                { id: 'declare_war', icon: '⚔️', label: 'Declare War', tip: 'Urge military action' }
+            ];
+            html += '<div style="display:flex;flex-wrap:wrap;gap:4px;">';
+            for (var _adi = 0; _adi < _adviceTypes.length; _adi++) {
+                var _adv = _adviceTypes[_adi];
+                var _advDisabled = polCap <= 0;
+                html += '<button class="btn-medieval" onclick="(function(){var r=Player.adviseKing(\'' + citizenKingdomId + '\',\'' + _adv.id + '\');UI.toast(r&&(r.message||r.reason)?r.message||r.reason:\'Advice given.\',r&&r.success?\'success\':\'warning\');UI.openNobilityDialog();})()" title="' + _adv.tip + '" style="font-size:0.7rem;padding:4px 8px;' + (_advDisabled ? 'opacity:0.4;cursor:not-allowed;' : '') + '"' + (_advDisabled ? ' disabled' : '') + '>' + _adv.icon + ' ' + _adv.label + '</button>';
+            }
+            html += '</div>';
+            if (polCap <= 0) {
+                html += '<div style="font-size:0.68rem;color:#c44e52;margin-top:4px;">No political capital remaining. Capital regenerates over time.</div>';
+            }
+            html += '</div>';
+
+            // Propose law
+            html += '<div style="margin-top:8px;">';
+            html += '<button class="btn-medieval" onclick="UI._nobilityProposeLaw(\'' + citizenKingdomId + '\')" style="font-size:0.75rem;padding:5px 12px;" ' + (polCap <= 0 ? 'disabled style="font-size:0.75rem;padding:5px 12px;opacity:0.4;cursor:not-allowed;"' : '') + '>📜 Propose New Law</button>';
+            html += '</div>';
+
+            // Crime immunity note
+            html += '<div style="margin-top:8px;font-size:0.72rem;color:#55a868;">🛡️ Full criminal immunity in ' + (kingdom ? kingdom.name : 'your kingdom') + ' (crimes still affect reputation)</div>';
+            html += '</div>';
+        }
+
+        // ── PRIVILEGES SUMMARY ──
+        html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:10px;margin-bottom:10px;">';
+        html += '<h3 style="margin:0 0 8px 0;font-size:0.9rem;color:var(--gold);">🏅 Noble Privileges</h3>';
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:0.75rem;">';
+        html += '<div style="color:#aaa;">Tax Discount:</div><div style="color:#55a868;font-weight:bold;">' + Math.floor((rankDef.taxDiscount || 0) * 100) + '%</div>';
+        if (rankDef.petitionBonus) {
+            html += '<div style="color:#aaa;">Petition Bonus:</div><div style="color:#55a868;font-weight:bold;">+' + Math.floor((rankDef.petitionBonus || 0) * 100) + '%</div>';
+        }
+        if (rankDef.signatureBonus) {
+            html += '<div style="color:#aaa;">Signature Weight:</div><div style="color:#55a868;font-weight:bold;">+' + Math.floor((rankDef.signatureBonus || 0) * 100) + '%</div>';
+        }
+        html += '<div style="color:#aaa;">Max Workers:</div><div>' + (rankDef.maxWorkers >= 9999 ? '∞' : rankDef.maxWorkers) + '</div>';
+        html += '<div style="color:#aaa;">Max Buildings:</div><div>' + (rankDef.maxBuildings >= 9999 ? '∞' : rankDef.maxBuildings) + '</div>';
+        html += '<div style="color:#aaa;">Max Land:</div><div>' + (rankDef.maxLand >= 9999 ? '∞' : rankDef.maxLand) + '</div>';
+        html += '</div>';
+
+        // Abilities list
+        var abilities = rankDef.abilities || [];
+        if (abilities.length > 0) {
+            var abilityNames = {
+                'influence_king': '🗣️ Influence the King',
+                'production_permits': '📋 Production Permits',
+                'attend_court': '🏰 Attend Court',
+                'noble_marriage': '💍 Noble Marriage',
+                'signature_bonus': '✍️ Petition Signature Bonus',
+                'build_anywhere': '🏗️ Build in Any Town',
+                'revitalize_towns': '🌱 Town Revitalization',
+                'raise_militia': '⚔️ Raise Militia',
+                'local_trade_policies': '📊 Local Trade Policies',
+                'crime_immunity': '🛡️ Crime Immunity (Lord Town)',
+                'propose_laws': '📜 Propose Laws',
+                'declare_emergencies': '🚨 Declare Emergencies',
+                'override_officials': '⚖️ Override Officials',
+                'petition_bonus': '📋 Petition Success Bonus',
+                'king_consults': '👑 King Consults You'
+            };
+            html += '<div style="margin-top:8px;border-top:1px solid rgba(201,168,76,0.1);padding-top:6px;">';
+            html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:4px;">Abilities:</div>';
+            html += '<div style="display:flex;flex-wrap:wrap;gap:3px;">';
+            for (var _abi = 0; _abi < abilities.length; _abi++) {
+                var _abName = abilityNames[abilities[_abi]] || abilities[_abi];
+                html += '<span style="font-size:0.68rem;padding:2px 6px;border-radius:4px;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.2);">' + _abName + '</span>';
+            }
+            html += '</div></div>';
+        }
+        html += '</div>';
+
+        // ── STANDING & REPUTATION DETAILS ──
+        html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:10px;margin-bottom:10px;">';
+        html += '<h3 style="margin:0 0 8px 0;font-size:0.9rem;color:var(--gold);">📊 Standing & Reputation</h3>';
+        html += '<div style="font-size:0.78rem;color:#ccc;">';
+
+        // Per-kingdom reputation
+        for (var _rki = 0; _rki < kingdoms.length; _rki++) {
+            var _rkk = kingdoms[_rki];
+            var _rkRep = Player.reputation ? (Player.reputation[_rkk.id] || 0) : 0;
+            var _rkRank = (Player.socialRank && Player.socialRank[_rkk.id]) || 0;
+            if (_rkRank === 0 && _rkRep === 0) continue;
+            var _rkDef = CONFIG.SOCIAL_RANKS[_rkRank] || CONFIG.SOCIAL_RANKS[0];
+            var _isHome = _rkk.id === citizenKingdomId;
+            html += '<div style="margin-bottom:6px;' + (_isHome ? 'border-left:3px solid var(--gold);padding-left:8px;' : '') + '">';
+            html += '<div style="font-size:0.75rem;">' + (_rkDef.icon || '') + ' ' + _rkk.name + ' — ' + (_rkDef.name || 'Peasant') + (_isHome ? ' <span style="color:var(--gold);font-size:0.68rem;">(Home)</span>' : '') + '</div>';
+            html += '<div style="height:5px;background:rgba(0,0,0,0.3);border-radius:3px;margin-top:2px;"><div style="height:100%;width:' + Math.min(100, Math.max(0, _rkRep)) + '%;background:' + (_rkRep >= 80 ? '#55a868' : _rkRep >= 50 ? '#ccb974' : '#c44e52') + ';border-radius:3px;"></div></div>';
+            html += '<div style="font-size:0.65rem;color:#777;margin-top:1px;">Rep: ' + Math.floor(_rkRep) + '/100</div>';
+            html += '</div>';
+        }
+
+        // King relationship
+        if (kingPerson) {
+            html += '<div style="margin-top:6px;border-top:1px solid rgba(201,168,76,0.1);padding-top:6px;">';
+            html += '<div style="font-size:0.75rem;">👑 Relationship with King ' + kingPerson.firstName + ': <span style="color:' + (kingRel >= 80 ? '#55a868' : kingRel >= 50 ? '#ccb974' : '#c44e52') + ';font-weight:bold;">' + Math.floor(kingRel) + '/100</span></div>';
+            html += '</div>';
+        }
+
+        // Next rank requirements (if not max)
+        if (playerRank < 6) {
+            var nextRankDef = CONFIG.SOCIAL_RANKS[playerRank + 1];
+            if (nextRankDef) {
+                html += '<div style="margin-top:8px;border-top:1px solid rgba(201,168,76,0.1);padding-top:6px;">';
+                html += '<div style="font-size:0.78rem;font-weight:bold;color:var(--gold);">Next Rank: ' + (nextRankDef.icon || '') + ' ' + nextRankDef.name + '</div>';
+                html += '<div style="font-size:0.72rem;color:#aaa;margin-top:2px;">';
+                if (nextRankDef.goldReq) html += '💰 Gold: ' + formatGold(nextRankDef.goldReq) + '<br>';
+                if (nextRankDef.repReq) html += '⭐ Kingdom Rep: ' + nextRankDef.repReq + '+<br>';
+                if (nextRankDef.extraReq) html += '📋 ' + nextRankDef.extraReq;
+                html += '</div></div>';
+            }
+        }
+
+        html += '</div></div>';
+
+        // Open modal
+        var footerHtml = '<button class="btn-medieval" onclick="closeModal()">Close</button>';
+        openModal('👑 Nobility — ' + (rankDef.name || 'Noble'), html, footerHtml);
+    }
+
+    // Helper: Request kingdom building from nobility panel
+    function _nobilityRequestBuilding(townId) {
+        // Show a simple selection of building types the kingdom might build
+        var buildingTypes = [];
+        if (CONFIG.BUILDING_TYPES) {
+            for (var i = 0; i < CONFIG.BUILDING_TYPES.length; i++) {
+                var bt = CONFIG.BUILDING_TYPES[i];
+                if (bt.category !== 'military' && bt.cost && bt.cost <= 5000) {
+                    buildingTypes.push(bt);
+                }
+            }
+        }
+        var html = '<div style="font-size:0.8rem;color:#ccc;margin-bottom:8px;">Request the kingdom to construct a building in your lord town:</div>';
+        html += '<div style="max-height:300px;overflow-y:auto;">';
+        for (var i = 0; i < Math.min(15, buildingTypes.length); i++) {
+            var bt = buildingTypes[i];
+            html += '<button class="btn-medieval" onclick="(function(){var r=Player.requestKingdomBuilding(\'' + townId + '\',\'' + bt.id + '\',0);UI.toast(r&&r.message?r.message:\'Request sent.\',r&&r.success?\'success\':\'warning\');closeModal();UI.openNobilityDialog();})()" style="display:block;width:100%;text-align:left;font-size:0.75rem;padding:5px 10px;margin-bottom:3px;">' + (bt.icon || '🏗️') + ' ' + bt.name + ' (' + formatGold(bt.cost || 0) + ')</button>';
+        }
+        html += '</div>';
+        openModal('🏗️ Request Kingdom Building', html, '<button class="btn-medieval" onclick="closeModal();UI.openNobilityDialog();">Back</button>');
+    }
+
+    // Helper: Propose law from nobility panel
+    function _nobilityProposeLaw(kingdomId) {
+        var specialLaws = CONFIG.SPECIAL_LAWS || [];
+        var html = '<div style="font-size:0.8rem;color:#ccc;margin-bottom:8px;">Propose a new law for the kingdom (costs 1 political capital):</div>';
+        html += '<div style="max-height:350px;overflow-y:auto;">';
+        for (var i = 0; i < specialLaws.length; i++) {
+            var law = specialLaws[i];
+            html += '<button class="btn-medieval" onclick="(function(){var r=Player.proposeLaw(\'' + kingdomId + '\',\'' + law.id + '\');UI.toast(r&&r.message?r.message:\'Law proposed.\',r&&r.success?\'success\':\'warning\');closeModal();UI.openNobilityDialog();})()" style="display:block;width:100%;text-align:left;font-size:0.75rem;padding:6px 10px;margin-bottom:3px;">';
+            html += '<span>' + (law.icon || '📜') + ' <strong>' + law.name + '</strong></span><br>';
+            html += '<span style="font-size:0.68rem;color:#aaa;">' + (law.desc || '') + '</span>';
+            html += '</button>';
+        }
+        html += '</div>';
+        openModal('📜 Propose Law', html, '<button class="btn-medieval" onclick="closeModal();UI.openNobilityDialog();">Back</button>');
+    }
+
     function openSchemesDialog() {
         const actions = Player.getAvailableCorruptActions();
         const tabs = [
@@ -20855,6 +21388,12 @@ window.UI = (function () {
                 actionsDiv._lastBtns = btns;
             }
         }
+
+        // Auto-open camp UI when player is exhausted while traveling
+        if (typeof Player !== 'undefined' && Player._campPromptNeeded && !Player.resting) {
+            Player._campPromptNeeded = false;
+            openTravelRest();
+        }
     }
 
     function openTravelRest() {
@@ -20863,22 +21402,37 @@ window.UI = (function () {
         var options = [];
         var inv = Player.inventory || {};
 
+        // Caravan wagon (mobile home) — best option
+        if (Player.hasCaravanWagon) {
+            options.push({ id: 'caravan_wagon', icon: '\uD83C\uDFE0', name: 'Rest in Mobile Home', energy: '5.5/tick', risks: '1% theft' });
+        }
         if ((inv.camping_kit || 0) > 0) {
-            options.push({ id: 'camping_kit_travel', icon: '\uD83C\uDFD5\uFE0F', name: 'Camp with Kit', energy: '5.0/tick', risks: 'None' });
+            options.push({ id: 'camping_kit_travel', icon: '\uD83C\uDFD5\uFE0F', name: 'Camp with Kit', energy: '5.0/tick', risks: 'Minimal' });
         }
-        if ((inv.tent || 0) > 0) {
+        // Bedroll + Tent combo
+        if ((inv.bedroll || 0) > 0 && (inv.tent || 0) > 0) {
+            options.push({ id: 'bedroll_tent_travel', icon: '\u26FA\uD83D\uDECF\uFE0F', name: 'Tent & Bedroll', energy: '4.5/tick', risks: '2% theft, 1% disease' });
+        } else if ((inv.tent || 0) > 0) {
             options.push({ id: 'tent_travel', icon: '\u26FA', name: 'Pitch Tent', energy: '4.0/tick', risks: '3% theft' });
-        }
-        if ((inv.bedroll || 0) > 0) {
+        } else if ((inv.bedroll || 0) > 0) {
             options.push({ id: 'bedroll_travel', icon: '\uD83D\uDECF\uFE0F', name: 'Use Bedroll', energy: '3.0/tick', risks: '5% theft, 3% disease' });
         }
-        if (Player.hasCaravanWagon) {
-            options.push({ id: 'caravan_wagon', icon: '\uD83D\uDED2', name: 'Rest in Wagon', energy: '4.5/tick', risks: '2% theft' });
+        // Sleep in wagon (storage container with 30+ space)
+        if (!Player.hasCaravanWagon && Player.storageContainer) {
+            var wagonTypes = ['small_wagon', 'wagon', 'large_wagon'];
+            if (wagonTypes.indexOf(Player.storageContainer) !== -1) {
+                var cap = Player.getCarryCapacity ? Player.getCarryCapacity() : 0;
+                var used = Player.getCarriedWeight ? Player.getCarriedWeight() : 0;
+                if (cap - used >= 30) {
+                    var cName = (CONFIG.STORAGE_CONTAINERS[Player.storageContainer] || {}).name || 'Wagon';
+                    options.push({ id: 'wagon_sleep_travel', icon: '\uD83D\uDEDE', name: 'Sleep in ' + cName, energy: '2.5/tick', risks: '8% theft' });
+                }
+            }
         }
         options.push({ id: 'outside', icon: '\uD83C\uDF3F', name: 'Sleep Roadside', energy: '2.0/tick', risks: '10% theft, 5% disease, 5% injury' });
 
         var html = '<div>';
-        html += '<p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:8px;">Choose where to rest. You\'ll stop traveling while resting.</p>';
+        html += '<p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:8px;">Choose where to rest. Travel pauses while camping. Bandits may still attack!</p>';
 
         for (var i = 0; i < options.length; i++) {
             var opt = options[i];
@@ -20889,7 +21443,7 @@ window.UI = (function () {
         }
         html += '</div>';
 
-        openModal('\uD83C\uDFD5\uFE0F Rest While Traveling', html);
+        openModal('\uD83C\uDFD5\uFE0F Camp & Rest', html);
     }
 
     function startTravelRest(locationId) {
@@ -21670,6 +22224,10 @@ window.UI = (function () {
         // Family Panel
         openFamilyPanel,
         familyAction,
+        // Nobility
+        openNobilityDialog,
+        _nobilityRequestBuilding,
+        _nobilityProposeLaw,
         // Special Start
         openSpecialStartPanel,
         openStartJournal,

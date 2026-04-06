@@ -769,26 +769,30 @@
             citizenDiscount = CONFIG.CITIZEN_TAX_DISCOUNT || 0;
         }
 
-        // Special law: market_day — every 7th day, prices drop 15%
-        let marketDayDiscount = 0;
-        if (hasSpecialLaw(kingdom, 'market_day') && Engine.getDay() % 7 === 0) {
-            marketDayDiscount = 0.15;
-        }
-
-        // Special law: maritime_privilege — port towns have 10% lower prices on all sea goods
-        let portDiscount = 0;
-        if (hasSpecialLaw(kingdom, 'maritime_privilege') && town.isPort && res_info) {
-            if (['fish', 'salt', 'pearls', 'rope', 'hemp', 'pearl_jewelry'].includes(resourceId)) {
-                portDiscount = 0.10;
-            }
-        }
-
         // Cap total tax burden at 35%
         let totalTaxRate = taxRate + effectiveGoodsTax + tariff + foreignSurcharge;
         // Tax Attorney skill: reduce tax burden by 10%
         if (hasSkill('tax_attorney')) totalTaxRate *= 0.90;
         totalTaxRate = Math.min(totalTaxRate, 0.35);
-        const totalDiscounts = citizenDiscount + marketDayDiscount + portDiscount;
+
+        // Special law: market_day — every 7th day, citizens trade tax-free
+        let marketDayTaxFree = false;
+        if (hasSpecialLaw(kingdom, 'market_day') && Engine.getDay() % 7 === 0) {
+            if (kingdom && isPlayerCitizenOf(town.kingdomId)) {
+                marketDayTaxFree = true;
+                totalTaxRate = 0;
+            }
+        }
+
+        // Special law: maritime_privilege — port towns get 50% tax break on sea goods
+        let portDiscount = 0;
+        if (!marketDayTaxFree && hasSpecialLaw(kingdom, 'maritime_privilege') && town.isPort && res_info) {
+            if (['fish', 'salt', 'pearls', 'rope', 'hemp', 'pearl_jewelry'].includes(resourceId)) {
+                portDiscount = totalTaxRate * 0.50;
+            }
+        }
+
+        const totalDiscounts = citizenDiscount + portDiscount;
 
         price = basePrice * (1 + totalTaxRate - totalDiscounts);
 
@@ -1078,26 +1082,30 @@
             citizenBonus = CONFIG.CITIZEN_TAX_DISCOUNT || 0;
         }
 
-        // Special law: market_day
-        let marketDayBonus = 0;
-        if (hasSpecialLaw(kingdom, 'market_day') && Engine.getDay() % 7 === 0) {
-            marketDayBonus = 0.15; // prices drop, so sell price also affected
-        }
-
-        // Special law: maritime_privilege — port towns have 10% better sell prices on sea goods
-        let portSellBonus = 0;
-        if (hasSpecialLaw(kingdom, 'maritime_privilege') && town.isPort) {
-            if (['fish', 'salt', 'pearls', 'rope', 'hemp', 'pearl_jewelry'].includes(resourceId)) {
-                portSellBonus = 0.10;
-            }
-        }
-
         // Cap total tax burden at 35%
         let totalTaxRate = taxRate + effectiveGoodsTax + tariff + foreignSurcharge;
         // Tax Attorney skill: reduce tax burden by 10%
         if (hasSkill('tax_attorney')) totalTaxRate *= 0.90;
         totalTaxRate = Math.min(totalTaxRate, 0.35);
-        const totalBonuses = citizenBonus + marketDayBonus + portSellBonus;
+
+        // Special law: market_day — every 7th day, citizens trade tax-free
+        let marketDayTaxFree = false;
+        if (hasSpecialLaw(kingdom, 'market_day') && Engine.getDay() % 7 === 0) {
+            if (kingdom && isPlayerCitizenOf(town.kingdomId)) {
+                marketDayTaxFree = true;
+                totalTaxRate = 0;
+            }
+        }
+
+        // Special law: maritime_privilege — port towns get 50% tax break on sea goods
+        let portSellBonus = 0;
+        if (!marketDayTaxFree && hasSpecialLaw(kingdom, 'maritime_privilege') && town.isPort) {
+            if (['fish', 'salt', 'pearls', 'rope', 'hemp', 'pearl_jewelry'].includes(resourceId)) {
+                portSellBonus = totalTaxRate * 0.50;
+            }
+        }
+
+        const totalBonuses = citizenBonus + portSellBonus;
 
         price = price * (1 - totalTaxRate + totalBonuses);
 
@@ -6716,13 +6724,17 @@
                 if (bldKingdom && hasSpecialLaw(bldKingdom, 'harvest_tithe')) {
                     var tithe = Math.max(1, Math.floor(output * 0.10));
                     actualOutput = output - tithe;
-                    // Convert tithe to gold for the crown (use base price of produced good)
+                    // Transfer actual goods to the kingdom's stockpile
+                    if (!bldKingdom.goodsStockpile) bldKingdom.goodsStockpile = {};
+                    var producedGood = bt.produces;
+                    bldKingdom.goodsStockpile[producedGood] = (bldKingdom.goodsStockpile[producedGood] || 0) + tithe;
+                    // Also credit gold value to the crown for economic tracking
                     var res = findResource(bt.produces);
                     var titheGold = tithe * (res ? res.basePrice : 1);
-                    bldKingdom.gold = (bldKingdom.gold || 0) + titheGold;
+                    bldKingdom.gold = (bldKingdom.gold || 0) + Math.floor(titheGold * 0.5);
                     // Log periodically (not every day to avoid spam)
                     if (Engine.getDay() % 30 === 0) {
-                        Engine.logEvent('🌾 Harvest tithe: ' + bldKingdom.name + ' collected ~' + Math.floor(titheGold) + 'g from your ' + bt.name + ' in ' + bldTown.name + '.');
+                        Engine.logEvent('🌾 Harvest tithe: ' + bldKingdom.name + ' collected ' + tithe + ' ' + (res ? res.name : producedGood) + ' from your ' + bt.name + ' in ' + bldTown.name + '.');
                     }
                 }
             }
@@ -10388,7 +10400,8 @@
             p.sex === oppositeSex &&
             p.age >= CONFIG.MARRIAGE_MIN_AGE &&
             p.age <= 45 &&
-            !p.employerId
+            !p.employerId &&
+            p.occupation !== 'king'
         ).slice(0, 10);
     }
 
@@ -10591,37 +10604,71 @@
         // Clear wedding plan
         player.weddingPlan = null;
 
-        // ===== Noble Marriage Rank System =====
+        // ===== Marriage Rank System =====
         // Non-noble marrying a noble => same rank as the noble
         // Noble marrying a noble => one rank below the higher-ranked spouse
+        // Marrying a non-noble => one rank below spouse (if player is lower)
         // King marriage impossible (enforced in marry())
         var spouseKingdom = person.kingdomId;
         var spouseRank = (person.socialRank && spouseKingdom) ? (person.socialRank[spouseKingdom] || 0) : 0;
+        // For non-noble NPCs, estimate rank from occupation/wealth
+        if (spouseRank === 0 && person.occupation) {
+            if (person.wealthClass === 'upper' || person.occupation === 'guild_master') spouseRank = 3;
+            else if (person.wealthClass === 'middle' || person.occupation === 'merchant' || person.occupation === 'master_craftsman') spouseRank = 2;
+            else if (person.occupation === 'craftsman' || person.occupation === 'shopkeeper' || person.occupation === 'farmer') spouseRank = 1;
+        }
         var playerKingdomForMarriage = spouseKingdom || player.citizenshipKingdomId;
         var playerCurrentRank = playerKingdomForMarriage ? (player.socialRank[playerKingdomForMarriage] || 0) : 0;
 
-        if (spouseRank >= 4 && playerKingdomForMarriage) { // Spouse is at least Minor Noble
+        if (spouseRank > 0 && playerKingdomForMarriage) {
             var newRank = playerCurrentRank;
-            if (playerCurrentRank < 4) {
-                // Non-noble marrying a noble = same rank as the noble
-                newRank = spouseRank;
+            if (spouseRank >= 4) {
+                // Marrying a noble
+                if (playerCurrentRank < 4) {
+                    // Non-noble marrying a noble = same rank as the noble
+                    newRank = spouseRank;
+                } else {
+                    // Noble marrying a noble = one below the higher-ranked
+                    newRank = Math.max(playerCurrentRank, spouseRank - 1);
+                }
             } else {
-                // Noble marrying a noble = one below the higher-ranked
-                newRank = Math.max(playerCurrentRank, spouseRank - 1);
+                // Marrying a non-noble: grants one rank below spouse if player is lower
+                var marriageGrantRank = spouseRank - 1;
+                if (marriageGrantRank > playerCurrentRank) {
+                    newRank = marriageGrantRank;
+                }
             }
 
             if (newRank > playerCurrentRank) {
                 player.socialRank[playerKingdomForMarriage] = newRank;
+                player.rankSince[playerKingdomForMarriage] = Engine.getDay();
                 var rankName = CONFIG.SOCIAL_RANKS[newRank] ? CONFIG.SOCIAL_RANKS[newRank].name : 'noble';
                 Engine.logEvent('🏰 Through marriage, ' + player.fullName + ' has been elevated to ' + rankName + '!');
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('👑 Your marriage elevates you to ' + rankName + '!', 'success', 'critical');
-                // Set waived requirements flag for easier next-rank promotion
-                player._marriageRankWaiver = player._marriageRankWaiver || {};
-                player._marriageRankWaiver[playerKingdomForMarriage] = {
-                    rank: newRank,
-                    spouseRank: spouseRank,
-                    day: Engine.getDay()
-                };
+            }
+            // Set waived requirements flag for easier promotion to spouse's rank
+            // Waives petitions + endorsements for the rank at or below spouse's rank
+            player._marriageRankWaiver = player._marriageRankWaiver || {};
+            player._marriageRankWaiver[playerKingdomForMarriage] = {
+                rank: newRank,
+                spouseRank: spouseRank,
+                day: Engine.getDay()
+            };
+        }
+
+        // ===== Reciprocal: Elevate spouse if player is higher rank =====
+        // If player's rank is higher, grant spouse one rank below player's rank
+        if (playerKingdomForMarriage && person) {
+            var finalPlayerRank = player.socialRank[playerKingdomForMarriage] || 0;
+            var currentSpouseRank = (person.socialRank && person.socialRank[playerKingdomForMarriage]) ? person.socialRank[playerKingdomForMarriage] : 0;
+            if (finalPlayerRank > 0 && finalPlayerRank - 1 > currentSpouseRank) {
+                var spouseNewRank = finalPlayerRank - 1;
+                if (!person.socialRank) person.socialRank = {};
+                person.socialRank[playerKingdomForMarriage] = spouseNewRank;
+                var spouseRankName = CONFIG.SOCIAL_RANKS[spouseNewRank] ? CONFIG.SOCIAL_RANKS[spouseNewRank].name : 'rank ' + spouseNewRank;
+                Engine.logEvent('🏰 Through marriage to ' + player.fullName + ', ' + person.firstName + ' has been elevated to ' + spouseRankName + '!');
+                // Mark spouse for easier promotion to player's rank (NPC AI can use this)
+                person._marriageRankWaiver = { rank: spouseNewRank, spouseRank: finalPlayerRank, day: Engine.getDay() };
             }
         }
         var msg = '💒 You married ' + person.firstName + ' ' + person.lastName + '! ' + venue.icon + ' at ' + venue.name + ', ' + feast.icon + ' ' + feast.name + ' feast. (Cost: ' + totalCost + 'g)';
@@ -17508,7 +17555,7 @@
         }
 
         if (nextRank.id === 'minor_noble') {
-            // Alternate path: marry a Lord to become Minor Noble (waives petitions + endorsements)
+            // Check marriage waiver: spouse rank >= 4 (Minor Noble+) waives petitions + endorsements
             var hasLordSpouse = player.spouseId ? (function() {
                 var s = Engine.findPerson(player.spouseId);
                 if (!s || !s.alive) return false;
@@ -17517,12 +17564,15 @@
                 return sMaxRank >= 5; // Lord or above
             })() : false;
             var hasNobleSpouse = hasLordSpouse || (player.spouseId ? (function() { var s = Engine.findPerson(player.spouseId); return s && (s.occupation === 'noble' || s.wealthClass === 'upper'); })() : false);
+            // Marriage waiver from _marriageRankWaiver also counts
+            var hasMarriageWaiver = player._marriageRankWaiver && player._marriageRankWaiver[kId] && player._marriageRankWaiver[kId].spouseRank >= 4;
+            var waivedPetitionsEndorsements = hasLordSpouse || hasNobleSpouse || hasMarriageWaiver;
 
-            if (!hasLordSpouse) {
+            if (!waivedPetitionsEndorsements) {
                 // Standard path: 3 petitions + 5 noble endorsements
                 var completedPetitions = player.petitions ? player.petitions.filter(function(p) { return p.status === 'approved' && p.kingdomId === kId; }).length : 0;
-                if (!hasNobleSpouse && completedPetitions < (nextRank.minPetitionsCompleted || 3)) {
-                    reasons.push(`Must marry a Lord/noble OR complete ${nextRank.minPetitionsCompleted || 3} petitions (have ${completedPetitions})`);
+                if (completedPetitions < (nextRank.minPetitionsCompleted || 3)) {
+                    reasons.push(`Must marry a Lord (waives petitions & endorsements) OR complete ${nextRank.minPetitionsCompleted || 3} petitions (have ${completedPetitions})`);
                 }
                 var endorsements = 0;
                 if (player.relationships) {
@@ -17536,7 +17586,7 @@
                         }
                     }
                 }
-                if (!hasNobleSpouse && endorsements < (nextRank.minEndorsements || 5)) reasons.push(`Need ${nextRank.minEndorsements || 5} noble endorsements (Minor Noble+ with 60+ relationship) \u2014 have ${endorsements}`);
+                if (endorsements < (nextRank.minEndorsements || 5)) reasons.push(`Must marry a Lord (waives petitions & endorsements) OR have ${nextRank.minEndorsements || 5} noble endorsements (Minor Noble+ with 60+ relationship) \u2014 have ${endorsements}`);
             }
             // Property requirement still applies regardless of marriage
             var townsWithPropNoble = new Set(player.buildings.filter(function(b) { var t = Engine.findTown(b.townId); return t && t.kingdomId === kId; }).map(function(b) { return b.townId; })).size;
@@ -17552,6 +17602,7 @@
             if (infraCount < (nextRank.minInfrastructure || 2)) reasons.push(`Need ${nextRank.minInfrastructure || 2}+ infrastructure projects (roads/bridges/sea routes) \u2014 have ${infraCount}`);
 
             // Marriage to Royal Advisor waives year-at-rank and lord friendship requirements
+            // Also check _marriageRankWaiver for spouse rank >= 6 (RA+)
             var hasRASpouse = player.spouseId ? (function() {
                 var s = Engine.findPerson(player.spouseId);
                 if (!s || !s.alive) return false;
@@ -17559,8 +17610,9 @@
                 if (s.socialRank) { for (var sk in s.socialRank) { if ((s.socialRank[sk] || 0) > sMaxR) sMaxR = s.socialRank[sk]; } }
                 return sMaxR >= 6;
             })() : false;
+            var lordMarriageWaiver = hasRASpouse || (player._marriageRankWaiver && player._marriageRankWaiver[kId] && player._marriageRankWaiver[kId].spouseRank >= 5);
 
-            if (!hasRASpouse) {
+            if (!lordMarriageWaiver) {
                 // 1 year as Minor Noble (changed from 2)
                 var rankSinceLord = player.rankSince ? (player.rankSince[kId] || Engine.getDay()) : Engine.getDay();
                 var yearsAtRankLord = (Engine.getDay() - rankSinceLord) / 360;
@@ -18510,6 +18562,39 @@
         if (amount > 0 && type !== 'spouse' && type !== 'child') {
             if (hasSkill('charismatic')) amount *= 1.50;
             else if (hasSkill('charming')) amount *= 1.25;
+        }
+        // Rank-based relationship modifiers (only for positive gains, not spouse/child)
+        if (amount > 0 && type !== 'spouse' && type !== 'child') {
+            var person = Engine.findPerson ? Engine.findPerson(personId) : null;
+            if (person) {
+                var npcRank = getNPCSocialRank(person);
+                var npcKingdom = person.kingdomId || player.citizenshipKingdomId;
+                var playerRank = npcKingdom ? (player.socialRank[npcKingdom] || 0) : getPlayerRankIndex();
+                var rankDiff = npcRank - playerRank; // positive = NPC is higher rank
+
+                if (rankDiff >= 3) {
+                    // 3+ ranks above: -50% relationship gains
+                    amount *= 0.50;
+                    // Extra -10% (total -60%) if they are noble and you are not
+                    if (npcRank >= 4 && playerRank < 4) amount *= 0.80;
+                } else if (rankDiff === 2) {
+                    // 2 ranks above: -25% total
+                    amount *= 0.75;
+                    // Extra -10% if they are noble and you are not
+                    if (npcRank >= 4 && playerRank < 4) amount *= 0.90;
+                } else if (rankDiff === 1) {
+                    // 1 rank above: -10%
+                    amount *= 0.90;
+                    // Extra -10% if they are noble and you are not
+                    if (npcRank >= 4 && playerRank < 4) amount *= 0.90;
+                } else if (rankDiff === -1) {
+                    // 1 rank below: +5%
+                    amount *= 1.05;
+                } else if (rankDiff <= -2) {
+                    // 2+ ranks below: +10%
+                    amount *= 1.10;
+                }
+            }
         }
         const rel = player.relationships[personId];
         rel.level = Math.max(0, Math.min(100, rel.level + amount));
@@ -20633,7 +20718,8 @@
             p.sex === oppositeSex &&
             p.age >= CONFIG.MARRIAGE_MIN_AGE &&
             p.age <= 45 &&
-            !p.employerId
+            !p.employerId &&
+            p.occupation !== 'king'
         ).map(p => {
             const rel = getRelationship(p.id);
             return { person: p, relationship: rel };
@@ -28134,7 +28220,15 @@
         player._energyConsumedThisTick = false;
 
         // Auto-rest: if enabled and energy below 10, start resting automatically
-        if (player.autoRest !== false && !player.resting && (player.energy || 0) < 10) {
+        // While traveling, don't auto-rest — prompt player to camp instead
+        if (player.traveling) {
+            if ((player.energy || 0) < 10 && !player.resting) {
+                if (!player._campPromptNeeded) {
+                    player._campPromptNeeded = true;
+                    Engine.logEvent('⚠️ You are exhausted! Click 🏕️ Camp to rest before you collapse.');
+                }
+            }
+        } else if (player.autoRest !== false && !player.resting && (player.energy || 0) < 10) {
             var opts = getAvailableRestOptions();
             if (opts.length > 0) {
                 // Pick best option player can afford (highest energyPerTick)
@@ -28239,26 +28333,66 @@
             }
             // Bedroll
             if ((player.inventory.bedroll || 0) > 0) {
+                // Bedroll + Tent combo (better than either alone)
+                if ((player.inventory.tent || 0) > 0) {
+                    options.push({
+                        id: 'bedroll_tent_travel',
+                        name: '⛺🛏️ Tent & Bedroll',
+                        cost: 0,
+                        energyPerTick: getRestEnergyRate('bedroll_tent_travel'),
+                        risks: ['2% theft', '1% disease'],
+                        icon: '⛺',
+                    });
+                } else {
+                    options.push({
+                        id: 'bedroll_travel',
+                        name: '🛏️ Sleep on Bedroll',
+                        cost: 0,
+                        energyPerTick: getRestEnergyRate('bedroll_travel'),
+                        risks: ['5% theft', '3% disease'],
+                        icon: '🛏️',
+                    });
+                }
+            } else if ((player.inventory.tent || 0) > 0) {
+                // Tent alone (no bedroll)
                 options.push({
-                    id: 'bedroll_travel',
-                    name: '🛏️ Sleep on Bedroll',
+                    id: 'tent_travel',
+                    name: '⛺ Rest in Tent',
                     cost: 0,
-                    energyPerTick: getRestEnergyRate('bedroll_travel'),
-                    risks: ['5% theft', '3% disease'],
-                    icon: '🛏️',
+                    energyPerTick: getRestEnergyRate('tent_travel'),
+                    risks: ['3% theft'],
+                    icon: '⛺',
                 });
             }
-            // Caravan Wagon (portable housing — rest in your wagon while traveling)
+            // Caravan Wagon (mobile home — best travel rest option)
             var hasWagon = (player.houses || []).some(function(h) { return h.type === 'caravan_wagon'; });
             if (hasWagon) {
                 options.push({
                     id: 'caravan_wagon',
-                    name: '🛒 Rest in Caravan Wagon',
+                    name: '🏠 Rest in Mobile Home',
                     cost: 0,
                     energyPerTick: getRestEnergyRate('caravan_wagon'),
-                    risks: ['2% theft'],
-                    icon: '🛒',
+                    risks: ['1% theft'],
+                    icon: '🏠',
                 });
+            }
+            // Sleep in wagon/cart (if equipped and has 30+ capacity left)
+            if (!hasWagon && player.storageContainer) {
+                var wagonTypes = ['small_wagon', 'wagon', 'large_wagon'];
+                if (wagonTypes.indexOf(player.storageContainer) !== -1) {
+                    var wCap = getCarryCapacity();
+                    var wUsed = getCarriedWeight();
+                    if (wCap - wUsed >= 30) {
+                        options.push({
+                            id: 'wagon_sleep_travel',
+                            name: '🛞 Sleep in ' + (CONFIG.STORAGE_CONTAINERS[player.storageContainer] ? CONFIG.STORAGE_CONTAINERS[player.storageContainer].name : 'Wagon'),
+                            cost: 0,
+                            energyPerTick: getRestEnergyRate('wagon_sleep_travel'),
+                            risks: ['8% theft'],
+                            icon: '🛞',
+                        });
+                    }
+                }
             }
             // Ship rest — if traveling by sea and ship has rest capability
             if (player.travelBySea) {
@@ -28388,13 +28522,16 @@
     }
 
     function restForTicks(locationId, ticks) {
-        var isTravelRest = locationId === 'camping_kit_travel' || locationId === 'tent_travel' || locationId === 'bedroll_travel';
+        var isTravelRest = ['camping_kit_travel', 'tent_travel', 'bedroll_travel', 'bedroll_tent_travel', 'wagon_sleep_travel', 'caravan_wagon', 'ship_cabin'].indexOf(locationId) !== -1;
         var isRoadsideRest = player.traveling && locationId === 'outside';
 
         // Block non-travel rest while traveling
         if (player.traveling && !isTravelRest && !isRoadsideRest) {
             return { success: false, message: 'Cannot rest here while traveling. Use camping gear or sleep roadside.' };
         }
+
+        // Clear camp prompt flag since player is now resting
+        player._campPromptNeeded = false;
 
         var rate = getRestEnergyRate(locationId);
         var max = getMaxEnergy();
@@ -28493,11 +28630,18 @@
             }
         }
 
-        // Travel camping gear has reduced risks (tent/bedroll/kit)
+        // Travel camping gear has reduced risks (tent/bedroll/kit/wagon/caravan)
         if (isTravelRest) {
             var rng2 = Engine.getRng();
-            var gearTheft = locationId === 'bedroll_travel' ? 0.05 : locationId === 'tent_travel' ? 0.03 : 0.01;
-            var gearDisease = locationId === 'bedroll_travel' ? 0.03 : locationId === 'tent_travel' ? 0.01 : 0;
+            var gearTheft, gearDisease;
+            if (locationId === 'caravan_wagon') { gearTheft = 0.01; gearDisease = 0; }
+            else if (locationId === 'camping_kit_travel') { gearTheft = 0.01; gearDisease = 0; }
+            else if (locationId === 'bedroll_tent_travel') { gearTheft = 0.02; gearDisease = 0.01; }
+            else if (locationId === 'tent_travel') { gearTheft = 0.03; gearDisease = 0.01; }
+            else if (locationId === 'bedroll_travel') { gearTheft = 0.05; gearDisease = 0.03; }
+            else if (locationId === 'wagon_sleep_travel') { gearTheft = 0.08; gearDisease = 0.02; }
+            else if (locationId === 'ship_cabin') { gearTheft = 0; gearDisease = 0; }
+            else { gearTheft = 0.01; gearDisease = 0; }
 
             if (rng2 && gearTheft > 0 && rng2.chance(gearTheft)) {
                 var stolen2 = Math.min(player.gold, Math.floor(Math.random() * 10) + 2);
@@ -37073,6 +37217,8 @@
         get worldX() { return player.worldX; },
         get worldY() { return player.worldY; },
         get hasCaravanWagon() { return player.hasCaravanWagon || false; },
+        get _campPromptNeeded() { return player._campPromptNeeded || false; },
+        set _campPromptNeeded(v) { player._campPromptNeeded = v; },
         // Character fields
         get firstName() { return player.firstName; },
         get lastName() { return player.lastName; },
@@ -37156,6 +37302,7 @@
         _handleRegimeChangeConsequence,
         _handleLordDemotion: handleLordDemotion,
         get politicalCapital() { return player.politicalCapital || 0; },
+        get _repWarnDay() { return player._repWarnDay || {}; },
         // Town Reputation
         get townReputation() { return player.townReputation || {}; },
         get wartimeGoldEarned() { return player.wartimeGoldEarned || 0; },

@@ -478,7 +478,7 @@ const CONFIG = {
           description: 'Master of commerce. Can build toll roads, trade weapons, and hire petitioners. +10% production output.' },
         { id: 'minor_noble', name: 'Minor Noble', index: 4, icon: '👑',
           maxWorkers: 70, maxBuildings: 50, maxLand: 30,
-          goldReq: 75000, repReq: 80, extraReq: 'Noble marriage OR king decree OR 3 petitions, 5 NPC endorsements, property in 3+ towns',
+          goldReq: 75000, repReq: 80, extraReq: 'Marry a Lord (waives petitions & endorsements) OR 3 petitions + 5 noble endorsements, property in 3+ towns',
           fee: 15000, minPetitionsCompleted: 3, minEndorsements: 5, minEndorsementLevel: 60, minTownsWithProperty: 3,
           taxDiscount: 0.20,
           signatureBonus: 0.15,
@@ -499,6 +499,12 @@ const CONFIG = {
           petitionBonus: 0.25,
           abilities: ['propose_laws', 'declare_emergencies', 'override_officials', 'petition_bonus', 'king_consults'],
           description: 'The king\'s right hand. Can propose laws, petition success +25%. The king consults you on decisions.' },
+        { id: 'king', name: 'King', index: 7, icon: '👑',
+          maxWorkers: 9999, maxBuildings: 9999, maxLand: 9999,
+          goldReq: 0, repReq: 0, extraReq: 'Only assigned by succession — not achievable through promotion',
+          fee: 0, taxDiscount: 1.0,
+          abilities: ['all'],
+          description: 'The sovereign ruler of a kingdom. Commands all subjects and sets the laws of the land.' },
     ],
 
     // Citizenship
@@ -1912,6 +1918,7 @@ const OCCUPATIONS = {
     SOLDIER:    { id: 'soldier',    name: 'Soldier',    wage: 3 },
     GUARD:      { id: 'guard',      name: 'Guard',      wage: 4 },
     NOBLE:      { id: 'noble',      name: 'Noble',      wage: 0 },
+    KING:       { id: 'king',       name: 'King',       wage: 0 },
     LABORER:    { id: 'laborer',    name: 'Laborer',    wage: 2 },
 };
 
@@ -2572,12 +2579,14 @@ const ENERGY_CONFIG = {
     },
     REST_ENERGY_PER_TICK: {
         outside: 2.0,
+        wagon_sleep_travel: 2.5, // sleeping in wagon with 30+ capacity space
         bedroll: 2.5,
         bedroll_travel: 3.0,     // bedroll while traveling
-        tent_travel: 4.0,        // tent while traveling
-        camping_kit_travel: 5.0, // full camping kit while traveling
-        caravan_wagon: 4.5,      // caravan wagon while traveling (portable housing)
         tent: 3.0,
+        tent_travel: 4.0,        // tent while traveling
+        bedroll_tent_travel: 4.5, // bedroll + tent combo while traveling
+        camping_kit_travel: 5.0, // full camping kit while traveling
+        caravan_wagon: 5.5,      // caravan wagon while traveling (mobile home — best travel option)
         shack: 3.0,
         master_quarters: 3.5,
         barracks: 3.5,
@@ -2717,14 +2726,14 @@ const SPECIAL_LAWS = [
     { id: 'night_market',      name: 'Night Market',         desc: 'Illegal goods detection reduced by 50% at night', icon: '🌙', effect: 'night_smuggle_bonus' },
     { id: 'sumptuary_laws',    name: 'Sumptuary Laws',       desc: 'Commoners (below Burgher) cannot buy luxury goods', icon: '👑', effect: 'luxury_rank_req' },
     { id: 'conscription_law',  name: 'Mandatory Conscription', desc: 'During wartime, the king conscripts 2-20% of males for 1 year of military service', icon: '⚔️', effect: 'conscription' },
-    { id: 'market_day',        name: 'Market Day',           desc: 'Every 7th day, all prices drop 15%', icon: '📅', effect: 'market_day_discount' },
-    { id: 'harvest_tithe',     name: 'Harvest Tithe',        desc: '10% of farm production goes to the crown', icon: '🌾', effect: 'farm_tithe' },
+    { id: 'market_day',        name: 'Market Day',           desc: 'Every 7th day is Market Day — citizens trade tax-free!', icon: '📅', effect: 'market_day_discount' },
+    { id: 'harvest_tithe',     name: 'Harvest Tithe',        desc: '10% of farm production is collected by the crown as goods', icon: '🌾', effect: 'farm_tithe' },
     { id: 'sanctuary_law',     name: 'Right of Sanctuary',   desc: 'Criminal penalties from other kingdoms don\'t apply here', icon: '🏛️', effect: 'clear_foreign_offenses' },
     { id: 'apprentice_law',    name: 'Apprentice Law',       desc: 'Must work for a business 30 days before owning one', icon: '📜', effect: 'build_delay' },
     { id: 'foreign_ban',       name: 'Isolationist Policy',  desc: 'Non-citizens pay 25% extra tax on all trades', icon: '🚫', effect: 'foreign_tax_25' },
     { id: 'free_trade',        name: 'Free Trade Zone',      desc: 'No goods-specific taxes, flat low rate', icon: '🕊️', effect: 'no_goods_tax' },
     { id: 'trial_combat',      name: 'Trial by Combat',      desc: 'When caught, 30% chance to fight your way out (combat skill matters)', icon: '⚔️', effect: 'trial_combat' },
-    { id: 'maritime_privilege', name: 'Maritime Privilege',   desc: 'Port towns have 10% lower prices on all sea goods', icon: '⚓', effect: 'port_discount' },
+    { id: 'maritime_privilege', name: 'Maritime Privilege',   desc: 'Port towns enjoy a 50% tax break on sea goods (fish, salt, pearls, rope, hemp, pearl jewelry)', icon: '⚓', effect: 'port_discount' },
     { id: 'price_controls',     name: 'Price Controls',       desc: 'Maximum prices set on essential goods (bread, wheat, water). Protects citizens but may cause shortages.', icon: '📊', effect: 'price_cap' },
     { id: 'immigration_policy', name: 'Closed Borders',       desc: 'Foreigners must earn citizenship through service before settling. Building restricted for non-citizens.', icon: '🚧', effect: 'closed_borders' },
     { id: 'inheritance_tax',    name: 'Inheritance Tax',       desc: 'The crown takes a percentage of inherited wealth during dynasty succession.', icon: '💀', effect: 'inheritance_tax' },

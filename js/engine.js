@@ -850,6 +850,7 @@
                     lastAssessmentDay: 0,
                 },
                 militaryStockpile: { swords: 0, armor: 0, bows: 0, arrows: 0, horses: 0 },
+                goodsStockpile: {},
                 lastTaxIncreaseDay: 0,  // day of most recent tax increase (for tax collector job availability)
                 tournament: null,       // { active, startDay, entryFee, townId } or null — king-sponsored tournament
                 kingMood: { current: 'content', since: 0, reason: '' },
@@ -3428,7 +3429,9 @@
             let king = kPeople.find(p => p.sex === 'M' && p.age >= 30 && p.age <= 60);
             if (!king) king = kPeople.find(p => p.sex === 'M' && p.age >= 20);
             if (!king) king = kPeople[0]; // fallback
-            king.occupation = 'noble';
+            king.occupation = 'king';
+            if (!king.socialRank) king.socialRank = {};
+            king.socialRank[k.id] = 7;
             king.gold = rng.randInt(200, 500);
             king.skills = { farming: 5, mining: 5, crafting: 10, trading: rng.randInt(30, 60), combat: rng.randInt(20, 50) };
             k.king = king.id;
@@ -3679,12 +3682,11 @@
         var royalNobles = kPeople.filter(function(p) { return p.occupation === 'noble'; });
         var assignedAdvisors = 0, assignedLords = 0, assignedMinors = 0;
 
-        // King gets royal_advisor rank
+        // King gets king rank (7) — preserve the rank set during world gen
         var king = people.find(function(p) { return p.id === kingdom.king; });
         if (king) {
             if (!king.socialRank) king.socialRank = {};
-            king.socialRank[kId] = 6; // royal_advisor
-            assignedAdvisors++;
+            king.socialRank[kId] = 7; // king
         }
 
         // King's spouse = lord
@@ -6113,6 +6115,12 @@
 
     function installNewKing(kingdom, newKing, cause) {
         const rng = world.rng;
+        // Demote old king if they exist and are alive
+        var oldKing = kingdom.king ? findPerson(kingdom.king) : null;
+        if (oldKing && oldKing.alive && oldKing.id !== newKing.id) {
+            oldKing.occupation = 'noble';
+            if (oldKing.socialRank) oldKing.socialRank[kingdom.id] = 5; // demote to lord rank
+        }
         // Prevent dual kingship: if this person is already king elsewhere, abdicate there first
         for (var ki = 0; ki < world.kingdoms.length; ki++) {
             var otherK = world.kingdoms[ki];
@@ -6124,7 +6132,9 @@
             }
         }
         kingdom.king = newKing.id;
-        newKing.occupation = 'noble';
+        newKing.occupation = 'king';
+        if (!newKing.socialRank) newKing.socialRank = {};
+        newKing.socialRank[kingdom.id] = 7;
         newKing.gold += 100;
         if (!cause || cause !== 'election') {
             logEvent(`${newKing.firstName} ${newKing.lastName} becomes the new ruler of ${kingdom.name}.`, { type: 'succession', kingdomId: kingdom.id });
@@ -27747,9 +27757,12 @@
             const oldKing = findPerson(k.king);
             if (oldKing && oldKing.alive) {
                 oldKing.occupation = 'laborer';
+                if (oldKing.socialRank) oldKing.socialRank[k.id] = 0;
             }
             k.king = prominentNPC.id;
             prominentNPC.occupation = 'king';
+            if (!prominentNPC.socialRank) prominentNPC.socialRank = {};
+            prominentNPC.socialRank[k.id] = 7;
             // Derive new personality from the NPC's actual personality traits
             var _rkp = prominentNPC.personality || {};
             var _rint = _rkp.intelligence || 50;
