@@ -20235,22 +20235,23 @@
             return { success: false, message: introducer.firstName + ' says: "Give me some time before asking again. ' + Math.max(1, 30 - (today - lastAsk)) + ' days."' };
         }
 
-        // Find a same-rank person in this town the player hasn't been introduced to
+        // Find a person one rank ABOVE the introducer that the player hasn't met
+        var targetRank = introRank + 1;
+        if (targetRank > 7) return { success: false, message: introducer.firstName + ' is already at the highest rank — there\'s no one above them to introduce you to.' };
         var people = Engine.getPeople ? Engine.getPeople(player.townId) : [];
         var candidates = [];
         for (var i = 0; i < people.length; i++) {
             var p = people[i];
             if (!p || !p.alive || p.id === introducerId) continue;
-            if (getNPCSocialRank(p) !== introRank) continue;
+            if (getNPCSocialRank(p) !== targetRank) continue;
             if (player.introductions && player.introductions[p.id]) continue;
-            // If player can already talk to them by rank, skip
             var check = canTalkTo(p.id);
             if (check.canTalk) continue;
             candidates.push(p);
         }
 
         if (candidates.length === 0) {
-            var _rankLabel = (CONFIG.SOCIAL_RANKS && CONFIG.SOCIAL_RANKS[introRank]) ? CONFIG.SOCIAL_RANKS[introRank].name : 'that rank';
+            var _rankLabel = (CONFIG.SOCIAL_RANKS && CONFIG.SOCIAL_RANKS[targetRank]) ? CONFIG.SOCIAL_RANKS[targetRank].name : 'that rank';
             return { success: false, message: introducer.firstName + ' doesn\'t know anyone of ' + _rankLabel + ' rank in this town that you haven\'t already met.' };
         }
 
@@ -20264,11 +20265,12 @@
         if (rng ? rng.chance(chance) : Math.random() < chance) {
             var target = rng ? rng.pick(candidates) : candidates[Math.floor(Math.random() * candidates.length)];
             if (!player.introductions) player.introductions = {};
-            player.introductions[target.id] = { introducedBy: introducerId, day: today, rank: introRank };
+            player.introductions[target.id] = { introducedBy: introducerId, day: today, rank: targetRank };
             if (!player.relationships[target.id]) {
                 player.relationships[target.id] = { level: 10, type: 'introduction' };
             }
-            Engine.logEvent('🤝 ' + introducer.firstName + ' introduced you to fellow ' + (CONFIG.SOCIAL_RANKS[introRank] ? CONFIG.SOCIAL_RANKS[introRank].name : 'noble') + ' ' + target.firstName + ' ' + (target.lastName || '') + '!');
+            var _tRankName = (CONFIG.SOCIAL_RANKS[targetRank] ? CONFIG.SOCIAL_RANKS[targetRank].name : 'noble');
+            Engine.logEvent('🤝 ' + introducer.firstName + ' introduced you to ' + _tRankName + ' ' + target.firstName + ' ' + (target.lastName || '') + '!');
             return { success: true, message: '🤝 ' + introducer.firstName + ' introduces you to ' + target.firstName + ' ' + (target.lastName || '') + '!', targetId: target.id };
         } else {
             return { success: false, message: introducer.firstName + ' says: "Not a good time right now. Ask me again later."' };

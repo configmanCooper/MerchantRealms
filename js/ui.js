@@ -2280,10 +2280,11 @@ window.UI = (function () {
                     html += `<button class="btn-medieval" onclick="UI.hireInvestigator('${person.id}')" title="Hire an investigator to uncover secrets — costly and risky, they may find out!" style="font-size:0.75rem;padding:5px 10px;">🕵️ Investigate</button>`;
                     // Introduction request for same-rank peers (if this is a noble you already know)
                     var _introNpcRank = Player.getNPCSocialRank ? Player.getNPCSocialRank(person) : 0;
-                    if (_introNpcRank >= 4) {
+                    if (_introNpcRank >= 4 && _introNpcRank < 7) {
                         var _introRel = Player.getRelationship ? Player.getRelationship(person.id) : { level: 0 };
                         if (_introRel.level >= 60) {
-                            var _targetRankName = _introNpcRank >= 6 ? 'Royal Advisor' : _introNpcRank >= 5 ? 'Lord' : _introNpcRank >= 4 ? 'Minor Noble' : 'Noble';
+                            var _aboveRank = _introNpcRank + 1;
+                            var _targetRankName = _aboveRank >= 7 ? 'King' : _aboveRank >= 6 ? 'Royal Advisor' : _aboveRank >= 5 ? 'Lord' : 'Minor Noble';
                             html += `<button class="btn-medieval" onclick="UI.requestSameRankIntro('${person.id}')" title="Ask to be introduced to a ${_targetRankName}" style="font-size:0.75rem;padding:5px 10px;">🤝 Ask for Introduction to ${_targetRankName}</button>`;
                         }
                     }
