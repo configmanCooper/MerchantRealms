@@ -3429,7 +3429,7 @@
             let king = kPeople.find(p => p.sex === 'M' && p.age >= 30 && p.age <= 60);
             if (!king) king = kPeople.find(p => p.sex === 'M' && p.age >= 20);
             if (!king) king = kPeople[0]; // fallback
-            king.occupation = 'king';
+            king.occupation = king.sex === 'F' ? 'reigning_queen' : 'king';
             if (!king.socialRank) king.socialRank = {};
             king.socialRank[k.id] = 7;
             king.gold = rng.randInt(200, 500);
@@ -3563,6 +3563,12 @@
                 goldMin: 50, goldMax: 150,
                 spouseId: king.id,
             });
+            // Set queen/consort occupation based on king's sex
+            if (king.sex === 'M') {
+                spouse.occupation = 'queen';
+            } else {
+                spouse.occupation = 'queens_lord';
+            }
             king.spouseId = spouse.id;
             people.push(spouse);
             if (capitalTown) capitalTown.population = (capitalTown.population || 0) + 1;
@@ -3584,6 +3590,12 @@
                     gold: isChildAdult ? undefined : 0,
                 });
                 if (!isChildAdult) child.gold = 0;
+                // King's adult children are lords
+                if (isChildAdult) {
+                    if (!child.socialRank) child.socialRank = {};
+                    child.socialRank[king.kingdomId] = 5;
+                    child.houseType = 'manor';
+                }
                 king.childrenIds.push(child.id);
                 spouse.childrenIds.push(child.id);
                 people.push(child);
@@ -3689,12 +3701,15 @@
             king.socialRank[kId] = 7; // king
         }
 
-        // King's spouse = lord
+        // King's spouse = lord rank with queen/consort title
         if (king && king.spouseId) {
             var spouse = people.find(function(p) { return p.id === king.spouseId; });
-            if (spouse && spouse.occupation === 'noble') {
+            if (spouse && (spouse.occupation === 'noble' || spouse.occupation === 'queen' || spouse.occupation === 'queens_lord')) {
                 if (!spouse.socialRank) spouse.socialRank = {};
                 spouse.socialRank[kId] = 5; // lord
+                if (spouse.occupation !== 'queen' && spouse.occupation !== 'queens_lord') {
+                    spouse.occupation = king.sex === 'M' ? 'queen' : 'queens_lord';
+                }
                 assignedLords++;
             }
         }
@@ -6132,9 +6147,44 @@
             }
         }
         kingdom.king = newKing.id;
-        newKing.occupation = 'king';
+        newKing.occupation = newKing.sex === 'F' ? 'reigning_queen' : 'king';
         if (!newKing.socialRank) newKing.socialRank = {};
         newKing.socialRank[kingdom.id] = 7;
+
+        // Update old king's spouse occupation back to noble
+        if (oldKing && oldKing.alive && oldKing.spouseId) {
+            var _oldSpouse = findPerson(oldKing.spouseId);
+            if (_oldSpouse && _oldSpouse.alive) {
+                if (_oldSpouse.occupation === 'queen' || _oldSpouse.occupation === 'queens_lord') {
+                    _oldSpouse.occupation = 'noble';
+                }
+            }
+        }
+
+        // Set new king's spouse to proper royal occupation
+        if (newKing.spouseId) {
+            var _newSpouse = findPerson(newKing.spouseId);
+            if (_newSpouse && _newSpouse.alive) {
+                _newSpouse.occupation = newKing.sex === 'M' ? 'queen' : 'queens_lord';
+                if (!_newSpouse.socialRank) _newSpouse.socialRank = {};
+                _newSpouse.socialRank[kingdom.id] = 5; // lord rank
+            }
+        }
+
+        // King's adult children become lords
+        if (newKing.childrenIds) {
+            for (var _kci = 0; _kci < newKing.childrenIds.length; _kci++) {
+                var _kChild = findPerson(newKing.childrenIds[_kci]);
+                if (_kChild && _kChild.alive && _kChild.age >= 18) {
+                    if (!_kChild.socialRank) _kChild.socialRank = {};
+                    if ((_kChild.socialRank[kingdom.id] || 0) < 5) {
+                        _kChild.socialRank[kingdom.id] = 5;
+                        _kChild.occupation = 'noble';
+                        _kChild.houseType = 'manor';
+                    }
+                }
+            }
+        }
         newKing.gold += 100;
         if (!cause || cause !== 'election') {
             logEvent(`${newKing.firstName} ${newKing.lastName} becomes the new ruler of ${kingdom.name}.`, { type: 'succession', kingdomId: kingdom.id });
@@ -8272,7 +8322,7 @@
                     bride.spouseId = king.id;
                     if (!bride.socialRank) bride.socialRank = {};
                     bride.socialRank[k.id] = 5; // King's spouse = Lord rank
-                    bride.occupation = 'noble';
+                    bride.occupation = king.sex === 'M' ? 'queen' : 'queens_lord';
                     logEvent('💒 The ruler of ' + k.name + ' has married ' + bride.firstName + ' ' + bride.lastName + '!');
                     if (typeof UI !== 'undefined' && UI.toast) UI.toast('💒 The ruler of ' + k.name + ' has remarried!', 'info', 'critical');
                 }
@@ -27851,9 +27901,16 @@
                 if (oldKing.socialRank) oldKing.socialRank[k.id] = 0;
             }
             k.king = prominentNPC.id;
-            prominentNPC.occupation = 'king';
+            prominentNPC.occupation = prominentNPC.sex === 'F' ? 'reigning_queen' : 'king';
             if (!prominentNPC.socialRank) prominentNPC.socialRank = {};
             prominentNPC.socialRank[k.id] = 7;
+            // Update old king's spouse
+            if (oldKing && oldKing.alive && oldKing.spouseId) {
+                var _revOldSpouse = findPerson(oldKing.spouseId);
+                if (_revOldSpouse && _revOldSpouse.alive && (_revOldSpouse.occupation === 'queen' || _revOldSpouse.occupation === 'queens_lord')) {
+                    _revOldSpouse.occupation = 'noble';
+                }
+            }
             // Derive new personality from the NPC's actual personality traits
             var _rkp = prominentNPC.personality || {};
             var _rint = _rkp.intelligence || 50;

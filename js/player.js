@@ -10421,7 +10421,7 @@
             p.age >= CONFIG.MARRIAGE_MIN_AGE &&
             p.age <= 45 &&
             !p.employerId &&
-            p.occupation !== 'king'
+            p.occupation !== 'king' && p.occupation !== 'reigning_queen' && p.occupation !== 'queen' && p.occupation !== 'queens_lord'
         ).slice(0, 10);
     }
 
@@ -20698,7 +20698,25 @@
             }
         }
 
-        // Gain relationships from being in town
+        // Noble relationship passive drain (every 30 days)
+        var _day = 0;
+        try { _day = Engine.getDay(); } catch(e) {}
+        if (_day > 0 && _day % 30 === 0) {
+            for (var _nrpId in player.relationships) {
+                var _nrpRel = player.relationships[_nrpId];
+                if (_nrpRel.type === 'spouse' || _nrpRel.type === 'child') continue;
+                var _nrpPerson = null;
+                try { _nrpPerson = Engine.findPerson(_nrpId); } catch(e) {}
+                if (!_nrpPerson || !_nrpPerson.alive) continue;
+                var _nrpNpcRank = getNPCSocialRank(_nrpPerson);
+                if (_nrpNpcRank < 4) continue; // only nobles
+                if (_nrpRel.level > 80) {
+                    _nrpRel.level = Math.max(0, _nrpRel.level - 2);
+                } else if (_nrpRel.level > 60) {
+                    _nrpRel.level = Math.max(0, _nrpRel.level - 1);
+                }
+            }
+        }
         if (player.townId) {
             const people = Engine.getPeople(player.townId);
             if (people) {
@@ -20741,7 +20759,7 @@
             p.age >= CONFIG.MARRIAGE_MIN_AGE &&
             p.age <= 45 &&
             !p.employerId &&
-            p.occupation !== 'king'
+            p.occupation !== 'king' && p.occupation !== 'reigning_queen' && p.occupation !== 'queen' && p.occupation !== 'queens_lord'
         ).map(p => {
             const rel = getRelationship(p.id);
             return { person: p, relationship: rel };

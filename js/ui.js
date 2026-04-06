@@ -2315,7 +2315,7 @@ window.UI = (function () {
                 }
 
                 // ── Dating Actions (if eligible, not a king) ──
-                var _isKingNPC = person.occupation === 'king';
+                var _isKingNPC = person.occupation === 'king' || person.occupation === 'reigning_queen' || person.occupation === 'queen' || person.occupation === 'queens_lord';
                 if (!_isKingNPC && Engine.getKingdoms) {
                     var _kkList = Engine.getKingdoms();
                     for (var _kki = 0; _kki < _kkList.length; _kki++) {
@@ -4921,7 +4921,7 @@ window.UI = (function () {
         let people;
         try { people = Engine.getPeople(Player.townId); } catch (e) { people = []; }
         var allUnemployed = (people || []).filter(p => p.alive && !p.employerId && p.age >= 18 &&
-            p.occupation !== 'noble' && p.occupation !== 'soldier' && p.occupation !== 'king' && p.occupation !== 'guard');
+            p.occupation !== 'noble' && p.occupation !== 'soldier' && p.occupation !== 'king' && p.occupation !== 'reigning_queen' && p.occupation !== 'queen' && p.occupation !== 'queens_lord' && p.occupation !== 'guard');
 
         // Guild-based skill tier gating
         // No guild: only unskilled (0-30)

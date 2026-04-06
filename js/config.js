@@ -1919,6 +1919,9 @@ const OCCUPATIONS = {
     GUARD:      { id: 'guard',      name: 'Guard',      wage: 4 },
     NOBLE:      { id: 'noble',      name: 'Noble',      wage: 0 },
     KING:       { id: 'king',       name: 'King',       wage: 0 },
+    QUEEN:      { id: 'queen',      name: 'Queen',      wage: 0 },
+    REIGNING_QUEEN: { id: 'reigning_queen', name: 'Reigning Queen', wage: 0 },
+    QUEENS_LORD: { id: 'queens_lord', name: "The Queen's Lord", wage: 0 },
     LABORER:    { id: 'laborer',    name: 'Laborer',    wage: 2 },
 };
 
