@@ -302,7 +302,7 @@ window.Tutorial = (function () {
             steps: [
                 {
                     title: 'Welcome',
-                    text: '\uD83C\uDFF0 Welcome, merchant! <strong>Merchant Realms</strong> is about trading goods, building an empire, climbing social ranks, and founding a dynasty. <strong>This panel is moveable</strong> \u2014 drag it by the header to reposition. You can leave any time via the \uD83C\uDFE0 <strong>Main Menu</strong> button on the bottom panel.',
+                    text: '\uD83C\uDFF0 Welcome, merchant! <strong>Merchant Realms</strong> is about trading goods, building an empire, climbing social ranks, and founding a dynasty. <strong>This panel is moveable</strong> \u2014 drag it by the header to reposition. You can leave any time via the \uD83C\uDFE0 <strong>Main Menu</strong> button in the upper-right corner of this panel, or on the right side of the top panel.',
                     highlight: '#btnMainMenu'
                 },
                 {
