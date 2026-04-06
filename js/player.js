@@ -855,12 +855,15 @@
         player.gold -= totalCost;
         logFinance(-totalCost, 'trading', 'Bought ' + qty + ' ' + resourceId);
 
-        // Track tax revenue for kingdom
+        // Track tax revenue for kingdom (trade tax + tariff + foreign surcharge)
         if (kingdom) {
             const taxPortion = Math.floor(basePrice * (taxRate + effectiveGoodsTax) * qty);
-            kingdom.taxRevenue = (kingdom.taxRevenue || 0) + taxPortion;
-            kingdom.gold = (kingdom.gold || 0) + taxPortion;
+            const tariffPortion = Math.floor(basePrice * (tariff + foreignSurcharge) * qty);
+            const totalKingdomRevenue = taxPortion + tariffPortion;
+            kingdom.taxRevenue = (kingdom.taxRevenue || 0) + totalKingdomRevenue;
+            kingdom.gold = (kingdom.gold || 0) + totalKingdomRevenue;
             kingdom.tradeTaxRevenue = (kingdom.tradeTaxRevenue || 0) + taxPortion;
+            kingdom.tariffRevenue = (kingdom.tariffRevenue || 0) + tariffPortion;
         }
 
         player.stats.totalGoldSpent += totalCost;
@@ -1138,13 +1141,16 @@
         player.gold += totalRevenue;
         logFinance(totalRevenue, 'trading', 'Sold ' + qty + ' ' + resourceId);
 
-        // Track tax revenue for kingdom
+        // Track tax revenue for kingdom (trade tax + tariff + foreign surcharge)
         if (kingdom) {
             const baseSellPrice = town.market.prices[resourceId] || 1;
             const taxPortion = Math.floor(baseSellPrice * (taxRate + effectiveGoodsTax) * qty);
-            kingdom.taxRevenue = (kingdom.taxRevenue || 0) + taxPortion;
-            kingdom.gold = (kingdom.gold || 0) + taxPortion;
+            const tariffPortion = Math.floor(baseSellPrice * (tariff + foreignSurcharge) * qty);
+            const totalKingdomRevenue = taxPortion + tariffPortion;
+            kingdom.taxRevenue = (kingdom.taxRevenue || 0) + totalKingdomRevenue;
+            kingdom.gold = (kingdom.gold || 0) + totalKingdomRevenue;
             kingdom.tradeTaxRevenue = (kingdom.tradeTaxRevenue || 0) + taxPortion;
+            kingdom.tariffRevenue = (kingdom.tariffRevenue || 0) + tariffPortion;
         }
 
         player.stats.totalGoldEarned += totalRevenue;
@@ -3915,6 +3921,47 @@
         }
     }
 
+    // Helper: compute tariff rate for caravan sales at a destination town
+    // Returns { tariffRate, tariffRevenue } where tariffRevenue is gold owed to destination kingdom
+    function _getCaravanTariffRate(townId) {
+        var town = Engine.findTown(townId);
+        if (!town || !town.kingdomId) return 0;
+        var kingdom = Engine.findKingdom(town.kingdomId);
+        if (!kingdom || !kingdom.laws) return 0;
+        // No tariff if player is citizen of destination kingdom
+        if (player.citizenshipKingdomId === town.kingdomId) return 0;
+        // Check open_market special law (no tariffs)
+        var specialLaws = kingdom.laws.specialLaws || [];
+        for (var i = 0; i < specialLaws.length; i++) {
+            if (specialLaws[i] === 'open_market') return 0;
+        }
+        var tariff = kingdom.laws.tradeTariff || 0;
+        // Check foreign_ban special law (+25% surcharge)
+        for (var j = 0; j < specialLaws.length; j++) {
+            if (specialLaws[j] === 'foreign_ban') tariff += 0.25;
+        }
+        return Math.min(tariff, 0.35);
+    }
+
+    // Helper: apply tariff to a caravan sale revenue and credit kingdom
+    function _applyCaravanTariff(grossRevenue, townId) {
+        var tariffRate = _getCaravanTariffRate(townId);
+        if (tariffRate <= 0) return { net: grossRevenue, tariff: 0 };
+        var tariffAmount = Math.floor(grossRevenue * tariffRate);
+        var net = grossRevenue - tariffAmount;
+        // Credit tariff to destination kingdom
+        var town = Engine.findTown(townId);
+        if (town && town.kingdomId) {
+            var kingdom = Engine.findKingdom(town.kingdomId);
+            if (kingdom) {
+                kingdom.gold = (kingdom.gold || 0) + tariffAmount;
+                kingdom.taxRevenue = (kingdom.taxRevenue || 0) + tariffAmount;
+                kingdom.tradeTaxRevenue = (kingdom.tradeTaxRevenue || 0) + tariffAmount;
+            }
+        }
+        return { net: Math.max(1, net), tariff: tariffAmount };
+    }
+
     function processCaravanOrders(caravan, townId, isReturnLeg) {
         var town = Engine.findTown(townId);
         if (!town) return;
@@ -4070,9 +4117,11 @@
                         }
                         var remainder = storeQty - stored;
                         if (remainder > 0 && caravan.overflowSell) {
-                            // Sell overflow to market
+                            // Sell overflow to market (with tariff)
                             var _ovP = town.market.prices[o.good] || 1;
-                            var _ovR = Math.floor(_ovP * remainder);
+                            var _ovGross = Math.floor(_ovP * remainder);
+                            var _ovTar = _applyCaravanTariff(_ovGross, townId);
+                            var _ovR = _ovTar.net;
                             player.gold += _ovR;
                             logFinance(_ovR, 'caravan_sales', 'Caravan overflow sold ' + remainder + ' ' + res.name);
                             player.stats.totalGoldEarned += _ovR;
@@ -4080,7 +4129,7 @@
                             town.market.supply[o.good] = (town.market.supply[o.good] || 0) + remainder;
                             player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + remainder;
                             stored += remainder;
-                            logCaravan(caravan, '💰 Building full — sold overflow ' + remainder + ' ' + resName + ' for ' + _ovR + 'g.');
+                            logCaravan(caravan, '💰 Building full — sold overflow ' + remainder + ' ' + resName + ' for ' + _ovR + 'g.' + (_ovTar.tariff > 0 ? ' (tariff: ' + _ovTar.tariff + 'g)' : ''));
                         } else if (remainder > 0) {
                             logCaravan(caravan, '⚠️ ' + remainder + ' ' + resName + ' could not be stored — building full. Keeping on caravan.');
                         }
@@ -4122,9 +4171,11 @@
                     // Overflow: sell to market or keep on caravan
                     if (_storeRemaining > 0) {
                         if (caravan.overflowSell) {
-                            // Sell overflow to town market
+                            // Sell overflow to town market (with tariff)
                             var _ovPrice = town.market.prices[o.good] || 1;
-                            var _ovRevenue = Math.floor(_ovPrice * _storeRemaining);
+                            var _ovGross2 = Math.floor(_ovPrice * _storeRemaining);
+                            var _ovTar2 = _applyCaravanTariff(_ovGross2, townId);
+                            var _ovRevenue = _ovTar2.net;
                             player.gold += _ovRevenue;
                             logFinance(_ovRevenue, 'caravan_sales', 'Caravan overflow sold ' + _storeRemaining + ' ' + res.name);
                             player.stats.totalGoldEarned += _ovRevenue;
@@ -4132,7 +4183,7 @@
                             town.market.supply[o.good] = (town.market.supply[o.good] || 0) + _storeRemaining;
                             player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + _storeRemaining;
                             stored += _storeRemaining;
-                            logCaravan(caravan, '💰 Overflow: sold ' + _storeRemaining + ' ' + resName + ' for ' + _ovRevenue + 'g at ' + townName + ' market.');
+                            logCaravan(caravan, '💰 Overflow: sold ' + _storeRemaining + ' ' + resName + ' for ' + _ovRevenue + 'g at ' + townName + ' market.' + (_ovTar2.tariff > 0 ? ' (tariff: ' + _ovTar2.tariff + 'g)' : ''));
                         } else {
                             // Keep on caravan — notify player
                             logCaravan(caravan, '⚠️ No building space for ' + _storeRemaining + ' ' + resName + ' at ' + townName + '. Keeping on caravan.');
@@ -4158,7 +4209,9 @@
                     logCaravan(caravan, '💰 No ' + resName + ' on caravan to sell at ' + townName + '.');
                     continue;
                 }
-                var revenue = Math.floor(sellPrice * sellQty);
+                var grossRevenue = Math.floor(sellPrice * sellQty);
+                var _cTariff = _applyCaravanTariff(grossRevenue, townId);
+                var revenue = _cTariff.net;
                 player.gold += revenue;
                 logFinance(revenue, 'caravan_sales', 'Caravan sold ' + sellQty + ' ' + res.name);
                 player.stats.totalGoldEarned += revenue;
@@ -4167,7 +4220,8 @@
                 caravan.goods[o.good] = (caravan.goods[o.good] || 0) - sellQty;
                 if (caravan.goods[o.good] <= 0) delete caravan.goods[o.good];
                 player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + sellQty;
-                logCaravan(caravan, '💰 Sold ' + sellQty + ' ' + resName + ' for ' + revenue + 'g at ' + townName + '.');
+                var _tariffMsg = _cTariff.tariff > 0 ? ' (tariff: ' + _cTariff.tariff + 'g)' : '';
+                logCaravan(caravan, '💰 Sold ' + sellQty + ' ' + resName + ' for ' + revenue + 'g at ' + townName + '.' + _tariffMsg);
             }
         }
 
@@ -4186,14 +4240,17 @@
             } else {
                 var remPrice = town.market.prices[gId] || 1;
                 if (hasSkill('trade_route_mastery')) remPrice *= 1.10;
-                var remRev = Math.floor(remPrice * remQty);
+                var remGross = Math.floor(remPrice * remQty);
+                var remTar = _applyCaravanTariff(remGross, townId);
+                var remRev = remTar.net;
                 player.gold += remRev;
                 logFinance(remRev, 'caravan_sales', 'Caravan auto-sold ' + (findResource(gId) ? findResource(gId).name : gId));
                 player.stats.totalGoldEarned += remRev;
                 caravan.totalProfit = (caravan.totalProfit || 0) + remRev;
                 town.market.supply[gId] = (town.market.supply[gId] || 0) + remQty;
                 player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + remQty;
-                logCaravan(caravan, '💰 Auto-sold ' + remQty + ' ' + (findResource(gId) ? findResource(gId).name : gId) + ' for ' + remRev + 'g at ' + townName + '.');
+                var _remTMsg = remTar.tariff > 0 ? ' (tariff: ' + remTar.tariff + 'g)' : '';
+                logCaravan(caravan, '💰 Auto-sold ' + remQty + ' ' + (findResource(gId) ? findResource(gId).name : gId) + ' for ' + remRev + 'g at ' + townName + '.' + _remTMsg);
             }
             delete caravan.goods[gId];
         }
@@ -4598,13 +4655,16 @@
                             } else {
                                 let price = destTown.market.prices[resId] || 1;
                                 if (hasSkill('trade_route_mastery')) price *= 1.10;
-                                const revenue = Math.floor(price * qty);
+                                const grossRev = Math.floor(price * qty);
+                                const _legTar = _applyCaravanTariff(grossRev, destTownId);
+                                const revenue = _legTar.net;
                                 player.gold += revenue;
                                 logFinance(revenue, 'caravan_sales', 'Caravan sold goods');
                                 player.stats.totalGoldEarned += revenue;
                                 tripRevenue += revenue;
                                 destTown.market.supply[resId] = (destTown.market.supply[resId] || 0) + qty;
-                                Engine.logEvent(`Caravan goods sold at ${destTown.name}: ${qty} ${resId} for ${revenue}g.`);
+                                var _legTMsg = _legTar.tariff > 0 ? ' (tariff: ' + _legTar.tariff + 'g)' : '';
+                                Engine.logEvent('Caravan goods sold at ' + destTown.name + ': ' + qty + ' ' + resId + ' for ' + revenue + 'g.' + _legTMsg);
                             }
                         }
                         caravan.totalProfit = (caravan.totalProfit || 0) + tripRevenue;

@@ -20858,13 +20858,37 @@
                     var destTown = findTown(caravan.toTownId);
                     if (destTown && destTown.market) {
                         var totalRevenue = 0;
+                        var totalTariffPaid = 0;
+                        // Determine tariff: foreign caravans pay destination kingdom tariff
+                        var _cDestK = destTown.kingdomId ? findKingdom(destTown.kingdomId) : null;
+                        var _cOriginTown = findTown(caravan.fromTownId);
+                        var _cOriginKId = _cOriginTown ? _cOriginTown.kingdomId : null;
+                        var _cTariffRate = 0;
+                        if (_cDestK && _cDestK.laws && _cOriginKId !== destTown.kingdomId) {
+                            _cTariffRate = _cDestK.laws.tradeTariff || 0;
+                            var _cSpecLaws = _cDestK.laws.specialLaws || [];
+                            for (var _sli = 0; _sli < _cSpecLaws.length; _sli++) {
+                                if (_cSpecLaws[_sli] === 'open_market') { _cTariffRate = 0; break; }
+                                if (_cSpecLaws[_sli] === 'foreign_ban') _cTariffRate += 0.25;
+                            }
+                            _cTariffRate = Math.min(_cTariffRate, 0.35);
+                        }
                         for (var resId in caravan.goods) {
                             var qty = caravan.goods[resId] || 0;
                             if (qty <= 0) continue;
                             var price = destTown.market.prices[resId] || 1;
-                            var revenue = Math.floor(price * qty * 0.85); // 15% caravan overhead
+                            var grossRevenue = Math.floor(price * qty * 0.85); // 15% caravan overhead
+                            var tariffAmt = Math.floor(grossRevenue * _cTariffRate);
+                            var revenue = grossRevenue - tariffAmt;
                             totalRevenue += revenue;
+                            totalTariffPaid += tariffAmt;
                             destTown.market.supply[resId] = (destTown.market.supply[resId] || 0) + qty;
+                        }
+                        // Credit tariff to destination kingdom
+                        if (totalTariffPaid > 0 && _cDestK) {
+                            _cDestK.gold = (_cDestK.gold || 0) + totalTariffPaid;
+                            _cDestK.taxRevenue = (_cDestK.taxRevenue || 0) + totalTariffPaid;
+                            _cDestK.tariffRevenue = (_cDestK.tariffRevenue || 0) + totalTariffPaid;
                         }
 
                         // Credit owner
@@ -20930,13 +20954,37 @@
                     var originTown = findTown(caravan.fromTownId);
                     if (originTown && originTown.market) {
                         var returnRevenue = 0;
+                        var returnTariffPaid = 0;
+                        // Determine tariff for return leg
+                        var _rDestK = originTown.kingdomId ? findKingdom(originTown.kingdomId) : null;
+                        var _rFromTown = findTown(caravan.toTownId);
+                        var _rFromKId = _rFromTown ? _rFromTown.kingdomId : null;
+                        var _rTariffRate = 0;
+                        if (_rDestK && _rDestK.laws && _rFromKId !== originTown.kingdomId) {
+                            _rTariffRate = _rDestK.laws.tradeTariff || 0;
+                            var _rSpecLaws = _rDestK.laws.specialLaws || [];
+                            for (var _rsli = 0; _rsli < _rSpecLaws.length; _rsli++) {
+                                if (_rSpecLaws[_rsli] === 'open_market') { _rTariffRate = 0; break; }
+                                if (_rSpecLaws[_rsli] === 'foreign_ban') _rTariffRate += 0.25;
+                            }
+                            _rTariffRate = Math.min(_rTariffRate, 0.35);
+                        }
                         for (var rr in caravan.goods) {
                             var rQty = caravan.goods[rr] || 0;
                             if (rQty <= 0) continue;
                             var rPrice = originTown.market.prices[rr] || 1;
-                            var rRev = Math.floor(rPrice * rQty * 0.85);
+                            var rGross = Math.floor(rPrice * rQty * 0.85);
+                            var rTarAmt = Math.floor(rGross * _rTariffRate);
+                            var rRev = rGross - rTarAmt;
                             returnRevenue += rRev;
+                            returnTariffPaid += rTarAmt;
                             originTown.market.supply[rr] = (originTown.market.supply[rr] || 0) + rQty;
+                        }
+                        // Credit tariff to origin kingdom
+                        if (returnTariffPaid > 0 && _rDestK) {
+                            _rDestK.gold = (_rDestK.gold || 0) + returnTariffPaid;
+                            _rDestK.taxRevenue = (_rDestK.taxRevenue || 0) + returnTariffPaid;
+                            _rDestK.tariffRevenue = (_rDestK.tariffRevenue || 0) + returnTariffPaid;
                         }
 
                         if (caravan.ownerType === 'em') {
@@ -24384,7 +24432,8 @@
         }
 
         // Lobby against high tariffs (social EMs with good relationship)
-        if (emRank >= 2 && rel > 15 && (personality.social || 50) > 55 && (kingdom.tariffRate || 0) > 0.10 && rng.chance(0.1)) {
+        var _lobbyTariff = (kingdom.laws && kingdom.laws.tradeTariff) || 0;
+        if (emRank >= 2 && rel > 15 && (personality.social || 50) > 55 && _lobbyTariff > 0.10 && rng.chance(0.1)) {
             var lobbyFee = Math.floor(100 + emRank * 150);
             if ((em.gold || 0) >= lobbyFee) {
                 em.gold -= lobbyFee;
@@ -24395,10 +24444,10 @@
                 if (kp4.greed === 'miserly') tariffReduceChance -= 0.15;
                 if (rel > 40) tariffReduceChance += 0.1;
                 if (rng.chance(Math.max(0.05, tariffReduceChance))) {
-                    var oldTariff = kingdom.tariffRate || 0;
-                    kingdom.tariffRate = Math.max(0.01, oldTariff - 0.02);
+                    var oldTariff = _lobbyTariff;
+                    kingdom.laws.tradeTariff = Math.max(0.01, oldTariff - 0.02);
                     rel += 3;
-                    logEvent(em.firstName + ' ' + (em.lastName || '') + ' successfully lobbies ' + kingdom.name + ' to reduce tariffs from ' + Math.round(oldTariff * 100) + '% to ' + Math.round(kingdom.tariffRate * 100) + '%.', {
+                    logEvent(em.firstName + ' ' + (em.lastName || '') + ' successfully lobbies ' + kingdom.name + ' to reduce tariffs from ' + Math.round(oldTariff * 100) + '% to ' + Math.round(kingdom.laws.tradeTariff * 100) + '%.', {
                         type: 'elite_lobby_tariff',
                         cause: em.firstName + ' uses court influence to push for trade reform.',
                         effects: ['Tariff reduced by 2%', 'All merchants benefit from lower trade costs']
