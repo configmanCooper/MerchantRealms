@@ -3933,12 +3933,14 @@
         // Check open_market special law (no tariffs)
         var specialLaws = kingdom.laws.specialLaws || [];
         for (var i = 0; i < specialLaws.length; i++) {
-            if (specialLaws[i] === 'open_market') return 0;
+            var _slId = typeof specialLaws[i] === 'string' ? specialLaws[i] : (specialLaws[i].id || '');
+            if (_slId === 'open_market') return 0;
         }
         var tariff = kingdom.laws.tradeTariff || 0;
         // Check foreign_ban special law (+25% surcharge)
         for (var j = 0; j < specialLaws.length; j++) {
-            if (specialLaws[j] === 'foreign_ban') tariff += 0.25;
+            var _slId2 = typeof specialLaws[j] === 'string' ? specialLaws[j] : (specialLaws[j].id || '');
+            if (_slId2 === 'foreign_ban') tariff += 0.25;
         }
         return Math.min(tariff, 0.35);
     }

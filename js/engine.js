@@ -20868,8 +20868,9 @@
                             _cTariffRate = _cDestK.laws.tradeTariff || 0;
                             var _cSpecLaws = _cDestK.laws.specialLaws || [];
                             for (var _sli = 0; _sli < _cSpecLaws.length; _sli++) {
-                                if (_cSpecLaws[_sli] === 'open_market') { _cTariffRate = 0; break; }
-                                if (_cSpecLaws[_sli] === 'foreign_ban') _cTariffRate += 0.25;
+                                var _csId = typeof _cSpecLaws[_sli] === 'string' ? _cSpecLaws[_sli] : (_cSpecLaws[_sli].id || '');
+                                if (_csId === 'open_market') { _cTariffRate = 0; break; }
+                                if (_csId === 'foreign_ban') _cTariffRate += 0.25;
                             }
                             _cTariffRate = Math.min(_cTariffRate, 0.35);
                         }
@@ -20964,8 +20965,9 @@
                             _rTariffRate = _rDestK.laws.tradeTariff || 0;
                             var _rSpecLaws = _rDestK.laws.specialLaws || [];
                             for (var _rsli = 0; _rsli < _rSpecLaws.length; _rsli++) {
-                                if (_rSpecLaws[_rsli] === 'open_market') { _rTariffRate = 0; break; }
-                                if (_rSpecLaws[_rsli] === 'foreign_ban') _rTariffRate += 0.25;
+                                var _rsId = typeof _rSpecLaws[_rsli] === 'string' ? _rSpecLaws[_rsli] : (_rSpecLaws[_rsli].id || '');
+                                if (_rsId === 'open_market') { _rTariffRate = 0; break; }
+                                if (_rsId === 'foreign_ban') _rTariffRate += 0.25;
                             }
                             _rTariffRate = Math.min(_rTariffRate, 0.35);
                         }
