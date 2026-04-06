@@ -17193,7 +17193,15 @@ window.UI = (function () {
         html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:10px;margin-bottom:10px;">';
         html += '<h3 style="margin:0 0 8px 0;font-size:0.9rem;color:var(--gold);">🏅 Noble Privileges</h3>';
         html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:0.75rem;">';
-        html += '<div style="color:#aaa;">Tax Discount:</div><div style="color:#55a868;font-weight:bold;">' + Math.floor((rankDef.taxDiscount || 0) * 100) + '%</div>';
+        if (rankDef.taxExempt) {
+            html += '<div style="color:#aaa;">Tax Status:</div><div style="color:#55a868;font-weight:bold;">Exempt from all kingdom taxes</div>';
+        } else if (rankDef.lordTaxFree) {
+            var _lordTownName = 'your lord town';
+            try { if (Player.lordTownId) { var _lt = Engine.findTown(Player.lordTownId); if (_lt) _lordTownName = _lt.name; } } catch(e) {}
+            html += '<div style="color:#aaa;">Tax Status:</div><div style="color:#55a868;font-weight:bold;">Tax-free in ' + _lordTownName + ', 10% discount elsewhere</div>';
+        } else {
+            html += '<div style="color:#aaa;">Tax Discount:</div><div style="color:#55a868;font-weight:bold;">' + Math.floor((rankDef.taxDiscount || 0) * 100) + '%' + (playerRank >= 1 ? ' + no foreign surcharge' : '') + '</div>';
+        }
         if (rankDef.petitionBonus) {
             html += '<div style="color:#aaa;">Petition Bonus:</div><div style="color:#55a868;font-weight:bold;">+' + Math.floor((rankDef.petitionBonus || 0) * 100) + '%</div>';
         }
@@ -17315,7 +17323,7 @@ window.UI = (function () {
             var law = specialLaws[i];
             html += '<button class="btn-medieval" onclick="(function(){var r=Player.proposeLaw(\'' + kingdomId + '\',\'' + law.id + '\');UI.toast(r&&r.message?r.message:\'Law proposed.\',r&&r.success?\'success\':\'warning\');UI.closeModal();UI.openNobilityDialog();})()" style="display:block;width:100%;text-align:left;font-size:0.75rem;padding:6px 10px;margin-bottom:3px;">';
             html += '<span>' + (law.icon || '📜') + ' <strong>' + law.name + '</strong></span><br>';
-            html += '<span style="font-size:0.68rem;color:#aaa;">' + (law.desc || '') + '</span>';
+            html += '<span style="font-size:0.7rem;color:#d4c9a0;">' + (law.desc || '') + '</span>';
             html += '</button>';
         }
         html += '</div>';

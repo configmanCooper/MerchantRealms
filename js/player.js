@@ -9487,7 +9487,7 @@
                     '<div>🪙 Purchase trade licenses</div>' +
                     '<div>🗳️ Vote in town matters</div>' +
                     '<div>👥 Hire up to 4 workers</div>' +
-                    '<div>📉 5% trade tax discount</div>' +
+                    '<div>📉 5% trade tax discount + no foreign surcharge</div>' +
                     '<div>🛡️ Legal protections</div>' +
                     '</div></div></div>';
             }
@@ -9523,7 +9523,7 @@
                     '<div>📜 File 2 petitions per year</div>' +
                     '<div>👥 Hire up to 15 workers</div>' +
                     '<div>🏠 Own up to 8 buildings</div>' +
-                    '<div>📉 5% trade tax discount</div>' +
+                    '<div>📉 5% trade tax discount + no foreign surcharge</div>' +
                     '</div></div></div>';
             }
         },
@@ -9559,7 +9559,7 @@
                     '<div>⚔️ Trade weapons legally</div>' +
                     '<div>📜 File 4 petitions per year</div>' +
                     '<div>👥 Hire up to 35 workers</div>' +
-                    '<div>📉 5% trade tax discount</div>' +
+                    '<div>📉 5% trade tax discount + no foreign surcharge</div>' +
                     '</div></div>' +
                     '<div style="margin-top:12px;padding:12px;background:rgba(212,175,55,0.08);border:1px solid rgba(212,175,55,0.3);border-radius:6px;">' +
                     '<div style="color:#ffd700;font-weight:bold;margin-bottom:8px;">👑 The Road to Nobility</div>' +
@@ -9617,7 +9617,7 @@
                     '<div>🌍 Foreign Minor Noble status</div>' +
                     '<div>📜 File 6 petitions per year</div>' +
                     '<div>👥 Hire up to 70 workers</div>' +
-                    '<div>📉 5% trade tax discount</div>' +
+                    '<div>📉 10% trade tax discount</div>' +
                     '</div></div>' +
                     '<div style="margin-top:10px;padding:12px;background:rgba(200,100,100,0.08);border:1px solid rgba(200,100,100,0.3);border-radius:6px;">' +
                     '<div style="color:#ff8888;font-weight:bold;margin-bottom:8px;">⚠️ Noble Responsibilities</div>' +
@@ -9664,7 +9664,7 @@
                     '<div>🛡️ Caravan guards paid by the crown</div>' +
                     '<div>📜 File 12 petitions per year</div>' +
                     '<div>👥 Unlimited workers & buildings</div>' +
-                    '<div>📉 5% trade tax discount</div>' +
+                    '<div>📉 Tax-free in your lord town, 10% discount elsewhere</div>' +
                     '</div></div>' +
                     '<div style="margin-top:10px;padding:12px;background:rgba(200,100,100,0.08);border:1px solid rgba(200,100,100,0.3);border-radius:6px;">' +
                     '<div style="color:#ff8888;font-weight:bold;margin-bottom:8px;">⚠️ Lord Responsibilities</div>' +
@@ -9718,9 +9718,8 @@
                     '<div>🗳️ Vote in royal succession</div>' +
                     '<div>👑 Sway over the king\'s decisions</div>' +
                     '<div>📜 Unlimited petitions per year</div>' +
-                    '<div>📉 5% trade tax discount</div>' +
+                    '<div>💰 Exempt from all kingdom taxes</div>' +
                     '<div>♾️ No limits on workers or buildings</div>' +
-                    '</div></div>' +
                     '<div style="margin-top:10px;padding:12px;background:rgba(200,100,100,0.08);border:1px solid rgba(200,100,100,0.3);border-radius:6px;">' +
                     '<div style="color:#ff8888;font-weight:bold;margin-bottom:8px;">⚠️ The Weight of the Crown</div>' +
                     '<div style="font-size:0.9em;">' +
