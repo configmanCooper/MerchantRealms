@@ -1778,19 +1778,19 @@ window.Renderer = (function () {
             var keys = Object.keys(town.naturalDeposits);
             var resources = [];
             for (var k = 0; k < keys.length; k++) {
-                if (town.naturalDeposits[keys[k]] > 0) {
-                    resources.push({ id: keys[k], amount: town.naturalDeposits[keys[k]] });
+                var amt = town.naturalDeposits[keys[k]];
+                if (amt > 0) {
+                    resources.push({ id: keys[k], amount: amt });
                 }
             }
             if (resources.length === 0) continue;
 
-            // Compact label below town: icon amount  icon amount ...
-            var fontSize = Math.max(8, Math.min(12, 10 * camera.zoom));
+            // Compact label rows below town: icon pct%  icon pct% ...
+            var fontSize = Math.max(8, Math.min(11, 9 * camera.zoom));
             ctx.font = 'bold ' + fontSize + 'px sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'top';
 
-            // Build label entries: split into rows of up to 4 resources each
             var rowSize = 4;
             var yOff = 18;
             for (var row = 0; row < Math.ceil(resources.length / rowSize); row++) {
@@ -1802,7 +1802,6 @@ window.Renderer = (function () {
                     var amt = r.amount >= 1000 ? Math.round(r.amount / 1000) + 'k' : r.amount;
                     label += (ri > 0 ? '  ' : '') + icon + amt;
                 }
-                // Draw with dark outline for readability
                 var ly = town.y + yOff + row * (fontSize + 3);
                 ctx.strokeStyle = 'rgba(0,0,0,0.8)';
                 ctx.lineWidth = 2.5;
