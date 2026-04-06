@@ -1247,6 +1247,14 @@
         qty = Number(qty);
         if (!qty || !isFinite(qty) || qty <= 0) return { success: false, message: 'Invalid quantity.' };
         qty = Math.floor(qty);
+
+        // Nobles cannot smuggle against their own kingdom — it's beneath their station and treasonous
+        var _smNobleRank = player.socialRank[kingdom.id] || 0;
+        if (_smNobleRank >= 4) {
+            var _smRankName = CONFIG.SOCIAL_RANKS[_smNobleRank] ? CONFIG.SOCIAL_RANKS[_smNobleRank].name : 'noble';
+            return { success: false, message: 'As a ' + _smRankName + ' of ' + (kingdom.name || 'this kingdom') + ', smuggling against your own kingdom is treason. Your noble oath forbids it.' };
+        }
+
         const rng = Engine.getRng();
         const rankIdx = player.socialRank[kingdom.id] || 0;
         let detectionChance = CONFIG.SMUGGLING_BASE_DETECTION
@@ -2248,6 +2256,28 @@
         const toTown = Engine.findTown(toTownId);
         if (!fromTown || !toTown) return { success: false, message: 'Invalid town.' };
         if (fromTownId === toTownId) return { success: false, message: 'Origin and destination are the same.' };
+
+        // Nobles cannot send caravans to enemy kingdoms during wartime
+        var _fromKId = fromTown.kingdomId;
+        var _toKId = toTown.kingdomId;
+        if (_fromKId && _toKId && _fromKId !== _toKId) {
+            var _nobleRank = 0;
+            for (var _nk in player.socialRank) {
+                if ((player.socialRank[_nk] || 0) >= 4) _nobleRank = Math.max(_nobleRank, player.socialRank[_nk]);
+            }
+            if (_nobleRank >= 4) {
+                try {
+                    var _worldData = Engine.getWorld ? Engine.getWorld() : {};
+                    var _wars = _worldData.activeWars || {};
+                    for (var _wId in _wars) {
+                        var _w = _wars[_wId];
+                        if (_w.active !== false && ((_w.kingdomA === _fromKId && _w.kingdomB === _toKId) || (_w.kingdomA === _toKId && _w.kingdomB === _fromKId))) {
+                            return { success: false, message: 'As nobility, you cannot send caravans to enemy territory during wartime. Your loyalty to your kingdom forbids it.' };
+                        }
+                    }
+                } catch(e) {}
+            }
+        }
 
         options = options || {};
         const buyOrders = options.buyOrders || null;
@@ -3658,6 +3688,27 @@
         if (fromTownId === toTownId) return { success: false, message: 'Origin and destination are the same.' };
         if (!fromTown.isPort || !toTown.isPort) return { success: false, message: 'Both towns must be ports for sea trade.' };
 
+        // Nobles cannot send sea caravans to enemy kingdoms during wartime
+        var _sfKId = fromTown.kingdomId;
+        var _stKId = toTown.kingdomId;
+        if (_sfKId && _stKId && _sfKId !== _stKId) {
+            var _sNobleRank = 0;
+            for (var _snk in player.socialRank) {
+                if ((player.socialRank[_snk] || 0) >= 4) _sNobleRank = Math.max(_sNobleRank, player.socialRank[_snk]);
+            }
+            if (_sNobleRank >= 4) {
+                try {
+                    var _sWorldData = Engine.getWorld ? Engine.getWorld() : {};
+                    var _sWars = _sWorldData.activeWars || {};
+                    for (var _swId in _sWars) {
+                        var _sw = _sWars[_swId];
+                        if (_sw.active !== false && ((_sw.kingdomA === _sfKId && _sw.kingdomB === _stKId) || (_sw.kingdomA === _stKId && _sw.kingdomB === _sfKId))) {
+                            return { success: false, message: 'As nobility, you cannot send sea caravans to enemy territory during wartime. Your loyalty to your kingdom forbids it.' };
+                        }
+                    }
+                } catch(e) {}
+            }
+        }
         // Resolve ship: owned or rental
         var shipId = options.shipId || null;
         var rentalShipType = options.rentalShipType || null;
@@ -17845,6 +17896,17 @@
         if ((player.socialRank[kingdomId] || 0) >= 1) return { success: false, message: 'Already a citizen of this kingdom.' };
         const town = Engine.findTown(player.townId);
         if (!town || town.kingdomId !== kingdomId) return { success: false, message: 'Must be in a town of that kingdom.' };
+
+        // Nobles cannot gain citizenship in another kingdom — they are bound to their noble kingdom
+        for (var _nkId in player.socialRank) {
+            if ((player.socialRank[_nkId] || 0) >= 4 && _nkId !== kingdomId) {
+                var _nkName = '';
+                try { var _nk = Engine.findKingdom(_nkId); _nkName = _nk ? _nk.name : _nkId; } catch(e) { _nkName = _nkId; }
+                var _nRankName = CONFIG.SOCIAL_RANKS[player.socialRank[_nkId]] ? CONFIG.SOCIAL_RANKS[player.socialRank[_nkId]].name : 'noble';
+                return { success: false, message: 'As a ' + _nRankName + ' of ' + _nkName + ', you cannot take citizenship elsewhere. Your loyalty must remain with your kingdom.' };
+            }
+        }
+
         const rep = player.reputation[kingdomId] || 0;
         if (rep < CONFIG.CITIZENSHIP_MIN_REPUTATION) return { success: false, message: `Need ${CONFIG.CITIZENSHIP_MIN_REPUTATION} reputation (have ${Math.floor(rep)}).` };
 
@@ -17952,6 +18014,13 @@
     function renounceKingdom(kingdomId) {
         if (!kingdomId) return { success: false, message: 'No kingdom specified.' };
         if ((player.socialRank[kingdomId] || 0) < 1) return { success: false, message: 'You have no rank in this kingdom.' };
+
+        // Nobles (Minor Noble+) cannot renounce — they must side with their kingdom
+        if ((player.socialRank[kingdomId] || 0) >= 4) {
+            var nobleName = CONFIG.SOCIAL_RANKS[player.socialRank[kingdomId]] ? CONFIG.SOCIAL_RANKS[player.socialRank[kingdomId]].name : 'noble';
+            return { success: false, message: 'As a ' + nobleName + ', you are bound to this kingdom. Renouncing your oath would be treason. You must maintain your loyalty or face demotion.' };
+        }
+
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.renounce_kingdom || 3);
         const kingdom = Engine.findKingdom(kingdomId);
         const rankName = CONFIG.SOCIAL_RANKS[player.socialRank[kingdomId]] ? CONFIG.SOCIAL_RANKS[player.socialRank[kingdomId]].name : 'Unknown';
@@ -18001,6 +18070,15 @@
         if (!player.pendingWarChoice) return { success: false, message: 'No war conflict pending.' };
         const conflict = player.pendingWarChoice;
         const abandonedId = (chosenKingdomId === conflict.kingdom1) ? conflict.kingdom2 : conflict.kingdom1;
+
+        // Nobles MUST side with the kingdom where they hold noble rank (4+)
+        var nobleRankInAbandoned = (player.socialRank[abandonedId] || 0) >= 4;
+        var nobleRankInChosen = (player.socialRank[chosenKingdomId] || 0) >= 4;
+        if (nobleRankInAbandoned && !nobleRankInChosen) {
+            var _abK = Engine.findKingdom(abandonedId);
+            var _abRankName = CONFIG.SOCIAL_RANKS[player.socialRank[abandonedId]] ? CONFIG.SOCIAL_RANKS[player.socialRank[abandonedId]].name : 'noble';
+            return { success: false, message: 'As a ' + _abRankName + ' of ' + (_abK ? _abK.name : abandonedId) + ', you MUST side with your kingdom. Your noble oath demands loyalty.' };
+        }
 
         const abandonedRank = CONFIG.SOCIAL_RANKS[player.socialRank[abandonedId] || 0] ? CONFIG.SOCIAL_RANKS[player.socialRank[abandonedId] || 0].name : 'Peasant';
         player.socialRank[abandonedId] = 0;
