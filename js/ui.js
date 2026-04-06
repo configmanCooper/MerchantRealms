@@ -25,6 +25,10 @@ window.UI = (function () {
     let selectedPersonId = null;
     let _bankruptcyLock = false; // When true, player must resolve bankruptcy before accessing menus
     let _encounterLocked = false; // When true, encounter dialog cannot be closed — must resolve
+    var _rightPanelTownId = null; // Track which town is shown in right panel for auto-refresh
+    var _rightPanelRefreshCounter = 0;
+    var _toastsMuted = false; // When true, toast popups are suppressed but events still log
+    try { _toastsMuted = localStorage.getItem('mr_toasts_muted') === 'true'; } catch(e) {}
 
     function _isBankruptcyBlocked() {
         if (!_bankruptcyLock) return false;
@@ -509,6 +513,7 @@ window.UI = (function () {
         el.leftPanel.classList.add('hidden');
         el.bottomBar.classList.add('hidden');
         el.rightPanel.classList.add('hidden');
+        _rightPanelTownId = null;
         closeModal();
         // Hide god mode panel if open
         var godPanel = document.getElementById('god-mode-panel');
@@ -728,6 +733,7 @@ window.UI = (function () {
                 updateHungerBar();
                 updateFatigueBar();
                 updateHealthBar();
+                updateConditionsIndicator();
 
                 // Rest button — always visible; grey out when traveling
                 const btnRest = document.getElementById('btnRest');
@@ -853,6 +859,25 @@ window.UI = (function () {
         if (familyBtn) {
             familyBtn.style.display = (typeof Player !== 'undefined' && Player.familyMembers && Player.familyMembers.length > 0) ? '' : 'none';
         }
+
+        // Auto-refresh town view panel (every ~12 update calls ≈ once per second)
+        if (_rightPanelTownId && el.rightPanel && !el.rightPanel.classList.contains('hidden')) {
+            _rightPanelRefreshCounter++;
+            if (_rightPanelRefreshCounter >= 12) {
+                _rightPanelRefreshCounter = 0;
+                try {
+                    var _rpTown = Engine.findTown ? Engine.findTown(_rightPanelTownId) : null;
+                    if (_rpTown) {
+                        // Preserve scroll position during refresh
+                        var _rpScroll = el.rightPanelBody ? el.rightPanelBody.scrollTop : 0;
+                        showTownDetail(_rpTown);
+                        if (el.rightPanelBody && _rpScroll > 0) el.rightPanelBody.scrollTop = _rpScroll;
+                    }
+                } catch (e) { /* no-op */ }
+            }
+        } else {
+            _rightPanelRefreshCounter = 0;
+        }
     }
 
     function updateReputationBars() {
@@ -918,11 +943,13 @@ window.UI = (function () {
 
     function closeRightPanel() {
         el.rightPanel.classList.add('hidden');
+        _rightPanelTownId = null;
     }
 
     function showTownDetail(town) {
         if (!town) return;
         if (_isBankruptcyBlocked()) { toast('💸 You must resolve your bankruptcy first!', 'danger', 'critical'); return; }
+        _rightPanelTownId = town.id;
         let kingdom;
         try { kingdom = Engine.getKingdom(town.kingdomId); } catch (e) { /* no-op */ }
         const kName = kingdom ? kingdom.name : 'Unknown';
@@ -1709,6 +1736,7 @@ window.UI = (function () {
 
     function showKingdomDetail(kingdom) {
         if (!kingdom) return;
+        _rightPanelTownId = null;
         const kColor = kingdom.color || CONFIG.KINGDOM_COLORS[kingdom.id % CONFIG.KINGDOM_COLORS.length];
 
         // Get king name
@@ -1978,6 +2006,7 @@ window.UI = (function () {
     }
 
     function showPersonDetail(person) {
+        _rightPanelTownId = null;
         if (!person) return;
         if (typeof person === 'string') {
             person = Engine.getPerson(person);
@@ -2413,6 +2442,7 @@ window.UI = (function () {
     }
 
     function showRoadDetail(road) {
+        _rightPanelTownId = null;
         if (!road) return;
         const fromName = road.fromTown ? road.fromTown.name : 'Unknown';
         const toName = road.toTown ? road.toTown.name : 'Unknown';
@@ -9636,6 +9666,12 @@ window.UI = (function () {
         var html = '<h3 style="margin-top:0;color:var(--gold);">📢 Notification Filters</h3>';
         html += '<p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:12px;">Control which notifications you see. Critical alerts (jail, death, ship sunk) always show.</p>';
 
+        // Master toast mute toggle
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;margin-bottom:12px;background:' + (_toastsMuted ? 'rgba(196,78,82,0.15)' : 'rgba(85,168,104,0.15)') + ';border:1px solid ' + (_toastsMuted ? 'rgba(196,78,82,0.4)' : 'rgba(85,168,104,0.4)') + ';border-radius:6px;">';
+        html += '<div><span style="font-size:1rem;font-weight:bold;">' + (_toastsMuted ? '🔇' : '🔔') + ' Toast Pop-ups</span><br><span style="font-size:0.75rem;color:var(--text-muted);">Toggle all toast pop-ups on/off. Events still appear in the notification log.</span></div>';
+        html += '<button class="btn-medieval" style="font-size:0.8rem;padding:4px 14px;' + (_toastsMuted ? 'background:#c44e52;color:#fff;' : 'background:#55a868;color:#fff;') + '" onclick="UI._toggleToastMute()">' + (_toastsMuted ? 'Muted' : 'On') + '</button>';
+        html += '</div>';
+
         for (var fi = 0; fi < filterDefs.length; fi++) {
             var f = filterDefs[fi];
             var val = filters[f.key];
@@ -9683,6 +9719,12 @@ window.UI = (function () {
             Player.setNotifFilter(key, value);
             openSettings(); // refresh
         }
+    }
+
+    function _toggleToastMute() {
+        _toastsMuted = !_toastsMuted;
+        try { localStorage.setItem('mr_toasts_muted', _toastsMuted ? 'true' : 'false'); } catch(e) {}
+        openSettings(); // refresh the panel
     }
 
     function showEventDetail(eventIndex) {
@@ -9791,6 +9833,9 @@ window.UI = (function () {
         if (typeof Player !== 'undefined' && Player.shouldShowNotification) {
             if (!Player.shouldShowNotification(category, null)) return;
         }
+
+        // Master toast mute — suppress all popups except critical (death, jail, bankruptcy)
+        if (_toastsMuted && category !== 'critical') return;
 
         const icons = { info: 'ℹ️', warning: '⚠️', danger: '🔴', success: '✅', achievement: '🏆' };
         const id = 'toast_' + (toastId++);
@@ -10422,41 +10467,232 @@ window.UI = (function () {
     }
 
     function showLoseScreen(message) {
-        const endTitle = document.getElementById('endTitle');
-        const endMessage = document.getElementById('endMessage');
-        if (endTitle) { endTitle.textContent = '💀 Defeat'; endTitle.style.color = '#c44e52'; }
-        let loseMsg = message || 'Your merchant ventures have come to a bitter end.';
-        if (message === 'No Heir') {
-            loseMsg = 'Your legacy dies with you. Without an heir to continue your trade empire, your name fades from history.';
+        // Pause game immediately
+        if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(0);
+
+        var deathCause = '';
+        if (typeof Player !== 'undefined' && Player.state) {
+            deathCause = Player.state.deathCause || '';
         }
-        if (endMessage) endMessage.textContent = loseMsg;
+
+        var endTitle = document.getElementById('endTitle');
+        var endMessage = document.getElementById('endMessage');
+        if (endTitle) { endTitle.textContent = '💀 Defeat'; endTitle.style.color = '#c44e52'; }
+
+        // Build cause of death message
+        var loseMsg = '';
+        if (message === 'No Heir' || message === 'Assassinated') {
+            if (deathCause) {
+                loseMsg = 'Cause of death: ' + deathCause + '.';
+            } else if (message === 'Assassinated') {
+                loseMsg = 'You were assassinated. Your enemies finally caught up with you.';
+            } else {
+                loseMsg = 'Your legacy dies with you. Without an heir, your name fades from history.';
+            }
+        } else if (message) {
+            loseMsg = message;
+        } else {
+            loseMsg = 'Your merchant ventures have come to a bitter end.';
+        }
+        if (endMessage) endMessage.innerHTML = '<span style="font-size:1.1rem;color:#e8c080;">' + loseMsg + '</span>';
+
         showEndStats();
         el.endScreen.classList.remove('hidden');
         el.endScreen.style.display = 'flex';
     }
 
     function showEndStats() {
-        const stats = (typeof Player !== 'undefined' && Player.stats) ? Player.stats : {};
-        const endStats = document.getElementById('endStats');
+        var stats = (typeof Player !== 'undefined' && Player.stats) ? Player.stats : {};
+        var endStats = document.getElementById('endStats');
         if (!endStats) return;
-        endStats.innerHTML = `
-            <span class="end-stat-label">Days Played</span><span class="end-stat-value">${stats.daysPlayed || Engine.getDay?.() || 0}</span>
-            <span class="end-stat-label">Gold Earned</span><span class="end-stat-value">${formatGold(stats.totalGoldEarned || 0)}</span>
-            <span class="end-stat-label">Gold Spent</span><span class="end-stat-value">${formatGold(stats.totalGoldSpent || 0)}</span>
-            <span class="end-stat-label">Trades Made</span><span class="end-stat-value">${stats.tradesCompleted || 0}</span>
-            <span class="end-stat-label">Final Gold</span><span class="end-stat-value">${formatGold(Player.gold || 0)}</span>
-            <span class="end-stat-label">Buildings</span><span class="end-stat-value">${Player.buildings?.length || 0}</span>
-        `;
 
-        const btnEndOk = document.getElementById('btnEndOk');
+        var daysPlayed = stats.daysPlayed || (Engine.getDay ? Engine.getDay() : 0);
+        var years = Math.floor(daysPlayed / 365);
+        var days = daysPlayed % 365;
+        var timeStr = years > 0 ? years + ' year' + (years > 1 ? 's' : '') + ', ' + days + ' day' + (days !== 1 ? 's' : '') : daysPlayed + ' day' + (daysPlayed !== 1 ? 's' : '');
+
+        // Get highest rank achieved
+        var highestRank = 0;
+        var highestRankName = 'Peasant';
+        if (typeof Player !== 'undefined' && Player.state) {
+            var sr = Player.state.socialRank || {};
+            for (var kid in sr) {
+                if (sr[kid] > highestRank) highestRank = sr[kid];
+            }
+            if (typeof CONFIG !== 'undefined' && CONFIG.SOCIAL_RANKS && CONFIG.SOCIAL_RANKS[highestRank]) {
+                highestRankName = CONFIG.SOCIAL_RANKS[highestRank].name;
+            }
+        }
+
+        // Achievement count
+        var achCount = 0;
+        var totalAch = 0;
+        if (typeof Player !== 'undefined') {
+            var pAch = Player.achievements || {};
+            for (var ak in pAch) { if (pAch[ak] && pAch[ak].unlocked) achCount++; }
+            if (typeof ACHIEVEMENTS !== 'undefined') {
+                for (var _ta in ACHIEVEMENTS) totalAch++;
+            }
+        }
+
+        endStats.innerHTML =
+            '<span class="end-stat-label">Time Lived</span><span class="end-stat-value">' + timeStr + '</span>' +
+            '<span class="end-stat-label">Gold Earned</span><span class="end-stat-value">' + formatGold(stats.totalGoldEarned || 0) + '</span>' +
+            '<span class="end-stat-label">Trades Made</span><span class="end-stat-value">' + (stats.tradesCompleted || 0) + '</span>' +
+            '<span class="end-stat-label">Buildings Owned</span><span class="end-stat-value">' + ((typeof Player !== 'undefined' && Player.buildings) ? Player.buildings.length : 0) + '</span>' +
+            '<span class="end-stat-label">Highest Rank</span><span class="end-stat-value">' + highestRankName + '</span>' +
+            '<span class="end-stat-label">Achievements</span><span class="end-stat-value">' + achCount + '/' + totalAch + '</span>' +
+            '<div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">' +
+                '<button class="btn-medieval" onclick="UI.openJournal()" style="font-size:0.82rem;padding:5px 14px;">📖 Journal</button>' +
+                '<button class="btn-medieval" onclick="UI.openAchievementsDialog()" style="font-size:0.82rem;padding:5px 14px;">🏆 Achievements</button>' +
+                '<button class="btn-medieval" onclick="UI.showBusinessLegacy()" style="font-size:0.82rem;padding:5px 14px;background:linear-gradient(135deg,rgba(180,140,60,0.4),rgba(120,90,30,0.5));border:1px solid rgba(200,170,80,0.5);">📊 Business Legacy</button>' +
+            '</div>';
+
+        var btnEndOk = document.getElementById('btnEndOk');
         if (btnEndOk) btnEndOk.onclick = function () {
             el.endScreen.classList.add('hidden');
             el.endScreen.style.display = 'none';
-            // Return to title
             hideGameUI();
             el.titleScreen.classList.remove('hidden');
             el.titleScreen.style.display = 'flex';
         };
+    }
+
+    // Business Legacy — comprehensive summary of the player's entire career
+    function showBusinessLegacy() {
+        if (typeof Player === 'undefined') return;
+        var p = Player.state || {};
+        var stats = Player.stats || {};
+        var achStats = p.achievementStats || {};
+        var day = Engine.getDay ? Engine.getDay() : 0;
+        var years = Math.floor(day / 365);
+
+        // Buildings summary
+        var buildings = Player.buildings || [];
+        var buildingTypes = {};
+        for (var bi = 0; bi < buildings.length; bi++) {
+            var bt = buildings[bi].type || 'unknown';
+            buildingTypes[bt] = (buildingTypes[bt] || 0) + 1;
+        }
+        var buildHtml = '';
+        if (buildings.length === 0) {
+            buildHtml = '<div style="color:#888;">No buildings owned.</div>';
+        } else {
+            buildHtml = '<div style="display:grid;grid-template-columns:1fr auto;gap:2px 12px;max-width:340px;margin:0 auto;">';
+            for (var btk in buildingTypes) {
+                var bLabel = btk.replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+                buildHtml += '<span style="text-align:left;">' + bLabel + '</span><span style="color:#f0c040;text-align:right;">' + buildingTypes[btk] + '</span>';
+            }
+            buildHtml += '</div>';
+        }
+
+        // Production summary — goods produced by buildings
+        var productionHtml = '';
+        var totalProduced = {};
+        for (var pi = 0; pi < buildings.length; pi++) {
+            var bld = buildings[pi];
+            if (bld.totalProduced) {
+                for (var pk in bld.totalProduced) {
+                    totalProduced[pk] = (totalProduced[pk] || 0) + bld.totalProduced[pk];
+                }
+            }
+        }
+        var prodEntries = [];
+        for (var prk in totalProduced) { if (totalProduced[prk] > 0) prodEntries.push({ good: prk, qty: totalProduced[prk] }); }
+        prodEntries.sort(function(a, b) { return b.qty - a.qty; });
+        if (prodEntries.length === 0) {
+            productionHtml = '<div style="color:#888;">No production recorded.</div>';
+        } else {
+            productionHtml = '<div style="display:grid;grid-template-columns:1fr auto;gap:2px 12px;max-width:340px;margin:0 auto;">';
+            for (var pe = 0; pe < Math.min(prodEntries.length, 15); pe++) {
+                var gLabel = prodEntries[pe].good.replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+                productionHtml += '<span style="text-align:left;">' + gLabel + '</span><span style="color:#90d090;text-align:right;">' + prodEntries[pe].qty + '</span>';
+            }
+            productionHtml += '</div>';
+        }
+
+        // Caravans summary
+        var caravans = p.caravans || [];
+        var caravansCompleted = stats.caravansCompleted || 0;
+
+        // Top traded goods (sells)
+        var sells = achStats.totalSells || {};
+        var sellEntries = [];
+        for (var sk in sells) { if (sells[sk] > 0) sellEntries.push({ good: sk, qty: sells[sk] }); }
+        sellEntries.sort(function(a, b) { return b.qty - a.qty; });
+        var top10Trades = '';
+        if (sellEntries.length === 0) {
+            top10Trades = '<div style="color:#888;">No goods sold.</div>';
+        } else {
+            top10Trades = '<div style="display:grid;grid-template-columns:auto 1fr auto;gap:2px 8px;max-width:340px;margin:0 auto;">';
+            for (var ti = 0; ti < Math.min(sellEntries.length, 10); ti++) {
+                var tLabel = sellEntries[ti].good.replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+                top10Trades += '<span style="color:#888;">#' + (ti + 1) + '</span><span style="text-align:left;">' + tLabel + '</span><span style="color:#f0c040;text-align:right;">' + sellEntries[ti].qty + '</span>';
+            }
+            top10Trades += '</div>';
+        }
+
+        // Social status per kingdom
+        var rankHtml = '';
+        var sr = p.socialRank || {};
+        var kingdoms = Engine.getKingdoms ? Engine.getKingdoms() : [];
+        for (var ki = 0; ki < kingdoms.length; ki++) {
+            var kd = kingdoms[ki];
+            var rank = sr[kd.id] || 0;
+            var rankName = (typeof CONFIG !== 'undefined' && CONFIG.SOCIAL_RANKS && CONFIG.SOCIAL_RANKS[rank]) ? CONFIG.SOCIAL_RANKS[rank].name : 'Peasant';
+            var rep = (p.reputation && p.reputation[kd.id]) || 0;
+            rankHtml += '<div style="display:flex;justify-content:space-between;gap:8px;"><span>' + kd.name + '</span><span style="color:#e8c080;">' + rankName + ' (Rep: ' + Math.round(rep) + ')</span></div>';
+        }
+        if (!rankHtml) rankHtml = '<div style="color:#888;">No kingdoms.</div>';
+
+        // Gold summary
+        var goldEarned = stats.totalGoldEarned || 0;
+        var goldSpent = stats.totalGoldSpent || 0;
+        var finalGold = Player.gold || 0;
+
+        // Generation
+        var generation = achStats.generation || 1;
+
+        var body =
+            '<div style="max-height:65vh;overflow-y:auto;padding:4px 8px;text-align:center;font-size:0.88rem;color:#d4c4a0;">' +
+            '<h3 style="color:#f0c040;margin:4px 0 10px;">📊 The Legacy of ' + (p.fullName || 'Unknown') + '</h3>' +
+            '<div style="color:#aaa;font-size:0.8rem;margin-bottom:10px;">Generation ' + generation + ' · ' + years + ' year' + (years !== 1 ? 's' : '') + ' in business</div>' +
+
+            '<div style="background:rgba(60,50,30,0.4);border:1px solid rgba(180,150,80,0.3);border-radius:6px;padding:8px;margin-bottom:10px;">' +
+            '<div style="color:#f0c040;font-weight:bold;margin-bottom:4px;">💰 Financial Summary</div>' +
+            '<div style="display:grid;grid-template-columns:1fr auto;gap:2px 12px;max-width:300px;margin:0 auto;">' +
+            '<span>Total Gold Earned</span><span style="color:#90d090;">' + formatGold(goldEarned) + '</span>' +
+            '<span>Total Gold Spent</span><span style="color:#d09090;">' + formatGold(goldSpent) + '</span>' +
+            '<span>Net Profit</span><span style="color:' + (goldEarned - goldSpent >= 0 ? '#90d090' : '#d09090') + ';">' + formatGold(goldEarned - goldSpent) + '</span>' +
+            '<span>Final Gold</span><span style="color:#f0c040;">' + formatGold(finalGold) + '</span>' +
+            '<span>Trades Completed</span><span style="color:#c0c0c0;">' + (stats.tradesCompleted || 0) + '</span>' +
+            '</div></div>' +
+
+            '<div style="background:rgba(60,50,30,0.4);border:1px solid rgba(180,150,80,0.3);border-radius:6px;padding:8px;margin-bottom:10px;">' +
+            '<div style="color:#f0c040;font-weight:bold;margin-bottom:4px;">🏗️ Buildings (' + buildings.length + ')</div>' +
+            buildHtml + '</div>' +
+
+            '<div style="background:rgba(60,50,30,0.4);border:1px solid rgba(180,150,80,0.3);border-radius:6px;padding:8px;margin-bottom:10px;">' +
+            '<div style="color:#f0c040;font-weight:bold;margin-bottom:4px;">⚒️ Total Production</div>' +
+            productionHtml + '</div>' +
+
+            '<div style="background:rgba(60,50,30,0.4);border:1px solid rgba(180,150,80,0.3);border-radius:6px;padding:8px;margin-bottom:10px;">' +
+            '<div style="color:#f0c040;font-weight:bold;margin-bottom:4px;">🐪 Caravans</div>' +
+            '<div>Active: ' + caravans.length + ' · Completed: ' + caravansCompleted + '</div>' +
+            '</div>' +
+
+            '<div style="background:rgba(60,50,30,0.4);border:1px solid rgba(180,150,80,0.3);border-radius:6px;padding:8px;margin-bottom:10px;">' +
+            '<div style="color:#f0c040;font-weight:bold;margin-bottom:4px;">📈 Top Goods Sold</div>' +
+            top10Trades + '</div>' +
+
+            '<div style="background:rgba(60,50,30,0.4);border:1px solid rgba(180,150,80,0.3);border-radius:6px;padding:8px;margin-bottom:10px;">' +
+            '<div style="color:#f0c040;font-weight:bold;margin-bottom:4px;">👑 Status Across Kingdoms</div>' +
+            rankHtml + '</div>' +
+
+            '</div>';
+
+        var footer = '<button class="btn-medieval" onclick="UI.closeModal()">Close</button>';
+        openModal('📊 Business Legacy', body, footer);
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -11441,23 +11677,160 @@ window.UI = (function () {
         for (var i = 0; i < options.length; i++) {
             if (options[i].id === optionId) { opt = options[i]; break; }
         }
-        if (opt && opt.available && opt.action) {
-            closeModal();
-            closeRightPanel();
-            try {
-                var result = opt.action();
-                if (result && result.success === false) {
-                    toast(result.message || 'Travel failed.', 'danger');
-                    return;
-                }
-            } catch (e) {
-                toast('Travel error: ' + (e.message || e), 'danger');
+        if (!opt || !opt.available || !opt.action) return;
+
+        // Check quarantine before executing travel
+        if (typeof Player !== 'undefined' && Player.getRouteQuarantineInfo) {
+            var qInfo = Player.getRouteQuarantineInfo(townId);
+            if (qInfo && qInfo.blocked) {
+                // Show quarantine decision popup instead of traveling
+                _showQuarantinePopup(townId, optionId, qInfo);
                 return;
             }
-            if (typeof Renderer !== 'undefined') {
-                var town = Engine.getTown(townId);
-                if (town) Renderer.panTo(town.x, town.y);
+        }
+
+        // No quarantine or player passes freely — execute travel
+        _executeTravel(townId, opt);
+    }
+
+    function _showQuarantinePopup(townId, optionId, qInfo) {
+        var qIcon = qInfo.isMartial ? '⚔️🔒' : '🔒';
+        var sneakPct = Math.round(qInfo.sneakChance * 100);
+
+        var html = '<div style="max-width:420px;">';
+        html += '<div style="text-align:center;margin-bottom:14px;">';
+        html += '<div style="font-size:2rem;">' + qIcon + '</div>';
+        html += '<div style="font-size:1.2rem;color:var(--gold-bright);font-weight:bold;margin-top:4px;">' + qInfo.townName + ' is under ' + qInfo.qLabel + '!</div>';
+        html += '</div>';
+
+        html += '<div style="background:rgba(196,78,82,0.15);border:1px solid rgba(196,78,82,0.3);border-radius:6px;padding:10px;margin-bottom:12px;">';
+        html += '<div style="font-size:0.9rem;color:var(--parchment);margin-bottom:6px;">Your route passes through a quarantine zone. Travel is restricted to certain social ranks.</div>';
+        html += '</div>';
+
+        // Allowed ranks
+        html += '<div style="margin-bottom:12px;">';
+        html += '<div style="font-size:0.85rem;color:var(--gold);font-weight:bold;margin-bottom:4px;">✅ Allowed Through:</div>';
+        for (var ri = 0; ri < qInfo.allowedRanks.length; ri++) {
+            html += '<div style="font-size:0.85rem;color:var(--parchment);padding-left:12px;">• ' + qInfo.allowedRanks[ri] + '</div>';
+        }
+        html += '</div>';
+
+        // Sneak option
+        html += '<div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:10px;margin-bottom:14px;">';
+        html += '<div style="font-size:0.85rem;color:var(--gold);font-weight:bold;margin-bottom:4px;">🤫 Sneak Past the Guards</div>';
+        html += '<div style="font-size:0.85rem;color:var(--parchment);margin-bottom:6px;">You can try to slip through the quarantine. If caught, you may be fined or jailed.</div>';
+
+        // Sneak chance bar
+        var barColor = sneakPct >= 50 ? '#55a868' : (sneakPct >= 30 ? '#e67e22' : '#c44e52');
+        html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">';
+        html += '<div style="font-size:0.8rem;color:var(--text-muted);min-width:90px;">Sneak chance:</div>';
+        html += '<div style="flex:1;height:14px;background:rgba(0,0,0,0.3);border-radius:7px;overflow:hidden;">';
+        html += '<div style="width:' + sneakPct + '%;height:100%;background:' + barColor + ';border-radius:7px;"></div>';
+        html += '</div>';
+        html += '<div style="font-size:0.9rem;font-weight:bold;color:' + barColor + ';min-width:40px;text-align:right;">' + sneakPct + '%</div>';
+        html += '</div>';
+
+        // Skill modifiers note
+        var modifiers = [];
+        if (typeof Player !== 'undefined' && Player.hasSkill) {
+            if (Player.hasSkill('smuggler')) modifiers.push('Smuggler (+20%)');
+            if (Player.hasSkill('streetwise')) modifiers.push('Streetwise (+20%)');
+            if (Player.hasSkill('cartographer')) modifiers.push('Cartographer (+10%)');
+        }
+        if (modifiers.length > 0) {
+            html += '<div style="font-size:0.75rem;color:var(--text-muted);">Skill bonuses: ' + modifiers.join(', ') + '</div>';
+        }
+        html += '</div>';
+
+        // Buttons
+        html += '<div style="display:flex;gap:8px;justify-content:center;">';
+        html += '<button class="btn-medieval" style="flex:1;padding:8px;font-size:0.95rem;background:rgba(196,78,82,0.2);border-color:rgba(196,78,82,0.4);" onclick="UI._quarantineSneakAttempt(\'' + townId + '\',\'' + optionId + '\')">🤫 Try to Sneak (' + sneakPct + '%)</button>';
+        html += '<button class="btn-medieval" style="flex:1;padding:8px;font-size:0.95rem;" onclick="UI.closeModal()">🚫 Turn Back</button>';
+        html += '</div>';
+
+        html += '</div>';
+        openModal(qIcon + ' Quarantine Checkpoint', html);
+    }
+
+    function _quarantineSneakAttempt(townId, optionId) {
+        closeModal();
+
+        // Execute the sneak attempt through Player
+        var sneakResult = Player.attemptQuarantineSneak(townId);
+
+        if (sneakResult && !sneakResult.allowed) {
+            // Caught — message already toasted by _checkRouteQuarantine
+            return;
+        }
+
+        // Sneak succeeded or no quarantine — proceed with travel, skipping the quarantine check
+        var options = _travelOptions || [];
+        var opt = null;
+        for (var i = 0; i < options.length; i++) {
+            if (options[i].id === optionId) { opt = options[i]; break; }
+        }
+        if (!opt || !opt.action) return;
+
+        if (sneakResult && sneakResult.allowed && sneakResult.message) {
+            toast(sneakResult.message, 'success', 'travel_events');
+        }
+
+        // Wrap the action to add skipQuarantineCheck
+        closeRightPanel();
+        try {
+            // We need to pass skipQuarantineCheck to the underlying Player.travelTo call
+            // Temporarily patch the action to include skipQuarantineCheck
+            var result = _executeTravelAction(townId, opt);
+            if (result && result.success === false) {
+                toast(result.message || 'Travel failed.', 'danger');
+                return;
             }
+        } catch (e) {
+            toast('Travel error: ' + (e.message || e), 'danger');
+            return;
+        }
+        if (typeof Renderer !== 'undefined') {
+            var town = Engine.getTown(townId);
+            if (town) Renderer.panTo(town.x, town.y);
+        }
+    }
+
+    function _executeTravelAction(townId, opt) {
+        // For standard travel options, call Player.travelTo with skipQuarantineCheck
+        // Parse the option to determine what kind of travel
+        if (opt.id && opt.id.indexOf('land_walk') === 0) return Player.travelTo(townId, { skipQuarantineCheck: true });
+        if (opt.id && opt.id.indexOf('land_horse') === 0) return Player.travelTo(townId, { mode: 'horse', skipQuarantineCheck: true });
+        if (opt.id && opt.id.indexOf('land_buy_horse') === 0) {
+            return Player.buyHorseForTravel(townId, opt.cost, { skipQuarantineCheck: true });
+        }
+        if (opt.id && opt.id.indexOf('land_bring_cart') === 0) return Player.travelTo(townId, { leaveCart: false, skipQuarantineCheck: true });
+        if (opt.id && opt.id.indexOf('land_leave_cart') === 0) return Player.travelTo(townId, { leaveCart: true, skipQuarantineCheck: true });
+        if (opt.id && opt.id.indexOf('mixed_') === 0) {
+            var parts = opt.id.replace('mixed_', '').split('_');
+            var lMode = parts[0];
+            var sMode = parts.slice(1).join('_');
+            return Player.travelTo(townId, { mode: lMode, seaMode: sMode, skipQuarantineCheck: true });
+        }
+        // Fallback: just call the original action
+        return opt.action();
+    }
+
+    function _executeTravel(townId, opt) {
+        closeModal();
+        closeRightPanel();
+        try {
+            var result = opt.action();
+            if (result && result.success === false) {
+                toast(result.message || 'Travel failed.', 'danger');
+                return;
+            }
+        } catch (e) {
+            toast('Travel error: ' + (e.message || e), 'danger');
+            return;
+        }
+        if (typeof Renderer !== 'undefined') {
+            var town = Engine.getTown(townId);
+            if (town) Renderer.panTo(town.x, town.y);
         }
     }
 
@@ -12538,6 +12911,223 @@ window.UI = (function () {
         else if (healthPct > 40) healthFill.style.background = '#ccb974';
         else if (healthPct > 20) healthFill.style.background = '#e8a040';
         else healthFill.style.background = '#c44e52';
+    }
+
+    function updateConditionsIndicator() {
+        if (typeof Player === 'undefined') return;
+        var injuries = Player.injuries || [];
+        var illnesses = Player.illnesses || [];
+        var healthGroup = document.getElementById('healthBarGroup');
+        if (!healthGroup) return;
+
+        var el2 = document.getElementById('conditionsIndicator');
+        if (injuries.length === 0 && illnesses.length === 0) {
+            if (el2) el2.style.display = 'none';
+            return;
+        }
+
+        if (!el2) {
+            el2 = document.createElement('div');
+            el2.id = 'conditionsIndicator';
+            el2.style.cssText = 'padding:2px 6px;font-size:0.72rem;line-height:1.4;cursor:pointer;';
+            el2.title = 'Click for health details';
+            el2.onclick = function() { openHealthDetailPanel(); };
+            healthGroup.appendChild(el2);
+        }
+        el2.style.display = '';
+
+        var html2 = '';
+        for (var i = 0; i < injuries.length; i++) {
+            var inj = injuries[i];
+            var sevColor = inj.severity === 'severe' ? '#e74c3c' : inj.severity === 'moderate' ? '#e67e22' : '#8e8';
+            var injName = inj.name || 'Injury';
+            html2 += '<span onclick="UI.openHealthDetailPanel()" style="cursor:pointer;color:' + sevColor + ';margin-right:8px;">🩹 ' + injName + ' <span style="font-size:0.65rem;opacity:0.8;">(' + inj.severity + ')</span></span>';
+        }
+        for (var j = 0; j < illnesses.length; j++) {
+            var ill = illnesses[j];
+            var sevColor2 = ill.severity === 'severe' ? '#e74c3c' : ill.severity === 'moderate' ? '#e67e22' : '#8e8';
+            var illName = ill.name || (ill.type ? ill.type.replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); }) : 'Illness');
+            html2 += '<span onclick="UI.openHealthDetailPanel()" style="cursor:pointer;color:' + sevColor2 + ';margin-right:8px;">🤒 ' + illName + ' <span style="font-size:0.65rem;opacity:0.8;">(' + ill.severity + ')</span></span>';
+        }
+        el2.innerHTML = html2;
+    }
+
+    function openHealthDetailPanel() {
+        if (typeof Player === 'undefined') return;
+        var injuries = Player.injuries || [];
+        var illnesses = Player.illnesses || [];
+        var injTypes = Player.getInjuryTypes ? Player.getInjuryTypes() : [];
+        var illTypes = Player.getIllnessTypes ? Player.getIllnessTypes() : [];
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+
+        var html = '<div style="max-height:500px;overflow-y:auto;">';
+
+        if (injuries.length === 0 && illnesses.length === 0) {
+            html += '<p style="color:#8e8;text-align:center;padding:20px;">✅ You are in good health — no injuries or illnesses.</p>';
+            var curHp = Player.health != null ? Player.health : 100;
+            var maxHp2 = Player.maxHealth || 100;
+            if (curHp < maxHp2) {
+                html += '<p style="color:#ccc;text-align:center;font-size:0.85rem;">❤️ Health: ' + Math.floor(curHp) + '/' + maxHp2 + ' — Recovers +1/day when energy, hunger, and thirst are all above 80%.</p>';
+            }
+            html += '</div>';
+            openModal('🏥 Health Status', html, '<button class="btn-medieval" onclick="UI.closeModal()">Close</button>');
+            return;
+        }
+
+        // Injuries
+        for (var i = 0; i < injuries.length; i++) {
+            var inj = injuries[i];
+            var typeDef = null;
+            for (var ti = 0; ti < injTypes.length; ti++) {
+                if (injTypes[ti].id === inj.type) { typeDef = injTypes[ti]; break; }
+            }
+            var sevColor = inj.severity === 'severe' ? '#e74c3c' : inj.severity === 'moderate' ? '#e67e22' : '#2ecc71';
+            var injName = inj.name || (typeDef ? typeDef.name : 'Unknown Injury');
+            var daysHad = day - (inj.dayOccurred || 0);
+
+            html += '<div style="border:1px solid ' + sevColor + '44;border-radius:8px;padding:10px;margin-bottom:10px;background:rgba(200,50,50,0.06);">';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+            html += '<span style="font-size:1.05rem;font-weight:bold;color:#f0d0a0;">🩹 ' + injName + '</span>';
+            html += '<span style="font-weight:bold;color:' + sevColor + ';text-transform:uppercase;font-size:0.85rem;">' + (inj.severity || 'unknown') + '</span>';
+            html += '</div>';
+
+            // Status
+            html += '<div style="font-size:0.82rem;color:#bbb;margin:6px 0;">';
+            html += inj.treated ? '✅ Being treated' : '⚠️ <span style="color:#e67e22;">Untreated</span>';
+            html += ' · Day ' + daysHad + ' of injury';
+            if (inj.treated && inj.healDay) {
+                var daysLeft = Math.max(0, inj.healDay - day);
+                html += ' · ~' + daysLeft + ' days to recover';
+            }
+            html += '</div>';
+
+            // Debuffs
+            if (typeDef && typeDef.debuffDesc) {
+                html += '<div style="font-size:0.8rem;padding:6px;background:rgba(0,0,0,0.2);border-radius:4px;margin:4px 0;">';
+                html += '<strong style="color:#e67e22;">⚡ Active Debuffs:</strong> <span style="color:#ddd;">' + typeDef.debuffDesc + '</span>';
+                html += '</div>';
+            }
+
+            // Risks
+            var drainPerDay = inj.severity === 'severe' ? 8 : inj.severity === 'moderate' ? 3 : 1;
+            html += '<div style="font-size:0.8rem;padding:6px;background:rgba(0,0,0,0.2);border-radius:4px;margin:4px 0;">';
+            html += '<strong style="color:#c44e52;">⚠️ Risks:</strong> <span style="color:#ddd;">';
+            html += '❤️ Drains <strong style="color:#e74c3c;">' + drainPerDay + ' health/day</strong>. ';
+            if (typeDef && typeDef.deathRisk) {
+                html += 'Daily death risk: ' + (typeDef.deathRisk * 100).toFixed(1) + '%. ';
+            }
+            html += 'Health at 0 = death. ';
+            if (inj.severity === 'minor') {
+                html += 'Will heal on its own in ' + (typeDef ? (typeDef.healDays * 2) : '10-30') + ' days untreated.';
+            } else if (inj.severity === 'moderate') {
+                html += 'May worsen to <span style="color:#e74c3c;">severe</span> if untreated for 10+ days. Natural recovery: ' + (typeDef ? (typeDef.healDays * 4) : '30-90') + ' days.';
+            } else if (inj.severity === 'severe') {
+                html += '<span style="color:#e74c3c;">Can be fatal if untreated for 30+ days.</span> Seek treatment immediately.';
+            }
+            html += '</span></div>';
+
+            // Treatment options
+            html += '<div style="font-size:0.8rem;padding:6px;background:rgba(50,100,50,0.15);border-radius:4px;margin:4px 0;">';
+            html += '<strong style="color:#2ecc71;">💊 Treatment Options:</strong><br>';
+            html += '<span style="color:#ddd;">';
+            html += '🏥 <strong>Hospital</strong> — Treats all severities. Fastest recovery. Requires hospital in town.<br>';
+            if (inj.severity !== 'severe') {
+                html += '🩺 <strong>Clinic</strong> — Treats minor/moderate. Cheaper than hospital. Requires clinic in town.<br>';
+            } else {
+                html += '🩺 <strong>Clinic</strong> — <span style="color:#888;">Cannot treat severe injuries.</span><br>';
+            }
+            html += '🧑‍⚕️ <strong>Self-treat</strong> — Requires ';
+            if (inj.severity === 'minor') html += 'First Aid skill';
+            else if (inj.severity === 'moderate') html += 'Field Medic skill';
+            else html += 'Doctor skill';
+            if (typeDef && typeDef.product) {
+                var prodName = typeDef.product.replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+                html += ' + ' + prodName + ' (' + (typeDef.productCost || '?') + 'g)';
+            }
+            html += '</span></div>';
+            html += '</div>';
+        }
+
+        // Illnesses
+        for (var k = 0; k < illnesses.length; k++) {
+            var ill = illnesses[k];
+            var illTypeDef = null;
+            for (var ti2 = 0; ti2 < illTypes.length; ti2++) {
+                if (illTypes[ti2].id === ill.type) { illTypeDef = illTypes[ti2]; break; }
+            }
+            var sevColor2 = ill.severity === 'severe' ? '#e74c3c' : ill.severity === 'moderate' ? '#e67e22' : '#2ecc71';
+            var illName = ill.name || (illTypeDef ? illTypeDef.name : (ill.type ? ill.type.replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); }) : 'Unknown Illness'));
+            var daysIll = day - (ill.dayOccurred || 0);
+
+            html += '<div style="border:1px solid ' + sevColor2 + '44;border-radius:8px;padding:10px;margin-bottom:10px;background:rgba(200,150,50,0.06);">';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+            html += '<span style="font-size:1.05rem;font-weight:bold;color:#f0d0a0;">🤒 ' + illName + '</span>';
+            html += '<span style="font-weight:bold;color:' + sevColor2 + ';text-transform:uppercase;font-size:0.85rem;">' + (ill.severity || 'unknown') + '</span>';
+            html += '</div>';
+
+            // Status
+            html += '<div style="font-size:0.82rem;color:#bbb;margin:6px 0;">';
+            html += ill.treated ? '✅ Being treated' : '⚠️ <span style="color:#e67e22;">Untreated</span>';
+            html += ' · Day ' + daysIll + ' of illness';
+            if (ill.treated && ill.healDay) {
+                var daysLeft2 = Math.max(0, ill.healDay - day);
+                html += ' · ~' + daysLeft2 + ' days to recover';
+            }
+            html += '</div>';
+
+            // Debuffs
+            if (illTypeDef && illTypeDef.debuffDesc) {
+                html += '<div style="font-size:0.8rem;padding:6px;background:rgba(0,0,0,0.2);border-radius:4px;margin:4px 0;">';
+                html += '<strong style="color:#e67e22;">⚡ Active Debuffs:</strong> <span style="color:#ddd;">' + illTypeDef.debuffDesc + '</span>';
+                html += '</div>';
+            }
+
+            // Risks
+            var drainPerDay2 = ill.severity === 'severe' ? 8 : ill.severity === 'moderate' ? 3 : 1;
+            html += '<div style="font-size:0.8rem;padding:6px;background:rgba(0,0,0,0.2);border-radius:4px;margin:4px 0;">';
+            html += '<strong style="color:#c44e52;">⚠️ Risks:</strong> <span style="color:#ddd;">';
+            html += '❤️ Drains <strong style="color:#e74c3c;">' + drainPerDay2 + ' health/day</strong>. ';
+            if (illTypeDef && illTypeDef.deathRisk) {
+                html += 'Daily death risk: ' + (illTypeDef.deathRisk * 100).toFixed(1) + '%. ';
+            }
+            html += 'Health at 0 = death. ';
+            if (ill.severity === 'minor') {
+                html += 'May worsen to <span style="color:#e67e22;">moderate</span> after 10 days untreated.';
+            } else if (ill.severity === 'moderate') {
+                html += 'May worsen to <span style="color:#e74c3c;">severe</span> after 25 days untreated.';
+            } else if (ill.severity === 'severe') {
+                html += '<span style="color:#e74c3c;">Can be fatal. Seek treatment immediately.</span>';
+            }
+            html += '</span></div>';
+
+            // Treatment
+            html += '<div style="font-size:0.8rem;padding:6px;background:rgba(50,100,50,0.15);border-radius:4px;margin:4px 0;">';
+            html += '<strong style="color:#2ecc71;">💊 Treatment Options:</strong><br>';
+            html += '<span style="color:#ddd;">';
+            html += '🏥 <strong>Hospital</strong> — Treats all severities. Fastest recovery.<br>';
+            if (ill.severity !== 'severe') {
+                html += '🩺 <strong>Clinic</strong> — Treats minor/moderate. Cheaper than hospital.<br>';
+            } else {
+                html += '🩺 <strong>Clinic</strong> — <span style="color:#888;">Cannot treat severe illnesses.</span><br>';
+            }
+            html += '🧑‍⚕️ <strong>Self-treat</strong> — Requires ';
+            if (ill.severity === 'minor') html += 'First Aid skill';
+            else if (ill.severity === 'moderate') html += 'Field Medic skill';
+            else html += 'Doctor skill';
+            if (illTypeDef && illTypeDef.product) {
+                var prodName2 = illTypeDef.product.replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+                html += ' + ' + prodName2 + ' (' + (illTypeDef.productCost || '?') + 'g)';
+            }
+            html += '</span></div>';
+            html += '</div>';
+        }
+
+        html += '</div>';
+
+        var footer = '<button class="btn-medieval" onclick="UI.openHealthDialog()" style="margin-right:8px;">🏥 Go to Treatment</button>';
+        footer += '<button class="btn-medieval" onclick="UI.closeModal()">Close</button>';
+        openModal('🏥 Health Status — Conditions Detail', html, footer);
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -16532,7 +17122,8 @@ window.UI = (function () {
         // Helper to get fee and time description
         function _getFeeAndTime(facilityType, severity) {
             var info = hospFees ? hospFees[facilityType] : null;
-            var fee = info && info.fees ? (info.fees[severity] || '?') : '?';
+            var fallbackFee = severity === 'severe' ? 40 : severity === 'moderate' ? 20 : 10;
+            var fee = info && info.fees ? (info.fees[severity] || fallbackFee) : fallbackFee;
             var ticks = info && info.treatmentTicks ? (info.treatmentTicks[severity] || 25) : 25;
             var timeStr = ticks <= 10 ? '~' + Math.round(ticks / 60 * 24) + 'h' : ticks <= 60 ? '~' + Math.round(ticks / 60 * 24) + 'h' : '~' + (ticks / 60).toFixed(1) + 'd';
             if (ticks <= 5) timeStr = 'quick';
@@ -17402,6 +17993,7 @@ window.UI = (function () {
             var a = tabActions[ai];
             var pct = Math.round(a.finalChance * 100);
             var pctColor = pct >= 60 ? '#2ecc71' : pct >= 35 ? '#e67e22' : '#e74c3c';
+            var actionSafeId = a.id.replace(/[^a-zA-Z0-9_]/g, '_');
 
             html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:8px;margin-bottom:6px;">';
             html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">';
@@ -17423,8 +18015,32 @@ window.UI = (function () {
                 html += '</div>';
             }
 
-            // Confirm button
-            html += '<button class="btn-medieval" onclick="(function(){var r=Player.proposeKingAction(\'' + kingdomId + '\',\'' + a.id + '\');UI.toast(r&&r.message?r.message:\'Action proposed.\',r&&r.success?\'success\':\'warning\');UI.closeModal();UI.openNobilityDialog();})()" style="font-size:0.75rem;padding:5px 14px;background:rgba(44,100,60,0.5) !important;border:2px solid rgba(80,180,100,0.5) !important;color:#f0e0c0 !important;">👑 Propose (' + pct + '% chance)</button>';
+            // Sub-choice dropdown for actions that need a target
+            if (a.needsSubChoice && a.subChoiceOptions && a.subChoiceOptions.length > 0) {
+                var selectId = '_raSubChoice_' + actionSafeId;
+                var subLabel = a.needsSubChoice === 'good' ? 'Select Good:' :
+                               a.needsSubChoice === 'banned_good' ? 'Select Banned Good:' :
+                               a.needsSubChoice === 'town' ? 'Select Town:' :
+                               a.needsSubChoice === 'port_town' ? 'Select Port:' : 'Select:';
+                html += '<div style="margin-bottom:6px;">';
+                html += '<label style="font-size:0.72rem;color:#ccc;margin-right:6px;">' + subLabel + '</label>';
+                html += '<select id="' + selectId + '" style="font-size:0.75rem;padding:3px 8px;background:rgba(40,35,25,0.9);color:#e8c080;border:1px solid rgba(180,150,80,0.4);border-radius:4px;max-width:200px;">';
+                for (var si = 0; si < a.subChoiceOptions.length; si++) {
+                    var opt = a.subChoiceOptions[si];
+                    html += '<option value="' + opt.value + '">' + opt.label + '</option>';
+                }
+                html += '</select></div>';
+
+                // Propose button that reads the dropdown value
+                html += '<button class="btn-medieval" onclick="(function(){var sel=document.getElementById(\'' + selectId + '\');var sc=sel?sel.value:\'\';var r=Player.proposeKingAction(\'' + kingdomId + '\',\'' + a.id + '\',sc);UI.toast(r&&r.message?r.message:\'Action proposed.\',r&&r.success?\'success\':\'warning\');UI.closeModal();UI.openNobilityDialog();})()" style="font-size:0.75rem;padding:5px 14px;background:rgba(44,100,60,0.5) !important;border:2px solid rgba(80,180,100,0.5) !important;color:#f0e0c0 !important;">👑 Propose (' + pct + '% chance)</button>';
+            } else if (a.needsSubChoice && (!a.subChoiceOptions || a.subChoiceOptions.length === 0)) {
+                // Action needs a sub-choice but no options available
+                html += '<div style="font-size:0.72rem;color:#888;font-style:italic;margin-bottom:4px;">No valid targets available.</div>';
+                html += '<button class="btn-medieval" disabled style="font-size:0.75rem;padding:5px 14px;opacity:0.4;">👑 No targets</button>';
+            } else {
+                // Normal action — no sub-choice needed
+                html += '<button class="btn-medieval" onclick="(function(){var r=Player.proposeKingAction(\'' + kingdomId + '\',\'' + a.id + '\');UI.toast(r&&r.message?r.message:\'Action proposed.\',r&&r.success?\'success\':\'warning\');UI.closeModal();UI.openNobilityDialog();})()" style="font-size:0.75rem;padding:5px 14px;background:rgba(44,100,60,0.5) !important;border:2px solid rgba(80,180,100,0.5) !important;color:#f0e0c0 !important;">👑 Propose (' + pct + '% chance)</button>';
+            }
             html += '</div>';
         }
         html += '</div>';
@@ -21713,6 +22329,30 @@ window.UI = (function () {
         // Export Console button
         html += '<br><button onclick="Game.exportConsole()" style="margin:2px; padding:3px 8px; background:#4a3520; color:#fff; border:1px solid #d4af37; cursor:pointer;">📋 Export Console</button> ';
 
+        // Give Player Illness/Injury
+        html += '<br><div style="margin-top:6px; padding-top:6px; border-top:1px solid #444;">';
+        html += '<span style="color:#f88; font-weight:bold; font-size:11px;">🤒 INFLICT CONDITION</span><br>';
+        html += '<select id="gm-inflict-type" style="background:#333; color:#fff; border:1px solid #666; margin:2px; padding:2px; font-size:11px;">';
+        html += '<option value="">— Select —</option>';
+        html += '<optgroup label="🤕 Injuries">';
+        try {
+            var _gmInjTypes = Player.getInjuryTypes ? Player.getInjuryTypes() : [];
+            for (var _ii = 0; _ii < _gmInjTypes.length; _ii++) {
+                html += '<option value="injury:' + _gmInjTypes[_ii].id + '">' + _gmInjTypes[_ii].name + ' (' + _gmInjTypes[_ii].severity + ')</option>';
+            }
+        } catch(e) {}
+        html += '</optgroup><optgroup label="🤒 Illnesses">';
+        try {
+            var _gmIllTypes = Player.getIllnessTypes ? Player.getIllnessTypes() : [];
+            for (var _ij = 0; _ij < _gmIllTypes.length; _ij++) {
+                html += '<option value="illness:' + _gmIllTypes[_ij].id + '">' + _gmIllTypes[_ij].name + ' (' + _gmIllTypes[_ij].severity + ')</option>';
+            }
+        } catch(e) {}
+        html += '</optgroup></select>';
+        html += '<button onclick="(function(){ var sel=document.getElementById(\'gm-inflict-type\'); if(!sel||!sel.value){UI.toast(\'Select a condition\',\'error\');return;} var parts=sel.value.split(\':\'); var cat=parts[0]; var id=parts[1]; if(cat===\'illness\'){ Player.inflictSpecificIllness(id, \'god_mode\'); UI.toast(\'🤒 Inflicted illness: \'+id,\'warning\'); } else { var types=Player.getInjuryTypes(); var t=null; for(var i=0;i<types.length;i++){if(types[i].id===id){t=types[i];break;}} if(t){ Player.state.injuries=Player.state.injuries||[]; Player.state.injuries.push({type:t.id, name:t.name, severity:t.severity, dayOccurred:Engine.getDay(), treated:false, source:\'god_mode\'}); var hpHit=t.severity===\'severe\'?20:t.severity===\'moderate\'?10:5; Player.state.health=Math.max(0,(Player.state.health||100)-hpHit); UI.toast(\'🤕 Inflicted \'+t.name+\' (\'+t.severity+\', -\'+hpHit+\' HP)\',\'warning\'); } } })()" style="margin:2px; padding:3px 8px; background:#8b4000; color:#fff; border:1px solid #f84; cursor:pointer; font-size:11px;">Inflict on Player</button>';
+        html += '<button onclick="Player.state.injuries=[]; Player.state.illnesses=[]; Player.state.health=100; UI.toast(\'💚 All conditions cleared & health restored\',\'success\')" style="margin:2px; padding:3px 8px; background:#006400; color:#fff; border:1px solid #0a0; cursor:pointer; font-size:11px;">Cure All</button>';
+        html += '</div>';
+
         html += '</div>';
 
         // === POSSESSED NPC ===
@@ -22000,6 +22640,12 @@ window.UI = (function () {
                 html += '<button onclick="window._gmPossessedNpc=\'' + npc.id + '\'; UI.toast(\'👁️ Possessing ' + ((npc.firstName || '?').replace(/'/g, '')) + '\',\'info\')" style="font-size:10px; padding:1px 5px; margin:1px; background:#4a004a; color:#fff; border:1px solid #a0a; cursor:pointer;">👁️Possess</button>';
                 // Become NPC — swap player identity
                 html += '<button onclick="(function(){var target=Engine.getPeople().find(function(x){return x.id===\'' + npc.id + '\'}); if(!target){UI.toast(\'NPC not found\',\'error\'); return;} if(!confirm(\'Become \'+target.firstName+\'? Your old character becomes an Elite Merchant.\')){return;} var st=Player.state; var oldClone={id:\'p_former_\'+Engine.getDay(), firstName:st.firstName, lastName:st.lastName, sex:st.sex, age:st.age, gold:st.gold, townId:st.townId, personality:Object.assign({},st.personality||{}), skills:Object.assign({},st.skills||{}), needs:{food:80,shelter:80,safety:80,wealth:50}, alive:true, occupation:\'merchant\', isEliteMerchant:true, strategy:\'opportunist\', npcMerchantInventory:{}, emCaravans:[], _formerPlayer:true, spouseId:null, childrenIds:(st.childrenIds||[]).slice(), parentIds:(st.parentIds||[]).slice()}; var oldName=oldClone.firstName+\' \'+oldClone.lastName; var world=Engine.getWorld(); if(world.eliteMerchants){world.eliteMerchants.push(oldClone);} Engine.addPerson(oldClone); st.townId=target.townId; st.gold=target.gold||100; st.firstName=target.firstName; st.lastName=target.lastName; st.sex=target.sex; st.age=target.age; st.personality=Object.assign({},target.personality||st.personality); st.spouseId=target.spouseId||null; if(target.spouseId){var sp=Engine.getPeople().find(function(x){return x.id===target.spouseId}); if(sp)sp.spouseId=\'player\';} st.childrenIds=(target.childrenIds||[]).slice(); st.parentIds=(target.parentIds||[]).slice(); st.traveling=false; st.travelRoute=null; st.travelProgress=0; st.travelDestination=null; st.travelOrigin=null; st.travelPaid=0; st.travelMode=null; st.travelBySea=false; st.travelOffroad=false; st.travelTotalDist=0; target.alive=false; target._deathDay=Engine.getDay(); target._absorbed=true; UI.toast(\'🔄 You are now \'+st.firstName+\'! Old character (\'+oldName+\') is now an Elite Merchant.\',\'success\');})()" style="font-size:10px; padding:1px 5px; margin:1px; background:#004a4a; color:#fff; border:1px solid #0aa; cursor:pointer;">🔄Become</button>';
+                // Inflict illness on NPC
+                html += '<button onclick="(function(){ var pp=Engine.getPeople().find(function(x){return x.id===\'' + npc.id + '\';}); if(!pp){UI.toast(\'NPC not found\',\'error\'); return;} var ills=[\'cold\',\'flu\',\'food_poisoning\',\'fever\',\'dysentery\',\'pneumonia\',\'typhus\',\'plague\']; var names=[\'Cold\',\'Flu\',\'Food Poisoning\',\'Fever\',\'Dysentery\',\'Pneumonia\',\'Typhus\',\'Plague\']; var choice=prompt(\'Inflict illness on ' + ((npc.firstName || '?').replace(/'/g, '')) + ':\\n\'+ills.map(function(id,i){return (i+1)+\'. \'+names[i];}).join(\'\\n\')+\'\\n\\nEnter number (1-8):\'); if(!choice)return; var idx=parseInt(choice,10)-1; if(idx<0||idx>=ills.length){UI.toast(\'Invalid choice\',\'error\');return;} var ok=Engine.infectNPC(pp, ills[idx], \'god_mode\'); if(ok){UI.toast(\'🤒 \'+names[idx]+\' inflicted on ' + ((npc.firstName || '?').replace(/'/g, '')) + '\',\'warning\');} else {UI.toast(\'Failed (already sick or immune)\',\'info\');} })()" style="font-size:10px; padding:1px 5px; margin:1px; background:#8b4000; color:#fff; border:1px solid #f84; cursor:pointer;">🤒Sicken</button>';
+                // Injure NPC
+                html += '<button onclick="(function(){ var pp=Engine.getPeople().find(function(x){return x.id===\'' + npc.id + '\';}); if(!pp){UI.toast(\'NPC not found\',\'error\'); return;} var types=[\'wound\',\'broken_bone\',\'concussion\',\'arrow_wound\']; var names=[\'Wound\',\'Broken Bone\',\'Concussion\',\'Arrow Wound\']; var choice=prompt(\'Inflict injury on ' + ((npc.firstName || '?').replace(/'/g, '')) + ':\\n\'+types.map(function(id,i){return (i+1)+\'. \'+names[i];}).join(\'\\n\')+\'\\n\\nEnter number (1-4):\'); if(!choice)return; var idx=parseInt(choice,10)-1; if(idx<0||idx>=types.length){UI.toast(\'Invalid choice\',\'error\');return;} pp.injured=true; pp.injuryDay=Engine.getDay(); pp.injuryType=types[idx]; pp.health=Math.max(10,(pp.health||100)-20); UI.toast(\'🤕 \'+names[idx]+\' inflicted on ' + ((npc.firstName || '?').replace(/'/g, '')) + '\',\'warning\'); })()" style="font-size:10px; padding:1px 5px; margin:1px; background:#8b4000; color:#fff; border:1px solid #f84; cursor:pointer;">🤕Injure</button>';
+                // Cure NPC
+                html += '<button onclick="(function(){ var pp=Engine.getPeople().find(function(x){return x.id===\'' + npc.id + '\';}); if(!pp){return;} pp.sick=false; pp.illness=null; pp.injured=false; pp.injuryType=null; pp.health=100; UI.toast(\'💚 Cured ' + ((npc.firstName || '?').replace(/'/g, '')) + '\',\'success\'); })()" style="font-size:10px; padding:1px 5px; margin:1px; background:#006400; color:#fff; border:1px solid #0a0; cursor:pointer;">💚Cure</button>';
 
                 // King-specific actions
                 if (isKing) {
@@ -22036,6 +22682,33 @@ window.UI = (function () {
         html += '<button onclick="(function(){var people=Engine.getPeople().filter(function(p){return p.alive && p.townId===Player.state.townId}); if(people.length===0){UI.toast(\'No people in town\',\'info\');return;} var killCount=Math.max(1,Math.floor(people.length*0.1)); for(var i=0;i<killCount;i++){var victim=people[Math.floor(Math.random()*people.length)]; if(victim && victim.alive){Engine.killPerson(victim, \'plague\');}} UI.toast(\'☠️ Plague! \'+killCount+\' dead in town\',\'warning\');})()" style="margin:2px; padding:3px 8px; background:#2a004a; color:#fff; border:1px solid #80f; cursor:pointer;">☠️ Plague</button> ';
         html += '<button onclick="Engine.godMakeWorldWar(); UI.toast(\'⚔️ WORLD WAR! All kingdoms at war!\',\'warning\');" style="margin:2px; padding:3px 8px; background:#8b0000; color:#fff; border:1px solid #f00; cursor:pointer;">⚔️ World War</button> ';
         html += '<button onclick="Engine.godMakeWorldPeace(); UI.toast(\'☮️ World peace declared!\',\'success\');" style="margin:2px; padding:3px 8px; background:#005050; color:#fff; border:1px solid #0aa; cursor:pointer;">☮️ World Peace</button> ';
+
+        // Plague Outbreak — choose town and illness
+        html += '<br><div style="margin-top:6px; padding-top:6px; border-top:1px solid #444;">';
+        html += '<span style="color:#c080ff; font-weight:bold; font-size:11px;">🦠 START PLAGUE OUTBREAK</span><br>';
+        try {
+            var _gmPlagueTowns = Engine.getTowns ? Engine.getTowns() : [];
+            html += '<select id="gm-plague-town" style="background:#333; color:#fff; border:1px solid #666; margin:2px; padding:2px; font-size:11px; max-width:140px;">';
+            for (var _pti = 0; _pti < _gmPlagueTowns.length; _pti++) {
+                var _pt = _gmPlagueTowns[_pti];
+                var _ptSel = (_pt.id === (Player.state && Player.state.townId)) ? ' selected' : '';
+                html += '<option value="' + _pt.id + '"' + _ptSel + '>' + (_pt.name || '?') + '</option>';
+            }
+            html += '</select>';
+        } catch(e) { html += '<span style="color:#f44;">Error loading towns</span>'; }
+        html += '<select id="gm-plague-illness" style="background:#333; color:#fff; border:1px solid #666; margin:2px; padding:2px; font-size:11px;">';
+        html += '<option value="plague">🟣 Plague (severe)</option>';
+        html += '<option value="typhus">🟠 Typhus (serious)</option>';
+        html += '<option value="pneumonia">🔵 Pneumonia (serious)</option>';
+        html += '<option value="dysentery">🟤 Dysentery (moderate)</option>';
+        html += '<option value="fever">🟡 Fever (moderate)</option>';
+        html += '<option value="flu">🟢 Flu (minor)</option>';
+        html += '<option value="cold">⚪ Cold (minor)</option>';
+        html += '</select>';
+        html += '<input id="gm-plague-count" type="number" value="10" min="1" max="200" style="width:40px; background:#333; color:#fff; border:1px solid #666; padding:2px; margin:2px; font-size:11px;" title="Number to infect" />';
+        html += '<button onclick="(function(){ var tid=document.getElementById(\'gm-plague-town\').value; var ill=document.getElementById(\'gm-plague-illness\').value; var cnt=parseInt(document.getElementById(\'gm-plague-count\').value,10)||10; var infected=Engine.godStartPlague(tid, ill, cnt); var tname=\'\'; try{var tt=Engine.getTowns().find(function(t){return t.id===tid}); tname=tt?tt.name:tid;}catch(e){tname=tid;} UI.toast(\'🦠 \'+infected+\' infected with \'+ill+\' in \'+tname+\'!\',infected>0?\'warning\':\'info\'); })()" style="margin:2px; padding:3px 8px; background:#4a004a; color:#fff; border:1px solid #a0a; cursor:pointer; font-size:11px;">Start Outbreak</button>';
+        html += '</div>';
+
         html += '</div>';
 
         // === MARKET OVERVIEW ===
@@ -22218,6 +22891,19 @@ window.UI = (function () {
         var prevRank = Player.state.socialRank[kid] || 0;
         Player.state.socialRank[kid] = r;
 
+        // Clean up privileges from higher ranks when demoting
+        if (r < 6 && prevRank >= 6) {
+            // Lost Royal Advisor status
+            Player.state.royalAdvisorKingdomId = null;
+            Player.state.isRoyalAdvisorFromKing = false;
+            Player.state.royalAdvisorBenefits = null;
+            Player.state.politicalCapital = 0;
+        }
+        if (r < 5 && prevRank >= 5) {
+            // Lost Lord status
+            Player.state.lordTownId = null;
+        }
+
         if (r >= 6) {
             Player.state.politicalCapital = 3;
             Player.state.royalAdvisorKingdomId = kid;
@@ -22284,6 +22970,27 @@ window.UI = (function () {
             if (prevRank >= 4) {
                 Player.state.isNoble = false;
                 if (Player.state.occupation === 'noble') Player.state.occupation = 'merchant';
+                // Dismiss kingdom-paid guards when losing noble status
+                if (Player.state.guards && Player.state.guards.length > 0) {
+                    var dismissed = 0;
+                    for (var di = Player.state.guards.length - 1; di >= 0; di--) {
+                        var g = Player.state.guards[di];
+                        if (g.kingdomPaid) {
+                            // Restore the NPC's previous occupation
+                            if (g.personId && typeof Engine !== 'undefined' && Engine.findPerson) {
+                                var guardNpc = Engine.findPerson(g.personId);
+                                if (guardNpc) {
+                                    guardNpc.isPlayerGuard = false;
+                                    guardNpc.occupation = guardNpc.previousOccupation || 'unemployed';
+                                }
+                            }
+                            Player.state.guards.splice(di, 1);
+                            dismissed++;
+                        }
+                    }
+                    Player.state.personalGuards = Player.state.guards.length;
+                    if (dismissed > 0) toast('🛡️ Lost ' + dismissed + ' kingdom guard' + (dismissed > 1 ? 's' : '') + ' with noble rank demotion.', 'warning');
+                }
             }
         }
 
@@ -22357,6 +23064,7 @@ window.UI = (function () {
         _setEventTab,
         openSettings,
         setNotifFilter,
+        _toggleToastMute,
         openMapView,
         closeMapView,
         locatePlayer,
@@ -22402,6 +23110,7 @@ window.UI = (function () {
         travelBySea: travelBySeaUI,
         openTravelOptions,
         confirmTravel,
+        _quarantineSneakAttempt,
         showRouteDangerDetail,
         getTransportServices,
         turnBackUI,
@@ -22445,6 +23154,7 @@ window.UI = (function () {
         // XP, Skills, Achievements
         openSkillsDialog,
         openAchievementsDialog,
+        showBusinessLegacy,
         learnSkill,
         buyInfoBrokerTip,
         // Kingdom/Town Selection
@@ -22504,6 +23214,7 @@ window.UI = (function () {
         showMilitaryEventChoice,
         // Health / Medical
         openHealthDialog,
+        openHealthDetailPanel,
         treatAtHospital,
         treatAtClinic,
         selfTreatCondition,

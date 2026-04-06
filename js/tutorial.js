@@ -720,6 +720,30 @@ window.Tutorial = (function () {
                 {
                     title: 'Sea Travel',
                     text: '\u26F5 At <strong>port towns</strong>, ships are required to sail sea routes. Buy a ship when you reach a port to unlock fast oceanic trade between distant towns!'
+                },
+                {
+                    title: 'Road Encounters',
+                    text: '\u26A0\uFE0F <strong>Danger!</strong> While traveling, you may be ambushed by <strong>bandits</strong> on land or <strong>pirates</strong> at sea. When this happens, the game pauses and you get three choices:' +
+                        '<br><br>\u2694\uFE0F <strong>Fight</strong> — Battle the attackers. Win = keep everything + earn XP. Lose = lose goods, gold, get injured, or even <strong>die</strong>.' +
+                        '<br>\uD83E\uDD1D <strong>Negotiate</strong> — Talk your way out. Success = lose some goods & gold but stay safe. Fail = forced into a fight at a disadvantage.' +
+                        '<br>\uD83C\uDFF3\uFE0F <strong>Surrender</strong> — Give up without a fight. You lose 50% of your gold and <strong>all</strong> carried goods, but you survive unharmed.'
+                },
+                {
+                    title: 'Improving Your Odds',
+                    text: '\uD83D\uDEE1\uFE0F Several things improve your combat chances:' +
+                        '<br><br>\uD83D\uDDE1\uFE0F <strong>Weapons & Armor</strong> — Buy from the trade panel. Weapons and armor significantly boost fight win chance.' +
+                        '<br>\uD83D\uDC82 <strong>Hire Guards</strong> — Each guard adds ~12% win chance on land. Hire them from the <strong>Guards</strong> panel once you can afford it.' +
+                        '<br>\uD83C\uDFAF <strong>Skills</strong> — <em>Combat Trained</em> (+10%), <em>Battle Hardened</em> (+20%), <em>Silver Tongue</em> (+15% negotiate), <em>Escape Artist</em> (chance to flee instead of fight).' +
+                        '<br>\uD83D\uDCAA <strong>Stay healthy</strong> — Low hunger, thirst, or energy penalize fight chance. Keep your bars above 20%!'
+                },
+                {
+                    title: 'Reducing Encounter Risk',
+                    text: '\uD83D\uDCA1 <strong>Tips to stay safe on the road:</strong>' +
+                        '<br><br>\u2022 <strong>Stick to safe routes</strong> — Road safety rating is shown in the Routes panel. Green = safe, red = dangerous.' +
+                        '<br>\u2022 <strong>Avoid warzones</strong> — Traveling between kingdoms at war drastically increases encounters with enemy soldiers.' +
+                        '<br>\u2022 <strong>Travel light early on</strong> — Surrendering is safest when you can\u2019t win fights yet. Don\u2019t carry your life savings!' +
+                        '<br>\u2022 <strong>Off-road is riskier</strong> — Off-road travel has higher encounter rates than using roads.' +
+                        '<br>\u2022 <strong>Injuries are real</strong> — Losing a fight can cause injuries that drain health daily. Visit a <strong>hospital</strong> or <strong>clinic</strong> to treat them before they worsen!'
                 }
             ]
         },
@@ -800,6 +824,17 @@ window.Tutorial = (function () {
                 {
                     title: 'Health & Injuries',
                     text: '\u2764\uFE0F Your <strong>health bar</strong> shows your physical condition. Injuries from combat, starvation, or accidents reduce max health until you rest and recover. Keep fed, hydrated, and rested to stay in top shape!'
+                },
+                {
+                    title: 'Personal Guards',
+                    text: '\uD83D\uDEE1\uFE0F Once you have some gold, <strong>hire personal guards</strong> from the <strong>\uD83D\uDC64 Character</strong> panel (scroll down to the Guards section). Guards travel with you and:<br><br>\u2022 <strong>+12% fight win chance</strong> per guard on land<br>\u2022 <strong>Reduce encounter chance</strong> while traveling<br>\u2022 Cost <strong>6g/day</strong> each in wages<br><br>Up to 4 guards can be hired. They\u2019re your best defense against bandits!',
+                    highlight: '#btnCharacter',
+                    waitFor: function () { return isModalOpen(); },
+                    onComplete: function () {
+                        closeModal();
+                        nextStep();
+                    },
+                    skipAfter: 8000
                 },
                 {
                     title: 'Transport & Carry Capacity',
@@ -981,17 +1016,76 @@ window.Tutorial = (function () {
                     skipAfter: 12000
                 },
                 {
+                    title: 'Your Journal',
+                    text: '\uD83D\uDCD6 Your character keeps a <strong>journal</strong> that records key life events \u2014 trades, encounters, marriages, promotions, and more. Open <strong>\uD83D\uDC64 Character</strong> on the bottom panel and click <strong>\uD83D\uDCD6 Read My Journal</strong> to see your story so far!',
+                    highlight: '#btnCharacter',
+                    onEnter: function () { closeModal(); },
+                    waitFor: function () {
+                        try {
+                            var modal = document.getElementById('modalOverlay');
+                            if (modal && !modal.classList.contains('hidden')) {
+                                var title = document.getElementById('modalTitle');
+                                if (title && title.textContent.indexOf('Journal') >= 0) return true;
+                            }
+                            return false;
+                        } catch (e) { return false; }
+                    },
+                    onComplete: function () {
+                        closeModal();
+                        nextStep();
+                    },
+                    skipAfter: 12000
+                },
+                {
                     title: 'You\u2019re Ready!',
                     text: '\uD83C\uDF89 <strong>That\u2019s the basics!</strong> You know how to control the game, trade, travel, manage skills, eat, build a home, start a family, and find help. Now choose: start playing, or continue to advanced systems.'
                 }
             ]
         },
 
-        // ═══════════════════════════════════════════════════════
-        //  PART 2: ADVANCED
-        // ═══════════════════════════════════════════════════════
+        // ── Chapter 9: Work & Jobs ────────────────────────────
+        {
+            title: 'Work & Jobs',
+            part: 'basic',
+            steps: [
+                {
+                    title: 'Finding Work',
+                    text: '\uD83D\uDCBC <strong>Jobs</strong> are the best early-game income! Click the <strong>\uD83D\uDCBC Work</strong> button on the bottom panel to see available jobs in your current town. Jobs pay gold, give XP, and some unlock new skills!',
+                    highlight: '#btnWork',
+                    onEnter: function () { closeModal(); },
+                    waitFor: function () { return isModalOpen(); },
+                    skipAfter: 8000
+                },
+                {
+                    title: 'Take a Job',
+                    text: '\uD83D\uDCBC Pick any job from the list and click it to start working! Jobs take time (shown in ticks) \u2014 <strong>speed up the game</strong> while working to finish faster. You\u2019ll earn gold and XP when the work is done.',
+                    onEnter: function () {
+                        snapshotState.workDaysBefore = 0;
+                        try { snapshotState.workDaysBefore = Player.state.workDaysCompleted || 0; } catch (e) {}
+                    },
+                    waitFor: function () {
+                        try {
+                            return (Player.state.workDaysCompleted || 0) > (snapshotState.workDaysBefore || 0);
+                        } catch (e) { return false; }
+                    },
+                    onComplete: function () {
+                        closeModal();
+                        nextStep();
+                    },
+                    skipAfter: 20000
+                },
+                {
+                    title: 'Job Types',
+                    text: '\uD83D\uDD28 Different towns offer different jobs based on their industry:<br><br>\u2022 \uD83E\uDE93 <strong>Woodcutting / Mining</strong> \u2014 Physical labor, decent pay<br>\u2022 \uD83C\uDF3E <strong>Farm Work</strong> \u2014 Available at farming towns<br>\u2022 \uD83D\uDEE1\uFE0F <strong>Guard Duty</strong> \u2014 Protects the town, bonus reputation<br>\u2022 \uD83C\uDFB5 <strong>Entertainment</strong> \u2014 Play music at taverns (needs instrument)<br>\u2022 \uD83C\uDFE5 <strong>Plague Nurse</strong> \u2014 Dangerous but high pay during outbreaks<br><br>\uD83D\uDCA1 <strong>Tip:</strong> Working builds <strong>kingdom reputation</strong> and unlocks building rights!'
+                }
+            ]
+        },
 
-        // ── Chapter 9: Buildings & Production ─────────────────
+        // \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+        //  PART 2: ADVANCED
+        // \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+
+        // \u2500\u2500 Chapter 10: Buildings & Production \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
         {
             title: 'Buildings & Production',
             part: 'advanced',
@@ -1110,11 +1204,17 @@ window.Tutorial = (function () {
                     onEnter: function () {
                         giveGold(500);
                         snapshotState.licensesBeforeAdv = 0;
-                        try { snapshotState.licensesBeforeAdv = (Player.state.licenses || []).length; } catch (e) {}
+                        try {
+                            var _lics = Player.state.licenses || {};
+                            for (var _lk in _lics) { if (Array.isArray(_lics[_lk])) snapshotState.licensesBeforeAdv += _lics[_lk].length; }
+                        } catch (e) {}
                     },
                     waitFor: function () {
                         try {
-                            return (Player.state.licenses || []).length > (snapshotState.licensesBeforeAdv || 0);
+                            var _total = 0;
+                            var _lics = Player.state.licenses || {};
+                            for (var _lk in _lics) { if (Array.isArray(_lics[_lk])) _total += _lics[_lk].length; }
+                            return _total > (snapshotState.licensesBeforeAdv || 0);
                         } catch (e) { return false; }
                     },
                     onComplete: function () {

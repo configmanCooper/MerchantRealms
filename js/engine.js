@@ -30557,6 +30557,25 @@
             const k = findKingdom(kingdomId);
             if (k) k.taxRate = rate;
         },
+        infectNPC(person, illnessId, source) {
+            if (!world) return false;
+            var rng = world.rng || { random: Math.random, chance: function(c) { return Math.random() < c; }, randInt: function(a,b) { return a + Math.floor(Math.random()*(b-a+1)); } };
+            return infectNPC(person, illnessId, rng, world.day, source || 'god_mode');
+        },
+        godStartPlague(townId, illnessId, count) {
+            if (!world) return 0;
+            var town = findTown(townId);
+            if (!town) return 0;
+            var rng = world.rng || { random: Math.random, chance: function(c) { return Math.random() < c; }, randInt: function(a,b) { return a + Math.floor(Math.random()*(b-a+1)); } };
+            var ill = illnessId || 'plague';
+            var toInfect = count || Math.max(3, Math.floor((town.population || 50) * 0.15));
+            var townPeople = world.people.filter(function(p) { return p.alive && !p.sick && p.townId === townId; });
+            var infected = 0;
+            for (var i = 0; i < Math.min(toInfect, townPeople.length); i++) {
+                if (infectNPC(townPeople[i], ill, rng, world.day, 'god_plague_outbreak')) infected++;
+            }
+            return infected;
+        },
 
         // Leaderboard & Net Worth API
         calculateNetWorth(entity) { return calculateNetWorth(entity); },

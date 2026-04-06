@@ -331,16 +331,28 @@
     const INJURY_TYPES = [
         { id: 'cuts', name: 'Cuts & Bruises', severity: 'minor', healDays: 5, product: 'bandages', productCost: 5,
           debuffs: { workEfficiency: -0.10, hungerRate: 1.2 }, debuffDesc: '−10% work pay, +20% hunger drain' },
+        { id: 'bruise', name: 'Bruise', severity: 'minor', healDays: 5, product: 'bandages', productCost: 3,
+          debuffs: { workEfficiency: -0.05 }, debuffDesc: '−5% work pay' },
         { id: 'broken_bone', name: 'Broken Bone', severity: 'moderate', healDays: 15, product: 'splint', productCost: 15,
           debuffs: { workEfficiency: -0.30, travelSpeed: -0.40, blocksPhysical: true }, debuffDesc: '−30% work pay, −40% travel speed, blocks physical jobs' },
         { id: 'deep_wound', name: 'Deep Wound', severity: 'severe', healDays: 25, product: 'healing_tonic', productCost: 30, deathRisk: 0.02,
           debuffs: { workEfficiency: -0.60, travelSpeed: -0.50, hungerRate: 1.5, goldDrain: 2 }, debuffDesc: '−60% work pay, −50% travel speed, +50% hunger, 2g/day bandage cost, 2% daily death risk' },
         { id: 'concussion', name: 'Concussion', severity: 'moderate', healDays: 10, product: 'herbal_poultice', productCost: 12,
           debuffs: { workEfficiency: -0.25, xpMult: 0.5, tradePenalty: -0.15 }, debuffDesc: '−25% work pay, −50% XP gain, −15% trade prices' },
+        { id: 'encounter_wound', name: 'Combat Wound', severity: 'moderate', healDays: 12, product: 'bandages', productCost: 12,
+          debuffs: { workEfficiency: -0.20, travelSpeed: -0.25, hungerRate: 1.3 }, debuffDesc: '−20% work pay, −25% travel speed, +30% hunger drain' },
+        { id: 'encounter_wound_severe', name: 'Severe Combat Wound', severity: 'severe', healDays: 20, product: 'healing_tonic', productCost: 25, deathRisk: 0.015,
+          debuffs: { workEfficiency: -0.50, travelSpeed: -0.40, hungerRate: 1.5, goldDrain: 2 }, debuffDesc: '−50% work pay, −40% travel speed, +50% hunger, 2g/day bandage cost, 1.5% daily death risk' },
+        { id: 'ambush_wound', name: 'Ambush Wound', severity: 'moderate', healDays: 10, product: 'bandages', productCost: 10,
+          debuffs: { workEfficiency: -0.15, travelSpeed: -0.20 }, debuffDesc: '−15% work pay, −20% travel speed' },
+        { id: 'exhaustion_collapse', name: 'Exhaustion Collapse', severity: 'minor', healDays: 3, product: 'herbal_remedy', productCost: 5,
+          debuffs: { workEfficiency: -0.10, hungerRate: 1.2 }, debuffDesc: '−10% work pay, +20% hunger drain' },
     ];
 
     const ILLNESS_TYPES = [
         { id: 'common_cold', name: 'Common Cold', severity: 'minor', healDays: 3, product: 'herbal_remedy', productCost: 8,
+          debuffs: { workEfficiency: -0.05, hungerRate: 1.1 }, debuffDesc: '−5% work pay, +10% hunger drain' },
+        { id: 'cold', name: 'Common Cold', severity: 'minor', healDays: 3, product: 'herbal_remedy', productCost: 8,
           debuffs: { workEfficiency: -0.05, hungerRate: 1.1 }, debuffDesc: '−5% work pay, +10% hunger drain' },
         { id: 'fever', name: 'Fever', severity: 'moderate', healDays: 7, product: 'fever_tonic', productCost: 15,
           debuffs: { workEfficiency: -0.20, travelSpeed: -0.20, hungerRate: 1.3, xpMult: 0.75 }, debuffDesc: '−20% work pay, −20% travel speed, +30% hunger, −25% XP gain' },
@@ -348,6 +360,10 @@
           debuffs: { workEfficiency: -0.50, travelSpeed: -0.40, hungerRate: 1.5, goldDrain: 3, blocksPhysical: true }, debuffDesc: '−50% work pay, −40% travel speed, +50% hunger, 3g/day medicine cost, blocks physical jobs, 2% daily death risk' },
         { id: 'food_poisoning', name: 'Food Poisoning', severity: 'minor', healDays: 3, product: 'antidote', productCost: 10,
           debuffs: { workEfficiency: -0.10, hungerRate: 1.4, travelSpeed: -0.10 }, debuffDesc: '−10% work pay, +40% hunger drain, −10% travel speed' },
+        { id: 'waterlogged_fever', name: 'Waterlogged Fever', severity: 'severe', healDays: 15, product: 'fever_tonic', productCost: 25, deathRisk: 0.015,
+          debuffs: { workEfficiency: -0.40, travelSpeed: -0.30, hungerRate: 1.4 }, debuffDesc: '−40% work pay, −30% travel speed, +40% hunger drain, 1.5% daily death risk' },
+        { id: 'infection', name: 'Infection', severity: 'moderate', healDays: 10, product: 'antidote', productCost: 18, deathRisk: 0.005,
+          debuffs: { workEfficiency: -0.25, hungerRate: 1.2 }, debuffDesc: '−25% work pay, +20% hunger drain, 0.5% daily death risk' },
     ];
 
     const MILITARY_RANKS = ['militiaman', 'footman', 'sergeant', 'knight'];
@@ -2738,14 +2754,28 @@
             if (route[si].fromTownId) routeTownIds[route[si].fromTownId] = true;
             if (route[si].toTownId) routeTownIds[route[si].toTownId] = true;
         }
-        // Check each town for quarantine (regular or martial)
+        // Check each town for quarantine via kingdom.healthPolicies
         for (var tid in routeTownIds) {
             var t = Engine.findTown(tid);
-            if (!t || !t.activePolicies) continue;
-            var qType = null; // 'quarantine_town' or 'martial_quarantine'
-            for (var qi = 0; qi < t.activePolicies.length; qi++) {
-                if (t.activePolicies[qi].id === 'martial_quarantine') { qType = 'martial'; break; }
-                if (t.activePolicies[qi].id === 'quarantine_town') { qType = 'standard'; }
+            if (!t) continue;
+            var qType = null;
+            // Check kingdom health policies for this town
+            if (t.kingdomId) {
+                var kingdom = Engine.findKingdom ? Engine.findKingdom(t.kingdomId) : null;
+                if (kingdom && kingdom.healthPolicies) {
+                    var day = Engine.getDay ? Engine.getDay() : 0;
+                    for (var qi = 0; qi < kingdom.healthPolicies.length; qi++) {
+                        var pol = kingdom.healthPolicies[qi];
+                        if (!pol.active || (pol.expiresDay && day > pol.expiresDay)) continue;
+                        if (pol.townId !== tid) continue;
+                        if (pol.type === 'martial_quarantine') { qType = 'martial'; break; }
+                        if (pol.type === 'quarantine_town') { qType = 'standard'; }
+                    }
+                }
+            }
+            // Also check town.quarantined flag (set by RA propose action)
+            if (!qType && t.quarantined) {
+                qType = 'standard';
             }
             if (!qType) continue;
 
@@ -2838,6 +2868,86 @@
         return { type: 'fine', fine: baseFine };
     }
 
+    // Read-only quarantine info for a travel destination (no side effects)
+    function getRouteQuarantineInfo(townId) {
+        var originTownId = player.townId;
+        if (!originTownId) return null;
+        var route = Engine.findPath(originTownId, townId);
+        if (!route || route.length === 0) return null;
+
+        var routeTownIds = {};
+        routeTownIds[originTownId] = true;
+        routeTownIds[townId] = true;
+        for (var si = 0; si < route.length; si++) {
+            if (route[si].fromTownId) routeTownIds[route[si].fromTownId] = true;
+            if (route[si].toTownId) routeTownIds[route[si].toTownId] = true;
+        }
+
+        for (var tid in routeTownIds) {
+            var t = Engine.findTown(tid);
+            if (!t) continue;
+            var qType = null;
+            if (t.kingdomId) {
+                var kingdom = Engine.findKingdom ? Engine.findKingdom(t.kingdomId) : null;
+                if (kingdom && kingdom.healthPolicies) {
+                    var day = Engine.getDay ? Engine.getDay() : 0;
+                    for (var qi = 0; qi < kingdom.healthPolicies.length; qi++) {
+                        var pol = kingdom.healthPolicies[qi];
+                        if (!pol.active || (pol.expiresDay && day > pol.expiresDay)) continue;
+                        if (pol.townId !== tid) continue;
+                        if (pol.type === 'martial_quarantine') { qType = 'martial'; break; }
+                        if (pol.type === 'quarantine_town') { qType = 'standard'; }
+                    }
+                }
+            }
+            if (!qType && t.quarantined) qType = 'standard';
+            if (!qType) continue;
+
+            var isMartial = qType === 'martial';
+            var qLabel = isMartial ? 'Martial Quarantine' : 'Quarantine';
+
+            // Check if player passes freely
+            if (player.isNoble) {
+                return { blocked: false, townName: t.name, townId: tid, qType: qType, qLabel: qLabel,
+                    reason: 'Your noble status grants free passage.' };
+            }
+            var playerRankInKingdom = 0;
+            if (t.kingdomId && player.socialRank) {
+                playerRankInKingdom = player.socialRank[t.kingdomId] || 0;
+            }
+            if (!isMartial && playerRankInKingdom >= 3) {
+                return { blocked: false, townName: t.name, townId: tid, qType: qType, qLabel: qLabel,
+                    reason: 'Your merchant standing grants passage on trade business.' };
+            }
+
+            // Blocked — calculate sneak chance
+            var sneakChance = isMartial ? 0.20 : 0.40;
+            if (hasSkill('smuggler') || hasSkill('streetwise')) sneakChance += 0.20;
+            if (hasSkill('cartographer')) sneakChance += 0.10;
+            sneakChance = Math.min(sneakChance, 0.95);
+
+            // Ranks allowed through
+            var allowedRanks = [];
+            allowedRanks.push('Minor Noble or higher (rank 4+)');
+            if (!isMartial) allowedRanks.push('Guildmaster (rank 3)');
+
+            return {
+                blocked: true, townName: t.name, townId: tid, qType: qType, qLabel: qLabel, isMartial: isMartial,
+                sneakChance: sneakChance, allowedRanks: allowedRanks
+            };
+        }
+        return null;
+    }
+
+    // Execute a quarantine sneak attempt (called after player confirms)
+    function attemptQuarantineSneak(destTownId) {
+        var originTownId = player.townId;
+        if (!originTownId) return { allowed: false, message: 'Cannot determine location.' };
+        var route = Engine.findPath(originTownId, destTownId);
+        if (!route || route.length === 0) return { allowed: false, message: 'No route found.' };
+        return _checkRouteQuarantine(route, originTownId, destTownId);
+    }
+
     /**
      * Player travels to another town (takes time).
      */
@@ -2883,10 +2993,12 @@
             return { success: false, message: borderResult.message };
         }
 
-        // Check quarantine on route (source town, destination, and intermediaries)
-        var quarantineCheck = _checkRouteQuarantine(route, originTownId, townId);
-        if (quarantineCheck && !quarantineCheck.allowed) {
-            return { success: false, message: quarantineCheck.message };
+        // Check quarantine on route (skip if UI already handled it)
+        if (!options.skipQuarantineCheck) {
+            var quarantineCheck = _checkRouteQuarantine(route, originTownId, townId);
+            if (quarantineCheck && !quarantineCheck.allowed) {
+                return { success: false, message: quarantineCheck.message };
+            }
         }
 
         // Determine travel type from route segments
@@ -5851,7 +5963,8 @@
         return { success: true, message: msg };
     }
 
-    function buyHorseForTravel(townId, cost) {
+    function buyHorseForTravel(townId, cost, options) {
+        options = options || {};
         cost = Number(cost);
         if (!cost || !isFinite(cost) || cost <= 0) return { success: false, message: 'Invalid cost.' };
         cost = Math.floor(cost);
@@ -5873,7 +5986,7 @@
         Engine.logEvent('🐴 Bought a horse for ' + cost + 'g!', { type: 'purchase' }, 'my_actions');
 
         // Now travel with horse
-        return travelTo(townId, { mode: 'horse' });
+        return travelTo(townId, { mode: 'horse', skipQuarantineCheck: options.skipQuarantineCheck });
     }
 
     // ========================================================
@@ -8575,6 +8688,12 @@
             if (!window._godInvincible) {
                 player.alive = false;
                 Engine.logEvent(player.fullName + ' has died with no heir. The legacy ends.');
+                // Show defeat screen immediately — don't wait for checkEndConditions tick
+                if (typeof Game !== 'undefined' && Game.setState) Game.setState('lost');
+                if (typeof UI !== 'undefined' && UI.showLoseScreen) {
+                    var cause = player.deathCause || 'unknown causes';
+                    UI.showLoseScreen('No Heir');
+                }
             }
         }
     }
@@ -9022,8 +9141,11 @@
         } else {
             // No heir available — game effectively becomes the NPC king
             if (!window._godInvincible) {
+                player.deathCause = 'Became king but had no heir — the merchant legacy ends';
                 player.alive = false;
                 Engine.logEvent(`${player.fullName} rules as king but has no heir. The merchant legacy ends.`);
+                if (typeof Game !== 'undefined' && Game.setState) Game.setState('lost');
+                if (typeof UI !== 'undefined' && UI.showLoseScreen) UI.showLoseScreen('No Heir');
             }
         }
     }
@@ -9445,7 +9567,26 @@
                 return m;
             },
             needsSubChoice: 'good',
-            execute: function() { Engine.logEvent('🚫 The king considers banning goods on the Royal Advisor\'s recommendation.'); }
+            subChoiceOptions: (function() {
+                var opts = [];
+                var bannedSet = (kingdom.laws && kingdom.laws.bannedGoods) ? kingdom.laws.bannedGoods : [];
+                for (var rk in RESOURCE_TYPES) {
+                    var res = RESOURCE_TYPES[rk];
+                    if (bannedSet.indexOf(res.id) === -1) {
+                        opts.push({ value: res.id, label: res.icon + ' ' + res.name });
+                    }
+                }
+                return opts;
+            })(),
+            execute: function(subChoice) {
+                if (!subChoice) { Engine.logEvent('🚫 No good specified for ban.'); return; }
+                if (!kingdom.laws) kingdom.laws = {};
+                if (!kingdom.laws.bannedGoods) kingdom.laws.bannedGoods = [];
+                if (kingdom.laws.bannedGoods.indexOf(subChoice) === -1) kingdom.laws.bannedGoods.push(subChoice);
+                var resName = subChoice;
+                for (var rk in RESOURCE_TYPES) { if (RESOURCE_TYPES[rk].id === subChoice) { resName = RESOURCE_TYPES[rk].name; break; } }
+                Engine.logEvent('🚫 ' + kingdom.name + ' bans trade of ' + resName + ' on the Royal Advisor\'s recommendation.');
+            }
         });
         actions.push({
             category: 'policy', id: 'lift_ban',
@@ -9459,7 +9600,28 @@
                 if (happiness < 40) m.push({ name: 'Unhappy people want more goods', val: 0.15 });
                 return m;
             },
-            execute: function() { Engine.logEvent('✅ The king considers lifting a trade ban.'); }
+            needsSubChoice: 'banned_good',
+            subChoiceOptions: (function() {
+                var opts = [];
+                var banned = (kingdom.laws && kingdom.laws.bannedGoods) ? kingdom.laws.bannedGoods : [];
+                for (var bi = 0; bi < banned.length; bi++) {
+                    var resName = banned[bi];
+                    var resIcon = '';
+                    for (var rk in RESOURCE_TYPES) { if (RESOURCE_TYPES[rk].id === banned[bi]) { resName = RESOURCE_TYPES[rk].name; resIcon = RESOURCE_TYPES[rk].icon; break; } }
+                    opts.push({ value: banned[bi], label: resIcon + ' ' + resName });
+                }
+                return opts;
+            })(),
+            execute: function(subChoice) {
+                if (!subChoice) { Engine.logEvent('✅ No good specified for unban.'); return; }
+                if (kingdom.laws && kingdom.laws.bannedGoods) {
+                    var idx = kingdom.laws.bannedGoods.indexOf(subChoice);
+                    if (idx !== -1) kingdom.laws.bannedGoods.splice(idx, 1);
+                }
+                var resName = subChoice;
+                for (var rk in RESOURCE_TYPES) { if (RESOURCE_TYPES[rk].id === subChoice) { resName = RESOURCE_TYPES[rk].name; break; } }
+                Engine.logEvent('✅ ' + kingdom.name + ' lifts the ban on ' + resName + '.');
+            }
         });
         actions.push({
             category: 'policy', id: 'conscription',
@@ -9486,23 +9648,38 @@
         actions.push({
             category: 'health', id: 'medical_funding',
             icon: '🏥', name: 'Increase Medical Funding',
-            desc: 'Fund healers and hospitals across the kingdom.',
+            desc: 'Fund healers and hospitals in a specific town.',
             baseChance: 0.50,
             modifiers: function() {
                 var m = [];
                 if (kp.temperament === 'kind' || kp.temperament === 'merciful') m.push({ name: 'Compassionate king', val: 0.20 });
                 if (treasury > 8000) m.push({ name: 'Can afford it', val: 0.10 });
                 else if (treasury < 3000) m.push({ name: 'Low treasury', val: -0.20 });
-                // Check for active plague
                 var hasPlague = false;
                 try { for (var ti = 0; ti < towns.length; ti++) { if (towns[ti].plagueActive) { hasPlague = true; break; } } } catch(e) {}
                 if (hasPlague) m.push({ name: 'Plague outbreak!', val: 0.30 });
                 return m;
             },
-            execute: function() {
+            needsSubChoice: 'town',
+            subChoiceOptions: (function() {
+                var opts = [{ value: '_all', label: '🏥 All Towns (Kingdom-wide)' }];
+                for (var ti = 0; ti < towns.length; ti++) {
+                    var plagueTag = towns[ti].plagueActive ? ' 🦠' : '';
+                    opts.push({ value: towns[ti].id, label: '🏥 ' + towns[ti].name + plagueTag });
+                }
+                return opts;
+            })(),
+            execute: function(subChoice) {
                 var cost = Math.min(800, treasury * 0.04);
                 kingdom.gold = Math.max(0, kingdom.gold - cost);
-                Engine.logEvent('🏥 ' + kingdom.name + ' increases medical funding across the kingdom.');
+                if (subChoice && subChoice !== '_all') {
+                    var targetTown = Engine.findTown(subChoice);
+                    if (targetTown) {
+                        Engine.logEvent('🏥 ' + kingdom.name + ' increases medical funding in ' + targetTown.name + '.');
+                    }
+                } else {
+                    Engine.logEvent('🏥 ' + kingdom.name + ' increases medical funding across the kingdom.');
+                }
             }
         });
         actions.push({
@@ -9520,12 +9697,41 @@
                 return m;
             },
             needsSubChoice: 'town',
-            execute: function() { Engine.logEvent('🔒 The king considers quarantine on the Royal Advisor\'s recommendation.'); }
+            subChoiceOptions: (function() {
+                var opts = [];
+                for (var ti = 0; ti < towns.length; ti++) {
+                    var plagueTag = towns[ti].plagueActive ? ' 🦠' : '';
+                    opts.push({ value: towns[ti].id, label: towns[ti].name + plagueTag });
+                }
+                return opts;
+            })(),
+            execute: function(subChoice) {
+                if (!subChoice) { Engine.logEvent('🔒 No town specified for quarantine.'); return; }
+                var targetTown = Engine.findTown(subChoice);
+                if (!targetTown) return;
+                targetTown.quarantined = true;
+                targetTown.quarantineDay = Engine.getDay();
+                // Also add to kingdom healthPolicies for proper travel blocking
+                if (!kingdom.healthPolicies) kingdom.healthPolicies = [];
+                // Remove existing quarantine for this town first
+                for (var qi = kingdom.healthPolicies.length - 1; qi >= 0; qi--) {
+                    if (kingdom.healthPolicies[qi].townId === subChoice && kingdom.healthPolicies[qi].active &&
+                        (kingdom.healthPolicies[qi].type === 'quarantine_town' || kingdom.healthPolicies[qi].type === 'martial_quarantine')) {
+                        kingdom.healthPolicies[qi].active = false;
+                    }
+                }
+                kingdom.healthPolicies.push({
+                    type: 'quarantine_town', townId: subChoice, active: true,
+                    startDay: Engine.getDay(), expiresDay: Engine.getDay() + 45,
+                    costPerDay: 8
+                });
+                Engine.logEvent('🔒 ' + kingdom.name + ' quarantines ' + targetTown.name + ' on the Royal Advisor\'s advice.');
+            }
         });
         actions.push({
             category: 'health', id: 'close_port',
-            icon: '⚓', name: 'Close Ports',
-            desc: 'Close kingdom ports to prevent disease or enemy ships.',
+            icon: '⚓', name: 'Close a Port',
+            desc: 'Close a specific port to prevent disease or enemy ships.',
             baseChance: 0.35,
             modifiers: function() {
                 var m = [];
@@ -9535,8 +9741,35 @@
                 else if (kp.intelligence === 'brilliant') m.push({ name: 'Smart king worries about trade loss', val: -0.15 });
                 return m;
             },
-            execute: function() {
-                Engine.logEvent('⚓ On the Royal Advisor\'s advice, ' + kingdom.name + ' closes its ports.');
+            needsSubChoice: 'port_town',
+            subChoiceOptions: (function() {
+                var opts = [];
+                for (var ti = 0; ti < towns.length; ti++) {
+                    if (towns[ti].isPort || towns[ti].hasPort || towns[ti].isCoastal) {
+                        opts.push({ value: towns[ti].id, label: '⚓ ' + towns[ti].name });
+                    }
+                }
+                if (opts.length === 0) {
+                    for (var ti2 = 0; ti2 < towns.length; ti2++) {
+                        opts.push({ value: towns[ti2].id, label: towns[ti2].name });
+                    }
+                }
+                return opts;
+            })(),
+            execute: function(subChoice) {
+                if (!subChoice) { Engine.logEvent('⚓ No port specified.'); return; }
+                var targetTown = Engine.findTown(subChoice);
+                if (!targetTown) return;
+                targetTown.portClosed = true;
+                targetTown.portClosedDay = Engine.getDay();
+                // Also add to kingdom healthPolicies
+                if (!kingdom.healthPolicies) kingdom.healthPolicies = [];
+                kingdom.healthPolicies.push({
+                    type: 'close_port', townId: subChoice, active: true,
+                    startDay: Engine.getDay(), expiresDay: Engine.getDay() + 30,
+                    costPerDay: 5
+                });
+                Engine.logEvent('⚓ On the Royal Advisor\'s advice, ' + kingdom.name + ' closes the port at ' + targetTown.name + '.');
             }
         });
 
@@ -9617,7 +9850,7 @@
         return actions;
     }
 
-    function proposeKingAction(kingdomId, actionId) {
+    function proposeKingAction(kingdomId, actionId, subChoice) {
         if (!player.royalAdvisorBenefits || !player.royalAdvisorBenefits.swayOverKing) return { success: false, message: 'Not a royal advisor.' };
         if (kingdomId !== player.royalAdvisorKingdomId) return { success: false, message: 'No sway in this kingdom.' };
         if (player.politicalCapital <= 0) return { success: false, message: 'No political capital remaining.' };
@@ -9658,7 +9891,7 @@
         }
 
         // Execute the action
-        if (typeof action.execute === 'function') action.execute();
+        if (typeof action.execute === 'function') action.execute(subChoice);
 
         autoJournalCapture('politics', 'I proposed ' + action.name + ' to the king, and it was accepted! My influence at court grows.', { mood: 'confident' });
         return { success: true, message: 'The king accepted: ' + action.name + '! (-1 political capital)', chance: Math.round(action.finalChance * 100) };
@@ -13267,10 +13500,13 @@
         // Check if heir is dead
         if (heir && !heir.alive && !window._godInvincible) {
             // All heirs dead — game over
-            player.alive = false;
             player.regencyMode = false;
             player.regencyData = null;
+            player.deathCause = 'Heir died during regency — the legacy ends';
             Engine.logEvent('The heir has died during regency. The legacy ends.');
+            player.alive = false;
+            if (typeof Game !== 'undefined' && Game.setState) Game.setState('lost');
+            if (typeof UI !== 'undefined' && UI.showLoseScreen) UI.showLoseScreen('No Heir');
             return;
         }
 
@@ -13384,9 +13620,12 @@
         const heir = Engine.findPerson(rd.heirId);
         if (!heir || !heir.alive) {
             if (!window._godInvincible) {
+                player.deathCause = 'Heir died — the legacy ends';
                 player.alive = false;
                 player.regencyMode = false;
                 player.regencyData = null;
+                if (typeof Game !== 'undefined' && Game.setState) Game.setState('lost');
+                if (typeof UI !== 'undefined' && UI.showLoseScreen) UI.showLoseScreen('No Heir');
                 return;
             }
         }
@@ -14375,8 +14614,9 @@
         if (rng && rng.random() < deathChance && !window._godInvincible) {
             Engine.logEvent(player.fullName + ' was killed in battle as a ' + MILITARY_RANK_LABELS[rank] + '!');
             if (typeof UI !== 'undefined' && UI.toast) UI.toast('☠️ Killed in battle!', 'danger', 'critical');
-            player.alive = false;
+            player.deathCause = 'Killed in battle as a ' + (MILITARY_RANK_LABELS[rank] || 'soldier');
             player.militaryActive = false;
+            handlePlayerDeath();
             return;
         }
 
@@ -14452,8 +14692,9 @@
         if (rng && rng.random() < nurseDeath && !window._godInvincible) {
             Engine.logEvent(player.fullName + ' was killed when the field hospital was attacked!');
             if (typeof UI !== 'undefined' && UI.toast) UI.toast('☠️ Killed in a field hospital attack!', 'danger', 'critical');
-            player.alive = false;
+            player.deathCause = 'Killed in a field hospital attack';
             player.militaryActive = false;
+            handlePlayerDeath();
             return;
         }
 
@@ -14469,7 +14710,7 @@
         var infectionChance = 0.015 * approachCfg.injuryMult;
         if (rng && rng.chance(infectionChance)) {
             player.illnesses = player.illnesses || [];
-            player.illnesses.push({ type: 'infection', name: 'Infection', severity: 'mild', dayOccurred: day, treated: false, source: 'nursing' });
+            player.illnesses.push({ type: 'infection', name: 'Infection', severity: 'minor', dayOccurred: day, treated: false, source: 'nursing' });
             Engine.logEvent('🤒 ' + player.fullName + ' contracted an infection while treating wounded soldiers.');
         }
 
@@ -14536,6 +14777,7 @@
                     type: 'bruise', name: 'Bruise', severity: 'minor',
                     dayOccurred: day, treated: false, healDay: day + 5, source: 'military_task'
                 });
+                _applyConditionHealthHit('minor');
                 Engine.logEvent('🩹 ' + player.fullName + ' suffered a minor injury during ' + task.name + '.');
             }
         }
@@ -14594,6 +14836,24 @@
     // §11.10 INJURY & ILLNESS SYSTEM
     // ========================================================
 
+    // Health impact when first getting a condition
+    var _CONDITION_HEALTH_HIT = { minor: 5, moderate: 10, severe: 20 };
+    // Daily health drain while condition is active
+    var _CONDITION_DAILY_DRAIN = { minor: 1, moderate: 3, severe: 8 };
+
+    function _applyConditionHealthHit(severity) {
+        var hit = _CONDITION_HEALTH_HIT[severity] || 0;
+        if (hit > 0) {
+            player.health = Math.max(0, (player.health || 100) - hit);
+            if (player.health <= 0 && !window._godInvincible) {
+                player.deathCause = 'Succumbed to ' + severity + ' injuries/illness';
+                Engine.logEvent('💀 ' + player.fullName + ' died from their injuries/illness.');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('☠️ You have died!', 'danger', 'critical');
+                handlePlayerDeath();
+            }
+        }
+    }
+
     function inflictRandomInjury(source) {
         const rng = Engine.getRng();
         if (!rng) return;
@@ -14616,6 +14876,7 @@
             source: source || 'unknown'
         };
         player.injuries.push(injury);
+        _applyConditionHealthHit(severity);
         Engine.logEvent(`${player.fullName} sustained ${type.name} (${severity}).`);
 
         // Journal — injury
@@ -14693,7 +14954,9 @@
             Engine.logEvent(player.fullName + '\'s housing protected them from illness.');
             return;
         }
-        const type = ILLNESS_TYPES[rng.randInt(0, ILLNESS_TYPES.length - 1)];
+        // Filter out specialty illnesses from random pool (waterlogged_fever is sea-only, infection is combat-only)
+        var randomPool = ILLNESS_TYPES.filter(function(t) { return t.id !== 'waterlogged_fever' && t.id !== 'infection'; });
+        const type = randomPool[rng.randInt(0, randomPool.length - 1)];
         const illness = {
             type: type.id,
             name: type.name,
@@ -14704,6 +14967,7 @@
             source: source || 'unknown'
         };
         player.illnesses.push(illness);
+        _applyConditionHealthHit(type.severity);
         Engine.logEvent(`${player.fullName} contracted ${type.name} (${type.severity}).`);
         if (typeof UI !== 'undefined' && UI.toast) {
             UI.toast(`🤒 Illness: ${type.name} (${type.severity})`, 'warning');
@@ -14730,6 +14994,7 @@
             source: source || 'unknown'
         };
         player.illnesses.push(illness);
+        _applyConditionHealthHit(type.severity);
         Engine.logEvent(`${player.fullName} contracted ${type.name}.`);
         if (typeof UI !== 'undefined' && UI.toast) {
             UI.toast(`🤒 Illness: ${type.name}`, 'warning');
@@ -14753,12 +15018,13 @@
         const typeDef = isIllness
             ? ILLNESS_TYPES.find(t => t.id === condition.type)
             : INJURY_TYPES.find(t => t.id === condition.type);
-        if (!typeDef) return { success: false, message: 'Unknown condition type.' };
+        // Fallback type definition for unregistered conditions
+        var effectiveTypeDef = typeDef || { id: condition.type, name: condition.name || 'Unknown', severity: condition.severity || 'minor', healDays: condition.severity === 'severe' ? 15 : condition.severity === 'moderate' ? 7 : 3, product: 'antidote', productCost: condition.severity === 'severe' ? 30 : condition.severity === 'moderate' ? 15 : 8 };
 
         // Get AI-driven fee from the hospital
         var fees = Engine.getHospitalFees ? Engine.getHospitalFees(player.townId) : null;
         var hospInfo = fees ? (fees.hospital || fees.clinic) : null;
-        var cost = hospInfo && hospInfo.fees ? (hospInfo.fees[condition.severity] || getHospitalCost(typeDef, condition.severity)) : getHospitalCost(typeDef, condition.severity);
+        var cost = hospInfo && hospInfo.fees ? (hospInfo.fees[condition.severity] || getHospitalCost(effectiveTypeDef, condition.severity)) : getHospitalCost(effectiveTypeDef, condition.severity);
         if (player.gold < cost) return { success: false, message: 'Not enough gold. Hospital costs ' + cost + 'g.' };
 
         // Treatment processing time
@@ -14804,12 +15070,12 @@
         const typeDef = isIllness
             ? ILLNESS_TYPES.find(t => t.id === condition.type)
             : INJURY_TYPES.find(t => t.id === condition.type);
-        if (!typeDef) return { success: false, message: 'Unknown condition type.' };
+        var effectiveTypeDef = typeDef || { id: condition.type, name: condition.name || 'Unknown', severity: condition.severity || 'minor', healDays: condition.severity === 'moderate' ? 7 : 3, product: 'antidote', productCost: condition.severity === 'moderate' ? 15 : 8 };
 
         // Get AI-driven fee from the clinic
         var fees = Engine.getHospitalFees ? Engine.getHospitalFees(player.townId) : null;
         var clinicInfo = fees ? fees.clinic : null;
-        var cost = clinicInfo && clinicInfo.fees ? (clinicInfo.fees[condition.severity] || getClinicCost(typeDef, condition.severity)) : getClinicCost(typeDef, condition.severity);
+        var cost = clinicInfo && clinicInfo.fees ? (clinicInfo.fees[condition.severity] || getClinicCost(effectiveTypeDef, condition.severity)) : getClinicCost(effectiveTypeDef, condition.severity);
         if (player.gold < cost) return { success: false, message: 'Not enough gold. Clinic costs ' + cost + 'g.' };
 
         var treatTicks = 5; // clinic minor is quick
@@ -14832,9 +15098,9 @@
             return { success: true, message: 'Treated ' + condition.name + ' at the clinic for ' + cost + 'g.' };
         } else {
             condition.treated = true;
-            condition.healDay = Engine.getDay() + Math.ceil((typeDef.healDays || 7) / 2);
+            condition.healDay = Engine.getDay() + Math.ceil((effectiveTypeDef.healDays || 7) / 2);
             Engine.logEvent(player.fullName + ' received clinic treatment for ' + condition.name + ' (' + cost + 'g). Recovery underway.');
-            return { success: true, message: 'Clinic treated ' + condition.name + ' for ' + cost + 'g. You\'ll recover in ' + Math.ceil((typeDef.healDays || 7) / 2) + ' days.' };
+            return { success: true, message: 'Clinic treated ' + condition.name + ' for ' + cost + 'g. You\'ll recover in ' + Math.ceil((effectiveTypeDef.healDays || 7) / 2) + ' days.' };
         }
     }
 
@@ -14936,7 +15202,7 @@
         const typeDef = isIllness
             ? ILLNESS_TYPES.find(t => t.id === condition.type)
             : INJURY_TYPES.find(t => t.id === condition.type);
-        if (!typeDef) return { success: false, message: 'Unknown condition type.' };
+        var effectiveTypeDef = typeDef || { id: condition.type, name: condition.name || 'Unknown', severity: condition.severity || 'minor', healDays: condition.severity === 'severe' ? 15 : condition.severity === 'moderate' ? 7 : 3, product: 'antidote', productCost: 10 };
 
         // first_aid: only minor injuries/illnesses. field_medic: minor+moderate. doctor: all.
         if (!hasSkill('doctor')) {
@@ -14945,7 +15211,7 @@
         }
 
         // Check for product in inventory
-        const productId = typeDef.product;
+        const productId = effectiveTypeDef.product;
         if (!player.inventory[productId] || player.inventory[productId] < 1) {
             return { success: false, message: `Need ${productId} in inventory to self-treat.` };
         }
@@ -14954,8 +15220,8 @@
 
         player.inventory[productId]--;
         condition.treated = true;
-        var healDays = Math.ceil(typeDef.healDays / 2);
-        if (hasSkill('first_aid')) healDays = Math.ceil(healDays * 0.75); // 25% faster with first_aid
+        var healDays = Math.ceil(effectiveTypeDef.healDays / 2);
+        if (hasSkill('first_aid')) healDays = Math.ceil(healDays * 0.75);
         condition.healDay = Engine.getDay() + healDays;
 
         Engine.logEvent(`${player.fullName} self-treated ${condition.name} with ${productId}.`);
@@ -15033,6 +15299,51 @@
         const day = Engine.getDay();
         const rng = Engine.getRng();
 
+        // Daily health drain from active conditions (use worst severity)
+        var worstDrain = 0;
+        for (var di = 0; di < (player.injuries || []).length; di++) {
+            var drainI = _CONDITION_DAILY_DRAIN[(player.injuries[di].severity)] || 0;
+            if (drainI > worstDrain) worstDrain = drainI;
+        }
+        for (var dj = 0; dj < (player.illnesses || []).length; dj++) {
+            var drainJ = _CONDITION_DAILY_DRAIN[(player.illnesses[dj].severity)] || 0;
+            if (drainJ > worstDrain) worstDrain = drainJ;
+        }
+        if (worstDrain > 0) {
+            player.health = Math.max(0, (player.health || 100) - worstDrain);
+            if (player.health <= 0 && !window._godInvincible) {
+                // Find the worst condition name for cause of death
+                var worstName = 'injuries';
+                var worstSev = 0;
+                var sevMap = { minor: 1, moderate: 2, severe: 3 };
+                for (var wi = 0; wi < (player.injuries || []).length; wi++) {
+                    if ((sevMap[player.injuries[wi].severity] || 0) > worstSev) { worstSev = sevMap[player.injuries[wi].severity]; worstName = player.injuries[wi].name || 'injury'; }
+                }
+                for (var wj = 0; wj < (player.illnesses || []).length; wj++) {
+                    if ((sevMap[player.illnesses[wj].severity] || 0) > worstSev) { worstSev = sevMap[player.illnesses[wj].severity]; worstName = player.illnesses[wj].name || 'illness'; }
+                }
+                Engine.logEvent('💀 ' + player.fullName + ' succumbed to ' + worstName + '. Health reached zero.');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('☠️ Died from ' + worstName + '!', 'danger', 'critical');
+                player.deathCause = worstName;
+                handlePlayerDeath();
+                return;
+            }
+        }
+
+        // Health recovery: +1/day if no conditions AND energy, hunger, thirst all > 50
+        if ((player.injuries || []).length === 0 && (player.illnesses || []).length === 0) {
+            var hp = player.health || 100;
+            var maxHp = player.maxHealth || 100;
+            if (hp < maxHp) {
+                var energy = player.energy != null ? player.energy : 100;
+                var hunger = player.hunger != null ? player.hunger : 100;
+                var thirst = player.thirst != null ? player.thirst : 100;
+                if (energy > 50 && hunger > 50 && thirst > 50) {
+                    player.health = Math.min(maxHp, hp + 1);
+                }
+            }
+        }
+
         // Process injuries
         for (let i = player.injuries.length - 1; i >= 0; i--) {
             const inj = player.injuries[i];
@@ -15078,14 +15389,16 @@
                     if (injDeathRisk > 0 && rng && rng.random() < injDeathRisk && !window._godInvincible) {
                         Engine.logEvent(`${player.fullName} died from ${inj.name}.`);
                         if (typeof UI !== 'undefined' && UI.toast) UI.toast(`☠️ Died from ${inj.name}!`, 'danger', 'critical');
-                        player.alive = false;
+                        player.deathCause = inj.name;
+                        handlePlayerDeath();
                         return;
                     }
                     // General severe injury death: ~1.5% daily after 30 days untreated
                     if (daysUntreated >= 30 && rng && rng.random() < 0.015 && !window._godInvincible) {
                         Engine.logEvent(`${player.fullName} died from untreated ${inj.name}.`);
                         if (typeof UI !== 'undefined' && UI.toast) UI.toast(`☠️ Died from untreated ${inj.name}!`, 'danger', 'critical');
-                        player.alive = false;
+                        player.deathCause = 'Untreated ' + inj.name;
+                        handlePlayerDeath();
                         return;
                     }
                 }
@@ -15114,7 +15427,8 @@
                     if (rng && rng.random() < deathRisk && !window._godInvincible) {
                         Engine.logEvent(`${player.fullName} died from ${ill.name}.`);
                         if (typeof UI !== 'undefined' && UI.toast) UI.toast(`☠️ Died from ${ill.name}!`, 'danger', 'critical');
-                        player.alive = false;
+                        player.deathCause = ill.name;
+                        handlePlayerDeath();
                         return;
                     }
                 }
@@ -17959,8 +18273,9 @@
                         var playerPerson = Engine.findPerson(player.id);
                         if (playerPerson) Engine.killPerson(playerPerson, 'executed_treason');
                     }
-                    player.alive = false;
+                    player.deathCause = 'Executed for treason by ' + (enemyK ? enemyK.name : 'the kingdom');
                     player.health = 0;
+                    handlePlayerDeath();
                     return; // Player is dead
                 }
 
@@ -18549,10 +18864,10 @@
             autoJournalCapture('politics', 'The new ruler of ' + kName + ' has ordered my execution. This is the end.', { mood: 'devastated' });
             if (typeof UI !== 'undefined' && UI.toast) UI.toast('💀 EXECUTED by the new ruler of ' + kName + '!', 'danger');
             // Trigger player death
-            player.alive = false;
             player.deathDay = day;
             player.deathCause = 'Executed by the new ruler of ' + kName;
             Engine.logEvent('💀 ' + player.fullName + ' was executed by the new ruler of ' + kName + '.');
+            handlePlayerDeath();
 
         } else if (fate === 'jail_seize') {
             // RA: demoted to Citizen, jailed, gold + buildings seized
@@ -23266,7 +23581,8 @@
                     if (typeof UI !== 'undefined' && UI.toast) {
                         UI.toast('💀 You have died of starvation!', 'danger');
                     }
-                    if (typeof handlePlayerDeath === 'function') handlePlayerDeath('starvation');
+                    player.deathCause = 'starvation';
+                    if (typeof handlePlayerDeath === 'function') handlePlayerDeath();
                 }
             }
         } else if (player.hunger <= 20) {
@@ -23274,14 +23590,26 @@
             player.energy = Math.max(0, (player.energy || 0) - 1);
         }
 
-        // Health recovery — when both hunger and thirst are above 20
-        if (player.hunger > 20 && player.thirst > 20 && (player.health || 100) < (player.maxHealth || 100)) {
-            if (!player._lastHealthRecoverTick || Engine.getDay() > player._lastHealthRecoverTick) {
-                player._lastHealthRecoverTick = Engine.getDay();
-                var recoveryRate = 1; // base 1 HP/day
-                if (player.townId) recoveryRate = 2; // 2 HP/day in town
-                if (player.hunger > 60 && player.thirst > 60) recoveryRate += 1; // well-fed bonus
-                player.health = Math.min((player.maxHealth || 100), (player.health || 100) + recoveryRate);
+        // Health recovery — only when no injuries/illnesses AND hunger, thirst, energy > 50
+        // (Moved to tickInjuriesAndIllnesses for centralized health management)
+
+        // Low hunger/thirst health drain: -1 per day per stat below 10
+        if (player.hunger < 10 || player.thirst < 10) {
+            if (!player._lastLowVitalHealthTick || Engine.getDay() > player._lastLowVitalHealthTick) {
+                player._lastLowVitalHealthTick = Engine.getDay();
+                var vitalDrain = 0;
+                if (player.hunger < 10) vitalDrain++;
+                if (player.thirst < 10) vitalDrain++;
+                if (vitalDrain > 0) {
+                    player.health = Math.max(0, (player.health || 100) - vitalDrain);
+                    if (player.health <= 0 && player.alive && !window._godInvincible) {
+                        var cause = (player.hunger < 10 && player.thirst < 10) ? 'starvation and dehydration' : (player.hunger < 10 ? 'starvation' : 'dehydration');
+                        Engine.logEvent('💀 ' + player.fullName + ' died from ' + cause + '.');
+                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('☠️ Died from ' + cause + '!', 'danger', 'critical');
+                        player.deathCause = cause;
+                        if (typeof handlePlayerDeath === 'function') handlePlayerDeath(cause);
+                    }
+                }
             }
         }
     }
@@ -24097,7 +24425,8 @@
         if (job.deathRisk && rng && rng.random() < job.deathRisk && !window._godInvincible) {
             Engine.logEvent(`${player.fullName} was killed while working as ${job.name}.`);
             if (typeof UI !== 'undefined' && UI.toast) UI.toast(`☠️ Killed during ${job.name}!`, 'danger', 'critical');
-            player.alive = false;
+            player.deathCause = 'Fatal accident while working as ' + job.name;
+            handlePlayerDeath();
             return { success: true, message: `Fatal accident during ${job.name}.` };
         }
 
@@ -28862,7 +29191,8 @@
                 var injuryChance = rng.chance(0.30);
                 if (injuryChance) {
                     player.injuries = player.injuries || [];
-                    player.injuries.push({ type: 'exhaustion_collapse', severity: 'mild', dayOccurred: Engine.getDay(), treated: false });
+                    player.injuries.push({ type: 'exhaustion_collapse', severity: 'minor', dayOccurred: Engine.getDay(), treated: false });
+                    _applyConditionHealthHit('minor');
                 }
                 Engine.logEvent(player.fullName + ' collapsed from exhaustion!');
                 return { blocked: true, message: '💫 You collapsed from exhaustion!' + (injuryChance ? ' You injured yourself in the fall.' : '') };
@@ -29312,7 +29642,7 @@
             }
             if (rng && rng.chance(diseaseChance)) {
                 player.illnesses = player.illnesses || [];
-                player.illnesses.push({ type: 'cold', name: 'Common Cold', severity: 'mild', dayOccurred: Engine.getDay(), treated: false });
+                player.illnesses.push({ type: 'cold', name: 'Common Cold', severity: 'minor', dayOccurred: Engine.getDay(), treated: false });
                 messages.push('🤧 You caught a cold!');
             } else if (rng && rng.chance(0.02)) {
                 player.illnesses = player.illnesses || [];
@@ -29348,7 +29678,7 @@
             }
             if (rng2 && gearDisease > 0 && rng2.chance(gearDisease)) {
                 player.illnesses = player.illnesses || [];
-                player.illnesses.push({ type: 'cold', name: 'Common Cold', severity: 'mild', dayOccurred: Engine.getDay(), treated: false });
+                player.illnesses.push({ type: 'cold', name: 'Common Cold', severity: 'minor', dayOccurred: Engine.getDay(), treated: false });
                 messages.push('🤧 You caught a cold while camping.');
             }
         }
@@ -29694,7 +30024,8 @@
                         if (typeof UI !== 'undefined' && UI.toast) {
                             UI.toast('💀 You have died of dehydration!', 'danger');
                         }
-                        if (typeof handlePlayerDeath === 'function') handlePlayerDeath('dehydration');
+                        player.deathCause = 'dehydration';
+                        if (typeof handlePlayerDeath === 'function') handlePlayerDeath();
                     }
                 }
             } else {
@@ -30978,7 +31309,9 @@
                     ? ['Sword Wound', 'Arrow Wound', 'Battle Trauma', 'Spear Wound', 'Shield Bash Concussion']
                     : ['Knife Wound', 'Blunt Trauma', 'Bandit Beating', 'Club Injury', 'Road Ambush Wound'];
                 var injName = rng.pick ? rng.pick(injuryNames) : injuryNames[Math.floor(rng.random() * injuryNames.length)];
-                player.injuries.push({ name: injName, type: 'encounter_wound', severity: severity, dayOccurred: Engine.getDay(), treated: false });
+                var injType = severity === 'severe' ? 'encounter_wound_severe' : 'encounter_wound';
+                player.injuries.push({ name: injName, type: injType, severity: severity, dayOccurred: Engine.getDay(), treated: false });
+                _applyConditionHealthHit(severity);
                 result.injured = true;
                 result.injurySeverity = severity;
 
@@ -30995,8 +31328,9 @@
                 if (window._godInvincible) deathChance = 0;
                 if (rng.chance(deathChance)) {
                     result.died = true;
-                    player.alive = false;
+                    player.deathCause = 'Killed by ' + enemyName;
                     Engine.logEvent('💀 ' + player.fullName + ' was killed by ' + enemyName + '!');
+                    handlePlayerDeath();
                 } else {
                     Engine.logEvent('⚔️ You lost the fight against ' + enemyName + '! Suffered a ' + severity + ' ' + injName + ' and lost all your goods.');
                 }
@@ -31145,6 +31479,7 @@
         if (injured) {
             player.injuries = player.injuries || [];
             player.injuries.push({ type: 'ambush_wound', severity: 'moderate', dayOccurred: Engine.getDay(), treated: false });
+            _applyConditionHealthHit('moderate');
         }
 
         var deathChance = 0.03;
@@ -32990,8 +33325,9 @@
                     Engine.logEvent('☠️ Your master ordered your execution, but you escaped! You are injured and on the run — but free! (' + failures + ' consecutive failures)');
                     grantXP(40, 'survived execution');
                 } else if (!window._godInvincible) {
-                    player.alive = false;
+                    player.deathCause = 'Executed by indentured master for persistent defiance';
                     Engine.logEvent('☠️ Your master had you executed for persistent defiance. Game Over. (' + failures + ' consecutive failures)');
+                    handlePlayerDeath();
                 }
             } else if (isHarsh) {
                 player.jailedUntilDay = day + 60;
@@ -37372,9 +37708,10 @@
             // Risk checks during stay (once per day)
             if (mission.risks && rng) {
                 if (mission.risks.deathRisk && rng.random() < mission.risks.deathRisk && !window._godInvincible) {
-                    player.alive = false;
+                    player.deathCause = 'Killed during ' + mission.name + ' mission';
                     player.autoTravelJob = null;
                     Engine.logEvent('☠️ ' + player.fullName + ' was killed during ' + mission.name + ' mission.');
+                    handlePlayerDeath();
                     return;
                 }
                 if (mission.risks.injuryRisk && rng.random() < mission.risks.injuryRisk) {
@@ -38274,6 +38611,8 @@
         getCaravanHireRates,
         editCaravanEquipment,
         travelTo,
+        getRouteQuarantineInfo,
+        attemptQuarantineSneak,
         turnBack,
         stopTravel,
         travelToCoords,
@@ -38328,6 +38667,9 @@
         visitClinic,
         selfTreat,
         treatOther,
+        inflictRandomInjury,
+        inflictRandomIllness,
+        inflictSpecificIllness,
         getWorstConditionSeverity,
         getWorkEfficiencyModifier,
         getHospitalCost,
