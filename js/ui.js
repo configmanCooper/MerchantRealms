@@ -17055,7 +17055,7 @@ window.UI = (function () {
         html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:10px;margin-bottom:10px;">';
         html += '<h3 style="margin:0 0 8px 0;font-size:0.9rem;color:var(--gold);">📜 King\'s Commission</h3>';
         if (commission && commission.status !== 'completed' && commission.status !== 'failed' && commission.status !== 'refused' && commission.status !== 'expired') {
-            var _commItem = commission.item || commission.goodId || '?';
+            var _commItem = commission.resourceId || commission.item || commission.goodId || '?';
             var _commQty = commission.quantity || commission.amount || 0;
             var _commDeadline = commission.deadlineDay || 0;
             var _commReward = commission.reward || commission.rewardGold || 0;
@@ -17064,8 +17064,21 @@ window.UI = (function () {
             var _commDelivered = commission.delivered || 0;
             var _commProgress = _commQty > 0 ? Math.min(100, Math.floor((_commDelivered / _commQty) * 100)) : 0;
 
+            // Resolve resource name from CONFIG.GOODS (keys are uppercase, id is lowercase)
             var _itemName = _commItem;
-            if (CONFIG.GOODS && CONFIG.GOODS[_commItem]) _itemName = CONFIG.GOODS[_commItem].name || _commItem;
+            if (CONFIG.GOODS) {
+                var _gKey = _commItem.toUpperCase();
+                if (CONFIG.GOODS[_gKey] && CONFIG.GOODS[_gKey].name) {
+                    _itemName = (CONFIG.GOODS[_gKey].icon || '') + ' ' + CONFIG.GOODS[_gKey].name;
+                } else {
+                    // Fallback: search by id field
+                    for (var _gk in CONFIG.GOODS) {
+                        if (CONFIG.GOODS[_gk].id === _commItem) { _itemName = (CONFIG.GOODS[_gk].icon || '') + ' ' + CONFIG.GOODS[_gk].name; break; }
+                    }
+                }
+            }
+            // Final fallback: prettify the raw id
+            if (_itemName === _commItem) _itemName = _commItem.replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
 
             html += '<div style="font-size:0.8rem;color:#ccc;">';
             html += '<div style="margin-bottom:6px;"><strong>Deliver:</strong> ' + _commQty + 'x ' + _itemName + '</div>';
@@ -17079,12 +17092,11 @@ window.UI = (function () {
 
             if (_commStatus === 'pending') {
                 var _isLord = playerRank >= 5;
-                html += '<div style="display:flex;gap:6px;margin-top:4px;">';
+                html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;align-items:center;">';
                 html += '<button class="btn-medieval" onclick="(function(){var r=Player.acceptKingCommission?Player.acceptKingCommission():{success:false};UI.toast(r.message||\'Commission accepted!\',r.success?\'success\':\'warning\');UI.openNobilityDialog();})()" style="font-size:0.75rem;padding:5px 12px;background:rgba(85,168,104,0.15);border-color:rgba(85,168,104,0.3);">✅ Accept</button>';
-                if (!_isLord) {
-                    html += '<button class="btn-medieval" onclick="(function(){var r=Player.refuseKingCommission?Player.refuseKingCommission():{success:false};UI.toast(r.message||\'Commission refused.\',r.success?\'success\':\'warning\');UI.openNobilityDialog();})()" style="font-size:0.75rem;padding:5px 12px;background:rgba(196,78,82,0.15);border-color:rgba(196,78,82,0.3);">🚫 Refuse</button>';
-                } else {
-                    html += '<div style="font-size:0.7rem;color:#c44e52;padding:5px;">⚠️ As a Lord, refusal means demotion!</div>';
+                html += '<button class="btn-medieval" onclick="(function(){' + (_isLord ? 'if(!confirm(\'⚠️ As a Lord, refusing a royal commission will trigger demotion! Are you sure?\')){return;}' : '') + 'var r=Player.refuseKingCommission?Player.refuseKingCommission():{success:false};UI.toast(r.message||\'Commission refused.\',r.success?\'success\':\'warning\');UI.openNobilityDialog();})()" style="font-size:0.75rem;padding:5px 12px;background:rgba(196,78,82,0.15);border-color:rgba(196,78,82,0.3);">🚫 Refuse</button>';
+                if (_isLord) {
+                    html += '<div style="font-size:0.7rem;color:#c44e52;">⚠️ Refusal triggers demotion!</div>';
                 }
                 html += '</div>';
             }
