@@ -9560,6 +9560,26 @@
                     '<div>📜 File 4 petitions per year</div>' +
                     '<div>👥 Hire up to 35 workers</div>' +
                     '<div>📉 5% trade tax discount</div>' +
+                    '</div></div>' +
+                    '<div style="margin-top:12px;padding:12px;background:rgba(212,175,55,0.08);border:1px solid rgba(212,175,55,0.3);border-radius:6px;">' +
+                    '<div style="color:#ffd700;font-weight:bold;margin-bottom:8px;">👑 The Road to Nobility</div>' +
+                    '<div style="font-size:0.9em;color:#ccc;">' +
+                    '<p style="margin:4px 0;">You now stand at the <b>highest rank a commoner can achieve</b>. Beyond this point lies the aristocracy — ' +
+                    'Minor Noble, Lord, and Royal Advisor. Entering nobility is not simply a title; it binds you to the crown itself.</p>' +
+                    '<p style="margin:8px 0 4px;color:#ffd700;"><b>Benefits of Nobility:</b></p>' +
+                    '<div style="margin:3px 0;">🛡️ Personal guards paid by the kingdom</div>' +
+                    '<div style="margin:3px 0;">👑 Direct influence over the king and royal decisions</div>' +
+                    '<div style="margin:3px 0;">🏰 Govern towns, build anywhere, trade banned goods</div>' +
+                    '<div style="margin:3px 0;">🌍 Automatic status in foreign kingdoms</div>' +
+                    '<div style="margin:3px 0;">📜 Propose laws and shape the kingdom\'s future</div>' +
+                    '<p style="margin:8px 0 4px;color:#ff8888;"><b>Responsibilities of Nobility:</b></p>' +
+                    '<div style="margin:3px 0;">📋 The king will assign you commissions — some mandatory, with demotion for refusal</div>' +
+                    '<div style="margin:3px 0;">📊 You must maintain your kingdom reputation or face demotion back to Guildmaster</div>' +
+                    '<div style="margin:3px 0;">⚔️ During war, the crown demands weapons production on their schedule</div>' +
+                    '<div style="margin:3px 0;">💀 If the kingdom falls, nobles face imprisonment, exile, or worse</div>' +
+                    '<div style="margin:3px 0;">🏛️ Your fate becomes tied to the king\'s — for better or worse</div>' +
+                    '<p style="margin:8px 0 0;color:#aaa;font-style:italic;">To petition for Minor Noble status, you will need noble endorsements, ' +
+                    'high kingdom reputation, and enough gold for the investiture fee. Seek out nobles and build relationships with them.</p>' +
                     '</div></div></div>';
             }
         },
