@@ -10834,7 +10834,7 @@
                 perks.push({
                     id: 'royal_audience',
                     name: '\u{1F3F0} Royal Audience',
-                    desc: 'Arranges a meeting with officials. +10 kingdom reputation.',
+                    desc: 'Arranges a meeting with officials. +2 kingdom reputation.',
                     cost: 100,
                     type: 'favor',
                     cooldownDays: 90,
@@ -10906,6 +10906,18 @@
                 desc: 'Their ambition inspires you. +10% XP for 14 days.',
                 cost: 0,
                 type: 'passive',
+                cooldownDays: 30,
+            });
+        }
+
+        // Universal favor — any NPC at relationship 60+
+        if (level >= 60) {
+            perks.push({
+                id: 'ask_favor',
+                name: '\u{1F91D} Ask a Favor',
+                desc: 'Ask for a small favor. Result depends on their occupation and personality.',
+                cost: 0,
+                type: 'favor',
                 cooldownDays: 30,
             });
         }
@@ -11134,9 +11146,9 @@
             case 'royal_audience': {
                 var kingdom = Engine.findKingdom(person.kingdomId);
                 if (kingdom) {
-                    modifyTownReputation(player.townId, 10);
-                    grantXP(25, 'royal audience');
-                    message = person.firstName + ' arranges an audience with ' + kingdom.name + "'s court. +10 reputation, +25 XP!";
+                    modifyKingdomReputation(person.kingdomId, 2);
+                    grantXP(10, 'royal audience');
+                    message = person.firstName + ' arranges an audience with ' + kingdom.name + "'s court. +2 kingdom reputation, +10 XP!";
                 } else {
                     message = person.firstName + ' tries to help but the court is unreachable.';
                 }
@@ -11217,6 +11229,42 @@
                 message = person.firstName + "'s ambition inspires you. +10% XP for 14 days!";
                 Engine.logEvent('\u{1F525} ' + message);
                 break;
+
+            case 'ask_favor': {
+                var _favRng = Engine.getRng ? Engine.getRng() : { random: function() { return Math.random(); }, chance: function(c) { return Math.random() < c; }, randInt: function(a,b) { return a + Math.floor(Math.random()*(b-a+1)); } };
+                var _favOcc = person.occupation || 'none';
+                var _favResults = [];
+                if (_favOcc === 'merchant' || _favOcc === 'shopkeeper') {
+                    _favResults.push({ msg: ' offers a trade tip — you spot a quick arbitrage.', gold: _favRng.randInt(15, 40) });
+                    _favResults.push({ msg: ' pulls some strings at the market. +2 town reputation.', townRep: 2 });
+                    _favResults.push({ msg: ' lets you in on a bulk deal. +15 XP.', xp: 15 });
+                } else if (_favOcc === 'noble') {
+                    _favResults.push({ msg: ' puts in a good word at court. +1 kingdom reputation.', kingdomRep: 1 });
+                    _favResults.push({ msg: ' invites you to a private gathering. +3 town reputation.', townRep: 3 });
+                    _favResults.push({ msg: ' lends you some coin. "Pay me back whenever."', gold: _favRng.randInt(20, 50) });
+                } else if (_favOcc === 'guard' || _favOcc === 'soldier') {
+                    _favResults.push({ msg: ' shares patrol schedules. Safer travels for a while.', xp: 10 });
+                    _favResults.push({ msg: ' warns you about recent bandit activity.', xp: 10 });
+                    _favResults.push({ msg: ' offers to keep an eye on your property. +2 town reputation.', townRep: 2 });
+                } else if (_favOcc === 'farmer' || _favOcc === 'woodcutter' || _favOcc === 'miner') {
+                    _favResults.push({ msg: ' gives you some surplus goods.', gold: _favRng.randInt(5, 20) });
+                    _favResults.push({ msg: ' teaches you a trick of the trade. +12 XP.', xp: 12 });
+                    _favResults.push({ msg: ' speaks well of you around town. +2 town reputation.', townRep: 2 });
+                } else {
+                    _favResults.push({ msg: ' does you a small kindness. +1 town reputation.', townRep: 1 });
+                    _favResults.push({ msg: ' helps spread the word about you. +10 XP.', xp: 10 });
+                    _favResults.push({ msg: ' lends a hand with something. +8 XP.', xp: 8 });
+                }
+                var _pick = _favResults[Math.floor(_favRng.random() * _favResults.length)];
+                message = person.firstName + _pick.msg;
+                if (_pick.gold) player.gold += _pick.gold;
+                if (_pick.xp) grantXP(_pick.xp, 'favor');
+                if (_pick.townRep) modifyTownReputation(player.townId, _pick.townRep);
+                if (_pick.kingdomRep && person.kingdomId) modifyKingdomReputation(person.kingdomId, _pick.kingdomRep);
+                if (_pick.gold) message += ' (+' + _pick.gold + 'g)';
+                Engine.logEvent('\u{1F91D} ' + message);
+                break;
+            }
 
             default:
                 message = 'Used perk: ' + perkId;
