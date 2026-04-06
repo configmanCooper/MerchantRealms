@@ -42,6 +42,15 @@ window.Tutorial = (function () {
         }
     }
 
+    // Return keyboard focus to the game canvas so WASD/keys work after button clicks
+    function refocusGame() {
+        var canvas = document.getElementById('gameCanvas');
+        if (canvas) {
+            if (!canvas.hasAttribute('tabindex')) canvas.setAttribute('tabindex', '0');
+            canvas.focus({ preventScroll: true });
+        }
+    }
+
     function getPlayerGold() {
         try { return Player.state.gold || 0; } catch (e) { return 0; }
     }
@@ -1654,28 +1663,28 @@ window.Tutorial = (function () {
             '<div class="tutorial-panel-header">' +
                 '<span class="tutorial-part-label">' + partLabel + '</span>' +
                 '<span class="tutorial-chapter-title">Ch ' + (currentChapter + 1) + ': ' + ch.title + '</span>' +
-                '<button class="tutorial-btn-skip" id="tutBtnMainMenu">\uD83C\uDFE0 Main Menu</button>' +
+                '<button class="tutorial-btn-skip" id="tutBtnMainMenu" tabindex="-1">\uD83C\uDFE0 Main Menu</button>' +
             '</div>' +
             stepTitleHtml +
             '<div class="tutorial-step-text">' + step.text + '</div>' +
             '<div class="tutorial-panel-footer">' +
                 '<div class="tutorial-footer-left">' +
-                    (canGoBack ? '<button class="tutorial-btn-back" id="tutBtnBack">\u2190 Back</button>' : '') +
+                    (canGoBack ? '<button class="tutorial-btn-back" id="tutBtnBack" tabindex="-1">\u2190 Back</button>' : '') +
                     '<span class="tutorial-progress">' + progressText + '</span>' +
                 '</div>' +
-                '<button class="tutorial-btn-next" id="tutBtnNext">' + nextLabel + '</button>' +
+                '<button class="tutorial-btn-next" id="tutBtnNext" tabindex="-1">' + nextLabel + '</button>' +
             '</div>';
 
         // Bind main menu button
         var btnMenu = document.getElementById('tutBtnMainMenu');
         if (btnMenu) {
-            btnMenu.addEventListener('click', function () { end(); });
+            btnMenu.addEventListener('click', function () { end(); refocusGame(); });
         }
 
         // Bind back button
         var btnBack = document.getElementById('tutBtnBack');
         if (btnBack) {
-            btnBack.addEventListener('click', function () { prevStep(); });
+            btnBack.addEventListener('click', function () { prevStep(); refocusGame(); });
         }
 
         // Bind next button
@@ -1702,15 +1711,14 @@ window.Tutorial = (function () {
                 if (btnNext.dataset.waiting === 'true') {
                     waitingClickCount++;
                     if (waitingClickCount >= 3) {
-                        // Convert to skip button after 3 frustrated clicks
                         btnNext.dataset.waiting = 'false';
                         btnNext.disabled = false;
                         updateNextButton('Skip this step \u2192', false);
                     }
+                    refocusGame();
                     return;
                 }
                 waitingClickCount = 0;
-                // Mark this interactive step as completed (whether Done or Skip)
                 var step = chapters[currentChapter] && chapters[currentChapter].steps[currentStep];
                 if (step && typeof step.waitFor === 'function') {
                     completedSteps[currentChapter + ':' + currentStep] = true;
@@ -1720,6 +1728,7 @@ window.Tutorial = (function () {
                     var fn = doneAdvanceFn;
                     doneAdvanceFn = null;
                     fn();
+                    refocusGame();
                     return;
                 }
                 if (isFinal) {
@@ -1727,6 +1736,7 @@ window.Tutorial = (function () {
                 } else {
                     nextStep();
                 }
+                refocusGame();
             });
         }
     }
@@ -1902,12 +1912,12 @@ window.Tutorial = (function () {
 
         var btnMenu = document.getElementById('tutBtnMainMenu');
         if (btnMenu) {
-            btnMenu.addEventListener('click', function () { end(); });
+            btnMenu.addEventListener('click', function () { end(); refocusGame(); });
         }
 
         var btnNew = document.getElementById('tutBtnNewGame');
         if (btnNew) {
-            btnNew.addEventListener('click', function () { end(); });
+            btnNew.addEventListener('click', function () { end(); refocusGame(); });
         }
 
         var btnContinue = document.getElementById('tutBtnContinue');
@@ -1916,6 +1926,7 @@ window.Tutorial = (function () {
                 currentChapter++;
                 currentStep = 0;
                 enterStep();
+                refocusGame();
             });
         }
     }

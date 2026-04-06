@@ -663,6 +663,11 @@ window.Game = (function () {
         if (!canvas) return;
         window._inputSetup = true;
 
+        // Ensure canvas can receive keyboard focus
+        if (!canvas.hasAttribute('tabindex')) canvas.setAttribute('tabindex', '0');
+        canvas.style.outline = 'none';
+        canvas.focus({ preventScroll: true });
+
         // Mouse events
         canvas.addEventListener('mousedown', onMouseDown);
         canvas.addEventListener('mousemove', onMouseMove);
