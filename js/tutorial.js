@@ -1,5 +1,5 @@
 // ============================================================
-// Merchant Realms — Interactive Tutorial System (16 Chapters)
+// Merchant Realms — Interactive Tutorial System (18 Chapters)
 // ============================================================
 
 window.Tutorial = (function () {
@@ -223,6 +223,73 @@ window.Tutorial = (function () {
 
 
     var chapters = [
+
+        // ═══════════════════════════════════════════════════════
+        //  PART 0: INTRODUCTION & GOALS
+        // ═══════════════════════════════════════════════════════
+
+        // ── Chapter 0: What Do I Do In This Game? ─────────────
+        {
+            title: 'What Do I Do In This Game?',
+            part: 'basic',
+            steps: [
+                {
+                    title: 'Your Goals',
+                    text: '🏰 <strong>Merchant Realms</strong> is an open-ended sandbox — there are no structured goals or win conditions. You make your own story! However, here are some aspirations you may want to pursue:' +
+                        '<ul style="margin:8px 0;padding-left:18px;font-size:0.85rem;line-height:1.6;">' +
+                        '<li>👑 <strong>Reach Royal Advisor rank</strong> — climb the social ladder until you advise the king. <em>(Check your rank in the Character button on the bottom panel.)</em></li>' +
+                        '<li>💰 <strong>Become the richest merchant in the world</strong> — amass more wealth than anyone else. <em>(See your ranking via the Rank button on the bottom panel.)</em></li>' +
+                        '<li>🏆 <strong>Achieve all feats</strong> — complete every challenge the game tracks. <em>(View them through the Feats button on the bottom panel.)</em></li>' +
+                        '<li>⚔️ <strong>Help a kingdom dominate the world</strong> — pick a side and use supply chain logistics to fuel their conquests.</li>' +
+                        '<li>🕊️ <strong>Keep the world at peace</strong> — optimize trade routes, fill supply gaps, and keep all kingdoms happy and prosperous.</li>' +
+                        '<li>🏗️ <strong>Build a trade empire</strong> — own buildings in every town, hire workers, and control production across the map.</li>' +
+                        '<li>🌍 <strong>Found outposts in the wilderness</strong> — expand civilization into untamed lands and grow them into thriving settlements.</li>' +
+                        '<li>👨‍👩‍👧‍👦 <strong>Found a dynasty</strong> — marry, have heirs, and pass your legacy to the next generation.</li>' +
+                        '</ul>'
+                }
+            ]
+        },
+
+        // ── Chapter 0B: How Do I Achieve My Goals? ────────────
+        {
+            title: 'How Do I Achieve My Goals?',
+            part: 'basic',
+            steps: [
+                {
+                    title: 'Early Game',
+                    text: '🌱 <strong>Early Game — Getting Started</strong>' +
+                        '<ul style="margin:6px 0;padding-left:18px;font-size:0.85rem;line-height:1.6;">' +
+                        '<li><strong>Work jobs</strong> — visit towns and take on available work to earn your first gold.</li>' +
+                        '<li><strong>Trade arbitrage</strong> — buy goods cheap in one town and sell them for more in another. Check market prices to find opportunities.</li>' +
+                        '<li><strong>Learn skills</strong> — invest skill points in commerce and logistics to unlock new abilities.</li>' +
+                        '<li><strong>Explore the map</strong> — discover towns, learn what each produces, and find the best trade routes.</li>' +
+                        '</ul>'
+                },
+                {
+                    title: 'Mid Game',
+                    text: '📈 <strong>Mid Game — Building Your Empire</strong>' +
+                        '<ul style="margin:6px 0;padding-left:18px;font-size:0.85rem;line-height:1.6;">' +
+                        '<li><strong>Fill supply chain gaps</strong> — if a town needs bread but has no bakery, build one! Identify what\'s missing and profit from it.</li>' +
+                        '<li><strong>Set up caravans</strong> — automate trade between towns so goods flow without you personally traveling.</li>' +
+                        '<li><strong>Hire employees</strong> — staff your buildings with workers to increase production.</li>' +
+                        '<li><strong>Fulfill kingdom orders</strong> — kingdoms post procurement orders for goods they need. Fill them for gold and reputation.</li>' +
+                        '<li><strong>Climb the social ranks</strong> — earn reputation through trade, donations, and fulfilling royal commissions.</li>' +
+                        '</ul>'
+                },
+                {
+                    title: 'Late Game',
+                    text: '🏰 <strong>Late Game — Power & Influence</strong>' +
+                        '<ul style="margin:6px 0;padding-left:18px;font-size:0.85rem;line-height:1.6;">' +
+                        '<li><strong>Supply wars</strong> — when kingdoms go to war, the demand for weapons, armor, and food skyrockets. Be the one who fills it.</li>' +
+                        '<li><strong>Create monopolies</strong> — corner the market on key resources by owning all production buildings for a good.</li>' +
+                        '<li><strong>Engage in high-level politics</strong> — as a Royal Advisor, influence laws, back pretenders in succession crises, and shape kingdoms.</li>' +
+                        '<li><strong>Found wilderness outposts</strong> — establish settlements in resource-rich areas and grow them into towns.</li>' +
+                        '<li><strong>Dominate or pacify</strong> — use your wealth and influence to either fuel conquest or broker peace across the world.</li>' +
+                        '</ul>' +
+                        '<div style="margin-top:8px;font-size:0.8rem;color:#aaa;text-align:center;">Now let\'s learn the basics! The next chapters will walk you through controls, trading, and more.</div>'
+                }
+            ]
+        },
 
         // ═══════════════════════════════════════════════════════
         //  PART 1: BASICS
