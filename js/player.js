@@ -12418,12 +12418,16 @@
             if (!player.discoveredGiftPrefs) player.discoveredGiftPrefs = {};
             if (!player.discoveredGiftPrefs[personId]) player.discoveredGiftPrefs[personId] = {};
             var _obsDisc = player.discoveredGiftPrefs[personId];
+            var _obsDay = 0;
+            try { _obsDay = Engine.getDay(); } catch(e) {}
             if (!_obsDisc.favorite && _obsRng.chance(0.5)) {
                 _obsDisc.favorite = _obsPrefs.favoriteGift;
+                _obsDisc.favoriteDay = _obsDay;
                 var _ofRes = findResource(_obsPrefs.favoriteGift);
                 return { success: true, message: '💡 While watching, you noticed ' + person.firstName + ' admiring some ' + (_ofRes ? _ofRes.name : _obsPrefs.favoriteGift) + '. They seem to love it!', noticed: true };
             } else if (!_obsDisc.hated) {
                 _obsDisc.hated = _obsPrefs.hatedGift;
+                _obsDisc.hatedDay = _obsDay;
                 var _ohRes = findResource(_obsPrefs.hatedGift);
                 return { success: true, message: '💡 While watching, you noticed ' + person.firstName + ' turning away from some ' + (_ohRes ? _ohRes.name : _obsPrefs.hatedGift) + '. They seem to hate it.', noticed: true };
             }
@@ -19744,12 +19748,14 @@
             if (!player.discoveredGiftPrefs) player.discoveredGiftPrefs = {};
             if (!player.discoveredGiftPrefs[personId]) player.discoveredGiftPrefs[personId] = {};
             player.discoveredGiftPrefs[personId].favorite = resourceId;
+            player.discoveredGiftPrefs[personId].favoriteDay = day;
         } else if (prefs.hatedGift === resourceId) {
             gain = -5 * qty;
             prefMessage = ' ' + person.firstName + ' looks offended — they hate ' + res.name + '! 😠';
             if (!player.discoveredGiftPrefs) player.discoveredGiftPrefs = {};
             if (!player.discoveredGiftPrefs[personId]) player.discoveredGiftPrefs[personId] = {};
             player.discoveredGiftPrefs[personId].hated = resourceId;
+            player.discoveredGiftPrefs[personId].hatedDay = day;
         } else {
             // Normal gift: 1-8 based on market value at location
             var town = Engine.findTown(player.townId);
@@ -19771,7 +19777,7 @@
 
     /**
      * Deterministic gift preferences for an NPC, derived from their ID.
-     * No storage needed — same ID always produces same preferences.
+     * Preferences rotate every 7 days so the player must re-learn them.
      */
     function getNPCGiftPreferences(personId) {
         // Giftable resources (exclude raw materials, livestock, military, contraband, quest, supplies)
@@ -19783,10 +19789,14 @@
             if (r.id === 'water' || r.id === 'blasting_powder' || r.id === 'demolition_tools' || r.id === 'poison') continue;
             giftableIds.push(r.id);
         }
-        // Deterministic hash from person ID
+        // Deterministic hash from person ID + 7-day epoch
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+        var epoch = Math.floor(day / 7);
         var hash = 0;
-        for (var i = 0; i < personId.length; i++) {
-            hash = ((hash << 5) - hash + personId.charCodeAt(i)) | 0;
+        var src = personId + ':' + epoch;
+        for (var i = 0; i < src.length; i++) {
+            hash = ((hash << 5) - hash + src.charCodeAt(i)) | 0;
         }
         hash = Math.abs(hash);
         var favIdx = hash % giftableIds.length;
@@ -19800,12 +19810,22 @@
 
     /**
      * Get known gift preferences for an NPC (only what player has discovered).
+     * Knowledge expires after 7 days (preferences rotate).
      */
     function getKnownGiftPreferences(personId) {
         var discovered = (player.discoveredGiftPrefs && player.discoveredGiftPrefs[personId]) || {};
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+        var fav = null, hated = null;
+        if (discovered.favorite && typeof discovered.favoriteDay === 'number' && (day - discovered.favoriteDay) < 7) {
+            fav = discovered.favorite;
+        }
+        if (discovered.hated && typeof discovered.hatedDay === 'number' && (day - discovered.hatedDay) < 7) {
+            hated = discovered.hated;
+        }
         return {
-            favorite: discovered.favorite || null,
-            hated: discovered.hated || null
+            favorite: fav,
+            hated: hated
         };
     }
 
@@ -21078,12 +21098,16 @@
             if (!player.discoveredGiftPrefs) player.discoveredGiftPrefs = {};
             if (!player.discoveredGiftPrefs[personId]) player.discoveredGiftPrefs[personId] = {};
             var _disc = player.discoveredGiftPrefs[personId];
+            var _discDay = 0;
+            try { _discDay = Engine.getDay(); } catch(e) {}
             if (!_disc.favorite && _giftRng.chance(0.5)) {
                 _disc.favorite = _prefs.favoriteGift;
+                _disc.favoriteDay = _discDay;
                 var _fRes = findResource(_prefs.favoriteGift);
                 giftDiscoverMsg = ' 💡 You noticed ' + person.firstName + ' seems to really like ' + (_fRes ? _fRes.name : _prefs.favoriteGift) + '!';
             } else if (!_disc.hated) {
                 _disc.hated = _prefs.hatedGift;
+                _disc.hatedDay = _discDay;
                 var _hRes = findResource(_prefs.hatedGift);
                 giftDiscoverMsg = ' 💡 You got the sense ' + person.firstName + ' dislikes ' + (_hRes ? _hRes.name : _prefs.hatedGift) + '.';
             }
