@@ -11551,9 +11551,9 @@
         }
 
         // ===== Marriage Rank System =====
-        // Non-noble marrying a noble => same rank as the noble
-        // Noble marrying a noble => one rank below the higher-ranked spouse
-        // Marrying a non-noble => one rank below spouse (if player is lower)
+        // Marrying a noble => spouse's rank - 1 (e.g. Minor Noble spouse → Guildmaster)
+        // If already at or above that rank, no change from marriage alone
+        // Waiver system then makes it easier to reach spouse's actual rank
         // King marriage impossible (enforced in marry())
         var spouseKingdom = person.kingdomId;
         var spouseRank = (person.socialRank && spouseKingdom) ? (person.socialRank[spouseKingdom] || 0) : 0;
@@ -11567,22 +11567,11 @@
         var playerCurrentRank = playerKingdomForMarriage ? (player.socialRank[playerKingdomForMarriage] || 0) : 0;
 
         if (spouseRank > 0 && playerKingdomForMarriage) {
+            // Marriage grants spouse's rank - 1 (if higher than current)
+            var marriageGrantRank = Math.max(0, spouseRank - 1);
             var newRank = playerCurrentRank;
-            if (spouseRank >= 4) {
-                // Marrying a noble
-                if (playerCurrentRank < 4) {
-                    // Non-noble marrying a noble = same rank as the noble
-                    newRank = spouseRank;
-                } else {
-                    // Noble marrying a noble = one below the higher-ranked
-                    newRank = Math.max(playerCurrentRank, spouseRank - 1);
-                }
-            } else {
-                // Marrying a non-noble: grants one rank below spouse if player is lower
-                var marriageGrantRank = spouseRank - 1;
-                if (marriageGrantRank > playerCurrentRank) {
-                    newRank = marriageGrantRank;
-                }
+            if (marriageGrantRank > playerCurrentRank) {
+                newRank = marriageGrantRank;
             }
 
             if (newRank > playerCurrentRank) {
@@ -11590,7 +11579,77 @@
                 player.rankSince[playerKingdomForMarriage] = Engine.getDay();
                 var rankName = CONFIG.SOCIAL_RANKS[newRank] ? CONFIG.SOCIAL_RANKS[newRank].name : 'noble';
                 Engine.logEvent('🏰 Through marriage, ' + player.fullName + ' has been elevated to ' + rankName + '!');
-                if (typeof UI !== 'undefined' && UI.toast) UI.toast('👑 Your marriage elevates you to ' + rankName + '!', 'success', 'critical');
+
+                // Grant noble benefits if reaching Minor Noble+ (rank 4+)
+                if (newRank >= 4 && !player.isNoble) {
+                    player.isNoble = true;
+                    player.occupation = 'noble';
+                    Engine.logEvent('🏰 ' + player.fullName + ' has entered the aristocracy!');
+                    // Grant kingdom guards
+                    player.guards = player.guards || [];
+                    var _mrng = Engine.getRng();
+                    var _mTownPeople = Engine.getPeople ? Engine.getPeople(player.townId) : [];
+                    var _mExisting = {};
+                    for (var _mgi = 0; _mgi < player.guards.length; _mgi++) {
+                        if (player.guards[_mgi].personId) _mExisting[player.guards[_mgi].personId] = true;
+                    }
+                    var _mCandidates = [];
+                    for (var _mci = 0; _mci < _mTownPeople.length; _mci++) {
+                        var _mc = _mTownPeople[_mci];
+                        if (!_mc.alive || _mc.age < 18 || _mExisting[_mc.id] || _mc.id === player.spouseId || _mc.isPlayerGuard) continue;
+                        _mCandidates.push(_mc);
+                    }
+                    var _mGuardsToGrant = Math.min(4, (CONFIG.PLAYER_GUARD_MAX || 4) - player.guards.length);
+                    var _mGranted = 0;
+                    for (var _mggi = 0; _mggi < _mGuardsToGrant && _mCandidates.length > 0; _mggi++) {
+                        var _mPref = _mCandidates.filter(function(c) { return c.occupation === 'soldier' || c.occupation === 'guard' || c.occupation === 'unemployed' || !c.occupation; });
+                        var _mPool = _mPref.length > 0 ? _mPref : _mCandidates;
+                        var _mChosen = _mrng && _mrng.pick ? _mrng.pick(_mPool) : _mPool[Math.floor(Math.random() * _mPool.length)];
+                        _mChosen.isPlayerGuard = true;
+                        _mChosen.previousOccupation = _mChosen.occupation;
+                        _mChosen.previousTownId = _mChosen.townId;
+                        _mChosen.occupation = 'player_guard';
+                        var _mgName = (_mChosen.firstName || '') + (_mChosen.lastName ? ' ' + _mChosen.lastName : '');
+                        if (!_mgName.trim()) _mgName = 'Royal Guard ' + (player.guards.length + 1);
+                        player.guards.push({
+                            id: 'guard_' + Date.now() + '_' + (_mrng ? _mrng.randInt(0, 9999) : Math.floor(Math.random() * 9999)),
+                            personId: _mChosen.id,
+                            name: _mgName,
+                            hiredDay: Engine.getDay(),
+                            kingdomPaid: true
+                        });
+                        _mCandidates = _mCandidates.filter(function(c) { return c.id !== _mChosen.id; });
+                        _mGranted++;
+                    }
+                    player.personalGuards = player.guards.length;
+                    if (_mGranted > 0) {
+                        var _mK = Engine.findKingdom(playerKingdomForMarriage);
+                        if (_mK) _mK.gold = Math.max(0, (_mK.gold || 0) - _mGranted * (CONFIG.PLAYER_GUARD_HIRE_COST || 30));
+                        Engine.logEvent('🛡️ As a new noble, ' + player.fullName + ' has been granted ' + _mGranted + ' personal guards by the kingdom!');
+                    }
+                }
+
+                // Show rank ceremony UI
+                grantXP(XP_REWARDS.NEW_RANK || 100, 'rank');
+                showRankCeremony(newRank, playerKingdomForMarriage);
+
+                // Lord (rank 5): offer town choice
+                if (newRank === 5) {
+                    _offerLordTownChoice(playerKingdomForMarriage);
+                }
+
+                // Royal Advisor (rank 6): grant RA benefits + enforce foreign rank cap
+                if (newRank === 6) {
+                    player.royalAdvisorKingdomId = playerKingdomForMarriage;
+                    player.isRoyalAdvisorFromKing = true;
+                    player.royalAdvisorBenefits = { noTaxes: true, immuneToLaws: true, kingdomNeverSeizes: true, swayOverKing: true };
+                    for (var _raFk in player.socialRank) {
+                        if (_raFk !== playerKingdomForMarriage && (player.socialRank[_raFk] || 0) > 2) {
+                            var _foreignLevel = (player.socialRank[_raFk] >= 5) ? 2 : (player.socialRank[_raFk] >= 4) ? 1 : 0;
+                            player.socialRank[_raFk] = _foreignLevel;
+                        }
+                    }
+                }
             }
             // Set waived requirements flag for easier promotion to spouse's rank
             // Waives petitions + endorsements for the rank at or below spouse's rank
@@ -18750,24 +18809,37 @@
         }
 
         if (nextRank.id === 'royal_advisor') {
-            var rankSinceRA = player.rankSince ? (player.rankSince[kId] || Engine.getDay()) : Engine.getDay();
-            var yearsAtRankRA = (Engine.getDay() - rankSinceRA) / 360;
-            if (yearsAtRankRA < (nextRank.minYearsAtPrevRank || 3)) reasons.push(`Need ${nextRank.minYearsAtPrevRank || 3}+ years as Lord (${yearsAtRankRA.toFixed(1)} years)`);
-            if (!player.hasSuppliedMilitary) reasons.push('Must have supplied military goods during a war');
-            var completedPetitionsRA = player.petitions ? player.petitions.filter(function(p) { return p.status === 'approved' && p.kingdomId === kId; }).length : 0;
-            if (completedPetitionsRA < (nextRank.minPetitionsCompleted || 5)) reasons.push(`Need ${nextRank.minPetitionsCompleted || 5}+ successful petitions (have ${completedPetitionsRA})`);
-            var nobleFriends = 0;
-            if (player.relationships) {
-                for (var pid2 in player.relationships) {
-                    if (player.relationships[pid2].level >= (nextRank.minNobleFriendLevel || 80)) {
-                        var person2 = Engine.findPerson(pid2);
-                        if (person2 && person2.alive && (person2.occupation === 'noble' || person2.wealthClass === 'upper') && person2.kingdomId === kId) nobleFriends++;
+            // Marriage to RA+ waives years-at-rank, petitions, and noble friend requirements
+            var hasRAMarriageWaiver = player._marriageRankWaiver && player._marriageRankWaiver[kId] && player._marriageRankWaiver[kId].spouseRank >= 6;
+            var hasRASpouseNow = player.spouseId ? (function() {
+                var s = Engine.findPerson(player.spouseId);
+                if (!s || !s.alive) return false;
+                var sMaxR = 0;
+                if (s.socialRank) { for (var sk in s.socialRank) { if ((s.socialRank[sk] || 0) > sMaxR) sMaxR = s.socialRank[sk]; } }
+                return sMaxR >= 6;
+            })() : false;
+            var raWaived = hasRAMarriageWaiver || hasRASpouseNow;
+
+            if (!raWaived) {
+                var rankSinceRA = player.rankSince ? (player.rankSince[kId] || Engine.getDay()) : Engine.getDay();
+                var yearsAtRankRA = (Engine.getDay() - rankSinceRA) / 360;
+                if (yearsAtRankRA < (nextRank.minYearsAtPrevRank || 3)) reasons.push(`Need ${nextRank.minYearsAtPrevRank || 3}+ years as Lord (${yearsAtRankRA.toFixed(1)} years)`);
+                if (!player.hasSuppliedMilitary) reasons.push('Must have supplied military goods during a war');
+                var completedPetitionsRA = player.petitions ? player.petitions.filter(function(p) { return p.status === 'approved' && p.kingdomId === kId; }).length : 0;
+                if (completedPetitionsRA < (nextRank.minPetitionsCompleted || 5)) reasons.push(`Need ${nextRank.minPetitionsCompleted || 5}+ successful petitions (have ${completedPetitionsRA})`);
+                var nobleFriends = 0;
+                if (player.relationships) {
+                    for (var pid2 in player.relationships) {
+                        if (player.relationships[pid2].level >= (nextRank.minNobleFriendLevel || 80)) {
+                            var person2 = Engine.findPerson(pid2);
+                            if (person2 && person2.alive && (person2.occupation === 'noble' || person2.wealthClass === 'upper') && person2.kingdomId === kId) nobleFriends++;
+                        }
                     }
                 }
+                if (nobleFriends < (nextRank.minNobleFriends || 3)) reasons.push(`Need ${nextRank.minNobleFriends || 3} noble friends (80+ relationship) \u2014 have ${nobleFriends}`);
             }
-            if (nobleFriends < (nextRank.minNobleFriends || 3)) reasons.push(`Need ${nextRank.minNobleFriends || 3} noble friends (80+ relationship) \u2014 have ${nobleFriends}`);
 
-            // Must have 80+ relationship with the king
+            // Must have 80+ relationship with the king (always required)
             var raKingRel = 0;
             try {
                 var raKingdom = Engine.findKingdom(kId);
