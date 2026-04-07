@@ -18695,87 +18695,96 @@
         if (effectiveFee && player.gold < effectiveFee) reasons.push(`Need ${effectiveFee.toLocaleString()}g fee (have ${Math.floor(player.gold).toLocaleString()}g)${_comDiscountStr}`);
 
         // Rank-specific requirements
+        // Marriage bypass: marrying someone 2+ ranks above target rank bypasses all rank-specific requirements
+        var _bypassRank = (currentIdx + 1) + 2; // rank needed for full bypass
+        var _hasFullBypass = _mw && _mw.spouseRank >= _bypassRank;
+
         if (nextRank.id === 'citizen') {
-            var startDay = (player.kingdomResidencyStart && player.kingdomResidencyStart[kId] !== undefined) ? player.kingdomResidencyStart[kId] : Engine.getDay();
-            var daysInKingdom = Engine.getDay() - startDay;
-            if (daysInKingdom < (nextRank.residencyDays || 90)) reasons.push(`Must live in kingdom for ${nextRank.residencyDays || 90} days (${daysInKingdom} so far)`);
-            if (player.criminalRecord && player.criminalRecord[kId]) {
-                var totalCrimes = 0;
-                var rec = player.criminalRecord[kId];
-                if (typeof rec === 'object') { for (var ck in rec) { totalCrimes += (rec[ck] || 0); } }
-                else { totalCrimes = rec; }
-                if (totalCrimes > 0) reasons.push('Must have no criminal record in this kingdom');
+            if (!_hasFullBypass) {
+                var startDay = (player.kingdomResidencyStart && player.kingdomResidencyStart[kId] !== undefined) ? player.kingdomResidencyStart[kId] : Engine.getDay();
+                var daysInKingdom = Engine.getDay() - startDay;
+                if (daysInKingdom < (nextRank.residencyDays || 90)) reasons.push(`Must live in kingdom for ${nextRank.residencyDays || 90} days (${daysInKingdom} so far). Marry a Guildmaster+ to bypass all requirements`);
+                if (player.criminalRecord && player.criminalRecord[kId]) {
+                    var totalCrimes = 0;
+                    var rec = player.criminalRecord[kId];
+                    if (typeof rec === 'object') { for (var ck in rec) { totalCrimes += (rec[ck] || 0); } }
+                    else { totalCrimes = rec; }
+                    if (totalCrimes > 0) reasons.push('Must have no criminal record in this kingdom');
+                }
             }
         }
 
         if (nextRank.id === 'burgher') {
-            var _bTradeDaysReq = Math.floor((nextRank.tradingDays || 90) * _comDiscount);
-            var tradeDays = Engine.getDay() - (player.tradingStartDay || Engine.getDay());
-            if (tradeDays < _bTradeDaysReq) reasons.push(`Need ${_bTradeDaysReq} days of trading (${tradeDays} days so far)${_comDiscountStr}`);
-            var buildingsInKingdom = player.buildings.filter(function(b) { var t = Engine.findTown(b.townId); return t && t.kingdomId === kId; }).length;
-            if (buildingsInKingdom < (nextRank.minBuildings || 1)) reasons.push(`Need at least ${nextRank.minBuildings || 1} building in kingdom (have ${buildingsInKingdom})`);
-            var trades = (player.stats && player.stats.tradesCompleted) || player.tradesCompleted || 0;
-            if (trades < (nextRank.minTrades || 50)) reasons.push(`Need ${nextRank.minTrades || 50}+ trades completed (have ${trades})`);
+            if (!_hasFullBypass) {
+                var _bTradeDaysReq = Math.floor((nextRank.tradingDays || 90) * _comDiscount);
+                var tradeDays = Engine.getDay() - (player.tradingStartDay || Engine.getDay());
+                if (tradeDays < _bTradeDaysReq) reasons.push(`Need ${_bTradeDaysReq} days of trading (${tradeDays} days so far)${_comDiscountStr}. Marry a Minor Noble+ to bypass all requirements`);
+                var buildingsInKingdom = player.buildings.filter(function(b) { var t = Engine.findTown(b.townId); return t && t.kingdomId === kId; }).length;
+                if (buildingsInKingdom < (nextRank.minBuildings || 1)) reasons.push(`Need at least ${nextRank.minBuildings || 1} building in kingdom (have ${buildingsInKingdom})`);
+                var trades = (player.stats && player.stats.tradesCompleted) || player.tradesCompleted || 0;
+                if (trades < (nextRank.minTrades || 50)) reasons.push(`Need ${nextRank.minTrades || 50}+ trades completed (have ${trades})`);
+            }
         }
 
         if (nextRank.id === 'guildmaster') {
-            var prodBuildings = player.buildings.filter(function(b) {
-                var bt = CONFIG.BUILDING_TYPES ? CONFIG.BUILDING_TYPES.find(function(x) { return x.id === b.type; }) : null;
-                if (!bt) { bt = Engine.findBuildingType ? Engine.findBuildingType(b.type) : null; }
-                var t = Engine.findTown(b.townId);
-                return bt && (bt.category === 'processing' || bt.category === 'finished') && t && t.kingdomId === kId;
-            }).length;
-            if (prodBuildings < (nextRank.minProductionBuildings || 3)) reasons.push(`Need ${nextRank.minProductionBuildings || 3} production buildings (have ${prodBuildings})`);
-            var workersInKingdom = player.employees ? player.employees.filter(function(e) { var p = Engine.findPerson(e); if (!p) return false; var t = Engine.findTown(p.townId); return t && t.kingdomId === kId; }).length : 0;
-            if (workersInKingdom < (nextRank.minWorkers || 8)) reasons.push(`Need ${nextRank.minWorkers || 8}+ workers in kingdom (have ${workersInKingdom})`);
-            var townsWithBuildings = new Set(player.buildings.filter(function(b) { var t = Engine.findTown(b.townId); return t && t.kingdomId === kId; }).map(function(b) { return b.townId; })).size;
-            if (townsWithBuildings < (nextRank.minTownsWithBuildings || 2)) reasons.push(`Need buildings in ${nextRank.minTownsWithBuildings || 2}+ towns (have ${townsWithBuildings})`);
-            // Trading days requirement — discounted by marriage
-            var _gmTradeDaysReq = Math.floor((nextRank.tradingDays || 180) * _comDiscount);
-            var gmTradeDays = Engine.getDay() - (player.tradingStartDay || Engine.getDay());
-            if (gmTradeDays < _gmTradeDaysReq) reasons.push(`Need ${_gmTradeDaysReq} days of trading (${gmTradeDays} so far)${_comDiscountStr}`);
-            // Caravan goods moved requirement
-            var caravanGoodsMoved = (player.stats && player.stats.caravanGoodsMoved) || 0;
-            if (caravanGoodsMoved < (nextRank.minCaravanGoodsMoved || 500)) reasons.push(`Need ${nextRank.minCaravanGoodsMoved || 500}+ goods moved by caravan (have ${caravanGoodsMoved})`);
+            if (!_hasFullBypass) {
+                var prodBuildings = player.buildings.filter(function(b) {
+                    var bt = CONFIG.BUILDING_TYPES ? CONFIG.BUILDING_TYPES.find(function(x) { return x.id === b.type; }) : null;
+                    if (!bt) { bt = Engine.findBuildingType ? Engine.findBuildingType(b.type) : null; }
+                    var t = Engine.findTown(b.townId);
+                    return bt && (bt.category === 'processing' || bt.category === 'finished') && t && t.kingdomId === kId;
+                }).length;
+                if (prodBuildings < (nextRank.minProductionBuildings || 3)) reasons.push(`Need ${nextRank.minProductionBuildings || 3} production buildings (have ${prodBuildings}). Marry a Lord+ to bypass all requirements`);
+                var workersInKingdom = player.employees ? player.employees.filter(function(e) { var p = Engine.findPerson(e); if (!p) return false; var t = Engine.findTown(p.townId); return t && t.kingdomId === kId; }).length : 0;
+                if (workersInKingdom < (nextRank.minWorkers || 8)) reasons.push(`Need ${nextRank.minWorkers || 8}+ workers in kingdom (have ${workersInKingdom})`);
+                var townsWithBuildings = new Set(player.buildings.filter(function(b) { var t = Engine.findTown(b.townId); return t && t.kingdomId === kId; }).map(function(b) { return b.townId; })).size;
+                if (townsWithBuildings < (nextRank.minTownsWithBuildings || 2)) reasons.push(`Need buildings in ${nextRank.minTownsWithBuildings || 2}+ towns (have ${townsWithBuildings})`);
+                var _gmTradeDaysReq = Math.floor((nextRank.tradingDays || 180) * _comDiscount);
+                var gmTradeDays = Engine.getDay() - (player.tradingStartDay || Engine.getDay());
+                if (gmTradeDays < _gmTradeDaysReq) reasons.push(`Need ${_gmTradeDaysReq} days of trading (${gmTradeDays} so far)${_comDiscountStr}`);
+                var caravanGoodsMoved = (player.stats && player.stats.caravanGoodsMoved) || 0;
+                if (caravanGoodsMoved < (nextRank.minCaravanGoodsMoved || 500)) reasons.push(`Need ${nextRank.minCaravanGoodsMoved || 500}+ goods moved by caravan (have ${caravanGoodsMoved})`);
+            }
         }
 
         if (nextRank.id === 'minor_noble') {
-            // Check marriage waiver: spouse rank >= 4 (Minor Noble+) waives petitions + endorsements
-            var hasLordSpouse = player.spouseId ? (function() {
-                var s = Engine.findPerson(player.spouseId);
-                if (!s || !s.alive) return false;
-                var sMaxRank = 0;
-                if (s.socialRank) { for (var sk in s.socialRank) { if ((s.socialRank[sk] || 0) > sMaxRank) sMaxRank = s.socialRank[sk]; } }
-                return sMaxRank >= 5; // Lord or above
-            })() : false;
-            var hasNobleSpouse = hasLordSpouse || (player.spouseId ? (function() { var s = Engine.findPerson(player.spouseId); return s && (s.occupation === 'noble' || s.wealthClass === 'upper'); })() : false);
-            // Marriage waiver from _marriageRankWaiver also counts
-            var hasMarriageWaiver = player._marriageRankWaiver && player._marriageRankWaiver[kId] && player._marriageRankWaiver[kId].spouseRank >= 4;
-            var waivedPetitionsEndorsements = hasLordSpouse || hasNobleSpouse || hasMarriageWaiver;
+            if (!_hasFullBypass) {
+                // Check marriage waiver: spouse rank >= 4 (Minor Noble+) waives petitions + endorsements
+                var hasLordSpouse = player.spouseId ? (function() {
+                    var s = Engine.findPerson(player.spouseId);
+                    if (!s || !s.alive) return false;
+                    var sMaxRank = 0;
+                    if (s.socialRank) { for (var sk in s.socialRank) { if ((s.socialRank[sk] || 0) > sMaxRank) sMaxRank = s.socialRank[sk]; } }
+                    return sMaxRank >= 5; // Lord or above
+                })() : false;
+                var hasNobleSpouse = hasLordSpouse || (player.spouseId ? (function() { var s = Engine.findPerson(player.spouseId); return s && (s.occupation === 'noble' || s.wealthClass === 'upper'); })() : false);
+                // Marriage waiver from _marriageRankWaiver also counts
+                var hasMarriageWaiver = player._marriageRankWaiver && player._marriageRankWaiver[kId] && player._marriageRankWaiver[kId].spouseRank >= 4;
+                var waivedPetitionsEndorsements = hasLordSpouse || hasNobleSpouse || hasMarriageWaiver;
 
-            if (!waivedPetitionsEndorsements) {
-                // Standard path: 3 petitions + 5 noble endorsements
-                var completedPetitions = player.petitions ? player.petitions.filter(function(p) { return p.status === 'approved' && p.kingdomId === kId; }).length : 0;
-                if (completedPetitions < (nextRank.minPetitionsCompleted || 3)) {
-                    reasons.push(`Must marry a Lord (waives petitions & endorsements) OR complete ${nextRank.minPetitionsCompleted || 3} petitions (have ${completedPetitions})`);
-                }
-                var endorsements = 0;
-                if (player.relationships) {
-                    for (var pid in player.relationships) {
-                        if (player.relationships[pid].level >= (nextRank.minEndorsementLevel || 60)) {
-                            var person = Engine.findPerson(pid);
-                            if (person && person.alive && person.kingdomId === kId) {
-                                var pRank = (person.socialRank && person.socialRank[kId]) ? person.socialRank[kId] : (person.occupation === 'noble' ? 4 : 0);
-                                if (pRank >= 4) endorsements++;
+                if (!waivedPetitionsEndorsements) {
+                    var completedPetitions = player.petitions ? player.petitions.filter(function(p) { return p.status === 'approved' && p.kingdomId === kId; }).length : 0;
+                    if (completedPetitions < (nextRank.minPetitionsCompleted || 3)) {
+                        reasons.push(`Marry a Minor Noble (waives petitions & endorsements) OR complete ${nextRank.minPetitionsCompleted || 3} petitions (have ${completedPetitions}). Marry a Royal Advisor+ to bypass all requirements`);
+                    }
+                    var endorsements = 0;
+                    if (player.relationships) {
+                        for (var pid in player.relationships) {
+                            if (player.relationships[pid].level >= (nextRank.minEndorsementLevel || 60)) {
+                                var person = Engine.findPerson(pid);
+                                if (person && person.alive && person.kingdomId === kId) {
+                                    var pRank = (person.socialRank && person.socialRank[kId]) ? person.socialRank[kId] : (person.occupation === 'noble' ? 4 : 0);
+                                    if (pRank >= 4) endorsements++;
+                                }
                             }
                         }
                     }
+                    if (endorsements < (nextRank.minEndorsements || 5)) reasons.push(`Marry a Minor Noble (waives petitions & endorsements) OR have ${nextRank.minEndorsements || 5} noble endorsements (Minor Noble+ with 60+ relationship) \u2014 have ${endorsements}`);
                 }
-                if (endorsements < (nextRank.minEndorsements || 5)) reasons.push(`Must marry a Lord (waives petitions & endorsements) OR have ${nextRank.minEndorsements || 5} noble endorsements (Minor Noble+ with 60+ relationship) \u2014 have ${endorsements}`);
+                // Property requirement still applies regardless of marriage
+                var townsWithPropNoble = new Set(player.buildings.filter(function(b) { var t = Engine.findTown(b.townId); return t && t.kingdomId === kId; }).map(function(b) { return b.townId; })).size;
+                if (townsWithPropNoble < (nextRank.minTownsWithProperty || 3)) reasons.push(`Need property in ${nextRank.minTownsWithProperty || 3}+ towns (have ${townsWithPropNoble})`);
             }
-            // Property requirement still applies regardless of marriage
-            var townsWithPropNoble = new Set(player.buildings.filter(function(b) { var t = Engine.findTown(b.townId); return t && t.kingdomId === kId; }).map(function(b) { return b.townId; })).size;
-            if (townsWithPropNoble < (nextRank.minTownsWithProperty || 3)) reasons.push(`Need property in ${nextRank.minTownsWithProperty || 3}+ towns (have ${townsWithPropNoble})`);
         }
 
         if (nextRank.id === 'lord') {
@@ -18801,7 +18810,7 @@
                 // 1 year as Minor Noble (changed from 2)
                 var rankSinceLord = player.rankSince ? (player.rankSince[kId] || Engine.getDay()) : Engine.getDay();
                 var yearsAtRankLord = (Engine.getDay() - rankSinceLord) / 360;
-                if (yearsAtRankLord < 1) reasons.push(`Need 1+ year as Minor Noble (${yearsAtRankLord.toFixed(1)} years)`);
+                if (yearsAtRankLord < 1) reasons.push(`Need 1+ year as Minor Noble (${yearsAtRankLord.toFixed(1)} years). Marry a Lord (waives time & friendship requirements)`);
 
                 // 60+ relationship with 3 Lords
                 var lordFriends = 0;
@@ -18816,7 +18825,7 @@
                         }
                     }
                 }
-                if (lordFriends < 3) reasons.push(`Need 60+ relationship with 3 Lords \u2014 have ${lordFriends}`);
+                if (lordFriends < 3) reasons.push(`Need 60+ relationship with 3 Lords \u2014 have ${lordFriends}. Marry a Lord (waives time & friendship requirements)`);
             }
         }
 
@@ -18835,10 +18844,10 @@
             if (!raWaived) {
                 var rankSinceRA = player.rankSince ? (player.rankSince[kId] || Engine.getDay()) : Engine.getDay();
                 var yearsAtRankRA = (Engine.getDay() - rankSinceRA) / 360;
-                if (yearsAtRankRA < (nextRank.minYearsAtPrevRank || 3)) reasons.push(`Need ${nextRank.minYearsAtPrevRank || 3}+ years as Lord (${yearsAtRankRA.toFixed(1)} years)`);
+                if (yearsAtRankRA < (nextRank.minYearsAtPrevRank || 3)) reasons.push(`Need ${nextRank.minYearsAtPrevRank || 3}+ years as Lord (${yearsAtRankRA.toFixed(1)} years). Marry a Royal Advisor (waives time, petitions & friends)`);
                 if (!player.hasSuppliedMilitary) reasons.push('Must have supplied military goods during a war');
                 var completedPetitionsRA = player.petitions ? player.petitions.filter(function(p) { return p.status === 'approved' && p.kingdomId === kId; }).length : 0;
-                if (completedPetitionsRA < (nextRank.minPetitionsCompleted || 5)) reasons.push(`Need ${nextRank.minPetitionsCompleted || 5}+ successful petitions (have ${completedPetitionsRA})`);
+                if (completedPetitionsRA < (nextRank.minPetitionsCompleted || 5)) reasons.push(`Need ${nextRank.minPetitionsCompleted || 5}+ successful petitions (have ${completedPetitionsRA}). Marry a Royal Advisor (waives time, petitions & friends)`);
                 var nobleFriends = 0;
                 if (player.relationships) {
                     for (var pid2 in player.relationships) {
@@ -18848,7 +18857,7 @@
                         }
                     }
                 }
-                if (nobleFriends < (nextRank.minNobleFriends || 3)) reasons.push(`Need ${nextRank.minNobleFriends || 3} noble friends (80+ relationship) \u2014 have ${nobleFriends}`);
+                if (nobleFriends < (nextRank.minNobleFriends || 3)) reasons.push(`Need ${nextRank.minNobleFriends || 3} noble friends (80+ relationship) \u2014 have ${nobleFriends}. Marry a Royal Advisor (waives time, petitions & friends)`);
             }
 
             // Must have 80+ relationship with the king (always required)
