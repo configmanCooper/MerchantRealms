@@ -31564,7 +31564,7 @@
         var enemyName = isWartime ? (isSea ? 'enemy navy' : 'enemy soldiers') : (isSea ? 'pirates' : 'bandits');
 
         if (choice === 'surrender') {
-            // Surrender: lose all goods + 50% gold capped at 500g
+            // Surrender: lose half of goods + 50% gold capped at 500g
             var goldPct = CONFIG.ENCOUNTER_SURRENDER_GOLD_PCT || 0.50;
             var goldCap = CONFIG.ENCOUNTER_SURRENDER_GOLD_CAP || 500;
             var goldLost = Math.min(Math.floor(player.gold * goldPct), goldCap);
@@ -31572,18 +31572,19 @@
             result.goldLost = goldLost;
             logFinance(-goldLost, 'encounter', 'Surrendered to ' + enemyName);
 
-            // Lose all inventory
+            // Lose half of each inventory type
             for (var key in player.inventory) {
                 if (player.inventory[key] > 0) {
-                    result.goodsLost[key] = player.inventory[key];
-                    player.inventory[key] = 0;
+                    var lostQty = Math.ceil(player.inventory[key] * 0.50);
+                    result.goodsLost[key] = lostQty;
+                    player.inventory[key] -= lostQty;
                 }
             }
 
             result.success = true;
             var emoji = isWartime ? '🏳️' : '💰';
-            Engine.logEvent(emoji + ' You surrendered to ' + enemyName + '. Lost ' + goldLost + 'g and all goods.');
-            autoJournalCapture('encounter', 'Surrendered to ' + enemyName + ' on the ' + (isSea ? 'seas' : 'road') + '. They took everything.', { mood: 'defeated' });
+            Engine.logEvent(emoji + ' You surrendered to ' + enemyName + '. Lost ' + goldLost + 'g and half your goods.');
+            autoJournalCapture('encounter', 'Surrendered to ' + enemyName + ' on the ' + (isSea ? 'seas' : 'road') + '. They took half of everything.', { mood: 'defeated' });
 
         } else if (choice === 'negotiate') {
             var negSuccess = rng.chance(enc.negotiateChance);
@@ -31597,8 +31598,8 @@
                 result.goldLost = goldLost2;
                 logFinance(-goldLost2, 'encounter', 'Negotiated with ' + enemyName);
 
-                var goodsPct = CONFIG.ENCOUNTER_NEGOTIATE_GOODS_PCT || 0.50;
-                // Lose half the quantity of each goods type (not half the types)
+                var goodsPct = CONFIG.ENCOUNTER_NEGOTIATE_GOODS_PCT || 0.25;
+                // Lose quarter of each goods type quantity
                 var invKeys = Object.keys(player.inventory).filter(function(k) { return player.inventory[k] > 0; });
                 for (var ni = 0; ni < invKeys.length; ni++) {
                     var nkey = invKeys[ni];
