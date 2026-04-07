@@ -223,7 +223,7 @@ window.Renderer = (function () {
         }
 
         // Wilderness (stopped on road, no townId)
-        if (!Player.townId && Player.worldX && Player.worldY) {
+        if (!Player.townId && Player.worldX != null && Player.worldY != null) {
             camera.targetX = Player.worldX;
             camera.targetY = Player.worldY;
             camera.x = camera.targetX;
@@ -2552,7 +2552,7 @@ window.Renderer = (function () {
             if (!town) return;
             px = town.x;
             py = town.y;
-        } else if (player.worldX && player.worldY) {
+        } else if (player.worldX != null && player.worldY != null) {
             // Player is in the wilderness (not at a town)
             px = player.worldX;
             py = player.worldY;
@@ -3046,7 +3046,7 @@ window.Renderer = (function () {
                 }
             }
 
-            if (ppx == null && player.worldX && player.worldY) {
+            if (ppx == null && player.worldX != null && player.worldY != null) {
                 ppx = player.worldX * scaleX;
                 ppy = player.worldY * scaleY;
             }

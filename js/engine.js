@@ -31126,6 +31126,16 @@
                 }
             }
 
+            // Assign capital towns: largest town per kingdom
+            for (const k of world.kingdoms) {
+                const kTowns = world.towns.filter(t => t.kingdomId === k.id);
+                if (kTowns.length === 0) continue;
+                kTowns.sort(function(a, b) { return (b.population || 0) - (a.population || 0); });
+                var capital = kTowns[0];
+                k.capitalTownId = capital.id;
+                capital.isCapital = true;
+            }
+
             // Roads
             var phaseRngRoads = createRNG(seed * 3 + 4);
             world.roads = generateRoads(phaseRngRoads, world.towns, world.kingdoms);
@@ -33084,6 +33094,21 @@
                 if (!kingPerson.parentIds || kingPerson.parentIds.length === 0) {
                     const kTowns = world.towns.filter(function(t) { return t.kingdomId === k.id; });
                     generateRoyalFamily(world.rng, kingPerson, world.people, kTowns);
+                }
+            }
+
+            // Backward compat: assign capitalTownId and isCapital for old saves
+            for (const k of world.kingdoms) {
+                if (!k.capitalTownId) {
+                    const kTowns = world.towns.filter(function(t) { return t.kingdomId === k.id && !t.abandoned && !t.destroyed; });
+                    if (kTowns.length > 0) {
+                        kTowns.sort(function(a, b) { return (b.population || 0) - (a.population || 0); });
+                        k.capitalTownId = kTowns[0].id;
+                        kTowns[0].isCapital = true;
+                    }
+                } else {
+                    var capTown = world.towns.find(function(t) { return t.id === k.capitalTownId; });
+                    if (capTown) capTown.isCapital = true;
                 }
             }
 

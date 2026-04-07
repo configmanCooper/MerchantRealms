@@ -1009,20 +1009,23 @@ window.Tutorial = (function () {
                             }
                         }
                         if (!candidate) {
-                            // Fallback: any adult alive NPC
+                            // Fallback: any unmarried adult alive NPC
                             for (var j = 0; j < npcs.length; j++) {
-                                if (npcs[j] && npcs[j].alive !== false && npcs[j].age >= 16) {
+                                if (npcs[j] && npcs[j].alive !== false && !npcs[j].spouseId && npc.age >= 16) {
                                     candidate = npcs[j];
                                     break;
                                 }
                             }
                         }
                         if (candidate) {
+                            // Clear any existing spouse so tutorial marriage works
+                            if (candidate.spouseId) candidate.spouseId = null;
                             // Set PLAYER-side relationship to 95
                             if (!Player.state.relationships) Player.state.relationships = {};
                             Player.state.relationships[candidate.id] = { level: 95, type: 'romantic' };
                             // Also set NPC-side
-                            if (candidate.relationships) candidate.relationships.player = 95;
+                            if (!candidate.relationships) candidate.relationships = {};
+                            candidate.relationships.player = { level: 95 };
                             snapshotState.marriageCandidateId = candidate.id;
                             snapshotState.marriageCandidate = ((candidate.firstName || '') + ' ' + (candidate.lastName || '')).trim() || 'a townsperson';
                         }
@@ -1414,7 +1417,7 @@ window.Tutorial = (function () {
             steps: [
                 {
                     title: 'What Are Guilds?',
-                    text: '\uD83C\uDFDB\uFE0F <strong>Guilds</strong> are professional organizations that control access to certain building types. There are <strong>9 guilds</strong>: Farmers\', Miners\', Harvesters\', Artisans\', Craftsmen\'s, Armorsmiths\', Luxury Artisans\', Maritime, and Merchants\'. Each covers a <strong>building category</strong> \u2014 you must be a member to own those buildings!<br><br>\uD83D\uDCCA The <strong>Merchants\' Guild</strong> is special \u2014 members can read a <strong>Daily Market Report</strong> with trade tips!'
+                    text: '\uD83C\uDFDB\uFE0F <strong>Guilds</strong> are professional organizations that control access to certain building types. There are <strong>10 guilds</strong>: Farmers\', Miners\', Harvesters\', Artisans\', Craftsmen\'s, Armorsmiths\', Luxury Artisans\', Maritime, Merchants\', and Healers\'. Each covers a <strong>building category</strong> \u2014 you must be a member to own those buildings!<br><br>\uD83D\uDCCA The <strong>Merchants\' Guild</strong> is special \u2014 members can read a <strong>Daily Market Report</strong> with trade tips!'
                 },
                 {
                     title: 'The Guilds Panel',

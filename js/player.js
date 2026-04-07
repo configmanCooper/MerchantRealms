@@ -5920,6 +5920,11 @@
         if (player.traveling) return { success: false, message: 'Already traveling.' };
         if (player.gold < service.price) return { success: false, message: 'Not enough gold.' };
 
+        // Validate route BEFORE charging
+        var route = null;
+        try { route = Engine.findPath(player.townId, townId); } catch (e) { /* ignore */ }
+        if (!route || route.length === 0) return { success: false, message: 'No route available.' };
+
         // Pay for transport
         player.gold -= service.price;
         player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + service.price;
@@ -5932,11 +5937,7 @@
             } catch (e) { /* ignore */ }
         }
 
-        // Start travel
-        var route = null;
-        try { route = Engine.findPath(player.townId, townId); } catch (e) { /* ignore */ }
-        if (!route || route.length === 0) return { success: false, message: 'No route available.' };
-
+        // Start travel (route already validated above)
         // Calculate total distance with service speed factor
         var totalDist = 0;
         for (var i = 0; i < route.length; i++) {
@@ -6365,8 +6366,9 @@
                 var cartContainer = CONFIG.STORAGE_CONTAINERS[lc.container];
                 var cartName = cartContainer ? cartContainer.name : 'Cart';
                 // 85% chance cart is still there
-                var rng = Engine.getRng ? Engine.getRng() : Math.random();
-                if (rng < 0.85) {
+                var rng = Engine.getRng ? Engine.getRng() : null;
+                var roll = rng ? rng.random() : Math.random();
+                if (roll < 0.85) {
                     player.storageContainer = lc.container;
                     // Return goods that survived
                     var returnedCount = 0;
