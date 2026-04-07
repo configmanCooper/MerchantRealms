@@ -11556,8 +11556,8 @@
         // Waiver system then makes it easier to reach spouse's actual rank
         // King marriage impossible (enforced in marry())
         var spouseKingdom = person.kingdomId;
-        var spouseRank = (person.socialRank && spouseKingdom) ? (person.socialRank[spouseKingdom] || 0) : 0;
-        // For non-noble NPCs, estimate rank from occupation/wealth
+        var spouseRank = getNPCSocialRank(person);
+        // For non-noble NPCs without explicit socialRank, estimate from occupation/wealth
         if (spouseRank === 0 && person.occupation) {
             if (person.wealthClass === 'upper' || person.occupation === 'guild_master') spouseRank = 3;
             else if (person.wealthClass === 'middle' || person.occupation === 'merchant' || person.occupation === 'master_craftsman') spouseRank = 2;
