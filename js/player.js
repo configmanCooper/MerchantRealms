@@ -30,6 +30,7 @@
             totalGoldEarned: 0,
             totalGoldSpent: 0,
             tradesCompleted: 0,
+            guildCrafts: 0,
             daysPlayed: 0,
             buildingsOwned: 0,
             employeesHired: 0,
@@ -471,6 +472,7 @@
             totalGoldEarned: 0,
             totalGoldSpent: 0,
             tradesCompleted: 0,
+            guildCrafts: 0,
             daysPlayed: 0,
             buildingsOwned: 0,
             employeesHired: 0,
@@ -12839,7 +12841,8 @@
                 lastActionDay: 0, totalEarned: 0,
                 recentActions: [],
                 assignedTask: null,
-                daysSick: 0, daysInjured: 0, sickEndDay: 0
+                daysSick: 0, daysInjured: 0, sickEndDay: 0,
+                travelTarget: null, travelArrivalDay: null
             };
         }
     }
@@ -13162,6 +13165,26 @@
         if (day - ai.lastActionDay < cfg.TICK_INTERVAL) return;
         ai.lastActionDay = day;
 
+        // Handle travel arrival
+        if (ai.activity === 'traveling' && ai.travelTarget && ai.travelArrivalDay) {
+            if (day >= ai.travelArrivalDay) {
+                spouse.townId = ai.travelTarget;
+                var arrTown = Engine.findTown(ai.travelTarget);
+                ai.activity = 'idle';
+                ai.activityDetail = 'Arrived in ' + (arrTown ? arrTown.name : 'town');
+                Engine.logEvent('💍 ' + spouse.firstName + ' has arrived in ' + (arrTown ? arrTown.name : 'the destination') + '.');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast(spouse.firstName + ' arrived in ' + (arrTown ? arrTown.name : 'town') + '.', 'info');
+                logSpouseAction(day, 'travel', 'Arrived in ' + (arrTown ? arrTown.name : 'town'), 0);
+                ai.travelTarget = null;
+                ai.travelArrivalDay = null;
+            } else {
+                // Still traveling — skip other actions
+                var daysLeft = ai.travelArrivalDay - day;
+                ai.activityDetail = 'Traveling (' + daysLeft + ' day' + (daysLeft > 1 ? 's' : '') + ' remaining)';
+                return;
+            }
+        }
+
         // Health tick
         tickSpouseHealth(spouse);
         if (!spouse.alive) return; // died from illness
@@ -13394,14 +13417,24 @@
         if (!player.spouseId) return { success: false, message: 'You have no spouse.' };
         var spouse = Engine.findPerson(player.spouseId);
         if (!spouse || !spouse.alive) return { success: false, message: 'Your spouse is not available.' };
+        if (spouse.townId === townId) return { success: false, message: spouse.firstName + ' is already in that town.' };
         initSpouseAI();
         var result = trySpouseRequest(spouse, 'travel to a town');
         if (result.accepted) {
-            player.spouseAI.stayTownId = townId;
-            spouse.townId = townId;
             var town = Engine.findTown(townId);
+            var currentTown = Engine.findTown(spouse.townId);
+            // Calculate travel time based on distance
+            var travelDays = 3;
+            if (currentTown && town) {
+                var dist = Math.sqrt(Math.pow(town.x - currentTown.x, 2) + Math.pow(town.y - currentTown.y, 2));
+                travelDays = Math.max(2, Math.min(10, Math.round(dist / 50)));
+            }
+            player.spouseAI.stayTownId = townId;
             player.spouseAI.activity = 'traveling';
-            player.spouseAI.activityDetail = 'Traveling to ' + (town ? town.name : 'a distant town');
+            player.spouseAI.activityDetail = 'Traveling to ' + (town ? town.name : 'a distant town') + ' (~' + travelDays + ' days)';
+            player.spouseAI.travelTarget = townId;
+            player.spouseAI.travelArrivalDay = Engine.getDay() + travelDays;
+            result.message = spouse.firstName + ' sets off for ' + (town ? town.name : 'the destination') + '. Expected arrival in ~' + travelDays + ' days.';
         }
         return result;
     }
@@ -16074,6 +16107,11 @@
             // Age / lifespan
             maxAge: player.maxAge || null,
             maxAgeBonus: player.maxAgeBonus || 0,
+            // Guidance system
+            _guidanceTasks: player._guidanceTasks ? JSON.parse(JSON.stringify(player._guidanceTasks)) : null,
+            _guidanceBaseline: player._guidanceBaseline ? JSON.parse(JSON.stringify(player._guidanceBaseline)) : null,
+            _guidanceDismissed: player._guidanceDismissed || false,
+            _guidanceCollapsed: player._guidanceCollapsed || false,
         };
     }
 
@@ -16162,6 +16200,11 @@
         player.age = data.age != null ? data.age : 18;
         player.maxAge = data.maxAge || null;
         player.maxAgeBonus = data.maxAgeBonus || 0;
+        // Guidance system
+        player._guidanceTasks = data._guidanceTasks || null;
+        player._guidanceBaseline = data._guidanceBaseline || null;
+        player._guidanceDismissed = data._guidanceDismissed || false;
+        player._guidanceCollapsed = data._guidanceCollapsed || false;
         player.alive = data.alive != null ? data.alive : true;
         player.spouseId = data.spouseId || null;
         // Validate spouseId against loaded world
@@ -19788,6 +19831,22 @@
             if (hasSkill('charismatic')) amount *= 1.50;
             else if (hasSkill('charming')) amount *= 1.25;
         }
+        // Family member bonus: +50% relationship gains with family
+        if (amount > 0) {
+            var _isFamily = false;
+            if (player.familyMembers) {
+                for (var _fi = 0; _fi < player.familyMembers.length; _fi++) {
+                    if (player.familyMembers[_fi].npcId === personId) { _isFamily = true; break; }
+                }
+            }
+            if (!_isFamily && player.spouseId === personId) _isFamily = true;
+            if (!_isFamily && player.childrenIds) {
+                for (var _ci = 0; _ci < player.childrenIds.length; _ci++) {
+                    if (player.childrenIds[_ci] === personId) { _isFamily = true; break; }
+                }
+            }
+            if (_isFamily) amount *= 1.50;
+        }
         // Rank-based relationship modifiers (only for positive gains, not spouse/child)
         if (amount > 0 && type !== 'spouse' && type !== 'child') {
             var person = Engine.findPerson ? Engine.findPerson(personId) : null;
@@ -21901,6 +21960,7 @@
         var msg = '🔨 Crafted ' + qty + ' ' + productName + ' at ' + bType.name + '. Fees: ' + feeDetail + '. ' + storageMsg;
 
         try { Engine.logEvent(msg, 'my_actions'); } catch(e) {}
+        if (player.stats) player.stats.guildCrafts = (player.stats.guildCrafts || 0) + 1;
         grantXP(3 * qty, 'guild_crafting');
 
         return { success: true, message: msg };

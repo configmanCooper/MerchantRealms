@@ -302,9 +302,9 @@ window.UI = (function () {
                 goldGroup.after(xpGroup);
             }
 
-            // Add hunger bar after notoriety
-            const notorietyGroup = leftPanelBody.querySelector('.stat-group:nth-child(7)');
-            const insertPoint = notorietyGroup || leftPanelBody.lastElementChild;
+            // Add hunger bar after reputation bars
+            const reputationGroup = leftPanelBody.querySelector('.stat-group:nth-child(6)');
+            const insertPoint = reputationGroup || leftPanelBody.lastElementChild;
             if (insertPoint) {
                 // Guard against duplicate bars on re-init
                 var _oldHunger = document.getElementById('hungerBarGroup');
@@ -507,6 +507,8 @@ window.UI = (function () {
         el.topBar.classList.remove('hidden');
         el.leftPanel.classList.remove('hidden');
         el.bottomBar.classList.remove('hidden');
+        // Initialize guidance system
+        if (typeof Guidance !== 'undefined' && Guidance.init) Guidance.init();
     }
 
     function hideGameUI() {
@@ -709,16 +711,18 @@ window.UI = (function () {
                 el.buildingCount.textContent = Player.buildings ? Player.buildings.length : 0;
                 el.caravanCount.textContent = Player.caravans ? Player.caravans.length : 0;
 
-                // Notoriety meter
-                const notoriety = Player.notoriety || 0;
-                el.notorietyFill.style.width = notoriety + '%';
-                el.notorietyValue.textContent = Math.floor(notoriety);
-                if (notoriety >= CONFIG.NOTORIETY_DANGER_THRESHOLD) {
-                    el.notorietyFill.style.background = '#c44e52';
-                } else if (notoriety >= 30) {
-                    el.notorietyFill.style.background = '#ccb974';
-                } else {
-                    el.notorietyFill.style.background = '#55a868';
+                // Notoriety meter (moved to character menu — guard references)
+                if (el.notorietyFill && el.notorietyValue) {
+                    const notoriety = Player.notoriety || 0;
+                    el.notorietyFill.style.width = notoriety + '%';
+                    el.notorietyValue.textContent = Math.floor(notoriety);
+                    if (notoriety >= CONFIG.NOTORIETY_DANGER_THRESHOLD) {
+                        el.notorietyFill.style.background = '#c44e52';
+                    } else if (notoriety >= 30) {
+                        el.notorietyFill.style.background = '#ccb974';
+                    } else {
+                        el.notorietyFill.style.background = '#55a868';
+                    }
                 }
 
                 // Reputation bars
@@ -885,6 +889,11 @@ window.UI = (function () {
             }
         } else {
             _rightPanelRefreshCounter = 0;
+        }
+
+        // Update guidance widget ("Merchant's Path")
+        if (typeof Guidance !== 'undefined' && Guidance.update) {
+            try { Guidance.update(); } catch (e) { /* no-op */ }
         }
     }
 
@@ -8774,6 +8783,38 @@ window.UI = (function () {
         }
     }
 
+    function _buildKingdomRepBarsHtml() {
+        var html = '';
+        try {
+            var kingdoms = Engine.getKingdoms();
+            if (!kingdoms || kingdoms.length === 0) return '';
+            html += '<div class="detail-section"><h3>🏰 Kingdom Reputation</h3>';
+            for (var ki = 0; ki < kingdoms.length; ki++) {
+                var k = kingdoms[ki];
+                var rep = (Player.reputation || {})[k.id] || 0;
+                var rankIdx = (Player.socialRank || {})[k.id] || 0;
+                var rank = CONFIG.SOCIAL_RANKS[rankIdx] || CONFIG.SOCIAL_RANKS[0];
+                var repPct = Math.max(0, Math.min(100, rep));
+                var repColor = rep >= 70 ? '#55a868' : rep >= 40 ? '#ccb974' : '#c44e52';
+                var isCitizen = Player.citizenshipKingdomId === k.id;
+                html += '<div style="margin-bottom:8px;">';
+                html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">';
+                html += '<span style="font-size:0.82rem;color:' + (k.color || '#ccc') + ';">' + (isCitizen ? '★ ' : '') + k.name + '</span>';
+                html += '<span style="font-size:0.75rem;color:#aaa;">' + rank.icon + ' ' + rank.name + '</span>';
+                html += '</div>';
+                html += '<div style="display:flex;align-items:center;gap:6px;">';
+                html += '<div style="flex:1;background:rgba(0,0,0,0.4);border:1px solid #444;border-radius:3px;height:10px;position:relative;">';
+                html += '<div style="height:100%;width:' + repPct + '%;background:' + repColor + ';border-radius:2px;transition:width 0.3s;"></div>';
+                html += '</div>';
+                html += '<span style="font-size:0.75rem;color:' + repColor + ';min-width:30px;text-align:right;">' + Math.floor(rep) + '</span>';
+                html += '</div>';
+                html += '</div>';
+            }
+            html += '</div>';
+        } catch(e) {}
+        return html;
+    }
+
     function openCharacterDialog() {
         if (typeof Player === 'undefined') return;
 
@@ -9210,6 +9251,22 @@ window.UI = (function () {
             <div class="detail-row"><span class="label">Gold Spent</span>
                 <span class="value">${formatGold(Player.stats ? Player.stats.totalGoldSpent : 0)}</span></div>
         </div>`;
+
+        // Notoriety section
+        var _charNotoriety = Player.notoriety || 0;
+        var _notColor = _charNotoriety >= (CONFIG.NOTORIETY_DANGER_THRESHOLD || 70) ? '#c44e52' : _charNotoriety >= 30 ? '#ccb974' : '#55a868';
+        html += '<div class="detail-section"><h3>🕵️ Notoriety</h3>';
+        html += '<div style="display:flex;align-items:center;gap:8px;">';
+        html += '<div style="flex:1;background:rgba(0,0,0,0.4);border:1px solid #555;border-radius:4px;height:14px;position:relative;">';
+        html += '<div style="height:100%;width:' + Math.min(100, _charNotoriety) + '%;background:' + _notColor + ';border-radius:3px;transition:width 0.3s;"></div>';
+        html += '</div>';
+        html += '<span style="font-size:0.85rem;color:' + _notColor + ';font-weight:bold;">' + Math.floor(_charNotoriety) + '/100</span>';
+        html += '</div>';
+        html += '<div style="font-size:0.72rem;color:#999;margin-top:4px;">How known you are to law enforcement. High notoriety increases detection chance for illegal activities.</div>';
+        html += '</div>';
+
+        // Kingdom reputation bars
+        html += _buildKingdomRepBarsHtml();
 
         // Social Status section
         html += buildSocialStatusHtml();
@@ -9967,6 +10024,14 @@ window.UI = (function () {
             html += '</div>';
         }
 
+        // Merchant's Path guidance toggle
+        var guidanceOn = (typeof Guidance !== 'undefined' && Guidance.isEnabled) ? Guidance.isEnabled() : false;
+        html += '<h3 style="margin-top:16px;color:var(--gold);">📋 Merchant\'s Path</h3>';
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;margin-bottom:8px;background:' + (guidanceOn ? 'rgba(85,168,104,0.15)' : 'rgba(196,78,82,0.15)') + ';border:1px solid ' + (guidanceOn ? 'rgba(85,168,104,0.4)' : 'rgba(196,78,82,0.4)') + ';border-radius:6px;">';
+        html += '<div><span style="font-size:0.95rem;font-weight:bold;">📋 Task Guidance</span><br><span style="font-size:0.75rem;color:var(--text-muted);">Shows suggested tasks below the ledger to help guide your progress. Auto-disables at Guildmaster rank.</span></div>';
+        html += '<button class="btn-medieval" style="font-size:0.8rem;padding:4px 14px;' + (guidanceOn ? 'background:#55a868;color:#fff;' : 'background:#c44e52;color:#fff;') + '" onclick="UI._toggleGuidance()">' + (guidanceOn ? 'On' : 'Off') + '</button>';
+        html += '</div>';
+
         openModal('⚙️ Settings', html);
     }
 
@@ -9980,6 +10045,17 @@ window.UI = (function () {
     function _toggleToastMute() {
         _toastsMuted = !_toastsMuted;
         try { localStorage.setItem('mr_toasts_muted', _toastsMuted ? 'true' : 'false'); } catch(e) {}
+        openSettings(); // refresh the panel
+    }
+
+    function _toggleGuidance() {
+        if (typeof Guidance === 'undefined') return;
+        var isOn = Guidance.isEnabled();
+        if (isOn) {
+            Guidance.dismiss();
+        } else {
+            Guidance.enable();
+        }
         openSettings(); // refresh the panel
     }
 
@@ -12796,7 +12872,15 @@ window.UI = (function () {
                 ${playerLicHtml}
                 ${licenseBtnHtml}
                 ${isHome ? '<div class="kc-home-badge">★ YOUR HOME</div>' : ''}
-                <div class="kc-row">Rep: ${Math.floor(rep)} | Rank: ${rank.icon} ${rank.name}</div>
+                <div class="kc-row" style="margin-top:4px;">
+                    <div style="display:flex;justify-content:space-between;font-size:0.8rem;margin-bottom:2px;">
+                        <span>Rep: ${Math.floor(rep)}/100</span>
+                        <span>${rank.icon} ${rank.name}</span>
+                    </div>
+                    <div style="background:rgba(0,0,0,0.4);border:1px solid #444;border-radius:3px;height:8px;">
+                        <div style="height:100%;width:${Math.max(0, Math.min(100, rep))}%;background:${rep >= 70 ? '#55a868' : rep >= 40 ? '#ccb974' : '#c44e52'};border-radius:2px;transition:width 0.3s;"></div>
+                    </div>
+                </div>
                 <div class="kc-buttons" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">
                     <button class="kc-btn" data-action="towns" data-kid="${k.id}" title="View Towns">🏘️ Towns</button>
                     <button class="kc-btn" data-action="laws" data-kid="${k.id}" title="View Laws">📜 Laws</button>
@@ -15641,7 +15725,7 @@ window.UI = (function () {
 
                 html += '<div class="family-member-card">';
                 html += '<div class="family-member-header">';
-                html += '<span>' + roleIcon + ' ' + m.name + '</span>';
+                html += '<span><a href="#" style="color:var(--gold);text-decoration:underline;cursor:pointer;" onclick="event.preventDefault();var p=Engine.findPerson(\'' + m.npcId + '\');if(p)UI.showPersonDetail(p);">' + roleIcon + ' ' + m.name + '</a></span>';
                 html += '<span class="family-role-badge">' + roleLabel + '</span>';
                 html += '</div>';
                 html += '<div class="family-member-body">';
@@ -15680,7 +15764,11 @@ window.UI = (function () {
 
                 html += '<div class="family-member-card" style="opacity:0.6;border-left:3px solid #555;">';
                 html += '<div class="family-member-header">';
-                html += '<span style="color:#999;">' + roleIcon + ' ' + dm.name + '</span>';
+                if (dperson && !isSynthetic) {
+                    html += '<span style="color:#999;"><a href="#" style="color:#999;text-decoration:underline;cursor:pointer;" onclick="event.preventDefault();var p=Engine.findPerson(\'' + dm.npcId + '\');if(p)UI.showPersonDetail(p);">' + roleIcon + ' ' + dm.name + '</a></span>';
+                } else {
+                    html += '<span style="color:#999;">' + roleIcon + ' ' + dm.name + '</span>';
+                }
                 html += '<span class="family-role-badge" style="background:rgba(100,100,100,0.3);color:#999;">' + dm.role + '</span>';
                 html += '</div>';
                 html += '<div class="family-member-body">';
@@ -15911,82 +15999,237 @@ window.UI = (function () {
                 result = Player.spouseSpendTime ? Player.spouseSpendTime() : { success: false, message: 'Not available.' };
                 break;
             case 'give_gold':
-                var giveAmt = prompt('How much gold to give your spouse?', '50');
-                if (!giveAmt || isNaN(parseInt(giveAmt))) return;
-                result = Player.giveSpouseGold ? Player.giveSpouseGold(parseInt(giveAmt)) : { success: false, message: 'Not available.' };
-                break;
+                _showSpouseGoldPicker('give');
+                return;
             case 'ask_work':
                 result = Player.askSpouseToWork ? Player.askSpouseToWork() : { success: false, message: 'Not available.' };
                 break;
             case 'ask_trade':
-                // Show town picker
-                var towns = Engine.getWorld ? Engine.getWorld().towns : [];
-                if (!towns || towns.length === 0) { toast('No towns available.', 'error'); return; }
-                var townList = towns.map(function(t) { return t.name; }).join(', ');
-                var townName = prompt('Which town should your spouse trade in?\n\nAvailable: ' + townList);
-                if (!townName) return;
-                var targetTown = towns.find(function(t) { return t.name.toLowerCase() === townName.toLowerCase(); });
-                if (!targetTown) { toast('Town not found: ' + townName, 'error'); return; }
-                result = Player.askSpouseToTrade ? Player.askSpouseToTrade(targetTown.id) : { success: false, message: 'Not available.' };
-                break;
+                _showSpouseTownPicker('trade');
+                return;
             case 'ask_money':
-                var askAmt = prompt('How much gold to ask for?', 'all');
-                if (!askAmt) return;
-                var amt = askAmt.toLowerCase() === 'all' ? 999999 : parseInt(askAmt);
-                if (isNaN(amt)) return;
-                result = Player.askSpouseForMoney ? Player.askSpouseForMoney(amt) : { success: false, message: 'Not available.' };
-                break;
+                _showSpouseGoldPicker('ask');
+                return;
             case 'ask_intel':
                 result = Player.askSpouseToGatherIntel ? Player.askSpouseToGatherIntel() : { success: false, message: 'Not available.' };
                 break;
             case 'ask_manage':
-                if (!Player.buildings || Player.buildings.length === 0) { toast('You have no buildings.', 'error'); return; }
-                var bldgList = Player.buildings.map(function(b, idx) { return idx + ': ' + (b.type || 'building') + ' (' + (Engine.findTown(b.townId) ? Engine.findTown(b.townId).name : '?') + ')'; }).join('\n');
-                var bIdx = prompt('Which building should your spouse manage?\n\n' + bldgList + '\n\nEnter number (or -1 to unassign):');
-                if (bIdx === null) return;
-                result = Player.askSpouseToManage ? Player.askSpouseToManage(parseInt(bIdx)) : { success: false, message: 'Not available.' };
-                break;
+                _showSpouseBuildingPicker();
+                return;
             case 'ask_hire':
                 result = Player.askSpouseToHireWorkers ? Player.askSpouseToHireWorkers() : { success: false, message: 'Not available.' };
                 break;
             case 'ask_negotiate':
-                // For now, negotiate with a merchant in current town
-                var people = Engine.getPeople ? Engine.getPeople(Player.townId) : [];
-                var merchants = people.filter(function(p) { return p.occupation === 'merchant' && p.alive; });
-                if (merchants.length === 0) { toast('No merchants in town to negotiate with.', 'error'); return; }
-                var mList = merchants.map(function(m) { return (m.firstName || 'Unknown') + ' ' + (m.lastName || ''); }).join(', ');
-                var mName = prompt('Which merchant should your spouse negotiate with?\n\n' + mList);
-                if (!mName) return;
-                var target = merchants.find(function(m) { return ((m.firstName || 'Unknown') + ' ' + (m.lastName || '')).toLowerCase() === mName.toLowerCase(); });
-                if (!target) { toast('Merchant not found.', 'error'); return; }
-                result = Player.askSpouseToNegotiate ? Player.askSpouseToNegotiate(target.id) : { success: false, message: 'Not available.' };
-                break;
+                _showSpouseNegotiatePicker();
+                return;
             case 'ask_stay':
                 result = Player.askSpouseToStay ? Player.askSpouseToStay(Player.townId) : { success: false, message: 'Not available.' };
                 break;
             case 'ask_travel':
-                var towns2 = Engine.getWorld ? Engine.getWorld().towns : [];
-                if (!towns2 || towns2.length === 0) { toast('No towns available.', 'error'); return; }
-                var townList2 = towns2.map(function(t) { return t.name; }).join(', ');
-                var townName2 = prompt('Which town should your spouse travel to?\n\n' + townList2);
-                if (!townName2) return;
-                var targetTown2 = towns2.find(function(t) { return t.name.toLowerCase() === townName2.toLowerCase(); });
-                if (!targetTown2) { toast('Town not found.', 'error'); return; }
-                result = Player.askSpouseToTravel ? Player.askSpouseToTravel(targetTown2.id) : { success: false, message: 'Not available.' };
-                break;
+                _showSpouseTownPicker('travel');
+                return;
             case 'ask_caravan':
-                if (!Player.caravans || Player.caravans.length === 0) { toast('You have no active caravans.', 'error'); return; }
-                var cIdx = prompt('Which caravan should your spouse guard? (0-' + (Player.caravans.length - 1) + ')');
-                if (cIdx === null || isNaN(parseInt(cIdx))) return;
-                result = Player.askSpouseToGuardCaravan ? Player.askSpouseToGuardCaravan(parseInt(cIdx)) : { success: false, message: 'Not available.' };
-                break;
+                _showSpouseCaravanPicker();
+                return;
             default:
                 result = { success: false, message: 'Unknown action.' };
         }
         if (result) {
             toast(result.message, result.success ? 'success' : (result.accepted === false ? 'warning' : 'error'));
-            openSpousePanel(); // Refresh
+            openSpousePanel();
         }
+    }
+
+    // --- Spouse sub-modal helpers (replace native prompt()) ---
+
+    function _showSpouseGoldPicker(mode) {
+        var status = Player.getSpouseStatus ? Player.getSpouseStatus() : null;
+        if (!status) { toast('No spouse.', 'error'); return; }
+        var isGive = mode === 'give';
+        var maxGold = isGive ? Math.floor(Player.state.gold) : Math.floor(status.gold || 0);
+        var title = isGive ? '🪙 Give Gold to ' + status.name : '💰 Ask ' + status.name + ' for Gold';
+        var desc = isGive
+            ? 'How much gold to give? (You have ' + formatGold(maxGold) + 'g)'
+            : status.name + ' has ' + formatGold(maxGold) + 'g. How much to ask for?';
+        var presets = [];
+        if (maxGold >= 10) presets.push(10);
+        if (maxGold >= 25) presets.push(25);
+        if (maxGold >= 50) presets.push(50);
+        if (maxGold >= 100) presets.push(100);
+        if (maxGold >= 250) presets.push(250);
+
+        var html = '<div style="padding:8px;">';
+        html += '<div style="color:#ccc;margin-bottom:10px;">' + desc + '</div>';
+        if (!isGive) {
+            html += '<button class="btn-medieval" onclick="UI._spouseGoldConfirm(\'' + mode + '\', 999999)" style="width:100%;margin-bottom:8px;background:rgba(200,180,60,0.15);border-color:rgba(200,180,60,0.4);">💰 Ask for All (' + formatGold(maxGold) + 'g)</button>';
+        }
+        if (presets.length > 0) {
+            html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">';
+            for (var pi = 0; pi < presets.length; pi++) {
+                html += '<button class="btn-medieval" onclick="UI._spouseGoldConfirm(\'' + mode + '\', ' + presets[pi] + ')" style="flex:1;min-width:60px;font-size:12px;padding:6px;">' + presets[pi] + 'g</button>';
+            }
+            html += '</div>';
+        }
+        html += '<div style="display:flex;gap:6px;align-items:center;">';
+        html += '<input type="number" id="spouseGoldInput" min="1" max="' + maxGold + '" value="50" style="flex:1;padding:6px;background:#1a1a1a;border:1px solid #555;color:#ddd;border-radius:4px;font-size:14px;" />';
+        html += '<button class="btn-medieval" onclick="UI._spouseGoldConfirm(\'' + mode + '\', parseInt(document.getElementById(\'spouseGoldInput\').value))" style="padding:6px 16px;">Confirm</button>';
+        html += '</div></div>';
+
+        var footer = '<button class="btn-medieval" onclick="UI.openSpousePanel()" style="background:rgba(150,100,100,0.2);border-color:rgba(150,100,100,0.4);">↩ Back</button>';
+        openModal(title, html, footer);
+    }
+
+    function _spouseGoldConfirm(mode, amount) {
+        if (!amount || isNaN(amount) || amount <= 0) { toast('Invalid amount.', 'error'); return; }
+        var result;
+        if (mode === 'give') {
+            result = Player.giveSpouseGold ? Player.giveSpouseGold(amount) : { success: false, message: 'Not available.' };
+        } else {
+            result = Player.askSpouseForMoney ? Player.askSpouseForMoney(amount) : { success: false, message: 'Not available.' };
+        }
+        toast(result.message, result.success ? 'success' : (result.accepted === false ? 'warning' : 'error'));
+        openSpousePanel();
+    }
+
+    function _showSpouseTownPicker(mode) {
+        var towns = [];
+        try { towns = Engine.getTowns(); } catch(e) {}
+        if (!towns || towns.length === 0) { toast('No towns available.', 'error'); return; }
+        var currentTownId = Player.townId;
+        var currentTown = Engine.findTown(currentTownId);
+
+        // Sort towns by distance from player's current town
+        var sortedTowns = towns.slice().sort(function(a, b) {
+            if (!currentTown) return 0;
+            var da = Math.abs(a.x - currentTown.x) + Math.abs(a.y - currentTown.y);
+            var db = Math.abs(b.x - currentTown.x) + Math.abs(b.y - currentTown.y);
+            return da - db;
+        });
+
+        var isTravel = mode === 'travel';
+        var title = isTravel ? '🗺️ Send Spouse to Town' : '📊 Send Spouse to Trade';
+        var html = '<div style="padding:8px;">';
+        html += '<div style="color:#ccc;margin-bottom:10px;">Select a town for your spouse to ' + (isTravel ? 'travel' : 'trade') + ' in:</div>';
+        html += '<div style="max-height:350px;overflow-y:auto;">';
+        for (var ti = 0; ti < sortedTowns.length; ti++) {
+            var t = sortedTowns[ti];
+            var isCurrent = t.id === currentTownId;
+            var dist = currentTown ? Math.round(Math.sqrt(Math.pow(t.x - currentTown.x, 2) + Math.pow(t.y - currentTown.y, 2))) : 0;
+            var distLabel = dist > 0 ? ' (' + dist + ' away)' : '';
+            var style = 'width:100%;text-align:left;font-size:12px;padding:8px;margin-bottom:4px;';
+            if (isCurrent) style += 'border-color:rgba(100,200,100,0.4);background:rgba(100,200,100,0.1);';
+            html += '<button class="btn-medieval" onclick="UI._spouseTownConfirm(\'' + mode + '\', \'' + t.id + '\')" style="' + style + '">';
+            html += (isCurrent ? '📍 ' : '') + t.name + '<span style="color:#888;margin-left:6px;">' + distLabel + '</span>';
+            if (t.kingdom) {
+                var kn = '';
+                try { var k = Engine.findKingdom(t.kingdom); kn = k ? k.name : ''; } catch(e) {}
+                if (kn) html += '<span style="color:#a88;margin-left:6px;font-size:11px;">(' + kn + ')</span>';
+            }
+            html += '</button>';
+        }
+        html += '</div></div>';
+
+        var footer = '<button class="btn-medieval" onclick="UI.openSpousePanel()" style="background:rgba(150,100,100,0.2);border-color:rgba(150,100,100,0.4);">↩ Back</button>';
+        openModal(title, html, footer);
+    }
+
+    function _spouseTownConfirm(mode, townId) {
+        var result;
+        if (mode === 'trade') {
+            result = Player.askSpouseToTrade ? Player.askSpouseToTrade(townId) : { success: false, message: 'Not available.' };
+        } else {
+            result = Player.askSpouseToTravel ? Player.askSpouseToTravel(townId) : { success: false, message: 'Not available.' };
+        }
+        toast(result.message, result.success ? 'success' : (result.accepted === false ? 'warning' : 'error'));
+        openSpousePanel();
+    }
+
+    function _showSpouseBuildingPicker() {
+        if (!Player.buildings || Player.buildings.length === 0) { toast('You have no buildings.', 'error'); return; }
+        var status = Player.getSpouseStatus ? Player.getSpouseStatus() : {};
+        var html = '<div style="padding:8px;">';
+        html += '<div style="color:#ccc;margin-bottom:10px;">Select a building for your spouse to manage:</div>';
+        html += '<div style="max-height:350px;overflow-y:auto;">';
+
+        // Unassign button
+        html += '<button class="btn-medieval" onclick="UI._spouseBuildingConfirm(-1)" style="width:100%;text-align:left;font-size:12px;padding:8px;margin-bottom:6px;background:rgba(150,100,100,0.15);border-color:rgba(150,100,100,0.3);">❌ Unassign from Building Management</button>';
+
+        for (var bi = 0; bi < Player.buildings.length; bi++) {
+            var b = Player.buildings[bi];
+            var tn = '';
+            try { var bTown = Engine.findTown(b.townId); tn = bTown ? bTown.name : '?'; } catch(e) { tn = '?'; }
+            var isManaged = status.managedBuilding && status.managedBuilding.type === b.type && status.managedBuilding.townId === b.townId;
+            var style = 'width:100%;text-align:left;font-size:12px;padding:8px;margin-bottom:4px;';
+            if (isManaged) style += 'border-color:rgba(100,200,100,0.4);background:rgba(100,200,100,0.1);';
+            html += '<button class="btn-medieval" onclick="UI._spouseBuildingConfirm(' + bi + ')" style="' + style + '">';
+            html += (isManaged ? '✅ ' : '🏭 ') + (b.type || 'building') + ' (Lv.' + (b.level || 1) + ') — ' + tn;
+            html += '</button>';
+        }
+        html += '</div></div>';
+
+        var footer = '<button class="btn-medieval" onclick="UI.openSpousePanel()" style="background:rgba(150,100,100,0.2);border-color:rgba(150,100,100,0.4);">↩ Back</button>';
+        openModal('🏭 Manage Building — Spouse', html, footer);
+    }
+
+    function _spouseBuildingConfirm(idx) {
+        var result = Player.askSpouseToManage ? Player.askSpouseToManage(idx) : { success: false, message: 'Not available.' };
+        toast(result.message, result.success ? 'success' : (result.accepted === false ? 'warning' : 'error'));
+        openSpousePanel();
+    }
+
+    function _showSpouseNegotiatePicker() {
+        var people = [];
+        try { people = Engine.getPeople ? Engine.getPeople(Player.townId) : []; } catch(e) {}
+        var merchants = people.filter(function(p) { return p.occupation === 'merchant' && p.alive; });
+        if (merchants.length === 0) { toast('No merchants in town to negotiate with.', 'error'); return; }
+
+        var html = '<div style="padding:8px;">';
+        html += '<div style="color:#ccc;margin-bottom:10px;">Select a merchant for your spouse to negotiate with:</div>';
+        html += '<div style="max-height:350px;overflow-y:auto;">';
+        for (var mi = 0; mi < merchants.length; mi++) {
+            var m = merchants[mi];
+            var rel = Player.getRelationship ? Player.getRelationship(m.id) : null;
+            var relStr = rel ? ' (Rel: ' + Math.round(rel.level || 0) + ')' : '';
+            html += '<button class="btn-medieval" onclick="UI._spouseNegotiateConfirm(\'' + m.id + '\')" style="width:100%;text-align:left;font-size:12px;padding:8px;margin-bottom:4px;">';
+            html += '🤝 ' + (m.firstName || 'Unknown') + ' ' + (m.lastName || '') + '<span style="color:#888;margin-left:6px;">' + relStr + '</span>';
+            html += '</button>';
+        }
+        html += '</div></div>';
+
+        var footer = '<button class="btn-medieval" onclick="UI.openSpousePanel()" style="background:rgba(150,100,100,0.2);border-color:rgba(150,100,100,0.4);">↩ Back</button>';
+        openModal('🤝 Negotiate Deal — Spouse', html, footer);
+    }
+
+    function _spouseNegotiateConfirm(npcId) {
+        var result = Player.askSpouseToNegotiate ? Player.askSpouseToNegotiate(npcId) : { success: false, message: 'Not available.' };
+        toast(result.message, result.success ? 'success' : (result.accepted === false ? 'warning' : 'error'));
+        openSpousePanel();
+    }
+
+    function _showSpouseCaravanPicker() {
+        if (!Player.caravans || Player.caravans.length === 0) { toast('You have no active caravans.', 'error'); return; }
+        var html = '<div style="padding:8px;">';
+        html += '<div style="color:#ccc;margin-bottom:10px;">Select a caravan for your spouse to guard:</div>';
+        html += '<div style="max-height:350px;overflow-y:auto;">';
+        for (var ci = 0; ci < Player.caravans.length; ci++) {
+            var c = Player.caravans[ci];
+            var dest = '';
+            try { var cTown = Engine.findTown(c.destinationTownId || c.targetTownId); dest = cTown ? cTown.name : 'Unknown'; } catch(e) { dest = 'Unknown'; }
+            html += '<button class="btn-medieval" onclick="UI._spouseCaravanConfirm(' + ci + ')" style="width:100%;text-align:left;font-size:12px;padding:8px;margin-bottom:4px;">';
+            html += '🐪 Caravan #' + (ci + 1) + ' → ' + dest;
+            if (c.goods && c.goods.length > 0) html += '<span style="color:#888;margin-left:6px;">(' + c.goods.length + ' goods)</span>';
+            html += '</button>';
+        }
+        html += '</div></div>';
+
+        var footer = '<button class="btn-medieval" onclick="UI.openSpousePanel()" style="background:rgba(150,100,100,0.2);border-color:rgba(150,100,100,0.4);">↩ Back</button>';
+        openModal('🐪 Guard Caravan — Spouse', html, footer);
+    }
+
+    function _spouseCaravanConfirm(idx) {
+        var result = Player.askSpouseToGuardCaravan ? Player.askSpouseToGuardCaravan(idx) : { success: false, message: 'Not available.' };
+        toast(result.message, result.success ? 'success' : (result.accepted === false ? 'warning' : 'error'));
+        openSpousePanel();
     }
 
     // ── Special Start Actions Panel ──
@@ -23542,6 +23785,7 @@ window.UI = (function () {
         openSettings,
         setNotifFilter,
         _toggleToastMute,
+        _toggleGuidance,
         openMapView,
         closeMapView,
         locatePlayer,
@@ -23923,6 +24167,11 @@ window.UI = (function () {
         confirmHeirSelection,
         openSpousePanel,
         spouseInteraction,
+        _spouseGoldConfirm: _spouseGoldConfirm,
+        _spouseTownConfirm: _spouseTownConfirm,
+        _spouseBuildingConfirm: _spouseBuildingConfirm,
+        _spouseNegotiateConfirm: _spouseNegotiateConfirm,
+        _spouseCaravanConfirm: _spouseCaravanConfirm,
         checkConquestEvents,
 
         // Free Travel & Travel HUD
