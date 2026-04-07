@@ -18674,15 +18674,25 @@
         const reasons = [];
 
         // Gold earned requirement
-        if (goldEarned < nextRank.goldReq) reasons.push(`Need ${nextRank.goldReq.toLocaleString()}g earned (have ${Math.floor(goldEarned).toLocaleString()}g)`);
+        // 25% discount if married to a Burgher+ (spouse rank 2+) for commoner promotions
+        var _comDiscountStr = '';
+        var _comDiscount = 1.0;
+        var _mw = player._marriageRankWaiver && player._marriageRankWaiver[kId];
+        if (_mw && _mw.spouseRank >= 2 && (nextRank.id === 'burgher' || nextRank.id === 'guildmaster')) {
+            _comDiscount = 0.75;
+            _comDiscountStr = ' (25% marriage discount)';
+        }
+        var effectiveGoldReq = Math.floor(nextRank.goldReq * _comDiscount);
+        if (goldEarned < effectiveGoldReq) reasons.push(`Need ${effectiveGoldReq.toLocaleString()}g earned (have ${Math.floor(goldEarned).toLocaleString()}g)${_comDiscountStr}`);
 
         // Reputation requirement
         var effectiveRepReq = nextRank.repReq;
         if (hasSkill('royal_favor')) effectiveRepReq = Math.floor(effectiveRepReq * 0.75);
         if (rep < effectiveRepReq) reasons.push(`Need ${effectiveRepReq} reputation (have ${Math.floor(rep)})`);
 
-        // Fee check
-        if (nextRank.fee && player.gold < nextRank.fee) reasons.push(`Need ${nextRank.fee.toLocaleString()}g fee (have ${Math.floor(player.gold).toLocaleString()}g)`);
+        // Fee check — also discounted by marriage
+        var effectiveFee = nextRank.fee ? Math.floor(nextRank.fee * _comDiscount) : 0;
+        if (effectiveFee && player.gold < effectiveFee) reasons.push(`Need ${effectiveFee.toLocaleString()}g fee (have ${Math.floor(player.gold).toLocaleString()}g)${_comDiscountStr}`);
 
         // Rank-specific requirements
         if (nextRank.id === 'citizen') {
@@ -18699,8 +18709,9 @@
         }
 
         if (nextRank.id === 'burgher') {
+            var _bTradeDaysReq = Math.floor((nextRank.tradingDays || 90) * _comDiscount);
             var tradeDays = Engine.getDay() - (player.tradingStartDay || Engine.getDay());
-            if (tradeDays < (nextRank.tradingDays || 90)) reasons.push(`Need ${nextRank.tradingDays || 90} days of trading (${tradeDays} days so far)`);
+            if (tradeDays < _bTradeDaysReq) reasons.push(`Need ${_bTradeDaysReq} days of trading (${tradeDays} days so far)${_comDiscountStr}`);
             var buildingsInKingdom = player.buildings.filter(function(b) { var t = Engine.findTown(b.townId); return t && t.kingdomId === kId; }).length;
             if (buildingsInKingdom < (nextRank.minBuildings || 1)) reasons.push(`Need at least ${nextRank.minBuildings || 1} building in kingdom (have ${buildingsInKingdom})`);
             var trades = (player.stats && player.stats.tradesCompleted) || player.tradesCompleted || 0;
@@ -18719,9 +18730,10 @@
             if (workersInKingdom < (nextRank.minWorkers || 8)) reasons.push(`Need ${nextRank.minWorkers || 8}+ workers in kingdom (have ${workersInKingdom})`);
             var townsWithBuildings = new Set(player.buildings.filter(function(b) { var t = Engine.findTown(b.townId); return t && t.kingdomId === kId; }).map(function(b) { return b.townId; })).size;
             if (townsWithBuildings < (nextRank.minTownsWithBuildings || 2)) reasons.push(`Need buildings in ${nextRank.minTownsWithBuildings || 2}+ towns (have ${townsWithBuildings})`);
-            // Trading days requirement
+            // Trading days requirement — discounted by marriage
+            var _gmTradeDaysReq = Math.floor((nextRank.tradingDays || 180) * _comDiscount);
             var gmTradeDays = Engine.getDay() - (player.tradingStartDay || Engine.getDay());
-            if (gmTradeDays < (nextRank.tradingDays || 180)) reasons.push(`Need ${nextRank.tradingDays || 180} days of trading (${gmTradeDays} so far)`);
+            if (gmTradeDays < _gmTradeDaysReq) reasons.push(`Need ${_gmTradeDaysReq} days of trading (${gmTradeDays} so far)${_comDiscountStr}`);
             // Caravan goods moved requirement
             var caravanGoodsMoved = (player.stats && player.stats.caravanGoodsMoved) || 0;
             if (caravanGoodsMoved < (nextRank.minCaravanGoodsMoved || 500)) reasons.push(`Need ${nextRank.minCaravanGoodsMoved || 500}+ goods moved by caravan (have ${caravanGoodsMoved})`);
@@ -18863,13 +18875,17 @@
         const currentIdx = player.socialRank[kId] || 0;
         const newIdx = currentIdx + 1;
         const nextRank = CONFIG.SOCIAL_RANKS[newIdx];
-        // Deduct fee (re-check after tick advance which may have spent gold)
+        // Deduct fee (apply marriage discount for commoner ranks)
         if (nextRank.fee) {
-            if (player.gold < nextRank.fee) return { success: false, message: `Not enough gold for promotion fee. Need ${nextRank.fee}g, have ${Math.floor(player.gold)}g.` };
-            player.gold -= nextRank.fee;
-            player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + nextRank.fee;
+            var _promoDiscount = 1.0;
+            var _pmw = player._marriageRankWaiver && player._marriageRankWaiver[kId];
+            if (_pmw && _pmw.spouseRank >= 2 && (nextRank.id === 'burgher' || nextRank.id === 'guildmaster')) _promoDiscount = 0.75;
+            var _actualFee = Math.floor(nextRank.fee * _promoDiscount);
+            if (player.gold < _actualFee) return { success: false, message: `Not enough gold for promotion fee. Need ${_actualFee}g, have ${Math.floor(player.gold)}g.` };
+            player.gold -= _actualFee;
+            player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + _actualFee;
             var promoKingdom = Engine.findKingdom(kId);
-            if (promoKingdom) promoKingdom.gold = (promoKingdom.gold || 0) + nextRank.fee;
+            if (promoKingdom) promoKingdom.gold = (promoKingdom.gold || 0) + _actualFee;
         }
         player.socialRank[kId] = newIdx;
         player.rankSince[kId] = Engine.getDay();
