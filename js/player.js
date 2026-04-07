@@ -8645,6 +8645,18 @@
     }
 
     function handlePlayerDeath() {
+        // Early-game protection: no death in first 180 days
+        var currentDay = (typeof Engine !== 'undefined' && Engine.getDay) ? Engine.getDay() : 9999;
+        if (currentDay <= 180) {
+            // Revive player instead of dying
+            player.alive = true;
+            player.health = Math.max(player.health || 0, 30);
+            player.deathCause = null;
+            Engine.logEvent('🛡️ A kind stranger found you and nursed you back to health. You survived by sheer luck.');
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('🛡️ You narrowly survived! (Early-game protection)', 'info');
+            return;
+        }
+
         // Pause the game while heir selection is shown
         if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(0);
 
