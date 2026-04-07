@@ -27712,12 +27712,14 @@
 
             // PLAGUE — any town, more likely in cities/capitals
             // World cooldown: no new random plagues for 360 days after the last one triggered
+            // Early-game protection: no plagues before day 90, reduced chance days 91-180
             var _plagueCooldownDays = 360;
             var _lastPlagueDay = world._lastPlagueTriggerDay || 0;
-            if (world.day - _lastPlagueDay >= _plagueCooldownDays) {
+            if (world.day > 90 && world.day - _lastPlagueDay >= _plagueCooldownDays) {
+                var earlyGameMult = world.day <= 180 ? 0.25 : 1.0;
                 const plagueMult = town.category === 'capital_city' ? CONFIG.DISASTER_PLAGUE_CAPITAL_MULT
                                  : town.category === 'city' ? CONFIG.DISASTER_PLAGUE_CITY_MULT : 1;
-                if (rng.chance(CONFIG.DISASTER_PLAGUE_CHANCE * plagueMult)) {
+                if (rng.chance(CONFIG.DISASTER_PLAGUE_CHANCE * plagueMult * earlyGameMult)) {
                     triggerPlague(town);
                     world._lastPlagueTriggerDay = world.day;
                 }

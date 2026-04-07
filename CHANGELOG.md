@@ -4,6 +4,27 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.59.0] - 2026-04-07
+
+### Added
+- **Autosave System**: Two rotating autosave slots that save every 15 minutes, alternating between slots. Autosaves appear in Load menu only; manual save slots are never touched
+- **Try for Baby Button**: Active conception attempt in spouse panel with age-based chance curve, 20 subtick cost, once-per-day cooldown. Shows conception chance preview
+- **Pregnancy/Fertility Indicator**: Spouse panel shows pregnant status with days remaining, can-conceive readiness, or blocked reason (too old, max children, etc.)
+- **Rank Progression Tracker**: Compact progress bars in the ledger showing requirements for next social rank with color-coded bars, k-notation for large values, and tooltips for each requirement
+- **Marriage Waiver Recognition**: Ledger progress bars show "Waived ✓" for petitions/endorsements when married to a Minor Noble+, and 💍 icon on discounted requirements
+
+### Changed
+- **Spouse AI Overhaul**: Occupation-aware and social-rank-aware behavior weights; elite merchant-level trading intelligence; autonomous return-home behavior
+- **Kingdom Panel Reputation Display**: Status and Reputation on separate lines; reputation bar uses kingdom's color
+- **Early-Game Plague Protection**: No plagues in first 90 days; 75% reduced chance days 91-180; player immune to plague exposure first 90 days
+- **Marriage Bypass Text**: Burgher says "Marry a Guildmaster+"; Minor Noble says "Marry a Minor Noble" (corrected from "Marry a Lord")
+
+### Fixed
+- **Engine.currentTown TypeError**: `buyTentSlot()` called non-existent `Engine.currentTown()` — changed to `Engine.getTown(Player.townId)`
+- **Tick Error Empty Object**: Enhanced error logging with separate try/catch for Engine.tick and Player.tick
+- **Trade Max Quantity Validation**: Fixed effectiveCap, rounding alignment, and spouse/injury modifier accounting
+- **Notification Bell Badge**: Force-clears badge immediately on click
+
 ## [0.58.0] - 2026-04-06
 
 ### Added

@@ -479,7 +479,7 @@ const CONFIG = {
           description: 'Master of commerce. Can build toll roads, trade weapons, and hire petitioners. +10% production output.' },
         { id: 'minor_noble', name: 'Minor Noble', index: 4, icon: '👑',
           maxWorkers: 70, maxBuildings: 50, maxLand: 30,
-          goldReq: 75000, repReq: 80, extraReq: 'Marry a Lord (waives petitions & endorsements) OR 3 petitions + 5 noble endorsements, property in 3+ towns',
+          goldReq: 75000, repReq: 80, extraReq: 'Marry a Minor Noble (waives petitions & endorsements) OR 3 petitions + 5 noble endorsements, property in 3+ towns',
           fee: 15000, minPetitionsCompleted: 3, minEndorsements: 5, minEndorsementLevel: 60, minTownsWithProperty: 3,
           taxDiscount: 0.10,
           signatureBonus: 0.15,

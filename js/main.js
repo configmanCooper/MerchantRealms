@@ -392,6 +392,9 @@ window.Game = (function () {
                     // Start game music
                     if (typeof Music !== 'undefined') Music.playGameMusic('peaceful');
 
+                    // Start autosave timer
+                    startAutosave();
+
                     const actualTown = Engine.findTown(Player.townId || selectedTownId);
                     const townName = actualTown ? actualTown.name : 'your town';
                     UI.toast(`Welcome, ${playerFirstName} ${playerLastName}! Your journey begins in ${townName}.`, 'info');
@@ -417,6 +420,7 @@ window.Game = (function () {
                 setupInput();
                 state = 'playing';
                 if (!animFrameId) loop(performance.now());
+                startAutosave();
             } catch (e2) {
                 console.error('Minimal start also failed:', e2);
             }
@@ -502,12 +506,22 @@ window.Game = (function () {
 
                 // Advance world simulation
                 if (typeof Engine !== 'undefined' && Engine.tick) {
-                    Engine.tick();
+                    try {
+                        Engine.tick();
+                    } catch (eTick) {
+                        console.error('Engine.tick() error on day', Engine.getDay ? Engine.getDay() : '?', eTick);
+                        if (eTick && eTick.stack) console.error(eTick.stack);
+                    }
                 }
 
                 // Advance player
                 if (typeof Player !== 'undefined' && Player.tick) {
-                    Player.tick();
+                    try {
+                        Player.tick();
+                    } catch (pTick) {
+                        console.error('Player.tick() error on day', Engine.getDay ? Engine.getDay() : '?', pTick);
+                        if (pTick && pTick.stack) console.error(pTick.stack);
+                    }
                 }
 
                 // Check win/lose conditions
@@ -527,6 +541,9 @@ window.Game = (function () {
 
         } catch (e) {
             console.error('Tick error:', e);
+            if (e && e.stack) console.error('Stack:', e.stack);
+            else if (e && e.message) console.error('Message:', e.message);
+            else console.error('Tick error (non-Error object):', JSON.stringify(e));
         }
     }
 
@@ -1271,6 +1288,158 @@ window.Game = (function () {
     const NUM_SAVE_SLOTS = 5;
     let lastUsedSlot = parseInt(localStorage.getItem('merchantRealms_lastSlot')) || 0;
 
+    // ── Autosave System ──
+    const AUTOSAVE_SLOT_A = 'merchantRealms_autosave_A';
+    const AUTOSAVE_SLOT_B = 'merchantRealms_autosave_B';
+    const AUTOSAVE_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+    let _autosaveTimerId = null;
+    // Track which autosave slot is "older" — we always overwrite the older one
+    // Start with A so first save goes to A, second to B, then back to A, etc.
+    let _autosaveNextSlot = 'A';
+
+    function _buildSavePayload() {
+        const engineData = Engine.serialize ? Engine.serialize() : null;
+        const playerData = Player.serialize ? Player.serialize() : null;
+        const dayNum = Engine.getDay ? Engine.getDay() : 0;
+        const seasonIdx = Math.floor((dayNum % (CONFIG.DAYS_PER_SEASON * 4)) / CONFIG.DAYS_PER_SEASON);
+        const kingdomId = Player.citizenshipKingdomId;
+        let kingdomName = '';
+        if (kingdomId && Engine.getKingdom) {
+            const k = Engine.getKingdom(kingdomId);
+            if (k) kingdomName = k.name;
+        }
+        let rankName = '';
+        if (Player.socialRank && kingdomId != null) {
+            const rIdx = Player.socialRank[kingdomId] || 0;
+            if (CONFIG.SOCIAL_RANKS[rIdx]) rankName = CONFIG.SOCIAL_RANKS[rIdx].name;
+        }
+        return {
+            playerName: Player.fullName || 'Unknown',
+            day: dayNum,
+            season: CONFIG.SEASONS[seasonIdx] || 'Spring',
+            year: Math.floor(dayNum / (CONFIG.DAYS_PER_SEASON * 4)) + 1,
+            kingdom: kingdomName,
+            rank: rankName,
+            gold: Player.gold || 0,
+            savedAt: Date.now(),
+            version: 3,
+            engine: engineData,
+            player: playerData,
+            aiMerchants: Player.serializeAI ? Player.serializeAI() : null,
+        };
+    }
+
+    function _compressAndStore(key, data) {
+        const jsonStr = JSON.stringify(data);
+        let saveStr = jsonStr;
+        if (typeof LZString !== 'undefined') {
+            saveStr = LZString.compressToUTF16(jsonStr);
+        }
+        localStorage.setItem(key, saveStr);
+    }
+
+    function _performAutosave() {
+        if (state !== 'playing' && state !== 'paused') return;
+        try {
+            var data = _buildSavePayload();
+            data.isAutosave = true;
+            var key = _autosaveNextSlot === 'A' ? AUTOSAVE_SLOT_A : AUTOSAVE_SLOT_B;
+            _compressAndStore(key, data);
+            console.log('[Autosave] Saved to slot ' + _autosaveNextSlot + ' on Day ' + data.day);
+            // Alternate to the other slot next time
+            _autosaveNextSlot = _autosaveNextSlot === 'A' ? 'B' : 'A';
+        } catch (e) {
+            console.error('[Autosave] Failed:', e);
+        }
+    }
+
+    function startAutosave() {
+        stopAutosave();
+        // Determine which slot is older so we overwrite it first
+        var metaA = getAutosaveMeta('A');
+        var metaB = getAutosaveMeta('B');
+        if (!metaA && !metaB) {
+            _autosaveNextSlot = 'A'; // both empty, start with A
+        } else if (!metaA) {
+            _autosaveNextSlot = 'A'; // A is empty, fill it
+        } else if (!metaB) {
+            _autosaveNextSlot = 'B'; // B is empty, fill it
+        } else {
+            // Both exist — overwrite the older one
+            _autosaveNextSlot = (metaA.savedAt || 0) <= (metaB.savedAt || 0) ? 'A' : 'B';
+        }
+        _autosaveTimerId = setInterval(_performAutosave, AUTOSAVE_INTERVAL_MS);
+    }
+
+    function stopAutosave() {
+        if (_autosaveTimerId) {
+            clearInterval(_autosaveTimerId);
+            _autosaveTimerId = null;
+        }
+    }
+
+    function getAutosaveData(slot) {
+        try {
+            var key = slot === 'A' ? AUTOSAVE_SLOT_A : AUTOSAVE_SLOT_B;
+            var raw = localStorage.getItem(key);
+            if (!raw) return null;
+            if (typeof LZString !== 'undefined') {
+                var decompressed = LZString.decompressFromUTF16(raw);
+                if (decompressed) {
+                    try { return JSON.parse(decompressed); } catch (e2) { /* fall through */ }
+                }
+            }
+            return JSON.parse(raw);
+        } catch (e) { return null; }
+    }
+
+    function getAutosaveMeta(slot) {
+        var data = getAutosaveData(slot);
+        if (!data) return null;
+        return {
+            playerName: data.playerName || 'Unknown',
+            day: data.day || 0,
+            season: data.season || 'Spring',
+            year: data.year || 1,
+            kingdom: data.kingdom || '',
+            rank: data.rank || '',
+            gold: data.gold || 0,
+            savedAt: data.savedAt || 0,
+        };
+    }
+
+    function loadAutosave(slot) {
+        var data = getAutosaveData(slot);
+        if (!data) {
+            if (typeof UI !== 'undefined') UI.toast('No autosave in slot ' + slot + '.', 'warning');
+            return;
+        }
+        // Reuse the same load logic as normal slots
+        try {
+            if (data.engine && Engine.deserialize) Engine.deserialize(data.engine);
+            if (data.player && Player.deserialize) Player.deserialize(data.player);
+            if (data.aiMerchants && Player.deserializeAI) Player.deserializeAI(data.aiMerchants);
+
+            try { UI.update(); } catch (e) { console.error('UI update after autosave load:', e); }
+            setupInput();
+            state = 'playing';
+            speed = 1;
+            lastTickTime = performance.now();
+            tickAccumulator = 0;
+            tickCounter = 0;
+            lastFrameTime = performance.now();
+            const events = Engine.getEvents ? Engine.getEvents() : [];
+            lastProcessedEventCount = events ? events.length : 0;
+            if (!animFrameId) loop(performance.now());
+            if (typeof Music !== 'undefined') Music.playGameMusic('peaceful');
+            startAutosave();
+            UI.toast('Loaded Autosave ' + slot + '!', 'success');
+        } catch (e) {
+            console.error('Autosave load failed:', e);
+            if (typeof UI !== 'undefined') UI.toast('Autosave load failed: ' + (e.message || 'Unknown error'), 'danger');
+        }
+    }
+
     function migrateOldSave() {
         const old = localStorage.getItem(OLD_SAVE_KEY);
         if (old && !localStorage.getItem(SAVE_SLOT_PREFIX + '1')) {
@@ -1435,6 +1604,38 @@ window.Game = (function () {
             }
         }
         html += '</div>';
+
+        // Autosave slots (only in load mode, only if they exist)
+        if (isLoad) {
+            var autoA = getAutosaveMeta('A');
+            var autoB = getAutosaveMeta('B');
+            if (autoA || autoB) {
+                html += '<div style="margin-top:10px;border-top:1px solid rgba(212,175,55,0.3);padding-top:8px;">';
+                html += '<div style="font-size:12px;color:#d4af37;margin-bottom:6px;">🔄 Autosaves</div>';
+                var autoSlots = [{ label: 'A', meta: autoA }, { label: 'B', meta: autoB }];
+                for (var _as = 0; _as < autoSlots.length; _as++) {
+                    var _asl = autoSlots[_as];
+                    if (!_asl.meta) continue;
+                    var _aDateStr = _asl.meta.savedAt ? new Date(_asl.meta.savedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
+                    html += '<div class="save-slot-row" data-autosave-slot="' + _asl.label + '" style="cursor:pointer;border-left:3px solid rgba(100,180,100,0.5);">' +
+                        '<div class="save-slot-left">' +
+                        '<div class="save-slot-info">' +
+                        '<span class="save-slot-num" style="color:#8c8;">[Auto ' + _asl.label + ']</span>' +
+                        '<span class="save-slot-name">' + _asl.meta.playerName + '</span>' +
+                        '</div>' +
+                        '<div class="save-slot-details">' +
+                        'Day ' + _asl.meta.day + ' — ' + _asl.meta.season + ', Year ' + _asl.meta.year +
+                        '</div>' +
+                        '<div class="save-slot-meta">' +
+                        '🪙 ' + Math.floor(_asl.meta.gold).toLocaleString() + '  •  ' + _aDateStr +
+                        '</div>' +
+                        '</div>' +
+                        '</div>';
+                }
+                html += '</div>';
+            }
+        }
+
         // Add debug file download button at the bottom
         html += '<div style="margin-top:12px;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:10px;">' +
             '<button class="btn-medieval save-slot-debug" title="Download a debug file containing your save data, console logs, and error info to send to the developer">🐛 Download Debug File</button>' +
@@ -1490,6 +1691,7 @@ window.Game = (function () {
             document.querySelectorAll('.save-slot-row:not(.save-slot-disabled)').forEach(function (row) {
                 row.addEventListener('click', function (e) {
                     if (e.target.dataset.deleteSlot || e.target.dataset.downloadSlot || e.target.dataset.importSlot) return;
+                    if (this.dataset.autosaveSlot) return; // handled separately
                     const slot = parseInt(this.dataset.slot);
                     if (getSlotData(slot)) {
                         UI.closeModal();
@@ -1539,49 +1741,21 @@ window.Game = (function () {
                     downloadDebugFile();
                 });
             }
+            // Autosave slot click handlers
+            document.querySelectorAll('[data-autosave-slot]').forEach(function (row) {
+                row.addEventListener('click', function (e) {
+                    var slot = this.dataset.autosaveSlot;
+                    UI.closeModal();
+                    loadAutosave(slot);
+                });
+            });
         }, 50);
     }
 
     function saveToSlot(slotNum) {
         try {
-            const engineData = Engine.serialize ? Engine.serialize() : null;
-            const playerData = Player.serialize ? Player.serialize() : null;
-            const dayNum = Engine.getDay ? Engine.getDay() : 0;
-            const seasonIdx = Math.floor((dayNum % (CONFIG.DAYS_PER_SEASON * 4)) / CONFIG.DAYS_PER_SEASON);
-            const kingdomId = Player.citizenshipKingdomId;
-            let kingdomName = '';
-            if (kingdomId && Engine.getKingdom) {
-                const k = Engine.getKingdom(kingdomId);
-                if (k) kingdomName = k.name;
-            }
-            let rankName = '';
-            if (Player.socialRank && kingdomId != null) {
-                const rIdx = Player.socialRank[kingdomId] || 0;
-                if (CONFIG.SOCIAL_RANKS[rIdx]) rankName = CONFIG.SOCIAL_RANKS[rIdx].name;
-            }
-            const data = {
-                playerName: Player.fullName || 'Unknown',
-                day: dayNum,
-                season: CONFIG.SEASONS[seasonIdx] || 'Spring',
-                year: Math.floor(dayNum / (CONFIG.DAYS_PER_SEASON * 4)) + 1,
-                kingdom: kingdomName,
-                rank: rankName,
-                gold: Player.gold || 0,
-                savedAt: Date.now(),
-                version: 3,
-                engine: engineData,
-                player: playerData,
-                aiMerchants: Player.serializeAI ? Player.serializeAI() : null,
-            };
-            const jsonStr = JSON.stringify(data);
-            // Compress save data to fit more in localStorage's 5MB limit
-            let saveStr = jsonStr;
-            if (typeof LZString !== 'undefined') {
-                saveStr = LZString.compressToUTF16(jsonStr);
-                const ratio = Math.round((1 - saveStr.length / jsonStr.length) * 100);
-                console.log('[Save] Compressed ' + (jsonStr.length / 1024).toFixed(0) + 'KB → ' + (saveStr.length / 1024).toFixed(0) + 'KB (' + ratio + '% smaller)');
-            }
-            localStorage.setItem(SAVE_SLOT_PREFIX + slotNum, saveStr);
+            var data = _buildSavePayload();
+            _compressAndStore(SAVE_SLOT_PREFIX + slotNum, data);
             lastUsedSlot = slotNum;
             localStorage.setItem('merchantRealms_lastSlot', String(slotNum));
             if (typeof UI !== 'undefined') UI.toast('Saved to Slot ' + slotNum + '!', 'success');
@@ -1690,6 +1864,9 @@ window.Game = (function () {
             // Start game music on load
             if (typeof Music !== 'undefined') Music.playGameMusic('peaceful');
 
+            // Start autosave timer
+            startAutosave();
+
             lastUsedSlot = slotNum;
             localStorage.setItem('merchantRealms_lastSlot', String(slotNum));
 
@@ -1788,7 +1965,7 @@ window.Game = (function () {
 
             // 3. Game metadata
             debugData.meta = {
-                gameVersion: 'v0.57.0',
+                gameVersion: 'v0.59.0',
                 saveVersion: 3,
                 timestamp: new Date().toISOString(),
                 userAgent: navigator.userAgent,
@@ -1937,9 +2114,11 @@ window.Game = (function () {
             if (!animFrameId) {
                 loop(performance.now());
             }
+            startAutosave();
         },
         showTitleScreen: function () {
             state = 'title';
+            stopAutosave();
             if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
             // Clean up tutorial if it was running
             if (typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive()) {

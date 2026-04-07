@@ -971,9 +971,10 @@ var Guidance = (function () {
         var currentDay = (typeof Engine !== 'undefined' && Engine.getDay) ? Engine.getDay() : 0;
         var rank = _getPlayerRank(p);
 
-        // Remove completed tasks after 1 day
+        // Remove completed tasks after 5 seconds real time
+        var nowMs = Date.now();
         p._guidanceTasks = p._guidanceTasks.filter(function (t) {
-            if (t.completedDay && currentDay - t.completedDay > 1) return false;
+            if (t.completedAt && nowMs - t.completedAt > 5000) return false;
             return true;
         });
 
@@ -984,6 +985,7 @@ var Guidance = (function () {
             var def = _findDef(active.id);
             if (def && def.check(p)) {
                 active.completedDay = currentDay;
+                active.completedAt = nowMs;
                 _rewardTaskComplete();
                 _updateBaseline(p, active.id);
             }
@@ -1092,8 +1094,12 @@ var Guidance = (function () {
                 var t = tasks[i];
                 var done = !!t.completedDay;
                 var icon = done ? '✅' : '⬜';
-                var textStyle = done ? 'text-decoration:line-through;color:var(--text-muted,#888);' : 'color:var(--parchment-dark,#5a4a2a);';
-                html += '<div style="font-size:0.78rem;padding:2px 0;' + textStyle + '">' + icon + ' ' + _escapeHtml(t.textCache) + '</div>';
+                var textStyle = done ? 'text-decoration:line-through;color:var(--text-muted,#888);cursor:pointer;' : 'color:var(--parchment-dark,#5a4a2a);';
+                if (done) {
+                    html += '<div data-guidance="dismiss-task" data-task-id="' + _escapeHtml(t.id) + '" style="font-size:0.78rem;padding:2px 0;' + textStyle + '" title="Click to dismiss">' + icon + ' ' + _escapeHtml(t.textCache) + '</div>';
+                } else {
+                    html += '<div style="font-size:0.78rem;padding:2px 0;' + textStyle + '">' + icon + ' ' + _escapeHtml(t.textCache) + '</div>';
+                }
             }
             html += '</div>';
         }
@@ -1119,6 +1125,12 @@ var Guidance = (function () {
                 if (action === 'dismiss') {
                     e.stopPropagation();
                     Guidance.confirmDismiss();
+                    return;
+                }
+                if (action === 'dismiss-task') {
+                    e.stopPropagation();
+                    var taskId = el.getAttribute('data-task-id');
+                    if (taskId) Guidance.dismissTask(taskId);
                     return;
                 }
                 if (action === 'header') {
@@ -1171,6 +1183,7 @@ var Guidance = (function () {
                 var def = _findDef(tasks[i].id);
                 if (def && def.check(p)) {
                     tasks[i].completedDay = currentDay;
+                    tasks[i].completedAt = Date.now();
                     _rewardTaskComplete();
                     _updateBaseline(p, tasks[i].id);
                     changed = true;
@@ -1226,6 +1239,16 @@ var Guidance = (function () {
         } catch (e) { return false; }
     }
 
+    function dismissTask(taskId) {
+        try {
+            var p = Player.state;
+            if (!p || !p._guidanceTasks) return;
+            p._guidanceTasks = p._guidanceTasks.filter(function (t) { return t.id !== taskId; });
+            _lastRenderedHtml = '';
+            _render(p);
+        } catch (e) {}
+    }
+
     return {
         init: init,
         update: update,
@@ -1233,7 +1256,8 @@ var Guidance = (function () {
         confirmDismiss: confirmDismiss,
         dismiss: dismiss,
         enable: enable,
-        isEnabled: isEnabled
+        isEnabled: isEnabled,
+        dismissTask: dismissTask
     };
 
 })();

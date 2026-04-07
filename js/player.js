@@ -12953,18 +12953,70 @@
         var frugality = p.frugality || 0;
         var cfg = CONFIG.SPOUSE_AI;
 
+        // Determine spouse's social rank and occupation for status-appropriate behavior
+        var spouseRank = getNPCSocialRank(spouse);
+        var playerRank = 0;
+        if (player.socialRank) {
+            for (var _kId in player.socialRank) {
+                if (player.socialRank[_kId] > playerRank) playerRank = player.socialRank[_kId];
+            }
+        }
+        var effectiveRank = Math.max(spouseRank, playerRank); // spouse adopts player's rank
+        var occupation = spouse.occupation || 'none';
+
+        // --- Elite merchant-level base weights (smarter than before) ---
         var weights = {
-            work: Math.max(5, ambition * 0.8 + intelligence * 0.2),
-            trade: intelligence >= cfg.TRADE_MIN_INTELLIGENCE ? (ambition * 0.5 + intelligence * 0.5) : 0,
-            manage: (ai.managedBuildingIdx >= 0 && intelligence >= cfg.MANAGE_MIN_INTELLIGENCE) ? 80 : 0,
-            socialize: warmth * 0.7 + (100 - ambition) * 0.2,
-            household: (100 - ambition) * 0.5 + warmth * 0.3,
-            gatherIntel: intelligence * 0.5 * (ambition * 0.01 + 0.3),
+            work: Math.max(8, ambition * 0.6 + intelligence * 0.4),
+            trade: intelligence >= 25 ? (ambition * 0.4 + intelligence * 0.6 + 15) : 0, // lower int threshold, higher base
+            manage: (ai.managedBuildingIdx >= 0 && intelligence >= 20) ? 90 : 0, // lower threshold, higher weight
+            socialize: warmth * 0.6 + (100 - ambition) * 0.15 + 10,
+            household: (100 - ambition) * 0.3 + warmth * 0.25,
+            gatherIntel: intelligence * 0.6 * (ambition * 0.01 + 0.4) + 8, // boosted intel gathering
             rest: Math.max(5, (100 - ai.health) * 1.5),
-            idle: Math.max(2, (100 - ambition) * 0.15 + (100 - intelligence) * 0.1)
+            idle: Math.max(1, (100 - ambition) * 0.08 + (100 - intelligence) * 0.05) // less idle time
         };
 
-        // Quirk adjustments
+        // --- Occupation-appropriate behavior ---
+        if (occupation === 'merchant' || occupation === 'trader') {
+            weights.trade *= 1.8;
+            weights.gatherIntel *= 1.5;
+            weights.work *= 0.6;
+        } else if (occupation === 'noble') {
+            weights.socialize *= 2.0;
+            weights.gatherIntel *= 1.5;
+            weights.work = 0; // nobles don't do manual labor
+            weights.household *= 0.3;
+        } else if (occupation === 'farmer' || occupation === 'laborer') {
+            weights.work *= 1.5;
+            weights.household *= 1.3;
+        } else if (occupation === 'guard' || occupation === 'soldier') {
+            weights.work *= 1.3;
+            weights.gatherIntel *= 1.3;
+        } else if (occupation === 'scholar' || occupation === 'doctor' || occupation === 'healer') {
+            weights.gatherIntel *= 2.0;
+            weights.trade *= 0.5;
+        } else if (occupation === 'craftsman' || occupation === 'artisan' || occupation === 'blacksmith') {
+            weights.work *= 1.4;
+            weights.manage *= 1.3;
+        }
+
+        // --- Social rank adjustments (higher rank = more dignified activities) ---
+        if (effectiveRank >= 4) { // Noble+
+            weights.work *= 0.2;    // nobles rarely do manual work
+            weights.household *= 0.4; // servants handle it
+            weights.socialize *= 1.5;
+            weights.gatherIntel *= 1.5;
+            weights.manage *= 1.3;
+        } else if (effectiveRank >= 3) { // Guildmaster
+            weights.trade *= 1.4;
+            weights.manage *= 1.3;
+            weights.work *= 0.5;
+        } else if (effectiveRank >= 2) { // Burgher
+            weights.trade *= 1.2;
+            weights.manage *= 1.2;
+        }
+
+        // --- Quirk adjustments ---
         if (quirks.indexOf('lazy') >= 0) weights.work *= 0.5;
         if (quirks.indexOf('adventurous') >= 0) weights.trade *= 2.0;
         if (quirks.indexOf('fearful') >= 0) weights.trade *= 0.5;
@@ -12972,15 +13024,34 @@
         if (quirks.indexOf('prideful') >= 0 && ambition < 30) weights.work = 0;
         if (quirks.indexOf('good_cook') >= 0) weights.household += 15;
 
-        // Homebody personality
-        if (ambition < 30 && warmth > 60) weights.household += 25;
+        // --- Homebody personality ---
+        if (ambition < 30 && warmth > 60) weights.household += 20;
 
-        // Health-based rest boost
+        // --- Home preference: boost household/manage/socialize when at player's primary home ---
+        var atPrimaryHome = false;
+        var bestHouseTown = null;
+        var bestComfort = -1;
+        for (var _hhi = 0; _hhi < (player.houses || []).length; _hhi++) {
+            var _hh = player.houses[_hhi];
+            var _ht = CONFIG.HOUSING_TYPES ? CONFIG.HOUSING_TYPES.find(function(t) { return t.id === _hh.type; }) : null;
+            if (_ht && _ht.comfort > bestComfort) {
+                bestComfort = _ht.comfort;
+                bestHouseTown = _hh.townId;
+            }
+        }
+        if (bestHouseTown && spouse.townId === bestHouseTown) {
+            atPrimaryHome = true;
+            weights.household += 15;
+            weights.manage += 10;
+            weights.socialize += 10;
+        }
+
+        // --- Health-based rest boost ---
         if (ai.health < 50) weights.rest += (50 - ai.health) * 2;
         if (ai.health < 30) weights.rest += 60;
 
-        // High frugality = less risky trading
-        if (frugality > 70) weights.trade *= 0.7;
+        // --- High frugality = less risky trading ---
+        if (frugality > 70) weights.trade *= 0.8;
 
         return weights;
     }
@@ -13055,12 +13126,15 @@
         var intelligence = (spouse.personality && spouse.personality.intelligence) || 10;
         var frugality = (spouse.personality && spouse.personality.frugality) || 50;
 
+        // Elite merchant-level trading: smarter decisions, better margins
         var profitRange = cfg.TRADE_PROFIT_MAX - cfg.TRADE_PROFIT_MIN;
         var skillBonus = (tradingSkill / 100) * profitRange * 0.5;
-        var intBonus = (intelligence / 100) * profitRange * 0.3;
-        var frugalBonus = (frugality / 100) * 5; // cautious traders lose less
-        var profit = Math.floor(cfg.TRADE_PROFIT_MIN + skillBonus + intBonus + frugalBonus + rng.randFloat(-5, 10));
-        profit = Math.max(cfg.TRADE_PROFIT_MIN, Math.min(cfg.TRADE_PROFIT_MAX, profit));
+        var intBonus = (intelligence / 100) * profitRange * 0.4; // boosted from 0.3
+        var frugalBonus = (frugality / 100) * 8; // boosted from 5
+        // Smart trading: rarely loses money with decent intelligence
+        var baseFloor = intelligence > 50 ? 0 : cfg.TRADE_PROFIT_MIN;
+        var profit = Math.floor(baseFloor + skillBonus + intBonus + frugalBonus + rng.randFloat(-3, 12));
+        profit = Math.max(cfg.TRADE_PROFIT_MIN, Math.min(cfg.TRADE_PROFIT_MAX + 10, profit));
 
         ai.gold += profit;
         if (profit > 0) ai.totalEarned += profit;
@@ -13234,6 +13308,35 @@
 
         // If no assigned task (or it was cleared), autonomous behavior
         if (!ai.assignedTask) {
+            // Smart home preference: if spouse is away from player's best home, occasionally return
+            if (!ai.travelTarget) {
+                var _bestHomeTown = null;
+                var _bestHComfort = -1;
+                for (var _bhi = 0; _bhi < (player.houses || []).length; _bhi++) {
+                    var _bh = player.houses[_bhi];
+                    var _bht = CONFIG.HOUSING_TYPES ? CONFIG.HOUSING_TYPES.find(function(t) { return t.id === _bh.type; }) : null;
+                    if (_bht && _bht.comfort > _bestHComfort) {
+                        _bestHComfort = _bht.comfort;
+                        _bestHomeTown = _bh.townId;
+                    }
+                }
+                if (_bestHomeTown && spouse.townId !== _bestHomeTown && rng.chance(0.15)) {
+                    // Travel home autonomously
+                    var homeTown = Engine.findTown(_bestHomeTown);
+                    var fromTown = Engine.findTown(spouse.townId);
+                    if (homeTown && fromTown) {
+                        var dist = Math.sqrt(Math.pow(homeTown.x - fromTown.x, 2) + Math.pow(homeTown.y - fromTown.y, 2));
+                        var travelDays = Math.max(1, Math.round(dist / 50));
+                        ai.travelTarget = _bestHomeTown;
+                        ai.travelArrivalDay = day + travelDays;
+                        ai.activity = 'traveling';
+                        ai.activityDetail = 'Returning home to ' + homeTown.name + ' (' + travelDays + ' days)';
+                        logSpouseAction(day, 'travel', 'Returning home to ' + homeTown.name, 0);
+                        return;
+                    }
+                }
+            }
+
             var weights = getSpouseBehaviorWeights(spouse);
             var chosen = selectWeightedAction(weights);
 
@@ -13448,8 +13551,9 @@
         if (!spouse || !spouse.alive) return { success: false, message: 'Your spouse is not available.' };
         initSpouseAI();
         var ai = player.spouseAI;
-        if (ai.gold < amount) {
-            return { success: false, message: spouse.firstName + ' only has ' + Math.floor(ai.gold) + ' gold.' };
+        var totalGold = (ai.gold || 0) + (spouse.gold || 0);
+        if (totalGold < amount) {
+            return { success: false, message: spouse.firstName + ' only has ' + Math.floor(totalGold) + ' gold.' };
         }
         // Generosity penalty: frugal spouses resist giving money
         var frugality = (spouse.personality && spouse.personality.frugality) || 50;
@@ -13458,7 +13562,11 @@
         acceptance = Math.max(10, Math.min(95, acceptance));
         var rng = Engine.getRng();
         if (rng.chance(acceptance / 100)) {
-            ai.gold -= amount;
+            // Draw from AI gold first, then NPC gold
+            var fromAi = Math.min(ai.gold || 0, amount);
+            var fromNpc = amount - fromAi;
+            ai.gold -= fromAi;
+            if (fromNpc > 0 && spouse.gold >= fromNpc) spouse.gold -= fromNpc;
             player.gold += amount;
             modifyRelationship(player.spouseId, -2);
             return { success: true, accepted: true, message: spouse.firstName + ' hands over ' + amount + ' gold.' };
@@ -13576,19 +13684,251 @@
         if (!spouse || !spouse.alive) return null;
         initSpouseAI();
         var ai = player.spouseAI;
+        var npcGold = spouse.gold || 0;
+        var aiGold = ai.gold || 0;
+
+        // Pregnancy / fertility status
+        var currentDay = 0;
+        try { currentDay = Engine.getDay(); } catch(e) {}
+        var isPregnant = player.pregnantDay > 0;
+        var pregnancyDaysLeft = isPregnant ? Math.max(0, (CONFIG.PREGNANCY_DURATION || 270) - (currentDay - player.pregnantDay)) : 0;
+        var canConceive = false;
+        var fertilityReason = '';
+        if (isPregnant) {
+            fertilityReason = 'Currently expecting (due in ~' + pregnancyDaysLeft + ' days)';
+        } else if (!spouse.alive) {
+            fertilityReason = 'Spouse deceased';
+        } else if (player.age >= 50) {
+            fertilityReason = 'Player too old (50+)';
+        } else if (spouse.age >= 45) {
+            fertilityReason = 'Spouse too old (45+)';
+        } else if (player.childrenIds && player.childrenIds.length >= (CONFIG.MAX_CHILDREN || 8)) {
+            fertilityReason = 'Max children reached';
+        } else if (spouse.quirks && spouse.quirks.indexOf('infertile') >= 0) {
+            fertilityReason = 'Spouse is infertile';
+        } else if (spouse.townId !== player.townId) {
+            fertilityReason = 'Must be in same town as spouse';
+            canConceive = false;
+        } else {
+            canConceive = true;
+            var hasHouse = false;
+            for (var _hi = 0; _hi < (player.houses || []).length; _hi++) {
+                if (player.houses[_hi].townId === player.townId) { hasHouse = true; break; }
+            }
+            var fertQuirk = '';
+            if (spouse.quirks && spouse.quirks.indexOf('fertile') >= 0) fertQuirk = 'Fertile quirk (+50%)';
+            else if (spouse.quirks && spouse.quirks.indexOf('low_fertility') >= 0) fertQuirk = 'Low fertility (-67%)';
+            fertilityReason = 'Can conceive' + (hasHouse ? '' : ' (no house — 90% reduced)') + (fertQuirk ? ' • ' + fertQuirk : '');
+        }
+
         return {
             name: spouse.firstName + ' ' + spouse.lastName,
             age: spouse.age, sex: spouse.sex,
+            occupation: spouse.occupation || 'none',
             health: ai.health, condition: ai.condition,
-            gold: ai.gold, activity: ai.activity,
+            gold: npcGold + aiGold,
+            npcGold: npcGold,
+            aiGold: aiGold,
+            activity: ai.activity,
             activityDetail: ai.activityDetail,
             totalEarned: ai.totalEarned,
             managedBuilding: ai.managedBuildingIdx >= 0 ? player.buildings[ai.managedBuildingIdx] : null,
             recentActions: ai.recentActions,
             personality: spouse.personality,
             quirks: spouse.quirks || [],
-            relationship: getRelationship(player.spouseId).level
+            relationship: getRelationship(player.spouseId).level,
+            isPregnant: isPregnant,
+            pregnancyDaysLeft: pregnancyDaysLeft,
+            canConceive: canConceive,
+            fertilityReason: fertilityReason
         };
+    }
+
+    // ========================================================
+    // §11.6C TRY FOR BABY
+    // ========================================================
+
+    /**
+     * Calculate pregnancy chance and attempt conception.
+     * Returns { success, chance, message, blocked, reason }
+     */
+    function tryForBaby() {
+        var currentDay = 0;
+        try { currentDay = Engine.getDay(); } catch(e) {}
+        var rng = Engine.getRng();
+
+        // Once per day limit
+        if (player._lastTryForBabyDay && player._lastTryForBabyDay >= currentDay) {
+            return { success: false, chance: 0, message: 'You can only try once per day.', blocked: true, reason: 'cooldown' };
+        }
+
+        if (!player.spouseId) {
+            return { success: false, chance: 0, message: 'You have no spouse.', blocked: true, reason: 'no_spouse' };
+        }
+        var spouse = Engine.findPerson(player.spouseId);
+        if (!spouse || !spouse.alive) {
+            return { success: false, chance: 0, message: 'Your spouse is not alive.', blocked: true, reason: 'dead' };
+        }
+        if (player.pregnantDay > 0) {
+            return { success: false, chance: 0, message: 'Already expecting a child!', blocked: true, reason: 'pregnant' };
+        }
+        if (spouse.townId !== player.townId) {
+            return { success: false, chance: 0, message: 'Must be in the same town as your spouse.', blocked: true, reason: 'different_town' };
+        }
+        if (player.childrenIds && player.childrenIds.length >= (CONFIG.MAX_CHILDREN || 8)) {
+            return { success: false, chance: 0, message: 'You have reached the maximum number of children.', blocked: true, reason: 'max_children' };
+        }
+
+        // Determine who is female
+        var femaleAge, maleAge;
+        if (player.sex === 'F') {
+            femaleAge = player.age || 20;
+            maleAge = spouse.age || 20;
+        } else {
+            femaleAge = spouse.age || 20;
+            maleAge = player.age || 20;
+        }
+
+        // Hard cutoffs
+        if (femaleAge >= 55) {
+            return { success: false, chance: 0, message: 'The woman is too old to conceive (55+).', blocked: true, reason: 'age' };
+        }
+
+        var chance = 0;
+        if (femaleAge >= 50) {
+            // Over 50: always 0.1%
+            chance = 0.1;
+        } else {
+            // Age-based curve for the female (primary factor)
+            // Under 25: up to 75%, 25-30: ~60-70%, 30-35: ~40-55%, 35-40: ~20-35%, 40-45: ~10-20%, 45-50: ~5-10%
+            if (femaleAge < 25) {
+                chance = 75;
+            } else if (femaleAge < 30) {
+                chance = 75 - (femaleAge - 25) * 2; // 75 → 65
+            } else if (femaleAge < 35) {
+                chance = 65 - (femaleAge - 30) * 4; // 65 → 45
+            } else if (femaleAge < 40) {
+                chance = 45 - (femaleAge - 35) * 5; // 45 → 20
+            } else if (femaleAge < 45) {
+                chance = 20 - (femaleAge - 40) * 2.5; // 20 → 7.5
+            } else {
+                chance = 7.5 - (femaleAge - 45) * 0.5; // 7.5 → 5
+            }
+
+            // Male age factor (slight reduction for older males)
+            if (maleAge >= 50) {
+                chance *= 0.6;
+            } else if (maleAge >= 45) {
+                chance *= 0.75;
+            } else if (maleAge >= 40) {
+                chance *= 0.85;
+            }
+
+            // Spouse quirks
+            var spouseQuirks = spouse.quirks || [];
+            if (spouseQuirks.indexOf('infertile') >= 0) {
+                return { success: false, chance: 0, message: 'Your spouse is infertile.', blocked: true, reason: 'infertile' };
+            }
+            if (spouseQuirks.indexOf('fertile') >= 0) chance *= 1.5;
+            if (spouseQuirks.indexOf('low_fertility') >= 0) chance *= 0.33;
+
+            // Housing bonus
+            var hasHouseHere = false;
+            for (var _hhi = 0; _hhi < (player.houses || []).length; _hhi++) {
+                if (player.houses[_hhi].townId === player.townId) { hasHouseHere = true; break; }
+            }
+            if (!hasHouseHere) chance *= 0.10; // 90% reduction with no house
+
+            // Relationship modifier: higher relationship = small boost
+            var relLevel = getRelationship(player.spouseId).level || 50;
+            if (relLevel >= 80) chance *= 1.15;
+            else if (relLevel < 30) chance *= 0.7;
+
+            // Clamp
+            chance = Math.max(0.1, Math.min(75, chance));
+        }
+
+        // Mark that we tried today
+        player._lastTryForBabyDay = currentDay;
+
+        // Advance time by 20 subticks
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(20);
+
+        // Roll for conception
+        var roll = rng.random() * 100;
+        if (roll < chance) {
+            // Conception!
+            player.pregnantDay = currentDay;
+            var dueDay = currentDay + (CONFIG.PREGNANCY_DURATION || 270);
+            var who = player.sex === 'F' ? 'You are' : 'Your spouse is';
+            Engine.logEvent('💕 Wonderful news! ' + who + ' expecting a child!');
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('🤰 ' + who + ' expecting a child!', 'success');
+            return { success: true, chance: Math.round(chance * 10) / 10, message: who + ' expecting a child!' };
+        } else {
+            return { success: false, chance: Math.round(chance * 10) / 10, message: 'No conception this time. (' + (Math.round(chance * 10) / 10) + '% chance)' };
+        }
+    }
+
+    /**
+     * Get the current try-for-baby chance without actually trying.
+     */
+    function getTryForBabyChance() {
+        if (!player.spouseId) return { chance: 0, reason: 'No spouse' };
+        var spouse = Engine.findPerson(player.spouseId);
+        if (!spouse || !spouse.alive) return { chance: 0, reason: 'Spouse deceased' };
+        if (player.pregnantDay > 0) return { chance: 0, reason: 'Already pregnant' };
+        if (spouse.townId !== player.townId) return { chance: 0, reason: 'Not in same town' };
+        if (player.childrenIds && player.childrenIds.length >= (CONFIG.MAX_CHILDREN || 8)) return { chance: 0, reason: 'Max children' };
+
+        var femaleAge, maleAge;
+        if (player.sex === 'F') {
+            femaleAge = player.age || 20;
+            maleAge = spouse.age || 20;
+        } else {
+            femaleAge = spouse.age || 20;
+            maleAge = player.age || 20;
+        }
+
+        if (femaleAge >= 55) return { chance: 0, reason: 'Woman over 55' };
+
+        var chance = 0;
+        if (femaleAge >= 50) {
+            chance = 0.1;
+        } else {
+            if (femaleAge < 25) chance = 75;
+            else if (femaleAge < 30) chance = 75 - (femaleAge - 25) * 2;
+            else if (femaleAge < 35) chance = 65 - (femaleAge - 30) * 4;
+            else if (femaleAge < 40) chance = 45 - (femaleAge - 35) * 5;
+            else if (femaleAge < 45) chance = 20 - (femaleAge - 40) * 2.5;
+            else chance = 7.5 - (femaleAge - 45) * 0.5;
+
+            if (maleAge >= 50) chance *= 0.6;
+            else if (maleAge >= 45) chance *= 0.75;
+            else if (maleAge >= 40) chance *= 0.85;
+
+            var spouseQuirks = spouse.quirks || [];
+            if (spouseQuirks.indexOf('infertile') >= 0) return { chance: 0, reason: 'Spouse infertile' };
+            if (spouseQuirks.indexOf('fertile') >= 0) chance *= 1.5;
+            if (spouseQuirks.indexOf('low_fertility') >= 0) chance *= 0.33;
+
+            var hasHouseHere = false;
+            for (var _hhi = 0; _hhi < (player.houses || []).length; _hhi++) {
+                if (player.houses[_hhi].townId === player.townId) { hasHouseHere = true; break; }
+            }
+            if (!hasHouseHere) chance *= 0.10;
+
+            var relLevel = getRelationship(player.spouseId).level || 50;
+            if (relLevel >= 80) chance *= 1.15;
+            else if (relLevel < 30) chance *= 0.7;
+
+            chance = Math.max(0.1, Math.min(75, chance));
+        }
+
+        var currentDay = 0;
+        try { currentDay = Engine.getDay(); } catch(e) {}
+        var canTryToday = !player._lastTryForBabyDay || player._lastTryForBabyDay < currentDay;
+
+        return { chance: Math.round(chance * 10) / 10, canTryToday: canTryToday };
     }
 
     // ========================================================
@@ -15097,10 +15437,15 @@
             var protectionMult = Math.max(0.1, 1.0 - housingProtection - skillProtection);
 
             for (var illId in contagiousSick) {
+                // Early-game plague protection: immune to plague before day 90
+                if (illId === 'plague' && Engine.getDay() <= 90) continue;
                 var illSickRatio = contagiousSick[illId] / pop;
                 // Player exposure rate: lower than NPC contagion (player takes more precautions)
                 var exposureChance = illSickRatio * 0.03 * protectionMult;
-                if (illId === 'plague') exposureChance *= 2; // plague is more aggressive
+                if (illId === 'plague') {
+                    exposureChance *= 2; // plague is more aggressive
+                    if (Engine.getDay() <= 180) exposureChance *= 0.25; // reduced in early game
+                }
 
                 if (rng.chance(exposureChance)) {
                     // Map NPC illness to player illness type
@@ -15873,6 +16218,7 @@
             spouseId: player.spouseId,
             childrenIds: [...player.childrenIds],
             pregnantDay: player.pregnantDay || 0,
+            _lastTryForBabyDay: player._lastTryForBabyDay || 0,
             generation: player.generation || 1,
             weapon: player.weapon,
             armor: player.armor,
@@ -16224,6 +16570,7 @@
             });
         }
         player.pregnantDay = data.pregnantDay || 0;
+        player._lastTryForBabyDay = data._lastTryForBabyDay || 0;
         player.generation = data.generation || 1;
         // Backward compat: old saves store weapon/armor as strings
         if (typeof data.weapon === 'string') {
@@ -18775,7 +19122,7 @@
             if (!_hasFullBypass) {
                 var _bTradeDaysReq = Math.floor((nextRank.tradingDays || 90) * _comDiscount);
                 var tradeDays = Engine.getDay() - (player.tradingStartDay || Engine.getDay());
-                if (tradeDays < _bTradeDaysReq) reasons.push(`Need ${_bTradeDaysReq} days of trading (${tradeDays} days so far)${_comDiscountStr}. Marry a Minor Noble+ to bypass all requirements`);
+                if (tradeDays < _bTradeDaysReq) reasons.push(`Need ${_bTradeDaysReq} days of trading (${tradeDays} days so far)${_comDiscountStr}. Marry a Guildmaster+ to bypass all requirements`);
                 var buildingsInKingdom = player.buildings.filter(function(b) { var t = Engine.findTown(b.townId); return t && t.kingdomId === kId; }).length;
                 if (buildingsInKingdom < (nextRank.minBuildings || 1)) reasons.push(`Need at least ${nextRank.minBuildings || 1} building in kingdom (have ${buildingsInKingdom})`);
                 var trades = (player.stats && player.stats.tradesCompleted) || player.tradesCompleted || 0;
@@ -18931,6 +19278,144 @@
 
         if (reasons.length > 0) return { can: false, reason: reasons.join('; '), reasons: reasons };
         return { can: true, reason: 'Requirements met!', reasons: [] };
+    }
+
+    /**
+     * Get structured progress data for the next rank's requirements.
+     * Returns { nextRank, bars: [{ label, current, required, pct, met }], allMet }
+     */
+    function getRankProgressBars(kingdomId) {
+        var kId = kingdomId || player.citizenshipKingdomId;
+        if (!kId) return null;
+        var currentIdx = player.socialRank[kId] || 0;
+        if (currentIdx >= CONFIG.SOCIAL_RANKS.length - 1) return null; // already max
+        var nextRank = CONFIG.SOCIAL_RANKS[currentIdx + 1];
+        if (!nextRank || nextRank.id === 'king') return null;
+
+        var bars = [];
+        var rep = player.reputation[kId] || 0;
+        var goldEarned = player.goldEarnedInKingdom ? (player.goldEarnedInKingdom[kId] || 0) : 0;
+
+        // Marriage discount
+        var _mw = player._marriageRankWaiver && player._marriageRankWaiver[kId];
+        var _comDiscount = 1.0;
+        if (_mw && _mw.spouseRank >= 2 && (nextRank.id === 'burgher' || nextRank.id === 'guildmaster')) _comDiscount = 0.75;
+        var effectiveGoldReq = Math.floor(nextRank.goldReq * _comDiscount);
+        var effectiveRepReq = nextRank.repReq;
+        if (hasSkill('royal_favor')) effectiveRepReq = Math.floor(effectiveRepReq * 0.75);
+        var effectiveFee = nextRank.fee ? Math.floor(nextRank.fee * _comDiscount) : 0;
+
+        // Gold earned
+        if (effectiveGoldReq > 0) {
+            bars.push({ label: '🪙 Gold Earned', current: Math.floor(goldEarned), required: effectiveGoldReq, pct: Math.min(100, Math.floor(goldEarned / effectiveGoldReq * 100)), met: goldEarned >= effectiveGoldReq, discounted: _comDiscount < 1 });
+        }
+        // Reputation
+        if (effectiveRepReq > 0) {
+            bars.push({ label: '⭐ Reputation', current: Math.floor(rep), required: effectiveRepReq, pct: Math.min(100, Math.floor(rep / effectiveRepReq * 100)), met: rep >= effectiveRepReq, discounted: hasSkill('royal_favor') });
+        }
+        // Fee
+        if (effectiveFee > 0) {
+            bars.push({ label: '💰 Fee', current: Math.floor(player.gold), required: effectiveFee, pct: Math.min(100, Math.floor(player.gold / effectiveFee * 100)), met: player.gold >= effectiveFee, discounted: _comDiscount < 1 });
+        }
+
+        // Full bypass check
+        var _bypassRank = (currentIdx + 1) + 2;
+        var _hasFullBypass = _mw && _mw.spouseRank >= _bypassRank;
+
+        // Rank-specific bars
+        if (nextRank.id === 'citizen' && !_hasFullBypass) {
+            var startDay = (player.kingdomResidencyStart && player.kingdomResidencyStart[kId] !== undefined) ? player.kingdomResidencyStart[kId] : Engine.getDay();
+            var daysIn = Engine.getDay() - startDay;
+            var reqDays = nextRank.residencyDays || 90;
+            bars.push({ label: '📅 Residency', current: daysIn, required: reqDays, pct: Math.min(100, Math.floor(daysIn / reqDays * 100)), met: daysIn >= reqDays });
+        }
+
+        if (nextRank.id === 'burgher' && !_hasFullBypass) {
+            var _bTradeDaysReq = Math.floor((nextRank.tradingDays || 90) * _comDiscount);
+            var tradeDays = Engine.getDay() - (player.tradingStartDay || Engine.getDay());
+            bars.push({ label: '📊 Trade Days', current: tradeDays, required: _bTradeDaysReq, pct: Math.min(100, Math.floor(tradeDays / _bTradeDaysReq * 100)), met: tradeDays >= _bTradeDaysReq });
+            var buildingsInK = player.buildings.filter(function(b) { var t = Engine.findTown(b.townId); return t && t.kingdomId === kId; }).length;
+            bars.push({ label: '🏗️ Buildings', current: buildingsInK, required: nextRank.minBuildings || 1, pct: Math.min(100, Math.floor(buildingsInK / (nextRank.minBuildings || 1) * 100)), met: buildingsInK >= (nextRank.minBuildings || 1) });
+            var trades = (player.stats && player.stats.tradesCompleted) || 0;
+            bars.push({ label: '🔄 Trades', current: trades, required: nextRank.minTrades || 50, pct: Math.min(100, Math.floor(trades / (nextRank.minTrades || 50) * 100)), met: trades >= (nextRank.minTrades || 50) });
+        }
+
+        if (nextRank.id === 'guildmaster' && !_hasFullBypass) {
+            var prodBldgs = player.buildings.filter(function(b) {
+                var bt = CONFIG.BUILDING_TYPES ? CONFIG.BUILDING_TYPES.find(function(x) { return x.id === b.type; }) : null;
+                if (!bt) { bt = Engine.findBuildingType ? Engine.findBuildingType(b.type) : null; }
+                var t = Engine.findTown(b.townId);
+                return bt && (bt.category === 'processing' || bt.category === 'finished') && t && t.kingdomId === kId;
+            }).length;
+            bars.push({ label: '🏭 Prod. Buildings', current: prodBldgs, required: nextRank.minProductionBuildings || 3, pct: Math.min(100, Math.floor(prodBldgs / (nextRank.minProductionBuildings || 3) * 100)), met: prodBldgs >= (nextRank.minProductionBuildings || 3) });
+            var workersInK = player.employees ? player.employees.filter(function(e) { var p = Engine.findPerson(e); if (!p) return false; var t = Engine.findTown(p.townId); return t && t.kingdomId === kId; }).length : 0;
+            bars.push({ label: '👷 Workers', current: workersInK, required: nextRank.minWorkers || 8, pct: Math.min(100, Math.floor(workersInK / (nextRank.minWorkers || 8) * 100)), met: workersInK >= (nextRank.minWorkers || 8) });
+            var townsWB = new Set(player.buildings.filter(function(b) { var t = Engine.findTown(b.townId); return t && t.kingdomId === kId; }).map(function(b) { return b.townId; })).size;
+            bars.push({ label: '🏘️ Towns', current: townsWB, required: nextRank.minTownsWithBuildings || 2, pct: Math.min(100, Math.floor(townsWB / (nextRank.minTownsWithBuildings || 2) * 100)), met: townsWB >= (nextRank.minTownsWithBuildings || 2) });
+            var gmTradeDays = Engine.getDay() - (player.tradingStartDay || Engine.getDay());
+            var _gmReq = Math.floor((nextRank.tradingDays || 180) * _comDiscount);
+            bars.push({ label: '📊 Trade Days', current: gmTradeDays, required: _gmReq, pct: Math.min(100, Math.floor(gmTradeDays / _gmReq * 100)), met: gmTradeDays >= _gmReq });
+            var caravanGoods = (player.stats && player.stats.caravanGoodsMoved) || 0;
+            bars.push({ label: '🐪 Caravan Goods', current: caravanGoods, required: nextRank.minCaravanGoodsMoved || 250, pct: Math.min(100, Math.floor(caravanGoods / (nextRank.minCaravanGoodsMoved || 250) * 100)), met: caravanGoods >= (nextRank.minCaravanGoodsMoved || 250) });
+        }
+
+        if (nextRank.id === 'minor_noble' && !_hasFullBypass) {
+            var townsWP = new Set(player.buildings.filter(function(b) { var t = Engine.findTown(b.townId); return t && t.kingdomId === kId; }).map(function(b) { return b.townId; })).size;
+            bars.push({ label: '🏘️ Towns w/ Property', current: townsWP, required: nextRank.minTownsWithProperty || 3, pct: Math.min(100, Math.floor(townsWP / (nextRank.minTownsWithProperty || 3) * 100)), met: townsWP >= (nextRank.minTownsWithProperty || 3) });
+
+            // Check marriage waiver for petitions & endorsements (same logic as canPetitionForPromotion)
+            var _mnHasLordSpouse = player.spouseId ? (function() {
+                var s = Engine.findPerson(player.spouseId);
+                if (!s || !s.alive) return false;
+                var sMaxRank = 0;
+                if (s.socialRank) { for (var sk in s.socialRank) { if ((s.socialRank[sk] || 0) > sMaxRank) sMaxRank = s.socialRank[sk]; } }
+                return sMaxRank >= 5;
+            })() : false;
+            var _mnHasNobleSpouse = _mnHasLordSpouse || (player.spouseId ? (function() { var s = Engine.findPerson(player.spouseId); return s && (s.occupation === 'noble' || s.wealthClass === 'upper'); })() : false);
+            var _mnHasMarriageWaiver = _mw && _mw.spouseRank >= 4;
+            var _mnWaived = _mnHasLordSpouse || _mnHasNobleSpouse || _mnHasMarriageWaiver;
+
+            if (_mnWaived) {
+                bars.push({ label: '📜 Petitions', current: 0, required: 0, pct: 100, met: true, waived: true });
+                bars.push({ label: '👑 Noble Endorsements', current: 0, required: 0, pct: 100, met: true, waived: true });
+            } else {
+                var compPetitions = player.petitions ? player.petitions.filter(function(p) { return p.status === 'approved' && p.kingdomId === kId; }).length : 0;
+                bars.push({ label: '📜 Petitions', current: compPetitions, required: nextRank.minPetitionsCompleted || 3, pct: Math.min(100, Math.floor(compPetitions / (nextRank.minPetitionsCompleted || 3) * 100)), met: compPetitions >= (nextRank.minPetitionsCompleted || 3) });
+                var endorse = 0;
+                if (player.relationships) {
+                    for (var _eid in player.relationships) {
+                        if (player.relationships[_eid].level >= 60) {
+                            var _ep = Engine.findPerson(_eid);
+                            if (_ep && _ep.alive && _ep.kingdomId === kId) {
+                                var _eRank = (_ep.socialRank && _ep.socialRank[kId]) ? _ep.socialRank[kId] : (_ep.occupation === 'noble' ? 4 : 0);
+                                if (_eRank >= 4) endorse++;
+                            }
+                        }
+                    }
+                }
+                bars.push({ label: '👑 Noble Endorsements', current: endorse, required: nextRank.minEndorsements || 5, pct: Math.min(100, Math.floor(endorse / (nextRank.minEndorsements || 5) * 100)), met: endorse >= (nextRank.minEndorsements || 5) });
+            }
+        }
+
+        if (nextRank.id === 'lord') {
+            var townsWPL = new Set(player.buildings.filter(function(b) { var t = Engine.findTown(b.townId); return t && t.kingdomId === kId; }).map(function(b) { return b.townId; })).size;
+            bars.push({ label: '🏘️ Towns w/ Property', current: townsWPL, required: nextRank.minTownsWithProperty || 4, pct: Math.min(100, Math.floor(townsWPL / (nextRank.minTownsWithProperty || 4) * 100)), met: townsWPL >= (nextRank.minTownsWithProperty || 4) });
+            var totalW = player.employees ? player.employees.length : 0;
+            bars.push({ label: '👷 Total Workers', current: totalW, required: nextRank.minTotalWorkers || 40, pct: Math.min(100, Math.floor(totalW / (nextRank.minTotalWorkers || 40) * 100)), met: totalW >= (nextRank.minTotalWorkers || 40) });
+            var infraC = (player.roadsBuilt || 0) + (player.bridgesBuilt || 0) + (player.seaRoutesBuilt || 0);
+            bars.push({ label: '🛤️ Infrastructure', current: infraC, required: nextRank.minInfrastructure || 2, pct: Math.min(100, Math.floor(infraC / (nextRank.minInfrastructure || 2) * 100)), met: infraC >= (nextRank.minInfrastructure || 2) });
+        }
+
+        if (nextRank.id === 'royal_advisor') {
+            var raPetitions = player.petitions ? player.petitions.filter(function(p) { return p.status === 'approved' && p.kingdomId === kId; }).length : 0;
+            bars.push({ label: '📜 Petitions', current: raPetitions, required: nextRank.minPetitionsCompleted || 5, pct: Math.min(100, Math.floor(raPetitions / (nextRank.minPetitionsCompleted || 5) * 100)), met: raPetitions >= (nextRank.minPetitionsCompleted || 5) });
+            var raKingRel2 = 0;
+            try { var raK = Engine.findKingdom(kId); if (raK && raK.king) { var _kr = getRelationship(raK.king); raKingRel2 = _kr ? _kr.level : 0; } } catch(e) {}
+            bars.push({ label: '👑 King Relationship', current: Math.floor(raKingRel2), required: 80, pct: Math.min(100, Math.floor(raKingRel2 / 80 * 100)), met: raKingRel2 >= 80 });
+        }
+
+        var allMet = bars.every(function(b) { return b.met; });
+        return { nextRank: nextRank, bars: bars, allMet: allMet, currentRankName: CONFIG.SOCIAL_RANKS[currentIdx].name, currentRankIcon: CONFIG.SOCIAL_RANKS[currentIdx].icon };
     }
 
     function petitionForPromotion(kingdomId) {
@@ -38916,6 +39401,7 @@
         get townStorage() { return player.townStorage; },
         getCarryCapacity,
         getCarriedWeight,
+        getInjuryDebuffs,
         buyHorse,
         sellHorse,
         mountHorse,
@@ -39210,6 +39696,7 @@
         acceptWarAssetDeal,
         rejectWarAssetDeal,
         canPetitionForPromotion,
+        getRankProgressBars,
         petitionForPromotion,
         petitionCitizenship,
         isPlayerCitizenOf,
@@ -39517,6 +40004,8 @@
         initSpouseAI,
         tickSpouseAI,
         getSpouseStatus,
+        tryForBaby,
+        getTryForBabyChance,
         askSpouseToTrade,
         askSpouseToManage,
         askSpouseToWork,

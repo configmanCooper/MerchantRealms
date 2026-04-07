@@ -302,9 +302,21 @@ window.UI = (function () {
                 goldGroup.after(xpGroup);
             }
 
-            // Add hunger bar after reputation bars
-            const reputationGroup = leftPanelBody.querySelector('.stat-group:nth-child(6)');
-            const insertPoint = reputationGroup || leftPanelBody.lastElementChild;
+            // Add rank progression tracker after XP bar
+            var _oldRankProg = document.getElementById('rankProgressGroup');
+            if (_oldRankProg) _oldRankProg.remove();
+            var xpGroupEl = document.getElementById('xpBarGroup');
+            if (xpGroupEl) {
+                var rankProgGroup = document.createElement('div');
+                rankProgGroup.className = 'stat-group';
+                rankProgGroup.id = 'rankProgressGroup';
+                rankProgGroup.innerHTML = '<div id="rankProgressContent"></div>';
+                xpGroupEl.after(rankProgGroup);
+            }
+
+            // Add hunger bar after XP bar (inserted after gold) or last stat-group
+            const lastStatGroup = leftPanelBody.querySelector('.stat-group:last-of-type');
+            const insertPoint = lastStatGroup || leftPanelBody.lastElementChild;
             if (insertPoint) {
                 // Guard against duplicate bars on re-init
                 var _oldHunger = document.getElementById('hungerBarGroup');
@@ -736,6 +748,9 @@ window.UI = (function () {
 
                 // XP bar update
                 updateXPBar();
+
+                // Rank progression tracker
+                updateRankProgress();
 
                 // Hunger bar update
                 updateHungerBar();
@@ -2904,10 +2919,37 @@ window.UI = (function () {
                 var freeStorage = (Player.getTownStorageCapacity() || 0) - (Player.getTownStorageUsed() || 0);
                 if (freeStorage > 0) effectiveCap += freeStorage;
             }
-            const remainingCapacity = Math.max(0, carryCapacity - carriedWeight);
+            const remainingCapacity = Math.max(0, effectiveCap - carriedWeight);
             const resWeight = res.weight || 1;
             const maxByCapacity = Math.floor(remainingCapacity / resWeight);
-            const maxByGold = finalUnitPrice > 0 ? Math.floor(Player.gold / finalUnitPrice) : 0;
+
+            // Account for spouse merchant_family and injury debuffs to match buy() pricing
+            let adjustedUnitPrice = finalUnitPrice;
+            if (typeof Player !== 'undefined' && Player.state && Player.state.spouseId) {
+                try {
+                    var _sp = Engine.findPerson(Player.state.spouseId);
+                    if (_sp && _sp.alive && _sp.quirks && _sp.quirks.includes('merchant_family')) {
+                        adjustedUnitPrice *= 0.95;
+                    }
+                } catch(e) {}
+            }
+            if (typeof Player !== 'undefined' && Player.getInjuryDebuffs) {
+                try {
+                    var _inj = Player.getInjuryDebuffs();
+                    if (_inj && _inj.tradePenalty < 0) adjustedUnitPrice *= (1 - _inj.tradePenalty);
+                } catch(e) {}
+            }
+
+            // Use ceil-based max to match buy() which uses Math.ceil(price * qty)
+            var maxByGold = 0;
+            if (adjustedUnitPrice > 0) {
+                // Find max qty where Math.ceil(price * qty) <= gold
+                maxByGold = Math.floor(Player.gold / adjustedUnitPrice);
+                // Double-check: ceil rounding can push cost above gold
+                while (maxByGold > 0 && Math.ceil(adjustedUnitPrice * maxByGold) > Player.gold) {
+                    maxByGold--;
+                }
+            }
             const buyMaxQty = Math.max(0, Math.min(maxByGold, maxByCapacity, qty));
             const buyQtyBtns = [1, 5, 10, 25].map(q =>
                 `<button class="qty-btn${q === 1 ? ' qty-selected' : ''}" data-qty="${q}" onclick="UI.setTradeQty('buy','${resId}',${q},${finalUnitPrice.toFixed(4)})">${q}</button>`
@@ -3871,7 +3913,7 @@ window.UI = (function () {
     }
 
     function buyTentSlot(tcBuildingId) {
-        var town = Engine.currentTown();
+        var town = Engine.getTown ? Engine.getTown(Player.townId) : null;
         if (!town) { toast('Not in a town.', 'warning'); return; }
         var tcBld = null;
         for (var i = 0; i < town.buildings.length; i++) {
@@ -9737,9 +9779,12 @@ window.UI = (function () {
         let events;
         try { events = Engine.getEvents(); } catch (e) { events = []; }
 
-        // Mark all events as read
+        // Mark all events as read and force-clear badge immediately
         _lastSeenEventCount = events ? events.length : 0;
-        updateNotifCount();
+        if (el.notifCount) {
+            el.notifCount.textContent = '0';
+            el.notifCount.classList.add('hidden');
+        }
 
         if (!events || !events.length) {
             openModal('📋 Event Log', '<div class="text-dim text-center">No events yet.</div>');
@@ -12872,13 +12917,16 @@ window.UI = (function () {
                 ${playerLicHtml}
                 ${licenseBtnHtml}
                 ${isHome ? '<div class="kc-home-badge">★ YOUR HOME</div>' : ''}
-                <div class="kc-row" style="margin-top:4px;">
-                    <div style="display:flex;justify-content:space-between;font-size:0.8rem;margin-bottom:2px;">
-                        <span>Rep: ${Math.floor(rep)}/100</span>
-                        <span>${rank.icon} ${rank.name}</span>
+                <div class="kc-row" style="margin-top:4px;font-size:0.8rem;">
+                    <span style="color:#aaa;">Status:</span> ${rank.icon} <span style="color:#d4af37;">${rank.name}</span>
+                </div>
+                <div style="margin-top:2px;">
+                    <div style="display:flex;justify-content:space-between;font-size:0.75rem;margin-bottom:2px;">
+                        <span style="color:#aaa;">Reputation:</span>
+                        <span style="color:${rep >= 70 ? '#55a868' : rep >= 40 ? '#ccb974' : '#c44e52'};">${Math.floor(rep)}/100</span>
                     </div>
                     <div style="background:rgba(0,0,0,0.4);border:1px solid #444;border-radius:3px;height:8px;">
-                        <div style="height:100%;width:${Math.max(0, Math.min(100, rep))}%;background:${rep >= 70 ? '#55a868' : rep >= 40 ? '#ccb974' : '#c44e52'};border-radius:2px;transition:width 0.3s;"></div>
+                        <div style="height:100%;width:${Math.max(0, Math.min(100, rep))}%;background:${k.color || '#ccb974'};border-radius:2px;transition:width 0.3s;"></div>
                     </div>
                 </div>
                 <div class="kc-buttons" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">
@@ -13228,6 +13276,69 @@ window.UI = (function () {
                 ? `${formatGold(totalXp)} XP • ${sp} SP${bankStr}`
                 : `${formatGold(totalXp)}/${formatGold(nextLevelXp)} XP • ${sp} SP${bankStr}`;
         }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  RANK PROGRESSION TRACKER UPDATE
+    // ═══════════════════════════════════════════════════════════
+    function updateRankProgress() {
+        var container = document.getElementById('rankProgressContent');
+        if (!container) return;
+        if (typeof Player === 'undefined' || !Player.getRankProgressBars) { container.innerHTML = ''; return; }
+        var data = Player.getRankProgressBars();
+        if (!data || !data.bars || data.bars.length === 0) {
+            container.innerHTML = '';
+            var group = document.getElementById('rankProgressGroup');
+            if (group) group.style.display = 'none';
+            return;
+        }
+        var group = document.getElementById('rankProgressGroup');
+        if (group) group.style.display = '';
+
+        var html = '<div style="font-size:10px;color:#d4af37;margin-bottom:3px;display:flex;justify-content:space-between;align-items:center;cursor:help;" title="To see privileges of the next rank, or to proceed once you meet all requirements, go to the Character menu.">';
+        html += '<span>Progress to ' + (data.nextRank.icon || '📈') + ' ' + data.nextRank.name + ' Promotion</span>';
+        if (data.allMet) html += '<span style="color:#5a5;font-size:9px;">✅ Ready!</span>';
+        html += '</div>';
+        for (var i = 0; i < data.bars.length; i++) {
+            var b = data.bars[i];
+            var barColor = b.met ? '#55a868' : (b.pct >= 60 ? '#ccb974' : '#7a6a4a');
+            var shortLabel = b.label;
+            // Tooltip descriptions for each requirement
+            var tooltipMap = {
+                '🪙 Gold Earned': 'Total gold earned through trading in this kingdom. Buy low and sell high to accumulate earnings.',
+                '⭐ Reputation': 'Your standing with this kingdom. Increases by trading, completing petitions, and socializing with locals.',
+                '💰 Fee': 'One-time promotion fee paid to the kingdom. Make sure you have enough gold on hand.',
+                '📅 Residency': 'Days you have lived in this kingdom. Simply stay and go about your business.',
+                '📊 Trade Days': 'Days since your first trade. Keep trading regularly to build your merchant reputation.',
+                '🏗️ Buildings': 'Buildings you own in this kingdom. Construct or purchase buildings in towns.',
+                '🔄 Trades': 'Total buy/sell transactions completed. Each purchase or sale counts as one trade.',
+                '🏭 Prod. Buildings': 'Processing or finished-goods buildings you own. Build sawmills, smithies, bakeries, etc.',
+                '👷 Workers': 'Employees working in this kingdom. Hire workers at your buildings to increase this count.',
+                '🏘️ Towns': 'Number of different towns where you own buildings. Expand your business to new towns.',
+                '🏘️ Towns w/ Property': 'Towns where you own buildings or land. Spread your holdings across the kingdom.',
+                '🐪 Caravan Goods': 'Total goods transported by your caravans. Send caravans between towns to move goods.',
+                '📜 Petitions': 'Successful petitions to the king. Visit the kingdom court to submit petitions.',
+                '👑 Noble Endorsements': 'Nobles with 60+ relationship. Build friendships with Minor Nobles and above.',
+                '👷 Total Workers': 'All employees across the kingdom. Hire more workers at your various buildings.',
+                '🛤️ Infrastructure': 'Roads, bridges, or sea routes you have built. Invest in kingdom infrastructure.',
+                '👑 King Relationship': 'Your personal relationship with the king. Attend court and complete royal commissions.'
+            };
+            var tooltip = tooltipMap[b.label] || '';
+            var discountNote = b.discounted ? ' 💍' : '';
+            var curStr = b.waived ? 'Waived' : (b.current >= 10000 ? (b.current / 1000).toFixed(0) + 'k' : String(b.current));
+            var reqStr = b.waived ? '✓' : (b.required >= 10000 ? (b.required / 1000).toFixed(0) + 'k' : String(b.required));
+            var displayValue = b.waived ? 'Waived ✓' : (curStr + '/' + reqStr + discountNote + (b.met ? ' ✓' : ''));
+            var tipText = b.waived ? 'Waived by marriage to a noble spouse.' : (b.discounted ? tooltip + ' (Reduced by marriage or skill)' : tooltip);
+            html += '<div style="margin-bottom:2px;cursor:help;" title="' + tipText + '">';
+            html += '<div style="display:flex;justify-content:space-between;font-size:9px;color:' + (b.met ? '#5a5' : '#999') + ';line-height:1.2;">';
+            html += '<span>' + shortLabel + '</span>';
+            html += '<span>' + displayValue + '</span>';
+            html += '</div>';
+            html += '<div style="height:4px;background:#1a1a1a;border-radius:2px;overflow:hidden;">';
+            html += '<div style="height:100%;width:' + b.pct + '%;background:' + barColor + ';border-radius:2px;transition:width 0.5s;"></div>';
+            html += '</div></div>';
+        }
+        container.innerHTML = html;
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -15937,6 +16048,27 @@ window.UI = (function () {
             html += '</div>';
         }
 
+        // Pregnancy / Fertility indicator + Try for Baby button
+        var babyInfo = Player.getTryForBabyChance ? Player.getTryForBabyChance() : { chance: 0 };
+        html += '<div style="margin-top:8px;padding:6px 8px;border-radius:4px;font-size:12px;display:flex;justify-content:space-between;align-items:center;';
+        if (status.isPregnant) {
+            html += 'background:rgba(200,120,200,0.15);border:1px solid rgba(200,120,200,0.4);color:#d8a0d8;">';
+            html += '<span>🤰 <strong>Pregnant!</strong> Due in ~' + status.pregnancyDaysLeft + ' days</span>';
+        } else if (status.canConceive) {
+            html += 'background:rgba(100,180,100,0.12);border:1px solid rgba(100,180,100,0.3);color:#8c8;">';
+            html += '<span>🍀 <strong>Fertility:</strong> ' + status.fertilityReason + '</span>';
+        } else {
+            html += 'background:rgba(100,100,100,0.12);border:1px solid rgba(100,100,100,0.3);color:#888;">';
+            html += '<span>🚫 <strong>Fertility:</strong> ' + status.fertilityReason + '</span>';
+        }
+        // Try for Baby button
+        if (!status.isPregnant && status.canConceive && babyInfo.canTryToday) {
+            html += '<button class="btn-medieval" onclick="UI.tryForBaby()" style="font-size:11px;padding:4px 10px;margin-left:8px;white-space:nowrap;">💕 Try for Baby (' + babyInfo.chance + '%)</button>';
+        } else if (!status.isPregnant && status.canConceive && !babyInfo.canTryToday) {
+            html += '<span style="font-size:11px;color:#886;margin-left:8px;white-space:nowrap;">⏳ Already tried today</span>';
+        }
+        html += '</div>';
+
         html += '</div>'; // end header card
 
         // Wedding Planner notification
@@ -15990,6 +16122,20 @@ window.UI = (function () {
 
         html += '</div>'; // end main container
         openModal('💍 Spouse — ' + status.name, html);
+    }
+
+    function tryForBaby() {
+        if (!Player.tryForBaby) { toast('Not available.', 'warning'); return; }
+        var result = Player.tryForBaby();
+        if (result.blocked) {
+            toast(result.message, 'warning');
+        } else if (result.success) {
+            toast(result.message, 'success');
+        } else {
+            toast(result.message, 'info');
+        }
+        // Refresh the spouse panel to update the button state
+        openSpousePanel();
     }
 
     function spouseInteraction(action) {
@@ -24166,6 +24312,7 @@ window.UI = (function () {
         showHeirSelectionUI,
         confirmHeirSelection,
         openSpousePanel,
+        tryForBaby,
         spouseInteraction,
         _spouseGoldConfirm: _spouseGoldConfirm,
         _spouseTownConfirm: _spouseTownConfirm,
