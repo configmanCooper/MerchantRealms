@@ -293,6 +293,7 @@
         // ── Game Start Scenario ──
         gameStart: null,            // start scenario id
         familyMembers: [],          // [{ npcId, role, name }]
+        travelCompanions: [],       // [{ npcId, name, role }] — family members traveling with you
         // Indentured Servant
         indentured: null,           // { active, masterId, startDay, contractDays, debtRemaining, discoveredEscapes, availableEscapes }
         // Conquest Servitude (separate from game start indenture)
@@ -3137,6 +3138,21 @@
         }
         player.travelRestBonus = false;
 
+        // Bring family companions if requested (preserve existing companions during redirect)
+        if (options.bringFamily) {
+            player.travelCompanions = [];
+            var _originIdFam = player.townId || originTownId;
+            for (var _fci = 0; _fci < player.familyMembers.length; _fci++) {
+                var _fm = player.familyMembers[_fci];
+                var _fp = Engine.findPerson(_fm.npcId);
+                if (_fp && _fp.alive && _fp.townId === _originIdFam) {
+                    player.travelCompanions.push({ npcId: _fm.npcId, name: _fm.name, role: _fm.role });
+                }
+            }
+        } else if (!player.travelCompanions) {
+            player.travelCompanions = [];
+        }
+
         // Wartime ambush is now handled by the daily encounter system during travel
         // (no longer instant at departure — happens each day on the road)
 
@@ -3151,7 +3167,8 @@
         // Show risk level in departure message
         var riskInfo = getEncounterChance();
         var riskMsg = riskInfo.chance > 0 ? (' ' + (riskInfo.riskLevel === 'high' ? '🔴' : riskInfo.riskLevel === 'medium' ? '🟡' : '🟢') + ' ' + riskInfo.riskLevel.charAt(0).toUpperCase() + riskInfo.riskLevel.slice(1) + ' risk') : '';
-        Engine.logEvent(`You set out for ${dest ? dest.name : 'unknown'}.${horseMsg}${offroadMsg}${seaMsg}${cartMsg}${riskMsg}`);
+        var companionMsg = player.travelCompanions.length > 0 ? ' 👨‍👩‍👧‍👦 Traveling with ' + player.travelCompanions.map(function(c) { return c.name; }).join(', ') + '.' : '';
+        Engine.logEvent(`You set out for ${dest ? dest.name : 'unknown'}.${horseMsg}${offroadMsg}${seaMsg}${cartMsg}${companionMsg}${riskMsg}`);
 
         // Journal — travel departure
         var originTown = Engine.findTown(player.travelOrigin);
@@ -3855,6 +3872,18 @@
         player.travelMode = (!hasShip || forcePaid) ? 'sea_passage' : 'sail_own';
         player.travelSeaMode = player.travelMode;
         player.travelRestBonus = false;
+
+        // Bring family companions if requested
+        player.travelCompanions = [];
+        if (options.bringFamily) {
+            for (var _sfci = 0; _sfci < player.familyMembers.length; _sfci++) {
+                var _sfm = player.familyMembers[_sfci];
+                var _sfp = Engine.findPerson(_sfm.npcId);
+                if (_sfp && _sfp.alive && _sfp.townId === player.townId) {
+                    player.travelCompanions.push({ npcId: _sfm.npcId, name: _sfm.name, role: _sfm.role });
+                }
+            }
+        }
 
         // Sea travel energy is now handled per-tick in tickTravel (no upfront cost)
 
@@ -5918,7 +5947,8 @@
         return { success: true, message: 'Turning back...' };
     }
 
-    function useTransportService(townId, service) {
+    function useTransportService(townId, service, options) {
+        options = options || {};
         if (player.traveling) return { success: false, message: 'Already traveling.' };
         if (player.gold < service.price) return { success: false, message: 'Not enough gold.' };
 
@@ -5972,6 +6002,18 @@
             player.travelRestBonus = true;
         }
 
+        // Bring family companions if requested
+        player.travelCompanions = [];
+        if (options.bringFamily) {
+            for (var _tsci = 0; _tsci < player.familyMembers.length; _tsci++) {
+                var _tsm = player.familyMembers[_tsci];
+                var _tsp = Engine.findPerson(_tsm.npcId);
+                if (_tsp && _tsp.alive && _tsp.townId === player.townId) {
+                    player.travelCompanions.push({ npcId: _tsm.npcId, name: _tsm.name, role: _tsm.role });
+                }
+            }
+        }
+
         var dest = Engine.findTown(townId);
         var msg = (service.icon || '🏇') + ' Traveling to ' + (dest ? dest.name : 'unknown') + ' via ' + service.name;
         Engine.logEvent(msg, { type: 'travel_start', townId: townId }, 'travel_events');
@@ -6001,7 +6043,7 @@
         Engine.logEvent('🐴 Bought a horse for ' + cost + 'g!', { type: 'purchase' }, 'my_actions');
 
         // Now travel with horse
-        return travelTo(townId, { mode: 'horse', skipQuarantineCheck: options.skipQuarantineCheck });
+        return travelTo(townId, { mode: 'horse', skipQuarantineCheck: options.skipQuarantineCheck, bringFamily: options.bringFamily });
     }
 
     // ========================================================
@@ -6332,6 +6374,18 @@
             if (player.escort) {
                 Engine.logEvent('\u{1F6E1}\uFE0F ' + player.escort.personName + ' completes the escort. Safe travels!');
                 player.escort = null;
+            }
+
+            // Move travel companions to destination town
+            if (player.travelCompanions && player.travelCompanions.length > 0) {
+                for (var _tci = 0; _tci < player.travelCompanions.length; _tci++) {
+                    var _tc = player.travelCompanions[_tci];
+                    var _tcNpc = Engine.findPerson(_tc.npcId);
+                    if (_tcNpc && _tcNpc.alive) {
+                        _tcNpc.townId = player.townId;
+                    }
+                }
+                player.travelCompanions = [];
             }
 
             // Clear street trading cache so new town gets fresh offers
@@ -16421,6 +16475,7 @@
             travelWaypoints: player.travelWaypoints ? JSON.parse(JSON.stringify(player.travelWaypoints)) : null,
             travelDestCoords: player.travelDestCoords || null,
             travelRestBonus: player.travelRestBonus || 0,
+            travelCompanions: player.travelCompanions ? JSON.parse(JSON.stringify(player.travelCompanions)) : [],
             // Spouse modifiers
             spouseProdMod: player.spouseProdMod != null ? player.spouseProdMod : 1.0,
             spouseCostMod: player.spouseCostMod != null ? player.spouseCostMod : 1.0,
@@ -16526,6 +16581,7 @@
         player.travelOffroad = data.travelOffroad || false;
         player.perkCooldowns = data.perkCooldowns || {};
         player.escort = data.escort || null;
+        player.travelCompanions = data.travelCompanions || [];
         player.discountRepair = data.discountRepair || null;
         player.marketDiscounts = data.marketDiscounts || {};
         player.foragingBonus = data.foragingBonus || null;
@@ -32363,6 +32419,46 @@
             player.personalGuards = player.guards.length;
         }
 
+        // Family companion casualties — same odds as player
+        if (player.travelCompanions && player.travelCompanions.length > 0) {
+            result.familyCasualties = [];
+            var _fcDeathChance = isWartime ? 0.05 : 0.02;
+            var _fcInjuryChance = won ? 0.15 : 0.50;
+            if (isSea && !won) _fcInjuryChance = 0.60;
+            for (var _fci2 = player.travelCompanions.length - 1; _fci2 >= 0; _fci2--) {
+                var _comp = player.travelCompanions[_fci2];
+                var _compNpc = Engine.findPerson(_comp.npcId);
+                if (!_compNpc || !_compNpc.alive) continue;
+                // Check if companion has armor/weapon (reduces death chance)
+                var compHasArmor = _compNpc.armor;
+                var compHasWeapon = _compNpc.weapon;
+                var compDeathChance = _fcDeathChance;
+                if (compHasArmor) compDeathChance *= 0.5;
+                if (compHasWeapon) compDeathChance *= 0.7;
+                if (!won && rng.chance(compDeathChance)) {
+                    _compNpc.alive = false;
+                    _compNpc.deathDay = Engine.getDay();
+                    _compNpc.deathCause = 'Killed by ' + enemyName;
+                    result.familyCasualties.push({ name: _comp.name, role: _comp.role, outcome: 'killed' });
+                    Engine.logEvent('💀 Your ' + _comp.role + ' ' + _comp.name + ' was killed by ' + enemyName + '!');
+                    // Remove from familyMembers
+                    for (var _fmr = 0; _fmr < player.familyMembers.length; _fmr++) {
+                        if (player.familyMembers[_fmr].npcId === _comp.npcId) {
+                            player.familyMembers.splice(_fmr, 1);
+                            break;
+                        }
+                    }
+                    player.travelCompanions.splice(_fci2, 1);
+                } else if (rng.chance(_fcInjuryChance)) {
+                    var fcSeverity = rng.chance(0.4) ? 'severe' : 'moderate';
+                    _compNpc.injured = true;
+                    _compNpc.injurySeverity = fcSeverity;
+                    result.familyCasualties.push({ name: _comp.name, role: _comp.role, outcome: 'injured', severity: fcSeverity });
+                    Engine.logEvent('🩹 Your ' + _comp.role + ' ' + _comp.name + ' suffered a ' + fcSeverity + ' injury in the fight.');
+                }
+            }
+        }
+
         return result;
     }
 
@@ -35168,6 +35264,14 @@
         player.shipwrecked.lastWarpDay = day;
         player.townId = player.shipwrecked.embassy.townId;
         player.traveling = false;
+        // Move companions to new location
+        if (player.travelCompanions && player.travelCompanions.length > 0) {
+            for (var _sci = 0; _sci < player.travelCompanions.length; _sci++) {
+                var _scn = Engine.findPerson(player.travelCompanions[_sci].npcId);
+                if (_scn && _scn.alive) _scn.townId = player.townId;
+            }
+            player.travelCompanions = [];
+        }
         
         // Update coordinates
         var embTown = Engine.findTown(player.shipwrecked.embassy.townId);
@@ -36351,8 +36455,76 @@
         var relBoost = Math.min(20, Math.floor(value / 10));
         player.relationships[npcId] = player.relationships[npcId] || { level: 0, type: 'family' };
         player.relationships[npcId].level = Math.min(100, player.relationships[npcId].level + relBoost);
+
+        // Auto-equip weapons/armor given to family members
+        var autoEquipMsg = '';
+        if (res && res.category === 'military') {
+            var _weapDef = null, _armDef = null;
+            for (var _wei = 0; _wei < EQUIPMENT_TYPES.weapons.length; _wei++) {
+                if (EQUIPMENT_TYPES.weapons[_wei].resource === resourceId) {
+                    if (!_weapDef || EQUIPMENT_TYPES.weapons[_wei].combatBonus > _weapDef.combatBonus) _weapDef = EQUIPMENT_TYPES.weapons[_wei];
+                }
+            }
+            for (var _ari = 0; _ari < EQUIPMENT_TYPES.armor.length; _ari++) {
+                if (EQUIPMENT_TYPES.armor[_ari].resource === resourceId) {
+                    if (!_armDef || EQUIPMENT_TYPES.armor[_ari].combatBonus > _armDef.combatBonus) _armDef = EQUIPMENT_TYPES.armor[_ari];
+                }
+            }
+            if (_weapDef) {
+                var oldWeapon = person.weapon;
+                person.weapon = { id: _weapDef.id, name: _weapDef.name, quality: _weapDef.quality, combatBonus: _weapDef.combatBonus };
+                autoEquipMsg = ' ' + member.name + ' equipped the ' + _weapDef.name + '!';
+                if (oldWeapon) autoEquipMsg += ' (replaced ' + oldWeapon.name + ')';
+            }
+            if (_armDef) {
+                var oldArmor = person.armor;
+                person.armor = { id: _armDef.id, name: _armDef.name, quality: _armDef.quality, combatBonus: _armDef.combatBonus };
+                autoEquipMsg = ' ' + member.name + ' equipped the ' + _armDef.name + '!';
+                if (oldArmor) autoEquipMsg += ' (replaced ' + oldArmor.name + ')';
+            }
+        }
+
+        // Auto-learn instruments given to family members
+        var _instIds2 = ['drum', 'flute', 'lute', 'hurdy_gurdy', 'harp'];
+        if (_instIds2.indexOf(resourceId) !== -1) {
+            if (!person._familyInstruments) person._familyInstruments = {};
+            if (!person._familyInstrumentSkill) person._familyInstrumentSkill = {};
+            person._familyInstruments[resourceId] = true;
+            var _instConf = typeof INSTRUMENTS !== 'undefined' ? INSTRUMENTS[resourceId] : null;
+            var _instNm = _instConf ? _instConf.name : resourceId;
+            if (!person._familyInstrumentSkill[resourceId]) {
+                person._familyInstrumentSkill[resourceId] = 1;
+                autoEquipMsg += ' ' + member.name + ' started learning the ' + _instNm + '!';
+            } else {
+                autoEquipMsg += ' ' + member.name + ' already plays the ' + _instNm + '.';
+            }
+        }
+
+        // Auto-assign horse if given horses resource
+        if (resourceId === 'horses' && !person.horse) {
+            person.horse = { name: 'Horse', stamina: 100 };
+            autoEquipMsg += ' ' + member.name + ' mounted the horse! 🐴';
+        }
+
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.give_family_gift || 2);
-        return { success: true, message: 'Gave ' + qty + 'x ' + (res ? res.name : resourceId) + ' to ' + member.name + '. +' + relBoost + ' relationship.' };
+        return { success: true, message: 'Gave ' + qty + 'x ' + (res ? res.name : resourceId) + ' to ' + member.name + '. +' + relBoost + ' relationship.' + autoEquipMsg };
+    }
+
+    function giveFamilyGold(npcId, amount) {
+        amount = Math.floor(Number(amount));
+        if (!amount || !isFinite(amount) || amount <= 0) return { success: false, message: 'Invalid amount.' };
+        var member = player.familyMembers.find(function(m) { return m.npcId === npcId; });
+        if (!member) return { success: false, message: 'Not a family member.' };
+        if (player.gold < amount) return { success: false, message: 'Not enough gold.' };
+        var person = Engine.findPerson(npcId);
+        if (!person || !person.alive) return { success: false, message: 'Family member not found.' };
+        player.gold -= amount;
+        person.gold = (person.gold || 0) + amount;
+        player.relationships[npcId] = player.relationships[npcId] || { level: 0, type: 'family' };
+        var relBoost = Math.min(15, Math.floor(amount / 20));
+        player.relationships[npcId].level = Math.min(100, player.relationships[npcId].level + relBoost);
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.give_family_gift || 2);
+        return { success: true, message: 'Gave ' + amount + 'g to ' + member.name + '. They now have ' + person.gold + 'g. +' + relBoost + ' relationship.' };
     }
 
     function inviteFamilyToLive(npcId) {
@@ -38861,6 +39033,14 @@
             player.travelDestination = null;
             player.travelRoute = null;
             player.travelTotalDist = 0;
+            // Move companions back with player
+            if (player.travelCompanions && player.travelCompanions.length > 0) {
+                for (var _mci = 0; _mci < player.travelCompanions.length; _mci++) {
+                    var _mcn = Engine.findPerson(player.travelCompanions[_mci].npcId);
+                    if (_mcn && _mcn.alive) _mcn.townId = player.townId;
+                }
+                player.travelCompanions = [];
+            }
         }
 
         // Messenger penalty: undelivered letters need to be handed off
@@ -39245,6 +39425,7 @@
         get travelMode() { return player.travelMode; },
         get travelSeaMode() { return player.travelSeaMode; },
         get travelRestBonus() { return player.travelRestBonus; },
+        get travelCompanions() { return player.travelCompanions || []; },
         get travelDestCoords() { return player.travelDestCoords; },
         get travelWaypoints() { return player.travelWaypoints; },
         get worldX() { return player.worldX; },
@@ -40043,7 +40224,7 @@
         // Family Actions
         askFamilyForMoney, askFamilyToWork, familyDinner, teachFamilyTrade,
         askFamilyAdvice, borrowFamilyConnections, familyCelebration,
-        giveFamilyGift, inviteFamilyToLive, familyBusiness,
+        giveFamilyGift, giveFamilyGold, inviteFamilyToLive, familyBusiness,
         confideInFamily, askFamilyToCaretake,
 
         // Talk to Townsfolk

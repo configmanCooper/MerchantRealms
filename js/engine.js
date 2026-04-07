@@ -27416,6 +27416,316 @@
                     }
                 }
             }
+
+            // ── FAMILY AI: Smart use of gold and items ──
+            var _fGold = p.gold || 0;
+            var _fRank = 0;
+            if (p.socialRank) {
+                for (var _rk in p.socialRank) { if (p.socialRank[_rk] > _fRank) _fRank = p.socialRank[_rk]; }
+            }
+            if (!_fRank && p.occupation === 'noble') _fRank = 4;
+            var _fMarket = town.market;
+            var _fSupply = _fMarket.supply || {};
+            var _fPrices = _fMarket.prices || {};
+            var _fName = p.firstName || p.name || 'family member';
+
+            // 6. SELF-TREATMENT — highest priority: seek medical care
+            if (p.sick || p.injured) {
+                var _fSev = p.injured ? (p.injurySeverity || 'minor') : (p.illnessSeverity || 'minor');
+
+                // 6a. Try hospital/clinic queue if not already being treated
+                if (!p._illnessTreatPaid) {
+                    var _fTreated = false;
+                    for (var _mbi = 0; _mbi < town.buildings.length && !_fTreated; _mbi++) {
+                        var _mBld = town.buildings[_mbi];
+                        if (_mBld.type !== 'hospital' && _mBld.type !== 'clinic') continue;
+                        if (!_mBld._treatmentQueue) _mBld._treatmentQueue = [];
+                        // Already queued?
+                        var _alreadyQ = false;
+                        for (var _qi = 0; _qi < _mBld._treatmentQueue.length; _qi++) {
+                            if (_mBld._treatmentQueue[_qi].personId === p.id) { _alreadyQ = true; break; }
+                        }
+                        if (_alreadyQ) { _fTreated = true; break; }
+                        // Check supplies available before payment
+                        if (!_checkSuppliesAvailable(_mBld, town, _fSev, !!p.sick)) continue;
+                        var _tFee = (_mBld._treatmentFees && _mBld._treatmentFees[_fSev]) || (_fSev === 'severe' ? 60 : _fSev === 'moderate' ? 30 : 10);
+                        if (_fGold >= _tFee) {
+                            p.gold -= _tFee;
+                            _fGold -= _tFee;
+                            p._illnessTreatPaid = true;
+                            var _tTicks = _fSev === 'severe' ? 40 : _fSev === 'moderate' ? 25 : 15;
+                            if (_mBld.type === 'clinic' && _fSev === 'severe') _tTicks *= 2;
+                            _mBld._treatmentQueue.push({
+                                personId: p.id, severity: _fSev,
+                                isIllness: !!p.sick, ticksRemaining: _tTicks,
+                                admittedDay: world.day
+                            });
+                            // Revenue to building owner
+                            if (_mBld.ownerId) {
+                                var _bOwner = findPerson(_mBld.ownerId);
+                                if (_bOwner) _bOwner.gold = (_bOwner.gold || 0) + Math.floor(_tFee * 0.7);
+                            }
+                            _fTreated = true;
+                        }
+                    }
+
+                    // 6b. No facility or can't afford — buy medical supplies from market
+                    if (!_fTreated && _fGold > 0) {
+                        var _medItems = p.injured
+                            ? ['bandages', 'splint', 'herbal_poultice', 'healing_tonic']
+                            : ['herbal_remedy', 'fever_tonic', 'healing_tonic', 'bandages'];
+                        for (var _mi = 0; _mi < _medItems.length; _mi++) {
+                            var _mId = _medItems[_mi];
+                            if ((_fSupply[_mId] || 0) > 0) {
+                                var _mCost = _fPrices[_mId] || 10;
+                                if (_fGold >= _mCost) {
+                                    p.gold -= _mCost;
+                                    _fGold -= _mCost;
+                                    _fSupply[_mId] = (_fSupply[_mId] || 0) - 1;
+                                    p.health = Math.min(100, (p.health || 50) + 5);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 7. BUY EQUIPMENT — weapon and armor if they can afford it
+            if (!p.weapon && _fGold > 15) {
+                // Choose weapon tier based on wealth and social rank
+                var _weapPref;
+                if (_fRank >= 4 || _fGold > 300) _weapPref = ['swords_excellent', 'swords_good', 'bows_excellent', 'swords', 'bows_good', 'bows'];
+                else if (_fRank >= 2 || _fGold > 100) _weapPref = ['swords_good', 'swords', 'bows_good', 'bows'];
+                else _weapPref = ['swords', 'bows'];
+                for (var _wi = 0; _wi < _weapPref.length; _wi++) {
+                    var _wId = _weapPref[_wi];
+                    if ((_fSupply[_wId] || 0) > 0) {
+                        var _wCost = _fPrices[_wId] || 50;
+                        if (_fGold >= _wCost && _fGold - _wCost >= 10) { // keep at least 10g reserve
+                            p.gold -= _wCost;
+                            _fGold -= _wCost;
+                            _fSupply[_wId] = (_fSupply[_wId] || 0) - 1;
+                            // Find matching equipment def and equip
+                            var _eqWeap = null;
+                            for (var _ewi = 0; _ewi < EQUIPMENT_TYPES.weapons.length; _ewi++) {
+                                if (EQUIPMENT_TYPES.weapons[_ewi].resource === _wId) {
+                                    if (!_eqWeap || EQUIPMENT_TYPES.weapons[_ewi].combatBonus > _eqWeap.combatBonus) _eqWeap = EQUIPMENT_TYPES.weapons[_ewi];
+                                }
+                            }
+                            if (_eqWeap) {
+                                p.weapon = { id: _eqWeap.id, name: _eqWeap.name, quality: _eqWeap.quality, combatBonus: _eqWeap.combatBonus };
+                                logEvent('⚔️ Your ' + (p._familyRole || 'family member') + ' ' + _fName + ' bought and equipped a ' + _eqWeap.name + '.');
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            // Upgrade weapon if they have gold and better is available
+            if (p.weapon && _fGold > 100) {
+                var _curCB = (typeof p.weapon === 'object') ? (p.weapon.combatBonus || 0) : 0.1;
+                var _upgWeapRes = ['swords_excellent', 'swords_good', 'bows_excellent', 'bows_good'];
+                for (var _uwi = 0; _uwi < _upgWeapRes.length; _uwi++) {
+                    var _uwId = _upgWeapRes[_uwi];
+                    if ((_fSupply[_uwId] || 0) > 0) {
+                        var _uwCost = _fPrices[_uwId] || 100;
+                        if (_fGold >= _uwCost && _fGold - _uwCost >= 20) {
+                            var _uwDef = null;
+                            for (var _udi = 0; _udi < EQUIPMENT_TYPES.weapons.length; _udi++) {
+                                if (EQUIPMENT_TYPES.weapons[_udi].resource === _uwId && EQUIPMENT_TYPES.weapons[_udi].combatBonus > _curCB) {
+                                    if (!_uwDef || EQUIPMENT_TYPES.weapons[_udi].combatBonus > _uwDef.combatBonus) _uwDef = EQUIPMENT_TYPES.weapons[_udi];
+                                }
+                            }
+                            if (_uwDef) {
+                                p.gold -= _uwCost;
+                                _fGold -= _uwCost;
+                                _fSupply[_uwId] = (_fSupply[_uwId] || 0) - 1;
+                                p.weapon = { id: _uwDef.id, name: _uwDef.name, quality: _uwDef.quality, combatBonus: _uwDef.combatBonus };
+                                logEvent('⚔️ ' + _fName + ' upgraded to a ' + _uwDef.name + '.');
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!p.armor && _fGold > 30) {
+                var _armPref;
+                if (_fRank >= 4 || _fGold > 500) _armPref = ['armor_excellent', 'armor_good', 'armor'];
+                else if (_fRank >= 2 || _fGold > 150) _armPref = ['armor_good', 'armor'];
+                else _armPref = ['armor'];
+                for (var _ai = 0; _ai < _armPref.length; _ai++) {
+                    var _aId = _armPref[_ai];
+                    if ((_fSupply[_aId] || 0) > 0) {
+                        var _aCost = _fPrices[_aId] || 80;
+                        if (_fGold >= _aCost && _fGold - _aCost >= 10) {
+                            p.gold -= _aCost;
+                            _fGold -= _aCost;
+                            _fSupply[_aId] = (_fSupply[_aId] || 0) - 1;
+                            var _eqArm = null;
+                            for (var _eai = 0; _eai < EQUIPMENT_TYPES.armor.length; _eai++) {
+                                if (EQUIPMENT_TYPES.armor[_eai].resource === _aId) {
+                                    if (!_eqArm || EQUIPMENT_TYPES.armor[_eai].combatBonus > _eqArm.combatBonus) _eqArm = EQUIPMENT_TYPES.armor[_eai];
+                                }
+                            }
+                            if (_eqArm) {
+                                p.armor = { id: _eqArm.id, name: _eqArm.name, quality: _eqArm.quality, combatBonus: _eqArm.combatBonus };
+                                logEvent('🛡️ ' + _fName + ' bought and equipped ' + _eqArm.name + '.');
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            // Upgrade armor similarly
+            if (p.armor && _fGold > 200) {
+                var _curAB = (typeof p.armor === 'object') ? (p.armor.combatBonus || 0) : 0.15;
+                var _upgArmRes = ['armor_excellent', 'armor_good'];
+                for (var _uai = 0; _uai < _upgArmRes.length; _uai++) {
+                    var _uaId = _upgArmRes[_uai];
+                    if ((_fSupply[_uaId] || 0) > 0) {
+                        var _uaCost = _fPrices[_uaId] || 200;
+                        if (_fGold >= _uaCost && _fGold - _uaCost >= 20) {
+                            var _uaDef = null;
+                            for (var _uadi = 0; _uadi < EQUIPMENT_TYPES.armor.length; _uadi++) {
+                                if (EQUIPMENT_TYPES.armor[_uadi].resource === _uaId && EQUIPMENT_TYPES.armor[_uadi].combatBonus > _curAB) {
+                                    if (!_uaDef || EQUIPMENT_TYPES.armor[_uadi].combatBonus > _uaDef.combatBonus) _uaDef = EQUIPMENT_TYPES.armor[_uadi];
+                                }
+                            }
+                            if (_uaDef) {
+                                p.gold -= _uaCost;
+                                _fGold -= _uaCost;
+                                _fSupply[_uaId] = (_fSupply[_uaId] || 0) - 1;
+                                p.armor = { id: _uaDef.id, name: _uaDef.name, quality: _uaDef.quality, combatBonus: _uaDef.combatBonus };
+                                logEvent('🛡️ ' + _fName + ' upgraded to ' + _uaDef.name + '.');
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 8. BUY HORSE — if wealthy enough and horses are available
+            if (!p.horse && _fGold >= 80 && (_fSupply.horses || 0) > 0) {
+                var _hCost = _fPrices.horses || 60;
+                // Nobles/wealthy buy horses more eagerly
+                var _horseThreshold = _fRank >= 3 ? _hCost : _hCost * 2; // commoners need more cushion
+                if (_fGold >= _horseThreshold && _fGold - _hCost >= 20) {
+                    p.gold -= _hCost;
+                    _fGold -= _hCost;
+                    _fSupply.horses = (_fSupply.horses || 0) - 1;
+                    p.horse = { name: 'Horse', stamina: 100 };
+                    logEvent('🐴 ' + _fName + ' bought a horse!');
+                }
+            }
+
+            // 9. INSTRUMENT PRACTICE — if they own an instrument, practice it
+            if (!p._familyInstruments) p._familyInstruments = {};
+            // Check if they have instruments in their merchant inventory (from gifts)
+            var _instIds = INSTRUMENT_IDS || ['drum', 'flute', 'lute', 'hurdy_gurdy', 'harp'];
+            for (var _ii = 0; _ii < _instIds.length; _ii++) {
+                var _instId = _instIds[_ii];
+                // If they received this instrument (tracked via npcMerchantInventory or direct flag)
+                if (p._familyInstruments[_instId] || (p.npcMerchantInventory && (p.npcMerchantInventory[_instId] || 0) > 0)) {
+                    if (p.npcMerchantInventory && p.npcMerchantInventory[_instId] > 0) {
+                        // Transfer from inventory to owned instruments
+                        p._familyInstruments[_instId] = true;
+                        p.npcMerchantInventory[_instId] = (p.npcMerchantInventory[_instId] || 0) - 1;
+                    }
+                    // Practice: skill increases
+                    if (!p._familyInstrumentSkill) p._familyInstrumentSkill = {};
+                    var _curSkill = p._familyInstrumentSkill[_instId] || 0;
+                    if (_curSkill < 100) {
+                        var _skillGain = Math.max(0.5, 2 - _curSkill / 50);
+                        p._familyInstrumentSkill[_instId] = Math.min(100, _curSkill + _skillGain);
+                        // Occasional log at milestones
+                        var _newSkill = p._familyInstrumentSkill[_instId];
+                        var _instDef = INSTRUMENTS[_instId];
+                        var _instName = _instDef ? _instDef.name : _instId;
+                        if ((_curSkill < 26 && _newSkill >= 26) || (_curSkill < 51 && _newSkill >= 51) || (_curSkill < 76 && _newSkill >= 76)) {
+                            var _tier = _newSkill >= 76 ? 'Master' : _newSkill >= 51 ? 'Expert' : 'Competent';
+                            logEvent('🎵 ' + _fName + ' reached ' + _tier + ' level on the ' + _instName + '!');
+                        }
+                    }
+                }
+            }
+            // Buy an instrument if they have gold, musical interest, and none owned yet
+            var _ownsInstrument = false;
+            for (var _oi in p._familyInstruments) { if (p._familyInstruments[_oi]) { _ownsInstrument = true; break; } }
+            if (!_ownsInstrument && _fGold > 40 && rng.chance(0.03)) {
+                // Preference based on social rank
+                var _instPref;
+                if (_fRank >= 4) _instPref = ['harp', 'hurdy_gurdy', 'lute'];
+                else if (_fRank >= 2) _instPref = ['lute', 'hurdy_gurdy', 'flute'];
+                else _instPref = ['drum', 'flute', 'lute'];
+                for (var _ipi = 0; _ipi < _instPref.length; _ipi++) {
+                    var _ipId = _instPref[_ipi];
+                    if ((_fSupply[_ipId] || 0) > 0) {
+                        var _ipCost = _fPrices[_ipId] || 20;
+                        if (_fGold >= _ipCost && _fGold - _ipCost >= 10) {
+                            p.gold -= _ipCost;
+                            _fGold -= _ipCost;
+                            _fSupply[_ipId] = (_fSupply[_ipId] || 0) - 1;
+                            p._familyInstruments[_ipId] = true;
+                            var _bInstDef = INSTRUMENTS[_ipId];
+                            logEvent('🎵 ' + _fName + ' bought a ' + (_bInstDef ? _bInstDef.name : _ipId) + ' and started learning to play!');
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 10. FOOD & BEVERAGES — buy food/drink if they have gold (basic survival)
+            if (_fGold > 5 && rng.chance(0.3)) {
+                var _foodItems = ['bread', 'meat', 'fish', 'poultry', 'eggs', 'vegetables'];
+                var _boughtFood = false;
+                for (var _fdi = 0; _fdi < _foodItems.length && !_boughtFood; _fdi++) {
+                    var _fdId = _foodItems[_fdi];
+                    if ((_fSupply[_fdId] || 0) > 0) {
+                        var _fdCost = _fPrices[_fdId] || 3;
+                        if (_fGold >= _fdCost) {
+                            p.gold -= _fdCost;
+                            _fGold -= _fdCost;
+                            _fSupply[_fdId] = (_fSupply[_fdId] || 0) - 1;
+                            p.health = Math.min(100, (p.health || 80) + 1);
+                            _boughtFood = true;
+                        }
+                    }
+                }
+            }
+
+            // 11. STATUS-APPROPRIATE LUXURY SPENDING — nobles buy fine goods
+            if (_fRank >= 3 && _fGold > 100 && rng.chance(0.08)) {
+                var _luxItems = ['wine', 'silk', 'jewelry', 'perfume', 'fine_clothes', 'pearls'];
+                for (var _li = 0; _li < _luxItems.length; _li++) {
+                    var _lId = _luxItems[_li];
+                    if ((_fSupply[_lId] || 0) > 0) {
+                        var _lCost = _fPrices[_lId] || 30;
+                        if (_fGold >= _lCost && _fGold - _lCost >= 30) {
+                            p.gold -= _lCost;
+                            _fGold -= _lCost;
+                            _fSupply[_lId] = (_fSupply[_lId] || 0) - 1;
+                            // Store for potential resale
+                            p.npcMerchantInventory[_lId] = (p.npcMerchantInventory[_lId] || 0) + 1;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 12. CHILDREN education — younger family members build skills
+            if (p.age && p.age >= 8 && p.age < 18 && rng.chance(0.1)) {
+                p.workerSkill = Math.min(50, (p.workerSkill || 0) + 1);
+                // Small chance to gain medical knowledge from schooling
+                if (!p.medicalKnowledge && rng.chance(0.02)) {
+                    p.medicalKnowledge = 'basic';
+                }
+            }
+
+            // Store the family role for logging purposes
+            var _member = playerObj.familyMembers.find(function(m) { return m.npcId === p.id; });
+            if (_member) p._familyRole = _member.role;
         }
     }
 

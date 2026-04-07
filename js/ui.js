@@ -11191,6 +11191,7 @@ window.UI = (function () {
     var _travelOptions = [];
     var _travelDestTownId = null;
     var _travelRouteDanger = {};
+    var _travelBringFamily = false;
 
     /** Closed borders dialog — offers military service or smuggling */
     function _showClosedBordersDialog(destTown, destKingdom, townId) {
@@ -11780,7 +11781,7 @@ window.UI = (function () {
                 desc: 'Travel on foot. Slow but free.',
                 cost: 0, days: _calcDays(lDists.land, lDists.sea, 'walk', 'sail_own'),
                 available: true, route: 'land', routeChain: lChain,
-                action: function () { return Player.travelTo(townId); }
+                action: function () { return Player.travelTo(townId, { bringFamily: _travelBringFamily }); }
             });
 
             // Ride Horse
@@ -11790,7 +11791,7 @@ window.UI = (function () {
                     desc: 'Much faster travel. Less tiring.',
                     cost: 0, days: _calcDays(lDists.land, lDists.sea, 'horse', 'sail_own'),
                     available: true, route: 'land', routeChain: lChain,
-                    action: function () { return Player.travelTo(townId, { mode: 'horse' }); }
+                    action: function () { return Player.travelTo(townId, { mode: 'horse', bringFamily: _travelBringFamily }); }
                 });
             }
 
@@ -11805,7 +11806,7 @@ window.UI = (function () {
                     available: canAffordHorse,
                     unavailableReason: !canAffordHorse ? 'Not enough gold' : '',
                     route: 'land', routeChain: lChain,
-                    action: (function (hCost) { return function () { return Player.buyHorseForTravel(townId, hCost); }; })(horseCost)
+                    action: (function (hCost) { return function () { return Player.buyHorseForTravel(townId, hCost, { bringFamily: _travelBringFamily }); }; })(horseCost)
                 });
             }
 
@@ -11820,7 +11821,7 @@ window.UI = (function () {
                     desc: hasHorse ? 'Your horse pulls the ' + containerCfg.name + '. No speed penalty.' : 'Drag the ' + containerCfg.name + ' by hand — 40% slower!',
                     cost: 0, days: bringDays,
                     available: true, route: 'land', routeChain: lChain,
-                    action: (function (tid) { return function () { return Player.travelTo(tid, { leaveCart: false }); }; })(townId)
+                    action: (function (tid) { return function () { return Player.travelTo(tid, { leaveCart: false, bringFamily: _travelBringFamily }); }; })(townId)
                 });
 
                 var leaveDays = hasHorse
@@ -11832,7 +11833,7 @@ window.UI = (function () {
                     desc: 'Travel light. Cart may be stolen (15%). Goods on it get raided daily.',
                     cost: 0, days: leaveDays,
                     available: true, route: 'land', routeChain: lChain,
-                    action: (function (tid) { return function () { return Player.travelTo(tid, { leaveCart: true }); }; })(townId)
+                    action: (function (tid) { return function () { return Player.travelTo(tid, { leaveCart: true, bringFamily: _travelBringFamily }); }; })(townId)
                 });
             }
 
@@ -11846,7 +11847,7 @@ window.UI = (function () {
                     available: playerGold >= svc.price,
                     unavailableReason: playerGold < svc.price ? 'Not enough gold' : '',
                     route: 'land', routeChain: lChain,
-                    action: (function (service) { return function () { return Player.useTransportService(townId, service); }; })(svc)
+                    action: (function (service) { return function () { return Player.useTransportService(townId, service, { bringFamily: _travelBringFamily }); }; })(svc)
                 });
             }
         }
@@ -11883,7 +11884,7 @@ window.UI = (function () {
                         route: 'mixed', routeChain: mChain,
                         action: (function (lMode, sMode) {
                             return function () {
-                                return Player.travelTo(townId, { mode: lMode, seaMode: sMode });
+                                return Player.travelTo(townId, { mode: lMode, seaMode: sMode, bringFamily: _travelBringFamily });
                             };
                         })(lm.id, sm.id)
                     });
@@ -11919,7 +11920,7 @@ window.UI = (function () {
                     desc: 'Use your own vessel. Risk of pirates and storms.',
                     cost: 0, days: sailDays,
                     available: true, route: 'sea', routeChain: seaChain,
-                    action: function () { return Player.travelBySea(townId); }
+                    action: function () { return Player.travelBySea(townId, { bringFamily: _travelBringFamily }); }
                 });
             }
 
@@ -11934,7 +11935,7 @@ window.UI = (function () {
                 available: playerGold >= passageCost,
                 unavailableReason: playerGold < passageCost ? 'Not enough gold' : '',
                 route: 'sea', routeChain: seaChain,
-                action: function () { return Player.travelBySea(townId, { paid: true }); }
+                action: function () { return Player.travelBySea(townId, { paid: true, bringFamily: _travelBringFamily }); }
             });
 
             // Sea transport services
@@ -11947,7 +11948,7 @@ window.UI = (function () {
                     available: playerGold >= ssvc.price,
                     unavailableReason: playerGold < ssvc.price ? 'Not enough gold' : '',
                     route: 'sea', routeChain: seaChain,
-                    action: (function (service) { return function () { return Player.useTransportService(townId, service); }; })(ssvc)
+                    action: (function (service) { return function () { return Player.useTransportService(townId, service, { bringFamily: _travelBringFamily }); }; })(ssvc)
                 });
             }
         }
@@ -11986,6 +11987,31 @@ window.UI = (function () {
 
         var html = '<div style="max-height:450px;overflow-y:auto;">';
         html += '<p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:10px;">\u{1F4CD} ' + (currentTown.name || '?') + ' \u2192 ' + (destTown.name || '?') + '</p>';
+
+        // "Bring Family" checkbox if family members are in the same town
+        var _familyInTown = [];
+        if (typeof Player !== 'undefined' && Player.familyMembers && Player.familyMembers.length > 0) {
+            for (var _ffi = 0; _ffi < Player.familyMembers.length; _ffi++) {
+                var _ffm = Player.familyMembers[_ffi];
+                var _ffp = Engine.findPerson(_ffm.npcId);
+                if (_ffp && _ffp.alive && _ffp.townId === Player.townId) {
+                    _familyInTown.push(_ffm);
+                }
+            }
+        }
+        if (_familyInTown.length > 0) {
+            html += '<div style="background:rgba(139,115,85,0.12);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:8px 10px;margin-bottom:10px;">';
+            html += '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem;color:var(--parchment);">';
+            html += '<input type="checkbox" id="travelBringFamily" style="width:16px;height:16px;cursor:pointer;">';
+            html += '<span>👨‍👩‍👧‍👦 Bring family along</span>';
+            html += '</label>';
+            html += '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;padding-left:24px;">';
+            var _familyNames = _familyInTown.map(function(f) { return f.name + ' (' + f.role + ')'; });
+            html += _familyNames.join(', ');
+            html += '<br><span style="color:#e67e22;">⚠️ Family can be injured in encounters!</span>';
+            html += '</div>';
+            html += '</div>';
+        }
 
         // Group options by route category
         var _routeOrder = ['land', 'mixed', 'sea', 'god'];
@@ -12189,24 +12215,30 @@ window.UI = (function () {
     function _executeTravelAction(townId, opt) {
         // For standard travel options, call Player.travelTo with skipQuarantineCheck
         // Parse the option to determine what kind of travel
-        if (opt.id && opt.id.indexOf('land_walk') === 0) return Player.travelTo(townId, { skipQuarantineCheck: true });
-        if (opt.id && opt.id.indexOf('land_horse') === 0) return Player.travelTo(townId, { mode: 'horse', skipQuarantineCheck: true });
+        if (opt.id && opt.id.indexOf('land_walk') === 0) return Player.travelTo(townId, { skipQuarantineCheck: true, bringFamily: _travelBringFamily });
+        if (opt.id && opt.id.indexOf('land_horse') === 0) return Player.travelTo(townId, { mode: 'horse', skipQuarantineCheck: true, bringFamily: _travelBringFamily });
         if (opt.id && opt.id.indexOf('land_buy_horse') === 0) {
-            return Player.buyHorseForTravel(townId, opt.cost, { skipQuarantineCheck: true });
+            return Player.buyHorseForTravel(townId, opt.cost, { skipQuarantineCheck: true, bringFamily: _travelBringFamily });
         }
-        if (opt.id && opt.id.indexOf('land_bring_cart') === 0) return Player.travelTo(townId, { leaveCart: false, skipQuarantineCheck: true });
-        if (opt.id && opt.id.indexOf('land_leave_cart') === 0) return Player.travelTo(townId, { leaveCart: true, skipQuarantineCheck: true });
+        if (opt.id && opt.id.indexOf('land_bring_cart') === 0) return Player.travelTo(townId, { leaveCart: false, skipQuarantineCheck: true, bringFamily: _travelBringFamily });
+        if (opt.id && opt.id.indexOf('land_leave_cart') === 0) return Player.travelTo(townId, { leaveCart: true, skipQuarantineCheck: true, bringFamily: _travelBringFamily });
         if (opt.id && opt.id.indexOf('mixed_') === 0) {
             var parts = opt.id.replace('mixed_', '').split('_');
             var lMode = parts[0];
             var sMode = parts.slice(1).join('_');
-            return Player.travelTo(townId, { mode: lMode, seaMode: sMode, skipQuarantineCheck: true });
+            return Player.travelTo(townId, { mode: lMode, seaMode: sMode, skipQuarantineCheck: true, bringFamily: _travelBringFamily });
         }
         // Fallback: just call the original action
         return opt.action();
     }
 
     function _executeTravel(townId, opt) {
+        // Check "Bring Family" checkbox before closing modal
+        var _bringFamily = false;
+        var cbEl = document.getElementById('travelBringFamily');
+        if (cbEl && cbEl.checked) _bringFamily = true;
+        _travelBringFamily = _bringFamily;
+
         closeModal();
         closeRightPanel();
         try {
@@ -15844,12 +15876,40 @@ window.UI = (function () {
                 html += '<div>💰 ' + formatGold(person.gold || 0) + 'g | 📍 ' + locationName + (sameLocation ? ' <span style="color:#5f5;font-size:0.7rem;">(Here)</span>' : '') + '</div>';
                 html += '<div>❤️ Relationship: ' + Math.round(rel) + '/100</div>';
 
+                // Show equipment, horse, and instrument status
+                var _eqParts = [];
+                if (person.weapon) _eqParts.push('⚔️ ' + (typeof person.weapon === 'object' ? person.weapon.name : 'Armed'));
+                if (person.armor) _eqParts.push('🛡️ ' + (typeof person.armor === 'object' ? person.armor.name : 'Armored'));
+                if (person.horse) _eqParts.push('🐴 Horse');
+                if (person._familyInstruments) {
+                    for (var _iKey in person._familyInstruments) {
+                        if (person._familyInstruments[_iKey]) {
+                            var _iSkill = (person._familyInstrumentSkill && person._familyInstrumentSkill[_iKey]) || 0;
+                            var _iTier = _iSkill >= 76 ? 'Master' : _iSkill >= 51 ? 'Expert' : _iSkill >= 26 ? 'Competent' : 'Novice';
+                            _eqParts.push('🎵 ' + _iKey.charAt(0).toUpperCase() + _iKey.slice(1).replace('_', '-') + ' (' + _iTier + ')');
+                        }
+                    }
+                }
+                if (_eqParts.length > 0) {
+                    html += '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">' + _eqParts.join(' • ') + '</div>';
+                }
+                // Health status
+                if (person.injured || person.sick) {
+                    var _hParts = [];
+                    if (person.injured) _hParts.push('🩹 ' + (person.injurySeverity || 'injured'));
+                    if (person.sick) _hParts.push('🤒 ' + (person.illness || 'sick'));
+                    if (person._illnessTreatPaid) _hParts.push('🏥 Being treated');
+                    html += '<div style="font-size:0.75rem;color:#e67e22;margin-top:2px;">' + _hParts.join(' • ') + '</div>';
+                }
+
                 html += '<div class="family-actions" style="margin-top:6px;">';
                 html += '<button class="btn-action btn-small" onclick="UI.familyAction(\'money\',\'' + m.npcId + '\')">💰 Ask Money</button>';
                 html += '<button class="btn-action btn-small" onclick="UI.familyAction(\'work\',\'' + m.npcId + '\')">🔨 Ask Work</button>';
                 html += '<button class="btn-action btn-small" onclick="UI.familyAction(\'teach\',\'' + m.npcId + '\')">📖 Teach</button>';
                 html += '<button class="btn-action btn-small" onclick="UI.familyAction(\'connections\',\'' + m.npcId + '\')">🤝 Connections</button>';
                 html += '<button class="btn-action btn-small" onclick="UI.familyAction(\'gift\',\'' + m.npcId + '\')">🎁 Gift</button>';
+                html += '<button class="btn-action btn-small" onclick="UI.giveFamilyGoldDialog(\'' + m.npcId + '\',\'' + m.name.replace(/'/g, "\\'") + '\')">💰 Give Gold</button>';
+                html += '<button class="btn-action btn-small" onclick="UI.giveFamilyItemDialog(\'' + m.npcId + '\',\'' + m.name.replace(/'/g, "\\'") + '\')">📦 Give Item</button>';
                 html += '<button class="btn-action btn-small" onclick="UI.familyAction(\'invite\',\'' + m.npcId + '\')">🏠 Invite</button>';
                 html += '<button class="btn-action btn-small" onclick="UI.familyAction(\'confide\',\'' + m.npcId + '\')">💬 Confide</button>';
                 if (m.role === 'brother' || m.role === 'sister') {
@@ -15984,6 +16044,65 @@ window.UI = (function () {
             toast(result.message, result.success ? 'success' : 'error');
             if (result.success) openFamilyPanel(); // Refresh
         }
+    }
+
+    function giveFamilyGoldDialog(npcId, name) {
+        var html = '<div style="text-align:center;padding:10px;">';
+        html += '<p style="color:var(--parchment);margin-bottom:12px;">How much gold to give <strong>' + name + '</strong>?</p>';
+        html += '<p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:10px;">Your gold: ' + formatGold(Player.gold) + 'g</p>';
+        html += '<div style="display:flex;justify-content:center;gap:6px;flex-wrap:wrap;margin-bottom:12px;">';
+        var amounts = [10, 25, 50, 100, 250, 500];
+        for (var i = 0; i < amounts.length; i++) {
+            var amt = amounts[i];
+            var disabled = Player.gold < amt ? ' disabled style="opacity:0.4;padding:4px 10px;font-size:0.8rem;"' : ' style="padding:4px 10px;font-size:0.8rem;"';
+            html += '<button class="btn-medieval"' + disabled + ' onclick="(function(){ var r=Player.giveFamilyGold(\'' + npcId + '\',' + amt + '); UI.toast(r.message, r.success?\'success\':\'error\'); if(r.success){ UI.closeModal(); UI.openFamilyPanel(); } })()">' + amt + 'g</button>';
+        }
+        html += '</div>';
+        html += '<div style="display:flex;justify-content:center;gap:6px;align-items:center;">';
+        html += '<input type="number" id="familyGoldCustom" min="1" max="' + Player.gold + '" placeholder="Custom amount" style="width:120px;padding:4px;font-size:0.85rem;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:4px;">';
+        html += '<button class="btn-medieval" style="padding:4px 10px;font-size:0.8rem;" onclick="(function(){ var el=document.getElementById(\'familyGoldCustom\'); if(!el)return; var r=Player.giveFamilyGold(\'' + npcId + '\',parseInt(el.value)); UI.toast(r.message, r.success?\'success\':\'error\'); if(r.success){ UI.closeModal(); UI.openFamilyPanel(); } })()">Give</button>';
+        html += '</div></div>';
+        openModal('💰 Give Gold to ' + name, html);
+    }
+
+    function giveFamilyItemDialog(npcId, name) {
+        var html = '<div style="max-height:400px;overflow-y:auto;padding:6px;">';
+        html += '<p style="color:var(--parchment);margin-bottom:10px;">Select an item to give <strong>' + name + '</strong>:</p>';
+        var inv = Player.inventory || {};
+        var hasItems = false;
+        // Group by category
+        var categories = { military: '⚔️ Military', luxury: '✨ Luxury', food: '🍞 Food', materials: '🪵 Materials', medical: '🏥 Medical', other: '📦 Other' };
+        var grouped = {};
+        for (var resId in inv) {
+            if (!inv[resId] || inv[resId] <= 0) continue;
+            hasItems = true;
+            var resDef = null;
+            var _resKey = resId.toUpperCase();
+            if (typeof CONFIG !== 'undefined' && CONFIG.RESOURCE_TYPES && CONFIG.RESOURCE_TYPES[_resKey]) resDef = CONFIG.RESOURCE_TYPES[_resKey];
+            if (!resDef) { for (var _rk in CONFIG.RESOURCE_TYPES) { if (CONFIG.RESOURCE_TYPES[_rk].id === resId) { resDef = CONFIG.RESOURCE_TYPES[_rk]; break; } } }
+            var cat = (resDef && resDef.category) || 'other';
+            if (!grouped[cat]) grouped[cat] = [];
+            grouped[cat].push({ id: resId, name: resDef ? resDef.name : resId, icon: resDef ? (resDef.icon || '') : '', qty: inv[resId] });
+        }
+        if (!hasItems) {
+            html += '<p style="color:#888;">No items in your inventory.</p>';
+        } else {
+            for (var cat in grouped) {
+                var catLabel = categories[cat] || categories.other;
+                html += '<div style="margin-bottom:8px;">';
+                html += '<div style="font-size:0.8rem;font-weight:bold;color:var(--gold);margin-bottom:4px;">' + catLabel + '</div>';
+                for (var gi = 0; gi < grouped[cat].length; gi++) {
+                    var item = grouped[cat][gi];
+                    html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 6px;margin-bottom:2px;background:rgba(255,255,255,0.03);border-radius:3px;">';
+                    html += '<span style="font-size:0.82rem;">' + item.icon + ' ' + item.name + ' <span style="color:#888;">x' + item.qty + '</span></span>';
+                    html += '<button class="btn-action btn-small" style="padding:2px 8px;font-size:0.75rem;" onclick="(function(){ var r=Player.giveFamilyGift(\'' + npcId + '\',\'' + item.id + '\',1); UI.toast(r.message, r.success?\'success\':\'error\'); if(r.success){ UI.closeModal(); UI.openFamilyPanel(); } })()">Give 1</button>';
+                    html += '</div>';
+                }
+                html += '</div>';
+            }
+        }
+        html += '</div>';
+        openModal('📦 Give Item to ' + name, html);
     }
 
     // ── Spouse Interaction Panel ──
@@ -17846,6 +17965,22 @@ window.UI = (function () {
                 } else if (gc.outcome === 'injured') {
                     var gcColor = gc.severity === 'severe' ? 'var(--danger)' : '#e67e22';
                     resultHtml += '🩹 ' + gc.name + ' — <span style="color:' + gcColor + ';">' + gc.severity + ' injury</span><br>';
+                }
+            }
+            resultHtml += '</div>';
+        }
+
+        // Family companion casualties
+        if (result.familyCasualties && result.familyCasualties.length > 0) {
+            resultHtml += '<div style="padding:8px;background:rgba(200,50,50,0.15);border-radius:4px;font-size:0.8rem;margin-top:6px;">';
+            resultHtml += '<strong>👨‍👩‍👧‍👦 Family Casualties:</strong><br>';
+            for (var fci = 0; fci < result.familyCasualties.length; fci++) {
+                var fc = result.familyCasualties[fci];
+                if (fc.outcome === 'killed') {
+                    resultHtml += '💀 ' + fc.name + ' (' + fc.role + ') — <span style="color:var(--danger);">killed</span><br>';
+                } else if (fc.outcome === 'injured') {
+                    var fcColor = fc.severity === 'severe' ? 'var(--danger)' : '#e67e22';
+                    resultHtml += '🩹 ' + fc.name + ' (' + fc.role + ') — <span style="color:' + fcColor + ';">' + fc.severity + ' injury</span><br>';
                 }
             }
             resultHtml += '</div>';
@@ -24039,7 +24174,7 @@ window.UI = (function () {
         backToTownSelection,
         // Family Panel
         openFamilyPanel,
-        familyAction,
+        familyAction, giveFamilyGoldDialog, giveFamilyItemDialog,
         // Nobility
         openNobilityDialog,
         _nobilityRequestBuilding,

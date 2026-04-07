@@ -4,6 +4,30 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.60.0] - 2026-04-07
+
+### Added
+- **Family Travel Companions**: "Bring Family" checkbox in travel dialog lets family members in the same town travel with you. Lists who will join with encounter risk warning
+- **Family Encounter Casualties**: Family companions can be injured or killed during bandit/pirate encounters (same odds as player). Armor halves death chance; weapons reduce it 30%. Casualties displayed in encounter results
+- **Family AI System**: Family members intelligently spend gold and use items you give them:
+  - Seek hospital/clinic treatment when injured or ill (checks supplies, pays fees)
+  - Buy and upgrade weapons/armor based on social rank and wealth
+  - Buy horses when wealthy enough; nobles buy more eagerly
+  - Practice instruments and buy new ones based on rank preference
+  - Buy food and beverages for sustenance
+  - Noble family members (rank 3+) purchase luxury goods (wine, silk, jewelry)
+  - Children ages 8-17 build worker skill and may learn basic medicine
+- **Give Gold to Family**: 💰 Give Gold button on family panel with preset amounts (10/25/50/100/250/500g) and custom input. Boosts relationship
+- **Give Item to Family**: 📦 Give Item button with categorized picker from player inventory. Auto-equips weapons/armor, auto-learns instruments, auto-mounts horses
+- **Family Equipment Display**: Family member cards now show equipped weapon, armor, horse, and instrument skill tier
+- **Family Health Status**: Family cards display injury, illness, and treatment status
+
+### Fixed
+- Family AI food list referenced non-existent `cheese` resource (replaced with poultry, eggs, vegetables)
+- Family AI luxury list referenced non-existent `spices` and `fur` resources (replaced with perfume, fine_clothes, pearls)
+- Missing `travelCompanions` getter on Player API
+- Armor check in companion casualty code used wrong field path (`equipment.armor` → `armor`)
+
 ## [0.59.0] - 2026-04-07
 
 ### Added
