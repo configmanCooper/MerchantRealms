@@ -273,7 +273,9 @@ window.Renderer = (function () {
         const dz = Math.abs(camera.zoom - lastTerrainZoom);
         const dx = Math.abs(camera.x - lastTerrainCamX);
         const dy = Math.abs(camera.y - lastTerrainCamY);
-        if (dz > 0.005 || dx > 2 || dy > 2) {
+        // Perf opt 2: at low zoom, allow more camera drift before redrawing terrain
+        const panThreshold = camera.zoom < 1.0 ? 8 : 2;
+        if (dz > 0.005 || dx > panThreshold || dy > panThreshold) {
             terrainDirty = true;
         }
     }
@@ -575,6 +577,7 @@ window.Renderer = (function () {
         const ts = CONFIG.TILE_SIZE;
         const vb = getVisibleBounds();
         const radius = 12; // territory radius in tiles around each town
+        const lowZoom = camera.zoom < 1.0; // Perf opt: use arc fill instead of per-tile at low zoom
 
         for (const kingdom of kingdoms) {
             const kColor = kingdom.color || CONFIG.KINGDOM_COLORS[kingdom.id % CONFIG.KINGDOM_COLORS.length];
@@ -582,29 +585,40 @@ window.Renderer = (function () {
 
             ctx.fillStyle = colorWithAlpha(kColor, mapMode === 1 ? 0.18 : 0.10);
 
-            const terrainWidth = worldData.gridCols || Math.floor(CONFIG.WORLD_WIDTH / ts);
-            const terrainHeight = worldData.gridRows || Math.floor(CONFIG.WORLD_HEIGHT / ts);
+            if (lowZoom) {
+                // Perf opt 1: single arc fill per town instead of per-tile fillRect
+                for (const town of kTowns) {
+                    const tr = (radius + Math.floor((town.population || 100) / 80)) * ts;
+                    if (!isVisible(town.x, town.y, tr + 100)) continue;
+                    ctx.beginPath();
+                    ctx.arc(town.x, town.y, tr, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            } else {
+                const terrainWidth = worldData.gridCols || Math.floor(CONFIG.WORLD_WIDTH / ts);
+                const terrainHeight = worldData.gridRows || Math.floor(CONFIG.WORLD_HEIGHT / ts);
 
-            for (const town of kTowns) {
-                const tcx = Math.floor(town.x / ts);
-                const tcy = Math.floor(town.y / ts);
-                const r = radius + Math.floor((town.population || 100) / 80);
+                for (const town of kTowns) {
+                    const tcx = Math.floor(town.x / ts);
+                    const tcy = Math.floor(town.y / ts);
+                    const r = radius + Math.floor((town.population || 100) / 80);
 
-                const startC = Math.max(0, tcx - r);
-                const endC = Math.min(terrainWidth - 1, tcx + r);
-                const startR = Math.max(0, tcy - r);
-                const endR = Math.min(terrainHeight - 1, tcy + r);
+                    const startC = Math.max(0, tcx - r);
+                    const endC = Math.min(terrainWidth - 1, tcx + r);
+                    const startR = Math.max(0, tcy - r);
+                    const endR = Math.min(terrainHeight - 1, tcy + r);
 
-                for (let row = startR; row <= endR; row++) {
-                    for (let col = startC; col <= endC; col++) {
-                        const px = col * ts;
-                        const py = row * ts;
-                        if (px < vb.left - ts || px > vb.right + ts ||
-                            py < vb.top - ts || py > vb.bottom + ts) continue;
+                    for (let row = startR; row <= endR; row++) {
+                        for (let col = startC; col <= endC; col++) {
+                            const px = col * ts;
+                            const py = row * ts;
+                            if (px < vb.left - ts || px > vb.right + ts ||
+                                py < vb.top - ts || py > vb.bottom + ts) continue;
 
-                        const dist = Math.sqrt((col - tcx) ** 2 + (row - tcy) ** 2);
-                        if (dist <= r) {
-                            ctx.fillRect(px, py, ts, ts);
+                            const dist = Math.sqrt((col - tcx) ** 2 + (row - tcy) ** 2);
+                            if (dist <= r) {
+                                ctx.fillRect(px, py, ts, ts);
+                            }
                         }
                     }
                 }
