@@ -31596,15 +31596,15 @@
                 logFinance(-goldLost2, 'encounter', 'Negotiated with ' + enemyName);
 
                 var goodsPct = CONFIG.ENCOUNTER_NEGOTIATE_GOODS_PCT || 0.50;
+                // Lose half the quantity of each goods type (not half the types)
                 var invKeys = Object.keys(player.inventory).filter(function(k) { return player.inventory[k] > 0; });
-                // Randomly select half the inventory types to lose
-                var shuffled = rng.shuffle ? rng.shuffle(invKeys.slice()) : invKeys.sort(function() { return rng.random() - 0.5; });
-                var typesToLose = Math.ceil(shuffled.length * goodsPct);
-                for (var ni = 0; ni < typesToLose; ni++) {
-                    var nkey = shuffled[ni];
-                    var loseQty = player.inventory[nkey];
-                    result.goodsLost[nkey] = loseQty;
-                    player.inventory[nkey] = 0;
+                for (var ni = 0; ni < invKeys.length; ni++) {
+                    var nkey = invKeys[ni];
+                    var loseQty = Math.ceil(player.inventory[nkey] * goodsPct);
+                    if (loseQty > 0) {
+                        result.goodsLost[nkey] = loseQty;
+                        player.inventory[nkey] -= loseQty;
+                    }
                 }
 
                 result.success = true;

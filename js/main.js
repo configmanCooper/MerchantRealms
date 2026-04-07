@@ -137,6 +137,21 @@ window.Game = (function () {
             });
         }
 
+        // Bind modal close button early so it works on the title screen
+        var btnCloseModal = document.getElementById('btnCloseModal');
+        if (btnCloseModal) {
+            btnCloseModal.addEventListener('click', function () {
+                var mo = document.getElementById('modalOverlay');
+                if (mo) mo.classList.add('hidden');
+            });
+        }
+        var modalOverlayEl = document.getElementById('modalOverlay');
+        if (modalOverlayEl) {
+            modalOverlayEl.addEventListener('click', function (e) {
+                if (e.target === modalOverlayEl) modalOverlayEl.classList.add('hidden');
+            });
+        }
+
         // Load Game button (replaces old Continue)
         const btnLoad = document.getElementById('btnLoadGame');
         if (btnLoad) {
