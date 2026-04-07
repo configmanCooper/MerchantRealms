@@ -16078,8 +16078,8 @@ window.UI = (function () {
             hasItems = true;
             var resDef = null;
             var _resKey = resId.toUpperCase();
-            if (typeof CONFIG !== 'undefined' && CONFIG.RESOURCE_TYPES && CONFIG.RESOURCE_TYPES[_resKey]) resDef = CONFIG.RESOURCE_TYPES[_resKey];
-            if (!resDef) { for (var _rk in CONFIG.RESOURCE_TYPES) { if (CONFIG.RESOURCE_TYPES[_rk].id === resId) { resDef = CONFIG.RESOURCE_TYPES[_rk]; break; } } }
+            if (typeof RESOURCE_TYPES !== 'undefined' && RESOURCE_TYPES[_resKey]) resDef = RESOURCE_TYPES[_resKey];
+            if (!resDef && typeof RESOURCE_TYPES !== 'undefined') { for (var _rk in RESOURCE_TYPES) { if (RESOURCE_TYPES[_rk].id === resId) { resDef = RESOURCE_TYPES[_rk]; break; } } }
             var cat = (resDef && resDef.category) || 'other';
             if (!grouped[cat]) grouped[cat] = [];
             grouped[cat].push({ id: resId, name: resDef ? resDef.name : resId, icon: resDef ? (resDef.icon || '') : '', qty: inv[resId] });

@@ -3098,7 +3098,9 @@
         // If route includes sea segments, delegate to travelBySea for proper ship handling
         if (isSea && !isOffroad && route.length === 1 && route[0].type === 'sea') {
             // Pure sea route — use dedicated sea travel with ship checks, blockades, etc.
-            return travelBySea(townId, options.seaMode === 'sea_passage' ? { paid: true } : {});
+            var _seaOpts = options.seaMode === 'sea_passage' ? { paid: true } : {};
+            if (options.bringFamily) _seaOpts.bringFamily = true;
+            return travelBySea(townId, _seaOpts);
         }
 
         // Handle paid sea passage for mixed routes (check gold before committing)
@@ -5760,6 +5762,7 @@
         player._campPromptNeeded = false;
         player.travelRestBonus = false;
         player.travelOrigin = null;
+        player.travelCompanions = [];
     }
 
     function travelToCoords(destX, destY) {

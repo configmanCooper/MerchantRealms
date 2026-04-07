@@ -27322,7 +27322,7 @@
             if (!p.familySimulated) p.familySimulated = true;
 
             // 1. SMART TRADING — buy underpriced goods, sell overpriced (better than NPC merchants)
-            if ((p.gold || 0) > 5) {
+            if ((p.gold || 0) > 5 && town.market.prices && town.market.supply) {
                 const goodIds = Object.keys(town.market.prices);
                 // Try to find a good deal (check up to 5 goods)
                 for (var gi = 0; gi < Math.min(5, goodIds.length); gi++) {
@@ -27346,6 +27346,7 @@
             }
 
             // Sell when profitable (lower threshold than NPC merchants — 120% vs 130%)
+            if (town.market.prices && town.market.supply) {
             for (const resId in p.npcMerchantInventory) {
                 if ((p.npcMerchantInventory[resId] || 0) <= 0) continue;
                 const price = town.market.prices[resId] || 1;
@@ -27359,6 +27360,7 @@
                         collectTradeTax(town.kingdomId, Math.floor(price * qty), resId);
                     }
                 }
+            }
             }
 
             // 2. JOB SEEKING — if unemployed and not a merchant, try to find work

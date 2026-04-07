@@ -27,6 +27,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - Family AI luxury list referenced non-existent `spices` and `fur` resources (replaced with perfume, fine_clothes, pearls)
 - Missing `travelCompanions` getter on Player API
 - Armor check in companion casualty code used wrong field path (`equipment.armor` → `armor`)
+- **`travelTo()` dropped `bringFamily` on pure sea routes** — family companions were lost when travel delegated to `travelBySea()`
+- **Stale travel companions after stopping travel** — `cleanupTravelState()` now clears `travelCompanions` array
+- **Give Item dialog used wrong resource lookup** — `CONFIG.RESOURCE_TYPES` → `RESOURCE_TYPES` (standalone global)
+- **Family AI null safety** — added guards for `town.market.prices`/`supply` before trading
 
 ## [0.59.0] - 2026-04-07
 
