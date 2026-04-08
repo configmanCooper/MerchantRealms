@@ -27,6 +27,29 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - **Street Goods Request**: Request goods not in local market — base 20% chance (boosted by skills), RNG pricing 50-500% above market, quantity 1-10, category penalties for military/banned/horses, 3-day cooldown (1-day with skill), shows calculated chance breakdown on selection
 - **Sell to Crown Tab**: New tab in Kingdom Orders showing goods the kingdom urgently needs. Crown price = market × urgency multiplier (up to 1.5×). Color-coded urgency badges, sell buttons (1/5/10/25/50/All). Disabled when kingdom treasury < 2000g
 - **Smart Building Input Balancer**: All building transfers and auto-buy purchases now use weight-based ratios matching the building's recipe needs. Accounts for existing input storage to maintain balanced ratios
+- **Ship Sprite for Sea Caravans**: Sea caravans now display an animated sailing ship (blue hull, mast, billowing sail, bow flag, wake lines) instead of the land wagon sprite. Zoom labels show ⚓ for sea vs 📦 for land
+- **Outpost Management System**: Comprehensive outpost management UI accessible from bottom panel ⛺ button:
+  - Outpost hub listing all outposts with status, buildings, staff, and cost summary
+  - Click any outpost for detailed management: overview, staff, buildings, upgrades, infrastructure
+  - Wall upgrades (levels 0-3) with scaling gold/stone/wood costs
+  - Dock building for coastal outposts (water within 3 tiles) — makes outpost a port
+  - Road building to connect outposts to towns/other outposts (cost scales with distance)
+  - Sea route building from port outposts to other port towns
+  - "Found New Outpost" placement mode — right-click map to place (validates offroad reachability)
+  - Cartographer skill provides 25% discount on all infrastructure
+  - All roads/sea routes auto-integrate into the pathfinding/travel network
+- **Off-Sea-Route Travel**: Free sailing in open water without established sea routes:
+  - Right-click water tiles to sail from any port town with an owned ship
+  - Ship selection dialog when multiple ships available at port
+  - 50% speed of normal sea routes, boosted by skills (navigator +20%, cartographer +10%, admiral +10%)
+  - Ship type speed and condition affect travel speed
+  - Waypoint chaining: redirect course by right-clicking more water while sailing
+  - Pirate risk based on average of port's sea routes +10% modifier
+  - Landing system: right-click coastal tiles with terrain-based risk (grass/sand 0%, forest 10%, hills 30%, mountains 60%)
+  - Landing skill bonuses reduce risk; failed landings damage ship hull 10-30%
+  - Shipwreck mechanics: death (60% base, reducible by skills) vs wash ashore with illness, gold/inventory loss
+  - Player ship sprite (gold-tinted sailing ship) during off-sea travel
+  - Dramatic shipwreck result screens
 
 ### Changed
 - **Kingdom Reputation Overhaul**: Removed passive +0.1 per trade. Town rep spillover replaced with monthly modifier system (±25 cap, delta-only application prevents stacking). Sell-to-kingdom military war bonus reduced from +2 to +0.1
@@ -43,6 +66,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - Orphan `reach_rep_40` tooltip reference (replaced by `gain_kingdom_rep`/`gain_town_rep`)
 - **Multi-product buildings ignoring selected recipe**: Both `getBuildingStatus()` and `tickBuildings()` used default recipe (`bt.produces`/`bt.consumes`) instead of player-selected `currentProduct`. All 15 multi-recipe building types now correctly produce the selected product
 - Input-only filter on building detail blocking deposit of consumed goods (e.g., wood to smelter)
+- **Quarantine doctor persuasion double-counting**: When origin town = quarantine town, both origin and destination clinic bonuses fired for the same building. Now deduplicates
+- **Personal guards stuck in old town**: Guards now sync to player location on both standard and offroad arrival via `_moveGuardsToPlayer()` helper
+- **World Analytics Active Wars showing ?**: Fixed `kingdomA`/`kingdomB` vs `attackerId`/`defenderId` field mismatch
+- **Ship building not working**: `buyShip()` now uses player inventory first before buying from market; build button routes through `UI.buyShip()` for toast feedback; `getShipPrice()` subtracts owned materials from cost
+- **Music not resuming on unmute**: `toggleMute()` and `setVolume()` now call `.play()` when restoring paused audio
+- **Ship assignedOffSea flag not cleared**: `cleanupTravelState()` now releases ship from off-sea assignment when travel is stopped/canceled
 
 ### Removed
 - `first_sale` and `first_purchase` achievements (trivial/redundant)
