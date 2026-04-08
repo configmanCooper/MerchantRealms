@@ -369,6 +369,8 @@ var Guidance = (function () {
         compare_prices: 'Click the Trade button in the action bar to open the market. Prices you have seen in other towns will be shown for comparison.',
         earn_500g: 'Keep trading goods between towns using the Trade button — buy low and sell high. Jobs and selling crafted goods also help build wealth.',
         reach_rep_40: 'Reputation increases by trading, completing jobs, socializing with townsfolk, and completing petitions. Check your rep in the ledger.',
+        gain_kingdom_rep: 'Kingdom reputation grows by trading in that kingdom, completing jobs, petitions, and socializing. Check your current rep in the rank progress section of the ledger.',
+        gain_town_rep: 'Town reputation grows by trading locally, doing jobs, socializing with townsfolk, and completing tasks in that town. Click your town name in the ledger to see town details.',
         get_citizenship: 'Open the Character menu and look at your rank progress. Once all requirements are met, click Promote to advance to Citizen.',
         learn_skill: 'Click the Skills button in the action bar. You need at least 3 skill points. Choose a skill from the skill tree and unlock it.',
         talk_info: 'Click your town name to open the town view, then click View Townspeople to see NPCs. Click an NPC to interact. You can also zoom in on the map and click NPCs directly.',
@@ -469,14 +471,14 @@ var Guidance = (function () {
         },
         {
             id: 'earn_100g', category: 'gold',
-            minRank: 0, maxRank: 0,
+            minRank: 0, maxRank: 1,
             text: function () { return '🪙 Have 100 gold'; },
             check: function (p) { return p.gold >= 100; },
             priority: function (p) { return p.gold < 100 ? 85 : 0; }
         },
         {
             id: 'first_trade', category: 'trade',
-            minRank: 0, maxRank: 0,
+            minRank: 0, maxRank: 1,
             text: function (p) {
                 var good = _getCheapGood(p);
                 return good ? '📦 Buy some ' + good + ' (cheap here!)' : '📦 Complete your first trade';
@@ -547,19 +549,48 @@ var Guidance = (function () {
             priority: function (p) { return p.gold >= 100 && p.gold < 500 ? 65 : 0; }
         },
         {
-            id: 'reach_rep_40', category: 'reputation',
-            minRank: 0, maxRank: 0,
-            text: function () { return '⭐ Reach 40 reputation in a kingdom'; },
+            id: 'gain_kingdom_rep', category: 'reputation',
+            minRank: 0, maxRank: 2,
+            text: function (p) {
+                var kId = p.citizenshipKingdomId;
+                var kName = _getKingdomName(kId);
+                var current = (p.reputation && kId) ? Math.floor(p.reputation[kId] || 0) : 0;
+                return '⭐ Gain 5 kingdom reputation in ' + kName + ' (currently ' + current + ')';
+            },
             check: function (p) {
-                if (!p.reputation) return false;
-                for (var k in p.reputation) { if (p.reputation[k] >= 40) return true; }
-                return false;
+                var kId = p.citizenshipKingdomId;
+                if (!kId || !p.reputation) return false;
+                var current = p.reputation[kId] || 0;
+                var baseline = (p._guidanceBaseline && p._guidanceBaseline.kingdomRep) || 0;
+                return current >= baseline + 5;
             },
             priority: function (p) {
-                if (!p.reputation) return 45;
-                var max = 0;
-                for (var k in p.reputation) { if (p.reputation[k] > max) max = p.reputation[k]; }
-                return max < 40 ? 50 : 0;
+                var kId = p.citizenshipKingdomId;
+                if (!kId) return 0;
+                var current = (p.reputation && p.reputation[kId]) || 0;
+                if (current < 100) return 50;
+                return 0;
+            }
+        },
+        {
+            id: 'gain_town_rep', category: 'town_reputation',
+            minRank: 0, maxRank: 2,
+            text: function (p) {
+                var tName = _getTownName(p.townId);
+                var current = (p.townReputation && p.townId) ? Math.floor(p.townReputation[p.townId] || 50) : 50;
+                return '🏘️ Gain 10 town reputation in ' + tName + ' (currently ' + current + ')';
+            },
+            check: function (p) {
+                if (!p.townId || !p.townReputation) return false;
+                var current = p.townReputation[p.townId] || 50;
+                var baseline = (p._guidanceBaseline && p._guidanceBaseline.townRep) || 50;
+                return current >= baseline + 10;
+            },
+            priority: function (p) {
+                if (!p.townId) return 0;
+                var current = (p.townReputation && p.townReputation[p.townId]) || 50;
+                if (current < 90) return 45;
+                return 0;
             }
         },
         {
@@ -1008,6 +1039,8 @@ var Guidance = (function () {
                 guildCrafts: (p.stats && p.stats.guildCrafts) || 0,
                 achievements: _getAchievementCount(p),
                 buildingLevels: totalLevels,
+                kingdomRep: (p.reputation && p.citizenshipKingdomId) ? (p.reputation[p.citizenshipKingdomId] || 0) : 0,
+                townRep: (p.townReputation && p.townId) ? (p.townReputation[p.townId] || 50) : 50,
                 _favorCheckDay: currentDay
             };
         }
@@ -1103,6 +1136,8 @@ var Guidance = (function () {
         var totalLevels = 0;
         if (p.buildings) { for (var i = 0; i < p.buildings.length; i++) totalLevels += (p.buildings[i].level || 1); }
         b.buildingLevels = totalLevels;
+        b.kingdomRep = (p.reputation && p.citizenshipKingdomId) ? (p.reputation[p.citizenshipKingdomId] || 0) : 0;
+        b.townRep = (p.townReputation && p.townId) ? (p.townReputation[p.townId] || 50) : 50;
         if (taskId === 'ask_npc_favor') {
             try { b._favorCheckDay = Engine.getDay(); } catch(e) {}
         }
