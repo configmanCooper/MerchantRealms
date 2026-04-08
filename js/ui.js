@@ -18868,7 +18868,7 @@ window.UI = (function () {
                 var _av = _activeVotes[_avi];
                 var _avDays = Math.max(0, (_av.deadlineDay || 0) - day);
                 html += '<button class="btn-medieval" onclick="UI.openVotingDialog(\'' + _av.id + '\')" style="display:block;width:100%;text-align:left;padding:6px 10px;margin-bottom:4px;font-size:0.78rem;">';
-                html += '📜 ' + (_av.title || 'Decision') + ' <span style="color:#aaa;font-size:0.7rem;">(' + _avDays + 'd left)</span>';
+                html += '📜 ' + escapeHtml(_av.title || 'Decision') + ' <span style="color:#aaa;font-size:0.7rem;">(' + _avDays + 'd left)</span>';
                 html += '</button>';
             }
             html += '</div>';
@@ -18884,12 +18884,12 @@ window.UI = (function () {
             var _playerAtFeast = Player.townId === _activeFeast.townId && !Player.traveling;
             html += '<div style="background:rgba(200,150,50,0.12);border:1px solid rgba(200,150,50,0.3);border-radius:8px;padding:10px;margin-bottom:10px;">';
             html += '<h3 style="margin:0 0 6px 0;font-size:0.9rem;color:#f0c040;">🎪 Royal Feast</h3>';
-            html += '<div style="font-size:0.78rem;color:#ccc;">A royal feast is being held in <strong>' + _feastTownName + '</strong>!</div>';
-            html += '<div style="font-size:0.72rem;color:#aaa;margin-top:2px;">' + _feastDaysLeft + ' day' + (_feastDaysLeft !== 1 ? 's' : '') + ' remaining • Actions left today: ' + (_activeFeast.playerActionsToday || 0) + '/3</div>';
+            html += '<div style="font-size:0.78rem;color:#ccc;">A royal feast is being held in <strong>' + escapeHtml(_feastTownName) + '</strong>!</div>';
+            html += '<div style="font-size:0.72rem;color:#aaa;margin-top:2px;">' + _feastDaysLeft + ' day' + (_feastDaysLeft !== 1 ? 's' : '') + ' remaining • Actions used today: ' + (_activeFeast._playerActionsToday || 0) + '/3</div>';
             if (_playerAtFeast) {
                 html += '<button class="btn-medieval" onclick="UI.openFeastDialog(\'' + citizenKingdomId + '\')" style="font-size:0.78rem;padding:6px 14px;margin-top:6px;background:rgba(200,150,50,0.3) !important;border-color:rgba(200,150,50,0.5) !important;">🍷 Attend Feast</button>';
             } else {
-                html += '<div style="font-size:0.72rem;color:#e67e22;margin-top:4px;">📍 You must travel to ' + _feastTownName + ' to attend.</div>';
+                html += '<div style="font-size:0.72rem;color:#e67e22;margin-top:4px;">📍 You must travel to ' + escapeHtml(_feastTownName) + ' to attend.</div>';
             }
             html += '</div>';
         }
@@ -19172,9 +19172,9 @@ window.UI = (function () {
 
         // Decision description
         html += '<div style="background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.3);border-radius:8px;padding:12px;margin-bottom:10px;">';
-        html += '<div style="font-size:0.9rem;font-weight:bold;color:var(--gold);">📜 ' + (vote.title || 'Kingdom Decision') + '</div>';
-        html += '<div style="font-size:0.8rem;color:#ccc;margin-top:4px;">' + (vote.description || '') + '</div>';
-        html += '<div style="font-size:0.75rem;color:#aaa;margin-top:6px;">⏱️ ' + daysLeft + ' day' + (daysLeft !== 1 ? 's' : '') + ' remaining • Kingdom: ' + kName + '</div>';
+        html += '<div style="font-size:0.9rem;font-weight:bold;color:var(--gold);">📜 ' + escapeHtml(vote.title || 'Kingdom Decision') + '</div>';
+        html += '<div style="font-size:0.8rem;color:#ccc;margin-top:4px;">' + escapeHtml(vote.description || '') + '</div>';
+        html += '<div style="font-size:0.75rem;color:#aaa;margin-top:6px;">⏱️ ' + daysLeft + ' day' + (daysLeft !== 1 ? 's' : '') + ' remaining • Kingdom: ' + escapeHtml(kName) + '</div>';
         html += '</div>';
 
         // Vote tally bar
@@ -19199,7 +19199,7 @@ window.UI = (function () {
             var voter = voters[vi2];
             var person = null;
             try { person = Engine.getPerson(voter.id); } catch (e) {}
-            var name = person ? (person.firstName + ' ' + person.lastName) : 'Unknown';
+            var name = person ? (escapeHtml(person.firstName) + ' ' + escapeHtml(person.lastName)) : 'Unknown';
             var rankLabel = _weightLabels[voter.rank] || 'Noble';
             var weight = _weightValues[voter.rank] || 1;
             var voteIcon = voter.vote === 'yes' ? '✅' : voter.vote === 'no' ? '❌' : '⏳';
@@ -19236,7 +19236,7 @@ window.UI = (function () {
         html += '</div>';
 
         var footerHtml = '<button class="btn-medieval" onclick="UI.closeModal();UI.openNobilityDialog();">Back to Nobility</button>';
-        openModal('🗳️ Council Vote — ' + (vote.title || 'Decision'), html, footerHtml);
+        openModal('🗳️ Council Vote — ' + escapeHtml(vote.title || 'Decision'), html, footerHtml);
     }
 
     function _tryInfluenceVote(voteId, noblegId) {
@@ -19265,8 +19265,8 @@ window.UI = (function () {
             try { var k = Engine.getKingdom(v.kingdomId); kName = k ? k.name : ''; } catch (e) {}
             var daysLeft = Math.max(0, (v.deadlineDay || 0) - (Engine.getDay ? Engine.getDay() : 0));
             html += '<button class="btn-medieval" onclick="UI.openVotingDialog(\'' + v.id + '\')" style="display:block;width:100%;text-align:left;padding:8px 12px;margin-bottom:6px;">';
-            html += '<div style="font-size:0.82rem;font-weight:bold;">' + (v.title || 'Decision') + '</div>';
-            html += '<div style="font-size:0.72rem;color:#aaa;">' + kName + ' • ' + daysLeft + ' day' + (daysLeft !== 1 ? 's' : '') + ' left</div>';
+            html += '<div style="font-size:0.82rem;font-weight:bold;">' + escapeHtml(v.title || 'Decision') + '</div>';
+            html += '<div style="font-size:0.72rem;color:#aaa;">' + escapeHtml(kName) + ' • ' + daysLeft + ' day' + (daysLeft !== 1 ? 's' : '') + ' left</div>';
             html += '</button>';
         }
         openModal('🗳️ Active Council Votes', html, '<button class="btn-medieval" onclick="UI.closeModal();">Close</button>');
@@ -19294,7 +19294,7 @@ window.UI = (function () {
 
         // Feast header
         html += '<div style="background:linear-gradient(135deg,rgba(200,150,50,0.15),rgba(200,150,50,0.05));border:1px solid rgba(200,150,50,0.3);border-radius:8px;padding:12px;margin-bottom:10px;">';
-        html += '<div style="font-size:0.9rem;font-weight:bold;color:#f0c040;">🎪 Royal Feast in ' + feastTown + '</div>';
+        html += '<div style="font-size:0.9rem;font-weight:bold;color:#f0c040;">🎪 Royal Feast in ' + escapeHtml(feastTown) + '</div>';
         html += '<div style="font-size:0.78rem;color:#ccc;margin-top:4px;">' + daysLeft + ' day' + (daysLeft !== 1 ? 's' : '') + ' remaining • ' + actionsLeft + ' action' + (actionsLeft !== 1 ? 's' : '') + ' left today</div>';
         html += '</div>';
 
@@ -19311,7 +19311,7 @@ window.UI = (function () {
                 var attRank = 0;
                 if (att.socialRank) for (var _rk in att.socialRank) { if (att.socialRank[_rk] > attRank) attRank = att.socialRank[_rk]; }
                 var rankIcon = attRank >= 7 ? '👑' : attRank >= 6 ? '📜' : attRank >= 5 ? '⚔️' : '🏛️';
-                html += '<span style="font-size:0.72rem;padding:3px 8px;border-radius:4px;background:rgba(200,150,50,0.1);border:1px solid rgba(200,150,50,0.2);cursor:pointer;" onclick="UI.showPersonDetail(Engine.getPerson(\'' + att.id + '\'))">' + rankIcon + ' ' + att.firstName + ' ' + att.lastName + '</span>';
+                html += '<span style="font-size:0.72rem;padding:3px 8px;border-radius:4px;background:rgba(200,150,50,0.1);border:1px solid rgba(200,150,50,0.2);cursor:pointer;" onclick="UI.showPersonDetail(Engine.getPerson(\'' + att.id + '\'))">' + rankIcon + ' ' + escapeHtml(att.firstName) + ' ' + escapeHtml(att.lastName) + '</span>';
             }
             html += '</div></div>';
         }
@@ -19356,7 +19356,7 @@ window.UI = (function () {
             html += '<div style="font-size:0.78rem;font-weight:bold;color:#f0c040;margin-bottom:4px;">📰 Feast Events</div>';
             html += '<div style="max-height:120px;overflow-y:auto;">';
             for (var ei = feast.events.length - 1; ei >= Math.max(0, feast.events.length - 8); ei--) {
-                html += '<div style="font-size:0.72rem;color:#bbb;margin-bottom:3px;padding:3px 6px;background:rgba(0,0,0,0.15);border-radius:4px;">' + feast.events[ei] + '</div>';
+                html += '<div style="font-size:0.72rem;color:#bbb;margin-bottom:3px;padding:3px 6px;background:rgba(0,0,0,0.15);border-radius:4px;">' + escapeHtml(feast.events[ei]) + '</div>';
             }
             html += '</div></div>';
         }
@@ -19382,7 +19382,7 @@ window.UI = (function () {
 
         var html = '';
         html += '<div style="font-size:0.82rem;color:#ccc;margin-bottom:10px;">';
-        html += 'Offer a loan to <strong>' + noble.firstName + ' ' + noble.lastName + '</strong>.<br>';
+        html += 'Offer a loan to <strong>' + escapeHtml(noble.firstName) + ' ' + escapeHtml(noble.lastName) + '</strong>.<br>';
         html += 'Status: ' + stressLabel + '<br>';
         html += 'Loans come with 15% interest. Indebted nobles are easier to influence in council votes.';
         html += '</div>';
@@ -19407,13 +19407,13 @@ window.UI = (function () {
             for (var li = 0; li < existingLoans.length; li++) {
                 var loan = existingLoans[li];
                 html += '<div style="font-size:0.72rem;color:#bbb;padding:3px 0;">';
-                html += loan.nobleName + ': ' + loan.remainingAmount + 'g remaining (issued day ' + loan.issuedDay + ')';
+                html += escapeHtml(loan.nobleName) + ': ' + loan.remainingAmount + 'g remaining (issued day ' + loan.issuedDay + ')';
                 html += '</div>';
             }
             html += '</div>';
         }
 
-        openModal('💰 Noble Loan — ' + noble.firstName, html, '<button class="btn-medieval" onclick="UI.closeModal();">Close</button>');
+        openModal('💰 Noble Loan — ' + escapeHtml(noble.firstName), html, '<button class="btn-medieval" onclick="UI.closeModal();">Close</button>');
     }
 
     function openSchemesDialog() {

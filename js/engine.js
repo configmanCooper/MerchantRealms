@@ -32782,7 +32782,7 @@
                 }, category);
                 k.taxRate = newTaxRate;
                 // Fund festival in unhappiest town
-                var kTowns = (k.territories || []).map(function(tid) { return findTown(tid); }).filter(Boolean);
+                var kTowns = Array.from(k.territories || []).map(function(tid) { return findTown(tid); }).filter(Boolean);
                 if (kTowns.length > 0) {
                     kTowns.sort(function(a, b) { return (a.happiness || 50) - (b.happiness || 50); });
                     var unhappiestTown = kTowns[0];
