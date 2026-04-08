@@ -14818,12 +14818,8 @@
             player.gold = Math.floor(player.gold * 1.10);
         }
 
-        // Diplomatic quirk — +10 reputation
-        if (quirks.includes('diplomatic')) {
-            for (const kId in player.reputation) {
-                player.reputation[kId] = Math.min(100, (player.reputation[kId] || 50) + 10);
-            }
-        }
+        // Diplomatic quirk — (kingdom rep boost removed — quirks no longer directly set kingdom rep)
+        // diplomatic quirk now only provides its other benefits
 
         // Manipulative quirk — -10 starting relationships
         if (quirks.includes('manipulative')) {
@@ -14845,12 +14841,7 @@
             }
         }
 
-        // Devout quirk — higher reputation (legacy support)
-        if (quirks.includes('devout')) {
-            for (const kId in player.reputation) {
-                player.reputation[kId] = Math.min(100, (player.reputation[kId] || 50) + 10);
-            }
-        }
+        // Devout quirk — (kingdom rep boost removed — quirks no longer directly set kingdom rep)
 
         // Warmth effect on relationships
         if (sp.warmth >= 70) {
@@ -16727,6 +16718,7 @@
             ships: JSON.parse(JSON.stringify(player.ships)),
             horses: JSON.parse(JSON.stringify(player.horses || [])),
             reputation: { ...player.reputation },
+            _townRepKingdomMod: { ...(player._townRepKingdomMod || {}) },
             notoriety: player.notoriety,
             personalGuards: (player.guards || []).length,
             guards: JSON.parse(JSON.stringify(player.guards || [])),
@@ -17055,6 +17047,7 @@
         }
         player.horses = data.horses || [];
         player.reputation = data.reputation || {};
+        player._townRepKingdomMod = data._townRepKingdomMod || {};
         player.notoriety = data.notoriety || 0;
         player.personalGuards = data.personalGuards || 0;
         player.encounterPending = null;
@@ -18698,28 +18691,15 @@
             player.notoriety = Math.max(0, player.notoriety - CONFIG.NOTORIETY_DECAY_PER_DAY);
         }
 
-        // Reputation adjustments based on trade volume in kingdom
-        for (const log of player.tradeLog) {
-            if (Engine.getDay() - log.day === 0) {
-                const town = Engine.findTown(log.townId);
-                if (town) {
-                    const kId = town.kingdomId;
-                    let repGain = 0.1;
-                    if (hasSkill('political_connections')) repGain *= 1.25;
-                    repGain *= (player.spouseRepMod || 1.0);
-                    player.reputation[kId] = Math.min(100,
-                        (player.reputation[kId] || 50) + repGain
-                    );
-                }
-            }
-        }
+        // (trade rep gain removed — trading no longer passively boosts kingdom rep)
 
         // Tick relationship system
         tickRelationships();
 
-        // Monthly: town reputation spills over into kingdom reputation
-        // Each 10 above 50 → +1 kingdom rep, each 10 below 50 → -1 kingdom rep
+        // Monthly: recalculate town-reputation → kingdom-reputation MODIFIER
+        // This is NOT cumulative — it replaces the previous modifier value (max +25)
         if (Engine.getDay() > 0 && Engine.getDay() % 30 === 0 && player.townReputation) {
+            if (!player._townRepKingdomMod) player._townRepKingdomMod = {};
             var _townRepByKingdom = {};
             var towns = Engine.getTowns();
             for (var _tri = 0; _tri < towns.length; _tri++) {
@@ -18734,17 +18714,15 @@
                 var _reps = _townRepByKingdom[_kId];
                 var _totalDelta = 0;
                 for (var _tii = 0; _tii < _reps.length; _tii++) {
-                    var _diff = _reps[_tii] - 50;
-                    _totalDelta += Math.floor(_diff / 10);
+                    _totalDelta += Math.floor((_reps[_tii] - 50) / 10);
                 }
-                if (_totalDelta !== 0) {
-                    var _avgDelta = _totalDelta / _reps.length;
-                    // Apply rounded average: positive towns boost, negative towns harm
-                    var _repChange = _avgDelta > 0 ? Math.floor(_avgDelta) : Math.ceil(_avgDelta);
-                    if (_repChange !== 0) {
-                        player.reputation[_kId] = Math.max(0, Math.min(100, (player.reputation[_kId] || 50) + _repChange));
-                    }
+                var _newMod = Math.max(-25, Math.min(25, Math.round(_totalDelta / _reps.length)));
+                var _oldMod = player._townRepKingdomMod[_kId] || 0;
+                var _diff = _newMod - _oldMod;
+                if (_diff !== 0) {
+                    player.reputation[_kId] = Math.max(0, Math.min(100, (player.reputation[_kId] || 50) + _diff));
                 }
+                player._townRepKingdomMod[_kId] = _newMod;
             }
         }
 
@@ -19549,7 +19527,7 @@
         // Military goods during war bonuses
         if (res && res.category === 'military' && kingdom.atWar && kingdom.atWar.size > 0) {
             player.hasSuppliedMilitary = true;
-            player.reputation[kingdomId] = Math.min(100, (player.reputation[kingdomId] || 50) + 2);
+            player.reputation[kingdomId] = Math.min(100, (player.reputation[kingdomId] || 50) + 0.1);
         }
 
         // Track gold earned in kingdom
@@ -35868,11 +35846,7 @@
                 player.skills.legendary_commander = true;
                 player.skills.battle_scarred = true;
                 player.skills.war_council = true;
-                // Permanent rep boost
-                var kingdoms = Engine.getKingdoms();
-                for (var ki = 0; ki < kingdoms.length; ki++) {
-                    player.reputation[kingdoms[ki].id] = Math.min(100, (player.reputation[kingdoms[ki].id] || 50) + 50);
-                }
+                // (kingdom rep boost removed — feats no longer directly grant kingdom rep)
                 Engine.logEvent(player.fullName + ' retires as Hero of Ages! Legendary status achieved.');
                 grantXP(200, 'hero of ages');
             }
@@ -35917,13 +35891,7 @@
                 player.stats.totalGoldEarned += royalty;
                 s.totalRoyaltiesEarned = (s.totalRoyaltiesEarned || 0) + royalty;
 
-                // Monthly reputation boost across all kingdoms
-                if (day % 30 === 0) {
-                    var kingdoms = Engine.getKingdoms();
-                    for (var ki = 0; ki < kingdoms.length; ki++) {
-                        player.reputation[kingdoms[ki].id] = Math.min(100, (player.reputation[kingdoms[ki].id] || 50) + 3);
-                    }
-                }
+                // (monthly kingdom rep boost removed — feats no longer directly grant kingdom rep)
             }
         }
     }
@@ -37288,11 +37256,7 @@
         // Specialization-specific bonuses
         if (player.scholar.specialization === 'history') {
             player.skills.historian = true;
-            // History book: +25 rep in all kingdoms
-            var kingdoms = Engine.getKingdoms();
-            for (var ki = 0; ki < kingdoms.length; ki++) {
-                player.reputation[kingdoms[ki].id] = Math.min(100, (player.reputation[kingdoms[ki].id] || 50) + 25);
-            }
+            // (history book kingdom rep boost removed — feats no longer directly grant kingdom rep)
         } else if (player.scholar.specialization === 'economics') {
             player.skills.economic_theorist = true;
             // Economics book: -10% buy prices permanently (applied via skill check elsewhere)
