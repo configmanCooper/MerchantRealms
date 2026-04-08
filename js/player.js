@@ -8436,7 +8436,8 @@
         // Input-only filter: if enabled, only accept goods this building consumes
         if (bld.inputOnly !== false && bt && bt.produces) {
             var consumed = getBuildingConsumedGoods(bt);
-            if (!consumed[resId]) {
+            var directConsumed = bt.consumes && bt.consumes[resId];
+            if (!consumed[resId] && !directConsumed) {
                 return { success: false, message: 'This building only accepts goods it uses. Uncheck "Only accept consumed goods" to store other items.' };
             }
         }

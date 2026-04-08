@@ -4853,8 +4853,12 @@ window.UI = (function () {
                         // Filter: livestock only to livestock buildings, horses only to horse buildings
                         if (_dr.category === 'livestock') continue;
                         if (_dk === 'horses') continue;
-                        // Input-only filter
-                        if (_inputOnly && _producesId && !_consumedSet[_dk]) continue;
+                        // Input-only filter: allow consumed goods (from all available product recipes)
+                        if (_inputOnly && _producesId && !_consumedSet[_dk]) {
+                            // Fallback: also check bt.consumes directly in case getBuildingConsumedGoods missed it
+                            var _directConsumed = bt.consumes && bt.consumes[_dk];
+                            if (!_directConsumed) continue;
+                        }
                         // Skip output goods (these belong in output storage)
                         if (_outputSet2[_dk]) continue;
                         _hasDepositable = true;
@@ -4990,7 +4994,10 @@ window.UI = (function () {
             if (ir.category === 'livestock' && !isLivestockBld) continue;
             if (ik === 'horses' && !isHorseBld) continue;
             // Input-only filter: skip goods this building doesn't consume
-            if (inputOnly && producesId && !consumedGoods[ik]) continue;
+            if (inputOnly && producesId && !consumedGoods[ik]) {
+                var _directConsumedM = bt && bt.consumes && bt.consumes[ik];
+                if (!_directConsumedM) continue;
+            }
             hasInv = true;
             var iName = (ir.icon || '') + ' ' + ir.name;
             var isConsumedGood = consumedGoods[ik];
