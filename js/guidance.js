@@ -461,7 +461,7 @@ var Guidance = (function () {
         // ═══════════════ PEASANT (rank 0) ═══════════════
         {
             id: 'do_a_job', category: 'work',
-            minRank: 0, maxRank: 1,
+            minRank: 0, maxRank: 2,
             text: function (p) { return '🔨 Do a job in ' + _getTownName(p.townId); },
             check: function (p) {
                 var earned = (p.stats && p.stats.totalGoldEarned) || 0;
@@ -471,14 +471,14 @@ var Guidance = (function () {
         },
         {
             id: 'earn_100g', category: 'gold',
-            minRank: 0, maxRank: 1,
+            minRank: 0, maxRank: 2,
             text: function () { return '🪙 Have 100 gold'; },
             check: function (p) { return p.gold >= 100; },
             priority: function (p) { return p.gold < 100 ? 85 : 0; }
         },
         {
             id: 'first_trade', category: 'trade',
-            minRank: 0, maxRank: 1,
+            minRank: 0, maxRank: 2,
             text: function (p) {
                 var good = _getCheapGood(p);
                 return good ? '📦 Buy some ' + good + ' (cheap here!)' : '📦 Complete your first trade';
@@ -508,7 +508,7 @@ var Guidance = (function () {
         },
         {
             id: 'buy_trade_tip', category: 'tip',
-            minRank: 0, maxRank: 1,
+            minRank: 0, maxRank: 2,
             text: function () { return '🕵️ Buy a trade tip from the Info Broker (10g)'; },
             check: function (p) {
                 var tips = p.tradeTipLog ? p.tradeTipLog.length : 0;
@@ -523,7 +523,7 @@ var Guidance = (function () {
         },
         {
             id: 'compare_prices', category: 'intel',
-            minRank: 0, maxRank: 1,
+            minRank: 0, maxRank: 2,
             text: function (p) {
                 var recentTown = _getRecentVisitedTownName(p);
                 return recentTown
@@ -543,7 +543,7 @@ var Guidance = (function () {
         },
         {
             id: 'earn_500g', category: 'gold',
-            minRank: 0, maxRank: 1,
+            minRank: 0, maxRank: 2,
             text: function () { return '🪙 Have 500 gold'; },
             check: function (p) { return p.gold >= 500; },
             priority: function (p) { return p.gold >= 100 && p.gold < 500 ? 65 : 0; }
@@ -618,7 +618,7 @@ var Guidance = (function () {
         },
         {
             id: 'talk_info', category: 'social',
-            minRank: 0, maxRank: 1,
+            minRank: 0, maxRank: 2,
             text: function () { return '💬 Talk to townsfolk for useful info'; },
             check: function (p) {
                 var earned = (p.stats && p.stats.totalGoldEarned) || 0;
@@ -631,7 +631,7 @@ var Guidance = (function () {
         },
         {
             id: 'buy_horse', category: 'horse',
-            minRank: 0, maxRank: 1,
+            minRank: 0, maxRank: 2,
             text: function () { return '🐴 Buy a horse and mount it (faster travel)'; },
             check: function (p) { return p.horses && p.horses.length > 0; },
             priority: function (p) {
@@ -641,7 +641,7 @@ var Guidance = (function () {
         },
         {
             id: 'craft_backpack', category: 'backpack',
-            minRank: 0, maxRank: 1,
+            minRank: 0, maxRank: 2,
             text: function () { return '🎒 Construct a backpack (Character panel)'; },
             check: function (p) { return !!p._backpack; },
             priority: function (p) {
@@ -693,7 +693,7 @@ var Guidance = (function () {
         },
         {
             id: 'ask_family_gold', category: 'family',
-            minRank: 0, maxRank: 1,
+            minRank: 0, maxRank: 2,
             text: function () { return '👨‍👩‍👧 Ask your family for gold'; },
             check: function (p) { return p.gold >= 200; },
             priority: function (p) {
