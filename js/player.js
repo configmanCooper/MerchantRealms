@@ -14833,8 +14833,12 @@
             player.gold = Math.floor(player.gold * 1.10);
         }
 
-        // Diplomatic quirk — (kingdom rep boost removed — quirks no longer directly set kingdom rep)
-        // diplomatic quirk now only provides its other benefits
+        // Diplomatic quirk — +10 reputation
+        if (quirks.includes('diplomatic')) {
+            for (const kId in player.reputation) {
+                player.reputation[kId] = Math.min(100, (player.reputation[kId] || 50) + 10);
+            }
+        }
 
         // Manipulative quirk — -10 starting relationships
         if (quirks.includes('manipulative')) {
@@ -14856,7 +14860,12 @@
             }
         }
 
-        // Devout quirk — (kingdom rep boost removed — quirks no longer directly set kingdom rep)
+        // Devout quirk — higher reputation
+        if (quirks.includes('devout')) {
+            for (const kId in player.reputation) {
+                player.reputation[kId] = Math.min(100, (player.reputation[kId] || 50) + 10);
+            }
+        }
 
         // Warmth effect on relationships
         if (sp.warmth >= 70) {
@@ -35861,7 +35870,11 @@
                 player.skills.legendary_commander = true;
                 player.skills.battle_scarred = true;
                 player.skills.war_council = true;
-                // (kingdom rep boost removed — feats no longer directly grant kingdom rep)
+                // Permanent rep boost
+                var kingdoms = Engine.getKingdoms();
+                for (var ki = 0; ki < kingdoms.length; ki++) {
+                    player.reputation[kingdoms[ki].id] = Math.min(100, (player.reputation[kingdoms[ki].id] || 50) + 50);
+                }
                 Engine.logEvent(player.fullName + ' retires as Hero of Ages! Legendary status achieved.');
                 grantXP(200, 'hero of ages');
             }
@@ -35906,7 +35919,13 @@
                 player.stats.totalGoldEarned += royalty;
                 s.totalRoyaltiesEarned = (s.totalRoyaltiesEarned || 0) + royalty;
 
-                // (monthly kingdom rep boost removed — feats no longer directly grant kingdom rep)
+                // Monthly reputation boost across all kingdoms
+                if (day % 30 === 0) {
+                    var kingdoms = Engine.getKingdoms();
+                    for (var ki = 0; ki < kingdoms.length; ki++) {
+                        player.reputation[kingdoms[ki].id] = Math.min(100, (player.reputation[kingdoms[ki].id] || 50) + 3);
+                    }
+                }
             }
         }
     }
@@ -37271,7 +37290,11 @@
         // Specialization-specific bonuses
         if (player.scholar.specialization === 'history') {
             player.skills.historian = true;
-            // (history book kingdom rep boost removed — feats no longer directly grant kingdom rep)
+            // History book: +25 rep in all kingdoms
+            var kingdoms = Engine.getKingdoms();
+            for (var ki = 0; ki < kingdoms.length; ki++) {
+                player.reputation[kingdoms[ki].id] = Math.min(100, (player.reputation[kingdoms[ki].id] || 50) + 25);
+            }
         } else if (player.scholar.specialization === 'economics') {
             player.skills.economic_theorist = true;
             // Economics book: -10% buy prices permanently (applied via skill check elsewhere)
