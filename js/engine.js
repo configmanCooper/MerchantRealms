@@ -16488,6 +16488,16 @@
 
         world.towns.push(outpost);
 
+        // Add to kingdom's territory set
+        if (kingdomId) {
+            var _foundKingdom = findKingdom(kingdomId);
+            if (_foundKingdom && _foundKingdom.territories) {
+                if (typeof _foundKingdom.territories.add === 'function') {
+                    _foundKingdom.territories.add(outpost.id);
+                }
+            }
+        }
+
         // Classify terrain and compute local base prices (needed for market pricing)
         outpost.terrainType = classifyTownTerrain(outpost);
         computeLocalBasePrices(outpost);
@@ -34549,6 +34559,17 @@
             }
             world.roads = data.roads || [];
             world.seaRoutes = data.seaRoutes || [];
+
+            // Migration: ensure all towns with kingdomId are in their kingdom's territories
+            for (var _tmig = 0; _tmig < world.towns.length; _tmig++) {
+                var _tmTown = world.towns[_tmig];
+                if (_tmTown.kingdomId && !_tmTown.abandoned && !_tmTown.destroyed) {
+                    var _tmK = findKingdom(_tmTown.kingdomId);
+                    if (_tmK && _tmK.territories instanceof Set && !_tmK.territories.has(_tmTown.id)) {
+                        _tmK.territories.add(_tmTown.id);
+                    }
+                }
+            }
 
             // Bridge migration: generate bridges[] for old saves lacking it
             for (var _bmi = 0; _bmi < world.roads.length; _bmi++) {
