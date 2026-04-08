@@ -19003,7 +19003,8 @@ window.UI = (function () {
             var reqGoods = Player.getStreetRequestableGoods();
             if (reqGoods.length > 0) {
                 // Cooldown check
-                var _reqCd = Player._streetGoodsRequestDay ? (3 - ((typeof Engine !== 'undefined' && Engine.getDay ? Engine.getDay() : 9999) - Player._streetGoodsRequestDay)) : 0;
+                var _reqCdDays = (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('black_market_contacts')) ? 1 : 3;
+                var _reqCd = Player._streetGoodsRequestDay ? (_reqCdDays - ((typeof Engine !== 'undefined' && Engine.getDay ? Engine.getDay() : 9999) - Player._streetGoodsRequestDay)) : 0;
                 var _reqOnCd = _reqCd > 0;
 
                 html += '<div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">';
@@ -19023,7 +19024,7 @@ window.UI = (function () {
                     html += '📋 Request Good';
                 }
                 html += '</button>';
-                html += '<span style="color:#888;font-size:0.8em;">Base 20% chance, improved by skills & local factors. 3 day cooldown.</span>';
+                html += '<span style="color:#888;font-size:0.8em;">Base 20% chance (lower for military/banned/horses), improved by skills & local factors. ' + _reqCdDays + ' day cooldown.</span>';
                 html += '</div>';
             } else {
                 html += '<p style="color:#888;margin-top:4px;">All goods are available in the local market.</p>';

@@ -26748,11 +26748,12 @@
         var rng = Engine.getRng();
         if (!rng) return { success: false, message: 'RNG error.' };
 
-        // Cooldown: one request every 3 days
+        // Cooldown: 3 days normally, 1 day with black_market_contacts
         if (!player._streetGoodsRequests) player._streetGoodsRequests = {};
         var day = Engine.getDay();
-        if (player._streetGoodsRequestDay && day - player._streetGoodsRequestDay < 3) {
-            var _waitDays = 3 - (day - player._streetGoodsRequestDay);
+        var _reqCooldown = hasSkill('black_market_contacts') ? 1 : 3;
+        if (player._streetGoodsRequestDay && day - player._streetGoodsRequestDay < _reqCooldown) {
+            var _waitDays = _reqCooldown - (day - player._streetGoodsRequestDay);
             return { success: false, message: 'You already made a request recently. Wait ' + _waitDays + ' more day' + (_waitDays !== 1 ? 's' : '') + '.' };
         }
 
@@ -26789,6 +26790,17 @@
 
         chance = Math.max(0.05, Math.min(0.70, chance));
 
+        // Category penalties — military, banned/restricted, horses harder to find
+        var _isMilitary = res.category === 'military';
+        var _isHorse = resourceId === 'horses';
+        var _bannedGoods = (kingdom && kingdom.laws && kingdom.laws.bannedGoods) || [];
+        var _restrictedGoods = (kingdom && kingdom.laws && kingdom.laws.restrictedGoods) || [];
+        var _isBannedOrRestricted = _bannedGoods.indexOf(resourceId) >= 0 || _restrictedGoods.indexOf(resourceId) >= 0;
+        if (_isMilitary) chance *= 0.45;
+        if (_isBannedOrRestricted) chance *= 0.40;
+        if (_isHorse) chance *= 0.75;
+        chance = Math.max(0.03, chance);
+
         // Skill-based discount on offered price
         var skillDiscount = 0;
         if (hasSkill('haggler') || hasSkill('master_haggler')) skillDiscount += 0.10;
@@ -26818,7 +26830,7 @@
 
             var premium = rng.randFloat(premMin, premMax);
             var pricePerUnit = Math.ceil(basePrice * premium * (1 - skillDiscount));
-            var qty = rng.randInt(1, 6);
+            var qty = rng.randInt(1, 10);
 
             // Pick an NPC seller
             var people = Engine.getPeople(town.id);
