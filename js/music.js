@@ -139,14 +139,34 @@ window.Music = (function () {
 
     function setVolume(v) {
         volume = Math.max(0, Math.min(1, v));
-        if (currentAudio) currentAudio.volume = muted ? 0 : volume;
         localStorage.setItem('merchantRealms_musicVolume', volume);
+        if (currentAudio) {
+            currentAudio.volume = muted ? 0 : volume;
+            // Resume playback if audio was paused and volume > 0
+            if (!muted && volume > 0 && currentAudio.paused && currentMood) {
+                var p = currentAudio.play();
+                if (p && p.then) p.catch(function() {});
+                playing = true;
+            }
+        }
     }
 
     function toggleMute() {
         muted = !muted;
-        if (currentAudio) currentAudio.volume = muted ? 0 : volume;
         localStorage.setItem('merchantRealms_musicMuted', muted);
+        if (currentAudio) {
+            currentAudio.volume = muted ? 0 : volume;
+            // Resume playback if unmuting and audio was paused
+            if (!muted && currentAudio.paused && currentMood) {
+                var p = currentAudio.play();
+                if (p && p.then) p.catch(function() {});
+                playing = true;
+            }
+        } else if (!muted && currentMood) {
+            // No current audio but we have a mood — restart it
+            crossfadeTo(currentMood);
+            playing = true;
+        }
     }
 
     return {
