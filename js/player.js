@@ -6275,6 +6275,11 @@
     }
 
     function cleanupTravelState() {
+        // Release off-sea ship assignment if any
+        if (player.offSeaShipId && player.ships) {
+            var offSeaShip = player.ships.find(function(s) { return s.id === player.offSeaShipId; });
+            if (offSeaShip) offSeaShip.assignedOffSea = false;
+        }
         player.travelDestination = null;
         player.travelDestCoords = null;
         player.travelWaypoints = null;
