@@ -3592,6 +3592,93 @@
         return Math.floor((baseStorage || 0) * (1 + (((level || 1) - 1) * 0.50)));
     }
 
+    /**
+     * Smart input ratio limiter: given a target building and a resource being deposited,
+     * returns the max units of that resource the building should accept to stay balanced.
+     * Looks at ALL current input stock and calculates how many production cycles each
+     * input can sustain, then prioritises the most-needed inputs.
+     *
+     * @param {object} targetBt  - building type definition (from BUILDING_TYPES)
+     * @param {object} targetBld - the actual building instance (with .inventory, .level)
+     * @param {string} resId     - resource id being deposited / transferred / bought
+     * @returns {number} max units of resId the building should accept (-1 = unlimited)
+     */
+    function _smartInputLimit(targetBt, targetBld, resId) {
+        if (!targetBt || !targetBt.consumes) return -1;
+        var consumeKeys = Object.keys(targetBt.consumes);
+        if (consumeKeys.length < 2) return -1; // single-input buildings need no balancing
+        if (!targetBt.consumes[resId]) return -1; // this resource isn't consumed
+
+        var cap = _bldStorageCap(targetBt.storage || 50, targetBld.level);
+        if (cap <= 0) return -1;
+
+        var resObj = findResource(resId);
+        var resWeight = resObj ? (resObj.weight || 1) : 1;
+
+        // Calculate how many production cycles each input can sustain
+        var cyclesPerInput = {};
+        var minCycles = Infinity;
+        for (var i = 0; i < consumeKeys.length; i++) {
+            var cId = consumeKeys[i];
+            var cQty = targetBt.consumes[cId]; // units consumed per cycle
+            var stored = (targetBld.inventory && targetBld.inventory[cId]) || 0;
+            var cycles = cQty > 0 ? stored / cQty : Infinity;
+            cyclesPerInput[cId] = cycles;
+            if (cycles < minCycles) minCycles = cycles;
+        }
+
+        // How many cycles can the requested resource sustain?
+        var myCycles = cyclesPerInput[resId] || 0;
+        var myConsumePerCycle = targetBt.consumes[resId];
+
+        // Target: bring this input up to the level of the most-stocked input + buffer
+        // Find the max cycles any OTHER input can sustain
+        var maxOtherCycles = 0;
+        for (var j = 0; j < consumeKeys.length; j++) {
+            if (consumeKeys[j] !== resId && cyclesPerInput[consumeKeys[j]] > maxOtherCycles) {
+                maxOtherCycles = cyclesPerInput[consumeKeys[j]];
+            }
+        }
+
+        // Target cycles: match the highest other input + 20% buffer, minimum 3 cycles
+        var targetCycles = Math.max(3, maxOtherCycles * 1.20);
+
+        // How many units do we need to reach targetCycles?
+        var neededUnits = Math.max(0, Math.ceil(targetCycles * myConsumePerCycle) - ((targetBld.inventory && targetBld.inventory[resId]) || 0));
+
+        // Also enforce weight-based capacity share: this input shouldn't exceed its proportional
+        // share of total capacity (by weight) + 25% flex to allow catching up
+        var totalWeightPerCycle = 0;
+        for (var k = 0; k < consumeKeys.length; k++) {
+            var ckRes = findResource(consumeKeys[k]);
+            var ckW = ckRes ? (ckRes.weight || 1) : 1;
+            totalWeightPerCycle += targetBt.consumes[consumeKeys[k]] * ckW;
+        }
+        var myWeightFraction = (myConsumePerCycle * resWeight) / totalWeightPerCycle;
+        // If this input is the LEAST stocked (fewest cycles), allow up to 50% extra share to catch up
+        var flexMult = (myCycles <= minCycles + 0.5) ? 1.50 : 1.15;
+        var maxByWeight = Math.floor((cap * myWeightFraction * flexMult) / resWeight);
+        var currentStored = (targetBld.inventory && targetBld.inventory[resId]) || 0;
+        var roomByWeight = Math.max(0, maxByWeight - currentStored);
+
+        // Also ensure we don't exceed absolute free space
+        var outputSet = {};
+        if (targetBt.produces) outputSet[targetBt.produces] = true;
+        if (targetBt.canProduce) { for (var ci = 0; ci < targetBt.canProduce.length; ci++) outputSet[targetBt.canProduce[ci]] = true; }
+        var inputUsed = 0;
+        if (targetBld.inventory) {
+            for (var bk in targetBld.inventory) {
+                if (!outputSet[bk]) {
+                    var bkRes = findResource(bk);
+                    inputUsed += (targetBld.inventory[bk] || 0) * (bkRes ? (bkRes.weight || 1) : 1);
+                }
+            }
+        }
+        var freeSpace = Math.max(0, Math.floor((cap - inputUsed) / resWeight));
+
+        return Math.min(neededUnits, roomByWeight, freeSpace);
+    }
+
     function getUpgradeCost(buildingId) {
         var bld = player.buildings.find(function(b) { return b.id === buildingId; });
         if (!bld) return null;
@@ -4740,7 +4827,14 @@
                         var bldUsed = 0;
                         if (bld.inventory) { for (var bi in bld.inventory) { if (_csOutSet[bi]) continue; var bw = (findResource(bi) || {}).weight || 1; bldUsed += (bld.inventory[bi] || 0) * bw; } }
                         var resWeight = (findResource(o.good) || {}).weight || 1;
-                        var canFit = Math.floor((bldCap - bldUsed) / resWeight);
+                        // Smart ratio limiter: considers all current inputs and cycle balance
+                        var _crSmartMax = _smartInputLimit(bt, bld, o.good);
+                        var canFit;
+                        if (_crSmartMax >= 0) {
+                            canFit = _crSmartMax;
+                        } else {
+                            canFit = Math.floor((bldCap - bldUsed) / resWeight);
+                        }
                         var bldQty = Math.min(storeQty, canFit);
                         if (bldQty > 0) {
                             if (!bld.inventory) bld.inventory = {};
@@ -4792,7 +4886,14 @@
                         var _tBldUsed = 0;
                         if (_tBld.inventory) { for (var _tbi2 in _tBld.inventory) { if (_tOutSet[_tbi2]) continue; var _tbw = (findResource(_tbi2) || {}).weight || 1; _tBldUsed += (_tBld.inventory[_tbi2] || 0) * _tbw; } }
                         var _tResWeight = (findResource(o.good) || {}).weight || 1;
-                        var _tCanFit = Math.floor((_tBldCap - _tBldUsed) / _tResWeight);
+                        // Smart ratio limiter
+                        var _trSmartMax = _smartInputLimit(_tBt, _tBld, o.good);
+                        var _tCanFit;
+                        if (_trSmartMax >= 0) {
+                            _tCanFit = _trSmartMax;
+                        } else {
+                            _tCanFit = Math.floor((_tBldCap - _tBldUsed) / _tResWeight);
+                        }
                         var _tStoreQty = Math.min(_storeRemaining, _tCanFit);
                         if (_tStoreQty > 0) {
                             if (!_tBld.inventory) _tBld.inventory = {};
@@ -7020,41 +7121,29 @@
             const targetBld = player.buildings.find(b => b.id === sourceBld.transferTarget);
             if (targetBld && targetBld.townId === sourceBld.townId) {
                 const targetBt = Engine.findBuildingType(targetBld.type);
-                // Input capacity is an independent pool — only count non-output items
-                var tBldCap = targetBt ? _bldStorageCap(targetBt.storage, targetBld.level) : 0;
-                var _tOutSet = {};
-                if (targetBt && targetBt.produces) _tOutSet[targetBt.produces] = true;
-                if (targetBt && targetBt.canProduce) { for (var _toi = 0; _toi < targetBt.canProduce.length; _toi++) _tOutSet[targetBt.canProduce[_toi]] = true; }
-                var tInputUsed = 0;
-                if (targetBld.inventory) {
-                    for (var _tbk in targetBld.inventory) {
-                        if (!_tOutSet[_tbk]) {
-                            var _tbr = findResource(_tbk);
-                            tInputUsed += (targetBld.inventory[_tbk] || 0) * (_tbr ? (_tbr.weight || 1) : 1);
-                        }
-                    }
-                }
                 var resObj = findResource(resourceId);
                 var resWeight = resObj ? (resObj.weight || 1) : 1;
-                var canFitAmount = tBldCap > 0 ? Math.floor((tBldCap - tInputUsed) / resWeight) : amount;
-                // Smart ratio limiting by weight: if target consumes multiple inputs,
-                // each input gets its proportional share of capacity based on weight ratio
-                if (targetBt && targetBt.consumes && Object.keys(targetBt.consumes).length > 1 && targetBt.consumes[resourceId]) {
-                    var myQty = targetBt.consumes[resourceId];
-                    var myWeightShare = myQty * resWeight;
-                    var totalWeightParts = 0;
-                    for (var _rk in targetBt.consumes) {
-                        var _rkRes = findResource(_rk);
-                        var _rkW = _rkRes ? (_rkRes.weight || 1) : 1;
-                        totalWeightParts += targetBt.consumes[_rk] * _rkW;
+                // Use smart input limiter (handles ratio + free space + cycle balancing)
+                var smartLimit = _smartInputLimit(targetBt, targetBld, resourceId);
+                var canFitAmount;
+                if (smartLimit >= 0) {
+                    canFitAmount = smartLimit;
+                } else {
+                    // Fallback for non-consumed or single-input: just use free space
+                    var tBldCap = targetBt ? _bldStorageCap(targetBt.storage, targetBld.level) : 0;
+                    var _tOutSet = {};
+                    if (targetBt && targetBt.produces) _tOutSet[targetBt.produces] = true;
+                    if (targetBt && targetBt.canProduce) { for (var _toi = 0; _toi < targetBt.canProduce.length; _toi++) _tOutSet[targetBt.canProduce[_toi]] = true; }
+                    var tInputUsed = 0;
+                    if (targetBld.inventory) {
+                        for (var _tbk in targetBld.inventory) {
+                            if (!_tOutSet[_tbk]) {
+                                var _tbr = findResource(_tbk);
+                                tInputUsed += (targetBld.inventory[_tbk] || 0) * (_tbr ? (_tbr.weight || 1) : 1);
+                            }
+                        }
                     }
-                    // This input's share of total capacity by weight (+15% buffer)
-                    var myWeightFraction = totalWeightParts > 0 ? myWeightShare / totalWeightParts : 0.5;
-                    var maxWeightForMe = tBldCap * myWeightFraction * 1.15;
-                    var maxUnitsForMe = Math.floor(maxWeightForMe / resWeight);
-                    var currentStored = (targetBld.inventory && targetBld.inventory[resourceId]) || 0;
-                    var balanceRoom = Math.max(0, maxUnitsForMe - currentStored);
-                    canFitAmount = Math.min(canFitAmount, balanceRoom);
+                    canFitAmount = tBldCap > 0 ? Math.floor((tBldCap - tInputUsed) / resWeight) : amount;
                 }
                 var actualAmount = Math.min(amount, Math.max(0, canFitAmount));
                 if (actualAmount > 0) {
@@ -7262,48 +7351,21 @@
 
             // Auto-buy inputs — stockpile buffer from market INTO building input storage
             if (bld.autoBuy && bt.consumes) {
-                var _abCap = _bldStorageCap(bt.storage || 50, bld.level);
-                // Count only input items (exclude output) for input capacity
-                var _abOutSet = {};
-                if (bt.produces) _abOutSet[bt.produces] = true;
-                if (bt.canProduce) { for (var _abi = 0; _abi < bt.canProduce.length; _abi++) _abOutSet[bt.canProduce[_abi]] = true; }
-                var _abInputUsed = 0;
-                if (bld.inventory) {
-                    for (var _abk in bld.inventory) {
-                        if (!_abOutSet[_abk]) {
-                            var _abr = findResource(_abk);
-                            _abInputUsed += (bld.inventory[_abk] || 0) * (_abr ? (_abr.weight || 1) : 1);
-                        }
-                    }
-                }
-                var _abNumInputs = Object.keys(bt.consumes).length;
-                // Calculate total weight ratio across all inputs
-                var _abTotalWeightRatio = 0;
-                for (var _abrk in bt.consumes) {
-                    var _abrkRes = findResource(_abrk);
-                    var _abrkW = _abrkRes ? (_abrkRes.weight || 1) : 1;
-                    _abTotalWeightRatio += bt.consumes[_abrk] * _abrkW;
-                }
-
                 for (const [resId, qty] of Object.entries(bt.consumes)) {
-                    const bldHasAB = (bld.inventory && bld.inventory[resId]) || 0;
                     var _abResObj = findResource(resId);
                     var _abResWeight = _abResObj ? (_abResObj.weight || 1) : 1;
-                    // Weight-based ratio: each input gets its proportional share by weight (+15% buffer)
-                    var _abMaxForInput;
-                    if (_abNumInputs > 1 && _abTotalWeightRatio > 0) {
-                        var _abMyWeightShare = (bt.consumes[resId] * _abResWeight) / _abTotalWeightRatio;
-                        var _abMaxWeight = _abCap * _abMyWeightShare * 1.15;
-                        _abMaxForInput = Math.floor(_abMaxWeight / _abResWeight);
+                    // Use smart limiter: considers current stock of ALL inputs, cycle balance, weight
+                    var _abSmartMax = _smartInputLimit(bt, bld, resId);
+                    var _abWant;
+                    if (_abSmartMax >= 0) {
+                        _abWant = _abSmartMax;
                     } else {
-                        _abMaxForInput = Math.floor(_abCap / _abResWeight * 0.8);
+                        // Single-input fallback: fill 80% of capacity
+                        var _abCap = _bldStorageCap(bt.storage || 50, bld.level);
+                        _abWant = Math.max(0, Math.floor(_abCap / _abResWeight * 0.8) - ((bld.inventory && bld.inventory[resId]) || 0));
                     }
-                    // Buy up to balanced max, respecting overall input capacity
-                    var _abWant = Math.max(0, _abMaxForInput - bldHasAB);
-                    var _abFreeInput = Math.max(0, Math.floor((_abCap - _abInputUsed) / _abResWeight));
-                    _abWant = Math.min(_abWant, _abFreeInput);
                     if (_abWant > 0) {
-                        const townHasAB = town.market.supply[resId] || 0;
+                        const townHasAB = (town.market && town.market.supply && town.market.supply[resId]) || 0;
                         const canBuyAB = Math.min(_abWant, townHasAB);
                         if (canBuyAB > 0) {
                             const price = (town.market.prices && town.market.prices[resId]) || 5;
@@ -7314,7 +7376,6 @@
                                 town.market.supply[resId] = Math.max(0, townHasAB - canBuyAB);
                                 if (!bld.inventory) bld.inventory = {};
                                 bld.inventory[resId] = (bld.inventory[resId] || 0) + canBuyAB;
-                                _abInputUsed += canBuyAB * _abResWeight;
                             }
                         }
                     }
@@ -8471,6 +8532,14 @@
             var inputUsed = 0;
             if (bld.inventory) { for (var bk in bld.inventory) { if (!_dOutSet[bk]) inputUsed += (bld.inventory[bk] || 0) * ((findResource(bk) || {}).weight || 1); } }
             var weight = res ? (res.weight || 1) : 1;
+            // Smart ratio limit: considers all current inputs and cycle balance
+            var _depSmartMax = _smartInputLimit(bt, bld, resId);
+            var _depRatioMax = _depSmartMax >= 0 ? _depSmartMax : Infinity;
+            var effectiveQty = Math.min(qty, _depRatioMax);
+            if (effectiveQty <= 0 && _depRatioMax < Infinity) {
+                return { success: false, message: 'Building already has enough ' + (res ? res.name : resId) + ' for its input ratio. Deposit other inputs first.' };
+            }
+            if (effectiveQty < qty) qty = effectiveQty;
             if (inputUsed + qty * weight > bldCap) {
                 var canFit = Math.floor((bldCap - inputUsed) / weight);
                 if (canFit <= 0) return { success: false, message: 'Building input storage full (' + Math.round(inputUsed) + '/' + bldCap + ').' };
