@@ -4164,16 +4164,20 @@
         var shipCost = shipType.laborCost || 100;
         var materialsNeeded = shipType.materials || {};
         var missingMats = [];
+        var materialsBuyFromMarket = {};
         for (var mat in materialsNeeded) {
             var qty = materialsNeeded[mat];
             var price = Engine.getResourcePrice ? Engine.getResourcePrice(player.townId, mat) : 10;
             if (!price || price <= 0) price = 10;
-            // Check if materials available in market
+            // Use player inventory first, then buy remainder from market
+            var playerHas = player.inventory[mat] || 0;
+            var needFromMarket = Math.max(0, qty - playerHas);
             var available = Engine.getResourceSupply ? Engine.getResourceSupply(player.townId, mat) : 999;
-            if (available < qty) missingMats.push(mat + ' (' + qty + ' needed, ' + available + ' available)');
-            shipCost += qty * price;
+            if (needFromMarket > available) missingMats.push(mat + ' (' + qty + ' needed, have ' + playerHas + ', market has ' + available + ')');
+            materialsBuyFromMarket[mat] = needFromMarket;
+            shipCost += needFromMarket * price;
         }
-        if (missingMats.length > 0) return { success: false, message: 'Insufficient materials at market: ' + missingMats.join(', ') };
+        if (missingMats.length > 0) return { success: false, message: 'Insufficient materials: ' + missingMats.join(', ') };
 
         // Harbor House discount: 10% off ship purchases
         var harborHouse = getHouseInTown(player.townId);
@@ -4189,9 +4193,16 @@
         player.gold -= shipCost;
         player.stats.totalGoldSpent += shipCost;
 
-        // Consume materials from market
+        // Consume materials: use player inventory first, then buy from market
         for (var mat2 in materialsNeeded) {
-            if (Engine.consumeResource) Engine.consumeResource(player.townId, mat2, materialsNeeded[mat2]);
+            var totalNeeded = materialsNeeded[mat2];
+            var fromInventory = Math.min(totalNeeded, player.inventory[mat2] || 0);
+            if (fromInventory > 0) {
+                player.inventory[mat2] -= fromInventory;
+                if (player.inventory[mat2] <= 0) delete player.inventory[mat2];
+            }
+            var fromMarket = totalNeeded - fromInventory;
+            if (fromMarket > 0 && Engine.consumeResource) Engine.consumeResource(player.townId, mat2, fromMarket);
         }
 
         const ship = {
@@ -17882,7 +17893,10 @@
         for (var mat in mats) {
             var price = Engine.getResourcePrice ? Engine.getResourcePrice(tid, mat) : 10;
             if (!price || price <= 0) price = 10;
-            cost += mats[mat] * price;
+            // Only charge for materials not already in player inventory
+            var playerHas = (player && player.inventory) ? (player.inventory[mat] || 0) : 0;
+            var needFromMarket = Math.max(0, mats[mat] - playerHas);
+            cost += needFromMarket * price;
         }
         return cost;
     }

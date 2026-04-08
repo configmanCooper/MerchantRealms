@@ -14573,7 +14573,7 @@ window.UI = (function () {
                 html += '<div style="font-size:0.7rem;margin-top:2px;">📦 ' + matParts.join(', ') + '</div>';
             }
 
-            html += '<button class="btn-medieval" onclick="Player.buyShip(\'' + typeId + '\'); UI.openShipsDialog();" style="font-size:0.75rem;padding:3px 8px;margin-top:3px;"' + (canBuild ? '' : ' disabled') + '>🏗️ Build</button>';
+            html += '<button class="btn-medieval" onclick="UI.buyShip(\'' + typeId + '\'); UI.openShipsDialog();" style="font-size:0.75rem;padding:3px 8px;margin-top:3px;"' + (canBuild ? '' : ' disabled') + '>🏗️ Build</button>';
             if (atLimit) html += ' <span style="color:#c44e52;font-size:0.75rem;">Port full!</span>';
             if (!allMatsAvailable) html += ' <span style="color:#c44e52;font-size:0.75rem;">Missing materials!</span>';
             html += '</div>';
