@@ -24024,6 +24024,9 @@ window.UI = (function () {
         // Export Console button
         html += '<br><button onclick="Game.exportConsole()" style="margin:2px; padding:3px 8px; background:#4a3520; color:#fff; border:1px solid #d4af37; cursor:pointer;">📋 Export Console</button> ';
 
+        // World Analytics button
+        html += '<br><button onclick="UI.openWorldAnalytics()" style="margin:4px 2px; padding:6px 14px; background:linear-gradient(135deg,#1a3a5c,#2a5a8c); color:#FFD700; border:2px solid #FFD700; cursor:pointer; font-size:13px; font-weight:bold; border-radius:4px;">🌍 World Analytics</button> ';
+
         // Give Player Illness/Injury
         html += '<br><div style="margin-top:6px; padding-top:6px; border-top:1px solid #444;">';
         html += '<span style="color:#f88; font-weight:bold; font-size:11px;">🤒 INFLICT CONDITION</span><br>';
@@ -24725,6 +24728,587 @@ window.UI = (function () {
         }
     }
 
+    // ── World Analytics Dashboard ──────────────────────────────────
+    function _waSnapshot() {
+        var kingdoms = Engine.getKingdoms ? Engine.getKingdoms() : [];
+        var towns = Engine.getTowns ? Engine.getTowns() : [];
+        var people = Engine.getPeople ? Engine.getPeople() : [];
+        var snap = { day: Engine.getDay ? Engine.getDay() : 0, kingdoms: {} };
+        for (var i = 0; i < kingdoms.length; i++) {
+            var k = kingdoms[i];
+            var kTowns = towns.filter(function(t) { return t.kingdomId === k.id; });
+            var pop = 0;
+            for (var j = 0; j < kTowns.length; j++) pop += (kTowns[j].population || 0);
+            var mil = Engine.getMilitaryBreakdown ? Engine.getMilitaryBreakdown(k.id) : null;
+            snap.kingdoms[k.id] = {
+                name: k.name, color: k.color || '#888',
+                gold: Math.floor(k.gold || 0),
+                militaryStrength: k.militaryStrength || 0,
+                prosperity: k.prosperity || 0,
+                happiness: k.happiness || 0,
+                population: pop,
+                warExhaustion: k.warExhaustion || 0,
+                infantry: mil ? mil.infantry : 0,
+                archers: mil ? mil.archers : 0,
+                cavalry: mil ? mil.cavalry : 0,
+                garrison: mil ? mil.garrison : 0
+            };
+        }
+        return snap;
+    }
+
+    function _waBar(val, max, color, w) {
+        var pct = max > 0 ? Math.min(100, Math.max(0, (val / max) * 100)) : 0;
+        return '<div style="display:inline-block;width:' + (w || 80) + 'px;height:12px;background:#111;border-radius:3px;vertical-align:middle;overflow:hidden;position:relative;">' +
+            '<div style="width:' + pct + '%;height:100%;background:' + (color || '#4fc3f7') + ';border-radius:3px;"></div>' +
+            '</div>';
+    }
+
+    function _waNum(n) { return typeof n === 'number' ? Math.floor(n).toLocaleString() : '?'; }
+
+    function _waBuildOverview(kingdoms, towns, people) {
+        var html = '<div style="overflow-x:auto;">';
+        html += '<table style="width:100%;border-collapse:collapse;font-size:0.8rem;">';
+        html += '<thead><tr style="background:#1a1a2e;color:#FFD700;text-align:left;">';
+        html += '<th style="padding:6px;border-bottom:2px solid #FFD700;">Kingdom</th>';
+        html += '<th style="padding:6px;border-bottom:2px solid #FFD700;">Treasury</th>';
+        html += '<th style="padding:6px;border-bottom:2px solid #FFD700;">Tax</th>';
+        html += '<th style="padding:6px;border-bottom:2px solid #FFD700;">Tariff</th>';
+        html += '<th style="padding:6px;border-bottom:2px solid #FFD700;">Military</th>';
+        html += '<th style="padding:6px;border-bottom:2px solid #FFD700;">War Exh.</th>';
+        html += '<th style="padding:6px;border-bottom:2px solid #FFD700;">Prosperity</th>';
+        html += '<th style="padding:6px;border-bottom:2px solid #FFD700;">Happiness</th>';
+        html += '<th style="padding:6px;border-bottom:2px solid #FFD700;">Towns</th>';
+        html += '<th style="padding:6px;border-bottom:2px solid #FFD700;">Pop.</th>';
+        html += '<th style="padding:6px;border-bottom:2px solid #FFD700;">Status</th>';
+        html += '<th style="padding:6px;border-bottom:2px solid #FFD700;">King Traits</th>';
+        html += '</tr></thead><tbody>';
+
+        var maxMil = 1, maxGold = 1, maxPop = 1;
+        var kData = [];
+        for (var i = 0; i < kingdoms.length; i++) {
+            var k = kingdoms[i];
+            var kTowns = towns.filter(function(t) { return t.kingdomId === k.id; });
+            var pop = 0;
+            for (var j = 0; j < kTowns.length; j++) pop += (kTowns[j].population || 0);
+            kData.push({ k: k, towns: kTowns, pop: pop });
+            if ((k.militaryStrength || 0) > maxMil) maxMil = k.militaryStrength;
+            if ((k.gold || 0) > maxGold) maxGold = k.gold;
+            if (pop > maxPop) maxPop = pop;
+        }
+
+        for (var i = 0; i < kData.length; i++) {
+            var d = kData[i], k = d.k;
+            var wars = (k.atWar && Array.isArray(k.atWar)) ? k.atWar : (k.atWar && typeof k.atWar.size !== 'undefined' ? Array.from(k.atWar) : []);
+            var alliances = (k.alliances && Array.isArray(k.alliances)) ? k.alliances : (k.alliances && typeof k.alliances.size !== 'undefined' ? Array.from(k.alliances) : []);
+            var tariff = k.laws && k.laws.tradeTariff != null ? Math.round(k.laws.tradeTariff * 100) : 0;
+            var statusParts = [];
+            if (wars.length > 0) statusParts.push('<span style="color:#f44;">⚔️' + wars.length + ' war' + (wars.length > 1 ? 's' : '') + '</span>');
+            if (alliances.length > 0) statusParts.push('<span style="color:#4f4;">🤝' + alliances.length + '</span>');
+            if (statusParts.length === 0) statusParts.push('<span style="color:#888;">Peace</span>');
+
+            var traits = [];
+            var kp = k.kingPersonality || {};
+            if ((kp.militarism || 0) >= 7) traits.push('⚔️');
+            if ((kp.generosity || 0) >= 7) traits.push('🎁');
+            if ((kp.greed || 0) >= 7) traits.push('💰');
+            if ((kp.ambition || 0) >= 7) traits.push('🔥');
+            if ((kp.intelligence || 0) >= 7) traits.push('🧠');
+            if ((kp.courage || 0) >= 7) traits.push('🦁');
+            if ((kp.justice || 0) >= 7) traits.push('⚖️');
+            if ((kp.tradition || 0) >= 7) traits.push('📜');
+            var traitStr = traits.length > 0 ? traits.join('') : '<span style="color:#666;">—</span>';
+
+            html += '<tr style="border-bottom:1px solid #333;">';
+            html += '<td style="padding:5px;border-left:4px solid ' + (k.color || '#666') + ';font-weight:bold;">' + (k.name || '?') + '</td>';
+            html += '<td style="padding:5px;color:#ffd700;">' + _waNum(k.gold) + 'g ' + _waBar(k.gold || 0, maxGold, '#ffd700', 60) + '</td>';
+            html += '<td style="padding:5px;">' + Math.round((k.taxRate || 0) * 100) + '%</td>';
+            html += '<td style="padding:5px;">' + tariff + '%</td>';
+            html += '<td style="padding:5px;">' + _waNum(k.militaryStrength) + ' ' + _waBar(k.militaryStrength || 0, maxMil, '#e74c3c', 60) + '</td>';
+            html += '<td style="padding:5px;">' + _waBar(k.warExhaustion || 0, 100, k.warExhaustion > 60 ? '#f44' : '#f90', 60) + ' ' + Math.round(k.warExhaustion || 0) + '</td>';
+            html += '<td style="padding:5px;">' + _waBar(k.prosperity || 0, 100, '#2ecc71', 60) + ' ' + Math.round(k.prosperity || 0) + '</td>';
+            html += '<td style="padding:5px;">' + _waBar(k.happiness || 0, 100, '#3498db', 60) + ' ' + Math.round(k.happiness || 0) + '</td>';
+            html += '<td style="padding:5px;">' + d.towns.length + '</td>';
+            html += '<td style="padding:5px;">' + _waNum(d.pop) + '</td>';
+            html += '<td style="padding:5px;">' + statusParts.join(' ') + '</td>';
+            html += '<td style="padding:5px;">' + traitStr + '</td>';
+            html += '</tr>';
+        }
+        html += '</tbody></table></div>';
+        return html;
+    }
+
+    function _waBuildEconomy(kingdoms, towns) {
+        var html = '';
+        var cats = {};
+        for (var rk in RESOURCE_TYPES) {
+            var r = RESOURCE_TYPES[rk];
+            if (!cats[r.category]) cats[r.category] = [];
+            cats[r.category].push(r);
+        }
+
+        // Market price comparison for key goods
+        var keyGoods = ['wheat', 'bread', 'iron', 'wood', 'tools', 'cloth', 'leather', 'swords', 'armor', 'ale', 'wine', 'salt', 'wool', 'fish', 'herbs', 'pottery'];
+        var existingGoods = keyGoods.filter(function(g) { return RESOURCE_TYPES[g]; });
+
+        html += '<div style="margin-bottom:12px;">';
+        html += '<h4 style="color:#FFD700;margin:0 0 6px;">📊 Market Price Comparison (avg per kingdom)</h4>';
+        html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.78rem;">';
+        html += '<thead><tr style="background:#1a1a2e;color:#FFD700;"><th style="padding:4px 6px;border-bottom:2px solid #FFD700;">Good</th>';
+        for (var i = 0; i < kingdoms.length; i++) {
+            html += '<th style="padding:4px 6px;border-bottom:2px solid ' + (kingdoms[i].color || '#666') + ';color:' + (kingdoms[i].color || '#ccc') + ';">' + (kingdoms[i].name || '?') + '</th>';
+        }
+        html += '</tr></thead><tbody>';
+
+        for (var gi = 0; gi < existingGoods.length; gi++) {
+            var gid = existingGoods[gi];
+            var res = RESOURCE_TYPES[gid];
+            html += '<tr style="border-bottom:1px solid #222;">';
+            html += '<td style="padding:3px 6px;">' + (res.icon || '') + ' ' + (res.name || gid) + '</td>';
+            for (var ki = 0; ki < kingdoms.length; ki++) {
+                var kTowns = towns.filter(function(t) { return t.kingdomId === kingdoms[ki].id; });
+                var totalPrice = 0, count = 0;
+                for (var ti = 0; ti < kTowns.length; ti++) {
+                    var p = kTowns[ti].market && kTowns[ti].market.prices ? kTowns[ti].market.prices[gid] : 0;
+                    if (p > 0) { totalPrice += p; count++; }
+                }
+                var avg = count > 0 ? (totalPrice / count) : 0;
+                var bgColor = avg === 0 ? 'transparent' : (avg < (res.basePrice || 10) ? 'rgba(46,204,113,0.15)' : 'rgba(231,76,60,0.15)');
+                html += '<td style="padding:3px 6px;text-align:center;background:' + bgColor + ';">' + (avg > 0 ? avg.toFixed(1) + 'g' : '<span style="color:#555;">—</span>') + '</td>';
+            }
+            html += '</tr>';
+        }
+        html += '</tbody></table></div></div>';
+
+        // Per-kingdom supply and production analysis
+        html += '<h4 style="color:#FFD700;margin:12px 0 6px;">🏭 Production & Supply by Kingdom</h4>';
+        for (var ki = 0; ki < kingdoms.length; ki++) {
+            var k = kingdoms[ki];
+            var kTowns = towns.filter(function(t) { return t.kingdomId === k.id; });
+            html += '<div style="margin-bottom:10px;padding:8px;background:#1a1a2e;border-left:4px solid ' + (k.color || '#666') + ';border-radius:4px;">';
+            html += '<div style="font-weight:bold;color:' + (k.color || '#ccc') + ';margin-bottom:4px;">' + (k.name || '?') + '</div>';
+
+            // Aggregate supply
+            var totalSupply = {};
+            var producedGoods = {};
+            var consumedGoods = {};
+            for (var ti = 0; ti < kTowns.length; ti++) {
+                var t = kTowns[ti];
+                if (t.market && t.market.supply) {
+                    for (var gk in t.market.supply) {
+                        totalSupply[gk] = (totalSupply[gk] || 0) + (t.market.supply[gk] || 0);
+                    }
+                }
+                if (t.buildings) {
+                    for (var bi = 0; bi < t.buildings.length; bi++) {
+                        var bld = t.buildings[bi];
+                        var bt = typeof BUILDING_TYPES !== 'undefined' ? BUILDING_TYPES[bld.type] : null;
+                        if (bt && bt.produces) producedGoods[bt.produces] = true;
+                        if (bt && bt.consumes) {
+                            if (Array.isArray(bt.consumes)) {
+                                for (var ci = 0; ci < bt.consumes.length; ci++) {
+                                    var cItem = bt.consumes[ci];
+                                    consumedGoods[typeof cItem === 'string' ? cItem : (cItem.id || cItem.resource || '')] = true;
+                                }
+                            } else if (typeof bt.consumes === 'object') {
+                                for (var ck in bt.consumes) consumedGoods[ck] = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Top supply items
+            var supplyArr = [];
+            for (var sk in totalSupply) {
+                if (totalSupply[sk] > 0) supplyArr.push({ id: sk, qty: totalSupply[sk] });
+            }
+            supplyArr.sort(function(a, b) { return b.qty - a.qty; });
+            html += '<div style="font-size:0.78rem;color:#aaa;margin-bottom:2px;">Top Supply: ';
+            var shown = Math.min(supplyArr.length, 10);
+            for (var si = 0; si < shown; si++) {
+                var sr = RESOURCE_TYPES[supplyArr[si].id];
+                html += '<span style="color:#4fc3f7;">' + (sr ? sr.icon || '' : '') + ' ' + (sr ? sr.name : supplyArr[si].id) + '</span>:' + Math.floor(supplyArr[si].qty);
+                if (si < shown - 1) html += ', ';
+            }
+            if (supplyArr.length === 0) html += '<span style="color:#666;">None</span>';
+            html += '</div>';
+
+            // Produces
+            var prodKeys = Object.keys(producedGoods);
+            html += '<div style="font-size:0.78rem;color:#aaa;">Produces: ';
+            if (prodKeys.length > 0) {
+                html += prodKeys.map(function(pk) {
+                    var r = RESOURCE_TYPES[pk];
+                    return '<span style="color:#2ecc71;">' + (r ? (r.icon || '') + r.name : pk) + '</span>';
+                }).join(', ');
+            } else { html += '<span style="color:#666;">None</span>'; }
+            html += '</div>';
+
+            // Lacks (consumed but not produced)
+            var lacks = [];
+            for (var ck in consumedGoods) {
+                if (!producedGoods[ck]) lacks.push(ck);
+            }
+            html += '<div style="font-size:0.78rem;color:#aaa;">Lacks (consumes but no production): ';
+            if (lacks.length > 0) {
+                html += lacks.map(function(lk) {
+                    var r = RESOURCE_TYPES[lk];
+                    return '<span style="color:#e74c3c;">' + (r ? (r.icon || '') + r.name : lk) + '</span>';
+                }).join(', ');
+            } else { html += '<span style="color:#2ecc71;">Self-sufficient</span>'; }
+            html += '</div>';
+            html += '</div>';
+        }
+        return html;
+    }
+
+    function _waBuildMilitary(kingdoms, towns) {
+        var html = '';
+        var activeWars = Engine.getActiveWars ? Engine.getActiveWars() : {};
+        var kingdomMap = {};
+        for (var i = 0; i < kingdoms.length; i++) kingdomMap[kingdoms[i].id] = kingdoms[i];
+
+        // Military breakdown table
+        html += '<h4 style="color:#FFD700;margin:0 0 6px;">⚔️ Military Breakdown</h4>';
+        html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.8rem;">';
+        html += '<thead><tr style="background:#1a1a2e;color:#FFD700;">';
+        html += '<th style="padding:5px;border-bottom:2px solid #FFD700;">Kingdom</th>';
+        html += '<th style="padding:5px;border-bottom:2px solid #FFD700;">Strength</th>';
+        html += '<th style="padding:5px;border-bottom:2px solid #FFD700;">Infantry</th>';
+        html += '<th style="padding:5px;border-bottom:2px solid #FFD700;">Archers</th>';
+        html += '<th style="padding:5px;border-bottom:2px solid #FFD700;">Cavalry</th>';
+        html += '<th style="padding:5px;border-bottom:2px solid #FFD700;">Garrison</th>';
+        html += '<th style="padding:5px;border-bottom:2px solid #FFD700;">War Exh.</th>';
+        html += '</tr></thead><tbody>';
+
+        var maxStr = 1;
+        for (var i = 0; i < kingdoms.length; i++) {
+            if ((kingdoms[i].militaryStrength || 0) > maxStr) maxStr = kingdoms[i].militaryStrength;
+        }
+
+        for (var i = 0; i < kingdoms.length; i++) {
+            var k = kingdoms[i];
+            var mil = Engine.getMilitaryBreakdown ? Engine.getMilitaryBreakdown(k.id) : null;
+            html += '<tr style="border-bottom:1px solid #333;">';
+            html += '<td style="padding:5px;border-left:4px solid ' + (k.color || '#666') + ';font-weight:bold;">' + (k.name || '?') + '</td>';
+            html += '<td style="padding:5px;">' + _waNum(k.militaryStrength) + ' ' + _waBar(k.militaryStrength || 0, maxStr, '#e74c3c', 70) + '</td>';
+            html += '<td style="padding:5px;">' + (mil ? _waNum(mil.infantry) : '?') + '</td>';
+            html += '<td style="padding:5px;">' + (mil ? _waNum(mil.archers) : '?') + '</td>';
+            html += '<td style="padding:5px;">' + (mil ? _waNum(mil.cavalry) : '?') + '</td>';
+            html += '<td style="padding:5px;">' + (mil ? _waNum(mil.garrison) : '?') + '</td>';
+            html += '<td style="padding:5px;">' + _waBar(k.warExhaustion || 0, 100, k.warExhaustion > 60 ? '#f44' : '#f90', 60) + ' ' + Math.round(k.warExhaustion || 0) + '%</td>';
+            html += '</tr>';
+        }
+        html += '</tbody></table></div>';
+
+        // Military stockpiles
+        html += '<h4 style="color:#FFD700;margin:12px 0 6px;">🏗️ Military Stockpiles</h4>';
+        html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.8rem;">';
+        html += '<thead><tr style="background:#1a1a2e;color:#FFD700;">';
+        html += '<th style="padding:5px;border-bottom:2px solid #FFD700;">Kingdom</th>';
+        html += '<th style="padding:5px;border-bottom:2px solid #FFD700;">⚔️ Swords</th>';
+        html += '<th style="padding:5px;border-bottom:2px solid #FFD700;">🛡️ Armor</th>';
+        html += '<th style="padding:5px;border-bottom:2px solid #FFD700;">🏹 Bows</th>';
+        html += '<th style="padding:5px;border-bottom:2px solid #FFD700;">➵ Arrows</th>';
+        html += '<th style="padding:5px;border-bottom:2px solid #FFD700;">🐴 Horses</th>';
+        html += '</tr></thead><tbody>';
+        for (var i = 0; i < kingdoms.length; i++) {
+            var k = kingdoms[i];
+            var ms = k.militaryStockpile || {};
+            html += '<tr style="border-bottom:1px solid #333;">';
+            html += '<td style="padding:5px;border-left:4px solid ' + (k.color || '#666') + ';font-weight:bold;">' + (k.name || '?') + '</td>';
+            html += '<td style="padding:5px;">' + _waNum(ms.swords || 0) + '</td>';
+            html += '<td style="padding:5px;">' + _waNum(ms.armor || 0) + '</td>';
+            html += '<td style="padding:5px;">' + _waNum(ms.bows || 0) + '</td>';
+            html += '<td style="padding:5px;">' + _waNum(ms.arrows || 0) + '</td>';
+            html += '<td style="padding:5px;">' + _waNum(ms.horses || 0) + '</td>';
+            html += '</tr>';
+        }
+        html += '</tbody></table></div>';
+
+        // Active wars
+        html += '<h4 style="color:#FFD700;margin:12px 0 6px;">🔥 Active Wars</h4>';
+        var warKeys = Object.keys(activeWars);
+        if (warKeys.length === 0) {
+            html += '<div style="color:#888;font-style:italic;padding:4px;">No active wars — the world is at peace.</div>';
+        } else {
+            for (var wi = 0; wi < warKeys.length; wi++) {
+                var w = activeWars[warKeys[wi]];
+                var aK = w.attackerId ? kingdomMap[w.attackerId] : null;
+                var dK = w.defenderId ? kingdomMap[w.defenderId] : null;
+                var aName = aK ? aK.name : (w.attackerId || '?');
+                var dName = dK ? dK.name : (w.defenderId || '?');
+                var aColor = aK ? aK.color : '#888';
+                var dColor = dK ? dK.color : '#888';
+                var aMil = aK ? (aK.militaryStrength || 0) : 0;
+                var dMil = dK ? (dK.militaryStrength || 0) : 0;
+                var totalMil = Math.max(aMil + dMil, 1);
+                html += '<div style="margin:6px 0;padding:8px;background:#1a1a2e;border-radius:4px;border:1px solid #444;">';
+                html += '<div style="font-weight:bold;margin-bottom:4px;">';
+                html += '<span style="color:' + aColor + ';">' + aName + '</span>';
+                html += ' <span style="color:#f44;">⚔️ vs ⚔️</span> ';
+                html += '<span style="color:' + dColor + ';">' + dName + '</span>';
+                if (w.dayStarted) html += ' <span style="color:#888;font-size:0.75rem;">(Day ' + w.dayStarted + ')</span>';
+                html += '</div>';
+                html += '<div style="display:flex;height:16px;border-radius:3px;overflow:hidden;background:#111;">';
+                html += '<div style="width:' + ((aMil / totalMil) * 100) + '%;background:' + aColor + ';"></div>';
+                html += '<div style="width:' + ((dMil / totalMil) * 100) + '%;background:' + dColor + ';"></div>';
+                html += '</div>';
+                html += '<div style="display:flex;justify-content:space-between;font-size:0.75rem;color:#aaa;margin-top:2px;">';
+                html += '<span>' + _waNum(aMil) + ' str</span><span>' + _waNum(dMil) + ' str</span>';
+                html += '</div></div>';
+            }
+        }
+        return html;
+    }
+
+    function _waBuildPopulation(kingdoms, towns, people) {
+        var html = '';
+        html += '<h4 style="color:#FFD700;margin:0 0 6px;">👥 Population by Kingdom</h4>';
+
+        for (var i = 0; i < kingdoms.length; i++) {
+            var k = kingdoms[i];
+            var kTowns = towns.filter(function(t) { return t.kingdomId === k.id; });
+            kTowns.sort(function(a, b) { return (b.population || 0) - (a.population || 0); });
+            var totalPop = 0;
+            for (var j = 0; j < kTowns.length; j++) totalPop += (kTowns[j].population || 0);
+
+            var kPeople = people.filter(function(p) { return p.kingdomId === k.id; });
+            var illCount = 0;
+            for (var pi = 0; pi < kPeople.length; pi++) {
+                if (kPeople[pi].illnesses && kPeople[pi].illnesses.length > 0) illCount++;
+                else if (kPeople[pi].ill || kPeople[pi].sick) illCount++;
+            }
+
+            html += '<div style="margin-bottom:10px;padding:8px;background:#1a1a2e;border-left:4px solid ' + (k.color || '#666') + ';border-radius:4px;">';
+            html += '<div style="font-weight:bold;color:' + (k.color || '#ccc') + ';margin-bottom:4px;">' + (k.name || '?') + ' — Total Pop: ' + _waNum(totalPop) + '</div>';
+            if (illCount > 0) html += '<div style="color:#f44;font-size:0.78rem;">🤒 Ill NPCs: ' + illCount + '</div>';
+
+            var maxPop = kTowns.length > 0 ? (kTowns[0].population || 1) : 1;
+            for (var ti = 0; ti < kTowns.length; ti++) {
+                var t = kTowns[ti];
+                html += '<div style="display:flex;align-items:center;gap:6px;padding:2px 0;font-size:0.78rem;">';
+                html += '<span style="min-width:120px;color:#ccc;">' + (t.name || '?') + ' <span style="color:#888;font-size:0.7rem;">(' + (t.isCapital ? 'capital' : (t.category || '?')) + ')</span></span>';
+                html += _waBar(t.population || 0, maxPop, k.color || '#4fc3f7', 100);
+                html += '<span style="color:#aaa;">' + _waNum(t.population) + '</span>';
+                html += '</div>';
+            }
+            html += '</div>';
+        }
+
+        // Happiness distribution
+        html += '<h4 style="color:#FFD700;margin:12px 0 6px;">😊 Town Happiness Distribution</h4>';
+        html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.78rem;">';
+        html += '<thead><tr style="background:#1a1a2e;color:#FFD700;">';
+        html += '<th style="padding:4px 6px;border-bottom:2px solid #FFD700;">Town</th>';
+        html += '<th style="padding:4px 6px;border-bottom:2px solid #FFD700;">Kingdom</th>';
+        html += '<th style="padding:4px 6px;border-bottom:2px solid #FFD700;">Happiness</th>';
+        html += '</tr></thead><tbody>';
+        var sortedTowns = towns.slice().sort(function(a, b) { return (b.happiness || 0) - (a.happiness || 0); });
+        for (var ti = 0; ti < sortedTowns.length; ti++) {
+            var t = sortedTowns[ti];
+            var tK = kingdoms.filter(function(kk) { return kk.id === t.kingdomId; })[0];
+            var hapColor = (t.happiness || 0) > 70 ? '#2ecc71' : (t.happiness || 0) > 40 ? '#f39c12' : '#e74c3c';
+            html += '<tr style="border-bottom:1px solid #222;">';
+            html += '<td style="padding:3px 6px;">' + (t.name || '?') + '</td>';
+            html += '<td style="padding:3px 6px;color:' + (tK ? tK.color : '#888') + ';">' + (tK ? tK.name : '?') + '</td>';
+            html += '<td style="padding:3px 6px;">' + _waBar(t.happiness || 0, 100, hapColor, 100) + ' ' + Math.round(t.happiness || 0) + '</td>';
+            html += '</tr>';
+        }
+        html += '</tbody></table></div>';
+        return html;
+    }
+
+    function _waBuildHistory() {
+        var history = window._worldAnalyticsHistory || [];
+        if (history.length === 0) return '<div style="color:#888;font-style:italic;padding:12px;">No history snapshots yet. Data is collected each time you open or refresh this panel.</div>';
+
+        var metrics = [
+            { key: 'gold', label: 'Treasury (Gold)', fmt: function(v) { return _waNum(v) + 'g'; } },
+            { key: 'militaryStrength', label: 'Military Strength', fmt: _waNum },
+            { key: 'prosperity', label: 'Prosperity', fmt: function(v) { return Math.round(v); } },
+            { key: 'happiness', label: 'Happiness', fmt: function(v) { return Math.round(v); } },
+            { key: 'population', label: 'Population', fmt: _waNum },
+            { key: 'warExhaustion', label: 'War Exhaustion', fmt: function(v) { return Math.round(v); } }
+        ];
+
+        var selectedMetric = window._waHistoryMetric || 'gold';
+        var html = '<div style="margin-bottom:10px;">';
+        html += '<label style="color:#FFD700;font-size:0.85rem;">Metric: </label>';
+        html += '<select onchange="window._waHistoryMetric=this.value;UI.openWorldAnalytics()" style="background:#2a2a3e;color:#e0e0e0;border:1px solid #666;padding:3px 6px;border-radius:3px;">';
+        for (var mi = 0; mi < metrics.length; mi++) {
+            html += '<option value="' + metrics[mi].key + '"' + (metrics[mi].key === selectedMetric ? ' selected' : '') + '>' + metrics[mi].label + '</option>';
+        }
+        html += '</select></div>';
+
+        var metric = metrics.filter(function(m) { return m.key === selectedMetric; })[0] || metrics[0];
+        var last = Math.min(history.length, 20);
+        var recent = history.slice(-last);
+
+        // Find all kingdom IDs and max value
+        var kIds = {};
+        var maxVal = 1;
+        for (var hi = 0; hi < recent.length; hi++) {
+            for (var kid in recent[hi].kingdoms) {
+                kIds[kid] = recent[hi].kingdoms[kid];
+                var v = recent[hi].kingdoms[kid][metric.key] || 0;
+                if (v > maxVal) maxVal = v;
+            }
+        }
+        var kIdArr = Object.keys(kIds);
+
+        // CSS bar chart
+        html += '<div style="margin-top:8px;">';
+        html += '<div style="font-weight:bold;color:#FFD700;margin-bottom:6px;">' + metric.label + ' over last ' + recent.length + ' snapshot' + (recent.length > 1 ? 's' : '') + '</div>';
+
+        // Legend
+        html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;font-size:0.75rem;">';
+        for (var li = 0; li < kIdArr.length; li++) {
+            var lk = kIds[kIdArr[li]];
+            html += '<span><span style="display:inline-block;width:10px;height:10px;background:' + (lk.color || '#888') + ';border-radius:2px;vertical-align:middle;"></span> ' + (lk.name || kIdArr[li]) + '</span>';
+        }
+        html += '</div>';
+
+        // Grouped bar chart
+        var barGroupWidth = Math.max(30, Math.floor(600 / Math.max(recent.length, 1)));
+        var singleBarW = Math.max(4, Math.floor((barGroupWidth - 4) / Math.max(kIdArr.length, 1)));
+        var chartH = 150;
+
+        html += '<div style="display:flex;align-items:flex-end;gap:2px;height:' + (chartH + 30) + 'px;overflow-x:auto;padding:4px;background:#111;border-radius:4px;">';
+        for (var hi = 0; hi < recent.length; hi++) {
+            var snap = recent[hi];
+            html += '<div style="display:flex;align-items:flex-end;gap:1px;flex-shrink:0;">';
+            for (var ki = 0; ki < kIdArr.length; ki++) {
+                var kd = snap.kingdoms[kIdArr[ki]];
+                var val = kd ? (kd[metric.key] || 0) : 0;
+                var h = Math.max(2, Math.round((val / maxVal) * chartH));
+                html += '<div title="' + (kd ? kd.name : '?') + ': ' + metric.fmt(val) + ' (Day ' + snap.day + ')" style="width:' + singleBarW + 'px;height:' + h + 'px;background:' + (kd ? kd.color : '#666') + ';border-radius:2px 2px 0 0;"></div>';
+            }
+            html += '</div>';
+        }
+        html += '</div>';
+
+        // X-axis labels (days)
+        html += '<div style="display:flex;gap:2px;font-size:0.65rem;color:#666;overflow-x:auto;">';
+        for (var hi = 0; hi < recent.length; hi++) {
+            html += '<div style="width:' + (barGroupWidth) + 'px;text-align:center;flex-shrink:0;">D' + recent[hi].day + '</div>';
+        }
+        html += '</div>';
+
+        // Current values table
+        if (recent.length > 0) {
+            var latestSnap = recent[recent.length - 1];
+            html += '<div style="margin-top:10px;font-size:0.78rem;">';
+            html += '<div style="color:#888;margin-bottom:3px;">Current values:</div>';
+            for (var ki = 0; ki < kIdArr.length; ki++) {
+                var kd = latestSnap.kingdoms[kIdArr[ki]];
+                if (kd) {
+                    html += '<span style="color:' + (kd.color || '#888') + ';margin-right:12px;">' + (kd.name || '?') + ': <b>' + metric.fmt(kd[metric.key] || 0) + '</b></span>';
+                }
+            }
+            html += '</div>';
+        }
+        html += '</div>';
+        return html;
+    }
+
+    function _waBuildContent() {
+        var tab = window._waTab || 'overview';
+        var kingdoms = Engine.getKingdoms ? Engine.getKingdoms() : [];
+        var towns = Engine.getTowns ? Engine.getTowns() : [];
+        var people = Engine.getPeople ? Engine.getPeople() : [];
+        var day = Engine.getDay ? Engine.getDay() : 0;
+
+        var html = '<style>';
+        html += '.wa-tabs{display:flex;gap:2px;margin-bottom:10px;flex-wrap:wrap;}';
+        html += '.wa-tab{padding:6px 12px;background:#2a2a3e;color:#aaa;border:1px solid #444;border-bottom:none;border-radius:4px 4px 0 0;cursor:pointer;font-size:0.8rem;transition:all 0.2s;}';
+        html += '.wa-tab:hover{background:#3a3a4e;color:#fff;}';
+        html += '.wa-tab-active{background:#1a1a2e;color:#FFD700;border-color:#FFD700;font-weight:bold;}';
+        html += '.wa-panel{background:#1a1a2e;border:1px solid #444;border-radius:0 4px 4px 4px;padding:10px;max-height:65vh;overflow-y:auto;}';
+        html += '</style>';
+
+        html += '<div style="font-size:0.8rem;color:#888;margin-bottom:6px;">Day ' + day + ' | ' + kingdoms.length + ' kingdoms | ' + towns.length + ' towns | ' + people.length + ' people alive</div>';
+
+        var tabs = [
+            { id: 'overview', label: '👑 Kingdom Overview' },
+            { id: 'economy', label: '💰 Economy & Trade' },
+            { id: 'military', label: '⚔️ Military' },
+            { id: 'population', label: '👥 Population' },
+            { id: 'history', label: '📈 History' }
+        ];
+        html += '<div class="wa-tabs">';
+        for (var i = 0; i < tabs.length; i++) {
+            html += '<div class="wa-tab' + (tabs[i].id === tab ? ' wa-tab-active' : '') + '" onclick="window._waTab=\'' + tabs[i].id + '\';UI.openWorldAnalytics()">' + tabs[i].label + '</div>';
+        }
+        var autoOn = !!window._waAutoRefresh;
+        html += '<div style="margin-left:auto;display:flex;align-items:center;gap:4px;">';
+        html += '<button onclick="UI.openWorldAnalytics()" style="padding:4px 8px;background:#2a2a3e;color:#4fc3f7;border:1px solid #4fc3f7;border-radius:3px;cursor:pointer;font-size:0.75rem;">🔄 Refresh</button>';
+        html += '<button onclick="window._waAutoRefresh=!window._waAutoRefresh;UI.openWorldAnalytics()" style="padding:4px 8px;background:' + (autoOn ? '#2d5016' : '#2a2a3e') + ';color:' + (autoOn ? '#4f4' : '#aaa') + ';border:1px solid ' + (autoOn ? '#4a8' : '#666') + ';border-radius:3px;cursor:pointer;font-size:0.75rem;">' + (autoOn ? '⏸️ Auto ON' : '▶️ Auto OFF') + '</button>';
+        html += '</div></div>';
+
+        html += '<div class="wa-panel">';
+        try {
+            if (tab === 'overview') html += _waBuildOverview(kingdoms, towns, people);
+            else if (tab === 'economy') html += _waBuildEconomy(kingdoms, towns);
+            else if (tab === 'military') html += _waBuildMilitary(kingdoms, towns);
+            else if (tab === 'population') html += _waBuildPopulation(kingdoms, towns, people);
+            else if (tab === 'history') html += _waBuildHistory();
+        } catch (e) {
+            html += '<div style="color:#f44;padding:8px;">Error rendering tab: ' + e.message + '</div>';
+        }
+        html += '</div>';
+        return html;
+    }
+
+    function openWorldAnalytics() {
+        // Take snapshot for history tracking
+        if (!window._worldAnalyticsHistory) window._worldAnalyticsHistory = [];
+        var snap = _waSnapshot();
+        var lastSnap = window._worldAnalyticsHistory.length > 0 ? window._worldAnalyticsHistory[window._worldAnalyticsHistory.length - 1] : null;
+        if (!lastSnap || lastSnap.day !== snap.day) {
+            window._worldAnalyticsHistory.push(snap);
+        }
+
+        // Clear previous auto-refresh
+        if (window._waAutoRefreshTimer) { clearInterval(window._waAutoRefreshTimer); window._waAutoRefreshTimer = null; }
+
+        if (!window._waTab) window._waTab = 'overview';
+        if (!window._waHistoryMetric) window._waHistoryMetric = 'gold';
+
+        var content = _waBuildContent();
+        openModal('🌍 World Analytics', content);
+
+        // Widen the modal
+        setTimeout(function() {
+            var mc = document.querySelector('.modal-content');
+            if (mc) { mc.style.maxWidth = '95vw'; mc.style.width = '95vw'; }
+            var md = document.getElementById('modalDialog');
+            if (md) { md.style.maxWidth = '95vw'; md.style.width = '95vw'; }
+        }, 50);
+
+        // Auto-refresh if enabled
+        if (window._waAutoRefresh) {
+            window._waAutoRefreshTimer = setInterval(function() {
+                var mo = document.getElementById('modalOverlay');
+                if (!mo || mo.classList.contains('hidden')) {
+                    clearInterval(window._waAutoRefreshTimer);
+                    window._waAutoRefreshTimer = null;
+                    return;
+                }
+                var newSnap = _waSnapshot();
+                var prevSnap = window._worldAnalyticsHistory.length > 0 ? window._worldAnalyticsHistory[window._worldAnalyticsHistory.length - 1] : null;
+                if (!prevSnap || prevSnap.day !== newSnap.day) {
+                    window._worldAnalyticsHistory.push(newSnap);
+                }
+                var mb = document.getElementById('modalBody');
+                if (mb) {
+                    try { mb.innerHTML = _waBuildContent(); } catch(e) {}
+                }
+            }, 3000);
+        }
+    }
+
     return {
         init,
         update,
@@ -25201,5 +25785,6 @@ window.UI = (function () {
         openGodModePanel,
         closeGodModePanel,
         buildGodModeHTML,
+        openWorldAnalytics,
     };
 })();
