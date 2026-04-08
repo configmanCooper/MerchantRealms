@@ -2266,105 +2266,214 @@ window.Renderer = (function () {
 
             if (!isVisible(cx, cy, 50)) continue;
 
-            // Draw caravan marker — small carriage icon
+            // Draw caravan marker
             var pulse = Math.sin(frameCount * 0.06) * 0.8;
             var sc = (camera.zoom > 0.5 ? 1.0 : 0.7) + pulse * 0.05;
-            var cColor = caravan.disbanding ? '#c06060' : '#8b6914';
-            var cLight = caravan.disbanding ? '#e0a0a0' : '#c2a050';
-            var cDark = caravan.disbanding ? '#802020' : '#5a3e0a';
+            var isSea = caravan.routeType === 'sea';
 
             ctx.save();
             ctx.translate(cx, cy);
             ctx.scale(sc, sc);
 
-            // Subtle glow beneath
-            ctx.shadowColor = cColor;
-            ctx.shadowBlur = 6;
+            if (isSea) {
+                // ─── SHIP SPRITE for sea caravans ───
+                var sColor = caravan.disbanding ? '#c06060' : '#2a6496';
+                var sLight = caravan.disbanding ? '#e0a0a0' : '#4a94c8';
+                var sDark  = caravan.disbanding ? '#802020' : '#1a3a5a';
+                var sAccent = caravan.disbanding ? '#c08080' : '#c2a050';
 
-            // Wagon body (rounded rectangle)
-            ctx.fillStyle = cColor;
-            ctx.beginPath();
-            ctx.moveTo(-7, -2);
-            ctx.lineTo(7, -2);
-            ctx.lineTo(8, -1);
-            ctx.lineTo(8, 3);
-            ctx.lineTo(-8, 3);
-            ctx.lineTo(-8, -1);
-            ctx.closePath();
-            ctx.fill();
+                // Subtle water glow
+                ctx.shadowColor = '#2080c0';
+                ctx.shadowBlur = 8;
 
-            ctx.shadowBlur = 0;
-
-            // Canopy / cover (arched top)
-            ctx.fillStyle = cLight;
-            ctx.beginPath();
-            ctx.moveTo(-6, -2);
-            ctx.quadraticCurveTo(-6, -8, 0, -9);
-            ctx.quadraticCurveTo(6, -8, 6, -2);
-            ctx.closePath();
-            ctx.fill();
-
-            // Canopy outline
-            ctx.strokeStyle = cDark;
-            ctx.lineWidth = 0.7;
-            ctx.beginPath();
-            ctx.moveTo(-6, -2);
-            ctx.quadraticCurveTo(-6, -8, 0, -9);
-            ctx.quadraticCurveTo(6, -8, 6, -2);
-            ctx.stroke();
-
-            // Canopy ribs
-            ctx.strokeStyle = cDark;
-            ctx.lineWidth = 0.4;
-            ctx.beginPath();
-            ctx.moveTo(-3, -2); ctx.quadraticCurveTo(-3, -7, 0, -8);
-            ctx.moveTo(3, -2); ctx.quadraticCurveTo(3, -7, 0, -8);
-            ctx.stroke();
-
-            // Wagon body outline
-            ctx.strokeStyle = cDark;
-            ctx.lineWidth = 0.7;
-            ctx.strokeRect(-8, -2, 16, 5);
-
-            // Wheels (two circles)
-            var wheelY = 4;
-            // Left wheel
-            ctx.fillStyle = cDark;
-            ctx.beginPath();
-            ctx.arc(-5, wheelY, 3, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = cLight;
-            ctx.beginPath();
-            ctx.arc(-5, wheelY, 1.5, 0, Math.PI * 2);
-            ctx.fill();
-            // Spokes
-            ctx.strokeStyle = cLight;
-            ctx.lineWidth = 0.4;
-            for (var sp = 0; sp < 4; sp++) {
-                var ang = sp * Math.PI / 4 + frameCount * 0.03;
+                // Hull (elongated boat shape)
+                ctx.fillStyle = sColor;
                 ctx.beginPath();
-                ctx.moveTo(-5 + Math.cos(ang) * 1.2, wheelY + Math.sin(ang) * 1.2);
-                ctx.lineTo(-5 + Math.cos(ang) * 2.8, wheelY + Math.sin(ang) * 2.8);
-                ctx.stroke();
-            }
+                ctx.moveTo(-10, 2);
+                ctx.quadraticCurveTo(-10, 5, -6, 6);
+                ctx.lineTo(6, 6);
+                ctx.quadraticCurveTo(11, 5, 12, 2);
+                ctx.lineTo(10, -1);
+                ctx.lineTo(-8, -1);
+                ctx.closePath();
+                ctx.fill();
 
-            // Right wheel
-            ctx.fillStyle = cDark;
-            ctx.beginPath();
-            ctx.arc(5, wheelY, 3, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = cLight;
-            ctx.beginPath();
-            ctx.arc(5, wheelY, 1.5, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.strokeStyle = cLight;
-            ctx.lineWidth = 0.4;
-            for (var sp2 = 0; sp2 < 4; sp2++) {
-                var ang2 = sp2 * Math.PI / 4 + frameCount * 0.03;
+                ctx.shadowBlur = 0;
+
+                // Hull outline
+                ctx.strokeStyle = sDark;
+                ctx.lineWidth = 0.7;
                 ctx.beginPath();
-                ctx.moveTo(5 + Math.cos(ang2) * 1.2, wheelY + Math.sin(ang2) * 1.2);
-                ctx.lineTo(5 + Math.cos(ang2) * 2.8, wheelY + Math.sin(ang2) * 2.8);
+                ctx.moveTo(-10, 2);
+                ctx.quadraticCurveTo(-10, 5, -6, 6);
+                ctx.lineTo(6, 6);
+                ctx.quadraticCurveTo(11, 5, 12, 2);
+                ctx.lineTo(10, -1);
+                ctx.lineTo(-8, -1);
+                ctx.closePath();
                 ctx.stroke();
+
+                // Hull stripe
+                ctx.strokeStyle = sLight;
+                ctx.lineWidth = 0.5;
+                ctx.beginPath();
+                ctx.moveTo(-8, 2);
+                ctx.lineTo(10, 2);
+                ctx.stroke();
+
+                // Mast
+                ctx.strokeStyle = sAccent;
+                ctx.lineWidth = 1.2;
+                ctx.beginPath();
+                ctx.moveTo(1, -1);
+                ctx.lineTo(1, -14);
+                ctx.stroke();
+
+                // Sail (triangle, flutters slightly)
+                var sailFlutter = Math.sin(frameCount * 0.04) * 0.8;
+                ctx.fillStyle = '#e8dcc8';
+                ctx.beginPath();
+                ctx.moveTo(1, -13);
+                ctx.quadraticCurveTo(8 + sailFlutter, -8, 2, -2);
+                ctx.lineTo(1, -2);
+                ctx.closePath();
+                ctx.fill();
+
+                // Sail outline
+                ctx.strokeStyle = sDark;
+                ctx.lineWidth = 0.5;
+                ctx.beginPath();
+                ctx.moveTo(1, -13);
+                ctx.quadraticCurveTo(8 + sailFlutter, -8, 2, -2);
+                ctx.lineTo(1, -2);
+                ctx.closePath();
+                ctx.stroke();
+
+                // Sail line across
+                ctx.strokeStyle = 'rgba(100,80,60,0.3)';
+                ctx.lineWidth = 0.3;
+                ctx.beginPath();
+                ctx.moveTo(1, -9);
+                ctx.lineTo(5 + sailFlutter * 0.5, -7);
+                ctx.stroke();
+
+                // Bow flag
+                ctx.strokeStyle = sAccent;
+                ctx.lineWidth = 0.5;
+                ctx.beginPath();
+                ctx.moveTo(1, -14);
+                ctx.lineTo(4, -14);
+                ctx.lineTo(2.5, -12.5);
+                ctx.lineTo(4, -11);
+                ctx.stroke();
+
+                // Small wake lines behind ship
+                ctx.strokeStyle = 'rgba(180,220,255,0.35)';
+                ctx.lineWidth = 0.5;
+                var waveOff = Math.sin(frameCount * 0.08) * 1.5;
+                ctx.beginPath();
+                ctx.moveTo(-10, 4 + waveOff);
+                ctx.lineTo(-14, 5 + waveOff);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(-9, 6 + waveOff * 0.7);
+                ctx.lineTo(-13, 7 + waveOff * 0.7);
+                ctx.stroke();
+            } else {
+                // ─── WAGON SPRITE for land caravans ───
+                var cColor = caravan.disbanding ? '#c06060' : '#8b6914';
+                var cLight = caravan.disbanding ? '#e0a0a0' : '#c2a050';
+                var cDark = caravan.disbanding ? '#802020' : '#5a3e0a';
+
+                // Subtle glow beneath
+                ctx.shadowColor = cColor;
+                ctx.shadowBlur = 6;
+
+                // Wagon body (rounded rectangle)
+                ctx.fillStyle = cColor;
+                ctx.beginPath();
+                ctx.moveTo(-7, -2);
+                ctx.lineTo(7, -2);
+                ctx.lineTo(8, -1);
+                ctx.lineTo(8, 3);
+                ctx.lineTo(-8, 3);
+                ctx.lineTo(-8, -1);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.shadowBlur = 0;
+
+                // Canopy / cover (arched top)
+                ctx.fillStyle = cLight;
+                ctx.beginPath();
+                ctx.moveTo(-6, -2);
+                ctx.quadraticCurveTo(-6, -8, 0, -9);
+                ctx.quadraticCurveTo(6, -8, 6, -2);
+                ctx.closePath();
+                ctx.fill();
+
+                // Canopy outline
+                ctx.strokeStyle = cDark;
+                ctx.lineWidth = 0.7;
+                ctx.beginPath();
+                ctx.moveTo(-6, -2);
+                ctx.quadraticCurveTo(-6, -8, 0, -9);
+                ctx.quadraticCurveTo(6, -8, 6, -2);
+                ctx.stroke();
+
+                // Canopy ribs
+                ctx.strokeStyle = cDark;
+                ctx.lineWidth = 0.4;
+                ctx.beginPath();
+                ctx.moveTo(-3, -2); ctx.quadraticCurveTo(-3, -7, 0, -8);
+                ctx.moveTo(3, -2); ctx.quadraticCurveTo(3, -7, 0, -8);
+                ctx.stroke();
+
+                // Wagon body outline
+                ctx.strokeStyle = cDark;
+                ctx.lineWidth = 0.7;
+                ctx.strokeRect(-8, -2, 16, 5);
+
+                // Wheels (two circles)
+                var wheelY = 4;
+                // Left wheel
+                ctx.fillStyle = cDark;
+                ctx.beginPath();
+                ctx.arc(-5, wheelY, 3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = cLight;
+                ctx.beginPath();
+                ctx.arc(-5, wheelY, 1.5, 0, Math.PI * 2);
+                ctx.fill();
+                // Spokes
+                ctx.strokeStyle = cLight;
+                ctx.lineWidth = 0.4;
+                for (var sp = 0; sp < 4; sp++) {
+                    var ang = sp * Math.PI / 4 + frameCount * 0.03;
+                    ctx.beginPath();
+                    ctx.moveTo(-5 + Math.cos(ang) * 1.2, wheelY + Math.sin(ang) * 1.2);
+                    ctx.lineTo(-5 + Math.cos(ang) * 2.8, wheelY + Math.sin(ang) * 2.8);
+                    ctx.stroke();
+                }
+
+                // Right wheel
+                ctx.fillStyle = cDark;
+                ctx.beginPath();
+                ctx.arc(5, wheelY, 3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = cLight;
+                ctx.beginPath();
+                ctx.arc(5, wheelY, 1.5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = cLight;
+                ctx.lineWidth = 0.4;
+                for (var sp2 = 0; sp2 < 4; sp2++) {
+                    var ang2 = sp2 * Math.PI / 4 + frameCount * 0.03;
+                    ctx.beginPath();
+                    ctx.moveTo(5 + Math.cos(ang2) * 1.2, wheelY + Math.sin(ang2) * 1.2);
+                    ctx.lineTo(5 + Math.cos(ang2) * 2.8, wheelY + Math.sin(ang2) * 2.8);
+                    ctx.stroke();
+                }
             }
 
             // Caravan name / goods at higher zoom
@@ -2376,9 +2485,10 @@ window.Renderer = (function () {
                 ctx.fillStyle = '#e8dcc8';
                 var fromName = caravan.returnTrip ? (to ? to.name : '?') : (from ? from.name : '?');
                 var toName = caravan.returnTrip ? (from ? from.name : '?') : (to ? to.name : '?');
-                ctx.fillText(fromName + '→' + toName, 0, 10);
+                var labelY = isSea ? 9 : 10;
+                ctx.fillText(fromName + '\u2192' + toName, 0, labelY);
                 if (goodsCount > 0) {
-                    ctx.fillText('📦' + goodsCount, 0, 19);
+                    ctx.fillText((isSea ? '\u2693' : '\uD83D\uDCE6') + goodsCount, 0, labelY + 9);
                 }
             }
 
