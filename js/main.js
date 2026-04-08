@@ -604,16 +604,14 @@ window.Game = (function () {
                     if (event.type === 'warDeclared') {
                         var tutorialActive = typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive();
                         if (!tutorialActive && typeof Player !== 'undefined' && Player.shouldShowWarAllegiancePopup && Player.shouldShowWarAllegiancePopup(event)) {
-                            // Auto-neutral for the very first war the player encounters
-                            var hasAnyPriorAllegiance = false;
-                            if (Player.warAllegiances) {
-                                for (var _wk in Player.warAllegiances) { hasAnyPriorAllegiance = true; break; }
-                            }
-                            if (!hasAnyPriorAllegiance) {
-                                // First war ever — auto-neutral, no popup
+                            // Auto-neutral only in the very early game (first 30 days)
+                            var earlyGame = (Engine.getDay ? Engine.getDay() : 999) <= 30;
+                            if (earlyGame) {
+                                // New player — auto-neutral, no popup
                                 if (Player.setWarAllegiance) Player.setWarAllegiance(event.warId, 'neutral');
                                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚔️ War declared! You remain neutral for now.', 'info', 'military');
                             } else {
+                                // Established player — always show allegiance choice
                                 if (typeof UI !== 'undefined' && UI.showWarAllegiancePopup) {
                                     UI.showWarAllegiancePopup(event);
                                 }

@@ -9363,6 +9363,9 @@ window.UI = (function () {
         // Social Status section
         html += buildSocialStatusHtml();
 
+        // ── War Advisory Section ──
+        html += _buildWarAdvisoryHtml();
+
         // Journal & Financial Report buttons
         html += `<div style="text-align:center;margin:12px 0 6px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
             <button class="btn-medieval" onclick="UI.openJournal()" style="font-size:0.85rem;padding:6px 18px;">📖 Read My Journal</button>
@@ -9370,6 +9373,150 @@ window.UI = (function () {
         </div>`;
 
         openModal(`👤 ${Player.fullName || 'Character'}`, html);
+    }
+
+    function _buildWarAdvisoryHtml() {
+        if (typeof Player === 'undefined' || typeof Engine === 'undefined') return '';
+        var allegiances = Player.warAllegiances || Player.state.warAllegiances || {};
+        var activeWars = Engine.getActiveWars ? Engine.getActiveWars() : {};
+        var html = '';
+        var hasAny = false;
+
+        // Collect active war entries
+        var activeEntries = [];
+        var endedEntries = [];
+        for (var warId in allegiances) {
+            var alleg = allegiances[warId];
+            var war = activeWars[warId];
+            if (war) {
+                activeEntries.push({ warId: warId, alleg: alleg, war: war });
+            } else {
+                endedEntries.push({ warId: warId, alleg: alleg });
+            }
+        }
+
+        if (activeEntries.length === 0 && endedEntries.length === 0) return '';
+        hasAny = true;
+
+        html += '<div class="detail-section" style="border:1px solid rgba(200,80,80,0.3);background:rgba(200,80,80,0.04);">';
+        html += '<h3>⚔️ War Status & Advisory</h3>';
+
+        // Active wars
+        for (var ai = 0; ai < activeEntries.length; ai++) {
+            var entry = activeEntries[ai];
+            var w = entry.war;
+            var a = entry.alleg;
+            var kA = Engine.findKingdom(w.kingdomA);
+            var kB = Engine.findKingdom(w.kingdomB);
+            var nameA = kA ? kA.name : 'Kingdom A';
+            var nameB = kB ? kB.name : 'Kingdom B';
+            var daysSinceStart = (Engine.getDay() - (w.startDay || 0));
+
+            html += '<div style="background:rgba(0,0,0,0.25);border:1px solid rgba(200,80,80,0.25);border-radius:6px;padding:10px;margin-bottom:8px;">';
+            html += '<div style="font-weight:bold;color:#ff6644;margin-bottom:6px;">🔥 ' + nameA + ' vs ' + nameB + ' <span style="font-size:0.75rem;color:#888;">(Day ' + daysSinceStart + ' of war)</span></div>';
+
+            // Current allegiance
+            var sideLabel, sideColor;
+            if (a.side === 'neutral') {
+                sideLabel = '🕊️ Neutral';
+                sideColor = '#aab';
+            } else {
+                var sideK = Engine.findKingdom(a.side);
+                sideLabel = '⚔️ Allied with ' + (sideK ? sideK.name : a.side);
+                sideColor = '#4ecdc4';
+            }
+            html += '<div class="detail-row"><span class="label">Your Stance</span><span class="value" style="color:' + sideColor + ';">' + sideLabel + '</span></div>';
+
+            // Advisory & consequences based on stance
+            if (a.side === 'neutral') {
+                html += '<div style="margin-top:8px;padding:8px;background:rgba(170,170,187,0.08);border-radius:4px;font-size:0.8rem;">';
+                html += '<div style="color:#ccb974;font-weight:bold;margin-bottom:4px;">📋 Neutral Advisory</div>';
+                html += '<div style="color:#bbb;margin-bottom:3px;">✅ You can trade freely with <strong>both</strong> kingdoms, including military goods.</div>';
+                html += '<div style="color:#bbb;margin-bottom:3px;">✅ No reputation change on war end — no reward, but no punishment either.</div>';
+                html += '<div style="color:#e67e22;margin-bottom:3px;">⚠️ <strong>Caution:</strong> Military goods sales to both sides are tracked. Keep them balanced!</div>';
+                html += '<div style="color:#aaa;margin-bottom:2px;padding-left:12px;">• At <strong>3:1</strong> sales ratio → extra 10% tax from the disadvantaged kingdom</div>';
+                html += '<div style="color:#aaa;margin-bottom:2px;padding-left:12px;">• At <strong>5:1</strong> ratio → risk of buildings being seized in the undersupplied kingdom</div>';
+                html += '<div style="color:#c44e52;margin-bottom:2px;padding-left:12px;">• At <strong>10:1</strong> ratio → total asset seizure + reputation destroyed in that kingdom</div>';
+
+                // Show current sales imbalance if any
+                var salesA = a.salesA || 0;
+                var salesB = a.salesB || 0;
+                if (salesA > 0 || salesB > 0) {
+                    var maxSales = Math.max(salesA, salesB, 1);
+                    var minSales = Math.min(salesA, salesB);
+                    var ratio = minSales > 0 ? (maxSales / minSales) : (maxSales > 0 ? maxSales : 0);
+                    var ratioColor = ratio >= 5 ? '#c44e52' : ratio >= 3 ? '#e67e22' : '#55a868';
+                    html += '<div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);">';
+                    html += '<div style="color:#aaa;margin-bottom:3px;">📊 Military sales: <strong>' + nameA + '</strong>: ' + salesA + ' | <strong>' + nameB + '</strong>: ' + salesB + '</div>';
+                    if (ratio > 1) {
+                        html += '<div style="color:' + ratioColor + ';">Ratio: ' + ratio.toFixed(1) + ':1 ' + (ratio >= 5 ? '— ⚠️ DANGER!' : ratio >= 3 ? '— ⚠️ Taxed' : '— Safe') + '</div>';
+                    }
+                    html += '</div>';
+                }
+                html += '</div>';
+            } else {
+                // Allied with a side
+                var alliedK = Engine.findKingdom(a.side);
+                var enemyId = a.side === w.kingdomA ? w.kingdomB : w.kingdomA;
+                var enemyK = Engine.findKingdom(enemyId);
+                var alliedName = alliedK ? alliedK.name : 'your ally';
+                var enemyName = enemyK ? enemyK.name : 'the enemy';
+
+                html += '<div style="margin-top:8px;padding:8px;background:rgba(78,205,196,0.08);border-radius:4px;font-size:0.8rem;">';
+                html += '<div style="color:#4ecdc4;font-weight:bold;margin-bottom:4px;">📋 Allied Advisory</div>';
+                html += '<div style="color:#bbb;margin-bottom:3px;">✅ Trade freely with <strong>' + alliedName + '</strong> — they appreciate your support.</div>';
+                html += '<div style="color:#c44e52;margin-bottom:3px;">🚫 <strong>Cannot</strong> sell military goods (weapons, armor, horses) to <strong>' + enemyName + '</strong>.</div>';
+                html += '<div style="color:#bbb;margin-bottom:6px;">💡 Non-military trade with ' + enemyName + ' is still allowed but may draw suspicion.</div>';
+                html += '<div style="color:#ccb974;font-weight:bold;margin-bottom:4px;">If ' + alliedName + ' wins:</div>';
+                html += '<div style="color:#55a868;margin-bottom:2px;padding-left:12px;">• +30 reputation with ' + alliedName + '</div>';
+                html += '<div style="color:#55a868;margin-bottom:2px;padding-left:12px;">• +1 social rank in ' + alliedName + '</div>';
+                html += '<div style="color:#55a868;margin-bottom:4px;padding-left:12px;">• Gold reward (up to 5,000g based on your contributions)</div>';
+                html += '<div style="color:#c44e52;font-weight:bold;margin-bottom:4px;">If ' + alliedName + ' loses:</div>';
+                html += '<div style="color:#c44e52;margin-bottom:2px;padding-left:12px;">• Buildings in ' + enemyName + ' territory may be seized</div>';
+                html += '<div style="color:#c44e52;margin-bottom:2px;padding-left:12px;">• Reputation with ' + enemyName + ' drops to 10</div>';
+                html += '</div>';
+            }
+
+            // Change allegiance button (can switch mid-war with penalties)
+            html += '<div style="margin-top:6px;text-align:center;">';
+            html += '<button class="btn-medieval" onclick="UI._reopenWarChoice(\'' + entry.warId + '\')" style="font-size:0.75rem;padding:4px 12px;">🔄 Change Allegiance</button>';
+            html += '</div>';
+
+            html += '</div>';
+        }
+
+        // Ended wars (brief summary)
+        if (endedEntries.length > 0) {
+            html += '<div style="margin-top:6px;border-top:1px solid rgba(255,255,255,0.1);padding-top:6px;">';
+            html += '<div style="font-size:0.75rem;color:#888;margin-bottom:4px;">Past Wars:</div>';
+            for (var ei = 0; ei < endedEntries.length; ei++) {
+                var ended = endedEntries[ei];
+                var sLabel = ended.alleg.side === 'neutral' ? '🕊️ Neutral' : '⚔️ Sided with ' + (Engine.findKingdom(ended.alleg.side) ? Engine.findKingdom(ended.alleg.side).name : ended.alleg.side);
+                html += '<div style="font-size:0.75rem;color:#777;margin-bottom:2px;">' + sLabel + ' — War ended</div>';
+            }
+            html += '</div>';
+        }
+
+        html += '</div>';
+        return html;
+    }
+
+    function _reopenWarChoice(warId) {
+        var activeWars = Engine.getActiveWars ? Engine.getActiveWars() : {};
+        var war = activeWars[warId];
+        if (!war) { toast('This war has ended.', 'warning'); return; }
+        var kA = Engine.findKingdom(war.kingdomA);
+        var kB = Engine.findKingdom(war.kingdomB);
+        closeModal();
+        showWarAllegiancePopup({
+            warId: warId,
+            kingdomA: war.kingdomA,
+            kingdomB: war.kingdomB,
+            nameA: kA ? kA.name : 'Kingdom A',
+            nameB: kB ? kB.name : 'Kingdom B',
+            strengthA: war.strengthAtStart ? (war.strengthAtStart[war.kingdomA] || 0) : 0,
+            strengthB: war.strengthAtStart ? (war.strengthAtStart[war.kingdomB] || 0) : 0
+        });
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -24778,6 +24925,7 @@ window.UI = (function () {
         // War Allegiance
         showWarAllegiancePopup,
         chooseWarAllegiance,
+        _reopenWarChoice,
         // Bankruptcy
         showBankruptcyDialog,
         handleBankruptcyChoice,
