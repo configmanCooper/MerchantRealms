@@ -1247,7 +1247,8 @@ window.UI = (function () {
             rememberedData = Player.getRememberedPrices(town.id);
             if (rememberedData) showStale = true;
         }
-
+
+
         // View Townspeople button — only if player is in this town or a connected town
         if (isPlayerHere) {
             html += `<div class="text-center mt-sm">
@@ -1948,7 +1949,8 @@ window.UI = (function () {
             }
             html += `</div>`;
         }
-
+
+
         // Kingdom Trade Requests (street-trade style — per item, any qty)
         if (typeof Player !== 'undefined' && Player.getKingdomTradeRequests) {
             var kTradeRequests = [];
@@ -4478,6 +4480,159 @@ window.UI = (function () {
             html += '</div>';
         }
 
+
+        // ── BUILDING STORAGE (output + input as INDEPENDENT pools) ──
+        if (bld.townId === Player.townId) {
+            var _bldCap = Math.floor((bt.storage || 0) * (1 + (((bld.level || 1) - 1) * 0.50)));
+            // Build output goods set
+            var _producesId = bt.produces || null;
+            var _outputSet2 = {};
+            if (_producesId) _outputSet2[_producesId] = true;
+            if (bt.canProduce) { for (var _ci0 = 0; _ci0 < bt.canProduce.length; _ci0++) _outputSet2[bt.canProduce[_ci0]] = true; }
+            // Calculate output and input weights separately
+            var _outputWeight = 0;
+            var _inputWeight = 0;
+            if (bld.inventory) {
+                for (var _bk in bld.inventory) {
+                    var _br = findResource(_bk);
+                    var _bw = (bld.inventory[_bk] || 0) * (_br ? (_br.weight || 1) : 1);
+                    if (_outputSet2[_bk]) _outputWeight += _bw;
+                    else _inputWeight += _bw;
+                }
+            }
+            // Gather consumed goods set for this building
+            var _consumedSet = Player.getBuildingConsumedGoods ? Player.getBuildingConsumedGoods(bt) : {};
+            var _inputOnly = bld.inputOnly !== false;
+            if (_bldCap > 0) {
+                html += '<div style="padding:8px;border:1px solid var(--border);border-radius:4px;margin-bottom:8px;">';
+                html += '<div style="font-weight:bold;font-size:0.85rem;margin-bottom:4px;">📦 BUILDING STORAGE</div>';
+
+                // ── Output Storage (independent pool) ──
+                if (_producesId) {
+                    html += '<div style="margin-bottom:6px;">';
+                    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:2px;">';
+                    html += '<span style="font-size:0.78rem;font-weight:bold;color:#7cb342;">📤 Output Storage</span>';
+                    html += '<span style="font-size:0.72rem;color:#aaa;">' + Math.round(_outputWeight) + ' / ' + _bldCap + ' (' + Math.round(Math.max(0, _bldCap - _outputWeight)) + ' free)</span>';
+                    html += '</div>';
+                    var _outputPct = _bldCap > 0 ? Math.min(100, Math.round((_outputWeight / _bldCap) * 100)) : 0;
+                    var _outputBarColor = _outputPct >= 90 ? '#e74c3c' : _outputPct >= 60 ? '#e67e22' : '#7cb342';
+                    html += '<div style="height:5px;background:#333;border-radius:3px;margin-bottom:4px;"><div style="height:100%;width:' + _outputPct + '%;background:' + _outputBarColor + ';border-radius:3px;"></div></div>';
+                    var _hasOutput = false;
+                    for (var _ok in _outputSet2) {
+                        var _oQty = (bld.inventory && bld.inventory[_ok]) || 0;
+                        if (_oQty <= 0) continue;
+                        _hasOutput = true;
+                        var _or = findResource(_ok);
+                        var _oName = _or ? ((_or.icon || '') + ' ' + _or.name) : _ok;
+                        html += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-size:0.78rem;">';
+                        html += '<span style="min-width:130px;">' + _oName + ': ' + _oQty + '</span>';
+                        html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI.collectOutputUI(\'' + bld.id + '\',\'' + _ok + '\',1)">Take 1</button>';
+                        if (_oQty >= 5) html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI.collectOutputUI(\'' + bld.id + '\',\'' + _ok + '\',5)">5</button>';
+                        html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI.collectOutputUI(\'' + bld.id + '\',\'' + _ok + '\',' + _oQty + ')">All</button>';
+                        html += '</div>';
+                    }
+                    if (!_hasOutput) html += '<div style="font-size:0.72rem;color:#888;">No output stored.</div>';
+                    if (_outputPct >= 100 && !bld.transferEnabled) {
+                        html += '<div style="font-size:0.72rem;color:#7cb342;margin-top:2px;">💰 Storage full — overflow auto-selling to market</div>';
+                    }
+                    html += '</div>';
+                }
+
+                // ── Input Storage (independent pool — same cap as output) ──
+                var _inputCap = _bldCap;
+
+                html += '<div style="margin-bottom:6px;">';
+                html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">';
+                html += '<span style="font-size:0.78rem;font-weight:bold;color:#64b5f6;">📥 Input Storage</span>';
+                html += '<span style="font-size:0.72rem;color:#aaa;">' + Math.round(_inputWeight) + ' / ' + Math.round(_inputCap) + ' (' + Math.round(Math.max(0, _inputCap - _inputWeight)) + ' free)</span>';
+                if (_producesId) {
+                    html += '<label style="font-size:0.68rem;color:#aaa;cursor:pointer;"><input type="checkbox" ' + (_inputOnly ? 'checked' : '') + ' onchange="(function(){var r=Player.toggleBuildingInputOnly(\'' + bld.id + '\');UI.toast(r.message,r.success?\'success\':\'warning\');UI.showBuildingDetail(\'' + bld.id + '\');})()" style="margin-right:3px;vertical-align:middle;"> Only accept consumed goods</label>';
+                }
+                html += '</div>';
+                // Capacity bar
+                var _inputPct = _inputCap > 0 ? Math.min(100, Math.round((_inputWeight / _inputCap) * 100)) : 0;
+                var _inputBarColor = _inputPct >= 90 ? '#e74c3c' : _inputPct >= 60 ? '#e67e22' : '#64b5f6';
+                html += '<div style="height:5px;background:#333;border-radius:3px;margin-bottom:6px;"><div style="height:100%;width:' + _inputPct + '%;background:' + _inputBarColor + ';border-radius:3px;"></div></div>';
+
+                // Items currently in input storage — withdraw section
+                var _hasInput = false;
+                if (bld.inventory) {
+                    for (var _ik in bld.inventory) {
+                        if (_outputSet2[_ik] || bld.inventory[_ik] <= 0) continue;
+                        _hasInput = true;
+                        var _ir = findResource(_ik);
+                        var _iName = _ir ? ((_ir.icon || '') + ' ' + _ir.name) : _ik;
+                        var _isConsumed = _consumedSet[_ik];
+                        var _iQty = bld.inventory[_ik];
+                        html += '<div style="display:flex;align-items:center;gap:4px;margin:3px 0;font-size:0.78rem;flex-wrap:wrap;">';
+                        html += '<span style="min-width:120px;">' + _iName + ': <strong>' + _iQty + '</strong>' + (_isConsumed ? ' <span style="color:#7cb342;font-size:0.6rem;">(used)</span>' : '') + '</span>';
+                        html += '<span style="display:flex;gap:2px;align-items:center;">';
+                        var _wQtys = [1, 5, 10];
+                        for (var _qi = 0; _qi < _wQtys.length; _qi++) {
+                            if (_iQty >= _wQtys[_qi]) html += '<button class="btn-trade buy" style="font-size:0.6rem;padding:1px 5px;" onclick="UI._bldWithdraw(\'' + bld.id + '\',\'' + _ik + '\',' + _wQtys[_qi] + ')">' + _wQtys[_qi] + '</button>';
+                        }
+                        html += '<button class="btn-trade buy" style="font-size:0.6rem;padding:1px 5px;" onclick="UI._bldWithdraw(\'' + bld.id + '\',\'' + _ik + '\',' + _iQty + ')">All</button>';
+                        html += '</span>';
+                        html += '</div>';
+                    }
+                }
+                if (!_hasInput) html += '<div style="font-size:0.72rem;color:#888;">No input items stored.</div>';
+
+                // Deposit from player inventory + town storage
+                if (bld.townId === Player.townId) {
+                    html += '<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px;">';
+                    html += '<div style="font-size:0.72rem;font-weight:bold;color:#aaa;margin-bottom:4px;">📤 Deposit from Inventory / Town Storage</div>';
+                    var _hasDepositable = false;
+                    var _inv = Player.inventory || {};
+                    var _townSt = (Player.state && Player.state.townStorage && Player.state.townStorage[bld.townId]) || {};
+                    // Merge keys from both inventory and town storage
+                    var _allDepKeys = {};
+                    for (var _ik2 in _inv) { if (_inv[_ik2] > 0) _allDepKeys[_ik2] = true; }
+                    for (var _tk2 in _townSt) { if (_townSt[_tk2] > 0) _allDepKeys[_tk2] = true; }
+                    for (var _dk in _allDepKeys) {
+                        var _invQty = _inv[_dk] || 0;
+                        var _tsQty = _townSt[_dk] || 0;
+                        var _totalQty = _invQty + _tsQty;
+                        if (_totalQty <= 0) continue;
+                        var _dr = findResource(_dk);
+                        if (!_dr) continue;
+                        // Filter: livestock only to livestock buildings, horses only to horse buildings
+                        if (_dr.category === 'livestock') continue;
+                        if (_dk === 'horses') continue;
+                        // Input-only filter: allow consumed goods (from all available product recipes)
+                        if (_inputOnly && _producesId && !_consumedSet[_dk]) {
+                            // Fallback: also check bt.consumes directly in case getBuildingConsumedGoods missed it
+                            var _directConsumed = bt.consumes && bt.consumes[_dk];
+                            if (!_directConsumed) continue;
+                        }
+                        // Skip output goods (these belong in output storage)
+                        if (_outputSet2[_dk]) continue;
+                        _hasDepositable = true;
+                        var _dName = (_dr.icon || '') + ' ' + _dr.name;
+                        var _dWeight = _dr.weight || 1;
+                        var _dMaxFit = _inputCap > _inputWeight ? Math.floor((_inputCap - _inputWeight) / _dWeight) : 0;
+                        var _dMax = Math.min(_totalQty, _dMaxFit);
+                        var _dIsConsumed = _consumedSet[_dk];
+                        var _srcNote = _invQty > 0 && _tsQty > 0 ? ' <span style="color:#aaa;font-size:0.6rem;">(' + _invQty + ' inv + ' + _tsQty + ' storage)</span>' : (_tsQty > 0 && _invQty === 0 ? ' <span style="color:#64b5f6;font-size:0.6rem;">(town storage)</span>' : '');
+                        html += '<div style="display:flex;align-items:center;gap:4px;margin:3px 0;font-size:0.78rem;flex-wrap:wrap;">';
+                        html += '<span style="min-width:120px;">' + _dName + ': ' + _totalQty + _srcNote + (_dIsConsumed ? ' <span style="color:#7cb342;font-size:0.6rem;">(used)</span>' : '') + '</span>';
+                        html += '<span style="display:flex;gap:2px;align-items:center;">';
+                        var _sQtys = [1, 5, 10, 25];
+                        for (var _si = 0; _si < _sQtys.length; _si++) {
+                            if (_dMax >= _sQtys[_si]) html += '<button class="btn-trade sell" style="font-size:0.6rem;padding:1px 5px;" onclick="UI._bldDeposit(\'' + bld.id + '\',\'' + _dk + '\',' + _sQtys[_si] + ')">' + _sQtys[_si] + '</button>';
+                        }
+                        if (_dMax > 0) html += '<button class="btn-trade sell" style="font-size:0.6rem;padding:1px 5px;" onclick="UI._bldDeposit(\'' + bld.id + '\',\'' + _dk + '\',' + _dMax + ')">All (' + _dMax + ')</button>';
+                        html += '</span>';
+                        html += '</div>';
+                    }
+                    if (!_hasDepositable) html += '<div style="font-size:0.72rem;color:#888;">Nothing to deposit' + (_inputOnly && _producesId ? ' (input filter on)' : '') + '</div>';
+                    html += '</div>';
+                }
+                html += '</div>';
+                html += '</div>';
+            }
+        }
+
         // WORKERS section
         html += `<div style="padding:8px;border:1px solid var(--border);border-radius:4px;margin-bottom:8px;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
@@ -4735,157 +4890,6 @@ window.UI = (function () {
 
         html += '</div></div>'; // close MAINTENANCE flex + border container
 
-        // ── BUILDING STORAGE (output + input as INDEPENDENT pools) ──
-        if (bld.townId === Player.townId) {
-            var _bldCap = Math.floor((bt.storage || 0) * (1 + (((bld.level || 1) - 1) * 0.50)));
-            // Build output goods set
-            var _producesId = bt.produces || null;
-            var _outputSet2 = {};
-            if (_producesId) _outputSet2[_producesId] = true;
-            if (bt.canProduce) { for (var _ci0 = 0; _ci0 < bt.canProduce.length; _ci0++) _outputSet2[bt.canProduce[_ci0]] = true; }
-            // Calculate output and input weights separately
-            var _outputWeight = 0;
-            var _inputWeight = 0;
-            if (bld.inventory) {
-                for (var _bk in bld.inventory) {
-                    var _br = findResource(_bk);
-                    var _bw = (bld.inventory[_bk] || 0) * (_br ? (_br.weight || 1) : 1);
-                    if (_outputSet2[_bk]) _outputWeight += _bw;
-                    else _inputWeight += _bw;
-                }
-            }
-            // Gather consumed goods set for this building
-            var _consumedSet = Player.getBuildingConsumedGoods ? Player.getBuildingConsumedGoods(bt) : {};
-            var _inputOnly = bld.inputOnly !== false;
-            if (_bldCap > 0) {
-                html += '<div style="padding:8px;border:1px solid var(--border);border-radius:4px;margin-bottom:8px;">';
-                html += '<div style="font-weight:bold;font-size:0.85rem;margin-bottom:4px;">📦 BUILDING STORAGE</div>';
-
-                // ── Output Storage (independent pool) ──
-                if (_producesId) {
-                    html += '<div style="margin-bottom:6px;">';
-                    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:2px;">';
-                    html += '<span style="font-size:0.78rem;font-weight:bold;color:#7cb342;">📤 Output Storage</span>';
-                    html += '<span style="font-size:0.72rem;color:#aaa;">' + Math.round(_outputWeight) + ' / ' + _bldCap + ' (' + Math.round(Math.max(0, _bldCap - _outputWeight)) + ' free)</span>';
-                    html += '</div>';
-                    var _outputPct = _bldCap > 0 ? Math.min(100, Math.round((_outputWeight / _bldCap) * 100)) : 0;
-                    var _outputBarColor = _outputPct >= 90 ? '#e74c3c' : _outputPct >= 60 ? '#e67e22' : '#7cb342';
-                    html += '<div style="height:5px;background:#333;border-radius:3px;margin-bottom:4px;"><div style="height:100%;width:' + _outputPct + '%;background:' + _outputBarColor + ';border-radius:3px;"></div></div>';
-                    var _hasOutput = false;
-                    for (var _ok in _outputSet2) {
-                        var _oQty = (bld.inventory && bld.inventory[_ok]) || 0;
-                        if (_oQty <= 0) continue;
-                        _hasOutput = true;
-                        var _or = findResource(_ok);
-                        var _oName = _or ? ((_or.icon || '') + ' ' + _or.name) : _ok;
-                        html += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-size:0.78rem;">';
-                        html += '<span style="min-width:130px;">' + _oName + ': ' + _oQty + '</span>';
-                        html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI.collectOutputUI(\'' + bld.id + '\',\'' + _ok + '\',1)">Take 1</button>';
-                        if (_oQty >= 5) html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI.collectOutputUI(\'' + bld.id + '\',\'' + _ok + '\',5)">5</button>';
-                        html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI.collectOutputUI(\'' + bld.id + '\',\'' + _ok + '\',' + _oQty + ')">All</button>';
-                        html += '</div>';
-                    }
-                    if (!_hasOutput) html += '<div style="font-size:0.72rem;color:#888;">No output stored.</div>';
-                    if (_outputPct >= 100 && !bld.transferEnabled) {
-                        html += '<div style="font-size:0.72rem;color:#7cb342;margin-top:2px;">💰 Storage full — overflow auto-selling to market</div>';
-                    }
-                    html += '</div>';
-                }
-
-                // ── Input Storage (independent pool — same cap as output) ──
-                var _inputCap = _bldCap;
-
-                html += '<div style="margin-bottom:6px;">';
-                html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">';
-                html += '<span style="font-size:0.78rem;font-weight:bold;color:#64b5f6;">📥 Input Storage</span>';
-                html += '<span style="font-size:0.72rem;color:#aaa;">' + Math.round(_inputWeight) + ' / ' + Math.round(_inputCap) + ' (' + Math.round(Math.max(0, _inputCap - _inputWeight)) + ' free)</span>';
-                if (_producesId) {
-                    html += '<label style="font-size:0.68rem;color:#aaa;cursor:pointer;"><input type="checkbox" ' + (_inputOnly ? 'checked' : '') + ' onchange="(function(){var r=Player.toggleBuildingInputOnly(\'' + bld.id + '\');UI.toast(r.message,r.success?\'success\':\'warning\');UI.showBuildingDetail(\'' + bld.id + '\');})()" style="margin-right:3px;vertical-align:middle;"> Only accept consumed goods</label>';
-                }
-                html += '</div>';
-                // Capacity bar
-                var _inputPct = _inputCap > 0 ? Math.min(100, Math.round((_inputWeight / _inputCap) * 100)) : 0;
-                var _inputBarColor = _inputPct >= 90 ? '#e74c3c' : _inputPct >= 60 ? '#e67e22' : '#64b5f6';
-                html += '<div style="height:5px;background:#333;border-radius:3px;margin-bottom:6px;"><div style="height:100%;width:' + _inputPct + '%;background:' + _inputBarColor + ';border-radius:3px;"></div></div>';
-
-                // Items currently in input storage — withdraw section
-                var _hasInput = false;
-                if (bld.inventory) {
-                    for (var _ik in bld.inventory) {
-                        if (_outputSet2[_ik] || bld.inventory[_ik] <= 0) continue;
-                        _hasInput = true;
-                        var _ir = findResource(_ik);
-                        var _iName = _ir ? ((_ir.icon || '') + ' ' + _ir.name) : _ik;
-                        var _isConsumed = _consumedSet[_ik];
-                        var _iQty = bld.inventory[_ik];
-                        html += '<div style="display:flex;align-items:center;gap:4px;margin:3px 0;font-size:0.78rem;flex-wrap:wrap;">';
-                        html += '<span style="min-width:120px;">' + _iName + ': <strong>' + _iQty + '</strong>' + (_isConsumed ? ' <span style="color:#7cb342;font-size:0.6rem;">(used)</span>' : '') + '</span>';
-                        html += '<span style="display:flex;gap:2px;align-items:center;">';
-                        var _wQtys = [1, 5, 10];
-                        for (var _qi = 0; _qi < _wQtys.length; _qi++) {
-                            if (_iQty >= _wQtys[_qi]) html += '<button class="btn-trade buy" style="font-size:0.6rem;padding:1px 5px;" onclick="UI._bldWithdraw(\'' + bld.id + '\',\'' + _ik + '\',' + _wQtys[_qi] + ')">' + _wQtys[_qi] + '</button>';
-                        }
-                        html += '<button class="btn-trade buy" style="font-size:0.6rem;padding:1px 5px;" onclick="UI._bldWithdraw(\'' + bld.id + '\',\'' + _ik + '\',' + _iQty + ')">All</button>';
-                        html += '</span>';
-                        html += '</div>';
-                    }
-                }
-                if (!_hasInput) html += '<div style="font-size:0.72rem;color:#888;">No input items stored.</div>';
-
-                // Deposit from player inventory + town storage
-                if (bld.townId === Player.townId) {
-                    html += '<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px;">';
-                    html += '<div style="font-size:0.72rem;font-weight:bold;color:#aaa;margin-bottom:4px;">📤 Deposit from Inventory / Town Storage</div>';
-                    var _hasDepositable = false;
-                    var _inv = Player.inventory || {};
-                    var _townSt = (Player.state && Player.state.townStorage && Player.state.townStorage[bld.townId]) || {};
-                    // Merge keys from both inventory and town storage
-                    var _allDepKeys = {};
-                    for (var _ik2 in _inv) { if (_inv[_ik2] > 0) _allDepKeys[_ik2] = true; }
-                    for (var _tk2 in _townSt) { if (_townSt[_tk2] > 0) _allDepKeys[_tk2] = true; }
-                    for (var _dk in _allDepKeys) {
-                        var _invQty = _inv[_dk] || 0;
-                        var _tsQty = _townSt[_dk] || 0;
-                        var _totalQty = _invQty + _tsQty;
-                        if (_totalQty <= 0) continue;
-                        var _dr = findResource(_dk);
-                        if (!_dr) continue;
-                        // Filter: livestock only to livestock buildings, horses only to horse buildings
-                        if (_dr.category === 'livestock') continue;
-                        if (_dk === 'horses') continue;
-                        // Input-only filter: allow consumed goods (from all available product recipes)
-                        if (_inputOnly && _producesId && !_consumedSet[_dk]) {
-                            // Fallback: also check bt.consumes directly in case getBuildingConsumedGoods missed it
-                            var _directConsumed = bt.consumes && bt.consumes[_dk];
-                            if (!_directConsumed) continue;
-                        }
-                        // Skip output goods (these belong in output storage)
-                        if (_outputSet2[_dk]) continue;
-                        _hasDepositable = true;
-                        var _dName = (_dr.icon || '') + ' ' + _dr.name;
-                        var _dWeight = _dr.weight || 1;
-                        var _dMaxFit = _inputCap > _inputWeight ? Math.floor((_inputCap - _inputWeight) / _dWeight) : 0;
-                        var _dMax = Math.min(_totalQty, _dMaxFit);
-                        var _dIsConsumed = _consumedSet[_dk];
-                        var _srcNote = _invQty > 0 && _tsQty > 0 ? ' <span style="color:#aaa;font-size:0.6rem;">(' + _invQty + ' inv + ' + _tsQty + ' storage)</span>' : (_tsQty > 0 && _invQty === 0 ? ' <span style="color:#64b5f6;font-size:0.6rem;">(town storage)</span>' : '');
-                        html += '<div style="display:flex;align-items:center;gap:4px;margin:3px 0;font-size:0.78rem;flex-wrap:wrap;">';
-                        html += '<span style="min-width:120px;">' + _dName + ': ' + _totalQty + _srcNote + (_dIsConsumed ? ' <span style="color:#7cb342;font-size:0.6rem;">(used)</span>' : '') + '</span>';
-                        html += '<span style="display:flex;gap:2px;align-items:center;">';
-                        var _sQtys = [1, 5, 10, 25];
-                        for (var _si = 0; _si < _sQtys.length; _si++) {
-                            if (_dMax >= _sQtys[_si]) html += '<button class="btn-trade sell" style="font-size:0.6rem;padding:1px 5px;" onclick="UI._bldDeposit(\'' + bld.id + '\',\'' + _dk + '\',' + _sQtys[_si] + ')">' + _sQtys[_si] + '</button>';
-                        }
-                        if (_dMax > 0) html += '<button class="btn-trade sell" style="font-size:0.6rem;padding:1px 5px;" onclick="UI._bldDeposit(\'' + bld.id + '\',\'' + _dk + '\',' + _dMax + ')">All (' + _dMax + ')</button>';
-                        html += '</span>';
-                        html += '</div>';
-                    }
-                    if (!_hasDepositable) html += '<div style="font-size:0.72rem;color:#888;">Nothing to deposit' + (_inputOnly && _producesId ? ' (input filter on)' : '') + '</div>';
-                    html += '</div>';
-                }
-                html += '</div>';
-                html += '</div>';
-            }
-        }
 
         html += `<div style="text-align:center;margin-top:8px;">
             <button class="btn-trade" style="font-size:0.75rem;" onclick="UI.openBuildingManagement()">← Back to All Buildings</button>
