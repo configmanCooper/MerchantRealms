@@ -1254,6 +1254,11 @@ window.Game = (function () {
                             label: Player.traveling ? 'Go Off-road Here (Leave Route)' : 'Travel Here (Off-road)',
                             action: 'UI.confirmFreeTravel(' + worldCoords.x + ',' + worldCoords.y + ')'
                         });
+                        items.push({
+                            icon: '⛺',
+                            label: 'Travel & Found Outpost Here',
+                            action: 'UI.travelAndFoundOutpost(' + worldCoords.x + ',' + worldCoords.y + ')'
+                        });
                     }
                 }
             }

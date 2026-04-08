@@ -15490,6 +15490,57 @@ window.UI = (function () {
         if (result.success) openOutpostDialog();
     }
 
+    function foundOutpostFromTravel() {
+        var cfg = CONFIG.OUTPOST_CONFIG || {};
+        var cost = cfg.foundingCost || 500;
+        var mats = cfg.foundingMaterials || {};
+        var gold = Player.gold || 0;
+        var inv = Player.inventory || {};
+
+        var html = '<div style="padding:8px;">';
+        html += '<p style="margin:0 0 8px;font-size:0.85rem;color:#aaa;">Found a wilderness outpost at your current location. Outposts cost <span style="color:#ffd700;">' + cost + 'g</span> + materials, and ' + (cfg.dailyCost || 3) + 'g/day to maintain.</p>';
+
+        // Gold check
+        var canAfford = gold >= cost;
+        html += '<div style="margin:4px 0;font-size:0.85rem;"><span style="color:' + (canAfford ? '#55a868' : '#c44e52') + ';">💰 Gold: ' + Math.floor(gold) + '/' + cost + 'g ' + (canAfford ? '✓' : '✗') + '</span></div>';
+
+        // Material check
+        var allMats = true;
+        for (var matId in mats) {
+            var needed = mats[matId];
+            var has = inv[matId] || 0;
+            var ok = has >= needed;
+            if (!ok) allMats = false;
+            html += '<div style="margin:2px 0;font-size:0.85rem;"><span style="color:' + (ok ? '#55a868' : '#c44e52') + ';">📦 ' + matId + ': ' + has + '/' + needed + ' ' + (ok ? '✓' : '✗') + '</span></div>';
+        }
+
+        var canFound = canAfford && allMats;
+        html += '</div>';
+
+        var footer = '';
+        if (canFound) {
+            footer += '<button class="btn-medieval" onclick="UI.foundOutpostUI()" style="background:rgba(74,124,59,0.4);border-color:rgba(74,124,59,0.6);padding:6px 16px;">⛺ Found Outpost</button> ';
+        } else {
+            footer += '<button class="btn-medieval" disabled style="opacity:0.5;padding:6px 16px;">⛺ Missing Requirements</button> ';
+        }
+        footer += '<button class="btn-medieval" onclick="UI.closeModal()" style="padding:6px 16px;">Cancel</button>';
+
+        openModal('\u26FA Found Wilderness Outpost', html, footer);
+    }
+
+    // Right-click map → "Travel & Found Outpost Here"
+    function travelAndFoundOutpost(destX, destY) {
+        // Start offroad travel to the location
+        var result = Player.travelToCoords ? Player.travelToCoords(destX, destY) : null;
+        if (!result || !result.success) {
+            toast((result && result.message) || 'Cannot travel there.', 'warning');
+            return;
+        }
+        // Set a flag so the outpost dialog opens on arrival
+        Player.state._pendingOutpostFound = true;
+        toast('⛺ Traveling to location... Outpost founding will begin on arrival.', 'info');
+    }
+
     function outpostStaffUI(townId, action, type) {
         var result = Player.manageOutpostStaff(townId, action, type);
         toast(result.message, result.success ? 'success' : 'error');
@@ -24305,6 +24356,8 @@ window.UI = (function () {
                 }
             }
             btns += '<button class="btn-travel" onclick="UI.forageNearby()" style="background:rgba(85,168,104,0.15);border-color:rgba(85,168,104,0.3);">' + forageLabel + '</button>';
+            // Found Outpost while traveling
+            btns += '<button class="btn-travel" onclick="UI.foundOutpostFromTravel()" style="background:rgba(74,124,59,0.15);border-color:rgba(74,124,59,0.3);">\u26FA Found Outpost</button>';
             // Only rebuild DOM when content changes to prevent button flicker
             if (actionsDiv._lastBtns !== btns) {
                 actionsDiv.innerHTML = btns;
@@ -26419,6 +26472,8 @@ window.UI = (function () {
         // Outpost Management
         openOutpostDialog,
         foundOutpostUI,
+        foundOutpostFromTravel,
+        travelAndFoundOutpost,
         outpostStaffUI,
         // Conquest & Servitude
         showConquestDialog,

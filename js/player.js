@@ -6885,6 +6885,13 @@
                 _moveGuardsToPlayer();
                 cleanupTravelState();
                 completeTransport();
+                // Check for pending outpost founding
+                if (player._pendingOutpostFound) {
+                    player._pendingOutpostFound = false;
+                    if (typeof UI !== 'undefined' && UI.foundOutpostFromTravel) {
+                        setTimeout(function() { UI.foundOutpostFromTravel(); }, 100);
+                    }
+                }
                 return;
             }
 
