@@ -7037,16 +7037,23 @@
                 var resObj = findResource(resourceId);
                 var resWeight = resObj ? (resObj.weight || 1) : 1;
                 var canFitAmount = tBldCap > 0 ? Math.floor((tBldCap - tInputUsed) / resWeight) : amount;
-                // Smart ratio limiting: if target consumes multiple inputs, keep a balanced ratio
+                // Smart ratio limiting by weight: if target consumes multiple inputs,
+                // each input gets its proportional share of capacity based on weight ratio
                 if (targetBt && targetBt.consumes && Object.keys(targetBt.consumes).length > 1 && targetBt.consumes[resourceId]) {
-                    var myRatio = targetBt.consumes[resourceId];
-                    var totalRatioParts = 0;
-                    for (var _rk in targetBt.consumes) totalRatioParts += targetBt.consumes[_rk];
-                    // Allow this input to use at most its proportional share of capacity (+15% buffer)
-                    var myShare = myRatio / totalRatioParts;
-                    var maxForBalance = Math.floor(tBldCap / resWeight * myShare * 1.15);
+                    var myQty = targetBt.consumes[resourceId];
+                    var myWeightShare = myQty * resWeight;
+                    var totalWeightParts = 0;
+                    for (var _rk in targetBt.consumes) {
+                        var _rkRes = findResource(_rk);
+                        var _rkW = _rkRes ? (_rkRes.weight || 1) : 1;
+                        totalWeightParts += targetBt.consumes[_rk] * _rkW;
+                    }
+                    // This input's share of total capacity by weight (+15% buffer)
+                    var myWeightFraction = totalWeightParts > 0 ? myWeightShare / totalWeightParts : 0.5;
+                    var maxWeightForMe = tBldCap * myWeightFraction * 1.15;
+                    var maxUnitsForMe = Math.floor(maxWeightForMe / resWeight);
                     var currentStored = (targetBld.inventory && targetBld.inventory[resourceId]) || 0;
-                    var balanceRoom = Math.max(0, maxForBalance - currentStored);
+                    var balanceRoom = Math.max(0, maxUnitsForMe - currentStored);
                     canFitAmount = Math.min(canFitAmount, balanceRoom);
                 }
                 var actualAmount = Math.min(amount, Math.max(0, canFitAmount));
@@ -7270,18 +7277,24 @@
                     }
                 }
                 var _abNumInputs = Object.keys(bt.consumes).length;
-                var _abTotalRatio = 0;
-                for (var _abrk in bt.consumes) _abTotalRatio += bt.consumes[_abrk];
+                // Calculate total weight ratio across all inputs
+                var _abTotalWeightRatio = 0;
+                for (var _abrk in bt.consumes) {
+                    var _abrkRes = findResource(_abrk);
+                    var _abrkW = _abrkRes ? (_abrkRes.weight || 1) : 1;
+                    _abTotalWeightRatio += bt.consumes[_abrk] * _abrkW;
+                }
 
                 for (const [resId, qty] of Object.entries(bt.consumes)) {
                     const bldHasAB = (bld.inventory && bld.inventory[resId]) || 0;
                     var _abResObj = findResource(resId);
                     var _abResWeight = _abResObj ? (_abResObj.weight || 1) : 1;
-                    // Ratio-balanced max: each input gets its proportional share (+15% buffer)
+                    // Weight-based ratio: each input gets its proportional share by weight (+15% buffer)
                     var _abMaxForInput;
-                    if (_abNumInputs > 1 && _abTotalRatio > 0) {
-                        var _abMyShare = bt.consumes[resId] / _abTotalRatio;
-                        _abMaxForInput = Math.floor(_abCap / _abResWeight * _abMyShare * 1.15);
+                    if (_abNumInputs > 1 && _abTotalWeightRatio > 0) {
+                        var _abMyWeightShare = (bt.consumes[resId] * _abResWeight) / _abTotalWeightRatio;
+                        var _abMaxWeight = _abCap * _abMyWeightShare * 1.15;
+                        _abMaxForInput = Math.floor(_abMaxWeight / _abResWeight);
                     } else {
                         _abMaxForInput = Math.floor(_abCap / _abResWeight * 0.8);
                     }
