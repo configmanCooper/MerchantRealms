@@ -24330,8 +24330,8 @@
 
         player.achievements[id] = { unlocked: true, unlockedAt: Engine.getDay() };
         grantXP(ach.xp, 'Achievement: ' + ach.name);
-        if (typeof UI !== 'undefined' && UI.toast) {
-            UI.toast(`🏆 Achievement: ${ach.icon} ${ach.name}`, 'achievement', 'my_actions');
+        if (typeof UI !== 'undefined' && UI.showAchievementPopup) {
+            UI.showAchievementPopup(id);
         }
         Engine.logEvent(`Achievement unlocked: ${ach.name}!`);
     }

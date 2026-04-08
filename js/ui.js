@@ -15309,6 +15309,145 @@ window.UI = (function () {
         platinum: { icon: '💎', color: '#b0e0e6', bg: 'rgba(176,224,230,0.12)', border: 'rgba(176,224,230,0.5)', glow: 'box-shadow:0 0 8px rgba(176,224,230,0.4);' }
     };
 
+    // ── Achievement Unlock Popup ──
+    var _achPopupQueue = [];
+    var _achPopupActive = false;
+
+    function showAchievementPopup(achievementId) {
+        var ach = ACHIEVEMENTS[achievementId];
+        if (!ach) return;
+        _achPopupQueue.push({ id: achievementId, ach: ach });
+        if (!_achPopupActive) _showNextAchPopup();
+    }
+
+    function _showNextAchPopup() {
+        if (_achPopupQueue.length === 0) { _achPopupActive = false; return; }
+        _achPopupActive = true;
+        var item = _achPopupQueue.shift();
+        var ach = item.ach;
+        var achId = item.id;
+        var tier = ach.tier || 'bronze';
+        var tb = _tierBadges[tier] || _tierBadges.bronze;
+        var isPlatinum = tier === 'platinum';
+
+        // Remove any existing popup
+        var existing = document.getElementById('ach-popup-overlay');
+        if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+
+        var overlay = document.createElement('div');
+        overlay.id = 'ach-popup-overlay';
+        overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:99999;pointer-events:none;display:flex;justify-content:center;padding-top:60px;';
+
+        // Tier-specific backgrounds
+        var bgGradient, borderColor, shadowStyle, shimmerCss;
+        if (isPlatinum) {
+            bgGradient = 'linear-gradient(135deg, rgba(20,30,50,0.97), rgba(40,60,90,0.97), rgba(20,30,50,0.97))';
+            borderColor = '#b0e0e6';
+            shadowStyle = '0 0 30px rgba(176,224,230,0.6), 0 0 60px rgba(176,224,230,0.3), 0 4px 20px rgba(0,0,0,0.5)';
+            shimmerCss = 'background:linear-gradient(110deg, transparent 30%, rgba(176,224,230,0.15) 45%, rgba(176,224,230,0.25) 50%, rgba(176,224,230,0.15) 55%, transparent 70%);background-size:200% 100%;animation:achShimmer 2s ease-in-out infinite;';
+        } else if (tier === 'gold') {
+            bgGradient = 'linear-gradient(135deg, rgba(40,30,10,0.95), rgba(60,45,15,0.95))';
+            borderColor = '#ffd700';
+            shadowStyle = '0 0 15px rgba(255,215,0,0.4), 0 4px 15px rgba(0,0,0,0.4)';
+            shimmerCss = '';
+        } else if (tier === 'silver') {
+            bgGradient = 'linear-gradient(135deg, rgba(30,30,35,0.95), rgba(45,45,50,0.95))';
+            borderColor = '#c0c0c0';
+            shadowStyle = '0 0 10px rgba(192,192,192,0.3), 0 4px 12px rgba(0,0,0,0.4)';
+            shimmerCss = '';
+        } else {
+            bgGradient = 'linear-gradient(135deg, rgba(35,25,15,0.95), rgba(50,35,20,0.95))';
+            borderColor = '#cd7f32';
+            shadowStyle = '0 0 8px rgba(205,127,50,0.3), 0 4px 10px rgba(0,0,0,0.4)';
+            shimmerCss = '';
+        }
+
+        var popupHtml = '';
+        popupHtml += '<div id="ach-popup-card" style="pointer-events:auto;cursor:pointer;position:relative;overflow:hidden;';
+        popupHtml += 'background:' + bgGradient + ';';
+        popupHtml += 'border:2px solid ' + borderColor + ';border-radius:12px;';
+        popupHtml += 'box-shadow:' + shadowStyle + ';';
+        popupHtml += 'padding:14px 24px;min-width:280px;max-width:420px;';
+        popupHtml += 'animation:achSlideIn 0.4s ease-out;';
+        popupHtml += 'transition:opacity 0.4s ease, transform 0.4s ease;"';
+        popupHtml += ' onclick="UI._achPopupClick(\'' + achId + '\')">';
+
+        // Shimmer overlay for platinum
+        if (isPlatinum) {
+            popupHtml += '<div style="position:absolute;top:0;left:0;width:100%;height:100%;' + shimmerCss + 'pointer-events:none;"></div>';
+        }
+
+        // Content
+        popupHtml += '<div style="position:relative;z-index:1;display:flex;align-items:center;gap:14px;">';
+
+        // Icon
+        popupHtml += '<div style="font-size:2.2rem;' + (isPlatinum ? 'animation:achPulse 1.5s ease-in-out infinite;' : '') + '">' + escapeHtml(ach.icon) + '</div>';
+
+        // Text
+        popupHtml += '<div style="flex:1;">';
+        popupHtml += '<div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:2px;color:' + tb.color + ';margin-bottom:2px;">' + tb.icon + ' ' + tier.toUpperCase() + ' ACHIEVEMENT</div>';
+        popupHtml += '<div style="font-size:1rem;font-weight:bold;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,0.5);">' + escapeHtml(ach.name) + '</div>';
+        popupHtml += '<div style="font-size:0.75rem;color:#bbb;margin-top:2px;">' + escapeHtml(ach.desc) + '</div>';
+        popupHtml += '<div style="font-size:0.68rem;color:' + tb.color + ';margin-top:4px;">+' + ach.xp + ' XP</div>';
+        popupHtml += '</div>';
+
+        popupHtml += '</div>'; // flex container
+        popupHtml += '</div>'; // card
+
+        overlay.innerHTML = popupHtml;
+
+        // Inject keyframe animations if not already present
+        if (!document.getElementById('ach-popup-styles')) {
+            var styleEl = document.createElement('style');
+            styleEl.id = 'ach-popup-styles';
+            styleEl.textContent = '@keyframes achSlideIn { 0% { opacity:0; transform:translateY(-30px) scale(0.95); } 100% { opacity:1; transform:translateY(0) scale(1); } }' +
+                '@keyframes achShimmer { 0% { background-position:200% 0; } 100% { background-position:-200% 0; } }' +
+                '@keyframes achPulse { 0%,100% { transform:scale(1); } 50% { transform:scale(1.15); } }';
+            document.head.appendChild(styleEl);
+        }
+
+        document.body.appendChild(overlay);
+
+        // Auto-dismiss after 3 seconds
+        var popupTimeout = setTimeout(function() {
+            _dismissAchPopup();
+        }, 3000);
+
+        overlay._popupTimeout = popupTimeout;
+    }
+
+    function _dismissAchPopup() {
+        var overlay = document.getElementById('ach-popup-overlay');
+        if (!overlay) { _achPopupActive = false; _showNextAchPopup(); return; }
+        var card = document.getElementById('ach-popup-card');
+        if (card) {
+            card.style.opacity = '0';
+            card.style.transform = 'translateY(-20px) scale(0.95)';
+        }
+        if (overlay._popupTimeout) clearTimeout(overlay._popupTimeout);
+        setTimeout(function() {
+            if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+            _achPopupActive = false;
+            _showNextAchPopup();
+        }, 400);
+    }
+
+    function _achPopupClick(achievementId) {
+        var overlay = document.getElementById('ach-popup-overlay');
+        if (overlay && overlay._popupTimeout) clearTimeout(overlay._popupTimeout);
+        if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        _achPopupActive = false;
+        _achPopupQueue = [];
+        // Navigate to achievements dialog filtered to show this achievement's category and tier
+        var ach = ACHIEVEMENTS[achievementId];
+        if (ach) {
+            _achCategory = ach.category || 'trading';
+            _achTierFilter = ach.tier || 'all';
+            openAchievementsDialog(ach.category, ach.tier);
+        }
+    }
+
+
     function openAchievementsDialog(category, tierFilter) {
         if (category && typeof category === 'string') _achCategory = category;
         if (tierFilter !== undefined) _achTierFilter = tierFilter;
@@ -24619,6 +24758,9 @@ window.UI = (function () {
         openFeastDialog,
         // Noble Loans
         openNobleLoanDialog,
+        // Achievement Popup
+        showAchievementPopup,
+        _achPopupClick,
         // Special Start
         openSpecialStartPanel,
         openStartJournal,
