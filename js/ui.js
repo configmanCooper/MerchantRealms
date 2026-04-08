@@ -25682,10 +25682,10 @@ window.UI = (function () {
         } else {
             for (var wi = 0; wi < warKeys.length; wi++) {
                 var w = activeWars[warKeys[wi]];
-                var aK = w.attackerId ? kingdomMap[w.attackerId] : null;
-                var dK = w.defenderId ? kingdomMap[w.defenderId] : null;
-                var aName = aK ? aK.name : (w.attackerId || '?');
-                var dName = dK ? dK.name : (w.defenderId || '?');
+                var aK = w.kingdomA ? kingdomMap[w.kingdomA] : (w.attackerId ? kingdomMap[w.attackerId] : null);
+                var dK = w.kingdomB ? kingdomMap[w.kingdomB] : (w.defenderId ? kingdomMap[w.defenderId] : null);
+                var aName = aK ? aK.name : (w.kingdomA || w.attackerId || '?');
+                var dName = dK ? dK.name : (w.kingdomB || w.defenderId || '?');
                 var aColor = aK ? aK.color : '#888';
                 var dColor = dK ? dK.color : '#888';
                 var aMil = aK ? (aK.militaryStrength || 0) : 0;
