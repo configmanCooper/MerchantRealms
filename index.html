@@ -131,13 +131,13 @@
             </div>
             <div class="stat-group">
                 <div class="stat-label">Location</div>
-                <div id="playerTown" class="stat-value">—</div>
+                <div id="playerTown" class="stat-value" style="cursor:pointer;transition:color 0.2s;" onmouseover="this.style.color='#d4af37'" onmouseout="this.style.color=''" onclick="if(typeof Player!=='undefined'&&Player.townId&&!Player.traveling){UI.showTownDetail(Engine.findTown(Player.townId));}">—</div>
             </div>
-            <div class="stat-row">
+            <div id="workersRow" class="stat-row" style="display:none;">
                 <div class="stat-mini"><span class="stat-icon">👥</span> <span id="employeeCount">0</span> Workers</div>
                 <div class="stat-mini"><span class="stat-icon">🏠</span> <span id="buildingCount">0</span> Buildings</div>
             </div>
-            <div class="stat-row">
+            <div id="caravansRow" class="stat-row" style="display:none;">
                 <div class="stat-mini"><span class="stat-icon">🐴</span> <span id="caravanCount">0</span> Caravans</div>
             </div>
         </div>

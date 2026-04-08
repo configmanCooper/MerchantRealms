@@ -353,6 +353,55 @@ var Guidance = (function () {
 
     // ── TASK POOL ────────────────────────────────────────────
 
+    // Tooltip map: task id → 1-2 sentence hover text explaining where in the UI to do this
+    var TASK_TOOLTIPS = {
+        rest_tired: 'Click the Rest button in the action bar at the bottom of the screen. You can also rest at an inn for better recovery.',
+        buy_food: 'Click on your town name in the ledger to open the town view, then use the Market tab to buy food like bread, meat, or fish.',
+        buy_water: 'Click on your town name in the ledger to open the town view, then use the Market tab to buy water, ale, or other drinks.',
+        eat_now: 'Click the Eat button next to your Hunger bar in the ledger, or open your inventory from the Character menu.',
+        drink_now: 'Click the Drink button next to your Thirst bar in the ledger, or open your inventory from the Character menu.',
+        get_treatment: 'Click on your town name to open the town view. Look for a hospital or clinic in the Buildings tab and use the Treat option.',
+        do_a_job: 'Click on your town name to open the town view. Go to the Jobs tab to see available work like hauling, farming, or mining.',
+        earn_100g: 'Earn gold by doing jobs (town view → Jobs tab), trading goods between towns, or selling items at the market.',
+        first_trade: 'Click on your town name to open the town view, then go to the Market tab. Buy goods that are cheap here to sell elsewhere.',
+        travel_nearby: 'Click on a town on the map or use the Routes button to see connected towns. Click a destination to begin traveling.',
+        buy_trade_tip: 'Click on your town name to open the town view. Look for the Info Broker in the Services tab and buy a trade tip for 10 gold.',
+        compare_prices: 'Open the Market tab in any town view. Prices you have seen in other towns will be shown for comparison.',
+        earn_500g: 'Keep trading goods between towns — buy low and sell high. Jobs and selling crafted goods also help build wealth.',
+        reach_rep_40: 'Reputation increases by trading, completing jobs, socializing with townsfolk, and completing petitions. Check your rep in the ledger.',
+        get_citizenship: 'Open the Character menu and look at your rank progress. Once all requirements are met, click Promote to advance to Citizen.',
+        learn_skill: 'Click the Skills button in the action bar. You need at least 3 skill points. Choose a skill from the skill tree and unlock it.',
+        talk_info: 'Click the Talk button in the action bar to see NPCs in your town. Use Small Talk or other social actions to learn useful info.',
+        buy_horse: 'Click on your town name to open the town view. Go to the Services tab and look for the Stables to buy and mount a horse.',
+        craft_backpack: 'Open the Character menu and look for the Backpack section. You need 2 leather, 1 cloth, and 10 gold to craft one.',
+        accomplish_feat: 'Click the Feats button in the action bar to see all achievements. Bronze feats like first trade or visiting towns are easiest to earn.',
+        buy_equipment: 'Open the Character menu and scroll to the Equipment section. You can buy weapons and armor if a smith or armorer is in town.',
+        hire_guard: 'Open the Character menu and look for the Guards section. You can hire guards to protect you from bandits during travel.',
+        ask_family_gold: 'Click the Family button in the action bar, then select a family member. Use the Give/Request option to ask them for gold.',
+        build_ship: 'Click the Ships button in the action bar (only available at port towns). Choose Commission a Ship to build your first vessel.',
+        buy_cheap_good: 'Click on your town name to open the town view, then go to the Market tab. Look for goods priced below their base value.',
+        sell_expensive_good: 'Click on your town name to open the town view, then go to the Market tab. Sell goods that are priced above their base value here.',
+        join_guild: 'Click on your town name to open the town view. Go to the Guilds tab to see available guilds and their membership requirements.',
+        guild_craft: 'Click on your town name and go to the Buildings tab. Find a guild-affiliated building and use its Craft option to make items.',
+        earn_1000g: 'Keep trading between towns and running your businesses. Selling processed goods like bread or furniture earns the most profit.',
+        buy_land: 'Click on your town name to open the town view. Go to the Housing tab to see available land plots and purchase one.',
+        build_first: 'Click the Buildings button in the action bar, or open the town view and go to the Buildings tab. You need land first, then click Build.',
+        hire_worker: 'Click the Buildings button or open town view → Buildings tab. Select your building and click Hire Worker to staff it.',
+        upgrade_building: 'Click the Buildings button or open town view → Buildings tab. Select your building and click Upgrade to increase its level.',
+        complete_10_trades: 'Keep buying and selling at town markets. Each purchase or sale counts as one trade. Visit multiple towns for the best deals.',
+        become_burgher: 'Open the Character menu to see your rank progress. Meet all Burgher requirements (gold, reputation, buildings, trades) then Promote.',
+        own_processing: 'Click the Buildings button. Build a processing building like a sawmill, smithy, or bakery. You need land and enough gold.',
+        send_caravan: 'Click the Routes button in the action bar. Set up a caravan route between two towns and assign goods to transport.',
+        build_second_town: 'Travel to another town, buy land there (Housing tab), and build a new building. Expanding across towns is key to growth.',
+        earn_5000g: 'Focus on profitable trade routes, building production chains, and selling processed goods. Caravans help automate income.',
+        join_second_guild: 'Travel to a town with a different guild and join it. Each guild offers unique crafting recipes and trade benefits.',
+        '8_workers': 'Open your buildings (Buildings button or town view) and hire workers at each one. More workers means more production and income.',
+        complete_50_trades: 'Keep buying and selling at markets. Use trade tips from Info Brokers and compare prices between towns to find the best deals.',
+        build_relationship_60: 'Click Talk in the action bar, then interact with the same NPC repeatedly. Use Small Talk, give gifts, or do favors to raise the relationship.',
+        ask_npc_favor: 'Click Talk, select an NPC with 60+ relationship, then choose Favors from the interaction options. Different NPCs offer different favor types.',
+        become_guildmaster: 'Open the Character menu to see Guildmaster requirements. You need production buildings, workers across multiple towns, and caravan deliveries.'
+    };
+
     var TASK_POOL = [
         // ═══════════════ URGENT / SITUATIONAL (any rank) ═══════════════
         {
@@ -1098,7 +1147,8 @@ var Guidance = (function () {
                 if (done) {
                     html += '<div data-guidance="dismiss-task" data-task-id="' + _escapeHtml(t.id) + '" style="font-size:0.78rem;padding:2px 0;' + textStyle + '" title="Click to dismiss">' + icon + ' ' + _escapeHtml(t.textCache) + '</div>';
                 } else {
-                    html += '<div style="font-size:0.78rem;padding:2px 0;' + textStyle + '">' + icon + ' ' + _escapeHtml(t.textCache) + '</div>';
+                    var _tip = TASK_TOOLTIPS[t.id] || '';
+                    html += '<div style="font-size:0.78rem;padding:2px 0;' + textStyle + '" title="' + _escapeHtml(_tip) + '">' + icon + ' ' + _escapeHtml(t.textCache) + '</div>';
                 }
             }
             html += '</div>';

@@ -394,6 +394,13 @@ window.UI = (function () {
                     </div>
                 `;
                 thirstGroup.after(healthGroup);
+
+                // Move workers/buildings/caravans rows below health
+                var workersRow = document.getElementById('workersRow');
+                var caravansRow = document.getElementById('caravansRow');
+                if (workersRow) { healthGroup.after(workersRow); workersRow.style.display = ''; }
+                if (caravansRow && workersRow) { workersRow.after(caravansRow); caravansRow.style.display = ''; }
+                else if (caravansRow) { healthGroup.after(caravansRow); caravansRow.style.display = ''; }
             }
         }
     }
