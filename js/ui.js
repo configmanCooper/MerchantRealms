@@ -12310,29 +12310,37 @@ window.UI = (function () {
     function _showQuarantinePopup(townId, optionId, qInfo) {
         var qIcon = qInfo.isMartial ? '⚔️🔒' : '🔒';
         var sneakPct = Math.round(qInfo.sneakChance * 100);
+        var playerGold = (typeof Player !== 'undefined' && Player.gold != null) ? Player.gold : 0;
 
-        var html = '<div style="max-width:420px;">';
-        html += '<div style="text-align:center;margin-bottom:14px;">';
+        var html = '<div style="max-width:460px;">';
+
+        // Header
+        html += '<div style="text-align:center;margin-bottom:12px;">';
         html += '<div style="font-size:2rem;">' + qIcon + '</div>';
         html += '<div style="font-size:1.2rem;color:var(--gold-bright);font-weight:bold;margin-top:4px;">' + qInfo.townName + ' is under ' + qInfo.qLabel + '!</div>';
         html += '</div>';
 
-        html += '<div style="background:rgba(196,78,82,0.15);border:1px solid rgba(196,78,82,0.3);border-radius:6px;padding:10px;margin-bottom:12px;">';
-        html += '<div style="font-size:0.9rem;color:var(--parchment);margin-bottom:6px;">Your route passes through a quarantine zone. Travel is restricted to certain social ranks.</div>';
+        // Guard name
+        var _guardRelTag = '';
+        if (qInfo.guardRelLevel >= 60) _guardRelTag = ' <span style="color:#55a868;font-size:0.75rem;">(Friendly)</span>';
+        else if (qInfo.guardRelLevel >= 40) _guardRelTag = ' <span style="color:#e6c422;font-size:0.75rem;">(Known)</span>';
+        html += '<div style="text-align:center;margin-bottom:10px;font-size:0.9rem;color:var(--parchment);">🛡️ Guard: <strong style="color:var(--gold);">' + (qInfo.guardName || 'Guard Captain') + '</strong>' + _guardRelTag + '</div>';
+
+        html += '<div style="background:rgba(196,78,82,0.15);border:1px solid rgba(196,78,82,0.3);border-radius:6px;padding:10px;margin-bottom:10px;">';
+        html += '<div style="font-size:0.85rem;color:var(--parchment);">Your route passes through a quarantine zone. Travel is restricted to certain social ranks.</div>';
         html += '</div>';
 
         // Allowed ranks
-        html += '<div style="margin-bottom:12px;">';
-        html += '<div style="font-size:0.85rem;color:var(--gold);font-weight:bold;margin-bottom:4px;">✅ Allowed Through:</div>';
+        html += '<div style="margin-bottom:10px;">';
+        html += '<div style="font-size:0.8rem;color:var(--gold);font-weight:bold;margin-bottom:3px;">✅ Allowed Through:</div>';
         for (var ri = 0; ri < qInfo.allowedRanks.length; ri++) {
-            html += '<div style="font-size:0.85rem;color:var(--parchment);padding-left:12px;">• ' + qInfo.allowedRanks[ri] + '</div>';
+            html += '<div style="font-size:0.8rem;color:var(--parchment);padding-left:12px;">• ' + qInfo.allowedRanks[ri] + '</div>';
         }
         html += '</div>';
 
-        // Sneak option
-        html += '<div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:10px;margin-bottom:14px;">';
+        // === Sneak Past section ===
+        html += '<div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:10px;margin-bottom:10px;">';
         html += '<div style="font-size:0.85rem;color:var(--gold);font-weight:bold;margin-bottom:4px;">🤫 Sneak Past the Guards</div>';
-        html += '<div style="font-size:0.85rem;color:var(--parchment);margin-bottom:6px;">You can try to slip through the quarantine. If caught, you may be fined or jailed.</div>';
 
         // Sneak chance bar
         var barColor = sneakPct >= 50 ? '#55a868' : (sneakPct >= 30 ? '#e67e22' : '#c44e52');
@@ -12344,22 +12352,75 @@ window.UI = (function () {
         html += '<div style="font-size:0.9rem;font-weight:bold;color:' + barColor + ';min-width:40px;text-align:right;">' + sneakPct + '%</div>';
         html += '</div>';
 
-        // Skill modifiers note
-        var modifiers = [];
-        if (typeof Player !== 'undefined' && Player.hasSkill) {
-            if (Player.hasSkill('smuggler')) modifiers.push('Smuggler (+20%)');
-            if (Player.hasSkill('streetwise')) modifiers.push('Streetwise (+20%)');
-            if (Player.hasSkill('cartographer')) modifiers.push('Cartographer (+10%)');
+        // Sneak skill modifiers
+        if (qInfo.sneakModifiers && qInfo.sneakModifiers.length > 0) {
+            html += '<div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:4px;">Bonuses: ';
+            var _smParts = [];
+            for (var _smi = 0; _smi < qInfo.sneakModifiers.length; _smi++) {
+                _smParts.push(qInfo.sneakModifiers[_smi].name + ' (+' + qInfo.sneakModifiers[_smi].bonus + '%)');
+            }
+            html += _smParts.join(', ') + '</div>';
         }
-        if (modifiers.length > 0) {
-            html += '<div style="font-size:0.75rem;color:var(--text-muted);">Skill bonuses: ' + modifiers.join(', ') + '</div>';
+
+        // Sneak button
+        html += '<button class="btn-medieval" style="width:100%;padding:7px;font-size:0.9rem;background:rgba(196,78,82,0.2);border-color:rgba(196,78,82,0.4);" onclick="UI._quarantineSneakAttempt(\'' + townId + '\',\'' + optionId + '\')">🤫 Try to Sneak (' + sneakPct + '%)</button>';
+        html += '</div>';
+
+        // === Bribe the Guard section ===
+        html += '<div style="background:rgba(218,165,32,0.08);border:1px solid rgba(218,165,32,0.25);border-radius:6px;padding:10px;margin-bottom:10px;">';
+        html += '<div style="font-size:0.85rem;color:var(--gold);font-weight:bold;margin-bottom:6px;">💰 Bribe the Guard</div>';
+
+        if (qInfo.bribes && qInfo.bribes.length > 0) {
+            var _bribeColors = { low: '#c44e52', medium: '#e67e22', high: '#55a868' };
+            for (var _bi = 0; _bi < qInfo.bribes.length; _bi++) {
+                var _b = qInfo.bribes[_bi];
+                var _bPct = Math.round(_b.chance * 100);
+                var _bColor = _bribeColors[_b.tier] || '#888';
+                var _bDisabled = playerGold < _b.cost;
+                var _bStyle = 'width:100%;padding:6px;font-size:0.85rem;margin-bottom:4px;';
+                if (_bDisabled) {
+                    _bStyle += 'opacity:0.4;cursor:not-allowed;background:rgba(100,100,100,0.2);border-color:rgba(100,100,100,0.3);';
+                } else {
+                    _bStyle += 'background:rgba(' + (_b.tier === 'low' ? '196,78,82' : (_b.tier === 'medium' ? '230,126,34' : '85,168,104')) + ',0.15);border-color:' + _bColor + ';';
+                }
+                html += '<button class="btn-medieval" style="' + _bStyle + '"';
+                if (_bDisabled) {
+                    html += ' disabled';
+                } else {
+                    html += ' onclick="UI._quarantineBribeAttempt(\'' + townId + '\',\'' + optionId + '\',\'' + _b.tier + '\',' + _b.cost + ')"';
+                }
+                html += '>';
+                html += '<span style="color:' + _bColor + ';">' + _b.label + '</span> — <strong>' + _b.cost + 'g</strong> (<span style="color:' + _bColor + ';font-weight:bold;">' + _bPct + '%</span>)';
+                if (_bDisabled) html += ' <span style="font-size:0.75rem;color:#888;">(not enough gold)</span>';
+                html += '</button>';
+            }
+        }
+
+        // Bribe skill modifiers
+        if (qInfo.bribeModifiers && qInfo.bribeModifiers.length > 0) {
+            html += '<div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">Bonuses: ';
+            var _bmParts = [];
+            for (var _bmi = 0; _bmi < qInfo.bribeModifiers.length; _bmi++) {
+                _bmParts.push(qInfo.bribeModifiers[_bmi].name + ' (+' + qInfo.bribeModifiers[_bmi].bonus + '%)');
+            }
+            html += _bmParts.join(', ') + '</div>';
         }
         html += '</div>';
 
-        // Buttons
-        html += '<div style="display:flex;gap:8px;justify-content:center;">';
-        html += '<button class="btn-medieval" style="flex:1;padding:8px;font-size:0.95rem;background:rgba(196,78,82,0.2);border-color:rgba(196,78,82,0.4);" onclick="UI._quarantineSneakAttempt(\'' + townId + '\',\'' + optionId + '\')">🤫 Try to Sneak (' + sneakPct + '%)</button>';
-        html += '<button class="btn-medieval" style="flex:1;padding:8px;font-size:0.95rem;" onclick="UI.closeModal()">🚫 Turn Back</button>';
+        // === Consequences Warning ===
+        html += '<div style="background:rgba(139,69,19,0.12);border:1px solid rgba(139,69,19,0.3);border-radius:6px;padding:8px;margin-bottom:10px;font-size:0.78rem;color:var(--text-muted);">';
+        html += '<div style="font-weight:bold;color:var(--gold);margin-bottom:3px;">⚠️ Consequences if Caught</div>';
+        html += '<div>Sneaking: <strong>' + (qInfo.sneakFine || 0) + 'g</strong> fine or <strong>' + (qInfo.sneakJailDays || 0) + '</strong> days jail</div>';
+        html += '<div>Bribing: <strong>' + (qInfo.bribeFine || 0) + 'g</strong> fine or <strong>' + (qInfo.bribeJailDays || 0) + '</strong> days jail <span style="color:#c44e52;">(bribery charge)</span></div>';
+        var _kingDesc = 'fair';
+        if (qInfo.kingTemperament === 'strict') _kingDesc = '<span style="color:#c44e52;">strict</span>';
+        else if (qInfo.kingTemperament === 'merciful') _kingDesc = '<span style="color:#55a868;">merciful</span>';
+        html += '<div style="margin-top:3px;font-style:italic;">This king is known to be ' + _kingDesc + '.</div>';
+        html += '</div>';
+
+        // Turn Back button
+        html += '<div style="text-align:center;">';
+        html += '<button class="btn-medieval" style="padding:8px 24px;font-size:0.9rem;" onclick="UI.closeModal()">🚫 Turn Back</button>';
         html += '</div>';
 
         html += '</div>';
@@ -12394,6 +12455,46 @@ window.UI = (function () {
         try {
             // We need to pass skipQuarantineCheck to the underlying Player.travelTo call
             // Temporarily patch the action to include skipQuarantineCheck
+            var result = _executeTravelAction(townId, opt);
+            if (result && result.success === false) {
+                toast(result.message || 'Travel failed.', 'danger');
+                return;
+            }
+        } catch (e) {
+            toast('Travel error: ' + (e.message || e), 'danger');
+            return;
+        }
+        if (typeof Renderer !== 'undefined') {
+            var town = Engine.getTown(townId);
+            if (town) Renderer.panTo(town.x, town.y);
+        }
+    }
+
+    function _quarantineBribeAttempt(townId, optionId, tier, bribeCost) {
+        closeModal();
+
+        // Execute the bribe attempt through Player
+        var bribeResult = Player.attemptQuarantineBribe(townId, tier, bribeCost);
+
+        if (bribeResult && !bribeResult.allowed) {
+            // Caught — message already toasted by attemptQuarantineBribe
+            return;
+        }
+
+        // Bribe succeeded — proceed with travel, skipping the quarantine check
+        var options = _travelOptions || [];
+        var opt = null;
+        for (var i = 0; i < options.length; i++) {
+            if (options[i].id === optionId) { opt = options[i]; break; }
+        }
+        if (!opt || !opt.action) return;
+
+        if (bribeResult && bribeResult.allowed && bribeResult.message) {
+            toast(bribeResult.message, 'success', 'travel_events');
+        }
+
+        closeRightPanel();
+        try {
             var result = _executeTravelAction(townId, opt);
             if (result && result.success === false) {
                 toast(result.message || 'Travel failed.', 'danger');
@@ -25420,6 +25521,7 @@ window.UI = (function () {
         openTravelOptions,
         confirmTravel,
         _quarantineSneakAttempt,
+        _quarantineBribeAttempt,
         showRouteDangerDetail,
         getTransportServices,
         turnBackUI,

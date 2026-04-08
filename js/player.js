@@ -2840,6 +2840,25 @@
             var sneakChance = isMartial ? 0.20 : 0.40;
             if (hasSkill('smuggler') || hasSkill('streetwise')) sneakChance += 0.20;
             if (hasSkill('cartographer')) sneakChance += 0.10;
+            if (hasSkill('shadow_step')) sneakChance += 0.05;
+            if (hasSkill('ghost')) sneakChance += 0.10;
+            if (hasSkill('master_disguise')) sneakChance += 0.05;
+            if (hasSkill('master_smuggler')) sneakChance += 0.05;
+            var _sneakHour = Engine.getHour ? Engine.getHour() : 12;
+            if (_sneakHour >= 20 || _sneakHour < 5) sneakChance += 0.10;
+            // Guard relationship bonus for sneak
+            var _sneakGuardRel = 0;
+            var _sneakPeople = Engine.getPeople ? Engine.getPeople(tid) : [];
+            for (var _sgi = 0; _sgi < _sneakPeople.length; _sgi++) {
+                var _sg = _sneakPeople[_sgi];
+                if (_sg.alive && (_sg.occupation === 'guard' || _sg.occupation === 'soldier')) {
+                    var _sgr = player.relationships[_sg.id];
+                    if (_sgr && _sgr.level > _sneakGuardRel) _sneakGuardRel = _sgr.level;
+                }
+            }
+            if (_sneakGuardRel >= 60) sneakChance += 0.15;
+            else if (_sneakGuardRel >= 40) sneakChance += 0.08;
+            sneakChance = Math.min(sneakChance, 0.95);
             var rng = Engine.getRng();
             if (rng.chance(sneakChance)) {
                 return { allowed: true, message: '🤫 You slipped past the ' + qLabel + ' guards at ' + t.name + '.' };
@@ -2877,7 +2896,7 @@
     }
 
     // Determine quarantine violation punishment based on kingdom personality
-    function _quarantinePunishment(kingdom, kp, isMartial, rng) {
+    function _quarantinePunishment(kingdom, kp, isMartial, rng, isBribery) {
         // Base fine scales with martial vs standard
         var baseFine = isMartial ? 100 : 40;
         var baseJailDays = isMartial ? 5 : 2;
@@ -2897,16 +2916,44 @@
             }
         }
 
+        // Bribery is an additional offense — harsher punishment
+        if (isBribery) {
+            baseFine = Math.floor(baseFine * 1.3);
+            baseJailDays += 2;
+            // High-justice kings punish bribery even harder
+            if (kp && typeof kp.justice === 'number' && kp.justice >= 70) {
+                baseFine = Math.floor(baseFine * 1.5);
+                baseJailDays = Math.floor(baseJailDays * 1.5);
+            }
+            // Greedy kings: boost the fine for bribery (they want the money)
+            if (kp && (kp.greed === 'greedy' || kp.greed === 'corrupt')) {
+                baseFine = Math.floor(baseFine * 1.2);
+            }
+        }
+
+        // Reputation loss with kingdom: -5 to -15 based on king personality
+        var repLoss = 8;
+        if (kp) {
+            if (kp.temperament === 'cruel' || kp.temperament === 'tyrannical') repLoss = 15;
+            else if (kp.temperament === 'merciful' || kp.temperament === 'kind') repLoss = 5;
+            if (isBribery && typeof kp.justice === 'number' && kp.justice >= 70) repLoss += 5;
+        }
+        if (kingdom && kingdom.id) {
+            player.reputation[kingdom.id] = Math.max(0, (player.reputation[kingdom.id] || 50) - repLoss);
+        }
+
         // Martial quarantine: always jail. Standard: 40% chance jail, 60% fine only
         var jailChance = isMartial ? 0.85 : 0.40;
         if (kp && (kp.temperament === 'cruel' || kp.temperament === 'tyrannical')) jailChance += 0.20;
         if (kp && (kp.temperament === 'merciful' || kp.temperament === 'kind')) jailChance -= 0.25;
+        // Greedy kings less likely to jail for bribery — they prefer fines
+        if (isBribery && kp && (kp.greed === 'greedy' || kp.greed === 'corrupt')) jailChance -= 0.15;
         jailChance = Math.max(0.1, Math.min(0.95, jailChance));
 
         if (rng.chance(jailChance)) {
-            return { type: 'jail', days: baseJailDays, fine: baseFine };
+            return { type: 'jail', days: baseJailDays, fine: baseFine, repLoss: repLoss };
         }
-        return { type: 'fine', fine: baseFine };
+        return { type: 'fine', fine: baseFine, repLoss: repLoss };
     }
 
     // Read-only quarantine info for a travel destination (no side effects)
@@ -2961,11 +3008,115 @@
                     reason: 'Your merchant standing grants passage on trade business.' };
             }
 
-            // Blocked — calculate sneak chance
+            // Blocked — find guard NPC at checkpoint
+            var _qPeople = Engine.getPeople ? Engine.getPeople(tid) : [];
+            var _qGuard = null;
+            var _qGuardFallback = null;
+            for (var _qgi = 0; _qgi < _qPeople.length; _qgi++) {
+                var _qgp = _qPeople[_qgi];
+                if (!_qgp.alive) continue;
+                if (_qgp.occupation === 'guard' || _qgp.occupation === 'soldier') {
+                    _qGuard = _qgp;
+                    break;
+                }
+                if (!_qGuardFallback && _qgp.occupation !== 'noble' && _qgp.occupation !== 'king' && _qgp.occupation !== 'merchant') {
+                    _qGuardFallback = _qgp;
+                }
+            }
+            if (!_qGuard) _qGuard = _qGuardFallback;
+            var guardId = _qGuard ? _qGuard.id : null;
+            var guardName = _qGuard ? ((_qGuard.firstName || '') + ' ' + (_qGuard.lastName || '')).trim() : 'Guard Captain';
+            if (!guardName) guardName = 'Guard Captain';
+
+            // Guard relationship
+            var guardRelLevel = 0;
+            if (guardId) {
+                var _gRel = player.relationships[guardId];
+                if (_gRel) guardRelLevel = _gRel.level || 0;
+            }
+
+            // Calculate sneak chance with all modifiers
             var sneakChance = isMartial ? 0.20 : 0.40;
-            if (hasSkill('smuggler') || hasSkill('streetwise')) sneakChance += 0.20;
-            if (hasSkill('cartographer')) sneakChance += 0.10;
+            var sneakModifiers = [];
+            if (hasSkill('smuggler')) { sneakChance += 0.20; sneakModifiers.push({ name: 'Smuggler', bonus: 20 }); }
+            if (hasSkill('streetwise')) { sneakChance += 0.20; sneakModifiers.push({ name: 'Streetwise', bonus: 20 }); }
+            if (hasSkill('cartographer')) { sneakChance += 0.10; sneakModifiers.push({ name: 'Cartographer', bonus: 10 }); }
+            if (hasSkill('shadow_step')) { sneakChance += 0.05; sneakModifiers.push({ name: 'Shadow Step', bonus: 5 }); }
+            if (hasSkill('ghost')) { sneakChance += 0.10; sneakModifiers.push({ name: 'Ghost', bonus: 10 }); }
+            if (hasSkill('master_disguise')) { sneakChance += 0.05; sneakModifiers.push({ name: 'Master Disguise', bonus: 5 }); }
+            if (hasSkill('master_smuggler')) { sneakChance += 0.05; sneakModifiers.push({ name: 'Master Smuggler', bonus: 5 }); }
+            var _qHour = Engine.getHour ? Engine.getHour() : 12;
+            var isNighttime = _qHour >= 20 || _qHour < 5;
+            if (isNighttime) { sneakChance += 0.10; sneakModifiers.push({ name: 'Nighttime', bonus: 10 }); }
+            if (guardRelLevel >= 60) { sneakChance += 0.15; sneakModifiers.push({ name: 'Guard Relationship (60+)', bonus: 15 }); }
+            else if (guardRelLevel >= 40) { sneakChance += 0.08; sneakModifiers.push({ name: 'Guard Relationship (40+)', bonus: 8 }); }
             sneakChance = Math.min(sneakChance, 0.95);
+
+            // Calculate bribe tiers
+            var _qRng = Engine.getRng();
+            var _weeklyPay = 100;
+            var bribeLow = _qRng.randInt(4 * _weeklyPay, 8 * _weeklyPay);
+            var bribeMed = _qRng.randInt(9 * _weeklyPay, 16 * _weeklyPay);
+            var bribeHigh = _qRng.randInt(17 * _weeklyPay, 26 * _weeklyPay);
+
+            // Bribe success modifiers
+            var bribeBonus = 0;
+            var bribeModifiers = [];
+            if (hasSkill('bribe_expert')) { bribeBonus += 0.15; bribeModifiers.push({ name: 'Bribe Expert', bonus: 15 }); }
+            if (hasSkill('corruption_expert')) { bribeBonus += 0.15; bribeModifiers.push({ name: 'Corruption Expert', bonus: 15 }); }
+            if (hasSkill('silver_tongue_dark')) { bribeBonus += 0.10; bribeModifiers.push({ name: 'Silver Tongue (Dark)', bonus: 10 }); }
+            if (!hasSkill('silver_tongue_dark')) {
+                if (hasSkill('silver_tongue') || hasSkill('golden_tongue')) {
+                    bribeBonus += 0.05;
+                    bribeModifiers.push({ name: hasSkill('silver_tongue') ? 'Silver Tongue' : 'Golden Tongue', bonus: 5 });
+                }
+            }
+            if (hasSkill('charming') || hasSkill('charismatic')) {
+                bribeBonus += 0.05;
+                bribeModifiers.push({ name: hasSkill('charismatic') ? 'Charismatic' : 'Charming', bonus: 5 });
+            }
+            if (guardRelLevel >= 60) { bribeBonus += 0.15; bribeModifiers.push({ name: 'Guard Relationship (60+)', bonus: 15 }); }
+            else if (guardRelLevel >= 40) { bribeBonus += 0.08; bribeModifiers.push({ name: 'Guard Relationship (40+)', bonus: 8 }); }
+
+            var bribeLowChance = Math.min(0.95, 0.25 + bribeBonus);
+            var bribeMedChance = Math.min(0.95, 0.45 + bribeBonus);
+            var bribeHighChance = Math.min(0.95, 0.75 + bribeBonus);
+
+            var bribes = [
+                { tier: 'low', cost: bribeLow, chance: bribeLowChance, label: 'Small Bribe' },
+                { tier: 'medium', cost: bribeMed, chance: bribeMedChance, label: 'Generous Bribe' },
+                { tier: 'high', cost: bribeHigh, chance: bribeHighChance, label: 'Lavish Bribe' }
+            ];
+
+            // Consequences preview
+            var _cKingdom = t.kingdomId ? Engine.findKingdom(t.kingdomId) : null;
+            var _cKp = _cKingdom ? _cKingdom.kingPersonality : null;
+            var sneakFine = isMartial ? 100 : 40;
+            var sneakJailDays = isMartial ? 5 : 2;
+            if (_cKp) {
+                if (_cKp.temperament === 'cruel' || _cKp.temperament === 'tyrannical') {
+                    sneakFine = Math.floor(sneakFine * 1.5);
+                    sneakJailDays = Math.floor(sneakJailDays * 1.5);
+                } else if (_cKp.temperament === 'merciful' || _cKp.temperament === 'kind') {
+                    sneakFine = Math.floor(sneakFine * 0.6);
+                    sneakJailDays = Math.max(1, Math.floor(sneakJailDays * 0.5));
+                }
+                if (_cKp.greed === 'greedy' || _cKp.greed === 'corrupt') {
+                    sneakFine = Math.floor(sneakFine * 1.4);
+                }
+            }
+            var bribeFine = Math.floor(sneakFine * 1.3);
+            var bribeJailDays = sneakJailDays + 2;
+            if (_cKp && typeof _cKp.justice === 'number' && _cKp.justice >= 70) {
+                bribeFine = Math.floor(bribeFine * 1.5);
+                bribeJailDays = Math.floor(bribeJailDays * 1.5);
+            }
+
+            var kingTemperament = 'fair';
+            if (_cKp) {
+                if (_cKp.temperament === 'cruel' || _cKp.temperament === 'tyrannical') kingTemperament = 'strict';
+                else if (_cKp.temperament === 'merciful' || _cKp.temperament === 'kind') kingTemperament = 'merciful';
+            }
 
             // Ranks allowed through
             var allowedRanks = [];
@@ -2974,7 +3125,12 @@
 
             return {
                 blocked: true, townName: t.name, townId: tid, qType: qType, qLabel: qLabel, isMartial: isMartial,
-                sneakChance: sneakChance, allowedRanks: allowedRanks
+                sneakChance: sneakChance, sneakModifiers: sneakModifiers, allowedRanks: allowedRanks,
+                guardId: guardId, guardName: guardName, guardRelLevel: guardRelLevel,
+                bribes: bribes, bribeModifiers: bribeModifiers,
+                sneakFine: sneakFine, sneakJailDays: sneakJailDays,
+                bribeFine: bribeFine, bribeJailDays: bribeJailDays,
+                kingTemperament: kingTemperament, isNighttime: isNighttime
             };
         }
         return null;
@@ -2987,6 +3143,133 @@
         var route = Engine.findPath(originTownId, destTownId);
         if (!route || route.length === 0) return { allowed: false, message: 'No route found.' };
         return _checkRouteQuarantine(route, originTownId, destTownId);
+    }
+
+    // Execute a quarantine bribe attempt (called after player selects bribe tier)
+    function attemptQuarantineBribe(destTownId, tier, bribeCost) {
+        var originTownId = player.townId;
+        if (!originTownId) return { allowed: false, message: 'Cannot determine location.' };
+        var route = Engine.findPath(originTownId, destTownId);
+        if (!route || route.length === 0) return { allowed: false, message: 'No route found.' };
+
+        // Find the quarantined town on route
+        var routeTownIds = {};
+        routeTownIds[originTownId] = true;
+        routeTownIds[destTownId] = true;
+        for (var _bsi = 0; _bsi < route.length; _bsi++) {
+            if (route[_bsi].fromTownId) routeTownIds[route[_bsi].fromTownId] = true;
+            if (route[_bsi].toTownId) routeTownIds[route[_bsi].toTownId] = true;
+        }
+
+        for (var _btid in routeTownIds) {
+            var _bt = Engine.findTown(_btid);
+            if (!_bt) continue;
+            var _bqType = null;
+            if (_bt.kingdomId) {
+                var _bkingdom = Engine.findKingdom ? Engine.findKingdom(_bt.kingdomId) : null;
+                if (_bkingdom && _bkingdom.healthPolicies) {
+                    var _bday = Engine.getDay ? Engine.getDay() : 0;
+                    for (var _bqi = 0; _bqi < _bkingdom.healthPolicies.length; _bqi++) {
+                        var _bpol = _bkingdom.healthPolicies[_bqi];
+                        if (!_bpol.active || (_bpol.expiresDay && _bday > _bpol.expiresDay)) continue;
+                        if (_bpol.townId !== _btid) continue;
+                        if (_bpol.type === 'martial_quarantine') { _bqType = 'martial'; break; }
+                        if (_bpol.type === 'quarantine_town') { _bqType = 'standard'; }
+                    }
+                }
+            }
+            if (!_bqType && _bt.quarantined) _bqType = 'standard';
+            if (!_bqType) continue;
+
+            var _bisMartial = _bqType === 'martial';
+            var _bqLabel = _bisMartial ? 'martial quarantine' : 'quarantine';
+
+            // Nobles pass freely
+            if (player.isNoble) {
+                return { allowed: true, message: 'Your noble status grants passage through the ' + _bqLabel + ' at ' + _bt.name + '.' };
+            }
+            var _bpRank = 0;
+            if (_bt.kingdomId && player.socialRank) {
+                _bpRank = player.socialRank[_bt.kingdomId] || 0;
+            }
+            if (!_bisMartial && _bpRank >= 3) {
+                return { allowed: true, message: 'Your merchant standing lets you pass the quarantine at ' + _bt.name + ' on official trade business.' };
+            }
+
+            // Check if player can afford the bribe
+            if (player.gold < bribeCost) {
+                return { allowed: false, message: 'You cannot afford the ' + bribeCost + 'g bribe.' };
+            }
+
+            // Determine base success chance from tier
+            var _bBaseChance = 0.25;
+            if (tier === 'medium') _bBaseChance = 0.45;
+            else if (tier === 'high') _bBaseChance = 0.75;
+
+            // Skill modifiers
+            var _bBonus = 0;
+            if (hasSkill('bribe_expert')) _bBonus += 0.15;
+            if (hasSkill('corruption_expert')) _bBonus += 0.15;
+            if (hasSkill('silver_tongue_dark')) _bBonus += 0.10;
+            if (!hasSkill('silver_tongue_dark')) {
+                if (hasSkill('silver_tongue') || hasSkill('golden_tongue')) _bBonus += 0.05;
+            }
+            if (hasSkill('charming') || hasSkill('charismatic')) _bBonus += 0.05;
+
+            // Guard relationship bonus
+            var _bPeople = Engine.getPeople ? Engine.getPeople(_btid) : [];
+            var _bGuardRel = 0;
+            for (var _bgri = 0; _bgri < _bPeople.length; _bgri++) {
+                var _bgp = _bPeople[_bgri];
+                if (_bgp.alive && (_bgp.occupation === 'guard' || _bgp.occupation === 'soldier')) {
+                    var _bgrv = player.relationships[_bgp.id];
+                    if (_bgrv && _bgrv.level > _bGuardRel) _bGuardRel = _bgrv.level;
+                }
+            }
+            if (_bGuardRel >= 60) _bBonus += 0.15;
+            else if (_bGuardRel >= 40) _bBonus += 0.08;
+
+            var _bSuccessChance = Math.min(0.95, _bBaseChance + _bBonus);
+            var rng = Engine.getRng();
+
+            if (rng.chance(_bSuccessChance)) {
+                // Bribe succeeded — deduct gold, log event
+                player.gold -= bribeCost;
+                Engine.logEvent('💰 ' + player.fullName + ' bribed a guard ' + bribeCost + 'g to pass through ' + _bqLabel + ' at ' + _bt.name + '.');
+                return { allowed: true, message: '💰 You slipped the guard ' + bribeCost + 'g and were waved through the ' + _bqLabel + ' at ' + _bt.name + '.' };
+            }
+
+            // Bribe failed — lose half the bribe money in the attempt, harsher punishment
+            player.gold -= Math.floor(bribeCost * 0.5);
+            player.notoriety = Math.min(100, (player.notoriety || 0) + 5);
+
+            var _bKingdom = _bt.kingdomId ? Engine.findKingdom(_bt.kingdomId) : null;
+            var _bKp = _bKingdom ? _bKingdom.kingPersonality : null;
+            var _bPunishment = _quarantinePunishment(_bKingdom, _bKp, _bisMartial, rng, true);
+
+            if (_bPunishment.type === 'jail') {
+                var _bJailDays = _bPunishment.days;
+                if (hasSkill('jail_break')) _bJailDays = Math.max(1, Math.floor(_bJailDays * 0.5));
+                player.jailedUntilDay = Engine.getDay() + _bJailDays;
+                player.jailReason = 'Bribery and violating ' + _bqLabel;
+                if (_bPunishment.fine > 0) {
+                    var _bActualFine = Math.min(_bPunishment.fine, player.gold);
+                    player.gold -= _bActualFine;
+                    if (_bKingdom) _bKingdom.gold = (_bKingdom.gold || 0) + _bActualFine;
+                }
+                Engine.logEvent('🚔 ' + player.fullName + ' was caught bribing a guard at ' + _bt.name + ' ' + _bqLabel + '! Jailed for ' + _bJailDays + ' days' + (_bPunishment.fine > 0 ? ' and fined ' + _bPunishment.fine + 'g' : '') + '.');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚔 Caught bribing! Jailed ' + _bJailDays + ' days for bribery and violating ' + _bqLabel + '.', 'error', 'critical');
+                return { allowed: false, message: '🚧 Caught bribing a guard at ' + _bt.name + '! Jailed for ' + _bJailDays + ' days' + (_bPunishment.fine > 0 ? ', fined ' + _bPunishment.fine + 'g' : '') + '.' };
+            } else {
+                var _bActualFine2 = Math.min(_bPunishment.fine, player.gold);
+                player.gold -= _bActualFine2;
+                if (_bKingdom) _bKingdom.gold = (_bKingdom.gold || 0) + _bActualFine2;
+                Engine.logEvent('🚧 ' + player.fullName + ' was caught bribing a guard at ' + _bt.name + ' ' + _bqLabel + ' and fined ' + _bActualFine2 + 'g.');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚧 Caught bribing! Fined ' + _bActualFine2 + 'g for bribery and violating ' + _bqLabel + '.', 'warning', 'critical');
+                return { allowed: false, message: '🚧 Caught bribing at ' + _bt.name + ' ' + _bqLabel + '! Fined ' + _bActualFine2 + 'g and turned away.' };
+            }
+        }
+        return null;
     }
 
     /**
@@ -40083,6 +40366,7 @@
         travelTo,
         getRouteQuarantineInfo,
         attemptQuarantineSneak,
+        attemptQuarantineBribe,
         turnBack,
         stopTravel,
         travelToCoords,
