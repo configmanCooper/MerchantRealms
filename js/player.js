@@ -4475,8 +4475,8 @@
             return { success: false, message: 'A ship is required for sea caravans. Select an owned ship or rent one.' };
         }
 
-        // Validate goods
-        if (!goods || typeof goods !== 'object') return { success: false, message: 'No goods specified.' };
+        // Validate goods — allow empty if pickup/buy orders exist
+        if (!goods || typeof goods !== 'object') goods = {};
         var hasSeaGoods = false;
         for (const [resId, gqty] of Object.entries(goods)) {
             var nqty = Number(gqty);
@@ -4484,7 +4484,10 @@
             goods[resId] = Math.floor(nqty);
             hasSeaGoods = true;
         }
-        if (!hasSeaGoods) return { success: false, message: 'No goods specified for the sea caravan.' };
+        var hasSeaPickupOrders = options.orders && options.orders.some(function(o) { return o.action === 'pickup' || o.action === 'buy'; });
+        if (!hasSeaGoods && !hasSeaPickupOrders && (!options.orders || options.orders.length === 0)) {
+            return { success: false, message: 'No goods or orders specified for the sea caravan.' };
+        }
 
         // Validate crew and guards
         var carriers = Number(options.carriers) || shipMinCrew;
