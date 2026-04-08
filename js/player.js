@@ -15852,7 +15852,7 @@
         const typeDef = isIllness
             ? ILLNESS_TYPES.find(t => t.id === condition.type)
             : INJURY_TYPES.find(t => t.id === condition.type);
-        var effectiveTypeDef = typeDef || { id: condition.type, name: condition.name || 'Unknown', severity: condition.severity || 'minor', healDays: condition.severity === 'severe' ? 15 : condition.severity === 'moderate' ? 7 : 3, product: 'antidote', productCost: 10 };
+        var effectiveTypeDef = typeDef || { id: condition.type, name: condition.name || 'Unknown', severity: condition.severity || 'minor', healDays: condition.severity === 'severe' ? 15 : condition.severity === 'moderate' ? 7 : 3, product: isIllness ? 'herbal_remedy' : 'bandages', productCost: 10 };
 
         // first_aid: only minor injuries/illnesses. field_medic: minor+moderate. doctor: all.
         if (!hasSkill('doctor')) {
