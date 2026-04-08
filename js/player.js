@@ -2838,7 +2838,6 @@
 
             // Sneak attempt — 40% for standard, 20% for martial
             var sneakChance = isMartial ? 0.20 : 0.40;
-            if (hasSkill('smuggler') || hasSkill('streetwise')) sneakChance += 0.20;
             if (hasSkill('cartographer')) sneakChance += 0.10;
             if (hasSkill('shadow_step')) sneakChance += 0.05;
             if (hasSkill('ghost')) sneakChance += 0.10;
@@ -3038,8 +3037,6 @@
             // Calculate sneak chance with all modifiers
             var sneakChance = isMartial ? 0.20 : 0.40;
             var sneakModifiers = [];
-            if (hasSkill('smuggler')) { sneakChance += 0.20; sneakModifiers.push({ name: 'Smuggler', bonus: 20 }); }
-            if (hasSkill('streetwise')) { sneakChance += 0.20; sneakModifiers.push({ name: 'Streetwise', bonus: 20 }); }
             if (hasSkill('cartographer')) { sneakChance += 0.10; sneakModifiers.push({ name: 'Cartographer', bonus: 10 }); }
             if (hasSkill('shadow_step')) { sneakChance += 0.05; sneakModifiers.push({ name: 'Shadow Step', bonus: 5 }); }
             if (hasSkill('ghost')) { sneakChance += 0.10; sneakModifiers.push({ name: 'Ghost', bonus: 10 }); }
