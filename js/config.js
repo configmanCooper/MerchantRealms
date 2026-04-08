@@ -2421,7 +2421,6 @@ const ACHIEVEMENT_CATEGORIES = {
     kingdom:    { name: 'Kingdom',    icon: '👑' },
     underworld: { name: 'Underworld', icon: '🎭' },
     legacy:     { name: 'Legacy',     icon: '🏰' },
-    military:   { name: 'Military',   icon: '⚔️' },
 };
 
 // ============================================================

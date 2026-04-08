@@ -15336,7 +15336,7 @@ window.UI = (function () {
 
         var overlay = document.createElement('div');
         overlay.id = 'ach-popup-overlay';
-        overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:99999;pointer-events:none;display:flex;justify-content:center;padding-top:60px;';
+        overlay.style.cssText = 'position:fixed;top:60px;left:0;width:100%;z-index:99999;pointer-events:none;display:flex;justify-content:center;';
 
         // Tier-specific backgrounds
         var bgGradient, borderColor, shadowStyle, shimmerCss;

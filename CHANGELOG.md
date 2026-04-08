@@ -4,6 +4,32 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.61.0] - 2026-04-08
+
+### Added
+- **Tiered Achievements**: All 186 achievements categorized into Bronze (28), Silver (66), Gold (72), Platinum (20) tiers with tier-appropriate XP rewards (Bronze 25-50, Silver 75-100, Gold 150-200, Platinum 300-400)
+- **Achievement Unlock Popup**: Sliding popup at top-center on achievement unlock with tier-colored backgrounds, auto-dismiss after 3 seconds, click to navigate to feats menu. Platinum achievements feature shimmer animation, pulsing icon, and glowing border
+- **Achievement UI Rewrite**: Tier badges, tier filter buttons (all/bronze/silver/gold/platinum), sorting by tier (platinum first), tier summary counts, platinum glow effects
+- **Noble Council Voting Law**: New `noble_council` special law with weighted votes (King×5, RA×3, Lord×2, MN×1). 6 decision types: war, peace, alliance, surrender, ban/unban goods. Player can cast votes and influence nobles
+- **Noble Economy System**: Building ownership assigned at worldgen by rank (King 5-10, RA 3-5, Lord 2-4, MN 1-2). Income/expense tick every 10 days, financial stress tracking
+- **Noble Relationships**: Noble-to-noble relationship scores (-100 to 100) initialized at worldgen based on personality compatibility. Monthly drift. King loyalty (0-100) for all nobles
+- **Noble Loans**: Player can offer 50-2000g loans at 15% interest to nobles rank 4-6. Monthly repayment based on personality, default after 360 days. Indebted nobles easier to influence in votes
+- **Royal Feast System**: Feasts scheduled every 60-120 days, 3-day events with 60-80% noble attendance. 8 player actions in 3 categories (Social/Intel/Scheme): mingle, toast king, private chat, eavesdrop, observe court, spread rumor, forge alliance, pit nobles
+- **Conspiracy & Assassination System**: Dissatisfied nobles (kingLoyalty < 30) form conspiracies that grow in strength, can be detected, and attempt coups or assassinations
+- **King AI Unrest Response**: Personality-driven king responses to low happiness — tax cuts, festivals, martial law, prisoner releases, wealth seizure depending on king traits
+- **Noble Assets Skill**: New 2 SP social skill showing noble/EM building ownership and financial status in NPC panels
+- **New Petition Types**: `promote_outpost` (requires pop ≥ 20) and `build_defense` (walls/watchtowers)
+- **Platinum Achievement Tracking**: War profiteering, arms supply, commission goods, vote manipulation, monopoly detection, petition tracking
+
+### Fixed
+- Feast action counter in nobility panel used wrong property name (`playerActionsToday` → `_playerActionsToday`)
+- King unrest response crashed using `.map()` on territories Set (now uses `Array.from()`)
+- Added HTML escaping to all dynamic text in voting, feast, loan, and nobility UIs
+- Removed empty Military achievement category (0 achievements)
+
+### Removed
+- `first_sale` and `first_purchase` achievements (trivial/redundant)
+
 ## [0.60.0] - 2026-04-07
 
 ### Added
