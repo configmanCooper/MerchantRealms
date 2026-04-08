@@ -18854,31 +18854,85 @@ window.UI = (function () {
             html += '</div>';
         }
 
-        // Street BUY offers (black market — buying contraband from NPCs)
+        // Skill discount summary for buy offers
+        var _sdSkills = [];
+        var _sdTotal = 0;
+        if (typeof Player !== 'undefined') {
+            if (Player.hasSkill('haggler') || Player.hasSkill('master_haggler')) { _sdSkills.push(Player.hasSkill('master_haggler') ? '💰 Master Haggler -10%' : '🤝 Haggler -10%'); _sdTotal += 10; }
+            if (Player.hasSkill('silver_tongue') || Player.hasSkill('golden_tongue')) { _sdSkills.push(Player.hasSkill('golden_tongue') ? '👅 Golden Tongue -5%' : '👄 Silver Tongue -5%'); _sdTotal += 5; }
+            if (Player.hasSkill('charming') || Player.hasSkill('charismatic')) { _sdSkills.push(Player.hasSkill('charismatic') ? '✨ Charismatic -5%' : '😊 Charming -5%'); _sdTotal += 5; }
+            if (Player.hasSkill('black_market_contacts')) { _sdSkills.push('🕶️ Black Market Contacts -10%'); _sdTotal += 10; }
+            if (Player.hasSkill('corruption_expert')) { _sdSkills.push('💀 Corruption Expert -5%'); _sdTotal += 5; }
+            _sdTotal = Math.min(30, _sdTotal);
+        }
+        if (_sdSkills.length > 0) {
+            html += '<hr style="border-color:#555;margin:12px 0;">';
+            html += '<div style="background:rgba(85,168,104,0.12);border:1px solid #55a868;border-radius:6px;padding:6px 10px;margin-bottom:8px;">';
+            html += '<span style="color:#55a868;font-weight:bold;">🏷️ Your Skill Discounts on Buy Prices:</span> ';
+            html += _sdSkills.join(', ');
+            html += ' <span style="color:#55a868;font-weight:bold;">(Total: -' + _sdTotal + '%' + (_sdTotal >= 30 ? ' MAX' : '') + ')</span>';
+            html += '</div>';
+        }
+
+        // Street BUY offers (contraband + scarce goods from street vendors)
         if (typeof Player !== 'undefined' && Player.getStreetBuyOffers) {
             var buyOffers = Player.getStreetBuyOffers();
             if (buyOffers.length > 0) {
-                html += '<hr style="border-color:#555;margin:12px 0;">';
-                html += '<p class="street-intro">🛒 <strong>Buy from Street</strong> — Shady characters selling contraband at black market prices.</p>';
-                html += '<div class="street-trade-list">';
-                for (var bi = 0; bi < buyOffers.length; bi++) {
-                    var bo = buyOffers[bi];
-                    var boTotal = bo.pricePerUnit * bo.qty;
-                    var boCanAfford = (Player.gold || 0) >= boTotal;
-                    html += '<div class="street-trade-item">';
-                    html += '<div class="street-trade-info">';
-                    html += '<span class="street-npc-name">' + bo.npcName + '</span> offers ';
-                    html += '<strong>' + bo.qty + ' ' + (bo.resourceIcon || '') + ' ' + bo.resourceName + '</strong>';
-                    html += ' — price <span class="street-price">' + bo.pricePerUnit + 'g each</span>';
-                    if (bo.isBanned) html += ' <span style="color:#c44e52;font-weight:bold;font-size:0.85em;">🚫 Banned</span>';
+                // Split into contraband and scarce
+                var contrabandBuys = buyOffers.filter(function(o) { return o.category === 'contraband'; });
+                var scarceBuys = buyOffers.filter(function(o) { return o.category === 'scarce'; });
+
+                if (contrabandBuys.length > 0) {
+                    html += '<hr style="border-color:#555;margin:12px 0;">';
+                    html += '<p class="street-intro">🚫 <strong>Buy Contraband</strong> — Shady characters selling banned goods at black market prices.</p>';
+                    html += '<div class="street-trade-list">';
+                    for (var bi = 0; bi < contrabandBuys.length; bi++) {
+                        var bo = contrabandBuys[bi];
+                        var boIdx = buyOffers.indexOf(bo);
+                        var boTotal = bo.pricePerUnit * bo.qty;
+                        var boCanAfford = (Player.gold || 0) >= boTotal;
+                        html += '<div class="street-trade-item" style="border-left:3px solid #c44e52;">';
+                        html += '<div class="street-trade-info">';
+                        html += '<span class="street-npc-name">' + bo.npcName + '</span> offers ';
+                        html += '<strong>' + bo.qty + ' ' + (bo.resourceIcon || '') + ' ' + bo.resourceName + '</strong>';
+                        html += ' — price <span class="street-price">' + bo.pricePerUnit + 'g each</span>';
+                        html += ' <span style="color:#c44e52;font-weight:bold;font-size:0.85em;">🚫 Banned</span>';
+                        html += '</div>';
+                        html += '<div class="street-trade-actions">';
+                        html += '<span class="street-have">Total: ' + boTotal + 'g</span>';
+                        html += '<button class="btn-medieval btn-street-sell" ' + (boCanAfford ? 'onclick="UI.executeStreetBuyUI(' + boIdx + ')"' : 'disabled') + '>';
+                        html += 'Buy ' + bo.qty + ' for ' + boTotal + 'g</button>';
+                        html += '</div></div>';
+                    }
                     html += '</div>';
-                    html += '<div class="street-trade-actions">';
-                    html += '<span class="street-have">Total: ' + boTotal + 'g</span>';
-                    html += '<button class="btn-medieval btn-street-sell" ' + (boCanAfford ? 'onclick="UI.executeStreetBuyUI(' + bi + ')"' : 'disabled') + '>';
-                    html += 'Buy ' + bo.qty + ' for ' + boTotal + 'g</button>';
-                    html += '</div></div>';
                 }
-                html += '</div>';
+
+                if (scarceBuys.length > 0) {
+                    html += '<hr style="border-color:#555;margin:12px 0;">';
+                    html += '<p class="street-intro">🛒 <strong>Buy Scarce Goods</strong> — Traveling merchants selling goods not available locally. Above-market prices.</p>';
+                    html += '<div class="street-trade-list">';
+                    for (var sbi = 0; sbi < scarceBuys.length; sbi++) {
+                        var so = scarceBuys[sbi];
+                        var soIdx = buyOffers.indexOf(so);
+                        var soTotal = so.pricePerUnit * so.qty;
+                        var soCanAfford = (Player.gold || 0) >= soTotal;
+                        var soPremPct = so.marketPrice > 0 ? Math.round(((so.pricePerUnit - so.marketPrice) / so.marketPrice) * 100) : 0;
+                        html += '<div class="street-trade-item" style="border-left:3px solid #e6c422;">';
+                        html += '<div class="street-trade-info">';
+                        html += '<span class="street-npc-name">' + so.npcName + '</span> offers ';
+                        html += '<strong>' + so.qty + ' ' + (so.resourceIcon || '') + ' ' + so.resourceName + '</strong>';
+                        html += ' — <span class="street-price">' + so.pricePerUnit + 'g each</span>';
+                        html += ' <span style="color:#e67e22;font-weight:bold;font-size:0.85em;">(+' + soPremPct + '% above market)</span>';
+                        html += ' <span style="color:#e6c422;font-size:0.8em;">📦 Not in local market</span>';
+                        html += '</div>';
+                        html += '<div class="street-trade-actions">';
+                        html += '<span class="street-have">Total: ' + soTotal + 'g</span>';
+                        html += '<button class="btn-medieval btn-street-sell" ' + (soCanAfford ? 'onclick="UI.executeStreetBuyUI(' + soIdx + ')"' : 'disabled') + '>';
+                        html += 'Buy ' + so.qty + ' for ' + soTotal + 'g</button>';
+                        html += '</div></div>';
+                    }
+                    html += '</div>';
+                }
             }
         }
 

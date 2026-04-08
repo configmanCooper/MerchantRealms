@@ -26531,57 +26531,64 @@
         var offers = [];
         var kingdom = Engine.findKingdom(town.kingdomId);
         var bannedGoods = (kingdom && kingdom.laws && kingdom.laws.bannedGoods) || [];
-
-        // Only generate buy offers for banned goods (otherwise buy from market normally)
-        if (bannedGoods.length > 0) {
-            var people = Engine.getPeople(town.id);
-            var candidates = [];
-            if (people && people.length > 0) {
-                for (var ci = 0; ci < people.length; ci++) {
-                    var cp = people[ci];
-                    if (cp && cp.alive && cp.occupation !== 'soldier' && cp.occupation !== 'guard' && cp.occupation !== 'noble') {
-                        candidates.push(cp);
-                    }
+        var restrictedGoods = (kingdom && kingdom.laws && kingdom.laws.restrictedGoods) || [];
+        var people = Engine.getPeople(town.id);
+        var candidates = [];
+        if (people && people.length > 0) {
+            for (var ci = 0; ci < people.length; ci++) {
+                var cp = people[ci];
+                if (cp && cp.alive && cp.occupation !== 'soldier' && cp.occupation !== 'guard' && cp.occupation !== 'noble') {
+                    candidates.push(cp);
                 }
             }
-            // Shuffle and pick up to 3 sellers
-            var shuffled = [];
-            for (var si = candidates.length - 1; si > 0; si--) {
-                var j = rng.randInt(0, si);
-                var tmp = candidates[si];
-                candidates[si] = candidates[j];
-                candidates[j] = tmp;
-            }
-            shuffled = candidates.slice(0, 3);
+        }
+        // Shuffle candidates
+        for (var si = candidates.length - 1; si > 0; si--) {
+            var j = rng.randInt(0, si);
+            var tmp = candidates[si];
+            candidates[si] = candidates[j];
+            candidates[j] = tmp;
+        }
 
-            for (var oi = 0; oi < shuffled.length; oi++) {
-                var npc = shuffled[oi];
-                // Pick a random banned good to sell
+        // Skill-based discount on street buy prices
+        var skillDiscount = 0;
+        if (hasSkill('haggler') || hasSkill('master_haggler')) skillDiscount += 0.10;
+        if (hasSkill('silver_tongue') || hasSkill('golden_tongue')) skillDiscount += 0.05;
+        if (hasSkill('charming') || hasSkill('charismatic')) skillDiscount += 0.05;
+        if (hasSkill('black_market_contacts')) skillDiscount += 0.10;
+        if (hasSkill('corruption_expert')) skillDiscount += 0.05;
+        skillDiscount = Math.min(0.30, skillDiscount);
+
+        // --- Banned goods offers (shady sellers) ---
+        if (bannedGoods.length > 0) {
+            var bannedSellers = candidates.slice(0, 3);
+            for (var oi = 0; oi < bannedSellers.length; oi++) {
+                var npc = bannedSellers[oi];
                 var bannedGood = bannedGoods[rng.randInt(0, bannedGoods.length - 1)];
                 var res = findResource(bannedGood);
                 if (!res) continue;
                 var qty = rng.randInt(1, 5);
                 var premium = rng.randFloat(2.0, 3.5);
-                var pricePerUnit = Math.ceil(res.basePrice * premium);
-
-                // Also always include blasting_powder if banned
+                var pricePerUnit = Math.ceil(res.basePrice * premium * (1 - skillDiscount));
                 offers.push({
                     npcName: npc.firstName + ' ' + npc.lastName,
                     npcId: npc.id,
                     resourceId: res.id,
                     resourceName: res.name,
-                    resourceIcon: res.icon || '\uD83D\uDCE6',
+                    resourceIcon: res.icon || '📦',
                     qty: qty,
                     pricePerUnit: pricePerUnit,
+                    marketPrice: res.basePrice,
                     detectionChance: 0.15,
                     isBanned: true,
+                    category: 'contraband'
                 });
             }
 
-            // Always include a blasting_powder offer if it's banned
+            // Always include blasting_powder if banned
             var bpBanned = bannedGoods.indexOf('blasting_powder') !== -1;
-            if (bpBanned && offers.filter(function(o) { return o.resourceId === 'blasting_powder'; }).length === 0 && shuffled.length > 0) {
-                var bpNpc = shuffled[0];
+            if (bpBanned && offers.filter(function(o) { return o.resourceId === 'blasting_powder'; }).length === 0 && bannedSellers.length > 0) {
+                var bpNpc = bannedSellers[0];
                 var bpRes = findResource('blasting_powder');
                 if (bpRes) {
                     offers.push({
@@ -26589,14 +26596,61 @@
                         npcId: bpNpc.id,
                         resourceId: 'blasting_powder',
                         resourceName: bpRes.name,
-                        resourceIcon: bpRes.icon || '\uD83D\uDCA5',
+                        resourceIcon: bpRes.icon || '💥',
                         qty: rng.randInt(1, 3),
-                        pricePerUnit: Math.ceil(bpRes.basePrice * rng.randFloat(2.0, 3.5)),
+                        pricePerUnit: Math.ceil(bpRes.basePrice * rng.randFloat(2.0, 3.5) * (1 - skillDiscount)),
+                        marketPrice: bpRes.basePrice,
                         detectionChance: 0.15,
                         isBanned: true,
+                        category: 'contraband'
                     });
                 }
             }
+        }
+
+        // --- Non-banned goods not in local market (travelers/merchants selling scarce items) ---
+        var marketSupply = (town.market && town.market.supply) ? town.market.supply : {};
+        var marketPrices = (town.market && town.market.prices) ? town.market.prices : {};
+        var scarcePool = [];
+        var allResKeys = Object.keys(RESOURCE_TYPES);
+        for (var ri = 0; ri < allResKeys.length; ri++) {
+            var rKey = allResKeys[ri];
+            var rDef = RESOURCE_TYPES[rKey];
+            if (!rDef || !rDef.id) continue;
+            if (bannedGoods.indexOf(rDef.id) >= 0) continue;
+            if (restrictedGoods.indexOf(rDef.id) >= 0) continue;
+            // Only goods with zero or very low supply in the local market
+            var supply = marketSupply[rDef.id] || 0;
+            if (supply <= 1) scarcePool.push(rDef);
+        }
+        // Pick 3-5 scarce goods to offer
+        var scarceCount = Math.min(scarcePool.length, rng.randInt(3, 5));
+        var scarceSellers = candidates.slice(3, 3 + scarceCount);
+        if (scarceSellers.length < scarceCount) scarceSellers = candidates.slice(0, scarceCount);
+        var shuffledScarce = rng.shuffle(scarcePool.slice()).slice(0, scarceCount);
+
+        for (var sci = 0; sci < shuffledScarce.length && sci < scarceSellers.length; sci++) {
+            var scRes = shuffledScarce[sci];
+            var scNpc = scarceSellers[sci];
+            if (!scRes || !scNpc) continue;
+            var scQty = rng.randInt(1, 8);
+            // Above-market premium: 1.3x to 1.8x since these are scarce/imported
+            var scPremium = rng.randFloat(1.3, 1.8);
+            var scBasePrice = marketPrices[scRes.id] || scRes.basePrice || 10;
+            var scPrice = Math.ceil(scBasePrice * scPremium * (1 - skillDiscount));
+            offers.push({
+                npcName: scNpc.firstName + ' ' + scNpc.lastName,
+                npcId: scNpc.id,
+                resourceId: scRes.id,
+                resourceName: scRes.name,
+                resourceIcon: scRes.icon || '📦',
+                qty: scQty,
+                pricePerUnit: scPrice,
+                marketPrice: scBasePrice,
+                detectionChance: 0,
+                isBanned: false,
+                category: 'scarce'
+            });
         }
 
         player._streetBuyCache = offers;
@@ -26649,11 +26703,16 @@
         player.stats.totalGoldSpent += totalPrice;
         player.inventory[offer.resourceId] = (player.inventory[offer.resourceId] || 0) + offer.qty;
 
-        // Improve smuggling skill
-        player.smugglingSkill = Math.min(20, (player.smugglingSkill || 0) + 1);
+        // Improve smuggling skill only for contraband
+        if (offer.isBanned) {
+            player.smugglingSkill = Math.min(20, (player.smugglingSkill || 0) + 1);
+        }
 
         offers.splice(buyIndex, 1);
-        return { success: true, message: 'Bought ' + offer.qty + ' ' + offer.resourceName + ' for ' + totalPrice + 'g from the black market.' };
+        var buyMsg = offer.isBanned
+            ? 'Bought ' + offer.qty + ' ' + offer.resourceName + ' for ' + totalPrice + 'g from the black market.'
+            : 'Bought ' + offer.qty + ' ' + offer.resourceName + ' for ' + totalPrice + 'g from a street vendor.';
+        return { success: true, message: buyMsg };
     }
 
     function executeStreetTrade(tradeIndex) {
