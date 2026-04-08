@@ -3129,6 +3129,8 @@
                     }
                 }
             }
+            // If origin and quarantine town are the same, only count once (as dest bonus)
+            if (originTownId === tid && ownsMedicalHere && ownsMedicalDest) ownsMedicalHere = false;
             if (hasDoctor || ownsMedicalHere || ownsMedicalDest) {
                 var _dpChance = 0;
                 var _dpReasons = [];
@@ -3329,6 +3331,8 @@
                 }
             }
         }
+        // If origin and quarantine town are the same, only count once (as dest bonus)
+        if (originTownId === destTownId && ownsMedOrigin && ownsMedDest) ownsMedOrigin = false;
         if (!hasDoc && !ownsMedOrigin && !ownsMedDest) {
             return { allowed: false, message: 'You need medical credentials to persuade the guard.' };
         }
