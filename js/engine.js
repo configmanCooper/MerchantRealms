@@ -964,6 +964,7 @@
                 immigrationPolicy: 'open',
                 warExhaustion: 0,           // 0-100 scale, accumulates during war, recovers during peace
                 healthPolicies: [],         // active health/quarantine policies
+                _activeVotes: [],           // Noble Council pending votes
             });
             // Bug 5: store starting gold for crisis detection
             kingdoms[kingdoms.length - 1]._startingGold = kingdoms[kingdoms.length - 1].gold;
@@ -3610,6 +3611,9 @@
             // Generate non-royal nobles (scaled by population/prosperity)
             generateNobles(rng, k, people, kTowns);
 
+            // Assign buildings to nobles based on rank
+            assignNobleBuildingOwnership(rng, k, people);
+
             // Build succession list: sons, then brothers, then other males
             const allKPeople = people.filter(p => p.kingdomId === k.id && p.alive);
             const males = allKPeople.filter(p => p.sex === 'M' && p.id !== king.id && p.age >= 14);
@@ -3883,6 +3887,18 @@
                 rn.socialRank[kId] = 4; // minor_noble
                 assignedMinors++;
             }
+            // Add kingLoyalty to existing royal nobles
+            if (rn.kingLoyalty == null) {
+                var rnRank = rn.socialRank[kId];
+                var rnKl = 50;
+                if (rnRank === 6) rnKl += 20;
+                else if (rnRank === 5) rnKl += 10;
+                var rnP = rn.personality || {};
+                rnKl += (rnP.loyalty || 50) * 0.3;
+                rnKl -= (rnP.ambition || 50) * 0.15;
+                rnKl += rng.randInt(-10, 10);
+                rn.kingLoyalty = Math.max(0, Math.min(100, Math.round(rnKl)));
+            }
         }
 
         // Generate additional nobles to fill the target counts
@@ -3947,6 +3963,14 @@
                 injured: false,
                 injuryDay: 0,
             };
+            // Calculate kingLoyalty based on rank and personality
+            var klBase = 50;
+            if (rank === 6) klBase += 20;
+            else if (rank === 5) klBase += 10;
+            klBase += person.personality.loyalty * 0.3;
+            klBase -= person.personality.ambition * 0.15;
+            klBase += rng.randInt(-10, 10);
+            person.kingLoyalty = Math.max(0, Math.min(100, Math.round(klBase)));
             people.push(person);
             var town = kTowns.find(function(t) { return t.id === townId; });
             if (town) town.population = (town.population || 0) + 1;
@@ -4029,7 +4053,181 @@
             kRAs[rai]._knowsNobles = kRAs[rai]._knowsNobles || [];
             if (kingdom.king) kRAs[rai]._knowsNobles.push(kingdom.king);
         }
+
+        // Initialize noble-to-noble relationships
+        initializeNobleRelationships(rng, kingdom, people);
     }
+
+    function assignNobleBuildingOwnership(rng, kingdom, people) {
+        var kId = kingdom.id;
+
+        // Find alive nobles in this kingdom by rank (descending priority)
+        var nobles = people.filter(function(p) {
+            return p.alive && p.kingdomId === kId && p.socialRank && p.socialRank[kId] >= 4;
+        });
+
+        // Sort by rank descending so higher ranks pick first
+        nobles.sort(function(a, b) { return (b.socialRank[kId] || 0) - (a.socialRank[kId] || 0); });
+
+        // Collect all kingdom towns and identify capital/major towns
+        var kTowns = [];
+        for (var ti = 0; ti < world.towns.length; ti++) {
+            if (world.towns[ti].kingdomId === kId) kTowns.push(world.towns[ti]);
+        }
+        var capitalTown = null;
+        var majorTowns = [];
+        for (var ci = 0; ci < kTowns.length; ci++) {
+            if (kTowns[ci].isCapital) capitalTown = kTowns[ci];
+            if (kTowns[ci].category === 'city' || kTowns[ci].category === 'capital_city' || kTowns[ci].isCapital) {
+                majorTowns.push(kTowns[ci]);
+            }
+        }
+        if (!capitalTown && kTowns.length > 0) capitalTown = kTowns[0];
+        if (majorTowns.length === 0) majorTowns = kTowns.slice();
+
+        // Helper: get unowned buildings from a set of towns
+        function getUnownedBuildings(towns) {
+            var result = [];
+            for (var i = 0; i < towns.length; i++) {
+                var t = towns[i];
+                if (!t.buildings) continue;
+                for (var j = 0; j < t.buildings.length; j++) {
+                    if (!t.buildings[j].ownerId) {
+                        result.push(t.buildings[j]);
+                    }
+                }
+            }
+            return result;
+        }
+
+        for (var ni = 0; ni < nobles.length; ni++) {
+            var noble = nobles[ni];
+            var rank = noble.socialRank[kId];
+
+            // Skip nobles who already own buildings
+            var alreadyOwns = false;
+            for (var ati = 0; ati < kTowns.length; ati++) {
+                if (!kTowns[ati].buildings) continue;
+                for (var abi = 0; abi < kTowns[ati].buildings.length; abi++) {
+                    if (kTowns[ati].buildings[abi].ownerId === noble.id) { alreadyOwns = true; break; }
+                }
+                if (alreadyOwns) break;
+            }
+            if (alreadyOwns) continue;
+
+            // Determine target building count and eligible towns
+            var minBuildings, maxBuildings, eligibleTowns;
+            if (rank >= 7) {
+                minBuildings = 5; maxBuildings = 10;
+                // Prefer capital: put capital first, then others
+                eligibleTowns = capitalTown ? [capitalTown] : [];
+                for (var eti = 0; eti < kTowns.length; eti++) {
+                    if (kTowns[eti] !== capitalTown) eligibleTowns.push(kTowns[eti]);
+                }
+            } else if (rank === 6) {
+                minBuildings = 3; maxBuildings = 5;
+                // Prefer capital + major towns
+                eligibleTowns = [];
+                if (capitalTown) eligibleTowns.push(capitalTown);
+                for (var mti = 0; mti < majorTowns.length; mti++) {
+                    if (majorTowns[mti] !== capitalTown) eligibleTowns.push(majorTowns[mti]);
+                }
+                // Fall back to all towns if not enough
+                for (var fti = 0; fti < kTowns.length; fti++) {
+                    if (eligibleTowns.indexOf(kTowns[fti]) === -1) eligibleTowns.push(kTowns[fti]);
+                }
+            } else if (rank === 5) {
+                minBuildings = 2; maxBuildings = 4;
+                // Prefer home town
+                var homeTown = null;
+                for (var hti = 0; hti < kTowns.length; hti++) {
+                    if (kTowns[hti].id === noble.townId) { homeTown = kTowns[hti]; break; }
+                }
+                eligibleTowns = homeTown ? [homeTown] : [];
+                for (var oti = 0; oti < kTowns.length; oti++) {
+                    if (eligibleTowns.indexOf(kTowns[oti]) === -1) eligibleTowns.push(kTowns[oti]);
+                }
+            } else {
+                minBuildings = 1; maxBuildings = 2;
+                // Home town only
+                var minorHome = null;
+                for (var mhi = 0; mhi < kTowns.length; mhi++) {
+                    if (kTowns[mhi].id === noble.townId) { minorHome = kTowns[mhi]; break; }
+                }
+                eligibleTowns = minorHome ? [minorHome] : [];
+            }
+
+            var targetCount = rng.randInt(minBuildings, maxBuildings);
+            var available = getUnownedBuildings(eligibleTowns);
+            rng.shuffle(available);
+
+            var assigned = Math.min(targetCount, available.length);
+            for (var ai = 0; ai < assigned; ai++) {
+                available[ai].ownerId = noble.id;
+            }
+
+            // Bonus gold: +50g per building owned
+            noble.gold = (noble.gold || 0) + assigned * 50;
+        }
+    }
+
+    function initializeNobleRelationships(rng, kingdom, people) {
+        var kId = kingdom.id;
+        var nobles = people.filter(function(p) {
+            return p.alive && p.socialRank && (p.socialRank[kId] === 4 || p.socialRank[kId] === 5 || p.socialRank[kId] === 6);
+        });
+        for (var i = 0; i < nobles.length; i++) {
+            var a = nobles[i];
+            if (!a._nobleRelationships) a._nobleRelationships = {};
+            for (var j = i + 1; j < nobles.length; j++) {
+                var b = nobles[j];
+                if (!b._nobleRelationships) b._nobleRelationships = {};
+
+                var score = 0;
+
+                // Personality compatibility
+                var aP = a.personality || {};
+                var bP = b.personality || {};
+                var warmthSim = 1 - Math.abs((aP.warmth || 50) - (bP.warmth || 50)) / 100;
+                var loyaltySim = 1 - Math.abs((aP.loyalty || 50) - (bP.loyalty || 50)) / 100;
+                score += (warmthSim + loyaltySim) * 15; // 0 to 30 bonus
+                var ambitionDiff = Math.abs((aP.ambition || 50) - (bP.ambition || 50));
+                score -= ambitionDiff * 0.2; // 0 to -20 penalty
+
+                // Same town bonus
+                if (a.townId && a.townId === b.townId) {
+                    score += rng.randInt(15, 25);
+                }
+
+                // Rank difference
+                var aRank = a.socialRank[kId] || 4;
+                var bRank = b.socialRank[kId] || 4;
+                if (aRank === bRank) {
+                    score += 5;
+                } else if (Math.abs(aRank - bRank) >= 2) {
+                    score -= 5;
+                }
+
+                // Family ties: shared parentIds = siblings
+                if (a.parentIds && b.parentIds && a.parentIds.length > 0 && b.parentIds.length > 0) {
+                    for (var pi = 0; pi < a.parentIds.length; pi++) {
+                        if (b.parentIds.indexOf(a.parentIds[pi]) !== -1) {
+                            score += 30;
+                            break;
+                        }
+                    }
+                }
+
+                // Random variance
+                score += rng.randInt(-20, 20);
+
+                score = Math.max(-100, Math.min(100, Math.round(score)));
+                a._nobleRelationships[b.id] = score;
+                b._nobleRelationships[a.id] = score;
+            }
+        }
+    }
+
     function getSeason(day) {
         const idx = Math.floor((day % (CONFIG.DAYS_PER_SEASON * 4)) / CONFIG.DAYS_PER_SEASON);
         return CONFIG.SEASONS[idx];
@@ -6882,6 +7080,13 @@
                                 conviction: Math.min(0.9, 0.5 + ((k.kingPersonality || {}).ambition === 'ambitious' ? 0.15 : 0) + ((k.kingPersonality || {}).temperament === 'aggressive' ? 0.15 : 0)),
                                 execute: (function(kRef, otherRef) { return function() { declareWar(kRef, otherRef); }; })(k, other)
                             });
+                        } else if (hasSpecialLaw(k, 'noble_council')) {
+                            initiateCouncilVote(k, 'Declare war on ' + other.name,
+                                'Our military strength: ' + Math.floor(ourStrength) + '. Enemy estimate: ' + Math.floor(scoutedEnemy) + '. Relations: ' + Math.floor(k.relations[other.id] || 0),
+                                'declare_war',
+                                (function(kRef, otherRef) { return function() { declareWar(kRef, otherRef); }; })(k, other),
+                                { action: 'declare_war', args: { kingdomAId: k.id, kingdomBId: other.id } }
+                            );
                         } else {
                             declareWar(k, other);
                         }
@@ -6929,6 +7134,32 @@
                                 });
                             }; })(k, _alOther, _alType)
                         });
+                    } else if (hasSpecialLaw(k, 'noble_council')) {
+                        initiateCouncilVote(k, 'Form ' + newAllianceType + ' alliance with ' + other.name,
+                            'Relations: ' + Math.round(rel) + '. ' + (newAllianceType === 'offensive' ? 'Both kingdoms will support each other in ALL wars.' : 'Both kingdoms will defend each other when attacked.'),
+                            'alliance',
+                            (function(kRef, otherRef, alType) { return function() {
+                                kRef.alliances.add(otherRef.id);
+                                otherRef.alliances.add(kRef.id);
+                                if (!kRef.allianceMeta) kRef.allianceMeta = {};
+                                if (!otherRef.allianceMeta) otherRef.allianceMeta = {};
+                                kRef.allianceMeta[otherRef.id] = { type: alType, formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0 };
+                                otherRef.allianceMeta[kRef.id] = { type: alType, formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0 };
+                                logEvent('🤝 ' + kRef.name + ' and ' + otherRef.name + ' have formed a ' + alType + ' alliance!', {
+                                    type: 'alliance_formed',
+                                    cause: 'Noble Council approved the alliance.',
+                                    effects: [
+                                        alType === 'defensive'
+                                            ? 'Both kingdoms will defend each other when attacked (after 30-day delay)'
+                                            : 'Both kingdoms will support each other in all wars (after 30-day delay)',
+                                        'Trade between allied kingdoms is boosted',
+                                        'Diplomatic relations are strengthened'
+                                    ],
+                                    kingdoms: [kRef.id, otherRef.id]
+                                });
+                            }; })(k, other, newAllianceType),
+                            { action: 'form_alliance', args: { kingdomAId: k.id, kingdomBId: other.id, allianceType: newAllianceType } }
+                        );
                     } else {
                         k.alliances.add(other.id);
                         other.alliances.add(k.id);
@@ -7259,6 +7490,9 @@
             // ---- Update kingdom happiness ----
             k.happiness = getKingdomHappiness(k);
 
+            // ---- Noble Council vote processing (daily) ----
+            tickCouncilVotes(k);
+
             // ---- King decisions & rebellion (once per season) ----
             if (world.day % CONFIG.DAYS_PER_SEASON === 0 && world.day > 0) {
                 // Recovery: if kingdom has no king or king person is missing/dead, attempt emergency succession
@@ -7298,6 +7532,12 @@
                 k.prosperity = kTowns.reduce((s, t) => s + t.prosperity, 0) / kTowns.length;
             }
         }
+
+        // ---- Noble building income (every 10 days) ----
+        tickNobleIncome();
+
+        // ---- Noble relationships & king loyalty (every 30 days) ----
+        tickNobleRelationships();
 
         // ---- Process construction & repair timers (daily) ----
         tickKingdomConstruction();
@@ -9855,6 +10095,242 @@
     }
 
     // ========================================================
+    // §14B-PRE  NOBLE COUNCIL VOTING SYSTEM
+    // ========================================================
+
+    /**
+     * initiateCouncilVote — Creates a council vote when noble_council law is active.
+     * @param {object} kingdom - the kingdom object
+     * @param {string} title - short title for the vote
+     * @param {string} description - detailed text
+     * @param {string} type - vote type: 'declare_war'|'make_peace'|'alliance'|'tax_change'|'ban_goods'|'unban_goods'|'major_policy'
+     * @param {function} executeFn - action to take if passed (also stored as params for serialization)
+     * @param {object} [voteParams] - serializable params: { action, args } for re-creating executeFn on load
+     * @returns {object|null} the vote object, or null if no noble_council
+     */
+    function initiateCouncilVote(kingdom, title, description, type, executeFn, voteParams) {
+        if (!hasSpecialLaw(kingdom, 'noble_council')) return null;
+        var rng = world.rng;
+        if (!kingdom._activeVotes) kingdom._activeVotes = [];
+
+        var voteId = 'vote_' + world.day + '_' + rng.randInt(100000, 999999).toString(36);
+        var voters = [];
+        var kId = kingdom.id;
+
+        // Gather all alive nobles of rank 4-7 in this kingdom
+        for (var pi = 0; pi < world.people.length; pi++) {
+            var person = world.people[pi];
+            if (!person.alive) continue;
+            if (!person.socialRank || person.socialRank[kId] == null) continue;
+            var rank = person.socialRank[kId];
+            if (rank < 4 || rank > 7) continue;
+
+            var isKing = (person.id === kingdom.king);
+            var isPlayer = (typeof Player !== 'undefined' && person.id === Player.id);
+
+            voters.push({
+                id: person.id,
+                rank: rank,
+                vote: isKing ? 'yes' : 'undecided',
+                isPlayer: isPlayer
+            });
+        }
+
+        // If somehow there are no voters, fall back to direct execution
+        if (voters.length === 0) {
+            if (typeof executeFn === 'function') executeFn();
+            return null;
+        }
+
+        var vote = {
+            id: voteId,
+            kingdomId: kingdom.id,
+            title: title,
+            description: description,
+            type: type,
+            createdDay: world.day,
+            deadlineDay: world.day + 3,
+            voters: voters,
+            resolved: false,
+            result: null,
+            _executeFn: executeFn,
+            _voteParams: voteParams || null
+        };
+
+        kingdom._activeVotes.push(vote);
+
+        logEvent('🗳️ The Noble Council of ' + kingdom.name + ' will vote on: ' + title, {
+            type: 'council_vote_initiated',
+            kingdomId: kingdom.id,
+            cause: 'Noble Council law requires major decisions to be voted upon.',
+            effects: ['Nobles have 3 days to cast their votes', 'King\'s vote counts with extra weight']
+        });
+
+        return vote;
+    }
+
+    /**
+     * Compute a noble's natural vote inclination for a given vote.
+     * Returns 'yes' or 'no'.
+     */
+    function _computeNobleVoteInclination(noble, vote) {
+        var rng = world.rng;
+        var lean = 'yes'; // default: lean with king's proposal
+
+        // Loyalty to king: loyal nobles follow the king
+        if (noble.kingLoyalty != null && noble.kingLoyalty > 60) {
+            lean = 'yes';
+        } else if (noble.kingLoyalty != null && noble.kingLoyalty < 40) {
+            lean = 'no';
+        }
+
+        // Ambitious nobles lean yes for war
+        if (noble.personality && noble.personality.ambition > 70 &&
+            (vote.type === 'declare_war')) {
+            lean = 'yes';
+        }
+
+        // Frugal nobles lean no for spending-related votes
+        if (noble.personality && noble.personality.frugality > 60 &&
+            (vote.type === 'major_policy' || vote.type === 'alliance')) {
+            lean = 'no';
+        }
+
+        // Financially stressed nobles lean toward whatever might help finances
+        if (noble._financiallyStressed) {
+            if (vote.type === 'make_peace' || vote.type === 'unban_goods') {
+                lean = 'yes'; // peace/unbanning helps trade
+            } else if (vote.type === 'declare_war' || vote.type === 'ban_goods') {
+                lean = 'no'; // war/banning hurts finances
+            }
+        }
+
+        // Random factor: 20% chance to flip
+        if (rng.chance(0.20)) {
+            lean = (lean === 'yes') ? 'no' : 'yes';
+        }
+
+        return lean;
+    }
+
+    /**
+     * Re-create an executeFn from stored vote params (for serialization safety).
+     */
+    function _recreateVoteExecuteFn(vote) {
+        if (typeof vote._executeFn === 'function') return vote._executeFn;
+        if (!vote._voteParams) return null;
+
+        var params = vote._voteParams;
+        var action = params.action;
+        var args = params.args || {};
+
+        if (action === 'declare_war') {
+            var kA = findKingdom(args.kingdomAId);
+            var kB = findKingdom(args.kingdomBId);
+            if (kA && kB) return function() { declareWar(kA, kB); };
+        } else if (action === 'make_peace') {
+            var pA = findKingdom(args.kingdomAId);
+            var pB = findKingdom(args.kingdomBId);
+            if (pA && pB) return function() { makePeace(pA, pB, !!args.isSurrender, args.loserId ? findKingdom(args.loserId) : null, !!args.isExhaustion); };
+        } else if (action === 'form_alliance') {
+            var alA = findKingdom(args.kingdomAId);
+            var alB = findKingdom(args.kingdomBId);
+            var alType = args.allianceType || 'defensive';
+            if (alA && alB) return function() {
+                alA.alliances.add(alB.id);
+                alB.alliances.add(alA.id);
+                if (!alA.allianceMeta) alA.allianceMeta = {};
+                if (!alB.allianceMeta) alB.allianceMeta = {};
+                alA.allianceMeta[alB.id] = { type: alType, formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0 };
+                alB.allianceMeta[alA.id] = { type: alType, formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0 };
+                logEvent('🤝 ' + alA.name + ' and ' + alB.name + ' have formed a ' + alType + ' alliance!', {
+                    type: 'alliance_formed',
+                    cause: 'Noble Council approved the alliance.',
+                    effects: [
+                        alType === 'defensive'
+                            ? 'Both kingdoms will defend each other when attacked (after 30-day delay)'
+                            : 'Both kingdoms will support each other in all wars (after 30-day delay)',
+                        'Trade between allied kingdoms is boosted',
+                        'Diplomatic relations are strengthened'
+                    ],
+                    kingdoms: [alA.id, alB.id]
+                });
+            };
+        } else if (action === 'set_banned_goods') {
+            var bK = findKingdom(args.kingdomId);
+            var newBanned = args.bannedGoods;
+            if (bK && newBanned) return function() { bK.laws.bannedGoods = newBanned; };
+        }
+
+        return null;
+    }
+
+    /**
+     * tickCouncilVotes — Process daily council vote progress for a kingdom.
+     * Called daily for each kingdom.
+     */
+    function tickCouncilVotes(kingdom) {
+        if (!kingdom._activeVotes) kingdom._activeVotes = [];
+        var rng = world.rng;
+
+        for (var vi = 0; vi < kingdom._activeVotes.length; vi++) {
+            var vote = kingdom._activeVotes[vi];
+            if (vote.resolved) continue;
+
+            // Each undecided noble has a 50% chance per day to decide
+            for (var ni = 0; ni < vote.voters.length; ni++) {
+                var voter = vote.voters[ni];
+                if (voter.vote !== 'undecided') continue;
+                if (voter.isPlayer) continue; // Player decides manually
+
+                if (rng.chance(0.50)) {
+                    var noble = findPerson(voter.id);
+                    if (!noble) { voter.vote = 'yes'; continue; }
+                    voter.vote = _computeNobleVoteInclination(noble, vote);
+                }
+            }
+
+            // Resolve at deadline
+            if (world.day >= vote.deadlineDay) {
+                var yesWeight = 0;
+                var noWeight = 0;
+                var yesCount = 0;
+                var noCount = 0;
+                var weightMap = { 7: 5, 6: 3, 5: 2, 4: 1 };
+
+                for (var ri = 0; ri < vote.voters.length; ri++) {
+                    var v = vote.voters[ri];
+                    var w = weightMap[v.rank] || 1;
+                    if (v.vote === 'yes') { yesWeight += w; yesCount++; }
+                    else if (v.vote === 'no') { noWeight += w; noCount++; }
+                    // undecided = abstain, weight not counted in total
+                }
+
+                vote.resolved = true;
+                if (yesWeight > noWeight) {
+                    vote.result = 'passed';
+                    var execFn = _recreateVoteExecuteFn(vote);
+                    if (typeof execFn === 'function') {
+                        execFn();
+                    }
+                } else {
+                    vote.result = 'failed';
+                }
+
+                // Clean up closure reference
+                vote._executeFn = null;
+
+                logEvent('🗳️ Council vote on ' + vote.title + ': ' + (vote.result === 'passed' ? 'PASSED' : 'FAILED') + ' (' + yesCount + ' yes, ' + noCount + ' no)', {
+                    type: 'council_vote_resolved',
+                    kingdomId: kingdom.id,
+                    cause: 'Noble Council vote concluded after 3 days.',
+                    effects: [vote.result === 'passed' ? 'The motion has been approved by the council' : 'The motion was rejected by the council']
+                });
+            }
+        }
+    }
+
+    // ========================================================
     // §14B KING DECISIONS (called each season)
     // ========================================================
     function tickKingDecisions(k) {
@@ -11018,7 +11494,16 @@
                 if (k.atWar.size > 1) peaceChance += 0.1; // multi-front pressure
 
                 if (wantsPeace && rng.chance(peaceChance)) {
-                    makePeace(k, enemy, true, k);
+                    if (hasSpecialLaw(k, 'noble_council')) {
+                        initiateCouncilVote(k, 'Negotiate peace with ' + enemy.name,
+                            'We are losing the war. Military comparison: ' + Math.floor(myStr) + ' vs ' + Math.floor(theirStr) + '. War exhaustion: ' + Math.floor(exhaustion),
+                            'make_peace',
+                            (function(kRef, eRef) { return function() { makePeace(kRef, eRef, true, kRef); }; })(k, enemy),
+                            { action: 'make_peace', args: { kingdomAId: k.id, kingdomBId: enemy.id, isSurrender: true, loserId: k.id, isExhaustion: false } }
+                        );
+                    } else {
+                        makePeace(k, enemy, true, k);
+                    }
                     break;
                 }
             }
@@ -11694,6 +12179,21 @@
         if (!k.laws) k.laws = {};
         if (!k.laws.specialLaws) k.laws.specialLaws = [];
         var moodCurrent = k.kingMood ? k.kingMood.current : 'content';
+
+        // Noble Council — just/diplomatic kings may adopt when happiness is low
+        if (!hasSpecialLaw(k, 'noble_council') &&
+            (p.justice === 'just' || p.diplomacy === 'diplomatic') &&
+            happiness < 40 && rng.chance(0.30)) {
+            k.laws.specialLaws.push({ id: 'noble_council', name: 'Noble Council', desc: 'Major decisions require a vote of the nobility.', icon: '🗳️', effect: 'noble_council' });
+            if (!k._activeVotes) k._activeVotes = [];
+            boostKingdomHappiness(k, 10);
+            logKingAction(k, '🗳️ Established a Noble Council');
+            logEvent('🗳️ ' + k.name + ' establishes a Noble Council! Major decisions now require noble approval. (+10 happiness)', {
+                type: 'law_change', kingdomId: k.id,
+                cause: 'The ruler seeks to share power and stabilize the realm.',
+                effects: ['Major decisions (war, peace, alliances, bans) now voted on', 'Kingdom happiness +10', 'Nobles gain political influence']
+            });
+        }
 
         // a. Price Controls — brilliant kings enact during crises, repeal when stable
         if (!hasSpecialLaw(k, 'price_controls') && (p.intelligence === 'brilliant' || p.intelligence === 'clever')
@@ -12636,6 +13136,169 @@
     }
 
     // ========================================================
+    // §14A3z NOBLE BUILDING INCOME TICK (every 10 days)
+    // ========================================================
+    function tickNobleIncome() {
+        if (world.day % 10 !== 0) return;
+        for (var ki = 0; ki < world.kingdoms.length; ki++) {
+            var k = world.kingdoms[ki];
+            var kId = k.id;
+            var nobles = world.people.filter(function(p) {
+                return p.alive && p.socialRank &&
+                    (p.socialRank[kId] === 4 || p.socialRank[kId] === 5 ||
+                     p.socialRank[kId] === 6 || p.socialRank[kId] === 7);
+            });
+
+            for (var ni = 0; ni < nobles.length; ni++) {
+                var noble = nobles[ni];
+                var rank = noble.socialRank[kId];
+
+                // Count owned buildings and calculate income
+                var buildingCount = 0;
+                for (var ti = 0; ti < world.towns.length; ti++) {
+                    var town = world.towns[ti];
+                    if (town.kingdomId !== kId || !town.buildings) continue;
+                    for (var bi = 0; bi < town.buildings.length; bi++) {
+                        if (town.buildings[bi].ownerId === noble.id) {
+                            buildingCount++;
+                        }
+                    }
+                }
+
+                // Income: 5g per building per 10-day tick, 70% noble efficiency
+                var rawIncome = buildingCount * 5;
+                var income = Math.floor(rawIncome * 0.7);
+                noble.gold = (noble.gold || 0) + income;
+
+                // Deduct expenses by rank
+                var expense = 0;
+                if (rank >= 7) expense = 500;
+                else if (rank === 6) expense = 200;
+                else if (rank === 5) expense = 100;
+                else expense = 50;
+                noble.gold -= expense;
+
+                // Clamp gold to 0
+                if (noble.gold < 0) noble.gold = 0;
+
+                // Track financial stress
+                var stressThreshold = 150;
+                if (rank === 5) stressThreshold = 300;
+                else if (rank >= 6) stressThreshold = 600;
+                noble._financiallyStressed = noble.gold < stressThreshold;
+            }
+        }
+    }
+
+    // ========================================================
+    // §14A3a NOBLE RELATIONSHIPS & KING LOYALTY TICK (every 30 days)
+    // ========================================================
+    function tickNobleRelationships() {
+        if (world.day % 30 !== 0) return;
+        var rng = world.rng;
+        for (var ki = 0; ki < world.kingdoms.length; ki++) {
+            var k = world.kingdoms[ki];
+            var kId = k.id;
+            var kHappiness = k.happiness != null ? k.happiness : 50;
+            var nobles = world.people.filter(function(p) {
+                return p.alive && p.socialRank &&
+                    (p.socialRank[kId] === 4 || p.socialRank[kId] === 5 || p.socialRank[kId] === 6);
+            });
+
+            // Build a lookup of buildings owned by nobles for competing interests check
+            var kTowns = world.towns.filter(function(t) { return t.kingdomId === kId; });
+            var nobleBuildingTypes = {}; // nobleId -> [{type, townId}]
+            for (var ti = 0; ti < kTowns.length; ti++) {
+                var town = kTowns[ti];
+                if (!town.buildings) continue;
+                for (var bi = 0; bi < town.buildings.length; bi++) {
+                    var bld = town.buildings[bi];
+                    if (bld.ownerId) {
+                        if (!nobleBuildingTypes[bld.ownerId]) nobleBuildingTypes[bld.ownerId] = [];
+                        nobleBuildingTypes[bld.ownerId].push({ type: bld.type, townId: town.id });
+                    }
+                }
+            }
+
+            // Update noble-to-noble relationships
+            for (var i = 0; i < nobles.length; i++) {
+                var a = nobles[i];
+                if (!a._nobleRelationships) continue;
+                for (var j = i + 1; j < nobles.length; j++) {
+                    var b = nobles[j];
+                    if (!b._nobleRelationships) continue;
+                    if (a._nobleRelationships[b.id] == null) continue;
+
+                    var drift = 0;
+
+                    // Same town: drift toward positive
+                    if (a.townId && a.townId === b.townId) {
+                        drift += 0.5;
+                    }
+
+                    // Competing business interests
+                    var aBlds = nobleBuildingTypes[a.id] || [];
+                    var bBlds = nobleBuildingTypes[b.id] || [];
+                    var competing = false;
+                    for (var ai = 0; ai < aBlds.length && !competing; ai++) {
+                        for (var bj = 0; bj < bBlds.length && !competing; bj++) {
+                            if (aBlds[ai].type === bBlds[bj].type && aBlds[ai].townId === bBlds[bj].townId) {
+                                competing = true;
+                            }
+                        }
+                    }
+                    if (competing) drift -= 0.3;
+
+                    // Ambition difference friction
+                    var aAmb = (a.personality || {}).ambition || 50;
+                    var bAmb = (b.personality || {}).ambition || 50;
+                    if (Math.abs(aAmb - bAmb) > 40) {
+                        drift -= 0.2;
+                    }
+
+                    var newScore = a._nobleRelationships[b.id] + drift;
+                    newScore = Math.max(-100, Math.min(100, newScore));
+                    a._nobleRelationships[b.id] = newScore;
+                    b._nobleRelationships[a.id] = newScore;
+                }
+            }
+
+            // Update kingLoyalty for each noble
+            for (var ni = 0; ni < nobles.length; ni++) {
+                var noble = nobles[ni];
+                if (noble.kingLoyalty == null) continue;
+
+                var loyaltyDrift = 0;
+
+                // Kingdom unhappiness erodes loyalty
+                if (kHappiness < 30) {
+                    loyaltyDrift -= 1;
+                }
+
+                // Financial stress
+                if ((noble.gold || 0) < 50) {
+                    loyaltyDrift -= 2;
+                }
+
+                // Natural drift toward personality-based baseline
+                var nP = noble.personality || {};
+                var baseline = 50 + (nP.loyalty || 50) * 0.3 - (nP.ambition || 50) * 0.15;
+                var nRank = noble.socialRank[kId] || 4;
+                if (nRank === 6) baseline += 20;
+                else if (nRank === 5) baseline += 10;
+                baseline = Math.max(0, Math.min(100, baseline));
+                if (noble.kingLoyalty < baseline) {
+                    loyaltyDrift += 0.5;
+                } else if (noble.kingLoyalty > baseline) {
+                    loyaltyDrift -= 0.5;
+                }
+
+                noble.kingLoyalty = Math.max(0, Math.min(100, noble.kingLoyalty + loyaltyDrift));
+            }
+        }
+    }
+
+    // ========================================================
     // §14A3 TAX CONSEQUENCES SYSTEM (called daily)
     // ========================================================
     function tickTaxConsequences() {
@@ -13167,6 +13830,13 @@
                             conviction: Math.min(0.95, 0.6 + townLossRatio * 0.3),
                             execute: (function(kRef, eRef) { return function() { makePeace(kRef, eRef, true, kRef); }; })(k, enemy)
                         });
+                    } else if (hasSpecialLaw(k, 'noble_council')) {
+                        initiateCouncilVote(k, 'Surrender to ' + enemy.name,
+                            'We have lost ' + Math.round(townLossRatio * 100) + '% of our territory. Continued war may mean total defeat.',
+                            'make_peace',
+                            (function(kRef, eRef) { return function() { makePeace(kRef, eRef, true, kRef); }; })(k, enemy),
+                            { action: 'make_peace', args: { kingdomAId: k.id, kingdomBId: enemy.id, isSurrender: true, loserId: k.id, isExhaustion: false } }
+                        );
                     } else {
                         makePeace(k, enemy, true, k);
                     }
@@ -20461,6 +21131,21 @@
                     conviction: _addedBans.some(function(g) { return ['swords', 'armor', 'bows', 'arrows'].indexOf(g) >= 0; }) ? 0.6 : 0.35,
                     execute: (function(kRef, nb) { return function() { kRef.laws.bannedGoods = nb; }; })(kingdom, _newBanned)
                 });
+            } else if (hasSpecialLaw(kingdom, 'noble_council')) {
+                var _ncPrevBanned = kingdom.laws.bannedGoods ? kingdom.laws.bannedGoods.slice() : [];
+                var _ncNewBanned = currentBanned.slice();
+                var _ncAddedBans = _ncNewBanned.filter(function(g) { return _ncPrevBanned.indexOf(g) === -1; });
+                var _ncLiftedBans = _ncPrevBanned.filter(function(g) { return _ncNewBanned.indexOf(g) === -1; });
+                var ncBanDesc = [];
+                if (_ncAddedBans.length > 0) ncBanDesc.push('Ban ' + _ncAddedBans.join(', '));
+                if (_ncLiftedBans.length > 0) ncBanDesc.push('Lift ban on ' + _ncLiftedBans.join(', '));
+                var ncBanType = _ncAddedBans.length > 0 ? 'ban_goods' : 'unban_goods';
+                initiateCouncilVote(kingdom, ncBanDesc.join('; ') || 'Adjust trade bans',
+                    'Current bans: ' + (_ncPrevBanned.length > 0 ? _ncPrevBanned.join(', ') : 'none') + '. Proposed: ' + (_ncNewBanned.length > 0 ? _ncNewBanned.join(', ') : 'none'),
+                    ncBanType,
+                    (function(kRef, nb) { return function() { kRef.laws.bannedGoods = nb; }; })(kingdom, _ncNewBanned),
+                    { action: 'set_banned_goods', args: { kingdomId: kingdom.id, bannedGoods: _ncNewBanned } }
+                );
             } else {
                 kingdom.laws.bannedGoods = currentBanned;
             }
@@ -33428,6 +34113,107 @@
 
             // Rebuild alive population cache
             world._alivePopCount = world.people.filter(p => p.alive).length;
+        },
+        getNobleBuildings: function(nobleId) {
+            var buildings = [];
+            for (var ti = 0; ti < world.towns.length; ti++) {
+                var town = world.towns[ti];
+                if (!town.buildings) continue;
+                for (var bi = 0; bi < town.buildings.length; bi++) {
+                    if (town.buildings[bi].ownerId === nobleId) {
+                        buildings.push({ building: town.buildings[bi], townId: town.id, townName: town.name });
+                    }
+                }
+            }
+            return buildings;
+        },
+        getNobleFinancialStatus: function(nobleId) {
+            var person = findPerson(nobleId);
+            if (!person) return null;
+            var rank = 0;
+            if (person.socialRank) {
+                for (var kId in person.socialRank) {
+                    if (person.socialRank[kId] > rank) rank = person.socialRank[kId];
+                }
+            }
+            var buildings = this.getNobleBuildings(nobleId);
+            var dailyExpense = rank >= 6 ? 20 : (rank >= 5 ? 10 : 5);
+            var dailyIncome = buildings.length * 5 * 0.7 / 10;
+            return {
+                gold: person.gold || 0,
+                buildings: buildings.length,
+                dailyIncome: Math.round(dailyIncome * 10) / 10,
+                dailyExpense: dailyExpense,
+                stressed: !!person._financiallyStressed,
+                rank: rank
+            };
+        },
+        // ---- Noble Council Voting API ----
+        getActiveVote: function(voteId) {
+            for (var ki = 0; ki < world.kingdoms.length; ki++) {
+                var k = world.kingdoms[ki];
+                if (!k._activeVotes) continue;
+                for (var vi = 0; vi < k._activeVotes.length; vi++) {
+                    if (k._activeVotes[vi].id === voteId) return k._activeVotes[vi];
+                }
+            }
+            return null;
+        },
+        getActiveVotes: function() {
+            var votes = [];
+            var pRanks = (typeof Player !== 'undefined' && Player.socialRank) ? Player.socialRank : {};
+            for (var ki = 0; ki < world.kingdoms.length; ki++) {
+                var k = world.kingdoms[ki];
+                if (!k._activeVotes) continue;
+                if (!pRanks[k.id] || pRanks[k.id] < 4) continue;
+                for (var vi = 0; vi < k._activeVotes.length; vi++) {
+                    if (!k._activeVotes[vi].resolved) votes.push(k._activeVotes[vi]);
+                }
+            }
+            return votes;
+        },
+        castVote: function(voteId, choice) {
+            var vote = this.getActiveVote(voteId);
+            if (!vote || vote.resolved) return { success: false, message: 'Vote not found or already resolved.' };
+            var voter = vote.voters.find(function(v) { return v.isPlayer; });
+            if (!voter) return { success: false, message: 'You are not a voter in this decision.' };
+            voter.vote = choice;
+            return { success: true, message: 'Your vote has been cast: ' + choice };
+        },
+        influenceVote: function(voteId, nobleId) {
+            var vote = this.getActiveVote(voteId);
+            if (!vote || vote.resolved) return { success: false, message: 'Vote not found or already resolved.' };
+            var voter = vote.voters.find(function(v) { return v.id === nobleId; });
+            if (!voter) return { success: false, message: 'Noble not found in voters.' };
+            if (voter.isPlayer) return { success: false, message: 'Cannot influence your own vote.' };
+
+            var noble = findPerson(nobleId);
+            if (!noble) return { success: false, message: 'Noble not found.' };
+
+            var rel = 0;
+            if (typeof Player !== 'undefined' && Player.getRelationship) {
+                var r = Player.getRelationship(nobleId);
+                rel = r ? r.level : 0;
+            }
+            // Base chance from relationship: 5% at rel 50, up to 40% at rel 100
+            var chance = Math.max(0.05, (rel - 50) * 0.007);
+            if (noble.kingLoyalty < 40) chance += 0.15;
+            if (noble._financiallyStressed) chance += 0.10;
+            if (noble.personality && noble.personality.honesty < 40) chance += 0.10;
+            chance = Math.min(0.60, chance);
+
+            var rng = world.rng;
+            if (rng.chance(chance)) {
+                var playerVoter = vote.voters.find(function(v) { return v.isPlayer; });
+                var playerVote = playerVoter ? playerVoter.vote : 'yes';
+                voter.vote = playerVote !== 'undecided' ? playerVote : 'yes';
+                return { success: true, message: noble.firstName + ' was persuaded to vote ' + voter.vote + '!' };
+            } else {
+                if (typeof Player !== 'undefined' && Player.modifyRelationship) {
+                    Player.modifyRelationship(nobleId, -2);
+                }
+                return { success: false, message: noble.firstName + ' refused your persuasion. (-2 relationship)' };
+            }
         },
     };
 
