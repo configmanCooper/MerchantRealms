@@ -12363,7 +12363,7 @@ window.UI = (function () {
         }
 
         // Sneak button
-        html += '<button class="btn-medieval" style="width:100%;padding:7px;font-size:0.9rem;background:rgba(196,78,82,0.2);border-color:rgba(196,78,82,0.4);" onclick="UI._quarantineSneakAttempt(\'' + townId + '\',\'' + optionId + '\')">🤫 Try to Sneak (' + sneakPct + '%)</button>';
+        html += '<button class="btn-medieval" style="width:100%;padding:8px 10px;font-size:0.9rem;background:rgba(196,78,82,0.25);border:2px solid rgba(196,78,82,0.6);color:#f0e6d2;" onclick="UI._quarantineSneakAttempt(\'' + townId + '\',\'' + optionId + '\')">🤫 <strong style="color:#fff;">Try to Sneak</strong> (<span style="color:#e67e22;font-weight:bold;">' + sneakPct + '%</span>)</button>';
         html += '</div>';
 
         // === Bribe the Guard section ===
@@ -12377,11 +12377,11 @@ window.UI = (function () {
                 var _bPct = Math.round(_b.chance * 100);
                 var _bColor = _bribeColors[_b.tier] || '#888';
                 var _bDisabled = playerGold < _b.cost;
-                var _bStyle = 'width:100%;padding:6px;font-size:0.85rem;margin-bottom:4px;';
+                var _bStyle = 'width:100%;padding:8px 10px;font-size:0.85rem;margin-bottom:4px;';
                 if (_bDisabled) {
-                    _bStyle += 'opacity:0.4;cursor:not-allowed;background:rgba(100,100,100,0.2);border-color:rgba(100,100,100,0.3);';
+                    _bStyle += 'opacity:0.4;cursor:not-allowed;background:rgba(100,100,100,0.2);border-color:rgba(100,100,100,0.3);color:#888;';
                 } else {
-                    _bStyle += 'background:rgba(' + (_b.tier === 'low' ? '196,78,82' : (_b.tier === 'medium' ? '230,126,34' : '85,168,104')) + ',0.15);border-color:' + _bColor + ';';
+                    _bStyle += 'background:rgba(' + (_b.tier === 'low' ? '196,78,82' : (_b.tier === 'medium' ? '230,126,34' : '85,168,104')) + ',0.25);border:2px solid ' + _bColor + ';color:#f0e6d2;';
                 }
                 html += '<button class="btn-medieval" style="' + _bStyle + '"';
                 if (_bDisabled) {
@@ -12390,7 +12390,7 @@ window.UI = (function () {
                     html += ' onclick="UI._quarantineBribeAttempt(\'' + townId + '\',\'' + optionId + '\',\'' + _b.tier + '\',' + _b.cost + ')"';
                 }
                 html += '>';
-                html += '<span style="color:' + _bColor + ';">' + _b.label + '</span> — <strong>' + _b.cost + 'g</strong> (<span style="color:' + _bColor + ';font-weight:bold;">' + _bPct + '%</span>)';
+                html += '<strong style="color:#fff;">' + _b.label + '</strong> — <strong style="color:#ffd700;">' + _b.cost + 'g</strong> (<span style="color:' + _bColor + ';font-weight:bold;font-size:1rem;">' + _bPct + '%</span>)';
                 if (_bDisabled) html += ' <span style="font-size:0.75rem;color:#888;">(not enough gold)</span>';
                 html += '</button>';
             }

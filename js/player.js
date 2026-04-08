@@ -3047,7 +3047,7 @@
             if (hasSkill('master_smuggler')) { sneakChance += 0.05; sneakModifiers.push({ name: 'Master Smuggler', bonus: 5 }); }
             var _qHour = Engine.getHour ? Engine.getHour() : 12;
             var isNighttime = _qHour >= 20 || _qHour < 5;
-            if (isNighttime) { sneakChance += 0.10; sneakModifiers.push({ name: 'Nighttime', bonus: 10 }); }
+            if (isNighttime) { sneakChance += 0.05; sneakModifiers.push({ name: 'Nighttime', bonus: 5 }); }
             if (guardRelLevel >= 60) { sneakChance += 0.15; sneakModifiers.push({ name: 'Guard Relationship (60+)', bonus: 15 }); }
             else if (guardRelLevel >= 40) { sneakChance += 0.08; sneakModifiers.push({ name: 'Guard Relationship (40+)', bonus: 8 }); }
             sneakChance = Math.min(sneakChance, 0.95);
