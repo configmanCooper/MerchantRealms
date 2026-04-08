@@ -22815,11 +22815,15 @@ window.UI = (function () {
         });
 
         var html = '<div style="padding:8px;">';
-        html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+        html += '<div style="margin-bottom:8px;">';
         html += '<span style="font-size:0.82rem;font-weight:bold;color:#f0d0a0;">👑 Sell Goods to ' + kingdom.name + '</span>';
-        html += '<span style="font-size:0.75rem;color:#aaa;">Treasury: <strong style="color:var(--gold);">' + Math.floor(treasury).toLocaleString() + 'g</strong></span>';
         html += '</div>';
-        html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:8px;">The crown will buy goods it urgently needs at premium prices. Higher urgency = better price.</div>';
+        var lowTreasury = treasury < 2000;
+        if (lowTreasury) {
+            html += '<div style="font-size:0.75rem;color:#e74c3c;margin-bottom:8px;">⚠️ The kingdom\'s coffers are too low to purchase goods right now.</div>';
+        } else {
+            html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:8px;">The crown will buy goods it urgently needs at premium prices. Higher urgency = better price.</div>';
+        }
 
         html += '<div style="max-height:350px;overflow-y:auto;">';
         for (var i = 0; i < items.length; i++) {
@@ -22852,11 +22856,11 @@ window.UI = (function () {
                 var sellQtys = [1, 5, 10, 25, 50];
                 for (var si = 0; si < sellQtys.length; si++) {
                     if (it.playerQty >= sellQtys[si]) {
-                        html += '<button class="btn-trade sell" style="font-size:0.68rem;padding:2px 8px;" onclick="UI.sellToCrownUI(\'' + kingdomId + '\',\'' + it.resId + '\',' + sellQtys[si] + ',' + it.crownPrice + ')">Sell ' + sellQtys[si] + '</button>';
+                        html += '<button class="btn-trade sell" style="font-size:0.68rem;padding:2px 8px;' + (lowTreasury ? 'opacity:0.4;cursor:not-allowed;' : '') + '" ' + (lowTreasury ? 'disabled' : 'onclick="UI.sellToCrownUI(\'' + kingdomId + '\',\'' + it.resId + '\',' + sellQtys[si] + ',' + it.crownPrice + ')"') + '>Sell ' + sellQtys[si] + '</button>';
                     }
                 }
                 if (it.playerQty > 1) {
-                    html += '<button class="btn-trade sell" style="font-size:0.68rem;padding:2px 8px;" onclick="UI.sellToCrownUI(\'' + kingdomId + '\',\'' + it.resId + '\',' + it.playerQty + ',' + it.crownPrice + ')">Sell All (' + it.playerQty + ')</button>';
+                    html += '<button class="btn-trade sell" style="font-size:0.68rem;padding:2px 8px;' + (lowTreasury ? 'opacity:0.4;cursor:not-allowed;' : '') + '" ' + (lowTreasury ? 'disabled' : 'onclick="UI.sellToCrownUI(\'' + kingdomId + '\',\'' + it.resId + '\',' + it.playerQty + ',' + it.crownPrice + ')"') + '>Sell All (' + it.playerQty + ')</button>';
                 }
                 html += '</div>';
             } else {
