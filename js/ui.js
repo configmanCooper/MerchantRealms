@@ -6978,7 +6978,13 @@ window.UI = (function () {
         var sortBy = sortEl ? sortEl.value : 'name-asc';
         var filterBy = filterEl ? filterEl.value : 'all';
         var searchQuery = searchEl ? searchEl.value : '';
+        var cursorPos = searchEl ? searchEl.selectionStart : 0;
         _renderTownPeople(sortBy, filterBy, searchQuery, 0);
+        // Re-focus search input after re-render (innerHTML replaces the DOM element)
+        setTimeout(function() {
+            var newSearch = document.getElementById('people-search');
+            if (newSearch) { newSearch.focus(); newSearch.selectionStart = newSearch.selectionEnd = cursorPos; }
+        }, 10);
     }
 
     function _reTownPeoplePage(page) {
