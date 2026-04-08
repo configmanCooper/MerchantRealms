@@ -1650,6 +1650,14 @@ window.UI = (function () {
                     ${_travelLabel}
                 </button>`;
 
+            // Outpost button — show if player has outposts or can afford to found one
+            if (isPlayerHere && typeof Player !== 'undefined') {
+                var _opCount = Player.getPlayerOutposts ? Player.getPlayerOutposts().length : 0;
+                html += ` <button class="btn-medieval" onclick="UI.openOutpostDialog()" style="font-size:0.85rem;padding:8px 16px;background:rgba(74,124,59,0.2);border-color:rgba(74,124,59,0.5);">
+                    ⛺ Outposts${_opCount > 0 ? ' (' + _opCount + ')' : ''}
+                </button>`;
+            }
+
             html += `</div>`;
         }
 
