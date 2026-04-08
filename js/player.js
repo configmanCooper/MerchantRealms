@@ -18176,7 +18176,7 @@
     /** Get available (idle, not assigned) ships at a port */
     function getAvailableShipsAtPort(townId) {
         return getShipsAtPort(townId).filter(function(s) {
-            return !s.assignedCaravanId && !s.unpaidDocking;
+            return !s.assignedCaravanId && !s.unpaidDocking && !s.assignedOffSea;
         });
     }
 

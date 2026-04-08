@@ -7702,12 +7702,15 @@ window.UI = (function () {
         shipSelectHtml += '<select id="caravanShipSelect" style="width:100%;padding:4px 6px;font-size:0.8rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;margin-top:4px;" onchange="UI._updateCaravanPreview()">';
         // Own ships at port
         var _ownShips = Player.getAvailableShipsAtPort ? Player.getAvailableShipsAtPort(Player.townId) : [];
+        // Also filter out ships assigned to off-sea travel
+        _ownShips = _ownShips.filter(function(s) { return !s.assignedOffSea; });
         if (_ownShips.length > 0) {
-            shipSelectHtml += '<optgroup label="Your Ships at Port">';
+            shipSelectHtml += '<optgroup label="Your Ships at Port (Free)">';
             for (var _osi = 0; _osi < _ownShips.length; _osi++) {
                 var _os = _ownShips[_osi];
                 var _ost = CONFIG.SHIP_TYPES[_os.type] || {};
-                shipSelectHtml += '<option value="own:' + _os.id + '">' + (_ost.icon || '⛵') + ' ' + (_os.name || _ost.name) + ' (Cap:' + (_ost.capacity || 0) + ', Spd:' + (_ost.speed || 1).toFixed(1) + ')</option>';
+                var _hull = _os.hullHealth != null ? _os.hullHealth : 100;
+                shipSelectHtml += '<option value="own:' + _os.id + '">' + (_ost.icon || '⛵') + ' ' + (_os.name || _ost.name) + ' (Cap:' + (_ost.capacity || 0) + ', Spd:' + (_ost.speed || 1).toFixed(1) + ', Hull:' + _hull + '%) — FREE</option>';
             }
             shipSelectHtml += '</optgroup>';
         }
@@ -8173,6 +8176,18 @@ window.UI = (function () {
             h += '<div style="margin-top:3px;font-size:0.68rem;color:#aaa;">💰 Hire cost: <b>' + hireCost + 'g</b>';
             if (carts > 0 || wagons > 0) h += ' + ' + carts + ' 🛒 carts + ' + wagons + ' 🚛 wagons from inventory';
             h += '</div>';
+            // Show ship cost for sea routes
+            if (_isSeaRoute) {
+                var _prevShipSel = document.getElementById('caravanShipSelect');
+                var _prevShipVal = _prevShipSel ? _prevShipSel.value : '';
+                if (_prevShipVal.indexOf('own:') === 0) {
+                    h += '<div style="font-size:0.68rem;color:#55a868;margin-top:2px;">⛵ Using your own ship — <b>FREE</b> (no rental fees)</div>';
+                } else if (_prevShipVal.indexOf('rent:') === 0) {
+                    var _prevRentType = _prevShipVal.substring(5);
+                    var _prevRentCost = Player.getShipRentalCost ? Player.getShipRentalCost(_prevRentType, Player.townId) : 0;
+                    h += '<div style="font-size:0.68rem;color:#ccaa33;margin-top:2px;">⛵ Ship rental: <b>' + _prevRentCost.toFixed(1) + 'g/day</b></div>';
+                }
+            }
 
             container.innerHTML = h;
         } catch(e) {
