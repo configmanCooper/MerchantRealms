@@ -1266,6 +1266,29 @@ window.Game = (function () {
                             label: 'Travel & Found Outpost Here',
                             action: 'UI.travelAndFoundOutpost(' + worldCoords.x + ',' + worldCoords.y + ')'
                         });
+                        // Off-sea landing option (when sailing in open water)
+                        if (Player.travelOffSea) {
+                            items.push({
+                                icon: '⚓',
+                                label: 'Attempt Landing Here',
+                                action: 'UI.showLandingDialog(' + worldCoords.x + ',' + worldCoords.y + ')'
+                            });
+                        }
+                    }
+                    // Right-click on water: off-sea travel options
+                    if (terrain === 2) {
+                        var inPort = false;
+                        if (Player.townId) {
+                            var pTown = Engine.findTown(Player.townId);
+                            if (pTown && pTown.isPort) inPort = true;
+                        }
+                        if (inPort || Player.travelOffSea) {
+                            items.push({
+                                icon: '⛵',
+                                label: Player.travelOffSea ? 'Redirect Course Here' : 'Sail Here (Off-Sea)',
+                                action: 'UI.showOffSeaDialog(' + worldCoords.x + ',' + worldCoords.y + ')'
+                            });
+                        }
                     }
                 }
             }

@@ -581,6 +581,23 @@ const CONFIG = {
     BRIDGE_MAX_WATER_TILES: 8,             // Max water tiles a road can cross to have a bridge
     ROAD_MAX_WATER_FRACTION: 0.30,         // Roads with >30% water tiles are rejected (no road possible)
     OFFROAD_SPEED_MULTIPLIER: 0.25,        // Off-road travel is 1/4 road speed
+    OFFSEA_SPEED_MULTIPLIER: 0.5,          // Off-sea travel is 1/2 sea route speed
+    OFFSEA_PIRATE_MODIFIER: 1.10,          // +10% pirate risk vs route average
+    OFFSEA_LANDING_DAMAGE_MIN: 10,         // Min hull damage on failed landing
+    OFFSEA_LANDING_DAMAGE_MAX: 30,         // Max hull damage on failed landing
+    OFFSEA_DEATH_BASE_CHANCE: 0.60,        // 60% death on shipwreck
+    OFFSEA_DEATH_MIN_CHANCE: 0.15,         // Can't go below 15%
+    OFFSEA_SHIPWRECK_GOLD_LOSS: 0.90,      // Lose 90% of gold
+    OFFSEA_SHIPWRECK_ITEM_KEEP: 3,         // Keep up to 3 random items
+    OFFSEA_SHIPWRECK_ILLNESS_DAYS_MIN: 14, // Min illness duration
+    OFFSEA_SHIPWRECK_ILLNESS_DAYS_MAX: 30, // Max illness duration
+    OFFSEA_LANDING_RISKS: {                // Risk by terrain type when landing
+        0: 0.00,   // GRASS — safe
+        5: 0.00,   // SAND — safe
+        1: 0.10,   // FOREST — 10% risk
+        4: 0.30,   // HILLS — 30% risk
+        3: 0.60,   // MOUNTAIN — 60% risk
+    },
     BRIDGE_DESTROY_COST: 500,              // Gold cost for player to destroy a bridge
     BRIDGE_REBUILD_COST: 1000,             // Gold cost to rebuild a destroyed bridge
     BRIDGE_REBUILD_DAYS: 30,               // Days to rebuild a bridge

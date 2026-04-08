@@ -2672,6 +2672,82 @@ window.Renderer = (function () {
 
         if (!isVisible(px, py, 100)) return;
 
+        // Off-sea travel: draw a ship sprite instead of diamond marker
+        if (player.travelOffSea) {
+            ctx.save();
+            ctx.translate(px, py);
+
+            // Determine heading for ship rotation
+            var heading = 0;
+            if (player.travelWaypoints && player.travelWaypoints.length >= 2) {
+                var wp0 = player.travelWaypoints[0];
+                var wp1 = player.travelWaypoints[player.travelWaypoints.length - 1];
+                heading = Math.atan2(wp1.y - wp0.y, wp1.x - wp0.x);
+            }
+            ctx.rotate(heading + Math.PI / 2);
+
+            var sz = 10;
+            var flutter = Math.sin(frameCount * 0.04) * 1.5;
+
+            // Glow
+            ctx.shadowColor = '#c4a35a';
+            ctx.shadowBlur = 10;
+
+            // Hull (gold-tinted)
+            ctx.fillStyle = '#c4a35a';
+            ctx.beginPath();
+            ctx.moveTo(-sz * 0.6, sz * 0.3);
+            ctx.quadraticCurveTo(-sz * 0.7, -sz * 0.2, -sz * 0.3, -sz * 0.7);
+            ctx.lineTo(sz * 0.3, -sz * 0.7);
+            ctx.quadraticCurveTo(sz * 0.7, -sz * 0.2, sz * 0.6, sz * 0.3);
+            ctx.lineTo(0, sz * 0.5);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.shadowBlur = 0;
+
+            // Mast
+            ctx.strokeStyle = '#8b7355';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(0, sz * 0.2);
+            ctx.lineTo(0, -sz);
+            ctx.stroke();
+
+            // Sail (white with gold tint)
+            ctx.fillStyle = 'rgba(255,248,230,0.9)';
+            ctx.beginPath();
+            ctx.moveTo(0, -sz * 0.9);
+            ctx.quadraticCurveTo(sz * 0.5 + flutter, -sz * 0.3, 0, sz * 0.1);
+            ctx.closePath();
+            ctx.fill();
+
+            // Wake lines
+            ctx.strokeStyle = 'rgba(200,200,255,0.3)';
+            ctx.lineWidth = 1;
+            var waveOff = Math.sin(frameCount * 0.06) * 2;
+            ctx.beginPath();
+            ctx.moveTo(-sz * 0.3, sz * 0.4);
+            ctx.lineTo(-sz * 0.5 + waveOff, sz * 0.8);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(sz * 0.3, sz * 0.4);
+            ctx.lineTo(sz * 0.5 - waveOff, sz * 0.8);
+            ctx.stroke();
+
+            // Progress text
+            if (player.traveling) {
+                ctx.rotate(-(heading + Math.PI / 2));
+                ctx.fillStyle = 'rgba(196,163,90,0.9)';
+                ctx.font = Math.max(8, 10) + 'px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(Math.round((player.travelProgress || 0) * 100) + '%', 0, -sz - 8);
+            }
+
+            ctx.restore();
+            return;
+        }
+
         // Golden diamond marker
         const pulse = Math.sin(frameCount * 0.08) * 2;
         const size = 8 + pulse;

@@ -6282,6 +6282,9 @@
         player.travelTotalDist = 0;
         player.travelBySea = false;
         player.travelOffroad = false;
+        player.travelOffSea = false;
+        player.offSeaShipId = null;
+        player._offSeaPirateChance = 0;
         player.travelPaid = false;
         player.travelMode = null;
         player.travelSeaMode = null;
@@ -6393,6 +6396,361 @@
         Engine.logEvent('\uD83E\uDDB6 ' + (player.firstName || 'You') + ' ' + (player.lastName || '') + ' departed into the wilderness.', { type: 'travel_start' }, 'travel_events');
 
         return { success: true, days: days };
+    }
+
+    /**
+     * Start off-sea-route travel. Player sails their own ship across open water.
+     */
+    function startOffSeaTravel(destX, destY, shipId) {
+        // Validate prerequisites
+        var currentTown = Engine.findTown(player.townId);
+        if (!currentTown && !player.travelOffSea) return { success: false, message: 'You must be in a port town to start sailing.' };
+        
+        // If already traveling off-sea, allow redirecting
+        var startX, startY;
+        if (player.travelOffSea) {
+            var pos = getPlayerWorldPosition();
+            if (!pos) return { success: false, message: 'Cannot determine position.' };
+            startX = pos.x;
+            startY = pos.y;
+            shipId = shipId || player.offSeaShipId;
+        } else {
+            if (!currentTown || !currentTown.isPort) return { success: false, message: 'You must be in a port town to set sail.' };
+            startX = currentTown.x;
+            startY = currentTown.y;
+        }
+
+        // Validate destination is water
+        var destTerrain = Engine.getTerrainAtPixel(destX, destY);
+        if (destTerrain !== 2) return { success: false, message: 'Destination must be water.' };
+
+        // Validate ship
+        if (!player.ships || player.ships.length === 0) return { success: false, message: 'You don\'t own any ships.' };
+        var ship = null;
+        if (shipId) {
+            ship = player.ships.find(function(s) { return s.id === shipId; });
+        } else {
+            // Find first available ship at this port
+            for (var i = 0; i < player.ships.length; i++) {
+                var s = player.ships[i];
+                if (!s.assignedCaravanId && !s.assignedOffSea) {
+                    if (player.travelOffSea || (s.townId === player.townId)) {
+                        ship = s;
+                        break;
+                    }
+                }
+            }
+        }
+        if (!ship) return { success: false, message: 'No available ship at this port.' };
+        var shipType = CONFIG.SHIP_TYPES[ship.type];
+        if (!shipType) return { success: false, message: 'Unknown ship type.' };
+        // Check ship condition
+        var condLevel = CONFIG.CONDITION_LEVELS ? CONFIG.CONDITION_LEVELS[ship.degradeCondition || 'new'] : null;
+        if (condLevel && condLevel.efficiency <= 0) return { success: false, message: 'Ship is destroyed and cannot sail.' };
+
+        // Build waypoints — use sea terrain pathfinding
+        var pathResult = Engine.findTerrainPath(startX, startY, destX, destY, 'sea');
+        var waypoints = null;
+        if (pathResult && Array.isArray(pathResult)) {
+            waypoints = pathResult;
+        } else if (pathResult && pathResult.waypoints && Array.isArray(pathResult.waypoints)) {
+            waypoints = pathResult.waypoints;
+        }
+        if (!waypoints || waypoints.length < 2) {
+            // Fallback: straight line over water
+            var straightDist = Math.hypot(destX - startX, destY - startY);
+            if (straightDist < 8000) {
+                waypoints = [{ x: startX, y: startY }, { x: destX, y: destY }];
+            } else {
+                return { success: false, message: 'Cannot navigate to that location.' };
+            }
+        }
+
+        // Calculate distance
+        var totalDist = 0;
+        for (var di = 1; di < waypoints.length; di++) {
+            totalDist += Math.hypot(waypoints[di].x - waypoints[di-1].x, waypoints[di].y - waypoints[di-1].y);
+        }
+        if (totalDist < 1) totalDist = Math.hypot(destX - startX, destY - startY);
+
+        // Apply off-sea speed (50% of normal sea route speed)
+        var speedMult = CONFIG.OFFSEA_SPEED_MULTIPLIER || 0.5;
+        // Ship speed bonus
+        speedMult *= (shipType.speed || 1.0);
+        // Ship condition efficiency
+        if (condLevel) speedMult *= (condLevel.efficiency || 1.0);
+        // Skill bonuses
+        if (hasSkill('expert_navigator')) speedMult *= 1.20;
+        if (hasSkill('cartographer')) speedMult *= 1.10;
+        if (hasSkill('fleet_admiral')) speedMult *= 1.10;
+        if ((player.skills && player.skills.combat || 0) >= 50) speedMult *= 1.05;
+        if (hasSkill('road_knowledge')) speedMult *= 1.05;
+
+        var effectiveDist = totalDist / speedMult;
+
+        // If already traveling off-sea, just redirect
+        if (player.travelOffSea) {
+            player.travelWaypoints = waypoints;
+            player.travelProgress = 0;
+            player.travelTotalDist = effectiveDist;
+            player.travelDestCoords = { x: destX, y: destY };
+            return { success: true, message: '⛵ Redirecting course.' };
+        }
+
+        // Set travel state
+        player.traveling = true;
+        player.travelDestination = null;
+        player.travelDestCoords = { x: destX, y: destY };
+        player.travelOrigin = player.townId;
+        player.travelRoute = null;
+        player.travelWaypoints = waypoints;
+        player.travelProgress = 0;
+        player.travelTotalDist = effectiveDist;
+        player.travelBySea = true;
+        player.travelOffroad = false;
+        player.travelOffSea = true;
+        player.offSeaShipId = ship.id;
+        player.travelPaid = false;
+        player.travelMode = 'ship';
+        player.townId = null;
+
+        // Mark ship as in-use
+        ship.assignedOffSea = true;
+
+        // Calculate pirate chance for this journey
+        player._offSeaPirateChance = _getOffSeaPirateChance(player.travelOrigin);
+
+        Engine.logEvent('⛵ ' + (player.firstName || 'You') + ' set sail into open waters aboard ' + (ship.name || shipType.name) + '.', { type: 'travel_start' }, 'travel_events');
+
+        var days = Math.ceil(effectiveDist / (CONFIG.CARAVAN_BASE_SPEED * 1.5 * 24));
+        return { success: true, days: days, message: '⛵ Setting sail! Estimated ' + days + ' days.' };
+    }
+
+    /**
+     * Calculate pirate encounter chance for off-sea travel based on origin port.
+     */
+    function _getOffSeaPirateChance(originTownId) {
+        var seaRoutes = Engine.getSeaRoutes ? Engine.getSeaRoutes() : [];
+        var portRoutes = seaRoutes.filter(function(r) { return r.fromTownId === originTownId || r.toTownId === originTownId; });
+        if (portRoutes.length === 0) return (CONFIG.SEA_ENCOUNTER_BASE_CHANCE || 0.08) * (CONFIG.OFFSEA_PIRATE_MODIFIER || 1.10);
+        var totalChance = 0;
+        for (var i = 0; i < portRoutes.length; i++) {
+            // Use route safety — unsafe routes have higher pirate chance
+            totalChance += portRoutes[i].safe === false ? 0.15 : (CONFIG.SEA_ENCOUNTER_BASE_CHANCE || 0.08);
+        }
+        var avgChance = totalChance / portRoutes.length;
+        return avgChance * (CONFIG.OFFSEA_PIRATE_MODIFIER || 1.10);
+    }
+
+    /**
+     * Attempt to land on a coastal tile from off-sea travel.
+     */
+    function attemptLanding(destX, destY) {
+        if (!player.travelOffSea) return { success: false, message: 'Not sailing in open water.' };
+
+        var terrain = Engine.getTerrainAtPixel(destX, destY);
+        if (terrain === 2) return { success: false, message: 'That\'s water — you need a land tile to land.' };
+
+        // Check adjacency to water (must be coastal)
+        var TS = CONFIG.TILE_SIZE || 16;
+        var tx = Math.floor(destX / TS), ty = Math.floor(destY / TS);
+        var touchesWater = false;
+        for (var dy = -1; dy <= 1 && !touchesWater; dy++) {
+            for (var dx = -1; dx <= 1 && !touchesWater; dx++) {
+                if (dx === 0 && dy === 0) continue;
+                if (Engine.getTerrainAtPixel((tx + dx) * TS, (ty + dy) * TS) === 2) touchesWater = true;
+            }
+        }
+        if (!touchesWater) return { success: false, message: 'Not a coastal tile — must be adjacent to water.' };
+
+        // Get risk based on terrain
+        var risks = CONFIG.OFFSEA_LANDING_RISKS || {};
+        var baseRisk = (risks[terrain] != null) ? risks[terrain] : 0.30;
+
+        // Skill modifiers reduce risk
+        var skillBonus = 0;
+        if (hasSkill('expert_navigator')) skillBonus += 0.15;
+        if (hasSkill('cartographer')) skillBonus += 0.10;
+        if (hasSkill('fleet_admiral')) skillBonus += 0.05;
+        if ((player.skills && player.skills.combat || 0) >= 50) skillBonus += 0.05;
+
+        // Ship condition affects risk
+        var ship = player.ships ? player.ships.find(function(s) { return s.id === player.offSeaShipId; }) : null;
+        var condPenalty = 0;
+        if (ship) {
+            var cond = CONFIG.CONDITION_LEVELS ? CONFIG.CONDITION_LEVELS[ship.degradeCondition || 'new'] : null;
+            if (cond && cond.efficiency < 1.0) condPenalty = (1.0 - cond.efficiency) * 0.15;
+        }
+
+        var finalRisk = Math.max(0, baseRisk - skillBonus + condPenalty);
+        var successChance = Math.min(1.0, 1.0 - finalRisk);
+
+        return {
+            success: true,
+            terrain: terrain,
+            risk: finalRisk,
+            successChance: successChance,
+            skillBonus: skillBonus,
+            condPenalty: condPenalty,
+            destX: destX,
+            destY: destY,
+        };
+    }
+
+    /**
+     * Execute a landing attempt (after player confirms in UI).
+     */
+    function executeLanding(destX, destY) {
+        var info = attemptLanding(destX, destY);
+        if (!info.success) return info;
+
+        var rng = Engine.getRng();
+        var roll = rng.random();
+        var ship = player.ships ? player.ships.find(function(s) { return s.id === player.offSeaShipId; }) : null;
+
+        if (roll >= info.risk) {
+            // SUCCESS — land safely
+            player.traveling = false;
+            player.travelOffSea = false;
+            player.travelBySea = false;
+            player.travelProgress = 0;
+            player.worldX = destX;
+            player.worldY = destY;
+            player.townId = null;
+            cleanupTravelState();
+            // Dock ship at landing coords
+            if (ship) {
+                ship.assignedOffSea = false;
+                ship.dockedCoords = { x: destX, y: destY };
+                ship.townId = null;
+            }
+            player.offSeaShipId = null;
+            _moveGuardsToPlayer();
+            Engine.logEvent('⚓ Successfully landed ashore!', { type: 'travel' }, 'travel_events');
+            return { success: true, landed: true, message: '⚓ Successfully landed!' };
+        } else {
+            // FAILURE — ship takes damage
+            var dmgMin = CONFIG.OFFSEA_LANDING_DAMAGE_MIN || 10;
+            var dmgMax = CONFIG.OFFSEA_LANDING_DAMAGE_MAX || 30;
+            var damage = rng.randInt(dmgMin, dmgMax);
+            if (ship) {
+                ship.hullHealth = Math.max(0, (ship.hullHealth || 100) - damage);
+                if (ship.hullHealth <= 0) {
+                    // Ship destroyed — trigger shipwreck
+                    return _handleShipwreck(ship, destX, destY);
+                }
+            }
+            return { success: true, landed: false, damage: damage, message: '⚠️ Landing failed! Ship damaged by ' + damage + '%. Try again or redirect.' };
+        }
+    }
+
+    /**
+     * Handle shipwreck — death vs wash ashore.
+     */
+    function _handleShipwreck(ship, nearX, nearY) {
+        var rng = Engine.getRng();
+        var deathChance = CONFIG.OFFSEA_DEATH_BASE_CHANCE || 0.60;
+
+        // Skill reductions
+        if (hasSkill('expert_navigator')) deathChance -= 0.15;
+        if (hasSkill('field_medic')) deathChance -= 0.10;
+        if ((player.skills && player.skills.combat || 0) >= 30) deathChance -= 0.05;
+        if (hasSkill('cartographer')) deathChance -= 0.05;
+        // Larger ships are safer
+        var shipType = CONFIG.SHIP_TYPES[ship.type];
+        if (shipType) {
+            if (shipType.capacity >= 200) deathChance -= 0.15;
+            else if (shipType.capacity >= 100) deathChance -= 0.10;
+            else if (shipType.capacity >= 50) deathChance -= 0.05;
+        }
+
+        deathChance = Math.max(CONFIG.OFFSEA_DEATH_MIN_CHANCE || 0.15, deathChance);
+
+        // Clean up travel state
+        player.traveling = false;
+        player.travelOffSea = false;
+        player.travelBySea = false;
+        player.travelProgress = 0;
+        cleanupTravelState();
+
+        // Remove destroyed ship
+        var shipIdx = player.ships.indexOf(ship);
+        if (shipIdx >= 0) player.ships.splice(shipIdx, 1);
+        player.offSeaShipId = null;
+
+        var roll = rng.random();
+        if (roll < deathChance) {
+            // Player dies
+            Engine.logEvent('💀 ' + (player.firstName || 'The merchant') + '\'s ship was destroyed in open waters. They did not survive.', {}, 'travel_events');
+            player.dead = true;
+            player.deathCause = 'shipwreck';
+            return { success: true, landed: false, died: true, message: '💀 Your ship was destroyed. You did not survive the shipwreck.' };
+        } else {
+            // Wash ashore
+            var landTile = _findNearestLandTile(nearX, nearY);
+            player.worldX = landTile.x;
+            player.worldY = landTile.y;
+            player.townId = null;
+
+            // Apply shipwreck illness
+            var illnessMin = CONFIG.OFFSEA_SHIPWRECK_ILLNESS_DAYS_MIN || 14;
+            var illnessMax = CONFIG.OFFSEA_SHIPWRECK_ILLNESS_DAYS_MAX || 30;
+            var illnessDays = rng.randInt(illnessMin, illnessMax);
+            player.illnesses = player.illnesses || [];
+            player.illnesses.push({
+                type: 'shipwreck_exposure',
+                name: 'Shipwreck Exposure',
+                severity: 'serious',
+                startDay: Engine.getDay(),
+                duration: illnessDays,
+                effects: { speedMult: 0.5, energyDrain: 2 },
+            });
+
+            // Gold loss
+            var goldLoss = Math.floor(player.gold * (CONFIG.OFFSEA_SHIPWRECK_GOLD_LOSS || 0.90));
+            player.gold -= goldLoss;
+
+            // Inventory loss — keep up to 3 random items
+            var maxKeep = CONFIG.OFFSEA_SHIPWRECK_ITEM_KEEP || 3;
+            var keptItems = {};
+            var itemKeys = Object.keys(player.inventory || {}).filter(function(k) { return player.inventory[k] > 0; });
+            var shuffled = rng.shuffle ? rng.shuffle(itemKeys.slice()) : itemKeys;
+            for (var ki = 0; ki < Math.min(maxKeep, shuffled.length); ki++) {
+                keptItems[shuffled[ki]] = Math.min(player.inventory[shuffled[ki]], rng.randInt(1, 3));
+            }
+            player.inventory = keptItems;
+
+            _moveGuardsToPlayer();
+            Engine.logEvent('🌊 ' + (player.firstName || 'The merchant') + ' washed ashore after their ship was destroyed. Injured and ill.', {}, 'travel_events');
+
+            return {
+                success: true, landed: false, died: false, washedAshore: true,
+                goldLost: goldLoss,
+                illnessDays: illnessDays,
+                landX: landTile.x, landY: landTile.y,
+                message: '🌊 Shipwrecked! You washed ashore. Lost ' + goldLoss + 'g and most inventory. Ill for ' + illnessDays + ' days.',
+            };
+        }
+    }
+
+    /**
+     * Find nearest land tile to given pixel coordinates (spiral search).
+     */
+    function _findNearestLandTile(px, py) {
+        var TS = CONFIG.TILE_SIZE || 16;
+        var cx = Math.floor(px / TS), cy = Math.floor(py / TS);
+        for (var r = 1; r < 50; r++) {
+            for (var dy = -r; dy <= r; dy++) {
+                for (var dx = -r; dx <= r; dx++) {
+                    if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue; // Only perimeter
+                    var t = Engine.getTerrainAtPixel((cx + dx) * TS, (cy + dy) * TS);
+                    if (t !== 2 && t !== 3) { // Not water or mountain
+                        return { x: (cx + dx) * TS + TS / 2, y: (cy + dy) * TS + TS / 2 };
+                    }
+                }
+            }
+        }
+        return { x: px, y: py }; // Fallback
     }
 
     function stopTravel() {
@@ -6854,6 +7212,20 @@
         }
 
         if (player.travelProgress >= 1.0) {
+            // Handle off-sea travel arrival at water waypoint
+            if (player.travelOffSea && player.travelDestCoords) {
+                // Arrived at water destination — stop here, player must redirect or land
+                player.travelProgress = 1.0;
+                var arrPos = player.travelDestCoords;
+                player.worldX = arrPos.x;
+                player.worldY = arrPos.y;
+                player.traveling = false;
+                // Keep travelOffSea true so player can redirect or land
+                // Don't cleanup full travel state — keep ship info
+                Engine.logEvent('⛵ Arrived at destination in open water. Right-click to continue sailing or land.', { type: 'travel_arrive' }, 'travel_events');
+                if (typeof Engine.pause === 'function') Engine.pause();
+                return;
+            }
             // Handle free travel arrival (to arbitrary coordinates)
             if (player.travelDestCoords) {
                 player.traveling = false;
@@ -16791,6 +17163,9 @@
             travelTotalDist: player.travelTotalDist,
             travelBySea: player.travelBySea,
             travelOffroad: player.travelOffroad || false,
+            travelOffSea: player.travelOffSea || false,
+            offSeaShipId: player.offSeaShipId || null,
+            _offSeaPirateChance: player._offSeaPirateChance || 0,
             perkCooldowns: player.perkCooldowns || {},
             escort: player.escort || null,
             discountRepair: player.discountRepair || null,
@@ -17121,6 +17496,9 @@
         player.travelBySea = data.travelBySea || false;
         player.travelSeaMode = data.travelSeaMode || null;
         player.travelOffroad = data.travelOffroad || false;
+        player.travelOffSea = data.travelOffSea || false;
+        player.offSeaShipId = data.offSeaShipId || null;
+        player._offSeaPirateChance = data._offSeaPirateChance || 0;
         player.perkCooldowns = data.perkCooldowns || {};
         player.escort = data.escort || null;
         player.travelCompanions = data.travelCompanions || [];
@@ -33248,6 +33626,10 @@
         if (isSea) {
             // Sea: ship defense is main factor
             chance = CONFIG.ENCOUNTER_SEA_BASE_CHANCE || 0.04;
+            // Off-sea-route travel has higher pirate risk
+            if (player.travelOffSea && player._offSeaPirateChance) {
+                chance = Math.max(chance, player._offSeaPirateChance);
+            }
             var ship = getBestShip();
             if (ship) {
                 var def = getShipDefense(ship);
@@ -40736,6 +41118,8 @@
         get travelDestination() { return player.travelDestination; },
         get travelRoute() { return player.travelRoute; },
         get travelOffroad() { return player.travelOffroad; },
+        get travelOffSea() { return player.travelOffSea; },
+        get offSeaShipId() { return player.offSeaShipId; },
         get travelTotalDist() { return player.travelTotalDist; },
         get travelOrigin() { return player.travelOrigin; },
         get travelPaid() { return player.travelPaid; },
@@ -41120,6 +41504,9 @@
         turnBack,
         stopTravel,
         travelToCoords,
+        startOffSeaTravel,
+        attemptLanding,
+        executeLanding,
         getPlayerWorldPosition,
         useTransportService,
         buyHorseForTravel,

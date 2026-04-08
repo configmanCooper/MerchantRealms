@@ -15821,8 +15821,131 @@ window.UI = (function () {
     }
 
     // ═══════════════════════════════════════════════════════════
-    //  SKILLS DIALOG
+    //  OFF-SEA TRAVEL UI
     // ═══════════════════════════════════════════════════════════
+
+    function showOffSeaDialog(destX, destY) {
+        // Show ship selection and confirmation dialog
+        var ships = (Player.ships || []).filter(function(s) {
+            if (s.assignedCaravanId || s.assignedOffSea) return false;
+            if (Player.travelOffSea) return s.id === Player.offSeaShipId;
+            return s.townId === Player.townId;
+        });
+
+        if (Player.travelOffSea) {
+            // Already sailing — just redirect
+            var result = Player.startOffSeaTravel(destX, destY);
+            if (result.success) {
+                toast(result.message || '⛵ Redirecting course!', 'success');
+                if (typeof Engine.resume === 'function') Engine.resume();
+            } else {
+                toast(result.message, 'error');
+            }
+            return;
+        }
+
+        if (ships.length === 0) {
+            toast('No available ships at this port.', 'error');
+            return;
+        }
+
+        var html = '<div style="padding:8px">';
+        html += '<p style="margin:0 0 10px;color:#aaa;font-size:12px">⛵ Sail into open waters. Off-sea travel is 50% speed of sea routes with increased pirate risk.</p>';
+
+        for (var i = 0; i < ships.length; i++) {
+            var s = ships[i];
+            var st = CONFIG.SHIP_TYPES[s.type] || {};
+            var hull = s.hullHealth != null ? s.hullHealth : 100;
+            var hullColor = hull > 70 ? '#55a868' : hull > 30 ? '#ccaa33' : '#c44e52';
+            html += '<div style="border:1px solid #555;padding:8px;margin:4px 0;border-radius:5px;background:rgba(30,30,30,0.8);cursor:pointer" onclick="UI._confirmOffSea(' + destX + ',' + destY + ',\'' + s.id + '\')">';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center">';
+            html += '<span style="font-size:13px">' + (st.icon || '⛵') + ' ' + (s.name || st.name) + '</span>';
+            html += '<span style="font-size:11px;color:' + hullColor + '">Hull: ' + hull + '%</span>';
+            html += '</div>';
+            html += '<div style="font-size:11px;color:#888;margin-top:3px">';
+            html += 'Speed: ' + ((st.speed || 1.0) * 100).toFixed(0) + '% | Capacity: ' + (st.capacity || 0) + ' | Defense: ' + (st.defense || 0);
+            html += '</div>';
+            html += '</div>';
+        }
+        html += '</div>';
+
+        var footer = '<button class="btn-medieval" onclick="UI.closeModal()" style="padding:6px 15px;">Cancel</button>';
+        openModal('⛵ Off-Sea Travel — Select Ship', html, footer);
+    }
+
+    function _confirmOffSea(destX, destY, shipId) {
+        closeModal();
+        var result = Player.startOffSeaTravel(destX, destY, shipId);
+        if (result.success) {
+            toast(result.message || '⛵ Setting sail!', 'success');
+        } else {
+            toast(result.message, 'error');
+        }
+    }
+
+    function showLandingDialog(destX, destY) {
+        var info = Player.attemptLanding(destX, destY);
+        if (!info.success) {
+            toast(info.message, 'error');
+            return;
+        }
+
+        var terrainNames = { 0: 'Grassland', 1: 'Forest', 2: 'Water', 3: 'Mountain', 4: 'Hills', 5: 'Sandy Beach' };
+        var terrainName = terrainNames[info.terrain] || 'Unknown';
+        var successPct = Math.floor(info.successChance * 100);
+        var riskPct = Math.floor(info.risk * 100);
+        var successColor = successPct >= 80 ? '#55a868' : successPct >= 50 ? '#ccaa33' : '#c44e52';
+
+        var html = '<div style="padding:8px;text-align:center">';
+        html += '<div style="font-size:2em;margin-bottom:8px">⚓</div>';
+        html += '<p style="margin:0 0 8px;font-size:14px">Terrain: <strong>' + terrainName + '</strong></p>';
+        html += '<p style="margin:0 0 12px;font-size:24px;color:' + successColor + '">' + successPct + '% Success</p>';
+
+        if (info.skillBonus > 0) html += '<p style="font-size:11px;color:#55a868;margin:2px 0">Skills: +' + Math.floor(info.skillBonus * 100) + '% bonus</p>';
+        if (info.condPenalty > 0) html += '<p style="font-size:11px;color:#c44e52;margin:2px 0">Ship condition: -' + Math.floor(info.condPenalty * 100) + '% penalty</p>';
+        if (riskPct > 0) html += '<p style="font-size:11px;color:#c44e52;margin:2px 0">Failure: ship takes ' + (CONFIG.OFFSEA_LANDING_DAMAGE_MIN || 10) + '-' + (CONFIG.OFFSEA_LANDING_DAMAGE_MAX || 30) + '% hull damage</p>';
+
+        html += '</div>';
+
+        var footer = '<button class="btn-medieval" onclick="UI._executeLanding(' + destX + ',' + destY + ')" style="background:rgba(42,100,150,0.4);border-color:rgba(42,100,150,0.6);padding:6px 16px;">⚓ Attempt Landing (' + successPct + '%)</button> ';
+        footer += '<button class="btn-medieval" onclick="UI.closeModal()" style="padding:6px 16px;">Cancel</button>';
+        openModal('⚓ Attempt Landing', html, footer);
+    }
+
+    function _executeLanding(destX, destY) {
+        closeModal();
+        var result = Player.executeLanding(destX, destY);
+        if (!result.success) {
+            toast(result.message, 'error');
+            return;
+        }
+
+        if (result.landed) {
+            toast(result.message, 'success');
+        } else if (result.died) {
+            // Show death screen
+            var html = '<div style="text-align:center;padding:20px">';
+            html += '<div style="font-size:3em;margin-bottom:10px">💀</div>';
+            html += '<h3 style="color:#c44e52">SHIPWRECK</h3>';
+            html += '<p>Your ship was destroyed. You did not survive.</p>';
+            html += '</div>';
+            openModal('💀 Death at Sea', html, '<button class="btn-medieval" onclick="UI.closeModal()">Continue</button>');
+        } else if (result.washedAshore) {
+            var html2 = '<div style="text-align:center;padding:15px">';
+            html2 += '<div style="font-size:3em;margin-bottom:10px">🌊</div>';
+            html2 += '<h3 style="color:#ccaa33">SHIPWRECKED!</h3>';
+            html2 += '<p>You washed ashore, barely alive.</p>';
+            html2 += '<div style="text-align:left;margin:10px auto;max-width:300px;font-size:12px">';
+            html2 += '<p>🤒 Shipwreck Exposure illness (' + result.illnessDays + ' days)</p>';
+            html2 += '<p>💰 Gold lost: ' + result.goldLost + 'g</p>';
+            html2 += '<p>📦 Most inventory lost</p>';
+            html2 += '</div>';
+            html2 += '</div>';
+            openModal('🌊 Shipwreck!', html2, '<button class="btn-medieval" onclick="UI.closeModal()">Continue</button>');
+        } else {
+            toast(result.message, 'warning');
+        }
+    }
     let _skillBranch = 'commerce';
 
     function openSkillsDialog(branch) {
@@ -26756,6 +26879,10 @@ window.UI = (function () {
         _opBuildDocks,
         _opBuildRoad,
         _opBuildSeaRoute,
+        showOffSeaDialog,
+        _confirmOffSea,
+        showLandingDialog,
+        _executeLanding,
         // Conquest & Servitude
         showConquestDialog,
         buyFreedomUI,
