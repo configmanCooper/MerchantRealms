@@ -24910,14 +24910,21 @@ window.UI = (function () {
 
             var traits = [];
             var kp = k.kingPersonality || {};
-            if ((kp.militarism || 0) >= 7) traits.push('⚔️');
-            if ((kp.generosity || 0) >= 7) traits.push('🎁');
-            if ((kp.greed || 0) >= 7) traits.push('💰');
-            if ((kp.ambition || 0) >= 7) traits.push('🔥');
-            if ((kp.intelligence || 0) >= 7) traits.push('🧠');
-            if ((kp.courage || 0) >= 7) traits.push('🦁');
-            if ((kp.justice || 0) >= 7) traits.push('⚖️');
-            if ((kp.tradition || 0) >= 7) traits.push('📜');
+            // Handle both numeric (initial gen) and string (post-succession) personality values
+            var _kpTrait = function(val, highStrings, emoji) {
+                if (typeof val === 'number') { if (val >= 7) traits.push(emoji); }
+                else if (typeof val === 'string') { if (highStrings.indexOf(val) >= 0) traits.push(emoji); }
+            };
+            _kpTrait(kp.militarism, ['aggressive', 'warlike'], '⚔️');
+            _kpTrait(kp.generosity, ['generous'], '🎁');
+            _kpTrait(kp.greed, ['greedy', 'corrupt'], '💰');
+            _kpTrait(kp.ambition, ['ambitious'], '🔥');
+            _kpTrait(kp.intelligence, ['brilliant', 'clever'], '🧠');
+            _kpTrait(kp.courage, ['brave'], '🦁');
+            _kpTrait(kp.justice, ['just', 'strict', 'absolute'], '⚖️');
+            _kpTrait(kp.tradition, ['traditional', 'conservative'], '📜');
+            _kpTrait(kp.temperament, ['cruel', 'tyrannical'], '😈');
+            _kpTrait(kp.temperament, ['kind', 'merciful'], '😇');
             var traitStr = traits.length > 0 ? traits.join('') : '<span style="color:#666;">—</span>';
 
             html += '<tr style="border-bottom:1px solid #333;">';
@@ -24936,6 +24943,51 @@ window.UI = (function () {
             html += '</tr>';
         }
         html += '</tbody></table></div>';
+
+        // ── Inter-Kingdom Relations Matrix ──
+        var warThresh = (typeof CONFIG !== 'undefined' && CONFIG.RELATION_WAR_THRESHOLD) ? CONFIG.RELATION_WAR_THRESHOLD : -35;
+        var warWarnThresh = warThresh + 20; // yellow zone
+        html += '<h4 style="color:#FFD700;margin:16px 0 6px;">🤝 Inter-Kingdom Relations</h4>';
+        html += '<div style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:0.78rem;">';
+        html += '<thead><tr><th style="padding:5px;border-bottom:2px solid #FFD700;color:#FFD700;"></th>';
+        for (var ri = 0; ri < kingdoms.length; ri++) {
+            html += '<th style="padding:5px;border-bottom:2px solid ' + (kingdoms[ri].color || '#666') + ';color:' + (kingdoms[ri].color || '#ccc') + ';min-width:70px;text-align:center;">' + (kingdoms[ri].name || '?') + '</th>';
+        }
+        html += '</tr></thead><tbody>';
+        for (var ri = 0; ri < kingdoms.length; ri++) {
+            var rk1 = kingdoms[ri];
+            html += '<tr><td style="padding:5px;font-weight:bold;border-left:4px solid ' + (rk1.color || '#666') + ';color:' + (rk1.color || '#ccc') + ';">' + (rk1.name || '?') + '</td>';
+            for (var rj = 0; rj < kingdoms.length; rj++) {
+                if (ri === rj) {
+                    html += '<td style="padding:5px;text-align:center;background:rgba(255,255,255,0.03);color:#555;">—</td>';
+                    continue;
+                }
+                var rk2 = kingdoms[rj];
+                var relVal = (rk1.relations && rk1.relations[rk2.id] != null) ? Math.round(rk1.relations[rk2.id]) : 0;
+                var atWar = false;
+                if (rk1.atWar) {
+                    var warArr = Array.isArray(rk1.atWar) ? rk1.atWar : (typeof rk1.atWar.has === 'function' ? rk1.atWar : []);
+                    atWar = typeof warArr.has === 'function' ? warArr.has(rk2.id) : (warArr.indexOf && warArr.indexOf(rk2.id) >= 0);
+                }
+                var relColor = '#55a868'; // green — safe
+                var relBg = 'rgba(85,168,104,0.1)';
+                if (atWar) {
+                    relColor = '#ff4444'; relBg = 'rgba(255,68,68,0.2)';
+                } else if (relVal <= warThresh) {
+                    relColor = '#ff4444'; relBg = 'rgba(255,68,68,0.15)';
+                } else if (relVal <= warWarnThresh) {
+                    relColor = '#e6c422'; relBg = 'rgba(230,196,34,0.12)';
+                } else if (relVal <= 0) {
+                    relColor = '#e6c422'; relBg = 'rgba(230,196,34,0.06)';
+                }
+                var relLabel = atWar ? '⚔️ ' + relVal : '' + relVal;
+                html += '<td style="padding:5px;text-align:center;color:' + relColor + ';font-weight:bold;background:' + relBg + ';" title="' + rk1.name + ' → ' + rk2.name + ': ' + relVal + (atWar ? ' (AT WAR)' : '') + ' (war threshold: ' + warThresh + ')">' + relLabel + '</td>';
+            }
+            html += '</tr>';
+        }
+        html += '</tbody></table></div>';
+        html += '<div style="font-size:0.7rem;color:#666;margin-top:4px;">🟢 Safe | 🟡 Tense (≤' + warWarnThresh + ') | 🔴 War risk (≤' + warThresh + ') | ⚔️ At war</div>';
+
         return html;
     }
 
@@ -25003,7 +25055,7 @@ window.UI = (function () {
                 if (t.buildings) {
                     for (var bi = 0; bi < t.buildings.length; bi++) {
                         var bld = t.buildings[bi];
-                        var bt = typeof BUILDING_TYPES !== 'undefined' ? BUILDING_TYPES[bld.type] : null;
+                        var bt = Engine.findBuildingType ? Engine.findBuildingType(bld.type) : (typeof BUILDING_TYPES !== 'undefined' ? BUILDING_TYPES[bld.type] : null);
                         if (bt && bt.produces) producedGoods[bt.produces] = true;
                         if (bt && bt.consumes) {
                             if (Array.isArray(bt.consumes)) {
@@ -25061,6 +25113,123 @@ window.UI = (function () {
             html += '</div>';
             html += '</div>';
         }
+        return html;
+    }
+
+    function _waBuildGoods(kingdoms, towns) {
+        var html = '';
+
+        // Gather all producible goods from BUILDING_TYPES
+        var allGoods = {};
+        for (var btKey in BUILDING_TYPES) {
+            var bt = BUILDING_TYPES[btKey];
+            if (bt.produces) allGoods[bt.produces] = true;
+            if (bt.availableProducts) {
+                for (var apKey in bt.availableProducts) {
+                    if (bt.availableProducts[apKey].produces) allGoods[bt.availableProducts[apKey].produces] = true;
+                }
+            }
+        }
+        var goodsList = Object.keys(allGoods).sort();
+        var totalGoodsCount = goodsList.length;
+
+        // For each kingdom, find which goods are produced by buildings in its towns
+        var kingdomGoods = {};
+        for (var ki = 0; ki < kingdoms.length; ki++) {
+            var k = kingdoms[ki];
+            kingdomGoods[k.id] = {};
+            var kTowns = towns.filter(function(t) { return t.kingdomId === k.id; });
+            for (var ti = 0; ti < kTowns.length; ti++) {
+                var t = kTowns[ti];
+                if (!t.buildings) continue;
+                for (var bi = 0; bi < t.buildings.length; bi++) {
+                    var bld = t.buildings[bi];
+                    var bType = Engine.findBuildingType ? Engine.findBuildingType(bld.type) : null;
+                    if (!bType) continue;
+                    // What is this building currently producing?
+                    var activeProduct = bld.currentProduct || bld.productionChoice || bType.produces;
+                    if (activeProduct) {
+                        if (!kingdomGoods[k.id][activeProduct]) kingdomGoods[k.id][activeProduct] = [];
+                        var ownerLabel = 'Kingdom';
+                        if (bld.ownerId) {
+                            if (typeof Player !== 'undefined' && Player.state && bld.ownerId === Player.state.id) {
+                                ownerLabel = 'Player';
+                            } else {
+                                var ownerNpc = Engine.findPerson ? Engine.findPerson(bld.ownerId) : null;
+                                if (ownerNpc && ownerNpc.isEliteMerchant) ownerLabel = 'Elite';
+                                else if (ownerNpc) ownerLabel = 'NPC';
+                            }
+                        }
+                        kingdomGoods[k.id][activeProduct].push({ town: t.name, owner: ownerLabel, bldName: bType.name || bld.type });
+                    }
+                    // Also count all possible products from canProduce
+                    if (bType.availableProducts) {
+                        for (var apk in bType.availableProducts) {
+                            var apGood = bType.availableProducts[apk].produces;
+                            if (apGood && apGood !== activeProduct && !kingdomGoods[k.id][apGood]) {
+                                // Mark as potential (has building capability but not currently producing)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Coverage summary per kingdom
+        html += '<h4 style="color:#FFD700;margin:0 0 8px;">📦 Goods Production Coverage</h4>';
+        html += '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px;">';
+        for (var ki = 0; ki < kingdoms.length; ki++) {
+            var k = kingdoms[ki];
+            var kGoodCount = Object.keys(kingdomGoods[k.id]).length;
+            var pct = totalGoodsCount > 0 ? Math.round((kGoodCount / totalGoodsCount) * 100) : 0;
+            var pctColor = pct >= 70 ? '#55a868' : (pct >= 40 ? '#e6c422' : '#c44e52');
+            html += '<div style="flex:1;min-width:140px;padding:8px;background:#1a1a2e;border-left:4px solid ' + (k.color || '#666') + ';border-radius:4px;text-align:center;">';
+            html += '<div style="font-weight:bold;color:' + (k.color || '#ccc') + ';font-size:0.85rem;">' + (k.name || '?') + '</div>';
+            html += '<div style="font-size:1.5rem;font-weight:bold;color:' + pctColor + ';">' + pct + '%</div>';
+            html += '<div style="font-size:0.72rem;color:#888;">' + kGoodCount + ' / ' + totalGoodsCount + ' goods</div>';
+            html += '</div>';
+        }
+        html += '</div>';
+
+        // Detailed goods table
+        html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.75rem;">';
+        html += '<thead><tr style="background:#1a1a2e;color:#FFD700;"><th style="padding:4px 6px;border-bottom:2px solid #FFD700;text-align:left;">Good</th>';
+        for (var ki = 0; ki < kingdoms.length; ki++) {
+            html += '<th style="padding:4px 6px;border-bottom:2px solid ' + (kingdoms[ki].color || '#666') + ';color:' + (kingdoms[ki].color || '#ccc') + ';text-align:center;">' + (kingdoms[ki].name || '?') + '</th>';
+        }
+        html += '</tr></thead><tbody>';
+
+        for (var gi = 0; gi < goodsList.length; gi++) {
+            var gid = goodsList[gi];
+            var res = RESOURCE_TYPES[gid];
+            var gName = res ? ((res.icon || '') + ' ' + (res.name || gid)) : gid;
+            html += '<tr style="border-bottom:1px solid #222;">';
+            html += '<td style="padding:3px 6px;white-space:nowrap;">' + gName + '</td>';
+            for (var ki = 0; ki < kingdoms.length; ki++) {
+                var k = kingdoms[ki];
+                var entries = kingdomGoods[k.id][gid];
+                if (entries && entries.length > 0) {
+                    // Group by owner type
+                    var ownerCounts = {};
+                    for (var ei = 0; ei < entries.length; ei++) {
+                        ownerCounts[entries[ei].owner] = (ownerCounts[entries[ei].owner] || 0) + 1;
+                    }
+                    var tags = [];
+                    var _ownerColors = { Kingdom: '#4fc3f7', Elite: '#e67e22', Player: '#55a868', NPC: '#aaa' };
+                    var _ownerIcons = { Kingdom: '👑', Elite: '💎', Player: '🧑', NPC: '👤' };
+                    for (var ot in ownerCounts) {
+                        tags.push('<span title="' + ownerCounts[ot] + ' ' + ot + '-owned building(s) producing ' + (res ? res.name : gid) + '" style="color:' + (_ownerColors[ot] || '#aaa') + ';font-size:0.72rem;">' + (_ownerIcons[ot] || '') + ownerCounts[ot] + '</span>');
+                    }
+                    html += '<td style="padding:3px 6px;text-align:center;background:rgba(85,168,104,0.08);">' + tags.join(' ') + '</td>';
+                } else {
+                    html += '<td style="padding:3px 6px;text-align:center;color:#444;">✗</td>';
+                }
+            }
+            html += '</tr>';
+        }
+        html += '</tbody></table></div>';
+        html += '<div style="font-size:0.7rem;color:#666;margin-top:6px;">👑 Kingdom-owned | 💎 Elite merchant | 🧑 Player | 👤 NPC — numbers show building count producing that good</div>';
+
         return html;
     }
 
@@ -25334,6 +25503,7 @@ window.UI = (function () {
         var tabs = [
             { id: 'overview', label: '👑 Kingdom Overview' },
             { id: 'economy', label: '💰 Economy & Trade' },
+            { id: 'goods', label: '📦 Goods Production' },
             { id: 'military', label: '⚔️ Military' },
             { id: 'population', label: '👥 Population' },
             { id: 'history', label: '📈 History' }
@@ -25352,6 +25522,7 @@ window.UI = (function () {
         try {
             if (tab === 'overview') html += _waBuildOverview(kingdoms, towns, people);
             else if (tab === 'economy') html += _waBuildEconomy(kingdoms, towns);
+            else if (tab === 'goods') html += _waBuildGoods(kingdoms, towns);
             else if (tab === 'military') html += _waBuildMilitary(kingdoms, towns);
             else if (tab === 'population') html += _waBuildPopulation(kingdoms, towns, people);
             else if (tab === 'history') html += _waBuildHistory();
