@@ -6280,6 +6280,15 @@
         player.travelCompanions = [];
     }
 
+    // Move all personal guards to the player's current town
+    function _moveGuardsToPlayer() {
+        if (!player.guards || player.guards.length === 0 || !player.townId) return;
+        for (var _mgi = 0; _mgi < player.guards.length; _mgi++) {
+            var _gNpc = player.guards[_mgi].personId ? Engine.findPerson(player.guards[_mgi].personId) : null;
+            if (_gNpc && _gNpc.alive) _gNpc.townId = player.townId;
+        }
+    }
+
     function travelToCoords(destX, destY) {
         if (player.traveling) {
             // Allow interrupting current travel to go offroad
@@ -6862,6 +6871,7 @@
                     Engine.logEvent('\u{1F6E1}\uFE0F ' + player.escort.personName + ' completes the escort. Safe travels!');
                     player.escort = null;
                 }
+                _moveGuardsToPlayer();
                 cleanupTravelState();
                 completeTransport();
                 return;
@@ -6905,6 +6915,9 @@
                 }
                 player.travelCompanions = [];
             }
+
+            // Move personal guards to player's new town
+            _moveGuardsToPlayer();
 
             // Clear street trading cache so new town gets fresh offers
             player._streetTradesCache = null;
