@@ -16487,6 +16487,7 @@
         outpost.soilFertility = outpost.soilFertilityRating / ((CONFIG.SOIL_FERTILITY && CONFIG.SOIL_FERTILITY.baselineFertility) || 50);
 
         world.towns.push(outpost);
+        townIndex[outpost.id] = outpost;
 
         // Add to kingdom's territory set
         if (kingdomId) {
