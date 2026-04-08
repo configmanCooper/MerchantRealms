@@ -18748,8 +18748,8 @@
             }
         }
 
-        // Monthly: kingdom reputation decay — above 70 decays slowly, faster at higher tiers
-        if (Engine.getDay() > 0 && Engine.getDay() % 30 === 0) {
+        // Weekly: kingdom reputation decay — above 70 decays slowly, faster at higher tiers
+        if (Engine.getDay() > 0 && Engine.getDay() % 7 === 0) {
             for (var _dkId in player.reputation) {
                 var _dkRep = player.reputation[_dkId];
                 if (_dkRep > 70) {
