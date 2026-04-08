@@ -368,7 +368,6 @@ var Guidance = (function () {
         buy_trade_tip: 'Click on your town name to open the town view. Look for the Info Broker in the Services tab and buy a trade tip for 10 gold.',
         compare_prices: 'Click the Trade button in the action bar to open the market. Prices you have seen in other towns will be shown for comparison.',
         earn_500g: 'Keep trading goods between towns using the Trade button — buy low and sell high. Jobs and selling crafted goods also help build wealth.',
-        reach_rep_40: 'Reputation increases by trading, completing jobs, socializing with townsfolk, and completing petitions. Check your rep in the ledger.',
         gain_kingdom_rep: 'Kingdom reputation grows by trading in that kingdom, completing jobs, petitions, and socializing. Check your current rep in the rank progress section of the ledger.',
         gain_town_rep: 'Town reputation grows by trading locally, doing jobs, socializing with townsfolk, and completing tasks in that town. Click your town name in the ledger to see town details.',
         get_citizenship: 'Open the Character menu and look at your rank progress. Once all requirements are met, click Promote to advance to Citizen.',
