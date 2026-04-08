@@ -226,7 +226,7 @@ window.UI = (function () {
             btnAchievements.className = 'btn-action';
             btnAchievements.id = 'btnAchievements';
             btnAchievements.title = 'Achievements';
-            btnAchievements.textContent = '🏆 Feats';
+            btnAchievements.textContent = '🎖️ Feats';
             btnAchievements.addEventListener('click', openAchievementsDialog);
             if (rowWorld) rowWorld.appendChild(btnAchievements);
 
@@ -283,11 +283,23 @@ window.UI = (function () {
         // Dynamically add XP bar and hunger bar containers to left panel
         const leftPanelBody = document.getElementById('leftPanelBody');
         if (leftPanelBody) {
+            // Remove ALL old dynamic bars FIRST to avoid detached-node bugs on re-init
+            var _oldXp = document.getElementById('xpBarGroup');
+            if (_oldXp) _oldXp.remove();
+            var _oldRankProg = document.getElementById('rankProgressGroup');
+            if (_oldRankProg) _oldRankProg.remove();
+            var _oldHunger = document.getElementById('hungerBarGroup');
+            if (_oldHunger) _oldHunger.remove();
+            var _oldFatigue = document.getElementById('fatigueBarGroup');
+            if (_oldFatigue) _oldFatigue.remove();
+            var _oldThirst = document.getElementById('thirstBarGroup');
+            if (_oldThirst) _oldThirst.remove();
+            var _oldHealth = document.getElementById('healthBarGroup');
+            if (_oldHealth) _oldHealth.remove();
+
             // Add XP bar after gold
             const goldGroup = leftPanelBody.querySelector('.stat-group:nth-child(3)');
             if (goldGroup) {
-                var _oldXp = document.getElementById('xpBarGroup');
-                if (_oldXp) _oldXp.remove();
                 const xpGroup = document.createElement('div');
                 xpGroup.className = 'stat-group';
                 xpGroup.id = 'xpBarGroup';
@@ -303,8 +315,6 @@ window.UI = (function () {
             }
 
             // Add rank progression tracker after XP bar
-            var _oldRankProg = document.getElementById('rankProgressGroup');
-            if (_oldRankProg) _oldRankProg.remove();
             var xpGroupEl = document.getElementById('xpBarGroup');
             if (xpGroupEl) {
                 var rankProgGroup = document.createElement('div');
@@ -314,20 +324,10 @@ window.UI = (function () {
                 xpGroupEl.after(rankProgGroup);
             }
 
-            // Add hunger bar after XP bar (inserted after gold) or last stat-group
+            // Add hunger bar after last stat-group (Location or rankProgress)
             const lastStatGroup = leftPanelBody.querySelector('.stat-group:last-of-type');
             const insertPoint = lastStatGroup || leftPanelBody.lastElementChild;
             if (insertPoint) {
-                // Guard against duplicate bars on re-init
-                var _oldHunger = document.getElementById('hungerBarGroup');
-                if (_oldHunger) _oldHunger.remove();
-                var _oldFatigue = document.getElementById('fatigueBarGroup');
-                if (_oldFatigue) _oldFatigue.remove();
-                var _oldThirst = document.getElementById('thirstBarGroup');
-                if (_oldThirst) _oldThirst.remove();
-                var _oldHealth = document.getElementById('healthBarGroup');
-                if (_oldHealth) _oldHealth.remove();
-
                 const hungerGroup = document.createElement('div');
                 hungerGroup.className = 'stat-group';
                 hungerGroup.id = 'hungerBarGroup';
@@ -15408,10 +15408,10 @@ window.UI = (function () {
 
         document.body.appendChild(overlay);
 
-        // Auto-dismiss after 3 seconds
+        // Auto-dismiss after 5 seconds
         var popupTimeout = setTimeout(function() {
             _dismissAchPopup();
-        }, 3000);
+        }, 5000);
 
         overlay._popupTimeout = popupTimeout;
     }
