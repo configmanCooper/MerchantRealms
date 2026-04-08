@@ -7522,6 +7522,13 @@
             // ---- Directed player commissions (daily deadline check) ----
             checkDirectedCommissionDeadline(k);
 
+            // ---- Royal Feast system (daily) ----
+            tickKingdomFeasts(k);
+
+            // ---- Noble conspiracies & king unrest response (monthly) ----
+            tickNobleConspiracies(k);
+            tickKingUnrestResponse(k);
+
             // ---- Update military strength and soldier count ----
             k.militaryStrength = computeMilitaryStrength(k);
             k.soldiers = (_tickCache.soldiersByKingdom[k.id] || []).length;
@@ -32065,6 +32072,780 @@
     }
 
     // ========================================================
+    // §19b ROYAL FEAST SYSTEM
+    // ========================================================
+
+    function tickKingdomFeasts(k) {
+        if (!k) return;
+        var rng = world.rng;
+
+        // Schedule first feast if not yet scheduled
+        if (k._nextFeastDay == null) {
+            k._nextFeastDay = world.day + rng.randInt(60, 120);
+        }
+
+        // End expired feast
+        if (k._activeFeast && world.day > k._activeFeast.endDay) {
+            var isPlayerKingdom = typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id;
+            logEvent('🎪 The Royal Feast in ' + k.name + ' has ended.', {
+                type: 'feast_ended', kingdomId: k.id
+            }, isPlayerKingdom ? 'my_kingdom' : 'foreign_kingdoms');
+            k._activeFeast = null;
+        }
+
+        // Start new feast
+        if (!k._activeFeast && world.day >= k._nextFeastDay) {
+            var feastTownId = k.capital || (k.territories && k.territories[0]);
+            if (!feastTownId) return;
+            var feastTown = findTown(feastTownId);
+            var feastTownName = feastTown ? feastTown.name : 'the capital';
+
+            k._activeFeast = {
+                id: 'feast_' + world.day,
+                townId: feastTownId,
+                startDay: world.day,
+                endDay: world.day + 3,
+                attendees: [],
+                events: [],
+                _playerActionsToday: 0,
+                _playerActionDay: 0
+            };
+
+            // Populate attendees: all alive nobles rank 4-7 in this kingdom
+            var kId = k.id;
+            var allNobles = world.people.filter(function(p) {
+                return p.alive && p.socialRank && p.socialRank[kId] >= 4 && p.socialRank[kId] <= 7;
+            });
+
+            // Random 60-80% actually attend
+            var attendRate = (rng.randInt(60, 80)) / 100;
+            var shuffled = rng.shuffle(allNobles.slice());
+            var attendCount = Math.max(1, Math.floor(shuffled.length * attendRate));
+            for (var ai = 0; ai < attendCount && ai < shuffled.length; ai++) {
+                k._activeFeast.attendees.push(shuffled[ai].id);
+            }
+
+            // Add player if they're a noble in this kingdom
+            try {
+                if (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId) {
+                    var playerPersonId = Player.personId || 'player';
+                    var playerPerson = findPerson(playerPersonId);
+                    if (playerPerson && playerPerson.socialRank && playerPerson.socialRank[kId] >= 4) {
+                        if (k._activeFeast.attendees.indexOf(playerPersonId) < 0) {
+                            k._activeFeast.attendees.push(playerPersonId);
+                        }
+                    }
+                }
+            } catch (e) { /* Player not loaded */ }
+
+            var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id;
+            logEvent('🎪 The king of ' + k.name + ' is hosting a Royal Feast in ' + feastTownName + '! (3 days)', {
+                type: 'feast_started', kingdomId: k.id, townId: feastTownId,
+                cause: 'The king has called a Royal Feast',
+                effects: ['Nobles gather in ' + feastTownName, 'The feast lasts 3 days']
+            }, isPlayerK ? 'my_kingdom' : 'foreign_kingdoms');
+
+            k._nextFeastDay = world.day + rng.randInt(60, 120);
+        }
+
+        // Dynamic feast events (30% chance per day during active feast)
+        if (k._activeFeast && rng.chance(0.30)) {
+            _triggerFeastDynamicEvent(k);
+        }
+    }
+
+    function _triggerFeastDynamicEvent(k) {
+        var rng = world.rng;
+        var feast = k._activeFeast;
+        if (!feast || feast.attendees.length < 2) return;
+
+        var eventType = rng.randInt(0, 4);
+        var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id;
+        var category = isPlayerK ? 'my_kingdom' : 'foreign_kingdoms';
+
+        if (eventType === 0) {
+            // King's Toast — king toasts someone, +5 their kingLoyalty
+            var toasteeId = rng.pick(feast.attendees);
+            var toastee = findPerson(toasteeId);
+            if (toastee && toastee.kingLoyalty != null) {
+                toastee.kingLoyalty = Math.min(100, toastee.kingLoyalty + 5);
+                var toasteeName = toastee.firstName || 'a noble';
+                feast.events.push('The king raised a toast to ' + toasteeName + '!');
+                logEvent('🍷 At the feast in ' + k.name + ', the king raised a toast to ' + toasteeName + '.', {
+                    type: 'feast_event', kingdomId: k.id
+                }, category);
+            }
+        } else if (eventType === 1) {
+            // Nobles Argue — 2 random nobles lose 10 mutual relationship
+            var arguer1Id = rng.pick(feast.attendees);
+            var remaining = feast.attendees.filter(function(id) { return id !== arguer1Id; });
+            if (remaining.length > 0) {
+                var arguer2Id = rng.pick(remaining);
+                var arguer1 = findPerson(arguer1Id);
+                var arguer2 = findPerson(arguer2Id);
+                if (arguer1 && arguer2) {
+                    if (!arguer1._nobleRelationships) arguer1._nobleRelationships = {};
+                    if (!arguer2._nobleRelationships) arguer2._nobleRelationships = {};
+                    arguer1._nobleRelationships[arguer2Id] = Math.max(-100, (arguer1._nobleRelationships[arguer2Id] || 0) - 10);
+                    arguer2._nobleRelationships[arguer1Id] = Math.max(-100, (arguer2._nobleRelationships[arguer1Id] || 0) - 10);
+                    var n1 = arguer1.firstName || 'A noble';
+                    var n2 = arguer2.firstName || 'another noble';
+                    feast.events.push(n1 + ' and ' + n2 + ' got into a heated argument!');
+                    logEvent('😤 At the feast in ' + k.name + ', ' + n1 + ' and ' + n2 + ' got into a heated argument.', {
+                        type: 'feast_event', kingdomId: k.id
+                    }, category);
+                }
+            }
+        } else if (eventType === 2) {
+            // Private Audience — king picks an attendee, +10 kingLoyalty
+            var audienceId = rng.pick(feast.attendees);
+            var audiencee = findPerson(audienceId);
+            if (audiencee && audiencee.kingLoyalty != null) {
+                audiencee.kingLoyalty = Math.min(100, audiencee.kingLoyalty + 10);
+                var audName = audiencee.firstName || 'a noble';
+                feast.events.push('The king granted ' + audName + ' a private audience.');
+                logEvent('👑 At the feast in ' + k.name + ', the king granted ' + audName + ' a private audience.', {
+                    type: 'feast_event', kingdomId: k.id
+                }, category);
+            }
+        } else if (eventType === 3) {
+            // Entertainment — all attendees get +2 happiness
+            for (var ei = 0; ei < feast.attendees.length; ei++) {
+                var ep = findPerson(feast.attendees[ei]);
+                if (ep && ep.needs) {
+                    ep.needs.happiness = Math.min(100, (ep.needs.happiness || 50) + 2);
+                }
+            }
+            feast.events.push('Grand entertainment delighted all attendees!');
+            logEvent('🎭 At the feast in ' + k.name + ', grand entertainment delighted all attendees.', {
+                type: 'feast_event', kingdomId: k.id
+            }, category);
+        } else {
+            // Noble Boasts — a noble with high ambition brags, others with low warmth lose 3 relationship
+            var ambitiousNobles = feast.attendees.map(function(id) { return findPerson(id); }).filter(function(p) {
+                return p && p.personality && p.personality.ambition > 70;
+            });
+            if (ambitiousNobles.length > 0) {
+                var braggart = rng.pick(ambitiousNobles);
+                var braggartName = braggart.firstName || 'A noble';
+                for (var bi = 0; bi < feast.attendees.length; bi++) {
+                    if (feast.attendees[bi] === braggart.id) continue;
+                    var listener = findPerson(feast.attendees[bi]);
+                    if (listener && listener.personality && listener.personality.warmth < 50) {
+                        if (!listener._nobleRelationships) listener._nobleRelationships = {};
+                        listener._nobleRelationships[braggart.id] = Math.max(-100, (listener._nobleRelationships[braggart.id] || 0) - 3);
+                    }
+                }
+                feast.events.push(braggartName + ' boasted loudly, annoying some nobles.');
+                logEvent('🗣️ At the feast in ' + k.name + ', ' + braggartName + ' boasted loudly about their accomplishments.', {
+                    type: 'feast_event', kingdomId: k.id
+                }, category);
+            }
+        }
+    }
+
+    function doFeastAction(kingdomId, actionId) {
+        var k = findKingdom(kingdomId);
+        if (!k) return { success: false, message: 'Kingdom not found.' };
+        var feast = k._activeFeast;
+        if (!feast) return { success: false, message: 'No active feast.' };
+
+        // Check player is at the feast town
+        try {
+            if (typeof Player !== 'undefined' && Player.townId) {
+                if (Player.townId !== feast.townId) {
+                    return { success: false, message: 'You must be in the feast town to participate.' };
+                }
+            }
+        } catch (e) { /* Player not loaded */ }
+
+        // Reset daily action count if new day
+        if (feast._playerActionDay !== world.day) {
+            feast._playerActionsToday = 0;
+            feast._playerActionDay = world.day;
+        }
+
+        if (feast._playerActionsToday >= 3) {
+            return { success: false, message: 'You have used all 3 feast actions for today.' };
+        }
+
+        var rng = world.rng;
+        var result = { success: false, message: '' };
+
+        // Filter out player from attendees for picking targets
+        var otherAttendees = feast.attendees.filter(function(id) {
+            try {
+                var playerPersonId = (typeof Player !== 'undefined' && Player.personId) ? Player.personId : 'player';
+                return id !== playerPersonId && id !== 'player';
+            } catch (e) { return true; }
+        });
+
+        if (actionId === 'mingle') {
+            if (otherAttendees.length === 0) return { success: false, message: 'No one to mingle with.' };
+            var mingTarget = rng.pick(otherAttendees);
+            var mingPerson = findPerson(mingTarget);
+            var mingBonus = rng.randInt(3, 8);
+            try {
+                if (typeof Player !== 'undefined' && Player.modifyRelationship) {
+                    Player.modifyRelationship(mingTarget, mingBonus);
+                }
+            } catch (e) { /* Player not loaded */ }
+            var mingName = mingPerson ? (mingPerson.firstName || 'a noble') : 'a noble';
+            feast.events.push('You mingled with ' + mingName + '.');
+            result = { success: true, message: 'You mingled with ' + mingName + '. (+' + mingBonus + ' relationship)' };
+
+        } else if (actionId === 'toast_king') {
+            try {
+                if (typeof Player !== 'undefined' && Player.modifyRelationship && k.king) {
+                    Player.modifyRelationship(k.king, 2);
+                }
+                if (typeof Player !== 'undefined' && Player.modifyReputation) {
+                    Player.modifyReputation(kingdomId, 1);
+                }
+            } catch (e) { /* Player not loaded */ }
+            feast.events.push('You toasted the king.');
+            result = { success: true, message: 'You toasted the king. (+2 king relationship, +1 reputation)' };
+
+        } else if (actionId === 'private_chat') {
+            if (otherAttendees.length === 0) return { success: false, message: 'No one to chat with.' };
+            var chatTarget = rng.pick(otherAttendees);
+            var chatPerson = findPerson(chatTarget);
+            var chatBonus = rng.randInt(5, 10);
+            try {
+                if (typeof Player !== 'undefined' && Player.modifyRelationship) {
+                    Player.modifyRelationship(chatTarget, chatBonus);
+                }
+            } catch (e) { /* Player not loaded */ }
+            var chatName = chatPerson ? (chatPerson.firstName || 'a noble') : 'a noble';
+            var traitRevealed = false;
+            if (rng.chance(0.30)) {
+                try {
+                    if (typeof Player !== 'undefined' && Player.revealPersonalityTrait) {
+                        Player.revealPersonalityTrait(chatTarget);
+                        traitRevealed = true;
+                    }
+                } catch (e) { /* Player not loaded */ }
+            }
+            var chatMsg = 'You had a private chat with ' + chatName + '. (+' + chatBonus + ' relationship)';
+            if (traitRevealed) chatMsg += ' You learned something about their personality.';
+            feast.events.push(chatMsg);
+            result = { success: true, message: chatMsg };
+
+        } else if (actionId === 'eavesdrop') {
+            if (rng.chance(0.40)) {
+                // Learn something useful
+                var intelOptions = [];
+                intelOptions.push('You overheard that kingdom happiness is around ' + Math.round(k.happiness || 50) + '%.');
+                // Check for plotting nobles
+                var discontentNobles = otherAttendees.map(function(id) { return findPerson(id); }).filter(function(p) {
+                    return p && p.kingLoyalty != null && p.kingLoyalty < 30;
+                });
+                if (discontentNobles.length > 0) {
+                    var plotterName = discontentNobles[0].firstName || 'A noble';
+                    intelOptions.push('You overheard ' + plotterName + ' whispering about dissatisfaction with the king.');
+                }
+                // Noble financial status
+                var stressedNobles = otherAttendees.map(function(id) { return findPerson(id); }).filter(function(p) {
+                    return p && p._financiallyStressed;
+                });
+                if (stressedNobles.length > 0) {
+                    var stressedName = stressedNobles[0].firstName || 'A noble';
+                    intelOptions.push('You learned that ' + stressedName + ' is under financial stress.');
+                }
+                var intel = rng.pick(intelOptions);
+                feast.events.push(intel);
+                result = { success: true, message: intel };
+            } else if (rng.chance(0.20)) {
+                // Caught eavesdropping
+                if (otherAttendees.length > 0) {
+                    var catcherId = rng.pick(otherAttendees);
+                    var catcherPerson = findPerson(catcherId);
+                    try {
+                        if (typeof Player !== 'undefined' && Player.modifyRelationship) {
+                            Player.modifyRelationship(catcherId, -5);
+                        }
+                    } catch (e) { /* Player not loaded */ }
+                    var catcherName = catcherPerson ? (catcherPerson.firstName || 'a noble') : 'a noble';
+                    feast.events.push('You were caught eavesdropping by ' + catcherName + '!');
+                    result = { success: false, message: 'You were caught eavesdropping by ' + catcherName + '! (-5 relationship)' };
+                } else {
+                    feast.events.push('You tried to eavesdrop but heard nothing useful.');
+                    result = { success: false, message: 'You tried to eavesdrop but heard nothing useful.' };
+                }
+            } else {
+                feast.events.push('You tried to eavesdrop but heard nothing useful.');
+                result = { success: false, message: 'You tried to eavesdrop but heard nothing useful.' };
+            }
+
+        } else if (actionId === 'observe_court') {
+            if (otherAttendees.length < 2) return { success: false, message: 'Not enough nobles to observe.' };
+            var obsA = rng.pick(otherAttendees);
+            var obsRemaining = otherAttendees.filter(function(id) { return id !== obsA; });
+            var obsB = rng.pick(obsRemaining);
+            var obsPersonA = findPerson(obsA);
+            var obsPersonB = findPerson(obsB);
+            if (obsPersonA && obsPersonB) {
+                var relScore = 0;
+                if (obsPersonA._nobleRelationships && obsPersonA._nobleRelationships[obsB] != null) {
+                    relScore = obsPersonA._nobleRelationships[obsB];
+                }
+                var relDesc = relScore > 30 ? 'allies' : (relScore < -30 ? 'rivals' : 'neutral acquaintances');
+                var nameA = obsPersonA.firstName || 'Noble A';
+                var nameB = obsPersonB.firstName || 'Noble B';
+                var obsMsg = nameA + ' and ' + nameB + ' seem to be ' + relDesc + '.';
+                feast.events.push(obsMsg);
+                result = { success: true, message: obsMsg };
+            } else {
+                result = { success: false, message: 'Could not observe the court dynamics.' };
+            }
+
+        } else if (actionId === 'spread_rumor') {
+            if (otherAttendees.length < 2) return { success: false, message: 'Not enough nobles to spread rumors about.' };
+            var rumorTarget = rng.pick(otherAttendees);
+            var rumorOthers = otherAttendees.filter(function(id) { return id !== rumorTarget; });
+            var rumorAbout = rng.pick(rumorOthers);
+            var rumorTargetP = findPerson(rumorTarget);
+            var rumorAboutP = findPerson(rumorAbout);
+            var targetName = rumorTargetP ? (rumorTargetP.firstName || 'a noble') : 'a noble';
+            var aboutName = rumorAboutP ? (rumorAboutP.firstName || 'another noble') : 'another noble';
+
+            if (rng.chance(0.50)) {
+                // Success: target loses relationship with the other
+                var rumorLoss = rng.randInt(5, 10);
+                if (rumorTargetP) {
+                    if (!rumorTargetP._nobleRelationships) rumorTargetP._nobleRelationships = {};
+                    rumorTargetP._nobleRelationships[rumorAbout] = Math.max(-100, (rumorTargetP._nobleRelationships[rumorAbout] || 0) - rumorLoss);
+                }
+                feast.events.push('You spread a rumor that turned ' + targetName + ' against ' + aboutName + '.');
+                result = { success: true, message: 'You spread a rumor. ' + targetName + ' now thinks less of ' + aboutName + '. (-' + rumorLoss + ')' };
+
+                // 30% chance caught
+                if (rng.chance(0.30) && otherAttendees.length > 0) {
+                    var rumorCatcherId = rng.pick(otherAttendees);
+                    try {
+                        if (typeof Player !== 'undefined' && Player.modifyRelationship) {
+                            Player.modifyRelationship(rumorCatcherId, -10);
+                        }
+                    } catch (e) { /* Player not loaded */ }
+                    var rumorCatcherP = findPerson(rumorCatcherId);
+                    var rumorCatcherName = rumorCatcherP ? (rumorCatcherP.firstName || 'a noble') : 'a noble';
+                    result.message += ' But ' + rumorCatcherName + ' saw through your deception! (-10 relationship)';
+                    feast.events.push(rumorCatcherName + ' caught you spreading rumors!');
+                }
+            } else {
+                feast.events.push('Your rumor about ' + targetName + ' didn\'t gain traction.');
+                result = { success: false, message: 'Your rumor about ' + targetName + ' didn\'t gain traction.' };
+            }
+
+        } else if (actionId === 'forge_alliance') {
+            if (otherAttendees.length === 0) return { success: false, message: 'No nobles to forge an alliance with.' };
+            var allyTarget = rng.pick(otherAttendees);
+            var allyPerson = findPerson(allyTarget);
+            var allyName = allyPerson ? (allyPerson.firstName || 'a noble') : 'a noble';
+
+            // Check relationship > 60
+            var allyRel = 0;
+            try {
+                if (typeof Player !== 'undefined' && Player.getRelationship) {
+                    var relData = Player.getRelationship(allyTarget);
+                    allyRel = relData ? (relData.level || 0) : 0;
+                }
+            } catch (e) { /* Player not loaded */ }
+
+            if (allyRel <= 60) {
+                result = { success: false, message: 'Your relationship with ' + allyName + ' is not strong enough (need > 60, have ' + allyRel + ').' };
+            } else if (rng.chance(0.60)) {
+                // Mark as ally
+                if (allyPerson) {
+                    if (!allyPerson._playerAlly) allyPerson._playerAlly = true;
+                }
+                feast.events.push('You forged an alliance with ' + allyName + '!');
+                result = { success: true, message: 'You forged an alliance with ' + allyName + '!' };
+            } else {
+                feast.events.push(allyName + ' politely declined your alliance proposal.');
+                result = { success: false, message: allyName + ' politely declined your alliance proposal.' };
+            }
+
+        } else if (actionId === 'pit_nobles') {
+            if (otherAttendees.length < 2) return { success: false, message: 'Not enough nobles to pit against each other.' };
+            var pitA = rng.pick(otherAttendees);
+            var pitRemaining = otherAttendees.filter(function(id) { return id !== pitA; });
+            var pitB = rng.pick(pitRemaining);
+            var pitPersonA = findPerson(pitA);
+            var pitPersonB = findPerson(pitB);
+            var pitNameA = pitPersonA ? (pitPersonA.firstName || 'Noble A') : 'Noble A';
+            var pitNameB = pitPersonB ? (pitPersonB.firstName || 'Noble B') : 'Noble B';
+
+            if (rng.chance(0.40)) {
+                // Success: they lose 10 mutual relationship
+                if (pitPersonA) {
+                    if (!pitPersonA._nobleRelationships) pitPersonA._nobleRelationships = {};
+                    pitPersonA._nobleRelationships[pitB] = Math.max(-100, (pitPersonA._nobleRelationships[pitB] || 0) - 10);
+                }
+                if (pitPersonB) {
+                    if (!pitPersonB._nobleRelationships) pitPersonB._nobleRelationships = {};
+                    pitPersonB._nobleRelationships[pitA] = Math.max(-100, (pitPersonB._nobleRelationships[pitA] || 0) - 10);
+                }
+                feast.events.push('You pitted ' + pitNameA + ' and ' + pitNameB + ' against each other.');
+                result = { success: true, message: 'You pitted ' + pitNameA + ' and ' + pitNameB + ' against each other. (-10 mutual relationship)' };
+
+                // 25% chance caught
+                if (rng.chance(0.25)) {
+                    var caughtBy = rng.pick([pitA, pitB]);
+                    try {
+                        if (typeof Player !== 'undefined' && Player.modifyRelationship) {
+                            Player.modifyRelationship(caughtBy, -15);
+                        }
+                    } catch (e) { /* Player not loaded */ }
+                    var caughtByP = findPerson(caughtBy);
+                    var caughtByName = caughtByP ? (caughtByP.firstName || 'a noble') : 'a noble';
+                    result.message += ' But ' + caughtByName + ' realized your scheme! (-15 relationship)';
+                    feast.events.push(caughtByName + ' discovered your manipulation!');
+                }
+            } else {
+                feast.events.push('Your attempt to pit ' + pitNameA + ' against ' + pitNameB + ' failed.');
+                result = { success: false, message: 'Your attempt to pit ' + pitNameA + ' against ' + pitNameB + ' failed.' };
+            }
+
+        } else {
+            return { success: false, message: 'Unknown feast action: ' + actionId };
+        }
+
+        feast._playerActionsToday++;
+        try {
+            if (typeof Game !== 'undefined' && Game.advanceTicks) {
+                Game.advanceTicks(1);
+            }
+        } catch (e) { /* Game not loaded */ }
+
+        return result;
+    }
+
+    // ========================================================
+    // §19c NOBLE CONSPIRACY SYSTEM
+    // ========================================================
+
+    function tickNobleConspiracies(k) {
+        if (!k || world.day % 30 !== 0) return;
+        var rng = world.rng;
+        var kId = k.id;
+        var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId;
+        var category = isPlayerK ? 'my_kingdom' : 'foreign_kingdoms';
+
+        // If there's an active conspiracy, advance it
+        if (k._conspiracy) {
+            var conspiracy = k._conspiracy;
+
+            // Grow strength: +5 per plotter per month
+            conspiracy.strength += conspiracy.plotters.length * 5;
+
+            // Detection: 10% base chance per month
+            if (!conspiracy.detected && rng.chance(0.10)) {
+                conspiracy.detected = true;
+                var kingPerson = findPerson(k.king);
+                var kingName = kingPerson ? (kingPerson.firstName || 'The King') : 'The King';
+                logEvent('🕵️ ' + kingName + ' of ' + k.name + ' has uncovered a ' + conspiracy.type + ' conspiracy!', {
+                    type: 'conspiracy_detected', kingdomId: kId,
+                    cause: 'Royal guards discovered the plot',
+                    effects: ['Plotters may be arrested', 'Kingdom stability may improve']
+                }, category);
+
+                // King arrests plotters
+                for (var di = 0; di < conspiracy.plotters.length; di++) {
+                    var plotterId = conspiracy.plotters[di];
+                    var plotter = findPerson(plotterId);
+                    if (plotter && plotter.alive && plotterId !== 'player') {
+                        // 60% chance each plotter is arrested/killed
+                        if (rng.chance(0.60)) {
+                            plotter._arrested = true;
+                            plotter.kingLoyalty = Math.min(100, (plotter.kingLoyalty || 0) + 20);
+                            logEvent('⚔️ ' + (plotter.firstName || 'A conspirator') + ' was arrested for treason in ' + k.name + '.', {
+                                type: 'conspiracy_arrest', kingdomId: kId
+                            }, category);
+                        }
+                    }
+                }
+                // Boost stability
+                k.happiness = Math.min(100, (k.happiness || 50) + 5);
+                k._conspiracy = null;
+                return;
+            }
+
+            // If strength > 80: attempt the plot
+            if (conspiracy.strength > 80) {
+                _attemptConspiracyPlot(k, conspiracy);
+            }
+            return;
+        }
+
+        // No active conspiracy — check if one should form
+        var dissidents = world.people.filter(function(p) {
+            return p.alive && p.socialRank && p.socialRank[kId] >= 4 && p.socialRank[kId] <= 6 &&
+                   p.kingLoyalty != null && p.kingLoyalty < 30;
+        });
+
+        if (dissidents.length >= 2 && rng.chance(0.20)) {
+            // Form conspiracy
+            var plotterIds = dissidents.map(function(p) { return p.id; });
+            var hasCoupLeader = dissidents.some(function(p) {
+                return p.personality && p.personality.ambition > 70;
+            });
+            var plotType = hasCoupLeader ? 'coup' : 'assassination';
+
+            k._conspiracy = {
+                plotters: plotterIds,
+                type: plotType,
+                startDay: world.day,
+                strength: 0,
+                detected: false
+            };
+
+            logEvent('🤫 Whispers of a ' + plotType + ' plot spread among the discontented nobles of ' + k.name + '.', {
+                type: 'conspiracy_formed', kingdomId: kId
+            }, category);
+        }
+    }
+
+    function _attemptConspiracyPlot(k, conspiracy) {
+        var rng = world.rng;
+        var kId = k.id;
+        var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId;
+        var category = isPlayerK ? 'my_kingdom' : 'foreign_kingdoms';
+        var kingPerson = findPerson(k.king);
+        var kingName = kingPerson ? (kingPerson.firstName + ' ' + (kingPerson.lastName || '')) : 'The King';
+
+        if (conspiracy.type === 'assassination') {
+            if (rng.chance(0.40)) {
+                // Assassination succeeds
+                logEvent('💀 ' + kingName.trim() + ' of ' + k.name + ' has been assassinated by conspirators!', {
+                    type: 'king_assassinated', kingdomId: kId,
+                    cause: 'A conspiracy of disloyal nobles carried out an assassination',
+                    effects: ['The king is dead', 'Succession is triggered', 'The kingdom is thrown into chaos']
+                }, category);
+                if (kingPerson && kingPerson.alive) {
+                    killPerson(kingPerson, 'assassination');
+                }
+                handleKingDeath(k, 'assassination');
+                k._conspiracy = null;
+            } else {
+                // Assassination fails
+                _conspiracyFails(k, conspiracy, category);
+            }
+        } else if (conspiracy.type === 'coup') {
+            // Coup success depends on plotters' combined military support vs king's garrison
+            var plotterSupport = conspiracy.plotters.length * 20;
+            var garrison = k.soldiers || 0;
+            var coupChance = plotterSupport > garrison ? 0.50 : 0.20;
+
+            if (rng.chance(coupChance)) {
+                // Coup succeeds — find leader (highest ambition)
+                var leader = null;
+                var highestAmbition = -1;
+                for (var ci = 0; ci < conspiracy.plotters.length; ci++) {
+                    var cp = findPerson(conspiracy.plotters[ci]);
+                    if (cp && cp.alive) {
+                        var amb = (cp.personality ? cp.personality.ambition : 50) || 50;
+                        if (amb > highestAmbition) {
+                            highestAmbition = amb;
+                            leader = cp;
+                        }
+                    }
+                }
+
+                logEvent('⚔️ A coup in ' + k.name + '! ' + kingName.trim() + ' has been overthrown!', {
+                    type: 'coup_success', kingdomId: kId,
+                    cause: 'Disloyal nobles staged a successful coup',
+                    effects: ['The king is deposed', 'A new ruler takes the throne']
+                }, category);
+
+                // Depose old king
+                if (kingPerson && kingPerson.alive) {
+                    if (kingPerson.socialRank) kingPerson.socialRank[kId] = 4;
+                    kingPerson.occupation = 'noble';
+                    kingPerson.kingLoyalty = 10;
+                }
+
+                // Install new king
+                if (leader) {
+                    leader.socialRank[kId] = 7;
+                    leader.occupation = leader.sex === 'F' ? 'reigning_queen' : 'king';
+                    k.king = leader.id;
+                    leader.kingLoyalty = 100;
+                    logEvent('👑 ' + (leader.firstName || 'The new ruler') + ' ' + (leader.lastName || '') + ' seizes the throne of ' + k.name + '!', {
+                        type: 'new_king_coup', kingdomId: kId
+                    }, category);
+                }
+
+                k._conspiracy = null;
+            } else {
+                // Coup fails
+                _conspiracyFails(k, conspiracy, category);
+            }
+        }
+    }
+
+    function _conspiracyFails(k, conspiracy, category) {
+        var rng = world.rng;
+        logEvent('⚔️ A ' + conspiracy.type + ' attempt in ' + k.name + ' has failed! The plotters are being rounded up.', {
+            type: 'conspiracy_failed', kingdomId: k.id,
+            cause: 'The conspiracy attempted their plot but failed',
+            effects: ['Plotters are arrested or killed', 'The kingdom is shaken']
+        }, category);
+
+        for (var fi = 0; fi < conspiracy.plotters.length; fi++) {
+            var fp = findPerson(conspiracy.plotters[fi]);
+            if (fp && fp.alive && conspiracy.plotters[fi] !== 'player') {
+                if (rng.chance(0.40)) {
+                    killPerson(fp, 'executed');
+                    logEvent('⚔️ ' + (fp.firstName || 'A conspirator') + ' was executed for treason in ' + k.name + '.', {
+                        type: 'conspiracy_execution', kingdomId: k.id
+                    }, category);
+                } else {
+                    fp._arrested = true;
+                    fp.kingLoyalty = Math.min(100, (fp.kingLoyalty || 0) + 30);
+                }
+            }
+        }
+        k._conspiracy = null;
+    }
+
+    // ========================================================
+    // §19d KING UNREST RESPONSE
+    // ========================================================
+
+    function tickKingUnrestResponse(k) {
+        if (!k || world.day % 30 !== 0) return;
+        if (!k.king) return;
+        var rng = world.rng;
+        var kId = k.id;
+        var happiness = k.happiness || 50;
+
+        if (happiness >= 35) return;
+        if (k._lastUnrestResponseDay && (world.day - k._lastUnrestResponseDay) < 60) return;
+
+        var kingPerson = findPerson(k.king);
+        if (!kingPerson) return;
+        var personality = kingPerson.personality || {};
+        var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId;
+        var category = isPlayerK ? 'my_kingdom' : 'foreign_kingdoms';
+        var kingName = kingPerson.firstName || 'The King';
+
+        k._lastUnrestResponseDay = world.day;
+
+        // Determine king's response type based on personality
+        if (happiness < 20) {
+            // Emergency measures
+            if (personality.warmth > 60) {
+                // Emergency food distribution
+                logEvent('🚨 ' + kingName + ' of ' + k.name + ' orders emergency food distribution to quell unrest!', {
+                    type: 'king_unrest_response', kingdomId: kId,
+                    cause: 'Kingdom happiness critically low (' + Math.round(happiness) + '%)',
+                    effects: ['Emergency food distributed', 'Gold spent from treasury']
+                }, category);
+                k.gold = Math.max(0, (k.gold || 0) - 100);
+                k.happiness = Math.min(100, happiness + 5);
+            } else if (personality.ambition > 60 || personality.warmth < 30) {
+                // Martial law
+                logEvent('⚔️ ' + kingName + ' of ' + k.name + ' declares martial law!', {
+                    type: 'king_unrest_response', kingdomId: kId,
+                    cause: 'Kingdom happiness critically low (' + Math.round(happiness) + '%)',
+                    effects: ['Garrison effect doubled', 'Happiness decreased further', 'Dissent suppressed']
+                }, category);
+                k._martialLaw = true;
+                k._martialLawUntil = world.day + 60;
+                k.happiness = Math.max(0, happiness - 10);
+            } else {
+                // Release prisoners / seek reconciliation
+                logEvent('🕊️ ' + kingName + ' of ' + k.name + ' releases political prisoners and seeks reconciliation.', {
+                    type: 'king_unrest_response', kingdomId: kId,
+                    cause: 'Kingdom happiness critically low (' + Math.round(happiness) + '%)',
+                    effects: ['Prisoners released', 'Some goodwill restored']
+                }, category);
+                k.happiness = Math.min(100, happiness + 3);
+                // Un-arrest any arrested nobles
+                var nobles = world.people.filter(function(p) {
+                    return p.alive && p._arrested && p.socialRank && p.socialRank[kId] >= 4;
+                });
+                for (var ri = 0; ri < nobles.length; ri++) {
+                    nobles[ri]._arrested = false;
+                }
+            }
+        } else {
+            // happiness < 35 — standard response
+            if (personality.warmth > 60 || personality.honesty > 60) {
+                // Generous/Just king: lower taxes, fund festival
+                var newTaxRate = Math.max(0.01, (k.taxRate || 0.10) - 0.05);
+                logEvent('📜 ' + kingName + ' of ' + k.name + ' lowers taxes to appease the people.', {
+                    type: 'king_unrest_response', kingdomId: kId,
+                    cause: 'Kingdom happiness low (' + Math.round(happiness) + '%)',
+                    effects: ['Tax rate lowered to ' + Math.round(newTaxRate * 100) + '%', 'Festival funded in unhappiest town']
+                }, category);
+                k.taxRate = newTaxRate;
+                // Fund festival in unhappiest town
+                var kTowns = (k.territories || []).map(function(tid) { return findTown(tid); }).filter(Boolean);
+                if (kTowns.length > 0) {
+                    kTowns.sort(function(a, b) { return (a.happiness || 50) - (b.happiness || 50); });
+                    var unhappiestTown = kTowns[0];
+                    unhappiestTown.happiness = Math.min(100, (unhappiestTown.happiness || 50) + 10);
+                    k.gold = Math.max(0, (k.gold || 0) - 50);
+                }
+            } else if (personality.loyalty > 60) {
+                // Militaristic king: increase garrison, impose curfew
+                logEvent('⚔️ ' + kingName + ' of ' + k.name + ' increases garrison and imposes a curfew.', {
+                    type: 'king_unrest_response', kingdomId: kId,
+                    cause: 'Kingdom happiness low (' + Math.round(happiness) + '%)',
+                    effects: ['Garrison strengthened', 'Curfew imposed (-5 happiness short term)']
+                }, category);
+                k.happiness = Math.max(0, happiness - 5);
+                k.gold = Math.max(0, (k.gold || 0) - 30);
+            } else if (personality.intelligence > 60) {
+                // Diplomatic king: seek peace if at war, propose trade
+                if (k.atWar && k.atWar.size > 0) {
+                    logEvent('🕊️ ' + kingName + ' of ' + k.name + ' seeks peace to restore stability.', {
+                        type: 'king_unrest_response', kingdomId: kId,
+                        cause: 'Kingdom happiness low (' + Math.round(happiness) + '%)',
+                        effects: ['King considers peace negotiations', 'Trade agreements sought']
+                    }, category);
+                } else {
+                    logEvent('📜 ' + kingName + ' of ' + k.name + ' proposes new trade agreements to boost prosperity.', {
+                        type: 'king_unrest_response', kingdomId: kId,
+                        cause: 'Kingdom happiness low (' + Math.round(happiness) + '%)',
+                        effects: ['Trade agreements proposed']
+                    }, category);
+                }
+                k.happiness = Math.min(100, happiness + 2);
+            } else {
+                // Greedy king: seize noble wealth, raise taxes
+                var newHighTax = Math.min(0.50, (k.taxRate || 0.10) + 0.05);
+                logEvent('💰 ' + kingName + ' of ' + k.name + ' raises taxes and seizes noble wealth!', {
+                    type: 'king_unrest_response', kingdomId: kId,
+                    cause: 'Kingdom happiness low (' + Math.round(happiness) + '%)',
+                    effects: ['Tax rate raised to ' + Math.round(newHighTax * 100) + '%', 'Noble wealth seized']
+                }, category);
+                k.taxRate = newHighTax;
+                // Seize some noble gold
+                var seizableNobles = world.people.filter(function(p) {
+                    return p.alive && p.socialRank && p.socialRank[kId] >= 4 && p.socialRank[kId] <= 6 && (p.gold || 0) > 50;
+                });
+                for (var si = 0; si < seizableNobles.length; si++) {
+                    var seized = Math.floor((seizableNobles[si].gold || 0) * 0.1);
+                    seizableNobles[si].gold -= seized;
+                    k.gold = (k.gold || 0) + seized;
+                    if (seizableNobles[si].kingLoyalty != null) {
+                        seizableNobles[si].kingLoyalty = Math.max(0, seizableNobles[si].kingLoyalty - 10);
+                    }
+                }
+            }
+        }
+
+        // Clear martial law if expired
+        if (k._martialLaw && k._martialLawUntil && world.day >= k._martialLawUntil) {
+            k._martialLaw = false;
+            k._martialLawUntil = null;
+        }
+    }
+
+    // ========================================================
     // §20 MAIN GENERATE & TICK
     // ========================================================
 
@@ -34214,6 +34995,33 @@
                 }
                 return { success: false, message: noble.firstName + ' refused your persuasion. (-2 relationship)' };
             }
+        },
+
+        // ---- Royal Feast API ----
+        getActiveFeast: function(kingdomId) {
+            var k = findKingdom(kingdomId);
+            return k ? k._activeFeast : null;
+        },
+        doFeastAction: function(kingdomId, actionId) {
+            return doFeastAction(kingdomId, actionId);
+        },
+
+        // ---- Conspiracy API ----
+        getKingdomConspiracy: function(kingdomId) {
+            var k = findKingdom(kingdomId);
+            if (!k || !k._conspiracy) return null;
+            var inConspiracy = k._conspiracy.plotters.indexOf('player') >= 0;
+            var hasSpy = false;
+            try {
+                hasSpy = typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('spy_network');
+            } catch (e) { /* Player not loaded */ }
+            if (!inConspiracy && !hasSpy) return null;
+            return {
+                type: k._conspiracy.type,
+                plotters: k._conspiracy.plotters.length,
+                strength: k._conspiracy.strength,
+                detected: k._conspiracy.detected
+            };
         },
     };
 

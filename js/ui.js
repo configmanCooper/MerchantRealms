@@ -2177,6 +2177,47 @@ window.UI = (function () {
             html += `</div>`;
         }
 
+        // ── Noble/EM Assets (requires noble_assets skill) ──
+        if (isPlayer && Player.hasSkill && Player.hasSkill('noble_assets') && (_npcSR >= 4 || person.isEliteMerchant)) {
+            var _naBuildings = [];
+            try {
+                if (Engine.getNobleBuildings) {
+                    _naBuildings = Engine.getNobleBuildings(person.id);
+                }
+            } catch (e) { /* not implemented yet */ }
+            html += `<div class="detail-section"><h3>🏠 Assets</h3>`;
+            if (_naBuildings.length > 0) {
+                var _bldgByTown = {};
+                for (var _bi = 0; _bi < _naBuildings.length; _bi++) {
+                    var _bInfo = _naBuildings[_bi];
+                    var _tName = _bInfo.townName || 'Unknown';
+                    if (!_bldgByTown[_tName]) _bldgByTown[_tName] = [];
+                    var _bType = _bInfo.building.typeId || _bInfo.building.type || 'building';
+                    var _bDef = typeof BUILDING_TYPES !== 'undefined' ? BUILDING_TYPES[_bType] : null;
+                    var _bName = _bDef ? _bDef.name : _bType;
+                    _bldgByTown[_tName].push(_bName);
+                }
+                for (var _tn in _bldgByTown) {
+                    html += `<div class="detail-row"><span class="label">${_tn}</span>
+                        <span class="value" style="font-size:0.75rem;">${_bldgByTown[_tn].join(', ')}</span></div>`;
+                }
+                html += `<div style="font-size:0.7rem;color:var(--text-muted);margin-top:4px;">${_naBuildings.length} building${_naBuildings.length !== 1 ? 's' : ''} total</div>`;
+            } else {
+                html += `<div style="font-size:0.75rem;color:var(--text-muted);">No known property holdings.</div>`;
+            }
+            // Financial status
+            if (Engine.getNobleFinancialStatus && _npcSR >= 4) {
+                var _nfs = Engine.getNobleFinancialStatus(person.id);
+                if (_nfs) {
+                    var _stressColor = _nfs.stressed ? '#c44e52' : '#55a868';
+                    var _stressLabel = _nfs.stressed ? '💸 Financially Stressed' : '💰 Stable';
+                    html += `<div class="detail-row"><span class="label">Finances</span>
+                        <span class="value" style="color:${_stressColor};font-size:0.8rem;">${_stressLabel}</span></div>`;
+                }
+            }
+            html += `</div>`;
+        }
+
         // ── Needs Bars ──
         if (person.needs) {
             html += `<div class="detail-section"><h3>Needs</h3>`;
@@ -2311,6 +2352,8 @@ window.UI = (function () {
                             var _targetRankName = _aboveRank >= 7 ? 'King' : _aboveRank >= 6 ? 'Royal Advisor' : _aboveRank >= 5 ? 'Lord' : 'Minor Noble';
                             html += `<button class="btn-medieval" onclick="UI.requestSameRankIntro('${person.id}')" title="Ask to be introduced to a ${_targetRankName}" style="font-size:0.75rem;padding:5px 10px;">🤝 Ask for Introduction to ${_targetRankName}</button>`;
                         }
+                        // Loan offer for financially stressed nobles
+                        html += `<button class="btn-medieval" onclick="UI.openNobleLoanDialog('${person.id}')" title="Offer a loan to this noble — indebted nobles are easier to influence" style="font-size:0.75rem;padding:5px 10px;">💰 Offer Loan</button>`;
                     }
                     html += `</div>`;
                 }
@@ -15257,14 +15300,24 @@ window.UI = (function () {
     //  ACHIEVEMENTS DIALOG
     // ═══════════════════════════════════════════════════════════
     let _achCategory = 'trading';
+    let _achTierFilter = 'all';
 
-    function openAchievementsDialog(category) {
+    var _tierBadges = {
+        bronze: { icon: '🥉', color: '#cd7f32', bg: 'rgba(205,127,50,0.15)', border: 'rgba(205,127,50,0.4)', glow: '' },
+        silver: { icon: '🥈', color: '#c0c0c0', bg: 'rgba(192,192,192,0.12)', border: 'rgba(192,192,192,0.35)', glow: '' },
+        gold: { icon: '🥇', color: '#ffd700', bg: 'rgba(255,215,0,0.12)', border: 'rgba(255,215,0,0.4)', glow: '' },
+        platinum: { icon: '💎', color: '#b0e0e6', bg: 'rgba(176,224,230,0.12)', border: 'rgba(176,224,230,0.5)', glow: 'box-shadow:0 0 8px rgba(176,224,230,0.4);' }
+    };
+
+    function openAchievementsDialog(category, tierFilter) {
         if (category && typeof category === 'string') _achCategory = category;
+        if (tierFilter !== undefined) _achTierFilter = tierFilter;
 
         const playerAch = Player.achievements || {};
         const totalUnlocked = Object.keys(playerAch).length;
         const totalAch = Object.keys(ACHIEVEMENTS).length;
 
+        // Category tabs
         let tabsHtml = '';
         for (const [catId, info] of Object.entries(ACHIEVEMENT_CATEGORIES)) {
             const active = catId === _achCategory ? 'active' : '';
@@ -15275,27 +15328,76 @@ window.UI = (function () {
             </button>`;
         }
 
+        // Tier filter buttons
+        var tierFilterHtml = '<div style="display:flex;gap:4px;margin:6px 0;flex-wrap:wrap;">';
+        var _tierOpts = [
+            { id: 'all', label: 'All' },
+            { id: 'bronze', label: '🥉 Bronze' },
+            { id: 'silver', label: '🥈 Silver' },
+            { id: 'gold', label: '🥇 Gold' },
+            { id: 'platinum', label: '💎 Platinum' }
+        ];
+        for (var _ti = 0; _ti < _tierOpts.length; _ti++) {
+            var _to = _tierOpts[_ti];
+            var _tActive = _achTierFilter === _to.id ? 'background:var(--gold);color:#1a1a2e;' : '';
+            tierFilterHtml += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;' + _tActive + '" onclick="UI.openAchievementsDialog(\'' + _achCategory + '\',\'' + _to.id + '\')">' + _to.label + '</button>';
+        }
+        tierFilterHtml += '</div>';
+
+        // Tier summary counts
+        var _tierCounts = { bronze: { total: 0, unlocked: 0 }, silver: { total: 0, unlocked: 0 }, gold: { total: 0, unlocked: 0 }, platinum: { total: 0, unlocked: 0 } };
+        for (var _aid in ACHIEVEMENTS) {
+            var _aTier = ACHIEVEMENTS[_aid].tier || 'bronze';
+            if (_tierCounts[_aTier]) {
+                _tierCounts[_aTier].total++;
+                if (playerAch[_aid]) _tierCounts[_aTier].unlocked++;
+            }
+        }
+        var tierSummaryHtml = '<div style="display:flex;gap:8px;margin-bottom:6px;font-size:0.75rem;flex-wrap:wrap;">';
+        for (var _ts in _tierCounts) {
+            var _badge = _tierBadges[_ts];
+            tierSummaryHtml += '<span style="color:' + _badge.color + ';">' + _badge.icon + ' ' + _tierCounts[_ts].unlocked + '/' + _tierCounts[_ts].total + '</span>';
+        }
+        tierSummaryHtml += '</div>';
+
         const categoryAchs = [];
         for (const id in ACHIEVEMENTS) {
             if (ACHIEVEMENTS[id].category === _achCategory) {
+                if (_achTierFilter !== 'all' && (ACHIEVEMENTS[id].tier || 'bronze') !== _achTierFilter) continue;
                 categoryAchs.push({ id, ...ACHIEVEMENTS[id] });
             }
         }
+
+        // Sort: platinum first, then gold, silver, bronze; unlocked first within each tier
+        var _tierOrder = { platinum: 0, gold: 1, silver: 2, bronze: 3 };
+        categoryAchs.sort(function(a, b) {
+            var aUnlocked = playerAch[a.id] ? 0 : 1;
+            var bUnlocked = playerAch[b.id] ? 0 : 1;
+            if (aUnlocked !== bUnlocked) return aUnlocked - bUnlocked;
+            var aTier = _tierOrder[a.tier || 'bronze'] || 3;
+            var bTier = _tierOrder[b.tier || 'bronze'] || 3;
+            return aTier - bTier;
+        });
 
         let achHtml = '<div class="achievement-grid">';
         for (const ach of categoryAchs) {
             const isUnlocked = playerAch[ach.id];
             const stateClass = isUnlocked ? 'ach-unlocked' : 'ach-locked';
             const dayText = isUnlocked ? `Day ${isUnlocked.unlockedAt}` : '';
+            var _tb = _tierBadges[ach.tier || 'bronze'] || _tierBadges.bronze;
+            var _tierStyle = 'border-left:3px solid ' + _tb.border + ';background:' + _tb.bg + ';' + (ach.tier === 'platinum' && isUnlocked ? _tb.glow : '');
 
-            achHtml += `<div class="achievement-card ${stateClass}">
+            achHtml += `<div class="achievement-card ${stateClass}" style="${_tierStyle}">
                 <div class="ach-icon">${ach.icon}</div>
                 <div class="ach-info">
-                    <div class="ach-name">${ach.name} ${isUnlocked ? '✅' : '🔒'}</div>
+                    <div class="ach-name">${_tb.icon} ${ach.name} ${isUnlocked ? '✅' : '🔒'}</div>
                     <div class="ach-desc">${ach.desc}</div>
-                    <div class="ach-xp">+${ach.xp} XP ${dayText ? '• ' + dayText : ''}</div>
+                    <div class="ach-xp" style="color:${_tb.color}">+${ach.xp} XP <span style="font-size:0.65rem;opacity:0.7;">${(ach.tier || 'bronze').toUpperCase()}</span> ${dayText ? '• ' + dayText : ''}</div>
                 </div>
             </div>`;
+        }
+        if (categoryAchs.length === 0) {
+            achHtml += '<div style="text-align:center;color:var(--text-muted);padding:20px;">No achievements in this filter.</div>';
         }
         achHtml += '</div>';
 
@@ -15304,7 +15406,9 @@ window.UI = (function () {
                 <span class="ach-progress">🏆 ${totalUnlocked}/${totalAch} Achievements Unlocked</span>
                 <span class="ach-xp-total">Total XP: ${formatGold(Player.totalXp || 0)}</span>
             </div>
+            ${tierSummaryHtml}
             <div class="skill-tabs">${tabsHtml}</div>
+            ${tierFilterHtml}
             ${achHtml}
         `;
 
@@ -18754,6 +18858,42 @@ window.UI = (function () {
             html += '</div>';
         }
 
+        // ── COUNCIL VOTES ──
+        var _activeVotes = [];
+        try { _activeVotes = Engine.getActiveVotes ? Engine.getActiveVotes() : []; } catch (e) {}
+        if (_activeVotes.length > 0) {
+            html += '<div style="background:rgba(100,50,200,0.1);border:1px solid rgba(150,100,255,0.3);border-radius:8px;padding:10px;margin-bottom:10px;">';
+            html += '<h3 style="margin:0 0 8px 0;font-size:0.9rem;color:#c8a0ff;">🗳️ Active Council Votes (' + _activeVotes.length + ')</h3>';
+            for (var _avi = 0; _avi < _activeVotes.length; _avi++) {
+                var _av = _activeVotes[_avi];
+                var _avDays = Math.max(0, (_av.deadlineDay || 0) - day);
+                html += '<button class="btn-medieval" onclick="UI.openVotingDialog(\'' + _av.id + '\')" style="display:block;width:100%;text-align:left;padding:6px 10px;margin-bottom:4px;font-size:0.78rem;">';
+                html += '📜 ' + (_av.title || 'Decision') + ' <span style="color:#aaa;font-size:0.7rem;">(' + _avDays + 'd left)</span>';
+                html += '</button>';
+            }
+            html += '</div>';
+        }
+
+        // ── ROYAL FEASTS ──
+        var _activeFeast = null;
+        try { _activeFeast = Engine.getActiveFeast ? Engine.getActiveFeast(citizenKingdomId) : null; } catch (e) {}
+        if (_activeFeast) {
+            var _feastDaysLeft = Math.max(0, (_activeFeast.endDay || 0) - day);
+            var _feastTownName = '';
+            try { var _fTown = Engine.findTown(_activeFeast.townId); _feastTownName = _fTown ? _fTown.name : ''; } catch (e) {}
+            var _playerAtFeast = Player.townId === _activeFeast.townId && !Player.traveling;
+            html += '<div style="background:rgba(200,150,50,0.12);border:1px solid rgba(200,150,50,0.3);border-radius:8px;padding:10px;margin-bottom:10px;">';
+            html += '<h3 style="margin:0 0 6px 0;font-size:0.9rem;color:#f0c040;">🎪 Royal Feast</h3>';
+            html += '<div style="font-size:0.78rem;color:#ccc;">A royal feast is being held in <strong>' + _feastTownName + '</strong>!</div>';
+            html += '<div style="font-size:0.72rem;color:#aaa;margin-top:2px;">' + _feastDaysLeft + ' day' + (_feastDaysLeft !== 1 ? 's' : '') + ' remaining • Actions left today: ' + (_activeFeast.playerActionsToday || 0) + '/3</div>';
+            if (_playerAtFeast) {
+                html += '<button class="btn-medieval" onclick="UI.openFeastDialog(\'' + citizenKingdomId + '\')" style="font-size:0.78rem;padding:6px 14px;margin-top:6px;background:rgba(200,150,50,0.3) !important;border-color:rgba(200,150,50,0.5) !important;">🍷 Attend Feast</button>';
+            } else {
+                html += '<div style="font-size:0.72rem;color:#e67e22;margin-top:4px;">📍 You must travel to ' + _feastTownName + ' to attend.</div>';
+            }
+            html += '</div>';
+        }
+
         // ── PRIVILEGES SUMMARY ──
         html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:10px;margin-bottom:10px;">';
         html += '<h3 style="margin:0 0 8px 0;font-size:0.9rem;color:var(--gold);">🏅 Noble Privileges</h3>';
@@ -18992,6 +19132,288 @@ window.UI = (function () {
     function _switchProposeActionTab(tabId, kingdomId) {
         _proposeActionTab = tabId;
         _nobilityProposeAction(kingdomId);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  NOBLE COUNCIL VOTING DIALOG
+    // ═══════════════════════════════════════════════════════════
+    function openVotingDialog(voteId) {
+        var vote = null;
+        try { vote = Engine.getActiveVote ? Engine.getActiveVote(voteId) : null; } catch (e) {}
+        if (!vote) {
+            toast('No active vote found.', 'warning');
+            return;
+        }
+
+        var kingdom = null;
+        try { kingdom = Engine.getKingdom(vote.kingdomId); } catch (e) {}
+        var kName = kingdom ? kingdom.name : 'Unknown';
+        var daysLeft = Math.max(0, (vote.deadlineDay || 0) - (Engine.getDay ? Engine.getDay() : 0));
+
+        // Vote weight labels
+        var _weightLabels = { 7: '👑 King (×5)', 6: '📜 Royal Advisor (×3)', 5: '⚔️ Lord (×2)', 4: '🏛️ Minor Noble (×1)' };
+        var _weightValues = { 7: 5, 6: 3, 5: 2, 4: 1 };
+
+        // Tally
+        var yesVotes = 0, noVotes = 0, abstainVotes = 0;
+        var voters = vote.voters || [];
+        for (var vi = 0; vi < voters.length; vi++) {
+            var v = voters[vi];
+            var w = _weightValues[v.rank] || 1;
+            if (v.vote === 'yes') yesVotes += w;
+            else if (v.vote === 'no') noVotes += w;
+            else abstainVotes += w;
+        }
+        var totalWeight = yesVotes + noVotes + abstainVotes;
+        var yesPct = totalWeight > 0 ? Math.round(yesVotes / totalWeight * 100) : 0;
+        var noPct = totalWeight > 0 ? Math.round(noVotes / totalWeight * 100) : 0;
+
+        var html = '';
+
+        // Decision description
+        html += '<div style="background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.3);border-radius:8px;padding:12px;margin-bottom:10px;">';
+        html += '<div style="font-size:0.9rem;font-weight:bold;color:var(--gold);">📜 ' + (vote.title || 'Kingdom Decision') + '</div>';
+        html += '<div style="font-size:0.8rem;color:#ccc;margin-top:4px;">' + (vote.description || '') + '</div>';
+        html += '<div style="font-size:0.75rem;color:#aaa;margin-top:6px;">⏱️ ' + daysLeft + ' day' + (daysLeft !== 1 ? 's' : '') + ' remaining • Kingdom: ' + kName + '</div>';
+        html += '</div>';
+
+        // Vote tally bar
+        html += '<div style="margin-bottom:10px;">';
+        html += '<div style="display:flex;justify-content:space-between;font-size:0.78rem;margin-bottom:3px;">';
+        html += '<span style="color:#55a868;">✅ Yes: ' + yesVotes + ' (' + yesPct + '%)</span>';
+        html += '<span style="color:#c44e52;">❌ No: ' + noVotes + ' (' + noPct + '%)</span>';
+        html += '</div>';
+        html += '<div style="height:12px;background:rgba(0,0,0,0.3);border-radius:6px;overflow:hidden;display:flex;">';
+        if (totalWeight > 0) {
+            html += '<div style="width:' + yesPct + '%;background:#55a868;"></div>';
+            html += '<div style="width:' + noPct + '%;background:#c44e52;"></div>';
+            html += '<div style="flex:1;background:rgba(150,150,150,0.3);"></div>';
+        }
+        html += '</div>';
+        html += '<div style="font-size:0.7rem;color:#888;text-align:center;margin-top:2px;">Majority needed to pass (' + Math.ceil(totalWeight / 2 + 0.1) + '+ weighted votes)</div>';
+        html += '</div>';
+
+        // Voter list
+        html += '<div style="max-height:300px;overflow-y:auto;margin-bottom:10px;">';
+        for (var vi2 = 0; vi2 < voters.length; vi2++) {
+            var voter = voters[vi2];
+            var person = null;
+            try { person = Engine.getPerson(voter.id); } catch (e) {}
+            var name = person ? (person.firstName + ' ' + person.lastName) : 'Unknown';
+            var rankLabel = _weightLabels[voter.rank] || 'Noble';
+            var weight = _weightValues[voter.rank] || 1;
+            var voteIcon = voter.vote === 'yes' ? '✅' : voter.vote === 'no' ? '❌' : '⏳';
+            var voteColor = voter.vote === 'yes' ? '#55a868' : voter.vote === 'no' ? '#c44e52' : '#888';
+            var isPlayer = voter.isPlayer;
+            var borderStyle = isPlayer ? 'border:2px solid var(--gold);' : 'border:1px solid rgba(255,255,255,0.08);';
+
+            html += '<div style="background:rgba(0,0,0,0.2);' + borderStyle + 'border-radius:6px;padding:8px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;">';
+            html += '<div>';
+            html += '<div style="font-size:0.82rem;color:#eee;">' + (isPlayer ? '⭐ ' : '') + name + '</div>';
+            html += '<div style="font-size:0.68rem;color:#999;">' + rankLabel + ' (×' + weight + ')</div>';
+            html += '</div>';
+            html += '<div style="display:flex;align-items:center;gap:6px;">';
+
+            if (isPlayer && daysLeft > 0) {
+                // Player can change their vote
+                html += '<button class="btn-medieval" onclick="(function(){Engine.castVote(\'' + voteId + '\',\'yes\');UI.openVotingDialog(\'' + voteId + '\');})()" style="font-size:0.7rem;padding:3px 8px;' + (voter.vote === 'yes' ? 'background:rgba(85,168,104,0.3);border-color:#55a868;' : '') + '">✅ Yes</button>';
+                html += '<button class="btn-medieval" onclick="(function(){Engine.castVote(\'' + voteId + '\',\'no\');UI.openVotingDialog(\'' + voteId + '\');})()" style="font-size:0.7rem;padding:3px 8px;' + (voter.vote === 'no' ? 'background:rgba(196,78,82,0.3);border-color:#c44e52;' : '') + '">❌ No</button>';
+            } else {
+                html += '<span style="font-size:0.85rem;color:' + voteColor + ';">' + voteIcon + ' ' + (voter.vote || 'Undecided') + '</span>';
+            }
+
+            // Influence button (if player has high enough relationship and is a noble)
+            if (!isPlayer && daysLeft > 0) {
+                var rel = 0;
+                try { if (Player.getRelationship) { var _r = Player.getRelationship(voter.id); rel = _r ? _r.level : 0; } } catch (e) {}
+                var canInfluence = rel >= 50;
+                if (canInfluence) {
+                    html += '<button class="btn-medieval" onclick="(function(){UI._tryInfluenceVote(\'' + voteId + '\',\'' + voter.id + '\');})()" style="font-size:0.65rem;padding:2px 6px;" title="Attempt to persuade (requires relationship 50+)">🗣️</button>';
+                }
+            }
+            html += '</div></div>';
+        }
+        html += '</div>';
+
+        var footerHtml = '<button class="btn-medieval" onclick="UI.closeModal();UI.openNobilityDialog();">Back to Nobility</button>';
+        openModal('🗳️ Council Vote — ' + (vote.title || 'Decision'), html, footerHtml);
+    }
+
+    function _tryInfluenceVote(voteId, noblegId) {
+        var result = null;
+        try { result = Engine.influenceVote ? Engine.influenceVote(voteId, noblegId) : null; } catch (e) {}
+        if (result && result.success) {
+            toast('🗣️ ' + result.message, 'success');
+        } else {
+            toast('❌ ' + (result ? result.message : 'Could not influence this noble.'), 'warning');
+        }
+        openVotingDialog(voteId);
+    }
+
+    function openActiveVotesDialog() {
+        var votes = [];
+        try { votes = Engine.getActiveVotes ? Engine.getActiveVotes() : []; } catch (e) {}
+        if (votes.length === 0) {
+            toast('No active council votes.', 'info');
+            return;
+        }
+
+        var html = '<div style="font-size:0.8rem;color:#ccc;margin-bottom:10px;">Active kingdom council votes requiring noble input:</div>';
+        for (var i = 0; i < votes.length; i++) {
+            var v = votes[i];
+            var kName = '';
+            try { var k = Engine.getKingdom(v.kingdomId); kName = k ? k.name : ''; } catch (e) {}
+            var daysLeft = Math.max(0, (v.deadlineDay || 0) - (Engine.getDay ? Engine.getDay() : 0));
+            html += '<button class="btn-medieval" onclick="UI.openVotingDialog(\'' + v.id + '\')" style="display:block;width:100%;text-align:left;padding:8px 12px;margin-bottom:6px;">';
+            html += '<div style="font-size:0.82rem;font-weight:bold;">' + (v.title || 'Decision') + '</div>';
+            html += '<div style="font-size:0.72rem;color:#aaa;">' + kName + ' • ' + daysLeft + ' day' + (daysLeft !== 1 ? 's' : '') + ' left</div>';
+            html += '</button>';
+        }
+        openModal('🗳️ Active Council Votes', html, '<button class="btn-medieval" onclick="UI.closeModal();">Close</button>');
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  ROYAL FEAST DIALOG
+    // ═══════════════════════════════════════════════════════════
+    function openFeastDialog(kingdomId) {
+        var feast = null;
+        try { feast = Engine.getActiveFeast ? Engine.getActiveFeast(kingdomId) : null; } catch (e) {}
+        if (!feast) {
+            toast('No active feast in this kingdom.', 'info');
+            return;
+        }
+
+        var day = 0;
+        try { day = Engine.getDay(); } catch (e) {}
+        var daysLeft = Math.max(0, (feast.endDay || 0) - day);
+        var actionsLeft = 3 - (feast._playerActionsToday || 0);
+        var feastTown = '';
+        try { var ft = Engine.findTown(feast.townId); feastTown = ft ? ft.name : ''; } catch (e) {}
+
+        var html = '';
+
+        // Feast header
+        html += '<div style="background:linear-gradient(135deg,rgba(200,150,50,0.15),rgba(200,150,50,0.05));border:1px solid rgba(200,150,50,0.3);border-radius:8px;padding:12px;margin-bottom:10px;">';
+        html += '<div style="font-size:0.9rem;font-weight:bold;color:#f0c040;">🎪 Royal Feast in ' + feastTown + '</div>';
+        html += '<div style="font-size:0.78rem;color:#ccc;margin-top:4px;">' + daysLeft + ' day' + (daysLeft !== 1 ? 's' : '') + ' remaining • ' + actionsLeft + ' action' + (actionsLeft !== 1 ? 's' : '') + ' left today</div>';
+        html += '</div>';
+
+        // Attending nobles
+        var attendees = feast.attendees || [];
+        if (attendees.length > 0) {
+            html += '<div style="margin-bottom:10px;">';
+            html += '<div style="font-size:0.82rem;font-weight:bold;color:#ddd;margin-bottom:6px;">👥 Attendees (' + attendees.length + ')</div>';
+            html += '<div style="max-height:150px;overflow-y:auto;display:flex;flex-wrap:wrap;gap:4px;">';
+            for (var ai = 0; ai < attendees.length; ai++) {
+                var att = null;
+                try { att = Engine.getPerson(attendees[ai]); } catch (e) {}
+                if (!att) continue;
+                var attRank = 0;
+                if (att.socialRank) for (var _rk in att.socialRank) { if (att.socialRank[_rk] > attRank) attRank = att.socialRank[_rk]; }
+                var rankIcon = attRank >= 7 ? '👑' : attRank >= 6 ? '📜' : attRank >= 5 ? '⚔️' : '🏛️';
+                html += '<span style="font-size:0.72rem;padding:3px 8px;border-radius:4px;background:rgba(200,150,50,0.1);border:1px solid rgba(200,150,50,0.2);cursor:pointer;" onclick="UI.showPersonDetail(Engine.getPerson(\'' + att.id + '\'))">' + rankIcon + ' ' + att.firstName + ' ' + att.lastName + '</span>';
+            }
+            html += '</div></div>';
+        }
+
+        // Feast actions
+        var feastActions = [
+            { id: 'mingle', icon: '🤝', name: 'Mingle & Socialize', desc: 'Build relationships with attending nobles (+3-8 relationship with random attendee)', category: 'social' },
+            { id: 'toast_king', icon: '🥂', name: 'Toast the King', desc: 'Publicly toast the king to gain favor (+2 king relationship, +1 kingdom rep)', category: 'social' },
+            { id: 'private_chat', icon: '💬', name: 'Private Conversation', desc: 'Pull a noble aside for a deeper conversation (+5-10 relationship, chance to learn secrets)', category: 'social' },
+            { id: 'eavesdrop', icon: '👂', name: 'Eavesdrop', desc: 'Listen in on conversations to learn kingdom secrets or noble plans', category: 'intel' },
+            { id: 'observe_court', icon: '👀', name: 'Observe Court Politics', desc: 'Watch noble interactions to learn about their relationships and loyalties', category: 'intel' },
+            { id: 'spread_rumor', icon: '🗣️', name: 'Spread a Rumor', desc: 'Plant a rumor to damage a noble\'s reputation or influence opinions', category: 'scheme' },
+            { id: 'forge_alliance', icon: '🤝', name: 'Forge Alliance', desc: 'Privately propose an alliance or pact with a noble', category: 'scheme' },
+            { id: 'pit_nobles', icon: '⚔️', name: 'Pit Nobles Against Each Other', desc: 'Subtly cause friction between two nobles (-10 their mutual relationship)', category: 'scheme' }
+        ];
+
+        var categories = [
+            { id: 'social', icon: '🤝', name: 'Social' },
+            { id: 'intel', icon: '🕵️', name: 'Intelligence' },
+            { id: 'scheme', icon: '🎭', name: 'Schemes' }
+        ];
+
+        for (var ci = 0; ci < categories.length; ci++) {
+            var cat = categories[ci];
+            var catActions = feastActions.filter(function(a) { return a.category === cat.id; });
+            html += '<div style="margin-bottom:8px;">';
+            html += '<div style="font-size:0.82rem;font-weight:bold;color:#ddd;margin-bottom:4px;">' + cat.icon + ' ' + cat.name + '</div>';
+            for (var fai = 0; fai < catActions.length; fai++) {
+                var fa = catActions[fai];
+                var disabled = actionsLeft <= 0;
+                html += '<button class="btn-medieval" onclick="(function(){var r=Engine.doFeastAction ? Engine.doFeastAction(\'' + kingdomId + '\',\'' + fa.id + '\') : null;UI.toast(r&&r.message?r.message:\'Action performed.\',r&&r.success?\'success\':\'warning\');UI.openFeastDialog(\'' + kingdomId + '\');})()" style="display:block;width:100%;text-align:left;padding:6px 10px;margin-bottom:3px;font-size:0.75rem;' + (disabled ? 'opacity:0.4;cursor:not-allowed;' : '') + '" ' + (disabled ? 'disabled' : '') + '>';
+                html += fa.icon + ' <strong>' + fa.name + '</strong><br>';
+                html += '<span style="font-size:0.68rem;color:#aaa;">' + fa.desc + '</span>';
+                html += '</button>';
+            }
+            html += '</div>';
+        }
+
+        // Feast events log
+        if (feast.events && feast.events.length > 0) {
+            html += '<div style="margin-top:8px;border-top:1px solid rgba(200,150,50,0.2);padding-top:8px;">';
+            html += '<div style="font-size:0.78rem;font-weight:bold;color:#f0c040;margin-bottom:4px;">📰 Feast Events</div>';
+            html += '<div style="max-height:120px;overflow-y:auto;">';
+            for (var ei = feast.events.length - 1; ei >= Math.max(0, feast.events.length - 8); ei--) {
+                html += '<div style="font-size:0.72rem;color:#bbb;margin-bottom:3px;padding:3px 6px;background:rgba(0,0,0,0.15);border-radius:4px;">' + feast.events[ei] + '</div>';
+            }
+            html += '</div></div>';
+        }
+
+        var footerHtml = '<button class="btn-medieval" onclick="UI.closeModal();UI.openNobilityDialog();">Back</button>';
+        openModal('🎪 Royal Feast', html, footerHtml);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  NOBLE LOAN DIALOG
+    // ═══════════════════════════════════════════════════════════
+    function openNobleLoanDialog(nobleId) {
+        var noble = null;
+        try { noble = Engine.getPerson(nobleId); } catch (e) {}
+        if (!noble) { toast('Noble not found.', 'warning'); return; }
+
+        var playerGold = Player.gold || 0;
+        var stressed = noble._financiallyStressed;
+        var stressLabel = stressed ? '<span style="color:#c44e52;">💸 Financially Stressed</span>' : '<span style="color:#55a868;">💰 Financially Stable</span>';
+
+        var existingLoans = Player.getNobleLoans ? Player.getNobleLoans() : [];
+        var hasLoan = existingLoans.find(function(l) { return l.nobleId === nobleId; });
+
+        var html = '';
+        html += '<div style="font-size:0.82rem;color:#ccc;margin-bottom:10px;">';
+        html += 'Offer a loan to <strong>' + noble.firstName + ' ' + noble.lastName + '</strong>.<br>';
+        html += 'Status: ' + stressLabel + '<br>';
+        html += 'Loans come with 15% interest. Indebted nobles are easier to influence in council votes.';
+        html += '</div>';
+
+        if (hasLoan) {
+            html += '<div style="background:rgba(200,150,50,0.15);border:1px solid rgba(200,150,50,0.3);border-radius:6px;padding:8px;margin-bottom:8px;">';
+            html += '<div style="font-size:0.8rem;color:#f0c040;">📋 Existing Loan: ' + hasLoan.remainingAmount + 'g remaining (of ' + hasLoan.amount + 'g)</div>';
+            html += '</div>';
+        } else {
+            html += '<div style="margin-bottom:10px;">';
+            html += '<label style="font-size:0.78rem;color:#aaa;">Loan Amount (50-2000g):</label><br>';
+            html += '<input type="number" id="loanAmountInput" min="50" max="2000" value="200" style="width:120px;padding:4px 8px;border-radius:4px;border:1px solid #555;background:#1a1a2e;color:#eee;font-size:0.85rem;margin-top:4px;">';
+            html += '<span style="font-size:0.72rem;color:#888;margin-left:8px;">Your gold: ' + Math.floor(playerGold) + 'g</span>';
+            html += '</div>';
+            html += '<button class="btn-medieval" onclick="(function(){var amt=parseInt(document.getElementById(\'loanAmountInput\').value);var r=Player.offerNobleLoan(\'' + nobleId + '\',amt);UI.toast(r.message,r.success?\'success\':\'warning\');if(r.success)UI.closeModal();else UI.openNobleLoanDialog(\'' + nobleId + '\');})()" style="font-size:0.8rem;padding:6px 16px;">💰 Offer Loan</button>';
+        }
+
+        // Show all active loans
+        if (existingLoans.length > 0) {
+            html += '<div style="margin-top:12px;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px;">';
+            html += '<div style="font-size:0.78rem;font-weight:bold;color:#ddd;margin-bottom:4px;">📋 Your Active Loans</div>';
+            for (var li = 0; li < existingLoans.length; li++) {
+                var loan = existingLoans[li];
+                html += '<div style="font-size:0.72rem;color:#bbb;padding:3px 0;">';
+                html += loan.nobleName + ': ' + loan.remainingAmount + 'g remaining (issued day ' + loan.issuedDay + ')';
+                html += '</div>';
+            }
+            html += '</div>';
+        }
+
+        openModal('💰 Noble Loan — ' + noble.firstName, html, '<button class="btn-medieval" onclick="UI.closeModal();">Close</button>');
     }
 
     function openSchemesDialog() {
@@ -20399,6 +20821,14 @@ window.UI = (function () {
     function deliverCommissionUI(kingdomId) {
         var result = Player.deliverKingCommission(kingdomId);
         if (result && result.success) {
+            // Track for platinum achievements
+            if (typeof Player !== 'undefined' && Player.state) {
+                var pt = Player.state._platinumTracking;
+                if (pt) {
+                    pt.commissionsCompleted = (pt.commissionsCompleted || 0) + 1;
+                    pt.commissionGoodsTotal = (pt.commissionGoodsTotal || 0) + (result.quantity || 0);
+                }
+            }
             closeModal();
         }
     }
@@ -24181,6 +24611,14 @@ window.UI = (function () {
         _nobilityProposeLaw,
         _nobilityProposeAction,
         _switchProposeActionTab,
+        // Noble Council Voting
+        openVotingDialog,
+        openActiveVotesDialog,
+        _tryInfluenceVote,
+        // Royal Feast
+        openFeastDialog,
+        // Noble Loans
+        openNobleLoanDialog,
         // Special Start
         openSpecialStartPanel,
         openStartJournal,

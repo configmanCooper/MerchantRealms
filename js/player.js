@@ -628,12 +628,31 @@
         player.loanHistory = [];
         player.tournamentState = null;
         player.tournamentsWon = 0;
+        // Platinum feat tracking
+        player._platinumTracking = {
+            warProfitByKingdom: {},       // { kingdomId: { sold: gold, bought: gold } } — track war profiteering
+            warSupplyByKingdom: {},        // { kingdomId: { weapons: qty, armor: qty, gold: qty } } — arms supply tracking
+            commissionsCompleted: 0,       // count of royal commissions completed
+            commissionGoodsTotal: 0,       // total goods delivered in commissions
+            votesFlipped: 0,              // count of noble votes player flipped
+            voteOutcomesChanged: 0,        // count of votes where player changed outcome
+            kingdomEconomyStart: {},       // { kingdomId: economy } — snapshot at game start
+            feastSchemesSuccess: 0,        // successful feast schemes
+            loansGivenToNobles: 0,         // total loans issued
+            buildingsInKingdoms: {},       // { kingdomId: count } — player buildings per kingdom
+            resourceMonopoly: {},          // { kingdomId: { resourceId: { ownPct, startDay } } }
+            petitionSuccesses: {},         // { typeId: count } — successful petitions by type
+            outpostsPromoted: 0,           // outposts promoted to villages
+            defensePetitions: 0,           // successful defense structure petitions
+        };
         player.pendingSpyFavor = null;
         player.taxExemption = {};
         player.guaranteedPetition = {};
         player.tradeMonopoly = {};
         // Petitions
         player.petitions = [];
+        // Noble loans
+        player._nobleLoans = [];
         // Dynasty marriages & alliances
         player.familyAlliances = [];
         player._marriageProposals = [];
@@ -1209,6 +1228,25 @@
         // Track gold earned per kingdom
         if (kingdom) {
             player.goldEarnedInKingdom[kingdom.id] = (player.goldEarnedInKingdom[kingdom.id] || 0) + totalRevenue;
+        }
+
+        // Platinum tracking: war profiteering
+        if (kingdom && kingdom.atWar && kingdom.atWar.size > 0 && res_check) {
+            if (!player._platinumTracking) player._platinumTracking = {};
+            if (!player._platinumTracking.warProfitByKingdom) player._platinumTracking.warProfitByKingdom = {};
+            if (!player._platinumTracking.warProfitByKingdom[kingdom.id]) player._platinumTracking.warProfitByKingdom[kingdom.id] = { sold: 0, bought: 0 };
+            player._platinumTracking.warProfitByKingdom[kingdom.id].sold += totalRevenue;
+            // Track military supplies sold to warring kingdoms
+            if (res_check.category === 'military') {
+                if (!player._platinumTracking.warSupplyByKingdom) player._platinumTracking.warSupplyByKingdom = {};
+                if (!player._platinumTracking.warSupplyByKingdom[kingdom.id]) player._platinumTracking.warSupplyByKingdom[kingdom.id] = { weapons: 0, armor: 0, gold: 0 };
+                if (resourceId === 'swords' || resourceId === 'bows' || resourceId === 'crossbows' || resourceId === 'pikes' || resourceId === 'halberds') {
+                    player._platinumTracking.warSupplyByKingdom[kingdom.id].weapons += qty;
+                } else if (resourceId === 'armor' || resourceId === 'shields' || resourceId === 'helmets' || resourceId === 'chainmail') {
+                    player._platinumTracking.warSupplyByKingdom[kingdom.id].armor += qty;
+                }
+                player._platinumTracking.warSupplyByKingdom[kingdom.id].gold += totalRevenue;
+            }
         }
 
         // Notoriety for military goods
@@ -17763,6 +17801,9 @@
         // Check for king-directed commissions (Minor Noble+)
         checkKingCommissions();
 
+        // Noble loan repayments (monthly)
+        tickNobleLoans();
+
         // Pay employee wages weekly (workers quit if unpaid too long)
         const day = Engine.getDay();
 
@@ -20589,6 +20630,134 @@
             favorite: fav,
             hated: hated
         };
+    }
+
+    // ── Noble Loan System ──────────────────────────────────────
+
+    function offerNobleLoan(nobleId, amount) {
+        amount = Number(amount);
+        if (!amount || !isFinite(amount) || amount < 50) return { success: false, message: 'Minimum loan amount is 50 gold.' };
+        amount = Math.floor(amount);
+        if (amount > 2000) return { success: false, message: 'Maximum loan amount is 2000 gold.' };
+
+        var noble = Engine.findPerson(nobleId);
+        if (!noble || !noble.alive) return { success: false, message: 'Noble not found.' };
+        if (noble.townId !== player.townId) return { success: false, message: 'Must be in the same town.' };
+
+        // Check noble is actually a noble (rank 4-6)
+        var nobleRank = 0;
+        if (noble.socialRank) {
+            for (var _k in noble.socialRank) {
+                if ((noble.socialRank[_k] || 0) > nobleRank) nobleRank = noble.socialRank[_k];
+            }
+        }
+        if (nobleRank < 4 || nobleRank >= 7) return { success: false, message: 'You can only offer loans to nobles (not the king).' };
+
+        // Noble access check
+        var talkCheck = canTalkTo(nobleId);
+        if (!talkCheck.canTalk) return { success: false, message: talkCheck.reason };
+
+        // Player needs the gold
+        if ((player.gold || 0) < amount) return { success: false, message: 'You don\'t have ' + amount + ' gold.' };
+
+        // Check if noble already has a loan from player
+        if (!player._nobleLoans) player._nobleLoans = [];
+        var existingLoan = player._nobleLoans.find(function(l) { return l.nobleId === nobleId && l.status === 'active'; });
+        if (existingLoan) return { success: false, message: noble.firstName + ' already owes you ' + existingLoan.remainingAmount + ' gold.' };
+
+        // Noble acceptance: financially stressed nobles almost always accept, otherwise based on personality
+        var rel = getRelationship(nobleId);
+        var relLevel = rel ? rel.level : 0;
+        var acceptChance = 0.1; // base 10%
+        if (noble._financiallyStressed) acceptChance += 0.60; // stressed nobles really need it
+        if (relLevel >= 50) acceptChance += 0.15;
+        if (relLevel >= 70) acceptChance += 0.10;
+        if (noble.personality && noble.personality.frugality < 40) acceptChance += 0.10; // spendthrift
+        if (noble.personality && noble.personality.honesty > 60) acceptChance += 0.05; // honest = will repay
+        acceptChance = Math.min(0.95, acceptChance);
+
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(3);
+
+        var rng = Engine.getRng();
+        if (!rng.chance(acceptChance)) {
+            return { success: false, message: noble.firstName + ' declined your loan offer. (' + Math.round(acceptChance * 100) + '% chance)' };
+        }
+
+        // Loan accepted
+        player.gold -= amount;
+        noble.gold = (noble.gold || 0) + amount;
+
+        var day = 0;
+        try { day = Engine.getDay(); } catch (e) {}
+
+        var loan = {
+            id: 'loan_' + day + '_' + Math.random().toString(36).substr(2, 6),
+            nobleId: nobleId,
+            nobleName: noble.firstName + ' ' + noble.lastName,
+            amount: amount,
+            remainingAmount: Math.floor(amount * 1.15), // 15% interest
+            issuedDay: day,
+            lastPaymentDay: day,
+            status: 'active' // active, repaid, defaulted
+        };
+        player._nobleLoans.push(loan);
+
+        // Relationship boost from lending
+        modifyRelationship(nobleId, 8);
+
+        Engine.logEvent('🤝 You loaned ' + amount + 'g to ' + noble.firstName + ' ' + noble.lastName + '. They owe ' + loan.remainingAmount + 'g (15% interest).');
+        return { success: true, message: noble.firstName + ' accepted your loan of ' + amount + 'g! They owe ' + loan.remainingAmount + 'g. Indebted nobles are easier to influence in council votes.' };
+    }
+
+    function getNobleLoans() {
+        return (player._nobleLoans || []).filter(function(l) { return l.status === 'active'; });
+    }
+
+    function tickNobleLoans() {
+        if (!player._nobleLoans || player._nobleLoans.length === 0) return;
+        var day = 0;
+        try { day = Engine.getDay(); } catch (e) {}
+        if (day % 30 !== 0) return; // Monthly check
+
+        for (var i = 0; i < player._nobleLoans.length; i++) {
+            var loan = player._nobleLoans[i];
+            if (loan.status !== 'active') continue;
+
+            var noble = Engine.findPerson(loan.nobleId);
+            if (!noble || !noble.alive) {
+                loan.status = 'defaulted';
+                Engine.logEvent('💀 ' + loan.nobleName + ' died with ' + loan.remainingAmount + 'g owed to you. Loan defaulted.');
+                continue;
+            }
+
+            // Noble tries to pay back 10-25% of remaining per month
+            var payFraction = 0.10;
+            if (noble.personality && noble.personality.honesty > 60) payFraction = 0.20;
+            if (noble.personality && noble.personality.frugality > 60) payFraction = 0.25;
+            if (noble._financiallyStressed) payFraction = 0.05; // can barely pay
+
+            var payment = Math.min(loan.remainingAmount, Math.floor(loan.remainingAmount * payFraction));
+            payment = Math.min(payment, Math.floor(noble.gold * 0.3)); // won't pay more than 30% of their gold
+
+            if (payment > 0) {
+                noble.gold -= payment;
+                player.gold = (player.gold || 0) + payment;
+                loan.remainingAmount -= payment;
+                loan.lastPaymentDay = day;
+
+                if (loan.remainingAmount <= 0) {
+                    loan.status = 'repaid';
+                    Engine.logEvent('✅ ' + loan.nobleName + ' repaid their loan in full!');
+                }
+            }
+
+            // Default after 360 days with no significant payment
+            if (day - loan.issuedDay > 360 && loan.remainingAmount > loan.amount * 0.5) {
+                loan.status = 'defaulted';
+                Engine.logEvent('❌ ' + loan.nobleName + ' defaulted on their loan. ' + loan.remainingAmount + 'g lost.');
+                modifyRelationship(loan.nobleId, -15);
+            }
+        }
     }
 
     // ── Social Interaction System ──────────────────────────────
@@ -24371,6 +24540,69 @@
                 unlockAchievement('rags_to_riches');
             }
         } catch (e) { /* no-op */ }
+
+        // ── New Tiered Achievements ──
+
+        // Bronze: bandit_survivor, burgher_rank, adulthood, first_hundred (gold earned)
+        if (p.age >= 25) unlockAchievement('adulthood');
+        if (citizenRank >= 2) unlockAchievement('burgher_rank');
+        if (p.stats.totalGoldEarned >= 100) unlockAchievement('first_hundred');
+
+        // Silver: escape indentured servitude (social_climber already handled above)
+        // Silver: old_age at 40 already handled
+
+        // Gold: Infrastructure Lobbyist (3 road/sea route petitions approved)
+        var pt = p._platinumTracking || {};
+        var _roadPets = (pt.petitionSuccesses && pt.petitionSuccesses.build_road) || 0;
+        var _seaPets = (pt.petitionSuccesses && pt.petitionSuccesses.build_sea_route) || 0;
+        if (_roadPets + _seaPets >= 3) unlockAchievement('infrastructure_lobbyist');
+
+        // Gold: Road Builder (built a road/sea route yourself)
+        if ((p.roadsBuilt || 0) + (p.seaRoutesBuilt || 0) >= 1) unlockAchievement('road_builder');
+
+        // ── Platinum Achievement Checks ──
+        try {
+            // Royal Commission Hero: completed a commission with 500+ goods
+            if ((pt.commissionGoodsTotal || 0) >= 500) unlockAchievement('royal_commission_hero');
+
+            // Monopoly Baron: own 100% production of 3 resources for 60+ days
+            // (tracked in periodic tick, just check flag here)
+            if (pt._monopolyBaronQualified) unlockAchievement('monopoly_baron');
+
+            // Fortress Builder: 5+ defense petitions approved
+            if ((pt.defensePetitions || 0) >= 5) unlockAchievement('fortress_builder');
+
+            // Architect of Civilization: 3+ outposts promoted to villages
+            if ((pt.outpostsPromoted || 0) >= 3) unlockAchievement('architect_of_civilization');
+
+            // Debt Collector: gave loans to 5+ different nobles
+            var activeLoans = p._nobleLoans ? p._nobleLoans.filter(function(l) { return l.status === 'active' || l.status === 'repaid'; }) : [];
+            var uniqueDebtors = {};
+            for (var _dli = 0; _dli < activeLoans.length; _dli++) uniqueDebtors[activeLoans[_dli].nobleId] = true;
+            if (Object.keys(uniqueDebtors).length >= 5) unlockAchievement('debt_collector');
+
+            // War profiteering platinum checks
+            var warKingdoms = Object.keys(pt.warProfitByKingdom || {});
+            if (warKingdoms.length >= 2) {
+                // War Profiteer Supreme: sold to both sides of a war for 5000+ gold total
+                var totalWarProfit = 0;
+                for (var _wki = 0; _wki < warKingdoms.length; _wki++) {
+                    totalWarProfit += (pt.warProfitByKingdom[warKingdoms[_wki]].sold || 0);
+                }
+                if (totalWarProfit >= 5000) unlockAchievement('war_profiteer_supreme');
+            }
+
+            // Arms supply checks
+            var supplyKingdoms = Object.keys(pt.warSupplyByKingdom || {});
+            for (var _ski = 0; _ski < supplyKingdoms.length; _ski++) {
+                var _sup = pt.warSupplyByKingdom[supplyKingdoms[_ski]];
+                if ((_sup.weapons || 0) + (_sup.armor || 0) >= 200) {
+                    unlockAchievement('arms_embargo_breaker');
+                    break;
+                }
+            }
+
+        } catch (e) { /* no-op */ }
     }
 
     // ========================================================
@@ -27113,6 +27345,22 @@
             }
         }
 
+        // Validate outpost promotion petition
+        if (typeId === 'promote_outpost' && targetData) {
+            var _outpostTown = Engine.findTown(targetData.townId);
+            if (!_outpostTown) return { success: false, message: 'Town not found.' };
+            if (_outpostTown.category !== 'outpost') return { success: false, message: _outpostTown.name + ' is already a ' + (_outpostTown.category || 'town') + ', not an outpost.' };
+            if ((_outpostTown.population || 0) < 20) return { success: false, message: _outpostTown.name + ' only has ' + (_outpostTown.population || 0) + ' residents. An outpost needs at least 20 people to qualify for village status.' };
+            if (_outpostTown.kingdomId !== player.citizenshipKingdomId) return { success: false, message: _outpostTown.name + ' belongs to another kingdom.' };
+        }
+
+        // Validate defense structure petition
+        if (typeId === 'build_defense' && targetData) {
+            var _defTown = Engine.findTown(targetData.townId);
+            if (!_defTown) return { success: false, message: 'Town not found.' };
+            if (_defTown.kingdomId !== player.citizenshipKingdomId) return { success: false, message: _defTown.name + ' belongs to another kingdom.' };
+        }
+
         const petition = {
             id: 'pet_' + (_nextPetitionId++),
             typeId: typeId,
@@ -27473,6 +27721,13 @@
             executePetitionAction(petition);
             var xpReward = 30 + Math.floor(Math.min(70, estimate.signaturePct * 2));
             grantXP(xpReward, 'petition');
+            // Track for platinum achievements
+            if (player._platinumTracking) {
+                if (!player._platinumTracking.petitionSuccesses) player._platinumTracking.petitionSuccesses = {};
+                player._platinumTracking.petitionSuccesses[petition.typeId] = (player._platinumTracking.petitionSuccesses[petition.typeId] || 0) + 1;
+                if (petition.typeId === 'promote_outpost') player._platinumTracking.outpostsPromoted = (player._platinumTracking.outpostsPromoted || 0) + 1;
+                if (petition.typeId === 'build_defense') player._platinumTracking.defensePetitions = (player._platinumTracking.defensePetitions || 0) + 1;
+            }
             Engine.logEvent('📜 Your petition for ' + (pType ? pType.name : petition.typeId) + ' was APPROVED by the king! 🎉');
             return { success: true, approved: true, chance: estimate.chance, message: 'The king approved your petition! ' + (pType ? pType.name : '') + ' will be carried out.' };
         } else {
@@ -27698,6 +27953,39 @@
                         Engine.logEvent('⚓ The kingdom established a sea route between ' + (td.fromName || td.fromTownId) + ' and ' + (td.toName || td.toTownId) + '!');
                     } else {
                         Engine.logEvent('⚓ The king tried to establish a sea route but ' + (result ? result.message : 'it was not possible') + '.');
+                    }
+                }
+                break;
+            }
+            case 'promote_outpost': {
+                if (td.townId) {
+                    var town = Engine.findTown(td.townId);
+                    if (town && town.category === 'outpost' && (town.population || 0) >= 20) {
+                        town.category = 'village';
+                        town.prosperity = Math.min(100, (town.prosperity || 30) + 10);
+                        town.happiness = Math.min(100, (town.happiness || 50) + 10);
+                        Engine.logEvent('🏘️ ' + town.name + ' has been officially promoted from outpost to village by royal decree!');
+                    } else {
+                        Engine.logEvent('📜 The king approved the promotion, but ' + (town ? town.name : 'the outpost') + ' no longer qualifies.');
+                    }
+                }
+                break;
+            }
+            case 'build_defense': {
+                if (td.townId && kingdom) {
+                    var town = Engine.findTown(td.townId);
+                    if (town) {
+                        // Build a defensive structure based on what the town needs
+                        if ((town.walls || 0) < 3) {
+                            town.walls = (town.walls || 0) + 1;
+                            Engine.logEvent('🏰 The kingdom upgraded walls in ' + town.name + ' to level ' + town.walls + '!');
+                        } else {
+                            // Already max walls — build watchtower instead
+                            if (!town.buildings) town.buildings = [];
+                            town.buildings.push({ type: 'watchtower', level: 1, ownerId: petition.kingdomId, active: true, workers: [] });
+                            town.garrison = (town.garrison || 0) + 2;
+                            Engine.logEvent('🏰 A watchtower was built in ' + town.name + ' with 2 additional guards!');
+                        }
                     }
                 }
                 break;
@@ -39963,6 +40251,8 @@
         giveGift,
         getNPCGiftPreferences,
         getKnownGiftPreferences,
+        offerNobleLoan,
+        getNobleLoans,
         interactWithNPC,
         getAvailableInteractions,
         canTalkTo,
