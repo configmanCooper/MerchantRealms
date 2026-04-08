@@ -22743,12 +22743,14 @@ window.UI = (function () {
 
         var html = '<div class="hire-tabs">';
         html += '<button class="btn-tab active" onclick="UI.switchOrdersTab(\'open\')">📋 Open Orders</button>';
+        html += '<button class="btn-tab" onclick="UI.switchOrdersTab(\'sell_crown\')">👑 Sell to Crown</button>';
         html += '<button class="btn-tab" onclick="UI.switchOrdersTab(\'my_orders\')">📦 My Orders</button>';
         html += '<button class="btn-tab" onclick="UI.switchOrdersTab(\'my_deals\')">🤝 My Deals</button>';
         html += '<button class="btn-tab" onclick="UI.switchOrdersTab(\'history\')">📜 History</button>';
         html += '</div>';
 
         html += '<div id="ordersTabOpen">' + buildOpenOrdersTab(kingdomId) + '</div>';
+        html += '<div id="ordersTabSellCrown" style="display:none">' + buildSellToCrownTab(kingdomId) + '</div>';
         html += '<div id="ordersTabMyOrders" style="display:none">' + buildMyOrdersTab(kingdomId) + '</div>';
         html += '<div id="ordersTabMyDeals" style="display:none">' + buildMyDealsTab(kingdomId) + '</div>';
         html += '<div id="ordersTabHistory" style="display:none">' + buildHistoryTab(kingdomId) + '</div>';
@@ -22757,16 +22759,126 @@ window.UI = (function () {
     }
 
     function switchOrdersTab(tab) {
-        var tabs = ['open', 'my_orders', 'my_deals', 'history'];
+        var tabs = ['open', 'sell_crown', 'my_orders', 'my_deals', 'history'];
+        var idMap = { open: 'ordersTabOpen', sell_crown: 'ordersTabSellCrown', my_orders: 'ordersTabMyOrders', my_deals: 'ordersTabMyDeals', history: 'ordersTabHistory' };
         var btns = document.querySelectorAll('.hire-tabs .btn-tab');
         btns.forEach(function(btn, i) { btn.classList.toggle('active', tabs[i] === tab); });
         for (var i = 0; i < tabs.length; i++) {
-            var el = document.getElementById('ordersTab' + capitalize(tabs[i]).replace('_o', 'O').replace('_d', 'D'));
-            if (!el) {
-                var idMap = { open: 'ordersTabOpen', my_orders: 'ordersTabMyOrders', my_deals: 'ordersTabMyDeals', history: 'ordersTabHistory' };
-                el = document.getElementById(idMap[tabs[i]]);
-            }
+            var el = document.getElementById(idMap[tabs[i]]);
             if (el) el.style.display = tabs[i] === tab ? '' : 'none';
+        }
+    }
+
+    // ── Sell to Crown tab — sell goods the kingdom urgently needs ──
+    function buildSellToCrownTab(kingdomId) {
+        var kingdom = Engine.findKingdom(kingdomId);
+        if (!kingdom) return '<div style="padding:12px;color:#aaa;text-align:center;">Kingdom not found.</div>';
+        var proc = kingdom.procurement || {};
+        var needs = proc.needs || {};
+        var needKeys = Object.keys(needs);
+        if (needKeys.length === 0) return '<div style="padding:12px;color:#aaa;text-align:center;">The kingdom has no urgent needs right now.</div>';
+
+        var town = Engine.findTown(Player.townId);
+        var inKingdomTown = town && town.kingdomId === kingdomId;
+        if (!inKingdomTown) return '<div style="padding:12px;color:#e67e22;text-align:center;">⚠️ You must be in a town belonging to this kingdom to sell goods to the crown.</div>';
+
+        var treasury = kingdom.gold || 0;
+        var inv = Player.inventory || {};
+        var townSt = (Player.townStorage && Player.townStorage[Player.townId]) || (Player.state && Player.state.townStorage && Player.state.townStorage[Player.townId]) || {};
+
+        // Build sorted list: items player has first, then others
+        var items = [];
+        for (var ni = 0; ni < needKeys.length; ni++) {
+            var resId = needKeys[ni];
+            var need = needs[resId];
+            if (!need || need.qtyNeeded <= 0) continue;
+            var res = findResource(resId);
+            if (!res) continue;
+            var marketPrice = (town.market && town.market.prices && town.market.prices[resId]) ? town.market.prices[resId] : (res.basePrice || 1);
+            var urgencyMult = 1.0 + (need.urgency / 100) * 0.5;
+            var crownPrice = Math.ceil(marketPrice * urgencyMult);
+            var playerQty = (inv[resId] || 0) + (townSt[resId] || 0);
+            items.push({
+                resId: resId, name: res.name, icon: res.icon || '📦',
+                urgency: need.urgency, qtyNeeded: need.qtyNeeded,
+                marketPrice: marketPrice, crownPrice: crownPrice,
+                multiplier: urgencyMult.toFixed(2),
+                playerQty: playerQty
+            });
+        }
+        // Sort: highest urgency first, player-held items first within same urgency tier
+        items.sort(function(a, b) {
+            var aHas = a.playerQty > 0 ? 1 : 0;
+            var bHas = b.playerQty > 0 ? 1 : 0;
+            if (aHas !== bHas) return bHas - aHas;
+            return b.urgency - a.urgency;
+        });
+
+        var html = '<div style="padding:8px;">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+        html += '<span style="font-size:0.82rem;font-weight:bold;color:#f0d0a0;">👑 Sell Goods to ' + kingdom.name + '</span>';
+        html += '<span style="font-size:0.75rem;color:#aaa;">Treasury: <strong style="color:var(--gold);">' + Math.floor(treasury).toLocaleString() + 'g</strong></span>';
+        html += '</div>';
+        html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:8px;">The crown will buy goods it urgently needs at premium prices. Higher urgency = better price.</div>';
+
+        html += '<div style="max-height:350px;overflow-y:auto;">';
+        for (var i = 0; i < items.length; i++) {
+            var it = items[i];
+            var urgColor = it.urgency >= 60 ? '#e74c3c' : it.urgency >= 30 ? '#e67e22' : '#aaa';
+            var urgLabel = it.urgency >= 60 ? '🔴 Urgent' : it.urgency >= 30 ? '🟡 Needed' : '⚪ Low';
+            var hasGoods = it.playerQty > 0;
+            var borderColor = hasGoods ? 'rgba(200,160,23,0.3)' : 'rgba(255,255,255,0.05)';
+
+            html += '<div style="padding:8px;margin:4px 0;background:rgba(0,0,0,0.2);border-radius:4px;border:1px solid ' + borderColor + ';">';
+            // Header row: item name + urgency badge
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+            html += '<span style="font-size:0.82rem;">' + it.icon + ' <strong>' + it.name + '</strong></span>';
+            html += '<span style="font-size:0.7rem;color:' + urgColor + ';">' + urgLabel + ' (' + it.urgency + ')</span>';
+            html += '</div>';
+            // Price info row
+            html += '<div style="font-size:0.75rem;color:#ccc;margin-top:4px;display:flex;gap:12px;flex-wrap:wrap;">';
+            html += '<span>Crown Price: <strong style="color:var(--gold);">' + it.crownPrice + 'g</strong></span>';
+            html += '<span style="color:#888;">Market: ' + it.marketPrice + 'g</span>';
+            html += '<span style="color:#55a868;">' + it.multiplier + 'x</span>';
+            html += '<span style="color:#888;">Needs: ' + it.qtyNeeded + '</span>';
+            html += '</div>';
+
+            if (hasGoods) {
+                var invQty = inv[it.resId] || 0;
+                var tsQty = townSt[it.resId] || 0;
+                var srcNote = (invQty > 0 && tsQty > 0) ? ' (' + invQty + ' inv + ' + tsQty + ' storage)' : (tsQty > 0 && invQty === 0 ? ' (town storage)' : '');
+                html += '<div style="font-size:0.75rem;color:#7bed9f;margin-top:4px;">You have: <strong>' + it.playerQty + '</strong>' + srcNote + '</div>';
+                html += '<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap;align-items:center;">';
+                var sellQtys = [1, 5, 10, 25, 50];
+                for (var si = 0; si < sellQtys.length; si++) {
+                    if (it.playerQty >= sellQtys[si]) {
+                        html += '<button class="btn-trade sell" style="font-size:0.68rem;padding:2px 8px;" onclick="UI.sellToCrownUI(\'' + kingdomId + '\',\'' + it.resId + '\',' + sellQtys[si] + ',' + it.crownPrice + ')">Sell ' + sellQtys[si] + '</button>';
+                    }
+                }
+                if (it.playerQty > 1) {
+                    html += '<button class="btn-trade sell" style="font-size:0.68rem;padding:2px 8px;" onclick="UI.sellToCrownUI(\'' + kingdomId + '\',\'' + it.resId + '\',' + it.playerQty + ',' + it.crownPrice + ')">Sell All (' + it.playerQty + ')</button>';
+                }
+                html += '</div>';
+            } else {
+                html += '<div style="font-size:0.72rem;color:#666;margin-top:4px;">You don\'t have any to sell.</div>';
+            }
+            html += '</div>';
+        }
+        html += '</div></div>';
+        return html;
+    }
+
+    function sellToCrownUI(kingdomId, resourceId, qty, pricePerUnit) {
+        if (typeof Player === 'undefined' || !Player.sellToKingdom) return;
+        var result = Player.sellToKingdom(kingdomId, resourceId, parseInt(qty), parseInt(pricePerUnit));
+        if (result.success) {
+            toast(result.message, 'success');
+            // Refresh the orders panel to update quantities
+            showKingdomOrdersPanel(kingdomId);
+            // Switch back to the sell_crown tab
+            setTimeout(function() { switchOrdersTab('sell_crown'); }, 50);
+        } else {
+            toast(result.message, 'error');
         }
     }
 
@@ -26236,6 +26348,7 @@ window.UI = (function () {
         // Kingdom Trade
         showKingdomTradePanel,
         sellToKingdomUI,
+        sellToCrownUI,
         // Kingdom Orders & Procurement
         showKingdomOrdersPanel,
         switchOrdersTab,
