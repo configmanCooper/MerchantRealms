@@ -4028,14 +4028,21 @@
         if (!bt) return null;
         const town = Engine.findTown(bld.townId);
 
+        // Determine active product (multi-product buildings store their choice)
+        var activeProduct = bld.currentProduct || bld.productionChoice || bt.produces;
+        var activeRecipe = (bt.availableProducts && bt.availableProducts[activeProduct]) || null;
+        var activeConsumes = activeRecipe ? activeRecipe.consumes : (bt.consumes || {});
+        var activeRate = activeRecipe ? (activeRecipe.rate || bt.rate) : bt.rate;
+
         var effectiveWorkerMax = bt.workers + ((bld.level || 1) - 1);
         // Workers scale production proportionally against base worker count
         var baseWorkers = Math.max(bt.workers, 1);
         const workerFraction = Math.min(bld.workers.length, effectiveWorkerMax) / baseWorkers;
         var missingInputs = [];
         var autoBuyCanCover = true;
-        if (bt.consumes) {
-            for (const [resId, qty] of Object.entries(bt.consumes)) {
+        if (activeConsumes) {
+            for (const resId of Object.keys(activeConsumes)) {
+                var qty = activeConsumes[resId];
                 const bldAvail = (bld.inventory && bld.inventory[resId]) || 0;
                 if (bldAvail < qty) {
                     // Check if auto-buy could cover the gap
@@ -4044,7 +4051,6 @@
                         var mktPrice = (town.market.prices && town.market.prices[resId]) || 5;
                         var needed = qty - bldAvail;
                         if (mktAvail >= needed && player.gold >= Math.floor(needed * mktPrice)) {
-                            // Auto-buy will cover this — don't list as missing
                             continue;
                         }
                     }
@@ -4094,8 +4100,8 @@
         }
         var workerSkillMod = 0.90 + avgWorkerSkill * 0.01;
 
-        const dailyOutput = bt.produces ? Math.round(bt.rate * workerFraction * seasonMod * (1 + ((bld.level || 1) - 1) * 0.10) * prodBonus * workerSkillMod * (player.spouseProdMod || 1.0)) : 0;
-        const stored = (bld.inventory && bt.produces && bld.inventory[bt.produces]) || 0;
+        const dailyOutput = bt.produces ? Math.round(activeRate * workerFraction * seasonMod * (1 + ((bld.level || 1) - 1) * 0.10) * prodBonus * workerSkillMod * (player.spouseProdMod || 1.0)) : 0;
+        const stored = (bld.inventory && activeProduct && bld.inventory[activeProduct]) || 0;
 
         var status = 'idle';
         if (bld._delivering) status = 'delivering';
@@ -4120,8 +4126,8 @@
             conditionEfficiency: condEff,
             prodBonus: prodBonus,
             stored: stored,
-            produces: bt.produces,
-            consumes: bt.consumes || {},
+            produces: activeProduct,
+            consumes: activeConsumes || {},
             autoBuy: bld.autoBuy || false,
             transferTarget: bld.transferTarget || null,
             transferEnabled: bld.transferEnabled || false,
@@ -7333,6 +7339,13 @@
             const bt = Engine.findBuildingType(bld.type);
             if (!bt || !bt.produces) continue;
 
+            // Resolve active product recipe for multi-product buildings
+            var _activeProduct = bld.currentProduct || bld.productionChoice || bt.produces;
+            var _activeRecipe = (bt.availableProducts && bt.availableProducts[_activeProduct]) || null;
+            var _activeConsumes = _activeRecipe ? _activeRecipe.consumes : (bt.consumes || {});
+            var _activeRate = _activeRecipe ? (_activeRecipe.rate || bt.rate) : bt.rate;
+            var _activeProduces = _activeRecipe ? (_activeRecipe.produces || _activeProduct) : bt.produces;
+
             const town = Engine.findTown(bld.townId);
             if (!town) continue;
 
@@ -7350,8 +7363,9 @@
             }
 
             // Auto-buy inputs — stockpile buffer from market INTO building input storage
-            if (bld.autoBuy && bt.consumes) {
-                for (const [resId, qty] of Object.entries(bt.consumes)) {
+            if (bld.autoBuy && _activeConsumes) {
+                for (const resId of Object.keys(_activeConsumes)) {
+                    var qty = _activeConsumes[resId];
                     var _abResObj = findResource(resId);
                     var _abResWeight = _abResObj ? (_abResObj.weight || 1) : 1;
                     // Use smart limiter: considers current stock of ALL inputs, cycle balance, weight
@@ -7384,10 +7398,10 @@
 
             // Check inputs from building inventory ONLY
             let canProduce = true;
-            var _consumes = bt.consumes || {};
-            for (const [resId, qty] of Object.entries(_consumes)) {
+            for (const resId of Object.keys(_activeConsumes)) {
+                var _cQty = _activeConsumes[resId];
                 const bldHas = (bld.inventory && bld.inventory[resId]) || 0;
-                if (bldHas < qty) {
+                if (bldHas < _cQty) {
                     canProduce = false;
                     break;
                 }
@@ -7395,9 +7409,10 @@
             if (!canProduce) continue;
 
             // Consume inputs from building inventory only
-            for (const [resId, qty] of Object.entries(_consumes)) {
+            for (const resId of Object.keys(_activeConsumes)) {
+                var _cQty2 = _activeConsumes[resId];
                 if (bld.inventory && bld.inventory[resId] > 0) {
-                    bld.inventory[resId] -= qty;
+                    bld.inventory[resId] -= _cQty2;
                     if (bld.inventory[resId] <= 0) delete bld.inventory[resId];
                 }
             }
@@ -7407,11 +7422,11 @@
             if (hasSkill('master_foreman')) prodBonus = 1.20;
             else if (hasSkill('foreman')) prodBonus = 1.10;
             // Supply chain expert bonus: if same town has chain components
-            if (hasSkill('supply_chain_expert') && bt.consumes && Object.keys(bt.consumes).length > 0) {
+            if (hasSkill('supply_chain_expert') && _activeConsumes && Object.keys(_activeConsumes).length > 0) {
                 const townPlayerBuildings = player.buildings.filter(b => b.townId === bld.townId && b.active);
                 const townTypes = new Set(townPlayerBuildings.map(b => b.type));
                 // Check if any of the consumed resources are produced by player buildings in same town
-                for (const consumedRes of Object.keys(bt.consumes)) {
+                for (const consumedRes of Object.keys(_activeConsumes)) {
                     for (const key in BUILDING_TYPES) {
                         const btInner = BUILDING_TYPES[key];
                         if (btInner && btInner.produces && btInner.produces === consumedRes && townTypes.has(btInner.id)) {
@@ -7444,7 +7459,7 @@
                 }
             }
 
-            const rawOutput = bt.rate * workerFraction * seasonMod * (1 + ((bld.level || 1) - 1) * 0.10) * prodBonus * workerSkillMod * (player.spouseProdMod || 1.0);
+            const rawOutput = _activeRate * workerFraction * seasonMod * (1 + ((bld.level || 1) - 1) * 0.10) * prodBonus * workerSkillMod * (player.spouseProdMod || 1.0);
             const output = Math.round(rawOutput);
 
             // ═══════════════════════════════════════════════════════════
@@ -7459,10 +7474,10 @@
                     actualOutput = output - tithe;
                     // Transfer actual goods to the kingdom's stockpile
                     if (!bldKingdom.goodsStockpile) bldKingdom.goodsStockpile = {};
-                    var producedGood = bt.produces;
+                    var producedGood = _activeProduces;
                     bldKingdom.goodsStockpile[producedGood] = (bldKingdom.goodsStockpile[producedGood] || 0) + tithe;
                     // Also credit gold value to the crown for economic tracking
-                    var res = findResource(bt.produces);
+                    var res = findResource(_activeProduces);
                     var titheGold = tithe * (res ? res.basePrice : 1);
                     bldKingdom.gold = (bldKingdom.gold || 0) + Math.floor(titheGold * 0.5);
                     // Log periodically (not every day to avoid spam)
@@ -7495,12 +7510,12 @@
                 
                 if (hasTransportGuild || hasTownTransportGuild) {
                     // Instant transfer — Transport Guild handles delivery
-                    _executeTransfer(bld, bt.produces, actualOutput);
+                    _executeTransfer(bld, _activeProduces, actualOutput);
                 } else {
                     // No Transport Guild — accumulate in storage, deliver when full
                     bld._transferBuffer = (bld._transferBuffer || 0) + actualOutput;
                     // Also store in townStorage so it shows up
-                    player.townStorage[bld.townId][bt.produces] = (player.townStorage[bld.townId][bt.produces] || 0) + actualOutput;
+                    player.townStorage[bld.townId][_activeProduces] = (player.townStorage[bld.townId][_activeProduces] || 0) + actualOutput;
                     
                     var buildingStorageCap = bt.storage || 100;
                     if (bld._transferBuffer >= buildingStorageCap) {
@@ -7509,10 +7524,10 @@
                         bld._deliveryDaysLeft = CONFIG.TRANSFER_WORKER_DELIVERY_DAYS || 2;
                         // Remove from townStorage since we're transferring it
                         const transferAmt = bld._transferBuffer;
-                        player.townStorage[bld.townId][bt.produces] = Math.max(0, 
-                            (player.townStorage[bld.townId][bt.produces] || 0) - transferAmt);
-                        if (player.townStorage[bld.townId][bt.produces] <= 0) delete player.townStorage[bld.townId][bt.produces];
-                        _executeTransfer(bld, bt.produces, transferAmt);
+                        player.townStorage[bld.townId][_activeProduces] = Math.max(0, 
+                            (player.townStorage[bld.townId][_activeProduces] || 0) - transferAmt);
+                        if (player.townStorage[bld.townId][_activeProduces] <= 0) delete player.townStorage[bld.townId][_activeProduces];
+                        _executeTransfer(bld, _activeProduces, transferAmt);
                         bld._transferBuffer = 0;
                     }
                 }
@@ -7523,7 +7538,7 @@
                 if (!bld.inventory) bld.inventory = {};
                 // Count all output items by weight against output cap
                 var _oOutSet = {};
-                _oOutSet[bt.produces] = true;
+                _oOutSet[_activeProduces] = true;
                 if (bt.canProduce) { for (var _oi = 0; _oi < bt.canProduce.length; _oi++) _oOutSet[bt.canProduce[_oi]] = true; }
                 var _outputUsedW = 0;
                 for (var _ok2 in bld.inventory) {
@@ -7532,34 +7547,34 @@
                         _outputUsedW += (bld.inventory[_ok2] || 0) * (_or2 ? (_or2.weight || 1) : 1);
                     }
                 }
-                var _outRes = findResource(bt.produces);
+                var _outRes = findResource(_activeProduces);
                 var _outWeight = _outRes ? (_outRes.weight || 1) : 1;
                 var spaceInBld = Math.max(0, Math.floor((bldStorageCap - _outputUsedW) / _outWeight));
 
                 if (spaceInBld >= actualOutput) {
                     // Fits in building storage
-                    bld.inventory[bt.produces] = (bld.inventory[bt.produces] || 0) + actualOutput;
+                    bld.inventory[_activeProduces] = (bld.inventory[_activeProduces] || 0) + actualOutput;
                 } else {
                     // Store what fits
                     if (spaceInBld > 0) {
-                        bld.inventory[bt.produces] = (bld.inventory[bt.produces] || 0) + spaceInBld;
+                        bld.inventory[_activeProduces] = (bld.inventory[_activeProduces] || 0) + spaceInBld;
                     }
                     // Overflow sells directly to market at full market price
                     var overflow = actualOutput - spaceInBld;
                     if (overflow > 0) {
                         var sellTown = Engine.findTown(bld.townId);
                         if (sellTown && sellTown.market) {
-                            var res = findResource(bt.produces);
+                            var res = findResource(_activeProduces);
                             var basePrice = (res && res.basePrice) || 1;
-                            var marketPrice = (sellTown.market.prices && sellTown.market.prices[bt.produces]) || basePrice;
+                            var marketPrice = (sellTown.market.prices && sellTown.market.prices[_activeProduces]) || basePrice;
                             var revenue = Math.floor(overflow * marketPrice);
                             player.gold += revenue;
                             player.stats.totalGoldEarned += revenue;
                             player.stats.totalGoodsSold = (player.stats.totalGoodsSold || 0) + overflow;
                             if (sellTown.market.supply) {
-                                sellTown.market.supply[bt.produces] = (sellTown.market.supply[bt.produces] || 0) + overflow;
+                                sellTown.market.supply[_activeProduces] = (sellTown.market.supply[_activeProduces] || 0) + overflow;
                             }
-                            var _ovResName = res ? res.name : bt.produces;
+                            var _ovResName = res ? res.name : _activeProduces;
                             logFinance(revenue, 'building_sales', 'Sold ' + overflow + ' ' + _ovResName + ' (storage full)');
                             // Track cumulative overflow for periodic notification
                             bld._overflowSold = (bld._overflowSold || 0) + overflow;
@@ -7571,12 +7586,12 @@
                             }
                         } else if (overflow > 0) {
                             // Town missing — give player gold at base price to avoid silent loss
-                            var _fbRes2 = findResource(bt.produces);
+                            var _fbRes2 = findResource(_activeProduces);
                             var _fbPrice2 = (_fbRes2 && _fbRes2.basePrice) || 1;
                             var _fbRev2 = Math.floor(overflow * _fbPrice2);
                             player.gold += _fbRev2;
                             player.stats.totalGoldEarned += _fbRev2;
-                            logFinance(_fbRev2, 'building_sales', 'Sold ' + overflow + ' ' + ((_fbRes2 && _fbRes2.name) || bt.produces) + ' (town missing fallback)');
+                            logFinance(_fbRev2, 'building_sales', 'Sold ' + overflow + ' ' + ((_fbRes2 && _fbRes2.name) || _activeProduces) + ' (town missing fallback)');
                         }
                     }
                 }

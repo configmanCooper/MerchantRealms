@@ -4147,7 +4147,7 @@ window.UI = (function () {
             // Current storage — show capacity from building type (weight-aware)
             var bldStorageCap = Math.floor((bt.storage || 0) * (1 + (((bld.level || 1) - 1) * 0.50)));
             if (bldStorageCap > 0) {
-                var _prodRes = (typeof findResource !== 'undefined') ? findResource(bt.produces) : null;
+                var _prodRes = (typeof findResource !== 'undefined') ? findResource(currentProduct) : null;
                 var _prodWeight = (_prodRes && _prodRes.weight) || 1;
                 var storedWeight = info.stored * _prodWeight;
                 var storagePct = Math.min(100, Math.round((storedWeight / bldStorageCap) * 100));
