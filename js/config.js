@@ -2020,8 +2020,8 @@ const SKILLS = {
     global_trade_intel:  { name: 'Global Trade Intel',  branch: 'commerce',   cost: 8, requires: ['trade_network', 'foreign_intelligence'], desc: 'See current prices in ALL towns across all kingdoms.',                     icon: '🌍' },
     haggler:             { name: 'Haggler',             branch: 'commerce',   cost: 2, requires: [],                              desc: '5% discount when buying goods.',                                           icon: '🤝' },
     master_haggler:      { name: 'Master Haggler',      branch: 'commerce',   cost: 3, requires: ['haggler'],                     desc: '10% discount when buying goods (replaces Haggler).',                       icon: '💰' },
-    silver_tongue:       { name: 'Silver Tongue',       branch: 'commerce',   cost: 2, requires: [],                              desc: '5% bonus when selling goods.',                                             icon: '🗣️' },
-    golden_tongue:       { name: 'Golden Tongue',       branch: 'commerce',   cost: 3, requires: ['silver_tongue'],               desc: '10% bonus when selling goods (replaces Silver Tongue).',                   icon: '👅' },
+    silver_tongue:       { name: 'Silver Tongue',       branch: 'commerce',   cost: 2, requires: [],                              desc: '5% bonus when selling goods. +5% quarantine bribe chance.',                icon: '🗣️' },
+    golden_tongue:       { name: 'Golden Tongue',       branch: 'commerce',   cost: 3, requires: ['silver_tongue'],               desc: '10% bonus when selling goods (replaces Silver Tongue). +5% quarantine bribe chance.', icon: '👅' },
     bulk_trader:         { name: 'Bulk Trader',         branch: 'commerce',   cost: 5, requires: ['master_haggler'],              desc: '25% discount on buy transactions over 5,000 gold.',                        icon: '📦' },
     trade_network_intelligence: { name: 'Trade Network Intel', branch: 'commerce', cost: 3, requires: ['bulk_trader'], desc: 'Your trade network reports on elite merchant activities — major trades, expansion, financial struggles.', icon: '📊' },
     market_manipulator:  { name: 'Market Manipulator',  branch: 'commerce',   cost: 5, requires: ['golden_tongue','master_haggler'], desc: 'Your trades have 2x effect on market prices.',                          icon: '📈' },
@@ -2069,12 +2069,12 @@ const SKILLS = {
     // ── Exploration/Travel Branch (3) ──
     wilderness_survival: { name: 'Wilderness Survival', branch: 'transport', cost: 2, requires: [],                               desc: 'Better rest while traveling (+50%). Foraging gives 50% more food.',         icon: '🏕️' },
     horse_mastery:       { name: 'Horse Mastery',       branch: 'transport',  cost: 3, requires: [],                              desc: '+2 max horses, horses give 25% more carry bonus.',                         icon: '🐎' },
-    cartographer:        { name: 'Cartographer',        branch: 'transport',  cost: 3, requires: ['road_knowledge'],              desc: '5% faster on roads, 50% faster off-road. 25% cheaper to build roads and outposts.', icon: '🗺️' },
+    cartographer:        { name: 'Cartographer',        branch: 'transport',  cost: 3, requires: ['road_knowledge'],              desc: '5% faster on roads, 50% faster off-road. 25% cheaper to build roads and outposts. +10% quarantine sneak chance.', icon: '🗺️' },
     animal_husbandry:    { name: 'Animal Husbandry',    branch: 'survival',   cost: 2, requires: [],                              desc: 'Learned from shepherding. Livestock buildings produce 10% more.',           icon: '🐑' },
 
     // ── Social Branch (9) ──
-    charming:            { name: 'Charming',            branch: 'social',     cost: 2, requires: [],                              desc: 'Relationships build 25% faster.',                                          icon: '😊' },
-    charismatic:         { name: 'Charismatic',         branch: 'social',     cost: 3, requires: ['charming'],                    desc: 'Relationships build 50% faster (replaces Charming).',                      icon: '✨' },
+    charming:            { name: 'Charming',            branch: 'social',     cost: 2, requires: [],                              desc: 'Relationships build 25% faster. +5% quarantine bribe chance.',              icon: '😊' },
+    charismatic:         { name: 'Charismatic',         branch: 'social',     cost: 3, requires: ['charming'],                    desc: 'Relationships build 50% faster (replaces Charming). +5% quarantine bribe chance.', icon: '✨' },
     smooth_talker:       { name: 'Smooth Talker',       branch: 'social',     cost: 2, requires: [],                              desc: 'Relationship decay reduced 50%.',                                          icon: '🎭' },
     romantic:            { name: 'Romantic',            branch: 'social',     cost: 2, requires: ['charming'],                    desc: 'Courtship relationship requirement reduced to 50 (from 60).',               icon: '💕' },
     noble_bearing:       { name: 'Noble Bearing',       branch: 'social',     cost: 3, requires: ['romantic'],                    desc: 'Easier to marry above your social rank.',                                   icon: '👑' },
@@ -2125,9 +2125,9 @@ const SKILLS = {
 
     // ── Underworld Branch (7) ──
     discrete:            { name: 'Discrete',            branch: 'underworld', cost: 2, requires: [],                              desc: 'Smuggling detection reduced by 10%.',                                       icon: '🤫' },
-    master_smuggler:     { name: 'Master Smuggler',     branch: 'underworld', cost: 3, requires: ['discrete'],                    desc: 'Smuggling detection reduced by 20% (replaces Discrete).',                   icon: '🥷' },
-    bribe_expert:        { name: 'Bribe Expert',        branch: 'underworld', cost: 3, requires: ['discrete'],                    desc: 'Can bribe guards to avoid detection (cost: 50g).',                          icon: '💸' },
-    corruption_expert:   { name: 'Corruption Expert',   branch: 'underworld', cost: 4, requires: ['bribe_expert'],                  desc: 'Halves forced requisition bribe cost. Bribe success formula improved.',      icon: '🤑' },
+    master_smuggler:     { name: 'Master Smuggler',     branch: 'underworld', cost: 3, requires: ['discrete'],                    desc: 'Smuggling detection reduced by 20% (replaces Discrete). +5% quarantine sneak chance.', icon: '🥷' },
+    bribe_expert:        { name: 'Bribe Expert',        branch: 'underworld', cost: 3, requires: ['discrete'],                    desc: 'Can bribe guards to avoid detection (cost: 50g). +15% quarantine bribe chance.', icon: '💸' },
+    corruption_expert:   { name: 'Corruption Expert',   branch: 'underworld', cost: 4, requires: ['bribe_expert'],                  desc: 'Halves forced requisition bribe cost. +15% quarantine bribe chance.',         icon: '🤑' },
     black_market_contacts: { name: 'Black Market Contacts', branch: 'underworld', cost: 4, requires: ['master_smuggler'],         desc: 'Black market premium increased to 2x (from 1.5x).',                        icon: '🕶️' },
     contraband_network:  { name: 'Contraband Network',  branch: 'underworld', cost: 5, requires: ['master_smuggler','bribe_expert'], desc: 'Automatically smuggle via caravans.',                                   icon: '🕸️' },
     jail_break:          { name: 'Jail Break',          branch: 'underworld', cost: 2, requires: [],                              desc: 'Jail time reduced 50%.',                                                    icon: '🔓' },
@@ -2138,16 +2138,16 @@ const SKILLS = {
     master_forger:       { name: 'Master Forger',       branch: 'underworld', cost: 3, requires: ['shadow_dealings'],             desc: 'Can create and sell counterfeit goods.',                                    icon: '📝' },
     assassin:            { name: 'Assassin',             branch: 'underworld', cost: 4, requires: ['black_market_contacts'],       desc: 'Can personally assassinate targets. Detection greatly reduced.',             icon: '🗡️' },
     poisoner:            { name: 'Poisoner',            branch: 'underworld', cost: 3, requires: ['black_market_contacts'],       desc: 'Can use poison for assassination. Access to poison goods.',                 icon: '☠️' },
-    silver_tongue_dark:  { name: 'Silver Tongue',       branch: 'underworld', cost: 2, requires: ['bribe_expert'],                desc: 'Bribery success rates increased by 25%.',                                  icon: '😈' },
+    silver_tongue_dark:  { name: 'Silver Tongue',       branch: 'underworld', cost: 2, requires: ['bribe_expert'],                desc: '+10% quarantine bribe chance. Bribery success rates increased by 25%.',     icon: '😈' },
     tunnel_rat:          { name: 'Tunnel Rat',          branch: 'underworld', cost: 4, requires: ['master_smuggler'],             desc: 'Can build smuggling tunnels. Permanent detection reduction.',               icon: '🕳️' },
     arsonist_skill:      { name: 'Arsonist',            branch: 'underworld', cost: 3, requires: ['shadow_dealings'],             desc: 'Arson has 50% less detection chance and destroys more evidence.',           icon: '🔥' },
     kingmaker_skill:     { name: 'Kingmaker',           branch: 'underworld', cost: 5, requires: ['silver_tongue_dark','black_market_contacts'], desc: 'Can attempt to assassinate kings. Political corruption more effective.', icon: '👑' },
     dark_connections:    { name: 'Dark Connections',    branch: 'underworld', cost: 4, requires: ['black_market_contacts'],        desc: 'Access assassination contracts and dark deeds without high notoriety.',     icon: '🌑' },
-    master_disguise:     { name: 'Master Disguise',     branch: 'underworld', cost: 3, requires: ['shadow_dealings'],              desc: '+5% stealth on all covert operations. Harder to identify.',                 icon: '🎭' },
-    shadow_step:         { name: 'Shadow Step',         branch: 'underworld', cost: 3, requires: ['discrete'],                    desc: '+5% stealth bonus. Move unseen through crowds.',                            icon: '👤' },
+    master_disguise:     { name: 'Master Disguise',     branch: 'underworld', cost: 3, requires: ['shadow_dealings'],              desc: '+5% stealth on all covert operations. +5% quarantine sneak chance. Harder to identify.', icon: '🎭' },
+    shadow_step:         { name: 'Shadow Step',         branch: 'underworld', cost: 3, requires: ['discrete'],                    desc: '+5% stealth bonus. +5% quarantine sneak chance. Move unseen through crowds.', icon: '👤' },
     smugglers_run:       { name: 'Smuggler\'s Run',     branch: 'underworld', cost: 3, requires: ['master_smuggler'],             desc: 'Attempt to cross closed borders on land. 40% detection chance.',            icon: '🏃' },
     blockade_runner:     { name: 'Blockade Runner',     branch: 'underworld', cost: 4, requires: ['smugglers_run','discrete'], desc: 'Sail through naval blockades. 35% detection chance. Ship seized if caught.', icon: '🚢' },
-    ghost:               { name: 'Ghost',               branch: 'underworld', cost: 5, requires: ['shadow_dealings','tunnel_rat'],               desc: 'Nearly invisible to guards at night. Detection halved.',                 icon: '👻' },
+    ghost:               { name: 'Ghost',               branch: 'underworld', cost: 5, requires: ['shadow_dealings','tunnel_rat'],               desc: 'Nearly invisible to guards at night. Detection halved. +10% quarantine sneak chance.', icon: '👻' },
 };
 
 const SKILL_BRANCHES = {
