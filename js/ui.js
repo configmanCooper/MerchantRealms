@@ -19008,7 +19008,7 @@ window.UI = (function () {
                 var _reqOnCd = _reqCd > 0;
 
                 html += '<div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">';
-                html += '<select id="streetGoodsRequestSelect" style="padding:5px 8px;border-radius:4px;border:1px solid #6495ed;background:#1a1a2e;color:#e0d8c0;font-size:0.9rem;min-width:180px;">';
+                html += '<select id="streetGoodsRequestSelect" onchange="UI._streetUpdateChancePreview()" style="padding:5px 8px;border-radius:4px;border:1px solid #6495ed;background:#1a1a2e;color:#e0d8c0;font-size:0.9rem;min-width:180px;">';
                 html += '<option value="">-- Select a good --</option>';
                 for (var rgi = 0; rgi < reqGoods.length; rgi++) {
                     var rg = reqGoods[rgi];
@@ -19024,8 +19024,9 @@ window.UI = (function () {
                     html += '📋 Request Good';
                 }
                 html += '</button>';
-                html += '<span style="color:#888;font-size:0.8em;">Base 20% chance (lower for military/banned/horses), improved by skills & local factors. ' + _reqCdDays + ' day cooldown.</span>';
                 html += '</div>';
+                // Chance preview area — populated by onchange
+                html += '<div id="streetRequestChancePreview" style="margin-top:6px;font-size:0.85em;color:#ccc;"></div>';
             } else {
                 html += '<p style="color:#888;margin-top:4px;">All goods are available in the local market.</p>';
             }
@@ -19152,6 +19153,38 @@ window.UI = (function () {
         Player.declineStreetGoodsOffer();
         toast('Offer declined.', 'info');
         openStreetTrading();
+    }
+
+    function _streetUpdateChancePreview() {
+        var preview = document.getElementById('streetRequestChancePreview');
+        if (!preview) return;
+        var sel = document.getElementById('streetGoodsRequestSelect');
+        if (!sel || !sel.value) { preview.innerHTML = ''; return; }
+
+        var info = Player.getStreetRequestChance(sel.value);
+        if (!info) { preview.innerHTML = ''; return; }
+
+        var chanceColor = info.chance >= 30 ? '#55a868' : info.chance >= 15 ? '#e6c422' : '#c44e52';
+        var html = '<div style="background:rgba(100,149,237,0.08);border:1px solid rgba(100,149,237,0.3);border-radius:5px;padding:6px 10px;margin-top:4px;">';
+        html += '<span style="font-weight:bold;color:' + chanceColor + ';font-size:1.05em;">🎯 Chance: ' + info.chance + '%</span>';
+
+        // Breakdown
+        html += '<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px 12px;">';
+        for (var bi = 0; bi < info.breakdown.length; bi++) {
+            var b = info.breakdown[bi];
+            var bColor = b.value >= 0 ? '#55a868' : '#c44e52';
+            html += '<span style="color:' + bColor + ';font-size:0.82em;">' + b.label + ' ' + (b.value >= 0 ? '+' : '') + b.value + '%</span>';
+        }
+        html += '</div>';
+
+        // Skills that could boost
+        if (info.boostSkills.length > 0) {
+            html += '<div style="margin-top:5px;color:#6495ed;font-size:0.8em;">💡 <strong>Skills that increase chance:</strong> ';
+            html += info.boostSkills.join(', ');
+            html += '</div>';
+        }
+        html += '</div>';
+        preview.innerHTML = html;
     }
 
     // ========================================================
@@ -26056,6 +26089,7 @@ window.UI = (function () {
         _streetSubmitRequest,
         _streetAcceptOffer,
         _streetDeclineOffer,
+        _streetUpdateChancePreview,
         chatWithNPC,
         // Dark Deeds / Schemes
         openSchemesDialog,

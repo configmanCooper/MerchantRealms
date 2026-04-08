@@ -26741,6 +26741,79 @@
         return available;
     }
 
+    function getStreetRequestChance(resourceId) {
+        var town = Engine.findTown(player.townId);
+        if (!town) return { chance: 0, breakdown: [], boostSkills: [] };
+        var res = findResource(resourceId);
+        if (!res) return { chance: 0, breakdown: [], boostSkills: [] };
+        var kingdom = Engine.findKingdom(town.kingdomId);
+
+        var chance = 0.20;
+        var breakdown = [{ label: 'Base chance', value: 20 }];
+
+        // Skill bonuses — track which are active and which could help
+        var boostSkills = [];
+        var _skillPairs = [
+            { ids: ['charming', 'charismatic'], bonus: 0.05, name: 'Charming / Charismatic', icon: '😊' },
+            { ids: ['silver_tongue', 'golden_tongue'], bonus: 0.05, name: 'Silver / Golden Tongue', icon: '🗣️' },
+            { ids: ['haggler', 'master_haggler'], bonus: 0.05, name: 'Haggler / Master Haggler', icon: '🤝' },
+            { ids: ['black_market_contacts'], bonus: 0.10, name: 'Black Market Contacts', icon: '🕶️' },
+            { ids: ['cartographer'], bonus: 0.05, name: 'Cartographer', icon: '🗺️' },
+            { ids: ['master_smuggler'], bonus: 0.05, name: 'Master Smuggler', icon: '🥷' }
+        ];
+        for (var si = 0; si < _skillPairs.length; si++) {
+            var sp = _skillPairs[si];
+            var hasIt = false;
+            for (var sj = 0; sj < sp.ids.length; sj++) {
+                if (hasSkill(sp.ids[sj])) { hasIt = true; break; }
+            }
+            if (hasIt) {
+                chance += sp.bonus;
+                breakdown.push({ label: sp.icon + ' ' + sp.name, value: Math.round(sp.bonus * 100) });
+            } else {
+                boostSkills.push(sp.icon + ' ' + sp.name + ' (+' + Math.round(sp.bonus * 100) + '%)');
+            }
+        }
+
+        // Local factors
+        var townPop = (town.population || 100);
+        if (townPop >= 500) { chance += 0.05; breakdown.push({ label: 'Town pop ≥500', value: 5 }); }
+        if (townPop >= 1000) { chance += 0.05; breakdown.push({ label: 'Town pop ≥1000', value: 5 }); }
+        if (kingdom && kingdom.atWar && kingdom.atWar.size > 0) { chance -= 0.05; breakdown.push({ label: '⚔️ Kingdom at war', value: -5 }); }
+        var kingdomRep = kingdom ? (player.reputation[kingdom.id] || 50) : 50;
+        if (kingdomRep >= 70) { chance += 0.05; breakdown.push({ label: 'Kingdom rep ≥70', value: 5 }); }
+        if (kingdomRep >= 85) { chance += 0.03; breakdown.push({ label: 'Kingdom rep ≥85', value: 3 }); }
+
+        chance = Math.max(0.05, Math.min(0.70, chance));
+
+        // Category penalties
+        var _bannedGoods = (kingdom && kingdom.laws && kingdom.laws.bannedGoods) || [];
+        var _restrictedGoods = (kingdom && kingdom.laws && kingdom.laws.restrictedGoods) || [];
+        var _isBannedOrRestricted = _bannedGoods.indexOf(resourceId) >= 0 || _restrictedGoods.indexOf(resourceId) >= 0;
+        if (res.category === 'military') {
+            var _milPen = Math.round(chance * 55);
+            chance *= 0.45;
+            breakdown.push({ label: '⚔️ Military good penalty', value: -_milPen });
+        }
+        if (_isBannedOrRestricted) {
+            var _banPen = Math.round(chance * 60);
+            chance *= 0.40;
+            breakdown.push({ label: '🚫 Banned/restricted penalty', value: -_banPen });
+        }
+        if (resourceId === 'horses') {
+            var _horsePen = Math.round(chance * 25);
+            chance *= 0.75;
+            breakdown.push({ label: '🐴 Horse scarcity', value: -_horsePen });
+        }
+        chance = Math.max(0.03, chance);
+
+        return {
+            chance: Math.round(chance * 100),
+            breakdown: breakdown,
+            boostSkills: boostSkills
+        };
+    }
+
     function submitStreetGoodsRequest(resourceId) {
         if (player.traveling) return { success: false, message: 'Cannot request while traveling.' };
         var town = Engine.findTown(player.townId);
@@ -40952,6 +41025,7 @@
         getStreetContrabandOffers,
         executeStreetContrabandSell,
         getStreetRequestableGoods,
+        getStreetRequestChance,
         submitStreetGoodsRequest,
         acceptStreetGoodsOffer,
         declineStreetGoodsOffer,
