@@ -18665,13 +18665,14 @@
             }
         }
 
-        // Monthly: kingdom reputation decay — above 70 decays -0.1/month, above 90 extra -0.1/month
+        // Monthly: kingdom reputation decay — above 70 decays slowly, faster at higher tiers
         if (Engine.getDay() > 0 && Engine.getDay() % 30 === 0) {
             for (var _dkId in player.reputation) {
                 var _dkRep = player.reputation[_dkId];
                 if (_dkRep > 70) {
-                    var _decay = 0.1;
-                    if (_dkRep > 90) _decay += 0.1;
+                    var _decay = 0.15;
+                    if (_dkRep > 80) _decay += 0.10;
+                    if (_dkRep > 90) _decay += 0.15;
                     player.reputation[_dkId] = Math.max(70, _dkRep - _decay);
                 }
             }
@@ -26713,6 +26714,181 @@
             ? 'Bought ' + offer.qty + ' ' + offer.resourceName + ' for ' + totalPrice + 'g from the black market.'
             : 'Bought ' + offer.qty + ' ' + offer.resourceName + ' for ' + totalPrice + 'g from a street vendor.';
         return { success: true, message: buyMsg };
+    }
+
+    // --- Street Goods Request: player puts in a request for a good not in the local market ---
+    function getStreetRequestableGoods(townId) {
+        var tid = townId || player.townId;
+        var town = Engine.findTown(tid);
+        if (!town) return [];
+        var marketSupply = (town.market && town.market.supply) ? town.market.supply : {};
+        var kingdom = Engine.findKingdom(town.kingdomId);
+        var bannedGoods = (kingdom && kingdom.laws && kingdom.laws.bannedGoods) || [];
+        var available = [];
+        var allResKeys = Object.keys(RESOURCE_TYPES);
+        for (var i = 0; i < allResKeys.length; i++) {
+            var rDef = RESOURCE_TYPES[allResKeys[i]];
+            if (!rDef || !rDef.id) continue;
+            // Exclude quest items, contraband category, banned, and items already in market
+            if (rDef.category === 'quest' || rDef.category === 'contraband') continue;
+            if (bannedGoods.indexOf(rDef.id) >= 0) continue;
+            var supply = marketSupply[rDef.id] || 0;
+            if (supply > 0) continue;
+            available.push({ id: rDef.id, name: rDef.name, icon: rDef.icon || '📦', basePrice: rDef.basePrice, category: rDef.category });
+        }
+        // Sort alphabetically
+        available.sort(function(a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; });
+        return available;
+    }
+
+    function submitStreetGoodsRequest(resourceId) {
+        if (player.traveling) return { success: false, message: 'Cannot request while traveling.' };
+        var town = Engine.findTown(player.townId);
+        if (!town) return { success: false, message: 'Not in a town.' };
+        var rng = Engine.getRng();
+        if (!rng) return { success: false, message: 'RNG error.' };
+
+        // Cooldown: one request every 3 days
+        if (!player._streetGoodsRequests) player._streetGoodsRequests = {};
+        var day = Engine.getDay();
+        if (player._streetGoodsRequestDay && day - player._streetGoodsRequestDay < 3) {
+            var _waitDays = 3 - (day - player._streetGoodsRequestDay);
+            return { success: false, message: 'You already made a request recently. Wait ' + _waitDays + ' more day' + (_waitDays !== 1 ? 's' : '') + '.' };
+        }
+
+        var res = findResource(resourceId);
+        if (!res) return { success: false, message: 'Unknown good.' };
+
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.street_trade || 3);
+        player._streetGoodsRequestDay = day;
+
+        // Base 20% chance of getting an offer
+        var chance = 0.20;
+
+        // Skill bonuses
+        if (hasSkill('charming') || hasSkill('charismatic')) chance += 0.05;
+        if (hasSkill('silver_tongue') || hasSkill('golden_tongue')) chance += 0.05;
+        if (hasSkill('haggler') || hasSkill('master_haggler')) chance += 0.05;
+        if (hasSkill('black_market_contacts')) chance += 0.10;
+        if (hasSkill('cartographer')) chance += 0.05;
+        if (hasSkill('master_smuggler')) chance += 0.05;
+
+        // Local factors: larger towns have more traders
+        var townPop = (town.population || 100);
+        if (townPop >= 500) chance += 0.05;
+        if (townPop >= 1000) chance += 0.05;
+
+        // Kingdom being at war reduces chance (fewer traders)
+        var kingdom = Engine.findKingdom(town.kingdomId);
+        if (kingdom && kingdom.atWar && kingdom.atWar.size > 0) chance -= 0.05;
+
+        // High kingdom reputation helps
+        var kingdomRep = kingdom ? (player.reputation[kingdom.id] || 50) : 50;
+        if (kingdomRep >= 70) chance += 0.05;
+        if (kingdomRep >= 85) chance += 0.03;
+
+        chance = Math.max(0.05, Math.min(0.70, chance));
+
+        // Skill-based discount on offered price
+        var skillDiscount = 0;
+        if (hasSkill('haggler') || hasSkill('master_haggler')) skillDiscount += 0.10;
+        if (hasSkill('silver_tongue') || hasSkill('golden_tongue')) skillDiscount += 0.05;
+        if (hasSkill('charming') || hasSkill('charismatic')) skillDiscount += 0.05;
+        if (hasSkill('black_market_contacts')) skillDiscount += 0.10;
+        if (hasSkill('corruption_expert')) skillDiscount += 0.05;
+        skillDiscount = Math.min(0.30, skillDiscount);
+
+        if (rng.chance(chance)) {
+            // Success — generate an offer
+            var marketPrices = (town.market && town.market.prices) ? town.market.prices : {};
+            var basePrice = marketPrices[resourceId] || res.basePrice || 10;
+
+            // Premium: 1.5x to 6.0x (50% to 500% above market)
+            // Higher basePrices get lower premiums, luxury/military get higher
+            var premMin = 1.5;
+            var premMax = 3.5;
+            if (res.category === 'luxury' || res.category === 'military') { premMin = 2.0; premMax = 5.0; }
+            if (res.category === 'raw' || res.category === 'food') { premMin = 1.5; premMax = 3.0; }
+            if (basePrice > 50) { premMax = Math.max(premMin + 0.5, premMax - 1.0); }
+
+            // Town pop helps lower price slightly
+            if (townPop >= 500) premMax -= 0.2;
+            if (townPop >= 1000) premMax -= 0.2;
+            premMax = Math.max(premMin + 0.3, premMax);
+
+            var premium = rng.randFloat(premMin, premMax);
+            var pricePerUnit = Math.ceil(basePrice * premium * (1 - skillDiscount));
+            var qty = rng.randInt(1, 6);
+
+            // Pick an NPC seller
+            var people = Engine.getPeople(town.id);
+            var npcName = 'A traveling merchant';
+            var npcId = null;
+            if (people && people.length > 0) {
+                var validNpcs = [];
+                for (var pi = 0; pi < people.length; pi++) {
+                    var p = people[pi];
+                    if (p && p.alive && p.occupation !== 'soldier' && p.occupation !== 'guard') validNpcs.push(p);
+                }
+                if (validNpcs.length > 0) {
+                    var picked = validNpcs[rng.randInt(0, validNpcs.length - 1)];
+                    npcName = picked.firstName + ' ' + picked.lastName;
+                    npcId = picked.id;
+                }
+            }
+
+            var premPct = Math.round((premium * (1 - skillDiscount) - 1) * 100);
+
+            // Store the pending offer for the player to accept/decline
+            player._streetGoodsOffer = {
+                resourceId: resourceId,
+                resourceName: res.name,
+                resourceIcon: res.icon || '📦',
+                qty: qty,
+                pricePerUnit: pricePerUnit,
+                marketPrice: basePrice,
+                premiumPct: premPct,
+                npcName: npcName,
+                npcId: npcId,
+                day: day
+            };
+
+            return {
+                success: true,
+                found: true,
+                offer: player._streetGoodsOffer,
+                chanceUsed: Math.round(chance * 100),
+                message: npcName + ' has ' + qty + ' ' + res.name + ' available at ' + pricePerUnit + 'g each (+' + premPct + '% above market).'
+            };
+        } else {
+            player._streetGoodsOffer = null;
+            return {
+                success: true,
+                found: false,
+                chanceUsed: Math.round(chance * 100),
+                message: 'No one in ' + town.name + ' has ' + res.name + ' to sell right now. Try again in a few days.'
+            };
+        }
+    }
+
+    function acceptStreetGoodsOffer() {
+        if (!player._streetGoodsOffer) return { success: false, message: 'No pending offer.' };
+        var offer = player._streetGoodsOffer;
+        var totalPrice = offer.pricePerUnit * offer.qty;
+        if (player.gold < totalPrice) return { success: false, message: 'Not enough gold. Need ' + totalPrice + 'g.' };
+
+        player.gold -= totalPrice;
+        player.stats.totalGoldSpent += totalPrice;
+        player.inventory[offer.resourceId] = (player.inventory[offer.resourceId] || 0) + offer.qty;
+        Engine.logEvent(player.fullName + ' bought ' + offer.qty + ' ' + offer.resourceName + ' from ' + offer.npcName + ' for ' + totalPrice + 'g (street request).');
+        player._streetGoodsOffer = null;
+
+        return { success: true, message: 'Bought ' + offer.qty + ' ' + offer.resourceName + ' for ' + totalPrice + 'g from ' + offer.npcName + '.' };
+    }
+
+    function declineStreetGoodsOffer() {
+        player._streetGoodsOffer = null;
+        return { success: true, message: 'Offer declined.' };
     }
 
     function executeStreetTrade(tradeIndex) {
@@ -40763,6 +40939,12 @@
         executeStreetBuy,
         getStreetContrabandOffers,
         executeStreetContrabandSell,
+        getStreetRequestableGoods,
+        submitStreetGoodsRequest,
+        acceptStreetGoodsOffer,
+        declineStreetGoodsOffer,
+        get _streetGoodsOffer() { return player._streetGoodsOffer || null; },
+        get _streetGoodsRequestDay() { return player._streetGoodsRequestDay || 0; },
 
         // Kingdom Trade
         getKingdomTradeRequests,

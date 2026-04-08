@@ -18973,6 +18973,64 @@ window.UI = (function () {
             }
         }
 
+        // --- Request Specific Goods section ---
+        if (typeof Player !== 'undefined' && Player.getStreetRequestableGoods) {
+            html += '<hr style="border-color:#555;margin:12px 0;">';
+            html += '<div style="background:rgba(100,149,237,0.10);border:1px solid #6495ed;border-radius:8px;padding:10px 14px;">';
+            html += '<p class="street-intro" style="margin-top:0;">📋 <strong>Request Specific Goods</strong> — Put out word that you\'re looking for a good not currently in the market. A merchant may or may not have it.</p>';
+
+            // Show pending offer if one exists
+            if (Player._streetGoodsOffer) {
+                var sgo = Player._streetGoodsOffer;
+                var sgoTotal = sgo.pricePerUnit * sgo.qty;
+                var sgoCanAfford = (Player.gold || 0) >= sgoTotal;
+                html += '<div class="street-trade-item" style="border-left:3px solid #6495ed;background:rgba(100,149,237,0.08);margin:8px 0;">';
+                html += '<div class="street-trade-info">';
+                html += '<span style="color:#6495ed;font-weight:bold;">📬 Pending Offer:</span> ';
+                html += '<span class="street-npc-name">' + sgo.npcName + '</span> has ';
+                html += '<strong>' + sgo.qty + ' ' + (sgo.resourceIcon || '') + ' ' + sgo.resourceName + '</strong>';
+                html += ' — <span class="street-price">' + sgo.pricePerUnit + 'g each</span>';
+                html += ' <span style="color:#e67e22;font-weight:bold;font-size:0.85em;">(+' + sgo.premiumPct + '% above market)</span>';
+                html += '</div>';
+                html += '<div class="street-trade-actions">';
+                html += '<span class="street-have">Total: ' + sgoTotal + 'g</span>';
+                html += '<button class="btn-medieval" style="background:#55a868;color:#fff;padding:4px 12px;margin-right:4px;" ' + (sgoCanAfford ? 'onclick="UI._streetAcceptOffer()"' : 'disabled title="Not enough gold"') + '>✅ Accept</button>';
+                html += '<button class="btn-medieval" style="background:#c44e52;color:#fff;padding:4px 12px;" onclick="UI._streetDeclineOffer()">❌ Decline</button>';
+                html += '</div></div>';
+            }
+
+            // Show dropdown to request
+            var reqGoods = Player.getStreetRequestableGoods();
+            if (reqGoods.length > 0) {
+                // Cooldown check
+                var _reqCd = Player._streetGoodsRequestDay ? (3 - ((typeof Engine !== 'undefined' && Engine.getDay ? Engine.getDay() : 9999) - Player._streetGoodsRequestDay)) : 0;
+                var _reqOnCd = _reqCd > 0;
+
+                html += '<div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">';
+                html += '<select id="streetGoodsRequestSelect" style="padding:5px 8px;border-radius:4px;border:1px solid #6495ed;background:#1a1a2e;color:#e0d8c0;font-size:0.9rem;min-width:180px;">';
+                html += '<option value="">-- Select a good --</option>';
+                for (var rgi = 0; rgi < reqGoods.length; rgi++) {
+                    var rg = reqGoods[rgi];
+                    html += '<option value="' + rg.id + '">' + rg.icon + ' ' + rg.name + ' (base ' + rg.basePrice + 'g)</option>';
+                }
+                html += '</select>';
+                html += '<button class="btn-medieval" style="background:#6495ed;color:#fff;padding:5px 14px;" ';
+                if (_reqOnCd) {
+                    html += 'disabled title="Cooldown: ' + _reqCd + ' day' + (_reqCd !== 1 ? 's' : '') + '">';
+                    html += '⏳ Request (' + _reqCd + 'd cooldown)';
+                } else {
+                    html += 'onclick="UI._streetSubmitRequest()">';
+                    html += '📋 Request Good';
+                }
+                html += '</button>';
+                html += '<span style="color:#888;font-size:0.8em;">Base 20% chance, improved by skills & local factors. 3 day cooldown.</span>';
+                html += '</div>';
+            } else {
+                html += '<p style="color:#888;margin-top:4px;">All goods are available in the local market.</p>';
+            }
+            html += '</div>';
+        }
+
         // Add NPC Chat section for indentured servants seeking escape hints
         if (typeof Player !== 'undefined' && Player.indentured && Player.indentured.active) {
             html += '<hr style="border-color:#555;margin:12px 0;">';
@@ -19064,6 +19122,35 @@ window.UI = (function () {
             toast(result.message, result.caught ? 'error' : 'warning');
             openStreetTrading(); // refresh to update quantities
         }
+    }
+
+    function _streetSubmitRequest() {
+        var sel = document.getElementById('streetGoodsRequestSelect');
+        if (!sel || !sel.value) { toast('Select a good to request.', 'warning'); return; }
+        var result = Player.submitStreetGoodsRequest(sel.value);
+        if (!result.success) { toast(result.message, 'warning'); return; }
+        if (result.found) {
+            toast(result.message, 'success');
+        } else {
+            toast(result.message, 'info');
+        }
+        openStreetTrading(); // refresh to show offer or cooldown
+    }
+
+    function _streetAcceptOffer() {
+        var result = Player.acceptStreetGoodsOffer();
+        if (result.success) {
+            toast(result.message, 'success');
+        } else {
+            toast(result.message, 'warning');
+        }
+        openStreetTrading();
+    }
+
+    function _streetDeclineOffer() {
+        Player.declineStreetGoodsOffer();
+        toast('Offer declined.', 'info');
+        openStreetTrading();
     }
 
     // ========================================================
@@ -25965,6 +26052,9 @@ window.UI = (function () {
         executeStreetTrade: executeStreetTradeUI,
         executeStreetBuyUI,
         executeStreetContrabandSellUI,
+        _streetSubmitRequest,
+        _streetAcceptOffer,
+        _streetDeclineOffer,
         chatWithNPC,
         // Dark Deeds / Schemes
         openSchemesDialog,
