@@ -3115,6 +3115,39 @@
                 else if (_cKp.temperament === 'merciful' || _cKp.temperament === 'kind') kingTemperament = 'merciful';
             }
 
+            // Doctor persuasion option
+            var doctorPersuasion = null;
+            var hasDoctor = hasSkill('doctor');
+            var ownsMedicalHere = false;
+            var ownsMedicalDest = false;
+            if (player.buildings) {
+                for (var _dbi = 0; _dbi < player.buildings.length; _dbi++) {
+                    var _db = player.buildings[_dbi];
+                    if (_db.type === 'clinic' || _db.type === 'hospital') {
+                        if (_db.townId === originTownId) ownsMedicalHere = true;
+                        if (_db.townId === tid) ownsMedicalDest = true;
+                    }
+                }
+            }
+            if (hasDoctor || ownsMedicalHere || ownsMedicalDest) {
+                var _dpChance = 0;
+                var _dpReasons = [];
+                if (hasDoctor) { _dpChance += 0.50; _dpReasons.push('Doctor skill (+50%)'); }
+                if (ownsMedicalHere) { _dpChance += 0.20; _dpReasons.push('Own clinic/hospital in ' + (Engine.findTown(originTownId) || {}).name + ' (+20%)'); }
+                if (ownsMedicalDest) { _dpChance += 0.25; _dpReasons.push('Own clinic/hospital in ' + t.name + ' (+25%)'); }
+                _dpChance = Math.min(0.95, _dpChance);
+                // Cooldown check
+                var _dpCooldownDay = player._doctorPersuasionCooldown || 0;
+                var _dpOnCooldown = (Engine.getDay ? Engine.getDay() : 0) < _dpCooldownDay;
+                var _dpCooldownRemaining = _dpOnCooldown ? (_dpCooldownDay - (Engine.getDay ? Engine.getDay() : 0)) : 0;
+                doctorPersuasion = {
+                    chance: _dpChance,
+                    reasons: _dpReasons,
+                    onCooldown: _dpOnCooldown,
+                    cooldownDays: _dpCooldownRemaining
+                };
+            }
+
             // Ranks allowed through
             var allowedRanks = [];
             allowedRanks.push('Minor Noble or higher (rank 4+)');
@@ -3127,7 +3160,8 @@
                 bribes: bribes, bribeModifiers: bribeModifiers,
                 sneakFine: sneakFine, sneakJailDays: sneakJailDays,
                 bribeFine: bribeFine, bribeJailDays: bribeJailDays,
-                kingTemperament: kingTemperament, isNighttime: isNighttime
+                kingTemperament: kingTemperament, isNighttime: isNighttime,
+                doctorPersuasion: doctorPersuasion
             };
         }
         return null;
@@ -3267,6 +3301,55 @@
             }
         }
         return null;
+    }
+
+    function attemptQuarantineDoctorPersuasion(destTownId) {
+        var originTownId = player.townId;
+        if (!originTownId) return { allowed: false, message: 'Cannot determine location.' };
+
+        var rng = Engine.getRng();
+        var currentDay = Engine.getDay ? Engine.getDay() : 0;
+
+        // Cooldown check
+        if (player._doctorPersuasionCooldown && currentDay < player._doctorPersuasionCooldown) {
+            var remaining = player._doctorPersuasionCooldown - currentDay;
+            return { allowed: false, message: 'You must wait ' + remaining + ' more day' + (remaining > 1 ? 's' : '') + ' before trying to persuade a guard again.' };
+        }
+
+        // Check eligibility: doctor skill or own clinic/hospital
+        var hasDoc = hasSkill('doctor');
+        var ownsMedOrigin = false;
+        var ownsMedDest = false;
+        if (player.buildings) {
+            for (var i = 0; i < player.buildings.length; i++) {
+                var b = player.buildings[i];
+                if (b.type === 'clinic' || b.type === 'hospital') {
+                    if (b.townId === originTownId) ownsMedOrigin = true;
+                    if (b.townId === destTownId) ownsMedDest = true;
+                }
+            }
+        }
+        if (!hasDoc && !ownsMedOrigin && !ownsMedDest) {
+            return { allowed: false, message: 'You need medical credentials to persuade the guard.' };
+        }
+
+        // Calculate chance
+        var chance = 0;
+        if (hasDoc) chance += 0.50;
+        if (ownsMedOrigin) chance += 0.20;
+        if (ownsMedDest) chance += 0.25;
+        chance = Math.min(0.95, chance);
+
+        if (rng.chance(chance)) {
+            Engine.logEvent('⚕️ ' + player.fullName + ' persuaded the quarantine guard to allow passage as a medical professional.');
+            return { allowed: true, message: '⚕️ The guard recognizes your medical expertise and waves you through.' };
+        }
+
+        // Failed — set 7-day cooldown, no other penalty
+        player._doctorPersuasionCooldown = currentDay + 7;
+        Engine.logEvent('⚕️ ' + player.fullName + ' failed to convince the quarantine guard of medical necessity. Must wait 7 days.');
+        if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚕️ The guard isn\'t convinced. Try again in 7 days.', 'warning');
+        return { allowed: false, message: '⚕️ The guard isn\'t convinced of your medical necessity. You can try again in 7 days.' };
     }
 
     /**
@@ -40364,6 +40447,7 @@
         getRouteQuarantineInfo,
         attemptQuarantineSneak,
         attemptQuarantineBribe,
+        attemptQuarantineDoctorPersuasion,
         turnBack,
         stopTravel,
         travelToCoords,

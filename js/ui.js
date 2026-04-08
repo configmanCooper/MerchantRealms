@@ -12413,6 +12413,32 @@ window.UI = (function () {
         }
         html += '</div>';
 
+        // === Doctor Persuasion section ===
+        if (qInfo.doctorPersuasion) {
+            var _dp = qInfo.doctorPersuasion;
+            var _dpPct = Math.round(_dp.chance * 100);
+            html += '<div style="background:rgba(46,204,113,0.08);border:1px solid rgba(46,204,113,0.25);border-radius:6px;padding:10px;margin-bottom:10px;">';
+            html += '<div style="font-size:0.85rem;color:var(--gold);font-weight:bold;margin-bottom:6px;">⚕️ Medical Persuasion</div>';
+            html += '<div style="font-size:0.8rem;color:var(--parchment);margin-bottom:6px;">Convince the guard you need passage for medical reasons. <strong style="color:#55a868;">No penalty if refused</strong> — 7 day cooldown on failure.</div>';
+            if (_dp.reasons && _dp.reasons.length > 0) {
+                html += '<div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;">';
+                for (var _dri = 0; _dri < _dp.reasons.length; _dri++) {
+                    html += '<div>• ' + _dp.reasons[_dri] + '</div>';
+                }
+                html += '</div>';
+            }
+            if (_dp.onCooldown) {
+                html += '<button class="btn-medieval" style="width:100%;padding:8px 10px;font-size:0.85rem;opacity:0.4;cursor:not-allowed;background:rgba(100,100,100,0.2);border-color:rgba(100,100,100,0.3);color:#888;" disabled>';
+                html += '⚕️ <strong>Persuade Guard</strong> — cooldown: ' + _dp.cooldownDays + ' day' + (_dp.cooldownDays > 1 ? 's' : '') + ' remaining';
+                html += '</button>';
+            } else {
+                html += '<button class="btn-medieval" style="width:100%;padding:8px 10px;font-size:0.85rem;background:rgba(46,204,113,0.25);border:2px solid #55a868;color:#f0e6d2;" onclick="UI._quarantineDoctorPersuade(\'' + townId + '\',\'' + optionId + '\')">';
+                html += '⚕️ <strong style="color:#fff;">Persuade Guard</strong> (<span style="color:#55a868;font-weight:bold;font-size:1rem;">' + _dpPct + '%</span>)';
+                html += '</button>';
+            }
+            html += '</div>';
+        }
+
         // === Consequences Warning ===
         html += '<div style="background:rgba(139,69,19,0.12);border:1px solid rgba(139,69,19,0.3);border-radius:6px;padding:8px;margin-bottom:10px;font-size:0.78rem;color:var(--text-muted);">';
         html += '<div style="font-weight:bold;color:var(--gold);margin-bottom:3px;">⚠️ Consequences if Caught</div>';
@@ -12504,6 +12530,49 @@ window.UI = (function () {
             var result = _executeTravelAction(townId, opt);
             if (result && result.success === false) {
                 toast(result.message || 'Travel failed.', 'danger');
+                return;
+            }
+        } catch (e) {
+            toast('Travel error: ' + (e.message || e), 'danger');
+            return;
+        }
+        if (typeof Renderer !== 'undefined') {
+            var town = Engine.getTown(townId);
+            if (town) Renderer.panTo(town.x, town.y);
+        }
+    }
+
+    function _quarantineDoctorPersuade(townId, optionId) {
+        closeModal();
+
+        var result = Player.attemptQuarantineDoctorPersuasion(townId);
+
+        if (result && !result.allowed) {
+            // Failed — toast already shown by player.js, re-open popup after brief delay
+            setTimeout(function() {
+                var qInfo = Player.getRouteQuarantineInfo(townId);
+                if (qInfo && qInfo.blocked) _showQuarantinePopup(townId, optionId, qInfo);
+            }, 1500);
+            return;
+        }
+
+        // Success — proceed with travel
+        var options = _travelOptions || [];
+        var opt = null;
+        for (var i = 0; i < options.length; i++) {
+            if (options[i].id === optionId) { opt = options[i]; break; }
+        }
+        if (!opt || !opt.action) return;
+
+        if (result && result.allowed && result.message) {
+            toast(result.message, 'success', 'travel_events');
+        }
+
+        closeRightPanel();
+        try {
+            var travelResult = _executeTravelAction(townId, opt);
+            if (travelResult && travelResult.success === false) {
+                toast(travelResult.message || 'Travel failed.', 'danger');
                 return;
             }
         } catch (e) {
@@ -25699,6 +25768,7 @@ window.UI = (function () {
         confirmTravel,
         _quarantineSneakAttempt,
         _quarantineBribeAttempt,
+        _quarantineDoctorPersuade,
         showRouteDangerDetail,
         getTransportServices,
         turnBackUI,
