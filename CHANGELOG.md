@@ -20,15 +20,33 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - **Noble Assets Skill**: New 2 SP social skill showing noble/EM building ownership and financial status in NPC panels
 - **New Petition Types**: `promote_outpost` (requires pop ≥ 20) and `build_defense` (walls/watchtowers)
 - **Platinum Achievement Tracking**: War profiteering, arms supply, commission goods, vote manipulation, monopoly detection, petition tracking
+- **War Allegiance Popup**: Established players prompted to choose sides when war breaks out. War advisory section in Character panel
+- **World Analytics Dashboard**: God Mode tool with goods production tab, kingdom relations matrix, and king personality traits
+- **Quarantine Checkpoint System**: Bribery, guard name/personality, skill-based modifiers (medicine, speech, stealth), night-time bonus, doctor persuasion option
+- **Street Trading Enhancements**: Scarce goods buy offers with skill-based discounts, sell contraband option
+- **Street Goods Request**: Request goods not in local market — base 20% chance (boosted by skills), RNG pricing 50-500% above market, quantity 1-10, category penalties for military/banned/horses, 3-day cooldown (1-day with skill), shows calculated chance breakdown on selection
+- **Sell to Crown Tab**: New tab in Kingdom Orders showing goods the kingdom urgently needs. Crown price = market × urgency multiplier (up to 1.5×). Color-coded urgency badges, sell buttons (1/5/10/25/50/All). Disabled when kingdom treasury < 2000g
+- **Smart Building Input Balancer**: All building transfers and auto-buy purchases now use weight-based ratios matching the building's recipe needs. Accounts for existing input storage to maintain balanced ratios
+
+### Changed
+- **Kingdom Reputation Overhaul**: Removed passive +0.1 per trade. Town rep spillover replaced with monthly modifier system (±25 cap, delta-only application prevents stacking). Sell-to-kingdom military war bonus reduced from +2 to +0.1
+- **Kingdom Reputation Decay**: Changed from monthly to weekly (same rates per tick but ~4× more frequent). Decay tiers: 0.15 above 70, +0.10 above 80, +0.15 above 90, floors at 70
+- **Building Storage UI Position**: Moved BUILDING STORAGE section above WORKERS in building detail modal for easier access to withdraw buttons
+- **Sea Caravans**: Can now be dispatched without pre-loaded goods when pickup/buy orders are set (matches land caravan behavior)
 
 ### Fixed
 - Feast action counter in nobility panel used wrong property name (`playerActionsToday` → `_playerActionsToday`)
 - King unrest response crashed using `.map()` on territories Set (now uses `Array.from()`)
 - Added HTML escaping to all dynamic text in voting, feast, loan, and nobility UIs
 - Removed empty Military achievement category (0 achievements)
+- People search stealing keyboard input (WASD/hotkeys) when search box was focused
+- Orphan `reach_rep_40` tooltip reference (replaced by `gain_kingdom_rep`/`gain_town_rep`)
+- **Multi-product buildings ignoring selected recipe**: Both `getBuildingStatus()` and `tickBuildings()` used default recipe (`bt.produces`/`bt.consumes`) instead of player-selected `currentProduct`. All 15 multi-recipe building types now correctly produce the selected product
+- Input-only filter on building detail blocking deposit of consumed goods (e.g., wood to smelter)
 
 ### Removed
 - `first_sale` and `first_purchase` achievements (trivial/redundant)
+- Dead `smuggler` and `streetwise` skill checks from quarantine code
 
 ## [0.60.0] - 2026-04-07
 
