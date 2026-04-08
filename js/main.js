@@ -1248,6 +1248,13 @@ window.Game = (function () {
                 var worldCoords = Renderer.screenToWorld(x, y);
                 if (worldCoords) {
                     var terrain = Engine.getTerrainAtPixel(worldCoords.x, worldCoords.y);
+                    // Outpost placement mode
+                    if (window._outpostPlacementMode && terrain !== 2 && terrain !== 3) {
+                        window._outpostPlacementMode = false;
+                        e.preventDefault();
+                        UI.confirmOutpostPlacement(worldCoords.x, worldCoords.y);
+                        return;
+                    }
                     if (terrain !== 2 && terrain !== 3) { // Not water or mountains
                         items.push({
                             icon: '🥾',

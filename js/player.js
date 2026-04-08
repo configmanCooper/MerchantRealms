@@ -32454,11 +32454,42 @@
             var po = player.outposts[i];
             var town = Engine.findTown(po.townId);
             if (!town) continue;
+            // Compute connected roads and sea routes
+            var roads = Engine.getRoads ? Engine.getRoads() : [];
+            var seaRoutes = Engine.getSeaRoutes ? Engine.getSeaRoutes() : [];
+            var connRoads = [];
+            var connSea = [];
+            for (var ri = 0; ri < roads.length; ri++) {
+                var r = roads[ri];
+                if (r.fromTownId === town.id || r.toTownId === town.id) {
+                    var otherId = r.fromTownId === town.id ? r.toTownId : r.fromTownId;
+                    var otherT = Engine.findTown(otherId);
+                    connRoads.push({ townId: otherId, name: otherT ? otherT.name : '?', condition: r.condition || 'new' });
+                }
+            }
+            for (var si = 0; si < seaRoutes.length; si++) {
+                var sr = seaRoutes[si];
+                if (sr.fromTownId === town.id || sr.toTownId === town.id) {
+                    var otherSId = sr.fromTownId === town.id ? sr.toTownId : sr.fromTownId;
+                    var otherST = Engine.findTown(otherSId);
+                    connSea.push({ townId: otherSId, name: otherST ? otherST.name : '?' });
+                }
+            }
+            // Building details
+            var bldgs = [];
+            for (var bi = 0; bi < town.buildings.length; bi++) {
+                var b = town.buildings[bi];
+                var bt = Engine.findBuildingType(b.type || b.buildingType);
+                bldgs.push({ type: b.type || b.buildingType, name: bt ? bt.name : (b.type || '?'), level: b.level || 1 });
+            }
             outposts.push({
                 townId: town.id,
                 name: town.name,
+                x: town.x,
+                y: town.y,
                 category: town.category,
                 buildings: town.buildings.length,
+                buildingDetails: bldgs,
                 maxBuildings: town.maxBuildingSlots || 4,
                 workers: town.hiredWorkers || 0,
                 guards: town.hiredGuards || 0,
@@ -32467,9 +32498,15 @@
                 population: town.population || 0,
                 dailyCost: (town._dailyMaintenanceDue || CONFIG.OUTPOST_CONFIG.dailyMaintenanceCost),
                 isOutpost: town.isOutpost,
+                isPort: town.isPort || false,
                 annexed: town.annexed || false,
                 abandoned: town.abandoned || false,
                 foundedDay: po.foundedDay,
+                connectedRoads: connRoads,
+                connectedSeaRoutes: connSea,
+                naturalDeposits: town.naturalDeposits || {},
+                soilFertility: town.soilFertility || 0,
+                garrison: town.garrison || 0,
             });
         }
         return outposts;
@@ -32550,9 +32587,189 @@
         return { success: false, message: 'Unknown staff type.' };
     }
 
-    // ========================================================
-    // §12L  RETAIL & SERVICE BUILDING SYSTEM
-    // ========================================================
+    /**
+     * Upgrade outpost walls. Costs gold + stone + wood.
+     */
+    function upgradeOutpostWalls(townId) {
+        var town = Engine.findTown(townId);
+        if (!town || !town.isOutpost) return { success: false, message: 'Not an outpost.' };
+        if (town.founderId !== (player.id || 'player')) return { success: false, message: 'Not your outpost.' };
+        var curWalls = town.walls || 0;
+        if (curWalls >= 3) return { success: false, message: 'Walls already at maximum level (3).' };
+        var nextLevel = curWalls + 1;
+        var costs = { 1: { gold: 200, stone: 20, wood: 15 }, 2: { gold: 500, stone: 40, wood: 25 }, 3: { gold: 1000, stone: 80, wood: 40 } };
+        var c = costs[nextLevel];
+        if (hasSkill('cartographer')) { c.gold = Math.floor(c.gold * 0.75); c.stone = Math.floor(c.stone * 0.75); c.wood = Math.floor(c.wood * 0.75); }
+        if (player.gold < c.gold) return { success: false, message: 'Need ' + c.gold + 'g (have ' + Math.floor(player.gold) + 'g).' };
+        var inv = player.inventory || {};
+        if ((inv.stone || 0) < c.stone) return { success: false, message: 'Need ' + c.stone + ' stone (have ' + (inv.stone || 0) + ').' };
+        if ((inv.wood || 0) < c.wood) return { success: false, message: 'Need ' + c.wood + ' wood (have ' + (inv.wood || 0) + ').' };
+        player.gold -= c.gold;
+        inv.stone = (inv.stone || 0) - c.stone;
+        inv.wood = (inv.wood || 0) - c.wood;
+        town.walls = nextLevel;
+        Engine.logEvent('🏰 ' + town.name + ' walls upgraded to level ' + nextLevel + '!');
+        return { success: true, message: '🏰 Walls upgraded to level ' + nextLevel + '!' };
+    }
+
+    /**
+     * Build docks at a coastal outpost. Makes it a port.
+     */
+    function buildOutpostDocks(townId) {
+        var town = Engine.findTown(townId);
+        if (!town || !town.isOutpost) return { success: false, message: 'Not an outpost.' };
+        if (town.founderId !== (player.id || 'player')) return { success: false, message: 'Not your outpost.' };
+        if (town.isPort) return { success: false, message: town.name + ' already has docks.' };
+        if ((town.walls || 0) < 1) return { success: false, message: 'Need walls level 1+ before building docks.' };
+        // Check if near water
+        var TS = CONFIG.TILE_SIZE || 16;
+        var prox = CONFIG.PORT_WATER_PROXIMITY || 3;
+        var cx = Math.floor(town.x / TS), cy = Math.floor(town.y / TS);
+        var nearWater = false;
+        for (var dy = -prox; dy <= prox && !nearWater; dy++) {
+            for (var dx = -prox; dx <= prox && !nearWater; dx++) {
+                if (Engine.getTerrainAtPixel((cx + dx) * TS, (cy + dy) * TS) === 2) nearWater = true;
+            }
+        }
+        if (!nearWater) return { success: false, message: 'No water within ' + prox + ' tiles — cannot build docks.' };
+        var cost = { gold: 400, wood: 30, planks: 20, rope: 10, iron: 8 };
+        if (hasSkill('cartographer')) { for (var k in cost) { cost[k] = Math.floor(cost[k] * 0.75); } }
+        if (player.gold < cost.gold) return { success: false, message: 'Need ' + cost.gold + 'g (have ' + Math.floor(player.gold) + 'g).' };
+        var inv = player.inventory || {};
+        for (var matId in cost) {
+            if (matId === 'gold') continue;
+            if ((inv[matId] || 0) < cost[matId]) return { success: false, message: 'Need ' + cost[matId] + ' ' + matId + ' (have ' + (inv[matId] || 0) + ').' };
+        }
+        player.gold -= cost.gold;
+        for (var matId2 in cost) {
+            if (matId2 === 'gold') continue;
+            inv[matId2] = (inv[matId2] || 0) - cost[matId2];
+        }
+        town.isPort = true;
+        Engine.logEvent('⚓ Docks built at ' + town.name + '! The outpost is now a port.');
+        return { success: true, message: '⚓ Docks built! ' + town.name + ' is now a port.' };
+    }
+
+    /**
+     * Build a road from an outpost to another town.
+     */
+    function buildOutpostRoad(fromTownId, toTownId) {
+        var fromT = Engine.findTown(fromTownId);
+        var toT = Engine.findTown(toTownId);
+        if (!fromT) return { success: false, message: 'Source town not found.' };
+        if (!toT) return { success: false, message: 'Destination town not found.' };
+        // Verify player owns the outpost
+        var isOwner = false;
+        if (fromT.isOutpost && fromT.founderId === (player.id || 'player')) isOwner = true;
+        if (toT.isOutpost && toT.founderId === (player.id || 'player')) isOwner = true;
+        if (!isOwner) return { success: false, message: 'You must own at least one of the connected outposts.' };
+        var dist = Math.hypot(fromT.x - toT.x, fromT.y - toT.y);
+        var baseCost = Math.floor(100 + dist * 0.5);
+        var woodCost = Math.floor(10 + dist * 0.1);
+        var stoneCost = Math.floor(8 + dist * 0.08);
+        if (hasSkill('cartographer')) { baseCost = Math.floor(baseCost * 0.75); woodCost = Math.floor(woodCost * 0.75); stoneCost = Math.floor(stoneCost * 0.75); }
+        if (player.gold < baseCost) return { success: false, message: 'Need ' + baseCost + 'g (have ' + Math.floor(player.gold) + 'g).' };
+        var inv = player.inventory || {};
+        if ((inv.wood || 0) < woodCost) return { success: false, message: 'Need ' + woodCost + ' wood (have ' + (inv.wood || 0) + ').' };
+        if ((inv.stone || 0) < stoneCost) return { success: false, message: 'Need ' + stoneCost + ' stone (have ' + (inv.stone || 0) + ').' };
+        var result = Engine.buildNewRoad(fromTownId, toTownId, player.id || 'player', { ownerId: player.id || 'player' });
+        if (!result.success) return result;
+        player.gold -= baseCost;
+        inv.wood = (inv.wood || 0) - woodCost;
+        inv.stone = (inv.stone || 0) - stoneCost;
+        return { success: true, message: '🛤️ Road built to ' + toT.name + '! (-' + baseCost + 'g, -' + woodCost + ' wood, -' + stoneCost + ' stone)' };
+    }
+
+    /**
+     * Build a sea route from a port outpost to another port.
+     */
+    function buildOutpostSeaRoute(fromTownId, toTownId) {
+        var fromT = Engine.findTown(fromTownId);
+        var toT = Engine.findTown(toTownId);
+        if (!fromT) return { success: false, message: 'Source not found.' };
+        if (!toT) return { success: false, message: 'Destination not found.' };
+        if (!fromT.isPort) return { success: false, message: fromT.name + ' is not a port.' };
+        if (!toT.isPort) return { success: false, message: toT.name + ' is not a port.' };
+        var isOwner = false;
+        if (fromT.isOutpost && fromT.founderId === (player.id || 'player')) isOwner = true;
+        if (toT.isOutpost && toT.founderId === (player.id || 'player')) isOwner = true;
+        if (!isOwner) return { success: false, message: 'You must own at least one of the connected port outposts.' };
+        var dist = Math.hypot(fromT.x - toT.x, fromT.y - toT.y);
+        var baseCost = Math.floor(200 + dist * 0.8);
+        var ropeCost = Math.floor(10 + dist * 0.05);
+        var planksCost = Math.floor(15 + dist * 0.08);
+        var clothCost = Math.floor(5 + dist * 0.03);
+        if (hasSkill('cartographer')) { baseCost = Math.floor(baseCost * 0.75); ropeCost = Math.floor(ropeCost * 0.75); planksCost = Math.floor(planksCost * 0.75); clothCost = Math.floor(clothCost * 0.75); }
+        if (player.gold < baseCost) return { success: false, message: 'Need ' + baseCost + 'g (have ' + Math.floor(player.gold) + 'g).' };
+        var inv = player.inventory || {};
+        if ((inv.rope || 0) < ropeCost) return { success: false, message: 'Need ' + ropeCost + ' rope (have ' + (inv.rope || 0) + ').' };
+        if ((inv.planks || 0) < planksCost) return { success: false, message: 'Need ' + planksCost + ' planks (have ' + (inv.planks || 0) + ').' };
+        if ((inv.cloth || 0) < clothCost) return { success: false, message: 'Need ' + clothCost + ' cloth (have ' + (inv.cloth || 0) + ').' };
+        var result = Engine.buildNewSeaRoute(fromTownId, toTownId, player.id || 'player', { ownerId: player.id || 'player' });
+        if (!result.success) return result;
+        player.gold -= baseCost;
+        inv.rope = (inv.rope || 0) - ropeCost;
+        inv.planks = (inv.planks || 0) - planksCost;
+        inv.cloth = (inv.cloth || 0) - clothCost;
+        return { success: true, message: '⚓ Sea route established to ' + toT.name + '!' };
+    }
+
+    /**
+     * Get cost info for outpost infrastructure (for UI display).
+     */
+    function getOutpostCosts(townId) {
+        var town = Engine.findTown(townId);
+        if (!town) return null;
+        var cartDisc = hasSkill('cartographer') ? 0.75 : 1.0;
+        var curWalls = town.walls || 0;
+        var wallCosts = { 1: { gold: 200, stone: 20, wood: 15 }, 2: { gold: 500, stone: 40, wood: 25 }, 3: { gold: 1000, stone: 80, wood: 40 } };
+        var nextWall = curWalls < 3 ? wallCosts[curWalls + 1] : null;
+        if (nextWall) { nextWall = { gold: Math.floor(nextWall.gold * cartDisc), stone: Math.floor(nextWall.stone * cartDisc), wood: Math.floor(nextWall.wood * cartDisc) }; }
+        var dockCost = !town.isPort ? { gold: Math.floor(400 * cartDisc), wood: Math.floor(30 * cartDisc), planks: Math.floor(20 * cartDisc), rope: Math.floor(10 * cartDisc), iron: Math.floor(8 * cartDisc) } : null;
+        // Check if near water for dock eligibility
+        var nearWater = false;
+        if (!town.isPort) {
+            var TS = CONFIG.TILE_SIZE || 16;
+            var prox = CONFIG.PORT_WATER_PROXIMITY || 3;
+            var cx = Math.floor(town.x / TS), cy = Math.floor(town.y / TS);
+            for (var dy = -prox; dy <= prox && !nearWater; dy++) {
+                for (var dx = -prox; dx <= prox && !nearWater; dx++) {
+                    if (Engine.getTerrainAtPixel((cx + dx) * TS, (cy + dy) * TS) === 2) nearWater = true;
+                }
+            }
+        }
+        return { wallCost: nextWall, dockCost: dockCost, nearWater: nearWater || town.isPort, currentWalls: curWalls, isPort: town.isPort };
+    }
+
+    /**
+     * Get nearby towns for road/sea route building from an outpost.
+     */
+    function getNearbyTownsForOutpost(townId, maxDist) {
+        maxDist = maxDist || 600;
+        var town = Engine.findTown(townId);
+        if (!town) return [];
+        var allTowns = Engine.getTowns();
+        var roads = Engine.getRoads ? Engine.getRoads() : [];
+        var seaRoutes = Engine.getSeaRoutes ? Engine.getSeaRoutes() : [];
+        var nearby = [];
+        for (var i = 0; i < allTowns.length; i++) {
+            var t = allTowns[i];
+            if (t.id === townId) continue;
+            var dist = Math.hypot(t.x - town.x, t.y - town.y);
+            if (dist > maxDist) continue;
+            // Check if road already exists
+            var hasRoad = roads.some(function(r) {
+                return (r.fromTownId === townId && r.toTownId === t.id) || (r.fromTownId === t.id && r.toTownId === townId);
+            });
+            // Check if sea route already exists
+            var hasSeaRoute = seaRoutes.some(function(sr) {
+                return (sr.fromTownId === townId && sr.toTownId === t.id) || (sr.fromTownId === t.id && sr.toTownId === townId);
+            });
+            nearby.push({ townId: t.id, name: t.name, dist: Math.floor(dist), isPort: t.isPort || false, hasRoad: hasRoad, hasSeaRoute: hasSeaRoute, category: t.category || 'town' });
+        }
+        nearby.sort(function(a, b) { return a.dist - b.dist; });
+        return nearby;
+    }
 
     function getRetailBuildings() {
         if (!player.buildings) return [];
@@ -40811,6 +41028,12 @@
         getPlayerOutposts,
         payOutpostMaintenance,
         manageOutpostStaff,
+        upgradeOutpostWalls,
+        buildOutpostDocks,
+        buildOutpostRoad,
+        buildOutpostSeaRoute,
+        getOutpostCosts,
+        getNearbyTownsForOutpost,
 
         // Conscription
         respondToConscription,
