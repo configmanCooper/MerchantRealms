@@ -8538,15 +8538,21 @@
                 if (BUILDING_TYPES[key].id === b.type) { bt = BUILDING_TYPES[key]; break; }
             }
             if (!bt || !bt.storage) continue;
+            var cap = _bldStorageCap(bt.storage, b.level);
+            // Buildings with no input consumes get half storage (except dedicated storage buildings)
+            var hasConsumes = bt.consumes && Object.keys(bt.consumes).length > 0;
+            if (!hasConsumes && bt.category !== 'storage') {
+                cap = Math.floor(cap / 2);
+            }
             if (bt.category === 'storage') {
                 // Warehouses always contribute
-                total += _bldStorageCap(bt.storage, b.level);
+                total += cap;
             } else if (bt.produces && b.inputOnly === false) {
                 // Production buildings with inputOnly OFF contribute
-                total += _bldStorageCap(bt.storage, b.level);
+                total += cap;
             } else if (!bt.produces) {
                 // Non-production buildings (e.g. guild halls) contribute
-                total += _bldStorageCap(bt.storage, b.level);
+                total += cap;
             }
             // inputOnly ON (default for production buildings) = excluded
         }

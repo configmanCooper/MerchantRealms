@@ -3460,7 +3460,14 @@ window.UI = (function () {
             if (bt.id === 'tree_plantation') {
                 producesStr = '🌲 Trees (Wood Deposit)';
             } else {
-                producesStr = producesRes ? `${producesRes.icon} ${producesRes.name}` : (bt.storage ? `📦 +${bt.storage} storage` : bt.salesBonus ? `📈 +${Math.round(bt.salesBonus * 100)}% sales` : bt.livestockCapacity ? `🐄 Holds ${bt.livestockCapacity} livestock` : bt.archerBonus ? `🏹 Archer +${Math.round(bt.archerBonus * 100)}%` : '—');
+                var _hasConsumes = bt.consumes && Object.keys(bt.consumes).length > 0;
+                var _storageAmt = bt.storage;
+                var _storageLabel = 'storage';
+                if (_storageAmt && !_hasConsumes && bt.category !== 'storage') {
+                    _storageAmt = Math.floor(_storageAmt / 2);
+                    _storageLabel = 'building extra storage';
+                }
+                producesStr = producesRes ? `${producesRes.icon} ${producesRes.name}` : (_storageAmt ? `📦 +${_storageAmt} ${_storageLabel}` : bt.salesBonus ? `📈 +${Math.round(bt.salesBonus * 100)}% sales` : bt.livestockCapacity ? `🐄 Holds ${bt.livestockCapacity} livestock` : bt.archerBonus ? `🏹 Archer +${Math.round(bt.archerBonus * 100)}%` : '—');
             }
 
             // Material requirements string with auto-buy details
