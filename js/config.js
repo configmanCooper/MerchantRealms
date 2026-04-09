@@ -905,7 +905,7 @@ const CONFIG = {
 
     // Town Categories
     TOWN_CATEGORIES: {
-        outpost:      { label: 'Outpost',      minPop: 0,   maxBuildingSlots: 4,  guardMultiplier: 0.0, relationshipGainMod: 3.0, icon: '⛺' },
+        outpost:      { label: 'Outpost',      minPop: 0,   maxBuildingSlots: 10, guardMultiplier: 0.0, relationshipGainMod: 3.0, icon: '⛺' },
         village:      { label: 'Village',      minPop: 0,   maxBuildingSlots: 6,  guardMultiplier: 0.5, relationshipGainMod: 2.0, icon: '🏘️' },
         town:         { label: 'Town',         minPop: 60,  maxBuildingSlots: 14, guardMultiplier: 1.0, relationshipGainMod: 1.0, icon: '🏠' },
         city:         { label: 'City',         minPop: 150, maxBuildingSlots: 24, guardMultiplier: 1.5, relationshipGainMod: 0.5, icon: '🏙️' },
@@ -928,13 +928,9 @@ const CONFIG = {
         foundingCost: 500,              // gold to establish an outpost
         foundingMaterials: { wood: 30, stone: 10 },  // materials needed
         dailyMaintenanceCost: 3,        // gold per day (no shared infrastructure)
-        workerWagePerDay: 2,            // gold per hired worker per day
-        maxHiredWorkers: 8,             // max workers at an outpost
         theftChancePerDay: 0.06,        // 6% daily chance of theft without security
         damageChancePerDay: 0.03,       // 3% daily chance of building damage (weather, animals)
-        securityPerGuard: 0.015,        // each guard reduces theft by 1.5%
-        maxGuards: 4,                   // max hired guards
-        guardCostPerDay: 5,             // gold per guard per day
+        securityPerGuard: 0.02,         // each guard reduces theft by 2%
         wallTheftReduction: { 0: 0, 1: 0.02, 2: 0.035, 3: 0.05 },
         annexationMinPop: 15,           // kingdom annexation requires 15+ people nearby/attracted
         annexationCheckInterval: 90,    // kingdoms check for annexation every 90 days
@@ -942,6 +938,120 @@ const CONFIG = {
         npcFoundChanceRefugee: 0.01,    // 1% during refugee crises
         maxDistanceFromRoad: 3,         // outpost must be within 3 tiles of a road
         abandonDaysNoMaintenance: 30,   // outpost abandoned after 30 days of no upkeep
+
+        // Land plots
+        startingLandPlots: 4,           // outpost starts with 4 land plots
+        maxLandPlots: 10,               // can expand to 10 total
+        landPlotCost: 150,              // gold per additional land plot
+        landPlotMaterials: { wood: 10, stone: 5 }, // materials per additional plot
+
+        // Workers & Guards (hired from NPCs living in outpost)
+        maxOutpostWorkers: 10,          // max workers at an outpost
+        maxOutpostGuards: 4,            // max hired guards
+        workerWagePerWeek: 10,          // gold per worker per week
+        guardWagePerWeek: 15,           // gold per guard per week
+
+        // Built-in storage
+        baseStorageCapacity: 200,       // weight units of built-in outpost storage
+
+        // NPC Recruitment
+        recruitBaseChance: 0.10,        // 10% base chance to convince NPC
+        recruitCooldownDays: 7,         // cooldown per NPC before asking again
+        recruitRoadBonus: 0.15,         // +15% if outpost has road connection
+        recruitRelationshipScale: 0.002, // per relationship point above 0
+        recruitGoldPerPercent: 50,       // gold per 1% chance increase
+        recruitMaxGoldBonus: 0.20,      // max +20% from gold incentive
+        recruitStatusScale: 0.02,       // per social rank difference (player higher = bonus)
+        recruitMinChance: 0.03,         // minimum 3% chance
+        recruitMaxChance: 0.85,         // maximum 85% chance
+
+        // Village Conversion
+        villageConversionMinPop: 20,    // minimum NPCs to petition for village
+        villageConversionBaseRep: 80,   // player starts with 80 rep in new village
+        villageConversionMinRelationship: 20, // NPCs below this get bumped up
+        villageConversionKingPayMin: 500,
+        villageConversionKingPayMax: 2000,
+
+        // AI Immigration
+        aiImmigrationCheckInterval: 7,  // days between AI checks
+        aiImmigrationBaseChance: 0.03,  // 3% base chance per eligible NPC per check
+    },
+
+    // Outpost Housing Types (each takes 1 land slot)
+    OUTPOST_HOUSING: {
+        tent_camp: {
+            id: 'tent_camp', name: 'Tent Camp', icon: '⛺',
+            capacity: 20, landSlots: 1, comfort: 5,
+            cost: 50, materials: { wood: 5, cloth: 8, rope: 4 },
+            description: 'Basic canvas tents. Holds 20 people but barely better than sleeping on the ground.',
+            recruitBonus: 0.02, restBonus: 0.1,
+        },
+        cabins: {
+            id: 'cabins', name: 'Log Cabins', icon: '🏠',
+            capacity: 15, landSlots: 1, comfort: 35,
+            cost: 200, materials: { wood: 25, planks: 10, stone: 5 },
+            description: 'Sturdy log cabins. Holds 15 people with decent living conditions.',
+            recruitBonus: 0.05, restBonus: 0.4,
+        },
+        cottages: {
+            id: 'cottages', name: 'Stone Cottages', icon: '🏡',
+            capacity: 10, landSlots: 1, comfort: 60,
+            cost: 400, materials: { stone: 20, planks: 15, bricks: 8, wood: 10 },
+            description: 'Charming stone cottages. Holds 10 people in comfortable, nice homes.',
+            recruitBonus: 0.08, restBonus: 0.7,
+        },
+    },
+
+    // Outpost Upgrades (improve recruitment chance, NPC quality of life)
+    OUTPOST_UPGRADES: {
+        well: {
+            id: 'well', name: 'Well', icon: '🪣',
+            cost: 100, materials: { stone: 15, rope: 3 },
+            recruitBonus: 0.05, description: 'Fresh water source. +5% NPC recruitment.',
+            autoAttract: false, landSlots: 0,
+        },
+        clinic: {
+            id: 'clinic', name: 'Clinic', icon: '🏥',
+            cost: 300, materials: { wood: 15, planks: 10, stone: 8, herbs: 10 },
+            recruitBonus: 0.08, description: 'Basic medical care. +8% NPC recruitment.',
+            autoAttract: false, landSlots: 0, requires: ['well'],
+        },
+        tavern: {
+            id: 'tavern', name: 'Tavern', icon: '🍺',
+            cost: 250, materials: { wood: 20, planks: 12, iron: 3 },
+            recruitBonus: 0.06, description: 'A place to drink and socialize. +6% NPC recruitment. Attracts travelers.',
+            autoAttract: true, autoAttractChance: 0.02, landSlots: 0,
+        },
+        market_stall: {
+            id: 'market_stall', name: 'Market Stalls', icon: '🏪',
+            cost: 150, materials: { wood: 12, cloth: 5, rope: 3 },
+            recruitBonus: 0.04, description: 'Basic trading area. +4% NPC recruitment. Improves outpost economy.',
+            autoAttract: false, landSlots: 0,
+        },
+        watchtower: {
+            id: 'watchtower', name: 'Watchtower', icon: '🗼',
+            cost: 350, materials: { stone: 20, wood: 15, iron: 5 },
+            recruitBonus: 0.03, description: 'Improves security. +3% NPC recruitment. Reduces theft further.',
+            autoAttract: false, landSlots: 0, theftReduction: 0.02,
+        },
+        chapel: {
+            id: 'chapel', name: 'Chapel', icon: '⛪',
+            cost: 400, materials: { stone: 25, wood: 10, planks: 8 },
+            recruitBonus: 0.06, description: 'A place of worship. +6% NPC recruitment. Improves happiness.',
+            autoAttract: true, autoAttractChance: 0.01, landSlots: 0,
+        },
+        smithy: {
+            id: 'smithy', name: 'Blacksmith', icon: '⚒️',
+            cost: 300, materials: { stone: 15, iron: 10, wood: 8 },
+            recruitBonus: 0.04, description: 'Tool and weapon repair. +4% NPC recruitment.',
+            autoAttract: false, landSlots: 0, requires: ['well'],
+        },
+        granary: {
+            id: 'granary', name: 'Granary', icon: '🌾',
+            cost: 200, materials: { wood: 20, planks: 8 },
+            recruitBonus: 0.03, description: 'Food storage. +3% NPC recruitment. Reduces spoilage.',
+            autoAttract: false, landSlots: 0, storageBonus: 100,
+        },
     },
 
     // Wall / Fortification Levels

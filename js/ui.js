@@ -2373,6 +2373,13 @@ window.UI = (function () {
                         // Loan offer for financially stressed nobles
                         html += `<button class="btn-medieval" onclick="UI.openNobleLoanDialog('${person.id}')" title="Offer a loan to this noble — indebted nobles are easier to influence" style="font-size:0.75rem;padding:5px 10px;">💰 Offer Loan</button>`;
                     }
+                    // Recruit to outpost button (if player has outposts)
+                    if (typeof Player !== 'undefined' && Player.getPlayerOutposts) {
+                        var _playerOutposts = Player.getPlayerOutposts().filter(function(o) { return !o.abandoned && !o.annexed && o.isOutpost; });
+                        if (_playerOutposts.length > 0) {
+                            html += `<button class="btn-medieval" onclick="UI.openRecruitToOutpostDialog('${person.id}')" title="Convince this person to move to your outpost" style="font-size:0.75rem;padding:5px 10px;background:rgba(74,124,59,0.2);border-color:rgba(74,124,59,0.4);">⛺ Recruit to Outpost</button>`;
+                        }
+                    }
                     html += `</div>`;
                 }
                 html += `</div>`;
@@ -15465,8 +15472,8 @@ window.UI = (function () {
             body += '<div style="font-size:2em;margin-bottom:10px">⛺</div>';
             body += '<p style="font-size:1.1em;color:#ccc">You have no wilderness outposts.</p>';
             body += '<p style="color:#888;font-size:12px">Outposts extend your trade network into the wilderness.<br>';
-            body += 'Build roads, docks, and sea routes to connect them.<br>';
-            body += 'Cost: <span style="color:#ffd700">' + (cfg.foundingCost || 500) + 'g</span> + ' + _formatMats(cfg.foundingMaterials || {}) + '</p>';
+            body += 'Found with: <span style="color:#ffd700">' + (cfg.foundingCost || 500) + 'g</span> + ' + _formatMats(cfg.foundingMaterials || {}) + '<br>';
+            body += 'Starts with ' + (cfg.startingLandPlots || 4) + ' land plots and ' + (cfg.baseStorageCapacity || 200) + ' storage.</p>';
             body += '<div style="margin-top:15px">';
             body += '<button class="btn-medieval" onclick="UI.enterOutpostPlacement()" style="background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5);padding:8px 20px;">⛺ Found New Outpost</button>';
             body += '</div></div>';
@@ -15476,30 +15483,44 @@ window.UI = (function () {
                 var op = outposts[i];
                 var statusIcon = op.abandoned ? '💀' : op.annexed ? '🏘️' : '⛺';
                 var statusColor = op.abandoned ? '#c44e52' : op.annexed ? '#5588bb' : '#55a868';
+                var housingCap = 0;
+                for (var hi = 0; hi < (op.outpostHousing || []).length; hi++) {
+                    var hCfg = CONFIG.OUTPOST_HOUSING && CONFIG.OUTPOST_HOUSING[op.outpostHousing[hi].type];
+                    if (hCfg) housingCap += hCfg.capacity;
+                }
                 body += '<div style="border:1px solid #555;padding:10px;margin:5px 0;border-radius:6px;background:rgba(30,30,30,0.8);cursor:pointer" onclick="UI.openOutpostDetail(\'' + op.townId + '\')">';
                 body += '<div style="display:flex;justify-content:space-between;align-items:center">';
                 body += '<h4 style="margin:0;color:#e0d6b8">' + statusIcon + ' ' + op.name + '</h4>';
-                body += '<span style="color:' + statusColor + ';font-size:11px">' + (op.abandoned ? 'Abandoned' : op.annexed ? 'Annexed' : 'Active') + '</span>';
+                body += '<span style="color:' + statusColor + ';font-size:11px">' + (op.abandoned ? 'Abandoned' : op.annexed ? 'Village' : 'Active') + '</span>';
                 body += '</div>';
                 body += '<div style="display:flex;flex-wrap:wrap;gap:10px;margin:6px 0;font-size:11px;color:#aaa">';
-                body += '<span>🏗️ ' + op.buildings + '/' + op.maxBuildings + '</span>';
+                body += '<span>👥 ' + op.population + '/' + housingCap + '</span>';
+                body += '<span>📐 ' + op.usedLandPlots + '/' + op.landPlots + ' plots</span>';
                 body += '<span>👷 ' + op.workers + '</span>';
                 body += '<span>🛡️ ' + op.guards + '</span>';
                 body += '<span>🏰 Walls ' + op.walls + '</span>';
-                body += '<span>👥 ' + op.population + '</span>';
                 body += '<span>📈 ' + Math.floor(op.prosperity) + '</span>';
-                body += '<span>💰 -' + Math.floor(op.dailyCost) + 'g/day</span>';
+                body += '<span>😊 ' + Math.floor(op.outpostHappiness || 50) + '</span>';
+                body += '<span>💰 -' + Math.ceil(op.dailyCost) + 'g/day</span>';
                 if (op.isPort) body += '<span style="color:#5599cc">⚓ Port</span>';
-                if (op.connectedRoads.length > 0) body += '<span>🛤️ ' + op.connectedRoads.length + ' roads</span>';
-                if (op.connectedSeaRoutes.length > 0) body += '<span>🚢 ' + op.connectedSeaRoutes.length + ' sea routes</span>';
+                if (op.hasRoad) body += '<span style="color:#55a868">🛤️ Road</span>';
                 body += '</div>';
+                // Show upgrades icons
+                if ((op.outpostUpgrades || []).length > 0) {
+                    body += '<div style="font-size:11px;color:#888;margin-top:2px">';
+                    for (var ui = 0; ui < op.outpostUpgrades.length; ui++) {
+                        var uCfg = CONFIG.OUTPOST_UPGRADES && CONFIG.OUTPOST_UPGRADES[op.outpostUpgrades[ui]];
+                        if (uCfg) body += uCfg.icon + ' ';
+                    }
+                    body += '</div>';
+                }
                 body += '<div style="font-size:10px;color:#666;margin-top:2px">Click to manage →</div>';
                 body += '</div>';
             }
             body += '</div>';
         }
 
-        var footer = '<button class="btn-medieval" onclick="UI.enterOutpostPlacement()" style="background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5);padding:6px 15px;">⛺ Found New Outpost (' + (cfg.foundingCost || 500) + 'g)</button> ';
+        var footer = '<button class="btn-medieval" onclick="UI.enterOutpostPlacement()" style="background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5);padding:6px 15px;">⛺ Found New Outpost</button> ';
         footer += '<button class="btn-medieval" onclick="UI.closeModal()" style="padding:6px 15px;">Close</button>';
         openModal('⛺ Outpost Management (' + outposts.length + ')', body, footer);
     }
@@ -15520,8 +15541,9 @@ window.UI = (function () {
         var nearby = Player.getNearbyTownsForOutpost ? Player.getNearbyTownsForOutpost(townId) : [];
         var inv = Player.inventory || {};
         var gold = Player.gold || 0;
+        var housingInfo = Player.getOutpostHousingInfo ? Player.getOutpostHousingInfo(townId) : null;
 
-        var body = '<div style="padding:4px">';
+        var body = '<div style="padding:4px;max-height:460px;overflow-y:auto">';
 
         // === OVERVIEW ===
         body += '<div style="background:rgba(40,40,40,0.6);padding:10px;border-radius:6px;margin-bottom:8px">';
@@ -15529,11 +15551,13 @@ window.UI = (function () {
         body += '<div style="display:flex;flex-wrap:wrap;gap:12px;font-size:12px">';
         body += '<span>👥 Pop: ' + op.population + '</span>';
         body += '<span>📈 Prosperity: ' + Math.floor(op.prosperity) + '</span>';
+        body += '<span>😊 Happiness: ' + Math.floor(op.outpostHappiness || 50) + '</span>';
         body += '<span>🏰 Walls: ' + op.walls + '/3</span>';
-        body += '<span>⚔️ Garrison: ' + op.garrison + '</span>';
-        body += '<span>💰 Daily: -' + Math.floor(op.dailyCost) + 'g</span>';
+        body += '<span>💰 Daily: -' + Math.ceil(op.dailyCost) + 'g</span>';
         body += '<span>📅 Founded: Day ' + op.foundedDay + '</span>';
+        body += '<span>📦 Storage: ' + (op.outpostStorage || 200) + '</span>';
         if (op.isPort) body += '<span style="color:#5599cc">⚓ Port</span>';
+        if (op.hasRoad) body += '<span style="color:#55a868">🛤️ Connected</span>';
         body += '</div>';
         if (op.soilFertility > 0) body += '<div style="font-size:11px;color:#888;margin-top:4px">🌾 Soil fertility: ' + Math.floor(op.soilFertility * 100) + '%</div>';
         var depNames = [];
@@ -15541,153 +15565,235 @@ window.UI = (function () {
         if (depNames.length > 0) body += '<div style="font-size:11px;color:#888">⛏️ Deposits: ' + depNames.join(', ') + '</div>';
         body += '</div>';
 
+        // === LAND PLOTS ===
+        body += '<div style="background:rgba(40,40,40,0.6);padding:10px;border-radius:6px;margin-bottom:8px">';
+        body += '<h5 style="margin:0 0 6px;color:#ccc">📐 Land (' + (op.usedLandPlots || 0) + '/' + (op.landPlots || 4) + ' used, max ' + (cfg.maxLandPlots || 10) + ')</h5>';
+        if ((op.landPlots || 4) < (cfg.maxLandPlots || 10)) {
+            var lpCost = cfg.landPlotCost || 150;
+            var lpMats = cfg.landPlotMaterials || { wood: 10, stone: 5 };
+            var canBuyLand = gold >= lpCost;
+            for (var lmk in lpMats) { if ((inv[lmk] || 0) < lpMats[lmk]) canBuyLand = false; }
+            body += '<button onclick="UI._opBuyLand(\'' + townId + '\')" style="padding:3px 10px;font-size:11px;cursor:pointer' + (canBuyLand ? '' : ';opacity:0.5') + '"' + (canBuyLand ? '' : ' disabled') + '>+ Buy Plot (' + lpCost + 'g + ' + _formatMats(lpMats) + ')</button>';
+        } else {
+            body += '<div style="font-size:11px;color:#666">Maximum land plots reached.</div>';
+        }
+        body += '</div>';
+
+        // === HOUSING ===
+        body += '<div style="background:rgba(40,40,40,0.6);padding:10px;border-radius:6px;margin-bottom:8px">';
+        var totalHCap = housingInfo ? housingInfo.totalCapacity : 0;
+        body += '<h5 style="margin:0 0 6px;color:#ccc">🏠 Housing (' + op.population + '/' + totalHCap + ' residents)</h5>';
+        // Show existing housing
+        if (housingInfo && housingInfo.housing.length > 0) {
+            for (var ehi = 0; ehi < housingInfo.housing.length; ehi++) {
+                var eh = housingInfo.housing[ehi];
+                body += '<div style="font-size:11px;color:#aaa;margin:2px 0">' + eh.icon + ' ' + eh.name + ' — ' + eh.capacity + ' capacity, comfort ' + eh.comfort + '</div>';
+            }
+        }
+        if (housingInfo && housingInfo.playerCanRest) {
+            body += '<div style="font-size:11px;color:#55a868;margin:4px 0">🛏️ You can rest here (housing has space)</div>';
+        }
+        // Build housing options
+        var freePlots = (op.landPlots || 4) - (op.usedLandPlots || 0);
+        if (freePlots > 0) {
+            body += '<div style="margin-top:6px;font-size:12px;color:#ccc"><strong>Build Housing:</strong></div>';
+            var hTypes = CONFIG.OUTPOST_HOUSING || {};
+            for (var hk in hTypes) {
+                var ht = hTypes[hk];
+                var canH = gold >= ht.cost && freePlots >= (ht.landSlots || 1);
+                for (var hmk in ht.materials) { if ((inv[hmk] || 0) < ht.materials[hmk]) canH = false; }
+                body += '<div style="display:flex;align-items:center;gap:6px;margin:3px 0;flex-wrap:wrap">';
+                body += '<button onclick="UI._opBuildHousing(\'' + townId + '\',\'' + hk + '\')" style="padding:2px 8px;font-size:11px;cursor:pointer' + (canH ? '' : ';opacity:0.5') + '"' + (canH ? '' : ' disabled') + '>Build</button>';
+                body += '<span style="font-size:11px">' + ht.icon + ' ' + ht.name + ' <span style="color:#888">(' + ht.capacity + ' cap, comfort ' + ht.comfort + ' — ' + ht.cost + 'g + ' + _formatMats(ht.materials) + ')</span></span>';
+                body += '</div>';
+            }
+        }
+        body += '</div>';
+
         // === STAFF ===
         body += '<div style="background:rgba(40,40,40,0.6);padding:10px;border-radius:6px;margin-bottom:8px">';
         body += '<h5 style="margin:0 0 6px;color:#ccc">👷 Staff</h5>';
+        var maxW = cfg.maxOutpostWorkers || 10;
+        var maxG = cfg.maxOutpostGuards || 4;
         body += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
-        body += '<span style="font-size:12px">Workers: ' + op.workers + '/' + (cfg.maxHiredWorkers || 8) + '</span>';
-        if (!op.abandoned && !op.annexed) {
-            body += '<button onclick="UI._opStaff(\'' + townId + '\',\'hire\',\'worker\')" style="padding:2px 8px;font-size:11px;cursor:pointer">+</button>';
-            body += '<button onclick="UI._opStaff(\'' + townId + '\',\'dismiss\',\'worker\')" style="padding:2px 8px;font-size:11px;cursor:pointer">−</button>';
+        body += '<span style="font-size:12px">Workers: ' + op.workers + '/' + maxW + ' (' + (cfg.workerWagePerWeek || 10) + 'g/wk each)</span>';
+        if (!op.abandoned && !op.annexed && op.population > 0) {
+            body += '<button onclick="UI._opStaff(\'' + townId + '\',\'hire\',\'worker\')" style="padding:2px 8px;font-size:11px;cursor:pointer"' + (op.workers < maxW ? '' : ' disabled') + '>+</button>';
+            body += '<button onclick="UI._opStaff(\'' + townId + '\',\'dismiss\',\'worker\')" style="padding:2px 8px;font-size:11px;cursor:pointer"' + (op.workers > 0 ? '' : ' disabled') + '>−</button>';
         }
-        body += '<span style="font-size:12px;margin-left:12px">Guards: ' + op.guards + '/' + (cfg.maxGuards || 4) + '</span>';
-        if (!op.abandoned && !op.annexed) {
-            body += '<button onclick="UI._opStaff(\'' + townId + '\',\'hire\',\'guard\')" style="padding:2px 8px;font-size:11px;cursor:pointer">+</button>';
-            body += '<button onclick="UI._opStaff(\'' + townId + '\',\'dismiss\',\'guard\')" style="padding:2px 8px;font-size:11px;cursor:pointer">−</button>';
+        body += '</div>';
+        body += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">';
+        body += '<span style="font-size:12px">Guards: ' + op.guards + '/' + maxG + ' (' + (cfg.guardWagePerWeek || 15) + 'g/wk each)</span>';
+        if (!op.abandoned && !op.annexed && op.population > 0) {
+            body += '<button onclick="UI._opStaff(\'' + townId + '\',\'hire\',\'guard\')" style="padding:2px 8px;font-size:11px;cursor:pointer"' + (op.guards < maxG ? '' : ' disabled') + '>+</button>';
+            body += '<button onclick="UI._opStaff(\'' + townId + '\',\'dismiss\',\'guard\')" style="padding:2px 8px;font-size:11px;cursor:pointer"' + (op.guards > 0 ? '' : ' disabled') + '>−</button>';
         }
+        if (op.population === 0) body += '<div style="font-size:11px;color:#c44e52;margin-top:4px">⚠️ Recruit NPCs before hiring staff.</div>';
         body += '</div></div>';
 
-        // === BUILDINGS ===
+        // === RESIDENTS ===
         body += '<div style="background:rgba(40,40,40,0.6);padding:10px;border-radius:6px;margin-bottom:8px">';
-        body += '<h5 style="margin:0 0 6px;color:#ccc">🏗️ Buildings (' + op.buildings + '/' + op.maxBuildings + ')</h5>';
-        if (op.buildingDetails.length > 0) {
-            body += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
-            for (var bi = 0; bi < op.buildingDetails.length; bi++) {
-                var b = op.buildingDetails[bi];
-                body += '<span style="background:rgba(60,60,60,0.8);padding:3px 8px;border-radius:4px;font-size:11px">' + b.name + (b.level > 1 ? ' Lv.' + b.level : '') + '</span>';
+        body += '<h5 style="margin:0 0 6px;color:#ccc">👥 Residents (' + op.population + ')</h5>';
+        if (op.residents && op.residents.length > 0) {
+            body += '<div style="max-height:80px;overflow-y:auto;font-size:11px;color:#aaa">';
+            for (var rri = 0; rri < Math.min(op.residents.length, 20); rri++) {
+                var resNpc = Engine.findPerson(op.residents[rri]);
+                if (resNpc) {
+                    var role = '';
+                    if ((op.workerIds || []).indexOf(resNpc.id) >= 0) role = ' 👷';
+                    if ((op.guardIds || []).indexOf(resNpc.id) >= 0) role = ' 🛡️';
+                    body += '<span style="display:inline-block;margin:1px 4px">' + resNpc.firstName + ' ' + resNpc.lastName + role + '</span>';
+                }
             }
+            if (op.residents.length > 20) body += '<div style="color:#666">...and ' + (op.residents.length - 20) + ' more</div>';
             body += '</div>';
         } else {
-            body += '<div style="font-size:11px;color:#666">No buildings yet (only starter warehouse).</div>';
+            body += '<div style="font-size:11px;color:#666">No residents. Recruit NPCs from nearby towns.</div>';
         }
         body += '</div>';
 
         // === UPGRADES ===
         body += '<div style="background:rgba(40,40,40,0.6);padding:10px;border-radius:6px;margin-bottom:8px">';
         body += '<h5 style="margin:0 0 6px;color:#ccc">🔨 Upgrades</h5>';
+        // Show installed upgrades
+        if ((op.outpostUpgrades || []).length > 0) {
+            body += '<div style="margin-bottom:6px">';
+            for (var iui = 0; iui < op.outpostUpgrades.length; iui++) {
+                var iuCfg = CONFIG.OUTPOST_UPGRADES && CONFIG.OUTPOST_UPGRADES[op.outpostUpgrades[iui]];
+                if (iuCfg) body += '<span style="display:inline-block;background:rgba(60,60,60,0.8);padding:3px 8px;border-radius:4px;font-size:11px;margin:2px">' + iuCfg.icon + ' ' + iuCfg.name + '</span>';
+            }
+            body += '</div>';
+        }
+        // Available upgrades
+        var availUpgrades = CONFIG.OUTPOST_UPGRADES || {};
+        var hasAvail = false;
+        for (var auk in availUpgrades) {
+            if ((op.outpostUpgrades || []).indexOf(auk) >= 0) continue;
+            hasAvail = true;
+            var au = availUpgrades[auk];
+            var canU = gold >= au.cost;
+            for (var aumk in au.materials) { if ((inv[aumk] || 0) < au.materials[aumk]) canU = false; }
+            var meetsReqs = true;
+            if (au.requires) {
+                for (var auri = 0; auri < au.requires.length; auri++) {
+                    if ((op.outpostUpgrades || []).indexOf(au.requires[auri]) < 0) { meetsReqs = false; break; }
+                }
+            }
+            body += '<div style="display:flex;align-items:center;gap:6px;margin:3px 0;flex-wrap:wrap">';
+            body += '<button onclick="UI._opBuildUpgrade(\'' + townId + '\',\'' + auk + '\')" style="padding:2px 8px;font-size:11px;cursor:pointer' + (canU && meetsReqs ? '' : ';opacity:0.5') + '"' + (canU && meetsReqs ? '' : ' disabled') + '>Build</button>';
+            body += '<span style="font-size:11px">' + au.icon + ' ' + au.name;
+            body += ' <span style="color:#888">(' + au.cost + 'g + ' + _formatMats(au.materials) + ')</span>';
+            if (au.recruitBonus) body += ' <span style="color:#55a868">+' + Math.round(au.recruitBonus * 100) + '% recruit</span>';
+            if (!meetsReqs) body += ' <span style="color:#c44e52">[requires ' + (au.requires || []).join(', ') + ']</span>';
+            body += '</span></div>';
+        }
+        if (!hasAvail) body += '<div style="font-size:11px;color:#666">All upgrades built!</div>';
+
         // Walls
         if (costs && costs.wallCost) {
             var wc = costs.wallCost;
             var canWall = gold >= wc.gold && (inv.stone || 0) >= wc.stone && (inv.wood || 0) >= wc.wood;
-            body += '<div style="margin:4px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap">';
-            body += '<span style="font-size:12px">🏰 Walls → Lv.' + (op.walls + 1) + '</span>';
-            body += '<span style="font-size:11px;color:#888">' + wc.gold + 'g + ' + wc.stone + ' stone + ' + wc.wood + ' wood</span>';
+            body += '<div style="margin:6px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap">';
             body += '<button onclick="UI._opUpgradeWalls(\'' + townId + '\')" style="padding:2px 10px;font-size:11px;cursor:pointer' + (canWall ? '' : ';opacity:0.5') + '"' + (canWall ? '' : ' disabled') + '>Upgrade</button>';
+            body += '<span style="font-size:11px">🏰 Walls → Lv.' + (op.walls + 1) + ' <span style="color:#888">(' + wc.gold + 'g + ' + wc.stone + ' stone + ' + wc.wood + ' wood)</span></span>';
             body += '</div>';
         } else {
-            body += '<div style="font-size:11px;color:#666">🏰 Walls at max level (3)</div>';
+            body += '<div style="font-size:11px;color:#666;margin-top:4px">🏰 Walls at max (3)</div>';
         }
         // Docks
         if (costs && !costs.isPort && costs.nearWater) {
             var dc = costs.dockCost;
-            var canDock = gold >= dc.gold;
+            var canDock = gold >= dc.gold && (op.walls >= 1);
             for (var dMat in dc) { if (dMat !== 'gold' && (inv[dMat] || 0) < dc[dMat]) canDock = false; }
             var needWall = (op.walls < 1);
             body += '<div style="margin:4px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap">';
-            body += '<span style="font-size:12px">⚓ Build Docks</span>';
-            body += '<span style="font-size:11px;color:#888">' + dc.gold + 'g + ' + dc.wood + ' wood + ' + dc.planks + ' planks + ' + dc.rope + ' rope + ' + dc.iron + ' iron</span>';
             if (needWall) {
-                body += '<span style="font-size:11px;color:#c44e52">Requires Walls Lv.1+</span>';
+                body += '<span style="font-size:11px;color:#c44e52">⚓ Docks require Walls Lv.1+</span>';
             } else {
                 body += '<button onclick="UI._opBuildDocks(\'' + townId + '\')" style="padding:2px 10px;font-size:11px;cursor:pointer' + (canDock ? '' : ';opacity:0.5') + '"' + (canDock ? '' : ' disabled') + '>Build</button>';
+                body += '<span style="font-size:11px">⚓ Docks <span style="color:#888">(' + dc.gold + 'g + ' + _formatMats(dc) + ')</span></span>';
             }
             body += '</div>';
         } else if (costs && costs.isPort) {
-            body += '<div style="font-size:11px;color:#5599cc">⚓ Docks built — this outpost is a port</div>';
-        } else if (costs && !costs.nearWater) {
-            body += '<div style="font-size:11px;color:#666">⚓ No water nearby — docks cannot be built</div>';
+            body += '<div style="font-size:11px;color:#5599cc;margin-top:4px">⚓ Port — docks built</div>';
         }
         body += '</div>';
 
         // === INFRASTRUCTURE (Roads & Sea Routes) ===
         body += '<div style="background:rgba(40,40,40,0.6);padding:10px;border-radius:6px;margin-bottom:8px">';
         body += '<h5 style="margin:0 0 6px;color:#ccc">🛤️ Infrastructure</h5>';
-
-        // Existing roads
         if (op.connectedRoads.length > 0) {
-            body += '<div style="font-size:12px;margin-bottom:4px"><strong>Roads:</strong></div>';
             for (var ri = 0; ri < op.connectedRoads.length; ri++) {
                 var cr = op.connectedRoads[ri];
-                body += '<div style="font-size:11px;color:#aaa;margin-left:8px">🛤️ → ' + cr.name + ' <span style="color:#666">(' + (cr.condition || 'good') + ')</span></div>';
+                body += '<div style="font-size:11px;color:#aaa;margin:2px 0">🛤️ Road → ' + cr.name + '</div>';
             }
         }
-        // Existing sea routes
         if (op.connectedSeaRoutes.length > 0) {
-            body += '<div style="font-size:12px;margin-bottom:4px;margin-top:4px"><strong>Sea Routes:</strong></div>';
             for (var si = 0; si < op.connectedSeaRoutes.length; si++) {
                 var cs = op.connectedSeaRoutes[si];
-                body += '<div style="font-size:11px;color:#aaa;margin-left:8px">🚢 → ' + cs.name + '</div>';
+                body += '<div style="font-size:11px;color:#aaa;margin:2px 0">🚢 Sea Route → ' + cs.name + '</div>';
             }
         }
         if (op.connectedRoads.length === 0 && op.connectedSeaRoutes.length === 0) {
-            body += '<div style="font-size:11px;color:#c44e52">⚠️ No connections — only reachable by offroad travel!</div>';
+            body += '<div style="font-size:11px;color:#c44e52">⚠️ No connections — offroad access only!</div>';
         }
-
         // Build new road
         var landTargets = nearby.filter(function(n) { return !n.hasRoad; });
         if (landTargets.length > 0) {
-            body += '<div style="margin-top:8px">';
-            body += '<div style="font-size:12px;margin-bottom:4px"><strong>Build Road to:</strong></div>';
-            body += '<div style="max-height:120px;overflow-y:auto">';
-            for (var li = 0; li < Math.min(landTargets.length, 10); li++) {
+            body += '<div style="margin-top:6px;font-size:12px"><strong>Build Road:</strong></div>';
+            body += '<div style="max-height:80px;overflow-y:auto">';
+            for (var li = 0; li < Math.min(landTargets.length, 8); li++) {
                 var lt = landTargets[li];
-                var rdist = lt.dist;
-                var rGold = Math.floor(100 + rdist * 0.5);
-                var rWood = Math.floor(10 + rdist * 0.1);
-                var rStone = Math.floor(8 + rdist * 0.08);
+                var rGold = Math.floor(100 + lt.dist * 0.5);
+                var rWood = Math.floor(10 + lt.dist * 0.1);
+                var rStone = Math.floor(8 + lt.dist * 0.08);
                 if (Player.skills && Player.skills.cartographer) { rGold = Math.floor(rGold * 0.75); rWood = Math.floor(rWood * 0.75); rStone = Math.floor(rStone * 0.75); }
                 var canRoad = gold >= rGold && (inv.wood || 0) >= rWood && (inv.stone || 0) >= rStone;
                 body += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;flex-wrap:wrap">';
                 body += '<button onclick="UI._opBuildRoad(\'' + townId + '\',\'' + lt.townId + '\')" style="padding:2px 8px;font-size:11px;cursor:pointer' + (canRoad ? '' : ';opacity:0.5') + '"' + (canRoad ? '' : ' disabled') + '>Build</button>';
-                body += '<span style="font-size:11px">' + lt.name + ' <span style="color:#888">(' + lt.category + ', ' + rdist + ' dist — ' + rGold + 'g + ' + rWood + ' wood + ' + rStone + ' stone)</span></span>';
+                body += '<span style="font-size:11px">' + lt.name + ' <span style="color:#888">(' + lt.category + ', ' + rGold + 'g + ' + rWood + ' wood + ' + rStone + ' stone)</span></span>';
                 body += '</div>';
             }
-            body += '</div></div>';
+            body += '</div>';
         }
-
         // Build new sea route (only if port)
         if (op.isPort) {
             var seaTargets = nearby.filter(function(n) { return n.isPort && !n.hasSeaRoute; });
             if (seaTargets.length > 0) {
-                body += '<div style="margin-top:8px">';
-                body += '<div style="font-size:12px;margin-bottom:4px"><strong>Build Sea Route to:</strong></div>';
-                body += '<div style="max-height:120px;overflow-y:auto">';
-                for (var sti = 0; sti < Math.min(seaTargets.length, 10); sti++) {
+                body += '<div style="margin-top:6px;font-size:12px"><strong>Build Sea Route:</strong></div>';
+                for (var sti = 0; sti < Math.min(seaTargets.length, 8); sti++) {
                     var st = seaTargets[sti];
-                    var sDist = st.dist;
-                    var sGold = Math.floor(200 + sDist * 0.8);
-                    var sRope = Math.floor(10 + sDist * 0.05);
-                    var sPlanks = Math.floor(15 + sDist * 0.08);
-                    var sCloth = Math.floor(5 + sDist * 0.03);
-                    if (Player.skills && Player.skills.cartographer) { sGold = Math.floor(sGold * 0.75); sRope = Math.floor(sRope * 0.75); sPlanks = Math.floor(sPlanks * 0.75); sCloth = Math.floor(sCloth * 0.75); }
-                    var canSea = gold >= sGold && (inv.rope || 0) >= sRope && (inv.planks || 0) >= sPlanks && (inv.cloth || 0) >= sCloth;
+                    var sGold = Math.floor(200 + st.dist * 0.8);
+                    if (Player.skills && Player.skills.cartographer) sGold = Math.floor(sGold * 0.75);
                     body += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;flex-wrap:wrap">';
-                    body += '<button onclick="UI._opBuildSeaRoute(\'' + townId + '\',\'' + st.townId + '\')" style="padding:2px 8px;font-size:11px;cursor:pointer' + (canSea ? '' : ';opacity:0.5') + '"' + (canSea ? '' : ' disabled') + '>Build</button>';
-                    body += '<span style="font-size:11px">🚢 ' + st.name + ' <span style="color:#888">(' + sDist + ' dist — ' + sGold + 'g + ' + sRope + ' rope + ' + sPlanks + ' planks + ' + sCloth + ' cloth)</span></span>';
+                    body += '<button onclick="UI._opBuildSeaRoute(\'' + townId + '\',\'' + st.townId + '\')" style="padding:2px 8px;font-size:11px;cursor:pointer">Build</button>';
+                    body += '<span style="font-size:11px">🚢 ' + st.name + ' <span style="color:#888">(' + sGold + 'g)</span></span>';
                     body += '</div>';
                 }
-                body += '</div></div>';
             }
         }
         body += '</div>';
+
+        // === VILLAGE PETITION ===
+        var minPop = cfg.villageConversionMinPop || 20;
+        if (op.population >= minPop) {
+            body += '<div style="background:rgba(74,124,59,0.15);padding:10px;border-radius:6px;margin-bottom:8px;border:1px solid rgba(74,124,59,0.4)">';
+            body += '<h5 style="margin:0 0 6px;color:#55a868">🏘️ Petition for Village Status</h5>';
+            body += '<p style="font-size:11px;color:#aaa;margin:0 0 6px">Your outpost has ' + op.population + '+ residents! Petition the king to recognize it as an official village.</p>';
+            body += '<button class="btn-medieval" onclick="UI._opPetitionVillage(\'' + townId + '\')" style="background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5);padding:5px 14px;font-size:12px">🏘️ Petition King</button>';
+            body += '</div>';
+        } else {
+            body += '<div style="font-size:11px;color:#666;margin-bottom:8px">🏘️ Village conversion requires ' + minPop + '+ residents (' + op.population + '/' + minPop + ')</div>';
+        }
+
         body += '</div>';
 
-        var footer = '<button class="btn-medieval" onclick="UI.openOutpostDialog()" style="padding:6px 15px;">← Back to List</button> ';
+        var footer = '<button class="btn-medieval" onclick="UI.openOutpostDialog()" style="padding:6px 15px;">← Back</button> ';
         footer += '<button class="btn-medieval" onclick="UI.closeModal()" style="padding:6px 15px;">Close</button>';
         openModal('⛺ ' + op.name + ' — Management', body, footer);
     }
 
-    // Outpost action helpers (called from inline onclick)
+    // Outpost action helpers
     function _opStaff(townId, action, type) {
         var result = Player.manageOutpostStaff(townId, action, type);
         toast(result.message, result.success ? 'success' : 'error');
@@ -15719,6 +15825,99 @@ window.UI = (function () {
         toast(result.message, result.success ? 'success' : 'error');
         openOutpostDetail(fromId);
     }
+    function _opBuyLand(townId) {
+        var result = Player.buyOutpostLandPlot(townId);
+        toast(result.message, result.success ? 'success' : 'error');
+        openOutpostDetail(townId);
+    }
+    function _opBuildHousing(townId, housingType) {
+        var result = Player.buildOutpostHousing(townId, housingType);
+        toast(result.message, result.success ? 'success' : 'error');
+        openOutpostDetail(townId);
+    }
+    function _opBuildUpgrade(townId, upgradeId) {
+        var result = Player.buildOutpostUpgrade(townId, upgradeId);
+        toast(result.message, result.success ? 'success' : 'error');
+        openOutpostDetail(townId);
+    }
+    function _opPetitionVillage(townId) {
+        if (!confirm('Petition the king to convert this outpost to a village? You will keep all land and buildings.')) return;
+        var result = Player.petitionOutpostToVillage(townId);
+        toast(result.message, result.success ? 'success' : 'error');
+        if (result.success) openOutpostDialog();
+        else openOutpostDetail(townId);
+    }
+
+    /**
+     * Open recruit-to-outpost dialog for an NPC.
+     */
+    function openRecruitToOutpostDialog(npcId) {
+        var npc = Engine.findPerson ? Engine.findPerson(npcId) : (Engine.getPerson ? Engine.getPerson(npcId) : null);
+        if (!npc) { toast('NPC not found.', 'error'); return; }
+        var outposts = Player.getPlayerOutposts ? Player.getPlayerOutposts() : [];
+        outposts = outposts.filter(function(o) { return !o.abandoned && !o.annexed && o.isOutpost; });
+        if (outposts.length === 0) { toast('No active outposts.', 'error'); return; }
+        var cfg = CONFIG.OUTPOST_CONFIG || {};
+
+        var html = '<div style="padding:8px">';
+        html += '<p style="color:#aaa;font-size:12px;margin:0 0 8px">Convince <strong>' + npc.firstName + ' ' + npc.lastName + '</strong> to move to one of your outposts.</p>';
+
+        for (var i = 0; i < outposts.length; i++) {
+            var op = outposts[i];
+            // Check housing capacity
+            var housingCap = 0;
+            for (var hi = 0; hi < (op.outpostHousing || []).length; hi++) {
+                var hCfg = CONFIG.OUTPOST_HOUSING && CONFIG.OUTPOST_HOUSING[op.outpostHousing[hi].type];
+                if (hCfg) housingCap += hCfg.capacity;
+            }
+            var hasSpace = op.population < housingCap;
+            var chance = Player.getOutpostRecruitChance ? Player.getOutpostRecruitChance(npcId, op.townId) : 0.10;
+            var chanceStr = Math.round(chance * 100);
+
+            // Check cooldown
+            var cooldownKey = npcId + '_' + op.townId;
+            var lastAsked = (Player.state._outpostRecruitCooldowns || {})[cooldownKey] || 0;
+            var daysLeft = Math.max(0, (cfg.recruitCooldownDays || 7) - (Engine.getDay() - lastAsked));
+            var onCooldown = lastAsked > 0 && daysLeft > 0;
+
+            html += '<div style="border:1px solid #555;padding:8px;margin:5px 0;border-radius:5px;background:rgba(30,30,30,0.8)">';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center">';
+            html += '<strong style="color:#e0d6b8">' + op.name + '</strong>';
+            html += '<span style="color:' + (chanceStr >= 30 ? '#55a868' : chanceStr >= 15 ? '#ccaa33' : '#c44e52') + ';font-size:13px">' + chanceStr + '% chance</span>';
+            html += '</div>';
+            html += '<div style="font-size:11px;color:#888;margin:4px 0">👥 ' + op.population + '/' + housingCap + ' residents';
+            if (op.hasRoad) html += ' | 🛤️ Road';
+            html += ' | Upgrades: ' + (op.outpostUpgrades || []).length;
+            html += '</div>';
+
+            if (!hasSpace) {
+                html += '<div style="font-size:11px;color:#c44e52">⚠️ No housing space — build more housing first.</div>';
+            } else if (onCooldown) {
+                html += '<div style="font-size:11px;color:#c44e52">⏳ Cooldown: ' + daysLeft + ' day(s) remaining.</div>';
+            } else {
+                // Gold incentive input
+                html += '<div style="display:flex;gap:6px;align-items:center;margin-top:4px">';
+                html += '<span style="font-size:11px">Gold incentive:</span>';
+                html += '<input type="number" id="recruit_gold_' + op.townId + '" value="0" min="0" step="50" style="width:60px;font-size:11px;padding:2px;background:#222;color:#e0d6b8;border:1px solid #555">';
+                html += '<button class="btn-medieval" onclick="UI._doRecruitNpc(\'' + npcId + '\',\'' + op.townId + '\')" style="font-size:11px;padding:3px 10px;background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5)">⛺ Recruit</button>';
+                html += '</div>';
+                html += '<div style="font-size:10px;color:#666">Each ' + (cfg.recruitGoldPerPercent || 50) + 'g adds ~1% chance (max +' + Math.round((cfg.recruitMaxGoldBonus || 0.20) * 100) + '%)</div>';
+            }
+            html += '</div>';
+        }
+        html += '</div>';
+        var footer = '<button class="btn-medieval" onclick="UI.closeModal()" style="padding:6px 15px;">Close</button>';
+        openModal('⛺ Recruit ' + npc.firstName + ' to Outpost', html, footer);
+    }
+
+    function _doRecruitNpc(npcId, townId) {
+        var goldInput = document.getElementById('recruit_gold_' + townId);
+        var goldIncentive = goldInput ? parseInt(goldInput.value) || 0 : 0;
+        var result = Player.recruitNpcToOutpost(npcId, townId, goldIncentive);
+        toast(result.message, result.success ? 'success' : 'warning');
+        if (result.success) closeModal();
+        else openRecruitToOutpostDialog(npcId);
+    }
 
     function enterOutpostPlacement() {
         closeModal();
@@ -15727,11 +15926,9 @@ window.UI = (function () {
     }
 
     function confirmOutpostPlacement(destX, destY) {
-        // Validate terrain is buildable
         var terrain = Engine.getTerrainAtPixel(destX, destY);
         if (terrain === 2) { toast('Cannot build on water.', 'error'); return; }
         if (terrain === 3) { toast('Cannot build on mountains.', 'error'); return; }
-        // Check reachability — must be reachable by land offroad (no water barrier)
         var playerX = Player.worldX || 0;
         var playerY = Player.worldY || 0;
         if (Player.townId) {
@@ -15740,45 +15937,108 @@ window.UI = (function () {
         }
         var pathCheck = Engine.findTerrainPath(playerX, playerY, destX, destY, 'land');
         if (!pathCheck || !pathCheck.waypoints || pathCheck.waypoints.length === 0) {
-            toast('⚠️ Cannot reach that location by land — water or mountains block the path.', 'error');
+            toast('⚠️ Cannot reach by land — water or mountains block the path.', 'error');
             return;
         }
-        // Show founding requirements dialog for this location
         var cfg = CONFIG.OUTPOST_CONFIG || {};
-        var cost = cfg.foundingCost || 500;
+        var baseCost = cfg.foundingCost || 500;
         var mats = cfg.foundingMaterials || {};
         var gold = Player.gold || 0;
         var inv = Player.inventory || {};
         var dist = Math.floor(Math.hypot(destX - playerX, destY - playerY));
 
+        // Find nearest settlement for road cost calc
+        var allTowns = Engine.getTowns ? Engine.getTowns() : [];
+        var nearestSettle = null, nearDist = Infinity;
+        for (var ti = 0; ti < allTowns.length; ti++) {
+            var t = allTowns[ti];
+            if (t.category === 'outpost' || t.abandoned) continue;
+            var d = Math.hypot(destX - t.x, destY - t.y);
+            if (d < nearDist) { nearDist = d; nearestSettle = t; }
+        }
+        var roadGold = nearestSettle ? Math.floor(100 + nearDist * 0.5) : 0;
+        var roadWood = nearestSettle ? Math.floor(10 + nearDist * 0.1) : 0;
+        var roadStone = nearestSettle ? Math.floor(8 + nearDist * 0.08) : 0;
+        if (Player.skills && Player.skills.cartographer) { roadGold = Math.floor(roadGold * 0.75); roadWood = Math.floor(roadWood * 0.75); roadStone = Math.floor(roadStone * 0.75); }
+
+        var totalWithRoad = baseCost + roadGold;
+        var totalMatsWithRoad = {};
+        for (var mk in mats) totalMatsWithRoad[mk] = mats[mk];
+        totalMatsWithRoad.wood = (totalMatsWithRoad.wood || 0) + roadWood;
+        totalMatsWithRoad.stone = (totalMatsWithRoad.stone || 0) + roadStone;
+
         var html = '<div style="padding:8px;">';
-        html += '<p style="margin:0 0 8px;font-size:0.85rem;color:#aaa;">Found an outpost at this location. Distance: ~' + dist + ' tiles. You will travel offroad to the site first.</p>';
-        var canAfford = gold >= cost;
-        html += '<div style="margin:4px 0;font-size:0.85rem;"><span style="color:' + (canAfford ? '#55a868' : '#c44e52') + ';">💰 Gold: ' + Math.floor(gold) + '/' + cost + 'g ' + (canAfford ? '✓' : '✗') + '</span></div>';
-        var allMats = true;
-        for (var matId in mats) {
-            var needed = mats[matId];
-            var has = inv[matId] || 0;
-            var ok = has >= needed;
-            if (!ok) allMats = false;
-            html += '<div style="margin:2px 0;font-size:0.85rem;"><span style="color:' + (ok ? '#55a868' : '#c44e52') + ';">📦 ' + matId + ': ' + has + '/' + needed + ' ' + (ok ? '✓' : '✗') + '</span></div>';
-        }
-        var canFound = canAfford && allMats;
+        html += '<p style="margin:0 0 8px;font-size:0.85rem;color:#aaa;">Found an outpost here. Distance: ~' + dist + '. Starts with ' + (cfg.startingLandPlots || 4) + ' land plots + ' + (cfg.baseStorageCapacity || 200) + ' storage.</p>';
+
+        // Base costs
+        html += '<div style="margin:6px 0;font-size:12px;color:#ccc"><strong>Base Cost:</strong> ' + baseCost + 'g + ' + _formatMats(mats) + '</div>';
+
+        // Option 1: Without road
+        var canBase = gold >= baseCost;
+        var baseMatOk = true;
+        for (var bmk in mats) { if ((inv[bmk] || 0) < mats[bmk]) { canBase = false; baseMatOk = false; } }
+        html += '<div style="border:1px solid #555;padding:8px;margin:6px 0;border-radius:5px;background:rgba(30,30,30,0.8)">';
+        html += '<div style="font-size:12px;color:#e0d6b8;margin-bottom:4px">🏕️ Found Without Road</div>';
+        html += '<div style="font-size:11px;color:#888">Only reachable by offroad travel. Cost: ' + baseCost + 'g + ' + _formatMats(mats) + '</div>';
+        html += '<button class="btn-medieval" onclick="UI._foundOutpostAtLocation(' + destX + ',' + destY + ',false)" style="margin-top:5px;padding:4px 14px;font-size:11px;background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5)' + (canBase ? '' : ';opacity:0.5') + '"' + (canBase ? '' : ' disabled') + '>⛺ Found (No Road)</button>';
         html += '</div>';
-        var footer = '';
-        if (canFound) {
-            footer += '<button class="btn-medieval" onclick="UI.travelAndFoundOutpost(' + destX + ',' + destY + ')" style="background:rgba(74,124,59,0.4);border-color:rgba(74,124,59,0.6);padding:6px 16px;">⛺ Travel & Found Outpost</button> ';
-        } else {
-            footer += '<button class="btn-medieval" disabled style="opacity:0.5;padding:6px 16px;">⛺ Missing Requirements</button> ';
+
+        // Option 2: With road
+        if (nearestSettle) {
+            var canWithRoad = gold >= totalWithRoad;
+            for (var rwmk in totalMatsWithRoad) { if ((inv[rwmk] || 0) < totalMatsWithRoad[rwmk]) canWithRoad = false; }
+            html += '<div style="border:1px solid #555;padding:8px;margin:6px 0;border-radius:5px;background:rgba(30,30,30,0.8)">';
+            html += '<div style="font-size:12px;color:#e0d6b8;margin-bottom:4px">🛤️ Found With Road to ' + nearestSettle.name + '</div>';
+            html += '<div style="font-size:11px;color:#888">Integrates into travel/caravan system. Total: ' + totalWithRoad + 'g + ' + _formatMats(totalMatsWithRoad) + '</div>';
+            html += '<div style="font-size:10px;color:#55a868">+15% NPC recruitment bonus with road!</div>';
+            html += '<button class="btn-medieval" onclick="UI._foundOutpostAtLocation(' + destX + ',' + destY + ',true)" style="margin-top:5px;padding:4px 14px;font-size:11px;background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5)' + (canWithRoad ? '' : ';opacity:0.5') + '"' + (canWithRoad ? '' : ' disabled') + '>🛤️ Found (With Road)</button>';
+            html += '</div>';
         }
-        footer += '<button class="btn-medieval" onclick="UI.closeModal()" style="padding:6px 16px;">Cancel</button>';
+
+        html += '</div>';
+        var footer = '<button class="btn-medieval" onclick="UI.closeModal()" style="padding:6px 16px;">Cancel</button>';
         openModal('⛺ Found Outpost Here', html, footer);
     }
 
-    function foundOutpostUI() {
+    function _foundOutpostAtLocation(destX, destY, buildWithRoad) {
+        closeModal();
+        // Start travel to location, then found on arrival
+        var result = Player.travelToCoords ? Player.travelToCoords(destX, destY) : null;
+        if (!result || !result.success) {
+            toast((result && result.message) || 'Cannot travel there.', 'warning');
+            return;
+        }
+        Player.state._pendingOutpostFound = true;
+        Player.state._pendingOutpostRoad = !!buildWithRoad;
+        toast('⛺ Traveling to location... Outpost founding will begin on arrival.', 'info');
+    }
+
+    function foundOutpostUI(buildWithRoad) {
         var name = prompt('Name your outpost:');
         if (!name || name.trim() === '') return;
-        var result = Player.foundPlayerOutpost(name);
+        var opts = { buildWithRoad: !!buildWithRoad };
+        if (buildWithRoad) {
+            // Calculate road costs for the nearest settlement
+            var cfg = CONFIG.OUTPOST_CONFIG || {};
+            var allTowns = Engine.getTowns ? Engine.getTowns() : [];
+            var px = Player.worldX || 0, py = Player.worldY || 0;
+            if (Player.townId) { var pt = Engine.findTown(Player.townId); if (pt) { px = pt.x; py = pt.y; } }
+            var nearestSettle = null, nearDist = Infinity;
+            for (var ti = 0; ti < allTowns.length; ti++) {
+                var t = allTowns[ti];
+                if (t.category === 'outpost' || t.abandoned) continue;
+                var d = Math.hypot(px - t.x, py - t.y);
+                if (d < nearDist) { nearDist = d; nearestSettle = t; }
+            }
+            if (nearestSettle) {
+                var roadGold = Math.floor(100 + nearDist * 0.5);
+                var roadWood = Math.floor(10 + nearDist * 0.1);
+                var roadStone = Math.floor(8 + nearDist * 0.08);
+                if (Player.skills && Player.skills.cartographer) { roadGold = Math.floor(roadGold * 0.75); roadWood = Math.floor(roadWood * 0.75); roadStone = Math.floor(roadStone * 0.75); }
+                opts.roadCost = { gold: roadGold, wood: roadWood, stone: roadStone };
+            }
+        }
+        var result = Player.foundPlayerOutpost(name, opts);
         toast(result.message, result.success ? 'success' : 'error');
         if (result.success) openOutpostDialog();
     }
@@ -15790,48 +16050,55 @@ window.UI = (function () {
         var gold = Player.gold || 0;
         var inv = Player.inventory || {};
 
-        var html = '<div style="padding:8px;">';
-        html += '<p style="margin:0 0 8px;font-size:0.85rem;color:#aaa;">Found a wilderness outpost at your current location. Outposts cost <span style="color:#ffd700;">' + cost + 'g</span> + materials, and ' + (cfg.dailyCost || 3) + 'g/day to maintain.</p>';
-
-        // Gold check
-        var canAfford = gold >= cost;
-        html += '<div style="margin:4px 0;font-size:0.85rem;"><span style="color:' + (canAfford ? '#55a868' : '#c44e52') + ';">💰 Gold: ' + Math.floor(gold) + '/' + cost + 'g ' + (canAfford ? '✓' : '✗') + '</span></div>';
-
-        // Material check
-        var allMats = true;
-        for (var matId in mats) {
-            var needed = mats[matId];
-            var has = inv[matId] || 0;
-            var ok = has >= needed;
-            if (!ok) allMats = false;
-            html += '<div style="margin:2px 0;font-size:0.85rem;"><span style="color:' + (ok ? '#55a868' : '#c44e52') + ';">📦 ' + matId + ': ' + has + '/' + needed + ' ' + (ok ? '✓' : '✗') + '</span></div>';
+        // Calculate road cost to nearest settlement
+        var allTowns = Engine.getTowns ? Engine.getTowns() : [];
+        var px = Player.worldX || 0, py = Player.worldY || 0;
+        var nearestSettle = null, nearDist = Infinity;
+        for (var ti = 0; ti < allTowns.length; ti++) {
+            var t = allTowns[ti];
+            if (t.category === 'outpost' || t.abandoned) continue;
+            var d = Math.hypot(px - t.x, py - t.y);
+            if (d < nearDist) { nearDist = d; nearestSettle = t; }
         }
+        var roadGold = nearestSettle ? Math.floor(100 + nearDist * 0.5) : 0;
+        var roadWood = nearestSettle ? Math.floor(10 + nearDist * 0.1) : 0;
+        var roadStone = nearestSettle ? Math.floor(8 + nearDist * 0.08) : 0;
+        if (Player.skills && Player.skills.cartographer) { roadGold = Math.floor(roadGold * 0.75); roadWood = Math.floor(roadWood * 0.75); roadStone = Math.floor(roadStone * 0.75); }
 
-        var canFound = canAfford && allMats;
+        var html = '<div style="padding:8px;">';
+        html += '<p style="margin:0 0 8px;font-size:0.85rem;color:#aaa;">Found a wilderness outpost at your current location. Starts with ' + (cfg.startingLandPlots || 4) + ' land plots + ' + (cfg.baseStorageCapacity || 200) + ' storage. ' + (cfg.dailyMaintenanceCost || 3) + 'g/day maintenance.</p>';
+
+        // Option 1: Without road
+        var canBase = gold >= cost;
+        for (var bmk in mats) { if ((inv[bmk] || 0) < mats[bmk]) canBase = false; }
+        html += '<div style="border:1px solid #555;padding:8px;margin:6px 0;border-radius:5px">';
+        html += '<div style="font-size:12px;color:#e0d6b8">🏕️ Without Road — ' + cost + 'g + ' + _formatMats(mats) + '</div>';
+        html += '<button class="btn-medieval" onclick="UI.foundOutpostUI(false)" style="margin-top:4px;padding:4px 14px;font-size:11px;background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5)' + (canBase ? '' : ';opacity:0.5') + '"' + (canBase ? '' : ' disabled') + '>⛺ Found (No Road)</button>';
         html += '</div>';
 
-        var footer = '';
-        if (canFound) {
-            footer += '<button class="btn-medieval" onclick="UI.foundOutpostUI()" style="background:rgba(74,124,59,0.4);border-color:rgba(74,124,59,0.6);padding:6px 16px;">⛺ Found Outpost</button> ';
-        } else {
-            footer += '<button class="btn-medieval" disabled style="opacity:0.5;padding:6px 16px;">⛺ Missing Requirements</button> ';
+        // Option 2: With road
+        if (nearestSettle) {
+            var totalGold = cost + roadGold;
+            var totalMats = {};
+            for (var mk in mats) totalMats[mk] = mats[mk];
+            totalMats.wood = (totalMats.wood || 0) + roadWood;
+            totalMats.stone = (totalMats.stone || 0) + roadStone;
+            var canWithRoad = gold >= totalGold;
+            for (var rwmk in totalMats) { if ((inv[rwmk] || 0) < totalMats[rwmk]) canWithRoad = false; }
+            html += '<div style="border:1px solid #555;padding:8px;margin:6px 0;border-radius:5px">';
+            html += '<div style="font-size:12px;color:#e0d6b8">🛤️ With Road to ' + nearestSettle.name + ' — ' + totalGold + 'g + ' + _formatMats(totalMats) + '</div>';
+            html += '<button class="btn-medieval" onclick="UI.foundOutpostUI(true)" style="margin-top:4px;padding:4px 14px;font-size:11px;background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5)' + (canWithRoad ? '' : ';opacity:0.5') + '"' + (canWithRoad ? '' : ' disabled') + '>🛤️ Found (With Road)</button>';
+            html += '</div>';
         }
-        footer += '<button class="btn-medieval" onclick="UI.closeModal()" style="padding:6px 16px;">Cancel</button>';
 
-        openModal('\u26FA Found Wilderness Outpost', html, footer);
+        html += '</div>';
+        var footer = '<button class="btn-medieval" onclick="UI.closeModal()" style="padding:6px 16px;">Cancel</button>';
+        openModal('⛺ Found Wilderness Outpost', html, footer);
     }
 
-    // Right-click map → "Travel & Found Outpost Here"
+    // Legacy: travelAndFoundOutpost is now handled by _foundOutpostAtLocation
     function travelAndFoundOutpost(destX, destY) {
-        // Start offroad travel to the location
-        var result = Player.travelToCoords ? Player.travelToCoords(destX, destY) : null;
-        if (!result || !result.success) {
-            toast((result && result.message) || 'Cannot travel there.', 'warning');
-            return;
-        }
-        // Set a flag so the outpost dialog opens on arrival
-        Player.state._pendingOutpostFound = true;
-        toast('⛺ Traveling to location... Outpost founding will begin on arrival.', 'info');
+        _foundOutpostAtLocation(destX, destY, false);
     }
 
     function outpostStaffUI(townId, action, type) {
@@ -26899,6 +27166,13 @@ window.UI = (function () {
         _opBuildDocks,
         _opBuildRoad,
         _opBuildSeaRoute,
+        _opBuyLand,
+        _opBuildHousing,
+        _opBuildUpgrade,
+        _opPetitionVillage,
+        _foundOutpostAtLocation,
+        openRecruitToOutpostDialog,
+        _doRecruitNpc,
         showOffSeaDialog,
         _confirmOffSea,
         showLandingDialog,

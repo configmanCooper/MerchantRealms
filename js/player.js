@@ -32749,23 +32749,37 @@
     // ========================================================
 
     /**
-     * Found a wilderness outpost. Player must be traveling or at a road between towns.
+     * Found a wilderness outpost with or without a road.
      * @param {string} name - Name for the outpost
+     * @param {object} opts - { buildWithRoad: boolean, roadCost: number, roadMaterials: object }
      * @returns {{ success: boolean, message: string }}
      */
-    function foundPlayerOutpost(name) {
+    function foundPlayerOutpost(name, opts) {
         var cfg = CONFIG.OUTPOST_CONFIG;
         if (!name || name.trim().length === 0) return { success: false, message: 'Outpost needs a name.' };
+        if (!opts) opts = {};
+
+        // Calculate total costs
+        var totalGold = cfg.foundingCost;
+        var totalMats = {};
+        for (var mk in cfg.foundingMaterials) totalMats[mk] = cfg.foundingMaterials[mk];
+        if (opts.buildWithRoad && opts.roadCost) {
+            totalGold += opts.roadCost.gold || 0;
+            for (var rk in opts.roadCost) {
+                if (rk === 'gold') continue;
+                totalMats[rk] = (totalMats[rk] || 0) + (opts.roadCost[rk] || 0);
+            }
+        }
 
         // Cost check
-        if (player.gold < cfg.foundingCost) {
-            return { success: false, message: 'Need ' + cfg.foundingCost + 'g to establish an outpost. You have ' + Math.floor(player.gold) + 'g.' };
+        if (player.gold < totalGold) {
+            return { success: false, message: 'Need ' + totalGold + 'g (have ' + Math.floor(player.gold) + 'g).' };
         }
 
         // Material check
         var matMissing = [];
-        for (var matId in cfg.foundingMaterials) {
-            var needed = cfg.foundingMaterials[matId];
+        for (var matId in totalMats) {
+            var needed = totalMats[matId];
             var has = player.inventory[matId] || 0;
             if (has < needed) matMissing.push(needed + ' ' + matId + ' (have ' + has + ')');
         }
@@ -32776,7 +32790,6 @@
         // Determine outpost position
         var ox, oy;
         if (player.traveling && player.travelData) {
-            // Use current travel position (interpolated)
             var from = Engine.findTown(player.travelData.fromTownId);
             var to = Engine.findTown(player.travelData.toTownId);
             if (from && to) {
@@ -32789,16 +32802,13 @@
                 oy = town ? town.y + 30 : 100;
             }
         } else {
-            // Use current town position offset, or wilderness coords if not at a town
             if (player.worldX != null && player.worldY != null) {
-                // Player is in the wilderness — use their exact coordinates
                 ox = player.worldX;
                 oy = player.worldY;
             } else {
                 var curTown = Engine.findTown(player.townId);
                 if (!curTown) return { success: false, message: 'Cannot determine location for outpost.' };
                 var rng = Engine.getRng();
-                // Try up to 10 random offsets to find buildable terrain
                 var _foundSpot = false;
                 for (var _try = 0; _try < 10; _try++) {
                     ox = curTown.x + (rng ? rng.randInt(-60, 60) : 30);
@@ -32814,32 +32824,31 @@
             }
         }
 
-        // Validate terrain at chosen location isn't water/mountain
+        // Validate terrain at chosen location
         if (Engine.getTerrainAtPixel) {
             var _opTerrain = Engine.getTerrainAtPixel(ox, oy);
             if (_opTerrain === 2) return { success: false, message: 'Cannot build an outpost on water.' };
             if (_opTerrain === 3) return { success: false, message: 'Cannot build an outpost on mountains.' };
         }
 
-        // Deduct costs
-        player.gold -= cfg.foundingCost;
-        player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + cfg.foundingCost;
-        for (var matId2 in cfg.foundingMaterials) {
-            player.inventory[matId2] = (player.inventory[matId2] || 0) - cfg.foundingMaterials[matId2];
+        // Deduct all costs
+        player.gold -= totalGold;
+        player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + totalGold;
+        for (var matId2 in totalMats) {
+            player.inventory[matId2] = (player.inventory[matId2] || 0) - totalMats[matId2];
             if (player.inventory[matId2] <= 0) delete player.inventory[matId2];
         }
 
-        // Determine kingdom (nearest to outpost location)
         var result = Engine.foundOutpost({
             founderId: player.id || 'player',
             founderType: 'player',
             x: ox,
             y: oy,
             name: name.trim(),
+            buildWithRoad: !!opts.buildWithRoad,
         });
 
         if (result.success && result.outpost) {
-            // Track player outposts
             if (!player.outposts) player.outposts = [];
             player.outposts.push({
                 townId: result.outpost.id,
@@ -32898,11 +32907,14 @@
                 buildings: town.buildings.length,
                 buildingDetails: bldgs,
                 maxBuildings: town.maxBuildingSlots || 4,
-                workers: town.hiredWorkers || 0,
-                guards: town.hiredGuards || 0,
+                workers: (town.outpostWorkers || []).length,
+                guards: (town.outpostGuards || []).length,
+                workerIds: town.outpostWorkers || [],
+                guardIds: town.outpostGuards || [],
                 walls: town.walls || 0,
                 prosperity: town.prosperity || 0,
-                population: town.population || 0,
+                population: (town.outpostResidents || []).length,
+                residents: town.outpostResidents || [],
                 dailyCost: (town._dailyMaintenanceDue || CONFIG.OUTPOST_CONFIG.dailyMaintenanceCost),
                 isOutpost: town.isOutpost,
                 isPort: town.isPort || false,
@@ -32914,6 +32926,14 @@
                 naturalDeposits: town.naturalDeposits || {},
                 soilFertility: town.soilFertility || 0,
                 garrison: town.garrison || 0,
+                // New outpost system fields
+                landPlots: town.landPlots || 4,
+                usedLandPlots: town.usedLandPlots || 0,
+                outpostStorage: town.outpostStorage || 200,
+                outpostHousing: town.outpostHousing || [],
+                outpostUpgrades: town.outpostUpgrades || [],
+                outpostHappiness: town.outpostHappiness || 50,
+                hasRoad: town.hasRoad || connRoads.length > 0,
             });
         }
         return outposts;
@@ -32931,9 +32951,15 @@
             var town = Engine.findTown(po.townId);
             if (!town || !town.isOutpost || town.abandoned || town.destroyed) continue;
 
-            var dailyCost = cfg.dailyMaintenanceCost +
-                (town.hiredWorkers || 0) * cfg.workerWagePerDay +
-                (town.hiredGuards || 0) * cfg.guardCostPerDay;
+            // Ensure new arrays exist
+            if (!town.outpostWorkers) town.outpostWorkers = [];
+            if (!town.outpostGuards) town.outpostGuards = [];
+
+            var numWorkers = town.outpostWorkers.length;
+            var numGuards = town.outpostGuards.length;
+            var dailyWorkerCost = numWorkers * (cfg.workerWagePerWeek || 10) / 7;
+            var dailyGuardCost = numGuards * (cfg.guardWagePerWeek || 15) / 7;
+            var dailyCost = cfg.dailyMaintenanceCost + dailyWorkerCost + dailyGuardCost;
 
             if (player.gold >= dailyCost) {
                 player.gold -= dailyCost;
@@ -32942,8 +32968,7 @@
                 town.lastMaintenanceDay = Engine.getDay();
             } else {
                 town.maintenancePaid = false;
-                // Warn player
-                Engine.logEvent('⚠️ You cannot afford ' + dailyCost + 'g maintenance for outpost "' + town.name + '"!');
+                Engine.logEvent('⚠️ You cannot afford ' + Math.ceil(dailyCost) + 'g maintenance for outpost "' + town.name + '"!');
             }
 
             // Player outpost abandonment
@@ -32953,7 +32978,6 @@
                     town.abandoned = true;
                     town.abandonedDay = Engine.getDay();
                     Engine.logEvent('💀 Your outpost "' + town.name + '" has been abandoned due to ' + daysSince + ' days without maintenance!');
-                    // Remove from player tracking
                     player.outposts.splice(i, 1);
                     i--;
                 }
@@ -32963,32 +32987,88 @@
 
     /**
      * Hire or dismiss workers/guards at a player outpost.
+     * Workers and guards are specific NPCs living in the outpost.
      */
-    function manageOutpostStaff(townId, action, type) {
+    function manageOutpostStaff(townId, action, type, npcId) {
         var town = Engine.findTown(townId);
         if (!town || !town.isOutpost) return { success: false, message: 'Not an outpost.' };
         if (town.founderId !== (player.id || 'player')) return { success: false, message: 'Not your outpost.' };
         var cfg = CONFIG.OUTPOST_CONFIG;
 
+        // Ensure arrays exist
+        if (!town.outpostWorkers) town.outpostWorkers = [];
+        if (!town.outpostGuards) town.outpostGuards = [];
+        if (!town.outpostResidents) town.outpostResidents = [];
+
         if (type === 'worker') {
             if (action === 'hire') {
-                if ((town.hiredWorkers || 0) >= cfg.maxHiredWorkers) return { success: false, message: 'Maximum workers reached (' + cfg.maxHiredWorkers + ').' };
-                town.hiredWorkers = (town.hiredWorkers || 0) + 1;
-                return { success: true, message: '👷 Hired a worker. (' + town.hiredWorkers + '/' + cfg.maxHiredWorkers + ')' };
+                if (town.outpostWorkers.length >= (cfg.maxOutpostWorkers || 10)) return { success: false, message: 'Maximum workers reached (' + (cfg.maxOutpostWorkers || 10) + ').' };
+                if (town.outpostResidents.length === 0) return { success: false, message: 'No residents to hire. Recruit NPCs first.' };
+                // Find eligible NPC
+                var npc = npcId ? Engine.findPerson(npcId) : null;
+                if (!npc) {
+                    // Find first available resident not already hired
+                    for (var ri = 0; ri < town.outpostResidents.length; ri++) {
+                        var candidate = Engine.findPerson(town.outpostResidents[ri]);
+                        if (candidate && candidate.alive && town.outpostWorkers.indexOf(candidate.id) < 0 && town.outpostGuards.indexOf(candidate.id) < 0) {
+                            npc = candidate; break;
+                        }
+                    }
+                }
+                if (!npc) return { success: false, message: 'No available residents to hire as workers.' };
+                if (town.outpostWorkers.indexOf(npc.id) >= 0) return { success: false, message: npc.firstName + ' is already a worker.' };
+                if (town.outpostGuards.indexOf(npc.id) >= 0) return { success: false, message: npc.firstName + ' is already a guard.' };
+                town.outpostWorkers.push(npc.id);
+                town.hiredWorkers = town.outpostWorkers.length;
+                npc.occupation = 'outpost_worker';
+                npc.employerId = player.id || 'player';
+                return { success: true, message: '👷 Hired ' + npc.firstName + ' ' + npc.lastName + ' as a worker. (' + town.outpostWorkers.length + '/' + (cfg.maxOutpostWorkers || 10) + ')' };
             } else {
-                if ((town.hiredWorkers || 0) <= 0) return { success: false, message: 'No workers to dismiss.' };
-                town.hiredWorkers--;
-                return { success: true, message: '👋 Dismissed a worker. (' + town.hiredWorkers + '/' + cfg.maxHiredWorkers + ')' };
+                if (town.outpostWorkers.length === 0) return { success: false, message: 'No workers to dismiss.' };
+                var dismissId = npcId || town.outpostWorkers[town.outpostWorkers.length - 1];
+                var idx = town.outpostWorkers.indexOf(dismissId);
+                if (idx >= 0) {
+                    town.outpostWorkers.splice(idx, 1);
+                    town.hiredWorkers = town.outpostWorkers.length;
+                    var dismissedNpc = Engine.findPerson(dismissId);
+                    if (dismissedNpc) { dismissedNpc.occupation = 'unemployed'; dismissedNpc.employerId = null; }
+                    return { success: true, message: '👋 Dismissed worker' + (dismissedNpc ? ' ' + dismissedNpc.firstName : '') + '. (' + town.outpostWorkers.length + '/' + (cfg.maxOutpostWorkers || 10) + ')' };
+                }
+                return { success: false, message: 'Worker not found.' };
             }
         } else if (type === 'guard') {
             if (action === 'hire') {
-                if ((town.hiredGuards || 0) >= cfg.maxGuards) return { success: false, message: 'Maximum guards reached (' + cfg.maxGuards + ').' };
-                town.hiredGuards = (town.hiredGuards || 0) + 1;
-                return { success: true, message: '🛡️ Hired a guard. (' + town.hiredGuards + '/' + cfg.maxGuards + ')' };
+                if (town.outpostGuards.length >= (cfg.maxOutpostGuards || 4)) return { success: false, message: 'Maximum guards reached (' + (cfg.maxOutpostGuards || 4) + ').' };
+                if (town.outpostResidents.length === 0) return { success: false, message: 'No residents to hire. Recruit NPCs first.' };
+                var guardNpc = npcId ? Engine.findPerson(npcId) : null;
+                if (!guardNpc) {
+                    for (var gi = 0; gi < town.outpostResidents.length; gi++) {
+                        var gCandidate = Engine.findPerson(town.outpostResidents[gi]);
+                        if (gCandidate && gCandidate.alive && town.outpostWorkers.indexOf(gCandidate.id) < 0 && town.outpostGuards.indexOf(gCandidate.id) < 0) {
+                            guardNpc = gCandidate; break;
+                        }
+                    }
+                }
+                if (!guardNpc) return { success: false, message: 'No available residents to hire as guards.' };
+                if (town.outpostGuards.indexOf(guardNpc.id) >= 0) return { success: false, message: guardNpc.firstName + ' is already a guard.' };
+                if (town.outpostWorkers.indexOf(guardNpc.id) >= 0) return { success: false, message: guardNpc.firstName + ' is already a worker.' };
+                town.outpostGuards.push(guardNpc.id);
+                town.hiredGuards = town.outpostGuards.length;
+                guardNpc.occupation = 'outpost_guard';
+                guardNpc.employerId = player.id || 'player';
+                return { success: true, message: '🛡️ Hired ' + guardNpc.firstName + ' ' + guardNpc.lastName + ' as a guard. (' + town.outpostGuards.length + '/' + (cfg.maxOutpostGuards || 4) + ')' };
             } else {
-                if ((town.hiredGuards || 0) <= 0) return { success: false, message: 'No guards to dismiss.' };
-                town.hiredGuards--;
-                return { success: true, message: '👋 Dismissed a guard. (' + town.hiredGuards + '/' + cfg.maxGuards + ')' };
+                if (town.outpostGuards.length === 0) return { success: false, message: 'No guards to dismiss.' };
+                var gDismissId = npcId || town.outpostGuards[town.outpostGuards.length - 1];
+                var gIdx = town.outpostGuards.indexOf(gDismissId);
+                if (gIdx >= 0) {
+                    town.outpostGuards.splice(gIdx, 1);
+                    town.hiredGuards = town.outpostGuards.length;
+                    var gDismissed = Engine.findPerson(gDismissId);
+                    if (gDismissed) { gDismissed.occupation = 'unemployed'; gDismissed.employerId = null; }
+                    return { success: true, message: '👋 Dismissed guard' + (gDismissed ? ' ' + gDismissed.firstName : '') + '. (' + town.outpostGuards.length + '/' + (cfg.maxOutpostGuards || 4) + ')' };
+                }
+                return { success: false, message: 'Guard not found.' };
             }
         }
         return { success: false, message: 'Unknown staff type.' };
@@ -33176,6 +33256,337 @@
         }
         nearby.sort(function(a, b) { return a.dist - b.dist; });
         return nearby;
+    }
+
+    /**
+     * Buy additional land plots for an outpost.
+     */
+    function buyOutpostLandPlot(townId) {
+        var town = Engine.findTown(townId);
+        if (!town || !town.isOutpost) return { success: false, message: 'Not an outpost.' };
+        if (town.founderId !== (player.id || 'player')) return { success: false, message: 'Not your outpost.' };
+        var cfg = CONFIG.OUTPOST_CONFIG;
+        var maxPlots = cfg.maxLandPlots || 10;
+        if ((town.landPlots || 4) >= maxPlots) return { success: false, message: 'Maximum land plots reached (' + maxPlots + ').' };
+        var cost = cfg.landPlotCost || 150;
+        var mats = cfg.landPlotMaterials || { wood: 10, stone: 5 };
+        if (player.gold < cost) return { success: false, message: 'Need ' + cost + 'g (have ' + Math.floor(player.gold) + 'g).' };
+        for (var mk in mats) {
+            if ((player.inventory[mk] || 0) < mats[mk]) return { success: false, message: 'Need ' + mats[mk] + ' ' + mk + ' (have ' + (player.inventory[mk] || 0) + ').' };
+        }
+        player.gold -= cost;
+        for (var mk2 in mats) {
+            player.inventory[mk2] = (player.inventory[mk2] || 0) - mats[mk2];
+            if (player.inventory[mk2] <= 0) delete player.inventory[mk2];
+        }
+        town.landPlots = (town.landPlots || 4) + 1;
+        town.maxBuildingSlots = town.landPlots;
+        return { success: true, message: '📐 Purchased land plot! (' + town.landPlots + '/' + maxPlots + ')' };
+    }
+
+    /**
+     * Build outpost housing (tent camp, cabins, or cottages).
+     */
+    function buildOutpostHousing(townId, housingType) {
+        var town = Engine.findTown(townId);
+        if (!town || !town.isOutpost) return { success: false, message: 'Not an outpost.' };
+        if (town.founderId !== (player.id || 'player')) return { success: false, message: 'Not your outpost.' };
+        var hCfg = CONFIG.OUTPOST_HOUSING && CONFIG.OUTPOST_HOUSING[housingType];
+        if (!hCfg) return { success: false, message: 'Unknown housing type.' };
+        if (!town.outpostHousing) town.outpostHousing = [];
+        var usedPlots = (town.usedLandPlots || 0);
+        if (usedPlots + (hCfg.landSlots || 1) > (town.landPlots || 4)) {
+            return { success: false, message: 'Not enough land plots. Need ' + (hCfg.landSlots || 1) + ' but only ' + ((town.landPlots || 4) - usedPlots) + ' available.' };
+        }
+        if (player.gold < hCfg.cost) return { success: false, message: 'Need ' + hCfg.cost + 'g (have ' + Math.floor(player.gold) + 'g).' };
+        for (var mk in hCfg.materials) {
+            if ((player.inventory[mk] || 0) < hCfg.materials[mk]) return { success: false, message: 'Need ' + hCfg.materials[mk] + ' ' + mk + ' (have ' + (player.inventory[mk] || 0) + ').' };
+        }
+        player.gold -= hCfg.cost;
+        for (var mk2 in hCfg.materials) {
+            player.inventory[mk2] = (player.inventory[mk2] || 0) - hCfg.materials[mk2];
+            if (player.inventory[mk2] <= 0) delete player.inventory[mk2];
+        }
+        town.outpostHousing.push({ type: housingType, builtDay: Engine.getDay() });
+        town.usedLandPlots = (town.usedLandPlots || 0) + (hCfg.landSlots || 1);
+        return { success: true, message: hCfg.icon + ' Built ' + hCfg.name + '! Holds ' + hCfg.capacity + ' residents.' };
+    }
+
+    /**
+     * Build an outpost upgrade (well, clinic, tavern, etc.).
+     */
+    function buildOutpostUpgrade(townId, upgradeId) {
+        var town = Engine.findTown(townId);
+        if (!town || !town.isOutpost) return { success: false, message: 'Not an outpost.' };
+        if (town.founderId !== (player.id || 'player')) return { success: false, message: 'Not your outpost.' };
+        var uCfg = CONFIG.OUTPOST_UPGRADES && CONFIG.OUTPOST_UPGRADES[upgradeId];
+        if (!uCfg) return { success: false, message: 'Unknown upgrade.' };
+        if (!town.outpostUpgrades) town.outpostUpgrades = [];
+        if (town.outpostUpgrades.indexOf(upgradeId) >= 0) return { success: false, message: uCfg.name + ' already built.' };
+        // Check prerequisites
+        if (uCfg.requires) {
+            for (var ri = 0; ri < uCfg.requires.length; ri++) {
+                if (town.outpostUpgrades.indexOf(uCfg.requires[ri]) < 0) {
+                    var reqCfg = CONFIG.OUTPOST_UPGRADES[uCfg.requires[ri]];
+                    return { success: false, message: 'Requires ' + (reqCfg ? reqCfg.name : uCfg.requires[ri]) + ' first.' };
+                }
+            }
+        }
+        if (player.gold < uCfg.cost) return { success: false, message: 'Need ' + uCfg.cost + 'g (have ' + Math.floor(player.gold) + 'g).' };
+        for (var mk in uCfg.materials) {
+            if ((player.inventory[mk] || 0) < uCfg.materials[mk]) return { success: false, message: 'Need ' + uCfg.materials[mk] + ' ' + mk + ' (have ' + (player.inventory[mk] || 0) + ').' };
+        }
+        player.gold -= uCfg.cost;
+        for (var mk2 in uCfg.materials) {
+            player.inventory[mk2] = (player.inventory[mk2] || 0) - uCfg.materials[mk2];
+            if (player.inventory[mk2] <= 0) delete player.inventory[mk2];
+        }
+        town.outpostUpgrades.push(upgradeId);
+        if (uCfg.storageBonus) town.outpostStorage = (town.outpostStorage || 200) + uCfg.storageBonus;
+        return { success: true, message: uCfg.icon + ' Built ' + uCfg.name + '!' };
+    }
+
+    /**
+     * Recruit an NPC to move to a player's outpost.
+     * @returns {{ success: boolean, message: string, chance?: number }}
+     */
+    function recruitNpcToOutpost(npcId, townId, goldIncentive) {
+        var town = Engine.findTown(townId);
+        if (!town || !town.isOutpost) return { success: false, message: 'Not an outpost.' };
+        if (town.founderId !== (player.id || 'player')) return { success: false, message: 'Not your outpost.' };
+        var npc = Engine.findPerson(npcId);
+        if (!npc || !npc.alive) return { success: false, message: 'NPC not found.' };
+        var cfg = CONFIG.OUTPOST_CONFIG;
+
+        // Check cooldown
+        if (!player._outpostRecruitCooldowns) player._outpostRecruitCooldowns = {};
+        var cooldownKey = npcId + '_' + townId;
+        var lastAsked = player._outpostRecruitCooldowns[cooldownKey] || 0;
+        if (Engine.getDay() - lastAsked < (cfg.recruitCooldownDays || 7)) {
+            var daysLeft = (cfg.recruitCooldownDays || 7) - (Engine.getDay() - lastAsked);
+            return { success: false, message: npc.firstName + ' was recently asked. Wait ' + daysLeft + ' more day(s).' };
+        }
+
+        // Check housing capacity
+        if (!town.outpostHousing) town.outpostHousing = [];
+        if (!town.outpostResidents) town.outpostResidents = [];
+        var housingCap = 0;
+        for (var hi = 0; hi < town.outpostHousing.length; hi++) {
+            var hCfg = CONFIG.OUTPOST_HOUSING && CONFIG.OUTPOST_HOUSING[town.outpostHousing[hi].type];
+            if (hCfg) housingCap += hCfg.capacity;
+        }
+        if (town.outpostResidents.length >= housingCap) {
+            return { success: false, message: 'No housing capacity. Build housing first.' };
+        }
+
+        // Calculate chance
+        var chance = getOutpostRecruitChance(npcId, townId);
+
+        // Add gold incentive
+        goldIncentive = Math.max(0, goldIncentive || 0);
+        var goldBonus = 0;
+        if (goldIncentive > 0 && cfg.recruitGoldPerPercent) {
+            goldBonus = Math.min(goldIncentive / cfg.recruitGoldPerPercent / 100, cfg.recruitMaxGoldBonus || 0.20);
+            chance += goldBonus;
+        }
+        chance = Math.max(cfg.recruitMinChance || 0.03, Math.min(cfg.recruitMaxChance || 0.85, chance));
+
+        // Check if player can afford gold incentive
+        if (goldIncentive > 0 && player.gold < goldIncentive) {
+            return { success: false, message: 'Cannot afford ' + goldIncentive + 'g incentive.' };
+        }
+
+        // Set cooldown
+        player._outpostRecruitCooldowns[cooldownKey] = Engine.getDay();
+
+        // Deduct gold incentive
+        if (goldIncentive > 0) {
+            player.gold -= goldIncentive;
+            player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + goldIncentive;
+        }
+
+        // Roll
+        var rng = Engine.getRng();
+        var roll = rng.random();
+        if (roll < chance) {
+            // Success — NPC agrees to move
+            npc.townId = town.id;
+            town.outpostResidents.push(npc.id);
+            town.population = town.outpostResidents.length;
+            Engine.logEvent('🎉 ' + npc.firstName + ' ' + npc.lastName + ' has agreed to move to your outpost "' + town.name + '"!');
+            return { success: true, message: '🎉 ' + npc.firstName + ' agreed to move! (' + Math.round(chance * 100) + '% chance)', chance: chance };
+        } else {
+            Engine.logEvent('😔 ' + npc.firstName + ' ' + npc.lastName + ' declined to move to outpost "' + town.name + '".');
+            return { success: false, message: '😔 ' + npc.firstName + ' declined. (' + Math.round(chance * 100) + '% chance)' + (goldIncentive > 0 ? ' Gold spent.' : ''), chance: chance };
+        }
+    }
+
+    /**
+     * Get recruitment chance for an NPC to an outpost (without rolling).
+     */
+    function getOutpostRecruitChance(npcId, townId) {
+        var town = Engine.findTown(townId);
+        var npc = Engine.findPerson(npcId);
+        if (!town || !npc) return 0;
+        var cfg = CONFIG.OUTPOST_CONFIG;
+        var chance = cfg.recruitBaseChance || 0.10;
+
+        // Road bonus (big)
+        if (town.hasRoad) chance += cfg.recruitRoadBonus || 0.15;
+
+        // Relationship bonus
+        var rel = getRelationship(npcId);
+        var relLevel = rel ? (rel.level || 0) : 0;
+        chance += Math.max(0, relLevel) * (cfg.recruitRelationshipScale || 0.002);
+
+        // Social status comparison
+        var playerRank = player.socialRank || 0;
+        var npcRank = npc.socialRank || 0;
+        var rankDiff = playerRank - npcRank;
+        chance += rankDiff * (cfg.recruitStatusScale || 0.02);
+
+        // Upgrade bonuses
+        if (town.outpostUpgrades) {
+            for (var ui = 0; ui < town.outpostUpgrades.length; ui++) {
+                var uCfg = CONFIG.OUTPOST_UPGRADES && CONFIG.OUTPOST_UPGRADES[town.outpostUpgrades[ui]];
+                if (uCfg && uCfg.recruitBonus) chance += uCfg.recruitBonus;
+            }
+        }
+
+        // Housing quality bonus
+        if (town.outpostHousing) {
+            for (var hi = 0; hi < town.outpostHousing.length; hi++) {
+                var hCfg = CONFIG.OUTPOST_HOUSING && CONFIG.OUTPOST_HOUSING[town.outpostHousing[hi].type];
+                if (hCfg && hCfg.recruitBonus) chance += hCfg.recruitBonus;
+            }
+        }
+
+        return Math.max(cfg.recruitMinChance || 0.03, Math.min(cfg.recruitMaxChance || 0.85, chance));
+    }
+
+    /**
+     * Petition the king to convert an outpost to a village.
+     */
+    function petitionOutpostToVillage(townId) {
+        var town = Engine.findTown(townId);
+        if (!town || !town.isOutpost) return { success: false, message: 'Not an outpost.' };
+        if (town.founderId !== (player.id || 'player')) return { success: false, message: 'Not your outpost.' };
+        var cfg = CONFIG.OUTPOST_CONFIG;
+        if (!town.outpostResidents) town.outpostResidents = [];
+        var minPop = cfg.villageConversionMinPop || 20;
+        if (town.outpostResidents.length < minPop) {
+            return { success: false, message: 'Need at least ' + minPop + ' residents to petition for village status. Currently: ' + town.outpostResidents.length };
+        }
+
+        // Find kingdom
+        var kingdom = Engine.findKingdom(town.kingdomId);
+        if (!kingdom) return { success: false, message: 'No kingdom found.' };
+
+        // Calculate king's payment based on treasury, personality, outpost quality
+        var basePay = cfg.villageConversionKingPayMin || 500;
+        var maxPay = cfg.villageConversionKingPayMax || 2000;
+        var qualityScore = 0;
+        qualityScore += (town.outpostUpgrades || []).length * 0.1;
+        qualityScore += (town.outpostHousing || []).length * 0.15;
+        qualityScore += town.outpostResidents.length * 0.02;
+        qualityScore += (town.walls || 0) * 0.1;
+        qualityScore += town.hasRoad ? 0.1 : 0;
+        qualityScore += town.isPort ? 0.1 : 0;
+        qualityScore = Math.min(1.0, qualityScore);
+
+        var treasuryFactor = Math.min(1.0, (kingdom.gold || 0) / 5000);
+        var personalityBonus = 0;
+        if (kingdom.kingPersonality) {
+            if (kingdom.kingPersonality.generosity === 'generous') personalityBonus = 0.2;
+            if (kingdom.kingPersonality.greed === 'greedy') personalityBonus = -0.2;
+            if (kingdom.kingPersonality.greed === 'corrupt') personalityBonus = -0.3;
+        }
+        var payFactor = Math.max(0, Math.min(1, (qualityScore * 0.5 + treasuryFactor * 0.3 + personalityBonus + 0.2)));
+        var payment = Math.floor(basePay + (maxPay - basePay) * payFactor);
+        payment = Math.min(payment, Math.floor((kingdom.gold || 0) * 0.15));
+        if (payment < basePay) payment = basePay;
+
+        // Convert outpost to village
+        town.isOutpost = false;
+        town.annexed = true;
+        town.category = 'village';
+        town.maxBuildingSlots = Math.max(town.landPlots || 4, CONFIG.TOWN_CATEGORIES.village.maxBuildingSlots);
+        town.garrison = Math.max(town.garrison || 0, 3);
+
+        // Player keeps all land and buildings
+        // Give player 80 town rep
+        if (!player.townReputation) player.townReputation = {};
+        player.townReputation[town.id] = cfg.villageConversionBaseRep || 80;
+
+        // Bump NPC relationships below 20 up to 20
+        var minRel = cfg.villageConversionMinRelationship || 20;
+        if (town.outpostResidents) {
+            for (var ri = 0; ri < town.outpostResidents.length; ri++) {
+                var resNpc = Engine.findPerson(town.outpostResidents[ri]);
+                if (resNpc) {
+                    var curRel = getRelationship(town.outpostResidents[ri]);
+                    var curLevel = curRel ? (curRel.level || 0) : 0;
+                    if (curLevel < minRel) {
+                        if (!player.relationships[town.outpostResidents[ri]]) {
+                            player.relationships[town.outpostResidents[ri]] = { level: minRel, type: 'acquaintance' };
+                        } else {
+                            player.relationships[town.outpostResidents[ri]].level = minRel;
+                        }
+                    }
+                }
+            }
+        }
+
+        // King pays the player
+        if (kingdom.gold >= payment) {
+            kingdom.gold -= payment;
+        } else {
+            payment = Math.floor(kingdom.gold * 0.5);
+            kingdom.gold -= payment;
+        }
+        player.gold += payment;
+
+        // Remove from player outposts tracking (it's now a regular village)
+        if (player.outposts) {
+            for (var oi = 0; oi < player.outposts.length; oi++) {
+                if (player.outposts[oi].townId === townId) {
+                    player.outposts.splice(oi, 1);
+                    break;
+                }
+            }
+        }
+
+        // Give player land ownership in the village
+        if (!player.landOwned) player.landOwned = {};
+        player.landOwned[town.id] = town.landPlots || 4;
+
+        Engine.logEvent('🏘️ Your outpost "' + town.name + '" has been officially recognized as a village by the crown! The king paid you ' + payment + 'g.');
+        return { success: true, message: '🏘️ ' + town.name + ' is now a village! King paid ' + payment + 'g. You have 80 town reputation.' };
+    }
+
+    /**
+     * Get outpost housing capacity info.
+     */
+    function getOutpostHousingInfo(townId) {
+        var town = Engine.findTown(townId);
+        if (!town) return null;
+        var totalCap = 0;
+        var housing = [];
+        var hList = town.outpostHousing || [];
+        for (var i = 0; i < hList.length; i++) {
+            var hCfg = CONFIG.OUTPOST_HOUSING && CONFIG.OUTPOST_HOUSING[hList[i].type];
+            if (hCfg) {
+                totalCap += hCfg.capacity;
+                housing.push({ type: hList[i].type, name: hCfg.name, icon: hCfg.icon, capacity: hCfg.capacity, comfort: hCfg.comfort, builtDay: hList[i].builtDay });
+            }
+        }
+        return {
+            housing: housing,
+            totalCapacity: totalCap,
+            currentResidents: (town.outpostResidents || []).length,
+            availableSpace: totalCap - (town.outpostResidents || []).length,
+            playerCanRest: totalCap > (town.outpostResidents || []).length,
+        };
     }
 
     function getRetailBuildings() {
@@ -41447,6 +41858,13 @@
         buildOutpostSeaRoute,
         getOutpostCosts,
         getNearbyTownsForOutpost,
+        buyOutpostLandPlot,
+        buildOutpostHousing,
+        buildOutpostUpgrade,
+        recruitNpcToOutpost,
+        getOutpostRecruitChance,
+        petitionOutpostToVillage,
+        getOutpostHousingInfo,
 
         // Conscription
         respondToConscription,

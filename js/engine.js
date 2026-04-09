@@ -8572,6 +8572,7 @@
             var t = world.towns[i];
             if (t.kingdomId !== k.id) continue;
             if (t._abandoned) continue;
+            if (t.isOutpost) continue; // Outpost happiness doesn't count towards kingdom
             var pop = typeof t.population === 'number' ? t.population : 0;
             if (pop <= 0) continue;
             weightedSum += (t.happiness || 50) * pop;
@@ -16436,7 +16437,6 @@
         // Determine nearest kingdom for jurisdiction
         var kingdomId = opts.kingdomId;
         if (!kingdomId) {
-            // Find nearest town's kingdom
             var nearest = null, nearDist = Infinity;
             for (var ti = 0; ti < world.towns.length; ti++) {
                 var t = world.towns[ti];
@@ -16447,6 +16447,18 @@
                 if (d < nearDist) { nearDist = d; nearest = t; }
             }
             if (nearest) kingdomId = nearest.kingdomId;
+        }
+
+        // Find nearest non-outpost settlement (for road building)
+        var nearestSettlement = null;
+        var nearestSettleDist = Infinity;
+        for (var ti2 = 0; ti2 < world.towns.length; ti2++) {
+            var t2 = world.towns[ti2];
+            if (t2.abandoned || t2.destroyed || t2.category === 'outpost') continue;
+            var dx2 = (opts.x || 0) - t2.x;
+            var dy2 = (opts.y || 0) - t2.y;
+            var d2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+            if (d2 < nearestSettleDist) { nearestSettleDist = d2; nearestSettlement = t2; }
         }
 
         var outpost = {
@@ -16468,40 +16480,41 @@
             towers: 0,
             livestock: { livestock_cow: 0, livestock_pig: 0, livestock_chicken: 0 },
             category: 'outpost',
-            maxBuildingSlots: CONFIG.TOWN_CATEGORIES.outpost.maxBuildingSlots,
+            maxBuildingSlots: cfg.maxLandPlots || 10,
             // Outpost-specific fields
             isOutpost: true,
             founderId: opts.founderId,
             founderType: opts.founderType || 'player',
             foundedDay: world.day,
-            hiredWorkers: 0,
-            hiredGuards: 0,
             maintenancePaid: true,
             lastMaintenanceDay: world.day,
             totalInvested: cfg.foundingCost,
             annexed: false,
+            // New outpost system fields
+            landPlots: cfg.startingLandPlots || 4,
+            usedLandPlots: 0,
+            outpostStorage: cfg.baseStorageCapacity || 200,
+            outpostStorageItems: {},
+            outpostHousing: [],       // array of { type: 'tent_camp'|'cabins'|'cottages', builtDay }
+            outpostUpgrades: [],      // array of upgrade IDs installed
+            outpostWorkers: [],       // array of NPC IDs hired as workers
+            outpostGuards: [],        // array of NPC IDs hired as guards
+            outpostResidents: [],     // array of NPC IDs living here
+            hasRoad: !!opts.buildWithRoad,
+            landForSale: [],          // array of { plots, pricePerPlot }
+            outpostHappiness: 50,
+            // Legacy compat
+            hiredWorkers: 0,
+            hiredGuards: 0,
         };
-
-        // Start with a basic storage shed
-        outpost.buildings.push({
-            type: 'warehouse',
-            id: 'bld_' + world.rng.randInt(10000, 99999),
-            ownerId: opts.founderId,
-            condition: 'new',
-            builtDay: world.day,
-            workers: [],
-            level: 1,
-        });
 
         // Generate natural deposits from terrain survey at this location
         var _outpostR = 120;
         outpost.naturalDeposits = _surveyDepositsAtPoint(outpost.x, outpost.y, _outpostR);
-        // Clay guaranteed for all settlements
         if (!outpost.naturalDeposits.clay) {
             var ND = CONFIG.NATURAL_DEPOSITS;
             outpost.naturalDeposits.clay = world.rng.randInt(ND.clay.min, ND.clay.max);
         }
-        // Generate soil fertility from terrain survey
         outpost.soilFertilityRating = _surveyFertilityAtPoint(outpost.x, outpost.y, _outpostR);
         outpost.soilFertility = outpost.soilFertilityRating / ((CONFIG.SOIL_FERTILITY && CONFIG.SOIL_FERTILITY.baselineFertility) || 50);
 
@@ -16518,22 +16531,14 @@
             }
         }
 
-        // Classify terrain and compute local base prices (needed for market pricing)
+        // Classify terrain and compute local base prices
         outpost.terrainType = classifyTownTerrain(outpost);
         computeLocalBasePrices(outpost);
-        var nearestTown = null;
-        var nearestDist = Infinity;
-        for (var ti2 = 0; ti2 < world.towns.length; ti2++) {
-            var t2 = world.towns[ti2];
-            if (t2.id === outpost.id || t2.abandoned || t2.destroyed || t2.category === 'outpost') continue;
-            var dx2 = outpost.x - t2.x;
-            var dy2 = outpost.y - t2.y;
-            var d2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
-            if (d2 < nearestDist) { nearestDist = d2; nearestTown = t2; }
-        }
-        if (nearestTown) {
+
+        // Build road to nearest settlement if requested
+        if (opts.buildWithRoad && nearestSettlement) {
             world.roads.push({
-                fromTownId: nearestTown.id,
+                fromTownId: nearestSettlement.id,
                 toTownId: outpost.id,
                 quality: 1,
                 safe: true,
@@ -16546,12 +16551,14 @@
                 banditThreat: 15,
                 isDirtTrack: true,
             });
+            logEvent('🛤️ A road has been built from ' + nearestSettlement.name + ' to outpost "' + outpost.name + '".');
         }
 
         logEvent('⛺ A new outpost "' + outpost.name + '" has been established in the wilderness by ' +
-            (opts.founderType === 'player' ? 'you' : 'an enterprising merchant') + '!');
+            (opts.founderType === 'player' ? 'you' : 'an enterprising merchant') + '!' +
+            (!opts.buildWithRoad ? ' (No road — offroad access only)' : ''));
 
-        return { success: true, message: 'Outpost "' + outpost.name + '" established!', outpost: outpost };
+        return { success: true, message: 'Outpost "' + outpost.name + '" established!', outpost: outpost, nearestSettlement: nearestSettlement, distance: Math.floor(nearestSettleDist) };
     }
 
     /**
@@ -16565,18 +16572,33 @@
             var outpost = world.towns[ti];
             if (!outpost.isOutpost || outpost.abandoned || outpost.destroyed) continue;
 
+            // Ensure new fields exist (migration)
+            if (!outpost.outpostWorkers) outpost.outpostWorkers = [];
+            if (!outpost.outpostGuards) outpost.outpostGuards = [];
+            if (!outpost.outpostResidents) outpost.outpostResidents = [];
+            if (!outpost.outpostHousing) outpost.outpostHousing = [];
+            if (!outpost.outpostUpgrades) outpost.outpostUpgrades = [];
+            if (outpost.landPlots == null) outpost.landPlots = cfg.startingLandPlots || 4;
+            if (outpost.usedLandPlots == null) outpost.usedLandPlots = 0;
+            if (outpost.outpostStorage == null) outpost.outpostStorage = cfg.baseStorageCapacity || 200;
+            if (!outpost.outpostStorageItems) outpost.outpostStorageItems = {};
+
+            // Sync legacy fields
+            outpost.hiredWorkers = outpost.outpostWorkers.length;
+            outpost.hiredGuards = outpost.outpostGuards.length;
+
             // ── Maintenance costs (deducted from founder) ──
-            var dailyCost = cfg.dailyMaintenanceCost +
-                (outpost.hiredWorkers || 0) * cfg.workerWagePerDay +
-                (outpost.hiredGuards || 0) * cfg.guardCostPerDay;
+            var numWorkers = outpost.outpostWorkers.length;
+            var numGuards = outpost.outpostGuards.length;
+            // Weekly wages paid daily: divide by 7
+            var dailyWorkerCost = numWorkers * (cfg.workerWagePerWeek || 10) / 7;
+            var dailyGuardCost = numGuards * (cfg.guardWagePerWeek || 15) / 7;
+            var dailyCost = cfg.dailyMaintenanceCost + dailyWorkerCost + dailyGuardCost;
 
             var founder = null;
             if (outpost.founderType === 'player') {
-                // Player outpost — costs handled in player.js tick
-                // Just track that maintenance is due
                 outpost._dailyMaintenanceDue = dailyCost;
             } else {
-                // NPC/Elite merchant outpost
                 founder = findPerson(outpost.founderId);
                 if (founder && founder.alive) {
                     if ((founder.gold || 0) >= dailyCost) {
@@ -16604,10 +16626,13 @@
 
             // ── Theft risk ──
             var theftChance = cfg.theftChancePerDay;
-            // Guards reduce theft
-            theftChance -= (outpost.hiredGuards || 0) * cfg.securityPerGuard;
-            // Walls reduce theft
+            theftChance -= numGuards * cfg.securityPerGuard;
             theftChance -= (cfg.wallTheftReduction[outpost.walls] || 0);
+            // Watchtower upgrade reduces theft further
+            if (outpost.outpostUpgrades.indexOf('watchtower') >= 0) {
+                var wtCfg = CONFIG.OUTPOST_UPGRADES && CONFIG.OUTPOST_UPGRADES.watchtower;
+                theftChance -= (wtCfg && wtCfg.theftReduction) || 0.02;
+            }
             theftChance = Math.max(theftChance, 0.005);
 
             if (rng.chance(theftChance)) {
@@ -16653,9 +16678,154 @@
             // ── Small prosperity growth if maintained ──
             if (outpost.maintenancePaid || outpost.founderType === 'player') {
                 outpost.prosperity = Math.min(100, (outpost.prosperity || 10) + 0.1);
-                // Attract settlers slowly (1% daily chance if prosperity > 30)
-                if (outpost.prosperity > 30 && rng.chance(0.01)) {
-                    outpost.population = (outpost.population || 0) + 1;
+                // Sync population with actual residents
+                outpost.population = outpost.outpostResidents.length;
+                // Outpost happiness based on upgrades and housing
+                var ohBase = 40;
+                for (var _ui = 0; _ui < outpost.outpostUpgrades.length; _ui++) {
+                    var _upCfg = CONFIG.OUTPOST_UPGRADES && CONFIG.OUTPOST_UPGRADES[outpost.outpostUpgrades[_ui]];
+                    if (_upCfg) ohBase += 3;
+                }
+                for (var _hi = 0; _hi < outpost.outpostHousing.length; _hi++) {
+                    var _hCfg = CONFIG.OUTPOST_HOUSING && CONFIG.OUTPOST_HOUSING[outpost.outpostHousing[_hi].type];
+                    if (_hCfg) ohBase += (_hCfg.comfort || 0) * 0.1;
+                }
+                if (numGuards > 0) ohBase += 5;
+                if (outpost.hasRoad) ohBase += 5;
+                outpost.outpostHappiness = Math.min(100, Math.max(10, ohBase));
+                // Auto-attract NPCs from upgrades (tavern, chapel etc.)
+                if (outpost.outpostUpgrades && outpost.outpostUpgrades.length > 0 && outpost.hasRoad) {
+                    var _totalAutoChance = 0;
+                    for (var _ai = 0; _ai < outpost.outpostUpgrades.length; _ai++) {
+                        var _aUpCfg = CONFIG.OUTPOST_UPGRADES && CONFIG.OUTPOST_UPGRADES[outpost.outpostUpgrades[_ai]];
+                        if (_aUpCfg && _aUpCfg.autoAttract) _totalAutoChance += (_aUpCfg.autoAttractChance || 0);
+                    }
+                    if (_totalAutoChance > 0 && rng.chance(_totalAutoChance)) {
+                        // Check if outpost has housing capacity
+                        var _housingCap = 0;
+                        for (var _hci = 0; _hci < outpost.outpostHousing.length; _hci++) {
+                            var _hcCfg = CONFIG.OUTPOST_HOUSING && CONFIG.OUTPOST_HOUSING[outpost.outpostHousing[_hci].type];
+                            if (_hcCfg) _housingCap += _hcCfg.capacity;
+                        }
+                        if (outpost.outpostResidents.length < _housingCap) {
+                            // Find a nearby connected NPC to attract
+                            var _attractedNpc = _findNpcToAttract(outpost);
+                            if (_attractedNpc) {
+                                _attractedNpc.townId = outpost.id;
+                                outpost.outpostResidents.push(_attractedNpc.id);
+                                outpost.population = outpost.outpostResidents.length;
+                                logEvent('🏠 ' + _attractedNpc.firstName + ' ' + _attractedNpc.lastName + ' has moved to outpost "' + outpost.name + '"!');
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Find a random eligible NPC from a connected town to attract to an outpost.
+     */
+    function _findNpcToAttract(outpost) {
+        var roads = world.roads || [];
+        var connectedTowns = [];
+        for (var ri = 0; ri < roads.length; ri++) {
+            var r = roads[ri];
+            if (r.fromTownId === outpost.id) connectedTowns.push(r.toTownId);
+            else if (r.toTownId === outpost.id) connectedTowns.push(r.fromTownId);
+        }
+        if (connectedTowns.length === 0) return null;
+        var candidates = [];
+        for (var pi = 0; pi < world.people.length; pi++) {
+            var p = world.people[pi];
+            if (!p.alive || p.isEliteMerchant || p.isPlayerGuard) continue;
+            if (p.employerId) continue;
+            if (connectedTowns.indexOf(p.townId) < 0) continue;
+            if (p.age < 16 || p.age > 65) continue;
+            if (p.occupation === 'king' || p.occupation === 'queen' || p.occupation === 'prince' || p.occupation === 'princess') continue;
+            candidates.push(p);
+        }
+        if (candidates.length === 0) return null;
+        return candidates[world.rng.randInt(0, candidates.length - 1)];
+    }
+
+    /**
+     * AI Immigration — NPCs and elite merchants evaluate moving to player outposts.
+     * Runs periodically (every aiImmigrationCheckInterval days).
+     */
+    function tickOutpostImmigration() {
+        var cfg = CONFIG.OUTPOST_CONFIG;
+        var interval = cfg.aiImmigrationCheckInterval || 7;
+        if (world.day % interval !== 0) return;
+        var rng = world.rng;
+
+        for (var ti = 0; ti < world.towns.length; ti++) {
+            var outpost = world.towns[ti];
+            if (!outpost.isOutpost || outpost.abandoned || outpost.destroyed) continue;
+            if (!outpost.hasRoad && (outpost.outpostUpgrades || []).length === 0) continue;
+            if (!outpost.outpostHousing || outpost.outpostHousing.length === 0) continue;
+            if (!outpost.outpostResidents) outpost.outpostResidents = [];
+
+            // Calculate housing capacity
+            var housingCap = 0;
+            for (var hi = 0; hi < outpost.outpostHousing.length; hi++) {
+                var hCfg = CONFIG.OUTPOST_HOUSING && CONFIG.OUTPOST_HOUSING[outpost.outpostHousing[hi].type];
+                if (hCfg) housingCap += hCfg.capacity;
+            }
+            if (outpost.outpostResidents.length >= housingCap) continue;
+
+            // Calculate attractiveness score
+            var attractScore = 0;
+            if (outpost.hasRoad) attractScore += 0.3;
+            attractScore += (outpost.outpostUpgrades || []).length * 0.1;
+            for (var ui = 0; ui < (outpost.outpostUpgrades || []).length; ui++) {
+                var uCfg = CONFIG.OUTPOST_UPGRADES && CONFIG.OUTPOST_UPGRADES[outpost.outpostUpgrades[ui]];
+                if (uCfg && uCfg.recruitBonus) attractScore += uCfg.recruitBonus;
+            }
+            // Buildings with unfilled jobs boost attractiveness
+            var unfilledJobs = 0;
+            for (var bi = 0; bi < outpost.buildings.length; bi++) {
+                var bld = outpost.buildings[bi];
+                var bType = findBuildingType ? findBuildingType(bld.type || bld.buildingType) : null;
+                if (bType && bType.workers) {
+                    var currentWorkers = (bld.workers || []).length;
+                    unfilledJobs += Math.max(0, (bType.workers || 0) - currentWorkers);
+                }
+            }
+            attractScore += unfilledJobs * 0.05;
+
+            var baseChance = (cfg.aiImmigrationBaseChance || 0.03) * attractScore;
+            if (baseChance <= 0) continue;
+
+            // Check connected towns for eligible NPCs
+            var connectedTowns = [];
+            if (outpost.hasRoad) {
+                var roads = world.roads || [];
+                for (var ri = 0; ri < roads.length; ri++) {
+                    var r = roads[ri];
+                    if (r.fromTownId === outpost.id) connectedTowns.push(r.toTownId);
+                    else if (r.toTownId === outpost.id) connectedTowns.push(r.fromTownId);
+                }
+            }
+            if (connectedTowns.length === 0) continue;
+
+            // Check a few NPCs from connected towns
+            var checkedCount = 0;
+            for (var pi = 0; pi < world.people.length && checkedCount < 20; pi++) {
+                var p = world.people[pi];
+                if (!p.alive || p.isEliteMerchant || p.isPlayerGuard) continue;
+                if (p.employerId) continue;
+                if (connectedTowns.indexOf(p.townId) < 0) continue;
+                if (p.age < 18 || p.age > 60) continue;
+                if (p.occupation === 'king' || p.occupation === 'queen') continue;
+                checkedCount++;
+
+                if (rng.chance(baseChance)) {
+                    // NPC decides to move
+                    p.townId = outpost.id;
+                    outpost.outpostResidents.push(p.id);
+                    outpost.population = outpost.outpostResidents.length;
+                    if (outpost.outpostResidents.length >= housingCap) break;
                 }
             }
         }
@@ -33310,6 +33480,7 @@
             tickTownCategories();
             tickOutposts();
             tickOutpostAnnexation();
+            tickOutpostImmigration();
             tickEliteMerchantOutposts();
             tickWorkerEconomy();
             tickTravelDemand();
