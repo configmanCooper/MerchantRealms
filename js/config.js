@@ -2995,6 +2995,7 @@ const SPECIAL_LAWS = [
     { id: 'no_tent_camps',       name: 'No Tent Camps',         desc: 'Tent camps are forbidden. Existing camps will be demolished by soldiers.', icon: '🚫', effect: 'no_tent_camps' },
     { id: 'right_to_camps',      name: 'Right to Camps',        desc: 'Homeless citizens may pool resources to build tent camps in any town.', icon: '⛺', effect: 'right_to_camps' },
     { id: 'noble_council',     name: 'Noble Council',        desc: 'Major decisions require a vote among nobles. King vote=5, RA=3, Lord=2, Minor Noble=1. Increases stability.', icon: '⚖️', effect: 'noble_council' },
+    { id: 'random_inspections', name: 'Random Inspections', desc: 'Guards randomly inspect warehouses, inventories, and merchants for banned or restricted goods without permits. Costs 1g per kingdom guard per day.', icon: '🔍', effect: 'random_inspections' },
 ];
 CONFIG.SPECIAL_LAWS = SPECIAL_LAWS;
 

@@ -2382,7 +2382,7 @@ window.UI = (function () {
                     if (typeof Player !== 'undefined' && Player.getPlayerOutposts) {
                         var _playerOutposts = Player.getPlayerOutposts().filter(function(o) { return !o.abandoned && !o.annexed && o.isOutpost; });
                         if (_playerOutposts.length > 0) {
-                            html += `<button class="btn-medieval" onclick="UI.openRecruitToOutpostDialog('${person.id}')" title="Convince this person to move to your outpost" style="font-size:0.75rem;padding:5px 10px;background:rgba(74,124,59,0.2);border-color:rgba(74,124,59,0.4);">⛺ Recruit to Outpost</button>`;
+                            html += `<button class="btn-medieval" onclick="UI.openRecruitToOutpostDialog('${person.id}')" title="Convince this person to move to your outpost" style="font-size:0.75rem;padding:5px 10px;background:rgba(74,124,59,0.2);border-color:rgba(74,124,59,0.4);color:#a5d6a7;">⛺ Recruit to Outpost</button>`;
                         }
                     }
                     html += `</div>`;
@@ -4793,7 +4793,17 @@ window.UI = (function () {
 
         // Assign worker button
         if (info.workerCount < info.workerMax) {
-            const unassigned = Player.employees.filter(eId => {
+            // Include outpost workers in the available pool for outpost buildings
+            var _allAvailable = Player.employees.slice();
+            if (town && town.isOutpost && town.outpostWorkers) {
+                for (var _owi = 0; _owi < town.outpostWorkers.length; _owi++) {
+                    if (_allAvailable.indexOf(town.outpostWorkers[_owi]) < 0) _allAvailable.push(town.outpostWorkers[_owi]);
+                }
+            }
+            const unassigned = _allAvailable.filter(eId => {
+                // Check this person is in the same town as the building
+                var _ep = Engine.findPerson(eId);
+                if (_ep && _ep.townId !== bld.townId) return false;
                 for (const b of Player.buildings) {
                     if (b.workers.includes(eId)) return false;
                 }
@@ -16112,6 +16122,74 @@ window.UI = (function () {
         }
         body += '</div>';
 
+        // === RECRUIT PEOPLE ===
+        if (_atOutpost) {
+            body += '<div style="background:rgba(40,40,40,0.6);padding:10px;border-radius:6px;margin-bottom:8px">';
+            body += '<h5 style="margin:0 0 6px;color:#a5d6a7">⛺ Recruit People</h5>';
+            // Get people in the player's current town (which is the outpost town) — no, outpost is wilderness
+            // Get people from nearest town or player's town if different
+            var _recruitTownId = Player.townId;
+            var _recruitFromTown = Engine.findTown(_recruitTownId);
+            var _recruitPeople = [];
+            if (_recruitFromTown && !_recruitFromTown.isWilderness) {
+                try { _recruitPeople = Engine.getPeople(_recruitTownId); } catch(e) {}
+                _recruitPeople = _recruitPeople.filter(function(p) {
+                    return p.alive !== false && p.age >= 14 && p.occupation !== 'king' && p.occupation !== 'noble' && p.employerId !== 'player';
+                });
+            }
+            if (_recruitPeople.length > 0) {
+                var maxPop = cfg.maxPopulation || 30;
+                var atPopCap = (op.population || 0) >= maxPop;
+                if (atPopCap) {
+                    body += '<div style="font-size:11px;color:#c44e52">⚠️ Population cap reached (' + maxPop + '). Cannot recruit more.</div>';
+                } else {
+                    body += '<div style="font-size:11px;color:#aaa;margin-bottom:6px">Recruit people from <strong>' + _recruitFromTown.name + '</strong> to your outpost.</div>';
+                    body += '<div style="max-height:200px;overflow-y:auto">';
+                    var _recruitShown = 0;
+                    var _maxShow = 20;
+                    for (var _rpi = 0; _rpi < _recruitPeople.length && _recruitShown < _maxShow; _rpi++) {
+                        var _rp = _recruitPeople[_rpi];
+                        var _rpOcc = _rp.occupation ? capitalize(_rp.occupation) : 'None';
+                        var _rpRel = Player.getRelationship ? Player.getRelationship(_rp.id) : { level: 0 };
+                        var _rpRelLvl = _rpRel.level || 0;
+                        // Check cooldown
+                        var _rpCdKey = _rp.id + '_' + townId;
+                        var _rpLastAsked = (Player.state._outpostRecruitCooldowns || {})[_rpCdKey] || 0;
+                        var _rpDaysLeft = Math.max(0, (cfg.recruitCooldownDays || 7) - (Engine.getDay() - _rpLastAsked));
+                        var _rpOnCd = _rpLastAsked > 0 && _rpDaysLeft > 0;
+                        var _rpChance = Player.getOutpostRecruitChance ? Player.getOutpostRecruitChance(_rp.id, townId) : 0.10;
+                        var _rpChancePct = Math.round(_rpChance * 100);
+                        var _rpChanceColor = _rpChancePct >= 30 ? '#55a868' : _rpChancePct >= 15 ? '#ccaa33' : '#c44e52';
+
+                        body += '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 6px;border-bottom:1px solid rgba(200,170,100,0.08);font-size:11px;">';
+                        body += '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">';
+                        body += (_rp.sex === 'M' ? '♂' : '♀') + ' ' + _rp.firstName + ' ' + _rp.lastName;
+                        body += ' <span style="color:#888">' + _rpOcc + ', Age ' + (_rp.age || '?') + '</span>';
+                        if (_rpRelLvl > 0) body += ' <span style="color:#aaa">❤' + _rpRelLvl + '</span>';
+                        body += '</span>';
+                        body += '<span style="display:flex;align-items:center;gap:4px;flex-shrink:0;">';
+                        body += '<span style="color:' + _rpChanceColor + ';font-size:10px">' + _rpChancePct + '%</span>';
+                        if (_rpOnCd) {
+                            body += '<span style="color:#888;font-size:10px">⏳' + _rpDaysLeft + 'd</span>';
+                        } else {
+                            body += '<button class="btn-medieval" onclick="UI.openRecruitToOutpostDialog(\'' + _rp.id + '\')" style="font-size:10px;padding:2px 6px;background:rgba(74,124,59,0.2);border-color:rgba(74,124,59,0.4);color:#a5d6a7;">Recruit</button>';
+                        }
+                        body += '</span></div>';
+                        _recruitShown++;
+                    }
+                    body += '</div>';
+                    if (_recruitPeople.length > _maxShow) {
+                        body += '<div style="font-size:10px;color:#666;margin-top:4px">Showing first ' + _maxShow + ' of ' + _recruitPeople.length + ' eligible people.</div>';
+                    }
+                }
+            } else {
+                body += '<div style="font-size:11px;color:#888">📍 Travel to a town to recruit people to this outpost, or use the townspeople view.</div>';
+            }
+            body += '</div>';
+        } else {
+            body += '<div style="font-size:11px;color:#888;margin-bottom:8px">⛺ Travel to a town to recruit people for this outpost.</div>';
+        }
+
         // === VILLAGE PETITION ===
         var minPop = cfg.villageConversionMinPop || 20;
         if (op.population >= minPop && _atOutpost) {
@@ -16293,8 +16371,18 @@ window.UI = (function () {
             html += '</div>';
         }
         html += '</div>';
-        var footer = '<button class="btn-medieval" onclick="UI.closeModal()" style="padding:6px 15px;">Close</button>';
+        var footer = '<button class="btn-medieval" onclick="UI._closeRecruitAndRestore()" style="padding:6px 15px;">Close</button>';
         openModal('⛺ Recruit ' + npc.firstName + ' to Outpost', html, footer);
+    }
+
+    function _closeRecruitAndRestore() {
+        if (window._townPeopleData) {
+            _renderTownPeople(
+                'name-asc', 'all', '', window._townPeoplePage || 0
+            );
+        } else {
+            closeModal();
+        }
     }
 
     function _doRecruitNpc(npcId, townId) {
@@ -16304,8 +16392,18 @@ window.UI = (function () {
         var shelterItem = shelterSel ? shelterSel.value : '';
         var result = Player.recruitNpcToOutpost(npcId, townId, goldIncentive, shelterItem);
         toast(result.message, result.success ? 'success' : 'warning');
-        if (result.success) closeModal();
-        else openRecruitToOutpostDialog(npcId);
+        // Restore townspeople modal if it was open
+        if (window._townPeopleData) {
+            _renderTownPeople(
+                document.getElementById('people-sort') ? document.getElementById('people-sort').value : 'name-asc',
+                document.getElementById('people-filter') ? document.getElementById('people-filter').value : 'all',
+                document.getElementById('people-search') ? document.getElementById('people-search').value : '',
+                window._townPeoplePage || 0
+            );
+        } else {
+            if (result.success) closeModal();
+            else openRecruitToOutpostDialog(npcId);
+        }
     }
 
     function enterOutpostPlacement() {
@@ -24933,6 +25031,31 @@ window.UI = (function () {
             }
         }
 
+        // Crime Punishments section
+        if (typeof CONFIG !== 'undefined' && CONFIG.CRIME_TYPES && CONFIG.CRIME_TYPES.length > 0) {
+            html += '<h4 style="margin:12px 0 4px;">⚖️ Crime Punishments</h4>';
+            html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 8px;">';
+            for (var ci = 0; ci < CONFIG.CRIME_TYPES.length; ci++) {
+                var crime = CONFIG.CRIME_TYPES[ci];
+                var cp = (kingdom.crimePunishments && kingdom.crimePunishments[crime.id]) || null;
+                var pType = cp ? cp.type : crime.defaultPunishment;
+                var pFine = cp ? (cp.fine != null ? cp.fine : crime.defaultFine) : crime.defaultFine;
+                var pJail = cp ? (cp.jailDays != null ? cp.jailDays : crime.defaultJailDays) : crime.defaultJailDays;
+
+                var pColor = pType === 'execution' ? '#ff4444' : pType === 'jail' ? '#ffaa44' : '#dddd44';
+                var pLabel = '';
+                if (pType === 'execution') {
+                    pLabel = 'Execution';
+                } else if (pType === 'jail') {
+                    pLabel = 'Jail ' + pJail + 'd' + (pFine > 0 ? ' + ' + pFine + 'g' : '');
+                } else {
+                    pLabel = 'Fine ' + pFine + 'g';
+                }
+                html += '<div style="padding:2px 4px;font-size:0.85rem;">' + (crime.icon || '⚖️') + ' <b>' + crime.name + ':</b> <span style="color:' + pColor + ';">' + pLabel + '</span></div>';
+            }
+            html += '</div>';
+        }
+
         html += '</div>';
 
         openModal('📜 Laws of ' + kingdom.name, html,
@@ -28360,6 +28483,7 @@ window.UI = (function () {
         _opOutpostWithdraw,
         _foundOutpostAtLocation,
         openRecruitToOutpostDialog,
+        _closeRecruitAndRestore,
         _doRecruitNpc,
         showOffSeaDialog,
         _confirmOffSea,

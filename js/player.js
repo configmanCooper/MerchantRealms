@@ -2238,7 +2238,16 @@
      */
     function assignWorker(personId, buildingId) {
         if (!player.employees.includes(personId)) {
-            return { success: false, message: 'Not your employee.' };
+            // Also allow outpost workers to be assigned to buildings at their outpost
+            var _isOutpostWorker = false;
+            var _person = Engine.findPerson(personId);
+            if (_person && _person.employerId === (player.id || 'player')) {
+                var _pTown = Engine.findTown(_person.townId);
+                if (_pTown && _pTown.isOutpost && _pTown.outpostWorkers && _pTown.outpostWorkers.indexOf(personId) >= 0) {
+                    _isOutpostWorker = true;
+                }
+            }
+            if (!_isOutpostWorker) return { success: false, message: 'Not your employee.' };
         }
         const bld = player.buildings.find(b => b.id === buildingId);
         if (!bld) return { success: false, message: 'Building not found.' };
@@ -25802,10 +25811,11 @@
             if (p.gold > totalAI && totalAI > 0) unlockAchievement('penny_pincher');
         } catch (e) { /* no-op */ }
 
-        // Economic dominance
+        // Economic dominance — exclude outpost/wilderness towns
         try {
             const towns = Engine.getTowns();
             for (const town of towns) {
+                if (town.isWilderness || town.isOutpost) continue;
                 const totalBlds = town.buildings ? town.buildings.length : 0;
                 const playerBlds = p.buildings.filter(b => b.townId === town.id).length;
                 if (totalBlds > 0 && playerBlds / totalBlds >= 0.5) {
@@ -44111,6 +44121,7 @@
         getForeignNobleStatus,
         getForeignNoblePrivilegeLevel,
         getCrimePunishment,
+        applyCorruptPenalty,
         handleForeignNobleCrime,
         getWarTradeDetectionChance,
         sellToKingdom,

@@ -980,28 +980,71 @@
         }
         for (const kingdom of kingdoms) {
             if (CONFIG.CRIME_TYPES) {
+                var kp = kingdom.kingPersonality || {};
+                // Map string personality traits to numeric severity modifiers
+                var justiceHarsh = (kp.justice === 'just');        // harsher punishments
+                var justiceLenient = (kp.justice === 'corrupt');   // lenient punishments
+                var temperamentVolatile = (kp.temperament === 'cruel' || kp.temperament === 'stern');
+                var greedyKing = (kp.greed === 'greedy' || kp.greed === 'corrupt');
+                var generousKing = (kp.generosity === 'generous' || kp.greed === 'generous');
+
                 for (const crime of CONFIG.CRIME_TYPES) {
-                    const roll = rng.random();
-                    if (roll < 0.3) {
-                        // Harsher than default
-                        if (crime.defaultPunishment === 'fine') {
-                            kingdom.crimePunishments[crime.id] = { type: 'jail', jailDays: crime.defaultJailDays || 5, fine: Math.floor(crime.defaultFine * 1.5) };
-                        } else if (crime.defaultPunishment === 'jail') {
-                            kingdom.crimePunishments[crime.id] = { type: 'jail', jailDays: Math.floor((crime.defaultJailDays || 7) * 1.5), fine: crime.defaultFine };
+                    var baseFine = crime.defaultFine || 100;
+                    var baseJail = crime.defaultJailDays || 5;
+                    var baseType = crime.defaultPunishment || 'fine';
+                    var pType = baseType;
+                    var pFine = baseFine;
+                    var pJail = baseJail;
+
+                    // Murder/treason: justice → execution, otherwise long jail
+                    if (crime.id === 'murder' || crime.id === 'treason') {
+                        if (!justiceLenient) {
+                            pType = 'execution'; pJail = 0; pFine = 0;
                         } else {
-                            kingdom.crimePunishments[crime.id] = { type: 'execution', jailDays: 0, fine: 0 };
+                            pType = 'jail'; pJail = Math.floor(baseJail * 1.2); pFine = baseFine;
                         }
-                    } else if (roll < 0.5) {
-                        // More lenient than default
-                        if (crime.defaultPunishment === 'execution') {
-                            kingdom.crimePunishments[crime.id] = { type: 'jail', jailDays: Math.floor((crime.defaultJailDays || 180) * 0.7), fine: crime.defaultFine };
-                        } else if (crime.defaultPunishment === 'jail') {
-                            kingdom.crimePunishments[crime.id] = { type: 'fine', jailDays: 0, fine: Math.floor((crime.defaultFine || 200) * 2) };
+                    } else if (justiceHarsh) {
+                        // High justice → harsher: more jail, higher fines
+                        pJail = Math.floor(baseJail * 1.5);
+                        pFine = Math.floor(baseFine * 1.5);
+                        if (baseType === 'fine') pType = 'jail';
+                    } else if (justiceLenient) {
+                        // Low justice → lenient: lower fines, less jail
+                        pJail = Math.max(1, Math.floor(baseJail * 0.5));
+                        pFine = Math.floor(baseFine * 0.6);
+                        if (baseType === 'execution') { pType = 'jail'; pJail = Math.floor(baseJail * 0.7); }
+                    }
+
+                    // Volatile temperament: chance of execution even for lesser crimes
+                    if (temperamentVolatile && pType !== 'execution' && rng.chance(0.15)) {
+                        pType = 'execution'; pJail = 0; pFine = 0;
+                    }
+
+                    // Greedy king prefers fines over jail (kingdom gets gold)
+                    if (greedyKing && pType === 'jail' && crime.id !== 'murder' && crime.id !== 'treason') {
+                        if (rng.chance(0.5)) {
+                            pType = 'fine';
+                            pFine = Math.floor(baseFine * 2.0);
+                            pJail = 0;
                         } else {
-                            kingdom.crimePunishments[crime.id] = { type: 'fine', jailDays: 0, fine: Math.floor((crime.defaultFine || 100) * 0.7) };
+                            pFine = Math.floor(pFine * 1.3);
                         }
                     }
-                    // else: use defaults (don't store override)
+
+                    // Generous king lowers fines
+                    if (generousKing) {
+                        pFine = Math.max(10, Math.floor(pFine * 0.6));
+                    }
+
+                    // Add small random variance (±15%)
+                    var variance = 0.85 + rng.random() * 0.30;
+                    pFine = Math.max(0, Math.floor(pFine * variance));
+                    pJail = Math.max(0, Math.floor(pJail * variance));
+
+                    // Only store override if different from default
+                    if (pType !== baseType || pFine !== baseFine || pJail !== baseJail) {
+                        kingdom.crimePunishments[crime.id] = { type: pType, jailDays: pJail, fine: pFine };
+                    }
                 }
             }
         }
@@ -30322,6 +30365,76 @@
                 }
             }
         }
+
+        // ---- RANDOM INSPECTIONS ENACT/REPEAL AI (every 90 days) ----
+        if (world.day % 90 === 0) {
+            var hasInspections = hasSpecialLaw(k, 'random_inspections');
+            var kpRI = k.kingPersonality || {};
+            var justiceIsHigh = (kpRI.justice === 'just');
+            var justiceIsLow = (kpRI.justice === 'corrupt');
+            var lowHappiness = (k.happiness || 50) < 60;
+
+            if (!hasInspections) {
+                // Consider enacting: justice is high AND (low happiness or random chance)
+                if (justiceIsHigh && (lowHappiness || rng.chance(0.3))) {
+                    if (k.gold >= 500) {
+                        var inspLaw = CONFIG.SPECIAL_LAWS.find(function(l) { return l.id === 'random_inspections'; });
+                        if (inspLaw) {
+                            k.laws.specialLaws.push(inspLaw);
+                            logEvent('📜 ' + k.name + ' enacted Random Inspections law — guards will inspect merchants for contraband.', { category: 'laws' });
+                        }
+                    }
+                }
+            } else {
+                // Consider repealing: treasury too low or lenient king
+                if (k.gold < 500 || justiceIsLow) {
+                    k.laws.specialLaws = k.laws.specialLaws.filter(function(l) { return l.id !== 'random_inspections'; });
+                    logEvent('📜 ' + k.name + ' repealed Random Inspections law — inspections cease.', { category: 'laws' });
+                }
+            }
+        }
+
+        // ---- PUNISHMENT ADJUSTMENT AI (every 180 days) ----
+        if (world.day % 180 === 0 && CONFIG.CRIME_TYPES && CONFIG.CRIME_TYPES.length > 0) {
+            var kpPA = k.kingPersonality || {};
+            var crimeToAdjust = rng.pick(CONFIG.CRIME_TYPES);
+            if (crimeToAdjust) {
+                var curP = (k.crimePunishments && k.crimePunishments[crimeToAdjust.id]) ||
+                    { type: crimeToAdjust.defaultPunishment, jailDays: crimeToAdjust.defaultJailDays, fine: crimeToAdjust.defaultFine };
+                var newP = { type: curP.type, jailDays: curP.jailDays || 0, fine: curP.fine || 0 };
+
+                // Small adjustments based on personality
+                if (kpPA.justice === 'just') {
+                    newP.fine = Math.floor(newP.fine * 1.2);
+                    newP.jailDays = Math.min(360, newP.jailDays + 2);
+                } else if (kpPA.justice === 'corrupt') {
+                    newP.fine = Math.max(10, Math.floor(newP.fine * 0.8));
+                    newP.jailDays = Math.max(0, newP.jailDays - 2);
+                }
+
+                // Greedy kings shift toward fines
+                if ((kpPA.greed === 'greedy' || kpPA.greed === 'corrupt') && newP.type === 'jail') {
+                    if (rng.chance(0.3) && crimeToAdjust.id !== 'murder' && crimeToAdjust.id !== 'treason') {
+                        newP.type = 'fine';
+                        newP.fine = Math.floor((crimeToAdjust.defaultFine || 200) * 2.0);
+                        newP.jailDays = 0;
+                    }
+                }
+
+                // Volatile temperament: small chance to escalate to execution
+                if ((kpPA.temperament === 'cruel') && newP.type !== 'execution' && rng.chance(0.1)) {
+                    newP.type = 'execution'; newP.jailDays = 0; newP.fine = 0;
+                }
+
+                // Generous kings lower fines
+                if (kpPA.generosity === 'generous' || kpPA.greed === 'generous') {
+                    newP.fine = Math.max(10, Math.floor(newP.fine * 0.8));
+                }
+
+                if (!k.crimePunishments) k.crimePunishments = {};
+                k.crimePunishments[crimeToAdjust.id] = newP;
+            }
+        }
     }
     function getKingdomFinancialState(k) {
         var soldierCount = (_tickCache.soldiersByKingdom[k.id] || []).length;
@@ -30383,6 +30496,139 @@
             warBudget: atWar ? Math.floor(k.gold * 0.4) : 0,
             civilianBudget: atWar ? Math.floor(k.gold * 0.6) : k.gold
         };
+    }
+
+    // ---- RANDOM INSPECTIONS DAILY TICK ----
+    function tickRandomInspections(k) {
+        if (!hasSpecialLaw(k, 'random_inspections')) return;
+        var rng = world.rng;
+
+        // Count kingdom guards for daily cost
+        var guardCount = 0;
+        for (var _gTid of k.territories) {
+            var _gTown = findTown(_gTid);
+            if (!_gTown) continue;
+            var _gPeople = (_tickCache.peopleByTown[_gTown.id] || []);
+            for (var _gi = 0; _gi < _gPeople.length; _gi++) {
+                if (_gPeople[_gi].alive && _gPeople[_gi].occupation === 'guard') guardCount++;
+            }
+        }
+        // Daily cost: 1g per guard
+        var inspCost = guardCount;
+        if (inspCost > 0 && k.gold >= inspCost) {
+            k.gold -= inspCost;
+        } else if (inspCost > 0) {
+            // Cannot afford inspections, skip
+            return;
+        }
+
+        // For each town in the kingdom, run inspection chance
+        for (var _iTid of k.territories) {
+            var town = findTown(_iTid);
+            if (!town) continue;
+
+            var townSecurity = town.security || 0;
+            var inspChance = 0.02 + (townSecurity / 100) * 0.03; // 2-5%
+            if (!rng.chance(inspChance)) continue;
+
+            var bannedGoods = (k.laws && k.laws.bannedGoods) || [];
+            var restrictedGoods = (k.laws && k.laws.restrictedGoods) || [];
+            if (bannedGoods.length === 0 && restrictedGoods.length === 0) continue;
+
+            // Check player if in this town
+            if (typeof Player !== 'undefined' && Player.townId === town.id) {
+                // Check for forged trade permit bypass
+                var pState = Player.state;
+                var hasForgeTrade = pState && pState.forgedDocuments && pState.forgedDocuments.trade_permit && pState.forgedDocuments.trade_permit > world.day;
+                if (hasForgeTrade) continue; // forged permit bypasses inspection
+
+                var playerInv = Player.inventory;
+                if (!playerInv) continue;
+
+                var caughtItem = null;
+                var caughtQty = 0;
+                var isBanned = false;
+
+                // Check banned goods
+                for (var _bi = 0; _bi < bannedGoods.length; _bi++) {
+                    var bg = bannedGoods[_bi];
+                    if ((playerInv[bg] || 0) >= 3) {
+                        caughtItem = bg;
+                        caughtQty = playerInv[bg];
+                        isBanned = true;
+                        break;
+                    }
+                }
+
+                // Check restricted goods (need license)
+                if (!caughtItem) {
+                    for (var _ri = 0; _ri < restrictedGoods.length; _ri++) {
+                        var rg = restrictedGoods[_ri];
+                        if ((playerInv[rg] || 0) >= 3) {
+                            // Check license
+                            var hasLicense = pState && pState.licenses && pState.licenses[k.id] && pState.licenses[k.id].includes(rg);
+                            if (!hasLicense) {
+                                caughtItem = rg;
+                                caughtQty = playerInv[rg];
+                                isBanned = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (caughtItem) {
+                    // Confiscate all of that item
+                    playerInv[caughtItem] = 0;
+
+                    // Get punishment
+                    var punishment = Player.getCrimePunishment(k.id, 'smuggling');
+                    var pFine = punishment.fine || 200;
+                    var pJail = punishment.jailDays || 5;
+
+                    // Apply penalty
+                    Player.applyCorruptPenalty(town, k, pFine, 10, pJail, false, 'smuggling');
+
+                    // Toast
+                    var itemLabel = caughtItem.replace(/_/g, ' ');
+                    if (typeof UI !== 'undefined' && UI.toast) {
+                        UI.toast('🔍 Random inspection! Guards found ' + caughtQty + ' ' + itemLabel + (isBanned ? ' (BANNED)' : ' (no permit)') + '. Confiscated! Fine: ' + pFine + 'g' + (pJail > 0 ? ', Jail: ' + pJail + 'd' : ''), 'danger');
+                    }
+                    logEvent('🔍 Random inspection in ' + town.name + ': guards found ' + caughtQty + ' ' + itemLabel + ' on ' + (pState.fullName || 'the player') + '. Goods confiscated.', { category: 'crime' });
+                }
+            }
+
+            // Check elite merchants in town
+            var townEMs = (world.eliteMerchants || []).filter(function(em) { return em.alive && em.townId === town.id; });
+            for (var _ei = 0; _ei < townEMs.length; _ei++) {
+                var em = townEMs[_ei];
+                if (!em.inventory) continue;
+
+                var emCaughtItem = null;
+                for (var _ebi = 0; _ebi < bannedGoods.length; _ebi++) {
+                    if ((em.inventory[bannedGoods[_ebi]] || 0) >= 3) {
+                        emCaughtItem = bannedGoods[_ebi]; break;
+                    }
+                }
+                if (!emCaughtItem) {
+                    for (var _eri = 0; _eri < restrictedGoods.length; _eri++) {
+                        if ((em.inventory[restrictedGoods[_eri]] || 0) >= 3) {
+                            emCaughtItem = restrictedGoods[_eri]; break;
+                        }
+                    }
+                }
+                if (emCaughtItem) {
+                    em.inventory[emCaughtItem] = 0;
+                    var emFine = 200;
+                    if (k.crimePunishments && k.crimePunishments.smuggling) {
+                        emFine = k.crimePunishments.smuggling.fine || 200;
+                    }
+                    em.gold = Math.max(0, (em.gold || 0) - emFine);
+                    k.gold += emFine;
+                    logEvent('🔍 Random inspection in ' + town.name + ': guards caught ' + (em.firstName || 'a merchant') + ' with contraband ' + emCaughtItem.replace(/_/g, ' ') + '. Fined ' + emFine + 'g.', { category: 'crime' });
+                }
+            }
+        }
     }
 
     function tickKingdomFinances(k) {
@@ -33888,6 +34134,11 @@
             }
             for (const k of world.kingdoms) {
                 tickKingdomFinances(k);
+            }
+
+            // Random inspections daily tick
+            for (const k of world.kingdoms) {
+                tickRandomInspections(k);
             }
 
             // Kingdom procurement AI (every 7 days)
