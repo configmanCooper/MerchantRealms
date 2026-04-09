@@ -16254,6 +16254,16 @@
                 town.maxBuildingSlots = CONFIG.TOWN_CATEGORIES[town.category].maxBuildingSlots;
             }
 
+            // Soft population cap enforcement — prevent runaway population growth
+            var _catCfg = CONFIG.TOWN_CATEGORIES[town.category || 'town'] || CONFIG.TOWN_CATEGORIES['town'];
+            var _popCap = (CONFIG.TOWN_POP_CAP || {})[town.category || 'town'] || (_catCfg.maxPop || 9999);
+            if (town.isIsland && CONFIG.TOWN_POP_CAP && CONFIG.TOWN_POP_CAP.island) {
+                _popCap = Math.min(_popCap, CONFIG.TOWN_POP_CAP.island);
+            }
+            if (town.population > _popCap) {
+                town.population = _popCap;
+            }
+
             // Town abandonment — population below 8 triggers collapse (capitals are protected)
             var isCapital = false;
             for (var ki = 0; ki < world.kingdoms.length; ki++) {

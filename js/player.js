@@ -25418,7 +25418,7 @@
 
         // Bronze: bandit_survivor, burgher_rank, adulthood, first_hundred (gold earned)
         if (p.age >= 25) unlockAchievement('adulthood');
-        if (citizenRank >= 2) unlockAchievement('burgher_rank');
+        if (citizenRank >= 2) unlockAchievement('burger_rank');
         if (p.stats.totalGoldEarned >= 100) unlockAchievement('first_hundred');
 
         // Silver: escape indentured servitude (social_climber already handled above)
@@ -25436,23 +25436,23 @@
         // ── Platinum Achievement Checks ──
         try {
             // Royal Commission Hero: completed a commission with 500+ goods
-            if ((pt.commissionGoodsTotal || 0) >= 500) unlockAchievement('royal_commission_hero');
+            if ((pt.commissionGoodsTotal || 0) >= 500) unlockAchievement('plat_royal_commission');
 
             // Monopoly Baron: own 100% production of 3 resources for 60+ days
             // (tracked in periodic tick, just check flag here)
-            if (pt._monopolyBaronQualified) unlockAchievement('monopoly_baron');
+            if (pt._monopolyBaronQualified) unlockAchievement('plat_monopoly_baron');
 
             // Fortress Builder: 5+ defense petitions approved
-            if ((pt.defensePetitions || 0) >= 5) unlockAchievement('fortress_builder');
+            if ((pt.defensePetitions || 0) >= 5) unlockAchievement('plat_fortress_builder');
 
             // Architect of Civilization: 3+ outposts promoted to villages
-            if ((pt.outpostsPromoted || 0) >= 3) unlockAchievement('architect_of_civilization');
+            if ((pt.outpostsPromoted || 0) >= 3) unlockAchievement('plat_architect');
 
             // Debt Collector: gave loans to 5+ different nobles
             var activeLoans = p._nobleLoans ? p._nobleLoans.filter(function(l) { return l.status === 'active' || l.status === 'repaid'; }) : [];
             var uniqueDebtors = {};
             for (var _dli = 0; _dli < activeLoans.length; _dli++) uniqueDebtors[activeLoans[_dli].nobleId] = true;
-            if (Object.keys(uniqueDebtors).length >= 5) unlockAchievement('debt_collector');
+            if (Object.keys(uniqueDebtors).length >= 5) unlockAchievement('plat_debt_collector');
 
             // War profiteering platinum checks
             var warKingdoms = Object.keys(pt.warProfitByKingdom || {});
@@ -25470,7 +25470,7 @@
             for (var _ski = 0; _ski < supplyKingdoms.length; _ski++) {
                 var _sup = pt.warSupplyByKingdom[supplyKingdoms[_ski]];
                 if ((_sup.weapons || 0) + (_sup.armor || 0) >= 200) {
-                    unlockAchievement('arms_embargo_breaker');
+                    unlockAchievement('plat_arms_embargo');
                     break;
                 }
             }
