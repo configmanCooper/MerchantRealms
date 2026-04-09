@@ -4898,7 +4898,10 @@ window.UI = (function () {
         // Demolish button (inside MAINTENANCE section)
         if (town && bld.townId === Player.townId) {
             var _demCost = Player.getLandCost ? Math.floor(Player.getLandCost(bld.townId) / 2) : 500;
-            html += '<button class="btn-trade sell" style="font-size:0.7rem;background:rgba(200,50,50,0.15);border-color:rgba(200,50,50,0.3);" onclick="UI.confirmDemolishUI(\'' + bld.id + '\',\'' + bld.townId + '\')">💥 Demolish (' + _demCost + 'g + blasting powder)</button>';
+            var _hasBp = (Player.inventory && Player.inventory.blasting_powder >= 1);
+            var _hasDt = (Player.inventory && Player.inventory.demolition_tools >= 2);
+            var _demReq = _hasBp ? '1 💥 blasting powder' : _hasDt ? '2 ⛏️ demolition tools' : '1 💥 blast powder or 2 ⛏️ demo tools';
+            html += '<button class="btn-trade sell" style="font-size:0.7rem;background:rgba(200,50,50,0.15);border-color:rgba(200,50,50,0.3);" onclick="UI.confirmDemolishUI(\'' + bld.id + '\',\'' + bld.townId + '\')">💥 Demolish (' + _demCost + 'g + ' + _demReq + ')</button>';
         }
 
         // List building for sale button (inside MAINTENANCE section)
@@ -5165,11 +5168,15 @@ window.UI = (function () {
         var pBld = Player.state && Player.state.buildings ? Player.state.buildings.find(function(b) { return b.id === buildingId; }) : null;
         var bt = bld ? Engine.findBuildingType(bld.type) : (pBld ? Engine.findBuildingType(pBld.type) : null);
         var bName = bt ? bt.name : 'Building';
-        var hasPowder = (Player.inventory && (Player.inventory.blasting_powder || 0) >= 1);
-        var powderNote = hasPowder ? '(from inventory)' : '(will buy from market/kingdom)';
+        var hasBp = (Player.inventory && (Player.inventory.blasting_powder || 0) >= 1);
+        var hasDt = (Player.inventory && (Player.inventory.demolition_tools || 0) >= 2);
+        var methodNote;
+        if (hasBp) methodNote = '1 💥 blasting powder (from inventory)';
+        else if (hasDt) methodNote = '2 ⛏️ demolition tools (from inventory)';
+        else methodNote = '1 💥 blasting powder or 2 ⛏️ demolition tools (will buy from market/kingdom)';
         var html = '<div style="padding:10px;">';
         html += '<p>Are you sure you want to demolish <strong>' + bName + '</strong>?</p>';
-        html += '<p style="font-size:0.85rem;">Cost: <strong>' + (Player.getLandCost ? Math.floor(Player.getLandCost(townId) / 2) : 500) + 'g</strong> + <strong>1 blasting powder</strong> ' + powderNote + '</p>';
+        html += '<p style="font-size:0.85rem;">Cost: <strong>' + (Player.getLandCost ? Math.floor(Player.getLandCost(townId) / 2) : 500) + 'g</strong> + <strong>' + methodNote + '</strong></p>';
         html += '<p style="font-size:0.8rem;color:#c44e52;">⚠️ This action cannot be undone. The building will be destroyed and the land plot freed.</p>';
         html += '<div style="display:flex;gap:8px;margin-top:12px;">';
         html += '<button class="btn-medieval" style="flex:1;background:rgba(200,50,50,0.3);" onclick="UI.demolishBuildingUI(\'' + buildingId + '\',\'' + townId + '\')">💥 Confirm Demolish</button>';

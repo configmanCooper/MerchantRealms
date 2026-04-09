@@ -2016,48 +2016,66 @@
         if (bld.ownerId !== 'player') return { success: false, message: 'You can only demolish buildings you own.' };
 
         var conversionCost = Math.floor(getLandCost(tid) / 2);
-        var blastingPowderCost = 0;
-        var blastingPowderSource = 'inventory';
+        var demolMethod = null; // 'bp_inventory', 'bp_market', 'bp_kingdom', 'dt_inventory', 'dt_market'
+        var extraCost = 0;
 
-        // Check blasting powder
+        // Check blasting powder in inventory first
         var hasBp = (player.inventory.blasting_powder || 0) >= 1;
-        if (!hasBp) {
+        var hasDt = (player.inventory.demolition_tools || 0) >= 2;
+
+        if (hasBp) {
+            demolMethod = 'bp_inventory';
+        } else if (hasDt) {
+            demolMethod = 'dt_inventory';
+        } else {
+            // Try market for blasting powder
             var kingdom = Engine.findKingdom(town.kingdomId);
             var bannedGoods = (kingdom && kingdom.laws && kingdom.laws.bannedGoods) || [];
-            var isBanned = bannedGoods.indexOf('blasting_powder') !== -1;
-            var mktSupply = (town.market && town.market.supply && town.market.supply.blasting_powder) || 0;
-            if (!isBanned && mktSupply >= 1) {
-                blastingPowderCost = Engine.getMarketPrice(tid, 'blasting_powder') || 40;
-                blastingPowderSource = 'market';
+            var isBpBanned = bannedGoods.indexOf('blasting_powder') !== -1;
+            var mktBp = (town.market && town.market.supply && town.market.supply.blasting_powder) || 0;
+            var mktDt = (town.market && town.market.supply && town.market.supply.demolition_tools) || 0;
+
+            if (!isBpBanned && mktBp >= 1) {
+                extraCost = Engine.getMarketPrice(tid, 'blasting_powder') || 40;
+                demolMethod = 'bp_market';
+            } else if (mktDt >= 2) {
+                extraCost = (Engine.getMarketPrice(tid, 'demolition_tools') || 55) * 2;
+                demolMethod = 'dt_market';
             } else if (kingdom) {
                 var kResult = Engine.buyBlastingPowderFromKingdom(kingdom.id, player.gold);
                 if (kResult.success) {
-                    blastingPowderCost = kResult.price;
-                    blastingPowderSource = 'kingdom';
-                } else {
-                    return { success: false, message: 'Cannot acquire blasting powder. ' + (kResult.reason || '') };
+                    extraCost = kResult.price;
+                    demolMethod = 'bp_kingdom';
                 }
-            } else {
-                return { success: false, message: 'No blasting powder available.' };
+            }
+            if (!demolMethod) {
+                return { success: false, message: 'Need 1 blasting powder or 2 demolition tools. None available.' };
             }
         }
 
-        var totalCost = conversionCost + blastingPowderCost;
+        var totalCost = conversionCost + extraCost;
         if (player.gold < totalCost) {
-            return { success: false, message: 'Not enough gold. Need ' + totalCost + 'g (demolition: ' + conversionCost + 'g + powder: ' + blastingPowderCost + 'g).' };
+            return { success: false, message: 'Not enough gold. Need ' + totalCost + 'g (demolition: ' + conversionCost + 'g' + (extraCost > 0 ? ' + materials: ' + extraCost + 'g' : '') + ').' };
         }
 
         // Deduct costs
         player.gold -= totalCost;
         player.stats.totalGoldSpent += totalCost;
 
-        // Deduct blasting powder
-        if (blastingPowderSource === 'inventory') {
+        // Deduct materials based on method
+        if (demolMethod === 'bp_inventory') {
             player.inventory.blasting_powder = (player.inventory.blasting_powder || 0) - 1;
             if (player.inventory.blasting_powder <= 0) delete player.inventory.blasting_powder;
-        } else if (blastingPowderSource === 'market') {
+        } else if (demolMethod === 'dt_inventory') {
+            player.inventory.demolition_tools = (player.inventory.demolition_tools || 0) - 2;
+            if (player.inventory.demolition_tools <= 0) delete player.inventory.demolition_tools;
+        } else if (demolMethod === 'bp_market') {
             if (town.market && town.market.supply) {
                 town.market.supply.blasting_powder = Math.max(0, (town.market.supply.blasting_powder || 0) - 1);
+            }
+        } else if (demolMethod === 'dt_market') {
+            if (town.market && town.market.supply) {
+                town.market.supply.demolition_tools = Math.max(0, (town.market.supply.demolition_tools || 0) - 2);
             }
         }
 
@@ -2075,8 +2093,9 @@
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.build || 10);
         var bldName = bt ? bt.name : bld.type;
-        Engine.logEvent('The merchant demolished a ' + bldName + ' in ' + town.name + '.');
-        return { success: true, message: 'Demolished ' + bldName + ' for ' + totalCost + 'g. Slot freed.' };
+        var methodStr = demolMethod.startsWith('bp') ? '(blasting powder)' : '(demolition tools)';
+        Engine.logEvent('The merchant demolished a ' + bldName + ' in ' + town.name + ' ' + methodStr + '.');
+        return { success: true, message: 'Demolished ' + bldName + ' for ' + totalCost + 'g ' + methodStr + '. Slot freed.' };
     }
 
     /**
@@ -27287,8 +27306,8 @@
         for (var i = 0; i < allResKeys.length; i++) {
             var rDef = RESOURCE_TYPES[allResKeys[i]];
             if (!rDef || !rDef.id) continue;
-            // Exclude quest items, contraband category, banned, and items already in market
-            if (rDef.category === 'quest' || rDef.category === 'contraband') continue;
+            // Exclude quest items and items already in market
+            if (rDef.category === 'quest') continue;
             if (bannedGoods.indexOf(rDef.id) >= 0) continue;
             var supply = marketSupply[rDef.id] || 0;
             if (supply > 0) continue;
