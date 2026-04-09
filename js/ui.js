@@ -7475,6 +7475,11 @@ window.UI = (function () {
 
     function openCaravanDialog() {
         if (typeof Player === 'undefined' || Player.townId == null) {
+            // If traveling, show caravan management instead of send dialog
+            if (Player.traveling || Player.travelOffSea) {
+                openCaravanManagement();
+                return;
+            }
             toast('You must be in a town to send caravans.', 'warning', 'my_business');
             return;
         }
