@@ -1168,14 +1168,20 @@ window.Game = (function () {
             items.push({ icon: '👁', label: 'View Details', action: `UI.showTownDetail(Engine.getTown('${town.id}'))` });
             if (!isHere) {
                 // Road travel options only available when in a town (not mid-travel/offroad)
-                if (Player.townId && !Player.traveling) {
+                // Outposts without a road cannot be reached via road travel
+                const _isOutpostNoRoad = town.isOutpost && !town.hasRoad;
+                if (Player.townId && !Player.traveling && !_isOutpostNoRoad) {
                     items.push({ icon: '🗺️', label: 'Travel Here...', action: `UI.openTravelOptions('${town.id}')` });
                 }
                 // Offroad travel always available
                 items.push({ icon: '🥾', label: 'Travel Off-road to ' + town.name, action: 'UI.confirmFreeTravel(' + town.x + ',' + town.y + ')' });
-                items.push({ icon: '🐴', label: 'Send Caravan', action: `UI.openCaravanDialog()` });
+                if (!_isOutpostNoRoad) {
+                    items.push({ icon: '🐴', label: 'Send Caravan', action: `UI.openCaravanDialog()` });
+                }
             }else {
-                items.push({ icon: '📊', label: 'Trade', action: 'UI.openTradeDialog()' });
+                if (!town.isOutpost) {
+                    items.push({ icon: '📊', label: 'Trade', action: 'UI.openTradeDialog()' });
+                }
                 items.push({ icon: '🏗️', label: 'Build', action: 'UI.openBuildDialog()' });
                 items.push({ icon: '👥', label: 'Hire Workers', action: 'UI.openHireDialog()' });
             }

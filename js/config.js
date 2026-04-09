@@ -938,6 +938,7 @@ const CONFIG = {
         npcFoundChanceRefugee: 0.01,    // 1% during refugee crises
         maxDistanceFromRoad: 3,         // outpost must be within 3 tiles of a road
         abandonDaysNoMaintenance: 30,   // outpost abandoned after 30 days of no upkeep
+        minDistanceTiles: 5,            // must be at least 5 tiles from any existing location
 
         // Land plots
         startingLandPlots: 4,           // outpost starts with 4 land plots
@@ -971,6 +972,9 @@ const CONFIG = {
         villageConversionMinRelationship: 20, // NPCs below this get bumped up
         villageConversionKingPayMin: 500,
         villageConversionKingPayMax: 2000,
+
+        // Population cap
+        maxPopulation: 30,              // outpost cannot exceed 30 NPCs
 
         // AI Immigration
         aiImmigrationCheckInterval: 7,  // days between AI checks

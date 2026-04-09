@@ -1046,8 +1046,9 @@ window.UI = (function () {
             <div class="detail-row"><span class="label">Population</span>
                 <span class="value">${pop}${pop <= 0 ? ' <span class="town-status-destroyed">— Destroyed</span>' : pop < 20 ? ' <span class="town-status-struggling">— Struggling</span>' : ''}</span></div>`;
 
-        // Sick population count
+        // Sick population count (skip for outposts with no residents)
         var _sickInfo = { total: 0, minor: 0, moderate: 0, severe: 0 };
+        if (pop > 0) {
         try {
             var _w = Engine.getWorld();
             if (_w && _w.people) {
@@ -1063,6 +1064,7 @@ window.UI = (function () {
                 }
             }
         } catch(e) {}
+        } // end if (pop > 0)
 
         if (_sickInfo.total > 0) {
             var _hasDiseaseAwareness = typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('disease_awareness');
@@ -2767,6 +2769,14 @@ window.UI = (function () {
     function openTradeDialog() {
         if (typeof Player === 'undefined' || Player.townId == null) {
             toast('You must be in a town to trade.', 'warning');
+            return;
+        }
+
+        // Block trade in outposts
+        var _curTown;
+        try { _curTown = Engine.getTown(Player.townId) || Engine.findTown(Player.townId); } catch(e) {}
+        if (_curTown && _curTown.isOutpost) {
+            toast('⛺ Trade is not available at outposts.', 'warning');
             return;
         }
 
@@ -10686,8 +10696,8 @@ window.UI = (function () {
 
         const footerHtml = `
             <button class="btn" onclick="UI.chooseWarAllegiance('${warId}','neutral')" style="margin:4px;position:relative;" title="Stay Neutral&#10;&#10;✅ Trade freely with BOTH sides&#10;✅ No reputation change&#10;✅ No war-end reward or punishment&#10;&#10;⚠️ Military sales to both sides are tracked&#10;⚠️ Lopsided sales (2:1+) trigger warnings&#10;⚠️ At 3:1 ratio: extra 10% tax from disadvantaged side&#10;⚠️ At 5:1 ratio: building seizure risk&#10;⚠️ At 10:1 ratio: total asset seizure + reputation destroyed">🕊️ Stay Neutral</button>
-            <button class="btn" onclick="UI.chooseWarAllegiance('${warId}','${warEvent.kingdomA}')" style="margin:4px;" title="Side with ${nameA}&#10;&#10;✅ If ${nameA} wins: +30 reputation, +1 social rank, gold reward (up to 5000g)&#10;✅ Unlocks 'War Hero' achievement&#10;&#10;❌ Cannot sell military goods to ${nameB}&#10;❌ If ${nameA} loses: buildings in ${nameB} territory seized&#10;❌ If ${nameA} loses: reputation with ${nameB} drops to 10">⚔️ Side with ${nameA}</button>
-            <button class="btn" onclick="UI.chooseWarAllegiance('${warId}','${warEvent.kingdomB}')" style="margin:4px;" title="Side with ${nameB}&#10;&#10;✅ If ${nameB} wins: +30 reputation, +1 social rank, gold reward (up to 5000g)&#10;✅ Unlocks 'War Hero' achievement&#10;&#10;❌ Cannot sell military goods to ${nameA}&#10;❌ If ${nameB} loses: buildings in ${nameA} territory seized&#10;❌ If ${nameB} loses: reputation with ${nameA} drops to 10">⚔️ Side with ${nameB}</button>
+            <button class="btn" onclick="UI.chooseWarAllegiance('${warId}','${warEvent.kingdomA}')" style="margin:4px;" title="Side with ${nameA}&#10;&#10;IMMEDIATE:&#10;✅ +5 reputation with ${nameA}&#10;❌ -5 reputation with ${nameB}&#10;❌ -5 relationship with ${nameB} king + nobles&#10;❌ Rank in ${nameB} becomes 'Enemy' (peasant privileges)&#10;❌ Cannot hire workers in military buildings in ${nameB}&#10;❌ +50% encounters, +25% danger in ${nameB} territory&#10;&#10;IF ${nameA} WINS:&#10;✅ +5 to +20 rep (scaled by military sales + status)&#10;✅ +10 king relationship, +5 all noble relationships&#10;✅ War Hero achievement&#10;✅ Guaranteed petition (no signatures needed)&#10;✅ Up to 5000g reward&#10;&#10;IF ${nameA} LOSES:&#10;❌ Up to 5000g retribution&#10;❌ -10 to -20 rep with BOTH kingdoms&#10;❌ -10 relationship with BOTH kings&#10;❌ -5 relationship with ALL nobles&#10;❌ Buildings in ${nameB} seized&#10;❌ Possible jail time&#10;&#10;⚠️ Choice is PERMANENT — cannot change sides!">⚔️ Side with ${nameA}</button>
+            <button class="btn" onclick="UI.chooseWarAllegiance('${warId}','${warEvent.kingdomB}')" style="margin:4px;" title="Side with ${nameB}&#10;&#10;IMMEDIATE:&#10;✅ +5 reputation with ${nameB}&#10;❌ -5 reputation with ${nameA}&#10;❌ -5 relationship with ${nameA} king + nobles&#10;❌ Rank in ${nameA} becomes 'Enemy' (peasant privileges)&#10;❌ Cannot hire workers in military buildings in ${nameA}&#10;❌ +50% encounters, +25% danger in ${nameA} territory&#10;&#10;IF ${nameB} WINS:&#10;✅ +5 to +20 rep (scaled by military sales + status)&#10;✅ +10 king relationship, +5 all noble relationships&#10;✅ War Hero achievement&#10;✅ Guaranteed petition (no signatures needed)&#10;✅ Up to 5000g reward&#10;&#10;IF ${nameB} LOSES:&#10;❌ Up to 5000g retribution&#10;❌ -10 to -20 rep with BOTH kingdoms&#10;❌ -10 relationship with BOTH kings&#10;❌ -5 relationship with ALL nobles&#10;❌ Buildings in ${nameA} seized&#10;❌ Possible jail time&#10;&#10;⚠️ Choice is PERMANENT — cannot change sides!">⚔️ Side with ${nameB}</button>
         `;
 
         // Pause game during popup
@@ -15603,7 +15613,7 @@ window.UI = (function () {
         body += '<div style="background:rgba(40,40,40,0.6);padding:10px;border-radius:6px;margin-bottom:8px">';
         body += '<h4 style="margin:0 0 6px;color:#e0d6b8">' + (op.isPort ? '⚓' : '⛺') + ' ' + op.name + '</h4>';
         body += '<div style="display:flex;flex-wrap:wrap;gap:12px;font-size:12px">';
-        body += '<span>👥 Pop: ' + op.population + '</span>';
+        body += '<span>👥 Pop: ' + op.population + '/' + (cfg.maxPopulation || 30) + '</span>';
         body += '<span>📈 Prosperity: ' + Math.floor(op.prosperity) + '</span>';
         body += '<span>😊 Happiness: ' + Math.floor(op.outpostHappiness || 50) + '</span>';
         body += '<span>🏰 Walls: ' + op.walls + '/3</span>';
@@ -15681,7 +15691,7 @@ window.UI = (function () {
 
         // === LAND PLOTS ===
         body += '<div style="background:rgba(40,40,40,0.6);padding:10px;border-radius:6px;margin-bottom:8px">';
-        body += '<h5 style="margin:0 0 6px;color:#ccc">📐 Land (' + (op.usedLandPlots || 0) + '/' + (op.landPlots || 4) + ' used, max ' + (cfg.maxLandPlots || 10) + ')</h5>';
+        body += '<h5 style="margin:0 0 6px;color:#ccc">📐 Land (' + (op.usedLandPlots || 0) + '/' + (op.landPlots || 4) + ' used)</h5>';
         if ((op.landPlots || 4) < (cfg.maxLandPlots || 10)) {
             var lpCost = cfg.landPlotCost || 150;
             var lpMats = cfg.landPlotMaterials || { wood: 10, stone: 5 };
@@ -15870,7 +15880,24 @@ window.UI = (function () {
             }
             body += '</div>';
         }
-        // Build new sea route (only if port)
+        // Connect to nearby road (junction shortcut - cheaper if road passes close)
+        if (op.connectedRoads.length === 0) {
+            var roadConn = Player.getNearestRoadConnection ? Player.getNearestRoadConnection(op.x, op.y, townId) : null;
+            if (roadConn) {
+                var jGold = Math.floor(100 + roadConn.perpDist * 0.5);
+                var jWood = Math.floor(10 + roadConn.perpDist * 0.1);
+                var jStone = Math.floor(8 + roadConn.perpDist * 0.08);
+                if (Player.skills && Player.skills.cartographer) { jGold = Math.floor(jGold * 0.75); jWood = Math.floor(jWood * 0.75); jStone = Math.floor(jStone * 0.75); }
+                var canJR = gold >= jGold && (inv.wood || 0) >= jWood && (inv.stone || 0) >= jStone;
+                body += '<div style="margin-top:6px;font-size:12px;border:1px solid #6688aa;padding:6px;border-radius:4px;background:rgba(30,40,50,0.5)">';
+                body += '<div style="color:#88bbdd;margin-bottom:4px"><strong>🔗 Connect to Nearby Road</strong></div>';
+                body += '<div style="font-size:11px;color:#888;margin-bottom:4px">' + roadConn.fromTownName + '–' + roadConn.toTownName + ' road passes ~' + roadConn.perpDist + ' away. Connect via ' + roadConn.connectTownName + '.</div>';
+                body += '<div style="display:flex;align-items:center;gap:6px">';
+                body += '<button onclick="UI._opConnectToRoad(\'' + townId + '\',\'' + roadConn.connectTownId + '\')" style="padding:2px 8px;font-size:11px;cursor:pointer' + (canJR ? '' : ';opacity:0.5') + '"' + (canJR ? '' : ' disabled') + '>Connect</button>';
+                body += '<span style="font-size:11px;color:#888">' + jGold + 'g + ' + jWood + ' wood + ' + jStone + ' stone</span>';
+                body += '</div></div>';
+            }
+        }
         if (op.isPort) {
             var seaTargets = nearby.filter(function(n) { return n.isPort && !n.hasSeaRoute; });
             if (seaTargets.length > 0) {
@@ -15939,6 +15966,14 @@ window.UI = (function () {
         toast(result.message, result.success ? 'success' : 'error');
         openOutpostDetail(fromId);
     }
+    function _opConnectToRoad(outpostId, targetTownId) {
+        var toT = Engine.findTown(targetTownId);
+        var name = toT ? toT.name : 'unknown';
+        if (!confirm('Connect to nearby road via ' + name + '? This will cost gold + materials.')) return;
+        var result = Player.connectOutpostToRoad(outpostId, targetTownId);
+        toast(result.message, result.success ? 'success' : 'error');
+        openOutpostDetail(outpostId);
+    }
     function _opBuyLand(townId) {
         var result = Player.buyOutpostLandPlot(townId);
         toast(result.message, result.success ? 'success' : 'error');
@@ -15995,6 +16030,8 @@ window.UI = (function () {
                 if (hCfg) housingCap += hCfg.capacity;
             }
             var hasSpace = op.population < housingCap;
+            var maxPop = cfg.maxPopulation || 30;
+            var atPopCap = (op.population || 0) >= maxPop;
             var chance = Player.getOutpostRecruitChance ? Player.getOutpostRecruitChance(npcId, op.townId) : 0.10;
             var chanceStr = Math.round(chance * 100);
 
@@ -16009,12 +16046,14 @@ window.UI = (function () {
             html += '<strong style="color:#e0d6b8">' + op.name + '</strong>';
             html += '<span style="color:' + (chanceStr >= 30 ? '#55a868' : chanceStr >= 15 ? '#ccaa33' : '#c44e52') + ';font-size:13px">' + chanceStr + '% chance</span>';
             html += '</div>';
-            html += '<div style="font-size:11px;color:#888;margin:4px 0">👥 ' + op.population + '/' + housingCap + ' residents';
+            html += '<div style="font-size:11px;color:#888;margin:4px 0">👥 ' + op.population + '/' + maxPop + ' residents (housing: ' + housingCap + ')';
             if (op.hasRoad) html += ' | 🛤️ Road';
             html += ' | Upgrades: ' + (op.outpostUpgrades || []).length;
             html += '</div>';
 
-            if (!hasSpace) {
+            if (atPopCap) {
+                html += '<div style="font-size:11px;color:#c44e52">⚠️ Population cap reached (' + maxPop + '). Consider converting to village.</div>';
+            } else if (!hasSpace) {
                 html += '<div style="font-size:11px;color:#c44e52">⚠️ No housing space — build more housing first.</div>';
             } else if (onCooldown) {
                 html += '<div style="font-size:11px;color:#c44e52">⏳ Cooldown: ' + daysLeft + ' day(s) remaining.</div>';
@@ -16053,6 +16092,19 @@ window.UI = (function () {
         var terrain = Engine.getTerrainAtPixel(destX, destY);
         if (terrain === 2) { toast('Cannot build on water.', 'error'); return; }
         if (terrain === 3) { toast('Cannot build on mountains.', 'error'); return; }
+        // Minimum distance from existing locations
+        var cfg = CONFIG.OUTPOST_CONFIG || {};
+        var minDistTiles = cfg.minDistanceTiles || 5;
+        var minDistPx = minDistTiles * (CONFIG.TILE_SIZE || 16);
+        var allTownsCheck = Engine.getTowns ? Engine.getTowns() : [];
+        for (var ci = 0; ci < allTownsCheck.length; ci++) {
+            var ct = allTownsCheck[ci];
+            if (ct.abandoned || ct.destroyed) continue;
+            if (Math.hypot(destX - ct.x, destY - ct.y) < minDistPx) {
+                toast('⚠️ Too close to ' + ct.name + '! Must be at least ' + minDistTiles + ' tiles from any location.', 'error');
+                return;
+            }
+        }
         var playerX = Player.worldX || 0;
         var playerY = Player.worldY || 0;
         if (Player.townId) {
@@ -16064,12 +16116,19 @@ window.UI = (function () {
             toast('⚠️ Cannot reach by land — water or mountains block the path.', 'error');
             return;
         }
-        var cfg = CONFIG.OUTPOST_CONFIG || {};
         var baseCost = cfg.foundingCost || 500;
         var mats = cfg.foundingMaterials || {};
         var gold = Player.gold || 0;
         var inv = Player.inventory || {};
         var dist = Math.floor(Math.hypot(destX - playerX, destY - playerY));
+
+        // Helper: build shortage text for a given gold + materials requirement
+        function _shortageText(needGold, needMats) {
+            var missing = [];
+            if (gold < needGold) missing.push('Need ' + needGold + 'g (have ' + Math.floor(gold) + 'g)');
+            for (var sk in needMats) { if ((inv[sk] || 0) < needMats[sk]) missing.push('Need ' + needMats[sk] + ' ' + sk + ' (have ' + (inv[sk] || 0) + ')'); }
+            return missing.length > 0 ? '<div style="font-size:10px;color:#c44e52;margin-top:3px">⚠️ ' + missing.join(', ') + '</div>' : '';
+        }
 
         // Find nearest settlement for road cost calc
         var allTowns = Engine.getTowns ? Engine.getTowns() : [];
@@ -16105,9 +16164,10 @@ window.UI = (function () {
         html += '<div style="font-size:12px;color:#e0d6b8;margin-bottom:4px">🏕️ Found Without Road</div>';
         html += '<div style="font-size:11px;color:#888">Only reachable by offroad travel. Cost: ' + baseCost + 'g + ' + _formatMats(mats) + '</div>';
         html += '<button class="btn-medieval" onclick="UI._foundOutpostAtLocation(' + destX + ',' + destY + ',false)" style="margin-top:5px;padding:4px 14px;font-size:11px;background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5)' + (canBase ? '' : ';opacity:0.5') + '"' + (canBase ? '' : ' disabled') + '>⛺ Found (No Road)</button>';
+        if (!canBase) html += _shortageText(baseCost, mats);
         html += '</div>';
 
-        // Option 2: With road
+        // Option 2: With road to nearest settlement
         if (nearestSettle) {
             var canWithRoad = gold >= totalWithRoad;
             for (var rwmk in totalMatsWithRoad) { if ((inv[rwmk] || 0) < totalMatsWithRoad[rwmk]) canWithRoad = false; }
@@ -16116,6 +16176,30 @@ window.UI = (function () {
             html += '<div style="font-size:11px;color:#888">Integrates into travel/caravan system. Total: ' + totalWithRoad + 'g + ' + _formatMats(totalMatsWithRoad) + '</div>';
             html += '<div style="font-size:10px;color:#55a868">+15% NPC recruitment bonus with road!</div>';
             html += '<button class="btn-medieval" onclick="UI._foundOutpostAtLocation(' + destX + ',' + destY + ',true)" style="margin-top:5px;padding:4px 14px;font-size:11px;background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5)' + (canWithRoad ? '' : ';opacity:0.5') + '"' + (canWithRoad ? '' : ' disabled') + '>🛤️ Found (With Road)</button>';
+            if (!canWithRoad) html += _shortageText(totalWithRoad, totalMatsWithRoad);
+            html += '</div>';
+        }
+
+        // Option 3: Connect to nearby road (if a road passes closer than nearest town)
+        var roadConn = Player.getNearestRoadConnection ? Player.getNearestRoadConnection(destX, destY, null) : null;
+        if (roadConn && nearestSettle && roadConn.perpDist < nearDist * 0.75) {
+            var jRoadGold = Math.floor(100 + roadConn.perpDist * 0.5);
+            var jRoadWood = Math.floor(10 + roadConn.perpDist * 0.1);
+            var jRoadStone = Math.floor(8 + roadConn.perpDist * 0.08);
+            if (Player.skills && Player.skills.cartographer) { jRoadGold = Math.floor(jRoadGold * 0.75); jRoadWood = Math.floor(jRoadWood * 0.75); jRoadStone = Math.floor(jRoadStone * 0.75); }
+            var totalJunction = baseCost + jRoadGold;
+            var totalJMats = {};
+            for (var jmk in mats) totalJMats[jmk] = mats[jmk];
+            totalJMats.wood = (totalJMats.wood || 0) + jRoadWood;
+            totalJMats.stone = (totalJMats.stone || 0) + jRoadStone;
+            var canJunction = gold >= totalJunction;
+            for (var jrmk in totalJMats) { if ((inv[jrmk] || 0) < totalJMats[jrmk]) canJunction = false; }
+            html += '<div style="border:1px solid #6688aa;padding:8px;margin:6px 0;border-radius:5px;background:rgba(30,40,50,0.8)">';
+            html += '<div style="font-size:12px;color:#88bbdd;margin-bottom:4px">🔗 Connect to ' + roadConn.fromTownName + '–' + roadConn.toTownName + ' Road via ' + roadConn.connectTownName + '</div>';
+            html += '<div style="font-size:11px;color:#888">Road passes ~' + roadConn.perpDist + ' away (cheaper than ' + nearDist + ' to ' + nearestSettle.name + '). Total: ' + totalJunction + 'g + ' + _formatMats(totalJMats) + '</div>';
+            html += '<div style="font-size:10px;color:#55a868">+15% NPC recruitment bonus with road!</div>';
+            html += '<button class="btn-medieval" onclick="UI._foundOutpostAtLocation(' + destX + ',' + destY + ',true,\'' + roadConn.connectTownId + '\')" style="margin-top:5px;padding:4px 14px;font-size:11px;background:rgba(59,89,124,0.3);border-color:rgba(59,89,124,0.5)' + (canJunction ? '' : ';opacity:0.5') + '"' + (canJunction ? '' : ' disabled') + '>🔗 Found (Connect to Road)</button>';
+            if (!canJunction) html += _shortageText(totalJunction, totalJMats);
             html += '</div>';
         }
 
@@ -16124,7 +16208,7 @@ window.UI = (function () {
         openModal('⛺ Found Outpost Here', html, footer);
     }
 
-    function _foundOutpostAtLocation(destX, destY, buildWithRoad) {
+    function _foundOutpostAtLocation(destX, destY, buildWithRoad, roadTargetTownId) {
         closeModal();
         // Start travel to location, then found on arrival
         var result = Player.travelToCoords ? Player.travelToCoords(destX, destY) : null;
@@ -16134,32 +16218,55 @@ window.UI = (function () {
         }
         Player.state._pendingOutpostFound = true;
         Player.state._pendingOutpostRoad = !!buildWithRoad;
+        if (roadTargetTownId) Player.state._pendingOutpostRoadTarget = roadTargetTownId;
         toast('⛺ Traveling to location... Outpost founding will begin on arrival.', 'info');
     }
 
-    function foundOutpostUI(buildWithRoad) {
+    function foundOutpostUI(buildWithRoad, roadTargetOverride) {
         var name = prompt('Name your outpost:');
         if (!name || name.trim() === '') return;
         var opts = { buildWithRoad: !!buildWithRoad };
+        // Check for road target override (junction connection)
+        var targetOverride = roadTargetOverride || (Player.state._pendingOutpostRoadTarget || null);
+        if (targetOverride) delete Player.state._pendingOutpostRoadTarget;
         if (buildWithRoad) {
-            // Calculate road costs for the nearest settlement
             var cfg = CONFIG.OUTPOST_CONFIG || {};
             var allTowns = Engine.getTowns ? Engine.getTowns() : [];
             var px = Player.worldX || 0, py = Player.worldY || 0;
             if (Player.townId) { var pt = Engine.findTown(Player.townId); if (pt) { px = pt.x; py = pt.y; } }
-            var nearestSettle = null, nearDist = Infinity;
-            for (var ti = 0; ti < allTowns.length; ti++) {
-                var t = allTowns[ti];
-                if (t.category === 'outpost' || t.abandoned) continue;
-                var d = Math.hypot(px - t.x, py - t.y);
-                if (d < nearDist) { nearDist = d; nearestSettle = t; }
-            }
-            if (nearestSettle) {
-                var roadGold = Math.floor(100 + nearDist * 0.5);
-                var roadWood = Math.floor(10 + nearDist * 0.1);
-                var roadStone = Math.floor(8 + nearDist * 0.08);
+
+            if (targetOverride) {
+                // Use the specific target town and perpendicular distance for costing
+                var roadConn = Player.getNearestRoadConnection ? Player.getNearestRoadConnection(px, py, null) : null;
+                var costDist;
+                if (roadConn && roadConn.connectTownId === targetOverride) {
+                    costDist = roadConn.perpDist;
+                } else {
+                    var tt = Engine.findTown(targetOverride);
+                    costDist = tt ? Math.hypot(px - tt.x, py - tt.y) : 200;
+                }
+                var roadGold = Math.floor(100 + costDist * 0.5);
+                var roadWood = Math.floor(10 + costDist * 0.1);
+                var roadStone = Math.floor(8 + costDist * 0.08);
                 if (Player.skills && Player.skills.cartographer) { roadGold = Math.floor(roadGold * 0.75); roadWood = Math.floor(roadWood * 0.75); roadStone = Math.floor(roadStone * 0.75); }
                 opts.roadCost = { gold: roadGold, wood: roadWood, stone: roadStone };
+                opts.roadTargetTownId = targetOverride;
+            } else {
+                // Nearest settlement approach
+                var nearestSettle = null, nearDist = Infinity;
+                for (var ti = 0; ti < allTowns.length; ti++) {
+                    var t = allTowns[ti];
+                    if (t.category === 'outpost' || t.abandoned) continue;
+                    var d = Math.hypot(px - t.x, py - t.y);
+                    if (d < nearDist) { nearDist = d; nearestSettle = t; }
+                }
+                if (nearestSettle) {
+                    var roadGold2 = Math.floor(100 + nearDist * 0.5);
+                    var roadWood2 = Math.floor(10 + nearDist * 0.1);
+                    var roadStone2 = Math.floor(8 + nearDist * 0.08);
+                    if (Player.skills && Player.skills.cartographer) { roadGold2 = Math.floor(roadGold2 * 0.75); roadWood2 = Math.floor(roadWood2 * 0.75); roadStone2 = Math.floor(roadStone2 * 0.75); }
+                    opts.roadCost = { gold: roadGold2, wood: roadWood2, stone: roadStone2 };
+                }
             }
         }
         var result = Player.foundPlayerOutpost(name, opts);
@@ -16173,6 +16280,14 @@ window.UI = (function () {
         var mats = cfg.foundingMaterials || {};
         var gold = Player.gold || 0;
         var inv = Player.inventory || {};
+
+        // Helper: build shortage text
+        function _shortageText(needGold, needMats) {
+            var missing = [];
+            if (gold < needGold) missing.push('Need ' + needGold + 'g (have ' + Math.floor(gold) + 'g)');
+            for (var sk in needMats) { if ((inv[sk] || 0) < needMats[sk]) missing.push('Need ' + needMats[sk] + ' ' + sk + ' (have ' + (inv[sk] || 0) + ')'); }
+            return missing.length > 0 ? '<div style="font-size:10px;color:#c44e52;margin-top:3px">⚠️ ' + missing.join(', ') + '</div>' : '';
+        }
 
         // Calculate road cost to nearest settlement
         var allTowns = Engine.getTowns ? Engine.getTowns() : [];
@@ -16198,9 +16313,10 @@ window.UI = (function () {
         html += '<div style="border:1px solid #555;padding:8px;margin:6px 0;border-radius:5px">';
         html += '<div style="font-size:12px;color:#e0d6b8">🏕️ Without Road — ' + cost + 'g + ' + _formatMats(mats) + '</div>';
         html += '<button class="btn-medieval" onclick="UI.foundOutpostUI(false)" style="margin-top:4px;padding:4px 14px;font-size:11px;background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5)' + (canBase ? '' : ';opacity:0.5') + '"' + (canBase ? '' : ' disabled') + '>⛺ Found (No Road)</button>';
+        if (!canBase) html += _shortageText(cost, mats);
         html += '</div>';
 
-        // Option 2: With road
+        // Option 2: With road to nearest settlement
         if (nearestSettle) {
             var totalGold = cost + roadGold;
             var totalMats = {};
@@ -16212,6 +16328,29 @@ window.UI = (function () {
             html += '<div style="border:1px solid #555;padding:8px;margin:6px 0;border-radius:5px">';
             html += '<div style="font-size:12px;color:#e0d6b8">🛤️ With Road to ' + nearestSettle.name + ' — ' + totalGold + 'g + ' + _formatMats(totalMats) + '</div>';
             html += '<button class="btn-medieval" onclick="UI.foundOutpostUI(true)" style="margin-top:4px;padding:4px 14px;font-size:11px;background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5)' + (canWithRoad ? '' : ';opacity:0.5') + '"' + (canWithRoad ? '' : ' disabled') + '>🛤️ Found (With Road)</button>';
+            if (!canWithRoad) html += _shortageText(totalGold, totalMats);
+            html += '</div>';
+        }
+
+        // Option 3: Connect to nearby road (if a road passes closer than nearest town)
+        var roadConn = Player.getNearestRoadConnection ? Player.getNearestRoadConnection(px, py, null) : null;
+        if (roadConn && nearestSettle && roadConn.perpDist < nearDist * 0.75) {
+            var jRoadGold = Math.floor(100 + roadConn.perpDist * 0.5);
+            var jRoadWood = Math.floor(10 + roadConn.perpDist * 0.1);
+            var jRoadStone = Math.floor(8 + roadConn.perpDist * 0.08);
+            if (Player.skills && Player.skills.cartographer) { jRoadGold = Math.floor(jRoadGold * 0.75); jRoadWood = Math.floor(jRoadWood * 0.75); jRoadStone = Math.floor(jRoadStone * 0.75); }
+            var totalJGold = cost + jRoadGold;
+            var totalJMats = {};
+            for (var jmk in mats) totalJMats[jmk] = mats[jmk];
+            totalJMats.wood = (totalJMats.wood || 0) + jRoadWood;
+            totalJMats.stone = (totalJMats.stone || 0) + jRoadStone;
+            var canJunction = gold >= totalJGold;
+            for (var jrmk in totalJMats) { if ((inv[jrmk] || 0) < totalJMats[jrmk]) canJunction = false; }
+            html += '<div style="border:1px solid #6688aa;padding:8px;margin:6px 0;border-radius:5px;background:rgba(30,40,50,0.6)">';
+            html += '<div style="font-size:12px;color:#88bbdd">🔗 Connect to ' + roadConn.fromTownName + '–' + roadConn.toTownName + ' Road via ' + roadConn.connectTownName + '</div>';
+            html += '<div style="font-size:11px;color:#888">Road passes ~' + roadConn.perpDist + ' away (cheaper than ' + Math.floor(nearDist) + ' to ' + nearestSettle.name + '). Total: ' + totalJGold + 'g + ' + _formatMats(totalJMats) + '</div>';
+            html += '<button class="btn-medieval" onclick="UI.foundOutpostUI(true,\'' + roadConn.connectTownId + '\')" style="margin-top:4px;padding:4px 14px;font-size:11px;background:rgba(59,89,124,0.3);border-color:rgba(59,89,124,0.5)' + (canJunction ? '' : ';opacity:0.5') + '"' + (canJunction ? '' : ' disabled') + '>🔗 Found (Connect to Road)</button>';
+            if (!canJunction) html += _shortageText(totalJGold, totalJMats);
             html += '</div>';
         }
 
@@ -23402,17 +23541,19 @@ window.UI = (function () {
         var k2Rank = CONFIG.SOCIAL_RANKS[Player.getPlayerRankIndex(conflict.kingdom2)] ? CONFIG.SOCIAL_RANKS[Player.getPlayerRankIndex(conflict.kingdom2)].name : 'Peasant';
 
         var html = '<div style="padding:20px;text-align:center;">';
-        html += '<h3 style="color:#ff6644;margin-bottom:15px;">\u2694\uFE0F War Breaks Out!</h3>';
+        html += '<h3 style="color:#ff6644;margin-bottom:15px;">⚔️ War Breaks Out!</h3>';
         html += '<p style="color:#ddd;margin-bottom:20px;">';
         html += '<strong style="color:' + (k1 ? k1.color : '#fff') + '">' + (k1 ? k1.name : 'Kingdom 1') + '</strong> has declared war on ';
         html += '<strong style="color:' + (k2 ? k2.color : '#fff') + '">' + (k2 ? k2.name : 'Kingdom 2') + '</strong>!';
         html += '</p>';
-        html += '<p style="color:#ffa;margin-bottom:20px;">You hold rank in both kingdoms. You must choose a side!</p>';
-        html += '<p style="color:#aaa;font-size:0.8rem;margin-bottom:20px;">The kingdom you abandon will strip your rank and your reputation will drop by 30.</p>';
+        html += '<p style="color:#ffa;margin-bottom:10px;">You hold rank in both kingdoms. You must choose a side!</p>';
+        html += '<p style="color:#c44;font-size:0.8rem;margin-bottom:5px;">⚠️ This choice is PERMANENT — you cannot change sides!</p>';
+        html += '<p style="color:#aaa;font-size:0.8rem;margin-bottom:5px;">Nobles siding against their kingdom are demoted to Guildmaster.</p>';
+        html += '<p style="color:#aaa;font-size:0.8rem;margin-bottom:20px;">The abandoned kingdom: -5 rep, -5 king/noble relationships, rank becomes "Enemy".</p>';
         html += '<div style="display:flex;gap:20px;justify-content:center;">';
-        html += '<button class="btn-medieval" style="padding:15px 30px;font-size:1.1rem;" onclick="UI.resolveWarConflict(\'' + conflict.kingdom1 + '\')" title="Keep ' + (k1 ? k1.name : 'Kingdom 1') + '&#10;&#10;✅ Keep your ' + k1Rank + ' rank in ' + (k1 ? k1.name : 'Kingdom 1') + '&#10;❌ Lose ALL rank in ' + (k2 ? k2.name : 'Kingdom 2') + '&#10;❌ -30 reputation with ' + (k2 ? k2.name : 'Kingdom 2') + '">';
+        html += '<button class="btn-medieval" style="padding:15px 30px;font-size:1.1rem;" onclick="UI.resolveWarConflict(\'' + conflict.kingdom1 + '\')" title="Side with ' + (k1 ? k1.name : 'Kingdom 1') + '&#10;&#10;✅ Keep ' + k1Rank + ' rank in ' + (k1 ? k1.name : 'Kingdom 1') + '&#10;✅ +5 rep with ' + (k1 ? k1.name : 'Kingdom 1') + '&#10;❌ -5 rep with ' + (k2 ? k2.name : 'Kingdom 2') + '&#10;❌ Rank in ' + (k2 ? k2.name : 'Kingdom 2') + ' → Enemy&#10;❌ -5 rel with ' + (k2 ? k2.name : 'Kingdom 2') + ' king + nobles">';
         html += (k1 ? k1.name : 'Kingdom 1') + '<br><span style="font-size:0.75rem;color:#aaa;">Your rank: ' + k1Rank + '</span></button>';
-        html += '<button class="btn-medieval" style="padding:15px 30px;font-size:1.1rem;" onclick="UI.resolveWarConflict(\'' + conflict.kingdom2 + '\')" title="Keep ' + (k2 ? k2.name : 'Kingdom 2') + '&#10;&#10;✅ Keep your ' + k2Rank + ' rank in ' + (k2 ? k2.name : 'Kingdom 2') + '&#10;❌ Lose ALL rank in ' + (k1 ? k1.name : 'Kingdom 1') + '&#10;❌ -30 reputation with ' + (k1 ? k1.name : 'Kingdom 1') + '">';
+        html += '<button class="btn-medieval" style="padding:15px 30px;font-size:1.1rem;" onclick="UI.resolveWarConflict(\'' + conflict.kingdom2 + '\')" title="Side with ' + (k2 ? k2.name : 'Kingdom 2') + '&#10;&#10;✅ Keep ' + k2Rank + ' rank in ' + (k2 ? k2.name : 'Kingdom 2') + '&#10;✅ +5 rep with ' + (k2 ? k2.name : 'Kingdom 2') + '&#10;❌ -5 rep with ' + (k1 ? k1.name : 'Kingdom 1') + '&#10;❌ Rank in ' + (k1 ? k1.name : 'Kingdom 1') + ' → Enemy&#10;❌ -5 rel with ' + (k1 ? k1.name : 'Kingdom 1') + ' king + nobles">';
         html += (k2 ? k2.name : 'Kingdom 2') + '<br><span style="font-size:0.75rem;color:#aaa;">Your rank: ' + k2Rank + '</span></button>';
         html += '</div></div>';
 
@@ -27290,6 +27431,7 @@ window.UI = (function () {
         _opBuildDocks,
         _opBuildRoad,
         _opBuildSeaRoute,
+        _opConnectToRoad,
         _opBuyLand,
         _opBuildHousing,
         _opBuildUpgrade,

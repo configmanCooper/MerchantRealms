@@ -1067,6 +1067,20 @@
                         checkNeutralSalesImbalance(warId, alleg, war);
                     }
                 }
+                // Track military sales to allied side for war-end scaling
+                if (alleg.side === kingdom.id) {
+                    alleg.militarySalesTotal = (alleg.militarySalesTotal || 0) + qty;
+                }
+            }
+        }
+
+        // Also track horse sales to allied side
+        if (res_mil && (resourceId === 'horses' || resourceId === 'saddles') && kingdom && player.warAllegiances) {
+            for (const warId in player.warAllegiances) {
+                const alleg = player.warAllegiances[warId];
+                if (alleg.side === kingdom.id && res_mil.category !== 'military') {
+                    alleg.militarySalesTotal = (alleg.militarySalesTotal || 0) + qty;
+                }
             }
         }
 
@@ -2206,6 +2220,27 @@
 
         const bt = Engine.findBuildingType(bld.type);
         if (!bt) return { success: false, message: 'Unknown building type.' };
+
+        // War restriction: can't assign workers to military/horse buildings in enemy kingdom
+        if (player.warAllegiances) {
+            var _bldTown = Engine.findTown(bld.townId);
+            if (_bldTown) {
+                var _produceMilitary = bt.produces && (CONFIG.RESOURCE_TYPES[bt.produces] && CONFIG.RESOURCE_TYPES[bt.produces].category === 'military' || bt.produces === 'horses');
+                if (_produceMilitary) {
+                    var _activeWars = Engine.getActiveWars ? Engine.getActiveWars() : {};
+                    for (var _awid in player.warAllegiances) {
+                        var _awal = player.warAllegiances[_awid];
+                        if (!_awal.side || _awal.side === 'neutral') continue;
+                        var _awWar = _activeWars[_awid];
+                        if (!_awWar) continue;
+                        var _awEnemy = (_awal.side === _awWar.kingdomA) ? _awWar.kingdomB : _awWar.kingdomA;
+                        if (_bldTown.kingdomId === _awEnemy) {
+                            return { success: false, message: 'Cannot hire workers for military buildings in enemy territory during war!' };
+                        }
+                    }
+                }
+            }
+        }
 
         var _effMax = bt.workers + ((bld.level || 1) - 1);
         if (bld.workers.length >= _effMax) {
@@ -4743,8 +4778,9 @@
         });
         if (locationOrders.length === 0) return false; // signal: no orders, use legacy
 
-        // Process in order: pickup → buy → store → sell
-        var actionPriority = { pickup: 0, buy: 1, store: 2, sell: 3 };
+        // Process in order: store → sell → pickup → buy
+        // (sell/store first to free capacity, then pickup/buy to load new cargo)
+        var actionPriority = { store: 0, sell: 1, pickup: 2, buy: 3 };
         locationOrders.sort(function(a, b) { return (actionPriority[a.action] || 0) - (actionPriority[b.action] || 0); });
 
         var townName = town.name || townId;
@@ -9428,24 +9464,85 @@
         const war = activeWars[warId];
         if (!war) return;
 
+        // Prevent changing allegiance once set
+        if (player.warAllegiances[warId] && player.warAllegiances[warId].side !== 'neutral' && player.warAllegiances[warId].side) {
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('You have already chosen a side in this war.', 'error');
+            return;
+        }
+
+        var enemySide = null;
+        if (side !== 'neutral') {
+            enemySide = (side === war.kingdomA) ? war.kingdomB : war.kingdomA;
+        }
+
+        // Nobility check: must side with own kingdom or be downgraded
+        if (side !== 'neutral' && enemySide) {
+            var playerRankInEnemy = player.socialRank[enemySide] || 0;
+            if (playerRankInEnemy >= 4) {
+                // Player is noble in the enemy kingdom — they must side with that kingdom, or be downgraded
+                var playerRankInChosen = player.socialRank[side] || 0;
+                if (playerRankInChosen < 4) {
+                    // They're choosing against the kingdom they're noble in — downgrade to guildmaster
+                    var oldRank = CONFIG.SOCIAL_RANKS[playerRankInEnemy] ? CONFIG.SOCIAL_RANKS[playerRankInEnemy].name : 'Noble';
+                    player.socialRank[enemySide] = 3; // guildmaster
+                    delete player.rankSince[enemySide];
+                    Engine.logEvent('⚠️ Your ' + oldRank + ' rank in the enemy kingdom has been stripped — demoted to Guildmaster for siding against them!');
+                    if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚠️ Demoted to Guildmaster in enemy kingdom for siding against them!', 'warning');
+                }
+            }
+        }
+
         player.warAllegiances[warId] = {
             side: side,
             declaredDay: Engine.getDay(),
             salesA: 0,
             salesB: 0,
-            strengthAtDeclaration: { ...war.strengthAtStart },
+            militarySalesTotal: 0, // tracks total military goods + horses sold to allied side
+            strengthAtDeclaration: war.strengthAtStart ? Object.assign({}, war.strengthAtStart) : {},
         };
 
         if (side === 'neutral') {
-            Engine.logEvent(`You chose to remain neutral in the war.`);
+            Engine.logEvent('You chose to remain neutral in the war.');
             if (typeof UI !== 'undefined' && UI.toast) {
                 UI.toast('🕊️ You chose neutrality.', 'info');
             }
         } else {
-            const k = Engine.findKingdom(side);
-            Engine.logEvent(`You sided with ${k ? k.name : side} in the war!`);
+            var chosenK = Engine.findKingdom(side);
+            var enemyK = enemySide ? Engine.findKingdom(enemySide) : null;
+
+            // Immediate +5 kingdom reputation with chosen side
+            player.reputation[side] = Math.min(100, (player.reputation[side] || 50) + 5);
+
+            // Immediate -5 kingdom reputation with enemy
+            if (enemySide) {
+                player.reputation[enemySide] = Math.max(0, (player.reputation[enemySide] || 50) - 5);
+            }
+
+            // -5 relationship with enemy king and all enemy nobles
+            if (enemyK) {
+                if (enemyK.king) modifyRelationship(enemyK.king, -5);
+                var enemyPeople = Engine.getWorld ? Engine.getWorld().people : [];
+                if (enemyPeople) {
+                    for (var epi = 0; epi < enemyPeople.length; epi++) {
+                        var ep = enemyPeople[epi];
+                        if (!ep.alive || ep.kingdomId !== enemySide) continue;
+                        var epRank = (ep.socialRank && ep.socialRank[enemySide]) || 0;
+                        if (epRank >= 4) modifyRelationship(ep.id, -5);
+                    }
+                }
+            }
+
+            // If player has social status with enemy kingdom, temporarily set to "Enemy" (rank -1)
+            if (enemySide && (player.socialRank[enemySide] || 0) >= 1) {
+                if (!player._warSavedRanks) player._warSavedRanks = {};
+                player._warSavedRanks[enemySide] = player.socialRank[enemySide];
+                player.socialRank[enemySide] = -1; // Special "Enemy" rank
+            }
+
+            Engine.logEvent('⚔️ You sided with ' + (chosenK ? chosenK.name : side) + ' in the war!' +
+                (enemyK ? ' (-5 rep with ' + enemyK.name + ')' : ''));
             if (typeof UI !== 'undefined' && UI.toast) {
-                UI.toast(`⚔️ You sided with ${k ? k.name : side}!`, 'info', 'military');
+                UI.toast('⚔️ You sided with ' + (chosenK ? chosenK.name : side) + '! +5 rep, -5 enemy rep', 'info', 'military');
             }
         }
     }
@@ -9460,70 +9557,172 @@
         const kingdomA = warEndEvent.kingdomA;
         const kingdomB = warEndEvent.kingdomB;
 
+        // Restore saved ranks from "Enemy" status
+        if (player._warSavedRanks) {
+            for (var _rk in player._warSavedRanks) {
+                // Only restore if still at -1 (Enemy)
+                if (player.socialRank[_rk] === -1) {
+                    // If your side lost, don't fully restore — handled below
+                    if (alleg.side !== 'neutral' && winner && winner !== alleg.side) {
+                        player.socialRank[_rk] = 0; // Strip completely on loss
+                    } else {
+                        player.socialRank[_rk] = player._warSavedRanks[_rk];
+                    }
+                }
+                delete player._warSavedRanks[_rk];
+            }
+        }
+
+        // Helper: get people of a kingdom
+        function _getKingdomPeople(kId) {
+            var people = Engine.getWorld ? Engine.getWorld().people : [];
+            var result = [];
+            if (!people) return result;
+            for (var i = 0; i < people.length; i++) {
+                if (people[i].alive && people[i].kingdomId === kId) result.push(people[i]);
+            }
+            return result;
+        }
+
+        // Calculate scaling factors: military sales and social status
+        var militarySales = alleg.militarySalesTotal || 0;
+        var salesFactor = Math.min(1.0, militarySales / 200); // 200 units = full bonus
+        var playerRank = Math.max((player.socialRank[kingdomA] || 0), (player.socialRank[kingdomB] || 0));
+        var rankFactor = Math.min(1.0, playerRank / 6); // rank 6 = full bonus
+        var scaleFactor = 0.5 + salesFactor * 0.3 + rankFactor * 0.2; // 0.5 base + up to 0.3 sales + 0.2 rank
+
         if (alleg.side === 'neutral') {
             // No special consequences for neutrals at war end
         } else if (alleg.side && alleg.side !== 'neutral') {
-            const alliedSide = alleg.side;
-            const enemySide = alliedSide === kingdomA ? kingdomB : kingdomA;
+            var alliedSide = alleg.side;
+            var enemySide = alliedSide === kingdomA ? kingdomB : kingdomA;
+            var alliedK = Engine.findKingdom(alliedSide);
+            var enemyK = Engine.findKingdom(enemySide);
 
             if (winner === alliedSide) {
-                // Your side WON
-                player.reputation[alliedSide] = Math.min(100, (player.reputation[alliedSide] || 50) + 5);
+                // ============================
+                // YOUR SIDE WON
+                // ============================
 
-                // Social rank promotion
-                const currentRank = player.socialRank[alliedSide] || 0;
-                if (currentRank < 6) {
-                    player.socialRank[alliedSide] = currentRank + 1;
+                // +5 to +20 kingdom reputation (scaled by military sales + social status)
+                var repGain = Math.min(20, Math.max(5, Math.floor(5 + 15 * scaleFactor)));
+                player.reputation[alliedSide] = Math.min(100, (player.reputation[alliedSide] || 50) + repGain);
+
+                // +10 relationship with the king
+                if (alliedK && alliedK.king) modifyRelationship(alliedK.king, 10);
+
+                // +5 relationship with all nobles of that kingdom
+                var alliedPeople = _getKingdomPeople(alliedSide);
+                for (var ani = 0; ani < alliedPeople.length; ani++) {
+                    var an = alliedPeople[ani];
+                    var anRank = (an.socialRank && an.socialRank[alliedSide]) || 0;
+                    if (anRank >= 4) modifyRelationship(an.id, 5);
                 }
 
-                // Gold reward (5% of kingdom treasury, capped at 5000)
-                const alliedK = Engine.findKingdom(alliedSide);
-                if (alliedK) {
-                    const reward = Math.min(5000, Math.floor(alliedK.gold * 0.05));
-                    player.gold += reward;
-                    player.stats.totalGoldEarned += reward;
-                    if (typeof UI !== 'undefined' && UI.toast) {
-                        UI.toast(`🎖️ War Hero! ${alliedK.name} rewards you with ${reward}g!`, 'success', 'military');
-                    }
-                }
-
+                // War Hero achievement
                 unlockAchievement('war_hero');
 
-                // Against All Odds check: was our side the underdog?
+                // One guaranteed yes petition (as long as kingdom can afford it)
+                player.guaranteedPetition = player.guaranteedPetition || {};
+                player.guaranteedPetition[alliedSide] = true;
+
+                // Gold reward (scaled, up to 5000g)
+                var baseReward = alliedK ? Math.floor(alliedK.gold * 0.05) : 500;
+                var reward = Math.min(5000, Math.max(100, Math.floor(baseReward * scaleFactor)));
+                if (alliedK) alliedK.gold -= Math.min(alliedK.gold, reward);
+                player.gold += reward;
+                player.stats.totalGoldEarned = (player.stats.totalGoldEarned || 0) + reward;
+
+                // Against All Odds check
                 if (alleg.strengthAtDeclaration) {
-                    const ourStrength = alleg.strengthAtDeclaration[alliedSide] || 0;
-                    const theirStrength = alleg.strengthAtDeclaration[enemySide] || 0;
-                    if (ourStrength < theirStrength) {
-                        unlockAchievement('against_all_odds');
+                    var ourStrength = alleg.strengthAtDeclaration[alliedSide] || 0;
+                    var theirStrength = alleg.strengthAtDeclaration[enemySide] || 0;
+                    if (ourStrength < theirStrength) unlockAchievement('against_all_odds');
+                }
+
+                Engine.logEvent('🎖️ Your side won the war! +' + repGain + ' rep, +' + reward + 'g reward, guaranteed petition granted.');
+                if (typeof UI !== 'undefined' && UI.toast) {
+                    UI.toast('🎖️ War Hero! ' + (alliedK ? alliedK.name : 'Your side') + ' wins! +' + repGain + ' rep, +' + reward + 'g, petition granted!', 'success', 'military');
+                }
+
+            } else if (winner && winner !== alliedSide) {
+                // ============================
+                // YOUR SIDE LOST
+                // ============================
+
+                // -10 to -20 kingdom reputation with BOTH kingdoms
+                var repLoss = Math.min(20, Math.max(10, Math.floor(10 + 10 * scaleFactor)));
+                player.reputation[alliedSide] = Math.max(0, (player.reputation[alliedSide] || 50) - repLoss);
+                player.reputation[enemySide] = Math.max(0, (player.reputation[enemySide] || 50) - repLoss);
+
+                // -10 relationship with BOTH kings
+                if (alliedK && alliedK.king) modifyRelationship(alliedK.king, -10);
+                if (enemyK && enemyK.king) modifyRelationship(enemyK.king, -10);
+
+                // -5 relationship with all nobles of BOTH kingdoms
+                var allPeopleA = _getKingdomPeople(alliedSide);
+                var allPeopleB = _getKingdomPeople(enemySide);
+                for (var lni = 0; lni < allPeopleA.length; lni++) {
+                    var ln = allPeopleA[lni];
+                    var lnRank = (ln.socialRank && ln.socialRank[alliedSide]) || 0;
+                    if (lnRank >= 4) modifyRelationship(ln.id, -5);
+                }
+                for (var lni2 = 0; lni2 < allPeopleB.length; lni2++) {
+                    var ln2 = allPeopleB[lni2];
+                    var ln2Rank = (ln2.socialRank && ln2.socialRank[enemySide]) || 0;
+                    if (ln2Rank >= 4) modifyRelationship(ln2.id, -5);
+                }
+
+                // Gold retribution (up to 5000g, scaled)
+                var retribution = Math.min(5000, Math.max(100, Math.floor(2000 * scaleFactor)));
+                retribution = Math.min(retribution, Math.floor(player.gold * 0.5)); // Can't take more than 50% of gold
+                if (retribution > 0) {
+                    player.gold -= retribution;
+                    if (enemyK) enemyK.gold += retribution;
+                }
+
+                // Possible jail time (winning king decides based on personality)
+                var rng = Engine.getRng();
+                var jailDays = 0;
+                if (enemyK && rng) {
+                    var kp = enemyK.kingPersonality || {};
+                    var jailChance = 0.4; // base 40% chance of jail
+                    if (kp.temperament === 'cruel' || kp.temperament === 'ruthless') jailChance = 0.7;
+                    if (kp.temperament === 'merciful' || kp.temperament === 'kind') jailChance = 0.15;
+                    if (playerRank >= 4) jailChance += 0.2; // Nobles more likely jailed
+                    if (rng.chance(Math.min(0.9, jailChance))) {
+                        jailDays = rng.randInt(3, 14);
+                        if (kp.temperament === 'cruel' || kp.temperament === 'ruthless') jailDays = rng.randInt(7, 21);
+                        if (kp.temperament === 'merciful' || kp.temperament === 'kind') jailDays = rng.randInt(2, 7);
+                        player.jailed = true;
+                        player.jailDaysRemaining = jailDays;
+                        player.jailReason = 'Sided with ' + (alliedK ? alliedK.name : 'the losing side') + ' in the war';
+                        player.jailKingdomId = enemySide;
                     }
                 }
 
-                Engine.logEvent(`Your side won the war! You are celebrated as a hero.`);
-            } else if (winner && winner !== alliedSide) {
-                // Your side LOST
                 // Winning kingdom seizes ALL buildings in their territory
-                const seizedBuildings = player.buildings.filter(b => {
-                    const town = Engine.findTown(b.townId);
+                var seizedBuildings = player.buildings.filter(function(b) {
+                    var town = Engine.findTown(b.townId);
                     return town && town.kingdomId === winner;
                 });
-                for (const bld of seizedBuildings) {
-                    bld.active = false;
-                    const town = Engine.findTown(bld.townId);
-                    if (town) {
-                        const idx = town.buildings.findIndex(b => b.ownerId === 'player' && b.type === bld.type);
-                        if (idx !== -1) town.buildings[idx].ownerId = null;
+                for (var sbi = 0; sbi < seizedBuildings.length; sbi++) {
+                    seizedBuildings[sbi].active = false;
+                    var sTown = Engine.findTown(seizedBuildings[sbi].townId);
+                    if (sTown) {
+                        var sIdx = sTown.buildings.findIndex(function(b) { return b.ownerId === 'player' && b.type === seizedBuildings[sbi].type; });
+                        if (sIdx !== -1) sTown.buildings[sIdx].ownerId = null;
                     }
                 }
-                player.buildings = player.buildings.filter(b => b.active);
+                player.buildings = player.buildings.filter(function(b) { return b.active; });
 
-                // Reputation consequences
-                player.reputation[winner] = 10;
-                player.reputation[alliedSide] = Math.max(0, (player.reputation[alliedSide] || 50) - 10);
-
+                var lossMsg = '💀 Defeat! -' + repLoss + ' rep both kingdoms, -' + retribution + 'g retribution';
+                if (jailDays > 0) lossMsg += ', jailed for ' + jailDays + ' days';
+                lossMsg += '.';
+                Engine.logEvent(lossMsg);
                 if (typeof UI !== 'undefined' && UI.toast) {
-                    UI.toast('💀 Defeat! Your side lost the war.', 'danger', 'critical');
+                    UI.toast(lossMsg, 'danger', 'critical');
                 }
-                Engine.logEvent(`Your side lost the war. The victor seizes your assets.`);
             }
         }
 
@@ -19695,6 +19894,8 @@
     function getPlayerRankInfo(kingdomId) {
         const kId = kingdomId || player.citizenshipKingdomId;
         const rankIdx = (kId && player.socialRank[kId] != null) ? player.socialRank[kId] : 0;
+        // Special "Enemy" rank during war
+        if (rankIdx === -1) return { id: 'enemy', name: 'Enemy', index: -1, icon: '⚔️', maxWorkers: 1, maxBuildings: 0, maxLand: 0, taxDiscount: 0, abilities: ['basic_trading'], description: 'Considered an enemy during wartime. Treated as a peasant with no privileges.' };
         return CONFIG.SOCIAL_RANKS[rankIdx] || CONFIG.SOCIAL_RANKS[0];
     }
 
@@ -20986,18 +21187,49 @@
         const abandonedId = (chosenKingdomId === conflict.kingdom1) ? conflict.kingdom2 : conflict.kingdom1;
 
         // Nobles MUST side with the kingdom where they hold noble rank (4+)
+        // If noble in both, they can choose, but siding against one means demotion to guildmaster
         var nobleRankInAbandoned = (player.socialRank[abandonedId] || 0) >= 4;
         var nobleRankInChosen = (player.socialRank[chosenKingdomId] || 0) >= 4;
         if (nobleRankInAbandoned && !nobleRankInChosen) {
             var _abK = Engine.findKingdom(abandonedId);
             var _abRankName = CONFIG.SOCIAL_RANKS[player.socialRank[abandonedId]] ? CONFIG.SOCIAL_RANKS[player.socialRank[abandonedId]].name : 'noble';
-            return { success: false, message: 'As a ' + _abRankName + ' of ' + (_abK ? _abK.name : abandonedId) + ', you MUST side with your kingdom. Your noble oath demands loyalty.' };
+            return { success: false, message: 'As a ' + _abRankName + ' of ' + (_abK ? _abK.name : abandonedId) + ', you MUST side with your kingdom or be demoted to Guildmaster.' };
         }
 
-        const abandonedRank = CONFIG.SOCIAL_RANKS[player.socialRank[abandonedId] || 0] ? CONFIG.SOCIAL_RANKS[player.socialRank[abandonedId] || 0].name : 'Peasant';
-        player.socialRank[abandonedId] = 0;
-        delete player.rankSince[abandonedId];
-        if (player.reputation[abandonedId]) player.reputation[abandonedId] = Math.max(0, (player.reputation[abandonedId] || 0) - 30);
+        // If noble in abandoned kingdom, downgrade to guildmaster immediately
+        if (nobleRankInAbandoned) {
+            player.socialRank[abandonedId] = 3; // guildmaster
+            delete player.rankSince[abandonedId];
+        } else {
+            player.socialRank[abandonedId] = 0;
+            delete player.rankSince[abandonedId];
+        }
+
+        // -5 reputation with abandoned kingdom (consistent with setWarAllegiance)
+        if (player.reputation[abandonedId]) player.reputation[abandonedId] = Math.max(0, (player.reputation[abandonedId] || 0) - 5);
+
+        // +5 reputation with chosen kingdom
+        player.reputation[chosenKingdomId] = Math.min(100, (player.reputation[chosenKingdomId] || 50) + 5);
+
+        // Relationship changes: -5 with abandoned king and nobles
+        var abandonedK = Engine.findKingdom(abandonedId);
+        if (abandonedK && abandonedK.king) modifyRelationship(abandonedK.king, -5);
+        var abPeople = Engine.getWorld ? Engine.getWorld().people : [];
+        if (abPeople) {
+            for (var _abi = 0; _abi < abPeople.length; _abi++) {
+                var _abp = abPeople[_abi];
+                if (!_abp.alive || _abp.kingdomId !== abandonedId) continue;
+                var _abpRank = (_abp.socialRank && _abp.socialRank[abandonedId]) || 0;
+                if (_abpRank >= 4) modifyRelationship(_abp.id, -5);
+            }
+        }
+
+        // Set "Enemy" rank in abandoned kingdom
+        if ((player.socialRank[abandonedId] || 0) >= 1) {
+            if (!player._warSavedRanks) player._warSavedRanks = {};
+            player._warSavedRanks[abandonedId] = player.socialRank[abandonedId];
+            player.socialRank[abandonedId] = -1; // Enemy rank
+        }
 
         if (player.citizenshipKingdomId === abandonedId) {
             player.citizenshipKingdomId = chosenKingdomId;
@@ -21007,10 +21239,13 @@
         player.resolvedWarConflicts[conflict.warId] = { chosen: chosenKingdomId, abandoned: abandonedId, day: Engine.getDay() };
         player.pendingWarChoice = null;
 
+        // Also set war allegiance for the tracking system
+        setWarAllegiance(conflict.warId, chosenKingdomId);
+
         const chosenK = Engine.findKingdom(chosenKingdomId);
-        const abandonedK = Engine.findKingdom(abandonedId);
-        Engine.logEvent(`\u2694\uFE0F ${player.fullName} sided with ${chosenK ? chosenK.name : chosenKingdomId} and lost their ${abandonedRank} rank in ${abandonedK ? abandonedK.name : abandonedId}.`);
-        return { success: true, message: `Sided with ${chosenK ? chosenK.name : chosenKingdomId}. Lost ${abandonedRank} rank in ${abandonedK ? abandonedK.name : abandonedId}. -30 reputation.` };
+        const abandonedRank = nobleRankInAbandoned ? 'Guildmaster (demoted)' : 'stripped';
+        Engine.logEvent('⚔️ ' + player.fullName + ' sided with ' + (chosenK ? chosenK.name : chosenKingdomId) + '. Rank in ' + (abandonedK ? abandonedK.name : abandonedId) + ': ' + abandonedRank + '.');
+        return { success: true, message: 'Sided with ' + (chosenK ? chosenK.name : chosenKingdomId) + '. ' + (nobleRankInAbandoned ? 'Demoted to Guildmaster' : 'Lost rank') + ' in ' + (abandonedK ? abandonedK.name : abandonedId) + '. +5/-5 reputation.' };
     }
 
     function getPendingWarChoice() {
@@ -32920,6 +33155,7 @@
             y: oy,
             name: name.trim(),
             buildWithRoad: !!opts.buildWithRoad,
+            roadTargetTownId: opts.roadTargetTownId || null,
         });
 
         if (result.success && result.outpost) {
@@ -32933,6 +33169,13 @@
             if (!player.landOwned) player.landOwned = {};
             var opPlots = result.outpost.landPlots || (CONFIG.OUTPOST_CONFIG && CONFIG.OUTPOST_CONFIG.startingLandPlots) || 4;
             player.landOwned[result.outpost.id] = opPlots;
+
+            // Set player location to the new outpost
+            player.townId = result.outpost.id;
+            player.traveling = false;
+            player.travelData = null;
+            player.worldX = result.outpost.x;
+            player.worldY = result.outpost.y;
         }
 
         return result;
@@ -33314,6 +33557,122 @@
     }
 
     /**
+     * Find the nearest existing road to a point (for connecting outposts to nearby roads).
+     * Returns the closest road, perpendicular distance, nearest point on road, and the
+     * nearer endpoint town to connect to.
+     */
+    function getNearestRoadConnection(ox, oy, outpostTownId) {
+        var roads = Engine.getRoads ? Engine.getRoads() : [];
+        if (roads.length === 0) return null;
+
+        var best = null;
+        var bestDist = Infinity;
+
+        for (var ri = 0; ri < roads.length; ri++) {
+            var road = roads[ri];
+            if (road.condition === 'destroyed') continue;
+            // Skip roads already connected to this outpost
+            if (outpostTownId && (road.fromTownId === outpostTownId || road.toTownId === outpostTownId)) continue;
+
+            var fromT = Engine.findTown(road.fromTownId);
+            var toT = Engine.findTown(road.toTownId);
+            if (!fromT || !toT) continue;
+
+            // Use waypoints if available, otherwise endpoints
+            var points = (road.waypoints && road.waypoints.length >= 2) ? road.waypoints : [{ x: fromT.x, y: fromT.y }, { x: toT.x, y: toT.y }];
+
+            // Find closest point on any segment of the road
+            for (var si = 0; si < points.length - 1; si++) {
+                var ax = points[si].x, ay = points[si].y;
+                var bx = points[si + 1].x, by = points[si + 1].y;
+                // Project point onto segment
+                var dx = bx - ax, dy = by - ay;
+                var lenSq = dx * dx + dy * dy;
+                var t = lenSq > 0 ? Math.max(0, Math.min(1, ((ox - ax) * dx + (oy - ay) * dy) / lenSq)) : 0;
+                var px = ax + t * dx, py = ay + t * dy;
+                var d = Math.hypot(ox - px, oy - py);
+                if (d < bestDist) {
+                    bestDist = d;
+                    // Pick the nearer endpoint town to actually connect to
+                    var distToFrom = Math.hypot(ox - fromT.x, oy - fromT.y);
+                    var distToTo = Math.hypot(ox - toT.x, oy - toT.y);
+                    var connectTown = distToFrom <= distToTo ? fromT : toT;
+                    var connectDist = Math.min(distToFrom, distToTo);
+                    best = {
+                        road: road,
+                        perpDist: Math.floor(d),
+                        nearestPointX: Math.floor(px),
+                        nearestPointY: Math.floor(py),
+                        connectTownId: connectTown.id,
+                        connectTownName: connectTown.name,
+                        connectTownDist: Math.floor(connectDist),
+                        fromTownName: fromT.name,
+                        toTownName: toT.name,
+                    };
+                }
+            }
+        }
+
+        if (!best || bestDist > 800) return null;
+        return best;
+    }
+
+    /**
+     * Connect an outpost to a nearby road by building to the nearest endpoint.
+     * Cost is based on perpendicular distance to the road, not full distance to town.
+     */
+    function connectOutpostToRoad(outpostTownId, targetTownId) {
+        var outpost = Engine.findTown(outpostTownId);
+        if (!outpost || !outpost.isOutpost) return { success: false, message: 'Not a valid outpost.' };
+        if (outpost.founderId !== (player.id || 'player')) return { success: false, message: 'Not your outpost.' };
+        var target = Engine.findTown(targetTownId);
+        if (!target) return { success: false, message: 'Target town not found.' };
+
+        // Check road doesn't already exist
+        var roads = Engine.getRoads ? Engine.getRoads() : [];
+        var exists = roads.some(function(r) {
+            return (r.fromTownId === outpostTownId && r.toTownId === targetTownId) ||
+                   (r.fromTownId === targetTownId && r.toTownId === outpostTownId);
+        });
+        if (exists) return { success: false, message: 'Road already exists to ' + target.name + '.' };
+
+        // Calculate cost based on perpendicular distance to nearest road
+        var roadConn = getNearestRoadConnection(outpost.x, outpost.y, outpostTownId);
+        var costDist;
+        if (roadConn && roadConn.connectTownId === targetTownId) {
+            // Use perpendicular distance for cost (the whole point of this feature)
+            costDist = roadConn.perpDist;
+        } else {
+            // Fallback to full distance
+            costDist = Math.hypot(outpost.x - target.x, outpost.y - target.y);
+        }
+
+        var baseCost = Math.floor(100 + costDist * 0.5);
+        var woodCost = Math.floor(10 + costDist * 0.1);
+        var stoneCost = Math.floor(8 + costDist * 0.08);
+        if (hasSkill('cartographer')) { baseCost = Math.floor(baseCost * 0.75); woodCost = Math.floor(woodCost * 0.75); stoneCost = Math.floor(stoneCost * 0.75); }
+
+        if (player.gold < baseCost) return { success: false, message: 'Need ' + baseCost + 'g (have ' + Math.floor(player.gold) + 'g).' };
+        var inv = player.inventory || {};
+        if ((inv.wood || 0) < woodCost) return { success: false, message: 'Need ' + woodCost + ' wood (have ' + (inv.wood || 0) + ').' };
+        if ((inv.stone || 0) < stoneCost) return { success: false, message: 'Need ' + stoneCost + ' stone (have ' + (inv.stone || 0) + ').' };
+
+        var result = Engine.buildNewRoad(outpostTownId, targetTownId, player.id || 'player', { ownerId: player.id || 'player' });
+        if (!result.success) return result;
+
+        player.gold -= baseCost;
+        inv.wood = (inv.wood || 0) - woodCost;
+        inv.stone = (inv.stone || 0) - stoneCost;
+        if (inv.wood <= 0) delete inv.wood;
+        if (inv.stone <= 0) delete inv.stone;
+
+        // Mark outpost as having a road
+        outpost.hasRoad = true;
+
+        return { success: true, message: '🛤️ Connected to road via ' + target.name + '! (-' + baseCost + 'g, -' + woodCost + ' wood, -' + stoneCost + ' stone)' };
+    }
+
+    /**
      * Get nearby towns for road/sea route building from an outpost.
      */
     function getNearbyTownsForOutpost(townId, maxDist) {
@@ -33453,6 +33812,12 @@
         if (lastAsked && lastAsked > 0 && Engine.getDay() - lastAsked < (cfg.recruitCooldownDays || 7)) {
             var daysLeft = (cfg.recruitCooldownDays || 7) - (Engine.getDay() - lastAsked);
             return { success: false, message: npc.firstName + ' was recently asked. Wait ' + daysLeft + ' more day(s).' };
+        }
+
+        // Check population cap
+        var maxPop = cfg.maxPopulation || 30;
+        if ((town.population || 0) >= maxPop) {
+            return { success: false, message: 'Outpost has reached maximum population of ' + maxPop + '.' };
         }
 
         // Check housing capacity
@@ -34307,6 +34672,32 @@
             chance = Math.min(maxChance, chance);
         }
 
+        // War allegiance penalty: +50% encounters in enemy kingdom territory
+        var inEnemyTerritory = false;
+        if (player.warAllegiances && player.travelRoute && player.travelRoute.length > 0) {
+            var _ecSegIdx = Math.min(Math.floor((player.travelProgress || 0) * player.travelRoute.length), player.travelRoute.length - 1);
+            var _ecSeg = player.travelRoute[_ecSegIdx];
+            if (_ecSeg) {
+                var _ecTown = Engine.findTown(_ecSeg.toTownId) || Engine.findTown(_ecSeg.fromTownId);
+                if (_ecTown) {
+                    for (var _ecWid in player.warAllegiances) {
+                        var _ecAlleg = player.warAllegiances[_ecWid];
+                        if (_ecAlleg.side && _ecAlleg.side !== 'neutral') {
+                            var _ecActiveWars = Engine.getActiveWars ? Engine.getActiveWars() : {};
+                            var _ecWar = _ecActiveWars[_ecWid];
+                            if (_ecWar) {
+                                var _ecEnemy = (_ecAlleg.side === _ecWar.kingdomA) ? _ecWar.kingdomB : _ecWar.kingdomA;
+                                if (_ecTown.kingdomId === _ecEnemy) { inEnemyTerritory = true; break; }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (inEnemyTerritory) {
+            chance *= 1.5; // +50% encounter chance in enemy territory
+        }
+
         // God mode: force 95% encounter chance
         if (typeof window !== 'undefined' && window._godBanditBoost) chance = 0.95;
 
@@ -34340,6 +34731,25 @@
         return false;
     }
 
+    function _isInEnemyWarTerritory() {
+        if (!player.warAllegiances || !player.travelRoute || player.travelRoute.length === 0) return false;
+        var segIdx = Math.min(Math.floor((player.travelProgress || 0) * player.travelRoute.length), player.travelRoute.length - 1);
+        var seg = player.travelRoute[segIdx];
+        if (!seg) return false;
+        var town = Engine.findTown(seg.toTownId) || Engine.findTown(seg.fromTownId);
+        if (!town) return false;
+        var activeWars = Engine.getActiveWars ? Engine.getActiveWars() : {};
+        for (var wid in player.warAllegiances) {
+            var alleg = player.warAllegiances[wid];
+            if (!alleg.side || alleg.side === 'neutral') continue;
+            var war = activeWars[wid];
+            if (!war) continue;
+            var enemy = (alleg.side === war.kingdomA) ? war.kingdomB : war.kingdomA;
+            if (town.kingdomId === enemy) return true;
+        }
+        return false;
+    }
+
     function checkDailyEncounter() {
         if (!player.traveling) return;
         if (player.encounterPending) return; // already awaiting resolution
@@ -34359,6 +34769,9 @@
         var banditStrength = (CONFIG.ENCOUNTER_FIGHT_BANDIT_STRENGTH_MIN || 0.10) +
             rng.random() * ((CONFIG.ENCOUNTER_FIGHT_BANDIT_STRENGTH_MAX || 0.30) - (CONFIG.ENCOUNTER_FIGHT_BANDIT_STRENGTH_MIN || 0.10));
         if (isWartime) banditStrength *= (CONFIG.ENCOUNTER_WARTIME_FIGHT_DIFFICULTY || 1.4);
+
+        // Enemy territory: encounters are 25% more dangerous
+        if (_isInEnemyWarTerritory()) banditStrength *= 1.25;
 
         // Calculate fight win chance
         var fightWin = calculateFightWinChance(isSea, isWartime, banditStrength);
@@ -42007,6 +42420,8 @@
         buildOutpostSeaRoute,
         getOutpostCosts,
         getNearbyTownsForOutpost,
+        getNearestRoadConnection,
+        connectOutpostToRoad,
         buyOutpostLandPlot,
         buildOutpostHousing,
         buildOutpostUpgrade,

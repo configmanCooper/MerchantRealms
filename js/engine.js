@@ -16434,6 +16434,20 @@
         var cfg = CONFIG.OUTPOST_CONFIG;
         if (!opts || !opts.founderId || !opts.name) return { success: false, message: 'Invalid outpost parameters.' };
 
+        // Minimum distance check — must be at least N tiles from any existing location
+        var minDistTiles = cfg.minDistanceTiles || 5;
+        var minDistPx = minDistTiles * (CONFIG.TILE_SIZE || 16);
+        var tooCloseLocation = null;
+        for (var ci = 0; ci < world.towns.length; ci++) {
+            var ct = world.towns[ci];
+            if (ct.abandoned || ct.destroyed) continue;
+            var cdist = Math.hypot((opts.x || 0) - ct.x, (opts.y || 0) - ct.y);
+            if (cdist < minDistPx) { tooCloseLocation = ct; break; }
+        }
+        if (tooCloseLocation) {
+            return { success: false, message: 'Too close to ' + tooCloseLocation.name + '! Outposts must be at least ' + minDistTiles + ' tiles from any existing location.' };
+        }
+
         // Determine nearest kingdom for jurisdiction
         var kingdomId = opts.kingdomId;
         if (!kingdomId) {
@@ -16480,7 +16494,7 @@
             towers: 0,
             livestock: { livestock_cow: 0, livestock_pig: 0, livestock_chicken: 0 },
             category: 'outpost',
-            maxBuildingSlots: cfg.maxLandPlots || 10,
+            maxBuildingSlots: cfg.startingLandPlots || 4,
             // Outpost-specific fields
             isOutpost: true,
             founderId: opts.founderId,
@@ -16535,23 +16549,31 @@
         outpost.terrainType = classifyTownTerrain(outpost);
         computeLocalBasePrices(outpost);
 
-        // Build road to nearest settlement if requested
-        if (opts.buildWithRoad && nearestSettlement) {
-            world.roads.push({
-                fromTownId: nearestSettlement.id,
-                toTownId: outpost.id,
-                quality: 1,
-                safe: true,
-                hasBridge: false,
-                bridgeDestroyed: false,
-                bridgeSegments: [],
-                condition: 'new',
-                builtDay: world.day,
-                lastRepairDay: 0,
-                banditThreat: 15,
-                isDirtTrack: true,
-            });
-            logEvent('🛤️ A road has been built from ' + nearestSettlement.name + ' to outpost "' + outpost.name + '".');
+        // Build road to target settlement if requested
+        if (opts.buildWithRoad) {
+            var roadTarget = opts.roadTargetTownId ? findTown(opts.roadTargetTownId) : nearestSettlement;
+            if (roadTarget) {
+                var _roadWp = findTerrainPath(roadTarget.x, roadTarget.y, outpost.x, outpost.y, 'land');
+                var _rpWaypoints = (_roadWp && _roadWp.waypoints) ? _roadWp.waypoints : [];
+                var _rpBridges = createBridgeObjects(_rpWaypoints);
+                world.roads.push({
+                    fromTownId: roadTarget.id,
+                    toTownId: outpost.id,
+                    quality: 1,
+                    safe: true,
+                    hasBridge: _rpBridges.length > 0,
+                    bridgeDestroyed: false,
+                    bridgeSegments: [],
+                    bridges: _rpBridges,
+                    waypoints: _rpWaypoints,
+                    condition: 'new',
+                    builtDay: world.day,
+                    lastRepairDay: 0,
+                    banditThreat: 15,
+                    isDirtTrack: true,
+                });
+                logEvent('🛤️ A road has been built from ' + roadTarget.name + ' to outpost "' + outpost.name + '".');
+            }
         }
 
         logEvent('⛺ A new outpost "' + outpost.name + '" has been established in the wilderness by ' +
@@ -16765,6 +16787,10 @@
             if (!outpost.hasRoad && (outpost.outpostUpgrades || []).length === 0) continue;
             if (!outpost.outpostHousing || outpost.outpostHousing.length === 0) continue;
             if (!outpost.outpostResidents) outpost.outpostResidents = [];
+
+            // Population cap
+            var maxPop = cfg.maxPopulation || 30;
+            if ((outpost.population || 0) >= maxPop) continue;
 
             // Calculate housing capacity
             var housingCap = 0;
@@ -17024,8 +17050,21 @@
             var emTown = findTown(em.townId);
             if (!emTown) continue;
 
-            var outpostX = emTown.x + rng.randInt(-80, 80);
-            var outpostY = emTown.y + rng.randInt(-80, 80);
+            // Find a valid position (must be at least minDistanceTiles from any location)
+            var _emMinDistPx = (cfg.minDistanceTiles || 5) * (CONFIG.TILE_SIZE || 16);
+            var outpostX, outpostY, _emPosOk = false;
+            for (var _emTry = 0; _emTry < 8; _emTry++) {
+                outpostX = emTown.x + rng.randInt(-80, 80);
+                outpostY = emTown.y + rng.randInt(-80, 80);
+                var _emTooClose = false;
+                for (var _emCi = 0; _emCi < world.towns.length; _emCi++) {
+                    var _emCt = world.towns[_emCi];
+                    if (_emCt.abandoned || _emCt.destroyed) continue;
+                    if (Math.hypot(outpostX - _emCt.x, outpostY - _emCt.y) < _emMinDistPx) { _emTooClose = true; break; }
+                }
+                if (!_emTooClose) { _emPosOk = true; break; }
+            }
+            if (!_emPosOk) continue; // couldn't find valid spot
 
             // Outpost names — ensure unique name
             var prefixes = ['New', 'Fort', 'Camp', 'Post', 'Watch', 'Trade', 'Old', 'North', 'South', 'East', 'West', 'Upper', 'Lower'];

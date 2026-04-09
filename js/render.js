@@ -1174,6 +1174,38 @@ window.Renderer = (function () {
             if (camera.zoom < 0.6) {
                 // Zoomed out: shape varies by category
                 const cat = town.category || 'village';
+
+                // Outpost: small tent/camp icon
+                if (cat === 'outpost') {
+                    const r = 5;
+                    // Tent shape
+                    ctx.fillStyle = '#8a7a5a';
+                    ctx.beginPath();
+                    ctx.moveTo(cx - r, cy + r * 0.5);
+                    ctx.lineTo(cx, cy - r);
+                    ctx.lineTo(cx + r, cy + r * 0.5);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.strokeStyle = '#5a4a38';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                    // Small flag
+                    ctx.strokeStyle = '#5a4a38';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(cx, cy - r);
+                    ctx.lineTo(cx, cy - r - 6);
+                    ctx.stroke();
+                    ctx.fillStyle = kColor;
+                    ctx.fillRect(cx, cy - r - 6, 4, 3);
+                    // Outpost name
+                    if (camera.zoom > 0.35) {
+                        ctx.fillStyle = '#c8b888';
+                        ctx.font = `bold ${Math.max(7, 9 / camera.zoom * 0.5)}px serif`;
+                        ctx.textAlign = 'center';
+                        ctx.fillText(town.name, cx, cy - 8);
+                    }
+                } else {
                 const r = cat === 'capital_city' ? 10 + Math.sqrt(pop) * 0.4
                          : cat === 'city' ? 8 + Math.sqrt(pop) * 0.38
                          : cat === 'town' ? 6 + Math.sqrt(pop) * 0.35
@@ -1265,10 +1297,91 @@ window.Renderer = (function () {
                         ctx.fillStyle = 'rgba(180,40,30,0.9)';
                         ctx.fillText('💀', cx - r - 8, cy + 3);
                     }
+                    }
                 }
             } else {
                 // Detailed town rendering — distinct graphics per category
                 const cat = town.category || 'village';
+
+                // ── OUTPOST: Small camp with tents, fence, flag ──
+                if (cat === 'outpost') {
+                    const baseSize = 12;
+                    // Cleared ground circle
+                    ctx.fillStyle = 'rgba(120,100,70,0.25)';
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, baseSize + 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    // Wooden fence/palisade ring
+                    ctx.strokeStyle = '#6b5b4f';
+                    ctx.lineWidth = 1.5;
+                    ctx.setLineDash([3, 2]);
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, baseSize + 2, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    // Main tent (large)
+                    ctx.fillStyle = '#8a7a5a';
+                    ctx.beginPath();
+                    ctx.moveTo(cx - 8, cy + 4);
+                    ctx.lineTo(cx, cy - 8);
+                    ctx.lineTo(cx + 8, cy + 4);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.strokeStyle = '#5a4a38';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                    // Tent entrance flap
+                    ctx.fillStyle = '#6b5b4f';
+                    ctx.beginPath();
+                    ctx.moveTo(cx - 2, cy + 4);
+                    ctx.lineTo(cx, cy);
+                    ctx.lineTo(cx + 2, cy + 4);
+                    ctx.closePath();
+                    ctx.fill();
+                    // Small side tent
+                    ctx.fillStyle = '#7a6a4a';
+                    ctx.beginPath();
+                    ctx.moveTo(cx + 6, cy + 2);
+                    ctx.lineTo(cx + 10, cy - 3);
+                    ctx.lineTo(cx + 14, cy + 2);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.strokeStyle = '#5a4a38';
+                    ctx.lineWidth = 0.8;
+                    ctx.stroke();
+                    // Storage crate
+                    ctx.fillStyle = '#5a4a38';
+                    ctx.fillRect(cx - 12, cy - 1, 5, 4);
+                    ctx.strokeStyle = '#3a2a1e';
+                    ctx.lineWidth = 0.5;
+                    ctx.strokeRect(cx - 12, cy - 1, 5, 4);
+                    // Flag pole and banner
+                    const flagX = cx + baseSize + 4;
+                    const flagY = cy - baseSize - 4;
+                    ctx.strokeStyle = '#5a4a38';
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.moveTo(flagX, flagY + 14);
+                    ctx.lineTo(flagX, flagY);
+                    ctx.stroke();
+                    ctx.fillStyle = kColor;
+                    ctx.beginPath();
+                    ctx.moveTo(flagX, flagY);
+                    ctx.lineTo(flagX + 8, flagY + 3);
+                    ctx.lineTo(flagX, flagY + 6);
+                    ctx.closePath();
+                    ctx.fill();
+                    // Outpost name
+                    ctx.fillStyle = '#c8b888';
+                    ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+                    ctx.lineWidth = 2;
+                    ctx.font = `bold 9px 'Cinzel', serif`;
+                    ctx.textAlign = 'center';
+                    const opLabel = '⛺ ' + town.name;
+                    ctx.strokeText(opLabel, cx, cy - baseSize - 8);
+                    ctx.fillText(opLabel, cx, cy - baseSize - 8);
+                } else {
+
                 const baseSize = cat === 'capital_city' ? 18 + Math.sqrt(pop) * 0.7
                                : cat === 'city' ? 15 + Math.sqrt(pop) * 0.65
                                : cat === 'town' ? 12 + Math.sqrt(pop) * 0.6
@@ -1687,6 +1800,7 @@ window.Renderer = (function () {
                         ctx.fillText(indicators, cx, cy + baseSize + (securityLevel < 25 && camera.zoom > 1.5 ? 36 : 24));
                     }
                 }
+                } // close non-outpost else block
             }
         }
     }
