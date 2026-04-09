@@ -2182,6 +2182,8 @@ const SKILL_BRANCHES = {
 
 const ACHIEVEMENTS = {
     // ── Trading (20) ──
+    first_purchase:      { name: 'First Purchase',      desc: 'Buy your first goods from a market.',            xp: 10 , tier: 'bronze', icon: '🛒', category: 'trading' },
+    first_sale:          { name: 'First Sale',          desc: 'Sell goods at a market for the first time.',     xp: 10 , tier: 'bronze', icon: '💰', category: 'trading' },
     profit_maker:        { name: 'Profit Maker',        desc: 'Make your first profitable trade.',              xp: 30 , tier: 'bronze', icon: '💹', category: 'trading' },
     trades_100:          { name: '100 Trades',          desc: 'Complete 100 trades.',                           xp: 75 , tier: 'silver', icon: '📊', category: 'trading' },
     trades_500:          { name: '500 Trades',          desc: 'Complete 500 trades.',                           xp: 85 , tier: 'silver', icon: '📈', category: 'trading' },

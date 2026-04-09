@@ -12557,7 +12557,10 @@
 
                 // Immigration: attract people from less happy towns
                 var immChance = (CONFIG.TOWN_THRIVING_IMMIGRATION_CHANCE || 0.008) * thrivingIntensity;
-                if (rng.chance(immChance)) {
+                // Check pop cap before accepting immigrants
+                var _immCatCfg = CONFIG.TOWN_CATEGORIES[town.category || 'town'] || CONFIG.TOWN_CATEGORIES['town'];
+                var _immPopCap = (CONFIG.TOWN_POP_CAP || {})[town.category || 'town'] || (_immCatCfg.maxPop || 9999);
+                if (rng.chance(immChance) && pop < _immPopCap) {
                     // Find a less happy town to pull from
                     var sourceTowns = world.towns.filter(function(st) {
                         return st.id !== town.id && (st.happiness || 50) < 40 && (typeof st.population === 'number' ? st.population : 0) > 10;
@@ -12797,9 +12800,12 @@
                         });
                         for (var ei = 0; ei < Math.min(expected, availPeople.length, 2); ei++) {
                             var emigrant = availPeople[rng.randInt(0, availPeople.length - 1)];
-                            // Move to a random happier town
+                            // Move to a random happier town that isn't over pop cap
                             var betterTowns = world.towns.filter(function(bt) {
-                                return bt.id !== town.id && (bt.happiness || 50) > h + 10;
+                                if (bt.id === town.id || (bt.happiness || 50) <= h + 10) return false;
+                                var btCat = bt.category || 'town';
+                                var btCap = (CONFIG.TOWN_POP_CAP || {})[btCat] || 9999;
+                                return (bt.population || 0) < btCap;
                             });
                             if (betterTowns.length > 0) {
                                 var dest = betterTowns[rng.randInt(0, betterTowns.length - 1)];
@@ -12863,7 +12869,10 @@
                         for (var fi = 0; fi < Math.min(exodusCount, fleeingPeople.length, 5); fi++) {
                             var refugee = fleeingPeople[rng.randInt(0, fleeingPeople.length - 1)];
                             var safeTowns = world.towns.filter(function(st) {
-                                return st.id !== town.id && (st.happiness || 50) > 30;
+                                if (st.id === town.id || (st.happiness || 50) <= 30) return false;
+                                var stCat = st.category || 'town';
+                                var stCap = (CONFIG.TOWN_POP_CAP || {})[stCat] || 9999;
+                                return (st.population || 0) < stCap;
                             });
                             if (safeTowns.length > 0) {
                                 var safeDest = safeTowns[rng.randInt(0, safeTowns.length - 1)];
