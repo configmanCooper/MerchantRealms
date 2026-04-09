@@ -7353,6 +7353,8 @@ window.UI = (function () {
 
     // ── Caravan order state ──
     var _caravanOrders = []; // current order list being built
+    var _caravanEditFromTownId = null; // source town of caravan being edited/created
+    var _caravanEditToTownId = null;   // destination town of caravan being edited/created
 
     function _getAllResourceList() {
         var list = [];
@@ -7368,22 +7370,26 @@ window.UI = (function () {
         var res = findResource(order.good);
         var resName = res ? (res.icon + ' ' + res.name) : order.good;
         var actionLabel = { buy: '🛒 Buy', sell: '💰 Sell', store: '📥 Store', pickup: '📦 Pickup' }[order.action] || order.action;
-        var locLabel = order.location === 'source' ? '📍 Source' : '🏁 Dest';
-        // Resolve to actual town names if possible
-        try {
-            var destEl2 = document.getElementById('caravanDest');
-            if (order.location === 'destination' && destEl2) {
-                var dT = Engine.findTown(destEl2.value);
-                if (dT) locLabel = '🏁 ' + dT.name;
-            } else if (order.location === 'source') {
-                var sT = Engine.findTown(Player.townId);
-                if (sT) locLabel = '📍 ' + sT.name;
-            }
-        } catch(e) {}
+        // Resolve location to actual town name using caravan context
+        var locLabel;
         if (order.location && order.location.indexOf('waypoint:') === 0) {
             var wpTownId = order.location.replace('waypoint:', '');
             var wpTown = Engine.findTown(wpTownId);
             locLabel = '📍 ' + (wpTown ? wpTown.name : wpTownId);
+        } else if (order.location === 'source') {
+            var srcTown = _caravanEditFromTownId ? Engine.findTown(_caravanEditFromTownId) : null;
+            if (!srcTown) { try { srcTown = Engine.findTown(Player.townId); } catch(e) {} }
+            locLabel = '📍 ' + (srcTown ? srcTown.name : 'Source');
+        } else {
+            // destination
+            var dstTown = _caravanEditToTownId ? Engine.findTown(_caravanEditToTownId) : null;
+            if (!dstTown) {
+                try {
+                    var destEl2 = document.getElementById('caravanDest');
+                    if (destEl2) dstTown = Engine.findTown(destEl2.value);
+                } catch(e) {}
+            }
+            locLabel = '🏁 ' + (dstTown ? dstTown.name : 'Destination');
         }
         var qtyLabel = order.qty === 'max' ? 'Max' : order.qty;
         var priceLabel = '';
@@ -7532,6 +7538,8 @@ window.UI = (function () {
         }
 
         _caravanOrders = [];
+        _caravanEditFromTownId = Player.townId;
+        _caravanEditToTownId = null;
 
         const roads = Engine.getRoads ? Engine.getRoads() : [];
         const towns = Engine.getTowns ? Engine.getTowns() : [];
@@ -8074,6 +8082,8 @@ window.UI = (function () {
             container.innerHTML = 'Select a destination to see stats.';
             return;
         }
+        // Track destination for order row labels
+        _caravanEditToTownId = destEl.value;
 
         // Update order location dropdown with waypoint towns if caravan_network skill
         var locSel = document.getElementById('orderLocation');
@@ -8741,9 +8751,13 @@ window.UI = (function () {
 
         // Load existing orders into the order builder
         _caravanOrders = caravan.orders ? caravan.orders.slice() : [];
+        _caravanEditFromTownId = caravan.fromTownId;
+        _caravanEditToTownId = caravan.toTownId;
 
         var html = '<div>';
-        html += '<div style="margin-bottom:8px;font-size:0.8rem;color:#aaa;">Editing orders for caravan to ' + (Engine.findTown(caravan.toTownId) || {}).name + '</div>';
+        var _editFromName = (_editSrcTown ? _editSrcTown.name : 'Source');
+        var _editToName = (_editDestTown ? _editDestTown.name : 'Destination');
+        html += '<div style="margin-bottom:8px;font-size:0.8rem;color:#aaa;">Editing orders for caravan: ' + _editFromName + ' ↔ ' + _editToName + '</div>';
 
         // Order list
         html += '<div id="caravanOrderList" style="max-height:200px;overflow-y:auto;margin-bottom:10px;">';
