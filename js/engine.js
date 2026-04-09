@@ -981,12 +981,11 @@
         for (const kingdom of kingdoms) {
             if (CONFIG.CRIME_TYPES) {
                 var kp = kingdom.kingPersonality || {};
-                // Map string personality traits to numeric severity modifiers
-                var justiceHarsh = (kp.justice === 'just');        // harsher punishments
-                var justiceLenient = (kp.justice === 'corrupt');   // lenient punishments
-                var temperamentVolatile = (kp.temperament === 'cruel' || kp.temperament === 'stern');
-                var greedyKing = (kp.greed === 'greedy' || kp.greed === 'corrupt');
-                var generousKing = (kp.generosity === 'generous' || kp.greed === 'generous');
+                var justiceHarsh = (kp.justice || 0) > 0.6;
+                var justiceLenient = (kp.justice || 0) < 0.4;
+                var temperamentVolatile = (kp.temperament || 0) > 0.7;
+                var greedyKing = (kp.greed || 0) > 0.6;
+                var generousKing = (kp.generosity || 0) > 0.6;
 
                 for (const crime of CONFIG.CRIME_TYPES) {
                     var baseFine = crime.defaultFine || 100;
@@ -1038,7 +1037,11 @@
 
                     // Add small random variance (±15%)
                     var variance = 0.85 + rng.random() * 0.30;
-                    pFine = Math.max(0, Math.floor(pFine * variance));
+                    if (pType !== 'execution') {
+                        pFine = Math.max(25, Math.floor(pFine * variance));
+                    } else {
+                        pFine = 0;
+                    }
                     pJail = Math.max(0, Math.floor(pJail * variance));
 
                     // Only store override if different from default
@@ -16925,7 +16928,7 @@
                             var _bIdx = outpost.buildings.indexOf(_umBld);
                             if (_bIdx >= 0) outpost.buildings.splice(_bIdx, 1);
                             outpost.usedLandPlots = Math.max(0, (outpost.usedLandPlots || 0) - 1);
-                            var _btDef = CONFIG.BUILDING_TYPES ? CONFIG.BUILDING_TYPES[(_umBld.type || '').toUpperCase()] : null;
+                            var _btDef = typeof BUILDING_TYPES !== 'undefined' ? BUILDING_TYPES[(_umBld.type || '').toUpperCase()] : null;
                             logEvent('🏚️ ' + (_btDef ? _btDef.name : _umBld.type) + ' at "' + outpost.name + '" collapsed from neglect and reverted to empty land.');
                         } else if (_degradeDays % 7 === 0 && _degradeDays > 0) {
                             // Periodically warn
@@ -21681,7 +21684,7 @@
     // §18 EVENT LOG
     // ========================================================
     function inferEventCategory(msg, details) {
-        var m = (msg || '').toLowerCase();
+        var m = String(msg || '').toLowerCase();
         var dtype = details && details.type ? details.type.toLowerCase() : '';
 
         // Tier 1: Always show (critical)
@@ -24778,8 +24781,8 @@
 
                     // Find what building makes this
                     var producerTypeId = null;
-                    for (var btKey in CONFIG.BUILDING_TYPES) {
-                        if (CONFIG.BUILDING_TYPES[btKey].produces === dResId) {
+                    for (var btKey in BUILDING_TYPES) {
+                        if (BUILDING_TYPES[btKey].produces === dResId) {
                             producerTypeId = btKey;
                             break;
                         }
@@ -26491,9 +26494,9 @@
 
             // If not in preferred, search all building types
             if (!producerType) {
-                if (typeof CONFIG.BUILDING_TYPES !== 'undefined') {
-                    for (var btKey in CONFIG.BUILDING_TYPES) {
-                        var btCheck = CONFIG.BUILDING_TYPES[btKey];
+                if (typeof BUILDING_TYPES !== 'undefined') {
+                    for (var btKey in BUILDING_TYPES) {
+                        var btCheck = BUILDING_TYPES[btKey];
                         if (btCheck && btCheck.produces === needId) {
                             producerType = btKey;
                             break;
@@ -26646,9 +26649,9 @@
 
                 // Find building that produces it
                 var gapProducer = null;
-                if (typeof CONFIG.BUILDING_TYPES !== 'undefined') {
-                    for (var gbtKey in CONFIG.BUILDING_TYPES) {
-                        var gbtCheck = CONFIG.BUILDING_TYPES[gbtKey];
+                if (typeof BUILDING_TYPES !== 'undefined') {
+                    for (var gbtKey in BUILDING_TYPES) {
+                        var gbtCheck = BUILDING_TYPES[gbtKey];
                         if (gbtCheck && gbtCheck.produces === gapRes) {
                             gapProducer = gbtKey;
                             break;
@@ -30370,8 +30373,8 @@
         if (world.day % 90 === 0) {
             var hasInspections = hasSpecialLaw(k, 'random_inspections');
             var kpRI = k.kingPersonality || {};
-            var justiceIsHigh = (kpRI.justice === 'just');
-            var justiceIsLow = (kpRI.justice === 'corrupt');
+            var justiceIsHigh = (kpRI.justice || 0) > 0.5;
+            var justiceIsLow = (kpRI.justice || 0) < 0.3;
             var lowHappiness = (k.happiness || 50) < 60;
 
             if (!hasInspections) {
@@ -30404,16 +30407,16 @@
                 var newP = { type: curP.type, jailDays: curP.jailDays || 0, fine: curP.fine || 0 };
 
                 // Small adjustments based on personality
-                if (kpPA.justice === 'just') {
+                if ((kpPA.justice || 0) > 0.6) {
                     newP.fine = Math.floor(newP.fine * 1.2);
                     newP.jailDays = Math.min(360, newP.jailDays + 2);
-                } else if (kpPA.justice === 'corrupt') {
-                    newP.fine = Math.max(10, Math.floor(newP.fine * 0.8));
+                } else if ((kpPA.justice || 0) < 0.3) {
+                    newP.fine = Math.max(25, Math.floor(newP.fine * 0.8));
                     newP.jailDays = Math.max(0, newP.jailDays - 2);
                 }
 
                 // Greedy kings shift toward fines
-                if ((kpPA.greed === 'greedy' || kpPA.greed === 'corrupt') && newP.type === 'jail') {
+                if ((kpPA.greed || 0) > 0.6 && newP.type === 'jail') {
                     if (rng.chance(0.3) && crimeToAdjust.id !== 'murder' && crimeToAdjust.id !== 'treason') {
                         newP.type = 'fine';
                         newP.fine = Math.floor((crimeToAdjust.defaultFine || 200) * 2.0);
@@ -30422,13 +30425,13 @@
                 }
 
                 // Volatile temperament: small chance to escalate to execution
-                if ((kpPA.temperament === 'cruel') && newP.type !== 'execution' && rng.chance(0.1)) {
+                if ((kpPA.temperament || 0) > 0.8 && newP.type !== 'execution' && rng.chance(0.1)) {
                     newP.type = 'execution'; newP.jailDays = 0; newP.fine = 0;
                 }
 
                 // Generous kings lower fines
-                if (kpPA.generosity === 'generous' || kpPA.greed === 'generous') {
-                    newP.fine = Math.max(10, Math.floor(newP.fine * 0.8));
+                if ((kpPA.generosity || 0) > 0.6) {
+                    newP.fine = Math.max(25, Math.floor(newP.fine * 0.8));
                 }
 
                 if (!k.crimePunishments) k.crimePunishments = {};
@@ -30550,9 +30553,15 @@
                 var isBanned = false;
 
                 // Check banned goods
+                var _playerMilExempt = (typeof Player !== 'undefined' && Player.hasMilitaryExemption) ? Player.hasMilitaryExemption(k.id) : false;
                 for (var _bi = 0; _bi < bannedGoods.length; _bi++) {
                     var bg = bannedGoods[_bi];
                     if ((playerInv[bg] || 0) >= 3) {
+                        // Military exemption: skip military/horse goods for war allies and nobles
+                        if (_playerMilExempt) {
+                            var _bgRes = findResource(bg);
+                            if (_bgRes && (_bgRes.category === 'military' || bg === 'horses' || bg === 'saddles')) continue;
+                        }
                         caughtItem = bg;
                         caughtQty = playerInv[bg];
                         isBanned = true;

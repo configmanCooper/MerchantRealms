@@ -3752,6 +3752,12 @@ window.UI = (function () {
                         delivering: '<span style="color:#c4a35a;">📦 Delivering</span>',
                     };
                     statusBadge = statusMap[info.status] || '';
+                    if (info.status === 'damaged' && bld.repairDay) {
+                        var _rdCur = 0;
+                        try { _rdCur = Engine.getDay(); } catch(e) {}
+                        var _rdLeft = Math.max(0, bld.repairDay - _rdCur);
+                        statusBadge += ' <span style="font-size:0.7rem;color:#aaa;">(' + _rdLeft + 'd)</span>';
+                    }
                 }
 
                 // Condition
@@ -4159,6 +4165,12 @@ window.UI = (function () {
     }
 
     function showBuildingDetail(buildingId) {
+        try { return _showBuildingDetailInner(buildingId); } catch (e) {
+            console.error('showBuildingDetail error:', e, e.stack);
+            toast('Error showing building detail: ' + (e.message || e), 'danger');
+        }
+    }
+    function _showBuildingDetailInner(buildingId) {
         const info = Player.getBuildingStatus(buildingId);
         if (!info) { toast('Building not found.', 'warning'); return; }
         const bld = info.building;
@@ -4188,6 +4200,12 @@ window.UI = (function () {
         if (info.status === 'blocked' && info.missingInputs.length > 0) {
             const missing = info.missingInputs.map(m => { const r = findResource(m.id); return (r ? r.name : m.id) + ' (have ' + m.available + ', need ' + m.needed + ')'; }).join(', ');
             statusText += ' — need: ' + missing;
+        }
+        if (info.status === 'damaged' && bld.repairDay) {
+            var _curDay = 0;
+            try { _curDay = Engine.getDay(); } catch(e) {}
+            var _daysLeft = Math.max(0, bld.repairDay - _curDay);
+            statusText += ' — repairs in ' + _daysLeft + ' day' + (_daysLeft !== 1 ? 's' : '') + ' (day ' + bld.repairDay + ')';
         }
 
         let html = '<div style="max-height:70vh;overflow-y:auto;">';
@@ -4793,17 +4811,7 @@ window.UI = (function () {
 
         // Assign worker button
         if (info.workerCount < info.workerMax) {
-            // Include outpost workers in the available pool for outpost buildings
-            var _allAvailable = Player.employees.slice();
-            if (town && town.isOutpost && town.outpostWorkers) {
-                for (var _owi = 0; _owi < town.outpostWorkers.length; _owi++) {
-                    if (_allAvailable.indexOf(town.outpostWorkers[_owi]) < 0) _allAvailable.push(town.outpostWorkers[_owi]);
-                }
-            }
-            const unassigned = _allAvailable.filter(eId => {
-                // Check this person is in the same town as the building
-                var _ep = Engine.findPerson(eId);
-                if (_ep && _ep.townId !== bld.townId) return false;
+            const unassigned = Player.employees.filter(eId => {
                 for (const b of Player.buildings) {
                     if (b.workers.includes(eId)) return false;
                 }
@@ -5063,7 +5071,7 @@ window.UI = (function () {
         var bld = (Player.buildings || []).find(function(b) { return b.id === buildingId; });
         if (!bld) { toast('Building not found.', 'error'); return; }
         var bt = null;
-        for (var key in CONFIG.BUILDING_TYPES) { if (CONFIG.BUILDING_TYPES[key].id === bld.type) { bt = CONFIG.BUILDING_TYPES[key]; break; } }
+        for (var key in BUILDING_TYPES) { if (BUILDING_TYPES[key].id === bld.type) { bt = BUILDING_TYPES[key]; break; } }
         var bName = bt ? bt.name : bld.type;
         var bldCap = Math.floor((bt ? (bt.storage || 0) : 0) * (1 + (((bld.level || 1) - 1) * 0.50)));
         var bldUsed = 0;
@@ -5208,7 +5216,7 @@ window.UI = (function () {
         html += '<div style="max-height:300px;overflow-y:auto;">';
 
         // List all available building types
-        var buildingTypes = CONFIG.BUILDING_TYPES;
+        var buildingTypes = typeof BUILDING_TYPES !== 'undefined' ? BUILDING_TYPES : {};
         for (var bKey in buildingTypes) {
             var bt = buildingTypes[bKey];
             if (!bt || !bt.id || bt.id === bld.type) continue;
@@ -5364,11 +5372,16 @@ window.UI = (function () {
     }
 
     function assignWorkerUI(buildingId) {
-        const sel = document.getElementById('assignWorkerSelect');
-        if (!sel || !sel.value) { toast('Select a worker first.', 'warning'); return; }
-        const result = Player.assignWorker(sel.value, buildingId);
-        toast(result.message, result.success ? 'success' : 'warning');
-        if (result.success) showBuildingDetail(buildingId);
+        try {
+            const sel = document.getElementById('assignWorkerSelect');
+            if (!sel || !sel.value) { toast('Select a worker first.', 'warning'); return; }
+            const result = Player.assignWorker(sel.value, buildingId);
+            toast(result.message, result.success ? 'success' : 'warning');
+            if (result.success) showBuildingDetail(buildingId);
+        } catch (e) {
+            console.error('assignWorkerUI error:', e, e.stack);
+            toast('Error assigning worker: ' + (e.message || e), 'danger');
+        }
     }
 
     function removeWorkerUI(personId, buildingId) {
@@ -5546,7 +5559,7 @@ window.UI = (function () {
         // Current employees
         let employeeHtml = '';
         const employees = Player.employees || [];
-        for (const empId of employees.slice(0, 30)) {
+        for (const empId of employees) {
             let emp;
             try { emp = Engine.getPerson(empId); } catch (e) { continue; }
             if (!emp) continue;
@@ -7679,7 +7692,7 @@ window.UI = (function () {
         // Find sea route destinations
         const seaDestinations = (typeof Player !== 'undefined' && Player.getSeaDestinations) ? Player.getSeaDestinations() : [];
 
-        let destOptions = connectedTowns.map(({ town, road, hops }) => {
+        let destOptions = connectedTowns.filter(({ town }) => !town.isJunction).map(({ town, road, hops }) => {
             const safeStr = road.safe !== false ? '✓' : '⚠';
             const threat = road.banditThreat || 0;
             const dangerStr = threat > CONFIG.BANDIT_THREAT_DANGER_THRESHOLD ? ` ☠${Math.round(threat)}` : '';
@@ -7700,6 +7713,7 @@ window.UI = (function () {
         }).join('');
 
         for (const sd of seaDestinations) {
+            if (sd.town && sd.town.isJunction) continue;
             destOptions += `<option value="${sd.town.id}" data-route="sea">⛵ ${sd.town.name} (Sea ~${sd.estimatedDays}d)</option>`;
         }
 
@@ -13082,7 +13096,7 @@ window.UI = (function () {
                 var have = (Player.inventory && Player.inventory[resId]) || 0;
                 var need = reqs[resId];
                 if (have < need) {
-                    var res = CONFIG.RESOURCE_TYPES ? Object.values(CONFIG.RESOURCE_TYPES).find(function(r) { return r.id === resId; }) : null;
+                    var res = typeof RESOURCE_TYPES !== 'undefined' ? Object.values(RESOURCE_TYPES).find(function(r) { return r.id === resId; }) : null;
                     missingItems.push((res ? res.name : resId) + ' (' + have + '/' + need + ')');
                 }
             }
@@ -13091,7 +13105,7 @@ window.UI = (function () {
             // Build material list
             var matList = [];
             for (var resId2 in reqs) {
-                var res2 = CONFIG.RESOURCE_TYPES ? Object.values(CONFIG.RESOURCE_TYPES).find(function(r) { return r.id === resId2; }) : null;
+                var res2 = typeof RESOURCE_TYPES !== 'undefined' ? Object.values(RESOURCE_TYPES).find(function(r) { return r.id === resId2; }) : null;
                 var icon2 = res2 ? res2.icon : '📦';
                 var name2 = res2 ? res2.name : resId2;
                 var have2 = (Player.inventory && Player.inventory[resId2]) || 0;
@@ -20999,9 +21013,9 @@ window.UI = (function () {
     function _nobilityRequestBuilding(townId) {
         // Show a simple selection of building types the kingdom might build
         var buildingTypes = [];
-        if (CONFIG.BUILDING_TYPES) {
-            for (var i = 0; i < CONFIG.BUILDING_TYPES.length; i++) {
-                var bt = CONFIG.BUILDING_TYPES[i];
+        if (typeof BUILDING_TYPES !== 'undefined') {
+            for (var i in BUILDING_TYPES) {
+                var bt = BUILDING_TYPES[i];
                 if (bt.category !== 'military' && bt.cost && bt.cost <= 5000) {
                     buildingTypes.push(bt);
                 }
@@ -21475,6 +21489,32 @@ window.UI = (function () {
                 html += '</div>';
             }
         } catch(e) {}
+        // Double Noble Agent mission tracker
+        try {
+            var _dna = Player.state.doubleNobleAgent;
+            if (_dna) {
+                var _dnaDay = typeof Engine !== 'undefined' && Engine.getDay ? Engine.getDay() : 0;
+                var _dnaSponsor = typeof Engine !== 'undefined' && Engine.findKingdom ? Engine.findKingdom(_dna.sponsorKingdomId) : null;
+                var _dnaTarget = typeof Engine !== 'undefined' && Engine.findKingdom ? Engine.findKingdom(_dna.targetKingdomId) : null;
+                html += '<div style="margin-top:6px;padding:6px 8px;background:rgba(196,78,82,0.15);border:1px solid rgba(196,78,82,0.3);border-radius:4px;font-size:0.78rem;">';
+                html += '<div style="color:#e8a0a0;font-weight:bold;">🎭 Double Noble Agent — ' + (_dnaSponsor ? _dnaSponsor.name : 'Unknown') + '</div>';
+                html += '<div style="color:var(--text-muted);margin:2px 0;">Destabilizing: ' + (_dnaTarget ? _dnaTarget.name : 'Unknown') + ' | Day ' + (_dnaDay - (_dna.startDay || 0)) + ' of mission</div>';
+                html += '<div style="margin-top:4px;">';
+                for (var _dti = 0; _dti < _dna.tasks.length; _dti++) {
+                    var _dt = _dna.tasks[_dti];
+                    var _dtIcon = _dt.completed ? '✅' : '⬜';
+                    var _dtColor = _dt.completed ? '#55a868' : '#aaa';
+                    html += '<div style="font-size:0.75rem;color:' + _dtColor + ';margin:1px 0;">' + _dtIcon + ' ' + _dt.name + '</div>';
+                }
+                html += '</div>';
+                html += '<div style="margin-top:4px;font-size:0.75rem;color:var(--gold);">Progress: ' + (_dna.completed || 0) + '/5 tasks</div>';
+                // Progress bar
+                var _dnaProgress = Math.floor((_dna.completed || 0) / 5 * 100);
+                html += '<div style="width:100%;height:4px;background:#333;border-radius:2px;margin-top:3px;overflow:hidden;">';
+                html += '<div style="width:' + _dnaProgress + '%;height:100%;background:#c4a35a;border-radius:2px;"></div></div>';
+                html += '</div>';
+            }
+        } catch(e) {}
         html += '</div>';
 
         for (const tab of tabs) {
@@ -21540,6 +21580,8 @@ window.UI = (function () {
                         html += buildBribeGuardsUI(a, ai);
                     } else if (a.id === 'bribe_advisor') {
                         html += buildBribeAdvisorUI(a, ai);
+                    } else if (a._needsNobleSelect) {
+                        html += buildNobleIntrigueUI(a, ai);
                     } else {
                         html += `<button class="btn-trade sell" style="font-size:0.85rem;margin-top:6px;" `
                             + `onclick="UI.executeScheme('${a.id}', ${JSON.stringify(a.params).replace(/"/g, '&quot;')})">⚡ Execute</button>`;
@@ -21649,6 +21691,79 @@ window.UI = (function () {
             + `onclick="UI.executeBribeAdvisor('${action.params[0]}', ${idx})">⚡ Bribe</button>`;
         html += '</div>';
         return html;
+    }
+
+    function buildNobleIntrigueUI(action, idx) {
+        var nobles = action._nobles || [];
+        var needTwo = action._needsNobleSelect >= 2;
+        var html = '<div style="margin-top:6px;">';
+        html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">';
+        // First noble select
+        html += '<select id="nobleA_' + idx + '" style="font-size:0.7rem;padding:2px;flex:1;min-width:100px;">';
+        for (var ni = 0; ni < nobles.length; ni++) {
+            var n = nobles[ni];
+            var nName = (n.firstName || 'Noble') + ' ' + (n.lastName || '');
+            var nRank = '';
+            if (n.socialRank) {
+                var town = Engine.findTown(Player.townId);
+                var kId = town ? town.kingdomId : '';
+                var rankIdx = n.socialRank[kId] || 0;
+                if (rankIdx >= 6) nRank = ' [RA]';
+                else if (rankIdx >= 5) nRank = ' [Lord]';
+                else if (rankIdx >= 4) nRank = ' [Noble]';
+            }
+            // Show influence bonus
+            var rel = Player.state.relationships[n.id];
+            var relLvl = rel ? rel.level : 0;
+            var hasLoan = (Player.state._nobleLoans || []).some(function(l) { return l.nobleId === n.id && l.status === 'active'; });
+            var hasBm = Player.state.blackmailTargets && Player.state.blackmailTargets[n.id];
+            var leverage = '';
+            if (hasBm) leverage += '🔗';
+            if (hasLoan) leverage += '💰';
+            if (relLvl >= 60) leverage += '❤️';
+            html += '<option value="' + n.id + '">' + nName.trim() + nRank + (leverage ? ' ' + leverage : '') + '</option>';
+        }
+        html += '</select>';
+        // Second noble select if needed
+        if (needTwo) {
+            html += '<select id="nobleB_' + idx + '" style="font-size:0.7rem;padding:2px;flex:1;min-width:100px;">';
+            for (var ni2 = 0; ni2 < nobles.length; ni2++) {
+                var n2 = nobles[ni2];
+                var n2Name = (n2.firstName || 'Noble') + ' ' + (n2.lastName || '');
+                html += '<option value="' + n2.id + '">' + n2Name.trim() + '</option>';
+            }
+            html += '</select>';
+        }
+        html += '<button class="btn-trade sell" style="font-size:0.7rem;" '
+            + 'onclick="UI.executeNobleIntrigue(\'' + action.id + '\', ' + idx + ', ' + (needTwo ? 'true' : 'false') + ')">⚡ Execute</button>';
+        html += '</div>';
+        // Legend
+        html += '<div style="font-size:0.65rem;color:var(--text-muted);margin-top:2px;">🔗=blackmailed 💰=indebted ❤️=ally (60+rel) — leverage boosts success</div>';
+        html += '</div>';
+        return html;
+    }
+
+    function executeNobleIntrigue(actionId, idx, needTwo) {
+        var selA = document.getElementById('nobleA_' + idx);
+        if (!selA) return;
+        var nobleAId = selA.value;
+        var params = [nobleAId];
+        if (needTwo) {
+            var selB = document.getElementById('nobleB_' + idx);
+            if (!selB) return;
+            var nobleBId = selB.value;
+            if (nobleAId === nobleBId) { toast('Select two different nobles!', 'warning'); return; }
+            params = [nobleAId, nobleBId];
+        }
+        var result = Player.executeCorruptAction(actionId, params);
+        if (result.success) {
+            toast(result.message, 'success');
+        } else if (result.caught) {
+            toast(result.message, 'danger');
+        } else {
+            toast(result.message, 'warning');
+        }
+        openSchemesDialog();
     }
 
     function executeScheme(actionId, params) {
@@ -23226,6 +23341,32 @@ window.UI = (function () {
                 else connected[otherId].seaRoute = sr;
             }
 
+            // If at a junction, BFS through connected junctions to find real towns
+            var _atJunction = currentTown.isJunction;
+            if (_atJunction) {
+                var _jVisited = {};
+                _jVisited[playerTownId] = true;
+                var _jFrontier = [playerTownId];
+                while (_jFrontier.length > 0) {
+                    var _jCur = _jFrontier.shift();
+                    for (let i = 0; i < roads.length; i++) {
+                        const rd = roads[i];
+                        let _jOther = null;
+                        if (rd.fromTownId === _jCur) _jOther = rd.toTownId;
+                        else if (rd.toTownId === _jCur) _jOther = rd.fromTownId;
+                        if (!_jOther || _jVisited[_jOther]) continue;
+                        _jVisited[_jOther] = true;
+                        const _jt = Engine.findTown(_jOther);
+                        if (!_jt) continue;
+                        if (_jt.isJunction) {
+                            _jFrontier.push(_jOther);
+                        } else {
+                            if (!connected[_jOther]) connected[_jOther] = { town: _jt, landRoute: rd, seaRoute: null };
+                        }
+                    }
+                }
+            }
+
             const destinations = Object.values(connected);
 
             if (destinations.length === 0) {
@@ -23248,6 +23389,7 @@ window.UI = (function () {
                 for (let di = 0; di < destinations.length; di++) {
                     const dest = destinations[di];
                     const t = dest.town;
+                    if (t.isJunction) continue; // Skip road junctions
                     const isLand = !!dest.landRoute;
                     const isSea = !!dest.seaRoute;
                     const destKingdom = kingdoms.find(function(k) { return k.id === t.kingdomId; });
@@ -28278,6 +28420,7 @@ window.UI = (function () {
         executeTargetAction,
         executeBribeGuards,
         executeBribeAdvisor,
+        executeNobleIntrigue,
         // Help
         openHelpDialog,
         openKingdomsAndNotables,

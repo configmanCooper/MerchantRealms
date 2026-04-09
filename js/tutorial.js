@@ -585,7 +585,7 @@ window.Tutorial = (function () {
                             }
                             // Pretty name from config
                             try {
-                                var rt = CONFIG.RESOURCE_TYPES;
+                                var rt = typeof RESOURCE_TYPES !== 'undefined' ? RESOURCE_TYPES : {};
                                 for (var k in rt) {
                                     if (rt[k].id === bestRes) { bestName = rt[k].name || bestRes; break; }
                                 }

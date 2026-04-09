@@ -192,6 +192,8 @@
         protectionRackets: {},          // { townId: { paymentPerWeek, lastCollectDay, npcsIntimidated } }
         forgedDocuments: {},            // { type: expiresDay } — active forged permits/titles
         doubleAgentActive: null,        // { enemyKingdomId, startDay, paymentPerSeason } or null
+        doubleNobleAgent: null,         // { targetKingdomId, sponsorKingdomId, tasks: [...], startDay, completed: 0 } or null
+        nobleIntrigues: {},             // { targetNobleId: { type, startDay, ... } }
         notorietyReduction: null,       // { type: 'lay_low'|'cleanse_identity', startDay, endDay, dailyReduction } or null
 
         // ── Crown & Royal Advisor State ──
@@ -1635,15 +1637,19 @@
 
         // === Banned goods production permit check ===
         // Buildings that produce banned goods require a production permit (or kingdom ownership)
+        // Military exemption: war allies and nobles can build military/horse buildings
         if (kingdom && kingdom.laws && kingdom.laws.bannedGoods && bt.produces) {
             if (kingdom.laws.bannedGoods.includes(bt.produces)) {
-                // Check if player has a production permit for this good
-                const hasPermit = player.productionPermits &&
-                    player.productionPermits[kingdom.id] &&
-                    player.productionPermits[kingdom.id].includes(bt.produces);
-                if (!hasPermit) {
-                    const resName = findResource(bt.produces) ? findResource(bt.produces).name : bt.produces;
-                    return { success: false, message: `🚫 ${resName} is banned in ${kingdom.name}. You need a Royal Production Permit to build this. Petition the crown (requires Magnate rank, 70+ reputation, ${CONFIG.PRODUCTION_PERMIT_FEE}g).` };
+                var _milExempt = _isMilitaryOrHorse(bt.produces) && hasMilitaryExemption(kingdom.id);
+                if (!_milExempt) {
+                    // Check if player has a production permit for this good
+                    const hasPermit = player.productionPermits &&
+                        player.productionPermits[kingdom.id] &&
+                        player.productionPermits[kingdom.id].includes(bt.produces);
+                    if (!hasPermit) {
+                        const resName = findResource(bt.produces) ? findResource(bt.produces).name : bt.produces;
+                        return { success: false, message: `🚫 ${resName} is banned in ${kingdom.name}. You need a Royal Production Permit to build this. Petition the crown (requires Magnate rank, 70+ reputation, ${CONFIG.PRODUCTION_PERMIT_FEE}g).` };
+                    }
                 }
             }
         }
@@ -2237,6 +2243,12 @@
      * Assign an employee to a player-owned building.
      */
     function assignWorker(personId, buildingId) {
+        try { return _assignWorkerInner(personId, buildingId); } catch(e) {
+            console.error('assignWorker crash:', e, e && e.stack);
+            return { success: false, message: 'Error: ' + (e && e.message ? e.message : String(e)) };
+        }
+    }
+    function _assignWorkerInner(personId, buildingId) {
         if (!player.employees.includes(personId)) {
             // Also allow outpost workers to be assigned to buildings at their outpost
             var _isOutpostWorker = false;
@@ -2259,7 +2271,7 @@
         if (player.warAllegiances) {
             var _bldTown = Engine.findTown(bld.townId);
             if (_bldTown) {
-                var _produceMilitary = bt.produces && (CONFIG.RESOURCE_TYPES[bt.produces] && CONFIG.RESOURCE_TYPES[bt.produces].category === 'military' || bt.produces === 'horses');
+                var _produceMilitary = bt.produces && (typeof RESOURCE_TYPES !== 'undefined' && RESOURCE_TYPES[bt.produces.toUpperCase()] && RESOURCE_TYPES[bt.produces.toUpperCase()].category === 'military' || bt.produces === 'horses');
                 if (_produceMilitary) {
                     var _activeWars = Engine.getActiveWars ? Engine.getActiveWars() : {};
                     for (var _awid in player.warAllegiances) {
@@ -3467,6 +3479,21 @@
             return { success: false, message: '🔒 You are in jail until day ' + player.jailedUntilDay + '.' };
         }
 
+        // Kingdom travel ban (from double noble agent defection)
+        if (player._kingdomTravelBan) {
+            var _destTown = Engine.findTown(townId);
+            if (_destTown) {
+                var _banExpiry = player._kingdomTravelBan[_destTown.kingdomId];
+                if (_banExpiry && Engine.getDay() < _banExpiry) {
+                    var _banDays = _banExpiry - Engine.getDay();
+                    var _banK = Engine.findKingdom ? Engine.findKingdom(_destTown.kingdomId) : null;
+                    return { success: false, message: '🚫 You are banned from ' + (_banK ? _banK.name : 'that kingdom') + ' for ' + _banDays + ' more days.' };
+                } else if (_banExpiry) {
+                    delete player._kingdomTravelBan[_destTown.kingdomId];
+                }
+            }
+        }
+
         if (townId === player.townId) return { success: false, message: 'Already there.' };
 
         // Check carry capacity before traveling
@@ -4203,8 +4230,8 @@
 
         var status = 'idle';
         if (bld._delivering) status = 'delivering';
-        else if (!bld.active || bld.fallow) status = 'inactive';
         else if (bld.damaged) status = 'damaged';
+        else if (!bld.active || bld.fallow) status = 'inactive';
         else if (bld.depositDepleted) status = 'depleted';
         else if (workerFraction <= 0) status = 'no_workers';
         else if (missingInputs.length > 0) status = 'blocked';
@@ -8602,6 +8629,9 @@
     function getTownStorageCapacity(townId) {
         var tid = townId || player.townId;
         var total = 0;
+        // Outpost base storage capacity
+        var _capTown = Engine.findTown(tid);
+        if (_capTown && _capTown.isOutpost) total += _capTown.outpostStorage || 200;
         // Warehouses (category: 'storage') always count, other buildings only if inputOnly is OFF
         for (var i = 0; i < player.buildings.length; i++) {
             var b = player.buildings[i];
@@ -9412,6 +9442,38 @@
             player.townStorage[player.townId][resourceId] = (player.townStorage[player.townId][resourceId] || 0) - fromStorage;
             if (player.townStorage[player.townId][resourceId] <= 0) delete player.townStorage[player.townId][resourceId];
         }
+    }
+
+    /**
+     * Check if the player has a military goods exemption for a given kingdom.
+     * Returns true if player is:
+     *  - Sided with this kingdom in an active war, OR
+     *  - Minor Noble (rank 4+) in this kingdom
+     * Military exemption allows possessing, selling, and producing banned
+     * military goods and horses for/in that kingdom without penalty.
+     */
+    function hasMilitaryExemption(kingdomId) {
+        if (!kingdomId) return false;
+        // Nobility: Minor Noble (4+) in this kingdom
+        if (player.socialRank && (player.socialRank[kingdomId] || 0) >= 4) return true;
+        // War allegiance: sided with this kingdom
+        if (player.warAllegiances) {
+            var activeWars = (typeof Engine !== 'undefined' && Engine.getActiveWars) ? Engine.getActiveWars() : {};
+            for (var wId in player.warAllegiances) {
+                var al = player.warAllegiances[wId];
+                if (al.side === kingdomId) {
+                    var w = activeWars[wId];
+                    if (w && (w.kingdomA === kingdomId || w.kingdomB === kingdomId)) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    function _isMilitaryOrHorse(resourceId) {
+        var res = findResource(resourceId);
+        if (!res) return false;
+        return res.category === 'military' || resourceId === 'horses' || resourceId === 'saddles';
     }
 
     function checkNeutralSalesImbalance(warId, alleg, war) {
@@ -19009,6 +19071,23 @@
     // §12 PLAYER TICK (called each game day)
     // ========================================================
     function playerTick() {
+        // One-time migration: move outpostStorageItems into player.townStorage
+        if (!player._outpostStorageMigrated) {
+            player._outpostStorageMigrated = true;
+            var towns = (typeof Engine !== 'undefined' && Engine.getTowns) ? Engine.getTowns() : [];
+            for (var _mi = 0; _mi < towns.length; _mi++) {
+                var _mt = towns[_mi];
+                if (_mt.isOutpost && _mt.outpostStorageItems) {
+                    if (!player.townStorage[_mt.id]) player.townStorage[_mt.id] = {};
+                    for (var _mk in _mt.outpostStorageItems) {
+                        if (_mt.outpostStorageItems[_mk] > 0) {
+                            player.townStorage[_mt.id][_mk] = (player.townStorage[_mt.id][_mk] || 0) + _mt.outpostStorageItems[_mk];
+                        }
+                    }
+                    _mt.outpostStorageItems = {};
+                }
+            }
+        }
         // Handle regency mode separately
         if (player.regencyMode) {
             player.stats.daysPlayed++;
@@ -20111,13 +20190,18 @@
         var crimeType = CONFIG.CRIME_TYPES ? CONFIG.CRIME_TYPES.find(function(c) { return c.id === crimeId; }) : null;
         if (!crimeType) return { type: 'fine', jailDays: 0, fine: 100 };
 
+        var result;
         // Check kingdom override
         if (kingdom && kingdom.crimePunishments && kingdom.crimePunishments[crimeId]) {
             var override = kingdom.crimePunishments[crimeId];
-            return { type: override.type, jailDays: override.jailDays || crimeType.defaultJailDays, fine: override.fine || crimeType.defaultFine };
+            result = { type: override.type, jailDays: override.jailDays || crimeType.defaultJailDays, fine: override.fine || crimeType.defaultFine };
+        } else {
+            // Use defaults
+            result = { type: crimeType.defaultPunishment, jailDays: crimeType.defaultJailDays, fine: crimeType.defaultFine };
         }
-        // Use defaults
-        return { type: crimeType.defaultPunishment, jailDays: crimeType.defaultJailDays, fine: crimeType.defaultFine };
+        // Enforce minimum fine (no crime should have 0g fine)
+        if (result.type !== 'execution' && result.fine < 25) result.fine = 25;
+        return result;
     }
 
     function handleForeignNobleCrime(kingdomId, jailDays, isExecution) {
@@ -20535,12 +20619,11 @@
         if (nextRank.id === 'guildmaster') {
             if (!_hasFullBypass) {
                 var prodBuildings = player.buildings.filter(function(b) {
-                    var bt = CONFIG.BUILDING_TYPES ? CONFIG.BUILDING_TYPES.find(function(x) { return x.id === b.type; }) : null;
+                    var bt = typeof BUILDING_TYPES !== 'undefined' ? Object.values(BUILDING_TYPES).find(function(x) { return x.id === b.type; }) : null;
                     if (!bt) { bt = Engine.findBuildingType ? Engine.findBuildingType(b.type) : null; }
                     var t = Engine.findTown(b.townId);
                     return bt && (bt.category === 'processing' || bt.category === 'finished') && t && t.kingdomId === kId;
-                }).length;
-                if (prodBuildings < (nextRank.minProductionBuildings || 3)) reasons.push(`Need ${nextRank.minProductionBuildings || 3} production buildings (have ${prodBuildings}). Marry a Lord+ to bypass all requirements`);
+                }).length;                if (prodBuildings < (nextRank.minProductionBuildings || 3)) reasons.push(`Need ${nextRank.minProductionBuildings || 3} production buildings (have ${prodBuildings}). Marry a Lord+ to bypass all requirements`);
                 var workersInKingdom = player.employees ? player.employees.filter(function(e) { var p = Engine.findPerson(e); if (!p) return false; var t = Engine.findTown(p.townId); return t && t.kingdomId === kId; }).length : 0;
                 if (workersInKingdom < (nextRank.minWorkers || 8)) reasons.push(`Need ${nextRank.minWorkers || 8}+ workers in kingdom (have ${workersInKingdom})`);
                 var townsWithBuildings = new Set(player.buildings.filter(function(b) { var t = Engine.findTown(b.townId); return t && t.kingdomId === kId; }).map(function(b) { return b.townId; })).size;
@@ -20744,7 +20827,7 @@
 
         if (nextRank.id === 'guildmaster' && !_hasFullBypass) {
             var prodBldgs = player.buildings.filter(function(b) {
-                var bt = CONFIG.BUILDING_TYPES ? CONFIG.BUILDING_TYPES.find(function(x) { return x.id === b.type; }) : null;
+                var bt = typeof BUILDING_TYPES !== 'undefined' ? Object.values(BUILDING_TYPES).find(function(x) { return x.id === b.type; }) : null;
                 if (!bt) { bt = Engine.findBuildingType ? Engine.findBuildingType(b.type) : null; }
                 var t = Engine.findTown(b.townId);
                 return bt && (bt.category === 'processing' || bt.category === 'finished') && t && t.kingdomId === kId;
@@ -23595,12 +23678,10 @@
         },
         // 5. Cheapest building construction
         function tipCheapBuilding(world, towns, rng) {
-            var btKeys = Object.keys(CONFIG.BUILDING_TYPES || {});
+            var btKeys = Object.keys(typeof BUILDING_TYPES !== 'undefined' ? BUILDING_TYPES : {});
             if (btKeys.length === 0) return null;
             var btKey = btKeys[Math.floor(rng() * btKeys.length)];
-            var bt = CONFIG.BUILDING_TYPES[btKey];
-            if (!bt || !bt.materials) return null;
-            var best = null;
+            var bt = BUILDING_TYPES[btKey];
             for (var i = 0; i < towns.length; i++) {
                 var cost = 0;
                 for (var matId in bt.materials) {
@@ -23617,10 +23698,10 @@
         },
         // 6. Most expensive building location
         function tipExpensiveBuilding(world, towns, rng) {
-            var btKeys = Object.keys(CONFIG.BUILDING_TYPES || {});
+            var btKeys = Object.keys(typeof BUILDING_TYPES !== 'undefined' ? BUILDING_TYPES : {});
             if (btKeys.length === 0) return null;
             var btKey = btKeys[Math.floor(rng() * btKeys.length)];
-            var bt = CONFIG.BUILDING_TYPES[btKey];
+            var bt = BUILDING_TYPES[btKey];
             if (!bt || !bt.materials) return null;
             var worst = null;
             for (var i = 0; i < towns.length; i++) {
@@ -28367,7 +28448,7 @@
         var reqs = m.requires || {};
         for (var resId in reqs) {
             if ((player.inventory[resId] || 0) < reqs[resId]) {
-                var res = CONFIG.RESOURCE_TYPES ? Object.values(CONFIG.RESOURCE_TYPES).find(function(r) { return r.id === resId; }) : null;
+                var res = typeof RESOURCE_TYPES !== 'undefined' ? Object.values(RESOURCE_TYPES).find(function(r) { return r.id === resId; }) : null;
                 var rname = res ? res.name : resId;
                 return { success: false, message: 'Need ' + reqs[resId] + ' ' + rname + ' (have ' + (player.inventory[resId] || 0) + ').' };
             }
@@ -29886,6 +29967,13 @@
         player.notoriety += 8;
         recordCorruptAction('sabotage_building', false);
         grantXP(10, 'Sabotaged building');
+        // DNA: check if military building in target kingdom
+        if (player.doubleNobleAgent) {
+            var _sbBt = bld.type ? bld.type.toLowerCase() : '';
+            if (_sbBt.indexOf('barracks') >= 0 || _sbBt.indexOf('armory') >= 0 || _sbBt.indexOf('weapon') >= 0 || _sbBt.indexOf('military') >= 0 || _sbBt.indexOf('forge') >= 0 || _sbBt.indexOf('fletcher') >= 0) {
+                if (town.kingdomId === player.doubleNobleAgent.targetKingdomId) { _trackDnaTask('sabotage_military'); _trackDnaTask('weaken_army'); }
+            }
+        }
         Engine.logEvent(`A building in ${town.name} has been sabotaged! Production halted for ${disabledDays} days.`);
         return { success: true, message: `✅ Building sabotaged! Disabled for ${disabledDays} days.` };
     }
@@ -29925,6 +30013,11 @@
         player.notoriety += 10;
         recordCorruptAction('sabotage_road', false);
         grantXP(15, 'Sabotaged road');
+        if (player.doubleNobleAgent && road) {
+            var _srFrom = Engine.findTown(road.fromTownId);
+            var _srTo = Engine.findTown(road.toTownId);
+            if ((_srFrom && _srFrom.kingdomId === player.doubleNobleAgent.targetKingdomId) || (_srTo && _srTo.kingdomId === player.doubleNobleAgent.targetKingdomId)) _trackDnaTask('destroy_road');
+        }
         Engine.logEvent('A road has been sabotaged! Travel slowed.');
         return { success: true, message: '✅ Road sabotaged! Quality reduced for 60 days.' };
     }
@@ -29970,6 +30063,7 @@
         recordCorruptAction('arson', false);
         grantXP(25, 'Arson');
         if (player.arsonCount >= 5) unlockAchievement('arsonist_ach');
+        if (player.doubleNobleAgent && town.kingdomId === player.doubleNobleAgent.targetKingdomId) _trackDnaTask('burn_supplies');
         Engine.logEvent(`A building in ${town.name} has been destroyed by fire!`);
         return { success: true, message: '✅ Building destroyed by fire!' };
     }
@@ -30020,6 +30114,7 @@
         recordCorruptAction('steal_goods', false);
         const xpBonus = Math.min(10, Math.floor(value / 50));
         grantXP(5 + xpBonus, 'Stole goods');
+        if (player.doubleNobleAgent && town.kingdomId === player.doubleNobleAgent.targetKingdomId) _trackDnaTask('steal_treasury', value);
         Engine.logEvent(`Goods went missing from ${town.name}'s market.`);
         return { success: true, message: `✅ Stole ${qty} ${res ? res.name : resourceId}! (worth ~${value}g)` };
     }
@@ -30505,6 +30600,11 @@
         player.notoriety += 10;
         recordCorruptAction('blackmail', false);
         grantXP(15, 'Blackmailed NPC');
+        // DNA task: check if target is a noble in the target kingdom
+        if (player.doubleNobleAgent && person.occupation === 'noble') {
+            var _blkTown = Engine.findTown(person.townId || player.townId);
+            if (_blkTown && _blkTown.kingdomId === player.doubleNobleAgent.targetKingdomId) _trackDnaTask('blackmail_noble');
+        }
         Engine.logEvent(`${person.firstName} is now being blackmailed.`);
         return { success: true, message: `✅ Blackmailing ${person.firstName} for ${payment}g per season!` };
     }
@@ -30534,6 +30634,14 @@
         player.notoriety += 5;
         recordCorruptAction('spread_rumors', false);
         grantXP(8, 'Spread rumors');
+        // DNA: check if target is the king
+        if (player.doubleNobleAgent && targetMerchantId) {
+            var _rumTarget = Engine.findPerson ? Engine.findPerson(targetMerchantId) : null;
+            if (_rumTarget && _rumTarget.isKing) {
+                var _rumTown = Engine.findTown(_rumTarget.townId);
+                if (_rumTown && _rumTown.kingdomId === player.doubleNobleAgent.targetKingdomId) _trackDnaTask('spread_rumors_king');
+            }
+        }
         Engine.logEvent('Rumors are spreading about a merchant...');
         return { success: true, message: '✅ Rumors spread! Target reputation damaged for 60 days.' };
     }
@@ -30630,6 +30738,7 @@
             player.notoriety += 40;
             recordCorruptAction('assassinate_guard_captain', false);
             grantXP(40, 'Assassinated guard captain');
+            if (player.doubleNobleAgent && town && town.kingdomId === player.doubleNobleAgent.targetKingdomId) _trackDnaTask('weaken_army');
             Engine.logEvent(`The guard captain in ${town ? town.name : 'a town'} has been assassinated!`);
             return { success: true, message: `✅ Guard captain eliminated! Town security dropped by 30 for 90 days.` };
         }
@@ -30654,6 +30763,14 @@
         player.notoriety += 30;
         recordCorruptAction('assassinate_competitor', false);
         grantXP(30, 'Hired assassin');
+        // DNA: check if target was a noble
+        if (player.doubleNobleAgent && targetId) {
+            var _assTarget = Engine.findPerson ? Engine.findPerson(targetId) : null;
+            if (_assTarget && (_assTarget.occupation === 'noble' || _assTarget.isNoble)) {
+                var _assTown = Engine.findTown(_assTarget.townId);
+                if (_assTown && _assTown.kingdomId === player.doubleNobleAgent.targetKingdomId) _trackDnaTask('assassinate_noble');
+            }
+        }
         Engine.logEvent('A merchant has been found dead under suspicious circumstances.');
         return { success: true, message: '✅ Target eliminated. Their properties may become available.' };
     }
@@ -30685,6 +30802,14 @@
         player.notoriety += 20;
         recordCorruptAction('poison', false);
         grantXP(20, 'Poisoned target');
+        // DNA: check if target is a noble
+        if (player.doubleNobleAgent && targetId) {
+            var _poisTarget = Engine.findPerson ? Engine.findPerson(targetId) : null;
+            if (_poisTarget && (_poisTarget.occupation === 'noble' || _poisTarget.isNoble)) {
+                var _poisTown = Engine.findTown(_poisTarget.townId);
+                if (_poisTown && _poisTown.kingdomId === player.doubleNobleAgent.targetKingdomId) _trackDnaTask('poison_noble');
+            }
+        }
         Engine.logEvent('Someone has fallen mysteriously ill...');
         return { success: true, message: `✅ Poison administered. Target will sicken over ${duration} days.` };
     }
@@ -31183,6 +31308,40 @@
                 }
             }
         }
+
+        // Check Double Noble Agent task progress
+        if (player.doubleNobleAgent) {
+            checkDoubleNobleAgentProgress();
+        }
+
+        // Track corrupt_two_nobles for DNA task
+        if (player.doubleNobleAgent && player._dnaTaskProgress) {
+            var _dnaKid = player.doubleNobleAgent.targetKingdomId;
+            var _corruptCount = 0;
+            var _dnaNobles = _getKingdomNobles(_dnaKid);
+            for (var _cni = 0; _cni < _dnaNobles.length; _cni++) {
+                var _cnId = _dnaNobles[_cni].id;
+                var _cnRel = getRelationship(_cnId);
+                var _isCorrupt = false;
+                if (player.blackmailTargets && player.blackmailTargets[_cnId]) _isCorrupt = true;
+                if (!_isCorrupt) {
+                    var _cnLoans = (player._nobleLoans || []).filter(function(l) { return l.nobleId === _cnId && l.status === 'active'; });
+                    if (_cnLoans.length > 0) _isCorrupt = true;
+                }
+                if (!_isCorrupt && _cnRel && _cnRel.level >= 80) _isCorrupt = true;
+                if (_isCorrupt) _corruptCount++;
+            }
+            player._dnaTaskProgress.corrupt_two_nobles = _corruptCount;
+
+            // Track forge_alliance_enemy — need 2 nobles with 60+ relationship in sponsor kingdom
+            var _sponsorNobles = _getKingdomNobles(player.doubleNobleAgent.sponsorKingdomId);
+            var _allyCount = 0;
+            for (var _ani = 0; _ani < _sponsorNobles.length; _ani++) {
+                var _anRel = getRelationship(_sponsorNobles[_ani].id);
+                if (_anRel && _anRel.level >= 60) _allyCount++;
+            }
+            player._dnaTaskProgress.forge_alliance_enemy = _allyCount;
+        }
     }
 
     // Helper to get available corrupt actions for current location
@@ -31623,6 +31782,105 @@
             });
         }
 
+        // ── Noble Intrigue Schemes (require rank 4+ in current kingdom) ──
+        if (kingdom && (player.socialRank[kingdom.id] || 0) >= 4) {
+            var _intNobles = _getKingdomNobles(kingdom.id);
+            if (_intNobles.length >= 2 && (hasSkill('silver_tongue_dark') || hasSkill('kingmaker_skill'))) {
+                actions.push({
+                    id: 'pit_nobles', tab: 'political',
+                    name: '🗡️ Pit Nobles Against Each Other',
+                    desc: 'Sow discord between two nobles. Having them indebted/blackmailed increases success. (' + _intNobles.length + ' nobles in kingdom)',
+                    cost: '300g', detection: calculateCorruptDetection(0.25, town),
+                    reward: 'Noble rivalry', xp: 20,
+                    requires: 'Noble rank + Silver Tongue (Dark) or Kingmaker', available: player.gold >= 300,
+                    params: [null, null], _needsNobleSelect: 2, _nobles: _intNobles,
+                });
+            }
+            if (_intNobles.length >= 1 && hasSkill('kingmaker_skill')) {
+                actions.push({
+                    id: 'turn_noble_against_king', tab: 'political',
+                    name: '🏴 Turn Noble Against King',
+                    desc: 'Undermine a noble\'s loyalty to the crown. Ambitious/disloyal nobles are easier targets.',
+                    cost: '500g', detection: calculateCorruptDetection(0.30, town),
+                    reward: 'Noble disloyal', xp: 25,
+                    requires: 'Noble rank + Kingmaker', available: player.gold >= 500,
+                    params: [null], _needsNobleSelect: 1, _nobles: _intNobles,
+                });
+            }
+            if (_intNobles.length >= 1 && (hasSkill('shadow_dealings') || hasSkill('silver_tongue_dark'))) {
+                actions.push({
+                    id: 'discredit_noble', tab: 'political',
+                    name: '📜 Discredit Noble',
+                    desc: 'Spread misinformation to damage a noble\'s reputation at court. Forger skill helps.',
+                    cost: '400g', detection: calculateCorruptDetection(0.25, town),
+                    reward: 'Noble weakened', xp: 20,
+                    requires: 'Noble rank + Shadow Dealings or Silver Tongue (Dark)', available: player.gold >= 400,
+                    params: [null], _needsNobleSelect: 1, _nobles: _intNobles,
+                });
+            }
+            if (_intNobles.length >= 1 && (hasSkill('silver_tongue_dark') || hasSkill('kingmaker_skill'))) {
+                actions.push({
+                    id: 'manipulate_vote', tab: 'political',
+                    name: '🤝 Manipulate Noble\'s Vote',
+                    desc: 'Sway a noble to support your political positions through bribes and favors.',
+                    cost: '200g', detection: calculateCorruptDetection(0.15, town),
+                    reward: 'Political support', xp: 15,
+                    requires: 'Noble rank + Silver Tongue (Dark) or Kingmaker', available: player.gold >= 200,
+                    params: [null, 'general'], _needsNobleSelect: 1, _nobles: _intNobles,
+                });
+            }
+            if (_intNobles.length >= 1 && (hasSkill('dark_connections') || hasSkill('shadow_dealings'))) {
+                actions.push({
+                    id: 'expose_secrets', tab: 'political',
+                    name: '💥 Expose Noble\'s Secrets',
+                    desc: 'Dig up and publicize a noble\'s secrets. Spy networks help. Devastating if successful.',
+                    cost: '600g', detection: calculateCorruptDetection(0.20, town),
+                    reward: 'Noble ruined', xp: 30,
+                    requires: 'Noble rank + Dark Connections or Shadow Dealings', available: player.gold >= 600,
+                    params: [null], _needsNobleSelect: 1, _nobles: _intNobles,
+                });
+            }
+
+            // Double Noble Agent — contact an enemy kingdom
+            if (hasSkill('shadow_dealings') && (hasSkill('kingmaker_skill') || hasSkill('silver_tongue_dark')) && !player.doubleNobleAgent) {
+                var _dnaKingdoms = Engine.getWorld ? Engine.getWorld().kingdoms : [];
+                for (var _dki = 0; _dki < _dnaKingdoms.length; _dki++) {
+                    var _dk = _dnaKingdoms[_dki];
+                    if (_dk.id === kingdom.id) continue;
+                    // Check if hostile
+                    var _dkHostile = false;
+                    if (_dk.atWar && _dk.atWar.has && _dk.atWar.has(kingdom.id)) _dkHostile = true;
+                    if (!_dkHostile) {
+                        var _dkDiplo = (_dk.diplomaticRelations || {})[kingdom.id] || 0;
+                        if (_dkDiplo < -30) _dkHostile = true;
+                    }
+                    if (_dkHostile) {
+                        actions.push({
+                            id: 'double_noble_agent', tab: 'political',
+                            name: '🎭 Double Agent for ' + _dk.name,
+                            desc: 'Contact ' + _dk.name + ' to become a double noble agent. Receive 5 tasks to destabilize ' + kingdom.name + '. Huge reward on completion.',
+                            cost: 'Your loyalty', detection: calculateCorruptDetection(0.20, town),
+                            reward: '5000-20000g + Minor Noble rank in ' + _dk.name, xp: 100,
+                            requires: 'Noble rank + Shadow Dealings + (Kingmaker or Silver Tongue Dark)', available: true,
+                            params: [_dk.id],
+                        });
+                    }
+                }
+            }
+            // Abandon Double Noble Agent
+            if (player.doubleNobleAgent) {
+                actions.push({
+                    id: 'abandon_double_noble', tab: 'political',
+                    name: '❌ Abandon Double Agent Mission',
+                    desc: 'Give up your double noble agent mission. Sponsor loses trust. (' + (player.doubleNobleAgent.completed || 0) + '/5 tasks done)',
+                    cost: '-15 sponsor rep', detection: 0,
+                    reward: 'Freedom', xp: 0,
+                    requires: 'Active mission', available: true,
+                    params: [],
+                });
+            }
+        }
+
         if (hasSkill('shadow_dealings') && player.militaryService && player.militaryService.active && !player.doubleAgentActive) {
             // Find enemy kingdoms at war with player's service kingdom
             var _myMilKingdom = player.militaryService.kingdomId;
@@ -31948,6 +32206,10 @@
         recordCorruptAction('plant_evidence', false);
         grantXP(20, 'Planted evidence');
         player.notoriety += 8;
+        // DNA: check if target is a noble
+        if (player.doubleNobleAgent && npc && (npc.occupation === 'noble' || npc.isNoble)) {
+            if (town && town.kingdomId === player.doubleNobleAgent.targetKingdomId) _trackDnaTask('plant_evidence_noble');
+        }
         Engine.logEvent((npc.firstName || 'A merchant') + ' was arrested after contraband was found in their possession!');
         return { success: true, message: '🎭 ' + (npc.firstName || 'Target') + ' arrested! Fined ' + npcFine + 'g and jailed. Their operations are disrupted.' };
     }
@@ -31980,6 +32242,7 @@
         recordCorruptAction('incite_revolt', false);
         grantXP(40, 'Incited revolt');
         player.notoriety += 20;
+        if (player.doubleNobleAgent && kingdom.id === player.doubleNobleAgent.targetKingdomId) _trackDnaTask('incite_unrest');
         Engine.logEvent('Unrest is brewing in ' + kingdom.name + '! Agitators are spreading dissent.');
         return { success: true, message: '🔥 Revolt incited in ' + kingdom.name + '! Stability and prosperity reduced, unrest rising.' };
     }
@@ -32116,6 +32379,607 @@
         return { success: true, message: '🧹 Cleansing identity over ' + duration + ' days. Notoriety will drop by ~' + Math.floor(totalReduction) + '. Cost: ' + cost + 'g.' };
     }
 
+    // ══════════════════════════════════════════════════════
+    // §N1 NOBLE INTRIGUE SCHEMES
+    // ══════════════════════════════════════════════════════
+
+    function _getKingdomNobles(kingdomId) {
+        var towns = Engine.getWorld ? Engine.getWorld().towns : [];
+        var nobles = [];
+        for (var ti = 0; ti < towns.length; ti++) {
+            if (towns[ti].kingdomId !== kingdomId) continue;
+            var people = Engine.getPeople ? Engine.getPeople(towns[ti].id) : [];
+            if (!people) continue;
+            for (var pi = 0; pi < people.length; pi++) {
+                var p = people[pi];
+                if (p.alive && (p.occupation === 'noble' || p.isNoble) && !p.isKing) nobles.push(p);
+            }
+        }
+        return nobles;
+    }
+
+    function _getNobleInfluenceBonus(nobleId) {
+        var bonus = 0;
+        var rel = getRelationship(nobleId);
+        if (rel && rel.level >= 60) bonus += 0.10;
+        if (rel && rel.level >= 80) bonus += 0.10;
+        // Loan leverage
+        var loans = player._nobleLoans || [];
+        for (var li = 0; li < loans.length; li++) {
+            if (loans[li].nobleId === nobleId && loans[li].status === 'active') { bonus += 0.15; break; }
+        }
+        // Blackmail leverage
+        if (player.blackmailTargets && player.blackmailTargets[nobleId]) bonus += 0.20;
+        return bonus;
+    }
+
+    function _trackDnaTask(taskId, amount) {
+        if (!player.doubleNobleAgent || !player._dnaTaskProgress) return;
+        player._dnaTaskProgress[taskId] = (player._dnaTaskProgress[taskId] || 0) + (amount || 1);
+    }
+
+    // (N1a) Pit Nobles Against Each Other — make two nobles rivals
+    function pitNoblesAgainstEachOther(nobleAId, nobleBId) {
+        if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('silver_tongue_dark') && !hasSkill('kingmaker_skill')) return { success: false, message: 'Requires Silver Tongue (Dark) or Kingmaker skill.' };
+        var myRank = 0;
+        var town = Engine.findTown(player.townId);
+        var kingdom = town ? Engine.findKingdom(town.kingdomId) : null;
+        if (kingdom) myRank = player.socialRank[kingdom.id] || 0;
+        if (myRank < 4) return { success: false, message: 'You must be at least a Minor Noble to engage in noble intrigue.' };
+
+        if (player.gold < 300) return { success: false, message: 'Need 300g to orchestrate this scheme.' };
+        var nobleA = Engine.findPerson ? Engine.findPerson(nobleAId) : null;
+        var nobleB = Engine.findPerson ? Engine.findPerson(nobleBId) : null;
+        if (!nobleA || !nobleA.alive || !nobleB || !nobleB.alive) return { success: false, message: 'Both nobles must be alive.' };
+        if (nobleAId === nobleBId) return { success: false, message: 'Must select two different nobles.' };
+
+        var rng = Engine.getRng();
+        var detection = calculateCorruptDetection(0.25, town);
+
+        // Influence bonuses from having nobles in your pocket
+        var bonusA = _getNobleInfluenceBonus(nobleAId);
+        var bonusB = _getNobleInfluenceBonus(nobleBId);
+        var totalBonus = bonusA + bonusB;
+        var baseSuccess = 0.35;
+        if (hasSkill('kingmaker_skill')) baseSuccess += 0.10;
+        if (hasSkill('silver_tongue_dark')) baseSuccess += 0.10;
+        var successChance = Math.min(0.90, baseSuccess + totalBonus);
+
+        player.gold -= 300;
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.scheme || 4);
+
+        if (rng && rng.chance(detection)) {
+            applyCorruptPenalty(town, kingdom, 500, 15, 0, false);
+            recordCorruptAction('pit_nobles', true);
+            player.notoriety += 10;
+            // Both nobles hate you now
+            modifyRelationship(nobleAId, -20);
+            modifyRelationship(nobleBId, -20);
+            return { success: false, caught: true, message: '🚨 CAUGHT! ' + nobleA.firstName + ' and ' + nobleB.firstName + ' realized your manipulation. -500g fine, -20 relationship with both.' };
+        }
+
+        if (rng && rng.chance(successChance)) {
+            // Success: damage their mutual relationship
+            if (!nobleA._nobleRelationships) nobleA._nobleRelationships = {};
+            if (!nobleB._nobleRelationships) nobleB._nobleRelationships = {};
+            var damage = rng.randInt(15, 30);
+            nobleA._nobleRelationships[nobleBId] = Math.max(-100, (nobleA._nobleRelationships[nobleBId] || 0) - damage);
+            nobleB._nobleRelationships[nobleAId] = Math.max(-100, (nobleB._nobleRelationships[nobleAId] || 0) - damage);
+            recordCorruptAction('pit_nobles', false);
+            grantXP(20, 'Pitted nobles against each other');
+            player.notoriety += 5;
+            _trackDnaTask('pit_two_nobles');
+            Engine.logEvent('🗡️ Tensions rise between ' + nobleA.firstName + ' and ' + nobleB.firstName + '.');
+            return { success: true, message: '🗡️ Successfully pitted ' + nobleA.firstName + ' against ' + nobleB.firstName + '! Their relationship dropped by ' + damage + '. (' + Math.round(successChance * 100) + '% chance)' };
+        }
+
+        recordCorruptAction('pit_nobles', false);
+        player.notoriety += 2;
+        return { success: false, message: 'Your scheming didn\'t take hold. ' + nobleA.firstName + ' and ' + nobleB.firstName + ' saw through the manipulation. (' + Math.round(successChance * 100) + '% chance)' };
+    }
+
+    // (N1b) Turn Noble Against King — undermine a noble's loyalty
+    function turnNobleAgainstKing(nobleId) {
+        if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('kingmaker_skill')) return { success: false, message: 'Requires Kingmaker skill.' };
+        var town = Engine.findTown(player.townId);
+        var kingdom = town ? Engine.findKingdom(town.kingdomId) : null;
+        if (!kingdom) return { success: false, message: 'Not in a kingdom.' };
+        var myRank = player.socialRank[kingdom.id] || 0;
+        if (myRank < 4) return { success: false, message: 'You must be at least a Minor Noble to engage in noble intrigue.' };
+        if (player.gold < 500) return { success: false, message: 'Need 500g to fund this campaign.' };
+        var noble = Engine.findPerson ? Engine.findPerson(nobleId) : null;
+        if (!noble || !noble.alive) return { success: false, message: 'Noble not found or dead.' };
+
+        var rng = Engine.getRng();
+        var detection = calculateCorruptDetection(0.30, town);
+        var influenceBonus = _getNobleInfluenceBonus(nobleId);
+        var baseSuccess = 0.25;
+        if (hasSkill('silver_tongue_dark')) baseSuccess += 0.10;
+        // Noble's personality affects susceptibility
+        if (noble.personality) {
+            if (noble.personality.ambition > 0.6) baseSuccess += 0.10;
+            if (noble.personality.loyalty !== undefined && noble.personality.loyalty < 0.4) baseSuccess += 0.10;
+            if (noble.personality.greed > 0.6) baseSuccess += 0.05;
+        }
+        var successChance = Math.min(0.85, baseSuccess + influenceBonus);
+
+        player.gold -= 500;
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.scheme || 4);
+
+        if (rng && rng.chance(detection)) {
+            applyCorruptPenalty(town, kingdom, 1000, 25, 5, false);
+            recordCorruptAction('turn_noble_against_king', true);
+            player.notoriety += 15;
+            modifyRelationship(nobleId, -15);
+            return { success: false, caught: true, message: '🚨 CAUGHT trying to turn ' + noble.firstName + ' against the king! Fined 1000g, jailed 5 days, -25 rep, -15 relationship.' };
+        }
+
+        if (rng && rng.chance(successChance)) {
+            // Reduce noble's loyalty to king
+            var king = null;
+            var people = Engine.getPeople ? Engine.getPeople(noble.townId || town.id) : [];
+            if (people) {
+                for (var ki = 0; ki < people.length; ki++) {
+                    if (people[ki].isKing) { king = people[ki]; break; }
+                }
+            }
+            if (!king) {
+                // Find king from all kingdom towns
+                var kTowns = Engine.getWorld ? Engine.getWorld().towns.filter(function(t) { return t.kingdomId === kingdom.id; }) : [];
+                for (var kti = 0; kti < kTowns.length && !king; kti++) {
+                    var kp = Engine.getPeople(kTowns[kti].id);
+                    if (kp) for (var kpi = 0; kpi < kp.length; kpi++) { if (kp[kpi].isKing) { king = kp[kpi]; break; } }
+                }
+            }
+            if (king) {
+                if (!noble._nobleRelationships) noble._nobleRelationships = {};
+                var loyaltyDrop = rng.randInt(15, 30);
+                noble._nobleRelationships[king.id] = Math.max(-100, (noble._nobleRelationships[king.id] || 0) - loyaltyDrop);
+                // Boost noble's relationship with player (they trust you)
+                modifyRelationship(nobleId, 5);
+                recordCorruptAction('turn_noble_against_king', false);
+                grantXP(25, 'Turned noble against king');
+                player.notoriety += 8;
+                _trackDnaTask('turn_noble_king');
+                Engine.logEvent('🏴 ' + noble.firstName + '\'s loyalty to the crown wavers.');
+                return { success: true, message: '🏴 ' + noble.firstName + ' is now more disillusioned with the king! Loyalty dropped by ' + loyaltyDrop + '. (' + Math.round(successChance * 100) + '% chance)' };
+            }
+            return { success: false, message: 'Could not find the king to undermine.' };
+        }
+
+        recordCorruptAction('turn_noble_against_king', false);
+        player.notoriety += 3;
+        return { success: false, message: noble.firstName + ' remains loyal to the crown. Your persuasion failed. (' + Math.round(successChance * 100) + '% chance)' };
+    }
+
+    // (N1c) Discredit Noble — damage a noble's standing with the king and court
+    function discreditNoble(nobleId) {
+        if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('shadow_dealings') && !hasSkill('silver_tongue_dark')) return { success: false, message: 'Requires Shadow Dealings or Silver Tongue (Dark).' };
+        var town = Engine.findTown(player.townId);
+        var kingdom = town ? Engine.findKingdom(town.kingdomId) : null;
+        if (!kingdom) return { success: false, message: 'Not in a kingdom.' };
+        var myRank = player.socialRank[kingdom.id] || 0;
+        if (myRank < 4) return { success: false, message: 'You must be at least a Minor Noble.' };
+        if (player.gold < 400) return { success: false, message: 'Need 400g to spread misinformation.' };
+        var noble = Engine.findPerson ? Engine.findPerson(nobleId) : null;
+        if (!noble || !noble.alive) return { success: false, message: 'Noble not found or dead.' };
+
+        var rng = Engine.getRng();
+        var detection = calculateCorruptDetection(0.25, town);
+        var influenceBonus = _getNobleInfluenceBonus(nobleId);
+        var baseSuccess = 0.30;
+        if (hasSkill('master_forger')) baseSuccess += 0.15; // forged evidence
+        if (hasSkill('silver_tongue_dark')) baseSuccess += 0.10;
+        if (hasSkill('shadow_dealings')) baseSuccess += 0.05;
+        var successChance = Math.min(0.85, baseSuccess + influenceBonus);
+
+        player.gold -= 400;
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.scheme || 4);
+
+        if (rng && rng.chance(detection)) {
+            applyCorruptPenalty(town, kingdom, 600, 20, 0, false);
+            recordCorruptAction('discredit_noble', true);
+            player.notoriety += 12;
+            modifyRelationship(nobleId, -25);
+            return { success: false, caught: true, message: '🚨 CAUGHT trying to discredit ' + noble.firstName + '! -600g fine, -20 rep, ' + noble.firstName + ' despises you (-25 relationship).' };
+        }
+
+        if (rng && rng.chance(successChance)) {
+            // Reduce noble's reputation in the kingdom
+            if (noble.socialRank && noble.socialRank[kingdom.id] !== undefined) {
+                // Damage reputation with other nobles and king
+                var nobles = _getKingdomNobles(kingdom.id);
+                var damaged = 0;
+                for (var ni = 0; ni < nobles.length; ni++) {
+                    if (nobles[ni].id === nobleId) continue;
+                    if (!nobles[ni]._nobleRelationships) nobles[ni]._nobleRelationships = {};
+                    var drop = rng.randInt(5, 15);
+                    nobles[ni]._nobleRelationships[nobleId] = Math.max(-100, (nobles[ni]._nobleRelationships[nobleId] || 0) - drop);
+                    damaged++;
+                }
+            }
+            // Damage noble's personal reputation
+            if (noble.reputation === undefined) noble.reputation = {};
+            noble.reputation[kingdom.id] = Math.max(0, (noble.reputation[kingdom.id] || 50) - rng.randInt(10, 20));
+
+            recordCorruptAction('discredit_noble', false);
+            grantXP(20, 'Discredited noble');
+            player.notoriety += 6;
+            _trackDnaTask('discredit_noble');
+            Engine.logEvent('📜 Rumors about ' + noble.firstName + '\'s incompetence spread through the court.');
+            return { success: true, message: '📜 Successfully discredited ' + noble.firstName + '! Their standing with the court has dropped. (' + Math.round(successChance * 100) + '% chance)' };
+        }
+
+        recordCorruptAction('discredit_noble', false);
+        player.notoriety += 2;
+        return { success: false, message: 'Your misinformation campaign failed to gain traction. (' + Math.round(successChance * 100) + '% chance)' };
+    }
+
+    // (N1d) Manipulate Noble's Vote — sway a noble's position on a proposal
+    function manipulateNobleVote(nobleId, proposalType) {
+        if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('silver_tongue_dark') && !hasSkill('kingmaker_skill')) return { success: false, message: 'Requires Silver Tongue (Dark) or Kingmaker skill.' };
+        var town = Engine.findTown(player.townId);
+        var kingdom = town ? Engine.findKingdom(town.kingdomId) : null;
+        if (!kingdom) return { success: false, message: 'Not in a kingdom.' };
+        var myRank = player.socialRank[kingdom.id] || 0;
+        if (myRank < 4) return { success: false, message: 'You must be at least a Minor Noble.' };
+        if (player.gold < 200) return { success: false, message: 'Need 200g for bribes and favors.' };
+        var noble = Engine.findPerson ? Engine.findPerson(nobleId) : null;
+        if (!noble || !noble.alive) return { success: false, message: 'Noble not found or dead.' };
+
+        var rng = Engine.getRng();
+        var detection = calculateCorruptDetection(0.15, town);
+        var influenceBonus = _getNobleInfluenceBonus(nobleId);
+        var baseSuccess = 0.35;
+        if (hasSkill('kingmaker_skill')) baseSuccess += 0.15;
+        if (hasSkill('silver_tongue_dark')) baseSuccess += 0.10;
+        if (hasSkill('bribe_expert')) baseSuccess += 0.10;
+        var successChance = Math.min(0.90, baseSuccess + influenceBonus);
+
+        player.gold -= 200;
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.scheme || 4);
+
+        if (rng && rng.chance(detection)) {
+            applyCorruptPenalty(town, kingdom, 300, 10, 0, false);
+            recordCorruptAction('manipulate_vote', true);
+            player.notoriety += 5;
+            modifyRelationship(nobleId, -10);
+            return { success: false, caught: true, message: '🚨 CAUGHT trying to buy ' + noble.firstName + '\'s vote! -300g fine.' };
+        }
+
+        if (rng && rng.chance(successChance)) {
+            // Noble now supports the player's position
+            if (!noble._manipulatedVotes) noble._manipulatedVotes = {};
+            noble._manipulatedVotes[proposalType || 'general'] = Engine.getDay() + 60;
+            modifyRelationship(nobleId, 3);
+            recordCorruptAction('manipulate_vote', false);
+            grantXP(15, 'Manipulated noble vote');
+            player.notoriety += 3;
+            _trackDnaTask('manipulate_votes');
+            return { success: true, message: '🤝 ' + noble.firstName + ' will support your position for 60 days. (' + Math.round(successChance * 100) + '% chance)' };
+        }
+
+        recordCorruptAction('manipulate_vote', false);
+        player.notoriety += 1;
+        return { success: false, message: noble.firstName + ' refused your influence. (' + Math.round(successChance * 100) + '% chance)' };
+    }
+
+    // (N1e) Expose Noble's Secrets — use spies/information to publicly shame a noble
+    function exposeNobleSecrets(nobleId) {
+        if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('dark_connections') && !hasSkill('shadow_dealings')) return { success: false, message: 'Requires Dark Connections or Shadow Dealings.' };
+        var town = Engine.findTown(player.townId);
+        var kingdom = town ? Engine.findKingdom(town.kingdomId) : null;
+        if (!kingdom) return { success: false, message: 'Not in a kingdom.' };
+        var myRank = player.socialRank[kingdom.id] || 0;
+        if (myRank < 4) return { success: false, message: 'You must be at least a Minor Noble.' };
+        if (player.gold < 600) return { success: false, message: 'Need 600g to dig up and publicize secrets.' };
+        var noble = Engine.findPerson ? Engine.findPerson(nobleId) : null;
+        if (!noble || !noble.alive) return { success: false, message: 'Noble not found or dead.' };
+
+        // Spy network in this town or kingdom helps
+        var hasLocalSpy = player.spyNetworks && player.spyNetworks[town.id];
+
+        var rng = Engine.getRng();
+        var detection = calculateCorruptDetection(0.20, town);
+        var influenceBonus = _getNobleInfluenceBonus(nobleId);
+        var baseSuccess = 0.25;
+        if (hasSkill('dark_connections')) baseSuccess += 0.10;
+        if (hasSkill('shadow_dealings')) baseSuccess += 0.05;
+        if (hasSkill('discrete')) baseSuccess += 0.05;
+        if (hasLocalSpy) baseSuccess += 0.15;
+        var successChance = Math.min(0.85, baseSuccess + influenceBonus);
+
+        player.gold -= 600;
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.scheme || 4);
+
+        if (rng && rng.chance(detection)) {
+            applyCorruptPenalty(town, kingdom, 800, 25, 3, false);
+            recordCorruptAction('expose_secrets', true);
+            player.notoriety += 15;
+            modifyRelationship(nobleId, -30);
+            return { success: false, caught: true, message: '🚨 CAUGHT investigating ' + noble.firstName + '\'s secrets! -800g fine, 3 days jail, ' + noble.firstName + ' is your enemy (-30 rel).' };
+        }
+
+        if (rng && rng.chance(successChance)) {
+            // Massive reputation damage to the noble
+            var allNobles = _getKingdomNobles(kingdom.id);
+            for (var ni = 0; ni < allNobles.length; ni++) {
+                if (allNobles[ni].id === nobleId) continue;
+                if (!allNobles[ni]._nobleRelationships) allNobles[ni]._nobleRelationships = {};
+                allNobles[ni]._nobleRelationships[nobleId] = Math.max(-100, (allNobles[ni]._nobleRelationships[nobleId] || 0) - rng.randInt(15, 30));
+            }
+            if (noble.reputation === undefined) noble.reputation = {};
+            noble.reputation[kingdom.id] = Math.max(0, (noble.reputation[kingdom.id] || 50) - rng.randInt(20, 35));
+            // Noble is humiliated — possible demotion tracked for later
+            noble._scandalized = true;
+            noble._scandalDay = Engine.getDay();
+
+            recordCorruptAction('expose_secrets', false);
+            grantXP(30, 'Exposed noble secrets');
+            player.notoriety += 10;
+            _trackDnaTask('expose_noble');
+            Engine.logEvent('💥 Scandalous revelations about ' + noble.firstName + ' ' + (noble.lastName || '') + ' rock the court of ' + kingdom.name + '!');
+            return { success: true, message: '💥 ' + noble.firstName + '\'s secrets are exposed! Reputation devastated, all nobles distance themselves. (' + Math.round(successChance * 100) + '% chance)' };
+        }
+
+        recordCorruptAction('expose_secrets', false);
+        player.notoriety += 3;
+        return { success: false, message: 'Couldn\'t find anything damaging on ' + noble.firstName + '. (' + Math.round(successChance * 100) + '% chance)' };
+    }
+
+    // ══════════════════════════════════════════════════════
+    // §N2 DOUBLE NOBLE AGENT
+    // ══════════════════════════════════════════════════════
+
+    var DOUBLE_NOBLE_TASK_POOL = [
+        { id: 'pit_two_nobles', name: 'Pit Two Nobles Against Each Other', desc: 'Successfully use the Pit Nobles scheme to create a rivalry.', check: function() { return (player._dnaTaskProgress || {}).pit_two_nobles >= 1; } },
+        { id: 'turn_noble_king', name: 'Turn a Noble Against the King', desc: 'Successfully turn a noble against their king.', check: function() { return (player._dnaTaskProgress || {}).turn_noble_king >= 1; } },
+        { id: 'discredit_noble', name: 'Discredit a Noble', desc: 'Successfully discredit a noble at court.', check: function() { return (player._dnaTaskProgress || {}).discredit_noble >= 1; } },
+        { id: 'expose_noble', name: 'Expose a Noble\'s Secrets', desc: 'Successfully expose a noble\'s secrets publicly.', check: function() { return (player._dnaTaskProgress || {}).expose_noble >= 1; } },
+        { id: 'blackmail_noble', name: 'Blackmail a Noble', desc: 'Successfully blackmail a noble of the target kingdom.', check: function() { return (player._dnaTaskProgress || {}).blackmail_noble >= 1; } },
+        { id: 'plant_evidence_noble', name: 'Plant Evidence on a Noble', desc: 'Frame a noble with planted contraband.', check: function() { return (player._dnaTaskProgress || {}).plant_evidence_noble >= 1; } },
+        { id: 'incite_unrest', name: 'Incite Civil Unrest', desc: 'Successfully incite revolt to destabilize the kingdom.', check: function() { return (player._dnaTaskProgress || {}).incite_unrest >= 1; } },
+        { id: 'sabotage_military', name: 'Sabotage Military Building', desc: 'Sabotage a military building (barracks, armory, etc).', check: function() { return (player._dnaTaskProgress || {}).sabotage_military >= 1; } },
+        { id: 'assassinate_noble', name: 'Assassinate a Noble', desc: 'Have a noble of the target kingdom assassinated.', check: function() { return (player._dnaTaskProgress || {}).assassinate_noble >= 1; } },
+        { id: 'steal_treasury', name: 'Steal from the Treasury', desc: 'Steal at least 1000g worth of goods/gold from the kingdom.', check: function() { return (player._dnaTaskProgress || {}).steal_treasury >= 1000; } },
+        { id: 'corrupt_two_nobles', name: 'Corrupt Two Nobles', desc: 'Have 2+ nobles in your pocket (blackmailed, indebted, or relationship 80+).', check: function() { return (player._dnaTaskProgress || {}).corrupt_two_nobles >= 2; } },
+        { id: 'ban_key_goods', name: 'Get Key Goods Banned', desc: 'Influence the king to ban a good important to the economy.', check: function() { return (player._dnaTaskProgress || {}).ban_key_goods >= 1; } },
+        { id: 'weaken_army', name: 'Weaken the Army', desc: 'Reduce kingdom military strength through sabotage or assassination of military leaders.', check: function() { return (player._dnaTaskProgress || {}).weaken_army >= 1; } },
+        { id: 'spread_rumors_king', name: 'Undermine the King\'s Authority', desc: 'Spread rumors about the king to reduce kingdom happiness by 10+.', check: function() { return (player._dnaTaskProgress || {}).spread_rumors_king >= 1; } },
+        { id: 'forge_alliance_enemy', name: 'Forge Alliance with Enemy', desc: 'Build relationship 60+ with 2 nobles in the sponsoring kingdom.', check: function() { return (player._dnaTaskProgress || {}).forge_alliance_enemy >= 2; } },
+        { id: 'burn_supplies', name: 'Burn Supply Warehouses', desc: 'Commit arson on 2 buildings in the target kingdom.', check: function() { return (player._dnaTaskProgress || {}).burn_supplies >= 2; } },
+        { id: 'manipulate_votes', name: 'Manipulate Noble Votes', desc: 'Successfully manipulate 3 noble votes.', check: function() { return (player._dnaTaskProgress || {}).manipulate_votes >= 3; } },
+        { id: 'poison_noble', name: 'Poison a Noble', desc: 'Successfully poison a noble of the target kingdom.', check: function() { return (player._dnaTaskProgress || {}).poison_noble >= 1; } },
+        { id: 'destroy_road', name: 'Sabotage Infrastructure', desc: 'Sabotage a road in the target kingdom.', check: function() { return (player._dnaTaskProgress || {}).destroy_road >= 1; } },
+        { id: 'drain_economy', name: 'Drain the Economy', desc: 'Cause the kingdom\'s prosperity to drop by 15+ points.', check: function() { return (player._dnaTaskProgress || {}).drain_economy >= 15; } },
+    ];
+
+    function startDoubleNobleAgent(sponsorKingdomId) {
+        if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('shadow_dealings')) return { success: false, message: 'Requires Shadow Dealings skill.' };
+        if (!hasSkill('kingmaker_skill') && !hasSkill('silver_tongue_dark')) return { success: false, message: 'Also requires Kingmaker or Silver Tongue (Dark).' };
+        if (player.doubleNobleAgent) return { success: false, message: 'Already operating as a double noble agent.' };
+
+        var town = Engine.findTown(player.townId);
+        var kingdom = town ? Engine.findKingdom(town.kingdomId) : null;
+        if (!kingdom) return { success: false, message: 'Not in a kingdom.' };
+
+        var myRank = player.socialRank[kingdom.id] || 0;
+        if (myRank < 4) return { success: false, message: 'You must be at least a Minor Noble to become a double noble agent.' };
+
+        var sponsor = Engine.findKingdom ? Engine.findKingdom(sponsorKingdomId) : null;
+        if (!sponsor) return { success: false, message: 'Sponsoring kingdom not found.' };
+        if (sponsor.id === kingdom.id) return { success: false, message: 'Cannot spy for your own kingdom.' };
+
+        // Sponsor must be hostile or at war with target
+        var isHostile = false;
+        if (sponsor.atWar && sponsor.atWar.has && sponsor.atWar.has(kingdom.id)) isHostile = true;
+        if (!isHostile && sponsor.atWar && sponsor.atWar.size > 0) {
+            // Check if they share an enemy
+            if (kingdom.atWar && kingdom.atWar.has) {
+                sponsor.atWar.forEach(function(wk) { if (kingdom.atWar.has(wk)) isHostile = true; });
+            }
+        }
+        // Also allow if kingdom relations are poor
+        if (!isHostile) {
+            var diplomatic = (sponsor.diplomaticRelations || {})[kingdom.id] || 0;
+            if (diplomatic < -30) isHostile = true;
+        }
+        if (!isHostile) return { success: false, message: sponsor.name + ' has no interest in undermining ' + kingdom.name + '. They must be at war, share an enemy, or have poor relations.' };
+
+        var rng = Engine.getRng();
+        // Initial contact — can be caught as a traitor
+        var detection = calculateCorruptDetection(0.20, town);
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.scheme || 4);
+
+        if (rng && rng.chance(detection)) {
+            applyCorruptPenalty(town, kingdom, 3000, 40, 15, true);
+            recordCorruptAction('double_noble_agent', true);
+            player.notoriety += 30;
+            return { success: false, caught: true, message: '🚨 TREASON! Caught contacting ' + sponsor.name + '! Fined 3000g, jailed 15 days, EXILED, reputation destroyed!' };
+        }
+
+        // Select 5 random tasks from the pool
+        var shuffled = rng.shuffle(DOUBLE_NOBLE_TASK_POOL.slice());
+        var selectedTasks = [];
+        for (var ti = 0; ti < Math.min(5, shuffled.length); ti++) {
+            selectedTasks.push({ id: shuffled[ti].id, name: shuffled[ti].name, desc: shuffled[ti].desc, completed: false });
+        }
+
+        // Calculate difficulty for gold reward later
+        var difficulty = 0;
+        for (var di = 0; di < selectedTasks.length; di++) {
+            var t = selectedTasks[di];
+            if (t.id === 'assassinate_noble' || t.id === 'steal_treasury' || t.id === 'drain_economy') difficulty += 3;
+            else if (t.id === 'incite_unrest' || t.id === 'poison_noble' || t.id === 'weaken_army') difficulty += 2;
+            else difficulty += 1;
+        }
+
+        player.doubleNobleAgent = {
+            targetKingdomId: kingdom.id,
+            sponsorKingdomId: sponsorKingdomId,
+            tasks: selectedTasks,
+            startDay: Engine.getDay(),
+            completed: 0,
+            difficulty: difficulty,
+            _initialProsperity: kingdom.prosperity || 50
+        };
+        player._dnaTaskProgress = {};
+        recordCorruptAction('double_noble_agent', false);
+        grantXP(30, 'Became double noble agent');
+        player.notoriety += 10;
+        Engine.logEvent('🕵️ ' + player.fullName + ' has begun a dangerous double life as a noble agent for ' + sponsor.name + '.');
+
+        var taskList = '';
+        for (var tli = 0; tli < selectedTasks.length; tli++) {
+            taskList += '\n  ' + (tli + 1) + '. ' + selectedTasks[tli].name + ' — ' + selectedTasks[tli].desc;
+        }
+        return { success: true, message: '🕵️ You are now a double noble agent for ' + sponsor.name + '! Complete these 5 tasks to destabilize ' + kingdom.name + ':' + taskList };
+    }
+
+    function checkDoubleNobleAgentProgress() {
+        if (!player.doubleNobleAgent) return null;
+        var dna = player.doubleNobleAgent;
+        var anyCompleted = false;
+        for (var ti = 0; ti < dna.tasks.length; ti++) {
+            if (dna.tasks[ti].completed) continue;
+            var poolTask = null;
+            for (var pi = 0; pi < DOUBLE_NOBLE_TASK_POOL.length; pi++) {
+                if (DOUBLE_NOBLE_TASK_POOL[pi].id === dna.tasks[ti].id) { poolTask = DOUBLE_NOBLE_TASK_POOL[pi]; break; }
+            }
+            if (poolTask && poolTask.check()) {
+                dna.tasks[ti].completed = true;
+                dna.completed++;
+                anyCompleted = true;
+                Engine.logEvent('🕵️ Double agent task completed: ' + dna.tasks[ti].name + ' (' + dna.completed + '/5)');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🕵️ Task complete: ' + dna.tasks[ti].name + ' (' + dna.completed + '/5)', 'success', 'schemes');
+            }
+        }
+
+        // Track prosperity drain
+        if (player._dnaTaskProgress) {
+            var kingdom = Engine.findKingdom(dna.targetKingdomId);
+            if (kingdom) {
+                var prosLoss = (dna._initialProsperity || 50) - (kingdom.prosperity || 50);
+                if (prosLoss > 0) player._dnaTaskProgress.drain_economy = Math.max(player._dnaTaskProgress.drain_economy || 0, prosLoss);
+            }
+        }
+
+        // All 5 completed? Trigger completion
+        if (dna.completed >= 5) {
+            return completeDoubleNobleAgent();
+        }
+        return anyCompleted ? { tasksRemaining: 5 - dna.completed } : null;
+    }
+
+    function completeDoubleNobleAgent() {
+        var dna = player.doubleNobleAgent;
+        if (!dna) return null;
+
+        var targetKingdom = Engine.findKingdom(dna.targetKingdomId);
+        var sponsor = Engine.findKingdom(dna.sponsorKingdomId);
+        if (!targetKingdom || !sponsor) {
+            player.doubleNobleAgent = null;
+            player._dnaTaskProgress = null;
+            return { success: false, message: 'One of the kingdoms no longer exists. Mission void.' };
+        }
+
+        var rng = Engine.getRng();
+
+        // Calculate reward based on difficulty and sponsor's resources
+        var baseGold = 5000 + (dna.difficulty || 10) * 1000;
+        var maxGold = Math.min(20000, Math.floor((sponsor.gold || 10000) * 0.15));
+        var reward = Math.max(5000, Math.min(maxGold, baseGold));
+        // King personality affects payment
+        var sponsorKing = null;
+        var sTowns = Engine.getWorld ? Engine.getWorld().towns.filter(function(t) { return t.kingdomId === sponsor.id; }) : [];
+        for (var sti = 0; sti < sTowns.length && !sponsorKing; sti++) {
+            var sp = Engine.getPeople(sTowns[sti].id);
+            if (sp) for (var spi = 0; spi < sp.length; spi++) { if (sp[spi].isKing) { sponsorKing = sp[spi]; break; } }
+        }
+        if (sponsorKing && sponsorKing.personality) {
+            if (sponsorKing.personality.generosity > 0.6) reward = Math.floor(reward * 1.25);
+            if (sponsorKing.personality.greed > 0.6) reward = Math.floor(reward * 0.80);
+        }
+
+        // Demote in target kingdom to citizen
+        player.socialRank[dna.targetKingdomId] = 1; // citizen
+        if (player.lordTownId) {
+            var lordTown = Engine.findTown(player.lordTownId);
+            if (lordTown && lordTown.kingdomId === dna.targetKingdomId) player.lordTownId = null;
+        }
+
+        // Promote to Minor Noble in sponsor kingdom
+        player.socialRank[dna.sponsorKingdomId] = Math.max(player.socialRank[dna.sponsorKingdomId] || 0, 4);
+
+        // Relationship changes
+        player.reputation[dna.sponsorKingdomId] = Math.min(100, (player.reputation[dna.sponsorKingdomId] || 50) + 20);
+        player.reputation[dna.targetKingdomId] = Math.max(0, (player.reputation[dna.targetKingdomId] || 50) - 10);
+
+        // King relationship with sponsor
+        if (sponsorKing) modifyRelationship(sponsorKing.id, 40);
+
+        // Pay reward
+        sponsor.gold = (sponsor.gold || 0) - reward;
+        player.gold += reward;
+        if (player.stats) player.stats.totalGoldEarned = (player.stats.totalGoldEarned || 0) + reward;
+
+        // Travel ban from target kingdom for 90 days
+        player._kingdomTravelBan = player._kingdomTravelBan || {};
+        player._kingdomTravelBan[dna.targetKingdomId] = Engine.getDay() + 90;
+
+        // Transport to sponsor's capital
+        var capitalTown = null;
+        for (var ct = 0; ct < sTowns.length; ct++) {
+            if (sTowns[ct].isCapital) { capitalTown = sTowns[ct]; break; }
+        }
+        if (!capitalTown && sTowns.length > 0) capitalTown = sTowns[0];
+        if (capitalTown) {
+            player.townId = capitalTown.id;
+            player.traveling = false;
+        }
+
+        // Achievement
+        unlockAchievement('double_noble_agent');
+
+        var msg = '🎭 MISSION COMPLETE!\n\n' +
+            'You have successfully destabilized ' + targetKingdom.name + ' from within!\n\n' +
+            '• Transported to ' + (capitalTown ? capitalTown.name : 'sponsor capital') + '\n' +
+            '• Received ' + reward + 'g from ' + sponsor.name + '\n' +
+            '• Promoted to Minor Noble of ' + sponsor.name + '\n' +
+            '• +20 ' + sponsor.name + ' reputation, +40 relationship with ' + (sponsorKing ? sponsorKing.firstName : 'their king') + '\n' +
+            '• Demoted to Citizen in ' + targetKingdom.name + '\n' +
+            '• -10 ' + targetKingdom.name + ' reputation\n' +
+            '• Banned from ' + targetKingdom.name + ' for 90 days';
+
+        Engine.logEvent('🎭 ' + player.fullName + ' revealed as a double agent! Fled to ' + sponsor.name + ' with ' + reward + 'g reward.');
+
+        player.doubleNobleAgent = null;
+        player._dnaTaskProgress = null;
+        grantXP(100, 'Completed double noble agent mission');
+
+        return { success: true, message: msg, reward: reward };
+    }
+
+    function abandonDoubleNobleAgent() {
+        if (!player.doubleNobleAgent) return { success: false, message: 'Not operating as a double noble agent.' };
+        var dna = player.doubleNobleAgent;
+        var sponsor = Engine.findKingdom(dna.sponsorKingdomId);
+        player.doubleNobleAgent = null;
+        player._dnaTaskProgress = null;
+        // Sponsor loses trust
+        if (sponsor) {
+            player.reputation[sponsor.id] = Math.max(0, (player.reputation[sponsor.id] || 50) - 15);
+        }
+        player.notoriety -= 5;
+        return { success: true, message: 'Mission abandoned. ' + (sponsor ? sponsor.name : 'The sponsoring kingdom') + ' is disappointed (-15 rep).' };
+    }
+
     function executeCorruptAction(actionId, params) {
         // Cooldown check
         player.schemeCooldowns = player.schemeCooldowns || {};
@@ -32159,6 +33023,13 @@
             case 'incite_revolt': result = inciteRevolt(params[0]); break;
             case 'double_agent': result = activateDoubleAgent(params[0]); break;
             case 'protection_racket': result = startProtectionRacket(params[0]); break;
+            case 'pit_nobles': result = pitNoblesAgainstEachOther(params[0], params[1]); break;
+            case 'turn_noble_against_king': result = turnNobleAgainstKing(params[0]); break;
+            case 'discredit_noble': result = discreditNoble(params[0]); break;
+            case 'manipulate_vote': result = manipulateNobleVote(params[0], params[1]); break;
+            case 'expose_secrets': result = exposeNobleSecrets(params[0]); break;
+            case 'double_noble_agent': result = startDoubleNobleAgent(params[0]); break;
+            case 'abandon_double_noble': result = abandonDoubleNobleAgent(); break;
             case 'lay_low': result = layLow(); break;
             case 'cleanse_identity': result = cleanseIdentity(); break;
             default: return { success: false, message: 'Unknown action.' };
@@ -32174,7 +33045,9 @@
             assassinate_passenger: 60, poison: 20, hidden_warehouse: 90, cook_books: 90, insider_trading: 30,
             spy_network: 90, smuggling_route: 120, forge_documents: 30, sabotage_caravan: 30,
             plant_evidence: 30, incite_revolt: 120, double_agent: 180, protection_racket: 60,
-            lay_low: 60, cleanse_identity: 30
+            lay_low: 60, cleanse_identity: 30,
+            pit_nobles: 20, turn_noble_against_king: 30, discredit_noble: 30,
+            manipulate_vote: 15, expose_secrets: 45, double_noble_agent: 365, abandon_double_noble: 90
         };
         var baseCd = SCHEME_COOLDOWNS[actionId] || 10;
         // Getting caught doubles cooldown; escalation from prior catches
@@ -35527,69 +36400,16 @@
      * Deposit goods from player inventory into outpost storage.
      */
     function depositToOutpostStorage(townId, resId, qty) {
-        qty = Number(qty);
-        if (!isFinite(qty) || qty <= 0) return { success: false, message: 'Invalid quantity.' };
-        if (resId === 'horses') return { success: false, message: 'Horses cannot be stored. Use the stable or sell them.' };
-        var town = Engine.findTown(townId);
-        if (!town || !town.isOutpost) return { success: false, message: 'Not a valid outpost.' };
-        // Must be at this outpost
-        if (player.townId !== townId) return { success: false, message: 'You must be at this outpost.' };
-        var have = (player.inventory && player.inventory[resId]) || 0;
-        if (have < qty) return { success: false, message: 'Not enough ' + resId + ' in inventory.' };
-        if (!town.outpostStorageItems) town.outpostStorageItems = {};
-        // Calculate current storage weight
-        var currentWeight = 0;
-        for (var k in town.outpostStorageItems) {
-            currentWeight += (town.outpostStorageItems[k] || 0);
-        }
-        var maxStorage = town.outpostStorage || 200;
-        if (currentWeight + qty > maxStorage) {
-            var canFit = maxStorage - currentWeight;
-            if (canFit <= 0) return { success: false, message: 'Outpost storage is full (' + currentWeight + '/' + maxStorage + ').' };
-            return { success: false, message: 'Only room for ' + canFit + ' more units (' + currentWeight + '/' + maxStorage + ').' };
-        }
-        player.inventory[resId] -= qty;
-        town.outpostStorageItems[resId] = (town.outpostStorageItems[resId] || 0) + qty;
-        var rName = resId;
-        try { var _r = findResource(resId); if (_r) rName = _r.name; } catch(e) {}
-        return { success: true, message: 'Stored ' + qty + ' ' + rName + ' in outpost storage.' };
+        // Unified: outpost storage IS town storage
+        return depositToStorage(resId, qty);
     }
 
     /**
      * Withdraw goods from outpost storage into player inventory.
      */
     function withdrawFromOutpostStorage(townId, resId, qty) {
-        qty = Number(qty);
-        if (!isFinite(qty) || qty <= 0) return { success: false, message: 'Invalid quantity.' };
-        var town = Engine.findTown(townId);
-        if (!town || !town.isOutpost) return { success: false, message: 'Not a valid outpost.' };
-        if (player.townId !== townId) return { success: false, message: 'You must be at this outpost.' };
-        if (!town.outpostStorageItems) town.outpostStorageItems = {};
-        var stored = town.outpostStorageItems[resId] || 0;
-        if (stored < qty) return { success: false, message: 'Only ' + stored + ' in storage.' };
-        // Check carry capacity (horses use slot system instead)
-        if (resId === 'horses') {
-            var _totalH = (player.inventory.horses || 0) + (player.horses || []).length;
-            var _maxH = (CONFIG.MAX_HORSES || 2) + (hasSkill('horse_mastery') ? 2 : 0);
-            if (_totalH + qty > _maxH) {
-                return { success: false, message: 'You can only have ' + _maxH + ' horses total. You have ' + _totalH + '.' };
-            }
-        } else {
-            var carried = getCarriedWeight();
-            var maxCarry = getCarryCapacity();
-            if (carried + qty > maxCarry) {
-                var canCarry = maxCarry - carried;
-                if (canCarry <= 0) return { success: false, message: 'You cannot carry any more.' };
-                return { success: false, message: 'You can only carry ' + canCarry + ' more units.' };
-            }
-        }
-        town.outpostStorageItems[resId] -= qty;
-        if (town.outpostStorageItems[resId] <= 0) delete town.outpostStorageItems[resId];
-        if (!player.inventory) player.inventory = {};
-        player.inventory[resId] = (player.inventory[resId] || 0) + qty;
-        var rName = resId;
-        try { var _r = findResource(resId); if (_r) rName = _r.name; } catch(e) {}
-        return { success: true, message: 'Withdrew ' + qty + ' ' + rName + ' from outpost storage.' };
+        // Unified: outpost storage IS town storage
+        return withdrawFromStorage(resId, qty);
     }
 
     function getRetailBuildings() {
@@ -44122,6 +44942,7 @@
         getForeignNoblePrivilegeLevel,
         getCrimePunishment,
         applyCorruptPenalty,
+        hasMilitaryExemption,
         handleForeignNobleCrime,
         getWarTradeDetectionChance,
         sellToKingdom,
@@ -44380,6 +45201,14 @@
         startProtectionRacket,
         layLow,
         cleanseIdentity,
+        pitNoblesAgainstEachOther,
+        turnNobleAgainstKing,
+        discreditNoble,
+        manipulateNobleVote,
+        exposeNobleSecrets,
+        startDoubleNobleAgent,
+        checkDoubleNobleAgentProgress,
+        abandonDoubleNobleAgent,
 
         // AI Merchants access (unified — returns elite merchants from engine)
         getAIMerchants() {

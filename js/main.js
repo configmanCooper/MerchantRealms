@@ -1962,10 +1962,8 @@ window.Game = (function () {
                 UI.toast('⚠️ ' + newErrors + ' error(s) detected in the last 30 days. Check notifications for details.', 'warning', 'critical');
                 // Log the error summary to event log
                 if (typeof Engine !== 'undefined' && Engine.logEvent) {
-                    Engine.logEvent({
+                    Engine.logEvent('⚠️ ' + newErrors + ' console error(s) detected. Use the debug file download in Save/Load to report issues.', {
                         type: 'error_alert',
-                        icon: '⚠️',
-                        text: newErrors + ' console error(s) detected. Use the debug file download in Save/Load to report issues.',
                         category: 'critical'
                     });
                 }
