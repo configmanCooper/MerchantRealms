@@ -32414,7 +32414,8 @@
     }
 
     function _trackDnaTask(taskId, amount) {
-        if (!player.doubleNobleAgent || !player._dnaTaskProgress) return;
+        if (!player.doubleNobleAgent) return;
+        if (!player._dnaTaskProgress) player._dnaTaskProgress = {};
         player._dnaTaskProgress[taskId] = (player._dnaTaskProgress[taskId] || 0) + (amount || 1);
     }
 
@@ -32924,8 +32925,9 @@
         // King relationship with sponsor
         if (sponsorKing) modifyRelationship(sponsorKing.id, 40);
 
-        // Pay reward
-        sponsor.gold = (sponsor.gold || 0) - reward;
+        // Pay reward - cap at available gold
+        reward = Math.min(reward, Math.max(5000, sponsor.gold || 0));
+        sponsor.gold = Math.max(0, (sponsor.gold || 0) - reward);
         player.gold += reward;
         if (player.stats) player.stats.totalGoldEarned = (player.stats.totalGoldEarned || 0) + reward;
 

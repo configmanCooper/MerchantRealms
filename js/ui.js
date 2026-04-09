@@ -21735,7 +21735,7 @@ window.UI = (function () {
             html += '</select>';
         }
         html += '<button class="btn-trade sell" style="font-size:0.7rem;" '
-            + 'onclick="UI.executeNobleIntrigue(\'' + action.id + '\', ' + idx + ', ' + (needTwo ? 'true' : 'false') + ')">⚡ Execute</button>';
+            + 'onclick="UI.executeNobleIntrigue(\x27' + action.id.replace(/'/g, '') + '\x27, ' + idx + ', ' + (needTwo ? 'true' : 'false') + ')">⚡ Execute</button>';
         html += '</div>';
         // Legend
         html += '<div style="font-size:0.65rem;color:var(--text-muted);margin-top:2px;">🔗=blackmailed 💰=indebted ❤️=ally (60+rel) — leverage boosts success</div>';

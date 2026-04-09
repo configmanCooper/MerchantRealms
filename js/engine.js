@@ -30559,7 +30559,8 @@
                     if ((playerInv[bg] || 0) >= 3) {
                         // Military exemption: skip military/horse goods for war allies and nobles
                         if (_playerMilExempt) {
-                            var _bgRes = findResource(bg);
+                            var _bgKey = bg.toUpperCase();
+                            var _bgRes = (typeof RESOURCE_TYPES !== 'undefined' && RESOURCE_TYPES[_bgKey]) ? RESOURCE_TYPES[_bgKey] : null;
                             if (_bgRes && (_bgRes.category === 'military' || bg === 'horses' || bg === 'saddles')) continue;
                         }
                         caughtItem = bg;
