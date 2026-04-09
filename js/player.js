@@ -17897,8 +17897,17 @@
         player.kingdomDebts = data.kingdomDebts || {};
         player.warTradeLedger = data.warTradeLedger || [];
         player.kingdomSalesLedger = data.kingdomSalesLedger || [];
-        // Outposts
-        player.outposts = data.outposts || [];
+        // Outposts — migrate single-object format from old saves to array
+        var _rawOutposts = data.outposts || [];
+        if (_rawOutposts && !Array.isArray(_rawOutposts)) {
+            // Old save had a single outpost object instead of array
+            if (_rawOutposts.townId) {
+                _rawOutposts = [_rawOutposts];
+            } else {
+                _rawOutposts = [];
+            }
+        }
+        player.outposts = _rawOutposts;
         // Conscription
         player.conscriptionPending = data.conscriptionPending || null;
         player.jailFastForwardAvailable = data.jailFastForwardAvailable || false;
@@ -17935,6 +17944,46 @@
         }
         // Clear stale localStorage filter overrides — save file is source of truth
         try { localStorage.removeItem('mr_notifFilters'); } catch(e) {}
+
+        // ── Migration: fix orphaned player location ──
+        // If player is not traveling, has no townId, and has no world position,
+        // try to place them at their most recently founded outpost or fallback to nearest town.
+        if (!player.townId && !player.traveling && player.worldX == null && player.worldY == null) {
+            var _placed = false;
+            // Check outposts first
+            if (player.outposts && player.outposts.length > 0) {
+                for (var _oi = player.outposts.length - 1; _oi >= 0; _oi--) {
+                    var _opTown = Engine.findTown ? Engine.findTown(player.outposts[_oi].townId) : null;
+                    if (_opTown) {
+                        player.townId = _opTown.id;
+                        _placed = true;
+                        break;
+                    }
+                }
+            }
+            // Fallback: any town
+            if (!_placed && typeof Engine !== 'undefined' && Engine.getTowns) {
+                var _allTowns = Engine.getTowns();
+                if (_allTowns && _allTowns.length > 0) {
+                    player.townId = _allTowns[0].id;
+                }
+            }
+        }
+
+        // ── Migration: ensure outpost land ownership ──
+        // Old saves may not have landOwned for outpost towns
+        if (player.outposts && player.outposts.length > 0 && typeof Engine !== 'undefined') {
+            if (!player.landOwned) player.landOwned = {};
+            for (var _oli = 0; _oli < player.outposts.length; _oli++) {
+                var _olTown = Engine.findTown ? Engine.findTown(player.outposts[_oli].townId) : null;
+                if (_olTown && _olTown.isOutpost) {
+                    var _olPlots = _olTown.landPlots || (CONFIG.OUTPOST_CONFIG && CONFIG.OUTPOST_CONFIG.startingLandPlots) || 4;
+                    if (!player.landOwned[_olTown.id] || player.landOwned[_olTown.id] < _olPlots) {
+                        player.landOwned[_olTown.id] = _olPlots;
+                    }
+                }
+            }
+        }
     }
 
     function serializeAIMerchants() {
@@ -32855,6 +32904,10 @@
                 name: result.outpost.name,
                 foundedDay: Engine.getDay(),
             });
+            // Player owns all land in the outpost
+            if (!player.landOwned) player.landOwned = {};
+            var opPlots = result.outpost.landPlots || (CONFIG.OUTPOST_CONFIG && CONFIG.OUTPOST_CONFIG.startingLandPlots) || 4;
+            player.landOwned[result.outpost.id] = opPlots;
         }
 
         return result;
@@ -32930,6 +32983,7 @@
                 landPlots: town.landPlots || 4,
                 usedLandPlots: town.usedLandPlots || 0,
                 outpostStorage: town.outpostStorage || 200,
+                outpostStorageItems: town.outpostStorageItems || {},
                 outpostHousing: town.outpostHousing || [],
                 outpostUpgrades: town.outpostUpgrades || [],
                 outpostHappiness: town.outpostHappiness || 50,
@@ -33287,6 +33341,9 @@
         }
         town.landPlots = (town.landPlots || 4) + 1;
         town.maxBuildingSlots = town.landPlots;
+        // Sync player land ownership
+        if (!player.landOwned) player.landOwned = {};
+        player.landOwned[townId] = town.landPlots;
         return { success: true, message: '📐 Purchased land plot! (' + town.landPlots + '/' + maxPlots + ')' };
     }
 
@@ -33594,6 +33651,66 @@
             availableSpace: totalCap - (town.outpostResidents || []).length,
             playerCanRest: totalCap > (town.outpostResidents || []).length,
         };
+    }
+
+    /**
+     * Deposit goods from player inventory into outpost storage.
+     */
+    function depositToOutpostStorage(townId, resId, qty) {
+        qty = Number(qty);
+        if (!isFinite(qty) || qty <= 0) return { success: false, message: 'Invalid quantity.' };
+        var town = Engine.findTown(townId);
+        if (!town || !town.isOutpost) return { success: false, message: 'Not a valid outpost.' };
+        // Must be at this outpost
+        if (player.townId !== townId) return { success: false, message: 'You must be at this outpost.' };
+        var have = (player.inventory && player.inventory[resId]) || 0;
+        if (have < qty) return { success: false, message: 'Not enough ' + resId + ' in inventory.' };
+        if (!town.outpostStorageItems) town.outpostStorageItems = {};
+        // Calculate current storage weight
+        var currentWeight = 0;
+        for (var k in town.outpostStorageItems) {
+            currentWeight += (town.outpostStorageItems[k] || 0);
+        }
+        var maxStorage = town.outpostStorage || 200;
+        if (currentWeight + qty > maxStorage) {
+            var canFit = maxStorage - currentWeight;
+            if (canFit <= 0) return { success: false, message: 'Outpost storage is full (' + currentWeight + '/' + maxStorage + ').' };
+            return { success: false, message: 'Only room for ' + canFit + ' more units (' + currentWeight + '/' + maxStorage + ').' };
+        }
+        player.inventory[resId] -= qty;
+        town.outpostStorageItems[resId] = (town.outpostStorageItems[resId] || 0) + qty;
+        var rName = resId;
+        try { var _r = findResource(resId); if (_r) rName = _r.name; } catch(e) {}
+        return { success: true, message: 'Stored ' + qty + ' ' + rName + ' in outpost storage.' };
+    }
+
+    /**
+     * Withdraw goods from outpost storage into player inventory.
+     */
+    function withdrawFromOutpostStorage(townId, resId, qty) {
+        qty = Number(qty);
+        if (!isFinite(qty) || qty <= 0) return { success: false, message: 'Invalid quantity.' };
+        var town = Engine.findTown(townId);
+        if (!town || !town.isOutpost) return { success: false, message: 'Not a valid outpost.' };
+        if (player.townId !== townId) return { success: false, message: 'You must be at this outpost.' };
+        if (!town.outpostStorageItems) town.outpostStorageItems = {};
+        var stored = town.outpostStorageItems[resId] || 0;
+        if (stored < qty) return { success: false, message: 'Only ' + stored + ' in storage.' };
+        // Check carry capacity
+        var carried = getCarriedWeight();
+        var maxCarry = getCarryCapacity();
+        if (carried + qty > maxCarry) {
+            var canCarry = maxCarry - carried;
+            if (canCarry <= 0) return { success: false, message: 'You cannot carry any more.' };
+            return { success: false, message: 'You can only carry ' + canCarry + ' more units.' };
+        }
+        town.outpostStorageItems[resId] -= qty;
+        if (town.outpostStorageItems[resId] <= 0) delete town.outpostStorageItems[resId];
+        if (!player.inventory) player.inventory = {};
+        player.inventory[resId] = (player.inventory[resId] || 0) + qty;
+        var rName = resId;
+        try { var _r = findResource(resId); if (_r) rName = _r.name; } catch(e) {}
+        return { success: true, message: 'Withdrew ' + qty + ' ' + rName + ' from outpost storage.' };
     }
 
     function getRetailBuildings() {
@@ -41872,6 +41989,8 @@
         getOutpostRecruitChance,
         petitionOutpostToVillage,
         getOutpostHousingInfo,
+        depositToOutpostStorage,
+        withdrawFromOutpostStorage,
 
         // Conscription
         respondToConscription,

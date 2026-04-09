@@ -7482,13 +7482,39 @@ window.UI = (function () {
 
     function openCaravanDialog() {
         if (typeof Player === 'undefined' || Player.townId == null) {
-            // If traveling, show caravan management instead of send dialog
+            // If traveling or no location, show caravan management instead of send dialog
             if (Player.traveling || Player.travelOffSea) {
                 openCaravanManagement();
                 return;
             }
-            toast('You must be in a town to send caravans.', 'warning', 'my_business');
+            // No townId and not traveling — show management if player has caravans
+            openCaravanManagement();
             return;
+        }
+
+        // Check if current location has any road connections — if not, show management
+        var _curTown = Engine.findTown(Player.townId);
+        if (_curTown && _curTown.isOutpost) {
+            var _hasConnection = false;
+            var _allRoads = Engine.getRoads ? Engine.getRoads() : [];
+            for (var _ri = 0; _ri < _allRoads.length; _ri++) {
+                if (_allRoads[_ri].fromTownId === Player.townId || _allRoads[_ri].toTownId === Player.townId) {
+                    _hasConnection = true; break;
+                }
+            }
+            if (!_hasConnection) {
+                var _allSea = Engine.getSeaRoutes ? Engine.getSeaRoutes() : [];
+                for (var _si = 0; _si < _allSea.length; _si++) {
+                    if (_allSea[_si].fromTownId === Player.townId || _allSea[_si].toTownId === Player.townId) {
+                        _hasConnection = true; break;
+                    }
+                }
+            }
+            if (!_hasConnection) {
+                // Outpost with no roads/sea routes — show caravan management
+                openCaravanManagement();
+                return;
+            }
         }
 
         _caravanOrders = [];
@@ -15565,6 +15591,66 @@ window.UI = (function () {
         if (depNames.length > 0) body += '<div style="font-size:11px;color:#888">⛏️ Deposits: ' + depNames.join(', ') + '</div>';
         body += '</div>';
 
+        // === STORAGE ===
+        body += '<div style="background:rgba(40,40,40,0.6);padding:10px;border-radius:6px;margin-bottom:8px">';
+        var storageItems = op.outpostStorageItems || {};
+        var currentWeight = 0;
+        for (var sk in storageItems) currentWeight += (storageItems[sk] || 0);
+        var maxStorage = op.outpostStorage || 200;
+        body += '<h5 style="margin:0 0 6px;color:#ccc">📦 Storage (' + currentWeight + '/' + maxStorage + ')</h5>';
+        // Show stored items
+        var storedKeys = Object.keys(storageItems).filter(function(k) { return storageItems[k] > 0; });
+        if (storedKeys.length > 0) {
+            body += '<div style="max-height:100px;overflow-y:auto;margin-bottom:6px">';
+            for (var sti = 0; sti < storedKeys.length; sti++) {
+                var _sResId = storedKeys[sti];
+                var _sQty = storageItems[_sResId];
+                var _sRes = findResource(_sResId);
+                var _sName = _sRes ? _sRes.name : _sResId;
+                var _sIcon = _sRes ? (_sRes.icon || '') : '';
+                body += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-size:11px;flex-wrap:wrap">';
+                body += '<span style="min-width:120px">' + _sIcon + ' ' + _sName + ': <strong>' + _sQty + '</strong></span>';
+                if (Player.townId === townId) {
+                    body += '<button onclick="UI._opOutpostWithdraw(\'' + townId + '\',\'' + _sResId + '\',1)" style="padding:1px 6px;font-size:10px;cursor:pointer">-1</button>';
+                    body += '<button onclick="UI._opOutpostWithdraw(\'' + townId + '\',\'' + _sResId + '\',10)" style="padding:1px 6px;font-size:10px;cursor:pointer">-10</button>';
+                    body += '<button onclick="UI._opOutpostWithdraw(\'' + townId + '\',\'' + _sResId + '\',' + _sQty + ')" style="padding:1px 6px;font-size:10px;cursor:pointer">All</button>';
+                }
+                body += '</div>';
+            }
+            body += '</div>';
+        } else {
+            body += '<div style="font-size:11px;color:#666;margin-bottom:4px">Storage is empty.</div>';
+        }
+        // Deposit from inventory
+        if (Player.townId === townId) {
+            var invKeys = [];
+            var pInv = Player.inventory || {};
+            for (var ik in pInv) { if (pInv[ik] > 0) invKeys.push(ik); }
+            if (invKeys.length > 0 && currentWeight < maxStorage) {
+                body += '<div style="margin-top:4px;font-size:11px;color:#ccc"><strong>Deposit from inventory:</strong></div>';
+                body += '<div style="max-height:100px;overflow-y:auto">';
+                for (var di = 0; di < invKeys.length; di++) {
+                    var _dResId = invKeys[di];
+                    var _dQty = pInv[_dResId];
+                    var _dRes = findResource(_dResId);
+                    var _dName = _dRes ? _dRes.name : _dResId;
+                    var _dIcon = _dRes ? (_dRes.icon || '') : '';
+                    body += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-size:11px;flex-wrap:wrap">';
+                    body += '<span style="min-width:120px">' + _dIcon + ' ' + _dName + ' (' + _dQty + ')</span>';
+                    body += '<button onclick="UI._opOutpostDeposit(\'' + townId + '\',\'' + _dResId + '\',1)" style="padding:1px 6px;font-size:10px;cursor:pointer">+1</button>';
+                    body += '<button onclick="UI._opOutpostDeposit(\'' + townId + '\',\'' + _dResId + '\',10)" style="padding:1px 6px;font-size:10px;cursor:pointer">+10</button>';
+                    body += '<button onclick="UI._opOutpostDeposit(\'' + townId + '\',\'' + _dResId + '\',' + Math.min(_dQty, maxStorage - currentWeight) + ')" style="padding:1px 6px;font-size:10px;cursor:pointer">Max</button>';
+                    body += '</div>';
+                }
+                body += '</div>';
+            } else if (currentWeight >= maxStorage) {
+                body += '<div style="font-size:11px;color:#c44e52;margin-top:4px">⚠️ Storage is full!</div>';
+            }
+        } else {
+            body += '<div style="font-size:11px;color:#888;margin-top:4px">Travel to this outpost to deposit/withdraw.</div>';
+        }
+        body += '</div>';
+
         // === LAND PLOTS ===
         body += '<div style="background:rgba(40,40,40,0.6);padding:10px;border-radius:6px;margin-bottom:8px">';
         body += '<h5 style="margin:0 0 6px;color:#ccc">📐 Land (' + (op.usedLandPlots || 0) + '/' + (op.landPlots || 4) + ' used, max ' + (cfg.maxLandPlots || 10) + ')</h5>';
@@ -15846,6 +15932,16 @@ window.UI = (function () {
         toast(result.message, result.success ? 'success' : 'error');
         if (result.success) openOutpostDialog();
         else openOutpostDetail(townId);
+    }
+    function _opOutpostDeposit(townId, resId, qty) {
+        var result = Player.depositToOutpostStorage(townId, resId, qty);
+        toast(result.message, result.success ? 'success' : 'error');
+        openOutpostDetail(townId);
+    }
+    function _opOutpostWithdraw(townId, resId, qty) {
+        var result = Player.withdrawFromOutpostStorage(townId, resId, qty);
+        toast(result.message, result.success ? 'success' : 'error');
+        openOutpostDetail(townId);
     }
 
     /**
@@ -27170,6 +27266,8 @@ window.UI = (function () {
         _opBuildHousing,
         _opBuildUpgrade,
         _opPetitionVillage,
+        _opOutpostDeposit,
+        _opOutpostWithdraw,
         _foundOutpostAtLocation,
         openRecruitToOutpostDialog,
         _doRecruitNpc,
