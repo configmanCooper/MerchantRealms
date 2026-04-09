@@ -32789,12 +32789,36 @@
                 oy = town ? town.y + 30 : 100;
             }
         } else {
-            // Use current town position offset
-            var curTown = Engine.findTown(player.townId);
-            if (!curTown) return { success: false, message: 'Cannot determine location for outpost.' };
-            var rng = Engine.getRng();
-            ox = curTown.x + (rng ? rng.randInt(-60, 60) : 30);
-            oy = curTown.y + (rng ? rng.randInt(-60, 60) : 30);
+            // Use current town position offset, or wilderness coords if not at a town
+            if (player.worldX != null && player.worldY != null) {
+                // Player is in the wilderness — use their exact coordinates
+                ox = player.worldX;
+                oy = player.worldY;
+            } else {
+                var curTown = Engine.findTown(player.townId);
+                if (!curTown) return { success: false, message: 'Cannot determine location for outpost.' };
+                var rng = Engine.getRng();
+                // Try up to 10 random offsets to find buildable terrain
+                var _foundSpot = false;
+                for (var _try = 0; _try < 10; _try++) {
+                    ox = curTown.x + (rng ? rng.randInt(-60, 60) : 30);
+                    oy = curTown.y + (rng ? rng.randInt(-60, 60) : 30);
+                    if (Engine.getTerrainAtPixel) {
+                        var _trTerrain = Engine.getTerrainAtPixel(ox, oy);
+                        if (_trTerrain !== 2 && _trTerrain !== 3) { _foundSpot = true; break; }
+                    } else {
+                        _foundSpot = true; break;
+                    }
+                }
+                if (!_foundSpot) return { success: false, message: 'Could not find suitable terrain near town for outpost.' };
+            }
+        }
+
+        // Validate terrain at chosen location isn't water/mountain
+        if (Engine.getTerrainAtPixel) {
+            var _opTerrain = Engine.getTerrainAtPixel(ox, oy);
+            if (_opTerrain === 2) return { success: false, message: 'Cannot build an outpost on water.' };
+            if (_opTerrain === 3) return { success: false, message: 'Cannot build an outpost on mountains.' };
         }
 
         // Deduct costs
