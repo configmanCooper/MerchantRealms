@@ -33006,6 +33006,9 @@
                 if (town.outpostResidents.length === 0) return { success: false, message: 'No residents to hire. Recruit NPCs first.' };
                 // Find eligible NPC
                 var npc = npcId ? Engine.findPerson(npcId) : null;
+                if (npc && town.outpostResidents.indexOf(npc.id) < 0) {
+                    return { success: false, message: (npc.firstName || 'NPC') + ' is not a resident of this outpost.' };
+                }
                 if (!npc) {
                     // Find first available resident not already hired
                     for (var ri = 0; ri < town.outpostResidents.length; ri++) {
@@ -33041,6 +33044,9 @@
                 if (town.outpostGuards.length >= (cfg.maxOutpostGuards || 4)) return { success: false, message: 'Maximum guards reached (' + (cfg.maxOutpostGuards || 4) + ').' };
                 if (town.outpostResidents.length === 0) return { success: false, message: 'No residents to hire. Recruit NPCs first.' };
                 var guardNpc = npcId ? Engine.findPerson(npcId) : null;
+                if (guardNpc && town.outpostResidents.indexOf(guardNpc.id) < 0) {
+                    return { success: false, message: (guardNpc.firstName || 'NPC') + ' is not a resident of this outpost.' };
+                }
                 if (!guardNpc) {
                     for (var gi = 0; gi < town.outpostResidents.length; gi++) {
                         var gCandidate = Engine.findPerson(town.outpostResidents[gi]);
@@ -33361,8 +33367,8 @@
         // Check cooldown
         if (!player._outpostRecruitCooldowns) player._outpostRecruitCooldowns = {};
         var cooldownKey = npcId + '_' + townId;
-        var lastAsked = player._outpostRecruitCooldowns[cooldownKey] || 0;
-        if (Engine.getDay() - lastAsked < (cfg.recruitCooldownDays || 7)) {
+        var lastAsked = player._outpostRecruitCooldowns[cooldownKey];
+        if (lastAsked && lastAsked > 0 && Engine.getDay() - lastAsked < (cfg.recruitCooldownDays || 7)) {
             var daysLeft = (cfg.recruitCooldownDays || 7) - (Engine.getDay() - lastAsked);
             return { success: false, message: npc.firstName + ' was recently asked. Wait ' + daysLeft + ' more day(s).' };
         }
@@ -33439,9 +33445,10 @@
         var relLevel = rel ? (rel.level || 0) : 0;
         chance += Math.max(0, relLevel) * (cfg.recruitRelationshipScale || 0.002);
 
-        // Social status comparison
-        var playerRank = player.socialRank || 0;
-        var npcRank = npc.socialRank || 0;
+        // Social status comparison (socialRank is { kingdomId → rankIndex })
+        var kId = town.kingdomId;
+        var playerRank = (typeof player.socialRank === 'object' && player.socialRank) ? (player.socialRank[kId] || 0) : (player.socialRank || 0);
+        var npcRank = (typeof npc.socialRank === 'object' && npc.socialRank) ? (npc.socialRank[kId] || 0) : (npc.socialRank || 0);
         var rankDiff = playerRank - npcRank;
         chance += rankDiff * (cfg.recruitStatusScale || 0.02);
 
