@@ -21004,9 +21004,280 @@ window.UI = (function () {
 
         html += '</div></div>';
 
+        // ── ROYAL DIRECTIVES (Kingdom Quests) ──
+        html += _buildRoyalDirectivesSection(citizenKingdomId, day);
+
         // Open modal
         var footerHtml = '<button class="btn-medieval" onclick="closeModal()">Close</button>';
         openModal('👑 Nobility — ' + (rankDef.name || 'Noble'), html, footerHtml);
+    }
+
+    // ── Royal Directives (Kingdom Quests) UI ──
+    var _kqTab = 'available'; // available, active, log
+
+    function _buildRoyalDirectivesSection(kingdomId, day) {
+        var html = '';
+        var kqData = null;
+        try { kqData = Player.getKingdomQuestData(kingdomId); } catch(e) {}
+        if (!kqData) {
+            // Try generating
+            try { Player.generateKingdomQuests(kingdomId); kqData = Player.getKingdomQuestData(kingdomId); } catch(e2) {}
+        }
+        if (!kqData) return '';
+
+        var activeCount = (kqData.active || []).length;
+        var availCount = (kqData.available || []).length + (kqData.personalAssignment ? 1 : 0);
+        var completedCount = (kqData.completed || []).length;
+
+        html += '<div style="background:rgba(44,62,80,0.2);border:1px solid rgba(52,152,219,0.3);border-radius:8px;padding:10px;margin-bottom:10px;">';
+        html += '<h3 style="margin:0 0 8px 0;font-size:0.9rem;color:#5dade2;">📜 Royal Directives</h3>';
+
+        // Tab buttons
+        html += '<div style="display:flex;gap:4px;margin-bottom:8px;">';
+        var tabs = [
+            { id: 'available', label: '📋 Available (' + availCount + ')' },
+            { id: 'active', label: '⚡ Active (' + activeCount + ')' },
+            { id: 'log', label: '📖 Log (' + completedCount + ')' }
+        ];
+        for (var ti = 0; ti < tabs.length; ti++) {
+            var tab = tabs[ti];
+            var isActive = _kqTab === tab.id;
+            html += '<button class="btn-medieval" onclick="UI._switchKQTab(\'' + tab.id + '\',\'' + kingdomId + '\')" style="font-size:0.7rem;padding:4px 10px;' + (isActive ? 'background:rgba(52,152,219,0.25);border-color:rgba(52,152,219,0.5);color:#5dade2;' : '') + '">' + tab.label + '</button>';
+        }
+        html += '</div>';
+
+        // Tab content
+        if (_kqTab === 'available') {
+            html += _buildKQAvailableTab(kqData, kingdomId, day);
+        } else if (_kqTab === 'active') {
+            html += _buildKQActiveTab(kqData, kingdomId, day);
+        } else if (_kqTab === 'log') {
+            html += _buildKQLogTab(kqData, day);
+        }
+
+        html += '</div>';
+        return html;
+    }
+
+    function _buildKQAvailableTab(kqData, kingdomId, day) {
+        var html = '';
+
+        // Personal assignment first
+        if (kqData.personalAssignment) {
+            var pa = kqData.personalAssignment;
+            html += '<div style="background:rgba(231,76,60,0.12);border:2px solid rgba(231,76,60,0.4);border-radius:8px;padding:10px;margin-bottom:8px;animation:pulse 2s infinite;">';
+            html += '<div style="font-size:0.82rem;font-weight:bold;color:#e74c3c;">⚠️ Personal Royal Assignment</div>';
+            html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:4px;">The King demands your attention!</div>';
+            html += _buildKQCard(pa, kingdomId, day, true);
+            html += '</div>';
+        }
+
+        // Available quests
+        if ((kqData.available || []).length === 0 && !kqData.personalAssignment) {
+            html += '<div style="font-size:0.78rem;color:#888;font-style:italic;">No royal directives available. Check back later.</div>';
+        }
+        for (var i = 0; i < (kqData.available || []).length; i++) {
+            html += _buildKQCard(kqData.available[i], kingdomId, day, false);
+        }
+        return html;
+    }
+
+    function _buildKQActiveTab(kqData, kingdomId, day) {
+        var html = '';
+        if ((kqData.active || []).length === 0) {
+            html += '<div style="font-size:0.78rem;color:#888;font-style:italic;">No active kingdom quests. Accept some from the Available tab.</div>';
+            return html;
+        }
+        for (var i = 0; i < kqData.active.length; i++) {
+            var q = kqData.active[i];
+            var progress = null;
+            try { progress = Player.checkKingdomQuestProgress(q.id, kingdomId); } catch(e) {}
+            html += _buildKQActiveCard(q, kingdomId, day, progress);
+        }
+        return html;
+    }
+
+    function _buildKQLogTab(kqData, day) {
+        var html = '';
+        var completed = (kqData.completed || []).slice().reverse();
+        if (completed.length === 0) {
+            html += '<div style="font-size:0.78rem;color:#888;font-style:italic;">No completed quests yet.</div>';
+            return html;
+        }
+        for (var i = 0; i < completed.length; i++) {
+            var q = completed[i];
+            var daysAgo = day - (q.completedDay || 0);
+            html += '<div style="background:rgba(0,0,0,0.15);border:1px solid rgba(85,168,104,0.3);border-radius:6px;padding:6px 8px;margin-bottom:4px;">';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+            html += '<span style="font-size:0.75rem;color:#55a868;">✅ ' + escapeHtml(q.title) + '</span>';
+            html += '<span style="font-size:0.65rem;color:#777;">' + daysAgo + 'd ago</span>';
+            html += '</div>';
+            html += '<div style="font-size:0.65rem;color:#888;">' + _kqCatIcon(q.category) + ' ' + (q.category || '') + ' · ' + (q.difficulty || '') + ' · +' + (q.rewards.gold || 0) + 'g +' + (q.rewards.kingdomRep || 0) + ' rep</div>';
+            html += '</div>';
+        }
+        return html;
+    }
+
+    function _buildKQCard(quest, kingdomId, day, isPersonal) {
+        var html = '';
+        var daysLeft = Math.max(0, (quest.expiresDay || 0) - day);
+        var diffColors = { easy: '#55a868', medium: '#ccb974', hard: '#e67e22', elite: '#e74c3c' };
+        var urgColors = { low: '#55a868', normal: '#ccb974', high: '#e67e22', critical: '#e74c3c' };
+        var diffBars = { easy: '■□□□', medium: '■■□□', hard: '■■■□', elite: '■■■■' };
+
+        html += '<div style="background:rgba(0,0,0,0.15);border:1px solid rgba(201,168,76,0.2);border-radius:6px;padding:8px;margin-bottom:6px;">';
+
+        // Title row
+        html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;">';
+        html += '<div style="font-size:0.82rem;font-weight:bold;color:#f0e0c0;">' + _kqCatIcon(quest.category) + ' ' + escapeHtml(quest.title) + '</div>';
+        html += '<span style="font-size:0.65rem;color:' + (urgColors[quest.urgency] || '#ccb974') + ';font-weight:bold;text-transform:uppercase;">' + (quest.urgency || 'normal') + '</span>';
+        html += '</div>';
+
+        // Description
+        html += '<div style="font-size:0.72rem;color:#aaa;margin:4px 0;">' + escapeHtml(quest.description) + '</div>';
+
+        // Stats row
+        html += '<div style="display:flex;gap:12px;font-size:0.68rem;color:#888;margin-bottom:4px;">';
+        html += '<span>Difficulty: <span style="color:' + (diffColors[quest.difficulty] || '#ccb974') + ';">' + (diffBars[quest.difficulty] || '■■□□') + ' ' + (quest.difficulty || 'medium') + '</span></span>';
+        html += '<span>⏰ ' + daysLeft + 'd left</span>';
+        html += '</div>';
+
+        // Rewards
+        html += '<div style="font-size:0.7rem;color:#aaa;">';
+        html += 'Reward: <span style="color:var(--gold);">' + (quest.rewards.gold || 0) + 'g</span>';
+        html += ' · <span style="color:#5dade2;">+' + (quest.rewards.kingdomRep || 0) + ' rep</span>';
+        html += ' · <span style="color:#bb8fce;">+' + (quest.rewards.kingRelationship || 0) + ' king rel</span>';
+        if (quest.rewards.special) {
+            html += ' · <span style="color:#f39c12;">⭐ ' + quest.rewards.special.replace(/_/g, ' ') + '</span>';
+        }
+        html += '</div>';
+
+        // Action buttons
+        html += '<div style="display:flex;gap:6px;margin-top:6px;">';
+        var safeId = quest.id.replace(/'/g, "\\'");
+        var safeKid = kingdomId.replace(/'/g, "\\'");
+        html += '<button class="btn-medieval" onclick="(function(){var r=Player.acceptKingdomQuest(\'' + safeId + '\',\'' + safeKid + '\');UI.toast(r.message,r.success?\'success\':\'warning\');if(r.success)UI.openNobilityDialog();})()" style="font-size:0.72rem;padding:4px 12px;background:rgba(46,204,113,0.2) !important;border-color:rgba(46,204,113,0.4) !important;">✅ Accept</button>';
+
+        // Reject button with penalty info
+        var rejPen = quest.rejectionPenalty || { rep: 2, kingRel: 3 };
+        var rejLabel = isPersonal ? 'Reject (-' + (rejPen.rep * 2) + ' rep)' : 'Decline';
+        html += '<button class="btn-medieval" onclick="(function(){var r=Player.rejectKingdomQuest(\'' + safeId + '\',\'' + safeKid + '\');UI.toast(r.message,r.success?\'success\':\'warning\');if(r.success)UI.openNobilityDialog();})()" style="font-size:0.72rem;padding:4px 12px;' + (isPersonal ? 'background:rgba(231,76,60,0.15) !important;border-color:rgba(231,76,60,0.3) !important;color:#e74c3c;' : '') + '">' + (isPersonal ? '❌ ' : '') + rejLabel + '</button>';
+        html += '</div>';
+
+        html += '</div>';
+        return html;
+    }
+
+    function _buildKQActiveCard(quest, kingdomId, day, progress) {
+        var html = '';
+        var daysLeft = Math.max(0, (quest.expiresDay || 0) - day);
+        var isComplete = progress && progress.complete;
+        var borderColor = isComplete ? 'rgba(46,204,113,0.5)' : daysLeft <= 5 ? 'rgba(231,76,60,0.4)' : 'rgba(52,152,219,0.3)';
+
+        html += '<div style="background:rgba(0,0,0,0.15);border:2px solid ' + borderColor + ';border-radius:6px;padding:8px;margin-bottom:6px;">';
+
+        // Title
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+        html += '<div style="font-size:0.82rem;font-weight:bold;color:#f0e0c0;">' + _kqCatIcon(quest.category) + ' ' + escapeHtml(quest.title) + (quest.isPersonal ? ' 👑' : '') + '</div>';
+        html += '<span style="font-size:0.68rem;color:' + (daysLeft <= 5 ? '#e74c3c' : daysLeft <= 10 ? '#e67e22' : '#aaa') + ';">⏰ ' + daysLeft + 'd</span>';
+        html += '</div>';
+
+        // Description
+        html += '<div style="font-size:0.72rem;color:#aaa;margin:4px 0;">' + escapeHtml(quest.description) + '</div>';
+
+        // Progress section
+        html += '<div style="margin:6px 0;">';
+        if (quest.requirements.deliver) {
+            html += '<div style="font-size:0.7rem;color:#ddd;margin-bottom:2px;">📦 Goods Required:</div>';
+            for (var resId in quest.requirements.deliver) {
+                var needed = quest.requirements.deliver[resId];
+                var have = 0;
+                try { have = (Player.state.inventory || {})[resId] || 0; } catch(e) {}
+                var met = have >= needed;
+                var resName = resId;
+                try {
+                    var rType = RESOURCE_TYPES[resId.toUpperCase()];
+                    if (rType) resName = (rType.icon || '') + ' ' + rType.name;
+                } catch(e) {}
+                html += '<div style="font-size:0.68rem;color:' + (met ? '#55a868' : '#e67e22') + ';margin-left:8px;">' + (met ? '✅' : '⬜') + ' ' + resName + ': ' + Math.min(have, needed) + '/' + needed + '</div>';
+            }
+        }
+        if (quest.requirements.gold > 0) {
+            var goldMet = (Player.state.gold || 0) >= quest.requirements.gold;
+            html += '<div style="font-size:0.68rem;color:' + (goldMet ? '#55a868' : '#e67e22') + ';">' + (goldMet ? '✅' : '⬜') + ' 💰 Gold: ' + Math.floor(Player.state.gold || 0) + '/' + quest.requirements.gold + '</div>';
+        }
+        if (quest.requirements.action) {
+            var act = quest.requirements.action;
+            if (act.type === 'visit_towns' || act.type === 'visit_foreign' || act.type === 'visit_enemy_towns') {
+                var visited = (Player.state._kqVisitedTowns || {})[quest.id] || [];
+                var visitMet = visited.length >= act.count;
+                var visitLabel = act.type === 'visit_foreign' ? 'Visit foreign towns' : act.type === 'visit_enemy_towns' ? 'Visit enemy towns' : 'Visit towns';
+                html += '<div style="font-size:0.68rem;color:' + (visitMet ? '#55a868' : '#e67e22') + ';">' + (visitMet ? '✅' : '⬜') + ' 🏘️ ' + visitLabel + ': ' + visited.length + '/' + act.count + '</div>';
+            } else if (act.goldTarget > 0) {
+                var spent = (Player.state._kqGoldSpent || {})[quest.id] || 0;
+                var spentMet = spent >= act.goldTarget;
+                html += '<div style="font-size:0.68rem;color:' + (spentMet ? '#55a868' : '#e67e22') + ';">' + (spentMet ? '✅' : '⬜') + ' 💰 Raise gold: ' + spent + '/' + act.goldTarget + '</div>';
+            } else {
+                var actionDone = (Player.state._kqActionDone || {})[quest.id] || false;
+                html += '<div style="font-size:0.68rem;color:' + (actionDone ? '#55a868' : '#e67e22') + ';">' + (actionDone ? '✅' : '⬜') + ' Complete: ' + act.type.replace(/_/g, ' ') + '</div>';
+            }
+        }
+        html += '</div>';
+
+        // Progress bar
+        var totalReqs = 0;
+        var metReqs = 0;
+        if (quest.requirements.deliver) {
+            for (var r in quest.requirements.deliver) {
+                totalReqs++;
+                try { if (((Player.state.inventory || {})[r] || 0) >= quest.requirements.deliver[r]) metReqs++; } catch(e) {}
+            }
+        }
+        if (quest.requirements.gold > 0) {
+            totalReqs++;
+            if ((Player.state.gold || 0) >= quest.requirements.gold) metReqs++;
+        }
+        if (quest.requirements.action) {
+            totalReqs++;
+            if (progress && progress.complete && totalReqs === 1) metReqs = 1;
+            else if (quest.requirements.action.type && (quest.requirements.action.type.indexOf('visit') >= 0)) {
+                var v = (Player.state._kqVisitedTowns || {})[quest.id] || [];
+                if (v.length >= (quest.requirements.action.count || 1)) metReqs++;
+            } else if (quest.requirements.action.goldTarget > 0) {
+                var s = (Player.state._kqGoldSpent || {})[quest.id] || 0;
+                if (s >= quest.requirements.action.goldTarget) metReqs++;
+            } else {
+                if ((Player.state._kqActionDone || {})[quest.id]) metReqs++;
+            }
+        }
+        var pctComplete = totalReqs > 0 ? Math.floor((metReqs / totalReqs) * 100) : 0;
+        html += '<div style="height:4px;background:rgba(0,0,0,0.3);border-radius:2px;margin:4px 0;">';
+        html += '<div style="height:100%;width:' + pctComplete + '%;background:' + (isComplete ? '#2ecc71' : '#3498db') + ';border-radius:2px;transition:width 0.3s;"></div>';
+        html += '</div>';
+        html += '<div style="font-size:0.62rem;color:#777;text-align:right;">' + pctComplete + '% complete</div>';
+
+        // Buttons
+        html += '<div style="display:flex;gap:6px;margin-top:4px;">';
+        var safeId = quest.id.replace(/'/g, "\\'");
+        var safeKid = kingdomId.replace(/'/g, "\\'");
+        if (isComplete) {
+            html += '<button class="btn-medieval" onclick="(function(){var r=Player.completeKingdomQuest(\'' + safeId + '\',\'' + safeKid + '\');UI.toast(r.message,r.success?\'success\':\'warning\');if(r.success)UI.openNobilityDialog();})()" style="font-size:0.72rem;padding:5px 14px;background:rgba(46,204,113,0.3) !important;border-color:rgba(46,204,113,0.5) !important;color:#2ecc71;font-weight:bold;">🎉 Complete Quest</button>';
+        }
+        html += '<button class="btn-medieval" onclick="(function(){if(confirm(\'Abandon this quest? You will lose reputation.\')){var r=Player.abandonKingdomQuest(\'' + safeId + '\',\'' + safeKid + '\');UI.toast(r.message,r.success?\'success\':\'warning\');UI.openNobilityDialog();}})()" style="font-size:0.68rem;padding:3px 8px;opacity:0.6;">Abandon</button>';
+        html += '</div>';
+
+        html += '</div>';
+        return html;
+    }
+
+    function _kqCatIcon(cat) {
+        var icons = { military: '🗡️', economic: '💰', diplomatic: '🤝', espionage: '🕵️', justice: '⚖️', infrastructure: '🏗️', social: '👑', corrupt: '🏴' };
+        return icons[cat] || '📜';
+    }
+
+    function _switchKQTab(tabId, kingdomId) {
+        _kqTab = tabId;
+        openNobilityDialog();
     }
 
     // Helper: Request kingdom building from nobility panel
@@ -28664,5 +28935,8 @@ window.UI = (function () {
         buildGodModeHTML,
         openWorldAnalytics,
         openPlayerImpact,
+
+        // Kingdom Quests UI
+        _switchKQTab,
     };
 })();

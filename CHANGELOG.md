@@ -4,6 +4,18 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.62.0] - 2026-04-09
+
+### Added
+- **Kingdom Quests System**: 107 dynamic quest types across 8 categories (military, economic, diplomatic, justice, infrastructure, social, espionage, corrupt) directed by the king based on personality and kingdom state
+- **Personality-Driven Quest Selection**: King personality traits (militarism, justice, greed, ambition, temperament, intelligence, tradition, courage) weight the quest pool — corrupt kings give shady tasks, kind kings want charity, warlike kings demand military support
+- **Dynamic State Triggers**: Quests react to kingdom conditions — war generates military quests, plague triggers medical quests, low treasury spawns economic quests, noble squabbling creates arbitration quests
+- **Personal Royal Assignments**: Higher-ranked nobles (5-30% chance scaling with rank) receive personal directives from the king with doubled rejection penalties
+- **Quest Rejection System**: Players can decline quests but suffer reputation and relationship penalties scaled by rank, urgency, and king temperament
+- **Royal Directives UI**: New tab in nobility panel with available/active/completed quest views, quest cards with difficulty/urgency indicators, progress tracking, and quest log
+- **Quest Reward Scaling**: 4 difficulty tiers (easy/medium/hard/elite) with scaling gold, reputation, relationship, and XP rewards. Special rewards include tax exemptions, production permits, royal decrees, land grants, and noble endorsements
+- **Quest Progress Tracking**: Automatic tracking for goods delivery, gold contributions, town visits, and special actions integrated into existing game systems
+
 ## [0.61.0] - 2026-04-08
 
 ### Added

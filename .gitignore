@@ -17,4 +17,5 @@ desktop.ini
 # Editor files
 *.swp
 *.swo
+*.bak
 .vscode/
