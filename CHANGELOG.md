@@ -72,9 +72,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - **Ship building not working**: `buyShip()` now uses player inventory first before buying from market; build button routes through `UI.buyShip()` for toast feedback; `getShipPrice()` subtracts owned materials from cost
 - **Music not resuming on unmute**: `toggleMute()` and `setVolume()` now call `.play()` when restoring paused audio
 - **Ship assignedOffSea flag not cleared**: `cleanupTravelState()` now releases ship from off-sea assignment when travel is stopped/canceled
+- **Sea caravan owned ship selection**: Player-owned ships now appear in caravan ship dropdown labeled "FREE" with hull condition, vs rental ships showing daily cost
+- **Founded towns missing from kingdom territories**: `foundOutpost()` now adds to kingdom.territories Set; save migration ensures all towns are in their kingdom's territory
+- **Outpost invisible to findTown()**: `foundOutpost()` now registers in townIndex cache so `getOutpostCosts()`, `upgradeOutpostWalls()`, etc. work immediately
+- **Population explosion in small towns**: Migration destinations now check pop cap before accepting migrants; soft cap enforcement clamps population in `tickTownCategories()`
+- **Achievement ID mismatches**: 7 achievement IDs in player.js didn't match config (burgher_rank→burger_rank, royal_commission_hero→plat_royal_commission, etc.)
+- **Missing achievements**: Added `first_purchase` and `first_sale` to ACHIEVEMENTS config (code granted them but they weren't defined)
 
 ### Removed
-- `first_sale` and `first_purchase` achievements (trivial/redundant)
 - Dead `smuggler` and `streetwise` skill checks from quarantine code
 
 ## [0.60.0] - 2026-04-07
