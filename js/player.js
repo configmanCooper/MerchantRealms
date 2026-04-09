@@ -530,8 +530,7 @@
         player.activeQuests = [];   // quests the player has accepted
         player.completedQuestCount = 0;
         player.kingdomQuests = {};  // kingdomId → { available:[], active:[], completed:[], lastGenDay:0, personalAssignment:null }
-        player._kqVisitedTowns = {};  // questId → Set of townId for visit tracking
-        player._kqDelivered = {};     // questId → { resourceId: qty } for delivery tracking
+        player._kqVisitedTowns = {};  // questId → [townId] for visit tracking
         player._kqGoldSpent = {};     // questId → gold spent so far
         player._kqActionDone = {};    // questId → true for one-off action quests
         player.smugglingSkill = 0;
@@ -23656,6 +23655,34 @@
         return kqData;
     }
 
+    function _buildVariableDelivery(kingdom, rng) {
+        // Generate context-appropriate delivery based on kingdom needs
+        var deliver = {};
+        var needs = (kingdom && kingdom.procurement && kingdom.procurement.needs) || {};
+        var needKeys = Object.keys(needs);
+        if (needKeys.length > 0) {
+            // Pick 2-3 items from actual kingdom procurement needs
+            var count = rng.randInt(2, 3);
+            var picked = rng.shuffle(needKeys.slice()).slice(0, count);
+            for (var i = 0; i < picked.length; i++) {
+                deliver[picked[i]] = rng.randInt(10, 30);
+            }
+        } else {
+            // Fallback: generic useful goods
+            var fallbackGoods = [
+                { id: 'wheat', qty: [15, 35] }, { id: 'bread', qty: [10, 25] },
+                { id: 'meat', qty: [10, 20] }, { id: 'wood', qty: [20, 40] },
+                { id: 'stone', qty: [15, 30] }, { id: 'iron', qty: [10, 20] },
+                { id: 'cloth', qty: [10, 20] }, { id: 'tools', qty: [10, 20] }
+            ];
+            var picks = rng.shuffle(fallbackGoods.slice()).slice(0, rng.randInt(2, 3));
+            for (var j = 0; j < picks.length; j++) {
+                deliver[picks[j].id] = rng.randInt(picks[j].qty[0], picks[j].qty[1]);
+            }
+        }
+        return deliver;
+    }
+
     function _buildKingdomQuest(typeId, qt, kingdomId, kingdom, day, rng) {
         var timeLimit = qt.diff === 'elite' ? 35 : qt.diff === 'hard' ? 30 : qt.diff === 'medium' ? 25 : 20;
         if (qt.urgency === 'critical') timeLimit = Math.max(10, timeLimit - 10);
@@ -23663,10 +23690,15 @@
         // Build delivery requirements with randomized quantities
         var deliverReq = null;
         if (qt.req && qt.req.deliver) {
-            deliverReq = {};
-            for (var resId in qt.req.deliver) {
-                var range = qt.req.deliver[resId];
-                deliverReq[resId] = Array.isArray(range) ? _kqRandRange(rng, range) : range;
+            if (typeof qt.req.deliver === 'string') {
+                // 'variable' delivery — generate contextual requirements based on kingdom needs
+                deliverReq = _buildVariableDelivery(kingdom, rng);
+            } else if (typeof qt.req.deliver === 'object' && qt.req.deliver !== null) {
+                deliverReq = {};
+                for (var resId in qt.req.deliver) {
+                    var range = qt.req.deliver[resId];
+                    deliverReq[resId] = Array.isArray(range) ? _kqRandRange(rng, range) : range;
+                }
             }
         }
 
@@ -23796,12 +23828,10 @@
 
         // Init tracking
         if (!player._kqVisitedTowns) player._kqVisitedTowns = {};
-        if (!player._kqDelivered) player._kqDelivered = {};
         if (!player._kqGoldSpent) player._kqGoldSpent = {};
         if (!player._kqActionDone) player._kqActionDone = {};
 
         player._kqVisitedTowns[quest.id] = [];
-        player._kqDelivered[quest.id] = {};
         player._kqGoldSpent[quest.id] = 0;
         player._kqActionDone[quest.id] = false;
 
@@ -23887,7 +23917,6 @@
 
         // Clean up tracking
         delete player._kqVisitedTowns[questId];
-        delete player._kqDelivered[questId];
         delete player._kqGoldSpent[questId];
         delete player._kqActionDone[questId];
 
@@ -23958,7 +23987,6 @@
 
         // Clean up tracking
         delete player._kqVisitedTowns[questId];
-        delete player._kqDelivered[questId];
         delete player._kqGoldSpent[questId];
         delete player._kqActionDone[questId];
 
@@ -24151,7 +24179,6 @@
 
                 // Clean up tracking
                 delete player._kqVisitedTowns[q.id];
-                delete player._kqDelivered[q.id];
                 delete player._kqGoldSpent[q.id];
                 delete player._kqActionDone[q.id];
 

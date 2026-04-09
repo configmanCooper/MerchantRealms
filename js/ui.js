@@ -21112,7 +21112,8 @@ window.UI = (function () {
             html += '<span style="font-size:0.75rem;color:#55a868;">✅ ' + escapeHtml(q.title) + '</span>';
             html += '<span style="font-size:0.65rem;color:#777;">' + daysAgo + 'd ago</span>';
             html += '</div>';
-            html += '<div style="font-size:0.65rem;color:#888;">' + _kqCatIcon(q.category) + ' ' + (q.category || '') + ' · ' + (q.difficulty || '') + ' · +' + (q.rewards.gold || 0) + 'g +' + (q.rewards.kingdomRep || 0) + ' rep</div>';
+            var rew = q.rewards || {};
+            html += '<div style="font-size:0.65rem;color:#888;">' + _kqCatIcon(q.category) + ' ' + (q.category || '') + ' · ' + (q.difficulty || '') + ' · +' + (rew.gold || 0) + 'g +' + (rew.kingdomRep || 0) + ' rep</div>';
             html += '</div>';
         }
         return html;
@@ -21143,25 +21144,26 @@ window.UI = (function () {
         html += '</div>';
 
         // Rewards
+        var rew = quest.rewards || {};
         html += '<div style="font-size:0.7rem;color:#aaa;">';
-        html += 'Reward: <span style="color:var(--gold);">' + (quest.rewards.gold || 0) + 'g</span>';
-        html += ' · <span style="color:#5dade2;">+' + (quest.rewards.kingdomRep || 0) + ' rep</span>';
-        html += ' · <span style="color:#bb8fce;">+' + (quest.rewards.kingRelationship || 0) + ' king rel</span>';
-        if (quest.rewards.special) {
-            html += ' · <span style="color:#f39c12;">⭐ ' + quest.rewards.special.replace(/_/g, ' ') + '</span>';
+        html += 'Reward: <span style="color:var(--gold);">' + (rew.gold || 0) + 'g</span>';
+        html += ' · <span style="color:#5dade2;">+' + (rew.kingdomRep || 0) + ' rep</span>';
+        html += ' · <span style="color:#bb8fce;">+' + (rew.kingRelationship || 0) + ' king rel</span>';
+        if (rew.special) {
+            html += ' · <span style="color:#f39c12;">⭐ ' + escapeHtml(rew.special.replace(/_/g, ' ')) + '</span>';
         }
         html += '</div>';
 
         // Action buttons
         html += '<div style="display:flex;gap:6px;margin-top:6px;">';
-        var safeId = quest.id.replace(/'/g, "\\'");
-        var safeKid = kingdomId.replace(/'/g, "\\'");
-        html += '<button class="btn-medieval" onclick="(function(){var r=Player.acceptKingdomQuest(\'' + safeId + '\',\'' + safeKid + '\');UI.toast(r.message,r.success?\'success\':\'warning\');if(r.success)UI.openNobilityDialog();})()" style="font-size:0.72rem;padding:4px 12px;background:rgba(46,204,113,0.2) !important;border-color:rgba(46,204,113,0.4) !important;">✅ Accept</button>';
+        var safeId = quest.id.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        var safeKid = kingdomId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        html += '<button class="btn-medieval" onclick="(function(){var r=Player.acceptKingdomQuest(\'' + safeId + '\',\'' + safeKid + '\');UI.toast(r&&r.message||\'Quest updated\',r&&r.success?\'success\':\'warning\');if(r&&r.success)UI.openNobilityDialog();})()" style="font-size:0.72rem;padding:4px 12px;background:rgba(46,204,113,0.2) !important;border-color:rgba(46,204,113,0.4) !important;">✅ Accept</button>';
 
         // Reject button with penalty info
         var rejPen = quest.rejectionPenalty || { rep: 2, kingRel: 3 };
         var rejLabel = isPersonal ? 'Reject (-' + (rejPen.rep * 2) + ' rep)' : 'Decline';
-        html += '<button class="btn-medieval" onclick="(function(){var r=Player.rejectKingdomQuest(\'' + safeId + '\',\'' + safeKid + '\');UI.toast(r.message,r.success?\'success\':\'warning\');if(r.success)UI.openNobilityDialog();})()" style="font-size:0.72rem;padding:4px 12px;' + (isPersonal ? 'background:rgba(231,76,60,0.15) !important;border-color:rgba(231,76,60,0.3) !important;color:#e74c3c;' : '') + '">' + (isPersonal ? '❌ ' : '') + rejLabel + '</button>';
+        html += '<button class="btn-medieval" onclick="(function(){var r=Player.rejectKingdomQuest(\'' + safeId + '\',\'' + safeKid + '\');UI.toast(r&&r.message||\'Quest updated\',r&&r.success?\'success\':\'warning\');if(r&&r.success)UI.openNobilityDialog();})()" style="font-size:0.72rem;padding:4px 12px;' + (isPersonal ? 'background:rgba(231,76,60,0.15) !important;border-color:rgba(231,76,60,0.3) !important;color:#e74c3c;' : '') + '">' + (isPersonal ? '❌ ' : '') + rejLabel + '</button>';
         html += '</div>';
 
         html += '</div>';
@@ -21186,11 +21188,12 @@ window.UI = (function () {
         html += '<div style="font-size:0.72rem;color:#aaa;margin:4px 0;">' + escapeHtml(quest.description) + '</div>';
 
         // Progress section
+        var reqs = quest.requirements || {};
         html += '<div style="margin:6px 0;">';
-        if (quest.requirements.deliver) {
+        if (reqs.deliver) {
             html += '<div style="font-size:0.7rem;color:#ddd;margin-bottom:2px;">📦 Goods Required:</div>';
-            for (var resId in quest.requirements.deliver) {
-                var needed = quest.requirements.deliver[resId];
+            for (var resId in reqs.deliver) {
+                var needed = reqs.deliver[resId];
                 var have = 0;
                 try { have = (Player.state.inventory || {})[resId] || 0; } catch(e) {}
                 var met = have >= needed;
@@ -21199,15 +21202,15 @@ window.UI = (function () {
                     var rType = RESOURCE_TYPES[resId.toUpperCase()];
                     if (rType) resName = (rType.icon || '') + ' ' + rType.name;
                 } catch(e) {}
-                html += '<div style="font-size:0.68rem;color:' + (met ? '#55a868' : '#e67e22') + ';margin-left:8px;">' + (met ? '✅' : '⬜') + ' ' + resName + ': ' + Math.min(have, needed) + '/' + needed + '</div>';
+                html += '<div style="font-size:0.68rem;color:' + (met ? '#55a868' : '#e67e22') + ';margin-left:8px;">' + (met ? '✅' : '⬜') + ' ' + escapeHtml(resName) + ': ' + Math.min(have, needed) + '/' + needed + '</div>';
             }
         }
-        if (quest.requirements.gold > 0) {
-            var goldMet = (Player.state.gold || 0) >= quest.requirements.gold;
-            html += '<div style="font-size:0.68rem;color:' + (goldMet ? '#55a868' : '#e67e22') + ';">' + (goldMet ? '✅' : '⬜') + ' 💰 Gold: ' + Math.floor(Player.state.gold || 0) + '/' + quest.requirements.gold + '</div>';
+        if (reqs.gold > 0) {
+            var goldMet = (Player.state.gold || 0) >= reqs.gold;
+            html += '<div style="font-size:0.68rem;color:' + (goldMet ? '#55a868' : '#e67e22') + ';">' + (goldMet ? '✅' : '⬜') + ' 💰 Gold: ' + Math.floor(Player.state.gold || 0) + '/' + reqs.gold + '</div>';
         }
-        if (quest.requirements.action) {
-            var act = quest.requirements.action;
+        if (reqs.action) {
+            var act = reqs.action;
             if (act.type === 'visit_towns' || act.type === 'visit_foreign' || act.type === 'visit_enemy_towns') {
                 var visited = (Player.state._kqVisitedTowns || {})[quest.id] || [];
                 var visitMet = visited.length >= act.count;
@@ -21219,7 +21222,11 @@ window.UI = (function () {
                 html += '<div style="font-size:0.68rem;color:' + (spentMet ? '#55a868' : '#e67e22') + ';">' + (spentMet ? '✅' : '⬜') + ' 💰 Raise gold: ' + spent + '/' + act.goldTarget + '</div>';
             } else {
                 var actionDone = (Player.state._kqActionDone || {})[quest.id] || false;
-                html += '<div style="font-size:0.68rem;color:' + (actionDone ? '#55a868' : '#e67e22') + ';">' + (actionDone ? '✅' : '⬜') + ' Complete: ' + act.type.replace(/_/g, ' ') + '</div>';
+                html += '<div style="font-size:0.68rem;color:' + (actionDone ? '#55a868' : '#e67e22') + ';">' + (actionDone ? '✅' : '⬜') + ' Complete: ' + escapeHtml(act.type.replace(/_/g, ' ')) + '</div>';
+                if (!actionDone) {
+                    var safActId = quest.id.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                    html += '<button class="btn-medieval" onclick="(function(){Player.trackKQActionDone(\'' + safActId + '\');UI.openNobilityDialog();})()" style="font-size:0.65rem;padding:2px 8px;margin-top:2px;">📋 Report Action Complete</button>';
+                }
             }
         }
         html += '</div>';
@@ -21227,25 +21234,24 @@ window.UI = (function () {
         // Progress bar
         var totalReqs = 0;
         var metReqs = 0;
-        if (quest.requirements.deliver) {
-            for (var r in quest.requirements.deliver) {
+        if (reqs.deliver) {
+            for (var r in reqs.deliver) {
                 totalReqs++;
-                try { if (((Player.state.inventory || {})[r] || 0) >= quest.requirements.deliver[r]) metReqs++; } catch(e) {}
+                try { if (((Player.state.inventory || {})[r] || 0) >= reqs.deliver[r]) metReqs++; } catch(e) {}
             }
         }
-        if (quest.requirements.gold > 0) {
+        if (reqs.gold > 0) {
             totalReqs++;
-            if ((Player.state.gold || 0) >= quest.requirements.gold) metReqs++;
+            if ((Player.state.gold || 0) >= reqs.gold) metReqs++;
         }
-        if (quest.requirements.action) {
+        if (reqs.action) {
             totalReqs++;
-            if (progress && progress.complete && totalReqs === 1) metReqs = 1;
-            else if (quest.requirements.action.type && (quest.requirements.action.type.indexOf('visit') >= 0)) {
+            if (reqs.action.type && (reqs.action.type.indexOf('visit') >= 0)) {
                 var v = (Player.state._kqVisitedTowns || {})[quest.id] || [];
-                if (v.length >= (quest.requirements.action.count || 1)) metReqs++;
-            } else if (quest.requirements.action.goldTarget > 0) {
+                if (v.length >= (reqs.action.count || 1)) metReqs++;
+            } else if (reqs.action.goldTarget > 0) {
                 var s = (Player.state._kqGoldSpent || {})[quest.id] || 0;
-                if (s >= quest.requirements.action.goldTarget) metReqs++;
+                if (s >= reqs.action.goldTarget) metReqs++;
             } else {
                 if ((Player.state._kqActionDone || {})[quest.id]) metReqs++;
             }
@@ -21258,12 +21264,12 @@ window.UI = (function () {
 
         // Buttons
         html += '<div style="display:flex;gap:6px;margin-top:4px;">';
-        var safeId = quest.id.replace(/'/g, "\\'");
-        var safeKid = kingdomId.replace(/'/g, "\\'");
+        var safeId = quest.id.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        var safeKid = kingdomId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         if (isComplete) {
-            html += '<button class="btn-medieval" onclick="(function(){var r=Player.completeKingdomQuest(\'' + safeId + '\',\'' + safeKid + '\');UI.toast(r.message,r.success?\'success\':\'warning\');if(r.success)UI.openNobilityDialog();})()" style="font-size:0.72rem;padding:5px 14px;background:rgba(46,204,113,0.3) !important;border-color:rgba(46,204,113,0.5) !important;color:#2ecc71;font-weight:bold;">🎉 Complete Quest</button>';
+            html += '<button class="btn-medieval" onclick="(function(){var r=Player.completeKingdomQuest(\'' + safeId + '\',\'' + safeKid + '\');UI.toast(r&&r.message||\'Quest updated\',r&&r.success?\'success\':\'warning\');if(r&&r.success)UI.openNobilityDialog();})()" style="font-size:0.72rem;padding:5px 14px;background:rgba(46,204,113,0.3) !important;border-color:rgba(46,204,113,0.5) !important;color:#2ecc71;font-weight:bold;">🎉 Complete Quest</button>';
         }
-        html += '<button class="btn-medieval" onclick="(function(){if(confirm(\'Abandon this quest? You will lose reputation.\')){var r=Player.abandonKingdomQuest(\'' + safeId + '\',\'' + safeKid + '\');UI.toast(r.message,r.success?\'success\':\'warning\');UI.openNobilityDialog();}})()" style="font-size:0.68rem;padding:3px 8px;opacity:0.6;">Abandon</button>';
+        html += '<button class="btn-medieval" onclick="(function(){if(confirm(\'Abandon this quest? You will lose reputation.\')){var r=Player.abandonKingdomQuest(\'' + safeId + '\',\'' + safeKid + '\');UI.toast(r&&r.message||\'Quest abandoned\',r&&r.success?\'success\':\'warning\');UI.openNobilityDialog();}})()" style="font-size:0.68rem;padding:3px 8px;opacity:0.6;">Abandon</button>';
         html += '</div>';
 
         html += '</div>';
