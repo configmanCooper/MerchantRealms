@@ -1156,6 +1156,7 @@ window.Renderer = (function () {
             const cx = town.x;
             const cy = town.y;
             if (!isVisible(cx, cy, 200)) continue;
+            if (town.isJunction) continue;
 
             const pop = town.population || 100;
             const kingdom = kingdomMap[town.kingdomId];
@@ -3232,6 +3233,7 @@ window.Renderer = (function () {
 
             // Town dots with black outline
             for (const town of towns) {
+                if (town.isJunction) continue;
                 const kingdom = kingdoms ? kingdoms.find(k => k.id === town.kingdomId) : null;
                 const kColor = kingdom ? (kingdom.color || CONFIG.KINGDOM_COLORS[kingdom.id % CONFIG.KINGDOM_COLORS.length]) : '#ccc';
                 const px = town.x * scaleX;
@@ -3417,6 +3419,7 @@ window.Renderer = (function () {
             const towns = Engine.getTowns();
             if (towns) {
                 for (const town of towns) {
+                    if (town.isJunction) continue;
                     const cx = town.x;
                     const cy = town.y;
                     const r = 10 + Math.sqrt(town.population || 100) * 0.35;
@@ -3507,6 +3510,7 @@ window.Renderer = (function () {
             }
             if (!inNpcZone && towns) {
                 for (const town of towns) {
+                    if (town.isJunction) continue;
                     const cx = town.x;
                     const cy = town.y;
                     const r = 10 + Math.sqrt(town.population || 100) * 0.35;

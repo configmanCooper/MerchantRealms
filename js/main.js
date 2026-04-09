@@ -474,6 +474,7 @@ window.Game = (function () {
             if (Renderer.getFrameCount() % 6 === 0) {
                 try { UI.update(); } catch (e) { console.error('UI update error:', e); }
                 try { if (UI.updateTravelPanel) UI.updateTravelPanel(); } catch (e) { /* no-op */ }
+                try { if (UI.updateJailPanel) UI.updateJailPanel(); } catch (e) { /* no-op */ }
             }
         }
     }

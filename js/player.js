@@ -185,6 +185,14 @@
         sabotagedBuildings: [],         // [{ townId, buildingIdx, expiresDay }]
         blackmailTargets: {},           // { personId: { paymentPerSeason, nextPayDay } }
         rumorTargets: {},               // { merchantId: { expiresDay } }
+        schemeCooldowns: {},            // { actionId: dayAvailableAgain }
+        npcSchemesAgainstPlayer: [],    // [{ type, day, ... }]
+        spyNetworks: {},                // { townId: { expiresDay, kingdomId } }
+        smugglingRoutes: [],            // [{ fromTownId, toTownId, resource, expiresDay }]
+        protectionRackets: {},          // { townId: { paymentPerWeek, lastCollectDay, npcsIntimidated } }
+        forgedDocuments: {},            // { type: expiresDay } — active forged permits/titles
+        doubleAgentActive: null,        // { enemyKingdomId, startDay, paymentPerSeason } or null
+        notorietyReduction: null,       // { type: 'lay_low'|'cleanse_identity', startDay, endDay, dailyReduction } or null
 
         // ── Crown & Royal Advisor State ──
         isRoyalAdvisorFromKing: false,
@@ -758,7 +766,9 @@
             Engine.hasEmbargo && Engine.hasEmbargo(player.citizenshipKingdomId, town.kingdomId);
         if (isEmbargoed) {
             const rng = Engine.getRng();
-            if (rng && rng.chance(CONFIG.EMBARGO_DETECTION_CHANCE)) {
+            var _embargoDetect2 = CONFIG.EMBARGO_DETECTION_CHANCE;
+            if (hasSkill('contraband_network')) _embargoDetect2 *= 0.4;
+            if (rng && rng.chance(_embargoDetect2)) {
                 const fine = Math.floor((town.market.prices[resourceId] || 1) * qty * CONFIG.EMBARGO_FINE_MULTIPLIER);
                 const actualFine = Math.min(fine, player.gold);
                 player.gold -= actualFine;
@@ -794,8 +804,12 @@
 
         // Apply tariff for foreign kingdom
         if (kingdom && !isPlayerCitizenOf(town.kingdomId)) {
-            // Special law: open_market — no tariff on foreign traders
-            if (hasSpecialLaw(kingdom, 'open_market')) {
+            // Forged trade permit bypasses tariffs
+            var _hasForgeTrade = player.forgedDocuments && player.forgedDocuments.trade_permit && player.forgedDocuments.trade_permit > Engine.getDay();
+            if (_hasForgeTrade) {
+                tariff = 0;
+                foreignSurcharge = 0;
+            } else if (hasSpecialLaw(kingdom, 'open_market')) {
                 tariff = 0;
             } else {
                 tariff = (kingdom.laws && kingdom.laws.tradeTariff) || 0;
@@ -1012,7 +1026,9 @@
             Engine.hasEmbargo && Engine.hasEmbargo(player.citizenshipKingdomId, town.kingdomId);
         if (sellEmbargoed) {
             const rng = Engine.getRng();
-            if (rng && rng.chance(CONFIG.EMBARGO_DETECTION_CHANCE)) {
+            var _embargoDetect = CONFIG.EMBARGO_DETECTION_CHANCE;
+            if (hasSkill('contraband_network')) _embargoDetect *= 0.4; // 60% reduction
+            if (rng && rng.chance(_embargoDetect)) {
                 const fine = Math.floor(price * qty * CONFIG.EMBARGO_FINE_MULTIPLIER);
                 const actualFine = Math.min(fine, player.gold);
                 player.gold -= actualFine;
@@ -1660,6 +1676,15 @@
         // Village-only building restriction
         if (bt.villageOnly && town.category !== 'village') {
             return { success: false, message: `${bt.name} can only be built in villages.` };
+        }
+
+        // Outpost building maintenance cap: need maintenance workers >= buildings after build
+        if (town.isOutpost && town.founderId === (player.id || 'player')) {
+            var _maintWorkers = getMaintenanceWorkerCount(town);
+            var _playerBldCount = town.buildings.filter(function(b) { return b.ownerId === 'player' || b.ownerId === (player.id || 'player'); }).length;
+            if (_playerBldCount >= _maintWorkers) {
+                return { success: false, message: '⚠️ Not enough building maintenance workers! You have ' + _maintWorkers + ' maintenance worker(s) supporting ' + _playerBldCount + ' building(s). Assign more workers to Building Maintenance in the Outpost Manager before building.' };
+            }
         }
 
         // Consume building materials (from inventory first, then town market)
@@ -3427,6 +3452,12 @@
             player.worldY = currentPos.y;
             cleanupTravelState();
         }
+
+        // Block travel while in jail
+        if (player.jailedUntilDay > 0 && Engine.getDay() < player.jailedUntilDay) {
+            return { success: false, message: '🔒 You are in jail until day ' + player.jailedUntilDay + '.' };
+        }
+
         if (townId === player.townId) return { success: false, message: 'Already there.' };
 
         // Check carry capacity before traveling
@@ -5585,8 +5616,8 @@
                     logCaravan(caravan, '🛑 Caravan auto-disbanded.');
                     var _adAtTown = player.townId === destTownId;
                     if (caravan.carrierHorses > 0) {
-                        if (_adAtTown) player.inventory['horses'] = (player.inventory['horses'] || 0) + caravan.carrierHorses;
-                        else { if (!player.townStorage[destTownId]) player.townStorage[destTownId] = {}; player.townStorage[destTownId]['horses'] = (player.townStorage[destTownId]['horses'] || 0) + caravan.carrierHorses; }
+                        // Horses go to player inventory (slot-based, not weight-based) regardless of location
+                        player.inventory['horses'] = (player.inventory['horses'] || 0) + caravan.carrierHorses;
                     }
                     if (caravan.guardWeapons > 0) {
                         if (_adAtTown) player.inventory['swords'] = (player.inventory['swords'] || 0) + caravan.guardWeapons;
@@ -6232,11 +6263,8 @@
 
         // Return equipment to origin town storage
         if (caravan.carrierHorses > 0) {
-            if (player.townId === dropTownId) {
-                player.inventory['horses'] = (player.inventory['horses'] || 0) + caravan.carrierHorses;
-            } else {
-                player.townStorage[dropTownId]['horses'] = (player.townStorage[dropTownId]['horses'] || 0) + caravan.carrierHorses;
-            }
+            // Horses go to player inventory (slot-based, not weight-based) regardless of location
+            player.inventory['horses'] = (player.inventory['horses'] || 0) + caravan.carrierHorses;
         }
         if (caravan.carts > 0) {
             if (player.townId === dropTownId) {
@@ -8637,6 +8665,7 @@
         qty = Number(qty);
         if (!qty || !isFinite(qty) || qty <= 0) return { success: false, message: 'Invalid quantity.' };
         qty = Math.floor(qty);
+        if (resId === 'horses') return { success: false, message: 'Horses cannot be stored in a warehouse. Use the stable or sell them.' };
         if (!player.townId) return { success: false, message: 'Must be in a town to deposit.' };
         var available = player.inventory[resId] || 0;
         if (available < qty) return { success: false, message: 'Not enough in inventory.' };
@@ -8662,10 +8691,19 @@
         var stored = (player.townStorage[player.townId] || {})[resId] || 0;
         if (stored < qty) return { success: false, message: 'Not enough in storage.' };
         var res = findResource(resId);
-        var weight = res ? (res.weight || 1) : 1;
-        var currentWeight = getCarriedWeight();
-        var maxCarry = getCarryCapacity();
-        if (currentWeight + qty * weight > maxCarry) return { success: false, message: 'Too heavy to carry. Upgrade your storage container.' };
+        // Horses use slot system, not weight
+        if (resId === 'horses') {
+            var _totalHorses = (player.inventory.horses || 0) + (player.horses || []).length;
+            var _maxHorses = (CONFIG.MAX_HORSES || 2) + (hasSkill('horse_mastery') ? 2 : 0);
+            if (_totalHorses + qty > _maxHorses) {
+                return { success: false, message: 'You can only have ' + _maxHorses + ' horses total. You have ' + _totalHorses + '.' };
+            }
+        } else {
+            var weight = res ? (res.weight || 1) : 1;
+            var currentWeight = getCarriedWeight();
+            var maxCarry = getCarryCapacity();
+            if (currentWeight + qty * weight > maxCarry) return { success: false, message: 'Too heavy to carry. Upgrade your storage container.' };
+        }
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.withdraw || 2);
         player.townStorage[player.townId][resId] -= qty;
         if (player.townStorage[player.townId][resId] <= 0) delete player.townStorage[player.townId][resId];
@@ -8793,9 +8831,8 @@
         if (!house) return { success: false, message: 'House not found.' };
         if (house.townId !== player.townId) return { success: false, message: 'You must be in the same town as this property.' };
         var res = findResource(resId);
-        // Block livestock & horses from homes
-        if (res && res.category === 'livestock') return { success: false, message: 'Livestock cannot be stored in a home. Use a livestock building.' };
-        if (resId === 'horses') return { success: false, message: 'Use the stable button to house horses.' };
+        // Block livestock from homes (except horses — homes can stable horses)
+        if (res && res.category === 'livestock' && resId !== 'horses') return { success: false, message: 'Livestock cannot be stored in a home. Use a livestock building.' };
         var available = player.inventory[resId] || 0;
         if (available < qty) return { success: false, message: 'Not enough in inventory.' };
         var cap = getHomeStorageCapacity(house);
@@ -8823,8 +8860,14 @@
         var stored = (house.homeStorage && house.homeStorage[resId]) || 0;
         if (stored < qty) return { success: false, message: 'Not enough stored.' };
         var res = findResource(resId);
-        var weight = res ? (res.weight || 1) : 1;
-        if (getCarriedWeight() + qty * weight > getCarryCapacity()) return { success: false, message: 'Too heavy to carry.' };
+        if (resId === 'horses') {
+            var _thH = (player.inventory.horses || 0) + (player.horses || []).length;
+            var _mxH = (CONFIG.MAX_HORSES || 2) + (hasSkill('horse_mastery') ? 2 : 0);
+            if (_thH + qty > _mxH) return { success: false, message: 'You can only have ' + _mxH + ' horses total. You have ' + _thH + '.' };
+        } else {
+            var weight = res ? (res.weight || 1) : 1;
+            if (getCarriedWeight() + qty * weight > getCarryCapacity()) return { success: false, message: 'Too heavy to carry.' };
+        };
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(1);
         house.homeStorage[resId] -= qty;
         if (house.homeStorage[resId] <= 0) delete house.homeStorage[resId];
@@ -9064,8 +9107,14 @@
         var stored = (bld.inventory && bld.inventory[resId]) || 0;
         if (stored < qty) return { success: false, message: 'Not enough stored.' };
         var res = findResource(resId);
-        var weight = res ? (res.weight || 1) : 1;
-        if (getCarriedWeight() + qty * weight > getCarryCapacity()) return { success: false, message: 'Too heavy to carry.' };
+        if (resId === 'horses') {
+            var _thH2 = (player.inventory.horses || 0) + (player.horses || []).length;
+            var _mxH2 = (CONFIG.MAX_HORSES || 2) + (hasSkill('horse_mastery') ? 2 : 0);
+            if (_thH2 + qty > _mxH2) return { success: false, message: 'You can only have ' + _mxH2 + ' horses total. You have ' + _thH2 + '.' };
+        } else {
+            var weight = res ? (res.weight || 1) : 1;
+            if (getCarriedWeight() + qty * weight > getCarryCapacity()) return { success: false, message: 'Too heavy to carry.' };
+        };
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(1);
         bld.inventory[resId] -= qty;
         if (bld.inventory[resId] <= 0) delete bld.inventory[resId];
@@ -9464,10 +9513,53 @@
         const war = activeWars[warId];
         if (!war) return;
 
-        // Prevent changing allegiance once set
+        // Handle changing allegiance — allowed for non-nobles, with penalties
         if (player.warAllegiances[warId] && player.warAllegiances[warId].side !== 'neutral' && player.warAllegiances[warId].side) {
-            if (typeof UI !== 'undefined' && UI.toast) UI.toast('You have already chosen a side in this war.', 'error');
-            return;
+            var _oldSide = player.warAllegiances[warId].side;
+            // Nobles cannot change allegiance
+            var _oldK = Engine.findKingdom(_oldSide);
+            if (player.socialRank && player.socialRank[_oldSide] >= 4) {
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('As nobility of ' + (_oldK ? _oldK.name : 'that kingdom') + ', you cannot change allegiance.', 'error');
+                return;
+            }
+
+            // Apply switching penalties
+            // -20 kingdom reputation from the side you change from
+            player.reputation[_oldSide] = Math.max(0, (player.reputation[_oldSide] || 50) - 20);
+            // -10 relationship with their king
+            if (_oldK && _oldK.king) modifyRelationship(_oldK.king, -10);
+            // -5 relationship with all their nobles
+            var _oldPeople = Engine.getWorld ? Engine.getWorld().people : [];
+            if (_oldPeople) {
+                for (var _opi = 0; _opi < _oldPeople.length; _opi++) {
+                    var _op = _oldPeople[_opi];
+                    if (!_op.alive || _op.kingdomId !== _oldSide) continue;
+                    var _opRank = (_op.socialRank && _op.socialRank[_oldSide]) || 0;
+                    if (_opRank >= 4) modifyRelationship(_op.id, -5);
+                }
+            }
+
+            // If switching to neutral, -10 rep from BOTH kingdoms
+            if (side === 'neutral') {
+                var _otherSide = _oldSide === war.kingdomA ? war.kingdomB : war.kingdomA;
+                player.reputation[_otherSide] = Math.max(0, (player.reputation[_otherSide] || 50) - 10);
+                player.reputation[_oldSide] = Math.max(0, (player.reputation[_oldSide] || 50) - 10); // additional -10
+            }
+
+            // Restore saved rank from Enemy status before re-applying
+            if (player._warSavedRanks) {
+                var _oldEnemy = _oldSide === war.kingdomA ? war.kingdomB : war.kingdomA;
+                if (player._warSavedRanks[_oldEnemy] != null && player.socialRank[_oldEnemy] === -1) {
+                    player.socialRank[_oldEnemy] = player._warSavedRanks[_oldEnemy];
+                    delete player._warSavedRanks[_oldEnemy];
+                }
+            }
+
+            Engine.logEvent('⚠️ You changed allegiance from ' + (_oldK ? _oldK.name : _oldSide) + '! Severe reputation penalties applied.');
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚠️ Allegiance changed! -20 rep with former ally, relationship penalties applied.', 'warning');
+
+            // Clear old allegiance — will be set fresh below
+            delete player.warAllegiances[warId];
         }
 
         var enemySide = null;
@@ -16748,10 +16840,12 @@
 
         // Queue wait time — player must wait in line
         var _queue = hospBld._treatmentQueue || [];
-        var _bt = Engine.findBuildingType('hospital');
-        var _baseH = (_bt && _bt.maxHealers) || 2;
         var _wCount = (hospBld.workers && hospBld.workers.length) || 0;
-        var _maxH = _baseH + Math.floor(_wCount / 2);
+        // Hospital: 4 simultaneous patients per 2 workers (floor division)
+        var _maxH = Math.max(1, Math.floor(_wCount / 2) * 4);
+        // Odd workers: 10% faster treatment
+        var _oddWorkerBonus = (_wCount % 2 === 1) ? 0.9 : 1.0;
+        treatTicks = Math.max(1, Math.floor(treatTicks * _oddWorkerBonus));
         var _playerIsNoble = player.isNoble || (player.socialRank && player.socialRank[town.kingdomId] >= 4);
         var _queueWaitTicks = 0;
         if (!_playerIsNoble) {
@@ -16823,10 +16917,12 @@
 
         // Queue wait time — player must wait in line
         var _queue = clinicBld._treatmentQueue || [];
-        var _bt = Engine.findBuildingType('clinic');
-        var _baseH = (_bt && _bt.maxHealers) || 2;
         var _wCount = (clinicBld.workers && clinicBld.workers.length) || 0;
-        var _maxH = _baseH + Math.floor(_wCount / 2);
+        // Clinic: 2 simultaneous patients per 2 workers (floor division)
+        var _maxH = Math.max(1, Math.floor(_wCount / 2) * 2);
+        // Odd workers: 10% faster treatment
+        var _oddWorkerBonus = (_wCount % 2 === 1) ? 0.9 : 1.0;
+        treatTicks = Math.max(1, Math.floor(treatTicks * _oddWorkerBonus));
         var _playerIsNoble = player.isNoble || (player.socialRank && player.socialRank[town.kingdomId] >= 4);
         var _queueWaitTicks = 0;
         if (!_playerIsNoble) {
@@ -17815,6 +17911,7 @@
         player.introductions = data.introductions || {};
         player.introductionCooldowns = data.introductionCooldowns || {};
         player.adviseCooldown = data.adviseCooldown || 0;
+        player._doctorPersuasionCooldown = 0; // Reset on load — cooldowns are session-only
         player.jailedUntilDay = data.jailedUntilDay || 0;
         player.aiMerchantSiblings = data.aiMerchantSiblings || [];
         // XP & Progression
@@ -19860,6 +19957,54 @@
         // Deadline passed — treated as dodging
         Engine.logEvent('⚠️ Conscription deadline passed! ' + player.fullName + ' failed to report — treated as desertion.');
         respondToConscription('dodge');
+    }
+
+    function attemptJailEscape() {
+        if (!player.jailedUntilDay || player.jailedUntilDay <= Engine.getDay()) {
+            return { success: false, message: 'Not currently jailed.' };
+        }
+        var rng = Engine.getRng();
+        var baseChance = 0.05;
+        // Skills that increase escape chance
+        if (hasSkill('jail_break')) baseChance += 0.10;
+        if (hasSkill('street_smart')) baseChance += 0.05;
+        if (hasSkill('untouchable')) baseChance += 0.05;
+        if (hasSkill('silver_tongue_dark')) baseChance += 0.03;
+
+        if (rng.chance(baseChance)) {
+            // Escaped!
+            var oldEnd = player.jailedUntilDay;
+            player.jailedUntilDay = 0;
+            player.jailReason = null;
+            player._jailEscaped = true;
+            Engine.logEvent('🔓 ' + player.fullName + ' escaped from jail!');
+            unlockAchievement('jailbreak');
+            return { success: true, message: '🔓 You escaped from jail! Lay low — if caught, penalties will be severe.' };
+        } else {
+            // Caught trying to escape
+            var kingdom = Engine.findKingdom(player.citizenshipKingdomId);
+            var extraDays = rng.randInt(5, 20);
+            var extraFine = rng.randInt(50, 300);
+            // Kingdom personality affects punishment
+            if (kingdom && kingdom.king) {
+                var king = Engine.findPerson(kingdom.king);
+                if (king && king.personality) {
+                    if (king.personality.strictness > 0.6) { extraDays = Math.floor(extraDays * 1.5); extraFine = Math.floor(extraFine * 1.5); }
+                    else if (king.personality.strictness < 0.3) { extraDays = Math.floor(extraDays * 0.7); extraFine = Math.floor(extraFine * 0.7); }
+                }
+            }
+            player.jailedUntilDay += extraDays;
+            if (player.gold >= extraFine) {
+                player.gold -= extraFine;
+                Engine.logEvent('⛓️ ' + player.fullName + ' was caught trying to escape! +' + extraDays + ' days, fined ' + extraFine + 'g.');
+                return { success: false, message: '⛓️ Caught! Sentence extended by ' + extraDays + ' days and fined ' + extraFine + 'g. (' + Math.round(baseChance * 100) + '% chance)' };
+            } else {
+                var additionalDays = rng.randInt(3, 10);
+                player.jailedUntilDay += additionalDays;
+                Engine.logEvent('⛓️ ' + player.fullName + ' was caught trying to escape! +' + (extraDays + additionalDays) + ' days (couldn\'t pay fine).');
+                return { success: false, message: '⛓️ Caught! Can\'t afford ' + extraFine + 'g fine — sentence extended by ' + (extraDays + additionalDays) + ' days. (' + Math.round(baseChance * 100) + '% chance)' };
+            }
+        }
     }
 
     /**
@@ -25793,6 +25938,11 @@
     function tickHunger() {
         if (!player.alive) return;
 
+        // Auto-feed in jail
+        if (player.jailedUntilDay > 0 && Engine.getDay() < player.jailedUntilDay) {
+            if ((player.hunger || 0) < 50) player.hunger = 50;
+        }
+
         // Decay hunger (spouseHungerMod reduces decay if good_cook, injuries increase it)
         const injDebuffs = getInjuryDebuffs();
         const hungerDecay = HUNGER_CONFIG.DECAY_PER_DAY * (player.spouseHungerMod || 1.0) * injDebuffs.hungerRate;
@@ -27108,6 +27258,14 @@
         if (player.traveling) return [];
         const town = Engine.findTown(player.townId);
         if (!town) return [];
+
+        // Outpost: street trading requires NPCs present AND Market Stalls upgrade with worker
+        if (town.isOutpost) {
+            if (!town.outpostResidents || town.outpostResidents.length === 0) return [];
+            if (!town.outpostUpgrades || town.outpostUpgrades.indexOf('market_stall') < 0) return [];
+            if (!town.workerAssignments || !town.workerAssignments.market_stall) return [];
+        }
+
         const rng = Engine.getRng();
         if (!rng) return [];
 
@@ -27215,6 +27373,12 @@
         if (player.traveling) return [];
         var town = Engine.findTown(player.townId);
         if (!town) return [];
+        // Outpost: requires NPCs + market stalls with worker
+        if (town.isOutpost) {
+            if (!town.outpostResidents || town.outpostResidents.length === 0) return [];
+            if (!town.outpostUpgrades || town.outpostUpgrades.indexOf('market_stall') < 0) return [];
+            if (!town.workerAssignments || !town.workerAssignments.market_stall) return [];
+        }
         var kingdom = Engine.findKingdom(town.kingdomId);
         if (!kingdom || !kingdom.laws) return [];
         var rng = Engine.getRng();
@@ -27339,6 +27503,12 @@
         var tid = townId || player.townId;
         var town = Engine.findTown(tid);
         if (!town) return [];
+        // Outpost: requires NPCs + market stalls with worker
+        if (town.isOutpost) {
+            if (!town.outpostResidents || town.outpostResidents.length === 0) return [];
+            if (!town.outpostUpgrades || town.outpostUpgrades.indexOf('market_stall') < 0) return [];
+            if (!town.workerAssignments || !town.workerAssignments.market_stall) return [];
+        }
         var rng = Engine.getRng();
         if (!rng) return [];
 
@@ -29527,7 +29697,23 @@
         if (hour >= 20 || hour <= 5) detection *= 0.7;
         if (hasSkill('shadow_dealings')) detection *= 0.85;
         if (hasSkill('ghost')) detection *= 0.5;
-        detection += (player.notoriety || 0) * 0.003;
+        if (hasSkill('master_disguise')) detection *= 0.90;
+        if (hasSkill('shadow_step')) detection *= 0.90;
+        // Tunnel rat: permanent detection reduction in towns with hidden warehouses
+        if (hasSkill('tunnel_rat') && town && player.hiddenWarehouses) {
+            var _hasTunnel = player.hiddenWarehouses.some(function(hw) { return hw.townId === town.id; });
+            if (_hasTunnel) detection *= 0.70;
+        }
+        // Notoriety significantly increases detection chance
+        var _notoriety = player.notoriety || 0;
+        if (_notoriety >= 80) {
+            detection *= 1.5;  // WANTED: 50% harder to avoid detection
+        } else if (_notoriety >= 50) {
+            detection *= 1.3;  // Notorious: 30% harder
+        } else if (_notoriety >= 25) {
+            detection *= 1.15; // Suspicious: 15% harder
+        }
+        detection += _notoriety * 0.002; // additional flat scaling
         // Bribed guards reduction
         if (town && player.bribedGuards[town.id]) {
             const bg = player.bribedGuards[town.id];
@@ -29661,6 +29847,7 @@
     // ── (a) Sabotage Building ──
     function sabotageBuilding(buildingIndex, townId) {
         if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('shadow_dealings') && !hasSkill('arsonist_skill')) return { success: false, message: 'Requires Shadow Dealings or Arsonist skill.' };
         if (!isInTown(townId)) return { success: false, message: 'You must be in the town.' };
         const town = Engine.findTown(townId);
         if (!town) return { success: false, message: 'Town not found.' };
@@ -29696,6 +29883,7 @@
     // ── (b) Sabotage Road ──
     function sabotageRoad(roadIdx) {
         if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('shadow_dealings') && !hasSkill('arsonist_skill')) return { success: false, message: 'Requires Shadow Dealings or Arsonist skill.' };
         const toolQty = player.inventory.tools || 0;
         if (toolQty < 5) return { success: false, message: 'Need 5 tools in inventory.' };
         const roads = Engine.getRoads ? Engine.getRoads() : [];
@@ -29734,6 +29922,7 @@
     // ── (c) Arson ──
     function commitArson(buildingIndex, townId) {
         if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('arsonist_skill')) return { success: false, message: 'Requires Arsonist skill.' };
         if (!isInTown(townId)) return { success: false, message: 'You must be in the town.' };
         const town = Engine.findTown(townId);
         if (!town) return { success: false, message: 'Town not found.' };
@@ -29781,6 +29970,7 @@
         if (!qty || !isFinite(qty) || qty <= 0) return { success: false, message: 'Invalid quantity.' };
         qty = Math.floor(qty);
         if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('discrete')) return { success: false, message: 'Requires Discrete skill.' };
         if (!isInTown(townId)) return { success: false, message: 'You must be in the town.' };
         const town = Engine.findTown(townId);
         if (!town) return { success: false, message: 'Town not found.' };
@@ -29827,6 +30017,7 @@
     // ── (d2) Pickpocket ──
     function pickpocket(townId) {
         if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('discrete')) return { success: false, message: 'Requires Discrete skill.' };
         if (!isInTown(townId)) return { success: false, message: 'You must be in the town.' };
         const town = Engine.findTown(townId);
         if (!town) return { success: false, message: 'Town not found.' };
@@ -29855,6 +30046,83 @@
         grantXP(3, 'Pickpocketed');
         Engine.logEvent('A townsfolk reported missing coins.');
         return { success: true, message: `✅ Lifted ${yield_}g from an unsuspecting local!` };
+    }
+
+    // ── (d2b) Steal from NPC (targeted theft from person view) ──
+    function stealFromNpc(npcId) {
+        if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('discrete')) return { success: false, message: 'Requires Discrete skill.' };
+        var npc = Engine.findPerson ? Engine.findPerson(npcId) : null;
+        if (!npc || !npc.alive) return { success: false, message: 'Target not found.' };
+        if (npc.townId !== player.townId) return { success: false, message: 'Target is not in your location.' };
+        var town = Engine.findTown(player.townId);
+        if (!town) return { success: false, message: 'Not in a town.' };
+
+        // Cooldown check
+        var day = Engine.getDay();
+        player.schemeCooldowns = player.schemeCooldowns || {};
+        var cdKey = 'steal_npc_' + npcId;
+        if (player.schemeCooldowns[cdKey] && day < player.schemeCooldowns[cdKey]) {
+            return { success: false, message: 'Too risky to target ' + (npc.firstName || 'them') + ' again so soon. Wait ' + (player.schemeCooldowns[cdKey] - day) + ' days.' };
+        }
+
+        var rng = Engine.getRng();
+        var w = Engine.getWorld ? Engine.getWorld() : null;
+        var hour = w ? (w.hour || 0) : 12;
+        var baseDetect = (hour >= 20 || hour <= 5) ? 0.18 : 0.30;
+        // Wealthier/higher-rank NPCs are harder to steal from
+        if (npc.isEliteMerchant) baseDetect += 0.15;
+        if (npc.occupation === 'noble' || npc.occupation === 'king') baseDetect += 0.20;
+        var detection = calculateCorruptDetection(baseDetect, town);
+        var caught = rng && rng.chance(detection);
+
+        // Determine what to steal: gold or inventory item
+        var stolenGold = 0;
+        var stolenItem = null;
+        var stolenQty = 0;
+        var npcGold = npc.gold || 0;
+        var npcInv = npc.inventory || {};
+        var invKeys = Object.keys(npcInv).filter(function(k) { return npcInv[k] > 0; });
+
+        if (caught) {
+            var kingdom = Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null;
+            var actualFine = applyCorruptPenalty(town, kingdom, 100, 10, 5, false);
+            recordCorruptAction('steal_npc', true);
+            player.notoriety += 5;
+            player.schemeCooldowns[cdKey] = day + 30;
+            Engine.logEvent(player.fullName + ' was caught trying to steal from ' + (npc.firstName || 'someone') + '!');
+            return { success: false, caught: true, message: '🚨 CAUGHT stealing from ' + (npc.firstName || 'them') + '! Fined ' + actualFine + 'g, jailed 5 days, reputation -10.' };
+        }
+
+        // Success — steal gold or item
+        if (npcGold > 10 && (invKeys.length === 0 || rng.chance(0.6))) {
+            stolenGold = Math.min(npcGold, rng.randInt(10, Math.min(100, Math.floor(npcGold * 0.3))));
+            if (npc.gold != null) npc.gold -= stolenGold;
+            player.gold += stolenGold;
+            player.stats.totalGoldEarned += stolenGold;
+        } else if (invKeys.length > 0) {
+            stolenItem = rng.pick(invKeys);
+            stolenQty = Math.min(npcInv[stolenItem], rng.randInt(1, 5));
+            npcInv[stolenItem] -= stolenQty;
+            if (npcInv[stolenItem] <= 0) delete npcInv[stolenItem];
+            player.inventory[stolenItem] = (player.inventory[stolenItem] || 0) + stolenQty;
+        } else {
+            // NPC has nothing
+            player.schemeCooldowns[cdKey] = day + 15;
+            return { success: false, message: (npc.firstName || 'They') + ' has nothing worth stealing.' };
+        }
+
+        player.notoriety += 3;
+        player.schemeCooldowns[cdKey] = day + 15;
+        recordCorruptAction('steal_npc', false);
+        grantXP(5, 'Stole from NPC');
+
+        if (stolenGold > 0) {
+            return { success: true, message: '✅ Stole ' + stolenGold + 'g from ' + (npc.firstName || 'them') + '!' };
+        } else {
+            var res = findResource(stolenItem);
+            return { success: true, message: '✅ Stole ' + stolenQty + ' ' + (res ? res.name : stolenItem) + ' from ' + (npc.firstName || 'them') + '!' };
+        }
     }
 
     // ── (d3) Warehouse Heist ──
@@ -30202,6 +30470,7 @@
     // ── (i) Blackmail NPC ──
     function blackmailNPC(personId) {
         if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('shadow_dealings') && !hasSkill('silver_tongue_dark')) return { success: false, message: 'Requires Shadow Dealings or Silver Tongue (Dark) skill.' };
         const person = Engine.findPerson ? Engine.findPerson(personId) : null;
         if (!person || !person.alive) return { success: false, message: 'Person not found or dead.' };
         if (player.blackmailTargets[personId]) return { success: false, message: 'Already blackmailing this person.' };
@@ -30233,6 +30502,7 @@
     // ── (j) Spread Rumors ──
     function spreadRumors(targetMerchantId) {
         if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('silver_tongue_dark') && !hasSkill('discrete')) return { success: false, message: 'Requires Silver Tongue (Dark) or Discrete skill.' };
         if (player.gold < 50) return { success: false, message: 'Need 50g to pay gossips.' };
 
         player.gold -= 50;
@@ -30261,6 +30531,7 @@
     // ── (k) Frame Competitor ──
     function frameCompetitor(targetMerchantId, crimeType) {
         if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('shadow_dealings') && !hasSkill('master_forger')) return { success: false, message: 'Requires Shadow Dealings or Master Forger skill.' };
         if (player.gold < 200) return { success: false, message: 'Need 200g for planting evidence.' };
         const town = Engine.findTown(player.townId);
         if (!town) return { success: false, message: 'Must be in a town.' };
@@ -30289,6 +30560,7 @@
     // ── (l/m/n) Hire Assassin ──
     function hireAssassin(targetId, type) {
         if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('dark_connections') && !hasSkill('assassin')) return { success: false, message: 'Requires Dark Connections or Assassin skill.' };
         const rng = Engine.getRng();
         const town = Engine.findTown(player.townId);
 
@@ -30546,6 +30818,125 @@
             }
         }
 
+        // ── Process Spy Networks ──
+        player.spyNetworks = player.spyNetworks || {};
+        for (var _snTownId in player.spyNetworks) {
+            var _sn = player.spyNetworks[_snTownId];
+            if (day >= _sn.expiresDay) {
+                delete player.spyNetworks[_snTownId];
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🕵️ Spy network in ' + (_snTownId || '?') + ' has dissolved.', 'info', 'my_business');
+            } else if (day % 30 === 0) {
+                // Monthly intelligence report — warn of upcoming changes
+                var _snKingdom = _sn.kingdomId ? (Engine.findKingdom ? Engine.findKingdom(_sn.kingdomId) : null) : null;
+                if (_snKingdom && rng) {
+                    var _intelType = rng.randInt(1, 4);
+                    if (_intelType === 1 && _snKingdom.pendingLaws && _snKingdom.pendingLaws.length > 0) {
+                        Engine.logEvent('🕵️ Intelligence: ' + _snKingdom.name + ' is planning new legislation.');
+                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('🕵️ Intel: ' + _snKingdom.name + ' planning new laws.', 'info', 'my_business');
+                    } else if (_intelType === 2 && (_snKingdom.stability || 50) < 40) {
+                        Engine.logEvent('🕵️ Intelligence: ' + _snKingdom.name + ' is experiencing instability (' + Math.round(_snKingdom.stability || 0) + '%).');
+                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('🕵️ Intel: ' + _snKingdom.name + ' instability at ' + Math.round(_snKingdom.stability || 0) + '%', 'info', 'my_business');
+                    } else if (_intelType === 3) {
+                        // Price trend intel
+                        var _snTown = Engine.findTown(_snTownId);
+                        if (_snTown && _snTown.market && _snTown.market.prices) {
+                            var _pKeys = Object.keys(_snTown.market.prices);
+                            if (_pKeys.length > 0) {
+                                var _pRes = rng.pick(_pKeys);
+                                var _pPrice = _snTown.market.prices[_pRes];
+                                var _pRes2 = findResource(_pRes);
+                                var _trend = _pPrice > (_pRes2 ? _pRes2.basePrice : 10) * 1.3 ? 'high' : (_pPrice < (_pRes2 ? _pRes2.basePrice : 10) * 0.7 ? 'low' : 'normal');
+                                Engine.logEvent('🕵️ Intelligence: ' + (_pRes2 ? _pRes2.name : _pRes) + ' prices are ' + _trend + ' in ' + _snTown.name + '.');
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Process Smuggling Routes — passive income ──
+        player.smugglingRoutes = player.smugglingRoutes || [];
+        for (var _smri = player.smugglingRoutes.length - 1; _smri >= 0; _smri--) {
+            var _sr = player.smugglingRoutes[_smri];
+            if (day >= _sr.expiresDay) {
+                player.smugglingRoutes.splice(_smri, 1);
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🥷 A smuggling route has expired.', 'info', 'my_business');
+            } else if (day % 7 === 0) {
+                // Weekly income from smuggling
+                var _smuggleIncome = (rng ? rng.randInt(15, 50) : 25);
+                if (hasSkill('contraband_network')) _smuggleIncome = Math.floor(_smuggleIncome * 1.5);
+                player.gold += _smuggleIncome;
+                player.stats.totalGoldEarned += _smuggleIncome;
+                _sr.goldEarned = (_sr.goldEarned || 0) + _smuggleIncome;
+                // Small chance of discovery each week
+                if (rng && rng.chance(0.03)) {
+                    var _smrTown = Engine.findTown(_sr.fromTownId);
+                    var _smrKingdom = _smrTown ? (Engine.findKingdom ? Engine.findKingdom(_smrTown.kingdomId) : null) : null;
+                    player.smugglingRoutes.splice(_smri, 1);
+                    player.notoriety += 10;
+                    if (_smrKingdom) player.reputation[_smrKingdom.id] = Math.max(0, (player.reputation[_smrKingdom.id] || 50) - 10);
+                    Engine.logEvent('🚨 A smuggling route was discovered and shut down!');
+                    if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚨 Smuggling route busted! Rep -10.', 'danger', 'my_business');
+                }
+            }
+        }
+
+        // ── Process Protection Rackets — weekly collection ──
+        player.protectionRackets = player.protectionRackets || {};
+        for (var _prTownId in player.protectionRackets) {
+            var _pr = player.protectionRackets[_prTownId];
+            if (day >= _pr.lastCollectDay + 7) {
+                _pr.lastCollectDay = day;
+                var _prIncome = _pr.paymentPerWeek || 30;
+                player.gold += _prIncome;
+                player.stats.totalGoldEarned += _prIncome;
+                // Chance of resistance/discovery each week
+                if (rng && rng.chance(0.05)) {
+                    delete player.protectionRackets[_prTownId];
+                    player.notoriety += 8;
+                    var _prTown = Engine.findTown(_prTownId);
+                    var _prKingdom = _prTown ? (Engine.findKingdom ? Engine.findKingdom(_prTown.kingdomId) : null) : null;
+                    if (_prKingdom) player.reputation[_prKingdom.id] = Math.max(0, (player.reputation[_prKingdom.id] || 50) - 8);
+                    Engine.logEvent('🚨 Protection racket in ' + (_prTown ? _prTown.name : '?') + ' was exposed! Merchants reported to authorities.');
+                    if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚨 Protection racket exposed in ' + (_prTown ? _prTown.name : '?') + '!', 'danger', 'my_business');
+                }
+            }
+        }
+
+        // ── Process Double Agent — seasonal payments ──
+        if (player.doubleAgentActive) {
+            var _da = player.doubleAgentActive;
+            // Auto-end if no longer in military
+            if (!player.militaryService || !player.militaryService.active) {
+                player.doubleAgentActive = null;
+            } else if (day >= _da.nextPayDay) {
+                player.gold += _da.paymentPerSeason;
+                player.stats.totalGoldEarned += _da.paymentPerSeason;
+                _da.nextPayDay = day + 90;
+                // Chance of discovery each payment cycle
+                if (rng && rng.chance(0.08)) {
+                    var _myKingId = player.militaryService.kingdomId;
+                    var _myK = Engine.findKingdom ? Engine.findKingdom(_myKingId) : null;
+                    var _daTown = Engine.findTown(player.townId);
+                    applyCorruptPenalty(_daTown, _myK, 3000, 40, 20, true);
+                    player.doubleAgentActive = null;
+                    player.militaryService.active = false;
+                    player.notoriety += 30;
+                    Engine.logEvent('🚨 ' + player.fullName + ' was exposed as a double agent! Dishonorably discharged and exiled.');
+                    if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚨 TREASON! Discovered as a double agent! Exiled!', 'danger', 'critical');
+                }
+            }
+        }
+
+        // ── Expire Forged Documents ──
+        player.forgedDocuments = player.forgedDocuments || {};
+        for (var _fdType in player.forgedDocuments) {
+            if (player.forgedDocuments[_fdType] <= day) {
+                delete player.forgedDocuments[_fdType];
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('📝 Your forged ' + _fdType.replace(/_/g, ' ') + ' has expired.', 'info', 'my_business');
+            }
+        }
+
         // Auto-repair sabotaged roads
         for (let i = player.sabotagedRoads.length - 1; i >= 0; i--) {
             const sr = player.sabotagedRoads[i];
@@ -30603,6 +30994,23 @@
         // Market manipulator check
         checkMarketManipulator();
 
+        // ── Process Notoriety Reduction (lay_low / cleanse_identity) ──
+        if (player.notorietyReduction) {
+            var _nr = player.notorietyReduction;
+            if (day >= _nr.endDay) {
+                // Finished
+                if (typeof UI !== 'undefined' && UI.toast) {
+                    if (_nr.type === 'lay_low') UI.toast('🕶️ You\'ve finished laying low. The heat has died down.', 'success', 'my_business');
+                    else UI.toast('🧹 Identity cleansed! Your reputation in the underworld has been scrubbed.', 'success', 'my_business');
+                }
+                Engine.logEvent(player.fullName + '\'s notoriety reduction (' + _nr.type.replace(/_/g, ' ') + ') is complete.');
+                player.notorietyReduction = null;
+            } else {
+                // Daily notoriety reduction tick
+                player.notoriety = Math.max(0, (player.notoriety || 0) - (_nr.dailyReduction || 0));
+            }
+        }
+
         // Clean hands check
         if (player.corruptActions === 0) {
             // Check if any social rank is >= 5 (Royal Advisor level)
@@ -30610,6 +31018,158 @@
                 if ((player.socialRank[kId] || 0) >= 5) {
                     unlockAchievement('clean_hands');
                     break;
+                }
+            }
+        }
+
+        // ── NPC-vs-Player Scheming ──
+        // Only once player is a noble (socialRank >= 4 in any kingdom) or top-10 merchant
+        var _playerIsTarget = false;
+        for (var _srk in player.socialRank) {
+            if ((player.socialRank[_srk] || 0) >= 4) { _playerIsTarget = true; break; }
+        }
+        if (!_playerIsTarget && typeof getMerchantLeaderboard === 'function') {
+            var _rankings = getMerchantLeaderboard();
+            if (_rankings) {
+                for (var _ri = 0; _ri < Math.min(10, _rankings.length); _ri++) {
+                    if (_rankings[_ri] && _rankings[_ri].isPlayer) { _playerIsTarget = true; break; }
+                }
+            }
+        }
+
+        if (_playerIsTarget && day % 30 === 0) {
+            // Check once per month — very rare events
+            player.npcSchemesAgainstPlayer = player.npcSchemesAgainstPlayer || [];
+
+            // Base chance: 8% per month check, very rare
+            var _schemeBaseChance = 0.08;
+            // Notoriety makes you a bigger target — NPCs hear about your criminal exploits
+            var _playerNotoriety = player.notoriety || 0;
+            if (_playerNotoriety >= 80) _schemeBaseChance *= 2.0;       // WANTED: double the scheming
+            else if (_playerNotoriety >= 50) _schemeBaseChance *= 1.6;  // Notorious: 60% more
+            else if (_playerNotoriety >= 25) _schemeBaseChance *= 1.3;  // Suspicious: 30% more
+            else if (_playerNotoriety >= 10) _schemeBaseChance *= 1.1;  // Whispered: 10% more
+            // Defensive skills reduce chance
+            if (hasSkill('inner_circle')) _schemeBaseChance *= 0.70;
+            if (hasSkill('fortified_reputation')) _schemeBaseChance *= 0.80;
+            if (hasSkill('counter_intelligence')) _schemeBaseChance *= 0.85;
+            if (hasSkill('vigilant_merchant')) _schemeBaseChance *= 0.75;
+
+            if (rng && rng.chance(_schemeBaseChance)) {
+                // Determine scheme type — weighted by rarity
+                var _schemeRoll = rng.random();
+                var _npcScheme = null;
+
+                if (_schemeRoll < 0.30) {
+                    // Rumors (most common) — NPC spreads rumors about player
+                    var _rumorDuration = rng.randInt(30, 90);
+                    var _rumorKingdom = player.citizenshipKingdomId;
+                    var _repLoss = rng.randInt(3, 8);
+                    if (hasSkill('fortified_reputation')) _repLoss = Math.floor(_repLoss * 0.6);
+                    if (_rumorKingdom && player.reputation[_rumorKingdom]) {
+                        player.reputation[_rumorKingdom] = Math.max(0, player.reputation[_rumorKingdom] - _repLoss);
+                    }
+                    _npcScheme = { type: 'rumors', day: day, repLoss: _repLoss, duration: _rumorDuration };
+                    Engine.logEvent('🤫 Rumors are being spread about ' + player.fullName + '! Reputation -' + _repLoss + '.');
+                    if (typeof UI !== 'undefined' && UI.toast) UI.toast('🤫 Someone is spreading rumors about you! Reputation -' + _repLoss, 'warning', 'my_business');
+
+                } else if (_schemeRoll < 0.52) {
+                    // Theft (common) — NPC steals gold from player
+                    var _stolenAmt = rng.randInt(20, Math.min(200, Math.floor((player.gold || 0) * 0.05)));
+                    if (hasSkill('vigilant_merchant')) _stolenAmt = Math.floor(_stolenAmt * 0.5);
+                    if (_stolenAmt > 0 && player.gold >= _stolenAmt) {
+                        player.gold -= _stolenAmt;
+                        _npcScheme = { type: 'theft', day: day, amount: _stolenAmt };
+                        Engine.logEvent('💰 ' + player.fullName + ' had ' + _stolenAmt + 'g stolen by an unknown thief!');
+                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('💰 A thief stole ' + _stolenAmt + 'g from you!', 'danger', 'my_business');
+                    }
+
+                } else if (_schemeRoll < 0.70) {
+                    // Sabotage (uncommon) — damage a player building
+                    var _playerBuildings = player.buildings.filter(function(b) { return !b._disabledUntil; });
+                    if (_playerBuildings.length > 0) {
+                        var _sabTarget = rng.pick(_playerBuildings);
+                        var _sabDays = rng.randInt(10, 25);
+                        if (hasSkill('vigilant_merchant')) _sabDays = Math.floor(_sabDays * 0.6);
+                        _sabTarget._disabledUntil = day + _sabDays;
+                        _npcScheme = { type: 'sabotage', day: day, buildingType: _sabTarget.type, duration: _sabDays };
+                        Engine.logEvent('🔨 One of ' + player.fullName + '\'s buildings was sabotaged! Disabled for ' + _sabDays + ' days.');
+                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('🔨 Your ' + (_sabTarget.type || 'building') + ' was sabotaged! Disabled for ' + _sabDays + ' days.', 'danger', 'my_business');
+                    }
+
+                } else if (_schemeRoll < 0.84) {
+                    // Price manipulation (uncommon) — NPC manipulates market prices against player
+                    var _priceTown = Engine.findTown(player.townId);
+                    if (_priceTown && _priceTown.market && _priceTown.market.prices) {
+                        var _priceKeys = Object.keys(_priceTown.market.prices);
+                        if (_priceKeys.length > 0) {
+                            var _priceRes = rng.pick(_priceKeys);
+                            var _priceInflation = 1 + rng.randFloat(0.15, 0.35);
+                            _priceTown.market.prices[_priceRes] = Math.floor(_priceTown.market.prices[_priceRes] * _priceInflation);
+                            _npcScheme = { type: 'price_manipulation', day: day, resource: _priceRes };
+                            Engine.logEvent('📈 Market prices for ' + _priceRes + ' in ' + _priceTown.name + ' have been artificially inflated.');
+                            if (typeof UI !== 'undefined' && UI.toast) UI.toast('📈 Someone manipulated ' + _priceRes + ' prices in ' + _priceTown.name + '!', 'warning', 'my_business');
+                        }
+                    }
+
+                } else if (_schemeRoll < 0.94) {
+                    // Framing (rare) — NPC frames player for a crime
+                    var _frameFine = rng.randInt(50, 300);
+                    var _frameJailDays = rng.randInt(2, 7);
+                    if (hasSkill('counter_intelligence')) {
+                        // Detected the frame! No penalty
+                        _npcScheme = { type: 'frame_detected', day: day };
+                        Engine.logEvent('🕵️ ' + player.fullName + '\'s intelligence network uncovered a framing attempt!');
+                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('🕵️ Your intelligence network uncovered a plot to frame you!', 'success', 'my_business');
+                    } else {
+                        var _frameTown = Engine.findTown(player.townId);
+                        var _frameKingdom = _frameTown ? (Engine.findKingdom ? Engine.findKingdom(_frameTown.kingdomId) : null) : null;
+                        if (_frameKingdom) player.reputation[_frameKingdom.id] = Math.max(0, (player.reputation[_frameKingdom.id] || 50) - 10);
+                        player.gold = Math.max(0, player.gold - _frameFine);
+                        _npcScheme = { type: 'framed', day: day, fine: _frameFine, jailDays: _frameJailDays };
+                        Engine.logEvent('🎭 ' + player.fullName + ' has been falsely accused of a crime! Fined ' + _frameFine + 'g.');
+                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('🎭 You\'ve been framed for a crime! Fined ' + _frameFine + 'g, reputation -10.', 'danger', 'my_business');
+                    }
+
+                } else {
+                    // Assassination attempt (extremely rare — 6% of an already 8% monthly chance)
+                    // Additional gates: only if player has notoriety >= 20 OR is noble rank 5+
+                    var _canAssassinate = (player.notoriety || 0) >= 20;
+                    if (!_canAssassinate) {
+                        for (var _ask in player.socialRank) {
+                            if ((player.socialRank[_ask] || 0) >= 5) { _canAssassinate = true; break; }
+                        }
+                    }
+                    if (_canAssassinate) {
+                        var _assassinChance = 0.60; // 60% chance the assassin succeeds in injuring
+                        if (hasSkill('counter_intelligence')) _assassinChance *= 0.50;
+                        if (hasSkill('inner_circle')) _assassinChance *= 0.70;
+                        if (hasSkill('intimidating_presence')) _assassinChance *= 0.80;
+                        // Player guards reduce chance
+                        var _guardCount = (player.guards || []).length;
+                        if (_guardCount > 0) _assassinChance *= Math.max(0.2, 1 - _guardCount * 0.15);
+
+                        if (rng.chance(_assassinChance)) {
+                            // Injured, not killed
+                            player.injuries = player.injuries || [];
+                            player.injuries.push({ type: 'assassination_wound', name: 'Assassination Wound', severity: 'severe', dayOccurred: day, treated: false });
+                            var _assassinGoldLoss = rng.randInt(100, 500);
+                            player.gold = Math.max(0, player.gold - _assassinGoldLoss);
+                            _npcScheme = { type: 'assassination_attempt', day: day, success: true, goldLost: _assassinGoldLoss };
+                            Engine.logEvent('🗡️ An assassin attacked ' + player.fullName + '! Severely wounded, lost ' + _assassinGoldLoss + 'g.');
+                            if (typeof UI !== 'undefined' && UI.toast) UI.toast('🗡️ An assassin attacked you! Severely wounded, lost ' + _assassinGoldLoss + 'g.', 'danger', 'critical');
+                        } else {
+                            _npcScheme = { type: 'assassination_attempt', day: day, success: false };
+                            Engine.logEvent('🛡️ An assassin targeted ' + player.fullName + ' but was thwarted!');
+                            if (typeof UI !== 'undefined' && UI.toast) UI.toast('🛡️ An assassination attempt on you was foiled!', 'warning', 'critical');
+                        }
+                    }
+                }
+
+                if (_npcScheme) {
+                    player.npcSchemesAgainstPlayer.push(_npcScheme);
+                    // Keep only last 20 records
+                    if (player.npcSchemesAgainstPlayer.length > 20) player.npcSchemesAgainstPlayer.shift();
                 }
             }
         }
@@ -30628,7 +31188,8 @@
 
         const kingdom = Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null;
 
-        // Sabotage tab
+        // Sabotage tab — requires shadow_dealings or arsonist_skill
+        if (hasSkill('shadow_dealings') || hasSkill('arsonist_skill')) {
         for (let i = 0; i < town.buildings.length; i++) {
             const bld = town.buildings[i];
             const bt = Engine.findBuildingType ? Engine.findBuildingType(bld.type) : null;
@@ -30638,7 +31199,7 @@
                 desc: 'Disable building production for 15-30 days.',
                 cost: '2 tools', detection: calculateCorruptDetection(0.25, town),
                 reward: 'Production halted', xp: 10,
-                requires: null, available: (player.inventory.tools || 0) >= 2,
+                requires: 'Shadow Dealings or Arsonist', available: (player.inventory.tools || 0) >= 2,
                 params: [i, town.id],
             });
         }
@@ -30654,7 +31215,7 @@
                     desc: 'Reduce road quality for 60 days.',
                     cost: '5 tools', detection: calculateCorruptDetection(0.15, town),
                     reward: 'Slows travel', xp: 15,
-                    requires: null, available: (player.inventory.tools || 0) >= 5,
+                    requires: 'Shadow Dealings or Arsonist', available: (player.inventory.tools || 0) >= 5,
                     params: [i],
                 });
             }
@@ -30671,19 +31232,22 @@
                 desc: 'DESTROY building permanently.',
                 cost: '1 wood + 10g', detection: calculateCorruptDetection(baseDetect, town),
                 reward: 'Building destroyed', xp: 25,
-                requires: null,
-                available: (player.inventory.wood || 0) >= 1 && player.gold >= 10,
+                requires: 'Arsonist',
+                available: hasSkill('arsonist_skill') && (player.inventory.wood || 0) >= 1 && player.gold >= 10,
                 params: [i, town.id],
             });
         }
+        } // end sabotage skill gate
 
+        // Steal/pickpocket — requires discrete
+        if (hasSkill('discrete')) {
         actions.push({
             id: 'steal_goods', tab: 'sabotage',
             name: 'Steal Goods',
             desc: `Take goods from market without paying. Max 20 units.${isNight ? ' (Night bonus!)' : ''}`,
             cost: 'Free', detection: calculateCorruptDetection(isNight ? 0.20 : 0.35, town),
             reward: 'Free goods', xp: 5,
-            requires: null, available: true,
+            requires: 'Discrete', available: true,
             params: [null, null, town.id],
         });
 
@@ -30694,9 +31258,10 @@
             desc: `Lift gold from unsuspecting locals. Yield: 5-30g.${isNight ? ' (Night bonus!)' : ''}`,
             cost: 'Free', detection: calculateCorruptDetection(isNight ? 0.15 : 0.30, town),
             reward: '5-30g', xp: 3,
-            requires: null, available: true,
+            requires: 'Discrete', available: true,
             params: [town.id],
         });
+        } // end discrete gate
 
         // Warehouse Heist — steal from NPC-owned warehouses/buildings
         if (hasSkill('shadow_dealings') || hasSkill('discrete')) {
@@ -30755,78 +31320,91 @@
         // Political tab
         const security = (town.security || 50);
         const minBribe = Math.floor(50 + security * 4.5);
+        if (hasSkill('bribe_expert') || hasSkill('silver_tongue_dark')) {
         actions.push({
             id: 'bribe_guards', tab: 'political',
             name: 'Bribe Guards',
             desc: `Reduce detection chance in this town by 40% for 30 days.`,
             cost: `${minBribe}-500g`, detection: calculateCorruptDetection(0.10, town),
             reward: '-40% detection', xp: 5,
-            requires: null, available: player.gold >= minBribe,
+            requires: 'Bribe Expert or Silver Tongue (Dark)', available: player.gold >= minBribe,
             params: [town.id, minBribe],
         });
+        }
 
         if (kingdom) {
             const advCost = Math.floor(500 + (kingdom.prosperity || 50) * 15);
+            if (hasSkill('silver_tongue_dark') || hasSkill('kingmaker_skill')) {
             actions.push({
                 id: 'bribe_advisor', tab: 'political',
                 name: 'Bribe Royal Advisor',
                 desc: 'Influence the next advisor vote.',
                 cost: `${advCost}g`, detection: calculateCorruptDetection(0.20, town),
                 reward: 'Political influence', xp: 25,
-                requires: hasSkill('silver_tongue_dark') ? null : 'Advisor relationship >= 30',
+                requires: 'Silver Tongue (Dark) or Kingmaker',
                 available: player.gold >= advCost,
                 params: [kingdom.id, null],
             });
+            }
 
+            if (hasSkill('kingmaker_skill') || hasSkill('silver_tongue_dark')) {
             actions.push({
                 id: 'cultivate_heir', tab: 'political',
                 name: 'Cultivate the Heir',
                 desc: `Gift luxury goods to heir. Current favor: ${player.heirFavor[kingdom.id] || 0}/100.`,
                 cost: '100g+ in luxury goods', detection: 0,
                 reward: 'Future political power', xp: 5,
-                requires: null, available: true,
+                requires: 'Kingmaker or Silver Tongue (Dark)', available: true,
                 params: [kingdom.id],
             });
+            }
 
+            if (hasSkill('shadow_dealings')) {
             actions.push({
                 id: 'insider_trading', tab: 'market',
                 name: 'Insider Trading',
                 desc: 'Learn about upcoming law/tax changes 30 days early.',
                 cost: '300g', detection: calculateCorruptDetection(0.20, town),
                 reward: 'Advance knowledge', xp: 10,
-                requires: null, available: player.gold >= 300,
+                requires: 'Shadow Dealings', available: player.gold >= 300,
                 params: [kingdom.id],
             });
+            }
         }
 
+        if (hasSkill('silver_tongue_dark') || hasSkill('discrete')) {
         actions.push({
             id: 'spread_rumors', tab: 'political',
             name: 'Spread Rumors',
             desc: 'Damage a competitor\'s reputation for 60 days.',
             cost: '50g', detection: calculateCorruptDetection(0.15, town),
             reward: 'Competitor weakened', xp: 8,
-            requires: null, available: player.gold >= 50,
+            requires: 'Silver Tongue (Dark) or Discrete', available: player.gold >= 50,
             params: [null],
         });
+        }
 
+        if (hasSkill('shadow_dealings') || hasSkill('master_forger')) {
         actions.push({
             id: 'frame_competitor', tab: 'political',
             name: 'Frame Competitor',
             desc: 'Plant evidence to get a competitor arrested.',
             cost: '200g', detection: calculateCorruptDetection(0.30, town),
             reward: 'Competitor jailed/fined', xp: 20,
-            requires: null, available: player.gold >= 200,
+            requires: 'Shadow Dealings or Master Forger', available: player.gold >= 200,
             params: [null, null],
         });
+        }
 
-        // Assassination tab
+        // Assassination tab — requires dark_connections or assassin
+        if (hasSkill('dark_connections') || hasSkill('assassin')) {
         actions.push({
             id: 'assassinate_competitor', tab: 'assassination',
             name: 'Hire Assassin (Competitor)',
             desc: 'Eliminate a rival merchant. Their buildings become available.',
             cost: '1000-3000g', detection: calculateCorruptDetection(0.20, town),
             reward: 'Competitor eliminated', xp: 30,
-            requires: null, available: player.gold >= 1000,
+            requires: 'Dark Connections or Assassin', available: player.gold >= 1000,
             params: [null, 'competitor'],
         });
 
@@ -30836,9 +31414,10 @@
             desc: 'Reduce town security by 30 for 90 days.',
             cost: '2000-5000g', detection: calculateCorruptDetection(0.25, town),
             reward: 'Town security drop', xp: 40,
-            requires: null, available: player.gold >= 2000,
+            requires: 'Dark Connections or Assassin', available: player.gold >= 2000,
             params: [town.id, 'guard_captain'],
         });
+        }
 
         if (kingdom && (hasSkill('kingmaker_skill') || hasSkill('dark_connections'))) {
             actions.push({
@@ -30886,7 +31465,8 @@
             });
         }
 
-        // Tax Evasion tab
+        // Tax Evasion tab — requires discrete or shadow_dealings
+        if (hasSkill('discrete') || hasSkill('shadow_dealings')) {
         if (!player.hiddenWarehouses.some(hw => hw.townId === town.id)) {
             actions.push({
                 id: 'hidden_warehouse', tab: 'tax_evasion',
@@ -30894,12 +31474,14 @@
                 desc: 'Store goods invisible to tax collectors. 50 capacity.',
                 cost: '800g + 20 wood + 15 stone', detection: 0,
                 reward: 'Tax-free storage', xp: 15,
-                requires: null,
+                requires: 'Discrete or Shadow Dealings',
                 available: player.gold >= 800 && (player.inventory.wood || 0) >= 20 && (player.inventory.stone || 0) >= 15,
                 params: [town.id],
             });
         }
+        }
 
+        if (hasSkill('master_forger') || hasSkill('shadow_dealings')) {
         if (!player.cookingBooks) {
             const hasLocalBuildings = player.buildings.some(b => b.townId === player.townId);
             actions.push({
@@ -30908,10 +31490,201 @@
                 desc: 'Underreport trade volume by 30%. Saves ~30% on taxes this season.',
                 cost: 'Free', detection: 0.10,
                 reward: '~30% tax savings', xp: 5,
-                requires: 'Buildings in town',
+                requires: 'Master Forger or Shadow Dealings',
                 available: hasLocalBuildings,
                 params: [],
             });
+        }
+        }
+
+        // ── Espionage tab (new schemes) ──
+        if (hasSkill('discrete') && hasSkill('dark_connections')) {
+            if (!player.spyNetworks || !player.spyNetworks[town.id]) {
+                actions.push({
+                    id: 'spy_network', tab: 'political',
+                    name: '🕵️ Plant Spy Network',
+                    desc: 'Establish intelligence contacts. Get advance warning of price changes, wars, and laws for 180 days.',
+                    cost: '500g', detection: calculateCorruptDetection(0.20, town),
+                    reward: 'Information advantage', xp: 20,
+                    requires: 'Discrete + Dark Connections', available: player.gold >= 500,
+                    params: [town.id],
+                });
+            }
+        }
+
+        if (hasSkill('master_smuggler') && hasSkill('contraband_network')) {
+            var _srCount = (player.smugglingRoutes || []).length;
+            if (_srCount < 3) {
+                // Find towns connected by road to offer as destinations
+                var _connRoads = (Engine.getRoads ? Engine.getRoads() : []).filter(function(r) {
+                    return r.fromTownId === town.id || r.toTownId === town.id;
+                });
+                for (var _sri = 0; _sri < Math.min(3, _connRoads.length); _sri++) {
+                    var _destId = _connRoads[_sri].fromTownId === town.id ? _connRoads[_sri].toTownId : _connRoads[_sri].fromTownId;
+                    var _destTown = Engine.findTown(_destId);
+                    var _routeExists = (player.smugglingRoutes || []).some(function(r) {
+                        return (r.fromTownId === town.id && r.toTownId === _destId) || (r.fromTownId === _destId && r.toTownId === town.id);
+                    });
+                    if (!_routeExists && _destTown) {
+                        actions.push({
+                            id: 'smuggling_route', tab: 'market',
+                            name: '🥷 Smuggling Route to ' + _destTown.name,
+                            desc: 'Establish permanent smuggling route. Generates passive gold for 365 days. (' + _srCount + '/3 active)',
+                            cost: '1000g', detection: calculateCorruptDetection(0.25, town),
+                            reward: 'Passive income', xp: 25,
+                            requires: 'Master Smuggler + Contraband Network', available: player.gold >= 1000,
+                            params: [town.id, _destId],
+                        });
+                    }
+                }
+            }
+        }
+
+        if (hasSkill('master_forger')) {
+            var _fd = player.forgedDocuments || {};
+            if (!_fd.trade_permit || _fd.trade_permit <= day) {
+                actions.push({
+                    id: 'forge_documents', tab: 'market',
+                    name: '📝 Forge Trade Permit',
+                    desc: 'Create fake trade permit. Bypass tariffs and trade restrictions for 90 days.',
+                    cost: '200g', detection: calculateCorruptDetection(0.20, town),
+                    reward: 'Trade freedom', xp: 15,
+                    requires: 'Master Forger', available: player.gold >= 200,
+                    params: ['trade_permit'],
+                });
+            }
+            if (!_fd.noble_title || _fd.noble_title <= day) {
+                actions.push({
+                    id: 'forge_documents', tab: 'political',
+                    name: '📝 Forge Noble Title',
+                    desc: 'Create fake noble credentials. Treated as minor nobility for 60 days.',
+                    cost: '800g', detection: calculateCorruptDetection(0.35, town),
+                    reward: 'Social access', xp: 15,
+                    requires: 'Master Forger', available: player.gold >= 800,
+                    params: ['noble_title'],
+                });
+            }
+            if (!_fd.travel_papers || _fd.travel_papers <= day) {
+                actions.push({
+                    id: 'forge_documents', tab: 'market',
+                    name: '📝 Forge Travel Papers',
+                    desc: 'Create fake travel papers. Cross closed borders freely for 120 days.',
+                    cost: '150g', detection: calculateCorruptDetection(0.15, town),
+                    reward: 'Border freedom', xp: 15,
+                    requires: 'Master Forger', available: player.gold >= 150,
+                    params: ['travel_papers'],
+                });
+            }
+        }
+
+        if (hasSkill('dark_connections')) {
+            actions.push({
+                id: 'sabotage_caravan', tab: 'sabotage',
+                name: '⚔️ Sabotage Rival Caravan',
+                desc: 'Hire bandits to ambush an elite merchant or noble\'s caravan near this town.',
+                cost: '300g', detection: calculateCorruptDetection(0.30, town),
+                reward: 'Loot + rival disruption', xp: 20,
+                requires: 'Dark Connections', available: player.gold >= 300,
+                params: [null],
+            });
+        }
+
+        if (hasSkill('master_forger') && hasSkill('discrete')) {
+            actions.push({
+                id: 'plant_evidence', tab: 'political',
+                name: '🎭 Plant Evidence on NPC',
+                desc: 'Plant contraband on an NPC to get them arrested. Disrupts their operations.',
+                cost: '150g', detection: calculateCorruptDetection(0.25, town),
+                reward: 'Rival removed', xp: 20,
+                requires: 'Master Forger + Discrete', available: player.gold >= 150,
+                params: [null],
+            });
+        }
+
+        if (hasSkill('kingmaker_skill') && kingdom) {
+            actions.push({
+                id: 'incite_revolt', tab: 'political',
+                name: '🔥 Incite Revolt',
+                desc: 'Fund agitators to destabilize ' + kingdom.name + '. Reduces stability, prosperity, increases unrest.',
+                cost: '2000g', detection: calculateCorruptDetection(0.40, town),
+                reward: 'Kingdom weakened', xp: 40,
+                requires: 'Kingmaker', available: player.gold >= 2000,
+                params: [kingdom.id],
+            });
+        }
+
+        if (hasSkill('shadow_dealings') && player.militaryService && player.militaryService.active && !player.doubleAgentActive) {
+            // Find enemy kingdoms at war with player's service kingdom
+            var _myMilKingdom = player.militaryService.kingdomId;
+            var _activeWars = Engine.getActiveWars ? Engine.getActiveWars() : {};
+            for (var _wId in _activeWars) {
+                var _war = _activeWars[_wId];
+                var _enemyId = null;
+                if (_war.kingdomA === _myMilKingdom) _enemyId = _war.kingdomB;
+                else if (_war.kingdomB === _myMilKingdom) _enemyId = _war.kingdomA;
+                if (_enemyId) {
+                    var _enemyK = Engine.findKingdom ? Engine.findKingdom(_enemyId) : null;
+                    if (_enemyK) {
+                        actions.push({
+                            id: 'double_agent', tab: 'political',
+                            name: '🕵️ Double Agent for ' + _enemyK.name,
+                            desc: 'Sell military secrets to the enemy. High risk treason — devastating if caught.',
+                            cost: 'Free', detection: calculateCorruptDetection(0.30, town),
+                            reward: 'Gold per season', xp: 30,
+                            requires: 'Shadow Dealings + Active Military', available: true,
+                            params: [_enemyId],
+                        });
+                    }
+                }
+            }
+        }
+
+        if (hasSkill('intimidating_presence') && hasSkill('shadow_dealings')) {
+            if (!player.protectionRackets || !player.protectionRackets[town.id]) {
+                actions.push({
+                    id: 'protection_racket', tab: 'market',
+                    name: '💪 Protection Racket',
+                    desc: 'Extort local merchants for weekly "protection" payments. Creates enemies but generates passive income.',
+                    cost: 'Free', detection: calculateCorruptDetection(0.25, town),
+                    reward: 'Weekly gold', xp: 20,
+                    requires: 'Intimidating Presence + Shadow Dealings', available: true,
+                    params: [town.id],
+                });
+            }
+        }
+
+        // ── Notoriety Reduction Schemes ──
+        if ((player.notoriety || 0) > 0 && !player.notorietyReduction) {
+            // Lay Low — expensive, slow, no skill requirement
+            actions.push({
+                id: 'lay_low', tab: 'political',
+                name: '🕶️ Lay Low',
+                desc: 'Pay a hefty sum to disappear from the public eye. Slowly reduces notoriety over 30-60 days.',
+                cost: '1,500g', detection: 0,
+                reward: 'Notoriety -25 to -45', xp: 5,
+                requires: 'Notoriety > 0', available: player.gold >= 1500,
+                params: [],
+            });
+            // Cleanse Identity — cheaper, faster, skill-gated
+            if (hasSkill('master_forger') || hasSkill('silver_tongue_dark') || hasSkill('discrete')) {
+                var _ciCost = 400;
+                var _ciSkills = 0;
+                if (hasSkill('master_forger')) _ciSkills++;
+                if (hasSkill('silver_tongue_dark')) _ciSkills++;
+                if (hasSkill('discrete')) _ciSkills++;
+                if (_ciSkills >= 3) _ciCost = 200;
+                else if (_ciSkills >= 2) _ciCost = 300;
+                var _ciRewardDesc = _ciSkills >= 3 ? 'Notoriety -35 to -50' : _ciSkills >= 2 ? 'Notoriety -25 to -40' : 'Notoriety -20 to -35';
+                actions.push({
+                    id: 'cleanse_identity', tab: 'political',
+                    name: '🧹 Cleanse Identity',
+                    desc: 'Use your skills to forge new records, talk your way out of suspicion, and erase evidence. Fast notoriety reduction over 7-14 days.',
+                    cost: _ciCost + 'g', detection: 0,
+                    reward: _ciRewardDesc, xp: 10,
+                    requires: 'Master Forger / Silver Tongue (Dark) / Discrete', available: player.gold >= _ciCost,
+                    params: [],
+                });
+            }
         }
 
         return actions;
@@ -30964,38 +31737,454 @@
         return { success: true, message: '\u2620\uFE0F ' + person.firstName + ' eliminated. Looted ' + loot + 'g. Their empire will pass to an heir... or collapse.' };
     }
 
+    // ── (p1) Spy Network ──
+    function plantSpyNetwork(townId) {
+        if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('discrete') || !hasSkill('dark_connections')) return { success: false, message: 'Requires Discrete + Dark Connections skills.' };
+        if (player.gold < 500) return { success: false, message: 'Need 500g to establish spy network.' };
+        var town = Engine.findTown(townId);
+        if (!town) return { success: false, message: 'Town not found.' };
+        player.spyNetworks = player.spyNetworks || {};
+        if (player.spyNetworks[townId]) return { success: false, message: 'Already have a spy network in ' + town.name + '.' };
+
+        var rng = Engine.getRng();
+        var detection = calculateCorruptDetection(0.20, town);
+        if (rng && rng.chance(detection)) {
+            var kingdom = Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null;
+            applyCorruptPenalty(town, kingdom, 300, 15, 5, false);
+            recordCorruptAction('spy_network', true);
+            player.notoriety += 10;
+            player.gold -= 500;
+            return { success: false, caught: true, message: '🚨 CAUGHT establishing spy network! Fined 300g, jailed 5 days.' };
+        }
+
+        player.gold -= 500;
+        player.spyNetworks[townId] = { expiresDay: Engine.getDay() + 180, kingdomId: town.kingdomId };
+        recordCorruptAction('spy_network', false);
+        grantXP(20, 'Established spy network');
+        player.notoriety += 5;
+        Engine.logEvent(player.fullName + ' established intelligence contacts in ' + town.name + '.');
+        return { success: true, message: '🕵️ Spy network established in ' + town.name + '! You\'ll receive advance warnings for 180 days.' };
+    }
+
+    // ── (p2) Smuggling Route ──
+    function establishSmugglingRoute(fromTownId, toTownId) {
+        if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('master_smuggler') || !hasSkill('contraband_network')) return { success: false, message: 'Requires Master Smuggler + Contraband Network skills.' };
+        if (player.gold < 1000) return { success: false, message: 'Need 1000g to bribe contacts along the route.' };
+        var fromTown = Engine.findTown(fromTownId);
+        var toTown = Engine.findTown(toTownId);
+        if (!fromTown || !toTown) return { success: false, message: 'Towns not found.' };
+        if (fromTownId === toTownId) return { success: false, message: 'Cannot smuggle to the same town.' };
+
+        player.smugglingRoutes = player.smugglingRoutes || [];
+        var exists = player.smugglingRoutes.some(function(r) {
+            return (r.fromTownId === fromTownId && r.toTownId === toTownId) || (r.fromTownId === toTownId && r.toTownId === fromTownId);
+        });
+        if (exists) return { success: false, message: 'Already have a smuggling route between these towns.' };
+        if (player.smugglingRoutes.length >= 3) return { success: false, message: 'Maximum 3 smuggling routes. Close one first.' };
+
+        var rng = Engine.getRng();
+        var detection = calculateCorruptDetection(0.25, fromTown);
+        if (rng && rng.chance(detection)) {
+            var kingdom = Engine.findKingdom ? Engine.findKingdom(fromTown.kingdomId) : null;
+            applyCorruptPenalty(fromTown, kingdom, 500, 20, 10, false);
+            recordCorruptAction('smuggling_route', true);
+            player.notoriety += 15;
+            player.gold -= 1000;
+            return { success: false, caught: true, message: '🚨 CAUGHT setting up smuggling route! Fined 500g, jailed 10 days.' };
+        }
+
+        player.gold -= 1000;
+        player.smugglingRoutes.push({ fromTownId: fromTownId, toTownId: toTownId, expiresDay: Engine.getDay() + 365, goldEarned: 0 });
+        recordCorruptAction('smuggling_route', false);
+        grantXP(25, 'Established smuggling route');
+        player.notoriety += 8;
+        Engine.logEvent('A new smuggling route has been established between ' + fromTown.name + ' and ' + toTown.name + '.');
+        return { success: true, message: '🥷 Smuggling route established: ' + fromTown.name + ' ↔ ' + toTown.name + '! Generates passive income for 365 days.' };
+    }
+
+    // ── (p3) Forge Documents ──
+    function forgeDocuments(docType) {
+        if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('master_forger')) return { success: false, message: 'Requires Master Forger skill.' };
+        player.forgedDocuments = player.forgedDocuments || {};
+
+        var rng = Engine.getRng();
+        var town = Engine.findTown(player.townId);
+        var day = Engine.getDay();
+        var cost, duration, detection, reward;
+
+        if (docType === 'trade_permit') {
+            cost = 200;
+            duration = 90;
+            detection = 0.20;
+            reward = 'Bypass trade restrictions and tariffs for 90 days';
+        } else if (docType === 'noble_title') {
+            cost = 800;
+            duration = 60;
+            detection = 0.35;
+            reward = 'Treated as minor nobility for 60 days — access to noble-only areas and audiences';
+        } else if (docType === 'travel_papers') {
+            cost = 150;
+            duration = 120;
+            detection = 0.15;
+            reward = 'Cross closed borders freely for 120 days';
+        } else {
+            return { success: false, message: 'Unknown document type.' };
+        }
+
+        if (player.gold < cost) return { success: false, message: 'Need ' + cost + 'g for materials and bribes.' };
+        if (player.forgedDocuments[docType] && player.forgedDocuments[docType] > day) {
+            return { success: false, message: 'Already have active forged ' + docType.replace(/_/g, ' ') + '.' };
+        }
+
+        var detectChance = calculateCorruptDetection(detection, town);
+        if (rng && rng.chance(detectChance)) {
+            var kingdom = Engine.findKingdom ? Engine.findKingdom(town ? town.kingdomId : null) : null;
+            var fine = applyCorruptPenalty(town, kingdom, cost * 3, 20, 7, false);
+            recordCorruptAction('forge_documents', true);
+            player.notoriety += 12;
+            player.gold -= cost;
+            return { success: false, caught: true, message: '🚨 CAUGHT forging documents! Fined ' + fine + 'g, jailed 7 days.' };
+        }
+
+        player.gold -= cost;
+        player.forgedDocuments[docType] = day + duration;
+        recordCorruptAction('forge_documents', false);
+        grantXP(15, 'Forged documents');
+        player.notoriety += 5;
+        return { success: true, message: '📝 Forged ' + docType.replace(/_/g, ' ') + ' created! ' + reward + '.' };
+    }
+
+    // ── (p4) Sabotage Competitor Caravan ──
+    function sabotageCaravan(targetType) {
+        if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('dark_connections')) return { success: false, message: 'Requires Dark Connections skill.' };
+        if (player.gold < 300) return { success: false, message: 'Need 300g to hire bandits.' };
+        var town = Engine.findTown(player.townId);
+        if (!town) return { success: false, message: 'Must be in a town.' };
+
+        // Find elite merchant or noble caravans near this town
+        var rng = Engine.getRng();
+        var people = Engine.getPeople ? Engine.getPeople(player.townId) : [];
+        var targets = [];
+        for (var i = 0; i < people.length; i++) {
+            var p = people[i];
+            if (p && p.alive && (p.isEliteMerchant || p.occupation === 'noble') && p.caravans && p.caravans.length > 0) {
+                targets.push(p);
+            }
+        }
+        if (targets.length === 0) return { success: false, message: 'No elite merchant or noble caravans found near this town.' };
+
+        var target = rng.pick(targets);
+        var detection = calculateCorruptDetection(0.30, town);
+        if (rng && rng.chance(detection)) {
+            var kingdom = Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null;
+            var fine = applyCorruptPenalty(town, kingdom, 800, 25, 10, false);
+            recordCorruptAction('sabotage_caravan', true);
+            player.notoriety += 20;
+            player.gold -= 300;
+            return { success: false, caught: true, message: '🚨 CAUGHT sabotaging ' + (target.firstName || 'a merchant') + '\'s caravan! Fined ' + fine + 'g, jailed 10 days.' };
+        }
+
+        player.gold -= 300;
+        // Damage the caravan
+        var loot = rng.randInt(50, 300);
+        player.gold += loot;
+        player.stats.totalGoldEarned += loot;
+        if (target.gold != null) target.gold = Math.max(0, target.gold - loot * 2);
+        recordCorruptAction('sabotage_caravan', false);
+        grantXP(20, 'Sabotaged caravan');
+        player.notoriety += 12;
+        Engine.logEvent('A caravan belonging to ' + (target.firstName || 'a merchant') + ' was raided by bandits near ' + town.name + '.');
+        return { success: true, message: '⚔️ Caravan sabotaged! Looted ' + loot + 'g from ' + (target.firstName || 'the merchant') + '\'s goods.' };
+    }
+
+    // ── (p5) Plant Evidence ──
+    function plantEvidence(npcId) {
+        if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('master_forger') || !hasSkill('discrete')) return { success: false, message: 'Requires Master Forger + Discrete skills.' };
+        if (player.gold < 150) return { success: false, message: 'Need 150g for fake contraband.' };
+        var npc = Engine.findPerson ? Engine.findPerson(npcId) : null;
+        if (!npc || !npc.alive) return { success: false, message: 'Target not found.' };
+        if (npc.townId !== player.townId) return { success: false, message: 'Target must be in your location.' };
+
+        var town = Engine.findTown(player.townId);
+        var rng = Engine.getRng();
+        var detection = calculateCorruptDetection(0.25, town);
+
+        if (rng && rng.chance(detection)) {
+            var kingdom = Engine.findKingdom ? Engine.findKingdom(town ? town.kingdomId : null) : null;
+            var fine = applyCorruptPenalty(town, kingdom, 400, 20, 8, false);
+            recordCorruptAction('plant_evidence', true);
+            player.notoriety += 15;
+            player.gold -= 150;
+            if (player.relationships[npcId]) player.relationships[npcId].level = 0;
+            return { success: false, caught: true, message: '🚨 CAUGHT planting evidence on ' + (npc.firstName || 'them') + '! Fined ' + fine + 'g, jailed 8 days.' };
+        }
+
+        player.gold -= 150;
+        // NPC gets arrested — loses gold, reputation, and is jailed
+        var npcFine = rng.randInt(100, 500);
+        if (npc.gold != null) npc.gold = Math.max(0, npc.gold - npcFine);
+        npc._jailedUntilDay = Engine.getDay() + rng.randInt(10, 30);
+        // If elite merchant, disrupt their operations
+        if (npc.isEliteMerchant && npc.caravans) {
+            for (var ci = 0; ci < npc.caravans.length; ci++) {
+                npc.caravans[ci].paused = true;
+            }
+        }
+        recordCorruptAction('plant_evidence', false);
+        grantXP(20, 'Planted evidence');
+        player.notoriety += 8;
+        Engine.logEvent((npc.firstName || 'A merchant') + ' was arrested after contraband was found in their possession!');
+        return { success: true, message: '🎭 ' + (npc.firstName || 'Target') + ' arrested! Fined ' + npcFine + 'g and jailed. Their operations are disrupted.' };
+    }
+
+    // ── (p6) Incite Revolt ──
+    function inciteRevolt(kingdomId) {
+        if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('kingmaker_skill')) return { success: false, message: 'Requires Kingmaker skill.' };
+        if (player.gold < 2000) return { success: false, message: 'Need 2000g to fund agitators.' };
+        var kingdom = Engine.findKingdom ? Engine.findKingdom(kingdomId) : null;
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+
+        var town = Engine.findTown(player.townId);
+        var rng = Engine.getRng();
+        var detection = calculateCorruptDetection(0.40, town);
+
+        if (rng && rng.chance(detection)) {
+            var fine = applyCorruptPenalty(town, kingdom, 3000, 40, 20, true);
+            recordCorruptAction('incite_revolt', true);
+            player.notoriety += 30;
+            player.gold -= 2000;
+            return { success: false, caught: true, message: '🚨 CAUGHT inciting revolt! Fined ' + fine + 'g, jailed 20 days, EXILED!' };
+        }
+
+        player.gold -= 2000;
+        // Reduce kingdom stability and prosperity
+        kingdom.stability = Math.max(0, (kingdom.stability || 50) - rng.randInt(10, 25));
+        kingdom.prosperity = Math.max(0, (kingdom.prosperity || 50) - rng.randInt(5, 15));
+        kingdom.unrest = (kingdom.unrest || 0) + rng.randInt(15, 30);
+        recordCorruptAction('incite_revolt', false);
+        grantXP(40, 'Incited revolt');
+        player.notoriety += 20;
+        Engine.logEvent('Unrest is brewing in ' + kingdom.name + '! Agitators are spreading dissent.');
+        return { success: true, message: '🔥 Revolt incited in ' + kingdom.name + '! Stability and prosperity reduced, unrest rising.' };
+    }
+
+    // ── (p7) Double Agent ──
+    function activateDoubleAgent(enemyKingdomId) {
+        if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('shadow_dealings')) return { success: false, message: 'Requires Shadow Dealings skill.' };
+        if (!player.militaryService || !player.militaryService.active) return { success: false, message: 'Must be actively serving in a kingdom\'s military.' };
+        if (player.doubleAgentActive) return { success: false, message: 'Already operating as a double agent.' };
+
+        var myKingdom = Engine.findKingdom ? Engine.findKingdom(player.militaryService.kingdomId) : null;
+        var enemyKingdom = Engine.findKingdom ? Engine.findKingdom(enemyKingdomId) : null;
+        if (!myKingdom || !enemyKingdom) return { success: false, message: 'Kingdom not found.' };
+        if (myKingdom.id === enemyKingdom.id) return { success: false, message: 'Cannot spy for your own kingdom.' };
+
+        // Check if the kingdoms are actually at war or hostile
+        var atWar = false;
+        if (typeof Engine !== 'undefined' && Engine.getActiveWars) {
+            var wars = Engine.getActiveWars();
+            for (var wId in wars) {
+                var war = wars[wId];
+                if ((war.kingdomA === myKingdom.id && war.kingdomB === enemyKingdom.id) || (war.kingdomB === myKingdom.id && war.kingdomA === enemyKingdom.id)) {
+                    atWar = true; break;
+                }
+            }
+        }
+        if (!atWar) return { success: false, message: 'The kingdoms must be at war.' };
+
+        var town = Engine.findTown(player.townId);
+        var rng = Engine.getRng();
+        var detection = calculateCorruptDetection(0.30, town);
+
+        if (rng && rng.chance(detection)) {
+            // Caught as traitor — devastating
+            var fine = applyCorruptPenalty(town, myKingdom, 5000, 50, 30, true);
+            recordCorruptAction('double_agent', true);
+            player.notoriety += 40;
+            player.militaryService.active = false;
+            return { success: false, caught: true, message: '🚨 TREASON DISCOVERED! Fined ' + fine + 'g, jailed 30 days, EXILED, dishonorably discharged!' };
+        }
+
+        var payPerSeason = rng.randInt(200, 600);
+        player.doubleAgentActive = { enemyKingdomId: enemyKingdomId, startDay: Engine.getDay(), paymentPerSeason: payPerSeason, nextPayDay: Engine.getDay() + 90 };
+        recordCorruptAction('double_agent', false);
+        grantXP(30, 'Became double agent');
+        player.notoriety += 10;
+        Engine.logEvent(player.fullName + ' has begun selling military secrets.');
+        return { success: true, message: '🕵️ Now operating as a double agent! Selling secrets to ' + enemyKingdom.name + ' for ' + payPerSeason + 'g per season.' };
+    }
+
+    // ── (p8) Protection Racket ──
+    function startProtectionRacket(townId) {
+        if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('intimidating_presence') || !hasSkill('shadow_dealings')) return { success: false, message: 'Requires Intimidating Presence + Shadow Dealings skills.' };
+        if (!isInTown(townId)) return { success: false, message: 'Must be in the town.' };
+        player.protectionRackets = player.protectionRackets || {};
+        if (player.protectionRackets[townId]) return { success: false, message: 'Already running a protection racket here.' };
+
+        var town = Engine.findTown(townId);
+        if (!town) return { success: false, message: 'Town not found.' };
+
+        var rng = Engine.getRng();
+        var detection = calculateCorruptDetection(0.25, town);
+
+        if (rng && rng.chance(detection)) {
+            var kingdom = Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null;
+            var fine = applyCorruptPenalty(town, kingdom, 500, 25, 10, false);
+            recordCorruptAction('protection_racket', true);
+            player.notoriety += 15;
+            return { success: false, caught: true, message: '🚨 CAUGHT running protection racket! Fined ' + fine + 'g, jailed 10 days.' };
+        }
+
+        var weeklyPay = rng.randInt(20, 60 + Math.floor((town.population || 100) * 0.1));
+        player.protectionRackets[townId] = { paymentPerWeek: weeklyPay, lastCollectDay: Engine.getDay(), npcsIntimidated: rng.randInt(2, 6) };
+        recordCorruptAction('protection_racket', false);
+        grantXP(20, 'Started protection racket');
+        player.notoriety += 10;
+        Engine.logEvent('Local merchants in ' + town.name + ' are being extorted for "protection" money.');
+        return { success: true, message: '💪 Protection racket established in ' + town.name + '! Collecting ' + weeklyPay + 'g per week from ' + player.protectionRackets[townId].npcsIntimidated + ' merchants.' };
+    }
+
+    function layLow() {
+        if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if ((player.notoriety || 0) <= 0) return { success: false, message: 'Your notoriety is already at zero.' };
+        if (player.notorietyReduction) return { success: false, message: 'Already working on reducing notoriety. Wait for "' + player.notorietyReduction.type.replace(/_/g, ' ') + '" to finish.' };
+        var cost = 1500;
+        if (player.gold < cost) return { success: false, message: 'Need ' + cost + 'g. You have ' + Math.floor(player.gold) + 'g.' };
+        var rng = Engine.getRng();
+        var day = Engine.getDay();
+        var duration = rng ? rng.randInt(30, 60) : 45;
+        var totalReduction = Math.min(player.notoriety || 0, rng ? rng.randInt(25, 45) : 35);
+        var dailyReduction = totalReduction / duration;
+        player.gold -= cost;
+        player.notorietyReduction = { type: 'lay_low', startDay: day, endDay: day + duration, dailyReduction: dailyReduction, totalPlanned: totalReduction };
+        Engine.logEvent(player.fullName + ' is paying ' + cost + 'g to lay low and let the heat die down.');
+        if (typeof UI !== 'undefined' && UI.toast) UI.toast('🕶️ Laying low... Notoriety will drop by ~' + Math.floor(totalReduction) + ' over ' + duration + ' days. Cost: ' + cost + 'g.', 'success', 'my_business');
+        return { success: true, message: '🕶️ Laying low for ' + duration + ' days. Notoriety will drop by ~' + Math.floor(totalReduction) + '. Cost: ' + cost + 'g.' };
+    }
+
+    function cleanseIdentity() {
+        if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if ((player.notoriety || 0) <= 0) return { success: false, message: 'Your notoriety is already at zero.' };
+        if (player.notorietyReduction) return { success: false, message: 'Already working on reducing notoriety. Wait for "' + player.notorietyReduction.type.replace(/_/g, ' ') + '" to finish.' };
+        if (!hasSkill('master_forger') && !hasSkill('silver_tongue_dark') && !hasSkill('discrete')) {
+            return { success: false, message: 'Requires Master Forger, Silver Tongue (Dark), or Discrete skill.' };
+        }
+        var cost = 400;
+        // Skill combo discounts
+        var skillCount = 0;
+        if (hasSkill('master_forger')) skillCount++;
+        if (hasSkill('silver_tongue_dark')) skillCount++;
+        if (hasSkill('discrete')) skillCount++;
+        if (skillCount >= 3) cost = 200;
+        else if (skillCount >= 2) cost = 300;
+        if (player.gold < cost) return { success: false, message: 'Need ' + cost + 'g. You have ' + Math.floor(player.gold) + 'g.' };
+        var rng = Engine.getRng();
+        var day = Engine.getDay();
+        var duration = rng ? rng.randInt(7, 14) : 10;
+        // More skills = more reduction
+        var baseReduction = rng ? rng.randInt(20, 35) : 27;
+        if (skillCount >= 3) baseReduction = rng ? rng.randInt(35, 50) : 42;
+        else if (skillCount >= 2) baseReduction = rng ? rng.randInt(25, 40) : 32;
+        var totalReduction = Math.min(player.notoriety || 0, baseReduction);
+        var dailyReduction = totalReduction / duration;
+        player.gold -= cost;
+        player.notorietyReduction = { type: 'cleanse_identity', startDay: day, endDay: day + duration, dailyReduction: dailyReduction, totalPlanned: totalReduction };
+        var skillNames = [];
+        if (hasSkill('master_forger')) skillNames.push('forged records');
+        if (hasSkill('silver_tongue_dark')) skillNames.push('smooth talking');
+        if (hasSkill('discrete')) skillNames.push('discretion');
+        Engine.logEvent(player.fullName + ' is using ' + skillNames.join(' & ') + ' to cleanse their identity.');
+        if (typeof UI !== 'undefined' && UI.toast) UI.toast('🧹 Cleansing identity using ' + skillNames.join(' & ') + '! Notoriety -' + Math.floor(totalReduction) + ' over ' + duration + ' days. Cost: ' + cost + 'g.', 'success', 'my_business');
+        return { success: true, message: '🧹 Cleansing identity over ' + duration + ' days. Notoriety will drop by ~' + Math.floor(totalReduction) + '. Cost: ' + cost + 'g.' };
+    }
+
     function executeCorruptAction(actionId, params) {
+        // Cooldown check
+        player.schemeCooldowns = player.schemeCooldowns || {};
+        var day = Engine.getDay();
+        var cdKey = actionId;
+        if (player.schemeCooldowns[cdKey] && day < player.schemeCooldowns[cdKey]) {
+            return { success: false, message: 'Too soon to attempt this again. Wait ' + (player.schemeCooldowns[cdKey] - day) + ' days.' };
+        }
+
+        var result;
         switch (actionId) {
-            case 'sabotage_building': return sabotageBuilding(params[0], params[1]);
-            case 'sabotage_road': return sabotageRoad(params[0]);
-            case 'arson': return commitArson(params[0], params[1]);
-            case 'steal_goods': return stealGoods(params[0], params[1], params[2]);
-            case 'pickpocket': return pickpocket(params[0]);
-            case 'warehouse_heist': return warehouseHeist(params[0]);
-            case 'rob_traveler': return robTraveler(params[0]);
-            case 'raid_caravan': return raidCaravan(params[0]);
-            case 'counterfeit': return sellCounterfeit(params[0], params[1], params[2]);
-            case 'bribe_guards': return bribeGuards(params[0], params[1]);
-            case 'bribe_advisor': return bribeAdvisor(params[0], params[1]);
-            case 'cultivate_heir': return cultivateHeir(params[0]);
-            case 'blackmail': return blackmailNPC(params[0]);
-            case 'spread_rumors': return spreadRumors(params[0]);
-            case 'frame_competitor': return frameCompetitor(params[0], params[1]);
+            case 'sabotage_building': result = sabotageBuilding(params[0], params[1]); break;
+            case 'sabotage_road': result = sabotageRoad(params[0]); break;
+            case 'arson': result = commitArson(params[0], params[1]); break;
+            case 'steal_goods': result = stealGoods(params[0], params[1], params[2]); break;
+            case 'pickpocket': result = pickpocket(params[0]); break;
+            case 'warehouse_heist': result = warehouseHeist(params[0]); break;
+            case 'rob_traveler': result = robTraveler(params[0]); break;
+            case 'raid_caravan': result = raidCaravan(params[0]); break;
+            case 'counterfeit': result = sellCounterfeit(params[0], params[1], params[2]); break;
+            case 'bribe_guards': result = bribeGuards(params[0], params[1]); break;
+            case 'bribe_advisor': result = bribeAdvisor(params[0], params[1]); break;
+            case 'cultivate_heir': result = cultivateHeir(params[0]); break;
+            case 'blackmail': result = blackmailNPC(params[0]); break;
+            case 'spread_rumors': result = spreadRumors(params[0]); break;
+            case 'frame_competitor': result = frameCompetitor(params[0], params[1]); break;
             case 'assassinate_competitor':
             case 'assassinate_guard_captain':
             case 'assassinate_king':
-                return hireAssassin(params[0], params[1]);
-            case 'assassinate_passenger': return assassinatePassenger(params[0]);
-            case 'poison': return poisonTarget(params[0]);
-            case 'hidden_warehouse': return buildHiddenWarehouse(params[0]);
-            case 'cook_books': return cookTheBooks();
-            case 'insider_trading': return insiderTrading(params[0]);
+                result = hireAssassin(params[0], params[1]); break;
+            case 'assassinate_passenger': result = assassinatePassenger(params[0]); break;
+            case 'poison': result = poisonTarget(params[0]); break;
+            case 'hidden_warehouse': result = buildHiddenWarehouse(params[0]); break;
+            case 'cook_books': result = cookTheBooks(); break;
+            case 'insider_trading': result = insiderTrading(params[0]); break;
+            case 'spy_network': result = plantSpyNetwork(params[0]); break;
+            case 'smuggling_route': result = establishSmugglingRoute(params[0], params[1]); break;
+            case 'forge_documents': result = forgeDocuments(params[0]); break;
+            case 'sabotage_caravan': result = sabotageCaravan(params[0]); break;
+            case 'plant_evidence': result = plantEvidence(params[0]); break;
+            case 'incite_revolt': result = inciteRevolt(params[0]); break;
+            case 'double_agent': result = activateDoubleAgent(params[0]); break;
+            case 'protection_racket': result = startProtectionRacket(params[0]); break;
+            case 'lay_low': result = layLow(); break;
+            case 'cleanse_identity': result = cleanseIdentity(); break;
             default: return { success: false, message: 'Unknown action.' };
         }
+
+        // Apply cooldown after attempt (longer if caught)
+        var SCHEME_COOLDOWNS = {
+            sabotage_building: 15, sabotage_road: 20, arson: 30, steal_goods: 3, pickpocket: 2,
+            warehouse_heist: 20, rob_traveler: 10, raid_caravan: 30, counterfeit: 7,
+            bribe_guards: 30, bribe_advisor: 60, cultivate_heir: 30, blackmail: 30,
+            spread_rumors: 15, frame_competitor: 30,
+            assassinate_competitor: 60, assassinate_guard_captain: 90, assassinate_king: 180,
+            assassinate_passenger: 60, poison: 20, hidden_warehouse: 90, cook_books: 90, insider_trading: 30,
+            spy_network: 90, smuggling_route: 120, forge_documents: 30, sabotage_caravan: 30,
+            plant_evidence: 30, incite_revolt: 120, double_agent: 180, protection_racket: 60,
+            lay_low: 60, cleanse_identity: 30
+        };
+        var baseCd = SCHEME_COOLDOWNS[actionId] || 10;
+        // Getting caught doubles cooldown; escalation from prior catches
+        var catchMult = (result && result.caught) ? 2 : 1;
+        var escalation = Math.min(5, (player.crimesCommitted[actionId] || 0));
+        player.schemeCooldowns[cdKey] = day + Math.floor(baseCd * catchMult) + escalation;
+
+        return result;
     }
 
     function shouldShowSchemesButton() {
-        return true; // Always show — player discovers dark deeds exist
+        // Show once player has any underworld skill, notoriety, or has committed crimes
+        if ((player.notoriety || 0) > 0) return true;
+        if ((player.corruptActions || 0) > 0) return true;
+        var skills = player.skills || [];
+        for (var i = 0; i < skills.length; i++) {
+            var sk = CONFIG.SKILLS ? CONFIG.SKILLS.find(function(s) { return s.id === skills[i]; }) : null;
+            if (sk && sk.branch === 'underworld') return true;
+        }
+        return false;
     }
 
     // ========================================================
@@ -31870,6 +33059,37 @@
         var town = Engine.findTown(townId);
         if (!town) return { success: false, message: 'Town not found.' };
 
+        // Outpost restrictions
+        if (town.isOutpost) {
+            if ((town.population || 0) < 10) {
+                return { success: false, message: 'This outpost needs at least 10 residents before land can be purchased.' };
+            }
+            // Player-founded outposts: land auto-owned, don't buy
+            if (town.founderId === (player.id || 'player')) {
+                return { success: false, message: 'You already own all land in your outpost. Use the outpost panel to expand.' };
+            }
+            // Non-player outposts: AI owner decides if they sell
+            var _opFounder = town.founderId ? (Engine.findPerson ? Engine.findPerson(town.founderId) : null) : null;
+            if (_opFounder) {
+                var rng = Engine.getRng();
+                // AI willingness based on: relationship with player, founder personality, outpost prosperity
+                var _rel = (player.relationships && player.relationships[_opFounder.id]) || 0;
+                var _sellChance = 0.3; // base 30% chance
+                if (_rel >= 60) _sellChance += 0.3;
+                else if (_rel >= 30) _sellChance += 0.15;
+                else if (_rel < 0) _sellChance -= 0.2;
+                // Prosperous outposts: owner is more protective of land
+                if ((town.prosperity || 0) > 60) _sellChance -= 0.15;
+                // Greedy owners less willing to sell
+                if (_opFounder.personality && (_opFounder.personality.greed === 'greedy' || (_opFounder.personality.greed || 0) > 6)) _sellChance -= 0.15;
+                _sellChance = Math.max(0.05, Math.min(0.9, _sellChance));
+                if (!rng.chance(_sellChance)) {
+                    var _ownerName = _opFounder.firstName || _opFounder.name || 'The outpost owner';
+                    return { success: false, message: _ownerName + ' refuses to sell land in their outpost right now. Try improving your relationship.' };
+                }
+            }
+        }
+
         // Immigration policy enforcement — closed borders block foreign land purchase
         if (town.kingdomId && player.citizenshipKingdomId !== town.kingdomId) {
             var kingdom = Engine.findKingdom(town.kingdomId);
@@ -32293,6 +33513,81 @@
             return options;
         }
 
+        // ── Outpost-specific rest options ──
+        var _restTown = Engine.findTown(player.townId);
+        var _isOutpost = _restTown && _restTown.isOutpost;
+        if (_isOutpost) {
+            // Outpost housing rest (if space available)
+            var _ohCap = 0;
+            var _ohPop = (_restTown.outpostResidents || []).length;
+            if (_restTown.outpostHousing) {
+                for (var _ohi = 0; _ohi < _restTown.outpostHousing.length; _ohi++) {
+                    var _ohCfg = CONFIG.OUTPOST_HOUSING && CONFIG.OUTPOST_HOUSING[_restTown.outpostHousing[_ohi].type];
+                    if (_ohCfg) _ohCap += _ohCfg.capacity;
+                }
+            }
+            if (_ohPop < _ohCap) {
+                options.push({
+                    id: 'outpost_housing',
+                    name: '🏠 Outpost Housing',
+                    cost: 0,
+                    energyPerTick: getRestEnergyRate('outpost_housing'),
+                    risks: [],
+                    icon: '🏠',
+                });
+            }
+            // Camping kit
+            if ((player.inventory.camping_kit || 0) > 0) {
+                options.push({
+                    id: 'camping_kit_travel',
+                    name: '🏕️ Camp with Kit',
+                    cost: 0,
+                    energyPerTick: getRestEnergyRate('camping_kit_travel'),
+                    risks: ['25% wear'],
+                    icon: '🏕️',
+                });
+            }
+            // Bedroll + Tent combo
+            if ((player.inventory.bedroll || 0) > 0 && (player.inventory.tent || 0) > 0) {
+                options.push({
+                    id: 'bedroll_tent_travel',
+                    name: '⛺🛏️ Tent & Bedroll',
+                    cost: 0,
+                    energyPerTick: getRestEnergyRate('bedroll_tent_travel'),
+                    risks: ['25% wear each'],
+                    icon: '⛺',
+                });
+            } else if ((player.inventory.tent || 0) > 0) {
+                options.push({
+                    id: 'tent_travel',
+                    name: '⛺ Pitch Tent',
+                    cost: 0,
+                    energyPerTick: getRestEnergyRate('tent_travel'),
+                    risks: ['25% wear'],
+                    icon: '⛺',
+                });
+            } else if ((player.inventory.bedroll || 0) > 0) {
+                options.push({
+                    id: 'bedroll_travel',
+                    name: '🛏️ Use Bedroll',
+                    cost: 0,
+                    energyPerTick: getRestEnergyRate('bedroll_travel'),
+                    risks: ['25% wear'],
+                    icon: '🛏️',
+                });
+            }
+            // Sleep outside always available
+            options.push({
+                id: 'outside',
+                name: '🌙 Sleep Outside',
+                cost: 0,
+                energyPerTick: getRestEnergyRate('outside'),
+                risks: ['theft', 'disease'],
+                icon: '🌙',
+            });
+            return options;
+        }
+
         // ── In town: full rest options ──
         var house = getHouseInTown(player.townId);
 
@@ -32524,6 +33819,40 @@
                 player.illnesses = player.illnesses || [];
                 player.illnesses.push({ type: 'cold', name: 'Common Cold', severity: 'minor', dayOccurred: Engine.getDay(), treated: false });
                 messages.push('🤧 You caught a cold while camping.');
+            }
+
+            // Gear wear — 25% chance of consumption per rest (10% with wilderness_survival)
+            var _gearWearChance = hasSkill('wilderness_survival') ? 0.10 : 0.25;
+            if (locationId === 'camping_kit_travel') {
+                if (rng2.chance(_gearWearChance)) {
+                    player.inventory.camping_kit = (player.inventory.camping_kit || 0) - 1;
+                    if (player.inventory.camping_kit <= 0) delete player.inventory.camping_kit;
+                    messages.push('🏕️ Your camping kit wore out!');
+                }
+            } else if (locationId === 'bedroll_tent_travel') {
+                // Both items risk wearing out independently
+                if (rng2.chance(_gearWearChance)) {
+                    player.inventory.bedroll = (player.inventory.bedroll || 0) - 1;
+                    if (player.inventory.bedroll <= 0) delete player.inventory.bedroll;
+                    messages.push('🛏️ Your bedroll wore out!');
+                }
+                if (rng2.chance(_gearWearChance)) {
+                    player.inventory.tent = (player.inventory.tent || 0) - 1;
+                    if (player.inventory.tent <= 0) delete player.inventory.tent;
+                    messages.push('⛺ Your tent wore out!');
+                }
+            } else if (locationId === 'tent_travel') {
+                if (rng2.chance(_gearWearChance)) {
+                    player.inventory.tent = (player.inventory.tent || 0) - 1;
+                    if (player.inventory.tent <= 0) delete player.inventory.tent;
+                    messages.push('⛺ Your tent wore out!');
+                }
+            } else if (locationId === 'bedroll_travel') {
+                if (rng2.chance(_gearWearChance)) {
+                    player.inventory.bedroll = (player.inventory.bedroll || 0) - 1;
+                    if (player.inventory.bedroll <= 0) delete player.inventory.bedroll;
+                    messages.push('🛏️ Your bedroll wore out!');
+                }
             }
         }
 
@@ -32805,6 +34134,11 @@
     function tickThirst() {
         if (!player.alive) return;
 
+        // Auto-thirst in jail
+        if (player.jailedUntilDay > 0 && Engine.getDay() < player.jailedUntilDay) {
+            if ((player.thirst || 0) < 50) player.thirst = 50;
+        }
+
         var injDebuffs = getInjuryDebuffs();
         var thirstDecay = THIRST_CONFIG.DECAY_PER_DAY * (injDebuffs.thirstRate || 1.0);
         player.thirst = Math.max(0, (player.thirst != null ? player.thirst : THIRST_CONFIG.START) - thirstDecay);
@@ -32997,22 +34331,31 @@
                 }
             }
         }
-        if (!activeWell) return { success: false, message: 'No active well in ' + (town.name || 'this town') + '. All wells have run dry!' };
+        // Outpost well upgrade counts as a well (infinite water, no depletion)
+        if (!activeWell && town.isOutpost && town.outpostUpgrades && town.outpostUpgrades.indexOf('well') >= 0) {
+            activeWell = { type: 'outpost_well', _isOutpostWell: true };
+        }
+        if (!activeWell) return { success: false, message: 'No active well in ' + (town.name || 'this town') + '.' + (town.isOutpost ? ' Build a Well upgrade first.' : ' All wells have run dry!') };
 
-        // Check kingdom law on well water
+        // Outpost well: free, skip rep check
+        var isOutpostWell = activeWell._isOutpostWell;
+
+        // Check kingdom law on well water (skip for outpost wells)
         var kingdom = Engine.findKingdom(town.kingdomId);
-        var isFree = kingdom && kingdom.laws && kingdom.laws.freeWellWater !== false; // default true
+        var isFree = isOutpostWell || (kingdom && kingdom.laws && kingdom.laws.freeWellWater !== false); // default true
         var cost = isFree ? 0 : 1;
 
         if (cost > 0 && player.gold < cost) {
             return { success: false, message: 'Well water costs ' + cost + 'g in this kingdom. You can\'t afford it.' };
         }
 
-        // Check rep — need at least non-hostile rep to use the well
-        var townKingdomId = town.kingdomId;
-        var townRep = player.reputation && townKingdomId ? (player.reputation[townKingdomId] || 0) : 0;
-        if (townRep < -30) {
-            return { success: false, message: 'The townsfolk won\'t let you near the well. Your reputation is too low.' };
+        // Check rep — need at least non-hostile rep to use the well (skip for outpost wells)
+        if (!isOutpostWell) {
+            var townKingdomId = town.kingdomId;
+            var townRep = player.reputation && townKingdomId ? (player.reputation[townKingdomId] || 0) : 0;
+            if (townRep < -30) {
+                return { success: false, message: 'The townsfolk won\'t let you near the well. Your reputation is too low.' };
+            }
         }
 
         // Pay cost
@@ -33176,6 +34519,8 @@
             player.travelData = null;
             player.worldX = result.outpost.x;
             player.worldY = result.outpost.y;
+
+            unlockAchievement('frontier_founder');
         }
 
         return result;
@@ -33225,7 +34570,8 @@
                 x: town.x,
                 y: town.y,
                 category: town.category,
-                buildings: town.buildings.length,
+                buildings: town.buildings,
+                buildingCount: town.buildings.length,
                 buildingDetails: bldgs,
                 maxBuildings: town.maxBuildingSlots || 4,
                 workers: (town.outpostWorkers || []).length,
@@ -33353,11 +34699,12 @@
                 var dismissId = npcId || town.outpostWorkers[town.outpostWorkers.length - 1];
                 var idx = town.outpostWorkers.indexOf(dismissId);
                 if (idx >= 0) {
+                    _unassignOutpostWorker(town, dismissId);
                     town.outpostWorkers.splice(idx, 1);
                     town.hiredWorkers = town.outpostWorkers.length;
                     var dismissedNpc = Engine.findPerson(dismissId);
                     if (dismissedNpc) { dismissedNpc.occupation = 'unemployed'; dismissedNpc.employerId = null; }
-                    return { success: true, message: '👋 Dismissed worker' + (dismissedNpc ? ' ' + dismissedNpc.firstName : '') + '. (' + town.outpostWorkers.length + '/' + (cfg.maxOutpostWorkers || 10) + ')' };
+                    return { success: true, message: '👋 Dismissed worker' + (dismissedNpc ? ' ' + dismissedNpc.firstName : '') + '. (' + town.outpostWorkers.length + '/' + (cfg.maxOutpostWorkers || 15) + ')' };
                 }
                 return { success: false, message: 'Worker not found.' };
             }
@@ -33403,8 +34750,108 @@
     }
 
     /**
-     * Upgrade outpost walls. Costs gold + stone + wood.
+     * Assign a worker to a specific role at the outpost.
+     * Roles: 'building_maintenance', or any upgrade id with needsWorker (clinic, tavern, etc.)
      */
+    function assignOutpostWorker(townId, workerId, role) {
+        var town = Engine.findTown(townId);
+        if (!town || !town.isOutpost) return { success: false, message: 'Not an outpost.' };
+        if (town.founderId !== (player.id || 'player')) return { success: false, message: 'Not your outpost.' };
+        if (!town.outpostWorkers) town.outpostWorkers = [];
+        if (town.outpostWorkers.indexOf(workerId) < 0) return { success: false, message: 'Not a worker here.' };
+        if (!town.workerAssignments) town.workerAssignments = {};
+
+        // Validate role
+        var validUpgradeRoles = ['clinic', 'tavern', 'market_stall', 'watchtower', 'chapel', 'food_hall'];
+        if (role !== 'building_maintenance' && validUpgradeRoles.indexOf(role) < 0) {
+            return { success: false, message: 'Invalid assignment role.' };
+        }
+
+        // For upgrade roles, check upgrade is built
+        if (role !== 'building_maintenance') {
+            if (!town.outpostUpgrades || town.outpostUpgrades.indexOf(role) < 0) {
+                var uCfg = CONFIG.OUTPOST_UPGRADES && CONFIG.OUTPOST_UPGRADES[role];
+                return { success: false, message: (uCfg ? uCfg.name : role) + ' not built yet.' };
+            }
+            // Only 1 worker per upgrade
+            if (town.workerAssignments[role] && town.workerAssignments[role] !== workerId) {
+                return { success: false, message: 'Another worker is already assigned to ' + role + '.' };
+            }
+        }
+
+        // Remove worker from any previous assignment
+        _unassignOutpostWorker(town, workerId);
+
+        // Assign to new role
+        if (role === 'building_maintenance') {
+            if (!town.workerAssignments._maintenance) town.workerAssignments._maintenance = [];
+            town.workerAssignments._maintenance.push(workerId);
+        } else {
+            town.workerAssignments[role] = workerId;
+        }
+
+        var npc = Engine.findPerson(workerId);
+        var npcName = npc ? npc.firstName : 'Worker';
+        var roleName = role === 'building_maintenance' ? 'Building Maintenance' :
+            (CONFIG.OUTPOST_UPGRADES && CONFIG.OUTPOST_UPGRADES[role] ? CONFIG.OUTPOST_UPGRADES[role].name : role);
+        return { success: true, message: '✅ ' + npcName + ' assigned to ' + roleName + '.' };
+    }
+
+    /**
+     * Unassign a worker from their current role.
+     */
+    function unassignOutpostWorker(townId, workerId) {
+        var town = Engine.findTown(townId);
+        if (!town || !town.isOutpost) return { success: false, message: 'Not an outpost.' };
+        if (town.founderId !== (player.id || 'player')) return { success: false, message: 'Not your outpost.' };
+        _unassignOutpostWorker(town, workerId);
+        return { success: true, message: 'Worker unassigned.' };
+    }
+
+    function _unassignOutpostWorker(town, workerId) {
+        if (!town.workerAssignments) return;
+        // Remove from upgrade roles
+        var upgradeRoles = ['clinic', 'tavern', 'market_stall', 'watchtower', 'chapel', 'food_hall'];
+        for (var i = 0; i < upgradeRoles.length; i++) {
+            if (town.workerAssignments[upgradeRoles[i]] === workerId) {
+                delete town.workerAssignments[upgradeRoles[i]];
+            }
+        }
+        // Remove from maintenance
+        if (town.workerAssignments._maintenance) {
+            var idx = town.workerAssignments._maintenance.indexOf(workerId);
+            if (idx >= 0) town.workerAssignments._maintenance.splice(idx, 1);
+        }
+    }
+
+    /**
+     * Get the current worker assignment for a given worker.
+     */
+    function getWorkerAssignment(town, workerId) {
+        if (!town.workerAssignments) return null;
+        var upgradeRoles = ['clinic', 'tavern', 'market_stall', 'watchtower', 'chapel', 'food_hall'];
+        for (var i = 0; i < upgradeRoles.length; i++) {
+            if (town.workerAssignments[upgradeRoles[i]] === workerId) return upgradeRoles[i];
+        }
+        if (town.workerAssignments._maintenance && town.workerAssignments._maintenance.indexOf(workerId) >= 0) return 'building_maintenance';
+        return null;
+    }
+
+    /**
+     * Check if an upgrade is actively staffed (has worker assigned).
+     */
+    function isUpgradeActive(town, upgradeId) {
+        if (!town.workerAssignments) return false;
+        return !!town.workerAssignments[upgradeId];
+    }
+
+    /**
+     * Get the number of workers assigned to building maintenance.
+     */
+    function getMaintenanceWorkerCount(town) {
+        if (!town.workerAssignments || !town.workerAssignments._maintenance) return 0;
+        return town.workerAssignments._maintenance.length;
+    }
     function upgradeOutpostWalls(townId) {
         var town = Engine.findTown(townId);
         if (!town || !town.isOutpost) return { success: false, message: 'Not an outpost.' };
@@ -33577,6 +35024,19 @@
             var fromT = Engine.findTown(road.fromTownId);
             var toT = Engine.findTown(road.toTownId);
             if (!fromT || !toT) continue;
+            // Skip roads involving junctions that connect to this outpost
+            if (fromT.isJunction || toT.isJunction) {
+                // Check if any road from this junction connects to outpost already
+                var junctionTown = fromT.isJunction ? fromT : toT;
+                var alreadyConnected = false;
+                for (var rj = 0; rj < roads.length; rj++) {
+                    if ((roads[rj].fromTownId === junctionTown.id && roads[rj].toTownId === outpostTownId) ||
+                        (roads[rj].toTownId === junctionTown.id && roads[rj].fromTownId === outpostTownId)) {
+                        alreadyConnected = true; break;
+                    }
+                }
+                if (alreadyConnected) continue;
+            }
 
             // Use waypoints if available, otherwise endpoints
             var points = (road.waypoints && road.waypoints.length >= 2) ? road.waypoints : [{ x: fromT.x, y: fromT.y }, { x: toT.x, y: toT.y }];
@@ -33593,19 +35053,13 @@
                 var d = Math.hypot(ox - px, oy - py);
                 if (d < bestDist) {
                     bestDist = d;
-                    // Pick the nearer endpoint town to actually connect to
-                    var distToFrom = Math.hypot(ox - fromT.x, oy - fromT.y);
-                    var distToTo = Math.hypot(ox - toT.x, oy - toT.y);
-                    var connectTown = distToFrom <= distToTo ? fromT : toT;
-                    var connectDist = Math.min(distToFrom, distToTo);
                     best = {
                         road: road,
                         perpDist: Math.floor(d),
                         nearestPointX: Math.floor(px),
                         nearestPointY: Math.floor(py),
-                        connectTownId: connectTown.id,
-                        connectTownName: connectTown.name,
-                        connectTownDist: Math.floor(connectDist),
+                        fromTownId: road.fromTownId,
+                        toTownId: road.toTownId,
                         fromTownName: fromT.name,
                         toTownName: toT.name,
                     };
@@ -33618,35 +35072,21 @@
     }
 
     /**
-     * Connect an outpost to a nearby road by building to the nearest endpoint.
-     * Cost is based on perpendicular distance to the road, not full distance to town.
+     * Connect an outpost to a nearby road by creating a junction on the road.
+     * Splits the target road at the nearest point, creating a junction node,
+     * then builds a short road from the outpost to the junction.
      */
-    function connectOutpostToRoad(outpostTownId, targetTownId) {
+    function connectOutpostToRoad(outpostTownId) {
         var outpost = Engine.findTown(outpostTownId);
         if (!outpost || !outpost.isOutpost) return { success: false, message: 'Not a valid outpost.' };
         if (outpost.founderId !== (player.id || 'player')) return { success: false, message: 'Not your outpost.' };
-        var target = Engine.findTown(targetTownId);
-        if (!target) return { success: false, message: 'Target town not found.' };
 
-        // Check road doesn't already exist
-        var roads = Engine.getRoads ? Engine.getRoads() : [];
-        var exists = roads.some(function(r) {
-            return (r.fromTownId === outpostTownId && r.toTownId === targetTownId) ||
-                   (r.fromTownId === targetTownId && r.toTownId === outpostTownId);
-        });
-        if (exists) return { success: false, message: 'Road already exists to ' + target.name + '.' };
-
-        // Calculate cost based on perpendicular distance to nearest road
+        // Find the nearest road connection
         var roadConn = getNearestRoadConnection(outpost.x, outpost.y, outpostTownId);
-        var costDist;
-        if (roadConn && roadConn.connectTownId === targetTownId) {
-            // Use perpendicular distance for cost (the whole point of this feature)
-            costDist = roadConn.perpDist;
-        } else {
-            // Fallback to full distance
-            costDist = Math.hypot(outpost.x - target.x, outpost.y - target.y);
-        }
+        if (!roadConn || !roadConn.road) return { success: false, message: 'No nearby road found.' };
 
+        // Calculate cost based on perpendicular distance
+        var costDist = roadConn.perpDist;
         var baseCost = Math.floor(100 + costDist * 0.5);
         var woodCost = Math.floor(10 + costDist * 0.1);
         var stoneCost = Math.floor(8 + costDist * 0.08);
@@ -33657,9 +35097,15 @@
         if ((inv.wood || 0) < woodCost) return { success: false, message: 'Need ' + woodCost + ' wood (have ' + (inv.wood || 0) + ').' };
         if ((inv.stone || 0) < stoneCost) return { success: false, message: 'Need ' + stoneCost + ' stone (have ' + (inv.stone || 0) + ').' };
 
-        var result = Engine.buildNewRoad(outpostTownId, targetTownId, player.id || 'player', { ownerId: player.id || 'player' });
-        if (!result.success) return result;
+        // Create junction on the road at the nearest point
+        var jResult = Engine.createRoadJunction(roadConn.road, roadConn.nearestPointX, roadConn.nearestPointY);
+        if (!jResult.success) return jResult;
 
+        // Build road from outpost to junction
+        var roadResult = Engine.buildNewRoad(outpostTownId, jResult.junction.id, player.id || 'player', { ownerId: player.id || 'player' });
+        if (!roadResult.success) return { success: false, message: 'Failed to build road to junction: ' + roadResult.message };
+
+        // Deduct costs
         player.gold -= baseCost;
         inv.wood = (inv.wood || 0) - woodCost;
         inv.stone = (inv.stone || 0) - stoneCost;
@@ -33669,7 +35115,7 @@
         // Mark outpost as having a road
         outpost.hasRoad = true;
 
-        return { success: true, message: '🛤️ Connected to road via ' + target.name + '! (-' + baseCost + 'g, -' + woodCost + ' wood, -' + stoneCost + ' stone)' };
+        return { success: true, message: '🛤️ Connected to ' + roadConn.fromTownName + '–' + roadConn.toTownName + ' road via junction! (-' + baseCost + 'g, -' + woodCost + ' wood, -' + stoneCost + ' stone)' };
     }
 
     /**
@@ -33685,7 +35131,7 @@
         var nearby = [];
         for (var i = 0; i < allTowns.length; i++) {
             var t = allTowns[i];
-            if (t.id === townId) continue;
+            if (t.id === townId || t.isJunction) continue;
             var dist = Math.hypot(t.x - town.x, t.y - town.y);
             if (dist > maxDist) continue;
             // Check if road already exists
@@ -33709,6 +35155,7 @@
         var town = Engine.findTown(townId);
         if (!town || !town.isOutpost) return { success: false, message: 'Not an outpost.' };
         if (town.founderId !== (player.id || 'player')) return { success: false, message: 'Not your outpost.' };
+        if ((town.population || 0) < 10) return { success: false, message: 'Need at least 10 residents to expand land.' };
         var cfg = CONFIG.OUTPOST_CONFIG;
         var maxPlots = cfg.maxLandPlots || 10;
         if ((town.landPlots || 4) >= maxPlots) return { success: false, message: 'Maximum land plots reached (' + maxPlots + ').' };
@@ -33797,7 +35244,7 @@
      * Recruit an NPC to move to a player's outpost.
      * @returns {{ success: boolean, message: string, chance?: number }}
      */
-    function recruitNpcToOutpost(npcId, townId, goldIncentive) {
+    function recruitNpcToOutpost(npcId, townId, goldIncentive, shelterItem) {
         var town = Engine.findTown(townId);
         if (!town || !town.isOutpost) return { success: false, message: 'Not an outpost.' };
         if (town.founderId !== (player.id || 'player')) return { success: false, message: 'Not your outpost.' };
@@ -33820,7 +35267,7 @@
             return { success: false, message: 'Outpost has reached maximum population of ' + maxPop + '.' };
         }
 
-        // Check housing capacity
+        // Check housing capacity — no longer blocks, but applies penalty
         if (!town.outpostHousing) town.outpostHousing = [];
         if (!town.outpostResidents) town.outpostResidents = [];
         var housingCap = 0;
@@ -33828,12 +35275,29 @@
             var hCfg = CONFIG.OUTPOST_HOUSING && CONFIG.OUTPOST_HOUSING[town.outpostHousing[hi].type];
             if (hCfg) housingCap += hCfg.capacity;
         }
-        if (town.outpostResidents.length >= housingCap) {
-            return { success: false, message: 'No housing capacity. Build housing first.' };
+        var noHousing = town.outpostResidents.length >= housingCap;
+        var noHousingPenalty = 0;
+        var shelterUsed = '';
+        if (noHousing) {
+            noHousingPenalty = 0.225; // base penalty for no housing (was 0.30, reduced 25%)
+            // Shelter items reduce the penalty
+            if (shelterItem === 'camping_kit' && (player.inventory.camping_kit || 0) >= 1) {
+                noHousingPenalty *= 0.50; // camping kit removes half the penalty
+                shelterUsed = 'camping_kit';
+            } else if (shelterItem === 'tent' && (player.inventory.tent || 0) >= 1) {
+                noHousingPenalty *= 0.65; // tent removes 35% of the penalty
+                shelterUsed = 'tent';
+            } else if (shelterItem === 'bedroll' && (player.inventory.bedroll || 0) >= 1) {
+                noHousingPenalty *= 0.75; // bedroll removes 25% of the penalty
+                shelterUsed = 'bedroll';
+            }
         }
 
         // Calculate chance
         var chance = getOutpostRecruitChance(npcId, townId);
+
+        // Apply no-housing penalty
+        if (noHousing) chance -= noHousingPenalty;
 
         // Add gold incentive
         goldIncentive = Math.max(0, goldIncentive || 0);
@@ -33866,8 +35330,13 @@
             npc.townId = town.id;
             town.outpostResidents.push(npc.id);
             town.population = town.outpostResidents.length;
+            // Consume shelter item given to the recruit
+            if (shelterUsed) {
+                player.inventory[shelterUsed] = (player.inventory[shelterUsed] || 0) - 1;
+                if (player.inventory[shelterUsed] <= 0) delete player.inventory[shelterUsed];
+            }
             Engine.logEvent('🎉 ' + npc.firstName + ' ' + npc.lastName + ' has agreed to move to your outpost "' + town.name + '"!');
-            return { success: true, message: '🎉 ' + npc.firstName + ' agreed to move! (' + Math.round(chance * 100) + '% chance)', chance: chance };
+            return { success: true, message: '🎉 ' + npc.firstName + ' agreed to move! (' + Math.round(chance * 100) + '% chance)' + (shelterUsed ? ' Gave them a ' + shelterUsed.replace(/_/g, ' ') + '.' : ''), chance: chance };
         } else {
             Engine.logEvent('😔 ' + npc.firstName + ' ' + npc.lastName + ' declined to move to outpost "' + town.name + '".');
             return { success: false, message: '😔 ' + npc.firstName + ' declined. (' + Math.round(chance * 100) + '% chance)' + (goldIncentive > 0 ? ' Gold spent.' : ''), chance: chance };
@@ -34015,6 +35484,7 @@
         player.landOwned[town.id] = town.landPlots || 4;
 
         Engine.logEvent('🏘️ Your outpost "' + town.name + '" has been officially recognized as a village by the crown! The king paid you ' + payment + 'g.');
+        unlockAchievement('village_maker');
         return { success: true, message: '🏘️ ' + town.name + ' is now a village! King paid ' + payment + 'g. You have 80 town reputation.' };
     }
 
@@ -34049,6 +35519,7 @@
     function depositToOutpostStorage(townId, resId, qty) {
         qty = Number(qty);
         if (!isFinite(qty) || qty <= 0) return { success: false, message: 'Invalid quantity.' };
+        if (resId === 'horses') return { success: false, message: 'Horses cannot be stored. Use the stable or sell them.' };
         var town = Engine.findTown(townId);
         if (!town || !town.isOutpost) return { success: false, message: 'Not a valid outpost.' };
         // Must be at this outpost
@@ -34086,13 +35557,21 @@
         if (!town.outpostStorageItems) town.outpostStorageItems = {};
         var stored = town.outpostStorageItems[resId] || 0;
         if (stored < qty) return { success: false, message: 'Only ' + stored + ' in storage.' };
-        // Check carry capacity
-        var carried = getCarriedWeight();
-        var maxCarry = getCarryCapacity();
-        if (carried + qty > maxCarry) {
-            var canCarry = maxCarry - carried;
-            if (canCarry <= 0) return { success: false, message: 'You cannot carry any more.' };
-            return { success: false, message: 'You can only carry ' + canCarry + ' more units.' };
+        // Check carry capacity (horses use slot system instead)
+        if (resId === 'horses') {
+            var _totalH = (player.inventory.horses || 0) + (player.horses || []).length;
+            var _maxH = (CONFIG.MAX_HORSES || 2) + (hasSkill('horse_mastery') ? 2 : 0);
+            if (_totalH + qty > _maxH) {
+                return { success: false, message: 'You can only have ' + _maxH + ' horses total. You have ' + _totalH + '.' };
+            }
+        } else {
+            var carried = getCarriedWeight();
+            var maxCarry = getCarryCapacity();
+            if (carried + qty > maxCarry) {
+                var canCarry = maxCarry - carried;
+                if (canCarry <= 0) return { success: false, message: 'You cannot carry any more.' };
+                return { success: false, message: 'You can only carry ' + canCarry + ' more units.' };
+            }
         }
         town.outpostStorageItems[resId] -= qty;
         if (town.outpostStorageItems[resId] <= 0) delete town.outpostStorageItems[resId];
@@ -34435,7 +35914,15 @@
         for (var gi = 0; gi < player.guards.length; gi++) {
             if (player.guards[gi].personId) existingGuardIds[player.guards[gi].personId] = true;
         }
-        // Filter: alive, adult, not already a guard, not the player's spouse, not a child
+        // Filter: alive, adult, not already a guard, not the player's spouse, not a child,
+        // not elite merchants, nobles, kings, anyone with burgher rank or above,
+        // not player employees, outpost workers/guards, or travelers
+        var _playerEmployees = {};
+        if (player.employees) { for (var _ei = 0; _ei < player.employees.length; _ei++) _playerEmployees[player.employees[_ei]] = true; }
+        var _opTown = Engine.findTown(player.townId);
+        var _opWorkers = {};
+        if (_opTown && _opTown.outpostWorkers) { for (var _owi = 0; _owi < _opTown.outpostWorkers.length; _owi++) _opWorkers[_opTown.outpostWorkers[_owi]] = true; }
+        if (_opTown && _opTown.outpostGuards) { for (var _ogi = 0; _ogi < _opTown.outpostGuards.length; _ogi++) _opWorkers[_opTown.outpostGuards[_ogi]] = true; }
         var candidates = [];
         for (var ci = 0; ci < townPeople.length; ci++) {
             var p = townPeople[ci];
@@ -34443,10 +35930,24 @@
             if (existingGuardIds[p.id]) continue;
             if (p.id === player.spouseId) continue;
             if (p.isPlayerGuard) continue;
-            // Prefer unemployed or soldiers
+            if (p.traveling) continue;
+            // Exclude player employees and outpost staff
+            if (_playerEmployees[p.id]) continue;
+            if (_opWorkers[p.id]) continue;
+            if (p.occupation === 'outpost_worker') continue;
+            // Exclude elite merchants, nobles, and kings
+            if (p.isEliteMerchant || p.occupation === 'noble' || p.occupation === 'king') continue;
+            // Exclude anyone with burgher rank (index 2) or above in any kingdom
+            var _highRank = false;
+            if (p.socialRank) {
+                for (var _rk in p.socialRank) {
+                    if ((p.socialRank[_rk] || 0) >= 2) { _highRank = true; break; }
+                }
+            }
+            if (_highRank) continue;
             candidates.push(p);
         }
-        if (candidates.length === 0) return { success: false, message: 'No one available to hire in this town.' };
+        if (candidates.length === 0) return { success: false, message: 'No hireable guards in this location.' };
 
         // Pick a candidate — prefer soldiers/unemployed
         var rng = Engine.getRng();
@@ -42414,6 +43915,20 @@
         getPlayerOutposts,
         payOutpostMaintenance,
         manageOutpostStaff,
+        assignOutpostWorker,
+        unassignOutpostWorker,
+        getWorkerAssignment: function(townId, workerId) {
+            var t = Engine.findTown(townId);
+            return t ? getWorkerAssignment(t, workerId) : null;
+        },
+        isUpgradeActive: function(townId, upgradeId) {
+            var t = Engine.findTown(townId);
+            return t ? isUpgradeActive(t, upgradeId) : false;
+        },
+        getMaintenanceWorkerCount: function(townId) {
+            var t = Engine.findTown(townId);
+            return t ? getMaintenanceWorkerCount(t) : 0;
+        },
         upgradeOutpostWalls,
         buildOutpostDocks,
         buildOutpostRoad,
@@ -42435,6 +43950,7 @@
         // Conscription
         respondToConscription,
         fastForwardJail,
+        attemptJailEscape,
         get conscriptionPending() { return player.conscriptionPending; },
         get jailFastForwardAvailable() { return player.jailFastForwardAvailable; },
         get jailReason() { return player.jailReason; },
@@ -42825,6 +44341,7 @@
         sabotageRoad,
         commitArson,
         stealGoods,
+        stealFromNpc,
         sellCounterfeit,
         bribeGuards,
         bribeAdvisor,
@@ -42842,6 +44359,16 @@
         executeCorruptAction,
         shouldShowSchemesButton,
         calculateCorruptDetection,
+        plantSpyNetwork,
+        establishSmugglingRoute,
+        forgeDocuments,
+        sabotageCaravan,
+        plantEvidence,
+        inciteRevolt,
+        activateDoubleAgent,
+        startProtectionRacket,
+        layLow,
+        cleanseIdentity,
 
         // AI Merchants access (unified — returns elite merchants from engine)
         getAIMerchants() {

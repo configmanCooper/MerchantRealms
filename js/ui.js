@@ -306,8 +306,9 @@ window.UI = (function () {
             var _oldHealth = document.getElementById('healthBarGroup');
             if (_oldHealth) _oldHealth.remove();
 
-            // Add XP bar after gold
-            const goldGroup = leftPanelBody.querySelector('.stat-group:nth-child(3)');
+            // Add XP bar after gold (find gold group robustly via #playerGold)
+            var _goldEl = document.getElementById('playerGold');
+            const goldGroup = _goldEl ? _goldEl.closest('.stat-group') : null;
             if (goldGroup) {
                 const xpGroup = document.createElement('div');
                 xpGroup.className = 'stat-group';
@@ -802,12 +803,13 @@ window.UI = (function () {
                     }
                 }
 
-                // Schemes button — always visible (basic crimes available to all)
+                // Schemes button — only visible once player enters underworld
                 const btnSchemes = document.getElementById('btnSchemes');
                 const schemesDivider = document.getElementById('schemesDivider');
                 if (btnSchemes) {
-                    btnSchemes.style.display = '';
-                    if (schemesDivider) schemesDivider.style.display = '';
+                    var showSchemes = typeof Player !== 'undefined' && Player.shouldShowSchemesButton && Player.shouldShowSchemesButton();
+                    btnSchemes.style.display = showSchemes ? '' : 'none';
+                    if (schemesDivider) schemesDivider.style.display = showSchemes ? '' : 'none';
                 }
 
                 // God Mode button visibility
@@ -1289,8 +1291,9 @@ window.UI = (function () {
             }
         }
 
-        // Town Quests button (only when player is in this town)
-        if (isPlayerHere) {
+        // Town Quests button (only when player is in this town, and outposts need 10+ NPCs)
+        var _outpostQuestBlock = town.isOutpost && (town.population || 0) < 10;
+        if (isPlayerHere && !_outpostQuestBlock) {
             var _questCount = 0;
             try {
                 if (typeof Player !== 'undefined' && Player.getTownQuestsForTown) {
@@ -1331,8 +1334,8 @@ window.UI = (function () {
             }
         }
 
-        // Land & Housing section (only when player is in town)
-        if (isPlayerHere && typeof Player !== 'undefined') {
+        // Land & Housing section (only when player is in town; outposts need 10+ NPCs)
+        if (isPlayerHere && typeof Player !== 'undefined' && !(town.isOutpost && (town.population || 0) < 10)) {
             var playerTownCat = town.category || 'village';
             var maxPlots = (CONFIG.LAND_PLOTS_BASE && CONFIG.LAND_PLOTS_BASE[playerTownCat]) || 5;
             var ownedLand = Player.getOwnedLand ? Player.getOwnedLand(town.id) : 0;
@@ -2546,20 +2549,38 @@ window.UI = (function () {
                     }
                 }
 
-                // ── Dark Actions ──
+                // ── Dark Actions (skill-gated) ──
+                var _hasAnySchemeSkill = false;
+                if (typeof Player !== 'undefined' && Player.hasSkill) {
+                    _hasAnySchemeSkill = Player.hasSkill('discrete') || Player.hasSkill('shadow_dealings') || Player.hasSkill('silver_tongue_dark') || Player.hasSkill('dark_connections') || Player.hasSkill('assassin') || Player.hasSkill('poisoner') || Player.hasSkill('master_forger');
+                }
+                if (_hasAnySchemeSkill) {
                 html += `<div class="detail-section"><h3>🏴 Schemes</h3>
                     <div style="display:flex;flex-wrap:wrap;gap:4px;">`;
 
+                if (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('discrete')) {
                 html += `<button class="btn-medieval" onclick="UI.stealFromPerson('${person.id}')" style="font-size:0.9rem;padding:6px 12px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">💰 Steal</button>`;
+                }
+                if (typeof Player !== 'undefined' && Player.hasSkill && (Player.hasSkill('silver_tongue_dark') || Player.hasSkill('discrete'))) {
                 html += `<button class="btn-medieval" onclick="UI.spreadRumorsAbout('${person.id}')" style="font-size:0.9rem;padding:6px 12px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">🤫 Rumors</button>`;
+                }
+                if (typeof Player !== 'undefined' && Player.hasSkill && (Player.hasSkill('shadow_dealings') || Player.hasSkill('silver_tongue_dark'))) {
                 html += `<button class="btn-medieval" onclick="UI.blackmailPerson('${person.id}')" style="font-size:0.9rem;padding:6px 12px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">📜 Blackmail</button>`;
+                }
+                if (typeof Player !== 'undefined' && Player.hasSkill && (Player.hasSkill('dark_connections') || Player.hasSkill('assassin'))) {
                 html += `<button class="btn-medieval" onclick="UI.hireAssassinFor('${person.id}')" style="font-size:0.9rem;padding:6px 12px;background:rgba(160,30,30,0.4);border-color:rgba(160,30,30,0.6);color:#f0d0a0;">🗡️ Assassin</button>`;
+                }
+                if (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('poisoner')) {
                 html += `<button class="btn-medieval" onclick="UI.poisonPerson('${person.id}')" style="font-size:0.9rem;padding:6px 12px;background:rgba(100,140,30,0.35);border-color:rgba(100,140,30,0.6);color:#f0d0a0;">☠️ Poison</button>`;
+                }
+                if (typeof Player !== 'undefined' && Player.hasSkill && (Player.hasSkill('shadow_dealings') || Player.hasSkill('master_forger'))) {
                 html += `<button class="btn-medieval" onclick="UI.framePerson('${person.id}')" style="font-size:0.9rem;padding:6px 12px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">🎭 Frame</button>`;
+                }
 
                 html += `</div>
                     <div class="text-dim" style="font-size:0.8rem;margin-top:6px;">⚠️ Criminal actions risk detection and punishment</div>
                 </div>`;
+                }
             } else if (!isInSameTown) {
                 const isTraveling = typeof Player !== 'undefined' && Player.traveling;
                 html += `<div class="detail-section">
@@ -2690,14 +2711,18 @@ window.UI = (function () {
         if (mf) mf.innerHTML = footerHtml || '';
         if (mo) mo.classList.remove('hidden');
 
-        // Reset position and make draggable
+        // Reset position, width and make draggable
         var dlg = document.getElementById('modalDialog');
         if (dlg) {
             dlg.style.transform = '';
             dlg.style.left = '';
             dlg.style.top = '';
+            dlg.style.maxWidth = '';
+            dlg.style.width = '';
             _makeModalDraggable(dlg);
         }
+        var mc = document.querySelector('.modal-content');
+        if (mc) { mc.style.maxWidth = ''; mc.style.width = ''; }
     }
 
     function closeModal() {
@@ -2766,17 +2791,71 @@ window.UI = (function () {
         }
     }
 
+    function openPlayerInventory() {
+        if (typeof Player === 'undefined') return;
+        var inv = Player.inventory || {};
+        var keys = Object.keys(inv).filter(function(k) { return inv[k] > 0; });
+        var totalWeight = 0;
+        var html = '<div style="max-height:450px;overflow-y:auto;">';
+        html += '<h4 style="margin:0 0 8px;">📦 Your Inventory</h4>';
+        if (keys.length === 0) {
+            html += '<p style="color:#888;">Your inventory is empty.</p>';
+        } else {
+            html += '<table style="width:100%;border-collapse:collapse;font-size:0.82rem;">';
+            html += '<tr style="border-bottom:1px solid #555;"><th style="text-align:left;padding:4px;">Item</th><th style="text-align:right;padding:4px;">Qty</th><th style="text-align:right;padding:4px;">Weight</th><th style="text-align:right;padding:4px;">Value</th></tr>';
+            keys.sort();
+            for (var i = 0; i < keys.length; i++) {
+                var resId = keys[i];
+                var qty = inv[resId];
+                var res = findResource(resId);
+                var name = res ? (res.icon || '') + ' ' + res.name : resId;
+                var weight = res ? (res.weight || 1) * qty : qty;
+                var value = res ? (res.basePrice || 0) * qty : 0;
+                totalWeight += weight;
+                html += '<tr style="border-bottom:1px solid #333;">';
+                html += '<td style="padding:3px 4px;">' + name + '</td>';
+                html += '<td style="padding:3px 4px;text-align:right;">' + qty + '</td>';
+                html += '<td style="padding:3px 4px;text-align:right;">' + weight + '</td>';
+                html += '<td style="padding:3px 4px;text-align:right;color:#d4af37;">' + value + 'g</td>';
+                html += '</tr>';
+            }
+            html += '</table>';
+        }
+        var capacity = Player.getCarryCapacity ? Player.getCarryCapacity() : '?';
+        var carried = Player.getCarriedWeight ? Player.getCarriedWeight() : totalWeight;
+        html += '<div style="margin-top:8px;font-size:0.8rem;color:#aaa;">⚖️ Weight: ' + Math.floor(carried) + '/' + capacity + ' | 🪙 Gold: ' + Math.floor(Player.gold || 0) + 'g</div>';
+        // Horses
+        if (Player.horses && Player.horses.length > 0) {
+            html += '<div style="margin-top:8px;border-top:1px solid #555;padding-top:6px;">';
+            html += '<h5 style="margin:0 0 4px;">🐴 Horses (' + Player.horses.length + ')</h5>';
+            for (var hi = 0; hi < Player.horses.length; hi++) {
+                var h = Player.horses[hi];
+                html += '<div style="font-size:0.78rem;color:#ccc;">' + (h.name || 'Horse') + ' — Stamina: ' + Math.floor(h.stamina || 100) + '</div>';
+            }
+            html += '</div>';
+        }
+        html += '</div>';
+        openModal('📦 Inventory', html);
+    }
+
     function openTradeDialog() {
         if (typeof Player === 'undefined' || Player.townId == null) {
+            if (Player.traveling) { openPlayerInventory(); return; }
             toast('You must be in a town to trade.', 'warning');
             return;
         }
 
-        // Block trade in outposts
+        // At outpost — show inventory instead of trade
         var _curTown;
         try { _curTown = Engine.getTown(Player.townId) || Engine.findTown(Player.townId); } catch(e) {}
         if (_curTown && _curTown.isOutpost) {
-            toast('⛺ Trade is not available at outposts.', 'warning');
+            openPlayerInventory();
+            return;
+        }
+
+        // Traveling — show inventory
+        if (Player.traveling) {
+            openPlayerInventory();
             return;
         }
 
@@ -6786,8 +6865,8 @@ window.UI = (function () {
 
     function stealFromPerson(personId) {
         if (typeof Player === 'undefined') return;
-        if (Player.stealGoods) {
-            const result = Player.stealGoods(personId);
+        if (Player.stealFromNpc) {
+            const result = Player.stealFromNpc(personId);
             toast((result && result.message) || 'Theft attempted.', result && result.success ? 'success' : 'warning');
             try { const p = Engine.getPerson(personId); if (p) showPersonDetail(p); } catch(e) {}
         } else {
@@ -9483,13 +9562,21 @@ window.UI = (function () {
         // ── War Advisory Section ──
         html += _buildWarAdvisoryHtml();
 
-        // Journal & Financial Report buttons
-        html += `<div style="text-align:center;margin:12px 0 6px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
-            <button class="btn-medieval" onclick="UI.openJournal()" style="font-size:0.85rem;padding:6px 18px;">📖 Read My Journal</button>
-            <button class="btn-medieval" onclick="UI.openFinancialReport()" style="font-size:0.85rem;padding:6px 18px;">📊 Financial Report</button>
-        </div>`;
+        // Journal & Financial Report buttons — moved to header area
+        // (removed from here, now in title bar)
 
         openModal(`👤 ${Player.fullName || 'Character'}`, html);
+
+        // Inject buttons next to the modal title
+        setTimeout(function() {
+            var mt = document.getElementById('modalTitle');
+            if (mt) {
+                mt.innerHTML = mt.textContent +
+                    ' <button class="btn-medieval" onclick="UI.openJournal()" style="font-size:0.65rem;padding:3px 10px;margin-left:10px;vertical-align:middle;">📖 Journal</button>' +
+                    ' <button class="btn-medieval" onclick="UI.openFinancialReport()" style="font-size:0.65rem;padding:3px 10px;vertical-align:middle;">📊 Financial Report</button>' +
+                    ' <button class="btn-medieval" onclick="UI.openPlayerImpact()" style="font-size:0.65rem;padding:3px 10px;vertical-align:middle;">🏆 Player Impact</button>';
+            }
+        }, 30);
     }
 
     function _buildWarAdvisoryHtml() {
@@ -9583,20 +9670,41 @@ window.UI = (function () {
                 html += '<div style="color:#4ecdc4;font-weight:bold;margin-bottom:4px;">📋 Allied Advisory</div>';
                 html += '<div style="color:#bbb;margin-bottom:3px;">✅ Trade freely with <strong>' + alliedName + '</strong> — they appreciate your support.</div>';
                 html += '<div style="color:#c44e52;margin-bottom:3px;">🚫 <strong>Cannot</strong> sell military goods (weapons, armor, horses) to <strong>' + enemyName + '</strong>.</div>';
+                html += '<div style="color:#c44e52;margin-bottom:3px;">🚫 Cannot hire workers in military/horse buildings in <strong>' + enemyName + '</strong>.</div>';
+                html += '<div style="color:#e67e22;margin-bottom:3px;">⚠️ +50% bandit/soldier encounters and +25% danger traveling in <strong>' + enemyName + '</strong>.</div>';
                 html += '<div style="color:#bbb;margin-bottom:6px;">💡 Non-military trade with ' + enemyName + ' is still allowed but may draw suspicion.</div>';
+                // Military sales tracking
+                var _salesTotal = a.militarySalesTotal || 0;
+                if (_salesTotal > 0) {
+                    html += '<div style="color:#aaa;margin-bottom:6px;">📊 Military goods/horses sold to ' + alliedName + ': <strong>' + _salesTotal + '</strong> (scales rewards/penalties)</div>';
+                }
                 html += '<div style="color:#ccb974;font-weight:bold;margin-bottom:4px;">If ' + alliedName + ' wins:</div>';
-                html += '<div style="color:#55a868;margin-bottom:2px;padding-left:12px;">• +30 reputation with ' + alliedName + '</div>';
-                html += '<div style="color:#55a868;margin-bottom:2px;padding-left:12px;">• +1 social rank in ' + alliedName + '</div>';
-                html += '<div style="color:#55a868;margin-bottom:4px;padding-left:12px;">• Gold reward (up to 5,000g based on your contributions)</div>';
+                html += '<div style="color:#55a868;margin-bottom:2px;padding-left:12px;">• +5 to +20 kingdom reputation with ' + alliedName + ' (scales with military sales & status)</div>';
+                html += '<div style="color:#55a868;margin-bottom:2px;padding-left:12px;">• +10 relationship with the king, +5 with all nobles</div>';
+                html += '<div style="color:#55a868;margin-bottom:2px;padding-left:12px;">• 🎖️ War Hero achievement</div>';
+                html += '<div style="color:#55a868;margin-bottom:2px;padding-left:12px;">• One guaranteed petition (no signatures needed)</div>';
+                html += '<div style="color:#55a868;margin-bottom:4px;padding-left:12px;">• Gold reward (up to 5,000g, scales with contributions & status)</div>';
                 html += '<div style="color:#c44e52;font-weight:bold;margin-bottom:4px;">If ' + alliedName + ' loses:</div>';
-                html += '<div style="color:#c44e52;margin-bottom:2px;padding-left:12px;">• Buildings in ' + enemyName + ' territory may be seized</div>';
-                html += '<div style="color:#c44e52;margin-bottom:2px;padding-left:12px;">• Reputation with ' + enemyName + ' drops to 10</div>';
+                html += '<div style="color:#c44e52;margin-bottom:2px;padding-left:12px;">• -10 to -20 rep with <strong>both</strong> kingdoms</div>';
+                html += '<div style="color:#c44e52;margin-bottom:2px;padding-left:12px;">• -10 relationship with <strong>both</strong> kings, -5 with all nobles</div>';
+                html += '<div style="color:#c44e52;margin-bottom:2px;padding-left:12px;">• Up to 5,000g retribution payment</div>';
+                html += '<div style="color:#c44e52;margin-bottom:2px;padding-left:12px;">• Buildings in ' + enemyName + ' territory seized</div>';
+                html += '<div style="color:#c44e52;margin-bottom:2px;padding-left:12px;">• Possible jail time (winning king decides)</div>';
                 html += '</div>';
             }
 
-            // Change allegiance button (can switch mid-war with penalties)
+            // Change allegiance button (allowed for non-nobles, with penalties)
+            var _isNobleInAlly = a.side !== 'neutral' && Player.state && Player.state.socialRank && (Player.state.socialRank[a.side] || 0) >= 4;
             html += '<div style="margin-top:6px;text-align:center;">';
-            html += '<button class="btn-medieval" onclick="UI._reopenWarChoice(\'' + entry.warId + '\')" style="font-size:0.75rem;padding:4px 12px;">🔄 Change Allegiance</button>';
+            if (_isNobleInAlly) {
+                html += '<button class="btn-medieval" disabled style="font-size:0.75rem;padding:4px 12px;opacity:0.4;cursor:not-allowed;">🔄 Change Allegiance</button>';
+                html += '<div style="font-size:0.7rem;color:#c44e52;margin-top:3px;">⚠️ Nobles cannot change allegiance.</div>';
+            } else {
+                html += '<button class="btn-medieval" onclick="UI._reopenWarChoice(\'' + entry.warId + '\')" style="font-size:0.75rem;padding:4px 12px;">🔄 Change Allegiance</button>';
+                if (a.side !== 'neutral') {
+                    html += '<div style="font-size:0.7rem;color:#e67e22;margin-top:3px;">⚠️ Changing costs -20 rep from current ally, -10 king relationship, -5 all nobles.</div>';
+                }
+            }
             html += '</div>';
 
             html += '</div>';
@@ -12410,8 +12518,8 @@ window.UI = (function () {
         }
         if (!opt || !opt.available || !opt.action) return;
 
-        // Check quarantine before executing travel
-        if (typeof Player !== 'undefined' && Player.getRouteQuarantineInfo) {
+        // Check quarantine before executing travel (skip for god mode warp)
+        if (optionId !== 'god_warp' && typeof Player !== 'undefined' && Player.getRouteQuarantineInfo) {
             var qInfo = Player.getRouteQuarantineInfo(townId);
             if (qInfo && qInfo.blocked) {
                 // Show quarantine decision popup instead of traveling
@@ -15436,17 +15544,21 @@ window.UI = (function () {
             html += '<div style="margin:8px 0;"><button class="btn-medieval" onclick="UI.sleepOutsideUI()" style="padding:8px 20px;">🌙 Sleep Outside (free, disease risk)</button></div>';
         }
 
-        // Draw water button — only if there's an active (non-depleted) well
+        // Draw water button — only if there's an active (non-depleted) well or outpost well upgrade
         var town = Engine.findTown(Player.townId);
-        if (town && town.buildings) {
-            var activeWells = town.buildings.filter(function(b) { return b.type === 'well' && !b.depleted; });
-            var hasCistern = town.buildings.some(function(b) { return b.type === 'cistern'; });
-            if (activeWells.length > 0 || hasCistern) {
+        var hasOutpostWell = town && town.isOutpost && town.outpostUpgrades && town.outpostUpgrades.indexOf('well') >= 0;
+        if (town && (hasOutpostWell || (town.buildings && town.buildings.length > 0))) {
+            var activeWells = town.buildings ? town.buildings.filter(function(b) { return b.type === 'well' && !b.depleted; }) : [];
+            var hasCistern = town.buildings ? town.buildings.some(function(b) { return b.type === 'cistern'; }) : false;
+            if (activeWells.length > 0 || hasCistern || hasOutpostWell) {
                 var kingdom = Engine.findKingdom(town.kingdomId);
-                var isFree = kingdom && kingdom.laws && kingdom.laws.freeWellWater;
+                var isFree = hasOutpostWell || (kingdom && kingdom.laws && kingdom.laws.freeWellWater);
                 html += '<div style="margin:12px 0;border-top:1px solid #555;padding-top:8px;">';
                 html += '<button class="btn-medieval" onclick="UI.drawWaterUI()" style="padding:6px 16px;">💧 Draw Water from Well' + (isFree ? ' (Free)' : ' (1g)') + '</button>';
-                // Show well water levels
+                if (hasOutpostWell) {
+                    html += '<div style="font-size:0.75rem;color:#5ac85a;margin-top:4px;">🪣 Outpost Well — unlimited fresh water</div>';
+                }
+                // Show well water levels for regular wells
                 for (var _wwi = 0; _wwi < activeWells.length; _wwi++) {
                     var _w = activeWells[_wwi];
                     if (_w.waterCapacity) {
@@ -15464,13 +15576,6 @@ window.UI = (function () {
                     html += '</div>';
                 }
             }
-        }
-
-        // Armed escort
-        if (Player.armedEscort && Player.armedEscort.active) {
-            html += '<div style="margin-top:12px;color:#5ac85a;">⚔️ Armed escort active: ' + Player.armedEscort.daysLeft + ' days remaining</div>';
-        } else {
-            html += '<div style="margin-top:12px;"><button class="btn-medieval" onclick="UI.hireEscortUI()" style="padding:6px 16px;">⚔️ Hire Armed Escort (' + CONFIG.WARTIME_ESCORT_COST_PER_DAY + 'g/day)</button></div>';
         }
 
         html += '</div>';
@@ -15606,6 +15711,7 @@ window.UI = (function () {
         var inv = Player.inventory || {};
         var gold = Player.gold || 0;
         var housingInfo = Player.getOutpostHousingInfo ? Player.getOutpostHousingInfo(townId) : null;
+        var _atOutpost = (Player.townId === townId);
 
         var body = '<div style="padding:4px;max-height:460px;overflow-y:auto">';
 
@@ -15627,6 +15733,25 @@ window.UI = (function () {
         var depNames = [];
         for (var dk in op.naturalDeposits) { if (op.naturalDeposits[dk] > 0) depNames.push(dk); }
         if (depNames.length > 0) body += '<div style="font-size:11px;color:#888">⛏️ Deposits: ' + depNames.join(', ') + '</div>';
+        // NPC Needs display
+        var _opTown = Engine.findTown(townId);
+        if (_opTown && _opTown.npcNeeds && op.population > 0) {
+            var _n = _opTown.npcNeeds;
+            body += '<div style="margin-top:6px;font-size:11px">';
+            body += '<strong style="color:#ccc">NPC Needs:</strong> ';
+            var _needItems = [
+                { label: '🍞 Food', val: _n.food },
+                { label: '🛡️ Safety', val: _n.safety },
+                { label: '😊 Happy', val: _n.happiness },
+                { label: '❤️ Health', val: _n.health },
+                { label: '💰 Wealth', val: _n.wealth }
+            ];
+            for (var _ni = 0; _ni < _needItems.length; _ni++) {
+                var _nc = _needItems[_ni].val >= 60 ? '#55a868' : (_needItems[_ni].val >= 30 ? '#d4a844' : '#c44e52');
+                body += '<span style="color:' + _nc + ';margin-right:8px">' + _needItems[_ni].label + ' ' + Math.round(_needItems[_ni].val) + '</span>';
+            }
+            body += '</div>';
+        }
         body += '</div>';
 
         // === STORAGE ===
@@ -15692,12 +15817,18 @@ window.UI = (function () {
         // === LAND PLOTS ===
         body += '<div style="background:rgba(40,40,40,0.6);padding:10px;border-radius:6px;margin-bottom:8px">';
         body += '<h5 style="margin:0 0 6px;color:#ccc">📐 Land (' + (op.usedLandPlots || 0) + '/' + (op.landPlots || 4) + ' used)</h5>';
-        if ((op.landPlots || 4) < (cfg.maxLandPlots || 10)) {
+        if ((op.population || 0) < 10) {
+            body += '<div style="font-size:11px;color:#888">Need at least 10 residents to expand land.</div>';
+        } else if ((op.landPlots || 4) < (cfg.maxLandPlots || 10)) {
+            if (_atOutpost) {
             var lpCost = cfg.landPlotCost || 150;
             var lpMats = cfg.landPlotMaterials || { wood: 10, stone: 5 };
             var canBuyLand = gold >= lpCost;
             for (var lmk in lpMats) { if ((inv[lmk] || 0) < lpMats[lmk]) canBuyLand = false; }
             body += '<button onclick="UI._opBuyLand(\'' + townId + '\')" style="padding:3px 10px;font-size:11px;cursor:pointer' + (canBuyLand ? '' : ';opacity:0.5') + '"' + (canBuyLand ? '' : ' disabled') + '>+ Buy Plot (' + lpCost + 'g + ' + _formatMats(lpMats) + ')</button>';
+            } else {
+                body += '<div style="font-size:11px;color:#888">📍 Travel here to buy land.</div>';
+            }
         } else {
             body += '<div style="font-size:11px;color:#666">Maximum land plots reached.</div>';
         }
@@ -15719,7 +15850,7 @@ window.UI = (function () {
         }
         // Build housing options
         var freePlots = (op.landPlots || 4) - (op.usedLandPlots || 0);
-        if (freePlots > 0) {
+        if (freePlots > 0 && _atOutpost) {
             body += '<div style="margin-top:6px;font-size:12px;color:#ccc"><strong>Build Housing:</strong></div>';
             var hTypes = CONFIG.OUTPOST_HOUSING || {};
             for (var hk in hTypes) {
@@ -15736,24 +15867,72 @@ window.UI = (function () {
 
         // === STAFF ===
         body += '<div style="background:rgba(40,40,40,0.6);padding:10px;border-radius:6px;margin-bottom:8px">';
-        body += '<h5 style="margin:0 0 6px;color:#ccc">👷 Staff</h5>';
-        var maxW = cfg.maxOutpostWorkers || 10;
+        var maxW = cfg.maxOutpostWorkers || 15;
         var maxG = cfg.maxOutpostGuards || 4;
-        body += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
-        body += '<span style="font-size:12px">Workers: ' + op.workers + '/' + maxW + ' (' + (cfg.workerWagePerWeek || 10) + 'g/wk each)</span>';
-        if (!op.abandoned && !op.annexed && op.population > 0) {
-            body += '<button onclick="UI._opStaff(\'' + townId + '\',\'hire\',\'worker\')" style="padding:2px 8px;font-size:11px;cursor:pointer"' + (op.workers < maxW ? '' : ' disabled') + '>+</button>';
-            body += '<button onclick="UI._opStaff(\'' + townId + '\',\'dismiss\',\'worker\')" style="padding:2px 8px;font-size:11px;cursor:pointer"' + (op.workers > 0 ? '' : ' disabled') + '>−</button>';
+        body += '<h5 style="margin:0 0 6px;color:#ccc">👷 Staff (Workers: ' + op.workers + '/' + maxW + ', Guards: ' + op.guards + '/' + maxG + ')</h5>';
+
+        // Hire/dismiss buttons
+        body += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">';
+        if (!op.abandoned && !op.annexed && op.population > 0 && _atOutpost) {
+            body += '<button onclick="UI._opStaff(\'' + townId + '\',\'hire\',\'worker\')" style="padding:2px 8px;font-size:11px;cursor:pointer"' + (op.workers < maxW ? '' : ' disabled') + '>+ Hire Worker</button>';
+            body += '<button onclick="UI._opStaff(\'' + townId + '\',\'dismiss\',\'worker\')" style="padding:2px 8px;font-size:11px;cursor:pointer"' + (op.workers > 0 ? '' : ' disabled') + '>− Dismiss Worker</button>';
+            body += '<button onclick="UI._opStaff(\'' + townId + '\',\'hire\',\'guard\')" style="padding:2px 8px;font-size:11px;cursor:pointer"' + (op.guards < maxG ? '' : ' disabled') + '>+ Hire Guard</button>';
+            body += '<button onclick="UI._opStaff(\'' + townId + '\',\'dismiss\',\'guard\')" style="padding:2px 8px;font-size:11px;cursor:pointer"' + (op.guards > 0 ? '' : ' disabled') + '>− Dismiss Guard</button>';
+        }
+        if (!_atOutpost && op.population > 0) body += '<div style="font-size:11px;color:#888">📍 Travel here to manage staff.</div>';
+        if (op.population === 0) body += '<div style="font-size:11px;color:#c44e52">⚠️ Recruit NPCs before hiring staff.</div>';
+        body += '</div>';
+        body += '<div style="font-size:10px;color:#888;margin-bottom:6px">Workers: ' + (cfg.workerWagePerWeek || 10) + 'g/wk · Guards: ' + (cfg.guardWagePerWeek || 15) + 'g/wk</div>';
+
+        // Worker assignments
+        if (op.workers > 0) {
+            body += '<div style="margin-top:4px;border-top:1px solid #444;padding-top:6px">';
+            body += '<div style="font-size:12px;color:#ccc;margin-bottom:4px"><strong>Worker Assignments:</strong></div>';
+            var workerIds = op.workerIds || [];
+            for (var wi = 0; wi < workerIds.length; wi++) {
+                var wNpc = Engine.findPerson(workerIds[wi]);
+                var wName = wNpc ? wNpc.firstName + ' ' + wNpc.lastName : 'Worker';
+                var wRole = Player.getWorkerAssignment ? Player.getWorkerAssignment(townId, workerIds[wi]) : null;
+                var wRoleName = '⚠️ Unassigned';
+                var wRoleColor = '#c44e52';
+                if (wRole === 'building_maintenance') { wRoleName = '🔧 Building Maintenance'; wRoleColor = '#88aacc'; }
+                else if (wRole) {
+                    var wRoleCfg = CONFIG.OUTPOST_UPGRADES && CONFIG.OUTPOST_UPGRADES[wRole];
+                    wRoleName = (wRoleCfg ? wRoleCfg.icon + ' ' + wRoleCfg.name : wRole);
+                    wRoleColor = '#55a868';
+                }
+                body += '<div style="display:flex;align-items:center;gap:6px;margin:3px 0;flex-wrap:wrap">';
+                body += '<span style="font-size:11px;min-width:120px">👷 ' + wName + '</span>';
+                body += '<span style="font-size:10px;color:' + wRoleColor + '">' + wRoleName + '</span>';
+                // Assignment dropdown (only when present)
+                if (_atOutpost) {
+                body += '<select onchange="UI._opAssignWorker(\'' + townId + '\',\'' + workerIds[wi] + '\',this.value)" style="font-size:10px;padding:1px 4px;background:#333;color:#ddd;border:1px solid #555">';
+                body += '<option value="">-- Assign --</option>';
+                body += '<option value="building_maintenance"' + (wRole === 'building_maintenance' ? ' selected' : '') + '>🔧 Building Maint.</option>';
+                var upgradeRoles = ['clinic', 'tavern', 'market_stall', 'watchtower', 'chapel', 'food_hall'];
+                for (var uri = 0; uri < upgradeRoles.length; uri++) {
+                    var _ur = upgradeRoles[uri];
+                    if ((op.outpostUpgrades || []).indexOf(_ur) >= 0) {
+                        var _urCfg = CONFIG.OUTPOST_UPGRADES && CONFIG.OUTPOST_UPGRADES[_ur];
+                        var _urName = _urCfg ? _urCfg.icon + ' ' + _urCfg.name : _ur;
+                        body += '<option value="' + _ur + '"' + (wRole === _ur ? ' selected' : '') + '>' + _urName + '</option>';
+                    }
+                }
+                body += '</select>';
+                }
+                body += '</div>';
+            }
+            // Building maintenance summary
+            var maintCount = Player.getMaintenanceWorkerCount ? Player.getMaintenanceWorkerCount(townId) : 0;
+            var playerBldCount = (op.buildings || []).filter(function(b) { return b.ownerId === 'player'; }).length;
+            var maxMaint = cfg.maxMaintainedBuildings || 10;
+            body += '<div style="font-size:11px;color:#88aacc;margin-top:6px">🔧 Maintenance workers: ' + maintCount + ' → supports ' + Math.min(maintCount, maxMaint) + ' buildings (you own ' + playerBldCount + ')</div>';
+            if (playerBldCount > maintCount) {
+                body += '<div style="font-size:11px;color:#c44e52">⚠️ Not enough maintenance workers! ' + (playerBldCount - maintCount) + ' building(s) degrading!</div>';
+            }
+            body += '</div>';
         }
         body += '</div>';
-        body += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">';
-        body += '<span style="font-size:12px">Guards: ' + op.guards + '/' + maxG + ' (' + (cfg.guardWagePerWeek || 15) + 'g/wk each)</span>';
-        if (!op.abandoned && !op.annexed && op.population > 0) {
-            body += '<button onclick="UI._opStaff(\'' + townId + '\',\'hire\',\'guard\')" style="padding:2px 8px;font-size:11px;cursor:pointer"' + (op.guards < maxG ? '' : ' disabled') + '>+</button>';
-            body += '<button onclick="UI._opStaff(\'' + townId + '\',\'dismiss\',\'guard\')" style="padding:2px 8px;font-size:11px;cursor:pointer"' + (op.guards > 0 ? '' : ' disabled') + '>−</button>';
-        }
-        if (op.population === 0) body += '<div style="font-size:11px;color:#c44e52;margin-top:4px">⚠️ Recruit NPCs before hiring staff.</div>';
-        body += '</div></div>';
 
         // === RESIDENTS ===
         body += '<div style="background:rgba(40,40,40,0.6);padding:10px;border-radius:6px;margin-bottom:8px">';
@@ -15779,16 +15958,27 @@ window.UI = (function () {
         // === UPGRADES ===
         body += '<div style="background:rgba(40,40,40,0.6);padding:10px;border-radius:6px;margin-bottom:8px">';
         body += '<h5 style="margin:0 0 6px;color:#ccc">🔨 Upgrades</h5>';
-        // Show installed upgrades
+        // Show installed upgrades with active/inactive status
         if ((op.outpostUpgrades || []).length > 0) {
             body += '<div style="margin-bottom:6px">';
             for (var iui = 0; iui < op.outpostUpgrades.length; iui++) {
-                var iuCfg = CONFIG.OUTPOST_UPGRADES && CONFIG.OUTPOST_UPGRADES[op.outpostUpgrades[iui]];
-                if (iuCfg) body += '<span style="display:inline-block;background:rgba(60,60,60,0.8);padding:3px 8px;border-radius:4px;font-size:11px;margin:2px">' + iuCfg.icon + ' ' + iuCfg.name + '</span>';
+                var _iuId = op.outpostUpgrades[iui];
+                var iuCfg = CONFIG.OUTPOST_UPGRADES && CONFIG.OUTPOST_UPGRADES[_iuId];
+                if (iuCfg) {
+                    var _needsW = iuCfg.needsWorker;
+                    var _isAct = !_needsW || (Player.isUpgradeActive && Player.isUpgradeActive(townId, _iuId));
+                    var _statusColor = _needsW ? (_isAct ? '#55a868' : '#c44e52') : '#888';
+                    var _statusText = _needsW ? (_isAct ? '✅ Active' : '❌ No worker') : '';
+                    body += '<span style="display:inline-block;background:rgba(60,60,60,0.8);padding:3px 8px;border-radius:4px;font-size:11px;margin:2px;border:1px solid ' + (_needsW && !_isAct ? '#c44e52' : 'transparent') + '">';
+                    body += iuCfg.icon + ' ' + iuCfg.name;
+                    if (_statusText) body += ' <span style="color:' + _statusColor + ';font-size:10px">' + _statusText + '</span>';
+                    body += '</span>';
+                }
             }
             body += '</div>';
         }
         // Available upgrades
+        if (_atOutpost) {
         var availUpgrades = CONFIG.OUTPOST_UPGRADES || {};
         var hasAvail = false;
         for (var auk in availUpgrades) {
@@ -15841,6 +16031,9 @@ window.UI = (function () {
         } else if (costs && costs.isPort) {
             body += '<div style="font-size:11px;color:#5599cc;margin-top:4px">⚓ Port — docks built</div>';
         }
+        } else {
+            body += '<div style="font-size:11px;color:#888;margin-top:6px">📍 Travel here to build upgrades, walls, and docks.</div>';
+        }
         body += '</div>';
 
         // === INFRASTRUCTURE (Roads & Sea Routes) ===
@@ -15862,6 +16055,7 @@ window.UI = (function () {
             body += '<div style="font-size:11px;color:#c44e52">⚠️ No connections — offroad access only!</div>';
         }
         // Build new road
+        if (_atOutpost) {
         var landTargets = nearby.filter(function(n) { return !n.hasRoad; });
         if (landTargets.length > 0) {
             body += '<div style="margin-top:6px;font-size:12px"><strong>Build Road:</strong></div>';
@@ -15891,9 +16085,9 @@ window.UI = (function () {
                 var canJR = gold >= jGold && (inv.wood || 0) >= jWood && (inv.stone || 0) >= jStone;
                 body += '<div style="margin-top:6px;font-size:12px;border:1px solid #6688aa;padding:6px;border-radius:4px;background:rgba(30,40,50,0.5)">';
                 body += '<div style="color:#88bbdd;margin-bottom:4px"><strong>🔗 Connect to Nearby Road</strong></div>';
-                body += '<div style="font-size:11px;color:#888;margin-bottom:4px">' + roadConn.fromTownName + '–' + roadConn.toTownName + ' road passes ~' + roadConn.perpDist + ' away. Connect via ' + roadConn.connectTownName + '.</div>';
+                body += '<div style="font-size:11px;color:#888;margin-bottom:4px">' + roadConn.fromTownName + '–' + roadConn.toTownName + ' road passes ~' + roadConn.perpDist + ' away. Creates a junction on the road.</div>';
                 body += '<div style="display:flex;align-items:center;gap:6px">';
-                body += '<button onclick="UI._opConnectToRoad(\'' + townId + '\',\'' + roadConn.connectTownId + '\')" style="padding:2px 8px;font-size:11px;cursor:pointer' + (canJR ? '' : ';opacity:0.5') + '"' + (canJR ? '' : ' disabled') + '>Connect</button>';
+                body += '<button onclick="UI._opConnectToRoad(\'' + townId + '\')" style="padding:2px 8px;font-size:11px;cursor:pointer' + (canJR ? '' : ';opacity:0.5') + '"' + (canJR ? '' : ' disabled') + '>Connect</button>';
                 body += '<span style="font-size:11px;color:#888">' + jGold + 'g + ' + jWood + ' wood + ' + jStone + ' stone</span>';
                 body += '</div></div>';
             }
@@ -15913,16 +16107,21 @@ window.UI = (function () {
                 }
             }
         }
+        } else {
+            body += '<div style="font-size:11px;color:#888;margin-top:6px">📍 Travel here to build roads and sea routes.</div>';
+        }
         body += '</div>';
 
         // === VILLAGE PETITION ===
         var minPop = cfg.villageConversionMinPop || 20;
-        if (op.population >= minPop) {
+        if (op.population >= minPop && _atOutpost) {
             body += '<div style="background:rgba(74,124,59,0.15);padding:10px;border-radius:6px;margin-bottom:8px;border:1px solid rgba(74,124,59,0.4)">';
             body += '<h5 style="margin:0 0 6px;color:#55a868">🏘️ Petition for Village Status</h5>';
             body += '<p style="font-size:11px;color:#aaa;margin:0 0 6px">Your outpost has ' + op.population + '+ residents! Petition the king to recognize it as an official village.</p>';
             body += '<button class="btn-medieval" onclick="UI._opPetitionVillage(\'' + townId + '\')" style="background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5);padding:5px 14px;font-size:12px">🏘️ Petition King</button>';
             body += '</div>';
+        } else if (op.population >= minPop && !_atOutpost) {
+            body += '<div style="font-size:11px;color:#888;margin-bottom:8px">🏘️ Travel here to petition for village status (' + op.population + '/' + minPop + ' residents).</div>';
         } else {
             body += '<div style="font-size:11px;color:#666;margin-bottom:8px">🏘️ Village conversion requires ' + minPop + '+ residents (' + op.population + '/' + minPop + ')</div>';
         }
@@ -15938,6 +16137,16 @@ window.UI = (function () {
     function _opStaff(townId, action, type) {
         var result = Player.manageOutpostStaff(townId, action, type);
         toast(result.message, result.success ? 'success' : 'error');
+        openOutpostDetail(townId);
+    }
+    function _opAssignWorker(townId, workerId, role) {
+        if (!role) {
+            var result = Player.unassignOutpostWorker(townId, workerId);
+            toast(result.message, result.success ? 'success' : 'info');
+        } else {
+            var result = Player.assignOutpostWorker(townId, workerId, role);
+            toast(result.message, result.success ? 'success' : 'error');
+        }
         openOutpostDetail(townId);
     }
     function _opUpgradeWalls(townId) {
@@ -15966,11 +16175,9 @@ window.UI = (function () {
         toast(result.message, result.success ? 'success' : 'error');
         openOutpostDetail(fromId);
     }
-    function _opConnectToRoad(outpostId, targetTownId) {
-        var toT = Engine.findTown(targetTownId);
-        var name = toT ? toT.name : 'unknown';
-        if (!confirm('Connect to nearby road via ' + name + '? This will cost gold + materials.')) return;
-        var result = Player.connectOutpostToRoad(outpostId, targetTownId);
+    function _opConnectToRoad(outpostId) {
+        if (!confirm('Connect to nearby road via junction? This will cost gold + materials.')) return;
+        var result = Player.connectOutpostToRoad(outpostId);
         toast(result.message, result.success ? 'success' : 'error');
         openOutpostDetail(outpostId);
     }
@@ -16033,6 +16240,8 @@ window.UI = (function () {
             var maxPop = cfg.maxPopulation || 30;
             var atPopCap = (op.population || 0) >= maxPop;
             var chance = Player.getOutpostRecruitChance ? Player.getOutpostRecruitChance(npcId, op.townId) : 0.10;
+            // Reflect no-housing penalty in displayed chance
+            if (!hasSpace) chance = Math.max((cfg.recruitMinChance || 0.03), chance - 0.225);
             var chanceStr = Math.round(chance * 100);
 
             // Check cooldown
@@ -16053,12 +16262,27 @@ window.UI = (function () {
 
             if (atPopCap) {
                 html += '<div style="font-size:11px;color:#c44e52">⚠️ Population cap reached (' + maxPop + '). Consider converting to village.</div>';
-            } else if (!hasSpace) {
-                html += '<div style="font-size:11px;color:#c44e52">⚠️ No housing space — build more housing first.</div>';
             } else if (onCooldown) {
                 html += '<div style="font-size:11px;color:#c44e52">⏳ Cooldown: ' + daysLeft + ' day(s) remaining.</div>';
             } else {
-                // Gold incentive input
+                // No-housing warning and shelter item options
+                if (!hasSpace) {
+                    html += '<div style="font-size:11px;color:#cc8833;margin-bottom:4px">⚠️ No housing space — recruitment chance reduced by ~22%.</div>';
+                    var _hasCK = (Player.inventory.camping_kit || 0) >= 1;
+                    var _hasTent = (Player.inventory.tent || 0) >= 1;
+                    var _hasBR = (Player.inventory.bedroll || 0) >= 1;
+                    if (_hasCK || _hasTent || _hasBR) {
+                        html += '<div style="font-size:11px;color:#aaa;margin-bottom:4px">Offer shelter to reduce penalty:</div>';
+                        html += '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px">';
+                        html += '<select id="recruit_shelter_' + op.townId + '" style="font-size:11px;padding:2px 4px;background:#222;color:#e0d6b8;border:1px solid #555">';
+                        html += '<option value="">None</option>';
+                        if (_hasCK) html += '<option value="camping_kit">🏕️ Camping Kit (-50% penalty)</option>';
+                        if (_hasTent) html += '<option value="tent">⛺ Tent (-35% penalty)</option>';
+                        if (_hasBR) html += '<option value="bedroll">🛏️ Bedroll (-25% penalty)</option>';
+                        html += '</select></div>';
+                    }
+                }
+                // Gold incentive + recruit button
                 html += '<div style="display:flex;gap:6px;align-items:center;margin-top:4px">';
                 html += '<span style="font-size:11px">Gold incentive:</span>';
                 html += '<input type="number" id="recruit_gold_' + op.townId + '" value="0" min="0" step="50" style="width:60px;font-size:11px;padding:2px;background:#222;color:#e0d6b8;border:1px solid #555">';
@@ -16076,7 +16300,9 @@ window.UI = (function () {
     function _doRecruitNpc(npcId, townId) {
         var goldInput = document.getElementById('recruit_gold_' + townId);
         var goldIncentive = goldInput ? parseInt(goldInput.value) || 0 : 0;
-        var result = Player.recruitNpcToOutpost(npcId, townId, goldIncentive);
+        var shelterSel = document.getElementById('recruit_shelter_' + townId);
+        var shelterItem = shelterSel ? shelterSel.value : '';
+        var result = Player.recruitNpcToOutpost(npcId, townId, goldIncentive, shelterItem);
         toast(result.message, result.success ? 'success' : 'warning');
         if (result.success) closeModal();
         else openRecruitToOutpostDialog(npcId);
@@ -16135,7 +16361,7 @@ window.UI = (function () {
         var nearestSettle = null, nearDist = Infinity;
         for (var ti = 0; ti < allTowns.length; ti++) {
             var t = allTowns[ti];
-            if (t.category === 'outpost' || t.abandoned) continue;
+            if (t.category === 'outpost' || t.abandoned || t.isJunction) continue;
             var d = Math.hypot(destX - t.x, destY - t.y);
             if (d < nearDist) { nearDist = d; nearestSettle = t; }
         }
@@ -16256,7 +16482,7 @@ window.UI = (function () {
                 var nearestSettle = null, nearDist = Infinity;
                 for (var ti = 0; ti < allTowns.length; ti++) {
                     var t = allTowns[ti];
-                    if (t.category === 'outpost' || t.abandoned) continue;
+                    if (t.category === 'outpost' || t.abandoned || t.isJunction) continue;
                     var d = Math.hypot(px - t.x, py - t.y);
                     if (d < nearDist) { nearDist = d; nearestSettle = t; }
                 }
@@ -16295,7 +16521,7 @@ window.UI = (function () {
         var nearestSettle = null, nearDist = Infinity;
         for (var ti = 0; ti < allTowns.length; ti++) {
             var t = allTowns[ti];
-            if (t.category === 'outpost' || t.abandoned) continue;
+            if (t.category === 'outpost' || t.abandoned || t.isJunction) continue;
             var d = Math.hypot(px - t.x, py - t.y);
             if (d < nearDist) { nearDist = d; nearestSettle = t; }
         }
@@ -19833,6 +20059,20 @@ window.UI = (function () {
         if (typeof Player === 'undefined') return;
         if (Player.traveling) { toast('Cannot trade while traveling.', 'warning'); return; }
 
+        // Outpost-specific messaging
+        var _stTown = Engine.findTown(Player.townId);
+        if (_stTown && _stTown.isOutpost) {
+            if (!_stTown.outpostResidents || _stTown.outpostResidents.length === 0) {
+                toast('No residents at this outpost for street trading.', 'warning'); return;
+            }
+            if (!_stTown.outpostUpgrades || _stTown.outpostUpgrades.indexOf('market_stall') < 0) {
+                toast('Build Market Stalls upgrade to enable street trading here.', 'warning'); return;
+            }
+            if (!_stTown.workerAssignments || !_stTown.workerAssignments.market_stall) {
+                toast('Assign a worker to Market Stalls to enable street trading.', 'warning'); return;
+            }
+        }
+
         const trades = Player.getStreetTrades();
         let html = '<p class="street-intro">Local townsfolk looking to buy specific goods at premium prices.</p>';
 
@@ -21097,11 +21337,46 @@ window.UI = (function () {
         }
         html += '</div>';
 
-        // Stats summary
-        html += '<div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:10px;display:flex;gap:12px;flex-wrap:wrap;">';
-        html += `<span>🗡️ Crimes: ${Player.corruptActions}</span>`;
-        html += `<span>🔥 Streak: ${Player.corruptionStreak}</span>`;
-        html += `<span>⚠️ Notoriety: ${Math.floor(Player.notoriety)}</span>`;
+        // Notoriety meter + stats
+        var _notoriety = typeof Player !== 'undefined' ? Math.floor(Player.notoriety || 0) : 0;
+        var _notorietyPct = Math.min(100, _notoriety);
+        var _notorietyColor = _notoriety >= 80 ? '#c44e52' : _notoriety >= 50 ? '#e8a040' : _notoriety >= 25 ? '#ccb974' : '#55a868';
+        var _notorietyLabel = _notoriety >= 80 ? 'WANTED' : _notoriety >= 50 ? 'Notorious' : _notoriety >= 25 ? 'Suspicious' : _notoriety >= 10 ? 'Whispered' : 'Unknown';
+        var _investigationRisk = Math.min(95, Math.floor(_notoriety * 0.3 + 2));
+        html += '<div style="background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:8px 12px;margin-bottom:10px;">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">';
+        html += '<span style="font-size:0.85rem;color:#ccc;">⚠️ Notoriety: <strong style="color:' + _notorietyColor + ';">' + _notoriety + '</strong> — <span style="color:' + _notorietyColor + ';">' + _notorietyLabel + '</span></span>';
+        html += '<span style="font-size:0.75rem;color:#aaa;">🔍 Investigation risk: ' + _investigationRisk + '%</span>';
+        html += '</div>';
+        html += '<div style="width:100%;height:8px;background:#222;border-radius:4px;overflow:hidden;">';
+        html += '<div style="width:' + _notorietyPct + '%;height:100%;background:' + _notorietyColor + ';border-radius:4px;transition:width 0.3s;"></div>';
+        html += '</div>';
+        html += '<div style="display:flex;gap:12px;margin-top:6px;font-size:0.78rem;color:var(--text-muted);">';
+        html += '<span>🗡️ Crimes: ' + (Player.corruptActions || 0) + '</span>';
+        html += '<span>🔥 Streak: ' + (Player.corruptionStreak || 0) + '</span>';
+        var _activeRackets = 0; try { _activeRackets = Object.keys(Player.state.protectionRackets || {}).length; } catch(e) {}
+        var _activeRoutes = 0; try { _activeRoutes = (Player.state.smugglingRoutes || []).length; } catch(e) {}
+        var _activeSpies = 0; try { _activeSpies = Object.keys(Player.state.spyNetworks || {}).length; } catch(e) {}
+        if (_activeRackets > 0) html += '<span>💪 Rackets: ' + _activeRackets + '</span>';
+        if (_activeRoutes > 0) html += '<span>🥷 Routes: ' + _activeRoutes + '</span>';
+        if (_activeSpies > 0) html += '<span>🕵️ Spies: ' + _activeSpies + '</span>';
+        html += '</div>';
+        // Active notoriety reduction indicator
+        try {
+            var _nr = Player.state.notorietyReduction;
+            if (_nr) {
+                var _nrDay = typeof Engine !== 'undefined' && Engine.getDay ? Engine.getDay() : 0;
+                var _nrDaysLeft = Math.max(0, _nr.endDay - _nrDay);
+                var _nrProgress = _nr.endDay > _nr.startDay ? Math.floor(100 * (_nrDay - _nr.startDay) / (_nr.endDay - _nr.startDay)) : 100;
+                _nrProgress = Math.min(100, Math.max(0, _nrProgress));
+                var _nrTypeLabel = _nr.type === 'lay_low' ? '🕶️ Laying Low' : '🧹 Cleansing Identity';
+                html += '<div style="margin-top:6px;padding:4px 8px;background:rgba(85,168,104,0.15);border:1px solid rgba(85,168,104,0.3);border-radius:4px;font-size:0.78rem;color:#88cc88;">';
+                html += _nrTypeLabel + ' — ' + _nrDaysLeft + ' days remaining (~' + Math.floor(_nr.dailyReduction * _nrDaysLeft) + ' notoriety left to remove)';
+                html += '<div style="width:100%;height:4px;background:#333;border-radius:2px;margin-top:3px;overflow:hidden;">';
+                html += '<div style="width:' + _nrProgress + '%;height:100%;background:#55a868;border-radius:2px;"></div></div>';
+                html += '</div>';
+            }
+        } catch(e) {}
         html += '</div>';
 
         for (const tab of tabs) {
@@ -25019,13 +25294,23 @@ window.UI = (function () {
     }
 
     function fastForwardJailUI() {
-        if (typeof Player === 'undefined' || !Player.fastForwardJail) return;
-        toast('⏩ Fast-forwarding through jail sentence...', 'info');
-        closeModal();
-        setTimeout(function() {
-            Player.fastForwardJail();
-            toast('🔓 You have been released from prison!', 'success');
-        }, 100);
+        if (typeof Player === 'undefined') return;
+        if (!Player.jailedUntilDay || Player.jailedUntilDay <= Engine.getDay()) {
+            toast('Not currently jailed.', 'info'); return;
+        }
+        window._jailFastForwarding = true;
+        if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(120);
+        toast('⏩ Fast-forwarding at 120x until release...', 'info');
+    }
+
+    function attemptJailEscapeUI() {
+        if (typeof Player === 'undefined' || !Player.attemptJailEscape) return;
+        var result = Player.attemptJailEscape();
+        toast(result.message, result.success ? 'success' : 'danger');
+        if (result.success) {
+            var jp = document.getElementById('jailPanel');
+            if (jp) jp.remove();
+        }
     }
 
     // ============================================================
@@ -25313,15 +25598,78 @@ window.UI = (function () {
             }
         }
 
-        // Auto-open camp UI when player is exhausted while traveling
+        // Auto-open camp UI when player is exhausted while traveling — pause game until player chooses
         if (typeof Player !== 'undefined' && Player._campPromptNeeded && Player.traveling && !Player.resting) {
             Player._campPromptNeeded = false;
+            // Save speed and pause so time doesn't advance while player decides
+            if (typeof Game !== 'undefined' && Game.getSpeed && Game.setSpeed) {
+                var curSpd = Game.getSpeed();
+                if (curSpd > 0) window._restPauseSavedSpeed = curSpd;
+                Game.setSpeed(0);
+            }
             openTravelRest();
         }
     }
 
+    function updateJailPanel() {
+        var _jailPanel = document.getElementById('jailPanel');
+        if (typeof Player !== 'undefined' && Player.jailedUntilDay > 0 && Engine.getDay() < Player.jailedUntilDay) {
+            var _jailDaysLeft = Player.jailedUntilDay - Engine.getDay();
+            var _jailTownName = Player.townId ? (Engine.findTown(Player.townId) || {}).name || 'Unknown' : 'Unknown';
+            if (!_jailPanel) {
+                _jailPanel = document.createElement('div');
+                _jailPanel.id = 'jailPanel';
+                _jailPanel.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:500;background:linear-gradient(135deg,#1a1a2e,#2a1a1a);border:2px solid #8b0000;border-radius:8px;padding:10px 20px;color:#e0d6b8;font-family:inherit;box-shadow:0 -2px 15px rgba(139,0,0,0.4);min-width:400px;text-align:center;';
+                var bottomBar = document.getElementById('bottomBar');
+                if (bottomBar) bottomBar.parentNode.insertBefore(_jailPanel, bottomBar);
+                else document.body.appendChild(_jailPanel);
+            }
+            var _escapeChance = 5;
+            if (Player.hasSkill && Player.hasSkill('jail_break')) _escapeChance += 10;
+            if (Player.hasSkill && Player.hasSkill('street_smart')) _escapeChance += 5;
+            if (Player.hasSkill && Player.hasSkill('untouchable')) _escapeChance += 5;
+            if (Player.hasSkill && Player.hasSkill('silver_tongue_dark')) _escapeChance += 3;
+            var _ffLabel = window._jailFastForwarding ? '⏸️ Stop Fast Forward' : '⏩ Fast Forward to Release';
+            var _ffAction = window._jailFastForwarding ? 'UI.stopJailFastForward()' : 'UI.fastForwardJailUI()';
+            // Slow down to 60x when close to release
+            if (window._jailFastForwarding && _jailDaysLeft < 3 && typeof Game !== 'undefined' && Game.getSpeed && Game.getSpeed() > 60) {
+                Game.setSpeed(60);
+            }
+            _jailPanel.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap;">' +
+                '<div>🔒 <strong style="color:#c44e52;">IMPRISONED</strong> in ' + _jailTownName + '</div>' +
+                '<div style="font-size:0.9rem;">⏳ ' + _jailDaysLeft + ' day' + (_jailDaysLeft !== 1 ? 's' : '') + ' remaining</div>' +
+                '<button onclick="UI.attemptJailEscapeUI()" style="padding:4px 12px;font-size:0.8rem;background:rgba(139,0,0,0.4);color:#e0d6b8;border:1px solid #8b0000;border-radius:4px;cursor:pointer;" title="' + _escapeChance + '% chance. If caught: more time + fine.">🔓 Attempt Escape (' + _escapeChance + '%)</button>' +
+                '<button onclick="' + _ffAction + '" style="padding:4px 12px;font-size:0.8rem;background:rgba(50,50,150,0.4);color:#e0d6b8;border:1px solid #4444aa;border-radius:4px;cursor:pointer;">' + _ffLabel + '</button>' +
+                '</div>';
+        } else {
+            // Jail ended — auto-pause if fast forwarding
+            if (window._jailFastForwarding) {
+                window._jailFastForwarding = false;
+                if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(0);
+                toast('🔓 Released from prison! Game paused.', 'success');
+                // Clear jail state
+                if (typeof Player !== 'undefined' && Player.state) {
+                    Player.state.jailReason = null;
+                }
+            }
+            if (_jailPanel) _jailPanel.remove();
+        }
+    }
+
+    function stopJailFastForward() {
+        window._jailFastForwarding = false;
+        if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(0);
+        toast('⏸️ Fast forward stopped. Game paused.', 'info');
+    }
+
     function openTravelRest() {
         if (!Player.traveling) { toast('Not traveling.', 'info'); return; }
+        // Pause game when player manually opens Camp dialog too
+        if (typeof Game !== 'undefined' && Game.getSpeed && Game.setSpeed) {
+            var curSpd = Game.getSpeed();
+            if (curSpd > 0) window._restPauseSavedSpeed = curSpd;
+            Game.setSpeed(0);
+        }
 
         var options = [];
         var inv = Player.inventory || {};
@@ -25330,16 +25678,17 @@ window.UI = (function () {
         if (Player.hasCaravanWagon) {
             options.push({ id: 'caravan_wagon', icon: '\uD83C\uDFE0', name: 'Rest in Mobile Home', energy: '5.5/tick', risks: '1% theft' });
         }
+        var _wearPct = (Player.hasSkill && Player.hasSkill('wilderness_survival')) ? '10' : '25';
         if ((inv.camping_kit || 0) > 0) {
-            options.push({ id: 'camping_kit_travel', icon: '\uD83C\uDFD5\uFE0F', name: 'Camp with Kit', energy: '5.0/tick', risks: 'Minimal' });
+            options.push({ id: 'camping_kit_travel', icon: '\uD83C\uDFD5\uFE0F', name: 'Camp with Kit', energy: '5.0/tick', risks: 'Minimal · ' + _wearPct + '% wear' });
         }
         // Bedroll + Tent combo
         if ((inv.bedroll || 0) > 0 && (inv.tent || 0) > 0) {
-            options.push({ id: 'bedroll_tent_travel', icon: '\u26FA\uD83D\uDECF\uFE0F', name: 'Tent & Bedroll', energy: '4.5/tick', risks: '2% theft, 1% disease' });
+            options.push({ id: 'bedroll_tent_travel', icon: '\u26FA\uD83D\uDECF\uFE0F', name: 'Tent & Bedroll', energy: '4.5/tick', risks: '2% theft, 1% disease · ' + _wearPct + '% wear each' });
         } else if ((inv.tent || 0) > 0) {
-            options.push({ id: 'tent_travel', icon: '\u26FA', name: 'Pitch Tent', energy: '4.0/tick', risks: '3% theft' });
+            options.push({ id: 'tent_travel', icon: '\u26FA', name: 'Pitch Tent', energy: '4.0/tick', risks: '3% theft · ' + _wearPct + '% wear' });
         } else if ((inv.bedroll || 0) > 0) {
-            options.push({ id: 'bedroll_travel', icon: '\uD83D\uDECF\uFE0F', name: 'Use Bedroll', energy: '3.0/tick', risks: '5% theft, 3% disease' });
+            options.push({ id: 'bedroll_travel', icon: '\uD83D\uDECF\uFE0F', name: 'Use Bedroll', energy: '3.0/tick', risks: '5% theft, 3% disease · ' + _wearPct + '% wear' });
         }
         // Sleep in wagon (storage container with 30+ space)
         if (!Player.hasCaravanWagon && Player.storageContainer) {
@@ -25375,6 +25724,11 @@ window.UI = (function () {
             // Rest until fully energized (restForTicks auto-caps at energy needed)
             Player.restForTicks(locationId, 999);
             closeModal();
+            // Restore game speed after resting
+            if (typeof Game !== 'undefined' && Game.setSpeed && window._restPauseSavedSpeed) {
+                Game.setSpeed(window._restPauseSavedSpeed);
+                delete window._restPauseSavedSpeed;
+            }
             toast('\uD83D\uDCA4 Resting until fully energized...', 'info', 'travel_events');
         }
     }
@@ -26869,6 +27223,550 @@ window.UI = (function () {
         return html;
     }
 
+    // ─── Player Effectiveness Tab ───
+    function _waBuildPlayerEffectiveness(kingdoms, towns, people) {
+        var p = Player.state;
+        var day = Engine.getDay ? Engine.getDay() : 0;
+        var roads = Engine.getRoads ? Engine.getRoads() : [];
+        var html = '';
+
+        // ── Helpers ──
+        var _pct = function(v) { return Math.min(100, Math.max(0, Math.round(v))); };
+        var _pctStr = function(v) { var c = _pct(v); return '<span style="color:' + (c >= 60 ? '#2ecc71' : c >= 30 ? '#f39c12' : c >= 10 ? '#e6c422' : '#888') + ';font-weight:bold;">' + c + '%</span>'; };
+        var _impactBar = function(val, label, color) {
+            var pct = _pct(val);
+            return '<div style="display:flex;align-items:center;gap:6px;margin:3px 0;">' +
+                '<span style="min-width:150px;font-size:0.75rem;color:#ccc;">' + label + '</span>' +
+                '<div style="flex:1;max-width:200px;height:14px;background:#111;border-radius:3px;overflow:hidden;position:relative;">' +
+                '<div style="width:' + pct + '%;height:100%;background:' + (color || '#4fc3f7') + ';border-radius:3px;transition:width 0.3s;"></div>' +
+                '</div>' +
+                '<span style="min-width:40px;text-align:right;font-size:0.75rem;font-weight:bold;color:' + (pct >= 50 ? '#2ecc71' : pct >= 20 ? '#f39c12' : '#888') + ';">' + pct + '%</span>' +
+                '</div>';
+        };
+        var _sectionHead = function(icon, title) {
+            return '<div style="margin:14px 0 6px 0;padding:6px 10px;background:linear-gradient(90deg,#1a2a3e,transparent);border-left:3px solid #FFD700;font-size:0.85rem;font-weight:bold;color:#FFD700;">' + icon + ' ' + title + '</div>';
+        };
+        var _statRow = function(label, value, note) {
+            return '<div style="display:flex;gap:6px;margin:2px 0;font-size:0.75rem;">' +
+                '<span style="color:#aaa;min-width:170px;">' + label + '</span>' +
+                '<span style="color:#e0e0e0;font-weight:bold;">' + value + '</span>' +
+                (note ? '<span style="color:#666;font-style:italic;margin-left:6px;">' + note + '</span>' : '') +
+                '</div>';
+        };
+
+        // ── Gather Player Data ──
+        var pBuildings = p.buildings || [];
+        var pCaravans = p.caravans || [];
+        var pOutposts = p.outposts || [];
+        var pPetitions = p.petitions || [];
+        var citizenKId = p.citizenshipKingdomId;
+        var citizenK = citizenKId ? (Engine.findKingdom ? Engine.findKingdom(citizenKId) : null) : null;
+        var citizenTowns = citizenKId ? towns.filter(function(t) { return t.kingdomId === citizenKId && !t.isJunction; }) : [];
+        var allTowns = towns.filter(function(t) { return !t.isJunction; });
+        var citizenPop = 0;
+        for (var ci = 0; ci < citizenTowns.length; ci++) citizenPop += (citizenTowns[ci].population || 0);
+        var worldPop = 0;
+        for (var wi = 0; wi < allTowns.length; wi++) worldPop += (allTowns[wi].population || 0);
+
+        // ── ECONOMIC IMPACT ──
+        var playerActiveBuildings = pBuildings.filter(function(b) { return b.active !== false; });
+        var playerBldCount = playerActiveBuildings.length;
+        var playerWorkers = 0;
+        var playerProduction = {}; // resourceId → qty/day estimate
+        var playerBldTowns = {}; // townId → count
+        for (var bi = 0; bi < playerActiveBuildings.length; bi++) {
+            var bld = playerActiveBuildings[bi];
+            playerWorkers += (bld.workers || bld.hiredWorkers || 0);
+            if (bld.townId) playerBldTowns[bld.townId] = (playerBldTowns[bld.townId] || 0) + 1;
+            var bType = bld.type ? bld.type.toUpperCase() : '';
+            var bDef = (typeof BUILDING_TYPES !== 'undefined' && BUILDING_TYPES[bType]) ? BUILDING_TYPES[bType] : null;
+            if (bDef && bDef.produces) {
+                var prod = bld.currentProduct || bld.productionChoice || bDef.produces;
+                if (typeof prod === 'string') {
+                    var rate = bDef.rate || 1;
+                    playerProduction[prod] = (playerProduction[prod] || 0) + rate;
+                }
+            }
+        }
+
+        // Kingdom totals for comparison
+        var kingdomBldCount = 0;
+        var kingdomWorkers = 0;
+        for (var ti = 0; ti < citizenTowns.length; ti++) {
+            var tBlds = citizenTowns[ti].buildings || [];
+            for (var tbi = 0; tbi < tBlds.length; tbi++) {
+                kingdomBldCount++;
+                var tb = tBlds[tbi];
+                kingdomWorkers += (typeof tb === 'object' ? (tb.workers || tb.hiredWorkers || 0) : 0);
+            }
+        }
+        var worldBldCount = 0;
+        for (var wti = 0; wti < allTowns.length; wti++) worldBldCount += (allTowns[wti].buildings || []).length;
+
+        var econBldPct = kingdomBldCount > 0 ? (playerBldCount / kingdomBldCount) * 100 : 0;
+        var econBldWorldPct = worldBldCount > 0 ? (playerBldCount / worldBldCount) * 100 : 0;
+        var econWorkerPct = kingdomWorkers > 0 ? (playerWorkers / kingdomWorkers) * 100 : 0;
+
+        // Gold earned vs kingdom treasury
+        var goldEarned = (p.stats && p.stats.totalGoldEarned) || 0;
+        var goldSpent = (p.stats && p.stats.totalGoldSpent) || 0;
+        var kTreasury = citizenK ? (citizenK.gold || 0) : 0;
+        var goldVsTreasury = kTreasury > 0 ? (goldEarned / kTreasury) * 100 : 0;
+
+        // Tax contribution estimate (gold earned * avg tax rate)
+        var taxRate = (citizenK && citizenK.laws && citizenK.laws.tradeTariff != null) ? citizenK.laws.tradeTariff : 0.05;
+        var estTaxContrib = goldEarned * taxRate;
+        var taxPct = kTreasury > 0 ? (estTaxContrib / kTreasury) * 100 : 0;
+
+        // Trade volume
+        var tradeCount = (p.stats && p.stats.tradesCompleted) || 0;
+
+        // Buildings across how many towns
+        var bldTownCount = Object.keys(playerBldTowns).length;
+        var townCoverage = citizenTowns.length > 0 ? (bldTownCount / citizenTowns.length) * 100 : 0;
+
+        // Caravan routes
+        var activeCaravans = pCaravans.filter(function(c) { return c.active !== false; }).length;
+
+        // Supply deals
+        var supplyDeals = (p.supplyDeals || []).length;
+
+        // Composite economic score
+        var econScore = Math.min(100, (econBldPct * 0.25) + (taxPct * 0.25) + (townCoverage * 0.2) + (econWorkerPct * 0.15) + Math.min(30, activeCaravans * 5) * 0.15);
+
+        html += _sectionHead('💰', 'Economic Impact');
+        html += '<div style="display:flex;flex-wrap:wrap;gap:16px;">';
+        html += '<div style="flex:1;min-width:280px;">';
+        html += '<div style="font-size:0.72rem;color:#888;margin-bottom:4px;">Kingdom: ' + (citizenK ? citizenK.name : 'None') + '</div>';
+        html += _impactBar(econScore, 'Overall Economic', '#2ecc71');
+        html += _impactBar(econBldPct, 'Buildings (Kingdom)', '#4fc3f7');
+        html += _impactBar(econBldWorldPct, 'Buildings (World)', '#4fc3f7');
+        html += _impactBar(econWorkerPct, 'Workforce (Kingdom)', '#9b59b6');
+        html += _impactBar(taxPct, 'Est. Tax Contribution', '#f39c12');
+        html += _impactBar(townCoverage, 'Town Coverage', '#e74c3c');
+        html += '</div>';
+        html += '<div style="flex:1;min-width:200px;">';
+        html += _statRow('Gold Earned (lifetime)', _waNum(goldEarned) + 'g');
+        html += _statRow('Gold Spent (lifetime)', _waNum(goldSpent) + 'g');
+        html += _statRow('Kingdom Treasury', _waNum(kTreasury) + 'g');
+        html += _statRow('Est. Tax Paid', _waNum(Math.floor(estTaxContrib)) + 'g', '(' + Math.round(taxRate * 100) + '% tariff)');
+        html += _statRow('Trades Completed', _waNum(tradeCount));
+        html += _statRow('Active Buildings', playerBldCount + ' / ' + kingdomBldCount + ' kingdom');
+        html += _statRow('Employees', _waNum(playerWorkers) + ' / ' + _waNum(kingdomWorkers) + ' kingdom');
+        html += _statRow('Active Caravans', activeCaravans);
+        html += _statRow('Supply Deals', supplyDeals);
+        html += _statRow('Towns w/ Player Biz', bldTownCount + ' / ' + citizenTowns.length);
+        html += '</div></div>';
+
+        // Show top produced goods
+        var prodKeys = Object.keys(playerProduction);
+        if (prodKeys.length > 0) {
+            prodKeys.sort(function(a, b) { return playerProduction[b] - playerProduction[a]; });
+            html += '<div style="margin-top:6px;font-size:0.72rem;color:#aaa;">Top Production: ';
+            for (var pi = 0; pi < Math.min(6, prodKeys.length); pi++) {
+                var rDef = findResource ? findResource(prodKeys[pi]) : null;
+                var rName = rDef ? rDef.name : prodKeys[pi];
+                html += '<span style="color:#4fc3f7;">' + rName + '</span> (' + playerProduction[prodKeys[pi]] + '/day) ';
+            }
+            html += '</div>';
+        }
+
+        // ── MILITARY IMPACT ──
+        var milGoodsIds = ['weapons', 'armor', 'shields', 'swords', 'bows', 'arrows', 'crossbows', 'pikes', 'war_horses', 'horses', 'iron', 'steel'];
+        var playerMilSales = 0;
+        var tradeLog = p.tradeLog || [];
+        for (var tli = 0; tli < tradeLog.length; tli++) {
+            var tl = tradeLog[tli];
+            if (tl.type === 'sell' && milGoodsIds.indexOf(tl.resource) >= 0) {
+                playerMilSales += (tl.qty || 0);
+            }
+        }
+        // Also check war trade ledger
+        var warLedger = p.warTradeLedger || [];
+        var warMilSold = 0;
+        for (var wli = 0; wli < warLedger.length; wli++) warMilSold += (warLedger[wli].qty || 0);
+
+        var kMilStrength = citizenK ? (citizenK.militaryStrength || 0) : 0;
+        var milSupplyPct = kMilStrength > 0 ? Math.min(100, ((playerMilSales + warMilSold) / kMilStrength) * 100) : 0;
+
+        var battlesWon = p.battlesWon || 0;
+        var battlesSurvived = p.battlesSurvived || 0;
+        var militaryActive = p.militaryActive || false;
+        var militaryRank = p.militaryRank || null;
+
+        // War allegiance tracking
+        var warAllegiances = p.warAllegiances || {};
+        var activeWars = Engine.getActiveWars ? Engine.getActiveWars() : [];
+        var warsSupported = 0;
+        var totalWarSales = 0;
+        for (var wKey in warAllegiances) {
+            warsSupported++;
+            var wa = warAllegiances[wKey];
+            totalWarSales += (wa.salesA || 0) + (wa.salesB || 0);
+        }
+
+        // Military buildings owned
+        var milBldCount = 0;
+        for (var mbi = 0; mbi < playerActiveBuildings.length; mbi++) {
+            var mbType = (playerActiveBuildings[mbi].type || '').toLowerCase();
+            if (mbType === 'armory' || mbType === 'barracks' || mbType === 'smithy' || mbType === 'weapons_forge' || mbType === 'fletcher' || mbType === 'stable' || mbType === 'horse_ranch') milBldCount++;
+        }
+
+        var milScore = Math.min(100, (milSupplyPct * 0.35) + Math.min(30, battlesWon * 3) * 0.25 + Math.min(30, warsSupported * 10) * 0.2 + Math.min(30, milBldCount * 8) * 0.2);
+
+        html += _sectionHead('⚔️', 'Military Impact');
+        html += '<div style="display:flex;flex-wrap:wrap;gap:16px;">';
+        html += '<div style="flex:1;min-width:280px;">';
+        html += _impactBar(milScore, 'Overall Military', '#e74c3c');
+        html += _impactBar(milSupplyPct, 'Arms Supply Share', '#f39c12');
+        html += _impactBar(Math.min(100, battlesWon * 5), 'Combat Record', '#e74c3c');
+        html += _impactBar(Math.min(100, milBldCount * 15), 'Military Industry', '#9b59b6');
+        html += '</div>';
+        html += '<div style="flex:1;min-width:200px;">';
+        html += _statRow('Military Goods Sold', _waNum(playerMilSales + warMilSold) + ' units');
+        html += _statRow('Kingdom Mil. Strength', _waNum(kMilStrength));
+        html += _statRow('Battles Won / Survived', battlesWon + ' / ' + battlesSurvived);
+        html += _statRow('Wars Supported', warsSupported);
+        html += _statRow('War Sales Value', _waNum(totalWarSales) + 'g');
+        html += _statRow('Military Buildings', milBldCount);
+        html += _statRow('Service Status', militaryActive ? '🟢 Active (' + (militaryRank || 'Soldier') + ')' : '<span style="color:#888;">Civilian</span>');
+        html += '</div></div>';
+
+        // ── HEALTH & MEDICAL IMPACT ──
+        var playerClinics = 0;
+        var playerHospitals = 0;
+        var totalTreated = 0;
+        var totalMedRevenue = 0;
+        var totalSickInKingdom = 0;
+        var totalTreatedInKingdom = 0;
+        var playerMedBlds = [];
+
+        for (var hti = 0; hti < citizenTowns.length; hti++) {
+            var ht = citizenTowns[hti];
+            var htPeople = people.filter(function(pp) { return pp.townId === ht.id && pp.alive; });
+            for (var hpi = 0; hpi < htPeople.length; hpi++) {
+                if (htPeople[hpi].sick) {
+                    totalSickInKingdom++;
+                    if (htPeople[hpi].illnessTreated) totalTreatedInKingdom++;
+                }
+            }
+            var htBlds = ht.buildings || [];
+            for (var hbi = 0; hbi < htBlds.length; hbi++) {
+                var hb = typeof htBlds[hbi] === 'object' ? htBlds[hbi] : null;
+                if (!hb) continue;
+                var hbType = (hb.type || hb.id || '').toLowerCase();
+                if (hbType !== 'clinic' && hbType !== 'hospital') continue;
+                var isPlayerOwned = (hb.ownerId === 'player');
+                if (isPlayerOwned) {
+                    if (hbType === 'clinic') playerClinics++;
+                    else playerHospitals++;
+                    playerMedBlds.push(hb);
+                }
+                if (hb._treatmentStats) {
+                    if (isPlayerOwned) {
+                        totalTreated += (hb._treatmentStats.treated || 0);
+                        totalMedRevenue += (hb._treatmentStats.feeEarned || 0);
+                    }
+                }
+            }
+        }
+
+        // Count total clinics/hospitals in kingdom
+        var kingdomMedBlds = 0;
+        for (var kmi = 0; kmi < citizenTowns.length; kmi++) {
+            var kmBlds = citizenTowns[kmi].buildings || [];
+            for (var kmbi = 0; kmbi < kmBlds.length; kmbi++) {
+                var kmb = typeof kmBlds[kmbi] === 'object' ? kmBlds[kmbi] : null;
+                if (!kmb) continue;
+                var kmbType = (kmb.type || kmb.id || '').toLowerCase();
+                if (kmbType === 'clinic' || kmbType === 'hospital') kingdomMedBlds++;
+            }
+        }
+
+        // Medicine sold from trade log
+        var medGoodsIds = ['herbal_remedy', 'fever_tonic', 'healing_tonic', 'antidote', 'bandages', 'herbal_poultice', 'splint'];
+        var playerMedSold = 0;
+        for (var mti = 0; mti < tradeLog.length; mti++) {
+            if (tradeLog[mti].type === 'sell' && medGoodsIds.indexOf(tradeLog[mti].resource) >= 0) {
+                playerMedSold += (tradeLog[mti].qty || 0);
+            }
+        }
+
+        var medFacilityPct = kingdomMedBlds > 0 ? ((playerClinics + playerHospitals) / kingdomMedBlds) * 100 : 0;
+        var treatmentPct = totalSickInKingdom > 0 ? (totalTreated / totalSickInKingdom) * 100 : 0;
+        var healthScore = Math.min(100, (medFacilityPct * 0.3) + (treatmentPct * 0.3) + Math.min(30, playerMedSold * 0.5) * 0.2 + Math.min(30, (playerClinics + playerHospitals) * 10) * 0.2);
+
+        // World sick count
+        var worldSick = 0;
+        for (var wsi = 0; wsi < people.length; wsi++) { if (people[wsi].sick && people[wsi].alive) worldSick++; }
+
+        html += _sectionHead('🏥', 'Health & Medical Impact');
+        html += '<div style="display:flex;flex-wrap:wrap;gap:16px;">';
+        html += '<div style="flex:1;min-width:280px;">';
+        html += _impactBar(healthScore, 'Overall Medical', '#2ecc71');
+        html += _impactBar(medFacilityPct, 'Medical Facilities', '#4fc3f7');
+        html += _impactBar(treatmentPct, 'Patients Treated', '#2ecc71');
+        html += _impactBar(Math.min(100, playerMedSold * 2), 'Medicine Supplied', '#9b59b6');
+        html += '</div>';
+        html += '<div style="flex:1;min-width:200px;">';
+        html += _statRow('Player Clinics', playerClinics);
+        html += _statRow('Player Hospitals', playerHospitals);
+        html += _statRow('Kingdom Medical Facilities', kingdomMedBlds);
+        html += _statRow('Patients Treated (yours)', _waNum(totalTreated));
+        html += _statRow('Medical Revenue', _waNum(Math.floor(totalMedRevenue)) + 'g');
+        html += _statRow('Medicine Sold', _waNum(playerMedSold) + ' units');
+        html += _statRow('Kingdom Sick', _waNum(totalSickInKingdom) + ' / ' + _waNum(citizenPop), '(' + (citizenPop > 0 ? Math.round(totalSickInKingdom / citizenPop * 100) : 0) + '%)');
+        html += _statRow('World Sick', _waNum(worldSick) + ' / ' + _waNum(worldPop), '(' + (worldPop > 0 ? Math.round(worldSick / worldPop * 100) : 0) + '%)');
+        html += '</div></div>';
+
+        // ── FOOD & SUPPLY CHAINS ──
+        var foodIds = ['grain', 'wheat', 'bread', 'flour', 'meat', 'fish', 'vegetables', 'fruit', 'cheese', 'milk', 'eggs', 'salt', 'sugar', 'honey', 'dried_fish', 'dried_meat', 'preserved_food', 'ale', 'wine', 'mead'];
+        var playerFoodProd = 0;
+        for (var fk in playerProduction) {
+            if (foodIds.indexOf(fk) >= 0) playerFoodProd += playerProduction[fk];
+        }
+        // Estimate kingdom food demand (pop * 0.01 units/day rough)
+        var kFoodDemand = citizenPop * 0.01;
+        var foodSupplyPct = kFoodDemand > 0 ? (playerFoodProd / kFoodDemand) * 100 : 0;
+
+        // Food sold from trade log
+        var playerFoodSold = 0;
+        for (var fti = 0; fti < tradeLog.length; fti++) {
+            if (tradeLog[fti].type === 'sell' && foodIds.indexOf(tradeLog[fti].resource) >= 0) {
+                playerFoodSold += (tradeLog[fti].qty || 0);
+            }
+        }
+
+        // Supply chain analysis: caravan routes and what they carry
+        var caravanTownsCovered = {};
+        var caravanGoodsVolume = 0;
+        for (var cvi = 0; cvi < pCaravans.length; cvi++) {
+            var cv = pCaravans[cvi];
+            if (cv.active === false) continue;
+            if (cv.fromTownId) caravanTownsCovered[cv.fromTownId] = true;
+            if (cv.toTownId) caravanTownsCovered[cv.toTownId] = true;
+            var cvGoods = cv.goods || cv.cargo || {};
+            for (var cvk in cvGoods) caravanGoodsVolume += (cvGoods[cvk] || 0);
+        }
+        var caravanTownsCount = Object.keys(caravanTownsCovered).length;
+        var caravanCoverage = allTowns.length > 0 ? (caravanTownsCount / allTowns.length) * 100 : 0;
+
+        var supplyScore = Math.min(100, (foodSupplyPct * 0.3) + Math.min(30, playerFoodSold * 0.1) * 0.25 + (caravanCoverage * 0.25) + Math.min(30, activeCaravans * 6) * 0.2);
+
+        html += _sectionHead('🌾', 'Food & Supply Chains');
+        html += '<div style="display:flex;flex-wrap:wrap;gap:16px;">';
+        html += '<div style="flex:1;min-width:280px;">';
+        html += _impactBar(supplyScore, 'Overall Supply', '#f39c12');
+        html += _impactBar(foodSupplyPct, 'Food Production Share', '#2ecc71');
+        html += _impactBar(caravanCoverage, 'Caravan Town Coverage', '#4fc3f7');
+        html += _impactBar(Math.min(100, activeCaravans * 12), 'Caravan Network', '#9b59b6');
+        html += '</div>';
+        html += '<div style="flex:1;min-width:200px;">';
+        html += _statRow('Food Production', playerFoodProd.toFixed(1) + '/day');
+        html += _statRow('Est. Kingdom Food Need', kFoodDemand.toFixed(0) + '/day');
+        html += _statRow('Food Sold (lifetime)', _waNum(playerFoodSold) + ' units');
+        html += _statRow('Active Caravans', activeCaravans);
+        html += _statRow('Caravan Towns Served', caravanTownsCount + ' / ' + allTowns.length);
+        html += _statRow('Supply Deals Active', supplyDeals);
+        html += '</div></div>';
+
+        // ── OUTPOSTS & INFRASTRUCTURE ──
+        var playerRoads = 0;
+        var totalRoads = roads.length;
+        for (var ri = 0; ri < roads.length; ri++) {
+            if (roads[ri].builtBy === 'player' || roads[ri].ownerId === 'player') playerRoads++;
+        }
+        var seaRoutes = (Engine.getWorld && Engine.getWorld()) ? (Engine.getWorld().seaRoutes || []) : [];
+        var playerSeaRoutes = 0;
+        for (var sri = 0; sri < seaRoutes.length; sri++) {
+            if (seaRoutes[sri].builtBy === 'player' || seaRoutes[sri].ownerId === 'player') playerSeaRoutes++;
+        }
+
+        var outpostPop = 0;
+        var outpostProsperity = 0;
+        var outpostUpgradeCount = 0;
+        for (var opi = 0; opi < pOutposts.length; opi++) {
+            var opTown = Engine.findTown ? Engine.findTown(pOutposts[opi].townId) : null;
+            if (opTown) {
+                outpostPop += (opTown.population || 0);
+                outpostProsperity += (opTown.prosperity || 0);
+                outpostUpgradeCount += (opTown.outpostUpgrades || []).length;
+            }
+        }
+        var avgOutpostProsp = pOutposts.length > 0 ? outpostProsperity / pOutposts.length : 0;
+
+        var roadPct = totalRoads > 0 ? (playerRoads / totalRoads) * 100 : 0;
+        var infraScore = Math.min(100, (roadPct * 0.25) + Math.min(30, pOutposts.length * 15) * 0.3 + Math.min(30, outpostPop * 0.5) * 0.25 + Math.min(30, (playerSeaRoutes * 10)) * 0.2);
+
+        // Toll revenue from roads/sea routes
+        var tollRevenue = 0;
+        for (var tri = 0; tri < roads.length; tri++) {
+            if ((roads[tri].ownerId === 'player') && roads[tri].tollRevenue) tollRevenue += roads[tri].tollRevenue;
+        }
+        for (var tsri = 0; tsri < seaRoutes.length; tsri++) {
+            if ((seaRoutes[tsri].ownerId === 'player') && seaRoutes[tsri].tollRevenue) tollRevenue += seaRoutes[tsri].tollRevenue;
+        }
+
+        html += _sectionHead('🏗️', 'Outposts & Infrastructure');
+        html += '<div style="display:flex;flex-wrap:wrap;gap:16px;">';
+        html += '<div style="flex:1;min-width:280px;">';
+        html += _impactBar(infraScore, 'Overall Infrastructure', '#9b59b6');
+        html += _impactBar(roadPct, 'Road Network Share', '#4fc3f7');
+        html += _impactBar(Math.min(100, pOutposts.length * 20), 'Outpost Presence', '#f39c12');
+        html += _impactBar(Math.min(100, avgOutpostProsp), 'Avg Outpost Prosperity', '#2ecc71');
+        html += '</div>';
+        html += '<div style="flex:1;min-width:200px;">';
+        html += _statRow('Outposts Founded', pOutposts.length);
+        html += _statRow('Outpost Population', _waNum(outpostPop));
+        html += _statRow('Outpost Upgrades', outpostUpgradeCount);
+        html += _statRow('Roads Built', playerRoads + ' / ' + totalRoads + ' total', '(' + (p.roadsBuilt || 0) + ' lifetime)');
+        html += _statRow('Sea Routes Built', playerSeaRoutes + ' / ' + seaRoutes.length + ' total');
+        html += _statRow('Toll Revenue', _waNum(Math.floor(tollRevenue)) + 'g');
+        html += '</div></div>';
+
+        // ── POLITICAL INFLUENCE ──
+        var rankNames = ['Peasant', 'Commoner', 'Merchant', 'Guild Master', 'Nobleman', 'Lord', 'Baron', 'Count', 'Duke', 'Archduke'];
+        var socialRank = (p.socialRank && citizenKId) ? (p.socialRank[citizenKId] || 0) : 0;
+        var rankName = rankNames[socialRank] || ('Rank ' + socialRank);
+        var reputation = (p.reputation && citizenKId) ? (p.reputation[citizenKId] || 50) : 50;
+
+        // Petitions stats
+        var petitionsTotal = pPetitions.length;
+        var petitionsSubmitted = 0;
+        var petitionsSuccess = 0;
+        for (var pti = 0; pti < pPetitions.length; pti++) {
+            if (pPetitions[pti].submitted || pPetitions[pti].status === 'submitted' || pPetitions[pti].status === 'approved') petitionsSubmitted++;
+            if (pPetitions[pti].status === 'approved') petitionsSuccess++;
+        }
+
+        // Relationships with key figures
+        var relationships = p.relationships || {};
+        var relCount = Object.keys(relationships).length;
+        var highRelCount = 0;
+        for (var rk in relationships) {
+            if (relationships[rk] >= 60) highRelCount++;
+        }
+
+        // Kingdoms where player has reputation
+        var kingdomPresence = 0;
+        var repEntries = p.reputation || {};
+        for (var rkk in repEntries) {
+            if (repEntries[rkk] >= 40) kingdomPresence++;
+        }
+
+        // Noble influence: check if player is noble in any kingdom
+        var nobleKingdoms = 0;
+        var socialRanks = p.socialRank || {};
+        for (var srk in socialRanks) {
+            if (socialRanks[srk] >= 4) nobleKingdoms++;
+        }
+
+        var politicalScore = Math.min(100, Math.min(30, socialRank * 5) * 0.25 + Math.min(30, (reputation - 50) * 1.5) * 0.2 + Math.min(30, petitionsSuccess * 10) * 0.2 + Math.min(30, highRelCount * 3) * 0.2 + Math.min(30, nobleKingdoms * 15) * 0.15);
+
+        html += _sectionHead('👑', 'Political Influence');
+        html += '<div style="display:flex;flex-wrap:wrap;gap:16px;">';
+        html += '<div style="flex:1;min-width:280px;">';
+        html += _impactBar(politicalScore, 'Overall Political', '#FFD700');
+        html += _impactBar(Math.min(100, socialRank * 11), 'Social Standing', '#FFD700');
+        html += _impactBar(reputation, 'Kingdom Reputation', '#4fc3f7');
+        html += _impactBar(Math.min(100, highRelCount * 5), 'Key Relationships', '#2ecc71');
+        html += _impactBar(Math.min(100, petitionsSuccess * 15), 'Legislative Impact', '#9b59b6');
+        html += '</div>';
+        html += '<div style="flex:1;min-width:200px;">';
+        html += _statRow('Social Rank', '<span style="color:#FFD700;">' + rankName + '</span>', '(' + socialRank + '/9)');
+        html += _statRow('Kingdom Reputation', reputation + '/100');
+        html += _statRow('Petitions Filed', petitionsTotal);
+        html += _statRow('Petitions Approved', petitionsSuccess);
+        html += _statRow('Key Relationships', relCount + ' (' + highRelCount + ' strong)');
+        html += _statRow('Noble Titles', nobleKingdoms + ' kingdom' + (nobleKingdoms !== 1 ? 's' : ''));
+        html += _statRow('Kingdom Presence', kingdomPresence + ' / ' + kingdoms.length + ' kingdoms');
+        html += '</div></div>';
+
+        // Per-kingdom reputation breakdown
+        if (kingdoms.length > 1) {
+            html += '<div style="margin-top:6px;font-size:0.72rem;">';
+            html += '<table style="width:100%;border-collapse:collapse;">';
+            html += '<tr style="color:#FFD700;border-bottom:1px solid #333;"><th style="text-align:left;padding:3px 6px;">Kingdom</th><th style="padding:3px 6px;">Reputation</th><th style="padding:3px 6px;">Rank</th><th style="padding:3px 6px;">Relationship</th></tr>';
+            for (var ki = 0; ki < kingdoms.length; ki++) {
+                var kk = kingdoms[ki];
+                var kkRep = (repEntries[kk.id] || 50);
+                var kkRank = (socialRanks[kk.id] || 0);
+                var kkRankName = rankNames[kkRank] || ('Rank ' + kkRank);
+                var kkColor = kkRep >= 70 ? '#2ecc71' : kkRep >= 50 ? '#f39c12' : kkRep >= 30 ? '#e6c422' : '#e74c3c';
+                html += '<tr style="border-bottom:1px solid #222;">';
+                html += '<td style="padding:3px 6px;color:' + (kk.color || '#ccc') + ';">' + kk.name + (kk.id === citizenKId ? ' 🏠' : '') + '</td>';
+                html += '<td style="padding:3px 6px;text-align:center;">' + _waBar(kkRep, 100, kkColor, 60) + ' <span style="color:' + kkColor + ';">' + kkRep + '</span></td>';
+                html += '<td style="padding:3px 6px;text-align:center;color:#ccc;">' + kkRankName + '</td>';
+                // King relationship
+                var kingRel = '—';
+                if (kk.kingId && relationships[kk.kingId] != null) {
+                    var kr = relationships[kk.kingId];
+                    var krCol = kr >= 60 ? '#2ecc71' : kr >= 30 ? '#f39c12' : '#e74c3c';
+                    kingRel = '<span style="color:' + krCol + ';">' + kr + '</span>';
+                }
+                html += '<td style="padding:3px 6px;text-align:center;">👑 ' + kingRel + '</td>';
+                html += '</tr>';
+            }
+            html += '</table></div>';
+        }
+
+        // ── COMPOSITE WORLD IMPACT ──
+        var worldImpact = (econScore * 0.30) + (milScore * 0.15) + (healthScore * 0.10) + (supplyScore * 0.15) + (infraScore * 0.15) + (politicalScore * 0.15);
+        var kingdomImpact = worldImpact * 1.4; // Player's kingdom impact is amplified since all buildings are concentrated there
+        kingdomImpact = Math.min(100, kingdomImpact);
+
+        // Unlock impact achievements
+        if (typeof Player !== 'undefined' && Player.unlockAchievement) {
+            if (_pct(kingdomImpact) >= 15) Player.unlockAchievement('kingdom_shaper');
+            if (_pct(worldImpact) >= 15) Player.unlockAchievement('world_influencer');
+            if (_pct(worldImpact) >= 30) Player.unlockAchievement('plat_world_shaper');
+        }
+
+        var impactColor = function(v) { return v >= 60 ? '#2ecc71' : v >= 35 ? '#f39c12' : v >= 15 ? '#e6c422' : '#888'; };
+        var impactLabel = function(v) { return v >= 70 ? 'Dominant' : v >= 50 ? 'Major' : v >= 30 ? 'Significant' : v >= 15 ? 'Moderate' : v >= 5 ? 'Minor' : 'Negligible'; };
+
+        html += _sectionHead('🌍', 'Composite World Impact');
+        html += '<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:center;padding:8px;">';
+
+        // Kingdom gauge
+        html += '<div style="text-align:center;">';
+        html += '<div style="font-size:0.75rem;color:#aaa;margin-bottom:4px;">Kingdom Impact</div>';
+        html += '<div style="width:120px;height:120px;border-radius:50%;background:conic-gradient(' + impactColor(_pct(kingdomImpact)) + ' ' + _pct(kingdomImpact) + '%, #222 0);display:flex;align-items:center;justify-content:center;margin:0 auto;">';
+        html += '<div style="width:90px;height:90px;border-radius:50%;background:#1a1a2e;display:flex;flex-direction:column;align-items:center;justify-content:center;">';
+        html += '<span style="font-size:1.5rem;font-weight:bold;color:' + impactColor(_pct(kingdomImpact)) + ';">' + _pct(kingdomImpact) + '%</span>';
+        html += '<span style="font-size:0.65rem;color:#aaa;">' + impactLabel(_pct(kingdomImpact)) + '</span>';
+        html += '</div></div></div>';
+
+        // World gauge
+        html += '<div style="text-align:center;">';
+        html += '<div style="font-size:0.75rem;color:#aaa;margin-bottom:4px;">World Impact</div>';
+        html += '<div style="width:120px;height:120px;border-radius:50%;background:conic-gradient(' + impactColor(_pct(worldImpact)) + ' ' + _pct(worldImpact) + '%, #222 0);display:flex;align-items:center;justify-content:center;margin:0 auto;">';
+        html += '<div style="width:90px;height:90px;border-radius:50%;background:#1a1a2e;display:flex;flex-direction:column;align-items:center;justify-content:center;">';
+        html += '<span style="font-size:1.5rem;font-weight:bold;color:' + impactColor(_pct(worldImpact)) + ';">' + _pct(worldImpact) + '%</span>';
+        html += '<span style="font-size:0.65rem;color:#aaa;">' + impactLabel(_pct(worldImpact)) + '</span>';
+        html += '</div></div></div>';
+
+        // Breakdown bars
+        html += '<div style="flex:1;min-width:250px;">';
+        html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:4px;">Impact Breakdown</div>';
+        html += _impactBar(econScore, '💰 Economic (' + Math.round(30) + '% weight)', '#2ecc71');
+        html += _impactBar(milScore, '⚔️ Military (' + Math.round(15) + '% weight)', '#e74c3c');
+        html += _impactBar(healthScore, '🏥 Medical (' + Math.round(10) + '% weight)', '#4fc3f7');
+        html += _impactBar(supplyScore, '🌾 Supply (' + Math.round(15) + '% weight)', '#f39c12');
+        html += _impactBar(infraScore, '🏗️ Infrastructure (' + Math.round(15) + '% weight)', '#9b59b6');
+        html += _impactBar(politicalScore, '👑 Political (' + Math.round(15) + '% weight)', '#FFD700');
+        html += '</div></div>';
+
+        // Day & context info
+        html += '<div style="margin-top:8px;padding:6px 10px;background:#111;border-radius:4px;font-size:0.7rem;color:#666;">';
+        html += 'Analysis based on ' + _waNum(day) + ' days played | ';
+        html += _waNum(playerBldCount) + ' buildings, ' + activeCaravans + ' caravans, ' + pOutposts.length + ' outposts | ';
+        html += 'Kingdom: ' + (citizenK ? citizenK.name : '—') + ' (' + _waNum(citizenPop) + ' pop) | World: ' + kingdoms.length + ' kingdoms, ' + _waNum(worldPop) + ' pop';
+        html += '</div>';
+
+        return html;
+    }
+
     function _waBuildContent() {
         var tab = window._waTab || 'overview';
         var kingdoms = Engine.getKingdoms ? Engine.getKingdoms() : [];
@@ -26892,6 +27790,7 @@ window.UI = (function () {
             { id: 'goods', label: '📦 Goods Production' },
             { id: 'military', label: '⚔️ Military' },
             { id: 'population', label: '👥 Population' },
+            { id: 'player', label: '🏆 Player Effectiveness' },
             { id: 'history', label: '📈 History' }
         ];
         html += '<div class="wa-tabs">';
@@ -26911,12 +27810,32 @@ window.UI = (function () {
             else if (tab === 'goods') html += _waBuildGoods(kingdoms, towns);
             else if (tab === 'military') html += _waBuildMilitary(kingdoms, towns);
             else if (tab === 'population') html += _waBuildPopulation(kingdoms, towns, people);
+            else if (tab === 'player') html += _waBuildPlayerEffectiveness(kingdoms, towns, people);
             else if (tab === 'history') html += _waBuildHistory();
         } catch (e) {
             html += '<div style="color:#f44;padding:8px;">Error rendering tab: ' + e.message + '</div>';
         }
         html += '</div>';
         return html;
+    }
+
+    function openPlayerImpact() {
+        var kingdoms = Engine.getKingdoms ? Engine.getKingdoms() : [];
+        var towns = Engine.getTowns ? Engine.getTowns() : [];
+        var people = Engine.getPeople ? Engine.getPeople() : [];
+        var content = '';
+        try {
+            content = _waBuildPlayerEffectiveness(kingdoms, towns, people);
+        } catch (e) {
+            content = '<div style="color:#f44;padding:8px;">Error: ' + e.message + '</div>';
+        }
+        openModal('🏆 Player Impact', '<div style="font-size:0.8rem;">' + content + '</div>');
+        setTimeout(function() {
+            var mc = document.querySelector('.modal-content');
+            if (mc) { mc.style.maxWidth = '90vw'; mc.style.width = '90vw'; }
+            var md = document.getElementById('modalDialog');
+            if (md) { md.style.maxWidth = '90vw'; md.style.width = '90vw'; }
+        }, 50);
     }
 
     function openWorldAnalytics() {
@@ -26993,7 +27912,7 @@ window.UI = (function () {
         respondConscription,
         openJailDialog,
         fastForwardJailUI,
-        openSuccessionCrisisDialog,
+        attemptJailEscapeUI,
         backPretenderUI,
         showPersonDetail,
         showRoadDetail,
@@ -27427,6 +28346,7 @@ window.UI = (function () {
         enterOutpostPlacement,
         confirmOutpostPlacement,
         _opStaff,
+        _opAssignWorker,
         _opUpgradeWalls,
         _opBuildDocks,
         _opBuildRoad,
@@ -27467,7 +28387,8 @@ window.UI = (function () {
         // Free Travel & Travel HUD
         confirmFreeTravel,
         updateTravelPanel,
-        openTravelRest,
+        updateJailPanel,
+        stopJailFastForward,
         startTravelRest,
 
         // God Mode
@@ -27475,5 +28396,6 @@ window.UI = (function () {
         closeGodModePanel,
         buildGodModeHTML,
         openWorldAnalytics,
+        openPlayerImpact,
     };
 })();

@@ -470,7 +470,7 @@ const CONFIG = {
           abilities: ['own_processing_buildings', 'buy_luxury', 'hire_caravan_guards', 'supply_chains'],
           description: 'An established merchant. Can own processing buildings, buy luxury goods, and run supply chains.' },
         { id: 'guildmaster', name: 'Guildmaster', index: 3, icon: '🔨',
-          maxWorkers: 35, maxBuildings: 25, maxLand: 15,
+          maxWorkers: 40, maxBuildings: 25, maxLand: 15,
           goldReq: 20000, repReq: 70, extraReq: '3 production buildings, 8+ workers, buildings in 2+ towns, 180 days trading, 250+ goods moved by caravan',
           fee: 5000, minProductionBuildings: 3, minWorkers: 8, minTownsWithBuildings: 2, tradingDays: 180, minCaravanGoodsMoved: 250,
           taxDiscount: 0.05,
@@ -478,7 +478,7 @@ const CONFIG = {
           abilities: ['build_toll_roads', 'trade_weapons', 'hire_petitioners', 'production_bonus'],
           description: 'Master of commerce. Can build toll roads, trade weapons, and hire petitioners. +10% production output.' },
         { id: 'minor_noble', name: 'Minor Noble', index: 4, icon: '👑',
-          maxWorkers: 70, maxBuildings: 50, maxLand: 30,
+          maxWorkers: 80, maxBuildings: 50, maxLand: 30,
           goldReq: 75000, repReq: 80, extraReq: 'Marry a Minor Noble (waives petitions & endorsements) OR 3 petitions + 5 noble endorsements, property in 3+ towns',
           fee: 15000, minPetitionsCompleted: 3, minEndorsements: 5, minEndorsementLevel: 60, minTownsWithProperty: 3,
           taxDiscount: 0.10,
@@ -947,7 +947,7 @@ const CONFIG = {
         landPlotMaterials: { wood: 10, stone: 5 }, // materials per additional plot
 
         // Workers & Guards (hired from NPCs living in outpost)
-        maxOutpostWorkers: 10,          // max workers at an outpost
+        maxOutpostWorkers: 15,          // max workers at an outpost
         maxOutpostGuards: 4,            // max hired guards
         workerWagePerWeek: 10,          // gold per worker per week
         guardWagePerWeek: 15,           // gold per guard per week
@@ -979,6 +979,15 @@ const CONFIG = {
         // AI Immigration
         aiImmigrationCheckInterval: 7,  // days between AI checks
         aiImmigrationBaseChance: 0.03,  // 3% base chance per eligible NPC per check
+
+        // Building maintenance (workers assigned to maintenance determine max player buildings)
+        maxMaintainedBuildings: 10,     // max buildings maintained by workers
+        buildingDegradeDays: 30,        // days until unmaintained building is destroyed
+
+        // NPC needs satisfaction thresholds
+        npcNeedDecayPerDay: 2,          // needs decay per day without satisfaction
+        npcDissatisfactionLeaveThreshold: 60, // dissatisfaction score at which NPC leaves
+        npcDissatisfactionPerDay: 1,    // dissatisfaction gained when any need < 30
     },
 
     // Outpost Housing Types (each takes 1 land slot)
@@ -1017,38 +1026,38 @@ const CONFIG = {
         clinic: {
             id: 'clinic', name: 'Clinic', icon: '🏥',
             cost: 300, materials: { wood: 15, planks: 10, stone: 8, herbs: 10 },
-            recruitBonus: 0.08, description: 'Basic medical care. +8% NPC recruitment.',
-            autoAttract: false, landSlots: 0, requires: ['well'],
+            recruitBonus: 0.08, description: 'Heals 2 sick residents per day. Requires a worker.',
+            autoAttract: false, landSlots: 0, requires: ['well'], needsWorker: true,
         },
         tavern: {
             id: 'tavern', name: 'Tavern', icon: '🍺',
             cost: 250, materials: { wood: 20, planks: 12, iron: 3 },
-            recruitBonus: 0.06, description: 'A place to drink and socialize. +6% NPC recruitment. Attracts travelers.',
-            autoAttract: true, autoAttractChance: 0.02, landSlots: 0,
+            recruitBonus: 0.06, description: 'Boosts happiness and slightly meets food need. Attracts travelers. Requires a worker.',
+            autoAttract: true, autoAttractChance: 0.02, landSlots: 0, needsWorker: true,
         },
         market_stall: {
             id: 'market_stall', name: 'Market Stalls', icon: '🏪',
             cost: 150, materials: { wood: 12, cloth: 5, rope: 3 },
-            recruitBonus: 0.04, description: 'Basic trading area. +4% NPC recruitment. Improves outpost economy.',
-            autoAttract: false, landSlots: 0,
+            recruitBonus: 0.04, description: 'Enables street trading. Slight food and wealth boost. Requires a worker.',
+            autoAttract: false, landSlots: 0, needsWorker: true,
         },
         watchtower: {
             id: 'watchtower', name: 'Watchtower', icon: '🗼',
             cost: 350, materials: { stone: 20, wood: 15, iron: 5 },
-            recruitBonus: 0.03, description: 'Improves security. +3% NPC recruitment. Reduces theft further.',
-            autoAttract: false, landSlots: 0, theftReduction: 0.02,
+            recruitBonus: 0.03, description: 'Greatly increases security and safety. Reduces theft. Requires a worker.',
+            autoAttract: false, landSlots: 0, theftReduction: 0.02, needsWorker: true,
         },
         chapel: {
             id: 'chapel', name: 'Chapel', icon: '⛪',
             cost: 400, materials: { stone: 25, wood: 10, planks: 8 },
-            recruitBonus: 0.06, description: 'A place of worship. +6% NPC recruitment. Improves happiness.',
-            autoAttract: true, autoAttractChance: 0.01, landSlots: 0,
+            recruitBonus: 0.06, description: 'Boosts happiness. Attracts settlers. Requires a worker.',
+            autoAttract: true, autoAttractChance: 0.01, landSlots: 0, needsWorker: true,
         },
-        smithy: {
-            id: 'smithy', name: 'Blacksmith', icon: '⚒️',
-            cost: 300, materials: { stone: 15, iron: 10, wood: 8 },
-            recruitBonus: 0.04, description: 'Tool and weapon repair. +4% NPC recruitment.',
-            autoAttract: false, landSlots: 0, requires: ['well'],
+        food_hall: {
+            id: 'food_hall', name: 'Food Hall', icon: '🍲',
+            cost: 300, materials: { stone: 15, iron: 5, wood: 12, planks: 8 },
+            recruitBonus: 0.05, description: 'Greatly helps NPC food need. Requires a worker.',
+            autoAttract: false, landSlots: 0, requires: ['well'], needsWorker: true,
         },
         granary: {
             id: 'granary', name: 'Granary', icon: '🌾',
@@ -1632,7 +1641,7 @@ const RESOURCE_TYPES = {
 
 const BUILDING_TYPES = {
     WHEAT_FARM:    { id: 'wheat_farm',    name: 'Wheat Farm',    cost: 200,  workers: 3, produces: 'wheat',    consumes: {},                       rate: 8, category: 'farm',       storage: 80, materials: { wood: 10, stone: 5 } },
-    CATTLE_RANCH:  { id: 'cattle_ranch',  name: 'Cattle Ranch',  cost: 350,  workers: 3, produces: 'meat',     consumes: { wheat: 2 },             rate: 4, category: 'farm',       storage: 60, materials: { wood: 15, planks: 5 } },
+    CATTLE_RANCH:  { id: 'cattle_ranch',  name: 'Cattle Ranch',  cost: 350,  workers: 3, produces: 'meat',     consumes: { wheat: 2 },             rate: 4, category: 'farm',       storage: 60, canProduce: ['meat', 'hide'], materials: { wood: 15, planks: 5 } },
     SHEEP_FARM:    { id: 'sheep_farm',    name: 'Sheep Farm',    cost: 250,  workers: 2, produces: 'wool',     consumes: { wheat: 1 },             rate: 5, category: 'farm',       storage: 60, materials: { wood: 10, stone: 3 } },
     CHICKEN_FARM:  { id: 'chicken_farm',  name: 'Chicken Farm',  cost: 150,  workers: 2, produces: 'eggs',     consumes: { wheat: 1 },             rate: 10, category: 'farm',      storage: 60, materials: { wood: 8 } },
     IRON_MINE:     { id: 'iron_mine',     name: 'Iron Mine',     cost: 500,  workers: 5, produces: 'iron_ore', consumes: {},                       rate: 5, category: 'mine',       storage: 80, materials: { wood: 20, stone: 15, tools: 3 } },
@@ -1820,7 +1829,7 @@ const BUILDING_TYPES = {
             blasting_powder: { produces: 'blasting_powder', consumes: { salt: 4, hemp: 2 },         rate: 3 },
         },
     },
-    HUNTING_LODGE:    { id: 'hunting_lodge',    name: 'Hunting Lodge',   cost: 250,  workers: 2, produces: 'hide',           consumes: {},                          rate: 4, category: 'harvest',    storage: 50, villageOnly: true, materials: { wood: 15 } },
+    HUNTING_LODGE:    { id: 'hunting_lodge',    name: 'Hunting Lodge',   cost: 250,  workers: 2, produces: 'hide',           consumes: {},                          rate: 4, category: 'harvest',    storage: 50, materials: { wood: 15 } },
     // --- Water & Beverage Buildings ---
     WELL:             { id: 'well',             name: 'Well',            cost: 2000, workers: 0, produces: 'water',          consumes: {},                          rate: 15, category: 'civic',     storage: 50, materials: { stone: 10, wood: 5 }, icon: '🪣', description: 'Draws fresh water. Free water for townsfolk. Water supply depends on local soil fertility.', noLandRequired: true },
     CISTERN:          { id: 'cistern',          name: 'Cistern',         cost: 200,  workers: 0, produces: 'water',          consumes: {},                          rate: 8,  category: 'civic',     storage: 40, materials: { stone: 15, bricks: 10, clay: 5 }, icon: '🏛️', description: 'Stores rainwater. Supplements well output.' },
@@ -2255,30 +2264,36 @@ const SKILLS = {
     soil_knowledge:      { name: 'Soil Knowledge',      branch: 'survival',   cost: 2, requires: ['herbalist'],                   desc: 'See soil fertility ratings on the map. Toggle in the ⚡ Abilities tab of Skills. Right-click the map to check an area.', icon: '🌾' },
 
     // ── Underworld Branch (7) ──
-    discrete:            { name: 'Discrete',            branch: 'underworld', cost: 2, requires: [],                              desc: 'Smuggling detection reduced by 10%.',                                       icon: '🤫' },
-    master_smuggler:     { name: 'Master Smuggler',     branch: 'underworld', cost: 3, requires: ['discrete'],                    desc: 'Smuggling detection reduced by 20% (replaces Discrete). +5% quarantine sneak chance.', icon: '🥷' },
-    bribe_expert:        { name: 'Bribe Expert',        branch: 'underworld', cost: 3, requires: ['discrete'],                    desc: 'Can bribe guards to avoid detection (cost: 50g). +15% quarantine bribe chance.', icon: '💸' },
+    discrete:            { name: 'Discrete',            branch: 'underworld', cost: 2, requires: [],                              desc: 'Smuggling detection -10%. Unlocks: Steal goods, Pickpocket, Plant evidence (with Master Forger). Reduces scheme detection by 10%.', icon: '🤫' },
+    master_smuggler:     { name: 'Master Smuggler',     branch: 'underworld', cost: 3, requires: ['discrete'],                    desc: 'Smuggling detection -20%. +5% quarantine sneak. Unlocks smuggling routes (with Contraband Network).', icon: '🥷' },
+    bribe_expert:        { name: 'Bribe Expert',        branch: 'underworld', cost: 3, requires: ['discrete'],                    desc: 'Can bribe guards. +15% quarantine bribe chance. Unlocks Bribe Guards scheme.', icon: '💸' },
     corruption_expert:   { name: 'Corruption Expert',   branch: 'underworld', cost: 4, requires: ['bribe_expert'],                  desc: 'Halves forced requisition bribe cost. +15% quarantine bribe chance. -5% street buy prices.',         icon: '🤑' },
-    black_market_contacts: { name: 'Black Market Contacts', branch: 'underworld', cost: 4, requires: ['master_smuggler'],         desc: 'Black market premium increased to 2x (from 1.5x). -10% street buy prices. Street goods requests every 1 day instead of 3.',                        icon: '🕶️' },
-    contraband_network:  { name: 'Contraband Network',  branch: 'underworld', cost: 5, requires: ['master_smuggler','bribe_expert'], desc: 'Automatically smuggle via caravans.',                                   icon: '🕸️' },
-    jail_break:          { name: 'Jail Break',          branch: 'underworld', cost: 2, requires: [],                              desc: 'Jail time reduced 50%.',                                                    icon: '🔓' },
-    untouchable:         { name: 'Untouchable',         branch: 'underworld', cost: 5, requires: ['bribe_expert','jail_break'],   desc: 'If caught smuggling, 25% chance charges are dropped.',                       icon: '🎩' },
+    black_market_contacts: { name: 'Black Market Contacts', branch: 'underworld', cost: 4, requires: ['master_smuggler'],         desc: 'Black market premium 2x. -10% street buy prices. Street requests every 1 day.',                        icon: '🕶️' },
+    contraband_network:  { name: 'Contraband Network',  branch: 'underworld', cost: 5, requires: ['master_smuggler','bribe_expert'], desc: 'Embargo detection -60%. Smuggling route income +50%. Unlocks permanent smuggling routes (with Master Smuggler).', icon: '🕸️' },
+    jail_break:          { name: 'Jail Break',          branch: 'underworld', cost: 2, requires: [],                              desc: 'Jail time -50%. +10% jail escape chance.',                                  icon: '🔓' },
+    untouchable:         { name: 'Untouchable',         branch: 'underworld', cost: 5, requires: ['bribe_expert','jail_break'],   desc: 'If caught smuggling, 25% chance charges are dropped. +5% jail escape.',     icon: '🎩' },
 
     // ── Underworld Branch — Dark Deeds Expansion ──
-    shadow_dealings:     { name: 'Shadow Dealings',     branch: 'underworld', cost: 2, requires: ['discrete'],                    desc: 'All corrupt action detection reduced by 15%.',                              icon: '🕶️' },
-    master_forger:       { name: 'Master Forger',       branch: 'underworld', cost: 3, requires: ['shadow_dealings'],             desc: 'Can create and sell counterfeit goods.',                                    icon: '📝' },
-    assassin:            { name: 'Assassin',             branch: 'underworld', cost: 4, requires: ['black_market_contacts'],       desc: 'Can personally assassinate targets. Detection greatly reduced.',             icon: '🗡️' },
-    poisoner:            { name: 'Poisoner',            branch: 'underworld', cost: 3, requires: ['black_market_contacts'],       desc: 'Can use poison for assassination. Access to poison goods.',                 icon: '☠️' },
-    silver_tongue_dark:  { name: 'Silver Tongue',       branch: 'underworld', cost: 2, requires: ['bribe_expert'],                desc: '+10% quarantine bribe chance. Bribery success rates increased by 25%.',     icon: '😈' },
-    tunnel_rat:          { name: 'Tunnel Rat',          branch: 'underworld', cost: 4, requires: ['master_smuggler'],             desc: 'Can build smuggling tunnels. Permanent detection reduction.',               icon: '🕳️' },
-    arsonist_skill:      { name: 'Arsonist',            branch: 'underworld', cost: 3, requires: ['shadow_dealings'],             desc: 'Arson has 50% less detection chance and destroys more evidence.',           icon: '🔥' },
-    kingmaker_skill:     { name: 'Kingmaker',           branch: 'underworld', cost: 5, requires: ['silver_tongue_dark','black_market_contacts'], desc: 'Can attempt to assassinate kings. Political corruption more effective.', icon: '👑' },
-    dark_connections:    { name: 'Dark Connections',    branch: 'underworld', cost: 4, requires: ['black_market_contacts'],        desc: 'Access assassination contracts and dark deeds without high notoriety.',     icon: '🌑' },
-    master_disguise:     { name: 'Master Disguise',     branch: 'underworld', cost: 3, requires: ['shadow_dealings'],              desc: '+5% stealth on all covert operations. +5% quarantine sneak chance. Harder to identify.', icon: '🎭' },
-    shadow_step:         { name: 'Shadow Step',         branch: 'underworld', cost: 3, requires: ['discrete'],                    desc: '+5% stealth bonus. +5% quarantine sneak chance. Move unseen through crowds.', icon: '👤' },
-    smugglers_run:       { name: 'Smuggler\'s Run',     branch: 'underworld', cost: 3, requires: ['master_smuggler'],             desc: 'Attempt to cross closed borders on land. 40% detection chance.',            icon: '🏃' },
+    shadow_dealings:     { name: 'Shadow Dealings',     branch: 'underworld', cost: 2, requires: ['discrete'],                    desc: 'All corrupt detection -15%. Unlocks: Sabotage, Blackmail, Insider trading, Protection racket (with Intimidating Presence), Double agent.', icon: '🕶️' },
+    master_forger:       { name: 'Master Forger',       branch: 'underworld', cost: 3, requires: ['shadow_dealings'],             desc: 'Sell counterfeit goods. Unlocks: Forge documents (permits, titles, papers), Plant evidence (with Discrete), Frame competitor, Cook books.', icon: '📝' },
+    assassin:            { name: 'Assassin',             branch: 'underworld', cost: 4, requires: ['black_market_contacts'],       desc: 'Personally assassinate targets. Detection greatly reduced. Unlocks assassination contracts.', icon: '🗡️' },
+    poisoner:            { name: 'Poisoner',            branch: 'underworld', cost: 3, requires: ['black_market_contacts'],       desc: 'Use poison for slow-kill assassination (5-15 days). Access to poison goods.',                 icon: '☠️' },
+    silver_tongue_dark:  { name: 'Silver Tongue',       branch: 'underworld', cost: 2, requires: ['bribe_expert'],                desc: '+10% quarantine bribe. +25% bribery success. Unlocks: Spread rumors, Blackmail, Bribe advisor, Cultivate heir.', icon: '😈' },
+    tunnel_rat:          { name: 'Tunnel Rat',          branch: 'underworld', cost: 4, requires: ['master_smuggler'],             desc: '-30% detection in towns with your hidden warehouses. Synergizes with Ghost skill.', icon: '🕳️' },
+    arsonist_skill:      { name: 'Arsonist',            branch: 'underworld', cost: 3, requires: ['shadow_dealings'],             desc: 'Arson detection -50%. Unlocks: Arson, Sabotage buildings and roads.',       icon: '🔥' },
+    kingmaker_skill:     { name: 'Kingmaker',           branch: 'underworld', cost: 5, requires: ['silver_tongue_dark','black_market_contacts'], desc: 'Assassinate kings. Unlocks: Incite revolt, Cultivate heir. Political corruption more effective.', icon: '👑' },
+    dark_connections:    { name: 'Dark Connections',    branch: 'underworld', cost: 4, requires: ['black_market_contacts'],        desc: 'Assassination contracts. Unlocks: Spy network (with Discrete), Sabotage rival caravans, Hire assassin.', icon: '🌑' },
+    master_disguise:     { name: 'Master Disguise',     branch: 'underworld', cost: 3, requires: ['shadow_dealings'],              desc: '-10% scheme detection. +5% quarantine sneak. Harder to identify.', icon: '🎭' },
+    shadow_step:         { name: 'Shadow Step',         branch: 'underworld', cost: 3, requires: ['discrete'],                    desc: '-10% scheme detection. +5% quarantine sneak. Move unseen through crowds.', icon: '👤' },
+    smugglers_run:       { name: 'Smuggler\'s Run',     branch: 'underworld', cost: 3, requires: ['master_smuggler'],             desc: 'Cross closed borders on land. 40% detection chance.',            icon: '🏃' },
     blockade_runner:     { name: 'Blockade Runner',     branch: 'underworld', cost: 4, requires: ['smugglers_run','discrete'], desc: 'Sail through naval blockades. 35% detection chance. Ship seized if caught.', icon: '🚢' },
-    ghost:               { name: 'Ghost',               branch: 'underworld', cost: 5, requires: ['shadow_dealings','tunnel_rat'],               desc: 'Nearly invisible to guards at night. Detection halved. +10% quarantine sneak chance.', icon: '👻' },
+    ghost:               { name: 'Ghost',               branch: 'underworld', cost: 5, requires: ['shadow_dealings','tunnel_rat'],               desc: 'Detection halved at night. +10% quarantine sneak. Near invisible to guards.', icon: '👻' },
+
+    // Defensive / Security skills
+    vigilant_merchant:   { name: 'Vigilant Merchant',   branch: 'commerce',  cost: 2, requires: [],                  desc: '-25% chance of NPC theft/sabotage against you. Reduces stolen amounts by 50%.', icon: '👁️' },
+    fortified_reputation:{ name: 'Fortified Reputation', branch: 'social',   cost: 3, requires: ['charming'],         desc: 'Rumors against you -40% effective. NPC schemes targeting you -20%.', icon: '🛡️' },
+    counter_intelligence:{ name: 'Counter-Intelligence', branch: 'underworld', cost: 3, requires: ['discrete'],       desc: 'Detect NPC frame attempts. Assassination attempts against you -50%.', icon: '🕵️' },
+    inner_circle:        { name: 'Inner Circle',        branch: 'social',    cost: 4, requires: ['charismatic'],      desc: 'Loyal network warns of plots. All NPC schemes against you -30%.', icon: '🤝' },
 };
 
 const SKILL_BRANCHES = {
@@ -2333,6 +2348,8 @@ const ACHIEVEMENTS = {
     port_developer:      { name: 'Port Developer',      desc: 'Build a dock in a port town.',                  xp: 90 , tier: 'silver', icon: '⚓', category: 'building' },
     island_investor:     { name: 'Island Investor',     desc: 'Own a building on an island town.',              xp: 95 , tier: 'silver', icon: '🏝️', category: 'building' },
     full_employment:     { name: 'Full Employment',     desc: 'Have 20+ workers employed.',                     xp: 80 , tier: 'silver', icon: '👷', category: 'building' },
+    frontier_founder:    { name: 'Frontier Founder',    desc: 'Found your first outpost in the wilderness.',     xp: 80 , tier: 'silver', icon: '⛺', category: 'building' },
+    village_maker:       { name: 'Village Maker',       desc: 'Get an outpost converted to an official village.', xp: 175, tier: 'gold', icon: '🏘️', category: 'building' },
 
     // ── Transport (10) ──
     first_caravan:       { name: 'First Caravan',       desc: 'Send your first caravan.',                       xp: 35 , tier: 'bronze', icon: '🐴', category: 'transport' },
@@ -2515,6 +2532,9 @@ const ACHIEVEMENTS = {
     plat_puppeteer_court:     { name: "The Puppeteer's Court",      desc: 'As RA, control king + council + economy + nobles for 180 consecutive days.', xp: 400, tier: 'platinum', icon: '🎭', category: 'kingdom' },
     plat_sea_and_land:        { name: 'Master of Sea and Land',     desc: '#1 trader by volume on both land and sea for 30+ consecutive days.',    xp: 375, tier: 'platinum', icon: '⚓', category: 'transport' },
     plat_architect:           { name: 'Architect of Civilization',  desc: 'Get 3 outposts promoted to village status through your efforts.',        xp: 400, tier: 'platinum', icon: '🏛️', category: 'kingdom' },
+    kingdom_shaper:           { name: 'Kingdom Shaper',             desc: 'Achieve 15%+ kingdom impact as measured by Player Impact.',              xp: 120, tier: 'silver', icon: '🏆', category: 'kingdom' },
+    world_influencer:         { name: 'World Influencer',           desc: 'Achieve 15%+ world impact as measured by Player Impact.',                xp: 200, tier: 'gold', icon: '🌍', category: 'kingdom' },
+    plat_world_shaper:        { name: 'World Shaper',               desc: 'Achieve 30%+ world impact as measured by Player Impact.',                xp: 400, tier: 'platinum', icon: '🌐', category: 'kingdom' },
 };
 
 // Achievements that are EXCLUDED per start — these are trivially granted by starting conditions
@@ -2833,6 +2853,7 @@ const ENERGY_CONFIG = {
         estate: 7.0,
         castle: 8.0,
         farmstead: 4.0,
+        outpost_housing: 4.5,
     },
     // Horse travel energy savings (multiplier on travel energy cost — lower = less energy used)
     HORSE_ENERGY_MULTIPLIER: 0.4,         // Horse reduces travel energy to 40% (60% reduction)

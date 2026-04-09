@@ -10751,7 +10751,7 @@
         // Urgent: reconnect isolated towns (guaranteed, not random)
         if (k.gold >= 300) {
             var kTerrSet = k.territories instanceof Set ? k.territories : new Set(k.territories || []);
-            var kTownsAll = world.towns.filter(function(t) { return kTerrSet.has(t.id) && !t.destroyed && !t.abandoned; });
+            var kTownsAll = world.towns.filter(function(t) { return kTerrSet.has(t.id) && !t.destroyed && !t.abandoned && !t.isOutpost; });
             for (var iti = 0; iti < kTownsAll.length; iti++) {
                 var isolatedTown = kTownsAll[iti];
                 var hasRoad = world.roads.some(function(r) {
@@ -10805,7 +10805,7 @@
         // Road importance factors into pair selection
         var roadBuildChance = p.intelligence === 'brilliant' ? 0.02 : p.intelligence === 'clever' ? 0.01 : p.intelligence === 'average' ? 0.005 : p.intelligence === 'dim' ? 0.002 : 0.001;
         if (roadBuildChance > 0 && k.gold >= 2000 && rng.chance(roadBuildChance)) {
-            const kTowns = world.towns.filter(t => k.territories.has(t.id) && !t.destroyed && !t.abandoned);
+            const kTowns = world.towns.filter(t => k.territories.has(t.id) && !t.destroyed && !t.abandoned && !t.isOutpost);
             // Priority: connect roadless towns first
             var roadlessTowns = kTowns.filter(t => {
                 return !world.roads.some(r =>
@@ -16440,7 +16440,7 @@
         var tooCloseLocation = null;
         for (var ci = 0; ci < world.towns.length; ci++) {
             var ct = world.towns[ci];
-            if (ct.abandoned || ct.destroyed) continue;
+            if (ct.abandoned || ct.destroyed || ct.isJunction) continue;
             var cdist = Math.hypot((opts.x || 0) - ct.x, (opts.y || 0) - ct.y);
             if (cdist < minDistPx) { tooCloseLocation = ct; break; }
         }
@@ -16604,6 +16604,11 @@
             if (outpost.usedLandPlots == null) outpost.usedLandPlots = 0;
             if (outpost.outpostStorage == null) outpost.outpostStorage = cfg.baseStorageCapacity || 200;
             if (!outpost.outpostStorageItems) outpost.outpostStorageItems = {};
+            if (!outpost.workerAssignments) outpost.workerAssignments = {};
+            if (!outpost.workerAssignments._maintenance) outpost.workerAssignments._maintenance = [];
+            // Migrate smithy → food_hall
+            var _smithyIdx = outpost.outpostUpgrades.indexOf('smithy');
+            if (_smithyIdx >= 0) outpost.outpostUpgrades[_smithyIdx] = 'food_hall';
 
             // Sync legacy fields
             outpost.hiredWorkers = outpost.outpostWorkers.length;
@@ -16650,8 +16655,8 @@
             var theftChance = cfg.theftChancePerDay;
             theftChance -= numGuards * cfg.securityPerGuard;
             theftChance -= (cfg.wallTheftReduction[outpost.walls] || 0);
-            // Watchtower upgrade reduces theft further
-            if (outpost.outpostUpgrades.indexOf('watchtower') >= 0) {
+            // Watchtower upgrade reduces theft further (only if worker assigned)
+            if (outpost.outpostUpgrades.indexOf('watchtower') >= 0 && outpost.workerAssignments && outpost.workerAssignments.watchtower) {
                 var wtCfg = CONFIG.OUTPOST_UPGRADES && CONFIG.OUTPOST_UPGRADES.watchtower;
                 theftChance -= (wtCfg && wtCfg.theftReduction) || 0.02;
             }
@@ -16697,40 +16702,221 @@
                 }
             }
 
-            // ── Small prosperity growth if maintained ──
+            // ── Prosperity growth from upgrades ──
             if (outpost.maintenancePaid || outpost.founderType === 'player') {
-                outpost.prosperity = Math.min(100, (outpost.prosperity || 10) + 0.1);
+                var _prospGain = 0.05; // base daily prosperity gain
+                var _upList = outpost.outpostUpgrades || [];
+                for (var _pi = 0; _pi < _upList.length; _pi++) {
+                    var _uid = _upList[_pi];
+                    if (_uid === 'market_stall')     _prospGain += 0.08; // slight
+                    else                             _prospGain += 0.03; // very slight for all others
+                }
+                // Housing prosperity: log cabins very slightly, cottages moderately
+                var _housingList = outpost.outpostHousing || [];
+                for (var _phi = 0; _phi < _housingList.length; _phi++) {
+                    var _hType = _housingList[_phi].type;
+                    if (_hType === 'cottages')         _prospGain += 0.12; // moderate per cottage
+                    else if (_hType === 'cabins')     _prospGain += 0.03; // very slight per cabin
+                    else                              _prospGain += 0.02; // tiny for other housing
+                }
+                outpost.prosperity = Math.min(100, (outpost.prosperity || 10) + _prospGain);
                 // Sync population with actual residents
                 outpost.population = outpost.outpostResidents.length;
-                // Outpost happiness based on upgrades and housing
-                var ohBase = 40;
-                for (var _ui = 0; _ui < outpost.outpostUpgrades.length; _ui++) {
-                    var _upCfg = CONFIG.OUTPOST_UPGRADES && CONFIG.OUTPOST_UPGRADES[outpost.outpostUpgrades[_ui]];
-                    if (_upCfg) ohBase += 3;
+
+                // Ensure workerAssignments migration
+                if (!outpost.workerAssignments) outpost.workerAssignments = {};
+                if (!outpost.workerAssignments._maintenance) outpost.workerAssignments._maintenance = [];
+
+                // ── Helper: check if an upgrade is actively staffed ──
+                function _isActive(upId) {
+                    return outpost.outpostUpgrades.indexOf(upId) >= 0 && !!outpost.workerAssignments[upId];
                 }
+
+                // ── NPC Needs Satisfaction ──
+                // Compute need bonuses from active upgrades
+                var needFood = 20;      // base food satisfaction
+                var needSafety = 20;    // base safety
+                var needHappiness = 30; // base happiness
+                var needHealth = 30;    // base health
+                var needWealth = 15;    // base wealth
+
+                // Food Hall: greatly helps food
+                if (_isActive('food_hall')) needFood += 40;
+                // Tavern: happiness + slight food
+                if (_isActive('tavern')) { needHappiness += 15; needFood += 10; }
+                // Chapel: happiness
+                if (_isActive('chapel')) needHappiness += 15;
+                // Market Stalls: slight food + wealth
+                if (_isActive('market_stall')) { needFood += 8; needWealth += 15; }
+                // Watchtower: security/safety
+                if (_isActive('watchtower')) needSafety += 25;
+                // Clinic: health
+                if (_isActive('clinic')) needHealth += 20;
+                // Well: base health/food
+                if (outpost.outpostUpgrades.indexOf('well') >= 0) { needHealth += 10; needFood += 5; }
+                // Guards: safety
+                if (numGuards > 0) needSafety += numGuards * 8;
+                // Walls: greatly increase security
+                needSafety += (outpost.walls || 0) * 15;
+                // Road: wealth/food
+                if (outpost.hasRoad) { needWealth += 5; needFood += 5; }
+                // Housing comfort
                 for (var _hi = 0; _hi < outpost.outpostHousing.length; _hi++) {
                     var _hCfg = CONFIG.OUTPOST_HOUSING && CONFIG.OUTPOST_HOUSING[outpost.outpostHousing[_hi].type];
-                    if (_hCfg) ohBase += (_hCfg.comfort || 0) * 0.1;
+                    if (_hCfg) needHappiness += (_hCfg.comfort || 0) * 0.15;
                 }
-                if (numGuards > 0) ohBase += 5;
-                if (outpost.hasRoad) ohBase += 5;
-                outpost.outpostHappiness = Math.min(100, Math.max(10, ohBase));
-                // Auto-attract NPCs from upgrades (tavern, chapel etc.)
+
+                // Cap needs at 100
+                needFood = Math.min(100, needFood);
+                needSafety = Math.min(100, needSafety);
+                needHappiness = Math.min(100, needHappiness);
+                needHealth = Math.min(100, needHealth);
+                needWealth = Math.min(100, needWealth);
+
+                // Store on outpost for UI
+                outpost.npcNeeds = { food: needFood, safety: needSafety, happiness: needHappiness, health: needHealth, wealth: needWealth };
+
+                // Compute overall happiness from needs
+                var ohBase = (needFood + needSafety + needHappiness + needHealth + needWealth) / 5;
+                outpost.outpostHappiness = Math.min(100, Math.max(10, Math.round(ohBase)));
+
+                // ── Clinic: heal 2 sick residents per day ──
+                if (_isActive('clinic') && outpost.population > 0) {
+                    var _healed = 0;
+                    for (var _si = 0; _si < world.people.length && _healed < 2; _si++) {
+                        var _sp = world.people[_si];
+                        if (_sp.townId !== outpost.id || !_sp.alive) continue;
+                        if (_sp.illnesses && _sp.illnesses.length > 0) {
+                            _sp.illnesses.shift(); // remove one illness
+                            _healed++;
+                        } else if (_sp.injured) {
+                            _sp.injured = false;
+                            _sp.injuryDaysLeft = 0;
+                            _healed++;
+                        }
+                    }
+                    if (_healed > 0) logEvent('🏥 Clinic at "' + outpost.name + '" healed ' + _healed + ' resident(s).');
+                }
+
+                // ── Watchtower: reduce theft further (already applied above in theft section) ──
+                // ── Watchtower active: additional theft reduction applied in theft calc ──
+
+                // ── NPC Departure: dissatisfied NPCs leave ──
+                var _opCfg = CONFIG.OUTPOST_CONFIG;
+                if (outpost.population > 0) {
+                    var avgNeed = (needFood + needSafety + needHappiness + needHealth + needWealth) / 5;
+                    if (avgNeed < 30) {
+                        if (!outpost._npcDissatisfaction) outpost._npcDissatisfaction = 0;
+                        outpost._npcDissatisfaction += (_opCfg.npcDissatisfactionPerDay || 1);
+                        if (outpost._npcDissatisfaction >= (_opCfg.npcDissatisfactionLeaveThreshold || 60)) {
+                            // One NPC leaves (pick non-worker, non-guard first)
+                            var _leaveCandidate = null;
+                            for (var _li = outpost.outpostResidents.length - 1; _li >= 0; _li--) {
+                                var _lId = outpost.outpostResidents[_li];
+                                if (outpost.outpostWorkers.indexOf(_lId) < 0 && outpost.outpostGuards.indexOf(_lId) < 0) {
+                                    _leaveCandidate = _lId; break;
+                                }
+                            }
+                            if (!_leaveCandidate && outpost.outpostResidents.length > 0) {
+                                _leaveCandidate = outpost.outpostResidents[outpost.outpostResidents.length - 1];
+                            }
+                            if (_leaveCandidate) {
+                                var _leaveIdx = outpost.outpostResidents.indexOf(_leaveCandidate);
+                                if (_leaveIdx >= 0) outpost.outpostResidents.splice(_leaveIdx, 1);
+                                // Remove from workers/guards if applicable
+                                var _wIdx = outpost.outpostWorkers.indexOf(_leaveCandidate);
+                                if (_wIdx >= 0) outpost.outpostWorkers.splice(_wIdx, 1);
+                                var _gIdx = outpost.outpostGuards.indexOf(_leaveCandidate);
+                                if (_gIdx >= 0) outpost.outpostGuards.splice(_gIdx, 1);
+                                // Unassign from worker roles
+                                if (outpost.workerAssignments) {
+                                    var _wRoles = ['clinic', 'tavern', 'market_stall', 'watchtower', 'chapel', 'food_hall'];
+                                    for (var _wr = 0; _wr < _wRoles.length; _wr++) {
+                                        if (outpost.workerAssignments[_wRoles[_wr]] === _leaveCandidate) delete outpost.workerAssignments[_wRoles[_wr]];
+                                    }
+                                    if (outpost.workerAssignments._maintenance) {
+                                        var _mIdx = outpost.workerAssignments._maintenance.indexOf(_leaveCandidate);
+                                        if (_mIdx >= 0) outpost.workerAssignments._maintenance.splice(_mIdx, 1);
+                                    }
+                                }
+                                var _leaveNpc = findPerson(_leaveCandidate);
+                                if (_leaveNpc) {
+                                    // Move to nearest non-outpost town
+                                    var _nearestTown = null, _nearDist = Infinity;
+                                    for (var _nti = 0; _nti < world.towns.length; _nti++) {
+                                        var _nt = world.towns[_nti];
+                                        if (_nt.id === outpost.id || _nt.isOutpost || _nt.destroyed || _nt.abandoned) continue;
+                                        var _nd = Math.hypot((_nt.x || 0) - (outpost.x || 0), (_nt.y || 0) - (outpost.y || 0));
+                                        if (_nd < _nearDist) { _nearDist = _nd; _nearestTown = _nt; }
+                                    }
+                                    if (_nearestTown) _leaveNpc.townId = _nearestTown.id;
+                                    _leaveNpc.occupation = 'unemployed';
+                                    _leaveNpc.employerId = null;
+                                    logEvent('😞 ' + _leaveNpc.firstName + ' ' + _leaveNpc.lastName + ' left outpost "' + outpost.name + '" due to poor conditions.');
+                                }
+                                outpost.population = outpost.outpostResidents.length;
+                                outpost._npcDissatisfaction = Math.max(0, outpost._npcDissatisfaction - 30);
+                            }
+                        }
+                    } else {
+                        // Slowly reduce dissatisfaction when needs are met
+                        outpost._npcDissatisfaction = Math.max(0, (outpost._npcDissatisfaction || 0) - 0.5);
+                    }
+                }
+
+                // ── Building Maintenance Degradation ──
+                var maintWorkers = (outpost.workerAssignments._maintenance || []).length;
+                var maxMaintBuildings = Math.min(maintWorkers, _opCfg.maxMaintainedBuildings || 10);
+                // Count player-owned buildings in this outpost
+                var playerBuildings = outpost.buildings.filter(function(b) { return b.ownerId === 'player' || b.ownerId === (typeof player !== 'undefined' ? player.id : 'player'); });
+                if (playerBuildings.length > maxMaintBuildings) {
+                    // Most recently built building degrades
+                    var unmaintained = playerBuildings.slice(maxMaintBuildings);
+                    for (var _umi = 0; _umi < unmaintained.length; _umi++) {
+                        var _umBld = unmaintained[_umi];
+                        if (!_umBld._degradeStart) _umBld._degradeStart = world.day;
+                        var _degradeDays = world.day - _umBld._degradeStart;
+                        var _maxDegrade = _opCfg.buildingDegradeDays || 30;
+                        if (_degradeDays >= _maxDegrade) {
+                            // Destroy building, free land slot
+                            var _bIdx = outpost.buildings.indexOf(_umBld);
+                            if (_bIdx >= 0) outpost.buildings.splice(_bIdx, 1);
+                            outpost.usedLandPlots = Math.max(0, (outpost.usedLandPlots || 0) - 1);
+                            var _btDef = CONFIG.BUILDING_TYPES ? CONFIG.BUILDING_TYPES[(_umBld.type || '').toUpperCase()] : null;
+                            logEvent('🏚️ ' + (_btDef ? _btDef.name : _umBld.type) + ' at "' + outpost.name + '" collapsed from neglect and reverted to empty land.');
+                        } else if (_degradeDays % 7 === 0 && _degradeDays > 0) {
+                            // Periodically warn
+                            if (_umBld.condition === 'new') _umBld.condition = 'used';
+                            else if (_umBld.condition === 'used') _umBld.condition = 'breaking';
+                        }
+                    }
+                } else {
+                    // Clear degrade timers on maintained buildings
+                    for (var _mi = 0; _mi < playerBuildings.length; _mi++) {
+                        if (playerBuildings[_mi]._degradeStart) delete playerBuildings[_mi]._degradeStart;
+                    }
+                }
+
+                // Auto-attract NPCs from active upgrades (tavern, chapel etc.)
                 if (outpost.outpostUpgrades && outpost.outpostUpgrades.length > 0 && outpost.hasRoad) {
                     var _totalAutoChance = 0;
                     for (var _ai = 0; _ai < outpost.outpostUpgrades.length; _ai++) {
                         var _aUpCfg = CONFIG.OUTPOST_UPGRADES && CONFIG.OUTPOST_UPGRADES[outpost.outpostUpgrades[_ai]];
-                        if (_aUpCfg && _aUpCfg.autoAttract) _totalAutoChance += (_aUpCfg.autoAttractChance || 0);
+                        // Only count auto-attract if upgrade is active (has worker) or doesn't need one
+                        if (_aUpCfg && _aUpCfg.autoAttract) {
+                            var _needsW = _aUpCfg.needsWorker;
+                            if (!_needsW || _isActive(outpost.outpostUpgrades[_ai])) {
+                                _totalAutoChance += (_aUpCfg.autoAttractChance || 0);
+                            }
+                        }
                     }
                     if (_totalAutoChance > 0 && rng.chance(_totalAutoChance)) {
-                        // Check if outpost has housing capacity
                         var _housingCap = 0;
                         for (var _hci = 0; _hci < outpost.outpostHousing.length; _hci++) {
                             var _hcCfg = CONFIG.OUTPOST_HOUSING && CONFIG.OUTPOST_HOUSING[outpost.outpostHousing[_hci].type];
                             if (_hcCfg) _housingCap += _hcCfg.capacity;
                         }
                         if (outpost.outpostResidents.length < _housingCap) {
-                            // Find a nearby connected NPC to attract
                             var _attractedNpc = _findNpcToAttract(outpost);
                             if (_attractedNpc) {
                                 _attractedNpc.townId = outpost.id;
@@ -18460,7 +18646,37 @@
         person.sick = true;
         person.illness = illnessId;
         person.illnessDay = day;
-        person.illnessSeverity = ill.severity;
+
+        // Contagion: roll severity per-victim instead of always using illness default
+        // Weighted so most contagion cases are milder; severe illness definition
+        // only means the *worst* case is severe, not every case
+        // Age affects severity: 18-30 baseline, 31-40 slightly worse, 41+ moderately worse
+        var _sev = ill.severity;
+        if (source === 'contagion' && (_sev === 'severe' || _sev === 'moderate')) {
+            var _age = person.age || 25;
+            // Age shift: pushes the roll toward more severe outcomes for older NPCs
+            var _ageShift = 0;
+            if (_age >= 41) _ageShift = 0.15;
+            else if (_age >= 31) _ageShift = 0.07;
+
+            var _r = rng.random();
+            if (_sev === 'severe') {
+                // severe illness (plague) baseline (18-30): 45% minor, 30% moderate, 25% severe
+                // 31-40: 38% minor, 30% moderate, 32% severe
+                // 41+:   30% minor, 30% moderate, 40% severe
+                var _minorCap = Math.max(0.15, 0.45 - _ageShift);
+                if (_r < _minorCap) _sev = 'minor';
+                else if (_r < _minorCap + 0.30) _sev = 'moderate';
+                // else stays severe
+            } else {
+                // moderate illness baseline (18-30): 55% minor, 45% moderate
+                // 31-40: 48% minor, 52% moderate
+                // 41+:   40% minor, 60% moderate
+                if (_r < Math.max(0.20, 0.55 - _ageShift)) _sev = 'minor';
+            }
+        }
+        person.illnessSeverity = _sev;
+
         person.asymptomatic = _isAsymptomatic(person.id, illnessId);
         person.illnessSource = source || 'random';
         person.illnessTreated = false;
@@ -18658,7 +18874,16 @@
         if (!illDef) { person.sick = false; person.illness = null; return; }
 
         var daysSick = day - (person.illnessDay || day);
-        var healthDrain = (illDef.healthDrain || 0.5) * tickScale;
+        var _pSev = person.illnessSeverity || illDef.severity || 'minor';
+        // Scale health drain and recovery by person's actual severity, not just illness definition
+        var _sevMult = _pSev === 'severe' ? 1.0 : (_pSev === 'moderate' ? 0.55 : 0.25);
+        // Age modifier: older NPCs drain faster, recover slower
+        var _pAge = person.age || 25;
+        var _ageDrainMult = 1.0;
+        var _ageRecovMult = 1.0; // multiplier on recovery chance (lower = worse)
+        if (_pAge >= 41) { _ageDrainMult = 1.25; _ageRecovMult = 0.7; }
+        else if (_pAge >= 31) { _ageDrainMult = 1.1; _ageRecovMult = 0.85; }
+        var healthDrain = (illDef.healthDrain || 0.5) * _sevMult * _ageDrainMult * tickScale;
 
         // Asymptomatic carriers: no health drain, but still contagious
         if (person.asymptomatic) {
@@ -18688,10 +18913,15 @@
         // Apply health drain
         person.health = Math.max(0, person.health - healthDrain);
 
-        // Recovery check
+        // Recovery check — milder cases recover faster
         var recoveryDays = illDef.daysToRecover || 14;
+        if (_pSev === 'minor') recoveryDays = Math.floor(recoveryDays * 0.4);
+        else if (_pSev === 'moderate') recoveryDays = Math.floor(recoveryDays * 0.65);
         if (treated) recoveryDays = Math.floor(recoveryDays * 0.6);
         var recovChance = (illDef.recoveryChance || 0.3) * tickScale;
+        if (_pSev === 'minor') recovChance *= 2.5;
+        else if (_pSev === 'moderate') recovChance *= 1.6;
+        recovChance *= _ageRecovMult;
         if (daysSick >= recoveryDays && rng.chance(recovChance)) {
             person.sick = false;
             person.illness = null;
@@ -18707,8 +18937,14 @@
         }
 
         // Natural immune recovery — some people fight it off even untreated
+        // Milder cases have much better natural recovery
         if (illDef.naturalRecoveryDay && illDef.naturalRecoveryChance) {
-            if (daysSick >= illDef.naturalRecoveryDay && rng.chance(illDef.naturalRecoveryChance * tickScale)) {
+            var _natDay = illDef.naturalRecoveryDay;
+            var _natChance = illDef.naturalRecoveryChance * tickScale;
+            if (_pSev === 'minor') { _natDay = Math.floor(_natDay * 0.5); _natChance *= 3.0; }
+            else if (_pSev === 'moderate') { _natDay = Math.floor(_natDay * 0.7); _natChance *= 1.8; }
+            _natChance *= _ageRecovMult;
+            if (daysSick >= _natDay && rng.chance(_natChance)) {
                 person.sick = false;
                 person.illness = null;
                 person.asymptomatic = false;
@@ -21605,7 +21841,7 @@
 
         // Find disconnected non-destroyed, non-abandoned towns
         var disconnected = world.towns.filter(function(t) {
-            return !visited[t.id] && !t.destroyed && !t.abandoned;
+            return !visited[t.id] && !t.destroyed && !t.abandoned && !t.isOutpost;
         });
         if (disconnected.length === 0) return;
 
@@ -21848,10 +22084,10 @@
         // Off-road cost is terrain-aware (mountains extremely slow, grassland moderate)
         for (let i = 0; i < world.towns.length; i++) {
             const tA = world.towns[i];
-            if (tA.isIsland) continue;
+            if (tA.isIsland || tA.isJunction) continue;
             for (let j = i + 1; j < world.towns.length; j++) {
                 const tB = world.towns[j];
-                if (tB.isIsland) continue;
+                if (tB.isIsland || tB.isJunction) continue;
                 // Check the path isn't over large water (must be traversable by land)
                 const waterInfo = checkWaterPath(tA.x, tA.y, tB.x, tB.y);
                 if (waterInfo > 0.05) continue; // Off-road can't cross water bodies
@@ -31542,6 +31778,118 @@
         return { success: true, message: `Road built between ${fromT.name} and ${toT.name}.` };
     }
 
+    /**
+     * Create a road junction — a minimal invisible node on an existing road.
+     * Splits the target road into two segments and returns the junction node.
+     * @param {object} road - The road to split
+     * @param {number} jx - Junction x coordinate
+     * @param {number} jy - Junction y coordinate
+     * @returns {{ success, junction, message }}
+     */
+    function createRoadJunction(road, jx, jy) {
+        if (!road) return { success: false, message: 'No road specified.' };
+        var fromT = findTown(road.fromTownId);
+        var toT = findTown(road.toTownId);
+        if (!fromT || !toT) return { success: false, message: 'Road endpoints not found.' };
+
+        // Create minimal junction node
+        var junction = {
+            id: uid('junction'),
+            name: 'Road Junction',
+            x: jx,
+            y: jy,
+            kingdomId: fromT.kingdomId,
+            isCapital: false,
+            population: 0,
+            buildings: [],
+            market: { supply: {}, demand: {}, prices: {} },
+            prosperity: 0,
+            walls: 0,
+            garrison: 0,
+            happiness: 0,
+            isPort: false,
+            isIsland: false,
+            towers: 0,
+            category: 'junction',
+            isJunction: true,
+            maxBuildingSlots: 0,
+        };
+        world.towns.push(junction);
+        townIndex[junction.id] = junction;
+
+        // Split waypoints at the junction point
+        var oldWaypoints = road.waypoints || [];
+        var wp1 = []; // fromT → junction
+        var wp2 = []; // junction → toT
+        if (oldWaypoints.length >= 2) {
+            // Find the segment closest to the junction
+            var bestSeg = 0, bestT = 0, bestD = Infinity;
+            for (var si = 0; si < oldWaypoints.length - 1; si++) {
+                var ax = oldWaypoints[si].x, ay = oldWaypoints[si].y;
+                var bx = oldWaypoints[si + 1].x, by = oldWaypoints[si + 1].y;
+                var dx = bx - ax, dy = by - ay;
+                var lenSq = dx * dx + dy * dy;
+                var t = lenSq > 0 ? Math.max(0, Math.min(1, ((jx - ax) * dx + (jy - ay) * dy) / lenSq)) : 0;
+                var px = ax + t * dx, py = ay + t * dy;
+                var d = Math.hypot(jx - px, jy - py);
+                if (d < bestD) { bestD = d; bestSeg = si; bestT = t; }
+            }
+            // Build wp1: from start to junction
+            for (var i = 0; i <= bestSeg; i++) wp1.push(oldWaypoints[i]);
+            wp1.push({ x: jx, y: jy });
+            // Build wp2: from junction to end
+            wp2.push({ x: jx, y: jy });
+            for (var j = bestSeg + 1; j < oldWaypoints.length; j++) wp2.push(oldWaypoints[j]);
+        } else {
+            wp1 = [{ x: fromT.x, y: fromT.y }, { x: jx, y: jy }];
+            wp2 = [{ x: jx, y: jy }, { x: toT.x, y: toT.y }];
+        }
+
+        // Remove the original road
+        var roadIdx = world.roads.indexOf(road);
+        if (roadIdx >= 0) world.roads.splice(roadIdx, 1);
+
+        // Create two new roads: fromT→junction, junction→toT
+        world.roads.push({
+            fromTownId: road.fromTownId,
+            toTownId: junction.id,
+            quality: road.quality || 2,
+            safe: road.safe !== false,
+            hasBridge: false,
+            bridgeDestroyed: false,
+            bridgeSegments: [],
+            bridges: [],
+            waypoints: wp1,
+            condition: road.condition || 'new',
+            builtDay: road.builtDay || world.day,
+            builtBy: road.builtBy || null,
+            ownerId: road.ownerId || null,
+            tollRate: road.tollRate || 0,
+            tollRevenue: 0,
+            isTollRoad: road.isTollRoad || false,
+        });
+        world.roads.push({
+            fromTownId: junction.id,
+            toTownId: road.toTownId,
+            quality: road.quality || 2,
+            safe: road.safe !== false,
+            hasBridge: false,
+            bridgeDestroyed: false,
+            bridgeSegments: [],
+            bridges: [],
+            waypoints: wp2,
+            condition: road.condition || 'new',
+            builtDay: road.builtDay || world.day,
+            builtBy: road.builtBy || null,
+            ownerId: road.ownerId || null,
+            tollRate: road.tollRate || 0,
+            tollRevenue: 0,
+            isTollRoad: road.isTollRoad || false,
+        });
+
+        return { success: true, junction: junction, message: 'Road junction created.' };
+    }
+
     function buildNewSeaRoute(fromTownId, toTownId, builtBy, options) {
         const fromT = findTown(fromTownId);
         const toT = findTown(toTownId);
@@ -34187,6 +34535,7 @@
         rebuildBridge(idx, bridgeId) { return rebuildBridge(idx, bridgeId); },
         buildNewRoad(from, to, by, opts) { return buildNewRoad(from, to, by, opts); },
         buildNewSeaRoute(from, to, by, opts) { return buildNewSeaRoute(from, to, by, opts); },
+        createRoadJunction(road, jx, jy) { return createRoadJunction(road, jx, jy); },
         collectTolls() { collectTolls(); },
         checkWaterFraction(x1, y1, x2, y2) { return checkWaterPath(x1, y1, x2, y2); },
         getDominantTerrain(ax, ay, bx, by) { return getDominantTerrain(ax, ay, bx, by); },
