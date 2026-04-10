@@ -3537,7 +3537,8 @@ const ACHIEVEMENTS = {
     tax_dodger:          { name: 'Tax Dodger',            desc: 'Avoid 1,000+ gold in taxes through smuggling.', xp: 160, tier: 'gold', icon: '🏴', category: 'underworld' },
     kingslayer_ach:      { name: 'Kingslayer',            desc: 'Your actions contribute to a king being overthrown.', xp: 200, tier: 'gold', icon: '⚰️', category: 'kingdom' },
     double_noble_agent:  { name: 'Shadow Diplomat',       desc: 'Complete a double noble agent mission, defecting to another kingdom.', xp: 200, tier: 'gold', icon: '🎭', category: 'underworld' },
-    top_merchant_victory: { name: 'Top Merchant',         desc: 'Hold #1 merchant rank for a full year.',      xp: 200, tier: 'gold', icon: '👑', category: 'wealth' },
+    top_merchant_victory: { name: 'Top Merchant',         desc: 'Reach #1 on the merchant leaderboard.',       xp: 200, tier: 'gold', icon: '👑', category: 'wealth' },
+    top_10_merchant:     { name: 'Rising Star',           desc: 'Break into the top 10 merchant rankings.',    xp: 75,  tier: 'silver', icon: '⭐', category: 'wealth' },
     devoted_spouse:      { name: 'Devoted Spouse',        desc: 'Maintain 90+ spouse relationship for 1 year.',xp: 85 , tier: 'silver', icon: '💑', category: 'social' },
     orphan_rise:         { name: 'Orphan Rise',           desc: 'Win Top Merchant after being abandoned as orphan.', xp: 190, tier: 'gold', icon: '🌟', category: 'legacy' },
     // Victory achievements (unlocked when corresponding win condition is met)
@@ -3811,9 +3812,9 @@ const NPC_HEALTH_CONFIG = {
     // --- Treatment processing time (in game ticks, 60 ticks = 1 day) ---
     TREATMENT_TICKS: {
         minor:    5,     // ~2 hours
-        moderate: 25,    // ~10 hours
-        serious:  70,    // ~1.2 days
-        severe:   120,   // 2 days
+        moderate: 15,    // ~6 hours
+        serious:  30,    // half a day
+        severe:   120,   // 2 days (hospital)
     },
 
     // --- Plague event specific ---

@@ -8482,15 +8482,13 @@
         // They unlock achievements and show toasts (once per type).
         const victories = [];
 
-        // 1. Top Merchant — #1 on leaderboard for 365 continuous days
+        // 1. Top Merchant — reach #1 on leaderboard
         const leaderboard = getMerchantLeaderboard();
         if (leaderboard.length > 0 && leaderboard[0].isPlayer) {
             player.topMerchantDays = (player.topMerchantDays || 0) + 1;
+            victories.push('Top Merchant');
         } else {
             player.topMerchantDays = 0;
-        }
-        if (player.topMerchantDays >= 365) {
-            victories.push('Top Merchant');
         }
 
         // 2. Kingmaker — sell 500+ military goods AND a kingdom controls 50%+ towns
@@ -10264,6 +10262,10 @@
     }
 
     function handlePlayerDeath() {
+        // Prevent double-processing (multiple sources can trigger death in same tick)
+        if (player._deathProcessing) return;
+        player._deathProcessing = true;
+
         // Early-game protection: no death in first 180 days
         var currentDay = (typeof Engine !== 'undefined' && Engine.getDay) ? Engine.getDay() : 9999;
         if (currentDay <= 180) {
@@ -10271,6 +10273,7 @@
             player.alive = true;
             player.health = Math.max(player.health || 0, 30);
             player.deathCause = null;
+            player._deathProcessing = false;
             Engine.logEvent('🛡️ A kind stranger found you and nursed you back to health. You survived by sheer luck.');
             if (typeof UI !== 'undefined' && UI.toast) UI.toast('🛡️ You narrowly survived! (Early-game protection)', 'info');
             return;
@@ -10348,6 +10351,7 @@
     function selectHeir(heirId) {
         var ctx = player._deathContext;
         if (!ctx) return;
+        player._deathProcessing = false;
 
         var selectedNpc = Engine.findPerson(heirId);
         if (!selectedNpc) return;
@@ -13777,6 +13781,27 @@
 
                 const w = Engine.getWorld();
                 if (w && w.people) w.people.push(child);
+
+                // Assign child social rank: one rank below the highest-ranked parent
+                var parentMaxRank = 0;
+                if (player.socialRank) {
+                    for (var _prk in player.socialRank) {
+                        if ((player.socialRank[_prk] || 0) > parentMaxRank) parentMaxRank = player.socialRank[_prk];
+                    }
+                }
+                if (spouse && spouse.socialRank) {
+                    for (var _srk in spouse.socialRank) {
+                        if ((spouse.socialRank[_srk] || 0) > parentMaxRank) parentMaxRank = spouse.socialRank[_srk];
+                    }
+                }
+                if (parentMaxRank >= 3) {
+                    var childRank = parentMaxRank - 1;
+                    var childKingdomId = child.kingdomId || (Engine.findTown(player.townId) || {}).kingdomId;
+                    if (childKingdomId) {
+                        child.socialRank = {};
+                        child.socialRank[childKingdomId] = childRank;
+                    }
+                }
 
                 player.childrenIds.push(child.id);
                 // Link child to spouse's childrenIds too
@@ -17285,8 +17310,8 @@
         if (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.TREATMENT_TICKS) {
             treatTicks = NPC_HEALTH_CONFIG.TREATMENT_TICKS[condition.severity] || 5;
         }
-        // Severe at clinic takes 2x longer
-        if (condition.severity === 'severe') treatTicks = treatTicks * 2;
+        // Clinic takes 2x longer than hospital for all severities
+        treatTicks = treatTicks * 2;
 
         // Queue wait time — player must wait in line
         var _queue = clinicBld._treatmentQueue || [];
@@ -17322,19 +17347,11 @@
         var waitDesc = _queueWaitTicks > 0 ? ', waited ~' + Math.round(_queueWaitTicks / 60 * 10) / 10 + ' days in queue' : '';
         var nobleNote = _playerIsNoble ? ' 👑 Noble priority.' : '';
 
-        if (condition.severity === 'minor') {
-            list.splice(conditionIndex, 1);
-            Engine.logEvent(player.fullName + ' was treated at the clinic for ' + condition.name + ' (' + cost + 'g).' + nobleNote);
-            return { success: true, message: 'Treated ' + condition.name + ' at the clinic for ' + cost + 'g.' + waitDesc + nobleNote };
-        } else {
-            condition.treated = true;
-            var _recovDays = Math.ceil((effectiveTypeDef.healDays || 7) / 2);
-            if (condition.severity === 'severe') _recovDays = _recovDays * 2;
-            condition.healDay = Engine.getDay() + _recovDays;
-            var _sevNote = condition.severity === 'severe' ? ' (severe — treatment takes longer at a clinic)' : '';
-            Engine.logEvent(player.fullName + ' received clinic treatment for ' + condition.name + ' (' + cost + 'g). Recovery underway.' + _sevNote + nobleNote);
-            return { success: true, message: 'Clinic treated ' + condition.name + ' for ' + cost + 'g. You\'ll recover in ' + _recovDays + ' days.' + waitDesc + _sevNote + nobleNote };
-        }
+        // Clinic fully cures all conditions (time + cost is the tradeoff vs hospital)
+        list.splice(conditionIndex, 1);
+        var timeDesc = totalTicks <= 10 ? 'a quick visit' : totalTicks <= 60 ? 'half a day' : '~' + (Math.round(totalTicks / 60 * 10) / 10) + ' days';
+        Engine.logEvent(player.fullName + ' was treated at the clinic for ' + condition.name + ' (' + cost + 'g, ' + timeDesc + ').' + nobleNote);
+        return { success: true, message: 'Treated ' + condition.name + ' at the clinic for ' + cost + 'g (' + timeDesc + ').' + waitDesc + nobleNote };
     }
 
     function _payHealthcareRevenue(town, fee) {
@@ -17653,7 +17670,7 @@
                 var cost = hospInfo2 && hospInfo2.fees ? (hospInfo2.fees[condSeverity] || baseCost) : baseCost;
                 if (player.gold < cost) return { success: false, message: 'Not enough gold. Hospital costs ' + cost + 'g for ' + spouse.firstName + '.' };
 
-                var treatTicks = condSeverity === 'severe' ? 60 : condSeverity === 'moderate' ? 30 : 15;
+                var treatTicks = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.TREATMENT_TICKS) ? (NPC_HEALTH_CONFIG.TREATMENT_TICKS[condSeverity] || 25) : 25;
                 if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(treatTicks);
                 player.gold -= cost;
                 player.stats.totalGoldSpent += cost;
@@ -17762,7 +17779,7 @@
                 var cost2 = hospInfo3 && hospInfo3.fees ? (hospInfo3.fees[npcSev] || baseCost2) : baseCost2;
                 if (player.gold < cost2) return { success: false, message: 'Not enough gold. Hospital costs ' + cost2 + 'g.' };
 
-                var treatTicks2 = npcSev === 'severe' ? 50 : npcSev === 'moderate' ? 25 : 10;
+                var treatTicks2 = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.TREATMENT_TICKS) ? (NPC_HEALTH_CONFIG.TREATMENT_TICKS[npcSev] || 25) : 25;
                 if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(treatTicks2);
                 player.gold -= cost2;
                 player.stats.totalGoldSpent += cost2;
@@ -27713,6 +27730,16 @@
             var elitesForAch = (typeof Engine !== 'undefined' && Engine.getWorld) ? (Engine.getWorld().people || []).filter(function(ep) { return ep.alive && ep.isEliteMerchant; }) : [];
             const totalAI = elitesForAch.reduce((a,m) => a + (m.gold || 0), 0);
             if (p.gold > totalAI && totalAI > 0) unlockAchievement('penny_pincher');
+        } catch (e) { /* no-op */ }
+
+        // Leaderboard achievements
+        try {
+            var _lb = getMerchantLeaderboard();
+            if (_lb.length > 0) {
+                for (var _lbi = 0; _lbi < Math.min(10, _lb.length); _lbi++) {
+                    if (_lb[_lbi].isPlayer) { unlockAchievement('top_10_merchant'); break; }
+                }
+            }
         } catch (e) { /* no-op */ }
 
         // Economic dominance — exclude outpost/wilderness towns

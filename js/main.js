@@ -668,6 +668,17 @@ window.Game = (function () {
         }
         updateSpeedButtons();
         emit('speedChanged', { speed: s });
+        // Enforce zoom-speed limits
+        if (typeof Render !== 'undefined' && Render.getCamera) {
+            var cam = Render.getCamera();
+            var minZ = 0.5;
+            if (s === 0) minZ = 0.5;
+            else if (s >= 16) minZ = 1.5;
+            else minZ = 1.0;
+            if (cam.targetZoom < minZ) {
+                cam.targetZoom = minZ;
+            }
+        }
     }
 
     function togglePause() {

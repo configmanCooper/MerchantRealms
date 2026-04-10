@@ -287,12 +287,27 @@ window.Renderer = (function () {
 
     function zoomAt(delta, mx, my) {
         const factor = delta > 0 ? 0.9 : 1.1;
-        camera.targetZoom = Math.max(camera.minZoom,
+        var minZ = camera.minZoom;
+        // Enforce minimum zoom based on game speed
+        if (typeof Game !== 'undefined' && Game.getSpeed) {
+            var spd = Game.getSpeed();
+            if (spd === 0) minZ = Math.max(minZ, 0.5);
+            else if (spd >= 16) minZ = Math.max(minZ, 1.5);
+            else minZ = Math.max(minZ, 1.0);
+        }
+        camera.targetZoom = Math.max(minZ,
             Math.min(camera.maxZoom, camera.targetZoom * factor));
     }
 
     function setZoom(z) {
-        camera.targetZoom = Math.max(camera.minZoom, Math.min(camera.maxZoom, z));
+        var minZ = camera.minZoom;
+        if (typeof Game !== 'undefined' && Game.getSpeed) {
+            var spd = Game.getSpeed();
+            if (spd === 0) minZ = Math.max(minZ, 0.5);
+            else if (spd >= 16) minZ = Math.max(minZ, 1.5);
+            else minZ = Math.max(minZ, 1.0);
+        }
+        camera.targetZoom = Math.max(minZ, Math.min(camera.maxZoom, z));
     }
 
     function panTo(worldX, worldY) {
