@@ -27480,7 +27480,7 @@ window.UI = (function () {
 
     function buildGuardSectionHTML() {
         var guards = Player.guards || [];
-        var maxGuards = CONFIG.PLAYER_GUARD_MAX || 4;
+        var maxGuards = (Player.getMaxGuards ? Player.getMaxGuards() : CONFIG.PLAYER_GUARD_MAX) || 4;
         var cost = CONFIG.PLAYER_GUARD_HIRE_COST || 30;
         if (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('cheap_security')) cost = Math.floor(cost * 0.80);
         var dailyWage = CONFIG.PLAYER_GUARD_DAILY_WAGE || 6;
@@ -27509,6 +27509,12 @@ window.UI = (function () {
 
         html += '<div style="margin-top:8px;">';
         html += '<span style="font-size:0.8rem;color:var(--text-muted);">' + guards.length + '/' + maxGuards + ' guards</span>';
+        // Show kingdom guard info for nobles
+        var kingdomGuards = 0;
+        for (var kg = 0; kg < guards.length; kg++) { if (guards[kg].kingdomPaid) kingdomGuards++; }
+        if (maxGuards > 4) {
+            html += ' <span style="font-size:0.7rem;color:#8ba;margin-left:6px;" title="As a noble, the kingdom provides up to ' + (CONFIG.NOBLE_KINGDOM_GUARD_SLOTS || 4) + ' guards at no cost to you. You may hire up to ' + (maxGuards - (CONFIG.NOBLE_KINGDOM_GUARD_SLOTS || 4)) + ' additional guards.">(👑 ' + kingdomGuards + ' kingdom + ' + (guards.length - kingdomGuards) + ' personal)</span>';
+        }
         if (guards.length < maxGuards) {
             var canAfford = (Player.gold || 0) >= cost;
             var inTown = !!Player.townId && !Player.traveling;
@@ -27565,8 +27571,8 @@ window.UI = (function () {
             // Grant kingdom guards if player has none
             if (!Player.state.guards || Player.state.guards.length === 0) {
                 Player.state.guards = Player.state.guards || [];
-                var maxGuards = (typeof CONFIG !== 'undefined' && CONFIG.PLAYER_GUARD_MAX) || 4;
-                var guardsToGrant = maxGuards - Player.state.guards.length;
+                var maxGuards = (Player.getMaxGuards ? Player.getMaxGuards() : (typeof CONFIG !== 'undefined' && CONFIG.PLAYER_GUARD_MAX)) || 8;
+                var guardsToGrant = Math.min(CONFIG.NOBLE_KINGDOM_GUARD_SLOTS || 4, maxGuards - Player.state.guards.length);
                 var rng = typeof Engine !== 'undefined' && Engine.getRng ? Engine.getRng() : null;
                 var townPeople = typeof Engine !== 'undefined' && Engine.getPeople ? Engine.getPeople(Player.state.townId) : [];
                 var existingGuardIds = {};

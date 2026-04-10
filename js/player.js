@@ -13184,7 +13184,7 @@
                         if (!_mc.alive || _mc.age < 18 || _mExisting[_mc.id] || _mc.id === player.spouseId || _mc.isPlayerGuard) continue;
                         _mCandidates.push(_mc);
                     }
-                    var _mGuardsToGrant = Math.min(4, (CONFIG.PLAYER_GUARD_MAX || 4) - player.guards.length);
+                    var _mGuardsToGrant = Math.min(CONFIG.NOBLE_KINGDOM_GUARD_SLOTS || 4, getMaxGuards() - player.guards.length);
                     var _mGranted = 0;
                     for (var _mggi = 0; _mggi < _mGuardsToGrant && _mCandidates.length > 0; _mggi++) {
                         var _mPref = _mCandidates.filter(function(c) { return c.occupation === 'soldier' || c.occupation === 'guard' || c.occupation === 'unemployed' || !c.occupation; });
@@ -19594,6 +19594,38 @@
                                 player.royalAdvisorBenefits = null;
                             }
                         }
+                        // Remove kingdom guards when losing noble status
+                        if (_dRank >= 4 && _dDemoteTo < 4) {
+                            player.isNoble = false;
+                            var _removedKG = 0;
+                            if (player.guards) {
+                                for (var _kgi = player.guards.length - 1; _kgi >= 0; _kgi--) {
+                                    if (player.guards[_kgi].kingdomPaid) {
+                                        var _kgNpc = Engine.findPerson ? Engine.findPerson(player.guards[_kgi].personId) : null;
+                                        if (_kgNpc) {
+                                            _kgNpc.isPlayerGuard = false;
+                                            _kgNpc.occupation = _kgNpc.previousOccupation || 'unemployed';
+                                            _kgNpc.townId = player.townId || _kgNpc.previousTownId || _kgNpc.townId;
+                                        }
+                                        player.guards.splice(_kgi, 1);
+                                        _removedKG++;
+                                    }
+                                }
+                                // Also enforce new lower max guard cap
+                                var _newMax = getMaxGuards();
+                                while (player.guards.length > _newMax) {
+                                    var _exG = player.guards.pop();
+                                    var _exNpc = Engine.findPerson ? Engine.findPerson(_exG.personId) : null;
+                                    if (_exNpc) { _exNpc.isPlayerGuard = false; _exNpc.occupation = _exNpc.previousOccupation || 'unemployed'; }
+                                    _removedKG++;
+                                }
+                                player.personalGuards = player.guards.length;
+                            }
+                            if (_removedKG > 0) {
+                                Engine.logEvent('🛡️ Lost ' + _removedKG + ' kingdom guard(s) with noble rank demotion.');
+                                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🛡️ Lost ' + _removedKG + ' kingdom guard(s) — no longer a noble.', 'warning');
+                            }
+                        }
 
                         var _dkName2 = 'the kingdom';
                         try { var _dk2 = Engine.findKingdom(_dkId); if (_dk2) _dkName2 = _dk2.name; } catch(e) {}
@@ -21166,7 +21198,7 @@
                 if (!nc.alive || nc.age < 18 || existingGuardIds[nc.id] || nc.id === player.spouseId || nc.isPlayerGuard) continue;
                 guardCandidates.push(nc);
             }
-            var guardsToGrant = Math.min(4, (CONFIG.PLAYER_GUARD_MAX || 4) - player.guards.length);
+            var guardsToGrant = Math.min(CONFIG.NOBLE_KINGDOM_GUARD_SLOTS || 4, getMaxGuards() - player.guards.length);
             var guardsGranted = 0;
             for (var ggi = 0; ggi < guardsToGrant && guardCandidates.length > 0; ggi++) {
                 var preferred = guardCandidates.filter(function(c) {
@@ -38101,9 +38133,19 @@
     // §12K-NEW  PLAYER ENCOUNTER SYSTEM (Bandits / Pirates / Wartime)
     // ========================================================
 
+    function getMaxGuards() {
+        var rankByRank = CONFIG.PLAYER_GUARD_MAX_BY_RANK;
+        if (rankByRank) {
+            var kId = player.citizenshipKingdomId || Object.keys(player.socialRank || {})[0];
+            var rankIdx = kId ? (player.socialRank[kId] || 0) : 0;
+            if (rankByRank[rankIdx] != null) return rankByRank[rankIdx];
+        }
+        return CONFIG.PLAYER_GUARD_MAX || 4;
+    }
+
     function hirePersonalGuard() {
         if (!player.townId || player.traveling) return { success: false, message: 'Must be in a town to hire guards.' };
-        var maxGuards = CONFIG.PLAYER_GUARD_MAX || 4;
+        var maxGuards = getMaxGuards();
         player.guards = player.guards || [];
         if (player.guards.length >= maxGuards) return { success: false, message: 'Already at maximum ' + maxGuards + ' guards.' };
         var cost = CONFIG.PLAYER_GUARD_HIRE_COST || 30;
@@ -38209,8 +38251,8 @@
 
         player.guards.splice(idx, 1);
         player.personalGuards = player.guards.length;
-        Engine.logEvent('\uD83D\uDEE1\uFE0F Dismissed guard ' + name + '. (' + player.guards.length + '/' + (CONFIG.PLAYER_GUARD_MAX || 4) + ')');
-        return { success: true, message: '\uD83D\uDEE1\uFE0F Dismissed ' + name + '. (' + player.guards.length + '/' + (CONFIG.PLAYER_GUARD_MAX || 4) + ')' };
+        Engine.logEvent('\uD83D\uDEE1\uFE0F Dismissed guard ' + name + '. (' + player.guards.length + '/' + getMaxGuards() + ')');
+        return { success: true, message: '\uD83D\uDEE1\uFE0F Dismissed ' + name + '. (' + player.guards.length + '/' + getMaxGuards() + ')' };
     }
 
     function tickPersonalGuardWages() {
@@ -46376,6 +46418,7 @@
         // Encounter System (Bandits/Pirates/Wartime)
         hirePersonalGuard,
         dismissPersonalGuard,
+        getMaxGuards,
         getEncounterChance,
         getEncounterRiskLabel,
         resolveEncounter,

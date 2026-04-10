@@ -1477,7 +1477,9 @@ const CONFIG = {
     // Guard hiring (player personal guards)
     PLAYER_GUARD_HIRE_COST: 30,             // same as caravan guards
     PLAYER_GUARD_DAILY_WAGE: 6,             // same as caravan guards
-    PLAYER_GUARD_MAX: 4,                    // max 4 personal guards
+    PLAYER_GUARD_MAX: 4,                    // base max guards (pre-noble)
+    PLAYER_GUARD_MAX_BY_RANK: { 0: 4, 1: 4, 2: 4, 3: 4, 4: 8, 5: 8, 6: 8, 7: 8 }, // rank-based max guards
+    NOBLE_KINGDOM_GUARD_SLOTS: 4,           // kingdom provides 4 guards to Minor Noble+
 
     // ── Kingdom Ban Policy ──
     KINGDOM_BAN_POLICY_INTERVAL: 30,
