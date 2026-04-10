@@ -4994,22 +4994,12 @@
                             logCaravan(caravan, '📥 Stored ' + bldQty + ' ' + resName + ' in ' + bldName + ' at ' + townName + '.');
                         }
                         var remainder = storeQty - stored;
-                        if (remainder > 0 && caravan.overflowSell) {
-                            // Sell overflow to market (with tariff)
-                            var _ovP = town.market.prices[o.good] || 1;
-                            var _ovGross = Math.floor(_ovP * remainder);
-                            var _ovTar = _applyCaravanTariff(_ovGross, townId);
-                            var _ovR = _ovTar.net;
-                            player.gold += _ovR;
-                            logFinance(_ovR, 'caravan_sales', 'Caravan overflow sold ' + remainder + ' ' + res.name);
-                            player.stats.totalGoldEarned += _ovR;
-                            caravan.totalProfit = (caravan.totalProfit || 0) + _ovR;
-                            town.market.supply[o.good] = (town.market.supply[o.good] || 0) + remainder;
-                            player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + remainder;
+                        if (remainder > 0) {
+                            // Fall back to town/outpost storage
+                            if (!player.townStorage[townId]) player.townStorage[townId] = {};
+                            player.townStorage[townId][o.good] = (player.townStorage[townId][o.good] || 0) + remainder;
                             stored += remainder;
-                            logCaravan(caravan, '💰 Building full — sold overflow ' + remainder + ' ' + resName + ' for ' + _ovR + 'g.' + (_ovTar.tariff > 0 ? ' (tariff: ' + _ovTar.tariff + 'g)' : ''));
-                        } else if (remainder > 0) {
-                            logCaravan(caravan, '⚠️ ' + remainder + ' ' + resName + ' could not be stored — building full. Keeping on caravan.');
+                            logCaravan(caravan, '📥 ' + remainder + ' ' + resName + ' overflow stored in town storage at ' + townName + '.');
                         }
                     } else {
                         logCaravan(caravan, '⚠️ Target building not found in ' + townName + '. Keeping goods on caravan.');
@@ -5064,26 +5054,14 @@
                             logCaravan(caravan, '📥 Stored ' + _tStoreQty + ' ' + resName + ' in ' + (_tBt.name || _tBld.type) + ' at ' + townName + '.');
                         }
                     }
-                    // Overflow: sell to market or keep on caravan
+                    // Overflow: fall back to town/outpost storage, then sell to market or keep on caravan
                     if (_storeRemaining > 0) {
-                        if (caravan.overflowSell) {
-                            // Sell overflow to town market (with tariff)
-                            var _ovPrice = town.market.prices[o.good] || 1;
-                            var _ovGross2 = Math.floor(_ovPrice * _storeRemaining);
-                            var _ovTar2 = _applyCaravanTariff(_ovGross2, townId);
-                            var _ovRevenue = _ovTar2.net;
-                            player.gold += _ovRevenue;
-                            logFinance(_ovRevenue, 'caravan_sales', 'Caravan overflow sold ' + _storeRemaining + ' ' + res.name);
-                            player.stats.totalGoldEarned += _ovRevenue;
-                            caravan.totalProfit = (caravan.totalProfit || 0) + _ovRevenue;
-                            town.market.supply[o.good] = (town.market.supply[o.good] || 0) + _storeRemaining;
-                            player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + _storeRemaining;
-                            stored += _storeRemaining;
-                            logCaravan(caravan, '💰 Overflow: sold ' + _storeRemaining + ' ' + resName + ' for ' + _ovRevenue + 'g at ' + townName + ' market.' + (_ovTar2.tariff > 0 ? ' (tariff: ' + _ovTar2.tariff + 'g)' : ''));
-                        } else {
-                            // Keep on caravan — notify player
-                            logCaravan(caravan, '⚠️ No building space for ' + _storeRemaining + ' ' + resName + ' at ' + townName + '. Keeping on caravan.');
-                        }
+                        // Try town/outpost storage as fallback
+                        if (!player.townStorage[townId]) player.townStorage[townId] = {};
+                        player.townStorage[townId][o.good] = (player.townStorage[townId][o.good] || 0) + _storeRemaining;
+                        stored += _storeRemaining;
+                        logCaravan(caravan, '📥 Stored ' + _storeRemaining + ' ' + resName + ' in town storage at ' + townName + '.');
+                        _storeRemaining = 0;
                     }
                 }
                 if (stored > 0) {
