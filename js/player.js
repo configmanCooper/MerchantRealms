@@ -24707,11 +24707,113 @@
         // Tracking for achievements
         player._kqCompletedTotal = (player._kqCompletedTotal || 0) + 1;
 
+        // L6: Quest chains — completing certain quests unlocks follow-up directives
+        var _chainFollowUp = _checkQuestChain(quest, kingdomId);
+
         Engine.logEvent('✅ Completed kingdom quest: ' + quest.title + ' (+' + quest.rewards.gold + 'g, +' + quest.rewards.kingdomRep + ' rep)');
         return {
             success: true,
-            message: '✅ Quest complete: ' + quest.title + '! Earned ' + quest.rewards.gold + 'g, +' + quest.rewards.kingdomRep + ' rep, +' + quest.rewards.kingRelationship + ' king rel' + (quest.rewards.special ? ', Special: ' + quest.rewards.special : '') + '.'
+            message: '✅ Quest complete: ' + quest.title + '! Earned ' + quest.rewards.gold + 'g, +' + quest.rewards.kingdomRep + ' rep, +' + quest.rewards.kingRelationship + ' king rel' + (quest.rewards.special ? ', Special: ' + quest.rewards.special : '') + '.' + (_chainFollowUp ? ' 🔗 New follow-up directive available!' : '')
         };
+    }
+
+    // L6: Quest chain definitions — action type → follow-up action type
+    var QUEST_CHAINS = {
+        decode: 'intercept',                 // decode messages → intercept courier
+        intercept: 'disinformation',         // intercept courier → spread disinformation
+        investigate: 'capture_criminal',     // investigate → capture criminal
+        capture_criminal: 'manhunt',         // capture → lead manhunt
+        forge_evidence: 'frame_merchant',    // forge evidence → frame merchant
+        eliminate_rival: 'silence_witness',  // eliminate rival → silence witness
+        patrol_roads: 'escort_npc',          // patrol roads → escort VIP
+        recruit_npcs: 'stay_location',       // recruit soldiers → defend position
+        sabotage_enemy: 'disinformation',    // sabotage supply → spread disinfo
+        diplomatic_mission: 'arrange_marriage', // diplomacy → broker marriage
+    };
+
+    function _checkQuestChain(completedQuest, kingdomId) {
+        if (!completedQuest || !completedQuest.requirements || !completedQuest.requirements.action) return null;
+        var actionType = completedQuest.requirements.action.type;
+        if (!actionType || !QUEST_CHAINS[actionType]) return null;
+
+        var nextActionType = QUEST_CHAINS[actionType];
+        // Check if there's a pool entry for a quest using this action type
+        if (typeof KINGDOM_QUEST_POOL === 'undefined') return null;
+        var pool = KINGDOM_QUEST_POOL;
+        var nextQuestType = null;
+        for (var typeId in pool) {
+            var qt = pool[typeId];
+            if (qt.action === nextActionType) { nextQuestType = { typeId: typeId, def: qt }; break; }
+        }
+        if (!nextQuestType) return null;
+
+        // Generate the follow-up quest and add to available
+        var kqData = player.kingdomQuests[kingdomId];
+        if (!kqData) return null;
+
+        // Don't add duplicates
+        for (var ai = 0; ai < kqData.available.length; ai++) {
+            if (kqData.available[ai].typeId === nextQuestType.typeId) return null;
+        }
+        for (var ac = 0; ac < kqData.active.length; ac++) {
+            if (kqData.active[ac].typeId === nextQuestType.typeId) return null;
+        }
+
+        // Generate simplified follow-up quest
+        var rng = Engine.getRng();
+        var day = Engine.getDay();
+        var qt2 = nextQuestType.def;
+        var followUp = {
+            id: 'kq_chain_' + nextQuestType.typeId + '_' + day,
+            typeId: nextQuestType.typeId,
+            title: '🔗 ' + (qt2.title || nextQuestType.typeId.replace(/_/g, ' ')),
+            description: (qt2.description || '') + ' (Follow-up from ' + completedQuest.title + ')',
+            category: qt2.category || completedQuest.category,
+            difficulty: qt2.difficulty || completedQuest.difficulty,
+            urgency: 'high',
+            isPersonal: true,
+            isChainQuest: true,
+            chainFrom: completedQuest.typeId,
+            expiresDay: day + (qt2.timeLimit || 30),
+            timeLimit: qt2.timeLimit || 30,
+            requirements: _buildQuestRequirements(qt2, rng),
+            rewards: {
+                gold: Math.round((qt2.baseGold || 100) * (rng ? (0.9 + rng.random() * 0.4) : 1)),
+                kingdomRep: Math.round((qt2.baseRep || 5) * 1.2),
+                kingRelationship: qt2.kingRel || 3,
+                xp: qt2.xp || 10,
+                special: qt2.special || null
+            },
+            rejectionPenalty: { rep: 1, kingRel: 1 }
+        };
+        kqData.available.push(followUp);
+        Engine.logEvent('🔗 A follow-up directive is now available: ' + followUp.title);
+        if (typeof UI !== 'undefined' && UI.toast) {
+            UI.toast('🔗 Follow-up directive available: ' + followUp.title, 'info', 'my_actions');
+        }
+        return followUp;
+    }
+
+    function _buildQuestRequirements(questDef, rng) {
+        var reqs = {};
+        if (questDef.action) {
+            reqs.action = { type: questDef.action };
+            if (questDef.action.indexOf('visit') >= 0) {
+                reqs.action.count = questDef.visitCount || 3;
+                reqs.action.townType = questDef.townType || 'any';
+            }
+        }
+        if (questDef.deliverGoods) {
+            reqs.deliver = {};
+            for (var di = 0; di < questDef.deliverGoods.length; di++) {
+                var dg = questDef.deliverGoods[di];
+                reqs.deliver[dg.id] = dg.qty || (rng ? rng.randInt(dg.min || 5, dg.max || 20) : 10);
+            }
+        }
+        if (questDef.goldReq) {
+            reqs.gold = questDef.goldReq;
+        }
+        return reqs;
     }
 
     function _applyKQSpecialReward(rewardType, kingdomId) {
@@ -24904,10 +25006,11 @@
             player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + goldCost;
         }
 
-        // Advance time
+        // Advance time (tickCost is in days, multiply by ticks per day)
         var tickCost = mech.tickCost || 5;
+        var ticksPerDay = (typeof CONFIG !== 'undefined' && CONFIG.TICKS_PER_DAY) ? CONFIG.TICKS_PER_DAY : 60;
         if (typeof Game !== 'undefined' && Game.advanceTicks) {
-            Game.advanceTicks(tickCost);
+            Game.advanceTicks(tickCost * ticksPerDay);
         }
 
         // Calculate success chance
@@ -24964,6 +25067,29 @@
             // Success!
             trackKQActionDone(questId);
             Engine.logEvent('✅ ' + (mech.label || 'Action') + ' succeeded! (attempt #' + attemptNum + ')');
+
+            var successConsequences = [];
+
+            // M2: Corrupt quest success — gain corruption trait over time
+            if (quest.category === 'corrupt') {
+                if (!player._corruptionPoints) player._corruptionPoints = 0;
+                player._corruptionPoints += 2;
+                if (player._corruptionPoints >= 5 && !player._corruptionTrait) {
+                    player._corruptionTrait = true;
+                    successConsequences.push('🏴 Your reputation for corruption grows... (Corruption trait gained)');
+                    Engine.logEvent('🏴 ' + player.fullName + ' has gained a reputation for corruption.');
+                }
+            }
+
+            // Shake down / extort: award bonus gold on success
+            if (actionType === 'shake_down' || actionType === 'extort') {
+                var rngGold = Engine.getRng();
+                var bonusGold = rngGold ? rngGold.randInt(50, 200) : 100;
+                player.gold += bonusGold;
+                successConsequences.push('💰 Extracted ' + bonusGold + 'g from the merchant!');
+                Engine.logEvent('💰 ' + player.fullName + ' extracted ' + bonusGold + 'g from a merchant.');
+            }
+
             return {
                 success: true,
                 actionSuccess: true,
@@ -24972,11 +25098,60 @@
                 goldSpent: goldCost,
                 ticksSpent: tickCost,
                 chance: Math.round(finalChance * 100),
-                attempt: attemptNum
+                attempt: attemptNum,
+                consequences: successConsequences
             };
         } else {
             // Failure — gold and time are lost, but can retry
             Engine.logEvent('❌ ' + (mech.label || 'Action') + ' failed (attempt #' + attemptNum + ', ' + Math.round(finalChance * 100) + '% chance)');
+
+            var failConsequences = [];
+
+            // M1: Espionage failure consequences
+            if (quest.category === 'espionage') {
+                var rng2 = Engine.getRng();
+                // 25% chance of being discovered — rep loss with target kingdom
+                if (rng2 && rng2.chance(0.25)) {
+                    var repLoss = rng2.randInt(3, 8);
+                    // Lose rep with player's own kingdom (king displeased at exposure)
+                    if (kingdomId && player.reputation) {
+                        player.reputation[kingdomId] = Math.max(0, (player.reputation[kingdomId] || 50) - repLoss);
+                    }
+                    failConsequences.push('🔍 Your involvement was discovered! (-' + repLoss + ' rep)');
+                    Engine.logEvent('🔍 ' + player.fullName + '\'s espionage activities were discovered! Reputation damaged.');
+                }
+                // 10% chance of diplomatic incident
+                if (rng2 && rng2.chance(0.10)) {
+                    failConsequences.push('⚠️ A diplomatic incident has occurred! Both kingdoms are aware of the operation.');
+                    Engine.logEvent('⚠️ Diplomatic incident: espionage operation exposed, straining relations.');
+                }
+            }
+
+            // M2: Corrupt quest failure consequences
+            if (quest.category === 'corrupt') {
+                var rng3 = Engine.getRng();
+                // 30% chance of being caught — major rep loss + corruption trait
+                if (rng3 && rng3.chance(0.30)) {
+                    var repLoss2 = rng3.randInt(5, 12);
+                    if (kingdomId && player.reputation) {
+                        player.reputation[kingdomId] = Math.max(0, (player.reputation[kingdomId] || 50) - repLoss2);
+                    }
+                    failConsequences.push('🚔 You were nearly caught! (-' + repLoss2 + ' rep)');
+                    Engine.logEvent('🚔 ' + player.fullName + '\'s corrupt activities were nearly exposed!');
+                }
+                // Track corruption — accumulates over corrupt quest attempts
+                if (!player._corruptionPoints) player._corruptionPoints = 0;
+                player._corruptionPoints += 1;
+                if (player._corruptionPoints >= 5 && !player._corruptionTrait) {
+                    player._corruptionTrait = true;
+                    failConsequences.push('🏴 Your reputation for corruption grows... (Corruption trait gained)');
+                    Engine.logEvent('🏴 ' + player.fullName + ' has gained a reputation for corruption.');
+                }
+            }
+
+            // Also add corruption points on SUCCESS for corrupt quests (M2)
+            // (This is tracked here so it applies to both success and failure paths)
+
             return {
                 success: true,  // call succeeded (no error), but action failed
                 actionSuccess: false,
@@ -24985,7 +25160,8 @@
                 goldSpent: goldCost,
                 ticksSpent: tickCost,
                 chance: Math.round(finalChance * 100),
-                attempt: attemptNum
+                attempt: attemptNum,
+                consequences: failConsequences
             };
         }
     }

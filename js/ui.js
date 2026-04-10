@@ -21748,7 +21748,23 @@ window.UI = (function () {
         var urgColors = { low: '#55a868', normal: '#ccb974', high: '#e67e22', critical: '#e74c3c' };
         var diffBars = { easy: '■□□□', medium: '■■□□', hard: '■■■□', elite: '■■■■' };
 
-        html += '<div style="background:rgba(0,0,0,0.15);border:1px solid rgba(201,168,76,0.2);border-radius:6px;padding:8px;margin-bottom:6px;">';
+        html += '<div style="background:rgba(0,0,0,0.15);border:' + (isPersonal ? '2px solid rgba(255,215,0,0.6)' : '1px solid rgba(201,168,76,0.2)') + ';border-radius:6px;padding:8px;margin-bottom:6px;' + (isPersonal ? 'box-shadow:0 0 8px rgba(255,215,0,0.15);' : '') + '">';
+
+        // Personal quest label
+        if (isPersonal) {
+            var _kingName = '';
+            try {
+                var _kqKdoms = Engine.getKingdoms ? Engine.getKingdoms() : [];
+                for (var _ki = 0; _ki < _kqKdoms.length; _ki++) {
+                    if (_kqKdoms[_ki].id === kingdomId && _kqKdoms[_ki].king) {
+                        var _kPerson = Engine.findPerson(_kqKdoms[_ki].king);
+                        if (_kPerson) _kingName = _kPerson.firstName;
+                        break;
+                    }
+                }
+            } catch(e) {}
+            html += '<div style="font-size:0.65rem;color:#ffd700;margin-bottom:3px;font-style:italic;">👑 ' + (_kingName ? 'King ' + escapeHtml(_kingName) + ' personally requests...' : 'Personal royal directive') + '</div>';
+        }
 
         // Title row
         html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;">';
@@ -21775,6 +21791,64 @@ window.UI = (function () {
             html += ' · <span style="color:#f39c12;">⭐ ' + escapeHtml(rew.special.replace(/_/g, ' ')) + '</span>';
         }
         html += '</div>';
+
+        // H1: Show requirements before accepting
+        var reqs = quest.requirements || {};
+        var _hasReqs = false;
+        var _reqHtml = '<div style="font-size:0.68rem;color:#bbb;margin:4px 0;padding:4px 6px;background:rgba(0,0,0,0.15);border-radius:4px;">';
+        _reqHtml += '<div style="color:#999;font-weight:bold;margin-bottom:2px;">📋 Requirements:</div>';
+        if (reqs.deliver && Object.keys(reqs.deliver).length > 0) {
+            _hasReqs = true;
+            for (var _dr in reqs.deliver) {
+                var _drName = _dr.replace(/_/g, ' ');
+                var _drHas = (Player.state.inventory || {})[_dr] || 0;
+                _reqHtml += '<div style="color:' + (_drHas >= reqs.deliver[_dr] ? '#55a868' : '#e67e22') + ';">📦 Deliver: ' + reqs.deliver[_dr] + ' ' + _drName + ' (have: ' + _drHas + ')</div>';
+            }
+        }
+        if (reqs.gold > 0) {
+            _hasReqs = true;
+            var _gHas = Player.state.gold || 0;
+            _reqHtml += '<div style="color:' + (_gHas >= reqs.gold ? '#55a868' : '#e67e22') + ';">💰 Gold: ' + reqs.gold + 'g (have: ' + Math.floor(_gHas) + ')</div>';
+        }
+        if (reqs.action) {
+            _hasReqs = true;
+            var _actM = (typeof ACTION_QUEST_MECHANICS !== 'undefined') ? ACTION_QUEST_MECHANICS[reqs.action.type] : null;
+            if (reqs.action.type && reqs.action.type.indexOf('visit') >= 0) {
+                _reqHtml += '<div>🏘️ Visit ' + (reqs.action.count || 1) + ' ' + (reqs.action.townType || '').replace(/_/g, ' ') + ' towns</div>';
+            } else if (reqs.action.goldTarget > 0) {
+                _reqHtml += '<div>💰 Raise ' + reqs.action.goldTarget + 'g through trade</div>';
+            } else if (_actM) {
+                _reqHtml += '<div>⏱️ Time: ' + (_actM.tickCost || 5) + ' days</div>';
+                if (_actM.goldCost > 0) _reqHtml += '<div>💰 Cost: ' + _actM.goldCost + 'g</div>';
+                if (_actM.locationReq === 'capital') _reqHtml += '<div>📍 Location: Kingdom capital</div>';
+                var _estC = Math.round((_actM.successBase || 0.60) * 100);
+                _reqHtml += '<div>🎲 Success: ~' + _estC + '%</div>';
+            }
+        }
+        _reqHtml += '</div>';
+        if (_hasReqs) html += _reqHtml;
+
+        // H2: How to complete instructions
+        var _howTo = '';
+        if (reqs.deliver && Object.keys(reqs.deliver).length > 0) {
+            _howTo = 'Gather the required items and return to complete delivery.';
+        } else if (reqs.gold > 0) {
+            _howTo = 'You need ' + reqs.gold + 'g to fund this directive.';
+        } else if (reqs.action) {
+            if (reqs.action.type && reqs.action.type.indexOf('visit') >= 0) {
+                _howTo = 'Travel to ' + (reqs.action.count || 1) + ' qualifying towns to complete.';
+            } else if (reqs.action.goldTarget > 0) {
+                _howTo = 'Trade goods until you raise ' + reqs.action.goldTarget + 'g in commerce.';
+            } else {
+                var _actMh = (typeof ACTION_QUEST_MECHANICS !== 'undefined') ? ACTION_QUEST_MECHANICS[reqs.action.type] : null;
+                if (_actMh) {
+                    _howTo = 'Click the action button below, pay the cost, and attempt the task. Your ' + (_actMh.skillKey || 'skills') + ' skill improves chances.';
+                }
+            }
+        }
+        if (_howTo) {
+            html += '<div style="font-size:0.65rem;color:#88aacc;margin:3px 0;font-style:italic;">📖 ' + _howTo + '</div>';
+        }
 
         // Action buttons
         html += '<div style="display:flex;gap:6px;margin-top:6px;">';
@@ -22015,11 +22089,16 @@ window.UI = (function () {
         if (result.attempt > 1) html += '<div style="color:#ccb974;">📝 Attempt #' + result.attempt + '</div>';
         html += '</div>';
 
-        // Failure consequences for espionage/corrupt quests
-        if (!isSuccess && result.consequences) {
-            html += '<div style="background:rgba(196,78,82,0.15);border:1px solid rgba(196,78,82,0.3);border-radius:6px;padding:8px;margin-top:8px;">';
-            html += '<div style="font-size:0.8rem;color:#c44e52;font-weight:bold;">⚠️ Consequences:</div>';
-            html += '<div style="font-size:0.78rem;color:#ddd;margin-top:4px;">' + escapeHtml(result.consequences) + '</div>';
+        // Consequences for espionage/corrupt quests (failure or success)
+        if (result.consequences && result.consequences.length > 0) {
+            var _conBg = isSuccess ? 'rgba(52,152,219,0.15)' : 'rgba(196,78,82,0.15)';
+            var _conBorder = isSuccess ? 'rgba(52,152,219,0.3)' : 'rgba(196,78,82,0.3)';
+            var _conColor = isSuccess ? '#5dade2' : '#c44e52';
+            html += '<div style="background:' + _conBg + ';border:1px solid ' + _conBorder + ';border-radius:6px;padding:8px;margin-top:8px;">';
+            html += '<div style="font-size:0.8rem;color:' + _conColor + ';font-weight:bold;">' + (isSuccess ? '📋' : '⚠️') + ' Consequences:</div>';
+            for (var _ci = 0; _ci < result.consequences.length; _ci++) {
+                html += '<div style="font-size:0.78rem;color:#ddd;margin-top:3px;">' + escapeHtml(result.consequences[_ci]) + '</div>';
+            }
             html += '</div>';
         }
 
