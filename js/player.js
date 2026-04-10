@@ -25253,6 +25253,93 @@
                 Engine.logEvent('💰 ' + player.fullName + ' extracted ' + bonusGold + 'g from a merchant.');
             }
 
+            // Create caravan: spawn a trade route that boosts kingdom prosperity
+            if (actionType === 'create_caravan') {
+                var _ccRng = Engine.getRng();
+                var _ccWorld = Engine.getWorld ? Engine.getWorld() : null;
+                if (_ccWorld && kingdomId) {
+                    var _ccKingdom = null;
+                    for (var _kci = 0; _kci < (_ccWorld.kingdoms || []).length; _kci++) {
+                        if (_ccWorld.kingdoms[_kci].id === kingdomId) { _ccKingdom = _ccWorld.kingdoms[_kci]; break; }
+                    }
+                    if (_ccKingdom) {
+                        if (!_ccKingdom.tradeRoutes) _ccKingdom.tradeRoutes = [];
+                        var _routeIncome = _ccRng ? _ccRng.randInt(5, 15) : 10;
+                        _ccKingdom.tradeRoutes.push({
+                            id: 'route_' + _ccWorld.day + '_' + Math.floor(Math.random() * 1000),
+                            createdDay: _ccWorld.day,
+                            income: _routeIncome,
+                            createdBy: 'player'
+                        });
+                        // Boost prosperity of 1-2 kingdom towns
+                        var _ccTowns = (_ccWorld.towns || []).filter(function(t) { return t.kingdomId === kingdomId; });
+                        for (var _cti = 0; _cti < Math.min(2, _ccTowns.length); _cti++) {
+                            _ccTowns[_cti].prosperity = Math.min(100, (_ccTowns[_cti].prosperity || 50) + 3);
+                        }
+                        successConsequences.push('🛤️ New trade route established! Kingdom gains +' + _routeIncome + 'g/month income.');
+                        Engine.logEvent('🛤️ ' + player.fullName + ' established a new trade route for the kingdom (+' + _routeIncome + 'g/month).');
+                    }
+                }
+            }
+
+            // Build building: place a building in a kingdom town
+            if (actionType === 'build_building') {
+                var _bbRng = Engine.getRng();
+                var _bbWorld = Engine.getWorld ? Engine.getWorld() : null;
+                if (_bbWorld && kingdomId) {
+                    var _bbTowns = (_bbWorld.towns || []).filter(function(t) { return t.kingdomId === kingdomId; });
+                    var _bbTown = null;
+                    // Prefer player's current town, then pick a random kingdom town
+                    for (var _bti = 0; _bti < _bbTowns.length; _bti++) {
+                        if (_bbTowns[_bti].id === player.townId) { _bbTown = _bbTowns[_bti]; break; }
+                    }
+                    if (!_bbTown && _bbTowns.length > 0) _bbTown = _bbRng ? _bbRng.pick(_bbTowns) : _bbTowns[0];
+                    if (_bbTown) {
+                        if (!_bbTown.buildings) _bbTown.buildings = [];
+                        var _bbTypes = ['workshop', 'warehouse', 'market_stall', 'tavern', 'smithy', 'mill'];
+                        var _bbType = _bbRng ? _bbRng.pick(_bbTypes) : 'workshop';
+                        _bbTown.buildings.push({
+                            id: 'bld_' + _bbWorld.day + '_' + Math.floor(Math.random() * 1000),
+                            type: _bbType,
+                            ownerId: kingdomId,
+                            condition: 100,
+                            built: _bbWorld.day
+                        });
+                        _bbTown.prosperity = Math.min(100, (_bbTown.prosperity || 50) + 5);
+                        successConsequences.push('🏗️ Built a new ' + _bbType.replace(/_/g, ' ') + ' in ' + _bbTown.name + '!');
+                        Engine.logEvent('🏗️ ' + player.fullName + ' oversaw construction of a ' + _bbType.replace(/_/g, ' ') + ' in ' + _bbTown.name + '.');
+                    }
+                }
+            }
+
+            // Sell foreign: player earns bonus gold from foreign trade
+            if (actionType === 'sell_foreign') {
+                var _sfRng = Engine.getRng();
+                var _sfGold = _sfRng ? _sfRng.randInt(100, 400) : 200;
+                player.gold += _sfGold;
+                player.stats.totalGoldEarned = (player.stats.totalGoldEarned || 0) + _sfGold;
+                successConsequences.push('💰 Earned ' + _sfGold + 'g from foreign market sales!');
+                Engine.logEvent('💰 ' + player.fullName + ' earned ' + _sfGold + 'g selling goods in foreign markets.');
+            }
+
+            // Escort NPC: relationship bonus with a random noble
+            if (actionType === 'escort_npc') {
+                var _enWorld = Engine.getWorld ? Engine.getWorld() : null;
+                if (_enWorld && kingdomId) {
+                    var _enNobles = (_enWorld.people || []).filter(function(p) {
+                        return p.alive && p.socialRank && p.socialRank[kingdomId] >= 4 && p.id !== 'player';
+                    });
+                    if (_enNobles.length > 0) {
+                        var _enRng = Engine.getRng();
+                        var _enNoble = _enRng ? _enRng.pick(_enNobles) : _enNobles[0];
+                        if (!_enNoble._playerRelationship) _enNoble._playerRelationship = 0;
+                        _enNoble._playerRelationship = Math.min(100, _enNoble._playerRelationship + 15);
+                        successConsequences.push('🤝 ' + _enNoble.firstName + ' ' + (_enNoble.lastName || '') + ' is grateful for the safe escort (+15 relationship).');
+                        Engine.logEvent('🤝 ' + _enNoble.firstName + ' thanks ' + player.fullName + ' for the safe escort.');
+                    }
+                }
+            }
+
             var successMsg = mech.successText || 'Action succeeded!';
             var successNarr = mech.narrative || '';
             if (isMultiStep) {
