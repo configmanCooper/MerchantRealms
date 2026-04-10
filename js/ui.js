@@ -21805,12 +21805,381 @@ window.UI = (function () {
         }
         html += '</div>';
 
+        // ── NOBLE AGENTS ──
+        html += _buildAgentsSection();
+
         // ── ROYAL DIRECTIVES (Kingdom Quests) ──
         html += _buildRoyalDirectivesSection(citizenKingdomId, day);
 
         // Open modal
         var footerHtml = '<button class="btn-medieval" onclick="UI.closeModal()">Close</button>';
         openModal('👑 Nobility — ' + (rankDef.name || 'Noble'), html, footerHtml);
+    }
+
+    // ── Noble Agents UI ──
+    var _agentExpandedId = null; // which agent's details are expanded
+
+    function _buildAgentsSection() {
+        var html = '';
+        var data = null;
+        try { data = Player.getAgentData(); } catch(e) { return ''; }
+        if (!data) return '';
+
+        html += '<div style="background:rgba(44,62,80,0.2);border:1px solid rgba(155,89,182,0.3);border-radius:8px;padding:10px;margin-bottom:10px;">';
+        html += '<h3 style="margin:0 0 8px 0;font-size:0.9rem;color:#9b59b6;">🕵️ Agents (' + data.agents.length + '/' + data.maxAgents + ')</h3>';
+
+        if (data.maxAgents === 0) {
+            html += '<div style="font-size:0.78rem;color:#888;font-style:italic;">Agents are available once you reach Minor Noble rank.</div>';
+            html += '</div>';
+            return html;
+        }
+
+        // Hire button
+        if (data.agents.length < data.maxAgents) {
+            html += '<button class="btn-medieval" onclick="UI.hireAgentAction()" style="font-size:0.75rem;padding:4px 10px;margin-bottom:8px;background:rgba(155,89,182,0.2);border-color:rgba(155,89,182,0.4);">➕ Hire Agent (' + data.hireCost + 'g)</button>';
+        }
+
+        // Agent list
+        if (data.agents.length === 0) {
+            html += '<div style="font-size:0.78rem;color:#888;font-style:italic;">No agents hired. Agents can trade, spy, sabotage, and more on your behalf.</div>';
+        }
+
+        for (var i = 0; i < data.agents.length; i++) {
+            var ag = data.agents[i];
+            var isExpanded = _agentExpandedId === ag.id;
+            var statusColor = ag.status === 'idle' ? '#55a868' : ag.status === 'working' ? '#5dade2' : ag.status === 'traveling' ? '#ccb974' : ag.status === 'jailed' ? '#c44e52' : ag.status === 'caught' ? '#e67e22' : '#888';
+            var statusIcon = ag.status === 'idle' ? '⏸️' : ag.status === 'working' ? '⚡' : ag.status === 'traveling' ? '🚶' : ag.status === 'jailed' ? '🔒' : ag.status === 'caught' ? '🚨' : '❓';
+            var townName = '';
+            try { var _at = Engine.findTown(ag.townId); townName = _at ? _at.name : '?'; } catch(e) {}
+
+            html += '<div style="background:rgba(0,0,0,0.15);border:1px solid rgba(155,89,182,0.2);border-radius:6px;padding:8px;margin-bottom:6px;">';
+
+            // Header row
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="UI.toggleAgentExpand(\'' + ag.id + '\')">';
+            html += '<div>';
+            html += '<span style="font-size:0.82rem;font-weight:bold;color:#d4b5e0;">' + escapeHtml(ag.name) + '</span>';
+            html += ' <span style="font-size:0.68rem;color:' + statusColor + ';">' + statusIcon + ' ' + ag.status + '</span>';
+            html += '</div>';
+            html += '<div style="font-size:0.68rem;color:#aaa;">📍' + escapeHtml(townName) + ' · ' + ag.dailyCost + 'g/day · ' + (isExpanded ? '▼' : '▶') + '</div>';
+            html += '</div>';
+
+            // Skills bar
+            html += '<div style="font-size:0.65rem;color:#999;margin-top:2px;">⚔️' + ag.skills.combat + ' 🥷' + ag.skills.stealth + ' 📊' + ag.skills.trade + ' 🗣️' + ag.skills.persuasion + ' · ❤️ Loyalty: ' + ag.loyalty + '</div>';
+
+            // Current task summary
+            if (ag.task) {
+                var tDef = data.taskDefs[ag.task.type];
+                var taskLabel = tDef ? (tDef.icon + ' ' + tDef.label) : ag.task.type;
+                var targetName = '';
+                if (ag.task.targetId) {
+                    try { var _tp = Engine.findPerson(ag.task.targetId); if (_tp) targetName = ' → ' + (_tp.firstName || '') + ' ' + (_tp.lastName || ''); } catch(e) {}
+                }
+                html += '<div style="font-size:0.72rem;color:#ccc;margin-top:3px;">Task: <strong>' + taskLabel + '</strong>' + escapeHtml(targetName) + '</div>';
+            }
+
+            // Expanded details
+            if (isExpanded) {
+                html += _buildAgentExpandedUI(ag, data);
+            }
+
+            html += '</div>';
+        }
+
+        html += '</div>';
+        return html;
+    }
+
+    function _buildAgentExpandedUI(agent, data) {
+        var html = '<div style="margin-top:8px;border-top:1px solid rgba(155,89,182,0.15);padding-top:8px;">';
+
+        // Earnings summary
+        html += '<div style="font-size:0.7rem;color:#aaa;margin-bottom:6px;">💰 Total earnings: ' + (agent.earnings || 0) + 'g · 🚨 Times caught: ' + (agent.catchCount || 0) + '</div>';
+
+        // Task assignment (if idle or to change task)
+        if (agent.status === 'idle' || agent.status === 'working') {
+            html += '<div style="margin-bottom:6px;">';
+            html += '<div style="font-size:0.72rem;color:#bbb;margin-bottom:4px;font-weight:bold;">Assign Task:</div>';
+
+            // Task category tabs
+            html += '<div style="display:flex;gap:3px;margin-bottom:6px;flex-wrap:wrap;">';
+            var cats = [
+                { id: 'hostile', label: '⚔️ Hostile', color: '#c44e52' },
+                { id: 'business', label: '📊 Business', color: '#55a868' },
+                { id: 'intel', label: '🕵️ Intel', color: '#5dade2' }
+            ];
+            for (var ci = 0; ci < cats.length; ci++) {
+                var cat = cats[ci];
+                html += '<button class="btn-medieval" onclick="UI.showAgentTaskCategory(\'' + agent.id + '\',\'' + cat.id + '\')" style="font-size:0.65rem;padding:3px 8px;border-color:' + cat.color + '40;color:' + cat.color + ';">' + cat.label + '</button>';
+            }
+            html += '</div>';
+
+            // Task input area (populated by JS when category is selected)
+            html += '<div id="agentTaskArea_' + agent.id + '"></div>';
+            html += '</div>';
+        }
+
+        // Reports (last 5)
+        var reports = agent.reports || [];
+        if (reports.length > 0) {
+            html += '<div style="font-size:0.68rem;color:#bbb;font-weight:bold;margin-bottom:3px;">📋 Recent Reports:</div>';
+            var showReports = reports.slice(-5).reverse();
+            for (var ri = 0; ri < showReports.length; ri++) {
+                var r = showReports[ri];
+                html += '<div style="font-size:0.65rem;color:#999;margin-bottom:2px;padding:2px 4px;background:rgba(0,0,0,0.1);border-radius:3px;">';
+                html += '<span style="color:#777;">Day ' + (r.day || '?') + ':</span> ' + escapeHtml(r.msg);
+                html += '</div>';
+            }
+        }
+
+        // Action buttons
+        html += '<div style="display:flex;gap:4px;margin-top:6px;">';
+        if (agent.task) {
+            html += '<button class="btn-medieval" onclick="UI.cancelAgentTaskAction(\'' + agent.id + '\')" style="font-size:0.65rem;padding:3px 8px;background:rgba(204,185,116,0.2);border-color:rgba(204,185,116,0.4);color:#ccb974;">⏹️ Cancel Task</button>';
+        }
+        if (agent.townId !== Player.townId) {
+            html += '<button class="btn-medieval" onclick="UI.recallAgentAction(\'' + agent.id + '\')" style="font-size:0.65rem;padding:3px 8px;background:rgba(93,173,226,0.2);border-color:rgba(93,173,226,0.4);color:#5dade2;">📍 Recall</button>';
+        }
+        html += '<button class="btn-medieval" onclick="UI.fireAgentAction(\'' + agent.id + '\')" style="font-size:0.65rem;padding:3px 8px;background:rgba(196,78,82,0.2);border-color:rgba(196,78,82,0.4);color:#c44e52;">🚫 Dismiss</button>';
+        html += '</div>';
+
+        html += '</div>';
+        return html;
+    }
+
+    function toggleAgentExpand(agentId) {
+        _agentExpandedId = (_agentExpandedId === agentId) ? null : agentId;
+        openNobilityDialog();
+    }
+
+    function hireAgentAction() {
+        var result = Player.hireAgent(Player.townId);
+        toast(result.message, result.success ? 'success' : 'warning');
+        if (result.success) openNobilityDialog();
+    }
+
+    function fireAgentAction(agentId) {
+        var result = Player.fireAgent(agentId);
+        toast(result.message, result.success ? 'success' : 'warning');
+        openNobilityDialog();
+    }
+
+    function cancelAgentTaskAction(agentId) {
+        var result = Player.cancelAgentTask(agentId);
+        toast(result.message, result.success ? 'success' : 'warning');
+        openNobilityDialog();
+    }
+
+    function recallAgentAction(agentId) {
+        var result = Player.recallAgent(agentId);
+        toast(result.message, result.success ? 'success' : 'warning');
+        openNobilityDialog();
+    }
+
+    function showAgentTaskCategory(agentId, category) {
+        var area = document.getElementById('agentTaskArea_' + agentId);
+        if (!area) return;
+        var data = null;
+        try { data = Player.getAgentData(); } catch(e) { return; }
+        var defs = data.taskDefs;
+        var html = '';
+
+        if (category === 'hostile') {
+            html += _buildHostileTaskUI(agentId, defs);
+        } else if (category === 'business') {
+            html += _buildBusinessTaskUI(agentId, defs);
+        } else if (category === 'intel') {
+            html += _buildIntelTaskUI(agentId, defs);
+        }
+
+        area.innerHTML = html;
+    }
+
+    function _buildHostileTaskUI(agentId, defs) {
+        var html = '';
+        // Target selection dropdown
+        html += '<div style="margin-bottom:6px;">';
+        html += '<label style="font-size:0.7rem;color:#ccc;">Target:</label> ';
+        html += '<select id="agentTarget_' + agentId + '" style="font-size:0.7rem;padding:2px;max-width:200px;">';
+
+        // Get nobles and EMs
+        var people = [];
+        try {
+            var world = Engine.getWorld ? Engine.getWorld() : null;
+            if (world && world.people) {
+                for (var pi = 0; pi < world.people.length; pi++) {
+                    var p = world.people[pi];
+                    if (!p.alive) continue;
+                    if (p.occupation === 'noble' || p.isEliteMerchant) {
+                        var pTown = Engine.findTown(p.townId);
+                        var label = (p.firstName || '') + ' ' + (p.lastName || '') + ' (' + (p.isEliteMerchant ? 'EM' : 'Noble') + (pTown ? ', ' + pTown.name : '') + ')';
+                        people.push({ id: p.id, label: label.trim() });
+                    }
+                }
+            }
+        } catch(e) {}
+
+        for (var i = 0; i < people.length; i++) {
+            html += '<option value="' + people[i].id + '">' + escapeHtml(people[i].label) + '</option>';
+        }
+        html += '</select>';
+        html += '</div>';
+
+        // Action checkboxes
+        html += '<div style="font-size:0.68rem;color:#ccc;margin-bottom:4px;">Allowed Actions:</div>';
+        var hostileTasks = ['sabotage_buildings', 'arson_buildings', 'raid_caravans', 'spread_rumors', 'steal_goods', 'intimidate'];
+        for (var hi = 0; hi < hostileTasks.length; hi++) {
+            var ht = hostileTasks[hi];
+            var hd = defs[ht];
+            if (!hd) continue;
+            html += '<label style="font-size:0.68rem;color:#ddd;display:block;margin:2px 0;cursor:pointer;">';
+            html += '<input type="checkbox" id="agentAction_' + agentId + '_' + ht + '" value="' + ht + '" style="margin-right:4px;">';
+            html += hd.icon + ' ' + hd.label + ' <span style="color:#888;">(' + Math.round(hd.baseDetection * 100) + '% base detection)</span>';
+            html += '</label>';
+        }
+
+        html += '<button class="btn-medieval" onclick="UI.assignHostileTask(\'' + agentId + '\')" style="font-size:0.7rem;padding:4px 10px;margin-top:6px;background:rgba(196,78,82,0.2);border-color:rgba(196,78,82,0.4);color:#c44e52;">⚡ Assign Hostile Task</button>';
+        return html;
+    }
+
+    function _buildBusinessTaskUI(agentId, defs) {
+        var html = '';
+        // Task type dropdown
+        html += '<div style="margin-bottom:4px;">';
+        html += '<label style="font-size:0.7rem;color:#ccc;">Task:</label> ';
+        html += '<select id="agentBizTask_' + agentId + '" style="font-size:0.7rem;padding:2px;" onchange="UI.onAgentBizTaskChange(\'' + agentId + '\')">';
+        var bizTasks = ['run_caravan', 'scout_markets', 'buy_sell_goods', 'manage_properties', 'establish_contacts', 'guard_properties'];
+        for (var bi = 0; bi < bizTasks.length; bi++) {
+            var bd = defs[bizTasks[bi]];
+            if (!bd) continue;
+            html += '<option value="' + bizTasks[bi] + '">' + bd.icon + ' ' + bd.label + '</option>';
+        }
+        html += '</select>';
+        html += '</div>';
+
+        // Town selection
+        html += '<div style="margin-bottom:4px;">';
+        html += '<label style="font-size:0.7rem;color:#ccc;">Town:</label> ';
+        html += '<select id="agentBizTown_' + agentId + '" style="font-size:0.7rem;padding:2px;">';
+        try {
+            var towns = Engine.getTowns ? Engine.getTowns() : [];
+            for (var ti = 0; ti < towns.length; ti++) {
+                var selected = towns[ti].id === Player.townId ? ' selected' : '';
+                html += '<option value="' + towns[ti].id + '"' + selected + '>' + escapeHtml(towns[ti].name) + '</option>';
+            }
+        } catch(e) {}
+        html += '</select>';
+        html += '</div>';
+
+        // Monthly budget
+        html += '<div style="margin-bottom:4px;">';
+        html += '<label style="font-size:0.7rem;color:#ccc;">Monthly Budget:</label> ';
+        html += '<input type="number" id="agentBizBudget_' + agentId + '" value="500" min="50" max="10000" step="50" style="font-size:0.7rem;padding:2px;width:80px;"> g';
+        html += '</div>';
+
+        // Description area
+        html += '<div id="agentBizDesc_' + agentId + '" style="font-size:0.65rem;color:#888;margin-bottom:4px;font-style:italic;">' + (defs.run_caravan ? defs.run_caravan.desc : '') + '</div>';
+
+        html += '<button class="btn-medieval" onclick="UI.assignBusinessTask(\'' + agentId + '\')" style="font-size:0.7rem;padding:4px 10px;margin-top:4px;background:rgba(85,168,104,0.2);border-color:rgba(85,168,104,0.4);color:#55a868;">⚡ Assign Business Task</button>';
+        return html;
+    }
+
+    function _buildIntelTaskUI(agentId, defs) {
+        var html = '';
+        // Task type
+        html += '<div style="margin-bottom:4px;">';
+        html += '<label style="font-size:0.7rem;color:#ccc;">Task:</label> ';
+        html += '<select id="agentIntelTask_' + agentId + '" style="font-size:0.7rem;padding:2px;">';
+        html += '<option value="spy_on_target">' + defs.spy_on_target.icon + ' ' + defs.spy_on_target.label + '</option>';
+        html += '<option value="counter_intel">' + defs.counter_intel.icon + ' ' + defs.counter_intel.label + '</option>';
+        html += '</select>';
+        html += '</div>';
+
+        // Target for spy (only needed for spy_on_target)
+        html += '<div style="margin-bottom:4px;">';
+        html += '<label style="font-size:0.7rem;color:#ccc;">Target:</label> ';
+        html += '<select id="agentIntelTarget_' + agentId + '" style="font-size:0.7rem;padding:2px;max-width:200px;">';
+        try {
+            var world = Engine.getWorld ? Engine.getWorld() : null;
+            if (world && world.people) {
+                for (var pi = 0; pi < world.people.length; pi++) {
+                    var p = world.people[pi];
+                    if (!p.alive) continue;
+                    if (p.occupation === 'noble' || p.isEliteMerchant) {
+                        var pTown = Engine.findTown(p.townId);
+                        var label = (p.firstName || '') + ' ' + (p.lastName || '') + ' (' + (p.isEliteMerchant ? 'EM' : 'Noble') + (pTown ? ', ' + pTown.name : '') + ')';
+                        html += '<option value="' + p.id + '">' + escapeHtml(label.trim()) + '</option>';
+                    }
+                }
+            }
+        } catch(e) {}
+        html += '</select>';
+        html += '</div>';
+
+        html += '<button class="btn-medieval" onclick="UI.assignIntelTask(\'' + agentId + '\')" style="font-size:0.7rem;padding:4px 10px;margin-top:4px;background:rgba(93,173,226,0.2);border-color:rgba(93,173,226,0.4);color:#5dade2;">⚡ Assign Intel Task</button>';
+        return html;
+    }
+
+    function onAgentBizTaskChange(agentId) {
+        var sel = document.getElementById('agentBizTask_' + agentId);
+        var descEl = document.getElementById('agentBizDesc_' + agentId);
+        if (!sel || !descEl) return;
+        var data = null;
+        try { data = Player.getAgentData(); } catch(e) { return; }
+        var def = data.taskDefs[sel.value];
+        descEl.textContent = def ? def.desc : '';
+    }
+
+    function assignHostileTask(agentId) {
+        var targetSel = document.getElementById('agentTarget_' + agentId);
+        if (!targetSel || !targetSel.value) { toast('Select a target.', 'warning'); return; }
+
+        // Find first checked action to use as task type
+        var hostileTasks = ['sabotage_buildings', 'arson_buildings', 'raid_caravans', 'spread_rumors', 'steal_goods', 'intimidate'];
+        var allowedActions = {};
+        var firstChecked = null;
+        for (var i = 0; i < hostileTasks.length; i++) {
+            var cb = document.getElementById('agentAction_' + agentId + '_' + hostileTasks[i]);
+            if (cb && cb.checked) {
+                allowedActions[hostileTasks[i]] = true;
+                if (!firstChecked) firstChecked = hostileTasks[i];
+            }
+        }
+        if (!firstChecked) { toast('Check at least one action.', 'warning'); return; }
+
+        var result = Player.assignAgentTask(agentId, firstChecked, {
+            targetId: targetSel.value,
+            allowedActions: allowedActions
+        });
+        toast(result.message, result.success ? 'success' : 'warning');
+        if (result.success) openNobilityDialog();
+    }
+
+    function assignBusinessTask(agentId) {
+        var taskSel = document.getElementById('agentBizTask_' + agentId);
+        var townSel = document.getElementById('agentBizTown_' + agentId);
+        var budgetEl = document.getElementById('agentBizBudget_' + agentId);
+        if (!taskSel) return;
+
+        var result = Player.assignAgentTask(agentId, taskSel.value, {
+            targetTownId: townSel ? townSel.value : null,
+            monthlyBudget: budgetEl ? parseInt(budgetEl.value) || 500 : 500
+        });
+        toast(result.message, result.success ? 'success' : 'warning');
+        if (result.success) openNobilityDialog();
+    }
+
+    function assignIntelTask(agentId) {
+        var taskSel = document.getElementById('agentIntelTask_' + agentId);
+        var targetSel = document.getElementById('agentIntelTarget_' + agentId);
+        if (!taskSel) return;
+
+        var params = {};
+        if (taskSel.value === 'spy_on_target' && targetSel) {
+            params.targetId = targetSel.value;
+        }
+        var result = Player.assignAgentTask(agentId, taskSel.value, params);
+        toast(result.message, result.success ? 'success' : 'warning');
+        if (result.success) openNobilityDialog();
     }
 
     // ── Royal Directives (Kingdom Quests) UI ──
@@ -29927,6 +30296,17 @@ window.UI = (function () {
         _nobilityProposeLaw,
         _nobilityProposeAction,
         _switchProposeActionTab,
+        // Noble Agents
+        toggleAgentExpand,
+        hireAgentAction,
+        fireAgentAction,
+        cancelAgentTaskAction,
+        recallAgentAction,
+        showAgentTaskCategory,
+        onAgentBizTaskChange,
+        assignHostileTask,
+        assignBusinessTask,
+        assignIntelTask,
         // Schemes
         openSchemesDialog,
         // Noble Council Voting
