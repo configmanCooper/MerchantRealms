@@ -20749,12 +20749,17 @@
 
         // Gold earned requirement
         // 25% discount if married to a Burgher+ (spouse rank 2+) for commoner promotions
+        // 10% discount if married to an NPC of the target noble rank or higher
         var _comDiscountStr = '';
         var _comDiscount = 1.0;
         var _mw = player._marriageRankWaiver && player._marriageRankWaiver[kId];
         if (_mw && _mw.spouseRank >= 2 && (nextRank.id === 'burgher' || nextRank.id === 'guildmaster')) {
             _comDiscount = 0.75;
             _comDiscountStr = ' (25% marriage discount)';
+        }
+        if (_mw && _mw.spouseRank >= nextRank.index && (nextRank.id === 'minor_noble' || nextRank.id === 'lord' || nextRank.id === 'royal_advisor')) {
+            _comDiscount = 0.90;
+            _comDiscountStr = ' (10% noble marriage discount)';
         }
         var effectiveGoldReq = Math.floor(nextRank.goldReq * _comDiscount);
         if (goldEarned < effectiveGoldReq) reasons.push(`Need ${effectiveGoldReq.toLocaleString()}g earned (have ${Math.floor(goldEarned).toLocaleString()}g)${_comDiscountStr}`);
@@ -20969,6 +20974,7 @@
         var _mw = player._marriageRankWaiver && player._marriageRankWaiver[kId];
         var _comDiscount = 1.0;
         if (_mw && _mw.spouseRank >= 2 && (nextRank.id === 'burgher' || nextRank.id === 'guildmaster')) _comDiscount = 0.75;
+        if (_mw && _mw.spouseRank >= nextRank.index && (nextRank.id === 'minor_noble' || nextRank.id === 'lord' || nextRank.id === 'royal_advisor')) _comDiscount = 0.90;
         var effectiveGoldReq = Math.floor(nextRank.goldReq * _comDiscount);
         var effectiveRepReq = nextRank.repReq;
         if (hasSkill('royal_favor')) effectiveRepReq = Math.floor(effectiveRepReq * 0.75);
