@@ -2346,11 +2346,15 @@ window.UI = (function () {
                     html += `<div class="detail-row"><span class="label">🔄 Trade Network</span>
                         <span class="value" style="color:#55a868;">+${_incLog.trade}g</span></div>`;
                 }
+                if (_incLog.stipend > 0) {
+                    html += `<div class="detail-row"><span class="label">👑 Rank Stipend</span>
+                        <span class="value" style="color:#55a868;">+${_incLog.stipend}g</span></div>`;
+                }
                 if (_incLog.expenses > 0) {
                     html += `<div class="detail-row"><span class="label">💸 Expenses</span>
                         <span class="value" style="color:#c44e52;">-${_incLog.expenses}g</span></div>`;
                 }
-                var _netInc = (_incLog.buildings || 0) + (_incLog.trade || 0) - (_incLog.expenses || 0);
+                var _netInc = (_incLog.buildings || 0) + (_incLog.trade || 0) + (_incLog.stipend || 0) - (_incLog.expenses || 0);
                 var _netColor = _netInc >= 0 ? '#55a868' : '#c44e52';
                 var _netSign = _netInc >= 0 ? '+' : '';
                 html += `<div class="detail-row" style="font-weight:600;"><span class="label">Net Income</span>

@@ -3979,8 +3979,8 @@
             var ageMin = rank >= 6 ? 40 : (rank >= 5 ? 35 : 25);
             var ageMax = rank >= 6 ? 65 : (rank >= 5 ? 60 : 55);
             var age = rng.randInt(ageMin, ageMax);
-            var goldMin = rank >= 6 ? 200 : (rank >= 5 ? 100 : 50);
-            var goldMax = rank >= 6 ? 500 : (rank >= 5 ? 300 : 150);
+            var goldMin = rank >= 6 ? 5000 : (rank >= 5 ? 2000 : 500);
+            var goldMax = rank >= 6 ? 10000 : (rank >= 5 ? 5000 : 1500);
             var sr = {};
             sr[kId] = rank;
             var person = {
@@ -4184,14 +4184,14 @@
             // Determine target building count and eligible towns
             var minBuildings, maxBuildings, eligibleTowns;
             if (rank >= 7) {
-                minBuildings = 5; maxBuildings = 10;
+                minBuildings = 12; maxBuildings = 20;
                 // Prefer capital: put capital first, then others
                 eligibleTowns = capitalTown ? [capitalTown] : [];
                 for (var eti = 0; eti < kTowns.length; eti++) {
                     if (kTowns[eti] !== capitalTown) eligibleTowns.push(kTowns[eti]);
                 }
             } else if (rank === 6) {
-                minBuildings = 3; maxBuildings = 5;
+                minBuildings = 8; maxBuildings = 12;
                 // Prefer capital + major towns
                 eligibleTowns = [];
                 if (capitalTown) eligibleTowns.push(capitalTown);
@@ -4203,7 +4203,7 @@
                     if (eligibleTowns.indexOf(kTowns[fti]) === -1) eligibleTowns.push(kTowns[fti]);
                 }
             } else if (rank === 5) {
-                minBuildings = 2; maxBuildings = 4;
+                minBuildings = 5; maxBuildings = 8;
                 // Prefer home town
                 var homeTown = null;
                 for (var hti = 0; hti < kTowns.length; hti++) {
@@ -4214,7 +4214,7 @@
                     if (eligibleTowns.indexOf(kTowns[oti]) === -1) eligibleTowns.push(kTowns[oti]);
                 }
             } else {
-                minBuildings = 1; maxBuildings = 2;
+                minBuildings = 3; maxBuildings = 5;
                 // Home town only
                 var minorHome = null;
                 for (var mhi = 0; mhi < kTowns.length; mhi++) {
@@ -13595,10 +13595,10 @@
                 var rank = noble.socialRank[kId];
 
                 // Initialize income log (rolling 30-day window)
-                if (!noble._incomeLog) noble._incomeLog = { buildings: 0, buildingsByTown: {}, expenses: 0, lastReset: world.day };
+                if (!noble._incomeLog) noble._incomeLog = { buildings: 0, buildingsByTown: {}, stipend: 0, expenses: 0, lastReset: world.day };
                 // Reset every 30 days
                 if (world.day - noble._incomeLog.lastReset >= 30) {
-                    noble._incomeLog = { buildings: 0, buildingsByTown: {}, expenses: 0, lastReset: world.day };
+                    noble._incomeLog = { buildings: 0, buildingsByTown: {}, stipend: 0, expenses: 0, lastReset: world.day };
                 }
 
                 // Count owned buildings and calculate income
@@ -13614,16 +13614,26 @@
                         }
                     }
                     if (townBldCount > 0) {
-                        var townIncome = Math.floor(townBldCount * 5 * 0.7);
+                        var townIncome = Math.floor(townBldCount * 20 * 0.85);
                         noble._incomeLog.buildingsByTown[town.name] = (noble._incomeLog.buildingsByTown[town.name] || 0) + townIncome;
                     }
                 }
 
-                // Income: 5g per building per 10-day tick, 70% noble efficiency
-                var rawIncome = buildingCount * 5;
-                var income = Math.floor(rawIncome * 0.7);
+                // Income: 20g per building per 10-day tick, 85% noble efficiency
+                var rawIncome = buildingCount * 20;
+                var income = Math.floor(rawIncome * 0.85);
                 noble.gold = (noble.gold || 0) + income;
                 noble._incomeLog.buildings += income;
+
+                // Rank-based stipend (land rents, tax collection, royal grants)
+                var stipend = 0;
+                if (rank >= 7) stipend = 400;
+                else if (rank === 6) stipend = 120;
+                else if (rank === 5) stipend = 60;
+                else stipend = 25;
+                noble.gold += stipend;
+                if (!noble._incomeLog.stipend) noble._incomeLog.stipend = 0;
+                noble._incomeLog.stipend += stipend;
 
                 // Deduct expenses by rank
                 var expense = 0;
