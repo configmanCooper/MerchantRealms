@@ -18465,6 +18465,15 @@
             _guidanceBaseline: player._guidanceBaseline ? JSON.parse(JSON.stringify(player._guidanceBaseline)) : null,
             _guidanceDismissed: player._guidanceDismissed || false,
             _guidanceCollapsed: player._guidanceCollapsed || false,
+            // Kingdom quest data
+            kingdomQuests: JSON.parse(JSON.stringify(player.kingdomQuests || {})),
+            _kqVisitedTowns: JSON.parse(JSON.stringify(player._kqVisitedTowns || {})),
+            _kqGoldSpent: JSON.parse(JSON.stringify(player._kqGoldSpent || {})),
+            _kqActionDone: JSON.parse(JSON.stringify(player._kqActionDone || {})),
+            _kqActionAttempts: JSON.parse(JSON.stringify(player._kqActionAttempts || {})),
+            _kqCompletedTotal: player._kqCompletedTotal || 0,
+            _corruptionPoints: player._corruptionPoints || 0,
+            _corruptionTrait: player._corruptionTrait || false,
         };
     }
 
@@ -18563,6 +18572,15 @@
         player._guidanceBaseline = data._guidanceBaseline || null;
         player._guidanceDismissed = data._guidanceDismissed || false;
         player._guidanceCollapsed = data._guidanceCollapsed || false;
+        // Kingdom quest data
+        player.kingdomQuests = data.kingdomQuests ? JSON.parse(JSON.stringify(data.kingdomQuests)) : {};
+        player._kqVisitedTowns = data._kqVisitedTowns ? JSON.parse(JSON.stringify(data._kqVisitedTowns)) : {};
+        player._kqGoldSpent = data._kqGoldSpent ? JSON.parse(JSON.stringify(data._kqGoldSpent)) : {};
+        player._kqActionDone = data._kqActionDone ? JSON.parse(JSON.stringify(data._kqActionDone)) : {};
+        player._kqActionAttempts = data._kqActionAttempts ? JSON.parse(JSON.stringify(data._kqActionAttempts)) : {};
+        player._kqCompletedTotal = data._kqCompletedTotal || 0;
+        player._corruptionPoints = data._corruptionPoints || 0;
+        player._corruptionTrait = data._corruptionTrait || false;
         player.alive = data.alive != null ? data.alive : true;
         player.spouseId = data.spouseId || null;
         // Validate spouseId against loaded world
@@ -24991,6 +25009,18 @@
             try { playerTown = Engine.findTown(player.townId); } catch(e) {}
             if (!playerTown || !playerTown.isCapital) {
                 return { success: false, message: '📍 You must be in the kingdom capital to attempt this action. Travel to the capital first.' };
+            }
+        }
+
+        // H3: stay_location requires player to be in a town (not traveling)
+        if (actionType === 'stay_location') {
+            if (player.traveling) {
+                return { success: false, message: '📍 You must be stationed in a town to defend it. Stop traveling first.' };
+            }
+            var _defTown = null;
+            try { _defTown = Engine.findTown(player.townId); } catch(e) {}
+            if (!_defTown) {
+                return { success: false, message: '📍 You must be in a town to defend a position.' };
             }
         }
 

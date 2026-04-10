@@ -21912,6 +21912,38 @@ window.UI = (function () {
                 var visitMet = visited.length >= act.count;
                 var visitLabel = act.type === 'visit_foreign' ? 'Visit foreign towns' : act.type === 'visit_enemy_towns' ? 'Visit enemy towns' : 'Visit towns';
                 html += '<div style="font-size:0.68rem;color:' + (visitMet ? '#55a868' : '#e67e22') + ';">' + (visitMet ? '✅' : '⬜') + ' 🏘️ ' + visitLabel + ': ' + visited.length + '/' + act.count + '</div>';
+
+                // M4: Show qualifying towns
+                try {
+                    var _towns = Engine.getTowns ? Engine.getTowns() : [];
+                    var _playerKingdomId = null;
+                    try { var _pt = Engine.findTown(Player.townId); if (_pt) _playerKingdomId = _pt.kingdomId; } catch(e2) {}
+                    var _qualTowns = [];
+                    for (var _ti = 0; _ti < _towns.length && _qualTowns.length < 8; _ti++) {
+                        var _t = _towns[_ti];
+                        if (_t.isWilderness || _t.isOutpost) continue;
+                        var _isVisited = visited.indexOf(_t.id) >= 0;
+                        var _qualifies = false;
+                        if (act.type === 'visit_foreign') _qualifies = _t.kingdomId !== _playerKingdomId;
+                        else if (act.type === 'visit_enemy_towns') {
+                            try {
+                                var _pKdom = Engine.findKingdom(_playerKingdomId);
+                                _qualifies = _pKdom && _pKdom.atWar && (_pKdom.atWar.has ? _pKdom.atWar.has(_t.kingdomId) : false);
+                            } catch(e3) {}
+                        } else {
+                            _qualifies = _t.kingdomId === _playerKingdomId;
+                        }
+                        if (_qualifies) _qualTowns.push({ name: _t.name, visited: _isVisited });
+                    }
+                    if (_qualTowns.length > 0) {
+                        html += '<div style="font-size:0.62rem;color:#777;margin-left:12px;margin-top:2px;">';
+                        for (var _qi2 = 0; _qi2 < _qualTowns.length; _qi2++) {
+                            html += '<span style="color:' + (_qualTowns[_qi2].visited ? '#55a868' : '#888') + ';">' + (_qualTowns[_qi2].visited ? '✓' : '○') + ' ' + escapeHtml(_qualTowns[_qi2].name) + '</span>';
+                            if (_qi2 < _qualTowns.length - 1) html += ' · ';
+                        }
+                        html += '</div>';
+                    }
+                } catch(e) { /* no-op */ }
             } else if (act.goldTarget > 0) {
                 var spent = (Player.state._kqGoldSpent || {})[quest.id] || 0;
                 var spentMet = spent >= act.goldTarget;
