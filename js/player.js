@@ -5016,8 +5016,19 @@
                     }
                 } else {
                     // No specific building — try to store in any suitable building at this town
+                    // Prioritize production buildings that consume this good as input
                     var _storeRemaining = storeQty;
                     var _townBuildings = (player.buildings || []).filter(function(b) { return b.townId === townId; });
+                    _townBuildings.sort(function(a, b) {
+                        var aBt = null, bBt = null;
+                        for (var _sk in BUILDING_TYPES) { if (BUILDING_TYPES[_sk].id === a.type) { aBt = BUILDING_TYPES[_sk]; break; } }
+                        for (var _sk2 in BUILDING_TYPES) { if (BUILDING_TYPES[_sk2].id === b.type) { bBt = BUILDING_TYPES[_sk2]; break; } }
+                        var aConsumes = aBt ? getBuildingConsumedGoods(aBt) : {};
+                        var bConsumes = bBt ? getBuildingConsumedGoods(bBt) : {};
+                        var aNeeds = aConsumes[o.good] ? 1 : 0;
+                        var bNeeds = bConsumes[o.good] ? 1 : 0;
+                        return bNeeds - aNeeds; // buildings that consume this good first
+                    });
                     for (var _tbi = 0; _tbi < _townBuildings.length && _storeRemaining > 0; _tbi++) {
                         var _tBld = _townBuildings[_tbi];
                         var _tBt = null;
