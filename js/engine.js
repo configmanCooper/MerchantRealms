@@ -8987,6 +8987,17 @@
     function tickKingMood(k) {
         if (!CONFIG.KING_MOOD) return;
         if (!k.king) return; // Guard: skip kingless kingdoms
+
+        // Enforce king socialRank = 7 and proper occupation
+        var _tkKing = findPerson(k.king);
+        if (_tkKing && _tkKing.alive) {
+            if (!_tkKing.socialRank) _tkKing.socialRank = {};
+            if (_tkKing.socialRank[k.id] !== 7) _tkKing.socialRank[k.id] = 7;
+            if (_tkKing.occupation !== 'king' && _tkKing.occupation !== 'reigning_queen') {
+                _tkKing.occupation = _tkKing.sex === 'F' ? 'reigning_queen' : 'king';
+            }
+        }
+
         if (!k.kingMood) k.kingMood = { current: 'content', since: 0, reason: '' };
         var mood = k.kingMood.current;
         var duration = CONFIG.KING_MOOD.moodDuration[mood] || 60;
@@ -35766,6 +35777,23 @@
                 // Injury severity migration (backward compat — old saves only have illnessSeverity)
                 if (p.injured && p.injurySeverity === undefined) {
                     p.injurySeverity = p.illnessSeverity || 'minor';
+                }
+            }
+            // King rank fixup: ensure all kings have socialRank 7 (king) in their kingdom
+            for (var _krfi = 0; _krfi < world.kingdoms.length; _krfi++) {
+                var _krfK = world.kingdoms[_krfi];
+                if (_krfK.king) {
+                    var _krfKing = world.people.find(function(p) { return p.id === _krfK.king; });
+                    if (_krfKing && _krfKing.alive) {
+                        if (!_krfKing.socialRank) _krfKing.socialRank = {};
+                        if (_krfKing.socialRank[_krfK.id] !== 7) {
+                            _krfKing.socialRank[_krfK.id] = 7;
+                        }
+                        // Ensure king occupation is correct
+                        if (_krfKing.occupation !== 'king' && _krfKing.occupation !== 'reigning_queen') {
+                            _krfKing.occupation = _krfKing.sex === 'F' ? 'reigning_queen' : 'king';
+                        }
+                    }
                 }
             }
             world.events = data.events || [];
