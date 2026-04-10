@@ -4220,7 +4220,10 @@ window.UI = (function () {
         // PRODUCTION section
         if (bt.produces) {
             const currentProduct = bld.currentProduct || bld.productionChoice || bt.produces;
-            const prodRes = findResource(currentProduct);
+            // Resolve actual output resource — recipe key may differ (e.g. rope_from_cloth → rope)
+            var _curRecipe = bt.availableProducts && bt.availableProducts[currentProduct];
+            var _actualOutputId = (_curRecipe && _curRecipe.produces) ? _curRecipe.produces : currentProduct;
+            const prodRes = findResource(_actualOutputId);
             const prodName = prodRes ? (prodRes.icon || '') + ' ' + prodRes.name : currentProduct;
 
             html += `<div style="padding:8px;border:1px solid var(--border);border-radius:4px;margin-bottom:8px;">
@@ -4235,10 +4238,10 @@ window.UI = (function () {
                     <select id="productSelect" style="font-size:0.75rem;padding:2px 4px;background:#2a2520;color:#e8dcc8;border:1px solid #555;border-radius:4px;">`;
                 for (const pId of productOptions) {
                     const pRes = findResource(pId);
-                    const pName = pRes ? pRes.name : pId;
+                    var _recipe = bt.availableProducts && bt.availableProducts[pId];
+                    const pName = (_recipe && _recipe.name) ? _recipe.name : (pRes ? pRes.name : pId);
                     const selected = pId === currentProduct ? 'selected' : '';
                     // Check minLevel requirement
-                    var _recipe = bt.availableProducts && bt.availableProducts[pId];
                     var _locked = _recipe && _recipe.minLevel && _bldLevel < _recipe.minLevel;
                     // Quality chance label for tiered products
                     var _qLabel = '';

@@ -4255,17 +4255,30 @@
         const dailyOutput = bt.produces ? Math.round(activeRate * workerFraction * seasonMod * (1 + ((bld.level || 1) - 1) * 0.10) * prodBonus * workerSkillMod * (player.spouseProdMod || 1.0)) : 0;
         const stored = (bld.inventory && activeProduct && bld.inventory[activeProduct]) || 0;
 
-        // Count all tiers of the same base item family in building storage
+        // Count all output items in building storage (all tiers of all producible goods)
         var storedByTier = {};
         var storedAllTiers = 0;
-        if (bld.inventory && bt.produces) {
-            var _baseItem = bt.produces; // e.g. 'armor', 'swords'
-            var _tierVariants = [_baseItem, _baseItem + '_good', _baseItem + '_excellent'];
-            for (var _tv = 0; _tv < _tierVariants.length; _tv++) {
-                var _tvQty = bld.inventory[_tierVariants[_tv]] || 0;
-                if (_tvQty > 0) {
-                    storedByTier[_tierVariants[_tv]] = _tvQty;
-                    storedAllTiers += _tvQty;
+        if (bld.inventory) {
+            // Build set of all possible output resource IDs
+            var _outputIds = {};
+            if (bt.produces) {
+                _outputIds[bt.produces] = true;
+                _outputIds[bt.produces + '_good'] = true;
+                _outputIds[bt.produces + '_excellent'] = true;
+            }
+            if (bt.canProduce) {
+                for (var _cpi = 0; _cpi < bt.canProduce.length; _cpi++) {
+                    var _cpRecipe = bt.availableProducts && bt.availableProducts[bt.canProduce[_cpi]];
+                    var _cpOut = _cpRecipe && _cpRecipe.produces ? _cpRecipe.produces : bt.canProduce[_cpi];
+                    _outputIds[_cpOut] = true;
+                    _outputIds[_cpOut + '_good'] = true;
+                    _outputIds[_cpOut + '_excellent'] = true;
+                }
+            }
+            for (var _oKey in bld.inventory) {
+                if (_outputIds[_oKey] && bld.inventory[_oKey] > 0) {
+                    storedByTier[_oKey] = bld.inventory[_oKey];
+                    storedAllTiers += bld.inventory[_oKey];
                 }
             }
         }
