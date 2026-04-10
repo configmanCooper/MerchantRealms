@@ -23760,6 +23760,10 @@
 
         kqData.lastGenDay = day;
         var kp = kingdom.kingPersonality || {};
+        var mood = (kingdom.kingMood && kingdom.kingMood.current) ? kingdom.kingMood.current : 'content';
+        var moodCfg = CONFIG.KING_MOOD || {};
+        var moodCatWeights = (moodCfg.questCatWeights && moodCfg.questCatWeights[mood]) || {};
+        var moodUrgencyBias = (moodCfg.urgencyBias && moodCfg.urgencyBias[mood]) || 0;
 
         // Evaluate kingdom state triggers
         var triggers = _evaluateKingdomTriggers(kingdom);
@@ -23810,6 +23814,10 @@
             else if (qt.urgency === 'high') weight *= 2.0;
             else if (qt.urgency === 'low') weight *= 0.5;
 
+            // King mood favors certain quest categories
+            var catMoodW = moodCatWeights[qt.cat] || 1.0;
+            weight *= catMoodW;
+
             candidates.push({ typeId: typeId, qt: qt, weight: Math.max(0.1, weight) });
         }
 
@@ -23839,7 +23847,7 @@
         kqData.available = [];
         for (var qi = 0; qi < selected.length; qi++) {
             var sel = selected[qi];
-            var quest = _buildKingdomQuest(sel.typeId, sel.qt, kingdomId, kingdom, day, rng);
+            var quest = _buildKingdomQuest(sel.typeId, sel.qt, kingdomId, kingdom, day, rng, mood);
             kqData.available.push(quest);
         }
 
@@ -23854,7 +23862,7 @@
             if (personalCands.length > 0) {
                 personalCands.sort(function(a, b) { return b.weight - a.weight; });
                 var pSel = personalCands[0];
-                var pQuest = _buildKingdomQuest(pSel.typeId, pSel.qt, kingdomId, kingdom, day, rng);
+                var pQuest = _buildKingdomQuest(pSel.typeId, pSel.qt, kingdomId, kingdom, day, rng, mood);
                 pQuest.isPersonal = true;
                 pQuest.urgency = 'critical';
                 // Shorter deadline for personal assignments
@@ -23894,7 +23902,9 @@
         return deliver;
     }
 
-    function _buildKingdomQuest(typeId, qt, kingdomId, kingdom, day, rng) {
+    function _buildKingdomQuest(typeId, qt, kingdomId, kingdom, day, rng, mood) {
+        var moodCfg = CONFIG.KING_MOOD || {};
+        mood = mood || 'content';
         var timeLimit = qt.diff === 'elite' ? 35 : qt.diff === 'hard' ? 30 : qt.diff === 'medium' ? 25 : 20;
         if (qt.urgency === 'critical') timeLimit = Math.max(10, timeLimit - 10);
 
@@ -23927,11 +23937,22 @@
             };
         }
 
-        // Build rewards
+        // Build rewards — mood affects gold generosity
         var rewardGold = Array.isArray(qt.reward.gold) ? _kqRandRange(rng, qt.reward.gold) : (qt.reward.gold || 0);
+        var moodRewardMod = (moodCfg.rewardMod && moodCfg.rewardMod[mood]) || 1.0;
+        rewardGold = Math.round(rewardGold * moodRewardMod);
         var rewardRep = qt.reward.rep || 3;
         var rewardKingRel = qt.reward.kingRel || 5;
         var rewardXp = qt.reward.xp || 30;
+
+        // Mood urgency bias — stressed/angry kings upgrade urgency
+        var moodUrgBias = (moodCfg.urgencyBias && moodCfg.urgencyBias[mood]) || 0;
+        var finalUrgency = qt.urgency || 'normal';
+        if (moodUrgBias > 0 && rng.chance(moodUrgBias)) {
+            if (finalUrgency === 'low') finalUrgency = 'normal';
+            else if (finalUrgency === 'normal') finalUrgency = 'high';
+            else if (finalUrgency === 'high') finalUrgency = 'critical';
+        }
 
         // Special reward chance (10% for hard, 20% for elite)
         var special = null;
@@ -23991,7 +24012,7 @@
             expiresDay: day + timeLimit,
             acceptedDay: null,
             status: 'available',
-            urgency: qt.urgency || 'normal',
+            urgency: finalUrgency,
             triggerCondition: (qt.triggers || [])[0] || 'normal',
             personalityDriver: (qt.personality || [])[0] || ''
         };
@@ -30772,6 +30793,14 @@
 
         // Court Etiquette skill: +10% petition success
         if (hasSkill('court_etiquette')) chance += 0.10;
+
+        // King mood affects petition receptiveness
+        if (kingdom && kingdom.kingMood && CONFIG.KING_MOOD && CONFIG.KING_MOOD.moods) {
+            var _petMoodData = CONFIG.KING_MOOD.moods[kingdom.kingMood.current];
+            if (_petMoodData && _petMoodData.petitionMod !== undefined) {
+                chance *= _petMoodData.petitionMod;
+            }
+        }
 
         chance = Math.max(0.02, Math.min(0.90, chance));
 

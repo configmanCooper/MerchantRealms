@@ -7130,6 +7130,9 @@
                         warChance += CONFIG.WAR_CHANCE_PER_DAY * 0.5; // Jealousy boost
                     }
                 }
+                // King mood affects war willingness
+                var _wMood = getKingMoodModifiers(k);
+                warChance *= (_wMood.warMod || 1.0);
                 if (warChance > 0 && rng.chance(warChance)) {
                     // Scout enemy strength before declaring war (M-4)
                     var scoutedEnemy = scoutEnemyStrength(k, other);
@@ -7141,7 +7144,7 @@
                                 type: 'declare_war',
                                 description: 'Declare war on ' + other.name,
                                 details: 'Our military strength: ' + Math.floor(ourStrength) + '. Enemy estimate: ' + Math.floor(scoutedEnemy) + '. Relations: ' + Math.floor(k.relations[other.id] || 0),
-                                conviction: Math.min(0.9, 0.5 + ((k.kingPersonality || {}).ambition === 'ambitious' ? 0.15 : 0) + ((k.kingPersonality || {}).temperament === 'aggressive' ? 0.15 : 0)),
+                                conviction: Math.min(0.9, 0.5 + ((k.kingPersonality || {}).ambition === 'ambitious' ? 0.15 : 0) + ((k.kingPersonality || {}).temperament === 'aggressive' ? 0.15 : 0) + (_wMood.warMod > 1.5 ? 0.10 : _wMood.warMod < 0.5 ? -0.15 : 0)),
                                 execute: (function(kRef, otherRef) { return function() { declareWar(kRef, otherRef); }; })(k, other)
                             });
                         } else if (hasSpecialLaw(k, 'noble_council')) {
@@ -7166,7 +7169,12 @@
                 if (!other.alliances) other.alliances = new Set();
                 if (!other.allianceMeta) other.allianceMeta = {};
                 const rel = k.relations[other.id] || 0;
-                if (rel >= CONFIG.RELATION_ALLIANCE_THRESHOLD && !k.alliances.has(other.id) && !k.atWar.has(other.id)) {
+                // Mood: fearful/worried kings seek alliances at lower relation threshold
+                var _aMood = getKingMoodModifiers(k);
+                var allianceRelThresh = CONFIG.RELATION_ALLIANCE_THRESHOLD;
+                if (_aMood.warMod < 0.8) allianceRelThresh -= 10; // fearful/grieving — more eager for allies
+                else if (_aMood.warMod > 1.5) allianceRelThresh += 5; // wrathful/ambitious — picky about allies
+                if (rel >= allianceRelThresh && !k.alliances.has(other.id) && !k.atWar.has(other.id)) {
                     // Form alliance — most alliances are defensive by default
                     var newAllianceType = rel >= 90 && rng.chance(0.25) ? 'offensive' : 'defensive';
                     if (isPlayerRoyalAdvisorOf(k)) {
@@ -7434,6 +7442,10 @@
                 if (_kp.courage === 'cowardly') peaceDesperation = 0.08;
                 else if (_kp.courage === 'cautious') peaceDesperation = 0.06;
                 else if (_kp.courage === 'brave' && _kp.ambition === 'ambitious') peaceDesperation = 0.01;
+                // Mood: fearful/grieving kings seek peace faster, wrathful/ambitious resist
+                var _pMood = getKingMoodModifiers(k);
+                if (_pMood.warMod < 0.8) peaceDesperation *= 1.5;
+                else if (_pMood.warMod > 1.5) peaceDesperation *= 0.5;
                 // Bankrupt days increase urgency
                 peaceDesperation += (k._bankruptDays || 0) * 0.002;
                 for (var _peaceEid of k.atWar) {
@@ -10554,7 +10566,8 @@
         }
 
         // 2. MILITARY(ambitious/brave kings build more military, with budget awareness)
-        if (p.ambition === 'ambitious' && !atWar && rng.chance(0.2)) {
+        var _milMoodMod = (mood.conscriptMod || 1.0);
+        if (p.ambition === 'ambitious' && !atWar && rng.chance(0.2 * _milMoodMod)) {
             // Peacetime recruitment: only if budget is sustainable
             var _ptFs = getKingdomFinancialState(k);
             var _ptCanRecruit = _ptFs.canHireGuards && k.gold > _ptFs.minReserve;
@@ -10584,8 +10597,10 @@
 
         // 3. INFRASTRUCTURE (clever/brilliant kings invest wisely)
         // H-3: Only build if treasury > 3 months upkeep; H-2: delay non-essential during war
+        // Mood: jubilant/ambitious invest more, paranoid/wrathful/grieving invest less
+        var _infraMoodChance = (mood.festivalMod > 0.5) ? 1.2 : (mood.festivalMod === 0) ? 0.3 : 1.0;
         var _infraFs = getKingdomFinancialState(k);
-        if ((p.intelligence === 'brilliant' || p.intelligence === 'clever') && treasury > 1000 && rng.chance(0.2) && _infraFs.canConstruct && !_infraFs.atWar) {
+        if ((p.intelligence === 'brilliant' || p.intelligence === 'clever') && treasury > 1000 && rng.chance(0.2 * _infraMoodChance) && _infraFs.canConstruct && !_infraFs.atWar) {
             // Build missing essential buildings in towns that lack them
             for (const townId of k.territories) {
                 const town = findTown(townId);
@@ -10612,7 +10627,7 @@
 
         // 3a. NATIONALIZATION — greedy/corrupt kings may nationalize industries (rare, seasonal)
         if (!k.nationalizedIndustries) k.nationalizedIndustries = [];
-        if ((p.greed === 'greedy' || p.greed === 'corrupt') && rng.chance(0.10) && k.nationalizedIndustries.length < 3) {
+        if ((p.greed === 'greedy' || p.greed === 'corrupt') && rng.chance(0.10 * (mood.warMod > 1.3 ? 1.5 : 1.0)) && k.nationalizedIndustries.length < 3) {
             const candidates = (CONFIG.KINGDOM_BUILDING_TYPES || []).filter(
                 bt => !k.nationalizedIndustries.includes(bt) && !(CONFIG.KINGDOM_EXCLUSIVE_BUILDINGS || []).includes(bt)
             );
@@ -14091,7 +14106,7 @@
 
                 // Conscription for desperate kingdoms (ratio computed in dynamic pay block below)
                 var _soldierRatio = k._soldierRatio || 1;
-                if (_soldierRatio < 0.3 && k.laws && k.laws.conscription && rng.chance(0.1)) {
+                if (_soldierRatio < 0.3 && k.laws && k.laws.conscription && rng.chance(0.1 * (getKingMoodModifiers(k).conscriptMod || 1))) {
                     var conscriptable = (_tickCache.peopleByTown[town.id] || []).filter(function(p) {
                         return p.occupation !== 'soldier' && p.occupation !== 'guard' &&
                                p.age >= CONFIG.COMING_OF_AGE && p.age <= 45;
@@ -21584,6 +21599,10 @@
         var kPers = kingdom.kingPersonality || {};
         var bannableWeapons = ['swords', 'armor', 'horses', 'blasting_powder', 'demolition_tools'];
         var bannableLuxury = ['wine', 'jewelry'];
+        // King mood: paranoid/wrathful kings ban more, jubilant/content kings unban more
+        var _banMood = getKingMoodModifiers(kingdom);
+        var moodBanMult = (_banMood.warMod > 1.3) ? 1.4 : (_banMood.warMod < 0.8) ? 0.6 : 1.0;
+        var moodUnbanMult = (_banMood.petitionMod > 1.0) ? 1.3 : (_banMood.petitionMod < 0.5) ? 0.5 : 1.0;
 
         // Calculate military stockpile ratio
         var stockpile = kingdom.militaryStockpile || {};
@@ -21619,6 +21638,7 @@
                 // Priority: swords most likely, horses least
                 if (good === 'horses') banChance *= 0.5;
                 else if (good === 'armor') banChance *= 0.8;
+                banChance *= moodBanMult;
 
                 if (rng.chance(Math.min(0.7, banChance))) {
                     currentBanned.push(good);
@@ -21642,6 +21662,7 @@
                 if (isAtWar) unbanChance += 0.50; // war → need supply
                 if (stockpileRatio < 0.5) unbanChance += 0.40;
                 if (kPers.militarism === 'warlike') unbanChance += 0.20;
+                unbanChance *= moodUnbanMult;
 
                 if (rng.chance(Math.min(0.6, unbanChance))) {
                     currentBanned = currentBanned.filter(g => g !== good);
@@ -21656,11 +21677,11 @@
         for (var li = 0; li < bannableLuxury.length; li++) {
             var luxGood = bannableLuxury[li];
             var luxBanned = currentBanned.includes(luxGood);
-            if (!luxBanned && isAustere && rng.chance(0.15)) {
+            if (!luxBanned && isAustere && rng.chance(0.15 * moodBanMult)) {
                 currentBanned.push(luxGood);
                 changed = true;
                 logEvent(kingdom.name + ' has banned trade in ' + luxGood + '!');
-            } else if (luxBanned && !isAustere && rng.chance(0.20)) {
+            } else if (luxBanned && !isAustere && rng.chance(0.20 * moodUnbanMult)) {
                 currentBanned = currentBanned.filter(g => g !== luxGood);
                 changed = true;
                 logEvent(kingdom.name + ' has lifted the ban on ' + luxGood + '.');
