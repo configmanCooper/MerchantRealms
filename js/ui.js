@@ -7655,6 +7655,26 @@ window.UI = (function () {
         var res = findResource(goodId);
         var resLabel = res ? res.name : goodId;
 
+        // Block buy/sell orders at outpost locations (no market until upgraded to village)
+        if (action === 'buy' || action === 'sell') {
+            var _checkTownId = null;
+            if (location === 'destination') {
+                _checkTownId = _caravanEditToTownId;
+                if (!_checkTownId) { try { var _dEl2 = document.getElementById('caravanDest'); if (_dEl2) _checkTownId = _dEl2.value; } catch(e) {} }
+            } else if (location === 'source') {
+                _checkTownId = _caravanEditFromTownId || (typeof Player !== 'undefined' ? Player.townId : null);
+            } else if (location && location.indexOf('waypoint:') === 0) {
+                _checkTownId = location.replace('waypoint:', '');
+            }
+            if (_checkTownId) {
+                var _chkTown = Engine.findTown(_checkTownId);
+                if (_chkTown && _chkTown.isOutpost) {
+                    toast('🚫 Cannot ' + action + ' at outpost ' + (_chkTown.name || 'outpost') + ' — outposts have no market. Upgrade to village first.', 'warning');
+                    return false;
+                }
+            }
+        }
+
         _caravanOrders.push({
             good: goodId,
             action: action,

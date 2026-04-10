@@ -4924,6 +4924,12 @@
             var qty = o.qty === 'max' ? 99999 : (Number(o.qty) || 0);
             if (qty <= 0 && o.qty !== 'max') { logCaravan(caravan, '⚠️ Invalid qty for ' + resName + ' — skipped.'); continue; }
 
+            // Block buy/sell at outpost locations — no market until upgraded to village
+            if ((o.action === 'buy' || o.action === 'sell') && town && town.isOutpost) {
+                logCaravan(caravan, '🚫 Cannot ' + o.action + ' ' + resName + ' at ' + townName + ' — outpost has no market.');
+                continue;
+            }
+
             if (o.action === 'pickup') {
                 // Check town storage first
                 var stored = (player.townStorage[townId] || {})[o.good] || 0;
@@ -8275,10 +8281,14 @@
                         bld.inventory[_activeProduces] = (bld.inventory[_activeProduces] || 0) + spaceInBld;
                     }
                     // Overflow sells directly to market at full market price
+                    // BUT NOT for outpost buildings — outposts have no market access
                     var overflow = actualOutput - spaceInBld;
                     if (overflow > 0) {
                         var sellTown = Engine.findTown(bld.townId);
-                        if (sellTown && sellTown.market) {
+                        if (sellTown && sellTown.isOutpost) {
+                            // Outpost: no market sell — production halts when full
+                            // Output is simply lost (building is at capacity)
+                        } else if (sellTown && sellTown.market) {
                             var res = findResource(_activeProduces);
                             var basePrice = (res && res.basePrice) || 1;
                             var marketPrice = (sellTown.market.prices && sellTown.market.prices[_activeProduces]) || basePrice;
