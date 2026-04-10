@@ -109,6 +109,11 @@
     <!-- Speed Warning Banner -->
     <div id="speedWarningBanner" style="display:none;position:fixed;top:52px;left:0;right:0;z-index:100000;background:rgba(180,60,0,0.95);border-bottom:2px solid #ff6400;padding:5px 12px;text-align:center;color:#ffcc66;font-size:0.85rem;font-weight:bold;letter-spacing:0.5px;pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,0.5);">⚠️ Fast Forwarding Time — Expect Extreme Lag Due to Simulation ⚠️</div>
 
+    <!-- Quest Tracker HUD Widget -->
+    <div id="questTrackerHud" style="display:none;position:fixed;top:56px;right:8px;z-index:9000;background:rgba(20,18,14,0.92);border:1px solid rgba(180,160,120,0.4);border-radius:6px;padding:6px 10px;max-width:260px;font-size:0.75rem;color:#d4c8a0;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.4);" onclick="if(typeof UI!=='undefined'&&UI.showNobilityPanel)UI.showNobilityPanel('directives');">
+        <div id="questTrackerContent"></div>
+    </div>
+
     <!-- Pause Indicator -->
     <div id="pauseIndicator" class="pause-indicator" style="display:none;">⏸ PAUSED</div>
 

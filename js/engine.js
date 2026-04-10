@@ -36641,6 +36641,7 @@
         },
         getNobleBuildings: function(nobleId) {
             var buildings = [];
+            var person = findPerson(nobleId);
             for (var ti = 0; ti < world.towns.length; ti++) {
                 var town = world.towns[ti];
                 if (!town.buildings) continue;
@@ -36650,27 +36651,86 @@
                     }
                 }
             }
+            // Fallback for EMs: check em.buildings array if town buildings didn't match
+            if (buildings.length === 0 && person && person.isEliteMerchant && person.buildings && person.buildings.length > 0) {
+                for (var ebi = 0; ebi < person.buildings.length; ebi++) {
+                    var ebRef = person.buildings[ebi];
+                    var ebTown = findTown(ebRef.townId);
+                    buildings.push({ building: { type: ebRef.type, ownerId: nobleId }, townId: ebRef.townId, townName: ebTown ? ebTown.name : 'Unknown' });
+                }
+            }
             return buildings;
         },
         getNobleFinancialStatus: function(nobleId) {
             var person = findPerson(nobleId);
             if (!person) return null;
             var rank = 0;
+            var primaryKingdomId = null;
             if (person.socialRank) {
                 for (var kId in person.socialRank) {
-                    if (person.socialRank[kId] > rank) rank = person.socialRank[kId];
+                    if (person.socialRank[kId] > rank) { rank = person.socialRank[kId]; primaryKingdomId = kId; }
                 }
             }
+            if (!primaryKingdomId) primaryKingdomId = person.kingdomId;
             var buildings = this.getNobleBuildings(nobleId);
-            var dailyExpense = rank >= 6 ? 20 : (rank >= 5 ? 10 : 5);
-            var dailyIncome = buildings.length * 5 * 0.7 / 10;
+
+            // Calculate income per building (same formula as tickNobleIncome / EM tick)
+            var buildingDetails = [];
+            var totalBuildingIncome = 0;
+            for (var bdi = 0; bdi < buildings.length; bdi++) {
+                var bld = buildings[bdi];
+                var bldTown = findTown(bld.townId);
+                var bType = bld.building.type || 'unknown';
+                var bTypeDef = null;
+                if (typeof BUILDING_TYPES !== 'undefined') bTypeDef = BUILDING_TYPES[bType];
+                var bName = bTypeDef ? bTypeDef.name : bType.replace(/_/g, ' ');
+                var incPer10 = 0;
+                if (person.isEliteMerchant) {
+                    var prosper = bldTown ? (bldTown.prosperity || 30) / 100 : 0.3;
+                    incPer10 = (bTypeDef && bTypeDef.produces) ? Math.floor(2 + 3 * prosper) : Math.floor(5 + 10 * prosper);
+                } else {
+                    incPer10 = Math.floor(20 * 0.85);
+                }
+                totalBuildingIncome += incPer10;
+                buildingDetails.push({ name: bName, townName: bld.townName, incomePer10: incPer10 });
+            }
+
+            // Stipend for nobles
+            var stipendPer10 = 0;
+            if (!person.isEliteMerchant) {
+                if (rank >= 7) stipendPer10 = 400;
+                else if (rank === 6) stipendPer10 = 120;
+                else if (rank === 5) stipendPer10 = 60;
+                else if (rank >= 4) stipendPer10 = 25;
+            }
+
+            // Trade network income for EMs
+            var tradePer10 = person.isEliteMerchant ? 40 : 0;
+
+            // Expenses
+            var expensePer10 = 0;
+            if (person.isEliteMerchant) {
+                expensePer10 = 0; // EMs have no rank-based expenses in tickNobleIncome
+            } else {
+                if (rank >= 7) expensePer10 = 500;
+                else if (rank === 6) expensePer10 = 200;
+                else if (rank === 5) expensePer10 = 100;
+                else expensePer10 = 50;
+            }
+
             return {
                 gold: person.gold || 0,
                 buildings: buildings.length,
-                dailyIncome: Math.round(dailyIncome * 10) / 10,
-                dailyExpense: dailyExpense,
+                buildingDetails: buildingDetails,
+                totalBuildingIncome: totalBuildingIncome,
+                stipendPer10: stipendPer10,
+                tradePer10: tradePer10,
+                expensePer10: expensePer10,
+                netPer10: totalBuildingIncome + stipendPer10 + tradePer10 - expensePer10,
                 stressed: !!person._financiallyStressed,
-                rank: rank
+                rank: rank,
+                isEM: !!person.isEliteMerchant,
+                incomeLog: person._incomeLog || null
             };
         },
         // ---- Noble Council Voting API ----

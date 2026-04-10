@@ -927,6 +927,62 @@ window.UI = (function () {
             _rightPanelRefreshCounter = 0;
         }
 
+        // Update quest tracker HUD widget
+        var _qtHud = document.getElementById('questTrackerHud');
+        var _qtContent = document.getElementById('questTrackerContent');
+        if (_qtHud && _qtContent && typeof Player !== 'undefined' && Player.state) {
+            var _kqs = Player.state.kingdomQuests;
+            var _activeQ = null;
+            if (_kqs) {
+                for (var _qi = 0; _qi < _kqs.length; _qi++) {
+                    if (_kqs[_qi].status === 'active') { _activeQ = _kqs[_qi]; break; }
+                }
+            }
+            if (_activeQ) {
+                var _qDef = (typeof CONFIG !== 'undefined' && CONFIG.KINGDOM_QUESTS) ? CONFIG.KINGDOM_QUESTS[_activeQ.type] : null;
+                var _qTitle = _qDef ? _qDef.title : (_activeQ.type || 'Directive');
+                var _qCatIcon = '';
+                if (_qDef) {
+                    var _cats = { economic: '💰', military: '⚔️', diplomatic: '🕊️', espionage: '🕵️', justice: '⚖️', social: '👥', corrupt: '🏴' };
+                    _qCatIcon = _cats[_qDef.cat] || '📜';
+                }
+                // Calculate progress
+                var _qProg = '';
+                var _qPct = 0;
+                var _req = _activeQ.requirements || {};
+                if (_req.deliver && _req.deliver.length > 0) {
+                    var _delDone = 0, _delTotal = _req.deliver.length;
+                    for (var _di = 0; _di < _req.deliver.length; _di++) {
+                        var _dItem = _req.deliver[_di];
+                        var _have = (Player.state.inventory && Player.state.inventory[_dItem.item]) || 0;
+                        if (_have >= _dItem.qty) _delDone++;
+                    }
+                    _qPct = Math.round((_delDone / _delTotal) * 100);
+                    _qProg = _delDone + '/' + _delTotal + ' items';
+                } else if (_req.gold) {
+                    var _gSpent = Player.state._kqGoldSpent || 0;
+                    _qPct = Math.min(100, Math.round((_gSpent / _req.gold) * 100));
+                    _qProg = _gSpent + '/' + _req.gold + 'g';
+                } else if (_req.visitTowns) {
+                    var _vDone = (Player.state._kqVisitedTowns || []).length;
+                    _qPct = Math.min(100, Math.round((_vDone / _req.visitTowns) * 100));
+                    _qProg = _vDone + '/' + _req.visitTowns + ' towns';
+                } else if (_req.action) {
+                    _qProg = Player.state._kqActionDone ? '✅ Done' : '⏳ Attempt action';
+                    _qPct = Player.state._kqActionDone ? 100 : 0;
+                }
+                var _daysLeft = _activeQ.deadlineDay ? (_activeQ.deadlineDay - (Engine.getDay ? Engine.getDay() : 0)) : 0;
+                var _dlColor = _daysLeft <= 5 ? '#c44e52' : _daysLeft <= 15 ? '#ccb974' : '#88aa77';
+                var _barColor = _qPct >= 100 ? '#55a868' : '#6688aa';
+                _qtContent.innerHTML = '<div style="font-weight:600;margin-bottom:3px;">' + _qCatIcon + ' ' + _qTitle + '</div>' +
+                    (_qProg ? '<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;"><div style="flex:1;height:4px;background:rgba(255,255,255,0.1);border-radius:2px;"><div style="height:100%;width:' + _qPct + '%;background:' + _barColor + ';border-radius:2px;"></div></div><span style="font-size:0.7rem;">' + _qProg + '</span></div>' : '') +
+                    (_daysLeft > 0 ? '<div style="font-size:0.68rem;color:' + _dlColor + ';">⏱️ ' + _daysLeft + ' days left</div>' : '');
+                _qtHud.style.display = '';
+            } else {
+                _qtHud.style.display = 'none';
+            }
+        }
+
         // Update guidance widget ("Merchant's Path")
         if (typeof Guidance !== 'undefined' && Guidance.update) {
             try { Guidance.update(); } catch (e) { /* no-op */ }
@@ -2287,78 +2343,86 @@ window.UI = (function () {
 
         // ── Noble/EM Assets (requires noble_assets skill) ──
         if (isPlayer && Player.hasSkill && Player.hasSkill('noble_assets') && (_npcSR >= 4 || person.isEliteMerchant)) {
-            var _naBuildings = [];
-            try {
-                if (Engine.getNobleBuildings) {
-                    _naBuildings = Engine.getNobleBuildings(person.id);
+            var _nfs = null;
+            try { if (Engine.getNobleFinancialStatus) _nfs = Engine.getNobleFinancialStatus(person.id); } catch(e) {}
+            html += `<div class="detail-section"><h3>🏠 Assets & Income</h3>`;
+
+            // Treasury and financial status
+            if (_nfs) {
+                var _stressColor = _nfs.stressed ? '#c44e52' : '#55a868';
+                var _stressLabel = _nfs.stressed ? '💸 Financially Stressed' : '💰 Stable';
+                html += `<div class="detail-row"><span class="label">Treasury</span>
+                    <span class="value">${Math.floor(_nfs.gold)}g</span></div>`;
+                html += `<div class="detail-row"><span class="label">Status</span>
+                    <span class="value" style="color:${_stressColor};font-size:0.8rem;">${_stressLabel}</span></div>`;
+            }
+
+            // Building holdings with per-building income
+            if (_nfs && _nfs.buildingDetails && _nfs.buildingDetails.length > 0) {
+                html += `<div style="margin-top:8px;padding-top:6px;border-top:1px solid var(--border-color);">`;
+                html += `<div style="font-size:0.75rem;font-weight:600;margin-bottom:4px;">🏗️ Property Holdings (${_nfs.buildings} buildings)</div>`;
+                // Group by town
+                var _bldByTown = {};
+                for (var _bdi = 0; _bdi < _nfs.buildingDetails.length; _bdi++) {
+                    var _bd = _nfs.buildingDetails[_bdi];
+                    if (!_bldByTown[_bd.townName]) _bldByTown[_bd.townName] = [];
+                    _bldByTown[_bd.townName].push(_bd);
                 }
-            } catch (e) { /* not implemented yet */ }
-            html += `<div class="detail-section"><h3>🏠 Assets</h3>`;
-            if (_naBuildings.length > 0) {
-                var _bldgByTown = {};
-                for (var _bi = 0; _bi < _naBuildings.length; _bi++) {
-                    var _bInfo = _naBuildings[_bi];
-                    var _tName = _bInfo.townName || 'Unknown';
-                    if (!_bldgByTown[_tName]) _bldgByTown[_tName] = [];
-                    var _bType = _bInfo.building.typeId || _bInfo.building.type || 'building';
-                    var _bDef = typeof BUILDING_TYPES !== 'undefined' ? BUILDING_TYPES[_bType] : null;
-                    var _bName = _bDef ? _bDef.name : _bType;
-                    _bldgByTown[_tName].push(_bName);
+                for (var _tn in _bldByTown) {
+                    var _townBlds = _bldByTown[_tn];
+                    var _townTotal = 0;
+                    for (var _tbi = 0; _tbi < _townBlds.length; _tbi++) _townTotal += _townBlds[_tbi].incomePer10;
+                    html += `<div class="detail-row" style="margin-top:4px;"><span class="label">📍 ${_tn}</span>
+                        <span class="value" style="color:#55a868;font-size:0.75rem;">+${_townTotal}g/10d</span></div>`;
+                    for (var _tbi2 = 0; _tbi2 < _townBlds.length; _tbi2++) {
+                        html += `<div style="font-size:0.7rem;color:var(--text-muted);padding-left:16px;display:flex;justify-content:space-between;">` +
+                            `<span>${_townBlds[_tbi2].name}</span><span style="color:#88aa77;">+${_townBlds[_tbi2].incomePer10}g</span></div>`;
+                    }
                 }
-                for (var _tn in _bldgByTown) {
-                    html += `<div class="detail-row"><span class="label">${_tn}</span>
-                        <span class="value" style="font-size:0.75rem;">${_bldgByTown[_tn].join(', ')}</span></div>`;
-                }
-                html += `<div style="font-size:0.7rem;color:var(--text-muted);margin-top:4px;">${_naBuildings.length} building${_naBuildings.length !== 1 ? 's' : ''} total</div>`;
+                html += `</div>`;
             } else {
-                html += `<div style="font-size:0.75rem;color:var(--text-muted);">No known property holdings.</div>`;
+                html += `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">No known property holdings.</div>`;
             }
-            // Financial status & income breakdown
-            if (Engine.getNobleFinancialStatus && _npcSR >= 4) {
-                var _nfs = Engine.getNobleFinancialStatus(person.id);
-                if (_nfs) {
-                    var _stressColor = _nfs.stressed ? '#c44e52' : '#55a868';
-                    var _stressLabel = _nfs.stressed ? '💸 Financially Stressed' : '💰 Stable';
-                    html += `<div class="detail-row"><span class="label">Finances</span>
-                        <span class="value" style="color:${_stressColor};font-size:0.8rem;">${_stressLabel}</span></div>`;
-                    if (_nfs.gold != null) {
-                        html += `<div class="detail-row"><span class="label">Treasury</span>
-                            <span class="value">${Math.floor(_nfs.gold)}g</span></div>`;
-                    }
-                }
-            }
-            // Income breakdown from _incomeLog
-            var _incLog = person._incomeLog;
-            if (_incLog) {
+
+            // EM Caravans
+            if (person.isEliteMerchant && person.emCaravans && person.emCaravans.length > 0) {
                 html += `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border-color);">`;
-                html += `<div style="font-size:0.75rem;font-weight:600;margin-bottom:4px;">📊 Income (Last 30 Days)</div>`;
-                if (_incLog.buildings > 0) {
+                html += `<div style="font-size:0.75rem;font-weight:600;margin-bottom:4px;">🐪 Trade Caravans (${person.emCaravans.length})</div>`;
+                for (var _eci = 0; _eci < person.emCaravans.length; _eci++) {
+                    var _ec = person.emCaravans[_eci];
+                    var _ecFrom = '', _ecTo = '';
+                    try { var _ft = Engine.findTown(_ec.fromTownId); _ecFrom = _ft ? _ft.name : '?'; } catch(e) { _ecFrom = '?'; }
+                    try { var _tt = Engine.findTown(_ec.toTownId); _ecTo = _tt ? _tt.name : '?'; } catch(e) { _ecTo = '?'; }
+                    html += `<div style="font-size:0.7rem;color:var(--text-muted);padding-left:8px;">${_ecFrom} → ${_ecTo}</div>`;
+                }
+                html += `</div>`;
+            }
+
+            // Income & expense summary
+            if (_nfs) {
+                html += `<div style="margin-top:8px;padding-top:6px;border-top:1px solid var(--border-color);">`;
+                html += `<div style="font-size:0.75rem;font-weight:600;margin-bottom:4px;">📊 Income Summary (per 10 days)</div>`;
+                if (_nfs.totalBuildingIncome > 0) {
                     html += `<div class="detail-row"><span class="label">🏗️ Buildings</span>
-                        <span class="value" style="color:#55a868;">+${_incLog.buildings}g</span></div>`;
-                    var _ibt = _incLog.buildingsByTown || {};
-                    for (var _itn in _ibt) {
-                        if (_ibt[_itn] > 0) {
-                            html += `<div style="font-size:0.7rem;color:var(--text-muted);padding-left:16px;">${_itn}: +${_ibt[_itn]}g</div>`;
-                        }
-                    }
+                        <span class="value" style="color:#55a868;">+${_nfs.totalBuildingIncome}g</span></div>`;
                 }
-                if (_incLog.trade > 0) {
-                    html += `<div class="detail-row"><span class="label">🔄 Trade Network</span>
-                        <span class="value" style="color:#55a868;">+${_incLog.trade}g</span></div>`;
-                }
-                if (_incLog.stipend > 0) {
+                if (_nfs.stipendPer10 > 0) {
                     html += `<div class="detail-row"><span class="label">👑 Rank Stipend</span>
-                        <span class="value" style="color:#55a868;">+${_incLog.stipend}g</span></div>`;
+                        <span class="value" style="color:#55a868;">+${_nfs.stipendPer10}g</span></div>`;
                 }
-                if (_incLog.expenses > 0) {
+                if (_nfs.tradePer10 > 0) {
+                    html += `<div class="detail-row"><span class="label">🔄 Trade Network</span>
+                        <span class="value" style="color:#55a868;">+${_nfs.tradePer10}g</span></div>`;
+                }
+                if (_nfs.expensePer10 > 0) {
                     html += `<div class="detail-row"><span class="label">💸 Expenses</span>
-                        <span class="value" style="color:#c44e52;">-${_incLog.expenses}g</span></div>`;
+                        <span class="value" style="color:#c44e52;">-${_nfs.expensePer10}g</span></div>`;
                 }
-                var _netInc = (_incLog.buildings || 0) + (_incLog.trade || 0) + (_incLog.stipend || 0) - (_incLog.expenses || 0);
-                var _netColor = _netInc >= 0 ? '#55a868' : '#c44e52';
-                var _netSign = _netInc >= 0 ? '+' : '';
-                html += `<div class="detail-row" style="font-weight:600;"><span class="label">Net Income</span>
-                    <span class="value" style="color:${_netColor};">${_netSign}${_netInc}g</span></div>`;
+                var _netPer10 = _nfs.netPer10 || 0;
+                var _netColor2 = _netPer10 >= 0 ? '#55a868' : '#c44e52';
+                var _netSign2 = _netPer10 >= 0 ? '+' : '';
+                html += `<div class="detail-row" style="font-weight:600;border-top:1px solid var(--border-color);padding-top:4px;margin-top:4px;"><span class="label">Net Income</span>
+                    <span class="value" style="color:${_netColor2};">${_netSign2}${_netPer10}g / 10 days</span></div>`;
                 html += `</div>`;
             }
             html += `</div>`;
