@@ -4487,7 +4487,8 @@
                     }
                 }
                 detectChance = Math.max(0.05, detectChance);
-                if (Math.random() < detectChance) {
+                var _blkRng = Engine.getRng();
+                if ((_blkRng ? _blkRng.random() : Math.random()) < detectChance) {
                     // Caught! Ship seized, player jailed
                     Engine.logEvent('⚠️ You were caught trying to run the blockade! Your ship has been seized!');
                     if (bestShip) {
@@ -19036,8 +19037,8 @@
             if (hasSkill('master_disguise')) detectChance -= 0.15;
             detectChance = Math.max(0.05, detectChance);
 
-            if (Math.random() < detectChance) {
-                // Caught!
+            var _bcRng = Engine.getRng();
+            if ((_bcRng ? _bcRng.random() : Math.random()) < detectChance) {
                 player.jailedUntilDay = Engine.getDay() + 20;
                 player.jailReason = 'Illegal border crossing';
                 var fine = Math.min(player.gold, Math.floor(player.gold * 0.25));
