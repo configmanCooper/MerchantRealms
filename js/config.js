@@ -356,6 +356,8 @@ const CONFIG = {
     CARAVAN_GUARD_WAGE: 6,                      // gold per day per guard
     CARAVAN_HORSE_SPEED_BONUS: 0.10,            // 10% speed per horse on caravan
     CARAVAN_HORSE_EXTRA_CAPACITY: 30,           // extra weight per horse
+    CARAVAN_HORSES_PER_CARRIER: 4,              // road caravans: each carrier can walk 4 horses (0 weight)
+    CARAVAN_HORSE_SEA_WEIGHT: 15,               // sea caravans: horses take up deck space (15 wt each)
     MARKET_HORSE_CAP: { village: 50, town: 100, city: 150, capital_city: 200 },
     CARAVAN_CART_CAPACITY: 80,                  // weight per cart
     CARAVAN_CART_COST: 30,                      // gold to buy a cart for the caravan

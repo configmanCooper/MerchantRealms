@@ -7562,8 +7562,35 @@ window.UI = (function () {
         var priceLabel = '';
         if (order.action === 'buy' && order.priceLimit) priceLabel = ' (max ' + order.priceLimit + 'g)';
         if (order.action === 'sell' && order.priceLimit) priceLabel = ' (min ' + order.priceLimit + 'g)';
-        return '<div style="display:flex;align-items:center;gap:6px;padding:4px 6px;background:rgba(255,255,255,0.03);border-radius:4px;margin-bottom:3px;font-size:0.75rem;">' +
-            '<span style="flex:1;">' + resName + '</span>' +
+
+        // Check for banned/restricted warning on sell orders
+        var _warnBadge = '';
+        var _rowBorder = 'background:rgba(255,255,255,0.03);';
+        if (order.action === 'sell') {
+            var _rowTownId = null;
+            if (order.location && order.location.indexOf('waypoint:') === 0) _rowTownId = order.location.replace('waypoint:', '');
+            else if (order.location === 'source') _rowTownId = _caravanEditFromTownId || (typeof Player !== 'undefined' ? Player.townId : null);
+            else { _rowTownId = _caravanEditToTownId; if (!_rowTownId) { try { var _rEl = document.getElementById('caravanDest'); if (_rEl) _rowTownId = _rEl.value; } catch(e) {} } }
+            if (_rowTownId) {
+                var _rowTown = Engine.findTown(_rowTownId);
+                var _rowK = _rowTown && _rowTown.kingdomId ? Engine.findKingdom(_rowTown.kingdomId) : null;
+                if (_rowK && _rowK.laws) {
+                    if (_rowK.laws.bannedGoods && _rowK.laws.bannedGoods.indexOf(order.good) >= 0) {
+                        _warnBadge = ' <span style="color:#f44;font-size:0.6rem;font-weight:bold;" title="BANNED — will attempt smuggling">🚫 BANNED</span>';
+                        _rowBorder = 'background:rgba(200,50,50,0.1);border:1px solid rgba(200,50,50,0.3);';
+                    } else if (_rowK.laws.restrictedGoods && _rowK.laws.restrictedGoods.indexOf(order.good) >= 0) {
+                        var _rowHasLic = typeof Player !== 'undefined' && Player.hasLicense ? Player.hasLicense(_rowK.id, order.good) : false;
+                        if (!_rowHasLic) {
+                            _warnBadge = ' <span style="color:#f90;font-size:0.6rem;font-weight:bold;" title="RESTRICTED — no license">⚠️ NO LICENSE</span>';
+                            _rowBorder = 'background:rgba(200,150,50,0.1);border:1px solid rgba(200,150,50,0.3);';
+                        }
+                    }
+                }
+            }
+        }
+
+        return '<div style="display:flex;align-items:center;gap:6px;padding:4px 6px;' + _rowBorder + 'border-radius:4px;margin-bottom:3px;font-size:0.75rem;">' +
+            '<span style="flex:1;">' + resName + _warnBadge + '</span>' +
             '<span style="color:var(--gold);min-width:60px;">' + actionLabel + '</span>' +
             '<span style="min-width:50px;">' + qtyLabel + priceLabel + '</span>' +
             '<span style="color:#888;min-width:55px;">' + locLabel + '</span>' +
@@ -7637,6 +7664,33 @@ window.UI = (function () {
         });
 
         toast('✅ Order added: ' + actionLabel + ' ' + (qty === 'max' ? 'Max' : qty) + ' ' + resLabel, 'success');
+
+        // Warn if sell/buy order targets a town where the good is banned or restricted
+        if (action === 'sell') {
+            var _warnTownId = null;
+            if (location === 'destination') {
+                _warnTownId = _caravanEditToTownId;
+                if (!_warnTownId) { try { var _dEl = document.getElementById('caravanDest'); if (_dEl) _warnTownId = _dEl.value; } catch(e) {} }
+            } else if (location === 'source') {
+                _warnTownId = _caravanEditFromTownId || (typeof Player !== 'undefined' ? Player.townId : null);
+            } else if (location && location.indexOf('waypoint:') === 0) {
+                _warnTownId = location.replace('waypoint:', '');
+            }
+            if (_warnTownId) {
+                var _wTown = Engine.findTown(_warnTownId);
+                var _wKingdom = _wTown && _wTown.kingdomId ? Engine.findKingdom(_wTown.kingdomId) : null;
+                if (_wKingdom && _wKingdom.laws) {
+                    var _isBanned = _wKingdom.laws.bannedGoods && _wKingdom.laws.bannedGoods.indexOf(goodId) >= 0;
+                    var _isRestricted = _wKingdom.laws.restrictedGoods && _wKingdom.laws.restrictedGoods.indexOf(goodId) >= 0;
+                    var _hasLic = typeof Player !== 'undefined' && Player.hasLicense ? Player.hasLicense(_wKingdom.id, goodId) : false;
+                    if (_isBanned) {
+                        toast('🚫 WARNING: ' + resLabel + ' is BANNED in ' + (_wKingdom.name || 'this kingdom') + '! Your caravan will attempt to smuggle it. Risk of detection, fines, and jail.', 'warning');
+                    } else if (_isRestricted && !_hasLic) {
+                        toast('⚠️ WARNING: ' + resLabel + ' is RESTRICTED in ' + (_wKingdom.name || 'this kingdom') + ' and you have no license! Risk of detection and penalties.', 'warning');
+                    }
+                }
+            }
+        }
 
         // Reset inputs for next order
         goodInput.value = '';
@@ -8389,6 +8443,13 @@ window.UI = (function () {
             h += '<div>🕐 <b>Trip:</b> ' + stats.tripDays + ' days (RT: ' + stats.roundTripDays + ')</div>';
             h += '<div>💵 <b>Daily wage:</b> ' + stats.dailyWage + 'g/day</div>';
             h += '</div>';
+            // Horse transport info for road caravans
+            if (!_isSeaRoute) {
+                var _maxHorseCap = carriers * (CONFIG.CARAVAN_HORSES_PER_CARRIER || 4);
+                h += '<div style="font-size:0.65rem;color:#8d8;margin-top:2px;">🐴 Horse transport: up to ' + _maxHorseCap + ' horses (0 weight — walk alongside, ' + (CONFIG.CARAVAN_HORSES_PER_CARRIER || 4) + ' per carrier)</div>';
+            } else {
+                h += '<div style="font-size:0.65rem;color:#cc8;margin-top:2px;">🐴 Horse transport: ' + (CONFIG.CARAVAN_HORSE_SEA_WEIGHT || 15) + ' wt each (deck cargo)</div>';
+            }
             h += '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:4px;">';
             h += '<div style="color:' + theftColor + ';">🏴‍☠️ <b>Theft risk:</b> ' + stats.yearlyTheftPct + '%/yr</div>';
             h += '<div style="color:' + killColor + ';">💀 <b>Kill risk:</b> ' + stats.yearlyKillPct + '%/yr</div>';
@@ -15842,9 +15903,16 @@ window.UI = (function () {
 
         // === STORAGE ===
         body += '<div style="background:rgba(40,40,40,0.6);padding:10px;border-radius:6px;margin-bottom:8px">';
-        var storageItems = op.outpostStorageItems || {};
+        // Use player.townStorage (where caravans and deposits actually store goods)
+        var _pState = Player.state || {};
+        var _pTownStorage = (_pState.townStorage || {})[townId] || {};
+        var storageItems = {};
+        // Merge outpostStorageItems (legacy) with townStorage (actual)
+        var _osi = op.outpostStorageItems || {};
+        for (var _ok in _osi) { if (_osi[_ok] > 0) storageItems[_ok] = (storageItems[_ok] || 0) + _osi[_ok]; }
+        for (var _tk in _pTownStorage) { if (_pTownStorage[_tk] > 0) storageItems[_tk] = (storageItems[_tk] || 0) + _pTownStorage[_tk]; }
         var currentWeight = 0;
-        for (var sk in storageItems) currentWeight += (storageItems[sk] || 0);
+        for (var sk in storageItems) { var _sw = (findResource(sk) || {}).weight || 1; currentWeight += (storageItems[sk] || 0) * _sw; }
         var maxStorage = op.outpostStorage || 200;
         body += '<h5 style="margin:0 0 6px;color:#ccc">📦 Storage (' + currentWeight + '/' + maxStorage + ')</h5>';
         // Show stored items
@@ -16247,7 +16315,7 @@ window.UI = (function () {
                         if (_rpOnCd) {
                             body += '<span style="color:#888;font-size:10px">⏳' + _rpDaysLeft + 'd</span>';
                         } else {
-                            body += '<button class="btn-medieval" onclick="UI.openRecruitToOutpostDialog(\'' + _rp.id + '\')" style="font-size:10px;padding:2px 6px;background:rgba(74,124,59,0.2);border-color:rgba(74,124,59,0.4);color:#a5d6a7;">Recruit</button>';
+                            body += '<button class="btn-medieval" onclick="UI.openRecruitToOutpostDialog(\'' + _rp.id + '\',\'' + townId + '\')" style="font-size:10px;padding:2px 6px;background:rgba(74,124,59,0.2);border-color:rgba(74,124,59,0.4);color:#a5d6a7;">Recruit</button>';
                         }
                         body += '</span></div>';
                         _recruitShown++;
@@ -16368,9 +16436,11 @@ window.UI = (function () {
     /**
      * Open recruit-to-outpost dialog for an NPC.
      */
-    function openRecruitToOutpostDialog(npcId) {
+    function openRecruitToOutpostDialog(npcId, fromOutpostId) {
         var npc = Engine.findPerson ? Engine.findPerson(npcId) : (Engine.getPerson ? Engine.getPerson(npcId) : null);
         if (!npc) { toast('NPC not found.', 'error'); return; }
+        // Track source outpost so we can return to it
+        window._recruitFromOutpostId = fromOutpostId || null;
         var outposts = Player.getPlayerOutposts ? Player.getPlayerOutposts() : [];
         outposts = outposts.filter(function(o) { return !o.abandoned && !o.annexed && o.isOutpost; });
         if (outposts.length === 0) { toast('No active outposts.', 'error'); return; }
@@ -16449,7 +16519,11 @@ window.UI = (function () {
     }
 
     function _closeRecruitAndRestore() {
-        if (window._townPeopleData) {
+        if (window._recruitFromOutpostId) {
+            var _retId = window._recruitFromOutpostId;
+            window._recruitFromOutpostId = null;
+            openOutpostDetail(_retId);
+        } else if (window._townPeopleData) {
             _renderTownPeople(
                 'name-asc', 'all', '', window._townPeoplePage || 0
             );
@@ -16465,8 +16539,12 @@ window.UI = (function () {
         var shelterItem = shelterSel ? shelterSel.value : '';
         var result = Player.recruitNpcToOutpost(npcId, townId, goldIncentive, shelterItem);
         toast(result.message, result.success ? 'success' : 'warning');
-        // Restore townspeople modal if it was open
-        if (window._townPeopleData) {
+        // Return to outpost management if opened from there
+        if (window._recruitFromOutpostId) {
+            var _retId = window._recruitFromOutpostId;
+            window._recruitFromOutpostId = null;
+            openOutpostDetail(_retId);
+        } else if (window._townPeopleData) {
             _renderTownPeople(
                 document.getElementById('people-sort') ? document.getElementById('people-sort').value : 'name-asc',
                 document.getElementById('people-filter') ? document.getElementById('people-filter').value : 'all',
@@ -22657,9 +22735,10 @@ window.UI = (function () {
         { cat: 'Trading', title: 'Seasonal Demand', text: 'Some goods have seasonal price changes. Winter increases demand for wool, wood, and warm clothing. Summer boosts demand for water and light fabrics. Watch for 📈 seasonal demand markers in the trade panel.' },
         { cat: 'Trading', title: 'Trending Goods', text: 'Fashion trends cause certain goods to become popular, marked with 🔥 Trending in the market. Trending goods sell at higher prices — capitalize on these surges while they last.' },
         { cat: 'Trading', title: 'Street Trading', text: 'The Street Trading button (🤝) lets you buy and sell directly to NPCs on the street, sometimes at better prices than the market. This includes both legal goods and (if unlocked) banned goods.' },
-        { cat: 'Trading', title: 'Banned Goods', text: 'Some kingdoms ban certain goods (weapons, poison, etc.). Selling banned goods carries risk — you may be caught and fined or jailed. Higher underworld skills reduce detection chance. The reward can be enormous.' },
+        { cat: 'Trading', title: 'Banned Goods', text: 'Some kingdoms ban certain goods (weapons, poison, etc.). Selling banned goods — whether personally or via caravan — carries risk. You may be caught and fined or jailed. Higher underworld skills reduce detection chance. The reward can be enormous. Caravans will show a 🚫 BANNED warning on sell orders for banned goods.' },
         { cat: 'Trading', title: 'Carrying Capacity', text: 'You can only carry a limited weight of goods. Your base capacity is 20 weight units. Horses, carts, and ships increase your carrying capacity. The trade panel shows your current load.' },
-        { cat: 'Trading', title: 'Caravans', text: 'Hire caravans to automatically transport goods between towns. Caravans can be one-way, round-trip, or continuous. Guards protect your goods from bandits on dangerous routes.' },
+        { cat: 'Trading', title: 'Caravans', text: 'Hire caravans to automatically transport goods between towns. Caravans can be one-way, round-trip, or continuous. Guards protect your goods from bandits on dangerous routes. Selling banned or restricted goods via caravan carries the same smuggling risk as selling them yourself — your caravan crew may be caught, resulting in fines and jail time for you.' },
+        { cat: 'Trading', title: 'Horse Transport', text: 'Road caravans can transport horses at no weight cost — horses walk alongside the carriers. Each carrier can handle up to 4 horses. Sea caravans treat horses as deck cargo at 15 weight each, taking up valuable ship capacity.' },
         { cat: 'Trading', title: 'Price Convergence', text: 'Connected towns slowly equalize prices over time through background trade. Isolated towns may have extreme price differences — these are the best trading opportunities.' },
         // SKILLS
         { cat: 'Skills', title: 'Skill Points', text: 'Earn skill points (SP) by leveling up through experience. Spend them in the Skills panel (📚) to unlock new abilities. Each skill costs 1-5 SP depending on power.' },

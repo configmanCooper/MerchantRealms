@@ -2495,14 +2495,27 @@
         capacity += carts * (CONFIG.CARAVAN_CART_CAPACITY || 80);
         capacity += wagons * (CONFIG.CARAVAN_WAGON_CAPACITY || 200);
 
-        // Check goods weight against capacity
+        // Check goods weight against capacity (horses walk alongside on road, 0 weight)
         var totalWeight = 0;
+        var horsesInGoods = 0;
         for (const [resId, qty] of Object.entries(goods)) {
-            var res = findResource(resId);
-            totalWeight += (res ? res.weight : 1) * qty;
+            if (resId === 'horses') {
+                horsesInGoods += qty;
+                // Horses have 0 weight on road caravans — they walk alongside
+            } else {
+                var res = findResource(resId);
+                totalWeight += (res ? res.weight : 1) * qty;
+            }
         }
         if (totalWeight > capacity) {
             return { success: false, message: 'Goods weight (' + totalWeight + ') exceeds caravan capacity (' + capacity + '). Add more carriers, horses, carts, or wagons.' };
+        }
+        // Road caravans: each carrier can walk up to HORSES_PER_CARRIER horses
+        if (horsesInGoods > 0) {
+            var maxHorsesCap = carriers * (CONFIG.CARAVAN_HORSES_PER_CARRIER || 4);
+            if (horsesInGoods > maxHorsesCap) {
+                return { success: false, message: 'Too many horses for your carriers. Each carrier can walk ' + (CONFIG.CARAVAN_HORSES_PER_CARRIER || 4) + ' horses. Max: ' + maxHorsesCap + ', loading: ' + horsesInGoods + '.' };
+            }
         }
 
         // Check player has resources for equipment
@@ -3766,54 +3779,27 @@
 
         var resObj = findResource(resId);
         var resWeight = resObj ? (resObj.weight || 1) : 1;
-
-        // Calculate how many production cycles each input can sustain
-        var cyclesPerInput = {};
-        var minCycles = Infinity;
-        for (var i = 0; i < consumeKeys.length; i++) {
-            var cId = consumeKeys[i];
-            var cQty = targetBt.consumes[cId]; // units consumed per cycle
-            var stored = (targetBld.inventory && targetBld.inventory[cId]) || 0;
-            var cycles = cQty > 0 ? stored / cQty : Infinity;
-            cyclesPerInput[cId] = cycles;
-            if (cycles < minCycles) minCycles = cycles;
-        }
-
-        // How many cycles can the requested resource sustain?
-        var myCycles = cyclesPerInput[resId] || 0;
         var myConsumePerCycle = targetBt.consumes[resId];
 
-        // Target: bring this input up to the level of the most-stocked input + buffer
-        // Find the max cycles any OTHER input can sustain
-        var maxOtherCycles = 0;
-        for (var j = 0; j < consumeKeys.length; j++) {
-            if (consumeKeys[j] !== resId && cyclesPerInput[consumeKeys[j]] > maxOtherCycles) {
-                maxOtherCycles = cyclesPerInput[consumeKeys[j]];
-            }
-        }
-
-        // Target cycles: match the highest other input + 20% buffer, minimum 3 cycles
-        var targetCycles = Math.max(3, maxOtherCycles * 1.20);
-
-        // How many units do we need to reach targetCycles?
-        var neededUnits = Math.max(0, Math.ceil(targetCycles * myConsumePerCycle) - ((targetBld.inventory && targetBld.inventory[resId]) || 0));
-
-        // Also enforce weight-based capacity share: this input shouldn't exceed its proportional
-        // share of total capacity (by weight) + 25% flex to allow catching up
+        // Ratio-based allocation: each input gets a proportional share of total
+        // input capacity based on its weight contribution per production cycle.
+        // E.g. recipe 3 iron (wt 2) + 2 wood (wt 1) → total cycle weight = 8
+        // Iron share = 6/8 of capacity (in weight), wood = 2/8
         var totalWeightPerCycle = 0;
         for (var k = 0; k < consumeKeys.length; k++) {
             var ckRes = findResource(consumeKeys[k]);
             var ckW = ckRes ? (ckRes.weight || 1) : 1;
             totalWeightPerCycle += targetBt.consumes[consumeKeys[k]] * ckW;
         }
-        var myWeightFraction = (myConsumePerCycle * resWeight) / totalWeightPerCycle;
-        // If this input is the LEAST stocked (fewest cycles), allow up to 50% extra share to catch up
-        var flexMult = (myCycles <= minCycles + 0.5) ? 1.50 : 1.15;
-        var maxByWeight = Math.floor((cap * myWeightFraction * flexMult) / resWeight);
-        var currentStored = (targetBld.inventory && targetBld.inventory[resId]) || 0;
-        var roomByWeight = Math.max(0, maxByWeight - currentStored);
 
-        // Also ensure we don't exceed absolute free space
+        var myWeightFraction = (myConsumePerCycle * resWeight) / totalWeightPerCycle;
+        var myAllocatedWeight = cap * myWeightFraction;
+        var maxByRatio = Math.floor(myAllocatedWeight / resWeight);
+
+        var currentStored = (targetBld.inventory && targetBld.inventory[resId]) || 0;
+        var roomByRatio = Math.max(0, maxByRatio - currentStored);
+
+        // Also enforce absolute free input space (excluding output items)
         var outputSet = {};
         if (targetBt.produces) outputSet[targetBt.produces] = true;
         if (targetBt.canProduce) { for (var ci = 0; ci < targetBt.canProduce.length; ci++) outputSet[targetBt.canProduce[ci]] = true; }
@@ -3828,7 +3814,7 @@
         }
         var freeSpace = Math.max(0, Math.floor((cap - inputUsed) / resWeight));
 
-        return Math.min(neededUnits, roomByWeight, freeSpace);
+        return Math.min(roomByRatio, freeSpace);
     }
 
     function getUpgradeCost(buildingId) {
@@ -4723,11 +4709,15 @@
             }
         }
 
-        // Check ship capacity
+        // Check ship capacity (horses have special sea weight)
         let totalWeight = 0;
         for (const [resId, qty] of Object.entries(goods)) {
-            const res = findResource(resId);
-            totalWeight += (res ? res.weight : 1) * qty;
+            if (resId === 'horses') {
+                totalWeight += (CONFIG.CARAVAN_HORSE_SEA_WEIGHT || 15) * qty;
+            } else {
+                const res = findResource(resId);
+                totalWeight += (res ? res.weight : 1) * qty;
+            }
         }
         if (totalWeight > shipCapacity) {
             return { success: false, message: `Goods exceed ship capacity (${shipCapacity}). Weight: ${totalWeight}` };
@@ -5153,6 +5143,45 @@
                     logCaravan(caravan, '💰 No ' + resName + ' on caravan to sell at ' + townName + '.');
                     continue;
                 }
+
+                // Check banned/restricted goods — apply same detection as personal smuggling
+                var _sellKingdom = town.kingdomId ? Engine.findKingdom(town.kingdomId) : null;
+                var _sellBanned = _sellKingdom && _sellKingdom.laws && _sellKingdom.laws.bannedGoods && _sellKingdom.laws.bannedGoods.indexOf(o.good) >= 0;
+                var _sellRestricted = _sellKingdom && _sellKingdom.laws && _sellKingdom.laws.restrictedGoods && _sellKingdom.laws.restrictedGoods.indexOf(o.good) >= 0 && !hasLicense(_sellKingdom.id, o.good);
+
+                if (_sellBanned) {
+                    // Stage caravan goods into player inventory for attemptSmuggle's deductGoodsFromPools
+                    player.inventory[o.good] = (player.inventory[o.good] || 0) + sellQty;
+                    var _cSmugResult = attemptSmuggle(o.good, sellQty, town, _sellKingdom, sellPrice);
+                    if (_cSmugResult.success) {
+                        logCaravan(caravan, '🚫💰 Caravan smuggled ' + sellQty + ' ' + resName + ' at ' + townName + '. ' + (_cSmugResult.message || ''));
+                        caravan.totalProfit = (caravan.totalProfit || 0) + (_cSmugResult.totalRevenue || 0);
+                    } else {
+                        logCaravan(caravan, '🚨 Caravan caught smuggling ' + resName + ' at ' + townName + '! ' + (_cSmugResult.message || ''));
+                    }
+                    caravan.goods[o.good] = (caravan.goods[o.good] || 0) - sellQty;
+                    if (caravan.goods[o.good] <= 0) delete caravan.goods[o.good];
+                    player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + sellQty;
+                    continue;
+                }
+
+                if (_sellRestricted) {
+                    // Stage caravan goods into player inventory for attemptRestrictedTrade's deductGoodsFromPools
+                    player.inventory[o.good] = (player.inventory[o.good] || 0) + sellQty;
+                    player.restrictedTradesWithoutLicense = (player.restrictedTradesWithoutLicense || 0) + 1;
+                    if (player.restrictedTradesWithoutLicense >= 10) unlockAchievement('tax_evader');
+                    var _cRestResult = attemptRestrictedTrade(o.good, sellQty, town, _sellKingdom, sellPrice);
+                    if (_cRestResult.success) {
+                        logCaravan(caravan, '⚠️💰 Caravan sold restricted ' + resName + ' at ' + townName + ' (no license). ' + (_cRestResult.message || ''));
+                        caravan.totalProfit = (caravan.totalProfit || 0) + (_cRestResult.totalRevenue || 0);
+                    } else {
+                        logCaravan(caravan, '🚨 Caravan caught selling restricted ' + resName + ' at ' + townName + '! ' + (_cRestResult.message || ''));
+                    }
+                    caravan.goods[o.good] = (caravan.goods[o.good] || 0) - sellQty;
+                    if (caravan.goods[o.good] <= 0) delete caravan.goods[o.good];
+                    player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + sellQty;
+                    continue;
+                }
                 var grossRevenue = Math.floor(sellPrice * sellQty);
                 var _cTariff = _applyCaravanTariff(grossRevenue, townId);
                 var revenue = _cTariff.net;
@@ -5182,30 +5211,59 @@
                 player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + remQty;
                 logCaravan(caravan, '📋 Returned ' + remQty + ' ' + (findResource(gId) ? findResource(gId).name : gId) + ' to inventory.');
             } else {
-                var remPrice = town.market.prices[gId] || 1;
-                if (hasSkill('trade_route_mastery')) remPrice *= 1.10;
-                var remGross = Math.floor(remPrice * remQty);
-                var remTar = _applyCaravanTariff(remGross, townId);
-                var remRev = remTar.net;
-                player.gold += remRev;
-                logFinance(remRev, 'caravan_sales', 'Caravan auto-sold ' + (findResource(gId) ? findResource(gId).name : gId));
-                player.stats.totalGoldEarned += remRev;
-                caravan.totalProfit = (caravan.totalProfit || 0) + remRev;
-                town.market.supply[gId] = (town.market.supply[gId] || 0) + remQty;
-                player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + remQty;
-                var _remTMsg = remTar.tariff > 0 ? ' (tariff: ' + remTar.tariff + 'g)' : '';
-                logCaravan(caravan, '💰 Auto-sold ' + remQty + ' ' + (findResource(gId) ? findResource(gId).name : gId) + ' for ' + remRev + 'g at ' + townName + '.' + _remTMsg);
+                // Auto-sell: check banned/restricted first
+                var _asKingdom = town.kingdomId ? Engine.findKingdom(town.kingdomId) : null;
+                var _asBanned = _asKingdom && _asKingdom.laws && _asKingdom.laws.bannedGoods && _asKingdom.laws.bannedGoods.indexOf(gId) >= 0;
+                var _asRestricted = _asKingdom && _asKingdom.laws && _asKingdom.laws.restrictedGoods && _asKingdom.laws.restrictedGoods.indexOf(gId) >= 0 && !hasLicense(_asKingdom.id, gId);
+                var _asResName = findResource(gId) ? findResource(gId).name : gId;
+
+                if (_asBanned) {
+                    var remPrice = town.market.prices[gId] || 1;
+                    // Stage caravan goods into player inventory for attemptSmuggle
+                    player.inventory[gId] = (player.inventory[gId] || 0) + remQty;
+                    var _asSmugResult = attemptSmuggle(gId, remQty, town, _asKingdom, remPrice);
+                    if (_asSmugResult.success) {
+                        logCaravan(caravan, '🚫💰 Caravan auto-smuggled ' + remQty + ' ' + _asResName + ' at ' + townName + '. ' + (_asSmugResult.message || ''));
+                        caravan.totalProfit = (caravan.totalProfit || 0) + (_asSmugResult.totalRevenue || 0);
+                    } else {
+                        logCaravan(caravan, '🚨 Caravan caught auto-smuggling ' + _asResName + ' at ' + townName + '! ' + (_asSmugResult.message || ''));
+                    }
+                    player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + remQty;
+                } else if (_asRestricted) {
+                    var remPrice2 = town.market.prices[gId] || 1;
+                    // Stage caravan goods into player inventory for attemptRestrictedTrade
+                    player.inventory[gId] = (player.inventory[gId] || 0) + remQty;
+                    player.restrictedTradesWithoutLicense = (player.restrictedTradesWithoutLicense || 0) + 1;
+                    if (player.restrictedTradesWithoutLicense >= 10) unlockAchievement('tax_evader');
+                    var _asRestResult = attemptRestrictedTrade(gId, remQty, town, _asKingdom, remPrice2);
+                    if (_asRestResult.success) {
+                        logCaravan(caravan, '⚠️💰 Caravan auto-sold restricted ' + _asResName + ' at ' + townName + ' (no license). ' + (_asRestResult.message || ''));
+                        caravan.totalProfit = (caravan.totalProfit || 0) + (_asRestResult.totalRevenue || 0);
+                    } else {
+                        logCaravan(caravan, '🚨 Caravan caught selling restricted ' + _asResName + ' at ' + townName + '! ' + (_asRestResult.message || ''));
+                    }
+                    player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + remQty;
+                } else {
+                    var remPrice3 = town.market.prices[gId] || 1;
+                    if (hasSkill('trade_route_mastery')) remPrice3 *= 1.10;
+                    var remGross = Math.floor(remPrice3 * remQty);
+                    var remTar = _applyCaravanTariff(remGross, townId);
+                    var remRev = remTar.net;
+                    player.gold += remRev;
+                    logFinance(remRev, 'caravan_sales', 'Caravan auto-sold ' + _asResName);
+                    player.stats.totalGoldEarned += remRev;
+                    caravan.totalProfit = (caravan.totalProfit || 0) + remRev;
+                    town.market.supply[gId] = (town.market.supply[gId] || 0) + remQty;
+                    player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + remQty;
+                    var _remTMsg = remTar.tariff > 0 ? ' (tariff: ' + remTar.tariff + 'g)' : '';
+                    logCaravan(caravan, '💰 Auto-sold ' + remQty + ' ' + _asResName + ' for ' + remRev + 'g at ' + townName + '.' + _remTMsg);
+                }
             }
             delete caravan.goods[gId];
         }
 
-        // Recalculate weight
-        var newWeight = 0;
-        for (var wId in caravan.goods) {
-            var wRes = findResource(wId);
-            newWeight += (wRes ? wRes.weight : 1) * (caravan.goods[wId] || 0);
-        }
-        caravan.totalWeight = newWeight;
+        // Recalculate weight using caravan-aware weight function
+        caravan.totalWeight = _getCaravanCurrentWeight(caravan);
         return true; // signal: orders were processed
     }
 
@@ -5428,7 +5486,23 @@
 
     function _getCaravanCurrentWeight(caravan) {
         var w = 0;
-        if (caravan.goods) { for (var k in caravan.goods) { if (caravan.goods.hasOwnProperty(k)) { var r = findResource(k); w += (r ? r.weight : 1) * (caravan.goods[k] || 0); } } }
+        var isSea = !!(caravan.shipCapacity || caravan.routeType === 'sea');
+        if (caravan.goods) {
+            for (var k in caravan.goods) {
+                if (caravan.goods.hasOwnProperty(k)) {
+                    var r = findResource(k);
+                    var rw;
+                    if (k === 'horses' && !isSea) {
+                        rw = 0; // road caravans: horses walk alongside, no weight
+                    } else if (k === 'horses' && isSea) {
+                        rw = CONFIG.CARAVAN_HORSE_SEA_WEIGHT || 15;
+                    } else {
+                        rw = r ? r.weight : 1;
+                    }
+                    w += rw * (caravan.goods[k] || 0);
+                }
+            }
+        }
         return w;
     }
 
@@ -5447,8 +5521,19 @@
         var cur = _getCaravanCurrentWeight(caravan);
         var remaining = cap - cur;
         if (remaining <= 0) return 0;
-        var r = findResource(resId);
-        var w = (r ? r.weight : 1);
+        var isSea = !!(caravan.shipCapacity || caravan.routeType === 'sea');
+        var w;
+        if (resId === 'horses' && !isSea) {
+            // Road caravans: horses don't use weight capacity but limited by carriers
+            var maxHorses = (caravan.carriers || 1) * (CONFIG.CARAVAN_HORSES_PER_CARRIER || 4);
+            var curHorses = (caravan.goods && caravan.goods['horses']) || 0;
+            return Math.max(0, maxHorses - curHorses);
+        } else if (resId === 'horses' && isSea) {
+            w = CONFIG.CARAVAN_HORSE_SEA_WEIGHT || 15;
+        } else {
+            var r = findResource(resId);
+            w = (r ? r.weight : 1);
+        }
         return Math.floor(remaining / w);
     }
 
