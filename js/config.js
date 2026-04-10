@@ -992,6 +992,55 @@ const CONFIG = {
         npcDissatisfactionPerDay: 1,    // dissatisfaction gained when any need < 30
     },
 
+    // Outpost Risk Events — dangers that threaten unprotected outposts
+    OUTPOST_RISKS: {
+        // ── Bandit Raids ──
+        banditRaid: {
+            baseChance: 0.03,           // 3% per day (~once per month)
+            stolenPctNoWalls: [0.10, 0.30],   // steal 10-30% of stored goods
+            stolenPctPalisade: [0.05, 0.20],  // 5-20% with wooden palisade
+            stolenPctStone: [0.03, 0.10],     // 3-10% with stone walls
+            stolenPctFortified: [0.01, 0.05], // 1-5% with fortified walls
+            wallReduction: { 0: 0, 1: 0.40, 2: 0.70, 3: 0.90 }, // chance reduction per wall level
+            guardReduction: 0.10,       // each guard reduces raid chance by 10%
+            watchtowerReduction: 0.15,  // watchtower reduces raid chance by 15%
+            maxInjuredWorkers: 2,       // 1-2 workers injured per raid
+            injuryHealDays: [5, 15],    // workers disabled for 5-15 days
+            raiderCount: [3, 8],        // number of raiders (guards must outnumber to repel fully)
+        },
+        // ── Building Fires ──
+        buildingFire: {
+            baseChance: 0.02,           // 2% per day per building without well (~every 50 days)
+            wellReduction: 0.80,        // well reduces fire chance by 80%
+            watchtowerReduction: 0.30,  // watchtower watchman spots fires early
+            stoneWallReduction: 0.10,   // stone doesn't burn
+            cottageReduction: 0.10,     // stone cottages reduce spread
+            guardReduction: 0.05,       // each guard helps firefighting
+            conditionDamage: [0.15, 0.30],    // building loses 15-30% condition
+            inventoryLoss: [0.10, 0.40],      // loses 10-40% of current inventory
+            repairPauseDays: [3, 7],    // building pauses production for 3-7 days
+        },
+        // ── Worker Desertion (enhanced) ──
+        workerDesertion: {
+            baseChanceNoTavern: 0.02,     // 2% daily if no tavern AND no chapel
+            baseChanceHungry: 0.04,       // 4% daily if no food hall and hungry
+            tavernReduction: 0.50,        // tavern halves desertion
+            chapelReduction: 0.50,        // chapel halves desertion (stacks multiplicatively)
+            housingReduction: { tent_camp: 0, cabins: 0.25, cottages: 0.50 }, // housing reduces desertion
+            foodHallEliminatesHunger: true, // food hall eliminates hunger-based desertion
+        },
+        // ── Disease Outbreaks ──
+        diseaseOutbreak: {
+            baseChance: 0.01,           // 1% per day (~once every 100 days)
+            clinicReduction: 0.70,      // clinic reduces outbreak chance by 70%
+            wellReduction: 0.20,        // well reduces chance (clean water)
+            cottageReduction: 0.10,     // cottages reduce chance (better sanitation)
+            tentCampIncrease: 0.005,    // tent camps INCREASE disease risk
+            infectedCount: [2, 5],      // 2-5 workers infected per outbreak
+            illnesses: ['cold', 'flu', 'dysentery', 'fever'], // possible diseases
+        },
+    },
+
     // Outpost Housing Types (each takes 1 land slot)
     OUTPOST_HOUSING: {
         tent_camp: {

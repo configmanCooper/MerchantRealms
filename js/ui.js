@@ -5040,10 +5040,16 @@ window.UI = (function () {
         const needsRepair = bld.condition === 'used' || bld.condition === 'breaking' || bld.condition === 'destroyed';
         const repairCostEst = bt ? (bld.condition === 'destroyed' ? Math.floor(bt.cost * 0.5) : bld.condition === 'breaking' ? Math.floor(bt.cost * 0.3) : Math.floor(bt.cost * 0.2)) : '?';
         const warehouseTypes = ['warehouse', 'warehouse_small', 'warehouse_large'];
+        const day = Engine.getDay ? Engine.getDay() : 0;
+        const isFireRepair = bld._fireRepairUntil && day < bld._fireRepairUntil;
 
         html += `<div style="padding:8px;border:1px solid var(--border);border-radius:4px;margin-bottom:8px;">
-            <div style="font-weight:bold;font-size:0.8rem;margin-bottom:6px;">🔧 MAINTENANCE</div>
-            <div style="display:flex;gap:6px;flex-wrap:wrap;">`;
+            <div style="font-weight:bold;font-size:0.8rem;margin-bottom:6px;">🔧 MAINTENANCE</div>`;
+        if (isFireRepair) {
+            var _frDaysLeft = bld._fireRepairUntil - day;
+            html += `<div style="padding:6px;background:rgba(200,80,0,0.15);border:1px solid rgba(200,80,0,0.3);border-radius:4px;margin-bottom:6px;font-size:0.75rem;color:#e8a050;">🔥 <b>Fire Damage — Repairing</b> (${_frDaysLeft} day${_frDaysLeft !== 1 ? 's' : ''} remaining). Production paused.</div>`;
+        }
+        html += `<div style="display:flex;gap:6px;flex-wrap:wrap;">`;
 
         if (needsRepair) {
             html += `<button class="btn-trade buy" style="font-size:0.7rem;background:rgba(200,100,0,0.15);border-color:rgba(200,100,0,0.3);" onclick="UI.repairBuilding('${bld.id}')">🔨 Repair (${repairCostEst}g)</button>`;
@@ -16439,6 +16445,82 @@ window.UI = (function () {
             body += '<div style="font-size:11px;color:#888;margin-bottom:8px">⛺ Travel to a town to recruit people for this outpost.</div>';
         }
 
+        // === RISK ASSESSMENT ===
+        var _risks = CONFIG.OUTPOST_RISKS || {};
+        if (_risks.banditRaid || _risks.buildingFire || _risks.workerDesertion || _risks.diseaseOutbreak) {
+            body += '<div style="background:rgba(200,80,0,0.06);padding:10px;border-radius:6px;margin-bottom:8px;border:1px solid rgba(200,80,0,0.2)">';
+            body += '<h5 style="margin:0 0 6px;color:#e0a060">⚠️ Risk Assessment</h5>';
+
+            // Bandit Raid risk
+            var _rRaid = _risks.banditRaid;
+            if (_rRaid) {
+                var _raidCh = _rRaid.baseChance;
+                _raidCh *= (1 - (_rRaid.wallReduction[op.walls] || 0));
+                _raidCh -= op.guards * _rRaid.guardReduction;
+                var _hasWT = (op.outpostUpgrades || []).indexOf('watchtower') >= 0;
+                if (_hasWT) _raidCh -= _rRaid.watchtowerReduction;
+                _raidCh = Math.max(0.001, _raidCh);
+                var _raidPct = Math.round(_raidCh * 1000) / 10;
+                var _raidColor = _raidPct > 2 ? '#c44e52' : _raidPct > 0.5 ? '#d4a844' : '#55a868';
+                body += '<div style="font-size:11px;margin:2px 0"><span style="color:' + _raidColor + '">🦹 Raid: ' + _raidPct + '%/day</span>';
+                if (op.walls === 0) body += ' <span style="color:#888;font-size:10px">(build walls!)</span>';
+                else if (op.guards === 0) body += ' <span style="color:#888;font-size:10px">(hire guards)</span>';
+                body += '</div>';
+            }
+
+            // Fire risk
+            var _rFire = _risks.buildingFire;
+            if (_rFire && (op.buildings || []).length > 0) {
+                var _fireCh = _rFire.baseChance;
+                var _hasWellR = (op.outpostUpgrades || []).indexOf('well') >= 0;
+                if (_hasWellR) _fireCh *= (1 - _rFire.wellReduction);
+                if (_hasWT) _fireCh *= (1 - _rFire.watchtowerReduction);
+                if (op.walls >= 2) _fireCh *= (1 - _rFire.stoneWallReduction);
+                _fireCh = Math.max(0.001, _fireCh);
+                var _firePct = Math.round(_fireCh * 1000) / 10;
+                var _fireColor = _firePct > 1 ? '#c44e52' : _firePct > 0.3 ? '#d4a844' : '#55a868';
+                body += '<div style="font-size:11px;margin:2px 0"><span style="color:' + _fireColor + '">🔥 Fire: ' + _firePct + '%/day/bldg</span>';
+                if (!_hasWellR) body += ' <span style="color:#888;font-size:10px">(build a well!)</span>';
+                body += '</div>';
+            }
+
+            // Desertion risk
+            var _rDesert = _risks.workerDesertion;
+            if (_rDesert && op.workers > 0) {
+                var _hasTav = (op.outpostUpgrades || []).indexOf('tavern') >= 0;
+                var _hasChap = (op.outpostUpgrades || []).indexOf('chapel') >= 0;
+                var _hasFH = (op.outpostUpgrades || []).indexOf('food_hall') >= 0;
+                var _desertLevel = 'Low';
+                var _desertColor = '#55a868';
+                if (!_hasTav && !_hasChap) { _desertLevel = 'High'; _desertColor = '#c44e52'; }
+                else if (!_hasTav || !_hasChap) { _desertLevel = 'Medium'; _desertColor = '#d4a844'; }
+                if (!_hasFH) { _desertLevel = _desertLevel === 'Low' ? 'Medium' : _desertLevel; _desertColor = _desertColor === '#55a868' ? '#d4a844' : _desertColor; }
+                body += '<div style="font-size:11px;margin:2px 0"><span style="color:' + _desertColor + '">😞 Desertion: ' + _desertLevel + '</span>';
+                if (!_hasTav) body += ' <span style="color:#888;font-size:10px">(build tavern)</span>';
+                if (!_hasChap) body += ' <span style="color:#888;font-size:10px">(build chapel)</span>';
+                body += '</div>';
+            }
+
+            // Disease risk
+            var _rDisease = _risks.diseaseOutbreak;
+            if (_rDisease && op.population >= 3) {
+                var _diseaseCh = _rDisease.baseChance;
+                var _hasClinicR = (op.outpostUpgrades || []).indexOf('clinic') >= 0;
+                var _hasWellD = (op.outpostUpgrades || []).indexOf('well') >= 0;
+                if (_hasClinicR) _diseaseCh *= (1 - _rDisease.clinicReduction);
+                if (_hasWellD) _diseaseCh *= (1 - _rDisease.wellReduction);
+                _diseaseCh = Math.max(0.001, _diseaseCh);
+                var _diseasePct = Math.round(_diseaseCh * 1000) / 10;
+                var _diseaseColor = _diseasePct > 0.5 ? '#c44e52' : _diseasePct > 0.2 ? '#d4a844' : '#55a868';
+                body += '<div style="font-size:11px;margin:2px 0"><span style="color:' + _diseaseColor + '">🤒 Disease: ' + _diseasePct + '%/day</span>';
+                if (!_hasClinicR) body += ' <span style="color:#888;font-size:10px">(build clinic)</span>';
+                if (!_hasWellD) body += ' <span style="color:#888;font-size:10px">(build well)</span>';
+                body += '</div>';
+            }
+
+            body += '</div>';
+        }
+
         // === VILLAGE PETITION ===
         var minPop = cfg.villageConversionMinPop || 20;
         if (op.population >= minPop && _atOutpost) {
@@ -16888,7 +16970,34 @@ window.UI = (function () {
         if (Player.skills && Player.skills.cartographer) { roadGold = Math.floor(roadGold * 0.75); roadWood = Math.floor(roadWood * 0.75); roadStone = Math.floor(roadStone * 0.75); }
 
         var html = '<div style="padding:8px;">';
-        html += '<p style="margin:0 0 8px;font-size:0.85rem;color:#aaa;">Found a wilderness outpost at your current location. Starts with ' + (cfg.startingLandPlots || 4) + ' land plots + ' + (cfg.baseStorageCapacity || 200) + ' storage. ' + (cfg.dailyMaintenanceCost || 3) + 'g/day maintenance.</p>';
+
+        // ── Advantages & Risks explanation ──
+        html += '<div style="border:1px solid rgba(85,168,104,0.4);background:rgba(85,168,104,0.08);padding:8px;border-radius:5px;margin-bottom:8px;">';
+        html += '<div style="font-size:12px;font-weight:bold;color:#8fc98a;margin-bottom:4px;">✅ Advantages of Outposts</div>';
+        html += '<ul style="margin:0;padding-left:16px;font-size:10.5px;color:#c0b888;line-height:1.5;">';
+        html += '<li><b>You own all the land</b> — build freely without competing for land plots in towns</li>';
+        html += '<li>Great for building when towns run out of space</li>';
+        html += '<li>Full control over production, workers, and storage</li>';
+        html += '<li>Can grow into a village with enough population</li>';
+        html += '<li>Private storage separate from town markets</li>';
+        html += '</ul></div>';
+
+        html += '<div style="border:1px solid rgba(200,80,0,0.4);background:rgba(200,80,0,0.08);padding:8px;border-radius:5px;margin-bottom:8px;">';
+        html += '<div style="font-size:12px;font-weight:bold;color:#e0a060;margin-bottom:4px;">⚠️ Risks of Outposts</div>';
+        html += '<ul style="margin:0;padding-left:16px;font-size:10.5px;color:#c0b888;line-height:1.5;">';
+        html += '<li><b>🦹 Bandit Raids</b> — bandits steal goods and injure workers. <i>Mitigate with walls, guards, and a watchtower.</i></li>';
+        html += '<li><b>🔥 Building Fires</b> — fires damage buildings and destroy inventory. <i>A well drastically reduces fire risk. A watchtower helps too.</i></li>';
+        html += '<li><b>😞 Worker Desertion</b> — workers leave if morale is low. <i>Build a tavern, chapel, food hall, and decent housing.</i></li>';
+        html += '<li><b>🤒 Disease Outbreaks</b> — sickness spreads without sanitation. <i>A clinic and well nearly eliminate outbreaks.</i></li>';
+        html += '<li><b>💰 Daily Maintenance</b> — ' + (cfg.dailyMaintenanceCost || 10) + 'g/day base cost + worker/guard wages</li>';
+        html += '</ul></div>';
+
+        html += '<div style="border:1px solid rgba(100,140,200,0.3);background:rgba(100,140,200,0.06);padding:6px;border-radius:5px;margin-bottom:8px;font-size:10px;color:#8ab8d8;">';
+        html += '💡 <b>Tip:</b> Build a <b>well</b> first (reduces fires by 80%), then walls and guards for raid protection. ';
+        html += 'A tavern and chapel keep workers happy. Upgrade housing from tents to cabins/cottages as you grow.';
+        html += '</div>';
+
+        html += '<p style="margin:0 0 8px;font-size:0.85rem;color:#aaa;">Starts with ' + (cfg.startingLandPlots || 4) + ' land plots + ' + (cfg.baseStorageCapacity || 200) + ' storage.</p>';
 
         // Option 1: Without road
         var canBase = gold >= cost;
@@ -23000,7 +23109,7 @@ window.UI = (function () {
         // OUTPOSTS
         { cat: 'Outposts', title: 'Founding Outposts', text: 'At higher ranks, you can found outposts in the wilderness. Outposts cost 500g to establish and 3g/day to maintain. They serve as small trading posts and can grow into full towns if population reaches 15+.' },
         { cat: 'Outposts', title: 'Outpost Growth', text: 'Outposts attract settlers over time. When population reaches 15+, a nearby kingdom may annex the outpost into a village. This is how new towns are born in the world — you can shape the map!' },
-        { cat: 'Outposts', title: 'Outpost Risks', text: 'Outposts face theft, bandit damage, and annexation. Staff your outposts with guards to reduce risk. Abandoned outposts decay and may be destroyed.' },
+        { cat: 'Outposts', title: 'Outpost Risks', text: 'Outposts face several dangers: 🦹 Bandit Raids (~3%/day) steal goods and injure workers — walls, guards, and a watchtower reduce risk dramatically. 🔥 Building Fires (~2%/day per building) damage condition and destroy inventory — a well reduces fire chance by 80%, and a watchtower helps spot fires early. 😞 Worker Desertion — workers leave without a tavern, chapel, or food hall. Upgrade housing from tents to cabins/cottages to improve retention. 🤒 Disease Outbreaks (~1%/day) infect multiple workers — a clinic and well nearly eliminate outbreaks. Build a well first, then walls and guards, then a tavern and clinic for a safe, productive outpost.' },
         // SOCIAL RANKS
         { cat: 'Ranks', title: 'Climbing the Ranks', text: 'Social rank determines what you can do. Start as a Peasant, work up through Citizen, Burgher, Guildmaster, Minor Noble, Lord, and Royal Advisor. Each rank requires gold, reputation, and skill thresholds.' },
         { cat: 'Ranks', title: 'Rank Benefits', text: 'Higher ranks unlock: property ownership (Citizen), processing buildings (Burgher), toll roads (Guildmaster), court access (Minor Noble), militia rights (Lord), and legislative power (Royal Advisor).' },

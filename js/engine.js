@@ -17306,6 +17306,398 @@
         }
     }
 
+    // ================================================================
+    // §25b  OUTPOST RISK EVENTS — Bandit Raids, Fires, Desertion, Disease
+    // ================================================================
+
+    /**
+     * Bandit Raids — armed bandits attack the outpost, stealing goods and injuring workers.
+     * Runs daily for each player-founded outpost.
+     */
+    function tickOutpostBanditRaids() {
+        var risks = CONFIG.OUTPOST_RISKS && CONFIG.OUTPOST_RISKS.banditRaid;
+        if (!risks) return;
+        var rng = world.rng;
+
+        for (var ti = 0; ti < world.towns.length; ti++) {
+            var outpost = world.towns[ti];
+            if (!outpost.isOutpost || outpost.abandoned || outpost.destroyed) continue;
+
+            var numGuards = (outpost.outpostGuards || []).length;
+            var wallLevel = outpost.walls || 0;
+            var hasWatchtower = (outpost.outpostUpgrades || []).indexOf('watchtower') >= 0 &&
+                                outpost.workerAssignments && !!outpost.workerAssignments.watchtower;
+
+            // Calculate raid chance
+            var raidChance = risks.baseChance;
+            raidChance *= (1 - (risks.wallReduction[wallLevel] || 0));
+            raidChance -= numGuards * risks.guardReduction;
+            if (hasWatchtower) raidChance -= risks.watchtowerReduction;
+            raidChance = Math.max(0.001, raidChance);
+
+            if (!rng.chance(raidChance)) continue;
+
+            // Determine number of raiders
+            var raiderCount = rng.randInt(risks.raiderCount[0], risks.raiderCount[1]);
+
+            // Guards can repel raiders
+            if (numGuards >= raiderCount) {
+                logEvent('⚔️🛡️ Bandits attacked outpost "' + outpost.name + '" but were repelled by the guards!', {
+                    type: 'outpost_defense', townId: outpost.id, icon: '⚔️'
+                });
+                continue;
+            }
+
+            // Raid succeeds — determine how much is stolen
+            var stolenPct;
+            if (wallLevel >= 3) stolenPct = risks.stolenPctFortified;
+            else if (wallLevel === 2) stolenPct = risks.stolenPctStone;
+            else if (wallLevel === 1) stolenPct = risks.stolenPctPalisade;
+            else stolenPct = risks.stolenPctNoWalls;
+
+            var pctRoll = stolenPct[0] + rng.random() * (stolenPct[1] - stolenPct[0]);
+
+            // Steal from outpost storage
+            var stolenItems = [];
+            var totalStolenValue = 0;
+            var storage = outpost.outpostStorageItems || {};
+            var sKeys = Object.keys(storage).filter(function(k) { return (storage[k] || 0) > 0; });
+            for (var si = 0; si < sKeys.length; si++) {
+                var key = sKeys[si];
+                var qty = storage[key] || 0;
+                var stolen = Math.max(1, Math.floor(qty * pctRoll));
+                if (stolen > qty) stolen = qty;
+                if (stolen > 0) {
+                    storage[key] -= stolen;
+                    if (storage[key] <= 0) delete storage[key];
+                    var res = findResourceById(key);
+                    totalStolenValue += stolen * (res ? res.basePrice : 1);
+                    stolenItems.push(stolen + ' ' + key);
+                }
+            }
+
+            // Also steal from building inventories at the outpost
+            var buildings = outpost.buildings || [];
+            for (var bi = 0; bi < buildings.length; bi++) {
+                var bld = buildings[bi];
+                var bldStorage = bld.outputStorage || bld.storage;
+                if (!bldStorage) continue;
+                var bKeys = Object.keys(bldStorage).filter(function(k) { return (bldStorage[k] || 0) > 0; });
+                for (var bk = 0; bk < bKeys.length; bk++) {
+                    var bKey = bKeys[bk];
+                    var bQty = bldStorage[bKey] || 0;
+                    var bStolen = Math.max(1, Math.floor(bQty * pctRoll * 0.5));
+                    if (bStolen > bQty) bStolen = bQty;
+                    if (bStolen > 0) {
+                        bldStorage[bKey] -= bStolen;
+                        if (bldStorage[bKey] <= 0) delete bldStorage[bKey];
+                        var bRes = findResourceById(bKey);
+                        totalStolenValue += bStolen * (bRes ? bRes.basePrice : 1);
+                        stolenItems.push(bStolen + ' ' + bKey);
+                    }
+                }
+            }
+
+            // Injure workers (1-2)
+            var injuredNames = [];
+            var maxInjured = Math.min(risks.maxInjuredWorkers, (outpost.outpostWorkers || []).length);
+            var workerPool = (outpost.outpostWorkers || []).slice();
+            for (var ii = 0; ii < maxInjured && workerPool.length > 0; ii++) {
+                var wIdx = rng.randInt(0, workerPool.length - 1);
+                var wId = workerPool.splice(wIdx, 1)[0];
+                var worker = findPerson(wId);
+                if (worker && worker.alive) {
+                    worker.injured = true;
+                    worker.injuryDaysLeft = rng.randInt(risks.injuryHealDays[0], risks.injuryHealDays[1]);
+                    worker._injurySource = 'bandit_raid';
+                    injuredNames.push(worker.firstName);
+                }
+            }
+
+            var msg = '🦹⚔️ Bandits raided outpost "' + outpost.name + '"!';
+            if (stolenItems.length > 0) msg += ' Stolen: ' + stolenItems.slice(0, 5).join(', ') + ' (~' + Math.floor(totalStolenValue) + 'g).';
+            if (injuredNames.length > 0) msg += ' Injured: ' + injuredNames.join(', ') + '.';
+            if (stolenItems.length === 0 && injuredNames.length === 0) msg += ' They found little of value.';
+            logEvent(msg, { type: 'outpost_raid', townId: outpost.id, icon: '🦹' });
+        }
+    }
+
+    /**
+     * Building Fires — random fires damage buildings and destroy inventory.
+     * Runs daily for each outpost.
+     */
+    function tickOutpostFires() {
+        var risks = CONFIG.OUTPOST_RISKS && CONFIG.OUTPOST_RISKS.buildingFire;
+        if (!risks) return;
+        var rng = world.rng;
+
+        for (var ti = 0; ti < world.towns.length; ti++) {
+            var outpost = world.towns[ti];
+            if (!outpost.isOutpost || outpost.abandoned || outpost.destroyed) continue;
+            if (!outpost.buildings || outpost.buildings.length === 0) continue;
+
+            var hasWell = (outpost.outpostUpgrades || []).indexOf('well') >= 0;
+            var hasWatchtower = (outpost.outpostUpgrades || []).indexOf('watchtower') >= 0 &&
+                                outpost.workerAssignments && !!outpost.workerAssignments.watchtower;
+            var wallLevel = outpost.walls || 0;
+            var numGuards = (outpost.outpostGuards || []).length;
+            var hasCottages = false;
+            var housingList = outpost.outpostHousing || [];
+            for (var hi = 0; hi < housingList.length; hi++) {
+                if (housingList[hi].type === 'cottages') { hasCottages = true; break; }
+            }
+
+            // Check each building for fire
+            for (var bi = 0; bi < outpost.buildings.length; bi++) {
+                var bld = outpost.buildings[bi];
+                if (bld.condition === 'destroyed') continue;
+                if (bld._fireRepairUntil && world.day < bld._fireRepairUntil) continue; // already being repaired
+
+                var fireChance = risks.baseChance;
+                if (hasWell) fireChance *= (1 - risks.wellReduction);
+                if (hasWatchtower) fireChance *= (1 - risks.watchtowerReduction);
+                if (wallLevel >= 2) fireChance *= (1 - risks.stoneWallReduction);
+                if (hasCottages) fireChance *= (1 - risks.cottageReduction);
+                fireChance -= numGuards * risks.guardReduction;
+                fireChance = Math.max(0.001, fireChance);
+
+                if (!rng.chance(fireChance)) continue;
+
+                // Fire breaks out!
+                // Damage condition
+                var condDmgPct = risks.conditionDamage[0] + rng.random() * (risks.conditionDamage[1] - risks.conditionDamage[0]);
+                if (bld.condition === 'new') {
+                    // 15-30% damage — if > 20% transition to 'used'
+                    if (condDmgPct > 0.20) bld.condition = 'used';
+                } else if (bld.condition === 'used') {
+                    // further damage pushes to breaking
+                    if (condDmgPct > 0.15) bld.condition = 'breaking';
+                } else if (bld.condition === 'breaking') {
+                    // Breaking buildings can be destroyed by fire
+                    if (condDmgPct > 0.25) bld.condition = 'destroyed';
+                }
+
+                // Destroy some inventory
+                var invLossPct = risks.inventoryLoss[0] + rng.random() * (risks.inventoryLoss[1] - risks.inventoryLoss[0]);
+                var lostItems = [];
+                var storages = [bld.outputStorage, bld.inputStorage, bld.storage].filter(Boolean);
+                for (var si = 0; si < storages.length; si++) {
+                    var st = storages[si];
+                    var stKeys = Object.keys(st);
+                    for (var sk = 0; sk < stKeys.length; sk++) {
+                        var sKey = stKeys[sk];
+                        var qty = st[sKey] || 0;
+                        var lost = Math.max(1, Math.floor(qty * invLossPct));
+                        if (lost > qty) lost = qty;
+                        if (lost > 0) {
+                            st[sKey] -= lost;
+                            if (st[sKey] <= 0) delete st[sKey];
+                            lostItems.push(lost + ' ' + sKey);
+                        }
+                    }
+                }
+
+                // Pause production
+                var pauseDays = rng.randInt(risks.repairPauseDays[0], risks.repairPauseDays[1]);
+                bld._fireRepairUntil = world.day + pauseDays;
+
+                var btDef = typeof BUILDING_TYPES !== 'undefined' ? BUILDING_TYPES[(bld.type || '').toUpperCase()] : null;
+                var bName = btDef ? btDef.name : bld.type;
+                var msg = '🔥 Fire at outpost "' + outpost.name + '"! ' + bName + ' is damaged (now ' + bld.condition + ').';
+                if (lostItems.length > 0) msg += ' Lost: ' + lostItems.slice(0, 4).join(', ') + '.';
+                msg += ' Repairs will take ' + pauseDays + ' days.';
+                logEvent(msg, { type: 'outpost_fire', townId: outpost.id, icon: '🔥' });
+                break; // Only one fire per outpost per day
+            }
+        }
+    }
+
+    /**
+     * Enhanced Worker Desertion — workers leave if conditions are poor.
+     * Stronger than the NPC departure system; targets specific quality-of-life gaps.
+     * Runs daily.
+     */
+    function tickOutpostDesertion() {
+        var risks = CONFIG.OUTPOST_RISKS && CONFIG.OUTPOST_RISKS.workerDesertion;
+        if (!risks) return;
+        var rng = world.rng;
+
+        for (var ti = 0; ti < world.towns.length; ti++) {
+            var outpost = world.towns[ti];
+            if (!outpost.isOutpost || outpost.abandoned || outpost.destroyed) continue;
+            if (!outpost.outpostWorkers || outpost.outpostWorkers.length === 0) continue;
+
+            var upgrades = outpost.outpostUpgrades || [];
+            var hasTavern = upgrades.indexOf('tavern') >= 0 && outpost.workerAssignments && !!outpost.workerAssignments.tavern;
+            var hasChapel = upgrades.indexOf('chapel') >= 0 && outpost.workerAssignments && !!outpost.workerAssignments.chapel;
+            var hasFoodHall = upgrades.indexOf('food_hall') >= 0 && outpost.workerAssignments && !!outpost.workerAssignments.food_hall;
+
+            // Determine best housing type for reduction
+            var bestHousingReduction = 0;
+            var housingList = outpost.outpostHousing || [];
+            for (var hi = 0; hi < housingList.length; hi++) {
+                var hReduction = risks.housingReduction[housingList[hi].type] || 0;
+                if (hReduction > bestHousingReduction) bestHousingReduction = hReduction;
+            }
+
+            // Check morale-based desertion (no tavern and no chapel)
+            var moraleDesertion = 0;
+            if (!hasTavern && !hasChapel) {
+                moraleDesertion = risks.baseChanceNoTavern;
+            } else if (!hasTavern || !hasChapel) {
+                // One but not both — half the base
+                moraleDesertion = risks.baseChanceNoTavern * 0.5;
+            }
+            // Apply tavern/chapel reductions if partially present
+            if (hasTavern) moraleDesertion *= (1 - risks.tavernReduction);
+            if (hasChapel) moraleDesertion *= (1 - risks.chapelReduction);
+            moraleDesertion *= (1 - bestHousingReduction);
+
+            // Check hunger-based desertion
+            var hungerDesertion = 0;
+            if (!hasFoodHall) {
+                var foodNeed = outpost.npcNeeds ? outpost.npcNeeds.food : 20;
+                if (foodNeed < 40) {
+                    hungerDesertion = risks.baseChanceHungry;
+                    if (hasTavern) hungerDesertion *= (1 - risks.tavernReduction);
+                    hungerDesertion *= (1 - bestHousingReduction);
+                }
+            }
+
+            // Combined desertion chance (whichever is higher, don't double-dip)
+            var desertChance = Math.max(moraleDesertion, hungerDesertion);
+            if (desertChance <= 0) continue;
+
+            // Check each worker individually
+            var workers = outpost.outpostWorkers.slice();
+            for (var wi = 0; wi < workers.length; wi++) {
+                if (!rng.chance(desertChance)) continue;
+
+                var wId = workers[wi];
+                var worker = findPerson(wId);
+                if (!worker || !worker.alive) continue;
+
+                // Remove from outpost
+                var wIdx = outpost.outpostWorkers.indexOf(wId);
+                if (wIdx >= 0) outpost.outpostWorkers.splice(wIdx, 1);
+                var rIdx = outpost.outpostResidents.indexOf(wId);
+                if (rIdx >= 0) outpost.outpostResidents.splice(rIdx, 1);
+                // Unassign from worker roles
+                if (outpost.workerAssignments) {
+                    var roles = ['clinic', 'tavern', 'market_stall', 'watchtower', 'chapel', 'food_hall'];
+                    for (var r = 0; r < roles.length; r++) {
+                        if (outpost.workerAssignments[roles[r]] === wId) delete outpost.workerAssignments[roles[r]];
+                    }
+                    if (outpost.workerAssignments._maintenance) {
+                        var mIdx = outpost.workerAssignments._maintenance.indexOf(wId);
+                        if (mIdx >= 0) outpost.workerAssignments._maintenance.splice(mIdx, 1);
+                    }
+                }
+                // Move to nearest non-outpost town
+                var nearTown = null, nearDist = Infinity;
+                for (var nti = 0; nti < world.towns.length; nti++) {
+                    var nt = world.towns[nti];
+                    if (nt.id === outpost.id || nt.isOutpost || nt.destroyed || nt.abandoned) continue;
+                    var nd = Math.hypot((nt.x || 0) - (outpost.x || 0), (nt.y || 0) - (outpost.y || 0));
+                    if (nd < nearDist) { nearDist = nd; nearTown = nt; }
+                }
+                if (nearTown) worker.townId = nearTown.id;
+                worker.occupation = 'unemployed';
+                worker.employerId = null;
+                outpost.population = outpost.outpostResidents.length;
+
+                var reason = hungerDesertion > moraleDesertion ? 'hunger' : 'poor morale';
+                logEvent('😞💨 ' + worker.firstName + ' ' + worker.lastName + ' deserted outpost "' + outpost.name + '" due to ' + reason + '.', {
+                    type: 'outpost_desertion', townId: outpost.id, icon: '😞'
+                });
+                break; // max one desertion per outpost per day to avoid cascading
+            }
+        }
+    }
+
+    /**
+     * Disease Outbreaks — without a clinic, disease can spread through the outpost.
+     * Runs daily.
+     */
+    function tickOutpostDisease() {
+        var risks = CONFIG.OUTPOST_RISKS && CONFIG.OUTPOST_RISKS.diseaseOutbreak;
+        if (!risks) return;
+        var rng = world.rng;
+
+        for (var ti = 0; ti < world.towns.length; ti++) {
+            var outpost = world.towns[ti];
+            if (!outpost.isOutpost || outpost.abandoned || outpost.destroyed) continue;
+            if (!outpost.outpostResidents || outpost.outpostResidents.length < 3) continue; // need people to have an outbreak
+
+            var upgrades = outpost.outpostUpgrades || [];
+            var hasClinic = upgrades.indexOf('clinic') >= 0 && outpost.workerAssignments && !!outpost.workerAssignments.clinic;
+            var hasWell = upgrades.indexOf('well') >= 0;
+            var hasCottages = false;
+            var hasTentCamp = false;
+            var housingList = outpost.outpostHousing || [];
+            for (var hi = 0; hi < housingList.length; hi++) {
+                if (housingList[hi].type === 'cottages') hasCottages = true;
+                if (housingList[hi].type === 'tent_camp') hasTentCamp = true;
+            }
+
+            // Calculate outbreak chance
+            var outbreakChance = risks.baseChance;
+            if (hasClinic) outbreakChance *= (1 - risks.clinicReduction);
+            if (hasWell) outbreakChance *= (1 - risks.wellReduction);
+            if (hasCottages) outbreakChance *= (1 - risks.cottageReduction);
+            if (hasTentCamp) outbreakChance += risks.tentCampIncrease;
+            outbreakChance = Math.max(0.001, outbreakChance);
+
+            if (!rng.chance(outbreakChance)) continue;
+
+            // Outbreak hits — infect 2-5 residents
+            var illness = risks.illnesses[rng.randInt(0, risks.illnesses.length - 1)];
+            var numToInfect = rng.randInt(risks.infectedCount[0], Math.min(risks.infectedCount[1], outpost.outpostResidents.length));
+            var infected = 0;
+            var infectedNames = [];
+            var candidates = outpost.outpostResidents.slice();
+            // Shuffle candidates
+            for (var ci = candidates.length - 1; ci > 0; ci--) {
+                var cj = rng.randInt(0, ci);
+                var tmp = candidates[ci]; candidates[ci] = candidates[cj]; candidates[cj] = tmp;
+            }
+
+            for (var ii = 0; ii < candidates.length && infected < numToInfect; ii++) {
+                var person = findPerson(candidates[ii]);
+                if (!person || !person.alive) continue;
+                // Skip already sick
+                if (person.illnesses && person.illnesses.length > 0) continue;
+                if (person.sick) continue;
+
+                // Use simplified infection (compatible with the existing illness system)
+                if (typeof infectNPC === 'function') {
+                    infectNPC(person, illness, rng, world.day, 'outpost_outbreak');
+                } else {
+                    // Fallback: manual illness fields
+                    if (!person.illnesses) person.illnesses = [];
+                    person.illnesses.push({
+                        id: illness,
+                        startDay: world.day,
+                        severity: rng.chance(0.3) ? 'moderate' : 'minor',
+                        source: 'outpost_outbreak'
+                    });
+                    person.sick = true;
+                }
+                infected++;
+                infectedNames.push(person.firstName);
+            }
+
+            if (infected > 0) {
+                var illnessName = illness.replace(/_/g, ' ');
+                illnessName = illnessName.charAt(0).toUpperCase() + illnessName.slice(1);
+                logEvent('🤒🏥 Disease outbreak at outpost "' + outpost.name + '"! ' + illnessName + ' has infected ' + infected + ' resident(s): ' +
+                    infectedNames.join(', ') + '.' + (hasClinic ? ' The clinic is treating patients.' : ' No clinic available!'), {
+                    type: 'outpost_disease', townId: outpost.id, icon: '🤒'
+                });
+            }
+        }
+    }
+
     /**
      * Find a random eligible NPC from a connected town to attract to an outpost.
      */
@@ -34477,6 +34869,10 @@
             tickOutposts();
             tickOutpostAnnexation();
             tickOutpostImmigration();
+            tickOutpostBanditRaids();
+            tickOutpostFires();
+            tickOutpostDesertion();
+            tickOutpostDisease();
             tickEliteMerchantOutposts();
             tickWorkerEconomy();
             tickTravelDemand();

@@ -8028,6 +8028,8 @@
 
         for (const bld of player.buildings) {
             if (!bld.active) continue;
+            // Skip buildings under fire repair
+            if (bld._fireRepairUntil && day < bld._fireRepairUntil) continue;
 
             // ═══════════════════════════════════════════════════════════
             // PASSIVE WORKER SKILL GAIN — happens every day the building
