@@ -4,6 +4,25 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.63.0] - 2026-04-10
+
+### Added
+- **Quality Crafting System**: Weapons and armor now have RNG-based quality when producing good or excellent variants — always uses premium materials, but chance determines if you get the quality version or fall back to basic
+- **Quality Chance Display**: Production buildings and guild crafting now show your % chance of producing good/excellent quality items based on worker skill and player skills
+- **4 New Player Skills**: Good Weaponcraft, Good Armorcraft (each +20% good chance), Excellent Weaponcraft, Excellent Armorcraft (each +20% excellent chance, requires corresponding good skill)
+- **Caravan Storage Priority**: Caravans now prioritize delivering goods to production buildings that use them (e.g., iron to blacksmith), then fall back to other buildings and town/outpost storage
+- **Clinic & Hospital Caravan Support**: Clinics and hospitals now properly accept caravan deliveries
+
+### Changed
+- Outpost founding cost increased to 800 gold + 10 planks (was 500 gold)
+- Outpost daily maintenance increased to 10 gold (was 3 gold)
+- Recruit section now only appears when at a town (not at outposts)
+
+### Fixed
+- Caravans no longer sell overflow goods to market when town/outpost storage has room
+- Fixed 5 dialog close buttons that weren't working due to scope issues
+- Relationship values now display as whole numbers in recruit panel
+
 ## [0.62.0] - 2026-04-09
 
 ### Added
