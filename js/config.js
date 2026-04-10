@@ -925,9 +925,9 @@ const CONFIG = {
 
     // Wilderness Outpost System
     OUTPOST_CONFIG: {
-        foundingCost: 500,              // gold to establish an outpost
-        foundingMaterials: { wood: 30, stone: 10 },  // materials needed
-        dailyMaintenanceCost: 3,        // gold per day (no shared infrastructure)
+        foundingCost: 800,              // gold to establish an outpost
+        foundingMaterials: { wood: 30, stone: 10, planks: 10 },  // materials needed
+        dailyMaintenanceCost: 10,       // gold per day (no shared infrastructure)
         theftChancePerDay: 0.06,        // 6% daily chance of theft without security
         damageChancePerDay: 0.03,       // 3% daily chance of building damage (weather, animals)
         securityPerGuard: 0.02,         // each guard reduces theft by 2%
