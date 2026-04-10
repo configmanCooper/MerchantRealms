@@ -3803,6 +3803,9 @@
         var outputSet = {};
         if (targetBt.produces) outputSet[targetBt.produces] = true;
         if (targetBt.canProduce) { for (var ci = 0; ci < targetBt.canProduce.length; ci++) outputSet[targetBt.canProduce[ci]] = true; }
+        // Consumed goods are inputs, not outputs
+        var _slConsumed = getBuildingConsumedGoods(targetBt);
+        for (var _slk in _slConsumed) { delete outputSet[_slk]; }
         var inputUsed = 0;
         if (targetBld.inventory) {
             for (var bk in targetBld.inventory) {
@@ -8273,6 +8276,9 @@
                 var _oOutSet = {};
                 _oOutSet[_activeProduces] = true;
                 if (bt.canProduce) { for (var _oi = 0; _oi < bt.canProduce.length; _oi++) _oOutSet[bt.canProduce[_oi]] = true; }
+                // Consumed goods are inputs, not outputs
+                var _oConsumed = getBuildingConsumedGoods(bt);
+                for (var _ock in _oConsumed) { delete _oOutSet[_ock]; }
                 var _outputUsedW = 0;
                 for (var _ok2 in bld.inventory) {
                     if (_oOutSet[_ok2]) {

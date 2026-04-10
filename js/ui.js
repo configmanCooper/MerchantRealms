@@ -4668,11 +4668,15 @@ window.UI = (function () {
         // ── BUILDING STORAGE (output + input as INDEPENDENT pools) ──
         if (bld.townId === Player.townId) {
             var _bldCap = Math.floor((bt.storage || 0) * (1 + (((bld.level || 1) - 1) * 0.50)));
-            // Build output goods set
+            // Build output goods set — but exclude anything the active recipe consumes
             var _producesId = bt.produces || null;
             var _outputSet2 = {};
             if (_producesId) _outputSet2[_producesId] = true;
             if (bt.canProduce) { for (var _ci0 = 0; _ci0 < bt.canProduce.length; _ci0++) _outputSet2[bt.canProduce[_ci0]] = true; }
+            // Gather consumed goods set for this building's active recipe
+            var _consumedSet = Player.getBuildingConsumedGoods ? Player.getBuildingConsumedGoods(bt) : {};
+            // Consumed goods are INPUTS, not outputs — remove from output set
+            for (var _ck in _consumedSet) { delete _outputSet2[_ck]; }
             // Calculate output and input weights separately
             var _outputWeight = 0;
             var _inputWeight = 0;
@@ -4684,8 +4688,6 @@ window.UI = (function () {
                     else _inputWeight += _bw;
                 }
             }
-            // Gather consumed goods set for this building
-            var _consumedSet = Player.getBuildingConsumedGoods ? Player.getBuildingConsumedGoods(bt) : {};
             var _inputOnly = bld.inputOnly !== false;
             if (_bldCap > 0) {
                 html += '<div style="padding:8px;border:1px solid var(--border);border-radius:4px;margin-bottom:8px;">';
