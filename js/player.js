@@ -4255,6 +4255,21 @@
         const dailyOutput = bt.produces ? Math.round(activeRate * workerFraction * seasonMod * (1 + ((bld.level || 1) - 1) * 0.10) * prodBonus * workerSkillMod * (player.spouseProdMod || 1.0)) : 0;
         const stored = (bld.inventory && activeProduct && bld.inventory[activeProduct]) || 0;
 
+        // Count all tiers of the same base item family in building storage
+        var storedByTier = {};
+        var storedAllTiers = 0;
+        if (bld.inventory && bt.produces) {
+            var _baseItem = bt.produces; // e.g. 'armor', 'swords'
+            var _tierVariants = [_baseItem, _baseItem + '_good', _baseItem + '_excellent'];
+            for (var _tv = 0; _tv < _tierVariants.length; _tv++) {
+                var _tvQty = bld.inventory[_tierVariants[_tv]] || 0;
+                if (_tvQty > 0) {
+                    storedByTier[_tierVariants[_tv]] = _tvQty;
+                    storedAllTiers += _tvQty;
+                }
+            }
+        }
+
         var status = 'idle';
         if (bld._delivering) status = 'delivering';
         else if (bld.damaged) status = 'damaged';
@@ -4291,6 +4306,8 @@
             conditionEfficiency: condEff,
             prodBonus: prodBonus,
             stored: stored,
+            storedByTier: storedByTier,
+            storedAllTiers: storedAllTiers,
             produces: activeProduct,
             consumes: activeConsumes || {},
             autoBuy: bld.autoBuy || false,

@@ -4298,26 +4298,52 @@ window.UI = (function () {
             var _lvlMod = (1 + ((bld.level || 1) - 1) * 0.10).toFixed(2);
             html += `<div style="font-size:0.72rem;color:#aaa;margin-top:4px;">Output: ${bt.rate} base × ${info.workerFraction.toFixed(2)} workers × ${info.seasonMod} season × ${_lvlMod} level × ${info.prodBonus.toFixed(2)} bonus = ${info.dailyOutput}</div>`;
 
-            // Current storage — show capacity from building type (weight-aware)
+            // Current storage — show ALL tiers combined (weight-aware)
             var bldStorageCap = Math.floor((bt.storage || 0) * (1 + (((bld.level || 1) - 1) * 0.50)));
             if (bldStorageCap > 0) {
+                // Use storedAllTiers for weight calc — all tiers share the same weight
                 var _prodRes = (typeof findResource !== 'undefined') ? findResource(currentProduct) : null;
                 var _prodWeight = (_prodRes && _prodRes.weight) || 1;
-                var storedWeight = info.stored * _prodWeight;
+                var storedWeight = info.storedAllTiers * _prodWeight;
                 var storagePct = Math.min(100, Math.round((storedWeight / bldStorageCap) * 100));
                 var storageColor = storagePct >= 90 ? '#e74c3c' : storagePct >= 60 ? '#e67e22' : '#55a868';
-                html += `<div style="font-size:0.78rem;margin-top:4px;">📋 Building Storage: ${info.stored} ${prodName} — ${storedWeight} / ${bldStorageCap} wt <span style="color:${storageColor};">(${storagePct}%)</span></div>`;
+                // Show combined total
+                html += `<div style="font-size:0.78rem;margin-top:4px;">📋 Building Storage: ${info.storedAllTiers} items — ${storedWeight} / ${bldStorageCap} wt <span style="color:${storageColor};">(${storagePct}%)</span></div>`;
+                // Show per-tier breakdown if multiple tiers present
+                if (info.storedByTier && Object.keys(info.storedByTier).length > 0) {
+                    var _tierParts = [];
+                    for (var _tierKey in info.storedByTier) {
+                        var _tierRes = (typeof findResource !== 'undefined') ? findResource(_tierKey) : null;
+                        var _tierName = _tierRes ? _tierRes.name : _tierKey;
+                        var _tierIcon = _tierRes ? (_tierRes.icon || '') : '';
+                        _tierParts.push(_tierIcon + ' ' + info.storedByTier[_tierKey] + ' ' + _tierName);
+                    }
+                    html += `<div style="font-size:0.72rem;color:#aaa;margin-top:2px;">${_tierParts.join(' · ')}</div>`;
+                }
                 html += `<div style="background:#333;border-radius:3px;height:6px;margin-top:2px;"><div style="background:${storageColor};height:100%;border-radius:3px;width:${storagePct}%;"></div></div>`;
             } else {
-                html += `<div style="font-size:0.78rem;margin-top:4px;">📋 Current Storage: ${info.stored} ${prodName}</div>`;
+                html += `<div style="font-size:0.78rem;margin-top:4px;">📋 Current Storage: ${info.storedAllTiers} items</div>`;
+                if (info.storedByTier && Object.keys(info.storedByTier).length > 0) {
+                    var _tierParts2 = [];
+                    for (var _tierKey2 in info.storedByTier) {
+                        var _tierRes2 = (typeof findResource !== 'undefined') ? findResource(_tierKey2) : null;
+                        var _tierName2 = _tierRes2 ? _tierRes2.name : _tierKey2;
+                        _tierParts2.push(info.storedByTier[_tierKey2] + ' ' + _tierName2);
+                    }
+                    html += `<div style="font-size:0.72rem;color:#aaa;margin-top:2px;">${_tierParts2.join(' · ')}</div>`;
+                }
             }
 
-            // Collect button
-            if (info.stored > 0 && bld.townId === Player.townId) {
-                html += `<div style="margin-top:6px;display:flex;gap:6px;">
-                    <button class="btn-trade buy" style="font-size:0.7rem;" onclick="UI.collectOutputUI('${bld.id}','${currentProduct}',10)">Collect 10</button>
-                    <button class="btn-trade buy" style="font-size:0.7rem;" onclick="UI.collectOutputUI('${bld.id}','${currentProduct}',${info.stored})">Collect All (${info.stored})</button>
-                </div>`;
+            // Collect buttons — one per tier that has stock
+            if (info.storedAllTiers > 0 && bld.townId === Player.townId) {
+                html += `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;">`;
+                for (var _colKey in info.storedByTier) {
+                    var _colQty = info.storedByTier[_colKey];
+                    var _colRes = (typeof findResource !== 'undefined') ? findResource(_colKey) : null;
+                    var _colName = _colRes ? _colRes.name : _colKey;
+                    html += `<button class="btn-trade buy" style="font-size:0.7rem;" onclick="UI.collectOutputUI('${bld.id}','${_colKey}',${_colQty})">Collect ${_colName} (${_colQty})</button>`;
+                }
+                html += `</div>`;
             }
 
             html += '</div>';
