@@ -3722,6 +3722,29 @@
     }
 
     /**
+     * Calculate the quality crafting chance for a given tier, resource, and worker skill.
+     * @param {'good'|'excellent'} tier
+     * @param {string} baseItem - the base resource id (e.g. 'swords', 'armor')
+     * @param {number} avgWorkerSkill - average worker skill 0-100
+     * @returns {number} chance 0-1 (clamped to max)
+     */
+    function _qualityCraftChance(tier, baseItem, avgWorkerSkill) {
+        var cfg = CONFIG.QUALITY_CRAFTING[tier];
+        if (!cfg) return 0;
+        var chance = cfg.baseChance + avgWorkerSkill * cfg.workerSkillFactor;
+        var isWeapon = CONFIG.QUALITY_CRAFTING.WEAPON_BASE_ITEMS.indexOf(baseItem) >= 0;
+        var isArmor = CONFIG.QUALITY_CRAFTING.ARMOR_BASE_ITEMS.indexOf(baseItem) >= 0;
+        if (tier === 'good') {
+            if (isWeapon && hasSkill('good_weaponcraft')) chance += cfg.playerSkillBonus;
+            if (isArmor && hasSkill('good_armorcraft')) chance += cfg.playerSkillBonus;
+        } else if (tier === 'excellent') {
+            if (isWeapon && hasSkill('excellent_weaponcraft')) chance += cfg.playerSkillBonus;
+            if (isArmor && hasSkill('excellent_armorcraft')) chance += cfg.playerSkillBonus;
+        }
+        return Math.min(chance, cfg.maxChance);
+    }
+
+    /**
      * Smart input ratio limiter: given a target building and a resource being deposited,
      * returns the max units of that resource the building should accept to stay balanced.
      * Looks at ALL current input stock and calculates how many production cycles each
@@ -4241,6 +4264,19 @@
         else if (missingInputs.length > 0) status = 'blocked';
         else status = 'producing';
 
+        // Quality crafting chance info for tiered products
+        var qualityChance = null;
+        var _qProdRes = findResource(activeProduct);
+        if (_qProdRes && (_qProdRes.tier === 'good' || _qProdRes.tier === 'excellent') && _qProdRes.baseItem) {
+            qualityChance = {};
+            if (_qProdRes.tier === 'excellent') {
+                qualityChance.excellent = Math.round(_qualityCraftChance('excellent', _qProdRes.baseItem, avgWorkerSkill) * 100);
+                qualityChance.good = Math.round(_qualityCraftChance('good', _qProdRes.baseItem, avgWorkerSkill) * 100);
+            } else {
+                qualityChance.good = Math.round(_qualityCraftChance('good', _qProdRes.baseItem, avgWorkerSkill) * 100);
+            }
+        }
+
         return {
             building: bld,
             type: bt,
@@ -4264,6 +4300,8 @@
             deliveryDaysLeft: bld._deliveryDaysLeft || 0,
             transferBuffer: bld._transferBuffer || 0,
             hasTransportGuild: hasTransportGuild(bld.townId),
+            avgWorkerSkill: avgWorkerSkill,
+            qualityChance: qualityChance,
         };
     }
 
@@ -7988,6 +8026,33 @@
 
             const rawOutput = _activeRate * workerFraction * seasonMod * (1 + ((bld.level || 1) - 1) * 0.10) * prodBonus * workerSkillMod * (player.spouseProdMod || 1.0);
             const output = Math.round(rawOutput);
+
+            // ═══════════════════════════════════════════════════════════
+            // STEP 6a: QUALITY CRAFTING RNG — when producing good/excellent,
+            // always consume the higher material cost but RNG determines
+            // whether you actually get the quality version
+            // ═══════════════════════════════════════════════════════════
+            var _qRes = findResource(_activeProduces);
+            if (_qRes && (_qRes.tier === 'good' || _qRes.tier === 'excellent') && _qRes.baseItem) {
+                var _qRng = Engine.getRng();
+                if (_qRes.tier === 'excellent') {
+                    var _excChance = _qualityCraftChance('excellent', _qRes.baseItem, avgWorkerSkill);
+                    if (!_qRng.chance(_excChance)) {
+                        // Failed excellent — try good cascade
+                        var _goodChance = _qualityCraftChance('good', _qRes.baseItem, avgWorkerSkill);
+                        if (_qRng.chance(_goodChance)) {
+                            _activeProduces = _qRes.baseItem + '_good';
+                        } else {
+                            _activeProduces = _qRes.baseItem;
+                        }
+                    }
+                } else if (_qRes.tier === 'good') {
+                    var _goodChance2 = _qualityCraftChance('good', _qRes.baseItem, avgWorkerSkill);
+                    if (!_qRng.chance(_goodChance2)) {
+                        _activeProduces = _qRes.baseItem;
+                    }
+                }
+            }
 
             // ═══════════════════════════════════════════════════════════
             // STEP 6b: HARVEST TITHE — crown takes 10% of farm output
@@ -24986,14 +25051,80 @@
             }
         }
 
-        // Add crafted goods
+        // Add crafted goods — quality RNG for good/excellent items
+        var _craftProduces = recipe.produces;
+        var _craftQRes = findResource(_craftProduces);
+        var _qualityMsg = '';
+        if (_craftQRes && (_craftQRes.tier === 'good' || _craftQRes.tier === 'excellent') && _craftQRes.baseItem) {
+            // Use avg skill of the guild building's workers (or 0 if none)
+            var _guildBld = null;
+            for (var _gbi = 0; _gbi < (town.buildings || []).length; _gbi++) {
+                if (town.buildings[_gbi].type === buildingType && town.buildings[_gbi].inGuild) { _guildBld = town.buildings[_gbi]; break; }
+            }
+            var _gAvgSkill = 0;
+            if (_guildBld && _guildBld.workers && _guildBld.workers.length > 0) {
+                var _gTotalSkill = 0;
+                for (var _gwi = 0; _gwi < _guildBld.workers.length; _gwi++) {
+                    var _gwP = Engine.findPerson(_guildBld.workers[_gwi]);
+                    _gTotalSkill += (_gwP && _gwP.workerSkill != null) ? _gwP.workerSkill : 0;
+                }
+                _gAvgSkill = _gTotalSkill / _guildBld.workers.length;
+            }
+            var _cRng = Engine.getRng();
+            // Per-item quality roll for manual crafting
+            var _goodCount = 0, _excCount = 0, _baseCount = 0;
+            for (var _qi = 0; _qi < qty; _qi++) {
+                if (_craftQRes.tier === 'excellent') {
+                    var _eChance = _qualityCraftChance('excellent', _craftQRes.baseItem, _gAvgSkill);
+                    if (_cRng.chance(_eChance)) { _excCount++; }
+                    else {
+                        var _gChance = _qualityCraftChance('good', _craftQRes.baseItem, _gAvgSkill);
+                        if (_cRng.chance(_gChance)) { _goodCount++; } else { _baseCount++; }
+                    }
+                } else if (_craftQRes.tier === 'good') {
+                    var _gChance2 = _qualityCraftChance('good', _craftQRes.baseItem, _gAvgSkill);
+                    if (_cRng.chance(_gChance2)) { _goodCount++; } else { _baseCount++; }
+                }
+            }
+            // Replace qty with quality breakdown
+            qty = 0; // we'll add each tier separately below
+            var _craftBase = _craftQRes.baseItem;
+            var _craftGood = _craftBase + '_good';
+            var _craftExc = _craftQRes.tier === 'excellent' ? recipe.produces : null;
+            if (_excCount > 0) { _craftProduces = _craftExc; qty = _excCount; }
+            else if (_goodCount > 0) { _craftProduces = _craftGood; qty = _goodCount; }
+            else { _craftProduces = _craftBase; qty = _baseCount; }
+            // Build quality message
+            var _qParts = [];
+            if (_excCount > 0) _qParts.push(_excCount + ' excellent');
+            if (_goodCount > 0) _qParts.push(_goodCount + ' good');
+            if (_baseCount > 0) _qParts.push(_baseCount + ' basic');
+            _qualityMsg = ' Quality results: ' + _qParts.join(', ') + '.';
+            // Store each quality tier (handle mixed results)
+            outputRes = findResource(_craftProduces);
+            outputWeight = (outputRes ? outputRes.weight : 1) * qty;
+            // For mixed results, add the other tiers to storage
+            var _mixedExtras = [];
+            if (_excCount > 0 && (_goodCount > 0 || _baseCount > 0)) {
+                if (_goodCount > 0) _mixedExtras.push({ id: _craftGood, qty: _goodCount });
+                if (_baseCount > 0) _mixedExtras.push({ id: _craftBase, qty: _baseCount });
+            } else if (_goodCount > 0 && _baseCount > 0 && _excCount === 0) {
+                _mixedExtras.push({ id: _craftBase, qty: _baseCount });
+            }
+            // Add mixed extras to town storage
+            for (var _me = 0; _me < _mixedExtras.length; _me++) {
+                if (!player.townStorage[player.townId]) player.townStorage[player.townId] = {};
+                player.townStorage[player.townId][_mixedExtras[_me].id] = (player.townStorage[player.townId][_mixedExtras[_me].id] || 0) + _mixedExtras[_me].qty;
+            }
+        }
+
         var addedToInventory = false;
         if (currentWeight + outputWeight <= maxWeight) {
-            player.inventory[recipe.produces] = (player.inventory[recipe.produces] || 0) + qty;
+            player.inventory[_craftProduces] = (player.inventory[_craftProduces] || 0) + qty;
             addedToInventory = true;
         } else {
             if (!player.townStorage[player.townId]) player.townStorage[player.townId] = {};
-            player.townStorage[player.townId][recipe.produces] = (player.townStorage[player.townId][recipe.produces] || 0) + qty;
+            player.townStorage[player.townId][_craftProduces] = (player.townStorage[player.townId][_craftProduces] || 0) + qty;
         }
 
         // Advance time
@@ -25002,11 +25133,11 @@
             Game.advanceTicks(Math.max(1, Math.ceil(timeHours * 2.5)));
         }
 
-        var productName = outputRes ? outputRes.name : recipe.produces;
+        var productName = outputRes ? outputRes.name : _craftProduces;
         var storageMsg = addedToInventory ? 'Added to inventory.' : 'Stored in warehouse.';
         var feeDetail = entryFee + 'g entry';
         if (perItemFee > 0) feeDetail += ' + ' + perItemFee + 'g crafting';
-        var msg = '🔨 Crafted ' + qty + ' ' + productName + ' at ' + bType.name + '. Fees: ' + feeDetail + '. ' + storageMsg;
+        var msg = '🔨 Crafted ' + qty + ' ' + productName + ' at ' + bType.name + '. Fees: ' + feeDetail + '. ' + storageMsg + _qualityMsg;
 
         try { Engine.logEvent(msg, 'my_actions'); } catch(e) {}
         if (player.stats) player.stats.guildCrafts = (player.stats.guildCrafts || 0) + 1;
@@ -45942,6 +46073,7 @@
         hasTransportGuild,
         removeWorkerFromBuilding,
         getBuildingStatus,
+        qualityCraftChance: _qualityCraftChance,
 
         // Protection Racket
         respondToRacket,

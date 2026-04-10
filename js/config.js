@@ -1471,6 +1471,14 @@ CONFIG.QUALITY_TIERS = {
     excellent: { name: 'Excellent', priceMultiplier: 9, effectivenessBonus: 0.20, icon: '🟣' },
 };
 
+// Quality Crafting RNG Chances
+CONFIG.QUALITY_CRAFTING = {
+    good:      { baseChance: 0.30, maxChance: 0.90, workerSkillFactor: 0.004, playerSkillBonus: 0.20 },
+    excellent: { baseChance: 0.10, maxChance: 0.60, workerSkillFactor: 0.003, playerSkillBonus: 0.20 },
+    WEAPON_BASE_ITEMS: ['swords', 'bows', 'arrows'],
+    ARMOR_BASE_ITEMS:  ['armor'],
+};
+
 // ============================================================
 // Worker Economy Constants
 // ============================================================
@@ -2749,6 +2757,12 @@ const SKILLS = {
     building_upgrade_discount: { name: 'Upgrade Discount', branch: 'industry', cost: 3, requires: ['master_builder'],             desc: 'Building upgrades cost 25% less.',                                         icon: '⬆️' },
     supply_chain_expert: { name: 'Supply Chain Expert', branch: 'industry',   cost: 5, requires: ['master_foreman'],              desc: 'Production chains in same town get +15% output bonus.',                    icon: '🔗' },
     haggler_hire:        { name: 'Hiring Haggler',      branch: 'industry',   cost: 2, requires: ['cheap_labor'],                 desc: '30% discount on hiring costs (replaces Cheap Labor).',                     icon: '💼' },
+
+    // ── Crafting Quality Branch (4) ──
+    good_weaponcraft:      { name: 'Good Weaponcraft',      branch: 'industry', cost: 2, requires: [],                     desc: '+20% chance to craft good quality weapons (swords, bows, arrows).',         icon: '⚔️' },
+    good_armorcraft:       { name: 'Good Armorcraft',       branch: 'industry', cost: 2, requires: [],                     desc: '+20% chance to craft good quality armor.',                                  icon: '🛡️' },
+    excellent_weaponcraft: { name: 'Excellent Weaponcraft', branch: 'industry', cost: 2, requires: ['good_weaponcraft'],   desc: '+20% chance to craft excellent quality weapons (swords, bows, arrows).',    icon: '⚔️' },
+    excellent_armorcraft:  { name: 'Excellent Armorcraft',  branch: 'industry', cost: 2, requires: ['good_armorcraft'],    desc: '+20% chance to craft excellent quality armor.',                              icon: '🛡️' },
 
     // ── Property/Business Branch (2) ──
     property_magnate:    { name: 'Property Magnate',    branch: 'industry',   cost: 3, requires: ['master_builder'],              desc: '+1 max buildings per rank tier. -10% property tax.',                        icon: '🏘️' },

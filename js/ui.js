@@ -4240,10 +4240,16 @@ window.UI = (function () {
                     // Check minLevel requirement
                     var _recipe = bt.availableProducts && bt.availableProducts[pId];
                     var _locked = _recipe && _recipe.minLevel && _bldLevel < _recipe.minLevel;
+                    // Quality chance label for tiered products
+                    var _qLabel = '';
+                    if (pRes && (pRes.tier === 'good' || pRes.tier === 'excellent') && pRes.baseItem && Player.qualityCraftChance) {
+                        var _dropChance = Math.round(Player.qualityCraftChance(pRes.tier, pRes.baseItem, info.avgWorkerSkill || 10) * 100);
+                        _qLabel = ' (' + _dropChance + '% chance)';
+                    }
                     if (_locked) {
                         html += `<option value="${pId}" disabled ${selected}>${pName} (Lv${_recipe.minLevel}+)</option>`;
                     } else {
-                        html += `<option value="${pId}" ${selected}>${pName}</option>`;
+                        html += `<option value="${pId}" ${selected}>${pName}${_qLabel}</option>`;
                     }
                 }
                 html += `</select>
@@ -4269,6 +4275,24 @@ window.UI = (function () {
 
             // Produces
             html += `<div style="font-size:0.78rem;">🔨 Produces: ${info.dailyOutput} ${prodName}/day</div>`;
+
+            // Quality crafting chance display
+            if (info.qualityChance) {
+                var _qcHtml = '<div style="font-size:0.75rem;margin-top:4px;padding:4px 6px;background:rgba(100,60,200,0.15);border:1px solid rgba(120,80,220,0.3);border-radius:4px;">';
+                _qcHtml += '🎲 <b>Quality Chance:</b> ';
+                if (info.qualityChance.excellent != null) {
+                    var _excColor = info.qualityChance.excellent >= 40 ? '#a855f7' : info.qualityChance.excellent >= 20 ? '#c084fc' : '#9ca3af';
+                    _qcHtml += '<span style="color:' + _excColor + ';">🟣 Excellent: ' + info.qualityChance.excellent + '%</span>';
+                    _qcHtml += ' · ';
+                    var _goodColor = info.qualityChance.good >= 60 ? '#3b82f6' : info.qualityChance.good >= 40 ? '#60a5fa' : '#9ca3af';
+                    _qcHtml += '<span style="color:' + _goodColor + ';">🔵 Good: ' + info.qualityChance.good + '% (if exc. fails)</span>';
+                } else if (info.qualityChance.good != null) {
+                    var _goodColor2 = info.qualityChance.good >= 60 ? '#3b82f6' : info.qualityChance.good >= 40 ? '#60a5fa' : '#9ca3af';
+                    _qcHtml += '<span style="color:' + _goodColor2 + ';">🔵 Good: ' + info.qualityChance.good + '%</span>';
+                }
+                _qcHtml += '</div>';
+                html += _qcHtml;
+            }
 
             // Output rate breakdown
             var _lvlMod = (1 + ((bld.level || 1) - 1) * 0.10).toFixed(2);
@@ -14455,7 +14479,14 @@ window.UI = (function () {
                             matsText = 'none';
                         }
                         html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid #333;">';
-                        html += '<span><strong>' + escapeHtml(item.productName) + '</strong> <span style="color:#888;font-size:0.85em;">at ' + escapeHtml(item.buildingName) + ' (needs: ' + matsText + ')</span></span>';
+                        // Quality chance label for tiered products
+                        var _gqLabel = '';
+                        var _gqRes = findResource(item.productId);
+                        if (_gqRes && (_gqRes.tier === 'good' || _gqRes.tier === 'excellent') && _gqRes.baseItem && Player.qualityCraftChance) {
+                            var _gqChance = Math.round(Player.qualityCraftChance(_gqRes.tier, _gqRes.baseItem, 0) * 100);
+                            _gqLabel = ' <span style="color:#a855f7;font-size:0.8em;">(' + _gqChance + '% chance)</span>';
+                        }
+                        html += '<span><strong>' + escapeHtml(item.productName) + '</strong>' + _gqLabel + ' <span style="color:#888;font-size:0.85em;">at ' + escapeHtml(item.buildingName) + ' (needs: ' + matsText + ')</span></span>';
                         html += '<button class="btn-medieval" style="font-size:0.85em;" onclick="UI.guildCraftPrompt(\'' + escapeHtml(item.buildingId) + '\', \'' + escapeHtml(item.productId) + '\', \'' + escapeHtml(item.productName) + '\')">🔨 Craft</button>';
                         html += '</div>';
                     }
