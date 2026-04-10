@@ -3808,11 +3808,13 @@
                     gold: isChildAdult ? undefined : 0,
                 });
                 if (!isChildAdult) child.gold = 0;
-                // King's adult children are lords
+                // King's children: adult = Royal Advisor (6), under 18 = Lord (5)
+                if (!child.socialRank) child.socialRank = {};
                 if (isChildAdult) {
-                    if (!child.socialRank) child.socialRank = {};
-                    child.socialRank[king.kingdomId] = 5;
+                    child.socialRank[king.kingdomId] = 6; // Royal Advisor
                     child.houseType = 'manor';
+                } else {
+                    child.socialRank[king.kingdomId] = 5; // Lord (until they come of age → 6)
                 }
                 king.childrenIds.push(child.id);
                 spouse.childrenIds.push(child.id);
@@ -5809,6 +5811,32 @@
                             p.gold = (p.gold || 0) + 50;
                         }
                     }
+                    // Noble children coming of age: king's child → Royal Advisor (6)
+                    if (p.socialRank && typeof p.socialRank === 'object') {
+                        for (var _coaKid in p.socialRank) {
+                            if (p.socialRank[_coaKid] >= 4) {
+                                // Check if a parent is/was a king in this kingdom
+                                var _isKingChild = false;
+                                if (p.parentIds) {
+                                    for (var _cpi = 0; _cpi < p.parentIds.length; _cpi++) {
+                                        var _cpar = findPerson(p.parentIds[_cpi]);
+                                        if (_cpar && (_cpar.isKing || (_cpar.socialRank && _cpar.socialRank[_coaKid] >= 7))) {
+                                            _isKingChild = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (_isKingChild) {
+                                    p.socialRank[_coaKid] = 6; // Royal Advisor
+                                    p.occupation = 'noble';
+                                    p.gold = Math.max(p.gold, 100);
+                                } else if (p.socialRank[_coaKid] >= 4) {
+                                    p.occupation = 'noble';
+                                    p.gold = Math.max(p.gold, 50);
+                                }
+                            }
+                        }
+                    }
                 }
                 // Old age death
                 if (p.age >= CONFIG.DEATH_AGE_MIN) {
@@ -5962,6 +5990,31 @@
                     p.childrenIds.push(child.id);
                     father.childrenIds.push(child.id);
                     p._lastBirthDay = day; // 270-day cooldown starts
+                    // Noble child rank inheritance: king's child = Lord (5), other nobles = parent rank - 1
+                    var _parentMaxRank = 0;
+                    var _parentRankKid = null;
+                    var _parents = [p, father];
+                    for (var _pri = 0; _pri < _parents.length; _pri++) {
+                        var _par = _parents[_pri];
+                        if (_par.socialRank && typeof _par.socialRank === 'object') {
+                            for (var _prk in _par.socialRank) {
+                                if ((_par.socialRank[_prk] || 0) > _parentMaxRank) {
+                                    _parentMaxRank = _par.socialRank[_prk];
+                                    _parentRankKid = _prk;
+                                }
+                            }
+                        }
+                    }
+                    if (_parentMaxRank >= 4 && _parentRankKid) {
+                        if (!child.socialRank) child.socialRank = {};
+                        if (_parentMaxRank >= 7) {
+                            // King's child = Lord (5) at birth
+                            child.socialRank[_parentRankKid] = 5;
+                        } else {
+                            // Other nobility children = one rank below parent (min 4)
+                            child.socialRank[_parentRankKid] = Math.max(4, _parentMaxRank - 1);
+                        }
+                    }
                     newPeople.push(child);
                     if (town) town.population++;
                     if (world._alivePopCount != null) world._alivePopCount++;

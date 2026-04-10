@@ -2395,11 +2395,17 @@ window.UI = (function () {
                         // Loan offer for financially stressed nobles
                         html += `<button class="btn-medieval" onclick="UI.openNobleLoanDialog('${person.id}')" title="Offer a loan to this noble — indebted nobles are easier to influence" style="font-size:0.75rem;padding:5px 10px;">💰 Offer Loan</button>`;
                     }
-                    // Recruit to outpost button (if player has outposts)
+                    // Recruit to outpost button (if player has outposts, NPC not nobility/minor)
                     if (typeof Player !== 'undefined' && Player.getPlayerOutposts) {
                         var _playerOutposts = Player.getPlayerOutposts().filter(function(o) { return !o.abandoned && !o.annexed && o.isOutpost; });
-                        if (_playerOutposts.length > 0) {
-                            html += `<button class="btn-medieval" onclick="UI.openRecruitToOutpostDialog('${person.id}')" title="Convince this person to move to your outpost" style="font-size:0.75rem;padding:5px 10px;background:rgba(74,124,59,0.2);border-color:rgba(74,124,59,0.4);color:#a5d6a7;">⛺ Recruit to Outpost</button>`;
+                        if (_playerOutposts.length > 0 && person.age >= 18 && person.occupation !== 'noble' && person.occupation !== 'king' && person.occupation !== 'queen' && person.occupation !== 'queens_lord' && !person.isKing) {
+                            var _pIsNoble = false;
+                            if (person.socialRank && typeof person.socialRank === 'object') {
+                                for (var _srck in person.socialRank) { if ((person.socialRank[_srck] || 0) >= 4) { _pIsNoble = true; break; } }
+                            }
+                            if (!_pIsNoble) {
+                                html += `<button class="btn-medieval" onclick="UI.openRecruitToOutpostDialog('${person.id}')" title="Convince this person to move to your outpost" style="font-size:0.75rem;padding:5px 10px;background:rgba(74,124,59,0.2);border-color:rgba(74,124,59,0.4);color:#a5d6a7;">⛺ Recruit to Outpost</button>`;
+                            }
                         }
                     }
                     html += `</div>`;

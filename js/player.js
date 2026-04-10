@@ -37567,6 +37567,23 @@
         if (!npc || !npc.alive) return { success: false, message: 'NPC not found.' };
         var cfg = CONFIG.OUTPOST_CONFIG;
 
+        // Cannot recruit minors (under 18)
+        if (npc.age < 18) return { success: false, message: npc.firstName + ' is too young to recruit (under 18).' };
+
+        // Cannot recruit nobility
+        if (npc.isKing || npc.occupation === 'king') return { success: false, message: 'You cannot recruit a king to an outpost!' };
+        if (npc.occupation === 'noble' || npc.occupation === 'queen' || npc.occupation === 'queens_lord') {
+            return { success: false, message: npc.firstName + ' is a noble and will not move to an outpost.' };
+        }
+        if (npc.socialRank && typeof npc.socialRank === 'object') {
+            var _npcHighRank = 0;
+            for (var _ork in npc.socialRank) { if ((npc.socialRank[_ork] || 0) > _npcHighRank) _npcHighRank = npc.socialRank[_ork]; }
+            if (_npcHighRank >= 4) {
+                var _nrkDef = CONFIG.SOCIAL_RANKS[_npcHighRank] || {};
+                return { success: false, message: npc.firstName + ' holds the rank of ' + (_nrkDef.name || 'Noble') + ' and will not move to an outpost.' };
+            }
+        }
+
         // Check cooldown
         if (!player._outpostRecruitCooldowns) player._outpostRecruitCooldowns = {};
         var cooldownKey = npcId + '_' + townId;
@@ -37696,6 +37713,23 @@
             for (var hi = 0; hi < town.outpostHousing.length; hi++) {
                 var hCfg = CONFIG.OUTPOST_HOUSING && CONFIG.OUTPOST_HOUSING[town.outpostHousing[hi].type];
                 if (hCfg && hCfg.recruitBonus) chance += hCfg.recruitBonus;
+            }
+        }
+
+        // Penalty for NPCs with children (they don't want to uproot their family)
+        var _npcChildren = npc.childrenIds ? npc.childrenIds.filter(function(cid) {
+            var c = Engine.findPerson(cid);
+            return c && c.alive;
+        }).length : 0;
+        if (_npcChildren > 0) {
+            var _hasSpouse = npc.spouseId && Engine.findPerson(npc.spouseId);
+            _hasSpouse = _hasSpouse && _hasSpouse.alive;
+            if (!_hasSpouse) {
+                // Single parent — very reluctant (−40% base, −8% per child)
+                chance -= 0.40 + (_npcChildren * 0.08);
+            } else {
+                // Has spouse and children — reluctant (−25% base, −5% per child)
+                chance -= 0.25 + (_npcChildren * 0.05);
             }
         }
 
