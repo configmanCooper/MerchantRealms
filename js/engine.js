@@ -7607,6 +7607,9 @@
             // ---- Kingdom purchasing from market (daily) ----
             tickKingdomPurchasing(k);
 
+            // ---- King travel — royal progress & diplomatic missions (daily) ----
+            tickKingTravel(k);
+
             // ---- Process pending RA consultation decisions (daily) ----
             tickPendingKingDecisions(k);
 
@@ -8741,8 +8744,251 @@
     }
 
     // ========================================================
-    // §N-8a NOBILITY AI — Rank promotions, replacement chain, families
+    // §N-7c KING TRAVEL — Royal Progress & Diplomatic Missions
     // ========================================================
+    function tickKingTravel(k) {
+        if (!k.king) return;
+        var rng = world.rng;
+        var king = findPerson(k.king);
+        if (!king || !king.alive) return;
+        var cfg = CONFIG.KING_TRAVEL;
+        if (!cfg) return;
+        var atWar = k.atWar && k.atWar.size > 0;
+        var p = k.kingPersonality || {};
+        var mood = (k.kingMood && k.kingMood.current) || 'content';
+
+        if (!k.kingTravel) k.kingTravel = null;
+
+        // --- If currently traveling, advance the trip ---
+        if (k.kingTravel) {
+            var trip = k.kingTravel;
+
+            // Tournament recall — king must return for tournaments
+            if (k.tournament && k.tournament.active && trip.type !== 'returning') {
+                _kingReturnToCapital(k, king, 'tournament');
+                return;
+            }
+
+            // War recall — king returns home when war breaks out
+            if (atWar && trip.type === 'diplomatic') {
+                _kingReturnToCapital(k, king, 'war');
+                return;
+            }
+
+            // Check if current leg is complete
+            if (world.day >= trip.legEndDay) {
+                if (trip.phase === 'traveling') {
+                    // Arrived at destination
+                    trip.phase = 'visiting';
+                    trip.legEndDay = world.day + trip.visitDays;
+                    king.townId = trip.currentDestId;
+                    if (king.currentTown !== undefined) king.currentTown = trip.currentDestId;
+                    var destTown = findTown(trip.currentDestId);
+                    if (destTown) {
+                        if (trip.type === 'progress') {
+                            // Royal progress boosts happiness/prosperity of visited town
+                            destTown.happiness = Math.min(100, (destTown.happiness || 50) + (cfg.progressHappinessBoost || 3));
+                            destTown.prosperity = Math.min(100, (destTown.prosperity || 50) + (cfg.progressProsperityBoost || 2));
+                            logEvent('👑 The ruler of ' + k.name + ' arrives in ' + destTown.name + ' on royal progress! The people celebrate.', {
+                                type: 'king_travel', travelType: 'progress', kingdomId: k.id, townId: destTown.id
+                            });
+                        } else if (trip.type === 'diplomatic') {
+                            // Diplomatic visit boosts relations
+                            var targetKingdom = findKingdom(destTown.kingdomId);
+                            if (targetKingdom && destTown.kingdomId !== k.id) {
+                                var relBoost = cfg.diplomaticRelationBoost || 5;
+                                if (!k.relations) k.relations = {};
+                                if (!targetKingdom.relations) targetKingdom.relations = {};
+                                k.relations[targetKingdom.id] = Math.min(100, (k.relations[targetKingdom.id] || 0) + relBoost);
+                                targetKingdom.relations[k.id] = Math.min(100, (targetKingdom.relations[k.id] || 0) + relBoost);
+                                logEvent('👑🤝 The ruler of ' + k.name + ' arrives at ' + destTown.name + ' for a diplomatic visit with ' + targetKingdom.name + '. Relations improve!', {
+                                    type: 'king_travel', travelType: 'diplomatic', kingdomId: k.id, targetKingdomId: targetKingdom.id
+                                });
+                                logKingAction(k, '🤝 Diplomatic visit to ' + targetKingdom.name + ' (+' + relBoost + ' relations)');
+                            }
+                        }
+                    }
+                } else if (trip.phase === 'visiting') {
+                    // Done visiting — move to next stop or return home
+                    trip.visitIndex = (trip.visitIndex || 0) + 1;
+                    if (trip.type === 'progress' && trip.visitIndex < trip.stops.length) {
+                        // Travel to next stop
+                        trip.currentDestId = trip.stops[trip.visitIndex];
+                        trip.phase = 'traveling';
+                        trip.legEndDay = world.day + (cfg.progressTravelDays || 3);
+                        trip.visitDays = cfg.progressDaysPerTown || 8;
+                    } else {
+                        // Return to capital
+                        _kingReturnToCapital(k, king, 'completed');
+                    }
+                } else if (trip.phase === 'returning') {
+                    // Arrived home
+                    king.townId = trip.homeId;
+                    if (king.currentTown !== undefined) king.currentTown = trip.homeId;
+                    k._lastTravelEndDay = world.day;
+                    k.kingTravel = null;
+                }
+            }
+
+            // Daily travel cost
+            if (k.kingTravel) {
+                var dailyCost = (k.kingTravel.type === 'diplomatic') ? (cfg.diplomaticCostPerDay || 10) : (cfg.progressCostPerDay || 5);
+                k.gold = Math.max(0, (k.gold || 0) - dailyCost);
+            }
+            return;
+        }
+
+        // --- Not traveling: evaluate whether to start a trip (once per season) ---
+        if (world.day % (CONFIG.DAYS_PER_SEASON || 30) !== 0) return;
+        // Don't travel during succession crisis, low treasury, tournament, or if just returned recently
+        if (k.successionCrisis) return;
+        if ((k.gold || 0) < 2000) return;
+        if (k.tournament && k.tournament.active) return;
+        if (k._lastTravelEndDay && (world.day - k._lastTravelEndDay) < 60) return;
+
+        // Calculate personality and mood modifiers
+        var pMods = {};
+        for (var traitKey in cfg.personalityMods) {
+            if (p.ambition === traitKey || p.courage === traitKey || p.temperament === traitKey) {
+                var tm = cfg.personalityMods[traitKey];
+                if (tm.progressMod !== undefined) pMods.progressMod = (pMods.progressMod || 1) * tm.progressMod;
+                if (tm.diplomaticMod !== undefined) pMods.diplomaticMod = (pMods.diplomaticMod || 1) * tm.diplomaticMod;
+            }
+        }
+        var mMods = cfg.moodMods[mood] || { progressMod: 1, diplomaticMod: 1 };
+        var progChance = (cfg.progressChancePerSeason || 0.12) * (pMods.progressMod || 1) * (mMods.progressMod || 1);
+        var diploChance = (cfg.diplomaticChancePerSeason || 0.06) * (pMods.diplomaticMod || 1) * (mMods.diplomaticMod || 1);
+
+        // Don't start diplomatic travel during war
+        if (atWar) diploChance = 0;
+
+        // Find capital as home base
+        var homeTown = null;
+        var ownTowns = [];
+        for (var ti = 0; ti < world.towns.length; ti++) {
+            var t = world.towns[ti];
+            if (t.kingdomId === k.id && !t.abandoned && !t.destroyed) {
+                ownTowns.push(t);
+                if (t.isCapital) homeTown = t;
+            }
+        }
+        if (!homeTown && ownTowns.length > 0) homeTown = ownTowns[0];
+        if (!homeTown) return;
+
+        // Need at least 2 towns for a progress tour
+        var canProgress = ownTowns.length >= 2;
+
+        // Royal progress — tour own kingdom towns
+        if (canProgress && progChance > 0 && rng.chance(progChance)) {
+            // Pick towns to visit (not capital, prioritize low-happiness or towns king hasn't visited)
+            var progressCandidates = ownTowns.filter(function(t) { return t.id !== homeTown.id; });
+            // Sort: low happiness first, then by population (king visits troubled/important towns)
+            progressCandidates.sort(function(a, b) {
+                var ha = a.happiness || 50, hb = b.happiness || 50;
+                if (ha !== hb) return ha - hb;
+                return (b.population || 0) - (a.population || 0);
+            });
+            var maxStops = Math.min(cfg.progressMaxTowns || 3, progressCandidates.length);
+            var stops = [];
+            for (var si = 0; si < maxStops; si++) stops.push(progressCandidates[si].id);
+
+            k.kingTravel = {
+                type: 'progress',
+                homeId: homeTown.id,
+                stops: stops,
+                visitIndex: 0,
+                currentDestId: stops[0],
+                phase: 'traveling',
+                legEndDay: world.day + (cfg.progressTravelDays || 3),
+                visitDays: cfg.progressDaysPerTown || 8,
+                startDay: world.day,
+            };
+            logEvent('👑🛤️ The ruler of ' + k.name + ' departs ' + homeTown.name + ' on a royal progress through the realm.', {
+                type: 'king_travel', travelType: 'progress', kingdomId: k.id
+            });
+            logKingAction(k, '🛤️ Departed on royal progress (' + stops.length + ' towns)');
+            return;
+        }
+
+        // Diplomatic travel — visit foreign capital
+        if (diploChance > 0 && rng.chance(diploChance)) {
+            // Find a suitable foreign kingdom to visit
+            var candidates = [];
+            for (var ki = 0; ki < world.kingdoms.length; ki++) {
+                var other = world.kingdoms[ki];
+                if (other.id === k.id) continue;
+                if (k.atWar && k.atWar.has(other.id)) continue;
+                var rel = (k.relations && k.relations[other.id]) || 0;
+                if (rel < (cfg.diplomaticMinRelation || -10)) continue;
+                // Find their capital
+                var otherCap = null;
+                for (var oti = 0; oti < world.towns.length; oti++) {
+                    if (world.towns[oti].kingdomId === other.id && world.towns[oti].isCapital) {
+                        otherCap = world.towns[oti]; break;
+                    }
+                }
+                if (!otherCap) continue;
+                // Prefer allies and kingdoms with good relations
+                var weight = 10 + rel;
+                if (k.alliances && k.alliances.has(other.id)) weight += 30;
+                candidates.push({ kingdom: other, capital: otherCap, weight: Math.max(1, weight) });
+            }
+            if (candidates.length > 0) {
+                // Weighted random pick
+                var totalW = 0;
+                for (var ci = 0; ci < candidates.length; ci++) totalW += candidates[ci].weight;
+                var roll = rng.random() * totalW;
+                var cum = 0;
+                var chosen = candidates[0];
+                for (var cj = 0; cj < candidates.length; cj++) {
+                    cum += candidates[cj].weight;
+                    if (roll <= cum) { chosen = candidates[cj]; break; }
+                }
+
+                k.kingTravel = {
+                    type: 'diplomatic',
+                    homeId: homeTown.id,
+                    stops: [chosen.capital.id],
+                    visitIndex: 0,
+                    currentDestId: chosen.capital.id,
+                    targetKingdomId: chosen.kingdom.id,
+                    phase: 'traveling',
+                    legEndDay: world.day + (cfg.progressTravelDays || 3) + 2, // slightly longer for foreign travel
+                    visitDays: cfg.diplomaticDays || 12,
+                    startDay: world.day,
+                };
+                logEvent('👑🌍 The ruler of ' + k.name + ' departs for a diplomatic visit to ' + chosen.kingdom.name + '.', {
+                    type: 'king_travel', travelType: 'diplomatic', kingdomId: k.id, targetKingdomId: chosen.kingdom.id
+                });
+                logKingAction(k, '🌍 Departed for diplomatic visit to ' + chosen.kingdom.name);
+            }
+        }
+    }
+
+    function _kingReturnToCapital(k, king, reason) {
+        var cfg = CONFIG.KING_TRAVEL || {};
+        var trip = k.kingTravel;
+        if (!trip) return;
+        var reasonText = reason === 'tournament' ? 'Royal tournament requires the king\'s presence' :
+                         reason === 'war' ? 'War has been declared — the king returns to lead' :
+                         'Trip concluded';
+        k.kingTravel = {
+            type: 'returning',
+            homeId: trip.homeId,
+            stops: [],
+            visitIndex: 0,
+            currentDestId: trip.homeId,
+            phase: 'returning',
+            legEndDay: world.day + (cfg.progressTravelDays || 3),
+            visitDays: 0,
+            startDay: trip.startDay,
+        };
+        if (reason !== 'completed') {
+            logEvent('👑↩️ The ruler of ' + k.name + ' cuts short their journey. ' + reasonText + '.', {
+                type: 'king_travel', travelType: 'return', kingdomId: k.id, reason: reason
+            });
+        }
+    }
     function tickNobleAI(k) {
         if (!k || !k.king) return;
         var rng = world.rng;
@@ -9012,20 +9258,23 @@
                 _tkKing.occupation = _tkKing.sex === 'F' ? 'reigning_queen' : 'king';
             }
             if (_tkKing.kingdomId !== k.id) _tkKing.kingdomId = k.id;
-            // Keep king in their own kingdom — if in foreign town, move to capital
-            var _tkTown = findTown(_tkKing.townId);
-            if (!_tkTown || _tkTown.kingdomId !== k.id) {
-                var _tkCap = null;
-                for (var _tki = 0; _tki < world.towns.length; _tki++) {
-                    var _tkT = world.towns[_tki];
-                    if (_tkT.kingdomId === k.id) {
-                        if (_tkT.isCapital) { _tkCap = _tkT; break; }
-                        if (!_tkCap) _tkCap = _tkT;
+            // Keep king in their own kingdom — unless on legitimate travel
+            var _tkOnTrip = k.kingTravel && k.kingTravel.phase;
+            if (!_tkOnTrip) {
+                var _tkTown = findTown(_tkKing.townId);
+                if (!_tkTown || _tkTown.kingdomId !== k.id) {
+                    var _tkCap = null;
+                    for (var _tki = 0; _tki < world.towns.length; _tki++) {
+                        var _tkT = world.towns[_tki];
+                        if (_tkT.kingdomId === k.id) {
+                            if (_tkT.isCapital) { _tkCap = _tkT; break; }
+                            if (!_tkCap) _tkCap = _tkT;
+                        }
                     }
-                }
-                if (_tkCap) {
-                    _tkKing.townId = _tkCap.id;
-                    if (_tkKing.currentTown !== undefined) _tkKing.currentTown = _tkCap.id;
+                    if (_tkCap) {
+                        _tkKing.townId = _tkCap.id;
+                        if (_tkKing.currentTown !== undefined) _tkKing.currentTown = _tkCap.id;
+                    }
                 }
             }
         }
@@ -35429,6 +35678,8 @@
                 immigrationPolicy: k.immigrationPolicy || 'open',
                 nationalizedIndustries: k.nationalizedIndustries || [],
                 militaryStockpile: k.militaryStockpile || { swords: 0, armor: 0, bows: 0, arrows: 0, horses: 0 },
+                kingTravel: k.kingTravel || null,
+                _lastTravelEndDay: k._lastTravelEndDay || 0,
             }));
 
             world.towns = data.towns || [];

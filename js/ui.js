@@ -1830,8 +1830,25 @@ window.UI = (function () {
 
         let html = `<div class="detail-section">
             <div class="detail-row"><span class="label">King</span>
-                <span class="value">${kingName}</span></div>
-            <div class="detail-row"><span class="label">Culture</span>
+                <span class="value">${kingName}</span></div>`;
+
+        // King travel status
+        if (kingdom.kingTravel) {
+            var _ktTrip = kingdom.kingTravel;
+            var _ktDestName = '...';
+            try {
+                var _ktDest = Engine.findTown(_ktTrip.currentDestId);
+                if (_ktDest) _ktDestName = _ktDest.name;
+            } catch(e) {}
+            var _ktTypeLabel = _ktTrip.type === 'progress' ? '🛤️ Royal Progress' :
+                               _ktTrip.type === 'diplomatic' ? '🌍 Diplomatic Visit' : '↩️ Returning';
+            var _ktPhaseLabel = _ktTrip.phase === 'traveling' ? 'Traveling to ' + _ktDestName :
+                                _ktTrip.phase === 'visiting' ? 'Visiting ' + _ktDestName :
+                                'Returning home';
+            html += '<div class="detail-row"><span class="label">Status</span><span class="value" style="color:#FFD700;">' + _ktTypeLabel + ' — ' + _ktPhaseLabel + '</span></div>';
+        }
+
+        html += `<div class="detail-row"><span class="label">Culture</span>
                 <span class="value">${kingdom.culture ? kingdom.culture.charAt(0).toUpperCase() + kingdom.culture.slice(1) : 'Unknown'}</span></div>
             <div class="detail-row"><span class="label">Gold</span>
                 <span class="value gold-value">${formatGold(kingdom.gold || 0)}</span></div>
@@ -22970,6 +22987,7 @@ window.UI = (function () {
         // KINGDOMS
         { cat: 'Kingdoms', title: 'Kingdom Overview', text: 'The world is divided into 4 kingdoms, each ruled by a king with unique personality. Kingdoms have their own taxes, laws, and military. Your social rank is tracked per kingdom.' },
         { cat: 'Kingdoms', title: 'King Personality', text: 'Kings have moods that affect their decisions: Jubilant kings lower taxes and build. Paranoid kings raise security. Wrathful kings may start wars. Ambitious kings expand territory. A king\'s mood changes based on events.' },
+        { cat: 'Kingdoms', title: 'King Travel', text: 'Kings may embark on Royal Progress tours to visit their own towns (boosting happiness and prosperity) or Diplomatic Visits to foreign capitals (improving relations). Travel frequency depends on personality — ambitious/brave kings travel more, while paranoid/fearful kings stay home. Kings always return for tournaments and wars.' },
         { cat: 'Kingdoms', title: 'Laws & Taxes', text: 'Kings set tax rates and enact laws: price controls, immigration policy, inheritance tax, draft animals, and female succession. Laws affect your daily life — check the Kingdom Laws panel to see active laws.' },
         { cat: 'Kingdoms', title: 'War & Peace', text: 'Kingdoms can declare war on each other. War affects trade (prices spike, roads become dangerous), and towns in the frontline zone are marked with ⚔️. Caravans crossing war zones are at risk.' },
         { cat: 'Kingdoms', title: 'Conscription', text: 'During wartime, kingdoms may conscript citizens into military service. If conscripted, you must serve or face penalties. Higher social rank and political connections can help you avoid the draft.' },
@@ -26953,7 +26971,12 @@ window.UI = (function () {
                 var kTowns = Engine.getTowns ? Engine.getTowns().filter(function(t){return t.kingdomId===k.id;}) : [];
                 var avgProsp = kTowns.length > 0 ? Math.round(kTowns.reduce(function(s,t){return s+(t.prosperity||0);},0)/kTowns.length) : 0;
                 html += '<div style="margin:4px 0;padding:4px;border-left:3px solid ' + (k.color || '#666') + ';">';
-                html += '<b>' + (k.name || 'Kingdom') + '</b> — King: ' + kingName + '<br>';
+                html += '<b>' + (k.name || 'Kingdom') + '</b> — King: ' + kingName;
+                if (k.kingTravel) {
+                    var _ovTType = k.kingTravel.type === 'progress' ? '🛤️ Touring' : k.kingTravel.type === 'diplomatic' ? '🌍 Abroad' : '↩️ Returning';
+                    html += ' <span style="color:#FFD700;font-size:0.75rem;">(' + _ovTType + ')</span>';
+                }
+                html += '<br>';
                 html += '<span style="color:#ffd700;font-weight:bold;">💰 Treasury: ' + Math.floor(k.gold || 0).toLocaleString() + 'g</span> | 😊 Mood: ' + mood + ' | ⚔️ Wars: ' + wars + ' | 🏘️ Towns: ' + kTowns.length + ' | 📈 Avg Prosperity: ' + avgProsp;
                 html += ' | Tax: ' + Math.round((k.taxRate || 0) * 100) + '% | Income: ' + Math.round((k.lastIncome || 0)).toLocaleString() + 'g/mo | Expenses: ' + Math.round((k.lastExpenses || 0)).toLocaleString() + 'g/mo';
                 html += '</div>';

@@ -4049,6 +4049,47 @@ CONFIG.SUCCESSION_CRISIS = {
 };
 
 // ============================================================
+// King Travel Config
+// ============================================================
+CONFIG.KING_TRAVEL = {
+    // Royal progress — king tours own towns
+    progressChancePerSeason: 0.12,       // ~12% chance per season to start a tour
+    progressDaysPerTown: 8,              // days spent in each visited town
+    progressTravelDays: 3,               // travel days between towns
+    progressMaxTowns: 3,                 // max towns per tour
+    progressHappinessBoost: 3,           // happiness boost to visited town
+    progressProsperityBoost: 2,          // prosperity boost to visited town
+    progressCostPerDay: 5,               // gold cost per day of travel
+    // Diplomatic travel — king visits foreign capital
+    diplomaticChancePerSeason: 0.06,     // ~6% chance per season
+    diplomaticDays: 12,                  // days spent at foreign capital
+    diplomaticRelationBoost: 5,          // relation boost on visit
+    diplomaticMinRelation: -10,          // won't visit hostile kingdoms
+    diplomaticCostPerDay: 10,            // gold cost per day
+    // Personality modifiers
+    personalityMods: {
+        ambitious:  { progressMod: 1.5, diplomaticMod: 1.8 },
+        content:    { progressMod: 0.5, diplomaticMod: 0.5 },
+        lazy:       { progressMod: 0.2, diplomaticMod: 0.3 },
+        brave:      { progressMod: 1.3, diplomaticMod: 1.5 },
+        cowardly:   { progressMod: 0.4, diplomaticMod: 0.3 },
+        kind:       { progressMod: 1.4, diplomaticMod: 1.0 },
+        cruel:      { progressMod: 0.6, diplomaticMod: 0.8 },
+    },
+    // Mood modifiers — stressed/fearful kings stay home
+    moodMods: {
+        jubilant:  { progressMod: 1.5, diplomaticMod: 1.3 },
+        content:   { progressMod: 1.0, diplomaticMod: 1.0 },
+        worried:   { progressMod: 0.3, diplomaticMod: 0.5 },
+        paranoid:  { progressMod: 0.0, diplomaticMod: 0.0 },
+        fearful:   { progressMod: 0.0, diplomaticMod: 0.0 },
+        wrathful:  { progressMod: 0.3, diplomaticMod: 0.2 },
+        grieving:  { progressMod: 0.1, diplomaticMod: 0.1 },
+        ambitious: { progressMod: 1.2, diplomaticMod: 1.6 },
+    },
+};
+
+// ============================================================
 // Price Controls Config
 // ============================================================
 CONFIG.PRICE_CONTROLS = {
