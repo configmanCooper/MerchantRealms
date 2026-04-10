@@ -4240,17 +4240,17 @@
             }
         }
 
-        // Worker skill modifier (matches production tick)
-        var avgWorkerSkill = 10;
+        // Worker skill modifier (matches production tick: each worker at skill 100 = +5% output)
+        var avgWorkerSkill = 0;
+        var _totalSkill = 0;
         if (bld.workers.length > 0) {
-            var _totalSkill = 0;
             for (var _wi = 0; _wi < bld.workers.length; _wi++) {
                 var _wPerson = Engine.findPerson(bld.workers[_wi]);
                 _totalSkill += (_wPerson && _wPerson.workerSkill != null) ? _wPerson.workerSkill : 0;
             }
             avgWorkerSkill = _totalSkill / bld.workers.length;
         }
-        var workerSkillMod = 0.90 + avgWorkerSkill * 0.01;
+        var workerSkillMod = 1.0 + _totalSkill * 0.0005;
 
         const dailyOutput = bt.produces ? Math.round(activeRate * workerFraction * seasonMod * (1 + ((bld.level || 1) - 1) * 0.10) * prodBonus * workerSkillMod * (player.spouseProdMod || 1.0)) : 0;
         const stored = (bld.inventory && activeProduct && bld.inventory[activeProduct]) || 0;
@@ -4318,6 +4318,7 @@
             seasonMod: seasonMod,
             conditionEfficiency: condEff,
             prodBonus: prodBonus,
+            workerSkillMod: workerSkillMod,
             stored: stored,
             storedByTier: storedByTier,
             storedAllTiers: storedAllTiers,
@@ -7922,6 +7923,21 @@
         for (const bld of player.buildings) {
             if (!bld.active) continue;
 
+            // ═══════════════════════════════════════════════════════════
+            // PASSIVE WORKER SKILL GAIN — happens every day the building
+            // is active, even if no production (no inputs, delivering, etc.)
+            // Rate: ~0.055/day → 0 to 100 in ~5 years (1825 days)
+            // ═══════════════════════════════════════════════════════════
+            if (bld.workers && bld.workers.length > 0) {
+                for (var wi2 = 0; wi2 < bld.workers.length; wi2++) {
+                    var wP = Engine.findPerson(bld.workers[wi2]);
+                    if (wP && wP.alive) {
+                        if (wP.workerSkill == null) wP.workerSkill = 0;
+                        wP.workerSkill = Math.min(100, wP.workerSkill + 0.055);
+                    }
+                }
+            }
+
             // Check if workers are delivering goods (no production during delivery)
             if (bld._delivering) {
                 bld._deliveryDaysLeft = (bld._deliveryDaysLeft || 0) - 1;
@@ -8034,26 +8050,17 @@
                 }
             }
 
-            // Worker skill production modifier: skill 0 = 0.90x, skill 10 = 1.0x baseline, each level above +1%
-            var avgWorkerSkill = 10;
+            // Worker skill production modifier: each worker at skill 100 gives +5% output
+            var avgWorkerSkill = 0;
+            var totalSkill = 0;
             if (bld.workers.length > 0) {
-                var totalSkill = 0;
                 for (var wi = 0; wi < bld.workers.length; wi++) {
                     var wPerson = Engine.findPerson(bld.workers[wi]);
                     totalSkill += (wPerson && wPerson.workerSkill != null) ? wPerson.workerSkill : 0;
                 }
                 avgWorkerSkill = totalSkill / bld.workers.length;
             }
-            var workerSkillMod = 0.90 + avgWorkerSkill * 0.01;
-
-            // Passive worker skill gain: ~0.055/day → 0 to 100 in ~5 years (1825 days)
-            for (var wi2 = 0; wi2 < bld.workers.length; wi2++) {
-                var wP = Engine.findPerson(bld.workers[wi2]);
-                if (wP && wP.alive) {
-                    if (wP.workerSkill == null) wP.workerSkill = 0;
-                    wP.workerSkill = Math.min(100, wP.workerSkill + 0.055);
-                }
-            }
+            var workerSkillMod = 1.0 + totalSkill * 0.0005;
 
             const rawOutput = _activeRate * workerFraction * seasonMod * (1 + ((bld.level || 1) - 1) * 0.10) * prodBonus * workerSkillMod * (player.spouseProdMod || 1.0);
             const output = Math.round(rawOutput);

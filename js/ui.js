@@ -4299,7 +4299,8 @@ window.UI = (function () {
 
             // Output rate breakdown
             var _lvlMod = (1 + ((bld.level || 1) - 1) * 0.10).toFixed(2);
-            html += `<div style="font-size:0.72rem;color:#aaa;margin-top:4px;">Output: ${bt.rate} base × ${info.workerFraction.toFixed(2)} workers × ${info.seasonMod} season × ${_lvlMod} level × ${info.prodBonus.toFixed(2)} bonus = ${info.dailyOutput}</div>`;
+            var _skillMod = info.workerSkillMod ? info.workerSkillMod.toFixed(2) : '1.00';
+            html += `<div style="font-size:0.72rem;color:#aaa;margin-top:4px;">Output: ${bt.rate} base × ${info.workerFraction.toFixed(2)} workers × ${info.seasonMod} season × ${_lvlMod} level × ${info.prodBonus.toFixed(2)} bonus × ${_skillMod} skill = ${info.dailyOutput}</div>`;
 
             // Current storage — show ALL tiers combined (weight-aware)
             var bldStorageCap = Math.floor((bt.storage || 0) * (1 + (((bld.level || 1) - 1) * 0.50)));
@@ -4829,12 +4830,13 @@ window.UI = (function () {
             for (const wId of bld.workers) {
                 const person = Engine.findPerson(wId);
                 const pName = person ? (person.firstName + ' ' + person.lastName) : wId;
-                const skill = person && person.skills && person.skills[bt.category] ? person.skills[bt.category] : 0;
+                const skill = (person && person.workerSkill != null) ? person.workerSkill : 0;
+                const skillDisplay = Math.floor(skill * 10) / 10; // show 1 decimal
                 let skillLabel = 'Unskilled';
-                if (skill >= 80) skillLabel = 'Master';
-                else if (skill >= 60) skillLabel = 'Expert';
-                else if (skill >= 40) skillLabel = 'Skilled';
-                else if (skill >= 20) skillLabel = 'Trained';
+                if (skill >= 81) skillLabel = 'Master';
+                else if (skill >= 61) skillLabel = 'Expert';
+                else if (skill >= 31) skillLabel = 'Skilled';
+                else if (skill >= 10) skillLabel = 'Trained';
 
                 var _wSat = typeof Player.getWorkerSatisfaction === 'function' ? Player.getWorkerSatisfaction(wId) : 50;
                 var _wSatRound = Math.round(_wSat);
@@ -4843,7 +4845,7 @@ window.UI = (function () {
 
                 html += `<div style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
                     <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.78rem;">
-                        <span>• ${pName} — Skill: ${skill} (${skillLabel})</span>
+                        <span>• ${pName} — Skill: ${skillDisplay} (${skillLabel})</span>
                         <span style="font-size:0.72rem;">${_wSatIcon} <span style="color:${_wSatColor};font-weight:bold;">${_wSatRound}%</span></span>
                     </div>
                     <div style="height:3px;background:#333;border-radius:2px;margin:2px 0;overflow:hidden;">

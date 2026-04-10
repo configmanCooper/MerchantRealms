@@ -16271,8 +16271,9 @@
     function tickTownCategories() {
         if (world.day % CONFIG.TOWN_CATEGORY_CHECK_INTERVAL !== 0) return;
         for (const town of world.towns) {
-            // Outposts upgrade via annexation, not population thresholds
-            if (town.category === 'outpost') continue;
+            // Outposts and junctions don't use population-based categories
+            if (town.category === 'outpost' || town.isOutpost) continue;
+            if (town.category === 'junction' || town.isJunction) continue;
             const newCat = getTownCategory(town.population);
             const oldCat = town.category || getTownCategory(town.population);
             if (newCat !== oldCat) {
