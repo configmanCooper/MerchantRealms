@@ -21955,8 +21955,54 @@ window.UI = (function () {
                 var _aqLabel = _aqMech ? _aqMech.label : act.type.replace(/_/g, ' ');
                 var _aqAttempts = (Player.state._kqActionAttempts || {})[quest.id] || 0;
 
+                // M5: Check for multi-step action
+                var _msConfig = (typeof MULTISTEP_ACTIONS !== 'undefined') ? MULTISTEP_ACTIONS[act.type] : null;
+                if (!_msConfig && typeof Player.getMultiStepConfig === 'function') { try { _msConfig = Player.getMultiStepConfig(act.type); } catch(e2){} }
+                var _msProgress = (Player.state._kqStepProgress || {})[quest.id] || 0;
+
                 if (actionDone) {
                     html += '<div style="font-size:0.68rem;color:#55a868;">✅ ' + escapeHtml(_aqLabel) + ' — completed!' + (_aqAttempts > 1 ? ' (took ' + _aqAttempts + ' attempts)' : '') + '</div>';
+                } else if (_msConfig && _aqMech) {
+                    // Multi-step action display
+                    html += '<div style="font-size:0.72rem;color:#d4a843;margin-bottom:4px;font-weight:bold;">📋 ' + escapeHtml(_aqLabel) + ' <span style="font-size:0.62rem;color:#888;">(' + _msProgress + '/' + _msConfig.totalSteps + ' steps)</span></div>';
+
+                    // Step progress bar
+                    html += '<div style="background:rgba(0,0,0,0.3);border-radius:4px;height:6px;margin:4px 8px;overflow:hidden;">';
+                    html += '<div style="height:100%;background:linear-gradient(90deg,#55a868,#4caf50);width:' + Math.round((_msProgress / _msConfig.totalSteps) * 100) + '%;border-radius:4px;transition:width 0.3s;"></div></div>';
+
+                    // Show each step with status
+                    for (var _si = 0; _si < _msConfig.steps.length; _si++) {
+                        var _step = _msConfig.steps[_si];
+                        var _stepDone = _si < _msProgress;
+                        var _stepCurrent = _si === _msProgress;
+                        var _stepColor = _stepDone ? '#55a868' : _stepCurrent ? '#e67e22' : '#666';
+                        var _stepIcon = _stepDone ? '✅' : _stepCurrent ? '▶️' : '⬜';
+                        html += '<div style="font-size:0.65rem;color:' + _stepColor + ';margin-left:8px;' + (_stepCurrent ? 'font-weight:bold;' : '') + '">';
+                        html += _stepIcon + ' Step ' + (_si + 1) + ': ' + escapeHtml(_step.label);
+                        if (_stepCurrent) {
+                            var _costs = [];
+                            if (_step.goldCost > 0) _costs.push('💰' + _step.goldCost + 'g');
+                            if (_step.tickCost > 0) _costs.push('⏳' + _step.tickCost + 'd');
+                            var _pct = Math.round((_step.successBase || 0.70) * 100);
+                            _costs.push('🎲' + _pct + '%');
+                            html += ' <span style="color:#aaa;font-weight:normal;">(' + _costs.join(', ') + ')</span>';
+                        }
+                        html += '</div>';
+                    }
+
+                    // Narrative for current step
+                    if (_msConfig.steps[_msProgress]) {
+                        html += '<div style="font-size:0.62rem;color:#999;margin:4px 0 4px 12px;font-style:italic;">' + escapeHtml(_msConfig.steps[_msProgress].narrative || '') + '</div>';
+                    }
+
+                    if (_aqAttempts > 0 && _msProgress < _msConfig.totalSteps) {
+                        html += '<div style="font-size:0.62rem;color:#e67e22;margin-left:12px;">⚠️ ' + _aqAttempts + ' total attempt' + (_aqAttempts > 1 ? 's' : '') + ' so far</div>';
+                    }
+
+                    var safActId2 = quest.id.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                    var safKid2 = kingdomId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                    var _curStepBtn = _msConfig.steps[_msProgress];
+                    html += '<button class="btn-medieval" onclick="UI._attemptKQActionUI(\'' + safActId2 + '\',\'' + safKid2 + '\')" style="font-size:0.7rem;padding:4px 12px;margin-top:4px;background:rgba(231,126,35,0.2) !important;border-color:rgba(231,126,35,0.4) !important;">▶️ ' + escapeHtml(_curStepBtn ? _curStepBtn.label : 'Next Step') + '</button>';
                 } else if (_aqMech) {
                     // Show action details with proper attempt button
                     html += '<div style="font-size:0.68rem;color:#e67e22;margin-bottom:4px;">⬜ ' + escapeHtml(_aqLabel) + '</div>';
@@ -22066,12 +22112,25 @@ window.UI = (function () {
         } catch(e) {}
 
         if (_aqMech) {
+            // Check for multi-step config
+            var _msConf = (typeof MULTISTEP_ACTIONS !== 'undefined' && _kqQ && _kqQ.requirements && _kqQ.requirements.action) ? MULTISTEP_ACTIONS[_kqQ.requirements.action.type] : null;
+            var _msProg = _msConf ? ((Player.state._kqStepProgress || {})[questId] || 0) : 0;
+            var _msStep = _msConf ? _msConf.steps[_msProg] : null;
+
             var _confHtml = '<div style="padding:10px;">';
-            _confHtml += '<div style="font-size:0.9rem;color:#ddd;margin-bottom:10px;">Are you sure you want to attempt this action?</div>';
+            if (_msConf && _msStep) {
+                _confHtml += '<div style="font-size:0.9rem;color:#d4a843;margin-bottom:6px;font-weight:bold;">Step ' + (_msProg + 1) + '/' + _msConf.totalSteps + ': ' + escapeHtml(_msStep.label) + '</div>';
+                _confHtml += '<div style="font-size:0.78rem;color:#999;margin-bottom:10px;font-style:italic;">' + escapeHtml(_msStep.narrative || '') + '</div>';
+            } else {
+                _confHtml += '<div style="font-size:0.9rem;color:#ddd;margin-bottom:10px;">Are you sure you want to attempt this action?</div>';
+            }
             _confHtml += '<div style="background:rgba(0,0,0,0.2);border-radius:6px;padding:10px;font-size:0.82rem;">';
-            if (_aqMech.goldCost > 0) _confHtml += '<div style="color:#e67e22;">💰 Cost: ' + _aqMech.goldCost + 'g</div>';
-            _confHtml += '<div style="color:#5dade2;">⏳ Time: ~' + (_aqMech.tickCost || 5) + ' days (you will be occupied)</div>';
-            var _confChance = Math.round((_aqMech.successBase || 0.60) * 100);
+            var _dispGold = (_msConf && _msStep) ? (_msStep.goldCost || 0) : (_aqMech.goldCost || 0);
+            var _dispTime = (_msConf && _msStep) ? (_msStep.tickCost || 1) : (_aqMech.tickCost || 5);
+            var _dispChance = (_msConf && _msStep) ? (_msStep.successBase || 0.70) : (_aqMech.successBase || 0.60);
+            if (_dispGold > 0) _confHtml += '<div style="color:#e67e22;">💰 Cost: ' + _dispGold + 'g</div>';
+            _confHtml += '<div style="color:#5dade2;">⏳ Time: ~' + _dispTime + ' days (you will be occupied)</div>';
+            var _confChance = Math.round(_dispChance * 100);
             _confHtml += '<div style="color:' + (_confChance >= 70 ? '#55a868' : _confChance >= 50 ? '#ccb974' : '#e67e22') + ';">🎲 Base success chance: ' + _confChance + '%</div>';
             if (_aqMech.locationReq === 'capital') _confHtml += '<div style="color:#aaa;">📍 Requires: Kingdom capital</div>';
             _confHtml += '</div>';
@@ -22103,14 +22162,44 @@ window.UI = (function () {
 
         // Show result modal with narrative
         var isSuccess = result.actionSuccess;
+        var isStepSuccess = result.stepSuccess || false;
         var html = '<div style="padding:15px;">';
         html += '<div style="text-align:center;margin-bottom:12px;">';
-        html += '<div style="font-size:2.5em;">' + (isSuccess ? '✅' : '❌') + '</div>';
-        html += '<h3 style="color:' + (isSuccess ? '#2ecc71' : '#e74c3c') + ';margin:5px 0;">' + (isSuccess ? 'Success!' : 'Failed!') + '</h3>';
+
+        // M5: Multi-step result header
+        if (result.isMultiStep) {
+            if (isSuccess) {
+                html += '<div style="font-size:2.5em;">🏆</div>';
+                html += '<h3 style="color:#2ecc71;margin:5px 0;">Mission Complete!</h3>';
+            } else if (isStepSuccess) {
+                html += '<div style="font-size:2.5em;">✅</div>';
+                html += '<h3 style="color:#d4a843;margin:5px 0;">Step Complete — ' + (result.stepCompleted || '?') + '/' + (result.totalSteps || '?') + '</h3>';
+            } else {
+                html += '<div style="font-size:2.5em;">❌</div>';
+                html += '<h3 style="color:#e74c3c;margin:5px 0;">Step Failed</h3>';
+            }
+        } else {
+            html += '<div style="font-size:2.5em;">' + (isSuccess ? '✅' : '❌') + '</div>';
+            html += '<h3 style="color:' + (isSuccess ? '#2ecc71' : '#e74c3c') + ';margin:5px 0;">' + (isSuccess ? 'Success!' : 'Failed!') + '</h3>';
+        }
         html += '</div>';
 
         // Result text
         html += '<p style="font-size:0.9rem;color:#ddd;margin:10px 0;">' + escapeHtml(result.message) + '</p>';
+
+        // M5: Step progress bar for multi-step
+        if (result.isMultiStep && result.totalSteps) {
+            var _done = result.stepCompleted || 0;
+            if (!isStepSuccess && result.currentStep) _done = result.currentStep - 1;
+            html += '<div style="margin:8px 0;">';
+            html += '<div style="font-size:0.75rem;color:#aaa;margin-bottom:3px;">Progress: ' + _done + '/' + result.totalSteps + ' steps</div>';
+            html += '<div style="background:rgba(0,0,0,0.3);border-radius:4px;height:8px;overflow:hidden;">';
+            html += '<div style="height:100%;background:linear-gradient(90deg,#55a868,#4caf50);width:' + Math.round((_done / result.totalSteps) * 100) + '%;border-radius:4px;transition:width 0.3s;"></div></div>';
+            if (result.nextStepLabel) {
+                html += '<div style="font-size:0.72rem;color:#d4a843;margin-top:4px;">Next step: ' + escapeHtml(result.nextStepLabel) + '</div>';
+            }
+            html += '</div>';
+        }
 
         // Cost summary
         html += '<div style="margin:12px 0;padding:8px;background:rgba(0,0,0,0.2);border-radius:6px;font-size:0.8rem;">';
@@ -22134,8 +22223,11 @@ window.UI = (function () {
             html += '</div>';
         }
 
-        if (!isSuccess) {
-            html += '<p style="font-size:0.8rem;color:#e67e22;font-style:italic;margin-top:8px;">You can try again, but it will cost more gold and time. Improve your skills to increase your chances.</p>';
+        if (!isSuccess && !isStepSuccess) {
+            var retryMsg = result.isMultiStep
+                ? 'You can retry this step, but it will cost more gold and time.'
+                : 'You can try again, but it will cost more gold and time. Improve your skills to increase your chances.';
+            html += '<p style="font-size:0.8rem;color:#e67e22;font-style:italic;margin-top:8px;">' + retryMsg + '</p>';
         }
 
         html += '</div>';

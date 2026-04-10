@@ -3055,6 +3055,49 @@ const ACTION_QUEST_MECHANICS = {
     },
 };
 
+// M5: Multi-step action quest definitions
+const MULTISTEP_ACTIONS = {
+    decode: {
+        totalSteps: 3,
+        steps: [
+            { label: 'Acquire Cipher Tools', narrative: 'Purchase decryption tools and reference materials from a scholar.', tickCost: 1, goldCost: 20, successBase: 0.90, skillKey: 'underworld' },
+            { label: 'Study Documents', narrative: 'Spend time analyzing the encrypted messages and identifying patterns.', tickCost: 3, goldCost: 0, successBase: 0.80, skillKey: 'underworld' },
+            { label: 'Attempt Decode', narrative: 'Apply your analysis to crack the cipher and extract the intelligence.', tickCost: 4, goldCost: 30, successBase: 0.65, skillKey: 'underworld' }
+        ]
+    },
+    investigate: {
+        totalSteps: 3,
+        steps: [
+            { label: 'Gather Evidence', narrative: 'Travel to the area of interest and begin collecting information.', tickCost: 2, goldCost: 15, successBase: 0.90, skillKey: 'underworld' },
+            { label: 'Interview Witnesses', narrative: 'Speak with locals and key figures to piece together what happened.', tickCost: 3, goldCost: 10, successBase: 0.80, skillKey: 'social' },
+            { label: 'Report Findings', narrative: 'Compile your evidence and deliver a comprehensive report.', tickCost: 2, goldCost: 0, successBase: 0.85, skillKey: 'social' }
+        ]
+    },
+    capture_criminal: {
+        totalSteps: 3,
+        steps: [
+            { label: 'Get Bounty Details', narrative: 'Review the bounty notice and gather information about the target\'s habits.', tickCost: 1, goldCost: 10, successBase: 0.95, skillKey: 'survival' },
+            { label: 'Track Target', narrative: 'Follow leads to the criminal\'s last known location and close in.', tickCost: 3, goldCost: 25, successBase: 0.70, skillKey: 'survival' },
+            { label: 'Attempt Capture', narrative: 'Confront and apprehend the criminal. Be prepared for a fight.', tickCost: 2, goldCost: 0, successBase: 0.60, skillKey: 'survival' }
+        ]
+    },
+    intercept: {
+        totalSteps: 2,
+        steps: [
+            { label: 'Stake Out Route', narrative: 'Position yourself along the courier\'s expected route and wait.', tickCost: 3, goldCost: 20, successBase: 0.85, skillKey: 'underworld' },
+            { label: 'Intercept Courier', narrative: 'Move to intercept the courier and seize the documents.', tickCost: 2, goldCost: 15, successBase: 0.65, skillKey: 'underworld' }
+        ]
+    },
+    manhunt: {
+        totalSteps: 3,
+        steps: [
+            { label: 'Organize Search Parties', narrative: 'Rally guards and volunteers to form search teams.', tickCost: 2, goldCost: 30, successBase: 0.90, skillKey: 'social' },
+            { label: 'Sweep the Area', narrative: 'Lead coordinated sweeps through suspected hideouts and routes.', tickCost: 4, goldCost: 20, successBase: 0.75, skillKey: 'survival' },
+            { label: 'Close the Net', narrative: 'Corner the fugitive and bring them to justice.', tickCost: 2, goldCost: 0, successBase: 0.60, skillKey: 'survival' }
+        ]
+    }
+};
+
 // ============================================================
 // Military Unit Types
 // ============================================================

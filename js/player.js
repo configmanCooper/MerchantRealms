@@ -18471,6 +18471,7 @@
             _kqGoldSpent: JSON.parse(JSON.stringify(player._kqGoldSpent || {})),
             _kqActionDone: JSON.parse(JSON.stringify(player._kqActionDone || {})),
             _kqActionAttempts: JSON.parse(JSON.stringify(player._kqActionAttempts || {})),
+            _kqStepProgress: JSON.parse(JSON.stringify(player._kqStepProgress || {})),
             _kqCompletedTotal: player._kqCompletedTotal || 0,
             _corruptionPoints: player._corruptionPoints || 0,
             _corruptionTrait: player._corruptionTrait || false,
@@ -18578,6 +18579,7 @@
         player._kqGoldSpent = data._kqGoldSpent ? JSON.parse(JSON.stringify(data._kqGoldSpent)) : {};
         player._kqActionDone = data._kqActionDone ? JSON.parse(JSON.stringify(data._kqActionDone)) : {};
         player._kqActionAttempts = data._kqActionAttempts ? JSON.parse(JSON.stringify(data._kqActionAttempts)) : {};
+        player._kqStepProgress = data._kqStepProgress ? JSON.parse(JSON.stringify(data._kqStepProgress)) : {};
         player._kqCompletedTotal = data._kqCompletedTotal || 0;
         player._corruptionPoints = data._corruptionPoints || 0;
         player._corruptionTrait = data._corruptionTrait || false;
@@ -25024,10 +25026,28 @@
             }
         }
 
-        // Check gold
-        var goldCost = mech.goldCost || 0;
+        // M5: Multi-step action logic
+        var multiStep = MULTISTEP_ACTIONS[actionType] || null;
+        var currentStep = null;
+        var currentStepIdx = 0;
+        var isMultiStep = false;
+        if (multiStep) {
+            isMultiStep = true;
+            if (!player._kqStepProgress) player._kqStepProgress = {};
+            currentStepIdx = player._kqStepProgress[questId] || 0;
+            if (currentStepIdx >= multiStep.totalSteps) {
+                // Already completed all steps
+                trackKQActionDone(questId);
+                return { success: true, actionSuccess: true, message: 'All steps already completed!', isMultiStep: true, stepCompleted: multiStep.totalSteps, totalSteps: multiStep.totalSteps };
+            }
+            currentStep = multiStep.steps[currentStepIdx];
+        }
+
+        // Check gold — use step cost if multi-step, otherwise base mechanic
+        var goldCost = isMultiStep ? (currentStep.goldCost || 0) : (mech.goldCost || 0);
         if (goldCost > 0 && player.gold < goldCost) {
-            return { success: false, message: '💰 Not enough gold. This action costs ' + goldCost + 'g for supplies and preparations. You have ' + Math.floor(player.gold) + 'g.' };
+            var stepLabel = isMultiStep ? (' (Step ' + (currentStepIdx + 1) + ': ' + currentStep.label + ')') : '';
+            return { success: false, message: '💰 Not enough gold. This action costs ' + goldCost + 'g' + stepLabel + '. You have ' + Math.floor(player.gold) + 'g.' };
         }
 
         // Deduct gold
@@ -25037,16 +25057,16 @@
         }
 
         // Advance time (tickCost is in days, multiply by ticks per day)
-        var tickCost = mech.tickCost || 5;
+        var tickCost = isMultiStep ? (currentStep.tickCost || 1) : (mech.tickCost || 5);
         var ticksPerDay = (typeof CONFIG !== 'undefined' && CONFIG.TICKS_PER_DAY) ? CONFIG.TICKS_PER_DAY : 60;
         if (typeof Game !== 'undefined' && Game.advanceTicks) {
             Game.advanceTicks(tickCost * ticksPerDay);
         }
 
-        // Calculate success chance
-        var baseChance = mech.successBase || 0.60;
+        // Calculate success chance — use step values if multi-step
+        var baseChance = isMultiStep ? (currentStep.successBase || 0.70) : (mech.successBase || 0.60);
         var skillBonus = 0;
-        var skillBranch = mech.skillKey || 'underworld';
+        var skillBranch = isMultiStep ? (currentStep.skillKey || mech.skillKey || 'underworld') : (mech.skillKey || 'underworld');
 
         // Count skills in the relevant branch
         if (player.skills && typeof PLAYER_SKILLS !== 'undefined') {
@@ -25095,10 +25115,24 @@
 
         if (roll) {
             // Success!
-            trackKQActionDone(questId);
-            Engine.logEvent('✅ ' + (mech.label || 'Action') + ' succeeded! (attempt #' + attemptNum + ')');
-
             var successConsequences = [];
+
+            // M5: Multi-step progression
+            if (isMultiStep) {
+                if (!player._kqStepProgress) player._kqStepProgress = {};
+                player._kqStepProgress[questId] = currentStepIdx + 1;
+                var isFinalStep = (currentStepIdx + 1) >= multiStep.totalSteps;
+                if (isFinalStep) {
+                    trackKQActionDone(questId);
+                    Engine.logEvent('✅ ' + (mech.label || 'Action') + ' — all steps completed! (Step ' + (currentStepIdx + 1) + '/' + multiStep.totalSteps + ': ' + currentStep.label + ')');
+                } else {
+                    var nextStep = multiStep.steps[currentStepIdx + 1];
+                    Engine.logEvent('✅ Step ' + (currentStepIdx + 1) + '/' + multiStep.totalSteps + ' complete: ' + currentStep.label + '. Next: ' + nextStep.label);
+                }
+            } else {
+                trackKQActionDone(questId);
+                Engine.logEvent('✅ ' + (mech.label || 'Action') + ' succeeded! (attempt #' + attemptNum + ')');
+            }
 
             // M2: Corrupt quest success — gain corruption trait over time
             if (quest.category === 'corrupt') {
@@ -25120,20 +25154,39 @@
                 Engine.logEvent('💰 ' + player.fullName + ' extracted ' + bonusGold + 'g from a merchant.');
             }
 
+            var successMsg = mech.successText || 'Action succeeded!';
+            var successNarr = mech.narrative || '';
+            if (isMultiStep) {
+                var _isFinal = (currentStepIdx + 1) >= multiStep.totalSteps;
+                if (_isFinal) {
+                    successMsg = '🏆 Final step complete! ' + (currentStep.label || '') + ' — ' + (mech.successText || 'Mission accomplished!');
+                } else {
+                    var _nextS = multiStep.steps[currentStepIdx + 1];
+                    successMsg = '✅ Step ' + (currentStepIdx + 1) + '/' + multiStep.totalSteps + ': ' + currentStep.label + ' — Success! Next: ' + (_nextS ? _nextS.label : 'Continue');
+                }
+                successNarr = currentStep.narrative || mech.narrative || '';
+            }
+
             return {
                 success: true,
-                actionSuccess: true,
-                message: mech.successText || 'Action succeeded!',
-                narrative: mech.narrative || '',
+                actionSuccess: isMultiStep ? ((currentStepIdx + 1) >= multiStep.totalSteps) : true,
+                stepSuccess: true,
+                message: successMsg,
+                narrative: successNarr,
                 goldSpent: goldCost,
                 ticksSpent: tickCost,
                 chance: Math.round(finalChance * 100),
                 attempt: attemptNum,
-                consequences: successConsequences
+                consequences: successConsequences,
+                isMultiStep: isMultiStep,
+                stepCompleted: isMultiStep ? (currentStepIdx + 1) : null,
+                totalSteps: isMultiStep ? multiStep.totalSteps : null,
+                nextStepLabel: (isMultiStep && (currentStepIdx + 1) < multiStep.totalSteps) ? multiStep.steps[currentStepIdx + 1].label : null
             };
         } else {
             // Failure — gold and time are lost, but can retry
-            Engine.logEvent('❌ ' + (mech.label || 'Action') + ' failed (attempt #' + attemptNum + ', ' + Math.round(finalChance * 100) + '% chance)');
+            var failLabel = isMultiStep ? ('Step ' + (currentStepIdx + 1) + '/' + multiStep.totalSteps + ': ' + currentStep.label) : (mech.label || 'Action');
+            Engine.logEvent('❌ ' + failLabel + ' failed (attempt #' + attemptNum + ', ' + Math.round(finalChance * 100) + '% chance)');
 
             var failConsequences = [];
 
@@ -25182,16 +25235,28 @@
             // Also add corruption points on SUCCESS for corrupt quests (M2)
             // (This is tracked here so it applies to both success and failure paths)
 
+            var failMsg = mech.failText || 'The action failed. You can try again.';
+            var failNarr = mech.narrative || '';
+            if (isMultiStep) {
+                failMsg = '❌ Step ' + (currentStepIdx + 1) + '/' + multiStep.totalSteps + ': ' + currentStep.label + ' — Failed! You can retry this step.';
+                failNarr = currentStep.narrative || mech.narrative || '';
+            }
+
             return {
                 success: true,  // call succeeded (no error), but action failed
                 actionSuccess: false,
-                message: mech.failText || 'The action failed. You can try again.',
-                narrative: mech.narrative || '',
+                stepSuccess: false,
+                message: failMsg,
+                narrative: failNarr,
                 goldSpent: goldCost,
                 ticksSpent: tickCost,
                 chance: Math.round(finalChance * 100),
                 attempt: attemptNum,
-                consequences: failConsequences
+                consequences: failConsequences,
+                isMultiStep: isMultiStep,
+                currentStep: isMultiStep ? (currentStepIdx + 1) : null,
+                totalSteps: isMultiStep ? multiStep.totalSteps : null,
+                stepLabel: isMultiStep ? currentStep.label : null
             };
         }
     }
