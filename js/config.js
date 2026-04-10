@@ -1754,7 +1754,7 @@ const BUILDING_TYPES = {
     STABLES:          { id: 'stables',          name: 'Stables',          cost: 600,  workers: 3,  produces: null, consumes: { wheat: 2 }, rate: 0, category: 'military',  cavalryCapacity: 20, materials: { wood: 120, leather: 30 } },
     // --- Kingdom civic/economic buildings ---
     HOSPITAL:         { id: 'hospital',         name: 'Hospital',         cost: 1200, workers: 10, produces: null, consumes: {}, rate: 0, category: 'medical',   plagueReduction: 0.50, happinessBonus: 5, materials: { wood: 80, cloth: 30, stone: 40 }, icon: '🏥',
-        landSlots: 3, maxHealers: 10, medicalStorage: 200, description: 'Large medical facility. Treats injuries and illnesses. Consumes medical supplies.',
+        landSlots: 3, maxHealers: 10, medicalStorage: 200, storage: 200, description: 'Large medical facility. Treats injuries and illnesses. Consumes medical supplies.',
         healingConfig: {
             minor:    { ticks: 30,  supplies: { bandages: 1 } },
             moderate: { ticks: 60,  supplies: { bandages: 1, herbal_remedy: 1 } },
@@ -1917,7 +1917,7 @@ const BUILDING_TYPES = {
         },
     },
     CLINIC:           { id: 'clinic',           name: 'Clinic',          cost: 500,  workers: 2, produces: null,             consumes: {},                          rate: 0,  category: 'medical',   plagueReduction: 0.20, happinessBonus: 2, materials: { planks: 10, stone: 10, bricks: 5 }, icon: '🏥', description: 'Small medical facility. Treats sick and injured. Stock with medical supplies.',
-        landSlots: 1, maxHealers: 2, medicalStorage: 40,
+        landSlots: 1, maxHealers: 2, medicalStorage: 40, storage: 40,
         healingConfig: {
             minor:    { ticks: 30,  supplies: { bandages: 1 } },
             moderate: { ticks: 60,  supplies: { bandages: 1, herbal_remedy: 1 } },
