@@ -22400,15 +22400,29 @@
             // Post order when qty > 50 or urgency > 60
             if (need.qtyNeeded > 50 || need.urgency > 60) {
                 const res = findResourceById(resId);
-                const marketPrice = res ? res.basePrice : 10;
+                const basePrice = res ? res.basePrice : 10;
                 const deadlineDays = Math.max(60, Math.min(360, Math.floor(need.qtyNeeded * 2)));
+                const isBanned = bannedGoods.indexOf(resId) !== -1;
+                // For banned goods: pay 10% less than capital market price (max, only at urgent+)
+                // Lower urgency pays even less, making smuggling more tempting
+                var orderMaxPrice;
+                if (isBanned) {
+                    var capitalMarketPrice = (capitalTown.market && capitalTown.market.prices && capitalTown.market.prices[resId]) || basePrice;
+                    // Urgency 80+ (urgent): 90% of market price
+                    // Urgency 50-79 (normal): 75% of market price
+                    // Urgency <50 (low): 60% of market price
+                    var urgencyMult = need.urgency >= 80 ? 0.90 : (need.urgency >= 50 ? 0.75 : 0.60);
+                    orderMaxPrice = Math.ceil(capitalMarketPrice * urgencyMult);
+                } else {
+                    orderMaxPrice = Math.ceil(basePrice * 1.3);
+                }
                 const order = {
                     id: 'order_' + kingdom.id + '_' + world.day + '_' + resId,
                     kingdomId: kingdom.id,
                     resourceId: resId,
                     qty: need.qtyNeeded,
                     qtyDelivered: 0,
-                    maxPricePerUnit: Math.ceil(marketPrice * (bannedGoods.indexOf(resId) !== -1 ? 1.95 : 1.3)),
+                    maxPricePerUnit: orderMaxPrice,
                     deliveryTownId: capitalTown.id,
                     postedDay: world.day,
                     deadlineDay: world.day + deadlineDays,
@@ -22416,8 +22430,9 @@
                     bids: [],
                     assignedTo: null,
                     assignedPrice: null,
-                    requiresPermit: bannedGoods.indexOf(resId) !== -1,
+                    requiresPermit: isBanned,
                     bonusOnCompletion: 0,
+                    urgencyLevel: need.urgency,
                 };
                 proc.orders.push(order);
             }
