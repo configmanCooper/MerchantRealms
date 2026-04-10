@@ -14940,6 +14940,38 @@
             return;
         }
 
+        // Auto-seek treatment: spouse goes to hospital if sick and has money
+        if (ai.condition !== 'healthy' && !ai._seekingTreatment) {
+            var _spTown = Engine.findTown(spouse.townId);
+            if (_spTown) {
+                var _spHasMed = false;
+                if (_spTown.buildings) {
+                    for (var _bmi = 0; _bmi < _spTown.buildings.length; _bmi++) {
+                        if (_spTown.buildings[_bmi].type === 'hospital' || _spTown.buildings[_bmi].type === 'clinic') { _spHasMed = true; break; }
+                    }
+                }
+                if (!_spHasMed && (_spTown.category === 'city' || _spTown.category === 'capital_city')) _spHasMed = true;
+                if (_spHasMed) {
+                    var _spSev = ai.condition === 'gravely_ill' ? 'severe' : 'moderate';
+                    var _spCost = getHospitalCost({ productCost: 10 }, _spSev);
+                    var _spGold = ai.savings || 0;
+                    if (_spGold >= _spCost) {
+                        ai.savings -= _spCost;
+                        ai.condition = 'healthy';
+                        ai.daysSick = 0;
+                        ai.daysInjured = 0;
+                        ai.health = Math.min(ai.health + 40, cfg.HEALTH_MAX || 100);
+                        _payHealthcareRevenue(_spTown, _spCost);
+                        ai.activity = 'recovering';
+                        ai.activityDetail = 'Treated at hospital (' + _spCost + 'g)';
+                        Engine.logEvent('🏥 ' + spouse.firstName + ' sought treatment at the hospital (' + _spCost + 'g from savings).');
+                        logSpouseAction(day, 'hospital', 'Sought treatment', -_spCost);
+                        return;
+                    }
+                }
+            }
+        }
+
         var goldEarned = 0;
         var actionTaken = 'idle';
         var actionDetail = '';
@@ -17487,19 +17519,27 @@
         // Check for product in inventory
         const productId = effectiveTypeDef.product;
         if (!player.inventory[productId] || player.inventory[productId] < 1) {
-            return { success: false, message: `Need ${productId} in inventory to self-treat.` };
+            return { success: false, message: 'Need ' + productId.replace(/_/g, ' ') + ' in inventory to self-treat.' };
         }
 
-        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.self_treat || 3);
+        // Self-treat takes same time as clinic (2x hospital ticks)
+        var treatTicks = CONFIG.TREATMENT_TICKS ? (CONFIG.TREATMENT_TICKS[condition.severity] || 15) : 15;
+        treatTicks = treatTicks * 2; // clinic rate
+        // Doctor skill: faster treatment
+        if (hasSkill('doctor')) treatTicks = Math.max(5, Math.floor(treatTicks * 0.6));
+        else if (hasSkill('field_medic')) treatTicks = Math.max(5, Math.floor(treatTicks * 0.8));
+
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(treatTicks);
 
         player.inventory[productId]--;
-        condition.treated = true;
-        var healDays = Math.ceil(effectiveTypeDef.healDays / 2);
-        if (hasSkill('first_aid')) healDays = Math.ceil(healDays * 0.75);
-        condition.healDay = Engine.getDay() + healDays;
 
-        Engine.logEvent(`${player.fullName} self-treated ${condition.name} with ${productId}.`);
-        return { success: true, message: `Self-treated ${condition.name}. Healing faster.` };
+        // Fully cure the condition (like hospital/clinic)
+        list.splice(conditionIndex, 1);
+        grantXP(8, 'medical');
+
+        var timeDesc = treatTicks <= 10 ? 'a quick treatment' : treatTicks <= 60 ? 'half a day' : '~' + (Math.round(treatTicks / 60 * 10) / 10) + ' days';
+        Engine.logEvent('⚕️ ' + player.fullName + ' self-treated ' + condition.name + ' using ' + productId.replace(/_/g, ' ') + ' (' + timeDesc + ').');
+        return { success: true, message: 'Self-treated ' + condition.name + ' using ' + productId.replace(/_/g, ' ') + '. Fully recovered! (' + timeDesc + ')' };
     }
 
     // Field Medic skill: treat injured NPCs in town for gold
@@ -17663,15 +17703,13 @@
                     return { success: false, message: 'Treatment of ' + spouse.firstName + ' was not fully effective. Used ' + usedSupply + '. Try again or visit a hospital.' };
                 }
             } else {
-                // Hospital treatment for spouse
+                // Hospital treatment for spouse — same cost as player, no time advance (companion stays at hospital)
                 var fees = Engine.getHospitalFees ? Engine.getHospitalFees(player.townId) : null;
                 var hospInfo2 = fees ? (fees.hospital || fees.clinic) : null;
-                var baseCost = condSeverity === 'severe' ? 60 : condSeverity === 'moderate' ? 30 : 15;
-                var cost = hospInfo2 && hospInfo2.fees ? (hospInfo2.fees[condSeverity] || baseCost) : baseCost;
+                var cost = hospInfo2 && hospInfo2.fees ? (hospInfo2.fees[condSeverity] || getHospitalCost({ productCost: 10 }, condSeverity)) : getHospitalCost({ productCost: 10 }, condSeverity);
                 if (player.gold < cost) return { success: false, message: 'Not enough gold. Hospital costs ' + cost + 'g for ' + spouse.firstName + '.' };
 
-                var treatTicks = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.TREATMENT_TICKS) ? (NPC_HEALTH_CONFIG.TREATMENT_TICKS[condSeverity] || 25) : 25;
-                if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(treatTicks);
+                // No Game.advanceTicks — companion is locked at hospital, player continues
                 player.gold -= cost;
                 player.stats.totalGoldSpent += cost;
                 _payHealthcareRevenue(town, cost);
@@ -17767,7 +17805,7 @@
                 Engine.logEvent('⚕️ ' + player.fullName + ' treated ' + (npc.firstName || 'a companion') + ' using ' + usedSup + '.');
                 return { success: true, message: 'Treated ' + (npc.firstName || 'companion') + ' using ' + usedSup + '.' };
             } else {
-                // Hospital treatment for family/guard NPC
+                // Hospital treatment for family/guard NPC — same cost as player, no time advance
                 var npcSev = 'minor';
                 if (npc.injuries && npc.injuries.length > 0) npcSev = npc.injuries[0].severity || 'moderate';
                 else if (npc.illnesses && npc.illnesses.length > 0) npcSev = npc.illnesses[0].severity || 'moderate';
@@ -17775,12 +17813,10 @@
 
                 var fees2 = Engine.getHospitalFees ? Engine.getHospitalFees(player.townId) : null;
                 var hospInfo3 = fees2 ? (fees2.hospital || fees2.clinic) : null;
-                var baseCost2 = npcSev === 'severe' ? 50 : npcSev === 'moderate' ? 25 : 12;
-                var cost2 = hospInfo3 && hospInfo3.fees ? (hospInfo3.fees[npcSev] || baseCost2) : baseCost2;
+                var cost2 = hospInfo3 && hospInfo3.fees ? (hospInfo3.fees[npcSev] || getHospitalCost({ productCost: 10 }, npcSev)) : getHospitalCost({ productCost: 10 }, npcSev);
                 if (player.gold < cost2) return { success: false, message: 'Not enough gold. Hospital costs ' + cost2 + 'g.' };
 
-                var treatTicks2 = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.TREATMENT_TICKS) ? (NPC_HEALTH_CONFIG.TREATMENT_TICKS[npcSev] || 25) : 25;
-                if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(treatTicks2);
+                // No Game.advanceTicks — companion stays at hospital, player continues
                 player.gold -= cost2;
                 player.stats.totalGoldSpent += cost2;
                 _payHealthcareRevenue(town, cost2);
@@ -17803,6 +17839,66 @@
         }
 
         return { success: false, message: 'Invalid target type.' };
+    }
+
+    // Auto-treatment: children and guards seek hospital treatment if sick and have money
+    function _tickFamilyAutoTreatment() {
+        var day = Engine.getDay();
+        // Only check every 5 days to reduce overhead
+        if (day % 5 !== 0) return;
+
+        var childIds = player.childrenIds || [];
+        for (var ci = 0; ci < childIds.length; ci++) {
+            _autoTreatNPC(childIds[ci]);
+        }
+        var guards = player.guards || [];
+        for (var gi = 0; gi < guards.length; gi++) {
+            if (guards[gi].personId) _autoTreatNPC(guards[gi].personId);
+        }
+    }
+
+    function _autoTreatNPC(npcId) {
+        var npc = Engine.findPerson(npcId);
+        if (!npc || !npc.alive) return;
+        var hasSickness = npc.sick || (npc.illnesses && npc.illnesses.length > 0);
+        var hasInjury = npc.injured || (npc.injuries && npc.injuries.length > 0);
+        if (!hasSickness && !hasInjury) return;
+
+        // Check if they are in a town with a hospital/clinic
+        var town = Engine.findTown(npc.townId);
+        if (!town) return;
+        var hasMed = false;
+        if (town.buildings) {
+            for (var bi = 0; bi < town.buildings.length; bi++) {
+                if (town.buildings[bi].type === 'hospital' || town.buildings[bi].type === 'clinic') { hasMed = true; break; }
+            }
+        }
+        if (!hasMed && (town.category === 'city' || town.category === 'capital_city')) hasMed = true;
+        if (!hasMed) return;
+
+        // Check NPC's gold (use npc.gold if it exists)
+        var npcGold = npc.gold || 0;
+        var sev = 'minor';
+        if (npc.injuries && npc.injuries.length > 0) sev = npc.injuries[0].severity || 'moderate';
+        else if (npc.illnesses && npc.illnesses.length > 0) sev = npc.illnesses[0].severity || 'moderate';
+        else if (npc.injurySeverity) sev = npc.injurySeverity;
+
+        var cost = getHospitalCost({ productCost: 10 }, sev);
+        if (npcGold < cost) return;
+
+        // Pay and cure
+        npc.gold -= cost;
+        npc.injuries = [];
+        npc.illnesses = [];
+        npc.injured = false;
+        npc.sick = false;
+        npc.injurySeverity = null;
+        npc.injuryType = null;
+        npc.illness = null;
+        npc.health = Math.min((npc.health || 50) + 40, 100);
+        if (npc._illnessTreatPaid) delete npc._illnessTreatPaid;
+        _payHealthcareRevenue(town, cost);
+        Engine.logEvent('🏥 ' + (npc.firstName || 'A family member') + ' sought treatment at the hospital (' + cost + 'g).');
     }
 
     // Get treatable companions (for UI display)
@@ -19793,6 +19889,9 @@
 
         // Ongoing spouse trait/quirk effects
         tickSpouseEffects();
+
+        // Auto-treatment for sick children and guards
+        _tickFamilyAutoTreatment();
 
         // Wedding planning countdown
         tickWeddingPlan();

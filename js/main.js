@@ -668,6 +668,9 @@ window.Game = (function () {
         }
         updateSpeedButtons();
         emit('speedChanged', { speed: s });
+        // Speed warning banner
+        var _swb = document.getElementById('speedWarningBanner');
+        if (_swb) _swb.style.display = (s >= 60) ? 'block' : 'none';
         // Enforce zoom-speed limits
         if (typeof Render !== 'undefined' && Render.getCamera) {
             var cam = Render.getCamera();

@@ -438,6 +438,9 @@ window.UI = (function () {
                 if (typeof Game !== 'undefined') Game.setSpeed(speed);
                 document.querySelectorAll('.btn-speed').forEach(b => b.classList.remove('active'));
                 this.classList.add('active');
+                // Speed warning banner
+                var _swb = document.getElementById('speedWarningBanner');
+                if (_swb) _swb.style.display = (speed >= 60) ? 'block' : 'none';
             });
         });
 
@@ -1315,22 +1318,87 @@ window.UI = (function () {
             html += '</div>';
         }
 
-        // Hospital / Clinic button (only when player is here and sick/injured)
+        // Hospital / Clinic button (blinks when player OR family/guards at same location are sick/injured)
         if (isPlayerHere && typeof Player !== 'undefined') {
             var _medFacilities = Player.getMedicalFacilities ? Player.getMedicalFacilities(town.id) : { hasHospital: false, hasClinic: false };
             var _playerSick = (Player.illnesses && Player.illnesses.length > 0) || (Player.injuries && Player.injuries.length > 0);
+
+            // Check family/guards at same location who need treatment
+            var _sickCompanions = [];
+            try {
+                var _pState = Player.state || {};
+                // Spouse
+                if (_pState.spouseId) {
+                    var _sp = Engine.findPerson(_pState.spouseId);
+                    if (_sp && _sp.alive && _sp.townId === town.id) {
+                        var _spAi = _pState.spouseAI || {};
+                        if (_spAi.condition && _spAi.condition !== 'healthy') {
+                            _sickCompanions.push({ type: 'spouse', id: _pState.spouseId, name: _sp.firstName || 'Spouse', condition: _spAi.condition });
+                        }
+                    }
+                }
+                // Children
+                var _childIds = _pState.childrenIds || [];
+                for (var _ci = 0; _ci < _childIds.length; _ci++) {
+                    var _ch = Engine.findPerson(_childIds[_ci]);
+                    if (_ch && _ch.alive && _ch.townId === town.id) {
+                        var _chSick = _ch.sick || (_ch.illnesses && _ch.illnesses.length > 0);
+                        var _chInj = _ch.injured || (_ch.injuries && _ch.injuries.length > 0);
+                        if (_chSick || _chInj) {
+                            _sickCompanions.push({ type: 'family', id: _childIds[_ci], name: _ch.firstName || 'Child', condition: _chSick ? 'sick' : 'injured' });
+                        }
+                    }
+                }
+                // Guards
+                var _guards = _pState.guards || [];
+                for (var _gi = 0; _gi < _guards.length; _gi++) {
+                    var _g = Engine.findPerson(_guards[_gi].personId);
+                    if (_g && _g.alive && _g.townId === town.id) {
+                        var _gSick = _g.sick || (_g.illnesses && _g.illnesses.length > 0);
+                        var _gInj = _g.injured || (_g.injuries && _g.injuries.length > 0);
+                        if (_gSick || _gInj) {
+                            _sickCompanions.push({ type: 'guard', id: _guards[_gi].personId, name: _g.firstName || 'Guard', condition: _gSick ? 'sick' : 'injured' });
+                        }
+                    }
+                }
+            } catch(e) { /* no-op */ }
+
+            var _anyoneSick = _playerSick || _sickCompanions.length > 0;
             if (_medFacilities.hasHospital || _medFacilities.hasClinic) {
                 var _medIcon = _medFacilities.hasHospital ? '🏥' : '⚕️';
                 var _medLabel = _medFacilities.hasHospital ? 'Visit Hospital' : 'Visit Clinic';
-                var _medStyle = _playerSick
+                var _medStyle = _anyoneSick
                     ? 'animation:pulse 2s infinite;'
                     : '';
                 html += '<div class="text-center mt-sm">';
                 html += '<button class="btn-medieval" onclick="UI.openHealthDialog()" style="font-size:0.8rem;padding:6px 16px;' + _medStyle + '">';
                 html += _medIcon + ' ' + _medLabel;
                 if (_playerSick) html += ' <span style="color:#e74c3c;font-size:0.7rem;">(You need treatment!)</span>';
+                else if (_sickCompanions.length > 0) html += ' <span style="color:#e67e22;font-size:0.7rem;">(' + _sickCompanions.length + ' companion' + (_sickCompanions.length > 1 ? 's' : '') + ' need treatment)</span>';
                 html += '</button>';
                 html += '</div>';
+
+                // Show sick companion list with treat buttons
+                if (_sickCompanions.length > 0) {
+                    html += '<div style="background:rgba(180,60,0,0.1);border:1px solid rgba(231,126,35,0.3);border-radius:6px;padding:8px;margin-top:6px;">';
+                    html += '<div style="font-size:0.78rem;color:#e67e22;font-weight:bold;margin-bottom:4px;">🩺 Companions Needing Treatment:</div>';
+                    for (var _sci = 0; _sci < _sickCompanions.length; _sci++) {
+                        var _sc = _sickCompanions[_sci];
+                        var _scIcon = _sc.type === 'spouse' ? '💑' : _sc.type === 'guard' ? '🛡️' : '👶';
+                        html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.05);">';
+                        html += '<span style="font-size:0.75rem;color:#ddd;">' + _scIcon + ' ' + escapeHtml(_sc.name) + ' <span style="color:#c44e52;font-size:0.68rem;">(' + _sc.condition.replace(/_/g, ' ') + ')</span></span>';
+                        html += '<span style="display:flex;gap:4px;">';
+                        var _safScType = _sc.type.replace(/'/g, "\\'");
+                        var _safScId = _sc.id.replace(/'/g, "\\'");
+                        html += '<button class="btn-medieval" onclick="(function(){var r=Player.treatCompanion(\'' + _safScType + '\',\'' + _safScId + '\',\'hospital\');UI.toast(r.message,r.success?\'success\':\'warning\');try{UI.showTownDetail(Engine.findTown(Player.townId));}catch(e){}})()" style="font-size:0.65rem;padding:2px 8px;background:rgba(40,80,160,0.3);border-color:rgba(60,120,220,0.5);">' + _medIcon + ' Treat</button>';
+                        // Player treat option if skilled
+                        if (typeof Player !== 'undefined' && Player.hasSkill && (Player.hasSkill('field_medic') || Player.hasSkill('doctor'))) {
+                            html += '<button class="btn-medieval" onclick="(function(){var r=Player.treatCompanion(\'' + _safScType + '\',\'' + _safScId + '\',\'player\');UI.toast(r.message,r.success?\'success\':\'warning\');try{UI.showTownDetail(Engine.findTown(Player.townId));}catch(e){}})()" style="font-size:0.65rem;padding:2px 8px;background:rgba(40,160,80,0.3);border-color:rgba(60,200,100,0.5);">⚕️ Self</button>';
+                        }
+                        html += '</span></div>';
+                    }
+                    html += '</div>';
+                }
             }
         }
 
@@ -21319,8 +21387,17 @@ window.UI = (function () {
             html += '<div style="margin-bottom:6px;"><strong>Deadline:</strong> Day ' + _commDeadline + ' <span style="color:' + (_commDaysLeft <= 5 ? '#c44e52' : _commDaysLeft <= 15 ? '#ccb974' : '#55a868') + ';">(' + (_commDaysLeft > 0 ? _commDaysLeft + ' days left' : 'OVERDUE!') + ')</span></div>';
             html += '<div style="margin-bottom:6px;"><strong>Reward:</strong> <span class="gold-value">' + formatGold(_commReward) + '</span></div>';
             if (_commStatus === 'accepted') {
-                html += '<div style="margin-bottom:4px;"><strong>Progress:</strong> ' + _commDelivered + '/' + _commQty + '</div>';
+                var _playerHas = (Player.state && Player.state.inventory) ? (Player.state.inventory[_commItem] || 0) : 0;
+                html += '<div style="margin-bottom:4px;"><strong>Progress:</strong> ' + _commDelivered + '/' + _commQty + ' <span style="font-size:0.72rem;color:#aaa;">(You have: ' + _playerHas + ')</span></div>';
                 html += '<div style="height:6px;background:rgba(0,0,0,0.3);border-radius:3px;margin-bottom:8px;"><div style="height:100%;width:' + _commProgress + '%;background:' + (_commProgress >= 100 ? '#55a868' : 'var(--gold)') + ';border-radius:3px;transition:width 0.3s;"></div></div>';
+                var _canDeliver = _playerHas >= (_commQty - _commDelivered);
+                html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;align-items:center;">';
+                if (_canDeliver) {
+                    html += '<button class="btn-medieval" onclick="(function(){var r=Player.deliverKingCommission?Player.deliverKingCommission():{success:false,message:\'Delivery not available.\'};UI.toast(r.message||\'Delivered!\',r.success?\'success\':\'warning\');UI.openNobilityDialog();})()" style="font-size:0.78rem;padding:6px 16px;background:rgba(85,168,104,0.25) !important;border-color:rgba(85,168,104,0.5) !important;animation:pulse 2s infinite;">📦 Deliver Goods</button>';
+                } else {
+                    html += '<div style="font-size:0.72rem;color:#888;">📦 Gather ' + (_commQty - _commDelivered - _playerHas) + ' more ' + _itemName + ' to deliver</div>';
+                }
+                html += '</div>';
             }
             html += '</div>';
 
