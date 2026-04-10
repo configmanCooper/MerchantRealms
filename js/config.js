@@ -2559,6 +2559,207 @@ const KINGDOM_QUEST_SPECIAL_REWARDS = [
     'noble_endorsement', 'crown_estate'
 ];
 
+// ── Action Quest Mechanics ──
+// Defines what the player must actually DO for one-off action quests
+// (instead of just clicking "Report Complete")
+const ACTION_QUEST_MECHANICS = {
+    // ESPIONAGE
+    decode: {
+        label: 'Decode Messages',
+        actionLabel: '🔓 Begin Decoding',
+        tickCost: 8,          // time investment (days)
+        goldCost: 50,         // supplies (ink, candles, reference texts)
+        locationReq: 'any',
+        successBase: 0.70,
+        skillKey: 'underworld',
+        narrative: 'You spread the intercepted documents across your desk and begin studying the cipher patterns by candlelight.',
+        successText: 'After careful analysis, the cipher breaks open — revealing enemy troop movements and supply routes!',
+        failText: 'The cipher is more complex than expected. Your work yields nothing useful — you\'ll need to start fresh.',
+    },
+    intercept: {
+        label: 'Intercept Courier',
+        actionLabel: '🏇 Set an Ambush',
+        tickCost: 5,
+        goldCost: 100,       // hire lookouts, supplies
+        locationReq: 'any',
+        successBase: 0.60,
+        skillKey: 'survival',
+        narrative: 'You set up along the known courier route with lookouts posted at every crossroads, watching for enemy riders.',
+        successText: 'Your ambush succeeds! The courier is captured and the dispatches seized.',
+        failText: 'The courier took an unexpected route and slipped past your net. The gold spent on lookouts is lost.',
+    },
+    investigate: {
+        label: 'Investigate',
+        actionLabel: '🔍 Begin Investigation',
+        tickCost: 7,
+        goldCost: 75,        // informant payments
+        locationReq: 'any',
+        successBase: 0.65,
+        skillKey: 'social',
+        narrative: 'You begin quietly interviewing servants, merchants, and soldiers, piecing together a web of contacts and rumors.',
+        successText: 'Your investigation uncovers the truth — names, dates, and evidence compiled into a damning report.',
+        failText: 'Your investigation leads to dead ends. The trail has gone cold and you\'ll need to start over with new leads.',
+    },
+    disinformation: {
+        label: 'Spread Disinformation',
+        actionLabel: '📜 Plant False Reports',
+        tickCost: 6,
+        goldCost: 200,       // bribe messengers, forge documents
+        locationReq: 'any',
+        successBase: 0.60,
+        skillKey: 'underworld',
+        narrative: 'You craft believable but false intelligence reports and begin distributing them through compromised channels.',
+        successText: 'The false information spreads like wildfire — enemy commanders are already reacting to phantom threats!',
+        failText: 'Your forgery is detected by a sharp-eyed official. The disinformation campaign falls apart.',
+    },
+    sabotage_economy: {
+        label: 'Sabotage Enemy Economy',
+        actionLabel: '💣 Launch Sabotage Operation',
+        tickCost: 12,
+        goldCost: 500,       // hire agents, smuggle materials
+        locationReq: 'any',
+        successBase: 0.45,
+        skillKey: 'underworld',
+        narrative: 'You assemble a network of agents and begin coordinating a complex operation to undermine the enemy\'s trade routes.',
+        successText: 'Warehouses burn, shipments vanish, and markets collapse — the enemy economy is reeling!',
+        failText: 'Your agents are captured before they can act. The operation is compromised and the gold is lost.',
+    },
+    // SOCIAL
+    arrange_marriage: {
+        label: 'Broker Marriage',
+        actionLabel: '💍 Begin Negotiations',
+        tickCost: 10,
+        goldCost: 150,       // hosting meetings, gifts
+        locationReq: 'any',
+        successBase: 0.65,
+        skillKey: 'social',
+        narrative: 'You arrange private meetings between the families, navigating the delicate politics of noble alliances.',
+        successText: 'Both families agree! The betrothal is announced to great celebration.',
+        failText: 'Negotiations break down over a dispute about dowry and lands. You\'ll need to try a different approach.',
+    },
+    tutor_heir: {
+        label: 'Tutor Royal Heir',
+        actionLabel: '📚 Begin Tutoring',
+        tickCost: 15,
+        goldCost: 100,       // books, materials
+        locationReq: 'capital',
+        successBase: 0.75,
+        skillKey: 'social',
+        narrative: 'You arrive at the royal palace and begin daily lessons with the young heir — history, economics, and statecraft.',
+        successText: 'The heir shows remarkable progress! The king is deeply impressed with your teaching.',
+        failText: 'The heir proves an unwilling student. After weeks of frustration, the king relieves you of the duty.',
+    },
+    sway_vote: {
+        label: 'Sway Council Vote',
+        actionLabel: '🗳️ Begin Lobbying',
+        tickCost: 6,
+        goldCost: 300,       // dinners, favors, bribes
+        locationReq: 'any',
+        successBase: 0.55,
+        skillKey: 'social',
+        narrative: 'You host private dinners and make quiet promises, working to turn council members to your side.',
+        successText: 'The council votes as you wished — your influence over the nobility grows stronger.',
+        failText: 'A rival noble outmaneuvered you at the last moment. The vote goes against your efforts.',
+    },
+    advise_succession: {
+        label: 'Advise on Succession',
+        actionLabel: '👑 Begin Consultation',
+        tickCost: 12,
+        goldCost: 200,
+        locationReq: 'capital',
+        successBase: 0.65,
+        skillKey: 'social',
+        narrative: 'You spend weeks in private audience with the aging king, reviewing the claims and qualifications of potential heirs.',
+        successText: 'The king accepts your counsel. Your advice will shape the kingdom\'s future for generations.',
+        failText: 'The king dismisses your recommendations, finding them too self-serving. Trust is damaged.',
+    },
+    // CORRUPT
+    eliminate_rival: {
+        label: 'Remove Political Threat',
+        actionLabel: '🗡️ Set Plan in Motion',
+        tickCost: 10,
+        goldCost: 400,       // hire assassins, bribes
+        locationReq: 'any',
+        successBase: 0.50,
+        skillKey: 'underworld',
+        narrative: 'You hire discreet agents and begin orchestrating the removal of the king\'s rival from the political stage.',
+        successText: 'The rival suffers a convenient "accident." No one asks questions — the king is pleased.',
+        failText: 'Your agents bungle the job. Suspicion rises but nothing can be traced back to you... yet.',
+    },
+    silence_witness: {
+        label: 'Silence Witness',
+        actionLabel: '🤫 Track Down Witness',
+        tickCost: 5,
+        goldCost: 200,
+        locationReq: 'any',
+        successBase: 0.60,
+        skillKey: 'underworld',
+        narrative: 'You track down the troublesome witness and arrange a meeting at a secluded location.',
+        successText: 'The witness agrees to keep quiet — whether through gold or fear, the threat is neutralized.',
+        failText: 'The witness has already fled the town. You\'ll need to find them again.',
+    },
+    forge_evidence: {
+        label: 'Forge Evidence',
+        actionLabel: '📝 Begin Forgery',
+        tickCost: 8,
+        goldCost: 250,       // supplies, seals, accomplices
+        locationReq: 'any',
+        successBase: 0.55,
+        skillKey: 'underworld',
+        narrative: 'You acquire blank parchment with the target\'s seal and begin carefully crafting false documents.',
+        successText: 'The forged documents are indistinguishable from genuine correspondence. A perfect frame.',
+        failText: 'Your forgery contains subtle errors that an expert would spot. You must destroy the evidence and try again.',
+    },
+    seize_assets: {
+        label: 'Seize Merchant Assets',
+        actionLabel: '⚖️ File Writ of Seizure',
+        tickCost: 5,
+        goldCost: 100,
+        locationReq: 'any',
+        successBase: 0.70,
+        skillKey: 'social',
+        narrative: 'You present forged royal authority to the local magistrate and order the seizure of the merchant\'s warehouses.',
+        successText: 'The merchant\'s goods are confiscated. They protest, but no one dares challenge the king\'s will.',
+        failText: 'The merchant has powerful friends who intervene. The seizure is blocked.',
+    },
+    intimidate: {
+        label: 'Intimidate Opposition',
+        actionLabel: '💀 Send a Warning',
+        tickCost: 3,
+        goldCost: 50,
+        locationReq: 'any',
+        successBase: 0.75,
+        skillKey: 'survival',
+        narrative: 'You arrange for threatening messages and displays of force to silence political opponents.',
+        successText: 'The opposition falls silent. Fear is a powerful motivator.',
+        failText: 'Your threats backfire — the opposition rallies support against you. You need a different approach.',
+    },
+    frame_merchant: {
+        label: 'Frame Elite Merchant',
+        actionLabel: '🕵️ Plant Evidence',
+        tickCost: 8,
+        goldCost: 300,
+        locationReq: 'any',
+        successBase: 0.50,
+        skillKey: 'underworld',
+        narrative: 'You identify a wealthy merchant and begin planting false evidence of treason in their warehouse and correspondence.',
+        successText: 'The merchant is arrested! Their wealth is seized by the crown — with a generous finder\'s fee for you.',
+        failText: 'The evidence is discovered too early and linked to a planted source. You flee before suspicion falls on you.',
+    },
+    rig_election: {
+        label: 'Rig Council Election',
+        actionLabel: '🏴 Begin Rigging',
+        tickCost: 10,
+        goldCost: 500,
+        locationReq: 'capital',
+        successBase: 0.45,
+        skillKey: 'underworld',
+        narrative: 'You bribe vote counters, intimidate neutral council members, and forge proxy ballots.',
+        successText: 'The election results are exactly what the king wanted. No one suspects a thing.',
+        failText: 'An honest council member discovers the ballot forgeries. The election is declared void.',
+    },
+};
+
 // ============================================================
 // Military Unit Types
 // ============================================================

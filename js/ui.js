@@ -21451,10 +21451,46 @@ window.UI = (function () {
                 html += '<div style="font-size:0.68rem;color:' + (spentMet ? '#55a868' : '#e67e22') + ';">' + (spentMet ? '✅' : '⬜') + ' 💰 Raise gold: ' + spent + '/' + act.goldTarget + '</div>';
             } else {
                 var actionDone = (Player.state._kqActionDone || {})[quest.id] || false;
-                html += '<div style="font-size:0.68rem;color:' + (actionDone ? '#55a868' : '#e67e22') + ';">' + (actionDone ? '✅' : '⬜') + ' Complete: ' + escapeHtml(act.type.replace(/_/g, ' ')) + '</div>';
-                if (!actionDone) {
+                // Look up action mechanics for rich display
+                var _aqMech = (typeof ACTION_QUEST_MECHANICS !== 'undefined') ? ACTION_QUEST_MECHANICS[act.type] : null;
+                var _aqLabel = _aqMech ? _aqMech.label : act.type.replace(/_/g, ' ');
+                var _aqAttempts = (Player.state._kqActionAttempts || {})[quest.id] || 0;
+
+                if (actionDone) {
+                    html += '<div style="font-size:0.68rem;color:#55a868;">✅ ' + escapeHtml(_aqLabel) + ' — completed!' + (_aqAttempts > 1 ? ' (took ' + _aqAttempts + ' attempts)' : '') + '</div>';
+                } else if (_aqMech) {
+                    // Show action details with proper attempt button
+                    html += '<div style="font-size:0.68rem;color:#e67e22;margin-bottom:4px;">⬜ ' + escapeHtml(_aqLabel) + '</div>';
+                    html += '<div style="font-size:0.65rem;color:#999;margin:2px 0 4px 12px;font-style:italic;">' + escapeHtml(_aqMech.narrative || '') + '</div>';
+                    // Requirements
+                    html += '<div style="font-size:0.65rem;color:#aaa;margin-left:12px;">';
+                    if (_aqMech.goldCost > 0) {
+                        var _hasGold = (Player.state.gold || 0) >= _aqMech.goldCost;
+                        html += '<div style="color:' + (_hasGold ? '#55a868' : '#e74c3c') + ';">💰 Cost: ' + _aqMech.goldCost + 'g' + (!_hasGold ? ' (need ' + (_aqMech.goldCost - Math.floor(Player.state.gold || 0)) + ' more)' : '') + '</div>';
+                    }
+                    html += '<div>⏳ Time: ~' + (_aqMech.tickCost || 5) + ' days</div>';
+                    if (_aqMech.locationReq === 'capital') {
+                        var _inCapital = false;
+                        try { var _pTown = Engine.findTown(Player.townId); _inCapital = _pTown && _pTown.isCapital; } catch(e) {}
+                        html += '<div style="color:' + (_inCapital ? '#55a868' : '#e74c3c') + ';">📍 Must be in kingdom capital' + (!_inCapital ? ' (travel there first)' : ' ✓') + '</div>';
+                    }
+                    // Success chance estimate
+                    var _estChance = Math.round((_aqMech.successBase || 0.60) * 100);
+                    var _chanceColor = _estChance >= 70 ? '#55a868' : _estChance >= 50 ? '#ccb974' : '#e67e22';
+                    html += '<div>🎲 Base success: <span style="color:' + _chanceColor + ';">' + _estChance + '%</span> (skills improve this)</div>';
+                    if (_aqAttempts > 0) {
+                        html += '<div style="color:#e67e22;">⚠️ Failed ' + _aqAttempts + ' time' + (_aqAttempts > 1 ? 's' : '') + ' already</div>';
+                    }
+                    html += '</div>';
+
                     var safActId = quest.id.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                    html += '<button class="btn-medieval" onclick="(function(){Player.trackKQActionDone(\'' + safActId + '\');UI.openNobilityDialog();})()" style="font-size:0.65rem;padding:2px 8px;margin-top:2px;">📋 Report Action Complete</button>';
+                    var safKid = kingdomId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                    html += '<button class="btn-medieval" onclick="UI._attemptKQActionUI(\'' + safActId + '\',\'' + safKid + '\')" style="font-size:0.7rem;padding:4px 12px;margin-top:4px;background:rgba(231,126,35,0.2) !important;border-color:rgba(231,126,35,0.4) !important;">' + escapeHtml(_aqMech.actionLabel || '⚡ Attempt Action') + '</button>';
+                } else {
+                    // Fallback for unknown action types
+                    html += '<div style="font-size:0.68rem;color:#e67e22;">⬜ Complete: ' + escapeHtml(act.type.replace(/_/g, ' ')) + '</div>';
+                    var safActId2 = quest.id.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                    html += '<button class="btn-medieval" onclick="(function(){Player.trackKQActionDone(\'' + safActId2 + '\');UI.openNobilityDialog();})()" style="font-size:0.65rem;padding:2px 8px;margin-top:2px;">📋 Report Action Complete</button>';
                 }
             }
         }
@@ -21508,6 +21544,51 @@ window.UI = (function () {
     function _kqCatIcon(cat) {
         var icons = { military: '🗡️', economic: '💰', diplomatic: '🤝', espionage: '🕵️', justice: '⚖️', infrastructure: '🏗️', social: '👑', corrupt: '🏴' };
         return icons[cat] || '📜';
+    }
+
+    function _attemptKQActionUI(questId, kingdomId) {
+        if (!Player.attemptKQAction) {
+            toast('Action system not available.', 'warning');
+            return;
+        }
+        var result = Player.attemptKQAction(questId, kingdomId);
+        if (!result) { toast('Failed to attempt action.', 'warning'); return; }
+
+        // If it's a validation error (not enough gold, wrong location), just toast
+        if (!result.success) {
+            toast(result.message, 'warning');
+            return;
+        }
+
+        // Show result modal with narrative
+        var isSuccess = result.actionSuccess;
+        var html = '<div style="padding:15px;">';
+        html += '<div style="text-align:center;margin-bottom:12px;">';
+        html += '<div style="font-size:2.5em;">' + (isSuccess ? '✅' : '❌') + '</div>';
+        html += '<h3 style="color:' + (isSuccess ? '#2ecc71' : '#e74c3c') + ';margin:5px 0;">' + (isSuccess ? 'Success!' : 'Failed!') + '</h3>';
+        html += '</div>';
+
+        // Result text
+        html += '<p style="font-size:0.9rem;color:#ddd;margin:10px 0;">' + escapeHtml(result.message) + '</p>';
+
+        // Cost summary
+        html += '<div style="margin:12px 0;padding:8px;background:rgba(0,0,0,0.2);border-radius:6px;font-size:0.8rem;">';
+        html += '<div style="color:#aaa;margin-bottom:4px;">📊 Action Summary:</div>';
+        if (result.goldSpent > 0) html += '<div style="color:#e67e22;">💰 Gold spent: ' + result.goldSpent + 'g</div>';
+        if (result.ticksSpent > 0) html += '<div style="color:#5dade2;">⏳ Time spent: ~' + result.ticksSpent + ' days</div>';
+        html += '<div style="color:#aaa;">🎲 Success chance was: ' + (result.chance || '?') + '%</div>';
+        if (result.attempt > 1) html += '<div style="color:#ccb974;">📝 Attempt #' + result.attempt + '</div>';
+        html += '</div>';
+
+        if (!isSuccess) {
+            html += '<p style="font-size:0.8rem;color:#e67e22;font-style:italic;margin-top:8px;">You can try again, but it will cost more gold and time. Improve your skills to increase your chances.</p>';
+        }
+
+        html += '</div>';
+
+        openModal(isSuccess ? '✅ Action Succeeded' : '❌ Action Failed', html,
+            '<button class="btn-medieval" onclick="UI.closeModal(); UI.openNobilityDialog();">Continue</button>'
+        );
     }
 
     function _switchKQTab(tabId, kingdomId) {
@@ -29265,5 +29346,6 @@ window.UI = (function () {
 
         // Kingdom Quests UI
         _switchKQTab,
+        _attemptKQActionUI,
     };
 })();

@@ -24357,6 +24357,138 @@
         player._kqActionDone[questId] = true;
     }
 
+    // ── Attempt a one-off action quest (replaces instant "Report Complete") ──
+    function attemptKQAction(questId, kingdomId) {
+        if (!kingdomId) kingdomId = _getPlayerKingdomId();
+        if (!player.kingdomQuests || !player.kingdomQuests[kingdomId]) {
+            return { success: false, message: 'No quest data.' };
+        }
+        var kqData = player.kingdomQuests[kingdomId];
+        var quest = null;
+        for (var qi = 0; qi < kqData.active.length; qi++) {
+            if (kqData.active[qi].id === questId) { quest = kqData.active[qi]; break; }
+        }
+        if (!quest) return { success: false, message: 'Quest not found in active quests.' };
+
+        // Get action type from quest requirements
+        var actionType = quest.requirements.action ? quest.requirements.action.type : null;
+        if (!actionType) return { success: false, message: 'Quest has no action requirement.' };
+
+        // Look up mechanics config
+        var mech = (typeof ACTION_QUEST_MECHANICS !== 'undefined') ? ACTION_QUEST_MECHANICS[actionType] : null;
+        if (!mech) {
+            // Fallback for unknown action types — instant complete (legacy behavior)
+            trackKQActionDone(questId);
+            return { success: true, message: 'Action completed.' };
+        }
+
+        // Check location requirement
+        if (mech.locationReq === 'capital') {
+            var playerTown = null;
+            try { playerTown = Engine.findTown(player.townId); } catch(e) {}
+            if (!playerTown || !playerTown.isCapital) {
+                return { success: false, message: '📍 You must be in the kingdom capital to attempt this action. Travel to the capital first.' };
+            }
+        }
+
+        // Check gold
+        var goldCost = mech.goldCost || 0;
+        if (goldCost > 0 && player.gold < goldCost) {
+            return { success: false, message: '💰 Not enough gold. This action costs ' + goldCost + 'g for supplies and preparations. You have ' + Math.floor(player.gold) + 'g.' };
+        }
+
+        // Deduct gold
+        if (goldCost > 0) {
+            player.gold -= goldCost;
+            player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + goldCost;
+        }
+
+        // Advance time
+        var tickCost = mech.tickCost || 5;
+        if (typeof Game !== 'undefined' && Game.advanceTicks) {
+            Game.advanceTicks(tickCost);
+        }
+
+        // Calculate success chance
+        var baseChance = mech.successBase || 0.60;
+        var skillBonus = 0;
+        var skillBranch = mech.skillKey || 'underworld';
+
+        // Count skills in the relevant branch
+        if (player.skills && typeof PLAYER_SKILLS !== 'undefined') {
+            for (var skId in player.skills) {
+                if (player.skills[skId]) {
+                    var skDef = PLAYER_SKILLS[skId];
+                    if (skDef && skDef.branch === skillBranch) {
+                        skillBonus += 0.03; // +3% per skill in branch
+                    }
+                }
+            }
+        }
+
+        // Specific high-value skill bonuses
+        if (skillBranch === 'underworld') {
+            if (hasSkill('discrete')) skillBonus += 0.05;
+            if (hasSkill('master_smuggler')) skillBonus += 0.05;
+            if (hasSkill('shadow_dealings')) skillBonus += 0.05;
+            if (hasSkill('master_forger')) skillBonus += 0.05;
+            if (hasSkill('dark_connections')) skillBonus += 0.05;
+            if (hasSkill('ghost')) skillBonus += 0.05;
+        } else if (skillBranch === 'social') {
+            if (hasSkill('court_etiquette')) skillBonus += 0.05;
+            if (hasSkill('political_connections')) skillBonus += 0.05;
+            if (hasSkill('charismatic')) skillBonus += 0.05;
+            if (hasSkill('court_informant')) skillBonus += 0.05;
+            if (hasSkill('royal_favor')) skillBonus += 0.05;
+        } else if (skillBranch === 'survival') {
+            if (hasSkill('combat_proficiency')) skillBonus += 0.05;
+            if (hasSkill('wilderness_survival')) skillBonus += 0.05;
+        }
+
+        // Difficulty scaling — harder quests are harder to succeed
+        var diffPenalty = quest.difficulty === 'elite' ? -0.15 : quest.difficulty === 'hard' ? -0.08 : 0;
+
+        var finalChance = Math.min(0.95, Math.max(0.15, baseChance + skillBonus + diffPenalty));
+
+        // Roll!
+        var rng = Engine.getRng();
+        var roll = rng ? rng.chance(finalChance) : (Math.random() < finalChance);
+
+        // Track attempt count
+        if (!player._kqActionAttempts) player._kqActionAttempts = {};
+        player._kqActionAttempts[questId] = (player._kqActionAttempts[questId] || 0) + 1;
+        var attemptNum = player._kqActionAttempts[questId];
+
+        if (roll) {
+            // Success!
+            trackKQActionDone(questId);
+            Engine.logEvent('✅ ' + (mech.label || 'Action') + ' succeeded! (attempt #' + attemptNum + ')');
+            return {
+                success: true,
+                actionSuccess: true,
+                message: mech.successText || 'Action succeeded!',
+                narrative: mech.narrative || '',
+                goldSpent: goldCost,
+                ticksSpent: tickCost,
+                chance: Math.round(finalChance * 100),
+                attempt: attemptNum
+            };
+        } else {
+            // Failure — gold and time are lost, but can retry
+            Engine.logEvent('❌ ' + (mech.label || 'Action') + ' failed (attempt #' + attemptNum + ', ' + Math.round(finalChance * 100) + '% chance)');
+            return {
+                success: true,  // call succeeded (no error), but action failed
+                actionSuccess: false,
+                message: mech.failText || 'The action failed. You can try again.',
+                narrative: mech.narrative || '',
+                goldSpent: goldCost,
+                ticksSpent: tickCost,
+                chance: Math.round(finalChance * 100),
+                attempt: attemptNum
+            };
+        }
+    }
+
     function tickKingdomQuests() {
         var day = Engine.getDay();
         var playerRank = _getPlayerNobleRank();
@@ -46433,6 +46565,7 @@
         trackKQTownVisit,
         trackKQGoldSpent,
         trackKQActionDone,
+        attemptKQAction,
 
         // AI Merchants access (unified — returns elite merchants from engine)
         getAIMerchants() {
