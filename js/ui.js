@@ -22879,8 +22879,23 @@ window.UI = (function () {
         // Build producer/consumer lookup
         var producedBy = {};  // good -> [building names]
         var consumedBy = {};  // good -> [building names]
-        var madeFrom = {};    // good -> { ingredientId: qty, ... } (recipe inputs)
-        var usedToMake = {};  // good -> [{ outputId, buildingName }] (downstream products)
+        var madeFrom = {};    // good -> [{ ingredients: { id: qty }, buildings: [name] }]
+        var usedToMake = {};  // good -> [{ output, building }] (downstream products)
+
+        // Helper: add recipe to madeFrom, grouping identical ingredient sets
+        function _addRecipe(outputId, consumes, buildingName) {
+            if (!madeFrom[outputId]) madeFrom[outputId] = [];
+            var sig = JSON.stringify(consumes);
+            for (var ri = 0; ri < madeFrom[outputId].length; ri++) {
+                if (JSON.stringify(madeFrom[outputId][ri].ingredients) === sig) {
+                    if (madeFrom[outputId][ri].buildings.indexOf(buildingName) === -1)
+                        madeFrom[outputId][ri].buildings.push(buildingName);
+                    return;
+                }
+            }
+            madeFrom[outputId].push({ ingredients: Object.assign({}, consumes), buildings: [buildingName] });
+        }
+
         for (var bk in BT) {
             var b = BT[bk];
             // Default recipe
@@ -22888,9 +22903,8 @@ window.UI = (function () {
                 if (!producedBy[b.produces]) producedBy[b.produces] = [];
                 producedBy[b.produces].push(b.name);
                 if (b.consumes) {
-                    if (!madeFrom[b.produces]) madeFrom[b.produces] = {};
+                    _addRecipe(b.produces, b.consumes, b.name);
                     for (var ci3a in b.consumes) {
-                        madeFrom[b.produces][ci3a] = b.consumes[ci3a];
                         if (!usedToMake[ci3a]) usedToMake[ci3a] = [];
                         usedToMake[ci3a].push({ output: b.produces, building: b.name });
                     }
@@ -22906,22 +22920,16 @@ window.UI = (function () {
             if (b.availableProducts) {
                 for (var apk in b.availableProducts) {
                     var ap = b.availableProducts[apk];
-                    if (ap.produces) {
-                        if (!producedBy[ap.produces]) producedBy[ap.produces] = [];
-                        producedBy[ap.produces].push(b.name);
-                        if (ap.consumes) {
-                            if (!madeFrom[ap.produces]) madeFrom[ap.produces] = {};
-                            for (var acId in ap.consumes) {
-                                madeFrom[ap.produces][acId] = ap.consumes[acId];
-                                if (!usedToMake[acId]) usedToMake[acId] = [];
-                                usedToMake[acId].push({ output: ap.produces, building: b.name });
-                            }
-                        }
-                    }
+                    var _apOut = ap.produces || apk;
+                    if (!producedBy[_apOut]) producedBy[_apOut] = [];
+                    producedBy[_apOut].push(b.name);
                     if (ap.consumes) {
-                        for (var acId2 in ap.consumes) {
-                            if (!consumedBy[acId2]) consumedBy[acId2] = [];
-                            consumedBy[acId2].push(b.name);
+                        _addRecipe(_apOut, ap.consumes, b.name);
+                        for (var acId in ap.consumes) {
+                            if (!usedToMake[acId]) usedToMake[acId] = [];
+                            usedToMake[acId].push({ output: _apOut, building: b.name });
+                            if (!consumedBy[acId]) consumedBy[acId] = [];
+                            consumedBy[acId].push(b.name);
                         }
                     }
                 }
@@ -22962,13 +22970,26 @@ window.UI = (function () {
             var hasChain = false;
 
             // Ingredients (what this good is made from)
-            if (madeFrom[r.id] && Object.keys(madeFrom[r.id]).length > 0) {
+            if (madeFrom[r.id] && madeFrom[r.id].length > 0) {
                 hasChain = true;
-                var ingList = [];
-                for (var ik in madeFrom[r.id]) {
-                    ingList.push((resName[ik] || ik) + ' ×' + madeFrom[r.id][ik]);
+                if (madeFrom[r.id].length === 1) {
+                    var _rec = madeFrom[r.id][0];
+                    var ingList = [];
+                    for (var ik in _rec.ingredients) {
+                        ingList.push((resName[ik] || ik) + ' ×' + _rec.ingredients[ik]);
+                    }
+                    chainHtml += '<div>📥 <span style="color:#7cb342;">Made from:</span> ' + ingList.join(', ') + '</div>';
+                } else {
+                    for (var ri2 = 0; ri2 < madeFrom[r.id].length; ri2++) {
+                        var _rec2 = madeFrom[r.id][ri2];
+                        var ingList2 = [];
+                        for (var ik2 in _rec2.ingredients) {
+                            ingList2.push((resName[ik2] || ik2) + ' ×' + _rec2.ingredients[ik2]);
+                        }
+                        var bldNames = _rec2.buildings.filter(function(v,i,a){return a.indexOf(v)===i;}).join(', ');
+                        chainHtml += '<div>📥 <span style="color:#7cb342;">Recipe ' + (ri2 + 1) + ':</span> ' + ingList2.join(', ') + ' <span style="color:#888;">(' + bldNames + ')</span></div>';
+                    }
                 }
-                chainHtml += '<div>📥 <span style="color:#7cb342;">Made from:</span> ' + ingList.join(', ') + '</div>';
             } else if (producedBy[r.id] && producedBy[r.id].length > 0) {
                 hasChain = true;
                 chainHtml += '<div>📥 <span style="color:#7cb342;">Source:</span> Gathered/harvested (no inputs)</div>';
@@ -23037,13 +23058,68 @@ window.UI = (function () {
                 }
             }
 
+            // Quality crafting info for tier goods
+            if (r.tier === 'basic' && !r.baseItem) {
+                // Base item that has quality variants — add a note
+                var _qc0 = typeof CONFIG !== 'undefined' && CONFIG.QUALITY_CRAFTING ? CONFIG.QUALITY_CRAFTING : null;
+                if (_qc0) {
+                    var _hasVariants = false;
+                    for (var _rvk in RT) { if (RT[_rvk].baseItem === r.id) { _hasVariants = true; break; } }
+                    if (_hasVariants) {
+                        hasChain = true;
+                        var _bInfo = '<div style="margin-top:4px; padding:4px 8px; background:rgba(255,255,255,0.04); border-left:2px solid #aaa; border-radius:4px; font-size:11px; line-height:1.6;">';
+                        _bInfo += '<div>⚪ <span style="color:#aaa;">Basic Tier</span> — standard quality. Set building recipe to Good or Excellent to attempt higher tiers (RNG-based, higher material cost).</div>';
+                        _bInfo += '</div>';
+                        desc += _bInfo;
+                    }
+                }
+            } else if (r.tier && r.baseItem) {
+                hasChain = true;
+                var _qc = typeof CONFIG !== 'undefined' && CONFIG.QUALITY_CRAFTING ? CONFIG.QUALITY_CRAFTING : null;
+                var _qt = typeof CONFIG !== 'undefined' && CONFIG.QUALITY_TIERS ? CONFIG.QUALITY_TIERS : null;
+                var _eqm = typeof CONFIG !== 'undefined' ? CONFIG.SOLDIER_EQUIPMENT_QUALITY_MULT : null;
+                var _tierInfo = '';
+                if (r.tier === 'good' && _qc && _qc.good) {
+                    var _bc = Math.round(_qc.good.baseChance * 100);
+                    var _mc = Math.round(_qc.good.maxChance * 100);
+                    var _ps = Math.round(_qc.good.playerSkillBonus * 100);
+                    var _isWeapon = _qc.WEAPON_BASE_ITEMS && _qc.WEAPON_BASE_ITEMS.indexOf(r.baseItem) >= 0;
+                    var _skillName = _isWeapon ? 'Good Weaponcraft' : 'Good Armorcraft';
+                    var _eqMult = _eqm && _eqm.good ? _eqm.good + '×' : '';
+                    _tierInfo += '<div style="margin-top:4px; padding:4px 8px; background:rgba(80,160,255,0.06); border-left:2px solid #64b5f6; border-radius:4px; font-size:11px; line-height:1.6;">';
+                    _tierInfo += '<div>🔵 <span style="color:#64b5f6;">Good Quality Tier</span> — uses higher material cost, RNG chance to craft.</div>';
+                    _tierInfo += '<div>🎲 <span style="color:#7cb342;">Chance:</span> ' + _bc + '% base (max ' + _mc + '%). Increased by worker skill and <b>' + _skillName + '</b> player skill (+' + _ps + '%).</div>';
+                    _tierInfo += '<div>⚔️ <span style="color:#ffb74d;">Benefits:</span> +10% combat effectiveness. Sells for 3× base price.';
+                    if (_eqMult) _tierInfo += ' Soldiers equipped: ' + _eqMult + ' effectiveness.';
+                    _tierInfo += '</div>';
+                    _tierInfo += '<div>🔄 <span style="color:#aaa;">On failure:</span> Produces basic version instead (materials still consumed at higher cost).</div>';
+                    _tierInfo += '</div>';
+                } else if (r.tier === 'excellent' && _qc && _qc.excellent) {
+                    var _bc2 = Math.round(_qc.excellent.baseChance * 100);
+                    var _mc2 = Math.round(_qc.excellent.maxChance * 100);
+                    var _ps2 = Math.round(_qc.excellent.playerSkillBonus * 100);
+                    var _isWeapon2 = _qc.WEAPON_BASE_ITEMS && _qc.WEAPON_BASE_ITEMS.indexOf(r.baseItem) >= 0;
+                    var _skillName2 = _isWeapon2 ? 'Excellent Weaponcraft' : 'Excellent Armorcraft';
+                    var _eqMult2 = _eqm && _eqm.excellent ? _eqm.excellent + '×' : '';
+                    _tierInfo += '<div style="margin-top:4px; padding:4px 8px; background:rgba(160,80,255,0.06); border-left:2px solid #ba68c8; border-radius:4px; font-size:11px; line-height:1.6;">';
+                    _tierInfo += '<div>🟣 <span style="color:#ba68c8;">Excellent Quality Tier</span> — highest material cost, lowest craft chance.</div>';
+                    _tierInfo += '<div>🎲 <span style="color:#7cb342;">Chance:</span> ' + _bc2 + '% base (max ' + _mc2 + '%). Requires <b>' + _skillName2 + '</b> player skill (+' + _ps2 + '%).</div>';
+                    _tierInfo += '<div>🔄 <span style="color:#64b5f6;">Cascade:</span> If excellent roll fails → rolls for good quality → if that also fails → produces basic.</div>';
+                    _tierInfo += '<div>⚔️ <span style="color:#ffb74d;">Benefits:</span> +20% combat effectiveness. Sells for 9× base price.';
+                    if (_eqMult2) _tierInfo += ' Soldiers equipped: ' + _eqMult2 + ' effectiveness.';
+                    _tierInfo += '</div>';
+                    _tierInfo += '</div>';
+                }
+                desc += _tierInfo;
+            }
+
             desc += (hasChain ? chainHtml : '');
 
             goodsData.push({ id: r.id, name: r.name, icon: r.icon || '', category: r.category || '?', basePrice: r.basePrice || 0, weight: r.weight || 1, desc: desc });
         }
 
         // Sort by category then name
-        var catOrder = ['raw', 'processed', 'food', 'beverage', 'finished', 'military', 'luxury', 'medical', 'supplies', 'livestock', 'contraband'];
+        var catOrder = ['raw', 'processed', 'food', 'beverage', 'finished', 'military', 'luxury', 'medical', 'supplies', 'livestock', 'contraband', 'quest'];
         goodsData.sort(function(a, b) {
             var ai = catOrder.indexOf(a.category); if (ai < 0) ai = 99;
             var bi = catOrder.indexOf(b.category); if (bi < 0) bi = 99;
@@ -23060,7 +23136,7 @@ window.UI = (function () {
         // Filter bar
         header += '<div style="padding:8px 16px; border-bottom:1px solid #333; display:flex; flex-wrap:wrap; align-items:center;">';
         header += '<input id="goods-search" type="text" placeholder="Search goods..." style="width:200px; background:#2a2a3e; color:#fff; border:1px solid #555; padding:6px 10px; border-radius:4px; margin-right:8px;" />';
-        var catLabels = { raw: '🪨 Raw', processed: '⚙️ Processed', food: '🍞 Food', beverage: '🍺 Beverage', finished: '🏭 Finished', military: '⚔️ Military', luxury: '💎 Luxury', medical: '🩹 Medical', supplies: '🏕️ Supplies', livestock: '🐄 Livestock', contraband: '☠️ Contraband' };
+        var catLabels = { raw: '🪨 Raw', processed: '⚙️ Processed', food: '🍞 Food', beverage: '🍺 Beverage', finished: '🏭 Finished', military: '⚔️ Military', luxury: '💎 Luxury', medical: '🩹 Medical', supplies: '🏕️ Supplies', livestock: '🐄 Livestock', contraband: '☠️ Contraband', quest: '🏆 Quest' };
         header += '<button onclick="window._goodsCat=\'all\'; window._filterGoods()" style="margin:2px; padding:3px 8px; background:#FFD700; color:#000; border:1px solid #555; border-radius:3px; cursor:pointer; font-size:11px;" id="goods-cat-all">All</button>';
         for (var ci2 = 0; ci2 < catOrder.length; ci2++) {
             var cat = catOrder[ci2];
@@ -23093,7 +23169,7 @@ window.UI = (function () {
         var html = '';
         var lastCat = '';
         var shown = 0;
-        var catLabels = { raw: '🪨 Raw Materials', processed: '⚙️ Processed Materials', food: '🍞 Food', beverage: '🍺 Beverages', finished: '🏭 Finished Goods', military: '⚔️ Military', luxury: '💎 Luxury', medical: '🩹 Medical', supplies: '🏕️ Supplies', livestock: '🐄 Livestock', contraband: '☠️ Contraband' };
+        var catLabels = { raw: '🪨 Raw Materials', processed: '⚙️ Processed Materials', food: '🍞 Food', beverage: '🍺 Beverages', finished: '🏭 Finished Goods', military: '⚔️ Military', luxury: '💎 Luxury', medical: '🩹 Medical', supplies: '🏕️ Supplies', livestock: '🐄 Livestock', contraband: '☠️ Contraband', quest: '🏆 Quest Items' };
 
         for (var i = 0; i < data.length; i++) {
             var g = data[i];
@@ -23118,7 +23194,7 @@ window.UI = (function () {
         list.innerHTML = html;
 
         // Update category button highlights
-        var allCats = ['all', 'raw', 'processed', 'food', 'beverage', 'finished', 'military', 'luxury', 'medical', 'supplies', 'livestock', 'contraband'];
+        var allCats = ['all', 'raw', 'processed', 'food', 'beverage', 'finished', 'military', 'luxury', 'medical', 'supplies', 'livestock', 'contraband', 'quest'];
         for (var ci3 = 0; ci3 < allCats.length; ci3++) {
             var btn = document.getElementById('goods-cat-' + allCats[ci3]);
             if (btn) {
