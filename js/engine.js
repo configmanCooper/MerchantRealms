@@ -13594,15 +13594,28 @@
                 var noble = nobles[ni];
                 var rank = noble.socialRank[kId];
 
+                // Initialize income log (rolling 30-day window)
+                if (!noble._incomeLog) noble._incomeLog = { buildings: 0, buildingsByTown: {}, expenses: 0, lastReset: world.day };
+                // Reset every 30 days
+                if (world.day - noble._incomeLog.lastReset >= 30) {
+                    noble._incomeLog = { buildings: 0, buildingsByTown: {}, expenses: 0, lastReset: world.day };
+                }
+
                 // Count owned buildings and calculate income
                 var buildingCount = 0;
                 for (var ti = 0; ti < world.towns.length; ti++) {
                     var town = world.towns[ti];
                     if (town.kingdomId !== kId || !town.buildings) continue;
+                    var townBldCount = 0;
                     for (var bi = 0; bi < town.buildings.length; bi++) {
                         if (town.buildings[bi].ownerId === noble.id) {
                             buildingCount++;
+                            townBldCount++;
                         }
+                    }
+                    if (townBldCount > 0) {
+                        var townIncome = Math.floor(townBldCount * 5 * 0.7);
+                        noble._incomeLog.buildingsByTown[town.name] = (noble._incomeLog.buildingsByTown[town.name] || 0) + townIncome;
                     }
                 }
 
@@ -13610,6 +13623,7 @@
                 var rawIncome = buildingCount * 5;
                 var income = Math.floor(rawIncome * 0.7);
                 noble.gold = (noble.gold || 0) + income;
+                noble._incomeLog.buildings += income;
 
                 // Deduct expenses by rank
                 var expense = 0;
@@ -13618,6 +13632,7 @@
                 else if (rank === 5) expense = 100;
                 else expense = 50;
                 noble.gold -= expense;
+                noble._incomeLog.expenses += expense;
 
                 // Clamp gold to 0
                 if (noble.gold < 0) noble.gold = 0;
@@ -24629,6 +24644,11 @@
             // ---- 0. PASSIVE BUILDING REVENUE (every tick) ----
             // EMs earn passive income from their buildings based on town prosperity
             var emBuildings = em.buildings || [];
+            // Initialize income log (rolling 30-day window)
+            if (!em._incomeLog) em._incomeLog = { buildings: 0, buildingsByTown: {}, trade: 0, expenses: 0, lastReset: world.day };
+            if (world.day - em._incomeLog.lastReset >= 30) {
+                em._incomeLog = { buildings: 0, buildingsByTown: {}, trade: 0, expenses: 0, lastReset: world.day };
+            }
             if (emBuildings.length > 0) {
                 var buildingIncome = 0;
                 for (var bi2 = 0; bi2 < emBuildings.length; bi2++) {
@@ -24637,19 +24657,25 @@
                         var bldTown = findTown(bld.townId);
                         var prosper = bldTown ? (bldTown.prosperity || 30) / 100 : 0.3;
                         var biBt = findBuildingType(bld.type);
+                        var _bldInc = 0;
                         if (biBt && biBt.produces) {
-                            // Production buildings earn real revenue via tickEconomy — small passive bonus only
-                            buildingIncome += Math.floor(2 + 3 * prosper);
+                            _bldInc = Math.floor(2 + 3 * prosper);
                         } else {
-                            // Non-producing buildings (warehouses, taverns, market stalls) earn passive income
-                            buildingIncome += Math.floor(5 + 10 * prosper);
+                            _bldInc = Math.floor(5 + 10 * prosper);
+                        }
+                        buildingIncome += _bldInc;
+                        if (bldTown) {
+                            em._incomeLog.buildingsByTown[bldTown.name] = (em._incomeLog.buildingsByTown[bldTown.name] || 0) + _bldInc;
                         }
                     }
                 }
                 em.gold = (em.gold || 0) + buildingIncome;
+                em._incomeLog.buildings += buildingIncome;
             }
             // Minimum sustenance: EMs always earn a small amount from their trade networks
-            em.gold = (em.gold || 0) + Math.floor(3 + rng.random() * 5);
+            var _tradeInc = Math.floor(3 + rng.random() * 5);
+            em.gold = (em.gold || 0) + _tradeInc;
+            em._incomeLog.trade += _tradeInc;
             grantEmXp(em, 1, 'daily');
 
             // ---- FINANCIAL DISTRESS & BANKRUPTCY ----

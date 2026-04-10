@@ -2313,7 +2313,7 @@ window.UI = (function () {
             } else {
                 html += `<div style="font-size:0.75rem;color:var(--text-muted);">No known property holdings.</div>`;
             }
-            // Financial status
+            // Financial status & income breakdown
             if (Engine.getNobleFinancialStatus && _npcSR >= 4) {
                 var _nfs = Engine.getNobleFinancialStatus(person.id);
                 if (_nfs) {
@@ -2321,7 +2321,41 @@ window.UI = (function () {
                     var _stressLabel = _nfs.stressed ? '💸 Financially Stressed' : '💰 Stable';
                     html += `<div class="detail-row"><span class="label">Finances</span>
                         <span class="value" style="color:${_stressColor};font-size:0.8rem;">${_stressLabel}</span></div>`;
+                    if (_nfs.gold != null) {
+                        html += `<div class="detail-row"><span class="label">Treasury</span>
+                            <span class="value">${Math.floor(_nfs.gold)}g</span></div>`;
+                    }
                 }
+            }
+            // Income breakdown from _incomeLog
+            var _incLog = person._incomeLog;
+            if (_incLog) {
+                html += `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border-color);">`;
+                html += `<div style="font-size:0.75rem;font-weight:600;margin-bottom:4px;">📊 Income (Last 30 Days)</div>`;
+                if (_incLog.buildings > 0) {
+                    html += `<div class="detail-row"><span class="label">🏗️ Buildings</span>
+                        <span class="value" style="color:#55a868;">+${_incLog.buildings}g</span></div>`;
+                    var _ibt = _incLog.buildingsByTown || {};
+                    for (var _itn in _ibt) {
+                        if (_ibt[_itn] > 0) {
+                            html += `<div style="font-size:0.7rem;color:var(--text-muted);padding-left:16px;">${_itn}: +${_ibt[_itn]}g</div>`;
+                        }
+                    }
+                }
+                if (_incLog.trade > 0) {
+                    html += `<div class="detail-row"><span class="label">🔄 Trade Network</span>
+                        <span class="value" style="color:#55a868;">+${_incLog.trade}g</span></div>`;
+                }
+                if (_incLog.expenses > 0) {
+                    html += `<div class="detail-row"><span class="label">💸 Expenses</span>
+                        <span class="value" style="color:#c44e52;">-${_incLog.expenses}g</span></div>`;
+                }
+                var _netInc = (_incLog.buildings || 0) + (_incLog.trade || 0) - (_incLog.expenses || 0);
+                var _netColor = _netInc >= 0 ? '#55a868' : '#c44e52';
+                var _netSign = _netInc >= 0 ? '+' : '';
+                html += `<div class="detail-row" style="font-weight:600;"><span class="label">Net Income</span>
+                    <span class="value" style="color:${_netColor};">${_netSign}${_netInc}g</span></div>`;
+                html += `</div>`;
             }
             html += `</div>`;
         }
