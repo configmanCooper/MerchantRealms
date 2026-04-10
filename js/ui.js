@@ -22992,6 +22992,8 @@ window.UI = (function () {
                         html += buildBribeGuardsUI(a, ai);
                     } else if (a.id === 'bribe_advisor') {
                         html += buildBribeAdvisorUI(a, ai);
+                    } else if (a._needsBuildingSelect) {
+                        html += buildBuildingSelectUI(a, ai);
                     } else if (a._needsNobleSelect) {
                         html += buildNobleIntrigueUI(a, ai);
                     } else {
@@ -23019,7 +23021,35 @@ window.UI = (function () {
 
     function hasSkillForAction(action) {
         if (!action.requires) return true;
+        // Use requiresSkill array if provided (actual skill IDs)
+        if (action.requiresSkill && Array.isArray(action.requiresSkill)) {
+            for (var si = 0; si < action.requiresSkill.length; si++) {
+                if (Player.hasSkill(action.requiresSkill[si])) return true;
+            }
+            return false;
+        }
+        // Fallback: map display name to skill ID
+        var skillMap = {
+            'Arsonist': 'arsonist_skill',
+            'Shadow Dealings': 'shadow_dealings',
+            'Discrete': 'discrete',
+            'Master Forger': 'master_forger',
+            'Dark Connections': 'dark_connections',
+            'Political Intrigue': 'political_intrigue',
+            'Assassination': 'assassination_skill',
+            'Noble Intrigue': 'noble_intrigue'
+        };
         if (typeof action.requires === 'string') {
+            // Handle "X or Y" format
+            var parts = action.requires.split(' or ');
+            for (var pi = 0; pi < parts.length; pi++) {
+                var mapped = skillMap[parts[pi].trim()];
+                if (mapped && Player.hasSkill(mapped)) return true;
+                if (Player.hasSkill(parts[pi].trim())) return true;
+            }
+            // Single skill
+            var single = skillMap[action.requires];
+            if (single) return Player.hasSkill(single);
             return Player.hasSkill(action.requires);
         }
         return true;
@@ -23103,6 +23133,38 @@ window.UI = (function () {
             + `onclick="UI.executeBribeAdvisor('${action.params[0]}', ${idx})">⚡ Bribe</button>`;
         html += '</div>';
         return html;
+    }
+
+    function buildBuildingSelectUI(action, idx) {
+        var buildings = action._buildingList || [];
+        var townId = action._townId || '';
+        var html = '<div style="margin-top:6px;">';
+        html += '<div style="display:flex;gap:4px;align-items:center;">';
+        html += '<select id="bldSelect_' + idx + '" style="font-size:0.75rem;padding:3px;flex:1;">';
+        for (var bi = 0; bi < buildings.length; bi++) {
+            var b = buildings[bi];
+            html += '<option value="' + b.index + '">' + escapeHtml(b.name) + ' — Owner: ' + escapeHtml(b.owner) + '</option>';
+        }
+        html += '</select>';
+        html += '<button class="btn-trade sell" style="font-size:0.75rem;" '
+            + 'onclick="UI.executeBuildingScheme(\'' + action.id.replace(/'/g, '') + '\', ' + idx + ', \'' + townId.replace(/'/g, '') + '\')">⚡ Execute</button>';
+        html += '</div></div>';
+        return html;
+    }
+
+    function executeBuildingScheme(actionId, idx, townId) {
+        var sel = document.getElementById('bldSelect_' + idx);
+        if (!sel) return;
+        var buildingIndex = parseInt(sel.value);
+        var result = Player.executeCorruptAction(actionId, [buildingIndex, townId]);
+        if (result.success) {
+            toast(result.message, 'success');
+        } else if (result.caught) {
+            toast(result.message, 'danger');
+        } else {
+            toast(result.message, 'warning');
+        }
+        openSchemesDialog();
     }
 
     function buildNobleIntrigueUI(action, idx) {
@@ -29956,6 +30018,7 @@ window.UI = (function () {
         executeTargetAction,
         executeBribeGuards,
         executeBribeAdvisor,
+        executeBuildingScheme,
         executeNobleIntrigue,
         // Help
         openHelpDialog,

@@ -33709,17 +33709,38 @@
 
         // Sabotage tab — requires shadow_dealings or arsonist_skill
         if (hasSkill('shadow_dealings') || hasSkill('arsonist_skill')) {
+
+        // Build list of buildings with owner info for the dropdown
+        var _sabBuildingList = [];
         for (let i = 0; i < town.buildings.length; i++) {
             const bld = town.buildings[i];
             const bt = Engine.findBuildingType ? Engine.findBuildingType(bld.type) : null;
+            var ownerName = 'Town';
+            if (bld.ownerId === 'player') {
+                ownerName = 'You';
+            } else if (bld.ownerId) {
+                var _ownerPerson = Engine.findPerson ? Engine.findPerson(bld.ownerId) : null;
+                if (_ownerPerson) ownerName = (_ownerPerson.firstName || '') + ' ' + (_ownerPerson.lastName || '');
+                else ownerName = 'NPC';
+            }
+            _sabBuildingList.push({ index: i, name: bt ? bt.name : bld.type, owner: ownerName.trim() });
+        }
+
+        // Single sabotage entry with building dropdown
+        if (town.buildings.length > 0) {
             actions.push({
                 id: 'sabotage_building', tab: 'sabotage',
-                name: `Sabotage: ${bt ? bt.name : bld.type}`,
+                name: 'Sabotage Building',
                 desc: 'Disable building production for 15-30 days.',
                 cost: '2 tools', detection: calculateCorruptDetection(0.25, town),
                 reward: 'Production halted', xp: 10,
-                requires: 'Shadow Dealings or Arsonist', available: (player.inventory.tools || 0) >= 2,
-                params: [i, town.id],
+                requiresSkill: ['shadow_dealings', 'arsonist_skill'],
+                requires: 'Shadow Dealings or Arsonist',
+                available: (hasSkill('shadow_dealings') || hasSkill('arsonist_skill')) && (player.inventory.tools || 0) >= 2,
+                _needsBuildingSelect: true,
+                _buildingList: _sabBuildingList,
+                _townId: town.id,
+                params: [0, town.id],
             });
         }
 
@@ -33733,27 +33754,30 @@
                     name: `Sabotage Road to ${otherTown ? otherTown.name : '?'}`,
                     desc: 'Reduce road quality for 60 days.',
                     cost: '5 tools', detection: calculateCorruptDetection(0.15, town),
-                    reward: 'Slows travel', xp: 15,
+                    requiresSkill: ['shadow_dealings', 'arsonist_skill'],
                     requires: 'Shadow Dealings or Arsonist', available: (player.inventory.tools || 0) >= 5,
                     params: [i],
                 });
             }
         }
 
-        for (let i = 0; i < town.buildings.length; i++) {
-            const bld = town.buildings[i];
-            const bt = Engine.findBuildingType ? Engine.findBuildingType(bld.type) : null;
+        // Single arson entry with building dropdown
+        if (town.buildings.length > 0) {
             let baseDetect = 0.40;
             if (hasSkill('arsonist_skill')) baseDetect *= 0.5;
             actions.push({
                 id: 'arson', tab: 'sabotage',
-                name: `Arson: ${bt ? bt.name : bld.type}`,
+                name: 'Arson',
                 desc: 'DESTROY building permanently.',
                 cost: '1 wood + 10g', detection: calculateCorruptDetection(baseDetect, town),
                 reward: 'Building destroyed', xp: 25,
+                requiresSkill: ['arsonist_skill'],
                 requires: 'Arsonist',
                 available: hasSkill('arsonist_skill') && (player.inventory.wood || 0) >= 1 && player.gold >= 10,
-                params: [i, town.id],
+                _needsBuildingSelect: true,
+                _buildingList: _sabBuildingList,
+                _townId: town.id,
+                params: [0, town.id],
             });
         }
         } // end sabotage skill gate
