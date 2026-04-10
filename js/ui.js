@@ -13935,10 +13935,79 @@ window.UI = (function () {
 
     function petitionPromotion() {
         try {
+            // Determine next rank index
+            var citizenKId = Player.citizenshipKingdomId;
+            var currentIdx = (Player.socialRank && citizenKId) ? (Player.socialRank[citizenKId] || 0) : 0;
+            var nextIdx = currentIdx + 1;
+
+            // If entering nobility (Minor Noble, index 4), show confirmation warning first
+            if (nextIdx === 4) {
+                _showNobilityConfirmation(citizenKId);
+                return;
+            }
+
+            _executePetition();
+        } catch (e) {
+            toast(e.message || 'Promotion failed', 'danger');
+        }
+    }
+
+    function _showNobilityConfirmation(kingdomId) {
+        var kingdom = null;
+        try { kingdom = Engine.findKingdom(kingdomId); } catch(e) {}
+        var kingdomName = kingdom ? kingdom.name : 'the kingdom';
+
+        var html = '<div style="padding:15px;">' +
+            '<div style="text-align:center;margin-bottom:15px;">' +
+            '<div style="font-size:2.5em;">⚠️👑</div>' +
+            '<h3 style="color:#ff8888;margin:5px 0;">Entering the Nobility</h3>' +
+            '<div style="color:var(--text-secondary);font-style:italic;">This decision will permanently change your relationship with ' + kingdomName + '.</div>' +
+            '</div>' +
+
+            '<div style="padding:12px;background:rgba(200,100,100,0.1);border:1px solid rgba(200,100,100,0.3);border-radius:6px;margin-bottom:12px;">' +
+            '<div style="color:#ff8888;font-weight:bold;margin-bottom:8px;">⚠️ You Will Be Bound to the Crown</div>' +
+            '<div style="font-size:0.9em;color:#ddd;">' +
+            '<p style="margin:6px 0;">By accepting the title of <b>Minor Noble</b>, you are swearing a binding oath of fealty to the King of ' + kingdomName + '. This is not merely a title — it is a <b>lifelong obligation</b> to the crown.</p>' +
+            '</div></div>' +
+
+            '<div style="padding:12px;background:rgba(200,100,100,0.08);border:1px solid rgba(200,100,100,0.25);border-radius:6px;margin-bottom:12px;">' +
+            '<div style="color:#ffaa66;font-weight:bold;margin-bottom:8px;">📋 Your Responsibilities as a Noble</div>' +
+            '<div style="font-size:0.85em;">' +
+            '<div style="margin:5px 0;">👑 <b>Royal Commissions</b> — The king will assign you personal tasks. Refusal costs reputation and may lead to demotion.</div>' +
+            '<div style="margin:5px 0;">⚔️ <b>Wartime Production</b> — During war, you must produce weapons and armor on the king\'s schedule. Failure risks demotion.</div>' +
+            '<div style="margin:5px 0;">📊 <b>Reputation Maintenance</b> — Your kingdom reputation must stay above 60 or you will be demoted back to Guildmaster.</div>' +
+            '<div style="margin:5px 0;">🏛️ <b>Public Figure</b> — Criminal actions now carry reputation penalties. You are always watched.</div>' +
+            '<div style="margin:5px 0;">🌍 <b>Foreign Entanglements</b> — Your foreign status is tied to your kingdom\'s diplomacy. War means losing foreign privileges.</div>' +
+            '<div style="margin:5px 0;">💀 <b>Shared Fate</b> — If ' + kingdomName + ' falls to a conqueror, nobles face imprisonment, exile, or execution.</div>' +
+            '</div></div>' +
+
+            '<div style="padding:12px;background:rgba(100,200,100,0.08);border:1px solid rgba(100,200,100,0.25);border-radius:6px;margin-bottom:12px;">' +
+            '<div style="color:#66ff88;font-weight:bold;margin-bottom:8px;">✨ Noble Privileges</div>' +
+            '<div style="font-size:0.85em;">' +
+            '<div style="margin:4px 0;">🛡️ 4 personal guards paid by the kingdom</div>' +
+            '<div style="margin:4px 0;">👑 Direct influence over the king\'s decisions</div>' +
+            '<div style="margin:4px 0;">💍 Noble marriage opportunities</div>' +
+            '<div style="margin:4px 0;">🌍 Automatic status in foreign kingdoms</div>' +
+            '<div style="margin:4px 0;">📜 Propose laws and shape the kingdom\'s future</div>' +
+            '<div style="margin:4px 0;">📉 10% trade tax discount</div>' +
+            '</div></div>' +
+
+            '<p style="text-align:center;color:#ffaa66;font-style:italic;margin:10px 0;">Once you enter the nobility, there is no going back to being a simple merchant. Are you certain?</p>' +
+            '</div>';
+
+        openModal('⚠️ Confirm: Enter the Nobility of ' + kingdomName, html,
+            '<button class="btn-medieval" onclick="UI.closeModal(); UI._executePetition();" style="background:linear-gradient(180deg,#5aad35,#3a7a24);border-color:#5aad35;margin-right:8px;">👑 Swear Fealty & Accept</button>' +
+            '<button class="btn-medieval" onclick="UI.closeModal();">Cancel</button>'
+        );
+    }
+
+    function _executePetition() {
+        try {
             const result = Player.petitionForPromotion();
             if (result && result.success) {
+                // Don't reopen character dialog — showRankCeremony() in player.js
+                // already opened the ceremony modal. Let it display.
                 toast(result.message, 'success');
-                openCharacterDialog();
             } else {
                 toast((result && result.message) || 'Cannot promote', 'warning');
             }
@@ -28829,6 +28898,7 @@ window.UI = (function () {
         openKingdomsDialog,
         showKingdomTowns,
         petitionPromotion,
+        _executePetition: _executePetition,
         changeCitizenship,
         openGiftDialog,
         executeGift,
