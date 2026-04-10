@@ -24830,7 +24830,16 @@ window.UI = (function () {
             var res = findResource(resId);
             if (!res) continue;
             var marketPrice = (town.market && town.market.prices && town.market.prices[resId]) ? town.market.prices[resId] : (res.basePrice || 1);
-            var urgencyMult = 1.0 + (need.urgency / 100) * 0.5;
+            var bannedGoods = (kingdom.laws && kingdom.laws.bannedGoods) || [];
+            var isBanned = bannedGoods.indexOf(resId) >= 0;
+            var urgencyMult;
+            if (isBanned) {
+                // Banned goods: crown pays BELOW market — 10% less max at urgent
+                urgencyMult = need.urgency >= 80 ? 0.90 : (need.urgency >= 50 ? 0.75 : 0.60);
+            } else {
+                // Normal goods: modest premium based on urgency
+                urgencyMult = 1.0 + (need.urgency / 100) * 0.15;
+            }
             var crownPrice = Math.ceil(marketPrice * urgencyMult);
             var playerQty = (inv[resId] || 0) + (townSt[resId] || 0);
             items.push({
@@ -24838,7 +24847,7 @@ window.UI = (function () {
                 urgency: need.urgency, qtyNeeded: need.qtyNeeded,
                 marketPrice: marketPrice, crownPrice: crownPrice,
                 multiplier: urgencyMult.toFixed(2),
-                playerQty: playerQty
+                playerQty: playerQty, isBanned: isBanned
             });
         }
         // Sort: highest urgency first, player-held items first within same urgency tier
@@ -24857,7 +24866,7 @@ window.UI = (function () {
         if (lowTreasury) {
             html += '<div style="font-size:0.75rem;color:#e74c3c;margin-bottom:8px;">⚠️ The kingdom\'s coffers are too low to purchase goods right now.</div>';
         } else {
-            html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:8px;">The crown will buy goods it urgently needs at premium prices. Higher urgency = better price.</div>';
+            html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:8px;">The crown buys goods it needs. Normal goods get a small premium; banned goods pay below market (smuggling may be more profitable).</div>';
         }
 
         html += '<div style="max-height:350px;overflow-y:auto;">';
@@ -24871,14 +24880,15 @@ window.UI = (function () {
             html += '<div style="padding:8px;margin:4px 0;background:rgba(0,0,0,0.2);border-radius:4px;border:1px solid ' + borderColor + ';">';
             // Header row: item name + urgency badge
             html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
-            html += '<span style="font-size:0.82rem;">' + it.icon + ' <strong>' + it.name + '</strong></span>';
+            html += '<span style="font-size:0.82rem;">' + it.icon + ' <strong>' + it.name + '</strong>' + (it.isBanned ? ' <span style="font-size:0.6rem;color:#e74c3c;">🚫 BANNED</span>' : '') + '</span>';
             html += '<span style="font-size:0.7rem;color:' + urgColor + ';">' + urgLabel + ' (' + it.urgency + ')</span>';
             html += '</div>';
             // Price info row
+            var _multColor = parseFloat(it.multiplier) < 1.0 ? '#e74c3c' : '#55a868';
             html += '<div style="font-size:0.75rem;color:#ccc;margin-top:4px;display:flex;gap:12px;flex-wrap:wrap;">';
             html += '<span>Crown Price: <strong style="color:var(--gold);">' + it.crownPrice + 'g</strong></span>';
             html += '<span style="color:#888;">Market: ' + it.marketPrice + 'g</span>';
-            html += '<span style="color:#55a868;">' + it.multiplier + 'x</span>';
+            html += '<span style="color:' + _multColor + ';">' + it.multiplier + 'x</span>';
             html += '<span style="color:#888;">Needs: ' + it.qtyNeeded + '</span>';
             html += '</div>';
 
