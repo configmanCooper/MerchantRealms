@@ -21008,7 +21008,7 @@ window.UI = (function () {
         html += _buildRoyalDirectivesSection(citizenKingdomId, day);
 
         // Open modal
-        var footerHtml = '<button class="btn-medieval" onclick="closeModal()">Close</button>';
+        var footerHtml = '<button class="btn-medieval" onclick="UI.closeModal()">Close</button>';
         openModal('👑 Nobility — ' + (rankDef.name || 'Noble'), html, footerHtml);
     }
 
@@ -21302,10 +21302,10 @@ window.UI = (function () {
         html += '<div style="max-height:300px;overflow-y:auto;">';
         for (var i = 0; i < Math.min(15, buildingTypes.length); i++) {
             var bt = buildingTypes[i];
-            html += '<button class="btn-medieval" onclick="(function(){var r=Player.requestKingdomBuilding(\'' + townId + '\',\'' + bt.id + '\',0);UI.toast(r&&r.message?r.message:\'Request sent.\',r&&r.success?\'success\':\'warning\');closeModal();UI.openNobilityDialog();})()" style="display:block;width:100%;text-align:left;font-size:0.75rem;padding:5px 10px;margin-bottom:3px;">' + (bt.icon || '🏗️') + ' ' + bt.name + ' (' + formatGold(bt.cost || 0) + ')</button>';
+            html += '<button class="btn-medieval" onclick="(function(){var r=Player.requestKingdomBuilding(\'' + townId + '\',\'' + bt.id + '\',0);UI.toast(r&&r.message?r.message:\'Request sent.\',r&&r.success?\'success\':\'warning\');UI.closeModal();UI.openNobilityDialog();})()" style="display:block;width:100%;text-align:left;font-size:0.75rem;padding:5px 10px;margin-bottom:3px;">' + (bt.icon || '🏗️') + ' ' + bt.name + ' (' + formatGold(bt.cost || 0) + ')</button>';
         }
         html += '</div>';
-        openModal('🏗️ Request Kingdom Building', html, '<button class="btn-medieval" onclick="closeModal();UI.openNobilityDialog();">Back</button>');
+        openModal('🏗️ Request Kingdom Building', html, '<button class="btn-medieval" onclick="UI.closeModal();UI.openNobilityDialog();">Back</button>');
     }
 
     // Helper: Propose law from nobility panel
@@ -23298,7 +23298,7 @@ window.UI = (function () {
         }
         body += '</div>';
 
-        openModal('🏗️ Kingdom Construction', body, '<button class="btn-medieval" onclick="closeModal()">Close</button>');
+        openModal('🏗️ Kingdom Construction', body, '<button class="btn-medieval" onclick="UI.closeModal()">Close</button>');
     }
 
     function _submitKingdomBuild(townId, buildingType) {
@@ -23335,7 +23335,7 @@ window.UI = (function () {
 
         var footer = '<button class="btn-medieval" onclick="UI._respondKingFavor(\'' + kingdomId + '\', true)" style="background:rgba(100,200,100,0.2);border-color:rgba(100,200,100,0.4);">✅ Accept</button>';
         footer += '<button class="btn-medieval" onclick="UI._respondKingFavor(\'' + kingdomId + '\', false)" style="background:rgba(200,100,100,0.2);border-color:rgba(200,100,100,0.4);margin-left:8px;">❌ Decline</button>';
-        footer += '<button class="btn-medieval" onclick="closeModal()" style="margin-left:8px;">Later</button>';
+        footer += '<button class="btn-medieval" onclick="UI.closeModal()" style="margin-left:8px;">Later</button>';
 
         openModal('👑 King\'s Request', body, footer);
     }
