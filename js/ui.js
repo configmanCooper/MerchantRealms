@@ -2931,7 +2931,7 @@ window.UI = (function () {
         }
         if (bannedGoods.length > 0) {
             const bannedNames = bannedGoods.map(g => { const r = findResource(g); return r ? r.icon + r.name : g; }).join(', ');
-            taxDetailsInner += `<div style="color:var(--danger);font-size:0.78rem;margin-bottom:4px;">🚫 Banned: ${bannedNames}</div>`;
+            taxDetailsInner += `<div style="color:var(--danger);font-size:0.78rem;margin-bottom:4px;cursor:help;" title="Banned items are illegal to make or sell, but legal to buy or own in small amounts.">🚫 Banned: ${bannedNames}</div>`;
         }
         if (restrictedGoods.length > 0) {
             const restrictedNames = restrictedGoods.map(g => {
@@ -2939,7 +2939,7 @@ window.UI = (function () {
                 const hasLic = Player.hasLicense(kingdom.id, g);
                 return `${r ? r.icon + r.name : g} ${hasLic ? '✅' : '🔒'}`;
             }).join(', ');
-            taxDetailsInner += `<div style="color:var(--gold);font-size:0.78rem;margin-bottom:4px;">🔒 Restricted: ${restrictedNames}</div>`;
+            taxDetailsInner += `<div style="color:var(--gold);font-size:0.78rem;margin-bottom:4px;cursor:help;" title="Legal to buy. Illegal to sell or produce without a license. Purchase a license from the Kingdom menu.">🔒 Restricted: ${restrictedNames}</div>`;
         }
         // Trade embargo warning
         const isEmbargoed = isForeign && kingdom && Player.citizenshipKingdomId &&
@@ -3053,8 +3053,8 @@ window.UI = (function () {
             const breakdownTooltip = breakdownLines.join('&#10;');
 
             let statusBadge = '';
-            if (isBanned) statusBadge = '<span style="color:var(--danger);font-size:0.7rem;">🚫 BANNED</span>';
-            else if (isRestricted) statusBadge = '<span style="color:var(--gold);font-size:0.7rem;">🔒 RESTRICTED</span>';
+            if (isBanned) statusBadge = '<span style="color:var(--danger);font-size:0.7rem;cursor:help;" title="Banned items are illegal to make or sell, but legal to buy or own in small amounts.">🚫 BANNED</span>';
+            else if (isRestricted) statusBadge = '<span style="color:var(--gold);font-size:0.7rem;cursor:help;" title="Legal to buy. Illegal to sell or produce without a license. Purchase a license from the Kingdom menu.">🔒 RESTRICTED</span>';
 
             // Seasonal demand tag
             let seasonTag = '';
@@ -3194,9 +3194,9 @@ window.UI = (function () {
             const breakdownTooltip = breakdownLines.join('&#10;');
 
             let statusBadge = '';
-            if (isBanned) statusBadge = '<span style="color:var(--danger);font-size:0.7rem;">🚫 BANNED</span>';
-            else if (isRestricted && !hasLicense) statusBadge = '<span style="color:var(--gold);font-size:0.7rem;">🔒 NO LICENSE</span>';
-            else if (isRestricted && hasLicense) statusBadge = '<span style="color:#55a868;font-size:0.7rem;">📜 LICENSED</span>';
+            if (isBanned) statusBadge = '<span style="color:var(--danger);font-size:0.7rem;cursor:help;" title="Banned items are illegal to make or sell, but legal to buy or own in small amounts.">🚫 BANNED</span>';
+            else if (isRestricted && !hasLicense) statusBadge = '<span style="color:var(--gold);font-size:0.7rem;cursor:help;" title="Legal to buy. Illegal to sell or produce without a license. Purchase a license from the Kingdom menu.">🔒 NO LICENSE</span>';
+            else if (isRestricted && hasLicense) statusBadge = '<span style="color:#55a868;font-size:0.7rem;cursor:help;" title="You have a valid license to trade this restricted good.">📜 LICENSED</span>';
 
             // Show carried/stored breakdown
             let qtyLabel = `(${qty})`;
@@ -7578,12 +7578,12 @@ window.UI = (function () {
                 var _rowK = _rowTown && _rowTown.kingdomId ? Engine.findKingdom(_rowTown.kingdomId) : null;
                 if (_rowK && _rowK.laws) {
                     if (_rowK.laws.bannedGoods && _rowK.laws.bannedGoods.indexOf(order.good) >= 0) {
-                        _warnBadge = ' <span style="color:#f44;font-size:0.6rem;font-weight:bold;" title="BANNED — will attempt smuggling">🚫 BANNED</span>';
+                        _warnBadge = ' <span style="color:#f44;font-size:0.6rem;font-weight:bold;cursor:help;" title="Banned items are illegal to make or sell, but legal to buy or own in small amounts. Selling via caravan will attempt smuggling.">🚫 BANNED</span>';
                         _rowBorder = 'background:rgba(200,50,50,0.1);border:1px solid rgba(200,50,50,0.3);';
                     } else if (_rowK.laws.restrictedGoods && _rowK.laws.restrictedGoods.indexOf(order.good) >= 0) {
                         var _rowHasLic = typeof Player !== 'undefined' && Player.hasLicense ? Player.hasLicense(_rowK.id, order.good) : false;
                         if (!_rowHasLic) {
-                            _warnBadge = ' <span style="color:#f90;font-size:0.6rem;font-weight:bold;" title="RESTRICTED — no license">⚠️ NO LICENSE</span>';
+                            _warnBadge = ' <span style="color:#f90;font-size:0.6rem;font-weight:bold;cursor:help;" title="Legal to buy. Illegal to sell or produce without a license. Purchase a license from the Kingdom menu.">⚠️ NO LICENSE</span>';
                             _rowBorder = 'background:rgba(200,150,50,0.1);border:1px solid rgba(200,150,50,0.3);';
                         }
                     }
@@ -9432,7 +9432,7 @@ window.UI = (function () {
             for (var wi = 0; wi < availWeapons.length; wi++) {
                 var ew = availWeapons[wi];
                 var qc = ew.quality === 'masterwork' ? '#ffd700' : ew.quality === 'fine' ? '#55a868' : ew.quality === 'poor' ? '#888' : 'var(--parchment)';
-                var bannedTag = ew.isBanned ? ' <span style="color:var(--danger);font-size:0.65rem;">🚫 BANNED</span>' : '';
+                var bannedTag = ew.isBanned ? ' <span style="color:var(--danger);font-size:0.65rem;cursor:help;" title="Banned items are illegal to make or sell, but legal to buy or own in small amounts.">🚫 BANNED</span>' : '';
                 html += '<div style="display:flex;align-items:center;gap:8px;margin:3px 0;">';
                 html += '<span style="font-size:0.8rem;">⚔️ ' + ew.name + ' <span style="color:' + qc + ';font-size:0.7rem;">(' + ew.quality + ')</span> +' + Math.round(ew.combatBonus * 100) + '%' + bannedTag + '</span>';
                 html += '<button class="btn-medieval" onclick="UI.buyWeapon(\'' + ew.id + '\')" style="font-size:0.7rem;padding:3px 10px;margin-left:auto;">' + ew.price + 'g</button>';
@@ -9441,7 +9441,7 @@ window.UI = (function () {
             for (var ai = 0; ai < availArmor.length; ai++) {
                 var ea = availArmor[ai];
                 var qca = ea.quality === 'masterwork' ? '#ffd700' : ea.quality === 'fine' ? '#55a868' : ea.quality === 'poor' ? '#888' : 'var(--parchment)';
-                var bannedTagA = ea.isBanned ? ' <span style="color:var(--danger);font-size:0.65rem;">🚫 BANNED</span>' : '';
+                var bannedTagA = ea.isBanned ? ' <span style="color:var(--danger);font-size:0.65rem;cursor:help;" title="Banned items are illegal to make or sell, but legal to buy or own in small amounts.">🚫 BANNED</span>' : '';
                 html += '<div style="display:flex;align-items:center;gap:8px;margin:3px 0;">';
                 html += '<span style="font-size:0.8rem;">🛡️ ' + ea.name + ' <span style="color:' + qca + ';font-size:0.7rem;">(' + ea.quality + ')</span> +' + Math.round(ea.combatBonus * 100) + '%' + bannedTagA + '</span>';
                 html += '<button class="btn-medieval" onclick="UI.buyArmor(\'' + ea.id + '\')" style="font-size:0.7rem;padding:3px 10px;margin-left:auto;">' + ea.price + 'g</button>';
@@ -13602,7 +13602,7 @@ window.UI = (function () {
                         const res = Object.values(RESOURCE_TYPES).find(r => r.id === g);
                         return res ? res.icon + ' ' + res.name : g;
                     }).join(', ');
-                    lawsHtml += `<div class="law-item">🚫 Banned: ${banned}</div>`;
+                    lawsHtml += `<div class="law-item" style="cursor:help;" title="Banned items are illegal to make or sell, but legal to buy or own in small amounts.">🚫 Banned: ${banned}</div>`;
                 }
                 lawsHtml += `<div class="law-item">💸 Tariff: ${Math.round((k.laws.tradeTariff || 0) * 100)}%</div>`;
                 if (k.laws.conscription) lawsHtml += `<div class="law-item">⚔️ Conscription Active</div>`;
@@ -13635,7 +13635,7 @@ window.UI = (function () {
                     const hasLic = Player.hasLicense(k.id, g);
                     return `${r ? r.icon : ''} ${r ? r.name : g} ${hasLic ? '✅' : '🔒'}`;
                 }).join(', ');
-                restrictedHtml = `<div class="law-item">🔒 Restricted: ${rNames}</div>`;
+                restrictedHtml = `<div class="law-item" style="cursor:help;" title="Legal to buy. Illegal to sell or produce without a license. Purchase a license from the Kingdom menu.">🔒 Restricted: ${rNames}</div>`;
             }
 
             // Player licenses in this kingdom
@@ -17586,7 +17586,7 @@ window.UI = (function () {
             // Banned/restricted
             let bannedHtml = '';
             if (k.laws && k.laws.bannedGoods && k.laws.bannedGoods.length > 0) {
-                bannedHtml = '<div class="kingdom-detail-row"><span class="detail-label">🚫 Banned:</span> ' + k.laws.bannedGoods.join(', ') + '</div>';
+                bannedHtml = '<div class="kingdom-detail-row" style="cursor:help;" title="Banned items are illegal to make or sell, but legal to buy or own in small amounts."><span class="detail-label">🚫 Banned:</span> ' + k.laws.bannedGoods.join(', ') + '</div>';
             }
 
             html += '<div class="kingdom-card" data-kingdom-id="' + k.id + '" style="border-color:' + k.color + '">';
@@ -20423,7 +20423,7 @@ window.UI = (function () {
                         html += '<span class="street-npc-name">' + bo.npcName + '</span> offers ';
                         html += '<strong>' + bo.qty + ' ' + (bo.resourceIcon || '') + ' ' + bo.resourceName + '</strong>';
                         html += ' — price <span class="street-price">' + bo.pricePerUnit + 'g each</span>';
-                        html += ' <span style="color:#c44e52;font-weight:bold;font-size:0.85em;">🚫 Banned</span>';
+                        html += ' <span style="color:#c44e52;font-weight:bold;font-size:0.85em;cursor:help;" title="Banned items are illegal to make or sell, but legal to buy or own in small amounts.">🚫 Banned</span>';
                         html += '</div>';
                         html += '<div class="street-trade-actions">';
                         html += '<span class="street-have">Total: ' + boTotal + 'g</span>';
@@ -20477,6 +20477,7 @@ window.UI = (function () {
                     var coTotal = co.pricePerUnit * coHeld;
                     var coPremiumPct = co.marketPrice > 0 ? Math.round(((co.pricePerUnit - co.marketPrice) / co.marketPrice) * 100) : 0;
                     var coLabel = co.isBanned ? '🚫 Banned' : '⚠️ No License';
+                    var coTooltip = co.isBanned ? 'Banned items are illegal to make or sell, but legal to buy or own in small amounts.' : 'Legal to buy. Illegal to sell or produce without a license. Purchase a license from the Kingdom menu.';
                     var coColor = co.isBanned ? '#c44e52' : '#d4a74a';
                     html += '<div class="street-trade-item" style="border-left:3px solid ' + coColor + ';">';
                     html += '<div class="street-trade-info">';
@@ -20485,7 +20486,7 @@ window.UI = (function () {
                     html += ' — <span class="street-price">' + co.pricePerUnit + 'g each</span>';
                     html += ' <span style="color:' + (coPremiumPct >= 0 ? '#55a868' : '#c44e52') + ';font-weight:bold;font-size:0.85em;">';
                     html += '(' + (coPremiumPct >= 0 ? '+' : '') + coPremiumPct + '% vs market)</span>';
-                    html += ' <span style="color:' + coColor + ';font-weight:bold;font-size:0.85em;">' + coLabel + '</span>';
+                    html += ' <span style="color:' + coColor + ';font-weight:bold;font-size:0.85em;cursor:help;" title="' + coTooltip + '">' + coLabel + '</span>';
                     html += '</div>';
                     html += '<div class="street-trade-actions">';
                     html += '<span class="street-have">You have: ' + coHeld + '</span>';
@@ -22757,7 +22758,8 @@ window.UI = (function () {
         { cat: 'Trading', title: 'Seasonal Demand', text: 'Some goods have seasonal price changes. Winter increases demand for wool, wood, and warm clothing. Summer boosts demand for water and light fabrics. Watch for 📈 seasonal demand markers in the trade panel.' },
         { cat: 'Trading', title: 'Trending Goods', text: 'Fashion trends cause certain goods to become popular, marked with 🔥 Trending in the market. Trending goods sell at higher prices — capitalize on these surges while they last.' },
         { cat: 'Trading', title: 'Street Trading', text: 'The Street Trading button (🤝) lets you buy and sell directly to NPCs on the street, sometimes at better prices than the market. This includes both legal goods and (if unlocked) banned goods.' },
-        { cat: 'Trading', title: 'Banned Goods', text: 'Some kingdoms ban certain goods (weapons, poison, etc.). Selling banned goods — whether personally or via caravan — carries risk. You may be caught and fined or jailed. Higher underworld skills reduce detection chance. The reward can be enormous. Caravans will show a 🚫 BANNED warning on sell orders for banned goods.' },
+        { cat: 'Trading', title: 'Banned Goods', text: 'Banned items are illegal to make or sell, but legal to buy or own in small amounts. Selling banned goods — whether personally or via caravan — carries risk. You may be caught and fined or jailed. Higher underworld skills reduce detection chance. The reward can be enormous. Caravans will show a 🚫 BANNED warning on sell orders for banned goods.' },
+        { cat: 'Trading', title: 'Restricted Goods', text: 'Restricted goods are legal to buy, but illegal to sell or produce without a license. Purchase a license from the Kingdom menu. Licenses expire after a set period and must be renewed. Selling restricted goods without a license — personally or via caravan — carries smuggling risk similar to banned goods.' },
         { cat: 'Trading', title: 'Carrying Capacity', text: 'You can only carry a limited weight of goods. Your base capacity is 20 weight units. Horses, carts, and ships increase your carrying capacity. The trade panel shows your current load.' },
         { cat: 'Trading', title: 'Caravans', text: 'Hire caravans to automatically transport goods between towns. Caravans can be one-way, round-trip, or continuous. Guards protect your goods from bandits on dangerous routes. Selling banned or restricted goods via caravan carries the same smuggling risk as selling them yourself — your caravan crew may be caught, resulting in fines and jail time for you.' },
         { cat: 'Trading', title: 'Horse Transport', text: 'Road caravans can transport horses at no weight cost — horses walk alongside the carriers. Each carrier can handle up to 4 horses. Sea caravans treat horses as deck cargo at 15 weight each, taking up valuable ship capacity.' },
@@ -24880,7 +24882,7 @@ window.UI = (function () {
             html += '<div style="padding:8px;margin:4px 0;background:rgba(0,0,0,0.2);border-radius:4px;border:1px solid ' + borderColor + ';">';
             // Header row: item name + urgency badge
             html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
-            html += '<span style="font-size:0.82rem;">' + it.icon + ' <strong>' + it.name + '</strong>' + (it.isBanned ? ' <span style="font-size:0.6rem;color:#e74c3c;">🚫 BANNED</span>' : '') + '</span>';
+            html += '<span style="font-size:0.82rem;">' + it.icon + ' <strong>' + it.name + '</strong>' + (it.isBanned ? ' <span style="font-size:0.6rem;color:#e74c3c;cursor:help;" title="Banned items are illegal to make or sell, but legal to buy or own in small amounts.">🚫 BANNED</span>' : '') + '</span>';
             html += '<span style="font-size:0.7rem;color:' + urgColor + ';">' + urgLabel + ' (' + it.urgency + ')</span>';
             html += '</div>';
             // Price info row
@@ -25665,12 +25667,12 @@ window.UI = (function () {
         // Banned goods
         html += '<h4 style="margin:12px 0 4px;">🚫 Restrictions</h4>';
         if (kingdom.laws && kingdom.laws.bannedGoods && kingdom.laws.bannedGoods.length > 0) {
-            html += '<div style="padding:4px 8px;color:#ff6b6b;">🚫 <b>Banned Goods:</b> ' + kingdom.laws.bannedGoods.join(', ') + ' — Trading these is illegal!</div>';
+            html += '<div style="padding:4px 8px;color:#ff6b6b;cursor:help;" title="Banned items are illegal to make or sell, but legal to buy or own in small amounts.">🚫 <b>Banned Goods:</b> ' + kingdom.laws.bannedGoods.join(', ') + ' — Trading these is illegal!</div>';
         } else {
             html += '<div style="padding:4px 8px;color:#6bff6b;">✅ No banned goods</div>';
         }
         if (kingdom.laws && kingdom.laws.restrictedGoods && kingdom.laws.restrictedGoods.length > 0) {
-            html += '<div style="padding:4px 8px;color:#ffaa6b;">⚠️ <b>Restricted Goods:</b> ' + kingdom.laws.restrictedGoods.join(', ') + ' — Require permits to trade</div>';
+            html += '<div style="padding:4px 8px;color:#ffaa6b;cursor:help;" title="Legal to buy. Illegal to sell or produce without a license. Purchase a license from the Kingdom menu.">⚠️ <b>Restricted Goods:</b> ' + kingdom.laws.restrictedGoods.join(', ') + ' — Require permits to trade</div>';
         }
 
         // Conscription
@@ -25850,7 +25852,10 @@ window.UI = (function () {
                     parts.push((sl.icon || '📜') + ' ' + sl.name);
                 }
             }
-            return parts.map(function(p) { return '<div style="padding:2px 0;">' + p + '</div>'; }).join('');
+            return parts.map(function(p) {
+                if (p.indexOf('🚫 Banned') >= 0) return '<div style="padding:2px 0;cursor:help;" title="Banned items are illegal to make or sell, but legal to buy or own in small amounts.">' + p + '</div>';
+                return '<div style="padding:2px 0;">' + p + '</div>';
+            }).join('');
         }
 
         var html = '<table style="width:100%;border-collapse:collapse;">';
