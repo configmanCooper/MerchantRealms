@@ -16137,21 +16137,20 @@ window.UI = (function () {
         body += '</div>';
 
         // === RECRUIT PEOPLE ===
-        if (_atOutpost) {
-            body += '<div style="background:rgba(40,40,40,0.6);padding:10px;border-radius:6px;margin-bottom:8px">';
-            body += '<h5 style="margin:0 0 6px;color:#a5d6a7">⛺ Recruit People</h5>';
-            // Get people in the player's current town (which is the outpost town) — no, outpost is wilderness
-            // Get people from nearest town or player's town if different
+        if (!_atOutpost) {
+            // Player is at a town — can recruit people to their outpost
             var _recruitTownId = Player.townId;
             var _recruitFromTown = Engine.findTown(_recruitTownId);
             var _recruitPeople = [];
-            if (_recruitFromTown && !_recruitFromTown.isWilderness) {
+            if (_recruitFromTown && !_recruitFromTown.isWilderness && !_recruitFromTown.isOutpost) {
                 try { _recruitPeople = Engine.getPeople(_recruitTownId); } catch(e) {}
                 _recruitPeople = _recruitPeople.filter(function(p) {
                     return p.alive !== false && p.age >= 14 && p.occupation !== 'king' && p.occupation !== 'noble' && p.employerId !== 'player';
                 });
             }
             if (_recruitPeople.length > 0) {
+                body += '<div style="background:rgba(40,40,40,0.6);padding:10px;border-radius:6px;margin-bottom:8px">';
+                body += '<h5 style="margin:0 0 6px;color:#a5d6a7">⛺ Recruit People</h5>';
                 var maxPop = cfg.maxPopulation || 30;
                 var atPopCap = (op.population || 0) >= maxPop;
                 if (atPopCap) {
@@ -16179,7 +16178,7 @@ window.UI = (function () {
                         body += '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">';
                         body += (_rp.sex === 'M' ? '♂' : '♀') + ' ' + _rp.firstName + ' ' + _rp.lastName;
                         body += ' <span style="color:#888">' + _rpOcc + ', Age ' + (_rp.age || '?') + '</span>';
-                        if (_rpRelLvl > 0) body += ' <span style="color:#aaa">❤' + _rpRelLvl + '</span>';
+                        if (_rpRelLvl > 0) body += ' <span style="color:#aaa">❤' + Math.round(_rpRelLvl * 10) / 10 + '</span>';
                         body += '</span>';
                         body += '<span style="display:flex;align-items:center;gap:4px;flex-shrink:0;">';
                         body += '<span style="color:' + _rpChanceColor + ';font-size:10px">' + _rpChancePct + '%</span>';
@@ -16196,10 +16195,8 @@ window.UI = (function () {
                         body += '<div style="font-size:10px;color:#666;margin-top:4px">Showing first ' + _maxShow + ' of ' + _recruitPeople.length + ' eligible people.</div>';
                     }
                 }
-            } else {
-                body += '<div style="font-size:11px;color:#888">📍 Travel to a town to recruit people to this outpost, or use the townspeople view.</div>';
+                body += '</div>';
             }
-            body += '</div>';
         } else {
             body += '<div style="font-size:11px;color:#888;margin-bottom:8px">⛺ Travel to a town to recruit people for this outpost.</div>';
         }
