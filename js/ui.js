@@ -2339,6 +2339,78 @@ window.UI = (function () {
             }
         }
 
+        // ── Companion Health & Treatment (spouse, family, guards) ──
+        if (isPlayer && isAlive && isInSameTown) {
+            var _isPlayerGuard = false;
+            var _guardEntry = null;
+            if (Player.guards) {
+                for (var _pgi2 = 0; _pgi2 < Player.guards.length; _pgi2++) {
+                    if (Player.guards[_pgi2].personId === person.id) { _isPlayerGuard = true; _guardEntry = Player.guards[_pgi2]; break; }
+                }
+            }
+            var _isFamilyMember = false;
+            if (Player.familyMembers) {
+                for (var _fmi = 0; _fmi < Player.familyMembers.length; _fmi++) {
+                    if (Player.familyMembers[_fmi].npcId === person.id) { _isFamilyMember = true; break; }
+                }
+            }
+            var _isCompanion = isSpouse || isChild || _isFamilyMember || _isPlayerGuard;
+
+            if (_isCompanion) {
+                // Check for spouse condition (spouseAI system)
+                var _companionSick = false;
+                var _companionCondLabel = '';
+                var _companionCondColor = '#e67e22';
+                if (isSpouse && Player.getSpouseStatus) {
+                    var _spStat = Player.getSpouseStatus();
+                    if (_spStat && _spStat.condition !== 'healthy') {
+                        _companionSick = true;
+                        _companionCondLabel = _spStat.condition === 'gravely_ill' ? '☠️ Gravely Ill' : _spStat.condition === 'sick' ? '🤒 Sick' : '🩹 Injured';
+                        _companionCondColor = _spStat.condition === 'gravely_ill' ? '#f33' : _spStat.condition === 'sick' ? '#e67e22' : '#d4a017';
+                    }
+                }
+                // Check NPC illness/injury system (family/guards/children)
+                if (!_companionSick) {
+                    var _cInjured = person.injured || (person.injuries && person.injuries.length > 0);
+                    var _cSick = person.sick || (person.illnesses && person.illnesses.length > 0);
+                    if (_cInjured || _cSick) {
+                        _companionSick = true;
+                        _companionCondLabel = _cInjured ? '🩹 ' + (person.injurySeverity || 'Injured') : '🤒 ' + (person.illness || 'Sick');
+                        _companionCondColor = '#e67e22';
+                    }
+                }
+
+                if (_companionSick) {
+                    var _compType = isSpouse ? 'spouse' : _isPlayerGuard ? 'guard' : 'family';
+                    html += '<div class="detail-section" style="background:rgba(200,60,60,0.08);border:1px solid rgba(200,60,60,0.25);border-radius:6px;">';
+                    html += '<h3 style="color:' + _companionCondColor + ';">⚕️ Health: ' + _companionCondLabel + '</h3>';
+                    html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">';
+                    var _pdHasDoc = Player.hasSkill && (Player.hasSkill('field_medic') || Player.hasSkill('doctor'));
+                    if (_pdHasDoc) {
+                        var _pdSkillName = Player.hasSkill('doctor') ? 'Doctor' : 'Field Medic';
+                        html += '<button class="btn-medieval" onclick="UI.treatCompanionUI(\'' + _compType + '\',\'' + person.id + '\',\'player\')" style="font-size:0.75rem;padding:5px 10px;background:rgba(40,120,40,0.3);border-color:rgba(60,180,60,0.5);">⚕️ Treat (' + _pdSkillName + ')</button>';
+                    } else {
+                        html += '<span style="font-size:0.75rem;color:#888;">Need Field Medic or Doctor skill to treat</span>';
+                    }
+                    // Hospital button
+                    var _pdTown = null;
+                    try { _pdTown = Engine.findTown(Player.townId); } catch(e) {}
+                    var _pdHasHosp = false;
+                    if (_pdTown && _pdTown.buildings) {
+                        for (var _phi = 0; _phi < _pdTown.buildings.length; _phi++) {
+                            if (_pdTown.buildings[_phi].type === 'hospital' || _pdTown.buildings[_phi].type === 'clinic') { _pdHasHosp = true; break; }
+                        }
+                    }
+                    if (_pdHasHosp) {
+                        html += '<button class="btn-medieval" onclick="UI.treatCompanionUI(\'' + _compType + '\',\'' + person.id + '\',\'hospital\')" style="font-size:0.75rem;padding:5px 10px;background:rgba(40,80,160,0.3);border-color:rgba(60,120,220,0.5);">🏥 Take to Hospital</button>';
+                    } else {
+                        html += '<span style="font-size:0.75rem;color:#888;margin-left:4px;">🏥 No hospital in town</span>';
+                    }
+                    html += '</div></div>';
+                }
+            }
+        }
+
         // ── Relationship & Social Actions (only if player exists and alive) ──
         if (isPlayer && isAlive && Player.getRelationship) {
             const rel = Player.getRelationship(person.id);
@@ -18197,6 +18269,16 @@ window.UI = (function () {
                     if (person.sick) _hParts.push('🤒 ' + (person.illness || 'sick'));
                     if (person._illnessTreatPaid) _hParts.push('🏥 Being treated');
                     html += '<div style="font-size:0.75rem;color:#e67e22;margin-top:2px;">' + _hParts.join(' • ') + '</div>';
+                    // Treatment buttons for sick/injured family
+                    if (person.townId === Player.townId && !Player.traveling) {
+                        html += '<div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap;">';
+                        var _fmHasDoc = Player.hasSkill && (Player.hasSkill('field_medic') || Player.hasSkill('doctor'));
+                        if (_fmHasDoc) {
+                            html += '<button class="btn-action btn-small" style="background:rgba(40,120,40,0.4);" onclick="UI.treatCompanionUI(\'family\',\'' + m.npcId + '\',\'player\')">⚕️ Treat</button>';
+                        }
+                        html += '<button class="btn-action btn-small" style="background:rgba(40,80,160,0.4);" onclick="UI.treatCompanionUI(\'family\',\'' + m.npcId + '\',\'hospital\')">🏥 Hospital</button>';
+                        html += '</div>';
+                    }
                 }
 
                 html += '<div class="family-actions" style="margin-top:6px;">';
@@ -18486,6 +18568,44 @@ window.UI = (function () {
         html += '</div>';
 
         html += '</div>'; // end header card
+
+        // === MEDICAL TREATMENT (when spouse is sick/injured/gravely ill) ===
+        if (status.condition !== 'healthy') {
+            var _spCondLabel = status.condition === 'gravely_ill' ? '☠️ Gravely Ill' : status.condition === 'sick' ? '🤒 Sick' : '🩹 Injured';
+            var _spCondColor = status.condition === 'gravely_ill' ? '#f33' : status.condition === 'sick' ? '#e67e22' : '#d4a017';
+            html += '<div style="background:rgba(200,60,60,0.12);border:1px solid rgba(200,60,60,0.3);border-radius:6px;padding:10px;margin-bottom:8px;">';
+            html += '<div style="font-size:13px;font-weight:bold;color:' + _spCondColor + ';margin-bottom:6px;">' + _spCondLabel + ' — Needs Treatment!</div>';
+            html += '<div style="font-size:11px;color:#ccc;margin-bottom:8px;">Health: ' + status.health + '/' + (CONFIG.SPOUSE_AI ? CONFIG.SPOUSE_AI.HEALTH_MAX : 100) + '</div>';
+            html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">';
+            // Player treatment button (needs skill)
+            var _hasDocSkill = Player.hasSkill && (Player.hasSkill('field_medic') || Player.hasSkill('doctor'));
+            var _inSameTown = Player.townId && !Player.traveling;
+            if (_hasDocSkill && _inSameTown) {
+                var _skillName = Player.hasSkill('doctor') ? 'Doctor' : 'Field Medic';
+                if (status.condition === 'gravely_ill' && !Player.hasSkill('doctor')) {
+                    html += '<button class="btn-medieval" disabled style="font-size:11px;padding:5px 10px;opacity:0.5;" title="Need Doctor skill for gravely ill">⚕️ Treat (Need Doctor Skill)</button>';
+                } else {
+                    html += '<button class="btn-medieval" onclick="UI.treatCompanionUI(\'spouse\',null,\'player\')" style="font-size:11px;padding:5px 10px;background:rgba(40,120,40,0.3);border-color:rgba(60,180,60,0.5);">⚕️ Treat with ' + _skillName + ' Skill</button>';
+                }
+            } else if (!_hasDocSkill) {
+                html += '<span style="font-size:11px;color:#888;">⚕️ Need Field Medic or Doctor skill to treat</span>';
+            }
+            // Hospital button
+            var _townObj = null;
+            try { _townObj = Engine.findTown(Player.townId); } catch(e) {}
+            var _hasHospital = false;
+            if (_townObj && _townObj.buildings) {
+                for (var _hci = 0; _hci < _townObj.buildings.length; _hci++) {
+                    if (_townObj.buildings[_hci].type === 'hospital' || _townObj.buildings[_hci].type === 'clinic') { _hasHospital = true; break; }
+                }
+            }
+            if (_hasHospital && _inSameTown) {
+                html += '<button class="btn-medieval" onclick="UI.treatCompanionUI(\'spouse\',null,\'hospital\')" style="font-size:11px;padding:5px 10px;background:rgba(40,80,160,0.3);border-color:rgba(60,120,220,0.5);">🏥 Take to Hospital</button>';
+            } else if (!_hasHospital && _inSameTown) {
+                html += '<span style="font-size:11px;color:#888;">🏥 No hospital/clinic in town</span>';
+            }
+            html += '</div></div>';
+        }
 
         // Wedding Planner notification
         if (Player.weddingPlan) {
@@ -20437,6 +20557,34 @@ window.UI = (function () {
             html += '<p class="text-dim" style="font-size:0.72rem;">Learn First Aid, Field Medic, or Doctor skill to self-treat with medical supplies.</p>';
         }
 
+        // === SICK COMPANIONS (spouse, family, guards) ===
+        if (typeof Player !== 'undefined' && Player.getTreatableCompanions) {
+            var _sickComps = Player.getTreatableCompanions();
+            if (_sickComps.length > 0) {
+                html += '<h4 style="margin:12px 0 6px 0;border-top:1px solid var(--border);padding-top:8px;">👥 Sick Companions</h4>';
+                var _compHasDoc = Player.hasSkill && (Player.hasSkill('field_medic') || Player.hasSkill('doctor'));
+                for (var _sci = 0; _sci < _sickComps.length; _sci++) {
+                    var _sc = _sickComps[_sci];
+                    var _scIcon = _sc.type === 'spouse' ? '💍' : _sc.type === 'guard' ? '🛡️' : '👤';
+                    var _scCondIcon = _sc.condition === 'gravely_ill' ? '☠️' : _sc.condition === 'sick' ? '🤒' : '🩹';
+                    var _scCondColor = _sc.condition === 'gravely_ill' ? '#f33' : _sc.condition === 'sick' ? '#e67e22' : '#d4a017';
+                    var _scLabel = _sc.type === 'spouse' ? 'Spouse' : _sc.type === 'guard' ? 'Guard' : (_sc.role ? _sc.role.charAt(0).toUpperCase() + _sc.role.slice(1) : 'Family');
+                    html += '<div style="border:1px solid var(--border);padding:6px;margin-bottom:6px;border-radius:4px;">';
+                    html += '<div class="detail-row"><span class="label">' + _scIcon + ' ' + _sc.name + ' <span style="font-size:0.7rem;color:#888;">(' + _scLabel + ')</span></span>';
+                    html += '<span class="value" style="color:' + _scCondColor + ';">' + _scCondIcon + ' ' + _sc.condition.replace('_', ' ') + '</span></div>';
+                    html += '<div style="font-size:0.72rem;color:#aaa;margin:2px 0;">Health: ' + _sc.health + '</div>';
+                    html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">';
+                    if (_compHasDoc) {
+                        html += '<button class="btn-medieval" onclick="UI.treatCompanionUI(\'' + _sc.type + '\',\'' + _sc.id + '\',\'player\')" style="font-size:0.7rem;padding:3px 8px;background:rgba(40,120,40,0.3);border-color:rgba(60,180,60,0.5);">⚕️ Treat</button>';
+                    }
+                    if (hasHospital || hasClinic) {
+                        html += '<button class="btn-medieval" onclick="UI.treatCompanionUI(\'' + _sc.type + '\',\'' + _sc.id + '\',\'hospital\')" style="font-size:0.7rem;padding:3px 8px;background:rgba(40,80,160,0.3);border-color:rgba(60,120,220,0.5);">🏥 Hospital</button>';
+                    }
+                    html += '</div></div>';
+                }
+            }
+        }
+
         openModal('🏥 Health', html);
     }
 
@@ -20470,6 +20618,41 @@ window.UI = (function () {
             openHealthDialog(); // refresh
         } else {
             toast(result.message, 'warning');
+        }
+    }
+
+    // Treat a companion (spouse, family member, or guard)
+    function treatCompanionUI(targetType, targetId, method) {
+        if (typeof Player === 'undefined' || !Player.treatCompanion) {
+            toast('Treatment system unavailable.', 'error');
+            return;
+        }
+        var result = Player.treatCompanion(targetType, targetId, method);
+        if (result.success) {
+            toast(result.message, 'success');
+        } else {
+            toast(result.message, 'warning');
+        }
+        // Refresh the appropriate UI based on context
+        // Check if a modal is open and which one to refresh
+        var modalEl = document.querySelector('.modal-content');
+        var modalTitle = modalEl ? modalEl.querySelector('h2, .modal-title') : null;
+        var titleText = modalTitle ? modalTitle.textContent : '';
+        if (titleText.indexOf('Health') >= 0) {
+            try { openHealthDialog(); } catch(e) {}
+        } else if (targetType === 'spouse') {
+            try { openSpousePanel(); } catch(e) {}
+        } else if (targetType === 'guard') {
+            try { openCharacterDialog(); } catch(e) {}
+        } else {
+            try { openFamilyPanel(); } catch(e) {}
+        }
+        // Also refresh NPC detail if person detail is showing
+        if (targetId && selectedPersonId === targetId) {
+            try {
+                var refreshPerson = Engine.findPerson(targetId);
+                if (refreshPerson) showPersonDetail(refreshPerson);
+            } catch(e) {}
         }
     }
 
@@ -21697,10 +21880,9 @@ window.UI = (function () {
                     var safKid = kingdomId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                     html += '<button class="btn-medieval" onclick="UI._attemptKQActionUI(\'' + safActId + '\',\'' + safKid + '\')" style="font-size:0.7rem;padding:4px 12px;margin-top:4px;background:rgba(231,126,35,0.2) !important;border-color:rgba(231,126,35,0.4) !important;">' + escapeHtml(_aqMech.actionLabel || '⚡ Attempt Action') + '</button>';
                 } else {
-                    // Fallback for unknown action types
+                    // No mechanic defined for this action type — show unavailable
                     html += '<div style="font-size:0.68rem;color:#e67e22;">⬜ Complete: ' + escapeHtml(act.type.replace(/_/g, ' ')) + '</div>';
-                    var safActId2 = quest.id.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                    html += '<button class="btn-medieval" onclick="(function(){Player.trackKQActionDone(\'' + safActId2 + '\');UI.openNobilityDialog();})()" style="font-size:0.65rem;padding:2px 8px;margin-top:2px;">📋 Report Action Complete</button>';
+                    html += '<div style="font-size:0.65rem;color:#c44e52;margin-left:12px;font-style:italic;">⚠️ Quest action unavailable — no mechanic defined for this action type.</div>';
                 }
             }
         }
@@ -21761,12 +21943,55 @@ window.UI = (function () {
             toast('Action system not available.', 'warning');
             return;
         }
+
+        // Look up mechanics to show confirmation
+        var _aqMech = null;
+        try {
+            var _kqD = Player.getKingdomQuestData(kingdomId);
+            var _kqQ = null;
+            if (_kqD) {
+                for (var _qi = 0; _qi < (_kqD.active || []).length; _qi++) {
+                    if (_kqD.active[_qi].id === questId) { _kqQ = _kqD.active[_qi]; break; }
+                }
+            }
+            if (_kqQ && _kqQ.requirements && _kqQ.requirements.action) {
+                _aqMech = (typeof ACTION_QUEST_MECHANICS !== 'undefined') ? ACTION_QUEST_MECHANICS[_kqQ.requirements.action.type] : null;
+            }
+        } catch(e) {}
+
+        if (_aqMech) {
+            var _confHtml = '<div style="padding:10px;">';
+            _confHtml += '<div style="font-size:0.9rem;color:#ddd;margin-bottom:10px;">Are you sure you want to attempt this action?</div>';
+            _confHtml += '<div style="background:rgba(0,0,0,0.2);border-radius:6px;padding:10px;font-size:0.82rem;">';
+            if (_aqMech.goldCost > 0) _confHtml += '<div style="color:#e67e22;">💰 Cost: ' + _aqMech.goldCost + 'g</div>';
+            _confHtml += '<div style="color:#5dade2;">⏳ Time: ~' + (_aqMech.tickCost || 5) + ' days (you will be occupied)</div>';
+            var _confChance = Math.round((_aqMech.successBase || 0.60) * 100);
+            _confHtml += '<div style="color:' + (_confChance >= 70 ? '#55a868' : _confChance >= 50 ? '#ccb974' : '#e67e22') + ';">🎲 Base success chance: ' + _confChance + '%</div>';
+            if (_aqMech.locationReq === 'capital') _confHtml += '<div style="color:#aaa;">📍 Requires: Kingdom capital</div>';
+            _confHtml += '</div>';
+            _confHtml += '<div style="font-size:0.75rem;color:#999;margin-top:8px;font-style:italic;">Gold and time are consumed whether you succeed or fail.</div>';
+            _confHtml += '</div>';
+
+            var _safQid = questId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            var _safKid = kingdomId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            openModal('⚡ Confirm Action', _confHtml,
+                '<button class="btn-medieval" onclick="UI.closeModal();UI._executeKQAction(\'' + _safQid + '\',\'' + _safKid + '\');" style="background:rgba(231,126,35,0.3) !important;border-color:rgba(231,126,35,0.5) !important;">⚡ Proceed</button>' +
+                '<button class="btn-medieval" onclick="UI.closeModal();UI.openNobilityDialog();">Cancel</button>'
+            );
+        } else {
+            // No mechanic — just try and show error
+            _executeKQAction(questId, kingdomId);
+        }
+    }
+
+    function _executeKQAction(questId, kingdomId) {
         var result = Player.attemptKQAction(questId, kingdomId);
         if (!result) { toast('Failed to attempt action.', 'warning'); return; }
 
         // If it's a validation error (not enough gold, wrong location), just toast
         if (!result.success) {
             toast(result.message, 'warning');
+            openNobilityDialog();
             return;
         }
 
@@ -21789,6 +22014,14 @@ window.UI = (function () {
         html += '<div style="color:#aaa;">🎲 Success chance was: ' + (result.chance || '?') + '%</div>';
         if (result.attempt > 1) html += '<div style="color:#ccb974;">📝 Attempt #' + result.attempt + '</div>';
         html += '</div>';
+
+        // Failure consequences for espionage/corrupt quests
+        if (!isSuccess && result.consequences) {
+            html += '<div style="background:rgba(196,78,82,0.15);border:1px solid rgba(196,78,82,0.3);border-radius:6px;padding:8px;margin-top:8px;">';
+            html += '<div style="font-size:0.8rem;color:#c44e52;font-weight:bold;">⚠️ Consequences:</div>';
+            html += '<div style="font-size:0.78rem;color:#ddd;margin-top:4px;">' + escapeHtml(result.consequences) + '</div>';
+            html += '</div>';
+        }
 
         if (!isSuccess) {
             html += '<p style="font-size:0.8rem;color:#e67e22;font-style:italic;margin-top:8px;">You can try again, but it will cost more gold and time. Improve your skills to increase your chances.</p>';
@@ -27584,8 +27817,25 @@ window.UI = (function () {
                 }
                 html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);">';
                 html += '<span style="font-size:0.85rem;">\uD83D\uDEE1\uFE0F ' + guardNameHtml + (g.kingdomPaid ? ' <span style="font-size:0.7rem;color:#8ba;font-style:italic;">(Kingdom)</span>' : '') + '</span>';
+                html += '<div style="display:flex;gap:4px;align-items:center;">';
+                // Check guard health
+                if (g.personId) {
+                    var _gNpc = null;
+                    try { _gNpc = Engine.findPerson(g.personId); } catch(e) {}
+                    if (_gNpc && (_gNpc.injured || _gNpc.sick)) {
+                        var _gCondText = _gNpc.injured ? '🩹 ' + (_gNpc.injurySeverity || 'injured') : '🤒 ' + (_gNpc.illness || 'sick');
+                        html += '<span style="font-size:0.7rem;color:#e67e22;margin-right:4px;">' + _gCondText + '</span>';
+                        if (Player.townId && !Player.traveling && _gNpc.townId === Player.townId) {
+                            var _gHasDoc = Player.hasSkill && (Player.hasSkill('field_medic') || Player.hasSkill('doctor'));
+                            if (_gHasDoc) {
+                                html += '<button class="btn-medieval" onclick="UI.treatCompanionUI(\'guard\',\'' + g.personId + '\',\'player\')" style="font-size:0.65rem;padding:2px 6px;background:rgba(40,120,40,0.3);border-color:rgba(60,180,60,0.5);" title="Treat with medical skill">⚕️</button>';
+                            }
+                            html += '<button class="btn-medieval" onclick="UI.treatCompanionUI(\'guard\',\'' + g.personId + '\',\'hospital\')" style="font-size:0.65rem;padding:2px 6px;background:rgba(40,80,160,0.3);border-color:rgba(60,120,220,0.5);" title="Take to hospital">🏥</button>';
+                        }
+                    }
+                }
                 html += '<button class="btn-medieval" onclick="UI.dismissGuardUI(\'' + g.id + '\')" style="font-size:0.7rem;padding:3px 8px;">\u274C Dismiss</button>';
-                html += '</div>';
+                html += '</div></div>';
             }
         }else {
             html += '<div style="font-size:0.8rem;color:#888;font-style:italic;margin:4px 0;">No guards hired.</div>';
@@ -29286,6 +29536,7 @@ window.UI = (function () {
         treatAtHospital,
         treatAtClinic,
         selfTreatCondition,
+        treatCompanionUI,
         // Encounter System
         showEncounterDialog,
         resolveEncounterChoice,
@@ -29571,5 +29822,6 @@ window.UI = (function () {
         // Kingdom Quests UI
         _switchKQTab,
         _attemptKQActionUI,
+        _executeKQAction,
     };
 })();

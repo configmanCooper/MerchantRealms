@@ -980,8 +980,15 @@
 
         addTradeLog(resourceId, qty, price, tid, 'buy');
         consumeEnergy(ENERGY_CONFIG.TRADE_COST || 2);
-        // Trading builds slight town reputation: +0.1 per 100g traded
-        if (totalCost > 0) modifyTownReputation(tid, totalCost / 1000);
+        // Trading builds slight town reputation: +0.02 per 500g traded, capped at 0.02/day
+        if (totalCost > 0) {
+            var _tradeRepGain = Math.min(0.02, totalCost / 25000);
+            if (!player._dailyTradeRep) player._dailyTradeRep = { day: Engine.getDay(), amount: 0 };
+            if (player._dailyTradeRep.day !== Engine.getDay()) { player._dailyTradeRep = { day: Engine.getDay(), amount: 0 }; }
+            var _tradeRepLeft = Math.max(0, 0.02 - player._dailyTradeRep.amount);
+            _tradeRepGain = Math.min(_tradeRepGain, _tradeRepLeft);
+            if (_tradeRepGain > 0) { modifyTownReputation(tid, _tradeRepGain); player._dailyTradeRep.amount += _tradeRepGain; }
+        }
         return {
             success: true,
             message: `Bought ${qty} ${resourceId} for ${totalCost} gold.`,
@@ -1339,8 +1346,15 @@
 
         addTradeLog(resourceId, qty, effectivePrice, tid, 'sell');
         consumeEnergy(ENERGY_CONFIG.TRADE_COST || 2);
-        // Trading builds slight town reputation: +0.1 per 100g traded
-        if (totalRevenue > 0) modifyTownReputation(tid, totalRevenue / 1000);
+        // Trading builds slight town reputation: +0.02 per 500g traded, capped at 0.02/day
+        if (totalRevenue > 0) {
+            var _tradeRepGain2 = Math.min(0.02, totalRevenue / 25000);
+            if (!player._dailyTradeRep) player._dailyTradeRep = { day: Engine.getDay(), amount: 0 };
+            if (player._dailyTradeRep.day !== Engine.getDay()) { player._dailyTradeRep = { day: Engine.getDay(), amount: 0 }; }
+            var _tradeRepLeft2 = Math.max(0, 0.02 - player._dailyTradeRep.amount);
+            _tradeRepGain2 = Math.min(_tradeRepGain2, _tradeRepLeft2);
+            if (_tradeRepGain2 > 0) { modifyTownReputation(tid, _tradeRepGain2); player._dailyTradeRep.amount += _tradeRepGain2; }
+        }
         return {
             success: true,
             message: `Sold ${qty} ${resourceId} for ${totalRevenue} gold.`,
@@ -9805,12 +9819,22 @@
         if (!kingdom) return { success: false, message: 'Kingdom not found.' };
         player.gold -= cost;
         kingdom.gold = (kingdom.gold || 0) + cost;
-        player.reputation[kingdomId] = Math.min(100, (player.reputation[kingdomId] || 50) + increments);
-        Engine.logEvent('Donated ' + cost + 'g to ' + kingdom.name + '. Reputation +' + increments + '.');
+        // Diminishing returns: each donation in 30 days gives 25% less
+        if (!player._donationTracker) player._donationTracker = {};
+        if (!player._donationTracker[kingdomId]) player._donationTracker[kingdomId] = { count: 0, resetDay: 0 };
+        var dt = player._donationTracker[kingdomId];
+        var day = Engine.getDay();
+        if (day - dt.resetDay > 30) { dt.count = 0; dt.resetDay = day; }
+        var diminish = Math.pow(0.75, dt.count);
+        var repGain = Math.max(0.5, Math.round(increments * diminish * 100) / 100);
+        repGain = Math.min(repGain, 8); // Cap at +8 max per donation
+        dt.count++;
+        modifyKingdomReputation(kingdomId, repGain);
+        Engine.logEvent('Donated ' + cost + 'g to ' + kingdom.name + '. Reputation +' + repGain.toFixed(1) + '.');
         if (typeof UI !== 'undefined' && UI.toast) {
-            UI.toast('💰 Donated ' + cost + 'g to ' + kingdom.name + '! Rep +' + increments, 'success');
+            UI.toast('💰 Donated ' + cost + 'g to ' + kingdom.name + '! Rep +' + repGain.toFixed(1), 'success');
         }
-        return { success: true, message: 'Donated ' + cost + 'g. Reputation +' + increments + '.' };
+        return { success: true, message: 'Donated ' + cost + 'g. Reputation +' + repGain.toFixed(1) + '.' };
     }
 
     function setWarAllegiance(warId, side) {
@@ -9908,8 +9932,8 @@
             var chosenK = Engine.findKingdom(side);
             var enemyK = enemySide ? Engine.findKingdom(enemySide) : null;
 
-            // Immediate +5 kingdom reputation with chosen side
-            player.reputation[side] = Math.min(100, (player.reputation[side] || 50) + 5);
+            // Immediate +2 kingdom reputation with chosen side (declaration only; +3 more from active participation)
+            player.reputation[side] = Math.min(100, (player.reputation[side] || 50) + 2);
 
             // Immediate -5 kingdom reputation with enemy
             if (enemySide) {
@@ -11840,7 +11864,7 @@
                 if (kingdom.gold != null) kingdom.gold += favor.goldCost;
             }
             // Rewards
-            player.reputation[kId] = Math.min(100, (player.reputation[kId] || 50) + (favor.repGain || 3));
+            player.reputation[kId] = Math.min(100, (player.reputation[kId] || 50) + (favor.repGain || 1));
             if (kingdom.king) modifyRelationship(kingdom.king, favor.relGain || 5, 'king_favor_accepted');
             kingdom._pendingRAFavor = null;
 
@@ -13678,12 +13702,20 @@
             }
         }
 
-        // Keep minor children in player's town (they live at home)
+        // Keep minor children at primary home (they live at home, not traveling with parent)
         if (!player.traveling) {
+            var _kidHomeTown = null;
+            var _kidHC2 = -1;
+            for (var _khi = 0; _khi < (player.houses || []).length; _khi++) {
+                var _kh = player.houses[_khi];
+                var _kht = CONFIG.HOUSING_TYPES ? CONFIG.HOUSING_TYPES.find(function(t) { return t.id === _kh.type; }) : null;
+                if (_kht && _kht.comfort > _kidHC2) { _kidHC2 = _kht.comfort; _kidHomeTown = _kh.townId; }
+            }
+            var _childTargetTown = _kidHomeTown || player.townId;
             for (const cid of player.childrenIds) {
                 const child = Engine.findPerson(cid);
-                if (child && child.alive && child.age < CONFIG.COMING_OF_AGE && child.townId !== player.townId) {
-                    child.townId = player.townId;
+                if (child && child.alive && child.age < CONFIG.COMING_OF_AGE && child.townId !== _childTargetTown) {
+                    child.townId = _childTargetTown;
                 }
             }
         }
@@ -14340,9 +14372,32 @@
         const spouse = Engine.findPerson(player.spouseId);
         if (!spouse || !spouse.alive) return;
 
-        // Spouse always lives with the player (prevent NPC migration from separating them)
-        if (spouse.townId !== player.townId && !player.traveling) {
-            spouse.townId = player.townId;
+        // Spouse stays at primary home, not forced to follow the player everywhere
+        // Find the primary house (best comfort)
+        var _bestHomeTownForSpouse = null;
+        var _bestHC = -1;
+        for (var _shi = 0; _shi < (player.houses || []).length; _shi++) {
+            var _sh = player.houses[_shi];
+            var _sht = CONFIG.HOUSING_TYPES ? CONFIG.HOUSING_TYPES.find(function(t) { return t.id === _sh.type; }) : null;
+            if (_sht && _sht.comfort > _bestHC) { _bestHC = _sht.comfort; _bestHomeTownForSpouse = _sh.townId; }
+        }
+        if (_bestHomeTownForSpouse) {
+            // Spouse should be at primary home (especially if pregnant)
+            if (spouse.townId !== _bestHomeTownForSpouse && !player.traveling) {
+                // If pregnant, always go home immediately
+                if (player.pregnantDay > 0) {
+                    spouse.townId = _bestHomeTownForSpouse;
+                } else if (spouse.townId !== player.townId) {
+                    // If not with player and not at home, go home
+                    spouse.townId = _bestHomeTownForSpouse;
+                }
+                // If with player but not at home, spouse stays with player (player explicitly brought them)
+            }
+        } else {
+            // No house — spouse follows player as fallback
+            if (spouse.townId !== player.townId && !player.traveling) {
+                spouse.townId = player.townId;
+            }
         }
 
         const rel = getRelationship(player.spouseId);
@@ -14408,14 +14463,14 @@
             }
         }
 
-        // Devout quirk: donate 5% income, gain reputation
+        // Devout quirk: donate 5% income, gain small reputation
         if (spouse.quirks && spouse.quirks.includes('devout')) {
             const donation = Math.floor(player.gold * 0.0017); // ~5% monthly / 30 days
             if (donation > 0 && player.gold >= donation) {
                 player.gold -= donation;
                 if (player.citizenshipKingdomId) {
                     player.reputation[player.citizenshipKingdomId] = Math.min(100,
-                        (player.reputation[player.citizenshipKingdomId] || 50) + 0.05);
+                        (player.reputation[player.citizenshipKingdomId] || 50) + 0.01);
                 }
             }
         }
@@ -14759,12 +14814,8 @@
         var warmth = (spouse.personality && spouse.personality.warmth) || 30;
         var relationBoost = rng.randInt(1, 3);
 
-        // Slightly boost player reputation if spouse is in same town
-        if (spouse.townId === player.townId && player.citizenshipKingdomId) {
-            var repBoost = warmth * 0.001;
-            player.reputation[player.citizenshipKingdomId] = Math.min(100,
-                (player.reputation[player.citizenshipKingdomId] || 50) + repBoost);
-        }
+        // Spouse warmth no longer gives passive kingdom reputation
+        // Marriage has social benefits (relationship, household) but not a rep farm
 
         ai.activity = 'socializing';
         ai.activityDetail = 'Socializing with townsfolk';
@@ -14901,7 +14952,10 @@
 
         // If no assigned task (or it was cleared), autonomous behavior
         if (!ai.assignedTask) {
-            // Smart home preference: if spouse is away from player's best home, occasionally return
+            // Pregnant spouse must stay at primary home — override all other behavior
+            var _isPregnant = player.pregnantDay > 0;
+
+            // Smart home preference: spouse strongly prefers being at primary home
             if (!ai.travelTarget) {
                 var _bestHomeTown = null;
                 var _bestHComfort = -1;
@@ -14913,7 +14967,16 @@
                         _bestHomeTown = _bh.townId;
                     }
                 }
-                if (_bestHomeTown && spouse.townId !== _bestHomeTown && rng.chance(0.15)) {
+                // If pregnant, always go home immediately (no travel delay)
+                if (_bestHomeTown && spouse.townId !== _bestHomeTown && _isPregnant) {
+                    spouse.townId = _bestHomeTown;
+                    ai.activity = 'resting';
+                    ai.activityDetail = 'Resting at home during pregnancy';
+                    logSpouseAction(day, 'rest', 'Resting at home during pregnancy', 0);
+                    return;
+                }
+                // Otherwise, 80% chance to return home each tick if away (was 15%)
+                if (_bestHomeTown && spouse.townId !== _bestHomeTown && rng.chance(0.80)) {
                     // Travel home autonomously
                     var homeTown = Engine.findTown(_bestHomeTown);
                     var fromTown = Engine.findTown(spouse.townId);
@@ -15845,7 +15908,11 @@
         for (const kId in player.reputation) {
             var repMult = threshold.repMult;
             if (rd.parentSkills && rd.parentSkills.good_parent) repMult *= 1.10;
-            player.reputation[kId] = Math.floor((rd.reputationAtDeath[kId] || 50) * repMult);
+            // Dynasty start: heirs begin with (parentRep - 50)/2 bonus above 50, max +25
+            // This prevents heirs from starting with inflated reputation
+            var _parentRepVal = (rd.reputationAtDeath[kId] || 50);
+            var _heirBonus = Math.min(25, Math.max(0, (_parentRepVal - 50) / 2)) * repMult;
+            player.reputation[kId] = Math.floor(50 + _heirBonus);
         }
 
         // Heir traits
@@ -17485,6 +17552,324 @@
         return { success: true, message: `Treated ${patient.name || 'a townsperson'} using ${usedSupply}. Earned ${basePay}g.` };
     }
 
+    // Treat a companion: spouse (spouseAI system), family member, or personal guard
+    // targetType: 'spouse', 'family', 'guard'
+    // targetId: NPC id for family/guard, ignored for spouse
+    // method: 'player' (use player's medical skill) or 'hospital' (pay for hospital treatment)
+    function treatCompanion(targetType, targetId, method) {
+        if (player.traveling) return { success: false, message: 'Cannot treat anyone while traveling.' };
+        var town = Engine.findTown(player.townId);
+        if (!town) return { success: false, message: 'You must be in a town.' };
+        var rng = Engine.getRng();
+
+        // Validate method
+        if (method === 'player') {
+            if (!hasSkill('field_medic') && !hasSkill('doctor')) {
+                return { success: false, message: 'You need the Field Medic or Doctor skill to treat others.' };
+            }
+        } else if (method === 'hospital') {
+            var hospBld = null;
+            if (town.buildings) {
+                for (var _hbi = 0; _hbi < town.buildings.length; _hbi++) {
+                    if (town.buildings[_hbi].type === 'hospital' || town.buildings[_hbi].type === 'clinic') {
+                        hospBld = town.buildings[_hbi]; break;
+                    }
+                }
+            }
+            if (!hospBld) return { success: false, message: 'No hospital or clinic in this town.' };
+        } else {
+            return { success: false, message: 'Invalid treatment method.' };
+        }
+
+        // === SPOUSE (uses spouseAI condition system) ===
+        if (targetType === 'spouse') {
+            if (!player.spouseId) return { success: false, message: 'You have no spouse.' };
+            var spouse = Engine.findPerson(player.spouseId);
+            if (!spouse || !spouse.alive) return { success: false, message: 'Spouse not found.' };
+            if (spouse.townId !== player.townId) return { success: false, message: 'Your spouse is not in this town.' };
+            initSpouseAI();
+            var ai = player.spouseAI;
+            if (ai.condition === 'healthy') return { success: false, message: spouse.firstName + ' is healthy and does not need treatment.' };
+
+            var condSeverity = ai.condition === 'gravely_ill' ? 'severe' : ai.condition === 'sick' ? 'moderate' : 'moderate';
+
+            if (method === 'player') {
+                // Check skill level vs severity
+                if (ai.condition === 'gravely_ill' && !hasSkill('doctor')) {
+                    return { success: false, message: 'Only the Doctor skill can treat gravely ill patients.' };
+                }
+                // Need medical supplies
+                var spouseSupplies = ai.condition === 'gravely_ill' ? ['antidote', 'healing_tonic', 'fever_tonic'] :
+                                     ai.condition === 'sick' ? ['herbal_remedy', 'fever_tonic', 'antidote'] :
+                                     ['bandages', 'herbal_poultice', 'splint'];
+                var usedSupply = null;
+                for (var si = 0; si < spouseSupplies.length; si++) {
+                    if (player.inventory[spouseSupplies[si]] && player.inventory[spouseSupplies[si]] > 0) {
+                        usedSupply = spouseSupplies[si]; break;
+                    }
+                }
+                if (!usedSupply) {
+                    return { success: false, message: 'Need medical supplies (' + spouseSupplies.join(', ') + ') to treat ' + spouse.firstName + '.' };
+                }
+
+                if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.treat_other || 5);
+                player.inventory[usedSupply]--;
+
+                // Success chance: doctor 90%, field_medic 70%, +5% per intelligence point of player
+                var baseChance = hasSkill('doctor') ? 0.90 : 0.70;
+                if (ai.condition === 'gravely_ill') baseChance -= 0.15;
+                var success = rng.chance(baseChance);
+
+                if (success) {
+                    if (ai.condition === 'gravely_ill') {
+                        ai.condition = 'sick';
+                        ai.sickEndDay = Engine.getDay() + rng.randInt(3, 7);
+                        ai.health = Math.min(ai.health + 20, CONFIG.SPOUSE_AI ? CONFIG.SPOUSE_AI.HEALTH_MAX : 100);
+                        Engine.logEvent('⚕️ ' + player.fullName + ' treated ' + spouse.firstName + '. Condition stabilized from gravely ill to sick.');
+                    } else if (ai.condition === 'sick') {
+                        ai.condition = 'healthy';
+                        ai.daysSick = 0;
+                        ai.health = Math.min(ai.health + 30, CONFIG.SPOUSE_AI ? CONFIG.SPOUSE_AI.HEALTH_MAX : 100);
+                        Engine.logEvent('⚕️ ' + player.fullName + ' treated ' + spouse.firstName + '. Fully recovered!');
+                    } else if (ai.condition === 'injured') {
+                        ai.condition = 'healthy';
+                        ai.daysInjured = 0;
+                        ai.health = Math.min(ai.health + 25, CONFIG.SPOUSE_AI ? CONFIG.SPOUSE_AI.HEALTH_MAX : 100);
+                        Engine.logEvent('⚕️ ' + player.fullName + ' treated ' + spouse.firstName + '\'s injuries. Fully recovered!');
+                    }
+                    grantXP(8, 'medical');
+                    modifyRelationship(player.spouseId, 5);
+                    return { success: true, message: 'Successfully treated ' + spouse.firstName + ' using ' + usedSupply + '.' };
+                } else {
+                    ai.health = Math.min(ai.health + 5, CONFIG.SPOUSE_AI ? CONFIG.SPOUSE_AI.HEALTH_MAX : 100);
+                    grantXP(3, 'medical');
+                    return { success: false, message: 'Treatment of ' + spouse.firstName + ' was not fully effective. Used ' + usedSupply + '. Try again or visit a hospital.' };
+                }
+            } else {
+                // Hospital treatment for spouse
+                var fees = Engine.getHospitalFees ? Engine.getHospitalFees(player.townId) : null;
+                var hospInfo2 = fees ? (fees.hospital || fees.clinic) : null;
+                var baseCost = condSeverity === 'severe' ? 60 : condSeverity === 'moderate' ? 30 : 15;
+                var cost = hospInfo2 && hospInfo2.fees ? (hospInfo2.fees[condSeverity] || baseCost) : baseCost;
+                if (player.gold < cost) return { success: false, message: 'Not enough gold. Hospital costs ' + cost + 'g for ' + spouse.firstName + '.' };
+
+                var treatTicks = condSeverity === 'severe' ? 60 : condSeverity === 'moderate' ? 30 : 15;
+                if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(treatTicks);
+                player.gold -= cost;
+                player.stats.totalGoldSpent += cost;
+                _payHealthcareRevenue(town, cost);
+
+                // Hospital always succeeds
+                ai.condition = 'healthy';
+                ai.daysSick = 0;
+                ai.daysInjured = 0;
+                ai.health = Math.min(ai.health + 40, CONFIG.SPOUSE_AI ? CONFIG.SPOUSE_AI.HEALTH_MAX : 100);
+                modifyRelationship(player.spouseId, 3);
+                Engine.logEvent('🏥 ' + spouse.firstName + ' was treated at the hospital. Cost: ' + cost + 'g.');
+                return { success: true, message: spouse.firstName + ' was treated at the hospital for ' + cost + 'g. Fully recovered!' };
+            }
+        }
+
+        // === FAMILY MEMBER or GUARD (uses standard NPC illness/injury system) ===
+        if (targetType === 'family' || targetType === 'guard') {
+            var npc = Engine.findPerson(targetId);
+            if (!npc || !npc.alive) return { success: false, message: 'Person not found.' };
+            if (npc.townId !== player.townId) return { success: false, message: (npc.firstName || 'They') + ' is not in this town.' };
+
+            // Validate they are actually family or guard
+            if (targetType === 'family') {
+                var isFamily = false;
+                if (player.spouseId === targetId) isFamily = true;
+                if (player.childrenIds && player.childrenIds.indexOf(targetId) >= 0) isFamily = true;
+                if (player.familyMembers) {
+                    for (var fm = 0; fm < player.familyMembers.length; fm++) {
+                        if (player.familyMembers[fm].npcId === targetId) { isFamily = true; break; }
+                    }
+                }
+                if (!isFamily) return { success: false, message: 'This person is not a family member.' };
+            } else {
+                var isGuard = false;
+                for (var gi = 0; gi < (player.guards || []).length; gi++) {
+                    if (player.guards[gi].personId === targetId) { isGuard = true; break; }
+                }
+                if (!isGuard) return { success: false, message: 'This person is not one of your guards.' };
+            }
+
+            // Check if they actually need treatment
+            var hasInjury = npc.injured || (npc.injuries && npc.injuries.length > 0);
+            var hasIllness = npc.sick || (npc.illnesses && npc.illnesses.length > 0);
+            if (!hasInjury && !hasIllness) return { success: false, message: (npc.firstName || 'They') + ' does not need medical attention.' };
+
+            if (method === 'player') {
+                // Determine severity from NPC state
+                var npcSeverity = 'minor';
+                if (npc.injuries && npc.injuries.length > 0) {
+                    npcSeverity = npc.injuries[0].severity || npc.injurySeverity || 'moderate';
+                } else if (npc.illnesses && npc.illnesses.length > 0) {
+                    npcSeverity = npc.illnesses[0].severity || 'moderate';
+                } else if (npc.injurySeverity) {
+                    npcSeverity = npc.injurySeverity;
+                }
+
+                if (npcSeverity === 'severe' && !hasSkill('doctor')) {
+                    return { success: false, message: 'Only the Doctor skill can treat severe conditions.' };
+                }
+                if (npcSeverity === 'moderate' && !hasSkill('field_medic') && !hasSkill('doctor')) {
+                    return { success: false, message: 'Need Field Medic or Doctor skill for moderate conditions.' };
+                }
+
+                // Need medical supplies
+                var supplies = ['bandages', 'herbal_remedy', 'healing_tonic', 'herbal_poultice', 'splint', 'fever_tonic', 'antidote'];
+                var usedSup = null;
+                for (var _s = 0; _s < supplies.length; _s++) {
+                    if (player.inventory[supplies[_s]] && player.inventory[supplies[_s]] > 0) {
+                        usedSup = supplies[_s]; break;
+                    }
+                }
+                if (!usedSup) return { success: false, message: 'Need medical supplies to treat ' + (npc.firstName || 'them') + '.' };
+
+                if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.treat_other || 5);
+                player.inventory[usedSup]--;
+
+                // Heal the NPC
+                if (npc.injuries && npc.injuries.length > 0) {
+                    npc.injuries.shift();
+                    if (npc.injuries.length === 0) { npc.injured = false; npc.injurySeverity = null; npc.injuryType = null; }
+                } else if (npc.illnesses && npc.illnesses.length > 0) {
+                    npc.illnesses.shift();
+                    if (npc.illnesses.length === 0) { npc.sick = false; npc.illness = null; }
+                } else {
+                    // Legacy flat flags
+                    if (npc.injured) { npc.injured = false; npc.injurySeverity = null; npc.injuryType = null; }
+                    else if (npc.sick) { npc.sick = false; npc.illness = null; }
+                }
+                npc.health = Math.min((npc.health || 50) + 25, 100);
+
+                grantXP(6, 'medical');
+                modifyRelationship(targetId, 8);
+                Engine.logEvent('⚕️ ' + player.fullName + ' treated ' + (npc.firstName || 'a companion') + ' using ' + usedSup + '.');
+                return { success: true, message: 'Treated ' + (npc.firstName || 'companion') + ' using ' + usedSup + '.' };
+            } else {
+                // Hospital treatment for family/guard NPC
+                var npcSev = 'minor';
+                if (npc.injuries && npc.injuries.length > 0) npcSev = npc.injuries[0].severity || 'moderate';
+                else if (npc.illnesses && npc.illnesses.length > 0) npcSev = npc.illnesses[0].severity || 'moderate';
+                else if (npc.injurySeverity) npcSev = npc.injurySeverity;
+
+                var fees2 = Engine.getHospitalFees ? Engine.getHospitalFees(player.townId) : null;
+                var hospInfo3 = fees2 ? (fees2.hospital || fees2.clinic) : null;
+                var baseCost2 = npcSev === 'severe' ? 50 : npcSev === 'moderate' ? 25 : 12;
+                var cost2 = hospInfo3 && hospInfo3.fees ? (hospInfo3.fees[npcSev] || baseCost2) : baseCost2;
+                if (player.gold < cost2) return { success: false, message: 'Not enough gold. Hospital costs ' + cost2 + 'g.' };
+
+                var treatTicks2 = npcSev === 'severe' ? 50 : npcSev === 'moderate' ? 25 : 10;
+                if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(treatTicks2);
+                player.gold -= cost2;
+                player.stats.totalGoldSpent += cost2;
+                _payHealthcareRevenue(town, cost2);
+
+                // Hospital clears all conditions
+                npc.injuries = [];
+                npc.illnesses = [];
+                npc.injured = false;
+                npc.sick = false;
+                npc.injurySeverity = null;
+                npc.injuryType = null;
+                npc.illness = null;
+                npc.health = Math.min((npc.health || 50) + 40, 100);
+                if (npc._illnessTreatPaid) delete npc._illnessTreatPaid;
+
+                modifyRelationship(targetId, 5);
+                Engine.logEvent('🏥 ' + (npc.firstName || 'Your companion') + ' was treated at the hospital. Cost: ' + cost2 + 'g.');
+                return { success: true, message: (npc.firstName || 'Companion') + ' was treated at the hospital for ' + cost2 + 'g.' };
+            }
+        }
+
+        return { success: false, message: 'Invalid target type.' };
+    }
+
+    // Get treatable companions (for UI display)
+    function getTreatableCompanions() {
+        var results = [];
+        var town = Engine.findTown(player.townId);
+        if (!town || player.traveling) return results;
+
+        // Check spouse (spouseAI condition system)
+        if (player.spouseId) {
+            var spouse = Engine.findPerson(player.spouseId);
+            if (spouse && spouse.alive && spouse.townId === player.townId) {
+                initSpouseAI();
+                if (player.spouseAI.condition !== 'healthy') {
+                    results.push({
+                        type: 'spouse',
+                        id: player.spouseId,
+                        name: spouse.firstName + ' ' + spouse.lastName,
+                        condition: player.spouseAI.condition,
+                        health: player.spouseAI.health,
+                        severity: player.spouseAI.condition === 'gravely_ill' ? 'severe' : 'moderate'
+                    });
+                }
+            }
+        }
+
+        // Check family members (NPC illness/injury system)
+        if (player.familyMembers) {
+            for (var i = 0; i < player.familyMembers.length; i++) {
+                var fm = player.familyMembers[i];
+                if (fm.npcId === player.spouseId) continue; // spouse handled above
+                var fNpc = Engine.findPerson(fm.npcId);
+                if (!fNpc || !fNpc.alive || fNpc.townId !== player.townId) continue;
+                var fInjured = fNpc.injured || (fNpc.injuries && fNpc.injuries.length > 0);
+                var fSick = fNpc.sick || (fNpc.illnesses && fNpc.illnesses.length > 0);
+                if (fInjured || fSick) {
+                    var fCond = fInjured ? 'injured' : 'sick';
+                    var fSev = 'minor';
+                    if (fNpc.injuries && fNpc.injuries.length > 0) fSev = fNpc.injuries[0].severity || 'moderate';
+                    else if (fNpc.illnesses && fNpc.illnesses.length > 0) fSev = fNpc.illnesses[0].severity || 'moderate';
+                    else if (fNpc.injurySeverity) fSev = fNpc.injurySeverity;
+                    results.push({
+                        type: 'family',
+                        id: fm.npcId,
+                        name: fNpc.firstName + ' ' + (fNpc.lastName || ''),
+                        role: fm.role,
+                        condition: fCond,
+                        conditionDetail: fInjured ? (fNpc.injurySeverity || fNpc.injuryType || 'injured') : (fNpc.illness || 'sick'),
+                        health: fNpc.health || 50,
+                        severity: fSev
+                    });
+                }
+            }
+        }
+
+        // Check personal guards (NPC illness/injury system)
+        for (var g = 0; g < (player.guards || []).length; g++) {
+            var guard = player.guards[g];
+            if (!guard.personId) continue;
+            var gNpc = Engine.findPerson(guard.personId);
+            if (!gNpc || !gNpc.alive || gNpc.townId !== player.townId) continue;
+            var gInjured = gNpc.injured || (gNpc.injuries && gNpc.injuries.length > 0);
+            var gSick = gNpc.sick || (gNpc.illnesses && gNpc.illnesses.length > 0);
+            if (gInjured || gSick) {
+                var gCond = gInjured ? 'injured' : 'sick';
+                var gSev = 'minor';
+                if (gNpc.injuries && gNpc.injuries.length > 0) gSev = gNpc.injuries[0].severity || 'moderate';
+                else if (gNpc.illnesses && gNpc.illnesses.length > 0) gSev = gNpc.illnesses[0].severity || 'moderate';
+                else if (gNpc.injurySeverity) gSev = gNpc.injurySeverity;
+                results.push({
+                    type: 'guard',
+                    id: guard.personId,
+                    name: guard.name || gNpc.firstName,
+                    condition: gCond,
+                    conditionDetail: gInjured ? (gNpc.injurySeverity || gNpc.injuryType || 'injured') : (gNpc.illness || 'sick'),
+                    health: gNpc.health || 50,
+                    severity: gSev
+                });
+            }
+        }
+
+        return results;
+    }
+
     function tickInjuriesAndIllnesses() {
         const day = Engine.getDay();
         const rng = Engine.getRng();
@@ -17924,6 +18309,9 @@
             _marriedToRoyalChild: player._marriedToRoyalChild || null,
             _tournamentAccessDay: player._tournamentAccessDay || null,
             _marriageRankWaiver: player._marriageRankWaiver ? JSON.parse(JSON.stringify(player._marriageRankWaiver)) : null,
+            // Reputation tracking
+            _donationTracker: player._donationTracker ? JSON.parse(JSON.stringify(player._donationTracker)) : {},
+            _warContributions: player._warContributions ? JSON.parse(JSON.stringify(player._warContributions)) : {},
             // Town Reputation
             townReputation: JSON.parse(JSON.stringify(player.townReputation || {})),
             // Town Quests
@@ -18301,6 +18689,8 @@
         player._marriedToRoyalChild = data._marriedToRoyalChild || null;
         player._tournamentAccessDay = data._tournamentAccessDay || null;
         player._marriageRankWaiver = data._marriageRankWaiver || null;
+        player._donationTracker = data._donationTracker || {};
+        player._warContributions = data._warContributions || {};
         // Town Reputation
         player.townReputation = data.townReputation || {};
         // Town Quests
@@ -19902,15 +20292,16 @@
             }
         }
 
-        // Weekly: kingdom reputation decay — above 70 decays slowly, faster at higher tiers
+        // Weekly: kingdom reputation decay — above 60 decays slowly, faster at higher tiers
         if (Engine.getDay() > 0 && Engine.getDay() % 7 === 0) {
             for (var _dkId in player.reputation) {
                 var _dkRep = player.reputation[_dkId];
-                if (_dkRep > 70) {
-                    var _decay = 0.15;
-                    if (_dkRep > 80) _decay += 0.10;
-                    if (_dkRep > 90) _decay += 0.15;
-                    player.reputation[_dkId] = Math.max(70, _dkRep - _decay);
+                if (_dkRep > 60) {
+                    var _decay = 0.14;  // ~0.02/day base for 60-70
+                    if (_dkRep > 70) _decay += 0.07;  // ~0.03/day for 70-80
+                    if (_dkRep > 80) _decay += 0.10;  // ~0.044/day for 80-90
+                    if (_dkRep > 90) _decay += 0.14;  // ~0.064/day for 90+
+                    player.reputation[_dkId] = Math.max(60, _dkRep - _decay);
                 }
             }
         }
@@ -20759,10 +21150,21 @@
         if (!player.kingdomSalesLedger) player.kingdomSalesLedger = [];
         player.kingdomSalesLedger.push({ day: Engine.getDay(), kingdomId: kingdomId, resourceId: resourceId, qty: qty, totalPrice: totalPrice });
 
-        // Military goods during war bonuses
+        // Military goods during war bonuses + active war participation tracking
         if (res && res.category === 'military' && kingdom.atWar && kingdom.atWar.size > 0) {
             player.hasSuppliedMilitary = true;
             player.reputation[kingdomId] = Math.min(100, (player.reputation[kingdomId] || 50) + 0.1);
+            // Track war contribution for active participation bonus (+3 rep at threshold)
+            if (!player._warContributions) player._warContributions = {};
+            if (!player._warContributions[kingdomId]) player._warContributions[kingdomId] = { qty: 0, bonusAwarded: false };
+            player._warContributions[kingdomId].qty += qty;
+            // Award +3 participation bonus at 50+ military items sold
+            if (player._warContributions[kingdomId].qty >= 50 && !player._warContributions[kingdomId].bonusAwarded) {
+                player._warContributions[kingdomId].bonusAwarded = true;
+                player.reputation[kingdomId] = Math.min(100, (player.reputation[kingdomId] || 50) + 3);
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚔️ Active war participant! +3 kingdom reputation', 'success');
+                Engine.logEvent('⚔️ ' + player.fullName + ' recognized as active war participant by ' + kingdom.name + ' (+3 rep)');
+            }
         }
 
         // Track gold earned in kingdom
@@ -22201,9 +22603,9 @@
     // Central function for kingdom reputation changes — applies royal marriage bonus
     function modifyKingdomReputation(kingdomId, amount) {
         if (!kingdomId || !amount) return;
-        // Royal family marriage bonus: +25% to positive kingdom rep gains
+        // Royal family marriage bonus: +10% to positive kingdom rep gains
         if (amount > 0 && player._marriedToRoyalChild && player._marriedToRoyalChild.kingdomId === kingdomId) {
-            amount *= 1.25;
+            amount *= 1.10;
         }
         player.reputation[kingdomId] = Math.max(0, Math.min(100, (player.reputation[kingdomId] || 50) + amount));
     }
@@ -23458,9 +23860,9 @@
         // Apply town reputation boost
         modifyTownReputation(quest.townId, repBoost);
 
-        // Apply 1/4 kingdom reputation boost
+        // Apply 1/8 kingdom reputation boost (town quests primarily boost town standing)
         if (town && town.kingdomId && player.reputation) {
-            var kingdomRepBoost = repBoost / 4;
+            var kingdomRepBoost = repBoost / 8;
             player.reputation[town.kingdomId] = Math.max(0, Math.min(100, (player.reputation[town.kingdomId] || 50) + kingdomRepBoost));
         }
 
@@ -24256,9 +24658,10 @@
             if (kingdom) kingdom.gold = (kingdom.gold || 0) + quest.requirements.gold;
         }
 
-        // Grant rewards
+        // Grant rewards (kingdom rep reduced by 40% — quests shouldn't be the dominant rep source)
         player.gold += quest.rewards.gold;
-        modifyKingdomReputation(kingdomId, quest.rewards.kingdomRep);
+        var _nerfedRep = Math.max(1, Math.round(quest.rewards.kingdomRep * 0.6));
+        modifyKingdomReputation(kingdomId, _nerfedRep);
         var kingdom2 = null;
         try { kingdom2 = Engine.findKingdom(kingdomId); } catch(e) {}
         if (kingdom2 && kingdom2.king) {
@@ -24308,9 +24711,9 @@
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('💰 Granted: Tax Exemption (30 days)', 'success');
                 break;
             case 'title_boost':
-                // +5 toward next rank reputation
-                modifyKingdomReputation(kingdomId, 5);
-                if (typeof UI !== 'undefined' && UI.toast) UI.toast('👑 Title Boost: +5 kingdom reputation', 'success');
+                // +3 toward next rank reputation
+                modifyKingdomReputation(kingdomId, 3);
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('👑 Title Boost: +3 kingdom reputation', 'success');
                 break;
             case 'royal_decree':
                 if (!player.guaranteedPetition) player.guaranteedPetition = {};
@@ -24339,8 +24742,8 @@
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('📊 Trade Monopoly granted (60 days)', 'success');
                 break;
             case 'noble_endorsement':
-                modifyKingdomReputation(kingdomId, 8);
-                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🏅 Noble Endorsement: +8 kingdom reputation', 'success');
+                modifyKingdomReputation(kingdomId, 5);
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🏅 Noble Endorsement: +5 kingdom reputation', 'success');
                 break;
             case 'crown_estate':
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('🏰 Crown Estate: Property rights expanded', 'success');
@@ -24460,9 +24863,7 @@
         // Look up mechanics config
         var mech = (typeof ACTION_QUEST_MECHANICS !== 'undefined') ? ACTION_QUEST_MECHANICS[actionType] : null;
         if (!mech) {
-            // Fallback for unknown action types — instant complete (legacy behavior)
-            trackKQActionDone(questId);
-            return { success: true, message: 'Action completed.' };
+            return { success: false, message: '⚠️ No mechanic defined for action type: ' + actionType + '. This quest action is not yet available.' };
         }
 
         // Check location requirement
@@ -36268,9 +36669,9 @@
         var npcOccupation = npc ? (npc.occupation || 'commoner') : 'commoner';
         var npcGender = npc ? (npc.sex === 'F' ? 'she' : 'he') : 'they';
 
-        // Small rep gain from socializing
+        // Tiny rep gain from socializing (reduced to prevent passive accumulation)
         if (kingdom) {
-            player.reputation[kingdom.id] = Math.min(100, (player.reputation[kingdom.id] || 50) + 0.05);
+            player.reputation[kingdom.id] = Math.min(100, (player.reputation[kingdom.id] || 50) + 0.01);
         }
 
         // 25% useful info, 75% flavor
@@ -41372,7 +41773,7 @@
                 if (day % 30 === 0) {
                     var kingdoms = Engine.getKingdoms();
                     for (var ki = 0; ki < kingdoms.length; ki++) {
-                        player.reputation[kingdoms[ki].id] = Math.min(100, (player.reputation[kingdoms[ki].id] || 50) + 3);
+                        player.reputation[kingdoms[ki].id] = Math.min(100, (player.reputation[kingdoms[ki].id] || 50) + 1);
                     }
                 }
             }
@@ -44118,7 +44519,7 @@
 
         if (roll < 0.30) {
             // EVENT: Reputation boost — uncovered plot against the kingdom
-            var repBoost = rng.randInt(5, 12);
+            var repBoost = rng.randInt(3, 8);
             player.reputation[kingdom.id] = Math.min(100, (player.reputation[kingdom.id] || 50) + repBoost);
             if (kingdom.king) modifyRelationship(kingdom.king.id, rng.randInt(3, 8), 'spy_success');
             modifyTownReputation(town.id, rng.randInt(2, 5));
@@ -44639,7 +45040,7 @@
             // Reputation boosts
             var town = Engine.findTown(player.townId);
             if (town) {
-                player.reputation[town.kingdomId] = Math.min(100, (player.reputation[town.kingdomId] || 50) + 8);
+                player.reputation[town.kingdomId] = Math.min(100, (player.reputation[town.kingdomId] || 50) + 4);
                 modifyTownReputation(town.id, 10);
             }
             // King relationship boost
@@ -44657,7 +45058,7 @@
             // Show tournament feast UI
             _showTournamentFeast(prize, town, kingdom);
 
-            return { success: true, message: '🏆 TOURNAMENT CHAMPION! Won all 3 rounds! Prize: ' + prize + 'g. Kingdom reputation +8, King relationship +15. (Combat Level: ' + combatLvl + ')' };
+            return { success: true, message: '🏆 TOURNAMENT CHAMPION! Won all 3 rounds! Prize: ' + prize + 'g. Kingdom reputation +4, King relationship +15. (Combat Level: ' + combatLvl + ')' };
         }
 
         // Won round but tournament continues — player can choose to continue
@@ -46393,6 +46794,8 @@
         visitClinic,
         selfTreat,
         treatOther,
+        treatCompanion,
+        getTreatableCompanions,
         inflictRandomInjury,
         inflictRandomIllness,
         inflictSpecificIllness,
