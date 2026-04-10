@@ -2193,6 +2193,30 @@
         if (person.occupation === 'noble' || person.occupation === 'soldier') {
             return { success: false, message: 'Cannot hire nobles or soldiers.' };
         }
+        // Cannot hire anyone with a nobility rank (Minor Noble = 4+)
+        if (person.socialRank) {
+            var _npcMaxRank = 0;
+            if (typeof person.socialRank === 'object') {
+                for (var _srk in person.socialRank) { if ((person.socialRank[_srk] || 0) > _npcMaxRank) _npcMaxRank = person.socialRank[_srk]; }
+            } else if (typeof person.socialRank === 'number') {
+                _npcMaxRank = person.socialRank;
+            }
+            if (_npcMaxRank >= 4) {
+                var _npcRankName = (CONFIG.SOCIAL_RANKS[_npcMaxRank] || {}).name || 'Noble';
+                return { success: false, message: 'Cannot hire ' + person.firstName + ' — they hold the rank of ' + _npcRankName + '.' };
+            }
+            // Cannot hire anyone above your own rank
+            var _playerMaxRank = 0;
+            for (var _prk in player.socialRank) { if ((player.socialRank[_prk] || 0) > _playerMaxRank) _playerMaxRank = player.socialRank[_prk]; }
+            if (_npcMaxRank > _playerMaxRank) {
+                var _npcRName = (CONFIG.SOCIAL_RANKS[_npcMaxRank] || {}).name || 'higher rank';
+                return { success: false, message: 'Cannot hire ' + person.firstName + ' — they outrank you (' + _npcRName + ').' };
+            }
+        }
+        // Block hiring kings explicitly
+        if (person.isKing || person.occupation === 'king') {
+            return { success: false, message: 'You cannot hire a king as a worker!' };
+        }
 
         // Check rank-based worker limit
         const town = Engine.findTown(player.townId);
@@ -20388,36 +20412,40 @@
     // ========================================================
     function getForeignNobleStatus(kingdomId) {
         if (!kingdomId) return false;
-        // Check if player is Minor Noble+ (rank 4+) in ANY kingdom
-        const activeWars = (typeof Engine !== 'undefined' && Engine.getActiveWars) ? Engine.getActiveWars() : {};
-        var bestStatus = null; // 'minor_noble' or 'lord'
-        for (const kId in player.socialRank) {
-            if ((player.socialRank[kId] || 0) < 4) continue; // Not Minor Noble+
-            if (kId === kingdomId) continue; // Same kingdom
-            // Check target kingdom is not at war with our kingdom
-            var atWar = false;
-            for (var wId in activeWars) {
-                var w = activeWars[wId];
-                if (!w.active && w.active !== undefined) continue;
-                var sides = [w.kingdomA, w.kingdomB, w.attackerId, w.defenderId].filter(Boolean);
-                if (sides.includes(kId) && sides.includes(kingdomId)) { atWar = true; break; }
-            }
-            if (atWar) continue;
-            var rank = player.socialRank[kId];
-            if (rank >= 5 && (player.socialRank[kingdomId] || 0) < 2) {
-                bestStatus = 'lord'; // Lord+ = Burgher-level privileges
-            } else if (rank >= 4 && !bestStatus && (player.socialRank[kingdomId] || 0) < 1) {
-                bestStatus = 'minor_noble'; // Minor Noble = Citizen-level privileges
-            }
+        // If the player already has rank 4+ in this kingdom, no need for foreign status
+        if ((player.socialRank[kingdomId] || 0) >= 4) return false;
+        // Check if player is Minor Noble+ (rank 4+) in ANY other kingdom
+        var homeRank = 0;
+        var homeKingdomId = null;
+        for (var kId in player.socialRank) {
+            if (kId === kingdomId) continue;
+            var r = player.socialRank[kId] || 0;
+            if (r > homeRank) { homeRank = r; homeKingdomId = kId; }
         }
-        return bestStatus || false;
+        if (homeRank < 4) return false; // Not noble anywhere
+
+        // Check if target kingdom is at war with the kingdom where we hold noble rank
+        var atWar = false;
+        var activeWars = (typeof Engine !== 'undefined' && Engine.getActiveWars) ? Engine.getActiveWars() : {};
+        for (var wId in activeWars) {
+            var w = activeWars[wId];
+            if (!w.active && w.active !== undefined) continue;
+            var sides = [w.kingdomA, w.kingdomB, w.attackerId, w.defenderId].filter(Boolean);
+            if (sides.includes(homeKingdomId) && sides.includes(kingdomId)) { atWar = true; break; }
+        }
+
+        if (atWar) {
+            return homeRank >= 5 ? 'enemy_noble' : 'enemy_minor_noble';
+        }
+        return homeRank >= 5 ? 'foreign_noble' : 'foreign_minor_noble';
     }
 
     // Returns the effective privilege level granted by foreign noble status
     function getForeignNoblePrivilegeLevel(kingdomId) {
         var status = getForeignNobleStatus(kingdomId);
-        if (status === 'lord') return 2; // Burgher-level
-        if (status === 'minor_noble') return 1; // Citizen-level
+        if (status === 'foreign_noble') return 2; // Burgher-level
+        if (status === 'foreign_minor_noble') return 1; // Citizen-level
+        if (status === 'enemy_noble' || status === 'enemy_minor_noble') return 0; // No privileges in enemy kingdom
         return 0;
     }
 
@@ -20469,7 +20497,7 @@
 
         // Try to get a patron kingdom's king to pay
         var activeWars = (typeof Engine !== 'undefined' && Engine.getActiveWars) ? Engine.getActiveWars() : {};
-        var minPatronRank = getForeignNobleStatus(kingdomId) === 'lord' ? 5 : 4;
+        var minPatronRank = (getForeignNobleStatus(kingdomId) === 'foreign_noble') ? 5 : 4;
         for (var kId in player.socialRank) {
             if ((player.socialRank[kId] || 0) < minPatronRank) continue;
             if (kId === kingdomId) continue;

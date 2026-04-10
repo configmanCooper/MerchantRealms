@@ -13617,6 +13617,16 @@ window.UI = (function () {
             const rankIdx = (typeof Player !== 'undefined' && Player.socialRank) ? (Player.socialRank[k.id] || 0) : 0;
             const rank = CONFIG.SOCIAL_RANKS[rankIdx] || CONFIG.SOCIAL_RANKS[0];
 
+            // Foreign noble status for non-home kingdoms
+            var foreignNobleStatus = '';
+            if (!isHome && typeof Player !== 'undefined' && Player.getForeignNobleStatus) {
+                var fns = Player.getForeignNobleStatus(k.id);
+                if (fns === 'foreign_minor_noble') foreignNobleStatus = '<span style="color:#8ba;font-size:0.75rem;"> (Foreign Minor Noble)</span>';
+                else if (fns === 'foreign_noble') foreignNobleStatus = '<span style="color:#8ba;font-size:0.75rem;"> (Foreign Noble)</span>';
+                else if (fns === 'enemy_minor_noble') foreignNobleStatus = '<span style="color:#c44e52;font-size:0.75rem;"> (Enemy Minor Noble)</span>';
+                else if (fns === 'enemy_noble') foreignNobleStatus = '<span style="color:#c44e52;font-size:0.75rem;"> (Enemy Noble)</span>';
+            }
+
             // Laws
             let lawsHtml = '';
             if (k.laws) {
@@ -13727,7 +13737,7 @@ window.UI = (function () {
                 ${licenseBtnHtml}
                 ${isHome ? '<div class="kc-home-badge">★ YOUR HOME</div>' : ''}
                 <div class="kc-row" style="margin-top:4px;font-size:0.8rem;">
-                    <span style="color:#aaa;">Status:</span> ${rank.icon} <span style="color:#d4af37;">${rank.name}</span>
+                    <span style="color:#aaa;">Status:</span> ${rank.icon} <span style="color:#d4af37;">${rank.name}</span>${foreignNobleStatus}
                 </div>
                 <div style="margin-top:2px;">
                     <div style="display:flex;justify-content:space-between;font-size:0.75rem;margin-bottom:2px;">
@@ -21358,6 +21368,73 @@ window.UI = (function () {
         }
 
         html += '</div></div>';
+
+        // ── KINGDOM NOBLES PANEL ──
+        html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:10px;margin-bottom:10px;">';
+        html += '<div style="font-size:0.9rem;font-weight:bold;color:var(--gold);margin-bottom:8px;">🏛️ Kingdom Nobles</div>';
+        try {
+            var _allPeople = Engine.getPeople ? Engine.getPeople() : [];
+            var _nobles = [];
+            for (var _ni = 0; _ni < _allPeople.length; _ni++) {
+                var _np = _allPeople[_ni];
+                if (!_np.socialRank || !_np.alive) continue;
+                var _npRank = 0;
+                if (typeof _np.socialRank === 'object') {
+                    _npRank = _np.socialRank[citizenKingdomId] || 0;
+                } else if (typeof _np.socialRank === 'number') {
+                    _npRank = _np.socialRank;
+                }
+                if (_npRank >= 4) {
+                    _nobles.push({ person: _np, rank: _npRank });
+                }
+            }
+            // Sort by rank descending, then name
+            _nobles.sort(function(a, b) {
+                if (b.rank !== a.rank) return b.rank - a.rank;
+                return (a.person.firstName || '').localeCompare(b.person.firstName || '');
+            });
+            if (_nobles.length === 0) {
+                html += '<div style="font-size:0.75rem;color:#888;font-style:italic;">No other nobles found in this kingdom.</div>';
+            } else {
+                html += '<div style="max-height:200px;overflow-y:auto;">';
+                for (var _nbi = 0; _nbi < _nobles.length; _nbi++) {
+                    var _nb = _nobles[_nbi];
+                    var _nbPerson = _nb.person;
+                    var _nbRankDef = CONFIG.SOCIAL_RANKS[_nb.rank] || CONFIG.SOCIAL_RANKS[4];
+                    var _nbRel = Player.getRelationship ? Player.getRelationship(_nbPerson.id) : { level: 0 };
+                    var _nbRelLvl = _nbRel.level || 0;
+                    var _nbRelColor = _nbRelLvl >= 60 ? '#55a868' : _nbRelLvl >= 30 ? '#ccb974' : _nbRelLvl >= 0 ? '#aaa' : '#c44e52';
+                    var _nbTown = _nbPerson.townId ? Engine.findTown(_nbPerson.townId) : null;
+                    var _sameLocation = _nbPerson.townId === Player.townId;
+                    var _isKing = _nb.rank >= 7 || _nbPerson.isKing;
+                    html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;margin-bottom:4px;background:rgba(0,0,0,0.15);border-radius:6px;border-left:3px solid ' + (_sameLocation ? 'var(--gold)' : 'transparent') + ';">';
+                    html += '<div style="flex:1;min-width:0;">';
+                    html += '<div style="font-size:0.78rem;font-weight:bold;color:#ddd;">' + (_nbRankDef.icon || '👑') + ' ' + (_nbPerson.firstName || '') + ' ' + (_nbPerson.lastName || '') + '</div>';
+                    html += '<div style="font-size:0.68rem;color:#999;">' + (_nbRankDef.name || 'Noble');
+                    if (_nbTown) html += ' — ' + _nbTown.name;
+                    if (_sameLocation) html += ' <span style="color:var(--gold);">📍 Here</span>';
+                    html += '</div>';
+                    html += '<div style="font-size:0.65rem;color:' + _nbRelColor + ';">Relationship: ' + Math.floor(_nbRelLvl) + '/100</div>';
+                    html += '</div>';
+                    // Actions if in same location
+                    if (_sameLocation) {
+                        html += '<div style="display:flex;gap:4px;flex-shrink:0;">';
+                        var _nbSafeId = String(_nbPerson.id).replace(/'/g, "\\'");
+                        html += '<button class="btn-medieval" onclick="(function(){var r=Player.interactWithNPC(\'' + _nbSafeId + '\',\'small_talk\');UI.toast(r&&r.message||\'Spoke with noble.\',r&&r.success?\'success\':\'warning\');UI.openNobilityDialog();})()" style="font-size:0.6rem;padding:3px 6px;" title="Small Talk">💬</button>';
+                        html += '<button class="btn-medieval" onclick="(function(){UI.closeModal();UI.openGiftDialog(\'' + _nbSafeId + '\');})()" style="font-size:0.6rem;padding:3px 6px;" title="Give Gift">🎁</button>';
+                        if (!_isKing) {
+                            html += '<button class="btn-medieval" onclick="(function(){UI.closeModal();UI.openSchemesDialog();})()" style="font-size:0.6rem;padding:3px 6px;" title="Scheme Against">🗡️</button>';
+                        }
+                        html += '</div>';
+                    }
+                    html += '</div>';
+                }
+                html += '</div>';
+            }
+        } catch (e) {
+            html += '<div style="font-size:0.75rem;color:#888;">Could not load nobles list.</div>';
+        }
+        html += '</div>';
 
         // ── ROYAL DIRECTIVES (Kingdom Quests) ──
         html += _buildRoyalDirectivesSection(citizenKingdomId, day);
@@ -29149,6 +29226,8 @@ window.UI = (function () {
         _nobilityProposeLaw,
         _nobilityProposeAction,
         _switchProposeActionTab,
+        // Schemes
+        openSchemesDialog,
         // Noble Council Voting
         openVotingDialog,
         openActiveVotesDialog,
