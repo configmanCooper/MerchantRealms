@@ -5083,7 +5083,19 @@
                         var bConsumes = bBt ? getBuildingConsumedGoods(bBt) : {};
                         var aNeeds = aConsumes[o.good] ? 1 : 0;
                         var bNeeds = bConsumes[o.good] ? 1 : 0;
-                        return bNeeds - aNeeds; // buildings that consume this good first
+                        if (aNeeds !== bNeeds) return bNeeds - aNeeds;
+                        // Both consume this good — prioritize buildings stalled due to lack of it
+                        if (aNeeds && bNeeds) {
+                            var aStored = (a.inventory && a.inventory[o.good]) || 0;
+                            var bStored = (b.inventory && b.inventory[o.good]) || 0;
+                            var aPerCycle = aConsumes[o.good] || 1;
+                            var bPerCycle = bConsumes[o.good] || 1;
+                            var aCycles = aStored / aPerCycle;
+                            var bCycles = bStored / bPerCycle;
+                            // Fewer cycles = more urgent (stalled buildings first)
+                            return aCycles - bCycles;
+                        }
+                        return 0;
                     });
                     for (var _tbi = 0; _tbi < _townBuildings.length && _storeRemaining > 0; _tbi++) {
                         var _tBld = _townBuildings[_tbi];
