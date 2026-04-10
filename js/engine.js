@@ -834,6 +834,24 @@
     // ========================================================
     // §7  KINGDOM GENERATION
     // ========================================================
+    // Expand a list of good IDs to include all quality tiers.
+    // e.g. ['swords'] → ['swords', 'swords_good', 'swords_excellent']
+    function _expandGoodsToTiers(goodsList) {
+        if (!goodsList || !goodsList.length) return goodsList;
+        var expanded = goodsList.slice();
+        var resTypes = CONFIG.RESOURCE_TYPES;
+        for (var i = 0; i < goodsList.length; i++) {
+            var baseId = goodsList[i];
+            for (var rk in resTypes) {
+                var rt = resTypes[rk];
+                if (rt.baseItem === baseId && expanded.indexOf(rt.id) === -1) {
+                    expanded.push(rt.id);
+                }
+            }
+        }
+        return expanded;
+    }
+
     function generateKingdoms(rng) {
         const n = CONFIG.NUM_KINGDOMS;
         const namePool = rng.shuffle([...NAMES.kingdoms]);
@@ -843,7 +861,7 @@
             const bannableGoods = ['swords', 'armor', 'wine', 'jewelry', 'horses', 'blasting_powder', 'demolition_tools'];
             const shuffledBannable = rng.shuffle([...bannableGoods]);
             const numBanned = rng.randInt(0, CONFIG.MAX_BANNED_GOODS);
-            const bannedGoods = shuffledBannable.slice(0, numBanned);
+            const bannedGoods = _expandGoodsToTiers(shuffledBannable.slice(0, numBanned));
 
             // Generate goods-specific taxes (1-3 goods taxed)
             const taxableGoods = ['swords', 'armor', 'wine', 'jewelry', 'horses', 'cloth', 'tools', 'salt'];
@@ -858,7 +876,7 @@
             const restrictableGoods = taxableGoods.filter(g => !bannedGoods.includes(g));
             const shuffledRestrictable = rng.shuffle([...restrictableGoods]);
             const numRestricted = rng.randInt(CONFIG.RESTRICTED_GOODS_COUNT_MIN, CONFIG.RESTRICTED_GOODS_COUNT_MAX);
-            const restrictedGoods = shuffledRestrictable.slice(0, numRestricted);
+            const restrictedGoods = _expandGoodsToTiers(shuffledRestrictable.slice(0, numRestricted));
 
             // Generate king personality
             const generosity = rng.pick(['generous', 'fair', 'miserly']);
@@ -9675,7 +9693,7 @@
             description: 'Prohibit sale of weapons to protect kingdom security',
             icon: '⚔️', effect: function(k) {
                 if (k.laws && k.laws.bannedGoods) {
-                    var weapons = ['swords', 'armor', 'bows'];
+                    var weapons = _expandGoodsToTiers(['swords', 'armor', 'bows']);
                     for (var i = 0; i < weapons.length; i++) {
                         if (k.laws.bannedGoods.indexOf(weapons[i]) < 0) k.laws.bannedGoods.push(weapons[i]);
                     }
@@ -9689,7 +9707,7 @@
             description: 'Allow free trade of weapons again',
             icon: '🔓', effect: function(k) {
                 if (k.laws && k.laws.bannedGoods) {
-                    var weapons = ['swords', 'armor', 'bows'];
+                    var weapons = _expandGoodsToTiers(['swords', 'armor', 'bows']);
                     k.laws.bannedGoods = k.laws.bannedGoods.filter(function(g) { return weapons.indexOf(g) < 0; });
                 }
             },
@@ -10313,7 +10331,7 @@
         } else if (action === 'set_banned_goods') {
             var bK = findKingdom(args.kingdomId);
             var newBanned = args.bannedGoods;
-            if (bK && newBanned) return function() { bK.laws.bannedGoods = newBanned; };
+            if (bK && newBanned) return function() { bK.laws.bannedGoods = _expandGoodsToTiers(newBanned); };
         }
 
         return null;
@@ -14431,7 +14449,10 @@
         if (k.atWar.size > 0) {
             // Wartime: consider restricting weapon/armor exports
             if (!k.laws.bannedGoods.includes('swords') && !k.laws.restrictedGoods.includes('swords') && rngLocal.chance(0.15)) {
-                k.laws.restrictedGoods.push('swords');
+                var _swordTiers = _expandGoodsToTiers(['swords']);
+                for (var _sti = 0; _sti < _swordTiers.length; _sti++) {
+                    if (k.laws.restrictedGoods.indexOf(_swordTiers[_sti]) < 0) k.laws.restrictedGoods.push(_swordTiers[_sti]);
+                }
                 logEvent(`${k.name} has restricted sword exports during wartime!`);
             }
             // Increase military goods taxes
@@ -21234,7 +21255,10 @@
                         if (rng.chance(monopolyChance)) {
                             var sgCurrentBanned = kingdom.laws.bannedGoods || [];
                             if (sgCurrentBanned.indexOf(strat.good) === -1) {
-                                sgCurrentBanned.push(strat.good);
+                                var _sgExpanded = _expandGoodsToTiers([strat.good]);
+                                for (var _sge = 0; _sge < _sgExpanded.length; _sge++) {
+                                    if (sgCurrentBanned.indexOf(_sgExpanded[_sge]) === -1) sgCurrentBanned.push(_sgExpanded[_sge]);
+                                }
                                 kingdom.laws.bannedGoods = sgCurrentBanned;
                                 logEvent('\uD83D\uDC51\uD83D\uDEAB ' + sgKingName + ' of ' + kingdom.name + ' has declared a royal monopoly on ' + strat.good + '! Private trade in ' + strat.good + ' is now banned.', {
                                     type: 'royal_monopoly', cause: sgKingName + ' seized control of ' + strat.good + ' trade after building production',
@@ -21658,7 +21682,7 @@
                     description: banDesc.join('; ') || 'Adjust trade bans',
                     details: 'Current bans: ' + (_prevBanned.length > 0 ? _prevBanned.join(', ') : 'none') + '. Proposed: ' + (_newBanned.length > 0 ? _newBanned.join(', ') : 'none'),
                     conviction: _addedBans.some(function(g) { return ['swords', 'armor', 'bows', 'arrows'].indexOf(g) >= 0; }) ? 0.6 : 0.35,
-                    execute: (function(kRef, nb) { return function() { kRef.laws.bannedGoods = nb; }; })(kingdom, _newBanned)
+                    execute: (function(kRef, nb) { return function() { kRef.laws.bannedGoods = _expandGoodsToTiers(nb); }; })(kingdom, _newBanned)
                 });
             } else if (hasSpecialLaw(kingdom, 'noble_council')) {
                 var _ncPrevBanned = kingdom.laws.bannedGoods ? kingdom.laws.bannedGoods.slice() : [];
@@ -21672,11 +21696,11 @@
                 initiateCouncilVote(kingdom, ncBanDesc.join('; ') || 'Adjust trade bans',
                     'Current bans: ' + (_ncPrevBanned.length > 0 ? _ncPrevBanned.join(', ') : 'none') + '. Proposed: ' + (_ncNewBanned.length > 0 ? _ncNewBanned.join(', ') : 'none'),
                     ncBanType,
-                    (function(kRef, nb) { return function() { kRef.laws.bannedGoods = nb; }; })(kingdom, _ncNewBanned),
+                    (function(kRef, nb) { return function() { kRef.laws.bannedGoods = _expandGoodsToTiers(nb); }; })(kingdom, _ncNewBanned),
                     { action: 'set_banned_goods', args: { kingdomId: kingdom.id, bannedGoods: _ncNewBanned } }
                 );
             } else {
-                kingdom.laws.bannedGoods = currentBanned;
+                kingdom.laws.bannedGoods = _expandGoodsToTiers(currentBanned);
             }
         }
     }
@@ -35316,9 +35340,9 @@
                 tournament: k.tournament || null,
                 laws: k.laws ? {
                     ...k.laws,
-                    bannedGoods: k.laws.bannedGoods || [],
+                    bannedGoods: _expandGoodsToTiers(k.laws.bannedGoods || []),
                     goodsTaxes: k.laws.goodsTaxes || {},
-                    restrictedGoods: k.laws.restrictedGoods || [],
+                    restrictedGoods: _expandGoodsToTiers(k.laws.restrictedGoods || []),
                 } : { bannedGoods: [], tradeTariff: 0.05, conscription: false, guildRestrictions: false, goodsTaxes: {}, restrictedGoods: [], specialLaws: [] },
                 taxRevenue: k.taxRevenue || 0,
                 guardBudget: k.guardBudget || 0.15,
