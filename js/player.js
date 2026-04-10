@@ -18569,6 +18569,7 @@
             _kqActionAttempts: JSON.parse(JSON.stringify(player._kqActionAttempts || {})),
             _kqStepProgress: JSON.parse(JSON.stringify(player._kqStepProgress || {})),
             _kqCompletedTotal: player._kqCompletedTotal || 0,
+            _kqRejections: player._kqRejections || [],
             _corruptionPoints: player._corruptionPoints || 0,
             _corruptionTrait: player._corruptionTrait || false,
         };
@@ -18677,6 +18678,7 @@
         player._kqActionAttempts = data._kqActionAttempts ? JSON.parse(JSON.stringify(data._kqActionAttempts)) : {};
         player._kqStepProgress = data._kqStepProgress ? JSON.parse(JSON.stringify(data._kqStepProgress)) : {};
         player._kqCompletedTotal = data._kqCompletedTotal || 0;
+        player._kqRejections = data._kqRejections || [];
         player._corruptionPoints = data._corruptionPoints || 0;
         player._corruptionTrait = data._corruptionTrait || false;
         player.alive = data.alive != null ? data.alive : true;
@@ -24696,6 +24698,14 @@
         }
         if (!quest) return { success: false, message: 'Quest not found.' };
 
+        // L1: Rejection cooldown — track rejections, double penalty after 2 in 30 days
+        if (!player._kqRejections) player._kqRejections = [];
+        // Prune old rejections (>30 days)
+        var _now = Engine.getDay();
+        player._kqRejections = player._kqRejections.filter(function(r) { return _now - r < 30; });
+        var _rejectCount = player._kqRejections.length;
+        var _cooldownMult = _rejectCount >= 2 ? 2.0 : 1.0;
+
         // Calculate rejection penalty
         var basePenalty = quest.rejectionPenalty || { rep: 2, kingRel: 3 };
         var rankMult = playerRank >= 6 ? 2.5 : playerRank >= 5 ? 1.5 : 1.0;
@@ -24709,18 +24719,22 @@
 
         var personalMult = fromPersonal ? 2.0 : 1.0;
 
-        var repLoss = Math.ceil(basePenalty.rep * rankMult * urgencyMult * tempMult * personalMult);
-        var relLoss = Math.ceil(basePenalty.kingRel * rankMult * urgencyMult * tempMult * personalMult);
+        var repLoss = Math.ceil(basePenalty.rep * rankMult * urgencyMult * tempMult * personalMult * _cooldownMult);
+        var relLoss = Math.ceil(basePenalty.kingRel * rankMult * urgencyMult * tempMult * personalMult * _cooldownMult);
 
         modifyKingdomReputation(kingdomId, -repLoss);
         if (kingdom && kingdom.king) {
             modifyRelationship(kingdom.king, -relLoss);
         }
 
+        // Track this rejection
+        player._kqRejections.push(_now);
+
         if (fromPersonal) kqData.personalAssignment = null;
 
+        var _cooldownWarn = _rejectCount >= 1 ? ' ⚠️ Frequent rejections increase penalties!' : '';
         Engine.logEvent('❌ Rejected kingdom quest: ' + quest.title + ' (-' + repLoss + ' rep, -' + relLoss + ' king rel)');
-        return { success: true, message: 'Quest rejected. (-' + repLoss + ' kingdom rep, -' + relLoss + ' king relationship)' };
+        return { success: true, message: 'Quest rejected. (-' + repLoss + ' kingdom rep, -' + relLoss + ' king relationship)' + _cooldownWarn };
     }
 
     function abandonKingdomQuest(questId, kingdomId) {
@@ -24795,9 +24809,29 @@
         }
 
         // Grant rewards (kingdom rep reduced by 40% — quests shouldn't be the dominant rep source)
-        player.gold += quest.rewards.gold;
+        var _bonusGold = 0;
+        var _bonusRep = 0;
+        var _bonusReasons = [];
+
+        // M6: Scaled rewards — bonus for clean completion (no failed action attempts)
+        var _attempts = player._kqActionAttempts ? (player._kqActionAttempts[questId] || 0) : 0;
+        if (_attempts <= 1) {
+            _bonusGold += Math.round(quest.rewards.gold * 0.25);
+            _bonusRep += 1;
+            _bonusReasons.push('🎯 Flawless execution (+25% gold, +1 rep)');
+        }
+        // Bonus for completing well before deadline (>50% time remaining)
+        var _daysUsed = (Engine.getDay() - (quest.acceptedDay || quest.issuedDay || 0));
+        var _totalDays = (quest.deadlineDay || 0) - (quest.acceptedDay || quest.issuedDay || 0);
+        if (_totalDays > 0 && _daysUsed < _totalDays * 0.5) {
+            _bonusGold += Math.round(quest.rewards.gold * 0.15);
+            _bonusRep += 1;
+            _bonusReasons.push('⚡ Swift completion (+15% gold, +1 rep)');
+        }
+
+        player.gold += quest.rewards.gold + _bonusGold;
         var _nerfedRep = Math.max(1, Math.round(quest.rewards.kingdomRep * 0.6));
-        modifyKingdomReputation(kingdomId, _nerfedRep);
+        modifyKingdomReputation(kingdomId, _nerfedRep + _bonusRep);
         var kingdom2 = null;
         try { kingdom2 = Engine.findKingdom(kingdomId); } catch(e) {}
         if (kingdom2 && kingdom2.king) {
@@ -24815,8 +24849,8 @@
         quest.completedDay = Engine.getDay();
         kqData.active.splice(idx, 1);
         kqData.completed.push(quest);
-        // Keep only last 20
-        if (kqData.completed.length > 20) kqData.completed = kqData.completed.slice(-20);
+        // Keep only last 50 for history
+        if (kqData.completed.length > 50) kqData.completed = kqData.completed.slice(-50);
 
         // Clean up tracking
         delete player._kqVisitedTowns[questId];
@@ -24829,10 +24863,11 @@
         // L6: Quest chains — completing certain quests unlocks follow-up directives
         var _chainFollowUp = _checkQuestChain(quest, kingdomId);
 
-        Engine.logEvent('✅ Completed kingdom quest: ' + quest.title + ' (+' + quest.rewards.gold + 'g, +' + quest.rewards.kingdomRep + ' rep)');
+        Engine.logEvent('✅ Completed kingdom quest: ' + quest.title + ' (+' + (quest.rewards.gold + _bonusGold) + 'g, +' + (_nerfedRep + _bonusRep) + ' rep)');
+        var _bonusMsg = _bonusReasons.length > 0 ? ' ' + _bonusReasons.join(' ') : '';
         return {
             success: true,
-            message: '✅ Quest complete: ' + quest.title + '! Earned ' + quest.rewards.gold + 'g, +' + quest.rewards.kingdomRep + ' rep, +' + quest.rewards.kingRelationship + ' king rel' + (quest.rewards.special ? ', Special: ' + quest.rewards.special : '') + '.' + (_chainFollowUp ? ' 🔗 New follow-up directive available!' : '')
+            message: '✅ Quest complete: ' + quest.title + '! Earned ' + (quest.rewards.gold + _bonusGold) + 'g, +' + (_nerfedRep + _bonusRep) + ' rep, +' + quest.rewards.kingRelationship + ' king rel' + (quest.rewards.special ? ', Special: ' + quest.rewards.special : '') + '.' + _bonusMsg + (_chainFollowUp ? ' 🔗 New follow-up directive available!' : '')
         };
     }
 

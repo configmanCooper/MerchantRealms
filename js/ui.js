@@ -806,13 +806,20 @@ window.UI = (function () {
                     }
                 }
 
-                // Schemes button — only visible once player enters underworld
+                // Schemes button — always visible, but dimmed until player enters underworld
                 const btnSchemes = document.getElementById('btnSchemes');
                 const schemesDivider = document.getElementById('schemesDivider');
                 if (btnSchemes) {
-                    var showSchemes = typeof Player !== 'undefined' && Player.shouldShowSchemesButton && Player.shouldShowSchemesButton();
-                    btnSchemes.style.display = showSchemes ? '' : 'none';
-                    if (schemesDivider) schemesDivider.style.display = showSchemes ? '' : 'none';
+                    var schemesUnlocked = typeof Player !== 'undefined' && Player.shouldShowSchemesButton && Player.shouldShowSchemesButton();
+                    btnSchemes.style.display = '';
+                    if (schemesDivider) schemesDivider.style.display = '';
+                    if (!schemesUnlocked) {
+                        btnSchemes.style.opacity = '0.4';
+                        btnSchemes.title = 'Schemes (locked — gain notoriety or learn underworld skills)';
+                    } else {
+                        btnSchemes.style.opacity = '1';
+                        btnSchemes.title = 'Schemes & Underworld';
+                    }
                 }
 
                 // God Mode button visibility
