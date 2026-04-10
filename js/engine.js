@@ -6697,6 +6697,21 @@
         if (!newKing.socialRank) newKing.socialRank = {};
         newKing.socialRank[kingdom.id] = 7;
 
+        // Relocate king to their kingdom's capital (or any kingdom town)
+        newKing.kingdomId = kingdom.id;
+        var _capitalTown = null;
+        for (var _cti = 0; _cti < world.towns.length; _cti++) {
+            var _ct = world.towns[_cti];
+            if (_ct.kingdomId === kingdom.id) {
+                if (_ct.isCapital) { _capitalTown = _ct; break; }
+                if (!_capitalTown) _capitalTown = _ct;
+            }
+        }
+        if (_capitalTown) {
+            newKing.townId = _capitalTown.id;
+            if (newKing.currentTown !== undefined) newKing.currentTown = _capitalTown.id;
+        }
+
         // Update old king's spouse occupation back to noble
         if (oldKing && oldKing.alive && oldKing.spouseId) {
             var _oldSpouse = findPerson(oldKing.spouseId);
@@ -8988,13 +9003,30 @@
         if (!CONFIG.KING_MOOD) return;
         if (!k.king) return; // Guard: skip kingless kingdoms
 
-        // Enforce king socialRank = 7 and proper occupation
+        // Enforce king socialRank = 7, proper occupation, and location in own kingdom
         var _tkKing = findPerson(k.king);
         if (_tkKing && _tkKing.alive) {
             if (!_tkKing.socialRank) _tkKing.socialRank = {};
             if (_tkKing.socialRank[k.id] !== 7) _tkKing.socialRank[k.id] = 7;
             if (_tkKing.occupation !== 'king' && _tkKing.occupation !== 'reigning_queen') {
                 _tkKing.occupation = _tkKing.sex === 'F' ? 'reigning_queen' : 'king';
+            }
+            if (_tkKing.kingdomId !== k.id) _tkKing.kingdomId = k.id;
+            // Keep king in their own kingdom — if in foreign town, move to capital
+            var _tkTown = findTown(_tkKing.townId);
+            if (!_tkTown || _tkTown.kingdomId !== k.id) {
+                var _tkCap = null;
+                for (var _tki = 0; _tki < world.towns.length; _tki++) {
+                    var _tkT = world.towns[_tki];
+                    if (_tkT.kingdomId === k.id) {
+                        if (_tkT.isCapital) { _tkCap = _tkT; break; }
+                        if (!_tkCap) _tkCap = _tkT;
+                    }
+                }
+                if (_tkCap) {
+                    _tkKing.townId = _tkCap.id;
+                    if (_tkKing.currentTown !== undefined) _tkKing.currentTown = _tkCap.id;
+                }
             }
         }
 
@@ -35792,6 +35824,32 @@
                         // Ensure king occupation is correct
                         if (_krfKing.occupation !== 'king' && _krfKing.occupation !== 'reigning_queen') {
                             _krfKing.occupation = _krfKing.sex === 'F' ? 'reigning_queen' : 'king';
+                        }
+                        // Ensure king belongs to the kingdom they rule
+                        if (_krfKing.kingdomId !== _krfK.id) {
+                            _krfKing.kingdomId = _krfK.id;
+                        }
+                        // Ensure king is in their own kingdom's territory
+                        var _krfInOwn = false;
+                        for (var _krfti = 0; _krfti < world.towns.length; _krfti++) {
+                            if (world.towns[_krfti].id === _krfKing.townId && world.towns[_krfti].kingdomId === _krfK.id) {
+                                _krfInOwn = true; break;
+                            }
+                        }
+                        if (!_krfInOwn) {
+                            // Move king to capital or first kingdom town
+                            var _krfCap = null;
+                            for (var _krfci = 0; _krfci < world.towns.length; _krfci++) {
+                                var _krfT = world.towns[_krfci];
+                                if (_krfT.kingdomId === _krfK.id) {
+                                    if (_krfT.isCapital) { _krfCap = _krfT; break; }
+                                    if (!_krfCap) _krfCap = _krfT;
+                                }
+                            }
+                            if (_krfCap) {
+                                _krfKing.townId = _krfCap.id;
+                                if (_krfKing.currentTown !== undefined) _krfKing.currentTown = _krfCap.id;
+                            }
                         }
                     }
                 }
