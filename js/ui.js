@@ -21413,8 +21413,9 @@ window.UI = (function () {
                     var _nbTown = _nbPerson.townId ? Engine.findTown(_nbPerson.townId) : null;
                     var _sameLocation = _nbPerson.townId === Player.townId;
                     var _isKing = _nb.rank >= 7 || _nbPerson.isKing;
+                    var _nbSafeIdClick = String(_nbPerson.id).replace(/'/g, "\\'");
                     html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;margin-bottom:4px;background:rgba(0,0,0,0.15);border-radius:6px;border-left:3px solid ' + (_sameLocation ? 'var(--gold)' : 'transparent') + ';">';
-                    html += '<div style="flex:1;min-width:0;">';
+                    html += '<div style="flex:1;min-width:0;cursor:pointer;" onclick="(function(){UI.closeModal();var p=Engine.findPerson(\'' + _nbSafeIdClick + '\');if(p)UI.showPersonDetail(p);})()" title="View details">';
                     html += '<div style="font-size:0.78rem;font-weight:bold;color:#ddd;">' + (_nbRankDef.icon || '👑') + ' ' + (_nbPerson.firstName || '') + ' ' + (_nbPerson.lastName || '') + '</div>';
                     html += '<div style="font-size:0.68rem;color:#999;">' + (_nbRankDef.name || 'Noble');
                     if (_nbTown) html += ' — ' + _nbTown.name;
