@@ -58,6 +58,9 @@ window.Renderer = (function () {
     let _sceneCacheTop = 0;
     let _sceneCacheRight = 0;
     let _sceneCacheBottom = 0;
+    // Zoom stability tracking — only use scene cache when zoom is stable
+    let _zoomStableFrames = 0;
+    let _lastCheckedZoom = -1;
 
     let worldData = null;
     let frameCount = 0;
@@ -296,8 +299,9 @@ window.Renderer = (function () {
         const dz = Math.abs(camera.zoom - lastTerrainZoom);
         const dx = Math.abs(camera.x - lastTerrainCamX);
         const dy = Math.abs(camera.y - lastTerrainCamY);
-        // Increase pan thresholds — scene cache handles low zoom, terrain cache handles rest
-        const panThreshold = camera.zoom < 1.0 ? 9999 : camera.zoom < 1.5 ? 12 : 4;
+        // At low zoom, generous threshold since terrain cache has large margin tiles
+        // At mid zoom (1.0-1.5), slightly increased threshold for perf
+        const panThreshold = camera.zoom < 0.5 ? 80 : camera.zoom < 0.7 ? 50 : camera.zoom < 1.0 ? 25 : camera.zoom < 1.5 ? 12 : 4;
         if (dz > 0.005 || dx > panThreshold || dy > panThreshold) {
             terrainDirty = true;
         }
@@ -415,13 +419,32 @@ window.Renderer = (function () {
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // ── SCENE SNAPSHOT MODE (zoom < 1.0) ──
-        // Render entire scene to offscreen canvas with large margin, then just blit on pan.
-        // Only re-render when pan exceeds margin or zoom changes.
+        // ── LOW ZOOM PATH (zoom < 1.0) ──
         if (camera.zoom < 1.0) {
+            // Track zoom stability — scene cache only kicks in after zoom stops changing
+            if (Math.abs(camera.zoom - _lastCheckedZoom) > 0.003) {
+                _zoomStableFrames = 0;
+                _lastCheckedZoom = camera.zoom;
+            } else {
+                _zoomStableFrames++;
+            }
+
+            // If zoom is still transitioning, use lightweight direct render (no scene cache)
+            // This avoids the expensive full-scene rebuild on every frame during zoom lerp
+            if (_zoomStableFrames < 12) {
+                _renderLowZoomDirect(player);
+                return;
+            }
+
+            // Zoom is stable — use the scene snapshot cache for buttery-smooth panning
             _renderViaSceneCache(player);
             return;
         }
+
+        // Reset zoom stability when not in low-zoom mode
+        _zoomStableFrames = 0;
+        _lastCheckedZoom = -1;
+        _sceneCacheDirty = true;
 
         // ── NORMAL RENDER (zoom >= 1.0) ──
         ctx.save();
@@ -495,14 +518,41 @@ window.Renderer = (function () {
     }
 
     // ═══════════════════════════════════════════════════════════
+    //  LOW-ZOOM DIRECT RENDER (during zoom transitions)
+    //  Lightweight — uses terrain cache + simplified overlays
+    //  No scene snapshot, so zoom changes are cheap
+    // ═══════════════════════════════════════════════════════════
+
+    function _renderLowZoomDirect(player) {
+        ctx.save();
+        ctx.translate(camera.width / 2, camera.height / 2);
+        ctx.scale(camera.zoom, camera.zoom);
+        ctx.translate(-camera.x, -camera.y);
+
+        renderTerrain();
+        renderKingdomTerritories();
+        renderRoads();
+        renderSeaRoutes();
+        renderTowns();
+        if (mapMode === 1) renderStrategicTownOverlays();
+        renderCaravansSimple(player);
+        renderPlayerMarker(player);
+        renderHoverHighlight();
+
+        ctx.restore();
+        renderSeasonOverlay();
+        renderMinimap(player);
+    }
+
+    // ═══════════════════════════════════════════════════════════
     //  SCENE SNAPSHOT (zoom < 1.0) — static image approach
     // ═══════════════════════════════════════════════════════════
 
     function _renderViaSceneCache(player) {
         var vb = getVisibleBounds();
-        // Large margin in world coords — enough for substantial panning without redraw
-        var marginW = (vb.right - vb.left) * 0.6;
-        var marginH = (vb.bottom - vb.top) * 0.6;
+        // 100% margin in each direction — can pan a full viewport before needing redraw
+        var marginW = (vb.right - vb.left) * 1.0;
+        var marginH = (vb.bottom - vb.top) * 1.0;
 
         // Check if current viewport is still within cached scene bounds
         var needsRedraw = _sceneCacheDirty || !_sceneCache;
@@ -511,6 +561,16 @@ window.Renderer = (function () {
             vb.left < _sceneCacheLeft || vb.right > _sceneCacheRight ||
             vb.top < _sceneCacheTop || vb.bottom > _sceneCacheBottom
         )) needsRedraw = true;
+
+        // On cache miss from fast pan, use direct render this frame and rebuild next frame
+        // This prevents the visible freeze — user sees immediate (slightly slower) frame
+        if (needsRedraw && _sceneCache && !_sceneCacheDirty &&
+            Math.abs(camera.zoom - _sceneCacheZoom) <= 0.005) {
+            // Pan-caused miss — do a quick direct render and schedule rebuild
+            _sceneCacheDirty = true;
+            _renderLowZoomDirect(player);
+            return;
+        }
 
         if (needsRedraw) {
             // Compute scene bounds with margin
