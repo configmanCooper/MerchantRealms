@@ -279,9 +279,13 @@ window.Renderer = (function () {
     // ═══════════════════════════════════════════════════════════
 
     function updateCamera() {
-        // Lerp towards target
-        camera.x += (camera.targetX - camera.x) * camera.lerpSpeed;
-        camera.y += (camera.targetY - camera.y) * camera.lerpSpeed;
+        // Faster pan lerp so it feels responsive, not floaty
+        var panLerp = 0.3;
+        camera.x += (camera.targetX - camera.x) * panLerp;
+        camera.y += (camera.targetY - camera.y) * panLerp;
+        // Snap when very close to avoid lingering drift
+        if (Math.abs(camera.targetX - camera.x) < 0.5) camera.x = camera.targetX;
+        if (Math.abs(camera.targetY - camera.y) < 0.5) camera.y = camera.targetY;
         // Faster lerp for zoom so it feels snappy, not floaty
         // Extra fast at low zoom where scene cache transitions are more noticeable
         var zoomLerp = (camera.zoom < 1.0 || camera.targetZoom < 1.0) ? 0.5625 : 0.375;
