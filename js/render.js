@@ -283,7 +283,7 @@ window.Renderer = (function () {
         camera.x += (camera.targetX - camera.x) * camera.lerpSpeed;
         camera.y += (camera.targetY - camera.y) * camera.lerpSpeed;
         // Faster lerp for zoom so it feels snappy, not floaty
-        var zoomLerp = 0.25;
+        var zoomLerp = 0.375;
         camera.zoom += (camera.targetZoom - camera.zoom) * zoomLerp;
         // Snap when very close to avoid lingering drift
         if (Math.abs(camera.targetZoom - camera.zoom) < 0.002) camera.zoom = camera.targetZoom;
