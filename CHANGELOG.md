@@ -4,6 +4,22 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.67.0] - 2026-04-11
+
+### Added
+- **Save Migration System (C2)**: Versioned save format with incremental migration functions — old saves auto-upgrade on load, preventing crashes when new fields are added
+- **Shared Utility Helpers (H2)**: `getPeopleInTown()`, `getPeopleInKingdom()` in engine.js; `_checkCanAct()`, `_getContext()`, `_modifyInventory()` in player.js — replacing 38+ duplicated inline patterns
+- **Validated Player State Setters (C1)**: `_modifyGold()`, `_modifyReputation()`, `_modifyTownRep()`, `_setTownId()`, `_modifyEnergy()` — NaN-safe, clamped, auto-logging
+
+### Changed
+- **Camera/Render Constants to CONFIG (H4)**: 20+ hardcoded magic numbers (lerp speeds, terrain margins, pan thresholds, cache parameters) moved to CONFIG object for centralized tuning
+- **showBuildingDetail Decomposed (H3)**: Extracted 210-line medical preparedness section into standalone `_buildMedicalSection()` function
+
+### Internal
+- Save version bumped to 4
+- Engine exposes `getPeopleInTown()` and `getPeopleInKingdom()` on public API
+- Player exposes `checkCanAct`, `getContext`, `modifyInventory`, and all C1 setters on public API
+
 ## [0.66.2] - 2026-04-11
 
 ### Added
