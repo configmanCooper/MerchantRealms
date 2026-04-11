@@ -10895,23 +10895,81 @@ window.UI = (function () {
         var filters = (typeof Player !== 'undefined' && Player.getNotificationFilters) ? Player.getNotificationFilters() : {};
 
         var filterDefs = [
-            { key: 'my_actions', label: '🎯 My Actions', desc: 'Your trades, travel, work results' },
-            { key: 'my_business', label: '💼 My Business', desc: 'Caravan arrivals, building output, worker events' },
-            { key: 'my_kingdom', label: '👑 My Kingdom', desc: 'Laws, taxes, king mood, festivals, wars' },
-            { key: 'local_town', label: '🏘️ Local Town', desc: 'Events in your current town' },
-            { key: 'foreign_kingdoms', label: '🌍 Foreign Kingdoms', desc: 'Wars, laws, diplomacy of other kingdoms' },
-            { key: 'world_economy', label: '📈 World Economy', desc: 'Trade crazes, embargoes, price controls' },
-            { key: 'military', label: '⚔️ Military/War', desc: 'Troop movements, battles, sieges', hasSmart: true },
-            { key: 'npc_activity', label: '👥 NPC Activity', desc: 'Elite merchant moves, NPC events' },
-            { key: 'travel_events', label: '🚶 Travel Events', desc: 'Foraging, terrain encounters, ambushes' },
-            { key: 'illness', label: '🦠 Illness/Health', desc: 'Plague outbreaks, disease spread, quarantines, health policies, NPC deaths from illness' },
-            { key: 'combat', label: '☠️ Combat/Piracy', desc: 'Pirate raids, blockades, attacks near you' },
+            { key: 'my_actions', label: '🎯 My Actions', desc: 'Your trades, travel, work results', subs: [
+                { key: 'trade', label: '💰 Trades & Purchases' },
+                { key: 'travel', label: '🚶 Travel & Arrivals' },
+                { key: 'work', label: '⚒️ Work & Crafting' },
+                { key: 'social', label: '💍 Social & Family' },
+                { key: 'skills', label: '📚 Skills & Levels' },
+                { key: 'reputation', label: '⭐ Reputation & Standing' },
+            ]},
+            { key: 'my_business', label: '💼 My Business', desc: 'Caravans, building output, workers, agents', subs: [
+                { key: 'caravan_dispatch', label: '🐪 Caravan Dispatch' },
+                { key: 'caravan_arrival', label: '📦 Caravan Arrivals & Sales' },
+                { key: 'caravan_problems', label: '⚠️ Caravan Problems' },
+                { key: 'building_output', label: '🏭 Building Output' },
+                { key: 'workers', label: '👷 Worker Events' },
+                { key: 'agents', label: '🕵️ Agent Reports' },
+                { key: 'license', label: '📜 Licenses & Loans' },
+            ]},
+            { key: 'my_kingdom', label: '👑 My Kingdom', desc: 'Laws, taxes, king mood, festivals, wars', subs: [
+                { key: 'laws', label: '📋 Law Changes' },
+                { key: 'taxes', label: '💰 Tax Changes' },
+                { key: 'king', label: '👑 King & Court' },
+                { key: 'festivals', label: '🎉 Festivals & Events' },
+                { key: 'commissions', label: '📜 Royal Commissions' },
+                { key: 'political', label: '🏛️ Political Events' },
+            ]},
+            { key: 'local_town', label: '🏘️ Local Town', desc: 'Events in your current town', subs: [
+                { key: 'disasters', label: '🔥 Disasters' },
+                { key: 'infrastructure', label: '🏗️ Infrastructure' },
+                { key: 'resources', label: '⛏️ Resources & Wells' },
+                { key: 'population', label: '👥 Population Changes' },
+            ]},
+            { key: 'foreign_kingdoms', label: '🌍 Foreign Kingdoms', desc: 'Wars, laws, diplomacy of other kingdoms', subs: [
+                { key: 'wars', label: '⚔️ Wars & Conflicts' },
+                { key: 'laws', label: '📋 Law Changes' },
+                { key: 'diplomacy', label: '🤝 Diplomacy & Treaties' },
+                { key: 'political', label: '🏛️ Political Events' },
+            ]},
+            { key: 'world_economy', label: '📈 World Economy', desc: 'Trade crazes, embargoes, price controls', subs: [
+                { key: 'trade_craze', label: '📈 Trade Crazes' },
+                { key: 'embargo', label: '🚫 Embargoes' },
+                { key: 'price_control', label: '💲 Price Controls' },
+                { key: 'tariffs', label: '📊 Tariffs & Bounties' },
+            ]},
+            { key: 'military', label: '⚔️ Military/War', desc: 'Troop movements, battles, sieges', hasSmart: true, subs: [
+                { key: 'battles', label: '⚔️ Battles & Sieges' },
+                { key: 'troop_movements', label: '🚩 Troop Movements' },
+                { key: 'promotions', label: '🎖️ Promotions & Rank' },
+                { key: 'equipment', label: '🛡️ Equipment & Supply' },
+            ]},
+            { key: 'npc_activity', label: '👥 NPC Activity', desc: 'Elite merchant moves, NPC events', subs: [
+                { key: 'elite_merchants', label: '🏪 Elite Merchant Actions' },
+                { key: 'npc_life', label: '👤 NPC Life Events' },
+            ]},
+            { key: 'travel_events', label: '🚶 Travel Events', desc: 'Foraging, terrain encounters, ambushes', subs: [
+                { key: 'foraging', label: '🌿 Foraging' },
+                { key: 'encounters', label: '🗺️ Terrain Encounters' },
+                { key: 'ambushes', label: '⚠️ Ambushes & Dangers' },
+            ]},
+            { key: 'illness', label: '🦠 Illness/Health', desc: 'Plague outbreaks, disease spread, quarantines, NPC deaths', subs: [
+                { key: 'outbreaks', label: '🦠 Plague Outbreaks' },
+                { key: 'quarantine', label: '🔒 Quarantines' },
+                { key: 'health_policy', label: '🏥 Health Policies' },
+                { key: 'npc_deaths', label: '💀 NPC Deaths from Illness' },
+            ]},
+            { key: 'combat', label: '☠️ Combat/Piracy', desc: 'Pirate raids, blockades, attacks near you', subs: [
+                { key: 'pirates', label: '🏴‍☠️ Pirate Raids' },
+                { key: 'blockades', label: '⛵ Blockades' },
+                { key: 'bandits', label: '🗡️ Bandit Attacks' },
+            ]},
             { key: 'tracked', label: '⭐ Tracked Merchants', desc: 'Activities of elite merchants you are tracking' },
             { key: 'error_alerts', label: '🐛 Error Alerts', desc: 'Get notified when the game detects console errors (for bug reporting)' },
         ];
 
         var html = '<h3 style="margin-top:0;color:var(--gold);">📢 Notification Filters</h3>';
-        html += '<p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:12px;">Control which notifications you see. Critical alerts (jail, death, ship sunk) always show.</p>';
+        html += '<p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:12px;">Control which notifications you see. Critical alerts (jail, death, ship sunk) always show. Click a category to expand sub-filters.</p>';
 
         // Master toast mute toggle
         html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;margin-bottom:12px;background:' + (_toastsMuted ? 'rgba(196,78,82,0.15)' : 'rgba(85,168,104,0.15)') + ';border:1px solid ' + (_toastsMuted ? 'rgba(196,78,82,0.4)' : 'rgba(85,168,104,0.4)') + ';border-radius:6px;">';
@@ -10922,20 +10980,43 @@ window.UI = (function () {
         for (var fi = 0; fi < filterDefs.length; fi++) {
             var f = filterDefs[fi];
             var val = filters[f.key];
-            var isOn = val === true;
+            var isOn = val === true || val === undefined;
             var isSmart = val === 'smart';
             var isOff = val === false;
 
-            html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);">';
-            html += '<div style="flex:1;"><span style="font-size:0.95rem;">' + f.label + '</span><br><span style="font-size:0.75rem;color:var(--text-muted);">' + f.desc + '</span></div>';
-            html += '<div style="display:flex;gap:2px;">';
+            // Category row — clickable to expand if has subs
+            var hasSubs = f.subs && f.subs.length > 0;
+            var expandId = 'nfSub_' + f.key;
+            html += '<div style="border-bottom:1px solid rgba(255,255,255,0.05);">';
+            html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;' + (hasSubs ? 'cursor:pointer;' : '') + '"' + (hasSubs ? ' onclick="(function(){var el=document.getElementById(\'' + expandId + '\');if(el)el.style.display=el.style.display===\'none\'?\'block\':\'none\';})()"' : '') + '>';
+            html += '<div style="flex:1;"><span style="font-size:0.95rem;">' + (hasSubs ? '▸ ' : '') + f.label + '</span><br><span style="font-size:0.75rem;color:var(--text-muted);">' + f.desc + '</span></div>';
+            html += '<div style="display:flex;gap:2px;" onclick="event.stopPropagation()">';
 
             if (f.hasSmart) {
                 html += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 8px;' + (isSmart ? 'background:var(--gold);color:#000;' : 'opacity:0.5;') + '" onclick="UI.setNotifFilter(\'' + f.key + '\',\'smart\')">Smart</button>';
             }
-            html += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 8px;' + (isOn ? 'background:#55a868;color:#fff;' : 'opacity:0.5;') + '" onclick="UI.setNotifFilter(\'' + f.key + '\',true)">On</button>';
+            html += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 8px;' + (isOn && !isSmart ? 'background:#55a868;color:#fff;' : 'opacity:0.5;') + '" onclick="UI.setNotifFilter(\'' + f.key + '\',true)">On</button>';
             html += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 8px;' + (isOff ? 'background:#c44e52;color:#fff;' : 'opacity:0.5;') + '" onclick="UI.setNotifFilter(\'' + f.key + '\',false)">Off</button>';
             html += '</div></div>';
+
+            // Sub-type toggles (collapsed by default)
+            if (hasSubs) {
+                html += '<div id="' + expandId + '" style="display:none;padding:4px 0 8px 20px;border-left:2px solid rgba(212,175,55,0.3);margin-left:8px;">';
+                for (var si = 0; si < f.subs.length; si++) {
+                    var sub = f.subs[si];
+                    var subKey = f.key + '.' + sub.key;
+                    var subVal = filters[subKey];
+                    var subOn = subVal !== false; // default to on if unset
+                    html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:3px 0;">';
+                    html += '<span style="font-size:0.8rem;color:' + (subOn ? '#ccc' : '#666') + ';">' + sub.label + '</span>';
+                    html += '<div style="display:flex;gap:2px;">';
+                    html += '<button class="btn-medieval" style="font-size:0.65rem;padding:1px 7px;' + (subOn ? 'background:#55a868;color:#fff;' : 'opacity:0.4;') + '" onclick="UI.setNotifFilter(\'' + subKey + '\',true)">On</button>';
+                    html += '<button class="btn-medieval" style="font-size:0.65rem;padding:1px 7px;' + (!subOn ? 'background:#c44e52;color:#fff;' : 'opacity:0.4;') + '" onclick="UI.setNotifFilter(\'' + subKey + '\',false)">Off</button>';
+                    html += '</div></div>';
+                }
+                html += '</div>';
+            }
+            html += '</div>';
         }
 
         // Skill-gated info
@@ -11097,7 +11178,7 @@ window.UI = (function () {
 
         // Check notification filter for popup suppression (toasts can be suppressed but log entry persists)
         if (typeof Player !== 'undefined' && Player.shouldShowNotification) {
-            if (!Player.shouldShowNotification(category, null)) return;
+            if (!Player.shouldShowNotification(category, null, message)) return;
         }
 
         // Master toast mute — suppress all popups except critical (death, jail, bankruptcy)
