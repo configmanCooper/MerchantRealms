@@ -14,10 +14,10 @@ window.Renderer = (function () {
     const camera = {
         x: 0, y: 0,           // world position (center of viewport)
         targetX: 0, targetY: 0,
-        zoom: 1.2,
-        targetZoom: 1.2,
-        minZoom: 0.5,
-        maxZoom: 3.0,
+        zoom: CONFIG.CAMERA_ZOOM_DEFAULT,
+        targetZoom: CONFIG.CAMERA_ZOOM_DEFAULT,
+        minZoom: CONFIG.CAMERA_ZOOM_MIN,
+        maxZoom: CONFIG.CAMERA_ZOOM_MAX,
         lerpSpeed: 0.12,
         width: 0,
         height: 0,
@@ -25,7 +25,7 @@ window.Renderer = (function () {
 
     // ── Map mode state ──
     let mapMode = 0; // 0=normal, 1=strategic, 2=world
-    let savedZoom = 1.2;
+    let savedZoom = CONFIG.CAMERA_ZOOM_DEFAULT;
     let savedCamX = 0;
     let savedCamY = 0;
     let worldMapCanvas = null;
@@ -279,19 +279,15 @@ window.Renderer = (function () {
     // ═══════════════════════════════════════════════════════════
 
     function updateCamera() {
-        // Faster pan lerp so it feels responsive, not floaty
-        var panLerp = 0.3;
+        var panLerp = CONFIG.CAMERA_PAN_LERP;
         camera.x += (camera.targetX - camera.x) * panLerp;
         camera.y += (camera.targetY - camera.y) * panLerp;
-        // Snap when very close to avoid lingering drift
-        if (Math.abs(camera.targetX - camera.x) < 0.5) camera.x = camera.targetX;
-        if (Math.abs(camera.targetY - camera.y) < 0.5) camera.y = camera.targetY;
-        // Faster lerp for zoom so it feels snappy, not floaty
+        if (Math.abs(camera.targetX - camera.x) < CONFIG.CAMERA_PAN_SNAP) camera.x = camera.targetX;
+        if (Math.abs(camera.targetY - camera.y) < CONFIG.CAMERA_PAN_SNAP) camera.y = camera.targetY;
         // Extra fast at low zoom where scene cache transitions are more noticeable
-        var zoomLerp = (camera.zoom < 1.0 || camera.targetZoom < 1.0) ? 0.5625 : 0.375;
+        var zoomLerp = (camera.zoom < 1.0 || camera.targetZoom < 1.0) ? CONFIG.CAMERA_ZOOM_LERP_LOW : CONFIG.CAMERA_ZOOM_LERP_NORMAL;
         camera.zoom += (camera.targetZoom - camera.zoom) * zoomLerp;
-        // Snap when very close to avoid lingering drift
-        if (Math.abs(camera.targetZoom - camera.zoom) < 0.002) camera.zoom = camera.targetZoom;
+        if (Math.abs(camera.targetZoom - camera.zoom) < CONFIG.CAMERA_ZOOM_SNAP) camera.zoom = camera.targetZoom;
 
         // Clamp to world bounds
         const worldPxW = CONFIG.WORLD_WIDTH;
@@ -310,7 +306,7 @@ window.Renderer = (function () {
         const dy = Math.abs(camera.y - lastTerrainCamY);
         // At low zoom, generous threshold since terrain cache has large margin tiles
         // At mid zoom (1.0-1.5), slightly increased threshold for perf
-        const panThreshold = camera.zoom < 0.5 ? 200 : camera.zoom < 0.7 ? 140 : camera.zoom < 1.0 ? 80 : camera.zoom < 1.5 ? 12 : 4;
+        const panThreshold = camera.zoom < 0.5 ? CONFIG.PAN_THRESHOLD_EXTREME : camera.zoom < 0.7 ? CONFIG.PAN_THRESHOLD_LOW : camera.zoom < 1.0 ? CONFIG.PAN_THRESHOLD_MEDIUM : camera.zoom < 1.5 ? CONFIG.PAN_THRESHOLD_NORMAL : CONFIG.PAN_THRESHOLD_HIGH;
         if (dz > 0.005 || dx > panThreshold || dy > panThreshold) {
             terrainDirty = true;
         }
@@ -403,7 +399,7 @@ window.Renderer = (function () {
         }
         // Periodically refresh scene cache to pick up game state changes (territory, towns)
         // Every ~300 frames ≈ 5 seconds at 60fps
-        if (camera.zoom < 1.0 && (frameCount % 300 === 0)) {
+        if (camera.zoom < 1.0 && (frameCount % CONFIG.SCENE_CACHE_REFRESH === 0)) {
             _sceneCacheDirty = true;
         }
         // Advance NPC animation clock based on game speed (NPCs freeze when paused)
@@ -440,7 +436,7 @@ window.Renderer = (function () {
 
             // If zoom is still transitioning, use lightweight direct render (no scene cache)
             // This avoids the expensive full-scene rebuild on every frame during zoom lerp
-            if (_zoomStableFrames < 12) {
+            if (_zoomStableFrames < CONFIG.SCENE_CACHE_STABLE_FRAMES) {
                 _renderLowZoomDirect(player);
                 return;
             }
@@ -563,8 +559,8 @@ window.Renderer = (function () {
     function _renderViaSceneCache(player) {
         var vb = getVisibleBounds();
         // 110% margin in each direction — can pan over a full viewport before needing redraw
-        var marginW = (vb.right - vb.left) * 1.1;
-        var marginH = (vb.bottom - vb.top) * 1.1;
+        var marginW = (vb.right - vb.left) * CONFIG.SCENE_CACHE_MARGIN;
+        var marginH = (vb.bottom - vb.top) * CONFIG.SCENE_CACHE_MARGIN;
 
         // Check if current viewport is still within cached overlay bounds
         var needsRedraw = _sceneCacheDirty || !_sceneCache;
@@ -735,7 +731,7 @@ window.Renderer = (function () {
 
         if (needsRedraw) {
             // Render with overscroll margin so small pans are free (no redraw)
-            var marginTiles = camera.zoom < 0.5 ? 40 : camera.zoom < 0.7 ? 28 : camera.zoom < 1.0 ? 16 : camera.zoom < 1.5 ? 6 : 3;
+            var marginTiles = camera.zoom < 0.5 ? CONFIG.TERRAIN_MARGIN_EXTREME : camera.zoom < 0.7 ? CONFIG.TERRAIN_MARGIN_LOW : camera.zoom < 1.0 ? CONFIG.TERRAIN_MARGIN_MEDIUM : camera.zoom < 1.5 ? CONFIG.TERRAIN_MARGIN_NORMAL : CONFIG.TERRAIN_MARGIN_HIGH;
             var cSC = Math.max(0, startCol - marginTiles);
             var cEC = Math.min(terrainWidth - 1, endCol + marginTiles);
             var cSR = Math.max(0, startRow - marginTiles);
@@ -753,7 +749,7 @@ window.Renderer = (function () {
                 offscreenTerrain.height = drawH;
             }
 
-            var lowZoom = camera.zoom < 0.65;
+            var lowZoom = camera.zoom < CONFIG.DECORATION_SKIP_ZOOM;
             var _isWinterSeason = (typeof Engine !== 'undefined' && Engine.getSeason && Engine.getSeason() === 'Winter');
 
             for (var r = cSR; r <= cER; r++) {

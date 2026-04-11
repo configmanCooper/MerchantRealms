@@ -32,6 +32,36 @@ const CONFIG = {
     VIEWPORT_WIDTH: 1280,
     VIEWPORT_HEIGHT: 720,
 
+    // ── Camera & Rendering ──
+    CAMERA_ZOOM_DEFAULT: 1.2,
+    CAMERA_ZOOM_MIN: 0.5,
+    CAMERA_ZOOM_MAX: 3.0,
+    CAMERA_PAN_LERP: 0.3,               // pan interpolation per frame
+    CAMERA_PAN_SNAP: 0.5,               // snap pan when within this many world units
+    CAMERA_ZOOM_LERP_LOW: 0.5625,       // zoom lerp at zoom < 1.0 (faster)
+    CAMERA_ZOOM_LERP_NORMAL: 0.375,     // zoom lerp at zoom >= 1.0
+    CAMERA_ZOOM_SNAP: 0.002,            // snap zoom when within this factor
+
+    // Terrain margin tiles by zoom level (buffer around viewport)
+    TERRAIN_MARGIN_EXTREME: 40,   // zoom < 0.5
+    TERRAIN_MARGIN_LOW: 28,       // 0.5 <= zoom < 0.7
+    TERRAIN_MARGIN_MEDIUM: 16,    // 0.7 <= zoom < 1.0
+    TERRAIN_MARGIN_NORMAL: 6,     // 1.0 <= zoom < 1.5
+    TERRAIN_MARGIN_HIGH: 3,       // zoom >= 1.5
+
+    // Pan thresholds in px (how far camera moves before terrain redraws)
+    PAN_THRESHOLD_EXTREME: 200,   // zoom < 0.5
+    PAN_THRESHOLD_LOW: 140,       // 0.5 <= zoom < 0.7
+    PAN_THRESHOLD_MEDIUM: 80,     // 0.7 <= zoom < 1.0
+    PAN_THRESHOLD_NORMAL: 12,     // 1.0 <= zoom < 1.5
+    PAN_THRESHOLD_HIGH: 4,        // zoom >= 1.5
+
+    // Scene cache (overlay-only offscreen canvas at low zoom)
+    SCENE_CACHE_MARGIN: 1.1,      // 110% of viewport
+    SCENE_CACHE_STABLE_FRAMES: 12, // frames zoom must be stable before engaging
+    SCENE_CACHE_REFRESH: 300,     // rebuild every N frames (~5s)
+    DECORATION_SKIP_ZOOM: 0.65,   // skip trees/mountains below this zoom
+
     // Time — real-time: ~1 real minute ≈ 1 in-game day
     DAYS_PER_SEASON: 90,
     SEASONS: ['Spring', 'Summer', 'Autumn', 'Winter'],
