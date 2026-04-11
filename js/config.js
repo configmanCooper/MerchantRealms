@@ -153,10 +153,10 @@ const CONFIG = {
     NEED_DECAY_RATE: 2,
     MARRIAGE_MIN_AGE: 18,
     CHILD_PROBABILITY: 0.03,    // ~3%/day → avg ~33 days to conceive (user wants 30-100 day range)
-    PREGNANCY_DURATION: 270,    // ~9 months in game days (360 days/year)
+    PREGNANCY_DURATION: 60,    // ~2 months in game days (1 year = 1 season = 90 days)
     MAX_CHILDREN: 8,            // Cap on total children per lifetime
-    DEATH_AGE_MIN: 55,
-    DEATH_AGE_MAX: 80,
+    DEATH_AGE_MIN: 40,
+    DEATH_AGE_MAX: 100,
     COMING_OF_AGE: 18,
     STARTING_CHILD_RATIO: 0.50, // Children at game start = 50% of adults per town
 
@@ -1129,9 +1129,9 @@ const CONFIG = {
     // Condition / Degradation System
     CONDITION_LEVELS: {
         'new':       { name: 'New',       icon: '✨', efficiency: 1.0,  minAge: 0 },
-        'used':      { name: 'Used',      icon: '🔧', efficiency: 0.90, minAge: 365 },
-        'breaking':  { name: 'Breaking',  icon: '⚠️', efficiency: 0.50, minAge: 730 },
-        'destroyed': { name: 'Destroyed', icon: '🚫', efficiency: 0.0,  minAge: 1095 },
+        'used':      { name: 'Used',      icon: '🔧', efficiency: 0.90, minAge: 90 },
+        'breaking':  { name: 'Breaking',  icon: '⚠️', efficiency: 0.50, minAge: 180 },
+        'destroyed': { name: 'Destroyed', icon: '🚫', efficiency: 0.0,  minAge: 270 },
     },
     DEGRADATION_TICK_INTERVAL: 30,
 

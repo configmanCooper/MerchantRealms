@@ -4314,12 +4314,12 @@
     }
 
     function getSeason(day) {
-        const idx = Math.floor((day % (CONFIG.DAYS_PER_SEASON * 4)) / CONFIG.DAYS_PER_SEASON);
+        const idx = Math.floor(day / CONFIG.DAYS_PER_SEASON) % 4;
         return CONFIG.SEASONS[idx];
     }
 
     function getYear(day) {
-        return Math.floor(day / (CONFIG.DAYS_PER_SEASON * 4)) + 1;
+        return Math.floor(day / CONFIG.DAYS_PER_SEASON) + 1;
     }
 
     function isWinter(day) { return getSeason(day) === 'Winter'; }
@@ -5812,8 +5812,8 @@
                 }
             }
 
-            // ---- Aging ----
-            if (day % (CONFIG.DAYS_PER_SEASON * 4) === 0) {
+            // ---- Aging (every season = every year in this world) ----
+            if (day % CONFIG.DAYS_PER_SEASON === 0) {
                 p.age++;
                 // Children come of age
                 if (p.age === CONFIG.COMING_OF_AGE) {
@@ -5860,11 +5860,30 @@
                         }
                     }
                 }
-                // Old age death
+                // Old age death — tiered yearly chance checked once per year (each season)
                 if (p.age >= CONFIG.DEATH_AGE_MIN) {
-                    // Use same gentle curve as player: 0.05% per year over min age, per day
-                    const deathChance = 0.0005 * (p.age - CONFIG.DEATH_AGE_MIN);
-                    if (p.age >= CONFIG.DEATH_AGE_MAX || world.rng.chance(deathChance)) {
+                    var ageDeathChance = 0;
+                    if (p.age >= 100) {
+                        ageDeathChance = 1.0; // hard cap
+                    } else if (p.age >= 75) {
+                        ageDeathChance = 0.99;
+                    } else if (p.age >= 70) {
+                        ageDeathChance = 0.95;
+                    } else if (p.age >= 60) {
+                        // At 60: base from 50-59 range + 4% per year over 60
+                        // Base at 60 = 11% + 2%*(60-50) = 11% + 20% = 31%, then +4% extra = 35%... 
+                        // User formula: 50 is 11%, 50-59 adds 2%/yr, so 59 = 11+18=29%
+                        // At 60: 29% + 4% = 33%, but user said 60 is 32% then +4% so 34%
+                        // Simplified: base at 60 = 32%, each year adds 4%
+                        ageDeathChance = (0.32 + (p.age - 60) * 0.04);
+                    } else if (p.age >= 50) {
+                        // At 50: 11%, each year adds 2%
+                        ageDeathChance = (0.11 + (p.age - 50) * 0.02);
+                    } else {
+                        // 40-49: starts at 1%, adds 1% per year
+                        ageDeathChance = (0.01 + (p.age - 40) * 0.01);
+                    }
+                    if (ageDeathChance >= 1.0 || world.rng.chance(ageDeathChance)) {
                         killPerson(p, 'old age');
                         continue;
                     }
@@ -5967,10 +5986,10 @@
             }
 
             // ---- Children ----
-            // NPC pregnancy: cooldown after birth (270 days), enforce MAX_CHILDREN (8)
+            // NPC pregnancy: cooldown after birth (60 days), enforce MAX_CHILDREN (8)
             if (p.spouseId && p.sex === 'F' && p.age >= CONFIG.MARRIAGE_MIN_AGE && p.age <= 45) {
                 const aliveChildren = p.childrenIds ? p.childrenIds.filter(cid => { const c = findPerson(cid); return c && c.alive; }).length : 0;
-                const pastCooldown = !p._lastBirthDay || (day - p._lastBirthDay) >= 270;
+                const pastCooldown = !p._lastBirthDay || (day - p._lastBirthDay) >= (CONFIG.PREGNANCY_DURATION || 60);
                 if (pastCooldown && aliveChildren < (CONFIG.MAX_CHILDREN || 8)) {
                 // Soft cap: reduce birth probability as population approaches cap
                 var totalPop = world._alivePopCount || 0;
@@ -10250,7 +10269,7 @@
         baseChance += kingRel * 0.002; // 100 rel = +0.2
 
         // Player-influenced king bonus
-        if (k._playerInfluencedKingDay && (world.day - k._playerInfluencedKingDay) < 365) {
+        if (k._playerInfluencedKingDay && (world.day - k._playerInfluencedKingDay) < CONFIG.DAYS_PER_SEASON) {
             baseChance += 0.20;
         }
 
@@ -10301,7 +10320,7 @@
                 }
             }
             baseChance += kingRel * 0.002;
-            if (k._playerInfluencedKingDay && (world.day - k._playerInfluencedKingDay) < 365) baseChance += 0.20;
+            if (k._playerInfluencedKingDay && (world.day - k._playerInfluencedKingDay) < CONFIG.DAYS_PER_SEASON) baseChance += 0.20;
             baseChance = Math.max(0.10, Math.min(0.95, baseChance));
             result.push({
                 id: law.id,
@@ -22811,7 +22830,7 @@
             for (const bld of town.buildings) {
                 // Retrofit existing buildings with a random age
                 if (!bld.builtDay && bld.builtDay !== 0) {
-                    bld.builtDay = Math.max(0, day - Math.floor(world.rng.randInt(0, 365)));
+                    bld.builtDay = Math.max(0, day - Math.floor(world.rng.randInt(0, CONFIG.DAYS_PER_SEASON)));
                 }
                 if (!bld.condition) bld.condition = 'new';
 
@@ -22828,7 +22847,7 @@
 
             // Walls
             if (town.walls > 0) {
-                if (!town.wallBuiltDay && town.wallBuiltDay !== 0) town.wallBuiltDay = Math.max(0, day - world.rng.randInt(0, 365));
+                if (!town.wallBuiltDay && town.wallBuiltDay !== 0) town.wallBuiltDay = Math.max(0, day - world.rng.randInt(0, CONFIG.DAYS_PER_SEASON));
                 if (!town.wallCondition) town.wallCondition = 'new';
                 const wallAge = day - (town.wallLastRepair || town.wallBuiltDay);
                 if (wallAge >= 3600 && town.wallCondition !== 'destroyed') {
@@ -23778,7 +23797,7 @@
                 em.gold -= cost;
                 em.guilds[guildId] = {
                     joinedDay: world.day,
-                    expiresDay: world.day + 365,
+                    expiresDay: world.day + CONFIG.DAYS_PER_SEASON,
                     type: 'yearly'
                 };
 
@@ -26496,11 +26515,11 @@
             var emInfra = (em.roadsBuilt || 0) + (em.bridgesBuilt || 0) + (em.seaRoutesBuilt || 0);
             if (emInfra < 2) return;
             var emRankSince = em.rankSince ? (em.rankSince[kId] || world.day) : world.day;
-            if ((world.day - emRankSince) / 360 < 2) return;
+            if ((world.day - emRankSince) / CONFIG.DAYS_PER_SEASON < 2) return;
         }
         if (nextRank.id === 'royal_advisor') {
             var emRankSinceRA = em.rankSince ? (em.rankSince[kId] || world.day) : world.day;
-            if ((world.day - emRankSinceRA) / 360 < 3) return;
+            if ((world.day - emRankSinceRA) / CONFIG.DAYS_PER_SEASON < 3) return;
             if (!em.hasSuppliedMilitary) return;
             var emNobleFriends = 0;
             if (em.relationships) {
@@ -33598,7 +33617,7 @@
         var newBt = findBuildingType(newTypeId);
         if (!newBt) return null;
 
-        var currentYear = Math.floor(world.day / 360);
+        var currentYear = Math.floor(world.day / CONFIG.DAYS_PER_SEASON);
         var convYear = building._conversionYear || -1;
         var convCount = (convYear === currentYear) ? (building._conversionsThisYear || 0) : 0;
 
@@ -33717,7 +33736,7 @@
         }
 
         // Track conversions
-        var currentYear = Math.floor(world.day / 360);
+        var currentYear = Math.floor(world.day / CONFIG.DAYS_PER_SEASON);
         if ((bld._conversionYear || -1) !== currentYear) {
             bld._conversionsThisYear = 0;
             bld._conversionYear = currentYear;

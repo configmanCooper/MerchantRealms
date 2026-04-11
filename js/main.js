@@ -1365,7 +1365,7 @@ window.Game = (function () {
         const engineData = Engine.serialize ? Engine.serialize() : null;
         const playerData = Player.serialize ? Player.serialize() : null;
         const dayNum = Engine.getDay ? Engine.getDay() : 0;
-        const seasonIdx = Math.floor((dayNum % (CONFIG.DAYS_PER_SEASON * 4)) / CONFIG.DAYS_PER_SEASON);
+        const seasonIdx = Math.floor(dayNum / CONFIG.DAYS_PER_SEASON) % 4;
         const kingdomId = Player.citizenshipKingdomId;
         let kingdomName = '';
         if (kingdomId && Engine.getKingdom) {
@@ -1381,7 +1381,7 @@ window.Game = (function () {
             playerName: Player.fullName || 'Unknown',
             day: dayNum,
             season: CONFIG.SEASONS[seasonIdx] || 'Spring',
-            year: Math.floor(dayNum / (CONFIG.DAYS_PER_SEASON * 4)) + 1,
+            year: Math.floor(dayNum / CONFIG.DAYS_PER_SEASON) + 1,
             kingdom: kingdomName,
             rank: rankName,
             gold: Player.gold || 0,
@@ -1533,9 +1533,9 @@ window.Game = (function () {
                 data.playerName = (data.player && data.player.fullName) || 'Unknown Merchant';
                 data.day = (data.engine && data.engine.day) || 0;
                 const dayNum = data.day || 0;
-                const seasonIdx = Math.floor((dayNum % (CONFIG.DAYS_PER_SEASON * 4)) / CONFIG.DAYS_PER_SEASON);
+                const seasonIdx = Math.floor(dayNum / CONFIG.DAYS_PER_SEASON) % 4;
                 data.season = CONFIG.SEASONS[seasonIdx] || 'Spring';
-                data.year = Math.floor(dayNum / (CONFIG.DAYS_PER_SEASON * 4)) + 1;
+                data.year = Math.floor(dayNum / CONFIG.DAYS_PER_SEASON) + 1;
                 data.kingdom = '';
                 data.rank = '';
                 data.gold = (data.player && data.player.gold) || 0;

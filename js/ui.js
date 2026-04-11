@@ -5354,7 +5354,7 @@ window.UI = (function () {
             var _convBldIdx = town.buildings.findIndex(function(b) { return b.ownerId === 'player' && b.type === bld.type; });
             if (_convBldIdx >= 0) {
                 var _isCrop = Engine.isCropFarm(bld.type);
-                var _curYear = Math.floor((Engine.getDay ? Engine.getDay() : 0) / 360);
+                var _curYear = Math.floor((Engine.getDay ? Engine.getDay() : 0) / (CONFIG.DAYS_PER_SEASON || 90));
                 var _convYear = bld._conversionYear || -1;
                 var _convCount = (_convYear === _curYear) ? (bld._conversionsThisYear || 0) : 0;
                 var _freeMax = _isCrop ? (CONFIG.FARM_FREE_CONVERSIONS_PER_YEAR || 1) : 0;
@@ -11854,8 +11854,8 @@ window.UI = (function () {
         if (!endStats) return;
 
         var daysPlayed = stats.daysPlayed || (Engine.getDay ? Engine.getDay() : 0);
-        var years = Math.floor(daysPlayed / 365);
-        var days = daysPlayed % 365;
+        var years = Math.floor(daysPlayed / (CONFIG.DAYS_PER_SEASON || 90));
+        var days = daysPlayed % (CONFIG.DAYS_PER_SEASON || 90);
         var timeStr = years > 0 ? years + ' year' + (years > 1 ? 's' : '') + ', ' + days + ' day' + (days !== 1 ? 's' : '') : daysPlayed + ' day' + (daysPlayed !== 1 ? 's' : '');
 
         // Get highest rank achieved
@@ -11912,7 +11912,7 @@ window.UI = (function () {
         var stats = Player.stats || {};
         var achStats = p.achievementStats || {};
         var day = Engine.getDay ? Engine.getDay() : 0;
-        var years = Math.floor(day / 365);
+        var years = Math.floor(day / (CONFIG.DAYS_PER_SEASON || 90));
 
         // Buildings summary
         var buildings = Player.buildings || [];
@@ -15104,7 +15104,7 @@ window.UI = (function () {
         var tips = result.tips || [];
         var day = 0;
         try { day = Engine.getDay(); } catch(e) {}
-        var year = Math.floor((day - 1) / 360) + 1;
+        var year = Math.floor((day - 1) / (CONFIG.DAYS_PER_SEASON || 90)) + 1;
 
         var html = '<div style="max-height:500px;overflow-y:auto;padding:4px;">';
         html += '<div style="text-align:center;border-bottom:2px solid #5a4a20;padding-bottom:8px;margin-bottom:12px;">';
@@ -15270,7 +15270,7 @@ window.UI = (function () {
                 html += '<td style="text-align:right;padding:3px 6px;color:#666;">N/A</td>';
             }
 
-            // 360 days ago with color coding
+            // 4 years (360 days) ago with color coding
             if (m.price360ago !== null) {
                 var color360 = m.price360ago > m.current ? '#55a868' : (m.price360ago < m.current ? '#cc4444' : '#ccc');
                 html += '<td style="text-align:right;padding:3px 6px;color:' + color360 + ';">' + (Math.round(m.price360ago * 100) / 100) + 'g</td>';
@@ -15286,7 +15286,7 @@ window.UI = (function () {
                 html += '<td style="text-align:right;padding:3px 6px;color:#666;">N/A</td>';
             }
 
-            // 360-day projection with color coding
+            // 4-year (360-day) projection with color coding
             if (m.projected360 !== null) {
                 var pColor360 = m.projected360 < m.current ? '#55a868' : (m.projected360 > m.current ? '#cc4444' : '#ccc');
                 html += '<td style="text-align:right;padding:3px 6px;color:' + pColor360 + ';">' + m.projected360 + 'g</td>';
@@ -19628,8 +19628,8 @@ window.UI = (function () {
         html += '</div>';
 
         var day = Engine.getDay ? Engine.getDay() : 0;
-        var year = Math.floor(day / 360) + 1;
-        var season = ['Spring', 'Summer', 'Autumn', 'Winter'][Math.floor((day % 360) / 90)];
+        var year = Math.floor(day / (CONFIG.DAYS_PER_SEASON || 90)) + 1;
+        var season = ['Spring', 'Summer', 'Autumn', 'Winter'][Math.floor(day / (CONFIG.DAYS_PER_SEASON || 90)) % 4];
 
         if (status.type === 'indentured') {
             var ind = Player.indentured || Player.state.indentured || {};
@@ -20248,7 +20248,7 @@ window.UI = (function () {
                 var curDay = Engine.getDay ? Engine.getDay() : 0;
                 var milDaysLeft = Math.max(0, milEndDay - curDay);
                 html += '<div style="margin-top:8px;padding:6px;background:rgba(200,150,0,0.15);border:1px solid rgba(200,150,0,0.3);border-radius:4px;font-size:0.8rem;">';
-                html += '⚠️ <strong>Mandatory Service:</strong> ' + milDaysLeft + ' days remaining (' + (milDaysLeft / 365).toFixed(1) + ' years). Cannot desert.';
+                html += '⚠️ <strong>Mandatory Service:</strong> ' + milDaysLeft + ' days remaining (' + (milDaysLeft / (CONFIG.DAYS_PER_SEASON || 90)).toFixed(1) + ' years). Cannot desert.';
                 html += '</div>';
             } else {
                 html += '<button class="btn-medieval" onclick="UI.quitMilitary()" style="margin-top:8px;font-size:0.8rem;padding:6px 16px;background:rgba(200,60,50,0.3);border-color:rgba(200,60,50,0.55);">🏠 Quit Military</button>';
@@ -27595,7 +27595,7 @@ window.UI = (function () {
         html += '<div style="background:rgba(100,100,100,0.2);padding:12px;border-radius:8px;margin-bottom:12px;">';
         html += '<h3 style="margin:0 0 8px;">🔒 IMPRISONED</h3>';
         html += '<p><b>Reason:</b> ' + reasonText + '</p>';
-        html += '<p><b>Sentence remaining:</b> ' + daysLeft + ' days (' + (daysLeft / 360).toFixed(1) + ' years)</p>';
+        html += '<p><b>Sentence remaining:</b> ' + daysLeft + ' days (' + (daysLeft / (CONFIG.DAYS_PER_SEASON || 90)).toFixed(1) + ' years)</p>';
         html += '<p class="text-dim">While in jail, you cannot trade, travel, work, or interact with the world. The world continues to simulate around you.</p>';
         html += '</div>';
 

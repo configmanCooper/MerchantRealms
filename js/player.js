@@ -44,7 +44,7 @@
         lastName: 'Merchant',
         sex: 'M',
         fullName: 'Unknown Merchant',
-        age: 18,
+        age: 25,
         alive: true,
         spouseId: null,
         childrenIds: [],
@@ -455,7 +455,7 @@
         player.lastName = (playerLastName || '').trim() || 'Merchant';
         player.sex = playerSex === 'F' ? 'F' : 'M';
         player.fullName = player.firstName + ' ' + player.lastName;
-        player.age = 18;
+        player.age = 25;
         player.alive = true;
         player.spouseId = null;
         player.childrenIds = [];
@@ -5446,8 +5446,8 @@
 
         var dailyTheft = baseDailyTheft * roadMult * warMult * connMult * carrierRiskMult * guardMult * weapMult * armMult * decoyMult * fortMult;
         var dailyKill = baseDailyKill * roadMult * warMult * connMult * carrierRiskMult * guardMult * weapMult * armMult * fortMult;
-        var yearlyTheft = 1 - Math.pow(1 - dailyTheft, 365);
-        var yearlyKill = 1 - Math.pow(1 - dailyKill, 365);
+        var yearlyTheft = 1 - Math.pow(1 - dailyTheft, CONFIG.DAYS_PER_SEASON);
+        var yearlyKill = 1 - Math.pow(1 - dailyKill, CONFIG.DAYS_PER_SEASON);
 
         // Daily wage cost — dynamic based on town economy
         var wageRates = getCaravanHireRates(opts.fromTownId || player.townId);
@@ -9111,7 +9111,7 @@
     }
 
     function tickParkedVehicleTheft() {
-        // ~70% per year = ~0.33% per day (1 - (1-r)^365 = 0.70 → r ≈ 0.0033)
+        // ~26% per year (90 days) = ~0.33% per day (1 - (1-r)^90 = 0.26 → r ≈ 0.0033)
         var dailyTheftChance = 0.0033;
         var rng = Engine.getRng ? Engine.getRng() : null;
         if (!rng) return;
@@ -10303,23 +10303,30 @@
         if (!player.alive) return;
         const day = Engine.getDay();
 
-        // Age every 360 days (1 year)
-        if (day > 0 && day % 360 === 0) {
+        // Age every 90 days (1 season = 1 year in this world)
+        if (day > 0 && day % CONFIG.DAYS_PER_SEASON === 0) {
             player.age++;
         }
 
-        // Death check: after age 55, small daily chance
-        if (!window._godInvincible) {
-            var effectiveMaxAge = (player.maxAge || CONFIG.DEATH_AGE_MAX) + (player.maxAgeBonus || 0);
-            if (player.age >= effectiveMaxAge) {
-                handlePlayerDeath();
-                return;
-            }
-            var effectiveMinAge = CONFIG.DEATH_AGE_MIN + (player.maxAgeBonus || 0);
-            if (player.age > effectiveMinAge) {
-                const deathChance = 0.0005 * (player.age - effectiveMinAge);
-                const rng = Engine.getRng();
-                if (rng && rng.chance(deathChance)) {
+        // Death check: tiered yearly chance at season boundaries
+        if (!window._godInvincible && day > 0 && day % CONFIG.DAYS_PER_SEASON === 0) {
+            if (player.age >= CONFIG.DEATH_AGE_MIN) {
+                var ageDeathChance = 0;
+                if (player.age >= 100) {
+                    ageDeathChance = 1.0;
+                } else if (player.age >= 75) {
+                    ageDeathChance = 0.99;
+                } else if (player.age >= 70) {
+                    ageDeathChance = 0.95;
+                } else if (player.age >= 60) {
+                    ageDeathChance = (0.32 + (player.age - 60) * 0.04);
+                } else if (player.age >= 50) {
+                    ageDeathChance = (0.11 + (player.age - 50) * 0.02);
+                } else {
+                    ageDeathChance = (0.01 + (player.age - 40) * 0.01);
+                }
+                var rng = Engine.getRng();
+                if (ageDeathChance >= 1.0 || (rng && rng.chance(ageDeathChance))) {
                     handlePlayerDeath();
                 }
             }
@@ -11862,7 +11869,7 @@
         if (rank >= 6 && !isLordTown) approval -= 0.15;
 
         // Player-influenced king bonus
-        if (kingdom._playerInfluencedKingDay && (Engine.getDay() - kingdom._playerInfluencedKingDay) < 365) {
+        if (kingdom._playerInfluencedKingDay && (Engine.getDay() - kingdom._playerInfluencedKingDay) < CONFIG.DAYS_PER_SEASON) {
             approval += 0.15;
         }
 
@@ -13920,8 +13927,8 @@
 
         // Conception!
         player.pregnantDay = currentDay;
-        const dueDay = currentDay + (CONFIG.PREGNANCY_DURATION || 270);
-        const dueSeason = CONFIG.SEASONS[Math.floor((dueDay % 360) / 90)];
+        const dueDay = currentDay + (CONFIG.PREGNANCY_DURATION || 60);
+        const dueSeason = CONFIG.SEASONS[Math.floor(dueDay / CONFIG.DAYS_PER_SEASON) % 4];
         Engine.logEvent(`Wonderful news! ${player.sex === 'F' ? 'You are' : 'Your spouse is'} expecting a child!`);
         if (typeof UI !== 'undefined' && UI.toast) {
             UI.toast(`🤰 ${player.sex === 'F' ? 'You are' : spouse.firstName + ' is'} expecting! Due in ${dueSeason}.`, 'success', 'my_actions');
@@ -15776,9 +15783,9 @@
         const rng = Engine.getRng();
         const day = Engine.getDay();
 
-        // Age the heir (1 year per 360 game days)
+        // Age the heir (1 year per season/90 game days)
         const daysSinceStart = day - rd.dayStarted;
-        rd.heirAge = Math.floor((Engine.findPerson(rd.heirId) || {}).age || (rd.heirAge + daysSinceStart / 360));
+        rd.heirAge = Math.floor((Engine.findPerson(rd.heirId) || {}).age || (rd.heirAge + daysSinceStart / CONFIG.DAYS_PER_SEASON));
 
         // Update heir age in the world
         const heir = Engine.findPerson(rd.heirId);
@@ -16389,10 +16396,10 @@
             if (!player.militaryRank) player.militaryRank = 'militiaman';
         }
 
-        // Set mandatory service if freed from indenture (4 years = 1460 days)
+        // Set mandatory service if freed from indenture (4 years)
         if (wasIndentured) {
             player.militaryMandatory = true;
-            player.militaryServiceEndDay = Engine.getDay() + 1460;
+            player.militaryServiceEndDay = Engine.getDay() + CONFIG.DAYS_PER_SEASON * 4;
         }
 
         const rng = Engine.getRng();
@@ -19354,7 +19361,7 @@
         for (const ship of player.ships) {
             // Retrofit existing ships
             if (!ship.builtDay && ship.builtDay !== 0) {
-                ship.builtDay = Math.max(0, day - Math.floor(Math.random() * 365));
+                ship.builtDay = Math.max(0, day - Math.floor(Math.random() * CONFIG.DAYS_PER_SEASON));
             }
             if (!ship.degradeCondition) ship.degradeCondition = 'new';
             if (ship.hullHealth === undefined) ship.hullHealth = 100;
@@ -19383,7 +19390,7 @@
             const age = day - (ship.lastRepairDay || ship.builtDay);
             var durCfg = CONFIG.SHIP_TYPES[ship.type];
             var durYears = durCfg ? (durCfg.durabilityYears || 3) : 3;
-            var destroyAge = durYears * 365;
+            var destroyAge = durYears * CONFIG.DAYS_PER_SEASON;
             var breakAge = Math.floor(destroyAge * 0.67);
             var usedAge = Math.floor(destroyAge * 0.33);
 
@@ -19877,7 +19884,7 @@
         for (const bld of player.buildings) {
             // Retrofit existing buildings
             if (!bld.builtDay && bld.builtDay !== 0) {
-                bld.builtDay = Math.max(0, day - Math.floor(Math.random() * 365));
+                bld.builtDay = Math.max(0, day - Math.floor(Math.random() * CONFIG.DAYS_PER_SEASON));
             }
             if (!bld.condition) bld.condition = 'new';
 
@@ -20311,7 +20318,7 @@
             if (_arType === 'loan') _arType = 'monthly'; // loan memberships renew as monthly
             var _arPrice = _arMem.lastPaidPrice || getGuildPrice(_arGuildId, _arType);
             if (player.gold >= _arPrice) {
-                var _arDuration = _arType === 'yearly' ? 365 : 30;
+                var _arDuration = _arType === 'yearly' ? CONFIG.DAYS_PER_SEASON : 30;
                 player.gold -= _arPrice;
                 player.stats.totalGoldSpent += _arPrice;
                 _arMem.expiresDay = day + _arDuration;
@@ -20884,7 +20891,7 @@
                 if (!player.criminalRecord) player.criminalRecord = {};
                 player.criminalRecord[pending.kingdomId] = (player.criminalRecord[pending.kingdomId] || 0) + 1;
 
-                Engine.logEvent('🚔 ' + player.fullName + ' was caught dodging conscription! Sentenced to ' + Math.floor(jailDays / 360) + ' years in prison.');
+                Engine.logEvent('🚔 ' + player.fullName + ' was caught dodging conscription! Sentenced to ' + Math.floor(jailDays / CONFIG.DAYS_PER_SEASON) + ' years in prison.');
 
                 // Store info for fast-forward option
                 player.jailFastForwardAvailable = true;
@@ -21595,7 +21602,7 @@
             if (!lordMarriageWaiver) {
                 // 1 year as Minor Noble (changed from 2)
                 var rankSinceLord = player.rankSince ? (player.rankSince[kId] || Engine.getDay()) : Engine.getDay();
-                var yearsAtRankLord = (Engine.getDay() - rankSinceLord) / 360;
+                var yearsAtRankLord = (Engine.getDay() - rankSinceLord) / CONFIG.DAYS_PER_SEASON;
                 if (yearsAtRankLord < 1) reasons.push(`Need 1+ year as Minor Noble (${yearsAtRankLord.toFixed(1)} years). Marry a Lord (waives time & friendship requirements)`);
 
                 // 60+ relationship with 3 Lords
@@ -21629,7 +21636,7 @@
 
             if (!raWaived) {
                 var rankSinceRA = player.rankSince ? (player.rankSince[kId] || Engine.getDay()) : Engine.getDay();
-                var yearsAtRankRA = (Engine.getDay() - rankSinceRA) / 360;
+                var yearsAtRankRA = (Engine.getDay() - rankSinceRA) / CONFIG.DAYS_PER_SEASON;
                 if (yearsAtRankRA < (nextRank.minYearsAtPrevRank || 3)) reasons.push(`Need ${nextRank.minYearsAtPrevRank || 3}+ years as Lord (${yearsAtRankRA.toFixed(1)} years). Marry a Royal Advisor (waives time, petitions & friends)`);
                 if (!player.hasSuppliedMilitary) reasons.push('Must have supplied military goods during a war');
                 var completedPetitionsRA = player.petitions ? player.petitions.filter(function(p) { return p.status === 'approved' && p.kingdomId === kId; }).length : 0;
@@ -25917,7 +25924,7 @@
 
         var day = 0;
         try { day = Engine.getDay(); } catch(e) {}
-        var duration = type === 'yearly' ? 365 : 30;
+        var duration = type === 'yearly' ? CONFIG.DAYS_PER_SEASON : 30;
 
         // If already a member, extend from expiration
         var existing = player.guildMemberships[guildId];
@@ -27107,7 +27114,7 @@
 
         const res = Object.values(RESOURCE_TYPES).find(r => r.id === resourceId);
         const resName = res ? res.name : resourceId;
-        var durationYears = Math.round(duration / 360);
+        var durationYears = Math.round(duration / CONFIG.DAYS_PER_SEASON);
         Engine.logEvent(`${player.fullName} obtained a ${durationYears}-year license to trade ${resName} in ${kingdom.name} for ${fee}g.`);
         if (typeof UI !== 'undefined' && UI.toast) {
             UI.toast(`📜 License obtained: ${resName} in ${kingdom.name} (expires in ${duration} days)`, 'success', 'my_business');
@@ -31551,7 +31558,7 @@
         if (maxPerYear === 0) return { success: false, message: 'Peasants cannot create petitions. Become a Citizen first.' };
         var currentDay = Engine.getDay();
         if (maxPerYear > 0) {
-            var yearStart = currentDay - 360;
+            var yearStart = currentDay - CONFIG.DAYS_PER_SEASON;
             var petitionsThisYear = player.petitions.filter(function(p) { return p.createdDay >= yearStart; }).length;
             var rankName = CONFIG.SOCIAL_RANKS[rankIdx] ? CONFIG.SOCIAL_RANKS[rankIdx].name : 'your rank';
             if (petitionsThisYear >= maxPerYear) {
@@ -34221,7 +34228,7 @@
                         actions.push({
                             id: 'smuggling_route', tab: 'market',
                             name: '🥷 Smuggling Route to ' + _destTown.name,
-                            desc: 'Establish permanent smuggling route. Generates passive gold for 365 days. (' + _srCount + '/3 active)',
+                            desc: 'Establish permanent smuggling route. Generates passive gold for 1 year. (' + _srCount + '/3 active)',
                             cost: '1000g', detection: calculateCorruptDetection(0.25, town),
                             reward: 'Passive income', xp: 25,
                             requires: 'Master Smuggler + Contraband Network', available: player.gold >= 1000,
@@ -34587,12 +34594,12 @@
         }
 
         player.gold -= 1000;
-        player.smugglingRoutes.push({ fromTownId: fromTownId, toTownId: toTownId, expiresDay: Engine.getDay() + 365, goldEarned: 0 });
+        player.smugglingRoutes.push({ fromTownId: fromTownId, toTownId: toTownId, expiresDay: Engine.getDay() + CONFIG.DAYS_PER_SEASON, goldEarned: 0 });
         recordCorruptAction('smuggling_route', false);
         grantXP(25, 'Established smuggling route');
         player.notoriety += 8;
         Engine.logEvent('A new smuggling route has been established between ' + fromTown.name + ' and ' + toTown.name + '.');
-        return { success: true, message: '🥷 Smuggling route established: ' + fromTown.name + ' ↔ ' + toTown.name + '! Generates passive income for 365 days.' };
+        return { success: true, message: '🥷 Smuggling route established: ' + fromTown.name + ' ↔ ' + toTown.name + '! Generates passive income for 1 year.' };
     }
 
     // ── (p3) Forge Documents ──
@@ -35572,7 +35579,7 @@
             plant_evidence: 30, incite_revolt: 120, double_agent: 180, protection_racket: 60,
             lay_low: 60, cleanse_identity: 30,
             pit_nobles: 20, turn_noble_against_king: 30, discredit_noble: 30,
-            manipulate_vote: 15, expose_secrets: 45, double_noble_agent: 365, abandon_double_noble: 90
+            manipulate_vote: 15, expose_secrets: 45, double_noble_agent: 90, abandon_double_noble: 90
         };
         var baseCd = SCHEME_COOLDOWNS[actionId] || 10;
         // Getting caught doubles cooldown; escalation from prior catches
@@ -41629,8 +41636,8 @@
         // earn_freedom: discovered after 180 days of working
         if (hasEscape('earn_freedom') && elapsed >= 180) discoverEscape('earn_freedom');
 
-        // master_dies: discovered after 365 days (you realize mortality)
-        if (hasEscape('master_dies') && elapsed >= 365) discoverEscape('master_dies');
+        // master_dies: discovered after 90 days (1 year — you realize mortality)
+        if (hasEscape('master_dies') && elapsed >= 90) discoverEscape('master_dies');
 
         // run_away: discovered after 90 days if player has been to a different town
         if (hasEscape('run_away') && elapsed >= 90) {
@@ -41673,9 +41680,9 @@
             }
         }
 
-        // steal_contract: discovered with high notoriety or after 365 days
+        // steal_contract: discovered with high notoriety or after 90 days (1 year)
         if (hasEscape('steal_contract')) {
-            if ((player.notoriety && player.notoriety >= 3) || elapsed >= 365) {
+            if ((player.notoriety && player.notoriety >= 3) || elapsed >= 90) {
                 discoverEscape('steal_contract');
             }
         }
@@ -41683,18 +41690,18 @@
         // religious_sanctuary: discovered after 180 days (you hear about temples)
         if (hasEscape('religious_sanctuary') && elapsed >= 180) discoverEscape('religious_sanctuary');
 
-        // blackmail_master: discovered after 365 days (you notice master's habits)
-        if (hasEscape('blackmail_master') && elapsed >= 365) discoverEscape('blackmail_master');
+        // blackmail_master: discovered after 90 days (1 year — you notice master's habits)
+        if (hasEscape('blackmail_master') && elapsed >= 90) discoverEscape('blackmail_master');
 
-        // frame_master: discovered after 540 days with some notoriety
-        if (hasEscape('frame_master') && elapsed >= 540) {
-            if ((player.notoriety && player.notoriety >= 2) || elapsed >= 730) {
+        // frame_master: discovered after 135 days (~1.5 years) with some notoriety
+        if (hasEscape('frame_master') && elapsed >= 135) {
+            if ((player.notoriety && player.notoriety >= 2) || elapsed >= 180) {
                 discoverEscape('frame_master');
             }
         }
 
-        // poison_master: discovered after 540 days (you learn about herbs)
-        if (hasEscape('poison_master') && elapsed >= 540) discoverEscape('poison_master');
+        // poison_master: discovered after 135 days (~1.5 years — you learn about herbs)
+        if (hasEscape('poison_master') && elapsed >= 135) discoverEscape('poison_master');
 
         // bribe_officials: discovered when you have 200+ gold
         if (hasEscape('bribe_officials') && player.gold >= 200) discoverEscape('bribe_officials');
@@ -41714,7 +41721,7 @@
                     hasHighRel = true; break;
                 }
             }
-            if (hasHighRel || elapsed >= 730) {
+            if (hasHighRel || elapsed >= CONFIG.DAYS_PER_SEASON * 2) {
                 discoverEscape('marry_up');
             }
         }
@@ -41877,7 +41884,7 @@
                 player.militaryService = {
                     active: true,
                     startDay: enlistDay,
-                    endDay: enlistDay + 1460,  // 4 years (365 * 4)
+                    endDay: enlistDay + CONFIG.DAYS_PER_SEASON * 4,  // 4 years
                     kingdom: atWar[0].id,
                     rank: 'recruit',
                     cannotQuit: true
@@ -41941,9 +41948,9 @@
                     return { success: true, message: 'Contract stolen and destroyed! You are free (but wanted)!' };
                 } else {
                     player.notoriety = (player.notoriety || 0) + 3;
-                    player.indentured.contractDays += 365;
+                    player.indentured.contractDays += CONFIG.DAYS_PER_SEASON;
                     Engine.logEvent('🚔 You were caught trying to steal your contract! 1 year added to your servitude!');
-                    return { success: false, message: 'Caught! 365 days added to your contract and notoriety increased.' };
+                    return { success: false, message: 'Caught! 1 year added to your contract and notoriety increased.' };
                 }
             }
 
@@ -41969,10 +41976,10 @@
                     grantXP(20, 'escaped');
                     return { success: true, message: 'You escaped! But you\'re now a fugitive with high notoriety.' };
                 } else {
-                    player.indentured.contractDays += 365;
+                    player.indentured.contractDays += CONFIG.DAYS_PER_SEASON;
                     player.notoriety = (player.notoriety || 0) + 2;
                     Engine.logEvent('🚔 ' + player.fullName + ' was caught fleeing! 1 year added to contract!');
-                    return { success: false, message: 'Caught! 365 days added to your contract.' };
+                    return { success: false, message: 'Caught! 1 year added to your contract.' };
                 }
             }
 
@@ -42046,7 +42053,7 @@
                     return { success: true, message: 'Your master was arrested! You are free!' };
                 } else {
                     player.notoriety = (player.notoriety || 0) + 8;
-                    player.indentured.contractDays += 730;
+                    player.indentured.contractDays += CONFIG.DAYS_PER_SEASON * 2;
                     Engine.logEvent('🚔 The guards saw through your scheme! You\'re in serious trouble — 2 years added!');
                     return { success: false, message: 'Failed! 2 years added to contract. Notoriety greatly increased.' };
                 }
@@ -42074,7 +42081,7 @@
                     return { success: true, message: 'Your master has... passed away. You are free.' };
                 } else {
                     // Master survives, suspects you
-                    player.indentured.contractDays += 365;
+                    player.indentured.contractDays += CONFIG.DAYS_PER_SEASON;
                     player.notoriety = (player.notoriety || 0) + 4;
                     Engine.logEvent('😡 Your master survived the illness and suspects foul play! 1 year added to contract!');
                     return { success: false, message: 'Your master survived and suspects you. 1 year added!' };
@@ -42732,11 +42739,11 @@
                 if (newMasters.length > 0) {
                     var newMaster = newMasters[Math.floor(Math.random() * newMasters.length)];
                     player.indentured.masterId = newMaster.id;
-                    player.indentured.contractDays += 365; // 1 extra year (was 2)
+                    player.indentured.contractDays += CONFIG.DAYS_PER_SEASON; // 1 extra year (was 2)
                     player.indentured.masterRelationship = 20;
                     Engine.logEvent('⛓️ Your master sold your contract to ' + newMaster.firstName + ' ' + newMaster.lastName + '! 1 year added! (' + failures + ' consecutive failures)');
                 } else {
-                    player.indentured.contractDays += 365;
+                    player.indentured.contractDays += CONFIG.DAYS_PER_SEASON;
                     Engine.logEvent('⛓️ Your master extended your contract by 1 year! (' + failures + ' consecutive failures)');
                 }
             } else {
@@ -42772,7 +42779,7 @@
                 player.indentured.contractDays += 540; // 1.5 years (was 3)
                 Engine.logEvent('🔒 Your master turned you over to the authorities! 60 days jail + 1.5 years added! (' + failures + ' consecutive failures)');
             } else {
-                player.indentured.contractDays += 365;
+                player.indentured.contractDays += CONFIG.DAYS_PER_SEASON;
                 player.indentured.masterRelationship = 0;
                 var confiscated2 = Math.floor(player.gold * 0.5);
                 if (confiscated2 > 0) player.gold -= confiscated2;
@@ -45059,7 +45066,7 @@
         if (loanAmount < minAmount) loanAmount = minAmount;
 
         // Calculate repayment terms
-        var totalInterest = Math.floor(loanAmount * annualInterest * (termDays / 365));
+        var totalInterest = Math.floor(loanAmount * annualInterest * (termDays / CONFIG.DAYS_PER_SEASON));
         var totalRepay = loanAmount + totalInterest;
         var numPayments = Math.floor(termDays / paymentInterval);
         var monthlyPayment = Math.ceil(totalRepay / numPayments);
@@ -45603,7 +45610,7 @@
         }
 
         var totalDebt = debtAmount + 1000;
-        var contractDays = Math.max(365, Math.floor(totalDebt / 2000 * 365));
+        var contractDays = Math.max(CONFIG.DAYS_PER_SEASON, Math.floor(totalDebt / 2000 * CONFIG.DAYS_PER_SEASON));
 
         player.indentured = {
             active: true,
@@ -45671,7 +45678,7 @@
         player.militaryDayEnlisted = Engine.getDay();
         if (!player.militaryRank) player.militaryRank = 'militiaman';
         player.militaryMandatory = true;
-        player.militaryServiceEndDay = Engine.getDay() + 1460;
+        player.militaryServiceEndDay = Engine.getDay() + CONFIG.DAYS_PER_SEASON * 4;
 
         var rng = Engine.getRng();
         player.militaryNextBattleDay = Engine.getDay() + (rng ? rng.randInt(3, 5) : 4);
@@ -46088,7 +46095,7 @@
             id: 'tax_exemption',
             label: '💰 Tax Exemption',
             description: 'Complete exemption from all taxes in ' + kingdom.name + ' for one full year.',
-            detail: 'No trade, property, or income taxes for 365 days'
+            detail: 'No trade, property, or income taxes for 1 year'
         });
 
         // 4. Land grant — free building
@@ -46298,10 +46305,10 @@
                 if (!kingdom.taxHolidays) kingdom.taxHolidays = [];
                 // Give player-specific tax exemption
                 player.taxExemption = player.taxExemption || {};
-                player.taxExemption[kingdomId] = Engine.getDay() + 365;
+                player.taxExemption[kingdomId] = Engine.getDay() + CONFIG.DAYS_PER_SEASON;
                 Engine.logEvent('💰 The King of ' + kingdom.name + ' grants ' + player.fullName + ' a full tax exemption for one year!');
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('💰 Tax exempt for 1 year!', 'success');
-                return { success: true, message: 'Tax exemption for 365 days!' };
+                return { success: true, message: 'Tax exemption for 1 year!' };
             }
             case 'land_grant': {
                 // Give a warehouse building + 3 workers
@@ -47446,7 +47453,7 @@
         // Show mandatory military service bar (replaces servitude bar when freed via enlistment)
         if (player.militaryMandatory && player.militaryActive) {
             var milDaysLeft = Math.max(0, (player.militaryServiceEndDay || 0) - Engine.getDay());
-            var milYearsLeft = (milDaysLeft / 365).toFixed(1);
+            var milYearsLeft = (milDaysLeft / CONFIG.DAYS_PER_SEASON).toFixed(1);
             status = { type: 'military_mandatory', icon: '⚔️', label: 'Mandatory Military Service',
                 info: 'Service Remaining: ' + milDaysLeft + ' days (' + milYearsLeft + ' years) | Rank: ' + (MILITARY_RANK_LABELS[player.militaryRank] || 'Soldier') };
         }
@@ -47540,12 +47547,12 @@
     var JOURNAL_SEASONS = { 0: 'winter', 1: 'spring', 2: 'summer', 3: 'autumn' };
 
     function getJournalSeason(day) {
-        var quarter = Math.floor(((day - 1) % 360) / 90);
+        var quarter = Math.floor((day - 1) / (CONFIG.DAYS_PER_SEASON || 90)) % 4;
         return JOURNAL_SEASONS[quarter] || 'summer';
     }
 
     function getJournalYear(day) {
-        return Math.floor((day - 1) / 360) + 1;
+        return Math.floor((day - 1) / (CONFIG.DAYS_PER_SEASON || 90)) + 1;
     }
 
     function recordJournalEntry(type, rawText, opts) {
@@ -47571,7 +47578,7 @@
 
     // Convert a journal entry to narrative prose
     function narrateJournalEntry(entry) {
-        var dayInYear = ((entry.day - 1) % 360) + 1;
+        var dayInYear = ((entry.day - 1) % (CONFIG.DAYS_PER_SEASON || 90)) + 1;
         var phrases = [];
         var type = entry.type;
         var text = entry.text || '';
