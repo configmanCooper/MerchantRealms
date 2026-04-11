@@ -27,6 +27,8 @@ window.UI = (function () {
     let _encounterLocked = false; // When true, encounter dialog cannot be closed — must resolve
     var _rightPanelTownId = null; // Track which town is shown in right panel for auto-refresh
     var _rightPanelRefreshCounter = 0;
+    var _rightPanelDirty = false; // Set true when game state changes require immediate refresh
+    var _rightPanelLastDay = -1; // Track last known game day for dirty detection
     var _townPanelExpandedSections = {}; // Track expanded collapsible sections across refreshes
     var _toastsMuted = false; // When true, toast popups are suppressed but events still log
     try { _toastsMuted = localStorage.getItem('mr_toasts_muted') === 'true'; } catch(e) {}
@@ -908,11 +910,17 @@ window.UI = (function () {
             familyBtn.style.display = (typeof Player !== 'undefined' && Player.familyMembers && Player.familyMembers.length > 0) ? '' : 'none';
         }
 
-        // Auto-refresh town view panel (every ~12 update calls ≈ once per second)
+        // Auto-refresh town view panel (every ~36 update calls ≈ 3 sec, or immediately on day change)
         if (_rightPanelTownId && el.rightPanel && !el.rightPanel.classList.contains('hidden')) {
+            var _curDay = (typeof Engine !== 'undefined' && Engine.getDay) ? Engine.getDay() : -1;
+            if (_curDay !== _rightPanelLastDay) {
+                _rightPanelDirty = true;
+                _rightPanelLastDay = _curDay;
+            }
             _rightPanelRefreshCounter++;
-            if (_rightPanelRefreshCounter >= 12) {
+            if (_rightPanelDirty || _rightPanelRefreshCounter >= 36) {
                 _rightPanelRefreshCounter = 0;
+                _rightPanelDirty = false;
                 try {
                     var _rpTown = Engine.findTown ? Engine.findTown(_rightPanelTownId) : null;
                     if (_rpTown) {
@@ -30653,5 +30661,7 @@ window.UI = (function () {
         _switchKQTab,
         _attemptKQActionUI,
         _executeKQAction,
+        // Performance: mark right panel for immediate refresh
+        markPanelDirty: function() { _rightPanelDirty = true; },
     };
 })();

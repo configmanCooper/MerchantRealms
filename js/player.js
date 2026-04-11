@@ -331,9 +331,14 @@
             category: category,
             desc: description
         });
-        var cutoff = Engine.getDay() - 60;
-        while (player.financialLedger.length > 0 && player.financialLedger[0].day < cutoff) {
-            player.financialLedger.shift();
+        // Prune entries older than 60 days using splice instead of repeated shift()
+        if (player.financialLedger.length > 100) {
+            var cutoff = Engine.getDay() - 60;
+            var firstValid = 0;
+            while (firstValid < player.financialLedger.length && player.financialLedger[firstValid].day < cutoff) {
+                firstValid++;
+            }
+            if (firstValid > 0) player.financialLedger.splice(0, firstValid);
         }
     }
 
@@ -722,6 +727,10 @@
             type,
         });
         if (player.tradeLog.length > 50) player.tradeLog.shift();
+        // Track military sales incrementally for win condition check
+        if (type === 'sell' && isMilitaryResource(resource)) {
+            player._militarySalesTotal = (player._militarySalesTotal || 0) + qty;
+        }
     }
 
     // ========================================================
@@ -2681,8 +2690,8 @@
             carrierWage: carrierWage,
             guardWage: guardWage,
             hasHorse: carrierHorses > 0,
-            buyOrders: buyOrders ? JSON.parse(JSON.stringify(buyOrders)) : null,
-            orders: orders ? JSON.parse(JSON.stringify(orders)) : null,
+            buyOrders: buyOrders ? structuredClone(buyOrders) : null,
+            orders: orders ? structuredClone(orders) : null,
             log: [],
             roundTrip: roundTrip || recurring,
             recurring: recurring,
@@ -2698,7 +2707,7 @@
             overflowSell: options.overflowSell || false,
             autoPickupTravelers: options.autoPickupTravelers || false,
             passengers: [],
-            autoDisbandConditions: options.autoDisbandConditions ? JSON.parse(JSON.stringify(options.autoDisbandConditions)) : [],
+            autoDisbandConditions: options.autoDisbandConditions ? structuredClone(options.autoDisbandConditions) : [],
         };
         player.caravans.push(caravan);
 
@@ -5337,7 +5346,7 @@
     function editCaravanOrders(caravanId, newOrders) {
         for (var i = 0; i < player.caravans.length; i++) {
             if (player.caravans[i].id === caravanId) {
-                player.caravans[i].orders = newOrders ? JSON.parse(JSON.stringify(newOrders)) : null;
+                player.caravans[i].orders = newOrders ? structuredClone(newOrders) : null;
                 logCaravan(player.caravans[i], '📝 Orders updated.');
                 return { success: true, message: 'Caravan orders updated.' };
             }
@@ -6429,7 +6438,7 @@
     function setAutoDisbandConditions(caravanId, conditions) {
         var caravan = player.caravans.find(function(c) { return c.id === caravanId && c.active; });
         if (!caravan) return { success: false, message: 'No active caravan with that ID.' };
-        caravan.autoDisbandConditions = conditions ? JSON.parse(JSON.stringify(conditions)) : [];
+        caravan.autoDisbandConditions = conditions ? structuredClone(conditions) : [];
         logCaravan(caravan, '⚙️ Auto-disband conditions updated (' + caravan.autoDisbandConditions.length + ' rules).');
         return { success: true, message: 'Auto-disband conditions set (' + caravan.autoDisbandConditions.length + ' rules).' };
     }
@@ -8493,9 +8502,7 @@
         }
 
         // 2. Kingmaker — sell 500+ military goods AND a kingdom controls 50%+ towns
-        const milSold = player.tradeLog
-            .filter(t => t.type === 'sell' && isMilitaryResource(t.resource))
-            .reduce((s, t) => s + t.qty, 0);
+        const milSold = player._militarySalesTotal || 0;
         if (milSold > 500) {
             const w = Engine.getWorld();
             if (w) {
@@ -10388,7 +10395,7 @@
                     thresholdLabel: 'Abandoned',
                     goldAtDeath: player.gold,
                     buildingsAtDeath: player.buildings.length,
-                    buildingsCopy: JSON.parse(JSON.stringify(player.buildings)),
+                    buildingsCopy: structuredClone(player.buildings),
                     reputationAtDeath: { ...player.reputation },
                     monthlyUpdates: [{ day: Engine.getDay(), message: '🚪 With no guardian, the child is sent to an orphanage.' }],
                     estateGold: 0,
@@ -15690,13 +15697,13 @@
             thresholdLabel: threshold ? threshold.label : 'Unknown',
             goldAtDeath: player.gold,
             buildingsAtDeath: player.buildings.length,
-            buildingsCopy: JSON.parse(JSON.stringify(player.buildings)),
+            buildingsCopy: structuredClone(player.buildings),
             reputationAtDeath: { ...player.reputation },
             monthlyUpdates: [],
             estateGold: player.gold,
             buildingsMaintained: player.buildings.length,
             dayStarted: Engine.getDay(),
-            revealedAtDeath: player.revealedTraits[spouse.id] ? JSON.parse(JSON.stringify(player.revealedTraits[spouse.id])) : { traits: {}, quirks: [] },
+            revealedAtDeath: player.revealedTraits[spouse.id] ? structuredClone(player.revealedTraits[spouse.id]) : { traits: {}, quirks: [] },
             parentSkills: player.skills ? { ...player.skills } : {},
         };
 
@@ -18273,20 +18280,20 @@
             gold: player.gold,
             townId: player.townId,
             inventory: { ...player.inventory },
-            buildings: JSON.parse(JSON.stringify(player.buildings)),
+            buildings: structuredClone(player.buildings),
             employees: [...player.employees],
             _workerSatisfaction: { ...player._workerSatisfaction },
             _autoRaiseWages: player._autoRaiseWages || false,
-            _guildGracePeriods: JSON.parse(JSON.stringify(player._guildGracePeriods || {})),
-            caravans: JSON.parse(JSON.stringify(player.caravans)),
-            ships: JSON.parse(JSON.stringify(player.ships)),
-            horses: JSON.parse(JSON.stringify(player.horses || [])),
+            _guildGracePeriods: structuredClone(player._guildGracePeriods || {}),
+            caravans: structuredClone(player.caravans),
+            ships: structuredClone(player.ships),
+            horses: structuredClone(player.horses || []),
             reputation: { ...player.reputation },
             _townRepKingdomMod: { ...(player._townRepKingdomMod || {}) },
             notoriety: player.notoriety,
             personalGuards: (player.guards || []).length,
-            guards: JSON.parse(JSON.stringify(player.guards || [])),
-            agents: JSON.parse(JSON.stringify(player.agents || [])),
+            guards: structuredClone(player.guards || []),
+            agents: structuredClone(player.agents || []),
             traveling: player.traveling,
             travelProgress: player.travelProgress,
             travelDestination: player.travelDestination,
@@ -18308,7 +18315,7 @@
             xpBonus: player.xpBonus || null,
             stats: { ...player.stats },
             supplyChains: [...player.supplyChains],
-            tradeLog: JSON.parse(JSON.stringify(player.tradeLog)),
+            tradeLog: structuredClone(player.tradeLog),
             financialLedger: player.financialLedger ? player.financialLedger.slice(-500) : [],
             firstName: player.firstName,
             lastName: player.lastName,
@@ -18336,22 +18343,22 @@
             tradingStartDay: player.tradingStartDay,
             kingdomResidencyStart: { ...(player.kingdomResidencyStart || {}) },
             criminalRecord: { ...(player.criminalRecord || {}) },
-            resolvedWarConflicts: JSON.parse(JSON.stringify(player.resolvedWarConflicts || {})),
-            pendingWarChoice: player.pendingWarChoice ? JSON.parse(JSON.stringify(player.pendingWarChoice)) : null,
+            resolvedWarConflicts: structuredClone(player.resolvedWarConflicts || {}),
+            pendingWarChoice: player.pendingWarChoice ? structuredClone(player.pendingWarChoice) : null,
             roadsBuilt: player.roadsBuilt || 0,
             bridgesBuilt: player.bridgesBuilt || 0,
-            bridgeDestruction: player.bridgeDestruction ? JSON.parse(JSON.stringify(player.bridgeDestruction)) : null,
+            bridgeDestruction: player.bridgeDestruction ? structuredClone(player.bridgeDestruction) : null,
             seaRoutesBuilt: player.seaRoutesBuilt || 0,
             hasSuppliedMilitary: player.hasSuppliedMilitary || false,
             tradesCompleted: player.tradesCompleted || 0,
-            relationships: JSON.parse(JSON.stringify(player.relationships)),
+            relationships: structuredClone(player.relationships),
             isNoble: player.isNoble || false,
-            introductions: JSON.parse(JSON.stringify(player.introductions || {})),
-            introductionCooldowns: JSON.parse(JSON.stringify(player.introductionCooldowns || {})),
+            introductions: structuredClone(player.introductions || {}),
+            introductionCooldowns: structuredClone(player.introductionCooldowns || {}),
             adviseCooldown: player.adviseCooldown || 0,
             smugglingSkill: player.smugglingSkill,
             jailedUntilDay: player.jailedUntilDay,
-            aiMerchantSiblings: JSON.parse(JSON.stringify(player.aiMerchantSiblings)),
+            aiMerchantSiblings: structuredClone(player.aiMerchantSiblings),
             // XP & Progression
             xp: player.xp,
             totalXp: player.totalXp,
@@ -18360,78 +18367,78 @@
             skillPoints: player.skillPoints,
             dynastySPBank: player.dynastySPBank || 0,
             skills: { ...player.skills },
-            notificationFilters: JSON.parse(JSON.stringify(player.notificationFilters || {})),
-            achievements: JSON.parse(JSON.stringify(player.achievements)),
+            notificationFilters: structuredClone(player.notificationFilters || {}),
+            achievements: structuredClone(player.achievements),
             hunger: player.hunger,
             health: player.health != null ? player.health : 100,
             maxHealth: player.maxHealth || 100,
             _lastStarveTick: player._lastStarveTick || 0,
             _lastDehydrateTick: player._lastDehydrateTick || 0,
-            marketIntel: JSON.parse(JSON.stringify(player.marketIntel)),
-            tradeTipLog: JSON.parse(JSON.stringify(player.tradeTipLog || [])),
-            journalEntries: JSON.parse(JSON.stringify(player.journalEntries || [])),
-            achievementStats: JSON.parse(JSON.stringify(player.achievementStats)),
+            marketIntel: structuredClone(player.marketIntel),
+            tradeTipLog: structuredClone(player.tradeTipLog || []),
+            journalEntries: structuredClone(player.journalEntries || []),
+            achievementStats: structuredClone(player.achievementStats),
             _xpAccumulator: player._xpAccumulator,
-            licenses: JSON.parse(JSON.stringify(player.licenses)),
-            productionPermits: JSON.parse(JSON.stringify(player.productionPermits || {})),
+            licenses: structuredClone(player.licenses),
+            productionPermits: structuredClone(player.productionPermits || {}),
             offenseCount: { ...player.offenseCount },
             protectionRacket: { ...player.protectionRacket },
             restrictedTradesWithoutLicense: player.restrictedTradesWithoutLicense || 0,
             // War allegiance & win tracking
-            warAllegiances: JSON.parse(JSON.stringify(player.warAllegiances || {})),
+            warAllegiances: structuredClone(player.warAllegiances || {}),
             topMerchantDays: player.topMerchantDays || 0,
-            victoriesAchieved: JSON.parse(JSON.stringify(player.victoriesAchieved || {})),
+            victoriesAchieved: structuredClone(player.victoriesAchieved || {}),
             belowMarketSales: player.belowMarketSales || 0,
             smugglingTaxSaved: player.smugglingTaxSaved || 0,
             // Dark Deeds / Corruption
             corruptActions: player.corruptActions || 0,
             corruptionStreak: player.corruptionStreak || 0,
-            crimesCommitted: JSON.parse(JSON.stringify(player.crimesCommitted || {})),
-            heirFavor: JSON.parse(JSON.stringify(player.heirFavor || {})),
-            hiddenWarehouses: JSON.parse(JSON.stringify(player.hiddenWarehouses || [])),
-            bribedGuards: JSON.parse(JSON.stringify(player.bribedGuards || {})),
+            crimesCommitted: structuredClone(player.crimesCommitted || {}),
+            heirFavor: structuredClone(player.heirFavor || {}),
+            hiddenWarehouses: structuredClone(player.hiddenWarehouses || []),
+            bribedGuards: structuredClone(player.bribedGuards || {}),
             taxesEvaded: player.taxesEvaded || 0,
             cookingBooks: player.cookingBooks || false,
-            insiderInfo: JSON.parse(JSON.stringify(player.insiderInfo || [])),
-            poisonTargets: JSON.parse(JSON.stringify(player.poisonTargets || [])),
+            insiderInfo: structuredClone(player.insiderInfo || []),
+            poisonTargets: structuredClone(player.poisonTargets || []),
             arsonCount: player.arsonCount || 0,
             poisonKills: player.poisonKills || 0,
-            sabotagedRoads: JSON.parse(JSON.stringify(player.sabotagedRoads || [])),
-            sabotagedBuildings: JSON.parse(JSON.stringify(player.sabotagedBuildings || [])),
-            blackmailTargets: JSON.parse(JSON.stringify(player.blackmailTargets || {})),
-            rumorTargets: JSON.parse(JSON.stringify(player.rumorTargets || {})),
+            sabotagedRoads: structuredClone(player.sabotagedRoads || []),
+            sabotagedBuildings: structuredClone(player.sabotagedBuildings || []),
+            blackmailTargets: structuredClone(player.blackmailTargets || {}),
+            rumorTargets: structuredClone(player.rumorTargets || {}),
             // Spouse personality / dating / regency
-            revealedTraits: JSON.parse(JSON.stringify(player.revealedTraits || {})),
-            discoveredGiftPrefs: JSON.parse(JSON.stringify(player.discoveredGiftPrefs || {})),
+            revealedTraits: structuredClone(player.revealedTraits || {}),
+            discoveredGiftPrefs: structuredClone(player.discoveredGiftPrefs || {}),
             regencyMode: player.regencyMode || false,
-            regencyData: player.regencyData ? JSON.parse(JSON.stringify(player.regencyData)) : null,
+            regencyData: player.regencyData ? structuredClone(player.regencyData) : null,
             spouseRelHighDays: player.spouseRelHighDays || 0,
-            heirTraits: JSON.parse(JSON.stringify(player.heirTraits || [])),
-            dateProgress: JSON.parse(JSON.stringify(player.dateProgress || {})),
-            _npcInteractions: JSON.parse(JSON.stringify(player._npcInteractions || {})),
-            investigatorCaught: JSON.parse(JSON.stringify(player.investigatorCaught || {})),
-            weddingPlan: player.weddingPlan ? JSON.parse(JSON.stringify(player.weddingPlan)) : null,
-            weddingMemory: player.weddingMemory ? JSON.parse(JSON.stringify(player.weddingMemory)) : null,
+            heirTraits: structuredClone(player.heirTraits || []),
+            dateProgress: structuredClone(player.dateProgress || {}),
+            _npcInteractions: structuredClone(player._npcInteractions || {}),
+            investigatorCaught: structuredClone(player.investigatorCaught || {}),
+            weddingPlan: player.weddingPlan ? structuredClone(player.weddingPlan) : null,
+            weddingMemory: player.weddingMemory ? structuredClone(player.weddingMemory) : null,
             // Crown & Royal Advisor
             isRoyalAdvisorFromKing: player.isRoyalAdvisorFromKing || false,
             royalAdvisorKingdomId: player.royalAdvisorKingdomId || null,
-            royalAdvisorBenefits: player.royalAdvisorBenefits ? JSON.parse(JSON.stringify(player.royalAdvisorBenefits)) : null,
+            royalAdvisorBenefits: player.royalAdvisorBenefits ? structuredClone(player.royalAdvisorBenefits) : null,
             politicalCapital: player.politicalCapital || 0,
             politicalCapitalResetDay: player.politicalCapitalResetDay || 0,
             lordTownId: player.lordTownId || null,
-            _repWarnDay: JSON.parse(JSON.stringify(player._repWarnDay || {})),
+            _repWarnDay: structuredClone(player._repWarnDay || {}),
             _nobleStatusNeverExpires: player._nobleStatusNeverExpires || false,
             _marriedToRoyalChild: player._marriedToRoyalChild || null,
             _tournamentAccessDay: player._tournamentAccessDay || null,
-            _marriageRankWaiver: player._marriageRankWaiver ? JSON.parse(JSON.stringify(player._marriageRankWaiver)) : null,
+            _marriageRankWaiver: player._marriageRankWaiver ? structuredClone(player._marriageRankWaiver) : null,
             // Reputation tracking
-            _donationTracker: player._donationTracker ? JSON.parse(JSON.stringify(player._donationTracker)) : {},
-            _warContributions: player._warContributions ? JSON.parse(JSON.stringify(player._warContributions)) : {},
+            _donationTracker: player._donationTracker ? structuredClone(player._donationTracker) : {},
+            _warContributions: player._warContributions ? structuredClone(player._warContributions) : {},
             // Town Reputation
-            townReputation: JSON.parse(JSON.stringify(player.townReputation || {})),
+            townReputation: structuredClone(player.townReputation || {}),
             // Town Quests
-            townQuests: JSON.parse(JSON.stringify(player.townQuests || {})),
-            activeQuests: JSON.parse(JSON.stringify(player.activeQuests || [])),
+            townQuests: structuredClone(player.townQuests || {}),
+            activeQuests: structuredClone(player.activeQuests || []),
             completedQuestCount: player.completedQuestCount || 0,
             wartimeGoldEarned: player.wartimeGoldEarned || 0,
             // Military Career
@@ -18443,89 +18450,89 @@
             militaryRole: player.militaryRole || 'soldier',
             militaryDayEnlisted: player.militaryDayEnlisted || 0,
             militaryNextBattleDay: player.militaryNextBattleDay || 0,
-            nursePostServiceJobs: player.nursePostServiceJobs ? JSON.parse(JSON.stringify(player.nursePostServiceJobs)) : [],
+            nursePostServiceJobs: player.nursePostServiceJobs ? structuredClone(player.nursePostServiceJobs) : [],
             // Guilds & Permits
-            guilds: JSON.parse(JSON.stringify(player.guilds || {})),
-            guildMemberships: JSON.parse(JSON.stringify(player.guildMemberships || {})),
-            horsePermit: JSON.parse(JSON.stringify(player.horsePermit || {})),
+            guilds: structuredClone(player.guilds || {}),
+            guildMemberships: structuredClone(player.guildMemberships || {}),
+            horsePermit: structuredClone(player.horsePermit || {}),
             autoRest: player.autoRest !== false,
             // Injuries & Illnesses
-            injuries: JSON.parse(JSON.stringify(player.injuries || [])),
-            illnesses: JSON.parse(JSON.stringify(player.illnesses || [])),
+            injuries: structuredClone(player.injuries || []),
+            illnesses: structuredClone(player.illnesses || []),
             // Job Experience
-            jobExperience: JSON.parse(JSON.stringify(player.jobExperience || {})),
+            jobExperience: structuredClone(player.jobExperience || {}),
             // Skill Point Passing
-            skillPointsPassedToChild: JSON.parse(JSON.stringify(player.skillPointsPassedToChild || {})),
+            skillPointsPassedToChild: structuredClone(player.skillPointsPassedToChild || {}),
             // Auto-Travel Jobs
-            autoTravelJob: player.autoTravelJob ? JSON.parse(JSON.stringify(player.autoTravelJob)) : null,
+            autoTravelJob: player.autoTravelJob ? structuredClone(player.autoTravelJob) : null,
             // Inventory Capacity
             storageContainer: player.storageContainer,
             _backpack: player._backpack || false,
-            townStorage: JSON.parse(JSON.stringify(player.townStorage || {})),
-            rememberedPrices: JSON.parse(JSON.stringify(player.rememberedPrices || {})),
-            _visitedTowns: JSON.parse(JSON.stringify(player._visitedTowns || {})),
+            townStorage: structuredClone(player.townStorage || {}),
+            rememberedPrices: structuredClone(player.rememberedPrices || {}),
+            _visitedTowns: structuredClone(player._visitedTowns || {}),
             // Passenger Transport
-            activeTransport: player.activeTransport ? JSON.parse(JSON.stringify(player.activeTransport)) : null,
+            activeTransport: player.activeTransport ? structuredClone(player.activeTransport) : null,
             // Toll Routes
-            ownedRoutes: JSON.parse(JSON.stringify(player.ownedRoutes || [])),
+            ownedRoutes: structuredClone(player.ownedRoutes || []),
             // Petitions
-            petitions: JSON.parse(JSON.stringify(player.petitions || [])),
+            petitions: structuredClone(player.petitions || []),
             // Dynasty marriages & alliances
-            familyAlliances: JSON.parse(JSON.stringify(player.familyAlliances || [])),
-            _marriageProposals: JSON.parse(JSON.stringify(player._marriageProposals || [])),
+            familyAlliances: structuredClone(player.familyAlliances || []),
+            _marriageProposals: structuredClone(player._marriageProposals || []),
             // Housing & Rest
-            houses: JSON.parse(JSON.stringify(player.houses || [])),
+            houses: structuredClone(player.houses || []),
             primaryHouseId: player.primaryHouseId || null,
             fatigue: player.fatigue || 0,
             energy: player.energy != null ? player.energy : ENERGY_CONFIG.START,
             maxEnergy: player.maxEnergy || ENERGY_CONFIG.BASE_MAX,
             lastRestDay: player.lastRestDay || 0,
             thirst: player.thirst != null ? player.thirst : THIRST_CONFIG.START,
-            landOwned: JSON.parse(JSON.stringify(player.landOwned || {})),
-            subsidizedLand: JSON.parse(JSON.stringify(player.subsidizedLand || {})),
-            parkedVehicles: JSON.parse(JSON.stringify(player.parkedVehicles || {})),
-            armedEscort: player.armedEscort ? JSON.parse(JSON.stringify(player.armedEscort)) : null,
+            landOwned: structuredClone(player.landOwned || {}),
+            subsidizedLand: structuredClone(player.subsidizedLand || {}),
+            parkedVehicles: structuredClone(player.parkedVehicles || {}),
+            armedEscort: player.armedEscort ? structuredClone(player.armedEscort) : null,
             // Kingdom Orders & Supply Deals
             ordersCompleted: player.ordersCompleted || 0,
             ordersFailed: player.ordersFailed || 0,
-            supplyDeals: JSON.parse(JSON.stringify(player.supplyDeals || [])),
+            supplyDeals: structuredClone(player.supplyDeals || []),
             // Family
-            familyMembers: JSON.parse(JSON.stringify(player.familyMembers || [])),
+            familyMembers: structuredClone(player.familyMembers || []),
             // Game Start
             gameStart: player.gameStart || null,
-            indentured: player.indentured ? JSON.parse(JSON.stringify(player.indentured)) : null,
-            conquestServitude: player.conquestServitude ? JSON.parse(JSON.stringify(player.conquestServitude)) : null,
-            pilgrim: player.pilgrim ? JSON.parse(JSON.stringify(player.pilgrim)) : null,
-            shipwrecked: player.shipwrecked ? JSON.parse(JSON.stringify(player.shipwrecked)) : null,
-            musician: player.musician ? JSON.parse(JSON.stringify(player.musician)) : null,
-            militaryLeader: player.militaryLeader ? JSON.parse(JSON.stringify(player.militaryLeader)) : null,
-            scholar: player.scholar ? JSON.parse(JSON.stringify(player.scholar)) : null,
+            indentured: player.indentured ? structuredClone(player.indentured) : null,
+            conquestServitude: player.conquestServitude ? structuredClone(player.conquestServitude) : null,
+            pilgrim: player.pilgrim ? structuredClone(player.pilgrim) : null,
+            shipwrecked: player.shipwrecked ? structuredClone(player.shipwrecked) : null,
+            musician: player.musician ? structuredClone(player.musician) : null,
+            militaryLeader: player.militaryLeader ? structuredClone(player.militaryLeader) : null,
+            scholar: player.scholar ? structuredClone(player.scholar) : null,
             // Kingdom debts & trade ledgers
-            kingdomDebts: JSON.parse(JSON.stringify(player.kingdomDebts || {})),
-            warTradeLedger: JSON.parse(JSON.stringify(player.warTradeLedger || [])),
-            kingdomSalesLedger: JSON.parse(JSON.stringify(player.kingdomSalesLedger || [])),
+            kingdomDebts: structuredClone(player.kingdomDebts || {}),
+            warTradeLedger: structuredClone(player.warTradeLedger || []),
+            kingdomSalesLedger: structuredClone(player.kingdomSalesLedger || []),
             // Work state
             workingUntilTick: player.workingUntilTick || 0,
             pendingWorkPay: player.pendingWorkPay || 0,
             pendingWorkName: player.pendingWorkName || '',
             workDaysCompleted: player.workDaysCompleted || 0,
             // Outposts
-            outposts: JSON.parse(JSON.stringify(player.outposts || [])),
+            outposts: structuredClone(player.outposts || []),
             // Conscription
-            conscriptionPending: player.conscriptionPending ? JSON.parse(JSON.stringify(player.conscriptionPending)) : null,
+            conscriptionPending: player.conscriptionPending ? structuredClone(player.conscriptionPending) : null,
             jailFastForwardAvailable: player.jailFastForwardAvailable || false,
             jailReason: player.jailReason || null,
             // Tracked Merchants
-            trackedMerchants: JSON.parse(JSON.stringify(player.trackedMerchants || [])),
+            trackedMerchants: structuredClone(player.trackedMerchants || []),
             // Travel state (complete)
             travelOrigin: player.travelOrigin || null,
             travelPaid: player.travelPaid || 0,
             travelMode: player.travelMode || null,
             travelSeaMode: player.travelSeaMode || null,
-            travelWaypoints: player.travelWaypoints ? JSON.parse(JSON.stringify(player.travelWaypoints)) : null,
+            travelWaypoints: player.travelWaypoints ? structuredClone(player.travelWaypoints) : null,
             travelDestCoords: player.travelDestCoords || null,
             travelRestBonus: player.travelRestBonus || 0,
-            travelCompanions: player.travelCompanions ? JSON.parse(JSON.stringify(player.travelCompanions)) : [],
+            travelCompanions: player.travelCompanions ? structuredClone(player.travelCompanions) : [],
             // Spouse modifiers
             spouseProdMod: player.spouseProdMod != null ? player.spouseProdMod : 1.0,
             spouseCostMod: player.spouseCostMod != null ? player.spouseCostMod : 1.0,
@@ -18539,41 +18546,42 @@
             militaryBorderService: player.militaryBorderService || false,
             // Bankruptcy
             bankruptDays: player.bankruptDays || 0,
-            bankruptcy: player.bankruptcy ? JSON.parse(JSON.stringify(player.bankruptcy)) : null,
+            bankruptcy: player.bankruptcy ? structuredClone(player.bankruptcy) : null,
             // Guild Loan
             maxGoldEver: player.maxGoldEver || 0,
-            activeLoan: player.activeLoan ? JSON.parse(JSON.stringify(player.activeLoan)) : null,
-            loanHistory: JSON.parse(JSON.stringify(player.loanHistory || [])),
+            activeLoan: player.activeLoan ? structuredClone(player.activeLoan) : null,
+            loanHistory: structuredClone(player.loanHistory || []),
             // Tournament
-            tournamentState: player.tournamentState ? JSON.parse(JSON.stringify(player.tournamentState)) : null,
+            tournamentState: player.tournamentState ? structuredClone(player.tournamentState) : null,
             tournamentsWon: player.tournamentsWon || 0,
             // Spy / Royal favors
-            pendingSpyFavor: player.pendingSpyFavor ? JSON.parse(JSON.stringify(player.pendingSpyFavor)) : null,
-            taxExemption: player.taxExemption ? JSON.parse(JSON.stringify(player.taxExemption)) : null,
+            pendingSpyFavor: player.pendingSpyFavor ? structuredClone(player.pendingSpyFavor) : null,
+            taxExemption: player.taxExemption ? structuredClone(player.taxExemption) : null,
             guaranteedPetition: player.guaranteedPetition || {},
-            tradeMonopoly: player.tradeMonopoly ? JSON.parse(JSON.stringify(player.tradeMonopoly)) : null,
+            tradeMonopoly: player.tradeMonopoly ? structuredClone(player.tradeMonopoly) : null,
             // Musician instruments
-            instrumentSkill: JSON.parse(JSON.stringify(player.instrumentSkill || {})),
-            instrumentFatigue: JSON.parse(JSON.stringify(player.instrumentFatigue || {})),
+            instrumentSkill: structuredClone(player.instrumentSkill || {}),
+            instrumentFatigue: structuredClone(player.instrumentFatigue || {}),
             // Age / lifespan
             maxAge: player.maxAge || null,
             maxAgeBonus: player.maxAgeBonus || 0,
             // Guidance system
-            _guidanceTasks: player._guidanceTasks ? JSON.parse(JSON.stringify(player._guidanceTasks)) : null,
-            _guidanceBaseline: player._guidanceBaseline ? JSON.parse(JSON.stringify(player._guidanceBaseline)) : null,
+            _guidanceTasks: player._guidanceTasks ? structuredClone(player._guidanceTasks) : null,
+            _guidanceBaseline: player._guidanceBaseline ? structuredClone(player._guidanceBaseline) : null,
             _guidanceDismissed: player._guidanceDismissed || false,
             _guidanceCollapsed: player._guidanceCollapsed || false,
             // Kingdom quest data
-            kingdomQuests: JSON.parse(JSON.stringify(player.kingdomQuests || {})),
-            _kqVisitedTowns: JSON.parse(JSON.stringify(player._kqVisitedTowns || {})),
-            _kqGoldSpent: JSON.parse(JSON.stringify(player._kqGoldSpent || {})),
-            _kqActionDone: JSON.parse(JSON.stringify(player._kqActionDone || {})),
-            _kqActionAttempts: JSON.parse(JSON.stringify(player._kqActionAttempts || {})),
-            _kqStepProgress: JSON.parse(JSON.stringify(player._kqStepProgress || {})),
+            kingdomQuests: structuredClone(player.kingdomQuests || {}),
+            _kqVisitedTowns: structuredClone(player._kqVisitedTowns || {}),
+            _kqGoldSpent: structuredClone(player._kqGoldSpent || {}),
+            _kqActionDone: structuredClone(player._kqActionDone || {}),
+            _kqActionAttempts: structuredClone(player._kqActionAttempts || {}),
+            _kqStepProgress: structuredClone(player._kqStepProgress || {}),
             _kqCompletedTotal: player._kqCompletedTotal || 0,
             _kqRejections: player._kqRejections || [],
             _corruptionPoints: player._corruptionPoints || 0,
             _corruptionTrait: player._corruptionTrait || false,
+            _militarySalesTotal: player._militarySalesTotal || 0,
         };
     }
 
@@ -18673,16 +18681,17 @@
         player._guidanceDismissed = data._guidanceDismissed || false;
         player._guidanceCollapsed = data._guidanceCollapsed || false;
         // Kingdom quest data
-        player.kingdomQuests = data.kingdomQuests ? JSON.parse(JSON.stringify(data.kingdomQuests)) : {};
-        player._kqVisitedTowns = data._kqVisitedTowns ? JSON.parse(JSON.stringify(data._kqVisitedTowns)) : {};
-        player._kqGoldSpent = data._kqGoldSpent ? JSON.parse(JSON.stringify(data._kqGoldSpent)) : {};
-        player._kqActionDone = data._kqActionDone ? JSON.parse(JSON.stringify(data._kqActionDone)) : {};
-        player._kqActionAttempts = data._kqActionAttempts ? JSON.parse(JSON.stringify(data._kqActionAttempts)) : {};
-        player._kqStepProgress = data._kqStepProgress ? JSON.parse(JSON.stringify(data._kqStepProgress)) : {};
+        player.kingdomQuests = data.kingdomQuests ? structuredClone(data.kingdomQuests) : {};
+        player._kqVisitedTowns = data._kqVisitedTowns ? structuredClone(data._kqVisitedTowns) : {};
+        player._kqGoldSpent = data._kqGoldSpent ? structuredClone(data._kqGoldSpent) : {};
+        player._kqActionDone = data._kqActionDone ? structuredClone(data._kqActionDone) : {};
+        player._kqActionAttempts = data._kqActionAttempts ? structuredClone(data._kqActionAttempts) : {};
+        player._kqStepProgress = data._kqStepProgress ? structuredClone(data._kqStepProgress) : {};
         player._kqCompletedTotal = data._kqCompletedTotal || 0;
         player._kqRejections = data._kqRejections || [];
         player._corruptionPoints = data._corruptionPoints || 0;
         player._corruptionTrait = data._corruptionTrait || false;
+        player._militarySalesTotal = data._militarySalesTotal || 0;
         player.alive = data.alive != null ? data.alive : true;
         player.spouseId = data.spouseId || null;
         // Validate spouseId against loaded world
@@ -19973,9 +19982,10 @@
             }
         }
         if (satQuitters.length > 0) {
-            player.employees = player.employees.filter(function(id) { return !satQuitters.includes(id); });
+            var satQuitSet = new Set(satQuitters);
+            player.employees = player.employees.filter(function(id) { return !satQuitSet.has(id); });
             for (var _sb = 0; _sb < player.buildings.length; _sb++) {
-                player.buildings[_sb].workers = player.buildings[_sb].workers.filter(function(wId) { return !satQuitters.includes(wId); });
+                player.buildings[_sb].workers = player.buildings[_sb].workers.filter(function(wId) { return !satQuitSet.has(wId); });
             }
         }
 
@@ -20008,10 +20018,11 @@
                 }
             }
             if (quitters.length > 0) {
-                player.employees = player.employees.filter(id => !quitters.includes(id));
+                var quitSet = new Set(quitters);
+                player.employees = player.employees.filter(id => !quitSet.has(id));
                 // Clean quitters from building worker lists
                 for (const bld of player.buildings) {
-                    bld.workers = bld.workers.filter(wId => !quitters.includes(wId));
+                    bld.workers = bld.workers.filter(wId => !quitSet.has(wId));
                 }
             }
         }
@@ -20069,10 +20080,11 @@
             }
         }
         // Clean stale workers from buildings (dead, missing, or no longer employed)
+        var employeeSet = new Set(player.employees);
         for (const bld of player.buildings) {
             bld.workers = bld.workers.filter(wId => {
                 const p = Engine.findPerson(wId);
-                return p && p.alive && player.employees.includes(wId);
+                return p && p.alive && employeeSet.has(wId);
             });
         }
 
@@ -20317,14 +20329,16 @@
         }
         // Remove seized buildings and clean up grace periods
         if (_guildSeized.length > 0) {
-            player.buildings = player.buildings.filter(function(b) { return _guildSeized.indexOf(b.id) < 0; });
+            var seizedSet = new Set(_guildSeized);
+            player.buildings = player.buildings.filter(function(b) { return !seizedSet.has(b.id); });
             for (var _gsi = 0; _gsi < _guildSeized.length; _gsi++) {
                 delete player._guildGracePeriods[_guildSeized[_gsi]];
             }
         }
         // Clean up grace periods for buildings that no longer exist
+        var buildingIdSet = new Set(player.buildings.map(function(b) { return b.id; }));
         for (var _gpk in player._guildGracePeriods) {
-            if (!player.buildings.find(function(b) { return b.id === _gpk; })) {
+            if (!buildingIdSet.has(_gpk)) {
                 delete player._guildGracePeriods[_gpk];
             }
         }

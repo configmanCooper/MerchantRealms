@@ -32,6 +32,13 @@
     // ── Performance: tick-scoped people cache ──
     var _tickCache = { peopleByTown: {}, peopleByKingdom: {}, soldiersByKingdom: {}, aliveCount: 0 };
 
+    // ── Performance: cached off-road edges (computed once at world gen, terrain is static) ──
+    var _offroadEdgeCache = null;
+
+    // ── Performance: path result cache (invalidated when roads change) ──
+    var _pathCache = {};
+    var _pathCacheVersion = 0;
+
     // ── Performance: render-scoped people cache ──
     var _renderPeopleCache = null;
     var _renderPeopleCacheDay = -1;
@@ -15185,7 +15192,7 @@
         }
 
         // 20% of survivors injured
-        const survivors = world.people.filter(p => p.alive && p.townId === town.id);
+        const survivors = (_tickCache.peopleByTown[town.id] || []);
         const toInjure = Math.floor(survivors.length * CONFIG.RAID_INJURY_RATE);
         const injuredSurvivors = rng.shuffle([...survivors]);
         for (let i = 0; i < toInjure && i < injuredSurvivors.length; i++) {
@@ -15207,7 +15214,7 @@
         }
 
         // All survivors become indentured servants
-        const aliveSurvivors = world.people.filter(p => p.alive && p.townId === town.id);
+        const aliveSurvivors = (_tickCache.peopleByTown[town.id] || []);
         for (const person of aliveSurvivors) {
             person.kingdomId = kingdom.id;
             person.status = 'indentured';
@@ -15560,7 +15567,7 @@
             }
 
             // Update population counts
-            town.population = world.people.filter(p => p.alive && p.townId === town.id).length;
+            town.population = (_tickCache.peopleByTown[town.id] || []).length;
 
             // Track migration for UI
             if (migrated > 0) {
@@ -15575,7 +15582,7 @@
 
         // Update destination town populations
         for (const town of world.towns) {
-            const newPop = world.people.filter(p => p.alive && p.townId === town.id).length;
+            const newPop = (_tickCache.peopleByTown[town.id] || []).length;
             if (newPop > (town.population || 0)) {
                 if (!town.migrationLog) town.migrationLog = [];
                 town.migrationLog.push({ day: world.day, in: newPop - (town.population || 0) });
@@ -16759,7 +16766,7 @@
                     // Migrate ALL remaining people to nearest non-destroyed town
                     const nearbyTowns = world.towns.filter(t => t.id !== town.id && !t.destroyed && t.population > 10);
                     if (nearbyTowns.length > 0) {
-                        const remainingPeople = world.people.filter(p => p.alive && p.townId === town.id);
+                        const remainingPeople = (_tickCache.peopleByTown[town.id] || []);
                         for (const p of remainingPeople) {
                             const dest = nearbyTowns[world.rng.randInt(0, nearbyTowns.length - 1)];
                             p.townId = dest.id;
@@ -22892,10 +22899,41 @@
         }
     }
 
+    // ── Performance: build off-road edge cache (called once at world gen) ──
+    function _buildOffroadEdgeCache() {
+        _offroadEdgeCache = {};
+        for (var i = 0; i < world.towns.length; i++) {
+            var tA = world.towns[i];
+            if (tA.isIsland || tA.isJunction) continue;
+            for (var j = i + 1; j < world.towns.length; j++) {
+                var tB = world.towns[j];
+                if (tB.isIsland || tB.isJunction) continue;
+                var waterInfo = checkWaterPath(tA.x, tA.y, tB.x, tB.y);
+                if (waterInfo > 0.05) continue;
+                var d = Math.hypot(tA.x - tB.x, tA.y - tB.y);
+                var avgTerrainCost = getOffroadCost(tA.x, tA.y, tB.x, tB.y);
+                if (avgTerrainCost === null) continue;
+                var cost = d * avgTerrainCost;
+                var dominantTerrain = getDominantTerrain(tA.x, tA.y, tB.x, tB.y);
+                var offroadEdge = { fromTownId: tA.id, toTownId: tB.id, type: 'offroad', quality: 0, dominantTerrain: dominantTerrain };
+                if (!_offroadEdgeCache[tA.id]) _offroadEdgeCache[tA.id] = [];
+                if (!_offroadEdgeCache[tB.id]) _offroadEdgeCache[tB.id] = [];
+                _offroadEdgeCache[tA.id].push({ town: tB.id, cost: cost, road: offroadEdge, type: 'offroad' });
+                _offroadEdgeCache[tB.id].push({ town: tA.id, cost: cost, road: offroadEdge, type: 'offroad' });
+            }
+        }
+    }
+
     // ========================================================
     // §19 PATHFINDING (Dijkstra over road graph)
     // ========================================================
     function findPath(fromTownId, toTownId, options) {
+        // ── Check path cache (invalidated when roads change) ──
+        var _isArmyRoute = options && options.armyRoute;
+        var _excludeSea = options && options.excludeSea;
+        var cacheKey = fromTownId + '>' + toTownId + (_isArmyRoute ? 'A' : '') + (_excludeSea ? 'L' : '');
+        if (_pathCache[cacheKey]) return _pathCache[cacheKey];
+
         const adjacency = {};
         for (const town of world.towns) adjacency[town.id] = [];
         for (const road of world.roads) {
@@ -22909,7 +22947,6 @@
                 _hasDestroyedBridge = true; // legacy fallback
             }
             // Armies can still use roads with destroyed bridges (slower)
-            var _isArmyRoute = options && options.armyRoute;
             if (_hasDestroyedBridge && !_isArmyRoute) continue;
             const fromT = findTown(road.fromTownId);
             const toT = findTown(road.toTownId);
@@ -22925,7 +22962,7 @@
         }
 
         // Also include sea routes in pathfinding (skip if excludeSea option set)
-        if (world.seaRoutes && !(options && options.excludeSea)) {
+        if (world.seaRoutes && !_excludeSea) {
             for (const route of world.seaRoutes) {
                 const fromT = findTown(route.fromTownId);
                 const toT = findTown(route.toTownId);
@@ -22937,51 +22974,85 @@
             }
         }
 
-        // Add off-road edges: any two non-island towns on the same landmass
-        // Off-road cost is terrain-aware (mountains extremely slow, grassland moderate)
-        for (let i = 0; i < world.towns.length; i++) {
-            const tA = world.towns[i];
-            if (tA.isIsland || tA.isJunction) continue;
-            for (let j = i + 1; j < world.towns.length; j++) {
-                const tB = world.towns[j];
-                if (tB.isIsland || tB.isJunction) continue;
-                // Check the path isn't over large water (must be traversable by land)
-                const waterInfo = checkWaterPath(tA.x, tA.y, tB.x, tB.y);
-                if (waterInfo > 0.05) continue; // Off-road can't cross water bodies
-                const d = Math.hypot(tA.x - tB.x, tA.y - tB.y);
-                // Compute terrain-aware cost
-                const avgTerrainCost = getOffroadCost(tA.x, tA.y, tB.x, tB.y);
-                if (avgTerrainCost === null) continue; // impassable (water tile found)
-                const cost = d * avgTerrainCost;
-                const dominantTerrain = getDominantTerrain(tA.x, tA.y, tB.x, tB.y);
-                const offroadEdge = { fromTownId: tA.id, toTownId: tB.id, type: 'offroad', quality: 0, dominantTerrain };
-                adjacency[tA.id].push({ town: tB.id, cost, road: offroadEdge, type: 'offroad' });
-                adjacency[tB.id].push({ town: tA.id, cost, road: offroadEdge, type: 'offroad' });
+        // Add cached off-road edges (pre-computed at world gen)
+        if (_offroadEdgeCache) {
+            for (var townId in _offroadEdgeCache) {
+                if (adjacency[townId]) {
+                    var edges = _offroadEdgeCache[townId];
+                    for (var _ei = 0; _ei < edges.length; _ei++) {
+                        adjacency[townId].push(edges[_ei]);
+                    }
+                }
+            }
+        } else {
+            // Fallback: compute on-the-fly if cache not built yet
+            for (let i = 0; i < world.towns.length; i++) {
+                const tA = world.towns[i];
+                if (tA.isIsland || tA.isJunction) continue;
+                for (let j = i + 1; j < world.towns.length; j++) {
+                    const tB = world.towns[j];
+                    if (tB.isIsland || tB.isJunction) continue;
+                    const waterInfo = checkWaterPath(tA.x, tA.y, tB.x, tB.y);
+                    if (waterInfo > 0.05) continue;
+                    const d = Math.hypot(tA.x - tB.x, tA.y - tB.y);
+                    const avgTerrainCost = getOffroadCost(tA.x, tA.y, tB.x, tB.y);
+                    if (avgTerrainCost === null) continue;
+                    const cost = d * avgTerrainCost;
+                    const dominantTerrain = getDominantTerrain(tA.x, tA.y, tB.x, tB.y);
+                    const offroadEdge = { fromTownId: tA.id, toTownId: tB.id, type: 'offroad', quality: 0, dominantTerrain };
+                    adjacency[tA.id].push({ town: tB.id, cost, road: offroadEdge, type: 'offroad' });
+                    adjacency[tB.id].push({ town: tA.id, cost, road: offroadEdge, type: 'offroad' });
+                }
             }
         }
 
-        const dist = {};
+        // ── Binary heap Dijkstra (O((V+E) log V) instead of O(V²)) ──
+        const distMap = {};
         const prev = {};
         const visited = new Set();
-        for (const town of world.towns) dist[town.id] = Infinity;
-        dist[fromTownId] = 0;
+        for (const town of world.towns) distMap[town.id] = Infinity;
+        distMap[fromTownId] = 0;
 
-        // Simple priority queue (array-based, fine for < 50 nodes)
-        const queue = [{ id: fromTownId, cost: 0 }];
+        // Min-heap via array with sift-up/sift-down
+        var heap = [{ id: fromTownId, cost: 0 }];
+        function _heapPush(item) {
+            heap.push(item);
+            var idx = heap.length - 1;
+            while (idx > 0) {
+                var parent = (idx - 1) >> 1;
+                if (heap[parent].cost <= heap[idx].cost) break;
+                var tmp = heap[parent]; heap[parent] = heap[idx]; heap[idx] = tmp;
+                idx = parent;
+            }
+        }
+        function _heapPop() {
+            if (heap.length <= 1) return heap.pop();
+            var top = heap[0];
+            heap[0] = heap.pop();
+            var idx = 0, len = heap.length;
+            while (true) {
+                var left = 2 * idx + 1, right = 2 * idx + 2, smallest = idx;
+                if (left < len && heap[left].cost < heap[smallest].cost) smallest = left;
+                if (right < len && heap[right].cost < heap[smallest].cost) smallest = right;
+                if (smallest === idx) break;
+                var tmp = heap[smallest]; heap[smallest] = heap[idx]; heap[idx] = tmp;
+                idx = smallest;
+            }
+            return top;
+        }
 
-        while (queue.length > 0) {
-            queue.sort((a, b) => a.cost - b.cost);
-            const { id: current } = queue.shift();
-            if (visited.has(current)) continue;
-            visited.add(current);
-            if (current === toTownId) break;
+        while (heap.length > 0) {
+            var node = _heapPop();
+            if (visited.has(node.id)) continue;
+            visited.add(node.id);
+            if (node.id === toTownId) break;
 
-            for (const edge of (adjacency[current] || [])) {
-                const newDist = dist[current] + edge.cost;
-                if (newDist < dist[edge.town]) {
-                    dist[edge.town] = newDist;
-                    prev[edge.town] = { from: current, road: edge.road, type: edge.type };
-                    queue.push({ id: edge.town, cost: newDist });
+            for (const edge of (adjacency[node.id] || [])) {
+                var newDist = distMap[node.id] + edge.cost;
+                if (newDist < distMap[edge.town]) {
+                    distMap[edge.town] = newDist;
+                    prev[edge.town] = { from: node.id, road: edge.road, type: edge.type };
+                    _heapPush({ id: edge.town, cost: newDist });
                 }
             }
         }
@@ -22999,7 +23070,16 @@
             path.unshift(seg);
             current = prev[current].from;
         }
-        return path.length > 0 ? path : null;
+        var result = path.length > 0 ? path : null;
+
+        // Cache result (limit cache size)
+        _pathCache[cacheKey] = result;
+        var cacheKeys = Object.keys(_pathCache);
+        if (cacheKeys.length > 200) {
+            // Evict oldest half
+            for (var _ek = 0; _ek < 100; _ek++) delete _pathCache[cacheKeys[_ek]];
+        }
+        return result;
     }
 
     // ========================================================
@@ -23640,7 +23720,7 @@
         var guilds = CONFIG.GUILDS;
         if (!guilds || guilds.length === 0) return;
 
-        var elites = world.people.filter(function(p) { return p.alive && p.isEliteMerchant; });
+        var elites = (_tickCache.eliteMerchants || world.people.filter(function(p) { return p.alive && p.isEliteMerchant; }));
         for (var i = 0; i < elites.length; i++) {
             var em = elites[i];
             if (!em.guilds) em.guilds = {};
@@ -24614,7 +24694,7 @@
         if (!rng) return;
         var day = world.day;
 
-        var elites = world.people.filter(function(p) { return p.alive && p.isEliteMerchant; });
+        var elites = (_tickCache.eliteMerchants || world.people.filter(function(p) { return p.alive && p.isEliteMerchant; }));
         for (var i = 0; i < elites.length; i++) {
             var em = elites[i];
             // Stagger: each elite ticks every 3 days on their own slot
@@ -28540,7 +28620,7 @@
         var rng = world.rng;
         if (!rng) return;
 
-        var elites = world.people.filter(function(p) { return p.alive && p.isEliteMerchant; });
+        var elites = (_tickCache.eliteMerchants || world.people.filter(function(p) { return p.alive && p.isEliteMerchant; }));
         for (var i = 0; i < elites.length; i++) {
             var em = elites[i];
             if (!em.rentalProperties) em.rentalProperties = [];
@@ -30120,7 +30200,7 @@
 
         // Kill 5-15% of population
         const killPct = rng.randFloat(0.05, 0.15);
-        const townPeople = world.people.filter(p => p.alive && p.townId === town.id);
+        const townPeople = (_tickCache.peopleByTown[town.id] || []);
         const toKill = Math.floor(townPeople.length * killPct);
         for (let i = 0; i < toKill && i < townPeople.length; i++) {
             if (rng.chance(killPct)) killPerson(townPeople[i], 'flood');
@@ -30170,7 +30250,7 @@
 
         // Kill population (reduced by water)
         const killPct = rng.randFloat(0.02, 0.08) * damageMultiplier;
-        const townPeople = world.people.filter(p => p.alive && p.townId === town.id);
+        const townPeople = (_tickCache.peopleByTown[town.id] || []);
         const toKill = Math.floor(townPeople.length * killPct);
         for (let i = 0; i < toKill && i < townPeople.length; i++) {
             if (rng.chance(killPct)) killPerson(townPeople[i], 'fire');
@@ -30603,9 +30683,11 @@
         const rate = fullRate / 3;
         let totalIncomeTax = 0;
 
-        // Tax NPC citizens based on accumulated wealth
-        const citizens = world.people.filter(p => p.alive && p.kingdomId === k.id && p.gold > 10);
-        for (const c of citizens) {
+        // Tax NPC citizens based on accumulated wealth (use cache)
+        const kPeople = _tickCache.peopleByKingdom[k.id] || [];
+        for (var _tci = 0; _tci < kPeople.length; _tci++) {
+            var c = kPeople[_tci];
+            if (c.gold <= 10) continue;
             const tax = Math.floor(c.gold * rate);
             if (tax > 0 && c.gold >= tax) {
                 c.gold -= tax;
@@ -30614,7 +30696,7 @@
         }
 
         // Tax elite merchants in kingdom territories
-        const elites = world.people.filter(p => p.alive && p.isEliteMerchant);
+        const elites = (_tickCache.eliteMerchants || world.people.filter(p => p.alive && p.isEliteMerchant));
         for (const em of elites) {
             const emTown = findTown(em.townId);
             if (!emTown || emTown.kingdomId !== k.id) continue;
@@ -30644,9 +30726,7 @@
         const bankruptDays = k._bankruptDays || 0;
         if (!k._financialActions) k._financialActions = [];
 
-        const soldiers = world.people.filter(s =>
-            s.alive && s.kingdomId === k.id && (s.occupation === 'soldier' || s.occupation === 'guard')
-        );
+        const soldiers = _tickCache.soldiersByKingdom[k.id] || [];
 
         // ---- BUDGET SUSTAINABILITY REVIEW ----
         // Kings periodically evaluate if their budget is sustainable and take corrective action
@@ -30927,7 +31007,7 @@
             // 7. Emergency tax levy
             if (rng.chance(p.greed === 'greedy' || p.greed === 'corrupt' ? 0.6 : 0.2)) {
                 let levy = 0;
-                const citizens = world.people.filter(c => c.alive && c.kingdomId === k.id && c.gold > 20);
+                const citizens = (_tickCache.peopleByKingdom[k.id] || []).filter(c => c.gold > 20);
                 for (const c of citizens) {
                     const tax = Math.floor(c.gold * 0.05);
                     if (tax > 0) { c.gold -= tax; levy += tax; }
@@ -31481,9 +31561,7 @@
     function tickKingdomFinances(k) {
         var rng = world.rng;
         // Count soldiers and buildings
-        const soldiers = world.people.filter(p =>
-            p.alive && p.kingdomId === k.id && (p.occupation === 'soldier' || p.occupation === 'guard')
-        );
+        const soldiers = _tickCache.soldiersByKingdom[k.id] || [];
         let totalBuildings = 0;
         for (const townId of k.territories) {
             const town = findTown(townId);
@@ -31725,9 +31803,7 @@
         }
 
         // 3. MILITARY DECIMATION
-        const soldiers = world.people.filter(s =>
-            s.alive && s.kingdomId === k.id && (s.occupation === 'soldier' || s.occupation === 'guard')
-        );
+        const soldiers = _tickCache.soldiersByKingdom[k.id] || [];
         const toDesert = Math.floor(soldiers.length * 0.70);
         let deserted = 0;
         for (const s of soldiers) {
@@ -31745,8 +31821,8 @@
         }
 
         // 5. MERCHANT EXODUS — NPCs with gold flee
-        const merchants = world.people.filter(m =>
-            m.alive && m.kingdomId === k.id && m.gold > 100 && m.occupation === 'merchant'
+        const merchants = (_tickCache.merchantsByKingdom[k.id] || []).filter(m =>
+            m.gold > 100
         );
         for (const m of merchants) {
             if (rng.chance(0.4)) {
@@ -31964,9 +32040,7 @@
         }
 
         // Soldiers become laborers
-        const soldiers = world.people.filter(p =>
-            p.alive && p.kingdomId === k.id && (p.occupation === 'soldier' || p.occupation === 'guard')
-        );
+        const soldiers = _tickCache.soldiersByKingdom[k.id] || [];
         for (const s of soldiers) {
             s.occupation = 'laborer';
             const town = findTown(s.townId);
@@ -34655,6 +34729,10 @@
                 }
             }
 
+            // ── Performance: build off-road edge cache for pathfinding ──
+            _buildOffroadEdgeCache();
+            _pathCache = {};
+
             // People — _popOverride assigned in generateTowns for non-island towns
             var phaseRngPeople = createRNG(seed * 3 + 6);
             for (const town of world.towns) {
@@ -34911,11 +34989,16 @@
             if (!world) return;
             world.day++;
 
+            // ── Performance: clear path cache daily (roads may change) ──
+            _pathCache = {};
+
             // ── Performance: build people cache for this tick ──
             _tickCache = {
                 peopleByTown: {},
                 peopleByKingdom: {},
                 soldiersByKingdom: {},
+                eliteMerchants: [],
+                merchantsByKingdom: {},
                 aliveCount: 0
             };
             for (var _ci = 0; _ci < world.people.length; _ci++) {
@@ -34929,6 +35012,13 @@
                 if (_cp.occupation === 'soldier' || _cp.occupation === 'guard') {
                     if (!_tickCache.soldiersByKingdom[_cp.kingdomId]) _tickCache.soldiersByKingdom[_cp.kingdomId] = [];
                     _tickCache.soldiersByKingdom[_cp.kingdomId].push(_cp);
+                }
+                if (_cp.isEliteMerchant) {
+                    _tickCache.eliteMerchants.push(_cp);
+                }
+                if (_cp.occupation === 'merchant') {
+                    if (!_tickCache.merchantsByKingdom[_cp.kingdomId]) _tickCache.merchantsByKingdom[_cp.kingdomId] = [];
+                    _tickCache.merchantsByKingdom[_cp.kingdomId].push(_cp);
                 }
             }
 
@@ -36641,6 +36731,10 @@
 
             // Rebuild alive population cache
             world._alivePopCount = world.people.filter(p => p.alive).length;
+
+            // ── Performance: build off-road edge cache for pathfinding ──
+            _buildOffroadEdgeCache();
+            _pathCache = {};
         },
         getNobleBuildings: function(nobleId) {
             var buildings = [];
