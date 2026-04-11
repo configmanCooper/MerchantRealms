@@ -38,6 +38,11 @@ window.Renderer = (function () {
     let lastTerrainZoom = -1;
     let lastTerrainCamX = -9999;
     let lastTerrainCamY = -9999;
+    // Overscroll terrain cache: render extra margin so small pans reuse the buffer
+    let _terrainCacheStartCol = 0;
+    let _terrainCacheStartRow = 0;
+    let _terrainCacheEndCol = 0;
+    let _terrainCacheEndRow = 0;
     let worldData = null;
     let frameCount = 0;
     let _npcAnimTime = 0; // Game-speed-driven animation clock for NPC movement
@@ -273,8 +278,9 @@ window.Renderer = (function () {
         const dz = Math.abs(camera.zoom - lastTerrainZoom);
         const dx = Math.abs(camera.x - lastTerrainCamX);
         const dy = Math.abs(camera.y - lastTerrainCamY);
-        // Perf opt 2: at low zoom, allow more camera drift before redrawing terrain
-        const panThreshold = camera.zoom < 1.0 ? 8 : 2;
+        // At low zoom, allow much more camera drift — we render with overscroll margin
+        // so small pans reuse the cached buffer without any redraw
+        const panThreshold = camera.zoom < 0.6 ? 40 : camera.zoom < 1.0 ? 20 : 4;
         if (dz > 0.005 || dx > panThreshold || dy > panThreshold) {
             terrainDirty = true;
         }
@@ -464,127 +470,118 @@ window.Renderer = (function () {
     // ═══════════════════════════════════════════════════════════
 
     function renderTerrain() {
-        const terrain = worldData.terrain;
+        var terrain = worldData.terrain;
         if (!terrain || !terrain.length) return;
 
-        const ts = CONFIG.TILE_SIZE;
-        const terrainWidth = worldData.gridCols || Math.floor(CONFIG.WORLD_WIDTH / CONFIG.TILE_SIZE);
-        const terrainHeight = worldData.gridRows || Math.floor(CONFIG.WORLD_HEIGHT / CONFIG.TILE_SIZE);
-        const vb = getVisibleBounds();
+        var ts = CONFIG.TILE_SIZE;
+        var terrainWidth = worldData.gridCols || Math.floor(CONFIG.WORLD_WIDTH / CONFIG.TILE_SIZE);
+        var terrainHeight = worldData.gridRows || Math.floor(CONFIG.WORLD_HEIGHT / CONFIG.TILE_SIZE);
+        var vb = getVisibleBounds();
 
-        const startCol = Math.max(0, Math.floor(vb.left / ts));
-        const endCol = Math.min(terrainWidth - 1, Math.ceil(vb.right / ts));
-        const startRow = Math.max(0, Math.floor(vb.top / ts));
-        const endRow = Math.min(terrainHeight - 1, Math.ceil(vb.bottom / ts));
+        var startCol = Math.max(0, Math.floor(vb.left / ts));
+        var endCol = Math.min(terrainWidth - 1, Math.ceil(vb.right / ts));
+        var startRow = Math.max(0, Math.floor(vb.top / ts));
+        var endRow = Math.min(terrainHeight - 1, Math.ceil(vb.bottom / ts));
 
-        const drawW = (endCol - startCol + 1) * ts;
-        const drawH = (endRow - startRow + 1) * ts;
+        // Check if viewport is still within cached overscroll region
+        var needsRedraw = terrainDirty || !offscreenTerrain;
+        if (!needsRedraw && (
+            startCol < _terrainCacheStartCol || endCol > _terrainCacheEndCol ||
+            startRow < _terrainCacheStartRow || endRow > _terrainCacheEndRow
+        )) {
+            needsRedraw = true;
+        }
 
-        if (terrainDirty || !offscreenTerrain ||
-            offscreenTerrain.width !== drawW || offscreenTerrain.height !== drawH) {
-            // Recreate offscreen canvas sized to visible area
+        if (needsRedraw) {
+            // Render with overscroll margin so small pans are free (no redraw)
+            var marginTiles = camera.zoom < 0.6 ? 10 : camera.zoom < 1.0 ? 6 : 3;
+            var cSC = Math.max(0, startCol - marginTiles);
+            var cEC = Math.min(terrainWidth - 1, endCol + marginTiles);
+            var cSR = Math.max(0, startRow - marginTiles);
+            var cER = Math.min(terrainHeight - 1, endRow + marginTiles);
+
+            var drawW = (cEC - cSC + 1) * ts;
+            var drawH = (cER - cSR + 1) * ts;
+
             if (!offscreenTerrain) {
                 offscreenTerrain = document.createElement('canvas');
                 offscreenCtx = offscreenTerrain.getContext('2d');
             }
-            offscreenTerrain.width = drawW;
-            offscreenTerrain.height = drawH;
-
-            const animTime = frameCount * 0.03;
-            const _isWinterSeason = (typeof Engine !== 'undefined' && Engine.getSeason && Engine.getSeason() === 'Winter');
-
-            // WASM fast path — generate base tile colors as ImageData, then overlay decorations in JS
-            var _usedWasm = false;
-            if (typeof WASM !== 'undefined' && WASM.ready() && WASM.renderTerrainTiles && terrain instanceof Uint8Array) {
-                try {
-                    var _rgbaData = WASM.renderTerrainTiles(terrain, terrainWidth, ts, startCol, startRow, endCol, endRow, _isWinterSeason);
-                    if (_rgbaData && _rgbaData.length === drawW * drawH * 4) {
-                        var _imgData = offscreenCtx.createImageData(drawW, drawH);
-                        _imgData.data.set(new Uint8ClampedArray(_rgbaData.buffer, _rgbaData.byteOffset, _rgbaData.length));
-                        offscreenCtx.putImageData(_imgData, 0, 0);
-                        _usedWasm = true;
-                    }
-                } catch (_wasmErr) {
-                    // Fallback to JS rendering
-                }
+            if (offscreenTerrain.width !== drawW || offscreenTerrain.height !== drawH) {
+                offscreenTerrain.width = drawW;
+                offscreenTerrain.height = drawH;
             }
 
-            // Water wave animations always done in JS (need frameCount)
-            for (let r = startRow; r <= endRow; r++) {
-                for (let c = startCol; c <= endCol; c++) {
-                    const tileId = terrain[r * terrainWidth + c];
-                    const x = (c - startCol) * ts;
-                    const y = (r - startRow) * ts;
+            var lowZoom = camera.zoom < 0.65;
+            var _isWinterSeason = (typeof Engine !== 'undefined' && Engine.getSeason && Engine.getSeason() === 'Winter');
 
-                    if (!_usedWasm) {
-                        // Full JS rendering path (fallback)
-                        const baseColor = getTerrainColor(tileId);
-                        const h = tileHash(c, r);
-                        const shift = Math.floor((h - 0.5) * 20);
-                        const color = rgbShift(baseColor, shift);
-                        offscreenCtx.fillStyle = color;
-                        offscreenCtx.fillRect(x, y, ts, ts);
+            for (var r = cSR; r <= cER; r++) {
+                for (var c = cSC; c <= cEC; c++) {
+                    var tileId = terrain[r * terrainWidth + c];
+                    var baseColor = getTerrainColor(tileId);
+                    var h = tileHash(c, r);
+                    var shift = Math.floor((h - 0.5) * 20);
+                    var x = (c - cSC) * ts;
+                    var y = (r - cSR) * ts;
 
-                        if (tileId === 1) { // Forest
-                            const treeCount = 1 + Math.floor(h * 2);
-                            offscreenCtx.fillStyle = rgbShift(_isWinterSeason ? '#3a5a48' : '#1a4020', shift);
-                            for (let t = 0; t < treeCount; t++) {
-                                const tx = x + (h * 37 + t * 5.7) % ts;
-                                const ty = y + (h * 23 + t * 7.3) % ts;
-                                const sz = 3 + h * 3;
-                                offscreenCtx.beginPath();
-                                offscreenCtx.moveTo(tx, ty - sz);
-                                offscreenCtx.lineTo(tx - sz * 0.6, ty + sz * 0.4);
-                                offscreenCtx.lineTo(tx + sz * 0.6, ty + sz * 0.4);
-                                offscreenCtx.closePath();
-                                offscreenCtx.fill();
-                            }
-                        } else if (tileId === 3) { // Mountain
-                            offscreenCtx.fillStyle = rgbShift('#6b5b4f', shift);
-                            const mx = x + ts * 0.5;
-                            const my = y + ts * 0.2;
+                    offscreenCtx.fillStyle = rgbShift(baseColor, shift);
+                    offscreenCtx.fillRect(x, y, ts, ts);
+
+                    // Skip decorations at very low zoom — barely visible
+                    if (lowZoom) continue;
+
+                    if (tileId === 1) { // Forest
+                        var treeCount = 1 + Math.floor(h * 2);
+                        offscreenCtx.fillStyle = rgbShift(_isWinterSeason ? '#3a5a48' : '#1a4020', shift);
+                        for (var t = 0; t < treeCount; t++) {
+                            var tx = x + (h * 37 + t * 5.7) % ts;
+                            var ty = y + (h * 23 + t * 7.3) % ts;
+                            var sz = 3 + h * 3;
                             offscreenCtx.beginPath();
-                            offscreenCtx.moveTo(mx, my);
-                            offscreenCtx.lineTo(x + ts * 0.2, y + ts * 0.9);
-                            offscreenCtx.lineTo(x + ts * 0.8, y + ts * 0.9);
+                            offscreenCtx.moveTo(tx, ty - sz);
+                            offscreenCtx.lineTo(tx - sz * 0.6, ty + sz * 0.4);
+                            offscreenCtx.lineTo(tx + sz * 0.6, ty + sz * 0.4);
                             offscreenCtx.closePath();
                             offscreenCtx.fill();
-                            const season = (typeof Engine !== 'undefined' && Engine.getSeason) ? Engine.getSeason() : '';
-                            if (season === 'Winter' || h > 0.6) {
-                                offscreenCtx.fillStyle = 'rgba(240,240,255,0.6)';
-                                offscreenCtx.beginPath();
-                                offscreenCtx.moveTo(mx, my);
-                                offscreenCtx.lineTo(mx - ts * 0.12, my + ts * 0.2);
-                                offscreenCtx.lineTo(mx + ts * 0.12, my + ts * 0.2);
-                                offscreenCtx.closePath();
-                                offscreenCtx.fill();
-                            }
-                        } else if (tileId === 4) { // Hills
-                            offscreenCtx.fillStyle = rgbShift(_isWinterSeason ? '#7a8a6a' : '#5a7a42', shift - 8);
+                        }
+                    } else if (tileId === 2) { // Water — static overlay (no wave anim in cache)
+                        offscreenCtx.fillStyle = 'rgba(180,220,255,0.08)';
+                        offscreenCtx.fillRect(x, y, ts, ts);
+                    } else if (tileId === 3) { // Mountain
+                        offscreenCtx.fillStyle = rgbShift('#6b5b4f', shift);
+                        var mx = x + ts * 0.5;
+                        var my = y + ts * 0.2;
+                        offscreenCtx.beginPath();
+                        offscreenCtx.moveTo(mx, my);
+                        offscreenCtx.lineTo(x + ts * 0.2, y + ts * 0.9);
+                        offscreenCtx.lineTo(x + ts * 0.8, y + ts * 0.9);
+                        offscreenCtx.closePath();
+                        offscreenCtx.fill();
+                        if (_isWinterSeason || h > 0.6) {
+                            offscreenCtx.fillStyle = 'rgba(240,240,255,0.6)';
                             offscreenCtx.beginPath();
-                            offscreenCtx.arc(x + ts * 0.35, y + ts * 0.65, ts * 0.25, Math.PI, 0);
-                            offscreenCtx.fill();
-                            offscreenCtx.beginPath();
-                            offscreenCtx.arc(x + ts * 0.7, y + ts * 0.55, ts * 0.2, Math.PI, 0);
+                            offscreenCtx.moveTo(mx, my);
+                            offscreenCtx.lineTo(mx - ts * 0.12, my + ts * 0.2);
+                            offscreenCtx.lineTo(mx + ts * 0.12, my + ts * 0.2);
+                            offscreenCtx.closePath();
                             offscreenCtx.fill();
                         }
-                    }
-
-                    // Water wave animation (always JS — needs animated frameCount)
-                    if (tileId === 2) {
-                        const wave = Math.sin(animTime + c * 0.7 + r * 0.5) * 0.08;
-                        offscreenCtx.fillStyle = `rgba(180,220,255,${0.08 + wave})`;
-                        offscreenCtx.fillRect(x, y, ts, ts);
-                        offscreenCtx.strokeStyle = `rgba(150,200,240,${0.15 + wave})`;
-                        offscreenCtx.lineWidth = 0.5;
-                        const wy = y + ts * 0.5 + Math.sin(animTime + c * 1.2) * 2;
+                    } else if (tileId === 4) { // Hills
+                        offscreenCtx.fillStyle = rgbShift(_isWinterSeason ? '#7a8a6a' : '#5a7a42', shift - 8);
                         offscreenCtx.beginPath();
-                        offscreenCtx.moveTo(x + 2, wy);
-                        offscreenCtx.quadraticCurveTo(x + ts * 0.5, wy - 2, x + ts - 2, wy);
-                        offscreenCtx.stroke();
+                        offscreenCtx.arc(x + ts * 0.35, y + ts * 0.65, ts * 0.25, Math.PI, 0);
+                        offscreenCtx.fill();
+                        offscreenCtx.beginPath();
+                        offscreenCtx.arc(x + ts * 0.7, y + ts * 0.55, ts * 0.2, Math.PI, 0);
+                        offscreenCtx.fill();
                     }
                 }
             }
+
+            _terrainCacheStartCol = cSC;
+            _terrainCacheEndCol = cEC;
+            _terrainCacheStartRow = cSR;
+            _terrainCacheEndRow = cER;
 
             terrainDirty = false;
             lastTerrainZoom = camera.zoom;
@@ -592,8 +589,8 @@ window.Renderer = (function () {
             lastTerrainCamY = camera.y;
         }
 
-        // Blit offscreen terrain to main canvas
-        ctx.drawImage(offscreenTerrain, startCol * ts, startRow * ts);
+        // Blit cached terrain to main canvas (offset by cache origin)
+        ctx.drawImage(offscreenTerrain, _terrainCacheStartCol * ts, _terrainCacheStartRow * ts);
     }
 
     // ═══════════════════════════════════════════════════════════
