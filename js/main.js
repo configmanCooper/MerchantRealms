@@ -1361,6 +1361,45 @@ window.Game = (function () {
     // Start with A so first save goes to A, second to B, then back to A, etc.
     let _autosaveNextSlot = 'A';
 
+    // ═══════════════════════════════════════════════════════════
+    //  SAVE MIGRATION SYSTEM
+    //  Each migration upgrades from version N to N+1.
+    //  Runs before deserialize to ensure data shape is current.
+    // ═══════════════════════════════════════════════════════════
+
+    const CURRENT_SAVE_VERSION = 4;
+
+    const SAVE_MIGRATIONS = {
+        // v3 → v4: Add notification filter defaults, ensure agents array
+        3: function(data) {
+            if (data.player) {
+                if (!data.player.agents) data.player.agents = [];
+                if (!data.player.notifFilters) data.player.notifFilters = {};
+                if (!data.player._notifSubKeys) data.player._notifSubKeys = {};
+            }
+        },
+        // Future migrations go here:
+        // 4: function(data) { ... },
+    };
+
+    function _migrateSaveData(data) {
+        if (!data) return data;
+        var ver = data.version || 1;
+        while (ver < CURRENT_SAVE_VERSION) {
+            var migrator = SAVE_MIGRATIONS[ver];
+            if (migrator) {
+                try {
+                    migrator(data);
+                } catch (e) {
+                    console.error('Save migration v' + ver + ' → v' + (ver + 1) + ' failed:', e);
+                }
+            }
+            ver++;
+        }
+        data.version = CURRENT_SAVE_VERSION;
+        return data;
+    }
+
     function _buildSavePayload() {
         const engineData = Engine.serialize ? Engine.serialize() : null;
         const playerData = Player.serialize ? Player.serialize() : null;
@@ -1386,7 +1425,7 @@ window.Game = (function () {
             rank: rankName,
             gold: Player.gold || 0,
             savedAt: Date.now(),
-            version: 3,
+            version: 4,
             engine: engineData,
             player: playerData,
             aiMerchants: Player.serializeAI ? Player.serializeAI() : null,
@@ -1500,6 +1539,7 @@ window.Game = (function () {
         }
         // Reuse the same load logic as normal slots
         try {
+            _migrateSaveData(data);
             if (data.engine && Engine.deserialize) Engine.deserialize(data.engine);
             if (data.player && Player.deserialize) Player.deserialize(data.player);
             if (data.aiMerchants && Player.deserializeAI) Player.deserializeAI(data.aiMerchants);
@@ -1915,6 +1955,9 @@ window.Game = (function () {
                 try { UI.closeModal(); } catch(e) {}
             }
 
+            // Run save migrations before deserializing
+            _migrateSaveData(data);
+
             // Restore engine state
             if (data.engine && Engine.deserialize) {
                 Engine.deserialize(data.engine);
@@ -2075,7 +2118,7 @@ window.Game = (function () {
 
             // 3. Game metadata
             debugData.meta = {
-                gameVersion: 'v0.66.2',
+                gameVersion: 'v0.67.0',
                 saveVersion: 3,
                 timestamp: new Date().toISOString(),
                 userAgent: navigator.userAgent,
