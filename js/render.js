@@ -280,7 +280,7 @@ window.Renderer = (function () {
         const dy = Math.abs(camera.y - lastTerrainCamY);
         // At low zoom, allow much more camera drift — we render with overscroll margin
         // so small pans reuse the cached buffer without any redraw
-        const panThreshold = camera.zoom < 0.6 ? 40 : camera.zoom < 1.0 ? 20 : 4;
+        const panThreshold = camera.zoom < 0.5 ? 80 : camera.zoom < 0.7 ? 50 : camera.zoom < 1.0 ? 25 : 4;
         if (dz > 0.005 || dx > panThreshold || dy > panThreshold) {
             terrainDirty = true;
         }
@@ -403,6 +403,9 @@ window.Renderer = (function () {
         // 1. Terrain
         renderTerrain();
 
+        // Performance: at low zoom (< 1.0), skip expensive moving/overlay layers
+        var lowZoomStatic = camera.zoom < 1.0;
+
         // 2. Kingdom territories
         renderKingdomTerritories();
 
@@ -420,36 +423,52 @@ window.Renderer = (function () {
             renderStrategicTownOverlays();
         }
 
-        // 4b. Elite merchant heraldry flags
-        renderEliteMerchantIcons();
+        // 4b. Elite merchant heraldry flags (skip at low zoom)
+        if (!lowZoomStatic) {
+            renderEliteMerchantIcons();
+        }
 
-        // 4c. Soil fertility overlay (Soil Knowledge skill)
-        renderFertility();
+        // 4c. Soil fertility overlay (skip at low zoom — barely visible)
+        if (!lowZoomStatic) {
+            renderFertility();
+        }
 
-        // 4d. Resource deposits overlay (Regional Survey skill)
-        renderDeposits();
+        // 4d. Resource deposits overlay (skip at low zoom)
+        if (!lowZoomStatic) {
+            renderDeposits();
+        }
 
-        // 4e. Survey circle (right-click survey)
-        renderSurveyCircle();
+        // 4e. Survey circle (skip at low zoom)
+        if (!lowZoomStatic) {
+            renderSurveyCircle();
+        }
 
         // 5. People (only when zoomed in)
         if (camera.zoom > 1.5) {
             renderPeople();
         }
 
-        // 6. Caravans
-        renderCaravans(player);
+        // 6. Caravans (static dots at low zoom, full render when closer)
+        if (lowZoomStatic) {
+            renderCaravansSimple(player);
+        } else {
+            renderCaravans(player);
+        }
 
         // 7. Player marker
         renderPlayerMarker(player);
 
         // 8. AI Merchants (unified with elite merchants — rendered via gold dots + flags)
 
-        // 9. War indicators
-        renderWarIndicators();
+        // 9. War indicators (skip at low zoom)
+        if (!lowZoomStatic) {
+            renderWarIndicators();
+        }
 
-        // 10. Event effects
-        renderEventEffects();
+        // 10. Event effects (skip at low zoom)
+        if (!lowZoomStatic) {
+            renderEventEffects();
+        }
 
         // Hover highlight
         renderHoverHighlight();
@@ -492,7 +511,7 @@ window.Renderer = (function () {
 
         if (needsRedraw) {
             // Render with overscroll margin so small pans are free (no redraw)
-            var marginTiles = camera.zoom < 0.6 ? 10 : camera.zoom < 1.0 ? 6 : 3;
+            var marginTiles = camera.zoom < 0.5 ? 20 : camera.zoom < 0.7 ? 14 : camera.zoom < 1.0 ? 8 : 3;
             var cSC = Math.max(0, startCol - marginTiles);
             var cEC = Math.min(terrainWidth - 1, endCol + marginTiles);
             var cSR = Math.max(0, startRow - marginTiles);
@@ -2271,6 +2290,32 @@ window.Renderer = (function () {
     // ═══════════════════════════════════════════════════════════
     //  6. CARAVANS
     // ═══════════════════════════════════════════════════════════
+
+    // Simplified caravan rendering for low zoom — just colored dots
+    function renderCaravansSimple(player) {
+        _caravanPositions = [];
+        if (!player || !player.caravans) return;
+        const townMap = _frameTownMap;
+        if (!townMap) return;
+
+        for (const caravan of player.caravans) {
+            if (caravan.status !== 'traveling') continue;
+            const from = townMap[caravan.fromTownId];
+            const to = townMap[caravan.toTownId];
+            if (!from || !to) continue;
+            const progress = Math.min(1.0, Math.max(0, caravan.progress || 0));
+            var startTown = caravan.returnTrip ? to : from;
+            var endTown = caravan.returnTrip ? from : to;
+            var cx = startTown.x + (endTown.x - startTown.x) * progress;
+            var cy = startTown.y + (endTown.y - startTown.y) * progress;
+
+            ctx.fillStyle = caravan.routeType === 'sea' ? '#4488cc' : '#c4a35a';
+            ctx.beginPath();
+            ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+            ctx.fill();
+            _caravanPositions.push({ x: cx, y: cy, caravan: caravan });
+        }
+    }
 
     function renderCaravans(player) {
         _caravanPositions = [];

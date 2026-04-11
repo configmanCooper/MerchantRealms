@@ -10666,7 +10666,7 @@ window.UI = (function () {
 
     function openEventLog() {
         let events;
-        try { events = Engine.getEvents(); } catch (e) { events = []; }
+        try { events = (Engine.getAllEvents ? Engine.getAllEvents() : Engine.getEvents()); } catch (e) { events = []; }
 
         // Mark all events as read and force-clear badge immediately
         _lastSeenEventCount = events ? events.length : 0;

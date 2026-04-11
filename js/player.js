@@ -2716,7 +2716,7 @@
         if (_fromKId && (player.socialRank[_fromKId] || 0) >= 5) {
             caravan.guards = (caravan.guards || 0) + 2;
             caravan._kingdomGuards = 2;
-            Engine.logEvent('🛡️ As a Lord, 2 kingdom-paid guards join your caravan.');
+            Engine.logEvent('🛡️ As a Lord, 2 kingdom-paid guards join your caravan.', null, 'my_business');
         }
 
         var crewMsg = ' (' + carriers + ' carriers, ' + caravan.guards + ' guards';
@@ -2725,7 +2725,7 @@
         if (wagons > 0) crewMsg += ', ' + wagons + ' 🚛';
         crewMsg += ')';
         const tripType = recurring ? ' [Recurring Route]' : (roundTrip ? ' [Round Trip]' : '');
-        Engine.logEvent('Caravan dispatched from ' + fromTown.name + ' to ' + toTown.name + '.' + crewMsg + tripType);
+        Engine.logEvent('Caravan dispatched from ' + fromTown.name + ' to ' + toTown.name + '.' + crewMsg + tripType, null, 'my_business');
         return { success: true, message: 'Caravan sent to ' + toTown.name + '.' + crewMsg + tripType, caravan: caravan };
     }
 
@@ -4859,11 +4859,11 @@
         if (_seaFromKId && (player.socialRank[_seaFromKId] || 0) >= 5) {
             caravan.guards = (caravan.guards || 0) + 2;
             caravan._kingdomGuards = 2;
-            Engine.logEvent('🛡️ As a Lord, 2 kingdom-paid guards join your sea caravan.');
+            Engine.logEvent('🛡️ As a Lord, 2 kingdom-paid guards join your sea caravan.', null, 'my_business');
         }
 
         var shipLabel = ownedShip ? ownedShip.name : (shipTypeDef ? shipTypeDef.name + ' (rented)' : 'rented ship');
-        Engine.logEvent('Sea caravan dispatched from ' + fromTown.name + ' to ' + toTown.name + ' on ' + shipLabel + '.');
+        Engine.logEvent('Sea caravan dispatched from ' + fromTown.name + ' to ' + toTown.name + ' on ' + shipLabel + '.', null, 'my_business');
         return { success: true, message: 'Sea caravan sent to ' + toTown.name + ' on ' + shipLabel + '.', caravan: caravan };
     }
 
@@ -4888,7 +4888,7 @@
     function logCaravan(caravan, message) {
         if (!caravan.log) caravan.log = [];
         caravan.log.push({ day: Engine.getDay(), message: message });
-        Engine.logEvent(message);
+        Engine.logEvent(message, null, 'my_business');
     }
 
     function cleanCaravanLogs() {
@@ -5722,7 +5722,7 @@
                             caravan.active = false;
                             caravan.recurring = false;
                             logCaravan(caravan, '🏳️ Caravan disbanded after final run.');
-                            Engine.logEvent('Caravan disbanded at ' + dropTownName + '. All goods dropped off.');
+                            Engine.logEvent('Caravan disbanded at ' + dropTownName + '. All goods dropped off.', null, 'my_business');
                             return;
                         } else {
                             caravan.returnTrip = true;
@@ -5762,7 +5762,7 @@
                                 tripRevenue += revenue;
                                 destTown.market.supply[resId] = (destTown.market.supply[resId] || 0) + qty;
                                 var _legTMsg = _legTar.tariff > 0 ? ' (tariff: ' + _legTar.tariff + 'g)' : '';
-                                Engine.logEvent('Caravan goods sold at ' + destTown.name + ': ' + qty + ' ' + resId + ' for ' + revenue + 'g.' + _legTMsg);
+                                Engine.logEvent('Caravan goods sold at ' + destTown.name + ': ' + qty + ' ' + resId + ' for ' + revenue + 'g.' + _legTMsg, null, 'my_business');
                             }
                         }
                         caravan.totalProfit = (caravan.totalProfit || 0) + tripRevenue;
@@ -5790,7 +5790,7 @@
                                 boughtWeight += buyQty * rw;
                                 buySpent += cost;
                                 destTown.market.supply[resId] = Math.max(0, marketSupply - buyQty);
-                                Engine.logEvent(`Caravan bought ${buyQty} ${resId} at ${destTown.name} for ${cost}g.`);
+                                Engine.logEvent(`Caravan bought ${buyQty} ${resId} at ${destTown.name} for ${cost}g.`, null, 'my_business');
                             }
                             if (buySpent > 0) {
                                 player.gold -= buySpent;
@@ -5816,7 +5816,7 @@
                     caravan.status = 'arrived';
                     caravan.active = false;
                     caravan.recurring = false;
-                    Engine.logEvent('Caravan destination no longer exists — cargo returned to inventory.');
+                    Engine.logEvent('Caravan destination no longer exists — cargo returned to inventory.', null, 'my_business');
                     return;
                 }
 
@@ -5824,7 +5824,7 @@
                 _processCaravanPassengers(caravan, destTownId);
 
                 const routeLabel = caravan.routeType === 'sea' ? 'Sea caravan' : 'Caravan';
-                Engine.logEvent(`${routeLabel} arrived at ${destTown ? destTown.name : 'destination'}.`);
+                Engine.logEvent(`${routeLabel} arrived at ${destTown ? destTown.name : 'destination'}.`, null, 'my_business');
 
                 // XP for caravan/voyage completion
                 if (caravan.routeType === 'sea') {
@@ -5905,7 +5905,7 @@
                             waypoints: seg.waypoints ? seg.waypoints.slice().reverse() : seg.waypoints
                         }));
                     }
-                    Engine.logEvent(`${routeLabel} starting return trip to ${originTown ? originTown.name : 'origin'}.`);
+                    Engine.logEvent(`${routeLabel} starting return trip to ${originTown ? originTown.name : 'origin'}.`, null, 'my_business');
                 } else if (caravan.recurring && isReturnLeg) {
                     const maintenanceCost = CONFIG.CARAVAN_RECURRING_MAINTENANCE_PER_TRIP || 15;
                     let totalMaint = maintenanceCost + (caravan.guards * CONFIG.GUARD_WAGE * 2);
@@ -5991,7 +5991,7 @@
                                         player.stats.totalGoldEarned += rev;
                                         caravan.totalProfit = (caravan.totalProfit || 0) + rev;
                                         originTownObj.market.supply[resId] = (originTownObj.market.supply[resId] || 0) + qty;
-                                        Engine.logEvent(`Recurring caravan sold return goods: ${qty} ${resId} for ${rev}g.`);
+                                        Engine.logEvent(`Recurring caravan sold return goods: ${qty} ${resId} for ${rev}g.`, null, 'my_business');
                                     }
                                 }
                             }
@@ -6000,7 +6000,7 @@
                                 caravan.status = 'arrived';
                                 caravan.active = false;
                                 caravan.recurring = false;
-                                Engine.logEvent(`Recurring route stopped — no goods available to reload at ${originTown ? originTown.name : 'origin'}.`);
+                                Engine.logEvent(`Recurring route stopped — no goods available to reload at ${originTown ? originTown.name : 'origin'}.`, null, 'my_business');
                             } else {
                                 caravan.goods = reloadedGoods;
                                 caravan.returnTrip = false;
@@ -6019,7 +6019,7 @@
                                     legacyWeight += (res ? res.weight : 1) * qty;
                                 }
                                 caravan.totalWeight = legacyWeight;
-                                Engine.logEvent(`Recurring caravan reloaded and departing again (maintenance: ${totalMaint}g). Trip #${caravan.tripCount + 1}`);
+                                Engine.logEvent(`Recurring caravan reloaded and departing again (maintenance: ${totalMaint}g). Trip #${caravan.tripCount + 1}`, null, 'my_business');
                             }
                         }
                     }
@@ -6042,7 +6042,7 @@
                                     player.stats.totalGoldEarned += rev;
                                     caravan.totalProfit = (caravan.totalProfit || 0) + rev;
                                     originTownObj.market.supply[resId] = (originTownObj.market.supply[resId] || 0) + qty;
-                                    Engine.logEvent(`Return caravan sold goods at ${originTownObj.name}: ${qty} ${resId} for ${rev}g.`);
+                                    Engine.logEvent(`Return caravan sold goods at ${originTownObj.name}: ${qty} ${resId} for ${rev}g.`, null, 'my_business');
                                 }
                             }
                         }
@@ -6195,7 +6195,7 @@
                         // If all carriers are gone, caravan is destroyed
                         if ((caravan.carriers || 0) <= 0) {
                             logCaravan(caravan, '💀 All carriers deserted — caravan abandoned and destroyed!');
-                            Engine.logEvent('Your caravan to ' + (Engine.findTown(caravan.toTownId) || {}).name + ' was abandoned after all carriers deserted!');
+                            Engine.logEvent('Your caravan to ' + (Engine.findTown(caravan.toTownId) || {}).name + ' was abandoned after all carriers deserted!', null, 'my_business');
                             caravan.status = 'destroyed';
                             caravan.active = false;
                             caravan.recurring = false;
@@ -6232,7 +6232,7 @@
                                 // Blockaded — caravan turns back
                                 caravan.status = 'blocked';
                                 caravan.active = false;
-                                Engine.logEvent('Your sea caravan was turned back by a naval blockade!');
+                                Engine.logEvent('Your sea caravan was turned back by a naval blockade!', null, 'my_business');
                                 // Return goods to player
                                 for (const [resId, qty] of Object.entries(caravan.goods)) {
                                     if (qty > 0) {
@@ -6260,7 +6260,7 @@
                         totalLost += lost;
                     }
                     if (totalLost > 0) {
-                        Engine.logEvent(`A storm struck your sea caravan! Lost ${totalLost} goods to the waves.`);
+                        Engine.logEvent(`A storm struck your sea caravan! Lost ${totalLost} goods to the waves.`, null, 'my_business');
                     }
                 }
             } else {
@@ -6494,7 +6494,7 @@
         player.stats.totalGoldSpent += rescueCost;
         caravan.status = 'traveling';
         caravan.progress = Math.max(0, caravan.progress - 0.1);
-        Engine.logEvent(`Caravan rescued for ${rescueCost}g. It continues its journey.`);
+        Engine.logEvent(`Caravan rescued for ${rescueCost}g. It continues its journey.`, null, 'my_business');
         return { success: true, message: `Caravan rescued for ${rescueCost}g.` };
     }
 
@@ -6503,7 +6503,7 @@
         if (!caravan) return { success: false, message: 'No active recurring route with that ID.' };
         caravan.recurring = false;
         caravan.active = caravan.status === 'traveling';
-        Engine.logEvent(`Recurring caravan route cancelled. Current trip will complete.`);
+        Engine.logEvent(`Recurring caravan route cancelled. Current trip will complete.`, null, 'my_business');
         return { success: true, message: 'Recurring route cancelled. Current trip will finish.' };
     }
 
@@ -6525,12 +6525,12 @@
 
         logCaravan(caravan, '🏳️ Caravan set to disband. Will finish last run and drop off all goods.');
         if (isReturn) {
-            Engine.logEvent('Caravan disbanding — finishing return to ' + originName + ', then will disband.');
+            Engine.logEvent('Caravan disbanding — finishing return to ' + originName + ', then will disband.', null, 'my_business');
             return { success: true, message: 'Caravan disbanding. Finishing return to ' + originName + ' and will drop off all goods.' };
         } else {
             // Outbound: will go to destination, drop goods, return, disband
             caravan.roundTrip = true; // ensure it does a return leg
-            Engine.logEvent('Caravan disbanding — finishing trip to ' + destName + ', returning goods to ' + originName + ', then will disband.');
+            Engine.logEvent('Caravan disbanding — finishing trip to ' + destName + ', returning goods to ' + originName + ', then will disband.', null, 'my_business');
             return { success: true, message: 'Caravan disbanding. Will deliver to ' + destName + ', return to ' + originName + ', and drop off remaining goods.' };
         }
     }
@@ -6588,7 +6588,7 @@
 
         var originName = Engine.findTown(dropTownId) ? Engine.findTown(dropTownId).name : 'origin';
         logCaravan(caravan, '❌ Caravan force-disbanded. ' + (totalDropped > 0 ? totalDropped + ' goods dropped at ' + originName + '.' : 'No goods to drop.'));
-        Engine.logEvent('Caravan force-disbanded. Equipment returned to ' + originName + '.');
+        Engine.logEvent('Caravan force-disbanded. Equipment returned to ' + originName + '.', null, 'my_business');
         return { success: true, message: 'Caravan disbanded immediately. Goods & equipment returned to ' + originName + '.' };
     }
 
@@ -15466,7 +15466,7 @@
         if (result.accepted) {
             player.spouseAI.activity = 'guarding_caravan';
             player.spouseAI.activityDetail = 'Guarding caravan #' + (caravanIdx + 1);
-            Engine.logEvent(spouse.firstName + ' is guarding your caravan.');
+            Engine.logEvent(spouse.firstName + ' is guarding your caravan.', null, 'my_business');
         }
         return result;
     }

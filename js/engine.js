@@ -22640,6 +22640,15 @@
             return 'combat';
         }
 
+        // Caravan/business events
+        if (m.includes('caravan') || m.includes('dispatched') || m.includes('recurring') ||
+            m.includes('picked up') || m.includes('stored') || m.includes('sold') ||
+            m.includes('bought') || m.includes('return trip') || m.includes('reloaded') ||
+            m.includes('disbanded') || m.includes('rescued') || m.includes('smuggling') ||
+            m.includes('sea route') || m.includes('trade route')) {
+            return 'my_business';
+        }
+
         // Default to local_town for unrecognized events
         return 'local_town';
     }
@@ -35304,7 +35313,12 @@
 
         getEvents() {
             if (!world) return [];
-            return world.eventLog.slice(); // Return all stored events (up to 500, auto-pruned at 90 days)
+            return world.eventLog.filter(e => world.day - e.day <= 30);
+        },
+
+        getAllEvents() {
+            if (!world) return [];
+            return world.eventLog.slice();
         },
 
         getActiveEvents() {
