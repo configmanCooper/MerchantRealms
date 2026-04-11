@@ -282,7 +282,11 @@ window.Renderer = (function () {
         // Lerp towards target
         camera.x += (camera.targetX - camera.x) * camera.lerpSpeed;
         camera.y += (camera.targetY - camera.y) * camera.lerpSpeed;
-        camera.zoom += (camera.targetZoom - camera.zoom) * camera.lerpSpeed;
+        // Faster lerp for zoom so it feels snappy, not floaty
+        var zoomLerp = 0.25;
+        camera.zoom += (camera.targetZoom - camera.zoom) * zoomLerp;
+        // Snap when very close to avoid lingering drift
+        if (Math.abs(camera.targetZoom - camera.zoom) < 0.002) camera.zoom = camera.targetZoom;
 
         // Clamp to world bounds
         const worldPxW = CONFIG.WORLD_WIDTH;
