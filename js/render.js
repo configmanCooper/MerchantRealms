@@ -550,9 +550,9 @@ window.Renderer = (function () {
 
     function _renderViaSceneCache(player) {
         var vb = getVisibleBounds();
-        // 100% margin in each direction — can pan a full viewport before needing redraw
-        var marginW = (vb.right - vb.left) * 1.0;
-        var marginH = (vb.bottom - vb.top) * 1.0;
+        // 110% margin in each direction — can pan over a full viewport before needing redraw
+        var marginW = (vb.right - vb.left) * 1.1;
+        var marginH = (vb.bottom - vb.top) * 1.1;
 
         // Check if current viewport is still within cached scene bounds
         var needsRedraw = _sceneCacheDirty || !_sceneCache;
