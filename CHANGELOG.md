@@ -4,6 +4,32 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.65.1] - 2026-04-11
+
+### Fixed
+- **Terrain Rendering Lag at Low Zoom**: WASM terrain render was NET slower due to copy overhead; replaced with optimized JS-only path
+- **Overscroll Terrain Cache**: Added 6-10 tile overscroll margin so small pans reuse buffer without redraw
+- **Pan Threshold Tuning**: Increased pan threshold at low zoom (40px at <0.6x, 20px at <1.0x)
+- **Decoration Skip**: Trees/mountains/hills hidden below zoom 0.65 (barely visible)
+- **Load Game Speed**: Stored save metadata separately (~100 bytes) to avoid decompressing full saves
+- **Speed Zoom Enforcement**: Fixed `setSpeed()` referencing non-existent `Render.getCamera` instead of `Renderer.getCamera`
+- **Free Zoom at 1x Speed**: Removed incorrect 1.0x zoom clamp at normal speed
+
+### Added
+- **Map Freeze at 60x Speed**: Renderer.render() completely skipped at 60x; banner shows "Map Frozen Until Speed Is Lowered"
+- **Pan/Zoom Block at 60x**: Mouse drag, scroll wheel, and WASD panning disabled during frozen map
+- **Live Stats at 60x**: Gold, XP, hunger, energy, thirst, health update every frame even with map frozen
+- **Zoom Enforcement**: Auto-zoom to 1.0x at 4x speed, 1.5x minimum at 16x+
+- **Expandable Notification Sub-Filters**: Each notification category is clickable to expand individual event type toggles
+  - 47 sub-types across 11 categories with On/Off controls using dot-notation keys
+  - Pattern-matching in shouldShowNotification() detects sub-types from message text
+  - Caravan events (dispatch, arrivals, problems) grouped under My Business
+
+### Changed
+- WASM terrain rendering removed (kept for pathfinding, terrain sampling, monopoly, caravans, minimap)
+- Static water tint instead of wave animation in terrain cache
+- `updateDateDisplay()` expanded to update gold, XP, hunger, energy, thirst, health
+
 ## [0.65.0] - 2026-04-11
 
 ### Added
