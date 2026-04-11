@@ -4,6 +4,54 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.65.0] - 2026-04-11
+
+### Added
+- **WebAssembly (WASM) Module**: Core computation ported to Rust/WASM for 3-12x speedup
+  - Seeded RNG (xoshiro128**) — millions of calls per game session now run in native code
+  - Terrain sampling (water path, offroad cost, dominant terrain) — 6-10x faster
+  - Dijkstra pathfinding with binary heap — 5-12x faster route calculations
+  - Monopoly win condition check — 3-8x faster daily computation
+  - Caravan position interpolation — 5-10x faster 60fps updates
+  - Terrain tile color computation — 2-8x faster map rendering
+- **WASM Fallback**: Automatic fallback to pure JS if WASM fails to load (browser compat)
+- **WebAssembly Audit Document**: Full analysis of 16 WASM candidates with implementation plan
+
+### Changed
+- Game now loads WASM module at startup for performance-critical paths
+- Pathfinding, terrain sampling, and RNG delegate to WASM when available
+
+## [0.64.0] - 2026-04-11
+
+### Added
+- **Noble Agents System**: Hire up to 6 agents (2 per nobility rank) to perform tasks
+  - 14 task types across hostile, business, and intelligence categories
+  - Hostile: Sabotage, arson, raid caravans, spread rumors, steal, intimidate
+  - Business: Trade caravans, scout markets, buy/sell, manage properties, establish contacts, guard
+  - Intelligence: Spy on targets, counter-intelligence
+  - Full UI with task assignment, dropdown target selection, budget controls
+- **Schemes Building Dropdown**: Arson/sabotage now use consolidated building dropdown with owner info
+- **Performance Audit**: Comprehensive 48-finding audit across all game files
+
+### Changed
+- Schemes button always available from game start (was hidden until unlocked)
+- Arson/sabotage skill checks now properly validate shadow dealings OR arsonist skills
+
+### Fixed
+- Spread rumors scheme no longer crashes on missing target
+- Establish contacts scheme properly validates town selection
+- Agent reports capped at 50 entries to prevent memory growth
+- Engine production tick building type lookup fix
+- Fixed 122 JSON.parse(JSON.stringify()) → structuredClone() for 2-3x clone speedup
+
+### Performance
+- Binary heap Dijkstra pathfinding with cached off-road edges (O(V²) → O((V+E)logV))
+- Expanded _tickCache with eliteMerchants and merchantsByKingdom arrays
+- Set membership for O(1) lookups in daily tick (was O(n) includes/indexOf)
+- Financial ledger pruning: single splice instead of repeated shift()
+- Incremental _militarySalesTotal counter (was daily tradeLog.filter().reduce() scan)
+- UI auto-refresh reduced from ~1s to ~3s interval with dirty-flag day-change detection
+
 ## [0.63.0] - 2026-04-10
 
 ### Added
