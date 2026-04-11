@@ -765,6 +765,7 @@ window.Game = (function () {
         input.mouseX = e.clientX;
         input.mouseY = e.clientY;
         if (typeof Renderer !== 'undefined' && Renderer.getMapMode() === 2) return;
+        if (speed >= 60) return; // Map frozen at 60x
 
         if (input.mouseDown && input.mouseDragStart) {
             const dx = e.clientX - input.mouseDragStart.x;
@@ -806,6 +807,7 @@ window.Game = (function () {
         e.preventDefault();
         if (state !== 'playing' && state !== 'paused') return;
         if (typeof Renderer !== 'undefined' && Renderer.getMapMode() === 2) return;
+        if (speed >= 60) return; // Map frozen at 60x
         Renderer.zoomAt(e.deltaY, e.clientX, e.clientY);
     }
 
@@ -984,6 +986,7 @@ window.Game = (function () {
     // ── Continuous input (WASD / arrow keys for camera pan) ──
 
     function handleContinuousInput(dt) {
+        if (speed >= 60) return; // Map frozen at 60x
         const panSpeed = 400 * (dt / 1000); // pixels per second
         if (input.keys['w'] || input.keys['W'] || input.keys['ArrowUp']) {
             Renderer.pan(0, -panSpeed);
