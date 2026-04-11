@@ -4,6 +4,20 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.66.1] - 2026-04-11
+
+### Added
+- **Longevity Skills**: Healthy Living (2 SP, -10% old-age death) and Longevity (4 SP, -25%, requires Healthy Living)
+- **Daily Player Death Check**: Old-age death now checked daily from age 40+ (converts yearly chance to daily probability)
+- **NPC 30-Day Death Check**: NPC old-age death checked every 30 days with scaled probability
+
+### Fixed
+- **Toast Sub-Filter Bypass**: Messages that didn't match any sub-type pattern would show even when category was OFF
+- **Category OFF Cascade**: Turning a notification category OFF now turns all sub-filters OFF too
+- **All Subs OFF Detection**: If every sub-filter in a category is OFF, all messages in that category are blocked
+- **Improved Pattern Matching**: Added audit/warehouse/thief/criminal/manipulated keywords for my_business.agents; catch-all for any unmatched caravan message
+- **Settings Panel Collapse**: Expanded notification category no longer collapses when toggling a sub-filter
+
 ## [0.66.0] - 2026-04-11
 
 ### Changed
