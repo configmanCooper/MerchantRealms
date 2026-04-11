@@ -3392,7 +3392,9 @@ const SKILLS = {
     doctor:              { name: 'Doctor',              branch: 'survival',   cost: 4, requires: ['field_medic'],                 desc: 'Treat ALL injury severities. 2x nurse pay. Unlocks itinerant healer job.',  icon: '⚕️' },
     disease_awareness:   { name: 'Disease Awareness',   branch: 'survival',   cost: 1, requires: [],                              desc: 'See illness breakdown in towns: minor, moderate, and severe sick counts.',   icon: '🔬' },
     epidemiologist:      { name: 'Epidemiologist',      branch: 'survival',   cost: 2, requires: ['disease_awareness'],            desc: 'See contagion risk level in towns — know your chances of getting sick.',     icon: '🦠' },
-    soil_knowledge:      { name: 'Soil Knowledge',      branch: 'survival',   cost: 2, requires: ['herbalist'],                   desc: 'See soil fertility ratings on the map. Toggle in the ⚡ Abilities tab of Skills. Right-click the map to check an area.', icon: '🌾' },
+    healthy_living:      { name: 'Healthy Living',      branch: 'survival',   cost: 2, requires: [],                              desc: 'Reduces old-age death chance by 10%. A disciplined lifestyle keeps you sharp.', icon: '🧘' },
+    longevity:           { name: 'Longevity',           branch: 'survival',   cost: 4, requires: ['healthy_living'],              desc: 'Reduces old-age death chance by 25%. Your body endures far longer than most.', icon: '🕰️' },
+    soil_knowledge:{ name: 'Soil Knowledge',      branch: 'survival',   cost: 2, requires: ['herbalist'],                   desc: 'See soil fertility ratings on the map. Toggle in the ⚡ Abilities tab of Skills. Right-click the map to check an area.', icon: '🌾' },
 
     // ── Underworld Branch (7) ──
     discrete:            { name: 'Discrete',            branch: 'underworld', cost: 2, requires: [],                              desc: 'Smuggling detection -10%. Unlocks: Steal goods, Pickpocket, Plant evidence (with Master Forger). Reduces scheme detection by 10%.', icon: '🤫' },

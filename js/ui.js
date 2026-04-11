@@ -10891,6 +10891,9 @@ window.UI = (function () {
         }
     }
 
+    // Track which notification filter category is expanded (survives re-render)
+    var _expandedNotifCategory = null;
+
     function openSettings() {
         var filters = (typeof Player !== 'undefined' && Player.getNotificationFilters) ? Player.getNotificationFilters() : {};
 
@@ -10980,15 +10983,34 @@ window.UI = (function () {
         for (var fi = 0; fi < filterDefs.length; fi++) {
             var f = filterDefs[fi];
             var val = filters[f.key];
-            var isOn = val === true || val === undefined;
             var isSmart = val === 'smart';
+            var hasSubs = f.subs && f.subs.length > 0;
+
+            // Determine ON/OFF state: OFF only if category explicitly false AND all subs are false
+            // ON if category is true/undefined, OR if at least one sub is not false
             var isOff = val === false;
+            if (isOff && hasSubs) {
+                // Check if truly all subs are off
+                var allSubsOff = true;
+                for (var _chk = 0; _chk < f.subs.length; _chk++) {
+                    if (filters[f.key + '.' + f.subs[_chk].key] !== false) { allSubsOff = false; break; }
+                }
+                isOff = allSubsOff;
+            }
+            if (!isOff && hasSubs && val !== 'smart') {
+                // ON means at least one sub is on
+                var anySub = false;
+                for (var _chk2 = 0; _chk2 < f.subs.length; _chk2++) {
+                    if (filters[f.key + '.' + f.subs[_chk2].key] !== false) { anySub = true; break; }
+                }
+                isOff = !anySub;
+            }
+            var isOn = !isOff && !isSmart;
 
             // Category row — clickable to expand if has subs
-            var hasSubs = f.subs && f.subs.length > 0;
             var expandId = 'nfSub_' + f.key;
             html += '<div style="border-bottom:1px solid rgba(255,255,255,0.05);">';
-            html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;' + (hasSubs ? 'cursor:pointer;' : '') + '"' + (hasSubs ? ' onclick="(function(){var el=document.getElementById(\'' + expandId + '\');if(el)el.style.display=el.style.display===\'none\'?\'block\':\'none\';})()"' : '') + '>';
+            html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;' + (hasSubs ? 'cursor:pointer;' : '') + '"' + (hasSubs ? ' onclick="(function(){var el=document.getElementById(\'' + expandId + '\');if(el){var show=el.style.display===\'none\';el.style.display=show?\'block\':\'none\';UI._expandedNotifCategory=show?\'' + f.key + '\':null;}})()"' : '') + '>';
             html += '<div style="flex:1;"><span style="font-size:0.95rem;">' + (hasSubs ? '▸ ' : '') + f.label + '</span><br><span style="font-size:0.75rem;color:var(--text-muted);">' + f.desc + '</span></div>';
             html += '<div style="display:flex;gap:2px;" onclick="event.stopPropagation()">';
 
@@ -10999,9 +11021,10 @@ window.UI = (function () {
             html += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 8px;' + (isOff ? 'background:#c44e52;color:#fff;' : 'opacity:0.5;') + '" onclick="UI.setNotifFilter(\'' + f.key + '\',false)">Off</button>';
             html += '</div></div>';
 
-            // Sub-type toggles (collapsed by default)
+            // Sub-type toggles (collapsed by default, but restore expanded state)
             if (hasSubs) {
-                html += '<div id="' + expandId + '" style="display:none;padding:4px 0 8px 20px;border-left:2px solid rgba(212,175,55,0.3);margin-left:8px;">';
+                var isExpanded = _expandedNotifCategory === f.key;
+                html += '<div id="' + expandId + '" style="display:' + (isExpanded ? 'block' : 'none') + ';padding:4px 0 8px 20px;border-left:2px solid rgba(212,175,55,0.3);margin-left:8px;">';
                 for (var si = 0; si < f.subs.length; si++) {
                     var sub = f.subs[si];
                     var subKey = f.key + '.' + sub.key;
@@ -30300,6 +30323,8 @@ window.UI = (function () {
         setNotifFilter,
         _toggleToastMute,
         _toggleGuidance,
+        get _expandedNotifCategory() { return _expandedNotifCategory; },
+        set _expandedNotifCategory(v) { _expandedNotifCategory = v; },
         openMapView,
         closeMapView,
         locatePlayer,

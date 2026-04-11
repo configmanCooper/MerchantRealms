@@ -10308,27 +10308,39 @@
             player.age++;
         }
 
-        // Death check: tiered yearly chance at season boundaries
-        if (!window._godInvincible && day > 0 && day % CONFIG.DAYS_PER_SEASON === 0) {
-            if (player.age >= CONFIG.DEATH_AGE_MIN) {
-                var ageDeathChance = 0;
-                if (player.age >= 100) {
-                    ageDeathChance = 1.0;
-                } else if (player.age >= 75) {
-                    ageDeathChance = 0.99;
-                } else if (player.age >= 70) {
-                    ageDeathChance = 0.95;
-                } else if (player.age >= 60) {
-                    ageDeathChance = (0.32 + (player.age - 60) * 0.04);
-                } else if (player.age >= 50) {
-                    ageDeathChance = (0.11 + (player.age - 50) * 0.02);
-                } else {
-                    ageDeathChance = (0.01 + (player.age - 40) * 0.01);
-                }
-                var rng = Engine.getRng();
-                if (ageDeathChance >= 1.0 || (rng && rng.chance(ageDeathChance))) {
-                    handlePlayerDeath();
-                }
+        // Daily old-age death check once player is 40+
+        if (!window._godInvincible && player.age >= CONFIG.DEATH_AGE_MIN) {
+            // Calculate yearly death chance, then convert to daily probability
+            var yearlyChance = 0;
+            if (player.age >= 100) {
+                yearlyChance = 1.0;
+            } else if (player.age >= 75) {
+                yearlyChance = 0.99;
+            } else if (player.age >= 70) {
+                yearlyChance = 0.95;
+            } else if (player.age >= 60) {
+                yearlyChance = (0.32 + (player.age - 60) * 0.04);
+            } else if (player.age >= 50) {
+                yearlyChance = (0.11 + (player.age - 50) * 0.02);
+            } else {
+                yearlyChance = (0.01 + (player.age - 40) * 0.01);
+            }
+
+            // Apply longevity skill reductions
+            if (hasSkill('longevity')) {
+                yearlyChance *= 0.75; // 25% reduction
+            } else if (hasSkill('healthy_living')) {
+                yearlyChance *= 0.90; // 10% reduction
+            }
+
+            // Convert yearly chance to daily: dailyP = 1 - (1 - yearlyP)^(1/90)
+            var dailyChance = yearlyChance >= 1.0 ? (1.0 / CONFIG.DAYS_PER_SEASON) : (1 - Math.pow(1 - yearlyChance, 1 / CONFIG.DAYS_PER_SEASON));
+            var rng = Engine.getRng();
+            if (yearlyChance >= 1.0 && day % CONFIG.DAYS_PER_SEASON === 0) {
+                // Hard cap at 100: guaranteed death at season boundary
+                handlePlayerDeath();
+            } else if (rng && rng.chance(dailyChance)) {
+                handlePlayerDeath();
             }
         }
     }
@@ -28042,75 +28054,92 @@
         // Standard category filter check
         var filterVal = filters[filterKey];
         if (filterVal === false) return false;
-        if (filterVal === undefined) { /* default on — continue to sub-type check */ }
 
         // Sub-type filter check — pattern-match the message to detect sub-types
-        var msgText = message || (event && event.message) || '';
-        if (msgText && filters) {
-            var ml = msgText.toLowerCase();
-            var subKey = null;
-
-            if (category === 'my_actions') {
-                if (ml.indexOf('bought') !== -1 || ml.indexOf('sold') !== -1 || ml.indexOf('traded') !== -1 || ml.indexOf('purchased') !== -1 || ml.indexOf('trade') !== -1) subKey = 'my_actions.trade';
-                else if (ml.indexOf('arrived') !== -1 || ml.indexOf('departed') !== -1 || ml.indexOf('travel') !== -1 || ml.indexOf('docked') !== -1 || ml.indexOf('set sail') !== -1 || ml.indexOf('landed') !== -1) subKey = 'my_actions.travel';
-                else if (ml.indexOf('crafted') !== -1 || ml.indexOf('produced') !== -1 || ml.indexOf('worked') !== -1 || ml.indexOf('foraged') !== -1 || ml.indexOf('harvested') !== -1) subKey = 'my_actions.work';
-                else if (ml.indexOf('married') !== -1 || ml.indexOf('child') !== -1 || ml.indexOf('pregnant') !== -1 || ml.indexOf('spouse') !== -1 || ml.indexOf('relationship') !== -1 || ml.indexOf('wedding') !== -1) subKey = 'my_actions.social';
-                else if (ml.indexOf('skill') !== -1 || ml.indexOf('level') !== -1 || ml.indexOf('unlocked') !== -1 || ml.indexOf('learned') !== -1 || ml.indexOf('xp') !== -1) subKey = 'my_actions.skills';
-                else if (ml.indexOf('reputation') !== -1 || ml.indexOf('standing') !== -1 || ml.indexOf('rank') !== -1 || ml.indexOf('promoted') !== -1 || ml.indexOf('promotion') !== -1) subKey = 'my_actions.reputation';
-            } else if (category === 'my_business') {
-                if (ml.indexOf('dispatched') !== -1 || ml.indexOf('dispatch') !== -1 || ml.indexOf('departing') !== -1 || ml.indexOf('guards join') !== -1) subKey = 'my_business.caravan_dispatch';
-                else if (ml.indexOf('caravan') !== -1 && (ml.indexOf('sold') !== -1 || ml.indexOf('arrival') !== -1 || ml.indexOf('arrived') !== -1 || ml.indexOf('delivered') !== -1 || ml.indexOf('bought') !== -1 || ml.indexOf('return') !== -1)) subKey = 'my_business.caravan_arrival';
-                else if (ml.indexOf('caravan') !== -1 && (ml.indexOf('desert') !== -1 || ml.indexOf('abandoned') !== -1 || ml.indexOf('storm') !== -1 || ml.indexOf('blockade') !== -1 || ml.indexOf('rescued') !== -1 || ml.indexOf('disbanded') !== -1 || ml.indexOf('turned back') !== -1)) subKey = 'my_business.caravan_problems';
-                else if (ml.indexOf('building') !== -1 || ml.indexOf('production') !== -1 || ml.indexOf('output') !== -1 || ml.indexOf('constructed') !== -1) subKey = 'my_business.building_output';
-                else if (ml.indexOf('worker') !== -1 || ml.indexOf('hired') !== -1 || ml.indexOf('dismissed') !== -1 || ml.indexOf('labor') !== -1 || ml.indexOf('conscript') !== -1) subKey = 'my_business.workers';
-                else if (ml.indexOf('agent') !== -1) subKey = 'my_business.agents';
-                else if (ml.indexOf('license') !== -1 || ml.indexOf('loan') !== -1 || ml.indexOf('payment') !== -1) subKey = 'my_business.license';
-            } else if (category === 'my_kingdom') {
-                if (ml.indexOf('law') !== -1 || ml.indexOf('decree') !== -1 || ml.indexOf('enacted') !== -1 || ml.indexOf('repealed') !== -1) subKey = 'my_kingdom.laws';
-                else if (ml.indexOf('tax') !== -1 || ml.indexOf('levy') !== -1 || ml.indexOf('tariff') !== -1) subKey = 'my_kingdom.taxes';
-                else if (ml.indexOf('king') !== -1 || ml.indexOf('regent') !== -1 || ml.indexOf('succession') !== -1 || ml.indexOf('counsel') !== -1 || ml.indexOf('court') !== -1 || ml.indexOf('coronation') !== -1) subKey = 'my_kingdom.king';
-                else if (ml.indexOf('festival') !== -1 || ml.indexOf('tournament') !== -1 || ml.indexOf('celebration') !== -1) subKey = 'my_kingdom.festivals';
-                else if (ml.indexOf('commission') !== -1 || ml.indexOf('petition') !== -1) subKey = 'my_kingdom.commissions';
-                else subKey = 'my_kingdom.political';
-            } else if (category === 'local_town') {
-                if (ml.indexOf('fire') !== -1 || ml.indexOf('flood') !== -1 || ml.indexOf('earthquake') !== -1 || ml.indexOf('famine') !== -1 || ml.indexOf('blight') !== -1 || ml.indexOf('drought') !== -1 || ml.indexOf('collapse') !== -1) subKey = 'local_town.disasters';
-                else if (ml.indexOf('road') !== -1 || ml.indexOf('bridge') !== -1 || ml.indexOf('dock') !== -1 || ml.indexOf('built') !== -1 || ml.indexOf('construct') !== -1) subKey = 'local_town.infrastructure';
-                else if (ml.indexOf('well') !== -1 || ml.indexOf('vein') !== -1 || ml.indexOf('deposit') !== -1 || ml.indexOf('ore') !== -1 || ml.indexOf('resource') !== -1) subKey = 'local_town.resources';
-                else if (ml.indexOf('population') !== -1 || ml.indexOf('refugee') !== -1 || ml.indexOf('migrat') !== -1) subKey = 'local_town.population';
-            } else if (category === 'foreign_kingdoms') {
-                if (ml.indexOf('war') !== -1 || ml.indexOf('invasion') !== -1 || ml.indexOf('battle') !== -1 || ml.indexOf('siege') !== -1) subKey = 'foreign_kingdoms.wars';
-                else if (ml.indexOf('law') !== -1 || ml.indexOf('decree') !== -1) subKey = 'foreign_kingdoms.laws';
-                else if (ml.indexOf('treaty') !== -1 || ml.indexOf('alliance') !== -1 || ml.indexOf('peace') !== -1 || ml.indexOf('surrender') !== -1) subKey = 'foreign_kingdoms.diplomacy';
-                else subKey = 'foreign_kingdoms.political';
-            } else if (category === 'world_economy') {
-                if (ml.indexOf('craze') !== -1 || ml.indexOf('trend') !== -1 || ml.indexOf('demand') !== -1) subKey = 'world_economy.trade_craze';
-                else if (ml.indexOf('embargo') !== -1 || ml.indexOf('ban') !== -1 || ml.indexOf('restrict') !== -1) subKey = 'world_economy.embargo';
-                else if (ml.indexOf('price control') !== -1 || ml.indexOf('price cap') !== -1 || ml.indexOf('price floor') !== -1) subKey = 'world_economy.price_control';
-                else if (ml.indexOf('tariff') !== -1 || ml.indexOf('bounty') !== -1) subKey = 'world_economy.tariffs';
-            } else if (category === 'military') {
-                if (ml.indexOf('battle') !== -1 || ml.indexOf('siege') !== -1 || ml.indexOf('bombardment') !== -1 || ml.indexOf('invaded') !== -1) subKey = 'military.battles';
-                else if (ml.indexOf('troops') !== -1 || ml.indexOf('army') !== -1 || ml.indexOf('march') !== -1 || ml.indexOf('movement') !== -1 || ml.indexOf('deployed') !== -1) subKey = 'military.troop_movements';
-                else if (ml.indexOf('promoted') !== -1 || ml.indexOf('promotion') !== -1 || ml.indexOf('rank') !== -1 || ml.indexOf('medal') !== -1) subKey = 'military.promotions';
-                else if (ml.indexOf('equipment') !== -1 || ml.indexOf('weapon') !== -1 || ml.indexOf('armor') !== -1 || ml.indexOf('supply') !== -1 || ml.indexOf('shield') !== -1) subKey = 'military.equipment';
-            } else if (category === 'travel_events') {
-                if (ml.indexOf('forag') !== -1 || ml.indexOf('gather') !== -1 || ml.indexOf('found') !== -1 || ml.indexOf('picked') !== -1) subKey = 'travel_events.foraging';
-                else if (ml.indexOf('ambush') !== -1 || ml.indexOf('bandit') !== -1 || ml.indexOf('attack') !== -1 || ml.indexOf('danger') !== -1) subKey = 'travel_events.ambushes';
-                else subKey = 'travel_events.encounters';
-            } else if (category === 'illness') {
-                if (ml.indexOf('plague') !== -1 || ml.indexOf('outbreak') !== -1 || ml.indexOf('epidemic') !== -1 || ml.indexOf('disease spread') !== -1) subKey = 'illness.outbreaks';
-                else if (ml.indexOf('quarantine') !== -1 || ml.indexOf('lockdown') !== -1) subKey = 'illness.quarantine';
-                else if (ml.indexOf('health policy') !== -1 || ml.indexOf('hospital') !== -1 || ml.indexOf('medic') !== -1) subKey = 'illness.health_policy';
-                else if (ml.indexOf('died') !== -1 || ml.indexOf('death') !== -1 || ml.indexOf('succumbed') !== -1) subKey = 'illness.npc_deaths';
-            } else if (category === 'combat') {
-                if (ml.indexOf('pirate') !== -1 || ml.indexOf('raid') !== -1) subKey = 'combat.pirates';
-                else if (ml.indexOf('blockade') !== -1) subKey = 'combat.blockades';
-                else if (ml.indexOf('bandit') !== -1 || ml.indexOf('ambush') !== -1 || ml.indexOf('attack') !== -1) subKey = 'combat.bandits';
-            } else if (category === 'npc_activity') {
-                if (ml.indexOf('elite merchant') !== -1 || ml.indexOf('merchant empire') !== -1 || ml.indexOf('merchant dynasty') !== -1 || ml.indexOf('ranking') !== -1) subKey = 'npc_activity.elite_merchants';
-                else subKey = 'npc_activity.npc_life';
+        // Also check if ALL subs are off → block everything in the category
+        var catSubs = _notifSubKeys[filterKey];
+        if (catSubs) {
+            // Check if ALL sub-filters for this category are OFF
+            var allSubsOff = true;
+            var anySubOff = false;
+            for (var _csi = 0; _csi < catSubs.length; _csi++) {
+                var _csKey = filterKey + '.' + catSubs[_csi];
+                if (filters[_csKey] === false) { anySubOff = true; }
+                else { allSubsOff = false; }
             }
+            if (allSubsOff && catSubs.length > 0) return false;
 
-            if (subKey && filters[subKey] === false) return false;
+            // Only do sub-type matching if at least one sub is off
+            if (anySubOff) {
+                var msgText = message || (event && event.message) || '';
+                if (msgText) {
+                    var ml = msgText.toLowerCase();
+                    var subKey = null;
+
+                    if (category === 'my_actions') {
+                        if (ml.indexOf('bought') !== -1 || ml.indexOf('sold') !== -1 || ml.indexOf('traded') !== -1 || ml.indexOf('purchased') !== -1 || ml.indexOf('trade') !== -1) subKey = 'my_actions.trade';
+                        else if (ml.indexOf('arrived') !== -1 || ml.indexOf('departed') !== -1 || ml.indexOf('travel') !== -1 || ml.indexOf('docked') !== -1 || ml.indexOf('set sail') !== -1 || ml.indexOf('landed') !== -1) subKey = 'my_actions.travel';
+                        else if (ml.indexOf('crafted') !== -1 || ml.indexOf('produced') !== -1 || ml.indexOf('worked') !== -1 || ml.indexOf('foraged') !== -1 || ml.indexOf('harvested') !== -1) subKey = 'my_actions.work';
+                        else if (ml.indexOf('married') !== -1 || ml.indexOf('child') !== -1 || ml.indexOf('pregnant') !== -1 || ml.indexOf('spouse') !== -1 || ml.indexOf('relationship') !== -1 || ml.indexOf('wedding') !== -1) subKey = 'my_actions.social';
+                        else if (ml.indexOf('skill') !== -1 || ml.indexOf('level') !== -1 || ml.indexOf('unlocked') !== -1 || ml.indexOf('learned') !== -1 || ml.indexOf('xp') !== -1) subKey = 'my_actions.skills';
+                        else if (ml.indexOf('reputation') !== -1 || ml.indexOf('standing') !== -1 || ml.indexOf('rank') !== -1 || ml.indexOf('promoted') !== -1 || ml.indexOf('promotion') !== -1) subKey = 'my_actions.reputation';
+                    } else if (category === 'my_business') {
+                        if (ml.indexOf('caravan') !== -1 && (ml.indexOf('dispatched') !== -1 || ml.indexOf('dispatch') !== -1 || ml.indexOf('departing') !== -1 || ml.indexOf('guards join') !== -1)) subKey = 'my_business.caravan_dispatch';
+                        else if (ml.indexOf('caravan') !== -1 && (ml.indexOf('sold') !== -1 || ml.indexOf('arrival') !== -1 || ml.indexOf('arrived') !== -1 || ml.indexOf('delivered') !== -1 || ml.indexOf('bought') !== -1 || ml.indexOf('return') !== -1 || ml.indexOf('profit') !== -1 || ml.indexOf('revenue') !== -1 || ml.indexOf('gold') !== -1)) subKey = 'my_business.caravan_arrival';
+                        else if (ml.indexOf('caravan') !== -1 && (ml.indexOf('desert') !== -1 || ml.indexOf('abandoned') !== -1 || ml.indexOf('storm') !== -1 || ml.indexOf('blockade') !== -1 || ml.indexOf('rescued') !== -1 || ml.indexOf('disbanded') !== -1 || ml.indexOf('turned back') !== -1 || ml.indexOf('crew') !== -1 || ml.indexOf('lost') !== -1 || ml.indexOf('destroyed') !== -1)) subKey = 'my_business.caravan_problems';
+                        else if (ml.indexOf('caravan') !== -1) subKey = 'my_business.caravan_arrival'; // any other caravan msg → arrival/sales
+                        else if (ml.indexOf('building') !== -1 || ml.indexOf('production') !== -1 || ml.indexOf('output') !== -1 || ml.indexOf('constructed') !== -1 || ml.indexOf('guard') !== -1 || ml.indexOf('sabotag') !== -1 || ml.indexOf('theft') !== -1 || ml.indexOf('protection') !== -1) subKey = 'my_business.building_output';
+                        else if (ml.indexOf('worker') !== -1 || ml.indexOf('hired') !== -1 || ml.indexOf('dismissed') !== -1 || ml.indexOf('labor') !== -1 || ml.indexOf('conscript') !== -1 || ml.indexOf('retired') !== -1 || ml.indexOf('wages') !== -1 || ml.indexOf('satisfaction') !== -1) subKey = 'my_business.workers';
+                        else if (ml.indexOf('agent') !== -1 || ml.indexOf('spy') !== -1 || ml.indexOf('intel') !== -1 || ml.indexOf('intelligence') !== -1 || ml.indexOf('smuggl') !== -1 || ml.indexOf('forged') !== -1 || ml.indexOf('notoriety') !== -1 || ml.indexOf('identity') !== -1 || ml.indexOf('laying low') !== -1 || ml.indexOf('rumor') !== -1 || ml.indexOf('frame') !== -1 || ml.indexOf('audit') !== -1 || ml.indexOf('warehouse') !== -1 || ml.indexOf('thief') !== -1 || ml.indexOf('stole') !== -1 || ml.indexOf('criminal') !== -1 || ml.indexOf('manipulated') !== -1) subKey = 'my_business.agents';
+                        else if (ml.indexOf('license') !== -1 || ml.indexOf('loan') !== -1 || ml.indexOf('payment') !== -1 || ml.indexOf('permit') !== -1 || ml.indexOf('order') !== -1 || ml.indexOf('supply deal') !== -1) subKey = 'my_business.license';
+                    } else if (category === 'my_kingdom') {
+                        if (ml.indexOf('law') !== -1 || ml.indexOf('decree') !== -1 || ml.indexOf('enacted') !== -1 || ml.indexOf('repealed') !== -1) subKey = 'my_kingdom.laws';
+                        else if (ml.indexOf('tax') !== -1 || ml.indexOf('levy') !== -1 || ml.indexOf('tariff') !== -1) subKey = 'my_kingdom.taxes';
+                        else if (ml.indexOf('king') !== -1 || ml.indexOf('regent') !== -1 || ml.indexOf('succession') !== -1 || ml.indexOf('counsel') !== -1 || ml.indexOf('court') !== -1 || ml.indexOf('coronation') !== -1) subKey = 'my_kingdom.king';
+                        else if (ml.indexOf('festival') !== -1 || ml.indexOf('tournament') !== -1 || ml.indexOf('celebration') !== -1) subKey = 'my_kingdom.festivals';
+                        else if (ml.indexOf('commission') !== -1 || ml.indexOf('petition') !== -1) subKey = 'my_kingdom.commissions';
+                        else subKey = 'my_kingdom.political';
+                    } else if (category === 'local_town') {
+                        if (ml.indexOf('fire') !== -1 || ml.indexOf('flood') !== -1 || ml.indexOf('earthquake') !== -1 || ml.indexOf('famine') !== -1 || ml.indexOf('blight') !== -1 || ml.indexOf('drought') !== -1 || ml.indexOf('collapse') !== -1) subKey = 'local_town.disasters';
+                        else if (ml.indexOf('road') !== -1 || ml.indexOf('bridge') !== -1 || ml.indexOf('dock') !== -1 || ml.indexOf('built') !== -1 || ml.indexOf('construct') !== -1) subKey = 'local_town.infrastructure';
+                        else if (ml.indexOf('well') !== -1 || ml.indexOf('vein') !== -1 || ml.indexOf('deposit') !== -1 || ml.indexOf('ore') !== -1 || ml.indexOf('resource') !== -1) subKey = 'local_town.resources';
+                        else if (ml.indexOf('population') !== -1 || ml.indexOf('refugee') !== -1 || ml.indexOf('migrat') !== -1) subKey = 'local_town.population';
+                    } else if (category === 'foreign_kingdoms') {
+                        if (ml.indexOf('war') !== -1 || ml.indexOf('invasion') !== -1 || ml.indexOf('battle') !== -1 || ml.indexOf('siege') !== -1) subKey = 'foreign_kingdoms.wars';
+                        else if (ml.indexOf('law') !== -1 || ml.indexOf('decree') !== -1) subKey = 'foreign_kingdoms.laws';
+                        else if (ml.indexOf('treaty') !== -1 || ml.indexOf('alliance') !== -1 || ml.indexOf('peace') !== -1 || ml.indexOf('surrender') !== -1) subKey = 'foreign_kingdoms.diplomacy';
+                        else subKey = 'foreign_kingdoms.political';
+                    } else if (category === 'world_economy') {
+                        if (ml.indexOf('craze') !== -1 || ml.indexOf('trend') !== -1 || ml.indexOf('demand') !== -1) subKey = 'world_economy.trade_craze';
+                        else if (ml.indexOf('embargo') !== -1 || ml.indexOf('ban') !== -1 || ml.indexOf('restrict') !== -1) subKey = 'world_economy.embargo';
+                        else if (ml.indexOf('price control') !== -1 || ml.indexOf('price cap') !== -1 || ml.indexOf('price floor') !== -1) subKey = 'world_economy.price_control';
+                        else if (ml.indexOf('tariff') !== -1 || ml.indexOf('bounty') !== -1) subKey = 'world_economy.tariffs';
+                    } else if (category === 'military') {
+                        if (ml.indexOf('battle') !== -1 || ml.indexOf('siege') !== -1 || ml.indexOf('bombardment') !== -1 || ml.indexOf('invaded') !== -1) subKey = 'military.battles';
+                        else if (ml.indexOf('troops') !== -1 || ml.indexOf('army') !== -1 || ml.indexOf('march') !== -1 || ml.indexOf('movement') !== -1 || ml.indexOf('deployed') !== -1) subKey = 'military.troop_movements';
+                        else if (ml.indexOf('promoted') !== -1 || ml.indexOf('promotion') !== -1 || ml.indexOf('rank') !== -1 || ml.indexOf('medal') !== -1) subKey = 'military.promotions';
+                        else if (ml.indexOf('equipment') !== -1 || ml.indexOf('weapon') !== -1 || ml.indexOf('armor') !== -1 || ml.indexOf('supply') !== -1 || ml.indexOf('shield') !== -1) subKey = 'military.equipment';
+                    } else if (category === 'travel_events') {
+                        if (ml.indexOf('forag') !== -1 || ml.indexOf('gather') !== -1 || ml.indexOf('found') !== -1 || ml.indexOf('picked') !== -1) subKey = 'travel_events.foraging';
+                        else if (ml.indexOf('ambush') !== -1 || ml.indexOf('bandit') !== -1 || ml.indexOf('attack') !== -1 || ml.indexOf('danger') !== -1) subKey = 'travel_events.ambushes';
+                        else subKey = 'travel_events.encounters';
+                    } else if (category === 'illness') {
+                        if (ml.indexOf('plague') !== -1 || ml.indexOf('outbreak') !== -1 || ml.indexOf('epidemic') !== -1 || ml.indexOf('disease spread') !== -1) subKey = 'illness.outbreaks';
+                        else if (ml.indexOf('quarantine') !== -1 || ml.indexOf('lockdown') !== -1) subKey = 'illness.quarantine';
+                        else if (ml.indexOf('health policy') !== -1 || ml.indexOf('hospital') !== -1 || ml.indexOf('medic') !== -1) subKey = 'illness.health_policy';
+                        else if (ml.indexOf('died') !== -1 || ml.indexOf('death') !== -1 || ml.indexOf('succumbed') !== -1) subKey = 'illness.npc_deaths';
+                    } else if (category === 'combat') {
+                        if (ml.indexOf('pirate') !== -1 || ml.indexOf('raid') !== -1) subKey = 'combat.pirates';
+                        else if (ml.indexOf('blockade') !== -1) subKey = 'combat.blockades';
+                        else if (ml.indexOf('bandit') !== -1 || ml.indexOf('ambush') !== -1 || ml.indexOf('attack') !== -1) subKey = 'combat.bandits';
+                    } else if (category === 'npc_activity') {
+                        if (ml.indexOf('elite merchant') !== -1 || ml.indexOf('merchant empire') !== -1 || ml.indexOf('merchant dynasty') !== -1 || ml.indexOf('ranking') !== -1) subKey = 'npc_activity.elite_merchants';
+                        else subKey = 'npc_activity.npc_life';
+                    }
+
+                    if (subKey && filters[subKey] === false) return false;
+                }
+            }
         }
 
         return true;
@@ -28132,6 +28161,39 @@
     function setNotifFilter(key, value) {
         if (!player.notificationFilters) player.notificationFilters = {};
         player.notificationFilters[key] = value;
+
+        // When a top-level category is turned OFF, also turn off all sub-filters
+        if (value === false && key.indexOf('.') === -1) {
+            var subKeys = _getSubKeysForCategory(key);
+            for (var i = 0; i < subKeys.length; i++) {
+                player.notificationFilters[subKeys[i]] = false;
+            }
+        }
+    }
+
+    // Sub-key definitions for each category (mirrors UI filterDefs)
+    var _notifSubKeys = {
+        my_actions: ['trade', 'travel', 'work', 'social', 'skills', 'reputation'],
+        my_business: ['caravan_dispatch', 'caravan_arrival', 'caravan_problems', 'building_output', 'workers', 'agents', 'license'],
+        my_kingdom: ['laws', 'taxes', 'king', 'festivals', 'commissions', 'political'],
+        local_town: ['disasters', 'infrastructure', 'resources', 'population'],
+        foreign_kingdoms: ['wars', 'laws', 'diplomacy', 'political'],
+        world_economy: ['trade_craze', 'embargo', 'price_control', 'tariffs'],
+        military: ['battles', 'troop_movements', 'promotions', 'equipment'],
+        npc_activity: ['elite_merchants', 'npc_life'],
+        travel_events: ['foraging', 'encounters', 'ambushes'],
+        illness: ['outbreaks', 'quarantine', 'health_policy', 'npc_deaths'],
+        combat: ['pirates', 'blockades', 'bandits']
+    };
+
+    function _getSubKeysForCategory(cat) {
+        var subs = _notifSubKeys[cat];
+        if (!subs) return [];
+        var result = [];
+        for (var i = 0; i < subs.length; i++) {
+            result.push(cat + '.' + subs[i]);
+        }
+        return result;
     }
 
     function getNotificationFilters() {

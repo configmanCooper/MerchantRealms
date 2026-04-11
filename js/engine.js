@@ -5860,34 +5860,6 @@
                         }
                     }
                 }
-                // Old age death — tiered yearly chance checked once per year (each season)
-                if (p.age >= CONFIG.DEATH_AGE_MIN) {
-                    var ageDeathChance = 0;
-                    if (p.age >= 100) {
-                        ageDeathChance = 1.0; // hard cap
-                    } else if (p.age >= 75) {
-                        ageDeathChance = 0.99;
-                    } else if (p.age >= 70) {
-                        ageDeathChance = 0.95;
-                    } else if (p.age >= 60) {
-                        // At 60: base from 50-59 range + 4% per year over 60
-                        // Base at 60 = 11% + 2%*(60-50) = 11% + 20% = 31%, then +4% extra = 35%... 
-                        // User formula: 50 is 11%, 50-59 adds 2%/yr, so 59 = 11+18=29%
-                        // At 60: 29% + 4% = 33%, but user said 60 is 32% then +4% so 34%
-                        // Simplified: base at 60 = 32%, each year adds 4%
-                        ageDeathChance = (0.32 + (p.age - 60) * 0.04);
-                    } else if (p.age >= 50) {
-                        // At 50: 11%, each year adds 2%
-                        ageDeathChance = (0.11 + (p.age - 50) * 0.02);
-                    } else {
-                        // 40-49: starts at 1%, adds 1% per year
-                        ageDeathChance = (0.01 + (p.age - 40) * 0.01);
-                    }
-                    if (ageDeathChance >= 1.0 || world.rng.chance(ageDeathChance)) {
-                        killPerson(p, 'old age');
-                        continue;
-                    }
-                }
                 // Worker retirement
                 if (p.age >= CONFIG.WORKER_RETIRE_AGE_MIN && p.employerId) {
                     const retireAge = CONFIG.WORKER_RETIRE_AGE_MIN + world.rng.randInt(0, CONFIG.WORKER_RETIRE_AGE_MAX - CONFIG.WORKER_RETIRE_AGE_MIN);
@@ -5897,6 +5869,31 @@
                         p.employerId = null;
                         if (_wasPlayerEmp) logEvent(`${p.firstName} ${p.lastName} has retired from work.`);
                     }
+                }
+            }
+
+            // ---- NPC old-age death (checked every 30 days for rough simulation) ----
+            if (day % 30 === 0 && p.age >= CONFIG.DEATH_AGE_MIN) {
+                var ageDeathChance = 0;
+                if (p.age >= 100) {
+                    ageDeathChance = 1.0;
+                } else if (p.age >= 75) {
+                    ageDeathChance = 0.99;
+                } else if (p.age >= 70) {
+                    ageDeathChance = 0.95;
+                } else if (p.age >= 60) {
+                    ageDeathChance = (0.32 + (p.age - 60) * 0.04);
+                } else if (p.age >= 50) {
+                    ageDeathChance = (0.11 + (p.age - 50) * 0.02);
+                } else {
+                    ageDeathChance = (0.01 + (p.age - 40) * 0.01);
+                }
+                // Scale yearly chance to 30-day check (3 checks per year)
+                // P(30-day) = 1 - (1 - yearlyP)^(1/3)
+                var npcDeathP = ageDeathChance >= 1.0 ? 0.5 : (1 - Math.pow(1 - ageDeathChance, 1/3));
+                if (ageDeathChance >= 1.0 || world.rng.chance(npcDeathP)) {
+                    killPerson(p, 'old age');
+                    continue;
                 }
             }
 
