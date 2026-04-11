@@ -18550,7 +18550,7 @@
             // Spy / Royal favors
             pendingSpyFavor: player.pendingSpyFavor ? JSON.parse(JSON.stringify(player.pendingSpyFavor)) : null,
             taxExemption: player.taxExemption ? JSON.parse(JSON.stringify(player.taxExemption)) : null,
-            guaranteedPetition: player.guaranteedPetition || false,
+            guaranteedPetition: player.guaranteedPetition || {},
             tradeMonopoly: player.tradeMonopoly ? JSON.parse(JSON.stringify(player.tradeMonopoly)) : null,
             // Musician instruments
             instrumentSkill: JSON.parse(JSON.stringify(player.instrumentSkill || {})),
@@ -35735,6 +35735,11 @@
             if (agent.status === 'working' && agent.task) {
                 _tickAgentTask(agent, day, rng);
             }
+
+            // Cap reports to prevent memory leak
+            if (agent.reports && agent.reports.length > 50) {
+                agent.reports = agent.reports.slice(-50);
+            }
         }
     }
 
@@ -35838,7 +35843,6 @@
         }
         var bld = targetBuildings[rng ? rng.intBetween(0, targetBuildings.length - 1) : 0];
         var bt = Engine.findBuildingType ? Engine.findBuildingType(bld.type) : null;
-        bld.disabled = true;
         bld._disabledUntil = day + 15 + (rng ? rng.intBetween(0, 15) : 10);
         agent.reports.push({ day: day, msg: '🔨 Sabotaged ' + (bt ? bt.name : bld.type) + ' owned by ' + (target.firstName || 'target') + '. Disabled for ' + (bld._disabledUntil - day) + ' days.' });
     }
@@ -35880,23 +35884,18 @@
 
     function _agentSpreadRumors(agent, target, town, day, rng) {
         var repDamage = 3 + (agent.skills.persuasion > 5 ? 3 : 0) + (rng ? rng.intBetween(0, 4) : 2);
+        // Damage target's relationships with other NPCs
         if (target._playerRelationship !== undefined) {
-            target._playerRelationship = Math.max(-100, (target._playerRelationship || 0)); // don't change player rel
+            target._playerRelationship = Math.max(-100, (target._playerRelationship || 0) - Math.floor(repDamage / 2));
         }
-        // Damage target's standing in kingdom
-        if (town && town.kingdomId) {
-            var kingdoms = Engine.getKingdoms ? Engine.getKingdoms() : [];
-            for (var ki = 0; ki < kingdoms.length; ki++) {
-                if (kingdoms[ki].id === town.kingdomId && kingdoms[ki].nobles) {
-                    // Reduce target's influence/standing
-                    for (var ni = 0; ni < kingdoms[ki].nobles.length; ni++) {
-                        if (kingdoms[ki].nobles[ni] === target.id && target.socialRank) {
-                            // Damage reputation indirectly — reduce prosperity of their town influence
-                            break;
-                        }
-                    }
-                }
-            }
+        // Damage target's standing in kingdom — reduce their gold (lost business from bad rep)
+        var goldLoss = repDamage * 10;
+        if (target.gold !== undefined) {
+            target.gold = Math.max(0, (target.gold || 0) - goldLoss);
+        }
+        // Reduce town prosperity slightly (discord hurts commerce)
+        if (town && town.prosperity) {
+            town.prosperity = Math.max(0, town.prosperity - 1);
         }
         // Direct reputation damage to target NPC
         if (target._reputation !== undefined) {
@@ -35904,7 +35903,7 @@
         } else {
             target._reputation = 50 - repDamage;
         }
-        agent.reports.push({ day: day, msg: '🗣️ Spread damaging rumors about ' + (target.firstName || 'target') + '. Reputation damaged by ' + repDamage + '.' });
+        agent.reports.push({ day: day, msg: '🗣️ Spread damaging rumors about ' + (target.firstName || 'target') + '. Rep -' + repDamage + ', gold -' + goldLoss + 'g.' });
     }
 
     function _agentStealGoods(agent, target, town, day, rng) {
@@ -36014,7 +36013,7 @@
 
         player.gold -= buyCost;
         agent.task.monthlySpent = (agent.task.monthlySpent || 0) + buyCost;
-        var sellPrice = qty * (bestDest.market.prices[bestRes] || 10);
+        var sellPrice = qty * (bestDest.market ? (bestDest.market.prices[bestRes] || 10) : 10);
         var netProfit = sellPrice - buyCost;
         player.gold += sellPrice;
         agent.earnings += netProfit;
@@ -36098,10 +36097,19 @@
     function _agentEstablishContacts(agent, day, rng) {
         var town = Engine.findTown(agent.townId);
         if (!town) return;
-        // After duration days, establish a trade contact that gives market visibility
-        var contactBonus = agent.skills.persuasion * 2;
-        if (town.prosperity) town.prosperity = Math.min(100, town.prosperity + 1);
-        agent.reports.push({ day: day, msg: '🤝 Building trade contacts in ' + town.name + '. Persuasion: ' + agent.skills.persuasion + '/10.' });
+        // Boost town prosperity based on persuasion skill
+        var prosperityGain = 1 + Math.floor(agent.skills.persuasion / 3);
+        if (town.prosperity !== undefined) town.prosperity = Math.min(100, (town.prosperity || 0) + prosperityGain);
+        // Boost player reputation in this town's kingdom
+        var repGain = Math.floor(agent.skills.persuasion / 2);
+        if (town.kingdomId && player.reputation) {
+            player.reputation[town.kingdomId] = Math.min(100, (player.reputation[town.kingdomId] || 50) + repGain);
+        }
+        // Earn some gold from brokered connections
+        var goldEarned = 5 + agent.skills.persuasion * 3 + (rng ? rng.intBetween(0, 15) : 8);
+        player.gold += goldEarned;
+        agent.earnings += goldEarned;
+        agent.reports.push({ day: day, msg: '🤝 Establishing contacts in ' + town.name + '. Prosperity +' + prosperityGain + ', rep +' + repGain + ', earned ' + goldEarned + 'g in referral fees.' });
     }
 
     function _agentGuardProperties(agent, day, rng) {

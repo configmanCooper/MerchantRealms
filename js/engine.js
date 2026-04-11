@@ -4398,6 +4398,9 @@
                 // Strike/abandonment check — building halted by worker action
                 if (bld._strikeUntil && bld._strikeUntil > world.day) continue;
 
+                // Sabotage/disabled check — building disabled by schemes
+                if (bld._disabledUntil && bld._disabledUntil > world.day) continue;
+
                 // Fallow check — only applies to farms
                 if (bld.fallow && bt.category === 'farm') { continue; }
                 // Deposit depletion — only applies to extraction buildings

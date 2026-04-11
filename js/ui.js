@@ -23406,7 +23406,12 @@ window.UI = (function () {
             'Dark Connections': 'dark_connections',
             'Political Intrigue': 'political_intrigue',
             'Assassination': 'assassination_skill',
-            'Noble Intrigue': 'noble_intrigue'
+            'Noble Intrigue': 'noble_intrigue',
+            'Assassin': 'assassin',
+            'Poisoner': 'poisoner',
+            'Kingmaker': 'kingmaker_skill',
+            'Bribe Expert': 'bribe_expert',
+            'Silver Tongue (Dark)': 'silver_tongue_dark'
         };
         if (typeof action.requires === 'string') {
             // Handle "X or Y" format
