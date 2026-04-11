@@ -10682,6 +10682,12 @@ window.UI = (function () {
 
         const tradeLog = Player.tradeLog || [];
 
+        // Pagination and search state
+        if (typeof openEventLog._currentPage !== 'number') openEventLog._currentPage = 0;
+        if (typeof openEventLog._searchQuery !== 'string') openEventLog._searchQuery = '';
+        var currentPage = openEventLog._currentPage;
+        var searchQuery = openEventLog._searchQuery.toLowerCase().trim();
+
         // Category tab groups
         var tabGroups = {
             all:      { label: '📋 All',      categories: null },
@@ -10735,6 +10741,11 @@ window.UI = (function () {
         }
 
         let html = tabBarHtml + filterBarHtml;
+
+        // Search bar
+        var escapedQuery = openEventLog._searchQuery.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        html += '<div style="margin-bottom:8px;"><input type="text" id="eventLogSearch" value="' + escapedQuery + '" placeholder="🔍 Search events..." style="width:100%;padding:6px 10px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:var(--text-color);font-size:0.85rem;" oninput="UI._searchEventLog(this.value)" /></div>';
+
         html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
 
         // Combine engine events and trade log, sort by day descending
@@ -10751,7 +10762,7 @@ window.UI = (function () {
         // Filter events based on active tab
         var activeCats = (tabGroups[activeTab] && tabGroups[activeTab].categories) ? tabGroups[activeTab].categories : null;
 
-        const filteredEvents = allEvents.filter(function(e) {
+        var filteredEvents = allEvents.filter(function(e) {
             var cat = e.category || inferCategoryFromMessage(e);
             // Tab filter
             if (activeCats && !activeCats.includes(cat)) return false;
@@ -10767,30 +10778,71 @@ window.UI = (function () {
             return true;
         });
 
-        html += '<span style="font-size:0.85rem;color:var(--text-muted);">' + Math.min(filteredEvents.length, 100) + ' events</span>' +
+        // Cap at 1000 events total
+        if (filteredEvents.length > 1000) filteredEvents = filteredEvents.slice(0, 1000);
+
+        // Apply search filter
+        if (searchQuery) {
+            filteredEvents = filteredEvents.filter(function(e) {
+                var text = (e.description || e.message || e.type || '').toLowerCase();
+                return text.indexOf(searchQuery) !== -1;
+            });
+        }
+
+        var totalEvents = filteredEvents.length;
+        var eventsPerPage = 100;
+        var totalPages = Math.max(1, Math.ceil(totalEvents / eventsPerPage));
+        if (currentPage >= totalPages) currentPage = totalPages - 1;
+        if (currentPage < 0) currentPage = 0;
+        openEventLog._currentPage = currentPage;
+
+        var pageStart = currentPage * eventsPerPage;
+        var pageEnd = Math.min(pageStart + eventsPerPage, totalEvents);
+        var pageEvents = filteredEvents.slice(pageStart, pageEnd);
+
+        // Event count and clear button
+        var countLabel = searchQuery ? (totalEvents + ' results') : (totalEvents + ' events');
+        if (totalPages > 1) countLabel += ' (page ' + (currentPage + 1) + '/' + totalPages + ')';
+        html += '<span style="font-size:0.85rem;color:var(--text-muted);">' + countLabel + '</span>' +
             '<button class="btn-medieval" onclick="UI.clearEventLog()" style="font-size:0.8rem;padding:4px 10px;">🗑️ Clear Log</button>' +
             '</div>';
+
+        // Pagination controls at top
+        if (totalPages > 1) {
+            html += '<div style="display:flex;justify-content:center;gap:6px;margin-bottom:8px;">';
+            html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 10px;' + (currentPage === 0 ? 'opacity:0.3;pointer-events:none;' : '') + '" onclick="UI._setEventPage(' + (currentPage - 1) + ')">◀ Prev</button>';
+            // Page number buttons (show up to 5 around current page)
+            var startPage = Math.max(0, currentPage - 2);
+            var endPage = Math.min(totalPages - 1, startPage + 4);
+            if (endPage - startPage < 4) startPage = Math.max(0, endPage - 4);
+            for (var pi = startPage; pi <= endPage; pi++) {
+                html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 8px;min-width:28px;' + (pi === currentPage ? 'background:rgba(255,215,0,0.25);border-color:var(--gold);color:var(--gold);' : 'opacity:0.6;') + '" onclick="UI._setEventPage(' + pi + ')">' + (pi + 1) + '</button>';
+            }
+            html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 10px;' + (currentPage >= totalPages - 1 ? 'opacity:0.3;pointer-events:none;' : '') + '" onclick="UI._setEventPage(' + (currentPage + 1) + ')">Next ▶</button>';
+            html += '</div>';
+        }
+
         html += '<div class="event-log-list">';
 
-        // Store events for detail lookup
+        // Store events for detail lookup (full filtered set, not just current page)
         openEventLog._cachedEvents = filteredEvents;
 
         // Group stackable events (refugees, migrations, similar types within 3 days)
         var stackableTypes = { 'refugees': '🏃 Refugee Movements', 'migration': '🏃 Migration Events', 'npc_death': '💀 Deaths', 'npc_birth': '👶 Births' };
         var displayItems = []; // { type: 'single'|'group', event, events, groupLabel, indices }
         var i = 0;
-        while (i < Math.min(filteredEvents.length, 150)) {
-            var ev = filteredEvents[i];
+        while (i < pageEvents.length) {
+            var ev = pageEvents[i];
             var evType = ev.details && ev.details.type ? ev.details.type : null;
             if (evType && stackableTypes[evType]) {
                 // Collect consecutive events of this type within 3 days
-                var group = [{ event: ev, idx: i }];
+                var group = [{ event: ev, idx: pageStart + i }];
                 var j = i + 1;
-                while (j < filteredEvents.length && j < i + 20) {
-                    var next = filteredEvents[j];
+                while (j < pageEvents.length && j < i + 20) {
+                    var next = pageEvents[j];
                     var nextType = next.details && next.details.type ? next.details.type : null;
                     if (nextType === evType && Math.abs((next.day || 0) - (ev.day || 0)) <= 3) {
-                        group.push({ event: next, idx: j });
+                        group.push({ event: next, idx: pageStart + j });
                         j++;
                     } else {
                         break;
@@ -10800,16 +10852,16 @@ window.UI = (function () {
                     displayItems.push({ type: 'group', events: group, groupLabel: stackableTypes[evType], groupType: evType, dayStart: ev.day });
                     i = j;
                 } else {
-                    displayItems.push({ type: 'single', event: ev, idx: i });
+                    displayItems.push({ type: 'single', event: ev, idx: pageStart + i });
                     i++;
                 }
             } else {
-                displayItems.push({ type: 'single', event: ev, idx: i });
+                displayItems.push({ type: 'single', event: ev, idx: pageStart + i });
                 i++;
             }
         }
 
-        for (var di = 0; di < Math.min(displayItems.length, 100); di++) {
+        for (var di = 0; di < displayItems.length; di++) {
             var item = displayItems[di];
             if (item.type === 'group') {
                 // Collapsed group header
@@ -10858,12 +10910,48 @@ window.UI = (function () {
         }
 
         html += '</div>';
+
+        // Pagination controls at bottom
+        if (totalPages > 1) {
+            html += '<div style="display:flex;justify-content:center;gap:6px;margin-top:8px;">';
+            html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 10px;' + (currentPage === 0 ? 'opacity:0.3;pointer-events:none;' : '') + '" onclick="UI._setEventPage(' + (currentPage - 1) + ')">◀ Prev</button>';
+            var startPage2 = Math.max(0, currentPage - 2);
+            var endPage2 = Math.min(totalPages - 1, startPage2 + 4);
+            if (endPage2 - startPage2 < 4) startPage2 = Math.max(0, endPage2 - 4);
+            for (var pi2 = startPage2; pi2 <= endPage2; pi2++) {
+                html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 8px;min-width:28px;' + (pi2 === currentPage ? 'background:rgba(255,215,0,0.25);border-color:var(--gold);color:var(--gold);' : 'opacity:0.6;') + '" onclick="UI._setEventPage(' + pi2 + ')">' + (pi2 + 1) + '</button>';
+            }
+            html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 10px;' + (currentPage >= totalPages - 1 ? 'opacity:0.3;pointer-events:none;' : '') + '" onclick="UI._setEventPage(' + (currentPage + 1) + ')">Next ▶</button>';
+            html += '</div>';
+        }
+
         openModal('📋 Event Log', html);
+        // Restore focus to search input if there was a query
+        if (searchQuery) {
+            try {
+                var searchEl = document.getElementById('eventLogSearch');
+                if (searchEl) { searchEl.focus(); searchEl.setSelectionRange(searchEl.value.length, searchEl.value.length); }
+            } catch(e) {}
+        }
     }
 
     function _setEventTab(tabKey) {
         openEventLog._activeTab = tabKey;
+        openEventLog._currentPage = 0; // reset page on tab change
         openEventLog();
+    }
+
+    function _setEventPage(page) {
+        openEventLog._currentPage = Math.max(0, page);
+        openEventLog();
+    }
+
+    var _searchEventDebounce = null;
+    function _searchEventLog(query) {
+        openEventLog._searchQuery = query || '';
+        openEventLog._currentPage = 0; // reset to first page on search
+        if (_searchEventDebounce) clearTimeout(_searchEventDebounce);
+        _searchEventDebounce = setTimeout(function() { openEventLog(); }, 300);
     }
 
     function clearEventLog() {
@@ -30319,6 +30407,8 @@ window.UI = (function () {
         clearEventLog,
         toggleNotifFilter,
         _setEventTab,
+        _setEventPage,
+        _searchEventLog,
         openSettings,
         setNotifFilter,
         _toggleToastMute,

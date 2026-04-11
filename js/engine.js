@@ -22665,11 +22665,11 @@
                 world.majorEventHistory.push({ day: world.day, message: msg, details: details });
             }
         }
-        // Auto-clear events older than 90 days
-        while (world.eventLog.length > 0 && world.eventLog[0].day < world.day - 90) {
+        // Auto-clear events older than 180 days
+        while (world.eventLog.length > 0 && world.eventLog[0].day < world.day - 180) {
             world.eventLog.shift();
         }
-        while (world.eventLog.length > 500) world.eventLog.shift();
+        while (world.eventLog.length > 1000) world.eventLog.shift();
     }
 
     // ========================================================
@@ -35304,7 +35304,7 @@
 
         getEvents() {
             if (!world) return [];
-            return world.eventLog.filter(e => world.day - e.day <= 30);
+            return world.eventLog.slice(); // Return all stored events (up to 500, auto-pruned at 90 days)
         },
 
         getActiveEvents() {
