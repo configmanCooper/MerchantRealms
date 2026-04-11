@@ -491,42 +491,90 @@ window.Renderer = (function () {
             offscreenTerrain.height = drawH;
 
             const animTime = frameCount * 0.03;
+            const _isWinterSeason = (typeof Engine !== 'undefined' && Engine.getSeason && Engine.getSeason() === 'Winter');
 
+            // WASM fast path — generate base tile colors as ImageData, then overlay decorations in JS
+            var _usedWasm = false;
+            if (typeof WASM !== 'undefined' && WASM.ready() && WASM.renderTerrainTiles && terrain instanceof Uint8Array) {
+                try {
+                    var _rgbaData = WASM.renderTerrainTiles(terrain, terrainWidth, ts, startCol, startRow, endCol, endRow, _isWinterSeason);
+                    if (_rgbaData && _rgbaData.length === drawW * drawH * 4) {
+                        var _imgData = offscreenCtx.createImageData(drawW, drawH);
+                        _imgData.data.set(new Uint8ClampedArray(_rgbaData.buffer, _rgbaData.byteOffset, _rgbaData.length));
+                        offscreenCtx.putImageData(_imgData, 0, 0);
+                        _usedWasm = true;
+                    }
+                } catch (_wasmErr) {
+                    // Fallback to JS rendering
+                }
+            }
+
+            // Water wave animations always done in JS (need frameCount)
             for (let r = startRow; r <= endRow; r++) {
                 for (let c = startCol; c <= endCol; c++) {
                     const tileId = terrain[r * terrainWidth + c];
-                    const baseColor = getTerrainColor(tileId);
-                    const h = tileHash(c, r);
-                    const shift = Math.floor((h - 0.5) * 20);
-                    const color = rgbShift(baseColor, shift);
-
                     const x = (c - startCol) * ts;
                     const y = (r - startRow) * ts;
 
-                    offscreenCtx.fillStyle = color;
-                    offscreenCtx.fillRect(x, y, ts, ts);
+                    if (!_usedWasm) {
+                        // Full JS rendering path (fallback)
+                        const baseColor = getTerrainColor(tileId);
+                        const h = tileHash(c, r);
+                        const shift = Math.floor((h - 0.5) * 20);
+                        const color = rgbShift(baseColor, shift);
+                        offscreenCtx.fillStyle = color;
+                        offscreenCtx.fillRect(x, y, ts, ts);
 
-                    // Special terrain decorations
-                    if (tileId === 1) { // Forest — small tree triangles
-                        const treeCount = 1 + Math.floor(h * 2);
-                        const _isWinter = (typeof Engine !== 'undefined' && Engine.getSeason && Engine.getSeason() === 'Winter');
-                        offscreenCtx.fillStyle = rgbShift(_isWinter ? '#3a5a48' : '#1a4020', shift);
-                        for (let t = 0; t < treeCount; t++) {
-                            const tx = x + (h * 37 + t * 5.7) % ts;
-                            const ty = y + (h * 23 + t * 7.3) % ts;
-                            const sz = 3 + h * 3;
+                        if (tileId === 1) { // Forest
+                            const treeCount = 1 + Math.floor(h * 2);
+                            offscreenCtx.fillStyle = rgbShift(_isWinterSeason ? '#3a5a48' : '#1a4020', shift);
+                            for (let t = 0; t < treeCount; t++) {
+                                const tx = x + (h * 37 + t * 5.7) % ts;
+                                const ty = y + (h * 23 + t * 7.3) % ts;
+                                const sz = 3 + h * 3;
+                                offscreenCtx.beginPath();
+                                offscreenCtx.moveTo(tx, ty - sz);
+                                offscreenCtx.lineTo(tx - sz * 0.6, ty + sz * 0.4);
+                                offscreenCtx.lineTo(tx + sz * 0.6, ty + sz * 0.4);
+                                offscreenCtx.closePath();
+                                offscreenCtx.fill();
+                            }
+                        } else if (tileId === 3) { // Mountain
+                            offscreenCtx.fillStyle = rgbShift('#6b5b4f', shift);
+                            const mx = x + ts * 0.5;
+                            const my = y + ts * 0.2;
                             offscreenCtx.beginPath();
-                            offscreenCtx.moveTo(tx, ty - sz);
-                            offscreenCtx.lineTo(tx - sz * 0.6, ty + sz * 0.4);
-                            offscreenCtx.lineTo(tx + sz * 0.6, ty + sz * 0.4);
+                            offscreenCtx.moveTo(mx, my);
+                            offscreenCtx.lineTo(x + ts * 0.2, y + ts * 0.9);
+                            offscreenCtx.lineTo(x + ts * 0.8, y + ts * 0.9);
                             offscreenCtx.closePath();
                             offscreenCtx.fill();
+                            const season = (typeof Engine !== 'undefined' && Engine.getSeason) ? Engine.getSeason() : '';
+                            if (season === 'Winter' || h > 0.6) {
+                                offscreenCtx.fillStyle = 'rgba(240,240,255,0.6)';
+                                offscreenCtx.beginPath();
+                                offscreenCtx.moveTo(mx, my);
+                                offscreenCtx.lineTo(mx - ts * 0.12, my + ts * 0.2);
+                                offscreenCtx.lineTo(mx + ts * 0.12, my + ts * 0.2);
+                                offscreenCtx.closePath();
+                                offscreenCtx.fill();
+                            }
+                        } else if (tileId === 4) { // Hills
+                            offscreenCtx.fillStyle = rgbShift(_isWinterSeason ? '#7a8a6a' : '#5a7a42', shift - 8);
+                            offscreenCtx.beginPath();
+                            offscreenCtx.arc(x + ts * 0.35, y + ts * 0.65, ts * 0.25, Math.PI, 0);
+                            offscreenCtx.fill();
+                            offscreenCtx.beginPath();
+                            offscreenCtx.arc(x + ts * 0.7, y + ts * 0.55, ts * 0.2, Math.PI, 0);
+                            offscreenCtx.fill();
                         }
-                    } else if (tileId === 2) { // Water — wave animation
+                    }
+
+                    // Water wave animation (always JS — needs animated frameCount)
+                    if (tileId === 2) {
                         const wave = Math.sin(animTime + c * 0.7 + r * 0.5) * 0.08;
                         offscreenCtx.fillStyle = `rgba(180,220,255,${0.08 + wave})`;
                         offscreenCtx.fillRect(x, y, ts, ts);
-                        // small wave lines
                         offscreenCtx.strokeStyle = `rgba(150,200,240,${0.15 + wave})`;
                         offscreenCtx.lineWidth = 0.5;
                         const wy = y + ts * 0.5 + Math.sin(animTime + c * 1.2) * 2;
@@ -534,36 +582,6 @@ window.Renderer = (function () {
                         offscreenCtx.moveTo(x + 2, wy);
                         offscreenCtx.quadraticCurveTo(x + ts * 0.5, wy - 2, x + ts - 2, wy);
                         offscreenCtx.stroke();
-                    } else if (tileId === 3) { // Mountain — triangle peaks
-                        offscreenCtx.fillStyle = rgbShift('#6b5b4f', shift);
-                        const mx = x + ts * 0.5;
-                        const my = y + ts * 0.2;
-                        offscreenCtx.beginPath();
-                        offscreenCtx.moveTo(mx, my);
-                        offscreenCtx.lineTo(x + ts * 0.2, y + ts * 0.9);
-                        offscreenCtx.lineTo(x + ts * 0.8, y + ts * 0.9);
-                        offscreenCtx.closePath();
-                        offscreenCtx.fill();
-                        // Snow cap (winter or high mountain)
-                        const season = (typeof Engine !== 'undefined' && Engine.getSeason) ? Engine.getSeason() : '';
-                        if (season === 'Winter' || h > 0.6) {
-                            offscreenCtx.fillStyle = 'rgba(240,240,255,0.6)';
-                            offscreenCtx.beginPath();
-                            offscreenCtx.moveTo(mx, my);
-                            offscreenCtx.lineTo(mx - ts * 0.12, my + ts * 0.2);
-                            offscreenCtx.lineTo(mx + ts * 0.12, my + ts * 0.2);
-                            offscreenCtx.closePath();
-                            offscreenCtx.fill();
-                        }
-                    } else if (tileId === 4) { // Hills — gentle bumps
-                        const _hillWinter = (typeof Engine !== 'undefined' && Engine.getSeason && Engine.getSeason() === 'Winter');
-                        offscreenCtx.fillStyle = rgbShift(_hillWinter ? '#7a8a6a' : '#5a7a42', shift - 8);
-                        offscreenCtx.beginPath();
-                        offscreenCtx.arc(x + ts * 0.35, y + ts * 0.65, ts * 0.25, Math.PI, 0);
-                        offscreenCtx.fill();
-                        offscreenCtx.beginPath();
-                        offscreenCtx.arc(x + ts * 0.7, y + ts * 0.55, ts * 0.2, Math.PI, 0);
-                        offscreenCtx.fill();
                     }
                 }
             }
@@ -3120,21 +3138,38 @@ window.Renderer = (function () {
         const imageData = tctx.createImageData(mw, mh);
         const data = imageData.data;
 
-        for (let py = 0; py < mh; py++) {
-            // Map minimap pixel Y to terrain row
-            const worldY = (py / mh) * worldPxH;
-            const tileRow = Math.min(rows - 1, Math.floor(worldY / ts));
-            for (let px = 0; px < mw; px++) {
-                // Map minimap pixel X to terrain column
-                const worldX = (px / mw) * worldPxW;
-                const tileCol = Math.min(cols - 1, Math.floor(worldX / ts));
-                const tileId = terrain[tileRow * cols + tileCol];
-                const rgb = _getTerrainRGB(tileId);
-                const idx = (py * mw + px) * 4;
-                data[idx] = rgb.r;
-                data[idx + 1] = rgb.g;
-                data[idx + 2] = rgb.b;
-                data[idx + 3] = 255;
+        // WASM fast path — generate entire minimap pixel buffer
+        var _usedWasm = false;
+        if (typeof WASM !== 'undefined' && WASM.ready() && WASM.buildMinimapTerrain && terrain instanceof Uint8Array) {
+            try {
+                var _isWinter = (typeof Engine !== 'undefined' && Engine.getSeason && Engine.getSeason() === 'Winter');
+                var _rgbaData = WASM.buildMinimapTerrain(terrain, cols, rows, mw, mh, _isWinter);
+                if (_rgbaData && _rgbaData.length === mw * mh * 4) {
+                    data.set(new Uint8ClampedArray(_rgbaData.buffer, _rgbaData.byteOffset, _rgbaData.length));
+                    _usedWasm = true;
+                }
+            } catch (_wasmErr) {
+                // Fallback to JS
+            }
+        }
+
+        if (!_usedWasm) {
+            for (let py = 0; py < mh; py++) {
+                // Map minimap pixel Y to terrain row
+                const worldY = (py / mh) * worldPxH;
+                const tileRow = Math.min(rows - 1, Math.floor(worldY / ts));
+                for (let px = 0; px < mw; px++) {
+                    // Map minimap pixel X to terrain column
+                    const worldX = (px / mw) * worldPxW;
+                    const tileCol = Math.min(cols - 1, Math.floor(worldX / ts));
+                    const tileId = terrain[tileRow * cols + tileCol];
+                    const rgb = _getTerrainRGB(tileId);
+                    const idx = (py * mw + px) * 4;
+                    data[idx] = rgb.r;
+                    data[idx + 1] = rgb.g;
+                    data[idx + 2] = rgb.b;
+                    data[idx + 3] = 255;
+                }
             }
         }
         tctx.putImageData(imageData, 0, 0);

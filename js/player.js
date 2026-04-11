@@ -6054,6 +6054,46 @@
     // Advance caravan positions smoothly (called 60x per day from subtick)
     function caravanSubtick() {
         var ticksPerDay = CONFIG.TICKS_PER_DAY || 60;
+
+        // WASM fast path — batch all traveling caravans into typed array
+        if (typeof WASM !== 'undefined' && WASM.ready() && WASM.caravanSubtick) {
+            var _travelingCaravans = [];
+            var _travelingIndices = [];
+            var _hasExpNav = hasSkill('expert_navigator') ? 1 : 0;
+            var _hasRoadK = hasSkill('road_knowledge') ? 1 : 0;
+            var _hasCart = hasSkill('cartographer') ? 1 : 0;
+            for (var _ci = 0; _ci < player.caravans.length; _ci++) {
+                var _c = player.caravans[_ci];
+                if (_c.status !== 'traveling') continue;
+                var _shipEff = 1.0;
+                if (_c.routeType === 'sea' && _c.shipId) {
+                    var _sh = player.ships.find(function(s) { return s.id === _c.shipId; });
+                    if (_sh) {
+                        _shipEff = CONFIG.CONDITION_LEVELS[_sh.degradeCondition || 'new'] ? CONFIG.CONDITION_LEVELS[_sh.degradeCondition || 'new'].efficiency : 1.0;
+                    }
+                }
+                _travelingCaravans.push(
+                    _c.progress, _c.totalWeight || 0, _c.totalDist || 1,
+                    CONFIG.CARAVAN_BASE_SPEED, _c.routeType === 'sea' ? 1 : 0,
+                    _hasExpNav, _hasRoadK, _hasCart, _shipEff
+                );
+                _travelingIndices.push(_ci);
+            }
+            if (_travelingIndices.length > 0) {
+                var _data = new Float64Array(_travelingCaravans);
+                var _result = WASM.caravanSubtick(_data, _travelingIndices.length, ticksPerDay);
+                for (var _ri = 0; _ri < _travelingIndices.length; _ri++) {
+                    var _cv = player.caravans[_travelingIndices[_ri]];
+                    _cv.progress = _result.progress[_ri];
+                    if (_cv.progress >= 1.0) {
+                        _cv.progress = 1.0;
+                        _processCaravanArrival(_cv);
+                    }
+                }
+            }
+            return;
+        }
+
         for (var ci = 0; ci < player.caravans.length; ci++) {
             var caravan = player.caravans[ci];
             if (caravan.status !== 'traveling') continue;
@@ -8605,6 +8645,23 @@
     }
 
     function countMonopolies() {
+        // WASM fast path — flatten inventory + town supplies into typed arrays
+        if (typeof WASM !== 'undefined' && WASM.ready() && WASM.countMonopolies) {
+            var _towns = Engine.getTowns();
+            var _resKeys = Object.keys(RESOURCE_TYPES);
+            var _numRes = _resKeys.length;
+            var _numTowns = _towns.length;
+            var _playerInv = new Float64Array(_numRes);
+            var _townSup = new Float64Array(_numTowns * _numRes);
+            for (var _ri = 0; _ri < _numRes; _ri++) {
+                var _resId = RESOURCE_TYPES[_resKeys[_ri]].id;
+                _playerInv[_ri] = player.inventory[_resId] || 0;
+                for (var _ti = 0; _ti < _numTowns; _ti++) {
+                    _townSup[_ti * _numRes + _ri] = _towns[_ti].market.supply[_resId] || 0;
+                }
+            }
+            return WASM.countMonopolies(_playerInv, _townSup, _numRes, _numTowns, CONFIG.WIN_MONOPOLY_PERCENT);
+        }
         let count = 0;
         const towns = Engine.getTowns();
         for (const key in RESOURCE_TYPES) {

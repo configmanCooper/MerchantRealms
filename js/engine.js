@@ -2448,6 +2448,10 @@
     }
 
     function checkWaterPath(x1, y1, x2, y2) {
+        // WASM fast path
+        if (typeof WASM !== 'undefined' && WASM.ready() && WASM.checkWaterPath && world.terrain) {
+            return WASM.checkWaterPath(world.terrain, world.gridCols, CONFIG.TILE_SIZE, x1, y1, x2, y2);
+        }
         // Sample tiles along the line and check what fraction is water
         const steps = 20;
         let waterCount = 0;
@@ -2553,6 +2557,10 @@
 
     // Compute terrain-aware off-road travel cost between two pixel positions
     function getOffroadCost(ax, ay, bx, by) {
+        // WASM fast path
+        if (typeof WASM !== 'undefined' && WASM.ready() && WASM.getOffroadCost && world.terrain) {
+            return WASM.getOffroadCost(world.terrain, world.gridCols, CONFIG.TILE_SIZE, ax, ay, bx, by);
+        }
         const steps = 30;
         let totalCost = 0;
         let passable = true;
@@ -2576,6 +2584,10 @@
 
     // Return dominant terrain type along a path (for off-road discovery events)
     function getDominantTerrain(ax, ay, bx, by) {
+        // WASM fast path
+        if (typeof WASM !== 'undefined' && WASM.ready() && WASM.getDominantTerrain && world.terrain) {
+            return WASM.getDominantTerrain(world.terrain, world.gridCols, CONFIG.TILE_SIZE, ax, ay, bx, by);
+        }
         const steps = 20;
         const counts = {};
         for (let s = 0; s <= steps; s++) {
