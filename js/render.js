@@ -550,7 +550,10 @@ window.Renderer = (function () {
     }
 
     // ═══════════════════════════════════════════════════════════
-    //  SCENE SNAPSHOT (zoom < 1.0) — static image approach
+    //  SCENE SNAPSHOT (zoom < 1.0) — overlay cache approach
+    //  Terrain uses its own existing cache; this caches ONLY
+    //  territories + roads + sea routes + towns + caravans
+    //  as a transparent overlay, making cache build very fast.
     // ═══════════════════════════════════════════════════════════
 
     function _renderViaSceneCache(player) {
@@ -559,7 +562,7 @@ window.Renderer = (function () {
         var marginW = (vb.right - vb.left) * 1.1;
         var marginH = (vb.bottom - vb.top) * 1.1;
 
-        // Check if current viewport is still within cached scene bounds
+        // Check if current viewport is still within cached overlay bounds
         var needsRedraw = _sceneCacheDirty || !_sceneCache;
         if (!needsRedraw && Math.abs(camera.zoom - _sceneCacheZoom) > 0.005) needsRedraw = true;
         if (!needsRedraw && (
@@ -568,10 +571,8 @@ window.Renderer = (function () {
         )) needsRedraw = true;
 
         // On cache miss from fast pan, use direct render this frame and rebuild next frame
-        // This prevents the visible freeze — user sees immediate (slightly slower) frame
         if (needsRedraw && _sceneCache && !_sceneCacheDirty &&
             Math.abs(camera.zoom - _sceneCacheZoom) <= 0.005) {
-            // Pan-caused miss — do a quick direct render and schedule rebuild
             _sceneCacheDirty = true;
             _renderLowZoomDirect(player);
             return;
@@ -623,7 +624,7 @@ window.Renderer = (function () {
                 _sceneCache.height = sceneH;
             }
 
-            // Render all static layers onto the scene cache
+            // Render ONLY overlay layers (no terrain — terrain has its own cache)
             var sctx = _sceneCacheCtx;
             sctx.clearRect(0, 0, sceneW, sceneH);
             sctx.save();
@@ -636,40 +637,19 @@ window.Renderer = (function () {
             var savedCamW = camera.width;
             var savedCamH = camera.height;
             var savedCtx = ctx;
-            ctx = sctx; // render functions use the module-level ctx
-            // Set camera to center of scene cache with dimensions matching scene cache
+            ctx = sctx;
             camera.x = (scLeft + scRight) / 2;
             camera.y = (scTop + scBottom) / 2;
             camera.width = sceneW;
             camera.height = sceneH;
 
-            // Force terrain redraw for the larger area
-            terrainDirty = true;
-
-            // Render terrain directly to scene cache
-            renderTerrain();
-
-            // Kingdom territories
+            // Overlay layers only — much faster than full scene with terrain
             renderKingdomTerritories();
-
-            // Roads
             renderRoads();
-
-            // Sea routes
             renderSeaRoutes();
-
-            // Towns
             renderTowns();
-
-            // Strategic overlays
-            if (mapMode === 1) {
-                renderStrategicTownOverlays();
-            }
-
-            // Simple caravan dots (static — these don't move fast enough to matter)
+            if (mapMode === 1) renderStrategicTownOverlays();
             renderCaravansSimple(player);
-
-            // NOTE: Player marker is NOT in the scene cache — drawn per-frame on top
 
             sctx.restore();
 
@@ -688,18 +668,25 @@ window.Renderer = (function () {
             _sceneCacheCamX = camera.x;
             _sceneCacheCamY = camera.y;
             _sceneCacheDirty = false;
-            terrainDirty = false;
-            lastTerrainZoom = camera.zoom;
-            lastTerrainCamX = camera.x;
-            lastTerrainCamY = camera.y;
         }
 
-        // Blit the cached scene to the main canvas — just a single drawImage with offset
+        // Render frame: terrain (own cache) + overlay (scene cache) + dynamic elements
+        ctx.save();
+        ctx.translate(camera.width / 2, camera.height / 2);
+        ctx.scale(camera.zoom, camera.zoom);
+        ctx.translate(-camera.x, -camera.y);
+
+        // 1. Terrain — uses its own offscreen cache with margin-based invalidation
+        renderTerrain();
+
+        ctx.restore();
+
+        // 2. Blit cached overlay (territories + roads + towns) on top of terrain
         var sx = (vb.left - _sceneCacheLeft) * camera.zoom;
         var sy = (vb.top - _sceneCacheTop) * camera.zoom;
         ctx.drawImage(_sceneCache, sx, sy, camera.width, camera.height, 0, 0, camera.width, camera.height);
 
-        // Draw dynamic overlays on top (player marker + hover highlight)
+        // 3. Dynamic elements on top (player marker + hover)
         ctx.save();
         ctx.translate(camera.width / 2, camera.height / 2);
         ctx.scale(camera.zoom, camera.zoom);
