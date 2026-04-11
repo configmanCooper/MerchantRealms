@@ -1390,6 +1390,19 @@ window.Game = (function () {
             saveStr = LZString.compressToUTF16(jsonStr);
         }
         localStorage.setItem(key, saveStr);
+        // Store lightweight metadata separately for fast slot picker display
+        try {
+            localStorage.setItem(key + '_meta', JSON.stringify({
+                playerName: data.playerName || 'Unknown',
+                day: data.day || 0,
+                season: data.season || 'Spring',
+                year: data.year || 1,
+                kingdom: data.kingdom || '',
+                rank: data.rank || '',
+                gold: data.gold || 0,
+                savedAt: data.savedAt || 0,
+            }));
+        } catch (_e) { /* metadata is optional — slot picker will fall back to full parse */ }
     }
 
     function _performAutosave() {
@@ -1448,6 +1461,13 @@ window.Game = (function () {
     }
 
     function getAutosaveMeta(slot) {
+        // Fast path: read lightweight metadata
+        try {
+            var key = slot === 'A' ? AUTOSAVE_SLOT_A : AUTOSAVE_SLOT_B;
+            var metaRaw = localStorage.getItem(key + '_meta');
+            if (metaRaw) return JSON.parse(metaRaw);
+        } catch (_e) { /* fall through */ }
+        // Slow fallback for old autosaves without separate meta
         var data = getAutosaveData(slot);
         if (!data) return null;
         return {
@@ -1515,6 +1535,14 @@ window.Game = (function () {
                     saveStr = LZString.compressToUTF16(jsonStr);
                 }
                 localStorage.setItem(SAVE_SLOT_PREFIX + '1', saveStr);
+                // Store metadata for fast slot picker
+                try {
+                    localStorage.setItem(SAVE_SLOT_PREFIX + '1_meta', JSON.stringify({
+                        playerName: data.playerName, day: data.day, season: data.season,
+                        year: data.year, kingdom: data.kingdom, rank: data.rank,
+                        gold: data.gold, savedAt: data.savedAt || 0,
+                    }));
+                } catch (_e) { /* optional */ }
                 localStorage.removeItem(OLD_SAVE_KEY);
                 lastUsedSlot = 1;
                 localStorage.setItem('merchantRealms_lastSlot', '1');
@@ -1541,6 +1569,12 @@ window.Game = (function () {
     }
 
     function getSlotMeta(slotNum) {
+        // Fast path: read lightweight metadata stored alongside the save
+        try {
+            var metaRaw = localStorage.getItem(SAVE_SLOT_PREFIX + slotNum + '_meta');
+            if (metaRaw) return JSON.parse(metaRaw);
+        } catch (_e) { /* fall through to full parse */ }
+        // Slow fallback: decompress + parse the full save (old saves without separate meta)
         const data = getSlotData(slotNum);
         if (!data) return null;
         return {
@@ -1605,6 +1639,19 @@ window.Game = (function () {
                         saveStr = LZString.compressToUTF16(jsonStr);
                     }
                     localStorage.setItem(SAVE_SLOT_PREFIX + slotNum, saveStr);
+                    // Store metadata for fast slot picker
+                    try {
+                        localStorage.setItem(SAVE_SLOT_PREFIX + slotNum + '_meta', JSON.stringify({
+                            playerName: data.playerName || 'Unknown',
+                            day: data.day || 0,
+                            season: data.season || 'Spring',
+                            year: data.year || 1,
+                            kingdom: data.kingdom || '',
+                            rank: data.rank || '',
+                            gold: data.gold || 0,
+                            savedAt: data.savedAt || 0,
+                        }));
+                    } catch (_e) { /* metadata is optional */ }
                     lastUsedSlot = slotNum;
                     localStorage.setItem('merchantRealms_lastSlot', String(slotNum));
                     UI.toast('Imported save to Slot ' + slotNum + '!', 'success');
@@ -1767,6 +1814,7 @@ window.Game = (function () {
                     const meta = getSlotMeta(slot);
                     if (meta && confirm('Delete save in Slot ' + slot + '?\n"' + meta.playerName + ' — Day ' + meta.day + '"')) {
                         localStorage.removeItem(SAVE_SLOT_PREFIX + slot);
+                        localStorage.removeItem(SAVE_SLOT_PREFIX + slot + '_meta');
                         if (lastUsedSlot === slot) {
                             lastUsedSlot = 0;
                             localStorage.setItem('merchantRealms_lastSlot', '0');
