@@ -561,7 +561,8 @@ window.UI = (function () {
     //  HUD UPDATE (called every frame or on tick)
     // ═══════════════════════════════════════════════════════════
 
-    // Lightweight date-only update for high-speed mode (no map render)
+    // Lightweight stats update for high-speed mode (no map render)
+    // Updates date, gold, XP, hunger, energy, thirst, health
     function updateDateDisplay() {
         if (!el.dayDisplay) return;
         try {
@@ -573,6 +574,17 @@ window.UI = (function () {
             var timeIcon = isNight ? '🌙' : '☀️';
             el.dayDisplay.textContent = timeIcon + ' Day ' + day + ' — ' + season + ', Year ' + year;
         } catch (_e) { /* no-op */ }
+        // Gold
+        try {
+            if (typeof Player !== 'undefined' && el.playerGold) {
+                el.playerGold.textContent = '🪙 ' + formatGold(Player.gold);
+            }
+        } catch (_e) { /* no-op */ }
+        // Vital stats + XP
+        try { updateXPBar(); } catch (_e) { /* no-op */ }
+        try { updateHungerBar(); } catch (_e) { /* no-op */ }
+        try { updateFatigueBar(); } catch (_e) { /* no-op */ }
+        try { updateHealthBar(); } catch (_e) { /* no-op */ }
     }
 
     function update() {
