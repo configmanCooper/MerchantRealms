@@ -461,21 +461,29 @@ window.Game = (function () {
         // Render (skip frames during fast-forward for performance)
         _loopFrameCount++;
         var _skipRender = speed > 2 && (_loopFrameCount % Math.floor(speed) !== 0);
+        // At 60x speed, freeze map rendering entirely — only update UI
+        var _freezeMap = speed >= 60;
         if (!_skipRender) {
-            try {
-                const world = (typeof Engine !== 'undefined' && Engine.getWorld) ? Engine.getWorld() : null;
-                const player = (typeof Player !== 'undefined') ? Player : null;
-                Renderer.render(world, player);
-            } catch (e) {
-                console.error('Render error:', e);
+            if (!_freezeMap) {
+                try {
+                    const world = (typeof Engine !== 'undefined' && Engine.getWorld) ? Engine.getWorld() : null;
+                    const player = (typeof Player !== 'undefined') ? Player : null;
+                    Renderer.render(world, player);
+                } catch (e) {
+                    console.error('Render error:', e);
+                }
             }
 
-            // UI update (throttled — every ~6 frames)
-            if (Renderer.getFrameCount() % 6 === 0) {
+            // UI update (throttled — every ~6 loop frames)
+            if (_loopFrameCount % 6 === 0) {
                 try { UI.update(); } catch (e) { console.error('UI update error:', e); }
                 try { if (UI.updateTravelPanel) UI.updateTravelPanel(); } catch (e) { /* no-op */ }
                 try { if (UI.updateJailPanel) UI.updateJailPanel(); } catch (e) { /* no-op */ }
             }
+        }
+        // At high speed, still update the day/year display every frame so it stays current
+        if (_skipRender || _freezeMap) {
+            try { if (UI.updateDateDisplay) UI.updateDateDisplay(); } catch (_e) { /* no-op */ }
         }
     }
 
@@ -671,13 +679,12 @@ window.Game = (function () {
         // Speed warning banner
         var _swb = document.getElementById('speedWarningBanner');
         if (_swb) _swb.style.display = (s >= 60) ? 'block' : 'none';
-        // Enforce zoom-speed limits
-        if (typeof Render !== 'undefined' && Render.getCamera) {
-            var cam = Render.getCamera();
+        // Enforce zoom-speed limits — zoom in when speeding up
+        if (typeof Renderer !== 'undefined' && Renderer.getCamera) {
+            var cam = Renderer.getCamera();
             var minZ = 0.5;
-            if (s === 0) minZ = 0.5;
-            else if (s >= 16) minZ = 1.5;
-            else minZ = 1.0;
+            if (s >= 16) minZ = 1.5;
+            else if (s >= 4) minZ = 1.0;
             if (cam.targetZoom < minZ) {
                 cam.targetZoom = minZ;
             }

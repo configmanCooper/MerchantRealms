@@ -561,6 +561,20 @@ window.UI = (function () {
     //  HUD UPDATE (called every frame or on tick)
     // ═══════════════════════════════════════════════════════════
 
+    // Lightweight date-only update for high-speed mode (no map render)
+    function updateDateDisplay() {
+        if (!el.dayDisplay) return;
+        try {
+            var day = Engine.getDay ? Engine.getDay() : 1;
+            var season = Engine.getSeason ? Engine.getSeason() : 'Spring';
+            var year = Engine.getYear ? Engine.getYear() : 1;
+            var hour = Engine.getHour ? Engine.getHour() : 12;
+            var isNight = hour >= 20 || hour < 5;
+            var timeIcon = isNight ? '🌙' : '☀️';
+            el.dayDisplay.textContent = timeIcon + ' Day ' + day + ' — ' + season + ', Year ' + year;
+        } catch (_e) { /* no-op */ }
+    }
+
     function update() {
         if (!el.dayDisplay) return;
 
@@ -30130,6 +30144,7 @@ window.UI = (function () {
     return {
         init,
         update,
+        updateDateDisplay,
         showGameUI,
         hideGameUI,
         toast,

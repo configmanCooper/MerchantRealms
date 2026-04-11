@@ -297,9 +297,8 @@ window.Renderer = (function () {
         // Enforce minimum zoom based on game speed
         if (typeof Game !== 'undefined' && Game.getSpeed) {
             var spd = Game.getSpeed();
-            if (spd === 0) minZ = Math.max(minZ, 0.5);
-            else if (spd >= 16) minZ = Math.max(minZ, 1.5);
-            else minZ = Math.max(minZ, 1.0);
+            if (spd >= 16) minZ = Math.max(minZ, 1.5);
+            else if (spd >= 4) minZ = Math.max(minZ, 1.0);
         }
         camera.targetZoom = Math.max(minZ,
             Math.min(camera.maxZoom, camera.targetZoom * factor));
@@ -309,9 +308,8 @@ window.Renderer = (function () {
         var minZ = camera.minZoom;
         if (typeof Game !== 'undefined' && Game.getSpeed) {
             var spd = Game.getSpeed();
-            if (spd === 0) minZ = Math.max(minZ, 0.5);
-            else if (spd >= 16) minZ = Math.max(minZ, 1.5);
-            else minZ = Math.max(minZ, 1.0);
+            if (spd >= 16) minZ = Math.max(minZ, 1.5);
+            else if (spd >= 4) minZ = Math.max(minZ, 1.0);
         }
         camera.targetZoom = Math.max(minZ, Math.min(camera.maxZoom, z));
     }
