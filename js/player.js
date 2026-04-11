@@ -35627,6 +35627,7 @@
 
     function hireAgent(townId) {
         if (!player.isNoble) return { success: false, message: 'You must be a noble to hire agents.' };
+        if (!player.agents) player.agents = [];
         var maxA = getMaxAgents();
         if ((player.agents || []).length >= maxA) return { success: false, message: 'You can only have ' + maxA + ' agents at your current rank.' };
         if (!townId) townId = player.townId;
@@ -35637,8 +35638,8 @@
 
         var rng = Engine.getRng();
         player.gold -= hireFee;
-        var firstName = _agentFirstNames[rng ? rng.intBetween(0, _agentFirstNames.length - 1) : Math.floor(Math.random() * _agentFirstNames.length)];
-        var lastName = _agentLastNames[rng ? rng.intBetween(0, _agentLastNames.length - 1) : Math.floor(Math.random() * _agentLastNames.length)];
+        var firstName = _agentFirstNames[rng ? rng.randInt(0, _agentFirstNames.length - 1) : Math.floor(Math.random() * _agentFirstNames.length)];
+        var lastName = _agentLastNames[rng ? rng.randInt(0, _agentLastNames.length - 1) : Math.floor(Math.random() * _agentLastNames.length)];
 
         var agent = {
             id: agentUid(),
@@ -35652,12 +35653,12 @@
             travelProgress: 0,
             travelRoute: null,
             travelTotalDist: 0,
-            loyalty: 70 + (rng ? rng.intBetween(0, 30) : Math.floor(Math.random() * 30)),
+            loyalty: 70 + (rng ? rng.randInt(0, 30) : Math.floor(Math.random() * 30)),
             skills: {
-                combat: 1 + (rng ? rng.intBetween(0, 7) : Math.floor(Math.random() * 7)),
-                stealth: 1 + (rng ? rng.intBetween(0, 7) : Math.floor(Math.random() * 7)),
-                trade: 1 + (rng ? rng.intBetween(0, 7) : Math.floor(Math.random() * 7)),
-                persuasion: 1 + (rng ? rng.intBetween(0, 7) : Math.floor(Math.random() * 7))
+                combat: 1 + (rng ? rng.randInt(0, 7) : Math.floor(Math.random() * 7)),
+                stealth: 1 + (rng ? rng.randInt(0, 7) : Math.floor(Math.random() * 7)),
+                trade: 1 + (rng ? rng.randInt(0, 7) : Math.floor(Math.random() * 7)),
+                persuasion: 1 + (rng ? rng.randInt(0, 7) : Math.floor(Math.random() * 7))
             },
             lastPaidDay: Engine.getDay(),
             catchCount: 0,
@@ -35983,9 +35984,9 @@
             agent.reports.push({ day: day, msg: '🔨 No buildings belonging to target found in ' + town.name + '.' });
             return;
         }
-        var bld = targetBuildings[rng ? rng.intBetween(0, targetBuildings.length - 1) : 0];
+        var bld = targetBuildings[rng ? rng.randInt(0, targetBuildings.length - 1) : 0];
         var bt = Engine.findBuildingType ? Engine.findBuildingType(bld.type) : null;
-        bld._disabledUntil = day + 15 + (rng ? rng.intBetween(0, 15) : 10);
+        bld._disabledUntil = day + 15 + (rng ? rng.randInt(0, 15) : 10);
         agent.reports.push({ day: day, msg: '🔨 Sabotaged ' + (bt ? bt.name : bld.type) + ' owned by ' + (target.firstName || 'target') + '. Disabled for ' + (bld._disabledUntil - day) + ' days.' });
     }
 
@@ -36015,8 +36016,8 @@
             agent.reports.push({ day: day, msg: '⚔️ No active caravans found for target. Waiting...' });
             return;
         }
-        var caravan = activeCaravans[rng ? rng.intBetween(0, activeCaravans.length - 1) : 0];
-        var lootGold = 50 + (rng ? rng.intBetween(0, 150) : 75);
+        var caravan = activeCaravans[rng ? rng.randInt(0, activeCaravans.length - 1) : 0];
+        var lootGold = 50 + (rng ? rng.randInt(0, 150) : 75);
         player.gold += lootGold;
         agent.earnings += lootGold;
         caravan.active = false;
@@ -36025,7 +36026,7 @@
     }
 
     function _agentSpreadRumors(agent, target, town, day, rng) {
-        var repDamage = 3 + (agent.skills.persuasion > 5 ? 3 : 0) + (rng ? rng.intBetween(0, 4) : 2);
+        var repDamage = 3 + (agent.skills.persuasion > 5 ? 3 : 0) + (rng ? rng.randInt(0, 4) : 2);
         // Damage target's relationships with other NPCs
         if (target._playerRelationship !== undefined) {
             target._playerRelationship = Math.max(-100, (target._playerRelationship || 0) - Math.floor(repDamage / 2));
@@ -36056,7 +36057,7 @@
             agent.reports.push({ day: day, msg: '🥷 No warehouses/buildings found for target.' });
             return;
         }
-        var goldStolen = 20 + (rng ? rng.intBetween(0, 80) : 40) + agent.skills.stealth * 5;
+        var goldStolen = 20 + (rng ? rng.randInt(0, 80) : 40) + agent.skills.stealth * 5;
         player.gold += goldStolen;
         agent.earnings += goldStolen;
         agent.reports.push({ day: day, msg: '🥷 Stole ' + goldStolen + 'g worth of goods from ' + (target.firstName || 'target') + '\'s warehouse.' });
@@ -36248,7 +36249,7 @@
             player.reputation[town.kingdomId] = Math.min(100, (player.reputation[town.kingdomId] || 50) + repGain);
         }
         // Earn some gold from brokered connections
-        var goldEarned = 5 + agent.skills.persuasion * 3 + (rng ? rng.intBetween(0, 15) : 8);
+        var goldEarned = 5 + agent.skills.persuasion * 3 + (rng ? rng.randInt(0, 15) : 8);
         player.gold += goldEarned;
         agent.earnings += goldEarned;
         agent.reports.push({ day: day, msg: '🤝 Establishing contacts in ' + town.name + '. Prosperity +' + prosperityGain + ', rep +' + repGain + ', earned ' + goldEarned + 'g in referral fees.' });
