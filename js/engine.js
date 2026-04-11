@@ -22662,7 +22662,14 @@
             m.includes('storm battered') || m.includes('hull took') ||
             m.includes('escort') || m.includes('you boarded') || m.includes('run the blockade') ||
             m.includes('slipped past') || m.includes('open water') ||
-            m.includes('camped') || m.includes('rested (')) {
+            m.includes('camped') || m.includes('rested (') ||
+            m.includes('sandstorm') || m.includes('desert heat') || m.includes('desert oasis') ||
+            m.includes('grasslands') || m.includes('wild plants') || m.includes('hidden path') ||
+            m.includes('dark cave') || m.includes('mountain trail') || m.includes('mountain pass') ||
+            m.includes('fallen trees') || m.includes('wild berries') || m.includes('ancient ruins') ||
+            m.includes('hillside') || m.includes('wild hare') || m.includes('wild herbs') ||
+            m.includes('herbs growing') || m.includes('half-buried') || m.includes('still here') ||
+            m.includes('your cart') || m.includes('gathered') || m.includes('hull took')) {
             return 'travel_events';
         }
 

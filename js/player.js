@@ -1070,7 +1070,7 @@
                 if (kingdom) {
                     player.reputation[kingdom.id] = Math.max(0, (player.reputation[kingdom.id] || 50) - CONFIG.EMBARGO_REP_PENALTY);
                 }
-                Engine.logEvent(`${player.fullName} caught smuggling ${resourceId} past the embargo! Fined ${actualFine}g.`);
+                Engine.logEvent(`${player.fullName} caught smuggling ${resourceId} past the embargo! Fined ${actualFine}g.`, null, 'my_actions');
                 return { success: false, message: `🚫 Caught smuggling past the embargo! Goods seized, fined ${actualFine}g.`, caught: true };
             }
             // Successful embargo smuggling — get premium price
@@ -1429,7 +1429,7 @@
                 deductGoodsFromPools(resourceId, qty);
                 player.stats.tradesCompleted++;
                 var scopeLabel = smugImmunity.scope === 'kingdom' ? 'Royal Advisor' : 'Lord of this town';
-                Engine.logEvent('🔓 ' + player.fullName + ' was caught smuggling but is immune as ' + scopeLabel + '. (-' + smugRepLoss + ' rep)');
+                Engine.logEvent('🔓 ' + player.fullName + ' was caught smuggling but is immune as ' + scopeLabel + '. (-' + smugRepLoss + ' rep)', null, 'my_actions');
                 return { success: true, message: 'Caught smuggling, but your ' + scopeLabel + ' status grants immunity! (-' + smugRepLoss + ' rep). Sold for ' + normalRevenue + 'g.', totalRevenue: normalRevenue, immune: true };
             }
 
@@ -1439,7 +1439,7 @@
                 if (player.weapon) combatChance += (typeof player.weapon === 'object') ? (player.weapon.combatBonus * 0.5) : 0.10;
                 if (hasSkill('combat_proficiency')) combatChance += 0.10;
                 if (rng.chance(combatChance)) {
-                    Engine.logEvent(`${player.fullName} won Trial by Combat and escaped punishment in ${town.name}!`);
+                    Engine.logEvent(`${player.fullName} won Trial by Combat and escaped punishment in ${town.name}!`, null, 'my_actions');
                     grantXP(XP_REWARDS.COMBAT_SURVIVE, 'trial_combat');
                     const normalRevenue = Math.floor(basePrice * qty);
                     player.gold += normalRevenue;
@@ -1477,7 +1477,7 @@
                 player.reputation[kingdom.id] = Math.max(0, (player.reputation[kingdom.id] || 50) - _smugRepPenalty);
                 player.achievementStats.smuggleStreak = 0;
                 unlockAchievement('caught_ach');
-                Engine.logEvent(`${player.fullName} paid the Blood Price (${actualFine}g) to avoid jail in ${town.name}.`);
+                Engine.logEvent(`${player.fullName} paid the Blood Price (${actualFine}g) to avoid jail in ${town.name}.`, null, 'my_actions');
                 return { success: false, message: `Caught! Blood Price paid: ${actualFine}g. No jail time.`, caught: true };
             }
 
@@ -1493,7 +1493,7 @@
             player.achievementStats.smuggleStreak = 0;
             unlockAchievement('caught_ach');
             unlockAchievement('jailbird');
-            Engine.logEvent(`${player.fullName} was caught smuggling ${findResource(resourceId)?.name || resourceId} in ${town.name}! Fined ${actualFine}g and jailed for ${jailDays} days.`);
+            Engine.logEvent(`${player.fullName} was caught smuggling ${findResource(resourceId)?.name || resourceId} in ${town.name}! Fined ${actualFine}g and jailed for ${jailDays} days.`, null, 'my_actions');
             return { success: false, message: `Caught smuggling! Fined ${actualFine}g, goods confiscated, jailed ${jailDays} days.`, caught: true };
         } else {
             // Successful smuggle - black market premium
@@ -1520,7 +1520,7 @@
             // Double agent check
             if (isPlayerCitizenOf(kingdom.id)) unlockAchievement('double_agent');
             addTradeLog(resourceId, qty, smugglePrice, town.id, 'smuggle');
-            Engine.logEvent(`${player.fullName} successfully smuggled ${findResource(resourceId)?.name || resourceId} in ${town.name}.`);
+            Engine.logEvent(`${player.fullName} successfully smuggled ${findResource(resourceId)?.name || resourceId} in ${town.name}.`, null, 'my_actions');
             return { success: true, message: `Smuggled ${qty} ${findResource(resourceId)?.name || resourceId} for ${totalRevenue}g (black market)!`, totalRevenue, smuggled: true };
         }
     }
@@ -1787,7 +1787,7 @@
             }
         }
 
-        Engine.logEvent(`The merchant builds a ${bt.name} in ${town.name}.`);
+        Engine.logEvent(`The merchant builds a ${bt.name} in ${town.name}.`, null, 'my_business');
         autoJournalCapture('building', 'I built a ' + bt.name + ' in ' + town.name + '. My empire grows.', { mood: 'hopeful' });
         grantXP(XP_REWARDS.BUILD, 'build');
         consumeEnergy(ENERGY_CONFIG.BUILD_COST || 5);
@@ -1890,7 +1890,7 @@
         player.stats.buildingsOwned++;
 
         var bName = bt ? bt.name : bld.type;
-        Engine.logEvent('The merchant purchased a ' + bName + ' in ' + town.name + ' for ' + result.price + 'g.');
+        Engine.logEvent('The merchant purchased a ' + bName + ' in ' + town.name + ' for ' + result.price + 'g.', null, 'my_business');
         grantXP(XP_REWARDS.BUILD || 10, 'build');
         return { success: true, message: 'Purchased ' + bName + ' for ' + result.price + 'g.', building: playerBld };
     }
@@ -2195,7 +2195,7 @@
         town._revitalizing = true;
         town._revitalizeProgress = 0;
         town._revitalizedBy = 'player';
-        Engine.logEvent(`🏗️ ${player.firstName} ${player.lastName} invests ${cost}g to revitalize the abandoned settlement of ${town.name}!`);
+        Engine.logEvent(`🏗️ ${player.firstName} ${player.lastName} invests ${cost}g to revitalize the abandoned settlement of ${town.name}!`, null, 'my_business');
         grantXP(50, 'revitalize');
         return { success: true, message: `Revitalization of ${town.name} has begun! It will take 90 days for settlers to arrive and rebuild.` };
     }
@@ -2836,7 +2836,7 @@
             player.travelTotalDist = totalDist;
         }
 
-        Engine.logEvent('\uD83D\uDE90 You boarded ' + service.operatorName + "'s transport to " + destTown.name + ' for ' + service.price + 'g.');
+        Engine.logEvent('\uD83D\uDE90 You boarded ' + service.operatorName + "'s transport to " + destTown.name + ' for ' + service.price + 'g.', null, 'travel_events');
         return { success: true, message: '\uD83D\uDE90 Boarding transport to ' + destTown.name + '! Paid ' + service.price + 'g.' };
     }
 
@@ -2895,7 +2895,7 @@
             status: 'boarding'
         };
 
-        Engine.logEvent('\uD83D\uDE8C ' + passengers.length + ' passengers boarded for ' + destTown.name + '. Revenue: ' + totalRevenue + 'g');
+        Engine.logEvent('\uD83D\uDE8C ' + passengers.length + ' passengers boarded for ' + destTown.name + '. Revenue: ' + totalRevenue + 'g', null, 'my_business');
         return { success: true, message: '\u2705 ' + passengers.length + ' passengers boarded! They\'ll pay ' + totalRevenue + 'g total when you arrive at ' + destTown.name + '.', passengers: passengers.length, revenue: totalRevenue };
     }
 
@@ -2917,7 +2917,7 @@
         }
 
         var destTown = Engine.findTown(transport.toTownId);
-        Engine.logEvent('\uD83D\uDE8C Delivered ' + passengerCount + ' passengers to ' + (destTown ? destTown.name : 'destination') + '. Earned ' + transport.totalRevenue + 'g!');
+        Engine.logEvent('\uD83D\uDE8C Delivered ' + passengerCount + ' passengers to ' + (destTown ? destTown.name : 'destination') + '. Earned ' + transport.totalRevenue + 'g!', null, 'my_business');
         grantXP(5 + passengerCount * 2, 'Passenger transport');
         player.activeTransport = null;
     }
@@ -2946,7 +2946,7 @@
         }
         var count = transport.passengers.length;
         player.activeTransport = null;
-        Engine.logEvent('🚌 Transport cancelled. ' + count + ' passengers returned to ' + (originTown ? originTown.name : 'origin') + '.');
+        Engine.logEvent('🚌 Transport cancelled. ' + count + ' passengers returned to ' + (originTown ? originTown.name : 'origin') + '.', null, 'my_business');
         return { success: true, message: 'Transport cancelled. ' + count + ' passengers returned to waiting.' };
     }
 
@@ -3043,7 +3043,7 @@
                     player.gold -= actualFine;
                     if (kingdom) kingdom.gold = (kingdom.gold || 0) + actualFine;
                 }
-                Engine.logEvent('🚔 ' + player.fullName + ' was caught violating ' + qLabel + ' at ' + t.name + '! Jailed for ' + jailDays + ' days' + (punishment.fine > 0 ? ' and fined ' + punishment.fine + 'g' : '') + '.');
+                Engine.logEvent('🚔 ' + player.fullName + ' was caught violating ' + qLabel + ' at ' + t.name + '! Jailed for ' + jailDays + ' days' + (punishment.fine > 0 ? ' and fined ' + punishment.fine + 'g' : '') + '.', null, 'my_actions');
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚔 Caught! Jailed ' + jailDays + ' days for violating ' + qLabel + '.', 'error', 'critical');
                 return { allowed: false, message: '🚧 Caught violating ' + qLabel + ' at ' + t.name + '! Jailed for ' + jailDays + ' days' + (punishment.fine > 0 ? ', fined ' + punishment.fine + 'g' : '') + '.' };
             } else {
@@ -3051,7 +3051,7 @@
                 var actualFine2 = Math.min(punishment.fine, player.gold);
                 player.gold -= actualFine2;
                 if (kingdom) kingdom.gold = (kingdom.gold || 0) + actualFine2;
-                Engine.logEvent('🚧 ' + player.fullName + ' was caught at ' + t.name + ' ' + qLabel + ' and fined ' + actualFine2 + 'g.');
+                Engine.logEvent('🚧 ' + player.fullName + ' was caught at ' + t.name + ' ' + qLabel + ' and fined ' + actualFine2 + 'g.', null, 'my_actions');
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚧 Caught! Fined ' + actualFine2 + 'g for violating ' + qLabel + '.', 'warning', 'critical');
                 return { allowed: false, message: '🚧 Caught at ' + t.name + ' ' + qLabel + '! Fined ' + actualFine2 + 'g and turned away.' };
             }
@@ -3433,7 +3433,7 @@
             if (rng.chance(_bSuccessChance)) {
                 // Bribe succeeded — deduct gold, log event
                 player.gold -= bribeCost;
-                Engine.logEvent('💰 ' + player.fullName + ' bribed a guard ' + bribeCost + 'g to pass through ' + _bqLabel + ' at ' + _bt.name + '.');
+                Engine.logEvent('💰 ' + player.fullName + ' bribed a guard ' + bribeCost + 'g to pass through ' + _bqLabel + ' at ' + _bt.name + '.', null, 'my_actions');
                 return { allowed: true, message: '💰 You slipped the guard ' + bribeCost + 'g and were waved through the ' + _bqLabel + ' at ' + _bt.name + '.' };
             }
 
@@ -3455,14 +3455,14 @@
                     player.gold -= _bActualFine;
                     if (_bKingdom) _bKingdom.gold = (_bKingdom.gold || 0) + _bActualFine;
                 }
-                Engine.logEvent('🚔 ' + player.fullName + ' was caught bribing a guard at ' + _bt.name + ' ' + _bqLabel + '! Jailed for ' + _bJailDays + ' days' + (_bPunishment.fine > 0 ? ' and fined ' + _bPunishment.fine + 'g' : '') + '.');
+                Engine.logEvent('🚔 ' + player.fullName + ' was caught bribing a guard at ' + _bt.name + ' ' + _bqLabel + '! Jailed for ' + _bJailDays + ' days' + (_bPunishment.fine > 0 ? ' and fined ' + _bPunishment.fine + 'g' : '') + '.', null, 'my_actions');
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚔 Caught bribing! Jailed ' + _bJailDays + ' days for bribery and violating ' + _bqLabel + '.', 'error', 'critical');
                 return { allowed: false, message: '🚧 Caught bribing a guard at ' + _bt.name + '! Jailed for ' + _bJailDays + ' days' + (_bPunishment.fine > 0 ? ', fined ' + _bPunishment.fine + 'g' : '') + '.' };
             } else {
                 var _bActualFine2 = Math.min(_bPunishment.fine, player.gold);
                 player.gold -= _bActualFine2;
                 if (_bKingdom) _bKingdom.gold = (_bKingdom.gold || 0) + _bActualFine2;
-                Engine.logEvent('🚧 ' + player.fullName + ' was caught bribing a guard at ' + _bt.name + ' ' + _bqLabel + ' and fined ' + _bActualFine2 + 'g.');
+                Engine.logEvent('🚧 ' + player.fullName + ' was caught bribing a guard at ' + _bt.name + ' ' + _bqLabel + ' and fined ' + _bActualFine2 + 'g.', null, 'my_actions');
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚧 Caught bribing! Fined ' + _bActualFine2 + 'g for bribery and violating ' + _bqLabel + '.', 'warning', 'critical');
                 return { allowed: false, message: '🚧 Caught bribing at ' + _bt.name + ' ' + _bqLabel + '! Fined ' + _bActualFine2 + 'g and turned away.' };
             }
@@ -3510,13 +3510,13 @@
         chance = Math.min(0.95, chance);
 
         if (rng.chance(chance)) {
-            Engine.logEvent('⚕️ ' + player.fullName + ' persuaded the quarantine guard to allow passage as a medical professional.');
+            Engine.logEvent('⚕️ ' + player.fullName + ' persuaded the quarantine guard to allow passage as a medical professional.', null, 'my_actions');
             return { allowed: true, message: '⚕️ The guard recognizes your medical expertise and waves you through.' };
         }
 
         // Failed — set 7-day cooldown, no other penalty
         player._doctorPersuasionCooldown = currentDay + 7;
-        Engine.logEvent('⚕️ ' + player.fullName + ' failed to convince the quarantine guard of medical necessity. Must wait 7 days.');
+        Engine.logEvent('⚕️ ' + player.fullName + ' failed to convince the quarantine guard of medical necessity. Must wait 7 days.', null, 'my_actions');
         if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚕️ The guard isn\'t convinced. Try again in 7 days.', 'warning');
         return { allowed: false, message: '⚕️ The guard isn\'t convinced of your medical necessity. You can try again in 7 days.' };
     }
@@ -4460,7 +4460,7 @@
         };
         player.ships.push(ship);
         consumeEnergy(ENERGY_CONFIG.BUILD_COST || 5);
-        Engine.logEvent('You commissioned a ' + shipType.name + ' at ' + town.name + ' for ' + Math.round(shipCost) + 'g.');
+        Engine.logEvent('You commissioned a ' + shipType.name + ' at ' + town.name + ' for ' + Math.round(shipCost) + 'g.', null, 'my_business');
         return { success: true, message: 'Built ' + shipType.name + ' for ' + Math.round(shipCost) + 'g!', ship: ship, cost: shipCost };
     }
 
@@ -4558,7 +4558,7 @@
                 var _blkRng = Engine.getRng();
                 if ((_blkRng ? _blkRng.random() : Math.random()) < detectChance) {
                     // Caught! Ship seized, player jailed
-                    Engine.logEvent('⚠️ You were caught trying to run the blockade! Your ship has been seized!');
+                    Engine.logEvent('⚠️ You were caught trying to run the blockade! Your ship has been seized!', null, 'travel_events');
                     if (bestShip) {
                         player.ships = player.ships.filter(function(s) { return s.id !== bestShip.id; });
                     }
@@ -4566,7 +4566,7 @@
                     player.jailReason = 'Running a naval blockade';
                     return { success: false, message: 'Caught running the blockade! Ship seized and you are jailed for 30 days.' };
                 }
-                Engine.logEvent('🚢 You successfully slipped past the blockade!');
+                Engine.logEvent('🚢 You successfully slipped past the blockade!', null, 'travel_events');
             } else {
                 return { success: false, message: 'The port is blockaded. You cannot sail through without the Blockade Runner skill.' };
             }
@@ -5841,7 +5841,7 @@
                 var autoDisbandReason = checkAutoDisbandConditions(caravan, destTownId);
                 if (autoDisbandReason) {
                     logCaravan(caravan, autoDisbandReason);
-                    Engine.logEvent(autoDisbandReason);
+                    Engine.logEvent(autoDisbandReason, null, 'my_business');
                     if (caravan.orders && caravan.orders.length > 0) {
                         processCaravanOrders(caravan, destTownId, isReturnLeg);
                     }
@@ -7400,7 +7400,7 @@
             logFinance(-(player.escort.dailyCost || 10), 'travel', 'Armed escort');
             if (player.gold < 0) {
                 player.gold = 0;
-                Engine.logEvent('\u{1F4B8} ' + player.escort.personName + ' leaves \u2014 you can\'t afford the escort fee.');
+                Engine.logEvent('\u{1F4B8} ' + player.escort.personName + ' leaves \u2014 you can\'t afford the escort fee.', null, 'travel_events');
                 player.escort = null;
             }
         }
@@ -7456,9 +7456,9 @@
             if (_travelRng && _travelRng.random() < stormChancePlayer && bestSeaShip) {
                 var stormDmg = CONFIG.SHIP_STORM_HULL_DAMAGE || 10;
                 bestSeaShip.hullHealth = Math.max(0, (bestSeaShip.hullHealth || 100) - stormDmg);
-                Engine.logEvent('⛈️ A storm battered your ship! Hull took ' + stormDmg + ' damage.');
+                Engine.logEvent('⛈️ A storm battered your ship! Hull took ' + stormDmg + ' damage.', null, 'travel_events');
                 if (bestSeaShip.hullHealth <= 0) {
-                    Engine.logEvent('💀 Your ' + bestSeaShip.name + ' has sunk in the storm!');
+                    Engine.logEvent('💀 Your ' + bestSeaShip.name + ' has sunk in the storm!', null, 'travel_events');
                     var stormCargoLoss = 0.4 + (_travelRng ? _travelRng.random() : Math.random()) * 0.4;
                     for (var sr in player.inventory) {
                         if (player.inventory[sr] > 0) {
@@ -7737,9 +7737,9 @@
                         }
                     }
                     if (returnedCount > 0) {
-                        Engine.logEvent('🛒 Your ' + cartName + ' is still here! Retrieved your stored goods.');
+                        Engine.logEvent('🛒 Your ' + cartName + ' is still here! Retrieved your stored goods.', null, 'travel_events');
                     } else {
-                        Engine.logEvent('🛒 Your ' + cartName + ' is still here where you left it.');
+                        Engine.logEvent('🛒 Your ' + cartName + ' is still here where you left it.', null, 'travel_events');
                     }
                 } else {
                     // Cart stolen
