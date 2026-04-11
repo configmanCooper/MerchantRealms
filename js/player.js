@@ -19019,6 +19019,7 @@
             skillPoints: player.skillPoints,
             dynastySPBank: player.dynastySPBank || 0,
             skills: { ...player.skills },
+            _streetEarsActive: player._streetEarsActive || false,
             notificationFilters: structuredClone(player.notificationFilters || {}),
             achievements: structuredClone(player.achievements),
             hunger: player.hunger,
@@ -19416,6 +19417,7 @@
         player.skillPoints = data.skillPoints || 0;
         player.dynastySPBank = data.dynastySPBank || 0;
         player.skills = data.skills || { keen_eye: true };
+        player._streetEarsActive = data._streetEarsActive || false;
         player.achievements = data.achievements || {};
         player.hunger = data.hunger != null ? data.hunger : HUNGER_CONFIG.START;
         player.health = data.health != null ? data.health : 100;
@@ -28549,7 +28551,16 @@
     // §12H SKILL SYSTEM
     // ========================================================
     function hasSkill(skillId) {
+        // Street Ears is toggleable — only active when turned on
+        if (skillId === 'street_ears') {
+            return !!player.skills[skillId] && !!player._streetEarsActive;
+        }
         return !!player.skills[skillId];
+    }
+
+    function toggleStreetEars() {
+        if (!player.skills['street_ears']) return;
+        player._streetEarsActive = !player._streetEarsActive;
     }
 
     // ========================================================
@@ -38808,14 +38819,53 @@
             player.reputation[kingdom.id] = Math.min(100, (player.reputation[kingdom.id] || 50) + 0.01);
         }
 
-        // 25% useful info, 75% flavor
+        // 25% useful info, 75% flavor — PLUS gossip from background system
         var isUseful = rng.chance(0.25);
+
+        // Check for background gossip first (30% chance if gossip exists for this area)
+        var gossipResult = _tryShareBackgroundGossip(town, kingdom, npcName, rng);
+        if (gossipResult) return gossipResult;
 
         if (isUseful) {
             return _generateUsefulInfo(town, kingdom, npc, npcName, npcOccupation, rng);
         } else {
             return _generateFlavorText(town, kingdom, npc, npcName, npcOccupation, npcGender, rng);
         }
+    }
+
+    function _tryShareBackgroundGossip(town, kingdom, npcName, rng) {
+        if (!Engine.getBackgroundGossip) return null;
+        // Get gossip relevant to this town or kingdom, max 14 days old
+        var localGossip = Engine.getBackgroundGossip({
+            townId: town.id,
+            maxAge: 14
+        });
+        var kingdomGossip = kingdom ? Engine.getBackgroundGossip({
+            kingdomId: kingdom.id,
+            maxAge: 14
+        }) : [];
+        // Merge and deduplicate
+        var allGossip = localGossip.slice();
+        for (var i = 0; i < kingdomGossip.length; i++) {
+            var found = false;
+            for (var j = 0; j < allGossip.length; j++) {
+                if (allGossip[j].day === kingdomGossip[i].day && allGossip[j].message === kingdomGossip[i].message) {
+                    found = true; break;
+                }
+            }
+            if (!found) allGossip.push(kingdomGossip[i]);
+        }
+        if (allGossip.length === 0) return null;
+        // 30% chance to share gossip
+        if (!rng.chance(0.30)) return null;
+        var gossip = allGossip[rng.randInt(0, allGossip.length - 1)];
+        var daysAgo = Engine.getDay() - gossip.day;
+        var timeAgo = daysAgo <= 1 ? 'today' : daysAgo + ' days ago';
+        return {
+            success: true,
+            message: npcName + ' leans in and whispers: "' + gossip.message + '" (' + timeAgo + ')',
+            type: 'gossip'
+        };
     }
 
     function _generateUsefulInfo(town, kingdom, npc, npcName, npcOccupation, rng) {
@@ -49114,6 +49164,7 @@
         // XP & Skills
         grantXP,
         hasSkill,
+        toggleStreetEars,
         canSeeEliteMerchantLocations,
         trackMerchant,
         untrackMerchant,

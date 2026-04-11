@@ -17906,6 +17906,7 @@ window.UI = (function () {
         var _abilities = [];
         if (playerSkills['regional_survey']) _abilities.push({ id: 'deposits', icon: '⛏️', name: 'Resource Deposits', desc: 'Show resource deposit icons scattered around towns on the map.' + (playerSkills['world_survey'] ? ' (World Survey: shows ALL towns)<br>💡 Right-click anywhere on the map to survey deposits in that area.' : ' (Your kingdom only)'), skill: 'Regional Survey', toggle: "Renderer.toggleDeposits()", isOn: typeof Renderer !== 'undefined' && Renderer.isDepositsOn && Renderer.isDepositsOn() });
         if (playerSkills['soil_knowledge']) _abilities.push({ id: 'fertility', icon: '🌾', name: 'Soil Fertility', desc: 'Show soil fertility colored regions and ratings around all towns.<br>💡 Right-click anywhere on the map to check fertility in that area.', skill: 'Soil Knowledge', toggle: "Renderer.toggleFertility()", isOn: typeof Renderer !== 'undefined' && Renderer.isFertilityOn && Renderer.isFertilityOn() });
+        if (playerSkills['street_ears']) _abilities.push({ id: 'street_ears', icon: '👂', name: 'Street Ears', desc: 'Overhear local gossip — 25% chance to receive NPC activity notifications (merchant asset moves, kingdom finances, local happenings). Talk to townsfolk for full gossip.', skill: 'Street Ears', toggle: "Player.toggleStreetEars()", isOn: Player.state && Player.state._streetEarsActive });
 
         let tabsHtml = '';
         for (const [branchId, info] of Object.entries(SKILL_BRANCHES)) {

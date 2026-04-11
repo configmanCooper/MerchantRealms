@@ -190,6 +190,7 @@
             events: [],         // active & recent events
             eventLog: [],       // last 90 days of event messages
             majorEventHistory: [], // permanent history of major events
+            _backgroundGossip: [], // NPC gossip stored for 30 days (not toasted)
             armies: [],         // active army objects
             fashionTrends: [], // active fashion/luxury trends
             eliteMerchants: [], // tracked elite merchant references (dynamic: 20-100)
@@ -22929,6 +22930,65 @@
     }
 
     // ========================================================
+    // §18b BACKGROUND GOSSIP SYSTEM
+    // ========================================================
+    // Stores NPC-specific activity, kingdom finance details, and other
+    // low-priority information as background data (NOT toasted).
+    // Data is retained for 30 days, pruned automatically.
+    // Players can access this via the "Talk" button (talkToTownsfolk)
+    // and the "Street Ears" skill surfaces 25% of these as toasts.
+
+    function _storeBackgroundGossip(gossipType, message, meta) {
+        if (!world._backgroundGossip) world._backgroundGossip = [];
+        var entry = {
+            day: world.day,
+            type: gossipType,
+            message: message,
+            townId: (meta && meta.townId) || null,
+            kingdomId: (meta && meta.kingdomId) || null,
+            personId: (meta && meta.personId) || null
+        };
+        world._backgroundGossip.push(entry);
+        // Prune entries older than 30 days
+        while (world._backgroundGossip.length > 0 && world._backgroundGossip[0].day < world.day - 30) {
+            world._backgroundGossip.shift();
+        }
+        // Cap at 500 entries
+        while (world._backgroundGossip.length > 500) world._backgroundGossip.shift();
+
+        // Street Ears skill: 25% chance to surface as toast
+        if (Player && typeof Player.hasSkill === 'function' && Player.hasSkill('street_ears')) {
+            var rng = getRng();
+            if (rng.chance(0.25)) {
+                if (typeof UI !== 'undefined' && UI.toast) {
+                    UI.toast('🗣️ ' + message, 'info', 'npc_activity', true);
+                }
+            }
+        }
+    }
+
+    function getBackgroundGossip(filters) {
+        if (!world._backgroundGossip) return [];
+        var results = world._backgroundGossip;
+        if (filters) {
+            if (filters.townId) {
+                results = results.filter(function(g) { return g.townId === filters.townId; });
+            }
+            if (filters.kingdomId) {
+                results = results.filter(function(g) { return g.kingdomId === filters.kingdomId; });
+            }
+            if (filters.type) {
+                results = results.filter(function(g) { return g.type === filters.type; });
+            }
+            if (filters.maxAge) {
+                var cutoff = world.day - filters.maxAge;
+                results = results.filter(function(g) { return g.day >= cutoff; });
+            }
+        }
+        return results;
+    }
+
+    // ========================================================
     // §18a PERIODIC ROAD CONNECTIVITY CHECK
     // ========================================================
     function tickRoadConnectivity() {
@@ -27343,14 +27403,10 @@
                         // Simulate investment: store as cached gold in a safe kingdom
                         if (!em._foreignInvestments) em._foreignInvestments = {};
                         em._foreignInvestments[safeKingdom.id] = (em._foreignInvestments[safeKingdom.id] || 0) + diverseAmt;
-                        logEvent(em.firstName + ' ' + (em.lastName || '') + ' quietly moves ' + diverseAmt + 'g in assets to ' + safeKingdom.name + '.', {
-                            type: 'elite_asset_diversification',
-                            cause: 'Fear of royal seizure drives ' + em.firstName + ' to diversify holdings.',
-                            effects: [
-                                diverseAmt + 'g moved to ' + safeKingdom.name + ' investments',
-                                'Reduced exposure to ' + kingdom.name + '\'s instability',
-                                'Merchant hedges against political risk'
-                            ]
+                        _storeBackgroundGossip('npc_finance', em.firstName + ' ' + (em.lastName || '') + ' quietly moves ' + diverseAmt + 'g in assets to ' + safeKingdom.name + '.', {
+                            townId: em.townId,
+                            kingdomId: kingdom.id,
+                            personId: em.id
                         });
                     }
                 }
@@ -31148,7 +31204,7 @@
                     k.guardBudget = Math.max(0.05, (k.guardBudget || 0.15) - 0.05);
                     logEvent('🏰 ' + k.name + ' reduces guard spending.', {
                         type: 'budget_cut', cause: 'Budget sustainability', effects: ['Fewer guards hired']
-                    });
+                    }, 'my_kingdom');
                     _bsActionsTaken++;
                 }
 
@@ -31255,7 +31311,7 @@
                 k.guardBudget = Math.max(0.05, (k.guardBudget || 0.15) - 0.05);
                 logEvent(`🏰 ${k.name} reduces guard spending.`, {
                     type: 'budget_cut', cause: 'Financial austerity', effects: ['Fewer guards hired', 'Town security may decrease']
-                });
+                }, 'my_kingdom');
                 actionsTaken++;
             }
 
@@ -31930,10 +31986,11 @@
             tickKingdomFinancialStrategy(k);
         }
 
-        // Bankruptcy warning
+        // Bankruptcy warning — stored as background data, not toasted
         if (k.gold > 0 && k.gold < CONFIG.KINGDOM_BANKRUPTCY_WARNING_GOLD && !k._bankruptWarned) {
             k._bankruptWarned = true;
-            logEvent(`💸 The treasury of ${k.name} is running dangerously low! Only ${Math.floor(k.gold)}g remains.`);
+            // Record as background gossip instead of toast
+            _storeBackgroundGossip('kingdom_finance', '💸 The treasury of ' + k.name + ' is running dangerously low! Only ' + Math.floor(k.gold) + 'g remains.', { kingdomId: k.id });
         }
         if (k.gold > CONFIG.KINGDOM_BANKRUPTCY_WARNING_GOLD * 2) {
             k._bankruptWarned = false;
@@ -35772,6 +35829,8 @@
         scoutEnemyStrength: scoutEnemyStrength,
         computeMilitaryStrength: computeMilitaryStrength,
         logEvent: logEvent,
+        storeBackgroundGossip: _storeBackgroundGossip,
+        getBackgroundGossip: getBackgroundGossip,
         demolishBuilding: demolishBuilding,
         buyBlastingPowderFromKingdom: buyBlastingPowderFromKingdom,
         getAlliances() {
