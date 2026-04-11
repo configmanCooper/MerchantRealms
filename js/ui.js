@@ -4463,6 +4463,196 @@ window.UI = (function () {
         openModal('📋 Sell Building', html);
     }
 
+    // ── Building Detail sub-sections (H3 decomposition) ──
+
+    function _buildMedicalSection(bld, bt, town) {
+        var html = '';
+        var _engBld = null;
+        if (town && town.buildings) {
+            for (var _ebi = 0; _ebi < town.buildings.length; _ebi++) {
+                if (town.buildings[_ebi].id === bld.id) { _engBld = town.buildings[_ebi]; break; }
+            }
+        }
+        var _medBld = _engBld || bld;
+        html += '<div style="padding:8px;border:1px solid var(--border);border-radius:4px;margin-bottom:8px;">';
+        html += '<div style="font-weight:bold;font-size:0.8rem;margin-bottom:6px;">🏥 MEDICAL PREPAREDNESS</div>';
+        var _abEnabled = _medBld._autobuyEnabled !== false;
+        html += '<div style="margin-bottom:6px;font-size:0.78rem;">';
+        html += '<label style="cursor:pointer;"><input type="checkbox" ' + (_abEnabled ? 'checked' : '') + ' onchange="Engine.toggleMedicalAutobuy(\'' + bld.townId + '\',\'' + bld.id + '\');UI.showBuildingDetail(\'' + bld.id + '\');"> 🛒 Auto-buy medical supplies from local market</label>';
+        html += '</div>';
+        var _medStock = _medBld._medicalStock || {};
+        var _retStock = _medBld.retailStock || bld.retailStock || {};
+        var _medGoods = ['bandages', 'herbal_remedy', 'healing_tonic', 'herbal_poultice', 'fever_tonic', 'antidote', 'splint'];
+        var _medStockTotal = 0;
+        for (var _msi = 0; _msi < _medGoods.length; _msi++) _medStockTotal += (_medStock[_medGoods[_msi]] || 0) + (_retStock[_medGoods[_msi]] || 0);
+        var _medStorageCap = (bt && bt.medicalStorage) || 40;
+        var _medPct = _medStorageCap > 0 ? Math.round(_medStockTotal / _medStorageCap * 100) : 0;
+        var _medColor = _medPct >= 60 ? '#55a868' : _medPct >= 25 ? 'var(--gold)' : 'var(--danger)';
+        html += '<div style="font-size:0.78rem;margin-bottom:4px;">📦 Medical Stock: <span style="color:' + _medColor + ';">' + _medStockTotal + '/' + _medStorageCap + '</span> <span style="font-size:0.68rem;color:#888;">(dedicated + retail)</span></div>';
+        html += '<div style="background:#333;border-radius:3px;height:6px;margin-bottom:8px;overflow:hidden;">';
+        html += '<div style="background:' + _medColor + ';height:100%;width:' + Math.min(100, _medPct) + '%;"></div></div>';
+        html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">';
+        for (var _mgi = 0; _mgi < _medGoods.length; _mgi++) {
+            var _mgId = _medGoods[_mgi];
+            var _mgDed = _medStock[_mgId] || 0;
+            var _mgRet = _retStock[_mgId] || 0;
+            var _mgQty = _mgDed + _mgRet;
+            var _mgRes = findResource(_mgId);
+            var _mgName = _mgRes ? _mgRes.name : _mgId;
+            var _mgIcon = _mgRes ? (_mgRes.icon || '💊') : '💊';
+            var _mgCol = _mgQty > 0 ? '#55a868' : '#666';
+            var _mgDetail = _mgDed > 0 && _mgRet > 0 ? ' (' + _mgDed + '+' + _mgRet + ')' : '';
+            html += '<span style="font-size:0.72rem;padding:2px 5px;border:1px solid #444;border-radius:3px;color:' + _mgCol + ';">' + _mgIcon + ' ' + _mgName + ': ' + _mgQty + _mgDetail + '</span>';
+        }
+        html += '</div>';
+        var _treatSuppliesInjury = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_INJURY) ? NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_INJURY : {};
+        var _treatSuppliesIllness = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_ILLNESS) ? NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_ILLNESS : {};
+        var _treatTicks = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.TREATMENT_TICKS) ? NPC_HEALTH_CONFIG.TREATMENT_TICKS : {};
+        var _isClinc = bld.type === 'clinic';
+        html += '<div style="font-weight:bold;font-size:0.75rem;margin-bottom:4px;">Treatment Capabilities:</div>';
+        html += '<table style="width:100%;font-size:0.72rem;border-collapse:collapse;">';
+        html += '<tr style="border-bottom:1px solid #444;"><th style="text-align:left;padding:3px;">Severity</th><th style="text-align:left;padding:3px;">Injury Supplies</th><th style="text-align:left;padding:3px;">Illness Supplies</th><th style="text-align:center;padding:3px;">Time</th><th style="text-align:center;padding:3px;">Ready?</th></tr>';
+        var _sevLevels = ['minor', 'moderate', 'serious', 'severe'];
+        var _sevLabels = { minor: '🟢 Minor', moderate: '🟡 Moderate', serious: '🟠 Serious', severe: '🔴 Severe' };
+        var _medRank = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.MEDICINE_RANK) ? NPC_HEALTH_CONFIG.MEDICINE_RANK : ['herbal_remedy', 'fever_tonic', 'healing_tonic', 'antidote'];
+        for (var _si = 0; _si < _sevLevels.length; _si++) {
+            var _sev = _sevLevels[_si];
+            var _blocked = false;
+            var _isClinicSevere = _isClinc && _sev === 'severe';
+            var _injSupplies = _treatSuppliesInjury[_sev] || {};
+            var _illSupplies = _treatSuppliesIllness[_sev] || {};
+            var _ticks = _treatTicks[_sev] || 0;
+            if (_isClinicSevere) _ticks = _ticks * 2;
+            var _hours = Math.round(_ticks / 2.5);
+            var _readyInj = true, _readyIll = true;
+            var _buildInjList = function(supplies) {
+                var list = [];
+                for (var _supRes in supplies) {
+                    var _supQty = supplies[_supRes];
+                    var _supHave = (_medStock[_supRes] || 0) + (_retStock[_supRes] || 0);
+                    var _supMkt = (town && town.market && town.market.supply[_supRes]) || 0;
+                    var _supAvail = _supHave + _supMkt;
+                    var _rIdx = _medRank.indexOf(_supRes);
+                    if (!(_supAvail >= _supQty) && _rIdx >= 0) {
+                        for (var _ssi = _rIdx + 1; _ssi < _medRank.length; _ssi++) {
+                            var _altHave = (_medStock[_medRank[_ssi]] || 0) + (_retStock[_medRank[_ssi]] || 0);
+                            var _altMkt = (town && town.market && town.market.supply[_medRank[_ssi]]) || 0;
+                            if (_altHave + _altMkt >= _supQty) { _supAvail = _supQty; break; }
+                        }
+                    }
+                    var _supOk = _supAvail >= _supQty;
+                    var _supRe = findResource(_supRes);
+                    var _supName = _supRe ? _supRe.name : _supRes;
+                    list.push('<span style="color:' + (_supOk ? '#55a868' : 'var(--danger)') + ';">' + _supQty + ' ' + _supName + (_supOk ? ' ✓' : ' ✗') + '</span>');
+                    if (!_supOk) return { list: list, ready: false };
+                }
+                return { list: list, ready: true };
+            };
+            var _injResult = _buildInjList(_injSupplies);
+            var _illResult = _buildInjList(_illSupplies);
+            var _rowStyle = _blocked ? 'color:#555;' : '';
+            html += '<tr style="border-bottom:1px solid #333;' + _rowStyle + '">';
+            html += '<td style="padding:3px;">' + (_blocked ? '🚫 ' : '') + _sevLabels[_sev] + (_isClinicSevere ? ' <span style="font-size:0.65rem;color:#e67e22;">(2x time)</span>' : '') + '</td>';
+            html += '<td style="padding:3px;">' + (_injResult.list.length > 0 ? _injResult.list.join(', ') : '<span style="color:#555;">—</span>') + '</td>';
+            html += '<td style="padding:3px;">' + (_illResult.list.length > 0 ? _illResult.list.join(', ') : '<span style="color:#555;">—</span>') + '</td>';
+            html += '<td style="text-align:center;padding:3px;">' + (_blocked ? '—' : '~' + _hours + 'h') + '</td>';
+            html += '<td style="text-align:center;padding:3px;">' + (_blocked ? '🚫' : ((_injResult.ready && _illResult.ready) ? '<span style="color:#55a868;">✅</span>' : '<span style="color:var(--danger);">❌</span>')) + '</td>';
+            html += '</tr>';
+        }
+        html += '</table>';
+        html += '<div style="font-weight:bold;font-size:0.75rem;margin-top:8px;margin-bottom:4px;">Common Conditions & Treatment:</div>';
+        html += '<table style="width:100%;font-size:0.70rem;border-collapse:collapse;">';
+        html += '<tr style="border-bottom:1px solid #444;"><th style="text-align:left;padding:2px;">Condition</th><th style="text-align:left;padding:2px;">Type</th><th style="text-align:center;padding:2px;">Severity</th><th style="text-align:left;padding:2px;">Key Supply</th><th style="text-align:right;padding:2px;">Fee</th><th style="text-align:right;padding:2px;">Supply Cost</th></tr>';
+        var _condTable = [
+            { name: 'Common Cold', type: 'Illness', sev: 'minor', supply: 'herbal_remedy' },
+            { name: 'Food Poisoning', type: 'Illness', sev: 'minor', supply: 'herbal_remedy' },
+            { name: 'Influenza', type: 'Illness', sev: 'moderate', supply: 'fever_tonic' },
+            { name: 'Dysentery', type: 'Illness', sev: 'moderate', supply: 'fever_tonic' },
+            { name: 'Pneumonia', type: 'Illness', sev: 'serious', supply: 'healing_tonic' },
+            { name: 'Plague', type: 'Illness', sev: 'severe', supply: 'antidote' },
+            { name: 'Minor Wound', type: 'Injury', sev: 'minor', supply: 'bandages' },
+            { name: 'Broken Bone', type: 'Injury', sev: 'moderate', supply: 'splint' },
+            { name: 'Severe Trauma', type: 'Injury', sev: 'serious', supply: 'herbal_poultice' },
+            { name: 'Crushed Limb', type: 'Injury', sev: 'severe', supply: 'healing_tonic' },
+        ];
+        var _tFees = _medBld._treatmentFees || {};
+        var _tSupInjury = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_INJURY) ? NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_INJURY : {};
+        var _tSupIllness = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_ILLNESS) ? NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_ILLNESS : {};
+        var _sevColors = { minor: '#55a868', moderate: 'var(--gold)', serious: '#e67e22', severe: 'var(--danger)' };
+        for (var _ci = 0; _ci < _condTable.length; _ci++) {
+            var _cond = _condTable[_ci];
+            var _cBlocked = false;
+            var _cIsClinicSevere = _isClinc && _cond.sev === 'severe';
+            var _cSupRes = findResource(_cond.supply);
+            var _cSupName = _cSupRes ? _cSupRes.name : _cond.supply;
+            var _cHaveSupply = ((_medStock[_cond.supply] || 0) + (_retStock[_cond.supply] || 0) + ((town && town.market && town.market.supply[_cond.supply]) || 0)) > 0;
+            var _cFee = _tFees[_cond.sev] || 0;
+            var _cSupCost = 0;
+            var _cSupDef = _cond.type === 'Illness' ? (_tSupIllness[_cond.sev] || {}) : (_tSupInjury[_cond.sev] || {});
+            for (var _csk in _cSupDef) {
+                var _cPrice = (Engine.getMarketPrice ? Engine.getMarketPrice(town, _csk) : 5) || 5;
+                _cSupCost += _cPrice * _cSupDef[_csk];
+            }
+            var _cProfit = _cFee - _cSupCost;
+            var _cProfitColor = _cProfit > 0 ? '#55a868' : _cProfit < 0 ? 'var(--danger)' : '#888';
+            html += '<tr style="border-bottom:1px solid #222;' + (_cBlocked ? 'color:#555;' : '') + '">';
+            html += '<td style="padding:2px;">' + _cond.name + '</td>';
+            html += '<td style="padding:2px;">' + (_cond.type === 'Illness' ? '🤒' : '🩹') + ' ' + _cond.type + '</td>';
+            html += '<td style="text-align:center;padding:2px;color:' + (_sevColors[_cond.sev] || '#aaa') + ';">' + _cond.sev + (_cIsClinicSevere ? ' (2x)' : '') + '</td>';
+            html += '<td style="padding:2px;">' + (_cBlocked ? '🚫' : (_cHaveSupply ? '✅ ' : '❌ ') + _cSupName) + '</td>';
+            html += '<td style="text-align:right;padding:2px;color:var(--gold);">' + _cFee + 'g</td>';
+            html += '<td style="text-align:right;padding:2px;color:' + _cProfitColor + ';">' + Math.round(_cSupCost * 100) / 100 + 'g</td>';
+            html += '</tr>';
+        }
+        html += '</table>';
+        var _queue = _medBld._treatmentQueue || [];
+        var _maxH = (bt && bt.maxHealers) || 2;
+        html += '<div style="font-size:0.75rem;margin-top:8px;">📋 Treatment Queue: <strong>' + _queue.length + '</strong> patients | Capacity: ' + _maxH + ' simultaneous</div>';
+        if (_queue.length > 0) {
+            html += '<div style="margin-top:4px;max-height:160px;overflow-y:auto;font-size:0.72rem;">';
+            html += '<div style="display:grid;grid-template-columns:2fr 1.2fr 0.8fr 0.8fr 24px;gap:2px;padding:2px 4px;border-bottom:1px solid #444;color:#888;font-size:0.68rem;">';
+            html += '<span>Patient</span><span>Condition</span><span>Severity</span><span style="text-align:right;">Time</span><span></span>';
+            html += '</div>';
+            for (var _qi = 0; _qi < _queue.length; _qi++) {
+                var _qp = _queue[_qi];
+                var _qPerson = Engine.findPerson ? Engine.findPerson(_qp.personId) : null;
+                var _qName = _qPerson ? (_qPerson.firstName + ' ' + (_qPerson.lastName || '')) : _qp.personId;
+                var _qActive = _qi < _maxH;
+                var _qDaysLeft = Math.round((_qp.ticksRemaining || 0) / 60 * 10) / 10;
+                var _qSev = _qp.severity || (_qPerson ? (_qPerson.injurySeverity || _qPerson.illnessSeverity || 'minor') : 'minor');
+                var _qIsIll = _qp.isIllness != null ? (_qp.isIllness !== false) : (_qPerson ? !!_qPerson.sick : true);
+                var _qSevColor = _qSev === 'severe' ? 'var(--danger)' : _qSev === 'serious' ? '#e67e22' : _qSev === 'moderate' ? 'var(--gold)' : '#55a868';
+                var _qCondition = '';
+                if (_qPerson) {
+                    if (_qIsIll && _qPerson.illness) _qCondition = _qPerson.illness;
+                    else if (!_qIsIll && _qPerson.injuryName) _qCondition = _qPerson.injuryName;
+                }
+                var _qTypeIcon = _qIsIll ? '🤒' : '🩹';
+                html += '<div style="display:grid;grid-template-columns:2fr 1.2fr 0.8fr 0.8fr 24px;gap:2px;padding:2px 4px;border-bottom:1px solid #333;align-items:center;">';
+                html += '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (_qActive ? '💊 ' : '⏳ ') + '<a href="#" onclick="UI.showNPCDetail(\'' + _qp.personId + '\');return false;" style="color:var(--link);text-decoration:underline;cursor:pointer;">' + _qName + '</a></span>';
+                html += '<span style="font-size:0.68rem;color:#aaa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + _qTypeIcon + ' ' + (_qCondition || (_qIsIll ? 'Illness' : 'Injury')) + '</span>';
+                html += '<span style="color:' + _qSevColor + ';">' + _qSev + '</span>';
+                html += '<span style="color:#aaa;text-align:right;">~' + _qDaysLeft + 'd</span>';
+                html += '<span style="text-align:center;"><a href="#" onclick="Engine.kickPatientFromQueue(\'' + bld.townId + '\',\'' + bld.id + '\',\'' + _qp.personId + '\');UI.showBuildingDetail(\'' + bld.id + '\');return false;" style="color:#888;text-decoration:none;cursor:pointer;font-size:0.8rem;" title="Remove from queue">✕</a></span>';
+                html += '</div>';
+            }
+            html += '</div>';
+        }
+        var _tStats = _medBld._treatmentStats || { treated: 0, feeEarned: 0, supplyCost: 0 };
+        var _netProfit = _tStats.feeEarned - _tStats.supplyCost;
+        var _profitColor = _netProfit > 0 ? '#55a868' : _netProfit < 0 ? 'var(--danger)' : '#aaa';
+        html += '<div style="margin-top:8px;padding:6px;background:rgba(0,0,0,0.2);border-radius:4px;">';
+        html += '<div style="font-weight:bold;font-size:0.75rem;margin-bottom:4px;">📊 Treatment Log</div>';
+        html += '<div style="font-size:0.73rem;display:flex;flex-wrap:wrap;gap:8px;">';
+        html += '<span>🩺 Patients Treated: <strong>' + _tStats.treated + '</strong></span>';
+        html += '<span>💰 Fees Earned: <strong style="color:var(--gold);">' + Math.round(_tStats.feeEarned) + 'g</strong></span>';
+        html += '<span>📦 Supply Cost: <strong style="color:#e67e22;">' + Math.round(_tStats.supplyCost) + 'g</strong></span>';
+        html += '<span>📈 Net Profit: <strong style="color:' + _profitColor + ';">' + ((_netProfit >= 0 ? '+' : '') + Math.round(_netProfit)) + 'g</strong></span>';
+        html += '</div></div>';
+        html += '</div>';
+        return html;
+    }
+
     function showBuildingDetail(buildingId) {
         try { return _showBuildingDetailInner(buildingId); } catch (e) {
             console.error('showBuildingDetail error:', e, e.stack);
@@ -4751,216 +4941,7 @@ window.UI = (function () {
 
         // MEDICAL PREPAREDNESS section (for hospitals/clinics)
         if (bld.type === 'hospital' || bld.type === 'clinic') {
-            // Engine stores _treatmentQueue, _medicalStock, etc. on the town copy, not player.buildings
-            var _engBld = null;
-            if (town && town.buildings) {
-                for (var _ebi = 0; _ebi < town.buildings.length; _ebi++) {
-                    if (town.buildings[_ebi].id === bld.id) { _engBld = town.buildings[_ebi]; break; }
-                }
-            }
-            var _medBld = _engBld || bld; // use engine copy if available, else fallback
-            html += '<div style="padding:8px;border:1px solid var(--border);border-radius:4px;margin-bottom:8px;">';
-            html += '<div style="font-weight:bold;font-size:0.8rem;margin-bottom:6px;">🏥 MEDICAL PREPAREDNESS</div>';
-
-            // Autobuy toggle
-            var _abEnabled = _medBld._autobuyEnabled !== false;
-            html += '<div style="margin-bottom:6px;font-size:0.78rem;">';
-            html += '<label style="cursor:pointer;"><input type="checkbox" ' + (_abEnabled ? 'checked' : '') + ' onchange="Engine.toggleMedicalAutobuy(\'' + bld.townId + '\',\'' + bld.id + '\');UI.showBuildingDetail(\'' + bld.id + '\');"> 🛒 Auto-buy medical supplies from local market</label>';
-            html += '</div>';
-
-            // Current medical stock (combine _medicalStock + retailStock for treatment readiness)
-            var _medStock = _medBld._medicalStock || {};
-            var _retStock = _medBld.retailStock || bld.retailStock || {};
-            var _medGoods = ['bandages', 'herbal_remedy', 'healing_tonic', 'herbal_poultice', 'fever_tonic', 'antidote', 'splint'];
-            var _medStockTotal = 0;
-            for (var _msi = 0; _msi < _medGoods.length; _msi++) _medStockTotal += (_medStock[_medGoods[_msi]] || 0) + (_retStock[_medGoods[_msi]] || 0);
-            var _medStorageCap = (bt && bt.medicalStorage) || 40;
-            var _medPct = _medStorageCap > 0 ? Math.round(_medStockTotal / _medStorageCap * 100) : 0;
-            var _medColor = _medPct >= 60 ? '#55a868' : _medPct >= 25 ? 'var(--gold)' : 'var(--danger)';
-
-            html += '<div style="font-size:0.78rem;margin-bottom:4px;">📦 Medical Stock: <span style="color:' + _medColor + ';">' + _medStockTotal + '/' + _medStorageCap + '</span> <span style="font-size:0.68rem;color:#888;">(dedicated + retail)</span></div>';
-            html += '<div style="background:#333;border-radius:3px;height:6px;margin-bottom:8px;overflow:hidden;">';
-            html += '<div style="background:' + _medColor + ';height:100%;width:' + Math.min(100, _medPct) + '%;"></div></div>';
-
-            // Show each medical item with combined count
-            html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">';
-            for (var _mgi = 0; _mgi < _medGoods.length; _mgi++) {
-                var _mgId = _medGoods[_mgi];
-                var _mgDed = _medStock[_mgId] || 0;
-                var _mgRet = _retStock[_mgId] || 0;
-                var _mgQty = _mgDed + _mgRet;
-                var _mgRes = findResource(_mgId);
-                var _mgName = _mgRes ? _mgRes.name : _mgId;
-                var _mgIcon = _mgRes ? (_mgRes.icon || '💊') : '💊';
-                var _mgCol = _mgQty > 0 ? '#55a868' : '#666';
-                var _mgDetail = _mgDed > 0 && _mgRet > 0 ? ' (' + _mgDed + '+' + _mgRet + ')' : '';
-                html += '<span style="font-size:0.72rem;padding:2px 5px;border:1px solid #444;border-radius:3px;color:' + _mgCol + ';">' + _mgIcon + ' ' + _mgName + ': ' + _mgQty + _mgDetail + '</span>';
-            }
-            html += '</div>';
-
-            // Treatment types table
-            var _treatSuppliesInjury = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_INJURY) ? NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_INJURY : {};
-            var _treatSuppliesIllness = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_ILLNESS) ? NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_ILLNESS : {};
-            var _treatTicks = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.TREATMENT_TICKS) ? NPC_HEALTH_CONFIG.TREATMENT_TICKS : {};
-            var _isClinc = bld.type === 'clinic';
-
-            html += '<div style="font-weight:bold;font-size:0.75rem;margin-bottom:4px;">Treatment Capabilities:</div>';
-            html += '<table style="width:100%;font-size:0.72rem;border-collapse:collapse;">';
-            html += '<tr style="border-bottom:1px solid #444;"><th style="text-align:left;padding:3px;">Severity</th><th style="text-align:left;padding:3px;">Injury Supplies</th><th style="text-align:left;padding:3px;">Illness Supplies</th><th style="text-align:center;padding:3px;">Time</th><th style="text-align:center;padding:3px;">Ready?</th></tr>';
-
-            var _sevLevels = ['minor', 'moderate', 'serious', 'severe'];
-            var _sevLabels = { minor: '🟢 Minor', moderate: '🟡 Moderate', serious: '🟠 Serious', severe: '🔴 Severe' };
-            var _medRank = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.MEDICINE_RANK) ? NPC_HEALTH_CONFIG.MEDICINE_RANK : ['herbal_remedy', 'fever_tonic', 'healing_tonic', 'antidote'];
-            for (var _si = 0; _si < _sevLevels.length; _si++) {
-                var _sev = _sevLevels[_si];
-                var _blocked = false;
-                var _isClinicSevere = _isClinc && _sev === 'severe';
-                var _injSupplies = _treatSuppliesInjury[_sev] || {};
-                var _illSupplies = _treatSuppliesIllness[_sev] || {};
-                var _ticks = _treatTicks[_sev] || 0;
-                if (_isClinicSevere) _ticks = _ticks * 2;
-                var _hours = Math.round(_ticks / 2.5);
-
-                // Check if we have all supplies (both types)
-                var _readyInj = true, _readyIll = true;
-
-                var _buildInjList = function(supplies) {
-                    var list = [];
-                    for (var _supRes in supplies) {
-                        var _supQty = supplies[_supRes];
-                        var _supHave = (_medStock[_supRes] || 0) + (_retStock[_supRes] || 0);
-                        var _supMkt = (town && town.market && town.market.supply[_supRes]) || 0;
-                        var _supAvail = _supHave + _supMkt;
-                        // Check substitution for medicine
-                        var _rIdx = _medRank.indexOf(_supRes);
-                        if (!(_supAvail >= _supQty) && _rIdx >= 0) {
-                            for (var _ssi = _rIdx + 1; _ssi < _medRank.length; _ssi++) {
-                                var _altHave = (_medStock[_medRank[_ssi]] || 0) + (_retStock[_medRank[_ssi]] || 0);
-                                var _altMkt = (town && town.market && town.market.supply[_medRank[_ssi]]) || 0;
-                                if (_altHave + _altMkt >= _supQty) { _supAvail = _supQty; break; }
-                            }
-                        }
-                        var _supOk = _supAvail >= _supQty;
-                        var _supRe = findResource(_supRes);
-                        var _supName = _supRe ? _supRe.name : _supRes;
-                        list.push('<span style="color:' + (_supOk ? '#55a868' : 'var(--danger)') + ';">' + _supQty + ' ' + _supName + (_supOk ? ' ✓' : ' ✗') + '</span>');
-                        if (!_supOk) return { list: list, ready: false };
-                    }
-                    return { list: list, ready: true };
-                };
-
-                var _injResult = _buildInjList(_injSupplies);
-                var _illResult = _buildInjList(_illSupplies);
-
-                var _rowStyle = _blocked ? 'color:#555;' : '';
-                html += '<tr style="border-bottom:1px solid #333;' + _rowStyle + '">';
-                html += '<td style="padding:3px;">' + (_blocked ? '🚫 ' : '') + _sevLabels[_sev] + (_isClinicSevere ? ' <span style="font-size:0.65rem;color:#e67e22;">(2x time)</span>' : '') + '</td>';
-                html += '<td style="padding:3px;">' + (_injResult.list.length > 0 ? _injResult.list.join(', ') : '<span style="color:#555;">—</span>') + '</td>';
-                html += '<td style="padding:3px;">' + (_illResult.list.length > 0 ? _illResult.list.join(', ') : '<span style="color:#555;">—</span>') + '</td>';
-                html += '<td style="text-align:center;padding:3px;">' + (_blocked ? '—' : '~' + _hours + 'h') + '</td>';
-                html += '<td style="text-align:center;padding:3px;">' + (_blocked ? '🚫' : ((_injResult.ready && _illResult.ready) ? '<span style="color:#55a868;">✅</span>' : '<span style="color:var(--danger);">❌</span>')) + '</td>';
-                html += '</tr>';
-            }
-            html += '</table>';
-
-            // Illness/Injury type info
-            html += '<div style="font-weight:bold;font-size:0.75rem;margin-top:8px;margin-bottom:4px;">Common Conditions & Treatment:</div>';
-            html += '<table style="width:100%;font-size:0.70rem;border-collapse:collapse;">';
-            html += '<tr style="border-bottom:1px solid #444;"><th style="text-align:left;padding:2px;">Condition</th><th style="text-align:left;padding:2px;">Type</th><th style="text-align:center;padding:2px;">Severity</th><th style="text-align:left;padding:2px;">Key Supply</th><th style="text-align:right;padding:2px;">Fee</th><th style="text-align:right;padding:2px;">Supply Cost</th></tr>';
-            var _condTable = [
-                { name: 'Common Cold', type: 'Illness', sev: 'minor', supply: 'herbal_remedy' },
-                { name: 'Food Poisoning', type: 'Illness', sev: 'minor', supply: 'herbal_remedy' },
-                { name: 'Influenza', type: 'Illness', sev: 'moderate', supply: 'fever_tonic' },
-                { name: 'Dysentery', type: 'Illness', sev: 'moderate', supply: 'fever_tonic' },
-                { name: 'Pneumonia', type: 'Illness', sev: 'serious', supply: 'healing_tonic' },
-                { name: 'Plague', type: 'Illness', sev: 'severe', supply: 'antidote' },
-                { name: 'Minor Wound', type: 'Injury', sev: 'minor', supply: 'bandages' },
-                { name: 'Broken Bone', type: 'Injury', sev: 'moderate', supply: 'splint' },
-                { name: 'Severe Trauma', type: 'Injury', sev: 'serious', supply: 'herbal_poultice' },
-                { name: 'Crushed Limb', type: 'Injury', sev: 'severe', supply: 'healing_tonic' },
-            ];
-            var _tFees = _medBld._treatmentFees || {};
-            var _tSupInjury = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_INJURY) ? NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_INJURY : {};
-            var _tSupIllness = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_ILLNESS) ? NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_ILLNESS : {};
-            var _sevColors = { minor: '#55a868', moderate: 'var(--gold)', serious: '#e67e22', severe: 'var(--danger)' };
-            for (var _ci = 0; _ci < _condTable.length; _ci++) {
-                var _cond = _condTable[_ci];
-                var _cBlocked = false;
-                var _cIsClinicSevere = _isClinc && _cond.sev === 'severe';
-                var _cSupRes = findResource(_cond.supply);
-                var _cSupName = _cSupRes ? _cSupRes.name : _cond.supply;
-                var _cHaveSupply = ((_medStock[_cond.supply] || 0) + (_retStock[_cond.supply] || 0) + ((town && town.market && town.market.supply[_cond.supply]) || 0)) > 0;
-                // Treatment fee charged to patient
-                var _cFee = _tFees[_cond.sev] || 0;
-                // Supply cost at local market prices — use correct supply set based on type
-                var _cSupCost = 0;
-                var _cSupDef = _cond.type === 'Illness' ? (_tSupIllness[_cond.sev] || {}) : (_tSupInjury[_cond.sev] || {});
-                for (var _csk in _cSupDef) {
-                    var _cPrice = (Engine.getMarketPrice ? Engine.getMarketPrice(town, _csk) : 5) || 5;
-                    _cSupCost += _cPrice * _cSupDef[_csk];
-                }
-                var _cProfit = _cFee - _cSupCost;
-                var _cProfitColor = _cProfit > 0 ? '#55a868' : _cProfit < 0 ? 'var(--danger)' : '#888';
-                html += '<tr style="border-bottom:1px solid #222;' + (_cBlocked ? 'color:#555;' : '') + '">';
-                html += '<td style="padding:2px;">' + _cond.name + '</td>';
-                html += '<td style="padding:2px;">' + (_cond.type === 'Illness' ? '🤒' : '🩹') + ' ' + _cond.type + '</td>';
-                html += '<td style="text-align:center;padding:2px;color:' + (_sevColors[_cond.sev] || '#aaa') + ';">' + _cond.sev + (_cIsClinicSevere ? ' (2x)' : '') + '</td>';
-                html += '<td style="padding:2px;">' + (_cBlocked ? '🚫' : (_cHaveSupply ? '✅ ' : '❌ ') + _cSupName) + '</td>';
-                html += '<td style="text-align:right;padding:2px;color:var(--gold);">' + _cFee + 'g</td>';
-                html += '<td style="text-align:right;padding:2px;color:' + _cProfitColor + ';">' + Math.round(_cSupCost * 100) / 100 + 'g</td>';
-                html += '</tr>';
-            }
-            html += '</table>';
-
-            // Queue info
-            var _queue = _medBld._treatmentQueue || [];
-            var _maxH = (bt && bt.maxHealers) || 2;
-            html += '<div style="font-size:0.75rem;margin-top:8px;">📋 Treatment Queue: <strong>' + _queue.length + '</strong> patients | Capacity: ' + _maxH + ' simultaneous</div>';
-            if (_queue.length > 0) {
-                html += '<div style="margin-top:4px;max-height:160px;overflow-y:auto;font-size:0.72rem;">';
-                html += '<div style="display:grid;grid-template-columns:2fr 1.2fr 0.8fr 0.8fr 24px;gap:2px;padding:2px 4px;border-bottom:1px solid #444;color:#888;font-size:0.68rem;">';
-                html += '<span>Patient</span><span>Condition</span><span>Severity</span><span style="text-align:right;">Time</span><span></span>';
-                html += '</div>';
-                for (var _qi = 0; _qi < _queue.length; _qi++) {
-                    var _qp = _queue[_qi];
-                    var _qPerson = Engine.findPerson ? Engine.findPerson(_qp.personId) : null;
-                    var _qName = _qPerson ? (_qPerson.firstName + ' ' + (_qPerson.lastName || '')) : _qp.personId;
-                    var _qActive = _qi < _maxH;
-                    var _qDaysLeft = Math.round((_qp.ticksRemaining || 0) / 60 * 10) / 10;
-                    var _qSev = _qp.severity || (_qPerson ? (_qPerson.injurySeverity || _qPerson.illnessSeverity || 'minor') : 'minor');
-                    var _qIsIll = _qp.isIllness != null ? (_qp.isIllness !== false) : (_qPerson ? !!_qPerson.sick : true);
-                    var _qSevColor = _qSev === 'severe' ? 'var(--danger)' : _qSev === 'serious' ? '#e67e22' : _qSev === 'moderate' ? 'var(--gold)' : '#55a868';
-                    var _qCondition = '';
-                    if (_qPerson) {
-                        if (_qIsIll && _qPerson.illness) _qCondition = _qPerson.illness;
-                        else if (!_qIsIll && _qPerson.injuryName) _qCondition = _qPerson.injuryName;
-                    }
-                    var _qTypeIcon = _qIsIll ? '🤒' : '🩹';
-                    html += '<div style="display:grid;grid-template-columns:2fr 1.2fr 0.8fr 0.8fr 24px;gap:2px;padding:2px 4px;border-bottom:1px solid #333;align-items:center;">';
-                    html += '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (_qActive ? '💊 ' : '⏳ ') + '<a href="#" onclick="UI.showNPCDetail(\'' + _qp.personId + '\');return false;" style="color:var(--link);text-decoration:underline;cursor:pointer;">' + _qName + '</a></span>';
-                    html += '<span style="font-size:0.68rem;color:#aaa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + _qTypeIcon + ' ' + (_qCondition || (_qIsIll ? 'Illness' : 'Injury')) + '</span>';
-                    html += '<span style="color:' + _qSevColor + ';">' + _qSev + '</span>';
-                    html += '<span style="color:#aaa;text-align:right;">~' + _qDaysLeft + 'd</span>';
-                    html += '<span style="text-align:center;"><a href="#" onclick="Engine.kickPatientFromQueue(\'' + bld.townId + '\',\'' + bld.id + '\',\'' + _qp.personId + '\');UI.showBuildingDetail(\'' + bld.id + '\');return false;" style="color:#888;text-decoration:none;cursor:pointer;font-size:0.8rem;" title="Remove from queue">✕</a></span>';
-                    html += '</div>';
-                }
-                html += '</div>';
-            }
-
-            // Treatment statistics log
-            var _tStats = _medBld._treatmentStats || { treated: 0, feeEarned: 0, supplyCost: 0 };
-            var _netProfit = _tStats.feeEarned - _tStats.supplyCost;
-            var _profitColor = _netProfit > 0 ? '#55a868' : _netProfit < 0 ? 'var(--danger)' : '#aaa';
-            html += '<div style="margin-top:8px;padding:6px;background:rgba(0,0,0,0.2);border-radius:4px;">';
-            html += '<div style="font-weight:bold;font-size:0.75rem;margin-bottom:4px;">📊 Treatment Log</div>';
-            html += '<div style="font-size:0.73rem;display:flex;flex-wrap:wrap;gap:8px;">';
-            html += '<span>🩺 Patients Treated: <strong>' + _tStats.treated + '</strong></span>';
-            html += '<span>💰 Fees Earned: <strong style="color:var(--gold);">' + Math.round(_tStats.feeEarned) + 'g</strong></span>';
-            html += '<span>📦 Supply Cost: <strong style="color:#e67e22;">' + Math.round(_tStats.supplyCost) + 'g</strong></span>';
-            html += '<span>📈 Net Profit: <strong style="color:' + _profitColor + ';">' + ((_netProfit >= 0 ? '+' : '') + Math.round(_netProfit)) + 'g</strong></span>';
-            html += '</div></div>';
-
-            html += '</div>';
+            html += _buildMedicalSection(bld, bt, town);
         }
 
 
