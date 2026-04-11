@@ -32,6 +32,28 @@
     // ── Performance: tick-scoped people cache ──
     var _tickCache = { peopleByTown: {}, peopleByKingdom: {}, soldiersByKingdom: {}, aliveCount: 0 };
 
+    /**
+     * Get alive people in a town. Uses _tickCache when available, falls back to filter.
+     * @param {string} townId
+     * @returns {Array} array of person objects
+     */
+    function getPeopleInTown(townId) {
+        if (_tickCache.peopleByTown[townId]) return _tickCache.peopleByTown[townId];
+        if (!world.people) return [];
+        return world.people.filter(function(p) { return p.alive && p.townId === townId; });
+    }
+
+    /**
+     * Get alive people in a kingdom. Uses _tickCache when available, falls back to filter.
+     * @param {string} kingdomId
+     * @returns {Array} array of person objects
+     */
+    function getPeopleInKingdom(kingdomId) {
+        if (_tickCache.peopleByKingdom[kingdomId]) return _tickCache.peopleByKingdom[kingdomId];
+        if (!world.people) return [];
+        return world.people.filter(function(p) { return p.alive && p.kingdomId === kingdomId; });
+    }
+
     // ── Performance: cached off-road edges (computed once at world gen, terrain is static) ──
     var _offroadEdgeCache = null;
 
@@ -4799,7 +4821,7 @@
 
             // ---- Population-driven consumption ----
             // Count adults vs children for differentiated food consumption
-            var townPeople = (_tickCache.peopleByTown[town.id] || []);
+            var townPeople = getPeopleInTown(town.id);
             const adultCount = townPeople.filter(p => p.age >= CONFIG.COMING_OF_AGE).length;
             const childCount = townPeople.filter(p => p.age < CONFIG.COMING_OF_AGE).length;
             const childMult = CONFIG.CHILD_FOOD_MULTIPLIER || 0.25;
@@ -4816,7 +4838,7 @@
             const foodNeeded = totalFoodNeeded - selfSufficient;
 
             // Baseline subsistence farming — farmers produce food outside of buildings
-            var farmers = (_tickCache.peopleByTown[town.id] || []).filter(function(p) {
+            var farmers = getPeopleInTown(town.id).filter(function(p) {
                 return p.occupation === 'farmer';
             });
             const subsistenceWheat = Math.floor(farmers.length * 1.5);
@@ -5517,7 +5539,7 @@
     function getAverageWorkerSkill(bld, town) {
         if (bld.ownerId === null) {
             // Town buildings: estimate from town population
-            var townPeople = (_tickCache.peopleByTown[town.id] || []);
+            var townPeople = getPeopleInTown(town.id);
             if (townPeople.length === 0) return 20;
             let total = 0, count = 0;
             for (const p of townPeople) {
@@ -7009,7 +7031,7 @@
     function tickSecurity() {
         // Calculate town security ratings
         for (const town of world.towns) {
-            var guards = (_tickCache.peopleByTown[town.id] || []).filter(function(p) {
+            var guards = getPeopleInTown(town.id).filter(function(p) {
                 return p.occupation === 'guard';
             });
             const guardRatio = guards.length / Math.max(1, town.population);
@@ -7592,7 +7614,7 @@
                 for (const townId of k.territories) {
                     const town = findTown(townId);
                     if (!town) continue;
-                    var foreignTraders = (_tickCache.peopleByTown[town.id] || []).filter(function(p) {
+                    var foreignTraders = getPeopleInTown(town.id).filter(function(p) {
                         return p.kingdomId !== k.id &&
                         (p.occupation === 'merchant' || p.isEliteMerchant);
                     });
@@ -7644,7 +7666,7 @@
                             if (hired >= guardsToHire) break;
                             const town = findTown(townId);
                             if (!town) continue;
-                            var idle = (_tickCache.peopleByTown[town.id] || []).filter(function(p) {
+                            var idle = getPeopleInTown(town.id).filter(function(p) {
                                 return (p.occupation === 'laborer' || p.occupation === 'none') &&
                                 p.age >= CONFIG.COMING_OF_AGE && p.age <= 50;
                             });
@@ -10964,7 +10986,7 @@
                 for (const townId of k.territories) {
                     const town = findTown(townId);
                     if (!town) continue;
-                    var idle = (_tickCache.peopleByTown[town.id] || []).filter(function(pp) {
+                    var idle = getPeopleInTown(town.id).filter(function(pp) {
                         return (pp.occupation === 'laborer' || pp.occupation === 'none') &&
                         pp.age >= CONFIG.COMING_OF_AGE && pp.age <= 50;
                     });
@@ -11467,7 +11489,7 @@
 
                 // NEITHER LAW: king decides based on personality
                 var townPop = (town.population || 0);
-                var homeless = (_tickCache.peopleByTown[town.id] || []).filter(function(pp) {
+                var homeless = getPeopleInTown(town.id).filter(function(pp) {
                     return pp.alive && pp.age >= 18 && !pp.houseType;
                 }).length;
                 var homelessRate = townPop > 0 ? homeless / townPop : 0;
@@ -11604,7 +11626,7 @@
                 if (recruited >= effectiveRecruitLimit) break;
                 const town = findTown(townId);
                 if (!town) continue;
-                var idle = (_tickCache.peopleByTown[town.id] || []).filter(function(pp) {
+                var idle = getPeopleInTown(town.id).filter(function(pp) {
                     return (pp.occupation === 'laborer' || pp.occupation === 'none') &&
                     pp.age >= CONFIG.COMING_OF_AGE && pp.age <= 50;
                 });
@@ -11999,7 +12021,7 @@
         var desiredSoldiers = 0;
         for (var _dti of k.territories) {
             var _dt = findTown(_dti);
-            if (_dt) desiredSoldiers += Math.max(5, Math.floor((_tickCache.peopleByTown[_dt.id] || []).length * (atWar ? 0.12 : 0.06)));
+            if (_dt) desiredSoldiers += Math.max(5, Math.floor(getPeopleInTown(_dt.id).length * (atWar ? 0.12 : 0.06)));
         }
         var soldierRatio = desiredSoldiers > 0 ? totalSoldiers / desiredSoldiers : 1;
         k._soldierRatio = soldierRatio; // cache for conscription checks
@@ -12030,7 +12052,7 @@
                 for (var _rti of k.territories) {
                     var _rt = findTown(_rti);
                     if (!_rt) continue;
-                    var volunteerPool = (_tickCache.peopleByTown[_rt.id] || []).filter(function(vp) {
+                    var volunteerPool = getPeopleInTown(_rt.id).filter(function(vp) {
                         return (vp.occupation === 'laborer' || vp.occupation === 'none') &&
                             vp.age >= CONFIG.COMING_OF_AGE && vp.age <= 45;
                     });
@@ -12865,7 +12887,7 @@
             t.happiness = Math.max(0, Math.min(100, (t.happiness || 50) + amount));
         }
         // Also nudge citizen happiness so it stays in sync
-        var citizens = (_tickCache.peopleByKingdom[k.id] || []);
+        var citizens = getPeopleInKingdom(k.id);
         for (var ci = 0; ci < citizens.length; ci++) {
             citizens[ci].needs.happiness = Math.max(0, Math.min(100, citizens[ci].needs.happiness + amount * 0.5));
         }
@@ -12931,7 +12953,7 @@
             if (pop > 700) happinessDelta -= (pop - 700) * 0.03;
 
             // Unemployment: check idle workers
-            var townPeople = (_tickCache.peopleByTown[town.id] || []);
+            var townPeople = getPeopleInTown(town.id);
             const idleCount = townPeople.filter(p => p.occupation === 'laborer' || p.occupation === 'none').length;
             if (townPeople.length > 0 && idleCount / townPeople.length > 0.20) {
                 happinessDelta -= 0.5;
@@ -13085,7 +13107,7 @@
                     if (netGrowth > 0) {
                         town.population += netGrowth;
                         // Spawn actual people for the births
-                        var townPeople = (_tickCache.peopleByTown[town.id] || []);
+                        var townPeople = getPeopleInTown(town.id);
                         var lastPool = townPeople.length > 0 ? townPeople.map(function(p) { return p.lastName; }).filter(Boolean) : ['Smith','Baker','Fletcher'];
                         for (var bi = 0; bi < netGrowth; bi++) {
                             var bSex = rng.random() < 0.5 ? 'M' : 'F';
@@ -13232,7 +13254,7 @@
                     } else if (netGrowth < 0) {
                         // Natural decline — kill elderly/sick people via killPerson for proper bookkeeping
                         var toKill = Math.min(Math.abs(netGrowth), Math.floor(pop * 0.01) || 1);
-                        var elderly = (_tickCache.peopleByTown[town.id] || [])
+                        var elderly = getPeopleInTown(town.id)
                             .filter(function(p) { return p.alive && p.age >= 50; })
                             .sort(function(a, b) { return b.age - a.age; });
                         for (var ki = 0; ki < Math.min(toKill, elderly.length); ki++) {
@@ -13393,7 +13415,7 @@
                     var deaths = Math.floor(infected * rng.randFloat(0.1, 0.2));
                     deaths = Math.min(deaths, Math.floor(pop * 0.05)); // cap at 5% of population
                     // Use killPerson for proper population tracking (fixes desync)
-                    var townPeople = (_tickCache.peopleByTown[town.id] || []).filter(function(pp) { return pp.alive; });
+                    var townPeople = getPeopleInTown(town.id).filter(function(pp) { return pp.alive; });
                     var shuffled = rng.shuffle([...townPeople]);
                     var killed = 0;
                     for (var di = 0; di < shuffled.length && killed < deaths; di++) {
@@ -13583,7 +13605,7 @@
                             newKingdom.territories.add(secTownId);
                             secTown.kingdomId = newKingdom.id;
                             // Update citizens
-                            var secCitizens = (_tickCache.peopleByTown[secTownId] || []);
+                            var secCitizens = getPeopleInTown(secTownId);
                             for (var sci = 0; sci < secCitizens.length; sci++) {
                                 secCitizens[sci].kingdomId = newKingdom.id;
                             }
@@ -13965,7 +13987,7 @@
         if (k.gold < CONFIG.TOWN_FOUNDING_MIN_TREASURY) return;
 
         // Check kingdom population
-        var kPop = (_tickCache.peopleByKingdom[k.id] || []).length;
+        var kPop = getPeopleInKingdom(k.id).length;
         if (kPop < CONFIG.TOWN_FOUNDING_MIN_POP) return;
 
         // Check town cap
@@ -14490,7 +14512,7 @@
                 if (_wRecruited >= _maxNewRecruits) break;
 
                 // Recruit idle people as soldiers (with gold cost)
-                var idle = (_tickCache.peopleByTown[town.id] || []).filter(function(p) {
+                var idle = getPeopleInTown(town.id).filter(function(p) {
                     return (p.occupation === 'laborer' || p.occupation === 'none') &&
                     p.age >= CONFIG.COMING_OF_AGE && p.age <= 50;
                 });
@@ -14515,7 +14537,7 @@
                 // Conscription for desperate kingdoms (ratio computed in dynamic pay block below)
                 var _soldierRatio = k._soldierRatio || 1;
                 if (_soldierRatio < 0.3 && k.laws && k.laws.conscription && rng.chance(0.1 * (getKingMoodModifiers(k).conscriptMod || 1))) {
-                    var conscriptable = (_tickCache.peopleByTown[town.id] || []).filter(function(p) {
+                    var conscriptable = getPeopleInTown(town.id).filter(function(p) {
                         return p.occupation !== 'soldier' && p.occupation !== 'guard' &&
                                p.age >= CONFIG.COMING_OF_AGE && p.age <= 45;
                     });
@@ -15154,7 +15176,7 @@
     }
 
     function grantCitizenship(town, kingdom) {
-        var townPeople = (_tickCache.peopleByTown[town.id] || []);
+        var townPeople = getPeopleInTown(town.id);
         for (const person of townPeople) {
             person.citizenshipKingdomId = kingdom.id;
             person.kingdomId = kingdom.id;
@@ -15177,7 +15199,7 @@
     }
 
     function imposeServitude(town, kingdom) {
-        var townPeople = (_tickCache.peopleByTown[town.id] || []);
+        var townPeople = getPeopleInTown(town.id);
         for (const person of townPeople) {
             person.kingdomId = kingdom.id;
             person.status = 'indentured';
@@ -15206,7 +15228,7 @@
 
     function raidTown(town, kingdom) {
         const rng = world.rng;
-        var townPeople = (_tickCache.peopleByTown[town.id] || []);
+        var townPeople = getPeopleInTown(town.id);
         const origPop = townPeople.length;
 
         // 30-50% killed
@@ -15220,7 +15242,7 @@
         }
 
         // 20% of survivors injured
-        const survivors = (_tickCache.peopleByTown[town.id] || []);
+        const survivors = getPeopleInTown(town.id);
         const toInjure = Math.floor(survivors.length * CONFIG.RAID_INJURY_RATE);
         const injuredSurvivors = rng.shuffle([...survivors]);
         for (let i = 0; i < toInjure && i < injuredSurvivors.length; i++) {
@@ -15242,7 +15264,7 @@
         }
 
         // All survivors become indentured servants
-        const aliveSurvivors = (_tickCache.peopleByTown[town.id] || []);
+        const aliveSurvivors = getPeopleInTown(town.id);
         for (const person of aliveSurvivors) {
             person.kingdomId = kingdom.id;
             person.status = 'indentured';
@@ -15595,7 +15617,7 @@
             }
 
             // Update population counts
-            town.population = (_tickCache.peopleByTown[town.id] || []).length;
+            town.population = getPeopleInTown(town.id).length;
 
             // Track migration for UI
             if (migrated > 0) {
@@ -15610,7 +15632,7 @@
 
         // Update destination town populations
         for (const town of world.towns) {
-            const newPop = (_tickCache.peopleByTown[town.id] || []).length;
+            const newPop = getPeopleInTown(town.id).length;
             if (newPop > (town.population || 0)) {
                 if (!town.migrationLog) town.migrationLog = [];
                 town.migrationLog.push({ day: world.day, in: newPop - (town.population || 0) });
@@ -16419,7 +16441,7 @@
                             + defArchCount * MILITARY_UNITS.archer.defenseMult * (1 + towerBonus)
                             + defCavCount * MILITARY_UNITS.cavalry.defenseMult;
         // Apply individual defender soldier effectiveness
-        var defSoldiers = (_tickCache.peopleByTown[town.id] || []).filter(function(p) {
+        var defSoldiers = getPeopleInTown(town.id).filter(function(p) {
             return p.occupation === 'soldier' || p.occupation === 'guard';
         });
         if (defSoldiers.length > 0) {
@@ -16453,7 +16475,7 @@
         defenseStrength *= garrisonMoraleMod;
 
         // --- MILITIA: 10% of civilian population fights as militia (combat skill 10) ---
-        var civilians = (_tickCache.peopleByTown[town.id] || []).filter(function(p) {
+        var civilians = getPeopleInTown(town.id).filter(function(p) {
             return p.occupation !== 'soldier' && p.occupation !== 'guard' &&
             p.age >= CONFIG.COMING_OF_AGE && p.age <= 55;
         });
@@ -16770,7 +16792,7 @@
                 // Migrate remaining people to nearest non-abandoned town
                 const nearbyTowns = world.towns.filter(t => t.id !== town.id && !t.abandoned && !t.destroyed && t.population > 10);
                 if (nearbyTowns.length > 0) {
-                    var migrants = (_tickCache.peopleByTown[town.id] || []);
+                    var migrants = getPeopleInTown(town.id);
                     for (const p of migrants) {
                         const dest = nearbyTowns[world.rng.randInt(0, nearbyTowns.length - 1)];
                         p.townId = dest.id;
@@ -16794,7 +16816,7 @@
                     // Migrate ALL remaining people to nearest non-destroyed town
                     const nearbyTowns = world.towns.filter(t => t.id !== town.id && !t.destroyed && t.population > 10);
                     if (nearbyTowns.length > 0) {
-                        const remainingPeople = (_tickCache.peopleByTown[town.id] || []);
+                        const remainingPeople = getPeopleInTown(town.id);
                         for (const p of remainingPeople) {
                             const dest = nearbyTowns[world.rng.randInt(0, nearbyTowns.length - 1)];
                             p.townId = dest.id;
@@ -21366,7 +21388,7 @@
             }
 
             // Medical supply demand: based on sick/injured NPCs in town
-            var _analysisPop = _tickCache.peopleByTown[town.id] || [];
+            var _analysisPop = getPeopleInTown(town.id);
             var _analysisSick = 0;
             for (var _ai = 0; _ai < _analysisPop.length; _ai++) {
                 if (_analysisPop[_ai].sick || _analysisPop[_ai].injured) _analysisSick++;
@@ -22415,7 +22437,7 @@
         var crimeRate = Math.max(0, 100 - avgSecurity); // higher = more crime
 
         // Count citizens who produce these goods (economic impact)
-        var weaponProducers = (_tickCache.peopleByKingdom[kingdom.id] || []).filter(function(p) { return p.occupation === 'craftsman'; }).length;
+        var weaponProducers = getPeopleInKingdom(kingdom.id).filter(function(p) { return p.occupation === 'craftsman'; }).length;
 
         var changed = false;
         var currentBanned = kingdom.laws.bannedGoods || [];
@@ -23349,7 +23371,7 @@
         // Medical supplies when health crisis detected
         var _totalSick = 0, _totalInjured = 0;
         for (var _hti = 0; _hti < kingdomTowns.length; _hti++) {
-            var _htPop = _tickCache.peopleByTown[kingdomTowns[_hti].id] || [];
+            var _htPop = getPeopleInTown(kingdomTowns[_hti].id);
             for (var _hpi = 0; _hpi < _htPop.length; _hpi++) {
                 if (_htPop[_hpi].sick) _totalSick++;
                 if (_htPop[_hpi].injured) _totalInjured++;
@@ -24647,7 +24669,7 @@
                         var _isMedGood = si >= 8; // medical goods start at index 8
                         if (_isMedGood) {
                             var _toSickPct = 0;
-                            var _toPop = _tickCache.peopleByTown[toT.id] || [];
+                            var _toPop = getPeopleInTown(toT.id);
                             if (_toPop.length > 0) {
                                 var _toSick = 0;
                                 for (var _sp = 0; _sp < _toPop.length; _sp++) { if (_toPop[_sp].sick || _toPop[_sp].injured) _toSick++; }
@@ -24736,7 +24758,7 @@
             var crisisTowns = [];
             for (var cti = 0; cti < kTowns.length; cti++) {
                 var ct = kTowns[cti];
-                var ctPop = _tickCache.peopleByTown[ct.id] || [];
+                var ctPop = getPeopleInTown(ct.id);
                 if (ctPop.length < 5) continue;
                 var sickCount = 0;
                 for (var cpi = 0; cpi < ctPop.length; cpi++) {
@@ -28590,7 +28612,7 @@
                 if (!hasSpecialLaw(rtcKingdom, 'right_to_camps')) continue;
                 if (hasSpecialLaw(rtcKingdom, 'no_tent_camps')) continue;
                 // Count homeless adults with enough gold to chip in
-                var rtcPeople = _tickCache.peopleByTown[rtcTown.id] || [];
+                var rtcPeople = getPeopleInTown(rtcTown.id);
                 var homelessWithGold = [];
                 for (var _rpi = 0; _rpi < rtcPeople.length; _rpi++) {
                     var _rp = rtcPeople[_rpi];
@@ -29005,7 +29027,7 @@
         if (!town) return 1.0;
         var prodConfig = CONFIG.HOUSING_PRODUCTIVITY;
         if (!prodConfig) return 1.0;
-        var people = _tickCache.peopleByTown[town.id];
+        var people = getPeopleInTown(town.id);
         if (!people || people.length === 0) return 1.0;
         var totalMod = 0;
         var count = 0;
@@ -30333,7 +30355,7 @@
 
         // Kill 5-15% of population
         const killPct = rng.randFloat(0.05, 0.15);
-        const townPeople = (_tickCache.peopleByTown[town.id] || []);
+        const townPeople = getPeopleInTown(town.id);
         const toKill = Math.floor(townPeople.length * killPct);
         for (let i = 0; i < toKill && i < townPeople.length; i++) {
             if (rng.chance(killPct)) killPerson(townPeople[i], 'flood');
@@ -30383,7 +30405,7 @@
 
         // Kill population (reduced by water)
         const killPct = rng.randFloat(0.02, 0.08) * damageMultiplier;
-        const townPeople = (_tickCache.peopleByTown[town.id] || []);
+        const townPeople = getPeopleInTown(town.id);
         const toKill = Math.floor(townPeople.length * killPct);
         for (let i = 0; i < toKill && i < townPeople.length; i++) {
             if (rng.chance(killPct)) killPerson(townPeople[i], 'fire');
@@ -30817,7 +30839,7 @@
         let totalIncomeTax = 0;
 
         // Tax NPC citizens based on accumulated wealth (use cache)
-        const kPeople = _tickCache.peopleByKingdom[k.id] || [];
+        const kPeople = getPeopleInKingdom(k.id);
         for (var _tci = 0; _tci < kPeople.length; _tci++) {
             var c = kPeople[_tci];
             if (c.gold <= 10) continue;
@@ -31140,7 +31162,7 @@
             // 7. Emergency tax levy
             if (rng.chance(p.greed === 'greedy' || p.greed === 'corrupt' ? 0.6 : 0.2)) {
                 let levy = 0;
-                const citizens = (_tickCache.peopleByKingdom[k.id] || []).filter(c => c.gold > 20);
+                const citizens = getPeopleInKingdom(k.id).filter(c => c.gold > 20);
                 for (const c of citizens) {
                     const tax = Math.floor(c.gold * 0.05);
                     if (tax > 0) { c.gold -= tax; levy += tax; }
@@ -31561,7 +31583,7 @@
         for (var _gTid of k.territories) {
             var _gTown = findTown(_gTid);
             if (!_gTown) continue;
-            var _gPeople = (_tickCache.peopleByTown[_gTown.id] || []);
+            var _gPeople = getPeopleInTown(_gTown.id);
             for (var _gi = 0; _gi < _gPeople.length; _gi++) {
                 if (_gPeople[_gi].alive && _gPeople[_gi].occupation === 'guard') guardCount++;
             }
@@ -31914,7 +31936,7 @@
             }
             // Population flight — use killPerson for proper tracking
             const fleeing = Math.floor(town.population * rng.randFloat(0.05, 0.15));
-            var fleeablePeople = (_tickCache.peopleByTown[town.id] || []).filter(function(pp) { return pp.alive; });
+            var fleeablePeople = getPeopleInTown(town.id).filter(function(pp) { return pp.alive; });
             var shuffledFlee = rng.shuffle([...fleeablePeople]);
             var fled = 0;
             for (var fi = 0; fi < shuffledFlee.length && fled < fleeing; fi++) {
@@ -35462,6 +35484,8 @@
         findPerson(id) { return findPerson(id); },
         findPath(a, b, opts) { return findPath(a, b, opts); },
         findBuildingType(id) { return findBuildingType(id); },
+        getPeopleInTown(id) { return getPeopleInTown(id); },
+        getPeopleInKingdom(id) { return getPeopleInKingdom(id); },
         transferTown(townId, fromKingdomId, toKingdomId, method) { return transferTown(townId, fromKingdomId, toKingdomId, method); },
         logEvent(msg, details, category) { logEvent(msg, details, category); },
         getRng() { return world ? world.rng : null; },

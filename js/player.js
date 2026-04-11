@@ -342,6 +342,53 @@
         }
     }
 
+    // ════════════════════════════════════════════════════════
+    // §1A  SHARED UTILITY HELPERS
+    // Extracted from 50-100+ duplicated inline patterns.
+    // ════════════════════════════════════════════════════════
+
+    /**
+     * Check if the player can perform an action right now.
+     * @param {object} [opts] - { requireTown: townId, requireAlive: true, allowTravel: false, allowJail: false }
+     * @returns {null|{blocked:true, message:string}} null if OK, or block reason
+     */
+    function _checkCanAct(opts) {
+        opts = opts || {};
+        if (player.dead) return { blocked: true, message: 'You are dead.' };
+        if (!opts.allowTravel && player.traveling) return { blocked: true, message: 'Cannot do this while traveling.' };
+        var day = Engine.getDay ? Engine.getDay() : 0;
+        if (!opts.allowJail && player.jailedUntilDay && player.jailedUntilDay > day) return { blocked: true, message: 'You are in jail.' };
+        if (opts.requireTown && player.townId !== opts.requireTown) return { blocked: true, message: 'You are not in the right town.' };
+        return null;
+    }
+
+    /**
+     * Get player's current town and kingdom context.
+     * @param {string} [townId] - override town (defaults to player.townId)
+     * @returns {{town:object, kingdom:object}|{blocked:true, message:string}}
+     */
+    function _getContext(townId) {
+        var tid = townId || player.townId;
+        var town = Engine.findTown(tid);
+        if (!town) return { blocked: true, message: 'Town not found.' };
+        var kingdom = Engine.findKingdom(town.kingdomId);
+        if (!kingdom) return { blocked: true, message: 'Kingdom not found.' };
+        return { town: town, kingdom: kingdom };
+    }
+
+    /**
+     * Add qty of a resource to an inventory object. Handles missing keys.
+     * @param {object} inv - inventory hash (resId → qty)
+     * @param {string} resId - resource ID
+     * @param {number} qty - amount to add (can be negative to subtract)
+     * @returns {number} new quantity
+     */
+    function _modifyInventory(inv, resId, qty) {
+        inv[resId] = (inv[resId] || 0) + qty;
+        if (inv[resId] <= 0) { delete inv[resId]; return 0; }
+        return inv[resId];
+    }
+
     // ========================================================
     // §1B INJURY & ILLNESS TYPE DEFINITIONS
     // ========================================================
@@ -48224,6 +48271,12 @@
         playerConvertFarm,
         playerDemolishBuilding,
         logFinance,
+
+        // Shared utility helpers (H2 extraction)
+        checkCanAct: _checkCanAct,
+        getContext: _getContext,
+        modifyInventory: _modifyInventory,
+
         revitalizeTown,
         hireWorker,
         fireWorker,
