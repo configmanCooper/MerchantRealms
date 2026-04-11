@@ -4,6 +4,24 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.66.0] - 2026-04-11
+
+### Changed
+- **Aging System Overhaul**: 1 season = 1 year (90 game days)
+  - Year 1 Spring → Year 2 Summer → Year 3 Fall → Year 4 Winter, cycling
+  - Player starts at age 25 (was 18)
+  - All NPCs, elite merchants, and the player age 1 year per season
+- **Old-Age Death System**: Tiered death chance starting at age 40
+  - 40-49: 1% + 1% per year, 50-59: 11% + 2% per year, 60-69: 32% + 4% per year
+  - 70+: 95%, 75+: 99%, hard cap death at 100
+- **Pregnancy Duration**: Reduced to 60 days (was 270)
+- **All Time References Updated**: Tax exemptions, military service, guild memberships,
+  loan interest, indentured servitude, escape discovery, and all UI displays use
+  CONFIG.DAYS_PER_SEASON (90) instead of 360/365
+
+### Fixed
+- **Agent Hire Crash**: `rng.intBetween()` → `rng.randInt()` (14 instances), added `player.agents` init guard
+
 ## [0.65.1] - 2026-04-11
 
 ### Fixed
