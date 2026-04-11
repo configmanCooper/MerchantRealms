@@ -389,6 +389,84 @@
         return inv[resId];
     }
 
+    // ════════════════════════════════════════════════════════
+    // §1A.2  VALIDATED STATE SETTERS (C1)
+    // Canonical functions for modifying critical player state.
+    // Prevents NaN, undefined, and out-of-range values.
+    // ════════════════════════════════════════════════════════
+
+    /**
+     * Modify player gold by delta. Guards against NaN, logs to finance ledger.
+     * @param {number} delta - amount to add (negative to subtract)
+     * @param {string} [category] - finance category for logFinance
+     * @param {string} [desc] - description for logFinance
+     * @returns {number} new gold balance
+     */
+    function _modifyGold(delta, category, desc) {
+        if (!isFinite(delta) || isNaN(delta)) {
+            console.warn('_modifyGold: invalid delta', delta);
+            return player.gold;
+        }
+        player.gold += delta;
+        if (player.gold < 0) player.gold = 0;
+        if (category) logFinance(delta, category, desc || '');
+        if (delta > 0) player.stats.totalGoldEarned = (player.stats.totalGoldEarned || 0) + delta;
+        return player.gold;
+    }
+
+    /**
+     * Modify kingdom reputation. Clamps to 0-100.
+     * @param {string} kingdomId
+     * @param {number} delta
+     * @returns {number} new reputation value
+     */
+    function _modifyReputation(kingdomId, delta) {
+        if (!kingdomId || !isFinite(delta)) return player.reputation[kingdomId] || 0;
+        player.reputation[kingdomId] = Math.max(0, Math.min(100,
+            (player.reputation[kingdomId] || 50) + delta
+        ));
+        return player.reputation[kingdomId];
+    }
+
+    /**
+     * Modify town reputation. Clamps to 0-100.
+     * @param {string} townId
+     * @param {number} delta
+     * @returns {number} new town rep value
+     */
+    function _modifyTownRep(townId, delta) {
+        if (!townId || !isFinite(delta)) return (player.townReputation || {})[townId] || 0;
+        if (!player.townReputation) player.townReputation = {};
+        player.townReputation[townId] = Math.max(0, Math.min(100,
+            (player.townReputation[townId] || 50) + delta
+        ));
+        return player.townReputation[townId];
+    }
+
+    /**
+     * Set player's current town. Validates the town exists.
+     * @param {string} townId
+     * @returns {boolean} true if set
+     */
+    function _setTownId(townId) {
+        if (!townId) { console.warn('_setTownId: null townId'); return false; }
+        var town = Engine.findTown(townId);
+        if (!town) { console.warn('_setTownId: town not found:', townId); return false; }
+        player.townId = townId;
+        return true;
+    }
+
+    /**
+     * Modify player energy. Clamps to 0-maxEnergy.
+     * @param {number} delta
+     * @returns {number} new energy value
+     */
+    function _modifyEnergy(delta) {
+        if (!isFinite(delta)) return player.energy;
+        player.energy = Math.max(0, Math.min(player.maxEnergy || 100, player.energy + delta));
+        return player.energy;
+    }
+
     // ========================================================
     // §1B INJURY & ILLNESS TYPE DEFINITIONS
     // ========================================================
@@ -48276,6 +48354,13 @@
         checkCanAct: _checkCanAct,
         getContext: _getContext,
         modifyInventory: _modifyInventory,
+
+        // Validated state setters (C1)
+        modifyGold: _modifyGold,
+        modifyReputation: _modifyReputation,
+        modifyTownRep: _modifyTownRep,
+        setTownId: _setTownId,
+        modifyEnergy: _modifyEnergy,
 
         revitalizeTown,
         hireWorker,
