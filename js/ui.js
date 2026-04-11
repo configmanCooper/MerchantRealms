@@ -11186,6 +11186,93 @@ window.UI = (function () {
         openSettings(); // refresh the panel
     }
 
+    // Build a flat lookup of filter key → { label } from the filterDefs structure
+    function _getFilterDefsLookup() {
+        var lookup = {};
+        var defs = [
+            { key: 'my_actions', label: '🎯 My Actions', subs: [
+                { key: 'trade', label: '💰 Trades & Purchases' },
+                { key: 'travel', label: '🚶 Travel & Arrivals' },
+                { key: 'work', label: '⚒️ Work & Crafting' },
+                { key: 'social', label: '💍 Social & Family' },
+                { key: 'skills', label: '📚 Skills & Levels' },
+                { key: 'reputation', label: '⭐ Reputation & Standing' },
+            ]},
+            { key: 'my_business', label: '💼 My Business', subs: [
+                { key: 'caravan_dispatch', label: '🐪 Caravan Dispatch' },
+                { key: 'caravan_trades', label: '📦 Caravan Trades' },
+                { key: 'caravan_arrival', label: '🚩 Caravan Arrivals' },
+                { key: 'caravan_problems', label: '⚠️ Caravan Problems' },
+                { key: 'building_output', label: '🏭 Building Output' },
+                { key: 'workers', label: '👷 Worker Events' },
+                { key: 'agents', label: '🕵️ Agent Reports' },
+                { key: 'license', label: '📜 Licenses & Loans' },
+            ]},
+            { key: 'my_kingdom', label: '👑 My Kingdom', subs: [
+                { key: 'laws', label: '📋 Law Changes' },
+                { key: 'taxes', label: '💰 Tax Changes' },
+                { key: 'king', label: '👑 King & Court' },
+                { key: 'festivals', label: '🎉 Festivals & Events' },
+                { key: 'commissions', label: '📜 Royal Commissions' },
+                { key: 'political', label: '🏛️ Political Events' },
+            ]},
+            { key: 'local_town', label: '🏘️ Local Town', subs: [
+                { key: 'disasters', label: '🔥 Disasters' },
+                { key: 'infrastructure', label: '🏗️ Infrastructure' },
+                { key: 'resources', label: '⛏️ Resources & Wells' },
+                { key: 'population', label: '👥 Population Changes' },
+            ]},
+            { key: 'foreign_kingdoms', label: '🌍 Foreign Kingdoms', subs: [
+                { key: 'wars', label: '⚔️ Wars & Conflicts' },
+                { key: 'laws', label: '📋 Law Changes' },
+                { key: 'diplomacy', label: '🤝 Diplomacy & Treaties' },
+                { key: 'political', label: '🏛️ Political Events' },
+            ]},
+            { key: 'world_economy', label: '📈 World Economy', subs: [
+                { key: 'trade_craze', label: '📈 Trade Crazes' },
+                { key: 'embargo', label: '🚫 Embargoes' },
+                { key: 'price_control', label: '💲 Price Controls' },
+                { key: 'tariffs', label: '📊 Tariffs & Bounties' },
+            ]},
+            { key: 'military', label: '⚔️ Military/War', subs: [
+                { key: 'battles', label: '⚔️ Battles & Sieges' },
+                { key: 'troop_movements', label: '🚩 Troop Movements' },
+                { key: 'promotions', label: '🎖️ Promotions & Rank' },
+                { key: 'equipment', label: '🛡️ Equipment & Supply' },
+            ]},
+            { key: 'npc_activity', label: '👥 NPC Activity', subs: [
+                { key: 'elite_merchants', label: '🏪 Elite Merchant Actions' },
+                { key: 'npc_life', label: '👤 NPC Life Events' },
+            ]},
+            { key: 'travel_events', label: '🚶 Travel Events', subs: [
+                { key: 'foraging', label: '🌿 Foraging' },
+                { key: 'encounters', label: '🗺️ Terrain Encounters' },
+                { key: 'ambushes', label: '⚠️ Ambushes & Dangers' },
+            ]},
+            { key: 'illness', label: '🦠 Illness/Health', subs: [
+                { key: 'outbreaks', label: '🦠 Plague Outbreaks' },
+                { key: 'quarantine', label: '🔒 Quarantines' },
+                { key: 'health_policy', label: '🏥 Health Policy' },
+                { key: 'npc_deaths', label: '💀 NPC Deaths' },
+            ]},
+            { key: 'combat', label: '⚔️ Combat/Piracy', subs: [
+                { key: 'pirates', label: '🏴‍☠️ Pirates & Raids' },
+                { key: 'blockades', label: '⛵ Blockades' },
+                { key: 'bandits', label: '🗡️ Bandits & Ambushes' },
+            ]},
+        ];
+        for (var i = 0; i < defs.length; i++) {
+            lookup[defs[i].key] = { label: defs[i].label };
+            if (defs[i].subs) {
+                for (var j = 0; j < defs[i].subs.length; j++) {
+                    var fullKey = defs[i].key + '.' + defs[i].subs[j].key;
+                    lookup[fullKey] = { label: defs[i].subs[j].label };
+                }
+            }
+        }
+        return lookup;
+    }
+
     function showEventDetail(eventIndex) {
         var events = openEventLog._cachedEvents;
         if (!events || eventIndex >= events.length) return;
@@ -11231,6 +11318,50 @@ window.UI = (function () {
             }
         } else {
             html += '<div style="color:var(--text-dim);font-style:italic;">No additional details available for this event.</div>';
+        }
+
+        // ── Notification Filter Info & Mute Button ──
+        var evtCategory = event.category || 'local_town';
+        var evtMsg = event.message || event.description || '';
+        var filterInfo = null;
+        try { if (typeof Player !== 'undefined' && Player.getEventFilterInfo) filterInfo = Player.getEventFilterInfo(evtCategory, evtMsg); } catch(e) {}
+
+        if (filterInfo) {
+            var catLabel = evtCategory;
+            var subLabel = null;
+            var muteKey = evtCategory; // default: mute entire category
+            var muteLabel = catLabel;
+
+            // Look up human-readable labels from filterDefs
+            var _fdLookup = _getFilterDefsLookup();
+            if (_fdLookup[evtCategory]) catLabel = _fdLookup[evtCategory].label;
+            if (filterInfo.subKey && _fdLookup[filterInfo.subKey]) {
+                subLabel = _fdLookup[filterInfo.subKey].label;
+                muteKey = filterInfo.subKey;
+                muteLabel = subLabel;
+            } else if (filterInfo.subKey) {
+                // subKey exists but no label found — use the raw key as label
+                var _parts = filterInfo.subKey.split('.');
+                subLabel = _parts[_parts.length - 1].replace(/_/g, ' ');
+                subLabel = subLabel.charAt(0).toUpperCase() + subLabel.slice(1);
+                muteKey = filterInfo.subKey;
+                muteLabel = subLabel;
+            }
+
+            html += '<div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,215,0,0.15);">';
+            html += '<div style="color:var(--text-dim);font-size:0.85rem;margin-bottom:6px;">📂 ' + catLabel + (subLabel ? ' › ' + subLabel : '') + '</div>';
+
+            // Check current filter state
+            var filters = {};
+            try { if (typeof Player !== 'undefined' && Player.getNotificationFilters) filters = Player.getNotificationFilters(); } catch(e) {}
+            var isCurrentlyOff = filters[muteKey] === false;
+
+            if (isCurrentlyOff) {
+                html += '<button class="btn-action" style="font-size:0.85rem;padding:4px 12px;background:rgba(50,180,50,0.2);border-color:rgba(50,180,50,0.5);" onclick="Player.setNotifFilter(\'' + muteKey + '\', true);UI.showEventDetail(' + eventIndex + ');">🔔 Unmute ' + muteLabel + '</button>';
+            } else {
+                html += '<button class="btn-action" style="font-size:0.85rem;padding:4px 12px;background:rgba(180,50,50,0.2);border-color:rgba(180,50,50,0.5);" onclick="Player.setNotifFilter(\'' + muteKey + '\', false);UI.showEventDetail(' + eventIndex + ');">🔇 Mute ' + muteLabel + '</button>';
+            }
+            html += '</div>';
         }
 
         // Universal location button — check all possible townId sources
