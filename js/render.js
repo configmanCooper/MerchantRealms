@@ -310,7 +310,7 @@ window.Renderer = (function () {
         const dy = Math.abs(camera.y - lastTerrainCamY);
         // At low zoom, generous threshold since terrain cache has large margin tiles
         // At mid zoom (1.0-1.5), slightly increased threshold for perf
-        const panThreshold = camera.zoom < 0.5 ? 80 : camera.zoom < 0.7 ? 50 : camera.zoom < 1.0 ? 25 : camera.zoom < 1.5 ? 12 : 4;
+        const panThreshold = camera.zoom < 0.5 ? 200 : camera.zoom < 0.7 ? 140 : camera.zoom < 1.0 ? 80 : camera.zoom < 1.5 ? 12 : 4;
         if (dz > 0.005 || dx > panThreshold || dy > panThreshold) {
             terrainDirty = true;
         }
@@ -735,7 +735,7 @@ window.Renderer = (function () {
 
         if (needsRedraw) {
             // Render with overscroll margin so small pans are free (no redraw)
-            var marginTiles = camera.zoom < 0.5 ? 20 : camera.zoom < 0.7 ? 14 : camera.zoom < 1.0 ? 8 : camera.zoom < 1.5 ? 6 : 3;
+            var marginTiles = camera.zoom < 0.5 ? 40 : camera.zoom < 0.7 ? 28 : camera.zoom < 1.0 ? 16 : camera.zoom < 1.5 ? 6 : 3;
             var cSC = Math.max(0, startCol - marginTiles);
             var cEC = Math.min(terrainWidth - 1, endCol + marginTiles);
             var cSR = Math.max(0, startRow - marginTiles);
