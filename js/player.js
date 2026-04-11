@@ -10474,12 +10474,17 @@
         if (player._deathProcessing) return;
         player._deathProcessing = true;
 
+        // Ensure player is marked dead (some callers set alive=false before calling)
+        player.alive = false;
+
         // Early-game protection: no death in first 180 days
         var currentDay = (typeof Engine !== 'undefined' && Engine.getDay) ? Engine.getDay() : 9999;
         if (currentDay <= 180) {
             // Revive player instead of dying
             player.alive = true;
             player.health = Math.max(player.health || 0, 30);
+            if (player.hunger != null && player.hunger <= 0) player.hunger = 20;
+            if (player.thirst != null && player.thirst <= 0) player.thirst = 20;
             player.deathCause = null;
             player._deathProcessing = false;
             Engine.logEvent('🛡️ A kind stranger found you and nursed you back to health. You survived by sheer luck.');
@@ -10544,13 +10549,22 @@
             // Game over — no heirs at all
             if (!window._godInvincible) {
                 player.alive = false;
-                Engine.logEvent(player.fullName + ' has died with no heir. The legacy ends.');
+                var cause = player.deathCause || 'unknown causes';
+                Engine.logEvent(player.fullName + ' has died from ' + cause + ' with no heir. The legacy ends.');
                 // Show defeat screen immediately — don't wait for checkEndConditions tick
                 if (typeof Game !== 'undefined' && Game.setState) Game.setState('lost');
                 if (typeof UI !== 'undefined' && UI.showLoseScreen) {
-                    var cause = player.deathCause || 'unknown causes';
                     UI.showLoseScreen('No Heir');
                 }
+            } else {
+                // God mode: revive
+                player.alive = true;
+                player.health = Math.max(player.health || 0, 30);
+                if (player.hunger != null && player.hunger <= 0) player.hunger = 20;
+                if (player.thirst != null && player.thirst <= 0) player.thirst = 20;
+                player.deathCause = null;
+                player._deathProcessing = false;
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🛡️ God mode: death prevented!', 'info');
             }
         }
     }
@@ -13305,6 +13319,22 @@
             player.employees.push(plan.fianceId);
         }
 
+        // Spouse takes player's last name (unless keeps_maiden_name quirk)
+        var _keepsMaidenName = false;
+        if (person.quirks && Array.isArray(person.quirks)) {
+            for (var _kmi = 0; _kmi < person.quirks.length; _kmi++) {
+                if (person.quirks[_kmi] === 'keeps_maiden_name') { _keepsMaidenName = true; break; }
+            }
+        }
+        if (!_keepsMaidenName && person.sex === 'F' && player.lastName) {
+            person._maidenName = person.lastName;
+            person.lastName = player.lastName;
+            person.fullName = person.firstName + ' ' + player.lastName;
+        } else if (_keepsMaidenName) {
+            person._maidenName = person.lastName;
+            Engine.logEvent('💁 ' + person.firstName + ' has chosen to keep her maiden name.');
+        }
+
         // Relationship bonuses from choices
         var totalRelBonus = 20 + (venue.relBonus || 0) + (feast.relBonus || 0) + (vow.relBonus || 0);
         modifyRelationship(plan.fianceId, totalRelBonus, 'spouse');
@@ -14024,11 +14054,48 @@
                 if (town) town.population++;
                 player.pregnantDay = 0;
 
-                Engine.logEvent(`A child is born! ${childFirstName} ${player.lastName} joins the family.`);
-                autoJournalCapture('child', 'Our child ' + childFirstName + ' has come into this world. I am overwhelmed with joy.', { mood: 'triumphant' });
-                grantXP(XP_REWARDS.CHILD, 'child');
-                if (typeof UI !== 'undefined' && UI.toast) {
-                    UI.toast(`🍼 A child is born! Welcome ${childFirstName}!`, 'success', 'my_actions');
+                // Check if spouse has names_children quirk
+                var _spouseNamesChild = false;
+                var _spouseQuirks = spouse ? (spouse.quirks || []) : [];
+                for (var _snci = 0; _snci < _spouseQuirks.length; _snci++) {
+                    if (_spouseQuirks[_snci] === 'names_children') { _spouseNamesChild = true; break; }
+                }
+
+                if (_spouseNamesChild) {
+                    // Spouse names the child — no choice for player
+                    Engine.logEvent('A child is born! ' + spouse.firstName + ' has named ' + (childSex === 'M' ? 'him' : 'her') + ' ' + childFirstName + ' ' + player.lastName + '.');
+                    autoJournalCapture('child', spouse.firstName + ' insisted on naming our child ' + childFirstName + '. I had no say in the matter.', { mood: 'mixed' });
+                    grantXP(XP_REWARDS.CHILD, 'child');
+                    if (typeof UI !== 'undefined' && UI.toast) {
+                        UI.toast('🍼 ' + spouse.firstName + ' named your child ' + childFirstName + '!', 'info', 'my_actions');
+                    }
+                } else {
+                    // Show child naming UI — let player choose
+                    // Generate spouse suggestion (different from auto-picked name)
+                    var spouseSuggestion = childFirstName;
+                    var _sugPool = childSex === 'M' ? NAMES.male : NAMES.female;
+                    var _sugAttempts = 0;
+                    while (_sugAttempts < 20) {
+                        var _sugName = rng.pick(_sugPool);
+                        if (_sugName !== childFirstName && !existingNames.has(_sugName)) {
+                            spouseSuggestion = _sugName;
+                            break;
+                        }
+                        _sugAttempts++;
+                    }
+                    // Pause the game for naming
+                    if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(0);
+                    if (typeof UI !== 'undefined' && UI.showChildNamingDialog) {
+                        UI.showChildNamingDialog(child.id, childSex, spouseSuggestion, spouse ? spouse.firstName : null);
+                    } else {
+                        // Fallback: use auto-generated name
+                        Engine.logEvent('A child is born! ' + childFirstName + ' ' + player.lastName + ' joins the family.');
+                        autoJournalCapture('child', 'Our child ' + childFirstName + ' has come into this world. I am overwhelmed with joy.', { mood: 'triumphant' });
+                        grantXP(XP_REWARDS.CHILD, 'child');
+                        if (typeof UI !== 'undefined' && UI.toast) {
+                            UI.toast('🍼 A child is born! Welcome ' + childFirstName + '!', 'success', 'my_actions');
+                        }
+                    }
                 }
             }
             return; // Already pregnant — skip conception check
@@ -15668,6 +15735,53 @@
     // ========================================================
     // §11.6C TRY FOR BABY
     // ========================================================
+
+    /**
+     * Confirm a child's name from the naming UI.
+     * Called by UI.showChildNamingDialog when player picks or types a name.
+     * @param {string} childId - The child NPC's ID
+     * @param {string} chosenName - The name the player chose
+     * @param {boolean} usedSpouseSuggestion - Whether the player used the spouse's suggestion
+     */
+    function confirmChildName(childId, chosenName, usedSpouseSuggestion) {
+        if (!childId || !chosenName) return;
+        var child = Engine.findPerson(childId);
+        if (!child) return;
+
+        // Sanitize and apply name
+        chosenName = chosenName.trim();
+        if (chosenName.length === 0) chosenName = child.firstName; // fallback to auto-generated
+        if (chosenName.length > 20) chosenName = chosenName.substring(0, 20);
+
+        child.firstName = chosenName;
+        child.fullName = chosenName + ' ' + (child.lastName || player.lastName);
+
+        // Update familyMembers entry
+        if (player.familyMembers) {
+            for (var i = 0; i < player.familyMembers.length; i++) {
+                if (player.familyMembers[i].npcId === childId) {
+                    player.familyMembers[i].name = child.fullName;
+                    break;
+                }
+            }
+        }
+
+        // Spouse suggestion bonus: +10 relationship
+        if (usedSpouseSuggestion && player.spouseId) {
+            modifyRelationship(player.spouseId, 10, 'spouse');
+            var spouse = Engine.findPerson(player.spouseId);
+            var spouseName = spouse ? spouse.firstName : 'Your spouse';
+            Engine.logEvent('❤️ ' + spouseName + ' is delighted you chose ' + (spouse && spouse.sex === 'F' ? 'her' : 'his') + ' suggested name!');
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('❤️ ' + spouseName + ' loves the name! (+10 relationship)', 'success', 'my_actions');
+        }
+
+        Engine.logEvent('A child is born! ' + child.fullName + ' joins the family.');
+        autoJournalCapture('child', 'Our child ' + chosenName + ' has come into this world. I am overwhelmed with joy.', { mood: 'triumphant' });
+        grantXP(XP_REWARDS.CHILD, 'child');
+        if (typeof UI !== 'undefined' && UI.toast) {
+            UI.toast('🍼 Welcome ' + child.fullName + '!', 'success', 'my_actions');
+        }
+    }
 
     /**
      * Calculate pregnancy chance and attempt conception.
@@ -26676,20 +26790,50 @@
     }
 
     function tickRelationships() {
-        // Decay relationships for people not in same town
+        // Tiered passive relationship decay for ALL relationships
+        // Tiers: 20-60 very slow, 60-80 moderate, 80-100 faster
+        // Family (spouse/child) decays at half rate but still decays
         for (const personId in player.relationships) {
             const person = Engine.findPerson(personId);
             if (!person || !person.alive) continue;
-            if (person.townId !== player.townId) {
-                const rel = player.relationships[personId];
-                if (rel.type !== 'spouse' && rel.type !== 'child') {
-                    const decayRate = hasSkill('smooth_talker') ? CONFIG.RELATIONSHIP_DECAY * 0.5 : CONFIG.RELATIONSHIP_DECAY;
-                    rel.level = Math.max(0, rel.level - decayRate);
-                }
+            const rel = player.relationships[personId];
+            if (rel.level <= 0) continue;
+
+            // No decay below 20 — baseline relationships are stable
+            if (rel.level <= 20) continue;
+
+            var isFamily = (rel.type === 'spouse' || rel.type === 'child');
+            var sameTown = (person.townId === player.townId);
+
+            // Base decay rate depends on relationship level tier
+            var baseDecay = 0;
+            if (rel.level > 80) {
+                baseDecay = 0.3;   // High relationships are hard to maintain
+            } else if (rel.level > 60) {
+                baseDecay = 0.15;  // Moderate decay
+            } else {
+                baseDecay = 0.05;  // Very slow decay (20-60 range)
             }
+
+            // Same town reduces decay significantly (but doesn't eliminate it for high levels)
+            if (sameTown) {
+                baseDecay *= 0.2;  // 80% reduction when nearby
+            }
+
+            // Family modifier — slower decay but still present
+            if (isFamily) {
+                baseDecay *= 0.5;
+            }
+
+            // Skill: smooth_talker halves decay
+            if (hasSkill('smooth_talker')) {
+                baseDecay *= 0.5;
+            }
+
+            rel.level = Math.max(0, rel.level - baseDecay);
         }
 
-        // Noble relationship passive drain (every 30 days)
+        // Noble relationship ADDITIONAL passive drain (every 30 days)
         var _day = 0;
         try { _day = Engine.getDay(); } catch(e) {}
         if (_day > 0 && _day % 30 === 0) {
@@ -28625,8 +28769,8 @@
         if (p.smugglingSkill >= 20) unlockAchievement('crime_pays');
 
         // Legacy
-        if (p.age >= 60) unlockAchievement('old_age');
-        if (p.age >= 75) unlockAchievement('ripe_old_age');
+        if (p.age >= 40) unlockAchievement('seasoned_merchant');
+        if (p.age >= 60) unlockAchievement('ripe_old_age');
         if ((s.generation || 1) >= 2) unlockAchievement('second_generation');
         if ((s.generation || 1) >= 3) unlockAchievement('dynasty');
 
@@ -28657,13 +28801,12 @@
 
         // ── New Tiered Achievements ──
 
-        // Bronze: bandit_survivor, burgher_rank, adulthood, first_hundred (gold earned)
-        if (p.age >= 25) unlockAchievement('adulthood');
+        // Bronze: bandit_survivor, burgher_rank, prime_of_life (age 30), first_hundred (gold earned)
+        if (p.age >= 30) unlockAchievement('prime_of_life');
         if (citizenRank >= 2) unlockAchievement('burger_rank');
         if (p.stats.totalGoldEarned >= 100) unlockAchievement('first_hundred');
 
-        // Silver: escape indentured servitude (social_climber already handled above)
-        // Silver: old_age at 40 already handled
+        // Silver: seasoned_merchant (age 40) already handled above
 
         // Gold: Infrastructure Lobbyist (3 road/sea route petitions approved)
         var pt = p._platinumTracking || {};
@@ -28809,11 +28952,13 @@
             if (!player._lastStarveTick || Engine.getDay() > player._lastStarveTick) {
                 player._lastStarveTick = Engine.getDay();
                 player.health = Math.max(0, (player.health || 100) - (HUNGER_CONFIG.STARVING_HEALTH_LOSS || 1));
-                if (player.health <= 0 && player.alive) {
-                    if (typeof UI !== 'undefined' && UI.toast) {
-                        UI.toast('💀 You have died of starvation!', 'danger');
-                    }
+                if (player.health <= 0 && player.alive && !window._godInvincible) {
                     player.deathCause = 'starvation';
+                    Engine.logEvent('💀 ' + player.fullName + ' has died of starvation.');
+                    if (typeof UI !== 'undefined' && UI.toast) {
+                        UI.toast('💀 You have died of starvation!', 'danger', 'critical');
+                    }
+                    player.alive = false;
                     if (typeof handlePlayerDeath === 'function') handlePlayerDeath();
                 }
             }
@@ -28837,9 +28982,10 @@
                     if (player.health <= 0 && player.alive && !window._godInvincible) {
                         var cause = (player.hunger < 10 && player.thirst < 10) ? 'starvation and dehydration' : (player.hunger < 10 ? 'starvation' : 'dehydration');
                         Engine.logEvent('💀 ' + player.fullName + ' died from ' + cause + '.');
-                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('☠️ Died from ' + cause + '!', 'danger', 'critical');
+                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('💀 Died from ' + cause + '!', 'danger', 'critical');
                         player.deathCause = cause;
-                        if (typeof handlePlayerDeath === 'function') handlePlayerDeath(cause);
+                        player.alive = false;
+                        if (typeof handlePlayerDeath === 'function') handlePlayerDeath();
                     }
                 }
             }
@@ -38555,11 +38701,13 @@
                 if (!player._lastDehydrateTick || Engine.getDay() > player._lastDehydrateTick) {
                     player._lastDehydrateTick = Engine.getDay();
                     player.health = Math.max(0, (player.health || 100) - 2);
-                    if (player.health <= 0 && player.alive) {
-                        if (typeof UI !== 'undefined' && UI.toast) {
-                            UI.toast('💀 You have died of dehydration!', 'danger');
-                        }
+                    if (player.health <= 0 && player.alive && !window._godInvincible) {
                         player.deathCause = 'dehydration';
+                        Engine.logEvent('💀 ' + player.fullName + ' has died of dehydration.');
+                        if (typeof UI !== 'undefined' && UI.toast) {
+                            UI.toast('💀 You have died of dehydration!', 'danger', 'critical');
+                        }
+                        player.alive = false;
                         if (typeof handlePlayerDeath === 'function') handlePlayerDeath();
                     }
                 }
@@ -48849,6 +48997,7 @@
         tickSpouseAI,
         getSpouseStatus,
         tryForBaby,
+        confirmChildName,
         getTryForBabyChance,
         askSpouseToTrade,
         askSpouseToManage,

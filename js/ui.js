@@ -11659,6 +11659,10 @@ window.UI = (function () {
         bodyHtml += '</div>';
 
         openModal('💸 Bankruptcy', bodyHtml, '');
+
+        // Hide close button — player MUST choose a bankruptcy option (like encounters)
+        var closeBtn = document.getElementById('btnCloseModal');
+        if (closeBtn) closeBtn.style.display = 'none';
     }
 
     function showGuildLoanDialog() {
@@ -11743,6 +11747,8 @@ window.UI = (function () {
         var result = Player.acceptGuildLoan(guildId);
         if (result.success) {
             _bankruptcyLock = false;
+            var closeBtn = document.getElementById('btnCloseModal');
+            if (closeBtn) closeBtn.style.display = '';
             closeModal();
             // Resume game
             if (typeof Game !== 'undefined' && Game.setSpeed) {
@@ -11763,6 +11769,8 @@ window.UI = (function () {
         // guild_loan is handled by showGuildLoanDialog, don't close/resume here
         if (choice === 'guild_loan') return;
         _bankruptcyLock = false;
+        var closeBtn = document.getElementById('btnCloseModal');
+        if (closeBtn) closeBtn.style.display = '';
         closeModal();
         // Resume game
         if (typeof Game !== 'undefined' && Game.setSpeed) {
@@ -18424,6 +18432,8 @@ window.UI = (function () {
 
     function backToMainMenu() {
         _bankruptcyLock = false; // Clear lock when returning to main menu
+        var closeBtn = document.getElementById('btnCloseModal');
+        if (closeBtn) closeBtn.style.display = ''; // Restore close button
         // Hide kingdom select screen and return to title screen
         const screen = document.getElementById('kingdomSelectScreen');
         if (screen) { screen.classList.add('hidden'); screen.style.display = 'none'; }
@@ -27300,6 +27310,83 @@ window.UI = (function () {
         }
     }
 
+    // ========================================================
+    // CHILD NAMING DIALOG
+    // ========================================================
+    function showChildNamingDialog(childId, childSex, spouseSuggestion, spouseFirstName) {
+        var genderLabel = childSex === 'M' ? 'son' : 'daughter';
+        var genderIcon = childSex === 'M' ? '👶🏻' : '👶🏻';
+        var html = '';
+        html += '<div style="text-align:center;padding:10px 0;">';
+        html += '<div style="font-size:48px;margin-bottom:8px;">🍼</div>';
+        html += '<p style="font-size:16px;color:#ff9;margin-bottom:4px;">A ' + genderLabel + ' is born!</p>';
+        html += '<p style="color:#ccc;font-size:13px;margin-bottom:16px;">Choose a name for your child:</p>';
+        html += '</div>';
+
+        // Name input
+        html += '<div style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:0 20px;">';
+        html += '<input id="childNameInput" type="text" maxlength="20" placeholder="Enter a name..." ';
+        html += 'style="width:100%;max-width:280px;padding:10px 14px;font-size:16px;border:2px solid #555;border-radius:6px;';
+        html += 'background:#1a1a1a;color:#fff;text-align:center;outline:none;font-family:inherit;" ';
+        html += 'onfocus="this.style.borderColor=\'#ff9\'" onblur="this.style.borderColor=\'#555\'">';
+
+        // Spouse suggestion
+        if (spouseFirstName && spouseSuggestion) {
+            html += '<div style="margin-top:4px;">';
+            html += '<button onclick="document.getElementById(\'childNameInput\').value=\'' + spouseSuggestion.replace(/'/g, "\\'") + '\';';
+            html += 'this.style.background=\'#2a4a2a\';this.style.borderColor=\'#5a5\';this.textContent=\'✓ ' + spouseFirstName.replace(/'/g, "\\'") + ' suggests: ' + spouseSuggestion.replace(/'/g, "\\'") + '\';" ';
+            html += 'style="padding:8px 16px;background:#2a2a3a;border:1px solid #55a;border-radius:4px;color:#aaf;cursor:pointer;font-size:13px;';
+            html += 'transition:all 0.2s;" onmouseover="this.style.background=\'#3a3a4a\'" onmouseout="if(!this.textContent.startsWith(\'✓\'))this.style.background=\'#2a2a3a\'">';
+            html += '💬 ' + spouseFirstName + ' suggests: <strong>' + spouseSuggestion + '</strong>';
+            html += '</button>';
+            html += '<div style="font-size:11px;color:#888;margin-top:4px;">Using this name will make ' + spouseFirstName + ' happy (+10 ❤️)</div>';
+            html += '</div>';
+        }
+
+        // Confirm button
+        html += '<button onclick="UI._confirmChildName(\'' + childId + '\', \'' + (spouseSuggestion || '').replace(/'/g, "\\'") + '\')" ';
+        html += 'style="margin-top:8px;padding:10px 32px;background:#3a5a3a;border:2px solid #5a5;border-radius:6px;color:#fff;';
+        html += 'cursor:pointer;font-size:15px;font-weight:bold;transition:all 0.2s;" ';
+        html += 'onmouseover="this.style.background=\'#4a6a4a\'" onmouseout="this.style.background=\'#3a5a3a\'">';
+        html += '✅ Name My Child</button>';
+
+        html += '</div>';
+
+        openModal('🍼 Name Your Child', html, '');
+
+        // Hide close button — must name the child
+        var closeBtn = document.querySelector('#modal .modal-close, #modal [onclick*="closeModal"]');
+        if (!closeBtn) closeBtn = document.getElementById('btnCloseModal');
+        if (closeBtn) closeBtn.style.display = 'none';
+
+        // Focus the input after a brief delay
+        setTimeout(function() {
+            var inp = document.getElementById('childNameInput');
+            if (inp) inp.focus();
+        }, 100);
+    }
+
+    function _confirmChildName(childId, spouseSuggestion) {
+        var inp = document.getElementById('childNameInput');
+        var chosenName = inp ? inp.value.trim() : '';
+        if (!chosenName) {
+            if (inp) { inp.style.borderColor = '#f55'; inp.placeholder = 'Please enter a name!'; }
+            return;
+        }
+
+        var usedSpouseSuggestion = (spouseSuggestion && chosenName === spouseSuggestion);
+
+        // Restore close button and close modal
+        var closeBtn = document.getElementById('btnCloseModal');
+        if (closeBtn) closeBtn.style.display = '';
+        closeModal();
+
+        // Call Player.confirmChildName
+        if (typeof Player !== 'undefined' && Player.confirmChildName) {
+            Player.confirmChildName(childId, chosenName, usedSpouseSuggestion);
+        }
+    }
+
     // Check if player's town was just conquered - hook into event updates
     var _lastConquestCheckDay = -1;
     function checkConquestEvents() {
@@ -30969,6 +31056,8 @@ window.UI = (function () {
         payDebt,
         showHeirSelectionUI,
         confirmHeirSelection,
+        showChildNamingDialog,
+        _confirmChildName,
         openSpousePanel,
         tryForBaby,
         spouseInteraction,

@@ -3586,7 +3586,8 @@ const ACHIEVEMENTS = {
 
     // ── Legacy & Survival (5) ──
     survivor:            { name: 'Survivor',            desc: 'Survive a combat encounter.',                     xp: 30 , tier: 'bronze', icon: '🛡️', category: 'legacy' },
-    old_age:             { name: 'Old Age',             desc: 'Reach age 40.',                                   xp: 80 , tier: 'silver', icon: '👴', category: 'legacy' },
+    prime_of_life:       { name: 'Prime of Life',       desc: 'Reach age 30.',                                   xp: 30 , tier: 'bronze', icon: '🎂', category: 'legacy' },
+    seasoned_merchant:   { name: 'Seasoned Merchant',   desc: 'Reach age 40.',                                   xp: 80 , tier: 'silver', icon: '👴', category: 'legacy' },
     ripe_old_age:        { name: 'Ripe Old Age',        desc: 'Reach age 60.',                                   xp: 165, tier: 'gold', icon: '🧓', category: 'legacy' },
     second_generation:   { name: 'Second Generation',   desc: 'Play as your heir.',                              xp: 100, tier: 'silver', icon: '👶', category: 'legacy' },
     dynasty:             { name: 'Dynasty',             desc: 'Play as a third-generation heir.',                xp: 185, tier: 'gold', icon: '🏰', category: 'legacy' },
@@ -3655,7 +3656,6 @@ const ACHIEVEMENTS = {
     wartime_merchant:    { name: 'Wartime Merchant',    desc: 'Trade in 3+ towns during wartime.',                             xp: 85,  tier: 'silver', icon: '⚔️', category: 'trading' },
     healer:              { name: 'Healer',              desc: 'Self-treat 10 injuries or illnesses.',                          xp: 80,  tier: 'silver', icon: '💊', category: 'legacy' },
     travel_companion:    { name: 'Travel Companion',    desc: 'Travel with family members 5 times.',                           xp: 75,  tier: 'silver', icon: '👨‍👩‍👧', category: 'social' },
-    adulthood:           { name: 'Adulthood',           desc: 'Reach age 25.',                                                 xp: 75,  tier: 'silver', icon: '🎂', category: 'legacy' },
     feast_socialite:     { name: 'Feast Socialite',     desc: 'Use all 9 actions in a single feast.',                          xp: 85,  tier: 'silver', icon: '🥂', category: 'social' },
     feast_schemer:       { name: 'Feast Schemer',       desc: 'Successfully spread rumors at a feast without getting caught.',  xp: 95,  tier: 'silver', icon: '🗡️', category: 'underworld' },
     witness_revolt:      { name: 'Witness to History',  desc: 'Be in a town when a revolt breaks out.',                        xp: 85,  tier: 'silver', icon: '🔥', category: 'kingdom' },
@@ -4417,6 +4417,8 @@ const SPOUSE_QUIRKS = [
     { id: 'hoarder', name: 'Hoarder', icon: '📦', positive: false, effect: 'Stockpiles 10% of produced goods, reducing sellable inventory', heirEffect: 'No effect', workerMod: -0.10, workerDesc: '-10% output (hoards materials)' },
     { id: 'low_fertility', name: 'Low Fertility', icon: '🥀', positive: false, effect: 'Conception takes much longer (~100 days avg)', heirEffect: 'May inherit low fertility', workerMod: 0, workerDesc: 'No worker effect' },
     { id: 'infertile', name: 'Infertile', icon: '🚫', positive: false, effect: 'Cannot have children', heirEffect: 'No children possible', rare: true, workerMod: 0, workerDesc: 'No worker effect' },
+    { id: 'names_children', name: 'Names the Children', icon: '✍️', positive: false, effect: 'Insists on naming children — you get no say', heirEffect: 'No effect', workerMod: 0, workerDesc: 'No worker effect' },
+    { id: 'keeps_maiden_name', name: 'Keeps Maiden Name', icon: '💁', positive: false, effect: 'Refuses to take your last name on marriage', heirEffect: 'No effect', workerMod: 0, workerDesc: 'No worker effect' },
 ];
 
 // ============================================================

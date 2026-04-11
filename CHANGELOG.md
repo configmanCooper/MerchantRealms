@@ -4,6 +4,28 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.68.0] - Life Systems & Bug Fixes
+
+### Fixed
+- **Bankruptcy Modal**: X button can no longer close the bankruptcy dialog — must choose an option, go to main menu, or save/load
+- **Starvation/Dehydration Death**: Deaths from starvation or dehydration now properly trigger the heir selection UI (or defeat screen if no heirs). Fixed god mode revival for all death paths. Added `!window._godInvincible` guard to all death paths. Set `player.alive = false` before calling `handlePlayerDeath()` to prevent repeated death toasts.
+- **Age Achievement Mismatches**: Old age check was at 60 instead of 40, ripe old age was at 75 instead of 60 — now correctly aligned
+
+### Changed
+- **Relationship Decay Overhaul**: All relationships now decay passively (including spouse and children). Tiered system: 20-60 very slow (0.05/day), 60-80 moderate (0.15/day), 80-100 faster (0.3/day). Same-town reduces decay by 80%. Family relationships decay at half rate. `smooth_talker` skill still halves decay. Relationships below 20 are stable (no decay).
+- **Age Achievements Reworked**: `adulthood` (25) → `prime_of_life` (30, bronze). `old_age` (40) → `seasoned_merchant` (40, silver). `ripe_old_age` kept at 60, gold tier. Save migration converts old achievement IDs.
+
+### Added
+- **Child Naming UI**: When a child is born, game pauses and shows a naming dialog. Spouse suggests a name — choosing it grants +10 relationship bonus. Text input with 20-char limit.
+- **Spouse Last Name Change**: Female spouses take the player's last name on marriage. Maiden name stored in `_maidenName` field.
+- **Spouse Quirk: Names the Children** (`names_children`): Spouse insists on naming children — player gets no choice
+- **Spouse Quirk: Keeps Maiden Name** (`keeps_maiden_name`): Spouse refuses to take player's last name on marriage
+- **Early-game death protection**: Now also restores hunger/thirst to 20 when reviving (prevents immediate re-death)
+- **God mode death protection**: Revives player with health 30, hunger/thirst 20 when god mode is active
+
+### Internal
+- Save version bumped to 5 (migration: renames `adulthood` → `prime_of_life`, `old_age` → `seasoned_merchant` in achievements)
+
 ## [0.67.0] - 2026-04-11
 
 ### Added

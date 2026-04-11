@@ -1367,7 +1367,7 @@ window.Game = (function () {
     //  Runs before deserialize to ensure data shape is current.
     // ═══════════════════════════════════════════════════════════
 
-    const CURRENT_SAVE_VERSION = 4;
+    const CURRENT_SAVE_VERSION = 5;
 
     const SAVE_MIGRATIONS = {
         // v3 → v4: Add notification filter defaults, ensure agents array
@@ -1378,8 +1378,16 @@ window.Game = (function () {
                 if (!data.player._notifSubKeys) data.player._notifSubKeys = {};
             }
         },
+        // v4 → v5: Rename age achievements (adulthood→prime_of_life, old_age→seasoned_merchant)
+        4: function(data) {
+            if (data.player && data.player.achievements) {
+                var ach = data.player.achievements;
+                if (ach.adulthood && !ach.prime_of_life) { ach.prime_of_life = ach.adulthood; delete ach.adulthood; }
+                if (ach.old_age && !ach.seasoned_merchant) { ach.seasoned_merchant = ach.old_age; delete ach.old_age; }
+            }
+        },
         // Future migrations go here:
-        // 4: function(data) { ... },
+        // 5: function(data) { ... },
     };
 
     function _migrateSaveData(data) {
@@ -2118,7 +2126,7 @@ window.Game = (function () {
 
             // 3. Game metadata
             debugData.meta = {
-                gameVersion: 'v0.67.0',
+                gameVersion: 'v0.68.0',
                 saveVersion: 3,
                 timestamp: new Date().toISOString(),
                 userAgent: navigator.userAgent,
