@@ -22626,7 +22626,11 @@
             m.includes('royal advisor') || m.includes('exiled') || m.includes('imprisoned') ||
             m.includes('stripped') || m.includes('execution') || m.includes('overthrown') ||
             m.includes('coup') || m.includes('border dispute') || m.includes('trade agreement') ||
-            m.includes('white peace') || m.includes('sues for peace') || m.includes('surrenders')) {
+            m.includes('white peace') || m.includes('sues for peace') || m.includes('surrenders') ||
+            m.includes('nationalized') || m.includes('elevated to') || m.includes('claimant') ||
+            m.includes('throne') || m.includes('tent camp') || m.includes('no tent camps') ||
+            m.includes('the king of') || m.includes('shelter the homeless') ||
+            m.includes('displeased') || m.includes('personal commission')) {
             return isMyKingdom() ? 'my_kingdom' : 'foreign_kingdoms';
         }
 
@@ -22643,7 +22647,9 @@
         // Illness/quarantine/disease
         if (dtype === 'quarantine' || dtype === 'disease' || dtype === 'epidemic' ||
             m.includes('quarantine') || m.includes('epidemic') || m.includes('disease spread') ||
-            m.includes('infection') || m.includes('outbreak') || m.includes('sick')) {
+            m.includes('infection') || m.includes('outbreak') || m.includes('sick') ||
+            m.includes('sought treatment') || m.includes('hospital') || m.includes('clinic') ||
+            m.includes('plague doctor')) {
             return 'illness';
         }
 
@@ -22685,6 +22691,9 @@
             m.includes('passengers') || m.includes('transport') ||
             m.includes('auto-disband') || m.includes('overflow') ||
             m.includes('guarding your') || m.includes('commissioned a ') ||
+            m.includes('retired from work') || m.includes('quit over wages') ||
+            m.includes('returned from training') || m.includes('privateer') ||
+            m.includes('outpost') ||
             m.includes('building') && (m.includes('completed') || m.includes('constructed'))) {
             return 'my_business';
         }
@@ -22725,7 +22734,9 @@
             m.includes('completed in') || m.includes('put a ') ||
             m.includes('for sale') || m.includes('population') ||
             m.includes('migrat') || m.includes('road ') || m.includes('bridge ') ||
-            m.includes('well ') || m.includes('vein') || m.includes('deposit')) {
+            m.includes('well ') || m.includes('vein') || m.includes('deposit') ||
+            m.includes('new road') || m.includes('road between') || m.includes('protests in') ||
+            m.includes('abandoned due to') || m.includes('demolished')) {
             return 'local_town';
         }
 
