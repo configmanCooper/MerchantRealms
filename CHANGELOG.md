@@ -4,6 +4,23 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.66.2] - 2026-04-11
+
+### Added
+- **Event Mute/Unmute Button**: Click any event in the Event Log to see details, with a mute/unmute button to toggle that notification category or sub-type directly
+- **Caravan Trades Sub-Filter**: Separate notification filter for caravan buy/sell/pickup/store messages (under My Business), distinct from caravan arrivals
+- **Full-Scene Overlay Cache**: At zoom < 1.0x, territories/roads/towns/caravans are cached on an offscreen canvas with 110% margin — panning is essentially free (single drawImage blit)
+- **Zoom Stability Detection**: Scene cache only engages after zoom stabilizes (~200ms), preventing expensive rebuilds during zoom transitions
+
+### Changed
+- **Snappier Camera**: Zoom lerp increased (0.12 → 0.375 normal, 0.5625 at low zoom), pan lerp increased (0.12 → 0.3), both with snap thresholds to eliminate drift
+- **Terrain Cache Optimized**: Doubled margin tiles and nearly tripled pan thresholds at low zoom for fewer redraws during panning
+- **Mid-Zoom Performance** (1.0x-1.5x): Increased terrain margins, skip fertility/deposits/survey overlays
+
+### Fixed
+- **Notification Filter Bypass**: Massively expanded inferEventCategory() from ~30 to 150+ patterns; added explicit categories to 90+ high-traffic logEvent calls
+- **Sub-Type Detection Refactor**: Extracted _detectEventSubKey() as single source of truth, eliminating code duplication in shouldShowNotification()
+
 ## [0.66.1] - 2026-04-11
 
 ### Added
