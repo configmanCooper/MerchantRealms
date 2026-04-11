@@ -10964,62 +10964,400 @@
     // §11.5B PLAYER BECOMES KING
     // ========================================================
     function becomeKing(kingdomId) {
-        const kingdom = Engine.findKingdom(kingdomId);
+        var kingdom = Engine.findKingdom(kingdomId);
         if (!kingdom) return;
-        const kingdomName = kingdom.name || 'the Kingdom';
+        var kingdomName = kingdom.name || 'the Kingdom';
 
         // Award achievement
         unlockAchievement('crowned_king');
 
-        // Transfer ALL player buildings to kingdom ownership
-        for (const bld of player.buildings) {
-            bld.ownerId = null; // kingdom-owned
-        }
-        // Transfer all caravans to kingdom
-        player.caravans = [];
-        // Add player gold to kingdom treasury
+        // Set king mode
+        player.isKing = true;
+        player.kingState = {
+            kingdomId: kingdomId,
+            coronationDay: Engine.getDay(),
+            assassinationRisk: 0,
+            revoltRisk: 0,
+            foreignVisitTarget: null,
+            courtHeldDay: 0,
+            feastHeldDay: 0,
+            decreesIssued: 0,
+            warsStarted: 0,
+            peacesMade: 0
+        };
+
+        // Set social rank to king (7)
+        player.socialRank[kingdomId] = 7;
+        player.rankSince[kingdomId] = Engine.getDay();
+        player.isNoble = true;
+
+        // Transfer personal gold to kingdom treasury
         kingdom.gold = (kingdom.gold || 0) + player.gold;
+        var transferredGold = player.gold;
         player.gold = 0;
 
-        // Create the player as an NPC king in the world
-        const world = Engine.getWorld();
-        if (world) {
-            const playerPerson = world.people.find(p =>
-                p.alive && p.firstName === player.firstName && p.lastName === player.lastName
-            );
+        // Transfer player buildings to kingdom ownership
+        var transferredBuildings = 0;
+        for (var _bki = 0; _bki < player.buildings.length; _bki++) {
+            player.buildings[_bki].ownerId = null; // kingdom-owned
+            transferredBuildings++;
+        }
+        player.buildings = [];
+        player.caravans = [];
+
+        // Install player as king in the world
+        var w = Engine.getWorld();
+        if (w) {
+            var playerPerson = w.people.find(function(p) {
+                return p.alive && p.firstName === player.firstName && p.lastName === player.lastName;
+            });
             if (playerPerson) {
-                playerPerson.occupation = 'noble';
+                playerPerson.occupation = player.sex === 'F' ? 'reigning_queen' : 'king';
+                if (!playerPerson.socialRank) playerPerson.socialRank = {};
+                playerPerson.socialRank[kingdomId] = 7;
                 kingdom.king = playerPerson.id;
-                Engine.installNewKing(kingdomId, playerPerson.id);
             }
         }
 
-        // Log the event
-        Engine.logEvent(`👑 ${player.fullName} has been crowned King/Queen of ${kingdomName}! All businesses are transferred to the crown.`);
+        // Move player to capital
+        var capitalTown = null;
+        try {
+            var towns = Engine.getTowns();
+            for (var _cti = 0; _cti < towns.length; _cti++) {
+                if (towns[_cti].kingdomId === kingdomId && towns[_cti].isCapital) {
+                    capitalTown = towns[_cti];
+                    break;
+                }
+                if (towns[_cti].kingdomId === kingdomId && !capitalTown) capitalTown = towns[_cti];
+            }
+        } catch(e) {}
+        if (capitalTown) {
+            player.townId = capitalTown.id;
+            if (player.traveling) {
+                player.traveling = false;
+                player._travelRoute = null;
+            }
+        }
+
+        // Set royal spouse title
+        if (player.spouseId) {
+            var spouse = Engine.findPerson(player.spouseId);
+            if (spouse && spouse.alive) {
+                spouse.occupation = player.sex === 'M' ? 'queen' : 'queens_lord';
+                if (!spouse.socialRank) spouse.socialRank = {};
+                spouse.socialRank[kingdomId] = 5;
+            }
+        }
+
+        // Set children as lords
+        for (var _kci = 0; _kci < player.childrenIds.length; _kci++) {
+            var _kChild = Engine.findPerson(player.childrenIds[_kci]);
+            if (_kChild && _kChild.alive && _kChild.age >= 18) {
+                if (!_kChild.socialRank) _kChild.socialRank = {};
+                if ((_kChild.socialRank[kingdomId] || 0) < 5) {
+                    _kChild.socialRank[kingdomId] = 5;
+                    _kChild.occupation = 'noble';
+                }
+            }
+        }
+
+        // Log events
+        Engine.logEvent('👑 ' + player.fullName + ' has been crowned ' + (player.sex === 'F' ? 'Queen' : 'King') + ' of ' + kingdomName + '! ' + transferredGold + 'g and ' + transferredBuildings + ' buildings transferred to the crown.');
+        autoJournalCapture('king', 'Today I was crowned ' + (player.sex === 'F' ? 'Queen' : 'King') + ' of ' + kingdomName + '. The weight of the crown is immense, but the power... the power is intoxicating.', { mood: 'triumphant' });
 
         if (typeof UI !== 'undefined' && UI.toast) {
-            UI.toast(`You have been crowned ruler of ${kingdomName}! Your businesses transfer to the kingdom.`, 'achievement', 'my_actions');
+            UI.toast('👑 All hail ' + (player.sex === 'F' ? 'Queen' : 'King') + ' ' + player.fullName + ' of ' + kingdomName + '!', 'achievement', 'critical');
         }
 
-        // Now trigger heir/death flow — player chooses next of kin
-        // The player character becomes the NPC king
-        // Set up the next-of-kin benefits
-        const nextKin = _setupNextOfKin(kingdomId);
-        if (nextKin) {
-            // Transition to heir with royal advisor benefits
-            handlePlayerDeath();
-            // After heir is set up, grant royal advisor benefits
-            _grantRoyalAdvisorBenefits(kingdomId);
-        } else {
-            // No heir available — game effectively becomes the NPC king
-            if (!window._godInvincible) {
-                player.deathCause = 'Became king but had no heir — the merchant legacy ends';
-                player.alive = false;
-                Engine.logEvent(`${player.fullName} rules as king but has no heir. The merchant legacy ends.`);
-                if (typeof Game !== 'undefined' && Game.setState) Game.setState('lost');
-                if (typeof UI !== 'undefined' && UI.showLoseScreen) UI.showLoseScreen('No Heir');
+        // Show king button if UI supports it
+        if (typeof UI !== 'undefined' && UI.showKingButton) {
+            UI.showKingButton();
+        }
+    }
+
+    // Check if player is currently king
+    function isPlayerKing() {
+        return !!(player.isKing && player.kingState && player.kingState.kingdomId);
+    }
+
+    // Get player's kingdom when they are king
+    function getPlayerKingdom() {
+        if (!player.isKing || !player.kingState) return null;
+        return Engine.findKingdom(player.kingState.kingdomId);
+    }
+
+    // ========================================================
+    // §11.5C KING MODE TICK (called daily when player is king)
+    // ========================================================
+    function tickKingMode() {
+        if (!player.isKing || !player.kingState) return;
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) { player.isKing = false; return; }
+
+        // Auto-feed/water/rest — king lifestyle
+        player.hunger = Math.max(player.hunger || 0, 80);
+        player.thirst = Math.max(player.thirst || 0, 80);
+        player.energy = Math.max(player.energy || 0, 80);
+        player.health = Math.min(100, Math.max(player.health || 100, player.health + 1));
+
+        // Calculate assassination risk
+        var assassinRisk = 0;
+        for (var _arId in player.relationships) {
+            var _arRel = player.relationships[_arId];
+            if (!_arRel) continue;
+            var _arPerson = Engine.findPerson(_arId);
+            if (!_arPerson || !_arPerson.alive || _arPerson.kingdomId !== kingdom.id) continue;
+            var _arRank = (_arPerson.socialRank && _arPerson.socialRank[kingdom.id]) || 0;
+            if (_arRank < 3) continue; // only nobles matter
+            if (_arRel.level < 20) assassinRisk += 8;
+            else if (_arRel.level < 40) assassinRisk += 3;
+            // Blackmail reduces their plotting
+            if (player.blackmailTargets && player.blackmailTargets[_arId]) assassinRisk -= 5;
+            // Loans give some security
+            var _arLoans = player._nobleLoans || [];
+            for (var _ali = 0; _ali < _arLoans.length; _ali++) {
+                if (_arLoans[_ali].nobleId === _arId && _arLoans[_ali].status === 'active') { assassinRisk -= 3; break; }
             }
         }
+        player.kingState.assassinationRisk = Math.max(0, Math.min(100, assassinRisk));
+
+        // Calculate revolt risk from kingdom happiness
+        var kHappiness = kingdom.happiness || 50;
+        var revoltRisk = 0;
+        if (kHappiness < 18) revoltRisk = 90;
+        else if (kHappiness < 30) revoltRisk = 60;
+        else if (kHappiness < 45) revoltRisk = 30;
+        else if (kHappiness < 60) revoltRisk = 10;
+        player.kingState.revoltRisk = revoltRisk;
+
+        // Player stays at capital (enforce)
+        if (!player.kingState.foreignVisitTarget) {
+            var _capTown = null;
+            try {
+                var _kTowns = Engine.getTowns();
+                for (var _kti = 0; _kti < _kTowns.length; _kti++) {
+                    if (_kTowns[_kti].kingdomId === kingdom.id && _kTowns[_kti].isCapital) { _capTown = _kTowns[_kti]; break; }
+                }
+            } catch(e) {}
+            if (_capTown && player.townId !== _capTown.id) player.townId = _capTown.id;
+        }
+
+        // Random assassination attempt (daily)
+        if (player.kingState.assassinationRisk > 40) {
+            var _assChance = (player.kingState.assassinationRisk - 40) * 0.0005;
+            var rng = Engine.getRng();
+            if (rng.chance(_assChance)) {
+                // Assassination attempt!
+                var _guardBonus = (player.guards || []).length * 5;
+                var _surviveChance = 0.5 + _guardBonus * 0.01;
+                if (rng.chance(_surviveChance)) {
+                    Engine.logEvent('⚔️ An assassination attempt on ' + (player.sex === 'F' ? 'Queen' : 'King') + ' ' + player.fullName + ' was thwarted by the royal guard!');
+                    if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚔️ Assassination attempt foiled!', 'warning', 'critical');
+                } else {
+                    // Player is killed
+                    player.deathCause = 'assassination';
+                    player.isKing = false;
+                    player.alive = false;
+                    Engine.logEvent('💀 ' + (player.sex === 'F' ? 'Queen' : 'King') + ' ' + player.fullName + ' has been assassinated!');
+                    if (typeof UI !== 'undefined' && UI.toast) UI.toast('💀 You have been assassinated!', 'danger', 'critical');
+                    handlePlayerDeath();
+                    return;
+                }
+            }
+        }
+    }
+
+    // ========================================================
+    // §11.5D KING ACTIONS (called from King UI)
+    // ========================================================
+
+    function kingSetTaxRate(newRate) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        newRate = Math.max(0.02, Math.min(0.25, newRate));
+        var oldRate = kingdom.taxRate || 0.08;
+        kingdom.taxRate = newRate;
+        var change = newRate > oldRate ? 'raised' : 'lowered';
+        Engine.logEvent('👑 Royal Decree: Tax rate ' + change + ' to ' + Math.round(newRate * 100) + '%.');
+        player.kingState.decreesIssued = (player.kingState.decreesIssued || 0) + 1;
+        return { success: true, message: 'Tax rate set to ' + Math.round(newRate * 100) + '%.' };
+    }
+
+    function kingEnactLaw(lawId) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        if (!kingdom.laws) kingdom.laws = {};
+        if (!kingdom.laws.specialLaws) kingdom.laws.specialLaws = [];
+        // Check if already enacted
+        for (var i = 0; i < kingdom.laws.specialLaws.length; i++) {
+            if (kingdom.laws.specialLaws[i].id === lawId) return { success: false, message: 'Law already in effect.' };
+        }
+        var lawDef = (CONFIG.SPECIAL_LAWS || []).find(function(l) { return l.id === lawId; });
+        if (!lawDef) return { success: false, message: 'Unknown law.' };
+        kingdom.laws.specialLaws.push({ id: lawId, enactedDay: Engine.getDay() });
+        Engine.logEvent('👑 Royal Decree: ' + (lawDef.name || lawId) + ' enacted in ' + kingdom.name + '.');
+        player.kingState.decreesIssued = (player.kingState.decreesIssued || 0) + 1;
+        return { success: true, message: lawDef.name + ' enacted.' };
+    }
+
+    function kingRepealLaw(lawId) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom || !kingdom.laws || !kingdom.laws.specialLaws) return { success: false, message: 'No laws.' };
+        var idx = -1;
+        for (var i = 0; i < kingdom.laws.specialLaws.length; i++) {
+            if (kingdom.laws.specialLaws[i].id === lawId) { idx = i; break; }
+        }
+        if (idx < 0) return { success: false, message: 'Law not currently enacted.' };
+        kingdom.laws.specialLaws.splice(idx, 1);
+        var lawDef = (CONFIG.SPECIAL_LAWS || []).find(function(l) { return l.id === lawId; });
+        Engine.logEvent('👑 Royal Decree: ' + (lawDef ? lawDef.name : lawId) + ' repealed in ' + kingdom.name + '.');
+        return { success: true, message: (lawDef ? lawDef.name : lawId) + ' repealed.' };
+    }
+
+    function kingDeclareWar(targetKingdomId) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        var target = Engine.findKingdom(targetKingdomId);
+        if (!target) return { success: false, message: 'Target kingdom not found.' };
+        if (kingdom.atWar && kingdom.atWar.has && kingdom.atWar.has(targetKingdomId)) {
+            return { success: false, message: 'Already at war with ' + target.name + '.' };
+        }
+        var warCost = CONFIG.WAR_DECLARATION_COST || 300;
+        if (kingdom.gold < warCost) return { success: false, message: 'Insufficient treasury (' + warCost + 'g required).' };
+        kingdom.gold -= warCost;
+        if (!kingdom.atWar) kingdom.atWar = new Set();
+        kingdom.atWar.add(targetKingdomId);
+        if (!target.atWar) target.atWar = new Set();
+        target.atWar.add(kingdom.id);
+        Engine.logEvent('⚔️ ' + kingdom.name + ' declares war on ' + target.name + '!', { type: 'war_declaration', kingdomId: kingdom.id });
+        player.kingState.warsStarted = (player.kingState.warsStarted || 0) + 1;
+        return { success: true, message: 'War declared against ' + target.name + '!' };
+    }
+
+    function kingSuePeace(targetKingdomId) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        if (!kingdom.atWar || !kingdom.atWar.has || !kingdom.atWar.has(targetKingdomId)) {
+            return { success: false, message: 'Not at war with that kingdom.' };
+        }
+        var target = Engine.findKingdom(targetKingdomId);
+        // Peace requires tribute (20% of treasury)
+        var tribute = Math.floor(kingdom.gold * 0.2);
+        kingdom.gold -= tribute;
+        if (target) target.gold = (target.gold || 0) + tribute;
+        kingdom.atWar.delete(targetKingdomId);
+        if (target && target.atWar && target.atWar.delete) target.atWar.delete(kingdom.id);
+        // Set peace treaty
+        if (!kingdom.peaceTreaties) kingdom.peaceTreaties = {};
+        kingdom.peaceTreaties[targetKingdomId] = Engine.getDay() + 180;
+        Engine.logEvent('🕊️ ' + kingdom.name + ' sues for peace with ' + (target ? target.name : 'the enemy') + '. Tribute: ' + tribute + 'g.');
+        player.kingState.peacesMade = (player.kingState.peacesMade || 0) + 1;
+        return { success: true, message: 'Peace achieved! Tribute paid: ' + tribute + 'g.' };
+    }
+
+    function kingHostFeast() {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        var daysSinceLast = Engine.getDay() - (player.kingState.feastHeldDay || 0);
+        if (daysSinceLast < 30) return { success: false, message: 'Must wait ' + (30 - daysSinceLast) + ' more days before hosting another feast.' };
+        var feastCost = 500;
+        if (kingdom.gold < feastCost) return { success: false, message: 'Treasury needs ' + feastCost + 'g for a feast.' };
+        kingdom.gold -= feastCost;
+        player.kingState.feastHeldDay = Engine.getDay();
+        // Boost happiness and noble relationships
+        if (kingdom.happiness != null) kingdom.happiness = Math.min(100, kingdom.happiness + 5);
+        for (var _fId in player.relationships) {
+            var _fRel = player.relationships[_fId];
+            var _fPerson = Engine.findPerson(_fId);
+            if (_fPerson && _fPerson.alive && _fPerson.kingdomId === kingdom.id) {
+                var _fRank = (_fPerson.socialRank && _fPerson.socialRank[kingdom.id]) || 0;
+                if (_fRank >= 3) modifyRelationship(_fId, 5);
+            }
+        }
+        Engine.logEvent('👑 ' + (player.sex === 'F' ? 'Queen' : 'King') + ' ' + player.fullName + ' hosts a grand royal feast! (+5 happiness, +5 noble relations)');
+        return { success: true, message: 'Grand feast held! Happiness +5, noble relationships improved.' };
+    }
+
+    function kingHoldCourt() {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var daysSinceLast = Engine.getDay() - (player.kingState.courtHeldDay || 0);
+        if (daysSinceLast < 30) return { success: false, message: 'Must wait ' + (30 - daysSinceLast) + ' more days before holding court.' };
+        player.kingState.courtHeldDay = Engine.getDay();
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        // Boost reputation and reduce revolt risk
+        if (kingdom && kingdom.happiness != null) kingdom.happiness = Math.min(100, kingdom.happiness + 3);
+        Engine.logEvent('👑 ' + (player.sex === 'F' ? 'Queen' : 'King') + ' ' + player.fullName + ' holds court, hearing petitions from the people. (+3 happiness)');
+        return { success: true, message: 'Court held. People heard, happiness improved.' };
+    }
+
+    function kingFleeKingdom() {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        var kingdomName = kingdom ? kingdom.name : 'the kingdom';
+
+        // End king mode
+        player.isKing = false;
+        var oldKingState = player.kingState;
+        player.kingState = null;
+
+        // Trigger emergency succession
+        if (kingdom) {
+            kingdom.king = null;
+            Engine.logEvent('💨 The ' + (player.sex === 'F' ? 'Queen' : 'King') + ' of ' + kingdomName + ' has fled! The kingdom falls into chaos.');
+        }
+
+        // Randomize identity
+        var rng = Engine.getRng();
+        var NAMES = typeof window !== 'undefined' && window.NAMES ? window.NAMES : { male: ['John','James','William','Robert'], female: ['Mary','Elizabeth','Anne','Catherine'] };
+        var _namePool = player.sex === 'M' ? NAMES.male : NAMES.female;
+        var _surnamePool = ['Smith','Cooper','Baker','Miller','Wright','Mason','Taylor','Clark'];
+        var oldName = player.fullName;
+        player.firstName = rng.pick ? rng.pick(_namePool) : _namePool[Math.floor(Math.random() * _namePool.length)];
+        player.lastName = rng.pick ? rng.pick(_surnamePool) : _surnamePool[Math.floor(Math.random() * _surnamePool.length)];
+        player.fullName = player.firstName + ' ' + player.lastName;
+
+        // Reset social standing
+        player.socialRank = {};
+        player.rankSince = {};
+        player.isNoble = false;
+        player.reputation = {};
+        player.gold = 50;
+        player.buildings = [];
+        player.caravans = [];
+        player.employees = [];
+
+        // Move to random town in different kingdom
+        try {
+            var towns = Engine.getTowns();
+            var otherTowns = towns.filter(function(t) {
+                return !t.isWilderness && !t.isOutpost && (!kingdom || t.kingdomId !== kingdom.id);
+            });
+            if (otherTowns.length > 0) {
+                var destTown = rng.pick ? rng.pick(otherTowns) : otherTowns[Math.floor(Math.random() * otherTowns.length)];
+                player.townId = destTown.id;
+                player.citizenshipKingdomId = destTown.kingdomId;
+            }
+        } catch(e) {}
+
+        player.traveling = false;
+        player._travelRoute = null;
+
+        // Keep: family (children), skills, achievements
+        Engine.logEvent('💨 ' + oldName + ' has fled ' + kingdomName + ' and now lives as ' + player.fullName + ', a nobody in a new land.');
+        autoJournalCapture('flee', 'I abandoned the crown and fled into the night. I am ' + player.fullName + ' now. No one can know who I was.', { mood: 'melancholy' });
+
+        if (typeof UI !== 'undefined') {
+            if (UI.toast) UI.toast('💨 You fled the kingdom! You are now ' + player.fullName + '.', 'warning', 'critical');
+            if (UI.hideKingButton) UI.hideKingButton();
+        }
+
+        return { success: true, message: 'You fled and became ' + player.fullName + '.' };
     }
 
     function _setupNextOfKin(kingdomId) {
@@ -18734,6 +19072,8 @@
             weddingPlan: player.weddingPlan ? structuredClone(player.weddingPlan) : null,
             weddingMemory: player.weddingMemory ? structuredClone(player.weddingMemory) : null,
             // Crown & Royal Advisor
+            isKing: player.isKing || false,
+            kingState: player.kingState ? structuredClone(player.kingState) : null,
             isRoyalAdvisorFromKing: player.isRoyalAdvisorFromKing || false,
             royalAdvisorKingdomId: player.royalAdvisorKingdomId || null,
             royalAdvisorBenefits: player.royalAdvisorBenefits ? structuredClone(player.royalAdvisorBenefits) : null,
@@ -19138,6 +19478,8 @@
         player.weddingPlan = data.weddingPlan || null;
         player.weddingMemory = data.weddingMemory || null;
         // Crown & Royal Advisor
+        player.isKing = data.isKing || false;
+        player.kingState = data.kingState || null;
         player.isRoyalAdvisorFromKing = data.isRoyalAdvisorFromKing || false;
         player.royalAdvisorKingdomId = data.royalAdvisorKingdomId || null;
         player.royalAdvisorBenefits = data.royalAdvisorBenefits || null;
@@ -20225,7 +20567,12 @@
         // Wedding planning countdown
         tickWeddingPlan();
 
-        tickHunger();
+        // King mode: special tick, skip hunger/thirst/energy management
+        if (player.isKing) {
+            tickKingMode();
+        } else {
+            tickHunger();
+        }
 
         // Bridge destruction progress (multi-day task)
         tickBridgeDestruction();
@@ -20883,10 +21230,10 @@
         tickAgents();
 
         // Fatigue natural recovery (now energy system)
-        tickFatigue();
+        if (!player.isKing) tickFatigue();
 
         // Thirst decay and auto-drink
-        tickThirst();
+        if (!player.isKing) tickThirst();
 
         // Retail building sales processing
         tickRetailBuildings();
@@ -48933,6 +49280,17 @@
 
         // Crown & Royal Advisor
         becomeKing,
+        isPlayerKing,
+        getPlayerKingdom,
+        tickKingMode,
+        kingSetTaxRate,
+        kingEnactLaw,
+        kingRepealLaw,
+        kingDeclareWar,
+        kingSuePeace,
+        kingHostFeast,
+        kingHoldCourt,
+        kingFleeKingdom,
         adviseKing,
         getPendingKingDecisions,
         respondToKingDecision,

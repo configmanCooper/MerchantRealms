@@ -6506,105 +6506,185 @@
             }
         }
 
-        // 3. Royal Advisor Election (if no family heir)
+        // 3. King's grandchildren (via children's children — includes player if they are a grandchild)
+        if (!newKing && deadKing && deadKing.childrenIds) {
+            var grandchildren = [];
+            for (var _gci = 0; _gci < deadKing.childrenIds.length; _gci++) {
+                var _gParent = findPerson(deadKing.childrenIds[_gci]);
+                if (!_gParent || !_gParent.childrenIds) continue;
+                for (var _gcj = 0; _gcj < _gParent.childrenIds.length; _gcj++) {
+                    var _gc = findPerson(_gParent.childrenIds[_gcj]);
+                    if (_gc && _gc.alive && _gc.age >= CONFIG.COMING_OF_AGE && (allowFemaleHeirs || _gc.sex === 'M')) {
+                        grandchildren.push(_gc);
+                    }
+                }
+            }
+            // Also check if the player character is a blood relative (grandchild via marriage to king's child)
+            if (typeof Player !== 'undefined' && Player.state && Player.state.alive) {
+                var _ps = Player.state;
+                var _playerIsGrandchild = false;
+                if (_ps.parentIds) {
+                    for (var _ppi = 0; _ppi < _ps.parentIds.length; _ppi++) {
+                        var _ppId = _ps.parentIds[_ppi];
+                        if (_ppId === 'player') continue;
+                        if (deadKing.childrenIds.indexOf(_ppId) >= 0) {
+                            _playerIsGrandchild = true;
+                            break;
+                        }
+                    }
+                }
+                if (_playerIsGrandchild) {
+                    // Player is a blood grandchild of the dead king — they are a valid heir
+                    var _playerRank = (_ps.socialRank && _ps.socialRank[kingdom.id]) || 0;
+                    if (_playerRank >= 3 && (allowFemaleHeirs || _ps.sex === 'M')) {
+                        // Find or create player person entry
+                        var _playerPerson = world.people.find(function(pp) {
+                            return pp.alive && pp.firstName === _ps.firstName && pp.lastName === _ps.lastName;
+                        });
+                        if (_playerPerson) {
+                            // Player takes priority as blood heir (they chose to play this character)
+                            newKing = _playerPerson;
+                            logEvent('👑 ' + _playerPerson.firstName + ' ' + _playerPerson.lastName + ' is recognized as a blood heir to the throne of ' + kingdom.name + '!', { type: 'succession', kingdomId: kingdom.id });
+                        }
+                    }
+                }
+            }
+            if (!newKing && grandchildren.length > 0) {
+                grandchildren.sort(function(a, b) { return b.age - a.age; });
+                newKing = grandchildren[0];
+            }
+        }
+
+        // 4. Noble Election (if no family heir) — all nobles rank 4+ can be candidates
         if (!newKing) {
             updateRoyalAdvisors(kingdom);
-            const advisors = (kingdom.royalAdvisors || [])
-                .map(id => findPerson(id))
-                .filter(a => a && a.alive);
 
-            if (advisors.length > 0) {
-                logEvent(`${kingName} has died with no heir. The Royal Council of ${kingdom.name} convenes to elect a new ruler.`, { type: 'succession', kingdomId: kingdom.id });
+            // Gather ALL nobles rank 4+ in the kingdom as candidates (not just royal advisors)
+            var _electionCandidates = world.people.filter(function(p) {
+                if (!p.alive || p.id === (deadKing ? deadKing.id : null)) return false;
+                if (p.kingdomId !== kingdom.id && !(p.socialRank && p.socialRank[kingdom.id] >= 4)) return false;
+                if (p.age < CONFIG.COMING_OF_AGE) return false;
+                if (isAlreadyKing(p.id)) return false;
+                var rank = (p.socialRank && p.socialRank[kingdom.id]) || 0;
+                return rank >= 4;
+            });
 
-                // Check if player is an advisor in this kingdom
-                const playerAdvisorId = _checkPlayerIsAdvisor(kingdom);
-
-                // If player is a Royal Advisor, pause for voting UI
-                if (playerAdvisorId) {
-                    // Build candidate list with scores for UI
-                    const candidates = [];
-                    for (const adv of advisors) {
-                        var advScore = (adv.gold || 0) * 0.001 +
-                            (adv.personality ? adv.personality.intelligence || 0 : 50) * 0.5 +
-                            (adv.personality ? adv.personality.ambition || 0 : 50) * 0.3;
-                        candidates.push({
-                            id: adv.id,
-                            name: adv.firstName + ' ' + (adv.lastName || ''),
-                            gold: adv.gold || 0,
-                            age: adv.age || 0,
-                            occupation: adv.occupation || 'unknown',
-                            intelligence: adv.personality ? (adv.personality.intelligence || 50) : 50,
-                            ambition: adv.personality ? (adv.personality.ambition || 50) : 50,
-                            charisma: adv.personality ? (adv.personality.charisma || 50) : 50,
-                            score: Math.round(advScore),
-                            isPlayer: adv.id === playerAdvisorId
-                        });
+            // Check if player is a noble (rank 4+) in this kingdom — add them as candidate
+            var _playerNobleId = null;
+            if (typeof Player !== 'undefined' && Player.state && Player.state.alive) {
+                var _pState = Player.state;
+                var _pRank = (_pState.socialRank && _pState.socialRank[kingdom.id]) || 0;
+                if (_pRank >= 4) {
+                    var _playerPP = world.people.find(function(pp) {
+                        return pp.alive && pp.firstName === _pState.firstName && pp.lastName === _pState.lastName;
+                    });
+                    if (_playerPP) {
+                        _playerNobleId = _playerPP.id;
+                        // Ensure player is in the candidate list
+                        if (!_electionCandidates.some(function(c) { return c.id === _playerPP.id; })) {
+                            _electionCandidates.push(_playerPP);
+                        }
                     }
+                }
+            }
+
+            if (_electionCandidates.length > 0) {
+                logEvent(kingName + ' has died with no blood heir. The nobles of ' + kingdom.name + ' convene to elect a new ruler.', { type: 'succession', kingdomId: kingdom.id });
+
+                // Build candidate data with influence factors
+                var _elCandData = [];
+                for (var _eci = 0; _eci < _electionCandidates.length; _eci++) {
+                    var _ec = _electionCandidates[_eci];
+                    var _ecRank = (_ec.socialRank && _ec.socialRank[kingdom.id]) || 0;
+                    // Vote weight by rank: RA(6+)=3, Lord(5)=2, other nobles=1
+                    var _ecVoteWeight = _ecRank >= 6 ? 3 : _ecRank >= 5 ? 2 : 1;
+                    // Base score from rank, wealth, personality
+                    var _ecScore = _ecRank * 10 + Math.min((_ec.gold || 0), 5000) * 0.001 +
+                        (_ec.personality ? (_ec.personality.intelligence || 50) * 0.3 + (_ec.personality.ambition || 50) * 0.2 : 25);
+                    _elCandData.push({
+                        id: _ec.id,
+                        name: _ec.firstName + ' ' + (_ec.lastName || ''),
+                        gold: _ec.gold || 0,
+                        age: _ec.age || 0,
+                        rank: _ecRank,
+                        rankName: CONFIG.SOCIAL_RANKS && CONFIG.SOCIAL_RANKS[_ecRank] ? CONFIG.SOCIAL_RANKS[_ecRank].name : 'Noble',
+                        occupation: _ec.occupation || 'unknown',
+                        voteWeight: _ecVoteWeight,
+                        intelligence: _ec.personality ? (_ec.personality.intelligence || 50) : 50,
+                        ambition: _ec.personality ? (_ec.personality.ambition || 50) : 50,
+                        loyalty: _ec.personality ? (_ec.personality.loyalty || 50) : 50,
+                        score: Math.round(_ecScore),
+                        isPlayer: _ec.id === _playerNobleId,
+                        isAdvisor: (kingdom.royalAdvisors || []).indexOf(_ec.id) >= 0
+                    });
+                }
+
+                // If player is a noble candidate, pause for election UI
+                if (_playerNobleId) {
                     kingdom._pendingElection = {
-                        candidates: candidates,
-                        playerAdvisorId: playerAdvisorId,
+                        candidates: _elCandData,
+                        playerAdvisorId: _playerNobleId,
                         deadKingName: kingName,
                         startDay: world.day,
                         cause: cause
                     };
                     kingdom._kingDeathCause = cause;
                     if (typeof UI !== 'undefined' && UI.toast) {
-                        UI.toast('👑 A succession election is underway in ' + kingdom.name + '! As Royal Advisor, you may cast your vote.', 'info', 'critical');
+                        UI.toast('👑 A succession election is underway in ' + kingdom.name + '! As a noble, you may cast your vote.', 'info', 'critical');
                     }
-                    // Don't resolve yet — wait for player vote or auto-resolve after 30 days
-                    return;
+                    return; // Wait for player vote
                 }
 
-                // NPC-only election: auto-resolve immediately
-                const scores = {};
-                for (const adv of advisors) {
-                    scores[adv.id] = (adv.gold || 0) * 0.001 +
-                        (adv.personality ? adv.personality.intelligence || 0 : 50) * 0.5 +
-                        (adv.personality ? adv.personality.ambition || 0 : 50) * 0.3 +
-                        rng.randFloat(0, 20);
+                // NPC-only election: auto-resolve with weighted voting
+                var _elScores = {};
+                for (var _esi = 0; _esi < _elCandData.length; _esi++) {
+                    _elScores[_elCandData[_esi].id] = _elCandData[_esi].score + rng.randFloat(0, 20);
                 }
 
-                // Multiple rounds until majority
-                let elected = null;
-                for (let round = 0; round < CONFIG.SUCCESSION_ELECTION_ROUNDS_MAX; round++) {
-                    const votes = {};
-                    for (const voter of advisors) {
-                        let bestId = null;
-                        let bestScore = -1;
-                        for (const candidate of advisors) {
-                            if (candidate.id === voter.id) continue;
-                            const s = (scores[candidate.id] || 0) + rng.randFloat(-5, 5);
-                            if (s > bestScore) { bestScore = s; bestId = candidate.id; }
+                var _elVoterPool = _electionCandidates.slice();
+                var _elElected = null;
+                for (var _elRound = 0; _elRound < (CONFIG.SUCCESSION_ELECTION_ROUNDS_MAX || 5); _elRound++) {
+                    var _elVotes = {};
+                    var _elTotalVotes = 0;
+                    for (var _evi = 0; _evi < _elVoterPool.length; _evi++) {
+                        var _evVoter = _elVoterPool[_evi];
+                        var _evWeight = (_evVoter.socialRank && _evVoter.socialRank[kingdom.id]) >= 6 ? 3 : (_evVoter.socialRank && _evVoter.socialRank[kingdom.id]) >= 5 ? 2 : 1;
+                        var _evBestId = null, _evBestScore = -1;
+                        for (var _ecci = 0; _ecci < _elVoterPool.length; _ecci++) {
+                            var _evCand = _elVoterPool[_ecci];
+                            if (_evCand.id === _evVoter.id) continue;
+                            var _evS = (_elScores[_evCand.id] || 0) + rng.randFloat(-5, 5);
+                            if (_evS > _evBestScore) { _evBestScore = _evS; _evBestId = _evCand.id; }
                         }
-                        if (bestId) votes[bestId] = (votes[bestId] || 0) + 1;
-                    }
-                    const majority = Math.ceil(advisors.length / 2);
-                    for (const [id, count] of Object.entries(votes)) {
-                        if (count >= majority) {
-                            elected = findPerson(id);
-                            break;
+                        if (_evBestId) {
+                            _elVotes[_evBestId] = (_elVotes[_evBestId] || 0) + _evWeight;
+                            _elTotalVotes += _evWeight;
                         }
                     }
-                    if (elected) break;
-                    let lowestId = null, lowestVotes = Infinity;
-                    for (const adv of advisors) {
-                        const v = votes[adv.id] || 0;
-                        if (v < lowestVotes) { lowestVotes = v; lowestId = adv.id; }
+                    var _elMajority = Math.ceil(_elTotalVotes / 2);
+                    for (var _emId in _elVotes) {
+                        if (_elVotes[_emId] >= _elMajority) { _elElected = findPerson(_emId); break; }
                     }
-                    if (lowestId) {
-                        const idx = advisors.findIndex(a => a.id === lowestId);
-                        if (idx >= 0) advisors.splice(idx, 1);
+                    if (_elElected) break;
+                    // Eliminate lowest
+                    var _elLowestId = null, _elLowestVotes = Infinity;
+                    for (var _eli = 0; _eli < _elVoterPool.length; _eli++) {
+                        var _elV = _elVotes[_elVoterPool[_eli].id] || 0;
+                        if (_elV < _elLowestVotes) { _elLowestVotes = _elV; _elLowestId = _elVoterPool[_eli].id; }
                     }
-                    if (advisors.length <= 1) { elected = advisors[0] || null; break; }
+                    if (_elLowestId) {
+                        _elVoterPool = _elVoterPool.filter(function(a) { return a.id !== _elLowestId; });
+                    }
+                    if (_elVoterPool.length <= 1) { _elElected = _elVoterPool[0] || null; break; }
+                }
+                if (!_elElected && _elVoterPool.length > 0) {
+                    _elVoterPool.sort(function(a, b) { return (_elScores[b.id] || 0) - (_elScores[a.id] || 0); });
+                    _elElected = _elVoterPool[0];
                 }
 
-                if (!elected && advisors.length > 0) {
-                    elected = advisors.sort((a, b) => (scores[b.id] || 0) - (scores[a.id] || 0))[0];
-                }
-
-                if (elected) {
-                    newKing = elected;
-                    logEvent(`${elected.firstName} ${elected.lastName} has been elected King/Queen of ${kingdom.name}!`, { type: 'succession', kingdomId: kingdom.id });
+                if (_elElected) {
+                    newKing = _elElected;
+                    logEvent(_elElected.firstName + ' ' + _elElected.lastName + ' has been elected ruler of ' + kingdom.name + '!', { type: 'succession', kingdomId: kingdom.id });
                 }
             }
         }
@@ -6663,32 +6743,67 @@
         var candidates = election.candidates;
         var playerAdvisorId = election.playerAdvisorId;
 
-        // Rebuild live advisor list from candidates
-        var advisors = candidates.map(function(c) { return findPerson(c.id); }).filter(function(a) { return a && a.alive; });
-        if (advisors.length === 0) { kingdom._pendingElection = null; return; }
+        // Rebuild live candidate list
+        var voterPool = candidates.map(function(c) { return findPerson(c.id); }).filter(function(a) { return a && a.alive; });
+        if (voterPool.length === 0) { kingdom._pendingElection = null; return; }
 
-        // Build scores
+        // Build candidate scores with influence factors
         var scores = {};
-        for (var ai = 0; ai < advisors.length; ai++) {
-            var adv = advisors[ai];
-            scores[adv.id] = (adv.gold || 0) * 0.001 +
-                (adv.personality ? adv.personality.intelligence || 0 : 50) * 0.5 +
-                (adv.personality ? adv.personality.ambition || 0 : 50) * 0.3 +
-                rng.randFloat(0, 20);
+        for (var ai = 0; ai < voterPool.length; ai++) {
+            var adv = voterPool[ai];
+            var advRank = (adv.socialRank && adv.socialRank[kingdom.id]) || 0;
+            // Base: rank bonus + wealth + personality
+            scores[adv.id] = advRank * 10 + Math.min((adv.gold || 0), 5000) * 0.001 +
+                (adv.personality ? (adv.personality.intelligence || 50) * 0.3 + (adv.personality.ambition || 50) * 0.2 : 25) +
+                rng.randFloat(0, 15);
+
+            // Player influence factors on this candidate
+            if (adv.id === playerAdvisorId && typeof Player !== 'undefined' && Player.state) {
+                var _pLoans = Player.state._nobleLoans || [];
+                var _pBlackmail = Player.state.blackmailTargets || {};
+                // Check if OTHER nobles owe player loans or are blackmailed → boosts player score
+                for (var _pli = 0; _pli < voterPool.length; _pli++) {
+                    var _plVoter = voterPool[_pli];
+                    if (_plVoter.id === adv.id) continue;
+                    // Relationship bonus
+                    var _plRel = Player.state.relationships && Player.state.relationships[_plVoter.id];
+                    if (_plRel && _plRel.level > 40) {
+                        scores[adv.id] += Math.min((_plRel.level - 40) * 0.25, 15);
+                    }
+                    // Loan leverage
+                    for (var _lli = 0; _lli < _pLoans.length; _lli++) {
+                        if (_pLoans[_lli].nobleId === _plVoter.id && _pLoans[_lli].status === 'active') {
+                            scores[adv.id] += 10;
+                            break;
+                        }
+                    }
+                    // Blackmail leverage
+                    if (_pBlackmail[_plVoter.id]) {
+                        scores[adv.id] += 15;
+                    }
+                }
+            }
         }
 
-        // Player's vote gives a major boost (+40) to their chosen candidate
+        // Player's direct vote gives a major boost (+40) to their chosen candidate
         if (playerVoteId && scores[playerVoteId] !== undefined) {
-            scores[playerVoteId] += 40;
+            // Player's own vote weight based on rank
+            var _playerVoteWeight = 1;
+            if (typeof Player !== 'undefined' && Player.state && Player.state.socialRank) {
+                var _pvRank = Player.state.socialRank[kingdom.id] || 0;
+                _playerVoteWeight = _pvRank >= 6 ? 3 : _pvRank >= 5 ? 2 : 1;
+            }
+            scores[playerVoteId] += 30 * _playerVoteWeight;
         }
 
-        // Run ranked elimination voting
+        // Run weighted ranked elimination voting
         var elected = null;
-        var voterPool = advisors.slice();
         for (var round = 0; round < (CONFIG.SUCCESSION_ELECTION_ROUNDS_MAX || 5); round++) {
             var votes = {};
+            var totalVoteWeight = 0;
             for (var vi = 0; vi < voterPool.length; vi++) {
                 var voter = voterPool[vi];
+                var voteWeight = (voter.socialRank && voter.socialRank[kingdom.id]) >= 6 ? 3 : (voter.socialRank && voter.socialRank[kingdom.id]) >= 5 ? 2 : 1;
                 var bestId = null, bestScore = -1;
                 for (var ci = 0; ci < voterPool.length; ci++) {
                     var cand = voterPool[ci];
@@ -6696,9 +6811,12 @@
                     var s = (scores[cand.id] || 0) + rng.randFloat(-5, 5);
                     if (s > bestScore) { bestScore = s; bestId = cand.id; }
                 }
-                if (bestId) votes[bestId] = (votes[bestId] || 0) + 1;
+                if (bestId) {
+                    votes[bestId] = (votes[bestId] || 0) + voteWeight;
+                    totalVoteWeight += voteWeight;
+                }
             }
-            var majority = Math.ceil(voterPool.length / 2);
+            var majority = Math.ceil(totalVoteWeight / 2);
             for (var eid in votes) {
                 if (votes[eid] >= majority) { elected = findPerson(eid); break; }
             }
@@ -6709,8 +6827,7 @@
                 if (v < lowestVotes) { lowestVotes = v; lowestId = voterPool[li].id; }
             }
             if (lowestId) {
-                var idx = voterPool.findIndex(function(a) { return a.id === lowestId; });
-                if (idx >= 0) voterPool.splice(idx, 1);
+                voterPool = voterPool.filter(function(a) { return a.id !== lowestId; });
             }
             if (voterPool.length <= 1) { elected = voterPool[0] || null; break; }
         }
@@ -13572,7 +13689,19 @@
                         type: 'coup_attempt', cause: 'Kingdom in open rebellion (happiness ' + Math.round(h) + '%)',
                         effects: ['King\'s life at risk', 'Kingdom stability threatened']
                     }, 'sensitive_intel');
-                    if (rng.chance(0.4 + rebellionIntensity * 0.2)) {
+                    // Check if king is the player
+                    var _isPlayerKing = typeof Player !== 'undefined' && Player.isPlayerKing && Player.isPlayerKing() && Player.state && Player.state.kingState && Player.state.kingState.kingdomId === k.id;
+                    if (_isPlayerKing) {
+                        // Show revolt UI to player instead of auto-resolving
+                        if (typeof UI !== 'undefined' && UI.toast) {
+                            UI.toast('⚔️ REVOLT! Rebels storm your palace!', 'danger', 'critical');
+                        }
+                        // Store revolt state for UI to handle
+                        k._playerRevoltPending = { rebellionIntensity: rebellionIntensity, day: world.day };
+                        if (typeof UI !== 'undefined' && UI._showRevoltUI) {
+                            UI._showRevoltUI(k, rebellionIntensity);
+                        }
+                    } else if (rng.chance(0.4 + rebellionIntensity * 0.2)) {
                         killPerson(king, 'coup');
                         handleKingDeath(k, 'coup');
                         logEvent('👑 The king of ' + k.name + ' has been overthrown! A new ruler rises.', {

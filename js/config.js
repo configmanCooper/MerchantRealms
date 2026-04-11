@@ -3635,7 +3635,7 @@ const ACHIEVEMENTS = {
     poisoner_ach:        { name: 'Poisoner',             desc: 'Successfully poison 3 targets.',                             xp: 165, tier: 'gold', icon: '☠️', category: 'underworld' },
 
     // ── Crown & Military ──
-    crowned_king:        { name: 'Crowned Ruler',        desc: '👑 You have ascended to the throne!',                          xp: 200, tier: 'gold', icon: '👑', category: 'kingdom' },
+    crowned_king:        { name: 'Crowned Ruler',        desc: '👑 You have ascended to the throne!',                          xp: 500, tier: 'platinum', icon: '👑', category: 'kingdom' },
     naval_commander:     { name: 'Naval Commander',      desc: 'Own a kingdom with 3+ warships.',                              xp: 180, tier: 'gold', icon: '⚓', category: 'kingdom' },
     wall_builder:        { name: 'Wall Builder',         desc: 'Build fortified walls (level 3) in a town.',                   xp: 165, tier: 'gold', icon: '🧱', category: 'building' },
     wartime_profiteer:   { name: 'Wartime Profiteer',    desc: 'Earn 5,000+ gold selling weapons/food during war.',            xp: 175, tier: 'gold', icon: '💰', category: 'trading' },

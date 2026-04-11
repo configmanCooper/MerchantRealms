@@ -1367,7 +1367,7 @@ window.Game = (function () {
     //  Runs before deserialize to ensure data shape is current.
     // ═══════════════════════════════════════════════════════════
 
-    const CURRENT_SAVE_VERSION = 5;
+    const CURRENT_SAVE_VERSION = 6;
 
     const SAVE_MIGRATIONS = {
         // v3 → v4: Add notification filter defaults, ensure agents array
@@ -1386,8 +1386,13 @@ window.Game = (function () {
                 if (ach.old_age && !ach.seasoned_merchant) { ach.seasoned_merchant = ach.old_age; delete ach.old_age; }
             }
         },
-        // Future migrations go here:
-        // 5: function(data) { ... },
+        // v5 → v6: Add king mode state defaults
+        5: function(data) {
+            if (data.player) {
+                if (data.player.isKing === undefined) data.player.isKing = false;
+                if (!data.player.kingState) data.player.kingState = null;
+            }
+        },
     };
 
     function _migrateSaveData(data) {
@@ -2126,7 +2131,7 @@ window.Game = (function () {
 
             // 3. Game metadata
             debugData.meta = {
-                gameVersion: 'v0.68.0',
+                gameVersion: 'v0.69.0',
                 saveVersion: 3,
                 timestamp: new Date().toISOString(),
                 userAgent: navigator.userAgent,

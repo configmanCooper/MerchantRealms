@@ -4,6 +4,34 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.69.0] - Become King
+
+### Added
+- **Become King Feature**: Players can now ascend to the throne through two paths:
+  - **Blood Heir Path**: Marry king's daughter → have child → die → play as child heir → inherit throne when king dies (no vote needed)
+  - **Election Path**: Eliminate all blood relatives of the king → be a noble (rank 4+) → king dies → nobles vote on new ruler
+- **King UI Panel**: Full strategic management interface with 5 tabs:
+  - **Overview**: Kingdom stats, treasury, happiness, risk meters, war status, active laws, reign statistics
+  - **Decisions**: Tax rate slider (2-25%), enact/repeal special laws, declare war/sue for peace, host feasts, hold court
+  - **Kingdom**: List of all towns with population, happiness, garrison, quarantine status
+  - **Court**: Full list of nobles with relationship levels, loan/blackmail indicators
+  - **Threats**: Assassination and revolt risk breakdown with advice, emergency "Flee the Kingdom" escape button
+- **King Mode Gameplay**: When crowned, player stays at capital, no hunger/thirst/energy management, trade/build/hire/caravan disabled, daily king tick calculates risks
+- **Assassination System**: Daily assassination chance based on noble hostility. Guards reduce risk. Failed attempts notify player. Successful attempts trigger death/heir UI
+- **Revolt System**: When coup fires against player-king, shows interactive Revolt UI with Fight (risk-based survival)/Flee (guaranteed)/Surrender (game over) options
+- **Flee Mechanic**: Emergency escape resets name, reputation, social rank, gold to 50, moves to random foreign town. Keeps skills, achievements, family
+- **Election Overhaul**: All nobles rank 4+ can be candidates and voters (not just royal advisors). Weighted voting: RA=3 votes, Lord=2, Minor Noble=1. Player influence via relationships, loans, and blackmail
+- **Blood Relative Check**: Grandchildren (via player marrying king's daughter) now recognized as valid blood heirs in succession
+- **King Button**: New 👑 King button in bottom bar (visible only when ruling)
+- **Crowned King Achievement**: Upgraded to platinum tier (500 XP)
+- **Save Migration v6**: Adds isKing and kingState fields to player data
+
+### Changed
+- **Succession System**: handleKingDeath now checks grandchildren before falling back to election
+- **Election Scoring**: Uses rank×10 + wealth + intelligence + ambition with random factor, plus player influence bonuses from loans (+10), blackmail (+15), and high relationships (+0-15)
+- **Bottom Bar**: Trade, Build, Hire, Caravan buttons disabled (grayed out) while ruling as king
+- **Vitals Skip**: Hunger, thirst, and energy ticks skipped when player is king (auto-maintained at 80+)
+
 ## [0.68.0] - Life Systems & Bug Fixes
 
 ### Fixed
