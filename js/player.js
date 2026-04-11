@@ -1810,7 +1810,7 @@
             if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.setBuildingProduct || 5);
             const res = findResource(productId);
             const prodName = res ? res.name : productId;
-            Engine.logEvent(`${bt.name} now producing ${prodName}.`);
+            Engine.logEvent(`${bt.name} now producing ${prodName}.`, null, 'my_business');
             return { success: true, message: `Now producing ${prodName}.` };
         }
 
@@ -1821,7 +1821,7 @@
             if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.setBuildingProduct || 5);
             const res = findResource(productId);
             const prodName = res ? res.name : productId;
-            Engine.logEvent(`${bt.name} now producing ${prodName}.`);
+            Engine.logEvent(`${bt.name} now producing ${prodName}.`, null, 'my_business');
             return { success: true, message: `Now producing ${prodName}.` };
         }
 
@@ -2010,7 +2010,7 @@
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.build || 10);
         grantXP(XP_REWARDS.BUILD || 10, 'build');
-        Engine.logEvent('The merchant converted a building to ' + newBt.name + ' in ' + town.name + '.');
+        Engine.logEvent('The merchant converted a building to ' + newBt.name + ' in ' + town.name + '.', null, 'my_business');
         return { success: true, message: 'Converted to ' + newBt.name + ' for ' + totalCost + 'g.', building: playerBld };
     }
 
@@ -2167,7 +2167,7 @@
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.build || 10);
         var bldName = bt ? bt.name : bld.type;
         var methodStr = demolMethod.startsWith('bp') ? '(blasting powder)' : '(demolition tools)';
-        Engine.logEvent('The merchant demolished a ' + bldName + ' in ' + town.name + ' ' + methodStr + '.');
+        Engine.logEvent('The merchant demolished a ' + bldName + ' in ' + town.name + ' ' + methodStr + '.', null, 'my_business');
         return { success: true, message: 'Demolished ' + bldName + ' for ' + totalCost + 'g ' + methodStr + '. Slot freed.' };
     }
 
@@ -3761,7 +3761,7 @@
         var riskInfo = getEncounterChance();
         var riskMsg = riskInfo.chance > 0 ? (' ' + (riskInfo.riskLevel === 'high' ? '🔴' : riskInfo.riskLevel === 'medium' ? '🟡' : '🟢') + ' ' + riskInfo.riskLevel.charAt(0).toUpperCase() + riskInfo.riskLevel.slice(1) + ' risk') : '';
         var companionMsg = player.travelCompanions.length > 0 ? ' 👨‍👩‍👧‍👦 Traveling with ' + player.travelCompanions.map(function(c) { return c.name; }).join(', ') + '.' : '';
-        Engine.logEvent(`You set out for ${dest ? dest.name : 'unknown'}.${horseMsg}${offroadMsg}${seaMsg}${cartMsg}${companionMsg}${riskMsg}`);
+        Engine.logEvent(`You set out for ${dest ? dest.name : 'unknown'}.${horseMsg}${offroadMsg}${seaMsg}${cartMsg}${companionMsg}${riskMsg}`, null, 'travel_events');
 
         // Journal — travel departure
         var originTown = Engine.findTown(player.travelOrigin);
@@ -4630,7 +4630,7 @@
 
         // Sea travel energy is now handled per-tick in tickTravel (no upfront cost)
 
-        Engine.logEvent('You set sail for ' + (destTown ? destTown.name : 'unknown') + '.');
+        Engine.logEvent('You set sail for ' + (destTown ? destTown.name : 'unknown') + '.', null, 'travel_events');
 
         // Warn if no beverages for the voyage
         var beverageTypes = (CONFIG.THIRST && CONFIG.THIRST.BEVERAGE_TYPES) || ['water', 'ale', 'mead', 'cider', 'herbal_tea', 'wine'];
@@ -7632,7 +7632,7 @@
                 }
                 // Dismiss escort on arrival
                 if (player.escort) {
-                    Engine.logEvent('\u{1F6E1}\uFE0F ' + player.escort.personName + ' completes the escort. Safe travels!');
+                    Engine.logEvent('\u{1F6E1}\uFE0F ' + player.escort.personName + ' completes the escort. Safe travels!', null, 'travel_events');
                     player.escort = null;
                 }
                 _moveGuardsToPlayer();
@@ -7671,8 +7671,7 @@
 
             // Dismiss escort on arrival
             if (player.escort) {
-                Engine.logEvent('\u{1F6E1}\uFE0F ' + player.escort.personName + ' completes the escort. Safe travels!');
-                player.escort = null;
+                Engine.logEvent('\u{1F6E1}\uFE0F ' + player.escort.personName + ' completes the escort. Safe travels!', null, 'travel_events');                player.escort = null;
             }
 
             // Move travel companions to destination town
@@ -7695,7 +7694,7 @@
             player._streetTradesDay = 0;
 
             const town = Engine.findTown(player.townId);
-            Engine.logEvent(`You have arrived at ${town ? town.name : 'your destination'}.`);
+            Engine.logEvent(`You have arrived at ${town ? town.name : 'your destination'}.`, null, 'travel_events');
 
             // Auto-pause on arrival so the player can decide what to do
             if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(0);
@@ -8308,7 +8307,7 @@
                     bldKingdom.gold = (bldKingdom.gold || 0) + Math.floor(titheGold * 0.5);
                     // Log periodically (not every day to avoid spam)
                     if (Engine.getDay() % 30 === 0) {
-                        Engine.logEvent('🌾 Harvest tithe: ' + bldKingdom.name + ' collected ' + tithe + ' ' + (res ? res.name : producedGood) + ' from your ' + bt.name + ' in ' + bldTown.name + '.');
+                        Engine.logEvent('🌾 Harvest tithe: ' + bldKingdom.name + ' collected ' + tithe + ' ' + (res ? res.name : producedGood) + ' from your ' + bt.name + ' in ' + bldTown.name + '.', null, 'my_business');
                     }
                 }
             }
@@ -8413,7 +8412,7 @@
                             bld._overflowSold = (bld._overflowSold || 0) + overflow;
                             bld._overflowRevenue = (bld._overflowRevenue || 0) + revenue;
                             if (bld._overflowSold >= 10 || (day % 7 === 0 && bld._overflowSold > 0)) {
-                                Engine.logEvent('🏭 ' + bt.name + ' in ' + sellTown.name + ': sold ' + bld._overflowSold + ' ' + _ovResName + ' to market for ' + bld._overflowRevenue + 'g (output storage full).');
+                                Engine.logEvent('🏭 ' + bt.name + ' in ' + sellTown.name + ': sold ' + bld._overflowSold + ' ' + _ovResName + ' to market for ' + bld._overflowRevenue + 'g (output storage full).', null, 'my_business');
                                 bld._overflowSold = 0;
                                 bld._overflowRevenue = 0;
                             }
@@ -14999,7 +14998,7 @@
                 var arrTown = Engine.findTown(ai.travelTarget);
                 ai.activity = 'idle';
                 ai.activityDetail = 'Arrived in ' + (arrTown ? arrTown.name : 'town');
-                Engine.logEvent('💍 ' + spouse.firstName + ' has arrived in ' + (arrTown ? arrTown.name : 'the destination') + '.');
+                Engine.logEvent('💍 ' + spouse.firstName + ' has arrived in ' + (arrTown ? arrTown.name : 'the destination') + '.', null, 'my_actions');
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast(spouse.firstName + ' arrived in ' + (arrTown ? arrTown.name : 'town') + '.', 'info');
                 logSpouseAction(day, 'travel', 'Arrived in ' + (arrTown ? arrTown.name : 'town'), 0);
                 ai.travelTarget = null;
@@ -20129,12 +20128,12 @@
                     if (_wBt && _wBld.workers.length < _wBt.workers) {
                         _wBld.workers.push(_wtPerson.id);
                         autoAssigned = true;
-                        Engine.logEvent('📍 ' + _wtPerson.firstName + ' arrived at ' + (_wtDestTown ? _wtDestTown.name : '?') + ' and was assigned to ' + _wBt.name + '.');
+                        Engine.logEvent('📍 ' + _wtPerson.firstName + ' arrived at ' + (_wtDestTown ? _wtDestTown.name : '?') + ' and was assigned to ' + _wBt.name + '.', null, 'my_business');
                         break;
                     }
                 }
                 if (!autoAssigned) {
-                    Engine.logEvent('📍 ' + _wtPerson.firstName + ' arrived at ' + (_wtDestTown ? _wtDestTown.name : '?') + '. No building assignment — assign them manually.');
+                    Engine.logEvent('📍 ' + _wtPerson.firstName + ' arrived at ' + (_wtDestTown ? _wtDestTown.name : '?') + '. No building assignment — assign them manually.', null, 'my_business');
                 }
             }
         }
@@ -28085,9 +28084,10 @@
                         else if (ml.indexOf('reputation') !== -1 || ml.indexOf('standing') !== -1 || ml.indexOf('rank') !== -1 || ml.indexOf('promoted') !== -1 || ml.indexOf('promotion') !== -1) subKey = 'my_actions.reputation';
                     } else if (category === 'my_business') {
                         if (ml.indexOf('caravan') !== -1 && (ml.indexOf('dispatched') !== -1 || ml.indexOf('dispatch') !== -1 || ml.indexOf('departing') !== -1 || ml.indexOf('guards join') !== -1)) subKey = 'my_business.caravan_dispatch';
-                        else if (ml.indexOf('caravan') !== -1 && (ml.indexOf('sold') !== -1 || ml.indexOf('arrival') !== -1 || ml.indexOf('arrived') !== -1 || ml.indexOf('delivered') !== -1 || ml.indexOf('bought') !== -1 || ml.indexOf('return') !== -1 || ml.indexOf('profit') !== -1 || ml.indexOf('revenue') !== -1 || ml.indexOf('gold') !== -1)) subKey = 'my_business.caravan_arrival';
+                        else if ((ml.indexOf('picked up') !== -1 && ml.indexOf('storage') !== -1) || (ml.indexOf('stored') !== -1 && (ml.indexOf(' in ') !== -1)) || (ml.indexOf('bought') !== -1 && ml.indexOf(' for ') !== -1 && ml.indexOf('g at ') !== -1) || (ml.indexOf('sold') !== -1 && ml.indexOf(' for ') !== -1 && ml.indexOf('g at ') !== -1) || ml.indexOf('reloaded') !== -1 || ml.indexOf('overflow') !== -1 || ml.indexOf('auto-disband') !== -1) subKey = 'my_business.caravan_trades';
+                        else if (ml.indexOf('caravan') !== -1 && (ml.indexOf('arrival') !== -1 || ml.indexOf('arrived') !== -1 || ml.indexOf('delivered') !== -1 || ml.indexOf('return') !== -1 || ml.indexOf('profit') !== -1 || ml.indexOf('revenue') !== -1 || ml.indexOf('completed') !== -1)) subKey = 'my_business.caravan_arrival';
                         else if (ml.indexOf('caravan') !== -1 && (ml.indexOf('desert') !== -1 || ml.indexOf('abandoned') !== -1 || ml.indexOf('storm') !== -1 || ml.indexOf('blockade') !== -1 || ml.indexOf('rescued') !== -1 || ml.indexOf('disbanded') !== -1 || ml.indexOf('turned back') !== -1 || ml.indexOf('crew') !== -1 || ml.indexOf('lost') !== -1 || ml.indexOf('destroyed') !== -1)) subKey = 'my_business.caravan_problems';
-                        else if (ml.indexOf('caravan') !== -1) subKey = 'my_business.caravan_arrival'; // any other caravan msg → arrival/sales
+                        else if (ml.indexOf('caravan') !== -1) subKey = 'my_business.caravan_arrival'; // any other caravan msg → arrival
                         else if (ml.indexOf('building') !== -1 || ml.indexOf('production') !== -1 || ml.indexOf('output') !== -1 || ml.indexOf('constructed') !== -1 || ml.indexOf('guard') !== -1 || ml.indexOf('sabotag') !== -1 || ml.indexOf('theft') !== -1 || ml.indexOf('protection') !== -1) subKey = 'my_business.building_output';
                         else if (ml.indexOf('worker') !== -1 || ml.indexOf('hired') !== -1 || ml.indexOf('dismissed') !== -1 || ml.indexOf('labor') !== -1 || ml.indexOf('conscript') !== -1 || ml.indexOf('retired') !== -1 || ml.indexOf('wages') !== -1 || ml.indexOf('satisfaction') !== -1) subKey = 'my_business.workers';
                         else if (ml.indexOf('agent') !== -1 || ml.indexOf('spy') !== -1 || ml.indexOf('intel') !== -1 || ml.indexOf('intelligence') !== -1 || ml.indexOf('smuggl') !== -1 || ml.indexOf('forged') !== -1 || ml.indexOf('notoriety') !== -1 || ml.indexOf('identity') !== -1 || ml.indexOf('laying low') !== -1 || ml.indexOf('rumor') !== -1 || ml.indexOf('frame') !== -1 || ml.indexOf('audit') !== -1 || ml.indexOf('warehouse') !== -1 || ml.indexOf('thief') !== -1 || ml.indexOf('stole') !== -1 || ml.indexOf('criminal') !== -1 || ml.indexOf('manipulated') !== -1) subKey = 'my_business.agents';
@@ -28174,7 +28174,7 @@
     // Sub-key definitions for each category (mirrors UI filterDefs)
     var _notifSubKeys = {
         my_actions: ['trade', 'travel', 'work', 'social', 'skills', 'reputation'],
-        my_business: ['caravan_dispatch', 'caravan_arrival', 'caravan_problems', 'building_output', 'workers', 'agents', 'license'],
+        my_business: ['caravan_dispatch', 'caravan_trades', 'caravan_arrival', 'caravan_problems', 'building_output', 'workers', 'agents', 'license'],
         my_kingdom: ['laws', 'taxes', 'king', 'festivals', 'commissions', 'political'],
         local_town: ['disasters', 'infrastructure', 'resources', 'population'],
         foreign_kingdoms: ['wars', 'laws', 'diplomacy', 'political'],
@@ -32267,7 +32267,7 @@
                             demolished++;
                         }
                         if (demolished > 0) {
-                            Engine.logEvent('🔥 The king ordered all ' + demolished + ' tent camp(s) in ' + town.name + ' demolished per your petition!');
+                            Engine.logEvent('🔥 The king ordered all ' + demolished + ' tent camp(s) in ' + town.name + ' demolished per your petition!', null, 'my_kingdom');
                             if (town.happiness !== undefined) town.happiness = Math.max(0, town.happiness - 3 * demolished);
                         } else {
                             Engine.logEvent('📜 The king approved your petition, but there are no tent camps in ' + town.name + ' to demolish.');
@@ -32883,7 +32883,7 @@
             // Traveler fights back — player takes minor damage
             player.notoriety += 5;
             recordCorruptAction('rob_traveler', true);
-            Engine.logEvent(`${player.fullName} tried to rob a traveler but was fought off!`);
+            Engine.logEvent(`${player.fullName} tried to rob a traveler but was fought off!`, null, 'my_actions');
             return { success: false, message: '⚔️ The traveler fought back! You fled empty-handed. (-5 notoriety gained)' };
         }
 
@@ -32892,7 +32892,7 @@
             const actualFine = applyCorruptPenalty(town, kingdom, 300, 15, 7, false);
             recordCorruptAction('rob_traveler', true);
             player.notoriety += 8;
-            Engine.logEvent(`${player.fullName} was caught robbing travelers near ${town.name}!`);
+            Engine.logEvent(`${player.fullName} was caught robbing travelers near ${town.name}!`, null, 'my_actions');
             return { success: false, caught: true, message: `🚨 CAUGHT! Fined ${actualFine}g, jailed 7 days.` };
         }
 
@@ -32915,7 +32915,7 @@
         player.notoriety += 6;
         recordCorruptAction('rob_traveler', false);
         grantXP(10, 'Robbed traveler');
-        Engine.logEvent('A traveler was robbed on the road near ' + town.name + '.');
+        Engine.logEvent('A traveler was robbed on the road near ' + town.name + '.', null, 'my_actions');
         return { success: true, message: `✅ Robbed a traveler for ${goldStolen}g${goodsMsg}!` };
     }
 
@@ -33401,7 +33401,7 @@
         player.inventory.stone -= 15;
         player.hiddenWarehouses.push({ townId, inventory: {}, capacity: 50 });
         grantXP(15, 'Built hidden warehouse');
-        Engine.logEvent(`${player.fullName} constructed something in ${Engine.findTown(townId)?.name || 'a town'}.`);
+        Engine.logEvent(`${player.fullName} constructed something in ${Engine.findTown(townId)?.name || 'a town'}.`, null, 'my_business');
         return { success: true, message: '✅ Hidden warehouse built! 50 capacity, invisible to tax collectors.' };
     }
 
@@ -33625,7 +33625,7 @@
                     player.doubleAgentActive = null;
                     player.militaryService.active = false;
                     player.notoriety += 30;
-                    Engine.logEvent('🚨 ' + player.fullName + ' was exposed as a double agent! Dishonorably discharged and exiled.');
+                    Engine.logEvent('🚨 ' + player.fullName + ' was exposed as a double agent! Dishonorably discharged and exiled.', null, 'my_actions');
                     if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚨 TREASON! Discovered as a double agent! Exiled!', 'danger', 'critical');
                 }
             }
@@ -35426,7 +35426,7 @@
         recordCorruptAction('double_noble_agent', false);
         grantXP(30, 'Became double noble agent');
         player.notoriety += 10;
-        Engine.logEvent('🕵️ ' + player.fullName + ' has begun a dangerous double life as a noble agent for ' + sponsor.name + '.');
+        Engine.logEvent('🕵️ ' + player.fullName + ' has begun a dangerous double life as a noble agent for ' + sponsor.name + '.', null, 'my_actions');
 
         var taskList = '';
         for (var tli = 0; tli < selectedTasks.length; tli++) {
@@ -35449,7 +35449,7 @@
                 dna.tasks[ti].completed = true;
                 dna.completed++;
                 anyCompleted = true;
-                Engine.logEvent('🕵️ Double agent task completed: ' + dna.tasks[ti].name + ' (' + dna.completed + '/5)');
+                Engine.logEvent('🕵️ Double agent task completed: ' + dna.tasks[ti].name + ' (' + dna.completed + '/5)', null, 'my_actions');
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('🕵️ Task complete: ' + dna.tasks[ti].name + ' (' + dna.completed + '/5)', 'success', 'schemes');
             }
         }
@@ -35551,7 +35551,7 @@
             '• -10 ' + targetKingdom.name + ' reputation\n' +
             '• Banned from ' + targetKingdom.name + ' for 90 days';
 
-        Engine.logEvent('🎭 ' + player.fullName + ' revealed as a double agent! Fled to ' + sponsor.name + ' with ' + reward + 'g reward.');
+        Engine.logEvent('🎭 ' + player.fullName + ' revealed as a double agent! Fled to ' + sponsor.name + ' with ' + reward + 'g reward.', null, 'my_actions');
 
         player.doubleNobleAgent = null;
         player._dnaTaskProgress = null;
@@ -35735,7 +35735,7 @@
             reports: [] // messages from agent
         };
         player.agents.push(agent);
-        Engine.logEvent(player.fullName + ' hired agent ' + agent.name + ' in ' + (Engine.findTown(townId) || {}).name + '.');
+        Engine.logEvent(player.fullName + ' hired agent ' + agent.name + ' in ' + (Engine.findTown(townId) || {}).name + '.', null, 'my_business');
         return { success: true, message: '✅ Hired ' + agent.name + ' for ' + hireFee + 'g (' + cost + 'g/day). Skills: ⚔️' + agent.skills.combat + ' 🥷' + agent.skills.stealth + ' 📊' + agent.skills.trade + ' 🗣️' + agent.skills.persuasion, agent: agent };
     }
 
@@ -36018,7 +36018,7 @@
             if (repKingdomId && player.reputation) {
                 player.reputation[repKingdomId] = Math.max(0, (player.reputation[repKingdomId] || 50) - 5);
             }
-            Engine.logEvent(player.fullName + '\'s agent ' + agent.name + ' was caught committing ' + def.label + '!');
+            Engine.logEvent(player.fullName + '\'s agent ' + agent.name + ' was caught committing ' + def.label + '!', null, 'my_business');
             return;
         }
 
@@ -37148,7 +37148,7 @@
                         }
                     }
                     if (day % 28 === 0) {
-                        Engine.logEvent('🌱 Your garden produced crops this month.');
+                        Engine.logEvent('🌱 Your garden produced crops this month.', null, 'my_business');
                     }
                 }
             }
@@ -41157,7 +41157,7 @@
             initScholarStart();
         }
 
-        Engine.logEvent(player.fullName + ' begins their journey as ' + (startConfig.name || 'an adventurer') + '.');
+        Engine.logEvent(player.fullName + ' begins their journey as ' + (startConfig.name || 'an adventurer') + '.', null, 'my_actions');
     }
 
     // ── Family Generation ──
@@ -42970,7 +42970,7 @@
                     var stolen = Math.min(player.pilgrim.followers, Math.floor(Math.random() * 2) + 1);
                     player.pilgrim.followers -= stolen;
                     rival.followers += stolen;
-                    Engine.logEvent('⚡ ' + rival.preacherName + ' of ' + rival.name + ' has converted ' + stolen + ' of your followers!');
+                    Engine.logEvent('⚡ ' + rival.preacherName + ' of ' + rival.name + ' has converted ' + stolen + ' of your followers!', null, 'my_business');
                 }
                 
                 // Rival moves to a new town every 45 days
@@ -44663,7 +44663,7 @@
         player.scholar.royaltiesGeneration = player.generation || 1;
         player.scholar.totalRoyaltiesEarned = 0;
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.write_great_book || 60);
-        Engine.logEvent(player.fullName + ' has written the Great Book! Scholar\'s journey complete.');
+        Engine.logEvent(player.fullName + ' has written the Great Book! Scholar\'s journey complete.', null, 'my_actions');
         grantXP(200, 'great book');
         return { success: true, message: 'The Great Book is written! Master Scholar abilities unlocked!' };
     }
@@ -45920,7 +45920,7 @@
         }
         if (bonusPay > 0) msg += ' + ' + bonusPay + 'g bonus plunder';
 
-        Engine.logEvent('🏴‍☠️ Privateer loot: ' + qty + 'x ' + resName + (bonusPay > 0 ? ' + ' + bonusPay + 'g bonus' : '') + (!placed ? ' (converted to gold)' : ''));
+        Engine.logEvent('🏴‍☠️ Privateer loot: ' + qty + 'x ' + resName + (bonusPay > 0 ? ' + ' + bonusPay + 'g bonus' : '') + (!placed ? ' (converted to gold)' : ''), null, 'my_business');
         if (typeof UI !== 'undefined' && UI.toast) UI.toast('🏴‍☠️ Found loot: ' + qty + 'x ' + resName + '!', 'success', 'combat');
 
         return msg;

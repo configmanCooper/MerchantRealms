@@ -22539,7 +22539,8 @@
             m.includes('ship sunk') || m.includes('caravan captured') ||
             m.includes('assassination') || m.includes('building seized') ||
             m.includes('bankruptcy') || m.includes('heir born') ||
-            m.includes('border closed') || m.includes('blockade')) {
+            m.includes('border closed') || m.includes('blockade') ||
+            m.includes('did not survive') || m.includes('has sunk')) {
             return 'critical';
         }
 
@@ -22554,7 +22555,7 @@
         } catch(e) {}
 
         function isMyKingdom() {
-            if (!details) return true; // no info, default to my_kingdom
+            if (!details) return true;
             if (details.kingdomId) {
                 return details.kingdomId === playerCitKingdom || details.kingdomId === playerTownKingdom;
             }
@@ -22564,20 +22565,24 @@
                 }
                 return false;
             }
-            return true; // no kingdom info, default to my_kingdom for backward compat
+            return true;
         }
 
         // War/military
         if (dtype === 'war_declared' || dtype === 'wardeclared' || dtype === 'warended' ||
             dtype === 'peace' || dtype === 'surrender' || dtype === 'battle' ||
             dtype === 'siege' || dtype === 'army' || dtype === 'naval_raid' ||
-            m.includes('declares war') || m.includes('war ') || m.includes('army') ||
+            dtype === 'demilitarized_zone_violation' || dtype === 'non_aggression_pact' ||
+            m.includes('declares war') || m.includes('war ') || m.includes('war!') || m.includes('army') ||
             m.includes('siege') || m.includes('troops') || m.includes('battle') ||
-            m.includes('bombardment') || m.includes('invaded')) {
+            m.includes('bombardment') || m.includes('invaded') || m.includes('deserted') ||
+            m.includes('deserting') || m.includes('reparations') || m.includes('demilitarized') ||
+            m.includes('dmz') || m.includes('garrison') || m.includes('military') ||
+            m.includes('non-aggression') || m.includes('war chest')) {
             return 'military';
         }
 
-        // Disasters/events — check if in player's current town or kingdom
+        // Disasters/events
         if (dtype === 'flood' || dtype === 'fire' || dtype === 'plague' || dtype === 'earthquake' ||
             dtype === 'blight' || dtype === 'drought' || dtype === 'mine_collapse' ||
             dtype === 'famine' || dtype === 'storm' ||
@@ -22590,8 +22595,8 @@
             return 'local_town';
         }
 
-        // Refugees — categorize based on source/destination kingdom
-        if (dtype === 'refugees') {
+        // Refugees
+        if (dtype === 'refugees' || m.includes('refugee')) {
             return isMyKingdom() ? 'my_kingdom' : 'foreign_kingdoms';
         }
 
@@ -22612,9 +22617,16 @@
             dtype === 'kingdom_collapse_warning' || dtype === 'kingdom_fragmentation' ||
             dtype === 'secession' || dtype === 'coup_attempt' || dtype === 'king_overthrown' || dtype === 'coup_failed' ||
             dtype === 'conquest_citizenship' || dtype === 'conquest_servitude' || dtype === 'conquest_raid' ||
+            dtype === 'peace_treaty' || dtype === 'election' ||
             m.includes('law ') || m.includes('tax ') || m.includes('festival') ||
             m.includes('succession') || m.includes('king ') || m.includes('regent') ||
-            m.includes('commission') || m.includes('tournament') || m.includes('alliance')) {
+            m.includes('commission') || m.includes('tournament') || m.includes('alliance') ||
+            m.includes('peace treaty') || m.includes('treaty ') || m.includes('coronation') ||
+            m.includes('the crown') || m.includes('ruler') || m.includes('election') ||
+            m.includes('royal advisor') || m.includes('exiled') || m.includes('imprisoned') ||
+            m.includes('stripped') || m.includes('execution') || m.includes('overthrown') ||
+            m.includes('coup') || m.includes('border dispute') || m.includes('trade agreement') ||
+            m.includes('white peace') || m.includes('sues for peace') || m.includes('surrenders')) {
             return isMyKingdom() ? 'my_kingdom' : 'foreign_kingdoms';
         }
 
@@ -22622,34 +22634,100 @@
         if (dtype === 'trade' || dtype === 'trade_craze' || dtype === 'embargo' ||
             dtype === 'trade_embargo' || dtype === 'embargo_lifted' ||
             dtype === 'price_control' || dtype === 'bounty' || dtype === 'tariff' ||
-            m.includes('trade craze') || m.includes('embargo') || m.includes('price') ||
-            m.includes('tariff') || m.includes('bounty')) {
+            m.includes('trade craze') || m.includes('embargo') ||
+            m.includes('tariff') || m.includes('bounty') ||
+            m.includes('price control') || m.includes('price cap') || m.includes('price floor')) {
             return 'world_economy';
         }
 
-        // Elite merchant / NPC
-        if (m.includes('elite merchant') || m.includes('merchant empire') ||
-            m.includes('merchant dynasty') || m.includes(' married ') ||
-            m.includes(' retired') || m.includes('npc ')) {
-            return 'npc_activity';
+        // Illness/quarantine/disease
+        if (dtype === 'quarantine' || dtype === 'disease' || dtype === 'epidemic' ||
+            m.includes('quarantine') || m.includes('epidemic') || m.includes('disease spread') ||
+            m.includes('infection') || m.includes('outbreak') || m.includes('sick')) {
+            return 'illness';
         }
 
         // Combat/piracy
         if (m.includes('pirate') || m.includes('bandit') || m.includes('ambush') ||
-            m.includes('attacked') || m.includes('raided')) {
+            m.includes('attacked') || m.includes('raided') || m.includes('mountain bandit')) {
             return 'combat';
         }
 
-        // Caravan/business events
+        // Travel events — player travel, foraging, encounters, storms at sea, escorts
+        if (dtype === 'travel_arrive' || dtype === 'travel_depart' || dtype === 'forage' ||
+            m.includes('you set out for') || m.includes('set sail for') || m.includes('arrived at') ||
+            m.includes('arrived in') || m.includes('arrived at my dest') ||
+            m.includes('found wild') || m.includes('found a gold') || m.includes('found ') ||
+            m.includes('mountain pass') || m.includes('dark cave') || m.includes('oasis') ||
+            m.includes('storm battered') || m.includes('hull took') ||
+            m.includes('escort') || m.includes('you boarded') || m.includes('run the blockade') ||
+            m.includes('slipped past') || m.includes('open water') ||
+            m.includes('camped') || m.includes('rested (')) {
+            return 'travel_events';
+        }
+
+        // Player business — caravans, buildings, workers, agents, licenses, smuggling, transport
         if (m.includes('caravan') || m.includes('dispatched') || m.includes('recurring') ||
-            m.includes('picked up') || m.includes('stored') || m.includes('sold') ||
-            m.includes('bought') || m.includes('return trip') || m.includes('reloaded') ||
+            m.includes('picked up') || m.includes('return trip') || m.includes('reloaded') ||
             m.includes('disbanded') || m.includes('rescued') || m.includes('smuggling') ||
-            m.includes('sea route') || m.includes('trade route')) {
+            m.includes('sea route') || m.includes('trade route') ||
+            m.includes('the merchant builds') || m.includes('the merchant purchased') ||
+            m.includes('the merchant converted') || m.includes('the merchant demolished') ||
+            m.includes('now producing') || m.includes('revitalize') ||
+            m.includes('worker') || m.includes('sent to ') ||
+            m.includes('passengers') || m.includes('transport') ||
+            m.includes('auto-disband') || m.includes('overflow') ||
+            m.includes('guarding your') || m.includes('commissioned a ') ||
+            m.includes('building') && (m.includes('completed') || m.includes('constructed'))) {
             return 'my_business';
         }
 
-        // Default to local_town for unrecognized events
+        // Player actions — smuggling, bribing, quarantine violations, combat trials, skills
+        // Only match when message contains player-specific context (player name or 'you')
+        var _playerName = '';
+        try { if (typeof Player !== 'undefined') _playerName = (Player.fullName || Player.firstName || '').toLowerCase(); } catch(e) {}
+        var _isPlayerMsg = _playerName && m.includes(_playerName) || m.includes('you ') || m.includes('your ') || m.includes('you\'');
+        if (_isPlayerMsg && (
+            m.includes('caught smuggling') || m.includes('smuggled') || m.includes('smuggl') ||
+            m.includes('bribed') || m.includes('bribing') || m.includes('blood price') ||
+            m.includes('trial by combat') || m.includes('charges were dropped') ||
+            m.includes('immune as') || m.includes('violated') ||
+            m.includes('fined ') || m.includes('jailed') ||
+            m.includes('married') || m.includes('pregnant') ||
+            m.includes('spouse') || m.includes('wedding') ||
+            m.includes('repaid your loan') ||
+            m.includes('frozen') || m.includes('peace restored'))) {
+            return 'my_actions';
+        }
+        // Player actions that don't need player-name gating
+        if (m.includes('level up') || m.includes('skill learned') || m.includes('unlocked') ||
+            m.includes('reputation')) {
+            return 'my_actions';
+        }
+
+        // NPC activity — elite merchants, NPC life events, merchant dynasties
+        if (m.includes('elite merchant') || m.includes('merchant empire') ||
+            m.includes('merchant dynasty') || m.includes(' married ') ||
+            m.includes(' retired') || m.includes('npc ') ||
+            m.includes('has collapsed') || m.includes('passes to')) {
+            return 'npc_activity';
+        }
+
+        // Local town events — construction, resources, population, infrastructure
+        if (m.includes('construction of') || m.includes('wall upgrade') ||
+            m.includes('completed in') || m.includes('put a ') ||
+            m.includes('for sale') || m.includes('population') ||
+            m.includes('migrat') || m.includes('road ') || m.includes('bridge ') ||
+            m.includes('well ') || m.includes('vein') || m.includes('deposit')) {
+            return 'local_town';
+        }
+
+        // Sold/bought as generic business (if not matched above)
+        if (m.includes('sold') || m.includes('bought') || m.includes('stored')) {
+            return 'my_business';
+        }
+
+        // Default to local_town for truly unrecognized events
         return 'local_town';
     }
 

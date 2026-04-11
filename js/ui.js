@@ -10996,7 +10996,8 @@ window.UI = (function () {
             ]},
             { key: 'my_business', label: '💼 My Business', desc: 'Caravans, building output, workers, agents', subs: [
                 { key: 'caravan_dispatch', label: '🐪 Caravan Dispatch' },
-                { key: 'caravan_arrival', label: '📦 Caravan Arrivals & Sales' },
+                { key: 'caravan_trades', label: '📦 Caravan Trades' },
+                { key: 'caravan_arrival', label: '🚩 Caravan Arrivals' },
                 { key: 'caravan_problems', label: '⚠️ Caravan Problems' },
                 { key: 'building_output', label: '🏭 Building Output' },
                 { key: 'workers', label: '👷 Worker Events' },
