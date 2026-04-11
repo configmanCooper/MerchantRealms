@@ -43,6 +43,22 @@ window.Renderer = (function () {
     let _terrainCacheStartRow = 0;
     let _terrainCacheEndCol = 0;
     let _terrainCacheEndRow = 0;
+
+    // ── Full-scene snapshot cache (low zoom optimization) ──
+    // At zoom < 1.0, we render the entire visible scene (terrain + overlays + towns + roads)
+    // onto a large offscreen canvas with margin, then just blit-shift on pan.
+    let _sceneCache = null;       // offscreen canvas
+    let _sceneCacheCtx = null;
+    let _sceneCacheDirty = true;
+    let _sceneCacheZoom = -1;
+    let _sceneCacheCamX = -9999;
+    let _sceneCacheCamY = -9999;
+    // World-coordinate bounds of what the scene cache covers
+    let _sceneCacheLeft = 0;
+    let _sceneCacheTop = 0;
+    let _sceneCacheRight = 0;
+    let _sceneCacheBottom = 0;
+
     let worldData = null;
     let frameCount = 0;
     let _npcAnimTime = 0; // Game-speed-driven animation clock for NPC movement
@@ -167,6 +183,7 @@ window.Renderer = (function () {
         centerOnPlayer();
 
         terrainDirty = true;
+        _sceneCacheDirty = true;
     }
 
     function resize() {
@@ -175,6 +192,7 @@ window.Renderer = (function () {
         camera.width = canvas.width;
         camera.height = canvas.height;
         terrainDirty = true;
+        _sceneCacheDirty = true;
     }
 
     function centerOnPlayer() {
@@ -278,12 +296,12 @@ window.Renderer = (function () {
         const dz = Math.abs(camera.zoom - lastTerrainZoom);
         const dx = Math.abs(camera.x - lastTerrainCamX);
         const dy = Math.abs(camera.y - lastTerrainCamY);
-        // At low zoom, allow much more camera drift — we render with overscroll margin
-        // so small pans reuse the cached buffer without any redraw
-        const panThreshold = camera.zoom < 0.5 ? 80 : camera.zoom < 0.7 ? 50 : camera.zoom < 1.0 ? 25 : 4;
+        // Increase pan thresholds — scene cache handles low zoom, terrain cache handles rest
+        const panThreshold = camera.zoom < 1.0 ? 9999 : camera.zoom < 1.5 ? 12 : 4;
         if (dz > 0.005 || dx > panThreshold || dy > panThreshold) {
             terrainDirty = true;
         }
+        // Scene cache invalidation is handled in _renderViaSceneCache via bounds check
     }
 
     function pan(dx, dy) {
@@ -367,7 +385,13 @@ window.Renderer = (function () {
         var _curSeason = (typeof Engine !== 'undefined' && Engine.getSeason) ? Engine.getSeason() : null;
         if (_curSeason !== _lastSeason) {
             terrainDirty = true;
+            _sceneCacheDirty = true;
             _lastSeason = _curSeason;
+        }
+        // Periodically refresh scene cache to pick up game state changes (territory, towns)
+        // Every ~300 frames ≈ 5 seconds at 60fps
+        if (camera.zoom < 1.0 && (frameCount % 300 === 0)) {
+            _sceneCacheDirty = true;
         }
         // Advance NPC animation clock based on game speed (NPCs freeze when paused)
         var now = performance.now();
@@ -375,9 +399,6 @@ window.Renderer = (function () {
             var dt = (now - _lastFrameTimestamp) / 1000; // seconds since last frame
             var gameSpeed = (typeof Game !== 'undefined' && Game.getSpeed) ? Game.getSpeed() : 0;
             if (gameSpeed > 0) {
-                // Scale so current visual speed at 1x is 1/16th of old speed
-                // Old: animT = frameCount * 0.015 (~0.9/sec at 60fps)
-                // New at 1x: ~0.056/sec, at 16x: ~0.9/sec (matches old), at 60x: ~3.4/sec
                 _npcAnimTime += dt * 0.056 * gameSpeed;
             }
         }
@@ -393,6 +414,16 @@ window.Renderer = (function () {
         _frameKingdoms = Engine.getKingdoms ? Engine.getKingdoms() : [];
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // ── SCENE SNAPSHOT MODE (zoom < 1.0) ──
+        // Render entire scene to offscreen canvas with large margin, then just blit on pan.
+        // Only re-render when pan exceeds margin or zoom changes.
+        if (camera.zoom < 1.0) {
+            _renderViaSceneCache(player);
+            return;
+        }
+
+        // ── NORMAL RENDER (zoom >= 1.0) ──
         ctx.save();
 
         // Apply camera transform
@@ -402,9 +433,6 @@ window.Renderer = (function () {
 
         // 1. Terrain
         renderTerrain();
-
-        // Performance: at low zoom (< 1.0), skip expensive moving/overlay layers
-        var lowZoomStatic = camera.zoom < 1.0;
 
         // 2. Kingdom territories
         renderKingdomTerritories();
@@ -423,24 +451,16 @@ window.Renderer = (function () {
             renderStrategicTownOverlays();
         }
 
-        // 4b. Elite merchant heraldry flags (skip at low zoom)
-        if (!lowZoomStatic) {
+        // 4b-4e: Overlays (skip fertility/deposits/survey at 1.0-1.5 for perf)
+        var midZoom = camera.zoom < 1.5;
+        if (!midZoom) {
             renderEliteMerchantIcons();
-        }
-
-        // 4c. Soil fertility overlay (skip at low zoom — barely visible)
-        if (!lowZoomStatic) {
             renderFertility();
-        }
-
-        // 4d. Resource deposits overlay (skip at low zoom)
-        if (!lowZoomStatic) {
             renderDeposits();
-        }
-
-        // 4e. Survey circle (skip at low zoom)
-        if (!lowZoomStatic) {
             renderSurveyCircle();
+        } else {
+            // At 1.0-1.5x, still render elite merchant icons (useful) but skip others
+            renderEliteMerchantIcons();
         }
 
         // 5. People (only when zoomed in)
@@ -448,31 +468,179 @@ window.Renderer = (function () {
             renderPeople();
         }
 
-        // 6. Caravans (static dots at low zoom, full render when closer)
-        if (lowZoomStatic) {
-            renderCaravansSimple(player);
-        } else {
-            renderCaravans(player);
-        }
+        // 6. Caravans
+        renderCaravans(player);
 
         // 7. Player marker
         renderPlayerMarker(player);
 
-        // 8. AI Merchants (unified with elite merchants — rendered via gold dots + flags)
+        // 9. War indicators
+        renderWarIndicators();
 
-        // 9. War indicators (skip at low zoom)
-        if (!lowZoomStatic) {
-            renderWarIndicators();
-        }
-
-        // 10. Event effects (skip at low zoom)
-        if (!lowZoomStatic) {
+        // 10. Event effects (skip at mid-zoom for slight perf gain)
+        if (!midZoom) {
             renderEventEffects();
         }
 
         // Hover highlight
         renderHoverHighlight();
 
+        ctx.restore();
+
+        // Seasonal tint overlay
+        renderSeasonOverlay();
+
+        // Minimap
+        renderMinimap(player);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  SCENE SNAPSHOT (zoom < 1.0) — static image approach
+    // ═══════════════════════════════════════════════════════════
+
+    function _renderViaSceneCache(player) {
+        var vb = getVisibleBounds();
+        // Large margin in world coords — enough for substantial panning without redraw
+        var marginW = (vb.right - vb.left) * 0.6;
+        var marginH = (vb.bottom - vb.top) * 0.6;
+
+        // Check if current viewport is still within cached scene bounds
+        var needsRedraw = _sceneCacheDirty || !_sceneCache;
+        if (!needsRedraw && Math.abs(camera.zoom - _sceneCacheZoom) > 0.005) needsRedraw = true;
+        if (!needsRedraw && (
+            vb.left < _sceneCacheLeft || vb.right > _sceneCacheRight ||
+            vb.top < _sceneCacheTop || vb.bottom > _sceneCacheBottom
+        )) needsRedraw = true;
+
+        if (needsRedraw) {
+            // Compute scene bounds with margin
+            var scLeft = vb.left - marginW;
+            var scTop = vb.top - marginH;
+            var scRight = vb.right + marginW;
+            var scBottom = vb.bottom + marginH;
+
+            // Clamp to world bounds
+            var worldW = CONFIG.WORLD_WIDTH || 4000;
+            var worldH = CONFIG.WORLD_HEIGHT || 4000;
+            if (scLeft < 0) scLeft = 0;
+            if (scTop < 0) scTop = 0;
+            if (scRight > worldW) scRight = worldW;
+            if (scBottom > worldH) scBottom = worldH;
+
+            var sceneW = Math.ceil((scRight - scLeft) * camera.zoom);
+            var sceneH = Math.ceil((scBottom - scTop) * camera.zoom);
+
+            // Cap canvas size to avoid huge memory (max ~4096px in each dimension)
+            var maxDim = 4096;
+            if (sceneW > maxDim) {
+                var scaleX = maxDim / sceneW;
+                scLeft = vb.left - marginW * scaleX;
+                scRight = vb.right + marginW * scaleX;
+                if (scLeft < 0) scLeft = 0;
+                if (scRight > worldW) scRight = worldW;
+                sceneW = Math.ceil((scRight - scLeft) * camera.zoom);
+            }
+            if (sceneH > maxDim) {
+                var scaleY = maxDim / sceneH;
+                scTop = vb.top - marginH * scaleY;
+                scBottom = vb.bottom + marginH * scaleY;
+                if (scTop < 0) scTop = 0;
+                if (scBottom > worldH) scBottom = worldH;
+                sceneH = Math.ceil((scBottom - scTop) * camera.zoom);
+            }
+
+            if (!_sceneCache) {
+                _sceneCache = document.createElement('canvas');
+                _sceneCacheCtx = _sceneCache.getContext('2d');
+            }
+            if (_sceneCache.width !== sceneW || _sceneCache.height !== sceneH) {
+                _sceneCache.width = sceneW;
+                _sceneCache.height = sceneH;
+            }
+
+            // Render all static layers onto the scene cache
+            var sctx = _sceneCacheCtx;
+            sctx.clearRect(0, 0, sceneW, sceneH);
+            sctx.save();
+            sctx.scale(camera.zoom, camera.zoom);
+            sctx.translate(-scLeft, -scTop);
+
+            // Temporarily widen camera so render functions see the full scene cache area
+            var savedCamX2 = camera.x;
+            var savedCamY2 = camera.y;
+            var savedCamW = camera.width;
+            var savedCamH = camera.height;
+            var savedCtx = ctx;
+            ctx = sctx; // render functions use the module-level ctx
+            // Set camera to center of scene cache with dimensions matching scene cache
+            camera.x = (scLeft + scRight) / 2;
+            camera.y = (scTop + scBottom) / 2;
+            camera.width = sceneW;
+            camera.height = sceneH;
+
+            // Force terrain redraw for the larger area
+            terrainDirty = true;
+
+            // Render terrain directly to scene cache
+            renderTerrain();
+
+            // Kingdom territories
+            renderKingdomTerritories();
+
+            // Roads
+            renderRoads();
+
+            // Sea routes
+            renderSeaRoutes();
+
+            // Towns
+            renderTowns();
+
+            // Strategic overlays
+            if (mapMode === 1) {
+                renderStrategicTownOverlays();
+            }
+
+            // Simple caravan dots (static — these don't move fast enough to matter)
+            renderCaravansSimple(player);
+
+            // NOTE: Player marker is NOT in the scene cache — drawn per-frame on top
+
+            sctx.restore();
+
+            // Restore main ctx and camera
+            ctx = savedCtx;
+            camera.x = savedCamX2;
+            camera.y = savedCamY2;
+            camera.width = savedCamW;
+            camera.height = savedCamH;
+
+            _sceneCacheLeft = scLeft;
+            _sceneCacheTop = scTop;
+            _sceneCacheRight = scRight;
+            _sceneCacheBottom = scBottom;
+            _sceneCacheZoom = camera.zoom;
+            _sceneCacheCamX = camera.x;
+            _sceneCacheCamY = camera.y;
+            _sceneCacheDirty = false;
+            terrainDirty = false;
+            lastTerrainZoom = camera.zoom;
+            lastTerrainCamX = camera.x;
+            lastTerrainCamY = camera.y;
+        }
+
+        // Blit the cached scene to the main canvas — just a single drawImage with offset
+        var sx = (vb.left - _sceneCacheLeft) * camera.zoom;
+        var sy = (vb.top - _sceneCacheTop) * camera.zoom;
+        ctx.drawImage(_sceneCache, sx, sy, camera.width, camera.height, 0, 0, camera.width, camera.height);
+
+        // Draw dynamic overlays on top (player marker + hover highlight)
+        ctx.save();
+        ctx.translate(camera.width / 2, camera.height / 2);
+        ctx.scale(camera.zoom, camera.zoom);
+        ctx.translate(-camera.x, -camera.y);
+        renderPlayerMarker(player);
+        renderHoverHighlight();
         ctx.restore();
 
         // Seasonal tint overlay
@@ -511,7 +679,7 @@ window.Renderer = (function () {
 
         if (needsRedraw) {
             // Render with overscroll margin so small pans are free (no redraw)
-            var marginTiles = camera.zoom < 0.5 ? 20 : camera.zoom < 0.7 ? 14 : camera.zoom < 1.0 ? 8 : 3;
+            var marginTiles = camera.zoom < 0.5 ? 20 : camera.zoom < 0.7 ? 14 : camera.zoom < 1.0 ? 8 : camera.zoom < 1.5 ? 6 : 3;
             var cSC = Math.max(0, startCol - marginTiles);
             var cEC = Math.min(terrainWidth - 1, endCol + marginTiles);
             var cSR = Math.max(0, startRow - marginTiles);
