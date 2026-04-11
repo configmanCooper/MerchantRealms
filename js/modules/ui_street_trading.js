@@ -1,0 +1,2093 @@
+// ============================================================
+// Merchant Realms — UI Street Trading Module (extracted from ui.js)
+// Extends window.UI with street trading dialog functions
+// ============================================================
+(function(UI) {
+    "use strict";
+    if (!UI) throw new Error("UI must be loaded before ui_street_trading.js");
+
+    // Aliases for UI utilities
+    var openModal = UI.openModal;
+    var closeModal = UI.closeModal;
+    var toast = UI.toast;
+    var formatGold = UI.formatGold;
+    var escapeHtml = UI.escapeHtml;
+
+    // ═══════════════════════════════════════════════════════════
+    //  STREET TRADING DIALOG
+    // ═══════════════════════════════════════════════════════════
+
+function openStreetTrading() {
+    if (typeof Player === 'undefined') return;
+    if (Player.traveling) { toast('Cannot trade while traveling.', 'warning'); return; }
+
+    // Outpost-specific messaging
+    var _stTown = Engine.findTown(Player.townId);
+    if (_stTown && _stTown.isOutpost) {
+        if (!_stTown.outpostResidents || _stTown.outpostResidents.length === 0) {
+            toast('No residents at this outpost for street trading.', 'warning'); return;
+        }
+        if (!_stTown.outpostUpgrades || _stTown.outpostUpgrades.indexOf('market_stall') < 0) {
+            toast('Build Market Stalls upgrade to enable street trading here.', 'warning'); return;
+        }
+        if (!_stTown.workerAssignments || !_stTown.workerAssignments.market_stall) {
+            toast('Assign a worker to Market Stalls to enable street trading.', 'warning'); return;
+        }
+    }
+
+    const trades = Player.getStreetTrades();
+    let html = '<p class="street-intro">Local townsfolk looking to buy specific goods at premium prices.</p>';
+
+    if (trades.length === 0) {
+        html += '<p>No street trading opportunities right now. Check back in a few days.</p>';
+    } else {
+        html += '<div class="street-trade-list">';
+        for (let i = 0; i < trades.length; i++) {
+            const t = trades[i];
+            const held = (Player.inventory[t.resourceId] || 0);
+            const canSell = held >= t.qty;
+            html += '<div class="street-trade-item">';
+            html += '<div class="street-trade-info">';
+            html += '<span class="street-npc-name">' + t.npcName + '</span> wants ';
+            html += '<strong>' + t.qty + ' ' + t.resourceIcon + ' ' + t.resourceName + '</strong>';
+            const premiumPct = t.marketPrice > 0 ? Math.round(((t.pricePerUnit - t.marketPrice) / t.marketPrice) * 100) : 0;
+            const isBelowMarket = t.pricePerUnit < t.marketPrice;
+            const premiumColor = isBelowMarket ? '#c44e52' : '#55a868';
+            const premiumSign = premiumPct >= 0 ? '+' : '';
+            html += ' — will pay <span class="street-price">' + t.pricePerUnit + 'g each</span>';
+            html += ' <span style="color:' + premiumColor + ';font-weight:bold;font-size:0.85em;">';
+            html += '(' + premiumSign + premiumPct + '% ' + (isBelowMarket ? 'below' : 'above') + ' market)';
+            html += '</span>';
+            if (isBelowMarket) {
+                html += ' <span style="color:#c44e52;font-weight:bold;">⚠️ Below market price!</span>';
+            }
+            html += '</div>';
+            html += '<div class="street-trade-actions">';
+            html += '<span class="street-have">You have: ' + held + '</span>';
+            html += '<button class="btn-medieval btn-street-sell" ' + (canSell ? 'onclick="UI.executeStreetTrade(' + i + ')"' : 'disabled') + '>';
+            html += 'Sell ' + t.qty + ' for ' + (t.pricePerUnit * t.qty) + 'g</button>';
+            html += '</div>';
+            html += '</div>';
+        }
+        html += '</div>';
+    }
+
+    // Skill discount summary for buy offers
+    var _sdSkills = [];
+    var _sdTotal = 0;
+    if (typeof Player !== 'undefined') {
+        if (Player.hasSkill('haggler') || Player.hasSkill('master_haggler')) { _sdSkills.push(Player.hasSkill('master_haggler') ? '💰 Master Haggler -10%' : '🤝 Haggler -10%'); _sdTotal += 10; }
+        if (Player.hasSkill('silver_tongue') || Player.hasSkill('golden_tongue')) { _sdSkills.push(Player.hasSkill('golden_tongue') ? '👅 Golden Tongue -5%' : '👄 Silver Tongue -5%'); _sdTotal += 5; }
+        if (Player.hasSkill('charming') || Player.hasSkill('charismatic')) { _sdSkills.push(Player.hasSkill('charismatic') ? '✨ Charismatic -5%' : '😊 Charming -5%'); _sdTotal += 5; }
+        if (Player.hasSkill('black_market_contacts')) { _sdSkills.push('🕶️ Black Market Contacts -10%'); _sdTotal += 10; }
+        if (Player.hasSkill('corruption_expert')) { _sdSkills.push('💀 Corruption Expert -5%'); _sdTotal += 5; }
+        _sdTotal = Math.min(30, _sdTotal);
+    }
+    if (_sdSkills.length > 0) {
+        html += '<hr style="border-color:#555;margin:12px 0;">';
+        html += '<div style="background:rgba(85,168,104,0.12);border:1px solid #55a868;border-radius:6px;padding:6px 10px;margin-bottom:8px;">';
+        html += '<span style="color:#55a868;font-weight:bold;">🏷️ Your Skill Discounts on Buy Prices:</span> ';
+        html += _sdSkills.join(', ');
+        html += ' <span style="color:#55a868;font-weight:bold;">(Total: -' + _sdTotal + '%' + (_sdTotal >= 30 ? ' MAX' : '') + ')</span>';
+        html += '</div>';
+    }
+
+    // Street BUY offers (contraband + scarce goods from street vendors)
+    if (typeof Player !== 'undefined' && Player.getStreetBuyOffers) {
+        var buyOffers = Player.getStreetBuyOffers();
+        if (buyOffers.length > 0) {
+            // Split into contraband and scarce
+            var contrabandBuys = buyOffers.filter(function(o) { return o.category === 'contraband'; });
+            var scarceBuys = buyOffers.filter(function(o) { return o.category === 'scarce'; });
+
+            if (contrabandBuys.length > 0) {
+                html += '<hr style="border-color:#555;margin:12px 0;">';
+                html += '<p class="street-intro">🚫 <strong>Buy Contraband</strong> — Shady characters selling banned goods at black market prices.</p>';
+                html += '<div class="street-trade-list">';
+                for (var bi = 0; bi < contrabandBuys.length; bi++) {
+                    var bo = contrabandBuys[bi];
+                    var boIdx = buyOffers.indexOf(bo);
+                    var boTotal = bo.pricePerUnit * bo.qty;
+                    var boCanAfford = (Player.gold || 0) >= boTotal;
+                    html += '<div class="street-trade-item" style="border-left:3px solid #c44e52;">';
+                    html += '<div class="street-trade-info">';
+                    html += '<span class="street-npc-name">' + bo.npcName + '</span> offers ';
+                    html += '<strong>' + bo.qty + ' ' + (bo.resourceIcon || '') + ' ' + bo.resourceName + '</strong>';
+                    html += ' — price <span class="street-price">' + bo.pricePerUnit + 'g each</span>';
+                    html += ' <span style="color:#c44e52;font-weight:bold;font-size:0.85em;cursor:help;" title="Banned items are illegal to make or sell, but legal to buy or own in small amounts.">🚫 Banned</span>';
+                    html += '</div>';
+                    html += '<div class="street-trade-actions">';
+                    html += '<span class="street-have">Total: ' + boTotal + 'g</span>';
+                    html += '<button class="btn-medieval btn-street-sell" ' + (boCanAfford ? 'onclick="UI.executeStreetBuyUI(' + boIdx + ')"' : 'disabled') + '>';
+                    html += 'Buy ' + bo.qty + ' for ' + boTotal + 'g</button>';
+                    html += '</div></div>';
+                }
+                html += '</div>';
+            }
+
+            if (scarceBuys.length > 0) {
+                html += '<hr style="border-color:#555;margin:12px 0;">';
+                html += '<p class="street-intro">🛒 <strong>Buy Scarce Goods</strong> — Traveling merchants selling goods not available locally. Above-market prices.</p>';
+                html += '<div class="street-trade-list">';
+                for (var sbi = 0; sbi < scarceBuys.length; sbi++) {
+                    var so = scarceBuys[sbi];
+                    var soIdx = buyOffers.indexOf(so);
+                    var soTotal = so.pricePerUnit * so.qty;
+                    var soCanAfford = (Player.gold || 0) >= soTotal;
+                    var soPremPct = so.marketPrice > 0 ? Math.round(((so.pricePerUnit - so.marketPrice) / so.marketPrice) * 100) : 0;
+                    html += '<div class="street-trade-item" style="border-left:3px solid #e6c422;">';
+                    html += '<div class="street-trade-info">';
+                    html += '<span class="street-npc-name">' + so.npcName + '</span> offers ';
+                    html += '<strong>' + so.qty + ' ' + (so.resourceIcon || '') + ' ' + so.resourceName + '</strong>';
+                    html += ' — <span class="street-price">' + so.pricePerUnit + 'g each</span>';
+                    html += ' <span style="color:#e67e22;font-weight:bold;font-size:0.85em;">(+' + soPremPct + '% above market)</span>';
+                    html += ' <span style="color:#e6c422;font-size:0.8em;">📦 Not in local market</span>';
+                    html += '</div>';
+                    html += '<div class="street-trade-actions">';
+                    html += '<span class="street-have">Total: ' + soTotal + 'g</span>';
+                    html += '<button class="btn-medieval btn-street-sell" ' + (soCanAfford ? 'onclick="UI.executeStreetBuyUI(' + soIdx + ')"' : 'disabled') + '>';
+                    html += 'Buy ' + so.qty + ' for ' + soTotal + 'g</button>';
+                    html += '</div></div>';
+                }
+                html += '</div>';
+            }
+        }
+    }
+
+    // Contraband SELL offers — sell your banned/restricted goods to shady NPCs
+    if (typeof Player !== 'undefined' && Player.getStreetContrabandOffers) {
+        var contrabandOffers = Player.getStreetContrabandOffers();
+        if (contrabandOffers.length > 0) {
+            html += '<hr style="border-color:#555;margin:12px 0;">';
+            html += '<p class="street-intro">🚫 <strong>Sell Contraband</strong> — Offload banned or restricted goods. Risk of detection and punishment!</p>';
+            html += '<div class="street-trade-list">';
+            for (var ci = 0; ci < contrabandOffers.length; ci++) {
+                var co = contrabandOffers[ci];
+                var coHeld = co.heldQty || 0;
+                var coCanSell = coHeld > 0;
+                var coTotal = co.pricePerUnit * coHeld;
+                var coPremiumPct = co.marketPrice > 0 ? Math.round(((co.pricePerUnit - co.marketPrice) / co.marketPrice) * 100) : 0;
+                var coLabel = co.isBanned ? '🚫 Banned' : '⚠️ No License';
+                var coTooltip = co.isBanned ? 'Banned items are illegal to make or sell, but legal to buy or own in small amounts.' : 'Legal to buy. Illegal to sell or produce without a license. Purchase a license from the Kingdom menu.';
+                var coColor = co.isBanned ? '#c44e52' : '#d4a74a';
+                html += '<div class="street-trade-item" style="border-left:3px solid ' + coColor + ';">';
+                html += '<div class="street-trade-info">';
+                html += '<span class="street-npc-name">' + co.npcName + '</span> will buy ';
+                html += '<strong>' + co.resourceIcon + ' ' + co.resourceName + '</strong>';
+                html += ' — <span class="street-price">' + co.pricePerUnit + 'g each</span>';
+                html += ' <span style="color:' + (coPremiumPct >= 0 ? '#55a868' : '#c44e52') + ';font-weight:bold;font-size:0.85em;">';
+                html += '(' + (coPremiumPct >= 0 ? '+' : '') + coPremiumPct + '% vs market)</span>';
+                html += ' <span style="color:' + coColor + ';font-weight:bold;font-size:0.85em;cursor:help;" title="' + coTooltip + '">' + coLabel + '</span>';
+                html += '</div>';
+                html += '<div class="street-trade-actions">';
+                html += '<span class="street-have">You have: ' + coHeld + '</span>';
+                if (coCanSell && coHeld > 1) {
+                    html += '<button class="btn-medieval btn-street-sell" onclick="UI.executeStreetContrabandSellUI(' + ci + ',1)" style="font-size:0.7rem;padding:2px 6px;">Sell 1 (' + co.pricePerUnit + 'g)</button>';
+                }
+                html += '<button class="btn-medieval btn-street-sell" ' + (coCanSell ? 'onclick="UI.executeStreetContrabandSellUI(' + ci + ',' + coHeld + ')"' : 'disabled') + '>';
+                html += 'Sell All ' + coHeld + ' (' + coTotal + 'g)</button>';
+                html += '</div></div>';
+            }
+            html += '</div>';
+        }
+    }
+
+    // --- Request Specific Goods section ---
+    if (typeof Player !== 'undefined' && Player.getStreetRequestableGoods) {
+        html += '<hr style="border-color:#555;margin:12px 0;">';
+        html += '<div style="background:rgba(100,149,237,0.10);border:1px solid #6495ed;border-radius:8px;padding:10px 14px;">';
+        html += '<p class="street-intro" style="margin-top:0;">📋 <strong>Request Specific Goods</strong> — Put out word that you\'re looking for a good not currently in the market. A merchant may or may not have it.</p>';
+
+        // Show pending offer if one exists
+        if (Player._streetGoodsOffer) {
+            var sgo = Player._streetGoodsOffer;
+            var sgoTotal = sgo.pricePerUnit * sgo.qty;
+            var sgoCanAfford = (Player.gold || 0) >= sgoTotal;
+            html += '<div class="street-trade-item" style="border-left:3px solid #6495ed;background:rgba(100,149,237,0.08);margin:8px 0;">';
+            html += '<div class="street-trade-info">';
+            html += '<span style="color:#6495ed;font-weight:bold;">📬 Pending Offer:</span> ';
+            html += '<span class="street-npc-name">' + sgo.npcName + '</span> has ';
+            html += '<strong>' + sgo.qty + ' ' + (sgo.resourceIcon || '') + ' ' + sgo.resourceName + '</strong>';
+            html += ' — <span class="street-price">' + sgo.pricePerUnit + 'g each</span>';
+            html += ' <span style="color:#e67e22;font-weight:bold;font-size:0.85em;">(+' + sgo.premiumPct + '% above market)</span>';
+            html += '</div>';
+            html += '<div class="street-trade-actions">';
+            html += '<span class="street-have">Total: ' + sgoTotal + 'g</span>';
+            html += '<button class="btn-medieval" style="background:#55a868;color:#fff;padding:4px 12px;margin-right:4px;" ' + (sgoCanAfford ? 'onclick="UI._streetAcceptOffer()"' : 'disabled title="Not enough gold"') + '>✅ Accept</button>';
+            html += '<button class="btn-medieval" style="background:#c44e52;color:#fff;padding:4px 12px;" onclick="UI._streetDeclineOffer()">❌ Decline</button>';
+            html += '</div></div>';
+        }
+
+        // Show dropdown to request
+        var reqGoods = Player.getStreetRequestableGoods();
+        if (reqGoods.length > 0) {
+            // Cooldown check
+            var _reqCdDays = (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('black_market_contacts')) ? 1 : 3;
+            var _reqCd = Player._streetGoodsRequestDay ? (_reqCdDays - ((typeof Engine !== 'undefined' && Engine.getDay ? Engine.getDay() : 9999) - Player._streetGoodsRequestDay)) : 0;
+            var _reqOnCd = _reqCd > 0;
+
+            html += '<div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">';
+            html += '<select id="streetGoodsRequestSelect" onchange="UI._streetUpdateChancePreview()" style="padding:5px 8px;border-radius:4px;border:1px solid #6495ed;background:#1a1a2e;color:#e0d8c0;font-size:0.9rem;min-width:180px;">';
+            html += '<option value="">-- Select a good --</option>';
+            for (var rgi = 0; rgi < reqGoods.length; rgi++) {
+                var rg = reqGoods[rgi];
+                html += '<option value="' + rg.id + '">' + rg.icon + ' ' + rg.name + ' (base ' + rg.basePrice + 'g)</option>';
+            }
+            html += '</select>';
+            html += '<button class="btn-medieval" style="background:#6495ed;color:#fff;padding:5px 14px;" ';
+            if (_reqOnCd) {
+                html += 'disabled title="Cooldown: ' + _reqCd + ' day' + (_reqCd !== 1 ? 's' : '') + '">';
+                html += '⏳ Request (' + _reqCd + 'd cooldown)';
+            } else {
+                html += 'onclick="UI._streetSubmitRequest()">';
+                html += '📋 Request Good';
+            }
+            html += '</button>';
+            html += '</div>';
+            // Chance preview area — populated by onchange
+            html += '<div id="streetRequestChancePreview" style="margin-top:6px;font-size:0.85em;color:#ccc;"></div>';
+        } else {
+            html += '<p style="color:#888;margin-top:4px;">All goods are available in the local market.</p>';
+        }
+        html += '</div>';
+    }
+
+    // Add NPC Chat section for indentured servants seeking escape hints
+    if (typeof Player !== 'undefined' && Player.indentured && Player.indentured.active) {
+        html += '<hr style="border-color:#555;margin:12px 0;">';
+        html += '<p class="street-intro">💬 <strong>Talk to Townsfolk</strong> — Chat with locals to learn about the town and maybe discover ways out of your contract.</p>';
+        // Get NPCs in current town
+        const townId = Player.townId;
+        const townNpcs = (typeof Engine !== 'undefined' && Engine.getPeople) ? Engine.getPeople(townId) : [];
+        const chatNpcs = [];
+        for (let n = 0; n < Math.min(townNpcs.length, 50); n++) {
+            const npc = townNpcs[n];
+            if (npc && npc.alive && npc.id !== Player.indentured.masterId) {
+                chatNpcs.push(npc);
+            }
+        }
+        // Show up to 6 random NPCs to chat with
+        const shuffled = chatNpcs.sort(() => Math.random() - 0.5).slice(0, 6);
+        if (shuffled.length > 0) {
+            html += '<div class="street-trade-list">';
+            for (let c = 0; c < shuffled.length; c++) {
+                const npc = shuffled[c];
+                const occ = npc.occupation || npc.title || 'Townsfolk';
+                const occDisplay = occ.charAt(0).toUpperCase() + occ.slice(1);
+                html += '<div class="street-trade-item" style="padding:6px 10px;">';
+                html += '<div class="street-trade-info">';
+                html += '<span class="street-npc-name">' + (npc.firstName || npc.fullName || 'Someone') + ' ' + (npc.lastName || '') + '</span>';
+                html += ' <span class="text-dim">(' + occDisplay + ')</span>';
+                html += '</div>';
+                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;" onclick="UI.chatWithNPC(\'' + npc.id + '\')">💬 Chat</button>';
+                html += '</div>';
+            }
+            html += '</div>';
+        } else {
+            html += '<p class="text-dim">No one around to talk to right now.</p>';
+        }
+    }
+
+    openModal('🤝 Street Trading', html);
+}
+
+function chatWithNPC(npcId) {
+    if (typeof Player === 'undefined' || !Player.checkNPCEscapeHints) return;
+    var hint = Player.checkNPCEscapeHints(npcId);
+    if (hint) {
+        toast('💡 ' + hint, 'success');
+    } else {
+        // Generic chat responses
+        var npc = (typeof Engine !== 'undefined') ? Engine.findPerson(npcId) : null;
+        var name = npc ? (npc.firstName || 'They') : 'They';
+        var chatLines = [
+            name + ' nods politely but has nothing useful to say.',
+            name + ' talks about the weather and rising grain prices.',
+            name + ' grumbles about taxes and moves along.',
+            name + ' shares gossip about a merchant who went bankrupt.',
+            name + ' mentions the roads have been dangerous lately.',
+            name + ' tells you about their family troubles.',
+            name + ' warns you about the war affecting trade routes.'
+        ];
+        toast('💬 ' + chatLines[Math.floor(Math.random() * chatLines.length)], 'info');
+    }
+    openStreetTrading(); // Refresh to show new NPCs
+}
+
+function executeStreetTradeUI(tradeIndex) {
+    const result = Player.executeStreetTrade(tradeIndex);
+    if (result.success) {
+        toast(result.message, 'success');
+        openStreetTrading(); // refresh
+    } else {
+        toast(result.message, 'warning');
+    }
+}
+
+function executeStreetBuyUI(buyIndex) {
+    var result = Player.executeStreetBuy(buyIndex);
+    if (result.success) {
+        toast(result.message, 'success');
+        openStreetTrading(); // refresh
+    } else {
+        toast(result.message, result.caught ? 'error' : 'warning');
+    }
+}
+
+function executeStreetContrabandSellUI(offerIndex, qty) {
+    var result = Player.executeStreetContrabandSell(offerIndex, qty);
+    if (result.success) {
+        toast(result.message, result.smuggled ? 'success' : 'success');
+        openStreetTrading(); // refresh
+    } else {
+        toast(result.message, result.caught ? 'error' : 'warning');
+        openStreetTrading(); // refresh to update quantities
+    }
+}
+
+function _streetSubmitRequest() {
+    var sel = document.getElementById('streetGoodsRequestSelect');
+    if (!sel || !sel.value) { toast('Select a good to request.', 'warning'); return; }
+    var result = Player.submitStreetGoodsRequest(sel.value);
+    if (!result.success) { toast(result.message, 'warning'); return; }
+    if (result.found) {
+        toast(result.message, 'success');
+    } else {
+        toast(result.message, 'info');
+    }
+    openStreetTrading(); // refresh to show offer or cooldown
+}
+
+function _streetAcceptOffer() {
+    var result = Player.acceptStreetGoodsOffer();
+    if (result.success) {
+        toast(result.message, 'success');
+    } else {
+        toast(result.message, 'warning');
+    }
+    openStreetTrading();
+}
+
+function _streetDeclineOffer() {
+    Player.declineStreetGoodsOffer();
+    toast('Offer declined.', 'info');
+    openStreetTrading();
+}
+
+function _streetUpdateChancePreview() {
+    var preview = document.getElementById('streetRequestChancePreview');
+    if (!preview) return;
+    var sel = document.getElementById('streetGoodsRequestSelect');
+    if (!sel || !sel.value) { preview.innerHTML = ''; return; }
+
+    var info = Player.getStreetRequestChance(sel.value);
+    if (!info) { preview.innerHTML = ''; return; }
+
+    var chanceColor = info.chance >= 30 ? '#55a868' : info.chance >= 15 ? '#e6c422' : '#c44e52';
+    var html = '<div style="background:rgba(100,149,237,0.08);border:1px solid rgba(100,149,237,0.3);border-radius:5px;padding:6px 10px;margin-top:4px;">';
+    html += '<span style="font-weight:bold;color:' + chanceColor + ';font-size:1.05em;">🎯 Chance: ' + info.chance + '%</span>';
+
+    // Breakdown
+    html += '<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px 12px;">';
+    for (var bi = 0; bi < info.breakdown.length; bi++) {
+        var b = info.breakdown[bi];
+        var bColor = b.value >= 0 ? '#55a868' : '#c44e52';
+        html += '<span style="color:' + bColor + ';font-size:0.82em;">' + b.label + ' ' + (b.value >= 0 ? '+' : '') + b.value + '%</span>';
+    }
+    html += '</div>';
+
+    // Skills that could boost
+    if (info.boostSkills.length > 0) {
+        html += '<div style="margin-top:5px;color:#6495ed;font-size:0.8em;">💡 <strong>Skills that increase chance:</strong> ';
+        html += info.boostSkills.join(', ');
+        html += '</div>';
+    }
+    html += '</div>';
+    preview.innerHTML = html;
+}
+
+// ========================================================
+// DARK DEEDS — SCHEMES DIALOG
+// ========================================================
+
+UI._schemesTab = 'sabotage';
+
+function switchSchemesTab(tab) {
+    UI._schemesTab = tab;
+    const tabs = ['sabotage', 'political', 'assassination', 'tax_evasion', 'market'];
+    const btns = document.querySelectorAll('.schemes-tabs .btn-tab');
+    btns.forEach((btn, i) => {
+        btn.classList.toggle('active', tabs[i] === tab);
+    });
+    for (const t of tabs) {
+        const el = document.getElementById('schemesTab_' + t);
+        if (el) el.style.display = t === tab ? '' : 'none';
+    }
+}
+
+function getDetectionColor(pct) {
+    if (pct < 0.20) return '#55a868';
+    if (pct < 0.50) return '#ccb974';
+    return '#c44e52';
+}
+
+// ============================================================
+// §NOBILITY — Nobility Panel (rank 4+ privileges, commissions, standing)
+// ============================================================
+
+function openNobilityDialog() {
+    var playerRank = 0;
+    var citizenKingdomId = Player.citizenshipKingdomId || '';
+    if (citizenKingdomId && Player.socialRank) {
+        playerRank = Player.socialRank[citizenKingdomId] || 0;
+    }
+    if (Player.socialRank) {
+        for (var _nk in Player.socialRank) {
+            if ((Player.socialRank[_nk] || 0) > playerRank) {
+                playerRank = Player.socialRank[_nk];
+                citizenKingdomId = _nk;
+            }
+        }
+    }
+    if (playerRank < 4) {
+        toast('You must be at least a Minor Noble to access this panel.', 'warning');
+        return;
+    }
+
+    var rankDef = CONFIG.SOCIAL_RANKS[playerRank] || CONFIG.SOCIAL_RANKS[4];
+    var kingdom = null;
+    var kingPerson = null;
+    var kingRel = 0;
+    var kingdoms = [];
+    try {
+        kingdoms = Engine.getKingdoms ? Engine.getKingdoms() : [];
+        kingdom = kingdoms.find(function(k) { return k.id === citizenKingdomId; });
+        if (kingdom && kingdom.king) {
+            kingPerson = Engine.findPerson(kingdom.king);
+            var kRel = Player.getRelationship ? Player.getRelationship(kingdom.king) : null;
+            kingRel = kRel ? kRel.level : 0;
+        }
+    } catch (e) { /* ignore */ }
+
+    var rep = Player.reputation ? (Player.reputation[citizenKingdomId] || 0) : 0;
+    var day = 0;
+    try { day = Engine.getDay(); } catch (e) {}
+    var polCap = Player.politicalCapital || 0;
+    var maxPolCap = CONFIG.ADVISE_KING_POLITICAL_CAPITAL_MAX || 3;
+    var lordTownId = Player.lordTownId || null;
+    var lordTown = lordTownId ? Engine.findTown(lordTownId) : null;
+
+    // Determine demotion danger
+    var demotionDanger = false;
+    var demotionDaysLeft = 0;
+    var demotionReason = '';
+    var repThreshold = playerRank >= 6 ? 80 : playerRank >= 5 ? 70 : 60;
+    var kingRelThreshold = playerRank >= 6 ? 70 : playerRank >= 5 ? 60 : 0;
+    if (rep < repThreshold) {
+        demotionDanger = true;
+        demotionReason = 'Kingdom reputation (' + Math.floor(rep) + ') is below ' + repThreshold;
+    }
+    if (kingRelThreshold > 0 && kingRel < kingRelThreshold) {
+        demotionDanger = true;
+        demotionReason += (demotionReason ? ' AND ' : '') + 'King relationship (' + Math.floor(kingRel) + ') is below ' + kingRelThreshold;
+    }
+    var _repWarn = Player._repWarnDay || {};
+    if (_repWarn[citizenKingdomId]) {
+        demotionDaysLeft = Math.max(0, 30 - (day - _repWarn[citizenKingdomId]));
+    }
+
+    // Commission data
+    var commission = kingdom ? kingdom.directedPlayerCommission : null;
+
+    // Pending RA decisions
+    var pendingDecisions = [];
+    if (playerRank >= 6 && Player.getPendingKingDecisions) {
+        try { pendingDecisions = Player.getPendingKingDecisions() || []; } catch (e) {}
+        pendingDecisions = pendingDecisions.filter(function(d) { return !d.resolved; });
+    }
+
+    // === Build HTML ===
+    var html = '';
+
+    // ── Status Header ──
+    html += '<div style="background:linear-gradient(135deg,rgba(201,168,76,0.15),rgba(201,168,76,0.05));border:1px solid rgba(201,168,76,0.3);border-radius:8px;padding:12px;margin-bottom:10px;">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">';
+    html += '<div>';
+    html += '<div style="font-size:1.1rem;font-weight:bold;color:var(--gold);">' + (rankDef.icon || '👑') + ' ' + (rankDef.name || 'Noble') + '</div>';
+    html += '<div style="font-size:0.78rem;color:#aaa;">Kingdom of ' + (kingdom ? kingdom.name : '?') + '</div>';
+    html += '</div>';
+    html += '<div style="text-align:right;">';
+    html += '<div style="font-size:0.75rem;color:#aaa;">Kingdom Rep: <span style="color:' + (rep >= repThreshold ? '#55a868' : rep >= repThreshold - 10 ? '#ccb974' : '#c44e52') + ';font-weight:bold;">' + Math.floor(rep) + '</span></div>';
+    if (kingPerson) {
+        html += '<div style="font-size:0.75rem;color:#aaa;">King ' + kingPerson.firstName + ': <span style="color:' + (kingRel >= (kingRelThreshold || 60) ? '#55a868' : kingRel >= 40 ? '#ccb974' : '#c44e52') + ';font-weight:bold;">' + Math.floor(kingRel) + '</span></div>';
+    }
+    if (playerRank >= 6) {
+        html += '<div style="font-size:0.75rem;color:#aaa;">Political Capital: <span style="color:var(--gold);font-weight:bold;">' + polCap + '/' + maxPolCap + '</span></div>';
+    }
+    html += '</div></div>';
+
+    // Rep bar with threshold marker
+    html += '<div style="margin-top:8px;">';
+    html += '<div style="position:relative;height:8px;background:rgba(0,0,0,0.3);border-radius:4px;overflow:visible;">';
+    html += '<div style="height:100%;width:' + Math.min(100, rep) + '%;background:linear-gradient(90deg,' + (rep >= repThreshold ? '#55a868' : '#c44e52') + ',var(--gold));border-radius:4px;transition:width 0.3s;"></div>';
+    html += '<div style="position:absolute;top:-2px;left:' + repThreshold + '%;width:2px;height:12px;background:#fff;opacity:0.6;" title="Demotion threshold: ' + repThreshold + '"></div>';
+    html += '</div>';
+    html += '<div style="display:flex;justify-content:space-between;font-size:0.65rem;color:#666;margin-top:2px;"><span>0</span><span style="color:#aaa;">Threshold: ' + repThreshold + '</span><span>100</span></div>';
+    html += '</div></div>';
+
+    // ── DEMOTION WARNING ──
+    if (demotionDanger) {
+        html += '<div style="background:rgba(196,78,82,0.15);border:2px solid rgba(196,78,82,0.5);border-radius:8px;padding:10px;margin-bottom:10px;animation:pulse 2s infinite;">';
+        html += '<div style="font-size:0.9rem;font-weight:bold;color:#c44e52;">⚠️ DEMOTION DANGER</div>';
+        html += '<div style="font-size:0.78rem;color:#ccc;margin-top:4px;">' + demotionReason + '</div>';
+        if (demotionDaysLeft > 0) {
+            html += '<div style="font-size:0.85rem;font-weight:bold;color:#e74c3c;margin-top:6px;">⏰ ' + demotionDaysLeft + ' days until demotion!</div>';
+            html += '<div style="font-size:0.7rem;color:#aaa;">Raise your reputation above ' + repThreshold + ' to cancel the countdown.</div>';
+        } else if (_repWarn[citizenKingdomId]) {
+            html += '<div style="font-size:0.85rem;font-weight:bold;color:#e74c3c;margin-top:6px;">⏰ Demotion imminent!</div>';
+        }
+        html += '</div>';
+    }
+
+    // ── ALERTS SECTION ──
+    var alerts = [];
+    if (commission && commission.status === 'pending') {
+        alerts.push({ icon: '📜', text: 'New commission from the king awaits your response!', color: '#6c9bd1' });
+    }
+    if (commission && commission.status === 'accepted') {
+        var _dLeft = (commission.deadlineDay || 0) - day;
+        if (_dLeft <= 10 && _dLeft > 0) {
+            alerts.push({ icon: '⏳', text: 'Commission deadline in ' + _dLeft + ' days!', color: '#ccb974' });
+        } else if (_dLeft <= 0) {
+            alerts.push({ icon: '❗', text: 'Commission deadline PASSED!', color: '#c44e52' });
+        }
+    }
+    if (pendingDecisions.length > 0) {
+        alerts.push({ icon: '👑', text: pendingDecisions.length + ' pending king decision' + (pendingDecisions.length > 1 ? 's' : '') + ' await your counsel!', color: '#6c9bd1' });
+    }
+    // Check for wars affecting foreign noble status
+    for (var _wi = 0; _wi < kingdoms.length; _wi++) {
+        var _wk = kingdoms[_wi];
+        if (_wk.id !== citizenKingdomId && _wk.atWar && _wk.warTarget === citizenKingdomId) {
+            alerts.push({ icon: '⚔️', text: _wk.name + ' is at war with your kingdom!', color: '#c44e52' });
+        }
+    }
+
+    if (alerts.length > 0) {
+        html += '<div style="margin-bottom:10px;">';
+        for (var _ai = 0; _ai < alerts.length; _ai++) {
+            html += '<div style="background:rgba(' + (alerts[_ai].color === '#c44e52' ? '196,78,82' : alerts[_ai].color === '#ccb974' ? '204,185,116' : '108,155,209') + ',0.12);border:1px solid ' + alerts[_ai].color + '33;border-radius:6px;padding:6px 10px;margin-bottom:4px;font-size:0.78rem;">';
+            html += '<span style="margin-right:4px;">' + alerts[_ai].icon + '</span><span style="color:' + alerts[_ai].color + ';">' + alerts[_ai].text + '</span></div>';
+        }
+        html += '</div>';
+    }
+
+    // ── KING'S COMMISSION (rank 4+) ──
+    html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:10px;margin-bottom:10px;">';
+    html += '<h3 style="margin:0 0 8px 0;font-size:0.9rem;color:var(--gold);">📜 King\'s Commission</h3>';
+    if (commission && commission.status !== 'completed' && commission.status !== 'failed' && commission.status !== 'refused' && commission.status !== 'expired') {
+        var _commItem = commission.resourceId || commission.item || commission.goodId || '?';
+        var _commQty = commission.quantity || commission.amount || 0;
+        var _commDeadline = commission.deadlineDay || 0;
+        var _commReward = commission.reward || commission.rewardGold || 0;
+        var _commStatus = commission.status || 'pending';
+        var _commDaysLeft = _commDeadline - day;
+        var _commDelivered = commission.delivered || 0;
+        var _commProgress = _commQty > 0 ? Math.min(100, Math.floor((_commDelivered / _commQty) * 100)) : 0;
+
+        // Resolve resource name from CONFIG.GOODS (keys are uppercase, id is lowercase)
+        var _itemName = _commItem;
+        if (CONFIG.GOODS) {
+            var _gKey = _commItem.toUpperCase();
+            if (CONFIG.GOODS[_gKey] && CONFIG.GOODS[_gKey].name) {
+                _itemName = (CONFIG.GOODS[_gKey].icon || '') + ' ' + CONFIG.GOODS[_gKey].name;
+            } else {
+                // Fallback: search by id field
+                for (var _gk in CONFIG.GOODS) {
+                    if (CONFIG.GOODS[_gk].id === _commItem) { _itemName = (CONFIG.GOODS[_gk].icon || '') + ' ' + CONFIG.GOODS[_gk].name; break; }
+                }
+            }
+        }
+        // Final fallback: prettify the raw id
+        if (_itemName === _commItem) _itemName = _commItem.replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+
+        html += '<div style="font-size:0.8rem;color:#ccc;">';
+        html += '<div style="margin-bottom:6px;"><strong>Deliver:</strong> ' + _commQty + 'x ' + _itemName + '</div>';
+        html += '<div style="margin-bottom:6px;"><strong>Deadline:</strong> Day ' + _commDeadline + ' <span style="color:' + (_commDaysLeft <= 5 ? '#c44e52' : _commDaysLeft <= 15 ? '#ccb974' : '#55a868') + ';">(' + (_commDaysLeft > 0 ? _commDaysLeft + ' days left' : 'OVERDUE!') + ')</span></div>';
+        html += '<div style="margin-bottom:6px;"><strong>Reward:</strong> <span class="gold-value">' + formatGold(_commReward) + '</span></div>';
+        if (_commStatus === 'accepted') {
+            var _playerHas = (Player.state && Player.state.inventory) ? (Player.state.inventory[_commItem] || 0) : 0;
+            html += '<div style="margin-bottom:4px;"><strong>Progress:</strong> ' + _commDelivered + '/' + _commQty + ' <span style="font-size:0.72rem;color:#aaa;">(You have: ' + _playerHas + ')</span></div>';
+            html += '<div style="height:6px;background:rgba(0,0,0,0.3);border-radius:3px;margin-bottom:8px;"><div style="height:100%;width:' + _commProgress + '%;background:' + (_commProgress >= 100 ? '#55a868' : 'var(--gold)') + ';border-radius:3px;transition:width 0.3s;"></div></div>';
+            var _canDeliver = _playerHas >= (_commQty - _commDelivered);
+            html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;align-items:center;">';
+            if (_canDeliver) {
+                html += '<button class="btn-medieval" onclick="(function(){var r=Player.deliverKingCommission?Player.deliverKingCommission():{success:false,message:\'Delivery not available.\'};UI.toast(r.message||\'Delivered!\',r.success?\'success\':\'warning\');UI.openNobilityDialog();})()" style="font-size:0.78rem;padding:6px 16px;background:rgba(85,168,104,0.25) !important;border-color:rgba(85,168,104,0.5) !important;animation:pulse 2s infinite;">📦 Deliver Goods</button>';
+            } else {
+                html += '<div style="font-size:0.72rem;color:#888;">📦 Gather ' + (_commQty - _commDelivered - _playerHas) + ' more ' + _itemName + ' to deliver</div>';
+            }
+            html += '</div>';
+        }
+        html += '</div>';
+
+        if (_commStatus === 'pending') {
+            var _isLord = playerRank >= 5;
+            html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;align-items:center;">';
+            html += '<button class="btn-medieval" onclick="(function(){var r=Player.acceptKingCommission?Player.acceptKingCommission():{success:false};UI.toast(r.message||\'Commission accepted!\',r.success?\'success\':\'warning\');UI.openNobilityDialog();})()" style="font-size:0.75rem;padding:5px 12px;background:rgba(85,168,104,0.15);border-color:rgba(85,168,104,0.3);">✅ Accept</button>';
+            html += '<button class="btn-medieval" onclick="(function(){' + (_isLord ? 'if(!confirm(\'⚠️ As a Lord, refusing a royal commission will trigger demotion! Are you sure?\')){return;}' : '') + 'var r=Player.refuseKingCommission?Player.refuseKingCommission():{success:false};UI.toast(r.message||\'Commission refused.\',r.success?\'success\':\'warning\');UI.openNobilityDialog();})()" style="font-size:0.75rem;padding:5px 12px;background:rgba(196,78,82,0.15);border-color:rgba(196,78,82,0.3);">🚫 Refuse</button>';
+            if (_isLord) {
+                html += '<div style="font-size:0.7rem;color:#c44e52;">⚠️ Refusal triggers demotion!</div>';
+            }
+            html += '</div>';
+        }
+    } else {
+        html += '<div style="font-size:0.78rem;color:#888;font-style:italic;">No active commission. The king may assign you a task when the kingdom has need.</div>';
+    }
+    html += '</div>';
+
+    // ── LORDSHIP SECTION (rank 5+) ──
+    if (playerRank >= 5) {
+        html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:10px;margin-bottom:10px;">';
+        html += '<h3 style="margin:0 0 8px 0;font-size:0.9rem;color:var(--gold);">🏰 Your Lordship</h3>';
+        if (lordTown) {
+            html += '<div style="font-size:0.8rem;color:#ccc;">';
+            html += '<div style="margin-bottom:4px;"><strong>Lord of:</strong> ' + lordTown.name + '</div>';
+            html += '<div style="margin-bottom:4px;"><strong>Population:</strong> ' + (lordTown.population || '?') + '</div>';
+            html += '<div style="margin-bottom:4px;"><strong>Prosperity:</strong> ' + Math.floor(lordTown.prosperity || 0) + '</div>';
+            html += '<div style="margin-bottom:4px;"><strong>Crime Immunity:</strong> <span style="color:#55a868;">✓ Active in ' + lordTown.name + '</span></div>';
+            html += '</div>';
+            // Kingdom building request
+            html += '<div style="margin-top:8px;">';
+            html += '<button class="btn-medieval" onclick="UI._nobilityRequestBuilding(\'' + lordTown.id + '\')" style="font-size:0.75rem;padding:5px 12px;">🏗️ Request Kingdom Building</button>';
+            html += '</div>';
+        } else {
+            html += '<div style="font-size:0.78rem;color:#888;font-style:italic;">You have not yet been assigned a town. The king will offer you a choice of towns to govern.</div>';
+        }
+        html += '</div>';
+    }
+
+    // ── ROYAL ADVISORY (rank 6) ──
+    if (playerRank >= 6) {
+        html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:10px;margin-bottom:10px;">';
+        html += '<h3 style="margin:0 0 8px 0;font-size:0.9rem;color:var(--gold);">👑 Royal Advisory</h3>';
+
+        // Political capital bar
+        html += '<div style="margin-bottom:8px;">';
+        html += '<div style="font-size:0.75rem;color:#aaa;margin-bottom:3px;">Political Capital: ' + polCap + '/' + maxPolCap + '</div>';
+        html += '<div style="height:6px;background:rgba(0,0,0,0.3);border-radius:3px;"><div style="height:100%;width:' + (maxPolCap > 0 ? Math.floor((polCap / maxPolCap) * 100) : 0) + '%;background:var(--gold);border-radius:3px;"></div></div>';
+        html += '</div>';
+
+        // Pending decisions
+        if (pendingDecisions.length > 0) {
+            html += '<div style="font-size:0.78rem;color:#6c9bd1;font-weight:bold;margin-bottom:6px;">📋 ' + pendingDecisions.length + ' Pending Decision' + (pendingDecisions.length > 1 ? 's' : '') + '</div>';
+            for (var _di = 0; _di < pendingDecisions.length; _di++) {
+                var _dec = pendingDecisions[_di];
+                var _convPct = Math.floor((_dec.conviction || 0) * 100);
+                var _convColor = _convPct >= 80 ? '#c44e52' : _convPct >= 50 ? '#ccb974' : '#55a868';
+                html += '<div style="background:rgba(108,155,209,0.08);border:1px solid rgba(108,155,209,0.2);border-radius:6px;padding:8px;margin-bottom:6px;">';
+                html += '<div style="font-size:0.8rem;font-weight:bold;color:#ddd;">' + (_dec.description || _dec.type || 'Unknown Decision') + '</div>';
+                if (_dec.details) html += '<div style="font-size:0.72rem;color:#aaa;margin-top:2px;">' + _dec.details + '</div>';
+                html += '<div style="font-size:0.7rem;color:#aaa;margin-top:4px;">King\'s conviction: <span style="color:' + _convColor + ';font-weight:bold;">' + _convPct + '%</span> ' + (_convPct >= 80 ? '(Very determined)' : _convPct >= 50 ? '(Moderate)' : '(Easily swayed)') + '</div>';
+                html += '<div style="display:flex;gap:6px;margin-top:6px;">';
+                html += '<button class="btn-medieval" onclick="(function(){var r=Player.respondToKingDecision(\'' + _dec.id + '\',\'agree\');UI.toast(r&&r.message?r.message:\'Agreed.\',\'success\');UI.openNobilityDialog();})()" style="font-size:0.72rem;padding:4px 10px;background:rgba(85,168,104,0.15);border-color:rgba(85,168,104,0.3);">✅ Agree</button>';
+                html += '<button class="btn-medieval" onclick="(function(){var r=Player.respondToKingDecision(\'' + _dec.id + '\',\'oppose\');UI.toast(r&&r.message?r.message:\'Opposed.\',r&&r.success?\'success\':\'warning\');UI.openNobilityDialog();})()" style="font-size:0.72rem;padding:4px 10px;background:rgba(196,78,82,0.15);border-color:rgba(196,78,82,0.3);">🚫 Oppose</button>';
+                html += '</div></div>';
+            }
+        } else {
+            html += '<div style="font-size:0.78rem;color:#888;font-style:italic;margin-bottom:8px;">No pending king decisions. The king will consult you on major policy changes.</div>';
+        }
+
+        // Direct advice
+        html += '<div style="margin-top:8px;border-top:1px solid rgba(201,168,76,0.15);padding-top:8px;">';
+        html += '<div style="font-size:0.78rem;font-weight:bold;color:#ddd;margin-bottom:6px;">🗣️ Advise the King</div>';
+        var _adviceTypes = [
+            { id: 'lower_taxes', icon: '📉', label: 'Lower Taxes', tip: 'Suggest the king lower taxes to boost trade' },
+            { id: 'raise_taxes', icon: '📈', label: 'Raise Taxes', tip: 'Suggest the king raise taxes for more revenue' },
+            { id: 'build_walls', icon: '🏰', label: 'Build Walls', tip: 'Suggest fortifying towns' },
+            { id: 'make_peace', icon: '🕊️', label: 'Make Peace', tip: 'Urge the king to seek peace' },
+            { id: 'declare_war', icon: '⚔️', label: 'Declare War', tip: 'Urge military action' }
+        ];
+        html += '<div style="display:flex;flex-wrap:wrap;gap:4px;">';
+        for (var _adi = 0; _adi < _adviceTypes.length; _adi++) {
+            var _adv = _adviceTypes[_adi];
+            var _advDisabled = polCap <= 0;
+            html += '<button class="btn-medieval" onclick="(function(){var r=Player.adviseKing(\'' + citizenKingdomId + '\',\'' + _adv.id + '\');UI.toast(r&&(r.message||r.reason)?r.message||r.reason:\'Advice given.\',r&&r.success?\'success\':\'warning\');UI.openNobilityDialog();})()" title="' + _adv.tip + '" style="font-size:0.7rem;padding:4px 8px;' + (_advDisabled ? 'opacity:0.4;cursor:not-allowed;' : '') + '"' + (_advDisabled ? ' disabled' : '') + '>' + _adv.icon + ' ' + _adv.label + '</button>';
+        }
+        html += '</div>';
+        if (polCap <= 0) {
+            html += '<div style="font-size:0.68rem;color:#c44e52;margin-top:4px;">No political capital remaining. Capital regenerates over time.</div>';
+        }
+        html += '</div>';
+
+        // Propose law & Propose action
+        html += '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">';
+        html += '<button class="btn-medieval" onclick="UI._nobilityProposeLaw(\'' + citizenKingdomId + '\')" style="font-size:0.75rem;padding:5px 12px;" ' + (polCap <= 0 ? 'disabled style="font-size:0.75rem;padding:5px 12px;opacity:0.4;cursor:not-allowed;"' : '') + '>📜 Propose New Law</button>';
+        html += '<button class="btn-medieval" onclick="UI._nobilityProposeAction(\'' + citizenKingdomId + '\')" style="font-size:0.75rem;padding:5px 12px;background:rgba(44,100,60,0.5) !important;border:2px solid rgba(80,180,100,0.5) !important;color:#f0e0c0 !important;" ' + (polCap <= 0 ? 'disabled' : '') + '>👑 Propose Action</button>';
+        html += '</div>';
+
+        // Crime immunity note
+        html += '<div style="margin-top:8px;font-size:0.72rem;color:#55a868;">🛡️ Full criminal immunity in ' + (kingdom ? kingdom.name : 'your kingdom') + ' (crimes still affect reputation)</div>';
+        html += '</div>';
+    }
+
+    // ── COUNCIL VOTES ──
+    var _activeVotes = [];
+    try { _activeVotes = Engine.getActiveVotes ? Engine.getActiveVotes() : []; } catch (e) {}
+    if (_activeVotes.length > 0) {
+        html += '<div style="background:rgba(100,50,200,0.1);border:1px solid rgba(150,100,255,0.3);border-radius:8px;padding:10px;margin-bottom:10px;">';
+        html += '<h3 style="margin:0 0 8px 0;font-size:0.9rem;color:#c8a0ff;">🗳️ Active Council Votes (' + _activeVotes.length + ')</h3>';
+        for (var _avi = 0; _avi < _activeVotes.length; _avi++) {
+            var _av = _activeVotes[_avi];
+            var _avDays = Math.max(0, (_av.deadlineDay || 0) - day);
+            html += '<button class="btn-medieval" onclick="UI.openVotingDialog(\'' + _av.id + '\')" style="display:block;width:100%;text-align:left;padding:6px 10px;margin-bottom:4px;font-size:0.78rem;">';
+            html += '📜 ' + escapeHtml(_av.title || 'Decision') + ' <span style="color:#aaa;font-size:0.7rem;">(' + _avDays + 'd left)</span>';
+            html += '</button>';
+        }
+        html += '</div>';
+    }
+
+    // ── ROYAL FEASTS ──
+    var _activeFeast = null;
+    try { _activeFeast = Engine.getActiveFeast ? Engine.getActiveFeast(citizenKingdomId) : null; } catch (e) {}
+    if (_activeFeast) {
+        var _feastDaysLeft = Math.max(0, (_activeFeast.endDay || 0) - day);
+        var _feastTownName = '';
+        try { var _fTown = Engine.findTown(_activeFeast.townId); _feastTownName = _fTown ? _fTown.name : ''; } catch (e) {}
+        var _playerAtFeast = Player.townId === _activeFeast.townId && !Player.traveling;
+        html += '<div style="background:rgba(200,150,50,0.12);border:1px solid rgba(200,150,50,0.3);border-radius:8px;padding:10px;margin-bottom:10px;">';
+        html += '<h3 style="margin:0 0 6px 0;font-size:0.9rem;color:#f0c040;">🎪 Royal Feast</h3>';
+        html += '<div style="font-size:0.78rem;color:#ccc;">A royal feast is being held in <strong>' + escapeHtml(_feastTownName) + '</strong>!</div>';
+        html += '<div style="font-size:0.72rem;color:#aaa;margin-top:2px;">' + _feastDaysLeft + ' day' + (_feastDaysLeft !== 1 ? 's' : '') + ' remaining • Actions used today: ' + (_activeFeast._playerActionsToday || 0) + '/3</div>';
+        if (_playerAtFeast) {
+            html += '<button class="btn-medieval" onclick="UI.openFeastDialog(\'' + citizenKingdomId + '\')" style="font-size:0.78rem;padding:6px 14px;margin-top:6px;background:rgba(200,150,50,0.3) !important;border-color:rgba(200,150,50,0.5) !important;">🍷 Attend Feast</button>';
+        } else {
+            html += '<div style="font-size:0.72rem;color:#e67e22;margin-top:4px;">📍 You must travel to ' + escapeHtml(_feastTownName) + ' to attend.</div>';
+        }
+        html += '</div>';
+    }
+
+    // ── PRIVILEGES SUMMARY ──
+    html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:10px;margin-bottom:10px;">';
+    html += '<h3 style="margin:0 0 8px 0;font-size:0.9rem;color:var(--gold);">🏅 Noble Privileges</h3>';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:0.75rem;">';
+    if (rankDef.taxExempt) {
+        html += '<div style="color:#aaa;">Tax Status:</div><div style="color:#55a868;font-weight:bold;">Exempt from all kingdom taxes</div>';
+    } else if (rankDef.lordTaxFree) {
+        var _lordTownName = 'your lord town';
+        try { if (Player.lordTownId) { var _lt = Engine.findTown(Player.lordTownId); if (_lt) _lordTownName = _lt.name; } } catch(e) {}
+        html += '<div style="color:#aaa;">Tax Status:</div><div style="color:#55a868;font-weight:bold;">Tax-free in ' + _lordTownName + ', 10% discount elsewhere</div>';
+    } else {
+        html += '<div style="color:#aaa;">Tax Discount:</div><div style="color:#55a868;font-weight:bold;">' + Math.floor((rankDef.taxDiscount || 0) * 100) + '%' + (playerRank >= 1 ? ' + no foreign surcharge' : '') + '</div>';
+    }
+    if (rankDef.petitionBonus) {
+        html += '<div style="color:#aaa;">Petition Bonus:</div><div style="color:#55a868;font-weight:bold;">+' + Math.floor((rankDef.petitionBonus || 0) * 100) + '%</div>';
+    }
+    if (rankDef.signatureBonus) {
+        html += '<div style="color:#aaa;">Signature Weight:</div><div style="color:#55a868;font-weight:bold;">+' + Math.floor((rankDef.signatureBonus || 0) * 100) + '%</div>';
+    }
+    html += '<div style="color:#aaa;">Max Workers:</div><div>' + (rankDef.maxWorkers >= 9999 ? '∞' : rankDef.maxWorkers) + '</div>';
+    html += '<div style="color:#aaa;">Max Buildings:</div><div>' + (rankDef.maxBuildings >= 9999 ? '∞' : rankDef.maxBuildings) + '</div>';
+    html += '<div style="color:#aaa;">Max Land:</div><div>' + (rankDef.maxLand >= 9999 ? '∞' : rankDef.maxLand) + '</div>';
+    html += '</div>';
+
+    // Abilities list
+    var abilities = rankDef.abilities || [];
+    if (abilities.length > 0) {
+        var abilityNames = {
+            'influence_king': '🗣️ Influence the King',
+            'production_permits': '📋 Production Permits',
+            'attend_court': '🏰 Attend Court',
+            'noble_marriage': '💍 Noble Marriage',
+            'signature_bonus': '✍️ Petition Signature Bonus',
+            'build_anywhere': '🏗️ Build in Any Town',
+            'revitalize_towns': '🌱 Town Revitalization',
+            'raise_militia': '⚔️ Raise Militia',
+            'local_trade_policies': '📊 Local Trade Policies',
+            'crime_immunity': '🛡️ Crime Immunity (Lord Town)',
+            'propose_laws': '📜 Propose Laws',
+            'declare_emergencies': '🚨 Declare Emergencies',
+            'override_officials': '⚖️ Override Officials',
+            'petition_bonus': '📋 Petition Success Bonus',
+            'king_consults': '👑 King Consults You'
+        };
+        html += '<div style="margin-top:8px;border-top:1px solid rgba(201,168,76,0.1);padding-top:6px;">';
+        html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:4px;">Abilities:</div>';
+        html += '<div style="display:flex;flex-wrap:wrap;gap:3px;">';
+        for (var _abi = 0; _abi < abilities.length; _abi++) {
+            var _abName = abilityNames[abilities[_abi]] || abilities[_abi];
+            html += '<span style="font-size:0.68rem;padding:2px 6px;border-radius:4px;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.2);">' + _abName + '</span>';
+        }
+        html += '</div></div>';
+    }
+    html += '</div>';
+
+    // ── STANDING & REPUTATION DETAILS ──
+    html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:10px;margin-bottom:10px;">';
+    html += '<h3 style="margin:0 0 8px 0;font-size:0.9rem;color:var(--gold);">📊 Standing & Reputation</h3>';
+    html += '<div style="font-size:0.78rem;color:#ccc;">';
+
+    // Per-kingdom reputation
+    for (var _rki = 0; _rki < kingdoms.length; _rki++) {
+        var _rkk = kingdoms[_rki];
+        var _rkRep = Player.reputation ? (Player.reputation[_rkk.id] || 0) : 0;
+        var _rkRank = (Player.socialRank && Player.socialRank[_rkk.id]) || 0;
+        if (_rkRank === 0 && _rkRep === 0) continue;
+        var _rkDef = CONFIG.SOCIAL_RANKS[_rkRank] || CONFIG.SOCIAL_RANKS[0];
+        var _isHome = _rkk.id === citizenKingdomId;
+        html += '<div style="margin-bottom:6px;' + (_isHome ? 'border-left:3px solid var(--gold);padding-left:8px;' : '') + '">';
+        html += '<div style="font-size:0.75rem;">' + (_rkDef.icon || '') + ' ' + _rkk.name + ' — ' + (_rkDef.name || 'Peasant') + (_isHome ? ' <span style="color:var(--gold);font-size:0.68rem;">(Home)</span>' : '') + '</div>';
+        html += '<div style="height:5px;background:rgba(0,0,0,0.3);border-radius:3px;margin-top:2px;"><div style="height:100%;width:' + Math.min(100, Math.max(0, _rkRep)) + '%;background:' + (_rkRep >= 80 ? '#55a868' : _rkRep >= 50 ? '#ccb974' : '#c44e52') + ';border-radius:3px;"></div></div>';
+        html += '<div style="font-size:0.65rem;color:#777;margin-top:1px;">Rep: ' + Math.floor(_rkRep) + '/100</div>';
+        html += '</div>';
+    }
+
+    // King relationship
+    if (kingPerson) {
+        html += '<div style="margin-top:6px;border-top:1px solid rgba(201,168,76,0.1);padding-top:6px;">';
+        html += '<div style="font-size:0.75rem;">👑 Relationship with King ' + kingPerson.firstName + ': <span style="color:' + (kingRel >= 80 ? '#55a868' : kingRel >= 50 ? '#ccb974' : '#c44e52') + ';font-weight:bold;">' + Math.floor(kingRel) + '/100</span></div>';
+        html += '</div>';
+    }
+
+    // Next rank requirements (if not max)
+    if (playerRank < 6) {
+        var nextRankDef = CONFIG.SOCIAL_RANKS[playerRank + 1];
+        if (nextRankDef) {
+            html += '<div style="margin-top:8px;border-top:1px solid rgba(201,168,76,0.1);padding-top:6px;">';
+            html += '<div style="font-size:0.78rem;font-weight:bold;color:var(--gold);">Next Rank: ' + (nextRankDef.icon || '') + ' ' + nextRankDef.name + '</div>';
+            html += '<div style="font-size:0.72rem;color:#aaa;margin-top:2px;">';
+            if (nextRankDef.goldReq) html += '💰 Gold: ' + formatGold(nextRankDef.goldReq) + '<br>';
+            if (nextRankDef.repReq) html += '⭐ Kingdom Rep: ' + nextRankDef.repReq + '+<br>';
+            if (nextRankDef.extraReq) html += '📋 ' + nextRankDef.extraReq;
+            html += '</div></div>';
+        }
+    }
+
+    html += '</div></div>';
+
+    // ── KINGDOM NOBLES PANEL ──
+    html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:10px;margin-bottom:10px;">';
+    html += '<div style="font-size:0.9rem;font-weight:bold;color:var(--gold);margin-bottom:8px;">🏛️ Kingdom Nobles</div>';
+    try {
+        var _allPeople = Engine.getPeople ? Engine.getPeople() : [];
+        var _nobles = [];
+        for (var _ni = 0; _ni < _allPeople.length; _ni++) {
+            var _np = _allPeople[_ni];
+            if (!_np.socialRank || !_np.alive) continue;
+            var _npRank = 0;
+            if (typeof _np.socialRank === 'object') {
+                _npRank = _np.socialRank[citizenKingdomId] || 0;
+            } else if (typeof _np.socialRank === 'number') {
+                _npRank = _np.socialRank;
+            }
+            if (_npRank >= 4) {
+                _nobles.push({ person: _np, rank: _npRank });
+            }
+        }
+        // Sort by rank descending, then name
+        _nobles.sort(function(a, b) {
+            if (b.rank !== a.rank) return b.rank - a.rank;
+            return (a.person.firstName || '').localeCompare(b.person.firstName || '');
+        });
+        if (_nobles.length === 0) {
+            html += '<div style="font-size:0.75rem;color:#888;font-style:italic;">No other nobles found in this kingdom.</div>';
+        } else {
+            html += '<div style="max-height:200px;overflow-y:auto;">';
+            for (var _nbi = 0; _nbi < _nobles.length; _nbi++) {
+                var _nb = _nobles[_nbi];
+                var _nbPerson = _nb.person;
+                var _nbRankDef = CONFIG.SOCIAL_RANKS[_nb.rank] || CONFIG.SOCIAL_RANKS[4];
+                var _nbRel = Player.getRelationship ? Player.getRelationship(_nbPerson.id) : { level: 0 };
+                var _nbRelLvl = _nbRel.level || 0;
+                var _nbRelColor = _nbRelLvl >= 60 ? '#55a868' : _nbRelLvl >= 30 ? '#ccb974' : _nbRelLvl >= 0 ? '#aaa' : '#c44e52';
+                var _nbTown = _nbPerson.townId ? Engine.findTown(_nbPerson.townId) : null;
+                var _sameLocation = _nbPerson.townId === Player.townId;
+                var _isKing = _nb.rank >= 7 || _nbPerson.isKing;
+                var _nbSafeIdClick = String(_nbPerson.id).replace(/'/g, "\\'");
+                html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;margin-bottom:4px;background:rgba(0,0,0,0.15);border-radius:6px;border-left:3px solid ' + (_sameLocation ? 'var(--gold)' : 'transparent') + ';">';
+                html += '<div style="flex:1;min-width:0;cursor:pointer;" onclick="(function(){UI.closeModal();var p=Engine.findPerson(\'' + _nbSafeIdClick + '\');if(p)UI.showPersonDetail(p);})()" title="View details">';
+                html += '<div style="font-size:0.78rem;font-weight:bold;color:#ddd;">' + (_nbRankDef.icon || '👑') + ' ' + (_nbPerson.firstName || '') + ' ' + (_nbPerson.lastName || '') + '</div>';
+                html += '<div style="font-size:0.68rem;color:#999;">' + (_nbRankDef.name || 'Noble');
+                if (_nbTown) html += ' — ' + _nbTown.name;
+                if (_sameLocation) html += ' <span style="color:var(--gold);">📍 Here</span>';
+                html += '</div>';
+                html += '<div style="font-size:0.65rem;color:' + _nbRelColor + ';">Relationship: ' + Math.floor(_nbRelLvl) + '/100</div>';
+                html += '</div>';
+                // Actions if in same location
+                if (_sameLocation) {
+                    html += '<div style="display:flex;gap:4px;flex-shrink:0;">';
+                    var _nbSafeId = String(_nbPerson.id).replace(/'/g, "\\'");
+                    html += '<button class="btn-medieval" onclick="(function(){var r=Player.interactWithNPC(\'' + _nbSafeId + '\',\'small_talk\');UI.toast(r&&r.message||\'Spoke with noble.\',r&&r.success?\'success\':\'warning\');UI.openNobilityDialog();})()" style="font-size:0.6rem;padding:3px 6px;" title="Small Talk">💬</button>';
+                    html += '<button class="btn-medieval" onclick="(function(){UI.closeModal();UI.openGiftDialog(\'' + _nbSafeId + '\');})()" style="font-size:0.6rem;padding:3px 6px;" title="Give Gift">🎁</button>';
+                    if (!_isKing) {
+                        html += '<button class="btn-medieval" onclick="(function(){UI.closeModal();UI.openSchemesDialog();})()" style="font-size:0.6rem;padding:3px 6px;" title="Scheme Against">🗡️</button>';
+                    }
+                    html += '</div>';
+                }
+                html += '</div>';
+            }
+            html += '</div>';
+        }
+    } catch (e) {
+        html += '<div style="font-size:0.75rem;color:#888;">Could not load nobles list.</div>';
+    }
+    html += '</div>';
+
+    // ── NOBLE AGENTS ──
+    html += _buildAgentsSection();
+
+    // ── ROYAL DIRECTIVES (Kingdom Quests) ──
+    html += _buildRoyalDirectivesSection(citizenKingdomId, day);
+
+    // Open modal
+    var footerHtml = '<button class="btn-medieval" data-action="closeModal">Close</button>';
+    openModal('👑 Nobility — ' + (rankDef.name || 'Noble'), html, footerHtml);
+}
+
+// ── Noble Agents UI ──
+var _agentExpandedId = null; // which agent's details are expanded
+
+function _buildAgentsSection() {
+    var html = '';
+    var data = null;
+    try { data = Player.getAgentData(); } catch(e) { return ''; }
+    if (!data) return '';
+
+    html += '<div style="background:rgba(44,62,80,0.2);border:1px solid rgba(155,89,182,0.3);border-radius:8px;padding:10px;margin-bottom:10px;">';
+    html += '<h3 style="margin:0 0 8px 0;font-size:0.9rem;color:#9b59b6;">🕵️ Agents (' + data.agents.length + '/' + data.maxAgents + ')</h3>';
+
+    if (data.maxAgents === 0) {
+        html += '<div style="font-size:0.78rem;color:#888;font-style:italic;">Agents are available once you reach Minor Noble rank.</div>';
+        html += '</div>';
+        return html;
+    }
+
+    // Hire button
+    if (data.agents.length < data.maxAgents) {
+        html += '<button class="btn-medieval" onclick="UI.hireAgentAction()" style="font-size:0.75rem;padding:4px 10px;margin-bottom:8px;background:rgba(155,89,182,0.2);border-color:rgba(155,89,182,0.4);">➕ Hire Agent (' + data.hireCost + 'g)</button>';
+    }
+
+    // Agent list
+    if (data.agents.length === 0) {
+        html += '<div style="font-size:0.78rem;color:#888;font-style:italic;">No agents hired. Agents can trade, spy, sabotage, and more on your behalf.</div>';
+    }
+
+    for (var i = 0; i < data.agents.length; i++) {
+        var ag = data.agents[i];
+        var isExpanded = _agentExpandedId === ag.id;
+        var statusColor = ag.status === 'idle' ? '#55a868' : ag.status === 'working' ? '#5dade2' : ag.status === 'traveling' ? '#ccb974' : ag.status === 'jailed' ? '#c44e52' : ag.status === 'caught' ? '#e67e22' : '#888';
+        var statusIcon = ag.status === 'idle' ? '⏸️' : ag.status === 'working' ? '⚡' : ag.status === 'traveling' ? '🚶' : ag.status === 'jailed' ? '🔒' : ag.status === 'caught' ? '🚨' : '❓';
+        var townName = '';
+        try { var _at = Engine.findTown(ag.townId); townName = _at ? _at.name : '?'; } catch(e) {}
+
+        html += '<div style="background:rgba(0,0,0,0.15);border:1px solid rgba(155,89,182,0.2);border-radius:6px;padding:8px;margin-bottom:6px;">';
+
+        // Header row
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="UI.toggleAgentExpand(\'' + ag.id + '\')">';
+        html += '<div>';
+        html += '<span style="font-size:0.82rem;font-weight:bold;color:#d4b5e0;">' + escapeHtml(ag.name) + '</span>';
+        html += ' <span style="font-size:0.68rem;color:' + statusColor + ';">' + statusIcon + ' ' + ag.status + '</span>';
+        html += '</div>';
+        html += '<div style="font-size:0.68rem;color:#aaa;">📍' + escapeHtml(townName) + ' · ' + ag.dailyCost + 'g/day · ' + (isExpanded ? '▼' : '▶') + '</div>';
+        html += '</div>';
+
+        // Skills bar
+        html += '<div style="font-size:0.65rem;color:#999;margin-top:2px;">⚔️' + ag.skills.combat + ' 🥷' + ag.skills.stealth + ' 📊' + ag.skills.trade + ' 🗣️' + ag.skills.persuasion + ' · ❤️ Loyalty: ' + ag.loyalty + '</div>';
+
+        // Current task summary
+        if (ag.task) {
+            var tDef = data.taskDefs[ag.task.type];
+            var taskLabel = tDef ? (tDef.icon + ' ' + tDef.label) : ag.task.type;
+            var targetName = '';
+            if (ag.task.targetId) {
+                try { var _tp = Engine.findPerson(ag.task.targetId); if (_tp) targetName = ' → ' + (_tp.firstName || '') + ' ' + (_tp.lastName || ''); } catch(e) {}
+            }
+            html += '<div style="font-size:0.72rem;color:#ccc;margin-top:3px;">Task: <strong>' + taskLabel + '</strong>' + escapeHtml(targetName) + '</div>';
+        }
+
+        // Expanded details
+        if (isExpanded) {
+            html += _buildAgentExpandedUI(ag, data);
+        }
+
+        html += '</div>';
+    }
+
+    html += '</div>';
+    return html;
+}
+
+function _buildAgentExpandedUI(agent, data) {
+    var html = '<div style="margin-top:8px;border-top:1px solid rgba(155,89,182,0.15);padding-top:8px;">';
+
+    // Earnings summary
+    html += '<div style="font-size:0.7rem;color:#aaa;margin-bottom:6px;">💰 Total earnings: ' + (agent.earnings || 0) + 'g · 🚨 Times caught: ' + (agent.catchCount || 0) + '</div>';
+
+    // Task assignment (if idle or to change task)
+    if (agent.status === 'idle' || agent.status === 'working') {
+        html += '<div style="margin-bottom:6px;">';
+        html += '<div style="font-size:0.72rem;color:#bbb;margin-bottom:4px;font-weight:bold;">Assign Task:</div>';
+
+        // Task category tabs
+        html += '<div style="display:flex;gap:3px;margin-bottom:6px;flex-wrap:wrap;">';
+        var cats = [
+            { id: 'hostile', label: '⚔️ Hostile', color: '#c44e52' },
+            { id: 'business', label: '📊 Business', color: '#55a868' },
+            { id: 'intel', label: '🕵️ Intel', color: '#5dade2' }
+        ];
+        for (var ci = 0; ci < cats.length; ci++) {
+            var cat = cats[ci];
+            html += '<button class="btn-medieval" onclick="UI.showAgentTaskCategory(\'' + agent.id + '\',\'' + cat.id + '\')" style="font-size:0.65rem;padding:3px 8px;border-color:' + cat.color + '40;color:' + cat.color + ';">' + cat.label + '</button>';
+        }
+        html += '</div>';
+
+        // Task input area (populated by JS when category is selected)
+        html += '<div id="agentTaskArea_' + agent.id + '"></div>';
+        html += '</div>';
+    }
+
+    // Reports (last 5)
+    var reports = agent.reports || [];
+    if (reports.length > 0) {
+        html += '<div style="font-size:0.68rem;color:#bbb;font-weight:bold;margin-bottom:3px;">📋 Recent Reports:</div>';
+        var showReports = reports.slice(-5).reverse();
+        for (var ri = 0; ri < showReports.length; ri++) {
+            var r = showReports[ri];
+            html += '<div style="font-size:0.65rem;color:#999;margin-bottom:2px;padding:2px 4px;background:rgba(0,0,0,0.1);border-radius:3px;">';
+            html += '<span style="color:#777;">Day ' + (r.day || '?') + ':</span> ' + escapeHtml(r.msg);
+            html += '</div>';
+        }
+    }
+
+    // Action buttons
+    html += '<div style="display:flex;gap:4px;margin-top:6px;">';
+    if (agent.task) {
+        html += '<button class="btn-medieval" onclick="UI.cancelAgentTaskAction(\'' + agent.id + '\')" style="font-size:0.65rem;padding:3px 8px;background:rgba(204,185,116,0.2);border-color:rgba(204,185,116,0.4);color:#ccb974;">⏹️ Cancel Task</button>';
+    }
+    if (agent.townId !== Player.townId) {
+        html += '<button class="btn-medieval" onclick="UI.recallAgentAction(\'' + agent.id + '\')" style="font-size:0.65rem;padding:3px 8px;background:rgba(93,173,226,0.2);border-color:rgba(93,173,226,0.4);color:#5dade2;">📍 Recall</button>';
+    }
+    html += '<button class="btn-medieval" onclick="UI.fireAgentAction(\'' + agent.id + '\')" style="font-size:0.65rem;padding:3px 8px;background:rgba(196,78,82,0.2);border-color:rgba(196,78,82,0.4);color:#c44e52;">🚫 Dismiss</button>';
+    html += '</div>';
+
+    html += '</div>';
+    return html;
+}
+
+function toggleAgentExpand(agentId) {
+    _agentExpandedId = (_agentExpandedId === agentId) ? null : agentId;
+    openNobilityDialog();
+}
+
+function hireAgentAction() {
+    var result = Player.hireAgent(Player.townId);
+    toast(result.message, result.success ? 'success' : 'warning');
+    if (result.success) openNobilityDialog();
+}
+
+function fireAgentAction(agentId) {
+    var result = Player.fireAgent(agentId);
+    toast(result.message, result.success ? 'success' : 'warning');
+    openNobilityDialog();
+}
+
+function cancelAgentTaskAction(agentId) {
+    var result = Player.cancelAgentTask(agentId);
+    toast(result.message, result.success ? 'success' : 'warning');
+    openNobilityDialog();
+}
+
+function recallAgentAction(agentId) {
+    var result = Player.recallAgent(agentId);
+    toast(result.message, result.success ? 'success' : 'warning');
+    openNobilityDialog();
+}
+
+function showAgentTaskCategory(agentId, category) {
+    var area = document.getElementById('agentTaskArea_' + agentId);
+    if (!area) return;
+    var data = null;
+    try { data = Player.getAgentData(); } catch(e) { return; }
+    var defs = data.taskDefs;
+    var html = '';
+
+    if (category === 'hostile') {
+        html += _buildHostileTaskUI(agentId, defs);
+    } else if (category === 'business') {
+        html += _buildBusinessTaskUI(agentId, defs);
+    } else if (category === 'intel') {
+        html += _buildIntelTaskUI(agentId, defs);
+    }
+
+    area.innerHTML = html;
+}
+
+function _buildHostileTaskUI(agentId, defs) {
+    var html = '';
+    // Target selection dropdown
+    html += '<div style="margin-bottom:6px;">';
+    html += '<label style="font-size:0.7rem;color:#ccc;">Target:</label> ';
+    html += '<select id="agentTarget_' + agentId + '" style="font-size:0.7rem;padding:2px;max-width:200px;">';
+
+    // Get nobles and EMs
+    var people = [];
+    try {
+        var world = Engine.getWorld ? Engine.getWorld() : null;
+        if (world && world.people) {
+            for (var pi = 0; pi < world.people.length; pi++) {
+                var p = world.people[pi];
+                if (!p.alive) continue;
+                if (p.occupation === 'noble' || p.isEliteMerchant) {
+                    var pTown = Engine.findTown(p.townId);
+                    var label = (p.firstName || '') + ' ' + (p.lastName || '') + ' (' + (p.isEliteMerchant ? 'EM' : 'Noble') + (pTown ? ', ' + pTown.name : '') + ')';
+                    people.push({ id: p.id, label: label.trim() });
+                }
+            }
+        }
+    } catch(e) {}
+
+    for (var i = 0; i < people.length; i++) {
+        html += '<option value="' + people[i].id + '">' + escapeHtml(people[i].label) + '</option>';
+    }
+    html += '</select>';
+    html += '</div>';
+
+    // Action checkboxes
+    html += '<div style="font-size:0.68rem;color:#ccc;margin-bottom:4px;">Allowed Actions:</div>';
+    var hostileTasks = ['sabotage_buildings', 'arson_buildings', 'raid_caravans', 'spread_rumors', 'steal_goods', 'intimidate'];
+    for (var hi = 0; hi < hostileTasks.length; hi++) {
+        var ht = hostileTasks[hi];
+        var hd = defs[ht];
+        if (!hd) continue;
+        html += '<label style="font-size:0.68rem;color:#ddd;display:block;margin:2px 0;cursor:pointer;">';
+        html += '<input type="checkbox" id="agentAction_' + agentId + '_' + ht + '" value="' + ht + '" style="margin-right:4px;">';
+        html += hd.icon + ' ' + hd.label + ' <span style="color:#888;">(' + Math.round(hd.baseDetection * 100) + '% base detection)</span>';
+        html += '</label>';
+    }
+
+    html += '<button class="btn-medieval" onclick="UI.assignHostileTask(\'' + agentId + '\')" style="font-size:0.7rem;padding:4px 10px;margin-top:6px;background:rgba(196,78,82,0.2);border-color:rgba(196,78,82,0.4);color:#c44e52;">⚡ Assign Hostile Task</button>';
+    return html;
+}
+
+function _buildBusinessTaskUI(agentId, defs) {
+    var html = '';
+    // Task type dropdown
+    html += '<div style="margin-bottom:4px;">';
+    html += '<label style="font-size:0.7rem;color:#ccc;">Task:</label> ';
+    html += '<select id="agentBizTask_' + agentId + '" style="font-size:0.7rem;padding:2px;" onchange="UI.onAgentBizTaskChange(\'' + agentId + '\')">';
+    var bizTasks = ['run_caravan', 'scout_markets', 'buy_sell_goods', 'manage_properties', 'establish_contacts', 'guard_properties'];
+    for (var bi = 0; bi < bizTasks.length; bi++) {
+        var bd = defs[bizTasks[bi]];
+        if (!bd) continue;
+        html += '<option value="' + bizTasks[bi] + '">' + bd.icon + ' ' + bd.label + '</option>';
+    }
+    html += '</select>';
+    html += '</div>';
+
+    // Town selection
+    html += '<div style="margin-bottom:4px;">';
+    html += '<label style="font-size:0.7rem;color:#ccc;">Town:</label> ';
+    html += '<select id="agentBizTown_' + agentId + '" style="font-size:0.7rem;padding:2px;">';
+    try {
+        var towns = Engine.getTowns ? Engine.getTowns() : [];
+        for (var ti = 0; ti < towns.length; ti++) {
+            var selected = towns[ti].id === Player.townId ? ' selected' : '';
+            html += '<option value="' + towns[ti].id + '"' + selected + '>' + escapeHtml(towns[ti].name) + '</option>';
+        }
+    } catch(e) {}
+    html += '</select>';
+    html += '</div>';
+
+    // Monthly budget
+    html += '<div style="margin-bottom:4px;">';
+    html += '<label style="font-size:0.7rem;color:#ccc;">Monthly Budget:</label> ';
+    html += '<input type="number" id="agentBizBudget_' + agentId + '" value="500" min="50" max="10000" step="50" style="font-size:0.7rem;padding:2px;width:80px;"> g';
+    html += '</div>';
+
+    // Description area
+    html += '<div id="agentBizDesc_' + agentId + '" style="font-size:0.65rem;color:#888;margin-bottom:4px;font-style:italic;">' + (defs.run_caravan ? defs.run_caravan.desc : '') + '</div>';
+
+    html += '<button class="btn-medieval" onclick="UI.assignBusinessTask(\'' + agentId + '\')" style="font-size:0.7rem;padding:4px 10px;margin-top:4px;background:rgba(85,168,104,0.2);border-color:rgba(85,168,104,0.4);color:#55a868;">⚡ Assign Business Task</button>';
+    return html;
+}
+
+function _buildIntelTaskUI(agentId, defs) {
+    var html = '';
+    // Task type
+    html += '<div style="margin-bottom:4px;">';
+    html += '<label style="font-size:0.7rem;color:#ccc;">Task:</label> ';
+    html += '<select id="agentIntelTask_' + agentId + '" style="font-size:0.7rem;padding:2px;">';
+    html += '<option value="spy_on_target">' + defs.spy_on_target.icon + ' ' + defs.spy_on_target.label + '</option>';
+    html += '<option value="counter_intel">' + defs.counter_intel.icon + ' ' + defs.counter_intel.label + '</option>';
+    html += '</select>';
+    html += '</div>';
+
+    // Target for spy (only needed for spy_on_target)
+    html += '<div style="margin-bottom:4px;">';
+    html += '<label style="font-size:0.7rem;color:#ccc;">Target:</label> ';
+    html += '<select id="agentIntelTarget_' + agentId + '" style="font-size:0.7rem;padding:2px;max-width:200px;">';
+    try {
+        var world = Engine.getWorld ? Engine.getWorld() : null;
+        if (world && world.people) {
+            for (var pi = 0; pi < world.people.length; pi++) {
+                var p = world.people[pi];
+                if (!p.alive) continue;
+                if (p.occupation === 'noble' || p.isEliteMerchant) {
+                    var pTown = Engine.findTown(p.townId);
+                    var label = (p.firstName || '') + ' ' + (p.lastName || '') + ' (' + (p.isEliteMerchant ? 'EM' : 'Noble') + (pTown ? ', ' + pTown.name : '') + ')';
+                    html += '<option value="' + p.id + '">' + escapeHtml(label.trim()) + '</option>';
+                }
+            }
+        }
+    } catch(e) {}
+    html += '</select>';
+    html += '</div>';
+
+    html += '<button class="btn-medieval" onclick="UI.assignIntelTask(\'' + agentId + '\')" style="font-size:0.7rem;padding:4px 10px;margin-top:4px;background:rgba(93,173,226,0.2);border-color:rgba(93,173,226,0.4);color:#5dade2;">⚡ Assign Intel Task</button>';
+    return html;
+}
+
+function onAgentBizTaskChange(agentId) {
+    var sel = document.getElementById('agentBizTask_' + agentId);
+    var descEl = document.getElementById('agentBizDesc_' + agentId);
+    if (!sel || !descEl) return;
+    var data = null;
+    try { data = Player.getAgentData(); } catch(e) { return; }
+    var def = data.taskDefs[sel.value];
+    descEl.textContent = def ? def.desc : '';
+}
+
+function assignHostileTask(agentId) {
+    var targetSel = document.getElementById('agentTarget_' + agentId);
+    if (!targetSel || !targetSel.value) { toast('Select a target.', 'warning'); return; }
+
+    // Find first checked action to use as task type
+    var hostileTasks = ['sabotage_buildings', 'arson_buildings', 'raid_caravans', 'spread_rumors', 'steal_goods', 'intimidate'];
+    var allowedActions = {};
+    var firstChecked = null;
+    for (var i = 0; i < hostileTasks.length; i++) {
+        var cb = document.getElementById('agentAction_' + agentId + '_' + hostileTasks[i]);
+        if (cb && cb.checked) {
+            allowedActions[hostileTasks[i]] = true;
+            if (!firstChecked) firstChecked = hostileTasks[i];
+        }
+    }
+    if (!firstChecked) { toast('Check at least one action.', 'warning'); return; }
+
+    var result = Player.assignAgentTask(agentId, firstChecked, {
+        targetId: targetSel.value,
+        allowedActions: allowedActions
+    });
+    toast(result.message, result.success ? 'success' : 'warning');
+    if (result.success) openNobilityDialog();
+}
+
+function assignBusinessTask(agentId) {
+    var taskSel = document.getElementById('agentBizTask_' + agentId);
+    var townSel = document.getElementById('agentBizTown_' + agentId);
+    var budgetEl = document.getElementById('agentBizBudget_' + agentId);
+    if (!taskSel) return;
+
+    var result = Player.assignAgentTask(agentId, taskSel.value, {
+        targetTownId: townSel ? townSel.value : null,
+        monthlyBudget: budgetEl ? parseInt(budgetEl.value) || 500 : 500
+    });
+    toast(result.message, result.success ? 'success' : 'warning');
+    if (result.success) openNobilityDialog();
+}
+
+function assignIntelTask(agentId) {
+    var taskSel = document.getElementById('agentIntelTask_' + agentId);
+    var targetSel = document.getElementById('agentIntelTarget_' + agentId);
+    if (!taskSel) return;
+
+    var params = {};
+    if (taskSel.value === 'spy_on_target' && targetSel) {
+        params.targetId = targetSel.value;
+    }
+    var result = Player.assignAgentTask(agentId, taskSel.value, params);
+    toast(result.message, result.success ? 'success' : 'warning');
+    if (result.success) openNobilityDialog();
+}
+
+// ── Royal Directives (Kingdom Quests) UI ──
+var _kqTab = 'available'; // available, active, log
+
+function _buildRoyalDirectivesSection(kingdomId, day) {
+    var html = '';
+    var kqData = null;
+    try { kqData = Player.getKingdomQuestData(kingdomId); } catch(e) {}
+    if (!kqData) {
+        // Try generating
+        try { Player.generateKingdomQuests(kingdomId); kqData = Player.getKingdomQuestData(kingdomId); } catch(e2) {}
+    }
+    if (!kqData) return '';
+
+    var activeCount = (kqData.active || []).length;
+    var availCount = (kqData.available || []).length + (kqData.personalAssignment ? 1 : 0);
+    var completedCount = (kqData.completed || []).length;
+
+    html += '<div style="background:rgba(44,62,80,0.2);border:1px solid rgba(52,152,219,0.3);border-radius:8px;padding:10px;margin-bottom:10px;">';
+    html += '<h3 style="margin:0 0 8px 0;font-size:0.9rem;color:#5dade2;">📜 Royal Directives</h3>';
+
+    // Tab buttons
+    html += '<div style="display:flex;gap:4px;margin-bottom:8px;">';
+    var tabs = [
+        { id: 'available', label: '📋 Available (' + availCount + ')' },
+        { id: 'active', label: '⚡ Active (' + activeCount + ')' },
+        { id: 'log', label: '📖 Log (' + completedCount + ')' }
+    ];
+    for (var ti = 0; ti < tabs.length; ti++) {
+        var tab = tabs[ti];
+        var isActive = _kqTab === tab.id;
+        html += '<button class="btn-medieval" onclick="UI._switchKQTab(\'' + tab.id + '\',\'' + kingdomId + '\')" style="font-size:0.7rem;padding:4px 10px;' + (isActive ? 'background:rgba(52,152,219,0.25);border-color:rgba(52,152,219,0.5);color:#5dade2;' : '') + '">' + tab.label + '</button>';
+    }
+    html += '</div>';
+
+    // Tab content
+    if (_kqTab === 'available') {
+        html += _buildKQAvailableTab(kqData, kingdomId, day);
+    } else if (_kqTab === 'active') {
+        html += _buildKQActiveTab(kqData, kingdomId, day);
+    } else if (_kqTab === 'log') {
+        html += _buildKQLogTab(kqData, day);
+    }
+
+    html += '</div>';
+    return html;
+}
+
+function _buildKQAvailableTab(kqData, kingdomId, day) {
+    var html = '';
+
+    // Personal assignment first
+    if (kqData.personalAssignment) {
+        var pa = kqData.personalAssignment;
+        html += '<div style="background:rgba(231,76,60,0.12);border:2px solid rgba(231,76,60,0.4);border-radius:8px;padding:10px;margin-bottom:8px;animation:pulse 2s infinite;">';
+        html += '<div style="font-size:0.82rem;font-weight:bold;color:#e74c3c;">⚠️ Personal Royal Assignment</div>';
+        html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:4px;">The King demands your attention!</div>';
+        html += _buildKQCard(pa, kingdomId, day, true);
+        html += '</div>';
+    }
+
+    // Available quests
+    if ((kqData.available || []).length === 0 && !kqData.personalAssignment) {
+        html += '<div style="font-size:0.78rem;color:#888;font-style:italic;">No royal directives available. Check back later.</div>';
+    }
+    for (var i = 0; i < (kqData.available || []).length; i++) {
+        html += _buildKQCard(kqData.available[i], kingdomId, day, false);
+    }
+    return html;
+}
+
+function _buildKQActiveTab(kqData, kingdomId, day) {
+    var html = '';
+    if ((kqData.active || []).length === 0) {
+        html += '<div style="font-size:0.78rem;color:#888;font-style:italic;">No active kingdom quests. Accept some from the Available tab.</div>';
+        return html;
+    }
+    for (var i = 0; i < kqData.active.length; i++) {
+        var q = kqData.active[i];
+        var progress = null;
+        try { progress = Player.checkKingdomQuestProgress(q.id, kingdomId); } catch(e) {}
+        html += _buildKQActiveCard(q, kingdomId, day, progress);
+    }
+    return html;
+}
+
+function _buildKQLogTab(kqData, day) {
+    var html = '';
+    var completed = (kqData.completed || []).slice().reverse();
+    if (completed.length === 0) {
+        html += '<div style="font-size:0.78rem;color:#888;font-style:italic;">No completed quests yet.</div>';
+        return html;
+    }
+    for (var i = 0; i < completed.length; i++) {
+        var q = completed[i];
+        var daysAgo = day - (q.completedDay || 0);
+        html += '<div style="background:rgba(0,0,0,0.15);border:1px solid rgba(85,168,104,0.3);border-radius:6px;padding:6px 8px;margin-bottom:4px;">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+        html += '<span style="font-size:0.75rem;color:#55a868;">✅ ' + escapeHtml(q.title) + '</span>';
+        html += '<span style="font-size:0.65rem;color:#777;">' + daysAgo + 'd ago</span>';
+        html += '</div>';
+        var rew = q.rewards || {};
+        html += '<div style="font-size:0.65rem;color:#888;">' + _kqCatIcon(q.category) + ' ' + (q.category || '') + ' · ' + (q.difficulty || '') + ' · +' + (rew.gold || 0) + 'g +' + (rew.kingdomRep || 0) + ' rep</div>';
+        html += '</div>';
+    }
+    return html;
+}
+
+function _buildKQCard(quest, kingdomId, day, isPersonal) {
+    var html = '';
+    var daysLeft = Math.max(0, (quest.expiresDay || 0) - day);
+    var diffColors = { easy: '#55a868', medium: '#ccb974', hard: '#e67e22', elite: '#e74c3c' };
+    var urgColors = { low: '#55a868', normal: '#ccb974', high: '#e67e22', critical: '#e74c3c' };
+    var diffBars = { easy: '■□□□', medium: '■■□□', hard: '■■■□', elite: '■■■■' };
+
+    html += '<div style="background:rgba(0,0,0,0.15);border:' + (isPersonal ? '2px solid rgba(255,215,0,0.6)' : '1px solid rgba(201,168,76,0.2)') + ';border-radius:6px;padding:8px;margin-bottom:6px;' + (isPersonal ? 'box-shadow:0 0 8px rgba(255,215,0,0.15);' : '') + '">';
+
+    // Personal quest label
+    if (isPersonal) {
+        var _kingName = '';
+        try {
+            var _kqKdoms = Engine.getKingdoms ? Engine.getKingdoms() : [];
+            for (var _ki = 0; _ki < _kqKdoms.length; _ki++) {
+                if (_kqKdoms[_ki].id === kingdomId && _kqKdoms[_ki].king) {
+                    var _kPerson = Engine.findPerson(_kqKdoms[_ki].king);
+                    if (_kPerson) _kingName = _kPerson.firstName;
+                    break;
+                }
+            }
+        } catch(e) {}
+        html += '<div style="font-size:0.65rem;color:#ffd700;margin-bottom:3px;font-style:italic;">👑 ' + (_kingName ? 'King ' + escapeHtml(_kingName) + ' personally requests...' : 'Personal royal directive') + '</div>';
+    }
+
+    // Title row
+    html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;">';
+    html += '<div style="font-size:0.82rem;font-weight:bold;color:#f0e0c0;">' + _kqCatIcon(quest.category) + ' ' + escapeHtml(quest.title) + '</div>';
+    html += '<span style="font-size:0.65rem;color:' + (urgColors[quest.urgency] || '#ccb974') + ';font-weight:bold;text-transform:uppercase;">' + (quest.urgency || 'normal') + '</span>';
+    html += '</div>';
+
+    // Description
+    html += '<div style="font-size:0.72rem;color:#aaa;margin:4px 0;">' + escapeHtml(quest.description) + '</div>';
+
+    // Stats row
+    html += '<div style="display:flex;gap:12px;font-size:0.68rem;color:#888;margin-bottom:4px;">';
+    html += '<span>Difficulty: <span style="color:' + (diffColors[quest.difficulty] || '#ccb974') + ';">' + (diffBars[quest.difficulty] || '■■□□') + ' ' + (quest.difficulty || 'medium') + '</span></span>';
+    html += '<span>⏰ ' + daysLeft + 'd left</span>';
+    html += '</div>';
+
+    // Rewards
+    var rew = quest.rewards || {};
+    html += '<div style="font-size:0.7rem;color:#aaa;">';
+    html += 'Reward: <span style="color:var(--gold);">' + (rew.gold || 0) + 'g</span>';
+    html += ' · <span style="color:#5dade2;">+' + (rew.kingdomRep || 0) + ' rep</span>';
+    html += ' · <span style="color:#bb8fce;">+' + (rew.kingRelationship || 0) + ' king rel</span>';
+    if (rew.special) {
+        html += ' · <span style="color:#f39c12;">⭐ ' + escapeHtml(rew.special.replace(/_/g, ' ')) + '</span>';
+    }
+    html += '</div>';
+
+    // H1: Show requirements before accepting
+    var reqs = quest.requirements || {};
+    var _hasReqs = false;
+    var _reqHtml = '<div style="font-size:0.68rem;color:#bbb;margin:4px 0;padding:4px 6px;background:rgba(0,0,0,0.15);border-radius:4px;">';
+    _reqHtml += '<div style="color:#999;font-weight:bold;margin-bottom:2px;">📋 Requirements:</div>';
+    if (reqs.deliver && Object.keys(reqs.deliver).length > 0) {
+        _hasReqs = true;
+        for (var _dr in reqs.deliver) {
+            var _drName = _dr.replace(/_/g, ' ');
+            var _drHas = (Player.state.inventory || {})[_dr] || 0;
+            _reqHtml += '<div style="color:' + (_drHas >= reqs.deliver[_dr] ? '#55a868' : '#e67e22') + ';">📦 Deliver: ' + reqs.deliver[_dr] + ' ' + _drName + ' (have: ' + _drHas + ')</div>';
+        }
+    }
+    if (reqs.gold > 0) {
+        _hasReqs = true;
+        var _gHas = Player.state.gold || 0;
+        _reqHtml += '<div style="color:' + (_gHas >= reqs.gold ? '#55a868' : '#e67e22') + ';">💰 Gold: ' + reqs.gold + 'g (have: ' + Math.floor(_gHas) + ')</div>';
+    }
+    if (reqs.action) {
+        _hasReqs = true;
+        var _actM = (typeof ACTION_QUEST_MECHANICS !== 'undefined') ? ACTION_QUEST_MECHANICS[reqs.action.type] : null;
+        if (reqs.action.type && reqs.action.type.indexOf('visit') >= 0) {
+            _reqHtml += '<div>🏘️ Visit ' + (reqs.action.count || 1) + ' ' + (reqs.action.townType || '').replace(/_/g, ' ') + ' towns</div>';
+        } else if (reqs.action.goldTarget > 0) {
+            _reqHtml += '<div>💰 Raise ' + reqs.action.goldTarget + 'g through trade</div>';
+        } else if (_actM) {
+            _reqHtml += '<div>⏱️ Time: ' + (_actM.tickCost || 5) + ' days</div>';
+            if (_actM.goldCost > 0) _reqHtml += '<div>💰 Cost: ' + _actM.goldCost + 'g</div>';
+            if (_actM.locationReq === 'capital') _reqHtml += '<div>📍 Location: Kingdom capital</div>';
+            var _estC = Math.round((_actM.successBase || 0.60) * 100);
+            _reqHtml += '<div>🎲 Success: ~' + _estC + '%</div>';
+        }
+    }
+    _reqHtml += '</div>';
+    if (_hasReqs) html += _reqHtml;
+
+    // H2: How to complete instructions
+    var _howTo = '';
+    if (reqs.deliver && Object.keys(reqs.deliver).length > 0) {
+        _howTo = 'Gather the required items and return to complete delivery.';
+    } else if (reqs.gold > 0) {
+        _howTo = 'You need ' + reqs.gold + 'g to fund this directive.';
+    } else if (reqs.action) {
+        if (reqs.action.type && reqs.action.type.indexOf('visit') >= 0) {
+            _howTo = 'Travel to ' + (reqs.action.count || 1) + ' qualifying towns to complete.';
+        } else if (reqs.action.goldTarget > 0) {
+            _howTo = 'Trade goods until you raise ' + reqs.action.goldTarget + 'g in commerce.';
+        } else {
+            var _actMh = (typeof ACTION_QUEST_MECHANICS !== 'undefined') ? ACTION_QUEST_MECHANICS[reqs.action.type] : null;
+            if (_actMh) {
+                _howTo = 'Click the action button below, pay the cost, and attempt the task. Your ' + (_actMh.skillKey || 'skills') + ' skill improves chances.';
+            }
+        }
+    }
+    if (_howTo) {
+        html += '<div style="font-size:0.65rem;color:#88aacc;margin:3px 0;font-style:italic;">📖 ' + _howTo + '</div>';
+    }
+
+    // Action buttons
+    html += '<div style="display:flex;gap:6px;margin-top:6px;">';
+    var safeId = quest.id.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    var safeKid = kingdomId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    html += '<button class="btn-medieval" onclick="(function(){var r=Player.acceptKingdomQuest(\'' + safeId + '\',\'' + safeKid + '\');UI.toast(r&&r.message||\'Quest updated\',r&&r.success?\'success\':\'warning\');if(r&&r.success)UI.openNobilityDialog();})()" style="font-size:0.72rem;padding:4px 12px;background:rgba(46,204,113,0.2) !important;border-color:rgba(46,204,113,0.4) !important;">✅ Accept</button>';
+
+    // Reject button with penalty info
+    var rejPen = quest.rejectionPenalty || { rep: 2, kingRel: 3 };
+    var rejLabel = isPersonal ? 'Reject (-' + (rejPen.rep * 2) + ' rep)' : 'Decline';
+    html += '<button class="btn-medieval" onclick="(function(){var r=Player.rejectKingdomQuest(\'' + safeId + '\',\'' + safeKid + '\');UI.toast(r&&r.message||\'Quest updated\',r&&r.success?\'success\':\'warning\');if(r&&r.success)UI.openNobilityDialog();})()" style="font-size:0.72rem;padding:4px 12px;' + (isPersonal ? 'background:rgba(231,76,60,0.15) !important;border-color:rgba(231,76,60,0.3) !important;color:#e74c3c;' : '') + '">' + (isPersonal ? '❌ ' : '') + rejLabel + '</button>';
+    html += '</div>';
+
+    html += '</div>';
+    return html;
+}
+
+function _buildKQActiveCard(quest, kingdomId, day, progress) {
+    var html = '';
+    var daysLeft = Math.max(0, (quest.expiresDay || 0) - day);
+    var isComplete = progress && progress.complete;
+    var borderColor = isComplete ? 'rgba(46,204,113,0.5)' : daysLeft <= 5 ? 'rgba(231,76,60,0.4)' : 'rgba(52,152,219,0.3)';
+
+    html += '<div style="background:rgba(0,0,0,0.15);border:2px solid ' + borderColor + ';border-radius:6px;padding:8px;margin-bottom:6px;">';
+
+    // Title
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+    html += '<div style="font-size:0.82rem;font-weight:bold;color:#f0e0c0;">' + _kqCatIcon(quest.category) + ' ' + escapeHtml(quest.title) + (quest.isPersonal ? ' 👑' : '') + '</div>';
+    html += '<span style="font-size:0.68rem;color:' + (daysLeft <= 5 ? '#e74c3c' : daysLeft <= 10 ? '#e67e22' : '#aaa') + ';">⏰ ' + daysLeft + 'd</span>';
+    html += '</div>';
+
+    // Description
+    html += '<div style="font-size:0.72rem;color:#aaa;margin:4px 0;">' + escapeHtml(quest.description) + '</div>';
+
+    // Progress section
+    var reqs = quest.requirements || {};
+    html += '<div style="margin:6px 0;">';
+    if (reqs.deliver) {
+        html += '<div style="font-size:0.7rem;color:#ddd;margin-bottom:2px;">📦 Goods Required:</div>';
+        for (var resId in reqs.deliver) {
+            var needed = reqs.deliver[resId];
+            var have = 0;
+            try { have = (Player.state.inventory || {})[resId] || 0; } catch(e) {}
+            var met = have >= needed;
+            var resName = resId;
+            try {
+                var rType = RESOURCE_TYPES[resId.toUpperCase()];
+                if (rType) resName = (rType.icon || '') + ' ' + rType.name;
+            } catch(e) {}
+            html += '<div style="font-size:0.68rem;color:' + (met ? '#55a868' : '#e67e22') + ';margin-left:8px;">' + (met ? '✅' : '⬜') + ' ' + escapeHtml(resName) + ': ' + Math.min(have, needed) + '/' + needed + '</div>';
+        }
+    }
+    if (reqs.gold > 0) {
+        var goldMet = (Player.state.gold || 0) >= reqs.gold;
+        html += '<div style="font-size:0.68rem;color:' + (goldMet ? '#55a868' : '#e67e22') + ';">' + (goldMet ? '✅' : '⬜') + ' 💰 Gold: ' + Math.floor(Player.state.gold || 0) + '/' + reqs.gold + '</div>';
+    }
+    if (reqs.action) {
+        var act = reqs.action;
+        if (act.type === 'visit_towns' || act.type === 'visit_foreign' || act.type === 'visit_enemy_towns') {
+            var visited = (Player.state._kqVisitedTowns || {})[quest.id] || [];
+            var visitMet = visited.length >= act.count;
+            var visitLabel = act.type === 'visit_foreign' ? 'Visit foreign towns' : act.type === 'visit_enemy_towns' ? 'Visit enemy towns' : 'Visit towns';
+            html += '<div style="font-size:0.68rem;color:' + (visitMet ? '#55a868' : '#e67e22') + ';">' + (visitMet ? '✅' : '⬜') + ' 🏘️ ' + visitLabel + ': ' + visited.length + '/' + act.count + '</div>';
+
+            // M4: Show qualifying towns
+            try {
+                var _towns = Engine.getTowns ? Engine.getTowns() : [];
+                var _playerKingdomId = null;
+                try { var _pt = Engine.findTown(Player.townId); if (_pt) _playerKingdomId = _pt.kingdomId; } catch(e2) {}
+                var _qualTowns = [];
+                for (var _ti = 0; _ti < _towns.length && _qualTowns.length < 8; _ti++) {
+                    var _t = _towns[_ti];
+                    if (_t.isWilderness || _t.isOutpost) continue;
+                    var _isVisited = visited.indexOf(_t.id) >= 0;
+                    var _qualifies = false;
+                    if (act.type === 'visit_foreign') _qualifies = _t.kingdomId !== _playerKingdomId;
+                    else if (act.type === 'visit_enemy_towns') {
+                        try {
+                            var _pKdom = Engine.findKingdom(_playerKingdomId);
+                            _qualifies = _pKdom && _pKdom.atWar && (_pKdom.atWar.has ? _pKdom.atWar.has(_t.kingdomId) : false);
+                        } catch(e3) {}
+                    } else {
+                        _qualifies = _t.kingdomId === _playerKingdomId;
+                    }
+                    if (_qualifies) _qualTowns.push({ name: _t.name, visited: _isVisited });
+                }
+                if (_qualTowns.length > 0) {
+                    html += '<div style="font-size:0.62rem;color:#777;margin-left:12px;margin-top:2px;">';
+                    for (var _qi2 = 0; _qi2 < _qualTowns.length; _qi2++) {
+                        html += '<span style="color:' + (_qualTowns[_qi2].visited ? '#55a868' : '#888') + ';">' + (_qualTowns[_qi2].visited ? '✓' : '○') + ' ' + escapeHtml(_qualTowns[_qi2].name) + '</span>';
+                        if (_qi2 < _qualTowns.length - 1) html += ' · ';
+                    }
+                    html += '</div>';
+                }
+            } catch(e) { /* no-op */ }
+        } else if (act.goldTarget > 0) {
+            var spent = (Player.state._kqGoldSpent || {})[quest.id] || 0;
+            var spentMet = spent >= act.goldTarget;
+            html += '<div style="font-size:0.68rem;color:' + (spentMet ? '#55a868' : '#e67e22') + ';">' + (spentMet ? '✅' : '⬜') + ' 💰 Raise gold: ' + spent + '/' + act.goldTarget + '</div>';
+        } else {
+            var actionDone = (Player.state._kqActionDone || {})[quest.id] || false;
+            // Look up action mechanics for rich display
+            var _aqMech = (typeof ACTION_QUEST_MECHANICS !== 'undefined') ? ACTION_QUEST_MECHANICS[act.type] : null;
+            var _aqLabel = _aqMech ? _aqMech.label : act.type.replace(/_/g, ' ');
+            var _aqAttempts = (Player.state._kqActionAttempts || {})[quest.id] || 0;
+
+            // M5: Check for multi-step action
+            var _msConfig = (typeof MULTISTEP_ACTIONS !== 'undefined') ? MULTISTEP_ACTIONS[act.type] : null;
+            if (!_msConfig && typeof Player.getMultiStepConfig === 'function') { try { _msConfig = Player.getMultiStepConfig(act.type); } catch(e2){} }
+            var _msProgress = (Player.state._kqStepProgress || {})[quest.id] || 0;
+
+            if (actionDone) {
+                html += '<div style="font-size:0.68rem;color:#55a868;">✅ ' + escapeHtml(_aqLabel) + ' — completed!' + (_aqAttempts > 1 ? ' (took ' + _aqAttempts + ' attempts)' : '') + '</div>';
+            } else if (_msConfig && _aqMech) {
+                // Multi-step action display
+                html += '<div style="font-size:0.72rem;color:#d4a843;margin-bottom:4px;font-weight:bold;">📋 ' + escapeHtml(_aqLabel) + ' <span style="font-size:0.62rem;color:#888;">(' + _msProgress + '/' + _msConfig.totalSteps + ' steps)</span></div>';
+
+                // Step progress bar
+                html += '<div style="background:rgba(0,0,0,0.3);border-radius:4px;height:6px;margin:4px 8px;overflow:hidden;">';
+                html += '<div style="height:100%;background:linear-gradient(90deg,#55a868,#4caf50);width:' + Math.round((_msProgress / _msConfig.totalSteps) * 100) + '%;border-radius:4px;transition:width 0.3s;"></div></div>';
+
+                // Show each step with status
+                for (var _si = 0; _si < _msConfig.steps.length; _si++) {
+                    var _step = _msConfig.steps[_si];
+                    var _stepDone = _si < _msProgress;
+                    var _stepCurrent = _si === _msProgress;
+                    var _stepColor = _stepDone ? '#55a868' : _stepCurrent ? '#e67e22' : '#666';
+                    var _stepIcon = _stepDone ? '✅' : _stepCurrent ? '▶️' : '⬜';
+                    html += '<div style="font-size:0.65rem;color:' + _stepColor + ';margin-left:8px;' + (_stepCurrent ? 'font-weight:bold;' : '') + '">';
+                    html += _stepIcon + ' Step ' + (_si + 1) + ': ' + escapeHtml(_step.label);
+                    if (_stepCurrent) {
+                        var _costs = [];
+                        if (_step.goldCost > 0) _costs.push('💰' + _step.goldCost + 'g');
+                        if (_step.tickCost > 0) _costs.push('⏳' + _step.tickCost + 'd');
+                        var _pct = Math.round((_step.successBase || 0.70) * 100);
+                        _costs.push('🎲' + _pct + '%');
+                        html += ' <span style="color:#aaa;font-weight:normal;">(' + _costs.join(', ') + ')</span>';
+                    }
+                    html += '</div>';
+                }
+
+                // Narrative for current step
+                if (_msConfig.steps[_msProgress]) {
+                    html += '<div style="font-size:0.62rem;color:#999;margin:4px 0 4px 12px;font-style:italic;">' + escapeHtml(_msConfig.steps[_msProgress].narrative || '') + '</div>';
+                }
+
+                if (_aqAttempts > 0 && _msProgress < _msConfig.totalSteps) {
+                    html += '<div style="font-size:0.62rem;color:#e67e22;margin-left:12px;">⚠️ ' + _aqAttempts + ' total attempt' + (_aqAttempts > 1 ? 's' : '') + ' so far</div>';
+                }
+
+                var safActId2 = quest.id.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                var safKid2 = kingdomId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                var _curStepBtn = _msConfig.steps[_msProgress];
+                html += '<button class="btn-medieval" onclick="UI._attemptKQActionUI(\'' + safActId2 + '\',\'' + safKid2 + '\')" style="font-size:0.7rem;padding:4px 12px;margin-top:4px;background:rgba(231,126,35,0.2) !important;border-color:rgba(231,126,35,0.4) !important;">▶️ ' + escapeHtml(_curStepBtn ? _curStepBtn.label : 'Next Step') + '</button>';
+            } else if (_aqMech) {
+                // Show action details with proper attempt button
+                html += '<div style="font-size:0.68rem;color:#e67e22;margin-bottom:4px;">⬜ ' + escapeHtml(_aqLabel) + '</div>';
+                html += '<div style="font-size:0.65rem;color:#999;margin:2px 0 4px 12px;font-style:italic;">' + escapeHtml(_aqMech.narrative || '') + '</div>';
+                // Requirements
+                html += '<div style="font-size:0.65rem;color:#aaa;margin-left:12px;">';
+                if (_aqMech.goldCost > 0) {
+                    var _hasGold = (Player.state.gold || 0) >= _aqMech.goldCost;
+                    html += '<div style="color:' + (_hasGold ? '#55a868' : '#e74c3c') + ';">💰 Cost: ' + _aqMech.goldCost + 'g' + (!_hasGold ? ' (need ' + (_aqMech.goldCost - Math.floor(Player.state.gold || 0)) + ' more)' : '') + '</div>';
+                }
+                html += '<div>⏳ Time: ~' + (_aqMech.tickCost || 5) + ' days</div>';
+                if (_aqMech.locationReq === 'capital') {
+                    var _inCapital = false;
+                    try { var _pTown = Engine.findTown(Player.townId); _inCapital = _pTown && _pTown.isCapital; } catch(e) {}
+                    html += '<div style="color:' + (_inCapital ? '#55a868' : '#e74c3c') + ';">📍 Must be in kingdom capital' + (!_inCapital ? ' (travel there first)' : ' ✓') + '</div>';
+                }
+                // Success chance estimate
+                var _estChance = Math.round((_aqMech.successBase || 0.60) * 100);
+                var _chanceColor = _estChance >= 70 ? '#55a868' : _estChance >= 50 ? '#ccb974' : '#e67e22';
+                html += '<div>🎲 Base success: <span style="color:' + _chanceColor + ';">' + _estChance + '%</span> (skills improve this)</div>';
+                if (_aqAttempts > 0) {
+                    html += '<div style="color:#e67e22;">⚠️ Failed ' + _aqAttempts + ' time' + (_aqAttempts > 1 ? 's' : '') + ' already</div>';
+                }
+                html += '</div>';
+
+                var safActId = quest.id.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                var safKid = kingdomId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                html += '<button class="btn-medieval" onclick="UI._attemptKQActionUI(\'' + safActId + '\',\'' + safKid + '\')" style="font-size:0.7rem;padding:4px 12px;margin-top:4px;background:rgba(231,126,35,0.2) !important;border-color:rgba(231,126,35,0.4) !important;">' + escapeHtml(_aqMech.actionLabel || '⚡ Attempt Action') + '</button>';
+            } else {
+                // No mechanic defined for this action type — show unavailable
+                html += '<div style="font-size:0.68rem;color:#e67e22;">⬜ Complete: ' + escapeHtml(act.type.replace(/_/g, ' ')) + '</div>';
+                html += '<div style="font-size:0.65rem;color:#c44e52;margin-left:12px;font-style:italic;">⚠️ Quest action unavailable — no mechanic defined for this action type.</div>';
+            }
+        }
+    }
+    html += '</div>';
+
+    // Progress bar
+    var totalReqs = 0;
+    var metReqs = 0;
+    if (reqs.deliver) {
+        for (var r in reqs.deliver) {
+            totalReqs++;
+            try { if (((Player.state.inventory || {})[r] || 0) >= reqs.deliver[r]) metReqs++; } catch(e) {}
+        }
+    }
+    if (reqs.gold > 0) {
+        totalReqs++;
+        if ((Player.state.gold || 0) >= reqs.gold) metReqs++;
+    }
+    if (reqs.action) {
+        totalReqs++;
+        if (reqs.action.type && (reqs.action.type.indexOf('visit') >= 0)) {
+            var v = (Player.state._kqVisitedTowns || {})[quest.id] || [];
+            if (v.length >= (reqs.action.count || 1)) metReqs++;
+        } else if (reqs.action.goldTarget > 0) {
+            var s = (Player.state._kqGoldSpent || {})[quest.id] || 0;
+            if (s >= reqs.action.goldTarget) metReqs++;
+        } else {
+            if ((Player.state._kqActionDone || {})[quest.id]) metReqs++;
+        }
+    }
+    var pctComplete = totalReqs > 0 ? Math.floor((metReqs / totalReqs) * 100) : 0;
+    html += '<div style="height:4px;background:rgba(0,0,0,0.3);border-radius:2px;margin:4px 0;">';
+    html += '<div style="height:100%;width:' + pctComplete + '%;background:' + (isComplete ? '#2ecc71' : '#3498db') + ';border-radius:2px;transition:width 0.3s;"></div>';
+    html += '</div>';
+    html += '<div style="font-size:0.62rem;color:#777;text-align:right;">' + pctComplete + '% complete</div>';
+
+    // Buttons
+    html += '<div style="display:flex;gap:6px;margin-top:4px;">';
+    var safeId = quest.id.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    var safeKid = kingdomId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    if (isComplete) {
+        html += '<button class="btn-medieval" onclick="(function(){var r=Player.completeKingdomQuest(\'' + safeId + '\',\'' + safeKid + '\');UI.toast(r&&r.message||\'Quest updated\',r&&r.success?\'success\':\'warning\');if(r&&r.success)UI.openNobilityDialog();})()" style="font-size:0.72rem;padding:5px 14px;background:rgba(46,204,113,0.3) !important;border-color:rgba(46,204,113,0.5) !important;color:#2ecc71;font-weight:bold;">🎉 Complete Quest</button>';
+    }
+    html += '<button class="btn-medieval" onclick="(function(){if(confirm(\'Abandon this quest? You will lose reputation.\')){var r=Player.abandonKingdomQuest(\'' + safeId + '\',\'' + safeKid + '\');UI.toast(r&&r.message||\'Quest abandoned\',r&&r.success?\'success\':\'warning\');UI.openNobilityDialog();}})()" style="font-size:0.68rem;padding:3px 8px;opacity:0.6;">Abandon</button>';
+    html += '</div>';
+
+    html += '</div>';
+    return html;
+}
+
+function _kqCatIcon(cat) {
+    var icons = { military: '🗡️', economic: '💰', diplomatic: '🤝', espionage: '🕵️', justice: '⚖️', infrastructure: '🏗️', social: '👑', corrupt: '🏴' };
+    return icons[cat] || '📜';
+}
+
+function _attemptKQActionUI(questId, kingdomId) {
+    if (!Player.attemptKQAction) {
+        toast('Action system not available.', 'warning');
+        return;
+    }
+
+    // Look up mechanics to show confirmation
+    var _aqMech = null;
+    try {
+        var _kqD = Player.getKingdomQuestData(kingdomId);
+        var _kqQ = null;
+        if (_kqD) {
+            for (var _qi = 0; _qi < (_kqD.active || []).length; _qi++) {
+                if (_kqD.active[_qi].id === questId) { _kqQ = _kqD.active[_qi]; break; }
+            }
+        }
+        if (_kqQ && _kqQ.requirements && _kqQ.requirements.action) {
+            _aqMech = (typeof ACTION_QUEST_MECHANICS !== 'undefined') ? ACTION_QUEST_MECHANICS[_kqQ.requirements.action.type] : null;
+        }
+    } catch(e) {}
+
+    if (_aqMech) {
+        // Check for multi-step config
+        var _msConf = (typeof MULTISTEP_ACTIONS !== 'undefined' && _kqQ && _kqQ.requirements && _kqQ.requirements.action) ? MULTISTEP_ACTIONS[_kqQ.requirements.action.type] : null;
+        var _msProg = _msConf ? ((Player.state._kqStepProgress || {})[questId] || 0) : 0;
+        var _msStep = _msConf ? _msConf.steps[_msProg] : null;
+
+        var _confHtml = '<div style="padding:10px;">';
+        if (_msConf && _msStep) {
+            _confHtml += '<div style="font-size:0.9rem;color:#d4a843;margin-bottom:6px;font-weight:bold;">Step ' + (_msProg + 1) + '/' + _msConf.totalSteps + ': ' + escapeHtml(_msStep.label) + '</div>';
+            _confHtml += '<div style="font-size:0.78rem;color:#999;margin-bottom:10px;font-style:italic;">' + escapeHtml(_msStep.narrative || '') + '</div>';
+        } else {
+            _confHtml += '<div style="font-size:0.9rem;color:#ddd;margin-bottom:10px;">Are you sure you want to attempt this action?</div>';
+        }
+        _confHtml += '<div style="background:rgba(0,0,0,0.2);border-radius:6px;padding:10px;font-size:0.82rem;">';
+        var _dispGold = (_msConf && _msStep) ? (_msStep.goldCost || 0) : (_aqMech.goldCost || 0);
+        var _dispTime = (_msConf && _msStep) ? (_msStep.tickCost || 1) : (_aqMech.tickCost || 5);
+        var _dispChance = (_msConf && _msStep) ? (_msStep.successBase || 0.70) : (_aqMech.successBase || 0.60);
+        if (_dispGold > 0) _confHtml += '<div style="color:#e67e22;">💰 Cost: ' + _dispGold + 'g</div>';
+        _confHtml += '<div style="color:#5dade2;">⏳ Time: ~' + _dispTime + ' days (you will be occupied)</div>';
+        var _confChance = Math.round(_dispChance * 100);
+        _confHtml += '<div style="color:' + (_confChance >= 70 ? '#55a868' : _confChance >= 50 ? '#ccb974' : '#e67e22') + ';">🎲 Base success chance: ' + _confChance + '%</div>';
+        if (_aqMech.locationReq === 'capital') _confHtml += '<div style="color:#aaa;">📍 Requires: Kingdom capital</div>';
+        _confHtml += '</div>';
+        _confHtml += '<div style="font-size:0.75rem;color:#999;margin-top:8px;font-style:italic;">Gold and time are consumed whether you succeed or fail.</div>';
+        _confHtml += '</div>';
+
+        var _safQid = questId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        var _safKid = kingdomId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        openModal('⚡ Confirm Action', _confHtml,
+            '<button class="btn-medieval" onclick="UI.closeModal();UI._executeKQAction(\'' + _safQid + '\',\'' + _safKid + '\');" style="background:rgba(231,126,35,0.3) !important;border-color:rgba(231,126,35,0.5) !important;">⚡ Proceed</button>' +
+            '<button class="btn-medieval" onclick="UI.closeModal();UI.openNobilityDialog();">Cancel</button>'
+        );
+    } else {
+        // No mechanic — just try and show error
+        _executeKQAction(questId, kingdomId);
+    }
+}
+
+function _executeKQAction(questId, kingdomId) {
+    var result = Player.attemptKQAction(questId, kingdomId);
+    if (!result) { toast('Failed to attempt action.', 'warning'); return; }
+
+    // If it's a validation error (not enough gold, wrong location), just toast
+    if (!result.success) {
+        toast(result.message, 'warning');
+        openNobilityDialog();
+        return;
+    }
+
+    // Show result modal with narrative
+    var isSuccess = result.actionSuccess;
+    var isStepSuccess = result.stepSuccess || false;
+    var html = '<div style="padding:15px;">';
+    html += '<div style="text-align:center;margin-bottom:12px;">';
+
+    // M5: Multi-step result header
+    if (result.isMultiStep) {
+        if (isSuccess) {
+            html += '<div style="font-size:2.5em;">🏆</div>';
+            html += '<h3 style="color:#2ecc71;margin:5px 0;">Mission Complete!</h3>';
+        } else if (isStepSuccess) {
+            html += '<div style="font-size:2.5em;">✅</div>';
+            html += '<h3 style="color:#d4a843;margin:5px 0;">Step Complete — ' + (result.stepCompleted || '?') + '/' + (result.totalSteps || '?') + '</h3>';
+        } else {
+            html += '<div style="font-size:2.5em;">❌</div>';
+            html += '<h3 style="color:#e74c3c;margin:5px 0;">Step Failed</h3>';
+        }
+    } else {
+        html += '<div style="font-size:2.5em;">' + (isSuccess ? '✅' : '❌') + '</div>';
+        html += '<h3 style="color:' + (isSuccess ? '#2ecc71' : '#e74c3c') + ';margin:5px 0;">' + (isSuccess ? 'Success!' : 'Failed!') + '</h3>';
+    }
+    html += '</div>';
+
+    // Result text
+    html += '<p style="font-size:0.9rem;color:#ddd;margin:10px 0;">' + escapeHtml(result.message) + '</p>';
+
+    // M5: Step progress bar for multi-step
+    if (result.isMultiStep && result.totalSteps) {
+        var _done = result.stepCompleted || 0;
+        if (!isStepSuccess && result.currentStep) _done = result.currentStep - 1;
+        html += '<div style="margin:8px 0;">';
+        html += '<div style="font-size:0.75rem;color:#aaa;margin-bottom:3px;">Progress: ' + _done + '/' + result.totalSteps + ' steps</div>';
+        html += '<div style="background:rgba(0,0,0,0.3);border-radius:4px;height:8px;overflow:hidden;">';
+        html += '<div style="height:100%;background:linear-gradient(90deg,#55a868,#4caf50);width:' + Math.round((_done / result.totalSteps) * 100) + '%;border-radius:4px;transition:width 0.3s;"></div></div>';
+        if (result.nextStepLabel) {
+            html += '<div style="font-size:0.72rem;color:#d4a843;margin-top:4px;">Next step: ' + escapeHtml(result.nextStepLabel) + '</div>';
+        }
+        html += '</div>';
+    }
+
+    // Cost summary
+    html += '<div style="margin:12px 0;padding:8px;background:rgba(0,0,0,0.2);border-radius:6px;font-size:0.8rem;">';
+    html += '<div style="color:#aaa;margin-bottom:4px;">📊 Action Summary:</div>';
+    if (result.goldSpent > 0) html += '<div style="color:#e67e22;">💰 Gold spent: ' + result.goldSpent + 'g</div>';
+    if (result.ticksSpent > 0) html += '<div style="color:#5dade2;">⏳ Time spent: ~' + result.ticksSpent + ' days</div>';
+    html += '<div style="color:#aaa;">🎲 Success chance was: ' + (result.chance || '?') + '%</div>';
+    if (result.attempt > 1) html += '<div style="color:#ccb974;">📝 Attempt #' + result.attempt + '</div>';
+    html += '</div>';
+
+    // Consequences for espionage/corrupt quests (failure or success)
+    if (result.consequences && result.consequences.length > 0) {
+        var _conBg = isSuccess ? 'rgba(52,152,219,0.15)' : 'rgba(196,78,82,0.15)';
+        var _conBorder = isSuccess ? 'rgba(52,152,219,0.3)' : 'rgba(196,78,82,0.3)';
+        var _conColor = isSuccess ? '#5dade2' : '#c44e52';
+        html += '<div style="background:' + _conBg + ';border:1px solid ' + _conBorder + ';border-radius:6px;padding:8px;margin-top:8px;">';
+        html += '<div style="font-size:0.8rem;color:' + _conColor + ';font-weight:bold;">' + (isSuccess ? '📋' : '⚠️') + ' Consequences:</div>';
+        for (var _ci = 0; _ci < result.consequences.length; _ci++) {
+            html += '<div style="font-size:0.78rem;color:#ddd;margin-top:3px;">' + escapeHtml(result.consequences[_ci]) + '</div>';
+        }
+        html += '</div>';
+    }
+
+    if (!isSuccess && !isStepSuccess) {
+        var retryMsg = result.isMultiStep
+            ? 'You can retry this step, but it will cost more gold and time.'
+            : 'You can try again, but it will cost more gold and time. Improve your skills to increase your chances.';
+        html += '<p style="font-size:0.8rem;color:#e67e22;font-style:italic;margin-top:8px;">' + retryMsg + '</p>';
+    }
+
+    html += '</div>';
+
+    openModal(isSuccess ? '✅ Action Succeeded' : '❌ Action Failed', html,
+        '<button class="btn-medieval" onclick="UI.closeModal(); UI.openNobilityDialog();">Continue</button>'
+    );
+}
+
+function _switchKQTab(tabId, kingdomId) {
+    _kqTab = tabId;
+    openNobilityDialog();
+}
+
+// Helper: Request kingdom building from nobility panel
+function _nobilityRequestBuilding(townId) {
+    // Show a simple selection of building types the kingdom might build
+    var buildingTypes = [];
+    if (typeof BUILDING_TYPES !== 'undefined') {
+        for (var i in BUILDING_TYPES) {
+            var bt = BUILDING_TYPES[i];
+            if (bt.category !== 'military' && bt.cost && bt.cost <= 5000) {
+                buildingTypes.push(bt);
+            }
+        }
+    }
+    var html = '<div style="font-size:0.8rem;color:#ccc;margin-bottom:8px;">Request the kingdom to construct a building in your lord town:</div>';
+    html += '<div style="max-height:300px;overflow-y:auto;">';
+    for (var i = 0; i < Math.min(15, buildingTypes.length); i++) {
+        var bt = buildingTypes[i];
+        html += '<button class="btn-medieval" onclick="(function(){var r=Player.requestKingdomBuilding(\'' + townId + '\',\'' + bt.id + '\',0);UI.toast(r&&r.message?r.message:\'Request sent.\',r&&r.success?\'success\':\'warning\');UI.closeModal();UI.openNobilityDialog();})()" style="display:block;width:100%;text-align:left;font-size:0.75rem;padding:5px 10px;margin-bottom:3px;">' + (bt.icon || '🏗️') + ' ' + bt.name + ' (' + formatGold(bt.cost || 0) + ')</button>';
+    }
+    html += '</div>';
+    openModal('🏗️ Request Kingdom Building', html, '<button class="btn-medieval" onclick="UI.closeModal();UI.openNobilityDialog();">Back</button>');
+}
+
+// Helper: Propose law from nobility panel
+function _nobilityProposeLaw(kingdomId) {
+    var specialLaws = CONFIG.SPECIAL_LAWS || [];
+    var html = '<div style="font-size:0.8rem;color:#ccc;margin-bottom:8px;">Propose a new law for the kingdom (costs 1 political capital):</div>';
+    html += '<div style="max-height:350px;overflow-y:auto;">';
+    for (var i = 0; i < specialLaws.length; i++) {
+        var law = specialLaws[i];
+        html += '<button class="btn-medieval" onclick="(function(){var r=Player.proposeLaw(\'' + kingdomId + '\',\'' + law.id + '\');UI.toast(r&&r.message?r.message:\'Law proposed.\',r&&r.success?\'success\':\'warning\');UI.closeModal();UI.openNobilityDialog();})()" style="display:block;width:100%;text-align:left;font-size:0.75rem;padding:6px 10px;margin-bottom:3px;">';
+        html += '<span>' + (law.icon || '📜') + ' <strong>' + law.name + '</strong></span><br>';
+        html += '<span style="font-size:0.7rem;color:#d4c9a0;">' + (law.desc || '') + '</span>';
+        html += '</button>';
+    }
+    html += '</div>';
+    openModal('📜 Propose Law', html, '<button class="btn-medieval" onclick="UI.closeModal();UI.openNobilityDialog();">Back</button>');
+}
+
+// Helper: Propose action from nobility panel (Royal Advisor)
+var _proposeActionTab = 'economic';
+function _nobilityProposeAction(kingdomId) {
+    if (!Player.getProposableActions) { toast('Feature not available.', 'warning'); return; }
+    var actions = Player.getProposableActions(kingdomId);
+    if (!actions || actions.length === 0) { toast('No actions available.', 'warning'); return; }
+
+    var categories = [
+        { id: 'economic', icon: '💰', name: 'Economic' },
+        { id: 'military', icon: '⚔️', name: 'Military & Diplomacy' },
+        { id: 'infrastructure', icon: '🏗️', name: 'Infrastructure' },
+        { id: 'policy', icon: '📋', name: 'Policy & Laws' },
+        { id: 'health', icon: '🏥', name: 'Health' },
+        { id: 'kingdom', icon: '👑', name: 'Kingdom' }
+    ];
+
+    var html = '<div style="font-size:0.8rem;color:#ccc;margin-bottom:8px;">Propose an action to the king (costs 1 political capital). Success depends on king personality, treasury, and your influence.</div>';
+
+    // Category tabs
+    html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px;">';
+    for (var ci = 0; ci < categories.length; ci++) {
+        var cat = categories[ci];
+        var catCount = actions.filter(function(a) { return a.category === cat.id; }).length;
+        if (catCount === 0) continue;
+        var isActive = _proposeActionTab === cat.id;
+        html += '<button class="btn-medieval" onclick="UI._switchProposeActionTab(\'' + cat.id + '\',\'' + kingdomId + '\')" style="font-size:0.7rem;padding:4px 8px;' + (isActive ? 'background:rgba(201,168,76,0.25);border-color:rgba(201,168,76,0.5);color:#f0d0a0;' : '') + '">' + cat.icon + ' ' + cat.name + ' (' + catCount + ')</button>';
+    }
+    html += '</div>';
+
+    // Actions for current tab
+    var tabActions = actions.filter(function(a) { return a.category === _proposeActionTab; });
+    html += '<div style="max-height:350px;overflow-y:auto;">';
+    if (tabActions.length === 0) {
+        html += '<div style="font-size:0.78rem;color:#888;font-style:italic;">No actions in this category.</div>';
+    }
+    for (var ai = 0; ai < tabActions.length; ai++) {
+        var a = tabActions[ai];
+        var pct = Math.round(a.finalChance * 100);
+        var pctColor = pct >= 60 ? '#2ecc71' : pct >= 35 ? '#e67e22' : '#e74c3c';
+        var actionSafeId = a.id.replace(/[^a-zA-Z0-9_]/g, '_');
+
+        html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:8px;margin-bottom:6px;">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">';
+        html += '<span style="font-size:0.82rem;font-weight:bold;color:#f0d0a0;">' + a.icon + ' ' + a.name + '</span>';
+        html += '<span style="font-size:0.85rem;font-weight:bold;color:' + pctColor + ';">' + pct + '%</span>';
+        html += '</div>';
+        html += '<div style="font-size:0.72rem;color:#bbb;margin-bottom:6px;">' + a.desc + '</div>';
+
+        // Show modifiers breakdown
+        if (a.displayMods && a.displayMods.length > 0) {
+            html += '<div style="font-size:0.65rem;color:#999;margin-bottom:6px;">';
+            for (var mi = 0; mi < a.displayMods.length; mi++) {
+                var mod = a.displayMods[mi];
+                var modSign = mod.val >= 0 ? '+' : '';
+                var modColor = mod.val >= 0 ? '#55a868' : '#c44e52';
+                html += '<span style="color:' + modColor + ';">' + modSign + Math.round(mod.val * 100) + '% ' + mod.name + '</span>';
+                if (mi < a.displayMods.length - 1) html += ' · ';
+            }
+            html += '</div>';
+        }
+
+        // Sub-choice dropdown for actions that need a target
+        if (a.needsSubChoice && a.subChoiceOptions && a.subChoiceOptions.length > 0) {
+            var selectId = '_raSubChoice_' + actionSafeId;
+            var subLabel = a.needsSubChoice === 'good' ? 'Select Good:' :
+                           a.needsSubChoice === 'banned_good' ? 'Select Banned Good:' :
+                           a.needsSubChoice === 'town' ? 'Select Town:' :
+                           a.needsSubChoice === 'port_town' ? 'Select Port:' : 'Select:';
+            html += '<div style="margin-bottom:6px;">';
+            html += '<label style="font-size:0.72rem;color:#ccc;margin-right:6px;">' + subLabel + '</label>';
+            html += '<select id="' + selectId + '" style="font-size:0.75rem;padding:3px 8px;background:rgba(40,35,25,0.9);color:#e8c080;border:1px solid rgba(180,150,80,0.4);border-radius:4px;max-width:200px;">';
+            for (var si = 0; si < a.subChoiceOptions.length; si++) {
+                var opt = a.subChoiceOptions[si];
+                html += '<option value="' + opt.value + '">' + opt.label + '</option>';
+            }
+            html += '</select></div>';
+
+            // Propose button that reads the dropdown value
+            html += '<button class="btn-medieval" onclick="(function(){var sel=document.getElementById(\'' + selectId + '\');var sc=sel?sel.value:\'\';var r=Player.proposeKingAction(\'' + kingdomId + '\',\'' + a.id + '\',sc);UI.toast(r&&r.message?r.message:\'Action proposed.\',r&&r.success?\'success\':\'warning\');UI.closeModal();UI.openNobilityDialog();})()" style="font-size:0.75rem;padding:5px 14px;background:rgba(44,100,60,0.5) !important;border:2px solid rgba(80,180,100,0.5) !important;color:#f0e0c0 !important;">👑 Propose (' + pct + '% chance)</button>';
+        } else if (a.needsSubChoice && (!a.subChoiceOptions || a.subChoiceOptions.length === 0)) {
+            // Action needs a sub-choice but no options available
+            html += '<div style="font-size:0.72rem;color:#888;font-style:italic;margin-bottom:4px;">No valid targets available.</div>';
+            html += '<button class="btn-medieval" disabled style="font-size:0.75rem;padding:5px 14px;opacity:0.4;">👑 No targets</button>';
+        } else {
+            // Normal action — no sub-choice needed
+            html += '<button class="btn-medieval" onclick="(function(){var r=Player.proposeKingAction(\'' + kingdomId + '\',\'' + a.id + '\');UI.toast(r&&r.message?r.message:\'Action proposed.\',r&&r.success?\'success\':\'warning\');UI.closeModal();UI.openNobilityDialog();})()" style="font-size:0.75rem;padding:5px 14px;background:rgba(44,100,60,0.5) !important;border:2px solid rgba(80,180,100,0.5) !important;color:#f0e0c0 !important;">👑 Propose (' + pct + '% chance)</button>';
+        }
+        html += '</div>';
+    }
+    html += '</div>';
+
+    openModal('👑 Propose Action to the King', html, '<button class="btn-medieval" onclick="UI.closeModal();UI.openNobilityDialog();">Back</button>');
+}
+
+function _switchProposeActionTab(tabId, kingdomId) {
+    _proposeActionTab = tabId;
+    _nobilityProposeAction(kingdomId);
+}
+
+
+    // Register on UI namespace
+    // -- Street Trading --
+    UI.openStreetTrading = openStreetTrading;
+    UI.executeStreetTrade = executeStreetTradeUI;
+    UI.executeStreetBuyUI = executeStreetBuyUI;
+    UI.executeStreetContrabandSellUI = executeStreetContrabandSellUI;
+    UI._streetSubmitRequest = _streetSubmitRequest;
+    UI._streetAcceptOffer = _streetAcceptOffer;
+    UI._streetDeclineOffer = _streetDeclineOffer;
+    UI._streetUpdateChancePreview = _streetUpdateChancePreview;
+    UI.chatWithNPC = chatWithNPC;
+    // -- Dark Deeds: Schemes helpers --
+    UI.switchSchemesTab = switchSchemesTab;
+    UI.getDetectionColor = getDetectionColor;
+    // -- Nobility --
+    UI.openNobilityDialog = openNobilityDialog;
+    UI._nobilityRequestBuilding = _nobilityRequestBuilding;
+    UI._nobilityProposeLaw = _nobilityProposeLaw;
+    UI._nobilityProposeAction = _nobilityProposeAction;
+    UI._switchProposeActionTab = _switchProposeActionTab;
+    // -- Noble Agents --
+    UI.toggleAgentExpand = toggleAgentExpand;
+    UI.hireAgentAction = hireAgentAction;
+    UI.fireAgentAction = fireAgentAction;
+    UI.cancelAgentTaskAction = cancelAgentTaskAction;
+    UI.recallAgentAction = recallAgentAction;
+    UI.showAgentTaskCategory = showAgentTaskCategory;
+    UI.onAgentBizTaskChange = onAgentBizTaskChange;
+    UI.assignHostileTask = assignHostileTask;
+    UI.assignBusinessTask = assignBusinessTask;
+    UI.assignIntelTask = assignIntelTask;
+    // -- Kingdom Quests --
+    UI._switchKQTab = _switchKQTab;
+    UI._attemptKQActionUI = _attemptKQActionUI;
+    UI._executeKQAction = _executeKQAction;
+})(window.UI);
