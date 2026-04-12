@@ -1545,4 +1545,7 @@
         _syncState();
         return result;
     };
+
+    // ── Export functions needed by other modules ──
+    Engine.tickKingdomFinancialStrategy = tickKingdomFinancialStrategy;
 })(window.Engine);

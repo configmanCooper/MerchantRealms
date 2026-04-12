@@ -4341,6 +4341,19 @@
         return CONFIG.SEASONS[idx];
     }
 
+    function getTentCampDiseaseMod(town) {
+        if (!town || !town.buildings) return 0;
+        var tentPop = 0;
+        for (var bi = 0; bi < town.buildings.length; bi++) {
+            var bld = town.buildings[bi];
+            if (bld.type !== 'tent_camp' || !bld.tents) continue;
+            for (var ti = 0; ti < bld.tents.length; ti++) {
+                if (bld.tents[ti].occupantId) tentPop++;
+            }
+        }
+        return tentPop * 0.002;
+    }
+
     function getYear(day) {
         return Math.floor(day / CONFIG.DAYS_PER_SEASON) + 1;
     }
@@ -20990,7 +21003,7 @@
         _getTickCache: function() { return _tickCache; },
 
         // Exports needed by engine_health.js module
-        _getSeason: _getSeason,
+        _getSeason: getSeason,
         isPlayerRoyalAdvisorOf: isPlayerRoyalAdvisorOf,
         proposeKingDecision: proposeKingDecision,
         kingdomBuild: kingdomBuild,
@@ -21007,7 +21020,7 @@
         shouldCallToArms: shouldCallToArms,
         processCallToArms: processCallToArms,
         initiateCouncilVote: initiateCouncilVote,
-        tickKingdomFinancialStrategy: tickKingdomFinancialStrategy,
+        // tickKingdomFinancialStrategy — set by engine_kingdom_finances.js module
         kingdomAI: kingdomAI,
         tickTownFounding: tickTownFounding,
         getKingdomHappiness: getKingdomHappiness,
