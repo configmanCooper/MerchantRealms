@@ -1282,7 +1282,6 @@ window.Game = (function () {
                     // Outpost placement mode
                     if (window._outpostPlacementMode && terrain !== 2 && terrain !== 3) {
                         window._outpostPlacementMode = false;
-                        e.preventDefault();
                         UI.confirmOutpostPlacement(worldCoords.x, worldCoords.y);
                         return;
                     }
