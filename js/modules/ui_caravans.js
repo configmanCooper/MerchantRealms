@@ -1696,7 +1696,6 @@
     UI._addCaravanOrder = _addCaravanOrder;
     UI._autoAddPendingOrder = _autoAddPendingOrder;
     UI.openCaravanDialog = openCaravanDialog;
-    UI.renderDropdown = renderDropdown;
     UI.buildTransportSection = buildTransportSection;
     UI.buildNPCTransportSection = buildNPCTransportSection;
     UI.useNPCTransportUI = useNPCTransportUI;

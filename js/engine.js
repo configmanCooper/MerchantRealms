@@ -5356,6 +5356,11 @@
         return _buildingTypeMap[typeId] || null;
     }
 
+    function findResourceById(resId) {
+        _ensureLookupMaps();
+        return _resourceTypeMap[resId] || null;
+    }
+
     // --------------------------------------------------------
     // §6B  CONSTRUCTION WAGES — distribute gold to local NPCs
     // --------------------------------------------------------
