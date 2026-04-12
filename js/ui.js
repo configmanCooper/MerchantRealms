@@ -14314,6 +14314,7 @@ window.UI = (function () {
         toast,
         showToast: toast,
         registerAction,
+        _actionHandlers,
         showTooltip,
         hideTooltip,
         showContextMenu,
