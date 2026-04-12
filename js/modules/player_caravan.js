@@ -1003,7 +1003,7 @@
             // Pure sea route — use dedicated sea travel with ship checks, blockades, etc.
             var _seaOpts = options.seaMode === 'sea_passage' ? { paid: true } : {};
             if (options.bringFamily) _seaOpts.bringFamily = true;
-            return travelBySea(townId, _seaOpts);
+            return Player.travelBySea(townId, _seaOpts);
         }
 
         // Handle paid sea passage for mixed routes (check gold before committing)

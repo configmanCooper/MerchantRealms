@@ -15,6 +15,8 @@
 
     var _nextQuestId = 1;
 
+    Player._setNextQuestId = function(val) { _nextQuestId = val; };
+
     // Quest type definitions: ~50 types across categories
     var TOWN_QUEST_TYPES = [
         // ---- GENERIC (always available) ----

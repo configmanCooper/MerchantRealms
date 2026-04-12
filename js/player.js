@@ -10944,7 +10944,7 @@
                 if (!_spHasMed && (_spTown.category === 'city' || _spTown.category === 'capital_city')) _spHasMed = true;
                 if (_spHasMed) {
                     var _spSev = ai.condition === 'gravely_ill' ? 'severe' : 'moderate';
-                    var _spCost = getHospitalCost({ productCost: 10 }, _spSev);
+                    var _spCost = Player.getHospitalCost({ productCost: 10 }, _spSev);
                     var _spGold = ai.savings || 0;
                     if (_spGold >= _spCost) {
                         ai.savings -= _spCost;
@@ -10952,7 +10952,7 @@
                         ai.daysSick = 0;
                         ai.daysInjured = 0;
                         ai.health = Math.min(ai.health + 40, cfg.HEALTH_MAX || 100);
-                        _payHealthcareRevenue(_spTown, _spCost);
+                        Player._payHealthcareRevenue(_spTown, _spCost);
                         ai.activity = 'recovering';
                         ai.activityDetail = 'Treated at hospital (' + _spCost + 'g)';
                         Engine.logEvent('🏥 ' + spouse.firstName + ' sought treatment at the hospital (' + _spCost + 'g from savings).');
@@ -13747,7 +13747,7 @@
             var _aqnum = parseInt((player.activeQuests[_aqi].id || '').replace('tq_', ''), 10);
             if (_aqnum > _maxQId) _maxQId = _aqnum;
         }
-        _nextQuestId = _maxQId + 1;
+        if (Player._setNextQuestId) Player._setNextQuestId(_maxQId + 1);
         player.wartimeGoldEarned = data.wartimeGoldEarned || 0;
         // Military Career
         player.militaryRank = data.militaryRank || null;
@@ -21893,7 +21893,7 @@
         Player.consumeEnergy(jobEnergyCost);
 
         // Apply low-energy debuff to pay if applicable
-        var energyPayMod = 1.0 + getLowEnergyModifier('workPay');
+        var energyPayMod = 1.0 + Player.getLowEnergyModifier('workPay');
 
         // Death risk check
         if (job.deathRisk && rng && rng.random() < job.deathRisk && !window._godInvincible) {
@@ -21919,7 +21919,7 @@
         }
 
         // Apply work efficiency modifier from injuries/illnesses + energy
-        const efficiency = getWorkEfficiencyModifier() * energyPayMod;
+        const efficiency = Player.getWorkEfficiencyModifier() * energyPayMod;
         let finalPay = Math.round(job.pay * efficiency);
 
         // Prosperity wage scaling
@@ -30572,7 +30572,7 @@
 
         // Pay for this leg
         if (leg.payAmount > 0) {
-            var efficiency = getWorkEfficiencyModifier();
+            var efficiency = Player.getWorkEfficiencyModifier();
             var legPay = Math.round(leg.payAmount * efficiency);
 
             if (player.conquestServitude && player.conquestServitude.active) {
@@ -31026,6 +31026,963 @@
             }
         }
         recordJournalEntry(type, text, opts);
+    }
+
+    // ========================================================
+    // §12B GAME START & SPECIAL STARTS (restored from pre-H1)
+    // ========================================================
+    function applyGameStart(startConfig) {
+        const rng = Engine.getRng();
+        player.gameStart = startConfig.id;
+
+        // Apply starting gold
+        player.gold = startConfig.startGold;
+
+        // Apply starting rank
+        if (player.citizenshipKingdomId) {
+            player.socialRank[player.citizenshipKingdomId] = startConfig.startRank || 0;
+        }
+
+        // Apply citizenship
+        if (!startConfig.startCitizen) {
+            player.citizenshipKingdomId = null;
+            player.socialRank = {};
+        }
+
+        // Generate family if applicable
+        if (startConfig.hasFamily) {
+            generatePlayerFamily(startConfig);
+        }
+
+        // Apply starting house
+        if (startConfig.startHouse) {
+            const house = {
+                id: houseUid(),
+                type: startConfig.startHouse,
+                townId: player.townId,
+                purchaseDay: 0,
+                occupants: [],
+                homeStorage: {},
+                isRental: false,
+                rentAccumulated: 0,
+                purchaseCost: 0,
+                condition: 'used', // starting house is not brand new
+                builtDay: 0,
+                lastRepairDay: 0
+            };
+            if (!player.houses) player.houses = [];
+            player.houses.push(house);
+            if (!player.primaryHouseId) player.primaryHouseId = house.id;
+
+            // Grant a land plot for the starting house (houses require land except apartments/portable)
+            var startHt = CONFIG.HOUSING_TYPES.find(function(h) { return h.id === startConfig.startHouse; });
+            if (startHt && startHt.id !== 'apartment' && !startHt.portable) {
+                player.landOwned = player.landOwned || {};
+                var startLandSlots = startHt.landSlots || 1;
+                player.landOwned[player.townId] = (player.landOwned[player.townId] || 0) + startLandSlots;
+            }
+        }
+
+        // Apply starting buildings
+        var numBuildings = startConfig.startBuildings || (startConfig.startBuilding ? 1 : 0);
+        if (numBuildings > 0) {
+            // Grant land plots for starting buildings (1 per building unless landSlots specified)
+            player.landOwned = player.landOwned || {};
+            player.landOwned[player.townId] = (player.landOwned[player.townId] || 0) + numBuildings;
+
+            var basicBuildings = ['bakery', 'brewery', 'workshop', 'flour_mill', 'wheat_farm'];
+            for (var bi = 0; bi < numBuildings; bi++) {
+                var bType = basicBuildings[bi % basicBuildings.length];
+                var bt = Engine.findBuildingType(bType);
+                if (bt) {
+                    var bld = {
+                        id: buildingUid(),
+                        type: bType,
+                        townId: player.townId,
+                        workers: [],
+                        active: true,
+                        level: 1,
+                        builtDay: 0,
+                        condition: 'new',
+                        lastRepairDay: 0,
+                        transferTarget: null,
+                        transferEnabled: false
+                    };
+                    player.buildings.push(bld);
+                    var town = Engine.findTown(player.townId);
+                    if (town) {
+                        town.buildings.push({ type: bType, level: 1, ownerId: 'player', builtDay: 0, condition: 'new', lastRepairDay: 0 });
+                    }
+                }
+            }
+        }
+
+        // Apply starting workers
+        if (startConfig.startWorkers) {
+            var townPeople = Engine.getPeople(player.townId);
+            var hirable = townPeople.filter(function(p) {
+                return p.alive && !p.employerId && p.occupation !== 'noble' && p.occupation !== 'soldier' && p.age >= 18;
+            });
+            for (var wi = 0; wi < Math.min(startConfig.startWorkers, hirable.length); wi++) {
+                var w = hirable[wi];
+                w.employerId = 'player';
+                player.employees.push(w.id);
+            }
+        }
+
+        // Noble Birth: extra reputation
+        if (startConfig.id === 'very_easy' && player.startingKingdomId) {
+            player.reputation[player.startingKingdomId] = 80;
+        }
+
+        // Special starts
+        if (startConfig.special === 'indentured') {
+            initIndenturedStart();
+        } else if (startConfig.special === 'pilgrim') {
+            initPilgrimStart();
+        } else if (startConfig.special === 'shipwrecked') {
+            initShipwreckedStart();
+        } else if (startConfig.special === 'musician') {
+            initMusicianStart();
+        } else if (startConfig.special === 'military_leader') {
+            initMilitaryLeaderStart();
+        } else if (startConfig.special === 'scholar') {
+            initScholarStart();
+        }
+
+        Engine.logEvent(player.fullName + ' begins their journey as ' + (startConfig.name || 'an adventurer') + '.', null, 'my_actions');
+    }
+
+    function generatePlayerFamily(startConfig) {
+        var rng = Engine.getRng();
+        var town = Engine.findTown(player.townId);
+        if (!town) return;
+
+        var townPeople = Engine.getPeople(player.townId);
+        player.familyMembers = [];
+
+        // Determine family wealth class
+        var familyGold = 100;
+        if (startConfig.id === 'easy') familyGold = rng.randInt(500, 1000);
+        else if (startConfig.id === 'very_easy') familyGold = rng.randInt(2000, 5000);
+        else familyGold = rng.randInt(50, 200);
+
+        // Find suitable NPCs for parents (ages 40-55, same town)
+        var potentialParents = townPeople.filter(function(p) {
+            return p.alive && p.age >= 40 && p.age <= 55 && !p.employerId && !p.isPlayerFamily;
+        });
+
+        var parentCount = 0;
+        var roles = ['father', 'mother'];
+        var parentSexes = ['M', 'F'];
+        for (var pi = 0; pi < 2 && pi < potentialParents.length; pi++) {
+            // Find matching sex
+            var parent = null;
+            for (var pj = 0; pj < potentialParents.length; pj++) {
+                if (potentialParents[pj].sex === parentSexes[pi] && !potentialParents[pj]._familyUsed) {
+                    parent = potentialParents[pj];
+                    parent._familyUsed = true;
+                    break;
+                }
+            }
+            if (!parent) {
+                // Take any available
+                for (var pk = 0; pk < potentialParents.length; pk++) {
+                    if (!potentialParents[pk]._familyUsed) {
+                        parent = potentialParents[pk];
+                        parent._familyUsed = true;
+                        break;
+                    }
+                }
+            }
+            if (!parent) break;
+
+            parent.isPlayerFamily = true;
+            parent.familyRole = 'parent';
+            parent.gold = Math.floor(familyGold / 2);
+            if (startConfig.id === 'easy') parent.occupation = 'merchant';
+            if (startConfig.id === 'very_easy') parent.wealthClass = 'upper';
+
+            var relLevel = rng.randInt(75, 85);
+            player.relationships[parent.id] = { level: relLevel, type: 'family' };
+            player.familyMembers.push({
+                npcId: parent.id,
+                role: roles[pi],
+                name: parent.firstName + ' ' + parent.lastName
+            });
+            parentCount++;
+        }
+
+        // Clean up temp flags
+        for (var cl = 0; cl < potentialParents.length; cl++) {
+            delete potentialParents[cl]._familyUsed;
+        }
+
+        // Generate siblings (1-3 based on start)
+        var numSiblings = startConfig.id === 'very_easy' ? rng.randInt(1, 3) : rng.randInt(1, 2);
+        var potentialSiblings = townPeople.filter(function(p) {
+            return p.alive && p.age >= 14 && p.age <= 25 && !p.isPlayerFamily && !p.employerId;
+        });
+
+        for (var si = 0; si < numSiblings && si < potentialSiblings.length; si++) {
+            var sib = potentialSiblings[si];
+            sib.isPlayerFamily = true;
+            sib.familyRole = 'sibling';
+
+            var sibRole = sib.sex === 'M' ? 'brother' : 'sister';
+            var sibRelLevel = rng.randInt(65, 75);
+            player.relationships[sib.id] = { level: sibRelLevel, type: 'family' };
+            player.familyMembers.push({
+                npcId: sib.id,
+                role: sibRole,
+                name: sib.firstName + ' ' + sib.lastName
+            });
+        }
+    }
+
+    function initIndenturedStart() {
+        var rng = Engine.getRng();
+        var people = Engine.getPeople();
+        var eliteMerchants = people.filter(function(p) { return p.isEliteMerchant && p.alive; });
+        var masterId = eliteMerchants.length > 0 ? rng.pick(eliteMerchants).id : null;
+
+        // Select 8-10 random escape methods from pool of 15
+        var pool = CONFIG.INDENTURED_ESCAPE_POOL.slice();
+        var numEscapes = rng.randInt(8, 10);
+        var selected = [];
+        for (var i = 0; i < numEscapes && pool.length > 0; i++) {
+            var idx = rng.randInt(0, pool.length - 1);
+            selected.push(pool[idx].id);
+            pool.splice(idx, 1);
+        }
+
+        player.indentured = {
+            active: true,
+            masterId: masterId,
+            startDay: 0,
+            contractDays: 2520,
+            debtRemaining: 15000,
+            discoveredEscapes: [],
+            availableEscapes: selected,
+            // Master Task System
+            currentTask: null,
+            taskHistory: [],
+            consecutiveFailures: 0,
+            totalTasksCompleted: 0,
+            totalTasksFailed: 0,
+            lastTaskDay: 0,
+            nextTaskDay: 15,  // First task after 15 days (settling in period)
+            masterRelationship: 50,  // 0-100, affects task rewards and consequences
+            masterMood: 'neutral',       // 'kind', 'neutral', 'cruel', 'generous', 'suspicious'
+            masterMoodSince: 0,
+            earlyReleaseOffered: false
+        };
+
+        // Move player to master's town (servant goes where master lives)
+        if (masterId) {
+            var master = Engine.findPerson(masterId);
+            if (master && master.townId) {
+                player.townId = master.townId;
+                var masterTown = Engine.findTown(master.townId);
+                if (masterTown) {
+                    player.startingKingdomId = masterTown.kingdomId;
+                    Engine.logEvent('⛓️ Your master ' + master.firstName + ' ' + master.lastName + ' has brought you to ' + masterTown.name + ' to begin your servitude.');
+                }
+            }
+        }
+    }
+
+    function initPilgrimStart() {
+        var rng = Engine.getRng();
+        var towns = Engine.getTowns();
+
+        // Mark 5-8 towns as holy sites (spread across kingdoms)
+        var numSites = rng.randInt(5, 8);
+        var holySiteIds = [];
+        var kingdoms = Engine.getKingdoms();
+        // Try to spread across kingdoms
+        var shuffledTowns = towns.slice().sort(function() { return rng.random() - 0.5; });
+        var usedKingdoms = {};
+        for (var ti = 0; ti < shuffledTowns.length && holySiteIds.length < numSites; ti++) {
+            var t = shuffledTowns[ti];
+            // Prefer towns from kingdoms we haven't used yet
+            if (!usedKingdoms[t.kingdomId] || holySiteIds.length >= kingdoms.length) {
+                t.holySite = true;
+                holySiteIds.push(t.id);
+                usedKingdoms[t.kingdomId] = true;
+            }
+        }
+
+        // All 3 goals available — player must complete any 2
+        var goals = ['visit_all_sites', 'convert_50_followers', 'build_temple'];
+
+        player.pilgrim = {
+            active: true,
+            holySites: holySiteIds,
+            visitedSites: [],
+            followers: 0,
+            sermonsGiven: 0,
+            conversionAttempts: 0,
+            goals: goals,
+            followerNpcs: {},
+            goalsCompleted: 0,
+            templeBuilt: false,
+            donations: 0,
+            rivalFaith: {
+                name: '',
+                followers: 0,
+                preacherName: '',
+                townId: null,
+                strength: 10
+            },
+            rivalDefeated: false
+        };
+
+        // Generate rival faith
+        var rivalNames = ['The Order of the Eternal Flame', 'The Cult of the Silver Moon', 'The Brotherhood of Iron',
+            'The Circle of the Ancient Oak', 'The Disciples of the Storm', 'The Keepers of the Deep',
+            'The Seekers of the Void', 'The Children of Dawn'];
+        var preacherFirstNames = ['Brother Aldous', 'Sister Miriam', 'Prophet Cassius', 'Elder Theron',
+            'Sage Lydia', 'Father Ambrose', 'Mother Elara', 'Deacon Mortis'];
+        player.pilgrim.rivalFaith.name = rng.pick(rivalNames);
+        player.pilgrim.rivalFaith.preacherName = rng.pick(preacherFirstNames);
+        // Rival starts in a random town different from player
+        var otherTowns = towns.filter(function(t) { return t.id !== player.townId; });
+        if (otherTowns.length > 0) {
+            player.pilgrim.rivalFaith.townId = rng.pick(otherTowns).id;
+        }
+    }
+
+    function initShipwreckedStart() {
+        var rng = Engine.getRng();
+        var towns = Engine.getTowns();
+        var coastalTowns = towns.filter(function(t) { return t.isPort; });
+        if (coastalTowns.length > 0) {
+            var coastalTown = rng.pick(coastalTowns);
+            player.townId = coastalTown.id;
+            player.startingKingdomId = coastalTown.kingdomId;
+        }
+
+        // Generate 5 resonance sites in different towns
+        var shuffledTowns = towns.slice();
+        for (var si = shuffledTowns.length - 1; si > 0; si--) {
+            var sj = rng.randInt(0, si);
+            var tmp = shuffledTowns[si];
+            shuffledTowns[si] = shuffledTowns[sj];
+            shuffledTowns[sj] = tmp;
+        }
+        var resonanceSites = [];
+        var siteNames = ['The Sunken Temple', 'The Whispering Stones', 'The Ancient Lighthouse', 'The Forgotten Grotto', 'The Tidal Monolith'];
+        var siteVisions = [
+            'A great city of white stone rises from the sea. Your homeland... you remember now.',
+            'Ships with sails of gold cross an impossibly blue ocean. You were aboard one once.',
+            'A council of elders places the artifact in your hands. "Carry it to the new world," they whisper.',
+            'Two paths diverge: one leads to a grand embassy, the other to a figure glowing with inner light.',
+            'The complete sea chart materializes — a route between two worlds, separated by storm and time.'
+        ];
+        for (var ri = 0; ri < 5 && ri < shuffledTowns.length; ri++) {
+            resonanceSites.push({
+                townId: shuffledTowns[ri].id,
+                name: siteNames[ri],
+                vision: siteVisions[ri],
+                visited: false
+            });
+        }
+
+        player.shipwrecked = {
+            active: true,
+            languageSkill: 0,
+            artifactKept: true,
+            storiesTold: 0,
+            craftsTaught: 0,
+            exoticRecipes: [],
+            // Resonance Path
+            resonanceSites: resonanceSites,
+            resonanceSitesVisited: 0,
+            seaChartFragments: 0,
+            artifactPulsing: false,
+            finalChoiceAvailable: false,
+            finalChoice: null, // 'open' or 'seal'
+            // Embassy state (if opened)
+            embassy: null,
+            embassyBankAccount: 0,
+            embassyPotionsGenerated: 0,
+            lastWarpDay: -9999,
+            freePotion: null,
+            lastFreePotionDay: -9999,
+            // Seal state (if absorbed)
+            sealBonuses: null,
+            deathReversalAvailable: false,
+            deathReversalUsed: false,
+            // Homeland NPCs
+            homelandNPCs: []
+        };
+
+        player.inventory.exotic_artifact = 1;
+    }
+
+    function initMusicianStart() {
+        var kingdoms = Engine.getKingdoms();
+        var fame = {};
+        for (var ki = 0; ki < kingdoms.length; ki++) {
+            fame[kingdoms[ki].id] = 0;
+        }
+
+        player.musician = {
+            active: true,
+            fame: fame,
+            fans: {},
+            instrument: 'lute',
+            songsComposed: [],
+            totalPerformances: 0,
+            musicSkill: 10,
+            lastCourtPerformance: {},
+            rivals: [],
+            duelsWon: 0,
+            duelsLost: 0,
+            lastDuelDay: 0,
+            legacyChoice: null
+        };
+
+        // Generate 3 rival musicians
+        var rivalInstruments = ['lute', 'flute', 'drum', 'harp', 'fiddle', 'pipes'];
+        var rivalFirstNames = ['Bard Finnegan', 'Minstrel Cordelia', 'Troubadour Aleron', 'Songstress Vivienne', 'Piper Rowan', 'Fiddler Gareth'];
+        var rng2 = Engine.getRng();
+        for (var ri = 0; ri < 3; ri++) {
+            var rivalTowns = Engine.getTowns();
+            player.musician.rivals.push({
+                name: rivalFirstNames[ri] || ('Rival Bard ' + ri),
+                instrument: rng2.pick(rivalInstruments),
+                skill: rng2.randInt(15, 40),
+                fans: rng2.randInt(5, 15),
+                townId: rng2.pick(rivalTowns).id,
+                defeated: false
+            });
+        }
+    }
+
+    function initMilitaryLeaderStart() {
+        player.militaryLeader = {
+            active: true,
+            rank: 'recruit',
+            faintCount: 0,
+            specialTraining: [],
+            equipment: [],
+            battlesAsLeader: 0,
+            victoriesAsLeader: 0,
+            generalSinceDay: 0,
+            tacticsUsed: {},
+            lastBattleDay: 0,
+            battleReady: false,
+            warCouncilAccess: false,
+            warCouncilDecisions: 0,
+            heroOfAgesEarned: false,
+            decisiveBattleAvailable: false,
+            siegesWon: 0,
+            navalBattlesWon: 0
+        };
+
+        // Auto-enlist in starting kingdom
+        if (player.citizenshipKingdomId) {
+            player.militaryActive = true;
+            player.militaryKingdomId = player.citizenshipKingdomId;
+            player.militaryRank = 'militiaman';
+            player.militaryDayEnlisted = 0;
+        }
+    }
+
+    function initScholarStart() {
+        player.scholar = {
+            active: true,
+            townsVisited: {},
+            knowledgeGathered: {},
+            npcsTaughtBy: [],
+            bookProgress: 0,
+            totalKnowledge: 0,
+            lastWriteDay: 0,
+            greatBookWritten: false,
+            specialization: null,
+            specializationKnowledge: 0
+        };
+    }
+
+    function tickSpecialStarts() {
+        if (player.indentured && player.indentured.active) tickIndentured();
+        if (player.conquestServitude && player.conquestServitude.active) tickConquestServitude();
+        if (player.pilgrim && player.pilgrim.active) tickPilgrim();
+        if (player.shipwrecked && (player.shipwrecked.active || player.shipwrecked.embassy)) tickShipwrecked();
+        if (player.musician && (player.musician.active || player.musician.legacyChoice)) tickMusician();
+        if (player.militaryLeader && player.militaryLeader.active) tickMilitaryLeader();
+        if (player.scholar && (player.scholar.active || player.scholar.royaltiesActive)) tickScholar();
+        // Military Service (from enlistment escape)
+        if (player.militaryService && player.militaryService.active) {
+            var msDay = Engine.getDay();
+            if (msDay >= player.militaryService.endDay) {
+                player.militaryService.active = false;
+                Engine.logEvent('🎖️ ' + player.fullName + '\'s military service is complete! You are now a free veteran.');
+                grantXP(100, 'military service complete');
+                player.skills = player.skills || {};
+                player.skills.combat_trained = true;
+                player.skills.military_veteran = true;
+            }
+        }
+    }
+
+    function checkNPCEscapeHints(npcId) {
+        if (!player.indentured || !player.indentured.active) return null;
+        var npc = Engine.findPerson(npcId);
+        if (!npc || !npc.alive) return null;
+        var rng = Engine.getRng();
+        var hint = null;
+
+        // Different NPC types give different hints
+        var occupation = npc.occupation || '';
+        var isReligious = occupation === 'priest' || occupation === 'monk';
+        var isMilitary = occupation === 'soldier' || occupation === 'guard' || occupation === 'knight';
+        var isMerchant = occupation === 'merchant' || npc.isEliteMerchant;
+        var isNoble = occupation === 'noble' || (npc.wealthClass === 'upper');
+        var isWorker = occupation === 'worker' || occupation === 'laborer' || occupation === 'farmer';
+
+        // Religious NPCs can reveal sanctuary escape
+        if (isReligious && hasEscape('religious_sanctuary') && !isDiscovered('religious_sanctuary')) {
+            if (rng.chance(0.4)) {
+                discoverEscape('religious_sanctuary');
+                hint = npc.firstName + ' whispers: "The temple can grant sanctuary to those in need. Seek the elders."';
+            }
+        }
+
+        // Military NPCs reveal enlistment escape
+        if (isMilitary && hasEscape('military_enlist') && !isDiscovered('military_enlist')) {
+            if (rng.chance(0.5)) {
+                discoverEscape('military_enlist');
+                hint = npc.firstName + ' says: "The army doesn\'t care about servant contracts. If you can hold a sword, you can be free."';
+            }
+        }
+
+        // Noble NPCs reveal impress_noble escape
+        if (isNoble && hasEscape('impress_noble') && !isDiscovered('impress_noble')) {
+            if (rng.chance(0.3)) {
+                discoverEscape('impress_noble');
+                hint = npc.firstName + ' muses: "I\'ve seen nobles buy servants\' contracts when impressed by their talent..."';
+            }
+        }
+
+        // Merchant NPCs reveal pay_debt or bribe_officials
+        if (isMerchant) {
+            if (hasEscape('pay_debt') && !isDiscovered('pay_debt') && rng.chance(0.5)) {
+                discoverEscape('pay_debt');
+                hint = npc.firstName + ' tells you: "Every contract has a price. Save enough gold and you can buy your way out."';
+            } else if (hasEscape('bribe_officials') && !isDiscovered('bribe_officials') && rng.chance(0.25)) {
+                discoverEscape('bribe_officials');
+                hint = npc.firstName + ' leans in: "For the right price, certain officials can make records... disappear."';
+            }
+        }
+
+        // Workers/laborers reveal run_away or earn_freedom
+        if (isWorker) {
+            if (hasEscape('run_away') && !isDiscovered('run_away') && rng.chance(0.3)) {
+                discoverEscape('run_away');
+                hint = npc.firstName + ' mutters: "I knew a servant who just ran. Disappeared one night. Never caught."';
+            } else if (hasEscape('earn_freedom') && !isDiscovered('earn_freedom') && rng.chance(0.3)) {
+                discoverEscape('earn_freedom');
+                hint = npc.firstName + ' advises: "Work hard enough and your master might just let you go. It happens."';
+            }
+        }
+
+        // Anyone can hint at legal challenge if they're educated-seeming
+        if (hasEscape('legal_challenge') && !isDiscovered('legal_challenge')) {
+            if ((npc.gold > 500 || isNoble || isMerchant) && rng.chance(0.15)) {
+                discoverEscape('legal_challenge');
+                hint = npc.firstName + ' mentions: "The old laws have loopholes. A good lawyer might void your contract..."';
+            }
+        }
+
+        // Anyone can hint at steal_contract in low-reputation conversations
+        if (hasEscape('steal_contract') && !isDiscovered('steal_contract')) {
+            if ((player.notoriety || 0) >= 2 && rng.chance(0.2)) {
+                discoverEscape('steal_contract');
+                hint = npc.firstName + ' glances around: "Your master keeps your contract in their quarters. Just saying..."';
+            }
+        }
+
+        // Marriage hint from anyone with high relationship
+        if (hasEscape('marry_up') && !isDiscovered('marry_up')) {
+            var rel = player.relationships[npcId];
+            if (rel && rel.level >= 40 && rng.chance(0.3)) {
+                discoverEscape('marry_up');
+                hint = npc.firstName + ' says warmly: "Love can conquer even the chains of servitude, you know."';
+            }
+        }
+
+        // Blackmail hint from observant NPCs
+        if (hasEscape('blackmail_master') && !isDiscovered('blackmail_master')) {
+            if (rng.chance(0.1)) {
+                discoverEscape('blackmail_master');
+                hint = npc.firstName + ' whispers conspiratorially: "Your master has secrets. Everyone does..."';
+            }
+        }
+
+        // Tournament hint from fighters/arena
+        if (hasEscape('win_tournament') && !isDiscovered('win_tournament')) {
+            if (isMilitary && rng.chance(0.3)) {
+                discoverEscape('win_tournament');
+                hint = npc.firstName + ' boasts: "Win the tournament and the king grants any wish. Even freedom."';
+            }
+        }
+
+        return hint;
+    }
+
+    function attemptEscape(escapeId) {
+        if (!player.indentured || !player.indentured.active) {
+            return { success: false, message: 'You are not indentured.' };
+        }
+        if (!isDiscovered(escapeId)) {
+            return { success: false, message: 'You haven\'t discovered this escape method yet.' };
+        }
+
+        var rng = Engine.getRng();
+        var day = Engine.getDay();
+        var master = player.indentured.masterId ? Engine.findPerson(player.indentured.masterId) : null;
+
+        switch (escapeId) {
+            case 'pay_debt': {
+                var cost = player.indentured.debtRemaining;
+                if (cost <= 0) {
+                    freeFromIndenture('💰 Your debt is fully paid! You are a free person!');
+                    return { success: true, message: 'Debt fully paid! You are free!' };
+                }
+                if (player.gold < cost) {
+                    return { success: false, message: 'You need ' + cost + 'g to pay off your debt. You have ' + Math.floor(player.gold) + 'g.' };
+                }
+                player.gold -= cost;
+                if (master) master.gold = (master.gold || 0) + cost;
+                freeFromIndenture('💰 ' + player.fullName + ' paid ' + cost + 'g to buy their freedom!');
+                return { success: true, message: 'You paid ' + cost + 'g and are now free!' };
+            }
+
+            case 'earn_freedom': {
+                if (player.indentured.debtRemaining > 0) {
+                    return { success: false, message: 'Your debt of ' + player.indentured.debtRemaining + 'g is not yet paid through service. Keep working.' };
+                }
+                freeFromIndenture('🤝 Your master acknowledges your loyal service. Your debt is paid — you are free!');
+                return { success: true, message: 'Your master grants your freedom through loyal service!' };
+            }
+
+            case 'military_enlist': {
+                var kingdoms = Engine.getKingdoms();
+                var atWar = [];
+                for (var ki = 0; ki < kingdoms.length; ki++) {
+                    if (kingdoms[ki].wars && kingdoms[ki].wars.length > 0) atWar.push(kingdoms[ki]);
+                }
+                if (atWar.length === 0) {
+                    return { success: false, message: 'No kingdoms are at war. You need an active war to enlist.' };
+                }
+                // Military enlistment: 4-year commitment, immediately frees from indenture
+                // No chance of failure — the army always accepts willing soldiers
+                player.indentured.active = false;
+                var enlistDay = Engine.getDay();
+                player.militaryService = {
+                    active: true,
+                    startDay: enlistDay,
+                    endDay: enlistDay + CONFIG.DAYS_PER_SEASON * 4,  // 4 years
+                    kingdom: atWar[0].id,
+                    rank: 'recruit',
+                    cannotQuit: true
+                };
+                Engine.logEvent('⚔️ ' + player.fullName + ' enlisted in ' + atWar[0].name + '\'s army! The military does not recognize servant contracts. You must serve 4 years.');
+                grantXP(30, 'military escape');
+                return { success: true, message: 'You\'ve enlisted in ' + atWar[0].name + '\'s army! Your servant contract is void, but you must serve 4 years of mandatory military duty. No other jobs allowed.' };
+            }
+
+            case 'legal_challenge': {
+                var elapsed = day - (player.indentured.startDay || 0);
+                var progressFactor = Math.min(1, elapsed / (player.indentured.contractDays || 2520));
+                var masterMood = player.indentured.masterMood || 'neutral';
+                var moodBonus = masterMood === 'kind' ? 0.05 : (masterMood === 'cruel' ? 0.08 : 0);
+                var suspiciousPenalty = masterMood === 'suspicious' ? 0.15 : 0;
+                var legalCost = 100;
+                if (player.gold < legalCost) {
+                    return { success: false, message: 'You need ' + legalCost + 'g for legal fees. You have ' + Math.floor(player.gold) + 'g.' };
+                }
+                player.gold -= legalCost;
+                var town = Engine.findTown(player.townId);
+                var rep = town ? (player.reputation[town.kingdomId] || 0) : 0;
+                var chance = 0.3 + (rep / 200) + progressFactor * 0.15 + moodBonus;
+                if (rng.random() < chance) {
+                    freeFromIndenture('⚖️ The court has ruled in your favor! Your contract is void!');
+                    return { success: true, message: 'The court ruled in your favor! You are free!' };
+                } else {
+                    Engine.logEvent('⚖️ The court upheld your contract. ' + legalCost + 'g wasted on legal fees.');
+                    return { success: false, message: 'The court ruled against you. Your ' + legalCost + 'g in legal fees is lost.' };
+                }
+            }
+
+            case 'impress_noble': {
+                var elapsed = day - (player.indentured.startDay || 0);
+                var progressFactor = Math.min(1, elapsed / (player.indentured.contractDays || 2520));
+                var masterMood = player.indentured.masterMood || 'neutral';
+                var moodBonus = masterMood === 'kind' ? 0.05 : (masterMood === 'cruel' ? 0.08 : 0);
+                var suspiciousPenalty = masterMood === 'suspicious' ? 0.15 : 0;
+                var town2 = Engine.findTown(player.townId);
+                var rep2 = town2 ? (player.reputation[town2.kingdomId] || 0) : 0;
+                var chance2 = 0.15 + (rep2 / 150) + progressFactor * 0.2 + moodBonus;
+                if (rng.random() < chance2) {
+                    freeFromIndenture('👑 A noble was so impressed by your talents that they purchased your freedom!');
+                    return { success: true, message: 'A noble bought your freedom! You are free!' };
+                } else {
+                    Engine.logEvent('👑 You tried to impress the nobility, but none took notice this time.');
+                    return { success: false, message: 'The nobles did not notice you this time. Try building more reputation.' };
+                }
+            }
+
+            case 'steal_contract': {
+                var elapsed = day - (player.indentured.startDay || 0);
+                var progressFactor = Math.min(1, elapsed / (player.indentured.contractDays || 2520));
+                var masterMood = player.indentured.masterMood || 'neutral';
+                var moodBonus = masterMood === 'kind' ? 0.05 : (masterMood === 'cruel' ? 0.08 : 0);
+                var suspiciousPenalty = masterMood === 'suspicious' ? 0.15 : 0;
+                var stealChance = 0.2 + progressFactor * 0.3 + ((player.notoriety || 0) * 0.05) + moodBonus - suspiciousPenalty;
+                if (rng.random() < stealChance) {
+                    freeFromIndenture('📜 You stole your indenture contract and burned it! No proof of servitude remains!');
+                    player.notoriety = (player.notoriety || 0) + 5;
+                    return { success: true, message: 'Contract stolen and destroyed! You are free (but wanted)!' };
+                } else {
+                    player.notoriety = (player.notoriety || 0) + 3;
+                    player.indentured.contractDays += CONFIG.DAYS_PER_SEASON;
+                    Engine.logEvent('🚔 You were caught trying to steal your contract! 1 year added to your servitude!');
+                    return { success: false, message: 'Caught! 1 year added to your contract and notoriety increased.' };
+                }
+            }
+
+            case 'run_away': {
+                var elapsed = day - (player.indentured.startDay || 0);
+                var progressFactor = Math.min(1, elapsed / (player.indentured.contractDays || 2520));
+                var masterMood = player.indentured.masterMood || 'neutral';
+                var moodBonus = masterMood === 'kind' ? 0.05 : (masterMood === 'cruel' ? 0.08 : 0);
+                var suspiciousPenalty = masterMood === 'suspicious' ? 0.15 : 0;
+                var catchChance = 0.85 - progressFactor * 0.45;
+                catchChance = catchChance - moodBonus + suspiciousPenalty;
+                if (rng.random() >= catchChance) {
+                    // Successful escape — move to a random distant town
+                    var towns = Engine.getTowns();
+                    var farTowns = towns.filter(function(t) { return t.id !== player.townId; });
+                    if (farTowns.length > 0) {
+                        var dest = farTowns[Math.floor(Math.random() * farTowns.length)];
+                        player.townId = dest.id;
+                    }
+                    player.indentured.active = false;
+                    player.notoriety = (player.notoriety || 0) + 8;
+                    Engine.logEvent('🏃 ' + player.fullName + ' fled into the night! A fugitive, but free!');
+                    grantXP(20, 'escaped');
+                    return { success: true, message: 'You escaped! But you\'re now a fugitive with high notoriety.' };
+                } else {
+                    player.indentured.contractDays += CONFIG.DAYS_PER_SEASON;
+                    player.notoriety = (player.notoriety || 0) + 2;
+                    Engine.logEvent('🚔 ' + player.fullName + ' was caught fleeing! 1 year added to contract!');
+                    return { success: false, message: 'Caught! 1 year added to your contract.' };
+                }
+            }
+
+            case 'religious_sanctuary': {
+                var elapsed = day - (player.indentured.startDay || 0);
+                var progressFactor = Math.min(1, elapsed / (player.indentured.contractDays || 2520));
+                var masterMood = player.indentured.masterMood || 'neutral';
+                var moodBonus = masterMood === 'kind' ? 0.05 : (masterMood === 'cruel' ? 0.08 : 0);
+                var suspiciousPenalty = masterMood === 'suspicious' ? 0.15 : 0;
+                var sanctuaryCost = 50;
+                if (player.gold < sanctuaryCost) {
+                    return { success: false, message: 'The temple requires a ' + sanctuaryCost + 'g donation for sanctuary.' };
+                }
+                var town3 = Engine.findTown(player.townId);
+                var rep3 = town3 ? (player.reputation[town3.kingdomId] || 0) : 0;
+                if (rep3 < 15) {
+                    return { success: false, message: 'The temple elders say you must prove your worth first (need 15+ reputation).' };
+                }
+                player.gold -= sanctuaryCost;
+                var chance3 = 0.5 + (rep3 / 200) + progressFactor * 0.1 + moodBonus;
+                if (rng.random() < chance3) {
+                    freeFromIndenture('🙏 The temple granted you religious sanctuary! Your contract is dissolved by holy decree!');
+                    return { success: true, message: 'The temple granted sanctuary! You are free!' };
+                } else {
+                    Engine.logEvent('🙏 The temple elders debated but ultimately could not grant sanctuary this time.');
+                    return { success: false, message: 'Sanctuary denied. Your ' + sanctuaryCost + 'g donation is kept by the temple.' };
+                }
+            }
+
+            case 'blackmail_master': {
+                var elapsed2 = day - (player.indentured.startDay || 0);
+                var progressFactor = Math.min(1, elapsed2 / (player.indentured.contractDays || 2520));
+                var masterMood = player.indentured.masterMood || 'neutral';
+                var moodBonus = masterMood === 'kind' ? 0.05 : (masterMood === 'cruel' ? 0.08 : 0);
+                var suspiciousPenalty = masterMood === 'suspicious' ? 0.15 : 0;
+                if (elapsed2 < 90) {
+                    return { success: false, message: 'You haven\'t gathered enough dirt on your master yet.' };
+                }
+                var chance4 = 0.3 + progressFactor * 0.3 + moodBonus - suspiciousPenalty;
+                if (rng.random() < chance4) {
+                    freeFromIndenture('🤫 Your master, fearing exposure, has quietly released you from your contract!');
+                    player.notoriety = (player.notoriety || 0) + 2;
+                    return { success: true, message: 'Blackmail successful! Your master freed you to keep their secrets.' };
+                } else {
+                    player.indentured.contractDays += 540;
+                    player.notoriety = (player.notoriety || 0) + 5;
+                    Engine.logEvent('😡 Your master turned the tables! They accused YOU of slander. 540 days added!');
+                    return { success: false, message: 'Your master outmaneuvered you! 540 days added as punishment.' };
+                }
+            }
+
+            case 'frame_master': {
+                var elapsed = day - (player.indentured.startDay || 0);
+                var progressFactor = Math.min(1, elapsed / (player.indentured.contractDays || 2520));
+                var masterMood = player.indentured.masterMood || 'neutral';
+                var moodBonus = masterMood === 'kind' ? 0.05 : (masterMood === 'cruel' ? 0.08 : 0);
+                var suspiciousPenalty = masterMood === 'suspicious' ? 0.15 : 0;
+                if (player.gold < 50) {
+                    return { success: false, message: 'You need at least 50g to plant evidence.' };
+                }
+                player.gold -= 50;
+                var chance5 = 0.2 + progressFactor * 0.3 + moodBonus - suspiciousPenalty;
+                if (rng.random() < chance5) {
+                    // Master gets arrested, contract voided
+                    if (master) {
+                        master.jailed = true;
+                        master.jailDays = 180;
+                    }
+                    freeFromIndenture('🚔 Your master was arrested for smuggling! Your contract is void!');
+                    player.notoriety = (player.notoriety || 0) + 3;
+                    return { success: true, message: 'Your master was arrested! You are free!' };
+                } else {
+                    player.notoriety = (player.notoriety || 0) + 8;
+                    player.indentured.contractDays += CONFIG.DAYS_PER_SEASON * 2;
+                    Engine.logEvent('🚔 The guards saw through your scheme! You\'re in serious trouble — 2 years added!');
+                    return { success: false, message: 'Failed! 2 years added to contract. Notoriety greatly increased.' };
+                }
+            }
+
+            case 'poison_master': {
+                var elapsed = day - (player.indentured.startDay || 0);
+                var progressFactor = Math.min(1, elapsed / (player.indentured.contractDays || 2520));
+                var masterMood = player.indentured.masterMood || 'neutral';
+                var moodBonus = masterMood === 'kind' ? 0.05 : (masterMood === 'cruel' ? 0.08 : 0);
+                var suspiciousPenalty = masterMood === 'suspicious' ? 0.15 : 0;
+                if (player.gold < 30) {
+                    return { success: false, message: 'You need 30g to purchase the herbs.' };
+                }
+                player.gold -= 30;
+                var chance6 = 0.25 + progressFactor * 0.3 + moodBonus - suspiciousPenalty;
+                if (rng.random() < chance6) {
+                    if (master) {
+                        master.alive = false;
+                        master.deathDay = day;
+                        master.causeOfDeath = 'mysterious illness';
+                    }
+                    freeFromIndenture('☠️ Your master fell ill and perished. With no one to enforce your contract, you are free.');
+                    player.notoriety = (player.notoriety || 0) + 1;
+                    return { success: true, message: 'Your master has... passed away. You are free.' };
+                } else {
+                    // Master survives, suspects you
+                    player.indentured.contractDays += CONFIG.DAYS_PER_SEASON;
+                    player.notoriety = (player.notoriety || 0) + 4;
+                    Engine.logEvent('😡 Your master survived the illness and suspects foul play! 1 year added to contract!');
+                    return { success: false, message: 'Your master survived and suspects you. 1 year added!' };
+                }
+            }
+
+            case 'bribe_officials': {
+                var elapsed = day - (player.indentured.startDay || 0);
+                var progressFactor = Math.min(1, elapsed / (player.indentured.contractDays || 2520));
+                var masterMood = player.indentured.masterMood || 'neutral';
+                var moodBonus = masterMood === 'kind' ? 0.05 : (masterMood === 'cruel' ? 0.08 : 0);
+                var suspiciousPenalty = masterMood === 'suspicious' ? 0.15 : 0;
+                var bribeCost = Math.max(200, Math.floor(player.indentured.debtRemaining * 0.5));
+                if (player.gold < bribeCost) {
+                    return { success: false, message: 'You need ' + bribeCost + 'g to bribe the officials.' };
+                }
+                player.gold -= bribeCost;
+                var chance7 = 0.55;
+                if (rng.random() < chance7) {
+                    freeFromIndenture('💰 Officials have "lost" your indenture records. You are officially a free person!');
+                    player.notoriety = (player.notoriety || 0) + 2;
+                    return { success: true, message: 'Bribe successful! Your records have been "lost." You are free!' };
+                } else {
+                    player.notoriety = (player.notoriety || 0) + 6;
+                    Engine.logEvent('🚔 The official you tried to bribe reported you! ' + bribeCost + 'g lost and notoriety increased.');
+                    return { success: false, message: 'The official reported you! Gold lost, notoriety increased.' };
+                }
+            }
+
+            case 'win_tournament': {
+                var elapsed = day - (player.indentured.startDay || 0);
+                var progressFactor = Math.min(1, elapsed / (player.indentured.contractDays || 2520));
+                var masterMood = player.indentured.masterMood || 'neutral';
+                var moodBonus = masterMood === 'kind' ? 0.05 : (masterMood === 'cruel' ? 0.08 : 0);
+                var suspiciousPenalty = masterMood === 'suspicious' ? 0.15 : 0;
+                // Must be strong enough
+                var combatSkill = player.skills && player.skills.combat_trained ? 1 : 0;
+                var chance8 = 0.2 + (combatSkill * 0.2) + (player.level * 0.02) + progressFactor * 0.15 + moodBonus;
+                if (rng.random() < chance8) {
+                    freeFromIndenture('🏆 You won the tournament! The king granted your freedom as the grand prize!');
+                    grantXP(50, 'tournament champion');
+                    return { success: true, message: 'Tournament champion! The king grants your freedom!' };
+                } else {
+                    Engine.logEvent('🏆 You fought bravely but did not win the tournament.');
+                    // Small injury
+                    player.injured = true;
+                    player.injuryDaysLeft = (player.injuryDaysLeft || 0) + 5;
+                    return { success: false, message: 'You lost the tournament and suffered minor injuries.' };
+                }
+            }
+
+            case 'marry_up': {
+                // Need a relationship >= 70 with someone
+                var bestRelId = null;
+                var bestRelLevel = 0;
+                for (var relId2 in player.relationships) {
+                    var rel = player.relationships[relId2];
+                    if (rel && rel.level > bestRelLevel && rel.type !== 'family') {
+                        bestRelLevel = rel.level;
+                        bestRelId = relId2;
+                    }
+                }
+                if (bestRelLevel < 70) {
+                    return { success: false, message: 'You need a strong relationship (70+) with someone. Best: ' + bestRelLevel + '.' };
+                }
+                var partner = Engine.findPerson(bestRelId);
+                if (!partner) {
+                    return { success: false, message: 'Your closest companion could not be found.' };
+                }
+                var chance9 = 0.5 + (bestRelLevel - 70) * 0.01;
+                if (rng.random() < chance9) {
+                    freeFromIndenture('💕 ' + partner.firstName + ' ' + partner.lastName + '\'s family purchased your freedom! Love conquers all!');
+                    player.spouseId = partner.id;
+                    partner.spouseId = 'player';
+                    return { success: true, message: partner.firstName + ' married you and bought your freedom!' };
+                } else {
+                    Engine.logEvent('💔 ' + partner.firstName + '\'s family refused to purchase your freedom.');
+                    return { success: false, message: partner.firstName + '\'s family wouldn\'t pay for your freedom.' };
+                }
+            }
+
+            case 'master_dies': {
+                return { success: false, message: 'You cannot make your master die by will. This is a passive escape — wait for fate.' };
+            }
+
+            default:
+                return { success: false, message: 'Unknown escape method.' };
+        }
+    }
+
+    function acceptEarlyRelease() {
+        if (!player.indentured || !player.indentured.active) return { success: false, message: 'Not indentured.' };
+        if (!player.indentured.earlyReleaseOffered) return { success: false, message: 'No early release offer available.' };
+        var cost = Math.floor(player.indentured.debtRemaining * 0.3);
+        if (player.gold < cost) return { success: false, message: 'You need ' + cost + 'g for early release.' };
+        player.gold -= cost;
+        var master = Engine.findPerson(player.indentured.masterId);
+        if (master) master.gold = (master.gold || 0) + cost;
+        freeFromIndenture('🤝 Your master accepted ' + cost + 'g for your early release. You are free!');
+        return { success: true, message: 'Early release accepted! You paid ' + cost + 'g and are free!' };
     }
 
     // ========================================================
@@ -31583,6 +32540,7 @@
         get trackedMerchants() { return player.trackedMerchants || []; },
         canUnlockSkill,
         unlockSkill,
+        learnSkill: unlockSkill,
         getSkillsForBranch,
         getMerchantTitle,
         getNextLevelXP,
@@ -31750,7 +32708,12 @@
         get ordersFailed() { return player.ordersFailed || 0; },
         get supplyDeals() { return player.supplyDeals || []; },
 
-        // Game Start & Family — attemptEscape, acceptEarlyRelease, discoverEscape, checkNPCEscapeHints: see js/modules/player_family.js
+        // Game Start & Special Starts
+        applyGameStart: applyGameStart,
+        tickSpecialStarts: tickSpecialStarts,
+        acceptEarlyRelease: acceptEarlyRelease,
+        attemptEscape: attemptEscape,
+        checkNPCEscapeHints: checkNPCEscapeHints,
         get gameStart() { return player.gameStart; },
         get familyMembers() { return player.familyMembers || []; },
         get indentured() { return player.indentured; },

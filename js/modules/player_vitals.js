@@ -7,7 +7,6 @@
 
     // Aliases for Player functions used by this module
     var hasSkill = Player.hasSkill;
-    var getInjuryDebuffs = Player.getInjuryDebuffs;
     var logFinance = Player.logFinance;
     var handlePlayerDeath = Player.handlePlayerDeath;
     var getHouseInTown = Player.getHouseInTown;
@@ -28,7 +27,7 @@
         }
 
         // Decay hunger (spouseHungerMod reduces decay if good_cook, injuries increase it)
-        const injDebuffs = getInjuryDebuffs();
+        const injDebuffs = Player.getInjuryDebuffs();
         const hungerDecay = HUNGER_CONFIG.DECAY_PER_DAY * (player.spouseHungerMod || 1.0) * injDebuffs.hungerRate;
         player.hunger = Math.max(0, player.hunger - hungerDecay);
 
@@ -921,7 +920,7 @@
             if ((player.thirst || 0) < 50) player.thirst = 50;
         }
 
-        var injDebuffs = getInjuryDebuffs();
+        var injDebuffs = Player.getInjuryDebuffs();
         var thirstDecay = THIRST_CONFIG.DECAY_PER_DAY * (injDebuffs.thirstRate || 1.0);
         player.thirst = Math.max(0, (player.thirst != null ? player.thirst : THIRST_CONFIG.START) - thirstDecay);
 
@@ -1203,6 +1202,7 @@
     Player.getAvailableRestOptions = getAvailableRestOptions;
     Player.restForTicks = restForTicks;
     Player.restAtHome = restAtHome;
+    Player.rest = restAtHome;
     Player.restAtInn = restAtInn;
     Player.sleepOutside = sleepOutside;
     Player.restAtMasterQuarters = restAtMasterQuarters;
@@ -1211,7 +1211,9 @@
     Player.getFoodSupply = getFoodSupply;
     Player.getDrinkSupply = getDrinkSupply;
     Player.eatUntilFull = eatUntilFull;
+    Player.eat = eatUntilFull;
     Player.drinkUntilFull = drinkUntilFull;
+    Player.drink = drinkUntilFull;
     Player.drawWaterFromWell = drawWaterFromWell;
 
 })(window.Player);

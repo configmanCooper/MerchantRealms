@@ -1206,5 +1206,6 @@
     Player.canDoPhysicalWork = canDoPhysicalWork;
     Player.canDoAnyWork = canDoAnyWork;
     Player.getInjuryDebuffs = getInjuryDebuffs;
+    Player._payHealthcareRevenue = _payHealthcareRevenue;
 
 })(window.Player);

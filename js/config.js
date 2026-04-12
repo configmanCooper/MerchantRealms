@@ -4926,3 +4926,21 @@ const INSTRUMENT_SKILL_TIERS = [
 ];
 const INSTRUMENT_PREFERENCE_BONUS = 0.50;
 const INSTRUMENT_FATIGUE_THRESHOLD = 50;
+
+// Attach standalone constants to CONFIG for uniform access
+CONFIG.SKILLS = SKILLS;
+CONFIG.ACHIEVEMENTS = ACHIEVEMENTS;
+CONFIG.NOTIFICATION_CATEGORIES = {
+    my_actions: 'My Actions',
+    my_business: 'My Business',
+    my_kingdom: 'My Kingdom',
+    local_town: 'Local Town',
+    foreign_kingdoms: 'Foreign Kingdoms',
+    world_economy: 'World Economy',
+    military: 'Military',
+    npc_activity: 'NPC Activity',
+    illness: 'Illness',
+    travel_events: 'Travel Events',
+    combat: 'Combat',
+    tracked: 'Tracked Merchants',
+};

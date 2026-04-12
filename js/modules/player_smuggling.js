@@ -175,4 +175,13 @@
 
     // ── Exports ──
     Player.attemptSmuggle = attemptSmuggle;
+    Player.getSmuggleChance = function(kingdomId) {
+        var rankIdx = player.socialRank[kingdomId] || 0;
+        var detection = CONFIG.SMUGGLING_BASE_DETECTION
+            - (rankIdx * CONFIG.SMUGGLING_RANK_REDUCTION)
+            - Math.min(CONFIG.SMUGGLING_SKILL_MAX_REDUCTION, player.smugglingSkill * CONFIG.SMUGGLING_SKILL_REDUCTION);
+        if (hasSkill('master_smuggler')) detection -= 0.20;
+        else if (hasSkill('discrete')) detection -= 0.10;
+        return Math.max(0.05, Math.min(1, 1 - detection));
+    };
 })(window.Player);

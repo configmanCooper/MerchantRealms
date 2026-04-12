@@ -6,6 +6,10 @@ window.UI = (function () {
     'use strict';
 
     var _delegationRegister = null; // Set during bindEvents()
+    
+    // ── Event Delegation: action handlers registered by modules at load time ──
+    var _actionHandlers = {};
+    function registerAction(name, handler) { _actionHandlers[name] = handler; }
 
     // ── Utility ──
     function escapeHtml(str) {
@@ -425,11 +429,8 @@ window.UI = (function () {
 
     function bindEvents() {
         // ── Event Delegation System ──
-        // Handles data-action attributes on dynamically generated elements
-        // Usage: <button data-action="closeModal">Close</button>
-        //        <button data-action="specialAction" data-id="some_id" data-val="some_val">Do</button>
-        var _actionHandlers = {};
-        function registerAction(name, handler) { _actionHandlers[name] = handler; }
+        // _actionHandlers and registerAction are declared at IIFE top level
+        // so modules can register actions at load time before bindEvents() runs
 
         document.addEventListener('click', function(e) {
             var target = e.target.closest('[data-action]');
@@ -724,9 +725,6 @@ window.UI = (function () {
 
         // Store registerAction for later use
         _delegationRegister = registerAction;
-
-        // Expose registerAction for modules to self-register their actions
-        UI.registerAction = registerAction;
 
         // Close buttons (null-safe)
         const btnCloseRight = document.getElementById('btnCloseRight');
@@ -6212,6 +6210,7 @@ window.UI = (function () {
             openEventLog();
         });
 
+        if (!el.toastContainer) return id;
         el.toastContainer.appendChild(toastEl);
         updateNotifCount();
 
@@ -14307,10 +14306,13 @@ window.UI = (function () {
     return {
         init,
         update,
+        updateUI: update,
         updateDateDisplay,
         showGameUI,
         hideGameUI,
         toast,
+        showToast: toast,
+        registerAction,
         showTooltip,
         hideTooltip,
         showContextMenu,

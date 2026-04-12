@@ -2058,6 +2058,7 @@ function _switchProposeActionTab(tabId, kingdomId) {
     // Register on UI namespace
     // -- Street Trading --
     UI.openStreetTrading = openStreetTrading;
+    UI.openStreetTradingDialog = openStreetTrading;
     UI.executeStreetTrade = executeStreetTradeUI;
     UI.executeStreetBuyUI = executeStreetBuyUI;
     UI.executeStreetContrabandSellUI = executeStreetContrabandSellUI;

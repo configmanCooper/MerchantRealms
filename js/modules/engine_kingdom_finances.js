@@ -187,7 +187,7 @@
         const bankruptDays = k._bankruptDays || 0;
         if (!k._financialActions) k._financialActions = [];
 
-        const soldiers = _tickCache.soldiersByKingdom[k.id] || [];
+        const soldiers = (_tickCache.soldiersByKingdom || {})[k.id] || [];
 
         // ---- BUDGET SUSTAINABILITY REVIEW ----
         // Kings periodically evaluate if their budget is sustainable and take corrective action
@@ -818,7 +818,7 @@
         }
     }
     function getKingdomFinancialState(k) {
-        var soldierCount = (_tickCache.soldiersByKingdom[k.id] || []).length;
+        var soldierCount = ((_tickCache.soldiersByKingdom || {})[k.id] || []).length;
         if (!soldierCount) {
             soldierCount = world.people.filter(function(p) {
                 return p.alive && p.kingdomId === k.id && (p.occupation === 'soldier' || p.occupation === 'guard');
@@ -1023,7 +1023,7 @@
     function tickKingdomFinances(k) {
         var rng = world.rng;
         // Count soldiers and buildings
-        const soldiers = _tickCache.soldiersByKingdom[k.id] || [];
+        const soldiers = (_tickCache.soldiersByKingdom || {})[k.id] || [];
         let totalBuildings = 0;
         for (const townId of k.territories) {
             const town = findTown(townId);
@@ -1266,7 +1266,7 @@
         }
 
         // 3. MILITARY DECIMATION
-        const soldiers = _tickCache.soldiersByKingdom[k.id] || [];
+        const soldiers = (_tickCache.soldiersByKingdom || {})[k.id] || [];
         const toDesert = Math.floor(soldiers.length * 0.70);
         let deserted = 0;
         for (const s of soldiers) {
@@ -1284,7 +1284,7 @@
         }
 
         // 5. MERCHANT EXODUS — NPCs with gold flee
-        const merchants = (_tickCache.merchantsByKingdom[k.id] || []).filter(m =>
+        const merchants = ((_tickCache.merchantsByKingdom || {})[k.id] || []).filter(m =>
             m.gold > 100
         );
         for (const m of merchants) {
@@ -1503,7 +1503,7 @@
         }
 
         // Soldiers become laborers
-        const soldiers = _tickCache.soldiersByKingdom[k.id] || [];
+        const soldiers = (_tickCache.soldiersByKingdom || {})[k.id] || [];
         for (const s of soldiers) {
             s.occupation = 'laborer';
             const town = findTown(s.townId);
@@ -1533,6 +1533,7 @@
     // ── Sync on generate ──
     var _origGenerate = Engine.generate;
     Engine.generate = function() {
+        _syncState();
         var result = _origGenerate.apply(this, arguments);
         _syncState();
         return result;
@@ -1548,4 +1549,5 @@
 
     // ── Export functions needed by other modules ──
     Engine.tickKingdomFinancialStrategy = tickKingdomFinancialStrategy;
+    Engine.triggerEconomicCollapse = triggerEconomicCollapse;
 })(window.Engine);

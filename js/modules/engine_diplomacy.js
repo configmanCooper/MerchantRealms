@@ -560,7 +560,7 @@
                 k.tradeTaxRevenue = 0;
 
                 // Pay soldiers (adjusted by dynamic pay multiplier) — seasonal bonus pay
-                var soldiers = (_tickCache.soldiersByKingdom[k.id] || []);
+                var soldiers = ((_tickCache.soldiersByKingdom || {})[k.id] || []);
                 const soldierCost = soldiers.length * CONFIG.SOLDIER_UPKEEP * (k.soldierPayMult || 1.0);
                 k.gold = Math.max(0, k.gold - soldierCost);
 
@@ -662,7 +662,7 @@
 
             // ---- Update military strength and soldier count ----
             k.militaryStrength = computeMilitaryStrength(k);
-            k.soldiers = (_tickCache.soldiersByKingdom[k.id] || []).length;
+            k.soldiers = ((_tickCache.soldiersByKingdom || {})[k.id] || []).length;
 
             // ---- Update prosperity ----
             const kTowns = world.towns.filter(t => t.kingdomId === k.id);
@@ -688,6 +688,7 @@
     }
 
     function declareWar(a, b, isStartingWar) {
+        _syncState();
         // --- CHECK NON-AGGRESSION PACT ---
         var napTreaty = wouldViolateNonAggression(a.id, b.id);
         if (napTreaty) {
@@ -720,7 +721,7 @@
         }
 
         // --- WAR DECLARATION COST (aggressor pays upfront) ---
-        var soldiers = (_tickCache.soldiersByKingdom[a.id] || []);
+        var soldiers = ((_tickCache.soldiersByKingdom || {})[a.id] || []);
         const warDeclarationCost = Math.min(2000, Math.max(500, soldiers.length * 10));
         if (a.gold < warDeclarationCost) {
             logEvent(`${a.name} cannot afford to declare war on ${b.name} (need ${warDeclarationCost}g).`);
@@ -2025,7 +2026,7 @@
                     // Only destroy if score is convincingly positive
                     if (destroyScore >= 3) {
                         // Destroy all bridges on this road (wartime scorched earth)
-                        destroyBridge(_bri);
+                        Engine.destroyBridge(_bri);
                         if (_road.bridges) {
                             for (var _wbi = 0; _wbi < _road.bridges.length; _wbi++) {
                                 _road.bridges[_wbi].destroyedBy = k.id;
@@ -2116,7 +2117,7 @@
         // =============================================
         // 8B. DYNAMIC SOLDIER PAY (runs both war & peace, once per kingdom)
         // =============================================
-        var totalSoldiers = (_tickCache.soldiersByKingdom[k.id] || []).length;
+        var totalSoldiers = ((_tickCache.soldiersByKingdom || {})[k.id] || []).length;
         var desiredSoldiers = 0;
         for (var _dti of k.territories) {
             var _dt = findTown(_dti);
@@ -2761,7 +2762,7 @@
 
         // 12. UPDATE ROYAL ADVISORS periodically
         if (world.day % CONFIG.ROYAL_ADVISOR_UPDATE_INTERVAL === 0) {
-            updateRoyalAdvisors(k);
+            Engine.updateRoyalAdvisors(k.id);
         }
 
         // =============================================
@@ -3770,7 +3771,7 @@
                         if (rng.chance(monopolyChance)) {
                             var sgCurrentBanned = kingdom.laws.bannedGoods || [];
                             if (sgCurrentBanned.indexOf(strat.good) === -1) {
-                                var _sgExpanded = _expandGoodsToTiers([strat.good]);
+                                var _sgExpanded = Engine._expandGoodsToTiers([strat.good]);
                                 for (var _sge = 0; _sge < _sgExpanded.length; _sge++) {
                                     if (sgCurrentBanned.indexOf(_sgExpanded[_sge]) === -1) sgCurrentBanned.push(_sgExpanded[_sge]);
                                 }
@@ -4107,6 +4108,7 @@
     // ── Sync on generate ──
     var _origGenerate = Engine.generate;
     Engine.generate = function() {
+        _syncState();
         var result = _origGenerate.apply(this, arguments);
         _syncState();
         return result;

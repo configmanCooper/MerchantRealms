@@ -4364,6 +4364,28 @@
         return s === 'Spring' || s === 'Summer';
     }
 
+    function getTownHousingProductivity(town) {
+        if (!town) return 1.0;
+        var prodConfig = CONFIG.HOUSING_PRODUCTIVITY;
+        if (!prodConfig) return 1.0;
+        var people = getPeopleInTown(town.id);
+        if (!people || people.length === 0) return 1.0;
+        var totalMod = 0;
+        var count = 0;
+        for (var i = 0; i < people.length; i++) {
+            var p = people[i];
+            if (!p.alive || p.age < 18) continue;
+            if (p.occupation === 'soldier' || p.occupation === 'guard') continue;
+            var ht = p.houseType || 'none';
+            var mod = prodConfig[ht];
+            if (mod === undefined) mod = (ht === 'none' ? prodConfig.none : 1.0);
+            if (mod === undefined) mod = 1.0;
+            totalMod += mod;
+            count++;
+        }
+        return count > 0 ? totalMod / count : 1.0;
+    }
+
     // ========================================================
     // §12 ECONOMY TICK
     // ========================================================
@@ -10883,8 +10905,8 @@
                         effects: ['Kingdom may fragment', 'Towns may declare independence']
                     }, 'sensitive_intel');
                     // Trigger economic collapse if the function exists
-                    if (typeof triggerEconomicCollapse === 'function') {
-                        triggerEconomicCollapse(k);
+                    if (typeof Engine.triggerEconomicCollapse === 'function') {
+                        Engine.triggerEconomicCollapse(k);
                     }
                 }
             }
@@ -17045,6 +17067,823 @@
         // Building workers are paid by their employer in tickEconomy()
     }
 
+    // --- Restored from pre-H1 extraction (housing utility functions) ---
+    var NPC_HOUSING_TIERS = ['shack', 'cottage', 'farmstead', 'townhouse', 'merchant_house', 'manor'];
+    var TOWN_CAT_RANK = { outpost: 0, village: 1, town: 2, city: 3, capital_city: 4 };
+
+    function getNPCHousingCost(housingTypeId, town) {
+        var ht = CONFIG.HOUSING_TYPES.find(function(h) { return h.id === housingTypeId; });
+        if (!ht) return Infinity;
+        if (ht.notBuildable || ht.fromApartmentBuilding) return Infinity;
+        if (ht.requiresPort && !town.isPort) return Infinity;
+        if (ht.minRank) return Infinity;
+        var minCatRank = TOWN_CAT_RANK[ht.minTownCategory] || 0;
+        var townCatRank = TOWN_CAT_RANK[town.category] || 0;
+        if (townCatRank < minCatRank) return Infinity;
+        var cat = town.category || 'town';
+        var laborMult = (CONFIG.HOUSING_LABOR_MULTIPLIER && CONFIG.HOUSING_LABOR_MULTIPLIER[cat]) || 1.0;
+        var laborCost = Math.floor((ht.laborCost || 0) * laborMult);
+        if (!ht.materials) {
+            return (ht.baseCost || ht.cost || 0) + laborCost;
+        }
+        var materialCost = 0;
+        for (var matId in ht.materials) {
+            var qty = ht.materials[matId];
+            var price = 0;
+            try { price = getMarketPrice(town, matId) || 0; } catch(e) {}
+            if (price <= 0) {
+                var res = findResourceById(matId);
+                price = res ? (res.basePrice || 5) : 5;
+            }
+            materialCost += qty * price;
+        }
+        return materialCost + laborCost;
+    }
+
+    function getHousingTierIndex(houseType) {
+        if (!houseType) return -1;
+        return NPC_HOUSING_TIERS.indexOf(houseType);
+    }
+
+    function getHousingComfort(houseType) {
+        if (!houseType) return 0;
+        var ht = CONFIG.HOUSING_TYPES.find(function(h) { return h.id === houseType; });
+        return ht ? (ht.comfort || 0) : 0;
+    }
+
+    // --- Restored from pre-H1 extraction ---
+    function tickNPCHousingAI() {
+        if (!world) return;
+        if (world.day % 7 !== 3) return; // Every 7 days, offset
+        var rng = world.rng;
+        if (!rng) return;
+
+        // Process a batch of NPCs per tick to limit performance impact
+        var batchSize = 300;
+        var offset = world._npcHousingOffset || 0;
+        var people = world.people;
+        if (!people || people.length === 0) return;
+
+        var processed = 0;
+        var purchased = 0;
+        var upgraded = 0;
+
+        for (var i = 0; i < batchSize && processed < batchSize; i++) {
+            var idx = (offset + i) % people.length;
+            var p = people[idx];
+            if (!p || !p.alive) continue;
+            if (p.age < 18) continue;
+            if (p.isEliteMerchant) continue; // EMs have their own housing logic
+            processed++;
+
+            var pGold = p.gold || 0;
+            if (pGold < 30) continue; // Can't afford anything
+
+            var town = findTown(p.townId);
+            if (!town) continue;
+
+            var currentTier = getHousingTierIndex(p.houseType);
+            var currentComfort = getHousingComfort(p.houseType);
+
+            // Determine target housing tier based on wealth and personality
+            var frugality = (p.personality && p.personality.frugality) || 50;
+            var ambition = (p.personality && p.personality.ambition) || 50;
+            // More ambitious NPCs aim higher; more frugal ones are conservative
+            var spendWillingness = (100 - frugality + ambition) / 200; // 0.0 to 1.0
+
+            // Find the best housing this NPC can afford and is willing to buy
+            var bestType = null;
+            var bestCost = 0;
+            var bestTierIdx = currentTier;
+
+            for (var t = NPC_HOUSING_TIERS.length - 1; t >= 0; t--) {
+                if (t <= currentTier) break; // Only upgrade, don't downgrade
+                var typeId = NPC_HOUSING_TIERS[t];
+                var cost = getNPCHousingCost(typeId, town);
+                if (cost === Infinity) continue;
+
+                // Must have at least 2├ù the cost as buffer
+                var minGold = cost * 2;
+                // Frugal NPCs want more buffer (up to 3├ù)
+                var bufferMult = 2.0 + (frugality / 100);
+                minGold = cost * bufferMult;
+
+                if (pGold >= minGold) {
+                    bestType = typeId;
+                    bestCost = cost;
+                    bestTierIdx = t;
+                    break; // Found best affordable option
+                }
+            }
+
+            // If homeless, also consider cheapest tier
+            if (!bestType && currentTier < 0) {
+                for (var t2 = 0; t2 < NPC_HOUSING_TIERS.length; t2++) {
+                    var typeId2 = NPC_HOUSING_TIERS[t2];
+                    var cost2 = getNPCHousingCost(typeId2, town);
+                    if (cost2 === Infinity) continue;
+                    var bufferMult2 = 2.0 + (frugality / 100);
+                    if (pGold >= cost2 * bufferMult2) {
+                        bestType = typeId2;
+                        bestCost = cost2;
+                        break;
+                    }
+                }
+            }
+
+            if (!bestType) {
+                // Can't afford to buy a house ΓÇö consider apartment unit first, then tent
+                // Apartments are better than tents: check for vacant apartment units
+                if (currentTier < 0 || p.houseType === 'tent') {
+                    var townBlds2 = town.buildings || [];
+                    for (var api = 0; api < townBlds2.length; api++) {
+                        var aptBld = townBlds2[api];
+                        if (aptBld.type !== 'apartment_building' || !aptBld.units) continue;
+                        var unitPrice = aptBld.unitPrice || 250;
+                        var monthlyFee = aptBld.monthlyFee || 2;
+                        // Need unit price + 6 months of fees as buffer
+                        if (pGold >= unitPrice + monthlyFee * 6) {
+                            for (var aui = 0; aui < aptBld.units.length; aui++) {
+                                var unit = aptBld.units[aui];
+                                if (unit.occupantId) continue;
+                                // Buy the unit
+                                unit.occupantId = p.id;
+                                unit.occupantType = 'npc';
+                                unit.purchaseDay = world.day;
+                                unit.purchasePrice = unitPrice;
+                                p.gold -= unitPrice;
+                                // Clear old tent if upgrading from tent
+                                if (p.houseType === 'tent' && p._tentCampId) {
+                                    var oldTc = null;
+                                    for (var _otci = 0; _otci < townBlds2.length; _otci++) {
+                                        if (townBlds2[_otci]._id === p._tentCampId) { oldTc = townBlds2[_otci]; break; }
+                                    }
+                                    if (oldTc && oldTc.tents && p._tentIndex !== undefined) {
+                                        var oldTent = oldTc.tents[p._tentIndex];
+                                        if (oldTent && oldTent.occupantId === p.id) {
+                                            oldTent.occupantId = null;
+                                            oldTent.occupantType = null;
+                                        }
+                                    }
+                                }
+                                p.houseType = 'apartment';
+                                p._apartmentBuildingId = aptBld._id;
+                                delete p._tentCampId;
+                                delete p._tentIndex;
+                                purchased++;
+                                break;
+                            }
+                            if (p.houseType === 'apartment') break;
+                        }
+                    }
+                }
+                // If still homeless, try renting a tent
+                // But not if the kingdom has a No Tent Camps law
+                var _tcKingdom = findKingdom(town.kingdomId);
+                var _tcBanned = _tcKingdom && hasSpecialLaw(_tcKingdom, 'no_tent_camps');
+                if (currentTier < 0 && p.houseType !== 'tent' && p.houseType !== 'apartment' && pGold >= 25 && !_tcBanned) {
+                    var townBlds = town.buildings || [];
+                    for (var tci = 0; tci < townBlds.length; tci++) {
+                        var tc = townBlds[tci];
+                        if (tc.type !== 'tent_camp' || !tc.tents) continue;
+                        for (var tti = 0; tti < tc.tents.length; tti++) {
+                            var tent = tc.tents[tti];
+                            if (tent.occupantId) continue;
+                            var upfront = tc.tentUpfrontCost || 20;
+                            var monthly = tc.tentMonthlyCost || 5;
+                            if (pGold >= upfront + monthly * 2) {
+                                tent.occupantId = p.id;
+                                tent.occupantType = 'npc';
+                                tent.rentStartDay = world.day;
+                                tent.lastRentDay = world.day;
+                                p.gold -= upfront;
+                                p.houseType = 'tent';
+                                p._tentCampId = tc._id;
+                                p._tentIndex = tti;
+                                purchased++;
+                                break;
+                            }
+                        }
+                        if (p.houseType === 'tent') break;
+                    }
+                }
+                continue;
+            }
+
+            // Probability check ΓÇö don't all buy on the same day
+            // Homeless NPCs are more eager (50-80%), upgraders less so (10-30%)
+            var buyChance = currentTier < 0 ? (0.5 + spendWillingness * 0.3) : (0.1 + spendWillingness * 0.2);
+            if (!rng.chance(buyChance)) continue;
+
+            // If upgrading, recover some value from old housing
+            var recoveredGold = 0;
+            if (p.houseType && currentTier >= 0) {
+                var oldCost = getNPCHousingCost(p.houseType, town);
+                if (oldCost !== Infinity) {
+                    recoveredGold = Math.floor(oldCost * (CONFIG.HOUSING_SELL_RATIO || 0.70));
+                }
+            }
+
+            var netCost = Math.max(0, bestCost - recoveredGold);
+            if (pGold < netCost) continue;
+
+            // Execute purchase
+            p.gold -= netCost;
+            var oldType = p.houseType;
+            p.houseType = bestType;
+
+            // Add gold to town economy (simulates paying builders/materials)
+            if (town.treasury !== undefined) {
+                town.treasury += Math.floor(netCost * 0.1); // 10% goes to town
+            }
+
+            if (oldType && currentTier >= 0) {
+                upgraded++;
+            } else {
+                purchased++;
+            }
+        }
+
+        // Advance offset for next batch
+        world._npcHousingOffset = (offset + batchSize) % people.length;
+
+        // Periodic logging
+        if ((purchased > 0 || upgraded > 0) && world.day % 30 === 3) {
+            // Silent ΓÇö no log spam, but data tracked
+        }
+
+        // RIGHT TO CAMPS LAW: homeless NPCs can pool gold to self-build a tent camp
+        // They must buy the land too. Land and camp are owned by the kingdom.
+        // While Right to Camps is active, king will never destroy these camps.
+        if (world.day % 14 === 10) { // Every 2 weeks, offset
+            for (var _rtci = 0; _rtci < world.towns.length; _rtci++) {
+                var rtcTown = world.towns[_rtci];
+                if (!rtcTown) continue;
+                var rtcKingdom = findKingdom(rtcTown.kingdomId);
+                if (!rtcKingdom) continue;
+                // Must have Right to Camps law AND not have No Tent Camps law
+                if (!hasSpecialLaw(rtcKingdom, 'right_to_camps')) continue;
+                if (hasSpecialLaw(rtcKingdom, 'no_tent_camps')) continue;
+                // Count homeless adults with enough gold to chip in
+                var rtcPeople = getPeopleInTown(rtcTown.id);
+                var homelessWithGold = [];
+                for (var _rpi = 0; _rpi < rtcPeople.length; _rpi++) {
+                    var _rp = rtcPeople[_rpi];
+                    if (_rp.alive && _rp.age >= 18 && !_rp.houseType && (_rp.gold || 0) >= 10) {
+                        homelessWithGold.push(_rp);
+                    }
+                }
+                // Need at least 5 homeless NPCs willing to pool resources
+                if (homelessWithGold.length < 5) continue;
+                // Check there's available land
+                var rtcUsedLand = 0;
+                for (var _rbi = 0; _rbi < rtcTown.buildings.length; _rbi++) {
+                    var _rbt = findBuildingType(rtcTown.buildings[_rbi].type);
+                    rtcUsedLand += (_rbt && _rbt.landSlots) || 1;
+                }
+                var rtcTotalLand = rtcTown.totalLand || (rtcTown.category === 'capital_city' ? 50 : rtcTown.category === 'city' ? 35 : rtcTown.category === 'town' ? 20 : 10);
+                if (rtcUsedLand >= rtcTotalLand - 1) continue;
+                // Cap at 5 tent camps per town
+                var rtcExisting = rtcTown.buildings.filter(function(b) { return b.type === 'tent_camp'; }).length;
+                if (rtcExisting >= 5) continue;
+                // Calculate total cost: land + building
+                var rtcCat = rtcTown.category || 'town';
+                var rtcLandMult = (CONFIG.LAND_COST_MULTIPLIER && CONFIG.LAND_COST_MULTIPLIER[rtcCat]) || 1.0;
+                var rtcProsperity = Math.max(0.5, (rtcTown.prosperity || 50) / 50);
+                var rtcLandCost = Math.floor((CONFIG.LAND_COST_BASE || 250) * rtcLandMult * rtcProsperity);
+                var rtcBuildCost = (BUILDING_TYPES['tent_camp'] && BUILDING_TYPES['tent_camp'].cost) || 50;
+                var rtcTotalCost = rtcLandCost + rtcBuildCost;
+                // Pool gold: each chips in proportional to their wealth
+                var pooled = 0;
+                var contributors = [];
+                for (var _rci = 0; _rci < homelessWithGold.length && pooled < rtcTotalCost; _rci++) {
+                    var chip = Math.min(Math.floor(rtcTotalCost / 5), Math.floor(homelessWithGold[_rci].gold * 0.25));
+                    if (chip >= 3) {
+                        pooled += chip;
+                        contributors.push({ person: homelessWithGold[_rci], amount: chip });
+                    }
+                }
+                if (pooled < rtcTotalCost) continue;
+                // Deduct gold from contributors (split evenly, cap at what each pledged)
+                var perPerson = Math.ceil(rtcTotalCost / contributors.length);
+                var remaining = rtcTotalCost;
+                for (var _cci = 0; _cci < contributors.length; _cci++) {
+                    var deduct = Math.min(perPerson, remaining, contributors[_cci].amount);
+                    contributors[_cci].person.gold -= deduct;
+                    remaining -= deduct;
+                }
+                // Build the tent camp ΓÇö owned by the kingdom
+                var rtcBt = BUILDING_TYPES['tent_camp'];
+                var rtcNewCamp = {
+                    type: 'tent_camp',
+                    level: 1,
+                    ownerId: rtcKingdom.id, // kingdom-owned
+                    condition: 'new',
+                    _builtByLaw: 'right_to_camps', // track how it was built
+                    _id: 'tc_' + rtcTown.id + '_' + rtcTown.buildings.length,
+                    tents: [],
+                    tentUpfrontCost: (rtcBt && rtcBt.tentUpfrontCost) || 20,
+                    tentMonthlyCost: (rtcBt && rtcBt.tentMonthlyCost) || 5
+                };
+                var rtcNumTents = (rtcBt && rtcBt.tents) || 10;
+                for (var _rnti = 0; _rnti < rtcNumTents; _rnti++) {
+                    rtcNewCamp.tents.push({ tentIndex: _rnti, occupantId: null, occupantType: null, rentStartDay: null, lastRentDay: null });
+                }
+                rtcTown.buildings.push(rtcNewCamp);
+                logEvent('Γ¢║ Homeless citizens of ' + rtcTown.name + ' pooled ' + rtcTotalCost + 'g (land: ' + rtcLandCost + 'g + build: ' + rtcBuildCost + 'g) and built a tent camp under the Right to Camps law.');
+            }
+        }
+    }
+
+    // --- Restored from pre-H1 extraction ---
+    function tickHousingRentalAI() {
+        if (!world) return;
+        if (world.day % 5 !== 2) return; // Run every 5 days, offset from other ticks
+        var rng = world.rng;
+        if (!rng) return;
+
+        // Get all player rental listings
+        var playerState = typeof Player !== 'undefined' ? Player.state : null;
+        if (!playerState || !playerState.houses) return;
+        var rentals = playerState.houses.filter(function(h) { return h.isRental && !h.tenantId && h.monthlyRent > 0; });
+        if (rentals.length === 0) return;
+
+        // Also collect apartment units available for rent from apartment buildings
+        // (handled separately)
+
+        // Evaluate NPCs/EMs who might want to rent
+        var candidates = world.people.filter(function(p) {
+            if (!p.alive || !p.townId) return false;
+            if (p.rentedHouseId) return false; // Already renting
+            // Only consider people who don't own good housing
+            if (p.houseType === 'manor' || p.houseType === 'merchant_house') return false;
+            return true;
+        });
+
+        // Shuffle and limit to prevent lag
+        for (var si = candidates.length - 1; si > 0; si--) {
+            var sj = Math.floor(rng.random() * (si + 1));
+            var tmp = candidates[si]; candidates[si] = candidates[sj]; candidates[sj] = tmp;
+        }
+        candidates = candidates.slice(0, 50); // Process up to 50 per tick
+
+        for (var ci = 0; ci < candidates.length; ci++) {
+            var npc = candidates[ci];
+            if (rentals.length === 0) break;
+
+            // Find rentals in NPC's town
+            var localRentals = rentals.filter(function(h) { return h.townId === npc.townId; });
+            if (localRentals.length === 0) continue;
+
+            // NPC evaluates affordability and value
+            var npcGold = npc.gold || 0;
+            var monthlyIncome = npc.monthlyIncome || (npc.isEliteMerchant ? 200 : (npc.wealthClass === 'upper' ? 100 : npc.wealthClass === 'middle' ? 50 : 20));
+            var maxAffordableRent = Math.floor(monthlyIncome * 0.4); // Spend up to 40% of income on rent
+
+            for (var ri = 0; ri < localRentals.length; ri++) {
+                var rental = localRentals[ri];
+                if (rental.monthlyRent > maxAffordableRent) continue;
+                if (npcGold < rental.monthlyRent * 3) continue; // Need at least 3 months reserve
+
+                var ht = CONFIG.HOUSING_TYPES.find(function(h) { return h.id === rental.type; });
+                if (!ht) continue;
+
+                // Compare rental quality to current housing
+                var currentComfort = 0;
+                var currentHt = npc.houseType ? CONFIG.HOUSING_TYPES.find(function(h) { return h.id === npc.houseType; }) : null;
+                if (currentHt) currentComfort = currentHt.comfort || 0;
+
+                if ((ht.comfort || 0) <= currentComfort && !npc.isEliteMerchant) continue; // Not an upgrade
+
+                // Decision: rent this place
+                rental.tenantId = npc.id;
+                rental.tenantType = npc.isEliteMerchant ? 'em' : 'npc';
+                rental.lastRentDay = world.day;
+                npc.rentedHouseId = rental.id;
+                npc.gold -= rental.monthlyRent; // First month's rent
+
+                // Pay player
+                if (playerState) {
+                    playerState.gold = (playerState.gold || 0) + rental.monthlyRent;
+                    playerState.stats.totalGoldEarned = (playerState.stats.totalGoldEarned || 0) + rental.monthlyRent;
+                }
+
+                var npcName = (npc.firstName || '') + ' ' + (npc.lastName || '');
+                logEvent('≡ƒÅá ' + npcName + (npc.isEliteMerchant ? ' (Elite Merchant)' : '') + ' rented your ' + (ht ? ht.name : 'property') + ' for ' + rental.monthlyRent + 'g/month.');
+
+                // Remove from available list
+                var rentIdx = rentals.indexOf(rental);
+                if (rentIdx >= 0) rentals.splice(rentIdx, 1);
+                break;
+            }
+        }
+    }
+
+    // --- Restored from pre-H1 extraction ---
+    function tickEMRentalBusiness() {
+        if (!world) return;
+        if (world.day % 30 !== 15) return; // Monthly check
+        var rng = world.rng;
+        if (!rng) return;
+
+        var elites = (_tickCache.eliteMerchants || world.people.filter(function(p) { return p.alive && p.isEliteMerchant; }));
+        for (var i = 0; i < elites.length; i++) {
+            var em = elites[i];
+            if (!em.rentalProperties) em.rentalProperties = [];
+
+            // --- RENT COLLECTION from existing EM rental properties ---
+            var totalRentIncome = 0;
+            for (var rpi = em.rentalProperties.length - 1; rpi >= 0; rpi--) {
+                var prop = em.rentalProperties[rpi];
+                if (!prop.tenantId) {
+                    // Try to find a tenant for vacant properties
+                    var propTown = findTown(prop.townId);
+                    if (propTown) {
+                        var seekers = (world.people || []).filter(function(p) {
+                            return p.alive && p.townId === prop.townId &&
+                                (!p.houseType || p.houseType === 'tent' || p.houseType === 'shack') &&
+                                !p.rentedHouseId && (p.gold || 0) >= prop.monthlyRent * 3;
+                        });
+                        if (seekers.length > 0) {
+                            var tenant = seekers[rng.randInt(0, seekers.length - 1)];
+                            prop.tenantId = tenant.id;
+                            prop.lastRentDay = world.day;
+                            tenant.rentedHouseId = prop.id;
+                            tenant.houseType = prop.type;
+                            tenant.gold -= prop.monthlyRent;
+                            em.gold = (em.gold || 0) + prop.monthlyRent;
+                            totalRentIncome += prop.monthlyRent;
+                        }
+                    }
+                    continue;
+                }
+                // Collect rent from existing tenant
+                var tenant = findPerson(prop.tenantId);
+                if (!tenant || !tenant.alive) {
+                    // Tenant died ΓÇö vacate
+                    prop.tenantId = null;
+                    prop.lastRentDay = null;
+                    continue;
+                }
+                if ((tenant.gold || 0) >= prop.monthlyRent) {
+                    tenant.gold -= prop.monthlyRent;
+                    em.gold = (em.gold || 0) + prop.monthlyRent;
+                    prop.lastRentDay = world.day;
+                    totalRentIncome += prop.monthlyRent;
+                } else {
+                    // Tenant can't pay ΓÇö track missed payments
+                    prop._missedPayments = (prop._missedPayments || 0) + 1;
+                    if (prop._missedPayments >= 2) {
+                        // Evict
+                        tenant.houseType = null;
+                        delete tenant.rentedHouseId;
+                        prop.tenantId = null;
+                        prop._missedPayments = 0;
+                    }
+                }
+            }
+            em.rentalIncome = totalRentIncome;
+
+            // --- EVALUATE NEW INVESTMENTS ---
+            if ((em.gold || 0) < 3000) continue; // Need capital
+            if (em.rentalProperties.length >= 5) continue; // Cap at 5 rentals per EM
+            if (!rng.chance(0.10)) continue; // Only 10% chance each month
+
+            var emTown = findTown(em.townId);
+            if (!emTown) continue;
+
+            // Check local housing demand
+            var townPop = emTown.population || 100;
+            var housingSupply = (emTown.buildings || []).filter(function(b) {
+                return b.type === 'apartment_building' || b.type === 'cottage' || b.type === 'townhouse';
+            }).length * 5;
+            if (housingSupply > townPop * 0.4) continue; // Enough housing
+
+            var rentalTypes = ['cottage', 'townhouse'];
+            var selectedType = rng.pick(rentalTypes);
+            var ht = CONFIG.HOUSING_TYPES.find(function(h) { return h.id === selectedType; });
+            if (!ht) continue;
+
+            var buildCost = (ht.baseCost || 500) * 1.5;
+            if (em.gold < buildCost) continue;
+
+            // --- EM evaluates profitability before building ---
+            var estimatedRent = Math.floor(buildCost * 0.02);
+            var monthsToBreakEven = Math.ceil(buildCost / estimatedRent);
+            // Only invest if break-even < 60 months and have enough capital buffer
+            if (monthsToBreakEven > 60 || em.gold < buildCost * 2) continue;
+
+            // --- Evaluate: should EM sell an underperforming property instead? ---
+            for (var _epi = em.rentalProperties.length - 1; _epi >= 0; _epi--) {
+                var _ep = em.rentalProperties[_epi];
+                if (!_ep.tenantId && _ep.builtDay && (world.day - _ep.builtDay) > 180) {
+                    // Vacant for 6+ months ΓÇö sell it (recover 50% cost)
+                    var salePrice = Math.floor((_ep._buildCost || buildCost * 0.5) * 0.5);
+                    em.gold += salePrice;
+                    em.rentalProperties.splice(_epi, 1);
+                    logEvent('≡ƒÅÜ∩╕Å ' + (em.firstName || '') + ' ' + (em.lastName || '') + ' sold an unprofitable rental property for ' + salePrice + 'g.');
+                    break; // Only sell one per cycle
+                }
+            }
+
+            em.gold -= buildCost;
+            var rentalProp = {
+                id: 'em_rental_' + em.id + '_' + world.day,
+                type: selectedType,
+                townId: em.townId,
+                monthlyRent: estimatedRent,
+                tenantId: null,
+                builtDay: world.day,
+                _buildCost: buildCost,
+                _missedPayments: 0,
+                lastRentDay: null
+            };
+            em.rentalProperties.push(rentalProp);
+            logEvent('≡ƒÅÿ∩╕Å ' + (em.firstName || '') + ' ' + (em.lastName || '') + ' built a ' + (ht ? ht.name : selectedType) + ' as a rental investment in ' + emTown.name + '.');
+        }
+    }
+
+    // --- Restored from pre-H1 extraction ---
+    function tickTentCampRents() {
+        if (!world) return;
+        if (world.day % 30 !== 10) return; // Monthly, offset
+        for (var ti = 0; ti < world.towns.length; ti++) {
+            var town = world.towns[ti];
+            if (!town || !town.buildings) continue;
+            for (var bi = 0; bi < town.buildings.length; bi++) {
+                var bld = town.buildings[bi];
+                if (bld.type !== 'tent_camp' || !bld.tents) continue;
+                var monthly = bld.tentMonthlyCost || 5;
+                for (var tti = 0; tti < bld.tents.length; tti++) {
+                    var tent = bld.tents[tti];
+                    if (!tent.occupantId) continue;
+                    var person = findPerson(tent.occupantId);
+                    if (!person || !person.alive) {
+                        // Vacate stale tenants
+                        tent.occupantId = null;
+                        tent.occupantType = null;
+                        tent.rentStartDay = null;
+                        tent.lastRentDay = null;
+                        continue;
+                    }
+                    if ((person.gold || 0) >= monthly) {
+                        person.gold -= monthly;
+                        tent.lastRentDay = world.day;
+                        // Revenue goes to kingdom
+                        var kingdom = findKingdom(town.kingdomId);
+                        if (kingdom) kingdom.gold = (kingdom.gold || 0) + monthly;
+                    } else {
+                        // Auto-evict: can't pay
+                        person.houseType = null;
+                        person._tentCampId = null;
+                        person._tentIndex = null;
+                        tent.occupantId = null;
+                        tent.occupantType = null;
+                        tent.rentStartDay = null;
+                        tent.lastRentDay = null;
+                    }
+                }
+            }
+        }
+    }
+
+    // --- Restored from pre-H1 extraction ---
+    function tickApartmentFees() {
+        if (!world) return;
+        if (world.day % 30 !== 15) return; // Monthly, offset from tent rent
+        for (var ti = 0; ti < world.towns.length; ti++) {
+            var town = world.towns[ti];
+            if (!town || !town.buildings) continue;
+            for (var bi = 0; bi < town.buildings.length; bi++) {
+                var bld = town.buildings[bi];
+                if (bld.type !== 'apartment_building' || !bld.units) continue;
+                var monthlyFee = bld.monthlyFee || 2;
+                for (var ui = 0; ui < bld.units.length; ui++) {
+                    var unit = bld.units[ui];
+                    if (!unit.occupantId) continue;
+                    // Player apartment unit
+                    if (unit.occupantType === 'player') {
+                        if (typeof Player !== 'undefined' && Player.state && Player.state.gold >= monthlyFee) {
+                            Player.state.gold -= monthlyFee;
+                        }
+                        continue;
+                    }
+                    // NPC apartment unit
+                    var person = findPerson(unit.occupantId);
+                    if (!person || !person.alive) {
+                        // Death cleanup ΓÇö vacate unit
+                        unit.occupantId = null;
+                        unit.occupantType = null;
+                        unit.purchaseDay = null;
+                        unit.purchasePrice = 0;
+                        continue;
+                    }
+                    if ((person.gold || 0) >= monthlyFee) {
+                        person.gold -= monthlyFee;
+                        // Revenue goes to building owner (kingdom or EM)
+                        if (bld.ownerId) {
+                            var aptOwnerK = findKingdom(bld.ownerId);
+                            if (aptOwnerK) {
+                                aptOwnerK.gold = (aptOwnerK.gold || 0) + monthlyFee;
+                            } else {
+                                var aptOwnerP = findPerson(bld.ownerId);
+                                if (aptOwnerP && aptOwnerP.alive) {
+                                    aptOwnerP.gold = (aptOwnerP.gold || 0) + monthlyFee;
+                                }
+                            }
+                        }
+                    } else {
+                        // Can't pay maintenance ΓÇö evict after 2 missed payments
+                        unit._missedPayments = (unit._missedPayments || 0) + 1;
+                        if (unit._missedPayments >= 2) {
+                            person.houseType = null;
+                            delete person._apartmentBuildingId;
+                            unit.occupantId = null;
+                            unit.occupantType = null;
+                            unit.purchaseDay = null;
+                            unit.purchasePrice = 0;
+                            unit._missedPayments = 0;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // --- Restored from pre-H1 extraction ---
+    function tickPlayerPropertySales() {
+        if (!world) return;
+        if (world.day % 3 !== 0) return; // Check every 3 days
+        var rng = world.rng;
+        if (!rng) return;
+
+        var playerState = typeof Player !== 'undefined' ? Player.state : null;
+        if (!playerState) return;
+
+        // Check player buildings for sale
+        var buildingsForSale = (playerState.buildings || []).filter(function(b) { return b.forSale && b.salePrice > 0; });
+
+        for (var bi = 0; bi < buildingsForSale.length; bi++) {
+            var bld = buildingsForSale[bi];
+            var town = findTown(bld.townId);
+            if (!town) continue;
+
+            var maxPrice = getPropertyMaxBuyPrice(bld, bld.townId);
+            if (bld.salePrice > maxPrice) continue; // Too expensive
+
+            // Better deals attract buyers faster (price/maxPrice ratio)
+            var priceRatio = maxPrice > 0 ? bld.salePrice / maxPrice : 1;
+            var dealBonus = priceRatio < 0.5 ? 2.0 : priceRatio < 0.7 ? 1.5 : priceRatio < 0.85 ? 1.2 : 1.0;
+
+            // Find a buyer: EMs first, then kingdom, then NPCs
+            var buyer = null;
+            var buyerType = '';
+
+            // Elite merchants ΓÇö filter to those who can actually use the building
+            var localEMs = world.people.filter(function(p) {
+                if (!p.alive || !p.isEliteMerchant || p.townId !== bld.townId) return false;
+                if ((p.gold || 0) < bld.salePrice) return false;
+                // Respect building limit from social rank
+                var maxRank = 0;
+                if (p.socialRank) { for (var kId in p.socialRank) { if ((p.socialRank[kId] || 0) > maxRank) maxRank = p.socialRank[kId]; } }
+                var rankDef = CONFIG.SOCIAL_RANKS[maxRank] || CONFIG.SOCIAL_RANKS[0];
+                var maxBuildings = rankDef.maxBuildings || 2;
+                if ((p.buildings || []).length >= maxBuildings) return false;
+                return true;
+            });
+            // Prefer EMs whose strategy matches the building type
+            if (localEMs.length > 0) {
+                var strategyMatches = localEMs.filter(function(p) {
+                    var strat = p.tradeStrategy || 'diversified';
+                    var preferred = STRATEGY_BUILDINGS[strat] || STRATEGY_BUILDINGS.diversified || [];
+                    return preferred.indexOf(bld.type) >= 0;
+                });
+                var emPool = strategyMatches.length > 0 ? strategyMatches : localEMs;
+                if (rng.chance(Math.min(0.9, 0.4 * dealBonus))) {
+                    buyer = rng.pick(emPool);
+                    buyerType = 'em';
+                }
+            }
+
+            // Kingdom
+            if (!buyer) {
+                var kingdom = findKingdom(town.kingdomId);
+                if (kingdom && (kingdom.treasury || 0) >= bld.salePrice && rng.chance(Math.min(0.7, 0.2 * dealBonus))) {
+                    buyer = kingdom;
+                    buyerType = 'kingdom';
+                }
+            }
+
+            // Wealthy NPCs
+            if (!buyer) {
+                var localNPCs = world.people.filter(function(p) {
+                    return p.alive && !p.isEliteMerchant && p.townId === bld.townId && p.wealthClass === 'upper' && (p.gold || 0) >= bld.salePrice;
+                });
+                if (localNPCs.length > 0 && rng.chance(Math.min(0.6, 0.15 * dealBonus))) {
+                    buyer = rng.pick(localNPCs);
+                    buyerType = 'npc';
+                }
+            }
+
+            if (!buyer) continue;
+
+            // Execute sale
+            var salePrice = bld.salePrice;
+            playerState.gold = (playerState.gold || 0) + salePrice;
+            playerState.stats.totalGoldEarned = (playerState.stats.totalGoldEarned || 0) + salePrice;
+            // Log to financial ledger
+            if (typeof Player !== 'undefined' && Player.logFinance) {
+                var saleBldName = findBuildingType(bld.type) ? findBuildingType(bld.type).name : bld.type;
+                Player.logFinance(salePrice, 'buildings', 'Sold ' + saleBldName);
+            }
+
+            if (buyerType === 'kingdom') {
+                buyer.treasury -= salePrice;
+            } else {
+                buyer.gold = (buyer.gold || 0) - salePrice;
+            }
+
+            // Find matching town building and transfer ownership
+            var townBld = town.buildings.find(function(tb) { return tb.ownerId === 'player' && tb.type === bld.type; });
+            if (townBld) {
+                townBld.ownerId = buyer.id;
+                townBld.forSale = false;
+            }
+
+            // Add to buyer's building tracking list so AI management works
+            if (buyerType === 'em' || buyerType === 'npc') {
+                if (!buyer.buildings) buyer.buildings = [];
+                // Avoid duplicates
+                var alreadyTracked = buyer.buildings.some(function(bb) { return bb.townId === bld.townId && bb.type === bld.type; });
+                if (!alreadyTracked) {
+                    buyer.buildings.push({ townId: bld.townId, type: bld.type });
+                }
+            }
+
+            // Remove from player buildings and release the land plot
+            var pIdx = playerState.buildings.indexOf(bld);
+            if (pIdx >= 0) playerState.buildings.splice(pIdx, 1);
+            // Building sale transfers the land too ΓÇö decrement player's land count
+            var soldBt = findBuildingType(bld.type);
+            var slotsFreed = (soldBt && soldBt.landSlots) ? soldBt.landSlots : 1;
+            if (playerState.landOwned && playerState.landOwned[bld.townId]) {
+                playerState.landOwned[bld.townId] = Math.max(0, playerState.landOwned[bld.townId] - slotsFreed);
+                if (playerState.landOwned[bld.townId] <= 0) delete playerState.landOwned[bld.townId];
+            }
+
+            var buyerName = buyerType === 'kingdom' ? buyer.name : ((buyer.firstName || '') + ' ' + (buyer.lastName || ''));
+            var soldBldName = findBuildingType(bld.type) ? findBuildingType(bld.type).name : bld.type;
+            logEvent('≡ƒÆ░ ' + buyerName + ' bought your ' + soldBldName + ' in ' + town.name + ' for ' + salePrice + 'g!');
+            if (typeof UI !== 'undefined' && UI.toast) {
+                UI.toast('≡ƒÆ░ ' + buyerName + ' bought your ' + soldBldName + ' for ' + salePrice + 'g! (+' + salePrice + 'g)', 'success', 'critical');
+            }
+        }
+
+        // Check player land for sale
+        var landForSale = playerState.landForSale || [];
+        for (var li = 0; li < landForSale.length; li++) {
+            var landListing = landForSale[li];
+            var landTown = findTown(landListing.townId);
+            if (!landTown) continue;
+
+            var maxLandPrice = getPropertyMaxBuyPrice({ type: 'land' }, landListing.townId);
+            if (landListing.price > maxLandPrice) continue;
+
+            // Find buyer
+            var landBuyer = null;
+            var landBuyerType = '';
+            var localBuyers = world.people.filter(function(p) {
+                return p.alive && p.townId === landListing.townId && (p.gold || 0) >= landListing.price;
+            });
+            if (localBuyers.length > 0 && rng.chance(0.25)) {
+                landBuyer = rng.pick(localBuyers);
+                landBuyerType = 'npc';
+            }
+
+            if (!landBuyer) continue;
+
+            // Execute land sale
+            playerState.gold = (playerState.gold || 0) + landListing.price;
+            playerState.stats.totalGoldEarned = (playerState.stats.totalGoldEarned || 0) + landListing.price;
+            if (typeof Player !== 'undefined' && Player.logFinance) {
+                Player.logFinance(landListing.price, 'land', 'Sold land in ' + landTown.name);
+            }
+            landBuyer.gold -= landListing.price;
+
+            playerState.landOwned[landListing.townId] = Math.max(0, (playerState.landOwned[landListing.townId] || 0) - 1);
+            if (playerState.landOwned[landListing.townId] <= 0) delete playerState.landOwned[landListing.townId];
+
+            var landBuyerName = (landBuyer.firstName || '') + ' ' + (landBuyer.lastName || '');
+            logEvent('≡ƒÆ░ ' + landBuyerName + ' bought your land plot in ' + landTown.name + ' for ' + landListing.price + 'g!');
+            if (typeof UI !== 'undefined' && UI.toast) {
+                UI.toast('≡ƒÆ░ ' + landBuyerName + ' bought your land in ' + landTown.name + ' for ' + landListing.price + 'g! (+' + landListing.price + 'g)', 'success', 'critical');
+            }
+
+            landForSale.splice(li, 1);
+            li--;
+        }
+    }
+
     function tickNPCPurchasing() {
         if (!world._npcPurchaseIndex) world._npcPurchaseIndex = 0;
 
@@ -20478,12 +21317,12 @@
             Engine.tickNPCMerchantTravel();
             Engine.tickFamilyMembers();
             Engine.tickEliteMerchantAI();
-            tickNPCCaravans();     // Process caravan movement
-            tickEMCaravans();      // EM caravan hiring decisions
-            tickKingdomCaravans(); // Kingdom supply caravans
-            tickKingdomMedicalLogistics(); // Emergency medical supply transport
-            tickNPCRetailBuildings();
-            npcOptimizeProduction();
+            Engine.tickNPCCaravans();     // Process caravan movement
+            Engine.tickEMCaravans();      // EM caravan hiring decisions
+            Engine.tickKingdomCaravans(); // Kingdom supply caravans
+            Engine.tickKingdomMedicalLogistics(); // Emergency medical supply transport
+            Engine.tickNPCRetailBuildings();
+            Engine.npcOptimizeProduction();
             tickNPCPurchasing();
             tickNPCHousingAI();
             tickHousingRentalAI();
@@ -20994,6 +21833,7 @@
         distributeConstructionWages: distributeConstructionWages,
         rebuildBridge: rebuildBridge,
         destroyBridge: destroyBridge,
+        _expandGoodsToTiers: _expandGoodsToTiers,
         buildNewRoad: buildNewRoad,
         checkWaterPath: checkWaterPath,
         computeRoadImportance: computeRoadImportance,
@@ -21264,10 +22104,10 @@
             return town ? getMarketPrice(town, resourceId) : 0;
         },
         collectTradeTax(kingdomId, amount) { Engine.collectTradeTax(kingdomId, amount); },
-        tickHospitals() { tickHospitalTreatment(); },
-        getHospitalFees(townId) { return getHospitalFees(townId); },
-        toggleMedicalAutobuy(townId, buildingId) { return toggleMedicalAutobuy(townId, buildingId); },
-        kickPatientFromQueue(townId, buildingId, personId) { return kickPatientFromQueue(townId, buildingId, personId); },
+        tickHospitals() { Engine.tickHospitalTreatment(); },
+        getHospitalFees(townId) { return Engine.getHospitalFees(townId); },
+        toggleMedicalAutobuy(townId, buildingId) { return Engine.toggleMedicalAutobuy(townId, buildingId); },
+        kickPatientFromQueue(townId, buildingId, personId) { return Engine.kickPatientFromQueue(townId, buildingId, personId); },
         getMarketPrice(town, resourceId) { return getMarketPrice(town, resourceId); },
         computeMilitaryStrength(id) {
             if (!world) return 0;
@@ -22446,6 +23286,17 @@
                 strength: k._conspiracy.strength,
                 detected: k._conspiracy.detected
             };
+        },
+
+        /**
+         * Load saved game data — deserializes engine state.
+         * Accepts a plain object (as returned by serialize()).
+         */
+        load(data) {
+            if (typeof data === 'string') {
+                try { data = JSON.parse(data); } catch (e) { return; }
+            }
+            if (data) this.deserialize(data);
         },
     };
 

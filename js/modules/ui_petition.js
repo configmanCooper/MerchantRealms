@@ -1285,7 +1285,7 @@
         toast(result.message, result.success ? 'success' : 'error');
         if (result.success) {
             closeModal();
-            openSpecialStartPanel();
+            UI.openSpecialStartPanel();
         }
     }
 
