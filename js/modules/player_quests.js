@@ -1,0 +1,2492 @@
+// ============================================================
+// Merchant Realms — Player Quests Module (extracted from player.js)
+// Extends window.Player with Town Quests, Kingdom Quests,
+// NPC Interactions, and Guild Membership functions
+// ============================================================
+(function(Player) {
+    "use strict";
+    if (!Player) throw new Error("Player must be loaded before player_quests.js");
+
+    var player;
+    function _sync() { player = Player.state; }
+    // ========================================================
+    // §16B TOWN QUESTS SYSTEM
+    // ========================================================
+
+    var _nextQuestId = 1;
+
+    // Quest type definitions: ~50 types across categories
+    var TOWN_QUEST_TYPES = [
+        // ---- GENERIC (always available) ----
+        { id: 'food_drive', category: 'generic', title: 'Food Drive', resources: ['bread','meat','eggs','poultry','fish','vegetables'], qtyRange: [8,30], timeRange: [20,40],
+          descFn: function(t,r,q) { return 'Many in '+t.name+' are struggling to feed their families. The town council is calling for donations of '+q+' '+r.name+' to distribute to the needy.'; } },
+        { id: 'fuel_supply', category: 'generic', title: 'Fuel for Hearths', resources: ['wood'], qtyRange: [15,50], timeRange: [20,45],
+          descFn: function(t,r,q) { return 'Firewood stores in '+t.name+' are running low. Residents need '+q+' '+r.name+' to keep their hearths burning.'; } },
+        { id: 'tool_request', category: 'generic', title: 'Tools for Craftsmen', resources: ['tools'], qtyRange: [3,12], timeRange: [25,45],
+          descFn: function(t,r,q) { return 'Local craftsmen in '+t.name+' are in desperate need of '+q+' sets of '+r.name+'. Their old ones have worn out and workshops sit idle.'; } },
+        { id: 'cloth_donation', category: 'generic', title: 'Clothing the Needy', resources: ['cloth','clothes'], qtyRange: [5,20], timeRange: [20,40],
+          descFn: function(t,r,q) { return 'With the changing seasons, many in '+t.name+' lack proper attire. '+q+' units of '+r.name+' would help clothe those in need.'; } },
+        { id: 'construction_aid', category: 'generic', title: 'Town Construction Project', resources: ['planks','stone','bricks'], qtyRange: [10,40], timeRange: [25,50],
+          descFn: function(t,r,q) { return t.name+' has begun a public construction project but lacks materials. They need '+q+' '+r.name+' to proceed.'; } },
+        { id: 'salt_preservation', category: 'generic', title: 'Salt for Preservation', resources: ['salt'], qtyRange: [8,25], timeRange: [20,40],
+          descFn: function(t,r,q) { return 'Butchers and fishmongers in '+t.name+' need '+q+' '+r.name+' to preserve their stock before it spoils.'; } },
+        { id: 'leather_goods', category: 'generic', title: 'Leather for the Cobbler', resources: ['leather','hide'], qtyRange: [5,18], timeRange: [20,40],
+          descFn: function(t,r,q) { return 'The cobbler and saddlemaker in '+t.name+' are running low on materials. They need '+q+' '+r.name+' to fill orders.'; } },
+        { id: 'tavern_restock', category: 'generic', title: 'Tavern Running Dry', resources: ['ale','wine','mead','cider'], qtyRange: [6,25], timeRange: [15,35],
+          descFn: function(t,r,q) { return 'The tavern in '+t.name+' is nearly out of drinks! The tavernkeep urgently needs '+q+' '+r.name+' before patrons riot.'; } },
+        { id: 'rope_needed', category: 'generic', title: 'Rope for the Docks', resources: ['rope','hemp'], qtyRange: [5,20], timeRange: [20,40],
+          descFn: function(t,r,q) { return 'Workers in '+t.name+' need '+q+' '+r.name+' for construction and rigging. Can you supply them?'; } },
+        { id: 'iron_request', category: 'generic', title: 'Iron for the Smith', resources: ['iron','iron_ore'], qtyRange: [5,18], timeRange: [25,45],
+          descFn: function(t,r,q) { return 'The blacksmith in '+t.name+' has run out of raw materials. '+q+' '+r.name+' would get the forge roaring again.'; } },
+        { id: 'honey_request', category: 'generic', title: 'Honey for the Healers', resources: ['honey'], qtyRange: [4,15], timeRange: [20,40],
+          descFn: function(t,r,q) { return 'Apothecaries in '+t.name+' use honey in many remedies. They are requesting '+q+' '+r.name+' from any willing merchant.'; } },
+        { id: 'furniture_needed', category: 'generic', title: 'Furnishing New Homes', resources: ['furniture'], qtyRange: [3,10], timeRange: [25,50],
+          descFn: function(t,r,q) { return 'New families have moved to '+t.name+' and need furniture. '+q+' pieces of '+r.name+' are needed for their homes.'; } },
+
+        // ---- WAR/CONFLICT ----
+        { id: 'war_bandages', category: 'war', title: 'Bandages for the Wounded', resources: ['bandages'], qtyRange: [10,40], timeRange: [15,30],
+          descFn: function(t,r,q) { return '⚔️ War rages and wounded soldiers pour into '+t.name+'. The healers desperately need '+q+' '+r.name+' to treat the injured.'; } },
+        { id: 'war_weapons', category: 'war', title: 'Arms for the Militia', resources: ['swords','bows'], qtyRange: [4,15], timeRange: [20,40],
+          descFn: function(t,r,q) { return '⚔️ With war threatening '+t.name+', the town guard needs '+q+' '+r.name+' to arm the local militia.'; } },
+        { id: 'war_armor', category: 'war', title: 'Armor for Defenders', resources: ['armor'], qtyRange: [3,10], timeRange: [25,45],
+          descFn: function(t,r,q) { return '⚔️ '+t.name+'\'s defenders lack proper protection. They urgently request '+q+' sets of '+r.name+'.'; } },
+        { id: 'war_provisions', category: 'war', title: 'Provisions for Troops', resources: ['preserved_food','bread','meat'], qtyRange: [10,35], timeRange: [15,35],
+          descFn: function(t,r,q) { return '⚔️ Soldiers stationed near '+t.name+' are running low on rations. Supply '+q+' '+r.name+' to feed the troops.'; } },
+        { id: 'war_horses', category: 'war', title: 'Horses for the Cavalry', resources: ['horses'], qtyRange: [2,6], timeRange: [25,45],
+          descFn: function(t,r,q) { return '⚔️ The cavalry is undermounted! '+t.name+' needs '+q+' war '+r.name+' to bolster the kingdom\'s mounted forces.'; } },
+        { id: 'war_arrows', category: 'war', title: 'Arrows for the Archers', resources: ['arrows'], qtyRange: [15,50], timeRange: [15,30],
+          descFn: function(t,r,q) { return '⚔️ Archers defending '+t.name+' are running low on ammunition. They need '+q+' bundles of '+r.name+' immediately.'; } },
+
+        // ---- PLAGUE/ILLNESS ----
+        { id: 'plague_medicine', category: 'plague', title: 'Medicine for the Sick', resources: ['herbal_remedy','healing_tonic'], qtyRange: [5,20], timeRange: [15,30],
+          descFn: function(t,r,q) { return '🏥 A plague ravages '+t.name+'! Healers urgently need '+q+' '+r.name+' to treat the afflicted.'; } },
+        { id: 'plague_bandages', category: 'plague', title: 'Bandages for Plague Victims', resources: ['bandages'], qtyRange: [10,35], timeRange: [15,30],
+          descFn: function(t,r,q) { return '🏥 The plague in '+t.name+' has overwhelmed the infirmary. '+q+' '+r.name+' are desperately needed.'; } },
+        { id: 'plague_tonics', category: 'plague', title: 'Fever Tonics Needed', resources: ['fever_tonic','healing_tonic'], qtyRange: [4,15], timeRange: [15,30],
+          descFn: function(t,r,q) { return '🏥 Fever has gripped '+t.name+'. Apothecaries need '+q+' '+r.name+' before more people succumb.'; } },
+        { id: 'plague_antidotes', category: 'plague', title: 'Antidotes Required', resources: ['antidote'], qtyRange: [3,10], timeRange: [20,35],
+          descFn: function(t,r,q) { return '🏥 A mysterious ailment in '+t.name+' requires rare antidotes. '+q+' '+r.name+' could save dozens of lives.'; } },
+        { id: 'plague_herbs', category: 'plague', title: 'Herbs for the Apothecary', resources: ['herbs'], qtyRange: [8,30], timeRange: [15,30],
+          descFn: function(t,r,q) { return '🏥 The apothecary in '+t.name+' has exhausted their supply of herbs fighting the plague. '+q+' '+r.name+' are needed.'; } },
+
+        // ---- BLIGHT/DROUGHT ----
+        { id: 'blight_wheat', category: 'blight', title: 'Seed Grain Needed', resources: ['wheat'], qtyRange: [20,60], timeRange: [20,40],
+          descFn: function(t,r,q) { return '🌾 A crop blight has destroyed harvests in '+t.name+'. Farmers need '+q+' '+r.name+' for replanting.'; } },
+        { id: 'blight_food', category: 'blight', title: 'Famine Relief', resources: ['bread','meat','eggs','fish','vegetables'], qtyRange: [12,40], timeRange: [20,40],
+          descFn: function(t,r,q) { return '🌾 With crops ruined by blight, '+t.name+' faces famine. '+q+' '+r.name+' would help feed the starving populace.'; } },
+        { id: 'drought_water', category: 'drought', title: 'Water for the Thirsty', resources: ['water'], qtyRange: [20,60], timeRange: [20,40],
+          descFn: function(t,r,q) { return '☀️ Drought has parched '+t.name+'. Wells are running dry and '+q+' '+r.name+' would bring much-needed relief.'; } },
+        { id: 'drought_provisions', category: 'drought', title: 'Drought Emergency Rations', resources: ['preserved_food','bread'], qtyRange: [10,30], timeRange: [20,40],
+          descFn: function(t,r,q) { return '☀️ The drought in '+t.name+' has ruined crops and livestock are dying. '+q+' '+r.name+' are needed to prevent starvation.'; } },
+
+        // ---- FESTIVAL/CELEBRATION ----
+        { id: 'festival_ale', category: 'festival', title: 'Ale for the Festival', resources: ['ale','mead'], qtyRange: [8,30], timeRange: [15,30],
+          descFn: function(t,r,q) { return '🎉 A festival is coming to '+t.name+'! The organizers need '+q+' barrels of '+r.name+' to keep the celebrations flowing.'; } },
+        { id: 'festival_wine', category: 'festival', title: 'Wine for the Feast', resources: ['wine'], qtyRange: [5,18], timeRange: [15,30],
+          descFn: function(t,r,q) { return '🎉 '+t.name+' is preparing a grand feast! '+q+' bottles of '+r.name+' are needed for the banquet tables.'; } },
+        { id: 'festival_food', category: 'festival', title: 'Feast Provisions', resources: ['meat','bread','poultry','fish'], qtyRange: [10,35], timeRange: [15,30],
+          descFn: function(t,r,q) { return '🎉 The upcoming festival in '+t.name+' needs food! Bring '+q+' '+r.name+' for the community feast.'; } },
+        { id: 'festival_decorations', category: 'festival', title: 'Festival Decorations', resources: ['cloth','tapestry','silk'], qtyRange: [3,12], timeRange: [15,30],
+          descFn: function(t,r,q) { return '🎉 '+t.name+' is decorating for their festival. They need '+q+' '+r.name+' to adorn the town square.'; } },
+        { id: 'festival_instruments', category: 'music_festival', title: 'Instruments for Musicians', resources: ['drum','flute','lute','harp','hurdy_gurdy'], qtyRange: [2,6], timeRange: [15,30],
+          descFn: function(t,r,q) { return '🎵 A music festival in '+t.name+' needs instruments! Supply '+q+' '+r.name+' so more musicians can join the celebration.'; } },
+        { id: 'festival_luxury', category: 'festival', title: 'Gifts for Visiting Dignitaries', resources: ['jewelry','perfume','silk','fine_clothes','gold_goblet'], qtyRange: [2,6], timeRange: [20,35],
+          descFn: function(t,r,q) { return '🎉 Visiting dignitaries are expected in '+t.name+'! The town needs '+q+' '+r.name+' as welcoming gifts.'; } },
+
+        // ---- MARKET/ECONOMIC ----
+        { id: 'price_crisis', category: 'economic', title: 'Price Crisis', resources: null, qtyRange: [8,30], timeRange: [20,40],
+          descFn: function(t,r,q) { return '📈 The price of '+r.name+' in '+t.name+' has skyrocketed! Bring '+q+' '+r.name+' to help stabilize the market and ease the burden on residents.'; } },
+        { id: 'shortage_response', category: 'economic', title: 'Market Shortage', resources: null, qtyRange: [10,35], timeRange: [20,40],
+          descFn: function(t,r,q) { return '📦 '+t.name+'\'s market has completely run out of '+r.name+'! Bring '+q+' units to restock the shelves.'; } },
+        { id: 'prosperity_drive', category: 'economic', title: 'Prosperity Drive', resources: ['jewelry','wine','silk','fine_clothes','perfume','tapestry'], qtyRange: [3,10], timeRange: [25,45],
+          descFn: function(t,r,q) { return '💰 '+t.name+' is trying to attract wealthier residents. Bring '+q+' '+r.name+' to establish a luxury market.'; } },
+        { id: 'guild_supply', category: 'economic', title: 'Guild Supply Request', resources: ['iron','planks','leather','cloth','rope','tools'], qtyRange: [6,20], timeRange: [20,40],
+          descFn: function(t,r,q) { return '🏛️ The local guild in '+t.name+' has a large order to fill. They need '+q+' '+r.name+' and will pay handsomely.'; } },
+
+        // ---- BUILDING/INFRASTRUCTURE ----
+        { id: 'road_materials', category: 'infrastructure', title: 'Road Repair Materials', resources: ['stone','bricks'], qtyRange: [12,40], timeRange: [25,45],
+          descFn: function(t,r,q) { return '🛤️ Roads near '+t.name+' have fallen into disrepair. '+q+' '+r.name+' are needed for restoration work.'; } },
+        { id: 'building_materials', category: 'infrastructure', title: 'Materials for New Building', resources: ['planks','bricks','stone','iron'], qtyRange: [10,35], timeRange: [25,50],
+          descFn: function(t,r,q) { return '🏗️ A new building is being constructed in '+t.name+' but work has stalled. '+q+' '+r.name+' are needed to continue.'; } },
+        { id: 'wall_repair', category: 'infrastructure', title: 'Repair the Town Walls', resources: ['stone','bricks'], qtyRange: [15,50], timeRange: [25,50],
+          descFn: function(t,r,q) { return '🧱 The walls of '+t.name+' have crumbled in places. '+q+' '+r.name+' are needed to shore up defenses.'; } },
+        { id: 'dock_repair', category: 'port', title: 'Dock Repairs Needed', resources: ['planks','rope'], qtyRange: [8,25], timeRange: [20,40],
+          descFn: function(t,r,q) { return '⚓ The docks in '+t.name+' are rotting and dangerous. '+q+' '+r.name+' are needed for urgent repairs.'; } },
+
+        // ---- CULTURAL/SOCIAL ----
+        { id: 'noble_gift', category: 'cultural', title: 'Gift for a Noble Visitor', resources: ['jewelry','gold_goblet','pearl_jewelry','wine','silk'], qtyRange: [1,4], timeRange: [15,30],
+          descFn: function(t,r,q) { return '👑 A noble is visiting '+t.name+' and the town wishes to present a gift. They need '+q+' '+r.name+' of fine quality.'; } },
+        { id: 'church_supplies', category: 'cultural', title: 'Supplies for the Temple', resources: ['honey','wine','herbs'], qtyRange: [5,18], timeRange: [20,40],
+          descFn: function(t,r,q) { return '⛪ The local temple in '+t.name+' needs supplies for their ceremonies. '+q+' '+r.name+' would be greatly appreciated.'; } },
+        { id: 'fine_clothing_ceremony', category: 'cultural', title: 'Finery for a Ceremony', resources: ['fine_clothes','silk','cloth'], qtyRange: [3,10], timeRange: [20,40],
+          descFn: function(t,r,q) { return '👗 A grand ceremony is being planned in '+t.name+'. '+q+' units of '+r.name+' are needed for ceremonial garments.'; } },
+
+        // ---- SEASONAL ----
+        { id: 'winter_prep', category: 'seasonal', title: 'Winter Preparations', resources: ['wood','wool','preserved_food'], qtyRange: [10,35], timeRange: [20,40],
+          descFn: function(t,r,q) { return '❄️ Winter approaches '+t.name+' and stockpiles are thin. '+q+' '+r.name+' would help the town survive the cold months.'; } },
+        { id: 'harvest_celebration', category: 'seasonal', title: 'Harvest Festival Supplies', resources: ['wheat','vegetables','ale','bread'], qtyRange: [10,30], timeRange: [20,35],
+          descFn: function(t,r,q) { return '🍂 '+t.name+' is celebrating the harvest! Bring '+q+' '+r.name+' for the festivities.'; } },
+        { id: 'spring_planting', category: 'seasonal', title: 'Seeds for Spring', resources: ['wheat','herbs','hemp'], qtyRange: [12,40], timeRange: [20,40],
+          descFn: function(t,r,q) { return '🌱 Spring has come to '+t.name+' and farmers need seed stock. '+q+' '+r.name+' would get the fields planted.'; } },
+        { id: 'summer_fair', category: 'seasonal', title: 'Summer Fair Goods', resources: ['wine','jewelry','perfume','silk','fine_clothes'], qtyRange: [3,10], timeRange: [20,35],
+          descFn: function(t,r,q) { return '☀️ '+t.name+' is hosting a summer fair! Merchants are seeking '+q+' '+r.name+' to sell at the event.'; } },
+
+        // ---- PERFORMANCE (music quests) ----
+        { id: 'concert_performance', category: 'performance', title: 'Town Concert', resources: null, qtyRange: [0,0], timeRange: [15,30], isPerformance: true,
+          skillReq: { min: 26 },
+          descFn: function(t,r,q) { return '🎵 The people of '+t.name+' are in need of entertainment! Perform a concert in the town square. You\'ll need a musical instrument and at least Competent skill level.'; } },
+        { id: 'tavern_show', category: 'performance', title: 'Tavern Entertainment', resources: null, qtyRange: [0,0], timeRange: [15,25], isPerformance: true,
+          skillReq: { min: 0 },
+          descFn: function(t,r,q) { return '🎵 The tavernkeep in '+t.name+' is looking for a bard to liven up the evenings. Bring any instrument and play for the patrons!'; } },
+        { id: 'noble_recital', category: 'performance', title: 'Recital for the Nobility', resources: null, qtyRange: [0,0], timeRange: [20,35], isPerformance: true,
+          skillReq: { min: 51 },
+          descFn: function(t,r,q) { return '🎵 A local noble in '+t.name+' desires a private musical recital. You\'ll need an instrument and Expert-level skill to impress.'; } },
+        { id: 'festival_bard', category: 'performance', title: 'Festival Bard', resources: null, qtyRange: [0,0], timeRange: [15,25], isPerformance: true,
+          skillReq: { min: 26 },
+          descFn: function(t,r,q) { return '🎵 The festival in '+t.name+' needs a bard! Bring your instrument and perform for the crowds. Competent skill or better required.'; } },
+    ];
+
+    function generateTownQuests(townId) {
+        _sync();
+        var town = Engine.findTown(townId);
+        if (!town) return;
+        var rng = Engine.getRng();
+        var day = Engine.getDay();
+
+        if (!player.townQuests) player.townQuests = {};
+        if (!player.townQuests[townId]) player.townQuests[townId] = { available: [], lastGenDay: 0 };
+        var tq = player.townQuests[townId];
+
+        // Don't regenerate too often — at most once per day
+        if (tq.lastGenDay >= day) return;
+        tq.lastGenDay = day;
+
+        // Remove expired available quests (unclaimed quests expire after 7 days)
+        tq.available = tq.available.filter(function(q) {
+            return q.status === 'available' && (day - q.postedDay) < 7;
+        });
+
+        // Target 3-6 available quests per town (scale with town size)
+        var pop = town.population || 50;
+        var maxQuests = pop >= 300 ? 6 : pop >= 150 ? 5 : pop >= 60 ? 4 : 3;
+        if (tq.available.length >= maxQuests) return;
+
+        var needed = maxQuests - tq.available.length;
+
+        // Gather context for quest selection
+        var kingdom = town.kingdomId ? Engine.findKingdom(town.kingdomId) : null;
+        var isAtWar = kingdom && kingdom.atWar && kingdom.atWar.size > 0;
+        var season = Engine.getSeason ? Engine.getSeason() : 'Summer';
+        var seasonLower = season.toLowerCase();
+        var activeEvents = [];
+        try {
+            var w = Engine.getWorld();
+            if (w && w.events) {
+                activeEvents = w.events.filter(function(ev) { return ev.active && ev.townId === townId; });
+            }
+        } catch(e) {}
+        var hasPlague = activeEvents.some(function(ev) { return ev.type === 'plague' || ev.type === 'plague_disaster'; });
+        var hasBlight = activeEvents.some(function(ev) { return ev.type === 'blight'; });
+        var hasDrought = activeEvents.some(function(ev) { return ev.type === 'drought'; });
+        var hasFestival = activeEvents.some(function(ev) { return ev.type === 'trade_festival' || ev.type === 'festival' || ev.type === 'grand_festival'; });
+        var hasMusicFestival = activeEvents.some(function(ev) { return ev.type === 'instrument_festival'; });
+        var isPort = town.isPort || false;
+        var lowProsperity = (town.prosperity || 50) < 35;
+
+        // Find market shortages and price spikes
+        var shortages = [];
+        var priceSpikes = [];
+        if (town.market) {
+            var supply = town.market.supply || {};
+            var prices = town.market.prices || {};
+            for (var rid in RESOURCE_TYPES) {
+                var res = RESOURCE_TYPES[rid];
+                var resId = res.id;
+                if (res.category === 'livestock' || res.category === 'contraband' || res.category === 'quest' || res.category === 'supplies') continue;
+                var s = supply[resId] || 0;
+                var bp = res.basePrice || 1;
+                var mp = prices[resId] || bp;
+                if (s <= 0 && (town.market.demand || {})[resId] > 0) shortages.push(resId);
+                if (mp > bp * 2.5) priceSpikes.push(resId);
+            }
+        }
+
+        // Build weighted candidate pool
+        var candidates = [];
+        var existingTypes = {};
+        for (var ei = 0; ei < tq.available.length; ei++) existingTypes[tq.available[ei].typeId] = true;
+        // Also exclude types from active quests
+        var activeQuests = player.activeQuests || [];
+        for (var ai = 0; ai < activeQuests.length; ai++) {
+            if (activeQuests[ai].townId === townId) existingTypes[activeQuests[ai].typeId] = true;
+        }
+
+        for (var qi = 0; qi < TOWN_QUEST_TYPES.length; qi++) {
+            var qt = TOWN_QUEST_TYPES[qi];
+            if (existingTypes[qt.id]) continue;
+
+            var weight = 0;
+            switch (qt.category) {
+                case 'generic': weight = 10; break;
+                case 'war': weight = isAtWar ? 25 : 0; break;
+                case 'plague': weight = hasPlague ? 30 : 0; break;
+                case 'blight': weight = hasBlight ? 30 : 0; break;
+                case 'drought': weight = hasDrought ? 30 : 0; break;
+                case 'festival': weight = hasFestival ? 25 : 0; break;
+                case 'music_festival': weight = hasMusicFestival ? 25 : 0; break;
+                case 'economic':
+                    if (qt.id === 'price_crisis') weight = priceSpikes.length > 0 ? 20 : 0;
+                    else if (qt.id === 'shortage_response') weight = shortages.length > 0 ? 20 : 0;
+                    else if (qt.id === 'prosperity_drive') weight = lowProsperity ? 15 : 3;
+                    else weight = 8;
+                    break;
+                case 'infrastructure': weight = 6; break;
+                case 'port': weight = isPort ? 12 : 0; break;
+                case 'cultural': weight = 5; break;
+                case 'seasonal':
+                    if (qt.id === 'winter_prep' && seasonLower === 'autumn') weight = 20;
+                    else if (qt.id === 'harvest_celebration' && seasonLower === 'autumn') weight = 18;
+                    else if (qt.id === 'spring_planting' && seasonLower === 'spring') weight = 18;
+                    else if (qt.id === 'summer_fair' && seasonLower === 'summer') weight = 18;
+                    else weight = 0;
+                    break;
+                case 'performance':
+                    weight = hasMusicFestival ? 15 : hasFestival ? 10 : 4;
+                    break;
+                default: weight = 5;
+            }
+
+            if (weight > 0) candidates.push({ qt: qt, weight: weight });
+        }
+
+        // Select quests using weighted random
+        for (var gi = 0; gi < needed && candidates.length > 0; gi++) {
+            var totalWeight = 0;
+            for (var wi = 0; wi < candidates.length; wi++) totalWeight += candidates[wi].weight;
+            var roll = rng.random() * totalWeight;
+            var chosen = null;
+            var chosenIdx = -1;
+            var acc = 0;
+            for (var ci = 0; ci < candidates.length; ci++) {
+                acc += candidates[ci].weight;
+                if (roll <= acc) { chosen = candidates[ci]; chosenIdx = ci; break; }
+            }
+            if (!chosen) break;
+            candidates.splice(chosenIdx, 1);
+
+            var quest = createQuestFromType(chosen.qt, town, rng, day, shortages, priceSpikes);
+            if (quest) tq.available.push(quest);
+        }
+    }
+
+    function createQuestFromType(qt, town, rng, day, shortages, priceSpikes) {
+        var resource = null;
+        var quantity = 0;
+
+        if (qt.isPerformance) {
+            // Performance quests don't need resources
+            var timeLimit = rng.randInt(qt.timeRange[0], qt.timeRange[1]);
+            var perfDifficulty = qt.skillReq ? Math.ceil(qt.skillReq.min / 25) + 1 : 1;
+            perfDifficulty = Math.max(1, Math.min(10, perfDifficulty));
+            var perfSmallBoost = Math.ceil(perfDifficulty / 2);
+            var perfRelMin = Math.max(2, perfDifficulty);
+            var perfRelMax = Math.min(20, perfDifficulty * 3);
+
+            return {
+                id: 'tq_' + (_nextQuestId++),
+                typeId: qt.id,
+                townId: town.id,
+                title: qt.title,
+                description: qt.descFn(town, {name:''}, 0),
+                resource: null,
+                quantity: 0,
+                difficulty: perfDifficulty,
+                timeLimit: timeLimit,
+                postedDay: day,
+                acceptedDay: null,
+                expiresDay: null,
+                smallRepBoost: perfSmallBoost,
+                bigRepBoost: perfSmallBoost * 4,
+                relGainMin: perfRelMin,
+                relGainMax: perfRelMax,
+                isPerformance: true,
+                skillReq: qt.skillReq || { min: 0 },
+                status: 'available',
+                category: qt.category,
+                reason: _getQuestReason(qt, town)
+            };
+        }
+
+        // Determine resource
+        var resPool = qt.resources;
+        if (qt.id === 'price_crisis' && priceSpikes.length > 0) {
+            resPool = priceSpikes;
+        } else if (qt.id === 'shortage_response' && shortages.length > 0) {
+            resPool = shortages;
+        }
+        if (!resPool || resPool.length === 0) return null;
+
+        var resId = resPool[rng.randInt(0, resPool.length - 1)];
+        var resObj = null;
+        for (var rk in RESOURCE_TYPES) {
+            if (RESOURCE_TYPES[rk].id === resId) { resObj = RESOURCE_TYPES[rk]; break; }
+        }
+        if (!resObj) return null;
+
+        // Determine quantity (scale with town pop)
+        var popScale = Math.max(0.5, Math.min(2.0, (town.population || 100) / 200));
+        var minQty = Math.max(1, Math.round(qt.qtyRange[0] * popScale));
+        var maxQty = Math.max(minQty, Math.round(qt.qtyRange[1] * popScale));
+        quantity = rng.randInt(minQty, maxQty);
+
+        // Calculate difficulty based on total cost
+        var totalCost = quantity * (resObj.basePrice || 1);
+        var difficulty;
+        if (totalCost < 50) difficulty = rng.randInt(1, 2);
+        else if (totalCost < 200) difficulty = rng.randInt(2, 4);
+        else if (totalCost < 500) difficulty = rng.randInt(4, 6);
+        else if (totalCost < 1000) difficulty = rng.randInt(6, 8);
+        else difficulty = rng.randInt(8, 10);
+
+        var smallRepBoost = Math.max(1, Math.ceil(difficulty / 2));
+        var bigRepBoost = smallRepBoost * 4;
+        var timeLimit = rng.randInt(qt.timeRange[0], qt.timeRange[1]);
+        // More difficult quests get extra time
+        if (difficulty >= 6) timeLimit = Math.round(timeLimit * 1.3);
+        if (difficulty >= 8) timeLimit = Math.round(timeLimit * 1.2);
+
+        var relGainMin = Math.max(3, Math.floor(difficulty * 1.5));
+        var relGainMax = Math.min(30, Math.ceil(difficulty * 4));
+
+        var description = qt.descFn(town, resObj, quantity);
+        var reason = _getQuestReason(qt, town);
+
+        // Check if resource is already in local market — donate only, easier quest
+        var donateOnly = false;
+        if (town && town.market && town.market.supply && (town.market.supply[resId] || 0) >= quantity) {
+            donateOnly = true;
+            var marketValue = quantity * (town.market.prices && town.market.prices[resId] ? town.market.prices[resId] : (resObj.basePrice || 1));
+            difficulty = marketValue > 1000 ? 2 : 1;
+            smallRepBoost = Math.max(1, Math.ceil(difficulty / 2));
+            bigRepBoost = smallRepBoost * 4;
+            relGainMin = Math.max(3, Math.floor(difficulty * 1.5));
+            relGainMax = Math.min(30, Math.ceil(difficulty * 4));
+        }
+
+        return {
+            id: 'tq_' + (_nextQuestId++),
+            typeId: qt.id,
+            townId: town.id,
+            title: qt.title,
+            description: description,
+            resource: resId,
+            quantity: quantity,
+            difficulty: difficulty,
+            timeLimit: timeLimit,
+            postedDay: day,
+            acceptedDay: null,
+            expiresDay: null,
+            smallRepBoost: smallRepBoost,
+            bigRepBoost: bigRepBoost,
+            relGainMin: relGainMin,
+            relGainMax: relGainMax,
+            isPerformance: false,
+            donateOnly: donateOnly,
+            skillReq: null,
+            status: 'available',
+            category: qt.category,
+            reason: reason
+        };
+    }
+
+    function _getQuestReason(qt, town) {
+        switch (qt.category) {
+            case 'war': return 'The kingdom is at war and ' + town.name + ' needs support.';
+            case 'plague': return 'A plague is ravaging ' + town.name + '.';
+            case 'blight': return 'A crop blight has struck the farms around ' + town.name + '.';
+            case 'drought': return 'A drought has dried up water sources near ' + town.name + '.';
+            case 'festival': case 'music_festival': return 'A festival is being held in ' + town.name + '.';
+            case 'seasonal': return 'Seasonal needs in ' + town.name + '.';
+            case 'port': return town.name + ' is a port town with maritime needs.';
+            case 'economic':
+                if (qt.id === 'price_crisis') return 'Market prices have spiked in ' + town.name + '.';
+                if (qt.id === 'shortage_response') return 'A market shortage has hit ' + town.name + '.';
+                if (qt.id === 'prosperity_drive') return town.name + '\'s prosperity is declining.';
+                return 'Economic opportunity in ' + town.name + '.';
+            default: return null;
+        }
+    }
+
+    function acceptTownQuest(questId) {
+        _sync();
+        if (!player.townQuests) player.townQuests = {};
+        if (!player.activeQuests) player.activeQuests = [];
+
+        // Max 5 active quests
+        if (player.activeQuests.length >= 5) {
+            return { success: false, message: 'You can only have 5 active quests at a time. Complete or abandon one first.' };
+        }
+
+        // Check if already accepted
+        for (var _aci = 0; _aci < player.activeQuests.length; _aci++) {
+            if (player.activeQuests[_aci].id === questId) {
+                return { success: false, message: 'You have already accepted this quest!' };
+            }
+        }
+
+        // Find the quest in available pools
+        var found = null;
+        var foundTownId = null;
+        for (var tid in player.townQuests) {
+            if (!player.townQuests.hasOwnProperty(tid)) continue;
+            var tqObj = player.townQuests[tid];
+            if (!tqObj || !tqObj.available) continue;
+            var avail = tqObj.available;
+            for (var i = 0; i < avail.length; i++) {
+                if (avail[i].id === questId) {
+                    found = avail[i];
+                    foundTownId = tid;
+                    break;
+                }
+            }
+            if (found) break;
+        }
+        if (!found) {
+            console.warn('[QuestBug] acceptTownQuest failed for', questId, 'townQuests keys:', Object.keys(player.townQuests), 'activeQuests:', player.activeQuests.map(function(q) { return q.id; }));
+            return { success: false, message: 'Quest not found — it may have expired. Try refreshing the quest panel.' };
+        }
+
+        var day = Engine.getDay();
+        found.status = 'accepted';
+        found.acceptedDay = day;
+        found.expiresDay = day + found.timeLimit;
+
+        // Move from available to active
+        player.townQuests[foundTownId].available = player.townQuests[foundTownId].available.filter(function(q) { return q.id !== questId; });
+        player.activeQuests.push(found);
+
+        Engine.logEvent('📋 Accepted town quest: ' + found.title + ' in ' + (Engine.findTown(foundTownId) || {}).name);
+        return { success: true, message: 'Quest accepted! You have ' + found.timeLimit + ' days to complete it.', quest: found };
+    }
+
+    function completeTownQuest(questId, donate) {
+        _sync();
+        if (!player.activeQuests) return { success: false, message: 'No active quests.' };
+        var idx = -1;
+        for (var i = 0; i < player.activeQuests.length; i++) {
+            if (player.activeQuests[i].id === questId) { idx = i; break; }
+        }
+        if (idx === -1) return { success: false, message: 'Quest not found in active quests.' };
+
+        var quest = player.activeQuests[idx];
+        var town = Engine.findTown(quest.townId);
+        var rng = Engine.getRng();
+        var day = Engine.getDay();
+
+        // Force donate if quest is donate-only (item was in market when posted)
+        if (quest.donateOnly) donate = true;
+
+        // Check if expired
+        if (quest.expiresDay && day > quest.expiresDay) {
+            return { success: false, message: 'This quest has expired!' };
+        }
+
+        if (quest.isPerformance) {
+            // Performance quest: check instrument and skill
+            var bestInst = null;
+            var bestSkill = 0;
+            var instSkill = player.instrumentSkill || {};
+            for (var iid in instSkill) {
+                var qty = (player.inventory[iid] || 0) + ((player.townStorage[player.townId] || {})[iid] || 0);
+                if (qty > 0 && instSkill[iid] >= (quest.skillReq ? quest.skillReq.min : 0)) {
+                    if (instSkill[iid] > bestSkill) { bestSkill = instSkill[iid]; bestInst = iid; }
+                }
+            }
+            if (!bestInst) {
+                return { success: false, message: 'You need a musical instrument in your inventory and sufficient skill level (' + (quest.skillReq ? quest.skillReq.min : 0) + '+) to complete this quest.' };
+            }
+
+            // Advance time for performance
+            if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(5);
+        } else {
+            // Resource quest: check inventory + town storage
+            var invQty = player.inventory[quest.resource] || 0;
+            var tsQty = (player.townStorage[quest.townId] || {})[quest.resource] || 0;
+            var totalAvail = invQty + tsQty;
+
+            if (totalAvail < quest.quantity) {
+                return { success: false, message: 'You need ' + quest.quantity + ' ' + quest.resource + ' but only have ' + totalAvail + '. Check your inventory and town storage.' };
+            }
+
+            // Remove resources: prioritize town storage, then inventory
+            var remaining = quest.quantity;
+            if (tsQty > 0 && remaining > 0) {
+                var fromTs = Math.min(tsQty, remaining);
+                if (!player.townStorage[quest.townId]) player.townStorage[quest.townId] = {};
+                player.townStorage[quest.townId][quest.resource] = (player.townStorage[quest.townId][quest.resource] || 0) - fromTs;
+                if (player.townStorage[quest.townId][quest.resource] <= 0) delete player.townStorage[quest.townId][quest.resource];
+                remaining -= fromTs;
+            }
+            if (remaining > 0) {
+                player.inventory[quest.resource] = (player.inventory[quest.resource] || 0) - remaining;
+                if (player.inventory[quest.resource] <= 0) player.inventory[quest.resource] = 0;
+            }
+        }
+
+        // Calculate rewards
+        var repBoost = donate ? quest.bigRepBoost : quest.smallRepBoost;
+        var goldReward = 0;
+
+        if (!donate && !quest.isPerformance) {
+            // Sell at market price
+            var resObj = null;
+            for (var rk in RESOURCE_TYPES) { if (RESOURCE_TYPES[rk].id === quest.resource) { resObj = RESOURCE_TYPES[rk]; break; } }
+            var marketPrice = resObj ? resObj.basePrice : 5;
+            if (town && town.market && town.market.prices && town.market.prices[quest.resource]) {
+                marketPrice = town.market.prices[quest.resource];
+            }
+            goldReward = Math.floor(quest.quantity * marketPrice);
+            player.gold += goldReward;
+        }
+
+        // Apply town reputation boost
+        Player.modifyTownReputation(quest.townId, repBoost);
+
+        // Apply 1/8 kingdom reputation boost (town quests primarily boost town standing)
+        if (town && town.kingdomId && player.reputation) {
+            var kingdomRepBoost = repBoost / 8;
+            player.reputation[town.kingdomId] = Math.max(0, Math.min(100, (player.reputation[town.kingdomId] || 50) + kingdomRepBoost));
+        }
+
+        // Boost relationships with random NPCs in town
+        var relCount = rng.randInt(quest.relGainMin, quest.relGainMax);
+        var townPeople = [];
+        try {
+            var w = Engine.getWorld();
+            if (w && w.people) {
+                townPeople = w.people.filter(function(p) { return p.alive && p.townId === quest.townId; });
+            }
+        } catch(e) {}
+        // Shuffle and pick
+        var shuffled = townPeople.slice();
+        for (var si = shuffled.length - 1; si > 0; si--) {
+            var sj = rng.randInt(0, si);
+            var tmp = shuffled[si]; shuffled[si] = shuffled[sj]; shuffled[sj] = tmp;
+        }
+        var relBoostAmount = donate ? 8 : 4;
+        var boosted = 0;
+        for (var ri = 0; ri < Math.min(relCount, shuffled.length); ri++) {
+            Player.modifyRelationship(shuffled[ri].id, relBoostAmount);
+            boosted++;
+        }
+
+        // Remove from active
+        player.activeQuests.splice(idx, 1);
+
+        // Track completed
+        if (!player.completedQuestCount) player.completedQuestCount = 0;
+        player.completedQuestCount++;
+
+        var resultMsg;
+        if (quest.isPerformance) {
+            if (donate) {
+                resultMsg = '🎵 Your performance delighted the people of ' + (town ? town.name : 'the town') + '! Town reputation +' + repBoost + '. ' + boosted + ' people now think more highly of you.';
+            } else {
+                resultMsg = '🎵 You performed well in ' + (town ? town.name : 'the town') + '! Town reputation +' + repBoost + '. ' + boosted + ' people appreciated the show.';
+            }
+        } else if (donate) {
+            resultMsg = '🎁 You generously donated ' + quest.quantity + ' ' + quest.resource + ' to ' + (town ? town.name : 'the town') + '! Town reputation +' + repBoost + '. ' + boosted + ' grateful residents think better of you.';
+        } else {
+            resultMsg = '💰 You sold ' + quest.quantity + ' ' + quest.resource + ' to ' + (town ? town.name : 'the town') + ' for ' + goldReward + 'g. Town reputation +' + repBoost + '. ' + boosted + ' residents noticed your help.';
+        }
+
+        Engine.logEvent('✅ Completed quest: ' + quest.title + (donate ? ' (donated)' : ' (sold)'));
+        if (typeof UI !== 'undefined' && UI.toast) UI.toast(resultMsg, 'success', 'critical');
+
+        return { success: true, message: resultMsg, goldReward: goldReward, repBoost: repBoost, boosted: boosted };
+    }
+
+    function _applyQuestFailurePenalty(quest, reason) {
+        // Lose half the rep you would've gained by donating
+        var repPenalty = Math.ceil((quest.bigRepBoost || 2) / 2);
+        Player.modifyTownReputation(quest.townId, -repPenalty);
+
+        // Lose 1/4 kingdom reputation (mirrors the 1/4 kingdom rep bonus from completing)
+        var town = Engine.findTown(quest.townId);
+        if (town && town.kingdomId && player.reputation) {
+            var kingdomRepPenalty = Math.ceil(repPenalty / 4);
+            player.reputation[town.kingdomId] = Math.max(0, (player.reputation[town.kingdomId] || 50) - kingdomRepPenalty);
+        }
+
+        // Negative relationship with NPCs you would've helped
+        var rng = Engine.getRng();
+        var relCount = rng.randInt(quest.relGainMin || 2, quest.relGainMax || 5);
+        var townPeople = [];
+        try {
+            var w = Engine.getWorld();
+            if (w && w.people) {
+                townPeople = w.people.filter(function(p) { return p.alive && p.townId === quest.townId; });
+            }
+        } catch(e) {}
+        var shuffled = townPeople.slice();
+        for (var si = shuffled.length - 1; si > 0; si--) {
+            var sj = rng.randInt(0, si);
+            var tmp = shuffled[si]; shuffled[si] = shuffled[sj]; shuffled[sj] = tmp;
+        }
+        for (var ri = 0; ri < Math.min(relCount, shuffled.length); ri++) {
+            Player.modifyRelationship(shuffled[ri].id, -2);
+        }
+    }
+
+    function abandonTownQuest(questId) {
+        _sync();
+        if (!player.activeQuests) return { success: false, message: 'No active quests.' };
+        var idx = -1;
+        for (var i = 0; i < player.activeQuests.length; i++) {
+            if (player.activeQuests[i].id === questId) { idx = i; break; }
+        }
+        if (idx === -1) return { success: false, message: 'Quest not found.' };
+
+        var quest = player.activeQuests[idx];
+        player.activeQuests.splice(idx, 1);
+
+        _applyQuestFailurePenalty(quest, 'abandoned');
+
+        Engine.logEvent('❌ Abandoned quest: ' + quest.title);
+        var repLoss = Math.ceil((quest.bigRepBoost || 2) / 2);
+        return { success: true, message: 'Quest abandoned. (-' + repLoss + ' town rep, -' + Math.ceil(repLoss / 4) + ' kingdom rep)' };
+    }
+
+    function tickTownQuests() {
+        _sync();
+        var day = Engine.getDay();
+        if (!player.activeQuests) player.activeQuests = [];
+
+        // Check for expired active quests
+        for (var i = player.activeQuests.length - 1; i >= 0; i--) {
+            var q = player.activeQuests[i];
+            if (q.expiresDay && day > q.expiresDay) {
+                var town = Engine.findTown(q.townId);
+                var townName = town ? town.name : 'the town';
+                _applyQuestFailurePenalty(q, 'expired');
+                var _expRepLoss = Math.ceil((q.bigRepBoost || 2) / 2);
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('⏰ Quest expired: ' + q.title + ' in ' + townName + ' (-' + _expRepLoss + ' rep)', 'warning');
+                Engine.logEvent('⏰ Quest expired: ' + q.title + ' in ' + townName);
+                player.activeQuests.splice(i, 1);
+            }
+        }
+
+        // Generate quests for current town
+        if (player.townId && !player.traveling) {
+            generateTownQuests(player.townId);
+        }
+    }
+
+    function getTownQuestsForTown(townId) {
+        _sync();
+        if (!player.townQuests || !player.townQuests[townId]) return [];
+        return player.townQuests[townId].available.filter(function(q) { return q.status === 'available'; });
+    }
+
+    function getActiveQuests() {
+        _sync();
+        return player.activeQuests || [];
+    }
+
+    function getCompletedQuestCount() {
+        _sync();
+        return player.completedQuestCount || 0;
+    }
+
+    // ============================================================
+    // Kingdom Quests System
+    // ============================================================
+
+    function _getPlayerNobleRank() {
+        var maxRank = 0;
+        if (player.socialRank) {
+            for (var k in player.socialRank) {
+                if ((player.socialRank[k] || 0) > maxRank) maxRank = player.socialRank[k];
+            }
+        }
+        return maxRank;
+    }
+
+    function _getPlayerKingdomId() {
+        var citizenKingdomId = player.citizenshipKingdomId || '';
+        var maxRank = 0;
+        if (player.socialRank) {
+            for (var k in player.socialRank) {
+                if ((player.socialRank[k] || 0) > maxRank) {
+                    maxRank = player.socialRank[k];
+                    citizenKingdomId = k;
+                }
+            }
+        }
+        return citizenKingdomId;
+    }
+
+    function _evaluateKingdomTriggers(kingdom) {
+        var triggers = {};
+        if (!kingdom) return triggers;
+        var rng = Engine.getRng();
+        var day = Engine.getDay();
+
+        // War state
+        var atWar = kingdom.atWar && (kingdom.atWar.size > 0 || (Array.isArray(kingdom.atWar) && kingdom.atWar.length > 0));
+        triggers.war_active = atWar;
+        if (atWar) {
+            var warExh = kingdom.warExhaustion || 0;
+            triggers.war_losing = warExh > 50;
+            triggers.war_desperate = warExh > 75;
+        }
+        // Check recent war end
+        var activeWars = [];
+        try { activeWars = Engine.getActiveWars ? Engine.getActiveWars() : []; } catch(e) {}
+        var recentPeace = false;
+        if (!atWar && kingdom._lastWarEndDay && (day - kingdom._lastWarEndDay) < 60) recentPeace = true;
+        triggers.war_ended = recentPeace;
+        triggers.war_won = recentPeace && (kingdom._lastWarResult === 'won');
+        triggers.war_exhausted = atWar && (kingdom.warExhaustion || 0) > 40;
+        triggers.war_ending = atWar && (kingdom.warExhaustion || 0) > 60;
+        triggers.war_threat = !atWar && _hasHostileNeighbor(kingdom);
+
+        // Economy
+        triggers.low_treasury = (kingdom.gold || 0) < 5000;
+        triggers.low_prosperity = (kingdom.prosperity || 50) < 30;
+        triggers.high_prosperity = (kingdom.prosperity || 50) > 70;
+        triggers.low_happiness = (kingdom.happiness || 50) < 30;
+        triggers.low_stability = (kingdom.stability || 50) < 30;
+        triggers.unrest = (kingdom.unrest || 0) > 30;
+
+        // Plague
+        var towns = [];
+        try {
+            var w = Engine.getWorld();
+            if (w && w.towns) towns = w.towns.filter(function(t) { return t.kingdomId === kingdom.id; });
+        } catch(e) {}
+        var plagueCount = 0;
+        var foodShortage = false;
+        for (var ti = 0; ti < towns.length; ti++) {
+            if (towns[ti].plagueActive) plagueCount++;
+            if (towns[ti].foodShortage || (towns[ti].marketSupply && towns[ti].marketSupply.wheat < 10 && towns[ti].marketSupply.bread < 10)) foodShortage = true;
+        }
+        triggers.plague_active = plagueCount > 0;
+        triggers.food_shortage = foodShortage;
+        triggers.goods_shortage = foodShortage; // simplified
+
+        // Diplomatic
+        triggers.hostile_neighbor = _hasHostileNeighbor(kingdom);
+        triggers.poor_relations = _hasPoorRelations(kingdom);
+        triggers.neutral_relations = true; // always possible
+        triggers.alliance_opportunity = _hasAllianceOpportunity(kingdom);
+        triggers.embargo_active = _hasEmbargo(kingdom);
+        triggers.poor_trade = triggers.low_prosperity;
+        triggers.diplomatic_trade = !atWar;
+
+        // King personality derived
+        var kp = kingdom.kingPersonality || {};
+        triggers.corrupt_king = kp.justice === 'corrupt' || kp.greed === 'corrupt';
+
+        // General
+        triggers.normal = true;
+        triggers.disaster_recent = _hasRecentDisaster(kingdom, day);
+        triggers.fire_recent = triggers.disaster_recent;
+        triggers.infrastructure_damaged = triggers.disaster_recent;
+        triggers.crime_wave = (kingdom.unrest || 0) > 20;
+        triggers.high_crime = triggers.crime_wave;
+        triggers.criminal_at_large = rng.chance(0.3);
+        triggers.serious_criminal = rng.chance(0.15);
+        triggers.banned_goods_detected = rng.chance(0.25);
+        triggers.smuggling_detected = rng.chance(0.2);
+        triggers.corruption_detected = rng.chance(0.2);
+        triggers.corruption_suspected = rng.chance(0.15);
+        triggers.corruption_exposed = triggers.corrupt_king && rng.chance(0.1);
+        triggers.noble_dispute = rng.chance(0.25);
+        triggers.noble_conflict = triggers.noble_dispute;
+        triggers.noble_charged = rng.chance(0.1);
+        triggers.noble_rivalry = rng.chance(0.2);
+        triggers.vote_pending = rng.chance(0.15);
+        triggers.trial_pending = rng.chance(0.1);
+        triggers.bandit_activity = rng.chance(0.2);
+        triggers.border_dispute = triggers.hostile_neighbor && rng.chance(0.2);
+        triggers.price_spike = triggers.low_prosperity || rng.chance(0.1);
+        triggers.towns_unconnected = rng.chance(0.1);
+        triggers.coastal_town = rng.chance(0.3);
+        triggers.drought = rng.chance(0.1);
+        triggers.unmarried_nobles = rng.chance(0.2);
+        triggers.heir_exists = rng.chance(0.4);
+        triggers.king_old = rng.chance(0.15);
+
+        return triggers;
+    }
+
+    function _hasHostileNeighbor(kingdom) {
+        if (!kingdom.diplomaticRelations) return false;
+        for (var kid in kingdom.diplomaticRelations) {
+            if ((kingdom.diplomaticRelations[kid] || 0) < -30) return true;
+        }
+        return false;
+    }
+
+    function _hasPoorRelations(kingdom) {
+        if (!kingdom.diplomaticRelations) return false;
+        for (var kid in kingdom.diplomaticRelations) {
+            if ((kingdom.diplomaticRelations[kid] || 0) < -10) return true;
+        }
+        return false;
+    }
+
+    function _hasAllianceOpportunity(kingdom) {
+        if (!kingdom.diplomaticRelations) return false;
+        for (var kid in kingdom.diplomaticRelations) {
+            if ((kingdom.diplomaticRelations[kid] || 0) > 60) return true;
+        }
+        return false;
+    }
+
+    function _hasEmbargo(kingdom) {
+        // Simplified check: if at war, embargoes likely exist
+        var atWar = kingdom.atWar && (kingdom.atWar.size > 0 || (Array.isArray(kingdom.atWar) && kingdom.atWar.length > 0));
+        return atWar;
+    }
+
+    function _hasRecentDisaster(kingdom, day) {
+        try {
+            var w = Engine.getWorld();
+            var towns = w && w.towns ? w.towns.filter(function(t) { return t.kingdomId === kingdom.id; }) : [];
+            for (var i = 0; i < towns.length; i++) {
+                var t = towns[i];
+                if (t.lastDisasterDay && (day - t.lastDisasterDay) < 60) return true;
+                if (t.plagueActive) return true;
+            }
+        } catch(e) {}
+        return false;
+    }
+
+    function _getPersonalityWeight(kp, traitReq) {
+        // traitReq like 'militarism_high', 'justice_corrupt', 'temperament_kind'
+        var parts = traitReq.split('_');
+        var trait = parts[0];
+        var val = parts.slice(1).join('_');
+        if (!kp || !kp[trait]) return 0.5;
+
+        var traitVal = kp[trait];
+        // Map high/low to specific values
+        if (val === 'high') {
+            var highVals = {
+                militarism: ['warlike','aggressive'], ambition: ['ambitious'], courage: ['brave'],
+                intelligence: ['brilliant','clever'], greed: ['greedy','corrupt'],
+                temperament: ['stern','cruel'], tradition: ['traditional']
+            };
+            return (highVals[trait] && highVals[trait].indexOf(traitVal) >= 0) ? 2.0 : 0.5;
+        }
+        if (val === 'low') {
+            var lowVals = {
+                greed: ['generous','fair'], militarism: ['peaceful','defensive'],
+                temperament: ['kind','fair'], ambition: ['content','lazy']
+            };
+            return (lowVals[trait] && lowVals[trait].indexOf(traitVal) >= 0) ? 2.0 : 0.5;
+        }
+        // Exact match (e.g. 'justice_corrupt', 'temperament_kind')
+        return traitVal === val ? 2.5 : 0.3;
+    }
+
+    function _kqRandRange(rng, arr) {
+        if (!arr || !Array.isArray(arr) || arr.length < 2) return arr;
+        return rng.randInt(arr[0], arr[1]);
+    }
+
+    function generateKingdomQuests(kingdomId) {
+        _sync();
+        if (!kingdomId) return;
+        var day = Engine.getDay();
+        var rng = Engine.getRng();
+
+        if (!player.kingdomQuests) player.kingdomQuests = {};
+        if (!player.kingdomQuests[kingdomId]) {
+            player.kingdomQuests[kingdomId] = { available: [], active: [], completed: [], lastGenDay: 0, personalAssignment: null };
+        }
+        var kqData = player.kingdomQuests[kingdomId];
+        var playerRank = _getPlayerNobleRank();
+        if (playerRank < 4) return;
+
+        // Generate every 15 days in war, 30 days in peace
+        var kingdom = null;
+        try { kingdom = Engine.findKingdom(kingdomId); } catch(e) {}
+        if (!kingdom) return;
+
+        var atWar = kingdom.atWar && (kingdom.atWar.size > 0 || (Array.isArray(kingdom.atWar) && kingdom.atWar.length > 0));
+        var genInterval = atWar ? 15 : 30;
+        if (kqData.lastGenDay > 0 && (day - kqData.lastGenDay) < genInterval) return;
+
+        kqData.lastGenDay = day;
+        var kp = kingdom.kingPersonality || {};
+        var mood = (kingdom.kingMood && kingdom.kingMood.current) ? kingdom.kingMood.current : 'content';
+        var moodCfg = CONFIG.KING_MOOD || {};
+        var moodCatWeights = (moodCfg.questCatWeights && moodCfg.questCatWeights[mood]) || {};
+        var moodUrgencyBias = (moodCfg.urgencyBias && moodCfg.urgencyBias[mood]) || 0;
+
+        // Evaluate kingdom state triggers
+        var triggers = _evaluateKingdomTriggers(kingdom);
+
+        // Get pool
+        if (typeof KINGDOM_QUEST_POOL === 'undefined') return;
+        var pool = KINGDOM_QUEST_POOL;
+
+        // Recently completed typeIds (cooldown 60 days)
+        var recentTypeIds = {};
+        for (var ci = 0; ci < kqData.completed.length; ci++) {
+            var cq = kqData.completed[ci];
+            if (cq.completedDay && (day - cq.completedDay) < 60) {
+                recentTypeIds[cq.typeId] = true;
+            }
+        }
+        // Also exclude currently active typeIds
+        for (var ai = 0; ai < kqData.active.length; ai++) {
+            recentTypeIds[kqData.active[ai].typeId] = true;
+        }
+
+        // Score each quest type
+        var candidates = [];
+        for (var typeId in pool) {
+            var qt = pool[typeId];
+            if (qt.rank > playerRank) continue;
+            if (recentTypeIds[typeId]) continue;
+
+            // Check at least one trigger matches
+            var triggerMatch = false;
+            for (var tri = 0; tri < (qt.triggers || []).length; tri++) {
+                if (triggers[qt.triggers[tri]]) { triggerMatch = true; break; }
+            }
+            if (!triggerMatch) continue;
+
+            // Corrupt quests only for corrupt kings
+            if (qt.cat === 'corrupt' && !triggers.corrupt_king) continue;
+
+            // Calculate weight
+            var weight = 1.0;
+            var persTraits = qt.personality || [];
+            for (var pi = 0; pi < persTraits.length; pi++) {
+                weight *= _getPersonalityWeight(kp, persTraits[pi]);
+            }
+
+            // State urgency multiplier
+            if (qt.urgency === 'critical') weight *= 3.0;
+            else if (qt.urgency === 'high') weight *= 2.0;
+            else if (qt.urgency === 'low') weight *= 0.5;
+
+            // King mood favors certain quest categories
+            var catMoodW = moodCatWeights[qt.cat] || 1.0;
+            weight *= catMoodW;
+
+            candidates.push({ typeId: typeId, qt: qt, weight: Math.max(0.1, weight) });
+        }
+
+        // Pick 3-5 quests based on rank
+        var questCount = playerRank >= 6 ? 5 : playerRank >= 5 ? 4 : 3;
+        questCount = Math.min(questCount, candidates.length);
+
+        // Weighted random selection
+        var selected = [];
+        var remaining = candidates.slice();
+        for (var si = 0; si < questCount && remaining.length > 0; si++) {
+            var totalWeight = 0;
+            for (var wi = 0; wi < remaining.length; wi++) totalWeight += remaining[wi].weight;
+            var roll = rng.random() * totalWeight;
+            var cumulative = 0;
+            for (var ri = 0; ri < remaining.length; ri++) {
+                cumulative += remaining[ri].weight;
+                if (roll <= cumulative) {
+                    selected.push(remaining[ri]);
+                    remaining.splice(ri, 1);
+                    break;
+                }
+            }
+        }
+
+        // Build quest objects
+        kqData.available = [];
+        for (var qi = 0; qi < selected.length; qi++) {
+            var sel = selected[qi];
+            var quest = _buildKingdomQuest(sel.typeId, sel.qt, kingdomId, kingdom, day, rng, mood);
+            kqData.available.push(quest);
+        }
+
+        // Personal assignment chance
+        kqData.personalAssignment = null;
+        var personalChance = playerRank >= 6 ? 0.30 : playerRank >= 5 ? 0.15 : 0.05;
+        if (rng.chance(personalChance) && candidates.length > 0) {
+            // Pick highest weight candidate not already selected
+            var personalCands = candidates.filter(function(c) {
+                return !selected.some(function(s) { return s.typeId === c.typeId; });
+            });
+            if (personalCands.length > 0) {
+                personalCands.sort(function(a, b) { return b.weight - a.weight; });
+                var pSel = personalCands[0];
+                var pQuest = _buildKingdomQuest(pSel.typeId, pSel.qt, kingdomId, kingdom, day, rng, mood);
+                pQuest.isPersonal = true;
+                pQuest.urgency = 'critical';
+                // Shorter deadline for personal assignments
+                pQuest.expiresDay = day + Math.max(10, Math.floor((pQuest.expiresDay - day) * 0.6));
+                kqData.personalAssignment = pQuest;
+            }
+        }
+
+        return kqData;
+    }
+
+    function _buildVariableDelivery(kingdom, rng) {
+        // Generate context-appropriate delivery based on kingdom needs
+        var deliver = {};
+        var needs = (kingdom && kingdom.procurement && kingdom.procurement.needs) || {};
+        var needKeys = Object.keys(needs);
+        if (needKeys.length > 0) {
+            // Pick 2-3 items from actual kingdom procurement needs
+            var count = rng.randInt(2, 3);
+            var picked = rng.shuffle(needKeys.slice()).slice(0, count);
+            for (var i = 0; i < picked.length; i++) {
+                deliver[picked[i]] = rng.randInt(10, 30);
+            }
+        } else {
+            // Fallback: generic useful goods
+            var fallbackGoods = [
+                { id: 'wheat', qty: [15, 35] }, { id: 'bread', qty: [10, 25] },
+                { id: 'meat', qty: [10, 20] }, { id: 'wood', qty: [20, 40] },
+                { id: 'stone', qty: [15, 30] }, { id: 'iron', qty: [10, 20] },
+                { id: 'cloth', qty: [10, 20] }, { id: 'tools', qty: [10, 20] }
+            ];
+            var picks = rng.shuffle(fallbackGoods.slice()).slice(0, rng.randInt(2, 3));
+            for (var j = 0; j < picks.length; j++) {
+                deliver[picks[j].id] = rng.randInt(picks[j].qty[0], picks[j].qty[1]);
+            }
+        }
+        return deliver;
+    }
+
+    function _buildKingdomQuest(typeId, qt, kingdomId, kingdom, day, rng, mood) {
+        var moodCfg = CONFIG.KING_MOOD || {};
+        mood = mood || 'content';
+        var timeLimit = qt.diff === 'elite' ? 35 : qt.diff === 'hard' ? 30 : qt.diff === 'medium' ? 25 : 20;
+        if (qt.urgency === 'critical') timeLimit = Math.max(10, timeLimit - 10);
+
+        // Build delivery requirements with randomized quantities
+        var deliverReq = null;
+        if (qt.req && qt.req.deliver) {
+            if (typeof qt.req.deliver === 'string') {
+                // 'variable' delivery — generate contextual requirements based on kingdom needs
+                deliverReq = _buildVariableDelivery(kingdom, rng);
+            } else if (typeof qt.req.deliver === 'object' && qt.req.deliver !== null) {
+                deliverReq = {};
+                for (var resId in qt.req.deliver) {
+                    var range = qt.req.deliver[resId];
+                    deliverReq[resId] = Array.isArray(range) ? _kqRandRange(rng, range) : range;
+                }
+            }
+        }
+
+        var goldReq = 0;
+        if (qt.req && qt.req.gold) {
+            goldReq = Array.isArray(qt.req.gold) ? _kqRandRange(rng, qt.req.gold) : qt.req.gold;
+        }
+
+        var actionReq = null;
+        if (qt.req && qt.req.action) {
+            actionReq = {
+                type: qt.req.action,
+                count: qt.req.count ? _kqRandRange(rng, qt.req.count) : 1,
+                goldTarget: qt.req.gold_target ? _kqRandRange(rng, qt.req.gold_target) : 0
+            };
+        }
+
+        // Build rewards — mood affects gold generosity
+        var rewardGold = Array.isArray(qt.reward.gold) ? _kqRandRange(rng, qt.reward.gold) : (qt.reward.gold || 0);
+        var moodRewardMod = (moodCfg.rewardMod && moodCfg.rewardMod[mood]) || 1.0;
+        rewardGold = Math.round(rewardGold * moodRewardMod);
+        var rewardRep = qt.reward.rep || 3;
+        var rewardKingRel = qt.reward.kingRel || 5;
+        var rewardXp = qt.reward.xp || 30;
+
+        // Mood urgency bias — stressed/angry kings upgrade urgency
+        var moodUrgBias = (moodCfg.urgencyBias && moodCfg.urgencyBias[mood]) || 0;
+        var finalUrgency = qt.urgency || 'normal';
+        if (moodUrgBias > 0 && rng.chance(moodUrgBias)) {
+            if (finalUrgency === 'low') finalUrgency = 'normal';
+            else if (finalUrgency === 'normal') finalUrgency = 'high';
+            else if (finalUrgency === 'high') finalUrgency = 'critical';
+        }
+
+        // Special reward chance (10% for hard, 20% for elite)
+        var special = null;
+        var specialChance = qt.diff === 'elite' ? 0.20 : qt.diff === 'hard' ? 0.10 : 0.03;
+        if (rng.chance(specialChance) && typeof KINGDOM_QUEST_SPECIAL_REWARDS !== 'undefined') {
+            special = rng.pick(KINGDOM_QUEST_SPECIAL_REWARDS);
+        }
+
+        // Rejection penalty
+        var rejBase = { rep: qt.diff === 'elite' ? 4 : qt.diff === 'hard' ? 3 : 2, kingRel: qt.diff === 'elite' ? 6 : qt.diff === 'hard' ? 4 : 3 };
+
+        // Build description with dynamic details
+        var desc = qt.desc || qt.title;
+        if (deliverReq) {
+            var deliverParts = [];
+            for (var dr in deliverReq) {
+                var resName = dr;
+                try {
+                    var rType = RESOURCE_TYPES[dr.toUpperCase()];
+                    if (rType) resName = (rType.icon || '') + ' ' + rType.name;
+                } catch(e) {}
+                deliverParts.push(deliverReq[dr] + ' ' + resName);
+            }
+            desc += ' Deliver: ' + deliverParts.join(', ') + '.';
+        }
+        if (goldReq > 0 && !actionReq) {
+            desc += ' Contribute ' + goldReq + 'g to the crown.';
+        }
+        if (actionReq && actionReq.goldTarget > 0) {
+            desc += ' Raise ' + actionReq.goldTarget + 'g through this task.';
+        }
+
+        return {
+            id: 'kq_' + typeId + '_' + day + '_' + rng.randInt(100, 999),
+            typeId: typeId,
+            kingdomId: kingdomId,
+            title: qt.title,
+            description: desc,
+            category: qt.cat,
+            difficulty: qt.diff,
+            minRank: qt.rank,
+            isPersonal: false,
+            requirements: {
+                deliver: deliverReq,
+                gold: goldReq,
+                action: actionReq
+            },
+            rewards: {
+                gold: rewardGold,
+                kingdomRep: rewardRep,
+                kingRelationship: rewardKingRel,
+                xp: rewardXp,
+                special: special
+            },
+            rejectionPenalty: rejBase,
+            postedDay: day,
+            expiresDay: day + timeLimit,
+            acceptedDay: null,
+            status: 'available',
+            urgency: finalUrgency,
+            triggerCondition: (qt.triggers || [])[0] || 'normal',
+            personalityDriver: (qt.personality || [])[0] || ''
+        };
+    }
+
+    function acceptKingdomQuest(questId, kingdomId) {
+        _sync();
+        if (!kingdomId) kingdomId = _getPlayerKingdomId();
+        if (!player.kingdomQuests || !player.kingdomQuests[kingdomId]) {
+            return { success: false, message: 'No kingdom quests available.' };
+        }
+        var kqData = player.kingdomQuests[kingdomId];
+        var playerRank = _getPlayerNobleRank();
+        var day = Engine.getDay();
+
+        // Max active quests by rank
+        var maxActive = playerRank >= 6 ? 4 : playerRank >= 5 ? 3 : 2;
+        if (kqData.active.length >= maxActive) {
+            return { success: false, message: 'You already have ' + maxActive + ' active kingdom quests (max for your rank).' };
+        }
+
+        // Find quest in available or personal assignment
+        var quest = null;
+        var fromPersonal = false;
+        if (kqData.personalAssignment && kqData.personalAssignment.id === questId) {
+            quest = kqData.personalAssignment;
+            fromPersonal = true;
+        } else {
+            for (var i = 0; i < kqData.available.length; i++) {
+                if (kqData.available[i].id === questId) {
+                    quest = kqData.available[i];
+                    kqData.available.splice(i, 1);
+                    break;
+                }
+            }
+        }
+
+        if (!quest) {
+            return { success: false, message: 'Quest not found.' };
+        }
+
+        quest.status = 'active';
+        quest.acceptedDay = day;
+        kqData.active.push(quest);
+        if (fromPersonal) kqData.personalAssignment = null;
+
+        // Init tracking
+        if (!player._kqVisitedTowns) player._kqVisitedTowns = {};
+        if (!player._kqGoldSpent) player._kqGoldSpent = {};
+        if (!player._kqActionDone) player._kqActionDone = {};
+
+        player._kqVisitedTowns[quest.id] = [];
+        player._kqGoldSpent[quest.id] = 0;
+        player._kqActionDone[quest.id] = false;
+
+        Engine.logEvent('📜 Accepted kingdom quest: ' + quest.title);
+        return { success: true, message: 'Quest accepted: ' + quest.title };
+    }
+
+    function rejectKingdomQuest(questId, kingdomId) {
+        _sync();
+        if (!kingdomId) kingdomId = _getPlayerKingdomId();
+        if (!player.kingdomQuests || !player.kingdomQuests[kingdomId]) {
+            return { success: false, message: 'No quest data.' };
+        }
+        var kqData = player.kingdomQuests[kingdomId];
+        var playerRank = _getPlayerNobleRank();
+        var day = Engine.getDay();
+
+        var quest = null;
+        var fromPersonal = false;
+        if (kqData.personalAssignment && kqData.personalAssignment.id === questId) {
+            quest = kqData.personalAssignment;
+            fromPersonal = true;
+        } else {
+            for (var i = 0; i < kqData.available.length; i++) {
+                if (kqData.available[i].id === questId) {
+                    quest = kqData.available[i];
+                    kqData.available.splice(i, 1);
+                    break;
+                }
+            }
+        }
+        if (!quest) return { success: false, message: 'Quest not found.' };
+
+        // L1: Rejection cooldown — track rejections, double penalty after 2 in 30 days
+        if (!player._kqRejections) player._kqRejections = [];
+        // Prune old rejections (>30 days)
+        var _now = Engine.getDay();
+        player._kqRejections = player._kqRejections.filter(function(r) { return _now - r < 30; });
+        var _rejectCount = player._kqRejections.length;
+        var _cooldownMult = _rejectCount >= 2 ? 2.0 : 1.0;
+
+        // Calculate rejection penalty
+        var basePenalty = quest.rejectionPenalty || { rep: 2, kingRel: 3 };
+        var rankMult = playerRank >= 6 ? 2.5 : playerRank >= 5 ? 1.5 : 1.0;
+        var urgencyMult = quest.urgency === 'critical' ? 2.5 : quest.urgency === 'high' ? 1.5 : quest.urgency === 'low' ? 0.5 : 1.0;
+
+        // King temperament
+        var kingdom = null;
+        try { kingdom = Engine.findKingdom(kingdomId); } catch(e) {}
+        var kp = kingdom ? (kingdom.kingPersonality || {}) : {};
+        var tempMult = kp.temperament === 'cruel' ? 2.0 : kp.temperament === 'stern' ? 1.5 : kp.temperament === 'kind' ? 0.7 : 1.0;
+
+        var personalMult = fromPersonal ? 2.0 : 1.0;
+
+        var repLoss = Math.ceil(basePenalty.rep * rankMult * urgencyMult * tempMult * personalMult * _cooldownMult);
+        var relLoss = Math.ceil(basePenalty.kingRel * rankMult * urgencyMult * tempMult * personalMult * _cooldownMult);
+
+        Player.modifyReputation(kingdomId, -repLoss);
+        if (kingdom && kingdom.king) {
+            Player.modifyRelationship(kingdom.king, -relLoss);
+        }
+
+        // Track this rejection
+        player._kqRejections.push(_now);
+
+        if (fromPersonal) kqData.personalAssignment = null;
+
+        var _cooldownWarn = _rejectCount >= 1 ? ' ⚠️ Frequent rejections increase penalties!' : '';
+        Engine.logEvent('❌ Rejected kingdom quest: ' + quest.title + ' (-' + repLoss + ' rep, -' + relLoss + ' king rel)');
+        return { success: true, message: 'Quest rejected. (-' + repLoss + ' kingdom rep, -' + relLoss + ' king relationship)' + _cooldownWarn };
+    }
+
+    function abandonKingdomQuest(questId, kingdomId) {
+        _sync();
+        if (!kingdomId) kingdomId = _getPlayerKingdomId();
+        if (!player.kingdomQuests || !player.kingdomQuests[kingdomId]) {
+            return { success: false, message: 'No quest data.' };
+        }
+        var kqData = player.kingdomQuests[kingdomId];
+        var idx = -1;
+        for (var i = 0; i < kqData.active.length; i++) {
+            if (kqData.active[i].id === questId) { idx = i; break; }
+        }
+        if (idx < 0) return { success: false, message: 'Quest not found in active quests.' };
+
+        var quest = kqData.active[idx];
+        kqData.active.splice(idx, 1);
+
+        // Penalty same as failure
+        var repLoss = Math.ceil((quest.rewards.kingdomRep || 3) * 0.5);
+        var relLoss = Math.ceil((quest.rewards.kingRelationship || 5) * 0.5);
+        if (quest.isPersonal) { repLoss *= 2; relLoss *= 2; }
+        Player.modifyReputation(kingdomId, -repLoss);
+        var kingdom = null;
+        try { kingdom = Engine.findKingdom(kingdomId); } catch(e) {}
+        if (kingdom && kingdom.king) Player.modifyRelationship(kingdom.king, -relLoss);
+
+        // Clean up tracking
+        delete player._kqVisitedTowns[questId];
+        delete player._kqGoldSpent[questId];
+        delete player._kqActionDone[questId];
+
+        Engine.logEvent('❌ Abandoned kingdom quest: ' + quest.title);
+        return { success: true, message: 'Quest abandoned. (-' + repLoss + ' rep, -' + relLoss + ' king rel)' };
+    }
+
+    function completeKingdomQuest(questId, kingdomId) {
+        _sync();
+        if (!kingdomId) kingdomId = _getPlayerKingdomId();
+        if (!player.kingdomQuests || !player.kingdomQuests[kingdomId]) {
+            return { success: false, message: 'No quest data.' };
+        }
+        var kqData = player.kingdomQuests[kingdomId];
+        var idx = -1;
+        for (var i = 0; i < kqData.active.length; i++) {
+            if (kqData.active[i].id === questId) { idx = i; break; }
+        }
+        if (idx < 0) return { success: false, message: 'Quest not found in active quests.' };
+
+        var quest = kqData.active[idx];
+
+        // Verify all requirements are met
+        var check = checkKingdomQuestProgress(questId, kingdomId);
+        if (!check.complete) {
+            return { success: false, message: 'Quest requirements not yet met. ' + (check.remaining || '') };
+        }
+
+        // Consume delivered goods from inventory
+        if (quest.requirements.deliver) {
+            for (var resId in quest.requirements.deliver) {
+                var qty = quest.requirements.deliver[resId];
+                player.inventory[resId] = (player.inventory[resId] || 0) - qty;
+                if (player.inventory[resId] < 0) player.inventory[resId] = 0;
+            }
+        }
+
+        // Consume gold requirement
+        if (quest.requirements.gold > 0) {
+            player.gold -= quest.requirements.gold;
+            // Give gold to kingdom treasury
+            var kingdom = null;
+            try { kingdom = Engine.findKingdom(kingdomId); } catch(e) {}
+            if (kingdom) kingdom.gold = (kingdom.gold || 0) + quest.requirements.gold;
+        }
+
+        // Grant rewards (kingdom rep reduced by 40% — quests shouldn't be the dominant rep source)
+        var _bonusGold = 0;
+        var _bonusRep = 0;
+        var _bonusReasons = [];
+
+        // M6: Scaled rewards — bonus for clean completion (no failed action attempts)
+        var _attempts = player._kqActionAttempts ? (player._kqActionAttempts[questId] || 0) : 0;
+        if (_attempts <= 1) {
+            _bonusGold += Math.round(quest.rewards.gold * 0.25);
+            _bonusRep += 1;
+            _bonusReasons.push('🎯 Flawless execution (+25% gold, +1 rep)');
+        }
+        // Bonus for completing well before deadline (>50% time remaining)
+        var _daysUsed = (Engine.getDay() - (quest.acceptedDay || quest.issuedDay || 0));
+        var _totalDays = (quest.deadlineDay || 0) - (quest.acceptedDay || quest.issuedDay || 0);
+        if (_totalDays > 0 && _daysUsed < _totalDays * 0.5) {
+            _bonusGold += Math.round(quest.rewards.gold * 0.15);
+            _bonusRep += 1;
+            _bonusReasons.push('⚡ Swift completion (+15% gold, +1 rep)');
+        }
+
+        player.gold += quest.rewards.gold + _bonusGold;
+        var _nerfedRep = Math.max(1, Math.round(quest.rewards.kingdomRep * 0.6));
+        Player.modifyReputation(kingdomId, _nerfedRep + _bonusRep);
+        var kingdom2 = null;
+        try { kingdom2 = Engine.findKingdom(kingdomId); } catch(e) {}
+        if (kingdom2 && kingdom2.king) {
+            Player.modifyRelationship(kingdom2.king, quest.rewards.kingRelationship);
+        }
+        if (quest.rewards.xp) player.xp = (player.xp || 0) + quest.rewards.xp;
+
+        // Special rewards
+        if (quest.rewards.special) {
+            _applyKQSpecialReward(quest.rewards.special, kingdomId);
+        }
+
+        // Move to completed
+        quest.status = 'completed';
+        quest.completedDay = Engine.getDay();
+        kqData.active.splice(idx, 1);
+        kqData.completed.push(quest);
+        // Keep only last 50 for history
+        if (kqData.completed.length > 50) kqData.completed = kqData.completed.slice(-50);
+
+        // Clean up tracking
+        delete player._kqVisitedTowns[questId];
+        delete player._kqGoldSpent[questId];
+        delete player._kqActionDone[questId];
+
+        // Tracking for achievements
+        player._kqCompletedTotal = (player._kqCompletedTotal || 0) + 1;
+
+        // L6: Quest chains — completing certain quests unlocks follow-up directives
+        var _chainFollowUp = _checkQuestChain(quest, kingdomId);
+
+        Engine.logEvent('✅ Completed kingdom quest: ' + quest.title + ' (+' + (quest.rewards.gold + _bonusGold) + 'g, +' + (_nerfedRep + _bonusRep) + ' rep)');
+        var _bonusMsg = _bonusReasons.length > 0 ? ' ' + _bonusReasons.join(' ') : '';
+        return {
+            success: true,
+            message: '✅ Quest complete: ' + quest.title + '! Earned ' + (quest.rewards.gold + _bonusGold) + 'g, +' + (_nerfedRep + _bonusRep) + ' rep, +' + quest.rewards.kingRelationship + ' king rel' + (quest.rewards.special ? ', Special: ' + quest.rewards.special : '') + '.' + _bonusMsg + (_chainFollowUp ? ' 🔗 New follow-up directive available!' : '')
+        };
+    }
+
+    // L6: Quest chain definitions — action type → follow-up action type
+    var QUEST_CHAINS = {
+        decode: 'intercept',                 // decode messages → intercept courier
+        intercept: 'disinformation',         // intercept courier → spread disinformation
+        investigate: 'capture_criminal',     // investigate → capture criminal
+        capture_criminal: 'manhunt',         // capture → lead manhunt
+        forge_evidence: 'frame_merchant',    // forge evidence → frame merchant
+        eliminate_rival: 'silence_witness',  // eliminate rival → silence witness
+        patrol_roads: 'escort_npc',          // patrol roads → escort VIP
+        recruit_npcs: 'stay_location',       // recruit soldiers → defend position
+        sabotage_enemy: 'disinformation',    // sabotage supply → spread disinfo
+        diplomatic_mission: 'arrange_marriage', // diplomacy → broker marriage
+    };
+
+    function _checkQuestChain(completedQuest, kingdomId) {
+        if (!completedQuest || !completedQuest.requirements || !completedQuest.requirements.action) return null;
+        var actionType = completedQuest.requirements.action.type;
+        if (!actionType || !QUEST_CHAINS[actionType]) return null;
+
+        var nextActionType = QUEST_CHAINS[actionType];
+        // Check if there's a pool entry for a quest using this action type
+        if (typeof KINGDOM_QUEST_POOL === 'undefined') return null;
+        var pool = KINGDOM_QUEST_POOL;
+        var nextQuestType = null;
+        for (var typeId in pool) {
+            var qt = pool[typeId];
+            if (qt.action === nextActionType) { nextQuestType = { typeId: typeId, def: qt }; break; }
+        }
+        if (!nextQuestType) return null;
+
+        // Generate the follow-up quest and add to available
+        var kqData = player.kingdomQuests[kingdomId];
+        if (!kqData) return null;
+
+        // Don't add duplicates
+        for (var ai = 0; ai < kqData.available.length; ai++) {
+            if (kqData.available[ai].typeId === nextQuestType.typeId) return null;
+        }
+        for (var ac = 0; ac < kqData.active.length; ac++) {
+            if (kqData.active[ac].typeId === nextQuestType.typeId) return null;
+        }
+
+        // Generate simplified follow-up quest
+        var rng = Engine.getRng();
+        var day = Engine.getDay();
+        var qt2 = nextQuestType.def;
+        var followUp = {
+            id: 'kq_chain_' + nextQuestType.typeId + '_' + day,
+            typeId: nextQuestType.typeId,
+            title: '🔗 ' + (qt2.title || nextQuestType.typeId.replace(/_/g, ' ')),
+            description: (qt2.description || '') + ' (Follow-up from ' + completedQuest.title + ')',
+            category: qt2.category || completedQuest.category,
+            difficulty: qt2.difficulty || completedQuest.difficulty,
+            urgency: 'high',
+            isPersonal: true,
+            isChainQuest: true,
+            chainFrom: completedQuest.typeId,
+            expiresDay: day + (qt2.timeLimit || 30),
+            timeLimit: qt2.timeLimit || 30,
+            requirements: _buildQuestRequirements(qt2, rng),
+            rewards: {
+                gold: Math.round((qt2.baseGold || 100) * (rng ? (0.9 + rng.random() * 0.4) : 1)),
+                kingdomRep: Math.round((qt2.baseRep || 5) * 1.2),
+                kingRelationship: qt2.kingRel || 3,
+                xp: qt2.xp || 10,
+                special: qt2.special || null
+            },
+            rejectionPenalty: { rep: 1, kingRel: 1 }
+        };
+        kqData.available.push(followUp);
+        Engine.logEvent('🔗 A follow-up directive is now available: ' + followUp.title);
+        if (typeof UI !== 'undefined' && UI.toast) {
+            UI.toast('🔗 Follow-up directive available: ' + followUp.title, 'info', 'my_actions');
+        }
+        return followUp;
+    }
+
+    function _buildQuestRequirements(questDef, rng) {
+        var reqs = {};
+        if (questDef.action) {
+            reqs.action = { type: questDef.action };
+            if (questDef.action.indexOf('visit') >= 0) {
+                reqs.action.count = questDef.visitCount || 3;
+                reqs.action.townType = questDef.townType || 'any';
+            }
+        }
+        if (questDef.deliverGoods) {
+            reqs.deliver = {};
+            for (var di = 0; di < questDef.deliverGoods.length; di++) {
+                var dg = questDef.deliverGoods[di];
+                reqs.deliver[dg.id] = dg.qty || (rng ? rng.randInt(dg.min || 5, dg.max || 20) : 10);
+            }
+        }
+        if (questDef.goldReq) {
+            reqs.gold = questDef.goldReq;
+        }
+        return reqs;
+    }
+
+    function _applyKQSpecialReward(rewardType, kingdomId) {
+        var day = Engine.getDay();
+        switch (rewardType) {
+            case 'production_permit':
+                if (!player._kqSpecialRewards) player._kqSpecialRewards = [];
+                player._kqSpecialRewards.push({ type: 'production_permit', kingdomId: kingdomId, expiresDay: day + 90 });
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🏭 Granted: Production Permit (90 days)', 'success');
+                break;
+            case 'tax_exemption_30d':
+                if (!player._kqSpecialRewards) player._kqSpecialRewards = [];
+                player._kqSpecialRewards.push({ type: 'tax_exemption', kingdomId: kingdomId, expiresDay: day + 30 });
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('💰 Granted: Tax Exemption (30 days)', 'success');
+                break;
+            case 'title_boost':
+                // +3 toward next rank reputation
+                Player.modifyReputation(kingdomId, 3);
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('👑 Title Boost: +3 kingdom reputation', 'success');
+                break;
+            case 'royal_decree':
+                if (!player.guaranteedPetition) player.guaranteedPetition = {};
+                player.guaranteedPetition[kingdomId] = true;
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('📜 Granted: Royal Decree (guaranteed petition)', 'success');
+                break;
+            case 'land_grant':
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🏘️ Land Grant: +1 building slot in your town', 'success');
+                // Increase building capacity slightly
+                player._kqLandGrants = (player._kqLandGrants || 0) + 1;
+                break;
+            case 'kings_favor':
+                var kingdom = null;
+                try { kingdom = Engine.findKingdom(kingdomId); } catch(e) {}
+                if (kingdom && kingdom.king) Player.modifyRelationship(kingdom.king, 20);
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('👑 King\'s Favor: +20 king relationship', 'success');
+                break;
+            case 'military_equipment':
+                player.inventory.swords = (player.inventory.swords || 0) + 10;
+                player.inventory.armor = (player.inventory.armor || 0) + 5;
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚔️ Military Equipment: 10 swords, 5 armor', 'success');
+                break;
+            case 'trade_monopoly':
+                if (!player._kqSpecialRewards) player._kqSpecialRewards = [];
+                player._kqSpecialRewards.push({ type: 'trade_monopoly', kingdomId: kingdomId, expiresDay: day + 60 });
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('📊 Trade Monopoly granted (60 days)', 'success');
+                break;
+            case 'noble_endorsement':
+                Player.modifyReputation(kingdomId, 5);
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🏅 Noble Endorsement: +5 kingdom reputation', 'success');
+                break;
+            case 'crown_estate':
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🏰 Crown Estate: Property rights expanded', 'success');
+                player._kqLandGrants = (player._kqLandGrants || 0) + 3;
+                break;
+        }
+    }
+
+    function checkKingdomQuestProgress(questId, kingdomId) {
+        _sync();
+        if (!kingdomId) kingdomId = _getPlayerKingdomId();
+        if (!player.kingdomQuests || !player.kingdomQuests[kingdomId]) return { complete: false };
+        var kqData = player.kingdomQuests[kingdomId];
+        var quest = null;
+        for (var i = 0; i < kqData.active.length; i++) {
+            if (kqData.active[i].id === questId) { quest = kqData.active[i]; break; }
+        }
+        if (!quest) return { complete: false };
+
+        var allMet = true;
+        var remaining = [];
+
+        // Check delivery requirements
+        if (quest.requirements.deliver) {
+            for (var resId in quest.requirements.deliver) {
+                var needed = quest.requirements.deliver[resId];
+                var have = player.inventory[resId] || 0;
+                if (have < needed) {
+                    allMet = false;
+                    remaining.push((needed - have) + ' more ' + resId);
+                }
+            }
+        }
+
+        // Check gold requirement
+        if (quest.requirements.gold > 0) {
+            if (player.gold < quest.requirements.gold) {
+                allMet = false;
+                remaining.push('Need ' + (quest.requirements.gold - Math.floor(player.gold)) + ' more gold');
+            }
+        }
+
+        // Check action requirements
+        if (quest.requirements.action) {
+            var action = quest.requirements.action;
+            if (action.type === 'visit_towns' || action.type === 'visit_foreign' || action.type === 'visit_enemy_towns') {
+                var visited = player._kqVisitedTowns ? (player._kqVisitedTowns[questId] || []) : [];
+                if (visited.length < action.count) {
+                    allMet = false;
+                    remaining.push('Visit ' + (action.count - visited.length) + ' more towns');
+                }
+            } else if (action.goldTarget > 0) {
+                var spent = player._kqGoldSpent ? (player._kqGoldSpent[questId] || 0) : 0;
+                if (spent < action.goldTarget) {
+                    allMet = false;
+                    remaining.push('Raise ' + (action.goldTarget - spent) + ' more gold');
+                }
+            } else {
+                // One-off action quests
+                var done = player._kqActionDone ? (player._kqActionDone[questId] || false) : false;
+                if (!done) {
+                    allMet = false;
+                    remaining.push('Complete the required action');
+                }
+            }
+        }
+
+        return { complete: allMet, remaining: remaining.join(', '), details: remaining };
+    }
+
+    function getKingdomQuestData(kingdomId) {
+        _sync();
+        if (!kingdomId) kingdomId = _getPlayerKingdomId();
+        if (!player.kingdomQuests || !player.kingdomQuests[kingdomId]) return null;
+        return player.kingdomQuests[kingdomId];
+    }
+
+    function getActiveKingdomQuests(kingdomId) {
+        _sync();
+        if (!kingdomId) kingdomId = _getPlayerKingdomId();
+        if (!player.kingdomQuests || !player.kingdomQuests[kingdomId]) return [];
+        return player.kingdomQuests[kingdomId].active || [];
+    }
+
+    function trackKQTownVisit(questId, townId) {
+        _sync();
+        if (!player._kqVisitedTowns) player._kqVisitedTowns = {};
+        if (!player._kqVisitedTowns[questId]) player._kqVisitedTowns[questId] = [];
+        if (player._kqVisitedTowns[questId].indexOf(townId) < 0) {
+            player._kqVisitedTowns[questId].push(townId);
+        }
+    }
+
+    function trackKQGoldSpent(questId, amount) {
+        _sync();
+        if (!player._kqGoldSpent) player._kqGoldSpent = {};
+        player._kqGoldSpent[questId] = (player._kqGoldSpent[questId] || 0) + amount;
+    }
+
+    function trackKQActionDone(questId) {
+        _sync();
+        if (!player._kqActionDone) player._kqActionDone = {};
+        player._kqActionDone[questId] = true;
+    }
+
+    // ── Attempt a one-off action quest (replaces instant "Report Complete") ──
+    function attemptKQAction(questId, kingdomId) {
+        _sync();
+        if (!kingdomId) kingdomId = _getPlayerKingdomId();
+        if (!player.kingdomQuests || !player.kingdomQuests[kingdomId]) {
+            return { success: false, message: 'No quest data.' };
+        }
+        var kqData = player.kingdomQuests[kingdomId];
+        var quest = null;
+        for (var qi = 0; qi < kqData.active.length; qi++) {
+            if (kqData.active[qi].id === questId) { quest = kqData.active[qi]; break; }
+        }
+        if (!quest) return { success: false, message: 'Quest not found in active quests.' };
+
+        // Get action type from quest requirements
+        var actionType = quest.requirements.action ? quest.requirements.action.type : null;
+        if (!actionType) return { success: false, message: 'Quest has no action requirement.' };
+
+        // Look up mechanics config
+        var mech = (typeof ACTION_QUEST_MECHANICS !== 'undefined') ? ACTION_QUEST_MECHANICS[actionType] : null;
+        if (!mech) {
+            return { success: false, message: '⚠️ No mechanic defined for action type: ' + actionType + '. This quest action is not yet available.' };
+        }
+
+        // Check location requirement
+        if (mech.locationReq === 'capital') {
+            var playerTown = null;
+            try { playerTown = Engine.findTown(player.townId); } catch(e) {}
+            if (!playerTown || !playerTown.isCapital) {
+                return { success: false, message: '📍 You must be in the kingdom capital to attempt this action. Travel to the capital first.' };
+            }
+        }
+
+        // H3: stay_location requires player to be in a town (not traveling)
+        if (actionType === 'stay_location') {
+            if (player.traveling) {
+                return { success: false, message: '📍 You must be stationed in a town to defend it. Stop traveling first.' };
+            }
+            var _defTown = null;
+            try { _defTown = Engine.findTown(player.townId); } catch(e) {}
+            if (!_defTown) {
+                return { success: false, message: '📍 You must be in a town to defend a position.' };
+            }
+        }
+
+        // M5: Multi-step action logic
+        var multiStep = MULTISTEP_ACTIONS[actionType] || null;
+        var currentStep = null;
+        var currentStepIdx = 0;
+        var isMultiStep = false;
+        if (multiStep) {
+            isMultiStep = true;
+            if (!player._kqStepProgress) player._kqStepProgress = {};
+            currentStepIdx = player._kqStepProgress[questId] || 0;
+            if (currentStepIdx >= multiStep.totalSteps) {
+                // Already completed all steps
+                trackKQActionDone(questId);
+                return { success: true, actionSuccess: true, message: 'All steps already completed!', isMultiStep: true, stepCompleted: multiStep.totalSteps, totalSteps: multiStep.totalSteps };
+            }
+            currentStep = multiStep.steps[currentStepIdx];
+        }
+
+        // Check gold — use step cost if multi-step, otherwise base mechanic
+        var goldCost = isMultiStep ? (currentStep.goldCost || 0) : (mech.goldCost || 0);
+        if (goldCost > 0 && player.gold < goldCost) {
+            var stepLabel = isMultiStep ? (' (Step ' + (currentStepIdx + 1) + ': ' + currentStep.label + ')') : '';
+            return { success: false, message: '💰 Not enough gold. This action costs ' + goldCost + 'g' + stepLabel + '. You have ' + Math.floor(player.gold) + 'g.' };
+        }
+
+        // Deduct gold
+        if (goldCost > 0) {
+            player.gold -= goldCost;
+            player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + goldCost;
+        }
+
+        // Advance time (tickCost is in days, multiply by ticks per day)
+        var tickCost = isMultiStep ? (currentStep.tickCost || 1) : (mech.tickCost || 5);
+        var ticksPerDay = (typeof CONFIG !== 'undefined' && CONFIG.TICKS_PER_DAY) ? CONFIG.TICKS_PER_DAY : 60;
+        if (typeof Game !== 'undefined' && Game.advanceTicks) {
+            Game.advanceTicks(tickCost * ticksPerDay);
+        }
+
+        // Calculate success chance — use step values if multi-step
+        var baseChance = isMultiStep ? (currentStep.successBase || 0.70) : (mech.successBase || 0.60);
+        var skillBonus = 0;
+        var skillBranch = isMultiStep ? (currentStep.skillKey || mech.skillKey || 'underworld') : (mech.skillKey || 'underworld');
+
+        // Count skills in the relevant branch
+        if (player.skills && typeof PLAYER_SKILLS !== 'undefined') {
+            for (var skId in player.skills) {
+                if (player.skills[skId]) {
+                    var skDef = PLAYER_SKILLS[skId];
+                    if (skDef && skDef.branch === skillBranch) {
+                        skillBonus += 0.03; // +3% per skill in branch
+                    }
+                }
+            }
+        }
+
+        // Specific high-value skill bonuses
+        if (skillBranch === 'underworld') {
+            if (Player.hasSkill('discrete')) skillBonus += 0.05;
+            if (Player.hasSkill('master_smuggler')) skillBonus += 0.05;
+            if (Player.hasSkill('shadow_dealings')) skillBonus += 0.05;
+            if (Player.hasSkill('master_forger')) skillBonus += 0.05;
+            if (Player.hasSkill('dark_connections')) skillBonus += 0.05;
+            if (Player.hasSkill('ghost')) skillBonus += 0.05;
+        } else if (skillBranch === 'social') {
+            if (Player.hasSkill('court_etiquette')) skillBonus += 0.05;
+            if (Player.hasSkill('political_connections')) skillBonus += 0.05;
+            if (Player.hasSkill('charismatic')) skillBonus += 0.05;
+            if (Player.hasSkill('court_informant')) skillBonus += 0.05;
+            if (Player.hasSkill('royal_favor')) skillBonus += 0.05;
+        } else if (skillBranch === 'survival') {
+            if (Player.hasSkill('combat_proficiency')) skillBonus += 0.05;
+            if (Player.hasSkill('wilderness_survival')) skillBonus += 0.05;
+        }
+
+        // Difficulty scaling — harder quests are harder to succeed
+        var diffPenalty = quest.difficulty === 'elite' ? -0.15 : quest.difficulty === 'hard' ? -0.08 : 0;
+
+        var finalChance = Math.min(0.95, Math.max(0.15, baseChance + skillBonus + diffPenalty));
+
+        // Roll!
+        var rng = Engine.getRng();
+        var roll = rng ? rng.chance(finalChance) : (Math.random() < finalChance);
+
+        // Track attempt count
+        if (!player._kqActionAttempts) player._kqActionAttempts = {};
+        player._kqActionAttempts[questId] = (player._kqActionAttempts[questId] || 0) + 1;
+        var attemptNum = player._kqActionAttempts[questId];
+
+        if (roll) {
+            // Success!
+            var successConsequences = [];
+
+            // M5: Multi-step progression
+            if (isMultiStep) {
+                if (!player._kqStepProgress) player._kqStepProgress = {};
+                player._kqStepProgress[questId] = currentStepIdx + 1;
+                var isFinalStep = (currentStepIdx + 1) >= multiStep.totalSteps;
+                if (isFinalStep) {
+                    trackKQActionDone(questId);
+                    Engine.logEvent('✅ ' + (mech.label || 'Action') + ' — all steps completed! (Step ' + (currentStepIdx + 1) + '/' + multiStep.totalSteps + ': ' + currentStep.label + ')');
+                } else {
+                    var nextStep = multiStep.steps[currentStepIdx + 1];
+                    Engine.logEvent('✅ Step ' + (currentStepIdx + 1) + '/' + multiStep.totalSteps + ' complete: ' + currentStep.label + '. Next: ' + nextStep.label);
+                }
+            } else {
+                trackKQActionDone(questId);
+                Engine.logEvent('✅ ' + (mech.label || 'Action') + ' succeeded! (attempt #' + attemptNum + ')');
+            }
+
+            // M2: Corrupt quest success — gain corruption trait over time
+            if (quest.category === 'corrupt') {
+                if (!player._corruptionPoints) player._corruptionPoints = 0;
+                player._corruptionPoints += 2;
+                if (player._corruptionPoints >= 5 && !player._corruptionTrait) {
+                    player._corruptionTrait = true;
+                    successConsequences.push('🏴 Your reputation for corruption grows... (Corruption trait gained)');
+                    Engine.logEvent('🏴 ' + player.fullName + ' has gained a reputation for corruption.');
+                }
+            }
+
+            // Shake down / extort: award bonus gold on success
+            if (actionType === 'shake_down' || actionType === 'extort') {
+                var rngGold = Engine.getRng();
+                var bonusGold = rngGold ? rngGold.randInt(50, 200) : 100;
+                player.gold += bonusGold;
+                successConsequences.push('💰 Extracted ' + bonusGold + 'g from the merchant!');
+                Engine.logEvent('💰 ' + player.fullName + ' extracted ' + bonusGold + 'g from a merchant.');
+            }
+
+            // Create caravan: spawn a trade route that boosts kingdom prosperity
+            if (actionType === 'create_caravan') {
+                var _ccRng = Engine.getRng();
+                var _ccWorld = Engine.getWorld ? Engine.getWorld() : null;
+                if (_ccWorld && kingdomId) {
+                    var _ccKingdom = null;
+                    for (var _kci = 0; _kci < (_ccWorld.kingdoms || []).length; _kci++) {
+                        if (_ccWorld.kingdoms[_kci].id === kingdomId) { _ccKingdom = _ccWorld.kingdoms[_kci]; break; }
+                    }
+                    if (_ccKingdom) {
+                        if (!_ccKingdom.tradeRoutes) _ccKingdom.tradeRoutes = [];
+                        var _routeIncome = _ccRng ? _ccRng.randInt(5, 15) : 10;
+                        _ccKingdom.tradeRoutes.push({
+                            id: 'route_' + _ccWorld.day + '_' + Math.floor(Math.random() * 1000),
+                            createdDay: _ccWorld.day,
+                            income: _routeIncome,
+                            createdBy: 'player'
+                        });
+                        // Boost prosperity of 1-2 kingdom towns
+                        var _ccTowns = (_ccWorld.towns || []).filter(function(t) { return t.kingdomId === kingdomId; });
+                        for (var _cti = 0; _cti < Math.min(2, _ccTowns.length); _cti++) {
+                            _ccTowns[_cti].prosperity = Math.min(100, (_ccTowns[_cti].prosperity || 50) + 3);
+                        }
+                        successConsequences.push('🛤️ New trade route established! Kingdom gains +' + _routeIncome + 'g/month income.');
+                        Engine.logEvent('🛤️ ' + player.fullName + ' established a new trade route for the kingdom (+' + _routeIncome + 'g/month).');
+                    }
+                }
+            }
+
+            // Build building: place a building in a kingdom town
+            if (actionType === 'build_building') {
+                var _bbRng = Engine.getRng();
+                var _bbWorld = Engine.getWorld ? Engine.getWorld() : null;
+                if (_bbWorld && kingdomId) {
+                    var _bbTowns = (_bbWorld.towns || []).filter(function(t) { return t.kingdomId === kingdomId; });
+                    var _bbTown = null;
+                    // Prefer player's current town, then pick a random kingdom town
+                    for (var _bti = 0; _bti < _bbTowns.length; _bti++) {
+                        if (_bbTowns[_bti].id === player.townId) { _bbTown = _bbTowns[_bti]; break; }
+                    }
+                    if (!_bbTown && _bbTowns.length > 0) _bbTown = _bbRng ? _bbRng.pick(_bbTowns) : _bbTowns[0];
+                    if (_bbTown) {
+                        if (!_bbTown.buildings) _bbTown.buildings = [];
+                        var _bbTypes = ['workshop', 'warehouse', 'market_stall', 'tavern', 'smithy', 'mill'];
+                        var _bbType = _bbRng ? _bbRng.pick(_bbTypes) : 'workshop';
+                        _bbTown.buildings.push({
+                            id: 'bld_' + _bbWorld.day + '_' + Math.floor(Math.random() * 1000),
+                            type: _bbType,
+                            ownerId: kingdomId,
+                            condition: 100,
+                            built: _bbWorld.day
+                        });
+                        _bbTown.prosperity = Math.min(100, (_bbTown.prosperity || 50) + 5);
+                        successConsequences.push('🏗️ Built a new ' + _bbType.replace(/_/g, ' ') + ' in ' + _bbTown.name + '!');
+                        Engine.logEvent('🏗️ ' + player.fullName + ' oversaw construction of a ' + _bbType.replace(/_/g, ' ') + ' in ' + _bbTown.name + '.');
+                    }
+                }
+            }
+
+            // Sell foreign: player earns bonus gold from foreign trade
+            if (actionType === 'sell_foreign') {
+                var _sfRng = Engine.getRng();
+                var _sfGold = _sfRng ? _sfRng.randInt(100, 400) : 200;
+                player.gold += _sfGold;
+                player.stats.totalGoldEarned = (player.stats.totalGoldEarned || 0) + _sfGold;
+                successConsequences.push('💰 Earned ' + _sfGold + 'g from foreign market sales!');
+                Engine.logEvent('💰 ' + player.fullName + ' earned ' + _sfGold + 'g selling goods in foreign markets.');
+            }
+
+            // Escort NPC: relationship bonus with a random noble
+            if (actionType === 'escort_npc') {
+                var _enWorld = Engine.getWorld ? Engine.getWorld() : null;
+                if (_enWorld && kingdomId) {
+                    var _enNobles = (_enWorld.people || []).filter(function(p) {
+                        return p.alive && p.socialRank && p.socialRank[kingdomId] >= 4 && p.id !== 'player';
+                    });
+                    if (_enNobles.length > 0) {
+                        var _enRng = Engine.getRng();
+                        var _enNoble = _enRng ? _enRng.pick(_enNobles) : _enNobles[0];
+                        if (!_enNoble._playerRelationship) _enNoble._playerRelationship = 0;
+                        _enNoble._playerRelationship = Math.min(100, _enNoble._playerRelationship + 15);
+                        successConsequences.push('🤝 ' + _enNoble.firstName + ' ' + (_enNoble.lastName || '') + ' is grateful for the safe escort (+15 relationship).');
+                        Engine.logEvent('🤝 ' + _enNoble.firstName + ' thanks ' + player.fullName + ' for the safe escort.');
+                    }
+                }
+            }
+
+            var successMsg = mech.successText || 'Action succeeded!';
+            var successNarr = mech.narrative || '';
+            if (isMultiStep) {
+                var _isFinal = (currentStepIdx + 1) >= multiStep.totalSteps;
+                if (_isFinal) {
+                    successMsg = '🏆 Final step complete! ' + (currentStep.label || '') + ' — ' + (mech.successText || 'Mission accomplished!');
+                } else {
+                    var _nextS = multiStep.steps[currentStepIdx + 1];
+                    successMsg = '✅ Step ' + (currentStepIdx + 1) + '/' + multiStep.totalSteps + ': ' + currentStep.label + ' — Success! Next: ' + (_nextS ? _nextS.label : 'Continue');
+                }
+                successNarr = currentStep.narrative || mech.narrative || '';
+            }
+
+            return {
+                success: true,
+                actionSuccess: isMultiStep ? ((currentStepIdx + 1) >= multiStep.totalSteps) : true,
+                stepSuccess: true,
+                message: successMsg,
+                narrative: successNarr,
+                goldSpent: goldCost,
+                ticksSpent: tickCost,
+                chance: Math.round(finalChance * 100),
+                attempt: attemptNum,
+                consequences: successConsequences,
+                isMultiStep: isMultiStep,
+                stepCompleted: isMultiStep ? (currentStepIdx + 1) : null,
+                totalSteps: isMultiStep ? multiStep.totalSteps : null,
+                nextStepLabel: (isMultiStep && (currentStepIdx + 1) < multiStep.totalSteps) ? multiStep.steps[currentStepIdx + 1].label : null
+            };
+        } else {
+            // Failure — gold and time are lost, but can retry
+            var failLabel = isMultiStep ? ('Step ' + (currentStepIdx + 1) + '/' + multiStep.totalSteps + ': ' + currentStep.label) : (mech.label || 'Action');
+            Engine.logEvent('❌ ' + failLabel + ' failed (attempt #' + attemptNum + ', ' + Math.round(finalChance * 100) + '% chance)');
+
+            var failConsequences = [];
+
+            // M1: Espionage failure consequences
+            if (quest.category === 'espionage') {
+                var rng2 = Engine.getRng();
+                // 25% chance of being discovered — rep loss with target kingdom
+                if (rng2 && rng2.chance(0.25)) {
+                    var repLoss = rng2.randInt(3, 8);
+                    // Lose rep with player's own kingdom (king displeased at exposure)
+                    if (kingdomId && player.reputation) {
+                        player.reputation[kingdomId] = Math.max(0, (player.reputation[kingdomId] || 50) - repLoss);
+                    }
+                    failConsequences.push('🔍 Your involvement was discovered! (-' + repLoss + ' rep)');
+                    Engine.logEvent('🔍 ' + player.fullName + '\'s espionage activities were discovered! Reputation damaged.');
+                }
+                // 10% chance of diplomatic incident
+                if (rng2 && rng2.chance(0.10)) {
+                    failConsequences.push('⚠️ A diplomatic incident has occurred! Both kingdoms are aware of the operation.');
+                    Engine.logEvent('⚠️ Diplomatic incident: espionage operation exposed, straining relations.');
+                }
+            }
+
+            // M2: Corrupt quest failure consequences
+            if (quest.category === 'corrupt') {
+                var rng3 = Engine.getRng();
+                // 30% chance of being caught — major rep loss + corruption trait
+                if (rng3 && rng3.chance(0.30)) {
+                    var repLoss2 = rng3.randInt(5, 12);
+                    if (kingdomId && player.reputation) {
+                        player.reputation[kingdomId] = Math.max(0, (player.reputation[kingdomId] || 50) - repLoss2);
+                    }
+                    failConsequences.push('🚔 You were nearly caught! (-' + repLoss2 + ' rep)');
+                    Engine.logEvent('🚔 ' + player.fullName + '\'s corrupt activities were nearly exposed!');
+                }
+                // Track corruption — accumulates over corrupt quest attempts
+                if (!player._corruptionPoints) player._corruptionPoints = 0;
+                player._corruptionPoints += 1;
+                if (player._corruptionPoints >= 5 && !player._corruptionTrait) {
+                    player._corruptionTrait = true;
+                    failConsequences.push('🏴 Your reputation for corruption grows... (Corruption trait gained)');
+                    Engine.logEvent('🏴 ' + player.fullName + ' has gained a reputation for corruption.');
+                }
+            }
+
+            // Also add corruption points on SUCCESS for corrupt quests (M2)
+            // (This is tracked here so it applies to both success and failure paths)
+
+            var failMsg = mech.failText || 'The action failed. You can try again.';
+            var failNarr = mech.narrative || '';
+            if (isMultiStep) {
+                failMsg = '❌ Step ' + (currentStepIdx + 1) + '/' + multiStep.totalSteps + ': ' + currentStep.label + ' — Failed! You can retry this step.';
+                failNarr = currentStep.narrative || mech.narrative || '';
+            }
+
+            return {
+                success: true,  // call succeeded (no error), but action failed
+                actionSuccess: false,
+                stepSuccess: false,
+                message: failMsg,
+                narrative: failNarr,
+                goldSpent: goldCost,
+                ticksSpent: tickCost,
+                chance: Math.round(finalChance * 100),
+                attempt: attemptNum,
+                consequences: failConsequences,
+                isMultiStep: isMultiStep,
+                currentStep: isMultiStep ? (currentStepIdx + 1) : null,
+                totalSteps: isMultiStep ? multiStep.totalSteps : null,
+                stepLabel: isMultiStep ? currentStep.label : null
+            };
+        }
+    }
+
+    function tickKingdomQuests() {
+        _sync();
+        var day = Engine.getDay();
+        var playerRank = _getPlayerNobleRank();
+        if (playerRank < 4) return;
+
+        var kingdomId = _getPlayerKingdomId();
+        if (!kingdomId) return;
+
+        // Ensure data exists
+        if (!player.kingdomQuests) player.kingdomQuests = {};
+        if (!player.kingdomQuests[kingdomId]) {
+            player.kingdomQuests[kingdomId] = { available: [], active: [], completed: [], lastGenDay: 0, personalAssignment: null };
+        }
+        var kqData = player.kingdomQuests[kingdomId];
+
+        // Check for expired active quests
+        for (var i = kqData.active.length - 1; i >= 0; i--) {
+            var q = kqData.active[i];
+            if (q.expiresDay && day > q.expiresDay) {
+                // Failure penalty
+                var repLoss = Math.ceil((q.rewards.kingdomRep || 3) * 0.6);
+                var relLoss = Math.ceil((q.rewards.kingRelationship || 5) * 0.6);
+                if (q.isPersonal) { repLoss *= 2; relLoss *= 2; }
+                Player.modifyReputation(kingdomId, -repLoss);
+                var kingdom = null;
+                try { kingdom = Engine.findKingdom(kingdomId); } catch(e) {}
+                if (kingdom && kingdom.king) Player.modifyRelationship(kingdom.king, -relLoss);
+
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('⏰ Kingdom quest expired: ' + q.title + ' (-' + repLoss + ' rep)', 'warning');
+                Engine.logEvent('⏰ Kingdom quest expired: ' + q.title);
+
+                // Clean up tracking
+                delete player._kqVisitedTowns[q.id];
+                delete player._kqGoldSpent[q.id];
+                delete player._kqActionDone[q.id];
+
+                kqData.active.splice(i, 1);
+
+                // Track failures for demotion
+                player._kqFailCount = (player._kqFailCount || 0) + 1;
+                player._kqLastFailDay = day;
+            }
+        }
+
+        // Check expiration of available quests and personal assignment
+        for (var j = kqData.available.length - 1; j >= 0; j--) {
+            if (kqData.available[j].expiresDay && day > kqData.available[j].expiresDay) {
+                kqData.available.splice(j, 1);
+            }
+        }
+        if (kqData.personalAssignment && kqData.personalAssignment.expiresDay && day > kqData.personalAssignment.expiresDay) {
+            // Expired personal assignment = rejection penalty
+            var pa = kqData.personalAssignment;
+            var paRepLoss = Math.ceil((pa.rejectionPenalty ? pa.rejectionPenalty.rep : 3) * 1.5);
+            var paRelLoss = Math.ceil((pa.rejectionPenalty ? pa.rejectionPenalty.kingRel : 4) * 1.5);
+            Player.modifyReputation(kingdomId, -paRepLoss);
+            var k = null;
+            try { k = Engine.findKingdom(kingdomId); } catch(e) {}
+            if (k && k.king) Player.modifyRelationship(k.king, -paRelLoss);
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚠️ Ignored royal assignment: ' + pa.title + ' (-' + paRepLoss + ' rep)', 'warning');
+            kqData.personalAssignment = null;
+        }
+
+        // Track visit_towns progress for active quests
+        if (player.townId && !player.traveling) {
+            for (var qi = 0; qi < kqData.active.length; qi++) {
+                var aq = kqData.active[qi];
+                if (aq.requirements.action) {
+                    var act = aq.requirements.action;
+                    if (act.type === 'visit_towns' || act.type === 'visit_foreign' || act.type === 'visit_enemy_towns') {
+                        var currentTown = Engine.findTown(player.townId);
+                        if (currentTown) {
+                            var validVisit = true;
+                            if (act.type === 'visit_foreign' && currentTown.kingdomId === kingdomId) validVisit = false;
+                            if (act.type === 'visit_enemy_towns') {
+                                var kingdom3 = null;
+                                try { kingdom3 = Engine.findKingdom(kingdomId); } catch(e) {}
+                                var isEnemy = false;
+                                if (kingdom3 && kingdom3.atWar) {
+                                    var warSet = kingdom3.atWar instanceof Set ? kingdom3.atWar : new Set(kingdom3.atWar);
+                                    if (currentTown.kingdomId && warSet.has(currentTown.kingdomId)) isEnemy = true;
+                                }
+                                if (!isEnemy) validVisit = false;
+                            }
+                            if (validVisit) trackKQTownVisit(aq.id, player.townId);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Generate new quests if needed
+        generateKingdomQuests(kingdomId);
+
+        // Check demotion from quest failures (3+ failures in 180 days)
+        if ((player._kqFailCount || 0) >= 3 && player._kqLastFailDay && (day - player._kqLastFailDay) < 180) {
+            // Reset counter but warn
+            player._kqFailCount = 0;
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚠️ The king is displeased with your repeated quest failures!', 'warning');
+            Player.modifyReputation(kingdomId, -5);
+        }
+    }
+
+    function getAvailableInteractions(personId) {
+        _sync();
+        var person = Engine.findPerson(personId);
+        if (!person) return [];
+        var cooldownCount = Player.getInteractionCooldown(personId);
+        var atLimit = cooldownCount >= (CONFIG.NPC_INTERACTION_DAILY_LIMIT || 3);
+        var hasSocialInsight = Player.hasSkill('social_insight') || Player.hasSkill('charismatic');
+
+        var interactions = [];
+        var socialInteractions = (typeof SOCIAL_INTERACTIONS !== 'undefined') ? SOCIAL_INTERACTIONS : [];
+
+        for (var i = 0; i < socialInteractions.length; i++) {
+            var si = socialInteractions[i];
+            var gain = Player.calculateInteractionGain(si, person);
+            var canAfford = player.gold >= (si.cost || 0);
+
+            var rating = 'neutral';
+            if (gain >= 3) rating = 'great';
+            else if (gain >= 1) rating = 'good';
+            else if (gain >= 0) rating = 'neutral';
+            else rating = 'bad';
+
+            interactions.push({
+                id: si.id,
+                name: si.name,
+                icon: si.icon,
+                description: si.description,
+                cost: si.cost || 0,
+                gain: gain,
+                rating: rating,
+                showRating: hasSocialInsight,
+                available: !atLimit && canAfford,
+                atCooldownLimit: atLimit,
+                dateProgress: si.dateProgress || 0,
+                timeHours: si.timeHours || 1
+            });
+        }
+        return interactions;
+    }
+
+    function interactWithNPC(personId, interactionId) {
+        _sync();
+        if (!player.alive) return { success: false, message: 'You are not alive.' };
+        var person = Engine.findPerson(personId);
+        if (!person) return { success: false, message: 'Person not found.' };
+        if (person.townId !== player.townId) return { success: false, message: 'Not in same town.' };
+        if (player.traveling) return { success: false, message: 'Cannot interact while traveling.' };
+
+        // Noble access check
+        var talkCheck = Player.canTalkTo(personId);
+        if (!talkCheck.canTalk) return { success: false, message: talkCheck.reason };
+
+        // Investigator rejection
+        if ((player.investigatorCaught[personId] || 0) >= 2) {
+            return { success: false, message: 'This person will never speak to you again.' };
+        }
+
+        // Cooldown check
+        var cooldownCount = Player.getInteractionCooldown(personId);
+        var limit = CONFIG.NPC_INTERACTION_DAILY_LIMIT || 3;
+        if (cooldownCount >= limit) {
+            return { success: false, message: person.firstName + ' says: "We\'ve talked enough for today. Come back tomorrow!"' };
+        }
+
+        // Find interaction config
+        var socialInteractions = (typeof SOCIAL_INTERACTIONS !== 'undefined') ? SOCIAL_INTERACTIONS : [];
+        var interaction = null;
+        for (var i = 0; i < socialInteractions.length; i++) {
+            if (socialInteractions[i].id === interactionId) { interaction = socialInteractions[i]; break; }
+        }
+        if (!interaction) return { success: false, message: 'Unknown interaction.' };
+
+        // Cost check
+        if (player.gold < (interaction.cost || 0)) {
+            return { success: false, message: 'Need ' + interaction.cost + 'g (have ' + player.gold + 'g).' };
+        }
+
+        // Advance time
+        if (typeof Game !== 'undefined' && Game.advanceTicks) {
+            Game.advanceTicks(Math.max(1, Math.ceil(interaction.timeHours * 2.5)));
+        }
+
+        // Pay cost
+        if (interaction.cost > 0) {
+            player.gold -= interaction.cost;
+            player.stats.totalGoldSpent += interaction.cost;
+        }
+
+        // Calculate and apply relationship gain
+        var gain = Player.calculateInteractionGain(interaction, person);
+        var rel = Player.getRelationship(personId);
+        Player.modifyRelationship(personId, gain, rel.type === 'spouse' ? 'spouse' : undefined);
+
+        // Progress trait/quirk reveal
+        var revealMsg = '';
+        if (interaction.dateProgress > 0) {
+            if (!player.dateProgress[personId]) {
+                player.dateProgress[personId] = { traitProgress: 0, quirkProgress: 0 };
+            }
+            var dp = player.dateProgress[personId];
+            var progress = interaction.dateProgress;
+            if (person.quirks && person.quirks.includes('secretive')) progress = Math.floor(progress / 2);
+
+            var revealed = player.revealedTraits[personId] || { traits: {}, quirks: [] };
+            var allTraitNames = person.personality ? Object.keys(person.personality) : [];
+            var unrevealedTraits = allTraitNames.filter(function(t) { return !(t in revealed.traits); });
+            var personQuirks = person.quirks || [];
+            var unrevealedQuirks = personQuirks.filter(function(q) { return !revealed.quirks.includes(q); });
+
+            if (unrevealedTraits.length > 0 || unrevealedQuirks.length > 0) {
+                var progressQuirk = unrevealedQuirks.length > 0 && (unrevealedTraits.length === 0 || dp.traitProgress > dp.quirkProgress);
+                if (progressQuirk) dp.quirkProgress += progress;
+                else dp.traitProgress += progress;
+
+                if (dp.traitProgress >= 100 && unrevealedTraits.length > 0) {
+                    dp.traitProgress -= 100;
+                    var reveal = Player.revealTrait(personId, 'vague');
+                    if (reveal && reveal.message) revealMsg = ' ' + reveal.message;
+                } else if (dp.quirkProgress >= 100 && unrevealedQuirks.length > 0) {
+                    dp.quirkProgress -= 100;
+                    var reveal2 = Player.revealTrait(personId, 'vague');
+                    if (reveal2 && reveal2.message) revealMsg = ' ' + reveal2.message;
+                }
+            }
+        }
+
+        // Small chance to discover gift preference during interaction (~10%)
+        var giftDiscoverMsg = '';
+        var _giftRng = Engine.getRng ? Engine.getRng() : null;
+        if (_giftRng && _giftRng.chance(0.10)) {
+            var _prefs = Player.getNPCGiftPreferences(personId);
+            if (!player.discoveredGiftPrefs) player.discoveredGiftPrefs = {};
+            if (!player.discoveredGiftPrefs[personId]) player.discoveredGiftPrefs[personId] = {};
+            var _disc = player.discoveredGiftPrefs[personId];
+            var _discDay = 0;
+            try { _discDay = Engine.getDay(); } catch(e) {}
+            if (!_disc.favorite && _giftRng.chance(0.5)) {
+                _disc.favorite = _prefs.favoriteGift;
+                _disc.favoriteDay = _discDay;
+                var _fRes = Player.findResource(_prefs.favoriteGift);
+                giftDiscoverMsg = ' 💡 You noticed ' + person.firstName + ' seems to really like ' + (_fRes ? _fRes.name : _prefs.favoriteGift) + '!';
+            } else if (!_disc.hated) {
+                _disc.hated = _prefs.hatedGift;
+                _disc.hatedDay = _discDay;
+                var _hRes = Player.findResource(_prefs.hatedGift);
+                giftDiscoverMsg = ' 💡 You got the sense ' + person.firstName + ' dislikes ' + (_hRes ? _hRes.name : _prefs.hatedGift) + '.';
+            }
+        }
+
+        // Track cooldown
+        if (!player._npcInteractions) player._npcInteractions = {};
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+        if (!player._npcInteractions[personId] || player._npcInteractions[personId].day !== day) {
+            player._npcInteractions[personId] = { day: day, count: 0 };
+        }
+        player._npcInteractions[personId].count++;
+
+        var remainingToday = limit - player._npcInteractions[personId].count;
+
+        // Build message
+        var gainSign = gain >= 0 ? '+' : '';
+        var gainColor = gain >= 2 ? '💚' : gain >= 0 ? '💛' : '❤️‍🩹';
+        var msg = interaction.name + ': ' + gainColor + ' Relationship ' + gainSign + gain.toFixed(1) + '.';
+        if (interaction.cost > 0) msg += ' Cost: ' + interaction.cost + 'g.';
+        if (remainingToday > 0) msg += ' (' + remainingToday + ' interaction' + (remainingToday !== 1 ? 's' : '') + ' left today)';
+        else msg += ' (No more interactions today)';
+        msg += revealMsg;
+        msg += giftDiscoverMsg;
+
+        Player.grantXP(2, 'social_interaction');
+        return { success: true, message: msg, gain: gain };
+    }
+
+    // ── Guild Membership System ──────────────────────────────
+
+    function getGuildForCategory(category) {
+        _sync();
+        if (!CONFIG.GUILDS) return null;
+        for (var gId in CONFIG.GUILDS) {
+            if (CONFIG.GUILDS[gId].categories.indexOf(category) >= 0) return CONFIG.GUILDS[gId];
+        }
+        return null;
+    }
+
+    function isGuildMember(guildId) {
+        _sync();
+        var membership = player.guildMemberships[guildId];
+        if (!membership) return false;
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+        return membership.expiresDay > day;
+    }
+
+    function getGuildPrice(guildId, type) {
+        _sync();
+        // Merchants guild uses its own doubled base prices
+        var base;
+        if (guildId === 'merchants') {
+            base = type === 'yearly' ? (CONFIG.MERCHANTS_GUILD_BASE_YEARLY || 400) : (CONFIG.MERCHANTS_GUILD_BASE_MONTHLY || 50);
+        } else {
+            base = type === 'yearly' ? (CONFIG.GUILD_BASE_YEARLY || 200) : (CONFIG.GUILD_BASE_MONTHLY || 25);
+        }
+        var guild = CONFIG.GUILDS[guildId];
+        if (!guild) return base;
+        try {
+            var world = Engine.getWorld();
+            var towns = world.towns || [];
+
+            // Merchants guild: scale price with average world prosperity (cap at 3x starting base)
+            if (guildId === 'merchants') {
+                var totalProsperity = 0;
+                var kingdomCount = 0;
+                var kingdoms = world.kingdoms || [];
+                for (var ki = 0; ki < kingdoms.length; ki++) {
+                    if (kingdoms[ki].alive !== false) {
+                        totalProsperity += (kingdoms[ki].prosperity || 50);
+                        kingdomCount++;
+                    }
+                }
+                var avgProsperity = kingdomCount > 0 ? totalProsperity / kingdomCount : 50;
+                // Base prosperity is ~50 at game start. Scale linearly from 1.0x at 50 to cap at higher prosperity.
+                // At prosperity 50 → 1.0x, at 100 → 2.0x, at 150+ → 3.0x (capped)
+                var prosperityMultiplier = Math.max(1.0, Math.min(CONFIG.MERCHANTS_GUILD_PROSPERITY_CAP || 3.0, 1.0 + (avgProsperity - 50) / 50));
+                base = Math.round(base * prosperityMultiplier);
+            } else {
+                // Other guilds: existing revenue-based scaling
+                var totalRevenue = 0;
+                var count = 0;
+                for (var ti = 0; ti < towns.length; ti++) {
+                    var buildings = towns[ti].buildings || [];
+                    for (var bi = 0; bi < buildings.length; bi++) {
+                        var bType = Engine.findBuildingType(buildings[bi].type);
+                        if (bType && guild.categories.indexOf(bType.category) >= 0) {
+                            totalRevenue += (buildings[bi].revenue || 0);
+                            count++;
+                        }
+                    }
+                }
+                if (count > 0) {
+                    var avgRevenue = totalRevenue / count;
+                    var multiplier = Math.max(0.5, Math.min(3, 1 + avgRevenue / 100));
+                    base = Math.round(base * multiplier);
+                }
+            }
+        } catch(e) {}
+        // Guild Negotiator skill: 20% reduced dues
+        if (Player.hasSkill('guild_negotiator')) base = Math.round(base * 0.80);
+        return base;
+    }
+
+    function joinGuild(guildId, type) {
+        _sync();
+        if (!CONFIG.GUILDS || !CONFIG.GUILDS[guildId]) return { success: false, message: 'Guild not found.' };
+        var guild = CONFIG.GUILDS[guildId];
+        var price = getGuildPrice(guildId, type);
+        if (player.gold < price) return { success: false, message: 'Not enough gold. Need ' + price + 'g.' };
+
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+        var duration = type === 'yearly' ? CONFIG.DAYS_PER_SEASON : 30;
+
+        // If already a member, extend from expiration
+        var existing = player.guildMemberships[guildId];
+        var currentExpiry = (existing && existing.expiresDay > day) ? existing.expiresDay : day;
+        var prevAutoRenew = existing ? (existing.autoRenew || false) : false;
+
+        player.gold -= price;
+        Player.logFinance(-price, 'guild', 'Guild membership');
+        player.stats.totalGoldSpent += price;
+        player.guildMemberships[guildId] = {
+            expiresDay: currentExpiry + duration,
+            type: type,
+            autoRenew: prevAutoRenew,
+            lastPaidPrice: price
+        };
+
+        try { Engine.logEvent(guild.icon + ' Joined ' + guild.name + ' (' + type + ', ' + price + 'g)', 'my_actions'); } catch(e) {}
+
+        // Journal — guild membership
+        Player.recordJournalEntry('guild', 'Joined the ' + guild.name + ' as a ' + type + ' member for ' + price + 'g. New opportunities and connections await.', { mood: 'hopeful' });
+
+        return { success: true, message: 'Joined ' + guild.name + '! Membership until Day ' + (currentExpiry + duration) + '.' };
+    }
+
+    function setGuildAutoRenew(guildId, enabled) {
+        _sync();
+        var membership = player.guildMemberships[guildId];
+        if (!membership) return { success: false, message: 'Not a member of this guild.' };
+        membership.autoRenew = !!enabled;
+        var guild = CONFIG.GUILDS[guildId];
+        var gName = guild ? guild.name : guildId;
+        return { success: true, message: 'Auto-renew ' + (enabled ? 'enabled' : 'disabled') + ' for ' + gName + '.' };
+    }
+
+    // ── Export to Player ──────────────────────────────────────
+    // Town Quests
+    Player.generateTownQuests = generateTownQuests;
+    Player.getTownQuestsForTown = getTownQuestsForTown;
+    Player.getActiveQuests = getActiveQuests;
+    Player.getCompletedQuestCount = getCompletedQuestCount;
+    Player.acceptTownQuest = acceptTownQuest;
+    Player.completeTownQuest = completeTownQuest;
+    Player.abandonTownQuest = abandonTownQuest;
+    Player.tickTownQuests = tickTownQuests;
+
+    // Kingdom Quests
+    Player.generateKingdomQuests = generateKingdomQuests;
+    Player.acceptKingdomQuest = acceptKingdomQuest;
+    Player.rejectKingdomQuest = rejectKingdomQuest;
+    Player.abandonKingdomQuest = abandonKingdomQuest;
+    Player.completeKingdomQuest = completeKingdomQuest;
+    Player.checkKingdomQuestProgress = checkKingdomQuestProgress;
+    Player.getKingdomQuestData = getKingdomQuestData;
+    Player.getActiveKingdomQuests = getActiveKingdomQuests;
+    Player.tickKingdomQuests = tickKingdomQuests;
+    Player.trackKQTownVisit = trackKQTownVisit;
+    Player.trackKQGoldSpent = trackKQGoldSpent;
+    Player.trackKQActionDone = trackKQActionDone;
+    Player.attemptKQAction = attemptKQAction;
+
+    // NPC Interactions
+    Player.getAvailableInteractions = getAvailableInteractions;
+    Player.interactWithNPC = interactWithNPC;
+
+    // Guild Membership
+    Player.isGuildMember = isGuildMember;
+    Player.joinGuild = joinGuild;
+    Player.setGuildAutoRenew = setGuildAutoRenew;
+    Player.getGuildPrice = getGuildPrice;
+    Player.getGuildForCategory = getGuildForCategory;
+
+})(window.Player);
