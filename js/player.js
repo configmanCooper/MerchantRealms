@@ -20544,6 +20544,10 @@
 
     function setNotifFilter(key, value) {
         if (!player.notificationFilters) player.notificationFilters = {};
+        // Convert string values from HTML data attributes to proper types
+        if (value === 'true') value = true;
+        else if (value === 'false') value = false;
+        // 'smart' stays as string
         player.notificationFilters[key] = value;
 
         // When a top-level category is turned OFF, also turn off all sub-filters
