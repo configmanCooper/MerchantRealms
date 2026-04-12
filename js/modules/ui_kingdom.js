@@ -2048,4 +2048,43 @@
     UI.registerAction('treatSpousePlayer', function() { UI.treatCompanionUI('spouse', null, 'player'); });
     UI.registerAction('treatSpouseHospital', function() { UI.treatCompanionUI('spouse', null, 'hospital'); });
 
+    // --- New game flow actions ---
+    UI.registerAction('selectKingdom', function(_t, d) { selectKingdom(d.id); });
+    UI.registerAction('regenerateWorld', function() { regenerateWorld(); });
+    UI.registerAction('backToMainMenu', function() { backToMainMenu(); });
+    UI.registerAction('randomTown', function(_t, d) { randomTown(d.id); });
+    UI.registerAction('selectTown', function(_t, d) { selectTown(d.id); });
+    UI.registerAction('backToTownSelection', function(_t, d) { backToTownSelection(d.id); });
+    UI.registerAction('selectStartScenario', function(_t, d) { selectStartScenario(d.id); });
+    UI.registerAction('selectMilitaryKingdom', function(_t, d) { selectMilitaryKingdom(d.id); });
+    UI.registerAction('confirmStartScenario', function(_t, d) { confirmStartScenario(d.id); });
+
+    // --- Family & spouse actions ---
+    UI.registerAction('familyAction', function(_t, d) { familyAction(d.id, d.action); });
+    UI.registerAction('giveFamilyGoldDialog', function(_t, d) { giveFamilyGoldDialog(d.id); });
+    UI.registerAction('giveFamilyItemDialog', function(_t, d) { giveFamilyItemDialog(d.id); });
+    UI.registerAction('openSpousePanel', function() { openSpousePanel(); });
+    UI.registerAction('tryForBaby', function() { tryForBaby(); });
+    UI.registerAction('spouseInteraction', function(_t, d) { spouseInteraction(d.id); });
+
+    // --- Special start & journal actions ---
+    UI.registerAction('openStartJournal', function() { openStartJournal(); });
+    UI.registerAction('specialAction', function(_t, d) { specialAction(d.id); });
+    UI.registerAction('openSpecialStartPanel', function() { UI.openSpecialStartPanel(); });
+
+    // --- Actions that need Player functions ---
+    UI.registerAction('respondToMarriageProposal', function(_t, d) { if (Player.respondToMarriageProposal) { var r = Player.respondToMarriageProposal(d.id, d.response === 'accept'); UI.toast(r.message, r.success ? 'success' : 'error'); } });
+    UI.registerAction('payDebt', function(_t, d) { if (Player.payDebt) { var r = Player.payDebt(d.id); UI.toast(r.message, r.success ? 'success' : 'error'); } });
+    UI.registerAction('completeMasterTask', function(_t, d) { if (Player.completeMasterTask) { var r = Player.completeMasterTask(d.id); UI.toast(r.message, r.success ? 'success' : 'error'); } });
+    UI.registerAction('dismissMasterTask', function(_t, d) { if (Player.dismissMasterTask) { var r = Player.dismissMasterTask(d.id); UI.toast(r.message, r.success ? 'success' : 'error'); } });
+    UI.registerAction('attemptIndenturedEscape', function() { if (Player.attemptEscape) { Player.attemptEscape(); } });
+    UI.registerAction('treatCompanionUI', function(_t, d) { if (UI.treatCompanionUI) UI.treatCompanionUI(d.type, d.id, d.method); });
+    UI.registerAction('openWeddingPlanner', function() { if (UI.openWeddingPlanner) UI.openWeddingPlanner(); });
+    UI.registerAction('openTalkToSpouse', function() { if (UI.openTalkToSpouse) UI.openTalkToSpouse(); });
+    UI.registerAction('_spouseGoldConfirm', function(_t, d) { if (UI._spouseGoldConfirm) UI._spouseGoldConfirm(d.id, parseInt(d.amount)); });
+    UI.registerAction('_spouseTownConfirm', function(_t, d) { if (UI._spouseTownConfirm) UI._spouseTownConfirm(d.id); });
+    UI.registerAction('_spouseBuildingConfirm', function(_t, d) { if (UI._spouseBuildingConfirm) UI._spouseBuildingConfirm(d.id, d.type); });
+    UI.registerAction('_spouseNegotiateConfirm', function(_t, d) { if (UI._spouseNegotiateConfirm) UI._spouseNegotiateConfirm(d.id); });
+    UI.registerAction('_spouseCaravanConfirm', function(_t, d) { if (UI._spouseCaravanConfirm) UI._spouseCaravanConfirm(d.id); });
+
 })(window.UI);

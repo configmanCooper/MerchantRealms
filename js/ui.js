@@ -564,8 +564,8 @@ window.UI = (function () {
         registerAction('openGoodsGuide', function() { UI.openGoodsGuide(); });
         registerAction('openGameGuide', function() { UI.openGameGuide(); });
         registerAction('openIconsGlossary', function() { UI.openIconsGlossary(); });
-        registerAction('showPersonDetailAndCloseModal', function() { UI.showPersonDetail(d.id); UI.closeModal(); });
-        registerAction('showTownDetailAndCloseModal', function() { UI.showTownDetail(d.id); UI.closeModal(); });
+        registerAction('showPersonDetailAndCloseModal', function(_t, d) { var p = Engine.findPerson(d.id); if (p) { UI.showPersonDetail(p); UI.closeModal(); } });
+        registerAction('showTownDetailAndCloseModal', function(_t, d) { var t = Engine.findTown(d.id); if (t) { UI.showTownDetail(t); UI.closeModal(); } });
         registerAction('_switchKNTab', function(_t, d) { if (d.tab) UI._switchKNTab(d.tab); });
         registerAction('executeBribeAdvisor', function(_t, d) { if (d.id && d.val) UI.executeBribeAdvisor(d.id, d.val); });
         registerAction('executeBribeGuards', function(_t, d) { if (d.id) UI.executeBribeGuards(d.id); });
@@ -621,7 +621,7 @@ window.UI = (function () {
         registerAction('stableHorseUI', function(_t, d) { if (d.id) UI.stableHorseUI(d.id); });
         registerAction('openHomeStorageUI', function(_t, d) { if (d.id) UI.openHomeStorageUI(d.id); });
         registerAction('unstableHorseUI', function(_t, d) { if (d.id && d.val) UI.unstableHorseUI(d.id, d.val); });
-        registerAction('_toggleVisibility', function() { var el=document.getElementById('otherShipsSection');el.style.display=el.style.display==='none'?'block':'none' });
+        registerAction('_toggleVisibility', function(_t, d) { var id = d.param1 || 'otherShipsSection'; var el = document.getElementById(id); if (el) { el.style.display = el.style.display === 'none' ? 'block' : 'none'; if (d.param2) UI._expandedNotifCategory = (el.style.display === 'none') ? null : d.param2; } });
         registerAction('buyShipAndOpenShipsDialog', function(_t, d) { UI.buyShip(d.id); UI.openShipsDialog(); });
         registerAction('showShipAddons', function(_t, d) { if (d.id) UI.showShipAddons(d.id); });
         registerAction('repairShipAndOpenShipsDialog', function(_t, d) { Player.repairShip(d.id); UI.openShipsDialog(); });
@@ -5499,7 +5499,7 @@ window.UI = (function () {
                     var fLabel = filterLabels[fKey];
                     var isOn = filters[fKey] === true || filters[fKey] === 'smart';
                     var isSmart = filters[fKey] === 'smart';
-                    filterBarHtml += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 6px;opacity:' + (isOn ? 1 : 0.4) + ';' + (isSmart ? 'border:1px solid gold;' : '') + '" data-action="toggleNotifFilter" data-id="${fKey}">' + fLabel + '</button>';
+                    filterBarHtml += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 6px;opacity:' + (isOn ? 1 : 0.4) + ';' + (isSmart ? 'border:1px solid gold;' : '') + '" data-action="toggleNotifFilter" data-id="' + fKey + '">' + fLabel + '</button>';
                 }
             }
             filterBarHtml += '</div>';
@@ -5869,10 +5869,10 @@ window.UI = (function () {
             html += '<div style="display:flex;gap:2px;" data-action="_handler_15">';
 
             if (f.hasSmart) {
-                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 8px;' + (isSmart ? 'background:var(--gold);color:#000;' : 'opacity:0.5;') + '" data-action="setNotifFilter" data-key="${f.key}" data-val="smart">Smart</button>';
+                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 8px;' + (isSmart ? 'background:var(--gold);color:#000;' : 'opacity:0.5;') + '" data-action="setNotifFilter" data-key="' + f.key + '" data-val="smart">Smart</button>';
             }
-            html += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 8px;' + (isOn && !isSmart ? 'background:#55a868;color:#fff;' : 'opacity:0.5;') + '" data-action="setNotifFilter" data-key="${f.key}" data-val="true">On</button>';
-            html += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 8px;' + (isOff ? 'background:#c44e52;color:#fff;' : 'opacity:0.5;') + '" data-action="setNotifFilter" data-key="${f.key}" data-val="false">Off</button>';
+            html += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 8px;' + (isOn && !isSmart ? 'background:#55a868;color:#fff;' : 'opacity:0.5;') + '" data-action="setNotifFilter" data-key="' + f.key + '" data-val="true">On</button>';
+            html += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 8px;' + (isOff ? 'background:#c44e52;color:#fff;' : 'opacity:0.5;') + '" data-action="setNotifFilter" data-key="' + f.key + '" data-val="false">Off</button>';
             html += '</div></div>';
 
             // Sub-type toggles (collapsed by default, but restore expanded state)
@@ -5887,8 +5887,8 @@ window.UI = (function () {
                     html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:3px 0;">';
                     html += '<span style="font-size:0.8rem;color:' + (subOn ? '#ccc' : '#666') + ';">' + sub.label + '</span>';
                     html += '<div style="display:flex;gap:2px;">';
-                    html += '<button class="btn-medieval" style="font-size:0.65rem;padding:1px 7px;' + (subOn ? 'background:#55a868;color:#fff;' : 'opacity:0.4;') + '" data-action="setNotifFilter" data-key="${subKey}" data-val="true">On</button>';
-                    html += '<button class="btn-medieval" style="font-size:0.65rem;padding:1px 7px;' + (!subOn ? 'background:#c44e52;color:#fff;' : 'opacity:0.4;') + '" data-action="setNotifFilter" data-key="${subKey}" data-val="false">Off</button>';
+                    html += '<button class="btn-medieval" style="font-size:0.65rem;padding:1px 7px;' + (subOn ? 'background:#55a868;color:#fff;' : 'opacity:0.4;') + '" data-action="setNotifFilter" data-key="' + subKey + '" data-val="true">On</button>';
+                    html += '<button class="btn-medieval" style="font-size:0.65rem;padding:1px 7px;' + (!subOn ? 'background:#c44e52;color:#fff;' : 'opacity:0.4;') + '" data-action="setNotifFilter" data-key="' + subKey + '" data-val="false">Off</button>';
                     html += '</div></div>';
                 }
                 html += '</div>';
@@ -8343,9 +8343,9 @@ window.UI = (function () {
                     '<input type="checkbox" ' + _arChecked + ' onchange="(function(cb){var r=Player.setGuildAutoRenew(\'' + gId + '\',cb.checked);UI.toast(r.message,r.success?\'success\':\'warning\');UI.openGuildsPanel();})(this)">' +
                     '🔄 Auto</label>';
             }
-            html += '<button class="btn-medieval" data-action="guildJoin" data-id="${gId}" data-type="monthly">' + (isMember ? '🔄 Extend' : '📜 Join') + ' Monthly (' + monthlyPrice + 'g)</button>';
+            html += '<button class="btn-medieval" data-action="guildJoin" data-id="' + gId + '" data-type="monthly">' + (isMember ? '🔄 Extend' : '📜 Join') + ' Monthly (' + monthlyPrice + 'g)</button>';
             if (isMember && membership.type === 'monthly') html += _arLabel;
-            html += '<button class="btn-medieval" data-action="guildJoin" data-id="${gId}" data-type="yearly">' + (isMember ? '🔄 Extend' : '📜 Join') + ' Yearly (' + yearlyPrice + 'g)</button>';
+            html += '<button class="btn-medieval" data-action="guildJoin" data-id="' + gId + '" data-type="yearly">' + (isMember ? '🔄 Extend' : '📜 Join') + ' Yearly (' + yearlyPrice + 'g)</button>';
             if (isMember && membership.type !== 'monthly') html += _arLabel;
             html += '</div>';
 
@@ -11746,7 +11746,7 @@ window.UI = (function () {
 
             html += '<div style="border:1px solid var(--border);border-left:3px solid ' + kColor + ';border-radius:6px;padding:10px;cursor:pointer;" ';
             if (kingPerson) {
-                html += 'data-action="showPersonDetailAndCloseModal"';
+                html += 'data-action="showPersonDetailAndCloseModal" data-id="' + kingPerson.id + '"';
             }
             html += '>';
             html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
@@ -11791,7 +11791,7 @@ window.UI = (function () {
             var catLabel = cat.charAt(0).toUpperCase() + cat.slice(1).replace('_', ' ');
             var isHere = typeof Player !== 'undefined' && Player.townId === town.id;
 
-            html += '<div class="_kn-loc-item" data-name="' + town.name.toLowerCase() + '" style="border:1px solid var(--border);border-left:3px solid ' + tColor + ';border-radius:4px;padding:8px;cursor:pointer;' + (isHere ? 'background:rgba(85,168,104,0.1);' : '') + '" data-action="showTownDetailAndCloseModal">';
+            html += '<div class="_kn-loc-item" data-name="' + town.name.toLowerCase() + '" style="border:1px solid var(--border);border-left:3px solid ' + tColor + ';border-radius:4px;padding:8px;cursor:pointer;' + (isHere ? 'background:rgba(85,168,104,0.1);' : '') + '" data-action="showTownDetailAndCloseModal" data-id="' + town.id + '">';
             html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
             html += '<strong style="font-size:0.9rem;">' + town.name + '</strong>';
             html += '<span style="font-size:0.75rem;color:var(--text-muted);">' + catLabel + '</span>';
@@ -11848,7 +11848,7 @@ window.UI = (function () {
             var fullName = (np.firstName || '') + ' ' + (np.lastName || '');
             var emLabel = np.isEliteMerchant ? ' 💼 Merchant' : '';
 
-            html += '<div class="_kn-noble-item" data-name="' + fullName.toLowerCase() + '" style="border:1px solid var(--border);border-left:3px solid ' + nColor + ';border-radius:4px;padding:8px;cursor:pointer;" data-action="showPersonDetailAndCloseModal">';
+            html += '<div class="_kn-noble-item" data-name="' + fullName.toLowerCase() + '" style="border:1px solid var(--border);border-left:3px solid ' + nColor + ';border-radius:4px;padding:8px;cursor:pointer;" data-action="showPersonDetailAndCloseModal" data-id="' + np.id + '">';
             html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
             html += '<strong style="font-size:0.9rem;">' + (nRank.icon || '') + ' ' + fullName + '</strong>';
             html += '<span style="font-size:0.75rem;color:var(--text-muted);">' + nRank.name + emLabel + '</span>';

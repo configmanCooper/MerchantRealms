@@ -501,5 +501,7 @@
     UI.registerAction('kingFleeConfirm', function() { var r = Player.kingFleeKingdom(); UI.closeModal(); UI.toast(r.message, r.success ? 'success' : 'warning'); });
     UI.registerAction('kingElectionVote', function(_t, d) { Engine._resolvePendingElection(Engine.findKingdom(d.kingdom), d.id); UI.closeModal(); UI.toast('Your vote has been cast.', 'success'); });
     UI.registerAction('kingElectionAbstain', function(_t, d) { Engine._resolvePendingElection(Engine.findKingdom(d.kingdom), null); UI.closeModal(); UI.toast('You abstained from voting.', 'warning'); });
+    UI.registerAction('_confirmKingFlee', function() { _confirmKingFlee(); });
+    UI.registerAction('_resolveRevolt', function(_t, d) { _resolveRevolt(d.id, d.val); });
 
 })(window.UI);

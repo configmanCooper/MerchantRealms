@@ -3714,5 +3714,6 @@ function clickTown(townId) {
     // Numeric-arg handlers (data-idx)
     UI.registerAction('rebuildBridge', function(_t, d) { UI.rebuildBridge(Number(d.idx)); });
     UI.registerAction('destroyBridge', function(_t, d) { UI.destroyBridge(Number(d.idx)); });
+    UI.registerAction('stopTravelUI', function() { stopTravelUI(); });
 
 })(window.UI);

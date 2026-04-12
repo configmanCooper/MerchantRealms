@@ -1724,4 +1724,15 @@
     UI.registerAction('saveCaravanOrders', function(_t, d) { if (!UI._autoAddPendingOrder()) return; var r = Player.editCaravanOrders(d.id, UI._getCaravanOrders()); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openCaravanManagement(); });
     UI.registerAction('saveCaravanEquipment', function(_t, d) { var h = parseInt((document.getElementById('editEqHorses') || {}).value) || 0; var w = parseInt((document.getElementById('editEqWeapons') || {}).value) || 0; var a = parseInt((document.getElementById('editEqArmor') || {}).value) || 0; if (h === 0 && w === 0 && a === 0) { UI.toast('No equipment changes.', 'warning'); return; } var r = Player.editCaravanEquipment(d.id, {addHorses: h, addWeapons: w, addArmor: a}); UI.toast(r.message, r.success ? 'success' : 'warning'); if (r.success) UI.openCaravanManagement(); });
 
+    UI.registerAction('_addADCondition', function(_t, d) { UI._addADCondition(d.id); });
+    UI.registerAction('_removeADCondition', function(_t, d) { UI._removeADCondition(parseInt(d.idx), d.id); });
+    UI.registerAction('_addCaravanOrder', function() { UI._addCaravanOrder(); });
+    UI.registerAction('_removeCaravanOrder', function(_t, d) { UI._removeCaravanOrder(parseInt(d.val)); });
+    UI.registerAction('cancelTransportUI', function() { UI.cancelTransportUI(); });
+    UI.registerAction('executeSendCaravan', function() { UI.executeSendCaravan(); });
+    UI.registerAction('openAutoDisbandEditor', function(_t, d) { UI.openAutoDisbandEditor(d.id); });
+    UI.registerAction('openEditCaravanEquipment', function(_t, d) { UI.openEditCaravanEquipment(d.id); });
+    UI.registerAction('openEditCaravanOrders', function(_t, d) { UI.openEditCaravanOrders(d.id); });
+    UI.registerAction('setupTransportUI', function(_t, d) { UI.setupTransportUI(d.id, d.val === 'true'); });
+    UI.registerAction('useNPCTransportUI', function(_t, d) { UI.useNPCTransportUI(parseInt(d.val)); });
 })(window.UI);

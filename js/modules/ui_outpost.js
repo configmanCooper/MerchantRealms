@@ -1530,5 +1530,6 @@
     // Simple passthrough handlers
     UI.registerAction('enterOutpostPlacement', function() { UI.enterOutpostPlacement(); });
     UI.registerAction('_closeRecruitAndRestore', function() { UI._closeRecruitAndRestore(); });
+    UI.registerAction('foundOutpostFromTravel', function() { foundOutpostFromTravel(); });
 
 })(window.UI);
