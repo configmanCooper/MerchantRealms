@@ -886,7 +886,7 @@
         if (townId && townId !== player.townId) return { success: false, message: 'You are not in that town.' };
 
         // Energy check for trading
-        var eCheck = checkEnergyForAction(ENERGY_CONFIG.TRADE_COST || 2);
+        var eCheck = Player.checkEnergyForAction(ENERGY_CONFIG.TRADE_COST || 2);
         if (eCheck.blocked) return { success: false, message: eCheck.message };
 
         const tid = townId || player.townId;
@@ -1009,7 +1009,7 @@
         }
 
         // Injury trade penalty (concussion makes you haggle poorly — pay more)
-        const injDebuffs = getInjuryDebuffs();
+        const injDebuffs = Player.getInjuryDebuffs();
         if (injDebuffs.tradePenalty < 0) {
             price *= (1 - injDebuffs.tradePenalty); // tradePenalty is negative, so this increases price
         }
@@ -1119,7 +1119,7 @@
         }
 
         addTradeLog(resourceId, qty, price, tid, 'buy');
-        consumeEnergy(ENERGY_CONFIG.TRADE_COST || 2);
+        Player.consumeEnergy(ENERGY_CONFIG.TRADE_COST || 2);
         // Trading builds slight town reputation: +0.02 per 500g traded, capped at 0.02/day
         if (totalCost > 0) {
             var _tradeRepGain = Math.min(0.02, totalCost / 25000);
@@ -1156,7 +1156,7 @@
         if (townId && townId !== player.townId) return { success: false, message: 'You are not in that town.' };
 
         // Energy check for trading
-        var eCheckSell = checkEnergyForAction(ENERGY_CONFIG.TRADE_COST || 2);
+        var eCheckSell = Player.checkEnergyForAction(ENERGY_CONFIG.TRADE_COST || 2);
         if (eCheckSell.blocked) return { success: false, message: eCheckSell.message };
 
         const tid = townId || player.townId;
@@ -1357,7 +1357,7 @@
         }
 
         // Injury trade penalty (concussion makes you haggle poorly — sell for less)
-        const sellInjDebuffs = getInjuryDebuffs();
+        const sellInjDebuffs = Player.getInjuryDebuffs();
         if (sellInjDebuffs.tradePenalty < 0) {
             price *= (1 + sellInjDebuffs.tradePenalty); // tradePenalty is negative, so this decreases price
         }
@@ -1485,7 +1485,7 @@
         }
 
         addTradeLog(resourceId, qty, effectivePrice, tid, 'sell');
-        consumeEnergy(ENERGY_CONFIG.TRADE_COST || 2);
+        Player.consumeEnergy(ENERGY_CONFIG.TRADE_COST || 2);
         // Trading builds slight town reputation: +0.02 per 500g traded, capped at 0.02/day
         if (totalRevenue > 0) {
             var _tradeRepGain2 = Math.min(0.02, totalRevenue / 25000);
@@ -1514,7 +1514,7 @@
         if (isBankruptcyPriestRestricted()) return { success: false, message: 'Your priestly vows forbid owning buildings. Complete your pilgrimage first.' };
 
         // Energy check
-        var eBuild = checkEnergyForAction(ENERGY_CONFIG.BUILD_COST || 5);
+        var eBuild = Player.checkEnergyForAction(ENERGY_CONFIG.BUILD_COST || 5);
         if (eBuild.blocked) return { success: false, message: eBuild.message };
 
         const tid = townId || player.townId;
@@ -1770,7 +1770,7 @@
         Engine.logEvent(`The merchant builds a ${bt.name} in ${town.name}.`, null, 'my_business');
         autoJournalCapture('building', 'I built a ' + bt.name + ' in ' + town.name + '. My empire grows.', { mood: 'hopeful' });
         grantXP(XP_REWARDS.BUILD, 'build');
-        consumeEnergy(ENERGY_CONFIG.BUILD_COST || 5);
+        Player.consumeEnergy(ENERGY_CONFIG.BUILD_COST || 5);
         return { success: true, message: `Built ${bt.name} in ${town.name}.`, building: bld };
     }
 
@@ -3152,7 +3152,7 @@
      */
     function buyShip(type) {
         if (player.traveling) return { success: false, message: 'Cannot buy a ship while traveling.' };
-        var eShip = checkEnergyForAction(ENERGY_CONFIG.BUILD_COST || 5);
+        var eShip = Player.checkEnergyForAction(ENERGY_CONFIG.BUILD_COST || 5);
         if (eShip.blocked) return { success: false, message: eShip.message };
         const town = Engine.findTown(player.townId);
         if (!town) return { success: false, message: 'Town not found.' };
@@ -3229,7 +3229,7 @@
             unpaidDocking: false,
         };
         player.ships.push(ship);
-        consumeEnergy(ENERGY_CONFIG.BUILD_COST || 5);
+        Player.consumeEnergy(ENERGY_CONFIG.BUILD_COST || 5);
         Engine.logEvent('You commissioned a ' + shipType.name + ' at ' + town.name + ' for ' + Math.round(shipCost) + 'g.', null, 'my_business');
         return { success: true, message: 'Built ' + shipType.name + ' for ' + Math.round(shipCost) + 'g!', ship: ship, cost: shipCost };
     }
@@ -4392,7 +4392,7 @@
         if (player.travelRestBonus || mode === 'npc_luxury' || mode === 'npc_luxury_sea') {
             // Luxury travel: restore energy instead of draining
             if (typeof player.energy === 'number') {
-                var maxE = (typeof getMaxEnergy === 'function') ? getMaxEnergy() : 100;
+                var maxE = Player.getMaxEnergy ? Player.getMaxEnergy() : 100;
                 player.energy = Math.min(maxE, player.energy + 0.5 / ticksPerDay);
             }
             travelDrain = 0; // no drain
@@ -4410,7 +4410,7 @@
             travelDrain += 0.1;
         }
         if (travelDrain > 0) {
-            consumeEnergy(travelDrain);
+            Player.consumeEnergy(travelDrain);
         }
 
         if (player.travelProgress >= 1.0) {
@@ -4576,7 +4576,7 @@
                 } else if (r < 0.60) {
                     const loss = Math.min(player.gold, Math.floor(10 + roll() * 20));
                     player.gold -= loss;
-                    if (typeof inflictRandomInjury === 'function') inflictRandomInjury('wolf attack');
+                    if (typeof Player.inflictRandomInjury === 'function') Player.inflictRandomInjury('wolf attack');
                     Engine.logEvent(`\uD83D\uDC3A Wolves attacked you in the forest! Lost ${loss}g.`);
                 } else if (r < 0.75) {
                     const bonus = Math.floor(10 + roll() * 40);
@@ -12893,7 +12893,7 @@
 
         // Injury check
         if (rng && rng.random() < injuryChance) {
-            inflictRandomInjury('battle');
+            Player.inflictRandomInjury('battle');
         }
 
         // Degrade player equipment after battle (matches NPC soldier degradation)
@@ -13035,7 +13035,7 @@
         var injChance = (task.injuryChance || 0) * approachCfg.injuryMult;
         if (rng && rng.random() < injChance) {
             if (task.injurySeverity === 'moderate' || task.injurySeverity === 'severe') {
-                inflictRandomInjury('military_task');
+                Player.inflictRandomInjury('military_task');
             } else {
                 // Minor injury — just a scratch
                 player.injuries = player.injuries || [];
@@ -13043,7 +13043,7 @@
                     type: 'bruise', name: 'Bruise', severity: 'minor',
                     dayOccurred: day, treated: false, healDay: day + 5, source: 'military_task'
                 });
-                _applyConditionHealthHit('minor');
+                Player._applyConditionHealthHit('minor');
                 Engine.logEvent('🩹 ' + player.fullName + ' suffered a minor injury during ' + task.name + '.');
             }
         }
@@ -13098,1152 +13098,7 @@
         Engine.logEvent((isWartime ? '⚔️' : '🏰') + ' ' + task.name + ': ' + task.desc + ' Earned ' + taskPay + 'g as ' + rankLabels[rank] + '.');
     }
 
-    // ========================================================
-    // §11.10 INJURY & ILLNESS SYSTEM
-    // ========================================================
-
-    // Health impact when first getting a condition
-    var _CONDITION_HEALTH_HIT = { minor: 5, moderate: 10, severe: 20 };
-    // Daily health drain while condition is active
-    var _CONDITION_DAILY_DRAIN = { minor: 1, moderate: 3, severe: 8 };
-
-    function _applyConditionHealthHit(severity) {
-        var hit = _CONDITION_HEALTH_HIT[severity] || 0;
-        if (hit > 0) {
-            player.health = Math.max(0, (player.health || 100) - hit);
-            if (player.health <= 0 && !window._godInvincible) {
-                player.deathCause = 'Succumbed to ' + severity + ' injuries/illness';
-                Engine.logEvent('💀 ' + player.fullName + ' died from their injuries/illness.');
-                if (typeof UI !== 'undefined' && UI.toast) UI.toast('☠️ You have died!', 'danger', 'critical');
-                handlePlayerDeath();
-            }
-        }
-    }
-
-    function inflictRandomInjury(source) {
-        const rng = Engine.getRng();
-        if (!rng) return;
-        const type = INJURY_TYPES[rng.randInt(0, INJURY_TYPES.length - 1)];
-        let severity = type.severity;
-        // Existing injuries increase chance of getting a worse injury
-        const existingCount = player.injuries.length;
-        if (existingCount > 0 && rng.random() < 0.15 * existingCount) {
-            // Bump severity: minor→moderate, moderate→severe
-            if (severity === 'minor') severity = 'moderate';
-            else if (severity === 'moderate') severity = 'severe';
-        }
-        const injury = {
-            type: type.id,
-            name: type.name,
-            severity: severity,
-            dayOccurred: Engine.getDay(),
-            treated: false,
-            healDay: Engine.getDay() + type.healDays,
-            source: source || 'unknown'
-        };
-        player.injuries.push(injury);
-        _applyConditionHealthHit(severity);
-        Engine.logEvent(`${player.fullName} sustained ${type.name} (${severity}).`);
-
-        // Journal — injury
-        recordJournalEntry('injury', 'Suffered a ' + type.name + ' (' + severity + ') from ' + (source || 'an unfortunate incident') + '. Recovery will take some days.', { mood: 'weary' });
-
-        if (typeof UI !== 'undefined' && UI.toast) {
-            UI.toast(`🩹 Injury: ${type.name} (${severity})`, 'danger');
-        }
-    }
-
-    function tickPlayerIllnessExposure() {
-        if (!player.townId || player.traveling) return;
-        if (player.illnesses && player.illnesses.length > 0) return; // already sick
-        var rng = Engine.getRng();
-        if (!rng) return;
-        var day = Engine.getDay();
-
-        // Check every day
-
-        try {
-            var w = Engine.getWorld();
-            if (!w || !w.people) return;
-            var townPeople = w.people.filter(function(p) { return p.alive && p.townId === player.townId; });
-            if (townPeople.length === 0) return;
-            var sickCount = 0;
-            var contagiousSick = {};
-            for (var i = 0; i < townPeople.length; i++) {
-                if (townPeople[i].sick) {
-                    sickCount++;
-                    var ill = townPeople[i].illness;
-                    if (ill === 'plague' || ill === 'cold' || ill === 'flu') {
-                        if (!contagiousSick[ill]) contagiousSick[ill] = 0;
-                        contagiousSick[ill]++;
-                    }
-                }
-            }
-            if (sickCount === 0) return;
-
-            var pop = townPeople.length;
-            // Housing protection
-            var housingProtection = getHousingDiseaseReduction();
-            // Medical skills give protection
-            var skillProtection = 0;
-            if (hasSkill('doctor')) skillProtection += 0.3;
-            else if (hasSkill('first_aid')) skillProtection += 0.15;
-            else if (hasSkill('field_medic')) skillProtection += 0.10;
-            var protectionMult = Math.max(0.1, 1.0 - housingProtection - skillProtection);
-
-            for (var illId in contagiousSick) {
-                // Early-game plague protection: immune to plague before day 90
-                if (illId === 'plague' && Engine.getDay() <= 90) continue;
-                var illSickRatio = contagiousSick[illId] / pop;
-                // Player exposure rate: lower than NPC contagion (player takes more precautions)
-                var exposureChance = illSickRatio * 0.03 * protectionMult;
-                if (illId === 'plague') {
-                    exposureChance *= 2; // plague is more aggressive
-                    if (Engine.getDay() <= 180) exposureChance *= 0.25; // reduced in early game
-                }
-
-                if (rng.chance(exposureChance)) {
-                    // Map NPC illness to player illness type
-                    var playerIllId = null;
-                    if (illId === 'plague') playerIllId = 'plague';
-                    else if (illId === 'flu' || illId === 'cold') playerIllId = 'common_cold';
-                    if (playerIllId) {
-                        inflictSpecificIllness(playerIllId, 'town_exposure');
-                    }
-                    break; // only one illness per tick
-                }
-            }
-        } catch(e) {}
-    }
-
-    function inflictRandomIllness(source) {
-        const rng = Engine.getRng();
-        if (!rng) return;
-        // Housing disease resistance — player's primary home reduces illness chance
-        var dReduction = getHousingDiseaseReduction();
-        if (dReduction > 0 && rng.chance(dReduction)) {
-            Engine.logEvent(player.fullName + '\'s housing protected them from illness.');
-            return;
-        }
-        // Filter out specialty illnesses from random pool (waterlogged_fever is sea-only, infection is combat-only)
-        var randomPool = ILLNESS_TYPES.filter(function(t) { return t.id !== 'waterlogged_fever' && t.id !== 'infection'; });
-        const type = randomPool[rng.randInt(0, randomPool.length - 1)];
-        const illness = {
-            type: type.id,
-            name: type.name,
-            severity: type.severity,
-            dayOccurred: Engine.getDay(),
-            treated: false,
-            healDay: Engine.getDay() + type.healDays,
-            source: source || 'unknown'
-        };
-        player.illnesses.push(illness);
-        _applyConditionHealthHit(type.severity);
-        Engine.logEvent(`${player.fullName} contracted ${type.name} (${type.severity}).`);
-        if (typeof UI !== 'undefined' && UI.toast) {
-            UI.toast(`🤒 Illness: ${type.name} (${type.severity})`, 'warning');
-        }
-    }
-
-    function inflictSpecificIllness(illnessId, source) {
-        const type = ILLNESS_TYPES.find(t => t.id === illnessId);
-        if (!type) return;
-        // Housing disease resistance
-        var dReduction = getHousingDiseaseReduction();
-        var rng = Engine.getRng();
-        if (dReduction > 0 && rng && rng.chance(dReduction)) {
-            Engine.logEvent(player.fullName + '\'s housing protected them from ' + type.name + '.');
-            return;
-        }
-        const illness = {
-            type: type.id,
-            name: type.name,
-            severity: type.severity,
-            dayOccurred: Engine.getDay(),
-            treated: false,
-            healDay: Engine.getDay() + type.healDays,
-            source: source || 'unknown'
-        };
-        player.illnesses.push(illness);
-        _applyConditionHealthHit(type.severity);
-        Engine.logEvent(`${player.fullName} contracted ${type.name}.`);
-        if (typeof UI !== 'undefined' && UI.toast) {
-            UI.toast(`🤒 Illness: ${type.name}`, 'warning');
-        }
-    }
-
-    function visitHospital(conditionIndex, isIllness) {
-        const town = Engine.findTown(player.townId);
-        if (!town) return { success: false, message: 'Not in a town.' };
-
-        // Find the actual hospital building
-        var hospBld = null;
-        if (town.buildings) {
-            for (var _hbi = 0; _hbi < town.buildings.length; _hbi++) {
-                if (town.buildings[_hbi].type === 'hospital') { hospBld = town.buildings[_hbi]; break; }
-            }
-        }
-        if (!hospBld) return { success: false, message: 'No hospital in this town. Try a city or capital.' };
-
-        const list = isIllness ? player.illnesses : player.injuries;
-        if (conditionIndex < 0 || conditionIndex >= list.length) return { success: false, message: 'Invalid condition.' };
-
-        const condition = list[conditionIndex];
-        const typeDef = isIllness
-            ? ILLNESS_TYPES.find(t => t.id === condition.type)
-            : INJURY_TYPES.find(t => t.id === condition.type);
-        var effectiveTypeDef = typeDef || { id: condition.type, name: condition.name || 'Unknown', severity: condition.severity || 'minor', healDays: condition.severity === 'severe' ? 15 : condition.severity === 'moderate' ? 7 : 3, product: 'antidote', productCost: condition.severity === 'severe' ? 30 : condition.severity === 'moderate' ? 15 : 8 };
-
-        // Get AI-driven fee from the hospital
-        var fees = Engine.getHospitalFees ? Engine.getHospitalFees(player.townId) : null;
-        var hospInfo = fees ? (fees.hospital || fees.clinic) : null;
-        var cost = hospInfo && hospInfo.fees ? (hospInfo.fees[condition.severity] || getHospitalCost(effectiveTypeDef, condition.severity)) : getHospitalCost(effectiveTypeDef, condition.severity);
-        if (player.gold < cost) return { success: false, message: 'Not enough gold. Hospital costs ' + cost + 'g.' };
-
-        // Treatment processing time
-        var treatTicks = CONFIG.TREATMENT_TICKS ? (CONFIG.TREATMENT_TICKS[condition.severity] || 25) : 25;
-        if (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.TREATMENT_TICKS) {
-            treatTicks = NPC_HEALTH_CONFIG.TREATMENT_TICKS[condition.severity] || treatTicks;
-        }
-
-        // Queue wait time — player must wait in line
-        var _queue = hospBld._treatmentQueue || [];
-        var _wCount = (hospBld.workers && hospBld.workers.length) || 0;
-        // Hospital: 4 simultaneous patients per 2 workers (floor division)
-        var _maxH = Math.max(1, Math.floor(_wCount / 2) * 4);
-        // Odd workers: 10% faster treatment
-        var _oddWorkerBonus = (_wCount % 2 === 1) ? 0.9 : 1.0;
-        treatTicks = Math.max(1, Math.floor(treatTicks * _oddWorkerBonus));
-        var _playerIsNoble = player.isNoble || (player.socialRank && player.socialRank[town.kingdomId] >= 4);
-        var _queueWaitTicks = 0;
-        if (!_playerIsNoble) {
-            // Non-nobles wait behind everyone in queue
-            var _patientsAhead = _queue.length;
-            _queueWaitTicks = Math.max(0, Math.ceil((_patientsAhead / _maxH) * 30)); // ~30 ticks per batch ahead
-        }
-        // else: nobles skip to front, no wait
-
-        var totalTicks = treatTicks + _queueWaitTicks;
-
-        _consumeMedicalSupplies(town, condition.severity, isIllness);
-
-        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(totalTicks);
-
-        player.gold -= cost;
-        player.stats.totalGoldSpent += cost;
-
-        _payHealthcareRevenue(town, cost);
-
-        // Track stats on building
-        if (!hospBld._treatmentStats) hospBld._treatmentStats = { treated: 0, feeEarned: 0, supplyCost: 0 };
-        hospBld._treatmentStats.treated++;
-        hospBld._treatmentStats.feeEarned += cost;
-
-        list.splice(conditionIndex, 1);
-
-        var waitDesc = _queueWaitTicks > 0 ? ', waited ~' + Math.round(_queueWaitTicks / 60 * 10) / 10 + ' days in queue' : '';
-        var timeDesc = totalTicks <= 10 ? 'a quick visit' : totalTicks <= 60 ? 'half a day' : '~' + (Math.round(totalTicks / 60 * 10) / 10) + ' days';
-        Engine.logEvent(player.fullName + ' was treated at the hospital for ' + condition.name + ' (' + cost + 'g, ' + timeDesc + ').' + (_playerIsNoble ? ' Noble priority — skipped the queue.' : ''));
-        return { success: true, message: 'Treated ' + condition.name + ' at the hospital for ' + cost + 'g (' + timeDesc + ').' + waitDesc + (_playerIsNoble ? ' 👑 Noble priority.' : '') };
-    }
-
-    function visitClinic(conditionIndex, isIllness) {
-        const town = Engine.findTown(player.townId);
-        if (!town) return { success: false, message: 'Not in a town.' };
-
-        // Find the actual clinic building
-        var clinicBld = null;
-        if (town.buildings) {
-            for (var _cbi = 0; _cbi < town.buildings.length; _cbi++) {
-                if (town.buildings[_cbi].type === 'clinic') { clinicBld = town.buildings[_cbi]; break; }
-            }
-        }
-        if (!clinicBld) return { success: false, message: 'No clinic in this town.' };
-
-        const list = isIllness ? player.illnesses : player.injuries;
-        if (conditionIndex < 0 || conditionIndex >= list.length) return { success: false, message: 'Invalid condition.' };
-
-        const condition = list[conditionIndex];
-
-        const typeDef = isIllness
-            ? ILLNESS_TYPES.find(t => t.id === condition.type)
-            : INJURY_TYPES.find(t => t.id === condition.type);
-        var effectiveTypeDef = typeDef || { id: condition.type, name: condition.name || 'Unknown', severity: condition.severity || 'minor', healDays: condition.severity === 'moderate' ? 7 : 3, product: 'antidote', productCost: condition.severity === 'moderate' ? 15 : 8 };
-
-        // Get AI-driven fee from the clinic
-        var fees = Engine.getHospitalFees ? Engine.getHospitalFees(player.townId) : null;
-        var clinicInfo = fees ? fees.clinic : null;
-        var cost = clinicInfo && clinicInfo.fees ? (clinicInfo.fees[condition.severity] || getClinicCost(effectiveTypeDef, condition.severity)) : getClinicCost(effectiveTypeDef, condition.severity);
-        if (player.gold < cost) return { success: false, message: 'Not enough gold. Clinic costs ' + cost + 'g.' };
-
-        var treatTicks = 5;
-        if (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.TREATMENT_TICKS) {
-            treatTicks = NPC_HEALTH_CONFIG.TREATMENT_TICKS[condition.severity] || 5;
-        }
-        // Clinic takes 2x longer than hospital for all severities
-        treatTicks = treatTicks * 2;
-
-        // Queue wait time — player must wait in line
-        var _queue = clinicBld._treatmentQueue || [];
-        var _wCount = (clinicBld.workers && clinicBld.workers.length) || 0;
-        // Clinic: 2 simultaneous patients per 2 workers (floor division)
-        var _maxH = Math.max(1, Math.floor(_wCount / 2) * 2);
-        // Odd workers: 10% faster treatment
-        var _oddWorkerBonus = (_wCount % 2 === 1) ? 0.9 : 1.0;
-        treatTicks = Math.max(1, Math.floor(treatTicks * _oddWorkerBonus));
-        var _playerIsNoble = player.isNoble || (player.socialRank && player.socialRank[town.kingdomId] >= 4);
-        var _queueWaitTicks = 0;
-        if (!_playerIsNoble) {
-            var _patientsAhead = _queue.length;
-            _queueWaitTicks = Math.max(0, Math.ceil((_patientsAhead / _maxH) * 30));
-        }
-
-        var totalTicks = treatTicks + _queueWaitTicks;
-
-        _consumeMedicalSupplies(town, condition.severity, isIllness);
-
-        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(totalTicks);
-
-        player.gold -= cost;
-        player.stats.totalGoldSpent += cost;
-
-        _payHealthcareRevenue(town, cost);
-
-        // Track stats on building
-        if (!clinicBld._treatmentStats) clinicBld._treatmentStats = { treated: 0, feeEarned: 0, supplyCost: 0 };
-        clinicBld._treatmentStats.treated++;
-        clinicBld._treatmentStats.feeEarned += cost;
-
-        var waitDesc = _queueWaitTicks > 0 ? ', waited ~' + Math.round(_queueWaitTicks / 60 * 10) / 10 + ' days in queue' : '';
-        var nobleNote = _playerIsNoble ? ' 👑 Noble priority.' : '';
-
-        // Clinic fully cures all conditions (time + cost is the tradeoff vs hospital)
-        list.splice(conditionIndex, 1);
-        var timeDesc = totalTicks <= 10 ? 'a quick visit' : totalTicks <= 60 ? 'half a day' : '~' + (Math.round(totalTicks / 60 * 10) / 10) + ' days';
-        Engine.logEvent(player.fullName + ' was treated at the clinic for ' + condition.name + ' (' + cost + 'g, ' + timeDesc + ').' + nobleNote);
-        return { success: true, message: 'Treated ' + condition.name + ' at the clinic for ' + cost + 'g (' + timeDesc + ').' + waitDesc + nobleNote };
-    }
-
-    function _payHealthcareRevenue(town, fee) {
-        if (!town) return;
-        var kingdom = Engine.findKingdom(town.kingdomId);
-        var healthcareTaxRate = (kingdom && kingdom.healthcareTaxRate != null) ? kingdom.healthcareTaxRate : 0.10;
-        var taxAmount = Math.floor(fee * healthcareTaxRate);
-
-        // Find the medical building
-        var medBld = null;
-        if (town.buildings) {
-            for (var i = 0; i < town.buildings.length; i++) {
-                if (town.buildings[i].type === 'hospital' || town.buildings[i].type === 'clinic') {
-                    medBld = town.buildings[i]; break;
-                }
-            }
-        }
-
-        var isKingdomOwned = medBld && kingdom && medBld.ownerId === kingdom.id;
-        var isPlayerOwned = medBld && medBld.ownerId === 'player';
-
-        if (isKingdomOwned) {
-            // Kingdom gets full revenue
-            if (kingdom) {
-                kingdom.gold = (kingdom.gold || 0) + fee;
-                kingdom.healthcareTaxRevenue = (kingdom.healthcareTaxRevenue || 0) + fee;
-            }
-        } else {
-            // Owner keeps fee minus healthcare tax
-            var ownerRevenue = fee - taxAmount;
-            if (kingdom && taxAmount > 0) {
-                kingdom.gold = (kingdom.gold || 0) + taxAmount;
-                kingdom.healthcareTaxRevenue = (kingdom.healthcareTaxRevenue || 0) + taxAmount;
-            }
-            if (isPlayerOwned) {
-                // Player-owned: credit to player directly
-                player.gold += ownerRevenue;
-                player.stats.totalGoldEarned = (player.stats.totalGoldEarned || 0) + ownerRevenue;
-            } else if (medBld && medBld.ownerId) {
-                var owner = Engine.findPerson(medBld.ownerId);
-                if (owner && owner.alive) owner.gold = (owner.gold || 0) + ownerRevenue;
-            }
-        }
-    }
-
-    function getHospitalCost(typeDef, severity) {
-        var base = (typeDef && typeDef.productCost) ? typeDef.productCost : 10;
-        if (severity === 'severe') return base * 8;
-        if (severity === 'moderate') return base * 5;
-        return base * 3;
-    }
-
-    function getClinicCost(typeDef, severity) {
-        var base = (typeDef && typeDef.productCost) ? typeDef.productCost : 10;
-        if (severity === 'moderate') return base * 3;
-        return base * 2;
-    }
-
-    function _consumeMedicalSupplies(town, severity, isIllness) {
-        if (!town || !town.market || !town.market.supply) return;
-        var supply = town.market.supply;
-        var NPC_HEALTH_CONFIG = (typeof CONFIG !== 'undefined' && CONFIG.NPC_HEALTH_CONFIG) ? CONFIG.NPC_HEALTH_CONFIG : {};
-        var supplyDef;
-        if (isIllness) {
-            supplyDef = (NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_ILLNESS && NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_ILLNESS[severity]) || null;
-        } else {
-            supplyDef = (NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_INJURY && NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_INJURY[severity]) || null;
-        }
-        if (!supplyDef) {
-            // Legacy fallback
-            supplyDef = (NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES && NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES[severity]) || null;
-        }
-        if (!supplyDef) return;
-
-        var medRank = NPC_HEALTH_CONFIG.MEDICINE_RANK || ['herbal_remedy', 'fever_tonic', 'healing_tonic', 'antidote'];
-
-        for (var key in supplyDef) {
-            var needed = supplyDef[key];
-            var rankIdx = medRank.indexOf(key);
-            var consumed = false;
-            // Try exact match first
-            if ((supply[key] || 0) >= needed) {
-                supply[key] -= needed;
-                consumed = true;
-            } else if (rankIdx >= 0) {
-                // Try higher-tier substitutes
-                for (var si = rankIdx + 1; si < medRank.length; si++) {
-                    if ((supply[medRank[si]] || 0) >= needed) {
-                        supply[medRank[si]] -= needed;
-                        consumed = true;
-                        break;
-                    }
-                }
-            }
-            // If not consumed, treatment still proceeds (shortage)
-        }
-    }
-
-    function getMedicalFacilities(townId) {
-        var town = Engine.findTown(townId || player.townId);
-        if (!town) return { hasHospital: false, hasClinic: false };
-        var hasHospital = false, hasClinic = false;
-        if (town.buildings) {
-            for (var i = 0; i < town.buildings.length; i++) {
-                var bt = town.buildings[i].type || '';
-                if (bt === 'hospital') hasHospital = true;
-                if (bt === 'clinic') hasClinic = true;
-            }
-        }
-        // Cities/capitals always have implicit hospital
-        if (town.category === 'city' || town.category === 'capital_city') hasHospital = true;
-        return { hasHospital: hasHospital, hasClinic: hasClinic };
-    }
-
-    function selfTreat(conditionIndex, isIllness) {
-        if (!hasSkill('doctor') && !hasSkill('first_aid') && !hasSkill('field_medic')) return { success: false, message: 'You need First Aid, Field Medic, or Doctor skill to self-treat.' };
-
-        const list = isIllness ? player.illnesses : player.injuries;
-        if (conditionIndex < 0 || conditionIndex >= list.length) return { success: false, message: 'Invalid condition.' };
-
-        const condition = list[conditionIndex];
-        const typeDef = isIllness
-            ? ILLNESS_TYPES.find(t => t.id === condition.type)
-            : INJURY_TYPES.find(t => t.id === condition.type);
-        var effectiveTypeDef = typeDef || { id: condition.type, name: condition.name || 'Unknown', severity: condition.severity || 'minor', healDays: condition.severity === 'severe' ? 15 : condition.severity === 'moderate' ? 7 : 3, product: isIllness ? 'herbal_remedy' : 'bandages', productCost: 10 };
-
-        // first_aid: only minor injuries/illnesses. field_medic: minor+moderate. doctor: all.
-        if (!hasSkill('doctor')) {
-            if (condition.severity === 'severe') return { success: false, message: 'Only the Doctor skill can treat severe conditions.' };
-            if (condition.severity === 'moderate' && !hasSkill('field_medic')) return { success: false, message: 'Need Field Medic or Doctor skill for moderate conditions.' };
-        }
-
-        // Check for product in inventory
-        const productId = effectiveTypeDef.product;
-        if (!player.inventory[productId] || player.inventory[productId] < 1) {
-            return { success: false, message: 'Need ' + productId.replace(/_/g, ' ') + ' in inventory to self-treat.' };
-        }
-
-        // Self-treat takes same time as clinic (2x hospital ticks)
-        var treatTicks = CONFIG.TREATMENT_TICKS ? (CONFIG.TREATMENT_TICKS[condition.severity] || 15) : 15;
-        treatTicks = treatTicks * 2; // clinic rate
-        // Doctor skill: faster treatment
-        if (hasSkill('doctor')) treatTicks = Math.max(5, Math.floor(treatTicks * 0.6));
-        else if (hasSkill('field_medic')) treatTicks = Math.max(5, Math.floor(treatTicks * 0.8));
-
-        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(treatTicks);
-
-        player.inventory[productId]--;
-
-        // Fully cure the condition (like hospital/clinic)
-        list.splice(conditionIndex, 1);
-        grantXP(8, 'medical');
-
-        var timeDesc = treatTicks <= 10 ? 'a quick treatment' : treatTicks <= 60 ? 'half a day' : '~' + (Math.round(treatTicks / 60 * 10) / 10) + ' days';
-        Engine.logEvent('⚕️ ' + player.fullName + ' self-treated ' + condition.name + ' using ' + productId.replace(/_/g, ' ') + ' (' + timeDesc + ').');
-        return { success: true, message: 'Self-treated ' + condition.name + ' using ' + productId.replace(/_/g, ' ') + '. Fully recovered! (' + timeDesc + ')' };
-    }
-
-    // Field Medic skill: treat injured NPCs in town for gold
-    function treatOther() {
-        if (!hasSkill('field_medic') && !hasSkill('doctor')) {
-            return { success: false, message: 'You need the Field Medic or Doctor skill to treat others.' };
-        }
-        if (player.traveling) return { success: false, message: 'Cannot treat others while traveling.' };
-
-        var town = Engine.findTown(player.townId);
-        if (!town) return { success: false, message: 'No town found.' };
-
-        // Find an injured/ill NPC in town
-        var people = town.people || [];
-        var patient = null;
-        for (var i = 0; i < people.length; i++) {
-            var p = people[i];
-            if (!p || !p.alive) continue;
-            if ((p.injuries && p.injuries.length > 0) || (p.illnesses && p.illnesses.length > 0)) {
-                patient = p;
-                break;
-            }
-        }
-
-        if (!patient) {
-            return { success: false, message: 'No one in town needs medical attention right now.' };
-        }
-
-        // Check we have medical supplies
-        var supplies = ['bandages', 'herbal_remedy', 'healing_tonic', 'herbal_poultice', 'splint', 'fever_tonic', 'antidote'];
-        var hasSupply = false;
-        var usedSupply = '';
-        for (var s = 0; s < supplies.length; s++) {
-            if (player.inventory[supplies[s]] && player.inventory[supplies[s]] > 0) {
-                hasSupply = true;
-                usedSupply = supplies[s];
-                break;
-            }
-        }
-        if (!hasSupply) {
-            return { success: false, message: 'You need medical supplies (bandages, remedies, tonics) to treat others.' };
-        }
-
-        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.treat_other || 5);
-
-        player.inventory[usedSupply]--;
-
-        // Heal the NPC
-        if (patient.injuries && patient.injuries.length > 0) {
-            patient.injuries.shift();
-        } else if (patient.illnesses && patient.illnesses.length > 0) {
-            patient.illnesses.shift();
-        }
-
-        // Payment based on skill level
-        var basePay = hasSkill('doctor') ? 25 : 15;
-        // Nurse military rank bonus
-        if (NURSE_RANKS && NURSE_RANKS.indexOf(player.militaryRank) !== -1) basePay = Math.floor(basePay * 1.5);
-        player.gold += basePay;
-        player.stats.totalGoldEarned += basePay;
-        grantXP(5, 'medical');
-
-        // Relationship boost
-        modifyRelationship(patient.id, 10);
-
-        Engine.logEvent(`⚕️ ${player.fullName} treated ${patient.name || 'a townsperson'} and earned ${basePay}g.`);
-        return { success: true, message: `Treated ${patient.name || 'a townsperson'} using ${usedSupply}. Earned ${basePay}g.` };
-    }
-
-    // Treat a companion: spouse (spouseAI system), family member, or personal guard
-    // targetType: 'spouse', 'family', 'guard'
-    // targetId: NPC id for family/guard, ignored for spouse
-    // method: 'player' (use player's medical skill) or 'hospital' (pay for hospital treatment)
-    function treatCompanion(targetType, targetId, method) {
-        if (player.traveling) return { success: false, message: 'Cannot treat anyone while traveling.' };
-        var town = Engine.findTown(player.townId);
-        if (!town) return { success: false, message: 'You must be in a town.' };
-        var rng = Engine.getRng();
-
-        // Validate method
-        if (method === 'player') {
-            if (!hasSkill('field_medic') && !hasSkill('doctor')) {
-                return { success: false, message: 'You need the Field Medic or Doctor skill to treat others.' };
-            }
-        } else if (method === 'hospital') {
-            var hospBld = null;
-            if (town.buildings) {
-                for (var _hbi = 0; _hbi < town.buildings.length; _hbi++) {
-                    if (town.buildings[_hbi].type === 'hospital' || town.buildings[_hbi].type === 'clinic') {
-                        hospBld = town.buildings[_hbi]; break;
-                    }
-                }
-            }
-            if (!hospBld) return { success: false, message: 'No hospital or clinic in this town.' };
-        } else {
-            return { success: false, message: 'Invalid treatment method.' };
-        }
-
-        // === SPOUSE (uses spouseAI condition system) ===
-        if (targetType === 'spouse') {
-            if (!player.spouseId) return { success: false, message: 'You have no spouse.' };
-            var spouse = Engine.findPerson(player.spouseId);
-            if (!spouse || !spouse.alive) return { success: false, message: 'Spouse not found.' };
-            if (spouse.townId !== player.townId) return { success: false, message: 'Your spouse is not in this town.' };
-            initSpouseAI();
-            var ai = player.spouseAI;
-            if (ai.condition === 'healthy') return { success: false, message: spouse.firstName + ' is healthy and does not need treatment.' };
-
-            var condSeverity = ai.condition === 'gravely_ill' ? 'severe' : ai.condition === 'sick' ? 'moderate' : 'moderate';
-
-            if (method === 'player') {
-                // Check skill level vs severity
-                if (ai.condition === 'gravely_ill' && !hasSkill('doctor')) {
-                    return { success: false, message: 'Only the Doctor skill can treat gravely ill patients.' };
-                }
-                // Need medical supplies
-                var spouseSupplies = ai.condition === 'gravely_ill' ? ['antidote', 'healing_tonic', 'fever_tonic'] :
-                                     ai.condition === 'sick' ? ['herbal_remedy', 'fever_tonic', 'antidote'] :
-                                     ['bandages', 'herbal_poultice', 'splint'];
-                var usedSupply = null;
-                for (var si = 0; si < spouseSupplies.length; si++) {
-                    if (player.inventory[spouseSupplies[si]] && player.inventory[spouseSupplies[si]] > 0) {
-                        usedSupply = spouseSupplies[si]; break;
-                    }
-                }
-                if (!usedSupply) {
-                    return { success: false, message: 'Need medical supplies (' + spouseSupplies.join(', ') + ') to treat ' + spouse.firstName + '.' };
-                }
-
-                if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.treat_other || 5);
-                player.inventory[usedSupply]--;
-
-                // Success chance: doctor 90%, field_medic 70%, +5% per intelligence point of player
-                var baseChance = hasSkill('doctor') ? 0.90 : 0.70;
-                if (ai.condition === 'gravely_ill') baseChance -= 0.15;
-                var success = rng.chance(baseChance);
-
-                if (success) {
-                    if (ai.condition === 'gravely_ill') {
-                        ai.condition = 'sick';
-                        ai.sickEndDay = Engine.getDay() + rng.randInt(3, 7);
-                        ai.health = Math.min(ai.health + 20, CONFIG.SPOUSE_AI ? CONFIG.SPOUSE_AI.HEALTH_MAX : 100);
-                        Engine.logEvent('⚕️ ' + player.fullName + ' treated ' + spouse.firstName + '. Condition stabilized from gravely ill to sick.');
-                    } else if (ai.condition === 'sick') {
-                        ai.condition = 'healthy';
-                        ai.daysSick = 0;
-                        ai.health = Math.min(ai.health + 30, CONFIG.SPOUSE_AI ? CONFIG.SPOUSE_AI.HEALTH_MAX : 100);
-                        Engine.logEvent('⚕️ ' + player.fullName + ' treated ' + spouse.firstName + '. Fully recovered!');
-                    } else if (ai.condition === 'injured') {
-                        ai.condition = 'healthy';
-                        ai.daysInjured = 0;
-                        ai.health = Math.min(ai.health + 25, CONFIG.SPOUSE_AI ? CONFIG.SPOUSE_AI.HEALTH_MAX : 100);
-                        Engine.logEvent('⚕️ ' + player.fullName + ' treated ' + spouse.firstName + '\'s injuries. Fully recovered!');
-                    }
-                    grantXP(8, 'medical');
-                    modifyRelationship(player.spouseId, 5);
-                    return { success: true, message: 'Successfully treated ' + spouse.firstName + ' using ' + usedSupply + '.' };
-                } else {
-                    ai.health = Math.min(ai.health + 5, CONFIG.SPOUSE_AI ? CONFIG.SPOUSE_AI.HEALTH_MAX : 100);
-                    grantXP(3, 'medical');
-                    return { success: false, message: 'Treatment of ' + spouse.firstName + ' was not fully effective. Used ' + usedSupply + '. Try again or visit a hospital.' };
-                }
-            } else {
-                // Hospital treatment for spouse — same cost as player, no time advance (companion stays at hospital)
-                var fees = Engine.getHospitalFees ? Engine.getHospitalFees(player.townId) : null;
-                var hospInfo2 = fees ? (fees.hospital || fees.clinic) : null;
-                var cost = hospInfo2 && hospInfo2.fees ? (hospInfo2.fees[condSeverity] || getHospitalCost({ productCost: 10 }, condSeverity)) : getHospitalCost({ productCost: 10 }, condSeverity);
-                if (player.gold < cost) return { success: false, message: 'Not enough gold. Hospital costs ' + cost + 'g for ' + spouse.firstName + '.' };
-
-                // No Game.advanceTicks — companion is locked at hospital, player continues
-                player.gold -= cost;
-                player.stats.totalGoldSpent += cost;
-                _payHealthcareRevenue(town, cost);
-
-                // Hospital always succeeds
-                ai.condition = 'healthy';
-                ai.daysSick = 0;
-                ai.daysInjured = 0;
-                ai.health = Math.min(ai.health + 40, CONFIG.SPOUSE_AI ? CONFIG.SPOUSE_AI.HEALTH_MAX : 100);
-                modifyRelationship(player.spouseId, 3);
-                Engine.logEvent('🏥 ' + spouse.firstName + ' was treated at the hospital. Cost: ' + cost + 'g.');
-                return { success: true, message: spouse.firstName + ' was treated at the hospital for ' + cost + 'g. Fully recovered!' };
-            }
-        }
-
-        // === FAMILY MEMBER or GUARD (uses standard NPC illness/injury system) ===
-        if (targetType === 'family' || targetType === 'guard') {
-            var npc = Engine.findPerson(targetId);
-            if (!npc || !npc.alive) return { success: false, message: 'Person not found.' };
-            if (npc.townId !== player.townId) return { success: false, message: (npc.firstName || 'They') + ' is not in this town.' };
-
-            // Validate they are actually family or guard
-            if (targetType === 'family') {
-                var isFamily = false;
-                if (player.spouseId === targetId) isFamily = true;
-                if (player.childrenIds && player.childrenIds.indexOf(targetId) >= 0) isFamily = true;
-                if (player.familyMembers) {
-                    for (var fm = 0; fm < player.familyMembers.length; fm++) {
-                        if (player.familyMembers[fm].npcId === targetId) { isFamily = true; break; }
-                    }
-                }
-                if (!isFamily) return { success: false, message: 'This person is not a family member.' };
-            } else {
-                var isGuard = false;
-                for (var gi = 0; gi < (player.guards || []).length; gi++) {
-                    if (player.guards[gi].personId === targetId) { isGuard = true; break; }
-                }
-                if (!isGuard) return { success: false, message: 'This person is not one of your guards.' };
-            }
-
-            // Check if they actually need treatment
-            var hasInjury = npc.injured || (npc.injuries && npc.injuries.length > 0);
-            var hasIllness = npc.sick || (npc.illnesses && npc.illnesses.length > 0);
-            if (!hasInjury && !hasIllness) return { success: false, message: (npc.firstName || 'They') + ' does not need medical attention.' };
-
-            if (method === 'player') {
-                // Determine severity from NPC state
-                var npcSeverity = 'minor';
-                if (npc.injuries && npc.injuries.length > 0) {
-                    npcSeverity = npc.injuries[0].severity || npc.injurySeverity || 'moderate';
-                } else if (npc.illnesses && npc.illnesses.length > 0) {
-                    npcSeverity = npc.illnesses[0].severity || 'moderate';
-                } else if (npc.injurySeverity) {
-                    npcSeverity = npc.injurySeverity;
-                }
-
-                if (npcSeverity === 'severe' && !hasSkill('doctor')) {
-                    return { success: false, message: 'Only the Doctor skill can treat severe conditions.' };
-                }
-                if (npcSeverity === 'moderate' && !hasSkill('field_medic') && !hasSkill('doctor')) {
-                    return { success: false, message: 'Need Field Medic or Doctor skill for moderate conditions.' };
-                }
-
-                // Need medical supplies
-                var supplies = ['bandages', 'herbal_remedy', 'healing_tonic', 'herbal_poultice', 'splint', 'fever_tonic', 'antidote'];
-                var usedSup = null;
-                for (var _s = 0; _s < supplies.length; _s++) {
-                    if (player.inventory[supplies[_s]] && player.inventory[supplies[_s]] > 0) {
-                        usedSup = supplies[_s]; break;
-                    }
-                }
-                if (!usedSup) return { success: false, message: 'Need medical supplies to treat ' + (npc.firstName || 'them') + '.' };
-
-                if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.treat_other || 5);
-                player.inventory[usedSup]--;
-
-                // Heal the NPC
-                if (npc.injuries && npc.injuries.length > 0) {
-                    npc.injuries.shift();
-                    if (npc.injuries.length === 0) { npc.injured = false; npc.injurySeverity = null; npc.injuryType = null; }
-                } else if (npc.illnesses && npc.illnesses.length > 0) {
-                    npc.illnesses.shift();
-                    if (npc.illnesses.length === 0) { npc.sick = false; npc.illness = null; }
-                } else {
-                    // Legacy flat flags
-                    if (npc.injured) { npc.injured = false; npc.injurySeverity = null; npc.injuryType = null; }
-                    else if (npc.sick) { npc.sick = false; npc.illness = null; }
-                }
-                npc.health = Math.min((npc.health || 50) + 25, 100);
-
-                grantXP(6, 'medical');
-                modifyRelationship(targetId, 8);
-                Engine.logEvent('⚕️ ' + player.fullName + ' treated ' + (npc.firstName || 'a companion') + ' using ' + usedSup + '.');
-                return { success: true, message: 'Treated ' + (npc.firstName || 'companion') + ' using ' + usedSup + '.' };
-            } else {
-                // Hospital treatment for family/guard NPC — same cost as player, no time advance
-                var npcSev = 'minor';
-                if (npc.injuries && npc.injuries.length > 0) npcSev = npc.injuries[0].severity || 'moderate';
-                else if (npc.illnesses && npc.illnesses.length > 0) npcSev = npc.illnesses[0].severity || 'moderate';
-                else if (npc.injurySeverity) npcSev = npc.injurySeverity;
-
-                var fees2 = Engine.getHospitalFees ? Engine.getHospitalFees(player.townId) : null;
-                var hospInfo3 = fees2 ? (fees2.hospital || fees2.clinic) : null;
-                var cost2 = hospInfo3 && hospInfo3.fees ? (hospInfo3.fees[npcSev] || getHospitalCost({ productCost: 10 }, npcSev)) : getHospitalCost({ productCost: 10 }, npcSev);
-                if (player.gold < cost2) return { success: false, message: 'Not enough gold. Hospital costs ' + cost2 + 'g.' };
-
-                // No Game.advanceTicks — companion stays at hospital, player continues
-                player.gold -= cost2;
-                player.stats.totalGoldSpent += cost2;
-                _payHealthcareRevenue(town, cost2);
-
-                // Hospital clears all conditions
-                npc.injuries = [];
-                npc.illnesses = [];
-                npc.injured = false;
-                npc.sick = false;
-                npc.injurySeverity = null;
-                npc.injuryType = null;
-                npc.illness = null;
-                npc.health = Math.min((npc.health || 50) + 40, 100);
-                if (npc._illnessTreatPaid) delete npc._illnessTreatPaid;
-
-                modifyRelationship(targetId, 5);
-                Engine.logEvent('🏥 ' + (npc.firstName || 'Your companion') + ' was treated at the hospital. Cost: ' + cost2 + 'g.');
-                return { success: true, message: (npc.firstName || 'Companion') + ' was treated at the hospital for ' + cost2 + 'g.' };
-            }
-        }
-
-        return { success: false, message: 'Invalid target type.' };
-    }
-
-    // Auto-treatment: children and guards seek hospital treatment if sick and have money
-    function _tickFamilyAutoTreatment() {
-        var day = Engine.getDay();
-        // Only check every 5 days to reduce overhead
-        if (day % 5 !== 0) return;
-
-        var childIds = player.childrenIds || [];
-        for (var ci = 0; ci < childIds.length; ci++) {
-            _autoTreatNPC(childIds[ci]);
-        }
-        var guards = player.guards || [];
-        for (var gi = 0; gi < guards.length; gi++) {
-            if (guards[gi].personId) _autoTreatNPC(guards[gi].personId);
-        }
-    }
-
-    function _autoTreatNPC(npcId) {
-        var npc = Engine.findPerson(npcId);
-        if (!npc || !npc.alive) return;
-        var hasSickness = npc.sick || (npc.illnesses && npc.illnesses.length > 0);
-        var hasInjury = npc.injured || (npc.injuries && npc.injuries.length > 0);
-        if (!hasSickness && !hasInjury) return;
-
-        // Check if they are in a town with a hospital/clinic
-        var town = Engine.findTown(npc.townId);
-        if (!town) return;
-        var hasMed = false;
-        if (town.buildings) {
-            for (var bi = 0; bi < town.buildings.length; bi++) {
-                if (town.buildings[bi].type === 'hospital' || town.buildings[bi].type === 'clinic') { hasMed = true; break; }
-            }
-        }
-        if (!hasMed && (town.category === 'city' || town.category === 'capital_city')) hasMed = true;
-        if (!hasMed) return;
-
-        // Check NPC's gold (use npc.gold if it exists)
-        var npcGold = npc.gold || 0;
-        var sev = 'minor';
-        if (npc.injuries && npc.injuries.length > 0) sev = npc.injuries[0].severity || 'moderate';
-        else if (npc.illnesses && npc.illnesses.length > 0) sev = npc.illnesses[0].severity || 'moderate';
-        else if (npc.injurySeverity) sev = npc.injurySeverity;
-
-        var cost = getHospitalCost({ productCost: 10 }, sev);
-        if (npcGold < cost) return;
-
-        // Pay and cure
-        npc.gold -= cost;
-        npc.injuries = [];
-        npc.illnesses = [];
-        npc.injured = false;
-        npc.sick = false;
-        npc.injurySeverity = null;
-        npc.injuryType = null;
-        npc.illness = null;
-        npc.health = Math.min((npc.health || 50) + 40, 100);
-        if (npc._illnessTreatPaid) delete npc._illnessTreatPaid;
-        _payHealthcareRevenue(town, cost);
-        Engine.logEvent('🏥 ' + (npc.firstName || 'A family member') + ' sought treatment at the hospital (' + cost + 'g).');
-    }
-
-    // Get treatable companions (for UI display)
-    function getTreatableCompanions() {
-        var results = [];
-        var town = Engine.findTown(player.townId);
-        if (!town || player.traveling) return results;
-
-        // Check spouse (spouseAI condition system)
-        if (player.spouseId) {
-            var spouse = Engine.findPerson(player.spouseId);
-            if (spouse && spouse.alive && spouse.townId === player.townId) {
-                initSpouseAI();
-                if (player.spouseAI.condition !== 'healthy') {
-                    results.push({
-                        type: 'spouse',
-                        id: player.spouseId,
-                        name: spouse.firstName + ' ' + spouse.lastName,
-                        condition: player.spouseAI.condition,
-                        health: player.spouseAI.health,
-                        severity: player.spouseAI.condition === 'gravely_ill' ? 'severe' : 'moderate'
-                    });
-                }
-            }
-        }
-
-        // Check family members (NPC illness/injury system)
-        if (player.familyMembers) {
-            for (var i = 0; i < player.familyMembers.length; i++) {
-                var fm = player.familyMembers[i];
-                if (fm.npcId === player.spouseId) continue; // spouse handled above
-                var fNpc = Engine.findPerson(fm.npcId);
-                if (!fNpc || !fNpc.alive || fNpc.townId !== player.townId) continue;
-                var fInjured = fNpc.injured || (fNpc.injuries && fNpc.injuries.length > 0);
-                var fSick = fNpc.sick || (fNpc.illnesses && fNpc.illnesses.length > 0);
-                if (fInjured || fSick) {
-                    var fCond = fInjured ? 'injured' : 'sick';
-                    var fSev = 'minor';
-                    if (fNpc.injuries && fNpc.injuries.length > 0) fSev = fNpc.injuries[0].severity || 'moderate';
-                    else if (fNpc.illnesses && fNpc.illnesses.length > 0) fSev = fNpc.illnesses[0].severity || 'moderate';
-                    else if (fNpc.injurySeverity) fSev = fNpc.injurySeverity;
-                    results.push({
-                        type: 'family',
-                        id: fm.npcId,
-                        name: fNpc.firstName + ' ' + (fNpc.lastName || ''),
-                        role: fm.role,
-                        condition: fCond,
-                        conditionDetail: fInjured ? (fNpc.injurySeverity || fNpc.injuryType || 'injured') : (fNpc.illness || 'sick'),
-                        health: fNpc.health || 50,
-                        severity: fSev
-                    });
-                }
-            }
-        }
-
-        // Check personal guards (NPC illness/injury system)
-        for (var g = 0; g < (player.guards || []).length; g++) {
-            var guard = player.guards[g];
-            if (!guard.personId) continue;
-            var gNpc = Engine.findPerson(guard.personId);
-            if (!gNpc || !gNpc.alive || gNpc.townId !== player.townId) continue;
-            var gInjured = gNpc.injured || (gNpc.injuries && gNpc.injuries.length > 0);
-            var gSick = gNpc.sick || (gNpc.illnesses && gNpc.illnesses.length > 0);
-            if (gInjured || gSick) {
-                var gCond = gInjured ? 'injured' : 'sick';
-                var gSev = 'minor';
-                if (gNpc.injuries && gNpc.injuries.length > 0) gSev = gNpc.injuries[0].severity || 'moderate';
-                else if (gNpc.illnesses && gNpc.illnesses.length > 0) gSev = gNpc.illnesses[0].severity || 'moderate';
-                else if (gNpc.injurySeverity) gSev = gNpc.injurySeverity;
-                results.push({
-                    type: 'guard',
-                    id: guard.personId,
-                    name: guard.name || gNpc.firstName,
-                    condition: gCond,
-                    conditionDetail: gInjured ? (gNpc.injurySeverity || gNpc.injuryType || 'injured') : (gNpc.illness || 'sick'),
-                    health: gNpc.health || 50,
-                    severity: gSev
-                });
-            }
-        }
-
-        return results;
-    }
-
-    function tickInjuriesAndIllnesses() {
-        const day = Engine.getDay();
-        const rng = Engine.getRng();
-
-        // Daily health drain from active conditions (use worst severity)
-        var worstDrain = 0;
-        for (var di = 0; di < (player.injuries || []).length; di++) {
-            var drainI = _CONDITION_DAILY_DRAIN[(player.injuries[di].severity)] || 0;
-            if (drainI > worstDrain) worstDrain = drainI;
-        }
-        for (var dj = 0; dj < (player.illnesses || []).length; dj++) {
-            var drainJ = _CONDITION_DAILY_DRAIN[(player.illnesses[dj].severity)] || 0;
-            if (drainJ > worstDrain) worstDrain = drainJ;
-        }
-        if (worstDrain > 0) {
-            player.health = Math.max(0, (player.health || 100) - worstDrain);
-            if (player.health <= 0 && !window._godInvincible) {
-                // Find the worst condition name for cause of death
-                var worstName = 'injuries';
-                var worstSev = 0;
-                var sevMap = { minor: 1, moderate: 2, severe: 3 };
-                for (var wi = 0; wi < (player.injuries || []).length; wi++) {
-                    if ((sevMap[player.injuries[wi].severity] || 0) > worstSev) { worstSev = sevMap[player.injuries[wi].severity]; worstName = player.injuries[wi].name || 'injury'; }
-                }
-                for (var wj = 0; wj < (player.illnesses || []).length; wj++) {
-                    if ((sevMap[player.illnesses[wj].severity] || 0) > worstSev) { worstSev = sevMap[player.illnesses[wj].severity]; worstName = player.illnesses[wj].name || 'illness'; }
-                }
-                Engine.logEvent('💀 ' + player.fullName + ' succumbed to ' + worstName + '. Health reached zero.');
-                if (typeof UI !== 'undefined' && UI.toast) UI.toast('☠️ Died from ' + worstName + '!', 'danger', 'critical');
-                player.deathCause = worstName;
-                handlePlayerDeath();
-                return;
-            }
-        }
-
-        // Health recovery: +2/day if no conditions AND energy, hunger, thirst all > 50; +1 bonus if all > 80
-        if ((player.injuries || []).length === 0 && (player.illnesses || []).length === 0) {
-            var hp = player.health || 100;
-            var maxHp = player.maxHealth || 100;
-            if (hp < maxHp) {
-                var energy = player.energy != null ? player.energy : 100;
-                var hunger = player.hunger != null ? player.hunger : 100;
-                var thirst = player.thirst != null ? player.thirst : 100;
-                var healAmt = 0;
-                if (energy > 50 && hunger > 50 && thirst > 50) healAmt += 2;
-                if (energy > 80 && hunger > 80 && thirst > 80) healAmt += 1;
-                if (healAmt > 0) player.health = Math.min(maxHp, hp + healAmt);
-            }
-        }
-
-        // Process injuries
-        for (let i = player.injuries.length - 1; i >= 0; i--) {
-            const inj = player.injuries[i];
-            if (inj.treated && day >= inj.healDay) {
-                player.injuries.splice(i, 1);
-                Engine.logEvent(`${player.fullName}'s ${inj.name} has healed.`);
-                continue;
-            }
-            if (!inj.treated) {
-                const daysUntreated = day - inj.dayOccurred;
-
-                if (inj.severity === 'minor') {
-                    // Minor: self-heals in 5-30 days (based on injury type healDays)
-                    const typeDef = INJURY_TYPES.find(t => t.id === inj.type);
-                    const healTime = typeDef ? Math.max(5, Math.min(30, typeDef.healDays * 2)) : 15;
-                    if (daysUntreated >= healTime) {
-                        player.injuries.splice(i, 1);
-                        Engine.logEvent(`${player.fullName}'s ${inj.name} has naturally healed.`);
-                        if (typeof UI !== 'undefined' && UI.toast) UI.toast(`💚 ${inj.name} healed naturally`, 'success');
-                        continue;
-                    }
-                } else if (inj.severity === 'moderate') {
-                    // Moderate: self-heals in 30-90 days, but small daily chance of becoming severe
-                    const typeDef = INJURY_TYPES.find(t => t.id === inj.type);
-                    const healTime = typeDef ? Math.max(30, Math.min(90, typeDef.healDays * 4)) : 60;
-                    if (daysUntreated >= healTime) {
-                        player.injuries.splice(i, 1);
-                        Engine.logEvent(`${player.fullName}'s ${inj.name} has naturally healed.`);
-                        if (typeof UI !== 'undefined' && UI.toast) UI.toast(`💚 ${inj.name} healed naturally`, 'success');
-                        continue;
-                    }
-                    // 1% daily chance of worsening to severe if untreated
-                    if (daysUntreated >= 10 && rng && rng.random() < 0.01) {
-                        inj.severity = 'severe';
-                        Engine.logEvent(`${player.fullName}'s ${inj.name} has worsened to severe!`);
-                        if (typeof UI !== 'undefined' && UI.toast) UI.toast(`⚠️ ${inj.name} is now severe!`, 'danger');
-                    }
-                } else if (inj.severity === 'severe') {
-                    // Severe: NO self-healing. Check type-specific death risk first, fallback to general
-                    const typeDef2 = INJURY_TYPES.find(t => t.id === inj.type);
-                    var injDeathRisk = (typeDef2 && typeDef2.deathRisk) ? typeDef2.deathRisk : 0;
-                    // Type-specific death risk applies immediately (e.g. deep wound 2%/day)
-                    if (injDeathRisk > 0 && rng && rng.random() < injDeathRisk && !window._godInvincible) {
-                        Engine.logEvent(`${player.fullName} died from ${inj.name}.`);
-                        if (typeof UI !== 'undefined' && UI.toast) UI.toast(`☠️ Died from ${inj.name}!`, 'danger', 'critical');
-                        player.deathCause = inj.name;
-                        handlePlayerDeath();
-                        return;
-                    }
-                    // General severe injury death: ~1.5% daily after 30 days untreated
-                    if (daysUntreated >= 30 && rng && rng.random() < 0.015 && !window._godInvincible) {
-                        Engine.logEvent(`${player.fullName} died from untreated ${inj.name}.`);
-                        if (typeof UI !== 'undefined' && UI.toast) UI.toast(`☠️ Died from untreated ${inj.name}!`, 'danger', 'critical');
-                        player.deathCause = 'Untreated ' + inj.name;
-                        handlePlayerDeath();
-                        return;
-                    }
-                }
-            }
-        }
-
-        // Process illnesses
-        for (let i = player.illnesses.length - 1; i >= 0; i--) {
-            const ill = player.illnesses[i];
-            if (ill.treated && day >= ill.healDay) {
-                player.illnesses.splice(i, 1);
-                Engine.logEvent(`${player.fullName} recovered from ${ill.name}.`);
-                continue;
-            }
-            if (!ill.treated) {
-                const daysUntreated = day - ill.dayOccurred;
-                if (ill.severity === 'minor' && daysUntreated >= 10) {
-                    ill.severity = 'moderate';
-                    Engine.logEvent(`${player.fullName}'s ${ill.name} has worsened!`);
-                } else if (ill.severity === 'moderate' && daysUntreated >= 25) {
-                    ill.severity = 'severe';
-                    Engine.logEvent(`${player.fullName}'s ${ill.name} is now severe!`);
-                } else if (ill.severity === 'severe') {
-                    const typeDef = ILLNESS_TYPES.find(t => t.id === ill.type);
-                    const deathRisk = (typeDef && typeDef.deathRisk) ? typeDef.deathRisk : 0.05;
-                    if (rng && rng.random() < deathRisk && !window._godInvincible) {
-                        Engine.logEvent(`${player.fullName} died from ${ill.name}.`);
-                        if (typeof UI !== 'undefined' && UI.toast) UI.toast(`☠️ Died from ${ill.name}!`, 'danger', 'critical');
-                        player.deathCause = ill.name;
-                        handlePlayerDeath();
-                        return;
-                    }
-                }
-            }
-        }
-    }
-
-    function getWorstConditionSeverity() {
-        let worst = null;
-        const severities = { minor: 1, moderate: 2, severe: 3 };
-        for (const inj of player.injuries) {
-            if (!worst || severities[inj.severity] > severities[worst]) worst = inj.severity;
-        }
-        for (const ill of player.illnesses) {
-            if (!worst || severities[ill.severity] > severities[worst]) worst = ill.severity;
-        }
-        return worst;
-    }
-
-    function getWorkEfficiencyModifier() {
-        let modifier = 1.0;
-        for (const inj of player.injuries) {
-            const typeDef = INJURY_TYPES.find(t => t.id === inj.type);
-            if (typeDef && typeDef.debuffs && typeDef.debuffs.workEfficiency) {
-                modifier += typeDef.debuffs.workEfficiency;
-            }
-        }
-        for (const ill of player.illnesses) {
-            const typeDef = ILLNESS_TYPES.find(t => t.id === ill.type);
-            if (typeDef && typeDef.debuffs && typeDef.debuffs.workEfficiency) {
-                modifier += typeDef.debuffs.workEfficiency;
-            } else {
-                // Fallback for old illness types without debuffs
-                var sev = ill.severity;
-                if (sev === 'severe') modifier -= 0.50;
-                else if (sev === 'moderate') modifier -= 0.25;
-                else if (sev === 'minor') modifier -= 0.10;
-            }
-        }
-        return Math.max(0.10, modifier); // minimum 10% efficiency
-    }
-
-    function canDoPhysicalWork() {
-        const sev = getWorstConditionSeverity();
-        if (sev === 'severe') return false;
-        // Injuries that block physical work
-        for (const inj of player.injuries) {
-            const typeDef = INJURY_TYPES.find(t => t.id === inj.type);
-            if (typeDef && typeDef.debuffs && typeDef.debuffs.blocksPhysical) return false;
-        }
-        // Illnesses that block physical work
-        for (const ill of player.illnesses) {
-            const typeDef = ILLNESS_TYPES.find(t => t.id === ill.type);
-            if (typeDef && typeDef.debuffs && typeDef.debuffs.blocksPhysical) return false;
-        }
-        return true;
-    }
-
-    function canDoAnyWork() {
-        const sev = getWorstConditionSeverity();
-        return sev !== 'severe';
-    }
-
-    // Get combined injury + illness debuff effects for use by other systems
-    function getInjuryDebuffs() {
-        const result = { hungerRate: 1.0, travelSpeed: 0, xpMult: 1.0, tradePenalty: 0, goldDrain: 0 };
-        for (const inj of player.injuries) {
-            const typeDef = INJURY_TYPES.find(t => t.id === inj.type);
-            if (!typeDef || !typeDef.debuffs) continue;
-            const d = typeDef.debuffs;
-            if (d.hungerRate) result.hungerRate = Math.max(result.hungerRate, d.hungerRate);
-            if (d.travelSpeed) result.travelSpeed = Math.min(result.travelSpeed, d.travelSpeed);
-            if (d.xpMult) result.xpMult = Math.min(result.xpMult, d.xpMult);
-            if (d.tradePenalty) result.tradePenalty = Math.min(result.tradePenalty, d.tradePenalty);
-            if (d.goldDrain) result.goldDrain += d.goldDrain;
-        }
-        for (const ill of player.illnesses) {
-            const typeDef = ILLNESS_TYPES.find(t => t.id === ill.type);
-            if (!typeDef || !typeDef.debuffs) continue;
-            const d = typeDef.debuffs;
-            if (d.hungerRate) result.hungerRate = Math.max(result.hungerRate, d.hungerRate);
-            if (d.travelSpeed) result.travelSpeed = Math.min(result.travelSpeed, d.travelSpeed);
-            if (d.xpMult) result.xpMult = Math.min(result.xpMult, d.xpMult);
-            if (d.tradePenalty) result.tradePenalty = Math.min(result.tradePenalty, d.tradePenalty);
-            if (d.goldDrain) result.goldDrain += d.goldDrain;
-        }
-        return result;
-    }
+    // §11.10 INJURY & ILLNESS SYSTEM — Extracted to js/modules/player_health.js
 
     // ========================================================
     // §11.11 SKILL POINT PASSING TO CHILDREN
@@ -15587,7 +14442,7 @@
         var ship = player.ships.find(function(s) { return s.id === shipId; });
         if (!ship) return { success: false, message: 'Ship not found.' };
 
-        var eAddon = checkEnergyForAction(ENERGY_CONFIG.BUILD_COST || 5);
+        var eAddon = Player.checkEnergyForAction(ENERGY_CONFIG.BUILD_COST || 5);
         if (eAddon.blocked) return { success: false, message: eAddon.message };
 
         var town = Engine.findTown(player.townId);
@@ -15635,7 +14490,7 @@
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(2);
 
-        consumeEnergy(ENERGY_CONFIG.BUILD_COST || 5);
+        Player.consumeEnergy(ENERGY_CONFIG.BUILD_COST || 5);
         Engine.logEvent('Installed ' + addonCfg.name + ' on ' + ship.name + ' for ' + addonCost + 'g.');
         return { success: true, message: 'Installed ' + addonCfg.name + ' on ' + ship.name + '!', cost: addonCost };
     }
@@ -15942,7 +14797,7 @@
         tickSpouseEffects();
 
         // Auto-treatment for sick children and guards
-        _tickFamilyAutoTreatment();
+        Player._tickFamilyAutoTreatment();
 
         // Wedding planning countdown
         tickWeddingPlan();
@@ -15951,7 +14806,7 @@
         if (player.isKing) {
             tickKingMode();
         } else {
-            tickHunger();
+            Player.tickHunger();
         }
 
         // Bridge destruction progress (multi-day task)
@@ -16394,7 +15249,7 @@
         Player.tickKingdomQuests();
 
         // Player exposure to town illness
-        tickPlayerIllnessExposure();
+        Player.tickPlayerIllnessExposure();
 
         // Personal guard wages (daily)
         tickPersonalGuardWages();
@@ -16586,7 +15441,7 @@
         tickAutoTravelJob();
 
         // Injuries & illnesses tick
-        tickInjuriesAndIllnesses();
+        Player.tickInjuriesAndIllnesses();
 
         // Dark Deeds tick
         Player.darkDeedsTick();
@@ -16607,13 +15462,13 @@
         tickHousing();
 
         // Noble agents daily processing
-        tickAgents();
+        Player.tickAgents();
 
         // Fatigue natural recovery (now energy system)
-        if (!player.isKing) tickFatigue();
+        if (!player.isKing) Player.tickFatigue();
 
         // Thirst decay and auto-drink
-        if (!player.isKing) tickThirst();
+        if (!player.isKing) Player.tickThirst();
 
         // Retail building sales processing
         Player.tickRetailBuildings();
@@ -20571,7 +19426,7 @@
     function grantXP(amount, reason) {
         if (!player.alive || amount <= 0) return;
         // Injury debuff: concussion reduces XP gain
-        const injDebuffs = getInjuryDebuffs();
+        const injDebuffs = Player.getInjuryDebuffs();
         amount = Math.ceil(amount * injDebuffs.xpMult);
         // Well-Raised heir trait: +5% XP
         if (player.heirTraits && player.heirTraits.includes('well_raised')) {
@@ -22186,135 +21041,7 @@
         } catch (e) { /* no-op */ }
     }
 
-    // ========================================================
-    // §12J HUNGER / FOOD SYSTEM
-    // ========================================================
-    function tickHunger() {
-        if (!player.alive) return;
-
-        // Auto-feed in jail
-        if (player.jailedUntilDay > 0 && Engine.getDay() < player.jailedUntilDay) {
-            if ((player.hunger || 0) < 50) player.hunger = 50;
-        }
-
-        // Decay hunger (spouseHungerMod reduces decay if good_cook, injuries increase it)
-        const injDebuffs = getInjuryDebuffs();
-        const hungerDecay = HUNGER_CONFIG.DECAY_PER_DAY * (player.spouseHungerMod || 1.0) * injDebuffs.hungerRate;
-        player.hunger = Math.max(0, player.hunger - hungerDecay);
-
-        // Injury gold drain (bandage/medicine costs for severe wounds)
-        if (injDebuffs.goldDrain > 0 && player.gold > 0) {
-            player.gold = Math.max(0, player.gold - injDebuffs.goldDrain);
-        }
-
-        if (player.townId && !player.traveling) {
-            // Military soldiers are fed by the kingdom — skip auto-buy
-            if (player.militaryActive) {
-                // Military provisions handle food separately in tickMilitaryCareer()
-            } else {
-            // Auto-buy food from town market
-            const town = Engine.findTown(player.townId);
-            if (town && player.hunger < 60) {
-                const foodTypes = [...HUNGER_CONFIG.FOOD_TYPES, ...HUNGER_CONFIG.RAW_FOOD_TYPES];
-                // Buy food until hunger >= 80 or can't afford/find any
-                let bought = false;
-                while (player.hunger < 80) {
-                    bought = false;
-                    for (const foodId of foodTypes) {
-                        const supply = town.market.supply[foodId] || 0;
-                        const price = town.market.prices[foodId] || 5;
-                        if (supply > 0 && player.gold >= price) {
-                            town.market.supply[foodId]--;
-                            player.gold -= price;
-                            logFinance(-price, 'food_drink', 'Bought food/drink');
-                            const restore = HUNGER_CONFIG.RAW_FOOD_TYPES.includes(foodId) ? HUNGER_CONFIG.RAW_FOOD_RESTORE : HUNGER_CONFIG.FOOD_RESTORE;
-                            player.hunger = Math.min(HUNGER_CONFIG.MAX, player.hunger + restore);
-                            bought = true;
-                            break;
-                        }
-                    }
-                    if (!bought) break; // No food available or can't afford
-                }
-            }
-            } // end else (not military)
-        } else if (player.traveling) {
-            // Eat from inventory while traveling — only when actually hungry
-            if (player.hunger < 50) {
-            let fed = false;
-            for (const foodId of HUNGER_CONFIG.FOOD_TYPES) {
-                if ((player.inventory[foodId] || 0) > 0) {
-                    player.inventory[foodId]--;
-                    player.hunger = Math.min(HUNGER_CONFIG.MAX, player.hunger + HUNGER_CONFIG.FOOD_RESTORE);
-                    fed = true;
-                    break;
-                }
-            }
-            if (!fed) {
-                for (const foodId of HUNGER_CONFIG.RAW_FOOD_TYPES) {
-                    if ((player.inventory[foodId] || 0) > 0) {
-                        player.inventory[foodId]--;
-                        player.hunger = Math.min(HUNGER_CONFIG.MAX, player.hunger + HUNGER_CONFIG.RAW_FOOD_RESTORE);
-                        fed = true;
-                        break;
-                    }
-                }
-            }
-            if (!fed && player.hunger <= 0) {
-                if (typeof UI !== 'undefined' && UI.toast) {
-                    UI.toast('⚠️ You are starving! Find food soon!', 'danger');
-                }
-            }
-            } // end hunger < 50 check
-        }
-
-        // Starvation effects
-        if (player.hunger <= 0) {
-            // Speed reduction handled in travel tick
-            // Energy drain — can't recover while starving
-            player.energy = Math.max(0, (player.energy || 0) - 2);
-            // Health loss — gradual damage from starvation
-            if (!player._lastStarveTick || Engine.getDay() > player._lastStarveTick) {
-                player._lastStarveTick = Engine.getDay();
-                player.health = Math.max(0, (player.health || 100) - (HUNGER_CONFIG.STARVING_HEALTH_LOSS || 1));
-                if (player.health <= 0 && player.alive && !window._godInvincible) {
-                    player.deathCause = 'starvation';
-                    Engine.logEvent('💀 ' + player.fullName + ' has died of starvation.');
-                    if (typeof UI !== 'undefined' && UI.toast) {
-                        UI.toast('💀 You have died of starvation!', 'danger', 'critical');
-                    }
-                    player.alive = false;
-                    if (typeof handlePlayerDeath === 'function') handlePlayerDeath();
-                }
-            }
-        } else if (player.hunger <= 20) {
-            // Low hunger warning — reduced energy recovery
-            player.energy = Math.max(0, (player.energy || 0) - 1);
-        }
-
-        // Health recovery — +2/day when no conditions and vitals > 50, +1 bonus when vitals > 80
-        // (Moved to tickInjuriesAndIllnesses for centralized health management)
-
-        // Low hunger/thirst health drain: -1 per day per stat below 10
-        if (player.hunger < 10 || player.thirst < 10) {
-            if (!player._lastLowVitalHealthTick || Engine.getDay() > player._lastLowVitalHealthTick) {
-                player._lastLowVitalHealthTick = Engine.getDay();
-                var vitalDrain = 0;
-                if (player.hunger < 10) vitalDrain++;
-                if (player.thirst < 10) vitalDrain++;
-                if (vitalDrain > 0) {
-                    player.health = Math.max(0, (player.health || 100) - vitalDrain);
-                    if (player.health <= 0 && player.alive && !window._godInvincible) {
-                        var cause = (player.hunger < 10 && player.thirst < 10) ? 'starvation and dehydration' : (player.hunger < 10 ? 'starvation' : 'dehydration');
-                        Engine.logEvent('💀 ' + player.fullName + ' died from ' + cause + '.');
-                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('💀 Died from ' + cause + '!', 'danger', 'critical');
-                        player.deathCause = cause;
-                        player.alive = false;
-                        if (typeof handlePlayerDeath === 'function') handlePlayerDeath();
-                    }
-                }
-            }
-        }
-    }
+    // §12J HUNGER / FOOD SYSTEM — Extracted to js/modules/player_vitals.js
 
     // ========================================================
     // §12K MARKET INTEL SYSTEM
@@ -22543,7 +21270,7 @@
         if (player.militaryActive) return []; // can't take jobs while enlisted
         if (player.militaryService && player.militaryService.active) return []; // mandatory military service — no other jobs
         if (player.workingUntilTick > 0 && player.workingUntilTick > Engine.getDay()) return [];
-        if (!canDoAnyWork()) return []; // too injured/ill
+        if (!Player.canDoAnyWork()) return []; // too injured/ill
         const town = Engine.findTown(player.townId);
         if (!town) return [];
 
@@ -22552,7 +21279,7 @@
         const payScale = CONFIG.JOB_PAY_SCALE[town.category] || 1.0;
         const isCitizen = player.socialRank[town.kingdomId] >= 1;
         const isHighRank = player.socialRank[town.kingdomId] >= 2;
-        const canPhysical = canDoPhysicalWork();
+        const canPhysical = Player.canDoPhysicalWork();
         const season = Engine.getSeason ? Engine.getSeason() : 'Summer';
 
         // Detect world context
@@ -23157,13 +21884,13 @@
         }
 
         // Energy check — do we have enough energy for this job?
-        var jobEnergyCostPerTick = getJobEnergyCostPerTick(job);
+        var jobEnergyCostPerTick = Player.getJobEnergyCostPerTick(job);
         var jobEnergyCost = jobEnergyCostPerTick * ticksRequired;
-        var energyCheck = checkEnergyForAction(jobEnergyCost);
+        var energyCheck = Player.checkEnergyForAction(jobEnergyCost);
         if (energyCheck.blocked) return { success: false, message: energyCheck.message };
 
         // Consume energy for the job
-        consumeEnergy(jobEnergyCost);
+        Player.consumeEnergy(jobEnergyCost);
 
         // Apply low-energy debuff to pay if applicable
         var energyPayMod = 1.0 + getLowEnergyModifier('workPay');
@@ -23179,15 +21906,15 @@
 
         // Injury risk check
         if (job.injuryRisk && rng && rng.random() < job.injuryRisk) {
-            inflictRandomInjury(job.name);
+            Player.inflictRandomInjury(job.name);
         }
 
         // Illness risk check
         if (job.illnessRisk && rng && rng.random() < job.illnessRisk) {
             if (job.jobTypeKey === 'plague_nurse' || job.name.includes('Plague') || job.name.includes('Gravedigger')) {
-                inflictSpecificIllness('plague', job.name);
+                Player.inflictSpecificIllness('plague', job.name);
             } else {
-                inflictRandomIllness(job.name);
+                Player.inflictRandomIllness(job.name);
             }
         }
 
@@ -24569,7 +23296,7 @@
         // Injury risk from foraging
         if (roll() < 0.05) {
             found.push('\u26A0\uFE0F Minor injury while foraging');
-            if (typeof inflictRandomInjury === 'function') inflictRandomInjury('foraging accident');
+            if (typeof Player.inflictRandomInjury === 'function') Player.inflictRandomInjury('foraging accident');
         }
 
         grantXP(3, 'foraging');
@@ -25364,7 +24091,7 @@
         petition._askCounts[npcId] = askedCount + 1;
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(1);
-        consumeEnergy(0.35);
+        Player.consumeEnergy(0.35);
 
         var rel = getRelationship(npcId);
         var relLevel = rel ? (rel.level || 0) : 0;
@@ -25627,11 +24354,11 @@
         if (!petition || petition.status !== 'active') return { success: false, message: 'Petition not found or not active.' };
 
         // Energy check
-        var ePet = checkEnergyForAction(ENERGY_CONFIG.PETITION_COST || 5);
+        var ePet = Player.checkEnergyForAction(ENERGY_CONFIG.PETITION_COST || 5);
         if (ePet.blocked) return { success: false, message: ePet.message };
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.submit_petition || 5);
-        consumeEnergy(ENERGY_CONFIG.PETITION_COST || 5);
+        Player.consumeEnergy(ENERGY_CONFIG.PETITION_COST || 5);
 
         petition.submitted = true;
         petition.submittedDay = Engine.getDay();
@@ -26646,749 +25373,7 @@
         return false;
     }
 
-    // ========================================================
-    // §12G  NOBLE AGENTS SYSTEM
-    // ========================================================
-    var _nextAgentId = 1;
-    function agentUid() { return 'agent_' + (_nextAgentId++); }
-
-    // Random agent name generator
-    var _agentFirstNames = ['Marcus','Aldric','Rowan','Felix','Cedric','Hugo','Lucian','Dorian','Giles','Edmund','Theron','Gareth','Silas','Owen','Roderick','Elias','Conrad','Barrett','Desmond','Caspian','Lydia','Brenna','Isolde','Mira','Seraphina','Rowena','Helena','Celeste','Ingrid','Astrid'];
-    var _agentLastNames = ['Blackwood','Ashford','Thornhill','Greymane','Ironside','Coldwell','Ravenscroft','Nightshade','Foxglove','Stormwind','Hawkridge','Duskmoore','Whitmore','Redfield','Deepwater','Fairfax','Goldwyn','Silverhand','Oakhart','Briarwood'];
-
-    function getMaxAgents() {
-        var maxRank = 0;
-        var sr = player.socialRank || {};
-        for (var k in sr) { if (sr[k] > maxRank) maxRank = sr[k]; }
-        if (maxRank >= 6) return 6;  // Royal Advisor
-        if (maxRank >= 5) return 4;  // Lord
-        if (maxRank >= 4) return 2;  // Minor Noble
-        return 0;
-    }
-
-    function getAgentDailyCost(townId) {
-        var base = 25;
-        var town = Engine.findTown(townId);
-        if (town) {
-            var prosperity = town.prosperity || 50;
-            base = Math.round(25 + (prosperity / 100) * 15); // 25-40g depending on prosperity
-        }
-        return base;
-    }
-
-    function hireAgent(townId) {
-        if (!player.isNoble) return { success: false, message: 'You must be a noble to hire agents.' };
-        if (!player.agents) player.agents = [];
-        var maxA = getMaxAgents();
-        if ((player.agents || []).length >= maxA) return { success: false, message: 'You can only have ' + maxA + ' agents at your current rank.' };
-        if (!townId) townId = player.townId;
-        if (player.townId !== townId) return { success: false, message: 'You must be in the town to hire.' };
-        var cost = getAgentDailyCost(townId);
-        var hireFee = cost * 10; // 10 days upfront
-        if (player.gold < hireFee) return { success: false, message: 'Hiring costs ' + hireFee + 'g upfront (10 days wages at ' + cost + 'g/day).' };
-
-        var rng = Engine.getRng();
-        player.gold -= hireFee;
-        var firstName = _agentFirstNames[rng ? rng.randInt(0, _agentFirstNames.length - 1) : Math.floor(Math.random() * _agentFirstNames.length)];
-        var lastName = _agentLastNames[rng ? rng.randInt(0, _agentLastNames.length - 1) : Math.floor(Math.random() * _agentLastNames.length)];
-
-        var agent = {
-            id: agentUid(),
-            name: firstName + ' ' + lastName,
-            hiredDay: Engine.getDay(),
-            dailyCost: cost,
-            townId: townId,
-            status: 'idle', // idle, traveling, working, caught, jailed
-            task: null,
-            travelingTo: null,
-            travelProgress: 0,
-            travelRoute: null,
-            travelTotalDist: 0,
-            loyalty: 70 + (rng ? rng.randInt(0, 30) : Math.floor(Math.random() * 30)),
-            skills: {
-                combat: 1 + (rng ? rng.randInt(0, 7) : Math.floor(Math.random() * 7)),
-                stealth: 1 + (rng ? rng.randInt(0, 7) : Math.floor(Math.random() * 7)),
-                trade: 1 + (rng ? rng.randInt(0, 7) : Math.floor(Math.random() * 7)),
-                persuasion: 1 + (rng ? rng.randInt(0, 7) : Math.floor(Math.random() * 7))
-            },
-            lastPaidDay: Engine.getDay(),
-            catchCount: 0,
-            earnings: 0, // total gold earned for player
-            reports: [] // messages from agent
-        };
-        player.agents.push(agent);
-        Engine.logEvent(player.fullName + ' hired agent ' + agent.name + ' in ' + (Engine.findTown(townId) || {}).name + '.', null, 'my_business');
-        return { success: true, message: '✅ Hired ' + agent.name + ' for ' + hireFee + 'g (' + cost + 'g/day). Skills: ⚔️' + agent.skills.combat + ' 🥷' + agent.skills.stealth + ' 📊' + agent.skills.trade + ' 🗣️' + agent.skills.persuasion, agent: agent };
-    }
-
-    function fireAgent(agentId) {
-        var idx = -1;
-        for (var i = 0; i < (player.agents || []).length; i++) {
-            if (player.agents[i].id === agentId) { idx = i; break; }
-        }
-        if (idx === -1) return { success: false, message: 'Agent not found.' };
-        var agent = player.agents[idx];
-        if (agent.status === 'jailed') return { success: false, message: agent.name + ' is in jail and cannot be dismissed yet.' };
-        player.agents.splice(idx, 1);
-        return { success: true, message: '✅ Dismissed ' + agent.name + '.' };
-    }
-
-    function findAgent(agentId) {
-        for (var i = 0; i < (player.agents || []).length; i++) {
-            if (player.agents[i].id === agentId) return player.agents[i];
-        }
-        return null;
-    }
-
-    // ── Agent Task Assignment ──
-    var AGENT_TASK_DEFS = {
-        // HOSTILE tasks
-        sabotage_buildings: { category: 'hostile', label: 'Sabotage Buildings', icon: '🔨', duration: 3, skillKey: 'stealth', baseDetection: 0.25, desc: 'Disable target\'s building production for 15-30 days' },
-        arson_buildings: { category: 'hostile', label: 'Arson', icon: '🔥', duration: 5, skillKey: 'stealth', baseDetection: 0.40, desc: 'Burn down target\'s buildings permanently' },
-        raid_caravans: { category: 'hostile', label: 'Raid Caravans', icon: '⚔️', duration: 7, skillKey: 'combat', baseDetection: 0.30, desc: 'Intercept and loot target\'s trade caravans' },
-        spread_rumors: { category: 'hostile', label: 'Spread Rumors', icon: '🗣️', duration: 5, skillKey: 'persuasion', baseDetection: 0.15, desc: 'Damage target\'s reputation across the kingdom' },
-        steal_goods: { category: 'hostile', label: 'Steal from Warehouses', icon: '🥷', duration: 3, skillKey: 'stealth', baseDetection: 0.35, desc: 'Pilfer goods from target\'s buildings/warehouses' },
-        intimidate: { category: 'hostile', label: 'Intimidate', icon: '💀', duration: 2, skillKey: 'combat', baseDetection: 0.20, desc: 'Threaten target, reducing their influence and morale' },
-        // BUSINESS tasks
-        run_caravan: { category: 'business', label: 'Run Trade Caravan', icon: '🐴', duration: 0, skillKey: 'trade', baseDetection: 0, desc: 'Autonomously create and run profitable trade routes' },
-        scout_markets: { category: 'business', label: 'Scout Markets', icon: '🔍', duration: 10, skillKey: 'trade', baseDetection: 0, desc: 'Find supply/demand gaps and report profitable opportunities' },
-        buy_sell_goods: { category: 'business', label: 'Buy/Sell Goods', icon: '💰', duration: 0, skillKey: 'trade', baseDetection: 0, desc: 'Auto-trade at assigned town within monthly budget' },
-        manage_properties: { category: 'business', label: 'Manage Properties', icon: '🏠', duration: 0, skillKey: 'trade', baseDetection: 0, desc: 'Optimize your buildings and collect revenue' },
-        establish_contacts: { category: 'business', label: 'Establish Trade Contacts', icon: '🤝', duration: 15, skillKey: 'persuasion', baseDetection: 0, desc: 'Set up trade connections in foreign towns' },
-        guard_properties: { category: 'business', label: 'Guard Properties', icon: '🛡️', duration: 0, skillKey: 'combat', baseDetection: 0, desc: 'Protect your buildings from sabotage and theft' },
-        // INTELLIGENCE tasks
-        spy_on_target: { category: 'intel', label: 'Spy on Target', icon: '🕵️', duration: 7, skillKey: 'stealth', baseDetection: 0.20, desc: 'Gather intel on target\'s assets, income, and weaknesses' },
-        counter_intel: { category: 'intel', label: 'Counter-Intelligence', icon: '🛡️', duration: 0, skillKey: 'stealth', baseDetection: 0, desc: 'Detect and prevent schemes against you' }
-    };
-
-    function assignAgentTask(agentId, taskType, params) {
-        var agent = findAgent(agentId);
-        if (!agent) return { success: false, message: 'Agent not found.' };
-        if (agent.status === 'jailed') return { success: false, message: agent.name + ' is in jail.' };
-        if (agent.status === 'caught') return { success: false, message: agent.name + ' was recently caught and is laying low.' };
-        var def = AGENT_TASK_DEFS[taskType];
-        if (!def) return { success: false, message: 'Unknown task type.' };
-
-        params = params || {};
-        var day = Engine.getDay();
-
-        // For hostile tasks, need a target
-        if (def.category === 'hostile' && !params.targetId) {
-            return { success: false, message: 'Must select a target for hostile tasks.' };
-        }
-
-        // For business tasks with budget, validate
-        if (params.monthlyBudget !== undefined && params.monthlyBudget < 0) {
-            return { success: false, message: 'Budget cannot be negative.' };
-        }
-
-        // If agent needs to travel to a different town
-        var targetTown = params.targetTownId || null;
-        if (def.category === 'hostile' && params.targetId) {
-            var targetPerson = Engine.findPerson(params.targetId);
-            if (targetPerson) targetTown = targetPerson.townId;
-        }
-
-        agent.task = {
-            type: taskType,
-            category: def.category,
-            targetId: params.targetId || null,
-            targetTownId: targetTown || agent.townId,
-            allowedActions: params.allowedActions || null, // for hostile: {sabotage:true, arson:true, etc}
-            monthlyBudget: params.monthlyBudget || 0,
-            monthlySpent: 0,
-            startDay: day,
-            duration: def.duration, // 0 = ongoing
-            lastActionDay: 0,
-            results: [],
-            goodsAcquired: {},
-            goldEarned: 0
-        };
-        agent.status = 'working';
-
-        // If agent is not in the target town, they need to travel first
-        if (targetTown && targetTown !== agent.townId) {
-            _startAgentTravel(agent, targetTown);
-        }
-
-        return { success: true, message: '✅ ' + agent.name + ' assigned: ' + def.icon + ' ' + def.label + (targetTown && targetTown !== agent.townId ? ' (traveling to target)' : '') };
-    }
-
-    function cancelAgentTask(agentId) {
-        var agent = findAgent(agentId);
-        if (!agent) return { success: false, message: 'Agent not found.' };
-        if (!agent.task && agent.status === 'idle') return { success: false, message: agent.name + ' has no active task.' };
-        agent.task = null;
-        agent.status = 'idle';
-        agent.travelingTo = null;
-        agent.travelProgress = 0;
-        agent.travelRoute = null;
-        return { success: true, message: '✅ ' + agent.name + ' task cancelled. Now idle in ' + ((Engine.findTown(agent.townId) || {}).name || 'unknown') + '.' };
-    }
-
-    function recallAgent(agentId) {
-        var agent = findAgent(agentId);
-        if (!agent) return { success: false, message: 'Agent not found.' };
-        agent.task = null;
-        agent.status = 'idle';
-        if (agent.townId !== player.townId) {
-            _startAgentTravel(agent, player.townId);
-            return { success: true, message: '✅ ' + agent.name + ' recalled, traveling back to you.' };
-        }
-        agent.travelingTo = null;
-        agent.travelProgress = 0;
-        return { success: true, message: '✅ ' + agent.name + ' recalled and idle.' };
-    }
-
-    function _startAgentTravel(agent, destTownId) {
-        var fromTown = Engine.findTown(agent.townId);
-        var toTown = Engine.findTown(destTownId);
-        if (!fromTown || !toTown) return;
-        agent.travelingTo = destTownId;
-        agent.travelProgress = 0;
-        // Estimate distance
-        var dx = (fromTown.x || 0) - (toTown.x || 0);
-        var dy = (fromTown.y || 0) - (toTown.y || 0);
-        agent.travelTotalDist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-        agent.status = 'traveling';
-    }
-
-    // ── Agent Daily Tick ──
-    function tickAgents() {
-        if (!player.agents || player.agents.length === 0) return;
-        var day = Engine.getDay();
-        var rng = Engine.getRng();
-
-        for (var i = player.agents.length - 1; i >= 0; i--) {
-            var agent = player.agents[i];
-
-            // Daily cost
-            if (day > agent.lastPaidDay) {
-                var daysMissed = day - agent.lastPaidDay;
-                var totalCost = agent.dailyCost * daysMissed;
-                if (player.gold >= totalCost) {
-                    player.gold -= totalCost;
-                    agent.lastPaidDay = day;
-                } else if (player.gold > 0) {
-                    // Pay partial
-                    var daysPaid = Math.floor(player.gold / agent.dailyCost);
-                    player.gold -= daysPaid * agent.dailyCost;
-                    agent.lastPaidDay += daysPaid;
-                    agent.loyalty = Math.max(0, agent.loyalty - (daysMissed - daysPaid) * 3);
-                } else {
-                    agent.loyalty = Math.max(0, agent.loyalty - daysMissed * 5);
-                }
-                // Loyalty too low — agent quits
-                if (agent.loyalty <= 10) {
-                    agent.reports.push({ day: day, msg: '💔 ' + agent.name + ' quit due to unpaid wages!' });
-                    player.agents.splice(i, 1);
-                    continue;
-                }
-            }
-
-            // Jailed agents: serve time
-            if (agent.status === 'jailed') {
-                if (agent._jailUntil && day >= agent._jailUntil) {
-                    agent.status = 'idle';
-                    agent.task = null;
-                    agent._jailUntil = 0;
-                    agent.reports.push({ day: day, msg: '🔓 ' + agent.name + ' released from jail.' });
-                }
-                continue;
-            }
-
-            // Caught agents: lay low for a few days
-            if (agent.status === 'caught') {
-                if (agent._cooldownUntil && day >= agent._cooldownUntil) {
-                    agent.status = 'idle';
-                    agent._cooldownUntil = 0;
-                }
-                continue;
-            }
-
-            // Traveling agents: move toward destination
-            if (agent.status === 'traveling' && agent.travelingTo) {
-                var speed = 50; // pixels per day equivalent
-                agent.travelProgress += speed;
-                if (agent.travelProgress >= agent.travelTotalDist) {
-                    agent.townId = agent.travelingTo;
-                    agent.travelingTo = null;
-                    agent.travelProgress = 0;
-                    agent.travelRoute = null;
-                    if (agent.task) {
-                        agent.status = 'working';
-                        agent.reports.push({ day: day, msg: '📍 ' + agent.name + ' arrived at ' + ((Engine.findTown(agent.townId) || {}).name || 'destination') + '.' });
-                    } else {
-                        agent.status = 'idle';
-                    }
-                }
-                continue;
-            }
-
-            // Working agents: execute task
-            if (agent.status === 'working' && agent.task) {
-                _tickAgentTask(agent, day, rng);
-            }
-
-            // Cap reports to prevent memory leak
-            if (agent.reports && agent.reports.length > 50) {
-                agent.reports = agent.reports.slice(-50);
-            }
-        }
-    }
-
-    // ── Agent Task Execution ──
-    function _tickAgentTask(agent, day, rng) {
-        var task = agent.task;
-        var def = AGENT_TASK_DEFS[task.type];
-        if (!def) return;
-
-        // Finite-duration tasks: check completion
-        if (def.duration > 0 && day - task.startDay >= def.duration) {
-            _completeAgentTask(agent, day, rng);
-            return;
-        }
-
-        // Ongoing tasks execute periodically
-        var actionInterval = def.category === 'hostile' ? 3 : 5; // hostile every 3 days, business every 5
-        if (day - task.lastActionDay < actionInterval) return;
-        task.lastActionDay = day;
-
-        if (def.category === 'hostile') {
-            _executeHostileAction(agent, day, rng);
-        } else if (def.category === 'business') {
-            _executeBusinessAction(agent, day, rng);
-        } else if (def.category === 'intel') {
-            _executeIntelAction(agent, day, rng);
-        }
-    }
-
-    // ── HOSTILE TASK EXECUTION ──
-    function _executeHostileAction(agent, day, rng) {
-        var task = agent.task;
-        var def = AGENT_TASK_DEFS[task.type];
-        var target = Engine.findPerson(task.targetId);
-        if (!target || !target.alive) {
-            agent.reports.push({ day: day, msg: '❌ Target no longer available. Task cancelled.' });
-            agent.task = null;
-            agent.status = 'idle';
-            return;
-        }
-
-        // Detection chance reduced by stealth skill
-        var detection = def.baseDetection * (1 - agent.skills.stealth * 0.06);
-        detection = Math.max(0.03, Math.min(0.90, detection));
-        var caught = rng ? rng.chance(detection) : Math.random() < detection;
-
-        if (caught) {
-            agent.catchCount++;
-            agent.reports.push({ day: day, msg: '🚨 ' + agent.name + ' was CAUGHT during ' + def.label + '!' });
-            // Player faces consequences
-            var town = Engine.findTown(agent.townId);
-            var kingdom = town ? (Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null) : null;
-            var fineAmount = task.type === 'arson_buildings' ? 800 : task.type === 'raid_caravans' ? 600 : 300;
-            if (player.gold >= fineAmount) player.gold -= fineAmount;
-            else { fineAmount = Math.floor(player.gold); player.gold = 0; }
-            player.notoriety = (player.notoriety || 0) + (task.type === 'arson_buildings' ? 20 : 10);
-            // Agent jailed
-            var jailDays = task.type === 'arson_buildings' ? 15 : task.type === 'raid_caravans' ? 10 : 5;
-            agent.status = 'jailed';
-            agent._jailUntil = day + jailDays;
-            agent.task = null;
-            // Reputation hit
-            var repKingdomId = town ? town.kingdomId : '';
-            if (repKingdomId && player.reputation) {
-                player.reputation[repKingdomId] = Math.max(0, (player.reputation[repKingdomId] || 50) - 5);
-            }
-            Engine.logEvent(player.fullName + '\'s agent ' + agent.name + ' was caught committing ' + def.label + '!', null, 'my_business');
-            return;
-        }
-
-        // Success! Execute the specific action
-        var targetTown = Engine.findTown(target.townId || agent.townId);
-        switch (task.type) {
-            case 'sabotage_buildings':
-                _agentSabotageBuilding(agent, target, targetTown, day, rng);
-                break;
-            case 'arson_buildings':
-                _agentArsonBuilding(agent, target, targetTown, day, rng);
-                break;
-            case 'raid_caravans':
-                _agentRaidCaravan(agent, target, day, rng);
-                break;
-            case 'spread_rumors':
-                _agentSpreadRumors(agent, target, targetTown, day, rng);
-                break;
-            case 'steal_goods':
-                _agentStealGoods(agent, target, targetTown, day, rng);
-                break;
-            case 'intimidate':
-                _agentIntimidate(agent, target, day, rng);
-                break;
-        }
-    }
-
-    function _agentSabotageBuilding(agent, target, town, day, rng) {
-        if (!town) return;
-        var targetBuildings = town.buildings.filter(function(b) { return b.ownerId === target.id; });
-        if (targetBuildings.length === 0) {
-            agent.reports.push({ day: day, msg: '🔨 No buildings belonging to target found in ' + town.name + '.' });
-            return;
-        }
-        var bld = targetBuildings[rng ? rng.randInt(0, targetBuildings.length - 1) : 0];
-        var bt = Engine.findBuildingType ? Engine.findBuildingType(bld.type) : null;
-        bld._disabledUntil = day + 15 + (rng ? rng.randInt(0, 15) : 10);
-        agent.reports.push({ day: day, msg: '🔨 Sabotaged ' + (bt ? bt.name : bld.type) + ' owned by ' + (target.firstName || 'target') + '. Disabled for ' + (bld._disabledUntil - day) + ' days.' });
-    }
-
-    function _agentArsonBuilding(agent, target, town, day, rng) {
-        if (!town) return;
-        var idx = -1;
-        for (var i = 0; i < town.buildings.length; i++) {
-            if (town.buildings[i].ownerId === target.id) { idx = i; break; }
-        }
-        if (idx === -1) {
-            agent.reports.push({ day: day, msg: '🔥 No buildings belonging to target found in ' + town.name + '.' });
-            return;
-        }
-        var bld = town.buildings[idx];
-        var bt = Engine.findBuildingType ? Engine.findBuildingType(bld.type) : null;
-        town.buildings.splice(idx, 1);
-        if (town.prosperity) town.prosperity = Math.max(0, town.prosperity - 3);
-        agent.reports.push({ day: day, msg: '🔥 Burned down ' + (bt ? bt.name : bld.type) + ' owned by ' + (target.firstName || 'target') + ' in ' + town.name + '!' });
-        Engine.logEvent('A building in ' + town.name + ' was destroyed by fire!');
-    }
-
-    function _agentRaidCaravan(agent, target, day, rng) {
-        // Find target's caravans (EM caravans or NPC caravans)
-        var caravans = target.emCaravans || target.caravans || [];
-        var activeCaravans = caravans.filter(function(c) { return c.active && c.status === 'traveling'; });
-        if (activeCaravans.length === 0) {
-            agent.reports.push({ day: day, msg: '⚔️ No active caravans found for target. Waiting...' });
-            return;
-        }
-        var caravan = activeCaravans[rng ? rng.randInt(0, activeCaravans.length - 1) : 0];
-        var lootGold = 50 + (rng ? rng.randInt(0, 150) : 75);
-        player.gold += lootGold;
-        agent.earnings += lootGold;
-        caravan.active = false;
-        caravan.status = 'destroyed';
-        agent.reports.push({ day: day, msg: '⚔️ Raided caravan! Looted ' + lootGold + 'g from ' + (target.firstName || 'target') + '\'s caravan.' });
-    }
-
-    function _agentSpreadRumors(agent, target, town, day, rng) {
-        var repDamage = 3 + (agent.skills.persuasion > 5 ? 3 : 0) + (rng ? rng.randInt(0, 4) : 2);
-        // Damage target's relationships with other NPCs
-        if (target._playerRelationship !== undefined) {
-            target._playerRelationship = Math.max(-100, (target._playerRelationship || 0) - Math.floor(repDamage / 2));
-        }
-        // Damage target's standing in kingdom — reduce their gold (lost business from bad rep)
-        var goldLoss = repDamage * 10;
-        if (target.gold !== undefined) {
-            target.gold = Math.max(0, (target.gold || 0) - goldLoss);
-        }
-        // Reduce town prosperity slightly (discord hurts commerce)
-        if (town && town.prosperity) {
-            town.prosperity = Math.max(0, town.prosperity - 1);
-        }
-        // Direct reputation damage to target NPC
-        if (target._reputation !== undefined) {
-            target._reputation = Math.max(0, (target._reputation || 50) - repDamage);
-        } else {
-            target._reputation = 50 - repDamage;
-        }
-        agent.reports.push({ day: day, msg: '🗣️ Spread damaging rumors about ' + (target.firstName || 'target') + '. Rep -' + repDamage + ', gold -' + goldLoss + 'g.' });
-    }
-
-    function _agentStealGoods(agent, target, town, day, rng) {
-        if (!town) return;
-        // Steal from target's buildings
-        var targetBuildings = town.buildings.filter(function(b) { return b.ownerId === target.id; });
-        if (targetBuildings.length === 0) {
-            agent.reports.push({ day: day, msg: '🥷 No warehouses/buildings found for target.' });
-            return;
-        }
-        var goldStolen = 20 + (rng ? rng.randInt(0, 80) : 40) + agent.skills.stealth * 5;
-        player.gold += goldStolen;
-        agent.earnings += goldStolen;
-        agent.reports.push({ day: day, msg: '🥷 Stole ' + goldStolen + 'g worth of goods from ' + (target.firstName || 'target') + '\'s warehouse.' });
-    }
-
-    function _agentIntimidate(agent, target, day, rng) {
-        var success = agent.skills.combat >= 4 || (rng ? rng.chance(0.6 + agent.skills.combat * 0.05) : Math.random() < 0.7);
-        if (success) {
-            if (target._playerRelationship !== undefined) {
-                target._playerRelationship = (target._playerRelationship || 0) - 10;
-            }
-            if (target._reputation !== undefined) {
-                target._reputation = Math.max(0, (target._reputation || 50) - 5);
-            } else {
-                target._reputation = 45;
-            }
-            agent.reports.push({ day: day, msg: '💀 Successfully intimidated ' + (target.firstName || 'target') + '. They\'re shaken.' });
-        } else {
-            agent.reports.push({ day: day, msg: '💀 Intimidation attempt on ' + (target.firstName || 'target') + ' failed. They stood their ground.' });
-        }
-    }
-
-    // ── BUSINESS TASK EXECUTION ──
-    function _executeBusinessAction(agent, day, rng) {
-        var task = agent.task;
-
-        // Monthly budget check (30-day cycle)
-        if (task.monthlyBudget > 0) {
-            var dayInCycle = (day - task.startDay) % 30;
-            if (dayInCycle === 0 && day !== task.startDay) task.monthlySpent = 0; // reset monthly
-            if (task.monthlySpent >= task.monthlyBudget) return; // budget exhausted
-        }
-
-        switch (task.type) {
-            case 'run_caravan':
-                _agentRunCaravan(agent, day, rng);
-                break;
-            case 'scout_markets':
-                _agentScoutMarkets(agent, day, rng);
-                break;
-            case 'buy_sell_goods':
-                _agentBuySell(agent, day, rng);
-                break;
-            case 'manage_properties':
-                _agentManageProperties(agent, day, rng);
-                break;
-            case 'establish_contacts':
-                _agentEstablishContacts(agent, day, rng);
-                break;
-            case 'guard_properties':
-                _agentGuardProperties(agent, day, rng);
-                break;
-        }
-    }
-
-    function _agentRunCaravan(agent, day, rng) {
-        // Agent finds profitable route and trades
-        var town = Engine.findTown(agent.townId);
-        if (!town || !town.market) return;
-        var towns = Engine.getTowns ? Engine.getTowns() : [];
-        var bestProfit = 0;
-        var bestRes = null;
-        var bestDest = null;
-        // Find best single-good trade
-        for (var ti = 0; ti < towns.length; ti++) {
-            var dest = towns[ti];
-            if (dest.id === agent.townId || !dest.market) continue;
-            for (var resKey in (town.market.supply || {})) {
-                var localSupply = town.market.supply[resKey] || 0;
-                var localPrice = town.market.prices[resKey] || 10;
-                var destPrice = dest.market.prices[resKey] || 10;
-                if (localSupply >= 10 && destPrice > localPrice * 1.3) {
-                    var profit = (destPrice - localPrice) * Math.min(20, localSupply);
-                    if (profit > bestProfit) {
-                        bestProfit = profit;
-                        bestRes = resKey;
-                        bestDest = dest;
-                    }
-                }
-            }
-        }
-        if (!bestRes || !bestDest || bestProfit < 20) {
-            agent.reports.push({ day: day, msg: '🐴 No profitable trade routes found. Waiting...' });
-            return;
-        }
-        // Execute trade (simplified: instant with travel time factored into interval)
-        var qty = Math.min(20, Math.floor(town.market.supply[bestRes] || 0));
-        var buyCost = qty * (town.market.prices[bestRes] || 10);
-        var budget = agent.task.monthlyBudget || 500;
-        if (buyCost > budget - (agent.task.monthlySpent || 0)) {
-            qty = Math.floor((budget - (agent.task.monthlySpent || 0)) / (town.market.prices[bestRes] || 10));
-        }
-        if (qty <= 0) return;
-        buyCost = qty * (town.market.prices[bestRes] || 10);
-        if (player.gold < buyCost) return;
-
-        player.gold -= buyCost;
-        agent.task.monthlySpent = (agent.task.monthlySpent || 0) + buyCost;
-        var sellPrice = qty * (bestDest.market ? (bestDest.market.prices[bestRes] || 10) : 10);
-        var netProfit = sellPrice - buyCost;
-        player.gold += sellPrice;
-        agent.earnings += netProfit;
-        // Affect markets
-        if (town.market.supply[bestRes]) town.market.supply[bestRes] = Math.max(0, town.market.supply[bestRes] - qty);
-        if (bestDest.market.supply[bestRes] !== undefined) bestDest.market.supply[bestRes] = (bestDest.market.supply[bestRes] || 0) + qty;
-
-        agent.reports.push({ day: day, msg: '🐴 Traded ' + qty + ' ' + bestRes + ' to ' + bestDest.name + ' for ' + netProfit + 'g profit.' });
-    }
-
-    function _agentScoutMarkets(agent, day, rng) {
-        var towns = Engine.getTowns ? Engine.getTowns() : [];
-        var opportunities = [];
-        for (var ti = 0; ti < towns.length; ti++) {
-            var t = towns[ti];
-            if (!t.market) continue;
-            for (var resKey in (t.market.demand || {})) {
-                var demand = t.market.demand[resKey] || 0;
-                var supply = t.market.supply[resKey] || 0;
-                if (demand > supply * 2 && demand > 10) {
-                    opportunities.push({ town: t.name, resource: resKey, demand: Math.floor(demand), supply: Math.floor(supply), price: Math.floor(t.market.prices[resKey] || 0) });
-                }
-            }
-        }
-        if (opportunities.length > 0) {
-            opportunities.sort(function(a, b) { return (b.demand - b.supply) - (a.demand - a.supply); });
-            var top = opportunities.slice(0, 3);
-            var msg = '🔍 Market Report:\n';
-            for (var oi = 0; oi < top.length; oi++) {
-                msg += '  • ' + top[oi].town + ' needs ' + top[oi].resource + ' (demand: ' + top[oi].demand + ', supply: ' + top[oi].supply + ', price: ' + top[oi].price + 'g)\n';
-            }
-            agent.reports.push({ day: day, msg: msg });
-        } else {
-            agent.reports.push({ day: day, msg: '🔍 Markets are relatively balanced. No major opportunities found.' });
-        }
-    }
-
-    function _agentBuySell(agent, day, rng) {
-        var town = Engine.findTown(agent.townId);
-        if (!town || !town.market) return;
-        // Buy cheapest, sell to where it's expensive (simplified)
-        var bestBuy = null;
-        var bestBuyPrice = Infinity;
-        for (var resKey in (town.market.supply || {})) {
-            var supply = town.market.supply[resKey] || 0;
-            var price = town.market.prices[resKey] || 999;
-            if (supply >= 5 && price < bestBuyPrice) {
-                bestBuyPrice = price;
-                bestBuy = resKey;
-            }
-        }
-        if (!bestBuy) return;
-        var qty = Math.min(10, Math.floor(town.market.supply[bestBuy] || 0));
-        var cost = qty * bestBuyPrice;
-        var budget = agent.task.monthlyBudget || 200;
-        if (cost > budget - (agent.task.monthlySpent || 0)) return;
-        if (player.gold < cost) return;
-
-        player.gold -= cost;
-        agent.task.monthlySpent = (agent.task.monthlySpent || 0) + cost;
-        player.inventory[bestBuy] = (player.inventory[bestBuy] || 0) + qty;
-        if (town.market.supply[bestBuy]) town.market.supply[bestBuy] = Math.max(0, town.market.supply[bestBuy] - qty);
-        agent.reports.push({ day: day, msg: '💰 Bought ' + qty + ' ' + bestBuy + ' at ' + Math.floor(bestBuyPrice) + 'g each in ' + town.name + '.' });
-    }
-
-    function _agentManageProperties(agent, day, rng) {
-        var town = Engine.findTown(agent.townId);
-        if (!town) return;
-        // Find player buildings in this town, boost output
-        var playerBuildings = town.buildings.filter(function(b) { return b.ownerId === 'player'; });
-        if (playerBuildings.length === 0) {
-            agent.reports.push({ day: day, msg: '🏠 No player buildings in ' + town.name + ' to manage.' });
-            return;
-        }
-        var bonus = Math.floor(playerBuildings.length * (3 + agent.skills.trade));
-        player.gold += bonus;
-        agent.earnings += bonus;
-        agent.reports.push({ day: day, msg: '🏠 Managed ' + playerBuildings.length + ' building(s) in ' + town.name + '. Earned ' + bonus + 'g in optimized revenue.' });
-    }
-
-    function _agentEstablishContacts(agent, day, rng) {
-        var town = Engine.findTown(agent.townId);
-        if (!town) return;
-        // Boost town prosperity based on persuasion skill
-        var prosperityGain = 1 + Math.floor(agent.skills.persuasion / 3);
-        if (town.prosperity !== undefined) town.prosperity = Math.min(100, (town.prosperity || 0) + prosperityGain);
-        // Boost player reputation in this town's kingdom
-        var repGain = Math.floor(agent.skills.persuasion / 2);
-        if (town.kingdomId && player.reputation) {
-            player.reputation[town.kingdomId] = Math.min(100, (player.reputation[town.kingdomId] || 50) + repGain);
-        }
-        // Earn some gold from brokered connections
-        var goldEarned = 5 + agent.skills.persuasion * 3 + (rng ? rng.randInt(0, 15) : 8);
-        player.gold += goldEarned;
-        agent.earnings += goldEarned;
-        agent.reports.push({ day: day, msg: '🤝 Establishing contacts in ' + town.name + '. Prosperity +' + prosperityGain + ', rep +' + repGain + ', earned ' + goldEarned + 'g in referral fees.' });
-    }
-
-    function _agentGuardProperties(agent, day, rng) {
-        // Passive: reduces sabotage risk. Just report presence.
-        var town = Engine.findTown(agent.townId);
-        if (!town) return;
-        var playerBuildings = town.buildings.filter(function(b) { return b.ownerId === 'player'; });
-        if (playerBuildings.length === 0) return;
-        // Chance to catch saboteurs
-        var catchChance = 0.05 + agent.skills.combat * 0.02;
-        if (rng ? rng.chance(catchChance) : Math.random() < catchChance) {
-            agent.reports.push({ day: day, msg: '🛡️ ' + agent.name + ' caught and repelled a saboteur targeting your ' + town.name + ' properties!' });
-        }
-    }
-
-    // ── INTEL TASK EXECUTION ──
-    function _executeIntelAction(agent, day, rng) {
-        var task = agent.task;
-        switch (task.type) {
-            case 'spy_on_target':
-                _agentSpyOnTarget(agent, day, rng);
-                break;
-            case 'counter_intel':
-                _agentCounterIntel(agent, day, rng);
-                break;
-        }
-    }
-
-    function _agentSpyOnTarget(agent, day, rng) {
-        var target = Engine.findPerson(agent.task.targetId);
-        if (!target) return;
-
-        var info = [];
-        // Gold/finances
-        if (target.gold !== undefined) info.push('💰 Treasury: ~' + (Math.round((target.gold || 0) / 50) * 50) + 'g');
-        // Buildings
-        var towns = Engine.getTowns ? Engine.getTowns() : [];
-        var bldCount = 0;
-        for (var ti = 0; ti < towns.length; ti++) {
-            var tb = towns[ti].buildings || [];
-            for (var bi = 0; bi < tb.length; bi++) {
-                if (tb[bi].ownerId === target.id) bldCount++;
-            }
-        }
-        info.push('🏛️ Buildings owned: ' + bldCount);
-        // Caravans
-        var caravans = target.emCaravans || target.caravans || [];
-        var activeC = caravans.filter(function(c) { return c.active; }).length;
-        info.push('🐴 Active caravans: ' + activeC);
-        // Relationships
-        if (target._playerRelationship !== undefined) info.push('❤️ Attitude toward you: ' + Math.floor(target._playerRelationship));
-        // Strategy
-        if (target.emStrategy) info.push('📋 Business strategy: ' + target.emStrategy);
-        // Location
-        info.push('📍 Currently in: ' + ((Engine.findTown(target.townId) || {}).name || 'unknown'));
-
-        agent.reports.push({ day: day, msg: '🕵️ Intel on ' + (target.firstName || '') + ' ' + (target.lastName || '') + ':\n  ' + info.join('\n  ') });
-    }
-
-    function _agentCounterIntel(agent, day, rng) {
-        // Passive protection + occasional detection
-        var detectChance = 0.03 + agent.skills.stealth * 0.015;
-        if (rng ? rng.chance(detectChance) : Math.random() < detectChance) {
-            agent.reports.push({ day: day, msg: '🛡️ Counter-intelligence detected suspicious activity near your operations!' });
-        }
-    }
-
-    // ── Finish finite tasks ──
-    function _completeAgentTask(agent, day, rng) {
-        var task = agent.task;
-        var def = AGENT_TASK_DEFS[task.type];
-        agent.reports.push({ day: day, msg: '✅ ' + agent.name + ' completed ' + (def ? def.label : task.type) + ' task.' });
-        agent.task = null;
-        agent.status = 'idle';
-    }
-
-    // Get agent data for UI
-    function getAgentData() {
-        return {
-            agents: player.agents || [],
-            maxAgents: getMaxAgents(),
-            taskDefs: AGENT_TASK_DEFS,
-            hireCost: getAgentDailyCost(player.townId) * 10
-        };
-    }
+    // §12G NOBLE AGENTS SYSTEM — Extracted to js/modules/player_agents.js
 
     // ========================================================
     // §12H  HOUSING SYSTEM
@@ -28166,7 +26151,7 @@
         if (player.traveling) return { success: false, message: 'Cannot craft while traveling.' };
 
         // Energy check
-        var eCraft = checkEnergyForAction(ENERGY_CONFIG.CRAFT_COST || 2);
+        var eCraft = Player.checkEnergyForAction(ENERGY_CONFIG.CRAFT_COST || 2);
         if (eCraft.blocked) return { success: false, message: eCraft.message };
 
         var house = getHouseInTown(player.townId);
@@ -28201,7 +26186,7 @@
         // Produce output
         player.inventory[recipe.output] = (player.inventory[recipe.output] || 0) + recipe.qty;
         grantXP(2, 'crafting');
-        consumeEnergy(ENERGY_CONFIG.CRAFT_COST || 2);
+        Player.consumeEnergy(ENERGY_CONFIG.CRAFT_COST || 2);
 
         Engine.logEvent('🔨 Crafted ' + recipe.qty + 'x ' + recipe.name + ' at home workshop.');
         return { success: true, message: 'Crafted ' + recipe.qty + 'x ' + recipe.name + '!' };
@@ -28372,748 +26357,8 @@
         return (player.landOwned && player.landOwned[townId]) || 0;
     }
 
-    // ========================================================
-    // §12J  ENERGY & THIRST SYSTEM (replaces old Fatigue)
-    // ========================================================
+    // §12J ENERGY & THIRST SYSTEM — Extracted to js/modules/player_vitals.js
 
-    function getMaxEnergy() {
-        var max = ENERGY_CONFIG.BASE_MAX;
-        for (var i = 0; i < ENERGY_CONFIG.ENDURANCE_TIERS.length; i++) {
-            if (hasSkill(ENERGY_CONFIG.ENDURANCE_TIERS[i].id)) {
-                max = ENERGY_CONFIG.ENDURANCE_TIERS[i].maxEnergy;
-            }
-        }
-        player.maxEnergy = max;
-        return max;
-    }
-
-    function consumeEnergy(amount) {
-        player.energy = Math.max(0, (player.energy || ENERGY_CONFIG.START) - amount);
-        // Sync legacy fatigue for backward compat
-        player.fatigue = Math.max(0, getMaxEnergy() - player.energy);
-        // Mark that energy was consumed this tick (prevents double-drain with passive decay)
-        player._energyConsumedThisTick = true;
-    }
-
-    function restoreEnergy(amount) {
-        var max = getMaxEnergy();
-        player.energy = Math.min(max, (player.energy || 0) + amount);
-        player.fatigue = Math.max(0, max - player.energy);
-    }
-
-    function getJobEnergyCostPerTick(job) {
-        // If explicitly set on job definition, use it
-        if (job.energyCost != null) return job.energyCost;
-
-        var name = (job.name || '').toLowerCase();
-
-        // Very heavy (4.0) — extreme physical
-        if (name.includes('arena') || name.includes('tournament')) return 4.0;
-
-        // Heavy (3.0) — hard labor / dangerous fieldwork
-        if (name.includes('mine') || name.includes('dock') || name.includes('lumber') ||
-            name.includes('well dig') || name.includes('rescue') || name.includes('deep sea') ||
-            name.includes('siege') || name.includes('road repair') || name.includes('caravan loader') ||
-            name.includes('gravedigger') || name.includes('rebuilder') || name.includes('chop wood') ||
-            name.includes('load cargo') || name.includes('carry supplies')) return 3.0;
-
-        // Medium-heavy (2.5) — moderate physical + skill
-        if (name.includes('soldier') || name.includes('smithy') || name.includes('harvest') ||
-            name.includes('ship repair') || name.includes('fence mend') || name.includes('blacksmith') ||
-            name.includes('castle work') || name.includes('caravan guard')) return 2.5;
-
-        // Medium (2.0) — standing/walking work
-        if (name.includes('guard') || name.includes('stablehand') || name.includes('farm') ||
-            name.includes('watchman') || name.includes('plague nurse') || name.includes('war medic') ||
-            name.includes('navigator') || name.includes('quarantine') || name.includes('guild enforcer') ||
-            name.includes('privateer') || name.includes('weapons courier')) return 2.0;
-
-        // Light-medium (1.5) — moderate activity
-        if (name.includes('castle servant') || name.includes('messenger') || name.includes('shepherd') ||
-            name.includes('market crier') || name.includes('lamplighter') || name.includes('herb') ||
-            name.includes('itinerant') || name.includes('customs') || name.includes('bakery') ||
-            name.includes('tailor') || name.includes('assist') || name.includes('warehouse') ||
-            name.includes('sweep') || name.includes('deliver') || name.includes('tend')) return 1.5;
-
-        // Light (1.0) — mental or entertainment work
-        if (name.includes('entertainer') || name.includes('tax collector') || name.includes('spy') ||
-            name.includes('merchant') || name.includes('count inventory') || name.includes('traveling')) return 1.0;
-
-        // Very light (0.5) — desk work
-        if (name.includes('scribe') || name.includes('clerk') || name.includes('diplomat') ||
-            name.includes('banker')) return 0.5;
-
-        // Default: light-medium
-        return 1.5;
-    }
-
-    function checkEnergyForAction(energyCost) {
-        var cost = energyCost || 0;
-        var energy = (player.energy != null) ? player.energy : ENERGY_CONFIG.START;
-        if (energy <= ENERGY_CONFIG.COLLAPSE_THRESHOLD) {
-            var rng = Engine.getRng();
-            if (rng && rng.chance(ENERGY_CONFIG.COLLAPSE_CHANCE)) {
-                if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(30);
-                restoreEnergy(30);
-                var injuryChance = rng.chance(0.30);
-                if (injuryChance) {
-                    player.injuries = player.injuries || [];
-                    player.injuries.push({ type: 'exhaustion_collapse', severity: 'minor', dayOccurred: Engine.getDay(), treated: false });
-                    _applyConditionHealthHit('minor');
-                }
-                Engine.logEvent(player.fullName + ' collapsed from exhaustion!');
-                return { blocked: true, message: '💫 You collapsed from exhaustion!' + (injuryChance ? ' You injured yourself in the fall.' : '') };
-            }
-        }
-        if (energy < ENERGY_CONFIG.ACTION_BLOCK) {
-            return { blocked: true, message: '😵 Too exhausted! You need to rest. (Energy: ' + Math.floor(energy) + ')' };
-        }
-        if (cost > 0 && energy < cost) {
-            return { blocked: true, message: '😴 Not enough energy for this action. Need ' + Math.ceil(cost) + ', have ' + Math.floor(energy) + '. Rest first!' };
-        }
-        return { blocked: false };
-    }
-
-    function getEnergyDebuffs() {
-        var max = getMaxEnergy();
-        var threshold = max * ENERGY_CONFIG.LOW_DEBUFF_THRESHOLD;
-        var energy = (player.energy != null) ? player.energy : ENERGY_CONFIG.START;
-        if (energy > threshold) return null;
-        return ENERGY_CONFIG.DEBUFFS;
-    }
-
-    function getLowEnergyModifier(stat) {
-        var debuffs = getEnergyDebuffs();
-        if (!debuffs) return 0;
-        return debuffs[stat] || 0;
-    }
-
-    // Legacy wrapper — keeps old addFatigue calls working
-    function addFatigue(ticks) {
-        consumeEnergy(ticks * CONFIG.FATIGUE_PER_TICK_COST);
-    }
-
-    // Legacy wrapper
-    function checkFatigueForAction() {
-        return checkEnergyForAction(0);
-    }
-
-    // Passive energy drain per subtick (0.25 × 60 = 15/day)
-    // Applies always when not resting — sitting in town, traveling, etc.
-    function energySubtick() {
-        if (!player.resting) {
-            player.energy = Math.max(0, (player.energy || ENERGY_CONFIG.START) - 0.25);
-            player.fatigue = Math.max(0, getMaxEnergy() - player.energy);
-        }
-    }
-
-    function tickEnergy() {
-        // Passive energy drain is now handled in energySubtick() (60x/day)
-        // This daily tick only handles: auto-rest and passive recovery
-        player._energyConsumedThisTick = false;
-
-        // Auto-rest: if enabled and energy below 10, start resting automatically
-        // While traveling, don't auto-rest — prompt player to camp instead
-        if (player.traveling) {
-            if ((player.energy || 0) < 10 && !player.resting) {
-                if (!player._campPromptNeeded) {
-                    player._campPromptNeeded = true;
-                    Engine.logEvent('⚠️ You are exhausted! Click 🏕️ Camp to rest before you collapse.');
-                }
-            }
-        } else if (player.autoRest !== false && !player.resting && (player.energy || 0) < 10) {
-            var opts = getAvailableRestOptions();
-            if (opts.length > 0) {
-                // Pick best option player can afford (highest energyPerTick)
-                var best = null;
-                for (var ri = 0; ri < opts.length; ri++) {
-                    var opt = opts[ri];
-                    if (opt.cost > 0 && player.gold < opt.cost) continue;
-                    if (!best || opt.energyPerTick > best.energyPerTick) best = opt;
-                }
-                if (best) {
-                    var result = restForTicks(best.id, 8);
-                    if (result && result.success) {
-                        Engine.logEvent('💤 Auto-rest: ' + best.name + (best.cost > 0 ? ' (' + best.cost + 'g)' : ''));
-                    }
-                }
-            }
-        }
-
-        // Natural daily passive recovery (only when housed/idle — NOT while traveling)
-        if (!player.traveling) {
-            var house = getHouseInTown(player.townId);
-            var recovery = house ? ENERGY_CONFIG.PASSIVE_RECOVERY_HOUSED : ENERGY_CONFIG.PASSIVE_RECOVERY_HOMELESS;
-            // Reduce recovery when hungry or thirsty
-            if ((player.hunger || 0) <= 0) recovery *= 0.25;  // Starving: 75% less recovery
-            else if ((player.hunger || 0) <= 20) recovery *= 0.5;  // Very hungry: 50% less
-            if ((player.thirst || 0) <= 0) recovery *= 0.25;  // Dehydrated: 75% less
-            else if ((player.thirst || 0) <= 20) recovery *= 0.5;  // Very thirsty: 50% less
-            restoreEnergy(recovery);
-        }
-    }
-
-    // Keep old name as alias
-    function tickFatigue() {
-        tickEnergy();
-    }
-
-    function getLodgingCost(type) {
-        var town = Engine.findTown(player.townId);
-        var prosperity = (town && town.prosperity) || 50;
-        var catMult = { village: 0.5, town: 1.0, city: 1.8, capital_city: 3.0 };
-        var cat = (town && town.category) || 'town';
-        var cm = catMult[cat] || 1.0;
-        // prosperity 0-100 maps to 0.5-1.5 multiplier
-        var pm = 0.5 + (prosperity / 100);
-        if (type === 'inn_room') {
-            // Base 3g, range 3-15g
-            return Math.max(3, Math.min(15, Math.round(3 * cm * pm)));
-        } else if (type === 'tavern') {
-            // Base 4g, range 4-20g
-            return Math.max(4, Math.min(20, Math.round(4 * cm * pm)));
-        }
-        return 0;
-    }
-
-    function getRestEnergyRate(locationId) {
-        var rate = ENERGY_CONFIG.REST_ENERGY_PER_TICK[locationId] || ENERGY_CONFIG.REST_ENERGY_PER_TICK.outside;
-        // Wilderness Survival: +50% rest while traveling
-        if (hasSkill('wilderness_survival') && (locationId === 'camping_kit_travel' || locationId === 'tent_travel' || locationId === 'bedroll_travel' || (player.traveling && locationId === 'outside'))) {
-            rate *= 1.5;
-        }
-        return rate;
-    }
-
-    function getRestLocationId() {
-        // Determine best rest location for player
-        if (player.indentured && player.indentured.active) return 'master_quarters';
-        if (player.militaryService && player.militaryService.active) return 'barracks';
-        var house = getHouseInTown(player.townId);
-        if (house) {
-            var ht = CONFIG.HOUSING_TYPES.find(function(h) { return h.id === house.type; });
-            if (ht) return house.type;
-        }
-        return null; // no home — must choose inn, tavern, or outside
-    }
-
-    function getAvailableRestOptions() {
-        var options = [];
-
-        // ── While traveling: only camping/roadside options ──
-        if (player.traveling) {
-            // Camping Kit (best travel rest)
-            if ((player.inventory.camping_kit || 0) > 0) {
-                options.push({
-                    id: 'camping_kit_travel',
-                    name: '🏕️ Camp with Kit',
-                    cost: 0,
-                    energyPerTick: getRestEnergyRate('camping_kit_travel'),
-                    risks: [],
-                    icon: '🏕️',
-                });
-            }
-            // Tent
-            if ((player.inventory.tent || 0) > 0) {
-                options.push({
-                    id: 'tent_travel',
-                    name: '⛺ Rest in Tent',
-                    cost: 0,
-                    energyPerTick: getRestEnergyRate('tent_travel'),
-                    risks: ['3% theft'],
-                    icon: '⛺',
-                });
-            }
-            // Bedroll
-            if ((player.inventory.bedroll || 0) > 0) {
-                // Bedroll + Tent combo (better than either alone)
-                if ((player.inventory.tent || 0) > 0) {
-                    options.push({
-                        id: 'bedroll_tent_travel',
-                        name: '⛺🛏️ Tent & Bedroll',
-                        cost: 0,
-                        energyPerTick: getRestEnergyRate('bedroll_tent_travel'),
-                        risks: ['2% theft', '1% disease'],
-                        icon: '⛺',
-                    });
-                } else {
-                    options.push({
-                        id: 'bedroll_travel',
-                        name: '🛏️ Sleep on Bedroll',
-                        cost: 0,
-                        energyPerTick: getRestEnergyRate('bedroll_travel'),
-                        risks: ['5% theft', '3% disease'],
-                        icon: '🛏️',
-                    });
-                }
-            } else if ((player.inventory.tent || 0) > 0) {
-                // Tent alone (no bedroll)
-                options.push({
-                    id: 'tent_travel',
-                    name: '⛺ Rest in Tent',
-                    cost: 0,
-                    energyPerTick: getRestEnergyRate('tent_travel'),
-                    risks: ['3% theft'],
-                    icon: '⛺',
-                });
-            }
-            // Caravan Wagon (mobile home — best travel rest option)
-            var hasWagon = (player.houses || []).some(function(h) { return h.type === 'caravan_wagon'; });
-            if (hasWagon) {
-                options.push({
-                    id: 'caravan_wagon',
-                    name: '🏠 Rest in Mobile Home',
-                    cost: 0,
-                    energyPerTick: getRestEnergyRate('caravan_wagon'),
-                    risks: ['1% theft'],
-                    icon: '🏠',
-                });
-            }
-            // Sleep in wagon/cart (if equipped and has 30+ capacity left)
-            if (!hasWagon && player.storageContainer) {
-                var wagonTypes = ['small_wagon', 'wagon', 'large_wagon'];
-                if (wagonTypes.indexOf(player.storageContainer) !== -1) {
-                    var wCap = Player.getCarryCapacity();
-                    var wUsed = Player.getCarriedWeight();
-                    if (wCap - wUsed >= 30) {
-                        options.push({
-                            id: 'wagon_sleep_travel',
-                            name: '🛞 Sleep in ' + (CONFIG.STORAGE_CONTAINERS[player.storageContainer] ? CONFIG.STORAGE_CONTAINERS[player.storageContainer].name : 'Wagon'),
-                            cost: 0,
-                            energyPerTick: getRestEnergyRate('wagon_sleep_travel'),
-                            risks: ['8% theft'],
-                            icon: '🛞',
-                        });
-                    }
-                }
-            }
-            // Ship rest — if traveling by sea and ship has rest capability
-            if (player.travelBySea) {
-                var bestSailor = getBestShip();
-                if (bestSailor && bestSailor.restBonus > 0) {
-                    var shipRestRate = bestSailor.restBonus * 10; // Convert to energy/tick (0.7 → 7.0)
-                    var stConfig = CONFIG.SHIP_TYPES[bestSailor.type];
-                    options.push({
-                        id: 'ship_cabin',
-                        name: '⚓ Rest Aboard ' + bestSailor.name,
-                        cost: 0,
-                        energyPerTick: shipRestRate,
-                        risks: [],
-                        icon: '⚓',
-                    });
-                }
-            }
-            // Bare roadside (always available)
-            options.push({
-                id: 'outside',
-                name: '🌙 Sleep on the Road',
-                cost: 0,
-                energyPerTick: getRestEnergyRate('outside'),
-                risks: ['10% theft', '5% disease', '5% injury'],
-                risk: 'Exposed on the road',
-                icon: '🌙',
-            });
-            return options;
-        }
-
-        // ── Outpost-specific rest options ──
-        var _restTown = Engine.findTown(player.townId);
-        var _isOutpost = _restTown && _restTown.isOutpost;
-        if (_isOutpost) {
-            // Outpost housing rest (if space available)
-            var _ohCap = 0;
-            var _ohPop = (_restTown.outpostResidents || []).length;
-            if (_restTown.outpostHousing) {
-                for (var _ohi = 0; _ohi < _restTown.outpostHousing.length; _ohi++) {
-                    var _ohCfg = CONFIG.OUTPOST_HOUSING && CONFIG.OUTPOST_HOUSING[_restTown.outpostHousing[_ohi].type];
-                    if (_ohCfg) _ohCap += _ohCfg.capacity;
-                }
-            }
-            if (_ohPop < _ohCap) {
-                options.push({
-                    id: 'outpost_housing',
-                    name: '🏠 Outpost Housing',
-                    cost: 0,
-                    energyPerTick: getRestEnergyRate('outpost_housing'),
-                    risks: [],
-                    icon: '🏠',
-                });
-            }
-            // Camping kit
-            if ((player.inventory.camping_kit || 0) > 0) {
-                options.push({
-                    id: 'camping_kit_travel',
-                    name: '🏕️ Camp with Kit',
-                    cost: 0,
-                    energyPerTick: getRestEnergyRate('camping_kit_travel'),
-                    risks: ['25% wear'],
-                    icon: '🏕️',
-                });
-            }
-            // Bedroll + Tent combo
-            if ((player.inventory.bedroll || 0) > 0 && (player.inventory.tent || 0) > 0) {
-                options.push({
-                    id: 'bedroll_tent_travel',
-                    name: '⛺🛏️ Tent & Bedroll',
-                    cost: 0,
-                    energyPerTick: getRestEnergyRate('bedroll_tent_travel'),
-                    risks: ['25% wear each'],
-                    icon: '⛺',
-                });
-            } else if ((player.inventory.tent || 0) > 0) {
-                options.push({
-                    id: 'tent_travel',
-                    name: '⛺ Pitch Tent',
-                    cost: 0,
-                    energyPerTick: getRestEnergyRate('tent_travel'),
-                    risks: ['25% wear'],
-                    icon: '⛺',
-                });
-            } else if ((player.inventory.bedroll || 0) > 0) {
-                options.push({
-                    id: 'bedroll_travel',
-                    name: '🛏️ Use Bedroll',
-                    cost: 0,
-                    energyPerTick: getRestEnergyRate('bedroll_travel'),
-                    risks: ['25% wear'],
-                    icon: '🛏️',
-                });
-            }
-            // Sleep outside always available
-            options.push({
-                id: 'outside',
-                name: '🌙 Sleep Outside',
-                cost: 0,
-                energyPerTick: getRestEnergyRate('outside'),
-                risks: ['theft', 'disease'],
-                icon: '🌙',
-            });
-            return options;
-        }
-
-        // ── In town: full rest options ──
-        var house = getHouseInTown(player.townId);
-
-        // Own home
-        if (house) {
-            var ht = CONFIG.HOUSING_TYPES.find(function(h) { return h.id === house.type; });
-            options.push({
-                id: house.type,
-                name: '🏠 ' + (ht ? ht.name : 'Home'),
-                cost: 0,
-                energyPerTick: getRestEnergyRate(house.type),
-                risks: [],
-            });
-        }
-
-        // Master's quarters
-        if (player.indentured && player.indentured.active) {
-            var master = Engine.findPerson(player.indentured.masterId);
-            if (master && player.townId === master.townId) {
-                options.push({
-                    id: 'master_quarters',
-                    name: '🛏️ Master\'s Quarters',
-                    cost: 0,
-                    energyPerTick: getRestEnergyRate('master_quarters'),
-                    risks: [],
-                });
-            }
-        }
-
-        // Ship cabin — rest aboard docked ship at port
-        var portTown = Engine.findTown(player.townId);
-        if (portTown && portTown.isPort && player.ships && player.ships.length > 0) {
-            var dockedShip = getBestShip();
-            if (dockedShip && dockedShip.restBonus > 0) {
-                var dockRestRate = dockedShip.restBonus * 10;
-                options.push({
-                    id: 'ship_cabin',
-                    name: '⚓ Rest Aboard ' + dockedShip.name,
-                    cost: 0,
-                    energyPerTick: dockRestRate,
-                    risks: [],
-                    icon: '⚓',
-                });
-            }
-        }
-
-        // Military barracks
-        if (player.militaryService && player.militaryService.active) {
-            options.push({
-                id: 'barracks',
-                name: '⚔️ Military Barracks',
-                cost: 0,
-                energyPerTick: getRestEnergyRate('barracks'),
-                risks: [],
-            });
-        }
-
-        // Tavern (if town has one)
-        if (player.townId) {
-            var town = Engine.findTown(player.townId);
-            if (town && town.buildings) {
-                var hasTavern = town.buildings.some(function(b) { return b.type === 'tavern'; });
-                if (hasTavern) {
-                    options.push({
-                        id: 'tavern',
-                        name: '🍻 Tavern',
-                        cost: getLodgingCost('tavern'),
-                        energyPerTick: getRestEnergyRate('tavern'),
-                        risks: [],
-                        desc: 'Socialize while you rest — meet locals!',
-                    });
-                }
-            }
-        }
-
-        // Inn (always available in towns)
-        if (player.townId) {
-            options.push({
-                id: 'inn_room',
-                name: '🏨 Inn Room',
-                cost: getLodgingCost('inn_room'),
-                energyPerTick: getRestEnergyRate('inn_room'),
-                risks: [],
-            });
-        }
-
-        // Sleep outside (always available)
-        options.push({
-            id: 'outside',
-            name: '🌙 Sleep Outside',
-            cost: 0,
-            energyPerTick: getRestEnergyRate('outside'),
-            risks: ['8% theft', '5% disease', '3% injury'],
-        });
-
-        return options;
-    }
-
-    function restForTicks(locationId, ticks) {
-        var isTravelRest = ['camping_kit_travel', 'tent_travel', 'bedroll_travel', 'bedroll_tent_travel', 'wagon_sleep_travel', 'caravan_wagon', 'ship_cabin'].indexOf(locationId) !== -1;
-        var isRoadsideRest = player.traveling && locationId === 'outside';
-
-        // Block non-travel rest while traveling
-        if (player.traveling && !isTravelRest && !isRoadsideRest) {
-            return { success: false, message: 'Cannot rest here while traveling. Use camping gear or sleep roadside.' };
-        }
-
-        // Clear camp prompt flag since player is now resting
-        player._campPromptNeeded = false;
-
-        var rate = getRestEnergyRate(locationId);
-        var max = getMaxEnergy();
-        var energyNeeded = max - (player.energy || 0);
-        var maxTicks = Math.ceil(energyNeeded / rate);
-        var actualTicks = Math.min(ticks, maxTicks);
-        if (actualTicks <= 0) return { success: false, message: 'Already at full energy.' };
-
-        // Handle costs (only in-town lodging)
-        if (locationId === 'inn_room') {
-            var innCost = getLodgingCost('inn_room');
-            if (player.gold < innCost) return { success: false, message: 'Need ' + innCost + 'g for an inn room.' };
-            player.gold -= innCost;
-            player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + innCost;
-        } else if (locationId === 'tavern') {
-            var tavCost = getLodgingCost('tavern');
-            if (player.gold < tavCost) return { success: false, message: 'Need ' + tavCost + 'g for a tavern room.' };
-            player.gold -= tavCost;
-            player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + tavCost;
-        }
-
-        // Pause travel progress while resting (time passes but no distance covered)
-        var wasTraveling = player.traveling;
-        var savedTravelProgress = null;
-        if (wasTraveling && player.travelData) {
-            savedTravelProgress = {
-                ticksRemaining: player.travelData.ticksRemaining,
-                progress: player.travelData.progress
-            };
-        }
-
-        // Advance time
-        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(actualTicks);
-
-        // Restore travel state so resting doesn't advance the journey
-        if (wasTraveling && savedTravelProgress && player.travelData) {
-            player.travelData.ticksRemaining = savedTravelProgress.ticksRemaining;
-            player.travelData.progress = savedTravelProgress.progress;
-        }
-
-        // Restore energy
-        var restored = actualTicks * rate;
-        restoreEnergy(restored);
-
-        // Injury recovery bonus for sheltered rest
-        if (locationId !== 'outside' && !isRoadsideRest && locationId !== 'barracks') {
-            if (player.injuries && player.injuries.length > 0) {
-                for (var i = 0; i < player.injuries.length; i++) {
-                    if (player.injuries[i].dayOccurred) player.injuries[i].dayOccurred -= 1;
-                }
-            }
-        }
-
-        var messages = ['Rested for ' + actualTicks + ' ticks. Energy: ' + Math.floor(player.energy) + '/' + max + '.'];
-        player.lastRestDay = Engine.getDay();
-
-        // Road/outdoor risks — roadside rest while traveling or sleeping outside in town
-        if (isRoadsideRest || locationId === 'outside') {
-            var rng = Engine.getRng();
-            // Camping gear reduces risks
-            var theftChance = isRoadsideRest ? 0.10 : 0.08;
-            var goodsTheftChance = isRoadsideRest ? 0.06 : 0.04;
-            var diseaseChance = isRoadsideRest ? 0.07 : 0.05;
-            var injuryChance = isRoadsideRest ? 0.05 : 0.03;
-
-            if (rng && rng.chance(theftChance)) {
-                var stolen = Math.min(player.gold, Math.floor(Math.random() * 15) + 3);
-                if (stolen > 0) {
-                    player.gold -= stolen;
-                    messages.push('💰 A thief stole ' + stolen + 'g while you slept!');
-                }
-            }
-            if (rng && rng.chance(goodsTheftChance)) {
-                var invKeys = Object.keys(player.inventory).filter(function(k) { return player.inventory[k] > 0; });
-                if (invKeys.length > 0) {
-                    var stolenGood = invKeys[Math.floor(Math.random() * invKeys.length)];
-                    var stolenQty = Math.min(player.inventory[stolenGood], Math.floor(Math.random() * 3) + 1);
-                    player.inventory[stolenGood] -= stolenQty;
-                    if (player.inventory[stolenGood] <= 0) delete player.inventory[stolenGood];
-                    messages.push('📦 Someone stole ' + stolenQty + ' ' + stolenGood + '!');
-                }
-            }
-            if (rng && rng.chance(diseaseChance)) {
-                player.illnesses = player.illnesses || [];
-                player.illnesses.push({ type: 'cold', name: 'Common Cold', severity: 'minor', dayOccurred: Engine.getDay(), treated: false });
-                messages.push('🤧 You caught a cold!');
-            } else if (rng && rng.chance(0.02)) {
-                player.illnesses = player.illnesses || [];
-                player.illnesses.push({ type: 'fever', name: 'Fever', severity: 'moderate', dayOccurred: Engine.getDay(), treated: false });
-                messages.push('🤒 You developed a fever!');
-            }
-            if (rng && rng.chance(injuryChance)) {
-                player.injured = true;
-                player.injuryDaysLeft = (player.injuryDaysLeft || 0) + 3;
-                messages.push('🩹 You woke up with a minor injury!');
-            }
-        }
-
-        // Travel camping gear has reduced risks (tent/bedroll/kit/wagon/caravan)
-        if (isTravelRest) {
-            var rng2 = Engine.getRng();
-            var gearTheft, gearDisease;
-            if (locationId === 'caravan_wagon') { gearTheft = 0.01; gearDisease = 0; }
-            else if (locationId === 'camping_kit_travel') { gearTheft = 0.01; gearDisease = 0; }
-            else if (locationId === 'bedroll_tent_travel') { gearTheft = 0.02; gearDisease = 0.01; }
-            else if (locationId === 'tent_travel') { gearTheft = 0.03; gearDisease = 0.01; }
-            else if (locationId === 'bedroll_travel') { gearTheft = 0.05; gearDisease = 0.03; }
-            else if (locationId === 'wagon_sleep_travel') { gearTheft = 0.08; gearDisease = 0.02; }
-            else if (locationId === 'ship_cabin') { gearTheft = 0; gearDisease = 0; }
-            else { gearTheft = 0.01; gearDisease = 0; }
-
-            if (rng2 && gearTheft > 0 && rng2.chance(gearTheft)) {
-                var stolen2 = Math.min(player.gold, Math.floor(Math.random() * 10) + 2);
-                if (stolen2 > 0) {
-                    player.gold -= stolen2;
-                    messages.push('💰 A thief stole ' + stolen2 + 'g while you camped!');
-                }
-            }
-            if (rng2 && gearDisease > 0 && rng2.chance(gearDisease)) {
-                player.illnesses = player.illnesses || [];
-                player.illnesses.push({ type: 'cold', name: 'Common Cold', severity: 'minor', dayOccurred: Engine.getDay(), treated: false });
-                messages.push('🤧 You caught a cold while camping.');
-            }
-
-            // Gear wear — 25% chance of consumption per rest (10% with wilderness_survival)
-            var _gearWearChance = hasSkill('wilderness_survival') ? 0.10 : 0.25;
-            if (locationId === 'camping_kit_travel') {
-                if (rng2.chance(_gearWearChance)) {
-                    player.inventory.camping_kit = (player.inventory.camping_kit || 0) - 1;
-                    if (player.inventory.camping_kit <= 0) delete player.inventory.camping_kit;
-                    messages.push('🏕️ Your camping kit wore out!');
-                }
-            } else if (locationId === 'bedroll_tent_travel') {
-                // Both items risk wearing out independently
-                if (rng2.chance(_gearWearChance)) {
-                    player.inventory.bedroll = (player.inventory.bedroll || 0) - 1;
-                    if (player.inventory.bedroll <= 0) delete player.inventory.bedroll;
-                    messages.push('🛏️ Your bedroll wore out!');
-                }
-                if (rng2.chance(_gearWearChance)) {
-                    player.inventory.tent = (player.inventory.tent || 0) - 1;
-                    if (player.inventory.tent <= 0) delete player.inventory.tent;
-                    messages.push('⛺ Your tent wore out!');
-                }
-            } else if (locationId === 'tent_travel') {
-                if (rng2.chance(_gearWearChance)) {
-                    player.inventory.tent = (player.inventory.tent || 0) - 1;
-                    if (player.inventory.tent <= 0) delete player.inventory.tent;
-                    messages.push('⛺ Your tent wore out!');
-                }
-            } else if (locationId === 'bedroll_travel') {
-                if (rng2.chance(_gearWearChance)) {
-                    player.inventory.bedroll = (player.inventory.bedroll || 0) - 1;
-                    if (player.inventory.bedroll <= 0) delete player.inventory.bedroll;
-                    messages.push('🛏️ Your bedroll wore out!');
-                }
-            }
-        }
-
-        // Tavern socializing — boost relationships with random locals
-        if (locationId === 'tavern' && player.townId) {
-            try {
-                var rngTav = Engine.getRng();
-                var townNpcs = Engine.getPeople(player.townId);
-                if (townNpcs && townNpcs.length > 0) {
-                    var alive = townNpcs.filter(function(n) { return n.alive !== false && n.age >= 14; });
-                    if (alive.length > 0) {
-                        var numToMeet = rngTav.randInt(2, Math.min(4, alive.length));
-                        var shuffled = rngTav.shuffle(alive.slice());
-                        var metNames = [];
-                        for (var ti = 0; ti < numToMeet; ti++) {
-                            var boost = rngTav.randInt(2, 5);
-                            modifyRelationship(shuffled[ti].id, boost);
-                            metNames.push((shuffled[ti].firstName || 'someone'));
-                        }
-                        messages.push('🍻 Socialized with ' + metNames.join(', ') + ' at the tavern!');
-                    }
-                }
-            } catch (e) {}
-        }
-
-        var icon = isTravelRest ? '🏕️' : isRoadsideRest ? '🌙' : locationId === 'outside' ? '🌙' : locationId === 'inn_room' ? '🏨' : locationId === 'tavern' ? '🍻' : locationId === 'barracks' ? '⚔️' : '🏠';
-        var restLabel = wasTraveling ? 'camped' : 'rested';
-        Engine.logEvent(player.fullName + ' ' + restLabel + ' (' + actualTicks + ' ticks). Energy restored.');
-        return { success: true, message: messages.join(' ') + ' ' + icon };
-    }
-
-    // Legacy rest functions — now redirect to restForTicks
-    function restAtHome(townId) {
-        var tid = townId || player.townId;
-        if (player.traveling) return { success: false, message: 'Cannot rest while traveling.' };
-        var house = getHouseInTown(tid);
-        if (!house) return { success: false, message: 'You have no house in this town.' };
-        var max = getMaxEnergy();
-        var needed = max - (player.energy || 0);
-        var rate = getRestEnergyRate(house.type);
-        var ticks = Math.ceil(needed / rate);
-        return restForTicks(house.type, ticks);
-    }
-
-    function restAtInn(townId) {
-        return restForTicks('inn_room', Math.ceil((getMaxEnergy() - (player.energy || 0)) / getRestEnergyRate('inn_room')));
-    }
-
-    function sleepOutside() {
-        return restForTicks('outside', Math.ceil((getMaxEnergy() - (player.energy || 0)) / getRestEnergyRate('outside')));
-    }
-
-    function restAtMasterQuarters() {
-        if (!player.indentured || !player.indentured.active) {
-            return { success: false, message: 'You are not an indentured servant.' };
-        }
-        return restForTicks('master_quarters', Math.ceil((getMaxEnergy() - (player.energy || 0)) / getRestEnergyRate('master_quarters')));
-    }
 
     // ── Talk to Townsfolk ──
 
@@ -29121,7 +26366,7 @@
         if (player.traveling) return { success: false, message: 'Cannot talk while traveling.' };
         if (!player.townId) return { success: false, message: 'You must be in a town.' };
 
-        var eCheck = checkEnergyForAction(1);
+        var eCheck = Player.checkEnergyForAction(1);
         if (eCheck.blocked) return { success: false, message: eCheck.message };
 
         var town = Engine.findTown(player.townId);
@@ -29371,274 +26616,7 @@
         return { success: true, type: 'flavor', icon: '💬', speaker: npcName, occupation: npcOccupation, message: text };
     }
 
-    // ── Thirst System ──
-
-    function tickThirst() {
-        if (!player.alive) return;
-
-        // Auto-thirst in jail
-        if (player.jailedUntilDay > 0 && Engine.getDay() < player.jailedUntilDay) {
-            if ((player.thirst || 0) < 50) player.thirst = 50;
-        }
-
-        var injDebuffs = getInjuryDebuffs();
-        var thirstDecay = THIRST_CONFIG.DECAY_PER_DAY * (injDebuffs.thirstRate || 1.0);
-        player.thirst = Math.max(0, (player.thirst != null ? player.thirst : THIRST_CONFIG.START) - thirstDecay);
-
-        if (player.townId && !player.traveling) {
-            // Military soldiers get water from the kingdom — skip auto-buy
-            if (!player.militaryActive) {
-            var town = Engine.findTown(player.townId);
-            if (town && player.thirst < 60) {
-                // Try to auto-buy beverages from market
-                for (var bi = 0; bi < THIRST_CONFIG.BEVERAGE_TYPES.length && player.thirst < 80; bi++) {
-                    var bevId = THIRST_CONFIG.BEVERAGE_TYPES[bi];
-                    var supply = (town.market.supply[bevId] || 0);
-                    var price = town.market.prices[bevId] || 2;
-                    if (supply > 0 && player.gold >= price) {
-                        town.market.supply[bevId]--;
-                        player.gold -= price;
-                        logFinance(-price, 'food_drink', 'Bought food/drink');
-                        var restore = THIRST_CONFIG.BEVERAGE_RESTORE[bevId] || 20;
-                        player.thirst = Math.min(THIRST_CONFIG.MAX, player.thirst + restore);
-                        // Apply beverage effects
-                        var effects = THIRST_CONFIG.BEVERAGE_EFFECTS[bevId];
-                        if (effects && effects.happiness && player.happiness != null) {
-                            player.happiness = Math.min(100, player.happiness + effects.happiness);
-                        }
-                    }
-                }
-            }
-            } // end if not military
-        } else if (player.traveling) {
-            // Drink from inventory while traveling
-            if (player.thirst < 50) {
-                for (var ti = 0; ti < THIRST_CONFIG.BEVERAGE_TYPES.length; ti++) {
-                    var drinkId = THIRST_CONFIG.BEVERAGE_TYPES[ti];
-                    if ((player.inventory[drinkId] || 0) > 0) {
-                        player.inventory[drinkId]--;
-                        if (player.inventory[drinkId] <= 0) delete player.inventory[drinkId];
-                        player.thirst = Math.min(THIRST_CONFIG.MAX, player.thirst + (THIRST_CONFIG.BEVERAGE_RESTORE[drinkId] || 20));
-                        break;
-                    }
-                }
-                if (player.thirst <= 0) {
-                    if (typeof UI !== 'undefined' && UI.toast) {
-                        UI.toast('⚠️ You are dehydrated! Find water soon!', 'danger');
-                    }
-                }
-            }
-        }
-
-        // Dehydration effects
-        if (player.thirst <= THIRST_CONFIG.DEHYDRATED_THRESHOLD) {
-            // Speed reduction handled in travel tick
-            // Energy drain from dehydration
-            if (player.thirst <= 0) {
-                player.energy = Math.max(0, (player.energy || 0) - 3);
-                // Health loss from severe dehydration
-                if (!player._lastDehydrateTick || Engine.getDay() > player._lastDehydrateTick) {
-                    player._lastDehydrateTick = Engine.getDay();
-                    player.health = Math.max(0, (player.health || 100) - 2);
-                    if (player.health <= 0 && player.alive && !window._godInvincible) {
-                        player.deathCause = 'dehydration';
-                        Engine.logEvent('💀 ' + player.fullName + ' has died of dehydration.');
-                        if (typeof UI !== 'undefined' && UI.toast) {
-                            UI.toast('💀 You have died of dehydration!', 'danger', 'critical');
-                        }
-                        player.alive = false;
-                        if (typeof handlePlayerDeath === 'function') handlePlayerDeath();
-                    }
-                }
-            } else {
-                // Mild dehydration — reduced energy
-                player.energy = Math.max(0, (player.energy || 0) - 1);
-            }
-        }
-    }
-
-    function getThirstDebuffs() {
-        if ((player.thirst != null ? player.thirst : THIRST_CONFIG.START) > THIRST_CONFIG.DEHYDRATED_THRESHOLD) return null;
-        return {
-            travelSpeed: -THIRST_CONFIG.DEHYDRATED_SPEED_PENALTY,
-            workPay: -THIRST_CONFIG.DEHYDRATED_WORK_PENALTY,
-        };
-    }
-
-    // ── Food & Drink Supply Helpers ──
-
-    function getFoodSupply() {
-        var total = 0;
-        var items = [];
-        var allTypes = HUNGER_CONFIG.FOOD_TYPES.concat(HUNGER_CONFIG.RAW_FOOD_TYPES);
-        for (var i = 0; i < allTypes.length; i++) {
-            var qty = player.inventory[allTypes[i]] || 0;
-            if (qty > 0) {
-                var restore = HUNGER_CONFIG.RAW_FOOD_TYPES.indexOf(allTypes[i]) !== -1 ? HUNGER_CONFIG.RAW_FOOD_RESTORE : HUNGER_CONFIG.FOOD_RESTORE;
-                items.push({ id: allTypes[i], qty: qty, restore: restore });
-                total += qty;
-            }
-        }
-        // Estimate days: each food item restores X hunger, decay is Y per day
-        var totalRestore = 0;
-        for (var j = 0; j < items.length; j++) totalRestore += items[j].qty * items[j].restore;
-        var daysEstimate = HUNGER_CONFIG.DECAY_PER_DAY > 0 ? Math.floor(totalRestore / HUNGER_CONFIG.DECAY_PER_DAY) : 999;
-        return { total: total, items: items, daysEstimate: daysEstimate };
-    }
-
-    function getDrinkSupply() {
-        var total = 0;
-        var items = [];
-        for (var i = 0; i < THIRST_CONFIG.BEVERAGE_TYPES.length; i++) {
-            var bev = THIRST_CONFIG.BEVERAGE_TYPES[i];
-            var qty = player.inventory[bev] || 0;
-            if (qty > 0) {
-                var restore = THIRST_CONFIG.BEVERAGE_RESTORE[bev] || 20;
-                items.push({ id: bev, qty: qty, restore: restore });
-                total += qty;
-            }
-        }
-        var totalRestore = 0;
-        for (var j = 0; j < items.length; j++) totalRestore += items[j].qty * items[j].restore;
-        var daysEstimate = THIRST_CONFIG.DECAY_PER_DAY > 0 ? Math.floor(totalRestore / THIRST_CONFIG.DECAY_PER_DAY) : 999;
-        return { total: total, items: items, daysEstimate: daysEstimate };
-    }
-
-    function eatUntilFull() {
-        if (!player.alive) return { success: false, message: 'Cannot eat.' };
-        if (player.hunger >= HUNGER_CONFIG.MAX) return { success: false, message: 'Already full.' };
-        var eaten = 0;
-        var allTypes = HUNGER_CONFIG.FOOD_TYPES.concat(HUNGER_CONFIG.RAW_FOOD_TYPES);
-        while (player.hunger < HUNGER_CONFIG.MAX) {
-            var found = false;
-            for (var i = 0; i < allTypes.length; i++) {
-                var fid = allTypes[i];
-                if ((player.inventory[fid] || 0) > 0) {
-                    player.inventory[fid]--;
-                    if (player.inventory[fid] <= 0) delete player.inventory[fid];
-                    var restore = HUNGER_CONFIG.RAW_FOOD_TYPES.indexOf(fid) !== -1 ? HUNGER_CONFIG.RAW_FOOD_RESTORE : HUNGER_CONFIG.FOOD_RESTORE;
-                    player.hunger = Math.min(HUNGER_CONFIG.MAX, player.hunger + restore);
-                    eaten++;
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) break;
-        }
-        if (eaten === 0) return { success: false, message: 'No food in inventory.' };
-        return { success: true, message: 'Ate ' + eaten + ' item' + (eaten > 1 ? 's' : '') + '. Hunger: ' + Math.floor(player.hunger) };
-    }
-
-    function drinkUntilFull() {
-        if (!player.alive) return { success: false, message: 'Cannot drink.' };
-        if (player.thirst >= THIRST_CONFIG.MAX) return { success: false, message: 'Already quenched.' };
-        var drunk = 0;
-        while (player.thirst < THIRST_CONFIG.MAX) {
-            var found = false;
-            for (var i = 0; i < THIRST_CONFIG.BEVERAGE_TYPES.length; i++) {
-                var bid = THIRST_CONFIG.BEVERAGE_TYPES[i];
-                if ((player.inventory[bid] || 0) > 0) {
-                    player.inventory[bid]--;
-                    if (player.inventory[bid] <= 0) delete player.inventory[bid];
-                    var restore = THIRST_CONFIG.BEVERAGE_RESTORE[bid] || 20;
-                    player.thirst = Math.min(THIRST_CONFIG.MAX, player.thirst + restore);
-                    // Apply beverage effects
-                    var effects = THIRST_CONFIG.BEVERAGE_EFFECTS[bid];
-                    if (effects && effects.happiness && player.happiness != null) {
-                        player.happiness = Math.min(100, player.happiness + effects.happiness);
-                    }
-                    drunk++;
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) break;
-        }
-        if (drunk === 0) return { success: false, message: 'No drinks in inventory.' };
-        return { success: true, message: 'Drank ' + drunk + ' item' + (drunk > 1 ? 's' : '') + '. Thirst: ' + Math.floor(player.thirst) };
-    }
-
-    function drawWaterFromWell(townId) {
-        var tid = townId || player.townId;
-        if (player.traveling) return { success: false, message: 'Cannot draw water while traveling.' };
-        var town = Engine.findTown(tid);
-        if (!town) return { success: false, message: 'No town found.' };
-
-        // Find an active (non-depleted) well
-        var activeWell = null;
-        if (town.buildings) {
-            for (var i = 0; i < town.buildings.length; i++) {
-                var b = town.buildings[i];
-                if ((b.type === 'well' && !b.depleted) || b.type === 'cistern') {
-                    activeWell = b;
-                    break;
-                }
-            }
-        }
-        // Outpost well upgrade counts as a well (infinite water, no depletion)
-        if (!activeWell && town.isOutpost && town.outpostUpgrades && town.outpostUpgrades.indexOf('well') >= 0) {
-            activeWell = { type: 'outpost_well', _isOutpostWell: true };
-        }
-        if (!activeWell) return { success: false, message: 'No active well in ' + (town.name || 'this town') + '.' + (town.isOutpost ? ' Build a Well upgrade first.' : ' All wells have run dry!') };
-
-        // Outpost well: free, skip rep check
-        var isOutpostWell = activeWell._isOutpostWell;
-
-        // Check kingdom law on well water (skip for outpost wells)
-        var kingdom = Engine.findKingdom(town.kingdomId);
-        var isFree = isOutpostWell || (kingdom && kingdom.laws && kingdom.laws.freeWellWater !== false); // default true
-        var cost = isFree ? 0 : 1;
-
-        if (cost > 0 && player.gold < cost) {
-            return { success: false, message: 'Well water costs ' + cost + 'g in this kingdom. You can\'t afford it.' };
-        }
-
-        // Check rep — need at least non-hostile rep to use the well (skip for outpost wells)
-        if (!isOutpostWell) {
-            var townKingdomId = town.kingdomId;
-            var townRep = player.reputation && townKingdomId ? (player.reputation[townKingdomId] || 0) : 0;
-            if (townRep < -30) {
-                return { success: false, message: 'The townsfolk won\'t let you near the well. Your reputation is too low.' };
-            }
-        }
-
-        // Pay cost
-        if (cost > 0) {
-            player.gold -= cost;
-            player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + cost;
-        }
-
-        // Advance time
-        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(THIRST_CONFIG.WELL_DRAW_TICKS);
-
-        // Deduct from well water supply
-        var drawAmount = THIRST_CONFIG.WELL_DRAW_AMOUNT;
-        if (activeWell.type === 'well' && activeWell.waterRemaining != null) {
-            var actualDraw = Math.min(drawAmount, activeWell.waterRemaining);
-            activeWell.waterRemaining -= actualDraw;
-            if (activeWell.waterRemaining <= 0) {
-                activeWell.waterRemaining = 0;
-                activeWell.depleted = true;
-            }
-        }
-
-        // Give water
-        player.inventory.water = (player.inventory.water || 0) + drawAmount;
-
-        // Also drink immediately if thirsty
-        if (player.thirst < 70) {
-            player.thirst = Math.min(THIRST_CONFIG.MAX, player.thirst + THIRST_CONFIG.BEVERAGE_RESTORE.water);
-        }
-
-        // Build status message with water remaining info
-        var costMsg = isFree ? '(free well water)' : '(-' + cost + 'g)';
-        var waterInfo = '';
-        if (activeWell.type === 'well' && activeWell.waterCapacity) {
-            var pct = Math.round((activeWell.waterRemaining / activeWell.waterCapacity) * 100);
-            waterInfo = ' Well: ' + Math.floor(activeWell.waterRemaining).toLocaleString() + '/' + activeWell.waterCapacity.toLocaleString() + ' (' + pct + '%)';
-        }
-        return { success: true, message: '💧 Drew ' + drawAmount + ' water from the well. ' + costMsg + waterInfo };
-    }
+    // Thirst System — Extracted to js/modules/player_vitals.js
 
 
     // §12M WILDERNESS OUTPOST SYSTEM + RETAIL BUILDINGS — Extracted to js/modules/player_outpost.js
@@ -30340,7 +27318,7 @@
                 var injName = rng.pick ? rng.pick(injuryNames) : injuryNames[Math.floor(rng.random() * injuryNames.length)];
                 var injType = severity === 'severe' ? 'encounter_wound_severe' : 'encounter_wound';
                 player.injuries.push({ name: injName, type: injType, severity: severity, dayOccurred: Engine.getDay(), treated: false });
-                _applyConditionHealthHit(severity);
+                Player._applyConditionHealthHit(severity);
                 result.injured = true;
                 result.injurySeverity = severity;
 
@@ -30548,7 +27526,7 @@
         if (injured) {
             player.injuries = player.injuries || [];
             player.injuries.push({ type: 'ambush_wound', severity: 'moderate', dayOccurred: Engine.getDay(), treated: false });
-            _applyConditionHealthHit('moderate');
+            Player._applyConditionHealthHit('moderate');
         }
 
         var deathChance = 0.03;
@@ -32748,7 +29726,7 @@
 
         // Roll for injury first (happens win or lose)
         if (rng.random() < injuryChance) {
-            inflictRandomInjury('Tournament Round ' + round);
+            Player.inflictRandomInjury('Tournament Round ' + round);
         }
 
         var won = rng.random() < winChance;
@@ -33541,10 +30519,10 @@
                     return;
                 }
                 if (mission.risks.injuryRisk && rng.random() < mission.risks.injuryRisk) {
-                    inflictRandomInjury(mission.name);
+                    Player.inflictRandomInjury(mission.name);
                 }
                 if (mission.risks.illnessRisk && rng.random() < mission.risks.illnessRisk) {
-                    inflictRandomIllness(mission.name);
+                    Player.inflictRandomIllness(mission.name);
                 }
             }
 
@@ -34240,7 +31218,7 @@
         get storageContainer() { return player.storageContainer; },
         get townStorage() { return player.townStorage; },
         // getCarryCapacity, getCarriedWeight, buyHorse..dismountContainer → player_inventory.js
-        getInjuryDebuffs,
+        // getInjuryDebuffs, _applyConditionHealthHit → player_health.js
         calculateWorkerWage: _calculateWorkerWage,
         payHorsePermitFine,
         refuseHorsePermitFine,
@@ -34253,7 +31231,7 @@
         get primaryHouseId() { return player.primaryHouseId; },
         get fatigue() { return player.fatigue || 0; },
         get energy() { return player.energy != null ? player.energy : ENERGY_CONFIG.START; },
-        get maxEnergy() { return getMaxEnergy(); },
+        get maxEnergy() { return Player.getMaxEnergy(); },
         get thirst() { return player.thirst != null ? player.thirst : THIRST_CONFIG.START; },
         get health() { return player.health != null ? player.health : 100; },
         get maxHealth() { return player.maxHealth || 100; },
@@ -34267,10 +31245,7 @@
         setPrimaryHouse,
         getHouseInTown,
         getHousingCost,
-        restAtHome,
-        restAtInn,
-        restAtMasterQuarters,
-        sleepOutside,
+        // restAtHome, restAtInn, restAtMasterQuarters, sleepOutside → player_vitals.js
         rentOutHouse,
         craftAtHome,
         getHomeCraftRecipes,
@@ -34290,32 +31265,20 @@
         getActiveSubsidy,
         getUsedLandSlots,
         hireArmedEscort,
-        addFatigue,
-        checkFatigueForAction,
+        // addFatigue, checkFatigueForAction → player_vitals.js
         getOrderCompletionBonus,
         canBidOnBannedOrder,
 
-        // Energy System
-        consumeEnergy,
-        restoreEnergy,
-        checkEnergyForAction,
-        getMaxEnergy,
-        getEnergyDebuffs,
-        getLowEnergyModifier,
-        getJobEnergyCostPerTick,
-        getAvailableRestOptions,
-        restForTicks,
+        // Energy System — moved to js/modules/player_vitals.js
+        // consumeEnergy, restoreEnergy, checkEnergyForAction, getMaxEnergy,
+        // getEnergyDebuffs, getLowEnergyModifier, getJobEnergyCostPerTick,
+        // getAvailableRestOptions, restForTicks → player_vitals.js
         setAutoRest: function(v) { player.autoRest = !!v; return { success: true, message: v ? 'Auto-rest enabled.' : 'Auto-rest disabled.' }; },
         get autoRest() { return player.autoRest !== false; },
 
-        // Thirst System
-        tickThirst,
-        getThirstDebuffs,
-        drawWaterFromWell,
-        getFoodSupply,
-        getDrinkSupply,
-        eatUntilFull,
-        drinkUntilFull,
+        // Thirst System — moved to js/modules/player_vitals.js
+        // tickThirst, getThirstDebuffs, drawWaterFromWell,
+        // getFoodSupply, getDrinkSupply, eatUntilFull, drinkUntilFull → player_vitals.js
 
         // Retail Buildings — moved to js/modules/player_outpost.js
         // Outposts — moved to js/modules/player_outpost.js
@@ -34456,23 +31419,15 @@
         getMilitaryRanks() { return MILITARY_RANKS; },
         getMilitaryRankLabels() { return MILITARY_RANK_LABELS; },
 
-        // Injury & Illness
-        visitHospital,
-        visitClinic,
-        selfTreat,
-        treatOther,
-        treatCompanion,
-        getTreatableCompanions,
-        inflictRandomInjury,
-        inflictRandomIllness,
-        inflictSpecificIllness,
-        getWorstConditionSeverity,
-        getWorkEfficiencyModifier,
-        getHospitalCost,
-        getClinicCost,
-        getMedicalFacilities,
+        // Injury & Illness — moved to js/modules/player_health.js
+        // visitHospital, visitClinic, selfTreat, treatOther, treatCompanion,
+        // getTreatableCompanions, inflictRandomInjury, inflictRandomIllness,
+        // inflictSpecificIllness, getWorstConditionSeverity, getWorkEfficiencyModifier,
+        // getHospitalCost, getClinicCost, getMedicalFacilities → player_health.js
+        getHousingDiseaseReduction,
         getInjuryTypes() { return INJURY_TYPES; },
         getIllnessTypes() { return ILLNESS_TYPES; },
+        getNurseRanks() { return NURSE_RANKS; },
 
         // Skill Point Passing
         teachChild,
@@ -34722,16 +31677,9 @@
 
         // Kingdom Quests — see js/modules/player_quests.js
 
-        // Noble Agents
-        hireAgent,
-        fireAgent,
-        findAgent,
-        assignAgentTask,
-        cancelAgentTask,
-        recallAgent,
-        getAgentData,
-        getMaxAgents,
-        tickAgents,
+        // Noble Agents — moved to js/modules/player_agents.js
+        // hireAgent, fireAgent, findAgent, assignAgentTask, cancelAgentTask,
+        // recallAgent, getAgentData, getMaxAgents, tickAgents → player_agents.js
 
         // AI Merchants access (unified — returns elite merchants from engine)
         getAIMerchants() {
@@ -34843,7 +31791,7 @@
 
         // Tick
         tick() { playerTick(); },
-        subtick() { travelSubtick(); Player.caravanSubtick(); energySubtick(); },
+        subtick() { travelSubtick(); Player.caravanSubtick(); Player.energySubtick(); },
 
         // Conditions
         checkWinConditions,
