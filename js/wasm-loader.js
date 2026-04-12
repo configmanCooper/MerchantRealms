@@ -9,6 +9,7 @@ window.WASM = (function () {
 
     var _instance = null;
     var _memory = null;
+    var _wasmBytes = null;
     var _ready = false;
     var _failed = false;
 
@@ -112,6 +113,7 @@ window.WASM = (function () {
                 return response.arrayBuffer();
             })
             .then(function (bytes) {
+                _wasmBytes = bytes;
                 return WebAssembly.instantiate(bytes, {
                     env: {}
                 });
@@ -127,7 +129,7 @@ window.WASM = (function () {
 
                 _bindFunctions();
                 _ready = true;
-                console.log('[WASM] Module loaded successfully (' + (bytes.byteLength / 1024).toFixed(1) + ' KB)');
+                console.log('[WASM] Module loaded successfully (' + (_wasmBytes.byteLength / 1024).toFixed(1) + ' KB)');
             })
             .catch(function (err) {
                 console.warn('[WASM] Failed to load — using JS fallback:', err.message || err);

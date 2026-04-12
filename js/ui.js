@@ -729,7 +729,7 @@ window.UI = (function () {
         // Close buttons (null-safe)
         const btnCloseRight = document.getElementById('btnCloseRight');
         const btnCloseModal = document.getElementById('btnCloseModal');
-        if (btnCloseRight) btnCloseRight.addEventListener('click', closeRightPanel);
+        if (btnCloseRight) btnCloseRight.addEventListener('click', function() { UI.closeRightPanel(); });
         if (btnCloseModal) btnCloseModal.addEventListener('click', closeModal);
         if (el.modalOverlay) {
             el.modalOverlay.addEventListener('click', function (e) {
