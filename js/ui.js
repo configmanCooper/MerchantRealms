@@ -2087,7 +2087,7 @@ window.UI = (function () {
                     var pvIcon = vehicleIcons[pv.type] || '📦';
                     parkedHtml += '<div style="display:flex;justify-content:space-between;align-items:center;font-size:0.72rem;padding:2px 4px;background:rgba(200,150,50,0.1);border-radius:4px;margin:2px 0;">' +
                         '<span>' + pvIcon + ' ' + pvName + ' (+' + pvCap + ' cap)</span>' +
-                        '<button class="qty-btn" data-action="unparkVehicle" data-id="${pv.type}" style="font-size:0.65rem;padding:1px 5px;">Retrieve</button>' +
+                        '<button class="qty-btn" data-action="unparkVehicle" data-id="' + pv.type + '" style="font-size:0.65rem;padding:1px 5px;">Retrieve</button>' +
                     '</div>';
                 }
                 parkedHtml += '<div style="font-size:0.65rem;color:var(--text-dim);margin-top:2px;">⚠️ ~70%/year theft risk for unguarded vehicles</div>';
@@ -2102,7 +2102,7 @@ window.UI = (function () {
                     var pName = pvt.replace(/_/g, ' ');
                     var pCap = vehicleCaps[pvt] || 0;
                     var pIcon = vehicleIcons[pvt] || '📦';
-                    parkBtns += '<button class="qty-btn" data-action="parkVehicle" data-id="${pvt}" style="font-size:0.65rem;padding:2px 6px;">' + pIcon + ' Park ' + pName + ' (+' + pCap + ')</button> ';
+                    parkBtns += '<button class="qty-btn" data-action="parkVehicle" data-id="' + pvt + '" style="font-size:0.65rem;padding:2px 6px;">' + pIcon + ' Park ' + pName + ' (+' + pCap + ')</button> ';
                 }
             }
             if (parkBtns) {
@@ -2250,7 +2250,7 @@ window.UI = (function () {
                 }
                 html += '<span style="color:#55a868;font-size:0.8rem;">✅ Licensed' + expiryStr + '</span>';
             } else {
-                html += '<button class="btn-medieval" data-action="buyLicense" data-kingdom="${k.id}" data-id="${gId}" style="font-size:0.75rem;padding:3px 10px;color:#e8dcc8;background:rgba(180,140,50,0.2);border-color:rgba(180,140,50,0.4);">Buy License (' + cost + 'g)</button>';
+                html += '<button class="btn-medieval" data-action="buyLicense" data-kingdom="' + k.id + '" data-id="' + gId + '" style="font-size:0.75rem;padding:3px 10px;color:#e8dcc8;background:rgba(180,140,50,0.2);border-color:rgba(180,140,50,0.4);">Buy License (' + cost + 'g)</button>';
             }
             html += '</div>';
         }
@@ -3083,13 +3083,13 @@ window.UI = (function () {
         } else if (mode === 'active') {
             // Complete buttons — only show if player is in the quest's town
             if (!quest.donateOnly) {
-                html += '<button class="btn-medieval" data-action="completeQuest" data-id="${quest.id}" data-val="false" style="font-size:0.75rem;padding:4px 12px;background:#2a3a4a;">💰 Sell to Town</button>';
+                html += '<button class="btn-medieval" data-action="completeQuest" data-id="' + quest.id + '" data-val="false" style="font-size:0.75rem;padding:4px 12px;background:#2a3a4a;">💰 Sell to Town</button>';
             }
-            html += '<button class="btn-medieval" data-action="completeQuest" data-id="${quest.id}" data-val="true" style="font-size:0.75rem;padding:4px 12px;background:#2a4a2a;">🎁 Donate</button>';
-            html += '<button class="btn-medieval" data-action="abandonQuest" data-id="${quest.id}" style="font-size:0.75rem;padding:4px 8px;background:#4a2a2a;opacity:0.7;">❌</button>';
+            html += '<button class="btn-medieval" data-action="completeQuest" data-id="' + quest.id + '" data-val="true" style="font-size:0.75rem;padding:4px 12px;background:#2a4a2a;">🎁 Donate</button>';
+            html += '<button class="btn-medieval" data-action="abandonQuest" data-id="' + quest.id + '" style="font-size:0.75rem;padding:4px 8px;background:#4a2a2a;opacity:0.7;">❌</button>';
         } else if (mode === 'active-elsewhere') {
             html += '<span style="color:#888;font-size:0.75rem;">Must be in ' + (otherTown ? otherTown.name : 'the quest town') + ' to complete</span>';
-            html += '<button class="btn-medieval" data-action="abandonQuest" data-id="${quest.id}" style="font-size:0.75rem;padding:4px 8px;background:#4a2a2a;opacity:0.7;">❌ Abandon</button>';
+            html += '<button class="btn-medieval" data-action="abandonQuest" data-id="' + quest.id + '" style="font-size:0.75rem;padding:4px 8px;background:#4a2a2a;opacity:0.7;">❌ Abandon</button>';
         }
         html += '</div>';
 
@@ -3561,7 +3561,7 @@ window.UI = (function () {
             const selected = plan.feast === f.id;
             const borderCol = selected ? 'rgba(200,180,60,0.8)' : 'rgba(120,100,60,0.3)';
             const bgCol = selected ? 'rgba(200,180,60,0.12)' : 'rgba(40,35,25,0.5)';
-            html += '<div data-action="setWeddingChoice" data-choice="feast" data-id="${f.id}" style="cursor:pointer;border:1px solid ' + borderCol + ';background:' + bgCol + ';padding:8px 12px;margin-bottom:4px;border-radius:6px;">';
+            html += '<div data-action="setWeddingChoice" data-choice="feast" data-id="' + f.id + '" style="cursor:pointer;border:1px solid ' + borderCol + ';background:' + bgCol + ';padding:8px 12px;margin-bottom:4px;border-radius:6px;">';
             html += '<strong>' + f.icon + ' ' + f.name + '</strong> <span style="color:#b0a080;">(' + f.cost + 'g, ~' + f.guests + ' guests)</span>';
             if (selected) html += ' <span style="color:var(--gold);">✓</span>';
             html += '<br><small style="color:#a09070;">' + f.description + '</small>';
@@ -3577,7 +3577,7 @@ window.UI = (function () {
             const selected = plan.vows === vw.id;
             const borderCol = selected ? 'rgba(200,180,60,0.8)' : 'rgba(120,100,60,0.3)';
             const bgCol = selected ? 'rgba(200,180,60,0.12)' : 'rgba(40,35,25,0.5)';
-            html += '<div data-action="setWeddingChoice" data-choice="vows" data-id="${vw.id}" style="cursor:pointer;border:1px solid ' + borderCol + ';background:' + bgCol + ';padding:8px 12px;margin-bottom:4px;border-radius:6px;">';
+            html += '<div data-action="setWeddingChoice" data-choice="vows" data-id="' + vw.id + '" style="cursor:pointer;border:1px solid ' + borderCol + ';background:' + bgCol + ';padding:8px 12px;margin-bottom:4px;border-radius:6px;">';
             html += '<strong>' + vw.icon + ' ' + vw.name + '</strong>';
             if (selected) html += ' <span style="color:var(--gold);">✓</span>';
             html += '<br><small style="color:#c8b890;font-style:italic;">' + vw.description + '</small>';
@@ -3657,7 +3657,7 @@ window.UI = (function () {
 
         for (let i = 0; i < topics.length; i++) {
             const t = topics[i];
-            html += '<div data-action="doTalkToSpouse" data-id="${t.id}" style="cursor:pointer;border:1px solid rgba(120,100,60,0.3);background:rgba(40,35,25,0.5);padding:10px 14px;margin-bottom:6px;border-radius:6px;transition:border-color 0.2s;" onmouseover="this.style.borderColor=\'rgba(200,180,60,0.6)\'" onmouseout="this.style.borderColor=\'rgba(120,100,60,0.3)\'">';
+            html += '<div data-action="doTalkToSpouse" data-id="' + t.id + '" style="cursor:pointer;border:1px solid rgba(120,100,60,0.3);background:rgba(40,35,25,0.5);padding:10px 14px;margin-bottom:6px;border-radius:6px;transition:border-color 0.2s;" onmouseover="this.style.borderColor=\'rgba(200,180,60,0.6)\'" onmouseout="this.style.borderColor=\'rgba(120,100,60,0.3)\'">';
             html += '<strong>' + t.icon + ' ' + t.name + '</strong>';
             html += '<br><small style="color:#a09070;font-style:italic;">"' + t.desc + '"</small>';
             html += '</div>';
@@ -4252,7 +4252,7 @@ window.UI = (function () {
         html += '</div>';
 
         html += '</div>';
-        var footer = '<button class="btn-medieval" data-action="showAssignDialog" data-id="${personId}">← Back</button>';
+        var footer = '<button class="btn-medieval" data-action="showAssignDialog" data-id="' + personId + '">← Back</button>';
         openModal('📍 Send Worker', html, footer);
     }
 
@@ -4505,7 +4505,7 @@ window.UI = (function () {
                 var bannedTag = ew.isBanned ? ' <span style="color:var(--danger);font-size:0.65rem;cursor:help;" title="Banned items are illegal to make or sell, but legal to buy or own in small amounts.">🚫 BANNED</span>' : '';
                 html += '<div style="display:flex;align-items:center;gap:8px;margin:3px 0;">';
                 html += '<span style="font-size:0.8rem;">⚔️ ' + ew.name + ' <span style="color:' + qc + ';font-size:0.7rem;">(' + ew.quality + ')</span> +' + Math.round(ew.combatBonus * 100) + '%' + bannedTag + '</span>';
-                html += '<button class="btn-medieval" data-action="buyWeapon" data-id="${ew.id}" style="font-size:0.7rem;padding:3px 10px;margin-left:auto;">' + ew.price + 'g</button>';
+                html += '<button class="btn-medieval" data-action="buyWeapon" data-id="' + ew.id + '" style="font-size:0.7rem;padding:3px 10px;margin-left:auto;">' + ew.price + 'g</button>';
                 html += '</div>';
             }
             for (var ai = 0; ai < availArmor.length; ai++) {
@@ -4514,7 +4514,7 @@ window.UI = (function () {
                 var bannedTagA = ea.isBanned ? ' <span style="color:var(--danger);font-size:0.65rem;cursor:help;" title="Banned items are illegal to make or sell, but legal to buy or own in small amounts.">🚫 BANNED</span>' : '';
                 html += '<div style="display:flex;align-items:center;gap:8px;margin:3px 0;">';
                 html += '<span style="font-size:0.8rem;">🛡️ ' + ea.name + ' <span style="color:' + qca + ';font-size:0.7rem;">(' + ea.quality + ')</span> +' + Math.round(ea.combatBonus * 100) + '%' + bannedTagA + '</span>';
-                html += '<button class="btn-medieval" data-action="buyArmor" data-id="${ea.id}" style="font-size:0.7rem;padding:3px 10px;margin-left:auto;">' + ea.price + 'g</button>';
+                html += '<button class="btn-medieval" data-action="buyArmor" data-id="' + ea.id + '" style="font-size:0.7rem;padding:3px 10px;margin-left:auto;">' + ea.price + 'g</button>';
                 html += '</div>';
             }
             html += '</div>';
@@ -4547,7 +4547,7 @@ window.UI = (function () {
             invEquipHtml += '<div style="display:flex;align-items:center;gap:8px;margin:3px 0;">';
             invEquipHtml += '<span style="font-size:0.8rem;">' + (eRes.icon || '') + ' ' + eRes.name + ' ×' + eHeld + '</span>';
             if (!alreadyEquipped) {
-                invEquipHtml += '<button class="btn-medieval" data-action="equipFromInventoryUI" data-id="${eResId}" style="font-size:0.7rem;padding:3px 10px;margin-left:auto;">Equip</button>';
+                invEquipHtml += '<button class="btn-medieval" data-action="equipFromInventoryUI" data-id="' + eResId + '" style="font-size:0.7rem;padding:3px 10px;margin-left:auto;">Equip</button>';
             } else {
                 invEquipHtml += '<span style="font-size:0.7rem;color:#55a868;margin-left:auto;">✓ Equipped</span>';
             }
@@ -4932,7 +4932,7 @@ window.UI = (function () {
                 html += '<button class="btn-medieval" disabled style="font-size:0.75rem;padding:4px 12px;opacity:0.4;cursor:not-allowed;">🔄 Change Allegiance</button>';
                 html += '<div style="font-size:0.7rem;color:#c44e52;margin-top:3px;">⚠️ Nobles cannot change allegiance.</div>';
             } else {
-                html += '<button class="btn-medieval" data-action="_reopenWarChoice" data-id="${entry.warId}" style="font-size:0.75rem;padding:4px 12px;">🔄 Change Allegiance</button>';
+                html += '<button class="btn-medieval" data-action="_reopenWarChoice" data-id="' + entry.warId + '" style="font-size:0.75rem;padding:4px 12px;">🔄 Change Allegiance</button>';
                 if (a.side !== 'neutral') {
                     html += '<div style="font-size:0.7rem;color:#e67e22;margin-top:3px;">⚠️ Changing costs -20 rep from current ally, -10 king relationship, -5 all nobles.</div>';
                 }
@@ -5470,7 +5470,7 @@ window.UI = (function () {
                 var isActive = (tabKey === activeTab);
                 tabBarHtml += '<button class="btn-medieval" style="font-size:0.78rem;padding:4px 10px;' +
                     (isActive ? 'background:rgba(255,215,0,0.2);border-color:var(--gold);color:var(--gold);' : 'opacity:0.6;') +
-                    '" data-action="_setEventTab" data-tab="${tabKey}">' + tg.label + '</button>';
+                    '" data-action="_setEventTab" data-tab="' + tabKey + '">' + tg.label + '</button>';
             }
         }
         tabBarHtml += '</div>';
@@ -6060,7 +6060,7 @@ window.UI = (function () {
 
             // Royal Consultation — open consultation dialog
             if (event.details.type === 'royal_consultation' && event.details.kingdomId && event.details.decisionId) {
-                html += '<div style="margin:12px 0;"><button class="btn-medieval" style="background:rgba(255,215,0,0.15);border-color:rgba(255,215,0,0.4);font-size:1rem;" data-action="closeModalAndOpenKingConsultationDialog" data-id="${event.details.kingdomId}" data-val="${event.details.decisionId}">👑 Respond to King\'s Proposal</button></div>';
+                html += '<div style="margin:12px 0;"><button class="btn-medieval" style="background:rgba(255,215,0,0.15);border-color:rgba(255,215,0,0.4);font-size:1rem;" data-action="closeModalAndOpenKingConsultationDialog" data-id="' + event.details.kingdomId + '" data-val="' + event.details.decisionId + '">👑 Respond to King\'s Proposal</button></div>';
             }
 
             // Cause
@@ -6122,9 +6122,9 @@ window.UI = (function () {
             var isCurrentlyOff = filters[muteKey] === false;
 
             if (isCurrentlyOff) {
-                html += '<button class="btn-action" style="font-size:0.85rem;padding:4px 12px;background:rgba(50,180,50,0.2);border-color:rgba(50,180,50,0.5);" data-action="setNotifFilterAndShowEventDetail" data-key="${muteKey}" data-val="true">🔔 Unmute ' + muteLabel + '</button>';
+                html += '<button class="btn-action" style="font-size:0.85rem;padding:4px 12px;background:rgba(50,180,50,0.2);border-color:rgba(50,180,50,0.5);" data-action="setNotifFilterAndShowEventDetail" data-key="' + muteKey + '" data-val="true">🔔 Unmute ' + muteLabel + '</button>';
             } else {
-                html += '<button class="btn-action" style="font-size:0.85rem;padding:4px 12px;background:rgba(180,50,50,0.2);border-color:rgba(180,50,50,0.5);" data-action="setNotifFilterAndShowEventDetail" data-key="${muteKey}" data-val="false">🔇 Mute ' + muteLabel + '</button>';
+                html += '<button class="btn-action" style="font-size:0.85rem;padding:4px 12px;background:rgba(180,50,50,0.2);border-color:rgba(180,50,50,0.5);" data-action="setNotifFilterAndShowEventDetail" data-key="' + muteKey + '" data-val="false">🔇 Mute ' + muteLabel + '</button>';
             }
             html += '</div>';
         }
@@ -6147,7 +6147,7 @@ window.UI = (function () {
             } catch (e) { /* ignore */ }
         }
         if (locTownId) {
-            html += '<button class="btn-action" style="margin-top:8px;" data-action="clickTown" data-id="${locTownId}">🗺️ View Location</button>';
+            html += '<button class="btn-action" style="margin-top:8px;" data-action="clickTown" data-id="' + locTownId + '">🗺️ View Location</button>';
         }
 
         html += '</div>';
@@ -6414,7 +6414,7 @@ window.UI = (function () {
                 if (ch.id === 'guild_loan') {
                     clickHandler = 'data-action="showGuildLoanDialog"';
                 } else {
-                    clickHandler = 'data-action="handleBankruptcyChoice" data-id="${ch.id}"';
+                    clickHandler = 'data-action="handleBankruptcyChoice" data-id="' + ch.id + '"';
                 }
             }
 
@@ -6472,7 +6472,7 @@ window.UI = (function () {
 
             var clickHandler = '';
             if (avail) {
-                clickHandler = 'data-action="handleGuildLoanAccept" data-id="${offer.guildId}"';
+                clickHandler = 'data-action="handleGuildLoanAccept" data-id="' + offer.guildId + '"';
             }
 
             bodyHtml += '<div ' + clickHandler + ' style="';
@@ -6579,7 +6579,7 @@ window.UI = (function () {
 
         for (var i = 0; i < choices.length; i++) {
             var ch = choices[i];
-            bodyHtml += '<div data-action="handleSpyFavor" data-id="${ch.id}" style="' +
+            bodyHtml += '<div data-action="handleSpyFavor" data-id="' + ch.id + '" style="' +
                 'background:#1a1a2e;border:1px solid #444;border-radius:8px;padding:10px 14px;margin:6px 0;cursor:pointer;transition:border-color 0.2s,background 0.2s;' +
                 '" onmouseenter="this.style.borderColor=\'#c4a35a\';this.style.background=\'#222244\'" onmouseleave="this.style.borderColor=\'#444\';this.style.background=\'#1a1a2e\'">' +
                 '<div style="font-weight:bold;font-size:14px;color:#e0d5c0;">' + ch.label + '</div>' +
@@ -8381,7 +8381,7 @@ window.UI = (function () {
                             _gqLabel = ' <span style="color:#a855f7;font-size:0.8em;">(' + _gqChance + '% chance)</span>';
                         }
                         html += '<span><strong>' + escapeHtml(item.productName) + '</strong>' + _gqLabel + ' <span style="color:#888;font-size:0.85em;">at ' + escapeHtml(item.buildingName) + ' (needs: ' + matsText + ')</span></span>';
-                        html += '<button class="btn-medieval" style="font-size:0.85em;" data-action="guildCraftPrompt" data-id="${escapeHtml(item.buildingId)}" data-product="${escapeHtml(item.productId)}" data-name="${escapeHtml(item.productName)}">🔨 Craft</button>';
+                        html += '<button class="btn-medieval" style="font-size:0.85em;" data-action="guildCraftPrompt" data-id="' + escapeHtml(item.buildingId) + '" data-product="' + escapeHtml(item.productId) + '" data-name="' + escapeHtml(item.productName) + '">🔨 Craft</button>';
                         html += '</div>';
                     }
                     html += '</div>';
@@ -8453,7 +8453,7 @@ window.UI = (function () {
         html += '<p>How many <strong>' + productName + '</strong> to craft?</p>';
         html += '<input type="number" id="guildCraftQty" value="1" min="1" max="100" style="width:80px;text-align:center;padding:4px;background:#222;color:#eee;border:1px solid #555;border-radius:4px;">';
         html += '<div style="margin-top:10px;">';
-        html += '<button class="btn-medieval" data-action="guildCraftExecute" data-id="${escapeHtml(buildingId)}" data-val="${escapeHtml(productId)}">🔨 Craft</button>';
+        html += '<button class="btn-medieval" data-action="guildCraftExecute" data-id="' + escapeHtml(buildingId) + '" data-val="' + escapeHtml(productId) + '">🔨 Craft</button>';
         html += ' <button class="btn-medieval" data-action="openGuildsPanel">Cancel</button>';
         html += '</div></div>';
         openModal('🔨 Craft ' + productName, html);
@@ -8671,9 +8671,9 @@ window.UI = (function () {
 
                 // Buttons
                 html += '<div style="margin-top:4px;">';
-                html += '<button class="btn-medieval" data-action="repairShipAndOpenShipsDialog" data-id="${ship.id}" style="font-size:0.75rem;padding:3px 8px;margin:2px;"' + (condition >= 100 ? ' disabled' : '') + '>🔧 Repair</button>';
+                html += '<button class="btn-medieval" data-action="repairShipAndOpenShipsDialog" data-id="' + ship.id + '" style="font-size:0.75rem;padding:3px 8px;margin:2px;"' + (condition >= 100 ? ' disabled' : '') + '>🔧 Repair</button>';
                 if ((sType.maxAddons || 0) > 0) {
-                    html += '<button class="btn-medieval" data-action="showShipAddons" data-id="${ship.id}" style="font-size:0.75rem;padding:3px 8px;margin:2px;">📦 Addons';
+                    html += '<button class="btn-medieval" data-action="showShipAddons" data-id="' + ship.id + '" style="font-size:0.75rem;padding:3px 8px;margin:2px;">📦 Addons';
                     if (ship.addons) html += ' (' + ship.addons.length + '/' + sType.maxAddons + ')';
                     html += '</button>';
                 }
@@ -8730,7 +8730,7 @@ window.UI = (function () {
                 html += '<div style="font-size:0.7rem;margin-top:2px;">📦 ' + matParts.join(', ') + '</div>';
             }
 
-            html += '<button class="btn-medieval" data-action="buyShipAndOpenShipsDialog" data-id="${typeId}" style="font-size:0.75rem;padding:3px 8px;margin-top:3px;"' + (canBuild ? '' : ' disabled') + '>🏗️ Build</button>';
+            html += '<button class="btn-medieval" data-action="buyShipAndOpenShipsDialog" data-id="' + typeId + '" style="font-size:0.75rem;padding:3px 8px;margin-top:3px;"' + (canBuild ? '' : ' disabled') + '>🏗️ Build</button>';
             if (atLimit) html += ' <span style="color:#c44e52;font-size:0.75rem;">Port full!</span>';
             if (!allMatsAvailable) html += ' <span style="color:#c44e52;font-size:0.75rem;">Missing materials!</span>';
             html += '</div>';
@@ -8840,19 +8840,19 @@ window.UI = (function () {
                     for (var _hhi = 0; _hhi < _homeHorses.length; _hhi++) {
                         var _hh = _homeHorses[_hhi];
                         html += (_hh.name || 'Horse') + ' ';
-                        if (h.townId === Player.townId) html += '<button class="btn-medieval" data-action="unstableHorseUI" data-id="${h.id}" data-val=" + _hhi + " style="font-size:0.65rem;padding:1px 5px;">Take</button> ';
+                        if (h.townId === Player.townId) html += '<button class="btn-medieval" data-action="unstableHorseUI" data-id="' + h.id + '" data-val=" + _hhi + " style="font-size:0.65rem;padding:1px 5px;">Take</button> ';
                     }
                 }
                 html += '</div>';
                 // Transfer buttons (only when in same town)
                 if (h.townId === Player.townId) {
-                    html += '<button class="btn-medieval" data-action="openHomeStorageUI" data-id="${h.id}" style="font-size:0.75rem;padding:3px 8px;margin:2px;">📦 Transfer Goods</button>';
+                    html += '<button class="btn-medieval" data-action="openHomeStorageUI" data-id="' + h.id + '" style="font-size:0.75rem;padding:3px 8px;margin:2px;">📦 Transfer Goods</button>';
                     if (Player.horses && Player.horses.length > 0 && _homeHorses.length < _maxHomeHorses) {
-                        html += '<button class="btn-medieval" data-action="stableHorseUI" data-id="${h.id}" style="font-size:0.75rem;padding:3px 8px;margin:2px;">🐴 Stable Horse</button>';
+                        html += '<button class="btn-medieval" data-action="stableHorseUI" data-id="' + h.id + '" style="font-size:0.75rem;padding:3px 8px;margin:2px;">🐴 Stable Horse</button>';
                     }
                     var _availAddons = Player.getAvailableAddons ? Player.getAvailableAddons(h.id) : [];
                     if (_availAddons.length > 0) {
-                        html += '<button class="btn-medieval" data-action="openHouseAddonsUI" data-id="${h.id}" style="font-size:0.75rem;padding:3px 8px;margin:2px;">🔧 Addons (' + _availAddons.length + ')</button>';
+                        html += '<button class="btn-medieval" data-action="openHouseAddonsUI" data-id="' + h.id + '" style="font-size:0.75rem;padding:3px 8px;margin:2px;">🔧 Addons (' + _availAddons.length + ')</button>';
                     }
                 }
                 if (h.isRental) {
@@ -8872,22 +8872,22 @@ window.UI = (function () {
                     html += '<div style="font-size:0.78rem;color:#c4a35a;">🏢 Apartment — monthly maintenance: ' + h.monthlyMaintenance + 'g</div>';
                 }
                 html += '<div style="margin-top:4px;">';
-                if (!isPrimary) html += '<button class="btn-medieval" data-action="setPrimaryHouseUI" data-id="${h.id}" style="font-size:0.75rem;padding:3px 8px;margin:2px;">⭐ Set Primary</button>';
+                if (!isPrimary) html += '<button class="btn-medieval" data-action="setPrimaryHouseUI" data-id="' + h.id + '" style="font-size:0.75rem;padding:3px 8px;margin:2px;">⭐ Set Primary</button>';
                 // Tents: only Leave option (stop renting), no rent-out/upgrade/sell
                 if (ht.fromTentCamp) {
-                    html += '<button class="btn-medieval" data-action="leaveTentUI" data-id="${h.id}" style="font-size:0.75rem;padding:3px 8px;margin:2px;color:#c44e52;">🚪 Leave Tent</button>';
+                    html += '<button class="btn-medieval" data-action="leaveTentUI" data-id="' + h.id + '" style="font-size:0.75rem;padding:3px 8px;margin:2px;color:#c44e52;">🚪 Leave Tent</button>';
                 } else {
                     // Rent out (not for apartments owned from a building — those are units, not full houses)
                     if (!ht.fromApartmentBuilding) {
-                        html += '<button class="btn-medieval" data-action="rentOutHouseUI" data-id="${h.id}" style="font-size:0.75rem;padding:3px 8px;margin:2px;">' + (h.isRental ? '🏠 Stop Renting' : '💰 Rent Out') + '</button>';
-                        if (h.tenantId && !h.evictionDay) html += '<button class="btn-medieval" data-action="evictTenantUI" data-id="${h.id}" style="font-size:0.75rem;padding:3px 8px;margin:2px;color:#c44e52;">🚪 Evict</button>';
+                        html += '<button class="btn-medieval" data-action="rentOutHouseUI" data-id="' + h.id + '" style="font-size:0.75rem;padding:3px 8px;margin:2px;">' + (h.isRental ? '🏠 Stop Renting' : '💰 Rent Out') + '</button>';
+                        if (h.tenantId && !h.evictionDay) html += '<button class="btn-medieval" data-action="evictTenantUI" data-id="' + h.id + '" style="font-size:0.75rem;padding:3px 8px;margin:2px;color:#c44e52;">🚪 Evict</button>';
                     }
                     // Upgrade only for land-based houses (not apartments, not tents, not portable)
                     if (!ht.fromApartmentBuilding && !ht.portable) {
-                        html += '<button class="btn-medieval" data-action="upgradeHouseUI" data-id="${h.id}" style="font-size:0.75rem;padding:3px 8px;margin:2px;">🏗️ Upgrade</button>';
+                        html += '<button class="btn-medieval" data-action="upgradeHouseUI" data-id="' + h.id + '" style="font-size:0.75rem;padding:3px 8px;margin:2px;">🏗️ Upgrade</button>';
                     }
                     // Sell — opens listing UI with price recommendation
-                    html += '<button class="btn-medieval" data-action="sellHouseUI" data-id="${h.id}" style="font-size:0.75rem;padding:3px 8px;margin:2px;color:#c44e52;">🏚️ Sell</button>';
+                    html += '<button class="btn-medieval" data-action="sellHouseUI" data-id="' + h.id + '" style="font-size:0.75rem;padding:3px 8px;margin:2px;color:#c44e52;">🏚️ Sell</button>';
                 }
                 html += '</div></div>';
             }
@@ -8970,7 +8970,7 @@ window.UI = (function () {
                         }
                         html += '📦 ' + matParts.join(', ') + '</div>';
                     }
-                    html += '<button class="btn-medieval" data-action="buyHouseUI" data-id="${htype.id}" style="font-size:0.75rem;padding:3px 8px;margin-top:3px;"' + (canBuild ? '' : ' disabled') + '>🏗️ Build</button>';
+                    html += '<button class="btn-medieval" data-action="buyHouseUI" data-id="' + htype.id + '" style="font-size:0.75rem;padding:3px 8px;margin-top:3px;"' + (canBuild ? '' : ' disabled') + '>🏗️ Build</button>';
                     if (needsLand) html += ' <span style="color:#c44e52;font-size:0.75rem;">Need land!</span>';
                     if (!matsAvailable) html += ' <span style="color:#c44e52;font-size:0.75rem;">Missing materials!</span>';
                     if (htype.minRank) {
@@ -9030,7 +9030,7 @@ window.UI = (function () {
                     html += ' | ' + matParts.join(', ');
                 }
                 html += '</div>';
-                html += '<button class="btn-medieval" data-action="doInstallAddon" data-id="${houseId}" data-val="${addon.id}" style="font-size:0.75rem;padding:3px 10px;margin-top:4px;color:#e8dcc8;">🔧 Install</button>';
+                html += '<button class="btn-medieval" data-action="doInstallAddon" data-id="' + houseId + '" data-val="' + addon.id + '" style="font-size:0.75rem;padding:3px 10px;margin-top:4px;color:#e8dcc8;">🔧 Install</button>';
                 html += '</div>';
             }
         } else if (installed.length === 0) {
@@ -9078,9 +9078,9 @@ window.UI = (function () {
                 var sQty = house.homeStorage[sk];
                 html += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-size:0.8rem;">';
                 html += '<span style="min-width:140px;">' + sName + ': ' + sQty + '</span>';
-                html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" data-action="_homeWithdraw" data-id="${houseId}" data-key="${sk}" data-qty="1">Take 1</button>';
-                if (sQty >= 5) html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" data-action="_homeWithdraw" data-id="${houseId}" data-key="${sk}" data-qty="5">5</button>';
-                html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" data-action="_homeWithdraw" data-id="${houseId}" data-key="${sk}" data-qty=" + sQty + ">All</button>';
+                html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" data-action="_homeWithdraw" data-id="' + houseId + '" data-key="' + sk + '" data-qty="1">Take 1</button>';
+                if (sQty >= 5) html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" data-action="_homeWithdraw" data-id="' + houseId + '" data-key="' + sk + '" data-qty="5">5</button>';
+                html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" data-action="_homeWithdraw" data-id="' + houseId + '" data-key="' + sk + '" data-qty=" + sQty + ">All</button>';
                 html += '</div>';
             }
         }
@@ -9100,9 +9100,9 @@ window.UI = (function () {
             var iQty = inv[ik];
             html += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-size:0.8rem;">';
             html += '<span style="min-width:140px;">' + iName + ': ' + iQty + '</span>';
-            html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" data-action="_homeDeposit" data-id="${houseId}" data-key="${ik}" data-qty="1">Store 1</button>';
-            if (iQty >= 5) html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" data-action="_homeDeposit" data-id="${houseId}" data-key="${ik}" data-qty="5">5</button>';
-            html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" data-action="_homeDeposit" data-id="${houseId}" data-key="${ik}" data-qty=" + iQty + ">All</button>';
+            html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" data-action="_homeDeposit" data-id="' + houseId + '" data-key="' + ik + '" data-qty="1">Store 1</button>';
+            if (iQty >= 5) html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" data-action="_homeDeposit" data-id="' + houseId + '" data-key="' + ik + '" data-qty="5">5</button>';
+            html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" data-action="_homeDeposit" data-id="' + houseId + '" data-key="' + ik + '" data-qty=" + iQty + ">All</button>';
             html += '</div>';
         }
         if (!hasInv) html += '<div style="color:#888;font-size:0.8rem;">Nothing to store</div>';
@@ -9182,8 +9182,8 @@ window.UI = (function () {
         html += '<div style="font-size:0.72rem;color:#888;">Note: If the price is too high, no one will buy it. Higher prices take longer to sell. Lower prices sell faster.</div>';
         html += '</div>';
 
-        var footer = '<button class="btn-medieval" data-action="confirmSellHouseUI" data-id="${houseId}" style="margin-right:8px;">📋 List For Sale</button>';
-        footer += '<button class="btn-medieval" data-action="quickSellHouseUI" data-id="${houseId}" style="margin-right:8px;color:#c4a35a;">⚡ Quick Sell (' + recommendedPrice + 'g)</button>';
+        var footer = '<button class="btn-medieval" data-action="confirmSellHouseUI" data-id="' + houseId + '" style="margin-right:8px;">📋 List For Sale</button>';
+        footer += '<button class="btn-medieval" data-action="quickSellHouseUI" data-id="' + houseId + '" style="margin-right:8px;color:#c4a35a;">⚡ Quick Sell (' + recommendedPrice + 'g)</button>';
         footer += '<button class="btn-medieval" data-action="closeModal">Cancel</button>';
         openModal('🏚️ Sell ' + ht.name, html, footer);
     }
@@ -9222,7 +9222,7 @@ window.UI = (function () {
         if (!house) { toast('Tent not found.', 'error'); return; }
         var html = '<div style="font-size:0.85rem;margin-bottom:10px;">Are you sure you want to leave this tent? It will be freed up for someone else.</div>';
         html += '<div style="font-size:0.78rem;color:#888;">You won\'t get any gold back — you\'re just stopping your rental.</div>';
-        var footer = '<button class="btn-medieval" data-action="confirmLeaveTent" data-id="${houseId}" style="margin-right:8px;color:#c44e52;">🚪 Leave</button>';
+        var footer = '<button class="btn-medieval" data-action="confirmLeaveTent" data-id="' + houseId + '" style="margin-right:8px;color:#c44e52;">🚪 Leave</button>';
         footer += '<button class="btn-medieval" data-action="closeModal">Cancel</button>';
         openModal('🚪 Leave Tent', html, footer);
     }
@@ -9258,7 +9258,7 @@ window.UI = (function () {
             html += '<div style="border:1px solid #444;padding:6px;margin:3px 0;border-radius:4px;opacity:' + (canUpg ? '1' : '0.5') + ';">';
             html += ht.icon + ' <b>' + ht.name + '</b> — <span style="color:#ffd700;">' + upgCost.toFixed(2) + 'g</span> <span class="text-dim" style="font-size:0.7rem;">(full: ' + newCostInfo.total.toFixed(2) + 'g - ' + credit.toFixed(2) + 'g credit)</span><br>';
             html += '<span style="font-size:0.75rem;color:#aaa;">' + ht.description + '</span><br>';
-            html += '<button class="btn-medieval" data-action="doUpgradeHouse" data-id="${houseId}" data-val="${ht.id}" style="font-size:0.75rem;padding:3px 8px;margin-top:2px;"' + (canUpg ? '' : ' disabled') + '>🏗️ Upgrade (' + upgCost.toFixed(2) + 'g)</button>';
+            html += '<button class="btn-medieval" data-action="doUpgradeHouse" data-id="' + houseId + '" data-val="' + ht.id + '" style="font-size:0.75rem;padding:3px 8px;margin-top:2px;"' + (canUpg ? '' : ' disabled') + '>🏗️ Upgrade (' + upgCost.toFixed(2) + 'g)</button>';
             if (!newCostInfo.available) html += ' <span style="color:#c44e52;font-size:0.7rem;">Missing materials</span>';
             html += '</div>';
         }
@@ -9481,7 +9481,7 @@ window.UI = (function () {
                 var ticksToFull = Math.ceil((maxEnergy - energy) / opt.energyPerTick);
                 var costNote = opt.cost > 0 ? ' — ' + opt.cost + 'g' : ' — Free';
                 html += '<div style="margin:6px 0;">';
-                html += '<button class="btn-medieval" data-action="restUI" data-id="${opt.id}" style="padding:6px 16px;width:90%;">';
+                html += '<button class="btn-medieval" data-action="restUI" data-id="' + opt.id + '" style="padding:6px 16px;width:90%;">';
                 html += (opt.icon || '') + ' ' + opt.name + costNote;
                 html += '</button>';
                 html += '<div style="font-size:0.75rem;color:#aaa;">+' + opt.energyPerTick.toFixed(1) + ' energy/tick · ~' + ticksToFull + ' ticks to full';
@@ -9764,7 +9764,7 @@ window.UI = (function () {
         for (var _ti = 0; _ti < _tierOpts.length; _ti++) {
             var _to = _tierOpts[_ti];
             var _tActive = _achTierFilter === _to.id ? 'background:var(--gold);color:#1a1a2e;' : '';
-            tierFilterHtml += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;' + _tActive + '" data-action="openAchievementsDialog" data-id="${_achCategory}" data-val="${_to.id}">' + _to.label + '</button>';
+            tierFilterHtml += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;' + _tActive + '" data-action="openAchievementsDialog" data-id="' + _achCategory + '" data-val="' + _to.id + '">' + _to.label + '</button>';
         }
         tierFilterHtml += '</div>';
 
@@ -10075,8 +10075,8 @@ window.UI = (function () {
                     const pr = proposals[pi];
                     html += '<div style="margin-bottom:8px;padding:6px;background:rgba(255,255,255,0.05);border-radius:4px;">';
                     html += '<div style="font-size:0.85rem;color:#ddd;">' + pr.eliteMerchantName + ' proposes: ' + pr.eliteChildName + ' wed ' + pr.playerChildName + '</div>';
-                    html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;margin-top:4px;" data-action="respondToMarriageProposal" data-id="${pr.id}" data-response="true">✅ Accept</button> ';
-                    html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;margin-top:4px;background:rgba(200,60,50,0.3);" data-action="respondToMarriageProposal" data-id="${pr.id}" data-response="false">❌ Reject</button>';
+                    html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;margin-top:4px;" data-action="respondToMarriageProposal" data-id="' + pr.id + '" data-response="true">✅ Accept</button> ';
+                    html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;margin-top:4px;background:rgba(200,60,50,0.3);" data-action="respondToMarriageProposal" data-id="' + pr.id + '" data-response="false">❌ Reject</button>';
                     html += '</div>';
                 }
                 html += '</div>';
@@ -10157,7 +10157,7 @@ window.UI = (function () {
                     shownKingdoms[kId] = true;
                     const k = Engine.findKingdom(kId);
                     if (!k) continue;
-                    html += '<button class="btn-medieval" data-action="enlistAsSoldier" data-id="${kId}" style="font-size:0.75rem;padding:4px 12px;margin:2px;">';
+                    html += '<button class="btn-medieval" data-action="enlistAsSoldier" data-id="' + kId + '" style="font-size:0.75rem;padding:4px 12px;margin:2px;">';
                     html += '⚔️ Enlist for ' + k.name;
                     html += '</button> ';
                 }
@@ -10745,10 +10745,10 @@ window.UI = (function () {
                     html += '<div style="font-size:0.72rem;color:#aaa;margin:2px 0;">Health: ' + _sc.health + '</div>';
                     html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">';
                     if (_compHasDoc) {
-                        html += '<button class="btn-medieval" data-action="treatCompanionUI" data-id="${_sc.type}" data-val="${_sc.id}" data-type="player" style="font-size:0.7rem;padding:3px 8px;background:rgba(40,120,40,0.3);border-color:rgba(60,180,60,0.5);">⚕️ Treat</button>';
+                        html += '<button class="btn-medieval" data-action="treatCompanionUI" data-id="' + _sc.type + '" data-val="' + _sc.id + '" data-type="player" style="font-size:0.7rem;padding:3px 8px;background:rgba(40,120,40,0.3);border-color:rgba(60,180,60,0.5);">⚕️ Treat</button>';
                     }
                     if (hasHospital || hasClinic) {
-                        html += '<button class="btn-medieval" data-action="treatCompanionUI" data-id="${_sc.type}" data-val="${_sc.id}" data-type="hospital" style="font-size:0.7rem;padding:3px 8px;background:rgba(40,80,160,0.3);border-color:rgba(60,120,220,0.5);">🏥 Hospital</button>';
+                        html += '<button class="btn-medieval" data-action="treatCompanionUI" data-id="' + _sc.type + '" data-val="' + _sc.id + '" data-type="hospital" style="font-size:0.7rem;padding:3px 8px;background:rgba(40,80,160,0.3);border-color:rgba(60,120,220,0.5);">🏥 Hospital</button>';
                     }
                     html += '</div></div>';
                 }
@@ -10866,7 +10866,7 @@ window.UI = (function () {
             hasAny = true;
             html += '<div class="job-item">';
             html += '<div class="job-info"><span class="job-name">' + skillIcon + ' ' + skillName + '</span></div>';
-            html += '<button class="btn-medieval" data-action="executeTeachChild" data-id="${childId}" data-val="${skillId}" style="font-size:0.7rem;padding:3px 10px;">Teach (3→1 SP)</button>';
+            html += '<button class="btn-medieval" data-action="executeTeachChild" data-id="' + childId + '" data-val="' + skillId + '" style="font-size:0.7rem;padding:3px 10px;">Teach (3→1 SP)</button>';
             html += '</div>';
         }
         html += '</div>';
@@ -11019,7 +11019,7 @@ window.UI = (function () {
             var kName = '';
             try { var k = Engine.getKingdom(v.kingdomId); kName = k ? k.name : ''; } catch (e) {}
             var daysLeft = Math.max(0, (v.deadlineDay || 0) - (Engine.getDay ? Engine.getDay() : 0));
-            html += '<button class="btn-medieval" data-action="openVotingDialog" data-id="${v.id}" style="display:block;width:100%;text-align:left;padding:8px 12px;margin-bottom:6px;">';
+            html += '<button class="btn-medieval" data-action="openVotingDialog" data-id="' + v.id + '" style="display:block;width:100%;text-align:left;padding:8px 12px;margin-bottom:6px;">';
             html += '<div style="font-size:0.82rem;font-weight:bold;">' + escapeHtml(v.title || 'Decision') + '</div>';
             html += '<div style="font-size:0.72rem;color:#aaa;">' + escapeHtml(kName) + ' • ' + daysLeft + ' day' + (daysLeft !== 1 ? 's' : '') + ' left</div>';
             html += '</button>';
@@ -12060,7 +12060,7 @@ window.UI = (function () {
         header += '<input id="icon-search" type="text" placeholder="Search icons..." oninput="window._filterIcons()" style="width:200px; background:#2a2a3e; color:#fff; border:1px solid #555; padding:6px 10px; border-radius:4px; margin-right:8px;" />';
         var cats = ['All', 'Map', 'UI', 'Ranks', 'Heraldry', 'Notifications', 'Jobs', 'Events'];
         for (var ci = 0; ci < cats.length; ci++) {
-            header += '<button data-action="_setIconCategory" data-param1="${cats[ci]}" style="margin:2px; padding:3px 8px; background:' + (ci === 0 ? '#FFD700' : '#2a2a3e') + '; color:' + (ci === 0 ? '#000' : '#ddd') + '; border:1px solid #555; border-radius:3px; cursor:pointer; font-size:11px;" id="icon-cat-' + cats[ci] + '">' + cats[ci] + '</button>';
+            header += '<button data-action="_setIconCategory" data-param1="' + cats[ci] + '" style="margin:2px; padding:3px 8px; background:' + (ci === 0 ? '#FFD700' : '#2a2a3e') + '; color:' + (ci === 0 ? '#000' : '#ddd') + '; border:1px solid #555; border-radius:3px; cursor:pointer; font-size:11px;" id="icon-cat-' + cats[ci] + '">' + cats[ci] + '</button>';
         }
         header += '</div>';
 
@@ -12581,23 +12581,23 @@ window.UI = (function () {
                 // Action buttons
                 html += '<br>';
                 // Travel to
-                html += '<button data-action="_handler_6" data-param1="${npc.townId}" style="font-size:10px; padding:1px 5px; margin:1px; background:#16305d; color:#fff; border:1px solid #48a; cursor:pointer;">📍Travel To</button>';
+                html += '<button data-action="_handler_6" data-param1="' + npc.townId + '" style="font-size:10px; padding:1px 5px; margin:1px; background:#16305d; color:#fff; border:1px solid #48a; cursor:pointer;">📍Travel To</button>';
                 // Kill
-                html += '<button data-action="_handler_5" data-id="${npc.id}" style="font-size:10px; padding:1px 5px; margin:1px; background:#8b0000; color:#fff; border:1px solid #f44; cursor:pointer;">💀Kill</button>';
+                html += '<button data-action="_handler_5" data-id="' + npc.id + '" style="font-size:10px; padding:1px 5px; margin:1px; background:#8b0000; color:#fff; border:1px solid #f44; cursor:pointer;">💀Kill</button>';
                 // Give gold
-                html += '<button data-action="_godGiveGoldToNpc" data-id="${npc.id}" style="font-size:10px; padding:1px 5px; margin:1px; background:#2d5016; color:#fff; border:1px solid #4a8; cursor:pointer;">💰+1K</button>';
+                html += '<button data-action="_godGiveGoldToNpc" data-id="' + npc.id + '" style="font-size:10px; padding:1px 5px; margin:1px; background:#2d5016; color:#fff; border:1px solid #4a8; cursor:pointer;">💰+1K</button>';
                 // Force marry player
-                html += '<button data-action="_godForceMarry" data-id="${npc.id}" data-id2="${npc.id}" style="font-size:10px; padding:1px 5px; margin:1px; background:#5d1630; color:#fff; border:1px solid #a48; cursor:pointer;">💒Marry</button>';
+                html += '<button data-action="_godForceMarry" data-id="' + npc.id + '" data-id2="' + npc.id + '" style="font-size:10px; padding:1px 5px; margin:1px; background:#5d1630; color:#fff; border:1px solid #a48; cursor:pointer;">💒Marry</button>';
                 // Possess - spectate NPC
-                html += '<button data-action="_godPossessNpc" data-id="${npc.id}" style="font-size:10px; padding:1px 5px; margin:1px; background:#4a004a; color:#fff; border:1px solid #a0a; cursor:pointer;">👁️Possess</button>';
+                html += '<button data-action="_godPossessNpc" data-id="' + npc.id + '" style="font-size:10px; padding:1px 5px; margin:1px; background:#4a004a; color:#fff; border:1px solid #a0a; cursor:pointer;">👁️Possess</button>';
                 // Become NPC — swap player identity
-                html += '<button data-action="_godBecomeNpc" data-id="${npc.id}" style="font-size:10px; padding:1px 5px; margin:1px; background:#004a4a; color:#fff; border:1px solid #0aa; cursor:pointer;">🔄Become</button>';
+                html += '<button data-action="_godBecomeNpc" data-id="' + npc.id + '" style="font-size:10px; padding:1px 5px; margin:1px; background:#004a4a; color:#fff; border:1px solid #0aa; cursor:pointer;">🔄Become</button>';
                 // Inflict illness on NPC
-                html += '<button data-action="_godInflictIllness" data-id="${npc.id}" style="font-size:10px; padding:1px 5px; margin:1px; background:#8b4000; color:#fff; border:1px solid #f84; cursor:pointer;">🤒Sicken</button>';
+                html += '<button data-action="_godInflictIllness" data-id="' + npc.id + '" style="font-size:10px; padding:1px 5px; margin:1px; background:#8b4000; color:#fff; border:1px solid #f84; cursor:pointer;">🤒Sicken</button>';
                 // Injure NPC
-                html += '<button data-action="_godInflictInjury" data-id="${npc.id}" style="font-size:10px; padding:1px 5px; margin:1px; background:#8b4000; color:#fff; border:1px solid #f84; cursor:pointer;">🤕Injure</button>';
+                html += '<button data-action="_godInflictInjury" data-id="' + npc.id + '" style="font-size:10px; padding:1px 5px; margin:1px; background:#8b4000; color:#fff; border:1px solid #f84; cursor:pointer;">🤕Injure</button>';
                 // Cure NPC
-                html += '<button data-action="_godCureNpc" data-id="${npc.id}" style="font-size:10px; padding:1px 5px; margin:1px; background:#006400; color:#fff; border:1px solid #0a0; cursor:pointer;">💚Cure</button>';
+                html += '<button data-action="_godCureNpc" data-id="' + npc.id + '" style="font-size:10px; padding:1px 5px; margin:1px; background:#006400; color:#fff; border:1px solid #0a0; cursor:pointer;">💚Cure</button>';
 
                 // King-specific actions
                 if (isKing) {
@@ -12605,16 +12605,16 @@ window.UI = (function () {
                     if (kingKingdom) {
                         var kid = kingKingdom.id;
                         html += '<br>';
-                        html += '<button data-action="godAddKingdomGoldAndToast" data-id="${kid}" data-val="5000" style="font-size:10px; padding:1px 5px; margin:1px; background:#2d5016; color:#fff; border:1px solid #4a8; cursor:pointer;">💰+5K Treasury</button>';
+                        html += '<button data-action="godAddKingdomGoldAndToast" data-id="' + kid + '" data-val="5000" style="font-size:10px; padding:1px 5px; margin:1px; background:#2d5016; color:#fff; border:1px solid #4a8; cursor:pointer;">💰+5K Treasury</button>';
                         // Force declare war — pick random enemy
-                        html += '<button data-action="_godDeclareRandomWar" data-kingdom="${kid}" data-kingdom2="${kid}" style="font-size:10px; padding:1px 5px; margin:1px; background:#8b0000; color:#fff; border:1px solid #f44; cursor:pointer;">⚔️Declare War</button>';
+                        html += '<button data-action="_godDeclareRandomWar" data-kingdom="' + kid + '" data-kingdom2="' + kid + '" style="font-size:10px; padding:1px 5px; margin:1px; background:#8b0000; color:#fff; border:1px solid #f44; cursor:pointer;">⚔️Declare War</button>';
                         // Force change tax
-                        html += '<button data-action="_godRaiseTax" data-kingdom="${kid}" data-kingdom2="${kid}" style="font-size:10px; padding:1px 5px; margin:1px; background:#5d4016; color:#fff; border:1px solid #a84; cursor:pointer;">📈+Tax</button>';
-                        html += '<button data-action="_godLowerTax" data-kingdom="${kid}" data-kingdom2="${kid}" style="font-size:10px; padding:1px 5px; margin:1px; background:#5d4016; color:#fff; border:1px solid #a84; cursor:pointer;">📉-Tax</button>';
+                        html += '<button data-action="_godRaiseTax" data-kingdom="' + kid + '" data-kingdom2="' + kid + '" style="font-size:10px; padding:1px 5px; margin:1px; background:#5d4016; color:#fff; border:1px solid #a84; cursor:pointer;">📈+Tax</button>';
+                        html += '<button data-action="_godLowerTax" data-kingdom="' + kid + '" data-kingdom2="' + kid + '" style="font-size:10px; padding:1px 5px; margin:1px; background:#5d4016; color:#fff; border:1px solid #a84; cursor:pointer;">📉-Tax</button>';
                         // Force mood change
-                        html += '<button data-action="_godRandomMood" data-id="${npc.id}" style="font-size:10px; padding:1px 5px; margin:1px; background:#16305d; color:#fff; border:1px solid #48a; cursor:pointer;">🎭Rand Mood</button>';
+                        html += '<button data-action="_godRandomMood" data-id="' + npc.id + '" style="font-size:10px; padding:1px 5px; margin:1px; background:#16305d; color:#fff; border:1px solid #48a; cursor:pointer;">🎭Rand Mood</button>';
                         // Force make peace (clear all wars)
-                        html += '<button data-action="_godMakeAllPeace" data-kingdom="${kid}" data-kingdom2="${kid}" style="font-size:10px; padding:1px 5px; margin:1px; background:#16505d; color:#fff; border:1px solid #4a8; cursor:pointer;">☮️Peace</button>';
+                        html += '<button data-action="_godMakeAllPeace" data-kingdom="' + kid + '" data-kingdom2="' + kid + '" style="font-size:10px; padding:1px 5px; margin:1px; background:#16505d; color:#fff; border:1px solid #4a8; cursor:pointer;">☮️Peace</button>';
                     }
                 }
 
@@ -12806,7 +12806,7 @@ window.UI = (function () {
                 var g = guards[i];
                 var guardNameHtml;
                 if (g.personId) {
-                    guardNameHtml = '<span data-action="showPersonDetail" data-id="${g.personId}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;color:var(--gold);" title="View NPC details">' + (g.name || 'Guard') + '</span>';
+                    guardNameHtml = '<span data-action="showPersonDetail" data-id="' + g.personId + '" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;color:var(--gold);" title="View NPC details">' + (g.name || 'Guard') + '</span>';
                 } else {
                     guardNameHtml = (g.name || 'Guard');
                 }
@@ -12823,13 +12823,13 @@ window.UI = (function () {
                         if (Player.townId && !Player.traveling && _gNpc.townId === Player.townId) {
                             var _gHasDoc = Player.hasSkill && (Player.hasSkill('field_medic') || Player.hasSkill('doctor'));
                             if (_gHasDoc) {
-                                html += '<button class="btn-medieval" data-action="treatCompanionUI" data-id="guard" data-val="${g.personId}" data-type="player" style="font-size:0.65rem;padding:2px 6px;background:rgba(40,120,40,0.3);border-color:rgba(60,180,60,0.5);" title="Treat with medical skill">⚕️</button>';
+                                html += '<button class="btn-medieval" data-action="treatCompanionUI" data-id="guard" data-val="' + g.personId + '" data-type="player" style="font-size:0.65rem;padding:2px 6px;background:rgba(40,120,40,0.3);border-color:rgba(60,180,60,0.5);" title="Treat with medical skill">⚕️</button>';
                             }
-                            html += '<button class="btn-medieval" data-action="treatCompanionUI" data-id="guard" data-val="${g.personId}" data-type="hospital" style="font-size:0.65rem;padding:2px 6px;background:rgba(40,80,160,0.3);border-color:rgba(60,120,220,0.5);" title="Take to hospital">🏥</button>';
+                            html += '<button class="btn-medieval" data-action="treatCompanionUI" data-id="guard" data-val="' + g.personId + '" data-type="hospital" style="font-size:0.65rem;padding:2px 6px;background:rgba(40,80,160,0.3);border-color:rgba(60,120,220,0.5);" title="Take to hospital">🏥</button>';
                         }
                     }
                 }
-                html += '<button class="btn-medieval" data-action="dismissGuardUI" data-id="${g.id}" style="font-size:0.7rem;padding:3px 8px;">\u274C Dismiss</button>';
+                html += '<button class="btn-medieval" data-action="dismissGuardUI" data-id="' + g.id + '" style="font-size:0.7rem;padding:3px 8px;">\u274C Dismiss</button>';
                 html += '</div></div>';
             }
         }else {
@@ -14205,7 +14205,7 @@ window.UI = (function () {
         ];
         html += '<div class="wa-tabs">';
         for (var i = 0; i < tabs.length; i++) {
-            html += '<div class="wa-tab' + (tabs[i].id === tab ? ' wa-tab-active' : '') + '" data-action="_setWaTab" data-id="${tabs[i].id}">' + tabs[i].label + '</div>';
+            html += '<div class="wa-tab' + (tabs[i].id === tab ? ' wa-tab-active' : '') + '" data-action="_setWaTab" data-id="' + tabs[i].id + '">' + tabs[i].label + '</div>';
         }
         var autoOn = !!window._waAutoRefresh;
         html += '<div style="margin-left:auto;display:flex;align-items:center;gap:4px;">';

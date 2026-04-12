@@ -2060,25 +2060,25 @@
     UI.registerAction('confirmStartScenario', function(_t, d) { confirmStartScenario(d.id); });
 
     // --- Family & spouse actions ---
-    UI.registerAction('familyAction', function(_t, d) { familyAction(d.id, d.action); });
-    UI.registerAction('giveFamilyGoldDialog', function(_t, d) { giveFamilyGoldDialog(d.id); });
-    UI.registerAction('giveFamilyItemDialog', function(_t, d) { giveFamilyItemDialog(d.id); });
+    UI.registerAction('familyAction', function(_t, d) { familyAction(d.type, d.id); });
+    UI.registerAction('giveFamilyGoldDialog', function(_t, d) { giveFamilyGoldDialog(d.id, d.val); });
+    UI.registerAction('giveFamilyItemDialog', function(_t, d) { giveFamilyItemDialog(d.id, d.val); });
     UI.registerAction('openSpousePanel', function() { openSpousePanel(); });
     UI.registerAction('tryForBaby', function() { tryForBaby(); });
     UI.registerAction('spouseInteraction', function(_t, d) { spouseInteraction(d.id); });
 
     // --- Special start & journal actions ---
     UI.registerAction('openStartJournal', function() { openStartJournal(); });
-    UI.registerAction('specialAction', function(_t, d) { specialAction(d.id); });
+    UI.registerAction('specialAction', function(_t, d) { specialAction(d.type); });
     UI.registerAction('openSpecialStartPanel', function() { UI.openSpecialStartPanel(); });
 
     // --- Actions that need Player functions ---
-    UI.registerAction('respondToMarriageProposal', function(_t, d) { if (Player.respondToMarriageProposal) { var r = Player.respondToMarriageProposal(d.id, d.response === 'accept'); UI.toast(r.message, r.success ? 'success' : 'error'); } });
-    UI.registerAction('payDebt', function(_t, d) { if (Player.payDebt) { var r = Player.payDebt(d.id); UI.toast(r.message, r.success ? 'success' : 'error'); } });
-    UI.registerAction('completeMasterTask', function(_t, d) { if (Player.completeMasterTask) { var r = Player.completeMasterTask(d.id); UI.toast(r.message, r.success ? 'success' : 'error'); } });
-    UI.registerAction('dismissMasterTask', function(_t, d) { if (Player.dismissMasterTask) { var r = Player.dismissMasterTask(d.id); UI.toast(r.message, r.success ? 'success' : 'error'); } });
-    UI.registerAction('attemptIndenturedEscape', function() { if (Player.attemptEscape) { Player.attemptEscape(); } });
-    UI.registerAction('treatCompanionUI', function(_t, d) { if (UI.treatCompanionUI) UI.treatCompanionUI(d.type, d.id, d.method); });
+    UI.registerAction('respondToMarriageProposal', function(_t, d) { if (Player.respondToMarriageProposal) { var r = Player.respondToMarriageProposal(d.id, d.val === 'true'); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) UI.openFamilyPanel(); } });
+    UI.registerAction('payDebt', function(_t, d) { if (Player.payDebt) { var r = Player.payDebt(parseInt(d.val)); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) UI.openSpecialStartPanel(); } });
+    UI.registerAction('completeMasterTask', function() { if (Player.completeMasterTask) { var r = Player.completeMasterTask(); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) UI.openSpecialStartPanel(); } });
+    UI.registerAction('dismissMasterTask', function() { if (Player.dismissMasterTask) { var r = Player.dismissMasterTask(); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) UI.openSpecialStartPanel(); } });
+    UI.registerAction('attemptIndenturedEscape', function(_t, d) { if (Player.attemptEscape) { Player.attemptEscape(d.id); } });
+    UI.registerAction('treatCompanionUI', function(_t, d) { if (UI.treatCompanionUI) UI.treatCompanionUI(d.type, d.id, d.val); });
     UI.registerAction('openWeddingPlanner', function() { if (UI.openWeddingPlanner) UI.openWeddingPlanner(); });
     UI.registerAction('openTalkToSpouse', function() { if (UI.openTalkToSpouse) UI.openTalkToSpouse(); });
     UI.registerAction('_spouseGoldConfirm', function(_t, d) { if (UI._spouseGoldConfirm) UI._spouseGoldConfirm(d.id, parseInt(d.amount)); });
