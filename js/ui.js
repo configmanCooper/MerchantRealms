@@ -6040,8 +6040,9 @@ window.UI = (function () {
 
     function showEventDetail(eventIndex) {
         var events = openEventLog._cachedEvents;
-        if (!events || eventIndex >= events.length) return;
+        if (!events || eventIndex == null || eventIndex >= events.length) return;
         var event = events[eventIndex];
+        if (!event) return;
 
         var html = '<div class="event-detail-panel">';
 
@@ -6122,9 +6123,9 @@ window.UI = (function () {
             var isCurrentlyOff = filters[muteKey] === false;
 
             if (isCurrentlyOff) {
-                html += '<button class="btn-action" style="font-size:0.85rem;padding:4px 12px;background:rgba(50,180,50,0.2);border-color:rgba(50,180,50,0.5);" data-action="setNotifFilterAndShowEventDetail" data-key="' + muteKey + '" data-val="true">🔔 Unmute ' + muteLabel + '</button>';
+                html += '<button class="btn-action" style="font-size:0.85rem;padding:4px 12px;background:rgba(50,180,50,0.2);border-color:rgba(50,180,50,0.5);" data-action="setNotifFilterAndShowEventDetail" data-key="' + muteKey + '" data-val="true" data-id="' + eventIndex + '">🔔 Unmute ' + muteLabel + '</button>';
             } else {
-                html += '<button class="btn-action" style="font-size:0.85rem;padding:4px 12px;background:rgba(180,50,50,0.2);border-color:rgba(180,50,50,0.5);" data-action="setNotifFilterAndShowEventDetail" data-key="' + muteKey + '" data-val="false">🔇 Mute ' + muteLabel + '</button>';
+                html += '<button class="btn-action" style="font-size:0.85rem;padding:4px 12px;background:rgba(180,50,50,0.2);border-color:rgba(180,50,50,0.5);" data-action="setNotifFilterAndShowEventDetail" data-key="' + muteKey + '" data-val="false" data-id="' + eventIndex + '">🔇 Mute ' + muteLabel + '</button>';
             }
             html += '</div>';
         }
