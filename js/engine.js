@@ -22109,9 +22109,9 @@
         toggleMedicalAutobuy(townId, buildingId) { return Engine.toggleMedicalAutobuy(townId, buildingId); },
         kickPatientFromQueue(townId, buildingId, personId) { return Engine.kickPatientFromQueue(townId, buildingId, personId); },
         getMarketPrice(town, resourceId) { return getMarketPrice(town, resourceId); },
-        computeMilitaryStrength(id) {
+        computeMilitaryStrength(idOrObj) {
             if (!world) return 0;
-            const k = findKingdom(id);
+            const k = (typeof idOrObj === 'object' && idOrObj !== null) ? idOrObj : findKingdom(idOrObj);
             return k ? computeMilitaryStrength(k) : 0;
         },
         getMilitaryBreakdown(kingdomId) {
