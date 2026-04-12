@@ -1250,7 +1250,7 @@
 
         // Check if the good is banned in this kingdom
         if (kingdom && kingdom.laws && kingdom.laws.bannedGoods && kingdom.laws.bannedGoods.includes(resourceId)) {
-            return attemptSmuggle(resourceId, qty, town, kingdom, price);
+            return Player.attemptSmuggle(resourceId, qty, town, kingdom, price);
         }
 
         // Check if the good is restricted and player lacks license
@@ -1498,157 +1498,7 @@
         };
     }
 
-    // ========================================================
-    // §3B  SMUGGLING / CONTRABAND
-    // ========================================================
-    function attemptSmuggle(resourceId, qty, town, kingdom, basePrice) {
-        qty = Number(qty);
-        if (!qty || !isFinite(qty) || qty <= 0) return { success: false, message: 'Invalid quantity.' };
-        qty = Math.floor(qty);
-
-        // Nobles cannot smuggle against their own kingdom — it's beneath their station and treasonous
-        var _smNobleRank = player.socialRank[kingdom.id] || 0;
-        if (_smNobleRank >= 4) {
-            var _smRankName = CONFIG.SOCIAL_RANKS[_smNobleRank] ? CONFIG.SOCIAL_RANKS[_smNobleRank].name : 'noble';
-            return { success: false, message: 'As a ' + _smRankName + ' of ' + (kingdom.name || 'this kingdom') + ', smuggling against your own kingdom is treason. Your noble oath forbids it.' };
-        }
-
-        const rng = Engine.getRng();
-        const rankIdx = player.socialRank[kingdom.id] || 0;
-        let detectionChance = CONFIG.SMUGGLING_BASE_DETECTION
-            - (rankIdx * CONFIG.SMUGGLING_RANK_REDUCTION)
-            - Math.min(CONFIG.SMUGGLING_SKILL_MAX_REDUCTION, player.smugglingSkill * CONFIG.SMUGGLING_SKILL_REDUCTION);
-
-        // Skill-based detection reduction
-        if (hasSkill('master_smuggler')) detectionChance -= 0.20;
-        else if (hasSkill('discrete')) detectionChance -= 0.10;
-
-        // Check for guard relationships in town
-        const people = Engine.getPeople(town.id);
-        const guards = people ? people.filter(p => p.occupation === 'guard') : [];
-        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.smuggle || 4);
-        for (const g of guards) {
-            const rel = player.relationships[g.id];
-            if (rel && rel.level >= 40) {
-                detectionChance -= CONFIG.SMUGGLING_GUARD_RELATION_REDUCTION;
-                break;
-            }
-        }
-        detectionChance = Math.max(0.05, detectionChance);
-
-        // Special law: night_market — halve detection at night
-        if (hasSpecialLaw(kingdom, 'night_market') && isNightTime()) {
-            detectionChance *= 0.5;
-        }
-
-        if (rng && rng.chance(detectionChance)) {
-            // Crime immunity check — Lords in lord town, RA kingdom-wide
-            var smugImmunity = Player.checkCrimeImmunity(town.id, kingdom.id);
-            if (smugImmunity.immune) {
-                // Immune: still sell goods at normal price, just lose some rep
-                var smugRepLoss = Math.min(_smugRepPenalty, 3);
-                player.reputation[kingdom.id] = Math.max(0, (player.reputation[kingdom.id] || 50) - smugRepLoss);
-                var normalRevenue = Math.floor(basePrice * qty);
-                player.gold += normalRevenue;
-                player.stats.totalGoldEarned += normalRevenue;
-                deductGoodsFromPools(resourceId, qty);
-                player.stats.tradesCompleted++;
-                var scopeLabel = smugImmunity.scope === 'kingdom' ? 'Royal Advisor' : 'Lord of this town';
-                Engine.logEvent('🔓 ' + player.fullName + ' was caught smuggling but is immune as ' + scopeLabel + '. (-' + smugRepLoss + ' rep)', null, 'my_actions');
-                return { success: true, message: 'Caught smuggling, but your ' + scopeLabel + ' status grants immunity! (-' + smugRepLoss + ' rep). Sold for ' + normalRevenue + 'g.', totalRevenue: normalRevenue, immune: true };
-            }
-
-            // Caught! Check trial_combat special law first
-            if (hasSpecialLaw(kingdom, 'trial_combat')) {
-                let combatChance = 0.30;
-                if (player.weapon) combatChance += (typeof player.weapon === 'object') ? (player.weapon.combatBonus * 0.5) : 0.10;
-                if (hasSkill('combat_proficiency')) combatChance += 0.10;
-                if (rng.chance(combatChance)) {
-                    Engine.logEvent(`${player.fullName} won Trial by Combat and escaped punishment in ${town.name}!`, null, 'my_actions');
-                    grantXP(XP_REWARDS.COMBAT_SURVIVE, 'trial_combat');
-                    const normalRevenue = Math.floor(basePrice * qty);
-                    player.gold += normalRevenue;
-                    player.stats.totalGoldEarned += normalRevenue;
-                    deductGoodsFromPools(resourceId, qty);
-                    player.stats.tradesCompleted++;
-                    return { success: true, message: `Won Trial by Combat! Sold for ${normalRevenue}g.`, totalRevenue: normalRevenue };
-                }
-            }
-
-            // But check untouchable skill
-            if (hasSkill('untouchable') && rng.chance(0.25)) {
-                Engine.logEvent(`${player.fullName} was almost caught smuggling, but charges were dropped!`);
-                // Still sell at normal price
-                const normalRevenue = Math.floor(basePrice * qty);
-                player.gold += normalRevenue;
-                player.stats.totalGoldEarned += normalRevenue;
-                deductGoodsFromPools(resourceId, qty);
-                player.stats.tradesCompleted++;
-                return { success: true, message: `Nearly caught but charges dropped! Sold for ${normalRevenue}g.`, totalRevenue: normalRevenue };
-            }
-
-            const fineAmount = Math.floor(basePrice * qty * CONFIG.SMUGGLING_FINE_MULTIPLIER);
-            var _smugRes = findResource(resourceId);
-            var _smugIsWarGoods = _smugRes && (_smugRes.category === 'military' || resourceId === 'swords' || resourceId === 'armor' || resourceId === 'bows' || resourceId === 'shields' || resourceId === 'blasting_powder');
-            var _smugRepPenalty = _smugIsWarGoods ? (CONFIG.SMUGGLING_REP_PENALTY_WAR_GOODS || 5) : (CONFIG.SMUGGLING_REP_PENALTY || 1);
-
-            // Special law: blood_price — pay 2x fine instead of jail
-            if (hasSpecialLaw(kingdom, 'blood_price')) {
-                const bloodFine = fineAmount * 2;
-                const actualFine = Math.min(bloodFine, player.gold);
-                player.gold -= actualFine;
-                kingdom.gold = (kingdom.gold || 0) + actualFine;
-                deductGoodsFromPools(resourceId, qty);
-                player.reputation[kingdom.id] = Math.max(0, (player.reputation[kingdom.id] || 50) - _smugRepPenalty);
-                player.achievementStats.smuggleStreak = 0;
-                unlockAchievement('caught_ach');
-                Engine.logEvent(`${player.fullName} paid the Blood Price (${actualFine}g) to avoid jail in ${town.name}.`, null, 'my_actions');
-                return { success: false, message: `Caught! Blood Price paid: ${actualFine}g. No jail time.`, caught: true };
-            }
-
-            const actualFine = Math.min(fineAmount, player.gold);
-            player.gold -= actualFine;
-            kingdom.gold = (kingdom.gold || 0) + actualFine;
-            deductGoodsFromPools(resourceId, qty);
-            player.reputation[kingdom.id] = Math.max(0, (player.reputation[kingdom.id] || 50) - _smugRepPenalty);
-            let jailDays = (rng ? rng.randInt(CONFIG.SMUGGLING_JAIL_DAYS_MIN, CONFIG.SMUGGLING_JAIL_DAYS_MAX) : CONFIG.SMUGGLING_JAIL_DAYS_MIN);
-            // Jail break skill
-            if (hasSkill('jail_break')) jailDays = Math.max(1, Math.floor(jailDays * 0.5));
-            player.jailedUntilDay = Engine.getDay() + jailDays;
-            player.achievementStats.smuggleStreak = 0;
-            unlockAchievement('caught_ach');
-            unlockAchievement('jailbird');
-            Engine.logEvent(`${player.fullName} was caught smuggling ${findResource(resourceId)?.name || resourceId} in ${town.name}! Fined ${actualFine}g and jailed for ${jailDays} days.`, null, 'my_actions');
-            return { success: false, message: `Caught smuggling! Fined ${actualFine}g, goods confiscated, jailed ${jailDays} days.`, caught: true };
-        } else {
-            // Successful smuggle - black market premium
-            let premiumMult = CONFIG.SMUGGLING_BLACK_MARKET_PREMIUM;
-            if (hasSkill('black_market_contacts')) premiumMult = 2.0;
-            const smugglePrice = basePrice * premiumMult;
-            const totalRevenue = Math.floor(smugglePrice * qty);
-            player.gold += totalRevenue;
-            player.stats.totalGoldEarned += totalRevenue;
-            deductGoodsFromPools(resourceId, qty);
-            player.stats.tradesCompleted++;
-            player.smugglingSkill = Math.min(20, player.smugglingSkill + 1);
-            if (kingdom) {
-                player.goldEarnedInKingdom[kingdom.id] = (player.goldEarnedInKingdom[kingdom.id] || 0) + totalRevenue;
-            }
-            // XP & achievement tracking
-            grantXP(XP_REWARDS.SMUGGLE_SUCCESS, 'smuggle');
-            player.achievementStats.smuggleSuccesses = (player.achievementStats.smuggleSuccesses || 0) + 1;
-            player.achievementStats.smuggleStreak = (player.achievementStats.smuggleStreak || 0) + 1;
-            player.achievementStats.smuggleGoldEarned = (player.achievementStats.smuggleGoldEarned || 0) + totalRevenue;
-            // Track tax saved by smuggling for achievement
-            var taxSaved = Math.floor(basePrice * qty * ((kingdom && kingdom.taxRate) || 0.10));
-            player.smugglingTaxSaved = (player.smugglingTaxSaved || 0) + taxSaved;
-            // Double agent check
-            if (isPlayerCitizenOf(kingdom.id)) unlockAchievement('double_agent');
-            addTradeLog(resourceId, qty, smugglePrice, town.id, 'smuggle');
-            Engine.logEvent(`${player.fullName} successfully smuggled ${findResource(resourceId)?.name || resourceId} in ${town.name}.`, null, 'my_actions');
-            return { success: true, message: `Smuggled ${qty} ${findResource(resourceId)?.name || resourceId} for ${totalRevenue}g (black market)!`, totalRevenue, smuggled: true };
-        }
-    }
+    // §3B SMUGGLING / CONTRABAND — moved to js/modules/player_smuggling.js
 
     /**
      * Build a new building in a town.
@@ -5346,7 +5196,7 @@
                 if (_sellBanned) {
                     // Stage caravan goods into player inventory for attemptSmuggle's deductGoodsFromPools
                     player.inventory[o.good] = (player.inventory[o.good] || 0) + sellQty;
-                    var _cSmugResult = attemptSmuggle(o.good, sellQty, town, _sellKingdom, sellPrice);
+                    var _cSmugResult = Player.attemptSmuggle(o.good, sellQty, town, _sellKingdom, sellPrice);
                     if (_cSmugResult.success) {
                         logCaravan(caravan, '🚫💰 Caravan smuggled ' + sellQty + ' ' + resName + ' at ' + townName + '. ' + (_cSmugResult.message || ''));
                         caravan.totalProfit = (caravan.totalProfit || 0) + (_cSmugResult.totalRevenue || 0);
@@ -5415,7 +5265,7 @@
                     var remPrice = town.market.prices[gId] || 1;
                     // Stage caravan goods into player inventory for attemptSmuggle
                     player.inventory[gId] = (player.inventory[gId] || 0) + remQty;
-                    var _asSmugResult = attemptSmuggle(gId, remQty, town, _asKingdom, remPrice);
+                    var _asSmugResult = Player.attemptSmuggle(gId, remQty, town, _asKingdom, remPrice);
                     if (_asSmugResult.success) {
                         logCaravan(caravan, '🚫💰 Caravan auto-smuggled ' + remQty + ' ' + _asResName + ' at ' + townName + '. ' + (_asSmugResult.message || ''));
                         caravan.totalProfit = (caravan.totalProfit || 0) + (_asSmugResult.totalRevenue || 0);
@@ -28360,7 +28210,7 @@
 
         if (offer.isBanned && kingdom) {
             // Use full smuggling system — same detection/punishment as market
-            return attemptSmuggle(offer.resourceId, sellQty, town, kingdom, offer.pricePerUnit);
+            return Player.attemptSmuggle(offer.resourceId, sellQty, town, kingdom, offer.pricePerUnit);
         } else if (offer.isRestricted && kingdom) {
             // Use restricted trade system
             return attemptRestrictedTrade(offer.resourceId, sellQty, town, kingdom, offer.pricePerUnit);
@@ -40539,6 +40389,10 @@
         playerConvertFarm,
         playerDemolishBuilding,
         logFinance,
+        hasSpecialLaw,
+        isNightTime,
+        deductGoodsFromPools,
+        addTradeLog,
 
         // Shared utility helpers (H2 extraction)
         checkCanAct: _checkCanAct,
