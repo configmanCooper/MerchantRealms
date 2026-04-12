@@ -64,7 +64,7 @@ function openStreetTrading() {
             html += '</div>';
             html += '<div class="street-trade-actions">';
             html += '<span class="street-have">You have: ' + held + '</span>';
-            html += '<button class="btn-medieval btn-street-sell" ' + (canSell ? 'onclick="UI.executeStreetTrade(' + i + ')"' : 'disabled') + '>';
+            html += '<button class="btn-medieval btn-street-sell" ' + (canSell ? 'data-action="executeStreetTrade" data-id=" + i + "' : 'disabled') + '>';
             html += 'Sell ' + t.qty + ' for ' + (t.pricePerUnit * t.qty) + 'g</button>';
             html += '</div>';
             html += '</div>';
@@ -118,7 +118,7 @@ function openStreetTrading() {
                     html += '</div>';
                     html += '<div class="street-trade-actions">';
                     html += '<span class="street-have">Total: ' + boTotal + 'g</span>';
-                    html += '<button class="btn-medieval btn-street-sell" ' + (boCanAfford ? 'onclick="UI.executeStreetBuyUI(' + boIdx + ')"' : 'disabled') + '>';
+                    html += '<button class="btn-medieval btn-street-sell" ' + (boCanAfford ? 'data-action="executeStreetBuyUI" data-id=" + boIdx + "' : 'disabled') + '>';
                     html += 'Buy ' + bo.qty + ' for ' + boTotal + 'g</button>';
                     html += '</div></div>';
                 }
@@ -145,7 +145,7 @@ function openStreetTrading() {
                     html += '</div>';
                     html += '<div class="street-trade-actions">';
                     html += '<span class="street-have">Total: ' + soTotal + 'g</span>';
-                    html += '<button class="btn-medieval btn-street-sell" ' + (soCanAfford ? 'onclick="UI.executeStreetBuyUI(' + soIdx + ')"' : 'disabled') + '>';
+                    html += '<button class="btn-medieval btn-street-sell" ' + (soCanAfford ? 'data-action="executeStreetBuyUI" data-id=" + soIdx + "' : 'disabled') + '>';
                     html += 'Buy ' + so.qty + ' for ' + soTotal + 'g</button>';
                     html += '</div></div>';
                 }
@@ -182,9 +182,9 @@ function openStreetTrading() {
                 html += '<div class="street-trade-actions">';
                 html += '<span class="street-have">You have: ' + coHeld + '</span>';
                 if (coCanSell && coHeld > 1) {
-                    html += '<button class="btn-medieval btn-street-sell" onclick="UI.executeStreetContrabandSellUI(' + ci + ',1)" style="font-size:0.7rem;padding:2px 6px;">Sell 1 (' + co.pricePerUnit + 'g)</button>';
+                    html += '<button class="btn-medieval btn-street-sell" data-action="executeStreetContrabandSellUI" data-id="' + ci + '" data-val="1" style="font-size:0.7rem;padding:2px 6px;">Sell 1 (' + co.pricePerUnit + 'g)</button>';
                 }
-                html += '<button class="btn-medieval btn-street-sell" ' + (coCanSell ? 'onclick="UI.executeStreetContrabandSellUI(' + ci + ',' + coHeld + ')"' : 'disabled') + '>';
+                html += '<button class="btn-medieval btn-street-sell" ' + (coCanSell ? 'data-action="executeStreetContrabandSellUI" data-id="' + ci + '" data-val="' + coHeld + '"' : 'disabled') + '>';
                 html += 'Sell All ' + coHeld + ' (' + coTotal + 'g)</button>';
                 html += '</div></div>';
             }
@@ -213,8 +213,8 @@ function openStreetTrading() {
             html += '</div>';
             html += '<div class="street-trade-actions">';
             html += '<span class="street-have">Total: ' + sgoTotal + 'g</span>';
-            html += '<button class="btn-medieval" style="background:#55a868;color:#fff;padding:4px 12px;margin-right:4px;" ' + (sgoCanAfford ? 'onclick="UI._streetAcceptOffer()"' : 'disabled title="Not enough gold"') + '>✅ Accept</button>';
-            html += '<button class="btn-medieval" style="background:#c44e52;color:#fff;padding:4px 12px;" onclick="UI._streetDeclineOffer()">❌ Decline</button>';
+            html += '<button class="btn-medieval" style="background:#55a868;color:#fff;padding:4px 12px;margin-right:4px;" ' + (sgoCanAfford ? 'data-action="_streetAcceptOffer"' : 'disabled title="Not enough gold"') + '>✅ Accept</button>';
+            html += '<button class="btn-medieval" style="background:#c44e52;color:#fff;padding:4px 12px;" data-action="_streetDeclineOffer">❌ Decline</button>';
             html += '</div></div>';
         }
 
@@ -239,7 +239,7 @@ function openStreetTrading() {
                 html += 'disabled title="Cooldown: ' + _reqCd + ' day' + (_reqCd !== 1 ? 's' : '') + '">';
                 html += '⏳ Request (' + _reqCd + 'd cooldown)';
             } else {
-                html += 'onclick="UI._streetSubmitRequest()">';
+                html += 'data-action="_streetSubmitRequest">';
                 html += '📋 Request Good';
             }
             html += '</button>';
@@ -279,7 +279,7 @@ function openStreetTrading() {
                 html += '<span class="street-npc-name">' + (npc.firstName || npc.fullName || 'Someone') + ' ' + (npc.lastName || '') + '</span>';
                 html += ' <span class="text-dim">(' + occDisplay + ')</span>';
                 html += '</div>';
-                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;" onclick="UI.chatWithNPC(\'' + npc.id + '\')">💬 Chat</button>';
+                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;" data-action="chatWithNPC" data-id="' + npc.id + '">💬 Chat</button>';
                 html += '</div>';
             }
             html += '</div>';
@@ -622,7 +622,7 @@ function openNobilityDialog() {
             var _canDeliver = _playerHas >= (_commQty - _commDelivered);
             html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;align-items:center;">';
             if (_canDeliver) {
-                html += '<button class="btn-medieval" onclick="(function(){var r=Player.deliverKingCommission?Player.deliverKingCommission():{success:false,message:\'Delivery not available.\'};UI.toast(r.message||\'Delivered!\',r.success?\'success\':\'warning\');UI.openNobilityDialog();})()" style="font-size:0.78rem;padding:6px 16px;background:rgba(85,168,104,0.25) !important;border-color:rgba(85,168,104,0.5) !important;animation:pulse 2s infinite;">📦 Deliver Goods</button>';
+                html += '<button class="btn-medieval" data-action="deliverKingCommission" style="font-size:0.78rem;padding:6px 16px;background:rgba(85,168,104,0.25) !important;border-color:rgba(85,168,104,0.5) !important;animation:pulse 2s infinite;">📦 Deliver Goods</button>';
             } else {
                 html += '<div style="font-size:0.72rem;color:#888;">📦 Gather ' + (_commQty - _commDelivered - _playerHas) + ' more ' + _itemName + ' to deliver</div>';
             }
@@ -633,8 +633,8 @@ function openNobilityDialog() {
         if (_commStatus === 'pending') {
             var _isLord = playerRank >= 5;
             html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;align-items:center;">';
-            html += '<button class="btn-medieval" onclick="(function(){var r=Player.acceptKingCommission?Player.acceptKingCommission():{success:false};UI.toast(r.message||\'Commission accepted!\',r.success?\'success\':\'warning\');UI.openNobilityDialog();})()" style="font-size:0.75rem;padding:5px 12px;background:rgba(85,168,104,0.15);border-color:rgba(85,168,104,0.3);">✅ Accept</button>';
-            html += '<button class="btn-medieval" onclick="(function(){' + (_isLord ? 'if(!confirm(\'⚠️ As a Lord, refusing a royal commission will trigger demotion! Are you sure?\')){return;}' : '') + 'var r=Player.refuseKingCommission?Player.refuseKingCommission():{success:false};UI.toast(r.message||\'Commission refused.\',r.success?\'success\':\'warning\');UI.openNobilityDialog();})()" style="font-size:0.75rem;padding:5px 12px;background:rgba(196,78,82,0.15);border-color:rgba(196,78,82,0.3);">🚫 Refuse</button>';
+            html += '<button class="btn-medieval" data-action="acceptKingCommission" style="font-size:0.75rem;padding:5px 12px;background:rgba(85,168,104,0.15);border-color:rgba(85,168,104,0.3);">✅ Accept</button>';
+            html += '<button class="btn-medieval" data-action="refuseKingCommission" style="font-size:0.75rem;padding:5px 12px;background:rgba(196,78,82,0.15);border-color:rgba(196,78,82,0.3);">🚫 Refuse</button>';
             if (_isLord) {
                 html += '<div style="font-size:0.7rem;color:#c44e52;">⚠️ Refusal triggers demotion!</div>';
             }
@@ -658,7 +658,7 @@ function openNobilityDialog() {
             html += '</div>';
             // Kingdom building request
             html += '<div style="margin-top:8px;">';
-            html += '<button class="btn-medieval" onclick="UI._nobilityRequestBuilding(\'' + lordTown.id + '\')" style="font-size:0.75rem;padding:5px 12px;">🏗️ Request Kingdom Building</button>';
+            html += '<button class="btn-medieval" data-action="_nobilityRequestBuilding" data-id="' + lordTown.id + '" style="font-size:0.75rem;padding:5px 12px;">🏗️ Request Kingdom Building</button>';
             html += '</div>';
         } else {
             html += '<div style="font-size:0.78rem;color:#888;font-style:italic;">You have not yet been assigned a town. The king will offer you a choice of towns to govern.</div>';
@@ -689,8 +689,8 @@ function openNobilityDialog() {
                 if (_dec.details) html += '<div style="font-size:0.72rem;color:#aaa;margin-top:2px;">' + _dec.details + '</div>';
                 html += '<div style="font-size:0.7rem;color:#aaa;margin-top:4px;">King\'s conviction: <span style="color:' + _convColor + ';font-weight:bold;">' + _convPct + '%</span> ' + (_convPct >= 80 ? '(Very determined)' : _convPct >= 50 ? '(Moderate)' : '(Easily swayed)') + '</div>';
                 html += '<div style="display:flex;gap:6px;margin-top:6px;">';
-                html += '<button class="btn-medieval" onclick="(function(){var r=Player.respondToKingDecision(\'' + _dec.id + '\',\'agree\');UI.toast(r&&r.message?r.message:\'Agreed.\',\'success\');UI.openNobilityDialog();})()" style="font-size:0.72rem;padding:4px 10px;background:rgba(85,168,104,0.15);border-color:rgba(85,168,104,0.3);">✅ Agree</button>';
-                html += '<button class="btn-medieval" onclick="(function(){var r=Player.respondToKingDecision(\'' + _dec.id + '\',\'oppose\');UI.toast(r&&r.message?r.message:\'Opposed.\',r&&r.success?\'success\':\'warning\');UI.openNobilityDialog();})()" style="font-size:0.72rem;padding:4px 10px;background:rgba(196,78,82,0.15);border-color:rgba(196,78,82,0.3);">🚫 Oppose</button>';
+                html += '<button class="btn-medieval" data-action="agreeKingDecision" data-id="' + _dec.id + '" style="font-size:0.72rem;padding:4px 10px;background:rgba(85,168,104,0.15);border-color:rgba(85,168,104,0.3);">✅ Agree</button>';
+                html += '<button class="btn-medieval" data-action="opposeKingDecision" data-id="' + _dec.id + '" style="font-size:0.72rem;padding:4px 10px;background:rgba(196,78,82,0.15);border-color:rgba(196,78,82,0.3);">🚫 Oppose</button>';
                 html += '</div></div>';
             }
         } else {
@@ -711,7 +711,7 @@ function openNobilityDialog() {
         for (var _adi = 0; _adi < _adviceTypes.length; _adi++) {
             var _adv = _adviceTypes[_adi];
             var _advDisabled = polCap <= 0;
-            html += '<button class="btn-medieval" onclick="(function(){var r=Player.adviseKing(\'' + citizenKingdomId + '\',\'' + _adv.id + '\');UI.toast(r&&(r.message||r.reason)?r.message||r.reason:\'Advice given.\',r&&r.success?\'success\':\'warning\');UI.openNobilityDialog();})()" title="' + _adv.tip + '" style="font-size:0.7rem;padding:4px 8px;' + (_advDisabled ? 'opacity:0.4;cursor:not-allowed;' : '') + '"' + (_advDisabled ? ' disabled' : '') + '>' + _adv.icon + ' ' + _adv.label + '</button>';
+            html += '<button class="btn-medieval" data-action="adviseKing" data-id="' + citizenKingdomId + '" data-val="' + _adv.id + '" title="' + _adv.tip + '" style="font-size:0.7rem;padding:4px 8px;' + (_advDisabled ? 'opacity:0.4;cursor:not-allowed;' : '') + '"' + (_advDisabled ? ' disabled' : '') + '>' + _adv.icon + ' ' + _adv.label + '</button>';
         }
         html += '</div>';
         if (polCap <= 0) {
@@ -721,8 +721,8 @@ function openNobilityDialog() {
 
         // Propose law & Propose action
         html += '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">';
-        html += '<button class="btn-medieval" onclick="UI._nobilityProposeLaw(\'' + citizenKingdomId + '\')" style="font-size:0.75rem;padding:5px 12px;" ' + (polCap <= 0 ? 'disabled style="font-size:0.75rem;padding:5px 12px;opacity:0.4;cursor:not-allowed;"' : '') + '>📜 Propose New Law</button>';
-        html += '<button class="btn-medieval" onclick="UI._nobilityProposeAction(\'' + citizenKingdomId + '\')" style="font-size:0.75rem;padding:5px 12px;background:rgba(44,100,60,0.5) !important;border:2px solid rgba(80,180,100,0.5) !important;color:#f0e0c0 !important;" ' + (polCap <= 0 ? 'disabled' : '') + '>👑 Propose Action</button>';
+        html += '<button class="btn-medieval" data-action="_nobilityProposeLaw" data-id="' + citizenKingdomId + '" style="font-size:0.75rem;padding:5px 12px;" ' + (polCap <= 0 ? 'disabled style="font-size:0.75rem;padding:5px 12px;opacity:0.4;cursor:not-allowed;"' : '') + '>📜 Propose New Law</button>';
+        html += '<button class="btn-medieval" data-action="_nobilityProposeAction" data-id="' + citizenKingdomId + '" style="font-size:0.75rem;padding:5px 12px;background:rgba(44,100,60,0.5) !important;border:2px solid rgba(80,180,100,0.5) !important;color:#f0e0c0 !important;" ' + (polCap <= 0 ? 'disabled' : '') + '>👑 Propose Action</button>';
         html += '</div>';
 
         // Crime immunity note
@@ -739,7 +739,7 @@ function openNobilityDialog() {
         for (var _avi = 0; _avi < _activeVotes.length; _avi++) {
             var _av = _activeVotes[_avi];
             var _avDays = Math.max(0, (_av.deadlineDay || 0) - day);
-            html += '<button class="btn-medieval" onclick="UI.openVotingDialog(\'' + _av.id + '\')" style="display:block;width:100%;text-align:left;padding:6px 10px;margin-bottom:4px;font-size:0.78rem;">';
+            html += '<button class="btn-medieval" data-action="openVotingDialog" data-id="' + _av.id + '" style="display:block;width:100%;text-align:left;padding:6px 10px;margin-bottom:4px;font-size:0.78rem;">';
             html += '📜 ' + escapeHtml(_av.title || 'Decision') + ' <span style="color:#aaa;font-size:0.7rem;">(' + _avDays + 'd left)</span>';
             html += '</button>';
         }
@@ -759,7 +759,7 @@ function openNobilityDialog() {
         html += '<div style="font-size:0.78rem;color:#ccc;">A royal feast is being held in <strong>' + escapeHtml(_feastTownName) + '</strong>!</div>';
         html += '<div style="font-size:0.72rem;color:#aaa;margin-top:2px;">' + _feastDaysLeft + ' day' + (_feastDaysLeft !== 1 ? 's' : '') + ' remaining • Actions used today: ' + (_activeFeast._playerActionsToday || 0) + '/3</div>';
         if (_playerAtFeast) {
-            html += '<button class="btn-medieval" onclick="UI.openFeastDialog(\'' + citizenKingdomId + '\')" style="font-size:0.78rem;padding:6px 14px;margin-top:6px;background:rgba(200,150,50,0.3) !important;border-color:rgba(200,150,50,0.5) !important;">🍷 Attend Feast</button>';
+            html += '<button class="btn-medieval" data-action="openFeastDialog" data-id="' + citizenKingdomId + '" style="font-size:0.78rem;padding:6px 14px;margin-top:6px;background:rgba(200,150,50,0.3) !important;border-color:rgba(200,150,50,0.5) !important;">🍷 Attend Feast</button>';
         } else {
             html += '<div style="font-size:0.72rem;color:#e67e22;margin-top:4px;">📍 You must travel to ' + escapeHtml(_feastTownName) + ' to attend.</div>';
         }
@@ -904,7 +904,7 @@ function openNobilityDialog() {
                 var _isKing = _nb.rank >= 7 || _nbPerson.isKing;
                 var _nbSafeIdClick = String(_nbPerson.id).replace(/'/g, "\\'");
                 html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;margin-bottom:4px;background:rgba(0,0,0,0.15);border-radius:6px;border-left:3px solid ' + (_sameLocation ? 'var(--gold)' : 'transparent') + ';">';
-                html += '<div style="flex:1;min-width:0;cursor:pointer;" onclick="(function(){UI.closeModal();var p=Engine.findPerson(\'' + _nbSafeIdClick + '\');if(p)UI.showPersonDetail(p);})()" title="View details">';
+                html += '<div style="flex:1;min-width:0;cursor:pointer;" data-action="viewNoblePerson" data-id="' + _nbSafeIdClick + '" title="View details">';
                 html += '<div style="font-size:0.78rem;font-weight:bold;color:#ddd;">' + (_nbRankDef.icon || '👑') + ' ' + (_nbPerson.firstName || '') + ' ' + (_nbPerson.lastName || '') + '</div>';
                 html += '<div style="font-size:0.68rem;color:#999;">' + (_nbRankDef.name || 'Noble');
                 if (_nbTown) html += ' — ' + _nbTown.name;
@@ -916,10 +916,10 @@ function openNobilityDialog() {
                 if (_sameLocation) {
                     html += '<div style="display:flex;gap:4px;flex-shrink:0;">';
                     var _nbSafeId = String(_nbPerson.id).replace(/'/g, "\\'");
-                    html += '<button class="btn-medieval" onclick="(function(){var r=Player.interactWithNPC(\'' + _nbSafeId + '\',\'small_talk\');UI.toast(r&&r.message||\'Spoke with noble.\',r&&r.success?\'success\':\'warning\');UI.openNobilityDialog();})()" style="font-size:0.6rem;padding:3px 6px;" title="Small Talk">💬</button>';
-                    html += '<button class="btn-medieval" onclick="(function(){UI.closeModal();UI.openGiftDialog(\'' + _nbSafeId + '\');})()" style="font-size:0.6rem;padding:3px 6px;" title="Give Gift">🎁</button>';
+                    html += '<button class="btn-medieval" data-action="nobleSmallTalk" data-id="' + _nbSafeId + '" style="font-size:0.6rem;padding:3px 6px;" title="Small Talk">💬</button>';
+                    html += '<button class="btn-medieval" data-action="nobleGiveGift" data-id="' + _nbSafeId + '" style="font-size:0.6rem;padding:3px 6px;" title="Give Gift">🎁</button>';
                     if (!_isKing) {
-                        html += '<button class="btn-medieval" onclick="(function(){UI.closeModal();UI.openSchemesDialog();})()" style="font-size:0.6rem;padding:3px 6px;" title="Scheme Against">🗡️</button>';
+                        html += '<button class="btn-medieval" data-action="nobleScheme" style="font-size:0.6rem;padding:3px 6px;" title="Scheme Against">🗡️</button>';
                     }
                     html += '</div>';
                 }
@@ -963,7 +963,7 @@ function _buildAgentsSection() {
 
     // Hire button
     if (data.agents.length < data.maxAgents) {
-        html += '<button class="btn-medieval" onclick="UI.hireAgentAction()" style="font-size:0.75rem;padding:4px 10px;margin-bottom:8px;background:rgba(155,89,182,0.2);border-color:rgba(155,89,182,0.4);">➕ Hire Agent (' + data.hireCost + 'g)</button>';
+        html += '<button class="btn-medieval" data-action="hireAgentAction" style="font-size:0.75rem;padding:4px 10px;margin-bottom:8px;background:rgba(155,89,182,0.2);border-color:rgba(155,89,182,0.4);">➕ Hire Agent (' + data.hireCost + 'g)</button>';
     }
 
     // Agent list
@@ -982,7 +982,7 @@ function _buildAgentsSection() {
         html += '<div style="background:rgba(0,0,0,0.15);border:1px solid rgba(155,89,182,0.2);border-radius:6px;padding:8px;margin-bottom:6px;">';
 
         // Header row
-        html += '<div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="UI.toggleAgentExpand(\'' + ag.id + '\')">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" data-action="toggleAgentExpand" data-id="' + ag.id + '">';
         html += '<div>';
         html += '<span style="font-size:0.82rem;font-weight:bold;color:#d4b5e0;">' + escapeHtml(ag.name) + '</span>';
         html += ' <span style="font-size:0.68rem;color:' + statusColor + ';">' + statusIcon + ' ' + ag.status + '</span>';
@@ -1036,7 +1036,7 @@ function _buildAgentExpandedUI(agent, data) {
         ];
         for (var ci = 0; ci < cats.length; ci++) {
             var cat = cats[ci];
-            html += '<button class="btn-medieval" onclick="UI.showAgentTaskCategory(\'' + agent.id + '\',\'' + cat.id + '\')" style="font-size:0.65rem;padding:3px 8px;border-color:' + cat.color + '40;color:' + cat.color + ';">' + cat.label + '</button>';
+            html += '<button class="btn-medieval" data-action="showAgentTaskCategory" data-id="' + agent.id + '" data-val="' + cat.id + '" style="font-size:0.65rem;padding:3px 8px;border-color:' + cat.color + '40;color:' + cat.color + ';">' + cat.label + '</button>';
         }
         html += '</div>';
 
@@ -1061,12 +1061,12 @@ function _buildAgentExpandedUI(agent, data) {
     // Action buttons
     html += '<div style="display:flex;gap:4px;margin-top:6px;">';
     if (agent.task) {
-        html += '<button class="btn-medieval" onclick="UI.cancelAgentTaskAction(\'' + agent.id + '\')" style="font-size:0.65rem;padding:3px 8px;background:rgba(204,185,116,0.2);border-color:rgba(204,185,116,0.4);color:#ccb974;">⏹️ Cancel Task</button>';
+        html += '<button class="btn-medieval" data-action="cancelAgentTaskAction" data-id="' + agent.id + '" style="font-size:0.65rem;padding:3px 8px;background:rgba(204,185,116,0.2);border-color:rgba(204,185,116,0.4);color:#ccb974;">⏹️ Cancel Task</button>';
     }
     if (agent.townId !== Player.townId) {
-        html += '<button class="btn-medieval" onclick="UI.recallAgentAction(\'' + agent.id + '\')" style="font-size:0.65rem;padding:3px 8px;background:rgba(93,173,226,0.2);border-color:rgba(93,173,226,0.4);color:#5dade2;">📍 Recall</button>';
+        html += '<button class="btn-medieval" data-action="recallAgentAction" data-id="' + agent.id + '" style="font-size:0.65rem;padding:3px 8px;background:rgba(93,173,226,0.2);border-color:rgba(93,173,226,0.4);color:#5dade2;">📍 Recall</button>';
     }
-    html += '<button class="btn-medieval" onclick="UI.fireAgentAction(\'' + agent.id + '\')" style="font-size:0.65rem;padding:3px 8px;background:rgba(196,78,82,0.2);border-color:rgba(196,78,82,0.4);color:#c44e52;">🚫 Dismiss</button>';
+    html += '<button class="btn-medieval" data-action="fireAgentAction" data-id="' + agent.id + '" style="font-size:0.65rem;padding:3px 8px;background:rgba(196,78,82,0.2);border-color:rgba(196,78,82,0.4);color:#c44e52;">🚫 Dismiss</button>';
     html += '</div>';
 
     html += '</div>';
@@ -1164,7 +1164,7 @@ function _buildHostileTaskUI(agentId, defs) {
         html += '</label>';
     }
 
-    html += '<button class="btn-medieval" onclick="UI.assignHostileTask(\'' + agentId + '\')" style="font-size:0.7rem;padding:4px 10px;margin-top:6px;background:rgba(196,78,82,0.2);border-color:rgba(196,78,82,0.4);color:#c44e52;">⚡ Assign Hostile Task</button>';
+    html += '<button class="btn-medieval" data-action="assignHostileTask" data-id="' + agentId + '" style="font-size:0.7rem;padding:4px 10px;margin-top:6px;background:rgba(196,78,82,0.2);border-color:rgba(196,78,82,0.4);color:#c44e52;">⚡ Assign Hostile Task</button>';
     return html;
 }
 
@@ -1206,7 +1206,7 @@ function _buildBusinessTaskUI(agentId, defs) {
     // Description area
     html += '<div id="agentBizDesc_' + agentId + '" style="font-size:0.65rem;color:#888;margin-bottom:4px;font-style:italic;">' + (defs.run_caravan ? defs.run_caravan.desc : '') + '</div>';
 
-    html += '<button class="btn-medieval" onclick="UI.assignBusinessTask(\'' + agentId + '\')" style="font-size:0.7rem;padding:4px 10px;margin-top:4px;background:rgba(85,168,104,0.2);border-color:rgba(85,168,104,0.4);color:#55a868;">⚡ Assign Business Task</button>';
+    html += '<button class="btn-medieval" data-action="assignBusinessTask" data-id="' + agentId + '" style="font-size:0.7rem;padding:4px 10px;margin-top:4px;background:rgba(85,168,104,0.2);border-color:rgba(85,168,104,0.4);color:#55a868;">⚡ Assign Business Task</button>';
     return html;
 }
 
@@ -1242,7 +1242,7 @@ function _buildIntelTaskUI(agentId, defs) {
     html += '</select>';
     html += '</div>';
 
-    html += '<button class="btn-medieval" onclick="UI.assignIntelTask(\'' + agentId + '\')" style="font-size:0.7rem;padding:4px 10px;margin-top:4px;background:rgba(93,173,226,0.2);border-color:rgba(93,173,226,0.4);color:#5dade2;">⚡ Assign Intel Task</button>';
+    html += '<button class="btn-medieval" data-action="assignIntelTask" data-id="' + agentId + '" style="font-size:0.7rem;padding:4px 10px;margin-top:4px;background:rgba(93,173,226,0.2);border-color:rgba(93,173,226,0.4);color:#5dade2;">⚡ Assign Intel Task</button>';
     return html;
 }
 
@@ -1339,7 +1339,7 @@ function _buildRoyalDirectivesSection(kingdomId, day) {
     for (var ti = 0; ti < tabs.length; ti++) {
         var tab = tabs[ti];
         var isActive = _kqTab === tab.id;
-        html += '<button class="btn-medieval" onclick="UI._switchKQTab(\'' + tab.id + '\',\'' + kingdomId + '\')" style="font-size:0.7rem;padding:4px 10px;' + (isActive ? 'background:rgba(52,152,219,0.25);border-color:rgba(52,152,219,0.5);color:#5dade2;' : '') + '">' + tab.label + '</button>';
+        html += '<button class="btn-medieval" data-action="_switchKQTab" data-id="' + tab.id + '" data-val="' + kingdomId + '" style="font-size:0.7rem;padding:4px 10px;' + (isActive ? 'background:rgba(52,152,219,0.25);border-color:rgba(52,152,219,0.5);color:#5dade2;' : '') + '">' + tab.label + '</button>';
     }
     html += '</div>';
 
@@ -1529,12 +1529,12 @@ function _buildKQCard(quest, kingdomId, day, isPersonal) {
     html += '<div style="display:flex;gap:6px;margin-top:6px;">';
     var safeId = quest.id.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     var safeKid = kingdomId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    html += '<button class="btn-medieval" onclick="(function(){var r=Player.acceptKingdomQuest(\'' + safeId + '\',\'' + safeKid + '\');UI.toast(r&&r.message||\'Quest updated\',r&&r.success?\'success\':\'warning\');if(r&&r.success)UI.openNobilityDialog();})()" style="font-size:0.72rem;padding:4px 12px;background:rgba(46,204,113,0.2) !important;border-color:rgba(46,204,113,0.4) !important;">✅ Accept</button>';
+    html += '<button class="btn-medieval" data-action="acceptKingdomQuest" data-id="' + safeId + '" data-kingdom="' + safeKid + '" style="font-size:0.72rem;padding:4px 12px;background:rgba(46,204,113,0.2) !important;border-color:rgba(46,204,113,0.4) !important;">✅ Accept</button>';
 
     // Reject button with penalty info
     var rejPen = quest.rejectionPenalty || { rep: 2, kingRel: 3 };
     var rejLabel = isPersonal ? 'Reject (-' + (rejPen.rep * 2) + ' rep)' : 'Decline';
-    html += '<button class="btn-medieval" onclick="(function(){var r=Player.rejectKingdomQuest(\'' + safeId + '\',\'' + safeKid + '\');UI.toast(r&&r.message||\'Quest updated\',r&&r.success?\'success\':\'warning\');if(r&&r.success)UI.openNobilityDialog();})()" style="font-size:0.72rem;padding:4px 12px;' + (isPersonal ? 'background:rgba(231,76,60,0.15) !important;border-color:rgba(231,76,60,0.3) !important;color:#e74c3c;' : '') + '">' + (isPersonal ? '❌ ' : '') + rejLabel + '</button>';
+    html += '<button class="btn-medieval" data-action="rejectKingdomQuest" data-id="' + safeId + '" data-kingdom="' + safeKid + '" style="font-size:0.72rem;padding:4px 12px;' + (isPersonal ? 'background:rgba(231,76,60,0.15) !important;border-color:rgba(231,76,60,0.3) !important;color:#e74c3c;' : '') + '">' + (isPersonal ? '❌ ' : '') + rejLabel + '</button>';
     html += '</div>';
 
     html += '</div>';
@@ -1677,7 +1677,7 @@ function _buildKQActiveCard(quest, kingdomId, day, progress) {
                 var safActId2 = quest.id.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                 var safKid2 = kingdomId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                 var _curStepBtn = _msConfig.steps[_msProgress];
-                html += '<button class="btn-medieval" onclick="UI._attemptKQActionUI(\'' + safActId2 + '\',\'' + safKid2 + '\')" style="font-size:0.7rem;padding:4px 12px;margin-top:4px;background:rgba(231,126,35,0.2) !important;border-color:rgba(231,126,35,0.4) !important;">▶️ ' + escapeHtml(_curStepBtn ? _curStepBtn.label : 'Next Step') + '</button>';
+                html += '<button class="btn-medieval" data-action="_attemptKQActionUI" data-id="' + safActId2 + '" data-val="' + safKid2 + '" style="font-size:0.7rem;padding:4px 12px;margin-top:4px;background:rgba(231,126,35,0.2) !important;border-color:rgba(231,126,35,0.4) !important;">▶️ ' + escapeHtml(_curStepBtn ? _curStepBtn.label : 'Next Step') + '</button>';
             } else if (_aqMech) {
                 // Show action details with proper attempt button
                 html += '<div style="font-size:0.68rem;color:#e67e22;margin-bottom:4px;">⬜ ' + escapeHtml(_aqLabel) + '</div>';
@@ -1705,7 +1705,7 @@ function _buildKQActiveCard(quest, kingdomId, day, progress) {
 
                 var safActId = quest.id.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                 var safKid = kingdomId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                html += '<button class="btn-medieval" onclick="UI._attemptKQActionUI(\'' + safActId + '\',\'' + safKid + '\')" style="font-size:0.7rem;padding:4px 12px;margin-top:4px;background:rgba(231,126,35,0.2) !important;border-color:rgba(231,126,35,0.4) !important;">' + escapeHtml(_aqMech.actionLabel || '⚡ Attempt Action') + '</button>';
+                html += '<button class="btn-medieval" data-action="_attemptKQActionUI" data-id="' + safActId + '" data-val="' + safKid + '" style="font-size:0.7rem;padding:4px 12px;margin-top:4px;background:rgba(231,126,35,0.2) !important;border-color:rgba(231,126,35,0.4) !important;">' + escapeHtml(_aqMech.actionLabel || '⚡ Attempt Action') + '</button>';
             } else {
                 // No mechanic defined for this action type — show unavailable
                 html += '<div style="font-size:0.68rem;color:#e67e22;">⬜ Complete: ' + escapeHtml(act.type.replace(/_/g, ' ')) + '</div>';
@@ -1751,9 +1751,9 @@ function _buildKQActiveCard(quest, kingdomId, day, progress) {
     var safeId = quest.id.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     var safeKid = kingdomId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     if (isComplete) {
-        html += '<button class="btn-medieval" onclick="(function(){var r=Player.completeKingdomQuest(\'' + safeId + '\',\'' + safeKid + '\');UI.toast(r&&r.message||\'Quest updated\',r&&r.success?\'success\':\'warning\');if(r&&r.success)UI.openNobilityDialog();})()" style="font-size:0.72rem;padding:5px 14px;background:rgba(46,204,113,0.3) !important;border-color:rgba(46,204,113,0.5) !important;color:#2ecc71;font-weight:bold;">🎉 Complete Quest</button>';
+        html += '<button class="btn-medieval" data-action="completeKingdomQuest" data-id="' + safeId + '" data-kingdom="' + safeKid + '" style="font-size:0.72rem;padding:5px 14px;background:rgba(46,204,113,0.3) !important;border-color:rgba(46,204,113,0.5) !important;color:#2ecc71;font-weight:bold;">🎉 Complete Quest</button>';
     }
-    html += '<button class="btn-medieval" onclick="(function(){if(confirm(\'Abandon this quest? You will lose reputation.\')){var r=Player.abandonKingdomQuest(\'' + safeId + '\',\'' + safeKid + '\');UI.toast(r&&r.message||\'Quest abandoned\',r&&r.success?\'success\':\'warning\');UI.openNobilityDialog();}})()" style="font-size:0.68rem;padding:3px 8px;opacity:0.6;">Abandon</button>';
+    html += '<button class="btn-medieval" data-action="abandonKingdomQuest" data-id="' + safeId + '" data-kingdom="' + safeKid + '" style="font-size:0.68rem;padding:3px 8px;opacity:0.6;">Abandon</button>';
     html += '</div>';
 
     html += '</div>';
@@ -1815,8 +1815,8 @@ function _attemptKQActionUI(questId, kingdomId) {
         var _safQid = questId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         var _safKid = kingdomId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         openModal('⚡ Confirm Action', _confHtml,
-            '<button class="btn-medieval" onclick="UI.closeModal();UI._executeKQAction(\'' + _safQid + '\',\'' + _safKid + '\');" style="background:rgba(231,126,35,0.3) !important;border-color:rgba(231,126,35,0.5) !important;">⚡ Proceed</button>' +
-            '<button class="btn-medieval" onclick="UI.closeModal();UI.openNobilityDialog();">Cancel</button>'
+            '<button class="btn-medieval" data-action="closeAndExecuteKQAction" data-id="' + _safQid + '" data-val="' + _safKid + '" style="background:rgba(231,126,35,0.3) !important;border-color:rgba(231,126,35,0.5) !important;">⚡ Proceed</button>' +
+            '<button class="btn-medieval" data-action="closeAndOpenNobilityDialog">Cancel</button>'
         );
     } else {
         // No mechanic — just try and show error
@@ -1908,7 +1908,7 @@ function _executeKQAction(questId, kingdomId) {
     html += '</div>';
 
     openModal(isSuccess ? '✅ Action Succeeded' : '❌ Action Failed', html,
-        '<button class="btn-medieval" onclick="UI.closeModal(); UI.openNobilityDialog();">Continue</button>'
+        '<button class="btn-medieval" data-action="closeAndOpenNobilityDialog">Continue</button>'
     );
 }
 
@@ -1933,10 +1933,10 @@ function _nobilityRequestBuilding(townId) {
     html += '<div style="max-height:300px;overflow-y:auto;">';
     for (var i = 0; i < Math.min(15, buildingTypes.length); i++) {
         var bt = buildingTypes[i];
-        html += '<button class="btn-medieval" onclick="(function(){var r=Player.requestKingdomBuilding(\'' + townId + '\',\'' + bt.id + '\',0);UI.toast(r&&r.message?r.message:\'Request sent.\',r&&r.success?\'success\':\'warning\');UI.closeModal();UI.openNobilityDialog();})()" style="display:block;width:100%;text-align:left;font-size:0.75rem;padding:5px 10px;margin-bottom:3px;">' + (bt.icon || '🏗️') + ' ' + bt.name + ' (' + formatGold(bt.cost || 0) + ')</button>';
+        html += '<button class="btn-medieval" data-action="requestKingdomBuilding" data-id="' + townId + '" data-val="' + bt.id + '" style="display:block;width:100%;text-align:left;font-size:0.75rem;padding:5px 10px;margin-bottom:3px;">' + (bt.icon || '🏗️') + ' ' + bt.name + ' (' + formatGold(bt.cost || 0) + ')</button>';
     }
     html += '</div>';
-    openModal('🏗️ Request Kingdom Building', html, '<button class="btn-medieval" onclick="UI.closeModal();UI.openNobilityDialog();">Back</button>');
+    openModal('🏗️ Request Kingdom Building', html, '<button class="btn-medieval" data-action="closeAndOpenNobilityDialog">Back</button>');
 }
 
 // Helper: Propose law from nobility panel
@@ -1946,13 +1946,13 @@ function _nobilityProposeLaw(kingdomId) {
     html += '<div style="max-height:350px;overflow-y:auto;">';
     for (var i = 0; i < specialLaws.length; i++) {
         var law = specialLaws[i];
-        html += '<button class="btn-medieval" onclick="(function(){var r=Player.proposeLaw(\'' + kingdomId + '\',\'' + law.id + '\');UI.toast(r&&r.message?r.message:\'Law proposed.\',r&&r.success?\'success\':\'warning\');UI.closeModal();UI.openNobilityDialog();})()" style="display:block;width:100%;text-align:left;font-size:0.75rem;padding:6px 10px;margin-bottom:3px;">';
+        html += '<button class="btn-medieval" data-action="proposeLaw" data-id="' + kingdomId + '" data-val="' + law.id + '" style="display:block;width:100%;text-align:left;font-size:0.75rem;padding:6px 10px;margin-bottom:3px;">';
         html += '<span>' + (law.icon || '📜') + ' <strong>' + law.name + '</strong></span><br>';
         html += '<span style="font-size:0.7rem;color:#d4c9a0;">' + (law.desc || '') + '</span>';
         html += '</button>';
     }
     html += '</div>';
-    openModal('📜 Propose Law', html, '<button class="btn-medieval" onclick="UI.closeModal();UI.openNobilityDialog();">Back</button>');
+    openModal('📜 Propose Law', html, '<button class="btn-medieval" data-action="closeAndOpenNobilityDialog">Back</button>');
 }
 
 // Helper: Propose action from nobility panel (Royal Advisor)
@@ -1980,7 +1980,7 @@ function _nobilityProposeAction(kingdomId) {
         var catCount = actions.filter(function(a) { return a.category === cat.id; }).length;
         if (catCount === 0) continue;
         var isActive = _proposeActionTab === cat.id;
-        html += '<button class="btn-medieval" onclick="UI._switchProposeActionTab(\'' + cat.id + '\',\'' + kingdomId + '\')" style="font-size:0.7rem;padding:4px 8px;' + (isActive ? 'background:rgba(201,168,76,0.25);border-color:rgba(201,168,76,0.5);color:#f0d0a0;' : '') + '">' + cat.icon + ' ' + cat.name + ' (' + catCount + ')</button>';
+        html += '<button class="btn-medieval" data-action="_switchProposeActionTab" data-id="' + cat.id + '" data-val="' + kingdomId + '" style="font-size:0.7rem;padding:4px 8px;' + (isActive ? 'background:rgba(201,168,76,0.25);border-color:rgba(201,168,76,0.5);color:#f0d0a0;' : '') + '">' + cat.icon + ' ' + cat.name + ' (' + catCount + ')</button>';
     }
     html += '</div>';
 
@@ -2033,20 +2033,20 @@ function _nobilityProposeAction(kingdomId) {
             html += '</select></div>';
 
             // Propose button that reads the dropdown value
-            html += '<button class="btn-medieval" onclick="(function(){var sel=document.getElementById(\'' + selectId + '\');var sc=sel?sel.value:\'\';var r=Player.proposeKingAction(\'' + kingdomId + '\',\'' + a.id + '\',sc);UI.toast(r&&r.message?r.message:\'Action proposed.\',r&&r.success?\'success\':\'warning\');UI.closeModal();UI.openNobilityDialog();})()" style="font-size:0.75rem;padding:5px 14px;background:rgba(44,100,60,0.5) !important;border:2px solid rgba(80,180,100,0.5) !important;color:#f0e0c0 !important;">👑 Propose (' + pct + '% chance)</button>';
+            html += '<button class="btn-medieval" data-action="proposeKingActionSelect" data-id="' + kingdomId + '" data-val="' + a.id + '" data-select="' + selectId + '" style="font-size:0.75rem;padding:5px 14px;background:rgba(44,100,60,0.5) !important;border:2px solid rgba(80,180,100,0.5) !important;color:#f0e0c0 !important;">👑 Propose (' + pct + '% chance)</button>';
         } else if (a.needsSubChoice && (!a.subChoiceOptions || a.subChoiceOptions.length === 0)) {
             // Action needs a sub-choice but no options available
             html += '<div style="font-size:0.72rem;color:#888;font-style:italic;margin-bottom:4px;">No valid targets available.</div>';
             html += '<button class="btn-medieval" disabled style="font-size:0.75rem;padding:5px 14px;opacity:0.4;">👑 No targets</button>';
         } else {
             // Normal action — no sub-choice needed
-            html += '<button class="btn-medieval" onclick="(function(){var r=Player.proposeKingAction(\'' + kingdomId + '\',\'' + a.id + '\');UI.toast(r&&r.message?r.message:\'Action proposed.\',r&&r.success?\'success\':\'warning\');UI.closeModal();UI.openNobilityDialog();})()" style="font-size:0.75rem;padding:5px 14px;background:rgba(44,100,60,0.5) !important;border:2px solid rgba(80,180,100,0.5) !important;color:#f0e0c0 !important;">👑 Propose (' + pct + '% chance)</button>';
+            html += '<button class="btn-medieval" data-action="proposeKingAction" data-id="' + kingdomId + '" data-val="' + a.id + '" style="font-size:0.75rem;padding:5px 14px;background:rgba(44,100,60,0.5) !important;border:2px solid rgba(80,180,100,0.5) !important;color:#f0e0c0 !important;">👑 Propose (' + pct + '% chance)</button>';
         }
         html += '</div>';
     }
     html += '</div>';
 
-    openModal('👑 Propose Action to the King', html, '<button class="btn-medieval" onclick="UI.closeModal();UI.openNobilityDialog();">Back</button>');
+    openModal('👑 Propose Action to the King', html, '<button class="btn-medieval" data-action="closeAndOpenNobilityDialog">Back</button>');
 }
 
 function _switchProposeActionTab(tabId, kingdomId) {
@@ -2090,4 +2090,129 @@ function _switchProposeActionTab(tabId, kingdomId) {
     UI._switchKQTab = _switchKQTab;
     UI._attemptKQActionUI = _attemptKQActionUI;
     UI._executeKQAction = _executeKQAction;
+
+    // ── C3: Register data-action handlers ──
+    UI.registerAction('executeStreetTrade', function(_t, d) { if (d.id !== undefined) UI.executeStreetTrade(parseInt(d.id)); });
+    UI.registerAction('executeStreetBuyUI', function(_t, d) { if (d.id !== undefined) UI.executeStreetBuyUI(parseInt(d.id)); });
+    UI.registerAction('executeStreetContrabandSellUI', function(_t, d) {
+        if (d.id !== undefined) UI.executeStreetContrabandSellUI(parseInt(d.id), d.val ? parseInt(d.val) : 1);
+    });
+    UI.registerAction('_streetAcceptOffer', function(_t, d) { if (d.id !== undefined) UI._streetAcceptOffer(parseInt(d.id)); });
+    UI.registerAction('_streetDeclineOffer', function(_t, d) { if (d.id !== undefined) UI._streetDeclineOffer(parseInt(d.id)); });
+    UI.registerAction('_streetSubmitRequest', function() { UI._streetSubmitRequest(); });
+    UI.registerAction('chatWithNPC', function(_t, d) { if (d.id) UI.chatWithNPC(d.id); });
+    UI.registerAction('hireAgentAction', function() { UI.hireAgentAction(); });
+    UI.registerAction('toggleAgentExpand', function(_t, d) { if (d.id) UI.toggleAgentExpand(d.id); });
+    UI.registerAction('showAgentTaskCategory', function(_t, d) { if (d.id && d.val) UI.showAgentTaskCategory(d.id, d.val); });
+    UI.registerAction('cancelAgentTaskAction', function(_t, d) { if (d.id) UI.cancelAgentTaskAction(d.id); });
+    UI.registerAction('recallAgentAction', function(_t, d) { if (d.id) UI.recallAgentAction(d.id); });
+    UI.registerAction('fireAgentAction', function(_t, d) { if (d.id) UI.fireAgentAction(d.id); });
+    UI.registerAction('assignHostileTask', function(_t, d) { if (d.id) UI.assignHostileTask(d.id); });
+    UI.registerAction('assignBusinessTask', function(_t, d) { if (d.id) UI.assignBusinessTask(d.id); });
+    UI.registerAction('assignIntelTask', function(_t, d) { if (d.id) UI.assignIntelTask(d.id); });
+    UI.registerAction('_switchProposeActionTab', function(_t, d) { if (d.id && d.val) UI._switchProposeActionTab(d.id, d.val); });
+    UI.registerAction('_nobilityRequestBuilding', function(_t, d) { if (d.id) UI._nobilityRequestBuilding(d.id); });
+    UI.registerAction('_nobilityProposeLaw', function(_t, d) { if (d.id) UI._nobilityProposeLaw(d.id); });
+    UI.registerAction('_nobilityProposeAction', function(_t, d) { if (d.id) UI._nobilityProposeAction(d.id); });
+    UI.registerAction('openFeastDialog', function(_t, d) { if (d.id) UI.openFeastDialog(d.id); });
+    UI.registerAction('openVotingDialog', function(_t, d) { if (d.id) UI.openVotingDialog(d.id); });
+    UI.registerAction('_attemptKQActionUI', function(_t, d) { if (d.id && d.val) UI._attemptKQActionUI(d.id, d.val); });
+
+    // Complex IIFE handlers
+    UI.registerAction('deliverKingCommission', function() {
+        var r = Player.deliverKingCommission ? Player.deliverKingCommission() : {success:false, message:'Delivery not available.'};
+        UI.toast(r.message || 'Delivered!', r.success ? 'success' : 'warning');
+        UI.openNobilityDialog();
+    });
+    UI.registerAction('acceptKingCommission', function() {
+        var r = Player.acceptKingCommission ? Player.acceptKingCommission() : {success:false};
+        UI.toast(r.message || 'Commission accepted!', r.success ? 'success' : 'warning');
+        UI.openNobilityDialog();
+    });
+    UI.registerAction('refuseKingCommission', function() {
+        var r = Player.refuseKingCommission ? Player.refuseKingCommission() : {success:false};
+        UI.toast(r.message || 'Commission refused.', r.success ? 'success' : 'warning');
+        UI.openNobilityDialog();
+    });
+    UI.registerAction('agreeKingDecision', function(_t, d) {
+        var r = Player.respondToKingDecision(d.id, 'agree');
+        UI.toast(r && r.message ? r.message : 'Agreed.', 'success');
+        UI.openNobilityDialog();
+    });
+    UI.registerAction('opposeKingDecision', function(_t, d) {
+        var r = Player.respondToKingDecision(d.id, 'oppose');
+        UI.toast(r && r.message ? r.message : 'Opposed.', r && r.success ? 'success' : 'warning');
+        UI.openNobilityDialog();
+    });
+    UI.registerAction('adviseKing', function(_t, d) {
+        var r = Player.adviseKing(d.id, d.val);
+        UI.toast(r && (r.message || r.reason) ? r.message || r.reason : 'Advice given.', r && r.success ? 'success' : 'warning');
+        UI.openNobilityDialog();
+    });
+    UI.registerAction('viewNoblePerson', function(_t, d) {
+        UI.closeModal();
+        var p = Engine.findPerson(d.id);
+        if (p) UI.showPersonDetail(p);
+    });
+    UI.registerAction('nobleSmallTalk', function(_t, d) {
+        var r = Player.interactWithNPC(d.id, 'small_talk');
+        UI.toast(r && r.message || 'Spoke with noble.', r && r.success ? 'success' : 'warning');
+        UI.openNobilityDialog();
+    });
+    UI.registerAction('nobleGiveGift', function(_t, d) {
+        UI.closeModal(); UI.openGiftDialog(d.id);
+    });
+    UI.registerAction('nobleScheme', function() {
+        UI.closeModal(); UI.openSchemesDialog();
+    });
+    UI.registerAction('acceptKingdomQuest', function(_t, d) {
+        var r = Player.acceptKingdomQuest(d.id, d.kingdom);
+        UI.toast(r && r.message || 'Quest updated', r && r.success ? 'success' : 'warning');
+        UI.openNobilityDialog();
+    });
+    UI.registerAction('rejectKingdomQuest', function(_t, d) {
+        var r = Player.rejectKingdomQuest(d.id, d.kingdom);
+        UI.toast(r && r.message || 'Quest updated', r && r.success ? 'success' : 'warning');
+        UI.openNobilityDialog();
+    });
+    UI.registerAction('completeKingdomQuest', function(_t, d) {
+        var r = Player.completeKingdomQuest(d.id, d.kingdom);
+        UI.toast(r && r.message || 'Quest updated', r && r.success ? 'success' : 'warning');
+        UI.openNobilityDialog();
+    });
+    UI.registerAction('abandonKingdomQuest', function(_t, d) {
+        if (confirm('Abandon this quest? You will lose reputation.')) {
+            var r = Player.abandonKingdomQuest(d.id, d.kingdom);
+            UI.toast(r && r.message || 'Quest abandoned.', r && r.success ? 'success' : 'warning');
+            UI.openNobilityDialog();
+        }
+    });
+    UI.registerAction('requestKingdomBuilding', function(_t, d) {
+        var r = Player.requestKingdomBuilding(d.id, d.val, 0);
+        UI.toast(r && r.message ? r.message : 'Request sent.', r && r.success ? 'success' : 'warning');
+        UI.openNobilityDialog();
+    });
+    UI.registerAction('proposeLaw', function(_t, d) {
+        var r = Player.proposeLaw(d.id, d.val);
+        UI.toast(r && r.message ? r.message : 'Law proposed.', r && r.success ? 'success' : 'warning');
+        UI.openNobilityDialog();
+    });
+    UI.registerAction('proposeKingActionSelect', function(_t, d) {
+        var sel = document.getElementById(d.select);
+        var sc = sel ? sel.value : '';
+        var r = Player.proposeKingAction(d.id, d.val, sc);
+        UI.toast(r && r.message ? r.message : 'Action proposed.', r && r.success ? 'success' : 'warning');
+        UI.openNobilityDialog();
+    });
+    UI.registerAction('proposeKingAction', function(_t, d) {
+        var r = Player.proposeKingAction(d.id, d.val);
+        UI.toast(r && r.message ? r.message : 'Action proposed.', r && r.success ? 'success' : 'warning');
+        UI.openNobilityDialog();
+    });
+    UI.registerAction('closeAndExecuteKQAction', function(_t, d) {
+        UI.closeModal(); UI._executeKQAction(d.id, d.val);
+    });
+    UI.registerAction('closeAndOpenNobilityDialog', function() {
+        UI.closeModal(); UI.openNobilityDialog();
+    });
 })(window.UI);

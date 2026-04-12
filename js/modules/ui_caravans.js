@@ -92,7 +92,7 @@
             '<span style="color:var(--gold);min-width:60px;">' + actionLabel + '</span>' +
             '<span style="min-width:50px;">' + qtyLabel + priceLabel + '</span>' +
             '<span style="color:#888;min-width:55px;">' + locLabel + '</span>' +
-            '<button onclick="UI._removeCaravanOrder(' + index + ')" style="background:rgba(200,50,50,0.3);border:1px solid rgba(200,50,50,0.5);color:#fff;border-radius:3px;cursor:pointer;padding:1px 6px;font-size:0.7rem;">✕</button>' +
+            '<button data-action="_removeCaravanOrder" data-val="' + index + '" style="background:rgba(200,50,50,0.3);border:1px solid rgba(200,50,50,0.5);color:#fff;border-radius:3px;cursor:pointer;padding:1px 6px;font-size:0.7rem;">✕</button>' +
         '</div>';
     }
 
@@ -424,7 +424,7 @@
         orderBuilderHtml += '<label style="font-size:0.7rem;color:#aaa;margin-left:6px;">Price:</label>';
         orderBuilderHtml += '<input type="number" id="orderPriceLimit" min="0" max="9999" value="" placeholder="limit" style="width:55px;padding:3px 5px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;">';
         orderBuilderHtml += '<span style="font-size:0.65rem;color:#666;">g</span>';
-        orderBuilderHtml += '<button onclick="UI._addCaravanOrder()" style="padding:4px 12px;font-size:0.75rem;background:rgba(0,150,80,0.3);border:1px solid rgba(0,150,80,0.5);color:#fff;border-radius:4px;cursor:pointer;font-weight:bold;">➕ Add</button>';
+        orderBuilderHtml += '<button data-action="_addCaravanOrder" style="padding:4px 12px;font-size:0.75rem;background:rgba(0,150,80,0.3);border:1px solid rgba(0,150,80,0.5);color:#fff;border-radius:4px;cursor:pointer;font-weight:bold;">➕ Add</button>';
         orderBuilderHtml += '</div>';
         orderBuilderHtml += '<div class="text-dim" style="font-size:0.6rem;margin-top:4px;">Buy/Pickup load onto caravan. Sell/Store unload from caravan. Price = max buy or min sell price.</div>';
         orderBuilderHtml += '</div></div>';
@@ -435,7 +435,7 @@
         var mgmtLink = '';
         if (totalCount > 0) {
             mgmtLink = '<div style="margin-top:10px;text-align:center;">' +
-                '<button class="btn-medieval" onclick="UI.openCaravanManagement()" style="font-size:0.8rem;padding:6px 16px;">📊 Manage Caravans (' + activeCount + ' active / ' + totalCount + ' total)</button>' +
+                '<button class="btn-medieval" data-action="openCaravanManagement" style="font-size:0.8rem;padding:6px 16px;">📊 Manage Caravans (' + activeCount + ' active / ' + totalCount + ' total)</button>' +
             '</div>';
         }
 
@@ -574,7 +574,7 @@
         ${buildTransportSection(connectedTowns, seaDestinations)}
         ${buildNPCTransportSection()}`;
 
-        const footer = `<button class="btn-medieval" onclick="UI.executeSendCaravan()" style="font-size:0.85rem;padding:8px 24px;">
+        const footer = `<button class="btn-medieval" data-action="executeSendCaravan" style="font-size:0.85rem;padding:8px 24px;">
             🐴 Send Caravan
         </button>`;
 
@@ -678,7 +678,7 @@
             manifestHtml = `<div style="background:rgba(0,180,100,0.1);border:1px solid rgba(0,180,100,0.3);border-radius:6px;padding:8px;margin-bottom:10px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;">
                     <div style="font-weight:bold;color:var(--gold);">\uD83D\uDE8C Active Transport to ${destTown ? destTown.name : '?'}</div>
-                    <button class="btn-medieval" style="font-size:0.65rem;padding:2px 8px;color:#e74c3c;" onclick="UI.cancelTransportUI()">❌ Cancel</button>
+                    <button class="btn-medieval" style="font-size:0.65rem;padding:2px 8px;color:#e74c3c;" data-action="cancelTransportUI">❌ Cancel</button>
                 </div>
                 <div style="font-size:0.75rem;color:#ccc;">${transport.passengers.length} passengers | ${transport.totalRevenue}g revenue on arrival</div>
                 <div style="font-size:0.7rem;margin-top:4px;">${transport.passengers.map(function(p) {
@@ -745,7 +745,7 @@
                     '<div style="display:flex;gap:6px;align-items:center;margin-top:4px;">' +
                         '<label style="font-size:0.75rem;">Price/passenger:</label>' +
                         '<input type="number" id="transportPrice_' + destId + '" min="1" max="500" value="' + Math.floor(group.travelers.reduce(function(s,t){ return s + t.maxPrice; }, 0) / group.travelers.length) + '" class="qty-select" style="width:60px;">' +
-                        '<button class="btn-medieval" onclick="UI.setupTransportUI(\'' + destId + '\', ' + (routeType === 'sea') + ')" style="font-size:0.7rem;padding:4px 10px;">' +
+                        '<button class="btn-medieval" data-action="setupTransportUI" data-id="' + destId + '" data-val="' + (routeType === 'sea') + '" style="font-size:0.7rem;padding:4px 10px;">' +
                             '\uD83D\uDE8C Board Passengers' +
                         '</button>' +
                     '</div>'
@@ -785,7 +785,7 @@
             html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.08);">';
             html += '<div style="flex:1;"><span style="font-size:0.75rem;">' + typeIcon + ' <strong>' + s.operatorName + '</strong> \u2192 ' + s.destinationName + '</span>';
             html += '<div style="font-size:0.7rem;color:#888;">' + s.capacity + ' seat' + (s.capacity !== 1 ? 's' : '') + ' left \u00B7 departs in ' + daysLeft + 'd</div></div>';
-            html += '<button class="btn-medieval" onclick="UI.useNPCTransportUI(' + i + ')" style="font-size:0.7rem;padding:3px 10px;' + btnStyle + '">' + s.price + 'g Board</button>';
+            html += '<button class="btn-medieval" data-action="useNPCTransportUI" data-val="' + i + '" style="font-size:0.7rem;padding:3px 10px;' + btnStyle + '">' + s.price + 'g Board</button>';
             html += '</div>';
         }
         html += '</div>';
@@ -1274,22 +1274,22 @@
             // Action buttons
             html += '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">';
             if (c.status === 'blocked' && c.active !== false) {
-                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;" onclick="(function(){var r=Player.rescueCaravan(\'' + c.id + '\');UI.toast(r.message,r.success?\'success\':\'warning\');UI.openCaravanManagement();})()">🆘 Rescue</button>';
+                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;" data-action="rescueCaravan" data-id="' + c.id + '">🆘 Rescue</button>';
             }
             if (c.recurring && c.active) {
-                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;background:rgba(200,60,50,0.3);" onclick="(function(){var r=Player.cancelRecurringRoute(\'' + c.id + '\');UI.toast(r.message,r.success?\'success\':\'warning\');UI.openCaravanManagement();})()">⏹️ Stop Route</button>';
+                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;background:rgba(200,60,50,0.3);" data-action="cancelRecurringRoute" data-id="' + c.id + '">⏹️ Stop Route</button>';
             }
             if (c.active && c.orders) {
-                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;" onclick="UI.openEditCaravanOrders(\'' + c.id + '\')">📝 Edit Orders</button>';
+                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;" data-action="openEditCaravanOrders" data-id="' + c.id + '">📝 Edit Orders</button>';
             }
             if (c.active && !c.disbanding) {
-                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;background:rgba(180,140,50,0.3);" onclick="(function(){if(!confirm(\'Finish last run and disband this caravan? Goods will be dropped to storage, not sold.\'))return;var r=Player.disbandCaravan(\'' + c.id + '\');UI.toast(r.message,r.success?\'success\':\'warning\');UI.openCaravanManagement();})()">🏳️ Finish & Disband</button>';
-                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;" onclick="UI.openEditCaravanEquipment(\'' + c.id + '\')">⚙️ Equipment</button>';
-                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;background:rgba(80,120,180,0.3);" onclick="UI.openAutoDisbandEditor(\'' + c.id + '\')">🔄 Auto-Disband</button>';
+                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;background:rgba(180,140,50,0.3);" data-action="finishDisbandCaravan" data-id="' + c.id + '">🏳️ Finish & Disband</button>';
+                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;" data-action="openEditCaravanEquipment" data-id="' + c.id + '">⚙️ Equipment</button>';
+                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;background:rgba(80,120,180,0.3);" data-action="openAutoDisbandEditor" data-id="' + c.id + '">🔄 Auto-Disband</button>';
             }
             if (c.disbanding && c.active) {
                 html += '<span style="font-size:0.7rem;color:#d4a017;padding:3px 6px;">🏳️ Disbanding…</span>';
-                html += '<button class="btn-medieval" style="font-size:0.65rem;padding:2px 8px;background:rgba(200,50,50,0.3);" onclick="(function(){if(!confirm(\'Force disband immediately? Goods will be dropped at nearest town or lost.\'))return;var r=Player.forceDisbandCaravan(\'' + c.id + '\');UI.toast(r.message,r.success?\'success\':\'warning\');UI.openCaravanManagement();})()">❌ Force Now</button>';
+                html += '<button class="btn-medieval" style="font-size:0.65rem;padding:2px 8px;background:rgba(200,50,50,0.3);" data-action="forceDisbandCaravan" data-id="' + c.id + '">❌ Force Now</button>';
             }
             html += '</div>';
 
@@ -1352,7 +1352,7 @@
                 var desc = _describeCondition(cond, fromName, toName);
                 html += '<div style="display:flex;align-items:center;gap:6px;padding:3px 6px;margin:2px 0;background:rgba(80,120,180,0.15);border-radius:4px;font-size:0.7rem;">';
                 html += '<span style="flex:1;color:#bcd;">' + desc + '</span>';
-                html += '<button class="btn-medieval" style="font-size:0.6rem;padding:1px 6px;background:rgba(200,50,50,0.3);" onclick="UI._removeADCondition(' + ci + ',\'' + caravanId + '\')">✕</button>';
+                html += '<button class="btn-medieval" style="font-size:0.6rem;padding:1px 6px;background:rgba(200,50,50,0.3);" data-action="_removeADCondition" data-idx="' + ci + '" data-id="' + caravanId + '">✕</button>';
                 html += '</div>';
             }
             html += '</div>';
@@ -1402,13 +1402,13 @@
         html += '<input id="ad-value" type="number" min="1" value="10" style="width:80px;padding:3px;font-size:0.7rem;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;">';
         html += '</div>';
 
-        html += '<button class="btn-medieval" style="font-size:0.7rem;padding:4px 12px;margin-top:4px;" onclick="UI._addADCondition(\'' + caravanId + '\')">➕ Add</button>';
+        html += '<button class="btn-medieval" style="font-size:0.7rem;padding:4px 12px;margin-top:4px;" data-action="_addADCondition" data-id="' + caravanId + '">➕ Add</button>';
         html += '</div>';
 
         html += '</div>';
 
-        var footer = '<button class="btn-medieval" onclick="(function(){var r=Player.setAutoDisbandConditions(\'' + caravanId + '\',UI._getADConditions());UI.toast(r.message,r.success?\'success\':\'warning\');UI.openCaravanManagement();})()" style="background:rgba(50,150,80,0.3);">✅ Save & Close</button>';
-        footer += ' <button class="btn-medieval" onclick="UI.openCaravanManagement()">← Back</button>';
+        var footer = '<button class="btn-medieval" data-action="saveADConditions" data-id="' + caravanId + '" style="background:rgba(50,150,80,0.3);">✅ Save & Close</button>';
+        footer += ' <button class="btn-medieval" data-action="openCaravanManagement">← Back</button>';
         openModal('🔄 Auto-Disband Conditions', html, footer);
 
         // Initialize visibility
@@ -1549,13 +1549,13 @@
         html += '<label style="font-size:0.7rem;color:#aaa;cursor:pointer;"><input type="checkbox" id="orderMaxQty"> Max</label>';
         html += '<label style="font-size:0.7rem;color:#aaa;margin-left:6px;">Price:</label>';
         html += '<input type="number" id="orderPriceLimit" min="0" max="9999" value="" placeholder="limit" style="width:55px;padding:3px 5px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;">';
-        html += '<button onclick="UI._addCaravanOrder()" style="padding:4px 12px;font-size:0.75rem;background:rgba(0,150,80,0.3);border:1px solid rgba(0,150,80,0.5);color:#fff;border-radius:4px;cursor:pointer;font-weight:bold;">➕ Add</button>';
+        html += '<button data-action="_addCaravanOrder" style="padding:4px 12px;font-size:0.75rem;background:rgba(0,150,80,0.3);border:1px solid rgba(0,150,80,0.5);color:#fff;border-radius:4px;cursor:pointer;font-weight:bold;">➕ Add</button>';
         html += '</div>';
         html += '</div>';
         html += '</div>';
 
-        var footer = '<button class="btn-medieval" onclick="(function(){if(!UI._autoAddPendingOrder())return;var r=Player.editCaravanOrders(\'' + caravanId + '\',UI._getCaravanOrders());UI.toast(r.message,r.success?\'success\':\'warning\');UI.openCaravanManagement();})()" style="margin-right:8px;">✅ Save Orders</button>';
-        footer += '<button class="btn-medieval" onclick="UI.openCaravanManagement()">Cancel</button>';
+        var footer = '<button class="btn-medieval" data-action="saveCaravanOrders" data-id="' + caravanId + '" style="margin-right:8px;">✅ Save Orders</button>';
+        footer += '<button class="btn-medieval" data-action="openCaravanManagement">Cancel</button>';
 
         openModal('📝 Edit Caravan Orders', html, footer);
 
@@ -1681,16 +1681,8 @@
         }
         html += '</div>';
 
-        var footer = '<button class="btn-medieval" onclick="(function(){' +
-            'var h=parseInt((document.getElementById(\'editEqHorses\')||{}).value)||0;' +
-            'var w=parseInt((document.getElementById(\'editEqWeapons\')||{}).value)||0;' +
-            'var a=parseInt((document.getElementById(\'editEqArmor\')||{}).value)||0;' +
-            'if(h===0&&w===0&&a===0){UI.toast(\'No equipment changes.\',\'warning\');return;}' +
-            'var r=Player.editCaravanEquipment(\'' + caravanId + '\',{addHorses:h,addWeapons:w,addArmor:a});' +
-            'UI.toast(r.message,r.success?\'success\':\'warning\');' +
-            'if(r.success)UI.openCaravanManagement();' +
-            '})()" style="margin-right:8px;">✅ Apply</button>';
-        footer += '<button class="btn-medieval" onclick="UI.openCaravanManagement()">Cancel</button>';
+        var footer = '<button class="btn-medieval" data-action="saveCaravanEquipment" data-id="' + caravanId + '" style="margin-right:8px;">✅ Apply</button>';
+        footer += '<button class="btn-medieval" data-action="openCaravanManagement">Cancel</button>';
 
         openModal('⚙️ Edit Caravan Equipment', html, footer);
     }
@@ -1723,4 +1715,14 @@
     UI.openEditCaravanOrders = openEditCaravanOrders;
     UI._getCaravanOrders = _getCaravanOrders;
     UI.openEditCaravanEquipment = openEditCaravanEquipment;
+
+    // --- Delegated action handlers ---
+    UI.registerAction('rescueCaravan', function(_t, d) { var r = Player.rescueCaravan(d.id); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openCaravanManagement(); });
+    UI.registerAction('cancelRecurringRoute', function(_t, d) { var r = Player.cancelRecurringRoute(d.id); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openCaravanManagement(); });
+    UI.registerAction('finishDisbandCaravan', function(_t, d) { if (!confirm('Finish last run and disband this caravan? Goods will be dropped to storage, not sold.')) return; var r = Player.disbandCaravan(d.id); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openCaravanManagement(); });
+    UI.registerAction('forceDisbandCaravan', function(_t, d) { if (!confirm('Force disband immediately? Goods will be dropped at nearest town or lost.')) return; var r = Player.forceDisbandCaravan(d.id); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openCaravanManagement(); });
+    UI.registerAction('saveADConditions', function(_t, d) { var r = Player.setAutoDisbandConditions(d.id, UI._getADConditions()); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openCaravanManagement(); });
+    UI.registerAction('saveCaravanOrders', function(_t, d) { if (!UI._autoAddPendingOrder()) return; var r = Player.editCaravanOrders(d.id, UI._getCaravanOrders()); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openCaravanManagement(); });
+    UI.registerAction('saveCaravanEquipment', function(_t, d) { var h = parseInt((document.getElementById('editEqHorses') || {}).value) || 0; var w = parseInt((document.getElementById('editEqWeapons') || {}).value) || 0; var a = parseInt((document.getElementById('editEqArmor') || {}).value) || 0; if (h === 0 && w === 0 && a === 0) { UI.toast('No equipment changes.', 'warning'); return; } var r = Player.editCaravanEquipment(d.id, {addHorses: h, addWeapons: w, addArmor: a}); UI.toast(r.message, r.success ? 'success' : 'warning'); if (r.success) UI.openCaravanManagement(); });
+
 })(window.UI);

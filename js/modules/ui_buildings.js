@@ -36,7 +36,7 @@
 
         let catHtml = '';
         for (const cat of categories) {
-            catHtml += `<button class="btn-category" data-cat="${cat}" onclick="UI.filterBuildings('${cat}')">${catNames[cat] || cat}</button>`;
+            catHtml += `<button class="btn-category" data-cat="${cat}" data-action="filterBuildings" data-id="${cat}">${catNames[cat] || cat}</button>`;
         }
 
         let gridHtml = '';
@@ -150,7 +150,7 @@
                 }
             }
 
-            gridHtml += `<div class="build-card ${canAfford && hasDeposit ? '' : 'cant-afford'}" data-category="${bt.category}" onclick="UI.executeBuild('${bt.id}','${town ? town.id : ''}')">
+            gridHtml += `<div class="build-card ${canAfford && hasDeposit ? '' : 'cant-afford'}" data-category="${bt.category}" data-action="executeBuild" data-id="${bt.id}" data-val="${town ? town.id : ''}">
                 <div class="build-name">${bt.name}</div>
                 <div class="build-cost">🪙 ${Math.ceil(totalBuildCost)}g (labor: ${Math.ceil(laborCost)}g${matCost > 0 ? ' + materials: ' + Math.ceil(matCost) + 'g' : ''}) | 👥 ${bt.workers} workers</div>
                 <div class="build-info">Produces: ${producesStr}<br>Consumes: ${consumesStr}<br>Rate: ${bt.rate}/day${materialsStr ? '<br>🔨 Materials: ' + materialsStr : ''}${!matsOk ? '<br><span style="color:#c44e52;">⚠ Not enough materials in inventory + market!</span>' : (matCost > 0 ? '<br><span style="font-size:0.68rem;color:#ffd700;">🛒 Will auto-buy missing materials from market (' + Math.ceil(matCost) + 'g)</span>' : '')}${depositWarning}${guildWarning}</div>
@@ -164,7 +164,7 @@
             if (offers.length > 0) {
                 saleHtml += '<div style="margin-top:12px;padding:8px;border:1px solid var(--border);border-radius:4px;text-align:center;">';
                 saleHtml += '<div style="font-size:0.8rem;color:#aaa;margin-bottom:4px;">' + offers.length + ' existing building(s) for sale in this town</div>';
-                saleHtml += '<button class="btn-medieval" onclick="UI.openTownMarket()" style="font-size:0.75rem;padding:3px 10px;">🏪 Open Town Market</button>';
+                saleHtml += '<button class="btn-medieval" data-action="openTownMarket" style="font-size:0.75rem;padding:3px 10px;">🏪 Open Town Market</button>';
                 saleHtml += '</div>';
             }
 
@@ -185,7 +185,7 @@
                     if (fBldIdx < 0) continue;
                     saleHtml += '<div class="build-card" style="display:flex;flex-direction:column;gap:4px;">';
                     saleHtml += '<div class="build-name">' + fBldName + '</div>';
-                    saleHtml += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;background:rgba(80,120,50,0.15);border-color:rgba(80,120,50,0.4);" onclick="UI.openFarmConvertUI(' + fBldIdx + ',\'' + town.id + '\')">🔄 Convert Type</button>';
+                    saleHtml += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;background:rgba(80,120,50,0.15);border-color:rgba(80,120,50,0.4);" data-action="openFarmConvertUI" data-idx="' + fBldIdx + '" data-id="' + town.id + '">🔄 Convert Type</button>';
                     saleHtml += '</div>';
                 }
                 saleHtml += '</div>';
@@ -272,7 +272,7 @@
             html += '<div style="font-size:0.78rem;margin-bottom:6px;padding:4px 6px;background:rgba(0,0,0,0.15);border-radius:3px;">';
             html += '🏗️ <b>Land:</b> ' + ownedLand + ' plot(s) owned — ' + usedLand + ' used, ' + freeLand + ' free';
             if (freeLand > 0) {
-                html += ' <button class="btn-medieval" onclick="UI.listLandForSaleUI(\'' + townId + '\')" style="font-size:0.65rem;padding:1px 6px;margin-left:6px;">📋 Sell Land</button>';
+                html += ' <button class="btn-medieval" data-action="listLandForSaleUI" data-id="' + townId + '" style="font-size:0.65rem;padding:1px 6px;margin-left:6px;">📋 Sell Land</button>';
             }
             html += '</div>';
 
@@ -352,7 +352,7 @@
                 const wCount = info ? info.workerCount : bld.workers.length;
                 const wMax = info ? info.workerMax : (bt ? bt.workers : '?');
 
-                html += `<div class="building-mgmt-card" style="border:1px solid var(--border);padding:8px;margin-bottom:6px;border-radius:4px;cursor:pointer;" onclick="UI.showBuildingDetail('${bld.id}')">
+                html += `<div class="building-mgmt-card" style="border:1px solid var(--border);padding:8px;margin-bottom:6px;border-radius:4px;cursor:pointer;" data-action="showBuildingDetail" data-id="${bld.id}">
                     <div style="display:flex;justify-content:space-between;align-items:center;">
                         <div>
                             <strong>${bName} ${condIcon}</strong> <span class="text-dim" style="font-size:0.75rem;">Lv.${bld.level}</span>
@@ -392,13 +392,13 @@
             html += '<h4 style="font-size:0.8rem;color:var(--danger);margin-bottom:6px;">💀 Protection Racket</h4>';
             if (Player.protectionRacket.paying) {
                 html += `<div style="font-size:0.78rem;">Currently paying ${CONFIG.PROTECTION_RACKET_FEE}g/season.</div>`;
-                html += `<button class="btn-trade sell" style="font-size:0.7rem;margin-top:4px;" onclick="UI.racketResponse('refuse')">Stop Paying</button>`;
+                html += `<button class="btn-trade sell" style="font-size:0.7rem;margin-top:4px;" data-action="racketResponse" data-val="refuse">Stop Paying</button>`;
             } else {
                 html += `<div style="font-size:0.78rem;color:var(--danger);">The criminal faction demands ${CONFIG.PROTECTION_RACKET_FEE}g/season for protection.</div>`;
                 html += `<div style="display:flex;gap:8px;margin-top:6px;">
-                    <button class="btn-trade buy" style="font-size:0.7rem;" onclick="UI.racketResponse('pay')">💰 Pay</button>
-                    <button class="btn-trade sell" style="font-size:0.7rem;" onclick="UI.racketResponse('refuse')">✋ Refuse</button>
-                    ${Player.hasSkill('intimidating_presence') ? '<button class="btn-trade" style="font-size:0.7rem;background:#4682b4;color:#fff;" onclick="UI.racketResponse(\'intimidate\')">💪 Intimidate</button>' : ''}
+                    <button class="btn-trade buy" style="font-size:0.7rem;" data-action="racketResponse" data-val="pay">💰 Pay</button>
+                    <button class="btn-trade sell" style="font-size:0.7rem;" data-action="racketResponse" data-val="refuse">✋ Refuse</button>
+                    ${Player.hasSkill('intimidating_presence') ? '<button class="btn-trade" style="font-size:0.7rem;background:#4682b4;color:#fff;" data-action="racketResponse" data-val="intimidate">💪 Intimidate</button>' : ''}
                 </div>`;
             }
             html += '</div>';
@@ -433,7 +433,7 @@
                 html += '<div><strong>' + bldName + '</strong> (Lv.' + (offer.building.level || 1) + ') — <span style="color:#ffd700;">' + Math.ceil(+offer.price) + 'g</span> | ' + condLabel + '</div>';
                 html += '<div style="font-size:0.75rem;color:#aaa;">' + offer.reason + '</div>';
                 html += '<div style="display:flex;gap:4px;margin-top:4px;">';
-                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;" ' + (canAffordOffer ? '' : 'disabled') + ' onclick="UI.purchaseNPCBuildingUI(' + bldIdx + ',\'' + town.id + '\')">🏠 Buy</button>';
+                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;" ' + (canAffordOffer ? '' : 'disabled') + ' data-action="purchaseNPCBuildingUI" data-idx="' + bldIdx + '" data-id="' + town.id + '">🏠 Buy</button>';
                 html += '</div></div>';
             }
         }
@@ -466,7 +466,7 @@
                 html += '<div style="font-size:0.78rem;color:#aaa;">' + availableUnits.length + '/' + units.length + ' units available | Buy: <span style="color:#ffd700;">' + Math.ceil(unitPrice) + 'g</span> | Monthly: <span style="color:#ffd700;">' + Math.ceil(monthlyFee) + 'g</span></div>';
                 if (availableUnits.length > 0 && aptBld.ownerId !== 'player') {
                     var canAffordApt = (Player.gold || 0) >= unitPrice;
-                    html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;margin-top:4px;" ' + (canAffordApt ? '' : 'disabled') + ' onclick="UI.buyApartmentUnit(\'' + aptBld._id + '\')">🏢 Buy Apartment (' + Math.ceil(unitPrice) + 'g)</button>';
+                    html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;margin-top:4px;" ' + (canAffordApt ? '' : 'disabled') + ' data-action="buyApartmentUnit" data-id="' + aptBld._id + '">🏢 Buy Apartment (' + Math.ceil(unitPrice) + 'g)</button>';
                 }
                 html += '</div>';
             }
@@ -502,7 +502,7 @@
                         if (alreadyHasTent) {
                             html += '<div style="font-size:0.72rem;color:#cc8800;margin-top:3px;">You already rent a tent.</div>';
                         } else {
-                            html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;margin-top:4px;" ' + (canAffordTent ? '' : 'disabled') + ' onclick="UI.buyTentSlot(\'' + tcBld._id + '\')">⛺ Rent Tent (' + tcUpfront + 'g)</button>';
+                            html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;margin-top:4px;" ' + (canAffordTent ? '' : 'disabled') + ' data-action="buyTentSlot" data-id="' + tcBld._id + '">⛺ Rent Tent (' + tcUpfront + 'g)</button>';
                         }
                     }
                     html += '</div>';
@@ -557,13 +557,13 @@
             html += '<div style="margin:4px 0;font-size:0.8rem;">🔎 Max any buyer will pay: <b style="color:#55a868;">' + maxPrice + 'g</b></div>';
         }
         html += '<div style="margin:8px 0;"><label>Your price: </label><input type="number" id="landSalePrice" value="' + recommended + '" min="1" style="width:80px;padding:2px 4px;background:#222;color:#eee;border:1px solid #555;border-radius:3px;"> g</div>';
-        html += '<button class="btn-medieval" onclick="(function(){ var p=parseInt(document.getElementById(\'landSalePrice\').value)||0; var r=Player.listLandForSale(\'' + townId + '\',p); UI.toast(r.message, r.success?\'success\':\'error\'); if(r.success) UI.closeModal(); })()">📋 List For Sale</button>';
+        html += '<button class="btn-medieval" data-action="listLandConfirm" data-id="' + townId + '">📋 List For Sale</button>';
 
         // Show existing listing if any
         var existing = (Player.state.landForSale || []).find(function(l) { return l.townId === townId; });
         if (existing) {
             html += '<div style="margin-top:8px;padding:6px;border:1px solid #555;border-radius:3px;">Currently listed at <b>' + existing.price + 'g</b>';
-            html += ' <button class="btn-medieval" style="font-size:0.7rem;padding:2px 6px;color:#c44e52;" onclick="(function(){ Player.cancelLandListing(\'' + townId + '\'); UI.toast(\'Listing removed.\',\'success\'); UI.closeModal(); })()">🚫 Cancel</button></div>';
+            html += ' <button class="btn-medieval" style="font-size:0.7rem;padding:2px 6px;color:#c44e52;" data-action="cancelLandListing" data-id="' + townId + '">🚫 Cancel</button></div>';
         }
         html += '</div>';
         openModal('📋 Sell Land', html);
@@ -702,7 +702,7 @@
             html += '<div style="margin:4px 0;font-size:0.8rem;">🔎 Max any buyer will pay: <b style="color:#55a868;">' + maxPrice + 'g</b></div>';
         }
         html += '<div style="margin:8px 0;"><label>Your price: </label><input type="number" id="bldSalePrice" value="' + recommended + '" min="1" style="width:100px;padding:2px 4px;background:#222;color:#eee;border:1px solid #555;border-radius:3px;"> g</div>';
-        html += '<button class="btn-medieval" onclick="(function(){ var p=parseInt(document.getElementById(\'bldSalePrice\').value)||0; var r=Player.listBuildingForSale(\'' + buildingId + '\',p); UI.toast(r.message, r.success?\'success\':\'error\'); if(r.success){ UI.closeModal(); UI.showBuildingDetail(\'' + buildingId + '\'); } })()">📋 List For Sale</button>';
+        html += '<button class="btn-medieval" data-action="listBldForSaleConfirm" data-id="' + buildingId + '">📋 List For Sale</button>';
         html += '</div>';
         openModal('📋 Sell Building', html);
     }
@@ -873,11 +873,11 @@
                 }
                 var _qTypeIcon = _qIsIll ? '🤒' : '🩹';
                 html += '<div style="display:grid;grid-template-columns:2fr 1.2fr 0.8fr 0.8fr 24px;gap:2px;padding:2px 4px;border-bottom:1px solid #333;align-items:center;">';
-                html += '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (_qActive ? '💊 ' : '⏳ ') + '<a href="#" onclick="UI.showNPCDetail(\'' + _qp.personId + '\');return false;" style="color:var(--link);text-decoration:underline;cursor:pointer;">' + _qName + '</a></span>';
+                html += '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (_qActive ? '💊 ' : '⏳ ') + '<a href="#" data-action="showNPCDetail" data-id="' + _qp.personId + '" style="color:var(--link);text-decoration:underline;cursor:pointer;">' + _qName + '</a></span>';
                 html += '<span style="font-size:0.68rem;color:#aaa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + _qTypeIcon + ' ' + (_qCondition || (_qIsIll ? 'Illness' : 'Injury')) + '</span>';
                 html += '<span style="color:' + _qSevColor + ';">' + _qSev + '</span>';
                 html += '<span style="color:#aaa;text-align:right;">~' + _qDaysLeft + 'd</span>';
-                html += '<span style="text-align:center;"><a href="#" onclick="Engine.kickPatientFromQueue(\'' + bld.townId + '\',\'' + bld.id + '\',\'' + _qp.personId + '\');UI.showBuildingDetail(\'' + bld.id + '\');return false;" style="color:#888;text-decoration:none;cursor:pointer;font-size:0.8rem;" title="Remove from queue">✕</a></span>';
+                html += '<span style="text-align:center;"><a href="#" data-action="kickPatientAction" data-id="' + _qp.personId + '" data-val="' + bld.id + '" data-type="' + bld.townId + '" style="color:#888;text-decoration:none;cursor:pointer;font-size:0.8rem;" title="Remove from queue">✕</a></span>';
                 html += '</div>';
             }
             html += '</div>';
@@ -989,7 +989,7 @@
                     }
                 }
                 html += `</select>
-                    <button class="btn-trade buy" style="font-size:0.7rem;margin-left:4px;" onclick="UI.setBuildingProductUI('${bld.id}')">Set</button>
+                    <button class="btn-trade buy" style="font-size:0.7rem;margin-left:4px;" data-action="setBuildingProductUI" data-id="${bld.id}">Set</button>
                 </div>`;
             }
 
@@ -1078,7 +1078,7 @@
                     var _colQty = info.storedByTier[_colKey];
                     var _colRes = (typeof findResource !== 'undefined') ? findResource(_colKey) : null;
                     var _colName = _colRes ? _colRes.name : _colKey;
-                    html += `<button class="btn-trade buy" style="font-size:0.7rem;" onclick="UI.collectOutputUI('${bld.id}','${_colKey}',${_colQty})">Collect ${_colName} (${_colQty})</button>`;
+                    html += `<button class="btn-trade buy" style="font-size:0.7rem;" data-action="collectOutputUI" data-id="${bld.id}" data-val="${_colKey}" data-qty="${_colQty}">Collect ${_colName} (${_colQty})</button>`;
                 }
                 html += `</div>`;
             }
@@ -1109,7 +1109,7 @@
             html += '</div>';
 
             if (revenue > 0 && bld.townId === Player.townId) {
-                html += '<button class="btn-trade buy" style="font-size:0.7rem;margin-bottom:6px;" onclick="UI.collectRetailRevenueUI(\'' + bld.id + '\')">💰 Collect ' + Math.floor(revenue).toLocaleString() + 'g</button> ';
+                html += '<button class="btn-trade buy" style="font-size:0.7rem;margin-bottom:6px;" data-action="collectRetailRevenueUI" data-id="' + bld.id + '">💰 Collect ' + Math.floor(revenue).toLocaleString() + 'g</button> ';
             }
 
             // Markup info
@@ -1146,11 +1146,11 @@
                         html += '<div style="border:1px solid #444;border-radius:4px;padding:3px 6px;font-size:0.72rem;background:rgba(0,0,0,0.2);">';
                         html += goodIcon + ' ' + goodName + ' (inv:' + playerHas + ' stock:' + inStock + ') ';
                         if (playerHas > 0) {
-                            html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI.stockRetailUI(\'' + bld.id + '\',\'' + goodId + '\',5)">+5</button> ';
-                            html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI.stockRetailUI(\'' + bld.id + '\',\'' + goodId + '\',' + playerHas + ')">All</button> ';
+                            html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" data-action="stockRetailUI" data-id="' + bld.id + '" data-val="' + goodId + '" data-qty="5">+5</button> ';
+                            html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" data-action="stockRetailUI" data-id="' + bld.id + '" data-val="' + goodId + '" data-qty="' + playerHas + '">All</button> ';
                         }
                         if (inStock > 0) {
-                            html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" onclick="UI.unstockRetailUI(\'' + bld.id + '\',\'' + goodId + '\',' + inStock + ')">↩</button>';
+                            html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" data-action="unstockRetailUI" data-id="' + bld.id + '" data-val="' + goodId + '" data-qty="' + inStock + '">↩</button>';
                         }
                         html += '</div>';
                     }
@@ -1236,9 +1236,9 @@
                         var _oName = _or ? ((_or.icon || '') + ' ' + _or.name) : _ok;
                         html += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-size:0.78rem;">';
                         html += '<span style="min-width:130px;">' + _oName + ': ' + _oQty + '</span>';
-                        html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI.collectOutputUI(\'' + bld.id + '\',\'' + _ok + '\',1)">Take 1</button>';
-                        if (_oQty >= 5) html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI.collectOutputUI(\'' + bld.id + '\',\'' + _ok + '\',5)">5</button>';
-                        html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI.collectOutputUI(\'' + bld.id + '\',\'' + _ok + '\',' + _oQty + ')">All</button>';
+                        html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" data-action="collectOutputUI" data-id="' + bld.id + '" data-val="' + _ok + '" data-qty="1">Take 1</button>';
+                        if (_oQty >= 5) html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" data-action="collectOutputUI" data-id="' + bld.id + '" data-val="' + _ok + '" data-qty="5">5</button>';
+                        html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" data-action="collectOutputUI" data-id="' + bld.id + '" data-val="' + _ok + '" data-qty="' + _oQty + '">All</button>';
                         html += '</div>';
                     }
                     if (!_hasOutput) html += '<div style="font-size:0.72rem;color:#888;">No output stored.</div>';
@@ -1279,9 +1279,9 @@
                         html += '<span style="display:flex;gap:2px;align-items:center;">';
                         var _wQtys = [1, 5, 10];
                         for (var _qi = 0; _qi < _wQtys.length; _qi++) {
-                            if (_iQty >= _wQtys[_qi]) html += '<button class="btn-trade buy" style="font-size:0.6rem;padding:1px 5px;" onclick="UI._bldWithdraw(\'' + bld.id + '\',\'' + _ik + '\',' + _wQtys[_qi] + ')">' + _wQtys[_qi] + '</button>';
+                            if (_iQty >= _wQtys[_qi]) html += '<button class="btn-trade buy" style="font-size:0.6rem;padding:1px 5px;" data-action="_bldWithdraw" data-id="' + bld.id + '" data-val="' + _ik + '" data-qty="' + _wQtys[_qi] + '">' + _wQtys[_qi] + '</button>';
                         }
-                        html += '<button class="btn-trade buy" style="font-size:0.6rem;padding:1px 5px;" onclick="UI._bldWithdraw(\'' + bld.id + '\',\'' + _ik + '\',' + _iQty + ')">All</button>';
+                        html += '<button class="btn-trade buy" style="font-size:0.6rem;padding:1px 5px;" data-action="_bldWithdraw" data-id="' + bld.id + '" data-val="' + _ik + '" data-qty="' + _iQty + '">All</button>';
                         html += '</span>';
                         html += '</div>';
                     }
@@ -1329,9 +1329,9 @@
                         html += '<span style="display:flex;gap:2px;align-items:center;">';
                         var _sQtys = [1, 5, 10, 25];
                         for (var _si = 0; _si < _sQtys.length; _si++) {
-                            if (_dMax >= _sQtys[_si]) html += '<button class="btn-trade sell" style="font-size:0.6rem;padding:1px 5px;" onclick="UI._bldDeposit(\'' + bld.id + '\',\'' + _dk + '\',' + _sQtys[_si] + ')">' + _sQtys[_si] + '</button>';
+                            if (_dMax >= _sQtys[_si]) html += '<button class="btn-trade sell" style="font-size:0.6rem;padding:1px 5px;" data-action="_bldDeposit" data-id="' + bld.id + '" data-val="' + _dk + '" data-qty="' + _sQtys[_si] + '">' + _sQtys[_si] + '</button>';
                         }
-                        if (_dMax > 0) html += '<button class="btn-trade sell" style="font-size:0.6rem;padding:1px 5px;" onclick="UI._bldDeposit(\'' + bld.id + '\',\'' + _dk + '\',' + _dMax + ')">All (' + _dMax + ')</button>';
+                        if (_dMax > 0) html += '<button class="btn-trade sell" style="font-size:0.6rem;padding:1px 5px;" data-action="_bldDeposit" data-id="' + bld.id + '" data-val="' + _dk + '" data-qty="' + _dMax + '">All (' + _dMax + ')</button>';
                         html += '</span>';
                         html += '</div>';
                     }
@@ -1378,11 +1378,11 @@
                         <div style="width:${_wSatRound}%;height:100%;background:${_wSatColor};"></div>
                     </div>
                     <div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:3px;">
-                        <button class="btn btn-sm" style="font-size:0.65rem;padding:1px 5px;" onclick="(function(){var r=Player.praiseWorker('${wId}');UI.toast(r.message,r.success?'success':'warning');UI.showBuildingDetail('${bld.id}');})()">👏 Praise</button>
-                        <button class="btn btn-sm" style="font-size:0.65rem;padding:1px 5px;" onclick="(function(){var r=Player.giveWorkerDayOff('${wId}');UI.toast(r.message,r.success?'success':'warning');UI.showBuildingDetail('${bld.id}');})()">🏖️ Day Off</button>
-                        <button class="btn btn-sm" style="font-size:0.65rem;padding:1px 5px;" onclick="(function(){var r=Player.giveWorkerBonus('${wId}');UI.toast(r.message,r.success?'success':'warning');UI.showBuildingDetail('${bld.id}');})()">💰 Bonus</button>
-                        <button class="btn btn-sm" style="font-size:0.65rem;padding:1px 5px;" onclick="(function(){var r=Player.giveWorkerRaise('${wId}');UI.toast(r.message,r.success?'success':'warning');UI.showBuildingDetail('${bld.id}');})()">⬆️ Raise</button>
-                        <button class="btn-trade sell" style="font-size:0.65rem;padding:1px 5px;" onclick="UI.removeWorkerUI('${wId}','${bld.id}')">✕ Remove</button>
+                        <button class="btn btn-sm" style="font-size:0.65rem;padding:1px 5px;" data-action="praiseWorkerAction" data-id="${wId}" data-val="${bld.id}">👏 Praise</button>
+                        <button class="btn btn-sm" style="font-size:0.65rem;padding:1px 5px;" data-action="giveWorkerDayOffAction" data-id="${wId}" data-val="${bld.id}">🏖️ Day Off</button>
+                        <button class="btn btn-sm" style="font-size:0.65rem;padding:1px 5px;" data-action="giveWorkerBonusAction" data-id="${wId}" data-val="${bld.id}">💰 Bonus</button>
+                        <button class="btn btn-sm" style="font-size:0.65rem;padding:1px 5px;" data-action="giveWorkerRaiseAction" data-id="${wId}" data-val="${bld.id}">⬆️ Raise</button>
+                        <button class="btn-trade sell" style="font-size:0.65rem;padding:1px 5px;" data-action="removeWorkerUI" data-id="${wId}" data-val="${bld.id}">✕ Remove</button>
                     </div>
                 </div>`;
             }
@@ -1405,7 +1405,7 @@
                     const nm = p ? (p.firstName + ' ' + p.lastName) : eId;
                     html += `<option value="${eId}">${nm}</option>`;
                 }
-                html += `</select><button class="btn-trade buy" style="font-size:0.7rem;" onclick="UI.assignWorkerUI('${bld.id}')">+ Assign</button></div>`;
+                html += `</select><button class="btn-trade buy" style="font-size:0.7rem;" data-action="assignWorkerUI" data-id="${bld.id}">+ Assign</button></div>`;
             } else {
                 html += `<div style="font-size:0.72rem;color:#aaa;margin-top:4px;">No unassigned employees. <button class="btn-trade" style="font-size:0.7rem;" data-action="openHireDialog">Hire Workers</button></div>`;
             }
@@ -1428,8 +1428,8 @@
                 if (playerHas > 0 && bld.townId === Player.townId) {
                     const supplyQty = Math.min(5, playerHas);
                     html += `<div style="display:flex;gap:4px;margin-bottom:4px;">
-                        <button class="btn-trade buy" style="font-size:0.7rem;" onclick="UI.supplyBuildingUI('${bld.id}','${resId}',${supplyQty})">Supply ${supplyQty}</button>
-                        <button class="btn-trade buy" style="font-size:0.7rem;" onclick="UI.supplyBuildingUI('${bld.id}','${resId}',${playerHas})">Supply All (${playerHas})</button>
+                        <button class="btn-trade buy" style="font-size:0.7rem;" data-action="supplyBuildingUI" data-id="${bld.id}" data-val="${resId}" data-qty="${supplyQty}">Supply ${supplyQty}</button>
+                        <button class="btn-trade buy" style="font-size:0.7rem;" data-action="supplyBuildingUI" data-id="${bld.id}" data-val="${resId}" data-qty="${playerHas}">Supply All (${playerHas})</button>
                     </div>`;
                 }
             }
@@ -1480,9 +1480,9 @@
                 html += '<option value="' + t.id + '" ' + selected + '>' + label + '</option>';
             }
             html += '</select>';
-            html += '<button class="btn-small" onclick="UI.setTransferTarget(\'' + buildingId + '\')" style="font-size:0.75rem;">Set</button>';
+            html += '<button class="btn-small" data-action="setTransferTarget" data-id="' + buildingId + '" style="font-size:0.75rem;">Set</button>';
             if (transferEnabled) {
-                html += '<button class="btn-small" onclick="UI.clearTransfer(\'' + buildingId + '\')" style="font-size:0.75rem;background:rgba(200,60,50,0.3);">Clear</button>';
+                html += '<button class="btn-small" data-action="clearTransfer" data-id="' + buildingId + '" style="font-size:0.75rem;background:rgba(200,60,50,0.3);">Clear</button>';
             }
             html += '</div>';
             
@@ -1503,7 +1503,7 @@
                 var _deliverable = _bufferAmt + _bldInvAmt;
                 html += '<div style="margin-top:6px;">';
                 if (_deliverable > 0) {
-                    html += '<button class="btn-medieval" onclick="(function(){var r=Player.deliverNow(\'' + buildingId + '\');UI.toast(r.message,r.success?\'success\':\'warning\');UI.showBuildingDetail(\'' + buildingId + '\');})()" style="font-size:0.75rem;padding:4px 12px;background:rgba(85,168,104,0.2);border-color:rgba(85,168,104,0.4);">📦 Deliver Now (' + _deliverable + ' ' + bt.produces + ')</button>';
+                    html += '<button class="btn-medieval" data-action="deliverNowAction" data-id="' + buildingId + '" style="font-size:0.75rem;padding:4px 12px;background:rgba(85,168,104,0.2);border-color:rgba(85,168,104,0.4);">📦 Deliver Now (' + _deliverable + ' ' + bt.produces + ')</button>';
                 } else {
                     html += '<button class="btn-medieval" disabled style="font-size:0.75rem;padding:4px 12px;opacity:0.5;">📦 Deliver Now (nothing to deliver)</button>';
                 }
@@ -1538,7 +1538,7 @@
                 if (bt.storage) {
                     html += `<div style="font-size:0.72rem;color:#aaa;">Storage: ${curStorageCap} → ${nextStorageCap} units</div>`;
                 }
-                html += `<button class="btn-trade buy" style="font-size:0.7rem;margin-top:4px;" onclick="UI.upgradeBuildingUI('${bld.id}')">⬆️ Upgrade (${upgradeCost}g)</button>
+                html += `<button class="btn-trade buy" style="font-size:0.7rem;margin-top:4px;" data-action="upgradeBuildingUI" data-id="${bld.id}">⬆️ Upgrade (${upgradeCost}g)</button>
                 </div>`;
             }
         }
@@ -1559,19 +1559,19 @@
         html += `<div style="display:flex;gap:6px;flex-wrap:wrap;">`;
 
         if (needsRepair) {
-            html += `<button class="btn-trade buy" style="font-size:0.7rem;background:rgba(200,100,0,0.15);border-color:rgba(200,100,0,0.3);" onclick="UI.repairBuilding('${bld.id}')">🔨 Repair (${repairCostEst}g)</button>`;
+            html += `<button class="btn-trade buy" style="font-size:0.7rem;background:rgba(200,100,0,0.15);border-color:rgba(200,100,0,0.3);" data-action="repairBuilding" data-id="${bld.id}">🔨 Repair (${repairCostEst}g)</button>`;
         }
-        html += `<button class="btn-trade ${bld.hasGuard ? 'sell' : 'buy'}" style="font-size:0.7rem;" onclick="UI.toggleGuard('${bld.id}');UI.showBuildingDetail('${bld.id}');">
+        html += `<button class="btn-trade ${bld.hasGuard ? 'sell' : 'buy'}" style="font-size:0.7rem;" data-action="toggleGuardAndRefresh" data-id="${bld.id}">
             ${bld.hasGuard ? '🛡️ Dismiss Guard' : '🛡️ Hire Guard (' + CONFIG.BUILDING_GUARD_COST_PER_SEASON + 'g/season)'}
         </button>`;
         if (!bld.lockedStorage) {
-            html += `<button class="btn-trade buy" style="font-size:0.7rem;" onclick="UI.buyLockedStorage('${bld.id}');UI.showBuildingDetail('${bld.id}');">🔒 Lock Storage (${CONFIG.BUILDING_LOCKED_STORAGE_COST}g)</button>`;
+            html += `<button class="btn-trade buy" style="font-size:0.7rem;" data-action="buyLockedStorageAndRefresh" data-id="${bld.id}">🔒 Lock Storage (${CONFIG.BUILDING_LOCKED_STORAGE_COST}g)</button>`;
         }
         if (bt && bt.category === 'farm') {
-            html += `<button class="btn-trade" style="font-size:0.7rem;${bld.fallow ? 'background:rgba(85,168,104,0.15);border-color:rgba(85,168,104,0.3);' : 'background:rgba(200,160,0,0.15);border-color:rgba(200,160,0,0.3);'}" onclick="UI.toggleFarmFallow('${bld.id}');UI.showBuildingDetail('${bld.id}');">${bld.fallow ? '🌾 Resume Farming' : '🌿 Set Fallow'}</button>`;
+            html += `<button class="btn-trade" style="font-size:0.7rem;${bld.fallow ? 'background:rgba(85,168,104,0.15);border-color:rgba(85,168,104,0.3);' : 'background:rgba(200,160,0,0.15);border-color:rgba(200,160,0,0.3);'}" data-action="toggleFarmFallowAndRefresh" data-id="${bld.id}">${bld.fallow ? '🌾 Resume Farming' : '🌿 Set Fallow'}</button>`;
         }
         if (warehouseTypes.includes(bld.type)) {
-            html += `<button class="btn-trade buy" style="font-size:0.7rem;" onclick="UI.openWarehouseSecurityDialog('${bld.id}')">🔐 Security Upgrades</button>`;
+            html += `<button class="btn-trade buy" style="font-size:0.7rem;" data-action="openWarehouseSecurityDialog" data-id="${bld.id}">🔐 Security Upgrades</button>`;
         }
 
         // Farm/livestock conversion button
@@ -1592,7 +1592,7 @@
                 } else if (!_isCrop) {
                     _convHint = ' (none left this year)';
                 }
-                html += '<button class="btn-trade" style="font-size:0.7rem;background:rgba(100,160,220,0.15);border-color:rgba(100,160,220,0.3);" onclick="UI.openFarmConvertUI(' + _convBldIdx + ',\'' + bld.townId + '\')">🔄 Convert Farm Type' + _convHint + '</button>';
+                html += '<button class="btn-trade" style="font-size:0.7rem;background:rgba(100,160,220,0.15);border-color:rgba(100,160,220,0.3);" data-action="openFarmConvertUI" data-idx="' + _convBldIdx + '" data-id="' + bld.townId + '">🔄 Convert Farm Type' + _convHint + '</button>';
             }
         }
 
@@ -1602,17 +1602,17 @@
             var _hasBp = (Player.inventory && Player.inventory.blasting_powder >= 1);
             var _hasDt = (Player.inventory && Player.inventory.demolition_tools >= 2);
             var _demReq = _hasBp ? '1 💥 blasting powder' : _hasDt ? '2 ⛏️ demolition tools' : '1 💥 blast powder or 2 ⛏️ demo tools';
-            html += '<button class="btn-trade sell" style="font-size:0.7rem;background:rgba(200,50,50,0.15);border-color:rgba(200,50,50,0.3);" onclick="UI.confirmDemolishUI(\'' + bld.id + '\',\'' + bld.townId + '\')">💥 Demolish (' + _demCost + 'g + ' + _demReq + ')</button>';
+            html += '<button class="btn-trade sell" style="font-size:0.7rem;background:rgba(200,50,50,0.15);border-color:rgba(200,50,50,0.3);" data-action="confirmDemolishUI" data-id="' + bld.id + '" data-val="' + bld.townId + '">💥 Demolish (' + _demCost + 'g + ' + _demReq + ')</button>';
         }
 
         // List building for sale button (inside MAINTENANCE section)
-        html += '<button class="btn-trade" style="font-size:0.7rem;background:rgba(80,180,80,0.15);border-color:rgba(80,180,80,0.3);" onclick="UI.listBuildingForSaleUI(\'' + bld.id + '\')">' + (bld.forSale ? '🚫 Remove Listing' : '📋 List For Sale') + '</button>';
+        html += '<button class="btn-trade" style="font-size:0.7rem;background:rgba(80,180,80,0.15);border-color:rgba(80,180,80,0.3);" data-action="listBuildingForSaleUI" data-id="' + bld.id + '">' + (bld.forSale ? '🚫 Remove Listing' : '📋 List For Sale') + '</button>';
 
         html += '</div></div>'; // close MAINTENANCE flex + border container
 
 
         html += `<div style="text-align:center;margin-top:8px;">
-            <button class="btn-trade" style="font-size:0.75rem;" onclick="UI.openBuildingManagement()">← Back to All Buildings</button>
+            <button class="btn-trade" style="font-size:0.75rem;" data-action="openBuildingManagement">← Back to All Buildings</button>
         </div>`;
 
         html += '</div>';
@@ -1684,9 +1684,9 @@
                 var sQty = bld.inventory[sk];
                 html += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-size:0.8rem;">';
                 html += '<span style="min-width:140px;">' + sName + ': ' + sQty + '</span>';
-                html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldWithdraw(\'' + buildingId + '\',\'' + sk + '\',1)">Take 1</button>';
-                if (sQty >= 5) html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldWithdraw(\'' + buildingId + '\',\'' + sk + '\',5)">5</button>';
-                html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldWithdraw(\'' + buildingId + '\',\'' + sk + '\',' + sQty + ')">All</button>';
+                html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" data-action="_bldWithdraw" data-id="' + buildingId + '" data-val="' + sk + '" data-qty="1">Take 1</button>';
+                if (sQty >= 5) html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" data-action="_bldWithdraw" data-id="' + buildingId + '" data-val="' + sk + '" data-qty="5">5</button>';
+                html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" data-action="_bldWithdraw" data-id="' + buildingId + '" data-val="' + sk + '" data-qty="' + sQty + '">All</button>';
                 html += '</div>';
             }
         }
@@ -1728,16 +1728,16 @@
             var _mSrcNote = _mInvQty > 0 && _mTsQty > 0 ? ' <span style="font-size:0.6rem;color:#aaa;">(' + _mInvQty + ' inv + ' + _mTsQty + ' stored)</span>' : (_mTsQty > 0 && _mInvQty === 0 ? ' <span style="font-size:0.6rem;color:#64b5f6;">📦 stored</span>' : '');
             html += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-size:0.8rem;">';
             html += '<span style="min-width:140px;">' + iName + ': ' + iQty + _mSrcNote + (isConsumedGood ? ' <span style="color:#7cb342;font-size:0.6rem;">(used)</span>' : '') + '</span>';
-            html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldDeposit(\'' + buildingId + '\',\'' + ik + '\',1)">Store 1</button>';
-            if (iQty >= 5) html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldDeposit(\'' + buildingId + '\',\'' + ik + '\',5)">5</button>';
-            html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._bldDeposit(\'' + buildingId + '\',\'' + ik + '\',' + iQty + ')">All</button>';
+            html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" data-action="_bldDeposit" data-id="' + buildingId + '" data-val="' + ik + '" data-qty="1">Store 1</button>';
+            if (iQty >= 5) html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" data-action="_bldDeposit" data-id="' + buildingId + '" data-val="' + ik + '" data-qty="5">5</button>';
+            html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" data-action="_bldDeposit" data-id="' + buildingId + '" data-val="' + ik + '" data-qty="' + iQty + '">All</button>';
             html += '</div>';
         }
         if (!hasInv) html += '<div style="color:#888;font-size:0.8rem;">Nothing transferable' + (inputOnly && producesId ? ' (input filter on)' : '') + '</div>';
 
         html += '</div>';
         openModal('📦 ' + bName + ' Storage', html,
-            '<button class="btn-medieval" onclick="UI.showBuildingDetail(\'' + buildingId + '\')">Back</button>');
+            '<button class="btn-medieval" data-action="showBuildingDetail" data-id="' + buildingId + '">Back</button>');
     }
 
     function _bldDeposit(buildingId, resId, qty) {
@@ -1820,7 +1820,7 @@
             var totalCost = salePrice + 500;
             var canAfford = (Player.gold || 0) >= totalCost;
             var producesInfo = bt.produces ? (' → produces ' + bt.produces) : ' (no production)';
-            html += '<div class="build-card' + (canAfford ? '' : ' cant-afford') + '" style="cursor:pointer;margin-bottom:4px;" onclick="UI.executeConvertBuildingUI(' + buildingIndex + ',\'' + townId + '\',\'' + bt.id + '\')">';
+            html += '<div class="build-card' + (canAfford ? '' : ' cant-afford') + '" style="cursor:pointer;margin-bottom:4px;" data-action="executeConvertBuildingUI" data-idx="' + buildingIndex + '" data-id="' + townId + '" data-val="' + bt.id + '">';
             html += '<div class="build-name">' + (bt.icon || '') + ' ' + bt.name + '</div>';
             html += '<div class="build-cost">🪙 ' + totalCost + 'g + 💥' + producesInfo + '</div>';
             if (bt.description) html += '<div class="build-info" style="font-size:0.7rem;">' + bt.description + '</div>';
@@ -1880,8 +1880,8 @@
         html += '<p style="font-size:0.85rem;">Cost: <strong>' + (Player.getLandCost ? Math.floor(Player.getLandCost(townId) / 2) : 500) + 'g</strong> + <strong>' + methodNote + '</strong></p>';
         html += '<p style="font-size:0.8rem;color:#c44e52;">⚠️ This action cannot be undone. The building will be destroyed and the land plot freed.</p>';
         html += '<div style="display:flex;gap:8px;margin-top:12px;">';
-        html += '<button class="btn-medieval" style="flex:1;background:rgba(200,50,50,0.3);" onclick="UI.demolishBuildingUI(\'' + buildingId + '\',\'' + townId + '\')">💥 Confirm Demolish</button>';
-        html += '<button class="btn-medieval" style="flex:1;" onclick="UI.showBuildingDetail(\'' + buildingId + '\')">Cancel</button>';
+        html += '<button class="btn-medieval" style="flex:1;background:rgba(200,50,50,0.3);" data-action="demolishBuildingUI" data-id="' + buildingId + '" data-val="' + townId + '">💥 Confirm Demolish</button>';
+        html += '<button class="btn-medieval" style="flex:1;" data-action="showBuildingDetail" data-id="' + buildingId + '">Cancel</button>';
         html += '</div></div>';
         openModal('💥 Demolish ' + bName + '?', html);
     }
@@ -1941,7 +1941,7 @@
                 var pRes = findResource(tBt.produces);
                 html += ' <span style="color:#a09070;">(produces ' + (pRes ? pRes.name : tBt.produces) + ')</span>';
             }
-            html += '<br><button class="btn-medieval" style="font-size:0.7rem;padding:2px 8px;margin-top:4px;" ' + (canAfford ? '' : 'disabled') + ' onclick="UI.executeFarmConvertUI(' + buildingIndex + ',\'' + townId + '\',\'' + tId + '\')">Convert</button>';
+            html += '<br><button class="btn-medieval" style="font-size:0.7rem;padding:2px 8px;margin-top:4px;" ' + (canAfford ? '' : 'disabled') + ' data-action="executeFarmConvertUI" data-idx="' + buildingIndex + '" data-id="' + townId + '" data-val="' + tId + '">Convert</button>';
             html += '</div>';
         }
 
@@ -2025,7 +2025,7 @@
             if (isInstalled) {
                 html += '<div style="color:#55a868;font-size:0.8rem;margin-top:4px;">✅ Installed</div>';
             } else {
-                html += '<button class="btn-trade buy" style="font-size:0.7rem;margin-top:4px;" onclick="UI.installWarehouseSecurity(\'' + buildingId + '\',\'' + upgradeId + '\')">Install (' + cfg.cost + 'g)</button>';
+                html += '<button class="btn-trade buy" style="font-size:0.7rem;margin-top:4px;" data-action="installWarehouseSecurity" data-id="' + buildingId + '" data-val="' + upgradeId + '">Install (' + cfg.cost + 'g)</button>';
             }
             html += '</div>';
         }
@@ -2084,5 +2084,89 @@
     UI.openWarehouseSecurityDialog = openWarehouseSecurityDialog;
     UI.installWarehouseSecurity = installWarehouseSecurity;
     UI.racketResponse = racketResponse;
+
+    // ── Action delegation registrations ──
+    UI.registerAction('filterBuildings', function(_t, d) { UI.filterBuildings(d.id); });
+    UI.registerAction('executeBuild', function(_t, d) { UI.executeBuild(d.id, d.val); });
+    UI.registerAction('openTownMarket', function() { UI.openTownMarket(); });
+    UI.registerAction('openFarmConvertUI', function(_t, d) { UI.openFarmConvertUI(parseInt(d.idx), d.id); });
+    UI.registerAction('listLandForSaleUI', function(_t, d) { UI.listLandForSaleUI(d.id); });
+    UI.registerAction('showBuildingDetail', function(_t, d) { UI.showBuildingDetail(d.id); });
+    UI.registerAction('racketResponse', function(_t, d) { UI.racketResponse(d.val); });
+    UI.registerAction('purchaseNPCBuildingUI', function(_t, d) { UI.purchaseNPCBuildingUI(parseInt(d.idx), d.id); });
+    UI.registerAction('buyApartmentUnit', function(_t, d) { UI.buyApartmentUnit(d.id); });
+    UI.registerAction('buyTentSlot', function(_t, d) { UI.buyTentSlot(d.id); });
+    UI.registerAction('listLandConfirm', function(_t, d) {
+        var p = parseInt(document.getElementById('landSalePrice').value) || 0;
+        var r = Player.listLandForSale(d.id, p);
+        UI.toast(r.message, r.success ? 'success' : 'error');
+        if (r.success) UI.closeModal();
+    });
+    UI.registerAction('cancelLandListing', function(_t, d) {
+        Player.cancelLandListing(d.id);
+        UI.toast('Listing removed.', 'success');
+        UI.closeModal();
+    });
+    UI.registerAction('listBldForSaleConfirm', function(_t, d) {
+        var p = parseInt(document.getElementById('bldSalePrice').value) || 0;
+        var r = Player.listBuildingForSale(d.id, p);
+        UI.toast(r.message, r.success ? 'success' : 'error');
+        if (r.success) { UI.closeModal(); UI.showBuildingDetail(d.id); }
+    });
+    UI.registerAction('showNPCDetail', function(_t, d) { UI.showNPCDetail(d.id); });
+    UI.registerAction('kickPatientAction', function(_t, d) {
+        Engine.kickPatientFromQueue(d.type, d.val, d.id);
+        UI.showBuildingDetail(d.val);
+    });
+    UI.registerAction('setBuildingProductUI', function(_t, d) { UI.setBuildingProductUI(d.id); });
+    UI.registerAction('collectOutputUI', function(_t, d) { UI.collectOutputUI(d.id, d.val, parseInt(d.qty)); });
+    UI.registerAction('collectRetailRevenueUI', function(_t, d) { UI.collectRetailRevenueUI(d.id); });
+    UI.registerAction('stockRetailUI', function(_t, d) { UI.stockRetailUI(d.id, d.val, parseInt(d.qty)); });
+    UI.registerAction('unstockRetailUI', function(_t, d) { UI.unstockRetailUI(d.id, d.val, parseInt(d.qty)); });
+    UI.registerAction('_bldWithdraw', function(_t, d) { UI._bldWithdraw(d.id, d.val, parseInt(d.qty)); });
+    UI.registerAction('_bldDeposit', function(_t, d) { UI._bldDeposit(d.id, d.val, parseInt(d.qty)); });
+    UI.registerAction('praiseWorkerAction', function(_t, d) {
+        var r = Player.praiseWorker(d.id);
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.showBuildingDetail(d.val);
+    });
+    UI.registerAction('giveWorkerDayOffAction', function(_t, d) {
+        var r = Player.giveWorkerDayOff(d.id);
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.showBuildingDetail(d.val);
+    });
+    UI.registerAction('giveWorkerBonusAction', function(_t, d) {
+        var r = Player.giveWorkerBonus(d.id);
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.showBuildingDetail(d.val);
+    });
+    UI.registerAction('giveWorkerRaiseAction', function(_t, d) {
+        var r = Player.giveWorkerRaise(d.id);
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.showBuildingDetail(d.val);
+    });
+    UI.registerAction('removeWorkerUI', function(_t, d) { UI.removeWorkerUI(d.id, d.val); });
+    UI.registerAction('assignWorkerUI', function(_t, d) { UI.assignWorkerUI(d.id); });
+    UI.registerAction('supplyBuildingUI', function(_t, d) { UI.supplyBuildingUI(d.id, d.val, parseInt(d.qty)); });
+    UI.registerAction('setTransferTarget', function(_t, d) { UI.setTransferTarget(d.id); });
+    UI.registerAction('clearTransfer', function(_t, d) { UI.clearTransfer(d.id); });
+    UI.registerAction('deliverNowAction', function(_t, d) {
+        var r = Player.deliverNow(d.id);
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.showBuildingDetail(d.id);
+    });
+    UI.registerAction('upgradeBuildingUI', function(_t, d) { UI.upgradeBuildingUI(d.id); });
+    UI.registerAction('repairBuilding', function(_t, d) { UI.repairBuilding(d.id); });
+    UI.registerAction('toggleGuardAndRefresh', function(_t, d) { UI.toggleGuard(d.id); UI.showBuildingDetail(d.id); });
+    UI.registerAction('buyLockedStorageAndRefresh', function(_t, d) { UI.buyLockedStorage(d.id); UI.showBuildingDetail(d.id); });
+    UI.registerAction('toggleFarmFallowAndRefresh', function(_t, d) { UI.toggleFarmFallow(d.id); UI.showBuildingDetail(d.id); });
+    UI.registerAction('openWarehouseSecurityDialog', function(_t, d) { UI.openWarehouseSecurityDialog(d.id); });
+    UI.registerAction('confirmDemolishUI', function(_t, d) { UI.confirmDemolishUI(d.id, d.val); });
+    UI.registerAction('listBuildingForSaleUI', function(_t, d) { UI.listBuildingForSaleUI(d.id); });
+    UI.registerAction('openBuildingManagement', function() { UI.openBuildingManagement(); });
+    UI.registerAction('executeConvertBuildingUI', function(_t, d) { UI.executeConvertBuildingUI(parseInt(d.idx), d.id, d.val); });
+    UI.registerAction('demolishBuildingUI', function(_t, d) { UI.demolishBuildingUI(d.id, d.val); });
+    UI.registerAction('executeFarmConvertUI', function(_t, d) { UI.executeFarmConvertUI(parseInt(d.idx), d.id, d.val); });
+    UI.registerAction('installWarehouseSecurity', function(_t, d) { UI.installWarehouseSecurity(d.id, d.val); });
 
 })(window.UI);

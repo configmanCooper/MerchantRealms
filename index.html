@@ -110,7 +110,7 @@
     <div id="speedWarningBanner" style="display:none;position:fixed;top:52px;left:0;right:0;z-index:100000;background:rgba(180,60,0,0.95);border-bottom:2px solid #ff6400;padding:5px 12px;text-align:center;color:#ffcc66;font-size:0.85rem;font-weight:bold;letter-spacing:0.5px;pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,0.5);">⏩ Fast Forwarding — Map Frozen Until Speed Is Lowered ⏩</div>
 
     <!-- Quest Tracker HUD Widget -->
-    <div id="questTrackerHud" style="display:none;position:fixed;top:56px;right:8px;z-index:9000;background:rgba(20,18,14,0.92);border:1px solid rgba(180,160,120,0.4);border-radius:6px;padding:6px 10px;max-width:260px;font-size:0.75rem;color:#d4c8a0;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.4);" onclick="if(typeof UI!=='undefined'&&UI.showNobilityPanel)UI.showNobilityPanel('directives');">
+    <div id="questTrackerHud" style="display:none;position:fixed;top:56px;right:8px;z-index:9000;background:rgba(20,18,14,0.92);border:1px solid rgba(180,160,120,0.4);border-radius:6px;padding:6px 10px;max-width:260px;font-size:0.75rem;color:#d4c8a0;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.4);" data-action="showNobilityPanel" data-tab="directives">
         <div id="questTrackerContent"></div>
     </div>
 
@@ -139,7 +139,7 @@
             </div>
             <div class="stat-group">
                 <div class="stat-label">Location</div>
-                <div id="playerTown" class="stat-value" style="cursor:pointer;transition:color 0.2s;" onmouseover="this.style.color='#d4af37'" onmouseout="this.style.color=''" onclick="if(typeof Player!=='undefined'&&Player.townId&&!Player.traveling){UI.showTownDetail(Engine.findTown(Player.townId));}">—</div>
+                <div id="playerTown" class="stat-value" style="cursor:pointer;transition:color 0.2s;" onmouseover="this.style.color='#d4af37'" onmouseout="this.style.color=''" data-action="showPlayerTown">—</div>
             </div>
             <div id="workersRow" class="stat-row" style="display:none;">
                 <div class="stat-mini"><span class="stat-icon">👥</span> <span id="employeeCount">0</span> Workers</div>
@@ -278,5 +278,20 @@
     <script src="js/guidance.js"></script>
     <script src="js/music.js"></script>
     <script src="js/main.js"></script>
+    <script>
+    // Register actions for index.html event delegation
+    (function() {
+        if (typeof UI !== 'undefined' && UI.registerAction) {
+            UI.registerAction('showNobilityPanel', function(_t, d) {
+                if (UI.showNobilityPanel) UI.showNobilityPanel(d.tab || 'directives');
+            });
+            UI.registerAction('showPlayerTown', function() {
+                if (typeof Player !== 'undefined' && Player.townId && !Player.traveling) {
+                    UI.showTownDetail(Engine.findTown(Player.townId));
+                }
+            });
+        }
+    })();
+    </script>
 </body>
 </html>

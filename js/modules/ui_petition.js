@@ -54,11 +54,11 @@
                 html += '<span>' + activePtrs + ' petitioner' + (activePtrs !== 1 ? 's' : '') + '</span>';
                 html += '</div></div>';
                 html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">';
-                html += '<button class="btn-medieval" style="font-size:0.75rem;padding:4px 10px;" onclick="UI.showPetitionDetail(\'' + p.id + '\')">📋 Manage</button>';
+                html += '<button class="btn-medieval" style="font-size:0.75rem;padding:4px 10px;" data-action="showPetitionDetail" data-id="' + p.id + '">📋 Manage</button>';
                 if (estimate && estimate.chance > 0) {
-                    html += '<button class="btn-medieval" style="font-size:0.75rem;padding:4px 10px;background:rgba(100,200,100,0.2);border-color:rgba(100,200,100,0.4);" onclick="UI.submitPetitionUI(\'' + p.id + '\')">✅ Submit (~' + Math.floor(estimate.chance * 100) + '%)</button>';
+                    html += '<button class="btn-medieval" style="font-size:0.75rem;padding:4px 10px;background:rgba(100,200,100,0.2);border-color:rgba(100,200,100,0.4);" data-action="submitPetitionUI" data-id="' + p.id + '">✅ Submit (~' + Math.floor(estimate.chance * 100) + '%)</button>';
                 }
-                html += '<button class="btn-medieval" style="font-size:0.75rem;padding:4px 10px;background:rgba(200,60,50,0.3);border-color:rgba(200,60,50,0.55);" onclick="UI.cancelPetitionUI(\'' + p.id + '\')">❌ Cancel</button>';
+                html += '<button class="btn-medieval" style="font-size:0.75rem;padding:4px 10px;background:rgba(200,60,50,0.3);border-color:rgba(200,60,50,0.55);" data-action="cancelPetitionUI" data-id="' + p.id + '">❌ Cancel</button>';
                 html += '</div></div>';
             }
         }
@@ -80,7 +80,7 @@
         }
 
         html += '<div style="margin-top:15px;">';
-        html += '<button class="btn-medieval" style="padding:8px 20px;background:rgba(212,160,23,0.2);border-color:rgba(212,160,23,0.5);" onclick="UI.showCreatePetitionPanel()">📜 Create New Petition</button>';
+        html += '<button class="btn-medieval" style="padding:8px 20px;background:rgba(212,160,23,0.2);border-color:rgba(212,160,23,0.5);" data-action="showCreatePetitionPanel">📜 Create New Petition</button>';
         html += '</div></div>';
 
         openModal('Petitions', html);
@@ -105,7 +105,7 @@
             html += '<span style="font-size:1.1em;">' + pt.icon + '</span> <strong>' + pt.name + '</strong>';
             html += '<div style="color:#aaa;font-size:0.8em;">' + pt.desc + '</div>';
             html += '</div>';
-            html += '<button class="btn-medieval" style="font-size:0.75rem;padding:4px 12px;margin-left:8px;" onclick="UI.selectPetitionType(\'' + pt.id + '\')">Select</button>';
+            html += '<button class="btn-medieval" style="font-size:0.75rem;padding:4px 12px;margin-left:8px;" data-action="selectPetitionType" data-id="' + pt.id + '">Select</button>';
             html += '</div>';
         }
         html += '</div>';
@@ -135,7 +135,7 @@
             var kTowns = towns.filter(function(t) { return t.kingdomId === playerKingdomId; });
             for (var i = 0; i < kTowns.length; i++) {
                 html += '<button class="btn-medieval" style="display:block;width:100%;text-align:left;padding:6px 12px;margin:3px 0;font-size:0.85rem;" ';
-                html += 'onclick="UI.confirmCreatePetition(\'' + typeId + '\', {townId:\'' + kTowns[i].id + '\',townName:\'' + kTowns[i].name.replace(/'/g, "\\'") + '\'})">';
+                html += 'data-action="confirmCreatePetition" data-type="' + typeId + '" data-townid="' + kTowns[i].id + '" data-townname="' + kTowns[i].name.replace(/'/g, "\\'") + '">';
                 html += '🏘️ ' + kTowns[i].name;
                 html += '</button>';
             }
@@ -155,7 +155,7 @@
                 html += '<option value="' + kTowns[i].id + '">' + kTowns[i].name + '</option>';
             }
             html += '</select></div>';
-            html += '<button class="btn-medieval" style="padding:6px 16px;" onclick="UI.confirmCreatePetitionTownPair(\'' + typeId + '\')">Create Petition</button>';
+            html += '<button class="btn-medieval" style="padding:6px 16px;" data-action="confirmCreatePetitionTownPair" data-id="' + typeId + '">Create Petition</button>';
         } else if (pt.targetType === 'port_pair') {
             html += '<h4 style="color:#ccc;">Select Port Towns:</h4>';
             var towns = (typeof Engine !== 'undefined' && Engine.getTowns) ? Engine.getTowns() : [];
@@ -175,7 +175,7 @@
                     html += '<option value="' + portTowns[i].id + '"' + (i === 1 ? ' selected' : '') + '>⚓ ' + portTowns[i].name + '</option>';
                 }
                 html += '</select></div>';
-                html += '<button class="btn-medieval" style="padding:6px 16px;" onclick="UI.confirmCreatePetitionTownPair(\'' + typeId + '\')">Create Petition</button>';
+                html += '<button class="btn-medieval" style="padding:6px 16px;" data-action="confirmCreatePetitionTownPair" data-id="' + typeId + '">Create Petition</button>';
             }
         } else if (pt.targetType === 'road') {
             html += '<h4 style="color:#ccc;">Select a Road:</h4>';
@@ -188,7 +188,7 @@
                 if (ft.kingdomId !== playerKingdomId && tt.kingdomId !== playerKingdomId) continue;
                 var rName = ft.name + ' ↔ ' + tt.name;
                 html += '<button class="btn-medieval" style="display:block;width:100%;text-align:left;padding:6px 12px;margin:3px 0;font-size:0.85rem;" ';
-                html += 'onclick="UI.confirmCreatePetition(\'' + typeId + '\', {roadIndex:' + i + ',roadName:\'' + rName.replace(/'/g, "\\'") + '\'})">';
+                html += 'data-action="confirmCreatePetition" data-type="' + typeId + '" data-roadindex="' + i + '" data-roadname="' + rName.replace(/'/g, "\\'") + '">';
                 html += '🛤️ ' + rName;
                 html += '</button>';
             }
@@ -198,7 +198,7 @@
             for (var i = 0; i < kingdoms.length; i++) {
                 if (kingdoms[i].id === playerKingdomId) continue;
                 html += '<button class="btn-medieval" style="display:block;width:100%;text-align:left;padding:6px 12px;margin:3px 0;font-size:0.85rem;" ';
-                html += 'onclick="UI.confirmCreatePetition(\'' + typeId + '\', {targetKingdomId:\'' + kingdoms[i].id + '\',targetKingdomName:\'' + kingdoms[i].name.replace(/'/g, "\\'") + '\'})">';
+                html += 'data-action="confirmCreatePetition" data-type="' + typeId + '" data-targetkingdomid="' + kingdoms[i].id + '" data-targetkingdomname="' + kingdoms[i].name.replace(/'/g, "\\'") + '">';
                 html += '👑 ' + kingdoms[i].name;
                 html += '</button>';
             }
@@ -207,7 +207,7 @@
             var resources = (typeof RESOURCES !== 'undefined') ? RESOURCES : [];
             for (var i = 0; i < resources.length; i++) {
                 html += '<button class="btn-medieval" style="display:block;width:100%;text-align:left;padding:6px 12px;margin:3px 0;font-size:0.85rem;" ';
-                html += 'onclick="UI.confirmCreatePetition(\'' + typeId + '\', {resourceId:\'' + resources[i].id + '\',resourceName:\'' + resources[i].name.replace(/'/g, "\\'") + '\'})">';
+                html += 'data-action="confirmCreatePetition" data-type="' + typeId + '" data-resourceid="' + resources[i].id + '" data-resourcename="' + resources[i].name.replace(/'/g, "\\'") + '">';
                 html += (resources[i].icon || '📦') + ' ' + resources[i].name;
                 html += '</button>';
             }
@@ -314,7 +314,7 @@
                         if (npc.isEliteMerchant) occLabel = '⭐ Elite Merchant';
                         html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid #333;">';
                         html += '<span style="font-size:0.85em;">' + npc.firstName + ' ' + npc.lastName + ' <span style="color:#888;">(' + occLabel + ')</span></span>';
-                        html += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 8px;" onclick="UI.askNPCToSign(\'' + petition.id + '\',\'' + npc.id + '\')">Ask</button>';
+                        html += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 8px;" data-action="askNPCToSign" data-id="' + petition.id + '" data-val="' + npc.id + '">Ask</button>';
                         html += '</div>';
                     }
                     if (townNpcs.length > 20) {
@@ -335,24 +335,24 @@
                     var ptrTown = (typeof Engine !== 'undefined') ? Engine.findTown(ptr.currentTownId) : null;
                     html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #333;font-size:0.85em;">';
                     html += '<span>' + (ptr.mounted ? '🐴 Mounted' : '🚶 Basic') + ' — in ' + (ptrTown ? ptrTown.name : '?') + ' — ' + ptr.signaturesCollected + ' sigs — ' + ptr.dailyCost + 'g/day</span>';
-                    html += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 8px;background:rgba(200,60,50,0.3);" onclick="UI.firePetitionerUI(\'' + petition.id + '\',\'' + ptr.id + '\')">Fire</button>';
+                    html += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 8px;background:rgba(200,60,50,0.3);" data-action="firePetitionerUI" data-id="' + petition.id + '" data-val="' + ptr.id + '">Fire</button>';
                     html += '</div>';
                 }
             } else {
                 html += '<p style="color:#aaa;font-size:0.85em;">No active petitioners.</p>';
             }
             html += '<div style="display:flex;gap:6px;margin-top:8px;">';
-            html += '<button class="btn-medieval" style="font-size:0.8rem;padding:5px 12px;" onclick="UI.hirePetitionerUI(\'' + petition.id + '\',false)">🚶 Hire Basic (' + CONFIG.PETITIONER_BASIC_COST + 'g/day)</button>';
-            html += '<button class="btn-medieval" style="font-size:0.8rem;padding:5px 12px;" onclick="UI.hirePetitionerUI(\'' + petition.id + '\',true)">🐴 Hire Mounted (' + CONFIG.PETITIONER_MOUNTED_COST + 'g/day)</button>';
+            html += '<button class="btn-medieval" style="font-size:0.8rem;padding:5px 12px;" data-action="hirePetitionerUI" data-id="' + petition.id + '" data-val="false">🚶 Hire Basic (' + CONFIG.PETITIONER_BASIC_COST + 'g/day)</button>';
+            html += '<button class="btn-medieval" style="font-size:0.8rem;padding:5px 12px;" data-action="hirePetitionerUI" data-id="' + petition.id + '" data-val="true">🐴 Hire Mounted (' + CONFIG.PETITIONER_MOUNTED_COST + 'g/day)</button>';
             html += '</div></div>';
 
             // Action buttons
             html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">';
             if (estimate && estimate.chance > 0) {
-                html += '<button class="btn-medieval" style="padding:8px 16px;background:rgba(100,200,100,0.2);border-color:rgba(100,200,100,0.4);" onclick="UI.submitPetitionUI(\'' + petition.id + '\')">✅ Submit Petition (~' + Math.floor(estimate.chance * 100) + '% chance)</button>';
+                html += '<button class="btn-medieval" style="padding:8px 16px;background:rgba(100,200,100,0.2);border-color:rgba(100,200,100,0.4);" data-action="submitPetitionUI" data-id="' + petition.id + '">✅ Submit Petition (~' + Math.floor(estimate.chance * 100) + '% chance)</button>';
             }
-            html += '<button class="btn-medieval" style="padding:8px 16px;background:rgba(200,60,50,0.3);border-color:rgba(200,60,50,0.55);" onclick="UI.cancelPetitionUI(\'' + petition.id + '\')">❌ Cancel Petition</button>';
-            html += '<button class="btn-medieval" style="padding:8px 16px;" onclick="UI.showPetitionsPanel()">⬅️ Back</button>';
+            html += '<button class="btn-medieval" style="padding:8px 16px;background:rgba(200,60,50,0.3);border-color:rgba(200,60,50,0.55);" data-action="cancelPetitionUI" data-id="' + petition.id + '">❌ Cancel Petition</button>';
+            html += '<button class="btn-medieval" style="padding:8px 16px;" data-action="showPetitionsPanel">⬅️ Back</button>';
             html += '</div>';
         }
 
@@ -417,9 +417,9 @@
         html += '<p style="color:#aaa;font-size:0.8rem;margin-bottom:5px;">Nobles siding against their kingdom are demoted to Guildmaster.</p>';
         html += '<p style="color:#aaa;font-size:0.8rem;margin-bottom:20px;">The abandoned kingdom: -5 rep, -5 king/noble relationships, rank becomes "Enemy".</p>';
         html += '<div style="display:flex;gap:20px;justify-content:center;">';
-        html += '<button class="btn-medieval" style="padding:15px 30px;font-size:1.1rem;" onclick="UI.resolveWarConflict(\'' + conflict.kingdom1 + '\')" title="Side with ' + (k1 ? k1.name : 'Kingdom 1') + '&#10;&#10;✅ Keep ' + k1Rank + ' rank in ' + (k1 ? k1.name : 'Kingdom 1') + '&#10;✅ +5 rep with ' + (k1 ? k1.name : 'Kingdom 1') + '&#10;❌ -5 rep with ' + (k2 ? k2.name : 'Kingdom 2') + '&#10;❌ Rank in ' + (k2 ? k2.name : 'Kingdom 2') + ' → Enemy&#10;❌ -5 rel with ' + (k2 ? k2.name : 'Kingdom 2') + ' king + nobles">';
+        html += '<button class="btn-medieval" style="padding:15px 30px;font-size:1.1rem;" data-action="resolveWarConflict" data-id="' + conflict.kingdom1 + '" title="Side with ' + (k1 ? k1.name : 'Kingdom 1') + '&#10;&#10;✅ Keep ' + k1Rank + ' rank in ' + (k1 ? k1.name : 'Kingdom 1') + '&#10;✅ +5 rep with ' + (k1 ? k1.name : 'Kingdom 1') + '&#10;❌ -5 rep with ' + (k2 ? k2.name : 'Kingdom 2') + '&#10;❌ Rank in ' + (k2 ? k2.name : 'Kingdom 2') + ' → Enemy&#10;❌ -5 rel with ' + (k2 ? k2.name : 'Kingdom 2') + ' king + nobles">';
         html += (k1 ? k1.name : 'Kingdom 1') + '<br><span style="font-size:0.75rem;color:#aaa;">Your rank: ' + k1Rank + '</span></button>';
-        html += '<button class="btn-medieval" style="padding:15px 30px;font-size:1.1rem;" onclick="UI.resolveWarConflict(\'' + conflict.kingdom2 + '\')" title="Side with ' + (k2 ? k2.name : 'Kingdom 2') + '&#10;&#10;✅ Keep ' + k2Rank + ' rank in ' + (k2 ? k2.name : 'Kingdom 2') + '&#10;✅ +5 rep with ' + (k2 ? k2.name : 'Kingdom 2') + '&#10;❌ -5 rep with ' + (k1 ? k1.name : 'Kingdom 1') + '&#10;❌ Rank in ' + (k1 ? k1.name : 'Kingdom 1') + ' → Enemy&#10;❌ -5 rel with ' + (k1 ? k1.name : 'Kingdom 1') + ' king + nobles">';
+        html += '<button class="btn-medieval" style="padding:15px 30px;font-size:1.1rem;" data-action="resolveWarConflict" data-id="' + conflict.kingdom2 + '" title="Side with ' + (k2 ? k2.name : 'Kingdom 2') + '&#10;&#10;✅ Keep ' + k2Rank + ' rank in ' + (k2 ? k2.name : 'Kingdom 2') + '&#10;✅ +5 rep with ' + (k2 ? k2.name : 'Kingdom 2') + '&#10;❌ -5 rep with ' + (k1 ? k1.name : 'Kingdom 1') + '&#10;❌ Rank in ' + (k1 ? k1.name : 'Kingdom 1') + ' → Enemy&#10;❌ -5 rel with ' + (k1 ? k1.name : 'Kingdom 1') + ' king + nobles">';
         html += (k2 ? k2.name : 'Kingdom 2') + '<br><span style="font-size:0.75rem;color:#aaa;">Your rank: ' + k2Rank + '</span></button>';
         html += '</div></div>';
 
@@ -445,7 +445,7 @@
         confirmHtml += '<p style="color:#ff8866;margin-bottom:15px;">\u26A0\uFE0F Are you sure you want to renounce your rank in <strong>' + kName + '</strong>?</p>';
         confirmHtml += '<p style="color:#aaa;font-size:0.85rem;margin-bottom:20px;">You will lose ALL rank and -30 reputation.</p>';
         confirmHtml += '<div style="display:flex;gap:15px;justify-content:center;">';
-        confirmHtml += '<button class="btn-medieval" style="padding:10px 25px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;" onclick="(function(){ var r = Player.renounceKingdom(\'' + kingdomId + '\'); UI.toast(r.message, r.success ? \'warning\' : \'danger\'); UI.closeModal(); UI.openCharacterDialog(); })()">Yes, Renounce</button>';
+        confirmHtml += '<button class="btn-medieval" style="padding:10px 25px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;" data-action="renounceKingdom" data-id="' + kingdomId + '">Yes, Renounce</button>';
         confirmHtml += '<button class="btn-medieval" style="padding:10px 25px;" data-action="closeModal">Cancel</button>';
         confirmHtml += '</div></div>';
         openModal('\u26A0\uFE0F Renounce Kingdom', confirmHtml, '');
@@ -514,7 +514,7 @@
                 html += '</div>';
 
                 if (check.can) {
-                    html += '<button class="btn-medieval" onclick="UI.petitionPromotion()" style="margin-top:10px;font-size:0.85rem;padding:6px 16px;">\uD83D\uDCDC Petition for Promotion</button>';
+                    html += '<button class="btn-medieval" data-action="petitionPromotion" style="margin-top:10px;font-size:0.85rem;padding:6px 16px;">\uD83D\uDCDC Petition for Promotion</button>';
                 }
             }
 
@@ -530,7 +530,7 @@
         // Renounce button
         if (rankIdx >= 1) {
             html += '<div style="margin-top:15px;border-top:1px solid #444;padding-top:10px;">';
-            html += '<button class="btn-medieval" onclick="UI.renounceKingdomUI(\'' + kingdomId + '\')" style="font-size:0.8rem;padding:5px 14px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">\u274C Renounce ' + kName + '</button>';
+            html += '<button class="btn-medieval" data-action="renounceKingdomUI" data-id="' + kingdomId + '" style="font-size:0.8rem;padding:5px 14px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">\u274C Renounce ' + kName + '</button>';
             html += '</div>';
         }
 
@@ -569,7 +569,7 @@
                 var playerQty = (typeof Player !== 'undefined' && Player.inventory) ? (Player.inventory[item.resourceId] || 0) : 0;
                 if (playerQty <= 0) continue;
                 html += '<tr><td>' + item.icon + ' ' + item.name + '</td><td class="price good-deal">' + item.effectivePrice + 'g</td><td style="color:#55a868">' + item.multiplier + 'x</td><td style="font-size:0.7rem;">' + item.reason + '</td>';
-                html += '<td><button class="btn-trade sell" onclick="UI.sellToKingdomUI(\'' + kingdomId + '\',\'' + item.resourceId + '\',1,' + item.effectivePrice + ')">Sell 1</button></td></tr>';
+                html += '<td><button class="btn-trade sell" data-action="sellToKingdomUI" data-id="' + kingdomId + '" data-val="' + item.resourceId + '" data-qty="1" data-price="' + item.effectivePrice + '">Sell 1</button></td></tr>';
             }
             html += '</table></div>';
         }
@@ -583,8 +583,8 @@
             var matchItem = info.buyList.find(function(b) { return b.resourceId === resId; });
             if (!matchItem) continue;
             html += '<tr><td>' + matchItem.icon + ' ' + matchItem.name + '</td><td>' + inv[resId] + '</td><td>' + matchItem.effectivePrice + 'g</td>';
-            html += '<td><button class="btn-trade sell" onclick="UI.sellToKingdomUI(\'' + kingdomId + '\',\'' + resId + '\',1,' + matchItem.effectivePrice + ')">Sell 1</button>';
-            if (inv[resId] >= 5) html += ' <button class="btn-trade sell" onclick="UI.sellToKingdomUI(\'' + kingdomId + '\',\'' + resId + '\',5,' + matchItem.effectivePrice + ')">Sell 5</button>';
+            html += '<td><button class="btn-trade sell" data-action="sellToKingdomUI" data-id="' + kingdomId + '" data-val="' + resId + '" data-qty="1" data-price="' + matchItem.effectivePrice + '">Sell 1</button>';
+            if (inv[resId] >= 5) html += ' <button class="btn-trade sell" data-action="sellToKingdomUI" data-id="' + kingdomId + '" data-val="' + resId + '" data-qty="5" data-price="' + matchItem.effectivePrice + '">Sell 5</button>';
             html += '</td></tr>';
         }
         html += '</table></div>';
@@ -615,11 +615,11 @@
         if (!kingdom) { toast('Kingdom not found.', 'error'); return; }
 
         var html = '<div class="hire-tabs">';
-        html += '<button class="btn-tab active" onclick="UI.switchOrdersTab(\'open\')">📋 Open Orders</button>';
-        html += '<button class="btn-tab" onclick="UI.switchOrdersTab(\'sell_crown\')">👑 Sell to Crown</button>';
-        html += '<button class="btn-tab" onclick="UI.switchOrdersTab(\'my_orders\')">📦 My Orders</button>';
-        html += '<button class="btn-tab" onclick="UI.switchOrdersTab(\'my_deals\')">🤝 My Deals</button>';
-        html += '<button class="btn-tab" onclick="UI.switchOrdersTab(\'history\')">📜 History</button>';
+        html += '<button class="btn-tab active" data-action="switchOrdersTab" data-tab="open">📋 Open Orders</button>';
+        html += '<button class="btn-tab" data-action="switchOrdersTab" data-tab="sell_crown">👑 Sell to Crown</button>';
+        html += '<button class="btn-tab" data-action="switchOrdersTab" data-tab="my_orders">📦 My Orders</button>';
+        html += '<button class="btn-tab" data-action="switchOrdersTab" data-tab="my_deals">🤝 My Deals</button>';
+        html += '<button class="btn-tab" data-action="switchOrdersTab" data-tab="history">📜 History</button>';
         html += '</div>';
 
         html += '<div id="ordersTabOpen">' + buildOpenOrdersTab(kingdomId) + '</div>';
@@ -739,11 +739,11 @@
                 var sellQtys = [1, 5, 10, 25, 50];
                 for (var si = 0; si < sellQtys.length; si++) {
                     if (it.playerQty >= sellQtys[si]) {
-                        html += '<button class="btn-trade sell" style="font-size:0.68rem;padding:2px 8px;' + (lowTreasury ? 'opacity:0.4;cursor:not-allowed;' : '') + '" ' + (lowTreasury ? 'disabled' : 'onclick="UI.sellToCrownUI(\'' + kingdomId + '\',\'' + it.resId + '\',' + sellQtys[si] + ',' + it.crownPrice + ')"') + '>Sell ' + sellQtys[si] + '</button>';
+                        html += '<button class="btn-trade sell" style="font-size:0.68rem;padding:2px 8px;' + (lowTreasury ? 'opacity:0.4;cursor:not-allowed;' : '') + '" ' + (lowTreasury ? 'disabled' : 'data-action="sellToCrownUI" data-id="' + kingdomId + '" data-val="' + it.resId + '" data-qty="' + sellQtys[si] + '" data-price="' + it.crownPrice + '"') + '>Sell ' + sellQtys[si] + '</button>';
                     }
                 }
                 if (it.playerQty > 1) {
-                    html += '<button class="btn-trade sell" style="font-size:0.68rem;padding:2px 8px;' + (lowTreasury ? 'opacity:0.4;cursor:not-allowed;' : '') + '" ' + (lowTreasury ? 'disabled' : 'onclick="UI.sellToCrownUI(\'' + kingdomId + '\',\'' + it.resId + '\',' + it.playerQty + ',' + it.crownPrice + ')"') + '>Sell All (' + it.playerQty + ')</button>';
+                    html += '<button class="btn-trade sell" style="font-size:0.68rem;padding:2px 8px;' + (lowTreasury ? 'opacity:0.4;cursor:not-allowed;' : '') + '" ' + (lowTreasury ? 'disabled' : 'data-action="sellToCrownUI" data-id="' + kingdomId + '" data-val="' + it.resId + '" data-qty="' + it.playerQty + '" data-price="' + it.crownPrice + '"') + '>Sell All (' + it.playerQty + ')</button>';
                 }
                 html += '</div>';
             } else {
@@ -801,7 +801,7 @@
                 html += '<div style="font-size:0.75rem;color:#7bed9f;margin-top:3px;">✅ You bid ' + playerBid.pricePerUnit + 'g/unit</div>';
             } else {
                 html += '<div style="margin-top:6px;">';
-                html += '<button class="btn-medieval" onclick="UI.showBidModal(\'' + o.id + '\')" style="font-size:0.75rem;padding:4px 12px;background:rgba(100,180,255,0.15);border-color:rgba(100,180,255,0.3);">💰 Place Bid</button>';
+                html += '<button class="btn-medieval" data-action="showBidModal" data-id="' + o.id + '" style="font-size:0.75rem;padding:4px 12px;background:rgba(100,180,255,0.15);border-color:rgba(100,180,255,0.3);">💰 Place Bid</button>';
                 html += '</div>';
             }
             html += '</div>';
@@ -858,7 +858,7 @@
                 var hasGoods = Player.inventory && (Player.inventory[o.resourceId] || 0) > 0;
                 if (inDeliveryTown && hasGoods) {
                     html += '<div style="margin-top:6px;">';
-                    html += '<button class="btn-medieval" onclick="UI.showDeliverOrderModal(\'' + o.id + '\')" style="font-size:0.75rem;padding:4px 12px;background:rgba(46,204,113,0.15);border-color:rgba(46,204,113,0.3);">📦 Deliver</button>';
+                    html += '<button class="btn-medieval" data-action="showDeliverOrderModal" data-id="' + o.id + '" style="font-size:0.75rem;padding:4px 12px;background:rgba(46,204,113,0.15);border-color:rgba(46,204,113,0.3);">📦 Deliver</button>';
                     html += '</div>';
                 } else if (!inDeliveryTown) {
                     var deliveryTown = Engine.findTown ? Engine.findTown(o.deliveryTownId) : null;
@@ -879,7 +879,7 @@
         if (deals.length === 0) {
             var html = '<div style="padding:12px;color:#aaa;text-align:center;">No active supply deals.</div>';
             html += '<div style="text-align:center;margin-top:8px;">';
-            html += '<button class="btn-medieval" onclick="UI.showNegotiateDealPanel(\'' + kingdomId + '\')" style="font-size:0.8rem;padding:6px 14px;background:rgba(100,200,100,0.15);border-color:rgba(100,200,100,0.3);">🤝 Negotiate New Deal</button>';
+            html += '<button class="btn-medieval" data-action="showNegotiateDealPanel" data-id="' + kingdomId + '" style="font-size:0.8rem;padding:6px 14px;background:rgba(100,200,100,0.15);border-color:rgba(100,200,100,0.3);">🤝 Negotiate New Deal</button>';
             html += '</div>';
             return html;
         }
@@ -910,16 +910,16 @@
                 var hasGoods = Player.inventory && (Player.inventory[d.resourceId] || 0) > 0;
                 html += '<div style="margin-top:6px;display:flex;gap:6px;">';
                 if (inKingdom && hasGoods) {
-                    html += '<button class="btn-medieval" onclick="UI.deliverSupplyDealUI(\'' + d.id + '\')" style="font-size:0.75rem;padding:4px 12px;background:rgba(46,204,113,0.15);border-color:rgba(46,204,113,0.3);">📦 Deliver</button>';
+                    html += '<button class="btn-medieval" data-action="deliverSupplyDealUI" data-id="' + d.id + '" style="font-size:0.75rem;padding:4px 12px;background:rgba(46,204,113,0.15);border-color:rgba(46,204,113,0.3);">📦 Deliver</button>';
                 }
-                html += '<button class="btn-medieval" onclick="UI.cancelSupplyDealUI(\'' + d.id + '\')" style="font-size:0.75rem;padding:4px 12px;background:rgba(231,76,60,0.15);border-color:rgba(231,76,60,0.3);">❌ Cancel</button>';
+                html += '<button class="btn-medieval" data-action="cancelSupplyDealUI" data-id="' + d.id + '" style="font-size:0.75rem;padding:4px 12px;background:rgba(231,76,60,0.15);border-color:rgba(231,76,60,0.3);">❌ Cancel</button>';
                 html += '</div>';
             }
             html += '</div>';
         }
         html += '</div>';
         html += '<div style="text-align:center;margin-top:8px;">';
-        html += '<button class="btn-medieval" onclick="UI.showNegotiateDealPanel(\'' + kingdomId + '\')" style="font-size:0.8rem;padding:6px 14px;background:rgba(100,200,100,0.15);border-color:rgba(100,200,100,0.3);">🤝 Negotiate New Deal</button>';
+        html += '<button class="btn-medieval" data-action="showNegotiateDealPanel" data-id="' + kingdomId + '" style="font-size:0.8rem;padding:6px 14px;background:rgba(100,200,100,0.15);border-color:rgba(100,200,100,0.3);">🤝 Negotiate New Deal</button>';
         html += '</div>';
         return html;
     }
@@ -1013,7 +1013,7 @@
         html += '</div>';
         html += '<div id="bidEstimate" style="font-size:0.78rem;color:#7bed9f;margin-top:6px;">Estimated earnings: ~' + estimateEarnings + 'g for full delivery</div>';
         html += '<div style="margin-top:12px;text-align:center;">';
-        html += '<button class="btn-medieval" onclick="UI.submitBid(\'' + orderId + '\')" style="font-size:0.85rem;padding:6px 18px;background:rgba(100,180,255,0.2);border-color:rgba(100,180,255,0.4);">💰 Submit Bid</button>';
+        html += '<button class="btn-medieval" data-action="submitBid" data-id="' + orderId + '" style="font-size:0.85rem;padding:6px 18px;background:rgba(100,180,255,0.2);border-color:rgba(100,180,255,0.4);">💰 Submit Bid</button>';
         html += '</div>';
         html += '</div>';
 
@@ -1068,7 +1068,7 @@
         html += '</div>';
         html += '<div style="font-size:0.78rem;color:#7bed9f;margin-top:6px;">Payment: ' + (maxDeliver * foundOrder.assignedPrice) + 'g</div>';
         html += '<div style="margin-top:12px;text-align:center;">';
-        html += '<button class="btn-medieval" onclick="UI.executeDeliverOrder(\'' + orderId + '\')" style="font-size:0.85rem;padding:6px 18px;background:rgba(46,204,113,0.2);border-color:rgba(46,204,113,0.4);">📦 Deliver</button>';
+        html += '<button class="btn-medieval" data-action="executeDeliverOrder" data-id="' + orderId + '" style="font-size:0.85rem;padding:6px 18px;background:rgba(46,204,113,0.2);border-color:rgba(46,204,113,0.4);">📦 Deliver</button>';
         html += '</div>';
         html += '</div>';
 
@@ -1135,8 +1135,8 @@
         html += '</div>';
 
         html += '<div style="margin-top:12px;text-align:center;display:flex;gap:8px;justify-content:center;">';
-        html += '<button class="btn-medieval" onclick="UI.submitDealProposal(\'' + kingdomId + '\')" style="font-size:0.85rem;padding:6px 18px;background:rgba(100,200,100,0.2);border-color:rgba(100,200,100,0.4);">🤝 Propose Deal</button>';
-        html += '<button class="btn-medieval" onclick="UI.showKingdomOrdersPanel(\'' + kingdomId + '\')" style="font-size:0.85rem;padding:6px 18px;">◀ Back</button>';
+        html += '<button class="btn-medieval" data-action="submitDealProposal" data-id="' + kingdomId + '" style="font-size:0.85rem;padding:6px 18px;background:rgba(100,200,100,0.2);border-color:rgba(100,200,100,0.4);">🤝 Propose Deal</button>';
+        html += '<button class="btn-medieval" data-action="showKingdomOrdersPanel" data-id="' + kingdomId + '" style="font-size:0.85rem;padding:6px 18px;">◀ Back</button>';
         html += '</div>';
         html += '</div>';
 
@@ -1183,7 +1183,7 @@
         html += '<input type="number" id="dealDeliverQtyInput" value="' + available + '" min="1" max="' + available + '" style="width:100px;padding:4px 8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.2);color:#fff;border-radius:3px;">';
         html += '</div>';
         html += '<div style="margin-top:12px;text-align:center;">';
-        html += '<button class="btn-medieval" onclick="UI.executeDeliverDeal(\'' + dealId + '\')" style="font-size:0.85rem;padding:6px 18px;background:rgba(46,204,113,0.2);border-color:rgba(46,204,113,0.4);">📦 Deliver</button>';
+        html += '<button class="btn-medieval" data-action="executeDeliverDeal" data-id="' + dealId + '" style="font-size:0.85rem;padding:6px 18px;background:rgba(46,204,113,0.2);border-color:rgba(46,204,113,0.4);">📦 Deliver</button>';
         html += '</div>';
         html += '</div>';
 
@@ -1335,7 +1335,7 @@
                 bgColor = '#2a2a1a';
             }
 
-            html += '<div onclick="UI.confirmHeirSelection(\'' + npc.id + '\', \'' + type + '\')" style="';
+            html += '<div data-action="confirmHeirSelection" data-id="' + npc.id + '" data-val="' + type + '" style="';
             html += 'border:2px solid ' + borderColor + ';background:' + bgColor + ';padding:12px;border-radius:6px;cursor:pointer;';
             html += 'transition:all 0.2s;display:flex;align-items:center;gap:12px;" ';
             html += 'onmouseover="this.style.borderColor=\'#fff\';this.style.transform=\'scale(1.02)\'" ';
@@ -1408,8 +1408,7 @@
         // Spouse suggestion
         if (spouseFirstName && spouseSuggestion) {
             html += '<div style="margin-top:4px;">';
-            html += '<button onclick="document.getElementById(\'childNameInput\').value=\'' + spouseSuggestion.replace(/'/g, "\\'") + '\';';
-            html += 'this.style.background=\'#2a4a2a\';this.style.borderColor=\'#5a5\';this.textContent=\'✓ ' + spouseFirstName.replace(/'/g, "\\'") + ' suggests: ' + spouseSuggestion.replace(/'/g, "\\'") + '\';" ';
+            html += '<button data-action="useSpouseSuggestion" data-val="' + spouseSuggestion.replace(/'/g, "\\'") + '" data-label="✓ ' + spouseFirstName.replace(/'/g, "\\'") + ' suggests: ' + spouseSuggestion.replace(/'/g, "\\'") + '" ';
             html += 'style="padding:8px 16px;background:#2a2a3a;border:1px solid #55a;border-radius:4px;color:#aaf;cursor:pointer;font-size:13px;';
             html += 'transition:all 0.2s;" onmouseover="this.style.background=\'#3a3a4a\'" onmouseout="if(!this.textContent.startsWith(\'✓\'))this.style.background=\'#2a2a3a\'">';
             html += '💬 ' + spouseFirstName + ' suggests: <strong>' + spouseSuggestion + '</strong>';
@@ -1419,7 +1418,7 @@
         }
 
         // Confirm button
-        html += '<button onclick="UI._confirmChildName(\'' + childId + '\', \'' + (spouseSuggestion || '').replace(/'/g, "\\'") + '\')" ';
+        html += '<button data-action="confirmChildName" data-id="' + childId + '" data-val="' + (spouseSuggestion || '').replace(/'/g, "\\'") + '" ';
         html += 'style="margin-top:8px;padding:10px 32px;background:#3a5a3a;border:2px solid #5a5;border-radius:6px;color:#fff;';
         html += 'cursor:pointer;font-size:15px;font-weight:bold;transition:all 0.2s;" ';
         html += 'onmouseover="this.style.background=\'#4a6a4a\'" onmouseout="this.style.background=\'#3a5a3a\'">';
@@ -1430,7 +1429,7 @@
         openModal('🍼 Name Your Child', html, '');
 
         // Hide close button — must name the child
-        var closeBtn = document.querySelector('#modal .modal-close, #modal [onclick*="closeModal"]');
+        var closeBtn = document.querySelector('#modal .modal-close, #modal [data-action="closeModal"]');
         if (!closeBtn) closeBtn = document.getElementById('btnCloseModal');
         if (closeBtn) closeBtn.style.display = 'none';
 
@@ -1554,7 +1553,7 @@
             if (crisis.pretenders && crisis.pretenders.length > 0) {
                 html += '<span class="text-dim">Pretenders: ' + crisis.pretenders.map(function(p) { return p.name + ' (' + p.type + ', support: ' + p.support + ')'; }).join(', ') + '</span>';
             }
-            html += '<br><button class="btn-medieval" onclick="UI.openSuccessionCrisisDialog(\'' + kingdomId + '\')" style="font-size:0.75rem;padding:3px 8px;margin-top:4px;">👑 View Details / Influence</button>';
+            html += '<br><button class="btn-medieval" data-action="openSuccessionCrisisDialog" data-id="' + kingdomId + '" style="font-size:0.75rem;padding:3px 8px;margin-top:4px;">👑 View Details / Influence</button>';
             html += '</div>';
         }
 
@@ -1813,7 +1812,7 @@
                     html += '<div style="margin-top:4px;font-size:0.8rem;">You have: <b>' + playerHas + '</b> / ' + (comm.quantity || 1) + ' ' + comm.resourceId + '</div>';
                 }
                 if (canFulfill) {
-                    html += '<button class="btn-medieval" onclick="UI.fulfillCommissionUI(\'' + kingdomId + '\',\'' + comm.id + '\')" style="font-size:0.8rem;padding:4px 10px;margin-top:4px;">✅ Fulfill Commission</button>';
+                    html += '<button class="btn-medieval" data-action="fulfillCommissionUI" data-id="' + kingdomId + '" data-val="' + comm.id + '" style="font-size:0.8rem;padding:4px 10px;margin-top:4px;">✅ Fulfill Commission</button>';
                 } else if (comm.type === 'building_request') {
                     html += '<div style="margin-top:4px;font-size:0.8rem;color:#ff9f43;">🏗️ Build the requested building to fulfill this commission.</div>';
                 }
@@ -1891,7 +1890,7 @@
         for (var i = 0; i < amounts.length; i++) {
             var a = amounts[i];
             var canAfford = playerGold >= a.gold;
-            html += '<button class="btn-medieval" style="font-size:0.8rem;padding:6px 12px;" ' + (canAfford ? '' : 'disabled') + ' onclick="(function(){var r=Player.donateToKingdom(\'' + kingdomId + '\',' + a.rep + ');if(!r.success){UI.toast(r.message,\'warning\');}else{UI.openKingdomDonateDialog(\'' + kingdomId + '\');}})()">💰 ' + a.gold + 'g (+' + a.rep + ' rep)</button>';
+            html += '<button class="btn-medieval" style="font-size:0.8rem;padding:6px 12px;" ' + (canAfford ? '' : 'disabled') + ' data-action="donateToKingdom" data-id="' + kingdomId + '" data-val="' + a.rep + '">💰 ' + a.gold + 'g (+' + a.rep + ' rep)</button>';
         }
         html += '</div></div>';
 
@@ -1927,7 +1926,7 @@
         html += '<div style="background:rgba(100,200,100,0.1);padding:10px;border-radius:6px;margin-bottom:8px;border:1px solid rgba(100,200,100,0.3);">';
         html += '<b>⚔️ Report for Duty</b><br>';
         html += '<span class="text-dim">Serve 1 year of mandatory military service. You will be fed, paid, and may earn rank/citizenship. If indentured, your servitude is dissolved.</span><br>';
-        html += '<button class="btn-medieval" onclick="UI.respondConscription(\'report\')" style="margin-top:6px;">⚔️ Report for Duty</button>';
+        html += '<button class="btn-medieval" data-action="respondConscription" data-val="report" style="margin-top:6px;">⚔️ Report for Duty</button>';
         html += '</div>';
 
         // Option 2: Pay (if eligible)
@@ -1935,7 +1934,7 @@
         html += '<b>💰 Pay Exemption Fee (' + (cfg.exemptionFee || 5000) + 'g)</b><br>';
         html += '<span class="text-dim">Requires Minor Noble rank (4+) and ' + (cfg.exemptionFee || 5000) + 'g. Fee goes to the kingdom treasury.</span><br>';
         if (canPay) {
-            html += '<button class="btn-medieval" onclick="UI.respondConscription(\'pay\')" style="margin-top:6px;">💰 Pay ' + (cfg.exemptionFee || 5000) + 'g</button>';
+            html += '<button class="btn-medieval" data-action="respondConscription" data-val="pay" style="margin-top:6px;">💰 Pay ' + (cfg.exemptionFee || 5000) + 'g</button>';
         } else {
             html += '<span style="color:#ff6b6b;font-size:0.8rem;">' + (highestRank < (cfg.exemptionMinRank || 4) ? 'Rank too low (need Minor Noble+)' : 'Not enough gold') + '</span>';
         }
@@ -1945,7 +1944,7 @@
         html += '<div style="background:rgba(200,50,50,0.1);padding:10px;border-radius:6px;margin-bottom:8px;border:1px solid rgba(200,50,50,0.3);">';
         html += '<b>🏃 Dodge Conscription</b><br>';
         html += '<span class="text-dim">Refuse to report. Risk of being caught and sentenced to 2 years in prison. Being outside the kingdom greatly reduces catch chance. Stealth skills help.</span><br>';
-        html += '<button class="btn-medieval" onclick="UI.respondConscription(\'dodge\')" style="margin-top:6px;background:rgba(200,60,50,0.3);border-color:rgba(200,60,50,0.55);">🏃 Dodge (Risky)</button>';
+        html += '<button class="btn-medieval" data-action="respondConscription" data-val="dodge" style="margin-top:6px;background:rgba(200,60,50,0.3);border-color:rgba(200,60,50,0.55);">🏃 Dodge (Risky)</button>';
         html += '</div>';
 
         html += '</div>';
@@ -1989,7 +1988,7 @@
             html += '<div style="background:rgba(100,150,255,0.1);padding:10px;border-radius:6px;border:1px solid rgba(100,150,255,0.3);">';
             html += '<b>⏩ Fast Forward</b><br>';
             html += '<span class="text-dim">Skip ahead through your sentence. The game will simulate ' + daysLeft + ' days of world activity while you serve your time.</span><br>';
-            html += '<button class="btn-medieval" onclick="UI.fastForwardJailUI()" style="margin-top:6px;">⏩ Skip ' + daysLeft + ' Days</button>';
+            html += '<button class="btn-medieval" data-action="fastForwardJailUI" style="margin-top:6px;">⏩ Skip ' + daysLeft + ' Days</button>';
             html += '</div>';
         }
 
@@ -2063,7 +2062,7 @@
                 html += '<b>' + pr.name + '</b> <span class="text-dim">(' + pr.type + ')</span><br>';
                 html += 'Support: ' + pr.support + ' | Gold: ' + (pr.gold || 0) + 'g';
                 if (canInfluence && !crisis.playerBacking) {
-                    html += '<br><button class="btn-medieval" onclick="UI.backPretenderUI(\'' + kingdomId + '\',\'' + pr.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin-top:4px;">💰 Back with 10,000g</button>';
+                    html += '<br><button class="btn-medieval" data-action="backPretenderUI" data-id="' + kingdomId + '" data-val="' + pr.id + '" style="font-size:0.75rem;padding:3px 8px;margin-top:4px;">💰 Back with 10,000g</button>';
                 }
                 html += '</div>';
             }
@@ -2164,8 +2163,8 @@
         html += '<p style="font-size:0.8rem;color:#c9a96e;margin-top:8px;">\u26A0\uFE0F Off-road travel is 4\u00D7 slower than roads. Higher risk of encounters.</p>';
 
         html += '<div style="display:flex;gap:8px;margin-top:12px;">';
-        html += '<button class="btn-medieval" style="flex:1;" onclick="Player.travelToCoords(' + worldX + ',' + worldY + '); UI.closeModal();">\uD83E\uDDB6 Go</button>';
-        html += '<button class="btn-medieval" style="flex:1;opacity:0.6;" onclick="UI.closeModal();">Cancel</button>';
+        html += '<button class="btn-medieval" style="flex:1;" data-action="travelToCoords" data-x="' + worldX + '" data-y="' + worldY + '">\uD83E\uDDB6 Go</button>';
+        html += '<button class="btn-medieval" style="flex:1;opacity:0.6;" data-action="closeModal">Cancel</button>';
         html += '</div>';
         html += '</div>';
 
@@ -2278,10 +2277,10 @@
         if (actionsDiv) {
             var btns = '';
             if (!Player.travelPaid) {
-                btns += '<button class="btn-travel" onclick="UI.turnBackUI()">\uD83D\uDD04 Turn Back</button>';
-                btns += '<button class="btn-travel" onclick="UI.stopTravelUI()">\u23F9\uFE0F Stop Here</button>';
+                btns += '<button class="btn-travel" data-action="turnBackUI">\uD83D\uDD04 Turn Back</button>';
+                btns += '<button class="btn-travel" data-action="stopTravelUI">\u23F9\uFE0F Stop Here</button>';
             }
-            btns += '<button class="btn-travel" onclick="UI.openTravelRest()">\uD83C\uDFD5\uFE0F Camp</button>';
+            btns += '<button class="btn-travel" data-action="openTravelRest">\uD83C\uDFD5\uFE0F Camp</button>';
             btns += '<button class="btn-travel" data-action="openCharacterDialog">\uD83D\uDC64 Status</button>';
             // Forage while traveling button
             var forageLabel = '\uD83C\uDF3F Forage';
@@ -2294,9 +2293,9 @@
                     forageLabel = '\uD83C\uDF3F Forage (' + chance + '%)';
                 }
             }
-            btns += '<button class="btn-travel" onclick="UI.forageNearby()" style="background:rgba(85,168,104,0.15);border-color:rgba(85,168,104,0.3);">' + forageLabel + '</button>';
+            btns += '<button class="btn-travel" data-action="forageNearby" style="background:rgba(85,168,104,0.15);border-color:rgba(85,168,104,0.3);">' + forageLabel + '</button>';
             // Found Outpost while traveling
-            btns += '<button class="btn-travel" onclick="UI.foundOutpostFromTravel()" style="background:rgba(74,124,59,0.15);border-color:rgba(74,124,59,0.3);">\u26FA Found Outpost</button>';
+            btns += '<button class="btn-travel" data-action="foundOutpostFromTravel" style="background:rgba(74,124,59,0.15);border-color:rgba(74,124,59,0.3);">\u26FA Found Outpost</button>';
             // Only rebuild DOM when content changes to prevent button flicker
             if (actionsDiv._lastBtns !== btns) {
                 actionsDiv.innerHTML = btns;
@@ -2336,7 +2335,7 @@
             if (Player.hasSkill && Player.hasSkill('untouchable')) _escapeChance += 5;
             if (Player.hasSkill && Player.hasSkill('silver_tongue_dark')) _escapeChance += 3;
             var _ffLabel = window._jailFastForwarding ? '⏸️ Stop Fast Forward' : '⏩ Fast Forward to Release';
-            var _ffAction = window._jailFastForwarding ? 'UI.stopJailFastForward()' : 'UI.fastForwardJailUI()';
+            var _ffAction = window._jailFastForwarding ? 'stopJailFastForward' : 'fastForwardJailUI';
             // Slow down to 60x when close to release
             if (window._jailFastForwarding && _jailDaysLeft < 3 && typeof Game !== 'undefined' && Game.getSpeed && Game.getSpeed() > 60) {
                 Game.setSpeed(60);
@@ -2344,8 +2343,8 @@
             _jailPanel.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap;">' +
                 '<div>🔒 <strong style="color:#c44e52;">IMPRISONED</strong> in ' + _jailTownName + '</div>' +
                 '<div style="font-size:0.9rem;">⏳ ' + _jailDaysLeft + ' day' + (_jailDaysLeft !== 1 ? 's' : '') + ' remaining</div>' +
-                '<button onclick="UI.attemptJailEscapeUI()" style="padding:4px 12px;font-size:0.8rem;background:rgba(139,0,0,0.4);color:#e0d6b8;border:1px solid #8b0000;border-radius:4px;cursor:pointer;" title="' + _escapeChance + '% chance. If caught: more time + fine.">🔓 Attempt Escape (' + _escapeChance + '%)</button>' +
-                '<button onclick="' + _ffAction + '" style="padding:4px 12px;font-size:0.8rem;background:rgba(50,50,150,0.4);color:#e0d6b8;border:1px solid #4444aa;border-radius:4px;cursor:pointer;">' + _ffLabel + '</button>' +
+                '<button data-action="attemptJailEscapeUI" style="padding:4px 12px;font-size:0.8rem;background:rgba(139,0,0,0.4);color:#e0d6b8;border:1px solid #8b0000;border-radius:4px;cursor:pointer;" title="' + _escapeChance + '% chance. If caught: more time + fine.">🔓 Attempt Escape (' + _escapeChance + '%)</button>' +
+                '<button data-action="' + _ffAction + '" style="padding:4px 12px;font-size:0.8rem;background:rgba(50,50,150,0.4);color:#e0d6b8;border:1px solid #4444aa;border-radius:4px;cursor:pointer;">' + _ffLabel + '</button>' +
                 '</div>';
         } else {
             // Jail ended — auto-pause if fast forwarding
@@ -2415,7 +2414,7 @@
 
         for (var i = 0; i < options.length; i++) {
             var opt = options[i];
-            html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px;margin-bottom:4px;background:rgba(255,255,255,0.03);border-radius:4px;cursor:pointer;" onclick="UI.startTravelRest(\'' + opt.id + '\')">';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px;margin-bottom:4px;background:rgba(255,255,255,0.03);border-radius:4px;cursor:pointer;" data-action="startTravelRest" data-id="' + opt.id + '">';
             html += '<div>' + opt.icon + ' <strong>' + opt.name + '</strong><br><span style="font-size:0.75rem;color:var(--text-muted);">\u26A1 ' + opt.energy + ' | \u26A0\uFE0F ' + opt.risks + '</span></div>';
             html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 8px;">Rest</button>';
             html += '</div>';
@@ -2500,5 +2499,128 @@
     UI.stopJailFastForward = stopJailFastForward;
     UI.openTravelRest = openTravelRest;
     UI.startTravelRest = startTravelRest;
+
+    // ============================================================
+    // ACTION REGISTRATIONS (data-action delegation)
+    // ============================================================
+
+    // Simple one-arg actions: handler receives data-id
+    var _simpleIdActions = [
+        'showPetitionDetail', 'submitPetitionUI', 'cancelPetitionUI',
+        'selectPetitionType', 'resolveWarConflict', 'renounceKingdomUI',
+        'showBidModal', 'showDeliverOrderModal', 'showNegotiateDealPanel',
+        'deliverSupplyDealUI', 'cancelSupplyDealUI', 'submitBid',
+        'executeDeliverOrder', 'submitDealProposal', 'showKingdomOrdersPanel',
+        'executeDeliverDeal', 'openSuccessionCrisisDialog',
+        'confirmCreatePetitionTownPair', 'startTravelRest'
+    ];
+    for (var _i = 0; _i < _simpleIdActions.length; _i++) {
+        (function(name) {
+            UI.registerAction(name, function(_t, d) { UI[name](d.id); });
+        })(_simpleIdActions[_i]);
+    }
+
+    // No-arg actions
+    var _noArgActions = [
+        'showCreatePetitionPanel', 'showPetitionsPanel', 'petitionPromotion',
+        'fastForwardJailUI', 'turnBackUI', 'stopTravelUI', 'openTravelRest',
+        'attemptJailEscapeUI', 'forageNearby', 'foundOutpostFromTravel',
+        'stopJailFastForward', 'closeModal'
+    ];
+    for (var _i = 0; _i < _noArgActions.length; _i++) {
+        (function(name) {
+            UI.registerAction(name, function() { UI[name](); });
+        })(_noArgActions[_i]);
+    }
+
+    // Two-arg actions (id, val) — both string
+    var _twoArgActions = [
+        'askNPCToSign', 'firePetitionerUI', 'backPretenderUI'
+    ];
+    for (var _i = 0; _i < _twoArgActions.length; _i++) {
+        (function(name) {
+            UI.registerAction(name, function(_t, d) { UI[name](d.id, d.val); });
+        })(_twoArgActions[_i]);
+    }
+
+    // hirePetitionerUI: id + boolean val
+    UI.registerAction('hirePetitionerUI', function(_t, d) {
+        UI.hirePetitionerUI(d.id, d.val === 'true');
+    });
+
+    // fulfillCommissionUI: id + val (both strings)
+    UI.registerAction('fulfillCommissionUI', function(_t, d) {
+        UI.fulfillCommissionUI(d.id, d.val);
+    });
+
+    // confirmHeirSelection: id + val
+    UI.registerAction('confirmHeirSelection', function(_t, d) {
+        UI.confirmHeirSelection(d.id, d.val);
+    });
+
+    // switchOrdersTab: uses data-tab
+    UI.registerAction('switchOrdersTab', function(_t, d) {
+        UI.switchOrdersTab(d.tab);
+    });
+
+    // respondConscription: uses data-val
+    UI.registerAction('respondConscription', function(_t, d) {
+        UI.respondConscription(d.val);
+    });
+
+    // sellToKingdomUI: id, val, qty (int), price (float)
+    UI.registerAction('sellToKingdomUI', function(_t, d) {
+        UI.sellToKingdomUI(d.id, d.val, parseInt(d.qty), parseFloat(d.price));
+    });
+
+    // sellToCrownUI: id, val, qty (int), price (float)
+    UI.registerAction('sellToCrownUI', function(_t, d) {
+        UI.sellToCrownUI(d.id, d.val, parseInt(d.qty), parseFloat(d.price));
+    });
+
+    // confirmCreatePetition: type + reconstructed params object
+    UI.registerAction('confirmCreatePetition', function(_t, d) {
+        var params = {};
+        if (d.townid) { params.townId = d.townid; params.townName = d.townname || ''; }
+        if (d.roadindex !== undefined && d.roadindex !== '') { params.roadIndex = parseInt(d.roadindex); params.roadName = d.roadname || ''; }
+        if (d.targetkingdomid) { params.targetKingdomId = d.targetkingdomid; params.targetKingdomName = d.targetkingdomname || ''; }
+        if (d.resourceid) { params.resourceId = d.resourceid; params.resourceName = d.resourcename || ''; }
+        UI.confirmCreatePetition(d.type, params);
+    });
+
+    // renounceKingdom IIFE wrapper
+    UI.registerAction('renounceKingdom', function(_t, d) {
+        var r = Player.renounceKingdom(d.id);
+        UI.toast(r.message, r.success ? 'warning' : 'danger');
+        UI.closeModal();
+        UI.openCharacterDialog();
+    });
+
+    // donateToKingdom IIFE wrapper
+    UI.registerAction('donateToKingdom', function(_t, d) {
+        var r = Player.donateToKingdom(d.id, parseInt(d.val));
+        if (!r.success) { UI.toast(r.message, 'warning'); }
+        else { UI.openKingdomDonateDialog(d.id); }
+    });
+
+    // travelToCoords: multi-statement wrapper
+    UI.registerAction('travelToCoords', function(_t, d) {
+        Player.travelToCoords(parseInt(d.x), parseInt(d.y));
+        UI.closeModal();
+    });
+
+    // useSpouseSuggestion: fill child name input + update button
+    UI.registerAction('useSpouseSuggestion', function(target, d) {
+        var inp = document.getElementById('childNameInput');
+        if (inp) inp.value = d.val;
+        target.style.background = '#2a4a2a';
+        target.style.borderColor = '#5a5';
+        target.textContent = d.label;
+    });
+
+    // confirmChildName: wrapper for _confirmChildName
+    UI.registerAction('confirmChildName', function(_t, d) {
+        UI._confirmChildName(d.id, d.val);
+    });
 
 })(window.UI);

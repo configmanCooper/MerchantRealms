@@ -1291,8 +1291,8 @@ var Guidance = (function () {
     function confirmDismiss() {
         var body = '<p style="margin-bottom:12px;">Are you sure you want to hide Merchant\'s Path?</p>';
         body += '<p style="font-size:0.8rem;color:var(--text-muted);">You can re-enable it later in ⚙️ Settings.</p>';
-        var footer = '<button class="btn-medieval" onclick="Guidance.dismiss();UI.closeModal()">Yes, hide it</button> ';
-        footer += '<button class="btn-medieval" onclick="UI.closeModal()">Cancel</button>';
+        var footer = '<button class="btn-medieval" data-action="guidanceDismiss">Yes, hide it</button> ';
+        footer += '<button class="btn-medieval" data-action="closeModal">Cancel</button>';
         UI.openModal("Hide Merchant's Path?", body, footer);
     }
 
@@ -1345,3 +1345,11 @@ var Guidance = (function () {
     };
 
 })();
+
+// Register guidance actions for event delegation
+if (typeof UI !== 'undefined' && UI.registerAction) {
+    UI.registerAction('guidanceDismiss', function() {
+        Guidance.dismiss();
+        UI.closeModal();
+    });
+}

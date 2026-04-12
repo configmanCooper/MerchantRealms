@@ -8146,7 +8146,7 @@
 
         var html = ceremony.narrative(playerName, kingdomName);
         if (typeof UI !== 'undefined' && UI.openModal) {
-            UI.openModal(ceremony.title, html, '<button class="btn-medieval" onclick="UI.closeModal()">Continue</button>');
+            UI.openModal(ceremony.title, html, '<button class="btn-medieval" data-action="closeModal">Continue</button>');
         }
     }
 
@@ -16800,7 +16800,7 @@
                     }
                 }
                 var pop = ct.population || 0;
-                html += '<div onclick="Player._selectLordTown(\'' + ct.id + '\', \'' + kingdomId + '\')" ';
+                html += '<div data-action="selectLordTown" data-id="' + ct.id + '" data-kingdom="' + kingdomId + '" ';
                 html += 'style="padding:12px;margin:8px 0;border:2px solid #8b6914;border-radius:8px;background:rgba(139,105,20,0.1);cursor:pointer;transition:all 0.2s" ';
                 html += 'onmouseover="this.style.borderColor=\'#ffd700\';this.style.background=\'rgba(255,215,0,0.15)\'" ';
                 html += 'onmouseout="this.style.borderColor=\'#8b6914\';this.style.background=\'rgba(139,105,20,0.1)\'">';
@@ -29877,7 +29877,7 @@
             var fnName = (fn.person.firstName || '') + ' ' + (fn.person.lastName || '');
             var fnIcon = rankIcons[fn.rank] || '👤';
             var fnLabel = rankLabels[fn.rank] || 'Noble';
-            html += '<div onclick="UI.closeModal(); UI.talkToPerson(\'' + fn.person.id + '\')" ';
+            html += '<div data-action="closeModalAndTalkToPerson" data-id="' + fn.person.id + '" ';
             html += 'style="display:flex;align-items:center;gap:8px;padding:6px 8px;margin:3px 0;border:1px solid #555;border-radius:6px;background:rgba(40,40,40,0.8);cursor:pointer;transition:background 0.15s" ';
             html += 'onmouseover="this.style.background=\'rgba(255,215,0,0.12)\'" onmouseout="this.style.background=\'rgba(40,40,40,0.8)\'">';
             html += '<span style="font-size:1.2em">' + fnIcon + '</span>';
@@ -29890,7 +29890,7 @@
         }
         html += '</div></div>';
 
-        UI.openModal('🏆 Champion\'s Feast', html, '<button class="btn-medieval" onclick="UI.closeModal()">Leave the Feast</button>');
+        UI.openModal('🏆 Champion\'s Feast', html, '<button class="btn-medieval" data-action="closeModal">Leave the Feast</button>');
     }
 
     // ========================================================
@@ -31856,6 +31856,19 @@
             return [];
         },
         configurable: true
+    });
+
+    // Register actions for event delegation (deferred until UI is available)
+    document.addEventListener('DOMContentLoaded', function() {
+        if (typeof UI !== 'undefined' && UI.registerAction) {
+            UI.registerAction('selectLordTown', function(_t, d) {
+                if (d.id && d.kingdom) Player._selectLordTown(d.id, d.kingdom);
+            });
+            UI.registerAction('closeModalAndTalkToPerson', function(_t, d) {
+                UI.closeModal();
+                if (d.id) UI.talkToPerson(d.id);
+            });
+        }
     });
 
 })();

@@ -184,14 +184,14 @@
 
         var header = '<div style="padding:12px 16px; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center;">';
         header += '<span style="color:#FFD700; font-size:18px; font-weight:bold;">📖 Game Guide</span>';
-        header += '<button onclick="document.getElementById(\'game-guide-overlay\').remove()" style="background:#600; color:#fff; border:1px solid #a00; padding:4px 12px; cursor:pointer; border-radius:4px;">✖ Close</button>';
+        header += '<button data-action="removeOverlay" data-id="game-guide-overlay" style="background:#600; color:#fff; border:1px solid #a00; padding:4px 12px; cursor:pointer; border-radius:4px;">✖ Close</button>';
         header += '</div>';
 
         header += '<div style="padding:8px 16px; border-bottom:1px solid #333; display:flex; flex-wrap:wrap; align-items:center;">';
         header += '<input id="guide-search" type="text" placeholder="Search guide..." oninput="window._filterGuide()" style="width:200px; background:#2a2a3e; color:#fff; border:1px solid #555; padding:6px 10px; border-radius:4px; margin-right:8px; margin-bottom:4px;" />';
         var cats = ['All', 'Getting Started', 'Trading', 'Skills', 'Buildings', 'Housing', 'Ships', 'Travel', 'Work', 'Kingdoms', 'Outposts', 'Ranks', 'Family', 'Elite Merchants', 'Health', 'Combat', 'Economy', 'Tips'];
         for (var ci = 0; ci < cats.length; ci++) {
-            header += '<button onclick="window._guideCat=\'' + cats[ci] + '\'; window._filterGuide()" style="margin:2px; padding:3px 8px; background:' + (ci === 0 ? '#FFD700' : '#2a2a3e') + '; color:' + (ci === 0 ? '#000' : '#ddd') + '; border:1px solid #555; border-radius:3px; cursor:pointer; font-size:11px;" id="guide-cat-' + cats[ci].replace(/ /g, '-') + '">' + cats[ci] + '</button>';
+            header += '<button data-action="filterGuide" data-val="' + cats[ci] + '" style="margin:2px; padding:3px 8px; background:' + (ci === 0 ? '#FFD700' : '#2a2a3e') + '; color:' + (ci === 0 ? '#000' : '#ddd') + '; border:1px solid #555; border-radius:3px; cursor:pointer; font-size:11px;" id="guide-cat-' + cats[ci].replace(/ /g, '-') + '">' + cats[ci] + '</button>';
         }
         header += '</div>';
 
@@ -515,17 +515,17 @@
         // Header
         var header = '<div style="padding:12px 16px; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center;">';
         header += '<span style="color:#FFD700; font-size:18px; font-weight:bold;">📦 Goods Guide</span>';
-        header += '<button onclick="document.getElementById(\'goods-guide-overlay\').remove()" style="background:#600; color:#fff; border:1px solid #a00; padding:4px 12px; cursor:pointer; border-radius:4px;">✖ Close</button>';
+        header += '<button data-action="removeOverlay" data-id="goods-guide-overlay" style="background:#600; color:#fff; border:1px solid #a00; padding:4px 12px; cursor:pointer; border-radius:4px;">✖ Close</button>';
         header += '</div>';
 
         // Filter bar
         header += '<div style="padding:8px 16px; border-bottom:1px solid #333; display:flex; flex-wrap:wrap; align-items:center;">';
         header += '<input id="goods-search" type="text" placeholder="Search goods..." style="width:200px; background:#2a2a3e; color:#fff; border:1px solid #555; padding:6px 10px; border-radius:4px; margin-right:8px;" />';
         var catLabels = { raw: '🪨 Raw', processed: '⚙️ Processed', food: '🍞 Food', beverage: '🍺 Beverage', finished: '🏭 Finished', military: '⚔️ Military', luxury: '💎 Luxury', medical: '🩹 Medical', supplies: '🏕️ Supplies', livestock: '🐄 Livestock', contraband: '☠️ Contraband', quest: '🏆 Quest' };
-        header += '<button onclick="window._goodsCat=\'all\'; window._filterGoods()" style="margin:2px; padding:3px 8px; background:#FFD700; color:#000; border:1px solid #555; border-radius:3px; cursor:pointer; font-size:11px;" id="goods-cat-all">All</button>';
+        header += '<button data-action="filterGoods" data-val="all" style="margin:2px; padding:3px 8px; background:#FFD700; color:#000; border:1px solid #555; border-radius:3px; cursor:pointer; font-size:11px;" id="goods-cat-all">All</button>';
         for (var ci2 = 0; ci2 < catOrder.length; ci2++) {
             var cat = catOrder[ci2];
-            header += '<button onclick="window._goodsCat=\'' + cat + '\'; window._filterGoods()" style="margin:2px; padding:3px 8px; background:#2a2a3e; color:#ddd; border:1px solid #555; border-radius:3px; cursor:pointer; font-size:11px;" id="goods-cat-' + cat + '">' + (catLabels[cat] || cat) + '</button>';
+            header += '<button data-action="filterGoods" data-val="' + cat + '" style="margin:2px; padding:3px 8px; background:#2a2a3e; color:#ddd; border:1px solid #555; border-radius:3px; cursor:pointer; font-size:11px;" id="goods-cat-' + cat + '">' + (catLabels[cat] || cat) + '</button>';
         }
         header += '</div>';
 
@@ -609,15 +609,15 @@
         if (capital > 0) {
             html += `<div class="detail-section"><h3>Counsel Options</h3>`;
 
-            html += `<div class="detail-row" style="cursor:pointer" onclick="UI.executeAdvice('${kingdomId}','lower_taxes')">
+            html += `<div class="detail-row" style="cursor:pointer" data-action="executeAdvice" data-kingdom="${kingdomId}" data-type="lower_taxes">
                 <span class="label">📉 Lower Taxes</span>
                 <span class="value text-dim">Suggest reducing kingdom tax rate</span>
             </div>`;
-            html += `<div class="detail-row" style="cursor:pointer" onclick="UI.executeAdvice('${kingdomId}','raise_taxes')">
+            html += `<div class="detail-row" style="cursor:pointer" data-action="executeAdvice" data-kingdom="${kingdomId}" data-type="raise_taxes">
                 <span class="label">📈 Raise Taxes</span>
                 <span class="value text-dim">Suggest increasing kingdom tax rate</span>
             </div>`;
-            html += `<div class="detail-row" style="cursor:pointer" onclick="UI.executeAdvice('${kingdomId}','build_walls')">
+            html += `<div class="detail-row" style="cursor:pointer" data-action="executeAdvice" data-kingdom="${kingdomId}" data-type="build_walls">
                 <span class="label">🏰 Fortify Towns</span>
                 <span class="value text-dim">Suggest building fortifications</span>
             </div>`;
@@ -630,7 +630,7 @@
 
             if (enemies.length > 0) {
                 for (const enemy of enemies) {
-                    html += `<div class="detail-row" style="cursor:pointer" onclick="UI.executeAdvice('${kingdomId}','make_peace','${enemy.id}')">
+                    html += `<div class="detail-row" style="cursor:pointer" data-action="executeAdvice" data-kingdom="${kingdomId}" data-type="make_peace" data-val="${enemy.id}">
                         <span class="label">🕊️ Seek Peace with ${enemy.name}</span>
                         <span class="value text-dim">End the war diplomatically</span>
                     </div>`;
@@ -638,7 +638,7 @@
             }
             if (potentials.length > 0) {
                 for (const pot of potentials.slice(0, 3)) {
-                    html += `<div class="detail-row" style="cursor:pointer" onclick="UI.executeAdvice('${kingdomId}','declare_war','${pot.id}')">
+                    html += `<div class="detail-row" style="cursor:pointer" data-action="executeAdvice" data-kingdom="${kingdomId}" data-type="declare_war" data-val="${pot.id}">
                         <span class="label">⚔ Provoke ${pot.name}</span>
                         <span class="value text-dim">Worsen relations (may lead to war)</span>
                     </div>`;
@@ -719,8 +719,8 @@
                 html += '</div>';
             }
             html += '<div style="display:flex;gap:10px;margin-top:10px;">';
-            html += '<button class="btn-medieval" style="flex:1;background:var(--accent-green,#2a7a2a);" onclick="UI.acceptCommissionUI(\'' + kingdomId + '\')">✅ Accept Commission</button>';
-            html += '<button class="btn-medieval" style="flex:1;background:var(--danger,#8a2a2a);" onclick="UI.refuseCommissionUI(\'' + kingdomId + '\')">❌ Refuse</button>';
+            html += '<button class="btn-medieval" style="flex:1;background:var(--accent-green,#2a7a2a);" data-action="acceptCommissionUI" data-id="' + kingdomId + '">✅ Accept Commission</button>';
+            html += '<button class="btn-medieval" style="flex:1;background:var(--danger,#8a2a2a);" data-action="refuseCommissionUI" data-id="' + kingdomId + '">❌ Refuse</button>';
             html += '</div>';
         } else if (comm.status === 'accepted') {
             // Show delivery status
@@ -737,7 +737,7 @@
             html += '</div>';
 
             if (canDeliver) {
-                html += '<button class="btn-medieval" style="width:100%;background:var(--accent-green,#2a7a2a);" onclick="UI.deliverCommissionUI(\'' + kingdomId + '\')">📦 Deliver Commission</button>';
+                html += '<button class="btn-medieval" style="width:100%;background:var(--accent-green,#2a7a2a);" data-action="deliverCommissionUI" data-id="' + kingdomId + '">📦 Deliver Commission</button>';
             } else {
                 html += '<p style="color:var(--text-secondary);">Gather the required goods and return to deliver.</p>';
             }
@@ -811,7 +811,7 @@
             body += '<input type="range" id="kb-contrib-' + b.id + '" min="0" max="' + b.cost + '" value="' + Math.floor(b.cost * 0.3) + '" step="10" style="flex:1;" oninput="document.getElementById(\'kb-val-' + b.id + '\').textContent=this.value+\'g (\'+Math.round(this.value/' + b.cost + '*100)+\'%)\'"/>';
             body += '<span id="kb-val-' + b.id + '" style="color:#d4a017;font-size:0.8rem;min-width:80px;">' + Math.floor(b.cost * 0.3) + 'g (30%)</span>';
             body += '</div>';
-            body += '<button class="btn-medieval" onclick="UI._submitKingdomBuild(\'' + townId + '\',\'' + b.id + '\')" style="margin-top:6px;font-size:0.8rem;padding:4px 16px;">🏗️ Request</button>';
+            body += '<button class="btn-medieval" data-action="_submitKingdomBuild" data-id="' + townId + '" data-val="' + b.id + '" style="margin-top:6px;font-size:0.8rem;padding:4px 16px;">🏗️ Request</button>';
             body += '</div>';
         }
         body += '</div>';
@@ -851,8 +851,8 @@
         body += '<p style="color:#aaa;font-size:0.85rem;">⏰ Expires in ' + Math.max(0, daysLeft) + ' days (ignored = -8 relationship)</p>';
         body += '</div>';
 
-        var footer = '<button class="btn-medieval" onclick="UI._respondKingFavor(\'' + kingdomId + '\', true)" style="background:rgba(100,200,100,0.2);border-color:rgba(100,200,100,0.4);">✅ Accept</button>';
-        footer += '<button class="btn-medieval" onclick="UI._respondKingFavor(\'' + kingdomId + '\', false)" style="background:rgba(200,100,100,0.2);border-color:rgba(200,100,100,0.4);margin-left:8px;">❌ Decline</button>';
+        var footer = '<button class="btn-medieval" data-action="_respondKingFavor" data-id="' + kingdomId + '" data-val="true" style="background:rgba(100,200,100,0.2);border-color:rgba(100,200,100,0.4);">✅ Accept</button>';
+        footer += '<button class="btn-medieval" data-action="_respondKingFavor" data-id="' + kingdomId + '" data-val="false" style="background:rgba(200,100,100,0.2);border-color:rgba(200,100,100,0.4);margin-left:8px;">❌ Decline</button>';
         footer += '<button class="btn-medieval" data-action="closeModal" style="margin-left:8px;">Later</button>';
 
         openModal('👑 King\'s Request', body, footer);
@@ -925,7 +925,7 @@
                 var disabled = capital <= 0 || !cl.canAfford;
                 var disabledStyle = disabled ? 'opacity:0.5;pointer-events:none;' : 'cursor:pointer;';
                 html += '<div class="detail-row" style="' + disabledStyle + 'padding:8px;margin:4px 0;border-radius:4px;background:rgba(255,255,255,0.03);" ' +
-                    (disabled ? '' : 'onclick="UI.executeProposeLaw(\'' + kingdomId + '\',\'' + cl.id + '\')"') + '>';
+                    (disabled ? '' : 'data-action="executeProposeLaw" data-id="' + kingdomId + '" data-val="' + cl.id + '"') + '>';
                 html += '<div style="flex:1;">';
                 html += '<span class="label">' + cl.icon + ' ' + cl.name + '</span>';
                 html += '<div style="color:var(--text-secondary);font-size:0.85em;">' + cl.description + '</div>';
@@ -1018,7 +1018,7 @@
             for (var oi = 0; oi < decisions.length; oi++) {
                 if (decisions[oi].id === decision.id) continue;
                 var od = decisions[oi];
-                html += '<div class="detail-row" style="cursor:pointer" onclick="UI.openKingConsultationDialog(\'' + kingdom.id + '\',\'' + od.id + '\')">';
+                html += '<div class="detail-row" style="cursor:pointer" data-action="openKingConsultationDialog" data-id="' + kingdom.id + '" data-val="' + od.id + '">';
                 html += '<span class="label">' + (typeIcons[od.type] || '📜') + ' ' + od.description + '</span>';
                 html += '<span class="value text-dim">Deadline: Day ' + od.deadlineDay + '</span>';
                 html += '</div>';
@@ -1026,8 +1026,8 @@
             html += '</div>';
         }
 
-        var footer = '<button class="btn-medieval" style="background:rgba(0,180,0,0.2);border-color:rgba(0,180,0,0.5);margin-right:8px;" onclick="UI.respondToKingDecision(\'' + kingdom.id + '\',\'' + decision.id + '\',\'agree\')">✅ Agree</button>';
-        footer += '<button class="btn-medieval" style="background:rgba(200,50,50,0.2);border-color:rgba(200,50,50,0.5);margin-right:8px;" onclick="UI.respondToKingDecision(\'' + kingdom.id + '\',\'' + decision.id + '\',\'oppose\')">🛡️ Oppose</button>';
+        var footer = '<button class="btn-medieval" style="background:rgba(0,180,0,0.2);border-color:rgba(0,180,0,0.5);margin-right:8px;" data-action="respondToKingDecision" data-id="' + kingdom.id + '" data-val="' + decision.id + '" data-type="agree">✅ Agree</button>';
+        footer += '<button class="btn-medieval" style="background:rgba(200,50,50,0.2);border-color:rgba(200,50,50,0.5);margin-right:8px;" data-action="respondToKingDecision" data-id="' + kingdom.id + '" data-val="' + decision.id + '" data-type="oppose">🛡️ Oppose</button>';
         footer += '<button class="btn-medieval" data-action="closeModal">Decide Later</button>';
 
         openModal('👑 Royal Consultation — ' + kingdom.name, html, footer);
@@ -1283,7 +1283,7 @@
                     if (isSea && seaDays !== null) {
                         html += '<div style="font-size:0.8rem;color:#8bf;">⛵ ~' + seaDays + 'd' + (seaCost > 0 ? ' · ' + seaCost + 'g' : '') + '</div>';
                     }
-                    html += '<button class="btn-medieval" style="margin-top:6px;padding:5px 12px;font-size:0.8rem;" onclick="UI.openTravelOptions(\'' + t.id + '\')">🗺️ Travel</button>';
+                    html += '<button class="btn-medieval" style="margin-top:6px;padding:5px 12px;font-size:0.8rem;" data-action="openTravelOptions" data-id="' + t.id + '">🗺️ Travel</button>';
                     html += '</div>';
 
                     html += '</div>'; // flex row
@@ -1309,14 +1309,14 @@
                 html += '<td style="text-align:center;">' + r.tollRate + 'g</td>';
                 html += '<td style="text-align:center;color:#ffd700;">' + Math.floor(r.tollRevenue || 0) + 'g</td>';
                 html += '<td style="text-align:center;">';
-                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;" onclick="UI.changeTollRate(\'' + r.type + '\',\'' + r.fromTownId + '\',\'' + r.toTownId + '\')">Set Rate</button>';
+                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;" data-action="changeTollRate" data-id="' + r.type + '" data-val="' + r.fromTownId + '" data-type="' + r.toTownId + '">Set Rate</button>';
                 html += '</td></tr>';
             }
             html += '</table>';
         }
 
         html += '<div style="margin-top:15px;">';
-        html += '<button class="btn-medieval" onclick="UI.collectTolls()" style="padding:8px 20px;">💰 Collect All Revenue</button>';
+        html += '<button class="btn-medieval" data-action="collectTolls" style="padding:8px 20px;">💰 Collect All Revenue</button>';
         html += '</div>';
         html += '</div>'; // toll routes section
         html += '</div>'; // outer container
@@ -1421,14 +1421,14 @@
                 costEstimate = '<span style="color:#ccc;">~' + playerCost.toLocaleString() + 'g (your 10% share)</span>';
             }
 
-            var btnAction = '';
-            if (type === 'toll_road') btnAction = "UI.buildTollRoad('" + t.id + "')";
-            else if (type === 'sea_route') btnAction = "UI.buildSeaRoute('" + t.id + "')";
-            else if (type === 'petition') btnAction = "UI.petitionKingForRoad('" + t.id + "')";
+            var btnActionAttr = '';
+            if (type === 'toll_road') btnActionAttr = 'data-action="buildTollRoad" data-id="' + t.id + '"';
+            else if (type === 'sea_route') btnActionAttr = 'data-action="buildSeaRoute" data-id="' + t.id + '"';
+            else if (type === 'petition') btnActionAttr = 'data-action="petitionKingForRoad" data-id="' + t.id + '"';
 
             html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #333;">';
             html += '<div><strong>' + t.name + '</strong> (' + (kingdom ? kingdom.name : '?') + ') \u2014 ' + Math.floor(d) + ' dist<br>' + costEstimate + '</div>';
-            html += '<button class="btn-medieval" style="font-size:0.75rem;padding:4px 12px;white-space:nowrap;" onclick="' + btnAction + '">Select</button>';
+            html += '<button class="btn-medieval" style="font-size:0.75rem;padding:4px 12px;white-space:nowrap;" ' + btnActionAttr + '>Select</button>';
             html += '</div>';
         }
         html += '</div>';
@@ -1480,4 +1480,80 @@
     UI.buildTollRoad = buildTollRoad;
     UI.buildSeaRoute = buildSeaRoute;
     UI.petitionKingForRoad = petitionKingForRoad;
+
+    // ── Action delegation registrations ──
+    UI.registerAction('removeOverlay', function(_t, d) {
+        var el = document.getElementById(d.id);
+        if (el) el.remove();
+    });
+
+    UI.registerAction('filterGuide', function(_t, d) {
+        window._guideCat = d.val;
+        window._filterGuide();
+    });
+
+    UI.registerAction('filterGoods', function(_t, d) {
+        window._goodsCat = d.val;
+        window._filterGoods();
+    });
+
+    UI.registerAction('executeAdvice', function(_t, d) {
+        UI.executeAdvice(d.kingdom, d.type, d.val);
+    });
+
+    UI.registerAction('acceptCommissionUI', function(_t, d) {
+        UI.acceptCommissionUI(d.id);
+    });
+
+    UI.registerAction('refuseCommissionUI', function(_t, d) {
+        UI.refuseCommissionUI(d.id);
+    });
+
+    UI.registerAction('deliverCommissionUI', function(_t, d) {
+        UI.deliverCommissionUI(d.id);
+    });
+
+    UI.registerAction('_submitKingdomBuild', function(_t, d) {
+        UI._submitKingdomBuild(d.id, d.val);
+    });
+
+    UI.registerAction('_respondKingFavor', function(_t, d) {
+        UI._respondKingFavor(d.id, d.val === 'true');
+    });
+
+    UI.registerAction('executeProposeLaw', function(_t, d) {
+        UI.executeProposeLaw(d.id, d.val);
+    });
+
+    UI.registerAction('openKingConsultationDialog', function(_t, d) {
+        UI.openKingConsultationDialog(d.id, d.val);
+    });
+
+    UI.registerAction('respondToKingDecision', function(_t, d) {
+        UI.respondToKingDecision(d.id, d.val, d.type);
+    });
+
+    UI.registerAction('openTravelOptions', function(_t, d) {
+        UI.openTravelOptions(d.id);
+    });
+
+    UI.registerAction('changeTollRate', function(_t, d) {
+        UI.changeTollRate(d.id, d.val, d.type);
+    });
+
+    UI.registerAction('collectTolls', function() {
+        UI.collectTolls();
+    });
+
+    UI.registerAction('buildTollRoad', function(_t, d) {
+        UI.buildTollRoad(d.id);
+    });
+
+    UI.registerAction('buildSeaRoute', function(_t, d) {
+        UI.buildSeaRoute(d.id);
+    });
+
+    UI.registerAction('petitionKingForRoad', function(_t, d) {
+        UI.petitionKingForRoad(d.id);
+    });
 })(window.UI);

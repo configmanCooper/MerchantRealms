@@ -35,7 +35,7 @@
             body += 'Found with: <span style="color:#ffd700">' + (cfg.foundingCost || 500) + 'g</span> + ' + _formatMats(cfg.foundingMaterials || {}) + '<br>';
             body += 'Starts with ' + (cfg.startingLandPlots || 4) + ' land plots and ' + (cfg.baseStorageCapacity || 200) + ' storage.</p>';
             body += '<div style="margin-top:15px">';
-            body += '<button class="btn-medieval" onclick="UI.enterOutpostPlacement()" style="background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5);padding:8px 20px;">⛺ Found New Outpost</button>';
+            body += '<button class="btn-medieval" data-action="enterOutpostPlacement" style="background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5);padding:8px 20px;">⛺ Found New Outpost</button>';
             body += '</div></div>';
         } else {
             body += '<div style="max-height:420px;overflow-y:auto;padding:4px">';
@@ -48,7 +48,7 @@
                     var hCfg = CONFIG.OUTPOST_HOUSING && CONFIG.OUTPOST_HOUSING[op.outpostHousing[hi].type];
                     if (hCfg) housingCap += hCfg.capacity;
                 }
-                body += '<div style="border:1px solid #555;padding:10px;margin:5px 0;border-radius:6px;background:rgba(30,30,30,0.8);cursor:pointer" onclick="UI.openOutpostDetail(\'' + op.townId + '\')">';
+                body += '<div style="border:1px solid #555;padding:10px;margin:5px 0;border-radius:6px;background:rgba(30,30,30,0.8);cursor:pointer" data-action="openOutpostDetail" data-id="' + op.townId + '">';
                 body += '<div style="display:flex;justify-content:space-between;align-items:center">';
                 body += '<h4 style="margin:0;color:#e0d6b8">' + statusIcon + ' ' + op.name + '</h4>';
                 body += '<span style="color:' + statusColor + ';font-size:11px">' + (op.abandoned ? 'Abandoned' : op.annexed ? 'Village' : 'Active') + '</span>';
@@ -80,7 +80,7 @@
             body += '</div>';
         }
 
-        var footer = '<button class="btn-medieval" onclick="UI.enterOutpostPlacement()" style="background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5);padding:6px 15px;">⛺ Found New Outpost</button> ';
+        var footer = '<button class="btn-medieval" data-action="enterOutpostPlacement" style="background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5);padding:6px 15px;">⛺ Found New Outpost</button> ';
         footer += '<button class="btn-medieval" data-action="closeModal" style="padding:6px 15px;">Close</button>';
         openModal('⛺ Outpost Management (' + outposts.length + ')', body, footer);
     }
@@ -172,9 +172,9 @@
                 body += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-size:11px;flex-wrap:wrap">';
                 body += '<span style="min-width:120px">' + _sIcon + ' ' + _sName + ': <strong>' + _sQty + '</strong></span>';
                 if (Player.townId === townId) {
-                    body += '<button onclick="UI._opOutpostWithdraw(\'' + townId + '\',\'' + _sResId + '\',1)" style="padding:1px 6px;font-size:10px;cursor:pointer">-1</button>';
-                    body += '<button onclick="UI._opOutpostWithdraw(\'' + townId + '\',\'' + _sResId + '\',10)" style="padding:1px 6px;font-size:10px;cursor:pointer">-10</button>';
-                    body += '<button onclick="UI._opOutpostWithdraw(\'' + townId + '\',\'' + _sResId + '\',' + _sQty + ')" style="padding:1px 6px;font-size:10px;cursor:pointer">All</button>';
+                    body += '<button data-action="_opOutpostWithdraw" data-id="' + townId + '" data-val="' + _sResId + '" data-qty="1" style="padding:1px 6px;font-size:10px;cursor:pointer">-1</button>';
+                    body += '<button data-action="_opOutpostWithdraw" data-id="' + townId + '" data-val="' + _sResId + '" data-qty="10" style="padding:1px 6px;font-size:10px;cursor:pointer">-10</button>';
+                    body += '<button data-action="_opOutpostWithdraw" data-id="' + townId + '" data-val="' + _sResId + '" data-qty="' + _sQty + '" style="padding:1px 6px;font-size:10px;cursor:pointer">All</button>';
                 }
                 body += '</div>';
             }
@@ -198,9 +198,9 @@
                     var _dIcon = _dRes ? (_dRes.icon || '') : '';
                     body += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-size:11px;flex-wrap:wrap">';
                     body += '<span style="min-width:120px">' + _dIcon + ' ' + _dName + ' (' + _dQty + ')</span>';
-                    body += '<button onclick="UI._opOutpostDeposit(\'' + townId + '\',\'' + _dResId + '\',1)" style="padding:1px 6px;font-size:10px;cursor:pointer">+1</button>';
-                    body += '<button onclick="UI._opOutpostDeposit(\'' + townId + '\',\'' + _dResId + '\',10)" style="padding:1px 6px;font-size:10px;cursor:pointer">+10</button>';
-                    body += '<button onclick="UI._opOutpostDeposit(\'' + townId + '\',\'' + _dResId + '\',' + Math.min(_dQty, maxStorage - currentWeight) + ')" style="padding:1px 6px;font-size:10px;cursor:pointer">Max</button>';
+                    body += '<button data-action="_opOutpostDeposit" data-id="' + townId + '" data-val="' + _dResId + '" data-qty="1" style="padding:1px 6px;font-size:10px;cursor:pointer">+1</button>';
+                    body += '<button data-action="_opOutpostDeposit" data-id="' + townId + '" data-val="' + _dResId + '" data-qty="10" style="padding:1px 6px;font-size:10px;cursor:pointer">+10</button>';
+                    body += '<button data-action="_opOutpostDeposit" data-id="' + townId + '" data-val="' + _dResId + '" data-qty="' + Math.min(_dQty, maxStorage - currentWeight) + '" style="padding:1px 6px;font-size:10px;cursor:pointer">Max</button>';
                     body += '</div>';
                 }
                 body += '</div>';
@@ -223,7 +223,7 @@
             var lpMats = cfg.landPlotMaterials || { wood: 10, stone: 5 };
             var canBuyLand = gold >= lpCost;
             for (var lmk in lpMats) { if ((inv[lmk] || 0) < lpMats[lmk]) canBuyLand = false; }
-            body += '<button onclick="UI._opBuyLand(\'' + townId + '\')" style="padding:3px 10px;font-size:11px;cursor:pointer' + (canBuyLand ? '' : ';opacity:0.5') + '"' + (canBuyLand ? '' : ' disabled') + '>+ Buy Plot (' + lpCost + 'g + ' + _formatMats(lpMats) + ')</button>';
+            body += '<button data-action="_opBuyLand" data-id="' + townId + '" style="padding:3px 10px;font-size:11px;cursor:pointer' + (canBuyLand ? '' : ';opacity:0.5') + '"' + (canBuyLand ? '' : ' disabled') + '>+ Buy Plot (' + lpCost + 'g + ' + _formatMats(lpMats) + ')</button>';
             } else {
                 body += '<div style="font-size:11px;color:#888">📍 Travel here to buy land.</div>';
             }
@@ -256,7 +256,7 @@
                 var canH = gold >= ht.cost && freePlots >= (ht.landSlots || 1);
                 for (var hmk in ht.materials) { if ((inv[hmk] || 0) < ht.materials[hmk]) canH = false; }
                 body += '<div style="display:flex;align-items:center;gap:6px;margin:3px 0;flex-wrap:wrap">';
-                body += '<button onclick="UI._opBuildHousing(\'' + townId + '\',\'' + hk + '\')" style="padding:2px 8px;font-size:11px;cursor:pointer' + (canH ? '' : ';opacity:0.5') + '"' + (canH ? '' : ' disabled') + '>Build</button>';
+                body += '<button data-action="_opBuildHousing" data-id="' + townId + '" data-val="' + hk + '" style="padding:2px 8px;font-size:11px;cursor:pointer' + (canH ? '' : ';opacity:0.5') + '"' + (canH ? '' : ' disabled') + '>Build</button>';
                 body += '<span style="font-size:11px">' + ht.icon + ' ' + ht.name + ' <span style="color:#888">(' + ht.capacity + ' cap, comfort ' + ht.comfort + ' — ' + ht.cost + 'g + ' + _formatMats(ht.materials) + ')</span></span>';
                 body += '</div>';
             }
@@ -272,10 +272,10 @@
         // Hire/dismiss buttons
         body += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">';
         if (!op.abandoned && !op.annexed && op.population > 0 && _atOutpost) {
-            body += '<button onclick="UI._opStaff(\'' + townId + '\',\'hire\',\'worker\')" style="padding:2px 8px;font-size:11px;cursor:pointer"' + (op.workers < maxW ? '' : ' disabled') + '>+ Hire Worker</button>';
-            body += '<button onclick="UI._opStaff(\'' + townId + '\',\'dismiss\',\'worker\')" style="padding:2px 8px;font-size:11px;cursor:pointer"' + (op.workers > 0 ? '' : ' disabled') + '>− Dismiss Worker</button>';
-            body += '<button onclick="UI._opStaff(\'' + townId + '\',\'hire\',\'guard\')" style="padding:2px 8px;font-size:11px;cursor:pointer"' + (op.guards < maxG ? '' : ' disabled') + '>+ Hire Guard</button>';
-            body += '<button onclick="UI._opStaff(\'' + townId + '\',\'dismiss\',\'guard\')" style="padding:2px 8px;font-size:11px;cursor:pointer"' + (op.guards > 0 ? '' : ' disabled') + '>− Dismiss Guard</button>';
+            body += '<button data-action="_opStaff" data-id="' + townId + '" data-val="hire" data-type="worker" style="padding:2px 8px;font-size:11px;cursor:pointer"' + (op.workers < maxW ? '' : ' disabled') + '>+ Hire Worker</button>';
+            body += '<button data-action="_opStaff" data-id="' + townId + '" data-val="dismiss" data-type="worker" style="padding:2px 8px;font-size:11px;cursor:pointer"' + (op.workers > 0 ? '' : ' disabled') + '>− Dismiss Worker</button>';
+            body += '<button data-action="_opStaff" data-id="' + townId + '" data-val="hire" data-type="guard" style="padding:2px 8px;font-size:11px;cursor:pointer"' + (op.guards < maxG ? '' : ' disabled') + '>+ Hire Guard</button>';
+            body += '<button data-action="_opStaff" data-id="' + townId + '" data-val="dismiss" data-type="guard" style="padding:2px 8px;font-size:11px;cursor:pointer"' + (op.guards > 0 ? '' : ' disabled') + '>− Dismiss Guard</button>';
         }
         if (!_atOutpost && op.population > 0) body += '<div style="font-size:11px;color:#888">📍 Travel here to manage staff.</div>';
         if (op.population === 0) body += '<div style="font-size:11px;color:#c44e52">⚠️ Recruit NPCs before hiring staff.</div>';
@@ -392,7 +392,7 @@
                 }
             }
             body += '<div style="display:flex;align-items:center;gap:6px;margin:3px 0;flex-wrap:wrap">';
-            body += '<button onclick="UI._opBuildUpgrade(\'' + townId + '\',\'' + auk + '\')" style="padding:2px 8px;font-size:11px;cursor:pointer' + (canU && meetsReqs ? '' : ';opacity:0.5') + '"' + (canU && meetsReqs ? '' : ' disabled') + '>Build</button>';
+            body += '<button data-action="_opBuildUpgrade" data-id="' + townId + '" data-val="' + auk + '" style="padding:2px 8px;font-size:11px;cursor:pointer' + (canU && meetsReqs ? '' : ';opacity:0.5') + '"' + (canU && meetsReqs ? '' : ' disabled') + '>Build</button>';
             body += '<span style="font-size:11px">' + au.icon + ' ' + au.name;
             body += ' <span style="color:#888">(' + au.cost + 'g + ' + _formatMats(au.materials) + ')</span>';
             if (au.recruitBonus) body += ' <span style="color:#55a868">+' + Math.round(au.recruitBonus * 100) + '% recruit</span>';
@@ -406,7 +406,7 @@
             var wc = costs.wallCost;
             var canWall = gold >= wc.gold && (inv.stone || 0) >= wc.stone && (inv.wood || 0) >= wc.wood;
             body += '<div style="margin:6px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap">';
-            body += '<button onclick="UI._opUpgradeWalls(\'' + townId + '\')" style="padding:2px 10px;font-size:11px;cursor:pointer' + (canWall ? '' : ';opacity:0.5') + '"' + (canWall ? '' : ' disabled') + '>Upgrade</button>';
+            body += '<button data-action="_opUpgradeWalls" data-id="' + townId + '" style="padding:2px 10px;font-size:11px;cursor:pointer' + (canWall ? '' : ';opacity:0.5') + '"' + (canWall ? '' : ' disabled') + '>Upgrade</button>';
             body += '<span style="font-size:11px">🏰 Walls → Lv.' + (op.walls + 1) + ' <span style="color:#888">(' + wc.gold + 'g + ' + wc.stone + ' stone + ' + wc.wood + ' wood)</span></span>';
             body += '</div>';
         } else {
@@ -422,7 +422,7 @@
             if (needWall) {
                 body += '<span style="font-size:11px;color:#c44e52">⚓ Docks require Walls Lv.1+</span>';
             } else {
-                body += '<button onclick="UI._opBuildDocks(\'' + townId + '\')" style="padding:2px 10px;font-size:11px;cursor:pointer' + (canDock ? '' : ';opacity:0.5') + '"' + (canDock ? '' : ' disabled') + '>Build</button>';
+                body += '<button data-action="_opBuildDocks" data-id="' + townId + '" style="padding:2px 10px;font-size:11px;cursor:pointer' + (canDock ? '' : ';opacity:0.5') + '"' + (canDock ? '' : ' disabled') + '>Build</button>';
                 body += '<span style="font-size:11px">⚓ Docks <span style="color:#888">(' + dc.gold + 'g + ' + _formatMats(dc) + ')</span></span>';
             }
             body += '</div>';
@@ -466,7 +466,7 @@
                 if (Player.skills && Player.skills.cartographer) { rGold = Math.floor(rGold * 0.75); rWood = Math.floor(rWood * 0.75); rStone = Math.floor(rStone * 0.75); }
                 var canRoad = gold >= rGold && (inv.wood || 0) >= rWood && (inv.stone || 0) >= rStone;
                 body += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;flex-wrap:wrap">';
-                body += '<button onclick="UI._opBuildRoad(\'' + townId + '\',\'' + lt.townId + '\')" style="padding:2px 8px;font-size:11px;cursor:pointer' + (canRoad ? '' : ';opacity:0.5') + '"' + (canRoad ? '' : ' disabled') + '>Build</button>';
+                body += '<button data-action="_opBuildRoad" data-id="' + townId + '" data-val="' + lt.townId + '" style="padding:2px 8px;font-size:11px;cursor:pointer' + (canRoad ? '' : ';opacity:0.5') + '"' + (canRoad ? '' : ' disabled') + '>Build</button>';
                 body += '<span style="font-size:11px">' + lt.name + ' <span style="color:#888">(' + lt.category + ', ' + rGold + 'g + ' + rWood + ' wood + ' + rStone + ' stone)</span></span>';
                 body += '</div>';
             }
@@ -485,7 +485,7 @@
                 body += '<div style="color:#88bbdd;margin-bottom:4px"><strong>🔗 Connect to Nearby Road</strong></div>';
                 body += '<div style="font-size:11px;color:#888;margin-bottom:4px">' + roadConn.fromTownName + '–' + roadConn.toTownName + ' road passes ~' + roadConn.perpDist + ' away. Creates a junction on the road.</div>';
                 body += '<div style="display:flex;align-items:center;gap:6px">';
-                body += '<button onclick="UI._opConnectToRoad(\'' + townId + '\')" style="padding:2px 8px;font-size:11px;cursor:pointer' + (canJR ? '' : ';opacity:0.5') + '"' + (canJR ? '' : ' disabled') + '>Connect</button>';
+                body += '<button data-action="_opConnectToRoad" data-id="' + townId + '" style="padding:2px 8px;font-size:11px;cursor:pointer' + (canJR ? '' : ';opacity:0.5') + '"' + (canJR ? '' : ' disabled') + '>Connect</button>';
                 body += '<span style="font-size:11px;color:#888">' + jGold + 'g + ' + jWood + ' wood + ' + jStone + ' stone</span>';
                 body += '</div></div>';
             }
@@ -499,7 +499,7 @@
                     var sGold = Math.floor(200 + st.dist * 0.8);
                     if (Player.skills && Player.skills.cartographer) sGold = Math.floor(sGold * 0.75);
                     body += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;flex-wrap:wrap">';
-                    body += '<button onclick="UI._opBuildSeaRoute(\'' + townId + '\',\'' + st.townId + '\')" style="padding:2px 8px;font-size:11px;cursor:pointer">Build</button>';
+                    body += '<button data-action="_opBuildSeaRoute" data-id="' + townId + '" data-val="' + st.townId + '" style="padding:2px 8px;font-size:11px;cursor:pointer">Build</button>';
                     body += '<span style="font-size:11px">🚢 ' + st.name + ' <span style="color:#888">(' + sGold + 'g)</span></span>';
                     body += '</div>';
                 }
@@ -559,7 +559,7 @@
                         if (_rpOnCd) {
                             body += '<span style="color:#888;font-size:10px">⏳' + _rpDaysLeft + 'd</span>';
                         } else {
-                            body += '<button class="btn-medieval" onclick="UI.openRecruitToOutpostDialog(\'' + _rp.id + '\',\'' + townId + '\')" style="font-size:10px;padding:2px 6px;background:rgba(74,124,59,0.2);border-color:rgba(74,124,59,0.4);color:#a5d6a7;">Recruit</button>';
+                            body += '<button class="btn-medieval" data-action="openRecruitToOutpostDialog" data-id="' + _rp.id + '" data-val="' + townId + '" style="font-size:10px;padding:2px 6px;background:rgba(74,124,59,0.2);border-color:rgba(74,124,59,0.4);color:#a5d6a7;">Recruit</button>';
                         }
                         body += '</span></div>';
                         _recruitShown++;
@@ -657,7 +657,7 @@
             body += '<div style="background:rgba(74,124,59,0.15);padding:10px;border-radius:6px;margin-bottom:8px;border:1px solid rgba(74,124,59,0.4)">';
             body += '<h5 style="margin:0 0 6px;color:#55a868">🏘️ Petition for Village Status</h5>';
             body += '<p style="font-size:11px;color:#aaa;margin:0 0 6px">Your outpost has ' + op.population + '+ residents! Petition the king to recognize it as an official village.</p>';
-            body += '<button class="btn-medieval" onclick="UI._opPetitionVillage(\'' + townId + '\')" style="background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5);padding:5px 14px;font-size:12px">🏘️ Petition King</button>';
+            body += '<button class="btn-medieval" data-action="_opPetitionVillage" data-id="' + townId + '" style="background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5);padding:5px 14px;font-size:12px">🏘️ Petition King</button>';
             body += '</div>';
         } else if (op.population >= minPop && !_atOutpost) {
             body += '<div style="font-size:11px;color:#888;margin-bottom:8px">🏘️ Travel here to petition for village status (' + op.population + '/' + minPop + ' residents).</div>';
@@ -827,14 +827,14 @@
                 html += '<div style="display:flex;gap:6px;align-items:center;margin-top:4px">';
                 html += '<span style="font-size:11px">Gold incentive:</span>';
                 html += '<input type="number" id="recruit_gold_' + op.townId + '" value="0" min="0" step="50" style="width:60px;font-size:11px;padding:2px;background:#222;color:#e0d6b8;border:1px solid #555">';
-                html += '<button class="btn-medieval" onclick="UI._doRecruitNpc(\'' + npcId + '\',\'' + op.townId + '\')" style="font-size:11px;padding:3px 10px;background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5)">⛺ Recruit</button>';
+                html += '<button class="btn-medieval" data-action="_doRecruitNpc" data-id="' + npcId + '" data-val="' + op.townId + '" style="font-size:11px;padding:3px 10px;background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5)">⛺ Recruit</button>';
                 html += '</div>';
                 html += '<div style="font-size:10px;color:#666">Each ' + (cfg.recruitGoldPerPercent || 50) + 'g adds ~1% chance (max +' + Math.round((cfg.recruitMaxGoldBonus || 0.20) * 100) + '%)</div>';
             }
             html += '</div>';
         }
         html += '</div>';
-        var footer = '<button class="btn-medieval" onclick="UI._closeRecruitAndRestore()" style="padding:6px 15px;">Close</button>';
+        var footer = '<button class="btn-medieval" data-action="_closeRecruitAndRestore" style="padding:6px 15px;">Close</button>';
         openModal('⛺ Recruit ' + npc.firstName + ' to Outpost', html, footer);
     }
 
@@ -958,7 +958,7 @@
         html += '<div style="border:1px solid #555;padding:8px;margin:6px 0;border-radius:5px;background:rgba(30,30,30,0.8)">';
         html += '<div style="font-size:12px;color:#e0d6b8;margin-bottom:4px">🏕️ Found Without Road</div>';
         html += '<div style="font-size:11px;color:#888">Only reachable by offroad travel. Cost: ' + baseCost + 'g + ' + _formatMats(mats) + '</div>';
-        html += '<button class="btn-medieval" onclick="UI._foundOutpostAtLocation(' + destX + ',' + destY + ',false)" style="margin-top:5px;padding:4px 14px;font-size:11px;background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5)' + (canBase ? '' : ';opacity:0.5') + '"' + (canBase ? '' : ' disabled') + '>⛺ Found (No Road)</button>';
+        html += '<button class="btn-medieval" data-action="_foundOutpostAtLocation" data-x="' + destX + '" data-y="' + destY + '" data-road="false" style="margin-top:5px;padding:4px 14px;font-size:11px;background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5)' + (canBase ? '' : ';opacity:0.5') + '"' + (canBase ? '' : ' disabled') + '>⛺ Found (No Road)</button>';
         if (!canBase) html += _shortageText(baseCost, mats);
         html += '</div>';
 
@@ -970,7 +970,7 @@
             html += '<div style="font-size:12px;color:#e0d6b8;margin-bottom:4px">🛤️ Found With Road to ' + nearestSettle.name + '</div>';
             html += '<div style="font-size:11px;color:#888">Integrates into travel/caravan system. Total: ' + totalWithRoad + 'g + ' + _formatMats(totalMatsWithRoad) + '</div>';
             html += '<div style="font-size:10px;color:#55a868">+15% NPC recruitment bonus with road!</div>';
-            html += '<button class="btn-medieval" onclick="UI._foundOutpostAtLocation(' + destX + ',' + destY + ',true)" style="margin-top:5px;padding:4px 14px;font-size:11px;background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5)' + (canWithRoad ? '' : ';opacity:0.5') + '"' + (canWithRoad ? '' : ' disabled') + '>🛤️ Found (With Road)</button>';
+            html += '<button class="btn-medieval" data-action="_foundOutpostAtLocation" data-x="' + destX + '" data-y="' + destY + '" data-road="true" style="margin-top:5px;padding:4px 14px;font-size:11px;background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5)' + (canWithRoad ? '' : ';opacity:0.5') + '"' + (canWithRoad ? '' : ' disabled') + '>🛤️ Found (With Road)</button>';
             if (!canWithRoad) html += _shortageText(totalWithRoad, totalMatsWithRoad);
             html += '</div>';
         }
@@ -993,7 +993,7 @@
             html += '<div style="font-size:12px;color:#88bbdd;margin-bottom:4px">🔗 Connect to ' + roadConn.fromTownName + '–' + roadConn.toTownName + ' Road via ' + roadConn.connectTownName + '</div>';
             html += '<div style="font-size:11px;color:#888">Road passes ~' + roadConn.perpDist + ' away (cheaper than ' + nearDist + ' to ' + nearestSettle.name + '). Total: ' + totalJunction + 'g + ' + _formatMats(totalJMats) + '</div>';
             html += '<div style="font-size:10px;color:#55a868">+15% NPC recruitment bonus with road!</div>';
-            html += '<button class="btn-medieval" onclick="UI._foundOutpostAtLocation(' + destX + ',' + destY + ',true,\'' + roadConn.connectTownId + '\')" style="margin-top:5px;padding:4px 14px;font-size:11px;background:rgba(59,89,124,0.3);border-color:rgba(59,89,124,0.5)' + (canJunction ? '' : ';opacity:0.5') + '"' + (canJunction ? '' : ' disabled') + '>🔗 Found (Connect to Road)</button>';
+            html += '<button class="btn-medieval" data-action="_foundOutpostAtLocation" data-x="' + destX + '" data-y="' + destY + '" data-road="true" data-connect="' + roadConn.connectTownId + '" style="margin-top:5px;padding:4px 14px;font-size:11px;background:rgba(59,89,124,0.3);border-color:rgba(59,89,124,0.5)' + (canJunction ? '' : ';opacity:0.5') + '"' + (canJunction ? '' : ' disabled') + '>🔗 Found (Connect to Road)</button>';
             if (!canJunction) html += _shortageText(totalJunction, totalJMats);
             html += '</div>';
         }
@@ -1134,7 +1134,7 @@
         for (var bmk in mats) { if ((inv[bmk] || 0) < mats[bmk]) canBase = false; }
         html += '<div style="border:1px solid #555;padding:8px;margin:6px 0;border-radius:5px">';
         html += '<div style="font-size:12px;color:#e0d6b8">🏕️ Without Road — ' + cost + 'g + ' + _formatMats(mats) + '</div>';
-        html += '<button class="btn-medieval" onclick="UI.foundOutpostUI(false)" style="margin-top:4px;padding:4px 14px;font-size:11px;background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5)' + (canBase ? '' : ';opacity:0.5') + '"' + (canBase ? '' : ' disabled') + '>⛺ Found (No Road)</button>';
+        html += '<button class="btn-medieval" data-action="foundOutpostUINoRoad" style="margin-top:4px;padding:4px 14px;font-size:11px;background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5)' + (canBase ? '' : ';opacity:0.5') + '"' + (canBase ? '' : ' disabled') + '>⛺ Found (No Road)</button>';
         if (!canBase) html += _shortageText(cost, mats);
         html += '</div>';
 
@@ -1149,7 +1149,7 @@
             for (var rwmk in totalMats) { if ((inv[rwmk] || 0) < totalMats[rwmk]) canWithRoad = false; }
             html += '<div style="border:1px solid #555;padding:8px;margin:6px 0;border-radius:5px">';
             html += '<div style="font-size:12px;color:#e0d6b8">🛤️ With Road to ' + nearestSettle.name + ' — ' + totalGold + 'g + ' + _formatMats(totalMats) + '</div>';
-            html += '<button class="btn-medieval" onclick="UI.foundOutpostUI(true)" style="margin-top:4px;padding:4px 14px;font-size:11px;background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5)' + (canWithRoad ? '' : ';opacity:0.5') + '"' + (canWithRoad ? '' : ' disabled') + '>🛤️ Found (With Road)</button>';
+            html += '<button class="btn-medieval" data-action="foundOutpostUIWithRoad" style="margin-top:4px;padding:4px 14px;font-size:11px;background:rgba(74,124,59,0.3);border-color:rgba(74,124,59,0.5)' + (canWithRoad ? '' : ';opacity:0.5') + '"' + (canWithRoad ? '' : ' disabled') + '>🛤️ Found (With Road)</button>';
             if (!canWithRoad) html += _shortageText(totalGold, totalMats);
             html += '</div>';
         }
@@ -1171,7 +1171,7 @@
             html += '<div style="border:1px solid #6688aa;padding:8px;margin:6px 0;border-radius:5px;background:rgba(30,40,50,0.6)">';
             html += '<div style="font-size:12px;color:#88bbdd">🔗 Connect to ' + roadConn.fromTownName + '–' + roadConn.toTownName + ' Road via ' + roadConn.connectTownName + '</div>';
             html += '<div style="font-size:11px;color:#888">Road passes ~' + roadConn.perpDist + ' away (cheaper than ' + Math.floor(nearDist) + ' to ' + nearestSettle.name + '). Total: ' + totalJGold + 'g + ' + _formatMats(totalJMats) + '</div>';
-            html += '<button class="btn-medieval" onclick="UI.foundOutpostUI(true,\'' + roadConn.connectTownId + '\')" style="margin-top:4px;padding:4px 14px;font-size:11px;background:rgba(59,89,124,0.3);border-color:rgba(59,89,124,0.5)' + (canJunction ? '' : ';opacity:0.5') + '"' + (canJunction ? '' : ' disabled') + '>🔗 Found (Connect to Road)</button>';
+            html += '<button class="btn-medieval" data-action="foundOutpostUIConnect" data-id="' + roadConn.connectTownId + '" style="margin-top:4px;padding:4px 14px;font-size:11px;background:rgba(59,89,124,0.3);border-color:rgba(59,89,124,0.5)' + (canJunction ? '' : ';opacity:0.5') + '"' + (canJunction ? '' : ' disabled') + '>🔗 Found (Connect to Road)</button>';
             if (!canJunction) html += _shortageText(totalJGold, totalJMats);
             html += '</div>';
         }
@@ -1229,7 +1229,7 @@
             var st = CONFIG.SHIP_TYPES[s.type] || {};
             var hull = s.hullHealth != null ? s.hullHealth : 100;
             var hullColor = hull > 70 ? '#55a868' : hull > 30 ? '#ccaa33' : '#c44e52';
-            html += '<div style="border:1px solid #555;padding:8px;margin:4px 0;border-radius:5px;background:rgba(30,30,30,0.8);cursor:pointer" onclick="UI._confirmOffSea(' + destX + ',' + destY + ',\'' + s.id + '\')">';
+            html += '<div style="border:1px solid #555;padding:8px;margin:4px 0;border-radius:5px;background:rgba(30,30,30,0.8);cursor:pointer" data-action="_confirmOffSea" data-x="' + destX + '" data-y="' + destY + '" data-id="' + s.id + '">';
             html += '<div style="display:flex;justify-content:space-between;align-items:center">';
             html += '<span style="font-size:13px">' + (st.icon || '⛵') + ' ' + (s.name || st.name) + '</span>';
             html += '<span style="font-size:11px;color:' + hullColor + '">Hull: ' + hull + '%</span>';
@@ -1279,7 +1279,7 @@
 
         html += '</div>';
 
-        var footer = '<button class="btn-medieval" onclick="UI._executeLanding(' + destX + ',' + destY + ')" style="background:rgba(42,100,150,0.4);border-color:rgba(42,100,150,0.6);padding:6px 16px;">⚓ Attempt Landing (' + successPct + '%)</button> ';
+        var footer = '<button class="btn-medieval" data-action="_executeLanding" data-x="' + destX + '" data-y="' + destY + '" style="background:rgba(42,100,150,0.4);border-color:rgba(42,100,150,0.6);padding:6px 16px;">⚓ Attempt Landing (' + successPct + '%)</button> ';
         footer += '<button class="btn-medieval" data-action="closeModal" style="padding:6px 16px;">Cancel</button>';
         openModal('⚓ Attempt Landing', html, footer);
     }
@@ -1337,14 +1337,14 @@
             const active = branchId === _skillBranch ? 'active' : '';
             const branchSkills = Object.keys(SKILLS).filter(id => SKILLS[id].branch === branchId);
             const unlocked = branchSkills.filter(id => playerSkills[id]).length;
-            tabsHtml += `<button class="skill-tab ${active}" onclick="UI.openSkillsDialog('${branchId}')" style="border-bottom:3px solid ${active ? info.color : 'transparent'}">
+            tabsHtml += `<button class="skill-tab ${active}" data-action="openSkillsDialog" data-id="${branchId}" style="border-bottom:3px solid ${active ? info.color : 'transparent'}">
                 ${info.icon} ${info.name} <span class="skill-tab-count">${unlocked}/${branchSkills.length}</span>
             </button>`;
         }
         // Add Abilities tab if any abilities unlocked
         if (_abilities.length > 0) {
             var _abActive = _skillBranch === '_abilities' ? 'active' : '';
-            tabsHtml += '<button class="skill-tab ' + _abActive + '" onclick="UI.openSkillsDialog(\'_abilities\')" style="border-bottom:3px solid ' + (_abActive ? '#9b59b6' : 'transparent') + '">⚡ Abilities</button>';
+            tabsHtml += '<button class="skill-tab ' + _abActive + '" data-action="openSkillsDialog" data-id="_abilities" style="border-bottom:3px solid ' + (_abActive ? '#9b59b6' : 'transparent') + '">⚡ Abilities</button>';
         }
 
         var contentHtml = '';
@@ -1366,7 +1366,7 @@
                 contentHtml += '</div>';
                 contentHtml += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:8px;">' + _ab.desc + '</div>';
                 contentHtml += '<div style="font-size:0.68rem;color:#777;margin-bottom:8px;">Skill: ' + _ab.skill + '</div>';
-                contentHtml += '<button class="btn-trade ' + _abBtnClass + '" style="font-size:0.78rem;padding:4px 16px;width:100%;" onclick="' + _ab.toggle + ';UI.openSkillsDialog(\'_abilities\');">' + _abBtnText + '</button>';
+                contentHtml += '<button class="btn-trade ' + _abBtnClass + '" style="font-size:0.78rem;padding:4px 16px;width:100%;" data-action="toggleAbilityAndRefresh" data-toggle="' + _ab.toggle.replace(/"/g, '&quot;') + '">' + _abBtnText + '</button>';
                 contentHtml += '</div>';
             }
             contentHtml += '</div>';
@@ -1415,7 +1415,7 @@
                         for (const mr of missingReqs) {
                             const mrSkill = SKILLS[mr];
                             if (mrSkill && sp >= mrSkill.cost) {
-                                reqHtml += ` <button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;margin-left:4px;" onclick="UI.learnSkill('${mr}')">Learn ${mrSkill.name} (${mrSkill.cost} SP)</button>`;
+                                reqHtml += ` <button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;margin-left:4px;" data-action="learnSkill" data-id="${mr}">Learn ${mrSkill.name} (${mrSkill.cost} SP)</button>`;
                             }
                         }
                     }
@@ -1429,7 +1429,7 @@
                     <div class="skill-desc">${skill.desc}</div>
                     ${extraInfo}
                     ${reqHtml}
-                    ${(!isUnlocked || isRepeatable) && canUnlock ? `<button class="btn-trade buy skill-learn-btn" onclick="UI.learnSkill('${skill.id}')">${isRepeatable && isUnlocked ? 'Invest Again' : 'Learn'}</button>` : ''}
+                    ${(!isUnlocked || isRepeatable) && canUnlock ? `<button class="btn-trade buy skill-learn-btn" data-action="learnSkill" data-id="${skill.id}">${isRepeatable && isUnlocked ? 'Invest Again' : 'Learn'}</button>` : ''}
                 </div>`;
             }
             skillsHtml += '</div>';
@@ -1499,5 +1499,36 @@
     // Skills
     UI.openSkillsDialog = openSkillsDialog;
     UI.learnSkill = learnSkill;
+
+
+    // ── Delegated action handlers (data-action) ──
+    UI.registerAction('_opOutpostWithdraw', function(_t, d) { UI._opOutpostWithdraw(d.id, d.val, Number(d.qty)); });
+    UI.registerAction('_opOutpostDeposit', function(_t, d) { UI._opOutpostDeposit(d.id, d.val, Number(d.qty)); });
+    UI.registerAction('_foundOutpostAtLocation', function(_t, d) { UI._foundOutpostAtLocation(Number(d.x), Number(d.y), d.road === 'true', d.connect || undefined); });
+    UI.registerAction('foundOutpostUINoRoad', function() { UI.foundOutpostUI(false); });
+    UI.registerAction('foundOutpostUIWithRoad', function() { UI.foundOutpostUI(true); });
+    UI.registerAction('foundOutpostUIConnect', function(_t, d) { UI.foundOutpostUI(true, d.id); });
+    UI.registerAction('_confirmOffSea', function(_t, d) { UI._confirmOffSea(Number(d.x), Number(d.y), d.id); });
+    UI.registerAction('_executeLanding', function(_t, d) { UI._executeLanding(Number(d.x), Number(d.y)); });
+    UI.registerAction('toggleAbilityAndRefresh', function(_t, d) { (new Function(d.toggle.replace(/&quot;/g, '"')))(); UI.openSkillsDialog('_abilities'); });
+    UI.registerAction('openSkillsDialog', function(_t, d) { UI.openSkillsDialog(d.id); });
+    UI.registerAction('_opStaff', function(_t, d) { UI._opStaff(d.id, d.val, d.type); });
+    UI.registerAction('_opBuildHousing', function(_t, d) { UI._opBuildHousing(d.id, d.val); });
+    UI.registerAction('_opBuyLand', function(_t, d) { UI._opBuyLand(d.id); });
+    UI.registerAction('_opBuildUpgrade', function(_t, d) { UI._opBuildUpgrade(d.id, d.val); });
+    UI.registerAction('_opUpgradeWalls', function(_t, d) { UI._opUpgradeWalls(d.id); });
+    UI.registerAction('_opBuildDocks', function(_t, d) { UI._opBuildDocks(d.id); });
+    UI.registerAction('_opBuildRoad', function(_t, d) { UI._opBuildRoad(d.id, d.val); });
+    UI.registerAction('_opConnectToRoad', function(_t, d) { UI._opConnectToRoad(d.id); });
+    UI.registerAction('_opBuildSeaRoute', function(_t, d) { UI._opBuildSeaRoute(d.id, d.val); });
+    UI.registerAction('openRecruitToOutpostDialog', function(_t, d) { UI.openRecruitToOutpostDialog(d.id, d.val); });
+    UI.registerAction('_opPetitionVillage', function(_t, d) { UI._opPetitionVillage(d.id); });
+    UI.registerAction('_doRecruitNpc', function(_t, d) { UI._doRecruitNpc(d.id, d.val); });
+    UI.registerAction('openOutpostDetail', function(_t, d) { UI.openOutpostDetail(d.id); });
+    UI.registerAction('learnSkill', function(_t, d) { UI.learnSkill(d.id); });
+
+    // Simple passthrough handlers
+    UI.registerAction('enterOutpostPlacement', function() { UI.enterOutpostPlacement(); });
+    UI.registerAction('_closeRecruitAndRestore', function() { UI._closeRecruitAndRestore(); });
 
 })(window.UI);

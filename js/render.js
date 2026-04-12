@@ -4321,9 +4321,9 @@ window.Renderer = (function () {
             'font-family:"Cinzel",serif;font-size:14px;cursor:pointer;transition:all 0.2s;';
         closeBtn.onmouseenter = function() { this.style.background = '#5a4530'; this.style.color = '#fff'; };
         closeBtn.onmouseleave = function() { this.style.background = 'rgba(30,22,12,0.9)'; this.style.color = '#d4c5a0'; };
-        closeBtn.onclick = function() {
+        closeBtn.addEventListener('click', function() {
             if (typeof UI !== 'undefined' && UI.closeMapView) UI.closeMapView();
-        };
+        });
         worldMapContainer.appendChild(closeBtn);
 
         // Info panels

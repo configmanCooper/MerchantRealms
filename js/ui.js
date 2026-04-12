@@ -355,7 +355,7 @@ window.UI = (function () {
                     </div>
                     <div id="foodSupplyRow" class="supply-row">
                         <span id="foodSupplyInfo" class="supply-info">🍞 0 food (~0d)</span>
-                        <button id="btnEatUntilFull" class="btn-supply" title="Eat from inventory until full" onclick="UI.eatUntilFull()">🍴 Eat</button>
+                        <button id="btnEatUntilFull" class="btn-supply" title="Eat from inventory until full" data-action="eatUntilFull">🍴 Eat</button>
                     </div>
                 `;
                 insertPoint.after(hungerGroup);
@@ -389,7 +389,7 @@ window.UI = (function () {
                     </div>
                     <div id="drinkSupplyRow" class="supply-row">
                         <span id="drinkSupplyInfo" class="supply-info">🫗 0 drinks (~0d)</span>
-                        <button id="btnDrinkUntilFull" class="btn-supply" title="Drink from inventory until full" onclick="UI.drinkUntilFull()">🥤 Drink</button>
+                        <button id="btnDrinkUntilFull" class="btn-supply" title="Drink from inventory until full" data-action="drinkUntilFull">🥤 Drink</button>
                     </div>
                 `;
                 fatigueGroup.after(thirstGroup);
@@ -464,7 +464,7 @@ window.UI = (function () {
         registerAction('spouseInteraction', function(_t, d) { if (d.id) UI.spouseInteraction(d.id); });
         registerAction('treatCompanionUI', function(_t, d) { if (d.id && d.type) treatCompanionUI(d.id, d.type); });
         registerAction('setNotifFilter', function(_t, d) { if (d.key && d.val) setNotifFilter(d.key, d.val); });
-        registerAction('setTradeQty', function(_t, d) { if (d.val) setTradeQty(parseInt(d.val)); });
+        registerAction('setTradeQty', function(_t, d) { if (d.type && d.id) setTradeQty(d.type, d.id, parseInt(d.qty)||1, parseFloat(d.price)||0); });
         registerAction('collectOutputUI', function(_t, d) { if (d.id) UI.collectOutputUI(d.id); });
         registerAction('_bldDeposit', function(_t, d) { if (d.id) UI._bldDeposit(d.id); });
         registerAction('_bldWithdraw', function(_t, d) { if (d.id) UI._bldWithdraw(d.id); });
@@ -494,8 +494,239 @@ window.UI = (function () {
         registerAction('closeAndOpenSpouse', function() { closeModal(); UI.openSpousePanel(); });
         registerAction('openLeaderboard', function() { openLeaderboard(); });
 
+
+        // ── Additional actions from onclick conversion ──
+        registerAction('ctxExec', function(_t, d) { if (d.cmd) { try { (new Function(d.cmd))(); } catch(e) { console.error('ctxExec:', e); } } });
+        registerAction('executeScheme', function(_t, d) { if (d.id) UI.executeScheme(d.id, JSON.parse((d.params || '{}').replace(/&amp;quot;/g, '"'))); });
+        registerAction('_castElectionVote', function(_t, d) { if (d.kingdom && d.id) UI._castElectionVote(d.kingdom, d.id, d.name || ''); });
+        registerAction('executeNobleIntrigue', function(_t, d) { if (d.id) UI.executeNobleIntrigue(d.id, parseInt(d.idx)||0, d.needTwo === 'true'); });
+        registerAction('executeBuildingScheme', function(_t, d) { if (d.id) UI.executeBuildingScheme(d.id, parseInt(d.idx)||0, d.town || ''); });
+        registerAction('unmountSaddle', function(_t, d) { var r=Player.unmountSaddle(d.id);UI.toast(r.message,r.success?'success':'warning');UI.openCharacterPanel(); });
+        registerAction('mountSaddle', function(_t, d) { var r=Player.mountSaddle(d.id);UI.toast(r.message,r.success?'success':'warning');UI.openCharacterPanel(); });
+        registerAction('toggleLeaderboardTrack', function(_t, d) { var r = Player[d.method || 'trackMerchant'](d.id); if(typeof UI!=='undefined' && UI.toast) UI.toast(r.message, r.success?'success':'warning'); UI.openLeaderboard(); });
+        registerAction('setWeddingChoice', function(_t, d) { if (d.choice && d.id) UI.setWeddingChoice(d.choice, d.id); });
+        registerAction('_setWaTabAndOpen', function() { window._waAutoRefresh=!window._waAutoRefresh;UI.openWorldAnalytics() });
+        registerAction('openWorldAnalytics', function() { UI.openWorldAnalytics(); });
+        registerAction('_setWaTab', function(_t, d) { window._waTab=d.id;UI.openWorldAnalytics() });
+        registerAction('hireGuardUI', function() { UI.hireGuardUI(); });
+        registerAction('dismissGuardUI', function(_t, d) { if (d.id) UI.dismissGuardUI(d.id); });
+        registerAction('_handler_1', function() { if(confirm('Kill your character? This will trigger inheritance/dynasty.')){Player.handlePlayerDeath ? Player.handlePlayerDeath() : (function(){Player.state.alive=false; Player.state.health=0;})(); UI.toast('💀 You died. Checking inheritance...','warning');} });
+        registerAction('_godAgeChildren', function() { var p=Player.state; if(!p.childrenIds||p.childrenIds.length===0){UI.toast('No children','error'); return;} var aged=0; for(var i=0;i<p.childrenIds.length;i++){var kid=Engine.getPeople().find(function(pp){return pp.id===p.childrenIds[i]}); if(kid&&kid.alive&&kid.age<17){kid.age=17; kid._almostAdult=true; aged++;}} UI.toast('🎂 Aged '+aged+' children to 17','success'); });
+        registerAction('_iife_2', function() { var p=Player.state; var spouse=Engine.getPeople().find(function(pp){return pp.id===p.spouseId}); if(!spouse){UI.toast('❌ Need a spouse first!','error'); return;} var sex=Math.random()>0.5?'M':'F'; var nms=typeof NAMES!=='undefined'?NAMES:null; var nameList=nms?(sex==='M'?nms.male:nms.female):['Child']; var baby={id:'p_god_'+Date.now(), firstName:nameList[Math.floor(Math.random()*nameList.length)], lastName:p.lastName||'Unknown', age:0, sex:sex, alive:true, townId:p.townId, kingdomId:p.citizenshipKingdomId||'k1', occupation:'none', employerId:null, gold:0, spouseId:null, childrenIds:[], parentIds:[p.id||'player', spouse.id], skills:{farming:0,mining:0,crafting:0,trading:0,combat:0}, personality:{loyalty:50,ambition:50,frugality:50,intelligence:50,warmth:50,honesty:50}, needs:{food:70,shelter:70,safety:70,wealth:50,happiness:60}, quirks:[], wealthClass:'lower', houseType:null, workerSkill:10}; Engine.addPerson(baby); if(!p.childrenIds)p.childrenIds=[]; p.childrenIds.push(baby.id); if(!spouse.childrenIds)spouse.childrenIds=[]; spouse.childrenIds.push(baby.id); UI.toast('👶 Baby '+baby.firstName+' born! ('+sex+')','success'); });
+        registerAction('_godAddSkillPoints', function() { var v=parseInt(document.getElementById('gm-set-sp').value)||10; Player.state.skillPoints=(Player.state.skillPoints||0)+v; UI.toast('🧠 +'+v+' Skill Points (now '+Player.state.skillPoints+')','success') });
+        registerAction('_handler_3', function() { window._gmShowMilitary=!window._gmShowMilitary });
+        registerAction('_handler_4', function() { window._gmShowMarket=!window._gmShowMarket });
+        registerAction('_godSpreadPlague', function() { var tid=document.getElementById('gm-plague-town').value; var ill=document.getElementById('gm-plague-illness').value; var cnt=parseInt(document.getElementById('gm-plague-count').value,10)||10; var infected=Engine.godStartPlague(tid, ill, cnt); var tname=''; try{var tt=Engine.getTowns().find(function(t){return t.id===tid}); tname=tt?tt.name:tid;}catch(e){tname=tid;} UI.toast('🦠 '+infected+' infected with '+ill+' in '+tname+'!',infected>0?'warning':'info'); });
+        registerAction('godMakeWorldPeaceAndToast', function(_t, d) { Engine.godMakeWorldPeace(); UI.toast(d.id, d.val); });
+        registerAction('godMakeWorldWarAndToast', function(_t, d) { Engine.godMakeWorldWar(); UI.toast(d.id, d.val); });
+        registerAction('_godPlague', function() { var people=Engine.getPeople().filter(function(p){return p.alive && p.townId===Player.state.townId}); if(people.length===0){UI.toast('No people in town','info');return;} var killCount=Math.max(1,Math.floor(people.length*0.1)); for(var i=0;i<killCount;i++){var victim=people[Math.floor(Math.random()*people.length)]; if(victim && victim.alive){Engine.killPerson(victim, 'plague');}} UI.toast('☠️ Plague! '+killCount+' dead in town','warning'); });
+        registerAction('_godKillKing', function() { var ks=Engine.getKingdoms(); var pk=ks.find(function(k){var t=Engine.getTowns().find(function(tt){return tt.id===Player.state.townId}); return t && k.id===t.kingdomId;}); if(pk && pk.king){var king=Engine.getPeople().find(function(p){return p.id===pk.king;}); if(king){Engine.killPerson(king, 'god_mode'); UI.toast('💀 King '+king.firstName+' is dead! Succession triggered!','warning');}else{UI.toast('King not found','error');}}else{UI.toast('No kingdom','error');} });
+        registerAction('_godBanditRaid', function() { var t=Engine.getTowns().find(function(t){return t.id===Player.state.townId}); if(t){t.gold=Math.max(0,(t.gold||0)-500); t.safety=Math.max(0,(t.safety||50)-30); UI.toast('🏴‍☠️ Bandit raid on '+t.name+'!','warning');}else{UI.toast('No town','error');} });
+        registerAction('_godTradeBoom', function() { var t=Engine.getTowns().find(function(t){return t.id===Player.state.townId}); if(t&&t.market&&t.market.supply){for(var r in t.market.supply){t.market.supply[r]=Math.floor((t.market.supply[r]||0)*2);} UI.toast('📈 Trade boom in '+t.name+'!','success');}else{UI.toast('No town','error');} });
+        registerAction('_godGoldRush', function() { var t=Engine.getTowns().find(function(t){return t.id===Player.state.townId}); if(t&&t.market&&t.market.supply){t.market.supply.gold_ore=(t.market.supply.gold_ore||0)+500; t.market.supply.jewelry=(t.market.supply.jewelry||0)+200; UI.toast('💎 Gold rush in '+t.name+'!','success');}else{UI.toast('No town','error');} });
+        registerAction('_godFamine', function() { var t=Engine.getTowns().find(function(t){return t.id===Player.state.townId}); if(t&&t.market&&t.market.supply){var foods=['wheat','meat','fish','bread','eggs','poultry','flour','grapes','preserved_food']; for(var i=0;i<foods.length;i++){var r=foods[i]; if(t.market.supply[r]!==undefined){t.market.supply[r]=Math.max(1,Math.floor((t.market.supply[r]||50)*0.1));}} UI.toast('🥺 Famine! Food supplies at 10% in '+t.name,'warning');}else{UI.toast('No town found','error');} });
+        registerAction('_godMakeAllPeace', function(_t, d) { var kk=Engine.getKingdom(d.kingdom); if(kk && kk.atWar){kk.atWar.forEach(function(eid){Engine.godMakePeace(d.kingdom, eid);}); UI.toast('☮️ Peace declared!','success');} });
+        registerAction('_godRandomMood', function(_t, d) { var pp=Engine.getPeople().find(function(x){return x.id===d.id;}); if(pp){var moods=['jubilant','content','worried','paranoid','wrathful','ambitious']; pp.mood=moods[Math.floor(Math.random()*moods.length)]; UI.toast('😊 Mood: '+pp.mood,'info');} });
+        registerAction('_godLowerTax', function(_t, d) { var kk=Engine.getKingdom(d.kingdom); if(kk){Engine.godSetKingdomTax(d.kingdom, Math.max(0.01,(kk.taxRate||0.1)-0.05)); UI.toast('📉 Tax now '+(Math.max(0.01,(kk.taxRate||0.1)-0.05)*100).toFixed(0)+'%','info');} });
+        registerAction('_godRaiseTax', function(_t, d) { var kk=Engine.getKingdom(d.kingdom); if(kk){Engine.godSetKingdomTax(d.kingdom, Math.min(0.5,(kk.taxRate||0.1)+0.05)); UI.toast('📈 Tax now '+(Math.min(0.5,(kk.taxRate||0.1)+0.05)*100).toFixed(0)+'%','info');} });
+        registerAction('_godDeclareRandomWar', function(_t, d) { var all=Engine.getKingdoms(); if(all.length>1){var targets=all.filter(function(t){return t.id!==d.kingdom;}); var target=targets[Math.floor(Math.random()*targets.length)]; Engine.godDeclareWar(d.kingdom, target.id); UI.toast('⚔️ War declared on '+target.name,'warning');} });
+        registerAction('godAddKingdomGoldAndToast', function(_t, d) { Engine.godAddKingdomGold(d.id, d.val); UI.toast(d.id, d.val); });
+        registerAction('_godCureNpc', function(_t, d) { var pp=Engine.getPeople().find(function(x){return x.id===d.id;}); if(!pp){return;} pp.sick=false; pp.illness=null; pp.injured=false; pp.injuryType=null; pp.health=100; UI.toast('💚 Cured ' + (pp ? pp.firstName : '?') + '','success'); });
+        registerAction('_godInflictInjury', function(_t, d) { var pp=Engine.getPeople().find(function(x){return x.id===d.id;}); if(!pp){UI.toast('NPC not found','error'); return;} var types=['wound','broken_bone','concussion','arrow_wound']; var names=['Wound','Broken Bone','Concussion','Arrow Wound']; var choice=prompt('Inflict injury on ' + (pp ? pp.firstName : '?') + ':\\n'+types.map(function(id,i){return (i+1)+'. '+names[i];}).join('\\n')+'\\n\\nEnter number (1-4):'); if(!choice)return; var idx=parseInt(choice,10)-1; if(idx<0||idx>=types.length){UI.toast('Invalid choice','error');return;} pp.injured=true; pp.injuryDay=Engine.getDay(); pp.injuryType=types[idx]; pp.health=Math.max(10,(pp.health||100)-20); UI.toast('🤕 '+names[idx]+' inflicted on ' + (pp ? pp.firstName : '?') + '','warning'); });
+        registerAction('_godInflictIllness', function(_t, d) { var pp=Engine.getPeople().find(function(x){return x.id===d.id;}); if(!pp){UI.toast('NPC not found','error'); return;} var ills=['cold','flu','food_poisoning','fever','dysentery','pneumonia','typhus','plague']; var names=['Cold','Flu','Food Poisoning','Fever','Dysentery','Pneumonia','Typhus','Plague']; var choice=prompt('Inflict illness on ' + (pp ? pp.firstName : '?') + ':\\n'+ills.map(function(id,i){return (i+1)+'. '+names[i];}).join('\\n')+'\\n\\nEnter number (1-8):'); if(!choice)return; var idx=parseInt(choice,10)-1; if(idx<0||idx>=ills.length){UI.toast('Invalid choice','error');return;} var ok=Engine.infectNPC(pp, ills[idx], 'god_mode'); if(ok){UI.toast('🤒 '+names[idx]+' inflicted on ' + (pp ? pp.firstName : '?') + '','warning');} else {UI.toast('Failed (already sick or immune)','info');} });
+        registerAction('_godBecomeNpc', function(_t, d) { var target=Engine.getPeople().find(function(x){return x.id===d.id}); if(!target){UI.toast('NPC not found','error'); return;} if(!confirm('Become '+target.firstName+'? Your old character becomes an Elite Merchant.')){return;} var st=Player.state; var oldClone={id:'p_former_'+Engine.getDay(), firstName:st.firstName, lastName:st.lastName, sex:st.sex, age:st.age, gold:st.gold, townId:st.townId, personality:Object.assign({},st.personality||{}), skills:Object.assign({},st.skills||{}), needs:{food:80,shelter:80,safety:80,wealth:50}, alive:true, occupation:'merchant', isEliteMerchant:true, strategy:'opportunist', npcMerchantInventory:{}, emCaravans:[], _formerPlayer:true, spouseId:null, childrenIds:(st.childrenIds||[]).slice(), parentIds:(st.parentIds||[]).slice()}; var oldName=oldClone.firstName+' '+oldClone.lastName; var world=Engine.getWorld(); if(world.eliteMerchants){world.eliteMerchants.push(oldClone);} Engine.addPerson(oldClone); st.townId=target.townId; st.gold=target.gold||100; st.firstName=target.firstName; st.lastName=target.lastName; st.sex=target.sex; st.age=target.age; st.personality=Object.assign({},target.personality||st.personality); st.spouseId=target.spouseId||null; if(target.spouseId){var sp=Engine.getPeople().find(function(x){return x.id===target.spouseId}); if(sp)sp.spouseId='player';} st.childrenIds=(target.childrenIds||[]).slice(); st.parentIds=(target.parentIds||[]).slice(); st.traveling=false; st.travelRoute=null; st.travelProgress=0; st.travelDestination=null; st.travelOrigin=null; st.travelPaid=0; st.travelMode=null; st.travelBySea=false; st.travelOffroad=false; st.travelTotalDist=0; target.alive=false; target._deathDay=Engine.getDay(); target._absorbed=true; UI.toast('🔄 You are now '+st.firstName+'! Old character ('+oldName+') is now an Elite Merchant.','success'); });
+        registerAction('_godPossessNpc', function(_t, d) { window._gmPossessedNpc=d.id; UI.toast('👁️ Possessing ' + ((Engine.getPerson && Engine.getPerson(d.id) || {}).firstName || '?') + '','info') });
+        registerAction('_godForceMarry', function(_t, d) { var oldSp=Player.state.spouseId; if(oldSp){var op=Engine.getPeople().find(function(x){return x.id===oldSp;}); if(op)op.spouseId=null;} Player.state.spouseId=d.id; Player.state.spouseRelationship=50; var pp=Engine.getPeople().find(function(x){return x.id===d.id2;}); if(pp){if(pp.spouseId){var os=Engine.getPeople().find(function(x){return x.id===pp.spouseId;}); if(os)os.spouseId=null;} pp.spouseId='player';} UI.toast('💒 Married ' + (pp ? pp.firstName : '?') + '!','success'); });
+        registerAction('_godGiveGoldToNpc', function(_t, d) { var pp=Engine.getPeople().find(function(x){return x.id===d.id;}); if(pp){pp.gold=(pp.gold||0)+1000; UI.toast('💰+1000g to ' + (pp ? pp.firstName : '?') + '','success');} });
+        registerAction('_handler_5', function(_t, d) { var pp=Engine.getPeople().find(function(x){return x.id===d.id;}); if(pp){Engine.killPerson(pp, 'god_mode'); UI.toast('💀 Killed ' + (pp ? pp.firstName : '?') + '','warning');} });
+        registerAction('_handler_6', function(_t, d) { Player.state.townId=d.param1; Player.state.traveling=false; Player.state.travelProgress=0; Player.state.travelDestination=null; Player.state.travelRoute=null; Player.state.travelOrigin=null; Player.state.travelPaid=0; Player.state.travelMode=null; Player.state.travelBySea=false; Player.state.travelOffroad=false; Player.state.travelTotalDist=0; UI.toast('Teleported to ' + ((npcTown ? npcTown.name : '?').replace(/'/g, '')) + '','success') });
+        registerAction('_godUnpossessNpc', function() { window._gmPossessedNpc=null });
+        registerAction('_godAddGood', function() { var sel=document.getElementById('gm-add-good'); var qtyEl=document.getElementById('gm-add-good-qty'); if(!sel||!sel.value){UI.toast('Select a good','error');return;} var qty=parseInt(qtyEl.value,10); if(isNaN(qty)||qty<=0)qty=50; Player.state.inventory=Player.state.inventory||{}; Player.state.inventory[sel.value]=(Player.state.inventory[sel.value]||0)+qty; var r=null; for(var k in RESOURCE_TYPES){if(RESOURCE_TYPES[k].id===sel.value){r=RESOURCE_TYPES[k];break;}} UI.toast('📦 +'+qty+' '+(r?r.icon+' '+r.name:sel.value)+' added to inventory','success'); });
+        registerAction('_handler_7', function() { Player.state.injuries=[]; Player.state.illnesses=[]; Player.state.health=100; UI.toast('💚 All conditions cleared & health restored','success') });
+        registerAction('_godInflictCondition', function() { var sel=document.getElementById('gm-inflict-type'); if(!sel||!sel.value){UI.toast('Select a condition','error');return;} var parts=sel.value.split(':'); var cat=parts[0]; var id=parts[1]; if(cat==='illness'){ Player.inflictSpecificIllness(id, 'god_mode'); UI.toast('🤒 Inflicted illness: '+id,'warning'); } else { var types=Player.getInjuryTypes(); var t=null; for(var i=0;i<types.length;i++){if(types[i].id===id){t=types[i];break;}} if(t){ Player.state.injuries=Player.state.injuries||[]; Player.state.injuries.push({type:t.id, name:t.name, severity:t.severity, dayOccurred:Engine.getDay(), treated:false, source:'god_mode'}); var hpHit=t.severity==='severe'?20:t.severity==='moderate'?10:5; Player.state.health=Math.max(0,(Player.state.health||100)-hpHit); UI.toast('🤕 Inflicted '+t.name+' ('+t.severity+', -'+hpHit+' HP)','warning'); } } });
+        registerAction('_handler_8', function() { Game.exportConsole() });
+        registerAction('_godAdvanceDays', function() { var d=parseInt(document.getElementById('gm-advance-days').value,10); if(isNaN(d)||d<=0)d=30; d=Math.min(d,365); for(var i=0;i<d;i++){Engine.tick();Player.tick();} UI.toast('⏩ Advanced '+d+' days','success') });
+        registerAction('_godUnlockAllSkills', function() { if(typeof SKILLS!=='undefined'){var count=0; for(var sk in SKILLS){if(!Player.state.unlockedSkills)Player.state.unlockedSkills=[];if(Player.state.unlockedSkills.indexOf(sk)===-1){Player.state.unlockedSkills.push(sk); count++;}} UI.toast('🧠 Unlocked '+count+' skills! ('+Player.state.unlockedSkills.length+' total)','success');}else{UI.toast('SKILLS config not found','error');} });
+        registerAction('_godModeSetRank', function() { UI._godModeSetRank(); });
+        registerAction('_handler_9', function() { window._godBanditBoost=!window._godBanditBoost; var b=this; b.textContent=window._godBanditBoost?'☠️ Bandits 95% ON':'☠️ Bandits 95% OFF'; b.style.background=window._godBanditBoost?'#8b4500':'#16305d'; b.style.borderColor=window._godBanditBoost?'#f84':'#48a'; UI.toast(window._godBanditBoost?'☠️ 95% daily bandit/pirate encounters!':'Bandit/pirate encounters normal', window._godBanditBoost?'warning':'info') });
+        registerAction('_godToggleInvincible', function() { window._godInvincible=!window._godInvincible; var b=this; b.textContent=window._godInvincible?'🛡️ Invincible ON':'🛡️ Invincible OFF'; b.style.background=window._godInvincible?'#8b0000':'#16305d'; b.style.borderColor=window._godInvincible?'#f44':'#48a'; UI.toast(window._godInvincible?'🛡️ INVINCIBLE — Cannot die or lose':'Invincibility OFF', window._godInvincible?'success':'info') });
+        registerAction('_godSetGold', function() { var v=document.getElementById('gm-set-gold').value; if(v){var g=parseInt(v,10); if(!isNaN(g)&&isFinite(g)){Player.state.gold=Math.max(0,g); UI.toast('💰 Gold set to '+g,'success');}else{UI.toast('Invalid number','error');}} });
+        registerAction('_handler_10', function() { Player.state.traveling=false;Player.state.travelProgress=0;Player.state.travelDestination=null;Player.state.travelRoute=null;Player.state.travelOrigin=null;Player.state.travelPaid=0;Player.state.travelMode=null;Player.state.travelBySea=false;Player.state.travelOffroad=false;Player.state.travelWaypoints=null;Player.state.travelDestCoords=null;Player.state.travelRestBonus=0;Player.state.travelTotalDist=0;UI.toast('🏠 Travel cancelled','success') });
+        registerAction('_handler_11', function() { if(Player.state.jailedUntilDay){Player.state.jailedUntilDay=0;UI.toast('🔓 Freed from jail','success');}else{UI.toast('Not in jail','info');} });
+        registerAction('_handler_12', function() { Player.state.energy=100;Player.state.hunger=0;Player.state.thirst=0;UI.toast('💪 Full energy/food/drink','success') });
+        registerAction('_godAddGold100k', function() { Player.state.gold+=100000;UI.toast('💰 +100,000 gold','success') });
+        registerAction('_godAddGold10k', function() { Player.state.gold+=10000;UI.toast('💰 +10,000 gold','success') });
+        registerAction('closeGodModePanel', function() { UI.closeGodModePanel(); });
+        registerAction('_setIconCategory', function(_t, d) { window._iconCat=d.param1; window._filterIcons() });
+        registerAction('_handler_13', function() { document.getElementById('icons-glossary-overlay').remove() });
+        registerAction('openKingdomsAndNotables', function() { UI.openKingdomsAndNotables(); });
+        registerAction('openGoodsGuide', function() { UI.openGoodsGuide(); });
+        registerAction('openGameGuide', function() { UI.openGameGuide(); });
+        registerAction('openIconsGlossary', function() { UI.openIconsGlossary(); });
+        registerAction('showPersonDetailAndCloseModal', function() { UI.showPersonDetail(d.id); UI.closeModal(); });
+        registerAction('showTownDetailAndCloseModal', function() { UI.showTownDetail(d.id); UI.closeModal(); });
+        registerAction('_switchKNTab', function(_t, d) { if (d.tab) UI._switchKNTab(d.tab); });
+        registerAction('executeBribeAdvisor', function(_t, d) { if (d.id && d.val) UI.executeBribeAdvisor(d.id, d.val); });
+        registerAction('executeBribeGuards', function(_t, d) { if (d.id) UI.executeBribeGuards(d.id); });
+        registerAction('executeTargetAction', function(_t, d) { if (d.id && d.val) UI.executeTargetAction(d.id, d.val); });
+        registerAction('executeCounterfeit', function(_t, d) { if (d.id) UI.executeCounterfeit(d.id); });
+        registerAction('executeStealGoods', function(_t, d) { if (d.id) UI.executeStealGoods(d.id); });
+        registerAction('switchSchemesTab', function(_t, d) { if (d.id) UI.switchSchemesTab(d.id); });
+        registerAction('offerNobleLoan', function(_t, d) { var amt=parseInt(document.getElementById('loanAmountInput').value);var r=Player.offerNobleLoan(d.id,amt);UI.toast(r.message,r.success?'success':'warning');if(r.success)UI.closeModal();else UI.openNobleLoanDialog(d.id2); });
+        registerAction('closeAndOpenNobilityDialog', function() { UI.closeModal(); UI.openNobilityDialog(); });
+        registerAction('doFeastAction', function(_t, d) { var r=Engine.doFeastAction ? Engine.doFeastAction(d.kingdom,d.id) : null;UI.toast(r&&r.message?r.message:'Action performed.',r&&r.success?'success':'warning');UI.openFeastDialog(d.kingdom); });
+        registerAction('showPersonDetailById', function(_t, d) { UI.showPersonDetail(Engine.getPerson(d.id)) });
+        registerAction('openVotingDialog', function(_t, d) { if (d.id) UI.openVotingDialog(d.id); });
+        registerAction('tryInfluenceVote', function(_t, d) { UI._tryInfluenceVote(d.id,d.id2); });
+        registerAction('castVote_no', function(_t, d) { Engine.castVote(d.id,'no');UI.openVotingDialog(d.id2); });
+        registerAction('castVote_yes', function(_t, d) { Engine.castVote(d.id,'yes');UI.openVotingDialog(d.id2); });
+        registerAction('executeTeachChild', function(_t, d) { if (d.id && d.val) UI.executeTeachChild(d.id, d.val); });
+        registerAction('selfTreatCondition', function(_t, d) { if (d.idx && d.val) UI.selfTreatCondition(d.idx, d.val); });
+        registerAction('treatAtClinic', function(_t, d) { if (d.idx && d.val) UI.treatAtClinic(d.idx, d.val); });
+        registerAction('treatAtHospital', function(_t, d) { if (d.idx && d.val) UI.treatAtHospital(d.idx, d.val); });
+        registerAction('resolveEncounterChoice', function(_t, d) { if (d.choice) UI.resolveEncounterChoice(d.choice); });
+        registerAction('resolvePendingMilitaryEventAndCloseModal', function(_t, d) { Player.resolvePendingMilitaryEvent(d.id); UI.closeModal(); });
+        registerAction('executeWork', function(_t, d) { if (d.id) UI.executeWork(d.id); });
+        registerAction('enlistAsSoldier', function(_t, d) { if (d.id) UI.enlistAsSoldier(d.id); });
+        registerAction('quitMilitary', function() { UI.quitMilitary(); });
+        registerAction('buyInfoBrokerTip', function() { UI.buyInfoBrokerTip(); });
+        registerAction('openAchievementsDialog', function(_t, d) { if (d.id && d.val) UI.openAchievementsDialog(d.id, d.val); });
+        registerAction('_achPopupClick', function(_t, d) { if (d.id) UI._achPopupClick(d.id); });
+        registerAction('restUI', function(_t, d) { if (d.id) UI.restUI(d.id); });
+        registerAction('_buyLandFull', function() { UI._buyLandFull(); });
+        registerAction('_buyLandSubsidized', function() { UI._buyLandSubsidized(); });
+        registerAction('rejectRentNegotiation', function(_t, d) { var r=Player.respondToRentNegotiation(d.id,'reject'); UI.toast(r.message, r.success?'success':'error'); UI.showRentNegotiations(); });
+        registerAction('counterOfferRent', function(_t, d) { var amt=prompt('Counter-offer (gold/month):',d.param1); if(amt){ var r=Player.respondToRentNegotiation(d.id,'counter',parseInt(amt)); UI.toast(r.message, r.success?'success':'error'); UI.showRentNegotiations(); } });
+        registerAction('acceptRentNegotiation', function(_t, d) { var r=Player.respondToRentNegotiation(d.id,'accept'); UI.toast(r.message, r.success?'success':'error'); UI.showRentNegotiations(); });
+        registerAction('evictTenant', function(_t, d) { var r=Player.evictTenant(d.id); UI.toast(r.message, r.success?'success':'error'); UI.closeModal(); UI.openHousingDialog(); });
+        registerAction('rentOutHouse', function(_t, d) { var p=parseInt(document.getElementById('rentalPrice').value)||0; var r=Player.rentOutHouse(d.id,p); UI.toast(r.message, r.success?'success':'error'); if(r.success){ UI.closeModal(); UI.openHousingDialog(); } });
+        registerAction('doUpgradeHouse', function(_t, d) { if (d.id && d.val) UI.doUpgradeHouse(d.id, d.val); });
+        registerAction('confirmLeaveTent', function(_t, d) { if (d.id) UI.confirmLeaveTent(d.id); });
+        registerAction('quickSellHouseUI', function(_t, d) { if (d.id) UI.quickSellHouseUI(d.id); });
+        registerAction('confirmSellHouseUI', function(_t, d) { if (d.id) UI.confirmSellHouseUI(d.id); });
+        registerAction('openHousingDialog', function() { UI.openHousingDialog(); });
+        registerAction('_homeDeposit', function(_t, d) { if (d.id && d.key) UI._homeDeposit(d.id, d.key, d.qty); });
+        registerAction('_homeWithdraw', function(_t, d) { if (d.id && d.key) UI._homeWithdraw(d.id, d.key, d.qty); });
+        registerAction('doInstallAddon', function(_t, d) { if (d.id && d.val) UI.doInstallAddon(d.id, d.val); });
+        registerAction('buyHouseUI', function(_t, d) { if (d.id) UI.buyHouseUI(d.id); });
+        registerAction('buyLandUI', function() { UI.buyLandUI(); });
+        registerAction('sellHouseUI', function(_t, d) { if (d.id) UI.sellHouseUI(d.id); });
+        registerAction('upgradeHouseUI', function(_t, d) { if (d.id) UI.upgradeHouseUI(d.id); });
+        registerAction('evictTenantUI', function(_t, d) { if (d.id) UI.evictTenantUI(d.id); });
+        registerAction('rentOutHouseUI', function(_t, d) { if (d.id) UI.rentOutHouseUI(d.id); });
+        registerAction('leaveTentUI', function(_t, d) { if (d.id) UI.leaveTentUI(d.id); });
+        registerAction('setPrimaryHouseUI', function(_t, d) { if (d.id) UI.setPrimaryHouseUI(d.id); });
+        registerAction('openHouseAddonsUI', function(_t, d) { if (d.id) UI.openHouseAddonsUI(d.id); });
+        registerAction('stableHorseUI', function(_t, d) { if (d.id) UI.stableHorseUI(d.id); });
+        registerAction('openHomeStorageUI', function(_t, d) { if (d.id) UI.openHomeStorageUI(d.id); });
+        registerAction('unstableHorseUI', function(_t, d) { if (d.id && d.val) UI.unstableHorseUI(d.id, d.val); });
+        registerAction('_toggleVisibility', function() { var el=document.getElementById('otherShipsSection');el.style.display=el.style.display==='none'?'block':'none' });
+        registerAction('buyShipAndOpenShipsDialog', function(_t, d) { UI.buyShip(d.id); UI.openShipsDialog(); });
+        registerAction('showShipAddons', function(_t, d) { if (d.id) UI.showShipAddons(d.id); });
+        registerAction('repairShipAndOpenShipsDialog', function(_t, d) { Player.repairShip(d.id); UI.openShipsDialog(); });
+        registerAction('openGuildsPanel', function() { UI.openGuildsPanel(); });
+        registerAction('guildCraftExecute', function(_t, d) { if (d.id && d.val) UI.guildCraftExecute(d.id, d.val); });
+        registerAction('guildCraftPrompt', function(_t, d) { if (d.id && d.product) UI.guildCraftPrompt(d.id, d.product, d.name); });
+        registerAction('guildJoin', function(_t, d) { if (d.id && d.type) UI.guildJoin(d.id, d.type); });
+        registerAction('openMerchantGuildReport', function() { UI.openMerchantGuildReport(); });
+        registerAction('openHealthDialog', function() { UI.openHealthDialog(); });
+        registerAction('openHealthDetailPanel', function() { UI.openHealthDetailPanel(); });
+        registerAction('executeGift', function(_t, d) { if (d.id && d.val) UI.executeGift(d.id, d.val, d.qty); });
+        registerAction('closeAnd_executePetition', function() { UI.closeModal(); UI._executePetition(); });
+        registerAction('changeCitizenship', function(_t, d) { if (d.id) UI.changeCitizenship(d.id); });
+        registerAction('petitionPromotion', function() { UI.petitionPromotion(); });
+        registerAction('renounceKingdomUI', function(_t, d) { if (d.id) UI.renounceKingdomUI(d.id); });
+        registerAction('showRankProgressionPanel', function(_t, d) { if (d.id) UI.showRankProgressionPanel(d.id); });
+        registerAction('openKingdomLicenses', function(_t, d) { if (d.id) UI.openKingdomLicenses(d.id); });
+        registerAction('showBusinessLegacy', function() { UI.showBusinessLegacy(); });
+        registerAction('openJournal', function() { UI.openJournal(); });
+        registerAction('quitAutoTravelJob', function() { UI.quitAutoTravelJob(); });
+        registerAction('handleCustomsChoice', function(_t, d) { if (d.choice) UI.handleCustomsChoice(d.choice); });
+        registerAction('handleTournamentForfeit', function() { UI.handleTournamentForfeit(); });
+        registerAction('handleTournamentContinue', function() { UI.handleTournamentContinue(); });
+        registerAction('handleSpyFavor', function(_t, d) { if (d.id) UI.handleSpyFavor(d.id); });
+        registerAction('showBankruptcyDialogFromLoan', function() { UI.showBankruptcyDialogFromLoan(); });
+        registerAction('handleGuildLoanAccept', function(_t, d) { if (d.id) UI.handleGuildLoanAccept(d.id); });
+        registerAction('backToMainMenu', function() { UI.backToMainMenu(); });
+        registerAction('_godLoadGame', function() { if(typeof Game!=='undefined'&&Game.load)Game.load() });
+        registerAction('_handler_14', function() { if(typeof Game!=='undefined'&&Game.save)Game.save() });
+        registerAction('handleBankruptcyChoice', function(_t, d) { if (d.id) UI.handleBankruptcyChoice(d.id); });
+        registerAction('showGuildLoanDialog', function() { UI.showGuildLoanDialog(); });
+        registerAction('chooseWarAllegiance', function(_t, d) { if (d.kingdom && d.choice) UI.chooseWarAllegiance(d.kingdom, d.choice); });
+        registerAction('clickTown', function(_t, d) { if (d.id) UI.clickTown(d.id); });
+        registerAction('setNotifFilterAndShowEventDetail', function(_t, d) { Player.setNotifFilter(d.key, d.val); UI.showEventDetail(d.id); });
+        registerAction('closeModalAndOpenKingConsultationDialog', function(_t, d) { UI.closeModal(); UI.openKingConsultationDialog(d.id, d.val); });
+        registerAction('_toggleGuidance', function() { UI._toggleGuidance(); });
+        registerAction('_handler_15', function() { event.stopPropagation() });
+        registerAction('_toggleToastMute', function() { UI._toggleToastMute(); });
+        registerAction('showEventDetail', function(_t, d) { if (d.id) UI.showEventDetail(d.id); });
+        registerAction('clearEventLog', function() { UI.clearEventLog(); });
+        registerAction('toggleNotifFilter', function(_t, d) { if (d.id) UI.toggleNotifFilter(d.id); });
+        registerAction('_setEventTab', function(_t, d) { if (d.tab) UI._setEventTab(d.tab); });
+        registerAction('_reopenWarChoice', function(_t, d) { if (d.id) UI._reopenWarChoice(d.id); });
+        registerAction('openPlayerImpact', function() { UI.openPlayerImpact(); });
+        registerAction('openFinancialReport', function() { UI.openFinancialReport(); });
+        registerAction('buyContainer', function(_t, d) { if (d.id) UI.buyContainer(d.id); });
+        registerAction('mountContainerUI', function(_t, d) { if (d.id) UI.mountContainerUI(d.id); });
+        registerAction('dismountContainerUI', function() { UI.dismountContainerUI(); });
+        registerAction('buyHorsePermitAndOpenCharacterPanel', function(_t, d) { Player.buyHorsePermit(d.id, d.val); UI.openCharacterPanel(); });
+        registerAction('mountHorseUI', function() { UI.mountHorseUI(); });
+        registerAction('sellHorse', function(_t, d) { if (d.id) UI.sellHorse(d.id); });
+        registerAction('dismountHorseUI', function(_t, d) { if (d.id) UI.dismountHorseUI(d.id); });
+        registerAction('buyShip', function(_t, d) { if (d.id) UI.buyShip(d.id); });
+        registerAction('repairShip', function(_t, d) { if (d.id) UI.repairShip(d.id); });
+        registerAction('equipFromInventoryUI', function(_t, d) { if (d.id) UI.equipFromInventoryUI(d.id); });
+        registerAction('buyArmor', function(_t, d) { if (d.id) UI.buyArmor(d.id); });
+        registerAction('buyWeapon', function(_t, d) { if (d.id) UI.buyWeapon(d.id); });
+        registerAction('unequipArmor', function() { UI.unequipArmor(); });
+        registerAction('unequipWeapon', function() { UI.unequipWeapon(); });
+        registerAction('openRenamePlayer', function() { UI.openRenamePlayer(); });
+        registerAction('openTeachChildDialog', function(_t, d) { if (d.id) UI.openTeachChildDialog(d.id); });
+        registerAction('confirmRenamePlayer', function() { UI.confirmRenamePlayer(); });
+        registerAction('showAssignDialog', function(_t, d) { if (d.id) UI.showAssignDialog(d.id); });
+        registerAction('sendWorkerToTown_transport', function(_t, d) { var r=Player.sendWorkerToTown(d.person,d.dest,'transport');UI.toast(r.message,r.success?'success':'warning');if(r.success)UI.closeModal(); });
+        registerAction('sendWorkerToTown_horse', function(_t, d) { var r=Player.sendWorkerToTown(d.person,d.dest,'horse');UI.toast(r.message,r.success?'success':'warning');if(r.success)UI.closeModal(); });
+        registerAction('sendWorkerToTown_walk', function(_t, d) { var r=Player.sendWorkerToTown(d.person,d.dest,'walk');UI.toast(r.message,r.success?'success':'warning');if(r.success)UI.closeModal(); });
+        registerAction('showSendWorkerOptions', function(_t, d) { if (d.id && d.val) UI.showSendWorkerOptions(d.id, d.val, d.type); });
+        registerAction('executeAssign', function(_t, d) { if (d.id && d.val) UI.executeAssign(d.id, d.val); });
+        registerAction('spendTimeWithSpouse', function(_t, d) { if (d.id) UI.spendTimeWithSpouse(d.id); });
+        registerAction('_reTownPeoplePage', function(_t, d) { if (d.page) UI._reTownPeoplePage(d.page); });
+        registerAction('openTalkToSpouse', function() { UI.openTalkToSpouse(); });
+        registerAction('doTalkToSpouse', function(_t, d) { if (d.id) UI.doTalkToSpouse(d.id); });
+        registerAction('finalizeWedding', function() { UI.finalizeWedding(); });
+        registerAction('abandonQuest', function(_t, d) { if (d.id) UI.abandonQuest(d.id); });
+        registerAction('completeQuest', function(_t, d) { if (d.id && d.val) UI.completeQuest(d.id, d.val); });
+        registerAction('acceptQuest', function(_t, d) { if (d.id) UI.acceptQuest(d.id); });
+        registerAction('executeAdviseKing', function(_t, d) { if (d.id && d.val) UI.executeAdviseKing(d.id, d.val); });
+        registerAction('doRequestIntroduction', function(_t, d) { if (d.id && d.val) UI.doRequestIntroduction(d.id, d.val); });
+        registerAction('proposeMarriage', function(_t, d) { if (d.id) UI.proposeMarriage(d.id); });
+        registerAction('openGiftDialog', function(_t, d) { if (d.id) UI.openGiftDialog(d.id); });
+        registerAction('goOnDate', function(_t, d) { if (d.id && d.val) UI.goOnDate(d.id, d.val); });
+        registerAction('observePerson', function(_t, d) { if (d.id) UI.observePerson(d.id); });
+        registerAction('askTavernAbout', function(_t, d) { if (d.id) UI.askTavernAbout(d.id); });
+        registerAction('hireInvestigator', function(_t, d) { if (d.id) UI.hireInvestigator(d.id); });
+        registerAction('hirePerson', function(_t, d) { if (d.id) UI.hirePerson(d.id); });
+        registerAction('switchHireTab', function(_t, d) { if (d.tab) UI.switchHireTab(d.tab); });
+        registerAction('fireWorker', function(_t, d) { if (d.id) UI.fireWorker(d.id); });
+        registerAction('buyLicense', function(_t, d) { if (d.kingdom && d.id) UI.buyLicense(d.kingdom, d.id); });
+        registerAction('askTavernFashionTrends', function() { UI.askTavernFashionTrends(); });
+        registerAction('askTavernFoodTrends', function() { UI.askTavernFoodTrends(); });
+        registerAction('parkVehicle', function(_t, d) { if (d.id) UI.parkVehicle(d.id); });
+        registerAction('unparkVehicle', function(_t, d) { if (d.id) UI.unparkVehicle(d.id); });
+        registerAction('withdrawFromStorage', function(_t, d) { if (d.id && d.qty) UI.withdrawFromStorage(d.id, d.qty); });
+        registerAction('depositToStorage', function(_t, d) { if (d.id && d.qty) UI.depositToStorage(d.id, d.qty); });
+        registerAction('executeSell', function(_t, d) { if (d.id && d.town) UI.executeSell(d.id, d.town); });
+        registerAction('executeBuy', function(_t, d) { if (d.id && d.town) UI.executeBuy(d.id, d.town); });
+        registerAction('quitAutoTravelJobUI', function() { UI.quitAutoTravelJobUI(); });
+        registerAction('turnBackUI', function() { UI.turnBackUI(); });
+        registerAction('drinkUntilFull', function() { UI.drinkUntilFull(); });
+        registerAction('eatUntilFull', function() { UI.eatUntilFull(); });
+
         // Store registerAction for later use
         _delegationRegister = registerAction;
+
+        // Expose registerAction for modules to self-register their actions
+        UI.registerAction = registerAction;
 
         // Close buttons (null-safe)
         const btnCloseRight = document.getElementById('btnCloseRight');
@@ -849,16 +1080,16 @@ window.UI = (function () {
                     var travelText = travelModeIcon + ' Traveling...';
                     if (!Player.travelPaid) {
                         travelText += ' ';
-                        var travelBtns = '<span onclick="UI.turnBackUI()" style="cursor:pointer;font-size:0.75rem;background:rgba(200,150,50,0.2);border:1px solid rgba(200,150,50,0.4);border-radius:4px;padding:1px 6px;margin-left:4px;">🔄 Turn Back</span>';
+                        var travelBtns = '<span data-action="turnBackUI" style="cursor:pointer;font-size:0.75rem;background:rgba(200,150,50,0.2);border:1px solid rgba(200,150,50,0.4);border-radius:4px;padding:1px 6px;margin-left:4px;">🔄 Turn Back</span>';
                         // Show quit mission button during auto-travel jobs
                         if (Player.autoTravelJob) {
-                            travelBtns += '<span onclick="UI.quitAutoTravelJobUI()" style="cursor:pointer;font-size:0.75rem;background:rgba(200,80,80,0.2);border:1px solid rgba(200,80,80,0.4);border-radius:4px;padding:1px 6px;margin-left:4px;">❌ Quit Job</span>';
+                            travelBtns += '<span data-action="quitAutoTravelJobUI" style="cursor:pointer;font-size:0.75rem;background:rgba(200,80,80,0.2);border:1px solid rgba(200,80,80,0.4);border-radius:4px;padding:1px 6px;margin-left:4px;">❌ Quit Job</span>';
                         }
                         el.playerTown.innerHTML = travelText + travelBtns;
                     } else {
                         // Paid travel (e.g. sea passage) — still show quit mission if on auto-travel
                         if (Player.autoTravelJob) {
-                            el.playerTown.innerHTML = travelText + ' <span onclick="UI.quitAutoTravelJobUI()" style="cursor:pointer;font-size:0.75rem;background:rgba(200,80,80,0.2);border:1px solid rgba(200,80,80,0.4);border-radius:4px;padding:1px 6px;margin-left:4px;">❌ Quit Job</span>';
+                            el.playerTown.innerHTML = travelText + ' <span data-action="quitAutoTravelJobUI" style="cursor:pointer;font-size:0.75rem;background:rgba(200,80,80,0.2);border:1px solid rgba(200,80,80,0.4);border-radius:4px;padding:1px 6px;margin-left:4px;">❌ Quit Job</span>';
                         } else {
                             el.playerTown.textContent = travelText;
                         }
@@ -1020,7 +1251,7 @@ window.UI = (function () {
                     startStatusEl = document.createElement('div');
                     startStatusEl.id = 'specialStartStatus';
                     startStatusEl.className = 'special-start-indicator';
-                    startStatusEl.onclick = function() { UI.openSpecialStartPanel(); };
+                    startStatusEl.addEventListener('click', function() { UI.openSpecialStartPanel(); });
                     var topBar = document.getElementById('topBar');
                     if (topBar) topBar.appendChild(startStatusEl);
                 }
@@ -1668,8 +1899,8 @@ window.UI = (function () {
             }
             const buyMaxQty = Math.max(0, Math.min(maxByGold, maxByCapacity, qty));
             const buyQtyBtns = [1, 5, 10, 25].map(q =>
-                `<button class="qty-btn${q === 1 ? ' qty-selected' : ''}" data-qty="${q}" onclick="UI.setTradeQty('buy','${resId}',${q},${finalUnitPrice.toFixed(4)})">${q}</button>`
-            ).join('') + `<button class="qty-btn" data-qty="max" onclick="UI.setTradeQty('buy','${resId}',${buyMaxQty},${finalUnitPrice.toFixed(4)})">⬆Max</button>`;
+                `<button class="qty-btn${q === 1 ? ' qty-selected' : ''}" data-qty="${q}" data-action="setTradeQty" data-type="buy" data-id="${resId}" data-qty="${q}" data-price="${finalUnitPrice.toFixed(4)}">${q}</button>`
+            ).join('') + `<button class="qty-btn" data-qty="max" data-action="setTradeQty" data-type="buy" data-id="${resId}" data-qty="${buyMaxQty}" data-price="${finalUnitPrice.toFixed(4)}">⬆Max</button>`;
 
             buyHtml += `<div class="trade-item ${isMilitary ? 'military-item' : ''}">
                 <div class="res-info">${res.icon} ${res.name} (${Math.floor(qty)}) ${statusBadge}${seasonTag}${trendTag}</div>
@@ -1678,7 +1909,7 @@ window.UI = (function () {
                     <div class="trade-qty-selector" id="buyQtyBtns_${resId}">${buyQtyBtns}</div>
                     <span class="trade-preview" id="buyPreview_${resId}">Buy 1: ${finalUnitPrice.toFixed(1)}g</span>
                     <input type="hidden" id="buyQty_${resId}" value="1">
-                    <button class="btn-trade buy" onclick="UI.executeBuy('${resId}','${town.id}')">Buy</button>
+                    <button class="btn-trade buy" data-action="executeBuy" data-id="${resId}" data-town="${town.id}">Buy</button>
                 </div>
             </div>`;
         }
@@ -1771,8 +2002,8 @@ window.UI = (function () {
 
             const sellMaxQty = qty;
             const sellQtyBtns = [1, 5, 10, 25].map(q =>
-                `<button class="qty-btn${q === 1 ? ' qty-selected' : ''}" data-qty="${q}" onclick="UI.setTradeQty('sell','${resId}',${q},${finalSellPrice.toFixed(4)})">${q}</button>`
-            ).join('') + `<button class="qty-btn" data-qty="max" onclick="UI.setTradeQty('sell','${resId}',${sellMaxQty},${finalSellPrice.toFixed(4)})">⬆Max</button>`;
+                `<button class="qty-btn${q === 1 ? ' qty-selected' : ''}" data-qty="${q}" data-action="setTradeQty" data-type="sell" data-id="${resId}" data-qty="${q}" data-price="${finalSellPrice.toFixed(4)}">${q}</button>`
+            ).join('') + `<button class="qty-btn" data-qty="max" data-action="setTradeQty" data-type="sell" data-id="${resId}" data-qty="${sellMaxQty}" data-price="${finalSellPrice.toFixed(4)}">⬆Max</button>`;
 
             sellHtml += `<div class="trade-item ${isMilitary ? 'military-item' : ''} ${isBanned ? 'banned-item' : ''} ${isRestricted && !hasLicense ? 'restricted-item' : ''}">
                 <div class="res-info">${res.icon} ${res.name} ${qtyLabel} ${statusBadge}</div>
@@ -1781,7 +2012,7 @@ window.UI = (function () {
                     <div class="trade-qty-selector" id="sellQtyBtns_${resId}">${sellQtyBtns}</div>
                     <span class="trade-preview" id="sellPreview_${resId}">Sell 1: ${finalSellPrice.toFixed(1)}g</span>
                     <input type="hidden" id="sellQty_${resId}" value="1">
-                    <button class="btn-trade sell" onclick="UI.executeSell('${resId}','${town.id}')">${sellBtnLabel}</button>
+                    <button class="btn-trade sell" data-action="executeSell" data-id="${resId}" data-town="${town.id}">${sellBtnLabel}</button>
                 </div>
             </div>`;
         }
@@ -1797,7 +2028,7 @@ window.UI = (function () {
                     const rName = r ? r.icon + ' ' + r.name : g;
                     licenseHtml += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
                         <span style="font-size:0.78rem;">${rName} — ${CONFIG.LICENSE_FEE}g</span>
-                        <button class="btn-trade buy" style="font-size:0.7rem;" onclick="UI.buyLicense('${kingdom.id}','${g}')">Buy License</button>
+                        <button class="btn-trade buy" style="font-size:0.7rem;" data-action="buyLicense" data-kingdom="${kingdom.id}" data-id="${g}">Buy License</button>
                     </div>`;
                 }
                 licenseHtml += '</div>';
@@ -1822,9 +2053,9 @@ window.UI = (function () {
                 depositItems += `<div style="display:flex;justify-content:space-between;align-items:center;margin:2px 0;font-size:0.75rem;">
                     <span>${r.icon} ${r.name} (${cQty})</span>
                     <div style="display:flex;gap:3px;">
-                        <button class="qty-btn" onclick="UI.depositToStorage('${resId}',1)" style="font-size:0.7rem;padding:1px 5px;">1</button>
-                        <button class="qty-btn" onclick="UI.depositToStorage('${resId}',${Math.min(5,cQty)})" style="font-size:0.7rem;padding:1px 5px;">${Math.min(5,cQty)}</button>
-                        <button class="qty-btn" onclick="UI.depositToStorage('${resId}',${cQty})" style="font-size:0.7rem;padding:1px 5px;">All</button>
+                        <button class="qty-btn" data-action="depositToStorage" data-id="${resId}" data-qty="1" style="font-size:0.7rem;padding:1px 5px;">1</button>
+                        <button class="qty-btn" data-action="depositToStorage" data-id="${resId}" data-qty="${Math.min(5,cQty)}" style="font-size:0.7rem;padding:1px 5px;">${Math.min(5,cQty)}</button>
+                        <button class="qty-btn" data-action="depositToStorage" data-id="${resId}" data-qty="${cQty}" style="font-size:0.7rem;padding:1px 5px;">All</button>
                     </div>
                 </div>`;
             }
@@ -1836,9 +2067,9 @@ window.UI = (function () {
                 withdrawItems += `<div style="display:flex;justify-content:space-between;align-items:center;margin:2px 0;font-size:0.75rem;">
                     <span>${r.icon} ${r.name} (${sQty})</span>
                     <div style="display:flex;gap:3px;">
-                        <button class="qty-btn" onclick="UI.withdrawFromStorage('${resId}',1)" style="font-size:0.7rem;padding:1px 5px;">1</button>
-                        <button class="qty-btn" onclick="UI.withdrawFromStorage('${resId}',${Math.min(5,sQty)})" style="font-size:0.7rem;padding:1px 5px;">${Math.min(5,sQty)}</button>
-                        <button class="qty-btn" onclick="UI.withdrawFromStorage('${resId}',${sQty})" style="font-size:0.7rem;padding:1px 5px;">All</button>
+                        <button class="qty-btn" data-action="withdrawFromStorage" data-id="${resId}" data-qty="1" style="font-size:0.7rem;padding:1px 5px;">1</button>
+                        <button class="qty-btn" data-action="withdrawFromStorage" data-id="${resId}" data-qty="${Math.min(5,sQty)}" style="font-size:0.7rem;padding:1px 5px;">${Math.min(5,sQty)}</button>
+                        <button class="qty-btn" data-action="withdrawFromStorage" data-id="${resId}" data-qty="${sQty}" style="font-size:0.7rem;padding:1px 5px;">All</button>
                     </div>
                 </div>`;
             }
@@ -1858,7 +2089,7 @@ window.UI = (function () {
                     var pvIcon = vehicleIcons[pv.type] || '📦';
                     parkedHtml += '<div style="display:flex;justify-content:space-between;align-items:center;font-size:0.72rem;padding:2px 4px;background:rgba(200,150,50,0.1);border-radius:4px;margin:2px 0;">' +
                         '<span>' + pvIcon + ' ' + pvName + ' (+' + pvCap + ' cap)</span>' +
-                        '<button class="qty-btn" onclick="UI.unparkVehicle(\'' + pv.type + '\')" style="font-size:0.65rem;padding:1px 5px;">Retrieve</button>' +
+                        '<button class="qty-btn" data-action="unparkVehicle" data-id="${pv.type}" style="font-size:0.65rem;padding:1px 5px;">Retrieve</button>' +
                     '</div>';
                 }
                 parkedHtml += '<div style="font-size:0.65rem;color:var(--text-dim);margin-top:2px;">⚠️ ~70%/year theft risk for unguarded vehicles</div>';
@@ -1873,7 +2104,7 @@ window.UI = (function () {
                     var pName = pvt.replace(/_/g, ' ');
                     var pCap = vehicleCaps[pvt] || 0;
                     var pIcon = vehicleIcons[pvt] || '📦';
-                    parkBtns += '<button class="qty-btn" onclick="UI.parkVehicle(\'' + pvt + '\')" style="font-size:0.65rem;padding:2px 6px;">' + pIcon + ' Park ' + pName + ' (+' + pCap + ')</button> ';
+                    parkBtns += '<button class="qty-btn" data-action="parkVehicle" data-id="${pvt}" style="font-size:0.65rem;padding:2px 6px;">' + pIcon + ' Park ' + pName + ' (+' + pCap + ')</button> ';
                 }
             }
             if (parkBtns) {
@@ -1903,8 +2134,8 @@ window.UI = (function () {
         ${licenseHtml}
         ${marketIntelHtml}
         <div style="display:flex;gap:8px;margin:8px 0;flex-wrap:wrap;">
-            <button class="btn-trade" style="font-size:0.7rem;background:rgba(100,150,200,0.15);border-color:rgba(100,150,200,0.3);" onclick="UI.askTavernFoodTrends()">📊 Food Trends (5g)</button>
-            <button class="btn-trade" style="font-size:0.7rem;background:rgba(200,120,50,0.15);border-color:rgba(200,120,50,0.3);" onclick="UI.askTavernFashionTrends()">🎭 Fashion Trends (10g)</button>
+            <button class="btn-trade" style="font-size:0.7rem;background:rgba(100,150,200,0.15);border-color:rgba(100,150,200,0.3);" data-action="askTavernFoodTrends">📊 Food Trends (5g)</button>
+            <button class="btn-trade" style="font-size:0.7rem;background:rgba(200,120,50,0.15);border-color:rgba(200,120,50,0.3);" data-action="askTavernFashionTrends">🎭 Fashion Trends (10g)</button>
         </div>
         <div class="trade-summary">Your gold: <span class="gold-value">🪙 ${formatGold(Player.gold)}</span></div>`;
 
@@ -2021,7 +2252,7 @@ window.UI = (function () {
                 }
                 html += '<span style="color:#55a868;font-size:0.8rem;">✅ Licensed' + expiryStr + '</span>';
             } else {
-                html += '<button class="btn-medieval" onclick="UI.buyLicense(\'' + k.id + '\',\'' + gId + '\')" style="font-size:0.75rem;padding:3px 10px;color:#e8dcc8;background:rgba(180,140,50,0.2);border-color:rgba(180,140,50,0.4);">Buy License (' + cost + 'g)</button>';
+                html += '<button class="btn-medieval" data-action="buyLicense" data-kingdom="${k.id}" data-id="${gId}" style="font-size:0.75rem;padding:3px 10px;color:#e8dcc8;background:rgba(180,140,50,0.2);border-color:rgba(180,140,50,0.4);">Buy License (' + cost + 'g)</button>';
             }
             html += '</div>';
         }
@@ -2163,8 +2394,8 @@ window.UI = (function () {
                     <div class="details">${statusText}</div>
                 </div>
                 <div>
-                    <button class="btn-assign" onclick="UI.showAssignDialog('${empId}')"${empTraveling ? ' disabled style="opacity:0.4;"' : ''}>Assign</button>
-                    <button class="btn-fire" onclick="UI.fireWorker('${empId}')">Fire</button>
+                    <button class="btn-assign" data-action="showAssignDialog" data-id="${empId}"${empTraveling ? ' disabled style="opacity:0.4;"' : ''}>Assign</button>
+                    <button class="btn-fire" data-action="fireWorker" data-id="${empId}">Fire</button>
                 </div>
             </div>`;
         }
@@ -2191,9 +2422,9 @@ window.UI = (function () {
         </div>`;
 
         const html = `<div class="hire-tabs">
-            <button class="btn-tab active" onclick="UI.switchHireTab('available')">Available (${_cachedUnemployed.length})</button>
-            <button class="btn-tab" onclick="UI.switchHireTab('employees')">Employees (${employees.length})</button>
-            <button class="btn-tab" onclick="UI.switchHireTab('marriage')">💍 Marriage</button>
+            <button class="btn-tab active" data-action="switchHireTab" data-tab="available">Available (${_cachedUnemployed.length})</button>
+            <button class="btn-tab" data-action="switchHireTab" data-tab="employees">Employees (${employees.length})</button>
+            <button class="btn-tab" data-action="switchHireTab" data-tab="marriage">💍 Marriage</button>
         </div>
         <div id="hireTabAvailable">${filterBar}<div id="workerListContainer" class="worker-list">${availableHtml}</div></div>
         <div id="hireTabEmployees" class="worker-list" style="display:none">${employeeHtml}</div>
@@ -2299,7 +2530,7 @@ window.UI = (function () {
         const occText = p.occupation && p.occupation !== 'none' ? `<span style="color:#aaa;font-size:0.7rem;"> • ${p.occupation}</span>` : '';
         var hireBtn = isLocked
             ? '<button class="btn-hire" disabled style="opacity:0.4;cursor:not-allowed;" title="Requires Guildmaster rank">🔒</button>'
-            : `<button class="btn-hire" onclick="UI.hirePerson('${p.id}')">Hire</button>`;
+            : `<button class="btn-hire" data-action="hirePerson" data-id="${p.id}">Hire</button>`;
 
         return `<div class="worker-row" style="flex-direction:column;align-items:stretch;${isLocked ? 'opacity:0.65;' : ''}">
             <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -2477,10 +2708,10 @@ window.UI = (function () {
             // Discovery buttons
             let discoveryButtons = '<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:4px;">';
             if (!permanentReject) {
-                discoveryButtons += `<button class="btn-hire" onclick="UI.hireInvestigator('${p.id}')" style="font-size:0.7rem;padding:3px 6px;background:rgba(150,100,200,0.15);border-color:rgba(150,100,200,0.3);" title="Hire someone to investigate this person. 50% chance of being caught!">🕵️ Hire Investigator (${investigatorCost}g)</button>`;
+                discoveryButtons += `<button class="btn-hire" data-action="hireInvestigator" data-id="${p.id}" style="font-size:0.7rem;padding:3px 6px;background:rgba(150,100,200,0.15);border-color:rgba(150,100,200,0.3);" title="Hire someone to investigate this person. 50% chance of being caught!">🕵️ Hire Investigator (${investigatorCost}g)</button>`;
             }
-            discoveryButtons += `<button class="btn-hire" onclick="UI.askTavernAbout('${p.id}')" style="font-size:0.7rem;padding:3px 6px;background:rgba(180,150,80,0.15);border-color:rgba(180,150,80,0.3);" title="Ask around at the tavern for gossip (5g)">🍺 Ask at Tavern (5g)</button>`;
-            discoveryButtons += `<button class="btn-hire" onclick="UI.observePerson('${p.id}')" style="font-size:0.7rem;padding:3px 6px;background:rgba(100,150,180,0.15);border-color:rgba(100,150,180,0.3);" title="Spend 8 hours observing (free, 30% chance to spot a quirk)">👀 Observe (8 hours)</button>`;
+            discoveryButtons += `<button class="btn-hire" data-action="askTavernAbout" data-id="${p.id}" style="font-size:0.7rem;padding:3px 6px;background:rgba(180,150,80,0.15);border-color:rgba(180,150,80,0.3);" title="Ask around at the tavern for gossip (5g)">🍺 Ask at Tavern (5g)</button>`;
+            discoveryButtons += `<button class="btn-hire" data-action="observePerson" data-id="${p.id}" style="font-size:0.7rem;padding:3px 6px;background:rgba(100,150,180,0.15);border-color:rgba(100,150,180,0.3);" title="Spend 8 hours observing (free, 30% chance to spot a quirk)">👀 Observe (8 hours)</button>`;
             discoveryButtons += '</div>';
 
             // Dating buttons
@@ -2489,7 +2720,7 @@ window.UI = (function () {
                 for (const act of DATING_ACTIVITIES) {
                     const disabled = (act.minRelationship && rel.level < act.minRelationship) || (act.cost > 0 && Player.gold < act.cost);
                     const title = `${act.description} (${act.cost > 0 ? act.cost + 'g, ' : ''}${act.timeHours}h, +${act.relationshipGain} rel)`;
-                    dateButtons += `<button class="btn-hire ${disabled ? 'disabled' : ''}" onclick="UI.goOnDate('${p.id}','${act.id}')" style="font-size:0.7rem;padding:3px 6px;${disabled ? 'opacity:0.4;' : ''}" ${disabled ? 'disabled' : ''} title="${title}">${act.name}</button>`;
+                    dateButtons += `<button class="btn-hire ${disabled ? 'disabled' : ''}" data-action="goOnDate" data-id="${p.id}" data-val="${act.id}" style="font-size:0.7rem;padding:3px 6px;${disabled ? 'opacity:0.4;' : ''}" ${disabled ? 'disabled' : ''} title="${title}">${act.name}</button>`;
                 }
             }
             dateButtons += '</div>';
@@ -2503,8 +2734,8 @@ window.UI = (function () {
                         <div class="text-dim" style="font-size:0.7rem;">🔍 Known: ${revealedCount}/6 traits, ${quirksCount}/${totalQuirks} quirks</div>
                     </div>
                     <div style="display:flex;gap:4px;">
-                        <button class="btn-hire" onclick="UI.openGiftDialog('${p.id}')" style="font-size:0.75rem;background:rgba(100,180,100,0.15);border-color:rgba(100,180,100,0.3);">🎁 Gift</button>
-                        <button class="btn-hire ${canPropose && !permanentReject ? '' : 'disabled'}" onclick="UI.proposeMarriage('${p.id}')" style="background:rgba(196,163,90,0.15);border-color:rgba(196,163,90,0.3);color:var(--gold);${canPropose && !permanentReject ? '' : 'opacity:0.5;'}" ${canPropose && !permanentReject ? '' : 'disabled'}>💍 Propose</button>
+                        <button class="btn-hire" data-action="openGiftDialog" data-id="${p.id}" style="font-size:0.75rem;background:rgba(100,180,100,0.15);border-color:rgba(100,180,100,0.3);">🎁 Gift</button>
+                        <button class="btn-hire ${canPropose && !permanentReject ? '' : 'disabled'}" data-action="proposeMarriage" data-id="${p.id}" style="background:rgba(196,163,90,0.15);border-color:rgba(196,163,90,0.3);color:var(--gold);${canPropose && !permanentReject ? '' : 'opacity:0.5;'}" ${canPropose && !permanentReject ? '' : 'disabled'}>💍 Propose</button>
                     </div>
                 </div>
                 ${investigatorWarning}${traitHtml}${quirkHtml}${discoveryButtons}${dateButtons}
@@ -2607,7 +2838,7 @@ window.UI = (function () {
                 var iRankName = intro.rank >= 6 ? 'Royal Advisor' : intro.rank >= 5 ? 'Lord' : intro.rank >= 4 ? 'Minor Noble' : intro.rank >= 3 ? 'Guildmaster' : 'Merchant';
                 var badge = intro.isEliteMerchant ? '⭐ ' : '';
 
-                html += '<div style="display:flex;align-items:center;gap:8px;padding:8px;margin:4px 0;border:1px solid ' + (canClick ? '#4a6' : '#555') + ';border-radius:6px;background:' + (canClick ? 'rgba(50,150,80,0.1)' : '#2a2a2a') + ';cursor:' + (canClick ? 'pointer' : 'default') + ';" ' + (canClick ? 'onclick="UI.doRequestIntroduction(\'' + intro.id + '\',\'' + targetId + '\')"' : '') + '>';
+                html += '<div style="display:flex;align-items:center;gap:8px;padding:8px;margin:4px 0;border:1px solid ' + (canClick ? '#4a6' : '#555') + ';border-radius:6px;background:' + (canClick ? 'rgba(50,150,80,0.1)' : '#2a2a2a') + ';cursor:' + (canClick ? 'pointer' : 'default') + ';" ' + (canClick ? 'data-action="doRequestIntroduction" data-id="' + intro.id + '" data-val="' + targetId + '"' : '') + '>';
                 html += '<div style="flex:1;">';
                 html += '<div style="font-weight:bold;color:#eee;">' + badge + intro.name + ' <span style="font-size:0.75rem;color:#aaa;">(' + iRankName + ')</span></div>';
                 html += '<div style="font-size:0.78rem;color:' + relColor + ';">Relationship: ' + Math.floor(intro.relationship) + '/100</div>';
@@ -2685,7 +2916,7 @@ window.UI = (function () {
             var pt = petitionTypes[pi];
             if (pt.requiresTarget) continue; // Skip target-requiring ones for direct counsel
             var canClick = cooldownDays === 0;
-            html += '<div style="display:flex;align-items:center;gap:8px;padding:8px;margin:4px 0;border:1px solid ' + (canClick ? '#4a6' : '#555') + ';border-radius:6px;background:' + (canClick ? 'rgba(50,150,80,0.1)' : '#2a2a2a') + ';cursor:' + (canClick ? 'pointer' : 'not-allowed') + ';opacity:' + (canClick ? '1' : '0.5') + ';" ' + (canClick ? 'onclick="UI.executeAdviseKing(\'' + kingdomId + '\',\'' + pt.id + '\')"' : '') + '>';
+            html += '<div style="display:flex;align-items:center;gap:8px;padding:8px;margin:4px 0;border:1px solid ' + (canClick ? '#4a6' : '#555') + ';border-radius:6px;background:' + (canClick ? 'rgba(50,150,80,0.1)' : '#2a2a2a') + ';cursor:' + (canClick ? 'pointer' : 'not-allowed') + ';opacity:' + (canClick ? '1' : '0.5') + ';" ' + (canClick ? 'data-action="executeAdviseKing" data-id="' + kingdomId + '" data-val="' + pt.id + '"' : '') + '>';
             html += '<span style="font-size:1.2em;">' + (pt.icon || '📜') + '</span>';
             html += '<div style="flex:1;">';
             html += '<div style="font-weight:bold;color:#eee;">' + (pt.name || pt.id) + '</div>';
@@ -2850,17 +3081,17 @@ window.UI = (function () {
         // Action buttons
         html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">';
         if (mode === 'available') {
-            html += '<button class="btn-medieval" onclick="UI.acceptQuest(\'' + quest.id + '\')" style="font-size:0.75rem;padding:4px 12px;background:#2a4a2a;">✅ Accept Quest</button>';
+            html += '<button class="btn-medieval" data-action="acceptQuest" data-id="' + quest.id + '" style="font-size:0.75rem;padding:4px 12px;background:#2a4a2a;">✅ Accept Quest</button>';
         } else if (mode === 'active') {
             // Complete buttons — only show if player is in the quest's town
             if (!quest.donateOnly) {
-                html += '<button class="btn-medieval" onclick="UI.completeQuest(\'' + quest.id + '\', false)" style="font-size:0.75rem;padding:4px 12px;background:#2a3a4a;">💰 Sell to Town</button>';
+                html += '<button class="btn-medieval" data-action="completeQuest" data-id="${quest.id}" data-val="false" style="font-size:0.75rem;padding:4px 12px;background:#2a3a4a;">💰 Sell to Town</button>';
             }
-            html += '<button class="btn-medieval" onclick="UI.completeQuest(\'' + quest.id + '\', true)" style="font-size:0.75rem;padding:4px 12px;background:#2a4a2a;">🎁 Donate</button>';
-            html += '<button class="btn-medieval" onclick="UI.abandonQuest(\'' + quest.id + '\')" style="font-size:0.75rem;padding:4px 8px;background:#4a2a2a;opacity:0.7;">❌</button>';
+            html += '<button class="btn-medieval" data-action="completeQuest" data-id="${quest.id}" data-val="true" style="font-size:0.75rem;padding:4px 12px;background:#2a4a2a;">🎁 Donate</button>';
+            html += '<button class="btn-medieval" data-action="abandonQuest" data-id="${quest.id}" style="font-size:0.75rem;padding:4px 8px;background:#4a2a2a;opacity:0.7;">❌</button>';
         } else if (mode === 'active-elsewhere') {
             html += '<span style="color:#888;font-size:0.75rem;">Must be in ' + (otherTown ? otherTown.name : 'the quest town') + ' to complete</span>';
-            html += '<button class="btn-medieval" onclick="UI.abandonQuest(\'' + quest.id + '\')" style="font-size:0.75rem;padding:4px 8px;background:#4a2a2a;opacity:0.7;">❌ Abandon</button>';
+            html += '<button class="btn-medieval" data-action="abandonQuest" data-id="${quest.id}" style="font-size:0.75rem;padding:4px 8px;background:#4a2a2a;opacity:0.7;">❌ Abandon</button>';
         }
         html += '</div>';
 
@@ -3313,7 +3544,7 @@ window.UI = (function () {
             const disabled = v.minRank && (Player.getPlayerRankIndex ? Player.getPlayerRankIndex() : 0) < v.minRank;
             const borderCol = selected ? 'rgba(200,180,60,0.8)' : 'rgba(120,100,60,0.3)';
             const bgCol = selected ? 'rgba(200,180,60,0.12)' : 'rgba(40,35,25,0.5)';
-            html += '<div onclick="' + (disabled ? '' : 'UI.setWeddingChoice(\'venue\',\'' + v.id + '\')') + '" style="cursor:' + (disabled ? 'not-allowed' : 'pointer') + ';border:1px solid ' + borderCol + ';background:' + bgCol + ';padding:8px 12px;margin-bottom:4px;border-radius:6px;' + (disabled ? 'opacity:0.4;' : '') + '">';
+            html += '<div ' + (disabled ? '' : 'data-action="setWeddingChoice" data-choice="venue" data-id="' + v.id + '"') + ' style="cursor:' + (disabled ? 'not-allowed' : 'pointer') + ';border:1px solid ' + borderCol + ';background:' + bgCol + ';padding:8px 12px;margin-bottom:4px;border-radius:6px;' + (disabled ? 'opacity:0.4;' : '') + '">';
             html += '<strong>' + v.icon + ' ' + v.name + '</strong>';
             if (v.cost > 0) html += ' <span style="color:#b0a080;">(' + v.cost + 'g)</span>';
             else html += ' <span style="color:#80b080;">(Free)</span>';
@@ -3332,7 +3563,7 @@ window.UI = (function () {
             const selected = plan.feast === f.id;
             const borderCol = selected ? 'rgba(200,180,60,0.8)' : 'rgba(120,100,60,0.3)';
             const bgCol = selected ? 'rgba(200,180,60,0.12)' : 'rgba(40,35,25,0.5)';
-            html += '<div onclick="UI.setWeddingChoice(\'feast\',\'' + f.id + '\')" style="cursor:pointer;border:1px solid ' + borderCol + ';background:' + bgCol + ';padding:8px 12px;margin-bottom:4px;border-radius:6px;">';
+            html += '<div data-action="setWeddingChoice" data-choice="feast" data-id="${f.id}" style="cursor:pointer;border:1px solid ' + borderCol + ';background:' + bgCol + ';padding:8px 12px;margin-bottom:4px;border-radius:6px;">';
             html += '<strong>' + f.icon + ' ' + f.name + '</strong> <span style="color:#b0a080;">(' + f.cost + 'g, ~' + f.guests + ' guests)</span>';
             if (selected) html += ' <span style="color:var(--gold);">✓</span>';
             html += '<br><small style="color:#a09070;">' + f.description + '</small>';
@@ -3348,7 +3579,7 @@ window.UI = (function () {
             const selected = plan.vows === vw.id;
             const borderCol = selected ? 'rgba(200,180,60,0.8)' : 'rgba(120,100,60,0.3)';
             const bgCol = selected ? 'rgba(200,180,60,0.12)' : 'rgba(40,35,25,0.5)';
-            html += '<div onclick="UI.setWeddingChoice(\'vows\',\'' + vw.id + '\')" style="cursor:pointer;border:1px solid ' + borderCol + ';background:' + bgCol + ';padding:8px 12px;margin-bottom:4px;border-radius:6px;">';
+            html += '<div data-action="setWeddingChoice" data-choice="vows" data-id="${vw.id}" style="cursor:pointer;border:1px solid ' + borderCol + ';background:' + bgCol + ';padding:8px 12px;margin-bottom:4px;border-radius:6px;">';
             html += '<strong>' + vw.icon + ' ' + vw.name + '</strong>';
             if (selected) html += ' <span style="color:var(--gold);">✓</span>';
             html += '<br><small style="color:#c8b890;font-style:italic;">' + vw.description + '</small>';
@@ -3370,7 +3601,7 @@ window.UI = (function () {
 
         const allChosen = plan.venue && plan.feast && plan.vows;
         if (allChosen && canAfford) {
-            html += '<button class="btn-medieval" onclick="UI.finalizeWedding()" style="padding:8px 24px;font-size:1rem;background:rgba(160,140,60,0.2);border-color:var(--gold);color:var(--gold);">💒 Hold the Wedding!</button>';
+            html += '<button class="btn-medieval" data-action="finalizeWedding" style="padding:8px 24px;font-size:1rem;background:rgba(160,140,60,0.2);border-color:var(--gold);color:var(--gold);">💒 Hold the Wedding!</button>';
         } else if (!allChosen) {
             html += '<p style="color:#b0a080;font-size:0.85rem;">Choose a venue, feast, and vows to proceed.</p>';
         } else {
@@ -3428,7 +3659,7 @@ window.UI = (function () {
 
         for (let i = 0; i < topics.length; i++) {
             const t = topics[i];
-            html += '<div onclick="UI.doTalkToSpouse(\'' + t.id + '\')" style="cursor:pointer;border:1px solid rgba(120,100,60,0.3);background:rgba(40,35,25,0.5);padding:10px 14px;margin-bottom:6px;border-radius:6px;transition:border-color 0.2s;" onmouseover="this.style.borderColor=\'rgba(200,180,60,0.6)\'" onmouseout="this.style.borderColor=\'rgba(120,100,60,0.3)\'">';
+            html += '<div data-action="doTalkToSpouse" data-id="${t.id}" style="cursor:pointer;border:1px solid rgba(120,100,60,0.3);background:rgba(40,35,25,0.5);padding:10px 14px;margin-bottom:6px;border-radius:6px;transition:border-color 0.2s;" onmouseover="this.style.borderColor=\'rgba(200,180,60,0.6)\'" onmouseout="this.style.borderColor=\'rgba(120,100,60,0.3)\'">';
             html += '<strong>' + t.icon + ' ' + t.name + '</strong>';
             html += '<br><small style="color:#a09070;font-style:italic;">"' + t.desc + '"</small>';
             html += '</div>';
@@ -3451,7 +3682,7 @@ window.UI = (function () {
             html += '</div>';
             html += '<p style="text-align:center;color:#80b080;font-size:0.85rem;">Relationship +' + result.relGain + '</p>';
             html += '<div style="text-align:center;margin-top:10px;">';
-            html += '<button class="btn-medieval" onclick="UI.openTalkToSpouse()" style="padding:6px 16px;margin-right:8px;">Talk More</button>';
+            html += '<button class="btn-medieval" data-action="openTalkToSpouse" style="padding:6px 16px;margin-right:8px;">Talk More</button>';
             html += '<button class="btn-medieval" data-action="closeModal" style="padding:6px 16px;">Done</button>';
             html += '</div>';
             html += '</div>';
@@ -3664,9 +3895,9 @@ window.UI = (function () {
         html += '<span style="font-size:0.72rem;color:#888;">Showing ' + (startIdx + 1) + '-' + Math.min(startIdx + perPage, filtered.length) + ' of ' + filtered.length + ' (total: ' + totalAlive + ')</span>';
         if (totalPages > 1) {
             html += '<span style="font-size:0.72rem;">';
-            if (page > 0) html += '<button class="btn-medieval" style="font-size:0.65rem;padding:2px 6px;" onclick="UI._reTownPeoplePage(' + (page - 1) + ')">← Prev</button> ';
+            if (page > 0) html += '<button class="btn-medieval" style="font-size:0.65rem;padding:2px 6px;" data-action="_reTownPeoplePage" data-page=" + (page - 1) + ">← Prev</button> ';
             html += 'Page ' + (page + 1) + '/' + totalPages;
-            if (page < totalPages - 1) html += ' <button class="btn-medieval" style="font-size:0.65rem;padding:2px 6px;" onclick="UI._reTownPeoplePage(' + (page + 1) + ')">Next →</button>';
+            if (page < totalPages - 1) html += ' <button class="btn-medieval" style="font-size:0.65rem;padding:2px 6px;" data-action="_reTownPeoplePage" data-page=" + (page + 1) + ">Next →</button>';
             html += '</span>';
         }
         html += '</div>';
@@ -3684,7 +3915,7 @@ window.UI = (function () {
             var relText = relLevel > 0 ? relLevel : '';
             var occLabel = p.occupation ? capitalize(p.occupation) : 'None';
 
-            html += '<div class="person-list-row" onclick="UI.showPersonDetail(Engine.getPerson(\'' + p.id + '\'))" style="cursor:pointer;padding:5px 8px;border-bottom:1px solid rgba(200,170,100,0.1);display:flex;justify-content:space-between;align-items:center;">';
+            html += '<div class="person-list-row" data-action="showPersonDetailById" data-id="' + p.id + '" style="cursor:pointer;padding:5px 8px;border-bottom:1px solid rgba(200,170,100,0.1);display:flex;justify-content:space-between;align-items:center;">';
             html += '<span style="font-size:0.8rem;">' + sex + ' ' + (p.firstName || '') + ' ' + (p.lastName || '') + employed + (isChildAge ? ' 👶' : '') + '</span>';
             html += '<span style="font-size:0.7rem;display:flex;gap:8px;align-items:center;">';
             html += '<span class="text-dim">' + occLabel + '</span>';
@@ -3862,7 +4093,7 @@ window.UI = (function () {
             for (const act of DATING_ACTIVITIES) {
                 const disabled = (act.minRelationship && rel.level < act.minRelationship) || (act.cost > 0 && Player.gold < act.cost);
                 const title = `${act.description} (${act.cost > 0 ? act.cost + 'g, ' : ''}${act.timeHours}h)`;
-                html += `<button class="btn-hire ${disabled ? 'disabled' : ''}" onclick="UI.spendTimeWithSpouse('${act.id}')" style="font-size:0.7rem;padding:3px 6px;${disabled ? 'opacity:0.4;' : ''}" ${disabled ? 'disabled' : ''} title="${title}">${act.name}</button>`;
+                html += `<button class="btn-hire ${disabled ? 'disabled' : ''}" data-action="spendTimeWithSpouse" data-id="${act.id}" style="font-size:0.7rem;padding:3px 6px;${disabled ? 'opacity:0.4;' : ''}" ${disabled ? 'disabled' : ''} title="${title}">${act.name}</button>`;
             }
         }
         html += '</div></div>';
@@ -3956,9 +4187,9 @@ window.UI = (function () {
                     </div>`;
 
             if (sameAsTown && !isFull) {
-                html += `<button class="btn-assign" onclick="UI.executeAssign('${personId}','${building.id}')">Assign</button>`;
+                html += `<button class="btn-assign" data-action="executeAssign" data-id="${personId}" data-val="${building.id}">Assign</button>`;
             } else if (!sameAsTown && !isFull) {
-                html += `<button class="btn-assign" style="font-size:0.7rem;background:rgba(200,150,50,0.15);border-color:rgba(200,150,50,0.4);" onclick="UI.showSendWorkerOptions('${personId}','${building.townId}','${building.id}')">📍 Send There</button>`;
+                html += `<button class="btn-assign" style="font-size:0.7rem;background:rgba(200,150,50,0.15);border-color:rgba(200,150,50,0.4);" data-action="showSendWorkerOptions" data-id="${personId}" data-val="${building.townId}" data-type="${building.id}">📍 Send There</button>`;
             } else {
                 html += `<button class="btn-assign" disabled style="opacity:0.4;">Full</button>`;
             }
@@ -4001,7 +4232,7 @@ window.UI = (function () {
         html += '<div style="padding:8px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:6px;display:flex;justify-content:space-between;align-items:center;">';
         html += '<div><div style="font-weight:bold;font-size:0.8rem;">🚶 Walk (Free)</div>';
         html += '<div style="font-size:0.7rem;color:#aaa;">~' + walkDays + ' days • ⚠️ -5 satisfaction</div></div>';
-        html += '<button class="btn-medieval" style="font-size:0.75rem;padding:4px 12px;" onclick="(function(){var r=Player.sendWorkerToTown(\'' + personId + '\',\'' + destTownId + '\',\'walk\');UI.toast(r.message,r.success?\'success\':\'warning\');if(r.success)UI.closeModal();})()">Send</button>';
+        html += '<button class="btn-medieval" style="font-size:0.75rem;padding:4px 12px;" data-action="sendWorkerToTown_walk" data-person="' + personId + '" data-dest="' + destTownId + '">Send</button>';
         html += '</div>';
 
         // Horse option
@@ -4009,7 +4240,7 @@ window.UI = (function () {
         html += '<div><div style="font-weight:bold;font-size:0.8rem;">🐴 Give Horse & Ride</div>';
         html += '<div style="font-size:0.7rem;color:#aaa;">~' + horseDays + ' days • Uses 1 horse from inventory' + (horsesOwned < 1 ? ' (none owned!)' : ' (' + horsesOwned + ' owned)') + '</div></div>';
         if (horsesOwned >= 1) {
-            html += '<button class="btn-medieval" style="font-size:0.75rem;padding:4px 12px;" onclick="(function(){var r=Player.sendWorkerToTown(\'' + personId + '\',\'' + destTownId + '\',\'horse\');UI.toast(r.message,r.success?\'success\':\'warning\');if(r.success)UI.closeModal();})()">Send</button>';
+            html += '<button class="btn-medieval" style="font-size:0.75rem;padding:4px 12px;" data-action="sendWorkerToTown_horse" data-person="' + personId + '" data-dest="' + destTownId + '">Send</button>';
         } else {
             html += '<button class="btn-medieval" disabled style="font-size:0.75rem;padding:4px 12px;opacity:0.4;">No Horse</button>';
         }
@@ -4019,11 +4250,11 @@ window.UI = (function () {
         html += '<div style="padding:8px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:6px;display:flex;justify-content:space-between;align-items:center;">';
         html += '<div><div style="font-weight:bold;font-size:0.8rem;">🚐 Pay for Transport</div>';
         html += '<div style="font-size:0.7rem;color:#aaa;">~' + transportDays + ' days • Costs ' + transportCost + 'g</div></div>';
-        html += '<button class="btn-medieval" style="font-size:0.75rem;padding:4px 12px;" onclick="(function(){var r=Player.sendWorkerToTown(\'' + personId + '\',\'' + destTownId + '\',\'transport\');UI.toast(r.message,r.success?\'success\':\'warning\');if(r.success)UI.closeModal();})()">Send</button>';
+        html += '<button class="btn-medieval" style="font-size:0.75rem;padding:4px 12px;" data-action="sendWorkerToTown_transport" data-person="' + personId + '" data-dest="' + destTownId + '">Send</button>';
         html += '</div>';
 
         html += '</div>';
-        var footer = '<button class="btn-medieval" onclick="UI.showAssignDialog(\'' + personId + '\')">← Back</button>';
+        var footer = '<button class="btn-medieval" data-action="showAssignDialog" data-id="${personId}">← Back</button>';
         openModal('📍 Send Worker', html, footer);
     }
 
@@ -4053,7 +4284,7 @@ window.UI = (function () {
                 <input type="text" id="renameLast" class="char-input" maxlength="20" value="${Player.lastName || ''}" style="width:80%;padding:6px;font-size:1rem;" />
             </div>
         </div>`;
-        const footer = `<button class="btn-medieval" onclick="UI.confirmRenamePlayer()">✅ Confirm</button>
+        const footer = `<button class="btn-medieval" data-action="confirmRenamePlayer">✅ Confirm</button>
             <button class="btn-medieval" data-action="closeModal">Cancel</button>`;
         openModal('✏️ Change Name', body, footer);
     }
@@ -4133,7 +4364,7 @@ window.UI = (function () {
                         </div>`;
                         if (child.age >= 10 && passed < 5 && Player.skillPoints >= 3) {
                             childrenHtml += `<div style="margin-left:20px;margin-bottom:4px;">
-                                <button class="btn-medieval" onclick="UI.openTeachChildDialog('${childId}')" style="font-size:0.7rem;padding:3px 10px;">📚 Teach Skill (3 SP → 1 SP)</button>
+                                <button class="btn-medieval" data-action="openTeachChildDialog" data-id="${childId}" style="font-size:0.7rem;padding:3px 10px;">📚 Teach Skill (3 SP → 1 SP)</button>
                             </div>`;
                         } else if (child.age >= 10 && passed >= 5) {
                             childrenHtml += `<div style="margin-left:20px;margin-bottom:4px;font-size:0.7rem;color:var(--text-muted);">Max skills taught ✓</div>`;
@@ -4147,7 +4378,7 @@ window.UI = (function () {
         let html = `<div class="detail-section">
             <h3>Identity</h3>
             <div class="detail-row"><span class="label">Name</span>
-                <span class="value">${Player.fullName || 'Unknown'} <button onclick="UI.openRenamePlayer()" style="cursor:pointer;background:none;border:none;padding:0 2px;font-size:0.85em;opacity:0.6;vertical-align:middle;" title="Change name">✏️</button></span></div>
+                <span class="value">${Player.fullName || 'Unknown'} <button data-action="openRenamePlayer" style="cursor:pointer;background:none;border:none;padding:0 2px;font-size:0.85em;opacity:0.6;vertical-align:middle;" title="Change name">✏️</button></span></div>
             <div class="detail-row"><span class="label">Sex</span>
                 <span class="value">${sexIcon} ${Player.sex === 'F' ? 'Female' : 'Male'}</span></div>
             <div class="detail-row"><span class="label">Age</span>
@@ -4177,7 +4408,7 @@ window.UI = (function () {
             }
             // Treatment buttons
             html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">';
-            html += '<button class="btn-medieval" onclick="UI.openHealthDialog()" style="font-size:0.75rem;padding:4px 12px;">🏥 Treat Conditions</button>';
+            html += '<button class="btn-medieval" data-action="openHealthDialog" style="font-size:0.75rem;padding:4px 12px;">🏥 Treat Conditions</button>';
             html += '</div>';
             html += '</div>';
         }
@@ -4250,10 +4481,10 @@ window.UI = (function () {
         // Unequip buttons
         var unequipBtns = '';
         if (Player.weapon) {
-            unequipBtns += '<button class="btn-medieval" onclick="UI.unequipWeapon()" style="font-size:0.75rem;padding:4px 10px;">❌ Unequip Weapon</button>';
+            unequipBtns += '<button class="btn-medieval" data-action="unequipWeapon" style="font-size:0.75rem;padding:4px 10px;">❌ Unequip Weapon</button>';
         }
         if (Player.armor) {
-            unequipBtns += '<button class="btn-medieval" onclick="UI.unequipArmor()" style="font-size:0.75rem;padding:4px 10px;">❌ Unequip Armor</button>';
+            unequipBtns += '<button class="btn-medieval" data-action="unequipArmor" style="font-size:0.75rem;padding:4px 10px;">❌ Unequip Armor</button>';
         }
         if (unequipBtns) {
             html += '<div style="display:flex;gap:8px;margin-top:6px;">' + unequipBtns + '</div>';
@@ -4276,7 +4507,7 @@ window.UI = (function () {
                 var bannedTag = ew.isBanned ? ' <span style="color:var(--danger);font-size:0.65rem;cursor:help;" title="Banned items are illegal to make or sell, but legal to buy or own in small amounts.">🚫 BANNED</span>' : '';
                 html += '<div style="display:flex;align-items:center;gap:8px;margin:3px 0;">';
                 html += '<span style="font-size:0.8rem;">⚔️ ' + ew.name + ' <span style="color:' + qc + ';font-size:0.7rem;">(' + ew.quality + ')</span> +' + Math.round(ew.combatBonus * 100) + '%' + bannedTag + '</span>';
-                html += '<button class="btn-medieval" onclick="UI.buyWeapon(\'' + ew.id + '\')" style="font-size:0.7rem;padding:3px 10px;margin-left:auto;">' + ew.price + 'g</button>';
+                html += '<button class="btn-medieval" data-action="buyWeapon" data-id="${ew.id}" style="font-size:0.7rem;padding:3px 10px;margin-left:auto;">' + ew.price + 'g</button>';
                 html += '</div>';
             }
             for (var ai = 0; ai < availArmor.length; ai++) {
@@ -4285,7 +4516,7 @@ window.UI = (function () {
                 var bannedTagA = ea.isBanned ? ' <span style="color:var(--danger);font-size:0.65rem;cursor:help;" title="Banned items are illegal to make or sell, but legal to buy or own in small amounts.">🚫 BANNED</span>' : '';
                 html += '<div style="display:flex;align-items:center;gap:8px;margin:3px 0;">';
                 html += '<span style="font-size:0.8rem;">🛡️ ' + ea.name + ' <span style="color:' + qca + ';font-size:0.7rem;">(' + ea.quality + ')</span> +' + Math.round(ea.combatBonus * 100) + '%' + bannedTagA + '</span>';
-                html += '<button class="btn-medieval" onclick="UI.buyArmor(\'' + ea.id + '\')" style="font-size:0.7rem;padding:3px 10px;margin-left:auto;">' + ea.price + 'g</button>';
+                html += '<button class="btn-medieval" data-action="buyArmor" data-id="${ea.id}" style="font-size:0.7rem;padding:3px 10px;margin-left:auto;">' + ea.price + 'g</button>';
                 html += '</div>';
             }
             html += '</div>';
@@ -4318,7 +4549,7 @@ window.UI = (function () {
             invEquipHtml += '<div style="display:flex;align-items:center;gap:8px;margin:3px 0;">';
             invEquipHtml += '<span style="font-size:0.8rem;">' + (eRes.icon || '') + ' ' + eRes.name + ' ×' + eHeld + '</span>';
             if (!alreadyEquipped) {
-                invEquipHtml += '<button class="btn-medieval" onclick="UI.equipFromInventoryUI(\'' + eResId + '\')" style="font-size:0.7rem;padding:3px 10px;margin-left:auto;">Equip</button>';
+                invEquipHtml += '<button class="btn-medieval" data-action="equipFromInventoryUI" data-id="${eResId}" style="font-size:0.7rem;padding:3px 10px;margin-left:auto;">Equip</button>';
             } else {
                 invEquipHtml += '<span style="font-size:0.7rem;color:#55a868;margin-left:auto;">✓ Equipped</span>';
             }
@@ -4370,8 +4601,8 @@ window.UI = (function () {
                         <span style="color:${hullColor}">Hull: ${hullPct}%</span>
                         ${(ship.addons && ship.addons.length > 0) ? ' | Addons: ' + ship.addons.map(function(a) { var ac = CONFIG.SHIP_ADDONS ? CONFIG.SHIP_ADDONS[a] : null; return ac ? ac.name : a; }).join(', ') : ''}
                     </div>
-                    ${shipNeedsRepair && isAtPort ? '<button class="btn-trade buy" style="font-size:0.7rem;margin-top:4px;background:rgba(200,120,0,0.35);border-color:rgba(220,140,20,0.6);color:#f5deb3;" onclick="UI.repairShip(\'' + ship.id + '\')">🔨 Repair (' + shipRepairCost + 'g)</button>' : ''}
-                    ${isAtPort && ship.addons && ship.maxAddons && ship.addons.length < ship.maxAddons ? ' <button class="btn-trade buy" style="font-size:0.7rem;margin-top:4px;background:rgba(0,100,140,0.35);border-color:rgba(0,160,200,0.6);color:#c8e8f0;" onclick="UI.showShipAddons(\'' + ship.id + '\')">🔧 Addons (' + ship.addons.length + '/' + ship.maxAddons + ')</button>' : ''}
+                    ${shipNeedsRepair && isAtPort ? '<button class="btn-trade buy" style="font-size:0.7rem;margin-top:4px;background:rgba(200,120,0,0.35);border-color:rgba(220,140,20,0.6);color:#f5deb3;" data-action="repairShip" data-id="${ship.id}">🔨 Repair (' + shipRepairCost + 'g)</button>' : ''}
+                    ${isAtPort && ship.addons && ship.maxAddons && ship.addons.length < ship.maxAddons ? ' <button class="btn-trade buy" style="font-size:0.7rem;margin-top:4px;background:rgba(0,100,140,0.35);border-color:rgba(0,160,200,0.6);color:#c8e8f0;" data-action="showShipAddons" data-id="${ship.id}">🔧 Addons (' + ship.addons.length + '/' + ship.maxAddons + ')</button>' : ''}
                 </div>`;
             }
         } else {
@@ -4386,7 +4617,7 @@ window.UI = (function () {
                 var stCfg = shipTypes[stId];
                 var stPrice = Player.getShipPrice ? Player.getShipPrice(stId) : (stCfg.laborCost || 100);
                 var canAfford = Player.gold >= stPrice;
-                html += `<button class="btn-medieval" onclick="UI.buyShip('${stId}')" style="font-size:0.7rem;padding:4px 10px;background:rgba(0,140,160,${canAfford ? '0.4' : '0.15'});border-color:rgba(0,200,220,${canAfford ? '0.6' : '0.3'});color:${canAfford ? '#e0f4f4' : '#666'};" title="${stCfg.description || ''}\nCap:${stCfg.capacity} Spd:${stCfg.speed}x Pass:${stCfg.passengers || 0} Def:${stCfg.defense || 0} Cannons:${stCfg.cannons || 0}">${stCfg.icon || '⛵'} ${stCfg.name} (${Math.round(stPrice)}g)</button>`;
+                html += `<button class="btn-medieval" data-action="buyShip" data-id="${stId}" style="font-size:0.7rem;padding:4px 10px;background:rgba(0,140,160,${canAfford ? '0.4' : '0.15'});border-color:rgba(0,200,220,${canAfford ? '0.6' : '0.3'});color:${canAfford ? '#e0f4f4' : '#666'};" title="${stCfg.description || ''}\nCap:${stCfg.capacity} Spd:${stCfg.speed}x Pass:${stCfg.passengers || 0} Def:${stCfg.defense || 0} Cannons:${stCfg.cannons || 0}">${stCfg.icon || '⛵'} ${stCfg.name} (${Math.round(stPrice)}g)</button>`;
             }
             html += `</div>`;
         } else {
@@ -4409,12 +4640,12 @@ window.UI = (function () {
                 html += `</span>`;
                 html += `<div style="display:flex;gap:4px;">`;
                 if (horse.saddled) {
-                    html += `<button class="btn-medieval" onclick="(function(){var r=Player.unmountSaddle('${horse.id}');UI.toast(r.message,r.success?'success':'warning');UI.openCharacterPanel();})()" style="font-size:0.7rem;padding:2px 6px;">🪑 Remove Saddle</button>`;
+                    html += `<button class="btn-medieval" data-action="unmountSaddle" data-id="${horse.id}" style="font-size:0.7rem;padding:2px 6px;">🪑 Remove Saddle</button>`;
                 } else if (invSaddles > 0) {
-                    html += `<button class="btn-medieval" onclick="(function(){var r=Player.mountSaddle('${horse.id}');UI.toast(r.message,r.success?'success':'warning');UI.openCharacterPanel();})()" style="font-size:0.7rem;padding:2px 6px;">🪑 Saddle</button>`;
+                    html += `<button class="btn-medieval" data-action="mountSaddle" data-id="${horse.id}" style="font-size:0.7rem;padding:2px 6px;">🪑 Saddle</button>`;
                 }
-                html += `<button class="btn-medieval" onclick="UI.dismountHorseUI('${horse.id}')" style="font-size:0.7rem;padding:2px 6px;">⬇️ Dismount</button>`;
-                html += `<button class="btn-medieval" onclick="UI.sellHorse('${horse.id}')" style="font-size:0.7rem;padding:2px 6px;">💰 Sell</button>`;
+                html += `<button class="btn-medieval" data-action="dismountHorseUI" data-id="${horse.id}" style="font-size:0.7rem;padding:2px 6px;">⬇️ Dismount</button>`;
+                html += `<button class="btn-medieval" data-action="sellHorse" data-id="${horse.id}" style="font-size:0.7rem;padding:2px 6px;">💰 Sell</button>`;
                 html += `</div></div>`;
             }
             if (invSaddles > 0) {
@@ -4426,7 +4657,7 @@ window.UI = (function () {
         // Mount from inventory
         var invHorses = (Player.inventory && Player.inventory.horses) || 0;
         if (invHorses > 0) {
-            html += `<div style="margin-top:4px;"><button class="btn-medieval" onclick="UI.mountHorseUI()" style="font-size:0.75rem;padding:4px 10px;">🐴 Mount Horse from Inventory (${invHorses} available)</button></div>`;
+            html += `<div style="margin-top:4px;"><button class="btn-medieval" data-action="mountHorseUI" style="font-size:0.75rem;padding:4px 10px;">🐴 Mount Horse from Inventory (${invHorses} available)</button></div>`;
         }
 
         // ── Horse Permit (Draft Animal Law) ──
@@ -4450,8 +4681,8 @@ window.UI = (function () {
                         var permitCostAnnual = permitCfg.permitCostAnnual || 1000;
                         html += `<div style="font-size:0.72rem;color:#c88;margin:4px 0;padding:4px 6px;background:rgba(140,30,30,0.25);border-radius:4px;">`;
                         html += `⚠️ <strong>${permitKingdom.name}</strong> requires a horse permit for commoners (Draft Animal Law).`;
-                        html += `<br><button class="btn-medieval" onclick="Player.buyHorsePermit('${permitKingdom.id}','monthly'); UI.openCharacterPanel();" style="font-size:0.7rem;padding:2px 8px;margin-top:4px;">🐴 30-Day Permit (${permitCostMonthly}g)</button>`;
-                        html += ` <button class="btn-medieval" onclick="Player.buyHorsePermit('${permitKingdom.id}','annual'); UI.openCharacterPanel();" style="font-size:0.7rem;padding:2px 8px;margin-top:4px;">🐴 Annual Permit (${permitCostAnnual}g)</button>`;
+                        html += `<br><button class="btn-medieval" data-action="buyHorsePermitAndOpenCharacterPanel" data-id="${permitKingdom.id}" data-val="monthly" style="font-size:0.7rem;padding:2px 8px;margin-top:4px;">🐴 30-Day Permit (${permitCostMonthly}g)</button>`;
+                        html += ` <button class="btn-medieval" data-action="buyHorsePermitAndOpenCharacterPanel" data-id="${permitKingdom.id}" data-val="annual" style="font-size:0.7rem;padding:2px 8px;margin-top:4px;">🐴 Annual Permit (${permitCostAnnual}g)</button>`;
                         html += `</div>`;
                     }
                 }
@@ -4466,7 +4697,7 @@ window.UI = (function () {
         html += `<div class="detail-row"><span class="label">Container</span><span class="value">${charContainerLabel}</span></div>`;
         // Dismount current container button
         if (charContainer) {
-            html += `<div style="margin-top:3px;"><button class="btn-medieval" onclick="UI.dismountContainerUI()" style="font-size:0.7rem;padding:2px 8px;">⬇️ Dismount ${charContainer.name} to Inventory</button></div>`;
+            html += `<div style="margin-top:3px;"><button class="btn-medieval" data-action="dismountContainerUI" style="font-size:0.7rem;padding:2px 8px;">⬇️ Dismount ${charContainer.name} to Inventory</button></div>`;
         }
         html += `<div class="detail-row"><span class="label">Carrying</span><span class="value">${Math.round(charCarriedWeight)} / ${charCarryCap} weight</span></div>`;
 
@@ -4482,7 +4713,7 @@ window.UI = (function () {
             if (charContainer && mcCfg.capacityMult <= charContainer.capacityMult) continue;
             var horsesOk = (Player.horses ? Player.horses.length : 0) >= (mcCfg.horsesRequired || 0);
             var horseNote = !horsesOk ? ' (need ' + mcCfg.horsesRequired + ' 🐴)' : '';
-            mountHtml += `<button class="btn-medieval" onclick="UI.mountContainerUI('${mcId}')" style="font-size:0.7rem;padding:3px 10px;margin:2px;${!horsesOk ? 'opacity:0.5;' : ''}" ${!horsesOk ? 'disabled' : ''}>${mcCfg.icon} Mount ${mcCfg.name} (${invCount} owned) — ${mcCfg.capacityMult * (CONFIG.PLAYER_BASE_CARRY || 20)} cap${horseNote}</button>`;
+            mountHtml += `<button class="btn-medieval" data-action="mountContainerUI" data-id="${mcId}" style="font-size:0.7rem;padding:3px 10px;margin:2px;${!horsesOk ? 'opacity:0.5;' : ''}" ${!horsesOk ? 'disabled' : ''}>${mcCfg.icon} Mount ${mcCfg.name} (${invCount} owned) — ${mcCfg.capacityMult * (CONFIG.PLAYER_BASE_CARRY || 20)} cap${horseNote}</button>`;
         }
         if (mountHtml) {
             html += `<div style="margin-top:4px;"><div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:3px;">📦 Mount from inventory:</div><div style="display:flex;flex-wrap:wrap;gap:4px;">${mountHtml}</div></div>`;
@@ -4501,7 +4732,7 @@ window.UI = (function () {
                     return (res ? res.icon || '' : '') + e[1];
                 }).join(', ');
             }
-            upgradeHtml += `<button class="btn-medieval" onclick="UI.buyContainer('${cId}')" style="font-size:0.7rem;padding:3px 10px;margin:2px;">${cCfg.icon} ${cCfg.name} (${upgradeCost}g${matStr}) — ${cCfg.capacityMult * (CONFIG.PLAYER_BASE_CARRY || 20)} cap</button>`;
+            upgradeHtml += `<button class="btn-medieval" data-action="buyContainer" data-id="${cId}" style="font-size:0.7rem;padding:3px 10px;margin:2px;">${cCfg.icon} ${cCfg.name} (${upgradeCost}g${matStr}) — ${cCfg.capacityMult * (CONFIG.PLAYER_BASE_CARRY || 20)} cap</button>`;
         }
         if (upgradeHtml) {
             html += `<div style="margin-top:6px;"><div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:4px;">Available upgrades:</div><div style="display:flex;flex-wrap:wrap;gap:4px;">${upgradeHtml}</div></div>`;
@@ -4575,9 +4806,9 @@ window.UI = (function () {
             var mt = document.getElementById('modalTitle');
             if (mt) {
                 mt.innerHTML = mt.textContent +
-                    ' <button class="btn-medieval" onclick="UI.openJournal()" style="font-size:0.65rem;padding:3px 10px;margin-left:10px;vertical-align:middle;">📖 Journal</button>' +
-                    ' <button class="btn-medieval" onclick="UI.openFinancialReport()" style="font-size:0.65rem;padding:3px 10px;vertical-align:middle;">📊 Financial Report</button>' +
-                    ' <button class="btn-medieval" onclick="UI.openPlayerImpact()" style="font-size:0.65rem;padding:3px 10px;vertical-align:middle;">🏆 Player Impact</button>';
+                    ' <button class="btn-medieval" data-action="openJournal" style="font-size:0.65rem;padding:3px 10px;margin-left:10px;vertical-align:middle;">📖 Journal</button>' +
+                    ' <button class="btn-medieval" data-action="openFinancialReport" style="font-size:0.65rem;padding:3px 10px;vertical-align:middle;">📊 Financial Report</button>' +
+                    ' <button class="btn-medieval" data-action="openPlayerImpact" style="font-size:0.65rem;padding:3px 10px;vertical-align:middle;">🏆 Player Impact</button>';
             }
         }, 30);
     }
@@ -4703,7 +4934,7 @@ window.UI = (function () {
                 html += '<button class="btn-medieval" disabled style="font-size:0.75rem;padding:4px 12px;opacity:0.4;cursor:not-allowed;">🔄 Change Allegiance</button>';
                 html += '<div style="font-size:0.7rem;color:#c44e52;margin-top:3px;">⚠️ Nobles cannot change allegiance.</div>';
             } else {
-                html += '<button class="btn-medieval" onclick="UI._reopenWarChoice(\'' + entry.warId + '\')" style="font-size:0.75rem;padding:4px 12px;">🔄 Change Allegiance</button>';
+                html += '<button class="btn-medieval" data-action="_reopenWarChoice" data-id="${entry.warId}" style="font-size:0.75rem;padding:4px 12px;">🔄 Change Allegiance</button>';
                 if (a.side !== 'neutral') {
                     html += '<div style="font-size:0.7rem;color:#e67e22;margin-top:3px;">⚠️ Changing costs -20 rep from current ally, -10 king relationship, -5 all nobles.</div>';
                 }
@@ -5241,7 +5472,7 @@ window.UI = (function () {
                 var isActive = (tabKey === activeTab);
                 tabBarHtml += '<button class="btn-medieval" style="font-size:0.78rem;padding:4px 10px;' +
                     (isActive ? 'background:rgba(255,215,0,0.2);border-color:var(--gold);color:var(--gold);' : 'opacity:0.6;') +
-                    '" onclick="UI._setEventTab(\'' + tabKey + '\')">' + tg.label + '</button>';
+                    '" data-action="_setEventTab" data-tab="${tabKey}">' + tg.label + '</button>';
             }
         }
         tabBarHtml += '</div>';
@@ -5270,7 +5501,7 @@ window.UI = (function () {
                     var fLabel = filterLabels[fKey];
                     var isOn = filters[fKey] === true || filters[fKey] === 'smart';
                     var isSmart = filters[fKey] === 'smart';
-                    filterBarHtml += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 6px;opacity:' + (isOn ? 1 : 0.4) + ';' + (isSmart ? 'border:1px solid gold;' : '') + '" onclick="UI.toggleNotifFilter(\'' + fKey + '\')">' + fLabel + '</button>';
+                    filterBarHtml += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 6px;opacity:' + (isOn ? 1 : 0.4) + ';' + (isSmart ? 'border:1px solid gold;' : '') + '" data-action="toggleNotifFilter" data-id="${fKey}">' + fLabel + '</button>';
                 }
             }
             filterBarHtml += '</div>';
@@ -5340,21 +5571,21 @@ window.UI = (function () {
         var countLabel = searchQuery ? (totalEvents + ' results') : (totalEvents + ' events');
         if (totalPages > 1) countLabel += ' (page ' + (currentPage + 1) + '/' + totalPages + ')';
         html += '<span style="font-size:0.85rem;color:var(--text-muted);">' + countLabel + '</span>' +
-            '<button class="btn-medieval" onclick="UI.clearEventLog()" style="font-size:0.8rem;padding:4px 10px;">🗑️ Clear Log</button>' +
+            '<button class="btn-medieval" data-action="clearEventLog" style="font-size:0.8rem;padding:4px 10px;">🗑️ Clear Log</button>' +
             '</div>';
 
         // Pagination controls at top
         if (totalPages > 1) {
             html += '<div style="display:flex;justify-content:center;gap:6px;margin-bottom:8px;">';
-            html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 10px;' + (currentPage === 0 ? 'opacity:0.3;pointer-events:none;' : '') + '" onclick="UI._setEventPage(' + (currentPage - 1) + ')">◀ Prev</button>';
+            html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 10px;' + (currentPage === 0 ? 'opacity:0.3;pointer-events:none;' : '') + '" data-action="_setEventPage" data-page=" + (currentPage - 1) + ">◀ Prev</button>';
             // Page number buttons (show up to 5 around current page)
             var startPage = Math.max(0, currentPage - 2);
             var endPage = Math.min(totalPages - 1, startPage + 4);
             if (endPage - startPage < 4) startPage = Math.max(0, endPage - 4);
             for (var pi = startPage; pi <= endPage; pi++) {
-                html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 8px;min-width:28px;' + (pi === currentPage ? 'background:rgba(255,215,0,0.25);border-color:var(--gold);color:var(--gold);' : 'opacity:0.6;') + '" onclick="UI._setEventPage(' + pi + ')">' + (pi + 1) + '</button>';
+                html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 8px;min-width:28px;' + (pi === currentPage ? 'background:rgba(255,215,0,0.25);border-color:var(--gold);color:var(--gold);' : 'opacity:0.6;') + '" data-action="_setEventPage" data-page=" + pi + ">' + (pi + 1) + '</button>';
             }
-            html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 10px;' + (currentPage >= totalPages - 1 ? 'opacity:0.3;pointer-events:none;' : '') + '" onclick="UI._setEventPage(' + (currentPage + 1) + ')">Next ▶</button>';
+            html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 10px;' + (currentPage >= totalPages - 1 ? 'opacity:0.3;pointer-events:none;' : '') + '" data-action="_setEventPage" data-page=" + (currentPage + 1) + ">Next ▶</button>';
             html += '</div>';
         }
 
@@ -5402,14 +5633,14 @@ window.UI = (function () {
             if (item.type === 'group') {
                 // Collapsed group header
                 var groupId = 'evGroup_' + di;
-                html += '<div class="event-log-item event-personal" style="cursor:pointer;border-left:3px solid #c4a35a;" onclick="(function(){var el=document.getElementById(\'' + groupId + '\');if(el)el.style.display=el.style.display===\'none\'?\'block\':\'none\';})()">';
+                html += '<div class="event-log-item event-personal" style="cursor:pointer;border-left:3px solid #c4a35a;" data-action="_toggleVisibility" data-id="' + groupId + '">';
                 html += '<span class="event-day">Day ' + (item.dayStart || '?') + '</span>';
                 html += '<span class="event-text">' + item.groupLabel + ' (' + item.events.length + ' events) ▸</span>';
                 html += '</div>';
                 html += '<div id="' + groupId + '" style="display:none;margin-left:12px;border-left:2px solid #555;padding-left:6px;">';
                 for (var gi = 0; gi < item.events.length; gi++) {
                     var ge = item.events[gi];
-                    var clickAct = 'onclick="UI.showEventDetail(' + ge.idx + ')"';
+                    var clickAct = 'data-action="showEventDetail" data-id=" + ge.idx + "';
                     html += '<div class="event-log-item event-personal" ' + clickAct + ' style="cursor:pointer;padding:3px 6px;font-size:0.78rem;">';
                     html += '<span class="event-day">Day ' + (ge.event.day || '?') + '</span>';
                     html += '<span class="event-text">' + (ge.event.description || ge.event.message || 'Event') + '</span>';
@@ -5435,7 +5666,7 @@ window.UI = (function () {
                     eventClass = 'event-personal';
                 }
 
-                var clickAction = 'onclick="UI.showEventDetail(' + evIdx + ')"';
+                var clickAction = 'data-action="showEventDetail" data-id=" + evIdx + "';
 
                 html += '<div class="event-log-item ' + eventClass + '" ' + clickAction + ' style="cursor:pointer;">' +
                     '<span class="event-day">Day ' + (event.day || '?') + '</span>' +
@@ -5450,14 +5681,14 @@ window.UI = (function () {
         // Pagination controls at bottom
         if (totalPages > 1) {
             html += '<div style="display:flex;justify-content:center;gap:6px;margin-top:8px;">';
-            html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 10px;' + (currentPage === 0 ? 'opacity:0.3;pointer-events:none;' : '') + '" onclick="UI._setEventPage(' + (currentPage - 1) + ')">◀ Prev</button>';
+            html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 10px;' + (currentPage === 0 ? 'opacity:0.3;pointer-events:none;' : '') + '" data-action="_setEventPage" data-page=" + (currentPage - 1) + ">◀ Prev</button>';
             var startPage2 = Math.max(0, currentPage - 2);
             var endPage2 = Math.min(totalPages - 1, startPage2 + 4);
             if (endPage2 - startPage2 < 4) startPage2 = Math.max(0, endPage2 - 4);
             for (var pi2 = startPage2; pi2 <= endPage2; pi2++) {
-                html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 8px;min-width:28px;' + (pi2 === currentPage ? 'background:rgba(255,215,0,0.25);border-color:var(--gold);color:var(--gold);' : 'opacity:0.6;') + '" onclick="UI._setEventPage(' + pi2 + ')">' + (pi2 + 1) + '</button>';
+                html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 8px;min-width:28px;' + (pi2 === currentPage ? 'background:rgba(255,215,0,0.25);border-color:var(--gold);color:var(--gold);' : 'opacity:0.6;') + '" data-action="_setEventPage" data-page=" + pi2 + ">' + (pi2 + 1) + '</button>';
             }
-            html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 10px;' + (currentPage >= totalPages - 1 ? 'opacity:0.3;pointer-events:none;' : '') + '" onclick="UI._setEventPage(' + (currentPage + 1) + ')">Next ▶</button>';
+            html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 10px;' + (currentPage >= totalPages - 1 ? 'opacity:0.3;pointer-events:none;' : '') + '" data-action="_setEventPage" data-page=" + (currentPage + 1) + ">Next ▶</button>';
             html += '</div>';
         }
 
@@ -5602,7 +5833,7 @@ window.UI = (function () {
         // Master toast mute toggle
         html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;margin-bottom:12px;background:' + (_toastsMuted ? 'rgba(196,78,82,0.15)' : 'rgba(85,168,104,0.15)') + ';border:1px solid ' + (_toastsMuted ? 'rgba(196,78,82,0.4)' : 'rgba(85,168,104,0.4)') + ';border-radius:6px;">';
         html += '<div><span style="font-size:1rem;font-weight:bold;">' + (_toastsMuted ? '🔇' : '🔔') + ' Toast Pop-ups</span><br><span style="font-size:0.75rem;color:var(--text-muted);">Toggle all toast pop-ups on/off. Events still appear in the notification log.</span></div>';
-        html += '<button class="btn-medieval" style="font-size:0.8rem;padding:4px 14px;' + (_toastsMuted ? 'background:#c44e52;color:#fff;' : 'background:#55a868;color:#fff;') + '" onclick="UI._toggleToastMute()">' + (_toastsMuted ? 'Muted' : 'On') + '</button>';
+        html += '<button class="btn-medieval" style="font-size:0.8rem;padding:4px 14px;' + (_toastsMuted ? 'background:#c44e52;color:#fff;' : 'background:#55a868;color:#fff;') + '" data-action="_toggleToastMute">' + (_toastsMuted ? 'Muted' : 'On') + '</button>';
         html += '</div>';
 
         for (var fi = 0; fi < filterDefs.length; fi++) {
@@ -5635,15 +5866,15 @@ window.UI = (function () {
             // Category row — clickable to expand if has subs
             var expandId = 'nfSub_' + f.key;
             html += '<div style="border-bottom:1px solid rgba(255,255,255,0.05);">';
-            html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;' + (hasSubs ? 'cursor:pointer;' : '') + '"' + (hasSubs ? ' onclick="(function(){var el=document.getElementById(\'' + expandId + '\');if(el){var show=el.style.display===\'none\';el.style.display=show?\'block\':\'none\';UI._expandedNotifCategory=show?\'' + f.key + '\':null;}})()"' : '') + '>';
+            html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;' + (hasSubs ? 'cursor:pointer;' : '') + '"' + (hasSubs ? ' data-action="_toggleVisibility" data-param1="' + expandId + '" data-param2="' + f.key + '"' : '') + '>';
             html += '<div style="flex:1;"><span style="font-size:0.95rem;">' + (hasSubs ? '▸ ' : '') + f.label + '</span><br><span style="font-size:0.75rem;color:var(--text-muted);">' + f.desc + '</span></div>';
-            html += '<div style="display:flex;gap:2px;" onclick="event.stopPropagation()">';
+            html += '<div style="display:flex;gap:2px;" data-action="_handler_15">';
 
             if (f.hasSmart) {
-                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 8px;' + (isSmart ? 'background:var(--gold);color:#000;' : 'opacity:0.5;') + '" onclick="UI.setNotifFilter(\'' + f.key + '\',\'smart\')">Smart</button>';
+                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 8px;' + (isSmart ? 'background:var(--gold);color:#000;' : 'opacity:0.5;') + '" data-action="setNotifFilter" data-key="${f.key}" data-val="smart">Smart</button>';
             }
-            html += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 8px;' + (isOn && !isSmart ? 'background:#55a868;color:#fff;' : 'opacity:0.5;') + '" onclick="UI.setNotifFilter(\'' + f.key + '\',true)">On</button>';
-            html += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 8px;' + (isOff ? 'background:#c44e52;color:#fff;' : 'opacity:0.5;') + '" onclick="UI.setNotifFilter(\'' + f.key + '\',false)">Off</button>';
+            html += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 8px;' + (isOn && !isSmart ? 'background:#55a868;color:#fff;' : 'opacity:0.5;') + '" data-action="setNotifFilter" data-key="${f.key}" data-val="true">On</button>';
+            html += '<button class="btn-medieval" style="font-size:0.7rem;padding:2px 8px;' + (isOff ? 'background:#c44e52;color:#fff;' : 'opacity:0.5;') + '" data-action="setNotifFilter" data-key="${f.key}" data-val="false">Off</button>';
             html += '</div></div>';
 
             // Sub-type toggles (collapsed by default, but restore expanded state)
@@ -5658,8 +5889,8 @@ window.UI = (function () {
                     html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:3px 0;">';
                     html += '<span style="font-size:0.8rem;color:' + (subOn ? '#ccc' : '#666') + ';">' + sub.label + '</span>';
                     html += '<div style="display:flex;gap:2px;">';
-                    html += '<button class="btn-medieval" style="font-size:0.65rem;padding:1px 7px;' + (subOn ? 'background:#55a868;color:#fff;' : 'opacity:0.4;') + '" onclick="UI.setNotifFilter(\'' + subKey + '\',true)">On</button>';
-                    html += '<button class="btn-medieval" style="font-size:0.65rem;padding:1px 7px;' + (!subOn ? 'background:#c44e52;color:#fff;' : 'opacity:0.4;') + '" onclick="UI.setNotifFilter(\'' + subKey + '\',false)">Off</button>';
+                    html += '<button class="btn-medieval" style="font-size:0.65rem;padding:1px 7px;' + (subOn ? 'background:#55a868;color:#fff;' : 'opacity:0.4;') + '" data-action="setNotifFilter" data-key="${subKey}" data-val="true">On</button>';
+                    html += '<button class="btn-medieval" style="font-size:0.65rem;padding:1px 7px;' + (!subOn ? 'background:#c44e52;color:#fff;' : 'opacity:0.4;') + '" data-action="setNotifFilter" data-key="${subKey}" data-val="false">Off</button>';
                     html += '</div></div>';
                 }
                 html += '</div>';
@@ -5692,7 +5923,7 @@ window.UI = (function () {
         html += '<h3 style="margin-top:16px;color:var(--gold);">📋 Merchant\'s Path</h3>';
         html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;margin-bottom:8px;background:' + (guidanceOn ? 'rgba(85,168,104,0.15)' : 'rgba(196,78,82,0.15)') + ';border:1px solid ' + (guidanceOn ? 'rgba(85,168,104,0.4)' : 'rgba(196,78,82,0.4)') + ';border-radius:6px;">';
         html += '<div><span style="font-size:0.95rem;font-weight:bold;">📋 Task Guidance</span><br><span style="font-size:0.75rem;color:var(--text-muted);">Shows suggested tasks below the ledger to help guide your progress. Auto-disables at Guildmaster rank.</span></div>';
-        html += '<button class="btn-medieval" style="font-size:0.8rem;padding:4px 14px;' + (guidanceOn ? 'background:#55a868;color:#fff;' : 'background:#c44e52;color:#fff;') + '" onclick="UI._toggleGuidance()">' + (guidanceOn ? 'On' : 'Off') + '</button>';
+        html += '<button class="btn-medieval" style="font-size:0.8rem;padding:4px 14px;' + (guidanceOn ? 'background:#55a868;color:#fff;' : 'background:#c44e52;color:#fff;') + '" data-action="_toggleGuidance">' + (guidanceOn ? 'On' : 'Off') + '</button>';
         html += '</div>';
 
         openModal('⚙️ Settings', html);
@@ -5831,7 +6062,7 @@ window.UI = (function () {
 
             // Royal Consultation — open consultation dialog
             if (event.details.type === 'royal_consultation' && event.details.kingdomId && event.details.decisionId) {
-                html += '<div style="margin:12px 0;"><button class="btn-medieval" style="background:rgba(255,215,0,0.15);border-color:rgba(255,215,0,0.4);font-size:1rem;" onclick="UI.closeModal();UI.openKingConsultationDialog(\'' + event.details.kingdomId + '\',\'' + event.details.decisionId + '\')">👑 Respond to King\'s Proposal</button></div>';
+                html += '<div style="margin:12px 0;"><button class="btn-medieval" style="background:rgba(255,215,0,0.15);border-color:rgba(255,215,0,0.4);font-size:1rem;" data-action="closeModalAndOpenKingConsultationDialog" data-id="${event.details.kingdomId}" data-val="${event.details.decisionId}">👑 Respond to King\'s Proposal</button></div>';
             }
 
             // Cause
@@ -5893,9 +6124,9 @@ window.UI = (function () {
             var isCurrentlyOff = filters[muteKey] === false;
 
             if (isCurrentlyOff) {
-                html += '<button class="btn-action" style="font-size:0.85rem;padding:4px 12px;background:rgba(50,180,50,0.2);border-color:rgba(50,180,50,0.5);" onclick="Player.setNotifFilter(\'' + muteKey + '\', true);UI.showEventDetail(' + eventIndex + ');">🔔 Unmute ' + muteLabel + '</button>';
+                html += '<button class="btn-action" style="font-size:0.85rem;padding:4px 12px;background:rgba(50,180,50,0.2);border-color:rgba(50,180,50,0.5);" data-action="setNotifFilterAndShowEventDetail" data-key="${muteKey}" data-val="true">🔔 Unmute ' + muteLabel + '</button>';
             } else {
-                html += '<button class="btn-action" style="font-size:0.85rem;padding:4px 12px;background:rgba(180,50,50,0.2);border-color:rgba(180,50,50,0.5);" onclick="Player.setNotifFilter(\'' + muteKey + '\', false);UI.showEventDetail(' + eventIndex + ');">🔇 Mute ' + muteLabel + '</button>';
+                html += '<button class="btn-action" style="font-size:0.85rem;padding:4px 12px;background:rgba(180,50,50,0.2);border-color:rgba(180,50,50,0.5);" data-action="setNotifFilterAndShowEventDetail" data-key="${muteKey}" data-val="false">🔇 Mute ' + muteLabel + '</button>';
             }
             html += '</div>';
         }
@@ -5918,7 +6149,7 @@ window.UI = (function () {
             } catch (e) { /* ignore */ }
         }
         if (locTownId) {
-            html += '<button class="btn-action" style="margin-top:8px;" onclick="UI.clickTown(\'' + locTownId + '\');">🗺️ View Location</button>';
+            html += '<button class="btn-action" style="margin-top:8px;" data-action="clickTown" data-id="${locTownId}">🗺️ View Location</button>';
         }
 
         html += '</div>';
@@ -6053,7 +6284,7 @@ window.UI = (function () {
             if (item.separator) {
                 html += '<div class="ctx-separator"></div>';
             } else {
-                html += `<div class="ctx-item ${item.disabled ? 'disabled' : ''}" onclick="${item.disabled ? '' : item.action}">
+                html += `<div class="ctx-item ${item.disabled ? 'disabled' : ''}" data-action="ctxExec" data-cmd="${item.disabled ? '' : item.action}">
                     ${item.icon || ''} ${item.label}
                 </div>`;
             }
@@ -6130,9 +6361,9 @@ window.UI = (function () {
         `;
 
         const footerHtml = `
-            <button class="btn" onclick="UI.chooseWarAllegiance('${warId}','neutral')" style="margin:4px;position:relative;" title="Stay Neutral&#10;&#10;✅ Trade freely with BOTH sides&#10;✅ No reputation change&#10;✅ No war-end reward or punishment&#10;&#10;⚠️ Military sales to both sides are tracked&#10;⚠️ Lopsided sales (2:1+) trigger warnings&#10;⚠️ At 3:1 ratio: extra 10% tax from disadvantaged side&#10;⚠️ At 5:1 ratio: building seizure risk&#10;⚠️ At 10:1 ratio: total asset seizure + reputation destroyed">🕊️ Stay Neutral</button>
-            <button class="btn" onclick="UI.chooseWarAllegiance('${warId}','${warEvent.kingdomA}')" style="margin:4px;" title="Side with ${nameA}&#10;&#10;IMMEDIATE:&#10;✅ +5 reputation with ${nameA}&#10;❌ -5 reputation with ${nameB}&#10;❌ -5 relationship with ${nameB} king + nobles&#10;❌ Rank in ${nameB} becomes 'Enemy' (peasant privileges)&#10;❌ Cannot hire workers in military buildings in ${nameB}&#10;❌ +50% encounters, +25% danger in ${nameB} territory&#10;&#10;IF ${nameA} WINS:&#10;✅ +5 to +20 rep (scaled by military sales + status)&#10;✅ +10 king relationship, +5 all noble relationships&#10;✅ War Hero achievement&#10;✅ Guaranteed petition (no signatures needed)&#10;✅ Up to 5000g reward&#10;&#10;IF ${nameA} LOSES:&#10;❌ Up to 5000g retribution&#10;❌ -10 to -20 rep with BOTH kingdoms&#10;❌ -10 relationship with BOTH kings&#10;❌ -5 relationship with ALL nobles&#10;❌ Buildings in ${nameB} seized&#10;❌ Possible jail time&#10;&#10;⚠️ Choice is PERMANENT — cannot change sides!">⚔️ Side with ${nameA}</button>
-            <button class="btn" onclick="UI.chooseWarAllegiance('${warId}','${warEvent.kingdomB}')" style="margin:4px;" title="Side with ${nameB}&#10;&#10;IMMEDIATE:&#10;✅ +5 reputation with ${nameB}&#10;❌ -5 reputation with ${nameA}&#10;❌ -5 relationship with ${nameA} king + nobles&#10;❌ Rank in ${nameA} becomes 'Enemy' (peasant privileges)&#10;❌ Cannot hire workers in military buildings in ${nameA}&#10;❌ +50% encounters, +25% danger in ${nameA} territory&#10;&#10;IF ${nameB} WINS:&#10;✅ +5 to +20 rep (scaled by military sales + status)&#10;✅ +10 king relationship, +5 all noble relationships&#10;✅ War Hero achievement&#10;✅ Guaranteed petition (no signatures needed)&#10;✅ Up to 5000g reward&#10;&#10;IF ${nameB} LOSES:&#10;❌ Up to 5000g retribution&#10;❌ -10 to -20 rep with BOTH kingdoms&#10;❌ -10 relationship with BOTH kings&#10;❌ -5 relationship with ALL nobles&#10;❌ Buildings in ${nameA} seized&#10;❌ Possible jail time&#10;&#10;⚠️ Choice is PERMANENT — cannot change sides!">⚔️ Side with ${nameB}</button>
+            <button class="btn" data-action="chooseWarAllegiance" data-kingdom="${warId}" data-choice="neutral" style="margin:4px;position:relative;" title="Stay Neutral&#10;&#10;✅ Trade freely with BOTH sides&#10;✅ No reputation change&#10;✅ No war-end reward or punishment&#10;&#10;⚠️ Military sales to both sides are tracked&#10;⚠️ Lopsided sales (2:1+) trigger warnings&#10;⚠️ At 3:1 ratio: extra 10% tax from disadvantaged side&#10;⚠️ At 5:1 ratio: building seizure risk&#10;⚠️ At 10:1 ratio: total asset seizure + reputation destroyed">🕊️ Stay Neutral</button>
+            <button class="btn" data-action="chooseWarAllegiance" data-kingdom="${warId}" data-choice="${warEvent.kingdomA}" style="margin:4px;" title="Side with ${nameA}&#10;&#10;IMMEDIATE:&#10;✅ +5 reputation with ${nameA}&#10;❌ -5 reputation with ${nameB}&#10;❌ -5 relationship with ${nameB} king + nobles&#10;❌ Rank in ${nameB} becomes 'Enemy' (peasant privileges)&#10;❌ Cannot hire workers in military buildings in ${nameB}&#10;❌ +50% encounters, +25% danger in ${nameB} territory&#10;&#10;IF ${nameA} WINS:&#10;✅ +5 to +20 rep (scaled by military sales + status)&#10;✅ +10 king relationship, +5 all noble relationships&#10;✅ War Hero achievement&#10;✅ Guaranteed petition (no signatures needed)&#10;✅ Up to 5000g reward&#10;&#10;IF ${nameA} LOSES:&#10;❌ Up to 5000g retribution&#10;❌ -10 to -20 rep with BOTH kingdoms&#10;❌ -10 relationship with BOTH kings&#10;❌ -5 relationship with ALL nobles&#10;❌ Buildings in ${nameB} seized&#10;❌ Possible jail time&#10;&#10;⚠️ Choice is PERMANENT — cannot change sides!">⚔️ Side with ${nameA}</button>
+            <button class="btn" data-action="chooseWarAllegiance" data-kingdom="${warId}" data-choice="${warEvent.kingdomB}" style="margin:4px;" title="Side with ${nameB}&#10;&#10;IMMEDIATE:&#10;✅ +5 reputation with ${nameB}&#10;❌ -5 reputation with ${nameA}&#10;❌ -5 relationship with ${nameA} king + nobles&#10;❌ Rank in ${nameA} becomes 'Enemy' (peasant privileges)&#10;❌ Cannot hire workers in military buildings in ${nameA}&#10;❌ +50% encounters, +25% danger in ${nameA} territory&#10;&#10;IF ${nameB} WINS:&#10;✅ +5 to +20 rep (scaled by military sales + status)&#10;✅ +10 king relationship, +5 all noble relationships&#10;✅ War Hero achievement&#10;✅ Guaranteed petition (no signatures needed)&#10;✅ Up to 5000g reward&#10;&#10;IF ${nameB} LOSES:&#10;❌ Up to 5000g retribution&#10;❌ -10 to -20 rep with BOTH kingdoms&#10;❌ -10 relationship with BOTH kings&#10;❌ -5 relationship with ALL nobles&#10;❌ Buildings in ${nameA} seized&#10;❌ Possible jail time&#10;&#10;⚠️ Choice is PERMANENT — cannot change sides!">⚔️ Side with ${nameB}</button>
         `;
 
         // Pause game during popup
@@ -6182,9 +6413,9 @@ window.UI = (function () {
             var clickHandler = '';
             if (ch.available) {
                 if (ch.id === 'guild_loan') {
-                    clickHandler = 'onclick="UI.showGuildLoanDialog()"';
+                    clickHandler = 'data-action="showGuildLoanDialog"';
                 } else {
-                    clickHandler = 'onclick="UI.handleBankruptcyChoice(\'' + ch.id + '\')"';
+                    clickHandler = 'data-action="handleBankruptcyChoice" data-id="${ch.id}"';
                 }
             }
 
@@ -6208,9 +6439,9 @@ window.UI = (function () {
 
         // Save/Load/Main Menu buttons — always accessible during bankruptcy
         bodyHtml += '<div style="display:flex;gap:8px;justify-content:center;padding:10px 15px 15px;border-top:1px solid #333;margin-top:5px;">';
-        bodyHtml += '<button onclick="if(typeof Game!==\'undefined\'&&Game.save)Game.save()" style="padding:6px 14px;background:#2a3a2a;color:#9d9;border:1px solid #5a5;border-radius:4px;cursor:pointer;font-size:12px;">💾 Save</button>';
-        bodyHtml += '<button onclick="if(typeof Game!==\'undefined\'&&Game.load)Game.load()" style="padding:6px 14px;background:#2a2a3a;color:#99d;border:1px solid #55a;border-radius:4px;cursor:pointer;font-size:12px;">📂 Load</button>';
-        bodyHtml += '<button onclick="UI.backToMainMenu()" style="padding:6px 14px;background:#3a2a1a;color:#da9;border:1px solid #a85;border-radius:4px;cursor:pointer;font-size:12px;">🏠 Main Menu</button>';
+        bodyHtml += '<button data-action="_handler_14" style="padding:6px 14px;background:#2a3a2a;color:#9d9;border:1px solid #5a5;border-radius:4px;cursor:pointer;font-size:12px;">💾 Save</button>';
+        bodyHtml += '<button data-action="_godLoadGame" style="padding:6px 14px;background:#2a2a3a;color:#99d;border:1px solid #55a;border-radius:4px;cursor:pointer;font-size:12px;">📂 Load</button>';
+        bodyHtml += '<button data-action="backToMainMenu" style="padding:6px 14px;background:#3a2a1a;color:#da9;border:1px solid #a85;border-radius:4px;cursor:pointer;font-size:12px;">🏠 Main Menu</button>';
         bodyHtml += '</div>';
 
         openModal('💸 Bankruptcy', bodyHtml, '');
@@ -6242,7 +6473,7 @@ window.UI = (function () {
 
             var clickHandler = '';
             if (avail) {
-                clickHandler = 'onclick="UI.handleGuildLoanAccept(\'' + offer.guildId + '\')"';
+                clickHandler = 'data-action="handleGuildLoanAccept" data-id="${offer.guildId}"';
             }
 
             bodyHtml += '<div ' + clickHandler + ' style="';
@@ -6278,7 +6509,7 @@ window.UI = (function () {
 
         bodyHtml += '</div>';
 
-        var footerHtml = '<button class="btn-action" onclick="UI.showBankruptcyDialogFromLoan()" style="margin-right:8px;">← Back</button>';
+        var footerHtml = '<button class="btn-action" data-action="showBankruptcyDialogFromLoan" style="margin-right:8px;">← Back</button>';
 
         openModal('🏛️ Guild Loans', bodyHtml, footerHtml);
     }
@@ -6349,7 +6580,7 @@ window.UI = (function () {
 
         for (var i = 0; i < choices.length; i++) {
             var ch = choices[i];
-            bodyHtml += '<div onclick="UI.handleSpyFavor(\'' + ch.id + '\')" style="' +
+            bodyHtml += '<div data-action="handleSpyFavor" data-id="${ch.id}" style="' +
                 'background:#1a1a2e;border:1px solid #444;border-radius:8px;padding:10px 14px;margin:6px 0;cursor:pointer;transition:border-color 0.2s,background 0.2s;' +
                 '" onmouseenter="this.style.borderColor=\'#c4a35a\';this.style.background=\'#222244\'" onmouseleave="this.style.borderColor=\'#444\';this.style.background=\'#1a1a2e\'">' +
                 '<div style="font-weight:bold;font-size:14px;color:#e0d5c0;">' + ch.label + '</div>' +
@@ -6389,8 +6620,8 @@ window.UI = (function () {
             '</div>';
 
         bodyHtml += '<div style="display:flex;gap:10px;margin-top:14px;">' +
-            '<button onclick="UI.handleTournamentContinue()" style="flex:1;padding:10px;background:#2d5a2d;color:#fff;border:1px solid #4ade80;border-radius:6px;cursor:pointer;font-size:14px;">⚔️ Fight Next Round</button>' +
-            '<button onclick="UI.handleTournamentForfeit()" style="flex:1;padding:10px;background:#5a2d2d;color:#fff;border:1px solid #f87171;border-radius:6px;cursor:pointer;font-size:14px;">🏳️ Withdraw (Keep Winnings)</button>' +
+            '<button data-action="handleTournamentContinue" style="flex:1;padding:10px;background:#2d5a2d;color:#fff;border:1px solid #4ade80;border-radius:6px;cursor:pointer;font-size:14px;">⚔️ Fight Next Round</button>' +
+            '<button data-action="handleTournamentForfeit" style="flex:1;padding:10px;background:#5a2d2d;color:#fff;border:1px solid #f87171;border-radius:6px;cursor:pointer;font-size:14px;">🏳️ Withdraw (Keep Winnings)</button>' +
             '</div>';
 
         openModal('🏟️ Tournament', bodyHtml, '');
@@ -6425,11 +6656,11 @@ window.UI = (function () {
             '<div style="color:#c4a35a;font-size:14px;">You discovered <strong>' + itemName + '</strong> while inspecting cargo.</div>' +
             '</div>';
         bodyHtml += '<div style="display:flex;gap:10px;margin-top:14px;">' +
-            '<div onclick="UI.handleCustomsChoice(\'turn_in\')" style="flex:1;padding:12px;background:#1a2e1a;border:1px solid #4ade80;border-radius:8px;cursor:pointer;text-align:center;">' +
+            '<div data-action="handleCustomsChoice" data-choice="turn_in" style="flex:1;padding:12px;background:#1a2e1a;border:1px solid #4ade80;border-radius:8px;cursor:pointer;text-align:center;">' +
             '<div style="font-size:16px;">⚖️ Turn In</div>' +
             '<div style="font-size:12px;color:#999;margin-top:4px;">+10g bounty, +2 kingdom rep</div>' +
             '</div>' +
-            '<div onclick="UI.handleCustomsChoice(\'keep\')" style="flex:1;padding:12px;background:#2e1a1a;border:1px solid #f87171;border-radius:8px;cursor:pointer;text-align:center;">' +
+            '<div data-action="handleCustomsChoice" data-choice="keep" style="flex:1;padding:12px;background:#2e1a1a;border:1px solid #f87171;border-radius:8px;cursor:pointer;text-align:center;">' +
             '<div style="font-size:16px;">🤫 Pocket It</div>' +
             '<div style="font-size:12px;color:#999;margin-top:4px;">Keep 1x ' + itemName + ', +5 notoriety</div>' +
             '</div>' +
@@ -6475,7 +6706,7 @@ window.UI = (function () {
             html += '</div>';
         }
 
-        html += '<button class="btn-medieval" onclick="UI.quitAutoTravelJob()" style="margin-top:8px;font-size:0.8rem;padding:6px 16px;background:rgba(200,60,50,0.3);border-color:rgba(200,60,50,0.55);">🛑 Quit Mission</button>';
+        html += '<button class="btn-medieval" data-action="quitAutoTravelJob" style="margin-top:8px;font-size:0.8rem;padding:6px 16px;background:rgba(200,60,50,0.3);border-color:rgba(200,60,50,0.55);">🛑 Quit Mission</button>';
         html += '</div>';
         html += '<p class="text-dim">You cannot take other jobs while on an auto-travel mission. The mission progresses automatically.</p>';
         return html;
@@ -6587,7 +6818,7 @@ window.UI = (function () {
             overlay = document.createElement('div');
             overlay.id = 'regencyOverlay';
             overlay.style.cssText = 'position:fixed;top:40px;left:50%;transform:translateX(-50%);background:rgba(30,25,20,0.95);border:1px solid var(--gold);border-radius:8px;padding:8px 16px;z-index:1000;cursor:pointer;font-size:0.8rem;text-align:center;';
-            overlay.onclick = function() { showRegencyScreen(); };
+            overlay.addEventListener('click', function() { showRegencyScreen(); });
             document.body.appendChild(overlay);
         }
         const rd = Player.regencyData;
@@ -6677,19 +6908,17 @@ window.UI = (function () {
             '<span class="end-stat-label">Highest Rank</span><span class="end-stat-value">' + highestRankName + '</span>' +
             '<span class="end-stat-label">Achievements</span><span class="end-stat-value">' + achCount + '/' + totalAch + '</span>' +
             '<div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">' +
-                '<button class="btn-medieval" onclick="UI.openJournal()" style="font-size:0.82rem;padding:5px 14px;">📖 Journal</button>' +
-                '<button class="btn-medieval" onclick="UI.openAchievementsDialog()" style="font-size:0.82rem;padding:5px 14px;">🏆 Achievements</button>' +
-                '<button class="btn-medieval" onclick="UI.showBusinessLegacy()" style="font-size:0.82rem;padding:5px 14px;background:linear-gradient(135deg,rgba(180,140,60,0.4),rgba(120,90,30,0.5));border:1px solid rgba(200,170,80,0.5);">📊 Business Legacy</button>' +
+                '<button class="btn-medieval" data-action="openJournal" style="font-size:0.82rem;padding:5px 14px;">📖 Journal</button>' +
+                '<button class="btn-medieval" data-action="openAchievementsDialog" style="font-size:0.82rem;padding:5px 14px;">🏆 Achievements</button>' +
+                '<button class="btn-medieval" data-action="showBusinessLegacy" style="font-size:0.82rem;padding:5px 14px;background:linear-gradient(135deg,rgba(180,140,60,0.4),rgba(120,90,30,0.5));border:1px solid rgba(200,170,80,0.5);">📊 Business Legacy</button>' +
             '</div>';
 
         var btnEndOk = document.getElementById('btnEndOk');
-        if (btnEndOk) btnEndOk.onclick = function () {
-            el.endScreen.classList.add('hidden');
+        if (btnEndOk) btnEndOk.addEventListener('click', function() { el.endScreen.classList.add('hidden');
             el.endScreen.style.display = 'none';
             hideGameUI();
             el.titleScreen.classList.remove('hidden');
-            el.titleScreen.style.display = 'flex';
-        };
+            el.titleScreen.style.display = 'flex'; });
     }
 
     // Business Legacy — comprehensive summary of the player's entire career
@@ -7006,7 +7235,7 @@ window.UI = (function () {
             var youTag = c.isPlayer ? ' <span style="color:#4dc8ff;font-size:0.7rem;">(YOU)</span>' : '';
             html += '<div style="background:' + bgColor + ';border:1px solid ' + borderColor + ';border-radius:6px;padding:10px 12px;cursor:pointer;transition:background 0.15s;" ';
             html += 'onmouseover="this.style.background=\'rgba(255,215,0,0.12)\'" onmouseout="this.style.background=\'' + bgColor + '\'" ';
-            html += 'onclick="UI._castElectionVote(\'' + kingdomId + '\',\'' + c.id + '\',\'' + c.name.replace(/'/g, "\\'") + '\')">';
+            html += 'data-action="_castElectionVote" data-kingdom="' + kingdomId + '" data-id="' + c.id + '" data-name="' + c.name.replace(/'/g, '') + '">';
             html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
             html += '<div>';
             html += '<div style="font-size:0.95rem;color:#e8d5a3;font-weight:bold;">' + c.name + youTag + '</div>';
@@ -7137,7 +7366,7 @@ window.UI = (function () {
             if (k.laws && k.laws.restrictedGoods && k.laws.restrictedGoods.length > 0) {
                 var _unlicensed = k.laws.restrictedGoods.filter(function(g) { return !Player.hasLicense(k.id, g); });
                 if (_unlicensed.length > 0) {
-                    licenseBtnHtml = '<div class="kc-row"><button class="btn-medieval" onclick="UI.openKingdomLicenses(\'' + k.id + '\')" style="font-size:0.75rem;padding:4px 12px;color:#e8dcc8;background:rgba(180,140,50,0.2);border-color:rgba(180,140,50,0.4);">📜 Buy Licenses (' + _unlicensed.length + ' available)</button></div>';
+                    licenseBtnHtml = '<div class="kc-row"><button class="btn-medieval" data-action="openKingdomLicenses" data-id="' + k.id + '" style="font-size:0.75rem;padding:4px 12px;color:#e8dcc8;background:rgba(180,140,50,0.2);border-color:rgba(180,140,50,0.4);">📜 Buy Licenses (' + _unlicensed.length + ' available)</button></div>';
                 }
             }
 
@@ -7336,8 +7565,8 @@ window.UI = (function () {
                 html += `<div class="detail-row" style="margin-bottom:4px;">
                     <span class="label" style="color:${ck.color};">${ck.name}</span>
                     <span class="value">${r.icon} ${r.name}
-                        <button class="btn-medieval" onclick="UI.showRankProgressionPanel('${ck.id}')" style="font-size:0.7rem;padding:2px 8px;margin-left:6px;">Details</button>
-                        <button class="btn-medieval" onclick="UI.renounceKingdomUI('${ck.id}')" style="font-size:0.7rem;padding:2px 8px;margin-left:4px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">\u274C Renounce</button>
+                        <button class="btn-medieval" data-action="showRankProgressionPanel" data-id="${ck.id}" style="font-size:0.7rem;padding:2px 8px;margin-left:6px;">Details</button>
+                        <button class="btn-medieval" data-action="renounceKingdomUI" data-id="${ck.id}" style="font-size:0.7rem;padding:2px 8px;margin-left:4px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">\u274C Renounce</button>
                     </span>
                 </div>`;
             }
@@ -7398,7 +7627,7 @@ window.UI = (function () {
                 ${nextRank.fee ? `<div class="detail-row"><span class="label">Fee</span><span class="value">${nextRank.fee.toLocaleString()}g</span></div>` : ''}
                 ${nextRank.extraReq ? `<div class="detail-row"><span class="label">Requirements</span><span class="value" style="font-size:0.8rem;">${nextRank.extraReq}</span></div>` : ''}
                 ${reqChecklist}
-                <button class="btn-medieval" onclick="UI.petitionPromotion()" style="${_petBtnStyle}">\uD83D\uDCDC Petition for Promotion</button>
+                <button class="btn-medieval" data-action="petitionPromotion" style="${_petBtnStyle}">\uD83D\uDCDC Petition for Promotion</button>
             </div>`;
         }
 
@@ -7409,7 +7638,7 @@ window.UI = (function () {
             const foreignK = kingdoms.find(k => k.id === currentTown.kingdomId);
             const foreignName = foreignK ? foreignK.name : 'Unknown';
             html += `<div class="detail-section">
-                <button class="btn-medieval" onclick="UI.changeCitizenship('${currentTown.kingdomId}')" style="font-size:0.85rem;padding:6px 16px;">\uD83C\uDFDB\uFE0F Petition for ${foreignName} Citizenship</button>
+                <button class="btn-medieval" data-action="changeCitizenship" data-id="${currentTown.kingdomId}" style="font-size:0.85rem;padding:6px 16px;">\uD83C\uDFDB\uFE0F Petition for ${foreignName} Citizenship</button>
             </div>`;
         }
 
@@ -7479,8 +7708,8 @@ window.UI = (function () {
             '</div>';
 
         openModal('⚠️ Confirm: Enter the Nobility of ' + kingdomName, html,
-            '<button class="btn-medieval" onclick="UI.closeModal(); UI._executePetition();" style="background:linear-gradient(180deg,#5aad35,#3a7a24);border-color:#5aad35;margin-right:8px;">👑 Swear Fealty & Accept</button>' +
-            '<button class="btn-medieval" onclick="UI.closeModal();">Cancel</button>'
+            '<button class="btn-medieval" data-action="closeAnd_executePetition" style="background:linear-gradient(180deg,#5aad35,#3a7a24);border-color:#5aad35;margin-right:8px;">👑 Swear Fealty & Accept</button>' +
+            '<button class="btn-medieval" data-action="closeModal">Cancel</button>'
         );
     }
 
@@ -7550,7 +7779,7 @@ window.UI = (function () {
             itemsHtml += `<div class="trade-item">
                 <div class="res-info">${res.icon} ${res.name} (${qty})${badge}</div>
                 <div class="trade-controls">
-                    <button class="btn-trade buy" onclick="UI.executeGift('${personId}','${resId}',1)">Gift 1</button>
+                    <button class="btn-trade buy" data-action="executeGift" data-id="${personId}" data-val="${resId}" data-qty="1">Gift 1</button>
                 </div>
             </div>`;
         }
@@ -7822,7 +8051,7 @@ window.UI = (function () {
             el2.id = 'conditionsIndicator';
             el2.style.cssText = 'padding:2px 6px;font-size:0.72rem;line-height:1.4;cursor:pointer;';
             el2.title = 'Click for health details';
-            el2.onclick = function() { openHealthDetailPanel(); };
+            el2.addEventListener('click', function() { openHealthDetailPanel(); });
             healthGroup.appendChild(el2);
         }
         el2.style.display = '';
@@ -7832,13 +8061,13 @@ window.UI = (function () {
             var inj = injuries[i];
             var sevColor = inj.severity === 'severe' ? '#e74c3c' : inj.severity === 'moderate' ? '#e67e22' : '#8e8';
             var injName = inj.name || 'Injury';
-            html2 += '<span onclick="UI.openHealthDetailPanel()" style="cursor:pointer;color:' + sevColor + ';margin-right:8px;">🩹 ' + injName + ' <span style="font-size:0.65rem;opacity:0.8;">(' + inj.severity + ')</span></span>';
+            html2 += '<span data-action="openHealthDetailPanel" style="cursor:pointer;color:' + sevColor + ';margin-right:8px;">🩹 ' + injName + ' <span style="font-size:0.65rem;opacity:0.8;">(' + inj.severity + ')</span></span>';
         }
         for (var j = 0; j < illnesses.length; j++) {
             var ill = illnesses[j];
             var sevColor2 = ill.severity === 'severe' ? '#e74c3c' : ill.severity === 'moderate' ? '#e67e22' : '#8e8';
             var illName = ill.name || (ill.type ? ill.type.replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); }) : 'Illness');
-            html2 += '<span onclick="UI.openHealthDetailPanel()" style="cursor:pointer;color:' + sevColor2 + ';margin-right:8px;">🤒 ' + illName + ' <span style="font-size:0.65rem;opacity:0.8;">(' + ill.severity + ')</span></span>';
+            html2 += '<span data-action="openHealthDetailPanel" style="cursor:pointer;color:' + sevColor2 + ';margin-right:8px;">🤒 ' + illName + ' <span style="font-size:0.65rem;opacity:0.8;">(' + ill.severity + ')</span></span>';
         }
         el2.innerHTML = html2;
     }
@@ -8016,7 +8245,7 @@ window.UI = (function () {
 
         html += '</div>';
 
-        var footer = '<button class="btn-medieval" onclick="UI.openHealthDialog()" style="margin-right:8px;">🏥 Go to Treatment</button>';
+        var footer = '<button class="btn-medieval" data-action="openHealthDialog" style="margin-right:8px;">🏥 Go to Treatment</button>';
         footer += '<button class="btn-medieval" data-action="closeModal">Close</button>';
         openModal('🏥 Health Status — Conditions Detail', html, footer);
     }
@@ -8067,7 +8296,7 @@ window.UI = (function () {
                 } else {
                     // Member: show report button
                     html += '<div style="margin:6px 0;text-align:center;">';
-                    html += '<button class="btn-medieval" style="background:linear-gradient(135deg,#3a2a10,#5a4a20);border-color:#d4a74a;color:#FFD700;padding:6px 16px;" onclick="UI.openMerchantGuildReport()">📊 Read Today\'s Market Report (' + (CONFIG.MERCHANTS_GUILD_REPORT_FEE || 25) + 'g)</button>';
+                    html += '<button class="btn-medieval" style="background:linear-gradient(135deg,#3a2a10,#5a4a20);border-color:#d4a74a;color:#FFD700;padding:6px 16px;" data-action="openMerchantGuildReport">📊 Read Today\'s Market Report (' + (CONFIG.MERCHANTS_GUILD_REPORT_FEE || 25) + 'g)</button>';
                     html += '</div>';
                 }
             }
@@ -8115,9 +8344,9 @@ window.UI = (function () {
                     '<input type="checkbox" ' + _arChecked + ' onchange="(function(cb){var r=Player.setGuildAutoRenew(\'' + gId + '\',cb.checked);UI.toast(r.message,r.success?\'success\':\'warning\');UI.openGuildsPanel();})(this)">' +
                     '🔄 Auto</label>';
             }
-            html += '<button class="btn-medieval" onclick="UI.guildJoin(\'' + gId + '\', \'monthly\')">' + (isMember ? '🔄 Extend' : '📜 Join') + ' Monthly (' + monthlyPrice + 'g)</button>';
+            html += '<button class="btn-medieval" data-action="guildJoin" data-id="${gId}" data-type="monthly">' + (isMember ? '🔄 Extend' : '📜 Join') + ' Monthly (' + monthlyPrice + 'g)</button>';
             if (isMember && membership.type === 'monthly') html += _arLabel;
-            html += '<button class="btn-medieval" onclick="UI.guildJoin(\'' + gId + '\', \'yearly\')">' + (isMember ? '🔄 Extend' : '📜 Join') + ' Yearly (' + yearlyPrice + 'g)</button>';
+            html += '<button class="btn-medieval" data-action="guildJoin" data-id="${gId}" data-type="yearly">' + (isMember ? '🔄 Extend' : '📜 Join') + ' Yearly (' + yearlyPrice + 'g)</button>';
             if (isMember && membership.type !== 'monthly') html += _arLabel;
             html += '</div>';
 
@@ -8153,7 +8382,7 @@ window.UI = (function () {
                             _gqLabel = ' <span style="color:#a855f7;font-size:0.8em;">(' + _gqChance + '% chance)</span>';
                         }
                         html += '<span><strong>' + escapeHtml(item.productName) + '</strong>' + _gqLabel + ' <span style="color:#888;font-size:0.85em;">at ' + escapeHtml(item.buildingName) + ' (needs: ' + matsText + ')</span></span>';
-                        html += '<button class="btn-medieval" style="font-size:0.85em;" onclick="UI.guildCraftPrompt(\'' + escapeHtml(item.buildingId) + '\', \'' + escapeHtml(item.productId) + '\', \'' + escapeHtml(item.productName) + '\')">🔨 Craft</button>';
+                        html += '<button class="btn-medieval" style="font-size:0.85em;" data-action="guildCraftPrompt" data-id="${escapeHtml(item.buildingId)}" data-product="${escapeHtml(item.productId)}" data-name="${escapeHtml(item.productName)}">🔨 Craft</button>';
                         html += '</div>';
                     }
                     html += '</div>';
@@ -8217,7 +8446,7 @@ window.UI = (function () {
         html += '</div>';
         html += '</div>';
 
-        openModal('📊 Daily Market Report', html, '<button class="btn-medieval" onclick="UI.openGuildsPanel()">← Back to Guilds</button> <button class="btn-medieval" data-action="closeModal">Close</button>');
+        openModal('📊 Daily Market Report', html, '<button class="btn-medieval" data-action="openGuildsPanel">← Back to Guilds</button> <button class="btn-medieval" data-action="closeModal">Close</button>');
     }
 
     function guildCraftPrompt(buildingId, productId, productName) {
@@ -8225,8 +8454,8 @@ window.UI = (function () {
         html += '<p>How many <strong>' + productName + '</strong> to craft?</p>';
         html += '<input type="number" id="guildCraftQty" value="1" min="1" max="100" style="width:80px;text-align:center;padding:4px;background:#222;color:#eee;border:1px solid #555;border-radius:4px;">';
         html += '<div style="margin-top:10px;">';
-        html += '<button class="btn-medieval" onclick="UI.guildCraftExecute(\'' + escapeHtml(buildingId) + '\', \'' + escapeHtml(productId) + '\')">🔨 Craft</button>';
-        html += ' <button class="btn-medieval" onclick="UI.openGuildsPanel()">Cancel</button>';
+        html += '<button class="btn-medieval" data-action="guildCraftExecute" data-id="${escapeHtml(buildingId)}" data-val="${escapeHtml(productId)}">🔨 Craft</button>';
+        html += ' <button class="btn-medieval" data-action="openGuildsPanel">Cancel</button>';
         html += '</div></div>';
         openModal('🔨 Craft ' + productName, html);
     }
@@ -8443,9 +8672,9 @@ window.UI = (function () {
 
                 // Buttons
                 html += '<div style="margin-top:4px;">';
-                html += '<button class="btn-medieval" onclick="Player.repairShip(\'' + ship.id + '\'); UI.openShipsDialog();" style="font-size:0.75rem;padding:3px 8px;margin:2px;"' + (condition >= 100 ? ' disabled' : '') + '>🔧 Repair</button>';
+                html += '<button class="btn-medieval" data-action="repairShipAndOpenShipsDialog" data-id="${ship.id}" style="font-size:0.75rem;padding:3px 8px;margin:2px;"' + (condition >= 100 ? ' disabled' : '') + '>🔧 Repair</button>';
                 if ((sType.maxAddons || 0) > 0) {
-                    html += '<button class="btn-medieval" onclick="UI.showShipAddons(\'' + ship.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin:2px;">📦 Addons';
+                    html += '<button class="btn-medieval" data-action="showShipAddons" data-id="${ship.id}" style="font-size:0.75rem;padding:3px 8px;margin:2px;">📦 Addons';
                     if (ship.addons) html += ' (' + ship.addons.length + '/' + sType.maxAddons + ')';
                     html += '</button>';
                 }
@@ -8502,7 +8731,7 @@ window.UI = (function () {
                 html += '<div style="font-size:0.7rem;margin-top:2px;">📦 ' + matParts.join(', ') + '</div>';
             }
 
-            html += '<button class="btn-medieval" onclick="UI.buyShip(\'' + typeId + '\'); UI.openShipsDialog();" style="font-size:0.75rem;padding:3px 8px;margin-top:3px;"' + (canBuild ? '' : ' disabled') + '>🏗️ Build</button>';
+            html += '<button class="btn-medieval" data-action="buyShipAndOpenShipsDialog" data-id="${typeId}" style="font-size:0.75rem;padding:3px 8px;margin-top:3px;"' + (canBuild ? '' : ' disabled') + '>🏗️ Build</button>';
             if (atLimit) html += ' <span style="color:#c44e52;font-size:0.75rem;">Port full!</span>';
             if (!allMatsAvailable) html += ' <span style="color:#c44e52;font-size:0.75rem;">Missing materials!</span>';
             html += '</div>';
@@ -8525,7 +8754,7 @@ window.UI = (function () {
             if (allShips[oi].townId !== townId) otherShips.push(allShips[oi]);
         }
         if (otherShips.length > 0) {
-            html += '<h3 style="margin-top:12px;cursor:pointer;" onclick="var el=document.getElementById(\'otherShipsSection\');el.style.display=el.style.display===\'none\'?\'block\':\'none\';">📍 Ships at Other Ports ▾</h3>';
+            html += '<h3 style="margin-top:12px;cursor:pointer;" data-action="_toggleVisibility">📍 Ships at Other Ports ▾</h3>';
             html += '<div id="otherShipsSection" style="display:none;">';
             var grouped = {};
             for (var gi = 0; gi < otherShips.length; gi++) {
@@ -8612,19 +8841,19 @@ window.UI = (function () {
                     for (var _hhi = 0; _hhi < _homeHorses.length; _hhi++) {
                         var _hh = _homeHorses[_hhi];
                         html += (_hh.name || 'Horse') + ' ';
-                        if (h.townId === Player.townId) html += '<button class="btn-medieval" onclick="UI.unstableHorseUI(\'' + h.id + '\',' + _hhi + ')" style="font-size:0.65rem;padding:1px 5px;">Take</button> ';
+                        if (h.townId === Player.townId) html += '<button class="btn-medieval" data-action="unstableHorseUI" data-id="${h.id}" data-val=" + _hhi + " style="font-size:0.65rem;padding:1px 5px;">Take</button> ';
                     }
                 }
                 html += '</div>';
                 // Transfer buttons (only when in same town)
                 if (h.townId === Player.townId) {
-                    html += '<button class="btn-medieval" onclick="UI.openHomeStorageUI(\'' + h.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin:2px;">📦 Transfer Goods</button>';
+                    html += '<button class="btn-medieval" data-action="openHomeStorageUI" data-id="${h.id}" style="font-size:0.75rem;padding:3px 8px;margin:2px;">📦 Transfer Goods</button>';
                     if (Player.horses && Player.horses.length > 0 && _homeHorses.length < _maxHomeHorses) {
-                        html += '<button class="btn-medieval" onclick="UI.stableHorseUI(\'' + h.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin:2px;">🐴 Stable Horse</button>';
+                        html += '<button class="btn-medieval" data-action="stableHorseUI" data-id="${h.id}" style="font-size:0.75rem;padding:3px 8px;margin:2px;">🐴 Stable Horse</button>';
                     }
                     var _availAddons = Player.getAvailableAddons ? Player.getAvailableAddons(h.id) : [];
                     if (_availAddons.length > 0) {
-                        html += '<button class="btn-medieval" onclick="UI.openHouseAddonsUI(\'' + h.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin:2px;">🔧 Addons (' + _availAddons.length + ')</button>';
+                        html += '<button class="btn-medieval" data-action="openHouseAddonsUI" data-id="${h.id}" style="font-size:0.75rem;padding:3px 8px;margin:2px;">🔧 Addons (' + _availAddons.length + ')</button>';
                     }
                 }
                 if (h.isRental) {
@@ -8644,22 +8873,22 @@ window.UI = (function () {
                     html += '<div style="font-size:0.78rem;color:#c4a35a;">🏢 Apartment — monthly maintenance: ' + h.monthlyMaintenance + 'g</div>';
                 }
                 html += '<div style="margin-top:4px;">';
-                if (!isPrimary) html += '<button class="btn-medieval" onclick="UI.setPrimaryHouseUI(\'' + h.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin:2px;">⭐ Set Primary</button>';
+                if (!isPrimary) html += '<button class="btn-medieval" data-action="setPrimaryHouseUI" data-id="${h.id}" style="font-size:0.75rem;padding:3px 8px;margin:2px;">⭐ Set Primary</button>';
                 // Tents: only Leave option (stop renting), no rent-out/upgrade/sell
                 if (ht.fromTentCamp) {
-                    html += '<button class="btn-medieval" onclick="UI.leaveTentUI(\'' + h.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin:2px;color:#c44e52;">🚪 Leave Tent</button>';
+                    html += '<button class="btn-medieval" data-action="leaveTentUI" data-id="${h.id}" style="font-size:0.75rem;padding:3px 8px;margin:2px;color:#c44e52;">🚪 Leave Tent</button>';
                 } else {
                     // Rent out (not for apartments owned from a building — those are units, not full houses)
                     if (!ht.fromApartmentBuilding) {
-                        html += '<button class="btn-medieval" onclick="UI.rentOutHouseUI(\'' + h.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin:2px;">' + (h.isRental ? '🏠 Stop Renting' : '💰 Rent Out') + '</button>';
-                        if (h.tenantId && !h.evictionDay) html += '<button class="btn-medieval" onclick="UI.evictTenantUI(\'' + h.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin:2px;color:#c44e52;">🚪 Evict</button>';
+                        html += '<button class="btn-medieval" data-action="rentOutHouseUI" data-id="${h.id}" style="font-size:0.75rem;padding:3px 8px;margin:2px;">' + (h.isRental ? '🏠 Stop Renting' : '💰 Rent Out') + '</button>';
+                        if (h.tenantId && !h.evictionDay) html += '<button class="btn-medieval" data-action="evictTenantUI" data-id="${h.id}" style="font-size:0.75rem;padding:3px 8px;margin:2px;color:#c44e52;">🚪 Evict</button>';
                     }
                     // Upgrade only for land-based houses (not apartments, not tents, not portable)
                     if (!ht.fromApartmentBuilding && !ht.portable) {
-                        html += '<button class="btn-medieval" onclick="UI.upgradeHouseUI(\'' + h.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin:2px;">🏗️ Upgrade</button>';
+                        html += '<button class="btn-medieval" data-action="upgradeHouseUI" data-id="${h.id}" style="font-size:0.75rem;padding:3px 8px;margin:2px;">🏗️ Upgrade</button>';
                     }
                     // Sell — opens listing UI with price recommendation
-                    html += '<button class="btn-medieval" onclick="UI.sellHouseUI(\'' + h.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin:2px;color:#c44e52;">🏚️ Sell</button>';
+                    html += '<button class="btn-medieval" data-action="sellHouseUI" data-id="${h.id}" style="font-size:0.75rem;padding:3px 8px;margin:2px;color:#c44e52;">🏚️ Sell</button>';
                 }
                 html += '</div></div>';
             }
@@ -8681,7 +8910,7 @@ window.UI = (function () {
                 var _hdCost = Player.getLandCost ? Player.getLandCost(Player.townId) : '?';
                 var _hdBtnTxt = 'Buy Land (' + _hdCost + 'g)';
                 if (_hdSub) _hdBtnTxt = 'Buy Land (' + _hdCost + 'g) ⭐ Subsidy!';
-                html += '<div style="font-size:0.85rem;margin-bottom:8px;">Land plots: ' + usedLand + '/' + ownedLand + ' used (global: ' + _totalLandOwned + '/' + _rankMaxLand + ' for ' + (_rankCfg ? _rankCfg.name : 'your rank') + ') | <button class="btn-medieval" onclick="UI.buyLandUI()" style="font-size:0.75rem;padding:2px 8px;">' + _hdBtnTxt + '</button></div>';
+                html += '<div style="font-size:0.85rem;margin-bottom:8px;">Land plots: ' + usedLand + '/' + ownedLand + ' used (global: ' + _totalLandOwned + '/' + _rankMaxLand + ' for ' + (_rankCfg ? _rankCfg.name : 'your rank') + ') | <button class="btn-medieval" data-action="buyLandUI" style="font-size:0.75rem;padding:2px 8px;">' + _hdBtnTxt + '</button></div>';
                 // Show subsidized (locked) plots
                 var _subLand = (Player.state && Player.state.subsidizedLand && Player.state.subsidizedLand[Player.townId]) || [];
                 if (_subLand.length > 0) {
@@ -8742,7 +8971,7 @@ window.UI = (function () {
                         }
                         html += '📦 ' + matParts.join(', ') + '</div>';
                     }
-                    html += '<button class="btn-medieval" onclick="UI.buyHouseUI(\'' + htype.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin-top:3px;"' + (canBuild ? '' : ' disabled') + '>🏗️ Build</button>';
+                    html += '<button class="btn-medieval" data-action="buyHouseUI" data-id="${htype.id}" style="font-size:0.75rem;padding:3px 8px;margin-top:3px;"' + (canBuild ? '' : ' disabled') + '>🏗️ Build</button>';
                     if (needsLand) html += ' <span style="color:#c44e52;font-size:0.75rem;">Need land!</span>';
                     if (!matsAvailable) html += ' <span style="color:#c44e52;font-size:0.75rem;">Missing materials!</span>';
                     if (htype.minRank) {
@@ -8802,7 +9031,7 @@ window.UI = (function () {
                     html += ' | ' + matParts.join(', ');
                 }
                 html += '</div>';
-                html += '<button class="btn-medieval" onclick="UI.doInstallAddon(\'' + houseId + '\',\'' + addon.id + '\')" style="font-size:0.75rem;padding:3px 10px;margin-top:4px;color:#e8dcc8;">🔧 Install</button>';
+                html += '<button class="btn-medieval" data-action="doInstallAddon" data-id="${houseId}" data-val="${addon.id}" style="font-size:0.75rem;padding:3px 10px;margin-top:4px;color:#e8dcc8;">🔧 Install</button>';
                 html += '</div>';
             }
         } else if (installed.length === 0) {
@@ -8813,7 +9042,7 @@ window.UI = (function () {
 
         html += '</div>';
         openModal('🔧 House Addons', html,
-            '<button class="btn-medieval" onclick="UI.openHousingDialog()">Back to Housing</button>');
+            '<button class="btn-medieval" data-action="openHousingDialog">Back to Housing</button>');
     }
 
     function doInstallAddon(houseId, addonId) {
@@ -8850,9 +9079,9 @@ window.UI = (function () {
                 var sQty = house.homeStorage[sk];
                 html += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-size:0.8rem;">';
                 html += '<span style="min-width:140px;">' + sName + ': ' + sQty + '</span>';
-                html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._homeWithdraw(\'' + houseId + '\',\'' + sk + '\',1)">Take 1</button>';
-                if (sQty >= 5) html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._homeWithdraw(\'' + houseId + '\',\'' + sk + '\',5)">5</button>';
-                html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._homeWithdraw(\'' + houseId + '\',\'' + sk + '\',' + sQty + ')">All</button>';
+                html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" data-action="_homeWithdraw" data-id="${houseId}" data-key="${sk}" data-qty="1">Take 1</button>';
+                if (sQty >= 5) html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" data-action="_homeWithdraw" data-id="${houseId}" data-key="${sk}" data-qty="5">5</button>';
+                html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" data-action="_homeWithdraw" data-id="${houseId}" data-key="${sk}" data-qty=" + sQty + ">All</button>';
                 html += '</div>';
             }
         }
@@ -8872,16 +9101,16 @@ window.UI = (function () {
             var iQty = inv[ik];
             html += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-size:0.8rem;">';
             html += '<span style="min-width:140px;">' + iName + ': ' + iQty + '</span>';
-            html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._homeDeposit(\'' + houseId + '\',\'' + ik + '\',1)">Store 1</button>';
-            if (iQty >= 5) html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._homeDeposit(\'' + houseId + '\',\'' + ik + '\',5)">5</button>';
-            html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" onclick="UI._homeDeposit(\'' + houseId + '\',\'' + ik + '\',' + iQty + ')">All</button>';
+            html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" data-action="_homeDeposit" data-id="${houseId}" data-key="${ik}" data-qty="1">Store 1</button>';
+            if (iQty >= 5) html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" data-action="_homeDeposit" data-id="${houseId}" data-key="${ik}" data-qty="5">5</button>';
+            html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" data-action="_homeDeposit" data-id="${houseId}" data-key="${ik}" data-qty=" + iQty + ">All</button>';
             html += '</div>';
         }
         if (!hasInv) html += '<div style="color:#888;font-size:0.8rem;">Nothing to store</div>';
 
         html += '</div>';
         openModal('📦 ' + (ht ? ht.name : 'Home') + ' Storage', html,
-            '<button class="btn-medieval" onclick="UI.openHousingDialog()">Back</button>');
+            '<button class="btn-medieval" data-action="openHousingDialog">Back</button>');
     }
 
     function _homeDeposit(houseId, resId, qty) {
@@ -8954,8 +9183,8 @@ window.UI = (function () {
         html += '<div style="font-size:0.72rem;color:#888;">Note: If the price is too high, no one will buy it. Higher prices take longer to sell. Lower prices sell faster.</div>';
         html += '</div>';
 
-        var footer = '<button class="btn-medieval" onclick="UI.confirmSellHouseUI(\'' + houseId + '\')" style="margin-right:8px;">📋 List For Sale</button>';
-        footer += '<button class="btn-medieval" onclick="UI.quickSellHouseUI(\'' + houseId + '\')" style="margin-right:8px;color:#c4a35a;">⚡ Quick Sell (' + recommendedPrice + 'g)</button>';
+        var footer = '<button class="btn-medieval" data-action="confirmSellHouseUI" data-id="${houseId}" style="margin-right:8px;">📋 List For Sale</button>';
+        footer += '<button class="btn-medieval" data-action="quickSellHouseUI" data-id="${houseId}" style="margin-right:8px;color:#c4a35a;">⚡ Quick Sell (' + recommendedPrice + 'g)</button>';
         footer += '<button class="btn-medieval" data-action="closeModal">Cancel</button>';
         openModal('🏚️ Sell ' + ht.name, html, footer);
     }
@@ -8994,7 +9223,7 @@ window.UI = (function () {
         if (!house) { toast('Tent not found.', 'error'); return; }
         var html = '<div style="font-size:0.85rem;margin-bottom:10px;">Are you sure you want to leave this tent? It will be freed up for someone else.</div>';
         html += '<div style="font-size:0.78rem;color:#888;">You won\'t get any gold back — you\'re just stopping your rental.</div>';
-        var footer = '<button class="btn-medieval" onclick="UI.confirmLeaveTent(\'' + houseId + '\')" style="margin-right:8px;color:#c44e52;">🚪 Leave</button>';
+        var footer = '<button class="btn-medieval" data-action="confirmLeaveTent" data-id="${houseId}" style="margin-right:8px;color:#c44e52;">🚪 Leave</button>';
         footer += '<button class="btn-medieval" data-action="closeModal">Cancel</button>';
         openModal('🚪 Leave Tent', html, footer);
     }
@@ -9030,7 +9259,7 @@ window.UI = (function () {
             html += '<div style="border:1px solid #444;padding:6px;margin:3px 0;border-radius:4px;opacity:' + (canUpg ? '1' : '0.5') + ';">';
             html += ht.icon + ' <b>' + ht.name + '</b> — <span style="color:#ffd700;">' + upgCost.toFixed(2) + 'g</span> <span class="text-dim" style="font-size:0.7rem;">(full: ' + newCostInfo.total.toFixed(2) + 'g - ' + credit.toFixed(2) + 'g credit)</span><br>';
             html += '<span style="font-size:0.75rem;color:#aaa;">' + ht.description + '</span><br>';
-            html += '<button class="btn-medieval" onclick="UI.doUpgradeHouse(\'' + houseId + '\',\'' + ht.id + '\')" style="font-size:0.75rem;padding:3px 8px;margin-top:2px;"' + (canUpg ? '' : ' disabled') + '>🏗️ Upgrade (' + upgCost.toFixed(2) + 'g)</button>';
+            html += '<button class="btn-medieval" data-action="doUpgradeHouse" data-id="${houseId}" data-val="${ht.id}" style="font-size:0.75rem;padding:3px 8px;margin-top:2px;"' + (canUpg ? '' : ' disabled') + '>🏗️ Upgrade (' + upgCost.toFixed(2) + 'g)</button>';
             if (!newCostInfo.available) html += ' <span style="color:#c44e52;font-size:0.7rem;">Missing materials</span>';
             html += '</div>';
         }
@@ -9080,7 +9309,7 @@ window.UI = (function () {
         }
         html += '<div style="margin:8px 0;"><label>Monthly rent: </label><input type="number" id="rentalPrice" value="' + recommended + '" min="1" style="width:80px;padding:2px 4px;background:#222;color:#eee;border:1px solid #555;border-radius:3px;"> g/month</div>';
         html += '<div style="font-size:0.75rem;color:#aaa;margin-bottom:8px;">You can change the price once per day.</div>';
-        html += '<button class="btn-medieval" onclick="(function(){ var p=parseInt(document.getElementById(\'rentalPrice\').value)||0; var r=Player.rentOutHouse(\'' + houseId + '\',p); UI.toast(r.message, r.success?\'success\':\'error\'); if(r.success){ UI.closeModal(); UI.openHousingDialog(); } })()">💰 List For Rent</button>';
+        html += '<button class="btn-medieval" data-action="rentOutHouse" data-id="' + houseId + '">💰 List For Rent</button>';
         html += '</div>';
         openModal('💰 Rent Property', html);
     }
@@ -9094,7 +9323,7 @@ window.UI = (function () {
         html += '<p>Are you sure you want to evict <b>' + tName + '</b>?</p>';
         html += '<p style="font-size:0.8rem;color:#aaa;">The tenant will stay until 30 days from their last rent payment.</p>';
         html += '<div style="display:flex;gap:8px;margin-top:8px;">';
-        html += '<button class="btn-medieval" style="color:#c44e52;" onclick="(function(){ var r=Player.evictTenant(\'' + houseId + '\'); UI.toast(r.message, r.success?\'success\':\'error\'); UI.closeModal(); UI.openHousingDialog(); })()">🚪 Confirm Eviction</button>';
+        html += '<button class="btn-medieval" style="color:#c44e52;" data-action="evictTenant" data-id="' + houseId + '">🚪 Confirm Eviction</button>';
         html += '<button class="btn-medieval" data-action="closeModal">Cancel</button>';
         html += '</div></div>';
         openModal('🚪 Evict Tenant', html);
@@ -9112,9 +9341,9 @@ window.UI = (function () {
             html += '<div style="font-size:0.8rem;color:#aaa;">Cannot afford current rent of <b>' + neg.currentRent + 'g/month</b></div>';
             html += '<div style="font-size:0.8rem;">Requests: <b style="color:#ffd700;">' + neg.requestedRent + 'g/month</b></div>';
             html += '<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;">';
-            html += '<button class="btn-medieval" style="font-size:0.72rem;" onclick="(function(){ var r=Player.respondToRentNegotiation(\'' + neg.houseId + '\',\'accept\'); UI.toast(r.message, r.success?\'success\':\'error\'); UI.showRentNegotiations(); })()">✅ Accept (' + neg.requestedRent + 'g)</button>';
-            html += '<button class="btn-medieval" style="font-size:0.72rem;" onclick="(function(){ var amt=prompt(\'Counter-offer (gold/month):\',\'' + Math.floor((neg.currentRent + neg.requestedRent) / 2) + '\'); if(amt){ var r=Player.respondToRentNegotiation(\'' + neg.houseId + '\',\'counter\',parseInt(amt)); UI.toast(r.message, r.success?\'success\':\'error\'); UI.showRentNegotiations(); } })()">🤝 Counter</button>';
-            html += '<button class="btn-medieval" style="font-size:0.72rem;color:#c44e52;" onclick="(function(){ var r=Player.respondToRentNegotiation(\'' + neg.houseId + '\',\'reject\'); UI.toast(r.message, r.success?\'success\':\'error\'); UI.showRentNegotiations(); })()">❌ Reject</button>';
+            html += '<button class="btn-medieval" style="font-size:0.72rem;" data-action="acceptRentNegotiation" data-id="' + neg.houseId + '">✅ Accept (' + neg.requestedRent + 'g)</button>';
+            html += '<button class="btn-medieval" style="font-size:0.72rem;" data-action="counterOfferRent" data-param1="' + Math.floor((neg.currentRent + neg.requestedRent) / 2) + '" data-id="' + neg.houseId + '">🤝 Counter</button>';
+            html += '<button class="btn-medieval" style="font-size:0.72rem;color:#c44e52;" data-action="rejectRentNegotiation" data-id="' + neg.houseId + '">❌ Reject</button>';
             html += '</div></div>';
         }
         html += '</div>';
@@ -9134,8 +9363,8 @@ window.UI = (function () {
             var html = '<div style="padding:8px;">';
             html += '<p style="margin-bottom:12px;">This town has an active <strong>Royal Land Subsidy</strong>! You can buy land at a discount, but it will be <strong>locked</strong> to building a <strong>' + btName + '</strong>.</p>';
             html += '<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;">';
-            html += '<button class="btn-medieval" style="padding:8px 16px;font-size:0.85rem;" onclick="UI._buyLandSubsidized()">🏗️ Subsidized Land<br><span style="font-size:0.75rem;color:#55a868;">' + subCost + 'g (' + discount + '% off) — locked to ' + btName + '</span></button>';
-            html += '<button class="btn-medieval" style="padding:8px 16px;font-size:0.85rem;" onclick="UI._buyLandFull()">🏗️ Regular Land<br><span style="font-size:0.75rem;color:#ccc;">' + fullCost + 'g — build anything</span></button>';
+            html += '<button class="btn-medieval" style="padding:8px 16px;font-size:0.85rem;" data-action="_buyLandSubsidized">🏗️ Subsidized Land<br><span style="font-size:0.75rem;color:#55a868;">' + subCost + 'g (' + discount + '% off) — locked to ' + btName + '</span></button>';
+            html += '<button class="btn-medieval" style="padding:8px 16px;font-size:0.85rem;" data-action="_buyLandFull">🏗️ Regular Land<br><span style="font-size:0.75rem;color:#ccc;">' + fullCost + 'g — build anything</span></button>';
             html += '</div></div>';
             openModal('🏗️ Buy Land', html);
         } else {
@@ -9207,8 +9436,8 @@ window.UI = (function () {
         }
 
         html += '<div style="text-align:center;">';
-        html += '<button class="btn-medieval" onclick="UI.talkToTownsfolk();" style="padding:6px 16px;margin-right:8px;">Talk to Someone Else</button>';
-        html += '<button class="btn-medieval" onclick="UI.closeModal();" style="padding:6px 16px;">Done</button>';
+        html += '<button class="btn-medieval" data-action="talkToTownsfolk" style="padding:6px 16px;margin-right:8px;">Talk to Someone Else</button>';
+        html += '<button class="btn-medieval" data-action="closeModal" style="padding:6px 16px;">Done</button>';
         html += '</div>';
 
         openModal('💬 Conversation', html);
@@ -9253,7 +9482,7 @@ window.UI = (function () {
                 var ticksToFull = Math.ceil((maxEnergy - energy) / opt.energyPerTick);
                 var costNote = opt.cost > 0 ? ' — ' + opt.cost + 'g' : ' — Free';
                 html += '<div style="margin:6px 0;">';
-                html += '<button class="btn-medieval" onclick="UI.restUI(\'' + opt.id + '\')" style="padding:6px 16px;width:90%;">';
+                html += '<button class="btn-medieval" data-action="restUI" data-id="${opt.id}" style="padding:6px 16px;width:90%;">';
                 html += (opt.icon || '') + ' ' + opt.name + costNote;
                 html += '</button>';
                 html += '<div style="font-size:0.75rem;color:#aaa;">+' + opt.energyPerTick.toFixed(1) + ' energy/tick · ~' + ticksToFull + ' ticks to full';
@@ -9427,7 +9656,7 @@ window.UI = (function () {
         popupHtml += 'padding:14px 24px;min-width:280px;max-width:420px;';
         popupHtml += 'animation:achSlideIn 0.4s ease-out;';
         popupHtml += 'transition:opacity 0.4s ease, transform 0.4s ease;"';
-        popupHtml += ' onclick="UI._achPopupClick(\'' + achId + '\')">';
+        popupHtml += ' data-action="_achPopupClick" data-id="' + achId + '">';
 
         // Shimmer overlay for platinum
         if (isPlatinum) {
@@ -9519,7 +9748,7 @@ window.UI = (function () {
             const active = catId === _achCategory ? 'active' : '';
             const catAchs = Object.keys(ACHIEVEMENTS).filter(id => ACHIEVEMENTS[id].category === catId);
             const unlocked = catAchs.filter(id => playerAch[id]).length;
-            tabsHtml += `<button class="skill-tab ${active}" onclick="UI.openAchievementsDialog('${catId}')">
+            tabsHtml += `<button class="skill-tab ${active}" data-action="openAchievementsDialog" data-id="${catId}">
                 ${info.icon} ${info.name} <span class="skill-tab-count">${unlocked}/${catAchs.length}</span>
             </button>`;
         }
@@ -9536,7 +9765,7 @@ window.UI = (function () {
         for (var _ti = 0; _ti < _tierOpts.length; _ti++) {
             var _to = _tierOpts[_ti];
             var _tActive = _achTierFilter === _to.id ? 'background:var(--gold);color:#1a1a2e;' : '';
-            tierFilterHtml += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;' + _tActive + '" onclick="UI.openAchievementsDialog(\'' + _achCategory + '\',\'' + _to.id + '\')">' + _to.label + '</button>';
+            tierFilterHtml += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;' + _tActive + '" data-action="openAchievementsDialog" data-id="${_achCategory}" data-val="${_to.id}">' + _to.label + '</button>';
         }
         tierFilterHtml += '</div>';
 
@@ -9633,14 +9862,14 @@ window.UI = (function () {
             return `<div class="market-intel-section">
                 <h4>📊 Market Intel</h4>
                 <div class="text-dim" style="font-size:0.8rem;">No market intelligence available. Learn the Market Scout skill or pay an Information Broker (${CONFIG.INFO_BROKER_COST || 10}g).</div>
-                <button class="btn-trade buy" style="margin-top:6px;" onclick="UI.buyInfoBrokerTip()">💡 Buy Trade Tip (${CONFIG.INFO_BROKER_COST || 10}g)</button>
+                <button class="btn-trade buy" style="margin-top:6px;" data-action="buyInfoBrokerTip">💡 Buy Trade Tip (${CONFIG.INFO_BROKER_COST || 10}g)</button>
             </div>`;
         }
 
         let html = '<div class="market-intel-section"><h4>📊 Market Intel</h4>';
 
         if (!hasIntelSkill) {
-            html += `<button class="btn-trade buy" style="margin-bottom:8px;" onclick="UI.buyInfoBrokerTip()">💡 Buy Trade Tip (${CONFIG.INFO_BROKER_COST || 10}g)</button>`;
+            html += `<button class="btn-trade buy" style="margin-bottom:8px;" data-action="buyInfoBrokerTip">💡 Buy Trade Tip (${CONFIG.INFO_BROKER_COST || 10}g)</button>`;
         }
 
         if (remoteTowns.length > 0) {
@@ -9813,7 +10042,7 @@ window.UI = (function () {
             // Track/Untrack button in leaderboard
             if (!e.isPlayer && typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('merchant_tracker') && e.id) {
                 var lbTracked = Player.isTrackingMerchant && Player.isTrackingMerchant(e.id);
-                html += '<td style="text-align:center;"><button class="btn-medieval" style="font-size:0.6rem;padding:1px 5px;' + (lbTracked ? 'background:var(--gold);color:#000;' : '') + '" onclick="(function(){ var r = Player.' + (lbTracked ? 'untrackMerchant' : 'trackMerchant') + '(\'' + e.id + '\'); if(typeof UI!==\'undefined\' && UI.toast) UI.toast(r.message, r.success?\'success\':\'warning\'); UI.openLeaderboard(); })();">' + (lbTracked ? '⭐' : '☆') + '</button></td>';
+                html += '<td style="text-align:center;"><button class="btn-medieval" style="font-size:0.6rem;padding:1px 5px;' + (lbTracked ? 'background:var(--gold);color:#000;' : '') + '" data-action="toggleLeaderboardTrack" data-display1="' + (lbTracked ? 'untrackMerchant' : 'trackMerchant') + '" data-id="' + e.id + '">' + (lbTracked ? '⭐' : '☆') + '</button></td>';
             } else {
                 html += '<td></td>';
             }
@@ -9847,8 +10076,8 @@ window.UI = (function () {
                     const pr = proposals[pi];
                     html += '<div style="margin-bottom:8px;padding:6px;background:rgba(255,255,255,0.05);border-radius:4px;">';
                     html += '<div style="font-size:0.85rem;color:#ddd;">' + pr.eliteMerchantName + ' proposes: ' + pr.eliteChildName + ' wed ' + pr.playerChildName + '</div>';
-                    html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;margin-top:4px;" onclick="UI.respondToMarriageProposal(\'' + pr.id + '\', true)">✅ Accept</button> ';
-                    html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;margin-top:4px;background:rgba(200,60,50,0.3);" onclick="UI.respondToMarriageProposal(\'' + pr.id + '\', false)">❌ Reject</button>';
+                    html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;margin-top:4px;" data-action="respondToMarriageProposal" data-id="${pr.id}" data-response="true">✅ Accept</button> ';
+                    html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;margin-top:4px;background:rgba(200,60,50,0.3);" data-action="respondToMarriageProposal" data-id="${pr.id}" data-response="false">❌ Reject</button>';
                     html += '</div>';
                 }
                 html += '</div>';
@@ -9908,7 +10137,7 @@ window.UI = (function () {
                 html += '⚠️ <strong>Mandatory Service:</strong> ' + milDaysLeft + ' days remaining (' + (milDaysLeft / (CONFIG.DAYS_PER_SEASON || 90)).toFixed(1) + ' years). Cannot desert.';
                 html += '</div>';
             } else {
-                html += '<button class="btn-medieval" onclick="UI.quitMilitary()" style="margin-top:8px;font-size:0.8rem;padding:6px 16px;background:rgba(200,60,50,0.3);border-color:rgba(200,60,50,0.55);">🏠 Quit Military</button>';
+                html += '<button class="btn-medieval" data-action="quitMilitary" style="margin-top:8px;font-size:0.8rem;padding:6px 16px;background:rgba(200,60,50,0.3);border-color:rgba(200,60,50,0.55);">🏠 Quit Military</button>';
             }
             html += '</div>';
             html += '<p class="text-dim">You cannot take other jobs while enlisted. Battles occur every 3-5 days automatically.</p>';
@@ -9929,7 +10158,7 @@ window.UI = (function () {
                     shownKingdoms[kId] = true;
                     const k = Engine.findKingdom(kId);
                     if (!k) continue;
-                    html += '<button class="btn-medieval" onclick="UI.enlistAsSoldier(\'' + kId + '\')" style="font-size:0.75rem;padding:4px 12px;margin:2px;">';
+                    html += '<button class="btn-medieval" data-action="enlistAsSoldier" data-id="${kId}" style="font-size:0.75rem;padding:4px 12px;margin:2px;">';
                     html += '⚔️ Enlist for ' + k.name;
                     html += '</button> ';
                 }
@@ -10013,7 +10242,7 @@ window.UI = (function () {
                     }
                 }
                 html += '</div>';
-                html += '<button class="btn-medieval btn-work" onclick="UI.executeWork(' + i + ')">Work</button>';
+                html += '<button class="btn-medieval btn-work" data-action="executeWork" data-id=" + i + ">Work</button>';
                 html += '</div>';
             }
             html += '</div>';
@@ -10078,7 +10307,7 @@ window.UI = (function () {
         // Aggressive button
         var agg = approaches.aggressive || {};
         html += '<div style="flex:1;min-width:140px;max-width:200px;background:#3a1515;border:2px solid #cc3333;border-radius:8px;padding:12px;cursor:pointer;" ';
-        html += 'onclick="Player.resolvePendingMilitaryEvent(\'aggressive\'); UI.closeModal();" ';
+        html += 'data-action="resolvePendingMilitaryEventAndCloseModal" data-id="aggressive" ';
         html += 'onmouseover="this.style.borderColor=\'#ff4444\'" onmouseout="this.style.borderColor=\'#cc3333\'">';
         html += '<div style="font-size:1.2rem;margin-bottom:6px;">' + (agg.label || '⚔️ Aggressive') + '</div>';
         html += '<div style="color:#ccc;font-size:0.8rem;">' + (agg.desc || 'Fight recklessly for glory.') + '</div>';
@@ -10088,7 +10317,7 @@ window.UI = (function () {
         // Normal button
         var norm = approaches.normal || {};
         html += '<div style="flex:1;min-width:140px;max-width:200px;background:#1a2a1a;border:2px solid #FFD700;border-radius:8px;padding:12px;cursor:pointer;" ';
-        html += 'onclick="Player.resolvePendingMilitaryEvent(\'normal\'); UI.closeModal();" ';
+        html += 'data-action="resolvePendingMilitaryEventAndCloseModal" data-id="normal" ';
         html += 'onmouseover="this.style.borderColor=\'#ffee00\'" onmouseout="this.style.borderColor=\'#FFD700\'">';
         html += '<div style="font-size:1.2rem;margin-bottom:6px;">' + (norm.label || '🛡️ Normal') + '</div>';
         html += '<div style="color:#ccc;font-size:0.8rem;">' + (norm.desc || 'Standard approach.') + '</div>';
@@ -10098,7 +10327,7 @@ window.UI = (function () {
         // Cautious button
         var caut = approaches.cautious || {};
         html += '<div style="flex:1;min-width:140px;max-width:200px;background:#151a2a;border:2px solid #4488cc;border-radius:8px;padding:12px;cursor:pointer;" ';
-        html += 'onclick="Player.resolvePendingMilitaryEvent(\'cautious\'); UI.closeModal();" ';
+        html += 'data-action="resolvePendingMilitaryEventAndCloseModal" data-id="cautious" ';
         html += 'onmouseover="this.style.borderColor=\'#66aaee\'" onmouseout="this.style.borderColor=\'#4488cc\'">';
         html += '<div style="font-size:1.2rem;margin-bottom:6px;">' + (caut.label || '🐢 Cautious') + '</div>';
         html += '<div style="color:#ccc;font-size:0.8rem;">' + (caut.desc || 'Stay in the rear.') + '</div>';
@@ -10183,20 +10412,20 @@ window.UI = (function () {
         html += '<div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">';
 
         // Surrender
-        html += '<button class="btn-medieval" onclick="UI.resolveEncounterChoice(\'surrender\')" style="padding:14px 16px;text-align:left;background:rgba(200,50,50,0.15);border-color:rgba(200,50,50,0.5);border-width:2px;">';
+        html += '<button class="btn-medieval" data-action="resolveEncounterChoice" data-choice="surrender" style="padding:14px 16px;text-align:left;background:rgba(200,50,50,0.15);border-color:rgba(200,50,50,0.5);border-width:2px;">';
         html += '<div style="font-size:1.05rem;font-weight:bold;color:#f0d0a0;">🏳️ Surrender</div>';
         html += '<div style="font-size:0.82rem;color:#ccc;margin-top:4px;">Give up all goods' + (invCount > 0 ? ' (' + invCount + ' items)' : '') + ' and ' + goldForSurrender + 'g. They let you pass unharmed.</div>';
         html += '</button>';
 
         // Negotiate
-        html += '<button class="btn-medieval" onclick="UI.resolveEncounterChoice(\'negotiate\')" style="padding:14px 16px;text-align:left;background:rgba(241,196,15,0.12);border-color:rgba(241,196,15,0.5);border-width:2px;">';
+        html += '<button class="btn-medieval" data-action="resolveEncounterChoice" data-choice="negotiate" style="padding:14px 16px;text-align:left;background:rgba(241,196,15,0.12);border-color:rgba(241,196,15,0.5);border-width:2px;">';
         html += '<div style="font-size:1.05rem;font-weight:bold;color:#f0d0a0;">🤝 Negotiate <span style="font-size:0.85rem;color:#f1c40f;font-weight:bold;">(' + negPct + '% chance)</span></div>';
         html += '<div style="font-size:0.82rem;color:#ccc;margin-top:4px;">Offer half your goods and ' + goldForNeg + 'g. If they refuse, it becomes a fight (with penalty).</div>';
         html += '</button>';
 
         // Fight
         var fightColor = fightPct >= 60 ? '#2ecc71' : fightPct >= 35 ? '#f39c12' : '#e74c3c';
-        html += '<button class="btn-medieval" onclick="UI.resolveEncounterChoice(\'fight\')" style="padding:14px 16px;text-align:left;background:rgba(46,204,113,0.12);border-color:rgba(46,204,113,0.5);border-width:2px;">';
+        html += '<button class="btn-medieval" data-action="resolveEncounterChoice" data-choice="fight" style="padding:14px 16px;text-align:left;background:rgba(46,204,113,0.12);border-color:rgba(46,204,113,0.5);border-width:2px;">';
         html += '<div style="font-size:1.05rem;font-weight:bold;color:#f0d0a0;">⚔️ Fight <span style="font-size:0.85rem;color:' + fightColor + ';font-weight:bold;">(' + fightPct + '% chance to win)</span></div>';
         html += '<div style="font-size:0.82rem;color:#ccc;margin-top:4px;">';
         if (isSea) {
@@ -10345,7 +10574,7 @@ window.UI = (function () {
             resultHtml += '</div>';
         }
 
-        resultHtml += '<div style="text-align:center;margin-top:16px;"><button class="btn-medieval" onclick="UI.closeModal();" style="padding:8px 24px;">Continue Journey</button></div>';
+        resultHtml += '<div style="text-align:center;margin-top:16px;"><button class="btn-medieval" data-action="closeModal" style="padding:8px 24px;">Continue Journey</button></div>';
 
         openModal('Encounter Result', resultHtml, '');
     }
@@ -10446,15 +10675,15 @@ window.UI = (function () {
                 html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">';
                 if (hasHospital) {
                     var hft = _getFeeAndTime('hospital', inj.severity);
-                    html += '<button class="btn-medieval" onclick="UI.treatAtHospital(' + i + ',false)" style="font-size:0.7rem;padding:3px 8px;">🏥 Hospital (' + hft.fee + 'g, ' + hft.time + ')</button>';
+                    html += '<button class="btn-medieval" data-action="treatAtHospital" data-idx=" + i + " data-val="false" style="font-size:0.7rem;padding:3px 8px;">🏥 Hospital (' + hft.fee + 'g, ' + hft.time + ')</button>';
                 }
                 if (hasClinic) {
                     var cft = _getFeeAndTime('clinic', inj.severity);
                     var _clinSevNote = inj.severity === 'severe' ? ' ⚠️ 2x time' : '';
-                    html += '<button class="btn-medieval" onclick="UI.treatAtClinic(' + i + ',false)" style="font-size:0.7rem;padding:3px 8px;">⚕️ Clinic (' + cft.fee + 'g, ' + cft.time + _clinSevNote + ')</button>';
+                    html += '<button class="btn-medieval" data-action="treatAtClinic" data-idx=" + i + " data-val="false" style="font-size:0.7rem;padding:3px 8px;">⚕️ Clinic (' + cft.fee + 'g, ' + cft.time + _clinSevNote + ')</button>';
                 }
                 if (canSelfTreat && !inj.treated && typeDef) {
-                    html += '<button class="btn-medieval" onclick="UI.selfTreatCondition(' + i + ',false)" style="font-size:0.7rem;padding:3px 8px;">💊 Self-Treat (needs ' + typeDef.product + ')</button>';
+                    html += '<button class="btn-medieval" data-action="selfTreatCondition" data-idx=" + i + " data-val="false" style="font-size:0.7rem;padding:3px 8px;">💊 Self-Treat (needs ' + typeDef.product + ')</button>';
                 }
                 html += '</div></div>';
             }
@@ -10476,15 +10705,15 @@ window.UI = (function () {
                 html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">';
                 if (hasHospital) {
                     var ihft = _getFeeAndTime('hospital', ill.severity);
-                    html += '<button class="btn-medieval" onclick="UI.treatAtHospital(' + i + ',true)" style="font-size:0.7rem;padding:3px 8px;">🏥 Hospital (' + ihft.fee + 'g, ' + ihft.time + ')</button>';
+                    html += '<button class="btn-medieval" data-action="treatAtHospital" data-idx=" + i + " data-val="true" style="font-size:0.7rem;padding:3px 8px;">🏥 Hospital (' + ihft.fee + 'g, ' + ihft.time + ')</button>';
                 }
                 if (hasClinic) {
                     var icft = _getFeeAndTime('clinic', ill.severity);
                     var _clinSevNote2 = ill.severity === 'severe' ? ' ⚠️ 2x time' : '';
-                    html += '<button class="btn-medieval" onclick="UI.treatAtClinic(' + i + ',true)" style="font-size:0.7rem;padding:3px 8px;">⚕️ Clinic (' + icft.fee + 'g, ' + icft.time + _clinSevNote2 + ')</button>';
+                    html += '<button class="btn-medieval" data-action="treatAtClinic" data-idx=" + i + " data-val="true" style="font-size:0.7rem;padding:3px 8px;">⚕️ Clinic (' + icft.fee + 'g, ' + icft.time + _clinSevNote2 + ')</button>';
                 }
                 if (canSelfTreat && !ill.treated && illTypeDef) {
-                    html += '<button class="btn-medieval" onclick="UI.selfTreatCondition(' + i + ',true)" style="font-size:0.7rem;padding:3px 8px;">💊 Self-Treat (needs ' + illTypeDef.product + ')</button>';
+                    html += '<button class="btn-medieval" data-action="selfTreatCondition" data-idx=" + i + " data-val="true" style="font-size:0.7rem;padding:3px 8px;">💊 Self-Treat (needs ' + illTypeDef.product + ')</button>';
                 }
                 html += '</div></div>';
             }
@@ -10517,10 +10746,10 @@ window.UI = (function () {
                     html += '<div style="font-size:0.72rem;color:#aaa;margin:2px 0;">Health: ' + _sc.health + '</div>';
                     html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">';
                     if (_compHasDoc) {
-                        html += '<button class="btn-medieval" onclick="UI.treatCompanionUI(\'' + _sc.type + '\',\'' + _sc.id + '\',\'player\')" style="font-size:0.7rem;padding:3px 8px;background:rgba(40,120,40,0.3);border-color:rgba(60,180,60,0.5);">⚕️ Treat</button>';
+                        html += '<button class="btn-medieval" data-action="treatCompanionUI" data-id="${_sc.type}" data-val="${_sc.id}" data-type="player" style="font-size:0.7rem;padding:3px 8px;background:rgba(40,120,40,0.3);border-color:rgba(60,180,60,0.5);">⚕️ Treat</button>';
                     }
                     if (hasHospital || hasClinic) {
-                        html += '<button class="btn-medieval" onclick="UI.treatCompanionUI(\'' + _sc.type + '\',\'' + _sc.id + '\',\'hospital\')" style="font-size:0.7rem;padding:3px 8px;background:rgba(40,80,160,0.3);border-color:rgba(60,120,220,0.5);">🏥 Hospital</button>';
+                        html += '<button class="btn-medieval" data-action="treatCompanionUI" data-id="${_sc.type}" data-val="${_sc.id}" data-type="hospital" style="font-size:0.7rem;padding:3px 8px;background:rgba(40,80,160,0.3);border-color:rgba(60,120,220,0.5);">🏥 Hospital</button>';
                     }
                     html += '</div></div>';
                 }
@@ -10638,7 +10867,7 @@ window.UI = (function () {
             hasAny = true;
             html += '<div class="job-item">';
             html += '<div class="job-info"><span class="job-name">' + skillIcon + ' ' + skillName + '</span></div>';
-            html += '<button class="btn-medieval" onclick="UI.executeTeachChild(\'' + childId + '\',\'' + skillId + '\')" style="font-size:0.7rem;padding:3px 10px;">Teach (3→1 SP)</button>';
+            html += '<button class="btn-medieval" data-action="executeTeachChild" data-id="${childId}" data-val="${skillId}" style="font-size:0.7rem;padding:3px 10px;">Teach (3→1 SP)</button>';
             html += '</div>';
         }
         html += '</div>';
@@ -10743,8 +10972,8 @@ window.UI = (function () {
 
             if (isPlayer && daysLeft > 0) {
                 // Player can change their vote
-                html += '<button class="btn-medieval" onclick="(function(){Engine.castVote(\'' + voteId + '\',\'yes\');UI.openVotingDialog(\'' + voteId + '\');})()" style="font-size:0.7rem;padding:3px 8px;' + (voter.vote === 'yes' ? 'background:rgba(85,168,104,0.3);border-color:#55a868;' : '') + '">✅ Yes</button>';
-                html += '<button class="btn-medieval" onclick="(function(){Engine.castVote(\'' + voteId + '\',\'no\');UI.openVotingDialog(\'' + voteId + '\');})()" style="font-size:0.7rem;padding:3px 8px;' + (voter.vote === 'no' ? 'background:rgba(196,78,82,0.3);border-color:#c44e52;' : '') + '">❌ No</button>';
+                html += '<button class="btn-medieval" data-action="castVote_yes" data-id="' + voteId + '" data-id2="' + voteId + '" style="font-size:0.7rem;padding:3px 8px;' + (voter.vote === 'yes' ? 'background:rgba(85,168,104,0.3);border-color:#55a868;' : '') + '">✅ Yes</button>';
+                html += '<button class="btn-medieval" data-action="castVote_no" data-id="' + voteId + '" data-id2="' + voteId + '" style="font-size:0.7rem;padding:3px 8px;' + (voter.vote === 'no' ? 'background:rgba(196,78,82,0.3);border-color:#c44e52;' : '') + '">❌ No</button>';
             } else {
                 html += '<span style="font-size:0.85rem;color:' + voteColor + ';">' + voteIcon + ' ' + (voter.vote || 'Undecided') + '</span>';
             }
@@ -10755,14 +10984,14 @@ window.UI = (function () {
                 try { if (Player.getRelationship) { var _r = Player.getRelationship(voter.id); rel = _r ? _r.level : 0; } } catch (e) {}
                 var canInfluence = rel >= 50;
                 if (canInfluence) {
-                    html += '<button class="btn-medieval" onclick="(function(){UI._tryInfluenceVote(\'' + voteId + '\',\'' + voter.id + '\');})()" style="font-size:0.65rem;padding:2px 6px;" title="Attempt to persuade (requires relationship 50+)">🗣️</button>';
+                    html += '<button class="btn-medieval" data-action="tryInfluenceVote" data-id="' + voteId + '" data-id2="' + voter.id + '" style="font-size:0.65rem;padding:2px 6px;" title="Attempt to persuade (requires relationship 50+)">🗣️</button>';
                 }
             }
             html += '</div></div>';
         }
         html += '</div>';
 
-        var footerHtml = '<button class="btn-medieval" onclick="UI.closeModal();UI.openNobilityDialog();">Back to Nobility</button>';
+        var footerHtml = '<button class="btn-medieval" data-action="closeAndOpenNobilityDialog">Back to Nobility</button>';
         openModal('🗳️ Council Vote — ' + escapeHtml(vote.title || 'Decision'), html, footerHtml);
     }
 
@@ -10791,12 +11020,12 @@ window.UI = (function () {
             var kName = '';
             try { var k = Engine.getKingdom(v.kingdomId); kName = k ? k.name : ''; } catch (e) {}
             var daysLeft = Math.max(0, (v.deadlineDay || 0) - (Engine.getDay ? Engine.getDay() : 0));
-            html += '<button class="btn-medieval" onclick="UI.openVotingDialog(\'' + v.id + '\')" style="display:block;width:100%;text-align:left;padding:8px 12px;margin-bottom:6px;">';
+            html += '<button class="btn-medieval" data-action="openVotingDialog" data-id="${v.id}" style="display:block;width:100%;text-align:left;padding:8px 12px;margin-bottom:6px;">';
             html += '<div style="font-size:0.82rem;font-weight:bold;">' + escapeHtml(v.title || 'Decision') + '</div>';
             html += '<div style="font-size:0.72rem;color:#aaa;">' + escapeHtml(kName) + ' • ' + daysLeft + ' day' + (daysLeft !== 1 ? 's' : '') + ' left</div>';
             html += '</button>';
         }
-        openModal('🗳️ Active Council Votes', html, '<button class="btn-medieval" onclick="UI.closeModal();">Close</button>');
+        openModal('🗳️ Active Council Votes', html, '<button class="btn-medieval" data-action="closeModal">Close</button>');
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -10838,7 +11067,7 @@ window.UI = (function () {
                 var attRank = 0;
                 if (att.socialRank) for (var _rk in att.socialRank) { if (att.socialRank[_rk] > attRank) attRank = att.socialRank[_rk]; }
                 var rankIcon = attRank >= 7 ? '👑' : attRank >= 6 ? '📜' : attRank >= 5 ? '⚔️' : '🏛️';
-                html += '<span style="font-size:0.72rem;padding:3px 8px;border-radius:4px;background:rgba(200,150,50,0.1);border:1px solid rgba(200,150,50,0.2);cursor:pointer;" onclick="UI.showPersonDetail(Engine.getPerson(\'' + att.id + '\'))">' + rankIcon + ' ' + escapeHtml(att.firstName) + ' ' + escapeHtml(att.lastName) + '</span>';
+                html += '<span style="font-size:0.72rem;padding:3px 8px;border-radius:4px;background:rgba(200,150,50,0.1);border:1px solid rgba(200,150,50,0.2);cursor:pointer;" data-action="showPersonDetailById" data-id="' + att.id + '">' + rankIcon + ' ' + escapeHtml(att.firstName) + ' ' + escapeHtml(att.lastName) + '</span>';
             }
             html += '</div></div>';
         }
@@ -10869,7 +11098,7 @@ window.UI = (function () {
             for (var fai = 0; fai < catActions.length; fai++) {
                 var fa = catActions[fai];
                 var disabled = actionsLeft <= 0;
-                html += '<button class="btn-medieval" onclick="(function(){var r=Engine.doFeastAction ? Engine.doFeastAction(\'' + kingdomId + '\',\'' + fa.id + '\') : null;UI.toast(r&&r.message?r.message:\'Action performed.\',r&&r.success?\'success\':\'warning\');UI.openFeastDialog(\'' + kingdomId + '\');})()" style="display:block;width:100%;text-align:left;padding:6px 10px;margin-bottom:3px;font-size:0.75rem;' + (disabled ? 'opacity:0.4;cursor:not-allowed;' : '') + '" ' + (disabled ? 'disabled' : '') + '>';
+                html += '<button class="btn-medieval" data-action="doFeastAction" data-kingdom="' + kingdomId + '" data-id="' + fa.id + '" data-kingdom2="' + kingdomId + '" style="display:block;width:100%;text-align:left;padding:6px 10px;margin-bottom:3px;font-size:0.75rem;' + (disabled ? 'opacity:0.4;cursor:not-allowed;' : '') + '" ' + (disabled ? 'disabled' : '') + '>';
                 html += fa.icon + ' <strong>' + fa.name + '</strong><br>';
                 html += '<span style="font-size:0.68rem;color:#aaa;">' + fa.desc + '</span>';
                 html += '</button>';
@@ -10888,7 +11117,7 @@ window.UI = (function () {
             html += '</div></div>';
         }
 
-        var footerHtml = '<button class="btn-medieval" onclick="UI.closeModal();UI.openNobilityDialog();">Back</button>';
+        var footerHtml = '<button class="btn-medieval" data-action="closeAndOpenNobilityDialog">Back</button>';
         openModal('🎪 Royal Feast', html, footerHtml);
     }
 
@@ -10924,7 +11153,7 @@ window.UI = (function () {
             html += '<input type="number" id="loanAmountInput" min="50" max="2000" value="200" style="width:120px;padding:4px 8px;border-radius:4px;border:1px solid #555;background:#1a1a2e;color:#eee;font-size:0.85rem;margin-top:4px;">';
             html += '<span style="font-size:0.72rem;color:#888;margin-left:8px;">Your gold: ' + Math.floor(playerGold) + 'g</span>';
             html += '</div>';
-            html += '<button class="btn-medieval" onclick="(function(){var amt=parseInt(document.getElementById(\'loanAmountInput\').value);var r=Player.offerNobleLoan(\'' + nobleId + '\',amt);UI.toast(r.message,r.success?\'success\':\'warning\');if(r.success)UI.closeModal();else UI.openNobleLoanDialog(\'' + nobleId + '\');})()" style="font-size:0.8rem;padding:6px 16px;">💰 Offer Loan</button>';
+            html += '<button class="btn-medieval" data-action="offerNobleLoan" data-id="' + nobleId + '" data-id2="' + nobleId + '" style="font-size:0.8rem;padding:6px 16px;">💰 Offer Loan</button>';
         }
 
         // Show all active loans
@@ -10940,7 +11169,7 @@ window.UI = (function () {
             html += '</div>';
         }
 
-        openModal('💰 Noble Loan — ' + escapeHtml(noble.firstName), html, '<button class="btn-medieval" onclick="UI.closeModal();">Close</button>');
+        openModal('💰 Noble Loan — ' + escapeHtml(noble.firstName), html, '<button class="btn-medieval" data-action="closeModal">Close</button>');
     }
 
     function openSchemesDialog() {
@@ -10957,7 +11186,7 @@ window.UI = (function () {
         for (const tab of tabs) {
             const count = actions.filter(a => a.tab === tab.id).length;
             html += `<button class="btn-tab${UI._schemesTab === tab.id ? ' active' : ''}" `
-                + `onclick="UI.switchSchemesTab('${tab.id}')" `
+                + `data-action="switchSchemesTab" data-id="${tab.id}" `
                 + `title="${tab.tip}" `
                 + `style="font-size:0.85rem;padding:6px 12px;">`
                 + `${tab.label} (${count})</button>`;
@@ -11101,7 +11330,7 @@ window.UI = (function () {
                         html += buildNobleIntrigueUI(a, ai);
                     } else {
                         html += `<button class="btn-trade sell" style="font-size:0.85rem;margin-top:6px;" `
-                            + `onclick="UI.executeScheme('${a.id}', ${JSON.stringify(a.params).replace(/"/g, '&quot;')})">⚡ Execute</button>`;
+                            + `data-action="executeScheme" data-id="${a.id}" data-params="${JSON.stringify(a.params).replace(/"/g, '&amp;quot;')}">⚡ Execute</button>`;
                     }
                 }
                 html += '</div>';
@@ -11179,7 +11408,7 @@ window.UI = (function () {
         html += '</select>';
         html += `<input type="number" id="stealQty_${idx}" value="5" min="1" max="20" style="width:45px;font-size:0.7rem;padding:2px;" oninput="UI.updateStealDetection(${idx})">`;
         html += `<button class="btn-trade sell" style="font-size:0.7rem;" `
-            + `onclick="UI.executeStealGoods(${idx})">⚡ Steal</button>`;
+            + `data-action="executeStealGoods" data-id="${idx}">⚡ Steal</button>`;
         html += '</div>';
         // Trigger initial detection update after render
         html += `<script>setTimeout(function(){ if(UI.updateStealDetection) UI.updateStealDetection(${idx}); }, 50);<\/script>`;
@@ -11195,7 +11424,7 @@ window.UI = (function () {
         html += '</select>';
         html += `<input type="number" id="counterfeitQty_${idx}" value="5" min="1" max="20" style="width:45px;font-size:0.7rem;padding:2px;">`;
         html += `<button class="btn-trade sell" style="font-size:0.7rem;" `
-            + `onclick="UI.executeCounterfeit(${idx})">⚡ Sell</button>`;
+            + `data-action="executeCounterfeit" data-id="${idx}">⚡ Sell</button>`;
         html += '</div>';
         return html;
     }
@@ -11212,7 +11441,7 @@ window.UI = (function () {
         } catch (e) { /* no-op */ }
         html += '</select>';
         html += `<button class="btn-trade sell" style="font-size:0.7rem;" `
-            + `onclick="UI.executeTargetAction('${action.id}', ${idx})">⚡ Execute</button>`;
+            + `data-action="executeTargetAction" data-id="${action.id}" data-val="${idx}">⚡ Execute</button>`;
         html += '</div>';
         return html;
     }
@@ -11224,7 +11453,7 @@ window.UI = (function () {
             + `style="width:65px;font-size:0.7rem;padding:2px;">`;
         html += '<span style="font-size:0.7rem;">gold</span>';
         html += `<button class="btn-trade sell" style="font-size:0.7rem;" `
-            + `onclick="UI.executeBribeGuards(${idx})">⚡ Bribe</button>`;
+            + `data-action="executeBribeGuards" data-id="${idx}">⚡ Bribe</button>`;
         html += '</div>';
         return html;
     }
@@ -11238,7 +11467,7 @@ window.UI = (function () {
         html += '<option value="unban_good">Unban a Good</option>';
         html += '</select>';
         html += `<button class="btn-trade sell" style="font-size:0.7rem;" `
-            + `onclick="UI.executeBribeAdvisor('${action.params[0]}', ${idx})">⚡ Bribe</button>`;
+            + `data-action="executeBribeAdvisor" data-id="${action.params[0]}" data-val="${idx}">⚡ Bribe</button>`;
         html += '</div>';
         return html;
     }
@@ -11255,7 +11484,7 @@ window.UI = (function () {
         }
         html += '</select>';
         html += '<button class="btn-trade sell" style="font-size:0.75rem;" '
-            + 'onclick="UI.executeBuildingScheme(\'' + action.id.replace(/'/g, '') + '\', ' + idx + ', \'' + townId.replace(/'/g, '') + '\')">⚡ Execute</button>';
+            + 'data-action="executeBuildingScheme" data-id="' + action.id.replace(/'/g, '') + '" data-idx="' + idx + '" data-town="' + townId.replace(/'/g, '') + '">⚡ Execute</button>';
         html += '</div></div>';
         return html;
     }
@@ -11317,7 +11546,7 @@ window.UI = (function () {
             html += '</select>';
         }
         html += '<button class="btn-trade sell" style="font-size:0.7rem;" '
-            + 'onclick="UI.executeNobleIntrigue(\x27' + action.id.replace(/'/g, '') + '\x27, ' + idx + ', ' + (needTwo ? 'true' : 'false') + ')">⚡ Execute</button>';
+            + 'data-action="executeNobleIntrigue" data-id="' + action.id.replace(/'/g, '') + '" data-idx="' + idx + '" data-need-two="' + (needTwo ? 'true' : 'false') + '">⚡ Execute</button>';
         html += '</div>';
         // Legend
         html += '<div style="font-size:0.65rem;color:var(--text-muted);margin-top:2px;">🔗=blackmailed 💰=indebted ❤️=ally (60+rel) — leverage boosts success</div>';
@@ -11501,9 +11730,9 @@ window.UI = (function () {
 
         // ── TAB BAR ──
         html += '<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">';
-        html += '<button class="btn-medieval _kn-tab" data-tab="kings" style="font-size:0.85rem;padding:5px 14px;" onclick="UI._switchKNTab(\'kings\')">👑 Kings</button>';
-        html += '<button class="btn-medieval _kn-tab" data-tab="locations" style="font-size:0.85rem;padding:5px 14px;" onclick="UI._switchKNTab(\'locations\')">🏘️ Locations</button>';
-        html += '<button class="btn-medieval _kn-tab" data-tab="nobles" style="font-size:0.85rem;padding:5px 14px;" onclick="UI._switchKNTab(\'nobles\')">🎖️ Nobles</button>';
+        html += '<button class="btn-medieval _kn-tab" data-tab="kings" style="font-size:0.85rem;padding:5px 14px;" data-action="_switchKNTab" data-tab="kings">👑 Kings</button>';
+        html += '<button class="btn-medieval _kn-tab" data-tab="locations" style="font-size:0.85rem;padding:5px 14px;" data-action="_switchKNTab" data-tab="locations">🏘️ Locations</button>';
+        html += '<button class="btn-medieval _kn-tab" data-tab="nobles" style="font-size:0.85rem;padding:5px 14px;" data-action="_switchKNTab" data-tab="nobles">🎖️ Nobles</button>';
         html += '</div>';
 
         // ── KINGS SECTION ──
@@ -11518,7 +11747,7 @@ window.UI = (function () {
 
             html += '<div style="border:1px solid var(--border);border-left:3px solid ' + kColor + ';border-radius:6px;padding:10px;cursor:pointer;" ';
             if (kingPerson) {
-                html += 'onclick="UI.showPersonDetail(Engine.getPerson(\'' + k.king + '\'));UI.closeModal();"';
+                html += 'data-action="showPersonDetailAndCloseModal"';
             }
             html += '>';
             html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
@@ -11563,7 +11792,7 @@ window.UI = (function () {
             var catLabel = cat.charAt(0).toUpperCase() + cat.slice(1).replace('_', ' ');
             var isHere = typeof Player !== 'undefined' && Player.townId === town.id;
 
-            html += '<div class="_kn-loc-item" data-name="' + town.name.toLowerCase() + '" style="border:1px solid var(--border);border-left:3px solid ' + tColor + ';border-radius:4px;padding:8px;cursor:pointer;' + (isHere ? 'background:rgba(85,168,104,0.1);' : '') + '" onclick="UI.showTownDetail(Engine.findTown(\'' + town.id + '\'));UI.closeModal();">';
+            html += '<div class="_kn-loc-item" data-name="' + town.name.toLowerCase() + '" style="border:1px solid var(--border);border-left:3px solid ' + tColor + ';border-radius:4px;padding:8px;cursor:pointer;' + (isHere ? 'background:rgba(85,168,104,0.1);' : '') + '" data-action="showTownDetailAndCloseModal">';
             html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
             html += '<strong style="font-size:0.9rem;">' + town.name + '</strong>';
             html += '<span style="font-size:0.75rem;color:var(--text-muted);">' + catLabel + '</span>';
@@ -11620,7 +11849,7 @@ window.UI = (function () {
             var fullName = (np.firstName || '') + ' ' + (np.lastName || '');
             var emLabel = np.isEliteMerchant ? ' 💼 Merchant' : '';
 
-            html += '<div class="_kn-noble-item" data-name="' + fullName.toLowerCase() + '" style="border:1px solid var(--border);border-left:3px solid ' + nColor + ';border-radius:4px;padding:8px;cursor:pointer;" onclick="UI.showPersonDetail(Engine.getPerson(\'' + np.id + '\'));UI.closeModal();">';
+            html += '<div class="_kn-noble-item" data-name="' + fullName.toLowerCase() + '" style="border:1px solid var(--border);border-left:3px solid ' + nColor + ';border-radius:4px;padding:8px;cursor:pointer;" data-action="showPersonDetailAndCloseModal">';
             html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
             html += '<strong style="font-size:0.9rem;">' + (nRank.icon || '') + ' ' + fullName + '</strong>';
             html += '<span style="font-size:0.75rem;color:var(--text-muted);">' + nRank.name + emLabel + '</span>';
@@ -11674,10 +11903,10 @@ window.UI = (function () {
     function openHelpDialog() {
         const html = `
         <div class="help-section" style="display:flex; gap:10px; margin-bottom:8px;">
-            <button class="btn btn-primary" onclick="UI.openIconsGlossary()" style="flex:1; padding:10px; font-size:14px; cursor:pointer;">🗺️ Icons Guide</button>
-            <button class="btn btn-primary" onclick="UI.openGameGuide()" style="flex:1; padding:10px; font-size:14px; cursor:pointer;">📖 Game Guide</button>
-            <button class="btn btn-primary" onclick="UI.openGoodsGuide()" style="flex:1; padding:10px; font-size:14px; cursor:pointer;">📦 Goods Guide</button>
-            <button class="btn btn-primary" onclick="UI.openKingdomsAndNotables()" style="flex:1; padding:10px; font-size:14px; cursor:pointer;">👑 Kingdoms & Notables</button>
+            <button class="btn btn-primary" data-action="openIconsGlossary" style="flex:1; padding:10px; font-size:14px; cursor:pointer;">🗺️ Icons Guide</button>
+            <button class="btn btn-primary" data-action="openGameGuide" style="flex:1; padding:10px; font-size:14px; cursor:pointer;">📖 Game Guide</button>
+            <button class="btn btn-primary" data-action="openGoodsGuide" style="flex:1; padding:10px; font-size:14px; cursor:pointer;">📦 Goods Guide</button>
+            <button class="btn btn-primary" data-action="openKingdomsAndNotables" style="flex:1; padding:10px; font-size:14px; cursor:pointer;">👑 Kingdoms & Notables</button>
         </div>
         <div class="help-section">
             <h3 class="help-heading">⌨️ Keyboard Shortcuts</h3>
@@ -11825,14 +12054,14 @@ window.UI = (function () {
 
         var header = '<div style="padding:12px 16px; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center;">';
         header += '<span style="color:#FFD700; font-size:18px; font-weight:bold;">🗺️ Icons Guide</span>';
-        header += '<button onclick="document.getElementById(\'icons-glossary-overlay\').remove()" style="background:#600; color:#fff; border:1px solid #a00; padding:4px 12px; cursor:pointer; border-radius:4px;">✖ Close</button>';
+        header += '<button data-action="_handler_13" style="background:#600; color:#fff; border:1px solid #a00; padding:4px 12px; cursor:pointer; border-radius:4px;">✖ Close</button>';
         header += '</div>';
 
         header += '<div style="padding:8px 16px; border-bottom:1px solid #333;">';
         header += '<input id="icon-search" type="text" placeholder="Search icons..." oninput="window._filterIcons()" style="width:200px; background:#2a2a3e; color:#fff; border:1px solid #555; padding:6px 10px; border-radius:4px; margin-right:8px;" />';
         var cats = ['All', 'Map', 'UI', 'Ranks', 'Heraldry', 'Notifications', 'Jobs', 'Events'];
         for (var ci = 0; ci < cats.length; ci++) {
-            header += '<button onclick="window._iconCat=\'' + cats[ci] + '\'; window._filterIcons()" style="margin:2px; padding:3px 8px; background:' + (ci === 0 ? '#FFD700' : '#2a2a3e') + '; color:' + (ci === 0 ? '#000' : '#ddd') + '; border:1px solid #555; border-radius:3px; cursor:pointer; font-size:11px;" id="icon-cat-' + cats[ci] + '">' + cats[ci] + '</button>';
+            header += '<button data-action="_setIconCategory" data-param1="${cats[ci]}" style="margin:2px; padding:3px 8px; background:' + (ci === 0 ? '#FFD700' : '#2a2a3e') + '; color:' + (ci === 0 ? '#000' : '#ddd') + '; border:1px solid #555; border-radius:3px; cursor:pointer; font-size:11px;" id="icon-cat-' + cats[ci] + '">' + cats[ci] + '</button>';
         }
         header += '</div>';
 
@@ -11902,7 +12131,7 @@ window.UI = (function () {
         dragBar.id = 'god-mode-drag-handle';
         dragBar.style.cssText = 'padding:8px 10px;border-bottom:2px solid #FFD700;cursor:move;user-select:none;flex-shrink:0;background:#1a1a2e;';
         dragBar.innerHTML = '<span style="font-size:18px;color:#FFD700;">🔮 GOD MODE</span> <span style="font-size:11px;color:#888;margin-left:8px;">⠿ drag to move</span>' +
-            ' <button onclick="UI.closeGodModePanel()" style="float:right;background:#8b0000;color:white;border:none;padding:4px 10px;cursor:pointer;">✕ Close</button>';
+            ' <button data-action="closeGodModePanel" style="float:right;background:#8b0000;color:white;border:none;padding:4px 10px;cursor:pointer;">✕ Close</button>';
         panel.appendChild(dragBar);
 
         // Scrollable content area (refreshed by interval)
@@ -11970,21 +12199,21 @@ window.UI = (function () {
         // === CHEAT BUTTONS ===
         html += '<div style="margin-bottom:12px;padding:8px;background:#2a2a3e;border-radius:4px;">';
         html += '<div style="color:#FFD700;font-weight:bold;margin-bottom:6px;">⚡ CHEATS</div>';
-        html += '<button onclick="Player.state.gold+=10000;UI.toast(\'💰 +10,000 gold\',\'success\')" style="margin:2px;padding:3px 8px;background:#2d5016;color:#fff;border:1px solid #4a8;cursor:pointer;">+10K Gold</button> ';
-        html += '<button onclick="Player.state.gold+=100000;UI.toast(\'💰 +100,000 gold\',\'success\')" style="margin:2px;padding:3px 8px;background:#2d5016;color:#fff;border:1px solid #4a8;cursor:pointer;">+100K Gold</button> ';
-        html += '<button onclick="Player.state.skillPoints=(Player.state.skillPoints||0)+20;UI.toast(\'🧠 +20 SP\',\'success\')" style="margin:2px;padding:3px 8px;background:#16305d;color:#fff;border:1px solid #48a;cursor:pointer;">+20 SP</button> ';
-        html += '<button onclick="Player.state.skillPoints=(Player.state.skillPoints||0)+100;UI.toast(\'🧠 +100 SP\',\'success\')" style="margin:2px;padding:3px 8px;background:#16305d;color:#fff;border:1px solid #48a;cursor:pointer;">+100 SP</button> ';
-        html += '<button onclick="Player.state.energy=100;Player.state.hunger=0;Player.state.thirst=0;UI.toast(\'💪 Full energy/food/drink\',\'success\')" style="margin:2px;padding:3px 8px;background:#5d1630;color:#fff;border:1px solid #a48;cursor:pointer;">Full Energy</button> ';
-        html += '<button onclick="if(Player.state.jailedUntilDay){Player.state.jailedUntilDay=0;UI.toast(\'🔓 Freed from jail\',\'success\');}else{UI.toast(\'Not in jail\',\'info\');}" style="margin:2px;padding:3px 8px;background:#5d4016;color:#fff;border:1px solid #a84;cursor:pointer;">Free from Jail</button> ';
-        html += '<button onclick="Player.state.traveling=false;Player.state.travelProgress=0;Player.state.travelDestination=null;Player.state.travelRoute=null;Player.state.travelOrigin=null;Player.state.travelPaid=0;Player.state.travelMode=null;Player.state.travelBySea=false;Player.state.travelOffroad=false;Player.state.travelWaypoints=null;Player.state.travelDestCoords=null;Player.state.travelRestBonus=0;Player.state.travelTotalDist=0;UI.toast(\'🏠 Travel cancelled\',\'success\')" style="margin:2px;padding:3px 8px;background:#4a3520;color:#fff;border:1px solid #a86;cursor:pointer;">Stop Travel</button> ';
+        html += '<button data-action="_godAddGold10k" style="margin:2px;padding:3px 8px;background:#2d5016;color:#fff;border:1px solid #4a8;cursor:pointer;">+10K Gold</button> ';
+        html += '<button data-action="_godAddGold100k" style="margin:2px;padding:3px 8px;background:#2d5016;color:#fff;border:1px solid #4a8;cursor:pointer;">+100K Gold</button> ';
+        html += '<button data-action="_godAddSkillPoints" style="margin:2px;padding:3px 8px;background:#16305d;color:#fff;border:1px solid #48a;cursor:pointer;">+20 SP</button> ';
+        html += '<button data-action="_godAddSkillPoints" style="margin:2px;padding:3px 8px;background:#16305d;color:#fff;border:1px solid #48a;cursor:pointer;">+100 SP</button> ';
+        html += '<button data-action="_handler_12" style="margin:2px;padding:3px 8px;background:#5d1630;color:#fff;border:1px solid #a48;cursor:pointer;">Full Energy</button> ';
+        html += '<button data-action="_handler_11" style="margin:2px;padding:3px 8px;background:#5d4016;color:#fff;border:1px solid #a84;cursor:pointer;">Free from Jail</button> ';
+        html += '<button data-action="_handler_10" style="margin:2px;padding:3px 8px;background:#4a3520;color:#fff;border:1px solid #a86;cursor:pointer;">Stop Travel</button> ';
 
         // Set Gold input
         html += '<br><input id="gm-set-gold" type="number" placeholder="Set gold..." style="width:80px; background:#333; color:#fff; border:1px solid #666; padding:2px 4px; margin:2px;" />';
-        html += '<button onclick="var v=document.getElementById(\'gm-set-gold\').value; if(v){var g=parseInt(v,10); if(!isNaN(g)&&isFinite(g)){Player.state.gold=Math.max(0,g); UI.toast(\'💰 Gold set to \'+g,\'success\');}else{UI.toast(\'Invalid number\',\'error\');}}" style="margin:2px; padding:3px 8px; background:#2d5016; color:#fff; border:1px solid #4a8; cursor:pointer;">Set Gold</button> ';
+        html += '<button data-action="_godSetGold" style="margin:2px; padding:3px 8px; background:#2d5016; color:#fff; border:1px solid #4a8; cursor:pointer;">Set Gold</button> ';
 
         // Invincibility toggle
-        html += '<br><button id="gm-invincible-btn" onclick="window._godInvincible=!window._godInvincible; var b=this; b.textContent=window._godInvincible?\'🛡️ Invincible ON\':\'🛡️ Invincible OFF\'; b.style.background=window._godInvincible?\'#8b0000\':\'#16305d\'; b.style.borderColor=window._godInvincible?\'#f44\':\'#48a\'; UI.toast(window._godInvincible?\'🛡️ INVINCIBLE — Cannot die or lose\':\'Invincibility OFF\', window._godInvincible?\'success\':\'info\')" style="margin:2px; padding:3px 8px; background:' + (window._godInvincible ? '#8b0000' : '#16305d') + '; color:#fff; border:1px solid ' + (window._godInvincible ? '#f44' : '#48a') + '; cursor:pointer;">' + (window._godInvincible ? '🛡️ Invincible ON' : '🛡️ Invincible OFF') + '</button> ';
-        html += '<button id="gm-bandit-boost-btn" onclick="window._godBanditBoost=!window._godBanditBoost; var b=this; b.textContent=window._godBanditBoost?\'☠️ Bandits 95% ON\':\'☠️ Bandits 95% OFF\'; b.style.background=window._godBanditBoost?\'#8b4500\':\'#16305d\'; b.style.borderColor=window._godBanditBoost?\'#f84\':\'#48a\'; UI.toast(window._godBanditBoost?\'☠️ 95% daily bandit/pirate encounters!\':\'Bandit/pirate encounters normal\', window._godBanditBoost?\'warning\':\'info\')" style="margin:2px; padding:3px 8px; background:' + (window._godBanditBoost ? '#8b4500' : '#16305d') + '; color:#fff; border:1px solid ' + (window._godBanditBoost ? '#f84' : '#48a') + '; cursor:pointer;">' + (window._godBanditBoost ? '☠️ Bandits 95% ON' : '☠️ Bandits 95% OFF') + '</button> ';
+        html += '<br><button id="gm-invincible-btn" data-action="_godToggleInvincible" style="margin:2px; padding:3px 8px; background:' + (window._godInvincible ? '#8b0000' : '#16305d') + '; color:#fff; border:1px solid ' + (window._godInvincible ? '#f44' : '#48a') + '; cursor:pointer;">' + (window._godInvincible ? '🛡️ Invincible ON' : '🛡️ Invincible OFF') + '</button> ';
+        html += '<button id="gm-bandit-boost-btn" data-action="_handler_9" style="margin:2px; padding:3px 8px; background:' + (window._godBanditBoost ? '#8b4500' : '#16305d') + '; color:#fff; border:1px solid ' + (window._godBanditBoost ? '#f84' : '#48a') + '; cursor:pointer;">' + (window._godBanditBoost ? '☠️ Bandits 95% ON' : '☠️ Bandits 95% OFF') + '</button> ';
 
         // Set rank (pre-select current rank)
         var _gmCurrentRank = 0;
@@ -12003,24 +12232,24 @@ window.UI = (function () {
             html += '<option value="' + _gri + '"' + (_gri === _gmCurrentRank ? ' selected' : '') + '>' + _gmRankNames[_gri] + '</option>';
         }
         html += '</select>';
-        html += '<button onclick="UI._godModeSetRank()" style="margin:2px; padding:3px 8px; background:#5d1630; color:#fff; border:1px solid #a48; cursor:pointer;">Set Rank</button> ';
+        html += '<button data-action="_godModeSetRank" style="margin:2px; padding:3px 8px; background:#5d1630; color:#fff; border:1px solid #a48; cursor:pointer;">Set Rank</button> ';
 
         // Noble status never expires checkbox
         var _gmNoExpire = (Player.state && Player.state._nobleStatusNeverExpires) || false;
         html += '<br><label style="margin:4px 2px;display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:11px;color:#ccc;"><input type="checkbox" id="gm-noble-never-expire" ' + (_gmNoExpire ? 'checked' : '') + ' onchange="Player.state._nobleStatusNeverExpires=this.checked; UI.toast(this.checked?\'👑 Noble status will never expire\':\'Noble status maintenance re-enabled\',this.checked?\'success\':\'info\')" style="cursor:pointer;"> 👑 Noble status never expires</label>';
 
         // Unlock all skills
-        html += '<button onclick="if(typeof SKILLS!==\'undefined\'){var count=0; for(var sk in SKILLS){if(!Player.state.unlockedSkills)Player.state.unlockedSkills=[];if(Player.state.unlockedSkills.indexOf(sk)===-1){Player.state.unlockedSkills.push(sk); count++;}} UI.toast(\'🧠 Unlocked \'+count+\' skills! (\'+Player.state.unlockedSkills.length+\' total)\',\'success\');}else{UI.toast(\'SKILLS config not found\',\'error\');}" style="margin:2px; padding:3px 8px; background:#5d4016; color:#fff; border:1px solid #a84; cursor:pointer;">Unlock All Skills</button> ';
+        html += '<button data-action="_godUnlockAllSkills" style="margin:2px; padding:3px 8px; background:#5d4016; color:#fff; border:1px solid #a84; cursor:pointer;">Unlock All Skills</button> ';
 
         // Advance time
         html += '<br><input id="gm-advance-days" type="number" value="30" style="width:60px; background:#333; color:#fff; border:1px solid #666; padding:2px 4px; margin:2px;" />';
-        html += '<button onclick="var d=parseInt(document.getElementById(\'gm-advance-days\').value,10); if(isNaN(d)||d<=0)d=30; d=Math.min(d,365); for(var i=0;i<d;i++){Engine.tick();Player.tick();} UI.toast(\'⏩ Advanced \'+d+\' days\',\'success\')" style="margin:2px; padding:3px 8px; background:#16305d; color:#fff; border:1px solid #48a; cursor:pointer;">Advance Days</button> ';
+        html += '<button data-action="_godAdvanceDays" style="margin:2px; padding:3px 8px; background:#16305d; color:#fff; border:1px solid #48a; cursor:pointer;">Advance Days</button> ';
 
         // Export Console button
-        html += '<br><button onclick="Game.exportConsole()" style="margin:2px; padding:3px 8px; background:#4a3520; color:#fff; border:1px solid #d4af37; cursor:pointer;">📋 Export Console</button> ';
+        html += '<br><button data-action="_handler_8" style="margin:2px; padding:3px 8px; background:#4a3520; color:#fff; border:1px solid #d4af37; cursor:pointer;">📋 Export Console</button> ';
 
         // World Analytics button
-        html += '<br><button onclick="UI.openWorldAnalytics()" style="margin:4px 2px; padding:6px 14px; background:linear-gradient(135deg,#1a3a5c,#2a5a8c); color:#FFD700; border:2px solid #FFD700; cursor:pointer; font-size:13px; font-weight:bold; border-radius:4px;">🌍 World Analytics</button> ';
+        html += '<br><button data-action="openWorldAnalytics" style="margin:4px 2px; padding:6px 14px; background:linear-gradient(135deg,#1a3a5c,#2a5a8c); color:#FFD700; border:2px solid #FFD700; cursor:pointer; font-size:13px; font-weight:bold; border-radius:4px;">🌍 World Analytics</button> ';
 
         // Give Player Illness/Injury
         html += '<br><div style="margin-top:6px; padding-top:6px; border-top:1px solid #444;">';
@@ -12042,8 +12271,8 @@ window.UI = (function () {
             }
         } catch(e) {}
         html += '</optgroup></select>';
-        html += '<button onclick="(function(){ var sel=document.getElementById(\'gm-inflict-type\'); if(!sel||!sel.value){UI.toast(\'Select a condition\',\'error\');return;} var parts=sel.value.split(\':\'); var cat=parts[0]; var id=parts[1]; if(cat===\'illness\'){ Player.inflictSpecificIllness(id, \'god_mode\'); UI.toast(\'🤒 Inflicted illness: \'+id,\'warning\'); } else { var types=Player.getInjuryTypes(); var t=null; for(var i=0;i<types.length;i++){if(types[i].id===id){t=types[i];break;}} if(t){ Player.state.injuries=Player.state.injuries||[]; Player.state.injuries.push({type:t.id, name:t.name, severity:t.severity, dayOccurred:Engine.getDay(), treated:false, source:\'god_mode\'}); var hpHit=t.severity===\'severe\'?20:t.severity===\'moderate\'?10:5; Player.state.health=Math.max(0,(Player.state.health||100)-hpHit); UI.toast(\'🤕 Inflicted \'+t.name+\' (\'+t.severity+\', -\'+hpHit+\' HP)\',\'warning\'); } } })()" style="margin:2px; padding:3px 8px; background:#8b4000; color:#fff; border:1px solid #f84; cursor:pointer; font-size:11px;">Inflict on Player</button>';
-        html += '<button onclick="Player.state.injuries=[]; Player.state.illnesses=[]; Player.state.health=100; UI.toast(\'💚 All conditions cleared & health restored\',\'success\')" style="margin:2px; padding:3px 8px; background:#006400; color:#fff; border:1px solid #0a0; cursor:pointer; font-size:11px;">Cure All</button>';
+        html += '<button data-action="_godInflictCondition" style="margin:2px; padding:3px 8px; background:#8b4000; color:#fff; border:1px solid #f84; cursor:pointer; font-size:11px;">Inflict on Player</button>';
+        html += '<button data-action="_handler_7" style="margin:2px; padding:3px 8px; background:#006400; color:#fff; border:1px solid #0a0; cursor:pointer; font-size:11px;">Cure All</button>';
         html += '</div>';
 
         // Add Goods to Inventory
@@ -12069,7 +12298,7 @@ window.UI = (function () {
         }
         html += '</select> ';
         html += '<input id="gm-add-good-qty" type="number" value="50" min="1" style="width:60px; background:#333; color:#fff; border:1px solid #666; padding:2px 4px; margin:2px;" /> ';
-        html += '<button onclick="(function(){ var sel=document.getElementById(\'gm-add-good\'); var qtyEl=document.getElementById(\'gm-add-good-qty\'); if(!sel||!sel.value){UI.toast(\'Select a good\',\'error\');return;} var qty=parseInt(qtyEl.value,10); if(isNaN(qty)||qty<=0)qty=50; Player.state.inventory=Player.state.inventory||{}; Player.state.inventory[sel.value]=(Player.state.inventory[sel.value]||0)+qty; var r=null; for(var k in RESOURCE_TYPES){if(RESOURCE_TYPES[k].id===sel.value){r=RESOURCE_TYPES[k];break;}} UI.toast(\'📦 +\'+qty+\' \'+(r?r.icon+\' \'+r.name:sel.value)+\' added to inventory\',\'success\'); })()" style="margin:2px; padding:3px 8px; background:#1a4a3a; color:#fff; border:1px solid #4a8; cursor:pointer; font-size:11px;">Add to Inventory</button>';
+        html += '<button data-action="_godAddGood" style="margin:2px; padding:3px 8px; background:#1a4a3a; color:#fff; border:1px solid #4a8; cursor:pointer; font-size:11px;">Add to Inventory</button>';
         html += '</div>';
 
         html += '</div>';
@@ -12077,7 +12306,7 @@ window.UI = (function () {
         // === POSSESSED NPC ===
         if (window._gmPossessedNpc) {
             html += '<div style="margin-bottom:12px; padding:8px; background:#3a2a4e; border:2px solid #a0a; border-radius:4px;">';
-            html += '<div style="color:#e0a0ff; font-weight:bold; margin-bottom:6px;">👁️ POSSESSING NPC <button onclick="window._gmPossessedNpc=null" style="float:right; font-size:10px; padding:1px 6px; background:#600; color:#fff; border:1px solid #a00; cursor:pointer;">✖ Stop</button></div>';
+            html += '<div style="color:#e0a0ff; font-weight:bold; margin-bottom:6px;">👁️ POSSESSING NPC <button data-action="_godUnpossessNpc" style="float:right; font-size:10px; padding:1px 6px; background:#600; color:#fff; border:1px solid #a00; cursor:pointer;">✖ Stop</button></div>';
             try {
                 var poss = Engine.getPeople().find(function(pp) { return pp.id === window._gmPossessedNpc; });
                 if (poss) {
@@ -12353,23 +12582,23 @@ window.UI = (function () {
                 // Action buttons
                 html += '<br>';
                 // Travel to
-                html += '<button onclick="Player.state.townId=\'' + npc.townId + '\'; Player.state.traveling=false; Player.state.travelProgress=0; Player.state.travelDestination=null; Player.state.travelRoute=null; Player.state.travelOrigin=null; Player.state.travelPaid=0; Player.state.travelMode=null; Player.state.travelBySea=false; Player.state.travelOffroad=false; Player.state.travelTotalDist=0; UI.toast(\'Teleported to ' + ((npcTown ? npcTown.name : '?').replace(/'/g, '')) + '\',\'success\')" style="font-size:10px; padding:1px 5px; margin:1px; background:#16305d; color:#fff; border:1px solid #48a; cursor:pointer;">📍Travel To</button>';
+                html += '<button data-action="_handler_6" data-param1="${npc.townId}" style="font-size:10px; padding:1px 5px; margin:1px; background:#16305d; color:#fff; border:1px solid #48a; cursor:pointer;">📍Travel To</button>';
                 // Kill
-                html += '<button onclick="var pp=Engine.getPeople().find(function(x){return x.id===\'' + npc.id + '\';}); if(pp){Engine.killPerson(pp, \'god_mode\'); UI.toast(\'💀 Killed ' + ((npc.firstName || '?').replace(/'/g, '')) + '\',\'warning\');}" style="font-size:10px; padding:1px 5px; margin:1px; background:#8b0000; color:#fff; border:1px solid #f44; cursor:pointer;">💀Kill</button>';
+                html += '<button data-action="_handler_5" data-id="${npc.id}" style="font-size:10px; padding:1px 5px; margin:1px; background:#8b0000; color:#fff; border:1px solid #f44; cursor:pointer;">💀Kill</button>';
                 // Give gold
-                html += '<button onclick="var pp=Engine.getPeople().find(function(x){return x.id===\'' + npc.id + '\';}); if(pp){pp.gold=(pp.gold||0)+1000; UI.toast(\'💰+1000g to ' + ((npc.firstName || '?').replace(/'/g, '')) + '\',\'success\');}" style="font-size:10px; padding:1px 5px; margin:1px; background:#2d5016; color:#fff; border:1px solid #4a8; cursor:pointer;">💰+1K</button>';
+                html += '<button data-action="_godGiveGoldToNpc" data-id="${npc.id}" style="font-size:10px; padding:1px 5px; margin:1px; background:#2d5016; color:#fff; border:1px solid #4a8; cursor:pointer;">💰+1K</button>';
                 // Force marry player
-                html += '<button onclick="(function(){var oldSp=Player.state.spouseId; if(oldSp){var op=Engine.getPeople().find(function(x){return x.id===oldSp;}); if(op)op.spouseId=null;} Player.state.spouseId=\'' + npc.id + '\'; Player.state.spouseRelationship=50; var pp=Engine.getPeople().find(function(x){return x.id===\'' + npc.id + '\';}); if(pp){if(pp.spouseId){var os=Engine.getPeople().find(function(x){return x.id===pp.spouseId;}); if(os)os.spouseId=null;} pp.spouseId=\'player\';} UI.toast(\'💒 Married ' + ((npc.firstName || '?').replace(/'/g, '')) + '!\',\'success\');})()" style="font-size:10px; padding:1px 5px; margin:1px; background:#5d1630; color:#fff; border:1px solid #a48; cursor:pointer;">💒Marry</button>';
+                html += '<button data-action="_godForceMarry" data-id="${npc.id}" data-id2="${npc.id}" style="font-size:10px; padding:1px 5px; margin:1px; background:#5d1630; color:#fff; border:1px solid #a48; cursor:pointer;">💒Marry</button>';
                 // Possess - spectate NPC
-                html += '<button onclick="window._gmPossessedNpc=\'' + npc.id + '\'; UI.toast(\'👁️ Possessing ' + ((npc.firstName || '?').replace(/'/g, '')) + '\',\'info\')" style="font-size:10px; padding:1px 5px; margin:1px; background:#4a004a; color:#fff; border:1px solid #a0a; cursor:pointer;">👁️Possess</button>';
+                html += '<button data-action="_godPossessNpc" data-id="${npc.id}" style="font-size:10px; padding:1px 5px; margin:1px; background:#4a004a; color:#fff; border:1px solid #a0a; cursor:pointer;">👁️Possess</button>';
                 // Become NPC — swap player identity
-                html += '<button onclick="(function(){var target=Engine.getPeople().find(function(x){return x.id===\'' + npc.id + '\'}); if(!target){UI.toast(\'NPC not found\',\'error\'); return;} if(!confirm(\'Become \'+target.firstName+\'? Your old character becomes an Elite Merchant.\')){return;} var st=Player.state; var oldClone={id:\'p_former_\'+Engine.getDay(), firstName:st.firstName, lastName:st.lastName, sex:st.sex, age:st.age, gold:st.gold, townId:st.townId, personality:Object.assign({},st.personality||{}), skills:Object.assign({},st.skills||{}), needs:{food:80,shelter:80,safety:80,wealth:50}, alive:true, occupation:\'merchant\', isEliteMerchant:true, strategy:\'opportunist\', npcMerchantInventory:{}, emCaravans:[], _formerPlayer:true, spouseId:null, childrenIds:(st.childrenIds||[]).slice(), parentIds:(st.parentIds||[]).slice()}; var oldName=oldClone.firstName+\' \'+oldClone.lastName; var world=Engine.getWorld(); if(world.eliteMerchants){world.eliteMerchants.push(oldClone);} Engine.addPerson(oldClone); st.townId=target.townId; st.gold=target.gold||100; st.firstName=target.firstName; st.lastName=target.lastName; st.sex=target.sex; st.age=target.age; st.personality=Object.assign({},target.personality||st.personality); st.spouseId=target.spouseId||null; if(target.spouseId){var sp=Engine.getPeople().find(function(x){return x.id===target.spouseId}); if(sp)sp.spouseId=\'player\';} st.childrenIds=(target.childrenIds||[]).slice(); st.parentIds=(target.parentIds||[]).slice(); st.traveling=false; st.travelRoute=null; st.travelProgress=0; st.travelDestination=null; st.travelOrigin=null; st.travelPaid=0; st.travelMode=null; st.travelBySea=false; st.travelOffroad=false; st.travelTotalDist=0; target.alive=false; target._deathDay=Engine.getDay(); target._absorbed=true; UI.toast(\'🔄 You are now \'+st.firstName+\'! Old character (\'+oldName+\') is now an Elite Merchant.\',\'success\');})()" style="font-size:10px; padding:1px 5px; margin:1px; background:#004a4a; color:#fff; border:1px solid #0aa; cursor:pointer;">🔄Become</button>';
+                html += '<button data-action="_godBecomeNpc" data-id="${npc.id}" style="font-size:10px; padding:1px 5px; margin:1px; background:#004a4a; color:#fff; border:1px solid #0aa; cursor:pointer;">🔄Become</button>';
                 // Inflict illness on NPC
-                html += '<button onclick="(function(){ var pp=Engine.getPeople().find(function(x){return x.id===\'' + npc.id + '\';}); if(!pp){UI.toast(\'NPC not found\',\'error\'); return;} var ills=[\'cold\',\'flu\',\'food_poisoning\',\'fever\',\'dysentery\',\'pneumonia\',\'typhus\',\'plague\']; var names=[\'Cold\',\'Flu\',\'Food Poisoning\',\'Fever\',\'Dysentery\',\'Pneumonia\',\'Typhus\',\'Plague\']; var choice=prompt(\'Inflict illness on ' + ((npc.firstName || '?').replace(/'/g, '')) + ':\\n\'+ills.map(function(id,i){return (i+1)+\'. \'+names[i];}).join(\'\\n\')+\'\\n\\nEnter number (1-8):\'); if(!choice)return; var idx=parseInt(choice,10)-1; if(idx<0||idx>=ills.length){UI.toast(\'Invalid choice\',\'error\');return;} var ok=Engine.infectNPC(pp, ills[idx], \'god_mode\'); if(ok){UI.toast(\'🤒 \'+names[idx]+\' inflicted on ' + ((npc.firstName || '?').replace(/'/g, '')) + '\',\'warning\');} else {UI.toast(\'Failed (already sick or immune)\',\'info\');} })()" style="font-size:10px; padding:1px 5px; margin:1px; background:#8b4000; color:#fff; border:1px solid #f84; cursor:pointer;">🤒Sicken</button>';
+                html += '<button data-action="_godInflictIllness" data-id="${npc.id}" style="font-size:10px; padding:1px 5px; margin:1px; background:#8b4000; color:#fff; border:1px solid #f84; cursor:pointer;">🤒Sicken</button>';
                 // Injure NPC
-                html += '<button onclick="(function(){ var pp=Engine.getPeople().find(function(x){return x.id===\'' + npc.id + '\';}); if(!pp){UI.toast(\'NPC not found\',\'error\'); return;} var types=[\'wound\',\'broken_bone\',\'concussion\',\'arrow_wound\']; var names=[\'Wound\',\'Broken Bone\',\'Concussion\',\'Arrow Wound\']; var choice=prompt(\'Inflict injury on ' + ((npc.firstName || '?').replace(/'/g, '')) + ':\\n\'+types.map(function(id,i){return (i+1)+\'. \'+names[i];}).join(\'\\n\')+\'\\n\\nEnter number (1-4):\'); if(!choice)return; var idx=parseInt(choice,10)-1; if(idx<0||idx>=types.length){UI.toast(\'Invalid choice\',\'error\');return;} pp.injured=true; pp.injuryDay=Engine.getDay(); pp.injuryType=types[idx]; pp.health=Math.max(10,(pp.health||100)-20); UI.toast(\'🤕 \'+names[idx]+\' inflicted on ' + ((npc.firstName || '?').replace(/'/g, '')) + '\',\'warning\'); })()" style="font-size:10px; padding:1px 5px; margin:1px; background:#8b4000; color:#fff; border:1px solid #f84; cursor:pointer;">🤕Injure</button>';
+                html += '<button data-action="_godInflictInjury" data-id="${npc.id}" style="font-size:10px; padding:1px 5px; margin:1px; background:#8b4000; color:#fff; border:1px solid #f84; cursor:pointer;">🤕Injure</button>';
                 // Cure NPC
-                html += '<button onclick="(function(){ var pp=Engine.getPeople().find(function(x){return x.id===\'' + npc.id + '\';}); if(!pp){return;} pp.sick=false; pp.illness=null; pp.injured=false; pp.injuryType=null; pp.health=100; UI.toast(\'💚 Cured ' + ((npc.firstName || '?').replace(/'/g, '')) + '\',\'success\'); })()" style="font-size:10px; padding:1px 5px; margin:1px; background:#006400; color:#fff; border:1px solid #0a0; cursor:pointer;">💚Cure</button>';
+                html += '<button data-action="_godCureNpc" data-id="${npc.id}" style="font-size:10px; padding:1px 5px; margin:1px; background:#006400; color:#fff; border:1px solid #0a0; cursor:pointer;">💚Cure</button>';
 
                 // King-specific actions
                 if (isKing) {
@@ -12377,16 +12606,16 @@ window.UI = (function () {
                     if (kingKingdom) {
                         var kid = kingKingdom.id;
                         html += '<br>';
-                        html += '<button onclick="Engine.godAddKingdomGold(\'' + kid + '\', 5000); UI.toast(\'💰+5000g to kingdom\',\'success\');" style="font-size:10px; padding:1px 5px; margin:1px; background:#2d5016; color:#fff; border:1px solid #4a8; cursor:pointer;">💰+5K Treasury</button>';
+                        html += '<button data-action="godAddKingdomGoldAndToast" data-id="${kid}" data-val="5000" style="font-size:10px; padding:1px 5px; margin:1px; background:#2d5016; color:#fff; border:1px solid #4a8; cursor:pointer;">💰+5K Treasury</button>';
                         // Force declare war — pick random enemy
-                        html += '<button onclick="var all=Engine.getKingdoms(); if(all.length>1){var targets=all.filter(function(t){return t.id!==\'' + kid + '\';}); var target=targets[Math.floor(Math.random()*targets.length)]; Engine.godDeclareWar(\'' + kid + '\', target.id); UI.toast(\'⚔️ War declared on \'+target.name,\'warning\');}" style="font-size:10px; padding:1px 5px; margin:1px; background:#8b0000; color:#fff; border:1px solid #f44; cursor:pointer;">⚔️Declare War</button>';
+                        html += '<button data-action="_godDeclareRandomWar" data-kingdom="${kid}" data-kingdom2="${kid}" style="font-size:10px; padding:1px 5px; margin:1px; background:#8b0000; color:#fff; border:1px solid #f44; cursor:pointer;">⚔️Declare War</button>';
                         // Force change tax
-                        html += '<button onclick="var kk=Engine.getKingdom(\'' + kid + '\'); if(kk){Engine.godSetKingdomTax(\'' + kid + '\', Math.min(0.5,(kk.taxRate||0.1)+0.05)); UI.toast(\'📈 Tax now \'+(Math.min(0.5,(kk.taxRate||0.1)+0.05)*100).toFixed(0)+\'%\',\'info\');}" style="font-size:10px; padding:1px 5px; margin:1px; background:#5d4016; color:#fff; border:1px solid #a84; cursor:pointer;">📈+Tax</button>';
-                        html += '<button onclick="var kk=Engine.getKingdom(\'' + kid + '\'); if(kk){Engine.godSetKingdomTax(\'' + kid + '\', Math.max(0.01,(kk.taxRate||0.1)-0.05)); UI.toast(\'📉 Tax now \'+(Math.max(0.01,(kk.taxRate||0.1)-0.05)*100).toFixed(0)+\'%\',\'info\');}" style="font-size:10px; padding:1px 5px; margin:1px; background:#5d4016; color:#fff; border:1px solid #a84; cursor:pointer;">📉-Tax</button>';
+                        html += '<button data-action="_godRaiseTax" data-kingdom="${kid}" data-kingdom2="${kid}" style="font-size:10px; padding:1px 5px; margin:1px; background:#5d4016; color:#fff; border:1px solid #a84; cursor:pointer;">📈+Tax</button>';
+                        html += '<button data-action="_godLowerTax" data-kingdom="${kid}" data-kingdom2="${kid}" style="font-size:10px; padding:1px 5px; margin:1px; background:#5d4016; color:#fff; border:1px solid #a84; cursor:pointer;">📉-Tax</button>';
                         // Force mood change
-                        html += '<button onclick="var pp=Engine.getPeople().find(function(x){return x.id===\'' + npc.id + '\';}); if(pp){var moods=[\'jubilant\',\'content\',\'worried\',\'paranoid\',\'wrathful\',\'ambitious\']; pp.mood=moods[Math.floor(Math.random()*moods.length)]; UI.toast(\'😊 Mood: \'+pp.mood,\'info\');}" style="font-size:10px; padding:1px 5px; margin:1px; background:#16305d; color:#fff; border:1px solid #48a; cursor:pointer;">🎭Rand Mood</button>';
+                        html += '<button data-action="_godRandomMood" data-id="${npc.id}" style="font-size:10px; padding:1px 5px; margin:1px; background:#16305d; color:#fff; border:1px solid #48a; cursor:pointer;">🎭Rand Mood</button>';
                         // Force make peace (clear all wars)
-                        html += '<button onclick="var kk=Engine.getKingdom(\'' + kid + '\'); if(kk && kk.atWar){kk.atWar.forEach(function(eid){Engine.godMakePeace(\'' + kid + '\', eid);}); UI.toast(\'☮️ Peace declared!\',\'success\');}" style="font-size:10px; padding:1px 5px; margin:1px; background:#16505d; color:#fff; border:1px solid #4a8; cursor:pointer;">☮️Peace</button>';
+                        html += '<button data-action="_godMakeAllPeace" data-kingdom="${kid}" data-kingdom2="${kid}" style="font-size:10px; padding:1px 5px; margin:1px; background:#16505d; color:#fff; border:1px solid #4a8; cursor:pointer;">☮️Peace</button>';
                     }
                 }
 
@@ -12398,14 +12627,14 @@ window.UI = (function () {
         // === FORCE EVENTS ===
         html += '<div style="margin-bottom:12px; padding:8px; background:#2a2a3e; border-radius:4px;">';
         html += '<div style="color:#FFD700; font-weight:bold; margin-bottom:6px;">🌪️ FORCE EVENTS</div>';
-        html += '<button onclick="(function(){var t=Engine.getTowns().find(function(t){return t.id===Player.state.townId}); if(t&&t.market&&t.market.supply){var foods=[\'wheat\',\'meat\',\'fish\',\'bread\',\'eggs\',\'poultry\',\'flour\',\'grapes\',\'preserved_food\']; for(var i=0;i<foods.length;i++){var r=foods[i]; if(t.market.supply[r]!==undefined){t.market.supply[r]=Math.max(1,Math.floor((t.market.supply[r]||50)*0.1));}} UI.toast(\'🥺 Famine! Food supplies at 10% in \'+t.name,\'warning\');}else{UI.toast(\'No town found\',\'error\');}})()" style="margin:2px; padding:3px 8px; background:#8b4000; color:#fff; border:1px solid #d80; cursor:pointer;">🥺 Famine (This Town)</button> ';
-        html += '<button onclick="(function(){var t=Engine.getTowns().find(function(t){return t.id===Player.state.townId}); if(t&&t.market&&t.market.supply){t.market.supply.gold_ore=(t.market.supply.gold_ore||0)+500; t.market.supply.jewelry=(t.market.supply.jewelry||0)+200; UI.toast(\'💎 Gold rush in \'+t.name+\'!\',\'success\');}else{UI.toast(\'No town\',\'error\');}})()" style="margin:2px; padding:3px 8px; background:#8b8000; color:#fff; border:1px solid #dd0; cursor:pointer;">💎 Gold Rush</button> ';
-        html += '<button onclick="(function(){var t=Engine.getTowns().find(function(t){return t.id===Player.state.townId}); if(t&&t.market&&t.market.supply){for(var r in t.market.supply){t.market.supply[r]=Math.floor((t.market.supply[r]||0)*2);} UI.toast(\'📈 Trade boom in \'+t.name+\'!\',\'success\');}else{UI.toast(\'No town\',\'error\');}})()" style="margin:2px; padding:3px 8px; background:#006400; color:#fff; border:1px solid #0a0; cursor:pointer;">📈 Trade Boom</button> ';
-        html += '<button onclick="(function(){var t=Engine.getTowns().find(function(t){return t.id===Player.state.townId}); if(t){t.gold=Math.max(0,(t.gold||0)-500); t.safety=Math.max(0,(t.safety||50)-30); UI.toast(\'🏴‍☠️ Bandit raid on \'+t.name+\'!\',\'warning\');}else{UI.toast(\'No town\',\'error\');}})()" style="margin:2px; padding:3px 8px; background:#4a0000; color:#fff; border:1px solid #a00; cursor:pointer;">🏴‍☠️ Bandit Raid</button> ';
-        html += '<button onclick="(function(){var ks=Engine.getKingdoms(); var pk=ks.find(function(k){var t=Engine.getTowns().find(function(tt){return tt.id===Player.state.townId}); return t && k.id===t.kingdomId;}); if(pk && pk.king){var king=Engine.getPeople().find(function(p){return p.id===pk.king;}); if(king){Engine.killPerson(king, \'god_mode\'); UI.toast(\'💀 King \'+king.firstName+\' is dead! Succession triggered!\',\'warning\');}else{UI.toast(\'King not found\',\'error\');}}else{UI.toast(\'No kingdom\',\'error\');}})()" style="margin:2px; padding:3px 8px; background:#5a0000; color:#fff; border:1px solid #f44; cursor:pointer;">👑💀 Kill King</button> ';
-        html += '<button onclick="(function(){var people=Engine.getPeople().filter(function(p){return p.alive && p.townId===Player.state.townId}); if(people.length===0){UI.toast(\'No people in town\',\'info\');return;} var killCount=Math.max(1,Math.floor(people.length*0.1)); for(var i=0;i<killCount;i++){var victim=people[Math.floor(Math.random()*people.length)]; if(victim && victim.alive){Engine.killPerson(victim, \'plague\');}} UI.toast(\'☠️ Plague! \'+killCount+\' dead in town\',\'warning\');})()" style="margin:2px; padding:3px 8px; background:#2a004a; color:#fff; border:1px solid #80f; cursor:pointer;">☠️ Plague</button> ';
-        html += '<button onclick="Engine.godMakeWorldWar(); UI.toast(\'⚔️ WORLD WAR! All kingdoms at war!\',\'warning\');" style="margin:2px; padding:3px 8px; background:#8b0000; color:#fff; border:1px solid #f00; cursor:pointer;">⚔️ World War</button> ';
-        html += '<button onclick="Engine.godMakeWorldPeace(); UI.toast(\'☮️ World peace declared!\',\'success\');" style="margin:2px; padding:3px 8px; background:#005050; color:#fff; border:1px solid #0aa; cursor:pointer;">☮️ World Peace</button> ';
+        html += '<button data-action="_godFamine" style="margin:2px; padding:3px 8px; background:#8b4000; color:#fff; border:1px solid #d80; cursor:pointer;">🥺 Famine (This Town)</button> ';
+        html += '<button data-action="_godGoldRush" style="margin:2px; padding:3px 8px; background:#8b8000; color:#fff; border:1px solid #dd0; cursor:pointer;">💎 Gold Rush</button> ';
+        html += '<button data-action="_godTradeBoom" style="margin:2px; padding:3px 8px; background:#006400; color:#fff; border:1px solid #0a0; cursor:pointer;">📈 Trade Boom</button> ';
+        html += '<button data-action="_godBanditRaid" style="margin:2px; padding:3px 8px; background:#4a0000; color:#fff; border:1px solid #a00; cursor:pointer;">🏴‍☠️ Bandit Raid</button> ';
+        html += '<button data-action="_godKillKing" style="margin:2px; padding:3px 8px; background:#5a0000; color:#fff; border:1px solid #f44; cursor:pointer;">👑💀 Kill King</button> ';
+        html += '<button data-action="_godPlague" style="margin:2px; padding:3px 8px; background:#2a004a; color:#fff; border:1px solid #80f; cursor:pointer;">☠️ Plague</button> ';
+        html += '<button data-action="godMakeWorldWarAndToast" data-id="⚔️ WORLD WAR! All kingdoms at war!" data-val="warning" style="margin:2px; padding:3px 8px; background:#8b0000; color:#fff; border:1px solid #f00; cursor:pointer;">⚔️ World War</button> ';
+        html += '<button data-action="godMakeWorldPeaceAndToast" data-id="☮️ World peace declared!" data-val="success" style="margin:2px; padding:3px 8px; background:#005050; color:#fff; border:1px solid #0aa; cursor:pointer;">☮️ World Peace</button> ';
 
         // Plague Outbreak — choose town and illness
         html += '<br><div style="margin-top:6px; padding-top:6px; border-top:1px solid #444;">';
@@ -12430,14 +12659,14 @@ window.UI = (function () {
         html += '<option value="cold">⚪ Cold (minor)</option>';
         html += '</select>';
         html += '<input id="gm-plague-count" type="number" value="10" min="1" max="200" style="width:40px; background:#333; color:#fff; border:1px solid #666; padding:2px; margin:2px; font-size:11px;" title="Number to infect" />';
-        html += '<button onclick="(function(){ var tid=document.getElementById(\'gm-plague-town\').value; var ill=document.getElementById(\'gm-plague-illness\').value; var cnt=parseInt(document.getElementById(\'gm-plague-count\').value,10)||10; var infected=Engine.godStartPlague(tid, ill, cnt); var tname=\'\'; try{var tt=Engine.getTowns().find(function(t){return t.id===tid}); tname=tt?tt.name:tid;}catch(e){tname=tid;} UI.toast(\'🦠 \'+infected+\' infected with \'+ill+\' in \'+tname+\'!\',infected>0?\'warning\':\'info\'); })()" style="margin:2px; padding:3px 8px; background:#4a004a; color:#fff; border:1px solid #a0a; cursor:pointer; font-size:11px;">Start Outbreak</button>';
+        html += '<button data-action="_godSpreadPlague" style="margin:2px; padding:3px 8px; background:#4a004a; color:#fff; border:1px solid #a0a; cursor:pointer; font-size:11px;">Start Outbreak</button>';
         html += '</div>';
 
         html += '</div>';
 
         // === MARKET OVERVIEW ===
         html += '<div style="margin-bottom:12px; padding:8px; background:#2a2a3e; border-radius:4px;">';
-        html += '<div style="color:#FFD700; font-weight:bold; margin-bottom:6px; cursor:pointer;" onclick="window._gmShowMarket=!window._gmShowMarket">📊 MARKET OVERVIEW ' + (window._gmShowMarket ? '▼' : '▶') + '</div>';
+        html += '<div style="color:#FFD700; font-weight:bold; margin-bottom:6px; cursor:pointer;" data-action="_handler_4">📊 MARKET OVERVIEW ' + (window._gmShowMarket ? '▼' : '▶') + '</div>';
         if (window._gmShowMarket) {
             try {
                 var mktTowns = Engine.getTowns();
@@ -12493,7 +12722,7 @@ window.UI = (function () {
 
         // === MILITARY STRENGTH ===
         html += '<div style="margin-bottom:12px; padding:8px; background:#2a2a3e; border-radius:4px;">';
-        html += '<div style="color:#FFD700; font-weight:bold; margin-bottom:6px; cursor:pointer;" onclick="window._gmShowMilitary=!window._gmShowMilitary">⚔️ MILITARY STRENGTH ' + (window._gmShowMilitary ? '▼' : '▶') + '</div>';
+        html += '<div style="color:#FFD700; font-weight:bold; margin-bottom:6px; cursor:pointer;" data-action="_handler_3">⚔️ MILITARY STRENGTH ' + (window._gmShowMilitary ? '▼' : '▶') + '</div>';
         if (window._gmShowMilitary) {
             try {
                 var milKingdoms = Engine.getKingdoms();
@@ -12530,11 +12759,11 @@ window.UI = (function () {
         html += '<div style="margin-bottom:12px; padding:8px; background:#2a2a3e; border-radius:4px;">';
         html += '<div style="color:#FFD700; font-weight:bold; margin-bottom:6px;">👶 FAMILY & DYNASTY</div>';
         html += '<input id="gm-set-sp" type="number" value="10" style="width:50px; background:#333; color:#fff; border:1px solid #666; padding:2px 4px; margin:2px;" />';
-        html += '<button onclick="var v=parseInt(document.getElementById(\'gm-set-sp\').value)||10; Player.state.skillPoints=(Player.state.skillPoints||0)+v; UI.toast(\'🧠 +\'+v+\' Skill Points (now \'+Player.state.skillPoints+\')\',\'success\')" style="margin:2px; padding:3px 8px; background:#16305d; color:#fff; border:1px solid #48a; cursor:pointer;">+SP</button> ';
-        html += '<button onclick="(function(){var p=Player.state; var spouse=Engine.getPeople().find(function(pp){return pp.id===p.spouseId}); if(!spouse){UI.toast(\'❌ Need a spouse first!\',\'error\'); return;} var sex=Math.random()>0.5?\'M\':\'F\'; var nms=typeof NAMES!==\'undefined\'?NAMES:null; var nameList=nms?(sex===\'M\'?nms.male:nms.female):[\'Child\']; var baby={id:\'p_god_\'+Date.now(), firstName:nameList[Math.floor(Math.random()*nameList.length)], lastName:p.lastName||\'Unknown\', age:0, sex:sex, alive:true, townId:p.townId, kingdomId:p.citizenshipKingdomId||\'k1\', occupation:\'none\', employerId:null, gold:0, spouseId:null, childrenIds:[], parentIds:[p.id||\'player\', spouse.id], skills:{farming:0,mining:0,crafting:0,trading:0,combat:0}, personality:{loyalty:50,ambition:50,frugality:50,intelligence:50,warmth:50,honesty:50}, needs:{food:70,shelter:70,safety:70,wealth:50,happiness:60}, quirks:[], wealthClass:\'lower\', houseType:null, workerSkill:10}; Engine.addPerson(baby); if(!p.childrenIds)p.childrenIds=[]; p.childrenIds.push(baby.id); if(!spouse.childrenIds)spouse.childrenIds=[]; spouse.childrenIds.push(baby.id); UI.toast(\'👶 Baby \'+baby.firstName+\' born! (\'+sex+\')\',\'success\');})()" style="margin:2px; padding:3px 8px; background:#5d1630; color:#fff; border:1px solid #a48; cursor:pointer;">👶 Have Baby</button> ';
-        html += '<button onclick="(function(){var p=Player.state; if(!p.childrenIds||p.childrenIds.length===0){UI.toast(\'No children\',\'error\'); return;} var aged=0; for(var i=0;i<p.childrenIds.length;i++){var kid=Engine.getPeople().find(function(pp){return pp.id===p.childrenIds[i]}); if(kid&&kid.alive&&kid.age<18){kid.age=18; if(kid.occupation===\'none\'||!kid.occupation){kid.occupation=\'merchant\'; kid.skills={farming:10,mining:10,crafting:10,trading:20,combat:10}; kid.gold=(kid.gold||0)+30;} aged++;}} UI.toast(\'🎂 Aged \'+aged+\' children to 18!\',\'success\');})()" style="margin:2px; padding:3px 8px; background:#2d5016; color:#fff; border:1px solid #4a8; cursor:pointer;">🎂 Age Kids→18</button> ';
-        html += '<button onclick="(function(){var p=Player.state; if(!p.childrenIds||p.childrenIds.length===0){UI.toast(\'No children\',\'error\'); return;} var aged=0; for(var i=0;i<p.childrenIds.length;i++){var kid=Engine.getPeople().find(function(pp){return pp.id===p.childrenIds[i]}); if(kid&&kid.alive&&kid.age<17){kid.age=17; kid._almostAdult=true; aged++;}} UI.toast(\'🎂 Aged \'+aged+\' children to 17\',\'success\');})()" style="margin:2px; padding:3px 8px; background:#4d5016; color:#fff; border:1px solid #8a8; cursor:pointer;">🎂 Age Kids→17</button> ';
-        html += '<br><button onclick="if(confirm(\'Kill your character? This will trigger inheritance/dynasty.\')){Player.handlePlayerDeath ? Player.handlePlayerDeath() : (function(){Player.state.alive=false; Player.state.health=0;})(); UI.toast(\'💀 You died. Checking inheritance...\',\'warning\');}" style="margin:2px; padding:3px 8px; background:#8b0000; color:#fff; border:1px solid #f44; cursor:pointer;">💀 Suicide (Test Inheritance)</button> ';
+        html += '<button data-action="_godAddSkillPoints" style="margin:2px; padding:3px 8px; background:#16305d; color:#fff; border:1px solid #48a; cursor:pointer;">+SP</button> ';
+        html += '<button data-action="_iife_2" style="margin:2px; padding:3px 8px; background:#5d1630; color:#fff; border:1px solid #a48; cursor:pointer;">👶 Have Baby</button> ';
+        html += '<button data-action="_godAgeChildren" style="margin:2px; padding:3px 8px; background:#2d5016; color:#fff; border:1px solid #4a8; cursor:pointer;">🎂 Age Kids→18</button> ';
+        html += '<button data-action="_godAgeChildren" style="margin:2px; padding:3px 8px; background:#4d5016; color:#fff; border:1px solid #8a8; cursor:pointer;">🎂 Age Kids→17</button> ';
+        html += '<br><button data-action="_handler_1" style="margin:2px; padding:3px 8px; background:#8b0000; color:#fff; border:1px solid #f44; cursor:pointer;">💀 Suicide (Test Inheritance)</button> ';
         try {
             var fp = Player.state;
             html += '<div style="margin-top:6px; font-size:11px; color:#aaa;">';
@@ -12578,7 +12807,7 @@ window.UI = (function () {
                 var g = guards[i];
                 var guardNameHtml;
                 if (g.personId) {
-                    guardNameHtml = '<span onclick="UI.showPersonDetail(\'' + g.personId + '\')" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;color:var(--gold);" title="View NPC details">' + (g.name || 'Guard') + '</span>';
+                    guardNameHtml = '<span data-action="showPersonDetail" data-id="${g.personId}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;color:var(--gold);" title="View NPC details">' + (g.name || 'Guard') + '</span>';
                 } else {
                     guardNameHtml = (g.name || 'Guard');
                 }
@@ -12595,13 +12824,13 @@ window.UI = (function () {
                         if (Player.townId && !Player.traveling && _gNpc.townId === Player.townId) {
                             var _gHasDoc = Player.hasSkill && (Player.hasSkill('field_medic') || Player.hasSkill('doctor'));
                             if (_gHasDoc) {
-                                html += '<button class="btn-medieval" onclick="UI.treatCompanionUI(\'guard\',\'' + g.personId + '\',\'player\')" style="font-size:0.65rem;padding:2px 6px;background:rgba(40,120,40,0.3);border-color:rgba(60,180,60,0.5);" title="Treat with medical skill">⚕️</button>';
+                                html += '<button class="btn-medieval" data-action="treatCompanionUI" data-id="guard" data-val="${g.personId}" data-type="player" style="font-size:0.65rem;padding:2px 6px;background:rgba(40,120,40,0.3);border-color:rgba(60,180,60,0.5);" title="Treat with medical skill">⚕️</button>';
                             }
-                            html += '<button class="btn-medieval" onclick="UI.treatCompanionUI(\'guard\',\'' + g.personId + '\',\'hospital\')" style="font-size:0.65rem;padding:2px 6px;background:rgba(40,80,160,0.3);border-color:rgba(60,120,220,0.5);" title="Take to hospital">🏥</button>';
+                            html += '<button class="btn-medieval" data-action="treatCompanionUI" data-id="guard" data-val="${g.personId}" data-type="hospital" style="font-size:0.65rem;padding:2px 6px;background:rgba(40,80,160,0.3);border-color:rgba(60,120,220,0.5);" title="Take to hospital">🏥</button>';
                         }
                     }
                 }
-                html += '<button class="btn-medieval" onclick="UI.dismissGuardUI(\'' + g.id + '\')" style="font-size:0.7rem;padding:3px 8px;">\u274C Dismiss</button>';
+                html += '<button class="btn-medieval" data-action="dismissGuardUI" data-id="${g.id}" style="font-size:0.7rem;padding:3px 8px;">\u274C Dismiss</button>';
                 html += '</div></div>';
             }
         }else {
@@ -12621,7 +12850,7 @@ window.UI = (function () {
             var inTown = !!Player.townId && !Player.traveling;
             var btnStyle = (canAfford && inTown) ? 'background:#2a5a2a;border-color:#4a8a4a;' : 'opacity:0.5;cursor:not-allowed;';
             var btnTitle = !inTown ? 'Must be in a town' : (!canAfford ? 'Need ' + cost + 'g' : 'Hire a guard for ' + cost + 'g');
-            html += ' <button class="btn-medieval" onclick="UI.hireGuardUI()" style="font-size:0.75rem;padding:4px 10px;' + btnStyle + '" title="' + btnTitle + '">\uD83D\uDEE1\uFE0F Hire Guard (' + cost + 'g)</button>';
+            html += ' <button class="btn-medieval" data-action="hireGuardUI" style="font-size:0.75rem;padding:4px 10px;' + btnStyle + '" title="' + btnTitle + '">\uD83D\uDEE1\uFE0F Hire Guard (' + cost + 'g)</button>';
         }
         html += '</div>';
         html += '</div>';
@@ -13977,12 +14206,12 @@ window.UI = (function () {
         ];
         html += '<div class="wa-tabs">';
         for (var i = 0; i < tabs.length; i++) {
-            html += '<div class="wa-tab' + (tabs[i].id === tab ? ' wa-tab-active' : '') + '" onclick="window._waTab=\'' + tabs[i].id + '\';UI.openWorldAnalytics()">' + tabs[i].label + '</div>';
+            html += '<div class="wa-tab' + (tabs[i].id === tab ? ' wa-tab-active' : '') + '" data-action="_setWaTab" data-id="${tabs[i].id}">' + tabs[i].label + '</div>';
         }
         var autoOn = !!window._waAutoRefresh;
         html += '<div style="margin-left:auto;display:flex;align-items:center;gap:4px;">';
-        html += '<button onclick="UI.openWorldAnalytics()" style="padding:4px 8px;background:#2a2a3e;color:#4fc3f7;border:1px solid #4fc3f7;border-radius:3px;cursor:pointer;font-size:0.75rem;">🔄 Refresh</button>';
-        html += '<button onclick="window._waAutoRefresh=!window._waAutoRefresh;UI.openWorldAnalytics()" style="padding:4px 8px;background:' + (autoOn ? '#2d5016' : '#2a2a3e') + ';color:' + (autoOn ? '#4f4' : '#aaa') + ';border:1px solid ' + (autoOn ? '#4a8' : '#666') + ';border-radius:3px;cursor:pointer;font-size:0.75rem;">' + (autoOn ? '⏸️ Auto ON' : '▶️ Auto OFF') + '</button>';
+        html += '<button data-action="openWorldAnalytics" style="padding:4px 8px;background:#2a2a3e;color:#4fc3f7;border:1px solid #4fc3f7;border-radius:3px;cursor:pointer;font-size:0.75rem;">🔄 Refresh</button>';
+        html += '<button data-action="_setWaTabAndOpen" style="padding:4px 8px;background:' + (autoOn ? '#2d5016' : '#2a2a3e') + ';color:' + (autoOn ? '#4f4' : '#aaa') + ';border:1px solid ' + (autoOn ? '#4a8' : '#666') + ';border-radius:3px;cursor:pointer;font-size:0.75rem;">' + (autoOn ? '⏸️ Auto ON' : '▶️ Auto OFF') + '</button>';
         html += '</div></div>';
 
         html += '<div class="wa-panel">';

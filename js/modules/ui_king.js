@@ -57,7 +57,7 @@
         for (var _ti = 0; _ti < tabs.length; _ti++) {
             var _tab = tabs[_ti];
             var _active = _kingTab === _tab.id;
-            html += '<button class="btn-medieval" onclick="UI.openKingPanel(\'' + _tab.id + '\')" style="flex:1;min-width:60px;font-size:0.72rem;padding:5px 4px;' + (_active ? 'background:rgba(212,168,67,0.35) !important;border-color:rgba(212,168,67,0.6) !important;color:#d4a843;' : '') + '">' + _tab.icon + ' ' + _tab.label + '</button>';
+            html += '<button class="btn-medieval" data-action="openKingPanel" data-id="' + _tab.id + '" style="flex:1;min-width:60px;font-size:0.72rem;padding:5px 4px;' + (_active ? 'background:rgba(212,168,67,0.35) !important;border-color:rgba(212,168,67,0.6) !important;color:#d4a843;' : '') + '">' + _tab.icon + ' ' + _tab.label + '</button>';
         }
         html += '</div>';
 
@@ -70,7 +70,7 @@
 
         html += '</div>';
 
-        openModal('👑 Royal Court', html, '<button class="btn-medieval" onclick="UI.closeModal();">Close</button>');
+        openModal('👑 Royal Court', html, '<button class="btn-medieval" data-action="closeModal">Close</button>');
     }
 
     function _riskMeter(value, label, color) {
@@ -162,7 +162,7 @@
         html += '<span style="font-size:0.75rem;color:#d4c9a0;">25%</span>';
         html += '<span id="_kingTaxVal" style="font-size:0.85rem;color:#e0c58a;font-weight:bold;min-width:35px;text-align:right;">' + curTax + '%</span>';
         html += '</div>';
-        html += '<button class="btn-medieval" onclick="(function(){var v=parseInt(document.getElementById(\'_kingTaxSlider\').value)/100;var r=Player.kingSetTaxRate(v);UI.toast(r.message,r.success?\'success\':\'warning\');UI.openKingPanel(\'decisions\');})()" style="margin-top:6px;font-size:0.72rem;padding:4px 12px;">📜 Set Tax Rate</button>';
+        html += '<button class="btn-medieval" data-action="kingSetTaxRate" style="margin-top:6px;font-size:0.72rem;padding:4px 12px;">📜 Set Tax Rate</button>';
         html += '</div>';
 
         // Laws
@@ -182,9 +182,9 @@
             if (_sl.desc) html += '<div style="font-size:0.65rem;color:#888;">' + _sl.desc + '</div>';
             html += '</div>';
             if (_isActive) {
-                html += '<button class="btn-medieval" onclick="(function(){var r=Player.kingRepealLaw(\'' + _sl.id + '\');UI.toast(r.message,r.success?\'success\':\'warning\');UI.openKingPanel(\'decisions\');})()" style="font-size:0.65rem;padding:2px 8px;background:rgba(196,78,82,0.3) !important;border-color:rgba(196,78,82,0.5) !important;">Repeal</button>';
+                html += '<button class="btn-medieval" data-action="kingRepealLaw" data-id="' + _sl.id + '" style="font-size:0.65rem;padding:2px 8px;background:rgba(196,78,82,0.3) !important;border-color:rgba(196,78,82,0.5) !important;">Repeal</button>';
             } else {
-                html += '<button class="btn-medieval" onclick="(function(){var r=Player.kingEnactLaw(\'' + _sl.id + '\');UI.toast(r.message,r.success?\'success\':\'warning\');UI.openKingPanel(\'decisions\');})()" style="font-size:0.65rem;padding:2px 8px;">Enact</button>';
+                html += '<button class="btn-medieval" data-action="kingEnactLaw" data-id="' + _sl.id + '" style="font-size:0.65rem;padding:2px 8px;">Enact</button>';
             }
             html += '</div>';
         }
@@ -204,9 +204,9 @@
                 html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 6px;margin-bottom:2px;background:rgba(0,0,0,0.1);border-radius:4px;">';
                 html += '<span style="font-size:0.75rem;color:' + (_atWar ? '#c44e52' : '#d4c9a0') + ';">' + (_atWar ? '⚔️' : '🤝') + ' ' + _tgt.name + '</span>';
                 if (_atWar) {
-                    html += '<button class="btn-medieval" onclick="(function(){var r=Player.kingSuePeace(\'' + _tgt.id + '\');UI.toast(r.message,r.success?\'success\':\'warning\');UI.openKingPanel(\'decisions\');})()" style="font-size:0.65rem;padding:2px 8px;background:rgba(93,173,226,0.3) !important;border-color:rgba(93,173,226,0.5) !important;">🕊️ Sue Peace</button>';
+                    html += '<button class="btn-medieval" data-action="kingSuePeace" data-id="' + _tgt.id + '" style="font-size:0.65rem;padding:2px 8px;background:rgba(93,173,226,0.3) !important;border-color:rgba(93,173,226,0.5) !important;">🕊️ Sue Peace</button>';
                 } else {
-                    html += '<button class="btn-medieval" onclick="(function(){var r=Player.kingDeclareWar(\'' + _tgt.id + '\');UI.toast(r.message,r.success?\'success\':\'warning\');UI.openKingPanel(\'decisions\');})()" style="font-size:0.65rem;padding:2px 8px;background:rgba(196,78,82,0.3) !important;border-color:rgba(196,78,82,0.5) !important;">⚔️ Declare War</button>';
+                    html += '<button class="btn-medieval" data-action="kingDeclareWar" data-id="' + _tgt.id + '" style="font-size:0.65rem;padding:2px 8px;background:rgba(196,78,82,0.3) !important;border-color:rgba(196,78,82,0.5) !important;">⚔️ Declare War</button>';
                 }
                 html += '</div>';
             }
@@ -219,8 +219,8 @@
         var _feastReady = Engine.getDay() - (ks.feastHeldDay || 0) >= 30;
         var _courtReady = Engine.getDay() - (ks.courtHeldDay || 0) >= 30;
         html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">';
-        html += '<button class="btn-medieval" onclick="(function(){var r=Player.kingHostFeast();UI.toast(r.message,r.success?\'success\':\'warning\');UI.openKingPanel(\'decisions\');})()" style="font-size:0.72rem;padding:4px 10px;' + (!_feastReady ? 'opacity:0.5;' : '') + '" ' + (!_feastReady ? 'disabled' : '') + '>🎉 Host Feast (500g)</button>';
-        html += '<button class="btn-medieval" onclick="(function(){var r=Player.kingHoldCourt();UI.toast(r.message,r.success?\'success\':\'warning\');UI.openKingPanel(\'decisions\');})()" style="font-size:0.72rem;padding:4px 10px;' + (!_courtReady ? 'opacity:0.5;' : '') + '" ' + (!_courtReady ? 'disabled' : '') + '>🏰 Hold Court</button>';
+        html += '<button class="btn-medieval" data-action="kingHostFeast" style="font-size:0.72rem;padding:4px 10px;' + (!_feastReady ? 'opacity:0.5;' : '') + '" ' + (!_feastReady ? 'disabled' : '') + '>🎉 Host Feast (500g)</button>';
+        html += '<button class="btn-medieval" data-action="kingHoldCourt" style="font-size:0.72rem;padding:4px 10px;' + (!_courtReady ? 'opacity:0.5;' : '') + '" ' + (!_courtReady ? 'disabled' : '') + '>🏰 Hold Court</button>';
         html += '</div>';
         if (!_feastReady) html += '<div style="font-size:0.65rem;color:#888;margin-top:4px;">Feast available in ' + (30 - (Engine.getDay() - (ks.feastHeldDay || 0))) + ' days</div>';
         if (!_courtReady) html += '<div style="font-size:0.65rem;color:#888;">Court available in ' + (30 - (Engine.getDay() - (ks.courtHeldDay || 0))) + ' days</div>';
@@ -356,7 +356,7 @@
         html += '<li>Start with only 50g in a random foreign town</li>';
         html += '<li>Keep: skills, achievements, family</li>';
         html += '</ul>';
-        html += '<button class="btn-medieval" onclick="UI._confirmKingFlee()" style="background:rgba(139,69,19,0.4) !important;border-color:rgba(139,69,19,0.6) !important;font-size:0.75rem;padding:5px 14px;">💨 Flee the Kingdom</button>';
+        html += '<button class="btn-medieval" data-action="_confirmKingFlee" style="background:rgba(139,69,19,0.4) !important;border-color:rgba(139,69,19,0.6) !important;font-size:0.75rem;padding:5px 14px;">💨 Flee the Kingdom</button>';
         html += '</div>';
 
         return html;
@@ -367,8 +367,8 @@
         html += '<div style="font-size:1rem;color:#c44e52;margin-bottom:10px;">⚠️ Are you absolutely sure?</div>';
         html += '<div style="font-size:0.8rem;color:#ddd;margin-bottom:12px;">You will abandon your crown and everything you\'ve built. There is no going back.</div>';
         html += '<div style="display:flex;gap:8px;justify-content:center;">';
-        html += '<button class="btn-medieval" onclick="(function(){var r=Player.kingFleeKingdom();UI.closeModal();UI.toast(r.message,r.success?\'success\':\'warning\');})()" style="background:rgba(196,78,82,0.4) !important;border-color:rgba(196,78,82,0.6) !important;">💨 Yes, Flee!</button>';
-        html += '<button class="btn-medieval" onclick="UI.openKingPanel(\'threats\')">Cancel</button>';
+        html += '<button class="btn-medieval" data-action="kingFleeConfirm" style="background:rgba(196,78,82,0.4) !important;border-color:rgba(196,78,82,0.6) !important;">💨 Yes, Flee!</button>';
+        html += '<button class="btn-medieval" data-action="openKingPanel" data-type="threats">Cancel</button>';
         html += '</div></div>';
         openModal('💨 Confirm Escape', html, '');
     }
@@ -386,19 +386,19 @@
 
         // Fight
         html += '<div style="background:rgba(196,78,82,0.15);border:1px solid rgba(196,78,82,0.3);border-radius:8px;padding:10px;margin-bottom:8px;">';
-        html += '<button class="btn-medieval" onclick="UI._resolveRevolt(\'' + kingdom.id + '\',\'fight\')" style="width:100%;font-size:0.85rem;padding:8px;background:rgba(196,78,82,0.3) !important;border-color:rgba(196,78,82,0.5) !important;">⚔️ Fight the Rebels</button>';
+        html += '<button class="btn-medieval" data-action="_resolveRevolt" data-id="' + kingdom.id + '" data-val="fight" style="width:100%;font-size:0.85rem;padding:8px;background:rgba(196,78,82,0.3) !important;border-color:rgba(196,78,82,0.5) !important;">⚔️ Fight the Rebels</button>';
         html += '<div style="font-size:0.7rem;color:#c44e52;margin-top:4px;">Survival chance: ~' + fightChance + '%. If you win, the rebellion is crushed. If you lose, you die.</div>';
         html += '</div>';
 
         // Flee
         html += '<div style="background:rgba(139,69,19,0.15);border:1px solid rgba(139,69,19,0.3);border-radius:8px;padding:10px;margin-bottom:8px;">';
-        html += '<button class="btn-medieval" onclick="UI._resolveRevolt(\'' + kingdom.id + '\',\'flee\')" style="width:100%;font-size:0.85rem;padding:8px;background:rgba(139,69,19,0.3) !important;border-color:rgba(139,69,19,0.5) !important;">💨 Flee the Kingdom</button>';
+        html += '<button class="btn-medieval" data-action="_resolveRevolt" data-id="' + kingdom.id + '" data-val="flee" style="width:100%;font-size:0.85rem;padding:8px;background:rgba(139,69,19,0.3) !important;border-color:rgba(139,69,19,0.5) !important;">💨 Flee the Kingdom</button>';
         html += '<div style="font-size:0.7rem;color:#d4a843;margin-top:4px;">Guaranteed survival. You lose everything and start a new life under a false name with 50g.</div>';
         html += '</div>';
 
         // Surrender
         html += '<div style="background:rgba(0,0,0,0.15);border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:10px;">';
-        html += '<button class="btn-medieval" onclick="UI._resolveRevolt(\'' + kingdom.id + '\',\'surrender\')" style="width:100%;font-size:0.85rem;padding:8px;">🏳️ Surrender</button>';
+        html += '<button class="btn-medieval" data-action="_resolveRevolt" data-id="' + kingdom.id + '" data-val="surrender" style="width:100%;font-size:0.85rem;padding:8px;">🏳️ Surrender</button>';
         html += '<div style="font-size:0.7rem;color:#888;margin-top:4px;">Game over. The rebels execute you publicly.</div>';
         html += '</div>';
 
@@ -469,7 +469,7 @@
             html += '<span style="font-size:0.8rem;color:' + (_isPlayer ? '#d4a843' : '#d4c9a0') + ';">' + (_isPlayer ? '⭐ ' : '') + (_ecPerson.firstName || '') + ' ' + (_ecPerson.lastName || '') + '</span>';
             html += '<span style="font-size:0.68rem;color:#888;margin-left:6px;">' + rankName + '</span>';
             html += '</div>';
-            html += '<button class="btn-medieval" onclick="(function(){Engine._resolvePendingElection(Engine.findKingdom(\'' + kingdom.id + '\'),\'' + _ec.id + '\');UI.closeModal();UI.toast(\'Your vote has been cast.\',\'success\');})()" style="font-size:0.68rem;padding:3px 10px;">Vote</button>';
+            html += '<button class="btn-medieval" data-action="kingElectionVote" data-kingdom="' + kingdom.id + '" data-id="' + _ec.id + '" style="font-size:0.68rem;padding:3px 10px;">Vote</button>';
             html += '</div>';
             // Score display
             html += '<div style="font-size:0.65rem;color:#888;margin-top:3px;">Influence: Rank ' + _ecRank + ' | Gold: ' + formatGold(_ecPerson.gold || 0) + '</div>';
@@ -478,7 +478,7 @@
         html += '</div>';
 
         html += '</div>';
-        openModal('👑 Royal Election', html, '<button class="btn-medieval" onclick="(function(){Engine._resolvePendingElection(Engine.findKingdom(\'' + kingdom.id + '\'),null);UI.closeModal();UI.toast(\'You abstained from voting.\',\'warning\');})()">Abstain</button>');
+        openModal('👑 Royal Election', html, '<button class="btn-medieval" data-action="kingElectionAbstain" data-kingdom="' + kingdom.id + '">Abstain</button>');
     }
     // Register functions on UI namespace
     UI.showKingButton = showKingButton;
@@ -488,5 +488,18 @@
     UI._confirmKingFlee = _confirmKingFlee;
     UI._showRevoltUI = _showRevoltUI;
     UI._resolveRevolt = _resolveRevolt;
+
+
+    // --- Delegated action handlers ---
+    UI.registerAction('kingSetTaxRate', function() { var v = parseInt(document.getElementById('_kingTaxSlider').value) / 100; var r = Player.kingSetTaxRate(v); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
+    UI.registerAction('kingRepealLaw', function(_t, d) { var r = Player.kingRepealLaw(d.id); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
+    UI.registerAction('kingEnactLaw', function(_t, d) { var r = Player.kingEnactLaw(d.id); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
+    UI.registerAction('kingSuePeace', function(_t, d) { var r = Player.kingSuePeace(d.id); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
+    UI.registerAction('kingDeclareWar', function(_t, d) { var r = Player.kingDeclareWar(d.id); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
+    UI.registerAction('kingHostFeast', function() { var r = Player.kingHostFeast(); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
+    UI.registerAction('kingHoldCourt', function() { var r = Player.kingHoldCourt(); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
+    UI.registerAction('kingFleeConfirm', function() { var r = Player.kingFleeKingdom(); UI.closeModal(); UI.toast(r.message, r.success ? 'success' : 'warning'); });
+    UI.registerAction('kingElectionVote', function(_t, d) { Engine._resolvePendingElection(Engine.findKingdom(d.kingdom), d.id); UI.closeModal(); UI.toast('Your vote has been cast.', 'success'); });
+    UI.registerAction('kingElectionAbstain', function(_t, d) { Engine._resolvePendingElection(Engine.findKingdom(d.kingdom), null); UI.closeModal(); UI.toast('You abstained from voting.', 'warning'); });
 
 })(window.UI);

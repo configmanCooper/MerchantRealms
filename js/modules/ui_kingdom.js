@@ -108,14 +108,14 @@
             if (lawsHtml) html += '<div class="kingdom-detail-row"><span class="detail-label">⚖️ Laws:</span> ' + lawsHtml + '</div>';
             html += '<div class="kingdom-detail-row"><span class="detail-label">🌐 Relations:</span> ' + relHtml + '</div>';
             html += '</div>';
-            html += '<button class="btn-medieval btn-kingdom-select" onclick="UI.selectKingdom(\'' + k.id + '\')">Select Kingdom</button>';
+            html += '<button class="btn-medieval btn-kingdom-select" data-action="selectKingdom" data-id="' + k.id + '">Select Kingdom</button>';
             html += '</div>';
         }
 
         html += '</div>';
         html += '<div style="text-align:center;margin-top:18px;">';
-        html += '<button class="btn-medieval" onclick="UI.regenerateWorld()" style="background:linear-gradient(135deg,#5a3a1a,#7a4a2a);font-size:1.1em;padding:10px 28px;">🔄 Regenerate World</button>';
-        html += ' <button class="btn-medieval" onclick="UI.backToMainMenu()" style="background:linear-gradient(135deg,#4a2a1a,#6a3a2a);font-size:1.1em;padding:10px 28px;">🏠 Back to Main Menu</button>';
+        html += '<button class="btn-medieval" data-action="regenerateWorld" style="background:linear-gradient(135deg,#5a3a1a,#7a4a2a);font-size:1.1em;padding:10px 28px;">🔄 Regenerate World</button>';
+        html += ' <button class="btn-medieval" data-action="backToMainMenu" style="background:linear-gradient(135deg,#4a2a1a,#6a3a2a);font-size:1.1em;padding:10px 28px;">🏠 Back to Main Menu</button>';
         html += '</div>';
         content.innerHTML = html;
         window._kingdomSelectCallback = onComplete;
@@ -156,8 +156,8 @@
         let html = '<h1 class="kingdom-select-title">Choose Your Starting Town</h1>';
         html += '<p class="kingdom-select-subtitle">in ' + (kingdom ? kingdom.name : 'Unknown Kingdom') + '</p>';
         html += '<div class="town-selection-buttons">';
-        html += '<button class="btn-medieval btn-back" onclick="UI.showKingdomSelection(window._kingdomSelectCallback)">← Back to Kingdoms</button>';
-        html += '<button class="btn-medieval btn-random-town" onclick="UI.randomTown(\'' + kingdomId + '\')">🎲 Random Town</button>';
+        html += '<button class="btn-medieval btn-back" data-action="backToKingdomSelect">← Back to Kingdoms</button>';
+        html += '<button class="btn-medieval btn-random-town" data-action="randomTown" data-id="' + kingdomId + '">🎲 Random Town</button>';
         html += '</div>';
         html += '<div class="town-cards">';
 
@@ -211,7 +211,7 @@
             if (town.isIsland && connTowns.length === 0) html += '<div class="town-detail-row" style="color:#e74c3c;">⚠️ Sea Access Only — costly start!</div>';
             if (buildingNames.length > 0) html += '<div class="town-detail-row">🏗️ Buildings: ' + buildingNames.join(', ') + '</div>';
             html += '</div>';
-            html += '<button class="btn-medieval btn-town-select" onclick="UI.selectTown(\'' + town.id + '\')">Start Here</button>';
+            html += '<button class="btn-medieval btn-town-select" data-action="selectTown" data-id="' + town.id + '">Start Here</button>';
             html += '</div>';
         }
 
@@ -236,14 +236,14 @@
         let html = '<h1 class="kingdom-select-title">Choose Your Origin</h1>';
         html += '<p class="kingdom-select-subtitle">Starting in ' + townName + '</p>';
         html += '<div class="town-selection-buttons">';
-        html += '<button class="btn-medieval btn-back" onclick="UI.backToTownSelection()">← Back to Towns</button>';
+        html += '<button class="btn-medieval btn-back" data-action="backToTownSelection">← Back to Towns</button>';
         html += '</div>';
         html += '<div class="start-scenario-grid">';
 
         for (let i = 0; i < starts.length; i++) {
             const s = starts[i];
             const isUnique = s.difficulty === 'Unique';
-            html += '<div class="start-scenario-card" data-start-id="' + s.id + '" onclick="UI.selectStartScenario(\'' + s.id + '\')" style="border-color:' + s.color + '">';
+            html += '<div class="start-scenario-card" data-start-id="' + s.id + '" data-action="selectStartScenario" data-id="' + s.id + '" style="border-color:' + s.color + '">';
             html += '<div class="start-scenario-header" style="background:' + s.color + ';color:#fff">';
             html += '<span class="start-icon">' + s.icon + '</span>';
             html += '<span class="start-name">' + s.name + '</span>';
@@ -298,7 +298,7 @@
                 }
                 for (var ki = 0; ki < warKingdoms.length; ki++) {
                     var k = warKingdoms[ki];
-                    optHtml += '<button class="btn-medieval" style="margin:4px;background:' + k.color + '" onclick="UI.selectMilitaryKingdom(\'' + k.id + '\')">' + k.name + ' (at war)</button>';
+                    optHtml += '<button class="btn-medieval" style="margin:4px;background:' + k.color + '" data-action="selectMilitaryKingdom" data-id="' + k.id + '">' + k.name + ' (at war)</button>';
                 }
                 const milOpts = document.getElementById('militaryKingdomOptions');
                 if (milOpts) milOpts.innerHTML = optHtml;
@@ -316,7 +316,7 @@
                 btnDiv.id = 'startConfirmDiv';
                 btnDiv.style.textAlign = 'center';
                 btnDiv.style.marginTop = '20px';
-                btnDiv.innerHTML = '<button id="btnConfirmStart" class="btn-medieval" style="font-size:1.3em;padding:12px 36px;background:linear-gradient(135deg,#8B6914,#DAA520);border:2px solid #FFD700;" onclick="UI.confirmStartScenario()">⚔️ Begin Your Journey ⚔️</button>';
+                btnDiv.innerHTML = '<button id="btnConfirmStart" class="btn-medieval" style="font-size:1.3em;padding:12px 36px;background:linear-gradient(135deg,#8B6914,#DAA520);border:2px solid #FFD700;" data-action="confirmStartScenario">⚔️ Begin Your Journey ⚔️</button>';
                 content.appendChild(btnDiv);
             }
         }
@@ -327,7 +327,7 @@
         var btns = document.querySelectorAll('#militaryKingdomOptions button');
         for (var i = 0; i < btns.length; i++) {
             btns[i].style.border = '';
-            if (btns[i].getAttribute('onclick') && btns[i].getAttribute('onclick').indexOf(kingdomId) !== -1) {
+            if (btns[i].dataset && btns[i].dataset.id === kingdomId) {
                 btns[i].style.border = '3px solid #FFD700';
             }
         }
@@ -454,7 +454,7 @@
 
                 html += '<div class="family-member-card">';
                 html += '<div class="family-member-header">';
-                html += '<span><a href="#" style="color:var(--gold);text-decoration:underline;cursor:pointer;" onclick="event.preventDefault();var p=Engine.findPerson(\'' + m.npcId + '\');if(p)UI.showPersonDetail(p);">' + roleIcon + ' ' + m.name + '</a></span>';
+                html += '<span><a href="#" style="color:var(--gold);text-decoration:underline;cursor:pointer;" data-action="showPersonLink" data-id="' + m.npcId + '">' + roleIcon + ' ' + m.name + '</a></span>';
                 html += '<span class="family-role-badge">' + roleLabel + '</span>';
                 html += '</div>';
                 html += '<div class="family-member-body">';
@@ -491,25 +491,25 @@
                         html += '<div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap;">';
                         var _fmHasDoc = Player.hasSkill && (Player.hasSkill('field_medic') || Player.hasSkill('doctor'));
                         if (_fmHasDoc) {
-                            html += '<button class="btn-action btn-small" style="background:rgba(40,120,40,0.4);" onclick="UI.treatCompanionUI(\'family\',\'' + m.npcId + '\',\'player\')">⚕️ Treat</button>';
+                            html += '<button class="btn-action btn-small" style="background:rgba(40,120,40,0.4);" data-action="treatCompanionUI" data-type="family" data-id="' + m.npcId + '" data-val="player">⚕️ Treat</button>';
                         }
-                        html += '<button class="btn-action btn-small" style="background:rgba(40,80,160,0.4);" onclick="UI.treatCompanionUI(\'family\',\'' + m.npcId + '\',\'hospital\')">🏥 Hospital</button>';
+                        html += '<button class="btn-action btn-small" style="background:rgba(40,80,160,0.4);" data-action="treatCompanionUI" data-type="family" data-id="' + m.npcId + '" data-val="hospital">🏥 Hospital</button>';
                         html += '</div>';
                     }
                 }
 
                 html += '<div class="family-actions" style="margin-top:6px;">';
-                html += '<button class="btn-action btn-small" onclick="UI.familyAction(\'money\',\'' + m.npcId + '\')">💰 Ask Money</button>';
-                html += '<button class="btn-action btn-small" onclick="UI.familyAction(\'work\',\'' + m.npcId + '\')">🔨 Ask Work</button>';
-                html += '<button class="btn-action btn-small" onclick="UI.familyAction(\'teach\',\'' + m.npcId + '\')">📖 Teach</button>';
-                html += '<button class="btn-action btn-small" onclick="UI.familyAction(\'connections\',\'' + m.npcId + '\')">🤝 Connections</button>';
-                html += '<button class="btn-action btn-small" onclick="UI.familyAction(\'gift\',\'' + m.npcId + '\')">🎁 Gift</button>';
-                html += '<button class="btn-action btn-small" onclick="UI.giveFamilyGoldDialog(\'' + m.npcId + '\',\'' + m.name.replace(/'/g, "\\'") + '\')">💰 Give Gold</button>';
-                html += '<button class="btn-action btn-small" onclick="UI.giveFamilyItemDialog(\'' + m.npcId + '\',\'' + m.name.replace(/'/g, "\\'") + '\')">📦 Give Item</button>';
-                html += '<button class="btn-action btn-small" onclick="UI.familyAction(\'invite\',\'' + m.npcId + '\')">🏠 Invite</button>';
-                html += '<button class="btn-action btn-small" onclick="UI.familyAction(\'confide\',\'' + m.npcId + '\')">💬 Confide</button>';
+                html += '<button class="btn-action btn-small" data-action="familyAction" data-type="money" data-id="' + m.npcId + '">💰 Ask Money</button>';
+                html += '<button class="btn-action btn-small" data-action="familyAction" data-type="work" data-id="' + m.npcId + '">🔨 Ask Work</button>';
+                html += '<button class="btn-action btn-small" data-action="familyAction" data-type="teach" data-id="' + m.npcId + '">📖 Teach</button>';
+                html += '<button class="btn-action btn-small" data-action="familyAction" data-type="connections" data-id="' + m.npcId + '">🤝 Connections</button>';
+                html += '<button class="btn-action btn-small" data-action="familyAction" data-type="gift" data-id="' + m.npcId + '">🎁 Gift</button>';
+                html += '<button class="btn-action btn-small" data-action="giveFamilyGoldDialog" data-id="' + m.npcId + '" data-val="' + m.name.replace(/'/g, "\\'") + '">💰 Give Gold</button>';
+                html += '<button class="btn-action btn-small" data-action="giveFamilyItemDialog" data-id="' + m.npcId + '" data-val="' + m.name.replace(/'/g, "\\'") + '">📦 Give Item</button>';
+                html += '<button class="btn-action btn-small" data-action="familyAction" data-type="invite" data-id="' + m.npcId + '">🏠 Invite</button>';
+                html += '<button class="btn-action btn-small" data-action="familyAction" data-type="confide" data-id="' + m.npcId + '">💬 Confide</button>';
                 if (m.role === 'brother' || m.role === 'sister') {
-                    html += '<button class="btn-action btn-small" onclick="UI.familyAction(\'business\',\'' + m.npcId + '\')">🏪 Business</button>';
+                    html += '<button class="btn-action btn-small" data-action="familyAction" data-type="business" data-id="' + m.npcId + '">🏪 Business</button>';
                 }
                 if (m.role === 'spouse' || m.npcId === Player.spouseId) {
                     html += '<button class="btn-action btn-small" style="background:#5a2a5a;" data-action="openSpousePanel">💍 Spouse Panel</button>';
@@ -532,7 +532,7 @@
                 html += '<div class="family-member-card" style="opacity:0.6;border-left:3px solid #555;">';
                 html += '<div class="family-member-header">';
                 if (dperson && !isSynthetic) {
-                    html += '<span style="color:#999;"><a href="#" style="color:#999;text-decoration:underline;cursor:pointer;" onclick="event.preventDefault();var p=Engine.findPerson(\'' + dm.npcId + '\');if(p)UI.showPersonDetail(p);">' + roleIcon + ' ' + dm.name + '</a></span>';
+                    html += '<span style="color:#999;"><a href="#" style="color:#999;text-decoration:underline;cursor:pointer;" data-action="showPersonLink" data-id="' + dm.npcId + '">' + roleIcon + ' ' + dm.name + '</a></span>';
                 } else {
                     html += '<span style="color:#999;">' + roleIcon + ' ' + dm.name + '</span>';
                 }
@@ -552,10 +552,10 @@
         }
 
         html += '<div style="text-align:center;margin-top:10px;">';
-        html += '<button class="btn-action btn-small" onclick="UI.familyAction(\'dinner\')">🍽️ Family Dinner</button>';
-        html += '<button class="btn-action btn-small" onclick="UI.familyAction(\'celebration\')">🎉 Celebration</button>';
-        html += '<button class="btn-action btn-small" onclick="UI.familyAction(\'advice\')">💡 Ask Advice</button>';
-        html += '<button class="btn-action btn-small" onclick="UI.familyAction(\'caretake\')">🏡 Caretake</button>';
+        html += '<button class="btn-action btn-small" data-action="familyAction" data-type="dinner">🍽️ Family Dinner</button>';
+        html += '<button class="btn-action btn-small" data-action="familyAction" data-type="celebration">🎉 Celebration</button>';
+        html += '<button class="btn-action btn-small" data-action="familyAction" data-type="advice">💡 Ask Advice</button>';
+        html += '<button class="btn-action btn-small" data-action="familyAction" data-type="caretake">🏡 Caretake</button>';
         html += '</div>';
 
         // Marriage proposals section
@@ -568,8 +568,8 @@
                     var pr = proposals[pi];
                     html += '<div style="margin-bottom:8px;padding:6px;background:rgba(255,255,255,0.05);border-radius:4px;">';
                     html += '<div style="font-size:0.85rem;color:#ddd;">' + (pr.eliteMerchantName || '?') + ' proposes: ' + (pr.eliteChildName || '?') + ' wed ' + (pr.playerChildName || '?') + '</div>';
-                    html += '<button class="btn-action btn-small" onclick="UI.respondToMarriageProposal(\'' + pr.id + '\', true)">✅ Accept</button> ';
-                    html += '<button class="btn-action btn-small" style="background:rgba(200,60,50,0.3);" onclick="UI.respondToMarriageProposal(\'' + pr.id + '\', false)">❌ Reject</button>';
+                    html += '<button class="btn-action btn-small" data-action="respondToMarriageProposal" data-id="' + pr.id + '" data-val="true">✅ Accept</button> ';
+                    html += '<button class="btn-action btn-small" style="background:rgba(200,60,50,0.3);" data-action="respondToMarriageProposal" data-id="' + pr.id + '" data-val="false">❌ Reject</button>';
                     html += '</div>';
                 }
                 html += '</div>';
@@ -596,7 +596,7 @@
                             html += '<option value="' + candidates[mi].id + '">' + candidates[mi].firstName + ' ' + (candidates[mi].lastName || '') + ' (age ' + candidates[mi].age + ')</option>';
                         }
                         html += '</select> ';
-                        html += '<button class="btn-action btn-small" onclick="(function(){ var sel=document.getElementById(\'marriageTarget_' + ci + '\'); if(sel){ var r=Player.arrangeChildMarriage(\'' + eligibleChildren[ci] + '\', sel.value); UI.toast(r.message, r.success?\'success\':\'error\'); if(r.success) UI.openFamilyPanel(); } })()">💒 Arrange</button>';
+                        html += '<button class="btn-action btn-small" data-action="arrangeChildMarriage" data-id="' + eligibleChildren[ci] + '" data-idx="' + ci + '">💒 Arrange</button>';
                         html += '</div>';
                     } else {
                         html += '<div style="margin-bottom:6px;font-size:0.8rem;color:#888;">' + childPerson.firstName + ': No eligible candidates nearby</div>';
@@ -651,12 +651,12 @@
         for (var i = 0; i < amounts.length; i++) {
             var amt = amounts[i];
             var disabled = Player.gold < amt ? ' disabled style="opacity:0.4;padding:4px 10px;font-size:0.8rem;"' : ' style="padding:4px 10px;font-size:0.8rem;"';
-            html += '<button class="btn-medieval"' + disabled + ' onclick="(function(){ var r=Player.giveFamilyGold(\'' + npcId + '\',' + amt + '); UI.toast(r.message, r.success?\'success\':\'error\'); if(r.success){ UI.closeModal(); UI.openFamilyPanel(); } })()">' + amt + 'g</button>';
+            html += '<button class="btn-medieval"' + disabled + ' data-action="giveFamilyGoldPreset" data-id="' + npcId + '" data-val="' + amt + '">' + amt + 'g</button>';
         }
         html += '</div>';
         html += '<div style="display:flex;justify-content:center;gap:6px;align-items:center;">';
         html += '<input type="number" id="familyGoldCustom" min="1" max="' + Player.gold + '" placeholder="Custom amount" style="width:120px;padding:4px;font-size:0.85rem;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:4px;">';
-        html += '<button class="btn-medieval" style="padding:4px 10px;font-size:0.8rem;" onclick="(function(){ var el=document.getElementById(\'familyGoldCustom\'); if(!el)return; var r=Player.giveFamilyGold(\'' + npcId + '\',parseInt(el.value)); UI.toast(r.message, r.success?\'success\':\'error\'); if(r.success){ UI.closeModal(); UI.openFamilyPanel(); } })()">Give</button>';
+        html += '<button class="btn-medieval" style="padding:4px 10px;font-size:0.8rem;" data-action="giveFamilyGoldCustom" data-id="' + npcId + '">Give</button>';
         html += '</div></div>';
         openModal('💰 Give Gold to ' + name, html);
     }
@@ -691,7 +691,7 @@
                     var item = grouped[cat][gi];
                     html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 6px;margin-bottom:2px;background:rgba(255,255,255,0.03);border-radius:3px;">';
                     html += '<span style="font-size:0.82rem;">' + item.icon + ' ' + item.name + ' <span style="color:#888;">x' + item.qty + '</span></span>';
-                    html += '<button class="btn-action btn-small" style="padding:2px 8px;font-size:0.75rem;" onclick="(function(){ var r=Player.giveFamilyGift(\'' + npcId + '\',\'' + item.id + '\',1); UI.toast(r.message, r.success?\'success\':\'error\'); if(r.success){ UI.closeModal(); UI.openFamilyPanel(); } })()">Give 1</button>';
+                    html += '<button class="btn-action btn-small" style="padding:2px 8px;font-size:0.75rem;" data-action="giveFamilyGift" data-id="' + npcId + '" data-val="' + item.id + '">Give 1</button>';
                     html += '</div>';
                 }
                 html += '</div>';
@@ -802,7 +802,7 @@
                 if (status.condition === 'gravely_ill' && !Player.hasSkill('doctor')) {
                     html += '<button class="btn-medieval" disabled style="font-size:11px;padding:5px 10px;opacity:0.5;" title="Need Doctor skill for gravely ill">⚕️ Treat (Need Doctor Skill)</button>';
                 } else {
-                    html += '<button class="btn-medieval" onclick="UI.treatCompanionUI(\'spouse\',null,\'player\')" style="font-size:11px;padding:5px 10px;background:rgba(40,120,40,0.3);border-color:rgba(60,180,60,0.5);">⚕️ Treat with ' + _skillName + ' Skill</button>';
+                    html += '<button class="btn-medieval" data-action="treatSpousePlayer" style="font-size:11px;padding:5px 10px;background:rgba(40,120,40,0.3);border-color:rgba(60,180,60,0.5);">⚕️ Treat with ' + _skillName + ' Skill</button>';
                 }
             } else if (!_hasDocSkill) {
                 html += '<span style="font-size:11px;color:#888;">⚕️ Need Field Medic or Doctor skill to treat</span>';
@@ -817,7 +817,7 @@
                 }
             }
             if (_hasHospital && _inSameTown) {
-                html += '<button class="btn-medieval" onclick="UI.treatCompanionUI(\'spouse\',null,\'hospital\')" style="font-size:11px;padding:5px 10px;background:rgba(40,80,160,0.3);border-color:rgba(60,120,220,0.5);">🏥 Take to Hospital</button>';
+                html += '<button class="btn-medieval" data-action="treatSpouseHospital" style="font-size:11px;padding:5px 10px;background:rgba(40,80,160,0.3);border-color:rgba(60,120,220,0.5);">🏥 Take to Hospital</button>';
             } else if (!_hasHospital && _inSameTown) {
                 html += '<span style="font-size:11px;color:#888;">🏥 No hospital/clinic in town</span>';
             }
@@ -828,7 +828,7 @@
         if (Player.weddingPlan) {
             html += '<div style="padding:8px;margin-bottom:6px;border:1px solid rgba(200,180,60,0.4);border-radius:6px;background:rgba(200,180,60,0.08);text-align:center;">';
             html += '<strong>💒 Wedding Planning!</strong> You are planning your wedding to ' + Player.weddingPlan.fianceName + '.';
-            html += '<br><button class="btn-medieval" onclick="UI.openWeddingPlanner()" style="font-size:12px;padding:6px 16px;margin-top:6px;">Open Wedding Planner</button>';
+            html += '<br><button class="btn-medieval" data-action="openWeddingPlanner" style="font-size:12px;padding:6px 16px;margin-top:6px;">Open Wedding Planner</button>';
             html += '</div>';
         }
 
@@ -837,25 +837,25 @@
         html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">';
 
         // Relationship
-        html += '<button class="btn-medieval" onclick="UI.openTalkToSpouse()" style="font-size:12px;padding:6px;">💬 Talk to Spouse</button>';
-        html += '<button class="btn-medieval" onclick="UI.spouseInteraction(\'spend_time\')" style="font-size:12px;padding:6px;">💕 Spend Time Together</button>';
-        html += '<button class="btn-medieval" onclick="UI.spouseInteraction(\'give_gold\')" style="font-size:12px;padding:6px;">🪙 Give Gold</button>';
+        html += '<button class="btn-medieval" data-action="openTalkToSpouse" style="font-size:12px;padding:6px;">💬 Talk to Spouse</button>';
+        html += '<button class="btn-medieval" data-action="spouseInteraction" data-type="spend_time" style="font-size:12px;padding:6px;">💕 Spend Time Together</button>';
+        html += '<button class="btn-medieval" data-action="spouseInteraction" data-type="give_gold" style="font-size:12px;padding:6px;">🪙 Give Gold</button>';
 
         // Work/Economy
-        html += '<button class="btn-medieval" onclick="UI.spouseInteraction(\'ask_work\')" style="font-size:12px;padding:6px;">💼 Ask to Work Jobs</button>';
-        html += '<button class="btn-medieval" onclick="UI.spouseInteraction(\'ask_trade\')" style="font-size:12px;padding:6px;">📊 Ask to Trade</button>';
-        html += '<button class="btn-medieval" onclick="UI.spouseInteraction(\'ask_money\')" style="font-size:12px;padding:6px;">💰 Ask for Money</button>';
-        html += '<button class="btn-medieval" onclick="UI.spouseInteraction(\'ask_intel\')" style="font-size:12px;padding:6px;">🔍 Gather Market Intel</button>';
+        html += '<button class="btn-medieval" data-action="spouseInteraction" data-type="ask_work" style="font-size:12px;padding:6px;">💼 Ask to Work Jobs</button>';
+        html += '<button class="btn-medieval" data-action="spouseInteraction" data-type="ask_trade" style="font-size:12px;padding:6px;">📊 Ask to Trade</button>';
+        html += '<button class="btn-medieval" data-action="spouseInteraction" data-type="ask_money" style="font-size:12px;padding:6px;">💰 Ask for Money</button>';
+        html += '<button class="btn-medieval" data-action="spouseInteraction" data-type="ask_intel" style="font-size:12px;padding:6px;">🔍 Gather Market Intel</button>';
 
         // Management
-        html += '<button class="btn-medieval" onclick="UI.spouseInteraction(\'ask_manage\')" style="font-size:12px;padding:6px;">🏭 Manage Building</button>';
-        html += '<button class="btn-medieval" onclick="UI.spouseInteraction(\'ask_hire\')" style="font-size:12px;padding:6px;">👷 Hire Workers</button>';
-        html += '<button class="btn-medieval" onclick="UI.spouseInteraction(\'ask_negotiate\')" style="font-size:12px;padding:6px;">🤝 Negotiate Deal</button>';
+        html += '<button class="btn-medieval" data-action="spouseInteraction" data-type="ask_manage" style="font-size:12px;padding:6px;">🏭 Manage Building</button>';
+        html += '<button class="btn-medieval" data-action="spouseInteraction" data-type="ask_hire" style="font-size:12px;padding:6px;">👷 Hire Workers</button>';
+        html += '<button class="btn-medieval" data-action="spouseInteraction" data-type="ask_negotiate" style="font-size:12px;padding:6px;">🤝 Negotiate Deal</button>';
 
         // Movement
-        html += '<button class="btn-medieval" onclick="UI.spouseInteraction(\'ask_stay\')" style="font-size:12px;padding:6px;">🏠 Stay in Town</button>';
-        html += '<button class="btn-medieval" onclick="UI.spouseInteraction(\'ask_travel\')" style="font-size:12px;padding:6px;">🗺️ Travel to Town</button>';
-        html += '<button class="btn-medieval" onclick="UI.spouseInteraction(\'ask_caravan\')" style="font-size:12px;padding:6px;">🐪 Guard Caravan</button>';
+        html += '<button class="btn-medieval" data-action="spouseInteraction" data-type="ask_stay" style="font-size:12px;padding:6px;">🏠 Stay in Town</button>';
+        html += '<button class="btn-medieval" data-action="spouseInteraction" data-type="ask_travel" style="font-size:12px;padding:6px;">🗺️ Travel to Town</button>';
+        html += '<button class="btn-medieval" data-action="spouseInteraction" data-type="ask_caravan" style="font-size:12px;padding:6px;">🐪 Guard Caravan</button>';
 
         html += '</div>';
 
@@ -960,18 +960,18 @@
         var html = '<div style="padding:8px;">';
         html += '<div style="color:#ccc;margin-bottom:10px;">' + desc + '</div>';
         if (!isGive) {
-            html += '<button class="btn-medieval" onclick="UI._spouseGoldConfirm(\'' + mode + '\', 999999)" style="width:100%;margin-bottom:8px;background:rgba(200,180,60,0.15);border-color:rgba(200,180,60,0.4);">💰 Ask for All (' + formatGold(maxGold) + 'g)</button>';
+            html += '<button class="btn-medieval" data-action="_spouseGoldConfirm" data-id="' + mode + '" data-val="999999" style="width:100%;margin-bottom:8px;background:rgba(200,180,60,0.15);border-color:rgba(200,180,60,0.4);">💰 Ask for All (' + formatGold(maxGold) + 'g)</button>';
         }
         if (presets.length > 0) {
             html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">';
             for (var pi = 0; pi < presets.length; pi++) {
-                html += '<button class="btn-medieval" onclick="UI._spouseGoldConfirm(\'' + mode + '\', ' + presets[pi] + ')" style="flex:1;min-width:60px;font-size:12px;padding:6px;">' + presets[pi] + 'g</button>';
+                html += '<button class="btn-medieval" data-action="_spouseGoldConfirm" data-id="' + mode + '" data-val="' + presets[pi] + '" style="flex:1;min-width:60px;font-size:12px;padding:6px;">' + presets[pi] + 'g</button>';
             }
             html += '</div>';
         }
         html += '<div style="display:flex;gap:6px;align-items:center;">';
         html += '<input type="number" id="spouseGoldInput" min="1" max="' + maxGold + '" value="50" style="flex:1;padding:6px;background:#1a1a1a;border:1px solid #555;color:#ddd;border-radius:4px;font-size:14px;" />';
-        html += '<button class="btn-medieval" onclick="UI._spouseGoldConfirm(\'' + mode + '\', parseInt(document.getElementById(\'spouseGoldInput\').value))" style="padding:6px 16px;">Confirm</button>';
+        html += '<button class="btn-medieval" data-action="spouseGoldConfirmInput" data-id="' + mode + '" style="padding:6px 16px;">Confirm</button>';
         html += '</div></div>';
 
         var footer = '<button class="btn-medieval" data-action="openSpousePanel" style="background:rgba(150,100,100,0.2);border-color:rgba(150,100,100,0.4);">↩ Back</button>';
@@ -1017,7 +1017,7 @@
             var distLabel = dist > 0 ? ' (' + dist + ' away)' : '';
             var style = 'width:100%;text-align:left;font-size:12px;padding:8px;margin-bottom:4px;';
             if (isCurrent) style += 'border-color:rgba(100,200,100,0.4);background:rgba(100,200,100,0.1);';
-            html += '<button class="btn-medieval" onclick="UI._spouseTownConfirm(\'' + mode + '\', \'' + t.id + '\')" style="' + style + '">';
+            html += '<button class="btn-medieval" data-action="_spouseTownConfirm" data-id="' + mode + '" data-val="' + t.id + '" style="' + style + '">';
             html += (isCurrent ? '📍 ' : '') + t.name + '<span style="color:#888;margin-left:6px;">' + distLabel + '</span>';
             if (t.kingdom) {
                 var kn = '';
@@ -1051,7 +1051,7 @@
         html += '<div style="max-height:350px;overflow-y:auto;">';
 
         // Unassign button
-        html += '<button class="btn-medieval" onclick="UI._spouseBuildingConfirm(-1)" style="width:100%;text-align:left;font-size:12px;padding:8px;margin-bottom:6px;background:rgba(150,100,100,0.15);border-color:rgba(150,100,100,0.3);">❌ Unassign from Building Management</button>';
+        html += '<button class="btn-medieval" data-action="_spouseBuildingConfirm" data-val="-1" style="width:100%;text-align:left;font-size:12px;padding:8px;margin-bottom:6px;background:rgba(150,100,100,0.15);border-color:rgba(150,100,100,0.3);">❌ Unassign from Building Management</button>';
 
         for (var bi = 0; bi < Player.buildings.length; bi++) {
             var b = Player.buildings[bi];
@@ -1060,7 +1060,7 @@
             var isManaged = status.managedBuilding && status.managedBuilding.type === b.type && status.managedBuilding.townId === b.townId;
             var style = 'width:100%;text-align:left;font-size:12px;padding:8px;margin-bottom:4px;';
             if (isManaged) style += 'border-color:rgba(100,200,100,0.4);background:rgba(100,200,100,0.1);';
-            html += '<button class="btn-medieval" onclick="UI._spouseBuildingConfirm(' + bi + ')" style="' + style + '">';
+            html += '<button class="btn-medieval" data-action="_spouseBuildingConfirm" data-val="' + bi + '" style="' + style + '">';
             html += (isManaged ? '✅ ' : '🏭 ') + (b.type || 'building') + ' (Lv.' + (b.level || 1) + ') — ' + tn;
             html += '</button>';
         }
@@ -1089,7 +1089,7 @@
             var m = merchants[mi];
             var rel = Player.getRelationship ? Player.getRelationship(m.id) : null;
             var relStr = rel ? ' (Rel: ' + Math.round(rel.level || 0) + ')' : '';
-            html += '<button class="btn-medieval" onclick="UI._spouseNegotiateConfirm(\'' + m.id + '\')" style="width:100%;text-align:left;font-size:12px;padding:8px;margin-bottom:4px;">';
+            html += '<button class="btn-medieval" data-action="_spouseNegotiateConfirm" data-id="' + m.id + '" style="width:100%;text-align:left;font-size:12px;padding:8px;margin-bottom:4px;">';
             html += '🤝 ' + (m.firstName || 'Unknown') + ' ' + (m.lastName || '') + '<span style="color:#888;margin-left:6px;">' + relStr + '</span>';
             html += '</button>';
         }
@@ -1114,7 +1114,7 @@
             var c = Player.caravans[ci];
             var dest = '';
             try { var cTown = Engine.findTown(c.destinationTownId || c.targetTownId); dest = cTown ? cTown.name : 'Unknown'; } catch(e) { dest = 'Unknown'; }
-            html += '<button class="btn-medieval" onclick="UI._spouseCaravanConfirm(' + ci + ')" style="width:100%;text-align:left;font-size:12px;padding:8px;margin-bottom:4px;">';
+            html += '<button class="btn-medieval" data-action="_spouseCaravanConfirm" data-val="' + ci + '" style="width:100%;text-align:left;font-size:12px;padding:8px;margin-bottom:4px;">';
             html += '🐪 Caravan #' + (ci + 1) + ' → ' + dest;
             if (c.goods && c.goods.length > 0) html += '<span style="color:#888;margin-left:6px;">(' + c.goods.length + ' goods)</span>';
             html += '</button>';
@@ -1139,7 +1139,7 @@
         var html = '<div class="special-start-panel">';
         html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
         html += '<div class="special-status-header">' + status.icon + ' ' + status.label + '</div>';
-        html += '<button class="btn-action" onclick="UI.openStartJournal()" style="font-size:0.85em;background:#2a3a5a;">📓 Journal</button>';
+        html += '<button class="btn-action" data-action="openStartJournal" style="font-size:0.85em;background:#2a3a5a;">📓 Journal</button>';
         html += '</div>';
         html += '<div class="special-status-info">' + status.info + '</div>';
         html += '<hr style="border-color:#5a3a1a;margin:10px 0;">';
@@ -1149,15 +1149,15 @@
         if (status.type === 'pilgrim') {
             html += '<h3>Pilgrim Actions</h3>';
             var pil = Player.state.pilgrim || {};
-            html += '<button class="btn-action" onclick="UI.specialAction(\'sermon\')">🙏 Give Sermon</button>';
-            html += '<button class="btn-action" onclick="UI.specialAction(\'visitSite\')">⛪ Visit Holy Site</button>';
-            html += '<button class="btn-action" onclick="UI.specialAction(\'convert\')">✝️ Convert NPC</button>';
-            html += '<button class="btn-action" onclick="UI.specialAction(\'bless\')">🙌 Bless NPC</button>';
+            html += '<button class="btn-action" data-action="specialAction" data-type="sermon">🙏 Give Sermon</button>';
+            html += '<button class="btn-action" data-action="specialAction" data-type="visitSite">⛪ Visit Holy Site</button>';
+            html += '<button class="btn-action" data-action="specialAction" data-type="convert">✝️ Convert NPC</button>';
+            html += '<button class="btn-action" data-action="specialAction" data-type="bless">🙌 Bless NPC</button>';
             if (!pil.templeBuilt && pil.followers >= 20) {
-                html += '<button class="btn-action" onclick="UI.specialAction(\'buildTemple\')" style="background:#553322;">🏛️ Build Temple (500g)</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="buildTemple" style="background:#553322;">🏛️ Build Temple (500g)</button>';
             }
             if (pil.rivalFaith && !pil.rivalDefeated && pil.rivalFaith.townId === Player.townId) {
-                html += '<button class="btn-action" onclick="UI.specialAction(\'challengeRival\')" style="background:#882222;">⚡ Challenge ' + (pil.rivalFaith.preacherName || 'Rival') + '</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="challengeRival" style="background:#882222;">⚡ Challenge ' + (pil.rivalFaith.preacherName || 'Rival') + '</button>';
             }
             html += '<p>Goals (complete any 2): ' + (pil.goals || []).map(function(g) {
                 var done = false;
@@ -1180,19 +1180,19 @@
         if (status.type === 'shipwrecked') {
             html += '<h3>Foreigner Actions</h3>';
             var sw = Player.state.shipwrecked || {};
-            html += '<button class="btn-action" onclick="UI.specialAction(\'story\')">📖 Tell Story</button>';
-            html += '<button class="btn-action" onclick="UI.specialAction(\'craft\')">🔧 Teach Craft</button>';
+            html += '<button class="btn-action" data-action="specialAction" data-type="story">📖 Tell Story</button>';
+            html += '<button class="btn-action" data-action="specialAction" data-type="craft">🔧 Teach Craft</button>';
             // Resonance site
             if (sw.artifactPulsing) {
-                html += '<button class="btn-action" onclick="UI.specialAction(\'resonance\')" style="background:#553388;animation:pulse 2s infinite;">✨ Visit Resonance Site</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="resonance" style="background:#553388;animation:pulse 2s infinite;">✨ Visit Resonance Site</button>';
             }
             // Final choice
             if (sw.finalChoiceAvailable && !sw.finalChoice) {
                 html += '<div style="margin:8px 0;padding:8px;background:rgba(255,215,0,0.15);border:1px solid gold;border-radius:6px;">';
                 html += '<strong style="color:gold;">🌟 THE FINAL CHOICE</strong><br>';
                 html += '<p style="color:#ccc;font-size:0.9em;">All sea chart fragments assembled. The artifact awaits your decision.</p>';
-                html += '<button class="btn-action" onclick="UI.specialAction(\'openArtifact\')" style="background:#336633;margin:4px;">🏛️ OPEN — Found Embassy</button>';
-                html += '<button class="btn-action" onclick="UI.specialAction(\'sealArtifact\')" style="background:#663333;margin:4px;">⚡ SEAL — Absorb Power</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="openArtifact" style="background:#336633;margin:4px;">🏛️ OPEN — Found Embassy</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="sealArtifact" style="background:#663333;margin:4px;">⚡ SEAL — Absorb Power</button>';
                 html += '</div>';
             }
             // Embassy actions
@@ -1200,18 +1200,18 @@
                 html += '<hr style="border-color:#555;margin:8px 0;">';
                 html += '<h4 style="color:#55aacc;">🏛️ Embassy in ' + sw.embassy.townName + '</h4>';
                 html += '<p>Bank: ' + (Player.state.shipwrecked.embassyBankAccount || 0) + 'g | Potions: R:' + (sw.embassy.potionStockRed || 0) + ' G:' + (sw.embassy.potionStockGreen || 0) + ' B:' + (sw.embassy.potionStockBlue || 0) + '</p>';
-                html += '<button class="btn-action" onclick="UI.specialAction(\'warpEmbassy\')" style="background:#224488;">🌀 Warp to Embassy</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="warpEmbassy" style="background:#224488;">🌀 Warp to Embassy</button>';
                 html += '<div style="margin:4px 0;"><strong>Free Potion (monthly):</strong></div>';
-                html += '<button class="btn-action" onclick="UI.specialAction(\'potionRed\')" style="background:#882222;font-size:0.85em;">❤️ Red (Strength)</button>';
-                html += '<button class="btn-action" onclick="UI.specialAction(\'potionGreen\')" style="background:#228822;font-size:0.85em;">💚 Green (Speed)</button>';
-                html += '<button class="btn-action" onclick="UI.specialAction(\'potionBlue\')" style="background:#222288;font-size:0.85em;">💙 Blue (Immunity)</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="potionRed" style="background:#882222;font-size:0.85em;">❤️ Red (Strength)</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="potionGreen" style="background:#228822;font-size:0.85em;">💚 Green (Speed)</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="potionBlue" style="background:#222288;font-size:0.85em;">💙 Blue (Immunity)</button>';
                 // Homeland NPCs
                 if (sw.homelandNPCs && sw.homelandNPCs.length > 0 && Player.townId === sw.embassy.townId) {
                     html += '<div style="margin:6px 0;"><strong>Homeland NPCs:</strong></div>';
                     for (var hi = 0; hi < sw.homelandNPCs.length; hi++) {
                         var hnpc = sw.homelandNPCs[hi];
                         var roleIcons = { healer: '💚', merchant: '💰', guard: '⚔️', scholar: '📚', worker: '🔧' };
-                        html += '<button class="btn-action" onclick="UI.specialAction(\'homeland_' + hi + '\')" style="font-size:0.85em;">' + (roleIcons[hnpc.role] || '👤') + ' ' + hnpc.first + ' (' + hnpc.role + ')</button>';
+                        html += '<button class="btn-action" data-action="specialAction" data-type="homeland_' + hi + '" style="font-size:0.85em;">' + (roleIcons[hnpc.role] || '👤') + ' ' + hnpc.first + ' (' + hnpc.role + ')</button>';
                     }
                 }
                 if (sw.freePotion && sw.freePotion.expiresDay > (Engine.getDay ? Engine.getDay() : 0)) {
@@ -1250,20 +1250,20 @@
             html += '<h3>Musician Actions</h3>';
             var mus = Player.state.musician || {};
             if (mus.active || mus.legacyChoice === 'legendary_bard') {
-                html += '<button class="btn-action" onclick="UI.specialAction(\'tavern\')">🎵 Tavern</button>';
-                html += '<button class="btn-action" onclick="UI.specialAction(\'street\')">🎶 Street</button>';
-                html += '<button class="btn-action" onclick="UI.specialAction(\'concert\')">🎪 Concert</button>';
-                html += '<button class="btn-action" onclick="UI.specialAction(\'court\')">👑 Court</button>';
-                html += '<button class="btn-action" onclick="UI.specialAction(\'private\')">🎻 Private</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="tavern">🎵 Tavern</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="street">🎶 Street</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="concert">🎪 Concert</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="court">👑 Court</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="private">🎻 Private</button>';
                 html += '<div style="margin:4px 0;">';
                 html += '<strong>Compose:</strong> ';
-                html += '<button class="btn-action" onclick="UI.specialAction(\'compose_love\')" style="font-size:0.85em;">❤️ Love</button>';
-                html += '<button class="btn-action" onclick="UI.specialAction(\'compose_war\')" style="font-size:0.85em;">⚔️ War</button>';
-                html += '<button class="btn-action" onclick="UI.specialAction(\'compose_comedy\')" style="font-size:0.85em;">😂 Comedy</button>';
-                html += '<button class="btn-action" onclick="UI.specialAction(\'compose_epic\')" style="font-size:0.85em;">⭐ Epic</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="compose_love" style="font-size:0.85em;">❤️ Love</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="compose_war" style="font-size:0.85em;">⚔️ War</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="compose_comedy" style="font-size:0.85em;">😂 Comedy</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="compose_epic" style="font-size:0.85em;">⭐ Epic</button>';
                 html += '</div>';
                 if ((mus.musicSkill || 0) >= 70) {
-                    html += '<button class="btn-action" onclick="UI.specialAction(\'grandConcert\')" style="background:#553388;">🌟 Grand Concert (200g)</button>';
+                    html += '<button class="btn-action" data-action="specialAction" data-type="grandConcert" style="background:#553388;">🌟 Grand Concert (200g)</button>';
                 }
             }
             // Rival duels
@@ -1271,7 +1271,7 @@
                 for (var ri3 = 0; ri3 < mus.rivals.length; ri3++) {
                     var rv = mus.rivals[ri3];
                     if (!rv.defeated && rv.townId === Player.townId) {
-                        html += '<button class="btn-action" onclick="UI.specialAction(\'duel_' + ri3 + '\')" style="background:#882222;">🎭 Duel ' + rv.name + ' (Skill:' + rv.skill + ')</button>';
+                        html += '<button class="btn-action" data-action="specialAction" data-type="duel_' + ri3 + '" style="background:#882222;">🎭 Duel ' + rv.name + ' (Skill:' + rv.skill + ')</button>';
                     }
                 }
             }
@@ -1279,8 +1279,8 @@
             if (mus.legacyOffered && !mus.legacyChoice) {
                 html += '<div style="margin:6px 0;padding:6px;background:rgba(255,215,0,0.15);border-radius:4px;">';
                 html += '<strong>🌟 Legacy Choice:</strong><br>';
-                html += '<button class="btn-action" onclick="UI.specialAction(\'legacy_school\')" style="background:#336633;">🏫 Music School</button>';
-                html += '<button class="btn-action" onclick="UI.specialAction(\'legacy_bard\')" style="background:#663366;">🌟 Legendary Bard</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="legacy_school" style="background:#336633;">🏫 Music School</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="legacy_bard" style="background:#663366;">🌟 Legendary Bard</button>';
                 html += '</div>';
             }
             // Status info
@@ -1305,27 +1305,27 @@
         if (status.type === 'military') {
             html += '<h3>Military Actions</h3>';
             var mil = Player.state.militaryLeader || {};
-            html += '<button class="btn-action" onclick="UI.specialAction(\'train\')">⚔️ Train Troops</button>';
-            html += '<button class="btn-action" onclick="UI.specialAction(\'plan\')">📋 Plan Battle</button>';
-            html += '<button class="btn-action" onclick="UI.specialAction(\'inspire\')">📣 Inspire Army</button>';
-            html += '<button class="btn-action" onclick="UI.specialAction(\'fortify\')">🏰 Fortify (100g)</button>';
-            html += '<button class="btn-action" onclick="UI.specialAction(\'scout\')">🔭 Scout Enemy</button>';
+            html += '<button class="btn-action" data-action="specialAction" data-type="train">⚔️ Train Troops</button>';
+            html += '<button class="btn-action" data-action="specialAction" data-type="plan">📋 Plan Battle</button>';
+            html += '<button class="btn-action" data-action="specialAction" data-type="inspire">📣 Inspire Army</button>';
+            html += '<button class="btn-action" data-action="specialAction" data-type="fortify">🏰 Fortify (100g)</button>';
+            html += '<button class="btn-action" data-action="specialAction" data-type="scout">🔭 Scout Enemy</button>';
             // Battle actions
             var milRanksArr = (typeof CONFIG !== 'undefined' && CONFIG.MILITARY_LEADER_RANKS) || [];
             var milRankIdxUI = milRanksArr.findIndex(function(r) { return r.id === mil.rank; });
             html += '<div style="margin:4px 0;">';
             html += '<strong>Battle Tactics:</strong> ';
-            html += '<button class="btn-action" onclick="UI.specialAction(\'battle_aggressive\')" style="background:#882222;font-size:0.85em;">🗡️ Aggressive</button>';
-            html += '<button class="btn-action" onclick="UI.specialAction(\'battle_defensive\')" style="background:#224488;font-size:0.85em;">🛡️ Defensive</button>';
-            html += '<button class="btn-action" onclick="UI.specialAction(\'battle_flanking\')" style="background:#886622;font-size:0.85em;">🏇 Flanking</button>';
+            html += '<button class="btn-action" data-action="specialAction" data-type="battle_aggressive" style="background:#882222;font-size:0.85em;">🗡️ Aggressive</button>';
+            html += '<button class="btn-action" data-action="specialAction" data-type="battle_defensive" style="background:#224488;font-size:0.85em;">🛡️ Defensive</button>';
+            html += '<button class="btn-action" data-action="specialAction" data-type="battle_flanking" style="background:#886622;font-size:0.85em;">🏇 Flanking</button>';
             html += '</div>';
             // War council (captain+)
             if (mil.warCouncilAccess || milRankIdxUI >= 4) {
-                html += '<button class="btn-action" onclick="UI.specialAction(\'warCouncil\')" style="background:#553388;">📜 War Council</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="warCouncil" style="background:#553388;">📜 War Council</button>';
             }
             // Decisive battle (general + 10 victories)
             if (mil.decisiveBattleAvailable && !mil.heroOfAgesEarned) {
-                html += '<button class="btn-action" onclick="UI.specialAction(\'decisiveBattle\')" style="background:#aa6600;font-size:1.1em;">⚔️👑 DECISIVE BATTLE</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="decisiveBattle" style="background:#aa6600;font-size:1.1em;">⚔️👑 DECISIVE BATTLE</button>';
             }
             // Status display
             var milRankName = milRanksArr[milRankIdxUI] ? milRanksArr[milRankIdxUI].name : mil.rank;
@@ -1343,20 +1343,20 @@
             if (!sch.specialization && sch.active) {
                 html += '<div style="margin-bottom:8px;padding:6px;background:rgba(136,136,255,0.15);border-radius:4px;">';
                 html += '<strong>Choose Your Specialization:</strong><br>';
-                html += '<button class="btn-action" onclick="UI.specialAction(\'specHistory\')" style="background:#665533;">📜 History</button>';
-                html += '<button class="btn-action" onclick="UI.specialAction(\'specEconomics\')" style="background:#336655;">💰 Economics</button>';
-                html += '<button class="btn-action" onclick="UI.specialAction(\'specScience\')" style="background:#335566;">🔬 Natural Science</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="specHistory" style="background:#665533;">📜 History</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="specEconomics" style="background:#336655;">💰 Economics</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="specScience" style="background:#335566;">🔬 Natural Science</button>';
                 html += '</div>';
             } else if (sch.specialization) {
                 var specLabels = { history: '📜 History', economics: '💰 Economics', natural_science: '🔬 Natural Science' };
                 html += '<p style="color:#8888ff;">Specialization: ' + (specLabels[sch.specialization] || sch.specialization) + '</p>';
             }
             if (sch.active) {
-                html += '<button class="btn-action" onclick="UI.specialAction(\'study\')">📚 Study Town</button>';
-                html += '<button class="btn-action" onclick="UI.specialAction(\'library\')">📖 Study Library</button>';
-                html += '<button class="btn-action" onclick="UI.specialAction(\'learn\')">🎓 Learn from NPC</button>';
-                html += '<button class="btn-action" onclick="UI.specialAction(\'notes\')">✏️ Write Notes</button>';
-                html += '<button class="btn-action" onclick="UI.specialAction(\'book\')">📕 Write Great Book</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="study">📚 Study Town</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="library">📖 Study Library</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="learn">🎓 Learn from NPC</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="notes">✏️ Write Notes</button>';
+                html += '<button class="btn-action" data-action="specialAction" data-type="book">📕 Write Great Book</button>';
             }
             if (sch.royaltiesActive) {
                 html += '<p style="color:#c4a35a;">📖 Great Book royalties: ~' + Math.min(100, 20 + Math.floor((sch.specializationKnowledge || 0) / 10)) + 'g/week | Total earned: ' + (sch.totalRoyaltiesEarned || 0) + 'g</p>';
@@ -1401,11 +1401,11 @@
                     for (var pi = 0; pi < payAmounts.length; pi++) {
                         var pa = payAmounts[pi];
                         var canPay = pGold >= pa && debtLeft >= pa;
-                        html += '<button class="btn-action" onclick="UI.payDebt(' + Math.min(pa, debtLeft) + ')" style="background:' + (canPay ? '#2d5a27' : '#333') + ';padding:4px 8px;font-size:12px;"' + (canPay ? '' : ' disabled') + '>' + pa + 'g</button>';
+                        html += '<button class="btn-action" data-action="payDebt" data-val="' + Math.min(pa, debtLeft) + '" style="background:' + (canPay ? '#2d5a27' : '#333') + ';padding:4px 8px;font-size:12px;"' + (canPay ? '' : ' disabled') + '>' + pa + 'g</button>';
                     }
                     if (pGold > 0) {
                         var allPay = Math.min(pGold, debtLeft);
-                        html += '<button class="btn-action" onclick="UI.payDebt(' + allPay + ')" style="background:#5a4a27;padding:4px 8px;font-size:12px;">All (' + allPay + 'g)</button>';
+                        html += '<button class="btn-action" data-action="payDebt" data-val="' + allPay + '" style="background:#5a4a27;padding:4px 8px;font-size:12px;">All (' + allPay + 'g)</button>';
                     }
                     html += '</div></div>';
                 }
@@ -1437,8 +1437,8 @@
                 html += '<span style="color:' + urgencyColor + ';">⏰ ' + (daysLeft > 0 ? daysLeft + ' days remaining' : '⚠️ OVERDUE!') + '</span><br>';
                 html += '<span style="color:#aaa;">Reward: ' + task.reward.gold + 'g + ' + task.reward.debtReduction + 'g debt reduction + ' + task.reward.xp + ' XP</span>';
                 html += '<div style="margin-top:8px;">';
-                html += '<button class="btn-action" onclick="UI.completeMasterTask()" style="background:#2d5a27;margin-right:5px;">✅ Complete Task</button>';
-                html += '<button class="btn-action" onclick="UI.dismissMasterTask()" style="background:#5a2727;">❌ Dismiss</button>';
+                html += '<button class="btn-action" data-action="completeMasterTask" style="background:#2d5a27;margin-right:5px;">✅ Complete Task</button>';
+                html += '<button class="btn-action" data-action="dismissMasterTask" style="background:#5a2727;">❌ Dismiss</button>';
                 html += '</div></div>';
             } else {
                 html += '<p style="color:#888;">No active task. Your master will assign one soon.</p>';
@@ -1478,7 +1478,7 @@
                     html += '<div style="background:rgba(45,90,39,0.3);border:1px solid #4CAF50;border-radius:6px;padding:10px;margin:5px 0;">';
                     html += '<strong style="color:#8ec07c;">💝 Early Release Offered!</strong><br>';
                     html += '<span style="color:#ccc;">Your master is willing to release you for <strong>' + releaseCost + 'g</strong>.</span><br>';
-                    html += '<button class="btn-action" onclick="UI.specialAction(\'acceptEarlyRelease\')" style="background:' + (canAfford ? '#2d5a27' : '#333') + ';margin-top:5px;"' + (canAfford ? '' : ' disabled') + '>🤝 Accept Early Release (' + releaseCost + 'g)</button>';
+                    html += '<button class="btn-action" data-action="specialAction" data-type="acceptEarlyRelease" style="background:' + (canAfford ? '#2d5a27' : '#333') + ';margin-top:5px;"' + (canAfford ? '' : ' disabled') + '>🤝 Accept Early Release (' + releaseCost + 'g)</button>';
                     if (!canAfford) html += '<br><span style="font-size:11px;color:#f44336;">You need ' + releaseCost + 'g (have ' + Math.floor(Player.gold || 0) + 'g)</span>';
                     html += '</div>';
                 }
@@ -1512,7 +1512,7 @@
                         html += '</div>';
                         html += '<p style="font-size:12px;color:#bbb;margin:4px 0;">' + info.desc + '</p>';
                         if (eid !== 'master_dies') {
-                            html += '<button class="btn-action" style="font-size:11px;margin-top:4px;" onclick="UI.attemptIndenturedEscape(\'' + eid + '\')">⚡ Attempt</button>';
+                            html += '<button class="btn-action" style="font-size:11px;margin-top:4px;" data-action="attemptIndenturedEscape" data-id="' + eid + '">⚡ Attempt</button>';
                         } else {
                             html += '<span style="font-size:11px;color:#888;font-style:italic;">Passive — wait for fate</span>';
                         }
@@ -1556,7 +1556,7 @@
         var html = '<div style="max-height:70vh;overflow-y:auto;padding:10px;">';
         html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">';
         html += '<h3 style="margin:0;">' + status.icon + ' ' + status.label + ' Journal</h3>';
-        html += '<button class="btn-action" onclick="UI.openSpecialStartPanel()" style="font-size:0.85em;">⬅ Actions</button>';
+        html += '<button class="btn-action" data-action="openSpecialStartPanel" style="font-size:0.85em;">⬅ Actions</button>';
         html += '</div>';
 
         var day = Engine.getDay ? Engine.getDay() : 0;
@@ -2036,4 +2036,16 @@
     UI.openSpecialStartPanel = openSpecialStartPanel;
     UI.openStartJournal = openStartJournal;
     UI.specialAction = specialAction;
+
+    // --- Delegated action handlers ---
+    UI.registerAction('showPersonLink', function(_t, d) { var p = Engine.findPerson(d.id); if (p) UI.showPersonDetail(p); });
+    UI.registerAction('backToKingdomSelect', function() { UI.showKingdomSelection(window._kingdomSelectCallback); });
+    UI.registerAction('arrangeChildMarriage', function(_t, d) { var sel = document.getElementById('marriageTarget_' + d.idx); if (sel) { var r = Player.arrangeChildMarriage(d.id, sel.value); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) UI.openFamilyPanel(); } });
+    UI.registerAction('giveFamilyGoldPreset', function(_t, d) { var r = Player.giveFamilyGold(d.id, parseInt(d.val)); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); UI.openFamilyPanel(); } });
+    UI.registerAction('giveFamilyGoldCustom', function(_t, d) { var el = document.getElementById('familyGoldCustom'); if (!el) return; var r = Player.giveFamilyGold(d.id, parseInt(el.value)); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); UI.openFamilyPanel(); } });
+    UI.registerAction('giveFamilyGift', function(_t, d) { var r = Player.giveFamilyGift(d.id, d.val, 1); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); UI.openFamilyPanel(); } });
+    UI.registerAction('spouseGoldConfirmInput', function(_t, d) { UI._spouseGoldConfirm(d.id, parseInt(document.getElementById('spouseGoldInput').value)); });
+    UI.registerAction('treatSpousePlayer', function() { UI.treatCompanionUI('spouse', null, 'player'); });
+    UI.registerAction('treatSpouseHospital', function() { UI.treatCompanionUI('spouse', null, 'hospital'); });
+
 })(window.UI);
