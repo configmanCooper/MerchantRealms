@@ -3893,9 +3893,9 @@ window.UI = (function () {
         html += '<span style="font-size:0.72rem;color:#888;">Showing ' + (startIdx + 1) + '-' + Math.min(startIdx + perPage, filtered.length) + ' of ' + filtered.length + ' (total: ' + totalAlive + ')</span>';
         if (totalPages > 1) {
             html += '<span style="font-size:0.72rem;">';
-            if (page > 0) html += '<button class="btn-medieval" style="font-size:0.65rem;padding:2px 6px;" data-action="_reTownPeoplePage" data-page=" + (page - 1) + ">← Prev</button> ';
+            if (page > 0) html += '<button class="btn-medieval" style="font-size:0.65rem;padding:2px 6px;" data-action="_reTownPeoplePage" data-page="' + (page - 1) + '">← Prev</button> ';
             html += 'Page ' + (page + 1) + '/' + totalPages;
-            if (page < totalPages - 1) html += ' <button class="btn-medieval" style="font-size:0.65rem;padding:2px 6px;" data-action="_reTownPeoplePage" data-page=" + (page + 1) + ">Next →</button>';
+            if (page < totalPages - 1) html += ' <button class="btn-medieval" style="font-size:0.65rem;padding:2px 6px;" data-action="_reTownPeoplePage" data-page="' + (page + 1) + '">Next →</button>';
             html += '</span>';
         }
         html += '</div>';
@@ -5575,15 +5575,15 @@ window.UI = (function () {
         // Pagination controls at top
         if (totalPages > 1) {
             html += '<div style="display:flex;justify-content:center;gap:6px;margin-bottom:8px;">';
-            html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 10px;' + (currentPage === 0 ? 'opacity:0.3;pointer-events:none;' : '') + '" data-action="_setEventPage" data-page=" + (currentPage - 1) + ">◀ Prev</button>';
+            html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 10px;' + (currentPage === 0 ? 'opacity:0.3;pointer-events:none;' : '') + '" data-action="_setEventPage" data-page="' + (currentPage - 1) + '">◀ Prev</button>';
             // Page number buttons (show up to 5 around current page)
             var startPage = Math.max(0, currentPage - 2);
             var endPage = Math.min(totalPages - 1, startPage + 4);
             if (endPage - startPage < 4) startPage = Math.max(0, endPage - 4);
             for (var pi = startPage; pi <= endPage; pi++) {
-                html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 8px;min-width:28px;' + (pi === currentPage ? 'background:rgba(255,215,0,0.25);border-color:var(--gold);color:var(--gold);' : 'opacity:0.6;') + '" data-action="_setEventPage" data-page=" + pi + ">' + (pi + 1) + '</button>';
+                html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 8px;min-width:28px;' + (pi === currentPage ? 'background:rgba(255,215,0,0.25);border-color:var(--gold);color:var(--gold);' : 'opacity:0.6;') + '" data-action="_setEventPage" data-page="' + pi + '">' + (pi + 1) + '</button>';
             }
-            html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 10px;' + (currentPage >= totalPages - 1 ? 'opacity:0.3;pointer-events:none;' : '') + '" data-action="_setEventPage" data-page=" + (currentPage + 1) + ">Next ▶</button>';
+            html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 10px;' + (currentPage >= totalPages - 1 ? 'opacity:0.3;pointer-events:none;' : '') + '" data-action="_setEventPage" data-page="' + (currentPage + 1) + '">Next ▶</button>';
             html += '</div>';
         }
 
@@ -5638,7 +5638,7 @@ window.UI = (function () {
                 html += '<div id="' + groupId + '" style="display:none;margin-left:12px;border-left:2px solid #555;padding-left:6px;">';
                 for (var gi = 0; gi < item.events.length; gi++) {
                     var ge = item.events[gi];
-                    var clickAct = 'data-action="showEventDetail" data-id=" + ge.idx + "';
+                    var clickAct = 'data-action="showEventDetail" data-id="' + ge.idx + '"';
                     html += '<div class="event-log-item event-personal" ' + clickAct + ' style="cursor:pointer;padding:3px 6px;font-size:0.78rem;">';
                     html += '<span class="event-day">Day ' + (ge.event.day || '?') + '</span>';
                     html += '<span class="event-text">' + (ge.event.description || ge.event.message || 'Event') + '</span>';
@@ -5664,7 +5664,7 @@ window.UI = (function () {
                     eventClass = 'event-personal';
                 }
 
-                var clickAction = 'data-action="showEventDetail" data-id=" + evIdx + "';
+                var clickAction = 'data-action="showEventDetail" data-id="' + evIdx + '"';
 
                 html += '<div class="event-log-item ' + eventClass + '" ' + clickAction + ' style="cursor:pointer;">' +
                     '<span class="event-day">Day ' + (event.day || '?') + '</span>' +
@@ -5679,14 +5679,14 @@ window.UI = (function () {
         // Pagination controls at bottom
         if (totalPages > 1) {
             html += '<div style="display:flex;justify-content:center;gap:6px;margin-top:8px;">';
-            html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 10px;' + (currentPage === 0 ? 'opacity:0.3;pointer-events:none;' : '') + '" data-action="_setEventPage" data-page=" + (currentPage - 1) + ">◀ Prev</button>';
+            html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 10px;' + (currentPage === 0 ? 'opacity:0.3;pointer-events:none;' : '') + '" data-action="_setEventPage" data-page="' + (currentPage - 1) + '">◀ Prev</button>';
             var startPage2 = Math.max(0, currentPage - 2);
             var endPage2 = Math.min(totalPages - 1, startPage2 + 4);
             if (endPage2 - startPage2 < 4) startPage2 = Math.max(0, endPage2 - 4);
             for (var pi2 = startPage2; pi2 <= endPage2; pi2++) {
-                html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 8px;min-width:28px;' + (pi2 === currentPage ? 'background:rgba(255,215,0,0.25);border-color:var(--gold);color:var(--gold);' : 'opacity:0.6;') + '" data-action="_setEventPage" data-page=" + pi2 + ">' + (pi2 + 1) + '</button>';
+                html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 8px;min-width:28px;' + (pi2 === currentPage ? 'background:rgba(255,215,0,0.25);border-color:var(--gold);color:var(--gold);' : 'opacity:0.6;') + '" data-action="_setEventPage" data-page="' + pi2 + '">' + (pi2 + 1) + '</button>';
             }
-            html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 10px;' + (currentPage >= totalPages - 1 ? 'opacity:0.3;pointer-events:none;' : '') + '" data-action="_setEventPage" data-page=" + (currentPage + 1) + ">Next ▶</button>';
+            html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 10px;' + (currentPage >= totalPages - 1 ? 'opacity:0.3;pointer-events:none;' : '') + '" data-action="_setEventPage" data-page="' + (currentPage + 1) + '">Next ▶</button>';
             html += '</div>';
         }
 
@@ -8840,7 +8840,7 @@ window.UI = (function () {
                     for (var _hhi = 0; _hhi < _homeHorses.length; _hhi++) {
                         var _hh = _homeHorses[_hhi];
                         html += (_hh.name || 'Horse') + ' ';
-                        if (h.townId === Player.townId) html += '<button class="btn-medieval" data-action="unstableHorseUI" data-id="' + h.id + '" data-val=" + _hhi + " style="font-size:0.65rem;padding:1px 5px;">Take</button> ';
+                        if (h.townId === Player.townId) html += '<button class="btn-medieval" data-action="unstableHorseUI" data-id="' + h.id + '" data-val="' + _hhi + '" style="font-size:0.65rem;padding:1px 5px;">Take</button> ';
                     }
                 }
                 html += '</div>';
@@ -9080,7 +9080,7 @@ window.UI = (function () {
                 html += '<span style="min-width:140px;">' + sName + ': ' + sQty + '</span>';
                 html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" data-action="_homeWithdraw" data-id="' + houseId + '" data-key="' + sk + '" data-qty="1">Take 1</button>';
                 if (sQty >= 5) html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" data-action="_homeWithdraw" data-id="' + houseId + '" data-key="' + sk + '" data-qty="5">5</button>';
-                html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" data-action="_homeWithdraw" data-id="' + houseId + '" data-key="' + sk + '" data-qty=" + sQty + ">All</button>';
+                html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" data-action="_homeWithdraw" data-id="' + houseId + '" data-key="' + sk + '" data-qty="' + sQty + '">All</button>';
                 html += '</div>';
             }
         }
@@ -9102,7 +9102,7 @@ window.UI = (function () {
             html += '<span style="min-width:140px;">' + iName + ': ' + iQty + '</span>';
             html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" data-action="_homeDeposit" data-id="' + houseId + '" data-key="' + ik + '" data-qty="1">Store 1</button>';
             if (iQty >= 5) html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" data-action="_homeDeposit" data-id="' + houseId + '" data-key="' + ik + '" data-qty="5">5</button>';
-            html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" data-action="_homeDeposit" data-id="' + houseId + '" data-key="' + ik + '" data-qty=" + iQty + ">All</button>';
+            html += '<button class="btn-trade sell" style="font-size:0.65rem;padding:1px 6px;" data-action="_homeDeposit" data-id="' + houseId + '" data-key="' + ik + '" data-qty="' + iQty + '">All</button>';
             html += '</div>';
         }
         if (!hasInv) html += '<div style="color:#888;font-size:0.8rem;">Nothing to store</div>';
@@ -10241,7 +10241,7 @@ window.UI = (function () {
                     }
                 }
                 html += '</div>';
-                html += '<button class="btn-medieval btn-work" data-action="executeWork" data-id=" + i + ">Work</button>';
+                html += '<button class="btn-medieval btn-work" data-action="executeWork" data-id="' + i + '">Work</button>';
                 html += '</div>';
             }
             html += '</div>';
@@ -10674,15 +10674,15 @@ window.UI = (function () {
                 html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">';
                 if (hasHospital) {
                     var hft = _getFeeAndTime('hospital', inj.severity);
-                    html += '<button class="btn-medieval" data-action="treatAtHospital" data-idx=" + i + " data-val="false" style="font-size:0.7rem;padding:3px 8px;">🏥 Hospital (' + hft.fee + 'g, ' + hft.time + ')</button>';
+                    html += '<button class="btn-medieval" data-action="treatAtHospital" data-idx="' + i + '" data-val="false" style="font-size:0.7rem;padding:3px 8px;">🏥 Hospital (' + hft.fee + 'g, ' + hft.time + ')</button>';
                 }
                 if (hasClinic) {
                     var cft = _getFeeAndTime('clinic', inj.severity);
                     var _clinSevNote = inj.severity === 'severe' ? ' ⚠️ 2x time' : '';
-                    html += '<button class="btn-medieval" data-action="treatAtClinic" data-idx=" + i + " data-val="false" style="font-size:0.7rem;padding:3px 8px;">⚕️ Clinic (' + cft.fee + 'g, ' + cft.time + _clinSevNote + ')</button>';
+                    html += '<button class="btn-medieval" data-action="treatAtClinic" data-idx="' + i + '" data-val="false" style="font-size:0.7rem;padding:3px 8px;">⚕️ Clinic (' + cft.fee + 'g, ' + cft.time + _clinSevNote + ')</button>';
                 }
                 if (canSelfTreat && !inj.treated && typeDef) {
-                    html += '<button class="btn-medieval" data-action="selfTreatCondition" data-idx=" + i + " data-val="false" style="font-size:0.7rem;padding:3px 8px;">💊 Self-Treat (needs ' + typeDef.product + ')</button>';
+                    html += '<button class="btn-medieval" data-action="selfTreatCondition" data-idx="' + i + '" data-val="false" style="font-size:0.7rem;padding:3px 8px;">💊 Self-Treat (needs ' + typeDef.product + ')</button>';
                 }
                 html += '</div></div>';
             }
@@ -10704,15 +10704,15 @@ window.UI = (function () {
                 html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">';
                 if (hasHospital) {
                     var ihft = _getFeeAndTime('hospital', ill.severity);
-                    html += '<button class="btn-medieval" data-action="treatAtHospital" data-idx=" + i + " data-val="true" style="font-size:0.7rem;padding:3px 8px;">🏥 Hospital (' + ihft.fee + 'g, ' + ihft.time + ')</button>';
+                    html += '<button class="btn-medieval" data-action="treatAtHospital" data-idx="' + i + '" data-val="true" style="font-size:0.7rem;padding:3px 8px;">🏥 Hospital (' + ihft.fee + 'g, ' + ihft.time + ')</button>';
                 }
                 if (hasClinic) {
                     var icft = _getFeeAndTime('clinic', ill.severity);
                     var _clinSevNote2 = ill.severity === 'severe' ? ' ⚠️ 2x time' : '';
-                    html += '<button class="btn-medieval" data-action="treatAtClinic" data-idx=" + i + " data-val="true" style="font-size:0.7rem;padding:3px 8px;">⚕️ Clinic (' + icft.fee + 'g, ' + icft.time + _clinSevNote2 + ')</button>';
+                    html += '<button class="btn-medieval" data-action="treatAtClinic" data-idx="' + i + '" data-val="true" style="font-size:0.7rem;padding:3px 8px;">⚕️ Clinic (' + icft.fee + 'g, ' + icft.time + _clinSevNote2 + ')</button>';
                 }
                 if (canSelfTreat && !ill.treated && illTypeDef) {
-                    html += '<button class="btn-medieval" data-action="selfTreatCondition" data-idx=" + i + " data-val="true" style="font-size:0.7rem;padding:3px 8px;">💊 Self-Treat (needs ' + illTypeDef.product + ')</button>';
+                    html += '<button class="btn-medieval" data-action="selfTreatCondition" data-idx="' + i + '" data-val="true" style="font-size:0.7rem;padding:3px 8px;">💊 Self-Treat (needs ' + illTypeDef.product + ')</button>';
                 }
                 html += '</div></div>';
             }
