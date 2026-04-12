@@ -4599,8 +4599,8 @@ window.UI = (function () {
                         <span style="color:${hullColor}">Hull: ${hullPct}%</span>
                         ${(ship.addons && ship.addons.length > 0) ? ' | Addons: ' + ship.addons.map(function(a) { var ac = CONFIG.SHIP_ADDONS ? CONFIG.SHIP_ADDONS[a] : null; return ac ? ac.name : a; }).join(', ') : ''}
                     </div>
-                    ${shipNeedsRepair && isAtPort ? '<button class="btn-trade buy" style="font-size:0.7rem;margin-top:4px;background:rgba(200,120,0,0.35);border-color:rgba(220,140,20,0.6);color:#f5deb3;" data-action="repairShip" data-id="${ship.id}">🔨 Repair (' + shipRepairCost + 'g)</button>' : ''}
-                    ${isAtPort && ship.addons && ship.maxAddons && ship.addons.length < ship.maxAddons ? ' <button class="btn-trade buy" style="font-size:0.7rem;margin-top:4px;background:rgba(0,100,140,0.35);border-color:rgba(0,160,200,0.6);color:#c8e8f0;" data-action="showShipAddons" data-id="${ship.id}">🔧 Addons (' + ship.addons.length + '/' + ship.maxAddons + ')</button>' : ''}
+                    ${shipNeedsRepair && isAtPort ? '<button class="btn-trade buy" style="font-size:0.7rem;margin-top:4px;background:rgba(200,120,0,0.35);border-color:rgba(220,140,20,0.6);color:#f5deb3;" data-action="repairShip" data-id="' + ship.id + '">🔨 Repair (' + shipRepairCost + 'g)</button>' : ''}
+                    ${isAtPort && ship.addons && ship.maxAddons && ship.addons.length < ship.maxAddons ? ' <button class="btn-trade buy" style="font-size:0.7rem;margin-top:4px;background:rgba(0,100,140,0.35);border-color:rgba(0,160,200,0.6);color:#c8e8f0;" data-action="showShipAddons" data-id="' + ship.id + '">🔧 Addons (' + ship.addons.length + '/' + ship.maxAddons + ')</button>' : ''}
                 </div>`;
             }
         } else {
