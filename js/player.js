@@ -7502,6 +7502,21 @@
             var nP = noble.personality || {};
             var weights = [];
             var totalW = 0;
+
+            // Check if noble has actual debt (for debt_forgiveness)
+            var _nobleDebt = 0;
+            if (player._nobleLoans) {
+                for (var _li = 0; _li < player._nobleLoans.length; _li++) {
+                    if (player._nobleLoans[_li].nobleId === noble.id && player._nobleLoans[_li].status === 'active') {
+                        _nobleDebt += player._nobleLoans[_li].remainingAmount || 0;
+                    }
+                }
+            }
+            // Check if noble has a pending/recent marriage (for marriage_blessing)
+            var _hasMarriage = !!(noble.spouseId && noble._marriedDay && (Engine.getDay() - noble._marriedDay) < 60);
+            // Also check if an upcoming marriage exists via wedding plan
+            if (!_hasMarriage && noble._weddingPlan) _hasMarriage = true;
+
             for (var ri = 0; ri < _AUDIENCE_REQUEST_TYPES.length; ri++) {
                 var rt = _AUDIENCE_REQUEST_TYPES[ri];
                 var w = 10;
@@ -7510,6 +7525,10 @@
                 var nRank = (noble.socialRank && noble.socialRank[ks.kingdomId]) || 4;
                 if (rt.id === 'title_elevation' && nRank >= 6) w = 0; // RA can't go higher
                 if (rt.id === 'title_elevation' && nRank < 5) w *= 1.5;
+                // Only show debt_forgiveness if noble actually has debt
+                if (rt.id === 'debt_forgiveness' && _nobleDebt <= 0) w = 0;
+                // Only show marriage_blessing if noble has recent/upcoming marriage
+                if (rt.id === 'marriage_blessing' && !_hasMarriage) w = 0;
                 weights.push(w);
                 totalW += w;
             }
@@ -7539,6 +7558,13 @@
             var desc = chosen.desc.replace('{town}', townName);
             var nobleName = (noble.firstName || '') + ' ' + (noble.lastName || '');
 
+            // Dynamic cost for debt forgiveness — tied to actual debt
+            var audienceCost = chosen.costBase;
+            if (chosen.id === 'debt_forgiveness' && _nobleDebt > 0) {
+                audienceCost = _nobleDebt; // Cost = actual debt amount
+                desc = 'Requests forgiveness of ' + Math.floor(_nobleDebt) + 'g in debts owed to the crown';
+            }
+
             ks._nobleAudiences.push({
                 nobleId: noble.id,
                 nobleName: nobleName.trim(),
@@ -7547,7 +7573,7 @@
                 requestLabel: chosen.label,
                 requestIcon: chosen.icon,
                 description: desc,
-                cost: chosen.costBase,
+                cost: audienceCost,
                 loyaltyGain: chosen.loyaltyGain,
                 relGain: chosen.relGain,
                 loyaltyLoss: chosen.loyaltyLoss,
@@ -7577,6 +7603,8 @@
         var noble = Engine.findPerson(aud.nobleId);
         if (noble) {
             noble.kingLoyalty = Math.min(100, (noble.kingLoyalty || 50) + aud.loyaltyGain);
+            // Granting favors reduces fear
+            noble.fearOfKing = Math.max(0, (noble.fearOfKing || 15) - 3);
         }
         modifyRelationship(aud.nobleId, aud.relGain);
 
@@ -7588,12 +7616,91 @@
                 noble.socialRank[ks.kingdomId] = curRank + 1;
             }
         }
+        // Debt forgiveness: actually clear the noble's loans
+        if (aud.requestType === 'debt_forgiveness' && player._nobleLoans) {
+            for (var _dli = 0; _dli < player._nobleLoans.length; _dli++) {
+                if (player._nobleLoans[_dli].nobleId === aud.nobleId && player._nobleLoans[_dli].status === 'active') {
+                    player._nobleLoans[_dli].status = 'forgiven';
+                    player._nobleLoans[_dli].remainingAmount = 0;
+                }
+            }
+        }
+
+        // ── Wave effects: ripple to other nobles ──
+        var otherNobles = _getKingdomNoblesForCourt(ks.kingdomId).filter(function(n) { return n.id !== aud.nobleId; });
+        var waveMsg = '';
+        for (var wi = 0; wi < otherNobles.length; wi++) {
+            var on = otherNobles[wi];
+            var onP = on.personality || {};
+            var loyRipple = 0;
+            var fearRipple = 0;
+            var relWithGranted = (on._nobleRelationships && on._nobleRelationships[aud.nobleId]) || 0;
+
+            switch (aud.requestType) {
+                case 'title_elevation':
+                    // Strong jealousy — ambitious nobles resent promotions of others
+                    loyRipple = -3;
+                    if ((onP.ambition || 50) > 60) loyRipple = -6;
+                    if ((onP.ambition || 50) > 80) loyRipple = -9;
+                    if (relWithGranted > 30) loyRipple = Math.max(loyRipple + 3, -2); // friends happy for them
+                    if (relWithGranted < -20) loyRipple -= 2; // rivals extra jealous
+                    if ((onP.warmth || 50) > 65) loyRipple *= 0.6; // warm nobles less jealous
+                    break;
+                case 'land_grant':
+                    // Moderate jealousy — especially for ambitious nobles
+                    loyRipple = -2;
+                    if ((onP.ambition || 50) > 65) loyRipple = -4;
+                    if (relWithGranted > 30) loyRipple = 0; // friends don't mind
+                    break;
+                case 'trade_privilege':
+                    // Moderate jealousy for ambitious/greedy, slight for others
+                    loyRipple = -1;
+                    if ((onP.ambition || 50) > 60 || (onP.frugality || 50) < 30) loyRipple = -3;
+                    break;
+                case 'military_appointment':
+                    // Ambitious nobles jealous; loyal ones approve
+                    loyRipple = 0;
+                    if ((onP.ambition || 50) > 65) loyRipple = -3;
+                    if ((onP.loyalty || 50) > 70) loyRipple = 1; // loyal nobles approve military order
+                    break;
+                case 'tax_exemption':
+                    // Mild jealousy — everyone wants lower taxes
+                    loyRipple = -1;
+                    if ((onP.frugality || 50) > 60) loyRipple = -2;
+                    break;
+                case 'building_rights':
+                    // Minor — most don't care much
+                    loyRipple = 0;
+                    if ((onP.ambition || 50) > 70) loyRipple = -1;
+                    break;
+                case 'marriage_blessing':
+                    // Warm nobles pleased; most don't care
+                    loyRipple = 0;
+                    if ((onP.warmth || 50) > 60) loyRipple = 1;
+                    if (relWithGranted > 20) loyRipple = 1;
+                    break;
+                case 'debt_forgiveness':
+                    // Some jealousy — "why do they get help and I don't?"
+                    loyRipple = -1;
+                    if ((onP.frugality || 50) > 65) loyRipple = -3; // frugal nobles resent handouts
+                    break;
+            }
+            // Apply wave
+            if (loyRipple !== 0) {
+                on.kingLoyalty = Math.max(0, Math.min(100, (on.kingLoyalty || 50) + loyRipple));
+                on.perceivedKingLoyalty = Math.max(0, Math.min(100, (on.perceivedKingLoyalty || 50) + loyRipple * 0.4));
+            }
+        }
 
         // Remove from queue
         ks._nobleAudiences.splice(audienceIdx, 1);
 
+        // Build wave summary for notable audience types
+        if (aud.requestType === 'title_elevation') waveMsg = ' Other nobles eye the promotion with envy.';
+        else if (aud.requestType === 'land_grant') waveMsg = ' Some nobles covet the favor.';
+
         Engine.logEvent('👑 ' + player.fullName + ' grants ' + aud.nobleName + '\'s request: ' + aud.requestLabel + ' (+' + aud.loyaltyGain + ' loyalty, +' + aud.relGain + ' rel)');
-        return { success: true, message: 'Granted ' + aud.nobleName + '\'s ' + aud.requestLabel + '! Loyalty +' + aud.loyaltyGain + ', Relationship +' + aud.relGain + (aud.cost > 0 ? ', Cost: ' + aud.cost + 'g' : '') };
+        return { success: true, message: 'Granted ' + aud.nobleName + '\'s ' + aud.requestLabel + '! Loyalty +' + aud.loyaltyGain + ', Relationship +' + aud.relGain + (aud.cost > 0 ? ', Cost: ' + aud.cost + 'g' : '') + waveMsg };
     }
 
     function kingDenyAudience(audienceIdx) {
@@ -7608,8 +7715,34 @@
         var noble = Engine.findPerson(aud.nobleId);
         if (noble) {
             noble.kingLoyalty = Math.max(0, (noble.kingLoyalty || 50) + aud.loyaltyLoss);
+            // Denial slightly increases fear
+            noble.fearOfKing = Math.min(100, (noble.fearOfKing || 15) + 2);
         }
         modifyRelationship(aud.nobleId, aud.relLoss);
+
+        // ── Wave effects for denial ──
+        var otherNobles = _getKingdomNoblesForCourt(ks.kingdomId).filter(function(n) { return n.id !== aud.nobleId; });
+        for (var wi = 0; wi < otherNobles.length; wi++) {
+            var on = otherNobles[wi];
+            var onP = on.personality || {};
+            var relWithDenied = (on._nobleRelationships && on._nobleRelationships[aud.nobleId]) || 0;
+            var loyRipple = 0;
+
+            // Rivals are pleased when someone is denied
+            if (relWithDenied < -20) loyRipple = 1;
+            // Friends sympathize — slight loyalty dip
+            if (relWithDenied > 30) loyRipple = -1;
+            // Ambitious nobles worry they'll be denied too
+            if ((onP.ambition || 50) > 65) loyRipple -= 1;
+            // Denial of title_elevation: rivals relieved
+            if (aud.requestType === 'title_elevation' && (onP.ambition || 50) > 55) loyRipple += 1;
+            // General slight fear increase — king said no
+            on.fearOfKing = Math.min(100, (on.fearOfKing || 15) + 1);
+
+            if (loyRipple !== 0) {
+                on.kingLoyalty = Math.max(0, Math.min(100, (on.kingLoyalty || 50) + loyRipple));
+            }
+        }
 
         // Remove from queue
         ks._nobleAudiences.splice(audienceIdx, 1);
@@ -7661,8 +7794,27 @@
         var noble = Engine.findPerson(nobleId);
         if (noble) {
             noble.kingLoyalty = Math.min(100, (noble.kingLoyalty || 50) + giftType.loyaltyGain);
+            noble.fearOfKing = Math.max(0, (noble.fearOfKing || 15) - 2); // Gifts reduce fear
         }
         modifyRelationship(nobleId, giftType.relGain);
+
+        // Wave effect: other nobles slightly jealous of gifts (mild)
+        var _giftNobles = _getKingdomNoblesForCourt(ks.kingdomId).filter(function(n) { return n.id !== nobleId; });
+        for (var _gni = 0; _gni < _giftNobles.length; _gni++) {
+            var _gn = _giftNobles[_gni];
+            var _gnP = _gn.personality || {};
+            var _gJealousy = 0;
+            // Gold gifts and land grants cause more jealousy
+            if (giftTypeId === 'gold_gift' || giftTypeId === 'land_grant') _gJealousy = -2;
+            else if (giftTypeId === 'trade_monopoly') _gJealousy = -1;
+            if (((_gnP.ambition || 50) > 65)) _gJealousy -= 1;
+            // Friends of the recipient don't mind
+            var _gnRel = (_gn._nobleRelationships && _gn._nobleRelationships[nobleId]) || 0;
+            if (_gnRel > 30) _gJealousy = 0;
+            if (_gJealousy !== 0) {
+                _gn.kingLoyalty = Math.max(0, Math.min(100, (_gn.kingLoyalty || 50) + _gJealousy));
+            }
+        }
 
         var nobleName = noble ? ((noble.firstName || '') + ' ' + (noble.lastName || '')).trim() : 'Noble';
         Engine.logEvent('👑 ' + player.fullName + ' bestows ' + giftType.label + ' upon ' + nobleName + '! (+' + giftType.loyaltyGain + ' loyalty)');
@@ -7851,7 +8003,14 @@
             modifyRelationship(nobleId, relHit);
         }
 
-        // Ripple effect on other nobles
+        // Apply target's fear spike from punishment
+        var _targetFearGain = punishmentType === 'fine' ? 10 : punishmentType === 'jail' ? 25 : punishmentType === 'seize_gold' ? 35 : punishmentType === 'seize_business' ? 40 : punishmentType === 'strip_title' ? 50 : punishmentType === 'execute' ? 0 : 10;
+        if (noble.alive && _targetFearGain > 0) {
+            noble.fearOfKing = Math.min(100, (noble.fearOfKing || 15) + _targetFearGain);
+        }
+
+        // Ripple effect on other nobles — loyalty and fear
+        var _otherFearBase = punishmentType === 'fine' ? 3 : punishmentType === 'jail' ? 8 : punishmentType === 'seize_gold' ? 12 : punishmentType === 'seize_business' ? 15 : punishmentType === 'strip_title' ? 18 : punishmentType === 'execute' ? 30 : 5;
         for (var ni = 0; ni < allNobles.length; ni++) {
             var on = allNobles[ni];
             var onP = on.personality || {};
@@ -7869,6 +8028,14 @@
             if ((onP.ambition || 50) > 70) _ripple *= 1.3; // ambitious nobles fear for themselves
             on.kingLoyalty = Math.max(0, Math.min(100, (on.kingLoyalty || 50) + _ripple));
             on.perceivedKingLoyalty = Math.max(0, Math.min(100, (on.perceivedKingLoyalty || 50) + _ripple * 0.5));
+            // Fear ripple to other nobles
+            var _otherFear = _otherFearBase;
+            if ((onP.loyalty || 50) > 70) _otherFear *= 0.5; // loyal nobles less fearful
+            if ((onP.ambition || 50) > 65) _otherFear *= 1.3; // ambitious worry for themselves
+            if (on._nobleRelationships && on._nobleRelationships[nobleId] && on._nobleRelationships[nobleId] > 30) {
+                _otherFear *= 1.5; // friends of punished fear more
+            }
+            on.fearOfKing = Math.min(100, (on.fearOfKing || 15) + _otherFear);
         }
 
         return result;
@@ -7896,19 +8063,29 @@
         noble.perceivedKingLoyalty = percLoy + (realLoy - percLoy) * revealAmount;
         noble.perceivedKingLoyalty = Math.max(0, Math.min(100, noble.perceivedKingLoyalty));
 
+        // Being investigated increases noble's fear slightly
+        noble.fearOfKing = Math.min(100, (noble.fearOfKing || 15) + 5);
+
         // Update noble dossier
         if (!player._nobleDossier) player._nobleDossier = {};
         if (!player._nobleDossier[nobleId]) player._nobleDossier[nobleId] = { personality: {}, relationships: {}, discoveredDay: Engine.getDay() };
         player._nobleDossier[nobleId].loyalty = noble.perceivedKingLoyalty;
         player._nobleDossier[nobleId]._investigatedDay = Engine.getDay();
 
+        // Reveal fear level from investigation
+        var _fearLabel = '';
+        var _fear = noble.fearOfKing || 0;
+        if (_fear >= 70) _fearLabel = ' They seem terrified of the crown.';
+        else if (_fear >= 45) _fearLabel = ' They appear quite fearful.';
+        else if (_fear >= 25) _fearLabel = ' They show some apprehension.';
+
         var newPercLabel = _loyaltyLabelText(noble.perceivedKingLoyalty);
         if (diff > 15) {
             Engine.logEvent('🔍 Investigation into ' + nobleName + ' reveals discrepancy — their true loyalty differs from appearances! Now assessed as: ' + newPercLabel);
-            return { success: true, message: '🔍 Investigation reveals ' + nobleName + '\'s loyalty is not as it seems! Reassessed as: ' + newPercLabel + ' (cost: 50g)' };
+            return { success: true, message: '🔍 Investigation reveals ' + nobleName + '\'s loyalty is not as it seems! Reassessed as: ' + newPercLabel + '.' + _fearLabel + ' (cost: 50g)' };
         } else {
             Engine.logEvent('🔍 Investigation into ' + nobleName + ' confirms their loyalty appears genuine. Assessed: ' + newPercLabel);
-            return { success: true, message: '🔍 Investigation confirms ' + nobleName + '\'s loyalty appears genuine. (' + newPercLabel + ', cost: 50g)' };
+            return { success: true, message: '🔍 Investigation confirms ' + nobleName + '\'s loyalty appears genuine. (' + newPercLabel + ')' + _fearLabel + ' (cost: 50g)' };
         }
     }
 
@@ -8705,23 +8882,14 @@
             return { success: false, message: 'Not at war with ' + (targetTown.kingdomId || 'that kingdom') + '.' };
         }
 
-        // Check for mounted army option — all soldiers need horses + saddles
+        // Check for mounted army option — all soldiers need horses + saddles from kingdom stockpile only
         var sendMounted = !!options.mounted;
         if (sendMounted) {
             var stockpile = kingdom.militaryStockpile || {};
             var totalHorses = stockpile.horses || 0;
-            var totalSaddles = 0;
-            // Also count from all kingdom town markets
-            var _allT = Engine.getTowns();
-            for (var _hi = 0; _hi < _allT.length; _hi++) {
-                if (_allT[_hi].kingdomId === kingdom.id) {
-                    var _ms = (_allT[_hi].market && _allT[_hi].market.supply) || {};
-                    totalHorses += (_ms.horses || 0);
-                    totalSaddles += (_ms.saddles || 0);
-                }
-            }
+            var totalSaddles = stockpile.saddles || 0;
             if (totalHorses < soldiers || totalSaddles < soldiers) {
-                return { success: false, message: 'Mounted army needs ' + soldiers + ' horses AND saddles. Have ' + totalHorses + ' horses, ' + totalSaddles + ' saddles across kingdom.' };
+                return { success: false, message: 'Mounted army needs ' + soldiers + ' horses AND saddles in the kingdom stockpile. Stockpile has ' + totalHorses + ' horses, ' + totalSaddles + ' saddles.' };
             }
         }
 
@@ -8796,34 +8964,11 @@
         // Split army composition based on mounted option
         var inf, arch, cav;
         if (sendMounted) {
-            // All cavalry — consume horses and saddles from stockpile + markets
+            // All cavalry — consume horses and saddles from kingdom stockpile only
             inf = 0; arch = 0; cav = soldiers;
-            var _horsesNeeded = soldiers;
-            var _saddlesNeeded = soldiers;
             var _sp = kingdom.militaryStockpile || {};
-            // Take from stockpile first
-            var _fromSP = Math.min(_sp.horses || 0, _horsesNeeded);
-            _sp.horses = (_sp.horses || 0) - _fromSP;
-            _horsesNeeded -= _fromSP;
-            _fromSP = Math.min(_sp.saddles || 0, _saddlesNeeded);
-            if (_sp.saddles) _sp.saddles -= _fromSP;
-            _saddlesNeeded -= _fromSP;
-            // Take remainder from town markets
-            var _mkTowns = Engine.getTowns();
-            for (var _mti = 0; _mti < _mkTowns.length && (_horsesNeeded > 0 || _saddlesNeeded > 0); _mti++) {
-                if (_mkTowns[_mti].kingdomId !== kingdom.id) continue;
-                var _mks = (_mkTowns[_mti].market && _mkTowns[_mti].market.supply) || {};
-                if (_horsesNeeded > 0) {
-                    var _takeH = Math.min(_mks.horses || 0, _horsesNeeded);
-                    _mks.horses = (_mks.horses || 0) - _takeH;
-                    _horsesNeeded -= _takeH;
-                }
-                if (_saddlesNeeded > 0) {
-                    var _takeS = Math.min(_mks.saddles || 0, _saddlesNeeded);
-                    _mks.saddles = (_mks.saddles || 0) - _takeS;
-                    _saddlesNeeded -= _takeS;
-                }
-            }
+            _sp.horses = Math.max(0, (_sp.horses || 0) - soldiers);
+            _sp.saddles = Math.max(0, (_sp.saddles || 0) - soldiers);
         } else {
             // Standard split: 60% infantry, 25% archers, 15% cavalry
             inf = Math.floor(soldiers * 0.6);

@@ -1332,6 +1332,12 @@
                 html += 'From: <span style="color:#d4c9a0;">' + escapeHtml(aud.nobleName) + '</span> (' + rankBadge + ')';
                 if (aud.cost > 0) html += ' · Cost: <span style="color:#e0c58a;">' + formatGold(aud.cost) + '</span>';
                 html += ' · <span style="color:#55a868;">+' + aud.loyaltyGain + ' loyalty</span>';
+                // Wave effect warning for high-jealousy requests
+                var _waveWarn = '';
+                if (aud.requestType === 'title_elevation') _waveWarn = '⚡ High jealousy if granted';
+                else if (aud.requestType === 'land_grant') _waveWarn = '⚡ May cause jealousy';
+                else if (aud.requestType === 'trade_privilege') _waveWarn = '⚡ Slight jealousy';
+                if (_waveWarn) html += ' · <span style="font-size:0.58rem;color:#e0a050;" title="Other nobles may react">' + _waveWarn + '</span>';
                 html += ' · <span style="font-size:0.6rem;color:' + urgColor + ';">' + (30 - daysOld) + 'd left</span>';
                 html += '</div></div>';
                 html += '<div style="display:flex;gap:4px;flex-shrink:0;margin-left:6px;">';
@@ -1417,8 +1423,8 @@
                     if (!onMission && (n.perceivedKingLoyalty != null ? n.perceivedKingLoyalty : (n.kingLoyalty || 50)) >= 40) {
                         html += '<button class="btn-medieval" data-action="kingSendMissionUI" data-id="' + n.id + '" data-name="' + nName + '" style="font-size:0.6rem;padding:2px 6px;">📜 Send Mission</button>';
                     }
-                    html += '<button class="btn-medieval" data-action="kingInvestigateNoble" data-id="' + n.id + '" data-name="' + nName + '" style="font-size:0.6rem;padding:2px 6px;background:rgba(93,173,226,0.2);">🔍 Investigate</button>';
-                    html += '<button class="btn-medieval" data-action="kingPunishNobleUI" data-id="' + n.id + '" data-name="' + nName + '" style="font-size:0.6rem;padding:2px 6px;background:rgba(196,78,82,0.2);">⚖️ Punish</button>';
+                    html += '<button class="btn-medieval" data-action="kingInvestigateNoble" data-id="' + n.id + '" data-name="' + nName + '" style="font-size:0.68rem;padding:4px 10px;background:rgba(93,173,226,0.35);border:1px solid rgba(93,173,226,0.6);color:#8dd3f5;">🔍 Investigate</button>';
+                    html += '<button class="btn-medieval" data-action="kingPunishNobleUI" data-id="' + n.id + '" data-name="' + nName + '" style="font-size:0.68rem;padding:4px 10px;background:rgba(196,78,82,0.35);border:1px solid rgba(196,78,82,0.6);color:#f5a0a0;">⚖️ Punish</button>';
                     html += '</div></div>';
                 }
                 html += '</div>';
@@ -2424,20 +2430,12 @@
         // Consolidation info
         html += '<div id="_armyConsolidationInfo" style="font-size:0.72rem;margin-bottom:10px;"></div>';
 
-        // Mounted option — check horse+saddle availability across kingdom
+        // Mounted option — check horse+saddle availability in kingdom stockpile only
         var _totalHorses = 0, _totalSaddles = 0;
         try {
             var _spk = kingdom.militaryStockpile || {};
-            _totalHorses += (_spk.horses || 0);
-            _totalSaddles += (_spk.saddles || 0);
-            var _aTowns = Engine.getTowns ? Engine.getTowns() : [];
-            for (var _hi = 0; _hi < _aTowns.length; _hi++) {
-                if (_aTowns[_hi].kingdomId === kingdom.id) {
-                    var _ms = (_aTowns[_hi].market && _aTowns[_hi].market.supply) || {};
-                    _totalHorses += (_ms.horses || 0);
-                    _totalSaddles += (_ms.saddles || 0);
-                }
-            }
+            _totalHorses = (_spk.horses || 0);
+            _totalSaddles = (_spk.saddles || 0);
         } catch(e) {}
         var _mountLimit = Math.min(_totalHorses, _totalSaddles);
         html += '<div style="margin-bottom:10px;padding:6px;background:rgba(139,69,19,0.15);border:1px solid rgba(139,69,19,0.3);border-radius:5px;">';
@@ -2445,9 +2443,9 @@
         html += '<input type="checkbox" id="_armyMounted" style="cursor:pointer;"' + (_mountLimit <= 0 ? ' disabled' : '') + '>';
         html += '🐴 Send as Mounted Cavalry (25% faster march)';
         html += '</label>';
-        html += '<div style="font-size:0.65rem;color:#999;margin-top:3px;">Kingdom has ' + _totalHorses + ' horses, ' + _totalSaddles + ' saddles (' + _mountLimit + ' can mount).</div>';
+        html += '<div style="font-size:0.65rem;color:#999;margin-top:3px;">Kingdom stockpile: ' + _totalHorses + ' horses, ' + _totalSaddles + ' saddles (' + _mountLimit + ' can mount).</div>';
         if (_mountLimit <= 0) {
-            html += '<div style="font-size:0.65rem;color:#e57373;margin-top:2px;">⚠️ Not enough horses and saddles for mounted army.</div>';
+            html += '<div style="font-size:0.65rem;color:#e57373;margin-top:2px;">⚠️ Not enough horses and saddles in stockpile for mounted army.</div>';
         }
         html += '</div>';
 

@@ -4013,6 +4013,15 @@
                 var _pklNoise = rng.randInt(-8, 8);
                 rn.perceivedKingLoyalty = Math.max(0, Math.min(100, (rn.kingLoyalty || 50) + _pklNoise));
             }
+            // Fear of king: hidden 0-100, starts low, rises from punishments/executions
+            if (rn.fearOfKing == null) {
+                var _rnFearP = rn.personality || {};
+                // Brave/loyal nobles start with less fear; ambitious/cautious more
+                var _baseFear = 15 + rng.randInt(-10, 10);
+                _baseFear -= ((_rnFearP.loyalty || 50) - 50) * 0.1; // loyal = less fear
+                _baseFear += ((_rnFearP.ambition || 50) - 50) * 0.1; // ambitious = slightly more fear
+                rn.fearOfKing = Math.max(0, Math.min(100, Math.round(_baseFear)));
+            }
             // L2: Assign faction to existing nobles if missing
             if (!rn._faction) {
                 var _rnP2 = rn.personality || {};
@@ -11275,6 +11284,21 @@
 
                 noble.kingLoyalty = Math.max(0, Math.min(100, noble.kingLoyalty + loyaltyDrift));
 
+                // Fear of king: slowly decays over time, affects behavior
+                if (noble.fearOfKing == null) noble.fearOfKing = 15;
+                // Fear decays by ~0.3 per tick toward baseline of 10
+                if (noble.fearOfKing > 10) {
+                    noble.fearOfKing = Math.max(10, noble.fearOfKing - 0.3);
+                }
+                // High fear + low loyalty = resentment: loyalty secretly drops faster
+                if (noble.fearOfKing > 50 && noble.kingLoyalty < 40) {
+                    noble.kingLoyalty = Math.max(0, noble.kingLoyalty - 0.2);
+                }
+                // High fear + high loyalty = obedience: loyalty stays more stable
+                if (noble.fearOfKing > 40 && noble.kingLoyalty > 60) {
+                    noble.kingLoyalty = Math.min(100, noble.kingLoyalty + 0.1);
+                }
+
                 // Perceived loyalty: slowly drifts toward real loyalty over time
                 if (noble.perceivedKingLoyalty == null) {
                     noble.perceivedKingLoyalty = noble.kingLoyalty;
@@ -11287,6 +11311,14 @@
                     noble.perceivedKingLoyalty += pklDiff * _honestyFactor * 0.1;
                     noble.perceivedKingLoyalty = Math.max(0, Math.min(100, noble.perceivedKingLoyalty));
                 }
+                // Fear inflates perceived loyalty: fearful nobles pretend to be more loyal
+                var _fearInflation = (noble.fearOfKing || 0) * 0.15; // up to +15 perceived at max fear
+                // Dishonest nobles hide fear better (bigger gap)
+                if ((nP.honesty || 50) < 40) _fearInflation *= 1.4;
+                // But very honest nobles can't hide it
+                if ((nP.honesty || 50) > 70) _fearInflation *= 0.4;
+                var _fearPKL = noble.perceivedKingLoyalty + _fearInflation;
+                noble.perceivedKingLoyalty = Math.max(0, Math.min(100, _fearPKL));
 
                 // NPC noble loyalty manipulation: dishonest/ambitious nobles actively deceive
                 if ((nP.honesty || 50) < 35 && (nP.ambition || 50) > 55 && rng.chance(0.04)) {
@@ -11332,7 +11364,7 @@
 
                     if (!rng.chance(_punishChance)) continue;
 
-                    // Apply punishment
+                    // Apply punishment — also increases fear of target and other nobles
                     var _pnName = ((_pn.firstName || '') + ' ' + (_pn.lastName || '')).trim();
                     var _pnP = _pn.personality || {};
                     switch (_punishSeverity) {
@@ -11373,7 +11405,10 @@
                             }
                             break;
                     }
-                    // Ripple to other nobles
+                    // Ripple to other nobles — loyalty and fear effects
+                    var _fearSpike = _punishSeverity === 'fine' ? 5 : _punishSeverity === 'jail' ? 12 : _punishSeverity === 'seize_gold' ? 18 : _punishSeverity === 'strip_title' ? 25 : 5;
+                    // Target noble's fear spikes hard
+                    _pn.fearOfKing = Math.min(100, (_pn.fearOfKing || 15) + _fearSpike * 2);
                     for (var _rni = 0; _rni < nobles.length; _rni++) {
                         if (nobles[_rni].id === _pn.id) continue;
                         var _rnP = nobles[_rni].personality || {};
@@ -11382,6 +11417,12 @@
                         if ((nobles[_rni]._nobleRelationships && nobles[_rni]._nobleRelationships[_pn.id] || 0) < -30) _ripple = 2;
                         if ((_rnP.loyalty || 50) > 65) _ripple *= 0.5;
                         nobles[_rni].kingLoyalty = Math.max(0, Math.min(100, (nobles[_rni].kingLoyalty || 50) + _ripple));
+                        // Fear ripple: other nobles become more fearful
+                        var _otherFearGain = _fearSpike * 0.6;
+                        // Brave nobles resist fear more
+                        if ((_rnP.loyalty || 50) > 70) _otherFearGain *= 0.5;
+                        if ((_rnP.ambition || 50) < 30) _otherFearGain *= 0.7; // unambitious care less
+                        nobles[_rni].fearOfKing = Math.min(100, (nobles[_rni].fearOfKing || 15) + _otherFearGain);
                     }
                     break; // One punishment per tick max
                 }
@@ -12493,9 +12534,21 @@
                         }
 
                         if (bestTarget) {
-                            // AI decides whether to mount entire army (needs horses+saddles for all)
-                            var _canMount = horses >= armySize && saddles >= armySize;
-                            var _aiMounted = _canMount; // AI always mounts if it can
+                            // AI decides whether to mount entire army — strategic decision, not automatic
+                            // Only mount when: capital_strike phase, long route, or high-value target. Uses kingdom stockpile only.
+                            var _spHorses = (k.militaryStockpile && k.militaryStockpile.horses) || 0;
+                            var _spSaddles = (k.militaryStockpile && k.militaryStockpile.saddles) || 0;
+                            var _canMount = _spHorses >= armySize && _spSaddles >= armySize;
+                            var _aiMounted = false;
+                            if (_canMount && bestRoute) {
+                                // Mount when: capital strike, route > 8 days, or target is capital
+                                var _routeLong = bestRoute.totalTime > 8;
+                                var _isCapStrike = _warPhase === 'capital_strike' && bestTarget.isCapital;
+                                var _isHighValue = bestTarget.isCapital || (bestTarget.population || 0) > 150;
+                                if (_isCapStrike || (_routeLong && _isHighValue)) {
+                                    _aiMounted = true;
+                                }
+                            }
 
                             var armyObj = {
                                 id: uid('army'),
@@ -12525,9 +12578,9 @@
 
                             // Consume equipment
                             if (_aiMounted) {
-                                // All mounted: consume horses+saddles for all, swords for all
-                                town.market.supply.horses = Math.max(0, (town.market.supply.horses || 0) - armySize);
-                                town.market.supply.saddles = Math.max(0, (town.market.supply.saddles || 0) - armySize);
+                                // All mounted: consume horses+saddles from kingdom stockpile
+                                k.militaryStockpile.horses = Math.max(0, (k.militaryStockpile.horses || 0) - armySize);
+                                k.militaryStockpile.saddles = Math.max(0, (k.militaryStockpile.saddles || 0) - armySize);
                                 town.market.supply.swords = Math.max(0, (town.market.supply.swords || 0) - Math.min(swords, armySize));
                             } else {
                                 const swordsUsed = Math.min(swords, actualInf + actualCav);
