@@ -7103,6 +7103,9 @@
 
                 if (engArmy._besieging) {
                     army.status = 'besieging';
+                } else if (engArmy._consolidating) {
+                    army.status = 'consolidating';
+                    army.consolidationDaysLeft = engArmy._consolidationDaysLeft || 0;
                 } else if (engArmy._retreating) {
                     army.status = 'retreating';
                 } else if (engArmy._recoveryUntil) {
@@ -8113,7 +8116,7 @@
         return { success: true, message: soldierCount + ' soldiers recruited at ' + (capTown ? capTown.name : 'capital') + '! Cost: ' + cost + 'g.', soldiers: soldierCount };
     }
 
-    function kingSendArmy(targetTownId, soldiers) {
+    function kingSendArmy(targetTownId, soldiers, stagingTownId) {
         if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
         var kingdom = Engine.findKingdom(player.kingState.kingdomId);
         if (!kingdom) return { success: false, message: 'Kingdom not found.' };
@@ -8127,52 +8130,66 @@
             return { success: false, message: 'Not at war with ' + (targetTown.kingdomId || 'that kingdom') + '.' };
         }
 
-        // Find capital or best garrison town to pull soldiers from
-        var capTown = null;
-        var kTowns = Engine.getTowns();
-        for (var _sti = 0; _sti < kTowns.length; _sti++) {
-            if (kTowns[_sti].kingdomId === kingdom.id && kTowns[_sti].isCapital) { capTown = kTowns[_sti]; break; }
-        }
-        if (!capTown) {
-            // Find town with highest garrison
-            var bestGarrison = 0;
-            for (var _sti2 = 0; _sti2 < kTowns.length; _sti2++) {
-                if (kTowns[_sti2].kingdomId === kingdom.id && (kTowns[_sti2].garrison || 0) > bestGarrison) {
-                    bestGarrison = kTowns[_sti2].garrison || 0;
-                    capTown = kTowns[_sti2];
+        // Determine staging town (player picks, fallback to capital)
+        var stagingTown = stagingTownId ? Engine.findTown(stagingTownId) : null;
+        if (!stagingTown || stagingTown.kingdomId !== kingdom.id) {
+            // Fallback to capital or best garrison
+            var kTowns = Engine.getTowns();
+            for (var _sti = 0; _sti < kTowns.length; _sti++) {
+                if (kTowns[_sti].kingdomId === kingdom.id && kTowns[_sti].isCapital) { stagingTown = kTowns[_sti]; break; }
+            }
+            if (!stagingTown) {
+                var bestGarrison = 0;
+                for (var _sti2 = 0; _sti2 < kTowns.length; _sti2++) {
+                    if (kTowns[_sti2].kingdomId === kingdom.id && (kTowns[_sti2].garrison || 0) > bestGarrison) {
+                        bestGarrison = kTowns[_sti2].garrison || 0;
+                        stagingTown = kTowns[_sti2];
+                    }
                 }
             }
         }
-        if (!capTown) return { success: false, message: 'No towns to raise army from.' };
+        if (!stagingTown) return { success: false, message: 'No towns to raise army from.' };
 
-        // Deduct soldiers from garrison (leave at least 5 for defense)
-        var available = Math.max(0, (capTown.garrison || 0) - 5);
-        if (available < soldiers) {
-            // Pull from multiple towns if needed
-            var totalAvailable = 0;
-            for (var _sti3 = 0; _sti3 < kTowns.length; _sti3++) {
-                if (kTowns[_sti3].kingdomId === kingdom.id) {
-                    totalAvailable += Math.max(0, (kTowns[_sti3].garrison || 0) - 5);
-                }
+        // Calculate available soldiers at staging town and total across kingdom
+        var stagingAvail = Math.max(0, (stagingTown.garrison || 0) - 5);
+        var totalAvailable = 0;
+        var allKTowns = Engine.getTowns();
+        for (var _ta = 0; _ta < allKTowns.length; _ta++) {
+            if (allKTowns[_ta].kingdomId === kingdom.id) {
+                totalAvailable += Math.max(0, (allKTowns[_ta].garrison || 0) - (allKTowns[_ta].id === stagingTown.id ? 5 : 3));
             }
-            if (totalAvailable < 10) return { success: false, message: 'Not enough soldiers in garrisons. Recruit more first.' };
-            soldiers = Math.min(soldiers, totalAvailable);
         }
+        if (totalAvailable < 10) return { success: false, message: 'Not enough soldiers in garrisons. Recruit more first.' };
+        soldiers = Math.min(soldiers, totalAvailable);
 
-        // Deduct soldiers from capital first, then other towns
+        // Deduct soldiers from staging town first, then nearest other towns
         var remaining = soldiers;
-        var fromGar = Math.min(remaining, Math.max(0, (capTown.garrison || 0) - 5));
-        capTown.garrison = (capTown.garrison || 0) - fromGar;
+        var fromGar = Math.min(remaining, stagingAvail);
+        stagingTown.garrison = (stagingTown.garrison || 0) - fromGar;
         remaining -= fromGar;
+
+        // Calculate consolidation time from other towns
+        var consolidationDays = 0;
         if (remaining > 0) {
-            for (var _sti4 = 0; _sti4 < kTowns.length; _sti4++) {
-                if (remaining <= 0) break;
-                var _t = kTowns[_sti4];
-                if (_t.kingdomId === kingdom.id && _t.id !== capTown.id) {
-                    var pull = Math.min(remaining, Math.max(0, (_t.garrison || 0) - 3));
-                    _t.garrison = (_t.garrison || 0) - pull;
-                    remaining -= pull;
+            // Sort other kingdom towns by distance to staging town
+            var otherTowns = [];
+            for (var _sti3 = 0; _sti3 < allKTowns.length; _sti3++) {
+                if (allKTowns[_sti3].kingdomId === kingdom.id && allKTowns[_sti3].id !== stagingTown.id) {
+                    var oAvail = Math.max(0, (allKTowns[_sti3].garrison || 0) - 3);
+                    if (oAvail > 0) {
+                        var oDist = Math.hypot(allKTowns[_sti3].x - stagingTown.x, allKTowns[_sti3].y - stagingTown.y);
+                        var oSpeed = (CONFIG.CARAVAN_BASE_SPEED || 120) * 0.5;
+                        otherTowns.push({ town: allKTowns[_sti3], available: oAvail, days: Math.max(1, Math.ceil(oDist / Math.max(oSpeed, 1))) });
+                    }
                 }
+            }
+            otherTowns.sort(function(a, b) { return a.days - b.days; });
+
+            for (var _sti4 = 0; _sti4 < otherTowns.length && remaining > 0; _sti4++) {
+                var pull = Math.min(remaining, otherTowns[_sti4].available);
+                otherTowns[_sti4].town.garrison = (otherTowns[_sti4].town.garrison || 0) - pull;
+                remaining -= pull;
+                consolidationDays = Math.max(consolidationDays, otherTowns[_sti4].days);
             }
         }
 
@@ -8185,15 +8202,15 @@
         var route = null;
         try {
             if (Engine.findArmyRoute) {
-                route = Engine.findArmyRoute(capTown.id, targetTown.id, kingdom.id);
+                route = Engine.findArmyRoute(stagingTown.id, targetTown.id, kingdom.id);
             } else {
-                route = Engine.findPath(capTown.id, targetTown.id, { allowOffroad: true });
+                route = Engine.findPath(stagingTown.id, targetTown.id, { allowOffroad: true });
             }
         } catch(e) {}
 
         if (!route || !route.legs || route.legs.length === 0) {
             // Refund soldiers to garrisons
-            capTown.garrison = (capTown.garrison || 0) + soldiers;
+            stagingTown.garrison = (stagingTown.garrison || 0) + soldiers;
             return { success: false, message: 'No route found to ' + targetTown.name + '. The army cannot reach it.' };
         }
 
@@ -8203,7 +8220,6 @@
             if (route.legs[_sli].type === 'sea') _seaLegs.push(route.legs[_sli]);
         }
         if (_seaLegs.length > 0) {
-            // Find first sea leg embarkation port
             var _embarkPort = Engine.findTown(_seaLegs[0].from);
             var shipsNeeded = Math.ceil(soldiers / (CONFIG.ARMY_EMBARK_SOLDIERS_PER_SHIP || 50));
             var shipsAvail = 0;
@@ -8217,7 +8233,7 @@
             }
             if (shipsAvail < shipsNeeded) {
                 // Refund soldiers
-                capTown.garrison = (capTown.garrison || 0) + soldiers;
+                stagingTown.garrison = (stagingTown.garrison || 0) + soldiers;
                 var portName = _embarkPort ? _embarkPort.name : 'the port';
                 return { success: false, message: 'This route crosses the sea! Need ' + shipsNeeded + ' ships at ' + portName + ' but only ' + shipsAvail + ' available. Build warships at port towns first.' };
             }
@@ -8227,7 +8243,7 @@
             kingdomId: kingdom.id,
             targetKingdomId: targetTown.kingdomId,
             soldiers: soldiers,
-            fromTownId: capTown.id,
+            fromTownId: stagingTown.id,
             toTownId: targetTown.id,
             progress: 0,
             infantry: inf,
@@ -8236,6 +8252,13 @@
             morale: CONFIG.ARMY_DEFAULT_MORALE || 80,
             supplies: CONFIG.ARMY_DEFAULT_SUPPLIES || 100,
         };
+
+        // If consolidation is needed, add delay before army departs
+        if (consolidationDays > 0) {
+            armyObj._consolidating = true;
+            armyObj._consolidationDaysLeft = consolidationDays;
+            armyObj._consolidationTotalDays = consolidationDays;
+        }
 
         if (route && route.legs && route.legs.length > 0) {
             armyObj.route = route;
@@ -8247,9 +8270,14 @@
         Engine.addArmy(armyObj);
 
         // Estimate travel days for the King UI tracker
-        var dist = Math.hypot(targetTown.x - capTown.x, targetTown.y - capTown.y);
-        var baseArmySpeed = (CONFIG.CARAVAN_BASE_SPEED || 120) * 0.5;
-        var travelDays = Math.max(2, Math.ceil(dist / Math.max(baseArmySpeed, 1)));
+        var travelDays = consolidationDays;
+        if (route && route.totalTime) {
+            travelDays += Math.max(2, Math.ceil(route.totalTime));
+        } else {
+            var dist = Math.hypot(targetTown.x - stagingTown.x, targetTown.y - stagingTown.y);
+            var baseArmySpeed = (CONFIG.CARAVAN_BASE_SPEED || 120) * 0.5;
+            travelDays += Math.max(2, Math.ceil(dist / Math.max(baseArmySpeed, 1)));
+        }
 
         // Also track in kingdom._armies for King UI display
         if (!kingdom._armies) kingdom._armies = [];
@@ -8259,14 +8287,22 @@
             targetTownId: targetTownId,
             targetName: targetTown.name,
             targetKingdomId: targetTown.kingdomId,
-            status: 'marching',
+            status: consolidationDays > 0 ? 'consolidating' : 'marching',
             morale: armyObj.morale,
-            departDay: Engine.getDay(),
+            departDay: Engine.getDay() + consolidationDays,
             arrivalDay: Engine.getDay() + travelDays,
+            consolidationDaysLeft: consolidationDays,
+            stagingTownName: stagingTown.name,
         });
 
-        Engine.logEvent('⚔️ An army of ' + soldiers + ' soldiers marches from ' + capTown.name + ' toward ' + targetTown.name + '!');
-        return { success: true, message: 'Army of ' + soldiers + ' sent from ' + capTown.name + ' to ' + targetTown.name + '.' };
+        var msg = 'Army of ' + soldiers + ' sent from ' + stagingTown.name + ' to ' + targetTown.name + '.';
+        if (consolidationDays > 0) {
+            msg = 'Army of ' + soldiers + ' consolidating at ' + stagingTown.name + ' (~' + consolidationDays + ' days), then marching to ' + targetTown.name + '.';
+            Engine.logEvent('⚔️ ' + soldiers + ' soldiers gathering at ' + stagingTown.name + ' before marching to ' + targetTown.name + '!');
+        } else {
+            Engine.logEvent('⚔️ An army of ' + soldiers + ' soldiers marches from ' + stagingTown.name + ' toward ' + targetTown.name + '!');
+        }
+        return { success: true, message: msg };
     }
 
     function kingFortifyTown(townId) {

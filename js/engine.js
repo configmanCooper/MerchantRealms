@@ -12009,6 +12009,176 @@
                 // Garrison management: keep minimum ratio to defend
                 var minGarrison = Math.max(CONFIG.GARRISON_MIN, Math.floor(town.garrison * (CONFIG.ARMY_MIN_GARRISON_RATIO || 0.4)));
                 var availableSoldiers = town.garrison - minGarrison;
+
+                // --- PLAYER KING: Generate military proposals instead of auto-executing ---
+                var _isPKing = typeof Player !== 'undefined' && Player.isPlayerKing && Player.isPlayerKing() && Player.state && Player.state.kingState && Player.state.kingState.kingdomId === k.id;
+                if (_isPKing) {
+                    if (!k._militaryProposals) k._militaryProposals = [];
+                    // Expire old proposals (10 days)
+                    k._militaryProposals = k._militaryProposals.filter(function(pr) { return (world.day - pr.createdDay) < 10; });
+                    // Cap total proposals
+                    if (k._militaryProposals.length < 10) {
+                        // Propose attack if enough soldiers
+                        if (availableSoldiers > 10 && rng.chance(0.15)) {
+                            var _armySize = Math.min(Math.floor(town.garrison * 0.5), availableSoldiers);
+                            var _enemyTs = world.towns.filter(function(t) { return k.atWar.has(t.kingdomId) && !t.destroyed && !t.abandoned; });
+                            if (_enemyTs.length > 0) {
+                                _enemyTs.sort(function(a, b) { return Math.hypot(a.x - town.x, a.y - town.y) - Math.hypot(b.x - town.x, b.y - town.y); });
+                                var _topTarget = _enemyTs[0];
+                                var _tgtRoute = null;
+                                try { _tgtRoute = findArmyRoute(town.id, _topTarget.id, k.id); } catch(e) {}
+                                var _tgtDays = _tgtRoute && _tgtRoute.totalTime ? Math.ceil(_tgtRoute.totalTime) : '?';
+                                var _tgtGar = _topTarget.garrison || 0;
+                                // Check for duplicate proposal
+                                var _atkDupe = false;
+                                for (var _md = 0; _md < k._militaryProposals.length; _md++) {
+                                    if (k._militaryProposals[_md].type === 'attack' && k._militaryProposals[_md].targetTownId === _topTarget.id && k._militaryProposals[_md].fromTownId === town.id) { _atkDupe = true; break; }
+                                }
+                                if (!_atkDupe) {
+                                    // Check if sea route needed
+                                    var _atkNeedsShips = false;
+                                    if (_tgtRoute && _tgtRoute.legs) {
+                                        _atkNeedsShips = _tgtRoute.legs.some(function(l) { return l.type === 'sea'; });
+                                    }
+                                    k._militaryProposals.push({
+                                        id: 'mp_atk_' + world.day + '_' + town.id,
+                                        type: 'attack',
+                                        icon: '⚔️',
+                                        title: 'Send Army to ' + (_topTarget.name || '?'),
+                                        desc: 'Send ' + _armySize + ' soldiers from ' + (town.name || '?') + ' to attack ' + (_topTarget.name || '?') + ' (~' + _tgtDays + ' days, ' + _tgtGar + ' defenders).' + (_atkNeedsShips ? ' ⛵ Requires ships!' : ''),
+                                        fromTownId: town.id,
+                                        targetTownId: _topTarget.id,
+                                        soldiers: _armySize,
+                                        createdDay: world.day,
+                                        needsShips: _atkNeedsShips
+                                    });
+                                }
+                            }
+                        }
+                        // Propose recruitment if garrison is low
+                        if (town.garrison < 15 && rng.chance(0.2)) {
+                            var _recDupe = false;
+                            for (var _rd = 0; _rd < k._militaryProposals.length; _rd++) {
+                                if (k._militaryProposals[_rd].type === 'recruit' && k._militaryProposals[_rd].townId === town.id) { _recDupe = true; break; }
+                            }
+                            if (!_recDupe) {
+                                var _recCost = (CONFIG.SOLDIER_RECRUIT_COST || 50) * 5;
+                                k._militaryProposals.push({
+                                    id: 'mp_rec_' + world.day + '_' + town.id,
+                                    type: 'recruit',
+                                    icon: '🛡️',
+                                    title: 'Recruit Soldiers at ' + (town.name || '?'),
+                                    desc: 'Recruit 5 soldiers at ' + (town.name || '?') + ' (current garrison: ' + town.garrison + '). Cost: ' + _recCost + 'g.',
+                                    townId: town.id,
+                                    count: 5,
+                                    cost: _recCost,
+                                    createdDay: world.day
+                                });
+                            }
+                        }
+                        // Propose supply procurement if lacking weapons
+                        var _townSwords = (town.market && town.market.supply && town.market.supply.swords) || 0;
+                        var _townArmor = (town.market && town.market.supply && town.market.supply.armor) || 0;
+                        var _townBows = (town.market && town.market.supply && town.market.supply.bows) || 0;
+                        if (_townSwords < 10 && rng.chance(0.1)) {
+                            var _supDupe = false;
+                            for (var _sd = 0; _sd < k._militaryProposals.length; _sd++) {
+                                if (k._militaryProposals[_sd].type === 'supply' && k._militaryProposals[_sd].townId === town.id && k._militaryProposals[_sd].good === 'swords') { _supDupe = true; break; }
+                            }
+                            if (!_supDupe) {
+                                var _swordPrice = getMarketPrice(town, 'swords') || 25;
+                                var _qty = Math.min(20, Math.floor(k.gold / _swordPrice * 0.1));
+                                if (_qty >= 5) {
+                                    k._militaryProposals.push({
+                                        id: 'mp_sup_' + world.day + '_swords_' + town.id,
+                                        type: 'supply',
+                                        icon: '🗡️',
+                                        title: 'Procure Swords for ' + (town.name || '?'),
+                                        desc: 'Purchase ' + _qty + ' swords at ' + (town.name || '?') + ' for ~' + Math.round(_qty * _swordPrice) + 'g to equip soldiers.',
+                                        townId: town.id,
+                                        good: 'swords',
+                                        qty: _qty,
+                                        cost: Math.round(_qty * _swordPrice),
+                                        createdDay: world.day
+                                    });
+                                }
+                            }
+                        }
+                        if (_townArmor < 10 && rng.chance(0.08)) {
+                            var _armDupe = false;
+                            for (var _ad = 0; _ad < k._militaryProposals.length; _ad++) {
+                                if (k._militaryProposals[_ad].type === 'supply' && k._militaryProposals[_ad].townId === town.id && k._militaryProposals[_ad].good === 'armor') { _armDupe = true; break; }
+                            }
+                            if (!_armDupe) {
+                                var _armorPrice = getMarketPrice(town, 'armor') || 35;
+                                var _aQty = Math.min(15, Math.floor(k.gold / _armorPrice * 0.1));
+                                if (_aQty >= 3) {
+                                    k._militaryProposals.push({
+                                        id: 'mp_sup_' + world.day + '_armor_' + town.id,
+                                        type: 'supply',
+                                        icon: '🛡️',
+                                        title: 'Procure Armor for ' + (town.name || '?'),
+                                        desc: 'Purchase ' + _aQty + ' armor at ' + (town.name || '?') + ' for ~' + Math.round(_aQty * _armorPrice) + 'g.',
+                                        townId: town.id,
+                                        good: 'armor',
+                                        qty: _aQty,
+                                        cost: Math.round(_aQty * _armorPrice),
+                                        createdDay: world.day
+                                    });
+                                }
+                            }
+                        }
+                        // Propose ship building if needed
+                        if (k._needsShipsForWar && town.isPort && rng.chance(0.15)) {
+                            var _shipDupe = false;
+                            for (var _shd = 0; _shd < k._militaryProposals.length; _shd++) {
+                                if (k._militaryProposals[_shd].type === 'build_ships' && k._militaryProposals[_shd].townId === town.id) { _shipDupe = true; break; }
+                            }
+                            if (!_shipDupe) {
+                                k._militaryProposals.push({
+                                    id: 'mp_ship_' + world.day + '_' + town.id,
+                                    type: 'build_ships',
+                                    icon: '⛵',
+                                    title: 'Build Warships at ' + (town.name || '?'),
+                                    desc: 'Build warships at ' + (town.name || '?') + ' for troop transport across sea routes. Cost: ~300g.',
+                                    townId: town.id,
+                                    cost: 300,
+                                    createdDay: world.day
+                                });
+                            }
+                        }
+                        // Propose fortifying border towns
+                        // Check if this town borders enemy territory
+                        var _isBorder = false;
+                        var _townRoads = world.roads.filter(function(r) { return r.fromTownId === town.id || r.toTownId === town.id; });
+                        for (var _ri = 0; _ri < _townRoads.length; _ri++) {
+                            var _otherTId = _townRoads[_ri].fromTownId === town.id ? _townRoads[_ri].toTownId : _townRoads[_ri].fromTownId;
+                            var _otherT = findTown(_otherTId);
+                            if (_otherT && k.atWar.has(_otherT.kingdomId)) { _isBorder = true; break; }
+                        }
+                        if (_isBorder && town.garrison < 20 && rng.chance(0.12)) {
+                            var _fortDupe = false;
+                            for (var _fd = 0; _fd < k._militaryProposals.length; _fd++) {
+                                if (k._militaryProposals[_fd].type === 'fortify' && k._militaryProposals[_fd].townId === town.id) { _fortDupe = true; break; }
+                            }
+                            if (!_fortDupe) {
+                                k._militaryProposals.push({
+                                    id: 'mp_fort_' + world.day + '_' + town.id,
+                                    type: 'fortify',
+                                    icon: '🏰',
+                                    title: 'Fortify ' + (town.name || '?'),
+                                    desc: 'Reinforce border town ' + (town.name || '?') + ' with +5 garrison soldiers. Cost: 150g.',
+                                    townId: town.id,
+                                    cost: 150,
+                                    createdDay: world.day
+                                });
+                            }
+                        }
+                    }
+                    // Skip auto army raising for player kingdom
+                    continue;
+                }
+
                 if (availableSoldiers > 5 && rng.chance(0.3)) {
                     const armySize = Math.min(Math.floor(town.garrison * 0.5), availableSoldiers);
                     town.garrison -= armySize;
@@ -13168,6 +13338,40 @@
         for (const army of world.armies) {
             // Skip armies currently besieging a town — they're handled by tickSieges
             if (army._besieging) continue;
+
+            // Handle consolidating armies — waiting for reinforcements to arrive at staging town
+            if (army._consolidating) {
+                army._consolidationDaysLeft = (army._consolidationDaysLeft || 1) - 1;
+                if (army._consolidationDaysLeft <= 0) {
+                    delete army._consolidating;
+                    delete army._consolidationDaysLeft;
+                    delete army._consolidationTotalDays;
+                    army.status = 'marching';
+                    // Update King UI tracking
+                    var _consK = findKingdom(army.kingdomId);
+                    if (_consK && _consK._armies) {
+                        for (var _ci = 0; _ci < _consK._armies.length; _ci++) {
+                            if (_consK._armies[_ci].id === army.id) {
+                                _consK._armies[_ci].status = 'marching';
+                                _consK._armies[_ci].consolidationDaysLeft = 0;
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    // Update UI tracking with remaining days
+                    var _consK2 = findKingdom(army.kingdomId);
+                    if (_consK2 && _consK2._armies) {
+                        for (var _ci2 = 0; _ci2 < _consK2._armies.length; _ci2++) {
+                            if (_consK2._armies[_ci2].id === army.id) {
+                                _consK2._armies[_ci2].consolidationDaysLeft = army._consolidationDaysLeft;
+                                break;
+                            }
+                        }
+                    }
+                }
+                continue; // Don't move while consolidating
+            }
 
             // Handle army recovery after failed siege — rest then re-attack
             if (army._recoveryUntil) {

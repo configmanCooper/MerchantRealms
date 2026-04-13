@@ -47,6 +47,8 @@
     var checkDirectedCommissionDeadline = function(k) { return Engine.checkDirectedCommissionDeadline(k); };
     var getMarketPrice = function(town, good) { return Engine.getMarketPrice(town, good); };
     var convertBuilding = function(town, index, newType, ownerId, owner) { return Engine.convertBuilding(town, index, newType, ownerId, owner); };
+    var findArmyRoute = function(from, to, kingdomId) { return Engine.findArmyRoute(from, to, kingdomId); };
+    var uid = function(prefix) { return Engine.uid ? Engine.uid(prefix) : (prefix || '') + '_' + Math.random().toString(36).substr(2, 9); };
 
     // ── Functions that must be newly exported from engine.js ──
     var tickWarExhaustion = function(k) { return Engine.tickWarExhaustion(k); };
@@ -4636,6 +4638,150 @@
     Engine.dismissEconomicProposal = function(kingdom, proposalId) {
         if (!kingdom || !kingdom._economicProposals) return;
         kingdom._economicProposals = kingdom._economicProposals.filter(function(pr) { return pr.id !== proposalId; });
+    };
+
+    // ── Execute a military proposal (player-king approved) ──
+    Engine.executeMilitaryProposal = function(kingdom, proposal) {
+        if (!kingdom || !proposal) return { success: false, message: 'Invalid proposal.' };
+        var world = Engine.getWorld();
+        switch (proposal.type) {
+            case 'attack':
+                // Send army from the specified town to target
+                var fromT = findTown(proposal.fromTownId);
+                var tgtT = findTown(proposal.targetTownId);
+                if (!fromT || !tgtT) return { success: false, message: 'Town not found.' };
+                var soldiers = proposal.soldiers || 20;
+                var minGar = Math.max(CONFIG.GARRISON_MIN || 3, Math.floor(fromT.garrison * (CONFIG.ARMY_MIN_GARRISON_RATIO || 0.4)));
+                var avail = fromT.garrison - minGar;
+                if (avail < 10) return { success: false, message: 'Not enough soldiers at ' + fromT.name + ' (need at least 10 available, have ' + avail + ').' };
+                soldiers = Math.min(soldiers, avail);
+                fromT.garrison -= soldiers;
+
+                var inf = Math.floor(soldiers * 0.6);
+                var arch = Math.floor(soldiers * 0.25);
+                var cav = soldiers - inf - arch;
+
+                var route = null;
+                try { route = findArmyRoute(fromT.id, tgtT.id, kingdom.id); } catch(e) {}
+                if (!route || !route.legs || route.legs.length === 0) {
+                    fromT.garrison += soldiers;
+                    return { success: false, message: 'No route to ' + tgtT.name + '.' };
+                }
+
+                // Consume equipment from town
+                var townSupply = fromT.market && fromT.market.supply ? fromT.market.supply : {};
+                var swordsUsed = Math.min(townSupply.swords || 0, soldiers);
+                var armorUsed = Math.min(townSupply.armor || 0, inf);
+                var bowsUsed = Math.min(townSupply.bows || 0, arch);
+                var arrowsUsed = Math.min(townSupply.arrows || 0, arch * 5);
+                if (townSupply.swords) townSupply.swords = Math.max(0, townSupply.swords - swordsUsed);
+                if (townSupply.armor) townSupply.armor = Math.max(0, townSupply.armor - armorUsed);
+                if (townSupply.bows) townSupply.bows = Math.max(0, townSupply.bows - bowsUsed);
+                if (townSupply.arrows) townSupply.arrows = Math.max(0, townSupply.arrows - arrowsUsed);
+
+                var armyObj = {
+                    id: uid('army'),
+                    kingdomId: kingdom.id,
+                    targetKingdomId: tgtT.kingdomId,
+                    soldiers: soldiers,
+                    fromTownId: fromT.id,
+                    toTownId: tgtT.id,
+                    progress: 0,
+                    equipment: swordsUsed,
+                    infantry: inf, archers: arch, cavalry: cav,
+                    morale: CONFIG.ARMY_DEFAULT_MORALE || 80,
+                    supplies: CONFIG.ARMY_DEFAULT_SUPPLIES || 100
+                };
+                if (route.legs.length > 0) {
+                    armyObj.route = route;
+                    armyObj.legIndex = 0;
+                    armyObj.legProgress = 0;
+                }
+                world.armies.push(armyObj);
+
+                // Track in kingdom._armies for King UI
+                if (!kingdom._armies) kingdom._armies = [];
+                var travelD = route.totalTime ? Math.max(2, Math.ceil(route.totalTime)) : 10;
+                kingdom._armies.push({
+                    id: armyObj.id, soldiers: soldiers, targetTownId: tgtT.id,
+                    targetName: tgtT.name, targetKingdomId: tgtT.kingdomId,
+                    status: 'marching', morale: armyObj.morale,
+                    departDay: world.day, arrivalDay: world.day + travelD,
+                    stagingTownName: fromT.name
+                });
+                logEvent('⚔️ ' + soldiers + ' soldiers march from ' + fromT.name + ' to attack ' + tgtT.name + '!');
+                break;
+
+            case 'recruit':
+                var recTown = findTown(proposal.townId);
+                if (!recTown) return { success: false, message: 'Town not found.' };
+                var cnt = proposal.count || 5;
+                var costPer = CONFIG.SOLDIER_RECRUIT_COST || 50;
+                var totalCost = cnt * costPer;
+                if (kingdom.gold < totalCost) return { success: false, message: 'Need ' + totalCost + 'g (have ' + Math.floor(kingdom.gold) + 'g).' };
+                kingdom.gold -= totalCost;
+                recTown.garrison = (recTown.garrison || 0) + cnt;
+                logEvent('🛡️ Recruited ' + cnt + ' soldiers at ' + recTown.name + '. Cost: ' + totalCost + 'g.');
+                break;
+
+            case 'supply':
+                var supTown = findTown(proposal.townId);
+                if (!supTown) return { success: false, message: 'Town not found.' };
+                var good = proposal.good;
+                var qty = proposal.qty || 10;
+                var price = getMarketPrice(supTown, good) || 10;
+                var supCost = Math.round(qty * price);
+                if (kingdom.gold < supCost) return { success: false, message: 'Need ' + supCost + 'g (have ' + Math.floor(kingdom.gold) + 'g).' };
+                kingdom.gold -= supCost;
+                if (!supTown.market.supply) supTown.market.supply = {};
+                supTown.market.supply[good] = (supTown.market.supply[good] || 0) + qty;
+                var _resInfo = findResourceById ? findResourceById(good) : null;
+                logEvent('🗡️ Procured ' + qty + ' ' + (_resInfo ? _resInfo.name : good) + ' at ' + supTown.name + '. Cost: ' + supCost + 'g.');
+                break;
+
+            case 'build_ships':
+                var shipTown = findTown(proposal.townId);
+                if (!shipTown || !shipTown.isPort) return { success: false, message: 'Port town not found.' };
+                var shipCost = proposal.cost || 300;
+                if (kingdom.gold < shipCost) return { success: false, message: 'Need ' + shipCost + 'g (have ' + Math.floor(kingdom.gold) + 'g).' };
+                kingdom.gold -= shipCost;
+                if (!kingdom.navalFleet) kingdom.navalFleet = [];
+                kingdom.navalFleet.push({
+                    id: uid('ship'),
+                    type: 'warship',
+                    stationedAt: shipTown.id,
+                    condition: 100,
+                    mission: null,
+                    builtDay: world.day
+                });
+                logEvent('⛵ New warship built at ' + shipTown.name + ' for ' + shipCost + 'g.');
+                break;
+
+            case 'fortify':
+                var fortTown = findTown(proposal.townId);
+                if (!fortTown) return { success: false, message: 'Town not found.' };
+                var fortCost = proposal.cost || 150;
+                if (kingdom.gold < fortCost) return { success: false, message: 'Need ' + fortCost + 'g (have ' + Math.floor(kingdom.gold) + 'g).' };
+                kingdom.gold -= fortCost;
+                fortTown.garrison = (fortTown.garrison || 0) + 5;
+                logEvent('🏰 ' + fortTown.name + ' fortified! +5 garrison soldiers. Cost: ' + fortCost + 'g.');
+                break;
+
+            default:
+                return { success: false, message: 'Unknown military proposal type: ' + proposal.type };
+        }
+
+        // Remove from proposals queue
+        if (kingdom._militaryProposals) {
+            kingdom._militaryProposals = kingdom._militaryProposals.filter(function(pr) { return pr.id !== proposal.id; });
+        }
+        return { success: true, message: proposal.icon + ' ' + proposal.title + ' approved!' };
+    };
+
+    // Dismiss a military proposal
+    Engine.dismissMilitaryProposal = function(kingdom, proposalId) {
+        if (!kingdom || !kingdom._militaryProposals) return;
+        kingdom._militaryProposals = kingdom._militaryProposals.filter(function(pr) { return pr.id !== proposalId; });
     };
 
     // ── Sync hook ──

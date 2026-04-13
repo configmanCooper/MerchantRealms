@@ -539,7 +539,7 @@
             for (var _ari = 0; _ari < _armies.length; _ari++) {
                 var _ar = _armies[_ari];
                 var _arTown = Engine.findTown(_ar.targetTownId);
-                var _statusIcon = _ar._recoveryUntil ? '🛏️' : _ar.status === 'retreating' ? '🏳️' : _ar.status === 'besieging' ? '🏰' : _ar.status === 'marching' ? '🚶' : _ar.status === 'recovering' ? '🛏️' : '⚔️';
+                var _statusIcon = _ar._recoveryUntil ? '🛏️' : _ar.status === 'retreating' ? '🏳️' : _ar.status === 'besieging' ? '🏰' : _ar.status === 'consolidating' ? '📦' : _ar.status === 'marching' ? '🚶' : _ar.status === 'recovering' ? '🛏️' : '⚔️';
                 var _statusText = '';
                 if (_ar._recoveryUntil) {
                     _statusText = 'Recovering (' + Math.max(0, _ar._recoveryUntil - _day) + 'd)';
@@ -547,6 +547,9 @@
                     _statusText = 'Retreating home';
                 } else if (_ar.status === 'besieging') {
                     _statusText = 'Besieging';
+                } else if (_ar.status === 'consolidating') {
+                    var _consLeft = _ar.consolidationDaysLeft || 0;
+                    _statusText = 'Consolidating at ' + escapeHtml(_ar.stagingTownName || '?') + ' (' + _consLeft + 'd)';
                 } else if (_ar.status === 'marching') {
                     if (_ar._daysLeft != null && _ar._daysLeft >= 0) {
                         _statusText = 'Marching (' + _ar._daysLeft + 'd left)';
@@ -647,8 +650,8 @@
         } else {
             for (var _ai = 0; _ai < _armies.length; _ai++) {
                 var _army = _armies[_ai];
-                var _statusIcon = _army._recoveryUntil ? '🛏️' : _army._retreating ? '🏳️' : _army._besieging ? '🏰' : _army.status === 'marching' ? '🚶' : _army.status === 'fighting' ? '⚔️' : _army.status === 'returning' ? '🔙' : '📍';
-                var _statusText = _army._recoveryUntil ? 'Regrouping (resumes attack soon)' : _army._retreating ? 'Retreating home' : _army._besieging ? 'Besieging' : (_army.status || 'unknown');
+                var _statusIcon = _army._recoveryUntil ? '🛏️' : _army._retreating ? '🏳️' : _army._besieging ? '🏰' : _army._consolidating ? '📦' : _army.status === 'marching' ? '🚶' : _army.status === 'fighting' ? '⚔️' : _army.status === 'returning' ? '🔙' : '📍';
+                var _statusText = _army._recoveryUntil ? 'Regrouping (resumes attack soon)' : _army._retreating ? 'Retreating home' : _army._besieging ? 'Besieging' : _army._consolidating ? 'Consolidating (' + (_army._consolidationDaysLeft || 0) + 'd)' : (_army.status || 'unknown');
                 var _moraleColor = (_army.morale || 50) > 60 ? '#4caf50' : (_army.morale || 50) > 30 ? '#ff9800' : '#f44336';
                 html += '<div style="background:rgba(0,0,0,0.2);padding:4px 6px;border-radius:4px;margin-bottom:3px;">';
                 html += '<div style="font-size:0.72rem;color:#d4c9a0;">' + _statusIcon + ' ' + (_army.soldiers || 0) + ' soldiers → ' + (_army.targetName || 'Unknown') + '</div>';
@@ -666,6 +669,34 @@
         html += '<input type="number" id="_kingDischargeCount" min="1" max="' + Math.max(1, _soldiers) + '" value="5" style="width:60px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#d4c9a0;padding:2px 4px;font-size:0.72rem;text-align:center;">';
         html += '<button class="btn-medieval" data-action="kingDischargeSoldiers" style="font-size:0.72rem;padding:4px 12px;' + (_soldiers < 1 ? 'opacity:0.5;' : '') + '" ' + (_soldiers < 1 ? 'disabled' : '') + '>📉 Discharge</button>';
         html += '</div></div>';
+
+        // ── Military Proposals (AI suggestions for player-king) ──
+        var _milProps = kingdom._militaryProposals || [];
+        if (_milProps.length > 0) {
+            html += '<div style="background:rgba(212,168,67,0.08);padding:10px;border-radius:6px;border:1px solid rgba(212,168,67,0.2);margin-top:10px;">';
+            html += '<div style="font-size:0.9rem;color:#d4a843;margin-bottom:6px;font-weight:bold;">📜 Military Proposals (' + _milProps.length + ')</div>';
+            html += '<div style="font-size:0.7rem;color:#aaa;margin-bottom:8px;">Your military advisors recommend these actions. Approve or dismiss.</div>';
+
+            for (var _mpi = 0; _mpi < _milProps.length; _mpi++) {
+                var _mp = _milProps[_mpi];
+                var _mpBg = _mp.type === 'attack' ? 'rgba(196,78,82,0.12)' : _mp.type === 'fortify' ? 'rgba(93,173,226,0.1)' : 'rgba(0,0,0,0.15)';
+                var _mpBorder = _mp.type === 'attack' ? 'rgba(196,78,82,0.25)' : _mp.type === 'fortify' ? 'rgba(93,173,226,0.2)' : 'rgba(255,255,255,0.08)';
+                html += '<div style="background:' + _mpBg + ';border:1px solid ' + _mpBorder + ';padding:8px;border-radius:5px;margin-bottom:6px;">';
+                html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;">';
+                html += '<div style="flex:1;">';
+                html += '<div style="font-size:0.8rem;color:#d4c9a0;font-weight:bold;margin-bottom:3px;">' + (_mp.icon || '📋') + ' ' + escapeHtml(_mp.title || '') + '</div>';
+                html += '<div style="font-size:0.7rem;color:#aaa;">' + escapeHtml(_mp.desc || '') + '</div>';
+                if (_mp.cost) html += '<div style="font-size:0.68rem;color:#e0c58a;margin-top:2px;">💰 Cost: ' + _mp.cost + 'g</div>';
+                html += '</div>';
+                html += '<div style="display:flex;flex-direction:column;gap:3px;margin-left:8px;">';
+                html += '<button class="btn-medieval" data-action="kingApproveMilProposal" data-id="' + _mp.id + '" style="font-size:0.68rem;padding:3px 10px;background:rgba(85,168,104,0.3) !important;border:1px solid rgba(85,168,104,0.4) !important;color:#81c784;">✅ Approve</button>';
+                html += '<button class="btn-medieval" data-action="kingDismissMilProposal" data-id="' + _mp.id + '" style="font-size:0.68rem;padding:3px 10px;opacity:0.7;">❌ Dismiss</button>';
+                html += '</div></div></div>';
+            }
+            html += '</div>';
+        } else if (kingdom.atWar && kingdom.atWar.size > 0) {
+            html += '<div style="font-size:0.72rem;color:#888;margin-top:8px;padding:6px;background:rgba(0,0,0,0.1);border-radius:4px;">📜 No current military proposals. Your advisors will suggest actions as the war progresses.</div>';
+        }
 
         return html;
     }
@@ -2053,34 +2084,223 @@
     UI._confirmKingFlee = _confirmKingFlee;
     UI._showRevoltUI = _showRevoltUI;
     UI._resolveRevolt = _resolveRevolt;
-    UI._openSendArmyModal = function(townId) {
+    // Shared Send Army modal builder — used by both _openSendArmyModal and kingSendArmyToTown
+    function _buildSendArmyModal(townId) {
         var tgt = Engine.findTown(townId);
         var garrison = tgt ? (tgt.garrison || 0) : 0;
-        var html2 = '<div style="padding:8px;">';
-        html2 += '<div style="font-size:0.85rem;color:#c44e52;margin-bottom:8px;">⚔️ Send Army</div>';
-        html2 += '<div style="font-size:0.75rem;color:#ddd;margin-bottom:6px;">Target: ' + (tgt ? escapeHtml(tgt.name) : '?') + ' (Garrison: ' + garrison + ')</div>';
+        var kingdom = null;
+        try { if (Player.state && Player.state.kingState) kingdom = Engine.findKingdom(Player.state.kingState.kingdomId); } catch(e) {}
+        if (!kingdom) { UI.toast('Not king.', 'error'); return; }
 
-        // Estimate travel time
-        var travelInfo = _estimateArmyTravel(tgt);
-        if (travelInfo.days > 0) {
-            html2 += '<div style="font-size:0.68rem;color:#aaa;margin-bottom:6px;">🗺️ Est. travel: ~' + travelInfo.days + ' days from ' + escapeHtml(travelInfo.fromName) + '</div>';
+        // Gather all kingdom towns with garrison info
+        var kTowns = [];
+        var totalAvailable = 0;
+        try {
+            var allTowns = Engine.getTowns ? Engine.getTowns() : [];
+            for (var i = 0; i < allTowns.length; i++) {
+                if (allTowns[i].kingdomId === kingdom.id) {
+                    var avail = Math.max(0, (allTowns[i].garrison || 0) - 5);
+                    kTowns.push({ id: allTowns[i].id, name: allTowns[i].name, garrison: allTowns[i].garrison || 0, available: avail, isCapital: !!allTowns[i].isCapital, x: allTowns[i].x, y: allTowns[i].y, isPort: !!allTowns[i].isPort });
+                    totalAvailable += avail;
+                }
+            }
+        } catch(e) {}
+
+        // Sort: capital first, then by garrison descending
+        kTowns.sort(function(a, b) { if (a.isCapital) return -1; if (b.isCapital) return 1; return b.garrison - a.garrison; });
+
+        // Find default staging town (capital or highest garrison)
+        var defaultStaging = kTowns.length > 0 ? kTowns[0].id : '';
+
+        var html = '<div style="padding:10px;">';
+        html += '<div style="font-size:1em;color:#c44e52;margin-bottom:6px;font-weight:bold;">⚔️ Send Army to ' + (tgt ? escapeHtml(tgt.name) : '?') + '</div>';
+        html += '<div style="font-size:0.78rem;color:#aaa;margin-bottom:8px;">Enemy garrison: <strong style="color:#e57373;">' + garrison + ' defenders</strong></div>';
+
+        // Staging town selector
+        html += '<div style="margin-bottom:10px;">';
+        html += '<label style="font-size:0.75rem;color:#d4a843;">📍 Staging Town (army departs from here):</label>';
+        html += '<select id="_armyStagingTown" style="display:block;width:100%;margin-top:4px;padding:5px;font-size:0.78rem;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:4px;" onchange="UI._updateSendArmyModal(\'' + townId + '\')">';
+        for (var ti = 0; ti < kTowns.length; ti++) {
+            var kt = kTowns[ti];
+            html += '<option value="' + kt.id + '"' + (kt.id === defaultStaging ? ' selected' : '') + '>' + escapeHtml(kt.name) + (kt.isCapital ? ' ★' : '') + ' — ' + kt.garrison + ' garrison (' + kt.available + ' available)</option>';
         }
+        html += '</select>';
+        html += '</div>';
 
-        html2 += '<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">';
-        html2 += '<label style="font-size:0.72rem;color:#aaa;">Soldiers:</label>';
-        html2 += '<input type="number" id="_armySendCount" min="10" max="200" value="30" style="font-size:0.72rem;width:60px;padding:3px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;" oninput="UI._updateArmyChance(' + garrison + ')">';
-        html2 += '</div>';
+        // Per-town soldier breakdown
+        html += '<div style="background:rgba(0,0,0,0.2);padding:6px;border-radius:5px;margin-bottom:8px;max-height:120px;overflow-y:auto;">';
+        html += '<div style="font-size:0.7rem;color:#d4a843;margin-bottom:4px;">🏘️ Available soldiers across kingdom: <strong>' + totalAvailable + '</strong></div>';
+        for (var ki = 0; ki < kTowns.length; ki++) {
+            var _kt = kTowns[ki];
+            if (_kt.available <= 0) continue;
+            html += '<div style="display:flex;justify-content:space-between;font-size:0.68rem;color:#bbb;padding:1px 4px;">';
+            html += '<span>' + (_kt.isCapital ? '⭐ ' : '') + escapeHtml(_kt.name) + '</span>';
+            html += '<span style="color:' + (_kt.available >= 10 ? '#81c784' : '#e0a050') + ';">' + _kt.available + ' soldiers</span>';
+            html += '</div>';
+        }
+        html += '</div>';
+
+        // Route info area (populated by JS on staging town change)
+        html += '<div id="_armyRouteInfo" style="font-size:0.72rem;margin-bottom:8px;"></div>';
+
+        // Soldier count
+        html += '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">';
+        html += '<label style="font-size:0.75rem;color:#aaa;">Soldiers to send:</label>';
+        html += '<input type="number" id="_armySendCount" min="10" max="' + Math.max(10, totalAvailable) + '" value="' + Math.min(30, totalAvailable) + '" style="font-size:0.78rem;width:70px;padding:4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:4px;" oninput="UI._updateSendArmyModal(\'' + townId + '\')">';
+        html += '<span style="font-size:0.68rem;color:#888;">/ ' + totalAvailable + ' max</span>';
+        html += '</div>';
 
         // Success estimate
-        html2 += '<div id="_armyChanceDisplay" style="font-size:0.68rem;margin-bottom:8px;">' + _getSuccessEstimateHtml(30, garrison) + '</div>';
+        html += '<div id="_armyChanceDisplay" style="font-size:0.72rem;margin-bottom:8px;">' + _getSuccessEstimateHtml(Math.min(30, totalAvailable), garrison) + '</div>';
 
-        html2 += '<button class="btn-medieval" data-action="kingSendArmyConfirm" data-id="' + townId + '" style="font-size:0.72rem;padding:4px 10px;background:rgba(196,78,82,0.3) !important;">⚔️ Send Army</button>';
-        html2 += '</div>';
-        openModal('⚔️ Send Army', html2, '<button class="btn-medieval" data-action="closeModal">Cancel</button>');
+        // Consolidation info
+        html += '<div id="_armyConsolidationInfo" style="font-size:0.72rem;margin-bottom:10px;"></div>';
+
+        // Send button
+        html += '<button class="btn-medieval" data-action="kingSendArmyConfirm" data-id="' + townId + '" style="padding:8px 16px;background:rgba(196,78,82,0.3) !important;border:2px solid rgba(196,78,82,0.5) !important;">';
+        html += '<div style="font-weight:bold;color:#ef9a9a;">⚔️ Send Army</div></button>';
+        html += '</div>';
+
+        openModal('⚔️ Send Army', html, '<button class="btn-medieval" data-action="closeModal">Cancel</button>');
+
+        // Trigger initial route info update
+        setTimeout(function() { UI._updateSendArmyModal(townId); }, 50);
+    }
+
+    UI._openSendArmyModal = function(townId) { _buildSendArmyModal(townId); };
+
+    // Dynamic update when staging town or soldier count changes
+    UI._updateSendArmyModal = function(targetTownId) {
+        var tgt = Engine.findTown(targetTownId);
+        var garrison = tgt ? (tgt.garrison || 0) : 5;
+        var kingdom = null;
+        try { if (Player.state && Player.state.kingState) kingdom = Engine.findKingdom(Player.state.kingState.kingdomId); } catch(e) {}
+        if (!kingdom) return;
+
+        var stagingSel = document.getElementById('_armyStagingTown');
+        var soldierInp = document.getElementById('_armySendCount');
+        var routeInfoEl = document.getElementById('_armyRouteInfo');
+        var consolidateEl = document.getElementById('_armyConsolidationInfo');
+        var chanceEl = document.getElementById('_armyChanceDisplay');
+        if (!stagingSel || !soldierInp) return;
+
+        var stagingId = stagingSel.value;
+        var soldiers = parseInt(soldierInp.value) || 30;
+        var stagingTown = Engine.findTown(stagingId);
+
+        // Update success estimate
+        if (chanceEl) chanceEl.innerHTML = _getSuccessEstimateHtml(soldiers, garrison);
+
+        // Route info: travel time + ship warning
+        if (routeInfoEl && stagingTown && tgt) {
+            var dist = Math.hypot(tgt.x - stagingTown.x, tgt.y - stagingTown.y);
+            var baseArmySpeed = ((typeof CONFIG !== 'undefined' ? CONFIG.CARAVAN_BASE_SPEED : 120) || 120) * 0.5;
+            var travelDays = Math.max(2, Math.ceil(dist / Math.max(baseArmySpeed, 1)));
+            var routeHtml = '🗺️ March: ~<strong>' + travelDays + ' days</strong> from ' + escapeHtml(stagingTown.name) + ' to ' + escapeHtml(tgt.name);
+
+            // Check for sea legs
+            var route = null;
+            try {
+                if (Engine.findArmyRoute) route = Engine.findArmyRoute(stagingId, targetTownId, kingdom.id);
+            } catch(e) {}
+            if (route && route.legs) {
+                var seaLegs = route.legs.filter(function(l) { return l.type === 'sea'; });
+                if (seaLegs.length > 0) {
+                    var shipsNeeded = Math.ceil(soldiers / (CONFIG.ARMY_EMBARK_SOLDIERS_PER_SHIP || 50));
+                    var shipsAvail = 0;
+                    if (kingdom.navalFleet) {
+                        var firstSeaPort = seaLegs[0].from;
+                        for (var si = 0; si < kingdom.navalFleet.length; si++) {
+                            var s = kingdom.navalFleet[si];
+                            if (s.stationedAt === firstSeaPort && (!s.mission || s.mission === 'troop_transport') && !s._transportingArmy) shipsAvail++;
+                        }
+                    }
+                    if (shipsAvail >= shipsNeeded) {
+                        routeHtml += '<br><span style="color:#64b5f6;">⛵ Sea crossing required — ' + shipsAvail + '/' + shipsNeeded + ' ships available ✓</span>';
+                    } else {
+                        routeHtml += '<br><span style="color:#e57373;">⚠️ Sea crossing required! Need ' + shipsNeeded + ' ships but only ' + shipsAvail + ' available at port. Build warships first!</span>';
+                    }
+                }
+                // Check for destroyed bridge legs
+                var destBridgeLegs = route.legs.filter(function(l) { return l.type === 'road_destroyed_bridge'; });
+                if (destBridgeLegs.length > 0) {
+                    routeHtml += '<br><span style="color:#ffcc80;">🌉 Route crosses ' + destBridgeLegs.length + ' destroyed bridge(s) — army will move at 30% speed on those sections</span>';
+                }
+                // Use route total time for better estimate
+                if (route.totalTime) {
+                    travelDays = Math.max(2, Math.ceil(route.totalTime));
+                    routeHtml = '🗺️ March: ~<strong>' + travelDays + ' days</strong> from ' + escapeHtml(stagingTown.name) + ' to ' + escapeHtml(tgt.name);
+                    if (seaLegs.length > 0) {
+                        var _sn = Math.ceil(soldiers / (CONFIG.ARMY_EMBARK_SOLDIERS_PER_SHIP || 50));
+                        var _sa = 0;
+                        if (kingdom.navalFleet) {
+                            var _fp = seaLegs[0].from;
+                            for (var _si2 = 0; _si2 < kingdom.navalFleet.length; _si2++) {
+                                var _s2 = kingdom.navalFleet[_si2];
+                                if (_s2.stationedAt === _fp && (!_s2.mission || _s2.mission === 'troop_transport') && !_s2._transportingArmy) _sa++;
+                            }
+                        }
+                        if (_sa >= _sn) routeHtml += '<br><span style="color:#64b5f6;">⛵ Sea crossing — ' + _sa + '/' + _sn + ' ships ✓</span>';
+                        else routeHtml += '<br><span style="color:#e57373;">⚠️ Need ' + _sn + ' ships, only ' + _sa + ' available!</span>';
+                    }
+                    if (destBridgeLegs.length > 0) {
+                        routeHtml += '<br><span style="color:#ffcc80;">🌉 ' + destBridgeLegs.length + ' destroyed bridge(s) — 30% speed</span>';
+                    }
+                }
+            }
+            routeInfoEl.innerHTML = routeHtml;
+        }
+
+        // Consolidation info: how long to gather soldiers from other towns
+        if (consolidateEl && stagingTown) {
+            var stagingAvail = Math.max(0, (stagingTown.garrison || 0) - 5);
+            if (soldiers <= stagingAvail) {
+                consolidateEl.innerHTML = '<span style="color:#81c784;">✓ ' + escapeHtml(stagingTown.name) + ' has enough soldiers (' + stagingAvail + ' available). Army departs immediately.</span>';
+            } else {
+                var needed = soldiers - stagingAvail;
+                var consHtml = '<div style="padding:6px;background:rgba(255,193,7,0.1);border:1px solid rgba(255,193,7,0.3);border-radius:5px;">';
+                consHtml += '<div style="color:#ffcc80;font-weight:bold;margin-bottom:4px;">⏳ Consolidation Required</div>';
+                consHtml += '<div style="color:#ccc;font-size:0.7rem;">' + escapeHtml(stagingTown.name) + ' has ' + stagingAvail + ' soldiers. Need ' + needed + ' more from other towns:</div>';
+
+                // Calculate consolidation: pull from nearest towns first
+                var otherTowns = [];
+                try {
+                    var allT = Engine.getTowns ? Engine.getTowns() : [];
+                    for (var oi = 0; oi < allT.length; oi++) {
+                        if (allT[oi].kingdomId === kingdom.id && allT[oi].id !== stagingId) {
+                            var oAvail = Math.max(0, (allT[oi].garrison || 0) - 3);
+                            if (oAvail > 0) {
+                                var oDist = Math.hypot(allT[oi].x - stagingTown.x, allT[oi].y - stagingTown.y);
+                                var oSpeed = ((typeof CONFIG !== 'undefined' ? CONFIG.CARAVAN_BASE_SPEED : 120) || 120) * 0.5;
+                                var oDays = Math.max(1, Math.ceil(oDist / Math.max(oSpeed, 1)));
+                                otherTowns.push({ name: allT[oi].name, available: oAvail, days: oDays });
+                            }
+                        }
+                    }
+                } catch(e) {}
+                otherTowns.sort(function(a, b) { return a.days - b.days; });
+
+                var rem = needed;
+                var maxConsDays = 0;
+                for (var ci = 0; ci < otherTowns.length && rem > 0; ci++) {
+                    var pull = Math.min(rem, otherTowns[ci].available);
+                    consHtml += '<div style="font-size:0.68rem;color:#bbb;padding:1px 0;">  → ' + pull + ' from ' + escapeHtml(otherTowns[ci].name) + ' (~' + otherTowns[ci].days + ' days march)</div>';
+                    maxConsDays = Math.max(maxConsDays, otherTowns[ci].days);
+                    rem -= pull;
+                }
+                if (rem > 0) {
+                    consHtml += '<div style="color:#e57373;font-size:0.7rem;margin-top:4px;">⚠️ Still ' + rem + ' soldiers short! Not enough across kingdom.</div>';
+                } else {
+                    consHtml += '<div style="color:#81c784;font-size:0.7rem;margin-top:4px;">Consolidation time: ~' + maxConsDays + ' days before army departs.</div>';
+                }
+                consHtml += '</div>';
+                consolidateEl.innerHTML = consHtml;
+            }
+        }
     };
 
-    // Estimate travel from player's capital to target
-    function _estimateArmyTravel(targetTown) {
+    // Estimate travel from a given staging town to target (used internally)
+    function _estimateArmyTravel(targetTown, fromTown) {
         if (!targetTown) return { days: 0, fromName: '?' };
         var kingdom = null;
         try {
@@ -2088,26 +2308,26 @@
         } catch(e) {}
         if (!kingdom) return { days: 0, fromName: '?' };
 
-        var capTown = null;
-        var kTowns = Engine.getTowns ? Engine.getTowns() : [];
-        for (var i = 0; i < kTowns.length; i++) {
-            if (kTowns[i].kingdomId === kingdom.id && kTowns[i].isCapital) { capTown = kTowns[i]; break; }
-        }
-        if (!capTown) {
-            // Fallback to highest garrison town
-            var bestGar = 0;
-            for (var j = 0; j < kTowns.length; j++) {
-                if (kTowns[j].kingdomId === kingdom.id && (kTowns[j].garrison || 0) > bestGar) {
-                    bestGar = kTowns[j].garrison || 0;
-                    capTown = kTowns[j];
+        if (!fromTown) {
+            var kTowns = Engine.getTowns ? Engine.getTowns() : [];
+            for (var i = 0; i < kTowns.length; i++) {
+                if (kTowns[i].kingdomId === kingdom.id && kTowns[i].isCapital) { fromTown = kTowns[i]; break; }
+            }
+            if (!fromTown) {
+                var bestGar = 0;
+                for (var j = 0; j < kTowns.length; j++) {
+                    if (kTowns[j].kingdomId === kingdom.id && (kTowns[j].garrison || 0) > bestGar) {
+                        bestGar = kTowns[j].garrison || 0;
+                        fromTown = kTowns[j];
+                    }
                 }
             }
         }
-        if (!capTown) return { days: 0, fromName: '?' };
-        var dist = Math.hypot(targetTown.x - capTown.x, targetTown.y - capTown.y);
+        if (!fromTown) return { days: 0, fromName: '?' };
+        var dist = Math.hypot(targetTown.x - fromTown.x, targetTown.y - fromTown.y);
         var baseArmySpeed = ((typeof CONFIG !== 'undefined' ? CONFIG.CARAVAN_BASE_SPEED : 120) || 120) * 0.5;
         var days = Math.max(2, Math.ceil(dist / Math.max(baseArmySpeed, 1)));
-        return { days: days, fromName: capTown.name || '?' };
+        return { days: days, fromName: fromTown.name || '?' };
     }
 
     // Success estimate HTML
@@ -2127,12 +2347,7 @@
                '<span style="color:#888;margin-left:6px;">' + soldiers + ' vs ' + garrison + ' defenders</span>';
     }
 
-    // Called from oninput on soldier count
-    UI._updateArmyChance = function(garrison) {
-        var el = document.getElementById('_armyChanceDisplay');
-        var inp = document.getElementById('_armySendCount');
-        if (el && inp) el.innerHTML = _getSuccessEstimateHtml(inp.value, garrison);
-    };
+    // _updateArmyChance is no longer needed — _updateSendArmyModal handles everything
 
 
     // --- Delegated action handlers ---
@@ -2382,6 +2597,30 @@
         UI.openKingPanel('military');
     });
 
+    // Military Proposal actions
+    UI.registerAction('kingApproveMilProposal', function(_t, d) {
+        try {
+            var kingdom = Engine.findKingdom(Player.state.kingState.kingdomId);
+            if (!kingdom || !kingdom._militaryProposals) { UI.toast('No proposals found.', 'warning'); return; }
+            var proposal = null;
+            for (var i = 0; i < kingdom._militaryProposals.length; i++) {
+                if (kingdom._militaryProposals[i].id === d.id) { proposal = kingdom._militaryProposals[i]; break; }
+            }
+            if (!proposal) { UI.toast('Proposal expired or already handled.', 'warning'); UI.openKingPanel('military'); return; }
+            var r = Engine.executeMilitaryProposal(kingdom, proposal);
+            UI.toast(r.message, r.success ? 'success' : 'warning');
+        } catch(e) { UI.toast('Error: ' + e.message, 'error'); }
+        UI.openKingPanel('military');
+    });
+    UI.registerAction('kingDismissMilProposal', function(_t, d) {
+        try {
+            var kingdom = Engine.findKingdom(Player.state.kingState.kingdomId);
+            Engine.dismissMilitaryProposal(kingdom, d.id);
+            UI.toast('Proposal dismissed.', 'info');
+        } catch(e) {}
+        UI.openKingPanel('military');
+    });
+
     // Town management actions
     UI.registerAction('kingSendMedical', function(_t, d) {
         var r = Player.kingExecuteOrder ? Player.kingExecuteOrder('send_medical', { townId: d.id }) : { success: false, message: 'Not available.' };
@@ -2507,30 +2746,14 @@
     });
     UI.registerAction('kingSendArmyToTown', function(_t, d) {
         if (!d.id) { UI.toast('No target.', 'warning'); return; }
-        var tgt2 = Engine.findTown(d.id);
-        var garrison2 = tgt2 ? (tgt2.garrison || 0) : 5;
-        var html2 = '<div style="padding:8px;">';
-        html2 += '<div style="font-size:0.85rem;color:#c44e52;margin-bottom:8px;">⚔️ Send Army</div>';
-        html2 += '<div style="font-size:0.75rem;color:#ddd;margin-bottom:6px;">Target: ' + (tgt2 ? escapeHtml(tgt2.name) : '?') + ' (Garrison: ' + garrison2 + ')</div>';
-
-        var travelInfo2 = _estimateArmyTravel(tgt2);
-        if (travelInfo2.days > 0) {
-            html2 += '<div style="font-size:0.68rem;color:#aaa;margin-bottom:6px;">🗺️ Est. travel: ~' + travelInfo2.days + ' days from ' + escapeHtml(travelInfo2.fromName) + '</div>';
-        }
-
-        html2 += '<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">';
-        html2 += '<label style="font-size:0.72rem;color:#aaa;">Soldiers:</label>';
-        html2 += '<input type="number" id="_armySendCount" min="10" max="200" value="30" style="font-size:0.72rem;width:60px;padding:3px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;" oninput="UI._updateArmyChance(' + garrison2 + ')">';
-        html2 += '</div>';
-        html2 += '<div id="_armyChanceDisplay" style="font-size:0.68rem;margin-bottom:8px;">' + _getSuccessEstimateHtml(30, garrison2) + '</div>';
-        html2 += '<button class="btn-medieval" data-action="kingSendArmyConfirm" data-id="' + d.id + '" style="font-size:0.72rem;padding:4px 10px;background:rgba(196,78,82,0.3) !important;">⚔️ Send Army</button>';
-        html2 += '</div>';
-        openModal('⚔️ Send Army', html2, '<button class="btn-medieval" data-action="closeModal">Cancel</button>');
+        _buildSendArmyModal(d.id);
     });
     UI.registerAction('kingSendArmyConfirm', function(_t, d) {
         var cnt2 = document.getElementById('_armySendCount');
+        var stagingSel = document.getElementById('_armyStagingTown');
         var soldiers = cnt2 ? parseInt(cnt2.value) || 30 : 30;
-        var r = Player.kingSendArmy(d.id, soldiers); UI.closeModal(); UI.toast(r.message, r.success ? 'success' : 'warning');
+        var stagingTownId = stagingSel ? stagingSel.value : null;
+        var r = Player.kingSendArmy(d.id, soldiers, stagingTownId); UI.closeModal(); UI.toast(r.message, r.success ? 'success' : 'warning');
     });
 
     // ── Treasury Transfer Actions ──
