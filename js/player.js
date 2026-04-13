@@ -7315,7 +7315,7 @@
 
         // Generate 1-3 new audiences
         var rng = Engine.getRng();
-        var count = 1 + Math.floor(rng() * Math.min(3, nobles.length));
+        var count = 1 + Math.floor(rng.random() * Math.min(3, nobles.length));
         var usedNobles = {};
         // Don't double-up on nobles already in the queue
         for (var ei = 0; ei < ks._nobleAudiences.length; ei++) {
@@ -7326,7 +7326,7 @@
             // Pick a random noble not already queued
             var candidates = nobles.filter(function(n) { return !usedNobles[n.id]; });
             if (candidates.length === 0) break;
-            var noble = candidates[Math.floor(rng() * candidates.length)];
+            var noble = candidates[Math.floor(rng.random() * candidates.length)];
             usedNobles[noble.id] = true;
 
             // Weight request type by noble personality
@@ -7344,7 +7344,7 @@
                 weights.push(w);
                 totalW += w;
             }
-            var roll = rng() * totalW;
+            var roll = rng.random() * totalW;
             var cumul = 0;
             var chosen = _AUDIENCE_REQUEST_TYPES[0];
             for (var wi = 0; wi < weights.length; wi++) {
@@ -7356,7 +7356,7 @@
             var kingdom = Engine.findKingdom(ks.kingdomId);
             var townName = 'the capital';
             if (kingdom && kingdom.towns && kingdom.towns.length > 0) {
-                var tId = kingdom.towns[Math.floor(rng() * kingdom.towns.length)];
+                var tId = kingdom.towns[Math.floor(rng.random() * kingdom.towns.length)];
                 var tObj = null;
                 var wObj = Engine.getWorld();
                 if (wObj && wObj.towns) {
@@ -7599,7 +7599,7 @@
         }
 
         var rng = Engine.getRng();
-        var duration = mType.durationBase + Math.floor(rng() * 15);
+        var duration = mType.durationBase + Math.floor(rng.random() * 15);
         var nobleName = ((noble.firstName || '') + ' ' + (noble.lastName || '')).trim();
         var targetName = '';
         if (targetKingdomId) {
@@ -7659,7 +7659,7 @@
             }
             successChance = Math.min(0.95, Math.max(0.2, successChance));
 
-            var success = rng() < successChance;
+            var success = rng.random() < successChance;
             if (!ks._missionCooldowns) ks._missionCooldowns = {};
             ks._missionCooldowns[cm.nobleId] = day;
 
@@ -7703,7 +7703,7 @@
                 if (noble) {
                     noble.kingLoyalty = Math.max(0, (noble.kingLoyalty || 50) + cm.loyaltyFail);
                     // Small chance of noble death on dangerous missions
-                    if ((cm.missionType === 'military_patrol' || cm.missionType === 'intelligence_spy') && rng() < 0.08) {
+                    if ((cm.missionType === 'military_patrol' || cm.missionType === 'intelligence_spy') && rng.random() < 0.08) {
                         noble.alive = false;
                         Engine.logEvent('💀 ' + cm.nobleName + ' was killed during ' + cm.missionLabel + '!');
                         addNotification('💀 ' + cm.nobleName + ' died on ' + cm.missionLabel + '!', 'kingdom');
@@ -7744,9 +7744,9 @@
 
         // 5% chance per loyal noble to report
         for (var li = 0; li < loyalNobles.length; li++) {
-            if (rng() < 0.05) {
+            if (rng.random() < 0.05) {
                 var reporter = loyalNobles[li];
-                var suspect = suspiciousNobles[Math.floor(rng() * suspiciousNobles.length)];
+                var suspect = suspiciousNobles[Math.floor(rng.random() * suspiciousNobles.length)];
                 var reporterName = ((reporter.firstName || '') + ' ' + (reporter.lastName || '')).trim();
                 var suspectName = ((suspect.firstName || '') + ' ' + (suspect.lastName || '')).trim();
 
@@ -7761,7 +7761,7 @@
                 if (alreadyReported) continue;
 
                 var plotTypes = ['conspiracy', 'embezzlement', 'foreign_contact', 'sedition'];
-                var plotType = plotTypes[Math.floor(rng() * plotTypes.length)];
+                var plotType = plotTypes[Math.floor(rng.random() * plotTypes.length)];
                 var plotDescs = {
                     conspiracy: reporterName + ' warns that ' + suspectName + ' has been meeting secretly with other discontented nobles.',
                     embezzlement: reporterName + ' reports that ' + suspectName + ' may be skimming from tax collections.',
@@ -7813,7 +7813,7 @@
         // Success based on relations
         var rng = Engine.getRng();
         var acceptChance = 0.3 + (relations / 200);
-        if (rng() > acceptChance) {
+        if (rng.random() > acceptChance) {
             if (kingdom.relations) kingdom.relations[targetKingdomId] = Math.max(0, relations - 3);
             return { success: false, message: target.name + ' declined the trade proposal. Relations slightly worsened.' };
         }
@@ -7859,7 +7859,7 @@
         kingdom.gold -= cost;
 
         var rng = Engine.getRng();
-        var duration = 20 + Math.floor(rng() * 15);
+        var duration = 20 + Math.floor(rng.random() * 15);
         var nobleName = ((noble.firstName || '') + ' ' + (noble.lastName || '')).trim();
 
         // Use the mission system for tracking
@@ -19697,11 +19697,11 @@
         if (candidates.length === 0) return;
 
         // Generate 0-2 events
-        var eventCount = Math.floor(rng() * 2.5); // 0, 1, or 2
+        var eventCount = Math.floor(rng.random() * 2.5); // 0, 1, or 2
         if (eventCount === 0) return;
 
         for (var ei = 0; ei < eventCount && ei < candidates.length; ei++) {
-            var c = candidates[Math.floor(rng() * candidates.length)];
+            var c = candidates[Math.floor(rng.random() * candidates.length)];
             var npc = c.person;
             var npcName = ((npc.firstName || '') + ' ' + (npc.lastName || '')).trim();
             var occ = npc.occupation || 'commoner';
@@ -19709,7 +19709,7 @@
 
             var eventTypes = _getNpcEventTypes(c.level, occ, npc);
             if (eventTypes.length === 0) continue;
-            var chosen = eventTypes[Math.floor(rng() * eventTypes.length)];
+            var chosen = eventTypes[Math.floor(rng.random() * eventTypes.length)];
 
             player._npcInitiatedQueue.push({
                 npcId: npc.id,
