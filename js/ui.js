@@ -3529,6 +3529,12 @@ window.UI = (function () {
             if (j > 0 && si.isJob && !(interactions[j-1] && interactions[j-1].isJob)) {
                 html += '<div style="margin:10px 0 4px;padding:4px 8px;font-size:0.8em;color:#3498db;font-weight:bold;border-top:1px solid #333;padding-top:8px">💼 WORK — Jobs available through your friendship</div>';
             }
+            if (j > 0 && si.isNobleDialogue && !(interactions[j-1] && interactions[j-1].isNobleDialogue)) {
+                html += '<div style="margin:10px 0 4px;padding:4px 8px;font-size:0.8em;color:#9b59b6;font-weight:bold;border-top:1px solid #333;padding-top:8px">👑 COURT — Noble personality conversations</div>';
+            }
+            if (j > 0 && si.isFavor && !(interactions[j-1] && interactions[j-1].isFavor)) {
+                html += '<div style="margin:10px 0 4px;padding:4px 8px;font-size:0.8em;color:#e74c3c;font-weight:bold;border-top:1px solid #333;padding-top:8px">📜 FAVOR REQUEST — This noble needs your help!</div>';
+            }
 
             if (si.showRating) {
                 if (si.rating === 'great') { borderColor = '#2ecc40'; bgColor = '#1a3a1a'; }
@@ -3541,6 +3547,8 @@ window.UI = (function () {
             if (si.isTraitInteraction) { borderColor = '#2ecc40'; bgColor = '#1a2a1a'; }
             if (si.isGossip) { borderColor = '#d4a017'; bgColor = '#2a2510'; }
             if (si.isJob) { borderColor = '#3498db'; bgColor = '#1a2030'; }
+            if (si.isNobleDialogue) { borderColor = '#9b59b6'; bgColor = '#251a30'; }
+            if (si.isFavor) { borderColor = '#e74c3c'; bgColor = '#301a1a'; }
 
             var opacity = si.available ? '1' : '0.5';
             var cursor = si.available ? 'pointer' : 'not-allowed';

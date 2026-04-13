@@ -211,6 +211,10 @@
         _npcMemoryEvents: {},           // { personId: [20, 40, 60] } — thresholds already triggered
         _npcGossipCooldowns: {},        // { personId: day } — last gossip request day
         _npcJobCooldowns: {},           // { 'personId_jobType': expiresDay } — relationship job cooldowns
+        _nobleFavorRequests: {},        // { nobleId: { type, resource, qty, rewardRel, expiresDay, status } }
+        _nobleVoteSupport: {},          // { nobleId: { nobleName, expiresDay } } — alliance vote support
+        _territoryProtection: {},       // { nobleId: { nobleName, expiresDay } } — building seizure protection
+        _reputationSpreading: false,    // recursion guard for reputation contagion
 
         // ── Crown & Royal Advisor State ──
         isRoyalAdvisorFromKing: false,
@@ -9408,6 +9412,33 @@
                 type: 'favor',
                 cooldownDays: 30,
             });
+            // Noble Alliance perks — tangible benefits
+            perks.push({
+                id: 'noble_vote_support',
+                name: '\u{1F5F3}\uFE0F Vote Support',
+                desc: 'This noble will vote in your favor on the next council matter. Lasts 30 days.',
+                cost: 0,
+                type: 'favor',
+                cooldownDays: 60,
+            });
+            perks.push({
+                id: 'noble_territory_favor',
+                name: '\u{1F3F0} Territory Protection',
+                desc: 'Your buildings in their territory are protected from seizure for 60 days.',
+                cost: 0,
+                type: 'passive',
+                cooldownDays: 90,
+            });
+            if (level >= 70) {
+                perks.push({
+                    id: 'noble_trade_privilege',
+                    name: '\u{1F4B0} Trade Privilege',
+                    desc: 'Gain 10% discount at all markets in their territory for 30 days.',
+                    cost: 0,
+                    type: 'passive',
+                    cooldownDays: 60,
+                });
+            }
             if (level >= 80) {
                 perks.push({
                     id: 'royal_audience',
@@ -9424,6 +9455,14 @@
                     cost: 0,
                     type: 'info',
                     cooldownDays: 30,
+                });
+                perks.push({
+                    id: 'noble_crisis_aid',
+                    name: '\u{1F198} Crisis Assistance',
+                    desc: 'In times of need, this noble sends 50-150g aid and resources.',
+                    cost: 0,
+                    type: 'gift',
+                    cooldownDays: 120,
                 });
             }
         }
@@ -9841,6 +9880,42 @@
                 if (_pick.kingdomRep && person.kingdomId) modifyKingdomReputation(person.kingdomId, _pick.kingdomRep);
                 if (_pick.gold) message += ' (+' + _pick.gold + 'g)';
                 Engine.logEvent('\u{1F91D} ' + message);
+                break;
+            }
+
+            case 'noble_vote_support':
+                if (!player._nobleVoteSupport) player._nobleVoteSupport = {};
+                player._nobleVoteSupport[personId] = { nobleName: person.firstName + ' ' + person.lastName, expiresDay: Engine.getDay() + 30 };
+                message = person.firstName + ' pledges to support your position in the next council vote. Lasts 30 days.';
+                Engine.logEvent('\u{1F5F3}\uFE0F ' + message);
+                break;
+
+            case 'noble_territory_favor':
+                if (!player._territoryProtection) player._territoryProtection = {};
+                player._territoryProtection[personId] = { nobleName: person.firstName + ' ' + person.lastName, expiresDay: Engine.getDay() + 60 };
+                message = person.firstName + ' guarantees your buildings in their territory won\'t be seized for 60 days.';
+                Engine.logEvent('\u{1F3F0} ' + message);
+                break;
+
+            case 'noble_trade_privilege':
+                if (!player.marketDiscounts) player.marketDiscounts = {};
+                player.marketDiscounts[person.townId || player.townId] = { discount: 0.10, expiresDay: Engine.getDay() + 30, from: person.firstName };
+                message = person.firstName + ' grants you trade privileges in their territory. 10% market discount for 30 days!';
+                Engine.logEvent('\u{1F4B0} ' + message);
+                break;
+
+            case 'noble_crisis_aid': {
+                var _aidRng = Engine.getRng ? Engine.getRng() : { randInt: function(a,b) { return a + Math.floor(Math.random()*(b-a+1)); } };
+                var aidGold = _aidRng.randInt(50, 150);
+                player.gold += aidGold;
+                // Also give some resources
+                var aidResources = ['grain', 'bread', 'tools'];
+                var aidRes = aidResources[Math.floor(Math.random() * aidResources.length)];
+                var aidQty = _aidRng.randInt(3, 8);
+                player.inventory[aidRes] = (player.inventory[aidRes] || 0) + aidQty;
+                var _aidResObj = findResource(aidRes);
+                message = person.firstName + ' sends emergency aid: ' + aidGold + 'g and ' + aidQty + ' ' + (_aidResObj ? _aidResObj.name : aidRes) + '!';
+                Engine.logEvent('\u{1F198} ' + message);
                 break;
             }
 
@@ -18671,6 +18746,12 @@
                 }
             }
         }
+
+        // Reputation Spreading — noble relationship changes ripple to nearby nobles
+        var actualGain = rel.level - oldLevel;
+        if (Math.abs(actualGain) >= 3) {
+            _spreadNobleReputation(personId, actualGain);
+        }
     }
 
     function _triggerNpcMemoryDialogue(personId, threshold) {
@@ -18730,6 +18811,82 @@
             toast(emoji + ' ' + fn + ': ' + msg, 'success');
         }
         try { Engine.logEvent(emoji + ' Relationship milestone with ' + fn + ' (' + label + '): ' + msg, null, 'social'); } catch(e) {}
+    }
+
+    // Reputation Spreading — when gaining/losing rel with a noble, nearby nobles react
+    function _spreadNobleReputation(personId, amount) {
+        if (!amount || player._reputationSpreading) return; // prevent recursion
+        var person = null;
+        try { person = Engine.findPerson(personId); } catch(e) {}
+        if (!person || !person.alive) return;
+
+        // Only spread from nobles (rank 4+)
+        var npcRank = getNPCSocialRank(person);
+        if (npcRank < 4) return;
+
+        var kingdomId = person.kingdomId;
+        if (!kingdomId) return;
+
+        // Find other nobles in same kingdom
+        var otherNobles = [];
+        try {
+            var towns = Engine.getWorld().towns;
+            for (var tId in towns) {
+                var tPeople = Engine.getPeople(tId);
+                if (!tPeople) continue;
+                for (var pi = 0; pi < tPeople.length; pi++) {
+                    var np = tPeople[pi];
+                    if (!np.alive || np.id === personId) continue;
+                    if (np.kingdomId !== kingdomId) continue;
+                    var npRank = getNPCSocialRank(np);
+                    if (npRank < 4) continue;
+                    otherNobles.push(np);
+                }
+            }
+        } catch(e) { return; }
+
+        if (otherNobles.length === 0) return;
+
+        player._reputationSpreading = true; // prevent recursion
+
+        // Spread rate: positive 10-20%, negative 30-50%
+        var isNegative = amount < 0;
+        var baseSpreadRate = isNegative ? 0.35 : 0.15;
+
+        for (var ni = 0; ni < otherNobles.length; ni++) {
+            var noble = otherNobles[ni];
+            // Modulate by noble-to-noble relationship (if noble A likes target, spread more)
+            var nobleRelToTarget = 50; // neutral default
+            if (noble.nobleRelationships && noble.nobleRelationships[personId]) {
+                nobleRelToTarget = noble.nobleRelationships[personId];
+            }
+
+            var spreadRate = baseSpreadRate;
+            if (nobleRelToTarget > 60) {
+                // Noble likes the target — positive spreads more, negative less
+                spreadRate = isNegative ? baseSpreadRate * 0.5 : baseSpreadRate * 1.5;
+            } else if (nobleRelToTarget < 40) {
+                // Noble dislikes the target — positive spreads less, negative more
+                spreadRate = isNegative ? baseSpreadRate * 1.5 : baseSpreadRate * 0.3;
+            }
+
+            // Same town bonus (gossip travels faster)
+            if (noble.townId === person.townId) {
+                spreadRate *= 1.5;
+            }
+
+            var spreadAmount = amount * spreadRate;
+            if (Math.abs(spreadAmount) < 0.5) continue;
+
+            // Apply without further spreading (recursion flag set)
+            if (!player.relationships[noble.id]) {
+                player.relationships[noble.id] = { level: 0, type: 'acquaintance' };
+            }
+            player.relationships[noble.id].level = Math.max(0, Math.min(100,
+                player.relationships[noble.id].level + spreadAmount));
+        }
+
+        player._reputationSpreading = false;
     }
 
     function getRelationshipLabel(level) {
@@ -18795,6 +18952,13 @@
         } else if (prefs.hatedGift === resourceId) {
             gain = -5 * qty;
             prefMessage = ' ' + person.firstName + ' looks offended — they hate ' + res.name + '! 😠';
+            // Extra penalty for giving cheap items to prideful nobles
+            var _npcRank = getNPCSocialRank(person);
+            var _pers = person.personality || {};
+            if (_npcRank >= 4 && (_pers.ambition || 50) > 60) {
+                gain -= 3; // additional relationship penalty
+                prefMessage += ' As a noble of ambition, they find this gift insulting.';
+            }
             if (!player.discoveredGiftPrefs) player.discoveredGiftPrefs = {};
             if (!player.discoveredGiftPrefs[personId]) player.discoveredGiftPrefs[personId] = {};
             player.discoveredGiftPrefs[personId].hated = resourceId;
@@ -18808,6 +18972,12 @@
             }
             var giftValue = marketPrice * qty;
             gain = Math.max(1, Math.min(8, Math.floor(giftValue / 8)));
+            // Nobles appreciate luxury gifts more
+            var _gNpcRank = getNPCSocialRank(person);
+            if (_gNpcRank >= 4 && res.category === 'luxury') {
+                gain = Math.floor(gain * 1.5);
+                prefMessage = ' ' + person.firstName + ' appreciates the luxury gift.';
+            }
         }
 
         gain += (hasSkill('musician') ? 2 : 0);
@@ -18819,19 +18989,35 @@
     }
 
     /**
-     * Deterministic gift preferences for an NPC, derived from their ID.
+     * Deterministic gift preferences for an NPC, derived from their ID and personality.
+     * Nobles and NPCs with strong personality traits get personality-based preferences.
      * Preferences rotate every 7 days so the player must re-learn them.
      */
     function getNPCGiftPreferences(personId) {
         // Giftable resources (exclude raw materials, livestock, military, contraband, quest, supplies)
         var giftableIds = [];
+        var luxuryIds = [];
+        var practicalIds = [];
+        var foodIds = [];
         for (var rk in RESOURCE_TYPES) {
             var r = RESOURCE_TYPES[rk];
             var cat = r.category;
             if (cat === 'livestock' || cat === 'contraband' || cat === 'quest' || cat === 'supplies' || cat === 'military') continue;
             if (r.id === 'water' || r.id === 'blasting_powder' || r.id === 'demolition_tools' || r.id === 'poison') continue;
             giftableIds.push(r.id);
+            if (cat === 'luxury') luxuryIds.push(r.id);
+            if (cat === 'finished' || cat === 'processing') practicalIds.push(r.id);
+            if (cat === 'farm' || cat === 'food' || r.id === 'bread' || r.id === 'ale' || r.id === 'wine' || r.id === 'meat' || r.id === 'fish' || r.id === 'cheese') {
+                foodIds.push(r.id);
+            }
         }
+
+        // Check NPC personality for preference weighting
+        var person = null;
+        try { person = Engine.findPerson(personId); } catch(e) {}
+        var pers = (person && person.personality) ? person.personality : {};
+        var npcRank = person ? getNPCSocialRank(person) : 0;
+
         // Deterministic hash from person ID + 7-day epoch
         var day = 0;
         try { day = Engine.getDay(); } catch(e) {}
@@ -18842,13 +19028,50 @@
             hash = ((hash << 5) - hash + src.charCodeAt(i)) | 0;
         }
         hash = Math.abs(hash);
-        var favIdx = hash % giftableIds.length;
-        var hateIdx = ((hash >>> 8) + 7) % giftableIds.length;
-        if (hateIdx === favIdx) hateIdx = (hateIdx + 1) % giftableIds.length;
-        return {
-            favoriteGift: giftableIds[favIdx],
-            hatedGift: giftableIds[hateIdx]
+
+        // Personality-driven preferences for nobles and strong-personality NPCs
+        var favoritePool = giftableIds;
+        var hatedPool = giftableIds;
+
+        if (npcRank >= 4 || (pers.ambition && pers.ambition > 65)) {
+            // Ambitious / noble: prefer luxury goods
+            if (luxuryIds.length > 0) {
+                if ((pers.ambition || 50) > 60) favoritePool = luxuryIds;
+                // Ambitious nobles hate cheap/practical items
+                if (practicalIds.length > 0) hatedPool = practicalIds;
+            }
+        }
+        if ((pers.frugality || 50) > 65) {
+            // Frugal: prefer practical items
+            if (practicalIds.length > 0) favoritePool = practicalIds;
+            // Frugal people hate expensive luxury
+            if (luxuryIds.length > 0) hatedPool = luxuryIds;
+        }
+        if ((pers.intelligence || 50) > 65) {
+            // Intelligent: prefer books, curiosities, luxury knowledge items
+            var intellectItems = luxuryIds.length > 0 ? luxuryIds : giftableIds;
+            favoritePool = intellectItems;
+        }
+        if ((pers.warmth || 50) > 65) {
+            // Warm: prefer food and drink
+            if (foodIds.length > 2) favoritePool = foodIds;
+        }
+
+        var favIdx = hash % favoritePool.length;
+        var hateIdx = ((hash >>> 8) + 7) % hatedPool.length;
+
+        var result = {
+            favoriteGift: favoritePool[favIdx],
+            hatedGift: hatedPool[hateIdx]
         };
+        // Ensure fav != hated
+        if (result.favoriteGift === result.hatedGift) {
+            result.hatedGift = giftableIds[((hash >>> 16) + 13) % giftableIds.length];
+            if (result.favoriteGift === result.hatedGift) {
+                result.hatedGift = giftableIds[(hash + 3) % giftableIds.length];
+            }
+        }
+        return result;
     }
 
     /**
@@ -18870,6 +19093,280 @@
             favorite: fav,
             hated: hated
         };
+    }
+
+    // ── Noble Favor Quest System ──────────────────────────────────
+
+    /**
+     * Generate or return existing noble favor requests.
+     * Each noble can have one active favor request at a time.
+     * Requests are personality-driven and regenerate every 30-60 days.
+     */
+    function getNobleFavorRequests() {
+        if (!player._nobleFavorRequests) player._nobleFavorRequests = {};
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+
+        // Find all nobles in player's kingdom
+        var kId = player.citizenshipKingdomId;
+        if (!kId) return [];
+
+        var nobles = [];
+        try {
+            var towns = Engine.getWorld().towns;
+            for (var tId in towns) {
+                var t = towns[tId];
+                if (!t.kingdomId || t.kingdomId !== kId) continue;
+                var people = Engine.getPeople(tId);
+                if (!people) continue;
+                for (var pi = 0; pi < people.length; pi++) {
+                    var p = people[pi];
+                    if (!p.alive || p.isKing) continue;
+                    var rank = getNPCSocialRank(p);
+                    if (rank >= 4) nobles.push(p);
+                }
+            }
+        } catch(e) {}
+
+        var requests = [];
+        var rng = null;
+        try { rng = Engine.getRng(); } catch(e) {}
+
+        for (var ni = 0; ni < nobles.length; ni++) {
+            var noble = nobles[ni];
+            var existing = player._nobleFavorRequests[noble.id];
+
+            // Check if request is still active
+            if (existing && existing.status === 'active' && existing.expiresDay > day) {
+                requests.push(existing);
+                continue;
+            }
+
+            // Check if enough time has passed since last request
+            if (existing && existing.completedDay && (day - existing.completedDay) < 30) continue;
+            if (existing && existing.expiresDay && existing.status === 'active' && existing.expiresDay <= day) {
+                // Expired — mark as failed, apply penalty
+                existing.status = 'expired';
+                existing.completedDay = day;
+                // Modest decay for ignored requests
+                modifyRelationship(noble.id, -3);
+            }
+
+            // Generate new request? 20% chance per cycle, or always if rel >= 40
+            var relLevel = player.relationships[noble.id] ? player.relationships[noble.id].level : 0;
+            if (relLevel < 20) continue; // need at least friendly
+            var generateChance = relLevel >= 40 ? 0.5 : 0.2;
+            if (!rng || !rng.chance(generateChance)) continue;
+
+            var request = _generateNobleFavorRequest(noble, day, rng);
+            if (request) {
+                player._nobleFavorRequests[noble.id] = request;
+                requests.push(request);
+            }
+        }
+
+        return requests;
+    }
+
+    function _generateNobleFavorRequest(noble, day, rng) {
+        var pers = noble.personality || {};
+        var fn = noble.firstName + ' ' + noble.lastName;
+        var ambition = pers.ambition || 50;
+        var frugality = pers.frugality || 50;
+        var loyalty = pers.loyalty || 50;
+        var intelligence = pers.intelligence || 50;
+        var warmth = pers.warmth || 50;
+
+        var requestTypes = [];
+
+        // Ambitious nobles want resources for projects
+        if (ambition > 50) {
+            requestTypes.push({
+                type: 'deliver_resources',
+                title: fn + ' needs supplies for an ambitious project',
+                description: '"I\'m expanding my estate and need quality materials. Can you procure them for me?"',
+                resource: _pickFavorResource(rng, 'ambitious'),
+                qty: 10 + Math.floor((rng ? rng.random() : 0.5) * 15),
+                rewardGold: 0,
+                rewardRel: 12 + Math.floor(ambition * 0.1),
+                weight: ambition
+            });
+        }
+
+        // Frugal nobles want bulk deals
+        if (frugality > 50) {
+            requestTypes.push({
+                type: 'deliver_resources',
+                title: fn + ' seeks a practical bulk purchase',
+                description: '"I need a reliable supplier for basic goods. Nothing fancy — just quality and quantity."',
+                resource: _pickFavorResource(rng, 'frugal'),
+                qty: 15 + Math.floor((rng ? rng.random() : 0.5) * 20),
+                rewardGold: Math.floor(10 + (rng ? rng.random() : 0.5) * 30),
+                rewardRel: 10 + Math.floor(frugality * 0.05),
+                weight: frugality
+            });
+        }
+
+        // Loyal nobles want discreet tasks for the crown
+        if (loyalty > 50) {
+            requestTypes.push({
+                type: 'deliver_message',
+                title: fn + ' has a confidential task',
+                description: '"I need someone I trust to deliver a message to the capital. Discretion is paramount."',
+                resource: null,
+                qty: 0,
+                rewardGold: 20 + Math.floor((rng ? rng.random() : 0.5) * 40),
+                rewardRel: 15 + Math.floor(loyalty * 0.1),
+                weight: loyalty
+            });
+        }
+
+        // Intelligent nobles want rare items
+        if (intelligence > 50) {
+            requestTypes.push({
+                type: 'deliver_resources',
+                title: fn + ' seeks scholarly materials',
+                description: '"I\'m conducting research and require specific materials. Your connections could prove invaluable."',
+                resource: _pickFavorResource(rng, 'intellectual'),
+                qty: 5 + Math.floor((rng ? rng.random() : 0.5) * 10),
+                rewardGold: 10 + Math.floor((rng ? rng.random() : 0.5) * 20),
+                rewardRel: 12 + Math.floor(intelligence * 0.08),
+                weight: intelligence
+            });
+        }
+
+        // Warm nobles want help for others
+        if (warmth > 50) {
+            requestTypes.push({
+                type: 'deliver_resources',
+                title: fn + ' wants to help the townspeople',
+                description: '"The common folk are struggling. Help me gather supplies for a charity distribution."',
+                resource: _pickFavorResource(rng, 'charitable'),
+                qty: 20 + Math.floor((rng ? rng.random() : 0.5) * 15),
+                rewardGold: 0,
+                rewardRel: 18 + Math.floor(warmth * 0.1),
+                rewardTownRep: 3,
+                weight: warmth
+            });
+        }
+
+        // Universal: gold donation
+        requestTypes.push({
+            type: 'gold_donation',
+            title: fn + ' needs financial support',
+            description: '"I find myself in need of funds for an important matter. Any contribution would be appreciated."',
+            resource: null,
+            qty: 0,
+            goldCost: 50 + Math.floor((rng ? rng.random() : 0.5) * 150),
+            rewardGold: 0,
+            rewardRel: 10,
+            weight: 30
+        });
+
+        if (requestTypes.length === 0) return null;
+
+        // Weighted random selection
+        var totalWeight = 0;
+        for (var wi = 0; wi < requestTypes.length; wi++) totalWeight += requestTypes[wi].weight;
+        var roll = (rng ? rng.random() : 0.5) * totalWeight;
+        var selected = requestTypes[0];
+        var cumWeight = 0;
+        for (var si = 0; si < requestTypes.length; si++) {
+            cumWeight += requestTypes[si].weight;
+            if (roll <= cumWeight) { selected = requestTypes[si]; break; }
+        }
+
+        return {
+            nobleId: noble.id,
+            nobleName: noble.firstName + ' ' + noble.lastName,
+            nobleTownId: noble.townId,
+            type: selected.type,
+            title: selected.title,
+            description: selected.description,
+            resource: selected.resource,
+            qty: selected.qty,
+            goldCost: selected.goldCost || 0,
+            rewardGold: selected.rewardGold || 0,
+            rewardRel: selected.rewardRel || 10,
+            rewardTownRep: selected.rewardTownRep || 0,
+            issuedDay: day,
+            expiresDay: day + 30 + Math.floor((rng ? rng.random() : 0.5) * 30),
+            status: 'active'
+        };
+    }
+
+    function _pickFavorResource(rng, type) {
+        var options;
+        if (type === 'ambitious') {
+            options = ['jewelry', 'silk', 'fine_clothes', 'wine', 'tapestry', 'perfume', 'pearls', 'furniture'];
+        } else if (type === 'frugal') {
+            options = ['grain', 'tools', 'cloth', 'planks', 'iron_ingot', 'rope', 'leather', 'bread'];
+        } else if (type === 'intellectual') {
+            options = ['pearls', 'perfume', 'silk', 'jewelry', 'wine', 'harp'];
+        } else if (type === 'charitable') {
+            options = ['grain', 'bread', 'meat', 'fish', 'clothes', 'cloth', 'ale'];
+        } else {
+            options = ['grain', 'tools', 'cloth', 'wine', 'jewelry', 'iron_ingot'];
+        }
+        return options[rng ? Math.floor(rng.random() * options.length) : 0];
+    }
+
+    function fulfillNobleFavor(nobleId) {
+        if (!player._nobleFavorRequests) return { success: false, message: 'No favor requests.' };
+        var request = player._nobleFavorRequests[nobleId];
+        if (!request || request.status !== 'active') return { success: false, message: 'No active request from this noble.' };
+
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+        if (request.expiresDay <= day) {
+            request.status = 'expired';
+            return { success: false, message: 'This request has expired.' };
+        }
+
+        var noble = Engine.findPerson(nobleId);
+        if (!noble || !noble.alive) return { success: false, message: 'Noble not found.' };
+
+        // Check requirements
+        if (request.type === 'deliver_resources') {
+            var held = player.inventory[request.resource] || 0;
+            if (held < request.qty) {
+                var resObj = findResource(request.resource);
+                var resName = resObj ? resObj.name : request.resource;
+                return { success: false, message: 'Need ' + request.qty + ' ' + resName + ' (have ' + held + ').' };
+            }
+            player.inventory[request.resource] -= request.qty;
+        } else if (request.type === 'gold_donation') {
+            if (player.gold < request.goldCost) {
+                return { success: false, message: 'Need ' + request.goldCost + 'g (have ' + Math.floor(player.gold) + 'g).' };
+            }
+            player.gold -= request.goldCost;
+        } else if (request.type === 'deliver_message') {
+            // Message delivery — just takes time
+        }
+
+        // Advance time
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(5);
+
+        // Apply rewards
+        modifyRelationship(nobleId, request.rewardRel);
+        if (request.rewardGold > 0) player.gold += request.rewardGold;
+        if (request.rewardTownRep > 0) {
+            player.townReputation = player.townReputation || {};
+            player.townReputation[player.townId] = Math.min(100, (player.townReputation[player.townId] || 50) + request.rewardTownRep);
+        }
+
+        // Mark complete
+        request.status = 'completed';
+        request.completedDay = day;
+
+        grantXP(15, 'noble_favor');
+
+        var msg = '✅ Fulfilled ' + request.nobleName + '\'s request! 💚 Relationship +' + request.rewardRel;
+        if (request.rewardGold > 0) msg += ', earned ' + request.rewardGold + 'g';
+        if (request.rewardTownRep > 0) msg += ', +' + request.rewardTownRep + ' town reputation';
+
+        try { Engine.logEvent('👑 ' + player.firstName + ' fulfilled a favor for ' + request.nobleName + '.', null, 'social'); } catch(e) {}
+        return { success: true, message: msg };
     }
 
     // ── Noble Loan System ──────────────────────────────────────
@@ -33236,6 +33733,8 @@
         giveGift,
         getNPCGiftPreferences,
         getKnownGiftPreferences,
+        getNobleFavorRequests,
+        fulfillNobleFavor,
         offerNobleLoan,
         getNobleLoans,
         // interactWithNPC, getAvailableInteractions — see js/modules/player_quests.js

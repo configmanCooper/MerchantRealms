@@ -2274,7 +2274,156 @@
             interactions.push(jobInteractions[ji]);
         }
 
+        // Noble personality-based dialogue — different interactions based on noble personality
+        var nobleDialogues = _getNoblePersonalityDialogue(personId, person, relLevel);
+        for (var ndi = 0; ndi < nobleDialogues.length; ndi++) {
+            interactions.push(nobleDialogues[ndi]);
+        }
+
+        // Noble favor requests — show if this noble has an active request
+        if (relLevel >= 20 && (person.occupation === 'noble' || person.isNoble)) {
+            var favorRequests = [];
+            try { favorRequests = Player.getNobleFavorRequests ? Player.getNobleFavorRequests() : []; } catch(e) {}
+            for (var fri = 0; fri < favorRequests.length; fri++) {
+                var freq = favorRequests[fri];
+                if (freq.nobleId === personId && freq.status === 'active') {
+                    var fDay = 0;
+                    try { fDay = Engine.getDay(); } catch(e) {}
+                    var daysLeft = Math.max(0, freq.expiresDay - fDay);
+                    var reqDesc = freq.description;
+                    if (freq.resource) {
+                        var reqRes = null;
+                        try { reqRes = Player.findResource(freq.resource); } catch(e) {}
+                        reqDesc += ' (Need: ' + freq.qty + ' ' + (reqRes ? reqRes.name : freq.resource) + ')';
+                    } else if (freq.goldCost) {
+                        reqDesc += ' (Need: ' + freq.goldCost + 'g)';
+                    }
+                    interactions.push({
+                        id: 'fulfill_noble_favor',
+                        name: '👑 ' + freq.title,
+                        icon: '👑',
+                        description: reqDesc + ' — ' + daysLeft + ' days remaining',
+                        cost: 0,
+                        gain: freq.rewardRel,
+                        rating: 'great',
+                        showRating: false,
+                        available: true,
+                        atCooldownLimit: false,
+                        dateProgress: 0,
+                        timeHours: 1,
+                        isFavor: true
+                    });
+                }
+            }
+        }
+
         return interactions;
+    }
+
+    // ── Noble Personality-Based Dialogue ────────────────────────
+    function _getNoblePersonalityDialogue(personId, person, relLevel) {
+        var dialogues = [];
+        if (relLevel < 30) return dialogues;
+        var occ = person.occupation || '';
+        if (occ !== 'noble' && !person.isNoble) return dialogues;
+
+        var pers = person.personality || {};
+        var fn = person.firstName || 'Noble';
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+
+        // Each noble personality type gets unique interaction options at relationship thresholds
+        if ((pers.ambition || 50) > 55 && relLevel >= 30) {
+            dialogues.push({
+                id: 'noble_discuss_power',
+                name: '⚔️ Discuss Power Plays',
+                icon: '⚔️',
+                description: fn + ' is ambitious — discuss strategies for gaining influence at court',
+                cost: 0,
+                gain: 3.0,
+                rating: 'good',
+                showRating: false,
+                available: true,
+                atCooldownLimit: false,
+                dateProgress: 15,
+                timeHours: 1,
+                isNobleDialogue: true
+            });
+        }
+
+        if ((pers.loyalty || 50) > 55 && relLevel >= 30) {
+            dialogues.push({
+                id: 'noble_discuss_duty',
+                name: '🛡️ Discuss Duty to the Crown',
+                icon: '🛡️',
+                description: fn + ' is loyal — bond over shared devotion to the kingdom',
+                cost: 0,
+                gain: 3.0,
+                rating: 'good',
+                showRating: false,
+                available: true,
+                atCooldownLimit: false,
+                dateProgress: 15,
+                timeHours: 1,
+                isNobleDialogue: true
+            });
+        }
+
+        if ((pers.intelligence || 50) > 55 && relLevel >= 30) {
+            dialogues.push({
+                id: 'noble_discuss_strategy',
+                name: '🧠 Discuss Kingdom Strategy',
+                icon: '🧠',
+                description: fn + ' is insightful — discuss economic and military strategies',
+                cost: 0,
+                gain: 3.0,
+                rating: 'good',
+                showRating: false,
+                available: true,
+                atCooldownLimit: false,
+                dateProgress: 15,
+                timeHours: 1,
+                isNobleDialogue: true
+            });
+        }
+
+        if ((pers.warmth || 50) > 55 && relLevel >= 30) {
+            dialogues.push({
+                id: 'noble_discuss_people',
+                name: '❤️ Discuss the Commonfolk',
+                icon: '❤️',
+                description: fn + ' cares about people — discuss the welfare of the kingdom\'s citizens',
+                cost: 0,
+                gain: 3.0,
+                rating: 'good',
+                showRating: false,
+                available: true,
+                atCooldownLimit: false,
+                dateProgress: 15,
+                timeHours: 1,
+                isNobleDialogue: true
+            });
+        }
+
+        if ((pers.frugality || 50) > 55 && relLevel >= 30) {
+            dialogues.push({
+                id: 'noble_discuss_economy',
+                name: '💰 Discuss Trade & Economy',
+                icon: '💰',
+                description: fn + ' is financially shrewd — discuss market trends and the kingdom treasury',
+                cost: 0,
+                gain: 3.0,
+                rating: 'good',
+                showRating: false,
+                available: true,
+                atCooldownLimit: false,
+                dateProgress: 15,
+                timeHours: 1,
+                isNobleDialogue: true
+            });
+        }
+
+        return dialogues;
     }
 
     // ── Trait-Based Interaction Helpers ──────────────────────
@@ -2597,7 +2746,7 @@
             if (socialInteractions[i].id === interactionId) { interaction = socialInteractions[i]; break; }
         }
 
-        // Handle special interaction types: gossip, trait-based, jobs
+        // Handle special interaction types: gossip, trait-based, jobs, noble dialogue, favors
         if (!interaction) {
             if (interactionId === 'ask_gossip') {
                 return _handleGossipInteraction(personId, person);
@@ -2607,6 +2756,12 @@
             }
             if (interactionId && interactionId.indexOf('npc_job_') === 0) {
                 return _handleJobInteraction(personId, person, interactionId);
+            }
+            if (interactionId && interactionId.indexOf('noble_discuss_') === 0) {
+                return _handleNobleDialogueInteraction(personId, person, interactionId);
+            }
+            if (interactionId === 'fulfill_noble_favor') {
+                return Player.fulfillNobleFavor ? Player.fulfillNobleFavor(personId) : { success: false, message: 'Favor system unavailable.' };
             }
             return { success: false, message: 'Unknown interaction.' };
         }
@@ -2918,6 +3073,58 @@
         }
 
         return { success: false, message: 'Unknown job.' };
+    }
+
+    function _handleNobleDialogueInteraction(personId, person, interactionId) {
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+        var fn = person.firstName || 'Noble';
+        var pers = person.personality || {};
+
+        // Advance time
+        if (typeof Game !== 'undefined' && Game.advanceTicks) {
+            Game.advanceTicks(3);
+        }
+
+        var gain = 3.0;
+        var dialogueMsg = '';
+
+        switch (interactionId) {
+            case 'noble_discuss_power':
+                dialogueMsg = fn + ' leans in: "You understand ambition. Together, we could reshape the court."';
+                if ((pers.ambition || 50) > 70) gain = 4.0;
+                break;
+            case 'noble_discuss_duty':
+                dialogueMsg = fn + ' nods solemnly: "The crown needs loyal subjects now more than ever. I\'m glad I can count on you."';
+                if ((pers.loyalty || 50) > 70) gain = 4.0;
+                break;
+            case 'noble_discuss_strategy':
+                dialogueMsg = fn + ' strokes their chin: "Your strategic mind impresses me. Few think beyond tomorrow."';
+                if ((pers.intelligence || 50) > 70) gain = 4.0;
+                break;
+            case 'noble_discuss_people':
+                dialogueMsg = fn + ' smiles warmly: "It heartens me that someone of your station cares about the common folk."';
+                if ((pers.warmth || 50) > 70) gain = 4.0;
+                break;
+            case 'noble_discuss_economy':
+                dialogueMsg = fn + ' raises an eyebrow: "A fellow pragmatist! Let me share what I know about the kingdom\'s finances."';
+                if ((pers.frugality || 50) > 70) gain = 4.0;
+                break;
+            default:
+                dialogueMsg = fn + ' enjoys the conversation.';
+        }
+
+        Player.modifyRelationship(personId, gain);
+
+        // Track interaction cooldown
+        if (!player._npcInteractions) player._npcInteractions = {};
+        if (!player._npcInteractions[personId] || player._npcInteractions[personId].day !== day) {
+            player._npcInteractions[personId] = { day: day, count: 0 };
+        }
+        player._npcInteractions[personId].count++;
+
+        Player.grantXP(4, 'noble_dialogue');
+        return { success: true, message: dialogueMsg + ' 💚 Relationship +' + gain.toFixed(1) };
     }
 
     // ── Guild Membership System ──────────────────────────────
