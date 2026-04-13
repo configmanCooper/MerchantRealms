@@ -8159,7 +8159,7 @@ window.UI = (function () {
             var shortLabel = b.label;
             // Tooltip descriptions for each requirement
             var tooltipMap = {
-                '🪙 Gold Earned': 'Total gold earned through trading in this kingdom. Buy low and sell high to accumulate earnings.',
+                '🪙 Gold Earned from Trading': 'Total gold earned through trading in this kingdom. Buy low and sell high to accumulate earnings.',
                 '⭐ Reputation': 'Your standing with this kingdom. Increases by trading, completing petitions, and socializing with locals.',
                 '💰 Fee': 'One-time promotion fee paid to the kingdom. Make sure you have enough gold on hand.',
                 '📅 Residency': 'Days you have lived in this kingdom. Simply stay and go about your business.',

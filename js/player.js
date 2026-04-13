@@ -19700,7 +19700,7 @@
 
         // Gold earned
         if (effectiveGoldReq > 0) {
-            bars.push({ label: '🪙 Gold Earned', current: Math.floor(goldEarned), required: effectiveGoldReq, pct: Math.min(100, Math.floor(goldEarned / effectiveGoldReq * 100)), met: goldEarned >= effectiveGoldReq, discounted: _comDiscount < 1 });
+            bars.push({ label: '🪙 Gold Earned from Trading', current: Math.floor(goldEarned), required: effectiveGoldReq, pct: Math.min(100, Math.floor(goldEarned / effectiveGoldReq * 100)), met: goldEarned >= effectiveGoldReq, discounted: _comDiscount < 1 });
         }
         // Reputation
         if (effectiveRepReq > 0) {
