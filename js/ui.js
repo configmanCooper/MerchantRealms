@@ -11202,6 +11202,38 @@ window.UI = (function () {
         }
         html += '</div>';
 
+        // Show locked schemes the player is missing out on
+        var _allSchemeInfo = [
+            { name: 'Pit Nobles', skill: 'shadow_dealings', tab: 'political' },
+            { name: 'Turn Noble Against King', skill: 'kingmaker_skill', tab: 'political' },
+            { name: 'Discredit Noble', skill: 'shadow_dealings', skillAlt: 'silver_tongue_dark', tab: 'political' },
+            { name: 'Manipulate Noble Vote', skill: 'silver_tongue_dark', skillAlt: 'kingmaker_skill', tab: 'political' },
+            { name: 'Expose Noble Secrets', skill: 'dark_connections', skillAlt: 'shadow_dealings', tab: 'political' },
+            { name: 'Insider Trading', skill: 'insider_trading', tab: 'market' },
+            { name: 'Blackmail', skill: 'dark_connections', tab: 'political' },
+            { name: 'Counterfeit Goods', skill: 'master_forger', tab: 'market' },
+            { name: 'Sabotage Building', skill: 'sabotage_expert', skillAlt: 'shadow_dealings', tab: 'sabotage' }
+        ];
+        var _lockedSchemesList = [];
+        var _hasSkillCheck = typeof Player !== 'undefined' && Player.hasSkill ? Player.hasSkill : function() { return false; };
+        for (var _lsi = 0; _lsi < _allSchemeInfo.length; _lsi++) {
+            var _ls = _allSchemeInfo[_lsi];
+            if (!_hasSkillCheck(_ls.skill) && (!_ls.skillAlt || !_hasSkillCheck(_ls.skillAlt))) {
+                _lockedSchemesList.push(_ls);
+            }
+        }
+        if (_lockedSchemesList.length > 0) {
+            html += '<div style="background:rgba(196,78,82,0.06);border:1px solid rgba(196,78,82,0.15);border-radius:6px;padding:6px 10px;margin-bottom:10px;">';
+            html += '<div style="font-size:0.78rem;color:#c44e52;margin-bottom:3px;">🔒 <b>' + _lockedSchemesList.length + ' Schemes Locked</b> — missing skills:</div>';
+            for (var _lsj = 0; _lsj < _lockedSchemesList.length; _lsj++) {
+                var _lsk = _lockedSchemesList[_lsj];
+                var _sn = _lsk.skill.replace(/_/g, ' ');
+                var _sa = _lsk.skillAlt ? (' or ' + _lsk.skillAlt.replace(/_/g, ' ')) : '';
+                html += '<span style="font-size:0.7rem;color:#999;margin-right:8px;">🔒 ' + _lsk.name + ' <span style="color:#c44e52;">(' + _sn + _sa + ')</span></span>';
+            }
+            html += '</div>';
+        }
+
         // Notoriety meter + stats
         var _notoriety = typeof Player !== 'undefined' ? Math.floor(Player.notoriety || 0) : 0;
         var _notorietyPct = Math.min(100, _notoriety);

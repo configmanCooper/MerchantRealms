@@ -435,6 +435,8 @@ function getDetectionColor(pct) {
 // §NOBILITY — Nobility Panel (rank 4+ privileges, commissions, standing)
 // ============================================================
 
+var _nobilityTab = 'status'; // 'status' or 'intrigue'
+
 function openNobilityDialog() {
     var playerRank = 0;
     var citizenKingdomId = Player.citizenshipKingdomId || '';
@@ -674,6 +676,15 @@ function openNobilityDialog() {
         }
         html += '</div>';
     }
+
+    // ── TAB BUTTONS ──
+    html += '<div style="display:flex;gap:6px;margin-bottom:10px;">';
+    html += '<button class="btn-tab' + (_nobilityTab === 'status' ? ' active' : '') + '" data-action="switchNobilityTab" data-id="status" style="font-size:0.85rem;padding:6px 14px;">📊 Status</button>';
+    html += '<button class="btn-tab' + (_nobilityTab === 'intrigue' ? ' active' : '') + '" data-action="switchNobilityTab" data-id="intrigue" style="font-size:0.85rem;padding:6px 14px;">🗡️ Noble Intrigue</button>';
+    html += '</div>';
+
+    // ── STATUS TAB ──
+    html += '<div id="nobilityTab_status" style="display:' + (_nobilityTab === 'status' ? '' : 'none') + ';">';
 
     // ── KING'S COMMISSION (rank 4+) ──
     html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:10px;margin-bottom:10px;">';
@@ -1031,9 +1042,176 @@ function openNobilityDialog() {
     // ── ROYAL DIRECTIVES (Kingdom Quests) ──
     html += _buildRoyalDirectivesSection(citizenKingdomId, day);
 
+    html += '</div>'; // close status tab
+
+    // ── INTRIGUE TAB ──
+    html += '<div id="nobilityTab_intrigue" style="display:' + (_nobilityTab === 'intrigue' ? '' : 'none') + ';">';
+    html += _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank);
+    html += '</div>';
+
     // Open modal
     var footerHtml = '<button class="btn-medieval" data-action="closeModal">Close</button>';
     openModal('👑 Nobility — ' + (rankDef.name || 'Noble'), html, footerHtml);
+}
+
+// ── Noble Intrigue Tab Builder ──
+function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank) {
+    var html = '';
+
+    // Get kingdom nobles for target selection
+    var nobles = [];
+    try {
+        if (typeof Engine !== 'undefined' && Engine.getWorldData) {
+            var _wd = Engine.getWorldData();
+            var _all = _wd && _wd.people ? _wd.people : [];
+            var _playerPersonId = (typeof Player !== 'undefined' && Player.personId) ? Player.personId : 'player';
+            for (var _ni = 0; _ni < _all.length; _ni++) {
+                var _p = _all[_ni];
+                if (_p && _p.alive && _p.id !== _playerPersonId && _p.socialRank && _p.socialRank[citizenKingdomId] >= 4) {
+                    nobles.push(_p);
+                }
+            }
+        }
+    } catch(e) {}
+
+    // Define all 5 schemes with their requirements
+    var schemes = [
+        { id: 'pit_nobles', name: '⚔️ Pit Nobles Against Each Other', desc: 'Create rivalry between two nobles, damaging their relationship.', cost: '300g', skill: 'shadow_dealings', skillAlt: null, needTwo: true },
+        { id: 'turn_noble_against_king', name: '🏴 Turn Noble Against King', desc: 'Undermine a noble\'s loyalty to the crown.', cost: '500g', skill: 'kingmaker_skill', skillAlt: null, needTwo: false },
+        { id: 'discredit_noble', name: '📜 Discredit Noble', desc: 'Damage a noble\'s standing with the court through misinformation.', cost: '400g', skill: 'shadow_dealings', skillAlt: 'silver_tongue_dark', needTwo: false },
+        { id: 'manipulate_noble_vote', name: '🤝 Manipulate Noble Vote', desc: 'Sway a noble\'s position on council proposals for 60 days.', cost: '200g', skill: 'silver_tongue_dark', skillAlt: 'kingmaker_skill', needTwo: false },
+        { id: 'expose_noble_secrets', name: '💥 Expose Noble Secrets', desc: 'Dig up and publicize a noble\'s secrets. Devastates reputation, grants blackmail leverage.', cost: '600g', skill: 'dark_connections', skillAlt: 'shadow_dealings', needTwo: false }
+    ];
+
+    // Check which schemes the player can use
+    var hasSkillFn = Player.hasSkill || function() { return false; };
+    var availableSchemes = [];
+    var lockedSchemes = [];
+    for (var _si = 0; _si < schemes.length; _si++) {
+        var _s = schemes[_si];
+        var _hasSkill = hasSkillFn(_s.skill) || (_s.skillAlt && hasSkillFn(_s.skillAlt));
+        if (_hasSkill && playerRank >= 4) {
+            availableSchemes.push(_s);
+        } else {
+            lockedSchemes.push(_s);
+        }
+    }
+
+    // Show locked schemes at the top if any
+    if (lockedSchemes.length > 0) {
+        html += '<div style="background:rgba(196,78,82,0.08);border:1px solid rgba(196,78,82,0.2);border-radius:8px;padding:8px 10px;margin-bottom:10px;">';
+        html += '<div style="font-size:0.82rem;color:#c44e52;margin-bottom:4px;">🔒 Locked Schemes (' + lockedSchemes.length + ')</div>';
+        html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:6px;">You are missing skills for these noble intrigue schemes:</div>';
+        for (var _li = 0; _li < lockedSchemes.length; _li++) {
+            var _ls = lockedSchemes[_li];
+            var _skillName = (_ls.skill || '').replace(/_/g, ' ');
+            var _altName = _ls.skillAlt ? (' or ' + _ls.skillAlt.replace(/_/g, ' ')) : '';
+            html += '<div style="font-size:0.75rem;color:#888;padding:2px 0;">🔒 <b>' + _ls.name + '</b> — requires: <span style="color:#c44e52;">' + _skillName + _altName + '</span></div>';
+        }
+        html += '</div>';
+    }
+
+    // Scheme Log
+    try {
+        var _schemeLog = Player.getState ? Player.getState()._schemeLog : null;
+        if (_schemeLog && _schemeLog.length > 0) {
+            html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(201,168,76,0.15);border-radius:8px;padding:10px;margin-bottom:10px;">';
+            html += '<div style="font-size:0.85rem;color:var(--gold);margin-bottom:6px;">📜 Scheme Log</div>';
+            var _logStart = Math.max(0, _schemeLog.length - 8);
+            for (var _sli = _schemeLog.length - 1; _sli >= _logStart; _sli--) {
+                var _le = _schemeLog[_sli];
+                var _leIcon = _le.caught ? '🚨' : _le.success ? '✅' : '❌';
+                var _leColor = _le.caught ? '#c44e52' : _le.success ? '#55a868' : '#aaa';
+                var _leScheme = (_le.scheme || '').replace(/_/g, ' ');
+                html += '<div style="font-size:0.75rem;color:' + _leColor + ';margin:2px 0;padding:3px 6px;background:rgba(0,0,0,0.15);border-radius:3px;">';
+                html += _leIcon + ' Day ' + (_le.day || '?') + ' — <b>' + escapeHtml(_leScheme) + '</b> vs ' + escapeHtml(_le.target || '?');
+                html += '</div>';
+            }
+            html += '</div>';
+        }
+    } catch(e) {}
+
+    // Available schemes
+    if (availableSchemes.length === 0) {
+        html += '<div style="text-align:center;padding:20px;color:#888;font-size:0.85rem;">';
+        html += '🔒 You need noble intrigue skills to access schemes.<br>';
+        html += '<span style="font-size:0.75rem;">Train skills like Shadow Dealings, Kingmaker, Silver Tongue (Dark), or Dark Connections.</span>';
+        html += '</div>';
+    } else {
+        html += '<div style="font-size:0.82rem;color:#ccc;margin-bottom:8px;">🗡️ Available Schemes (' + availableSchemes.length + '/' + schemes.length + ')</div>';
+        for (var _ai = 0; _ai < availableSchemes.length; _ai++) {
+            var _as = availableSchemes[_ai];
+            html += '<div style="border:1px solid rgba(201,168,76,0.2);border-radius:6px;padding:10px;margin-bottom:8px;background:rgba(0,0,0,0.15);">';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+            html += '<strong style="font-size:0.9rem;">' + _as.name + '</strong>';
+            html += '<span style="font-size:0.75rem;color:var(--gold);">' + _as.cost + '</span>';
+            html += '</div>';
+            html += '<div style="font-size:0.75rem;color:#aaa;margin-top:4px;">' + _as.desc + '</div>';
+
+            // Noble select
+            if (nobles.length > 0) {
+                html += '<div style="margin-top:6px;display:flex;gap:4px;align-items:center;flex-wrap:wrap;">';
+                html += '<select id="nob_intA_' + _ai + '" style="font-size:0.7rem;padding:2px;flex:1;min-width:100px;">';
+                for (var _nj = 0; _nj < nobles.length; _nj++) {
+                    var _n = nobles[_nj];
+                    var _nName = (_n.firstName || '?') + ' ' + (_n.lastName || '');
+                    var _nRank = (_n.socialRank && _n.socialRank[citizenKingdomId]) || 4;
+                    var _nRL = _nRank >= 6 ? ' [RA]' : _nRank >= 5 ? ' [Lord]' : ' [Noble]';
+                    var _nFact = _n._faction ? ' (' + _n._faction.charAt(0).toUpperCase() + _n._faction.slice(1) + ')' : '';
+                    html += '<option value="' + _n.id + '">' + _nName.trim() + _nRL + _nFact + '</option>';
+                }
+                html += '</select>';
+                if (_as.needTwo) {
+                    html += '<select id="nob_intB_' + _ai + '" style="font-size:0.7rem;padding:2px;flex:1;min-width:100px;">';
+                    for (var _nk = 0; _nk < nobles.length; _nk++) {
+                        var _n2 = nobles[_nk];
+                        html += '<option value="' + _n2.id + '">' + (_n2.firstName || '?') + ' ' + (_n2.lastName || '') + '</option>';
+                    }
+                    html += '</select>';
+                }
+                html += '<button class="btn-trade sell" style="font-size:0.7rem;" data-action="executeNobilityIntrigue" data-id="' + _as.id + '" data-idx="' + _ai + '">⚡ Execute</button>';
+                html += '</div>';
+            } else {
+                html += '<div style="font-size:0.75rem;color:#888;margin-top:4px;">No nobles available to target.</div>';
+            }
+            html += '</div>';
+        }
+    }
+
+    // Court Intelligence (also show here for easy reference)
+    try {
+        if (nobles.length > 0) {
+            html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(108,155,209,0.15);border-radius:8px;padding:10px;margin-bottom:10px;">';
+            html += '<div style="font-size:0.85rem;color:#6c9bd1;margin-bottom:6px;">🏛️ Court Intelligence (' + nobles.length + ' nobles)</div>';
+            var _kingPerson = null;
+            if (kingdom && kingdom.king && typeof Engine !== 'undefined' && Engine.findPerson) _kingPerson = Engine.findPerson(kingdom.king);
+            for (var _ci = 0; _ci < Math.min(12, nobles.length); _ci++) {
+                var _cn = nobles[_ci];
+                var _cnRank = (_cn.socialRank && _cn.socialRank[citizenKingdomId]) || 4;
+                var _cnRL = _cnRank >= 6 ? 'RA' : _cnRank >= 5 ? 'Lord' : 'Noble';
+                var _cnLoy = _cn._nobleRelationships && _kingPerson ? (_cn._nobleRelationships[_kingPerson.id] || 0) : 0;
+                var _cnLC = _cnLoy >= 30 ? '#55a868' : _cnLoy >= 0 ? '#ccb974' : '#c44e52';
+                var _cnRep = (_cn.reputation && _cn.reputation[citizenKingdomId]) ? Math.floor(_cn.reputation[citizenKingdomId]) : 50;
+                var _cnScan = _cn._scandalized ? ' 💥' : '';
+                var _cnFact2 = _cn._faction ? (' [' + _cn._faction.charAt(0).toUpperCase() + _cn._faction.slice(1) + ']') : '';
+                // Player relationship
+                var _cnPRel = 0;
+                try { var _pr = Player.getRelationship ? Player.getRelationship(_cn.id) : null; _cnPRel = _pr ? _pr.level : 0; } catch(e) {}
+                var _cnPRC = _cnPRel >= 40 ? '#55a868' : _cnPRel >= 10 ? '#ccb974' : _cnPRel > -10 ? '#aaa' : '#c44e52';
+                html += '<div style="font-size:0.75rem;padding:2px 0;color:#ccc;">';
+                html += '<b>' + escapeHtml(_cn.firstName || '?') + '</b> [' + _cnRL + ']';
+                html += ' — King: <span style="color:' + _cnLC + ';">' + _cnLoy + '</span>';
+                html += ' | Rep: ' + _cnRep + _cnScan;
+                html += ' | You: <span style="color:' + _cnPRC + ';">' + _cnPRel + '</span>';
+                html += _cnFact2;
+                html += '</div>';
+            }
+            if (nobles.length > 12) html += '<div style="font-size:0.7rem;color:#888;">...and ' + (nobles.length - 12) + ' more</div>';
+            html += '</div>';
+        }
+    } catch(e) {}
+
+    return html;
 }
 
 // ── Noble Agents UI ──
@@ -2292,6 +2470,31 @@ function _switchProposeActionTab(tabId, kingdomId) {
     UI.registerAction('_nobilityRequestBuilding', function(_t, d) { if (d.id) UI._nobilityRequestBuilding(d.id); });
     UI.registerAction('_nobilityProposeLaw', function(_t, d) { if (d.id) UI._nobilityProposeLaw(d.id); });
     UI.registerAction('_nobilityProposeAction', function(_t, d) { if (d.id) UI._nobilityProposeAction(d.id); });
+    UI.registerAction('switchNobilityTab', function(_t, d) {
+        _nobilityTab = d.id || 'status';
+        openNobilityDialog();
+    });
+    UI.registerAction('executeNobilityIntrigue', function(_t, d) {
+        var schemeId = d.id || '';
+        var nobleAId = '';
+        var nobleBId = '';
+        try {
+            var _selA = document.getElementById('nob_intA_' + d.idx);
+            if (_selA) nobleAId = _selA.value;
+            var _selB = document.getElementById('nob_intB_' + d.idx);
+            if (_selB) nobleBId = _selB.value;
+        } catch(e) {}
+        var result = Player.executeCorruptAction(schemeId, [nobleAId, nobleBId]);
+        if (result && result.success) {
+            UI.toast(result.message, 'success');
+        } else if (result && result.caught) {
+            UI.toast(result.message, 'danger');
+        } else {
+            UI.toast(result ? result.message : 'Failed.', 'warning');
+        }
+        _nobilityTab = 'intrigue';
+        openNobilityDialog();
+    });
     UI.registerAction('openFeastDialog', function(_t, d) { if (d.id) UI.openFeastDialog(d.id); });
     UI.registerAction('openVotingDialog', function(_t, d) { if (d.id) UI.openVotingDialog(d.id); });
     UI.registerAction('_switchKQTab', function(_t, d) { UI._switchKQTab(d.tab, d.kingdom); });
