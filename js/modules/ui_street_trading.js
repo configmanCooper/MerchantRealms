@@ -1079,8 +1079,8 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank) {
         { id: 'pit_nobles', name: '⚔️ Pit Nobles Against Each Other', desc: 'Create rivalry between two nobles, damaging their relationship.', cost: '300g', skill: 'shadow_dealings', skillAlt: null, needTwo: true },
         { id: 'turn_noble_against_king', name: '🏴 Turn Noble Against King', desc: 'Undermine a noble\'s loyalty to the crown.', cost: '500g', skill: 'kingmaker_skill', skillAlt: null, needTwo: false },
         { id: 'discredit_noble', name: '📜 Discredit Noble', desc: 'Damage a noble\'s standing with the court through misinformation.', cost: '400g', skill: 'shadow_dealings', skillAlt: 'silver_tongue_dark', needTwo: false },
-        { id: 'manipulate_noble_vote', name: '🤝 Manipulate Noble Vote', desc: 'Sway a noble\'s position on council proposals for 60 days.', cost: '200g', skill: 'silver_tongue_dark', skillAlt: 'kingmaker_skill', needTwo: false },
-        { id: 'expose_noble_secrets', name: '💥 Expose Noble Secrets', desc: 'Dig up and publicize a noble\'s secrets. Devastates reputation, grants blackmail leverage.', cost: '600g', skill: 'dark_connections', skillAlt: 'shadow_dealings', needTwo: false }
+        { id: 'manipulate_vote', name: '🤝 Manipulate Noble Vote', desc: 'Sway a noble\'s position on council proposals for 60 days.', cost: '200g', skill: 'silver_tongue_dark', skillAlt: 'kingmaker_skill', needTwo: false },
+        { id: 'expose_secrets', name: '💥 Expose Noble Secrets', desc: 'Dig up and publicize a noble\'s secrets. Devastates reputation, grants blackmail leverage.', cost: '600g', skill: 'dark_connections', skillAlt: 'shadow_dealings', needTwo: false }
     ];
 
     // Check which schemes the player can use
