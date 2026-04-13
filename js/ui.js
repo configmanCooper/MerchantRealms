@@ -497,6 +497,7 @@ window.UI = (function () {
 
         // ── NPC-Initiated Events ──
         registerAction('openNpcEvents', function() { _showNpcEventsModal(); });
+        registerAction('talkToTownsfolkDirect', function() { _talkToTownsfolkDirect(); });
         registerAction('npcEventAccept', function(_t, d) {
             var idx = parseInt(d.idx);
             var r = Player.respondToNpcEvent(idx, true);
@@ -3532,6 +3533,27 @@ window.UI = (function () {
 
         // NPC greeting based on rank and personality
         html += _getNpcGreeting(person, personName);
+
+        // Relationship tier badge
+        var _pRel = Player.state && Player.state.relationships && Player.state.relationships[personId];
+        if (_pRel) {
+            var _rlvl = Math.round(_pRel.level || 0);
+            var _tName = 'Acquaintance', _tColor = '#888', _tIcon = '👤';
+            if (_rlvl >= 80) { _tName = 'Trusted'; _tColor = '#9b59b6'; _tIcon = '💜'; }
+            else if (_rlvl >= 60) { _tName = 'Close Friend'; _tColor = '#55a868'; _tIcon = '💚'; }
+            else if (_rlvl >= 40) { _tName = 'Friend'; _tColor = '#d4a843'; _tIcon = '💛'; }
+            else if (_rlvl >= 20) { _tName = 'Friendly'; _tColor = '#5dade2'; _tIcon = '🤝'; }
+            html += '<div style="display:flex;align-items:center;gap:8px;margin:4px 0 8px;padding:4px 8px;background:rgba(0,0,0,0.2);border-radius:4px;border-left:3px solid ' + _tColor + ';">';
+            html += '<span style="font-size:0.75rem;color:' + _tColor + ';font-weight:bold;">' + _tIcon + ' ' + _tName + '</span>';
+            html += '<span style="font-size:0.65rem;color:#888;">❤️ ' + _rlvl + '/100</span>';
+            // Progress bar to next tier
+            var _nextTier = _rlvl >= 80 ? 100 : _rlvl >= 60 ? 80 : _rlvl >= 40 ? 60 : _rlvl >= 20 ? 40 : 20;
+            var _prevTier = _rlvl >= 80 ? 80 : _rlvl >= 60 ? 60 : _rlvl >= 40 ? 40 : _rlvl >= 20 ? 20 : 0;
+            var _tierProg = Math.round(((_rlvl - _prevTier) / (_nextTier - _prevTier)) * 100);
+            html += '<div style="flex:1;background:rgba(255,255,255,0.1);border-radius:3px;height:5px;overflow:hidden;"><div style="background:' + _tColor + ';height:100%;width:' + _tierProg + '%;border-radius:3px;"></div></div>';
+            if (_rlvl < 100) html += '<span style="font-size:0.6rem;color:#888;">→ ' + _nextTier + '</span>';
+            html += '</div>';
+        }
 
         var cooldownCount = 0;
         for (var i = 0; i < interactions.length; i++) {
@@ -9624,7 +9646,23 @@ window.UI = (function () {
             }
         }
         html += '</div>';
+        html += '<div style="text-align:center;margin-top:8px;">';
+        html += '<button class="btn-medieval" data-action="talkToTownsfolkDirect" style="font-size:0.72rem;padding:4px 12px;">💬 Talk to Someone Else</button>';
+        html += '<button class="btn-medieval" data-action="closeModal" style="font-size:0.72rem;padding:4px 12px;margin-left:6px;">Done</button>';
+        html += '</div>';
         openModal('NPC Events', html);
+    }
+
+    function _talkToTownsfolkDirect() {
+        if (typeof Player === 'undefined') return;
+        if (Player.traveling) { toast('Cannot talk while traveling.', 'warning'); return; }
+        if (!Player.townId) { toast('You must be in a town to talk to people.', 'warning'); return; }
+        var result = Player.talkToTownsfolk();
+        if (!result || !result.success) {
+            toast((result && result.message) || 'Nobody wants to talk right now.', 'warning');
+            return;
+        }
+        _showTalkResult(result);
     }
 
     function talkToTownsfolk() {
@@ -9632,12 +9670,24 @@ window.UI = (function () {
         if (Player.traveling) { toast('Cannot talk while traveling.', 'warning'); return; }
         if (!Player.townId) { toast('You must be in a town to talk to people.', 'warning'); return; }
 
+        // Show NPC-initiated events first if any are pending
+        if (Player.getNpcInitiatedEvents) {
+            var npcEvents = Player.getNpcInitiatedEvents();
+            if (npcEvents && npcEvents.length > 0) {
+                _showNpcEventsModal();
+                return;
+            }
+        }
+
         var result = Player.talkToTownsfolk();
         if (!result || !result.success) {
             toast((result && result.message) || 'Nobody wants to talk right now.', 'warning');
             return;
         }
+        _showTalkResult(result);
+    }
 
+    function _showTalkResult(result) {
         // Build a nice chat bubble display
         var html = '<div style="text-align:center;margin-bottom:16px;">';
         html += '<div style="font-size:1.5rem;margin-bottom:4px;">' + (result.icon || '💬') + '</div>';

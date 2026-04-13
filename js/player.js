@@ -15077,6 +15077,17 @@
             heirTraits: structuredClone(player.heirTraits || []),
             dateProgress: structuredClone(player.dateProgress || {}),
             _npcInteractions: structuredClone(player._npcInteractions || {}),
+            // NPC relationship systems
+            _npcMemoryEvents: structuredClone(player._npcMemoryEvents || {}),
+            _npcGossipCooldowns: structuredClone(player._npcGossipCooldowns || {}),
+            _npcJobCooldowns: structuredClone(player._npcJobCooldowns || {}),
+            _nobleFavorRequests: structuredClone(player._nobleFavorRequests || {}),
+            _nobleVoteSupport: structuredClone(player._nobleVoteSupport || {}),
+            _territoryProtection: structuredClone(player._territoryProtection || {}),
+            _relationshipTiers: structuredClone(player._relationshipTiers || {}),
+            _lastInteractionDay: structuredClone(player._lastInteractionDay || {}),
+            _npcInitiatedCooldown: player._npcInitiatedCooldown || 0,
+            _npcInitiatedQueue: structuredClone(player._npcInitiatedQueue || []),
             investigatorCaught: structuredClone(player.investigatorCaught || {}),
             weddingPlan: player.weddingPlan ? structuredClone(player.weddingPlan) : null,
             weddingMemory: player.weddingMemory ? structuredClone(player.weddingMemory) : null,
@@ -15486,6 +15497,17 @@
         player.heirTraits = data.heirTraits || [];
         player.dateProgress = data.dateProgress || {};
         player._npcInteractions = data._npcInteractions || {};
+        // NPC relationship systems
+        player._npcMemoryEvents = data._npcMemoryEvents || {};
+        player._npcGossipCooldowns = data._npcGossipCooldowns || {};
+        player._npcJobCooldowns = data._npcJobCooldowns || {};
+        player._nobleFavorRequests = data._nobleFavorRequests || {};
+        player._nobleVoteSupport = data._nobleVoteSupport || {};
+        player._territoryProtection = data._territoryProtection || {};
+        player._relationshipTiers = data._relationshipTiers || {};
+        player._lastInteractionDay = data._lastInteractionDay || {};
+        player._npcInitiatedCooldown = data._npcInitiatedCooldown || 0;
+        player._npcInitiatedQueue = data._npcInitiatedQueue || [];
         player.investigatorCaught = data.investigatorCaught || {};
         player.weddingPlan = data.weddingPlan || null;
         player.weddingMemory = data.weddingMemory || null;
