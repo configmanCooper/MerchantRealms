@@ -1015,8 +1015,11 @@
             kqData.available.push(quest);
         }
 
-        // Personal assignment chance
+        // Personal assignment chance — skip if player IS the king (they assign directives, not receive them)
+        var _isPlayerKingForQuests = false;
+        try { _isPlayerKingForQuests = Player && Player.isPlayerKing && Player.isPlayerKing() && Player.state && Player.state.kingState && Player.state.kingState.kingdomId === kingdomId; } catch(e) {}
         kqData.personalAssignment = null;
+        if (!_isPlayerKingForQuests) {
         var personalChance = playerRank >= 6 ? 0.30 : playerRank >= 5 ? 0.15 : 0.05;
         if (rng.chance(personalChance) && candidates.length > 0) {
             // Pick highest weight candidate not already selected
@@ -1034,6 +1037,7 @@
                 kqData.personalAssignment = pQuest;
             }
         }
+        } // end skip personal assignments when player is king
 
         return kqData;
     }

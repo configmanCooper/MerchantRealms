@@ -12937,6 +12937,8 @@ window.UI = (function () {
 
             toast('👑 You are now KING of ' + kingdom.name + '! ' + kingName + ' is dead.', 'success');
             Engine.logEvent('👑 ' + Player.state.firstName + ' ' + Player.state.lastName + ' has seized the throne of ' + kingdom.name + ' by divine intervention!', { type: 'succession', kingdomId: kid }, 'my_kingdom');
+            // Show coronation ceremony
+            if (Player.showRankCeremony) Player.showRankCeremony(7, kid);
             return;
         }
 

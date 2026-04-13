@@ -394,8 +394,8 @@ const CONFIG = {
     CARAVAN_WAGON_CAPACITY: 200,                // weight per wagon
     CARAVAN_WAGON_COST: 120,                    // gold to buy a wagon for the caravan
     // Daily theft/kill chances (calibrated: worst=80%/50% yearly, best=2%/0.5% yearly)
-    CARAVAN_BASE_DAILY_THEFT: 0.0012,
-    CARAVAN_BASE_DAILY_KILL: 0.0005,
+    CARAVAN_BASE_DAILY_THEFT: 0.0048,
+    CARAVAN_BASE_DAILY_KILL: 0.0020,
     CARAVAN_ROAD_UNSAFE_MULT: 2.0,
     CARAVAN_WAR_MULT: 1.5,
     CARAVAN_UNSAFE_CONN_MULT: 1.2,

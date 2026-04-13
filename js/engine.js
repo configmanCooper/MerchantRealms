@@ -7876,14 +7876,27 @@
             }
 
             // If all goals achieved, auto-trigger favorable peace
+            // Skip if player is king of either kingdom — they decide peace manually
             if (allAchieved && war.warGoals.length > 0) {
                 war._goalsAchieved = true;
-                logEvent('🏆 ' + aggressor.name + ' has achieved all war goals against ' + defender.name + '. Seeking favorable peace terms.');
-                // Boost peace chance dramatically
-                if (aggressor.relations) {
-                    aggressor.relations[defender.id] = Math.max(aggressor.relations[defender.id] || 0, -10);
+                var _playerIsKingAgg = false, _playerIsKingDef = false;
+                try {
+                    _playerIsKingAgg = Player && Player.isPlayerKing && Player.isPlayerKing() &&
+                        Player.state && Player.state.kingState && Player.state.kingState.kingdomId === aggressor.id;
+                    _playerIsKingDef = Player && Player.isPlayerKing && Player.isPlayerKing() &&
+                        Player.state && Player.state.kingState && Player.state.kingState.kingdomId === defender.id;
+                } catch(e) {}
+                if (_playerIsKingAgg || _playerIsKingDef) {
+                    logEvent('🏆 ' + aggressor.name + ' has achieved all war goals against ' + defender.name + '! You may now negotiate favorable peace terms.', {
+                        type: 'war_goals_achieved', kingdoms: [aggressor.id, defender.id]
+                    });
+                } else {
+                    logEvent('🏆 ' + aggressor.name + ' has achieved all war goals against ' + defender.name + '. Seeking favorable peace terms.');
+                    if (aggressor.relations) {
+                        aggressor.relations[defender.id] = Math.max(aggressor.relations[defender.id] || 0, -10);
+                    }
+                    Engine.makePeace(aggressor, defender, true, defender);
                 }
-                Engine.makePeace(aggressor, defender, true, defender);
             }
         }
     }

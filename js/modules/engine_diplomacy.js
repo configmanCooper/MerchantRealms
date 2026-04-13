@@ -539,6 +539,26 @@
             }
 
             // ---- Peace offering (enhanced negotiation) ----
+            // Player-king decides peace manually via King UI
+            if (_isPlayerKingOf(k)) {
+                // Generate advisor suggestion if peace conditions are met
+                for (const _ptId of k.atWar) {
+                    const _ptOther = findKingdom(_ptId);
+                    if (!_ptOther) continue;
+                    const _ptMyStr = computeMilitaryStrength(k);
+                    const _ptTheirStr = computeMilitaryStrength(_ptOther);
+                    const _ptLosing = _ptMyStr < _ptTheirStr;
+                    const _ptExh = k.warExhaustion || 0;
+                    if (_ptLosing || _ptExh > 40) {
+                        var _peaceDesc = 'Our military strength is ' + Math.floor(_ptMyStr) + ' vs ' + _ptOther.name + '\'s ' + Math.floor(_ptTheirStr) + '.';
+                        if (_ptExh > 40) _peaceDesc += ' War exhaustion: ' + Math.floor(_ptExh) + '.';
+                        if (_ptLosing) _peaceDesc += ' We are losing this war.';
+                        _addAdvisorSuggestion(k, 'diplomacy', '🕊️', 'Negotiate Peace with ' + _ptOther.name,
+                            _peaceDesc + ' Advisors recommend considering peace negotiations.',
+                            'suggest_peace_' + _ptOther.id, { enemyId: _ptOther.id, enemyName: _ptOther.name });
+                    }
+                }
+            } else {
             for (const warTargetId of k.atWar) {
                 const other = findKingdom(warTargetId);
                 if (!other) continue;
@@ -566,57 +586,107 @@
                     const result = evaluatePeaceTerms(loser, winner);
 
                     if (result.accepted) {
-                        // Apply peace terms
-                        loser.gold -= result.offer.gold;
-                        winner.gold += result.offer.gold;
+                        // If the OTHER side is player-king, convert to peace offer petition
+                        if (_isPlayerKingOf(other)) {
+                            var _playerK = other;
+                            if (!_playerK._pendingPetitions) _playerK._pendingPetitions = [];
+                            _playerK._pendingPetitions.push({
+                                id: 'peace_offer_' + k.id + '_' + (world.day || 0),
+                                type: 'peace_offer',
+                                from: k.name,
+                                fromId: k.id,
+                                title: '🕊️ ' + k.name + ' Seeks Peace',
+                                description: k.name + ' has sent envoys requesting peace negotiations. They offer ' + Math.floor(result.offer.gold) + 'g and ' + result.offer.towns.length + ' town(s) as concessions.',
+                                day: world.day,
+                                peaceTerms: result
+                            });
+                            _addAdvisorSuggestion(_playerK, 'diplomacy', '🕊️', k.name + ' Offers Peace',
+                                k.name + ' has sent peace envoys. Check your Court petitions to review their terms.',
+                                'peace_offer_from_' + k.id, { enemyId: k.id, enemyName: k.name });
+                        } else {
+                            // Apply peace terms
+                            loser.gold -= result.offer.gold;
+                            winner.gold += result.offer.gold;
 
-                        // Transfer ceded towns
-                        for (const cededTownId of result.offer.towns) {
-                            const cededTown = transferTown(cededTownId, loser.id, winner.id, 'peace_deal');
-                            if (cededTown) {
-                                // Update people in ceded town
-                                for (const p of world.people) {
-                                    if (p.alive && p.townId === cededTownId) {
-                                        p.kingdomId = winner.id;
+                            // Transfer ceded towns
+                            for (const cededTownId of result.offer.towns) {
+                                const cededTown = transferTown(cededTownId, loser.id, winner.id, 'peace_deal');
+                                if (cededTown) {
+                                    // Update people in ceded town
+                                    for (const p of world.people) {
+                                        if (p.alive && p.townId === cededTownId) {
+                                            p.kingdomId = winner.id;
+                                        }
+                                    }
+                                    // Apply servitude if negotiated
+                                    if (result.offer.concessions.includes('servitude_of_ceded')) {
+                                        imposeServitude(cededTown, winner);
+                                    } else {
+                                        grantCitizenship(cededTown, winner);
                                     }
                                 }
-                                // Apply servitude if negotiated
-                                if (result.offer.concessions.includes('servitude_of_ceded')) {
-                                    imposeServitude(cededTown, winner);
-                                } else {
-                                    grantCitizenship(cededTown, winner);
-                                }
                             }
-                        }
 
-                        // Apply trade concessions
-                        if (result.offer.concessions.includes('lower_tariffs') && loser.laws) {
-                            loser.laws.tradeTariff = Math.round(Math.max(0, (loser.laws.tradeTariff || 0.05) * 0.5) * 10000) / 10000;
-                        }
+                            // Apply trade concessions
+                            if (result.offer.concessions.includes('lower_tariffs') && loser.laws) {
+                                loser.laws.tradeTariff = Math.round(Math.max(0, (loser.laws.tradeTariff || 0.05) * 0.5) * 10000) / 10000;
+                            }
 
-                        makePeace(k, other, result.level >= 3, result.level >= 3 ? loser : null);
+                            makePeace(k, other, result.level >= 3, result.level >= 3 ? loser : null);
+                        }
                     }
                 }
             }
+            } // end player-king peace bypass
 
             // ---- Mutual exhaustion peace (both sides too tired to fight) ----
+            // Player-king decides peace manually
+            if (_isPlayerKingOf(k)) {
+                // Generate advisor suggestion instead
+                for (const warTargetId of k.atWar) {
+                    const other = findKingdom(warTargetId);
+                    if (!other) continue;
+                    if ((k.warExhaustion > 60 && (other.warExhaustion || 0) > 60) ||
+                        (k._bankruptDays > 60 && (other._bankruptDays || 0) > 60)) {
+                        _addAdvisorSuggestion(k, 'diplomacy', '🕊️', 'Seek White Peace with ' + other.name,
+                            'Both kingdoms are exhausted from the war. Our war exhaustion is ' + Math.floor(k.warExhaustion || 0) + ' and ' + other.name + '\'s is ' + Math.floor(other.warExhaustion || 0) + '. Advisors recommend ending the war with no concessions.',
+                            'suggest_white_peace_' + other.id, { enemyId: other.id, enemyName: other.name });
+                    }
+                }
+            } else {
             for (const warTargetId of k.atWar) {
                 const other = findKingdom(warTargetId);
                 if (!other) continue;
                 if ((k.warExhaustion > 60 && (other.warExhaustion || 0) > 60) ||
                     (k._bankruptDays > 60 && (other._bankruptDays || 0) > 60)) {
-                    logEvent('🕊️ ' + k.name + ' and ' + other.name + ' agree to a white peace — both sides are exhausted from the war.', {
-                        type: 'mutual_exhaustion_peace',
-                        cause: 'Both kingdoms have war exhaustion above 60 or have been bankrupt for over 60 days.',
-                        effects: ['War ends with no tribute or concessions', 'Both kingdoms begin recovery'],
-                        kingdoms: [k.id, other.id]
-                    }, 'military');
-                    makePeace(k, other, false, null, true); // White peace — no terms (exhaustion)
+                    // If OTHER side is player-king, send peace offer instead
+                    if (_isPlayerKingOf(other)) {
+                        _addAdvisorSuggestion(other, 'diplomacy', '🕊️', k.name + ' Seeks White Peace',
+                            k.name + ' signals willingness for a white peace — both sides are exhausted. War exhaustion: ' + Math.floor(k.warExhaustion || 0) + ' vs our ' + Math.floor(other.warExhaustion || 0) + '.',
+                            'enemy_white_peace_' + k.id, { enemyId: k.id, enemyName: k.name });
+                    } else {
+                        logEvent('🕊️ ' + k.name + ' and ' + other.name + ' agree to a white peace — both sides are exhausted from the war.', {
+                            type: 'mutual_exhaustion_peace',
+                            cause: 'Both kingdoms have war exhaustion above 60 or have been bankrupt for over 60 days.',
+                            effects: ['War ends with no tribute or concessions', 'Both kingdoms begin recovery'],
+                            kingdoms: [k.id, other.id]
+                        }, 'military');
+                        makePeace(k, other, false, null, true);
+                    }
                     break;
                 }
             }
+            } // end mutual exhaustion bypass
 
             // ---- Multi-front war prioritization: seek peace with weakest enemy ----
+            // Player-king decides peace manually
+            if (_isPlayerKingOf(k)) {
+                if (k.atWar.size > 1 && k.warExhaustion > 30) {
+                    _addAdvisorSuggestion(k, 'diplomacy', '⚔️', 'Multi-Front War Pressure',
+                        'Your Majesty, we are fighting on ' + k.atWar.size + ' fronts with war exhaustion at ' + Math.floor(k.warExhaustion) + '. Consider suing for peace with the weakest enemy to consolidate forces.',
+                        'suggest_multi_front_peace', { fronts: k.atWar.size, exhaustion: Math.floor(k.warExhaustion) });
+                }
+            } else {
             if (k.atWar.size > 1) {
                 var enemies = [];
                 for (const eid of k.atWar) {
@@ -628,16 +698,32 @@
                 if (enemies.length > 1 && k.warExhaustion > 30) {
                     var weakest = findKingdom(enemies[0].id);
                     if (weakest && rng.chance(0.02 * (k.warExhaustion / 50))) {
-                        logEvent('🕊️ ' + k.name + ' sues for peace with ' + weakest.name + ' to focus on other fronts.', {
-                            type: 'multi_front_peace', cause: 'Multi-front war pressure',
-                            effects: [k.name + ' seeks to consolidate forces'], kingdoms: [k.id, weakest.id]
-                        }, 'military');
-                        makePeace(k, weakest, false, null);
+                        // If weakest enemy is player-king, send peace offer instead
+                        if (_isPlayerKingOf(weakest)) {
+                            _addAdvisorSuggestion(weakest, 'diplomacy', '🕊️', k.name + ' Seeks Peace (Multi-Front)',
+                                k.name + ' is fighting on multiple fronts and signals willingness to end the war with us to consolidate forces.',
+                                'enemy_multifront_peace_' + k.id, { enemyId: k.id, enemyName: k.name });
+                        } else {
+                            logEvent('🕊️ ' + k.name + ' sues for peace with ' + weakest.name + ' to focus on other fronts.', {
+                                type: 'multi_front_peace', cause: 'Multi-front war pressure',
+                                effects: [k.name + ' seeks to consolidate forces'], kingdoms: [k.id, weakest.id]
+                            }, 'military');
+                            makePeace(k, weakest, false, null);
+                        }
                     }
                 }
             }
+            } // end multi-front bypass
 
             // ---- C-2: Financial peace-seeking — broke kingdoms seek peace ----
+            // Player-king decides peace manually
+            if (_isPlayerKingOf(k)) {
+                if (k.atWar.size > 0 && k.gold < 1000 && (k.warExhaustion || 0) > 50) {
+                    _addAdvisorSuggestion(k, 'diplomacy', '💸', 'Treasury Depleted — Seek Peace?',
+                        'Your Majesty, our treasury has only ' + Math.floor(k.gold) + 'g and war exhaustion is at ' + Math.floor(k.warExhaustion || 0) + '. The kingdom cannot sustain this conflict much longer. Consider negotiating peace.',
+                        'suggest_financial_peace', { gold: Math.floor(k.gold), exhaustion: Math.floor(k.warExhaustion || 0) });
+                }
+            } else {
             if (k.atWar.size > 0 && k.gold < 1000 && (k.warExhaustion || 0) > 50) {
                 var _kp = k.kingPersonality || {};
                 // Personality affects willingness: brave/ambitious resist, cowardly/cautious agree faster
@@ -654,16 +740,24 @@
                 for (var _peaceEid of k.atWar) {
                     var _peaceEnemy = findKingdom(_peaceEid);
                     if (_peaceEnemy && rng.chance(peaceDesperation)) {
-                        logEvent('🕊️💸 ' + k.name + ' desperately seeks peace with ' + _peaceEnemy.name + ' — the treasury is empty!', {
-                            type: 'financial_peace', cause: k.name + ' treasury at ' + Math.floor(k.gold) + 'g with war exhaustion ' + Math.floor(k.warExhaustion || 0),
-                            effects: ['War ends — kingdom cannot sustain the conflict', 'Both sides begin recovery'],
-                            kingdoms: [k.id, _peaceEnemy.id]
-                        }, 'military');
-                        makePeace(k, _peaceEnemy, false, null, true);
+                        // If enemy is player-king, send peace offer instead
+                        if (_isPlayerKingOf(_peaceEnemy)) {
+                            _addAdvisorSuggestion(_peaceEnemy, 'diplomacy', '💸', k.name + ' Desperately Seeks Peace',
+                                k.name + '\'s treasury is at ' + Math.floor(k.gold) + 'g. They are desperate for peace and may offer favorable terms.',
+                                'enemy_financial_peace_' + k.id, { enemyId: k.id, enemyName: k.name });
+                        } else {
+                            logEvent('🕊️💸 ' + k.name + ' desperately seeks peace with ' + _peaceEnemy.name + ' — the treasury is empty!', {
+                                type: 'financial_peace', cause: k.name + ' treasury at ' + Math.floor(k.gold) + 'g with war exhaustion ' + Math.floor(k.warExhaustion || 0),
+                                effects: ['War ends — kingdom cannot sustain the conflict', 'Both sides begin recovery'],
+                                kingdoms: [k.id, _peaceEnemy.id]
+                            }, 'military');
+                            makePeace(k, _peaceEnemy, false, null, true);
+                        }
                         break;
                     }
                 }
             }
+            } // end financial peace bypass
 
             // ---- H-1: Daily base tax collection (smoothed, not seasonal lump) ----
             if (!(k._taxRevoltUntil && world.day < k._taxRevoltUntil)) {
@@ -794,7 +888,10 @@
                 }
                 tickRebellion(k);
                 tickKingdomHappinessConsequences(k);
-                tickSurrender(k);
+                // Player-king decides surrender manually
+                if (!_playerIsKingHere) {
+                    tickSurrender(k);
+                }
                 tickNobleAI(k);
                 tickKingFamilyAI(k);
             }
@@ -2256,7 +2353,12 @@
                 if (k.atWar.size > 1) peaceChance += 0.1; // multi-front pressure
 
                 if (wantsPeace && rng.chance(peaceChance)) {
-                    if (hasSpecialLaw(k, 'noble_council')) {
+                    // If enemy is player-king, send peace offer instead of auto-making peace
+                    if (_isPlayerKingOf(enemy)) {
+                        _addAdvisorSuggestion(enemy, 'diplomacy', '🏳️', k.name + ' Wants to Surrender',
+                            k.name + ' is losing the war (strength ' + Math.floor(myStr) + ' vs our ' + Math.floor(theirStr) + ') and seeks to negotiate peace terms. This could be advantageous.',
+                            'enemy_surrender_' + k.id, { enemyId: k.id, enemyName: k.name });
+                    } else if (hasSpecialLaw(k, 'noble_council')) {
                         initiateCouncilVote(k, 'Negotiate peace with ' + enemy.name,
                             'We are losing the war. Military comparison: ' + Math.floor(myStr) + ' vs ' + Math.floor(theirStr) + '. War exhaustion: ' + Math.floor(exhaustion),
                             'make_peace',
