@@ -411,6 +411,15 @@ const CONFIG = {
     NOTORIETY_DANGER_THRESHOLD: 50,
     ASSASSINATION_CHANCE_BASE: 0.001,
 
+    // Noble Notoriety — separate system for noble-level scheming
+    NOBLE_NOTORIETY_DECAY_PER_DAY: 1,
+    NOBLE_NOTORIETY_MAX: 100,
+    NOBLE_NOTORIETY_AGENT_CAUGHT_ADD: 15,        // added when an agent is caught
+    NOBLE_NOTORIETY_DARK_DEED_ADD: 12,           // added when caught doing dark deeds vs nobles
+    NOBLE_NOTORIETY_DIRECT_NOBLE_ADD: 20,        // added when directly messing with another noble
+    NOBLE_NOTORIETY_AGENT_DISABLE_DAYS: 30,      // days an agent is disabled when caught
+    NOBLE_NOTORIETY_POST_PUNISHMENT_REDUCTION: 0.90, // reduce by 90% after punishment
+
     // Naval / Sea travel
     SEA_ROUTE_MAX_DISTANCE: 3000,
     SEA_ROUTE_MIN_WATER_FRACTION: 0.95,    // Open-water portion must be >=95% water (coastal approach excluded)

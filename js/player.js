@@ -26,6 +26,7 @@
         ships: [],              // ship objects { id, name, type, capacity, speed, condition }
         reputation: {},         // kingdomId → 0-100
         notoriety: 0,
+        nobleNotoriety: 0,      // 0-100, noble-level suspicion from scheming
         traveling: false,
         travelProgress: 0,
         travelDestination: null,
@@ -5846,6 +5847,202 @@
                 handlePlayerDeath();
             }
         }
+    }
+
+    // ========================================================================
+    // NOBLE NOTORIETY PUNISHMENT SYSTEM
+    // When player's nobleNotoriety is checked (agent caught, dark deed caught),
+    // current notoriety is used as % chance the nobles/king catch the player.
+    // King delivers punishment based on personality, relationships.
+    // ========================================================================
+    function checkNobleNotorietyPunishment(actionDesc) {
+        var currentNotoriety = player.nobleNotoriety || 0;
+        var rng = Engine.getRng();
+        if (!rng) return null;
+
+        // Use current notoriety (before adding new) as % chance of being caught
+        var catchChance = currentNotoriety / 100;
+        if (!rng.chance(catchChance)) return null;
+
+        // Player was caught by the nobles/king!
+        return deliverNoblePunishment(actionDesc);
+    }
+
+    function deliverNoblePunishment(actionDesc) {
+        var rng = Engine.getRng();
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+
+        // Find player's kingdom and king
+        var citizenKingdomId = player.citizenshipKingdomId || '';
+        if (!citizenKingdomId && player.socialRank) {
+            for (var _nk in player.socialRank) {
+                if ((player.socialRank[_nk] || 0) >= 4) { citizenKingdomId = _nk; break; }
+            }
+        }
+        var kingdom = null;
+        var kingPerson = null;
+        var kingRel = 50;
+        try {
+            kingdom = citizenKingdomId ? Engine.findKingdom(citizenKingdomId) : null;
+            if (kingdom && kingdom.king) {
+                kingPerson = Engine.findPerson(kingdom.king);
+                var kRel = getRelationship(kingdom.king);
+                kingRel = kRel ? kRel.level : 50;
+            }
+        } catch(e) {}
+
+        var kingPersonality = kingdom ? (kingdom.kingPersonality || {}) : {};
+        var temperament = kingPersonality.temperament || 'fair';
+        var greed = kingPersonality.greed || 'fair';
+        var intel = kingPersonality.intelligence || 'average';
+
+        // Calculate average noble relationship (nobles who know about the player)
+        var nobleRelAvg = 50;
+        var nobleCount = 0;
+        try {
+            if (player.relationships) {
+                for (var _nrid in player.relationships) {
+                    var _nrRel = player.relationships[_nrid];
+                    if (!_nrRel) continue;
+                    var _nrPerson = Engine.findPerson(_nrid);
+                    if (!_nrPerson || !_nrPerson.alive) continue;
+                    if (!_nrPerson.kingdomId || _nrPerson.kingdomId !== citizenKingdomId) continue;
+                    var _nrRank = (_nrPerson.socialRank && _nrPerson.socialRank[citizenKingdomId]) || 0;
+                    if (_nrRank < 3) continue;
+                    nobleRelAvg += (_nrRel.level || 50);
+                    nobleCount++;
+                }
+            }
+            if (nobleCount > 0) nobleRelAvg = nobleRelAvg / (nobleCount + 1);
+        } catch(e) {}
+
+        // Severity score (0-100): higher = harsher punishment
+        var severity = 50;
+        severity += (player.nobleNotoriety || 0) * 0.3;     // high notoriety = harsher
+        severity -= kingRel * 0.3;                           // good king rel = lenient
+        severity -= nobleRelAvg * 0.2;                       // liked by nobles = lenient
+        if (temperament === 'cruel') severity += 20;
+        else if (temperament === 'stern') severity += 10;
+        else if (temperament === 'kind') severity -= 20;
+        if (greed === 'greedy' || greed === 'corrupt') severity += 10;
+        else if (greed === 'generous') severity -= 10;
+        if (intel === 'foolish' || intel === 'dim') severity -= 10;  // foolish kings may not punish well
+        if (intel === 'brilliant') severity += 5;                     // brilliant kings crack down harder
+
+        // Player rank affects severity — higher rank = bigger scandal
+        var playerRank = 0;
+        if (player.socialRank && citizenKingdomId) {
+            playerRank = player.socialRank[citizenKingdomId] || 0;
+        }
+        if (playerRank >= 6) severity += 10;  // royal advisor caught = big deal
+
+        // Add randomness
+        severity += rng.randInt(-10, 10);
+        severity = Math.max(0, Math.min(100, severity));
+
+        // Determine punishment tier
+        var punishment = {};
+        if (severity >= 85) {
+            // EXECUTION — extremely rare, only for very high severity
+            punishment = { type: 'execution', desc: 'execution' };
+        } else if (severity >= 70) {
+            // DEMOTION — lose one rank
+            punishment = { type: 'demotion', desc: 'demotion by one rank' };
+        } else if (severity >= 55) {
+            // BUILDING/GOODS SEIZURE — king takes some player property
+            punishment = { type: 'seizure', desc: 'seizure of property for the kingdom' };
+        } else if (severity >= 35) {
+            // JAIL TIME — 5-20 days
+            var jailDays = rng.randInt(5, 20);
+            punishment = { type: 'jail', desc: jailDays + ' days imprisonment', days: jailDays };
+        } else {
+            // FINE — slap on the wrist
+            var fineAmount = Math.floor(rng.randInt(100, 500) * (1 + severity / 100));
+            punishment = { type: 'fine', desc: 'a fine of ' + fineAmount + 'g', amount: fineAmount };
+        }
+
+        // Apply the punishment
+        var resultMsg = '';
+        var kingName = kingPerson ? (kingPerson.firstName + ' ' + kingPerson.lastName) : 'The King';
+
+        switch (punishment.type) {
+            case 'execution':
+                resultMsg = '💀 ' + kingName + ' has ordered your execution for your treacherous schemes!';
+                Engine.logEvent(resultMsg, null, 'my_business');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast(resultMsg, 'danger', 'critical');
+                player.alive = false;
+                handlePlayerDeath();
+                break;
+
+            case 'demotion':
+                if (playerRank > 0 && citizenKingdomId) {
+                    var oldRank = playerRank;
+                    player.socialRank[citizenKingdomId] = Math.max(0, playerRank - 1);
+                    var oldRankName = CONFIG.SOCIAL_RANKS[oldRank] ? CONFIG.SOCIAL_RANKS[oldRank].name : 'Noble';
+                    var newRankName = CONFIG.SOCIAL_RANKS[playerRank - 1] ? CONFIG.SOCIAL_RANKS[playerRank - 1].name : 'Commoner';
+                    resultMsg = '⬇️ ' + kingName + ' has demoted you from ' + oldRankName + ' to ' + newRankName + ' for your crimes!';
+                    // Remove lord status if demoted below rank 5
+                    if (playerRank - 1 < 5 && player.lordTownId) {
+                        player.lordTownId = null;
+                    }
+                } else {
+                    // Fallback to fine if can't demote
+                    punishment.type = 'fine';
+                    punishment.amount = rng.randInt(200, 600);
+                    resultMsg = '💰 ' + kingName + ' fines you ' + punishment.amount + 'g for your scheming!';
+                    player.gold = Math.max(0, player.gold - punishment.amount);
+                }
+                break;
+
+            case 'seizure':
+                // Take 1-3 buildings or a portion of goods
+                var seized = false;
+                var seizedBuildings = [];
+                if (player.buildings && player.buildings.length > 0) {
+                    var numToSeize = Math.min(player.buildings.length, rng.randInt(1, 3));
+                    for (var _si = 0; _si < numToSeize; _si++) {
+                        var _bIdx = rng.randInt(0, player.buildings.length - 1);
+                        var _bld = player.buildings[_bIdx];
+                        if (_bld) {
+                            seizedBuildings.push(_bld.type || _bld.name || 'building');
+                            // Transfer to kingdom ownership
+                            _bld.ownerId = kingdom ? kingdom.id : null;
+                            _bld._playerOwned = false;
+                            player.buildings.splice(_bIdx, 1);
+                            seized = true;
+                        }
+                    }
+                }
+                if (seized) {
+                    resultMsg = '🏛️ ' + kingName + ' has seized ' + seizedBuildings.join(', ') + ' for the kingdom treasury!';
+                } else {
+                    // No buildings to seize → take gold instead
+                    var seizeGold = Math.min(player.gold, rng.randInt(300, 1000));
+                    player.gold -= seizeGold;
+                    resultMsg = '💰 ' + kingName + ' confiscates ' + seizeGold + 'g from your coffers!';
+                }
+                break;
+
+            case 'jail':
+                player.jailedUntilDay = day + punishment.days;
+                resultMsg = '🔒 ' + kingName + ' sentences you to ' + punishment.days + ' days in the dungeon!';
+                break;
+
+            case 'fine':
+                var fineAmt = Math.min(player.gold, punishment.amount || 200);
+                player.gold -= fineAmt;
+                resultMsg = '💰 ' + kingName + ' fines you ' + fineAmt + 'g — consider this a warning!';
+                break;
+        }
+
+        Engine.logEvent(resultMsg, null, 'my_business');
+        if (typeof UI !== 'undefined' && UI.toast) UI.toast(resultMsg, punishment.type === 'execution' ? 'danger' : punishment.type === 'fine' ? 'warning' : 'danger');
+
+        // Reduce notoriety by 90% after punishment
+        player.nobleNotoriety = Math.floor((player.nobleNotoriety || 0) * (1 - (CONFIG.NOBLE_NOTORIETY_POST_PUNISHMENT_REDUCTION || 0.90)));
+
+        return { punished: true, type: punishment.type, message: resultMsg, severity: severity };
     }
 
     function handlePlayerDeath() {
@@ -16105,6 +16302,11 @@
         // Notoriety decay
         if (player.notoriety > 0) {
             player.notoriety = Math.max(0, player.notoriety - CONFIG.NOTORIETY_DECAY_PER_DAY);
+        }
+
+        // Noble Notoriety decay (-1 per day)
+        if (player.nobleNotoriety > 0) {
+            player.nobleNotoriety = Math.max(0, player.nobleNotoriety - (CONFIG.NOBLE_NOTORIETY_DECAY_PER_DAY || 1));
         }
 
         // (trade rep gain removed — trading no longer passively boosts kingdom rep)
@@ -32810,6 +33012,7 @@
         get caravans() { return player.caravans; },
         get reputation() { return player.reputation; },
         get notoriety() { return player.notoriety; },
+        get nobleNotoriety() { return player.nobleNotoriety || 0; },
         get stats() { return player.stats; },
         get supplyChains() { return player.supplyChains; },
         get tradeLog() { return player.tradeLog; },
@@ -33544,6 +33747,8 @@
         makeDebtPayment,
         selectHeir,
         handlePlayerDeath,
+        checkNobleNotorietyPunishment,
+        deliverNoblePunishment,
 
         // Spouse AI
         initSpouseAI,

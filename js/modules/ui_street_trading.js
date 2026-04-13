@@ -549,6 +549,28 @@ function openNobilityDialog() {
         html += '</div>';
     }
 
+    // ── NOBLE NOTORIETY BAR ──
+    var _nobleNot = Player.nobleNotoriety || 0;
+    var _nobleNotColor = _nobleNot >= 70 ? '#c44e52' : _nobleNot >= 40 ? '#e67e22' : _nobleNot >= 15 ? '#ccb974' : '#55a868';
+    var _nobleNotLabel = _nobleNot >= 80 ? 'Infamous' : _nobleNot >= 60 ? 'Highly Suspicious' : _nobleNot >= 40 ? 'Suspicious' : _nobleNot >= 20 ? 'Whispers' : _nobleNot > 0 ? 'Noticed' : 'Clean';
+    html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(201,168,76,0.15);border-radius:8px;padding:10px;margin-bottom:10px;">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">';
+    html += '<div style="font-size:0.85rem;color:var(--gold);">🕵️ Noble Notoriety</div>';
+    html += '<div style="font-size:0.78rem;color:' + _nobleNotColor + ';font-weight:bold;">' + Math.floor(_nobleNot) + '/100 — ' + _nobleNotLabel + '</div>';
+    html += '</div>';
+    html += '<div style="position:relative;height:10px;background:rgba(0,0,0,0.3);border-radius:5px;overflow:hidden;">';
+    html += '<div style="height:100%;width:' + Math.min(100, _nobleNot) + '%;background:linear-gradient(90deg,' + _nobleNotColor + ',' + (_nobleNot >= 50 ? '#c44e52' : _nobleNotColor) + ');border-radius:5px;transition:width 0.3s;"></div>';
+    html += '</div>';
+    html += '<div style="font-size:0.65rem;color:#888;margin-top:4px;">';
+    if (_nobleNot >= 50) {
+        html += '⚠️ The nobility is watching you closely. Each time an agent is caught, there is a <b>' + Math.floor(_nobleNot) + '%</b> chance the king will deliver punishment.';
+    } else if (_nobleNot > 0) {
+        html += 'Suspicion level among nobles. Decays by 1 per day. Higher values increase the risk of being caught and punished by the king.';
+    } else {
+        html += 'The nobility has no suspicions about you. Keep it that way — or don\'t.';
+    }
+    html += '</div></div>';
+
     // ── ALERTS SECTION ──
     var alerts = [];
     if (commission && commission.status === 'pending') {

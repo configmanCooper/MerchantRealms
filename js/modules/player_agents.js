@@ -353,24 +353,35 @@
         if (caught) {
             agent.catchCount++;
             agent.reports.push({ day: day, msg: '🚨 ' + agent.name + ' was CAUGHT during ' + def.label + '!' });
-            // Player faces consequences
-            var town = Engine.findTown(agent.townId);
-            var kingdom = town ? (Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null) : null;
-            var fineAmount = task.type === 'arson_buildings' ? 800 : task.type === 'raid_caravans' ? 600 : 300;
-            if (player.gold >= fineAmount) player.gold -= fineAmount;
-            else { fineAmount = Math.floor(player.gold); player.gold = 0; }
-            player.notoriety = (player.notoriety || 0) + (task.type === 'arson_buildings' ? 20 : 10);
-            // Agent jailed
-            var jailDays = task.type === 'arson_buildings' ? 15 : task.type === 'raid_caravans' ? 10 : 5;
-            agent.status = 'jailed';
-            agent._jailUntil = day + jailDays;
-            agent.task = null;
-            // Reputation hit
-            var repKingdomId = town ? town.kingdomId : '';
-            if (repKingdomId && player.reputation) {
-                player.reputation[repKingdomId] = Math.max(0, (player.reputation[repKingdomId] || 50) - 5);
+
+            // Check noble notoriety: use CURRENT notoriety as % chance nobles/king catch the PLAYER
+            var punishResult = null;
+            if (Player.checkNobleNotorietyPunishment) {
+                punishResult = Player.checkNobleNotorietyPunishment(def.label);
             }
-            Engine.logEvent(player.fullName + '\'s agent ' + agent.name + ' was caught committing ' + def.label + '!', null, 'my_business');
+
+            // Add noble notoriety AFTER the check (the check uses current value before this add)
+            player.nobleNotoriety = Math.min(CONFIG.NOBLE_NOTORIETY_MAX || 100,
+                (player.nobleNotoriety || 0) + (CONFIG.NOBLE_NOTORIETY_AGENT_CAUGHT_ADD || 15));
+
+            // Disable agent for 30 days (not jailed, not fined — just disabled)
+            var disableDays = CONFIG.NOBLE_NOTORIETY_AGENT_DISABLE_DAYS || 30;
+            agent.status = 'caught';
+            agent._cooldownUntil = day + disableDays;
+            agent.task = null;
+
+            // Minor reputation hit (the agent was caught, not necessarily the player)
+            var repKingdomId = (Engine.findTown(agent.townId) || {}).kingdomId || '';
+            if (repKingdomId && player.reputation) {
+                player.reputation[repKingdomId] = Math.max(0, (player.reputation[repKingdomId] || 50) - 3);
+            }
+
+            if (punishResult && punishResult.punished) {
+                agent.reports.push({ day: day, msg: '⚠️ The nobles traced ' + agent.name + '\'s actions back to you! ' + punishResult.message });
+                Engine.logEvent('🔍 ' + player.fullName + '\'s scheming was discovered by the nobility! ' + punishResult.message, null, 'my_business');
+            } else {
+                Engine.logEvent(player.fullName + '\'s agent ' + agent.name + ' was caught during ' + def.label + ' and is laying low for ' + disableDays + ' days.', null, 'my_business');
+            }
             return;
         }
 
