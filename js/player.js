@@ -217,9 +217,6 @@
         _reputationSpreading: false,    // recursion guard for reputation contagion
         _relationshipTiers: {},         // { personId: tier } — highest tier notified (0-4)
         _lastInteractionDay: {},        // { personId: day } — last interaction day for decay
-        _npcInitiatedCooldown: 0,       // day last NPC-initiated events generated
-        _npcInitiatedQueue: [],         // [{ npcId, npcName, eventType, message, day, ... }]
-
         // ── Crown & Royal Advisor State ──
         isRoyalAdvisorFromKing: false,
         royalAdvisorKingdomId: null,
@@ -15086,8 +15083,6 @@
             _territoryProtection: structuredClone(player._territoryProtection || {}),
             _relationshipTiers: structuredClone(player._relationshipTiers || {}),
             _lastInteractionDay: structuredClone(player._lastInteractionDay || {}),
-            _npcInitiatedCooldown: player._npcInitiatedCooldown || 0,
-            _npcInitiatedQueue: structuredClone(player._npcInitiatedQueue || []),
             investigatorCaught: structuredClone(player.investigatorCaught || {}),
             weddingPlan: player.weddingPlan ? structuredClone(player.weddingPlan) : null,
             weddingMemory: player.weddingMemory ? structuredClone(player.weddingMemory) : null,
@@ -15506,9 +15501,7 @@
         player._territoryProtection = data._territoryProtection || {};
         player._relationshipTiers = data._relationshipTiers || {};
         player._lastInteractionDay = data._lastInteractionDay || {};
-        player._npcInitiatedCooldown = data._npcInitiatedCooldown || 0;
-        player._npcInitiatedQueue = data._npcInitiatedQueue || [];
-        player.investigatorCaught = data.investigatorCaught || {};
+        player.investigatorCaught= data.investigatorCaught || {};
         player.weddingPlan = data.weddingPlan || null;
         player.weddingMemory = data.weddingMemory || null;
         // Crown & Royal Advisor
@@ -17300,10 +17293,7 @@
         // Relationship decay for neglected friendships
         tickRelationshipDecay();
 
-        // NPC-initiated interactions (every 3-5 days in town)
-        tickNpcInitiatedEvents();
-
-        // Track maximum gold ever held (for guild loan creditworthiness)
+        // Track maximum gold ever held(for guild loan creditworthiness)
         if (player.gold > (player.maxGoldEver || 0)) {
             player.maxGoldEver = player.gold;
         }
@@ -19650,202 +19640,7 @@
         }
     }
 
-    // ── NPC-Initiated Interactions ──
-    function tickNpcInitiatedEvents() {
-        if (!player.townId) return;
-        if (!player._npcInitiatedCooldown) player._npcInitiatedCooldown = 0;
-        var daysSince = Engine.getDay() - player._npcInitiatedCooldown;
-        // Generate every 4 days
-        if (daysSince < 4) return;
-        player._npcInitiatedCooldown = Engine.getDay();
-
-        if (!player._npcInitiatedQueue) player._npcInitiatedQueue = [];
-        // Limit queue size
-        if (player._npcInitiatedQueue.length > 5) {
-            player._npcInitiatedQueue = player._npcInitiatedQueue.slice(-5);
-        }
-
-        var rng = Engine.getRng();
-        var townPeople = Engine.getPeople(player.townId);
-        if (!townPeople || townPeople.length === 0) return;
-
-        // Find NPCs with high relationship in same town
-        var candidates = [];
-        for (var pi = 0; pi < townPeople.length; pi++) {
-            var p = townPeople[pi];
-            if (!p.alive || !p.id) continue;
-            var rel = player.relationships[p.id];
-            if (!rel || rel.level < 40) continue;
-            if (rel.type === 'spouse' || rel.type === 'child') continue;
-            candidates.push({ person: p, level: rel.level });
-        }
-        // Also check family in town
-        if (player.familyMembers) {
-            for (var fi = 0; fi < player.familyMembers.length; fi++) {
-                var fm = player.familyMembers[fi];
-                if (!fm.npcId) continue;
-                var fPerson = null;
-                try { fPerson = Engine.findPerson(fm.npcId); } catch(e) {}
-                if (fPerson && fPerson.alive && fPerson.townId === player.townId) {
-                    var fRel = player.relationships[fm.npcId];
-                    var fLevel = fRel ? fRel.level : 30;
-                    if (fLevel >= 20) candidates.push({ person: fPerson, level: fLevel });
-                }
-            }
-        }
-
-        if (candidates.length === 0) return;
-
-        // Generate 0-2 events
-        var eventCount = Math.floor(rng.random() * 2.5); // 0, 1, or 2
-        if (eventCount === 0) return;
-
-        for (var ei = 0; ei < eventCount && ei < candidates.length; ei++) {
-            var c = candidates[Math.floor(rng.random() * candidates.length)];
-            var npc = c.person;
-            var npcName = ((npc.firstName || '') + ' ' + (npc.lastName || '')).trim();
-            var occ = npc.occupation || 'commoner';
-            var pName = player.firstName || 'friend';
-
-            var eventTypes = _getNpcEventTypes(c.level, occ, npc);
-            if (eventTypes.length === 0) continue;
-            var chosen = eventTypes[Math.floor(rng.random() * eventTypes.length)];
-
-            player._npcInitiatedQueue.push({
-                npcId: npc.id,
-                npcName: npcName,
-                eventType: chosen.type,
-                title: chosen.title,
-                message: chosen.message.replace('{player}', pName).replace('{npc}', npcName),
-                day: Engine.getDay(),
-                relGain: chosen.relGain || 0,
-                relLoss: chosen.relLoss || 0,
-                goldCost: chosen.goldCost || 0,
-                goldGain: chosen.goldGain || 0,
-                responded: false
-            });
-
-            Engine.logEvent('💬 ' + npcName + ': ' + chosen.title, null, 'social');
-        }
-    }
-
-    function _getNpcEventTypes(level, occ, npc) {
-        var pName = player.firstName || 'friend';
-        var events = [];
-
-        // Help Requests (40+)
-        if (level >= 40) {
-            if (occ === 'farmer' || occ === 'fisher') {
-                events.push({ type: 'help_request', title: 'Needs help with supplies', message: '"{player}, I\'m short on grain this month. Could you spare 10 units? I\'d be grateful."', relGain: 5, relLoss: -3, goldCost: 0 });
-            } else if (occ === 'merchant' || occ === 'trader') {
-                events.push({ type: 'help_request', title: 'Needs a small loan', message: '"{player}, business has been slow. Could you lend me 50 gold? I\'ll remember the kindness."', relGain: 6, relLoss: -3, goldCost: 50 });
-            } else {
-                events.push({ type: 'help_request', title: 'Asks for a favor', message: '"{player}, I need a hand with something. Would you be willing to help out?"', relGain: 4, relLoss: -2, goldCost: 25 });
-            }
-        }
-
-        // Warnings (40+)
-        if (level >= 40) {
-            events.push({ type: 'warning', title: 'Shares a warning', message: '"{player}, be careful. I heard there are bandits on the roads around here. Watch yourself."', relGain: 2, relLoss: 0 });
-            if (occ === 'guard' || occ === 'soldier') {
-                events.push({ type: 'warning', title: 'Security intel', message: '"{player}, I shouldn\'t be telling you this, but there\'s trouble brewing. Keep your guard up."', relGain: 3, relLoss: 0 });
-            }
-        }
-
-        // Invitations (40+)
-        if (level >= 40) {
-            events.push({ type: 'invitation', title: 'Invites you for a drink', message: '"{player}! Come join me at the tavern tonight. My treat!"', relGain: 4, relLoss: -3 });
-            if (level >= 60) {
-                events.push({ type: 'invitation', title: 'Hosts a small gathering', message: '"{player}, I\'m having a few friends over tonight. You\'re one of the few I want there."', relGain: 6, relLoss: -4 });
-            }
-        }
-
-        // Gift Giving (60+)
-        if (level >= 60) {
-            events.push({ type: 'gift', title: 'Brings you a gift', message: '"{player}, I saw this and thought of you. Please, take it — a token of our friendship."', relGain: 3, relLoss: 0, goldGain: 15 });
-            if (occ === 'merchant' || occ === 'trader') {
-                events.push({ type: 'gift', title: 'Offers a trade tip', message: '"{player}, I have inside information on prices. This should help you make some gold."', relGain: 2, relLoss: 0, goldGain: 30 });
-            }
-        }
-
-        // Gossip Sharing (40+)
-        if (level >= 40) {
-            events.push({ type: 'gossip', title: 'Shares some gossip', message: '"{player}, come closer. I heard something interesting about one of the nobles..."', relGain: 2, relLoss: 0 });
-            if (level >= 60 && (occ === 'innkeeper' || occ === 'barkeep' || occ === 'tavern_keeper')) {
-                events.push({ type: 'gossip', title: 'Tavern secrets', message: '"{player}, you won\'t believe what I overheard at the bar last night..."', relGain: 3, relLoss: 0 });
-            }
-        }
-
-        // Random warm encounters (60+)
-        if (level >= 60) {
-            events.push({ type: 'encounter', title: 'Warm greeting', message: '"{player}!" {npc} spots you across the square and rushes over with a warm embrace. "It\'s always good to see you, friend."', relGain: 2, relLoss: 0 });
-        }
-
-        // Trusted exclusive (80+)
-        if (level >= 80) {
-            events.push({ type: 'alliance', title: 'Offers unwavering support', message: '"{player}, I want you to know — if you ever need anything, anything at all, I\'m here. You\'ve earned my complete trust."', relGain: 3, relLoss: 0 });
-            if (npc.isNoble || (npc.socialRank && Object.values(npc.socialRank).some(function(r) { return r >= 4; }))) {
-                events.push({ type: 'intel', title: 'Shares secret intelligence', message: '"{player}, I\'m telling you this because I trust you. There are political changes coming. Position yourself wisely."', relGain: 4, relLoss: 0 });
-            }
-        }
-
-        return events;
-    }
-
-    function respondToNpcEvent(eventIdx, accept) {
-        if (!player._npcInitiatedQueue) return { success: false, message: 'No events.' };
-        if (eventIdx < 0 || eventIdx >= player._npcInitiatedQueue.length) {
-            return { success: false, message: 'Invalid event.' };
-        }
-
-        var evt = player._npcInitiatedQueue[eventIdx];
-        if (evt.responded) return { success: false, message: 'Already responded.' };
-
-        evt.responded = true;
-        var npcName = evt.npcName;
-
-        if (accept) {
-            // Pay gold cost if any
-            if (evt.goldCost > 0) {
-                if (player.gold < evt.goldCost) {
-                    return { success: false, message: 'You need ' + evt.goldCost + 'g to help.' };
-                }
-                player.gold -= evt.goldCost;
-            }
-            // Gain gold if any
-            if (evt.goldGain > 0) {
-                player.gold += evt.goldGain;
-            }
-            // Relationship gain
-            if (evt.relGain > 0) modifyRelationship(evt.npcId, evt.relGain);
-
-            // Track as interaction for decay prevention
-            if (!player._lastInteractionDay) player._lastInteractionDay = {};
-            player._lastInteractionDay[evt.npcId] = Engine.getDay();
-
-            var msg = 'You accepted ' + npcName + '\'s ' + evt.title + '.';
-            if (evt.relGain > 0) msg += ' Relationship +' + evt.relGain + '.';
-            if (evt.goldCost > 0) msg += ' Cost: ' + evt.goldCost + 'g.';
-            if (evt.goldGain > 0) msg += ' Received: ' + evt.goldGain + 'g.';
-            return { success: true, message: msg };
-        } else {
-            // Declined
-            if (evt.relLoss < 0) modifyRelationship(evt.npcId, evt.relLoss);
-            var msg2 = 'You declined ' + npcName + '\'s ' + evt.title + '.';
-            if (evt.relLoss < 0) msg2 += ' Relationship ' + evt.relLoss + '.';
-            return { success: true, message: msg2 };
-        }
-    }
-
-    function getNpcInitiatedEvents() {
-        if (!player._npcInitiatedQueue) return [];
-        // Return unresponded events within the last 15 days
-        return player._npcInitiatedQueue.filter(function(e) {
-            return !e.responded && Engine.getDay() - e.day < 15;
-        });
-    }
-
-    // Reputation Spreading — when gaining/losing rel with a noble, nearby nobles react
+    // Reputation Spreading— when gaining/losing rel with a noble, nearby nobles react
     function _spreadNobleReputation(personId, amount) {
         if (!amount || player._reputationSpreading) return; // prevent recursion
         var person = null;
@@ -34767,8 +34562,6 @@
         getKnownGiftPreferences,
         getNobleFavorRequests,
         fulfillNobleFavor,
-        respondToNpcEvent,
-        getNpcInitiatedEvents,
         offerNobleLoan,
         getNobleLoans,
         // interactWithNPC, getAvailableInteractions — see js/modules/player_quests.js

@@ -495,21 +495,6 @@ window.UI = (function () {
         registerAction('closeAndOpenSpouse', function() { closeModal(); UI.openSpousePanel(); });
         registerAction('openLeaderboard', function() { openLeaderboard(); });
 
-        // ── NPC-Initiated Events ──
-        registerAction('openNpcEvents', function() { _showNpcEventsModal(); });
-        registerAction('talkToTownsfolkDirect', function() { _talkToTownsfolkDirect(); });
-        registerAction('npcEventAccept', function(_t, d) {
-            var idx = parseInt(d.idx);
-            var r = Player.respondToNpcEvent(idx, true);
-            toast(r.message, r.success ? 'success' : 'warning');
-            _showNpcEventsModal();
-        });
-        registerAction('npcEventDecline', function(_t, d) {
-            var idx = parseInt(d.idx);
-            var r = Player.respondToNpcEvent(idx, false);
-            toast(r.message, r.success ? 'success' : 'warning');
-            _showNpcEventsModal();
-        });
 
 
         // ── Additional actions from onclick conversion ──
@@ -940,21 +925,6 @@ window.UI = (function () {
             } else {
                 _btnKing.style.display = 'none';
                 _btnKing.classList.add('hidden');
-            }
-        }
-
-        // NPC Events badge on Talk button
-        var _btnTalk = document.getElementById('btnTalk');
-        if (_btnTalk && typeof Player !== 'undefined' && Player.getNpcInitiatedEvents) {
-            var _npcEvts = Player.getNpcInitiatedEvents();
-            if (_npcEvts && _npcEvts.length > 0) {
-                _btnTalk.textContent = '💬 Talk (' + _npcEvts.length + ')';
-                _btnTalk.style.borderColor = '#d4a843';
-                _btnTalk.title = 'Talk to Townsfolk — ' + _npcEvts.length + ' people want to talk to you!';
-            } else {
-                _btnTalk.textContent = '💬 Talk';
-                _btnTalk.style.borderColor = '';
-                _btnTalk.title = 'Talk to Townsfolk';
             }
         }
 
@@ -9600,84 +9570,10 @@ window.UI = (function () {
     // ═══════════════════════════════════════════════════════════
     //  TALK TO TOWNSFOLK DIALOG
     // ═══════════════════════════════════════════════════════════
-    // ── NPC-Initiated Events Modal ──
-    function _showNpcEventsModal() {
-        var events = Player.getNpcInitiatedEvents ? Player.getNpcInitiatedEvents() : [];
-        var html = '<div style="padding:8px;">';
-        html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:8px;">💬 People Want to Talk to You</div>';
-        html += '<div style="font-size:0.65rem;color:#888;margin-bottom:8px;">NPCs who know you well will approach you with requests, gifts, gossip, and invitations.</div>';
-
-        if (events.length === 0) {
-            html += '<div style="font-size:0.75rem;color:#888;text-align:center;padding:20px;">No one has anything for you right now. Check back in a few days.</div>';
-        } else {
-            // Find original indices in the queue for data-idx
-            var queue = (Player.state && Player.state._npcInitiatedQueue) || [];
-            for (var ei = 0; ei < events.length; ei++) {
-                var evt = events[ei];
-                // Find original index
-                var origIdx = -1;
-                for (var qi = 0; qi < queue.length; qi++) {
-                    if (queue[qi] === evt) { origIdx = qi; break; }
-                }
-                if (origIdx < 0) continue;
-
-                var daysAgo = Engine.getDay() - evt.day;
-                var typeIcon = evt.eventType === 'help_request' ? '🙏' : evt.eventType === 'warning' ? '⚠️' : evt.eventType === 'invitation' ? '🎉' : evt.eventType === 'gift' ? '🎁' : evt.eventType === 'gossip' ? '🗣️' : evt.eventType === 'encounter' ? '👋' : evt.eventType === 'alliance' ? '🤝' : evt.eventType === 'intel' ? '🕵️' : '💬';
-                var typeColor = evt.eventType === 'help_request' ? '#e0c58a' : evt.eventType === 'warning' ? '#c44e52' : evt.eventType === 'gift' ? '#55a868' : '#5dade2';
-
-                html += '<div style="background:rgba(0,0,0,0.15);border:1px solid rgba(255,255,255,0.08);border-left:3px solid ' + typeColor + ';padding:8px 10px;border-radius:4px;margin-bottom:6px;">';
-                html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;">';
-                html += '<div style="flex:1;">';
-                html += '<div style="font-size:0.8rem;color:#ddd;">' + typeIcon + ' ' + escapeHtml(evt.npcName) + ': ' + escapeHtml(evt.title) + '</div>';
-                html += '<div style="font-size:0.72rem;color:#bbb;margin-top:3px;font-style:italic;">' + escapeHtml(evt.message) + '</div>';
-                html += '<div style="font-size:0.6rem;color:#888;margin-top:4px;">';
-                if (daysAgo > 0) html += daysAgo + ' days ago · ';
-                if (evt.goldCost > 0) html += '<span style="color:#c44e52;">Costs ' + evt.goldCost + 'g</span> · ';
-                if (evt.goldGain > 0) html += '<span style="color:#55a868;">Receive ' + evt.goldGain + 'g</span> · ';
-                if (evt.relGain > 0) html += '<span style="color:#55a868;">+' + evt.relGain + ' rel</span>';
-                if (evt.relLoss < 0) html += '<span style="color:#c44e52;margin-left:4px;">' + evt.relLoss + ' if declined</span>';
-                html += '</div></div>';
-                html += '<div style="display:flex;gap:4px;flex-shrink:0;margin-left:8px;align-items:center;">';
-                html += '<button class="btn-medieval" data-action="npcEventAccept" data-idx="' + origIdx + '" style="font-size:0.65rem;padding:3px 8px;background:rgba(85,168,104,0.3) !important;border-color:rgba(85,168,104,0.5) !important;">✅ Accept</button>';
-                if (evt.eventType !== 'gift' && evt.eventType !== 'gossip' && evt.eventType !== 'warning' && evt.eventType !== 'encounter') {
-                    html += '<button class="btn-medieval" data-action="npcEventDecline" data-idx="' + origIdx + '" style="font-size:0.65rem;padding:3px 8px;background:rgba(196,78,82,0.3) !important;border-color:rgba(196,78,82,0.5) !important;">❌ Decline</button>';
-                }
-                html += '</div></div></div>';
-            }
-        }
-        html += '</div>';
-        html += '<div style="text-align:center;margin-top:8px;">';
-        html += '<button class="btn-medieval" data-action="talkToTownsfolkDirect" style="font-size:0.72rem;padding:4px 12px;">💬 Talk to Someone Else</button>';
-        html += '<button class="btn-medieval" data-action="closeModal" style="font-size:0.72rem;padding:4px 12px;margin-left:6px;">Done</button>';
-        html += '</div>';
-        openModal('NPC Events', html);
-    }
-
-    function _talkToTownsfolkDirect() {
-        if (typeof Player === 'undefined') return;
-        if (Player.traveling) { toast('Cannot talk while traveling.', 'warning'); return; }
-        if (!Player.townId) { toast('You must be in a town to talk to people.', 'warning'); return; }
-        var result = Player.talkToTownsfolk();
-        if (!result || !result.success) {
-            toast((result && result.message) || 'Nobody wants to talk right now.', 'warning');
-            return;
-        }
-        _showTalkResult(result);
-    }
-
     function talkToTownsfolk() {
         if (typeof Player === 'undefined') return;
         if (Player.traveling) { toast('Cannot talk while traveling.', 'warning'); return; }
         if (!Player.townId) { toast('You must be in a town to talk to people.', 'warning'); return; }
-
-        // Show NPC-initiated events first if any are pending
-        if (Player.getNpcInitiatedEvents) {
-            var npcEvents = Player.getNpcInitiatedEvents();
-            if (npcEvents && npcEvents.length > 0) {
-                _showNpcEventsModal();
-                return;
-            }
-        }
 
         var result = Player.talkToTownsfolk();
         if (!result || !result.success) {
