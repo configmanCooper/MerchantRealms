@@ -742,6 +742,108 @@
         return html;
     }
 
+    // =========================================================================
+    // Kingdom Towns Tab — Detailed per-town view with stats and actions
+    // =========================================================================
+    function _kingKingdomTab(kingdom, ks) {
+        var html = '';
+        html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:6px;">🏘️ Kingdom Towns — Detailed View</div>';
+        html += '<div style="font-size:0.68rem;color:#888;margin-bottom:8px;">Town-level data for informed decisions. Use action buttons for direct management.</div>';
+        try {
+            var _kTowns = Engine.getTowns().filter(function(t) { return t.kingdomId === kingdom.id && !t.isOutpost && !t.isWilderness; });
+            _kTowns.sort(function(a, b) { return (b.isCapital ? 1 : 0) - (a.isCapital ? 1 : 0) || (b.prosperity || 50) - (a.prosperity || 50); });
+
+            // Kingdom summary bar
+            var _totalPop = 0, _totalGarrison = 0, _totalBuildings = 0, _plagueCount = 0;
+            for (var _si = 0; _si < _kTowns.length; _si++) {
+                _totalPop += (_kTowns[_si].people || []).length;
+                _totalGarrison += (_kTowns[_si].garrison || 0);
+                _totalBuildings += (_kTowns[_si].buildings || []).length;
+                if (_kTowns[_si].plagueActive) _plagueCount++;
+            }
+            html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4px;margin-bottom:8px;">';
+            html += '<div style="background:rgba(0,0,0,0.2);padding:4px;border-radius:4px;text-align:center;font-size:0.68rem;"><span style="color:#aaa;">Towns</span><br><span style="color:#5dade2;">' + _kTowns.length + '</span></div>';
+            html += '<div style="background:rgba(0,0,0,0.2);padding:4px;border-radius:4px;text-align:center;font-size:0.68rem;"><span style="color:#aaa;">Pop</span><br><span style="color:#d4c9a0;">' + _totalPop + '</span></div>';
+            html += '<div style="background:rgba(0,0,0,0.2);padding:4px;border-radius:4px;text-align:center;font-size:0.68rem;"><span style="color:#aaa;">Garrison</span><br><span style="color:#5dade2;">' + _totalGarrison + '</span></div>';
+            html += '<div style="background:rgba(0,0,0,0.2);padding:4px;border-radius:4px;text-align:center;font-size:0.68rem;"><span style="color:#aaa;">Plague</span><br><span style="color:' + (_plagueCount > 0 ? '#c44e52' : '#55a868') + ';">' + (_plagueCount > 0 ? _plagueCount + ' towns' : 'None') + '</span></div>';
+            html += '</div>';
+
+            html += '<div style="max-height:400px;overflow-y:auto;">';
+            for (var _ki = 0; _ki < _kTowns.length; _ki++) {
+                var _kt = _kTowns[_ki];
+                var _pop = (_kt.people || []).length;
+                var _hap = Math.round(_kt.happiness || 50);
+                var _pros = Math.round(_kt.prosperity || 50);
+                var _hapColor = _hap > 60 ? '#55a868' : _hap > 35 ? '#e67e22' : '#c44e52';
+                var _prosColor = _pros > 60 ? '#55a868' : _pros > 35 ? '#e67e22' : '#c44e52';
+                var _garr = _kt.garrison || 0;
+
+                // Problems detection
+                var _problems = [];
+                if (_kt.plagueActive) _problems.push('🦠 Plague');
+                if (_kt.foodShortage) _problems.push('🍞 Food Shortage');
+                if (_hap < 30) _problems.push('😡 Very Unhappy');
+                if (_garr < 5) _problems.push('🛡️ Weak Garrison');
+                if (_kt.banditThreat && _kt.banditThreat > 50) _problems.push('🏴‍☠️ Bandits');
+                if (_kt.quarantineLevel && _kt.quarantineLevel > 0) _problems.push('🏥 Quarantine Lv' + _kt.quarantineLevel);
+
+                html += '<div style="background:rgba(0,0,0,0.15);padding:8px;border-radius:6px;margin-bottom:5px;border-left:3px solid ' + (_kt.isCapital ? '#d4a843' : _problems.length > 0 ? '#c44e52' : 'rgba(255,255,255,0.1)') + ';">';
+
+                // Header row
+                html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">';
+                html += '<span style="font-size:0.82rem;color:#d4c9a0;font-weight:bold;">' + (_kt.isCapital ? '⭐ ' : '') + (_kt.name || 'Unknown') + '</span>';
+                html += '<span style="font-size:0.65rem;color:#888;text-transform:uppercase;">' + (_kt.category || 'village') + '</span>';
+                html += '</div>';
+
+                // Stats grid
+                html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:3px;margin-bottom:4px;">';
+                html += '<div style="font-size:0.65rem;text-align:center;"><span style="color:#aaa;">Pop</span><br><span style="color:#d4c9a0;">' + _pop + '</span></div>';
+                html += '<div style="font-size:0.65rem;text-align:center;"><span style="color:#aaa;">Happy</span><br><span style="color:' + _hapColor + ';">' + _hap + '%</span></div>';
+                html += '<div style="font-size:0.65rem;text-align:center;"><span style="color:#aaa;">Prosp</span><br><span style="color:' + _prosColor + ';">' + _pros + '%</span></div>';
+                html += '<div style="font-size:0.65rem;text-align:center;"><span style="color:#aaa;">Garrison</span><br><span style="color:#5dade2;">' + _garr + '</span></div>';
+                html += '</div>';
+
+                // Buildings summary
+                var _bldgs = _kt.buildings || [];
+                if (_bldgs.length > 0) {
+                    var _bCats = {};
+                    for (var _bi = 0; _bi < _bldgs.length; _bi++) {
+                        var _bCat = _bldgs[_bi].category || 'other';
+                        _bCats[_bCat] = (_bCats[_bCat] || 0) + 1;
+                    }
+                    var _bSummary = [];
+                    for (var _bc in _bCats) _bSummary.push(_bc + ': ' + _bCats[_bc]);
+                    html += '<div style="font-size:0.62rem;color:#888;">🏗️ ' + _bldgs.length + ' buildings (' + _bSummary.join(', ') + ')</div>';
+                }
+
+                // Problems
+                if (_problems.length > 0) {
+                    html += '<div style="font-size:0.65rem;color:#c44e52;margin-top:3px;">⚠️ ' + _problems.join(' | ') + '</div>';
+                }
+
+                // Action buttons
+                html += '<div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap;">';
+                html += '<button class="btn-medieval" data-action="kingReinforceTown" data-id="' + _kt.id + '" style="font-size:0.6rem;padding:2px 6px;">🛡️ Reinforce</button>';
+                if (_kt.plagueActive) {
+                    html += '<button class="btn-medieval" data-action="kingSendMedical" data-id="' + _kt.id + '" style="font-size:0.6rem;padding:2px 6px;">🏥 Send Aid</button>';
+                }
+                if (_kt.foodShortage) {
+                    html += '<button class="btn-medieval" data-action="kingSendFood" data-id="' + _kt.id + '" style="font-size:0.6rem;padding:2px 6px;">🍞 Send Food</button>';
+                }
+                if (_hap < 40) {
+                    html += '<button class="btn-medieval" data-action="kingHostLocalFeast" data-id="' + _kt.id + '" style="font-size:0.6rem;padding:2px 6px;">🎉 Local Feast</button>';
+                }
+                html += '<button class="btn-medieval" data-action="kingQuarantineTown" data-id="' + _kt.id + '" data-val="' + (_kt.quarantineLevel || 0) + '" style="font-size:0.6rem;padding:2px 6px;">' + (_kt.quarantineLevel ? '🔓 Lift' : '🔒 Quarantine') + '</button>';
+                html += '</div>';
+                html += '</div>';
+            }
+            html += '</div>';
+        } catch(e) {
+            html += '<div style="color:#888;">Unable to load town data.</div>';
+        }
+        return html;
+    }
+
     function _kingCourtTab(kingdom, ks) {
         var html = '';
 

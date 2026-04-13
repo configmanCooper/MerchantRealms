@@ -535,7 +535,7 @@
                 var extra = '';
                 if (bc.forSale > 0) extra += ' <span style="color:#5ac85a;">(' + bc.forSale + ' for sale)</span>';
                 if (bc.underConstruction > 0) extra += ' <span style="color:#c4a35a;">(' + bc.underConstruction + ' building)</span>';
-                html += '<div style="border:1px solid #444;padding:3px 6px;border-radius:4px;font-size:0.75rem;background:rgba(0,0,0,0.2);">' + bIcon + ' ' + bName + ' ×' + bc.count + extra + '</div>';
+                html += '<div class="btn-medieval" data-action="openBuildingDetail" data-id="' + bType + '" data-val="' + town.id + '" style="cursor:pointer;border:1px solid #444;padding:3px 6px;border-radius:4px;font-size:0.75rem;background:rgba(0,0,0,0.2);">' + bIcon + ' ' + bName + ' ×' + bc.count + extra + '</div>';
             }
             html += '</div>';
         }
@@ -2168,5 +2168,157 @@
     UI.registerAction('demolishBuildingUI', function(_t, d) { UI.demolishBuildingUI(d.id, d.val); });
     UI.registerAction('executeFarmConvertUI', function(_t, d) { UI.executeFarmConvertUI(parseInt(d.idx), d.id, d.val); });
     UI.registerAction('installWarehouseSecurity', function(_t, d) { UI.installWarehouseSecurity(d.id, d.val); });
+
+    // =========================================================================
+    // Building Detail Popup — shows info about a building type in a town
+    // Used by town market badges + quest interactions (search for evidence, etc.)
+    // =========================================================================
+    function openBuildingDetail(buildingType, townId) {
+        var town = Engine.findTown(townId);
+        if (!town) { toast('Town not found.', 'warning'); return; }
+        var bt = Engine.findBuildingType ? Engine.findBuildingType(buildingType) : null;
+        var bName = bt ? bt.name : buildingType;
+        var bIcon = bt ? (bt.icon || '🏠') : '🏠';
+
+        // Find all buildings of this type in the town
+        var buildings = (town.buildings || []).filter(function(b) { return b.type === buildingType; });
+
+        var html = '<div style="max-height:450px;overflow-y:auto;padding:4px;">';
+
+        // Building type header
+        html += '<div style="background:rgba(0,0,0,0.2);padding:8px;border-radius:6px;margin-bottom:8px;">';
+        html += '<div style="font-size:1rem;color:#d4c9a0;margin-bottom:4px;">' + bIcon + ' ' + bName + '</div>';
+        if (bt && bt.desc) html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:4px;">' + bt.desc + '</div>';
+
+        // Building type stats
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:0.68rem;">';
+        html += '<div style="color:#888;">Count in town: <span style="color:#d4c9a0;">' + buildings.length + '</span></div>';
+        if (bt && bt.category) html += '<div style="color:#888;">Category: <span style="color:#5dade2;">' + bt.category + '</span></div>';
+        if (bt && bt.buildCost) html += '<div style="color:#888;">Build cost: <span style="color:#e0c58a;">' + bt.buildCost + 'g</span></div>';
+        if (bt && bt.maxWorkers) html += '<div style="color:#888;">Max workers: <span style="color:#d4c9a0;">' + bt.maxWorkers + '</span></div>';
+        if (bt && bt.produces) {
+            var prodName = bt.produces;
+            var prodDef = CONFIG.ITEMS ? CONFIG.ITEMS[prodName] : null;
+            html += '<div style="color:#888;">Produces: <span style="color:#55a868;">' + (prodDef ? prodDef.name : prodName) + '</span></div>';
+        }
+        if (bt && bt.requires) {
+            var reqNames = [];
+            var reqs = Array.isArray(bt.requires) ? bt.requires : [bt.requires];
+            for (var _ri = 0; _ri < reqs.length; _ri++) {
+                var _rd = CONFIG.ITEMS ? CONFIG.ITEMS[reqs[_ri]] : null;
+                reqNames.push(_rd ? _rd.name : reqs[_ri]);
+            }
+            html += '<div style="color:#888;">Requires: <span style="color:#e67e22;">' + reqNames.join(', ') + '</span></div>';
+        }
+        html += '</div></div>';
+
+        // Individual buildings
+        if (buildings.length > 0) {
+            html += '<div style="font-size:0.8rem;color:#d4a843;margin-bottom:4px;">📋 Individual Buildings</div>';
+            for (var _bi = 0; _bi < buildings.length; _bi++) {
+                var bld = buildings[_bi];
+                var ownerName = 'Unknown';
+                if (bld.ownerId === 'player') ownerName = 'You';
+                else if (bld.ownerId) {
+                    var _ow = Engine.findPerson(bld.ownerId);
+                    if (_ow) ownerName = (_ow.firstName || '') + ' ' + (_ow.lastName || '');
+                    else {
+                        var _owK = Engine.findKingdom(bld.ownerId);
+                        if (_owK) ownerName = _owK.name + ' (Kingdom)';
+                    }
+                }
+                var cond = bld.condition || 'good';
+                var condColor = cond === 'good' || cond === 'new' ? '#55a868' : cond === 'worn' ? '#e67e22' : cond === 'damaged' ? '#c44e52' : cond === 'under_construction' ? '#5dade2' : '#d4c9a0';
+
+                html += '<div style="background:rgba(0,0,0,0.15);padding:6px;border-radius:4px;margin-bottom:4px;border-left:3px solid ' + condColor + ';">';
+                html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+                html += '<span style="font-size:0.72rem;color:#d4c9a0;">' + bIcon + ' Lv.' + (bld.level || 1) + '</span>';
+                html += '<span style="font-size:0.65rem;color:' + condColor + ';">' + cond + '</span>';
+                html += '</div>';
+                html += '<div style="font-size:0.65rem;color:#888;">Owner: ' + ownerName + '</div>';
+
+                // Workers
+                var workers = bld.workers || [];
+                if (workers.length > 0) {
+                    html += '<div style="font-size:0.65rem;color:#888;">Workers: ' + workers.length + '/' + (bt && bt.maxWorkers ? bt.maxWorkers : '?') + '</div>';
+                }
+
+                // Output buffer
+                if (bld.outputBuffer) {
+                    var outKeys = Object.keys(bld.outputBuffer).filter(function(k) { return bld.outputBuffer[k] > 0; });
+                    if (outKeys.length > 0) {
+                        var outStr = outKeys.map(function(k) {
+                            var _od = CONFIG.ITEMS ? CONFIG.ITEMS[k] : null;
+                            return (_od ? _od.name : k) + ': ' + Math.floor(bld.outputBuffer[k]);
+                        }).join(', ');
+                        html += '<div style="font-size:0.65rem;color:#55a868;">📦 Stock: ' + outStr + '</div>';
+                    }
+                }
+
+                // For sale indicator
+                if (bld.forSale) {
+                    html += '<div style="font-size:0.65rem;color:#5ac85a;">💰 For sale: ' + Math.ceil(bld.forSalePrice || 0) + 'g</div>';
+                }
+
+                // Player-owned building: link to management
+                if (bld.ownerId === 'player' && bld.id) {
+                    html += '<button class="btn-medieval" data-action="showBuildingDetail" data-id="' + bld.id + '" style="font-size:0.6rem;padding:2px 6px;margin-top:3px;">🔧 Manage</button>';
+                }
+
+                html += '</div>';
+            }
+        }
+
+        // Quest interaction buttons — search for evidence, etc.
+        var _questButtons = _getBuildingQuestButtons(buildingType, townId);
+        if (_questButtons) html += _questButtons;
+
+        html += '</div>';
+        openModal(bIcon + ' ' + bName + ' — ' + town.name, html, '<button class="btn-medieval" data-action="openTownMarket">← Market</button> <button class="btn-medieval" data-action="closeModal">Close</button>');
+    }
+
+    // Returns HTML for quest-related buttons on building detail (search for evidence, etc.)
+    function _getBuildingQuestButtons(buildingType, townId) {
+        if (!Player.state || !Player.state.kingState) return '';
+        var kingdom = Engine.findKingdom(Player.state.kingState.kingdomId);
+        if (!kingdom) return '';
+
+        var html = '';
+        // Check active directives for interactive steps targeting this building type/town
+        var directives = kingdom._kingDirectives || [];
+        var playerDirectives = Player.state._activeDirectives || [];
+        // Also check the nobility directives (player's own royal directives)
+        var allDirectives = directives.concat(playerDirectives);
+
+        for (var _di = 0; _di < allDirectives.length; _di++) {
+            var dir = allDirectives[_di];
+            if (!dir.interactiveData) continue;
+            var iData = dir.interactiveData;
+
+            // Evidence search step
+            if (iData.currentStep === 'gather_evidence' && iData.evidenceBuildings) {
+                for (var _ei = 0; _ei < iData.evidenceBuildings.length; _ei++) {
+                    var eb = iData.evidenceBuildings[_ei];
+                    if (eb.townId === townId && eb.buildingType === buildingType && !eb.searched) {
+                        html += '<div style="background:rgba(212,168,67,0.15);padding:8px;border-radius:6px;border:1px solid rgba(212,168,67,0.3);margin-top:8px;">';
+                        html += '<div style="font-size:0.8rem;color:#d4a843;">🔍 Royal Directive: Search for Evidence</div>';
+                        html += '<div style="font-size:0.68rem;color:#aaa;margin:4px 0;">Your directive requires searching this building for evidence of ' + (dir.title || 'criminal activity') + '.</div>';
+                        html += '<button class="btn-medieval" data-action="searchBuildingEvidence" data-id="' + _di + '" data-val="' + _ei + '" style="font-size:0.72rem;padding:4px 10px;">🔍 Search for Evidence</button>';
+                        html += '</div>';
+                    }
+                }
+            }
+        }
+        return html;
+    }
+
+    UI.openBuildingDetail = openBuildingDetail;
+
+    UI.registerAction('openBuildingDetail', function(_t, d) { UI.openBuildingDetail(d.id, d.val); });
+    UI.registerAction('searchBuildingEvidence', function(_t, d) {
+        var r = Player.searchBuildingForEvidence ? Player.searchBuildingForEvidence(parseInt(d.id), parseInt(d.val)) : { success: false, message: 'Evidence search not available.' };
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        if (r.success) UI.openTownMarket();
+    });
 
 })(window.UI);
