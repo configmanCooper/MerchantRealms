@@ -8162,6 +8162,11 @@
         // Add to engine's world.armies (the real army system)
         Engine.addArmy(armyObj);
 
+        // Estimate travel days for the King UI tracker
+        var dist = Math.hypot(targetTown.x - capTown.x, targetTown.y - capTown.y);
+        var baseArmySpeed = (CONFIG.CARAVAN_BASE_SPEED || 120) * 0.5;
+        var travelDays = Math.max(2, Math.ceil(dist / Math.max(baseArmySpeed, 1)));
+
         // Also track in kingdom._armies for King UI display
         if (!kingdom._armies) kingdom._armies = [];
         kingdom._armies.push({
@@ -8172,6 +8177,8 @@
             targetKingdomId: targetTown.kingdomId,
             status: 'marching',
             morale: armyObj.morale,
+            departDay: Engine.getDay(),
+            arrivalDay: Engine.getDay() + travelDays,
         });
 
         Engine.logEvent('⚔️ An army of ' + soldiers + ' soldiers marches from ' + capTown.name + ' toward ' + targetTown.name + '!');

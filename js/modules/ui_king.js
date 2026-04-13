@@ -526,7 +526,7 @@
                 var _ar = _armies[_ari];
                 var _arTown = Engine.findTown(_ar.targetTownId);
                 var _statusIcon = _ar._recoveryUntil ? '🛏️' : _ar._retreating ? '🏳️' : _ar._besieging ? '🏰' : _ar.status === 'marching' ? '🚶' : _ar.status === 'returning' ? '🏠' : '⚔️';
-                var _statusText = _ar._recoveryUntil ? 'Regrouping (' + Math.max(0, _ar._recoveryUntil - _day) + 'd)' : _ar._retreating ? 'Retreating home' : _ar._besieging ? 'Besieging' : _ar.status === 'marching' ? 'Marching (' + Math.max(0, _ar.arrivalDay - _day) + 'd left)' : _ar.status === 'returning' ? 'Returning (' + Math.max(0, _ar.returnDay - _day) + 'd left)' : _ar.status;
+                var _statusText = _ar._recoveryUntil ? 'Regrouping (' + Math.max(0, _ar._recoveryUntil - _day) + 'd)' : _ar._retreating ? 'Retreating home' : _ar._besieging ? 'Besieging' : _ar.status === 'marching' ? 'Marching (' + Math.max(0, (_ar.arrivalDay || _day) - _day) + 'd left)' : _ar.status === 'returning' ? 'Returning (' + Math.max(0, (_ar.returnDay || _day) - _day) + 'd left)' : _ar.status;
                 html += '<div style="font-size:0.65rem;color:#ccc;padding:2px 0;">' + _statusIcon + ' ' + _ar.soldiers + ' soldiers → ' + (_arTown ? escapeHtml(_arTown.name) : '?') + ' — ' + _statusText + ' · Morale: ' + Math.round(_ar.morale || 50) + '%</div>';
             }
             html += '</div>';
