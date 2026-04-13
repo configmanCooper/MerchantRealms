@@ -2088,6 +2088,7 @@ function _switchProposeActionTab(tabId, kingdomId) {
     UI.assignBusinessTask = assignBusinessTask;
     UI.assignIntelTask = assignIntelTask;
     // -- Kingdom Quests --
+    UI._buildRoyalDirectivesSection = _buildRoyalDirectivesSection;
     UI._switchKQTab = _switchKQTab;
     UI._attemptKQActionUI = _attemptKQActionUI;
     UI._executeKQAction = _executeKQAction;

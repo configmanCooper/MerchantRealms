@@ -6451,6 +6451,9 @@
         if (typeof UI !== 'undefined' && UI.showKingButton) {
             UI.showKingButton();
         }
+
+        // Show coronation ceremony
+        showRankCeremony(7, kingdomId);
     }
 
     // Check if player is currently king
@@ -8131,6 +8134,63 @@
                     '<div style="margin:3px 0;">⚠️ Very high chance of being caught selling weapons to enemies — execution if caught</div>' +
                     '<div style="margin:3px 0;">💀 <b>If the kingdom falls</b>, the new ruler decides your fate — imprisonment, exile, or execution</div>' +
                     '<div style="margin:3px 0;">🏛️ You are now bound to this kingdom — your fate is tied to the king\'s</div>' +
+                    '</div></div></div>';
+            }
+        },
+        7: {
+            title: '👑 Coronation',
+            narrative: function(name, kingdom) {
+                var isFemale = typeof Player !== 'undefined' && Player.state && Player.state.sex === 'F';
+                var title = isFemale ? 'Queen' : 'King';
+                return '<div style="padding:15px;">' +
+                    '<div style="text-align:center;margin-bottom:15px;">' +
+                    '<div style="font-size:2.5em;">👑🏰⚔️🎺</div>' +
+                    '<h3 style="color:var(--gold);margin:5px 0;">All Hail the ' + title + '!</h3>' +
+                    '<div style="color:var(--text-secondary);font-style:italic;">The Crown of ' + kingdom + '</div>' +
+                    '</div>' +
+                    '<p style="font-style:italic;color:var(--text-secondary);margin:10px 0;text-align:center;">' +
+                    'The bells of every chapel in ' + kingdom + ' ring in unison. This is no ordinary ceremony.</p>' +
+                    '<p>The great cathedral is filled beyond capacity. Lords and ladies, merchants and peasants, soldiers and scholars — ' +
+                    'every soul who could make the journey stands shoulder to shoulder. Banners of every noble house hang from the rafters. ' +
+                    'The air trembles with incense and anticipation.</p>' +
+                    '<p>You walk alone down the central aisle, past a thousand bowing heads. Your footsteps echo on ancient stone ' +
+                    'that has known the weight of kings for centuries. At the altar, the high priest waits with the crown — ' +
+                    'a circlet of hammered gold set with rubies, sapphires, and a single flawless diamond at its center.</p>' +
+                    '<p>You kneel. The cathedral falls utterly silent. Even the wind outside seems to hold its breath.</p>' +
+                    '<p>The high priest speaks in a voice that carries to the farthest pew:</p>' +
+                    '<p style="margin:10px 20px;font-style:italic;">"By the authority vested in this holy office, by the will of the people, ' +
+                    'and by the grace of the heavens — I crown thee <b>' + name + '</b>, sovereign ruler of ' + kingdom + '. ' +
+                    'May your reign bring justice to the wronged, prosperity to the poor, and glory to this land."</p>' +
+                    '<p>The crown descends upon your brow. It is heavier than you imagined — not just gold and gems, but the weight of ' +
+                    'every life in the kingdom, every decision yet to be made, every war yet to be fought.</p>' +
+                    '<p>You rise. You turn to face your subjects. And the cathedral <b>erupts</b>.</p>' +
+                    '<p style="text-align:center;font-size:1.1em;color:var(--gold);font-weight:bold;margin:15px 0;">' +
+                    '"LONG LIVE THE ' + title.toUpperCase() + '! LONG LIVE ' + kingdom.toUpperCase() + '!"</p>' +
+                    '<p>The roar shakes the pillars. Children throw flowers. Soldiers bang swords on shields. ' +
+                    'Outside, the crowds take up the chant until the entire capital city thunders with a single voice.</p>' +
+                    '<p>You look out over a sea of faces — your people, your kingdom, your responsibility. ' +
+                    'Every merchant you traded with, every noble you courted, every battle you survived — it all led to this moment.</p>' +
+                    '<div style="margin-top:15px;padding:12px;background:rgba(212,168,67,0.1);border:1px solid rgba(212,168,67,0.3);border-radius:6px;">' +
+                    '<div style="color:var(--gold);font-weight:bold;margin-bottom:8px;">👑 Powers of the Crown</div>' +
+                    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:0.9em;">' +
+                    '<div>⚖️ Set kingdom tax rates</div>' +
+                    '<div>📜 Enact and repeal laws</div>' +
+                    '<div>⚔️ Declare war and sue for peace</div>' +
+                    '<div>🏰 Hold court to address the people</div>' +
+                    '<div>🎉 Host royal feasts</div>' +
+                    '<div>💰 Command the kingdom treasury</div>' +
+                    '<div>🛡️ Complete immunity from all laws</div>' +
+                    '<div>♾️ No limits on anything</div>' +
+                    '</div></div>' +
+                    '<div style="margin-top:10px;padding:12px;background:rgba(196,78,82,0.08);border:1px solid rgba(196,78,82,0.3);border-radius:6px;">' +
+                    '<div style="color:#ff8888;font-weight:bold;margin-bottom:8px;">⚠️ The Burden of the Crown</div>' +
+                    '<div style="font-size:0.9em;">' +
+                    '<div style="margin:3px 0;">💰 Your personal wealth is now the kingdom\'s treasury</div>' +
+                    '<div style="margin:3px 0;">🏠 All buildings transferred to the crown</div>' +
+                    '<div style="margin:3px 0;">🗡️ Assassination risk from hostile nobles</div>' +
+                    '<div style="margin:3px 0;">🔥 Revolt risk from unhappy citizens</div>' +
+                    '<div style="margin:3px 0;">⚔️ You must lead in times of war</div>' +
+                    '<div style="margin:3px 0;">💀 Failure means death or exile — there is no stepping down</div>' +
                     '</div></div></div>';
             }
         }

@@ -51,6 +51,7 @@
             { id: 'decisions', icon: '⚖️', label: 'Decisions' },
             { id: 'kingdom', icon: '🗺️', label: 'Kingdom' },
             { id: 'court', icon: '🏰', label: 'Court' },
+            { id: 'nobility', icon: '🏅', label: 'Nobility' },
             { id: 'threats', icon: '⚠️', label: 'Threats' }
         ];
         html += '<div style="display:flex;gap:3px;margin-bottom:10px;flex-wrap:wrap;">';
@@ -66,6 +67,7 @@
         else if (_kingTab === 'decisions') html += _kingDecisionsTab(kingdom, ks);
         else if (_kingTab === 'kingdom') html += _kingKingdomTab(kingdom, ks);
         else if (_kingTab === 'court') html += _kingCourtTab(kingdom, ks);
+        else if (_kingTab === 'nobility') html += _kingNobilityTab(kingdom, ks);
         else if (_kingTab === 'threats') html += _kingThreatsTab(kingdom, ks);
 
         html += '</div>';
@@ -358,6 +360,184 @@
         html += '</ul>';
         html += '<button class="btn-medieval" data-action="_confirmKingFlee" style="background:rgba(139,69,19,0.4) !important;border-color:rgba(139,69,19,0.6) !important;font-size:0.75rem;padding:5px 14px;">💨 Flee the Kingdom</button>';
         html += '</div>';
+
+        return html;
+    }
+
+    function _kingNobilityTab(kingdom, ks) {
+        var html = '';
+        var p = Player.state;
+        var citizenKingdomId = kingdom.id;
+        var day = 0;
+        try { day = Engine.getDay(); } catch (e) {}
+        var kingdoms = [];
+        try { kingdoms = Engine.getKingdoms ? Engine.getKingdoms() : []; } catch (e) {}
+
+        // ── LORDSHIP ──
+        var lordTownId = p.lordTownId || null;
+        var lordTown = lordTownId ? Engine.findTown(lordTownId) : null;
+        if (lordTown) {
+            html += '<div style="background:rgba(0,0,0,0.15);border:1px solid rgba(212,168,67,0.2);border-radius:6px;padding:8px;margin-bottom:8px;">';
+            html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:4px;">🏰 Your Lordship</div>';
+            html += '<div style="font-size:0.78rem;color:#ccc;">';
+            html += '<div style="margin-bottom:3px;"><strong>Lord of:</strong> ' + lordTown.name + '</div>';
+            html += '<div style="margin-bottom:3px;"><strong>Population:</strong> ' + (lordTown.population || '?') + '</div>';
+            html += '<div style="margin-bottom:3px;"><strong>Prosperity:</strong> ' + Math.floor(lordTown.prosperity || 0) + '</div>';
+            html += '</div></div>';
+        }
+
+        // ── STANDING & REPUTATION ──
+        html += '<div style="background:rgba(0,0,0,0.15);border:1px solid rgba(212,168,67,0.2);border-radius:6px;padding:8px;margin-bottom:8px;">';
+        html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:6px;">📊 Standing & Reputation</div>';
+        for (var _rki = 0; _rki < kingdoms.length; _rki++) {
+            var _rkk = kingdoms[_rki];
+            var _rkRep = Player.reputation ? (Player.reputation[_rkk.id] || 0) : 0;
+            var _rkRank = (Player.socialRank && Player.socialRank[_rkk.id]) || 0;
+            if (_rkRank === 0 && _rkRep === 0) continue;
+            var _rkDef = CONFIG.SOCIAL_RANKS[_rkRank] || CONFIG.SOCIAL_RANKS[0];
+            var _isHome = _rkk.id === citizenKingdomId;
+            html += '<div style="margin-bottom:5px;' + (_isHome ? 'border-left:3px solid #d4a843;padding-left:8px;' : '') + '">';
+            html += '<div style="font-size:0.75rem;color:#d4c9a0;">' + (_rkDef.icon || '') + ' ' + _rkk.name + ' — ' + (_rkDef.name || 'Peasant') + (_isHome ? ' <span style="color:#d4a843;font-size:0.68rem;">(Home)</span>' : '') + '</div>';
+            html += '<div style="height:5px;background:rgba(0,0,0,0.3);border-radius:3px;margin-top:2px;"><div style="height:100%;width:' + Math.min(100, Math.max(0, _rkRep)) + '%;background:' + (_rkRep >= 80 ? '#55a868' : _rkRep >= 50 ? '#ccb974' : '#c44e52') + ';border-radius:3px;"></div></div>';
+            html += '<div style="font-size:0.65rem;color:#777;margin-top:1px;">Rep: ' + Math.floor(_rkRep) + '/100</div>';
+            html += '</div>';
+        }
+        html += '</div>';
+
+        // ── NOBLE PRIVILEGES ──
+        var rankDef = CONFIG.SOCIAL_RANKS[7] || CONFIG.SOCIAL_RANKS[6] || {};
+        html += '<div style="background:rgba(0,0,0,0.15);border:1px solid rgba(212,168,67,0.2);border-radius:6px;padding:8px;margin-bottom:8px;">';
+        html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:4px;">🏅 Royal Privileges</div>';
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 10px;font-size:0.72rem;">';
+        html += '<div style="color:#aaa;">Tax Status:</div><div style="color:#55a868;">Exempt from all taxes</div>';
+        html += '<div style="color:#aaa;">Criminal Immunity:</div><div style="color:#55a868;">Full (entire kingdom)</div>';
+        html += '<div style="color:#aaa;">Max Workers:</div><div>∞</div>';
+        html += '<div style="color:#aaa;">Max Buildings:</div><div>∞</div>';
+        html += '<div style="color:#aaa;">Max Land:</div><div>∞</div>';
+        html += '</div></div>';
+
+        // ── KINGDOM NOBLES ──
+        html += '<div style="background:rgba(0,0,0,0.15);border:1px solid rgba(212,168,67,0.2);border-radius:6px;padding:8px;margin-bottom:8px;">';
+        html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:6px;">🏛️ Kingdom Nobles</div>';
+        try {
+            var _allPeople = typeof Engine.getPeople === 'function' ? Engine.getPeople() : [];
+            var _nobles = [];
+            for (var _ni = 0; _ni < _allPeople.length; _ni++) {
+                var _np = _allPeople[_ni];
+                if (!_np.socialRank || !_np.alive) continue;
+                var _npRank = 0;
+                if (typeof _np.socialRank === 'object') {
+                    _npRank = _np.socialRank[citizenKingdomId] || 0;
+                } else if (typeof _np.socialRank === 'number') {
+                    _npRank = _np.socialRank;
+                }
+                if (_npRank >= 4) _nobles.push({ person: _np, rank: _npRank });
+            }
+            _nobles.sort(function(a, b) {
+                if (b.rank !== a.rank) return b.rank - a.rank;
+                return (a.person.firstName || '').localeCompare(b.person.firstName || '');
+            });
+            if (_nobles.length === 0) {
+                html += '<div style="font-size:0.75rem;color:#888;">No nobles found in this kingdom.</div>';
+            } else {
+                html += '<div style="max-height:250px;overflow-y:auto;">';
+                for (var _nbi = 0; _nbi < _nobles.length; _nbi++) {
+                    var _nb = _nobles[_nbi];
+                    var _nbPerson = _nb.person;
+                    var _nbRankDef = CONFIG.SOCIAL_RANKS[_nb.rank] || CONFIG.SOCIAL_RANKS[4];
+                    var _nbRel = Player.getRelationship ? Player.getRelationship(_nbPerson.id) : { level: 0 };
+                    var _nbRelLvl = _nbRel.level || 0;
+                    var _nbRelColor = _nbRelLvl >= 60 ? '#55a868' : _nbRelLvl >= 30 ? '#ccb974' : _nbRelLvl >= 0 ? '#aaa' : '#c44e52';
+                    var _nbTown = _nbPerson.townId ? Engine.findTown(_nbPerson.townId) : null;
+                    var _sameLocation = _nbPerson.townId === Player.townId;
+                    var _nbSafeId = String(_nbPerson.id).replace(/'/g, "\\'");
+                    html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 6px;margin-bottom:3px;background:rgba(0,0,0,0.1);border-radius:4px;border-left:3px solid ' + (_sameLocation ? '#d4a843' : 'transparent') + ';">';
+                    html += '<div style="flex:1;min-width:0;cursor:pointer;" data-action="closeAndShowPerson" data-id="' + _nbSafeId + '" title="View details">';
+                    html += '<div style="font-size:0.75rem;color:#d4c9a0;">' + (_nbRankDef.icon || '👑') + ' ' + (_nbPerson.firstName || '') + ' ' + (_nbPerson.lastName || '') + '</div>';
+                    html += '<div style="font-size:0.65rem;color:#888;">' + (_nbRankDef.name || 'Noble');
+                    if (_nbTown) html += ' — ' + _nbTown.name;
+                    if (_sameLocation) html += ' <span style="color:#d4a843;">📍 Here</span>';
+                    html += '</div>';
+                    html += '<div style="font-size:0.62rem;color:' + _nbRelColor + ';">Rel: ' + Math.floor(_nbRelLvl) + '</div>';
+                    html += '</div>';
+                    if (_sameLocation) {
+                        html += '<div style="display:flex;gap:3px;flex-shrink:0;">';
+                        html += '<button class="btn-medieval" data-action="interactNPCSmallTalk" data-id="' + _nbSafeId + '" style="font-size:0.6rem;padding:2px 5px;" title="Small Talk">💬</button>';
+                        html += '<button class="btn-medieval" data-action="closeAndGift" data-id="' + _nbSafeId + '" style="font-size:0.6rem;padding:2px 5px;" title="Give Gift">🎁</button>';
+                        html += '</div>';
+                    }
+                    html += '</div>';
+                }
+                html += '</div>';
+            }
+        } catch (e) {
+            html += '<div style="font-size:0.75rem;color:#888;">Could not load nobles list.</div>';
+        }
+        html += '</div>';
+
+        // ── NOBLE AGENTS ──
+        try {
+            var agentData = Player.getAgentData ? Player.getAgentData() : null;
+            if (agentData && agentData.agents && agentData.agents.length > 0) {
+                html += '<div style="background:rgba(44,62,80,0.15);border:1px solid rgba(155,89,182,0.3);border-radius:6px;padding:8px;margin-bottom:8px;">';
+                html += '<div style="font-size:0.85rem;color:#9b59b6;margin-bottom:4px;">🕵️ Agents (' + agentData.agents.length + '/' + agentData.maxAgents + ')</div>';
+                for (var _ai = 0; _ai < agentData.agents.length; _ai++) {
+                    var _ag = agentData.agents[_ai];
+                    var _agStatus = _ag.status || 'idle';
+                    var _agColor = _agStatus === 'active' ? '#55a868' : _agStatus === 'returning' ? '#e67e22' : '#aaa';
+                    html += '<div style="font-size:0.72rem;padding:3px 0;color:#ccc;">';
+                    html += '🕵️ ' + (_ag.name || 'Agent') + ' — <span style="color:' + _agColor + ';">' + _agStatus + '</span>';
+                    if (_ag.mission) html += ' <span style="color:#888;">(' + _ag.mission + ')</span>';
+                    html += '</div>';
+                }
+                html += '<button class="btn-medieval" data-action="closeAndOpenNobilityDialog" style="font-size:0.7rem;padding:3px 8px;margin-top:4px;">📋 Manage Agents</button>';
+                html += '</div>';
+            }
+        } catch (e) { /* ignore */ }
+
+        // ── ROYAL DIRECTIVES ──
+        try {
+            if (typeof _buildRoyalDirectivesSection === 'function') {
+                html += _buildRoyalDirectivesSection(citizenKingdomId, day);
+            } else if (typeof UI._buildRoyalDirectivesSection === 'function') {
+                html += UI._buildRoyalDirectivesSection(citizenKingdomId, day);
+            }
+        } catch (e) { /* ignore */ }
+
+        // ── COUNCIL VOTES ──
+        var _activeVotes = [];
+        try { _activeVotes = Engine.getActiveVotes ? Engine.getActiveVotes() : []; } catch (e) {}
+        if (_activeVotes.length > 0) {
+            html += '<div style="background:rgba(100,50,200,0.1);border:1px solid rgba(150,100,255,0.3);border-radius:6px;padding:8px;margin-bottom:8px;">';
+            html += '<div style="font-size:0.85rem;color:#c8a0ff;margin-bottom:4px;">🗳️ Active Council Votes (' + _activeVotes.length + ')</div>';
+            for (var _avi = 0; _avi < _activeVotes.length; _avi++) {
+                var _av = _activeVotes[_avi];
+                var _avDays = Math.max(0, (_av.deadlineDay || 0) - day);
+                html += '<button class="btn-medieval" data-action="openVotingDialog" data-id="' + _av.id + '" style="display:block;width:100%;text-align:left;padding:5px 8px;margin-bottom:3px;font-size:0.72rem;">';
+                html += '📜 ' + escapeHtml(_av.title || 'Decision') + ' <span style="color:#aaa;font-size:0.65rem;">(' + _avDays + 'd left)</span>';
+                html += '</button>';
+            }
+            html += '</div>';
+        }
+
+        // ── ROYAL FEASTS ──
+        var _activeFeast = null;
+        try { _activeFeast = Engine.getActiveFeast ? Engine.getActiveFeast(citizenKingdomId) : null; } catch (e) {}
+        if (_activeFeast) {
+            var _feastDaysLeft = Math.max(0, (_activeFeast.endDay || 0) - day);
+            var _feastTownName = '';
+            try { var _fTown = Engine.findTown(_activeFeast.townId); _feastTownName = _fTown ? _fTown.name : ''; } catch (e) {}
+            var _playerAtFeast = Player.townId === _activeFeast.townId && !Player.traveling;
+            html += '<div style="background:rgba(200,150,50,0.1);border:1px solid rgba(200,150,50,0.3);border-radius:6px;padding:8px;margin-bottom:8px;">';
+            html += '<div style="font-size:0.85rem;color:#f0c040;margin-bottom:4px;">🎪 Royal Feast</div>';
+            html += '<div style="font-size:0.72rem;color:#ccc;">Feast in <strong>' + escapeHtml(_feastTownName) + '</strong> — ' + _feastDaysLeft + ' day' + (_feastDaysLeft !== 1 ? 's' : '') + ' left</div>';
+            if (_playerAtFeast) {
+                html += '<button class="btn-medieval" data-action="openFeastDialog" data-id="' + citizenKingdomId + '" style="font-size:0.72rem;padding:4px 10px;margin-top:4px;">🍷 Attend Feast</button>';
+            } else {
+                html += '<div style="font-size:0.68rem;color:#e67e22;margin-top:3px;">📍 Travel to ' + escapeHtml(_feastTownName) + ' to attend.</div>';
+            }
+            html += '</div>';
+        }
 
         return html;
     }
