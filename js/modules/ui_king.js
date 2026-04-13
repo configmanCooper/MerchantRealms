@@ -504,6 +504,46 @@
                 html += '<button class="btn-medieval" data-action="kingSendArmyUI" data-id="' + _wi + '" style="font-size:0.62rem;padding:2px 6px;background:rgba(196,78,82,0.3) !important;">⚔️ Send</button>';
                 html += '</div>';
             }
+
+            // Check for pending peace offer from this enemy
+            var _peaceOffers = (kingdom._pendingPetitions || []).filter(function(p) { return p.type === 'peace_offer' && p.fromId === _wk.id; });
+            if (_peaceOffers.length > 0) {
+                var _po = _peaceOffers[0];
+                var _poTerms = _po.peaceTerms || {};
+                var _poOffer = _poTerms.offer || {};
+                var _poGold = Math.floor(_poOffer.gold || 0);
+                var _poTowns = (_poOffer.towns || []).length;
+                html += '<div style="background:rgba(93,173,226,0.12);border:1px solid rgba(93,173,226,0.3);padding:6px;border-radius:4px;margin-top:4px;">';
+                html += '<div style="font-size:0.75rem;color:#90caf9;margin-bottom:3px;">🕊️ ' + escapeHtml(_wk.name) + ' Offers Peace!</div>';
+                html += '<div style="font-size:0.65rem;color:#aaa;margin-bottom:4px;">They offer: <strong style="color:#e0c58a;">' + formatGold(_poGold) + '</strong> gold';
+                if (_poTowns > 0) html += ' + <strong style="color:#81c784;">' + _poTowns + ' town' + (_poTowns > 1 ? 's' : '') + '</strong>';
+                if (_poOffer.concessions && _poOffer.concessions.length > 0) html += ' + concessions';
+                html += '</div>';
+                html += '<div style="display:flex;gap:6px;">';
+                html += '<button class="btn-medieval" data-action="kingAcceptPeaceOffer" data-id="' + _wk.id + '" style="font-size:0.68rem;padding:4px 12px;background:rgba(85,168,104,0.3) !important;border:1px solid rgba(85,168,104,0.5) !important;color:#81c784;">🕊️ Accept Peace (+' + formatGold(_poGold) + ')</button>';
+                html += '<button class="btn-medieval" data-action="kingRejectPeaceOffer" data-id="' + _wk.id + '" style="font-size:0.68rem;padding:4px 12px;opacity:0.7;">🔥 Reject — Continue War</button>';
+                html += '</div></div>';
+            }
+
+            // Check for surrender offer
+            var _surrenderOffers = (kingdom._pendingPetitions || []).filter(function(p) { return p.type === 'surrender_offer' && p.fromId === _wk.id; });
+            if (_surrenderOffers.length > 0) {
+                var _so = _surrenderOffers[0];
+                var _soTerms = _so.peaceTerms || {};
+                var _soOffer = _soTerms.offer || {};
+                var _soGold = Math.floor(_soOffer.gold || 0);
+                var _soTowns = (_soOffer.towns || []).length;
+                html += '<div style="background:rgba(85,168,104,0.12);border:1px solid rgba(85,168,104,0.3);padding:6px;border-radius:4px;margin-top:4px;">';
+                html += '<div style="font-size:0.75rem;color:#81c784;margin-bottom:3px;">🏳️ ' + escapeHtml(_wk.name) + ' Wants to Surrender!</div>';
+                html += '<div style="font-size:0.65rem;color:#aaa;margin-bottom:4px;">They offer: <strong style="color:#e0c58a;">' + formatGold(_soGold) + '</strong> gold';
+                if (_soTowns > 0) html += ' + <strong style="color:#81c784;">' + _soTowns + ' town' + (_soTowns > 1 ? 's' : '') + '</strong>';
+                html += '</div>';
+                html += '<div style="display:flex;gap:6px;">';
+                html += '<button class="btn-medieval" data-action="kingAcceptPeaceOffer" data-id="' + _wk.id + '" style="font-size:0.68rem;padding:4px 12px;background:rgba(85,168,104,0.3) !important;border:1px solid rgba(85,168,104,0.5) !important;color:#81c784;">🏳️ Accept Surrender (+' + formatGold(_soGold) + ')</button>';
+                html += '<button class="btn-medieval" data-action="kingRejectPeaceOffer" data-id="' + _wk.id + '" style="font-size:0.68rem;padding:4px 12px;opacity:0.7;">🔥 Reject — Continue War</button>';
+                html += '</div></div>';
+            }
+
             html += '</div>';
         }
 
@@ -999,7 +1039,9 @@
     // ── King Petitions Section ──
     function _kingPetitionsSection(kingdom) {
         var html = '';
-        var petitions = kingdom._pendingPetitions || [];
+        var allPetitions = kingdom._pendingPetitions || [];
+        // Filter out peace/surrender offers — shown in War Management instead
+        var petitions = allPetitions.filter(function(p) { return p.type !== 'peace_offer' && p.type !== 'surrender_offer'; });
         html += '<div style="background:rgba(0,0,0,0.15);padding:8px;border-radius:6px;margin-bottom:8px;">';
         html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:6px;">📜 Petitions from Subjects' + (petitions.length > 0 ? ' <span style="background:#c44e52;color:#fff;font-size:0.6rem;padding:1px 5px;border-radius:8px;margin-left:4px;">' + petitions.length + '</span>' : '') + '</div>';
 
@@ -2414,6 +2456,8 @@
         }
     });
     UI.registerAction('kingSuePeaceConfirm', function(_t, d) { var r = Player.kingSuePeace(d.id); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
+    UI.registerAction('kingAcceptPeaceOffer', function(_t, d) { var r = Player.kingAcceptPeaceOffer(d.id); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
+    UI.registerAction('kingRejectPeaceOffer', function(_t, d) { var r = Player.kingRejectPeaceOffer(d.id); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
     UI.registerAction('kingDeclareWar', function(_t, d) { var r = Player.kingDeclareWar(d.id); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
     UI.registerAction('kingHostFeast', function() { var r = Player.kingHostFeast(); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
     UI.registerAction('kingHoldCourt', function() { var r = Player.kingHoldCourt(); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });

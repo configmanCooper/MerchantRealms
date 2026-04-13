@@ -7248,6 +7248,127 @@
         return { success: true, message: 'Peace achieved! Tribute paid: ' + tribute + 'g.' };
     }
 
+    function kingAcceptPeaceOffer(enemyKingdomId) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        if (!kingdom.atWar || !kingdom.atWar.has || !kingdom.atWar.has(enemyKingdomId)) {
+            return { success: false, message: 'Not at war with that kingdom.' };
+        }
+        var enemy = Engine.findKingdom(enemyKingdomId);
+        if (!enemy) return { success: false, message: 'Enemy kingdom not found.' };
+
+        // Find the peace offer petition
+        var petitions = kingdom._pendingPetitions || [];
+        var offerIdx = -1;
+        for (var _poi = 0; _poi < petitions.length; _poi++) {
+            if ((petitions[_poi].type === 'peace_offer' || petitions[_poi].type === 'surrender_offer') && petitions[_poi].fromId === enemyKingdomId) {
+                offerIdx = _poi;
+                break;
+            }
+        }
+        if (offerIdx < 0) return { success: false, message: 'No peace offer from that kingdom.' };
+
+        var offer = petitions[offerIdx];
+        var terms = offer.peaceTerms || {};
+        var offerData = terms.offer || {};
+        var goldReceived = Math.floor(offerData.gold || 0);
+        var isSurrender = offer.type === 'surrender_offer' || (terms.level != null && terms.level >= 3);
+
+        // Apply gold transfer: enemy pays US
+        if (goldReceived > 0) {
+            enemy.gold = Math.max(0, (enemy.gold || 0) - goldReceived);
+            kingdom.gold = (kingdom.gold || 0) + goldReceived;
+        }
+
+        // Transfer ceded towns
+        var cededNames = [];
+        var townsList = offerData.towns || [];
+        for (var _cti = 0; _cti < townsList.length; _cti++) {
+            var cededTownId = townsList[_cti];
+            try {
+                var cededTown = Engine.transferTown(cededTownId, enemyKingdomId, kingdom.id, 'peace_deal');
+                if (cededTown) {
+                    cededNames.push(cededTown.name || cededTownId);
+                    // Update people in ceded town
+                    var townPeople = [];
+                    try { townPeople = Engine.getPeople ? Engine.getPeople(cededTownId) : []; } catch(e2) {}
+                    for (var _cpi = 0; _cpi < townPeople.length; _cpi++) {
+                        if (townPeople[_cpi].alive) {
+                            townPeople[_cpi].kingdomId = kingdom.id;
+                        }
+                    }
+                    // Apply servitude or citizenship
+                    var concessions = offerData.concessions || [];
+                    if (concessions.indexOf('servitude_of_ceded') >= 0) {
+                        Engine.imposeServitude(cededTown, kingdom);
+                    } else {
+                        Engine.grantCitizenship(cededTown, kingdom);
+                    }
+                }
+            } catch(e) { /* transfer failed silently */ }
+        }
+
+        // Apply trade concessions
+        var concessions = offerData.concessions || [];
+        if (concessions.indexOf('lower_tariffs') >= 0 && enemy.laws) {
+            enemy.laws.tradeTariff = Math.round(Math.max(0, (enemy.laws.tradeTariff || 0.05) * 0.5) * 10000) / 10000;
+        }
+
+        // Make peace using engine function
+        Engine.makePeace(kingdom, enemy, isSurrender, isSurrender ? enemy : null);
+
+        // Remove the petition
+        kingdom._pendingPetitions.splice(offerIdx, 1);
+
+        // Remove any advisor suggestions about this peace offer
+        if (kingdom._advisorSuggestions) {
+            kingdom._advisorSuggestions = kingdom._advisorSuggestions.filter(function(s) {
+                return s.key !== 'peace_offer_from_' + enemyKingdomId && s.key !== 'surrender_offer_from_' + enemyKingdomId;
+            });
+        }
+
+        player.kingState.peacesMade = (player.kingState.peacesMade || 0) + 1;
+
+        var msg = isSurrender ? '🏳️ ' + enemy.name + ' has surrendered!' : '🕊️ Peace accepted with ' + enemy.name + '!';
+        if (goldReceived > 0) msg += ' Received ' + goldReceived + 'g.';
+        if (cededNames.length > 0) msg += ' Gained: ' + cededNames.join(', ') + '.';
+        Engine.logEvent(msg, null, 'military');
+        return { success: true, message: msg };
+    }
+
+    function kingRejectPeaceOffer(enemyKingdomId) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+
+        var petitions = kingdom._pendingPetitions || [];
+        var offerIdx = -1;
+        for (var _rpi = 0; _rpi < petitions.length; _rpi++) {
+            if ((petitions[_rpi].type === 'peace_offer' || petitions[_rpi].type === 'surrender_offer') && petitions[_rpi].fromId === enemyKingdomId) {
+                offerIdx = _rpi;
+                break;
+            }
+        }
+        if (offerIdx < 0) return { success: false, message: 'No peace offer from that kingdom.' };
+
+        var offer = petitions[offerIdx];
+        var enemyName = offer.from || 'the enemy';
+
+        // Remove the petition
+        kingdom._pendingPetitions.splice(offerIdx, 1);
+
+        // Remove advisor suggestions
+        if (kingdom._advisorSuggestions) {
+            kingdom._advisorSuggestions = kingdom._advisorSuggestions.filter(function(s) {
+                return s.key !== 'peace_offer_from_' + enemyKingdomId && s.key !== 'surrender_offer_from_' + enemyKingdomId;
+            });
+        }
+
+        Engine.logEvent('🔥 Rejected peace offer from ' + enemyName + '. The war continues!', null, 'military');
+        return { success: true, message: 'Rejected peace from ' + enemyName + '. War continues!' };
+    }
+
     function kingDonateTreasury(amount) {
         if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
         var kingdom = Engine.findKingdom(player.kingState.kingdomId);
@@ -34852,6 +34973,8 @@
         kingRepealLaw,
         kingDeclareWar,
         kingSuePeace,
+        kingAcceptPeaceOffer,
+        kingRejectPeaceOffer,
         kingDonateTreasury,
         kingWithdrawTreasury,
         kingHostFeast,

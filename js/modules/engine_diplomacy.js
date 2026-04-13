@@ -2363,9 +2363,22 @@
                 if (wantsPeace && rng.chance(peaceChance)) {
                     // If enemy is player-king, send peace offer instead of auto-making peace
                     if (_isPlayerKingOf(enemy)) {
+                        // Generate surrender terms — loser (k) pays tribute and may cede towns
+                        var _surrenderTerms = evaluatePeaceTerms(k, enemy);
+                        if (!enemy._pendingPetitions) enemy._pendingPetitions = [];
+                        enemy._pendingPetitions.push({
+                            id: 'surrender_offer_' + k.id + '_' + (world.day || 0),
+                            type: 'surrender_offer',
+                            from: k.name,
+                            fromId: k.id,
+                            title: '🏳️ ' + k.name + ' Wants to Surrender',
+                            description: k.name + ' is losing and wants to surrender. They offer ' + Math.floor((_surrenderTerms.offer || {}).gold || 0) + 'g and ' + ((_surrenderTerms.offer || {}).towns || []).length + ' town(s).',
+                            day: world.day,
+                            peaceTerms: _surrenderTerms
+                        });
                         _addAdvisorSuggestion(enemy, 'diplomacy', '🏳️', k.name + ' Wants to Surrender',
-                            k.name + ' is losing the war (strength ' + Math.floor(myStr) + ' vs our ' + Math.floor(theirStr) + ') and seeks to negotiate peace terms. This could be advantageous.',
-                            'enemy_surrender_' + k.id, { enemyId: k.id, enemyName: k.name });
+                            k.name + ' is losing the war (strength ' + Math.floor(myStr) + ' vs our ' + Math.floor(theirStr) + ') and seeks to negotiate peace terms. Check War Management to accept or reject.',
+                            'surrender_offer_from_' + k.id, { enemyId: k.id, enemyName: k.name });
                     } else if (hasSpecialLaw(k, 'noble_council')) {
                         initiateCouncilVote(k, 'Negotiate peace with ' + enemy.name,
                             'We are losing the war. Military comparison: ' + Math.floor(myStr) + ' vs ' + Math.floor(theirStr) + '. War exhaustion: ' + Math.floor(exhaustion),
