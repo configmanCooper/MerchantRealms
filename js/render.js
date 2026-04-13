@@ -2912,12 +2912,55 @@ window.Renderer = (function () {
     //  6b. ARMY MARKERS (marching armies on the map)
     // ═══════════════════════════════════════════════════════════
 
+    // Helper: interpolate position along road waypoints
+    function _getPositionOnRoad(road, fromId, progress) {
+        if (!road || !road.waypoints || road.waypoints.length < 2) return null;
+        var wp = road.waypoints;
+        // Reverse waypoints if army is going from road.toTownId → road.fromTownId
+        if (road.toTownId === fromId) {
+            wp = wp.slice().reverse();
+        }
+        var totalLen = 0;
+        for (var i = 1; i < wp.length; i++) {
+            totalLen += Math.hypot(wp[i].x - wp[i-1].x, wp[i].y - wp[i-1].y);
+        }
+        if (totalLen === 0) return { x: wp[0].x, y: wp[0].y };
+        var targetLen = Math.min(1, Math.max(0, progress)) * totalLen;
+        var accum = 0;
+        for (var j = 1; j < wp.length; j++) {
+            var segLen = Math.hypot(wp[j].x - wp[j-1].x, wp[j].y - wp[j-1].y);
+            if (accum + segLen >= targetLen) {
+                var t = segLen > 0 ? (targetLen - accum) / segLen : 0;
+                return { x: wp[j-1].x + (wp[j].x - wp[j-1].x) * t, y: wp[j-1].y + (wp[j].y - wp[j-1].y) * t };
+            }
+            accum += segLen;
+        }
+        return { x: wp[wp.length-1].x, y: wp[wp.length-1].y };
+    }
+
+    // Build road lookup for army rendering
+    function _buildArmyRoadMap() {
+        var roadMap = {};
+        var roads = null;
+        try { roads = Engine.getRoads(); } catch(e) {}
+        if (roads) {
+            for (var i = 0; i < roads.length; i++) {
+                var rd = roads[i];
+                if (!rd.waypoints || rd.waypoints.length < 2) continue;
+                roadMap[rd.fromTownId + '_' + rd.toTownId] = rd;
+                roadMap[rd.toTownId + '_' + rd.fromTownId] = rd;
+            }
+        }
+        return roadMap;
+    }
+
     function renderArmies() {
         var armies = null;
         try { armies = Engine.getArmies(); } catch(e) { return; }
         if (!armies || armies.length === 0) return;
         var townMap = _frameTownMap;
         if (!townMap) return;
+        var roadMap = _buildArmyRoadMap();
 
         for (var ai = 0; ai < armies.length; ai++) {
             var army = armies[ai];
@@ -2942,8 +2985,18 @@ window.Renderer = (function () {
                 var legFrom = townMap[leg.from];
                 var legTo = townMap[leg.to];
                 if (legFrom && legTo) {
-                    ax = legFrom.x + (legTo.x - legFrom.x) * Math.min(1, legProg);
-                    ay = legFrom.y + (legTo.y - legFrom.y) * Math.min(1, legProg);
+                    // Try to follow road waypoints for road legs
+                    var _roadKey = leg.from + '_' + leg.to;
+                    var _road = roadMap ? roadMap[_roadKey] : null;
+                    if (_road && (leg.type === 'road' || leg.type === 'road_destroyed_bridge')) {
+                        var _pos = _getPositionOnRoad(_road, leg.from, legProg);
+                        if (_pos) { ax = _pos.x; ay = _pos.y; }
+                    }
+                    // Fallback: straight line between towns
+                    if (ax == null) {
+                        ax = legFrom.x + (legTo.x - legFrom.x) * Math.min(1, legProg);
+                        ay = legFrom.y + (legTo.y - legFrom.y) * Math.min(1, legProg);
+                    }
                 } else {
                     var p = army.progress || 0;
                     ax = fromT.x + (toT.x - fromT.x) * p;
@@ -3047,6 +3100,7 @@ window.Renderer = (function () {
         if (!armies || armies.length === 0) return;
         var townMap = _frameTownMap;
         if (!townMap) return;
+        var roadMap = _buildArmyRoadMap();
 
         for (var ai = 0; ai < armies.length; ai++) {
             var army = armies[ai];
@@ -3068,8 +3122,17 @@ window.Renderer = (function () {
                     var leg = army.route.legs[legIdx];
                     var lf = townMap[leg.from]; var lt = townMap[leg.to];
                     if (lf && lt) {
-                        cx = lf.x + (lt.x - lf.x) * Math.min(1, legProg);
-                        cy = lf.y + (lt.y - lf.y) * Math.min(1, legProg);
+                        // Follow road waypoints
+                        var _sKey = leg.from + '_' + leg.to;
+                        var _sRoad = roadMap ? roadMap[_sKey] : null;
+                        if (_sRoad && (leg.type === 'road' || leg.type === 'road_destroyed_bridge')) {
+                            var _sPos = _getPositionOnRoad(_sRoad, leg.from, legProg);
+                            if (_sPos) { cx = _sPos.x; cy = _sPos.y; }
+                        }
+                        if (cx == null) {
+                            cx = lf.x + (lt.x - lf.x) * Math.min(1, legProg);
+                            cy = lf.y + (lt.y - lf.y) * Math.min(1, legProg);
+                        }
                     }
                 }
             }
@@ -3101,13 +3164,6 @@ window.Renderer = (function () {
             ctx.fillText('' + (army.soldiers || '?'), 0, 0);
 
             ctx.restore();
-            ctx.fillStyle = '#c44e52';
-            ctx.beginPath();
-            ctx.arc(ax, ay, 5, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.strokeStyle = '#802020';
-            ctx.lineWidth = 1;
-            ctx.stroke();
         }
     }
 

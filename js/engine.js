@@ -2685,7 +2685,7 @@
         for (var ri = 0; ri < world.roads.length; ri++) {
             var road = world.roads[ri];
             if (road.condition === 'destroyed') continue;
-            // Skip roads with destroyed bridges (check individual bridges first, legacy fallback)
+            // Check for destroyed bridges — armies cross slowly instead of skipping
             var _rdHasDestBr = false;
             if (road.bridges && road.bridges.length > 0) {
                 for (var _rbi = 0; _rbi < road.bridges.length; _rbi++) {
@@ -2694,14 +2694,15 @@
             } else if (road.hasBridge && road.bridgeDestroyed) {
                 _rdHasDestBr = true;
             }
-            if (_rdHasDestBr) continue;
             var rFrom = findTown(road.fromTownId);
             var rTo = findTown(road.toTownId);
             if (!rFrom || !rTo) continue;
             var rDist = Math.hypot(rTo.x - rFrom.x, rTo.y - rFrom.y);
-            var rTime = rDist / (baseSpeed * roadMult);
-            if (graph[road.fromTownId]) graph[road.fromTownId].push({ to: road.toTownId, dist: rDist, type: 'road', time: rTime });
-            if (graph[road.toTownId]) graph[road.toTownId].push({ to: road.fromTownId, dist: rDist, type: 'road', time: rTime });
+            var _rdSpeedMult = _rdHasDestBr ? (CONFIG.BRIDGE_ARMY_DESTROYED_SPEED_MULT || 0.3) : roadMult;
+            var rTime = rDist / (baseSpeed * _rdSpeedMult);
+            var _rdType = _rdHasDestBr ? 'road_destroyed_bridge' : 'road';
+            if (graph[road.fromTownId]) graph[road.fromTownId].push({ to: road.toTownId, dist: rDist, type: _rdType, time: rTime });
+            if (graph[road.toTownId]) graph[road.toTownId].push({ to: road.fromTownId, dist: rDist, type: _rdType, time: rTime });
         }
 
         // Sea route edges (need ports)
@@ -12050,13 +12051,25 @@
 
                             // Score: prefer short routes, weak garrisons, high-value targets
                             var routeScore = 100;
-                            routeScore -= route.totalTime * 2; // Faster routes preferred
+                            routeScore -= route.totalTime * 0.5; // Faster routes preferred (reduced from ×2)
                             routeScore -= (cand.garrison || 0) * 0.5; // Weaker targets preferred
                             routeScore += (cand.population || 0) * 0.01; // Higher pop = more valuable
                             routeScore += cand.isCapital ? 30 : 0; // Capitals are high-value
                             // Penalize routes with lots of offroad legs
                             var offroadLegs = route.legs.filter(function(l) { return l.type === 'offroad'; }).length;
                             routeScore -= offroadLegs * 10;
+                            // Heavily penalize sea routes if no ships available
+                            var _hasSeaLegs = route.legs.some(function(l) { return l.type === 'sea'; });
+                            if (_hasSeaLegs) {
+                                var _firstSeaLeg = route.legs.find(function(l) { return l.type === 'sea'; });
+                                var _canEmbark = false;
+                                try { _canEmbark = canEmbarkAtPort({ soldiers: armySize }, _firstSeaLeg.from, k.id); } catch(e) {}
+                                if (!_canEmbark) {
+                                    routeScore -= 200; // Effectively eliminates this route
+                                    // Flag kingdom needs ships for future
+                                    if (!k._needsShipsForWar) k._needsShipsForWar = true;
+                                }
+                            }
 
                             if (routeScore > bestRouteScore) {
                                 bestRouteScore = routeScore;
@@ -13240,6 +13253,7 @@
                 // Apply speed modifier based on leg type
                 var speedMult = leg.type === 'offroad' ? (CONFIG.ARMY_OFFROAD_SPEED_MULT || 0.3) :
                                 leg.type === 'sea' ? (CONFIG.ARMY_SEA_SPEED_MULT || 0.6) :
+                                leg.type === 'road_destroyed_bridge' ? (CONFIG.BRIDGE_ARMY_DESTROYED_SPEED_MULT || 0.3) :
                                 (CONFIG.ARMY_ROAD_SPEED_MULT || 1.0);
                 var legSpeed = baseSpeed * speedMult;
                 army.legProgress = (army.legProgress || 0) + legSpeed / Math.max(legDist, 1);
@@ -14496,7 +14510,10 @@
             if (k.atWar.size === 0) continue;
 
             // Build warships at port towns if at war and can afford
-            if (rng.chance(0.12)) {
+            // Higher priority when army routes require sea transport
+            var _shipBuildChance = 0.12;
+            if (k._needsShipsForWar) _shipBuildChance = 0.45; // 45% if armies need ships
+            if (rng.chance(_shipBuildChance)) {
                 for (const townId of k.territories) {
                     const town = findTown(townId);
                     if (!town || !town.isPort) continue;
@@ -22562,7 +22579,7 @@
         collectTolls() { collectTolls(); },
         checkWaterFraction(x1, y1, x2, y2) { return checkWaterPath(x1, y1, x2, y2); },
         getDominantTerrain(ax, ay, bx, by) { return getDominantTerrain(ax, ay, bx, by); },
-        findArmyRoute(from, to) { return findArmyRoute(from, to); },
+        findArmyRoute(from, to, kingdomId) { return findArmyRoute(from, to, kingdomId); },
         computeRoadImportance(tA, tB) { return computeRoadImportance(tA, tB); },
         getArmyWorldPosition(army) { return getArmyWorldPosition(army); },
 

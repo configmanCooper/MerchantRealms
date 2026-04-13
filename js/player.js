@@ -8184,8 +8184,44 @@
         // Try to find a route using pathfinding
         var route = null;
         try {
-            route = Engine.findPath(capTown.id, targetTown.id, { allowOffroad: true });
+            if (Engine.findArmyRoute) {
+                route = Engine.findArmyRoute(capTown.id, targetTown.id, kingdom.id);
+            } else {
+                route = Engine.findPath(capTown.id, targetTown.id, { allowOffroad: true });
+            }
         } catch(e) {}
+
+        if (!route || !route.legs || route.legs.length === 0) {
+            // Refund soldiers to garrisons
+            capTown.garrison = (capTown.garrison || 0) + soldiers;
+            return { success: false, message: 'No route found to ' + targetTown.name + '. The army cannot reach it.' };
+        }
+
+        // Check if route requires sea transport — verify ships are available
+        var _seaLegs = [];
+        for (var _sli = 0; _sli < route.legs.length; _sli++) {
+            if (route.legs[_sli].type === 'sea') _seaLegs.push(route.legs[_sli]);
+        }
+        if (_seaLegs.length > 0) {
+            // Find first sea leg embarkation port
+            var _embarkPort = Engine.findTown(_seaLegs[0].from);
+            var shipsNeeded = Math.ceil(soldiers / (CONFIG.ARMY_EMBARK_SOLDIERS_PER_SHIP || 50));
+            var shipsAvail = 0;
+            if (kingdom.navalFleet) {
+                for (var _shi = 0; _shi < kingdom.navalFleet.length; _shi++) {
+                    var _s = kingdom.navalFleet[_shi];
+                    if (_s.stationedAt === _seaLegs[0].from && (!_s.mission || _s.mission === 'troop_transport') && !_s._transportingArmy) {
+                        shipsAvail++;
+                    }
+                }
+            }
+            if (shipsAvail < shipsNeeded) {
+                // Refund soldiers
+                capTown.garrison = (capTown.garrison || 0) + soldiers;
+                var portName = _embarkPort ? _embarkPort.name : 'the port';
+                return { success: false, message: 'This route crosses the sea! Need ' + shipsNeeded + ' ships at ' + portName + ' but only ' + shipsAvail + ' available. Build warships at port towns first.' };
+            }
+        }
 
         var armyObj = {
             kingdomId: kingdom.id,
