@@ -6573,7 +6573,19 @@
             feastHeldDay: 0,
             decreesIssued: 0,
             warsStarted: 0,
-            peacesMade: 0
+            peacesMade: 0,
+            // ── Court Management ──
+            _nobleAudiences: [],            // [{ nobleId, nobleName, requestType, description, cost, loyaltyGain, loyaltyLoss, relGain, relLoss, generatedDay }]
+            _audienceLastGenDay: 0,         // day last generated audiences
+            _royalGiftCooldowns: {},        // { nobleId: day } — last gift day per noble
+            _privatAudienceCooldowns: {},   // { nobleId: day } — last private audience per noble
+            _activeMissions: [],            // [{ nobleId, nobleName, missionType, targetKingdomId, startDay, endDay, reward }]
+            _missionCooldowns: {},          // { nobleId: day } — last mission end per noble
+            _intrigueWarnings: [],          // [{ day, reporterName, suspectName, suspectId, plotType }]
+            _militaryHonors: [],            // [{ nobleId, nobleName, warId, day }] — pending honors to grant
+            _tradeAgreements: [],           // [{ targetKingdomId, targetKingdomName, startDay, endDay, benefit }]
+            _diplomaticEnvoys: [],          // [{ nobleId, nobleName, targetKingdomId, startDay, endDay }]
+            _vassalTributeDay: 0            // day last tribute collected
         };
 
         // Set social rank to king (7)
@@ -7244,6 +7256,687 @@
         if (kingdom && kingdom.happiness != null) kingdom.happiness = Math.min(100, kingdom.happiness + 3);
         Engine.logEvent('👑 ' + (player.sex === 'F' ? 'Queen' : 'King') + ' ' + player.fullName + ' holds court, hearing petitions from the people. (+3 happiness)');
         return { success: true, message: 'Court held. People heard, happiness improved.' };
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // §KING-COURT  King Court Management Systems
+    // ═══════════════════════════════════════════════════════════
+
+    // ── Noble Audience System ──
+    // Nobles petition the king for personal favors. Generated every 15 days.
+    var _AUDIENCE_REQUEST_TYPES = [
+        { id: 'land_grant', label: 'Land Grant', icon: '🏰', desc: 'Requests a parcel of land in {town}', costBase: 300, loyaltyGain: 15, relGain: 10, loyaltyLoss: -8, relLoss: -5, personality: 'ambition' },
+        { id: 'building_rights', label: 'Building Rights', icon: '🏗️', desc: 'Requests permission to build freely in {town}', costBase: 150, loyaltyGain: 10, relGain: 8, loyaltyLoss: -5, relLoss: -3, personality: 'ambition' },
+        { id: 'tax_exemption', label: 'Tax Exemption', icon: '💰', desc: 'Requests exemption from taxes for 60 days', costBase: 0, loyaltyGain: 12, relGain: 8, loyaltyLoss: -6, relLoss: -4, personality: 'frugality' },
+        { id: 'military_appointment', label: 'Military Appointment', icon: '⚔️', desc: 'Requests a military command position', costBase: 100, loyaltyGain: 12, relGain: 6, loyaltyLoss: -4, relLoss: -3, personality: 'loyalty' },
+        { id: 'title_elevation', label: 'Title Elevation', icon: '👑', desc: 'Requests promotion to a higher noble rank', costBase: 500, loyaltyGain: 20, relGain: 15, loyaltyLoss: -10, relLoss: -8, personality: 'ambition' },
+        { id: 'trade_privilege', label: 'Trade Privilege', icon: '📦', desc: 'Requests exclusive trading rights in {town}', costBase: 200, loyaltyGain: 10, relGain: 7, loyaltyLoss: -5, relLoss: -3, personality: 'intelligence' },
+        { id: 'marriage_blessing', label: 'Marriage Blessing', icon: '💍', desc: 'Requests royal blessing for a family marriage alliance', costBase: 50, loyaltyGain: 8, relGain: 10, loyaltyLoss: -3, relLoss: -5, personality: 'warmth' },
+        { id: 'debt_forgiveness', label: 'Debt Forgiveness', icon: '📜', desc: 'Requests forgiveness of debts owed to the crown', costBase: 250, loyaltyGain: 14, relGain: 10, loyaltyLoss: -7, relLoss: -5, personality: 'frugality' }
+    ];
+
+    function _getKingdomNoblesForCourt(kingdomId) {
+        var nobles = [];
+        var w = Engine.getWorld();
+        if (!w || !w.towns) return nobles;
+        for (var ti = 0; ti < w.towns.length; ti++) {
+            var t = w.towns[ti];
+            if (t.kingdomId !== kingdomId) continue;
+            var people = Engine.getPeople(t.id);
+            if (!people) continue;
+            for (var pi = 0; pi < people.length; pi++) {
+                var p = people[pi];
+                if (!p.alive) continue;
+                var rank = (p.socialRank && p.socialRank[kingdomId]) || 0;
+                if (rank >= 4 && rank < 7) nobles.push(p);
+            }
+        }
+        return nobles;
+    }
+
+    function kingGenerateAudiences() {
+        if (!player.isKing || !player.kingState) return;
+        var ks = player.kingState;
+        var daysSince = Engine.getDay() - (ks._audienceLastGenDay || 0);
+        if (daysSince < 15) return;
+        ks._audienceLastGenDay = Engine.getDay();
+
+        var nobles = _getKingdomNoblesForCourt(ks.kingdomId);
+        if (nobles.length === 0) return;
+
+        // Remove old expired audiences (older than 30 days)
+        ks._nobleAudiences = (ks._nobleAudiences || []).filter(function(a) {
+            return Engine.getDay() - a.generatedDay < 30;
+        });
+
+        // Generate 1-3 new audiences
+        var rng = Engine.getRng();
+        var count = 1 + Math.floor(rng() * Math.min(3, nobles.length));
+        var usedNobles = {};
+        // Don't double-up on nobles already in the queue
+        for (var ei = 0; ei < ks._nobleAudiences.length; ei++) {
+            usedNobles[ks._nobleAudiences[ei].nobleId] = true;
+        }
+
+        for (var i = 0; i < count; i++) {
+            // Pick a random noble not already queued
+            var candidates = nobles.filter(function(n) { return !usedNobles[n.id]; });
+            if (candidates.length === 0) break;
+            var noble = candidates[Math.floor(rng() * candidates.length)];
+            usedNobles[noble.id] = true;
+
+            // Weight request type by noble personality
+            var nP = noble.personality || {};
+            var weights = [];
+            var totalW = 0;
+            for (var ri = 0; ri < _AUDIENCE_REQUEST_TYPES.length; ri++) {
+                var rt = _AUDIENCE_REQUEST_TYPES[ri];
+                var w = 10;
+                if (rt.personality && nP[rt.personality]) w += nP[rt.personality] * 0.5;
+                // Higher-rank nobles ask for bigger things
+                var nRank = (noble.socialRank && noble.socialRank[ks.kingdomId]) || 4;
+                if (rt.id === 'title_elevation' && nRank >= 6) w = 0; // RA can't go higher
+                if (rt.id === 'title_elevation' && nRank < 5) w *= 1.5;
+                weights.push(w);
+                totalW += w;
+            }
+            var roll = rng() * totalW;
+            var cumul = 0;
+            var chosen = _AUDIENCE_REQUEST_TYPES[0];
+            for (var wi = 0; wi < weights.length; wi++) {
+                cumul += weights[wi];
+                if (roll <= cumul) { chosen = _AUDIENCE_REQUEST_TYPES[wi]; break; }
+            }
+
+            // Pick a town for location-based requests
+            var kingdom = Engine.findKingdom(ks.kingdomId);
+            var townName = 'the capital';
+            if (kingdom && kingdom.towns && kingdom.towns.length > 0) {
+                var tId = kingdom.towns[Math.floor(rng() * kingdom.towns.length)];
+                var tObj = null;
+                var wObj = Engine.getWorld();
+                if (wObj && wObj.towns) {
+                    for (var ti2 = 0; ti2 < wObj.towns.length; ti2++) {
+                        if (wObj.towns[ti2].id === tId) { tObj = wObj.towns[ti2]; break; }
+                    }
+                }
+                if (tObj) townName = tObj.name;
+            }
+
+            var desc = chosen.desc.replace('{town}', townName);
+            var nobleName = (noble.firstName || '') + ' ' + (noble.lastName || '');
+
+            ks._nobleAudiences.push({
+                nobleId: noble.id,
+                nobleName: nobleName.trim(),
+                nobleRank: (noble.socialRank && noble.socialRank[ks.kingdomId]) || 4,
+                requestType: chosen.id,
+                requestLabel: chosen.label,
+                requestIcon: chosen.icon,
+                description: desc,
+                cost: chosen.costBase,
+                loyaltyGain: chosen.loyaltyGain,
+                relGain: chosen.relGain,
+                loyaltyLoss: chosen.loyaltyLoss,
+                relLoss: chosen.relLoss,
+                generatedDay: Engine.getDay()
+            });
+        }
+    }
+
+    function kingGrantAudience(audienceIdx) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var ks = player.kingState;
+        if (!ks._nobleAudiences || audienceIdx < 0 || audienceIdx >= ks._nobleAudiences.length) {
+            return { success: false, message: 'Invalid audience request.' };
+        }
+        var aud = ks._nobleAudiences[audienceIdx];
+        var kingdom = Engine.findKingdom(ks.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        if (aud.cost > 0 && kingdom.gold < aud.cost) {
+            return { success: false, message: 'Treasury needs ' + aud.cost + 'g to grant this request.' };
+        }
+
+        // Pay cost
+        if (aud.cost > 0) kingdom.gold -= aud.cost;
+
+        // Apply loyalty and relationship boosts
+        var noble = Engine.findPerson(aud.nobleId);
+        if (noble) {
+            noble.kingLoyalty = Math.min(100, (noble.kingLoyalty || 50) + aud.loyaltyGain);
+        }
+        modifyRelationship(aud.nobleId, aud.relGain);
+
+        // Special effects by request type
+        if (aud.requestType === 'title_elevation' && noble) {
+            var curRank = (noble.socialRank && noble.socialRank[ks.kingdomId]) || 4;
+            if (curRank < 6) {
+                if (!noble.socialRank) noble.socialRank = {};
+                noble.socialRank[ks.kingdomId] = curRank + 1;
+            }
+        }
+
+        // Remove from queue
+        ks._nobleAudiences.splice(audienceIdx, 1);
+
+        Engine.logEvent('👑 ' + player.fullName + ' grants ' + aud.nobleName + '\'s request: ' + aud.requestLabel + ' (+' + aud.loyaltyGain + ' loyalty, +' + aud.relGain + ' rel)');
+        return { success: true, message: 'Granted ' + aud.nobleName + '\'s ' + aud.requestLabel + '! Loyalty +' + aud.loyaltyGain + ', Relationship +' + aud.relGain + (aud.cost > 0 ? ', Cost: ' + aud.cost + 'g' : '') };
+    }
+
+    function kingDenyAudience(audienceIdx) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var ks = player.kingState;
+        if (!ks._nobleAudiences || audienceIdx < 0 || audienceIdx >= ks._nobleAudiences.length) {
+            return { success: false, message: 'Invalid audience request.' };
+        }
+        var aud = ks._nobleAudiences[audienceIdx];
+
+        // Apply loyalty and relationship penalties
+        var noble = Engine.findPerson(aud.nobleId);
+        if (noble) {
+            noble.kingLoyalty = Math.max(0, (noble.kingLoyalty || 50) + aud.loyaltyLoss);
+        }
+        modifyRelationship(aud.nobleId, aud.relLoss);
+
+        // Remove from queue
+        ks._nobleAudiences.splice(audienceIdx, 1);
+
+        Engine.logEvent('👑 ' + player.fullName + ' denies ' + aud.nobleName + '\'s request: ' + aud.requestLabel + ' (' + aud.loyaltyLoss + ' loyalty, ' + aud.relLoss + ' rel)');
+        return { success: true, message: 'Denied ' + aud.nobleName + '\'s ' + aud.requestLabel + '. Loyalty ' + aud.loyaltyLoss + ', Relationship ' + aud.relLoss };
+    }
+
+    // ── Royal Gifts & Bestowments ──
+    var _ROYAL_GIFT_TYPES = [
+        { id: 'honorary_title', label: 'Bestow Honorary Title', icon: '🎖️', cost: 0, loyaltyGain: 8, relGain: 5, desc: 'Grant an honorary title recognizing their service', cooldown: 60 },
+        { id: 'land_grant', label: 'Grant Land', icon: '🏰', cost: 400, loyaltyGain: 15, relGain: 10, desc: 'Grant a parcel of royal land to this noble', cooldown: 90 },
+        { id: 'tax_exemption', label: 'Grant Tax Exemption', icon: '💰', cost: 0, loyaltyGain: 10, relGain: 8, desc: 'Exempt this noble from taxes for 60 days', cooldown: 60 },
+        { id: 'military_command', label: 'Military Commission', icon: '⚔️', cost: 100, loyaltyGain: 12, relGain: 6, desc: 'Appoint to a military command position', cooldown: 45 },
+        { id: 'gold_gift', label: 'Royal Gold Gift', icon: '👑', cost: 200, loyaltyGain: 8, relGain: 12, desc: 'Bestow gold from the treasury as a personal gift', cooldown: 30 },
+        { id: 'trade_monopoly', label: 'Trade Monopoly', icon: '📦', cost: 150, loyaltyGain: 10, relGain: 7, desc: 'Grant exclusive trading rights in their territory', cooldown: 60 }
+    ];
+
+    function kingBestowGift(nobleId, giftTypeId) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var ks = player.kingState;
+        var kingdom = Engine.findKingdom(ks.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+
+        var giftType = null;
+        for (var gi = 0; gi < _ROYAL_GIFT_TYPES.length; gi++) {
+            if (_ROYAL_GIFT_TYPES[gi].id === giftTypeId) { giftType = _ROYAL_GIFT_TYPES[gi]; break; }
+        }
+        if (!giftType) return { success: false, message: 'Unknown gift type.' };
+
+        // Cooldown check
+        if (!ks._royalGiftCooldowns) ks._royalGiftCooldowns = {};
+        var cdKey = nobleId + '_' + giftTypeId;
+        var lastDay = ks._royalGiftCooldowns[cdKey] || 0;
+        var daysSince = Engine.getDay() - lastDay;
+        if (daysSince < giftType.cooldown) {
+            return { success: false, message: 'Must wait ' + (giftType.cooldown - daysSince) + ' more days before bestowing this again.' };
+        }
+
+        // Cost check
+        if (giftType.cost > 0 && kingdom.gold < giftType.cost) {
+            return { success: false, message: 'Treasury needs ' + giftType.cost + 'g.' };
+        }
+
+        // Pay and apply
+        if (giftType.cost > 0) kingdom.gold -= giftType.cost;
+        ks._royalGiftCooldowns[cdKey] = Engine.getDay();
+
+        var noble = Engine.findPerson(nobleId);
+        if (noble) {
+            noble.kingLoyalty = Math.min(100, (noble.kingLoyalty || 50) + giftType.loyaltyGain);
+        }
+        modifyRelationship(nobleId, giftType.relGain);
+
+        var nobleName = noble ? ((noble.firstName || '') + ' ' + (noble.lastName || '')).trim() : 'Noble';
+        Engine.logEvent('👑 ' + player.fullName + ' bestows ' + giftType.label + ' upon ' + nobleName + '! (+' + giftType.loyaltyGain + ' loyalty)');
+        return { success: true, message: giftType.label + ' bestowed upon ' + nobleName + '! Loyalty +' + giftType.loyaltyGain + ', Relationship +' + giftType.relGain + (giftType.cost > 0 ? ' (Cost: ' + giftType.cost + 'g)' : '') };
+    }
+
+    function kingGetRoyalGiftTypes() { return _ROYAL_GIFT_TYPES; }
+
+    // ── Private Audience (1-on-1 Loyalty Management) ──
+    function kingPrivateAudience(nobleId) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var ks = player.kingState;
+        if (!ks._privatAudienceCooldowns) ks._privatAudienceCooldowns = {};
+        var lastDay = ks._privatAudienceCooldowns[nobleId] || 0;
+        var daysSince = Engine.getDay() - lastDay;
+        if (daysSince < 7) {
+            return { success: false, message: 'Must wait ' + (7 - daysSince) + ' more days for another private audience with this noble.' };
+        }
+
+        var noble = Engine.findPerson(nobleId);
+        if (!noble) return { success: false, message: 'Noble not found.' };
+
+        ks._privatAudienceCooldowns[nobleId] = Engine.getDay();
+
+        // Loyalty gain based on personality match
+        var nP = noble.personality || {};
+        var pP = player.personality || {};
+        var matchScore = 0;
+        var traits = ['loyalty', 'ambition', 'intelligence', 'warmth', 'frugality'];
+        for (var ti = 0; ti < traits.length; ti++) {
+            var diff = Math.abs((nP[traits[ti]] || 50) - (pP[traits[ti]] || 50));
+            if (diff < 20) matchScore += 1;
+        }
+        var loyaltyGain = 3 + matchScore; // 3-8 based on personality match
+        var relGain = 2 + Math.floor(matchScore / 2);
+
+        noble.kingLoyalty = Math.min(100, (noble.kingLoyalty || 50) + loyaltyGain);
+        modifyRelationship(nobleId, relGain);
+
+        var nobleName = ((noble.firstName || '') + ' ' + (noble.lastName || '')).trim();
+        var matchDesc = matchScore >= 4 ? 'You found much common ground!' : matchScore >= 2 ? 'A productive meeting.' : 'The conversation was formal but cordial.';
+
+        Engine.logEvent('👑 ' + player.fullName + ' holds a private audience with ' + nobleName + '. ' + matchDesc);
+        return { success: true, message: 'Private audience with ' + nobleName + '. ' + matchDesc + ' Loyalty +' + loyaltyGain + ', Relationship +' + relGain };
+    }
+
+    // ── Military Honors ──
+    function kingGrantMilitaryHonor(nobleId) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var noble = Engine.findPerson(nobleId);
+        if (!noble) return { success: false, message: 'Noble not found.' };
+
+        noble.kingLoyalty = Math.min(100, (noble.kingLoyalty || 50) + 10);
+        modifyRelationship(nobleId, 5);
+
+        var nobleName = ((noble.firstName || '') + ' ' + (noble.lastName || '')).trim();
+        Engine.logEvent('👑 ' + player.fullName + ' honors ' + nobleName + ' for military service! (+10 loyalty)');
+        return { success: true, message: nobleName + ' honored for military service! Loyalty +10, Relationship +5' };
+    }
+
+    // ── Noble Loyalty Missions ──
+    var _MISSION_TYPES = [
+        { id: 'diplomacy', label: 'Diplomatic Mission', icon: '🕊️', desc: 'Send to negotiate with {kingdom}', durationBase: 20, loyaltySuccess: 8, loyaltyFail: -5, successBase: 0.6, trait: 'intelligence', needsTarget: true },
+        { id: 'military_patrol', label: 'Military Patrol', icon: '⚔️', desc: 'Patrol roads and clear threats', durationBase: 15, loyaltySuccess: 6, loyaltyFail: -3, successBase: 0.7, trait: 'loyalty', needsTarget: false },
+        { id: 'trade_expedition', label: 'Trade Expedition', icon: '📦', desc: 'Establish trade route with {kingdom}', durationBase: 25, loyaltySuccess: 7, loyaltyFail: -4, successBase: 0.65, trait: 'intelligence', needsTarget: true },
+        { id: 'intelligence_spy', label: 'Intelligence Gathering', icon: '🕵️', desc: 'Spy on {kingdom}', durationBase: 30, loyaltySuccess: 10, loyaltyFail: -8, successBase: 0.5, trait: 'ambition', needsTarget: true },
+        { id: 'bandit_hunt', label: 'Bandit Hunting', icon: '🏹', desc: 'Hunt down bandits threatening trade routes', durationBase: 15, loyaltySuccess: 5, loyaltyFail: -2, successBase: 0.75, trait: 'loyalty', needsTarget: false }
+    ];
+
+    function kingGetMissionTypes() { return _MISSION_TYPES; }
+
+    function kingSendNobleOnMission(nobleId, missionTypeId, targetKingdomId) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var ks = player.kingState;
+
+        var noble = Engine.findPerson(nobleId);
+        if (!noble) return { success: false, message: 'Noble not found.' };
+        if ((noble.kingLoyalty || 0) < 40) return { success: false, message: 'Noble must have at least 40 loyalty to accept a mission.' };
+
+        // Check not already on mission
+        if (!ks._activeMissions) ks._activeMissions = [];
+        for (var mi = 0; mi < ks._activeMissions.length; mi++) {
+            if (ks._activeMissions[mi].nobleId === nobleId) {
+                return { success: false, message: 'This noble is already on a mission.' };
+            }
+        }
+
+        // Cooldown check
+        if (!ks._missionCooldowns) ks._missionCooldowns = {};
+        var lastEnd = ks._missionCooldowns[nobleId] || 0;
+        if (Engine.getDay() - lastEnd < 10) {
+            return { success: false, message: 'This noble needs ' + (10 - (Engine.getDay() - lastEnd)) + ' more days of rest.' };
+        }
+
+        var mType = null;
+        for (var mti = 0; mti < _MISSION_TYPES.length; mti++) {
+            if (_MISSION_TYPES[mti].id === missionTypeId) { mType = _MISSION_TYPES[mti]; break; }
+        }
+        if (!mType) return { success: false, message: 'Unknown mission type.' };
+
+        if (mType.needsTarget && !targetKingdomId) {
+            return { success: false, message: 'This mission requires a target kingdom.' };
+        }
+
+        var rng = Engine.getRng();
+        var duration = mType.durationBase + Math.floor(rng() * 15);
+        var nobleName = ((noble.firstName || '') + ' ' + (noble.lastName || '')).trim();
+        var targetName = '';
+        if (targetKingdomId) {
+            var tK = Engine.findKingdom(targetKingdomId);
+            targetName = tK ? tK.name : 'foreign lands';
+        }
+
+        ks._activeMissions.push({
+            nobleId: nobleId,
+            nobleName: nobleName,
+            missionType: missionTypeId,
+            missionLabel: mType.label,
+            missionIcon: mType.icon,
+            targetKingdomId: targetKingdomId || null,
+            targetKingdomName: targetName,
+            startDay: Engine.getDay(),
+            endDay: Engine.getDay() + duration,
+            successBase: mType.successBase,
+            trait: mType.trait,
+            loyaltySuccess: mType.loyaltySuccess,
+            loyaltyFail: mType.loyaltyFail
+        });
+
+        var desc = mType.desc.replace('{kingdom}', targetName);
+        Engine.logEvent('👑 ' + nobleName + ' departs on ' + mType.label + ': ' + desc + ' (returns in ' + duration + ' days)');
+        return { success: true, message: nobleName + ' sent on ' + mType.label + '! Returns in ' + duration + ' days.' };
+    }
+
+    function kingTickMissions() {
+        if (!player.isKing || !player.kingState) return;
+        var ks = player.kingState;
+        if (!ks._activeMissions) return;
+
+        var day = Engine.getDay();
+        var completed = [];
+        var remaining = [];
+
+        for (var mi = 0; mi < ks._activeMissions.length; mi++) {
+            var m = ks._activeMissions[mi];
+            if (day >= m.endDay) {
+                completed.push(m);
+            } else {
+                remaining.push(m);
+            }
+        }
+        ks._activeMissions = remaining;
+
+        for (var ci = 0; ci < completed.length; ci++) {
+            var cm = completed[ci];
+            var noble = Engine.findPerson(cm.nobleId);
+            var rng = Engine.getRng();
+
+            // Calculate success chance: base + trait bonus
+            var successChance = cm.successBase || 0.6;
+            if (noble && noble.personality && cm.trait) {
+                successChance += (noble.personality[cm.trait] || 50) * 0.003;
+            }
+            successChance = Math.min(0.95, Math.max(0.2, successChance));
+
+            var success = rng() < successChance;
+            if (!ks._missionCooldowns) ks._missionCooldowns = {};
+            ks._missionCooldowns[cm.nobleId] = day;
+
+            if (success) {
+                if (noble) {
+                    noble.kingLoyalty = Math.min(100, (noble.kingLoyalty || 50) + cm.loyaltySuccess);
+                }
+                modifyRelationship(cm.nobleId, 3);
+
+                // Special mission effects
+                if (cm.missionType === 'diplomacy' && cm.targetKingdomId) {
+                    var kingdom = Engine.findKingdom(ks.kingdomId);
+                    if (kingdom && kingdom.relations) {
+                        kingdom.relations[cm.targetKingdomId] = Math.min(100, (kingdom.relations[cm.targetKingdomId] || 50) + 10);
+                    }
+                }
+                if (cm.missionType === 'trade_expedition' && cm.targetKingdomId) {
+                    var kingdom2 = Engine.findKingdom(ks.kingdomId);
+                    if (kingdom2) kingdom2.gold = (kingdom2.gold || 0) + 150;
+                }
+                if (cm.missionType === 'military_patrol' || cm.missionType === 'bandit_hunt') {
+                    var kingdom3 = Engine.findKingdom(ks.kingdomId);
+                    if (kingdom3 && kingdom3.happiness != null) kingdom3.happiness = Math.min(100, kingdom3.happiness + 3);
+                }
+                if (cm.missionType === 'intelligence_spy' && cm.targetKingdomId) {
+                    // Reveal info about target kingdom
+                    if (!ks._intrigueWarnings) ks._intrigueWarnings = [];
+                    ks._intrigueWarnings.push({
+                        day: day,
+                        reporterName: cm.nobleName,
+                        suspectName: cm.targetKingdomName,
+                        suspectId: null,
+                        plotType: 'foreign_intel',
+                        message: cm.nobleName + ' returns with intelligence about ' + cm.targetKingdomName + '\'s military strength and political climate.'
+                    });
+                }
+
+                Engine.logEvent('👑 ' + cm.nobleName + ' returns successfully from ' + cm.missionLabel + '! (+' + cm.loyaltySuccess + ' loyalty)');
+                addNotification('👑 Mission Success! ' + cm.nobleName + ' completed ' + cm.missionLabel + '.', 'kingdom');
+            } else {
+                if (noble) {
+                    noble.kingLoyalty = Math.max(0, (noble.kingLoyalty || 50) + cm.loyaltyFail);
+                    // Small chance of noble death on dangerous missions
+                    if ((cm.missionType === 'military_patrol' || cm.missionType === 'intelligence_spy') && rng() < 0.08) {
+                        noble.alive = false;
+                        Engine.logEvent('💀 ' + cm.nobleName + ' was killed during ' + cm.missionLabel + '!');
+                        addNotification('💀 ' + cm.nobleName + ' died on ' + cm.missionLabel + '!', 'kingdom');
+                        continue;
+                    }
+                }
+                modifyRelationship(cm.nobleId, -2);
+                Engine.logEvent('👑 ' + cm.nobleName + ' returns from failed ' + cm.missionLabel + '. (' + cm.loyaltyFail + ' loyalty)');
+                addNotification('👑 Mission Failed. ' + cm.nobleName + ' failed ' + cm.missionLabel + '.', 'kingdom');
+            }
+        }
+    }
+
+    // ── Court Intrigue Detection ──
+    function kingTickIntrigueDetection() {
+        if (!player.isKing || !player.kingState) return;
+        var ks = player.kingState;
+        var rng = Engine.getRng();
+        var nobles = _getKingdomNoblesForCourt(ks.kingdomId);
+        if (nobles.length < 2) return;
+
+        // Only check once every 5 days
+        if (Engine.getDay() % 5 !== 0) return;
+
+        if (!ks._intrigueWarnings) ks._intrigueWarnings = [];
+        // Limit to last 20 warnings
+        if (ks._intrigueWarnings.length > 20) {
+            ks._intrigueWarnings = ks._intrigueWarnings.slice(-20);
+        }
+
+        // Find loyal nobles who could report
+        var loyalNobles = nobles.filter(function(n) { return (n.kingLoyalty || 0) >= 70; });
+        if (loyalNobles.length === 0) return;
+
+        // Find disloyal/conspiring nobles
+        var suspiciousNobles = nobles.filter(function(n) { return (n.kingLoyalty || 0) < 25; });
+        if (suspiciousNobles.length === 0) return;
+
+        // 5% chance per loyal noble to report
+        for (var li = 0; li < loyalNobles.length; li++) {
+            if (rng() < 0.05) {
+                var reporter = loyalNobles[li];
+                var suspect = suspiciousNobles[Math.floor(rng() * suspiciousNobles.length)];
+                var reporterName = ((reporter.firstName || '') + ' ' + (reporter.lastName || '')).trim();
+                var suspectName = ((suspect.firstName || '') + ' ' + (suspect.lastName || '')).trim();
+
+                // Don't duplicate reports about the same suspect within 30 days
+                var alreadyReported = false;
+                for (var wi = 0; wi < ks._intrigueWarnings.length; wi++) {
+                    if (ks._intrigueWarnings[wi].suspectId === suspect.id && Engine.getDay() - ks._intrigueWarnings[wi].day < 30) {
+                        alreadyReported = true;
+                        break;
+                    }
+                }
+                if (alreadyReported) continue;
+
+                var plotTypes = ['conspiracy', 'embezzlement', 'foreign_contact', 'sedition'];
+                var plotType = plotTypes[Math.floor(rng() * plotTypes.length)];
+                var plotDescs = {
+                    conspiracy: reporterName + ' warns that ' + suspectName + ' has been meeting secretly with other discontented nobles.',
+                    embezzlement: reporterName + ' reports that ' + suspectName + ' may be skimming from tax collections.',
+                    foreign_contact: reporterName + ' has heard that ' + suspectName + ' is in contact with a foreign kingdom.',
+                    sedition: reporterName + ' warns that ' + suspectName + ' has been speaking against the crown openly.'
+                };
+
+                ks._intrigueWarnings.push({
+                    day: Engine.getDay(),
+                    reporterName: reporterName,
+                    reporterId: reporter.id,
+                    suspectName: suspectName,
+                    suspectId: suspect.id,
+                    plotType: plotType,
+                    message: plotDescs[plotType]
+                });
+
+                addNotification('🕵️ Court Warning: ' + reporterName + ' reports suspicious activity by ' + suspectName + '!', 'kingdom');
+                break; // Only one report per check
+            }
+        }
+    }
+
+    // ── Foreign Diplomacy Actions ──
+    function kingProposeTrade(targetKingdomId) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var ks = player.kingState;
+        var kingdom = Engine.findKingdom(ks.kingdomId);
+        var target = Engine.findKingdom(targetKingdomId);
+        if (!kingdom || !target) return { success: false, message: 'Kingdom not found.' };
+
+        // Check not at war
+        if (kingdom.wars && kingdom.wars.indexOf(targetKingdomId) >= 0) {
+            return { success: false, message: 'Cannot propose trade with a kingdom you are at war with.' };
+        }
+
+        // Check not already in agreement
+        if (!ks._tradeAgreements) ks._tradeAgreements = [];
+        for (var tai = 0; tai < ks._tradeAgreements.length; tai++) {
+            if (ks._tradeAgreements[tai].targetKingdomId === targetKingdomId && Engine.getDay() < ks._tradeAgreements[tai].endDay) {
+                return { success: false, message: 'Already have an active trade agreement with ' + target.name + '.' };
+            }
+        }
+
+        // Relations must be at least 30
+        var relations = (kingdom.relations && kingdom.relations[targetKingdomId]) || 50;
+        if (relations < 30) return { success: false, message: 'Relations with ' + target.name + ' are too poor (need 30+, currently ' + Math.round(relations) + ').' };
+
+        // Success based on relations
+        var rng = Engine.getRng();
+        var acceptChance = 0.3 + (relations / 200);
+        if (rng() > acceptChance) {
+            if (kingdom.relations) kingdom.relations[targetKingdomId] = Math.max(0, relations - 3);
+            return { success: false, message: target.name + ' declined the trade proposal. Relations slightly worsened.' };
+        }
+
+        var cost = 100;
+        if (kingdom.gold < cost) return { success: false, message: 'Need ' + cost + 'g for diplomatic expenses.' };
+        kingdom.gold -= cost;
+
+        ks._tradeAgreements.push({
+            targetKingdomId: targetKingdomId,
+            targetKingdomName: target.name,
+            startDay: Engine.getDay(),
+            endDay: Engine.getDay() + 90,
+            benefit: 'trade_bonus'
+        });
+
+        if (kingdom.relations) kingdom.relations[targetKingdomId] = Math.min(100, relations + 10);
+        Engine.logEvent('👑 ' + kingdom.name + ' and ' + target.name + ' establish a trade agreement! (+10 relations)');
+        return { success: true, message: 'Trade agreement established with ' + target.name + ' for 90 days! Relations +10.' };
+    }
+
+    function kingSendDiplomaticEnvoy(nobleId, targetKingdomId) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var ks = player.kingState;
+        var noble = Engine.findPerson(nobleId);
+        if (!noble) return { success: false, message: 'Noble not found.' };
+        if ((noble.kingLoyalty || 0) < 50) return { success: false, message: 'Noble must have 50+ loyalty to serve as envoy.' };
+
+        var target = Engine.findKingdom(targetKingdomId);
+        if (!target) return { success: false, message: 'Target kingdom not found.' };
+
+        // Check not already on mission
+        if (!ks._activeMissions) ks._activeMissions = [];
+        for (var mi = 0; mi < ks._activeMissions.length; mi++) {
+            if (ks._activeMissions[mi].nobleId === nobleId) {
+                return { success: false, message: 'This noble is already on a mission.' };
+            }
+        }
+
+        var cost = 75;
+        var kingdom = Engine.findKingdom(ks.kingdomId);
+        if (!kingdom || kingdom.gold < cost) return { success: false, message: 'Need ' + cost + 'g for envoy expenses.' };
+        kingdom.gold -= cost;
+
+        var rng = Engine.getRng();
+        var duration = 20 + Math.floor(rng() * 15);
+        var nobleName = ((noble.firstName || '') + ' ' + (noble.lastName || '')).trim();
+
+        // Use the mission system for tracking
+        ks._activeMissions.push({
+            nobleId: nobleId,
+            nobleName: nobleName,
+            missionType: 'diplomacy',
+            missionLabel: 'Diplomatic Envoy to ' + target.name,
+            missionIcon: '🕊️',
+            targetKingdomId: targetKingdomId,
+            targetKingdomName: target.name,
+            startDay: Engine.getDay(),
+            endDay: Engine.getDay() + duration,
+            successBase: 0.7,
+            trait: 'intelligence',
+            loyaltySuccess: 6,
+            loyaltyFail: -3
+        });
+
+        Engine.logEvent('👑 ' + nobleName + ' departs as diplomatic envoy to ' + target.name + '. (returns in ' + duration + ' days)');
+        return { success: true, message: nobleName + ' sent as envoy to ' + target.name + '. Returns in ' + duration + ' days.' };
+    }
+
+    // ── Vassal Tribute Collection ──
+    function kingCollectTribute() {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var ks = player.kingState;
+        var daysSince = Engine.getDay() - (ks._vassalTributeDay || 0);
+        if (daysSince < 30) return { success: false, message: 'Tribute collected recently. Wait ' + (30 - daysSince) + ' more days.' };
+
+        var kingdom = Engine.findKingdom(ks.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+
+        ks._vassalTributeDay = Engine.getDay();
+        var nobles = _getKingdomNoblesForCourt(ks.kingdomId);
+        var totalTribute = 0;
+        var details = [];
+
+        for (var ni = 0; ni < nobles.length; ni++) {
+            var n = nobles[ni];
+            var nGold = n.gold || 0;
+            var tributeRate = 0.05; // 5% base
+            var loyalty = n.kingLoyalty || 50;
+
+            // Loyal nobles pay more willingly, disloyal try to pay less
+            if (loyalty >= 70) tributeRate = 0.08;
+            else if (loyalty < 30) tributeRate = 0.02;
+
+            var tribute = Math.floor(nGold * tributeRate);
+            if (tribute < 1) continue;
+
+            n.gold -= tribute;
+            totalTribute += tribute;
+
+            // Loyalty consequences — tribute makes loyal nobles slightly less happy
+            if (loyalty < 50) {
+                n.kingLoyalty = Math.max(0, loyalty - 2);
+            } else {
+                n.kingLoyalty = Math.max(0, loyalty - 1);
+            }
+
+            var nName = ((n.firstName || '') + ' ' + (n.lastName || '')).trim();
+            details.push(nName + ': ' + tribute + 'g');
+        }
+
+        kingdom.gold = (kingdom.gold || 0) + totalTribute;
+
+        if (totalTribute === 0) {
+            return { success: true, message: 'Tribute collected but nobles have little to give. 0g collected.' };
+        }
+
+        Engine.logEvent('👑 Royal tribute collected: ' + totalTribute + 'g from ' + details.length + ' noble(s).');
+        return { success: true, message: 'Tribute collected: ' + totalTribute + 'g from ' + details.length + ' noble(s). (Loyalty slightly decreased)' };
+    }
+
+    // ── King Daily Tick (call from main tick) ──
+    function kingCourtTick() {
+        if (!player.isKing || !player.kingState) return;
+        kingGenerateAudiences();
+        kingTickMissions();
+        kingTickIntrigueDetection();
     }
 
     // ── ORDER COSTS for petition approval and direct royal orders ──
@@ -16574,6 +17267,9 @@
         }
 
         checkAchievements();
+
+        // King court management daily tick (audiences, missions, intrigue)
+        kingCourtTick();
 
         // Track maximum gold ever held (for guild loan creditworthiness)
         if (player.gold > (player.maxGoldEver || 0)) {
@@ -33900,6 +34596,21 @@
         kingSuePeace,
         kingHostFeast,
         kingHoldCourt,
+        kingGrantAudience,
+        kingDenyAudience,
+        kingGenerateAudiences,
+        kingBestowGift,
+        kingGetRoyalGiftTypes,
+        kingPrivateAudience,
+        kingGrantMilitaryHonor,
+        kingSendNobleOnMission,
+        kingGetMissionTypes,
+        kingTickMissions,
+        kingTickIntrigueDetection,
+        kingProposeTrade,
+        kingSendDiplomaticEnvoy,
+        kingCollectTribute,
+        kingCourtTick,
         kingFleeKingdom,
         kingApprovePetition,
         kingRejectPetition,

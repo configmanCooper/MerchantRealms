@@ -254,7 +254,16 @@
         html += '</div>';
         if (!_feastReady) html += '<div style="font-size:0.65rem;color:#888;margin-top:4px;">Feast available in ' + (30 - (Engine.getDay() - (ks.feastHeldDay || 0))) + ' days</div>';
         if (!_courtReady) html += '<div style="font-size:0.65rem;color:#888;">Court available in ' + (30 - (Engine.getDay() - (ks.courtHeldDay || 0))) + ' days</div>';
+        // Tribute collection
+        var _tributeReady = Engine.getDay() - (ks._vassalTributeDay || 0) >= 30;
+        html += '<div style="margin-top:6px;">';
+        html += '<button class="btn-medieval" data-action="kingCollectTribute" style="font-size:0.72rem;padding:4px 10px;' + (!_tributeReady ? 'opacity:0.5;' : '') + '" ' + (!_tributeReady ? 'disabled' : '') + '>💎 Collect Vassal Tribute</button>';
+        if (!_tributeReady) html += '<span style="font-size:0.65rem;color:#888;margin-left:6px;">Available in ' + (30 - (Engine.getDay() - (ks._vassalTributeDay || 0))) + ' days</span>';
         html += '</div>';
+        html += '</div>';
+
+        // ── Diplomacy & Trade Agreements ──
+        html += _kingDiplomacySection(kingdom, ks);
 
         // ── Royal Orders ──
         html += _kingRoyalOrdersSection(kingdom);
@@ -849,8 +858,20 @@
     function _kingCourtTab(kingdom, ks) {
         var html = '';
 
+        // ── Noble Audiences ──
+        html += _kingAudiencesSection(ks);
+
         // ── Pending Petitions ──
         html += _kingPetitionsSection(kingdom);
+
+        // ── Royal Gifts & Private Audiences ──
+        html += _kingNobleManagementSection(kingdom, ks);
+
+        // ── Active Missions ──
+        html += _kingMissionsSection(ks);
+
+        // ── Intrigue Warnings ──
+        html += _kingIntrigueSection(ks);
 
         // ── Royal Advisor Suggestions ──
         html += _kingAdvisorSection(kingdom, ks);
@@ -894,7 +915,12 @@
                 if (_hasLoan) html += ' <span title="Owes you a loan" style="font-size:0.65rem;">💰</span>';
                 if (_hasBM) html += ' <span title="You have blackmail on them" style="font-size:0.65rem;">🔒</span>';
                 html += '</div>';
-                html += '<span style="font-size:0.7rem;color:' + _relColor + ';">' + _relLevel + ' ❤️</span>';
+                var _loyalty = Math.round(_n.kingLoyalty || 50);
+                var _loyColor = _loyalty >= 70 ? '#55a868' : _loyalty >= 40 ? '#e0c58a' : '#c44e52';
+                html += '<div style="font-size:0.7rem;">';
+                html += '<span style="color:' + _loyColor + ';" title="Loyalty to crown">♛ ' + _loyalty + '</span>';
+                html += '<span style="color:' + _relColor + ';margin-left:6px;">' + _relLevel + ' ❤️</span>';
+                html += '</div>';
                 html += '</div>';
             }
             if (_nobles.length === 0) html += '<div style="color:#888;font-size:0.75rem;">No nobles found in this kingdom.</div>';
@@ -946,7 +972,233 @@
         return html;
     }
 
-    // ── Royal Advisor Suggestions ──
+    // ── Noble Audiences Section ──
+    function _kingAudiencesSection(ks) {
+        var html = '';
+        var audiences = (ks._nobleAudiences || []);
+        html += '<div style="background:rgba(0,0,0,0.15);padding:8px;border-radius:6px;margin-bottom:8px;">';
+        html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:6px;">👑 Noble Audiences' + (audiences.length > 0 ? ' <span style="background:#9b59b6;color:#fff;font-size:0.6rem;padding:1px 5px;border-radius:8px;margin-left:4px;">' + audiences.length + '</span>' : '') + '</div>';
+        html += '<div style="font-size:0.65rem;color:#888;margin-bottom:4px;">Nobles petition you for personal favors. Granting builds loyalty; denying harms it.</div>';
+
+        if (audiences.length === 0) {
+            html += '<div style="font-size:0.72rem;color:#888;">No pending audiences. Nobles will petition you soon.</div>';
+        } else {
+            html += '<div style="max-height:250px;overflow-y:auto;">';
+            for (var ai = 0; ai < audiences.length; ai++) {
+                var aud = audiences[ai];
+                var rankBadge = aud.nobleRank >= 6 ? '👑 RA' : aud.nobleRank >= 5 ? '🏰 Lord' : '🎖️ Noble';
+                var daysOld = Engine.getDay() - aud.generatedDay;
+                var urgColor = daysOld > 20 ? '#c44e52' : daysOld > 10 ? '#e0c58a' : '#5dade2';
+
+                html += '<div style="background:rgba(0,0,0,0.12);border:1px solid rgba(255,255,255,0.08);border-left:3px solid ' + urgColor + ';padding:6px 8px;border-radius:4px;margin-bottom:4px;">';
+                html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;">';
+                html += '<div style="flex:1;">';
+                html += '<div style="font-size:0.78rem;color:#ddd;">' + aud.requestIcon + ' ' + escapeHtml(aud.requestLabel) + '</div>';
+                html += '<div style="font-size:0.65rem;color:#999;margin-top:2px;">' + escapeHtml(aud.description) + '</div>';
+                html += '<div style="font-size:0.62rem;color:#888;margin-top:3px;">';
+                html += 'From: <span style="color:#d4c9a0;">' + escapeHtml(aud.nobleName) + '</span> (' + rankBadge + ')';
+                if (aud.cost > 0) html += ' · Cost: <span style="color:#e0c58a;">' + formatGold(aud.cost) + '</span>';
+                html += ' · <span style="color:#55a868;">+' + aud.loyaltyGain + ' loyalty</span>';
+                html += ' · <span style="font-size:0.6rem;color:' + urgColor + ';">' + (30 - daysOld) + 'd left</span>';
+                html += '</div></div>';
+                html += '<div style="display:flex;gap:4px;flex-shrink:0;margin-left:6px;">';
+                html += '<button class="btn-medieval" data-action="kingGrantAudience" data-idx="' + ai + '" style="font-size:0.62rem;padding:3px 6px;background:rgba(85,168,104,0.3) !important;border-color:rgba(85,168,104,0.5) !important;" title="Grant">✅ Grant</button>';
+                html += '<button class="btn-medieval" data-action="kingDenyAudience" data-idx="' + ai + '" style="font-size:0.62rem;padding:3px 6px;background:rgba(196,78,82,0.3) !important;border-color:rgba(196,78,82,0.5) !important;" title="Deny">❌ Deny</button>';
+                html += '</div></div></div>';
+            }
+            html += '</div>';
+        }
+        html += '</div>';
+        return html;
+    }
+
+    // ── Noble Management: Royal Gifts, Private Audiences ──
+    function _kingNobleManagementSection(kingdom, ks) {
+        var html = '';
+        html += '<div style="background:rgba(0,0,0,0.15);padding:8px;border-radius:6px;margin-bottom:8px;">';
+        html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:6px;">🎁 Royal Gifts & Audiences</div>';
+        html += '<div style="font-size:0.65rem;color:#888;margin-bottom:6px;">Select a noble to bestow gifts or hold a private audience. Builds loyalty and relationships.</div>';
+
+        // Noble selector
+        try {
+            var _nobles = [];
+            var w = Engine.getWorld();
+            if (w && w.towns) {
+                for (var ti = 0; ti < w.towns.length; ti++) {
+                    var t = w.towns[ti];
+                    if (t.kingdomId !== kingdom.id) continue;
+                    var people = Engine.getPeople(t.id);
+                    if (!people) continue;
+                    for (var pi = 0; pi < people.length; pi++) {
+                        var p = people[pi];
+                        if (!p.alive) continue;
+                        var rank = (p.socialRank && p.socialRank[kingdom.id]) || 0;
+                        if (rank >= 4 && rank < 7) _nobles.push(p);
+                    }
+                }
+            }
+            _nobles.sort(function(a, b) {
+                return ((b.socialRank && b.socialRank[kingdom.id]) || 0) - ((a.socialRank && a.socialRank[kingdom.id]) || 0);
+            });
+
+            if (_nobles.length === 0) {
+                html += '<div style="color:#888;font-size:0.72rem;">No nobles in your kingdom.</div>';
+            } else {
+                html += '<div style="max-height:350px;overflow-y:auto;">';
+                for (var ni = 0; ni < _nobles.length; ni++) {
+                    var n = _nobles[ni];
+                    var nName = escapeHtml(((n.firstName || '') + ' ' + (n.lastName || '')).trim());
+                    var nRank = (n.socialRank && n.socialRank[kingdom.id]) || 4;
+                    var rankLabel = nRank >= 6 ? '👑 RA' : nRank >= 5 ? '🏰 Lord' : '🎖️ Noble';
+                    var loyalty = Math.round(n.kingLoyalty || 50);
+                    var loyColor = loyalty >= 70 ? '#55a868' : loyalty >= 40 ? '#e0c58a' : '#c44e52';
+                    var pRel = Player.state && Player.state.relationships && Player.state.relationships[n.id];
+                    var relLvl = pRel ? Math.round(pRel.level) : 0;
+
+                    // Check private audience cooldown
+                    var audCD = (ks._privatAudienceCooldowns && ks._privatAudienceCooldowns[n.id]) || 0;
+                    var audReady = Engine.getDay() - audCD >= 7;
+
+                    // Check if on mission
+                    var onMission = false;
+                    var missions = ks._activeMissions || [];
+                    for (var mi = 0; mi < missions.length; mi++) {
+                        if (missions[mi].nobleId === n.id) { onMission = true; break; }
+                    }
+
+                    html += '<div style="background:rgba(0,0,0,0.12);border:1px solid rgba(255,255,255,0.06);padding:6px 8px;border-radius:4px;margin-bottom:3px;">';
+                    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">';
+                    html += '<div>';
+                    html += '<span style="font-size:0.75rem;color:#d4c9a0;">' + nName + '</span>';
+                    html += '<span style="font-size:0.62rem;color:#888;margin-left:4px;">' + rankLabel + '</span>';
+                    if (onMission) html += '<span style="font-size:0.6rem;color:#5dade2;margin-left:4px;">📍 On Mission</span>';
+                    html += '</div>';
+                    html += '<div style="font-size:0.65rem;">';
+                    html += '<span style="color:' + loyColor + ';">♛ ' + loyalty + '</span>';
+                    html += '<span style="color:#888;margin-left:6px;">❤️ ' + relLvl + '</span>';
+                    html += '</div></div>';
+
+                    // Action buttons
+                    html += '<div style="display:flex;gap:4px;flex-wrap:wrap;">';
+                    html += '<button class="btn-medieval" data-action="kingPrivateAudience" data-id="' + n.id + '" style="font-size:0.6rem;padding:2px 6px;' + (!audReady || onMission ? 'opacity:0.5;' : '') + '" ' + (!audReady || onMission ? 'disabled' : '') + '>🤝 Audience' + (!audReady ? ' (' + (7 - (Engine.getDay() - audCD)) + 'd)' : '') + '</button>';
+                    html += '<button class="btn-medieval" data-action="kingBestowGiftUI" data-id="' + n.id + '" data-name="' + nName + '" style="font-size:0.6rem;padding:2px 6px;">🎁 Bestow Gift</button>';
+                    if (!onMission && (n.kingLoyalty || 0) >= 40) {
+                        html += '<button class="btn-medieval" data-action="kingSendMissionUI" data-id="' + n.id + '" data-name="' + nName + '" style="font-size:0.6rem;padding:2px 6px;">📜 Send Mission</button>';
+                    }
+                    html += '</div></div>';
+                }
+                html += '</div>';
+            }
+        } catch(e) { html += '<div style="color:#888;font-size:0.72rem;">Error loading nobles.</div>'; }
+        html += '</div>';
+        return html;
+    }
+
+    // ── Active Missions Section ──
+    function _kingMissionsSection(ks) {
+        var html = '';
+        var missions = ks._activeMissions || [];
+        if (missions.length === 0) return '';
+
+        html += '<div style="background:rgba(0,0,0,0.15);padding:8px;border-radius:6px;margin-bottom:8px;">';
+        html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:6px;">📜 Active Missions <span style="background:#5dade2;color:#fff;font-size:0.6rem;padding:1px 5px;border-radius:8px;margin-left:4px;">' + missions.length + '</span></div>';
+        for (var mi = 0; mi < missions.length; mi++) {
+            var m = missions[mi];
+            var daysLeft = m.endDay - Engine.getDay();
+            var progress = Math.round(((Engine.getDay() - m.startDay) / (m.endDay - m.startDay)) * 100);
+            html += '<div style="background:rgba(0,0,0,0.12);border-left:3px solid #5dade2;padding:5px 8px;border-radius:4px;margin-bottom:3px;">';
+            html += '<div style="font-size:0.75rem;color:#ddd;">' + (m.missionIcon || '📜') + ' ' + escapeHtml(m.missionLabel) + '</div>';
+            html += '<div style="font-size:0.65rem;color:#999;">Assigned: ' + escapeHtml(m.nobleName) + (m.targetKingdomName ? ' → ' + escapeHtml(m.targetKingdomName) : '') + '</div>';
+            html += '<div style="background:rgba(255,255,255,0.1);border-radius:3px;height:6px;margin-top:3px;overflow:hidden;"><div style="background:#5dade2;height:100%;width:' + progress + '%;border-radius:3px;"></div></div>';
+            html += '<div style="font-size:0.6rem;color:#888;margin-top:2px;">' + daysLeft + ' days remaining (' + progress + '%)</div>';
+            html += '</div>';
+        }
+        html += '</div>';
+        return html;
+    }
+
+    // ── Intrigue Warnings Section ──
+    function _kingIntrigueSection(ks) {
+        var html = '';
+        var warnings = (ks._intrigueWarnings || []).filter(function(w) {
+            return Engine.getDay() - w.day < 60;
+        });
+        if (warnings.length === 0) return '';
+
+        html += '<div style="background:rgba(0,0,0,0.15);padding:8px;border-radius:6px;margin-bottom:8px;">';
+        html += '<div style="font-size:0.85rem;color:#c44e52;margin-bottom:6px;">🕵️ Court Intelligence <span style="background:#c44e52;color:#fff;font-size:0.6rem;padding:1px 5px;border-radius:8px;margin-left:4px;">' + warnings.length + '</span></div>';
+        html += '<div style="max-height:200px;overflow-y:auto;">';
+        // Show newest first
+        for (var wi = warnings.length - 1; wi >= 0; wi--) {
+            var w = warnings[wi];
+            var daysAgo = Engine.getDay() - w.day;
+            var plotIcon = w.plotType === 'conspiracy' ? '🗡️' : w.plotType === 'embezzlement' ? '💰' : w.plotType === 'foreign_contact' ? '🌍' : w.plotType === 'foreign_intel' ? '🔍' : '📢';
+            html += '<div style="background:rgba(196,78,82,0.1);border-left:3px solid #c44e52;padding:5px 8px;border-radius:4px;margin-bottom:3px;">';
+            html += '<div style="font-size:0.72rem;color:#ddd;">' + plotIcon + ' ' + escapeHtml(w.message) + '</div>';
+            html += '<div style="font-size:0.6rem;color:#888;margin-top:2px;">' + daysAgo + ' days ago — Reported by ' + escapeHtml(w.reporterName || 'Unknown') + '</div>';
+            html += '</div>';
+        }
+        html += '</div></div>';
+        return html;
+    }
+
+    // ── Diplomacy Section (for Decisions tab) ──
+    function _kingDiplomacySection(kingdom, ks) {
+        var html = '';
+        html += '<div style="background:rgba(0,0,0,0.15);padding:8px;border-radius:6px;margin-bottom:8px;">';
+        html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:4px;">🤝 Trade Agreements & Diplomacy</div>';
+        html += '<div style="font-size:0.65rem;color:#888;margin-bottom:6px;">Propose trade agreements with other kingdoms. Costs 100g, requires relations 30+.</div>';
+
+        // Active agreements
+        var agreements = (ks._tradeAgreements || []).filter(function(ta) { return Engine.getDay() < ta.endDay; });
+        if (agreements.length > 0) {
+            html += '<div style="margin-bottom:6px;">';
+            for (var tai = 0; tai < agreements.length; tai++) {
+                var ta = agreements[tai];
+                var daysLeft = ta.endDay - Engine.getDay();
+                html += '<div style="background:rgba(85,168,104,0.15);border-left:3px solid #55a868;padding:4px 8px;border-radius:4px;margin-bottom:2px;">';
+                html += '<span style="font-size:0.72rem;color:#55a868;">📦 Trade Agreement: ' + escapeHtml(ta.targetKingdomName) + '</span>';
+                html += '<span style="font-size:0.6rem;color:#888;margin-left:6px;">' + daysLeft + ' days left</span>';
+                html += '</div>';
+            }
+            html += '</div>';
+        }
+
+        // Propose new agreements
+        try {
+            var _allK = Engine.getWorld().kingdoms;
+            var hasProposals = false;
+            for (var ki = 0; ki < _allK.length; ki++) {
+                var tgt = _allK[ki];
+                if (tgt.id === kingdom.id) continue;
+                var atWar = kingdom.atWar && kingdom.atWar.has && kingdom.atWar.has(tgt.id);
+                if (atWar) continue;
+                // Check not already in agreement
+                var alreadyAgreed = false;
+                for (var ai = 0; ai < agreements.length; ai++) {
+                    if (agreements[ai].targetKingdomId === tgt.id) { alreadyAgreed = true; break; }
+                }
+                if (alreadyAgreed) continue;
+
+                var relations = (kingdom.relations && kingdom.relations[tgt.id]) || 50;
+                var canPropose = relations >= 30;
+                hasProposals = true;
+
+                html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 6px;margin-bottom:2px;background:rgba(0,0,0,0.1);border-radius:4px;">';
+                html += '<div>';
+                html += '<span style="font-size:0.72rem;color:#d4c9a0;">🤝 ' + escapeHtml(tgt.name) + '</span>';
+                html += '<span style="font-size:0.6rem;color:#888;margin-left:6px;">Relations: ' + Math.round(relations) + '</span>';
+                html += '</div>';
+                html += '<button class="btn-medieval" data-action="kingProposeTrade" data-id="' + tgt.id + '" style="font-size:0.6rem;padding:2px 8px;' + (!canPropose ? 'opacity:0.5;' : '') + '" ' + (!canPropose ? 'disabled title="Need 30+ relations"' : '') + '>📦 Propose Trade (100g)</button>';
+                html += '</div>';
+            }
+            if (!hasProposals && agreements.length === 0) {
+                html += '<div style="font-size:0.72rem;color:#888;">No kingdoms available for trade agreements.</div>';
+            }
+        } catch(e) {}
+        html += '</div>';
+        return html;
+    }
     function _kingAdvisorSection(kingdom, ks) {
         var html = '';
         var suggestions = [];
@@ -1718,6 +1970,114 @@
     UI.registerAction('kingDeclareWar', function(_t, d) { var r = Player.kingDeclareWar(d.id); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
     UI.registerAction('kingHostFeast', function() { var r = Player.kingHostFeast(); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
     UI.registerAction('kingHoldCourt', function() { var r = Player.kingHoldCourt(); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
+
+    // ── Court Management Actions ──
+    UI.registerAction('kingGrantAudience', function(_t, d) {
+        var idx = parseInt(d.idx);
+        var r = Player.kingGrantAudience(idx);
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.openKingPanel('court');
+    });
+    UI.registerAction('kingDenyAudience', function(_t, d) {
+        var idx = parseInt(d.idx);
+        var r = Player.kingDenyAudience(idx);
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.openKingPanel('court');
+    });
+    UI.registerAction('kingPrivateAudience', function(_t, d) {
+        var r = Player.kingPrivateAudience(d.id);
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.openKingPanel('court');
+    });
+    UI.registerAction('kingCollectTribute', function() {
+        var r = Player.kingCollectTribute();
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.openKingPanel('decisions');
+    });
+    UI.registerAction('kingProposeTrade', function(_t, d) {
+        var r = Player.kingProposeTrade(d.id);
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.openKingPanel('decisions');
+    });
+
+    // Bestow Gift sub-modal
+    UI.registerAction('kingBestowGiftUI', function(_t, d) {
+        var nobleId = d.id;
+        var nobleName = d.name || 'Noble';
+        var giftTypes = Player.kingGetRoyalGiftTypes ? Player.kingGetRoyalGiftTypes() : [];
+        var ks = Player.state && Player.state.kingState;
+        var html = '<div style="padding:12px;">';
+        html += '<div style="font-size:1rem;color:#d4a843;margin-bottom:8px;">🎁 Bestow Gift upon ' + escapeHtml(nobleName) + '</div>';
+        for (var gi = 0; gi < giftTypes.length; gi++) {
+            var gt = giftTypes[gi];
+            var cdKey = nobleId + '_' + gt.id;
+            var lastDay = (ks && ks._royalGiftCooldowns && ks._royalGiftCooldowns[cdKey]) || 0;
+            var ready = Engine.getDay() - lastDay >= gt.cooldown;
+            html += '<div style="background:rgba(0,0,0,0.15);border:1px solid rgba(255,255,255,0.08);padding:6px 8px;border-radius:4px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;">';
+            html += '<div style="flex:1;">';
+            html += '<div style="font-size:0.78rem;color:#ddd;">' + gt.icon + ' ' + gt.label + '</div>';
+            html += '<div style="font-size:0.65rem;color:#999;">' + gt.desc + '</div>';
+            html += '<div style="font-size:0.6rem;color:#888;">';
+            if (gt.cost > 0) html += 'Cost: ' + formatGold(gt.cost) + ' · ';
+            html += '<span style="color:#55a868;">+' + gt.loyaltyGain + ' loyalty, +' + gt.relGain + ' rel</span>';
+            if (!ready) html += ' · <span style="color:#c44e52;">' + (gt.cooldown - (Engine.getDay() - lastDay)) + 'd cooldown</span>';
+            html += '</div></div>';
+            html += '<button class="btn-medieval" data-action="kingBestowGiftExec" data-id="' + nobleId + '" data-gift="' + gt.id + '" style="font-size:0.6rem;padding:3px 8px;margin-left:6px;' + (!ready ? 'opacity:0.5;' : '') + '" ' + (!ready ? 'disabled' : '') + '>Bestow</button>';
+            html += '</div>';
+        }
+        html += '<button class="btn-medieval" data-action="kingBackToCourt" style="margin-top:8px;font-size:0.72rem;padding:4px 12px;">← Back to Court</button>';
+        html += '</div>';
+        openModal('Royal Gifts', html);
+    });
+    UI.registerAction('kingBestowGiftExec', function(_t, d) {
+        var r = Player.kingBestowGift(d.id, d.gift);
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        if (r.success) UI.openKingPanel('court');
+    });
+    UI.registerAction('kingBackToCourt', function() { UI.openKingPanel('court'); });
+
+    // Send Mission sub-modal
+    UI.registerAction('kingSendMissionUI', function(_t, d) {
+        var nobleId = d.id;
+        var nobleName = d.name || 'Noble';
+        var missionTypes = Player.kingGetMissionTypes ? Player.kingGetMissionTypes() : [];
+        var ks = Player.state && Player.state.kingState;
+        var kingdom = Engine.findKingdom(ks ? ks.kingdomId : null);
+        var html = '<div style="padding:12px;">';
+        html += '<div style="font-size:1rem;color:#d4a843;margin-bottom:8px;">📜 Send ' + escapeHtml(nobleName) + ' on Mission</div>';
+
+        for (var mi = 0; mi < missionTypes.length; mi++) {
+            var mt = missionTypes[mi];
+            html += '<div style="background:rgba(0,0,0,0.15);border:1px solid rgba(255,255,255,0.08);padding:6px 8px;border-radius:4px;margin-bottom:4px;">';
+            html += '<div style="font-size:0.78rem;color:#ddd;">' + mt.icon + ' ' + mt.label + '</div>';
+            html += '<div style="font-size:0.65rem;color:#999;">' + mt.desc.replace('{kingdom}', 'target kingdom') + '</div>';
+            html += '<div style="font-size:0.6rem;color:#888;">Duration: ~' + mt.durationBase + '-' + (mt.durationBase + 15) + ' days · Success: ~' + Math.round(mt.successBase * 100) + '% · <span style="color:#55a868;">+' + mt.loyaltySuccess + ' loyalty</span></div>';
+
+            if (mt.needsTarget) {
+                // Show target kingdom selector
+                try {
+                    var _allK = Engine.getWorld().kingdoms;
+                    html += '<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:4px;">';
+                    for (var ki = 0; ki < _allK.length; ki++) {
+                        if (kingdom && _allK[ki].id === kingdom.id) continue;
+                        html += '<button class="btn-medieval" data-action="kingExecMission" data-noble="' + nobleId + '" data-mission="' + mt.id + '" data-target="' + _allK[ki].id + '" style="font-size:0.58rem;padding:2px 6px;">→ ' + escapeHtml(_allK[ki].name) + '</button>';
+                    }
+                    html += '</div>';
+                } catch(e) {}
+            } else {
+                html += '<button class="btn-medieval" data-action="kingExecMission" data-noble="' + nobleId + '" data-mission="' + mt.id + '" data-target="" style="font-size:0.62rem;padding:2px 8px;margin-top:4px;">Send</button>';
+            }
+            html += '</div>';
+        }
+        html += '<button class="btn-medieval" data-action="kingBackToCourt" style="margin-top:8px;font-size:0.72rem;padding:4px 12px;">← Back to Court</button>';
+        html += '</div>';
+        openModal('Noble Missions', html);
+    });
+    UI.registerAction('kingExecMission', function(_t, d) {
+        var r = Player.kingSendNobleOnMission(d.noble, d.mission, d.target || null);
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        if (r.success) UI.openKingPanel('court');
+    });
     UI.registerAction('kingFleeConfirm', function() { var r = Player.kingFleeKingdom(); UI.closeModal(); UI.toast(r.message, r.success ? 'success' : 'warning'); });
     UI.registerAction('kingElectionVote', function(_t, d) { Engine._resolvePendingElection(Engine.findKingdom(d.kingdom), d.id); UI.closeModal(); UI.toast('Your vote has been cast.', 'success'); });
     UI.registerAction('kingElectionAbstain', function(_t, d) { Engine._resolvePendingElection(Engine.findKingdom(d.kingdom), null); UI.closeModal(); UI.toast('You abstained from voting.', 'warning'); });
