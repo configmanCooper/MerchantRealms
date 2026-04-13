@@ -21774,6 +21774,13 @@
 
         getArmies() { return world ? world.armies : []; },
 
+        addArmy(armyObj) {
+            if (!world || !world.armies) return null;
+            if (!armyObj.id) armyObj.id = uid('army');
+            world.armies.push(armyObj);
+            return armyObj;
+        },
+
         getTownSecurity(townId) {
             const town = findTown(townId);
             return town ? (town.security || 0) : 0;
