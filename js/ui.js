@@ -9650,7 +9650,7 @@ window.UI = (function () {
             var html = '<div style="padding:8px;">';
             html += '<p style="margin-bottom:12px;">This town has an active <strong>Royal Land Subsidy</strong>! You can buy land at a discount, but it will be <strong>locked</strong> to building a <strong>' + btName + '</strong>.</p>';
             html += '<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;">';
-            html += '<button class="btn-medieval" style="padding:8px 16px;font-size:0.85rem;" data-action="_buyLandSubsidized">🏗️ Subsidized Land<br><span style="font-size:0.75rem;color:#55a868;">' + subCost + 'g (' + discount + '% off) — locked to ' + btName + '</span></button>';
+            html += '<button class="btn-medieval" style="padding:8px 16px;font-size:0.85rem;" data-action="_buyLandSubsidized">🏗️ Subsidized Land<br><span style="font-size:0.75rem;color:#2d6b3f;text-shadow:0 1px 0 rgba(255,255,255,0.3);">' + subCost + 'g (' + discount + '% off) — locked to ' + btName + '</span></button>';
             html += '<button class="btn-medieval" style="padding:8px 16px;font-size:0.85rem;" data-action="_buyLandFull">🏗️ Regular Land<br><span style="font-size:0.75rem;color:#ccc;">' + fullCost + 'g — build anything</span></button>';
             html += '</div></div>';
             openModal('🏗️ Buy Land', html);
