@@ -525,8 +525,34 @@
             for (var _ari = 0; _ari < _armies.length; _ari++) {
                 var _ar = _armies[_ari];
                 var _arTown = Engine.findTown(_ar.targetTownId);
-                var _statusIcon = _ar._recoveryUntil ? '🛏️' : _ar._retreating ? '🏳️' : _ar._besieging ? '🏰' : _ar.status === 'marching' ? '🚶' : _ar.status === 'returning' ? '🏠' : '⚔️';
-                var _statusText = _ar._recoveryUntil ? 'Regrouping (' + Math.max(0, _ar._recoveryUntil - _day) + 'd)' : _ar._retreating ? 'Retreating home' : _ar._besieging ? 'Besieging' : _ar.status === 'marching' ? 'Marching (' + Math.max(0, (_ar.arrivalDay || _day) - _day) + 'd left)' : _ar.status === 'returning' ? 'Returning (' + Math.max(0, (_ar.returnDay || _day) - _day) + 'd left)' : _ar.status;
+                var _statusIcon = _ar._recoveryUntil ? '🛏️' : _ar.status === 'retreating' ? '🏳️' : _ar.status === 'besieging' ? '🏰' : _ar.status === 'marching' ? '🚶' : _ar.status === 'recovering' ? '🛏️' : '⚔️';
+                var _statusText = '';
+                if (_ar._recoveryUntil) {
+                    _statusText = 'Recovering (' + Math.max(0, _ar._recoveryUntil - _day) + 'd)';
+                } else if (_ar.status === 'retreating') {
+                    _statusText = 'Retreating home';
+                } else if (_ar.status === 'besieging') {
+                    _statusText = 'Besieging';
+                } else if (_ar.status === 'marching') {
+                    var _prog = _ar._progress || 0;
+                    if (_prog > 0 && _prog < 1) {
+                        var _estTotal = (_ar.arrivalDay && _ar.departDay) ? (_ar.arrivalDay - _ar.departDay) : 0;
+                        if (_estTotal > 0) {
+                            var _daysLeft = Math.max(0, Math.round(_estTotal * (1 - _prog)));
+                            _statusText = 'Marching (' + _daysLeft + 'd left)';
+                        } else {
+                            _statusText = 'Marching (' + Math.round(_prog * 100) + '%)';
+                        }
+                    } else if (_prog >= 1) {
+                        _statusText = 'Arriving';
+                    } else {
+                        // No progress yet, use arrivalDay fallback
+                        var _fb = (_ar.arrivalDay || 0) - _day;
+                        _statusText = 'Marching' + (_fb > 0 ? ' (' + _fb + 'd left)' : '');
+                    }
+                } else {
+                    _statusText = _ar.status || 'Unknown';
+                }
                 html += '<div style="font-size:0.65rem;color:#ccc;padding:2px 0;">' + _statusIcon + ' ' + _ar.soldiers + ' soldiers → ' + (_arTown ? escapeHtml(_arTown.name) : '?') + ' — ' + _statusText + ' · Morale: ' + Math.round(_ar.morale || 50) + '%</div>';
             }
             html += '</div>';
@@ -2023,16 +2049,83 @@
     UI._resolveRevolt = _resolveRevolt;
     UI._openSendArmyModal = function(townId) {
         var tgt = Engine.findTown(townId);
+        var garrison = tgt ? (tgt.garrison || 0) : 0;
         var html2 = '<div style="padding:8px;">';
         html2 += '<div style="font-size:0.85rem;color:#c44e52;margin-bottom:8px;">⚔️ Send Army</div>';
-        html2 += '<div style="font-size:0.75rem;color:#ddd;margin-bottom:6px;">Target: ' + (tgt ? escapeHtml(tgt.name) : '?') + ' (Garrison: ' + (tgt ? (tgt.garrison || 0) : '?') + ')</div>';
+        html2 += '<div style="font-size:0.75rem;color:#ddd;margin-bottom:6px;">Target: ' + (tgt ? escapeHtml(tgt.name) : '?') + ' (Garrison: ' + garrison + ')</div>';
+
+        // Estimate travel time
+        var travelInfo = _estimateArmyTravel(tgt);
+        if (travelInfo.days > 0) {
+            html2 += '<div style="font-size:0.68rem;color:#aaa;margin-bottom:6px;">🗺️ Est. travel: ~' + travelInfo.days + ' days from ' + escapeHtml(travelInfo.fromName) + '</div>';
+        }
+
         html2 += '<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">';
         html2 += '<label style="font-size:0.72rem;color:#aaa;">Soldiers:</label>';
-        html2 += '<input type="number" id="_armySendCount" min="10" max="200" value="30" style="font-size:0.72rem;width:60px;padding:3px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;">';
+        html2 += '<input type="number" id="_armySendCount" min="10" max="200" value="30" style="font-size:0.72rem;width:60px;padding:3px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;" oninput="UI._updateArmyChance(' + garrison + ')">';
         html2 += '</div>';
+
+        // Success estimate
+        html2 += '<div id="_armyChanceDisplay" style="font-size:0.68rem;margin-bottom:8px;">' + _getSuccessEstimateHtml(30, garrison) + '</div>';
+
         html2 += '<button class="btn-medieval" data-action="kingSendArmyConfirm" data-id="' + townId + '" style="font-size:0.72rem;padding:4px 10px;background:rgba(196,78,82,0.3) !important;">⚔️ Send Army</button>';
         html2 += '</div>';
         openModal('⚔️ Send Army', html2, '<button class="btn-medieval" data-action="closeModal">Cancel</button>');
+    };
+
+    // Estimate travel from player's capital to target
+    function _estimateArmyTravel(targetTown) {
+        if (!targetTown) return { days: 0, fromName: '?' };
+        var kingdom = null;
+        try {
+            if (Player.state && Player.state.kingState) kingdom = Engine.findKingdom(Player.state.kingState.kingdomId);
+        } catch(e) {}
+        if (!kingdom) return { days: 0, fromName: '?' };
+
+        var capTown = null;
+        var kTowns = Engine.getTowns ? Engine.getTowns() : [];
+        for (var i = 0; i < kTowns.length; i++) {
+            if (kTowns[i].kingdomId === kingdom.id && kTowns[i].isCapital) { capTown = kTowns[i]; break; }
+        }
+        if (!capTown) {
+            // Fallback to highest garrison town
+            var bestGar = 0;
+            for (var j = 0; j < kTowns.length; j++) {
+                if (kTowns[j].kingdomId === kingdom.id && (kTowns[j].garrison || 0) > bestGar) {
+                    bestGar = kTowns[j].garrison || 0;
+                    capTown = kTowns[j];
+                }
+            }
+        }
+        if (!capTown) return { days: 0, fromName: '?' };
+        var dist = Math.hypot(targetTown.x - capTown.x, targetTown.y - capTown.y);
+        var baseArmySpeed = ((typeof CONFIG !== 'undefined' ? CONFIG.CARAVAN_BASE_SPEED : 120) || 120) * 0.5;
+        var days = Math.max(2, Math.ceil(dist / Math.max(baseArmySpeed, 1)));
+        return { days: days, fromName: capTown.name || '?' };
+    }
+
+    // Success estimate HTML
+    function _getSuccessEstimateHtml(soldiers, garrison) {
+        soldiers = parseInt(soldiers) || 30;
+        garrison = Math.max(1, garrison || 5);
+        var ratio = soldiers / garrison;
+        var chance, color, label;
+        if (ratio >= 5) { chance = '~95%'; color = '#55a868'; label = 'Overwhelming'; }
+        else if (ratio >= 3) { chance = '~85%'; color = '#55a868'; label = 'Very likely'; }
+        else if (ratio >= 2) { chance = '~70%'; color = '#8bc34a'; label = 'Favorable'; }
+        else if (ratio >= 1.5) { chance = '~55%'; color = '#e0c58a'; label = 'Even odds'; }
+        else if (ratio >= 1) { chance = '~40%'; color = '#e0a050'; label = 'Risky'; }
+        else if (ratio >= 0.5) { chance = '~20%'; color = '#c44e52'; label = 'Very risky'; }
+        else { chance = '~5%'; color = '#c44e52'; label = 'Suicidal'; }
+        return '<span style="color:' + color + ';">⚔️ ' + label + ' (' + chance + ' success)</span>' +
+               '<span style="color:#888;margin-left:6px;">' + soldiers + ' vs ' + garrison + ' defenders</span>';
+    }
+
+    // Called from oninput on soldier count
+    UI._updateArmyChance = function(garrison) {
+        var el = document.getElementById('_armyChanceDisplay');
+        var inp = document.getElementById('_armySendCount');
+        if (el && inp) el.innerHTML = _getSuccessEstimateHtml(inp.value, garrison);
     };
 
 
@@ -2349,14 +2442,22 @@
     });
     UI.registerAction('kingSendArmyToTown', function(_t, d) {
         if (!d.id) { UI.toast('No target.', 'warning'); return; }
+        var tgt2 = Engine.findTown(d.id);
+        var garrison2 = tgt2 ? (tgt2.garrison || 0) : 5;
         var html2 = '<div style="padding:8px;">';
         html2 += '<div style="font-size:0.85rem;color:#c44e52;margin-bottom:8px;">⚔️ Send Army</div>';
-        var tgt2 = Engine.findTown(d.id);
-        html2 += '<div style="font-size:0.75rem;color:#ddd;margin-bottom:6px;">Target: ' + (tgt2 ? escapeHtml(tgt2.name) : '?') + ' (Garrison: ' + (tgt2 ? (tgt2.garrison || 0) : '?') + ')</div>';
+        html2 += '<div style="font-size:0.75rem;color:#ddd;margin-bottom:6px;">Target: ' + (tgt2 ? escapeHtml(tgt2.name) : '?') + ' (Garrison: ' + garrison2 + ')</div>';
+
+        var travelInfo2 = _estimateArmyTravel(tgt2);
+        if (travelInfo2.days > 0) {
+            html2 += '<div style="font-size:0.68rem;color:#aaa;margin-bottom:6px;">🗺️ Est. travel: ~' + travelInfo2.days + ' days from ' + escapeHtml(travelInfo2.fromName) + '</div>';
+        }
+
         html2 += '<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">';
         html2 += '<label style="font-size:0.72rem;color:#aaa;">Soldiers:</label>';
-        html2 += '<input type="number" id="_armySendCount" min="10" max="200" value="30" style="font-size:0.72rem;width:60px;padding:3px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;">';
+        html2 += '<input type="number" id="_armySendCount" min="10" max="200" value="30" style="font-size:0.72rem;width:60px;padding:3px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;" oninput="UI._updateArmyChance(' + garrison2 + ')">';
         html2 += '</div>';
+        html2 += '<div id="_armyChanceDisplay" style="font-size:0.68rem;margin-bottom:8px;">' + _getSuccessEstimateHtml(30, garrison2) + '</div>';
         html2 += '<button class="btn-medieval" data-action="kingSendArmyConfirm" data-id="' + d.id + '" style="font-size:0.72rem;padding:4px 10px;background:rgba(196,78,82,0.3) !important;">⚔️ Send Army</button>';
         html2 += '</div>';
         openModal('⚔️ Send Army', html2, '<button class="btn-medieval" data-action="closeModal">Cancel</button>');

@@ -7084,47 +7084,59 @@
     // ── Army Processing ──
     function _processKingArmies(kingdom) {
         var day = Engine.getDay();
-        var rng = Engine.getRng();
+        var engineArmies = Engine.getArmies ? Engine.getArmies() : [];
+
         for (var _ai = kingdom._armies.length - 1; _ai >= 0; _ai--) {
             var army = kingdom._armies[_ai];
             if (!army) { kingdom._armies.splice(_ai, 1); continue; }
 
-            if (army.status === 'marching' && day >= army.arrivalDay) {
-                // Battle resolution
-                var targetTown = Engine.findTown(army.targetTownId);
-                if (!targetTown) { army.status = 'returning'; army.returnDay = day + Math.max(3, army.arrivalDay - army.departDay); continue; }
+            // Find matching engine army by id
+            var engArmy = null;
+            for (var _ei = 0; _ei < engineArmies.length; _ei++) {
+                if (engineArmies[_ei].id === army.id) { engArmy = engineArmies[_ei]; break; }
+            }
 
-                var atkPower = army.soldiers * (0.8 + rng.random() * 0.4);
-                var defPower = (targetTown.garrison || 5) * (0.8 + rng.random() * 0.4);
+            if (engArmy) {
+                // Sync live data from engine army
+                army.soldiers = engArmy.soldiers;
+                army.morale = engArmy.morale || army.morale;
 
-                if (atkPower > defPower) {
-                    // Victory
-                    var losses = Math.floor(army.soldiers * (0.1 + rng.random() * 0.2));
-                    army.soldiers = Math.max(1, army.soldiers - losses);
-                    var garrisonLoss = Math.floor((targetTown.garrison || 5) * (0.5 + rng.random() * 0.3));
-                    targetTown.garrison = Math.max(0, (targetTown.garrison || 5) - garrisonLoss);
-                    // Increase enemy war exhaustion
-                    var enemyK = Engine.findKingdom(army.targetKingdomId);
-                    if (enemyK) enemyK._warExhaustion = Math.min(100, (enemyK._warExhaustion || 0) + 8 + Math.floor(rng.random() * 7));
-                    Engine.logEvent('⚔️ Victory! Our army defeated the garrison at ' + targetTown.name + '! Lost ' + losses + ' soldiers, enemy lost ' + garrisonLoss + '.');
-                    army.status = 'returning';
-                    army.returnDay = day + Math.max(3, army.arrivalDay - army.departDay);
+                if (engArmy._besieging) {
+                    army.status = 'besieging';
+                } else if (engArmy._retreating) {
+                    army.status = 'retreating';
+                } else if (engArmy._recoveryUntil) {
+                    army.status = 'recovering';
+                    army._recoveryUntil = engArmy._recoveryUntil;
                 } else {
-                    // Defeat
-                    var losses2 = Math.floor(army.soldiers * (0.3 + rng.random() * 0.3));
-                    army.soldiers = Math.max(0, army.soldiers - losses2);
-                    Engine.logEvent('💀 Defeat! Our army was repelled at ' + targetTown.name + '. Lost ' + losses2 + ' soldiers.');
-                    if (army.soldiers <= 0) {
-                        kingdom._armies.splice(_ai, 1);
-                        continue;
+                    // Still marching — compute progress-based days remaining
+                    var totalProgress = 0;
+                    if (engArmy.route && engArmy.route.legs && engArmy.route.legs.length > 0) {
+                        var legsDone = (engArmy.legIndex || 0) + (engArmy.legProgress || 0);
+                        totalProgress = legsDone / engArmy.route.legs.length;
+                    } else {
+                        totalProgress = engArmy.progress || 0;
                     }
-                    army.status = 'returning';
-                    army.returnDay = day + Math.max(3, army.arrivalDay - army.departDay);
+                    army._progress = Math.min(1.0, totalProgress);
+                    army.status = 'marching';
                 }
-            } else if (army.status === 'returning' && day >= army.returnDay) {
-                // Army returns — add surviving soldiers back to military strength
-                kingdom.militaryStrength = Math.min(100, (kingdom.militaryStrength || 50) + Math.floor(army.soldiers / 5));
-                Engine.logEvent('🏰 An army of ' + army.soldiers + ' soldiers has returned home.');
+            } else {
+                // Engine army is gone — battle resolved or army destroyed
+                if (army.status === 'marching' || army.status === 'besieging') {
+                    // Check if the target town was captured (now belongs to our kingdom)
+                    var targetTown = Engine.findTown(army.targetTownId);
+                    if (targetTown && targetTown.kingdomId === kingdom.id) {
+                        Engine.logEvent('⚔️ Our army has captured ' + (targetTown.name || 'the target') + '!');
+                    } else {
+                        Engine.logEvent('💀 Our army sent to ' + (army.targetName || 'unknown') + ' has been lost in battle.');
+                    }
+                }
+                kingdom._armies.splice(_ai, 1);
+                continue;
+            }
+
+            // Clean up armies that have been besieging/recovering too long without engine backing
+            if (army.status === 'retreating' && !engArmy._retreating) {
                 kingdom._armies.splice(_ai, 1);
             }
         }
