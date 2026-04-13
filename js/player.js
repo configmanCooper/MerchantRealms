@@ -7698,7 +7698,7 @@
                 }
 
                 Engine.logEvent('👑 ' + cm.nobleName + ' returns successfully from ' + cm.missionLabel + '! (+' + cm.loyaltySuccess + ' loyalty)');
-                addNotification('👑 Mission Success! ' + cm.nobleName + ' completed ' + cm.missionLabel + '.', 'kingdom');
+                Engine.logEvent('👑 Mission Success! ' + cm.nobleName + ' completed ' + cm.missionLabel + '.', null, 'kingdom');
             } else {
                 if (noble) {
                     noble.kingLoyalty = Math.max(0, (noble.kingLoyalty || 50) + cm.loyaltyFail);
@@ -7706,13 +7706,13 @@
                     if ((cm.missionType === 'military_patrol' || cm.missionType === 'intelligence_spy') && rng.random() < 0.08) {
                         noble.alive = false;
                         Engine.logEvent('💀 ' + cm.nobleName + ' was killed during ' + cm.missionLabel + '!');
-                        addNotification('💀 ' + cm.nobleName + ' died on ' + cm.missionLabel + '!', 'kingdom');
+                        Engine.logEvent('💀 ' + cm.nobleName + ' died on ' + cm.missionLabel + '!', null, 'kingdom');
                         continue;
                     }
                 }
                 modifyRelationship(cm.nobleId, -2);
                 Engine.logEvent('👑 ' + cm.nobleName + ' returns from failed ' + cm.missionLabel + '. (' + cm.loyaltyFail + ' loyalty)');
-                addNotification('👑 Mission Failed. ' + cm.nobleName + ' failed ' + cm.missionLabel + '.', 'kingdom');
+                Engine.logEvent('👑 Mission Failed. ' + cm.nobleName + ' failed ' + cm.missionLabel + '.', null, 'kingdom');
             }
         }
     }
@@ -7779,7 +7779,7 @@
                     message: plotDescs[plotType]
                 });
 
-                addNotification('🕵️ Court Warning: ' + reporterName + ' reports suspicious activity by ' + suspectName + '!', 'kingdom');
+                Engine.logEvent('🕵️ Court Warning: ' + reporterName + ' reports suspicious activity by ' + suspectName + '!', null, 'kingdom');
                 break; // Only one report per check
             }
         }
@@ -19523,7 +19523,7 @@
                 };
 
                 var msg = tierMessages[t.tier] || '🤝 Your relationship with ' + npcName + ' has grown to ' + t.name + '!';
-                addNotification(msg, 'social');
+                Engine.logEvent(msg, null, 'social');
                 Engine.logEvent(msg);
                 break;
             }
@@ -19639,11 +19639,11 @@
                 if (person && person.alive) {
                     var npcName = ((person.firstName || '') + ' ' + (person.lastName || '')).trim();
                     if (oldLevel >= 80 && rel.level < 80) {
-                        addNotification('💔 ' + npcName + ' feels neglected. "We used to be so close..." (Trusted → Close Friend)', 'social');
+                        Engine.logEvent('💔 ' + npcName + ' feels neglected. "We used to be so close..." (Trusted → Close Friend)', null, 'social');
                     } else if (oldLevel >= 60 && rel.level < 60) {
-                        addNotification('💔 ' + npcName + ' is drifting away. "Haven\'t seen you in ages..." (Close Friend → Friend)', 'social');
+                        Engine.logEvent('💔 ' + npcName + ' is drifting away. "Haven\'t seen you in ages..." (Close Friend → Friend)', null, 'social');
                     } else if (oldLevel >= 40 && rel.level < 40) {
-                        addNotification('💔 ' + npcName + ' barely remembers you. (Friend → Friendly)', 'social');
+                        Engine.logEvent('💔 ' + npcName + ' barely remembers you. (Friend → Friendly)', null, 'social');
                     }
                 }
             }
@@ -19725,7 +19725,7 @@
                 responded: false
             });
 
-            addNotification('💬 ' + npcName + ': ' + chosen.title, 'social');
+            Engine.logEvent('💬 ' + npcName + ': ' + chosen.title, null, 'social');
         }
     }
 
