@@ -621,6 +621,8 @@ window.UI = (function () {
         registerAction('resolveEncounterChoice', function(_t, d) { if (d.choice) UI.resolveEncounterChoice(d.choice); });
         registerAction('resolvePendingMilitaryEventAndCloseModal', function(_t, d) { Player.resolvePendingMilitaryEvent(d.id); UI.closeModal(); });
         registerAction('executeWork', function(_t, d) { if (d.id) UI.executeWork(d.id); });
+        registerAction('startAutoWorkUI', function(_t, d) { if (d.id != null) UI.startAutoWorkUI(d.id); });
+        registerAction('stopAutoWorkUI', function() { UI.stopAutoWorkUI(); });
         registerAction('enlistAsSoldier', function(_t, d) { if (d.id) UI.enlistAsSoldier(d.id); });
         registerAction('quitMilitary', function() { UI.quitMilitary(); });
         registerAction('buyInfoBrokerTip', function() { UI.buyInfoBrokerTip(); });
@@ -1096,7 +1098,15 @@ window.UI = (function () {
                         const towns = Engine.getTowns();
                         town = towns ? towns.find(t => t.id === Player.townId) : null;
                     }
-                    el.playerTown.textContent = town ? town.name : 'Unknown';
+                    // Show auto-work status overlay when in town
+                    if (Player.autoWork && Player.autoWork.active && !Player.traveling) {
+                        var _awTownName = town ? town.name : 'Unknown';
+                        var _awStatus = Player.getAutoWorkStatus ? Player.getAutoWorkStatus() : null;
+                        var _awAction = _awStatus ? _awStatus.currentAction : 'Working...';
+                        el.playerTown.innerHTML = _awTownName + ' <span style="font-size:0.7rem;color:#4ade80;margin-left:4px;">🔄 ' + _awAction + '</span> <span data-action="stopAutoWorkUI" style="cursor:pointer;font-size:0.7rem;background:rgba(200,60,50,0.2);border:1px solid rgba(200,60,50,0.4);border-radius:4px;padding:1px 5px;margin-left:4px;">⏹️ Stop</span>';
+                    } else {
+                        el.playerTown.textContent = town ? town.name : 'Unknown';
+                    }
                 } else if (Player.traveling) {
                     var travelModeIcon = '🚶';
                     if (Player.travelMode === 'horse') travelModeIcon = '🐴';
@@ -1116,11 +1126,19 @@ window.UI = (function () {
                         if (Player.autoTravelJob) {
                             travelBtns += '<span data-action="quitAutoTravelJobUI" style="cursor:pointer;font-size:0.75rem;background:rgba(200,80,80,0.2);border:1px solid rgba(200,80,80,0.4);border-radius:4px;padding:1px 6px;margin-left:4px;">❌ Quit Job</span>';
                         }
+                        // Show stop auto-work button during auto-work travel
+                        if (Player.autoWork && Player.autoWork.active) {
+                            travelBtns += '<span data-action="stopAutoWorkUI" style="cursor:pointer;font-size:0.75rem;background:rgba(200,60,50,0.2);border:1px solid rgba(200,60,50,0.4);border-radius:4px;padding:1px 6px;margin-left:4px;">⏹️ Stop Auto</span>';
+                        }
                         el.playerTown.innerHTML = travelText + travelBtns;
                     } else {
                         // Paid travel (e.g. sea passage) — still show quit mission if on auto-travel
                         if (Player.autoTravelJob) {
-                            el.playerTown.innerHTML = travelText + ' <span data-action="quitAutoTravelJobUI" style="cursor:pointer;font-size:0.75rem;background:rgba(200,80,80,0.2);border:1px solid rgba(200,80,80,0.4);border-radius:4px;padding:1px 6px;margin-left:4px;">❌ Quit Job</span>';
+                            var _paidBtns = '<span data-action="quitAutoTravelJobUI" style="cursor:pointer;font-size:0.75rem;background:rgba(200,80,80,0.2);border:1px solid rgba(200,80,80,0.4);border-radius:4px;padding:1px 6px;margin-left:4px;">❌ Quit Job</span>';
+                            if (Player.autoWork && Player.autoWork.active) {
+                                _paidBtns += '<span data-action="stopAutoWorkUI" style="cursor:pointer;font-size:0.75rem;background:rgba(200,60,50,0.2);border:1px solid rgba(200,60,50,0.4);border-radius:4px;padding:1px 6px;margin-left:4px;">⏹️ Stop Auto</span>';
+                            }
+                            el.playerTown.innerHTML = travelText + ' ' + _paidBtns;
                         } else {
                             el.playerTown.textContent = travelText;
                         }
@@ -6938,6 +6956,60 @@ window.UI = (function () {
     }
 
     // ═══════════════════════════════════════════════════════════
+    //  AUTO-WORK STATUS (shown in work dialog & overlay)
+    // ═══════════════════════════════════════════════════════════
+    function _getAutoWorkStatusHtml() {
+        if (typeof Player === 'undefined' || !Player.getAutoWorkStatus) return '';
+        var s = Player.getAutoWorkStatus();
+        if (!s) return '';
+        var daysActive = s.daysWorked || 0;
+        var energyPct = Math.round((s.energy / (s.maxEnergy || 100)) * 100);
+        var energyColor = energyPct > 50 ? '#2ecc71' : (energyPct > 25 ? '#e67e22' : '#c0392b');
+
+        var html = '<div style="border:2px solid #4ade80;padding:10px;margin-bottom:12px;border-radius:6px;background:rgba(74,222,128,0.08);">';
+        html += '<h3 style="margin:0 0 6px 0;">🔄 Auto-Work — ' + escapeHtml(s.jobName) + '</h3>';
+        html += '<div class="detail-row"><span class="label">Status</span><span class="value">' + escapeHtml(s.currentAction) + '</span></div>';
+        html += '<div class="detail-row"><span class="label">Days Worked</span><span class="value">' + daysActive + '</span></div>';
+        html += '<div class="detail-row"><span class="label">Total Earned</span><span class="value">🪙 ' + formatGold(s.totalEarned || 0) + 'g</span></div>';
+        if (s.weeklyPay) {
+            html += '<div class="detail-row"><span class="label">Weekly Pay</span><span class="value">🪙 ' + s.weeklyPay + 'g/week</span></div>';
+        }
+        html += '<div class="detail-row"><span class="label">Energy</span><span class="value" style="color:' + energyColor + ';">' + Math.round(s.energy) + '/' + Math.round(s.maxEnergy) + ' (' + energyPct + '%)</span></div>';
+        html += '<div class="detail-row"><span class="label">Hunger</span><span class="value">' + Math.round(s.hunger) + '/100</span></div>';
+        html += '<div class="detail-row"><span class="label">Thirst</span><span class="value">' + Math.round(s.thirst) + '/100</span></div>';
+        if (s.isTravel) {
+            html += '<div style="margin-top:4px;font-size:0.75rem;color:#60a5fa;">🗺️ Travel mode (' + (s.paidTravel ? 'paid routes' : 'unpaid routes') + ')</div>';
+        }
+        html += '<button class="btn-medieval" data-action="stopAutoWorkUI" style="margin-top:8px;font-size:0.8rem;padding:6px 16px;background:rgba(200,60,50,0.3);border-color:rgba(200,60,50,0.55);">⏹️ Stop Working</button>';
+        html += '</div>';
+        html += '<p class="text-dim">Your character will automatically work, rest, eat, and drink. You can stop at any time.</p>';
+        return html;
+    }
+
+    function startAutoWorkUI(jobIndex) {
+        if (typeof Player === 'undefined' || !Player.startAutoWork) return;
+        var idx = parseInt(jobIndex, 10);
+        if (isNaN(idx)) return;
+        var result = Player.startAutoWork(idx, {});
+        if (result && result.success) {
+            toast('🔄 ' + result.message, 'success');
+        } else {
+            toast((result && result.message) || 'Cannot start auto-work.', 'warning');
+        }
+        closeModal();
+    }
+
+    function stopAutoWorkUI() {
+        if (typeof Player !== 'undefined' && Player.stopAutoWork) {
+            var result = Player.stopAutoWork();
+            if (result && result.message) {
+                toast(result.message, result.success ? 'info' : 'warning');
+            }
+        }
+        closeModal();
+    }
+
+    // ═══════════════════════════════════════════════════════════
     //  WIN / LOSE SCREEN
     // ═══════════════════════════════════════════════════════════
 
@@ -10392,6 +10464,17 @@ window.UI = (function () {
 
         html += '<p class="work-intro">Find work at local businesses to earn gold without traveling.</p>';
 
+        // Show auto-work status if active
+        if (Player.autoWork && Player.autoWork.active) {
+            html += _getAutoWorkStatusHtml();
+            // If it's a travel auto-work, also show the travel mission status
+            if (Player.autoWork.isTravel && Player.autoTravelJob) {
+                html += getAutoTravelStatusHtml();
+            }
+            openModal('💼 Find Work', html);
+            return;
+        }
+
         // Show auto-travel mission status if active
         if (Player.autoTravelJob) {
             html += getAutoTravelStatusHtml();
@@ -10409,12 +10492,13 @@ window.UI = (function () {
                 const job = jobs[i];
                 const typeIcons = {
                     building: '🏢', odd: '🔧', kingdom: '👑', castle: '🏰',
-                    apprentice: '📖', merchant: '🤝'
+                    apprentice: '📖', merchant: '🤝', kingdom_employee: '📋'
                 };
                 const typeIcon = typeIcons[job.type] || '🏢';
                 const typeLabels = {
                     building: 'Building', odd: 'Odd Job', kingdom: 'Kingdom',
-                    castle: 'Royal Court', apprentice: 'Apprentice', merchant: 'Merchant'
+                    castle: 'Royal Court', apprentice: 'Apprentice', merchant: 'Merchant',
+                    kingdom_employee: 'Kingdom Position'
                 };
                 const typeLabel = typeLabels[job.type] || '';
 
@@ -10460,7 +10544,10 @@ window.UI = (function () {
                     }
                 }
                 html += '</div>';
+                html += '<div style="display:flex;gap:4px;">';
                 html += '<button class="btn-medieval btn-work" data-action="executeWork" data-id="' + i + '">Work</button>';
+                html += '<button class="btn-medieval" data-action="startAutoWorkUI" data-id="' + i + '" style="font-size:0.7rem;padding:4px 8px;background:rgba(100,180,100,0.2);border-color:rgba(100,180,100,0.4);" title="Repeat this job automatically">🔄 Auto</button>';
+                html += '</div>';
                 html += '</div>';
             }
             html += '</div>';
@@ -14808,6 +14895,9 @@ window.UI = (function () {
         handleCustomsChoice,
         // Auto-Travel Jobs
         quitAutoTravelJob,
+        // Auto-Work
+        startAutoWorkUI,
+        stopAutoWorkUI,
         // Local Work & Street Trading
         openWorkDialog,
         executeWork,

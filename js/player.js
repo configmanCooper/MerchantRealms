@@ -16496,6 +16496,8 @@
             skillPointsPassedToChild: structuredClone(player.skillPointsPassedToChild || {}),
             // Auto-Travel Jobs
             autoTravelJob: player.autoTravelJob ? structuredClone(player.autoTravelJob) : null,
+            // Auto-Work
+            _autoWork: player._autoWork ? structuredClone(player._autoWork) : null,
             // Inventory Capacity
             storageContainer: player.storageContainer,
             _backpack: player._backpack || false,
@@ -16942,6 +16944,7 @@
         player.skillPointsPassedToChild = data.skillPointsPassedToChild || {};
         // Auto-Travel Jobs
         player.autoTravelJob = data.autoTravelJob || null;
+        player._autoWork = data._autoWork || null;
         // Bankruptcy
         player.bankruptDays = data.bankruptDays || 0;
         player.bankruptcy = data.bankruptcy || null;
@@ -18598,6 +18601,9 @@
 
         // Auto-travel job tick
         tickAutoTravelJob();
+
+        // Auto-work tick (repeat jobs)
+        tickAutoWork();
 
         // Injuries & illnesses tick
         Player.tickInjuriesAndIllnesses();
@@ -25615,6 +25621,57 @@
             }
         }
 
+        // Kingdom employee postings — procurer, guard, royal guard
+        if (!player.isKing && !(player.socialRank[town.kingdomId] >= 4)) {
+            var _empK = Engine.findKingdom(town.kingdomId);
+            if (_empK && _empK._employeePostings && _empK._employeePostings.length > 0) {
+                for (var _epi = 0; _epi < _empK._employeePostings.length; _epi++) {
+                    var _ep = _empK._employeePostings[_epi];
+                    if (_ep.slotsFilled >= _ep.slotsTotal) continue;
+                    if (_ep.towns && _ep.towns.indexOf(town.id) === -1) continue;
+                    var _epDailyPay = Math.round((_ep.weeklyPay || 14) / 7);
+
+                    if (_ep.type === 'procurer') {
+                        var _procOrders = (_empK._procurementOrders || []).length;
+                        jobs.push({
+                            name: '📦 Kingdom Procurer', hours: 16,
+                            pay: _epDailyPay, ticks: 40, type: 'kingdom_employee',
+                            xpReward: 5, repGain: 1,
+                            description: 'Buy goods for the royal stockpile. ' + _procOrders + ' active order' + (_procOrders !== 1 ? 's' : '') + '. Weekly pay: ' + _ep.weeklyPay + 'g.',
+                            _kingdomJobType: 'procurer', _kingdomId: _empK.id, _postingId: _ep.id,
+                            _weeklyPay: _ep.weeklyPay, jobTypeKey: 'kingdom_procurer'
+                        });
+                    } else if (_ep.type === 'guard') {
+                        jobs.push({
+                            name: '🛡️ Kingdom Guard', hours: 16,
+                            pay: _epDailyPay, ticks: 40, type: 'kingdom_employee',
+                            xpReward: 4, repGain: 1,
+                            description: 'Patrol kingdom towns and keep order. Medium danger. Weekly pay: ' + _ep.weeklyPay + 'g.',
+                            injuryRisk: 0.005, riskLevel: 'medium',
+                            _kingdomJobType: 'guard', _kingdomId: _empK.id, _postingId: _ep.id,
+                            _weeklyPay: _ep.weeklyPay, jobTypeKey: 'kingdom_guard'
+                        });
+                    } else if (_ep.type === 'royal_guard') {
+                        // Requires 90+ days guard/soldier experience, citizen, capital only
+                        var _rgExp = (player.jobExperience.temp_soldier || 0) +
+                            (player.jobExperience.town_guard || 0) + (player.jobExperience.castle_guard || 0) +
+                            (player.jobExperience.kingdom_guard || 0) + (player.battlesSurvived || 0) * 5;
+                        if (_rgExp >= 90 && isCitizen && town.category === 'capital_city') {
+                            jobs.push({
+                                name: '⚜️ Royal Guard', hours: 16,
+                                pay: _epDailyPay, ticks: 40, type: 'kingdom_employee',
+                                xpReward: 6, repGain: 2,
+                                description: 'Guard the monarch at the capital. Elite post. Medium danger. Weekly pay: ' + _ep.weeklyPay + 'g.',
+                                injuryRisk: 0.004, riskLevel: 'medium',
+                                _kingdomJobType: 'royal_guard', _kingdomId: _empK.id, _postingId: _ep.id,
+                                _weeklyPay: _ep.weeklyPay, jobTypeKey: 'royal_guard'
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
         // Add odd jobs
         const oddJobs = [
             { name: 'Guard a warehouse overnight', hours: 12, pay: 8, ticks: 30, type: 'odd', description: 'Watch over goods through the night', xpReward: 2 },
@@ -25756,6 +25813,9 @@
                     'night_watchman': 0.2,
                     'guild_enforcer': 0.35,
                     'customs_inspector': 0,
+                    'kingdom_procurer': 0.35,
+                    'kingdom_guard': 0.30,
+                    'royal_guard': 0.35,
                 };
                 var _repChance = _repChances[job.jobTypeKey] !== undefined ? _repChances[job.jobTypeKey] : 0.3;
                 if (_repChance > 0 && rng.random() < _repChance) {
@@ -25791,6 +25851,9 @@
                         'court_entertainer': '🎭 The court was thoroughly entertained.',
                         'diplomats_aide': '🤵 Diplomatic work advanced the kingdom\'s interests.',
                         'castle_work': '🏗️ Construction work at the castle earned approval.',
+                        'kingdom_procurer': '📦 Procurement service appreciated by the crown.',
+                        'kingdom_guard': '🛡️ Diligent patrol duty noticed by the watch commander.',
+                        'royal_guard': '⚜️ Vigilant service guarding the monarch earned royal favor.',
                     };
                     var _repMsg = _repMsgs[job.jobTypeKey] || 'Your work earned kingdom recognition.';
                     if (typeof UI !== 'undefined' && UI.toast) UI.toast('⬆️ +' + Math.round(repGainAmount) + ' Kingdom Rep: ' + _repMsg, 'success', 'my_actions');
@@ -33847,7 +33910,8 @@
         if (player.militaryActive) return { success: false, message: 'Cannot take jobs while enlisted.' };
         if (player.traveling) return { success: false, message: 'Cannot start while traveling.' };
 
-        var mission = generateAutoTravelMission(job);
+        // Support prebuilt missions (from kingdom auto-work)
+        var mission = job._prebuiltMission || generateAutoTravelMission(job);
         if (!mission) return { success: false, message: 'Could not generate mission — no valid destinations.' };
 
         player.autoTravelJob = mission;
@@ -34063,6 +34127,12 @@
 
         _removeJobTransport(mission);
 
+        // Track earnings in auto-work if active
+        if (player._autoWork && player._autoWork.active && player._autoWork.isTravel) {
+            player._autoWork.totalEarned += (mission.totalPaid || 0);
+            player._autoWork.daysWorked++;
+        }
+
         // Bonus XP and reputation on completion
         if (success) {
             if (mission.xpReward) grantXP(mission.xpReward, mission.name);
@@ -34150,6 +34220,315 @@
             daysElapsed: daysElapsed,
             isReturn: currentLeg ? currentLeg.isReturn || false : false,
             letters: m.letters || null
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  AUTO-WORK SYSTEM — repeat any job automatically
+    // ═══════════════════════════════════════════════════════════
+
+    function startAutoWork(jobIndex, options) {
+        var jobs = getAvailableJobs();
+        if (jobIndex < 0 || jobIndex >= jobs.length) return { success: false, message: 'Invalid job.' };
+        if (player._autoWork && player._autoWork.active) return { success: false, message: 'Already auto-working. Stop first.' };
+        if (player.autoTravelJob) return { success: false, message: 'Already on an auto-travel mission.' };
+        if (player.militaryActive) return { success: false, message: 'Cannot auto-work while enlisted.' };
+        if (player.traveling) return { success: false, message: 'Cannot start while traveling.' };
+        if (player.jailedUntilDay > 0 && Engine.getDay() < player.jailedUntilDay) return { success: false, message: 'Cannot work while in jail.' };
+
+        var job = jobs[jobIndex];
+        options = options || {};
+        var paidTravel = options.paidTravel || false;
+
+        // For auto-travel kingdom jobs (procurer, guard), generate a travel mission
+        if (job._kingdomJobType === 'procurer' || job._kingdomJobType === 'guard') {
+            var kingdom = Engine.findKingdom(job._kingdomId);
+            if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+            player._autoWork = {
+                active: true, jobName: job.name, jobKey: job.jobTypeKey || job.name,
+                pay: job.pay, weeklyPay: job._weeklyPay || 0,
+                currentAction: 'Starting ' + job.name + '...',
+                paidTravel: paidTravel, startDay: Engine.getDay(),
+                totalEarned: 0, daysWorked: 0,
+                isTravel: true, kingdomJobType: job._kingdomJobType,
+                kingdomId: job._kingdomId, postingId: job._postingId
+            };
+            // Generate and start the travel mission
+            var mission = _generateKingdomTravelMission(kingdom, job._kingdomJobType);
+            if (!mission) {
+                player._autoWork = null;
+                return { success: false, message: 'Could not plan a route — no valid destinations.' };
+            }
+            var travelResult = startAutoTravelJob({ autoTravel: true, _prebuiltMission: mission });
+            if (!travelResult || !travelResult.success) {
+                player._autoWork = null;
+                return { success: false, message: (travelResult && travelResult.message) || 'Cannot start travel.' };
+            }
+            Engine.logEvent('🔄 Auto-work started: ' + job.name + ' (travel mode).');
+            return { success: true, message: 'Auto-work started: ' + job.name + '. Traveling to assignments.' };
+        }
+
+        // For non-travel jobs: do the first job execution, then set up auto-repeat
+        var firstResult = doWork(jobIndex);
+        if (!firstResult || !firstResult.success) {
+            return { success: false, message: (firstResult && firstResult.message) || 'Cannot work.' };
+        }
+
+        player._autoWork = {
+            active: true, jobName: job.name, jobKey: job.jobTypeKey || job.name,
+            pay: job.pay, weeklyPay: job._weeklyPay || 0,
+            currentAction: 'Working as ' + job.name + '...',
+            paidTravel: false, startDay: Engine.getDay(),
+            totalEarned: firstResult.pay || job.pay || 0, daysWorked: 1,
+            isTravel: false, kingdomJobType: job._kingdomJobType || null,
+            kingdomId: job._kingdomId || null, postingId: job._postingId || null
+        };
+
+        Engine.logEvent('🔄 Auto-work started: ' + job.name + '.');
+        return { success: true, message: 'Auto-work started: ' + job.name + '. Will repeat automatically.' };
+    }
+
+    function stopAutoWork() {
+        if (!player._autoWork || !player._autoWork.active) return { success: false, message: 'Not auto-working.' };
+        var aw = player._autoWork;
+        var msg = 'Stopped auto-work: ' + aw.jobName + '. Earned ' + aw.totalEarned + 'g over ' + aw.daysWorked + ' days.';
+
+        // If on an auto-travel mission, quit that too
+        if (aw.isTravel && player.autoTravelJob) {
+            quitAutoTravelJob();
+        }
+
+        Engine.logEvent('⏹️ ' + msg);
+        if (typeof UI !== 'undefined' && UI.toast) UI.toast('⏹️ ' + msg, 'info');
+        player._autoWork = null;
+        return { success: true, message: msg };
+    }
+
+    function tickAutoWork() {
+        if (!player._autoWork || !player._autoWork.active) return;
+        if (!player.alive) { stopAutoWork(); return; }
+        if (player.jailedUntilDay > 0 && Engine.getDay() < player.jailedUntilDay) { stopAutoWork(); return; }
+        if (player.militaryActive) { stopAutoWork(); return; }
+        var aw = player._autoWork;
+
+        // Travel auto-work: the auto-travel system handles the mission tick
+        // We just need to handle mission completion → restart
+        if (aw.isTravel) {
+            // If the auto-travel mission ended, start a new one
+            if (!player.autoTravelJob && !player.traveling) {
+                var kingdom = Engine.findKingdom(aw.kingdomId);
+                if (!kingdom) { _autoWorkStopUnavailable(aw, 'Kingdom no longer exists.'); return; }
+                // Rest/eat/drink before next mission
+                if (!_autoWorkHandleVitals(aw)) return;
+                // Check posting still open
+                var postingStillValid = (kingdom._employeePostings || []).some(function(p) {
+                    return p.id === aw.postingId && p.slotsFilled < p.slotsTotal;
+                });
+                if (!postingStillValid) { _autoWorkStopUnavailable(aw, 'Position no longer available.'); return; }
+                var mission = _generateKingdomTravelMission(kingdom, aw.kingdomJobType);
+                if (!mission) { _autoWorkStopUnavailable(aw, 'No routes available.'); return; }
+                var res = startAutoTravelJob({ autoTravel: true, _prebuiltMission: mission });
+                if (!res || !res.success) { _autoWorkStopUnavailable(aw, 'Cannot start next route.'); return; }
+                aw.daysWorked++;
+                aw.currentAction = 'Starting next route...';
+            }
+            return;
+        }
+
+        // Non-travel auto-work
+        if (player.traveling) return; // wait for travel to finish (shouldn't happen)
+        if (player.autoTravelJob) return; // shouldn't happen but guard
+
+        // Handle vitals first
+        if (!_autoWorkHandleVitals(aw)) return;
+
+        // Find the matching job
+        var jobs = getAvailableJobs();
+        var matchIdx = -1;
+        for (var i = 0; i < jobs.length; i++) {
+            if (jobs[i].name === aw.jobName) { matchIdx = i; break; }
+        }
+        if (matchIdx === -1) {
+            _autoWorkStopUnavailable(aw, aw.jobName + ' is no longer available.');
+            return;
+        }
+
+        // Do the work
+        var result = doWork(matchIdx);
+        if (result && result.success) {
+            aw.daysWorked++;
+            aw.totalEarned += (jobs[matchIdx].pay || 0);
+            aw.currentAction = 'Working as ' + aw.jobName + '...';
+            // Build 1-2 relationships with same-occupation NPCs
+            _autoWorkBuildRelationships(aw);
+        } else {
+            aw.currentAction = (result && result.message) || 'Cannot work right now';
+        }
+    }
+
+    function _autoWorkHandleVitals(aw) {
+        // Auto-rest if energy too low (< 30)
+        if (player.energy < 30) {
+            aw.currentAction = 'Resting...';
+            var restOpts = Player.getAvailableRestOptions();
+            if (restOpts && restOpts.length > 0) {
+                // Sort by energy rate descending, prefer free options
+                restOpts.sort(function(a, b) { return (b.energyPerTick || 0) - (a.energyPerTick || 0); });
+                var best = restOpts[0];
+                var ticksNeeded = Math.ceil((70 - (player.energy || 0)) / (best.energyPerTick || 1));
+                ticksNeeded = Math.max(2, Math.min(ticksNeeded, 20));
+                Player.restForTicks(best.id, ticksNeeded);
+            }
+            return false; // vitals handled, don't work this tick
+        }
+        // Auto-eat if hungry
+        if (player.hunger < 50) {
+            aw.currentAction = 'Eating...';
+            Player.eatUntilFull();
+            // If still hungry, try market (the vitals system already handles this, but belt-and-suspenders)
+            if (player.hunger < 50 && player.townId && !player.traveling) {
+                var town = Engine.findTown(player.townId);
+                if (town) {
+                    var foodTypes = CONFIG.FOOD_TYPES || ['bread', 'meat', 'cheese', 'fish', 'apples', 'berries', 'grain'];
+                    for (var fi = 0; fi < foodTypes.length && player.hunger < 80; fi++) {
+                        var fid = foodTypes[fi];
+                        var supply = (town.market.supply[fid] || 0);
+                        var price = (town.market.prices[fid] || 5);
+                        if (supply > 0 && player.gold >= price) {
+                            town.market.supply[fid]--;
+                            player.gold -= price;
+                            player.hunger = Math.min(100, player.hunger + 15);
+                        }
+                    }
+                }
+            }
+        }
+        // Auto-drink if thirsty
+        if (player.thirst < 50) {
+            aw.currentAction = 'Drinking...';
+            Player.drinkUntilFull();
+            if (player.thirst < 50 && player.townId && !player.traveling) {
+                var town = Engine.findTown(player.townId);
+                if (town) {
+                    var drinkTypes = ['ale', 'wine', 'mead'];
+                    for (var di = 0; di < drinkTypes.length && player.thirst < 80; di++) {
+                        var did = drinkTypes[di];
+                        var ds = (town.market.supply[did] || 0);
+                        var dp = (town.market.prices[did] || 5);
+                        if (ds > 0 && player.gold >= dp) {
+                            town.market.supply[did]--;
+                            player.gold -= dp;
+                            player.thirst = Math.min(100, player.thirst + 20);
+                        }
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
+    function _autoWorkBuildRelationships(aw) {
+        // Build 1-2 relationship points with 1-2 NPCs in same occupation at current location
+        var rng = Engine.getRng();
+        if (!rng) return;
+        var people = Engine.getPeople ? Engine.getPeople() : [];
+        var town = Engine.findTown(player.townId);
+        if (!town) return;
+        var sameOccNpcs = people.filter(function(p) {
+            if (!p.alive || p.townId !== town.id) return false;
+            if (aw.kingdomJobType === 'procurer') return p.occupation === 'procurer' || p.occupation === 'merchant';
+            if (aw.kingdomJobType === 'guard') return p.occupation === 'guard';
+            if (aw.kingdomJobType === 'royal_guard') return p.occupation === 'royal_guard' || p.occupation === 'guard';
+            return p.occupation === 'laborer' || p.occupation === 'craftsman' || p.occupation === 'farmer';
+        });
+        if (sameOccNpcs.length === 0) return;
+        var count = rng.randInt(1, Math.min(2, sameOccNpcs.length));
+        rng.shuffle(sameOccNpcs);
+        for (var i = 0; i < count; i++) {
+            modifyRelationship(sameOccNpcs[i].id, rng.randInt(1, 2), 'coworker');
+        }
+    }
+
+    function _autoWorkStopUnavailable(aw, reason) {
+        Engine.logEvent('⏹️ Auto-work stopped: ' + reason);
+        if (typeof UI !== 'undefined' && UI.toast) UI.toast('⏹️ ' + reason + ' Auto-work stopped.', 'warning');
+        player._autoWork = null;
+    }
+
+    function _generateKingdomTravelMission(kingdom, jobType) {
+        var day = Engine.getDay();
+        var rng = Engine.getRng();
+        if (!rng) return null;
+        var kTowns = Engine.getTowns().filter(function(t) { return t.kingdomId === kingdom.id; });
+        if (kTowns.length < 2) return null;
+        var homeTown = Engine.findTown(player.townId);
+        if (!homeTown) return null;
+
+        var legs = [];
+        if (jobType === 'procurer') {
+            // Visit 2-4 kingdom towns to fulfill procurement orders
+            var orders = (kingdom._procurementOrders || []).filter(function(o) { return o.remaining > 0; });
+            var targetTowns = kTowns.filter(function(t) { return t.id !== player.townId; });
+            rng.shuffle(targetTowns);
+            var numStops = Math.min(rng.randInt(2, 4), targetTowns.length);
+            for (var i = 0; i < numStops; i++) {
+                var t = targetTowns[i];
+                var orderDesc = orders.length > 0 ? 'Buy ' + orders[i % orders.length].resourceId + ' for the stockpile' : 'Survey market prices';
+                legs.push({
+                    townId: t.id, description: orderDesc + ' in ' + t.name,
+                    stayDays: 1, stayTicks: 20, arrived: false, workDone: false
+                });
+            }
+        } else if (jobType === 'guard') {
+            // Patrol 2-3 kingdom towns
+            var patrolTowns = kTowns.filter(function(t) { return t.id !== player.townId; });
+            rng.shuffle(patrolTowns);
+            var numPatrol = Math.min(rng.randInt(2, 3), patrolTowns.length);
+            for (var pi = 0; pi < numPatrol; pi++) {
+                legs.push({
+                    townId: patrolTowns[pi].id, description: 'Patrol duty in ' + patrolTowns[pi].name,
+                    stayDays: 2, stayTicks: 30, arrived: false, workDone: false
+                });
+            }
+        }
+        // Return home
+        legs.push({ townId: homeTown.id, description: 'Return home to ' + homeTown.name, stayDays: 0, stayTicks: 0, arrived: false, workDone: false, isReturn: true });
+
+        var payPerLeg = Math.round((kingdom._employeePostings || []).reduce(function(best, p) {
+            return p.type === jobType ? Math.max(best, p.weeklyPay || 14) : best;
+        }, 14) / 7);
+
+        return {
+            name: jobType === 'procurer' ? 'Kingdom Procurement Run' : 'Kingdom Guard Patrol',
+            startDay: day, type: 'kingdom_' + jobType,
+            legs: legs, currentLeg: 0, status: 'traveling',
+            risks: { deathRisk: 0, injuryRisk: jobType === 'guard' ? 0.005 : 0.002, illnessRisk: 0.002 },
+            payScale: payPerLeg, totalPaid: 0, kingdomId: kingdom.id,
+            xpReward: jobType === 'procurer' ? 8 : 10, repGain: 2,
+            jobTypeKey: 'kingdom_' + jobType
+        };
+    }
+
+    function getAutoWorkStatus() {
+        if (!player._autoWork || !player._autoWork.active) return null;
+        var aw = player._autoWork;
+        return {
+            jobName: aw.jobName,
+            jobKey: aw.jobKey,
+            pay: aw.pay,
+            weeklyPay: aw.weeklyPay,
+            currentAction: aw.currentAction,
+            paidTravel: aw.paidTravel,
+            startDay: aw.startDay,
+            totalEarned: aw.totalEarned,
+            daysWorked: aw.daysWorked,
+            isTravel: aw.isTravel,
+            kingdomJobType: aw.kingdomJobType,
+            energy: player.energy || 0,
+            maxEnergy: Player.getMaxEnergy(),
+            hunger: player.hunger || 0,
+            thirst: player.thirst != null ? player.thirst : 100,
+            health: player.health != null ? player.health : 100
         };
     }
 
@@ -35595,6 +35974,11 @@
         quitAutoTravelJob,
         getAutoTravelStatus,
         get autoTravelJob() { return player.autoTravelJob; },
+        // Auto-Work System
+        startAutoWork,
+        stopAutoWork,
+        getAutoWorkStatus,
+        get autoWork() { return player._autoWork; },
         // Musical Instruments
         getPlayerInstruments,
         getBestInstrumentForTown,

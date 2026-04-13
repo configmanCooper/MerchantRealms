@@ -208,6 +208,7 @@
             name.includes('market crier') || name.includes('lamplighter') || name.includes('herb') ||
             name.includes('itinerant') || name.includes('customs') || name.includes('bakery') ||
             name.includes('tailor') || name.includes('assist') || name.includes('warehouse') ||
+            name.includes('procurer') ||
             name.includes('sweep') || name.includes('deliver') || name.includes('tend')) return 1.5;
 
         // Light (1.0) — mental or entertainment work
