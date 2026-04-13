@@ -9159,6 +9159,9 @@
         var playerRank = pState.socialRank[k.id] || 0;
         if (playerRank < 4) return; // Must be Minor Noble or higher
 
+        // Don't assign commissions to the player if they ARE the king of this kingdom
+        if (pState.isKing && pState.kingState && pState.kingState.kingdomId === k.id) return;
+
         // Only check every 45-90 days (less frequent than open commissions)
         var commInterval = playerRank >= 5 ? 45 : 60; // Lords get commissions more often
         if (world.day % commInterval !== 0) return;
