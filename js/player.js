@@ -7723,6 +7723,359 @@
         return { success: true, message: nobleName + ' honored for military service! Loyalty +10, Relationship +5' };
     }
 
+    // ── Noble Punishment System ──
+    function kingPunishNoble(nobleId, punishmentType) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        var noble = Engine.findPerson(nobleId);
+        if (!noble || !noble.alive) return { success: false, message: 'Noble not found.' };
+        var nobleName = ((noble.firstName || '') + ' ' + (noble.lastName || '')).trim();
+        var nP = noble.personality || {};
+
+        // Gather all nobles for ripple effects
+        var allNobles = [];
+        try {
+            var w = Engine.getWorld();
+            if (w && w.people) {
+                for (var i = 0; i < w.people.length; i++) {
+                    var p = w.people[i];
+                    if (!p.alive || p.kingdomId !== kingdom.id || p.id === nobleId) continue;
+                    var rank = (p.socialRank && p.socialRank[kingdom.id]) || 0;
+                    if (rank >= 3) allNobles.push(p);
+                }
+            }
+        } catch(e) {}
+
+        var result = { success: true, message: '' };
+        var targetLoyHit = 0, otherLoyHit = 0, relHit = 0;
+
+        switch (punishmentType) {
+            case 'fine':
+                var fineAmt = Math.min(noble.gold || 0, 200);
+                if (fineAmt < 10) return { success: false, message: nobleName + ' has no gold to fine.' };
+                noble.gold -= fineAmt;
+                kingdom.gold = (kingdom.gold || 0) + fineAmt;
+                targetLoyHit = -8;
+                otherLoyHit = -2;
+                relHit = -5;
+                result.message = 'Fined ' + nobleName + ' ' + fineAmt + 'g. Treasury gains ' + fineAmt + 'g.';
+                Engine.logEvent('⚖️ King fines ' + nobleName + ' ' + fineAmt + 'g.');
+                break;
+
+            case 'jail':
+                noble._jailedUntilDay = (Engine.getDay ? Engine.getDay() : 0) + 15;
+                noble._jailedBy = 'king';
+                targetLoyHit = -18;
+                otherLoyHit = -5;
+                relHit = -12;
+                result.message = nobleName + ' imprisoned for 15 days.';
+                Engine.logEvent('⚖️ King imprisons ' + nobleName + ' for 15 days.');
+                break;
+
+            case 'seize_gold':
+                var seizeAmt = Math.floor((noble.gold || 0) * 0.5);
+                if (seizeAmt < 20) return { success: false, message: nobleName + ' has little gold to seize.' };
+                noble.gold -= seizeAmt;
+                kingdom.gold = (kingdom.gold || 0) + seizeAmt;
+                targetLoyHit = -25;
+                otherLoyHit = -8;
+                relHit = -15;
+                result.message = 'Seized ' + seizeAmt + 'g from ' + nobleName + '. Treasury gains ' + seizeAmt + 'g.';
+                Engine.logEvent('⚖️ King confiscates ' + seizeAmt + 'g from ' + nobleName + '.');
+                break;
+
+            case 'seize_business':
+                var seized = 0;
+                try {
+                    var towns = Engine.getTowns();
+                    for (var ti = 0; ti < towns.length && seized < 2; ti++) {
+                        if (towns[ti].kingdomId !== kingdom.id) continue;
+                        for (var bi = 0; bi < (towns[ti].buildings || []).length && seized < 2; bi++) {
+                            if (towns[ti].buildings[bi].ownerId === nobleId) {
+                                towns[ti].buildings[bi].ownerId = kingdom.id;
+                                towns[ti].buildings[bi]._seizedDay = Engine.getDay();
+                                seized++;
+                            }
+                        }
+                    }
+                } catch(e) {}
+                if (seized === 0) return { success: false, message: nobleName + ' has no properties to seize.' };
+                targetLoyHit = -30;
+                otherLoyHit = -12;
+                relHit = -20;
+                result.message = 'Seized ' + seized + ' properties from ' + nobleName + ' for the kingdom.';
+                Engine.logEvent('⚖️ King seizes ' + seized + ' properties from ' + nobleName + '.');
+                break;
+
+            case 'strip_title':
+                var curRank = (noble.socialRank && noble.socialRank[kingdom.id]) || 4;
+                if (curRank <= 3) return { success: false, message: nobleName + ' has no title to strip.' };
+                noble.socialRank[kingdom.id] = curRank - 1;
+                if (curRank - 1 < 5) noble.isNoble = false;
+                targetLoyHit = -35;
+                otherLoyHit = -15;
+                relHit = -25;
+                var newRankName = (curRank - 1) >= 5 ? 'Lord' : (curRank - 1) >= 4 ? 'Minor Noble' : 'Burgher';
+                result.message = nobleName + ' demoted to ' + newRankName + '.';
+                Engine.logEvent('⚖️ King strips ' + nobleName + ' of their title. Now: ' + newRankName + '.');
+                break;
+
+            case 'execute':
+                noble.alive = false;
+                noble._deathDay = Engine.getDay();
+                noble._causeOfDeath = 'executed_by_king';
+                targetLoyHit = 0; // they're dead
+                otherLoyHit = -20;
+                relHit = 0;
+                result.message = nobleName + ' has been executed.';
+                Engine.logEvent('⚖️ King executes ' + nobleName + '! The court is shaken.');
+                break;
+
+            default:
+                return { success: false, message: 'Unknown punishment type.' };
+        }
+
+        // Apply target loyalty hit (personality modifies response)
+        if (noble.alive && targetLoyHit !== 0) {
+            // Loyal nobles are more hurt by betrayal of trust; ambitious nobles seethe more
+            var _loyMod = 1.0;
+            if ((nP.loyalty || 50) > 60) _loyMod = 1.3; // loyal nobles hurt more
+            if ((nP.ambition || 50) > 70) _loyMod *= 1.2; // ambitious nobles hold grudges
+            if ((nP.warmth || 50) > 60) _loyMod *= 0.8; // warm nobles forgive more
+            noble.kingLoyalty = Math.max(0, Math.min(100, (noble.kingLoyalty || 50) + targetLoyHit * _loyMod));
+            // Perceived drops too (they can't hide being punished)
+            noble.perceivedKingLoyalty = Math.max(0, Math.min(100, (noble.perceivedKingLoyalty || 50) + targetLoyHit * 0.7));
+        }
+        if (relHit !== 0 && noble.alive) {
+            modifyRelationship(nobleId, relHit);
+        }
+
+        // Ripple effect on other nobles
+        for (var ni = 0; ni < allNobles.length; ni++) {
+            var on = allNobles[ni];
+            var onP = on.personality || {};
+            var _ripple = otherLoyHit;
+            // Nobles who were friends with punished noble lose more loyalty
+            if (on._nobleRelationships && on._nobleRelationships[nobleId] && on._nobleRelationships[nobleId] > 30) {
+                _ripple *= 1.5;
+            }
+            // Nobles who disliked the punished noble actually gain loyalty (justice served)
+            if (on._nobleRelationships && on._nobleRelationships[nobleId] && on._nobleRelationships[nobleId] < -30) {
+                _ripple = Math.abs(_ripple) * 0.3; // small loyalty boost
+            }
+            // Personality modifiers
+            if ((onP.loyalty || 50) > 65) _ripple *= 0.7; // loyal nobles trust the king
+            if ((onP.ambition || 50) > 70) _ripple *= 1.3; // ambitious nobles fear for themselves
+            on.kingLoyalty = Math.max(0, Math.min(100, (on.kingLoyalty || 50) + _ripple));
+            on.perceivedKingLoyalty = Math.max(0, Math.min(100, (on.perceivedKingLoyalty || 50) + _ripple * 0.5));
+        }
+
+        return result;
+    }
+
+    // ── Investigate Noble (discover real vs perceived loyalty) ──
+    function kingInvestigateNoble(nobleId) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        var noble = Engine.findPerson(nobleId);
+        if (!noble || !noble.alive) return { success: false, message: 'Noble not found.' };
+        var nobleName = ((noble.firstName || '') + ' ' + (noble.lastName || '')).trim();
+
+        // Cost: 50g for investigation
+        if ((kingdom.gold || 0) < 50) return { success: false, message: 'Treasury needs 50g for an investigation.' };
+        kingdom.gold -= 50;
+
+        var realLoy = noble.kingLoyalty || 50;
+        var percLoy = noble.perceivedKingLoyalty != null ? noble.perceivedKingLoyalty : realLoy;
+        var diff = Math.abs(realLoy - percLoy);
+
+        // Investigation reveals partial truth — moves perceived closer to real
+        var revealAmount = 0.3 + (Math.random() * 0.4); // reveal 30-70% of the gap
+        noble.perceivedKingLoyalty = percLoy + (realLoy - percLoy) * revealAmount;
+        noble.perceivedKingLoyalty = Math.max(0, Math.min(100, noble.perceivedKingLoyalty));
+
+        // Update noble dossier
+        if (!player._nobleDossier) player._nobleDossier = {};
+        if (!player._nobleDossier[nobleId]) player._nobleDossier[nobleId] = { personality: {}, relationships: {}, discoveredDay: Engine.getDay() };
+        player._nobleDossier[nobleId].loyalty = noble.perceivedKingLoyalty;
+        player._nobleDossier[nobleId]._investigatedDay = Engine.getDay();
+
+        var newPercLabel = _loyaltyLabelText(noble.perceivedKingLoyalty);
+        if (diff > 15) {
+            Engine.logEvent('🔍 Investigation into ' + nobleName + ' reveals discrepancy — their true loyalty differs from appearances! Now assessed as: ' + newPercLabel);
+            return { success: true, message: '🔍 Investigation reveals ' + nobleName + '\'s loyalty is not as it seems! Reassessed as: ' + newPercLabel + ' (cost: 50g)' };
+        } else {
+            Engine.logEvent('🔍 Investigation into ' + nobleName + ' confirms their loyalty appears genuine. Assessed: ' + newPercLabel);
+            return { success: true, message: '🔍 Investigation confirms ' + nobleName + '\'s loyalty appears genuine. (' + newPercLabel + ', cost: 50g)' };
+        }
+    }
+
+    // Helper for loyalty text labels
+    function _loyaltyLabelText(val) {
+        var v = Math.round(val || 50);
+        if (v >= 80) return 'Very Loyal';
+        if (v >= 60) return 'Loyal';
+        if (v >= 50) return 'Neutral';
+        return 'Unsure';
+    }
+
+    // ── Noble Loyalty Missions ──
+
+    // ── Player-Noble Loyalty Manipulation (when player is noble, not king) ──
+    function nobleFlatterKing() {
+        // Player (as noble) flatters the king to boost own perceived loyalty
+        var pPerson = Engine.findPerson(player.personId || 'player');
+        if (!pPerson) return { success: false, message: 'Player person not found.' };
+        var kId = player.citizenshipKingdomId;
+        if (!kId) return { success: false, message: 'You must be a citizen of a kingdom.' };
+        var rank = (pPerson.socialRank && pPerson.socialRank[kId]) || 0;
+        if (rank < 4) return { success: false, message: 'You must be at least a Minor Noble to flatter the king.' };
+        if (player.isKing) return { success: false, message: 'You ARE the king. No need to flatter yourself.' };
+
+        // Cooldown: once per 5 days
+        if (!player._flatterCooldown) player._flatterCooldown = 0;
+        if (Engine.getDay() - player._flatterCooldown < 5) {
+            return { success: false, message: 'You recently flattered the king. Wait ' + (5 - (Engine.getDay() - player._flatterCooldown)) + ' more days.' };
+        }
+
+        var rng = Engine.getRng();
+        if (pPerson.perceivedKingLoyalty == null) pPerson.perceivedKingLoyalty = pPerson.kingLoyalty || 50;
+        var boost = 4 + Math.floor(rng.random() * 7); // +4 to +10
+        // Charisma/diplomacy skill bonus
+        var dipSkill = (player.skills && player.skills.diplomacy) ? 1.3 : 1.0;
+        boost = Math.round(boost * dipSkill);
+        // Risk: honest king may see through it (5% base, reduced by diplomacy)
+        var detectChance = 0.05 / dipSkill;
+        if (rng.chance(detectChance)) {
+            // King sees through flattery — perceived drops slightly
+            pPerson.perceivedKingLoyalty = Math.max(0, pPerson.perceivedKingLoyalty - 5);
+            player._flatterCooldown = Engine.getDay();
+            Engine.logEvent('😬 The king saw through your flattery and seems suspicious now.', null, 'my_kingdom');
+            return { success: false, message: 'The king saw through your flattery! Perceived loyalty dropped slightly.' };
+        }
+
+        pPerson.perceivedKingLoyalty = Math.min(98, pPerson.perceivedKingLoyalty + boost);
+        player._flatterCooldown = Engine.getDay();
+        Engine.logEvent('😊 You flattered the king and improved your standing in their eyes.', null, 'my_kingdom');
+        return { success: true, message: 'Successfully flattered the king! Perceived loyalty boosted by ~' + boost + '.' };
+    }
+
+    function nobleWhisperAgainst(targetNobleId) {
+        // Player (as noble) whispers against another noble to reduce their perceived loyalty
+        var pPerson = Engine.findPerson(player.personId || 'player');
+        if (!pPerson) return { success: false, message: 'Player person not found.' };
+        var kId = player.citizenshipKingdomId;
+        if (!kId) return { success: false, message: 'Not a kingdom citizen.' };
+        var rank = (pPerson.socialRank && pPerson.socialRank[kId]) || 0;
+        if (rank < 4) return { success: false, message: 'Must be at least Minor Noble.' };
+        if (player.isKing) return { success: false, message: 'Use the Investigate function as king instead.' };
+
+        var target = Engine.findPerson(targetNobleId);
+        if (!target || !target.alive) return { success: false, message: 'Target not found.' };
+        var targetName = ((target.firstName || '') + ' ' + (target.lastName || '')).trim();
+
+        // Cooldown: once per 7 days per target
+        if (!player._whisperCooldowns) player._whisperCooldowns = {};
+        var lastWhisper = player._whisperCooldowns[targetNobleId] || 0;
+        if (Engine.getDay() - lastWhisper < 7) {
+            return { success: false, message: 'Wait ' + (7 - (Engine.getDay() - lastWhisper)) + ' more days before whispering against ' + targetName + ' again.' };
+        }
+
+        var rng = Engine.getRng();
+        if (target.perceivedKingLoyalty == null) target.perceivedKingLoyalty = target.kingLoyalty || 50;
+        var drop = 3 + Math.floor(rng.random() * 6); // -3 to -8
+        // Intrigue skill bonus
+        var intrigueSkill = (player.skills && player.skills.intrigue) ? 1.4 : 1.0;
+        drop = Math.round(drop * intrigueSkill);
+        // Risk: 10% base chance of being caught
+        var caughtChance = 0.10 / intrigueSkill;
+        if (rng.chance(caughtChance)) {
+            // Caught! Target's relationship drops, player perceived drops
+            if (target._nobleRelationships) {
+                target._nobleRelationships[player.personId || 'player'] = Math.max(-100, (target._nobleRelationships[player.personId || 'player'] || 0) - 20);
+            }
+            if (pPerson.perceivedKingLoyalty != null) {
+                pPerson.perceivedKingLoyalty = Math.max(0, pPerson.perceivedKingLoyalty - 8);
+            }
+            player._whisperCooldowns[targetNobleId] = Engine.getDay();
+            Engine.logEvent('🚨 ' + targetName + ' discovered you were spreading rumors about them!', null, 'my_kingdom');
+            return { success: false, message: targetName + ' caught you slandering them! Your relationship and standing both dropped.' };
+        }
+
+        target.perceivedKingLoyalty = Math.max(5, target.perceivedKingLoyalty - drop);
+        player._whisperCooldowns[targetNobleId] = Engine.getDay();
+        Engine.logEvent('🗣️ You successfully planted doubts about ' + targetName + '\'s loyalty with the king.', null, 'my_kingdom');
+        return { success: true, message: 'Whispered against ' + targetName + '. Their perceived loyalty dropped by ~' + drop + '.' };
+    }
+
+    function nobleBoostAlly(targetNobleId) {
+        // Player (as noble) speaks well of an ally to boost their perceived loyalty
+        var pPerson = Engine.findPerson(player.personId || 'player');
+        if (!pPerson) return { success: false, message: 'Player person not found.' };
+        var kId = player.citizenshipKingdomId;
+        if (!kId || (((pPerson.socialRank || {})[kId]) || 0) < 4) {
+            return { success: false, message: 'Must be at least Minor Noble.' };
+        }
+        if (player.isKing) return { success: false, message: 'Use king actions instead.' };
+
+        var target = Engine.findPerson(targetNobleId);
+        if (!target || !target.alive) return { success: false, message: 'Target not found.' };
+        var targetName = ((target.firstName || '') + ' ' + (target.lastName || '')).trim();
+
+        // Cooldown: once per 7 days per target
+        if (!player._boostCooldowns) player._boostCooldowns = {};
+        var lastBoost = player._boostCooldowns[targetNobleId] || 0;
+        if (Engine.getDay() - lastBoost < 7) {
+            return { success: false, message: 'Wait ' + (7 - (Engine.getDay() - lastBoost)) + ' more days.' };
+        }
+
+        var rng = Engine.getRng();
+        if (target.perceivedKingLoyalty == null) target.perceivedKingLoyalty = target.kingLoyalty || 50;
+        var boost = 3 + Math.floor(rng.random() * 4); // +3 to +6
+        target.perceivedKingLoyalty = Math.min(95, target.perceivedKingLoyalty + boost);
+        player._boostCooldowns[targetNobleId] = Engine.getDay();
+        Engine.logEvent('🤝 You vouched for ' + targetName + '\'s loyalty to the king.', null, 'my_kingdom');
+        return { success: true, message: 'Spoke well of ' + targetName + '. Their perceived loyalty boosted by ~' + boost + '.' };
+    }
+
+    function nobleAcceptFeastInvite(feastIndex) {
+        // Player accepts a feast invitation
+        if (!player._feastInvitations || !player._feastInvitations[feastIndex]) {
+            return { success: false, message: 'No such invitation.' };
+        }
+        var inv = player._feastInvitations[feastIndex];
+        var k = Engine.findKingdom(inv.kingdomId);
+        if (!k || !k._activeFeast) {
+            player._feastInvitations.splice(feastIndex, 1);
+            return { success: false, message: 'The feast is no longer active.' };
+        }
+        // Add player to feast attendees
+        var playerPersonId = player.personId || 'player';
+        if (k._activeFeast.attendees.indexOf(playerPersonId) < 0) {
+            k._activeFeast.attendees.push(playerPersonId);
+        }
+        player._feastInvitations.splice(feastIndex, 1);
+        Engine.logEvent('✅ You accepted the feast invitation in ' + inv.townName + '.', null, 'my_kingdom');
+        return { success: true, message: 'Accepted! Attend the feast in ' + inv.townName + ' before day ' + inv.endDay + '.' };
+    }
+
+    function nobleDeclineFeastInvite(feastIndex) {
+        if (!player._feastInvitations || !player._feastInvitations[feastIndex]) {
+            return { success: false, message: 'No such invitation.' };
+        }
+        var inv = player._feastInvitations[feastIndex];
+        player._feastInvitations.splice(feastIndex, 1);
+        Engine.logEvent('❌ You declined the feast invitation in ' + inv.townName + '.', null, 'my_kingdom');
+        // Small relationship hit with king for declining
+        var pPerson = Engine.findPerson(player.personId || 'player');
+        if (pPerson && pPerson.kingLoyalty != null) {
+            pPerson.perceivedKingLoyalty = Math.max(0, (pPerson.perceivedKingLoyalty || pPerson.kingLoyalty) - 3);
+        }
+        return { success: true, message: 'Declined the feast. The king may note your absence.' };
+    }
+
     // ── Noble Loyalty Missions ──
     var _MISSION_TYPES = [
         { id: 'diplomacy', label: 'Diplomatic Mission', icon: '🕊️', desc: 'Send to negotiate with {kingdom}', durationBase: 20, loyaltySuccess: 8, loyaltyFail: -5, successBase: 0.6, trait: 'intelligence', needsTarget: true },
@@ -8272,18 +8625,32 @@
         }
         if (action === 'set_land_subsidy') {
             if (!kingdom.laws.landSubsidyTowns) kingdom.laws.landSubsidyTowns = [];
-            if (kingdom.laws.landSubsidyTowns.indexOf(data.townId) >= 0) return { success: false, message: 'Land subsidy already active for this town.' };
+            var _lsBldg = data.buildingType || 'all';
+            // Check for existing subsidy on same town
+            for (var _lsci = 0; _lsci < kingdom.laws.landSubsidyTowns.length; _lsci++) {
+                var _lsEntry = kingdom.laws.landSubsidyTowns[_lsci];
+                if ((typeof _lsEntry === 'string' && _lsEntry === data.townId) || (typeof _lsEntry === 'object' && _lsEntry.townId === data.townId)) {
+                    return { success: false, message: 'Land subsidy already active for this town.' };
+                }
+            }
             if (kingdom.gold < 200) return { success: false, message: 'Need 200g in treasury for land subsidy.' };
             kingdom.gold -= 200;
-            kingdom.laws.landSubsidyTowns.push(data.townId);
+            kingdom.laws.landSubsidyTowns.push({ townId: data.townId, buildingType: _lsBldg });
             var tName = data.townId;
             try { var _lt = Engine.findTown(data.townId); if (_lt) tName = _lt.name; } catch(e) {}
-            Engine.logEvent('🏡 Land subsidy set in ' + tName + '. Property costs -25%.', null, 'kingdom');
-            return { success: true, message: 'Land subsidy set in ' + tName + '. Cost: 200g/season.' };
+            var bldgLabel = _lsBldg === 'all' ? 'all buildings' : _lsBldg.replace(/_/g, ' ');
+            Engine.logEvent('🏡 Land subsidy set in ' + tName + ' for ' + bldgLabel + '. Building costs -25%.', null, 'kingdom');
+            return { success: true, message: 'Land subsidy set in ' + tName + ' for ' + bldgLabel + '. Cost: 200g/season.' };
         }
         if (action === 'remove_land_subsidy') {
             if (!kingdom.laws.landSubsidyTowns) return { success: false, message: 'No land subsidies active.' };
-            var lIdx = kingdom.laws.landSubsidyTowns.indexOf(data.townId);
+            var lIdx = -1;
+            for (var _lri = 0; _lri < kingdom.laws.landSubsidyTowns.length; _lri++) {
+                var _lrEntry = kingdom.laws.landSubsidyTowns[_lri];
+                if ((typeof _lrEntry === 'string' && _lrEntry === data.townId) || (typeof _lrEntry === 'object' && _lrEntry.townId === data.townId)) {
+                    lIdx = _lri; break;
+                }
+            }
             if (lIdx < 0) return { success: false, message: 'No land subsidy for this town.' };
             kingdom.laws.landSubsidyTowns.splice(lIdx, 1);
             Engine.logEvent('❌ Land subsidy removed.', null, 'kingdom');
@@ -35186,6 +35553,13 @@
         kingGetRoyalGiftTypes,
         kingPrivateAudience,
         kingGrantMilitaryHonor,
+        kingPunishNoble,
+        kingInvestigateNoble,
+        nobleFlatterKing,
+        nobleWhisperAgainst,
+        nobleBoostAlly,
+        nobleAcceptFeastInvite,
+        nobleDeclineFeastInvite,
         kingSendNobleOnMission,
         kingGetMissionTypes,
         kingTickMissions,

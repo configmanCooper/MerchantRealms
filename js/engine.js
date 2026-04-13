@@ -4008,6 +4008,11 @@
                 rnKl += rng.randInt(-10, 10);
                 rn.kingLoyalty = Math.max(0, Math.min(100, Math.round(rnKl)));
             }
+            // Perceived loyalty: what the king believes (may differ from real)
+            if (rn.perceivedKingLoyalty == null) {
+                var _pklNoise = rng.randInt(-8, 8);
+                rn.perceivedKingLoyalty = Math.max(0, Math.min(100, (rn.kingLoyalty || 50) + _pklNoise));
+            }
             // L2: Assign faction to existing nobles if missing
             if (!rn._faction) {
                 var _rnP2 = rn.personality || {};
@@ -4089,6 +4094,8 @@
             klBase -= person.personality.ambition * 0.15;
             klBase += rng.randInt(-10, 10);
             person.kingLoyalty = Math.max(0, Math.min(100, Math.round(klBase)));
+            // Perceived loyalty starts close to real but with noise
+            person.perceivedKingLoyalty = Math.max(0, Math.min(100, Math.round(klBase) + rng.randInt(-8, 8)));
             // L2: Assign noble faction based on personality
             var _factions = ['loyalist', 'reformist', 'expansionist'];
             var _fScore = [person.personality.loyalty, person.personality.intelligence, person.personality.ambition];
@@ -11260,6 +11267,117 @@
                 }
 
                 noble.kingLoyalty = Math.max(0, Math.min(100, noble.kingLoyalty + loyaltyDrift));
+
+                // Perceived loyalty: slowly drifts toward real loyalty over time
+                if (noble.perceivedKingLoyalty == null) {
+                    noble.perceivedKingLoyalty = noble.kingLoyalty;
+                }
+                // Perceived drifts toward real at ~0.2/tick (takes many days to converge)
+                var pklDiff = noble.kingLoyalty - noble.perceivedKingLoyalty;
+                if (Math.abs(pklDiff) > 1) {
+                    // Honest nobles: perceived converges faster (king reads them easily)
+                    var _honestyFactor = (nP.honesty || 50) > 60 ? 0.4 : (nP.honesty || 50) < 30 ? 0.08 : 0.2;
+                    noble.perceivedKingLoyalty += pklDiff * _honestyFactor * 0.1;
+                    noble.perceivedKingLoyalty = Math.max(0, Math.min(100, noble.perceivedKingLoyalty));
+                }
+
+                // NPC noble loyalty manipulation: dishonest/ambitious nobles actively deceive
+                if ((nP.honesty || 50) < 35 && (nP.ambition || 50) > 55 && rng.chance(0.04)) {
+                    // Flatter the king: boost own perceived loyalty
+                    if ((noble.kingLoyalty || 50) < 60 && (noble.perceivedKingLoyalty || 50) < 80) {
+                        noble.perceivedKingLoyalty = Math.min(95, (noble.perceivedKingLoyalty || 50) + rng.randInt(3, 8));
+                    }
+                }
+                // Ambitious nobles slander rivals occasionally
+                if ((nP.ambition || 50) > 70 && (nP.warmth || 50) < 40 && rng.chance(0.02)) {
+                    var _rivals = nobles.filter(function(_rn) {
+                        return _rn.id !== noble.id && _rn.alive && (_rn._nobleRelationships && _rn._nobleRelationships[noble.id] < -10 || ((_rn.personality || {}).ambition || 50) > 60);
+                    });
+                    if (_rivals.length > 0) {
+                        var _rival = rng.pick(_rivals);
+                        if (_rival.perceivedKingLoyalty == null) _rival.perceivedKingLoyalty = _rival.kingLoyalty || 50;
+                        _rival.perceivedKingLoyalty = Math.max(5, _rival.perceivedKingLoyalty - rng.randInt(2, 6));
+                    }
+                }
+            }
+
+            // AI King punishment decisions (NPC kings only, skip player)
+            if (k.king && k.king !== 'player_king' && rng.chance(0.03)) {
+                var _kPers = k.kingPersonality || {};
+                for (var _pni = 0; _pni < nobles.length; _pni++) {
+                    var _pn = nobles[_pni];
+                    var _pnPerc = _pn.perceivedKingLoyalty != null ? _pn.perceivedKingLoyalty : (_pn.kingLoyalty || 50);
+                    if (_pnPerc >= 40) continue; // only punish nobles perceived as disloyal
+
+                    // Personality-based severity threshold
+                    var _punishChance = 0.15;
+                    var _punishSeverity = 'fine';
+                    if (_kPers.temperament === 'cruel' || _kPers.greed === 'corrupt') {
+                        _punishChance = 0.35;
+                        if (_pnPerc < 25) _punishSeverity = 'seize_gold';
+                        else if (_pnPerc < 15) _punishSeverity = 'strip_title';
+                    } else if (_kPers.temperament === 'stern' || _kPers.courage === 'brave') {
+                        _punishChance = 0.25;
+                        if (_pnPerc < 20) _punishSeverity = 'jail';
+                    } else if (_kPers.temperament === 'kind' || _kPers.intelligence === 'brilliant') {
+                        _punishChance = 0.08; // kind/smart kings try other approaches first
+                    }
+
+                    if (!rng.chance(_punishChance)) continue;
+
+                    // Apply punishment
+                    var _pnName = ((_pn.firstName || '') + ' ' + (_pn.lastName || '')).trim();
+                    var _pnP = _pn.personality || {};
+                    switch (_punishSeverity) {
+                        case 'fine':
+                            var _fAmt = Math.min(_pn.gold || 0, 200);
+                            if (_fAmt >= 10) {
+                                _pn.gold -= _fAmt;
+                                k.gold = (k.gold || 0) + _fAmt;
+                                _pn.kingLoyalty = Math.max(0, (_pn.kingLoyalty || 50) - 8);
+                                _pn.perceivedKingLoyalty = Math.max(0, (_pn.perceivedKingLoyalty || 50) - 5);
+                                logEvent('⚖️ ' + k.name + ' fines ' + _pnName + ' ' + _fAmt + 'g for suspected disloyalty.');
+                            }
+                            break;
+                        case 'jail':
+                            _pn._jailedUntilDay = day + 15;
+                            _pn._jailedBy = 'king';
+                            _pn.kingLoyalty = Math.max(0, (_pn.kingLoyalty || 50) - 18);
+                            _pn.perceivedKingLoyalty = Math.max(0, (_pn.perceivedKingLoyalty || 50) - 12);
+                            logEvent('⚖️ ' + k.name + ' imprisons ' + _pnName + ' for disloyalty.');
+                            break;
+                        case 'seize_gold':
+                            var _sAmt = Math.floor((_pn.gold || 0) * 0.5);
+                            if (_sAmt >= 20) {
+                                _pn.gold -= _sAmt;
+                                k.gold = (k.gold || 0) + _sAmt;
+                            }
+                            _pn.kingLoyalty = Math.max(0, (_pn.kingLoyalty || 50) - 25);
+                            _pn.perceivedKingLoyalty = Math.max(0, (_pn.perceivedKingLoyalty || 50) - 15);
+                            logEvent('⚖️ ' + k.name + ' confiscates gold from ' + _pnName + ' for treachery.');
+                            break;
+                        case 'strip_title':
+                            var _cRank = (_pn.socialRank && _pn.socialRank[kId]) || 4;
+                            if (_cRank > 3) {
+                                _pn.socialRank[kId] = _cRank - 1;
+                                _pn.kingLoyalty = Math.max(0, (_pn.kingLoyalty || 50) - 35);
+                                _pn.perceivedKingLoyalty = Math.max(0, (_pn.perceivedKingLoyalty || 50) - 20);
+                                logEvent('⚖️ ' + k.name + ' strips ' + _pnName + ' of their noble title.');
+                            }
+                            break;
+                    }
+                    // Ripple to other nobles
+                    for (var _rni = 0; _rni < nobles.length; _rni++) {
+                        if (nobles[_rni].id === _pn.id) continue;
+                        var _rnP = nobles[_rni].personality || {};
+                        var _ripple = -3;
+                        if ((nobles[_rni]._nobleRelationships && nobles[_rni]._nobleRelationships[_pn.id] || 0) > 30) _ripple = -6;
+                        if ((nobles[_rni]._nobleRelationships && nobles[_rni]._nobleRelationships[_pn.id] || 0) < -30) _ripple = 2;
+                        if ((_rnP.loyalty || 50) > 65) _ripple *= 0.5;
+                        nobles[_rni].kingLoyalty = Math.max(0, Math.min(100, (nobles[_rni].kingLoyalty || 50) + _ripple));
+                    }
+                    break; // One punishment per tick max
+                }
             }
         }
     }
@@ -20922,6 +21040,26 @@
         // Apply happiness from holding court
         k.happiness = Math.min(100, (k.happiness || 50) + happinessBonus);
 
+        // Create interactive court session for player-noble (not king)
+        try {
+            var _pIsKingOfThis = typeof Player !== 'undefined' && Player.state && Player.state.isKing && Player.state.kingState && Player.state.kingState.kingdomId === kId;
+            if (!_pIsKingOfThis && typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId) {
+                var _pPersonId = Player.personId || 'player';
+                var _pPerson = findPerson(_pPersonId);
+                if (_pPerson && _pPerson.socialRank && _pPerson.socialRank[kId] >= 4) {
+                    // Noble player can attend court — store court session data for UI access
+                    k._activeCourtSession = {
+                        id: 'court_' + world.day,
+                        day: world.day,
+                        events: courtEvents,
+                        kingName: kingName,
+                        _playerActionsLeft: 2 // player gets 2 court actions
+                    };
+                    logEvent('⚖️ The king is holding court today. As a noble, you may attend and take actions.', null, 'my_kingdom');
+                }
+            }
+        } catch(e) {}
+
         // Log court session
         logEvent('⚖️ ' + kingName + ' held court in ' + k.name + '. ' + petitionsProcessed + ' petitions heard. (+'  + happinessBonus + ' happiness)', {
             type: 'court_session', kingdomId: kId,
@@ -20931,6 +21069,110 @@
 
         // Schedule next court in 30-60 days
         k._nextCourtDay = world.day + rng.randInt(30, 60);
+    }
+
+    // ── Player Court Actions (non-king noble attending court) ──
+    function doCourtAction(kingdomId, actionId) {
+        var k = findKingdom(kingdomId);
+        if (!k) return { success: false, message: 'Kingdom not found.' };
+        var court = k._activeCourtSession;
+        if (!court || court._playerActionsLeft <= 0) return { success: false, message: 'No court actions remaining.' };
+
+        var pPerson = null;
+        try {
+            pPerson = findPerson(Player.personId || 'player');
+        } catch(e) {}
+        if (!pPerson) return { success: false, message: 'Player not found.' };
+
+        var rng = world.rng;
+        var result = { success: false, message: '' };
+
+        switch (actionId) {
+            case 'address_king': {
+                // Formally address the king — boosts perceived loyalty and relationship
+                if (pPerson.perceivedKingLoyalty == null) pPerson.perceivedKingLoyalty = pPerson.kingLoyalty || 50;
+                var boost = 3 + Math.floor(rng.random() * 5);
+                pPerson.perceivedKingLoyalty = Math.min(98, pPerson.perceivedKingLoyalty + boost);
+                pPerson.kingLoyalty = Math.min(100, (pPerson.kingLoyalty || 50) + 2);
+                result = { success: true, message: 'You formally addressed the king and made a favorable impression. (+' + boost + ' perceived loyalty)' };
+                logEvent('🎙️ You spoke before the court and addressed the king directly.', null, 'my_kingdom');
+                break;
+            }
+            case 'petition_king': {
+                // Present a petition — chance of getting a benefit
+                var petTypes = ['tax reduction on your lands', 'royal endorsement for trade', 'military honors'];
+                var chosen = rng.pick(petTypes);
+                var success = rng.chance(0.55);
+                if (success) {
+                    pPerson.kingLoyalty = Math.min(100, (pPerson.kingLoyalty || 50) + 3);
+                    if (chosen.indexOf('tax') >= 0) k.happiness = Math.min(100, (k.happiness || 50) + 1);
+                    result = { success: true, message: 'Your petition for ' + chosen + ' was GRANTED by the king!' };
+                } else {
+                    result = { success: true, message: 'Your petition for ' + chosen + ' was DENIED. The king cited other priorities.' };
+                }
+                logEvent('📜 You petitioned the king for ' + chosen + ' — ' + (success ? 'GRANTED' : 'DENIED'), null, 'my_kingdom');
+                break;
+            }
+            case 'observe_nobles': {
+                // Observe other nobles — learn about loyalties and relationships
+                var kId = kingdomId;
+                var nobles = world.people.filter(function(p) {
+                    return p.alive && p.socialRank && p.socialRank[kId] >= 4 && p.id !== (pPerson.id || 'player');
+                });
+                if (nobles.length === 0) {
+                    result = { success: true, message: 'No other nobles to observe.' };
+                    break;
+                }
+                var observed = rng.pick(nobles);
+                var obName = ((observed.firstName || '') + ' ' + (observed.lastName || '')).trim();
+                // Reveal partial personality/loyalty info
+                var realLoy = observed.kingLoyalty || 50;
+                var percLoy = observed.perceivedKingLoyalty != null ? observed.perceivedKingLoyalty : realLoy;
+                var diff = Math.abs(realLoy - percLoy);
+                var msg = 'You observed ' + obName + ' at court. ';
+                if (diff > 15) {
+                    msg += 'Something seems off about their demeanor — they may not be as ' + (percLoy > realLoy ? 'loyal' : 'disloyal') + ' as they appear.';
+                } else {
+                    msg += 'They seem genuine in their bearing.';
+                }
+                var _obP = observed.personality || {};
+                if ((_obP.ambition || 50) > 70) msg += ' They seem quite ambitious.';
+                if ((_obP.honesty || 50) < 30) msg += ' You sense dishonesty in their words.';
+                result = { success: true, message: msg };
+                logEvent('👁️ You carefully observed ' + obName + ' during court proceedings.', null, 'my_kingdom');
+                break;
+            }
+            case 'network_nobles': {
+                // Network with other nobles — improve relationships
+                var kId2 = kingdomId;
+                var nobles2 = world.people.filter(function(p) {
+                    return p.alive && p.socialRank && p.socialRank[kId2] >= 4 && p.id !== (pPerson.id || 'player');
+                });
+                if (nobles2.length === 0) {
+                    result = { success: true, message: 'No nobles to network with.' };
+                    break;
+                }
+                var target = rng.pick(nobles2);
+                var tName = ((target.firstName || '') + ' ' + (target.lastName || '')).trim();
+                if (!target._nobleRelationships) target._nobleRelationships = {};
+                var playerId = pPerson.id || 'player';
+                target._nobleRelationships[playerId] = Math.min(100, (target._nobleRelationships[playerId] || 0) + rng.randInt(3, 8));
+                if (!pPerson._nobleRelationships) pPerson._nobleRelationships = {};
+                pPerson._nobleRelationships[target.id] = Math.min(100, (pPerson._nobleRelationships[target.id] || 0) + rng.randInt(2, 6));
+                result = { success: true, message: 'You networked with ' + tName + ' and improved your relationship.' };
+                logEvent('🤝 You made connections with ' + tName + ' at court.', null, 'my_kingdom');
+                break;
+            }
+            default:
+                result = { success: false, message: 'Unknown court action.' };
+        }
+
+        court._playerActionsLeft--;
+        // Clear court session after all actions used
+        if (court._playerActionsLeft <= 0) {
+            k._activeCourtSession = null;
+        }
+        return result;
     }
 
     // ========================================================
@@ -20979,7 +21221,7 @@
                 return p.alive && p.socialRank && p.socialRank[kId] >= 4 && p.socialRank[kId] <= 7;
             });
 
-            // Random 60-80% actually attend
+            // Random attendance based on personality, loyalty, and relationship with king
             var attendRate = (rng.randInt(60, 80)) / 100;
             var shuffled = rng.shuffle(allNobles.slice());
             var attendCount = Math.max(1, Math.floor(shuffled.length * attendRate));
@@ -20996,20 +21238,50 @@
                 }
                 k._playerFeastInvites = null; // consumed
             } else {
-                for (var ai = 0; ai < attendCount && ai < shuffled.length; ai++) {
-                    k._activeFeast.attendees.push(shuffled[ai].id);
+                // Personality-based attendance: loyal/social nobles more likely to attend
+                for (var ai = 0; ai < shuffled.length; ai++) {
+                    var _fNoble = shuffled[ai];
+                    var _fNP = _fNoble.personality || {};
+                    var _fAttendChance = 0.65;
+                    // Loyal nobles always show up
+                    if ((_fNoble.kingLoyalty || 50) > 70) _fAttendChance += 0.2;
+                    else if ((_fNoble.kingLoyalty || 50) < 30) _fAttendChance -= 0.25;
+                    // Social nobles love feasts
+                    if ((_fNP.social || 50) > 60) _fAttendChance += 0.15;
+                    // Ambitious nobles attend to gain influence
+                    if ((_fNP.ambition || 50) > 65) _fAttendChance += 0.1;
+                    // Jailed nobles can't attend
+                    if (_fNoble._jailedUntilDay && world.day < _fNoble._jailedUntilDay) _fAttendChance = 0;
+                    if (rng.chance(Math.max(0.1, Math.min(0.95, _fAttendChance)))) {
+                        k._activeFeast.attendees.push(_fNoble.id);
+                    }
                 }
             }
 
-            // Add player if they're a noble in this kingdom
+            // Player feast invitation: if player is noble (not king), create invitation instead of auto-adding
             try {
                 if (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId) {
                     var playerPersonId = Player.personId || 'player';
                     var playerPerson = findPerson(playerPersonId);
-                    if (playerPerson && playerPerson.socialRank && playerPerson.socialRank[kId] >= 4) {
+                    var _pIsKing = Player.state && Player.state.isKing && Player.state.kingState && Player.state.kingState.kingdomId === kId;
+                    if (_pIsKing) {
+                        // King always attends their own feast
                         if (k._activeFeast.attendees.indexOf(playerPersonId) < 0) {
                             k._activeFeast.attendees.push(playerPersonId);
                         }
+                    } else if (playerPerson && playerPerson.socialRank && playerPerson.socialRank[kId] >= 4) {
+                        // Noble player gets an invitation they can accept/decline
+                        if (!Player.state._feastInvitations) Player.state._feastInvitations = [];
+                        Player.state._feastInvitations.push({
+                            kingdomId: kId,
+                            feastId: k._activeFeast.id,
+                            townId: feastTownId,
+                            townName: feastTownName,
+                            kingdomName: k.name,
+                            endDay: k._activeFeast.endDay,
+                            inviteDay: world.day
+                        });
+                        logEvent('📨 You have been invited to a Royal Feast in ' + feastTownName + '! Open the Noble panel to RSVP.', null, 'my_kingdom');
                     }
                 }
             } catch (e) { /* Player not loaded */ }
@@ -24185,6 +24457,9 @@
         },
         doFeastAction: function(kingdomId, actionId) {
             return doFeastAction(kingdomId, actionId);
+        },
+        doCourtAction: function(kingdomId, actionId) {
+            return doCourtAction(kingdomId, actionId);
         },
 
         // ---- Conspiracy API ----

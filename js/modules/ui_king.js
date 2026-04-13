@@ -12,6 +12,16 @@
     var toast = UI.toast;
     var formatGold = UI.formatGold;
     var escapeHtml = UI.escapeHtml;
+
+    // Loyalty label helper: converts perceived loyalty to text + color
+    function _loyaltyLabel(perceivedVal) {
+        var v = Math.round(perceivedVal || 50);
+        if (v >= 80) return { text: 'Very Loyal', color: '#55a868', icon: '♛' };
+        if (v >= 60) return { text: 'Loyal', color: '#5dade2', icon: '♛' };
+        if (v >= 50) return { text: 'Neutral', color: '#e0c58a', icon: '♛' };
+        return { text: 'Unsure', color: '#c44e52', icon: '♛' };
+    }
+
     // ========================================================
     // §KING — KING UI PANEL & FUNCTIONS
     // ========================================================
@@ -518,12 +528,17 @@
 
         // Land Subsidy
         html += '<div style="background:rgba(0,0,0,0.1);padding:6px;border-radius:4px;margin-bottom:4px;">';
-        html += '<div style="font-size:0.75rem;color:#ddd;margin-bottom:4px;">🏡 Land Subsidy <span style="font-size:0.62rem;color:#888;">(Reduce land costs 25%)</span> <span style="font-size:0.62rem;color:#e0c58a;">(' + formatGold(200) + '/season)</span></div>';
+        html += '<div style="font-size:0.75rem;color:#ddd;margin-bottom:4px;">🏡 Land Subsidy <span style="font-size:0.62rem;color:#888;">(Reduce building costs 25%)</span> <span style="font-size:0.62rem;color:#e0c58a;">(' + formatGold(200) + '/season)</span></div>';
         var _landSubTowns = (kingdom.laws && kingdom.laws.landSubsidyTowns) || [];
+        var _landSubBuildings = ['farm', 'bakery', 'blacksmith', 'armorer', 'fletcher', 'clinic', 'hospital', 'marketplace', 'inn', 'tavern', 'mill', 'lumber_mill', 'mine', 'quarry', 'dock', 'warehouse', 'guild_hall'];
         html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">';
-        html += '<select id="_roLandSubTown" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;max-width:140px;">';
+        html += '<select id="_roLandSubTown" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;max-width:120px;">';
         html += '<option value="">Select town...</option>';
         for (var _lsi = 0; _lsi < _roTowns.length; _lsi++) html += '<option value="' + _roTowns[_lsi].id + '">' + escapeHtml(_roTowns[_lsi].name) + '</option>';
+        html += '</select>';
+        html += '<select id="_roLandSubBldg" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;max-width:120px;">';
+        html += '<option value="all">All Buildings</option>';
+        for (var _lbi = 0; _lbi < _landSubBuildings.length; _lbi++) html += '<option value="' + _landSubBuildings[_lbi] + '">' + _landSubBuildings[_lbi].replace(/_/g, ' ') + '</option>';
         html += '</select>';
         html += '<button class="btn-medieval" data-action="kingSetLandSubsidy" style="font-size:0.62rem;padding:2px 6px;">🏡 Set</button>';
         html += '<button class="btn-medieval" data-action="kingRemoveLandSubsidy" style="font-size:0.62rem;padding:2px 6px;">❌ Remove</button>';
@@ -531,8 +546,12 @@
         if (_landSubTowns.length > 0) {
             var _lsNames = [];
             for (var _lsni = 0; _lsni < _landSubTowns.length; _lsni++) {
-                var _lst = Engine.findTown(_landSubTowns[_lsni]);
-                _lsNames.push(_lst ? _lst.name : _landSubTowns[_lsni]);
+                var _lsEntry = _landSubTowns[_lsni];
+                var _lsTownId = typeof _lsEntry === 'string' ? _lsEntry : _lsEntry.townId;
+                var _lsBldgType = typeof _lsEntry === 'object' && _lsEntry.buildingType ? _lsEntry.buildingType : 'all';
+                var _lst = Engine.findTown(_lsTownId);
+                var _lsLabel = (_lst ? _lst.name : _lsTownId) + (_lsBldgType !== 'all' ? ' (' + _lsBldgType.replace(/_/g, ' ') + ')' : '');
+                _lsNames.push(_lsLabel);
             }
             html += '<div style="font-size:0.6rem;color:#55a868;margin-top:3px;">Land subsidies in: ' + _lsNames.join(', ') + '</div>';
         }
@@ -1023,7 +1042,9 @@
             // Kingdom summary bar
             var _totalPop = 0, _totalGarrison = 0, _totalBuildings = 0, _plagueCount = 0;
             for (var _si = 0; _si < _kTowns.length; _si++) {
-                _totalPop += (_kTowns[_si].people || []).length;
+                var _sPeople = [];
+                try { _sPeople = Engine.getPeople(_kTowns[_si].id) || []; } catch(e) {}
+                _totalPop += _sPeople.length;
                 _totalGarrison += (_kTowns[_si].garrison || 0);
                 _totalBuildings += (_kTowns[_si].buildings || []).length;
                 if (_kTowns[_si].plagueActive) _plagueCount++;
@@ -1038,7 +1059,13 @@
             html += '<div style="max-height:400px;overflow-y:auto;">';
             for (var _ki = 0; _ki < _kTowns.length; _ki++) {
                 var _kt = _kTowns[_ki];
-                var _pop = (_kt.people || []).length;
+                var _townPeople = [];
+                try { _townPeople = Engine.getPeople(_kt.id) || []; } catch(e) {}
+                var _pop = _townPeople.length;
+                var _sickCount = 0;
+                for (var _sci = 0; _sci < _townPeople.length; _sci++) {
+                    if (_townPeople[_sci].sick) _sickCount++;
+                }
                 var _hap = Math.round(_kt.happiness || 50);
                 var _pros = Math.round(_kt.prosperity || 50);
                 var _hapColor = _hap > 60 ? '#55a868' : _hap > 35 ? '#e67e22' : '#c44e52';
@@ -1048,6 +1075,7 @@
                 // Problems detection
                 var _problems = [];
                 if (_kt.plagueActive) _problems.push('🦠 Plague');
+                if (_sickCount > 0) _problems.push('🤒 ' + _sickCount + ' Sick');
                 if (_kt.foodShortage) _problems.push('🍞 Food Shortage');
                 if (_hap < 30) _problems.push('😡 Very Unhappy');
                 if (_garr < 5) _problems.push('🛡️ Weak Garrison');
@@ -1063,11 +1091,12 @@
                 html += '</div>';
 
                 // Stats grid
-                html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:3px;margin-bottom:4px;">';
+                html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:3px;margin-bottom:4px;">';
                 html += '<div style="font-size:0.65rem;text-align:center;"><span style="color:#aaa;">Pop</span><br><span style="color:#d4c9a0;">' + _pop + '</span></div>';
                 html += '<div style="font-size:0.65rem;text-align:center;"><span style="color:#aaa;">Happy</span><br><span style="color:' + _hapColor + ';">' + _hap + '%</span></div>';
                 html += '<div style="font-size:0.65rem;text-align:center;"><span style="color:#aaa;">Prosp</span><br><span style="color:' + _prosColor + ';">' + _pros + '%</span></div>';
                 html += '<div style="font-size:0.65rem;text-align:center;"><span style="color:#aaa;">Garrison</span><br><span style="color:#5dade2;">' + _garr + '</span></div>';
+                html += '<div style="font-size:0.65rem;text-align:center;"><span style="color:#aaa;">Sick</span><br><span style="color:' + (_sickCount > 0 ? '#c44e52' : '#55a868') + ';">' + (_sickCount > 0 ? _sickCount : '0') + '</span></div>';
                 html += '</div>';
 
                 // Buildings summary
@@ -1171,10 +1200,9 @@
                 if (_hasLoan) html += ' <span title="Owes you a loan" style="font-size:0.65rem;">💰</span>';
                 if (_hasBM) html += ' <span title="You have blackmail on them" style="font-size:0.65rem;">🔒</span>';
                 html += '</div>';
-                var _loyalty = Math.round(_n.kingLoyalty || 50);
-                var _loyColor = _loyalty >= 70 ? '#55a868' : _loyalty >= 40 ? '#e0c58a' : '#c44e52';
+                var _pLoy = _loyaltyLabel(_n.perceivedKingLoyalty != null ? _n.perceivedKingLoyalty : (_n.kingLoyalty || 50));
                 html += '<div style="font-size:0.7rem;">';
-                html += '<span style="color:' + _loyColor + ';" title="Loyalty to crown">♛ ' + _loyalty + '</span>';
+                html += '<span style="color:' + _pLoy.color + ';" title="Loyalty to crown">' + _pLoy.icon + ' ' + _pLoy.text + '</span>';
                 html += '<span style="color:' + _relColor + ';margin-left:6px;">' + _relLevel + ' ❤️</span>';
                 html += '</div>';
                 html += '</div>';
@@ -1308,8 +1336,7 @@
                     var nName = escapeHtml(((n.firstName || '') + ' ' + (n.lastName || '')).trim());
                     var nRank = (n.socialRank && n.socialRank[kingdom.id]) || 4;
                     var rankLabel = nRank >= 6 ? '👑 RA' : nRank >= 5 ? '🏰 Lord' : '🎖️ Noble';
-                    var loyalty = Math.round(n.kingLoyalty || 50);
-                    var loyColor = loyalty >= 70 ? '#55a868' : loyalty >= 40 ? '#e0c58a' : '#c44e52';
+                    var _nLoy = _loyaltyLabel(n.perceivedKingLoyalty != null ? n.perceivedKingLoyalty : (n.kingLoyalty || 50));
                     var pRel = Player.state && Player.state.relationships && Player.state.relationships[n.id];
                     var relLvl = pRel ? Math.round(pRel.level) : 0;
 
@@ -1332,7 +1359,7 @@
                     if (onMission) html += '<span style="font-size:0.6rem;color:#5dade2;margin-left:4px;">📍 On Mission</span>';
                     html += '</div>';
                     html += '<div style="font-size:0.65rem;">';
-                    html += '<span style="color:' + loyColor + ';">♛ ' + loyalty + '</span>';
+                    html += '<span style="color:' + _nLoy.color + ';">' + _nLoy.icon + ' ' + _nLoy.text + '</span>';
                     html += '<span style="color:#888;margin-left:6px;">❤️ ' + relLvl + '</span>';
                     html += '</div></div>';
 
@@ -1340,9 +1367,11 @@
                     html += '<div style="display:flex;gap:4px;flex-wrap:wrap;">';
                     html += '<button class="btn-medieval" data-action="kingPrivateAudience" data-id="' + n.id + '" style="font-size:0.6rem;padding:2px 6px;' + (!audReady || onMission ? 'opacity:0.5;' : '') + '" ' + (!audReady || onMission ? 'disabled' : '') + '>🤝 Audience' + (!audReady ? ' (' + (7 - (Engine.getDay() - audCD)) + 'd)' : '') + '</button>';
                     html += '<button class="btn-medieval" data-action="kingBestowGiftUI" data-id="' + n.id + '" data-name="' + nName + '" style="font-size:0.6rem;padding:2px 6px;">🎁 Bestow Gift</button>';
-                    if (!onMission && (n.kingLoyalty || 0) >= 40) {
+                    if (!onMission && (n.perceivedKingLoyalty != null ? n.perceivedKingLoyalty : (n.kingLoyalty || 50)) >= 40) {
                         html += '<button class="btn-medieval" data-action="kingSendMissionUI" data-id="' + n.id + '" data-name="' + nName + '" style="font-size:0.6rem;padding:2px 6px;">📜 Send Mission</button>';
                     }
+                    html += '<button class="btn-medieval" data-action="kingInvestigateNoble" data-id="' + n.id + '" data-name="' + nName + '" style="font-size:0.6rem;padding:2px 6px;background:rgba(93,173,226,0.2);">🔍 Investigate</button>';
+                    html += '<button class="btn-medieval" data-action="kingPunishNobleUI" data-id="' + n.id + '" data-name="' + nName + '" style="font-size:0.6rem;padding:2px 6px;background:rgba(196,78,82,0.2);">⚖️ Punish</button>';
                     html += '</div></div>';
                 }
                 html += '</div>';
@@ -2762,6 +2791,54 @@
         UI.toast(r.message, r.success ? 'success' : 'warning');
         if (r.success) UI.openKingPanel('court');
     });
+
+    // ── Noble Punishment UI ──
+    UI.registerAction('kingPunishNobleUI', function(_t, d) {
+        var nobleId = d.id;
+        var nobleName = d.name || 'Noble';
+        var noble = null;
+        try { var w = Engine.getWorld(); if (w && w.people) for (var i = 0; i < w.people.length; i++) { if (w.people[i].id === nobleId) { noble = w.people[i]; break; } } } catch(e) {}
+        var percLoy = noble ? (noble.perceivedKingLoyalty != null ? noble.perceivedKingLoyalty : (noble.kingLoyalty || 50)) : 50;
+        var loyLabel = _loyaltyLabel(percLoy);
+        var html = '<div style="padding:12px;">';
+        html += '<div style="font-size:1rem;color:#c44e52;margin-bottom:8px;">⚖️ Punish ' + escapeHtml(nobleName) + '</div>';
+        html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:8px;">Current standing: <span style="color:' + loyLabel.color + ';">' + loyLabel.text + '</span>. Choose a punishment — harsher measures damage loyalty of all nobles.</div>';
+
+        var punishments = [
+            { id: 'fine', icon: '💰', name: 'Levy a Fine', desc: 'Demand 200g from this noble. Moderate loyalty hit to target, minor ripple to others.', severity: 'Mild' },
+            { id: 'jail', icon: '🔒', name: 'Imprison', desc: 'Jail this noble for 15 days. Significant loyalty and relationship damage. Other nobles take notice.', severity: 'Moderate' },
+            { id: 'seize_gold', icon: '💎', name: 'Seize Gold', desc: 'Confiscate half their gold for the treasury. Heavy loyalty loss, other nobles fear for their wealth.', severity: 'Harsh' },
+            { id: 'seize_business', icon: '🏭', name: 'Seize Properties', desc: 'Confiscate their buildings for the kingdom. Devastating loyalty impact across all nobles.', severity: 'Severe' },
+            { id: 'strip_title', icon: '📜', name: 'Strip Title', desc: 'Demote this noble by one rank. Enormous reputational damage. Other nobles deeply unsettled.', severity: 'Severe' },
+            { id: 'execute', icon: '⚔️', name: 'Execute', desc: 'Put this noble to death. Maximum fear effect but massive loyalty collapse among all other nobles.', severity: 'Extreme' }
+        ];
+        var sevColors = { Mild: '#e0c58a', Moderate: '#e67e22', Harsh: '#c44e52', Severe: '#a93226', Extreme: '#7b241c' };
+        for (var pi = 0; pi < punishments.length; pi++) {
+            var p = punishments[pi];
+            html += '<div style="background:rgba(0,0,0,0.15);border:1px solid rgba(196,78,82,0.2);padding:6px 8px;border-radius:4px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;">';
+            html += '<div style="flex:1;">';
+            html += '<div style="font-size:0.78rem;color:#ddd;">' + p.icon + ' ' + p.name + ' <span style="font-size:0.58rem;color:' + (sevColors[p.severity] || '#888') + ';">(' + p.severity + ')</span></div>';
+            html += '<div style="font-size:0.62rem;color:#999;">' + p.desc + '</div>';
+            html += '</div>';
+            html += '<button class="btn-medieval" data-action="kingPunishNoble" data-id="' + nobleId + '" data-val="' + p.id + '" style="font-size:0.62rem;padding:3px 8px;background:rgba(196,78,82,0.3);margin-left:8px;">⚖️</button>';
+            html += '</div>';
+        }
+        html += '<button class="btn-medieval" data-action="kingBackToCourt" style="margin-top:8px;font-size:0.72rem;padding:4px 12px;">← Back to Court</button>';
+        html += '</div>';
+        openModal('⚖️ Noble Punishment', html);
+    });
+    UI.registerAction('kingPunishNoble', function(_t, d) {
+        var r = Player.kingPunishNoble ? Player.kingPunishNoble(d.id, d.val) : { success: false, message: 'Not available.' };
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        if (r.success) UI.openKingPanel('court');
+    });
+
+    // ── Investigate Noble ──
+    UI.registerAction('kingInvestigateNoble', function(_t, d) {
+        var r = Player.kingInvestigateNoble ? Player.kingInvestigateNoble(d.id) : { success: false, message: 'Not available.' };
+        UI.toast(r.message, r.success ? 'success' : 'info');
+        UI.openKingPanel('court');
+    });
     UI.registerAction('kingFleeConfirm', function() { var r = Player.kingFleeKingdom(); UI.closeModal(); UI.toast(r.message, r.success ? 'success' : 'warning'); });
     UI.registerAction('kingElectionVote', function(_t, d) { Engine._resolvePendingElection(Engine.findKingdom(d.kingdom), d.id); UI.closeModal(); UI.toast('Your vote has been cast.', 'success'); });
     UI.registerAction('kingElectionAbstain', function(_t, d) { Engine._resolvePendingElection(Engine.findKingdom(d.kingdom), null); UI.closeModal(); UI.toast('You abstained from voting.', 'warning'); });
@@ -2969,8 +3046,10 @@
     });
     UI.registerAction('kingSetLandSubsidy', function() {
         var t = document.getElementById('_roLandSubTown');
+        var b = document.getElementById('_roLandSubBldg');
         if (!t || !t.value) { UI.toast('Select a town.', 'warning'); return; }
-        var r = Player.kingEconomicOrder('set_land_subsidy', { townId: t.value }); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions');
+        var bldgType = b ? b.value : 'all';
+        var r = Player.kingEconomicOrder('set_land_subsidy', { townId: t.value, buildingType: bldgType }); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions');
     });
     UI.registerAction('kingRemoveLandSubsidy', function() {
         var t = document.getElementById('_roLandSubTown');

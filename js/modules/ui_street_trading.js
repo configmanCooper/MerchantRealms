@@ -683,8 +683,9 @@ function openNobilityDialog() {
     }
 
     // ── TAB BUTTONS ──
-    html += '<div style="display:flex;gap:6px;margin-bottom:10px;">';
+    html += '<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;">';
     html += '<button class="btn-tab' + (_nobilityTab === 'status' ? ' active' : '') + '" data-action="switchNobilityTab" data-id="status" style="font-size:0.85rem;padding:6px 14px;">📊 Status</button>';
+    html += '<button class="btn-tab' + (_nobilityTab === 'influence' ? ' active' : '') + '" data-action="switchNobilityTab" data-id="influence" style="font-size:0.85rem;padding:6px 14px;">🎭 Influence</button>';
     html += '<button class="btn-tab' + (_nobilityTab === 'intrigue' ? ' active' : '') + '" data-action="switchNobilityTab" data-id="intrigue" style="font-size:0.85rem;padding:6px 14px;">🗡️ Noble Intrigue</button>';
     html += '</div>';
 
@@ -1049,6 +1050,11 @@ function openNobilityDialog() {
 
     html += '</div>'; // close status tab
 
+    // ── INFLUENCE TAB ── (loyalty manipulation: flatter king, whisper against nobles, feast invitations)
+    html += '<div id="nobilityTab_influence" style="display:' + (_nobilityTab === 'influence' ? '' : 'none') + ';">';
+    html += _buildNobleInfluenceTab(citizenKingdomId, kingdom, playerRank);
+    html += '</div>';
+
     // ── INTRIGUE TAB ──
     html += '<div id="nobilityTab_intrigue" style="display:' + (_nobilityTab === 'intrigue' ? '' : 'none') + ';">';
     html += _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank);
@@ -1057,6 +1063,121 @@ function openNobilityDialog() {
     // Open modal
     var footerHtml = '<button class="btn-medieval" data-action="closeModal">Close</button>';
     openModal('👑 Nobility — ' + (rankDef.name || 'Noble'), html, footerHtml);
+}
+
+// ── Noble Influence Tab Builder ──
+function _buildNobleInfluenceTab(citizenKingdomId, kingdom, playerRank) {
+    var html = '';
+    var _isKing = typeof Player !== 'undefined' && Player.state && Player.state.isKing;
+
+    // ── Feast Invitations ──
+    var invitations = (typeof Player !== 'undefined' && Player.state && Player.state._feastInvitations) || [];
+    if (invitations.length > 0) {
+        html += '<div style="background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.3);border-radius:8px;padding:10px;margin-bottom:10px;">';
+        html += '<h3 style="margin:0 0 8px 0;font-size:0.95rem;color:var(--gold);">🎪 Feast Invitations</h3>';
+        for (var fi = 0; fi < invitations.length; fi++) {
+            var inv = invitations[fi];
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);">';
+            html += '<span>Royal Feast in <b>' + escapeHtml(inv.townName || '?') + '</b> (' + escapeHtml(inv.kingdomName || '?') + ') — ends day ' + (inv.endDay || '?') + '</span>';
+            html += '<span>';
+            html += '<button class="btn-medieval btn-sm" data-action="acceptFeastInvite" data-id="' + fi + '" style="margin-right:4px;">✅ Accept</button>';
+            html += '<button class="btn-medieval btn-sm" data-action="declineFeastInvite" data-id="' + fi + '">❌ Decline</button>';
+            html += '</span></div>';
+        }
+        html += '</div>';
+    }
+
+    if (_isKing) {
+        html += '<p style="color:#999;font-style:italic;">As king, use the King panel for loyalty management.</p>';
+        return html;
+    }
+
+    // ── Active Court Session ──
+    var _courtSession = null;
+    try {
+        var _ck = Engine.findKingdom(citizenKingdomId);
+        if (_ck && _ck._activeCourtSession && _ck._activeCourtSession._playerActionsLeft > 0) {
+            _courtSession = _ck._activeCourtSession;
+        }
+    } catch(e) {}
+    if (_courtSession) {
+        html += '<div style="background:rgba(80,120,200,0.1);border:1px solid rgba(80,120,200,0.3);border-radius:8px;padding:10px;margin-bottom:10px;">';
+        html += '<h3 style="margin:0 0 8px 0;font-size:0.95rem;color:#5dade2;">⚖️ Court in Session — ' + _courtSession._playerActionsLeft + ' actions left</h3>';
+        html += '<p style="color:#bbb;font-size:0.8rem;margin:0 0 8px 0;">The king is holding court. Take formal actions to influence your standing.</p>';
+        var _courtActions = [
+            { id: 'address_king', icon: '🎙️', label: 'Address the King', desc: 'Formally speak before the court (+3-7 perceived loyalty)' },
+            { id: 'petition_king', icon: '📜', label: 'Present a Petition', desc: '55% chance of royal favor' },
+            { id: 'observe_nobles', icon: '👁️', label: 'Observe Nobles', desc: 'Learn about a noble\'s true loyalty and personality' },
+            { id: 'network_nobles', icon: '🤝', label: 'Network with Nobles', desc: 'Improve relationship with a random noble' }
+        ];
+        for (var _ca = 0; _ca < _courtActions.length; _ca++) {
+            var _act = _courtActions[_ca];
+            html += '<button class="btn-medieval" data-action="doCourtAction" data-id="' + _act.id + '" style="width:100%;text-align:left;padding:6px 10px;margin-bottom:4px;">';
+            html += _act.icon + ' <b>' + _act.label + '</b> <span style="color:#888;font-size:0.8rem;">— ' + _act.desc + '</span>';
+            html += '</button>';
+        }
+        html += '</div>';
+    }
+
+    // ── Loyalty Manipulation Actions ──
+    html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:10px;margin-bottom:10px;">';
+    html += '<h3 style="margin:0 0 8px 0;font-size:0.95rem;color:var(--gold);">🎭 Loyalty Manipulation</h3>';
+    html += '<p style="color:#bbb;font-size:0.8rem;margin:0 0 8px 0;">Influence how the king perceives you and other nobles. Risky — you may be discovered!</p>';
+
+    // Flatter the King
+    html += '<div style="margin-bottom:8px;">';
+    html += '<button class="btn-medieval" data-action="nobleFlatterKing" style="width:100%;text-align:left;padding:8px 12px;">';
+    html += '😊 <b>Flatter the King</b> — Boost how loyal the king thinks you are';
+    html += '</button>';
+    html += '<div style="color:#888;font-size:0.75rem;margin-top:2px;">+4-10 perceived loyalty · 5-day cooldown · Risk: king may see through it</div>';
+    html += '</div>';
+
+    // Whisper Against Noble (needs target selector)
+    html += '<div style="margin-bottom:8px;">';
+    html += '<div style="display:flex;gap:6px;align-items:center;">';
+    html += '<select id="whisperTarget" style="flex:1;background:#1a1a2e;color:#eee;border:1px solid rgba(201,168,76,0.3);border-radius:4px;padding:4px;">';
+    html += '<option value="">— Select noble to slander —</option>';
+    // Get nobles
+    var _nobles = [];
+    try {
+        var _allP = Engine.getPeople ? Engine.getPeople() : [];
+        for (var _ni = 0; _ni < _allP.length; _ni++) {
+            var _np = _allP[_ni];
+            if (_np && _np.alive && _np.socialRank && _np.socialRank[citizenKingdomId] >= 4 && _np.id !== (Player.personId || 'player')) {
+                _nobles.push(_np);
+            }
+        }
+    } catch(e) {}
+    for (var _nj = 0; _nj < _nobles.length; _nj++) {
+        var _nn = _nobles[_nj];
+        var _nnName = ((_nn.firstName || '') + ' ' + (_nn.lastName || '')).trim();
+        html += '<option value="' + _nn.id + '">' + escapeHtml(_nnName) + '</option>';
+    }
+    html += '</select>';
+    html += '<button class="btn-medieval btn-sm" data-action="nobleWhisperAgainst" style="white-space:nowrap;">🗣️ Whisper Against</button>';
+    html += '</div>';
+    html += '<div style="color:#888;font-size:0.75rem;margin-top:2px;">-3-8 target\'s perceived loyalty · 7-day cooldown · Risk: they may find out!</div>';
+    html += '</div>';
+
+    // Boost Ally
+    html += '<div style="margin-bottom:8px;">';
+    html += '<div style="display:flex;gap:6px;align-items:center;">';
+    html += '<select id="boostTarget" style="flex:1;background:#1a1a2e;color:#eee;border:1px solid rgba(201,168,76,0.3);border-radius:4px;padding:4px;">';
+    html += '<option value="">— Select noble to vouch for —</option>';
+    for (var _nk = 0; _nk < _nobles.length; _nk++) {
+        var _nb = _nobles[_nk];
+        var _nbName = ((_nb.firstName || '') + ' ' + (_nb.lastName || '')).trim();
+        html += '<option value="' + _nb.id + '">' + escapeHtml(_nbName) + '</option>';
+    }
+    html += '</select>';
+    html += '<button class="btn-medieval btn-sm" data-action="nobleBoostAlly" style="white-space:nowrap;">🤝 Vouch For</button>';
+    html += '</div>';
+    html += '<div style="color:#888;font-size:0.75rem;margin-top:2px;">+3-6 target\'s perceived loyalty · 7-day cooldown · Safe action</div>';
+    html += '</div>';
+
+    html += '</div>';
+
+    return html;
 }
 
 // ── Noble Intrigue Tab Builder ──
@@ -2520,6 +2641,78 @@ function _switchProposeActionTab(tabId, kingdomId) {
     });
     UI.registerAction('openFeastDialog', function(_t, d) { if (d.id) UI.openFeastDialog(d.id); });
     UI.registerAction('openVotingDialog', function(_t, d) { if (d.id) UI.openVotingDialog(d.id); });
+
+    // ── Noble Influence Actions ──
+    UI.registerAction('nobleFlatterKing', function() {
+        var result = Player.nobleFlatterKing();
+        if (result && result.success) {
+            UI.toast(result.message, 'success');
+        } else {
+            UI.toast(result ? result.message : 'Failed.', 'warning');
+        }
+        _nobilityTab = 'influence';
+        openNobilityDialog();
+    });
+    UI.registerAction('nobleWhisperAgainst', function() {
+        var sel = document.getElementById('whisperTarget');
+        var targetId = sel ? sel.value : '';
+        if (!targetId) { UI.toast('Select a noble to whisper against.', 'warning'); return; }
+        var result = Player.nobleWhisperAgainst(targetId);
+        if (result && result.success) {
+            UI.toast(result.message, 'success');
+        } else {
+            UI.toast(result ? result.message : 'Failed.', result && result.success === false && result.message && result.message.indexOf('caught') >= 0 ? 'danger' : 'warning');
+        }
+        _nobilityTab = 'influence';
+        openNobilityDialog();
+    });
+    UI.registerAction('nobleBoostAlly', function() {
+        var sel = document.getElementById('boostTarget');
+        var targetId = sel ? sel.value : '';
+        if (!targetId) { UI.toast('Select a noble to vouch for.', 'warning'); return; }
+        var result = Player.nobleBoostAlly(targetId);
+        if (result && result.success) {
+            UI.toast(result.message, 'success');
+        } else {
+            UI.toast(result ? result.message : 'Failed.', 'warning');
+        }
+        _nobilityTab = 'influence';
+        openNobilityDialog();
+    });
+    UI.registerAction('acceptFeastInvite', function(_t, d) {
+        var idx = parseInt(d.id, 10);
+        var result = Player.nobleAcceptFeastInvite(idx);
+        if (result && result.success) {
+            UI.toast(result.message, 'success');
+        } else {
+            UI.toast(result ? result.message : 'Failed.', 'warning');
+        }
+        _nobilityTab = 'influence';
+        openNobilityDialog();
+    });
+    UI.registerAction('declineFeastInvite', function(_t, d) {
+        var idx = parseInt(d.id, 10);
+        var result = Player.nobleDeclineFeastInvite(idx);
+        if (result && result.success) {
+            UI.toast(result.message, 'info');
+        } else {
+            UI.toast(result ? result.message : 'Failed.', 'warning');
+        }
+        _nobilityTab = 'influence';
+        openNobilityDialog();
+    });
+    UI.registerAction('doCourtAction', function(_t, d) {
+        var kId = Player.citizenshipKingdomId;
+        if (!kId) { UI.toast('No kingdom.', 'warning'); return; }
+        var result = Engine.doCourtAction(kId, d.id);
+        if (result && result.success) {
+            UI.toast(result.message, 'success');
+        } else {
+            UI.toast(result ? result.message : 'Failed.', 'warning');
+        }
+        _nobilityTab = 'influence';
+        openNobilityDialog();
+    });
     UI.registerAction('_switchKQTab', function(_t, d) { UI._switchKQTab(d.tab, d.kingdom); });
     UI.registerAction('_attemptKQActionUI', function(_t, d) { if (d.id && d.kingdom) UI._attemptKQActionUI(d.id, d.kingdom); });
     UI.registerAction('attemptCaptureCriminalUI', function(_t, d) {
