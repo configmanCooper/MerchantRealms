@@ -513,9 +513,9 @@
             for (var _ari = 0; _ari < _armies.length; _ari++) {
                 var _ar = _armies[_ari];
                 var _arTown = Engine.findTown(_ar.targetTownId);
-                var _statusIcon = _ar.status === 'marching' ? '🚶' : _ar.status === 'returning' ? '🏠' : '⚔️';
-                var _statusText = _ar.status === 'marching' ? 'Marching (' + Math.max(0, _ar.arrivalDay - _day) + 'd left)' : _ar.status === 'returning' ? 'Returning (' + Math.max(0, _ar.returnDay - _day) + 'd left)' : _ar.status;
-                html += '<div style="font-size:0.65rem;color:#ccc;padding:2px 0;">' + _statusIcon + ' ' + _ar.soldiers + ' soldiers → ' + (_arTown ? escapeHtml(_arTown.name) : '?') + ' — ' + _statusText + '</div>';
+                var _statusIcon = _ar._recoveryUntil ? '🛏️' : _ar._retreating ? '🏳️' : _ar._besieging ? '🏰' : _ar.status === 'marching' ? '🚶' : _ar.status === 'returning' ? '🏠' : '⚔️';
+                var _statusText = _ar._recoveryUntil ? 'Regrouping (' + Math.max(0, _ar._recoveryUntil - _day) + 'd)' : _ar._retreating ? 'Retreating home' : _ar._besieging ? 'Besieging' : _ar.status === 'marching' ? 'Marching (' + Math.max(0, _ar.arrivalDay - _day) + 'd left)' : _ar.status === 'returning' ? 'Returning (' + Math.max(0, _ar.returnDay - _day) + 'd left)' : _ar.status;
+                html += '<div style="font-size:0.65rem;color:#ccc;padding:2px 0;">' + _statusIcon + ' ' + _ar.soldiers + ' soldiers → ' + (_arTown ? escapeHtml(_arTown.name) : '?') + ' — ' + _statusText + ' · Morale: ' + Math.round(_ar.morale || 50) + '%</div>';
             }
             html += '</div>';
         }
@@ -603,10 +603,12 @@
         } else {
             for (var _ai = 0; _ai < _armies.length; _ai++) {
                 var _army = _armies[_ai];
-                var _statusIcon = _army.status === 'marching' ? '🚶' : _army.status === 'fighting' ? '⚔️' : _army.status === 'returning' ? '🔙' : '📍';
+                var _statusIcon = _army._recoveryUntil ? '🛏️' : _army._retreating ? '🏳️' : _army._besieging ? '🏰' : _army.status === 'marching' ? '🚶' : _army.status === 'fighting' ? '⚔️' : _army.status === 'returning' ? '🔙' : '📍';
+                var _statusText = _army._recoveryUntil ? 'Regrouping (resumes attack soon)' : _army._retreating ? 'Retreating home' : _army._besieging ? 'Besieging' : (_army.status || 'unknown');
+                var _moraleColor = (_army.morale || 50) > 60 ? '#4caf50' : (_army.morale || 50) > 30 ? '#ff9800' : '#f44336';
                 html += '<div style="background:rgba(0,0,0,0.2);padding:4px 6px;border-radius:4px;margin-bottom:3px;">';
                 html += '<div style="font-size:0.72rem;color:#d4c9a0;">' + _statusIcon + ' ' + (_army.soldiers || 0) + ' soldiers → ' + (_army.targetName || 'Unknown') + '</div>';
-                html += '<div style="font-size:0.62rem;color:#888;">Status: ' + (_army.status || 'unknown') + '</div>';
+                html += '<div style="font-size:0.62rem;color:#888;">Status: ' + _statusText + ' · Morale: <span style="color:' + _moraleColor + ';">' + Math.round(_army.morale || 50) + '%</span></div>';
                 html += '</div>';
             }
         }
