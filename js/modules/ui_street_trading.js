@@ -1097,6 +1097,19 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank) {
         }
     }
 
+    // Noble Notoriety bar at top of intrigue tab
+    var _nobleNot2 = (typeof Player !== 'undefined' && Player.nobleNotoriety != null) ? Player.nobleNotoriety : 0;
+    var _nn2Color = _nobleNot2 >= 70 ? '#c44e52' : _nobleNot2 >= 40 ? '#e67e22' : _nobleNot2 >= 15 ? '#ccb974' : '#55a868';
+    var _nn2Label = _nobleNot2 >= 80 ? 'Infamous' : _nobleNot2 >= 60 ? 'Highly Suspicious' : _nobleNot2 >= 40 ? 'Suspicious' : _nobleNot2 >= 20 ? 'Whispers' : _nobleNot2 > 0 ? 'Noticed' : 'Clean';
+    html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(201,168,76,0.15);border-radius:8px;padding:8px 10px;margin-bottom:10px;">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">';
+    html += '<span style="font-size:0.82rem;color:var(--gold);">🕵️ Noble Notoriety</span>';
+    html += '<span style="font-size:0.78rem;color:' + _nn2Color + ';font-weight:bold;">' + Math.floor(_nobleNot2) + '/100 — ' + _nn2Label + '</span>';
+    html += '</div>';
+    html += '<div style="height:6px;background:#222;border-radius:3px;overflow:hidden;">';
+    html += '<div style="width:' + Math.min(100, _nobleNot2) + '%;height:100%;background:' + _nn2Color + ';border-radius:3px;"></div>';
+    html += '</div></div>';
+
     // Show locked schemes at the top if any
     if (lockedSchemes.length > 0) {
         html += '<div style="background:rgba(196,78,82,0.08);border:1px solid rgba(196,78,82,0.2);border-radius:8px;padding:8px 10px;margin-bottom:10px;">';
