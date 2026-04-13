@@ -606,14 +606,19 @@ function openNobilityDialog() {
                 break;
             }
         }
-        if (_myKingdomId && typeof Engine !== 'undefined' && Engine.getWorldData) {
-            var _wd = Engine.getWorldData();
-            var _allPeople = _wd && _wd.people ? _wd.people : [];
+        if (_myKingdomId && typeof Engine !== 'undefined' && Engine.getWorld && Engine.getPeople) {
+            var _ciTowns = Engine.getWorld().towns || [];
             var _courtNobles = [];
-            for (var _cn = 0; _cn < _allPeople.length; _cn++) {
-                var _p = _allPeople[_cn];
-                if (_p && _p.alive && _p.socialRank && _p.socialRank[_myKingdomId] >= 4) {
-                    _courtNobles.push(_p);
+            var _ciPlayerPId = (typeof Player !== 'undefined' && Player.personId) ? Player.personId : 'player';
+            for (var _cti = 0; _cti < _ciTowns.length; _cti++) {
+                if (_ciTowns[_cti].kingdomId !== _myKingdomId) continue;
+                var _ciPeople = Engine.getPeople(_ciTowns[_cti].id);
+                if (!_ciPeople) continue;
+                for (var _cn = 0; _cn < _ciPeople.length; _cn++) {
+                    var _p = _ciPeople[_cn];
+                    if (_p && _p.alive && _p.id !== _ciPlayerPId && (_p.occupation === 'noble' || _p.isNoble) && !_p.isKing) {
+                        _courtNobles.push(_p);
+                    }
                 }
             }
             if (_courtNobles.length > 0) {
@@ -624,7 +629,7 @@ function openNobilityDialog() {
                 if (_myK && _myK.king) _kingPerson = Engine.findPerson ? Engine.findPerson(_myK.king) : null;
                 for (var _ci = 0; _ci < Math.min(8, _courtNobles.length); _ci++) {
                     var _cn2 = _courtNobles[_ci];
-                    var _cnRank = _cn2.socialRank[_myKingdomId] || 4;
+                    var _cnRank = (_cn2.socialRank && _cn2.socialRank[_myKingdomId]) || 4;
                     var _cnRankLabel = _cnRank >= 6 ? 'RA' : _cnRank >= 5 ? 'Lord' : 'Noble';
                     var _cnLoyalty = _cn2._nobleRelationships && _kingPerson ? (_cn2._nobleRelationships[_kingPerson.id] || 0) : 0;
                     var _cnLoyColor = _cnLoyalty >= 30 ? '#55a868' : _cnLoyalty >= 0 ? '#ccb974' : '#c44e52';
@@ -1058,17 +1063,22 @@ function openNobilityDialog() {
 function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank) {
     var html = '';
 
-    // Get kingdom nobles for target selection
+    // Get kingdom nobles for target selection (same approach as _getKingdomNobles in player_dark_deeds)
     var nobles = [];
     try {
-        if (typeof Engine !== 'undefined' && Engine.getWorldData) {
-            var _wd = Engine.getWorldData();
-            var _all = _wd && _wd.people ? _wd.people : [];
+        if (typeof Engine !== 'undefined' && Engine.getWorld && Engine.getPeople) {
+            var _wd = Engine.getWorld();
+            var _towns = _wd && _wd.towns ? _wd.towns : [];
             var _playerPersonId = (typeof Player !== 'undefined' && Player.personId) ? Player.personId : 'player';
-            for (var _ni = 0; _ni < _all.length; _ni++) {
-                var _p = _all[_ni];
-                if (_p && _p.alive && _p.id !== _playerPersonId && _p.socialRank && _p.socialRank[citizenKingdomId] >= 4) {
-                    nobles.push(_p);
+            for (var _ti = 0; _ti < _towns.length; _ti++) {
+                if (_towns[_ti].kingdomId !== citizenKingdomId) continue;
+                var _townPeople = Engine.getPeople(_towns[_ti].id);
+                if (!_townPeople) continue;
+                for (var _pi = 0; _pi < _townPeople.length; _pi++) {
+                    var _p = _townPeople[_pi];
+                    if (_p && _p.alive && _p.id !== _playerPersonId && (_p.occupation === 'noble' || _p.isNoble) && !_p.isKing) {
+                        nobles.push(_p);
+                    }
                 }
             }
         }
