@@ -8690,14 +8690,40 @@
         return { success: true, message: soldierCount + ' soldiers recruited at ' + (capTown ? capTown.name : 'capital') + '! Cost: ' + cost + 'g.', soldiers: soldierCount };
     }
 
-    function kingSendArmy(targetTownId, soldiers, stagingTownId) {
+    function kingSendArmy(targetTownId, soldiers, stagingTownId, options) {
         if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
         var kingdom = Engine.findKingdom(player.kingState.kingdomId);
         if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        options = options || {};
 
         soldiers = Math.max(10, parseInt(soldiers) || 30);
         var targetTown = Engine.findTown(targetTownId);
         if (!targetTown) return { success: false, message: 'Target town not found.' };
+
+        // Check we are at war with the target's kingdom
+        if (!kingdom.atWar || !kingdom.atWar.has || !kingdom.atWar.has(targetTown.kingdomId)) {
+            return { success: false, message: 'Not at war with ' + (targetTown.kingdomId || 'that kingdom') + '.' };
+        }
+
+        // Check for mounted army option — all soldiers need horses + saddles
+        var sendMounted = !!options.mounted;
+        if (sendMounted) {
+            var stockpile = kingdom.militaryStockpile || {};
+            var totalHorses = stockpile.horses || 0;
+            var totalSaddles = 0;
+            // Also count from all kingdom town markets
+            var _allT = Engine.getTowns();
+            for (var _hi = 0; _hi < _allT.length; _hi++) {
+                if (_allT[_hi].kingdomId === kingdom.id) {
+                    var _ms = (_allT[_hi].market && _allT[_hi].market.supply) || {};
+                    totalHorses += (_ms.horses || 0);
+                    totalSaddles += (_ms.saddles || 0);
+                }
+            }
+            if (totalHorses < soldiers || totalSaddles < soldiers) {
+                return { success: false, message: 'Mounted army needs ' + soldiers + ' horses AND saddles. Have ' + totalHorses + ' horses, ' + totalSaddles + ' saddles across kingdom.' };
+            }
+        }
 
         // Check we are at war with the target's kingdom
         if (!kingdom.atWar || !kingdom.atWar.has || !kingdom.atWar.has(targetTown.kingdomId)) {
@@ -8767,10 +8793,43 @@
             }
         }
 
-        // Split army composition (60% infantry, 25% archers, 15% cavalry)
-        var inf = Math.floor(soldiers * 0.6);
-        var arch = Math.floor(soldiers * 0.25);
-        var cav = soldiers - inf - arch;
+        // Split army composition based on mounted option
+        var inf, arch, cav;
+        if (sendMounted) {
+            // All cavalry — consume horses and saddles from stockpile + markets
+            inf = 0; arch = 0; cav = soldiers;
+            var _horsesNeeded = soldiers;
+            var _saddlesNeeded = soldiers;
+            var _sp = kingdom.militaryStockpile || {};
+            // Take from stockpile first
+            var _fromSP = Math.min(_sp.horses || 0, _horsesNeeded);
+            _sp.horses = (_sp.horses || 0) - _fromSP;
+            _horsesNeeded -= _fromSP;
+            _fromSP = Math.min(_sp.saddles || 0, _saddlesNeeded);
+            if (_sp.saddles) _sp.saddles -= _fromSP;
+            _saddlesNeeded -= _fromSP;
+            // Take remainder from town markets
+            var _mkTowns = Engine.getTowns();
+            for (var _mti = 0; _mti < _mkTowns.length && (_horsesNeeded > 0 || _saddlesNeeded > 0); _mti++) {
+                if (_mkTowns[_mti].kingdomId !== kingdom.id) continue;
+                var _mks = (_mkTowns[_mti].market && _mkTowns[_mti].market.supply) || {};
+                if (_horsesNeeded > 0) {
+                    var _takeH = Math.min(_mks.horses || 0, _horsesNeeded);
+                    _mks.horses = (_mks.horses || 0) - _takeH;
+                    _horsesNeeded -= _takeH;
+                }
+                if (_saddlesNeeded > 0) {
+                    var _takeS = Math.min(_mks.saddles || 0, _saddlesNeeded);
+                    _mks.saddles = (_mks.saddles || 0) - _takeS;
+                    _saddlesNeeded -= _takeS;
+                }
+            }
+        } else {
+            // Standard split: 60% infantry, 25% archers, 15% cavalry
+            inf = Math.floor(soldiers * 0.6);
+            arch = Math.floor(soldiers * 0.25);
+            cav = soldiers - inf - arch;
+        }
 
         // Try to find a route using pathfinding
         var route = null;
@@ -8823,6 +8882,7 @@
             infantry: inf,
             archers: arch,
             cavalry: cav,
+            mounted: sendMounted,
             morale: CONFIG.ARMY_DEFAULT_MORALE || 80,
             supplies: CONFIG.ARMY_DEFAULT_SUPPLIES || 100,
         };
@@ -8846,10 +8906,13 @@
         // Estimate travel days for the King UI tracker
         var travelDays = consolidationDays;
         if (route && route.totalTime) {
-            travelDays += Math.max(2, Math.ceil(route.totalTime));
+            var routeTime = route.totalTime;
+            if (sendMounted) routeTime *= 0.75; // 25% faster when all mounted
+            travelDays += Math.max(2, Math.ceil(routeTime));
         } else {
             var dist = Math.hypot(targetTown.x - stagingTown.x, targetTown.y - stagingTown.y);
             var baseArmySpeed = (CONFIG.CARAVAN_BASE_SPEED || 120) * 0.5;
+            if (sendMounted) baseArmySpeed *= 1.25; // 25% faster
             travelDays += Math.max(2, Math.ceil(dist / Math.max(baseArmySpeed, 1)));
         }
 
@@ -8863,18 +8926,20 @@
             targetKingdomId: targetTown.kingdomId,
             status: consolidationDays > 0 ? 'consolidating' : 'marching',
             morale: armyObj.morale,
+            mounted: sendMounted,
             departDay: Engine.getDay() + consolidationDays,
             arrivalDay: Engine.getDay() + travelDays,
             consolidationDaysLeft: consolidationDays,
             stagingTownName: stagingTown.name,
         });
 
-        var msg = 'Army of ' + soldiers + ' sent from ' + stagingTown.name + ' to ' + targetTown.name + '.';
+        var mountedLabel = sendMounted ? ' (🐴 mounted, 25% faster)' : '';
+        var msg = 'Army of ' + soldiers + ' sent from ' + stagingTown.name + ' to ' + targetTown.name + '.' + mountedLabel;
         if (consolidationDays > 0) {
-            msg = 'Army of ' + soldiers + ' consolidating at ' + stagingTown.name + ' (~' + consolidationDays + ' days), then marching to ' + targetTown.name + '.';
-            Engine.logEvent('⚔️ ' + soldiers + ' soldiers gathering at ' + stagingTown.name + ' before marching to ' + targetTown.name + '!');
+            msg = 'Army of ' + soldiers + ' consolidating at ' + stagingTown.name + ' (~' + consolidationDays + ' days), then marching to ' + targetTown.name + '.' + mountedLabel;
+            Engine.logEvent('⚔️ ' + soldiers + ' soldiers gathering at ' + stagingTown.name + ' before marching to ' + targetTown.name + '!' + mountedLabel);
         } else {
-            Engine.logEvent('⚔️ An army of ' + soldiers + ' soldiers marches from ' + stagingTown.name + ' toward ' + targetTown.name + '!');
+            Engine.logEvent('⚔️ An army of ' + soldiers + (sendMounted ? ' mounted cavalry' : ' soldiers') + ' marches from ' + stagingTown.name + ' toward ' + targetTown.name + '!');
         }
         return { success: true, message: msg };
     }

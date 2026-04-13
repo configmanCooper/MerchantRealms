@@ -4849,6 +4849,20 @@
                 if (townSupply.bows) townSupply.bows = Math.max(0, townSupply.bows - bowsUsed);
                 if (townSupply.arrows) townSupply.arrows = Math.max(0, townSupply.arrows - arrowsUsed);
 
+                // Check if army should be mounted (proposal.mounted or enough horses+saddles)
+                var _propMounted = !!proposal.mounted;
+                if (_propMounted) {
+                    var _pH = townSupply.horses || 0;
+                    var _pS = townSupply.saddles || 0;
+                    if (_pH >= soldiers && _pS >= soldiers) {
+                        // Consume horses + saddles for mounted
+                        townSupply.horses = Math.max(0, (townSupply.horses || 0) - soldiers);
+                        townSupply.saddles = Math.max(0, (townSupply.saddles || 0) - soldiers);
+                    } else {
+                        _propMounted = false; // Not enough horses, send unmounted
+                    }
+                }
+
                 var armyObj = {
                     id: uid('army'),
                     kingdomId: kingdom.id,
@@ -4858,7 +4872,8 @@
                     toTownId: tgtT.id,
                     progress: 0,
                     equipment: swordsUsed,
-                    infantry: inf, archers: arch, cavalry: cav,
+                    infantry: _propMounted ? 0 : inf, archers: _propMounted ? 0 : arch, cavalry: _propMounted ? soldiers : cav,
+                    mounted: _propMounted,
                     morale: CONFIG.ARMY_DEFAULT_MORALE || 80,
                     supplies: CONFIG.ARMY_DEFAULT_SUPPLIES || 100
                 };
@@ -4871,15 +4886,16 @@
 
                 // Track in kingdom._armies for King UI
                 if (!kingdom._armies) kingdom._armies = [];
-                var travelD = route.totalTime ? Math.max(2, Math.ceil(route.totalTime)) : 10;
+                var travelD = route.totalTime ? Math.max(2, Math.ceil(_propMounted ? route.totalTime * 0.75 : route.totalTime)) : 10;
                 kingdom._armies.push({
                     id: armyObj.id, soldiers: soldiers, targetTownId: tgtT.id,
                     targetName: tgtT.name, targetKingdomId: tgtT.kingdomId,
-                    status: 'marching', morale: armyObj.morale,
+                    status: 'marching', morale: armyObj.morale, mounted: _propMounted,
                     departDay: world.day, arrivalDay: world.day + travelD,
                     stagingTownName: fromT.name
                 });
-                logEvent('⚔️ ' + soldiers + ' soldiers march from ' + fromT.name + ' to attack ' + tgtT.name + '!');
+                var _ml = _propMounted ? ' (🐴 mounted)' : '';
+                logEvent('⚔️ ' + soldiers + (_propMounted ? ' mounted cavalry' : ' soldiers') + ' march from ' + fromT.name + ' to attack ' + tgtT.name + '!' + _ml);
                 break;
 
             case 'recruit':

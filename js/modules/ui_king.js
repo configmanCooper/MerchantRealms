@@ -680,7 +680,7 @@
             for (var _ari = 0; _ari < _armies.length; _ari++) {
                 var _ar = _armies[_ari];
                 var _arTown = Engine.findTown(_ar.targetTownId);
-                var _statusIcon = _ar._recoveryUntil ? '🛏️' : _ar.status === 'retreating' ? '🏳️' : _ar.status === 'besieging' ? '🏰' : _ar.status === 'consolidating' ? '📦' : _ar.status === 'marching' ? '🚶' : _ar.status === 'recovering' ? '🛏️' : '⚔️';
+                var _statusIcon = _ar._recoveryUntil ? '🛏️' : _ar.status === 'retreating' ? '🏳️' : _ar.status === 'besieging' ? '🏰' : _ar.status === 'consolidating' ? '📦' : _ar.status === 'marching' ? (_ar.mounted ? '🐴' : '🚶') : _ar.status === 'recovering' ? '🛏️' : '⚔️';
                 var _statusText = '';
                 if (_ar._recoveryUntil) {
                     _statusText = 'Recovering (' + Math.max(0, _ar._recoveryUntil - _day) + 'd)';
@@ -703,7 +703,8 @@
                 } else {
                     _statusText = _ar.status || 'Unknown';
                 }
-                html += '<div style="font-size:0.65rem;color:#ccc;padding:2px 0;">' + _statusIcon + ' ' + _ar.soldiers + ' soldiers → ' + (_arTown ? escapeHtml(_arTown.name) : '?') + ' — ' + _statusText + ' · Morale: ' + Math.round(_ar.morale || 50) + '%</div>';
+                var _mountLabel = _ar.mounted ? ' 🐴' : '';
+                html += '<div style="font-size:0.65rem;color:#ccc;padding:2px 0;">' + _statusIcon + ' ' + _ar.soldiers + ' soldiers' + _mountLabel + ' → ' + (_arTown ? escapeHtml(_arTown.name) : '?') + ' — ' + _statusText + ' · Morale: ' + Math.round(_ar.morale || 50) + '%</div>';
             }
             html += '</div>';
         }
@@ -2423,6 +2424,33 @@
         // Consolidation info
         html += '<div id="_armyConsolidationInfo" style="font-size:0.72rem;margin-bottom:10px;"></div>';
 
+        // Mounted option — check horse+saddle availability across kingdom
+        var _totalHorses = 0, _totalSaddles = 0;
+        try {
+            var _spk = kingdom.militaryStockpile || {};
+            _totalHorses += (_spk.horses || 0);
+            _totalSaddles += (_spk.saddles || 0);
+            var _aTowns = Engine.getTowns ? Engine.getTowns() : [];
+            for (var _hi = 0; _hi < _aTowns.length; _hi++) {
+                if (_aTowns[_hi].kingdomId === kingdom.id) {
+                    var _ms = (_aTowns[_hi].market && _aTowns[_hi].market.supply) || {};
+                    _totalHorses += (_ms.horses || 0);
+                    _totalSaddles += (_ms.saddles || 0);
+                }
+            }
+        } catch(e) {}
+        var _mountLimit = Math.min(_totalHorses, _totalSaddles);
+        html += '<div style="margin-bottom:10px;padding:6px;background:rgba(139,69,19,0.15);border:1px solid rgba(139,69,19,0.3);border-radius:5px;">';
+        html += '<label style="font-size:0.75rem;color:#d4a843;display:flex;align-items:center;gap:6px;cursor:pointer;">';
+        html += '<input type="checkbox" id="_armyMounted" style="cursor:pointer;"' + (_mountLimit <= 0 ? ' disabled' : '') + '>';
+        html += '🐴 Send as Mounted Cavalry (25% faster march)';
+        html += '</label>';
+        html += '<div style="font-size:0.65rem;color:#999;margin-top:3px;">Kingdom has ' + _totalHorses + ' horses, ' + _totalSaddles + ' saddles (' + _mountLimit + ' can mount).</div>';
+        if (_mountLimit <= 0) {
+            html += '<div style="font-size:0.65rem;color:#e57373;margin-top:2px;">⚠️ Not enough horses and saddles for mounted army.</div>';
+        }
+        html += '</div>';
+
         // Send button
         html += '<button class="btn-medieval" data-action="kingSendArmyConfirm" data-id="' + townId + '" style="padding:8px 16px;background:rgba(196,78,82,0.3) !important;border:2px solid rgba(196,78,82,0.5) !important;">';
         html += '<div style="font-weight:bold;color:#ef9a9a;">⚔️ Send Army</div></button>';
@@ -3175,9 +3203,11 @@
     UI.registerAction('kingSendArmyConfirm', function(_t, d) {
         var cnt2 = document.getElementById('_armySendCount');
         var stagingSel = document.getElementById('_armyStagingTown');
+        var mountedCb = document.getElementById('_armyMounted');
         var soldiers = cnt2 ? parseInt(cnt2.value) || 30 : 30;
         var stagingTownId = stagingSel ? stagingSel.value : null;
-        var r = Player.kingSendArmy(d.id, soldiers, stagingTownId); UI.closeModal(); UI.toast(r.message, r.success ? 'success' : 'warning');
+        var mounted = mountedCb ? mountedCb.checked : false;
+        var r = Player.kingSendArmy(d.id, soldiers, stagingTownId, { mounted: mounted }); UI.closeModal(); UI.toast(r.message, r.success ? 'success' : 'warning');
     });
 
     // ── Treasury Transfer Actions ──

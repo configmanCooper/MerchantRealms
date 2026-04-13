@@ -12493,6 +12493,10 @@
                         }
 
                         if (bestTarget) {
+                            // AI decides whether to mount entire army (needs horses+saddles for all)
+                            var _canMount = horses >= armySize && saddles >= armySize;
+                            var _aiMounted = _canMount; // AI always mounts if it can
+
                             var armyObj = {
                                 id: uid('army'),
                                 kingdomId: k.id,
@@ -12502,9 +12506,10 @@
                                 toTownId: bestTarget.id,
                                 progress: 0,
                                 equipment: Math.min(swords, armySize),
-                                infantry: Math.max(0, actualInf),
-                                archers: Math.max(0, actualArch),
-                                cavalry: Math.max(0, actualCav),
+                                infantry: _aiMounted ? 0 : Math.max(0, actualInf),
+                                archers: _aiMounted ? 0 : Math.max(0, actualArch),
+                                cavalry: _aiMounted ? armySize : Math.max(0, actualCav),
+                                mounted: _aiMounted,
                                 morale: CONFIG.ARMY_DEFAULT_MORALE,
                                 supplies: CONFIG.ARMY_DEFAULT_SUPPLIES,
                             };
@@ -12519,18 +12524,25 @@
                             world.armies.push(armyObj);
 
                             // Consume equipment
-                            const swordsUsed = Math.min(swords, actualInf + actualCav);
-                            town.market.supply.swords = Math.max(0, (town.market.supply.swords || 0) - swordsUsed);
-                            const armorUsed = Math.min(armor, actualInf);
-                            town.market.supply.armor = Math.max(0, (town.market.supply.armor || 0) - armorUsed);
-                            const bowsUsed = actualArch;
-                            town.market.supply.bows = Math.max(0, (town.market.supply.bows || 0) - bowsUsed);
-                            const arrowsUsed = actualArch * 5;
-                            town.market.supply.arrows = Math.max(0, (town.market.supply.arrows || 0) - arrowsUsed);
-                            const horsesUsed = actualCav;
-                            town.market.supply.horses = Math.max(0, (town.market.supply.horses || 0) - horsesUsed);
-                            const saddlesUsed = actualCav;
-                            town.market.supply.saddles = Math.max(0, (town.market.supply.saddles || 0) - saddlesUsed);
+                            if (_aiMounted) {
+                                // All mounted: consume horses+saddles for all, swords for all
+                                town.market.supply.horses = Math.max(0, (town.market.supply.horses || 0) - armySize);
+                                town.market.supply.saddles = Math.max(0, (town.market.supply.saddles || 0) - armySize);
+                                town.market.supply.swords = Math.max(0, (town.market.supply.swords || 0) - Math.min(swords, armySize));
+                            } else {
+                                const swordsUsed = Math.min(swords, actualInf + actualCav);
+                                town.market.supply.swords = Math.max(0, (town.market.supply.swords || 0) - swordsUsed);
+                                const armorUsed = Math.min(armor, actualInf);
+                                town.market.supply.armor = Math.max(0, (town.market.supply.armor || 0) - armorUsed);
+                                const bowsUsed = actualArch;
+                                town.market.supply.bows = Math.max(0, (town.market.supply.bows || 0) - bowsUsed);
+                                const arrowsUsed = actualArch * 5;
+                                town.market.supply.arrows = Math.max(0, (town.market.supply.arrows || 0) - arrowsUsed);
+                                const horsesUsed = actualCav;
+                                town.market.supply.horses = Math.max(0, (town.market.supply.horses || 0) - horsesUsed);
+                                const saddlesUsed = actualCav;
+                                town.market.supply.saddles = Math.max(0, (town.market.supply.saddles || 0) - saddlesUsed);
+                            }
                         }
                     }
                 }
@@ -13756,6 +13768,8 @@
 
                 var legDist = Math.hypot(legTo.x - legFrom.x, legTo.y - legFrom.y);
                 var baseSpeed = (army.speed || CONFIG.CARAVAN_BASE_SPEED * 0.5);
+                // Mounted armies travel 25% faster (all cavalry on horseback)
+                if (army.mounted) baseSpeed *= 1.25;
                 // Apply speed modifier based on leg type
                 var speedMult = leg.type === 'offroad' ? (CONFIG.ARMY_OFFROAD_SPEED_MULT || 0.3) :
                                 leg.type === 'sea' ? (CONFIG.ARMY_SEA_SPEED_MULT || 0.6) :
@@ -13787,7 +13801,7 @@
             } else {
                 // Legacy: straight-line movement (backwards compatible)
                 const dist = Math.hypot(toTown.x - fromTown.x, toTown.y - fromTown.y);
-                const speed = (army.speed || CONFIG.CARAVAN_BASE_SPEED * 0.5);
+                const speed = (army.speed || CONFIG.CARAVAN_BASE_SPEED * 0.5) * (army.mounted ? 1.25 : 1);
                 army.progress += speed / Math.max(dist, 1);
 
                 if (army.progress >= 1.0) {

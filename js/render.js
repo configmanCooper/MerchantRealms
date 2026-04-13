@@ -3088,6 +3088,10 @@ window.Renderer = (function () {
                 ctx.font = 'bold 12px sans-serif';
                 ctx.fillStyle = '#ff6666';
                 ctx.fillText('SIEGE', 0, 50);
+            } else if (army.mounted) {
+                ctx.font = 'bold 12px sans-serif';
+                ctx.fillStyle = '#d4a843';
+                ctx.fillText('🐴', 0, 50);
             }
 
             ctx.restore();
