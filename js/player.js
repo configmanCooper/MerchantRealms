@@ -7235,6 +7235,32 @@
         return { success: true, message: 'Peace achieved! Tribute paid: ' + tribute + 'g.' };
     }
 
+    function kingDonateTreasury(amount) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        amount = Math.max(1, Math.floor(parseInt(amount) || 100));
+        if (player.gold < amount) return { success: false, message: 'You only have ' + Math.floor(player.gold) + 'g.' };
+        player.gold -= amount;
+        kingdom.gold = (kingdom.gold || 0) + amount;
+        Engine.logEvent('💰 ' + (player.sex === 'F' ? 'Queen' : 'King') + ' ' + player.fullName + ' donated ' + amount + 'g to the kingdom treasury.', null, 'kingdom');
+        return { success: true, message: 'Donated ' + amount + 'g to the treasury. Kingdom treasury: ' + Math.floor(kingdom.gold) + 'g.' };
+    }
+
+    function kingWithdrawTreasury(amount) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        amount = Math.max(1, Math.floor(parseInt(amount) || 100));
+        if ((kingdom.gold || 0) < amount) return { success: false, message: 'Treasury only has ' + Math.floor(kingdom.gold || 0) + 'g.' };
+        kingdom.gold -= amount;
+        player.gold += amount;
+        // Withdrawing from treasury hurts happiness slightly
+        if (kingdom.happiness != null) kingdom.happiness = Math.max(0, kingdom.happiness - Math.ceil(amount / 200));
+        Engine.logEvent('🏦 ' + (player.sex === 'F' ? 'Queen' : 'King') + ' ' + player.fullName + ' withdrew ' + amount + 'g from the kingdom treasury.', null, 'kingdom');
+        return { success: true, message: 'Withdrew ' + amount + 'g. Treasury: ' + Math.floor(kingdom.gold) + 'g.' };
+    }
+
     function kingHostFeast() {
         if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
         var kingdom = Engine.findKingdom(player.kingState.kingdomId);
@@ -34744,6 +34770,8 @@
         kingRepealLaw,
         kingDeclareWar,
         kingSuePeace,
+        kingDonateTreasury,
+        kingWithdrawTreasury,
         kingHostFeast,
         kingHoldCourt,
         kingGrantAudience,

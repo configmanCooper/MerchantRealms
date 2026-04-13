@@ -110,7 +110,21 @@
         html += '<div style="background:rgba(0,0,0,0.2);padding:6px;border-radius:6px;text-align:center;"><div style="font-size:0.7rem;color:#aaa;">Tax Rate</div><div style="font-size:1rem;color:#d4c9a0;">' + Math.round((kingdom.taxRate || 0.08) * 100) + '%</div></div>';
         html += '</div>';
 
-        // Risk meters
+        // Treasury transfer section
+        var _playerGold = (typeof Player !== 'undefined' && Player.state) ? (Player.state.gold || 0) : 0;
+        html += '<div style="background:rgba(0,0,0,0.15);padding:8px;border-radius:6px;margin-bottom:10px;border:1px solid rgba(224,197,138,0.2);">';
+        html += '<div style="font-size:0.8rem;color:#e0c58a;margin-bottom:6px;">💰 Treasury Management</div>';
+        html += '<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;">';
+        html += '<span style="font-size:0.68rem;color:#aaa;">Kingdom: ' + formatGold(kingdom.gold || 0) + '</span>';
+        html += '<span style="font-size:0.68rem;color:#888;">|</span>';
+        html += '<span style="font-size:0.68rem;color:#aaa;">Your Gold: ' + formatGold(_playerGold) + '</span>';
+        html += '</div>';
+        html += '<div style="display:flex;gap:6px;align-items:center;">';
+        html += '<input type="number" id="_treasuryAmount" min="10" value="100" style="font-size:0.68rem;width:70px;padding:3px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;">';
+        html += '<button class="btn-medieval" data-action="kingDonateTreasury" style="font-size:0.62rem;padding:3px 8px;background:rgba(85,168,104,0.3) !important;border-color:rgba(85,168,104,0.5) !important;">💰 Donate</button>';
+        html += '<button class="btn-medieval" data-action="kingWithdrawTreasury" style="font-size:0.62rem;padding:3px 8px;background:rgba(196,78,82,0.3) !important;border-color:rgba(196,78,82,0.5) !important;">🏦 Withdraw</button>';
+        html += '</div>';
+        html += '</div>';
         html += '<div style="background:rgba(0,0,0,0.15);padding:8px;border-radius:6px;margin-bottom:10px;">';
         html += '<div style="font-size:0.8rem;color:#d4a843;margin-bottom:4px;">⚠️ Risk Assessment</div>';
         html += _riskMeter(ks.assassinationRisk || 0, '🗡️ Assassination Risk', '#c44e52');
@@ -2466,6 +2480,22 @@
         var cnt2 = document.getElementById('_armySendCount');
         var soldiers = cnt2 ? parseInt(cnt2.value) || 30 : 30;
         var r = Player.kingSendArmy(d.id, soldiers); UI.closeModal(); UI.toast(r.message, r.success ? 'success' : 'warning');
+    });
+
+    // ── Treasury Transfer Actions ──
+    UI.registerAction('kingDonateTreasury', function() {
+        var inp = document.getElementById('_treasuryAmount');
+        var amount = inp ? parseInt(inp.value) || 100 : 100;
+        var r = Player.kingDonateTreasury(amount);
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.openKingPanel('overview');
+    });
+    UI.registerAction('kingWithdrawTreasury', function() {
+        var inp = document.getElementById('_treasuryAmount');
+        var amount = inp ? parseInt(inp.value) || 100 : 100;
+        var r = Player.kingWithdrawTreasury(amount);
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.openKingPanel('overview');
     });
 
 })(window.UI);
