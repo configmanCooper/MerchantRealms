@@ -50,7 +50,7 @@
         var _advisorCount = (kingdom._advisorSuggestions || []).length;
         var tabs = [
             { id: 'overview', icon: '📊', label: 'Overview' },
-            { id: 'decisions', icon: '⚖️', label: 'Decisions' },
+            { id: 'decisions', icon: '⚖️', label: 'Decisions' + ((kingdom._economicProposals && kingdom._economicProposals.length > 0) ? ' (' + kingdom._economicProposals.length + ')' : '') },
             { id: 'military', icon: '⚔️', label: 'Military' },
             { id: 'stockpile', icon: '📦', label: 'Stockpile' },
             { id: 'kingdom', icon: '🗺️', label: 'Towns' },
@@ -264,6 +264,9 @@
 
         // ── Diplomacy & Trade Agreements ──
         html += _kingDiplomacySection(kingdom, ks);
+
+        // ── Economic Proposals (advisor recommendations) ──
+        html += _kingEconomicProposalsSection(kingdom);
 
         // ── Royal Orders ──
         html += _kingRoyalOrdersSection(kingdom);
@@ -1199,6 +1202,77 @@
         html += '</div>';
         return html;
     }
+
+    // ── Economic Proposals (player king reviews AI advisor recommendations) ──
+    function _kingEconomicProposalsSection(kingdom) {
+        var proposals = kingdom._economicProposals || [];
+        // Also show active economic policies for context
+        var activePolicies = [];
+        if (kingdom.landSubsidies && kingdom.landSubsidies.length > 0) activePolicies.push('🏗️ ' + kingdom.landSubsidies.length + ' land subsid' + (kingdom.landSubsidies.length > 1 ? 'ies' : 'y'));
+        if (kingdom.productionBounties && kingdom.productionBounties.length > 0) activePolicies.push('📜 ' + kingdom.productionBounties.length + ' production bount' + (kingdom.productionBounties.length > 1 ? 'ies' : 'y'));
+        if (kingdom.tradeSubsidies && kingdom.tradeSubsidies.length > 0) activePolicies.push('💰 ' + kingdom.tradeSubsidies.length + ' trade subsid' + (kingdom.tradeSubsidies.length > 1 ? 'ies' : 'y'));
+        if (kingdom.taxHolidays && kingdom.taxHolidays.length > 0) activePolicies.push('🎉 ' + kingdom.taxHolidays.length + ' tax holiday' + (kingdom.taxHolidays.length > 1 ? 's' : ''));
+        if (kingdom.exportRestrictions && kingdom.exportRestrictions.length > 0) activePolicies.push('🚫 ' + kingdom.exportRestrictions.length + ' export restriction' + (kingdom.exportRestrictions.length > 1 ? 's' : ''));
+        if (kingdom.immigrationIncentives && kingdom.immigrationIncentives.length > 0) activePolicies.push('🏘️ ' + kingdom.immigrationIncentives.length + ' immigration incentive' + (kingdom.immigrationIncentives.length > 1 ? 's' : ''));
+
+        var html = '<div style="background:rgba(0,0,0,0.15);padding:8px;border-radius:6px;margin-bottom:8px;margin-top:8px;">';
+        html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:4px;">📋 Economic Proposals';
+        if (proposals.length > 0) html += ' <span style="background:#d4a843;color:#1a1a2e;font-size:0.6rem;padding:1px 5px;border-radius:8px;margin-left:4px;">' + proposals.length + '</span>';
+        html += '</div>';
+        html += '<div style="font-size:0.68rem;color:#888;margin-bottom:6px;">Your advisors analyze the kingdom economy and recommend actions. Approve or dismiss each proposal.</div>';
+
+        // Active policies summary
+        if (activePolicies.length > 0) {
+            html += '<div style="background:rgba(85,168,104,0.1);border:1px solid rgba(85,168,104,0.2);border-radius:4px;padding:4px 6px;margin-bottom:6px;">';
+            html += '<div style="font-size:0.68rem;color:#55a868;margin-bottom:2px;">Active Policies:</div>';
+            html += '<div style="font-size:0.65rem;color:#aaa;">' + activePolicies.join(' · ') + '</div>';
+            html += '</div>';
+        }
+
+        if (proposals.length === 0) {
+            html += '<div style="font-size:0.72rem;color:#888;font-style:italic;">No new proposals. Your advisors will review the economy periodically.</div>';
+        } else {
+            for (var _epi = 0; _epi < proposals.length; _epi++) {
+                var _ep = proposals[_epi];
+                var _daysOld = Engine.getDay() - _ep.createdDay;
+                var _expiresIn = 15 - _daysOld;
+                html += '<div style="background:rgba(0,0,0,0.12);padding:6px 8px;border-radius:4px;margin-bottom:4px;border-left:3px solid rgba(212,168,67,0.5);">';
+                html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;">';
+                html += '<div style="flex:1;">';
+                html += '<div style="font-size:0.78rem;color:#d4c9a0;">' + _ep.icon + ' ' + escapeHtml(_ep.title) + '</div>';
+                html += '<div style="font-size:0.68rem;color:#aaa;margin-top:2px;">' + escapeHtml(_ep.desc) + '</div>';
+                html += '<div style="font-size:0.6rem;color:#666;margin-top:2px;">Expires in ' + _expiresIn + ' day' + (_expiresIn !== 1 ? 's' : '') + '</div>';
+                html += '</div>';
+                html += '<div style="display:flex;gap:4px;margin-left:8px;flex-shrink:0;">';
+                html += '<button class="btn-medieval" data-action="kingApproveProposal" data-id="' + _ep.id + '" style="font-size:0.62rem;padding:2px 8px;background:rgba(85,168,104,0.3) !important;border-color:rgba(85,168,104,0.5) !important;">✅ Approve</button>';
+                html += '<button class="btn-medieval" data-action="kingDismissProposal" data-id="' + _ep.id + '" style="font-size:0.62rem;padding:2px 8px;background:rgba(196,78,82,0.2) !important;border-color:rgba(196,78,82,0.4) !important;">❌ Dismiss</button>';
+                html += '</div>';
+                html += '</div>';
+                html += '</div>';
+            }
+        }
+
+        // Revoke active export restrictions
+        if (kingdom.exportRestrictions && kingdom.exportRestrictions.length > 0) {
+            html += '<div style="margin-top:6px;border-top:1px solid rgba(255,255,255,0.05);padding-top:6px;">';
+            html += '<div style="font-size:0.72rem;color:#c44e52;margin-bottom:4px;">🚫 Active Export Restrictions</div>';
+            for (var _eri = 0; _eri < kingdom.exportRestrictions.length; _eri++) {
+                var _erGood = kingdom.exportRestrictions[_eri];
+                var _erRes = null;
+                try { _erRes = Engine.findResourceById(_erGood); } catch(e) {}
+                var _erName = _erRes ? _erRes.name : _erGood;
+                html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 6px;margin-bottom:2px;background:rgba(0,0,0,0.08);border-radius:3px;">';
+                html += '<span style="font-size:0.7rem;color:#d4c9a0;">🚫 ' + escapeHtml(_erName) + '</span>';
+                html += '<button class="btn-medieval" data-action="kingRevokeExportRestriction" data-id="' + _erGood + '" style="font-size:0.58rem;padding:1px 6px;">Revoke</button>';
+                html += '</div>';
+            }
+            html += '</div>';
+        }
+
+        html += '</div>';
+        return html;
+    }
+
     function _kingAdvisorSection(kingdom, ks) {
         var html = '';
         var suggestions = [];
@@ -1997,6 +2071,49 @@
     UI.registerAction('kingProposeTrade', function(_t, d) {
         var r = Player.kingProposeTrade(d.id);
         UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.openKingPanel('decisions');
+    });
+
+    // Economic proposal approve/dismiss
+    UI.registerAction('kingApproveProposal', function(_t, d) {
+        var ks = Player.state && Player.state.kingState;
+        if (!ks || !ks.kingdomId) { UI.toast('Not a king.', 'error'); return; }
+        var kingdom = null;
+        try { kingdom = Engine.findKingdom(ks.kingdomId); } catch(e) {}
+        if (!kingdom) { UI.toast('Kingdom not found.', 'error'); return; }
+        var proposals = kingdom._economicProposals || [];
+        var proposal = null;
+        for (var _fi = 0; _fi < proposals.length; _fi++) {
+            if (proposals[_fi].id === d.id) { proposal = proposals[_fi]; break; }
+        }
+        if (!proposal) { UI.toast('Proposal expired or not found.', 'warning'); UI.openKingPanel('decisions'); return; }
+        var result = Engine.executeEconomicProposal(kingdom, proposal);
+        UI.toast(result.message, result.success ? 'success' : 'warning');
+        UI.openKingPanel('decisions');
+    });
+    UI.registerAction('kingDismissProposal', function(_t, d) {
+        var ks = Player.state && Player.state.kingState;
+        if (!ks || !ks.kingdomId) return;
+        var kingdom = null;
+        try { kingdom = Engine.findKingdom(ks.kingdomId); } catch(e) {}
+        if (!kingdom) return;
+        Engine.dismissEconomicProposal(kingdom, d.id);
+        UI.toast('Proposal dismissed.', 'info');
+        UI.openKingPanel('decisions');
+    });
+    UI.registerAction('kingRevokeExportRestriction', function(_t, d) {
+        var ks = Player.state && Player.state.kingState;
+        if (!ks || !ks.kingdomId) return;
+        var kingdom = null;
+        try { kingdom = Engine.findKingdom(ks.kingdomId); } catch(e) {}
+        if (!kingdom || !kingdom.exportRestrictions) return;
+        var idx = kingdom.exportRestrictions.indexOf(d.id);
+        if (idx >= 0) {
+            kingdom.exportRestrictions.splice(idx, 1);
+            var resInfo = null;
+            try { resInfo = Engine.findResourceById(d.id); } catch(e) {}
+            UI.toast('Export restriction on ' + (resInfo ? resInfo.name : d.id) + ' revoked.', 'success');
+        }
         UI.openKingPanel('decisions');
     });
 

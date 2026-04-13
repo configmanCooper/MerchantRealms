@@ -3885,7 +3885,96 @@
             });
         }
 
-        // ---- EXECUTE STRATEGIES ----
+        // ---- PLAYER KING: Queue as proposals instead of auto-executing ----
+        if (_isPlayerKingOf(kingdom)) {
+            if (!kingdom._economicProposals) kingdom._economicProposals = [];
+            // Expire old proposals (15 days)
+            kingdom._economicProposals = kingdom._economicProposals.filter(function(pr) { return (world.day - pr.createdDay) < 15; });
+            // Cap total proposals
+            if (kingdom._economicProposals.length >= 8) return;
+            var _proposalCount = 0;
+            for (var _pi = 0; _pi < candidates.length && _proposalCount < maxActions; _pi++) {
+                var _ps = candidates[_pi];
+                if (kingdom.gold < (CONFIG.KING_MIN_TREASURY_FOR_STRATEGY || 500)) break;
+                // Skip if duplicate proposal already queued
+                var _isDupe = false;
+                for (var _di = 0; _di < kingdom._economicProposals.length; _di++) {
+                    var _ex = kingdom._economicProposals[_di];
+                    if (_ex.type === _ps.type && _ex.good === _ps.good && _ex.townId === _ps.townId) { _isDupe = true; break; }
+                }
+                if (_isDupe) continue;
+                // Build human-readable description
+                var _resInfo = _ps.good ? findResourceById(_ps.good) : null;
+                var _goodName = _resInfo ? _resInfo.name : (_ps.good || '');
+                var _desc = '';
+                var _icon = '📋';
+                var _title = '';
+                switch (_ps.type) {
+                    case 'land_subsidy':
+                        _icon = '🏗️'; _title = 'Land Subsidy';
+                        _desc = 'Offer ' + Math.round(Math.min(0.6, _ps.discount || 0.4) * 100) + '% land discount in ' + (_ps.townName || '?') + ' for ' + (_ps.buildingName || '?') + ' builders.';
+                        break;
+                    case 'bounty':
+                        _icon = '📜'; _title = 'Production Bounty';
+                        _desc = 'Offer ' + (_ps.reward || 50) + 'g bounty for ' + _goodName + ' production in ' + (_ps.townName || '?') + '.';
+                        break;
+                    case 'trade_subsidy':
+                        _icon = '💰'; _title = 'Import Subsidy';
+                        _desc = 'Subsidize ' + _goodName + ' imports — ' + (_ps.bonusPerUnit || 2) + 'g bonus per unit to merchants.';
+                        break;
+                    case 'tax_holiday':
+                        _icon = '🎉'; _title = 'Tax Holiday';
+                        _desc = 'Declare a tax holiday in ' + (_ps.townName || '?') + ' for ' + (CONFIG.KING_TAX_HOLIDAY_DURATION || 180) + ' days.';
+                        break;
+                    case 'immigration':
+                        _icon = '🏘️'; _title = 'Immigration Incentive';
+                        _desc = 'Attract settlers to ' + (_ps.townName || '?') + ' with ' + (CONFIG.KING_IMMIGRATION_BONUS || 50) + 'g signing bonus.';
+                        break;
+                    case 'production_quota':
+                        _icon = '⚒️'; _title = 'Production Quota';
+                        _desc = 'Set mandatory minimum production of ' + _goodName + ' in ' + (_ps.townName || '?') + '.';
+                        break;
+                    case 'supply_gap_building':
+                        _icon = '🏭'; _title = 'Build ' + (_ps.buildingName || 'Facility');
+                        _desc = 'Build a ' + (_ps.buildingName || '?') + ' in ' + (_ps.townName || '?') + ' to produce ' + _goodName + ' (cost: ' + (_ps.cost || 0) + 'g).';
+                        break;
+                    case 'forced_labor':
+                        _icon = '⛓️'; _title = 'Forced Labor';
+                        _desc = 'Conscript laborers in ' + (_ps.townName || '?') + ' to build a ' + (_ps.buildingName || '?') + ' at half cost (happiness penalty).';
+                        break;
+                    case 'asset_seizure':
+                        _icon = '👑'; _title = 'Seize Asset';
+                        _desc = 'Confiscate a ' + (_ps.buildingName || 'building') + ' in ' + (_ps.townName || '?') + ' for the crown.';
+                        break;
+                    case 'export_restriction':
+                        _icon = '🚫'; _title = 'Export Restriction';
+                        _desc = 'Restrict export of ' + _goodName + ' to protect domestic supply.';
+                        break;
+                    case 'tariff_adjustment':
+                        _icon = '📊'; _title = 'Adjust Tariffs';
+                        _desc = 'Lower trade tariffs to attract imports of scarce goods.';
+                        break;
+                    default:
+                        _icon = '📋'; _title = _ps.type;
+                        _desc = 'Economic strategy: ' + _ps.type + '.';
+                }
+                kingdom._economicProposals.push({
+                    id: 'ep_' + world.day + '_' + _pi,
+                    type: _ps.type,
+                    icon: _icon,
+                    title: _title,
+                    desc: _desc,
+                    stratData: _ps,
+                    createdDay: world.day,
+                    good: _ps.good || null,
+                    townId: _ps.townId || null
+                });
+                _proposalCount++;
+            }
+            return; // Don't auto-execute for player kingdom
+        }
+
+        // ---- EXECUTE STRATEGIES (AI kingdoms only) ----
         let actionsThisCycle = 0;
         for (const strat of candidates) {
             if (actionsThisCycle >= maxActions) break;
@@ -4375,6 +4464,179 @@
     };
     Engine.tickKingEconomicStrategy = tickKingEconomicStrategy;
     Engine.applyKingEconomicEffectsToNPCs = applyKingEconomicEffectsToNPCs;
+
+    // Execute a player-approved economic proposal
+    Engine.executeEconomicProposal = function(kingdom, proposal) {
+        if (!world || !kingdom || !proposal) return { success: false, message: 'Invalid proposal.' };
+        var day = world.day;
+        var strat = proposal.stratData;
+        if (!strat) return { success: false, message: 'Proposal data missing.' };
+        if (kingdom.gold < (CONFIG.KING_MIN_TREASURY_FOR_STRATEGY || 500)) {
+            return { success: false, message: 'Treasury too low (need ' + (CONFIG.KING_MIN_TREASURY_FOR_STRATEGY || 500) + 'g).' };
+        }
+
+        // Initialize arrays if needed
+        if (!kingdom.landSubsidies) kingdom.landSubsidies = [];
+        if (!kingdom.productionBounties) kingdom.productionBounties = [];
+        if (!kingdom.tradeSubsidies) kingdom.tradeSubsidies = [];
+        if (!kingdom.taxHolidays) kingdom.taxHolidays = [];
+        if (!kingdom.immigrationIncentives) kingdom.immigrationIncentives = [];
+        if (!kingdom.productionQuotas) kingdom.productionQuotas = [];
+        if (!kingdom.exportRestrictions) kingdom.exportRestrictions = [];
+
+        var _resInfo, _goodName;
+
+        switch (strat.type) {
+            case 'land_subsidy':
+                var _disc = Math.min(0.6, strat.discount || 0.4);
+                kingdom.landSubsidies.push({
+                    townId: strat.townId, buildingType: strat.buildingType,
+                    discount: _disc, expiresDay: day + (CONFIG.KING_SUBSIDY_DURATION || 180)
+                });
+                logEvent('👑 ' + kingdom.name + ' offers cheap land in ' + (strat.townName || '?') + ' for ' + (strat.buildingName || '?') + ' builders!', {
+                    type: 'economic_strategy', cause: (strat.good || 'goods') + ' deficit',
+                    effects: [Math.round(_disc * 100) + '% discount on land']
+                });
+                break;
+            case 'bounty':
+                kingdom.productionBounties.push({
+                    good: strat.good, townId: strat.townId,
+                    reward: strat.reward || (CONFIG.KING_BOUNTY_DEFAULT_REWARD || 50),
+                    expiresDay: day + (CONFIG.KING_SUBSIDY_DURATION || 180)
+                });
+                _resInfo = findResourceById(strat.good);
+                _goodName = _resInfo ? _resInfo.name : strat.good;
+                logEvent('📜 ' + kingdom.name + ' seeks ' + _goodName + ' producers in ' + (strat.townName || '?') + ' — ' + (strat.reward || 50) + 'g bounty!', {
+                    type: 'economic_strategy', effects: [(strat.reward || 50) + 'g reward']
+                });
+                break;
+            case 'trade_subsidy':
+                kingdom.tradeSubsidies.push({
+                    good: strat.good, bonusPerUnit: strat.bonusPerUnit || 2,
+                    maxUnits: strat.maxUnits || 200, unitsPaid: 0,
+                    expiresDay: day + (CONFIG.KING_SUBSIDY_DURATION || 180)
+                });
+                _resInfo = findResourceById(strat.good);
+                _goodName = _resInfo ? _resInfo.name : strat.good;
+                logEvent('💰 ' + kingdom.name + ' subsidizes ' + _goodName + ' imports — ' + (strat.bonusPerUnit || 2) + 'g bonus per unit!', {
+                    type: 'economic_strategy', effects: ['Merchants get +' + (strat.bonusPerUnit || 2) + 'g per ' + _goodName + ' sold']
+                });
+                break;
+            case 'tax_holiday':
+                kingdom.taxHolidays.push({
+                    townId: strat.townId,
+                    expiresDay: day + (CONFIG.KING_TAX_HOLIDAY_DURATION || 180)
+                });
+                logEvent('🎉 ' + kingdom.name + ' declares a tax holiday in ' + (strat.townName || '?') + '!', {
+                    type: 'economic_strategy', effects: ['No property tax for new buildings']
+                });
+                break;
+            case 'immigration':
+                kingdom.immigrationIncentives.push({
+                    townId: strat.townId,
+                    bonus: CONFIG.KING_IMMIGRATION_BONUS || 50,
+                    expiresDay: day + (CONFIG.KING_SUBSIDY_DURATION || 180)
+                });
+                logEvent('🏘️ ' + kingdom.name + ' offers immigration bonuses for ' + (strat.townName || '?') + '!', {
+                    type: 'economic_strategy', effects: [(CONFIG.KING_IMMIGRATION_BONUS || 50) + 'g per settler']
+                });
+                break;
+            case 'supply_gap_building': {
+                var _sgTown = findTown(strat.townId);
+                var _sgBt = BUILDING_TYPES ? BUILDING_TYPES[strat.buildingType] : null;
+                if (!_sgTown || !_sgBt) return { success: false, message: 'Town or building type not found.' };
+                if (kingdom.gold < (_sgBt.cost || 0)) return { success: false, message: 'Not enough gold (' + (_sgBt.cost || 0) + 'g needed).' };
+                kingdom.gold -= _sgBt.cost;
+                _sgTown.buildings.push({
+                    type: _sgBt.id, level: 1, ownerId: kingdom.id,
+                    builtDay: day, condition: 'new', lastRepairDay: 0
+                });
+                logEvent('🏭 ' + kingdom.name + ' builds a ' + _sgBt.name + ' in ' + _sgTown.name + '!', {
+                    type: 'economic_strategy', effects: ['New ' + _sgBt.name + ' in ' + _sgTown.name, 'Treasury -' + _sgBt.cost + 'g']
+                });
+                break;
+            }
+            case 'export_restriction':
+                if (!kingdom.exportRestrictions.includes(strat.good)) {
+                    kingdom.exportRestrictions.push(strat.good);
+                }
+                _resInfo = findResourceById(strat.good);
+                _goodName = _resInfo ? _resInfo.name : strat.good;
+                logEvent('🚫 ' + kingdom.name + ' restricts export of ' + _goodName + ' to protect domestic supply!', {
+                    type: 'economic_strategy', effects: [_goodName + ' cannot be exported']
+                });
+                break;
+            case 'tariff_adjustment':
+                if (kingdom.laws && kingdom.laws.tradeTariff > 0.02) {
+                    kingdom.laws.tradeTariff = Math.max(0.02, kingdom.laws.tradeTariff - 0.01);
+                    logEvent('📊 ' + kingdom.name + ' lowers trade tariffs to ' + Math.round(kingdom.laws.tradeTariff * 100) + '%.', {
+                        type: 'economic_strategy', effects: ['Tariffs reduced']
+                    });
+                }
+                break;
+            case 'forced_labor': {
+                var _flTown = findTown(strat.townId);
+                var _flBt = BUILDING_TYPES ? BUILDING_TYPES[strat.buildingType] : null;
+                if (!_flTown || !_flBt) return { success: false, message: 'Town or building type not found.' };
+                var _flCost = Math.floor((_flBt.cost || 0) * 0.5);
+                if (kingdom.gold < _flCost) return { success: false, message: 'Not enough gold (' + _flCost + 'g needed).' };
+                kingdom.gold -= _flCost;
+                _flTown.buildings.push({
+                    type: _flBt.id, level: 1, ownerId: kingdom.id,
+                    builtDay: day, condition: 'new', lastRepairDay: 0
+                });
+                _flTown.happiness = Math.max(0, (_flTown.happiness || 50) + (CONFIG.KING_FORCED_LABOR_HAPPINESS || -10));
+                logEvent('⛓️ ' + kingdom.name + ' conscripts laborers in ' + _flTown.name + ' to build a ' + _flBt.name + '!', {
+                    type: 'economic_strategy', effects: [_flBt.name + ' built at half cost', 'Happiness drops']
+                });
+                break;
+            }
+            case 'asset_seizure': {
+                var _asTown = findTown(strat.townId);
+                if (!_asTown) return { success: false, message: 'Town not found.' };
+                var _asBld = _asTown.buildings.find(function(b) { return b.type === strat.buildingType && b.ownerId === strat.ownerId; });
+                if (!_asBld) return { success: false, message: 'Building no longer exists.' };
+                var _prevOwner = findPerson(strat.ownerId);
+                _asBld.ownerId = kingdom.id;
+                _asTown.happiness = Math.max(0, (_asTown.happiness || 50) - 15);
+                if (_prevOwner) {
+                    _prevOwner.needs = _prevOwner.needs || {};
+                    _prevOwner.needs.happiness = Math.max(0, (_prevOwner.needs.happiness || 50) - 30);
+                }
+                var _asBt = BUILDING_TYPES ? BUILDING_TYPES[strat.buildingType] : null;
+                logEvent('👑 ' + kingdom.name + ' seizes a ' + (_asBt ? _asBt.name : strat.buildingType) + ' in ' + _asTown.name + '!', {
+                    type: 'economic_strategy', effects: ['Building transferred to crown', 'Happiness drops']
+                });
+                break;
+            }
+            case 'production_quota':
+                kingdom.productionQuotas.push({
+                    good: strat.good, townId: strat.townId,
+                    minOutput: strat.minOutput || 10,
+                    expiresDay: day + (CONFIG.KING_SUBSIDY_DURATION || 180)
+                });
+                _resInfo = findResourceById(strat.good);
+                _goodName = _resInfo ? _resInfo.name : strat.good;
+                logEvent('⚒️ ' + kingdom.name + ' sets production quotas for ' + _goodName + ' in ' + (strat.townName || '?') + '.', {
+                    type: 'economic_strategy', effects: ['Minimum production mandated']
+                });
+                break;
+            default:
+                return { success: false, message: 'Unknown proposal type: ' + strat.type };
+        }
+
+        // Remove from proposals queue
+        if (kingdom._economicProposals) {
+            kingdom._economicProposals = kingdom._economicProposals.filter(function(pr) { return pr.id !== proposal.id; });
+        }
+        return { success: true, message: proposal.icon + ' ' + proposal.title + ' enacted!' };
+    };
+
+    // Dismiss/deny a proposal
+    Engine.dismissEconomicProposal = function(kingdom, proposalId) {
+        if (!kingdom || !kingdom._economicProposals) return;
+        kingdom._economicProposals = kingdom._economicProposals.filter(function(pr) { return pr.id !== proposalId; });
+    };
 
     // ── Sync hook ──
     var _origTick = Engine.tick;
