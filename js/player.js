@@ -6821,6 +6821,10 @@
                 if (_arLoans[_ali].nobleId === _arId && _arLoans[_ali].status === 'active') { assassinRisk -= 3; break; }
             }
         }
+        // Royal guards reduce assassination risk
+        if (kingdom._employees && kingdom._employees.royalGuards) {
+            assassinRisk -= kingdom._employees.royalGuards.length * 3;
+        }
         player.kingState.assassinationRisk = Math.max(0, Math.min(100, assassinRisk));
 
         // Calculate revolt risk from kingdom happiness
@@ -8654,7 +8658,53 @@
         build_structure: 400, fortify_town: 150
     };
 
-    function kingGetOrderCost(typeId) {
+    function kingGetOrderCost(typeId, petition) {
+        // Dynamic costs for certain petition types
+        if (petition && petition.targetData) {
+            var td = petition.targetData;
+            switch (typeId) {
+                case 'build_defense': {
+                    // Actual cost depends on town's current wall level
+                    var _bdTown = td.townId ? Engine.findTown(td.townId) : null;
+                    if (_bdTown) {
+                        var wallLevel = _bdTown.walls || 0;
+                        if (wallLevel < 3) {
+                            // Wall upgrade costs: lvl 0→1: 200, 1→2: 400, 2→3: 600
+                            return 200 + wallLevel * 200;
+                        } else {
+                            // Watchtower construction
+                            return 500;
+                        }
+                    }
+                    return 300;
+                }
+                case 'build_road': {
+                    // Scale with distance if both towns specified
+                    if (td.fromTownId && td.toTownId) {
+                        var _frT = Engine.findTown(td.fromTownId);
+                        var _toT = Engine.findTown(td.toTownId);
+                        if (_frT && _toT) {
+                            var _dx = (_frT.x || 0) - (_toT.x || 0);
+                            var _dy = (_frT.y || 0) - (_toT.y || 0);
+                            var _dist = Math.sqrt(_dx * _dx + _dy * _dy);
+                            return Math.max(200, Math.ceil(_dist * 2));
+                        }
+                    }
+                    return 350;
+                }
+                case 'fortify_town': {
+                    var _ftTown = td.townId ? Engine.findTown(td.townId) : null;
+                    if (_ftTown) {
+                        var _garrison = _ftTown.garrison || 0;
+                        return Math.max(100, 50 + _garrison * 10);
+                    }
+                    return 150;
+                }
+                case 'increase_security': {
+                    return 30 * (3 + Math.floor(Math.random() * 3));
+                }
+            }
+        }
         return _ORDER_COSTS[typeId] || 100;
     }
 
@@ -8671,7 +8721,7 @@
         if (idx < 0) return { success: false, message: 'Petition not found.' };
 
         var petition = kingdom._pendingPetitions[idx];
-        var cost = _ORDER_COSTS[petition.typeId] || 100;
+        var cost = kingGetOrderCost(petition.typeId, petition);
         if (kingdom.gold < cost) return { success: false, message: 'Insufficient treasury. Need ' + cost + 'g.' };
 
         kingdom.gold -= cost;
@@ -8721,15 +8771,15 @@
         var kingdom = Engine.findKingdom(player.kingState.kingdomId);
         if (!kingdom) return { success: false, message: 'Kingdom not found.' };
 
-        var cost = _ORDER_COSTS[orderId] || 100;
-        if (kingdom.gold < cost) return { success: false, message: 'Insufficient treasury. Need ' + cost + 'g.' };
-
-        kingdom.gold -= cost;
         var fakePetition = {
             typeId: orderId,
             targetData: targetData || {},
             kingdomId: kingdom.id
         };
+        var cost = kingGetOrderCost(orderId, fakePetition);
+        if (kingdom.gold < cost) return { success: false, message: 'Insufficient treasury. Need ' + cost + 'g.' };
+
+        kingdom.gold -= cost;
         executePetitionAction(fakePetition);
         Engine.logEvent('👑 Royal Order executed: ' + orderId + ' (Cost: ' + cost + 'g)');
         player.kingState.decreesIssued = (player.kingState.decreesIssued || 0) + 1;
@@ -9313,28 +9363,35 @@
         if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
         var kingdom = Engine.findKingdom(player.kingState.kingdomId);
         if (!kingdom) return { success: false, message: 'Kingdom not found.' };
-        qty = parseInt(qty) || 10;
-        priceEach = parseInt(priceEach) || 10;
-        var totalCost = qty * priceEach;
-        if (kingdom.gold < totalCost) return { success: false, message: 'Need ' + totalCost + 'g.' };
-        // Find capital market and reduce supply
-        try {
-            var allTowns = Engine.getTowns();
-            for (var _bsi = 0; _bsi < allTowns.length; _bsi++) {
-                if (allTowns[_bsi].kingdomId === kingdom.id && allTowns[_bsi].isCapital && allTowns[_bsi].market && allTowns[_bsi].market[itemId]) {
-                    var avail = allTowns[_bsi].market[itemId].supply || 0;
-                    var buyQty = Math.min(qty, Math.floor(avail));
-                    if (buyQty < 1) return { success: false, message: 'Not enough supply in capital market.' };
-                    allTowns[_bsi].market[itemId].supply -= buyQty;
-                    kingdom.gold -= buyQty * priceEach;
-                    if (!kingdom.goodsStockpile) kingdom.goodsStockpile = {};
-                    kingdom.goodsStockpile[itemId] = (kingdom.goodsStockpile[itemId] || 0) + buyQty;
-                    Engine.logEvent('📦 Bought ' + buyQty + ' ' + itemId + ' for stockpile (' + (buyQty * priceEach) + 'g).');
-                    return { success: true, message: 'Bought ' + buyQty + ' ' + itemId + ' for stockpile.' };
-                }
-            }
-        } catch(e) {}
-        return { success: false, message: 'Capital market not found.' };
+        qty = Math.max(1, Math.min(500, parseInt(qty) || 10));
+
+        // Find cheapest supply across all kingdom towns
+        var allTowns = [];
+        try { allTowns = Engine.getTowns(); } catch(e) {}
+        var bestTown = null, bestPrice = Infinity, bestAvail = 0;
+        for (var _bsi = 0; _bsi < allTowns.length; _bsi++) {
+            var _bt = allTowns[_bsi];
+            if (_bt.kingdomId !== kingdom.id || _bt.isWilderness) continue;
+            if (!_bt.market || !_bt.market.supply) continue;
+            var _avail = _bt.market.supply[itemId] || 0;
+            if (_avail < 1) continue;
+            var _price = 10;
+            try { _price = Engine.getMarketPrice ? Engine.getMarketPrice(_bt, itemId) : ((_bt.market[itemId] && _bt.market[itemId].price) || 10); } catch(e) {}
+            if (_price < bestPrice) { bestPrice = _price; bestTown = _bt; bestAvail = _avail; }
+        }
+        if (!bestTown) return { success: false, message: 'No ' + itemId + ' available in any kingdom market.' };
+
+        var buyQty = Math.min(qty, Math.floor(bestAvail));
+        if (buyQty < 1) return { success: false, message: 'No ' + itemId + ' available.' };
+        var totalCost = Math.ceil(bestPrice * buyQty);
+        if (kingdom.gold < totalCost) return { success: false, message: 'Need ' + totalCost + 'g. (Cheapest in ' + bestTown.name + ' at ' + Math.ceil(bestPrice) + 'g each)' };
+
+        kingdom.gold -= totalCost;
+        bestTown.market.supply[itemId] -= buyQty;
+        if (!kingdom.goodsStockpile) kingdom.goodsStockpile = {};
+        kingdom.goodsStockpile[itemId] = (kingdom.goodsStockpile[itemId] || 0) + buyQty;
+        Engine.logEvent('📦 Bought ' + buyQty + ' ' + itemId + ' from ' + bestTown.name + ' for stockpile (' + totalCost + 'g).');
+        return { success: true, message: 'Bought ' + buyQty + ' ' + itemId + ' from ' + bestTown.name + ' (' + totalCost + 'g).' };
     }
 
     function kingSellStockpile(itemId) {
@@ -9369,7 +9426,7 @@
         if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
         var kingdom = Engine.findKingdom(player.kingState.kingdomId);
         if (!kingdom) return { success: false, message: 'Kingdom not found.' };
-        qty = Math.max(5, Math.min(50, qty || 10));
+        qty = Math.max(5, Math.min(500, qty || 10));
         // Cost: upfront payment of ~50% of typical market price per unit
         var baseCost = 5;
         try {
@@ -9403,8 +9460,7 @@
         if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
         var kingdom = Engine.findKingdom(player.kingState.kingdomId);
         if (!kingdom) return { success: false, message: 'Kingdom not found.' };
-        qty = Math.max(1, Math.min(50, qty || 5));
-        // Check stockpile
+        qty = Math.max(1, Math.min(500, qty || 5));
         var fromGoods = kingdom.goodsStockpile && kingdom.goodsStockpile[goodId] ? kingdom.goodsStockpile[goodId] : 0;
         var fromMil = kingdom.militaryStockpile && kingdom.militaryStockpile[goodId] ? kingdom.militaryStockpile[goodId] : 0;
         var avail = fromGoods + fromMil;
@@ -9432,6 +9488,209 @@
         town.market[goodId].supply = (town.market[goodId].supply || 0) + qty;
         Engine.logEvent('📦 Sent ' + qty + ' ' + goodId + ' from stockpile to ' + (town.name || townId) + '.');
         return { success: true, message: 'Sent ' + qty + ' ' + goodId + ' to ' + (town.name || townId) + '.' };
+    }
+
+    // ══════════════════════════════════════════════════════
+    // §KE KINGDOM EMPLOYEES SYSTEM
+    // ══════════════════════════════════════════════════════
+
+    // Employee types: procurer, guard, royal_guard
+    // Each employee is a real NPC with a posting that was filled
+
+    function _initKingdomEmployees(kingdom) {
+        if (!kingdom._employees) kingdom._employees = { procurers: [], guards: [], royalGuards: [] };
+        if (!kingdom._employeePostings) kingdom._employeePostings = [];
+        if (!kingdom._procurementOrders) kingdom._procurementOrders = [];
+    }
+
+    function kingHireEmployees(type, count, weeklyPay, townId) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        _initKingdomEmployees(kingdom);
+
+        count = Math.max(1, Math.min(20, parseInt(count) || 1));
+        weeklyPay = Math.max(5, Math.min(200, parseInt(weeklyPay) || 20));
+
+        // Validate type
+        var validTypes = ['procurer', 'guard', 'royal_guard'];
+        if (validTypes.indexOf(type) < 0) return { success: false, message: 'Invalid employee type.' };
+
+        // Royal guards: extra requirements
+        if (type === 'royal_guard') {
+            weeklyPay = Math.max(30, weeklyPay); // minimum 30g/week for royal guards
+        }
+
+        // Limit active postings
+        var activePostings = kingdom._employeePostings.filter(function(p) { return p.type === type && p.slotsFilled < p.slotsTotal; });
+        if (activePostings.length >= 3) return { success: false, message: 'Already have 3 active ' + type + ' postings. Wait for them to fill.' };
+
+        // Reserve 2 weeks pay upfront
+        var reserveGold = count * weeklyPay * 2;
+        if ((kingdom.gold || 0) < reserveGold) {
+            var canAfford = Math.floor((kingdom.gold || 0) / (weeklyPay * 2));
+            if (canAfford < 1) return { success: false, message: 'Need at least ' + (weeklyPay * 2) + 'g for posting.' };
+            count = canAfford;
+            reserveGold = count * weeklyPay * 2;
+        }
+        kingdom.gold -= reserveGold;
+
+        // Target towns for hiring
+        var targetTowns = [];
+        if (townId) {
+            var t = Engine.findTown(townId);
+            if (t && t.kingdomId === kingdom.id) targetTowns.push(townId);
+        }
+        if (targetTowns.length === 0) {
+            var kTowns = Engine.getTowns();
+            for (var _ti = 0; _ti < kTowns.length; _ti++) {
+                if (kTowns[_ti].kingdomId === kingdom.id && !kTowns[_ti].isWilderness) targetTowns.push(kTowns[_ti].id);
+            }
+        }
+
+        var typeLabel = type === 'procurer' ? 'Procurer' : type === 'guard' ? 'Town Guard' : 'Royal Guard';
+        kingdom._employeePostings.push({
+            id: 'emp_' + type + '_' + Engine.getDay() + '_' + Math.floor(Math.random() * 9999),
+            type: type,
+            towns: targetTowns,
+            slotsTotal: count,
+            slotsFilled: 0,
+            weeklyPay: weeklyPay,
+            reservedGold: reserveGold,
+            postedDay: Engine.getDay()
+        });
+
+        Engine.logEvent('📋 Posted ' + count + ' ' + typeLabel + ' positions at ' + weeklyPay + 'g/week (' + reserveGold + 'g reserved).');
+        return { success: true, message: typeLabel + ' posting created: ' + count + ' positions at ' + weeklyPay + 'g/week.' };
+    }
+
+    function kingDismissEmployee(employeeId, type) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        _initKingdomEmployees(kingdom);
+
+        var list = type === 'procurer' ? kingdom._employees.procurers :
+                   type === 'guard' ? kingdom._employees.guards :
+                   type === 'royal_guard' ? kingdom._employees.royalGuards : null;
+        if (!list) return { success: false, message: 'Invalid type.' };
+
+        var idx = -1;
+        for (var i = 0; i < list.length; i++) {
+            if (list[i].id === employeeId) { idx = i; break; }
+        }
+        if (idx < 0) return { success: false, message: 'Employee not found.' };
+
+        var emp = list[idx];
+        list.splice(idx, 1);
+
+        // NPC returns to civilian life
+        try {
+            var person = Engine.findPerson(emp.npcId);
+            if (person) {
+                person.occupation = 'unemployed';
+                person.employerId = null;
+            }
+        } catch(e) {}
+
+        var typeLabel = type === 'procurer' ? 'Procurer' : type === 'guard' ? 'Guard' : 'Royal Guard';
+        Engine.logEvent('👤 Dismissed ' + typeLabel + ' ' + (emp.name || 'employee') + '.');
+        return { success: true, message: typeLabel + ' dismissed.' };
+    }
+
+    function kingSetProcurementOrder(goodId, qty, maxPrice) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        _initKingdomEmployees(kingdom);
+
+        qty = Math.max(1, Math.min(500, parseInt(qty) || 10));
+        maxPrice = Math.max(1, parseInt(maxPrice) || 999);
+
+        // Check procurers
+        if (kingdom._employees.procurers.length === 0) {
+            return { success: false, message: 'No procurers hired! Hire procurers first.' };
+        }
+
+        // Limit active orders
+        if (kingdom._procurementOrders.length >= 20) {
+            return { success: false, message: 'Maximum 20 procurement orders. Cancel some first.' };
+        }
+
+        // Check for existing order for same good
+        for (var i = 0; i < kingdom._procurementOrders.length; i++) {
+            if (kingdom._procurementOrders[i].goodId === goodId && kingdom._procurementOrders[i].remaining > 0) {
+                kingdom._procurementOrders[i].remaining += qty;
+                kingdom._procurementOrders[i].maxPrice = maxPrice;
+                Engine.logEvent('📦 Updated procurement order for ' + goodId + ' (+' + qty + ', total: ' + kingdom._procurementOrders[i].remaining + ').');
+                return { success: true, message: 'Expanded ' + goodId + ' order by ' + qty + '.' };
+            }
+        }
+
+        kingdom._procurementOrders.push({
+            id: 'pord_' + Engine.getDay() + '_' + Math.floor(Math.random() * 9999),
+            goodId: goodId,
+            remaining: qty,
+            filled: 0,
+            maxPrice: maxPrice,
+            createdDay: Engine.getDay()
+        });
+
+        Engine.logEvent('📦 Procurement order: ' + qty + ' ' + goodId + ' (max ' + maxPrice + 'g each).');
+        return { success: true, message: 'Procurement order created: ' + qty + ' ' + goodId + '.' };
+    }
+
+    function kingCancelProcurementOrder(orderId) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        _initKingdomEmployees(kingdom);
+
+        var idx = -1;
+        for (var i = 0; i < kingdom._procurementOrders.length; i++) {
+            if (kingdom._procurementOrders[i].id === orderId) { idx = i; break; }
+        }
+        if (idx < 0) return { success: false, message: 'Order not found.' };
+        kingdom._procurementOrders.splice(idx, 1);
+        return { success: true, message: 'Procurement order cancelled.' };
+    }
+
+    function kingGetEmployeeSummary() {
+        if (!player.isKing || !player.kingState) return null;
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return null;
+        _initKingdomEmployees(kingdom);
+
+        var procurers = kingdom._employees.procurers;
+        var guards = kingdom._employees.guards;
+        var royalGuards = kingdom._employees.royalGuards;
+        var postings = kingdom._employeePostings || [];
+        var orders = kingdom._procurementOrders || [];
+
+        // Calculate weekly costs
+        var procurerCost = 0, guardCost = 0, royalGuardCost = 0;
+        for (var i = 0; i < procurers.length; i++) procurerCost += procurers[i].weeklyPay || 0;
+        for (var j = 0; j < guards.length; j++) guardCost += guards[j].weeklyPay || 0;
+        for (var k = 0; k < royalGuards.length; k++) royalGuardCost += royalGuards[k].weeklyPay || 0;
+
+        // Guard effect: each guard reduces crime by ~2% in their town
+        // Royal guard effect: each reduces assassination chance by ~3%
+        var assassinationReduction = royalGuards.length * 3;
+
+        return {
+            procurers: procurers,
+            guards: guards,
+            royalGuards: royalGuards,
+            postings: postings.filter(function(p) { return p.slotsFilled < p.slotsTotal; }),
+            orders: orders.filter(function(o) { return o.remaining > 0; }),
+            weeklyCost: {
+                procurers: procurerCost,
+                guards: guardCost,
+                royalGuards: royalGuardCost,
+                total: procurerCost + guardCost + royalGuardCost
+            },
+            assassinationReduction: Math.min(60, assassinationReduction)
+        };
     }
 
     function kingFleeKingdom() {
@@ -35888,6 +36147,11 @@
         kingSellStockpile,
         kingCommissionGoods,
         kingSendStockpile,
+        kingHireEmployees,
+        kingDismissEmployee,
+        kingSetProcurementOrder,
+        kingCancelProcurementOrder,
+        kingGetEmployeeSummary,
         adviseKing,
         getPendingKingDecisions,
         respondToKingDecision,

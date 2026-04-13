@@ -66,6 +66,7 @@
             { id: 'kingdom', icon: '🗺️', label: 'Towns' },
             { id: 'court', icon: '🏰', label: 'Court' + ((kingdom._pendingPetitions && kingdom._pendingPetitions.length > 0) ? ' (' + kingdom._pendingPetitions.length + ')' : '') },
             { id: 'nobility', icon: '🏅', label: 'Nobility' },
+            { id: 'employees', icon: '👷', label: 'Employees' },
             { id: 'threats', icon: '⚠️', label: 'Threats' }
         ];
         html += '<div style="display:flex;gap:3px;margin-bottom:10px;flex-wrap:wrap;">';
@@ -84,6 +85,7 @@
         else if (_kingTab === 'kingdom') html += _kingKingdomTab(kingdom, ks);
         else if (_kingTab === 'court') html += _kingCourtTab(kingdom, ks);
         else if (_kingTab === 'nobility') html += _kingNobilityTab(kingdom, ks);
+        else if (_kingTab === 'employees') html += _kingEmployeesTab(kingdom, ks);
         else if (_kingTab === 'threats') html += _kingThreatsTab(kingdom, ks);
 
         html += '</div>';
@@ -974,39 +976,50 @@
         }
         html += '</div></div>';
 
-        // Buy goods for stockpile
+        // Buy goods for stockpile — from cheapest kingdom market
         html += '<div style="background:rgba(0,0,0,0.15);padding:8px;border-radius:6px;">';
         html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:4px;">🛒 Buy Goods for Stockpile</div>';
-        html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:6px;">Purchase goods from the capital market into the kingdom stockpile.</div>';
-        // Show available goods from capital market
+        html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:6px;">Purchase goods from the cheapest kingdom market into the stockpile.</div>';
         try {
-            var _capTown = null;
-            var _allTowns = Engine.getTowns();
-            for (var _cti = 0; _cti < _allTowns.length; _cti++) {
-                if (_allTowns[_cti].kingdomId === kingdom.id && _allTowns[_cti].isCapital) { _capTown = _allTowns[_cti]; break; }
-            }
-            if (_capTown && _capTown.market) {
-                var _marketItems = Object.keys(_capTown.market);
-                _marketItems.sort();
-                var _shown = 0;
-                html += '<div style="max-height:150px;overflow-y:auto;">';
-                for (var _mki = 0; _mki < _marketItems.length && _shown < 30; _mki++) {
-                    var _mk = _marketItems[_mki];
-                    var _mData = _capTown.market[_mk];
-                    if (!_mData || !_mData.supply || _mData.supply < 1) continue;
-                    var _mPrice = _mData.price || 10;
-                    var _mDef = CONFIG.ITEMS ? CONFIG.ITEMS[_mk] : null;
-                    var _mName = _mDef ? (_mDef.name || _mk) : _mk;
-                    html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 6px;margin-bottom:1px;background:rgba(0,0,0,0.1);border-radius:3px;">';
-                    html += '<span style="font-size:0.68rem;color:#d4c9a0;">' + _mName + ' (' + Math.floor(_mData.supply) + ' avail)</span>';
-                    html += '<button class="btn-medieval" data-action="kingBuyStockpile" data-id="' + _mk + '" data-val="' + Math.round(_mPrice) + '" style="font-size:0.6rem;padding:1px 6px;">Buy 10 (' + formatGold(Math.round(_mPrice * 10)) + ')</button>';
-                    html += '</div>';
-                    _shown++;
+            // Collect all goods across all kingdom towns with cheapest prices
+            var _goodsMap = {};
+            for (var _kti = 0; _kti < _kTowns.length; _kti++) {
+                var _kt = _kTowns[_kti];
+                if (!_kt.market) continue;
+                var _mKeys = Object.keys(_kt.market);
+                for (var _gki = 0; _gki < _mKeys.length; _gki++) {
+                    var _gk = _mKeys[_gki];
+                    var _gData = _kt.market[_gk];
+                    if (!_gData || !_gData.supply || _gData.supply < 1) continue;
+                    var _gPrice = _gData.price || 10;
+                    if (!_goodsMap[_gk]) {
+                        _goodsMap[_gk] = { totalAvail: 0, cheapestPrice: Infinity, cheapestTown: '' };
+                    }
+                    _goodsMap[_gk].totalAvail += Math.floor(_gData.supply);
+                    if (_gPrice < _goodsMap[_gk].cheapestPrice) {
+                        _goodsMap[_gk].cheapestPrice = _gPrice;
+                        _goodsMap[_gk].cheapestTown = _kt.name;
+                    }
                 }
+            }
+            var _goodsList = Object.keys(_goodsMap);
+            _goodsList.sort();
+            if (_goodsList.length > 0) {
+                html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">';
+                html += '<select id="_kBuyGood" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;max-width:160px;">';
+                for (var _gli = 0; _gli < _goodsList.length; _gli++) {
+                    var _gId = _goodsList[_gli];
+                    var _gInfo = _goodsMap[_gId];
+                    var _gDef = CONFIG.ITEMS ? CONFIG.ITEMS[_gId] : null;
+                    var _gName = _gDef ? (_gDef.name || _gId) : _gId;
+                    html += '<option value="' + _gId + '">' + _gName + ' (' + Math.floor(_gInfo.totalAvail) + ' @ ' + formatGold(Math.ceil(_gInfo.cheapestPrice)) + ')</option>';
+                }
+                html += '</select>';
+                html += '<input type="number" id="_kBuyQty" min="1" max="500" value="10" style="font-size:0.65rem;width:55px;padding:2px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;">';
+                html += '<button class="btn-medieval" data-action="kingBuyStockpile" style="font-size:0.62rem;padding:2px 6px;">🛒 Buy</button>';
                 html += '</div>';
-                if (_shown === 0) html += '<div style="font-size:0.68rem;color:#888;">No goods available in capital market.</div>';
             } else {
-                html += '<div style="font-size:0.68rem;color:#888;">Capital market not available.</div>';
+                html += '<div style="font-size:0.68rem;color:#888;">No goods available in kingdom markets.</div>';
             }
         } catch(e) {
             html += '<div style="font-size:0.68rem;color:#888;">Unable to load market data.</div>';
@@ -1017,12 +1030,33 @@
         html += '<div style="background:rgba(0,0,0,0.15);padding:8px;border-radius:6px;margin-top:8px;margin-bottom:8px;">';
         html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:4px;">📋 Commission Goods Production</div>';
         html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:6px;">Pay artisans in advance. Orders are filled over time by kingdom producers.</div>';
-        var _commGoods = ['swords', 'armor', 'bows', 'arrows', 'bread', 'cloth', 'tools', 'ships'];
+        // Build dynamic goods list from CONFIG.ITEMS (producible goods)
+        var _commGoods = [];
+        try {
+            if (typeof CONFIG !== 'undefined' && CONFIG.ITEMS) {
+                var _itemKeys = Object.keys(CONFIG.ITEMS);
+                for (var _iki = 0; _iki < _itemKeys.length; _iki++) {
+                    var _item = CONFIG.ITEMS[_itemKeys[_iki]];
+                    if (_item && (_item.category === 'military' || _item.category === 'tools' || _item.category === 'food' ||
+                        _item.category === 'clothing' || _item.category === 'luxury' || _item.category === 'crafted' ||
+                        _item.category === 'raw_materials' || _item.category === 'materials' || _item.category === 'trade' ||
+                        _item.producedBy || _item.craftable)) {
+                        _commGoods.push(_itemKeys[_iki]);
+                    }
+                }
+                _commGoods.sort();
+            }
+        } catch(e) {}
+        if (_commGoods.length === 0) _commGoods = ['swords', 'armor', 'bows', 'arrows', 'bread', 'cloth', 'tools', 'ships', 'horses', 'wine', 'ale', 'spices', 'silk', 'iron', 'wood', 'stone', 'planks', 'bricks'];
         html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:4px;">';
-        html += '<select id="_roCommGood" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;max-width:100px;">';
-        for (var _cgi = 0; _cgi < _commGoods.length; _cgi++) html += '<option value="' + _commGoods[_cgi] + '">' + _commGoods[_cgi] + '</option>';
+        html += '<select id="_roCommGood" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;max-width:140px;">';
+        for (var _cgi = 0; _cgi < _commGoods.length; _cgi++) {
+            var _cgDef = (typeof CONFIG !== 'undefined' && CONFIG.ITEMS) ? CONFIG.ITEMS[_commGoods[_cgi]] : null;
+            var _cgName = _cgDef ? (_cgDef.name || _commGoods[_cgi]) : _commGoods[_cgi];
+            html += '<option value="' + _commGoods[_cgi] + '">' + _cgName + '</option>';
+        }
         html += '</select>';
-        html += '<input type="number" id="_roCommQty" min="5" max="50" value="10" style="font-size:0.65rem;width:50px;padding:2px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;">';
+        html += '<input type="number" id="_roCommQty" min="5" max="500" value="10" style="font-size:0.65rem;width:55px;padding:2px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;">';
         html += '<button class="btn-medieval" data-action="kingCommissionGoods" style="font-size:0.62rem;padding:2px 6px;">📋 Commission</button>';
         html += '</div>';
         var _commissions = kingdom._commissions || [];
@@ -1064,7 +1098,7 @@
             html += '<select id="_roSendTown" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;max-width:120px;">';
             for (var _sti3 = 0; _sti3 < _kTowns.length; _sti3++) html += '<option value="' + _kTowns[_sti3].id + '">' + escapeHtml(_kTowns[_sti3].name) + '</option>';
             html += '</select>';
-            html += '<input type="number" id="_roSendQty" min="1" max="50" value="5" style="font-size:0.65rem;width:40px;padding:2px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;">';
+            html += '<input type="number" id="_roSendQty" min="1" max="500" value="5" style="font-size:0.65rem;width:50px;padding:2px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;">';
             html += '<button class="btn-medieval" data-action="kingSendStockpile" style="font-size:0.62rem;padding:2px 6px;">📦 Send</button>';
             html += '</div>';
         } else {
@@ -1281,7 +1315,7 @@
                 var _urgLabel = _pet.urgency === 'high' ? '🔶 Urgent' : _pet.urgency === 'critical' ? '⚠️ Critical' : '🔵 Normal';
                 var _rankBadge = _pet.petitionerRank >= 6 ? '👑 RA' : _pet.petitionerRank >= 5 ? '🏰 Lord' : _pet.petitionerRank >= 4 ? '🎖️ Noble' : _pet.petitionerRank >= 3 ? '🏅 Burgher' : '👤 Citizen';
                 var _cost = 0;
-                try { _cost = Player.kingGetOrderCost(_pet.typeId); } catch(e) {}
+                try { _cost = Player.kingGetOrderCost(_pet.typeId, _pet); } catch(e) {}
 
                 html += '<div style="background:rgba(0,0,0,0.12);border:1px solid rgba(255,255,255,0.08);border-left:3px solid ' + _urgColor + ';padding:6px 8px;border-radius:4px;margin-bottom:4px;">';
                 html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;">';
@@ -1707,6 +1741,174 @@
             html += '</div></div>';
         }
         html += '</div>';
+        return html;
+    }
+
+    // =========================================================================
+    // Kingdom Employees Tab — Hire procurers, guards, royal guards
+    // =========================================================================
+    function _kingEmployeesTab(kingdom, ks) {
+        var html = '';
+        var summary = null;
+        try { summary = Player.kingGetEmployeeSummary(); } catch(e) {}
+        if (!summary) summary = { procurers: [], guards: [], royalGuards: [], postings: [], orders: [], weeklyCost: { procurers: 0, guards: 0, royalGuards: 0, total: 0 }, assassinationReduction: 0 };
+
+        var _kTowns = [];
+        try {
+            var _allT = Engine.getTowns();
+            for (var _ti2 = 0; _ti2 < _allT.length; _ti2++) {
+                if (_allT[_ti2].kingdomId === kingdom.id && !_allT[_ti2].isWilderness) _kTowns.push(_allT[_ti2]);
+            }
+        } catch(e) {}
+
+        // Cost Summary
+        html += '<div style="background:rgba(212,168,67,0.08);border:1px solid rgba(212,168,67,0.2);padding:8px;border-radius:6px;margin-bottom:8px;">';
+        html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:4px;">💰 Weekly Employee Costs</div>';
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;font-size:0.72rem;">';
+        html += '<div style="text-align:center;"><div style="color:#aaa;">Procurers</div><div style="color:#e0c58a;">' + formatGold(summary.weeklyCost.procurers) + '/wk</div><div style="color:#888;">(' + summary.procurers.length + ' hired)</div></div>';
+        html += '<div style="text-align:center;"><div style="color:#aaa;">Guards</div><div style="color:#e0c58a;">' + formatGold(summary.weeklyCost.guards) + '/wk</div><div style="color:#888;">(' + summary.guards.length + ' hired)</div></div>';
+        html += '<div style="text-align:center;"><div style="color:#aaa;">Royal Guards</div><div style="color:#e0c58a;">' + formatGold(summary.weeklyCost.royalGuards) + '/wk</div><div style="color:#888;">(' + summary.royalGuards.length + ' hired)</div></div>';
+        html += '<div style="text-align:center;"><div style="color:#d4a843;font-weight:bold;">Total</div><div style="color:#e0c58a;font-weight:bold;">' + formatGold(summary.weeklyCost.total) + '/wk</div></div>';
+        html += '</div>';
+        if (summary.assassinationReduction > 0) {
+            html += '<div style="font-size:0.65rem;color:#81c784;margin-top:4px;">🛡️ Royal Guards reduce assassination risk by ' + summary.assassinationReduction + '%</div>';
+        }
+        html += '</div>';
+
+        // Active Postings
+        if (summary.postings.length > 0) {
+            html += '<div style="background:rgba(93,173,226,0.08);border:1px solid rgba(93,173,226,0.2);padding:8px;border-radius:6px;margin-bottom:8px;">';
+            html += '<div style="font-size:0.82rem;color:#5dade2;margin-bottom:4px;">📋 Active Hiring Postings</div>';
+            for (var _hpi = 0; _hpi < summary.postings.length; _hpi++) {
+                var _hp = summary.postings[_hpi];
+                var _tLabel = _hp.type === 'procurer' ? '📦 Procurer' : _hp.type === 'guard' ? '🛡️ Guard' : '⚔️ Royal Guard';
+                html += '<div style="font-size:0.7rem;color:#ccc;padding:2px 0;">' + _tLabel + ': ' + _hp.slotsFilled + '/' + _hp.slotsTotal + ' filled (' + _hp.weeklyPay + 'g/wk)</div>';
+            }
+            html += '</div>';
+        }
+
+        // Hiring Controls
+        html += '<div style="background:rgba(0,0,0,0.15);padding:8px;border-radius:6px;margin-bottom:8px;">';
+        html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:4px;">🏗️ Hire Employees</div>';
+        html += '<div style="font-size:0.68rem;color:#aaa;margin-bottom:6px;">Post positions and NPCs will apply over time based on pay.</div>';
+
+        html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:4px;">';
+        html += '<select id="_empType" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;">';
+        html += '<option value="procurer">📦 Procurer (buy goods)</option>';
+        html += '<option value="guard">🛡️ Town Guard (reduce crime)</option>';
+        html += '<option value="royal_guard">⚔️ Royal Guard (protect king)</option>';
+        html += '</select>';
+        html += '<input type="number" id="_empCount" min="1" max="10" value="2" style="font-size:0.65rem;width:40px;padding:2px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;" title="Count">';
+        html += '<input type="number" id="_empPay" min="5" max="200" value="25" style="font-size:0.65rem;width:50px;padding:2px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;" title="Weekly pay (gold)">';
+        html += '<span style="font-size:0.6rem;color:#888;">g/wk</span>';
+        html += '<select id="_empTown" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;">';
+        html += '<option value="">All Towns</option>';
+        for (var _eti = 0; _eti < _kTowns.length; _eti++) html += '<option value="' + _kTowns[_eti].id + '">' + escapeHtml(_kTowns[_eti].name) + '</option>';
+        html += '</select>';
+        html += '<button class="btn-medieval" data-action="kingHireEmployees" style="font-size:0.62rem;padding:2px 8px;">📋 Post</button>';
+        html += '</div>';
+        html += '<div style="font-size:0.6rem;color:#888;">Royal Guards: 18-35, prior military experience, citizen rank. Higher pay = faster filling.</div>';
+        html += '</div>';
+
+        // Procurers Section
+        html += '<div style="background:rgba(85,168,104,0.08);border:1px solid rgba(85,168,104,0.15);padding:8px;border-radius:6px;margin-bottom:8px;">';
+        html += '<div style="font-size:0.82rem;color:#81c784;margin-bottom:4px;">📦 Procurers (' + summary.procurers.length + ')</div>';
+        if (summary.procurers.length === 0) {
+            html += '<div style="font-size:0.68rem;color:#888;">No procurers hired. Procurers travel your kingdom buying goods for the treasury.</div>';
+        } else {
+            for (var _pi2 = 0; _pi2 < summary.procurers.length; _pi2++) {
+                var _proc = summary.procurers[_pi2];
+                var _procTown = null; try { _procTown = Engine.findTown(_proc.townId); } catch(e) {}
+                html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 6px;background:rgba(0,0,0,0.1);border-radius:3px;margin-bottom:2px;">';
+                html += '<span style="font-size:0.7rem;color:#d4c9a0;">' + escapeHtml(_proc.name) + ' <span style="color:#888;">(' + (_procTown ? _procTown.name : '?') + ', ' + _proc.weeklyPay + 'g/wk)</span></span>';
+                html += '<button class="btn-medieval" data-action="kingDismissEmployee" data-id="' + _proc.id + '" data-val="procurer" style="font-size:0.58rem;padding:1px 4px;background:rgba(196,78,82,0.3) !important;">Dismiss</button>';
+                html += '</div>';
+            }
+        }
+        html += '</div>';
+
+        // Procurement Orders
+        html += '<div style="background:rgba(0,0,0,0.15);padding:8px;border-radius:6px;margin-bottom:8px;">';
+        html += '<div style="font-size:0.82rem;color:#d4a843;margin-bottom:4px;">📋 Procurement Orders (' + summary.orders.length + '/20)</div>';
+        html += '<div style="font-size:0.68rem;color:#aaa;margin-bottom:4px;">Set orders for procurers to fill by traveling and buying from kingdom markets.</div>';
+        if (summary.procurers.length === 0) {
+            html += '<div style="font-size:0.68rem;color:#e57373;">⚠️ Hire procurers first to fill procurement orders.</div>';
+        } else {
+            // Add order form
+            html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:4px;">';
+            // Dynamic goods list
+            var _procGoods = [];
+            try {
+                if (typeof CONFIG !== 'undefined' && CONFIG.ITEMS) {
+                    var _pKeys = Object.keys(CONFIG.ITEMS);
+                    for (var _pki = 0; _pki < _pKeys.length; _pki++) { _procGoods.push(_pKeys[_pki]); }
+                    _procGoods.sort();
+                }
+            } catch(e) {}
+            if (_procGoods.length === 0) _procGoods = ['swords', 'armor', 'bows', 'arrows', 'horses', 'bread', 'wheat', 'cloth', 'tools', 'wood', 'iron', 'stone'];
+            html += '<select id="_procGood" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;max-width:140px;">';
+            for (var _pgi = 0; _pgi < _procGoods.length; _pgi++) {
+                var _pgDef = (typeof CONFIG !== 'undefined' && CONFIG.ITEMS) ? CONFIG.ITEMS[_procGoods[_pgi]] : null;
+                var _pgName = _pgDef ? (_pgDef.name || _procGoods[_pgi]) : _procGoods[_pgi];
+                html += '<option value="' + _procGoods[_pgi] + '">' + _pgName + '</option>';
+            }
+            html += '</select>';
+            html += '<input type="number" id="_procQty" min="1" max="500" value="20" style="font-size:0.65rem;width:50px;padding:2px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;" title="Quantity">';
+            html += '<input type="number" id="_procMaxPrice" min="1" max="999" value="50" style="font-size:0.65rem;width:50px;padding:2px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;" title="Max price each">';
+            html += '<span style="font-size:0.6rem;color:#888;">max/ea</span>';
+            html += '<button class="btn-medieval" data-action="kingSetProcurementOrder" style="font-size:0.62rem;padding:2px 8px;">📦 Order</button>';
+            html += '</div>';
+        }
+        // Active orders
+        if (summary.orders.length > 0) {
+            html += '<div style="margin-top:4px;">';
+            for (var _oi = 0; _oi < summary.orders.length; _oi++) {
+                var _ord = summary.orders[_oi];
+                var _ordDef = (typeof CONFIG !== 'undefined' && CONFIG.ITEMS && CONFIG.ITEMS[_ord.goodId]) ? CONFIG.ITEMS[_ord.goodId] : null;
+                var _ordName = _ordDef ? (_ordDef.name || _ord.goodId) : _ord.goodId;
+                html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 6px;background:rgba(0,0,0,0.1);border-radius:3px;margin-bottom:2px;">';
+                html += '<span style="font-size:0.68rem;color:#d4c9a0;">' + _ordName + ': ' + (_ord.filled || 0) + '/' + ((_ord.filled || 0) + _ord.remaining) + ' (max ' + _ord.maxPrice + 'g ea)</span>';
+                html += '<button class="btn-medieval" data-action="kingCancelProcOrder" data-id="' + _ord.id + '" style="font-size:0.58rem;padding:1px 4px;background:rgba(196,78,82,0.2) !important;">✕</button>';
+                html += '</div>';
+            }
+            html += '</div>';
+        }
+        html += '</div>';
+
+        // Guards Section
+        html += '<div style="background:rgba(93,173,226,0.08);border:1px solid rgba(93,173,226,0.15);padding:8px;border-radius:6px;margin-bottom:8px;">';
+        html += '<div style="font-size:0.82rem;color:#5dade2;margin-bottom:4px;">🛡️ Town Guards (' + summary.guards.length + ')</div>';
+        if (summary.guards.length === 0) {
+            html += '<div style="font-size:0.68rem;color:#888;">No guards hired. Guards patrol towns and reduce crime.</div>';
+        } else {
+            for (var _gi2 = 0; _gi2 < summary.guards.length; _gi2++) {
+                var _grd = summary.guards[_gi2];
+                var _grdTown = null; try { _grdTown = Engine.findTown(_grd.townId); } catch(e) {}
+                html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 6px;background:rgba(0,0,0,0.1);border-radius:3px;margin-bottom:2px;">';
+                html += '<span style="font-size:0.7rem;color:#d4c9a0;">' + escapeHtml(_grd.name) + ' <span style="color:#888;">(' + (_grdTown ? _grdTown.name : '?') + ', ' + _grd.weeklyPay + 'g/wk)</span></span>';
+                html += '<button class="btn-medieval" data-action="kingDismissEmployee" data-id="' + _grd.id + '" data-val="guard" style="font-size:0.58rem;padding:1px 4px;background:rgba(196,78,82,0.3) !important;">Dismiss</button>';
+                html += '</div>';
+            }
+        }
+        html += '</div>';
+
+        // Royal Guards Section
+        html += '<div style="background:rgba(196,78,82,0.08);border:1px solid rgba(196,78,82,0.15);padding:8px;border-radius:6px;">';
+        html += '<div style="font-size:0.82rem;color:#c44e52;margin-bottom:4px;">⚔️ Royal Guards (' + summary.royalGuards.length + ')</div>';
+        html += '<div style="font-size:0.65rem;color:#888;margin-bottom:4px;">Each royal guard reduces assassination chance by ~3% (max -60%). Requires ages 18-35, military experience, citizen rank.</div>';
+        if (summary.royalGuards.length === 0) {
+            html += '<div style="font-size:0.68rem;color:#888;">No royal guards hired.</div>';
+        } else {
+            for (var _rgi = 0; _rgi < summary.royalGuards.length; _rgi++) {
+                var _rgd = summary.royalGuards[_rgi];
+                html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 6px;background:rgba(0,0,0,0.1);border-radius:3px;margin-bottom:2px;">';
+                html += '<span style="font-size:0.7rem;color:#d4c9a0;">' + escapeHtml(_rgd.name) + ' <span style="color:#888;">(' + _rgd.weeklyPay + 'g/wk)</span></span>';
+                html += '<button class="btn-medieval" data-action="kingDismissEmployee" data-id="' + _rgd.id + '" data-val="royal_guard" style="font-size:0.58rem;padding:1px 4px;background:rgba(196,78,82,0.3) !important;">Dismiss</button>';
+                html += '</div>';
+            }
+        }
+        html += '</div>';
+
         return html;
     }
 
@@ -2648,13 +2850,65 @@
     UI.registerAction('kingRepealLaw', function(_t, d) { var r = Player.kingRepealLaw(d.id); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
     UI.registerAction('kingEnactLaw', function(_t, d) { var r = Player.kingEnactLaw(d.id); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
     UI.registerAction('kingSuePeace', function(_t, d) {
-        // Show peace terms before confirming
+        // Smart routing: if a peace/surrender offer exists, show that instead (better deal)
         try {
             var kingdom = Engine.findKingdom(Player.state.kingState.kingdomId);
             var target = Engine.findKingdom(d.id);
             if (!kingdom || !target) { UI.toast('Kingdom not found', 'error'); return; }
             if (!kingdom.atWar || !kingdom.atWar.has || !kingdom.atWar.has(d.id)) { UI.toast('Not at war with ' + (target.name || 'them'), 'warning'); return; }
 
+            // Check if enemy has a pending peace/surrender offer — accept that instead
+            var petitions = kingdom._pendingPetitions || [];
+            var existingOffer = null;
+            for (var _eoi = 0; _eoi < petitions.length; _eoi++) {
+                if ((petitions[_eoi].type === 'peace_offer' || petitions[_eoi].type === 'surrender_offer') && petitions[_eoi].fromId === d.id) {
+                    existingOffer = petitions[_eoi];
+                    break;
+                }
+            }
+
+            if (existingOffer) {
+                // Route to accepting the enemy's offer (better deal — they pay us!)
+                var offerTerms = existingOffer.peaceTerms || {};
+                var offerData = offerTerms.offer || {};
+                var goldOffered = Math.floor(offerData.gold || 0);
+                var townsOffered = (offerData.towns || []).length;
+                var isSurrender = existingOffer.type === 'surrender_offer';
+
+                var html = '<div style="padding:10px;">';
+                html += '<div style="text-align:center;font-size:2em;margin-bottom:8px;">' + (isSurrender ? '🏳️' : '🕊️') + '</div>';
+                html += '<p style="color:#81c784;text-align:center;font-weight:bold;font-size:1.1em;">' + escapeHtml(target.name) + (isSurrender ? ' is Surrendering!' : ' Offers Peace!') + '</p>';
+                html += '<div style="background:rgba(85,168,104,0.12);border:1px solid rgba(85,168,104,0.3);padding:10px;border-radius:6px;margin:10px 0;">';
+                html += '<div style="color:#81c784;font-weight:bold;margin-bottom:6px;">💰 Their Offer:</div>';
+                html += '<div style="color:#ccc;font-size:0.85rem;">';
+                if (goldOffered > 0) html += '• <strong style="color:#e0c58a;">Gold:</strong> ' + formatGold(goldOffered) + ' paid to you<br>';
+                if (townsOffered > 0) html += '• <strong style="color:#a5d6a7;">Towns:</strong> ' + townsOffered + ' town' + (townsOffered > 1 ? 's' : '') + ' ceded to you<br>';
+                if (goldOffered === 0 && townsOffered === 0) html += '• White peace — no reparations<br>';
+                html += '• <strong style="color:#64b5f6;">Peace treaty:</strong> 180 days of guaranteed peace';
+                html += '</div></div>';
+
+                // Compare with sue-for-peace cost
+                var tribute = Math.floor(kingdom.gold * 0.2);
+                html += '<div style="background:rgba(196,78,82,0.12);border:1px solid rgba(196,78,82,0.3);padding:8px;border-radius:6px;margin:8px 0;">';
+                html += '<div style="color:#e57373;font-size:0.78rem;">⚠️ Alternatively, suing for peace costs you <strong>' + formatGold(tribute) + '</strong> (20% of treasury)</div>';
+                html += '</div>';
+
+                html += '<div style="color:#81c784;font-size:0.82rem;text-align:center;margin:8px 0;">✅ Accepting their offer is the better deal!</div>';
+
+                html += '<div style="display:flex;gap:8px;margin-top:14px;">';
+                html += '<button class="btn-medieval" data-action="kingAcceptPeaceOffer" data-id="' + d.id + '" style="flex:1;padding:10px;background:rgba(85,168,104,0.3);border:2px solid rgba(85,168,104,0.6);">';
+                html += '<div style="font-weight:bold;color:#81c784;">' + (isSurrender ? '🏳️ Accept Surrender' : '🕊️ Accept Peace Deal') + '</div>';
+                if (goldOffered > 0) html += '<div style="font-size:0.75rem;color:#e0c58a;margin-top:2px;">Receive ' + formatGold(goldOffered) + '</div>';
+                html += '</button>';
+                html += '<button class="btn-medieval" data-action="closeModal" style="flex:1;padding:10px;background:rgba(100,100,100,0.2);border:2px solid rgba(150,150,150,0.4);">';
+                html += '<div style="font-weight:bold;color:#ccc;">✋ Continue the War</div></button>';
+                html += '</div></div>';
+
+                UI.openModal((isSurrender ? '🏳️ ' : '🕊️ ') + escapeHtml(target.name) + (isSurrender ? ' Surrenders' : ' Offers Peace'), html);
+                return;
+            }
+
+            // No existing offer — show regular sue-for-peace modal
             var tribute = Math.floor(kingdom.gold * 0.2);
             var ourTowns = kingdom.territories ? (kingdom.territories.size || kingdom.territories.length || 0) : 0;
             var theirTowns = target.territories ? (target.territories.size || target.territories.length || 0) : 0;
@@ -2986,6 +3240,42 @@
         UI.openKingPanel('military');
     });
 
+    // Employee tab actions
+    UI.registerAction('kingHireEmployees', function() {
+        var typeEl = document.getElementById('_empType');
+        var countEl = document.getElementById('_empCount');
+        var payEl = document.getElementById('_empPay');
+        var townEl = document.getElementById('_empTown');
+        if (!typeEl || !typeEl.value) { UI.toast('Select employee type.', 'warning'); return; }
+        var count = countEl ? parseInt(countEl.value) || 1 : 1;
+        var pay = payEl ? parseInt(payEl.value) || 25 : 25;
+        var townId = townEl ? townEl.value : '';
+        var r = Player.kingHireEmployees ? Player.kingHireEmployees(typeEl.value, count, pay, townId || null) : { success: false, message: 'Not available.' };
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.openKingPanel('employees');
+    });
+    UI.registerAction('kingDismissEmployee', function(_t, d) {
+        var r = Player.kingDismissEmployee ? Player.kingDismissEmployee(d.id, d.val) : { success: false, message: 'Not available.' };
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.openKingPanel('employees');
+    });
+    UI.registerAction('kingSetProcurementOrder', function() {
+        var goodEl = document.getElementById('_procGood');
+        var qtyEl = document.getElementById('_procQty');
+        var priceEl = document.getElementById('_procMaxPrice');
+        if (!goodEl || !goodEl.value) { UI.toast('Select a good.', 'warning'); return; }
+        var qty = qtyEl ? parseInt(qtyEl.value) || 20 : 20;
+        var maxPrice = priceEl ? parseInt(priceEl.value) || 50 : 50;
+        var r = Player.kingSetProcurementOrder ? Player.kingSetProcurementOrder(goodEl.value, qty, maxPrice) : { success: false, message: 'Not available.' };
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.openKingPanel('employees');
+    });
+    UI.registerAction('kingCancelProcOrder', function(_t, d) {
+        var r = Player.kingCancelProcurementOrder ? Player.kingCancelProcurementOrder(d.id) : { success: false, message: 'Not available.' };
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.openKingPanel('employees');
+    });
+
     // Military Proposal actions
     UI.registerAction('kingApproveMilProposal', function(_t, d) {
         try {
@@ -3040,7 +3330,10 @@
         UI.openKingPanel('stockpile');
     });
     UI.registerAction('kingBuyStockpile', function(_t, d) {
-        var r = Player.kingBuyStockpile ? Player.kingBuyStockpile(d.id, 10, parseInt(d.val) || 0) : { success: false, message: 'Not available.' };
+        var goodEl = document.getElementById('_kBuyGood'), qtyEl = document.getElementById('_kBuyQty');
+        if (!goodEl || !goodEl.value) { UI.toast('Select a good.', 'warning'); return; }
+        var qty = qtyEl ? parseInt(qtyEl.value) || 10 : 10;
+        var r = Player.kingBuyStockpile ? Player.kingBuyStockpile(goodEl.value, qty) : { success: false, message: 'Not available.' };
         UI.toast(r.message, r.success ? 'success' : 'warning');
         UI.openKingPanel('stockpile');
     });

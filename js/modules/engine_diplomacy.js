@@ -211,6 +211,307 @@
         }
     }
 
+    // ── Employee Postings Tick: NPCs respond to guard/procurer/royal_guard postings ──
+    function _tickEmployeePostings(k, rng) {
+        if (!k._employeePostings || k._employeePostings.length === 0) return;
+        if (!k._employees) k._employees = { procurers: [], guards: [], royalGuards: [] };
+        var dayNow = world.day;
+
+        for (var pi = k._employeePostings.length - 1; pi >= 0; pi--) {
+            var post = k._employeePostings[pi];
+            var remaining = post.slotsTotal - post.slotsFilled;
+            if (remaining <= 0) { k._employeePostings.splice(pi, 1); continue; }
+
+            // Expire after 30 days
+            if (dayNow - post.postedDay > 30) {
+                var refundPerSlot = post.weeklyPay * 2;
+                var refund = remaining * refundPerSlot;
+                k.gold = (k.gold || 0) + refund;
+                var isP = false; try { isP = _isPlayerKingOf(k); } catch(e) {}
+                logEvent('📋 Employee posting expired (' + post.slotsFilled + '/' + post.slotsTotal + ' ' + post.type + 's filled). ' + refund + 'g refunded.', null, isP ? 'my_kingdom' : 'foreign_kingdoms');
+                k._employeePostings.splice(pi, 1);
+                continue;
+            }
+
+            var filledThisTick = 0;
+            for (var ti = 0; ti < post.towns.length && remaining > 0; ti++) {
+                var town = findTown(post.towns[ti]);
+                if (!town) continue;
+
+                var eligible = getPeopleInTown(town.id).filter(function(p) {
+                    if (!p.alive || p.occupation === 'soldier' || p.status === 'indentured') return false;
+                    if (post.type === 'royal_guard') {
+                        // 18-35, prior guard/soldier experience, citizen rank+
+                        return p.age >= 18 && p.age <= 35 &&
+                               (p.previousOccupation === 'soldier' || p.previousOccupation === 'guard' ||
+                                p.combatSkill >= 20 || p.militaryExperience) &&
+                               (p.socialRank >= 1 || (p.citizenship && p.citizenship[k.id]));
+                    } else if (post.type === 'guard') {
+                        // 16-55, able-bodied
+                        return p.age >= 16 && p.age <= 55 &&
+                               (p.occupation === 'laborer' || p.occupation === 'none' || p.occupation === 'unemployed' ||
+                                p.occupation === 'farmer' || p.occupation === 'guard');
+                    } else {
+                        // Procurer: anyone 16+ with some merchant/trading ability
+                        return p.age >= 16 && p.age <= 60 &&
+                               (p.occupation === 'laborer' || p.occupation === 'none' || p.occupation === 'unemployed' ||
+                                p.occupation === 'merchant' || p.occupation === 'trader' || p.occupation === 'farmer');
+                    }
+                });
+                if (eligible.length === 0) continue;
+
+                var maxPerTown = Math.min(2, remaining, eligible.length);
+                for (var ei = 0; ei < maxPerTown; ei++) {
+                    var cand = eligible[ei];
+                    // Willingness based on pay vs alternatives
+                    var will = 0.25;
+                    if (post.weeklyPay >= 30) will += 0.1;
+                    if (post.weeklyPay >= 50) will += 0.15;
+                    var _cp = cand.personality || {};
+                    if (cand.occupation === 'unemployed' || cand.occupation === 'none') will += 0.2;
+                    if ((_cp.loyalty || 50) > 60) will += 0.05;
+
+                    if (rng.chance(Math.min(0.7, will))) {
+                        var empRecord = {
+                            id: 'emp_' + cand.id + '_' + dayNow,
+                            npcId: cand.id,
+                            name: (cand.firstName || '') + ' ' + (cand.lastName || ''),
+                            type: post.type,
+                            townId: town.id,
+                            weeklyPay: post.weeklyPay,
+                            hiredDay: dayNow
+                        };
+
+                        cand.previousOccupation = cand.occupation;
+                        cand.occupation = post.type === 'procurer' ? 'procurer' : post.type === 'royal_guard' ? 'royal_guard' : 'guard';
+                        cand.employerId = 'kingdom_' + k.id;
+
+                        if (post.type === 'procurer') k._employees.procurers.push(empRecord);
+                        else if (post.type === 'guard') k._employees.guards.push(empRecord);
+                        else if (post.type === 'royal_guard') k._employees.royalGuards.push(empRecord);
+
+                        post.slotsFilled++;
+                        remaining--;
+                        filledThisTick++;
+                    }
+                }
+            }
+
+            if (filledThisTick > 0) {
+                var isP2 = false; try { isP2 = _isPlayerKingOf(k); } catch(e) {}
+                var tLabel = post.type === 'procurer' ? 'Procurer' : post.type === 'guard' ? 'Guard' : 'Royal Guard';
+                logEvent('👤 ' + tLabel + ' hiring: ' + post.slotsFilled + '/' + post.slotsTotal + ' filled', null, isP2 ? 'my_kingdom' : 'foreign_kingdoms');
+            }
+            if (post.slotsFilled >= post.slotsTotal) k._employeePostings.splice(pi, 1);
+        }
+    }
+
+    // ── Procurer Tick: procurers travel and buy goods for the kingdom ──
+    function _tickProcurers(k, rng) {
+        if (!k._employees || !k._employees.procurers || k._employees.procurers.length === 0) return;
+        if (!k._procurementOrders || k._procurementOrders.length === 0) return;
+
+        var activeOrders = k._procurementOrders.filter(function(o) { return o.remaining > 0; });
+        if (activeOrders.length === 0) return;
+
+        // Each procurer processes one order per tick
+        for (var pi = 0; pi < k._employees.procurers.length; pi++) {
+            var proc = k._employees.procurers[pi];
+            if (activeOrders.length === 0) break;
+
+            // Pick an order to work on
+            var order = activeOrders[Math.floor(rng.random() * activeOrders.length)];
+
+            // Find cheapest supply in the procurer's current town or nearby
+            var procTown = findTown(proc.townId);
+            if (!procTown) continue;
+
+            var avail = (procTown.market && procTown.market.supply) ? (procTown.market.supply[order.goodId] || 0) : 0;
+            if (avail >= 1) {
+                var price = 10;
+                try { price = getMarketPrice(procTown, order.goodId); } catch(e) {}
+                if (price <= order.maxPrice && (k.gold || 0) >= price) {
+                    var buyQty = Math.min(Math.floor(avail), order.remaining, 5); // procurers buy up to 5 per tick
+                    var totalCost = Math.ceil(price * buyQty);
+                    if ((k.gold || 0) >= totalCost) {
+                        k.gold -= totalCost;
+                        procTown.market.supply[order.goodId] -= buyQty;
+                        if (!k.goodsStockpile) k.goodsStockpile = {};
+                        // Military items go to military stockpile
+                        var milItems = ['swords', 'armor', 'bows', 'arrows', 'horses', 'saddles', 'shields'];
+                        if (milItems.indexOf(order.goodId) >= 0) {
+                            if (!k.militaryStockpile) k.militaryStockpile = {};
+                            k.militaryStockpile[order.goodId] = (k.militaryStockpile[order.goodId] || 0) + buyQty;
+                        } else {
+                            k.goodsStockpile[order.goodId] = (k.goodsStockpile[order.goodId] || 0) + buyQty;
+                        }
+                        order.remaining -= buyQty;
+                        order.filled = (order.filled || 0) + buyQty;
+                    }
+                }
+            } else {
+                // No supply here — procurer "travels" to a different town next tick
+                var kTowns = world.towns.filter(function(t) { return k.territories.has(t.id) && t.id !== proc.townId; });
+                if (kTowns.length > 0) {
+                    proc.townId = kTowns[Math.floor(rng.random() * kTowns.length)].id;
+                }
+            }
+        }
+
+        // Clean up completed orders
+        for (var oi = k._procurementOrders.length - 1; oi >= 0; oi--) {
+            if (k._procurementOrders[oi].remaining <= 0) {
+                var isP = false; try { isP = _isPlayerKingOf(k); } catch(e) {}
+                logEvent('✅ Procurement order fulfilled: ' + k._procurementOrders[oi].goodId + ' (' + k._procurementOrders[oi].filled + ' total)', null, isP ? 'my_kingdom' : 'foreign_kingdoms');
+                k._procurementOrders.splice(oi, 1);
+            }
+        }
+    }
+
+    // ── Employee Wages Tick: pay employees weekly ──
+    function _tickEmployeeWages(k) {
+        if (!k._employees) return;
+        if (world.day % 7 !== 0) return; // weekly
+
+        var lists = [k._employees.procurers, k._employees.guards, k._employees.royalGuards];
+        var totalPaid = 0;
+        for (var li = 0; li < lists.length; li++) {
+            if (!lists[li]) continue;
+            for (var ei = lists[li].length - 1; ei >= 0; ei--) {
+                var emp = lists[li][ei];
+                var pay = emp.weeklyPay || 20;
+                if ((k.gold || 0) >= pay) {
+                    k.gold -= pay;
+                    totalPaid += pay;
+                    // NPC gets paid
+                    try {
+                        var person = findPerson(emp.npcId);
+                        if (person) person.gold = (person.gold || 0) + pay;
+                    } catch(e) {}
+                } else {
+                    // Can't pay — employee quits
+                    try {
+                        var person2 = findPerson(emp.npcId);
+                        if (person2) { person2.occupation = 'unemployed'; person2.employerId = null; }
+                    } catch(e) {}
+                    lists[li].splice(ei, 1);
+                    var isP = false; try { isP = _isPlayerKingOf(k); } catch(e) {}
+                    logEvent('💸 Kingdom employee quit (unpaid): ' + (emp.name || 'unknown'), null, isP ? 'my_kingdom' : 'foreign_kingdoms');
+                }
+            }
+        }
+
+        // Guard crime reduction: each guard reduces theft/crime chance in their town
+        if (k._employees.guards) {
+            for (var gi = 0; gi < k._employees.guards.length; gi++) {
+                var guard = k._employees.guards[gi];
+                var gTown = findTown(guard.townId);
+                if (gTown) {
+                    gTown.garrison = Math.max(gTown.garrison || 0, 1); // ensure at least 1 garrison for crime check
+                    gTown._guardBonus = (gTown._guardBonus || 0) + 1; // tracked for crime reduction
+                }
+            }
+        }
+    }
+
+    // ── AI King Employee Hiring: strategically hire guards, procurers, royal guards ──
+    function _aiKingHireEmployees(k, rng) {
+        if (!k._employees) k._employees = { procurers: [], guards: [], royalGuards: [] };
+        if (!k._employeePostings) k._employeePostings = [];
+        var treasury = k.gold || 0;
+        if (treasury < 1000) return; // don't hire if poor
+
+        var kTowns = world.towns.filter(function(t) { return k.territories.has(t.id); });
+        var totalPop = 0;
+        for (var i = 0; i < kTowns.length; i++) totalPop += kTowns[i].population || 0;
+
+        // Guards: aim for 1 guard per 200 population, minimum 2 per town
+        var desiredGuards = Math.max(kTowns.length * 2, Math.floor(totalPop / 200));
+        var currentGuards = k._employees.guards.length;
+        var pendingGuards = k._employeePostings.filter(function(p) { return p.type === 'guard'; }).reduce(function(s, p) { return s + (p.slotsTotal - p.slotsFilled); }, 0);
+
+        if (currentGuards + pendingGuards < desiredGuards && treasury > 2000) {
+            var hireGuards = Math.min(5, desiredGuards - currentGuards - pendingGuards);
+            if (hireGuards > 0) {
+                var guardPay = 15 + Math.floor(rng.random() * 10); // 15-24g/week
+                k._employeePostings.push({
+                    id: 'emp_guard_' + world.day + '_' + Math.floor(rng.random() * 9999),
+                    type: 'guard', towns: kTowns.map(function(t) { return t.id; }),
+                    slotsTotal: hireGuards, slotsFilled: 0,
+                    weeklyPay: guardPay, reservedGold: 0, postedDay: world.day
+                });
+            }
+        }
+
+        // Royal Guards: aim for 3-6 based on assassination risk
+        var assRisk = 0;
+        try { assRisk = k.assassinationRisk || 0; } catch(e) {}
+        var desiredRG = assRisk > 50 ? 6 : assRisk > 25 ? 4 : 3;
+        var currentRG = k._employees.royalGuards.length;
+        var pendingRG = k._employeePostings.filter(function(p) { return p.type === 'royal_guard'; }).reduce(function(s, p) { return s + (p.slotsTotal - p.slotsFilled); }, 0);
+
+        if (currentRG + pendingRG < desiredRG && treasury > 3000) {
+            var hireRG = Math.min(3, desiredRG - currentRG - pendingRG);
+            if (hireRG > 0) {
+                k._employeePostings.push({
+                    id: 'emp_rg_' + world.day + '_' + Math.floor(rng.random() * 9999),
+                    type: 'royal_guard', towns: kTowns.map(function(t) { return t.id; }),
+                    slotsTotal: hireRG, slotsFilled: 0,
+                    weeklyPay: 35 + Math.floor(rng.random() * 15), reservedGold: 0, postedDay: world.day
+                });
+            }
+        }
+
+        // Procurers: aim for 2-4 based on kingdom size
+        var desiredProc = Math.min(4, Math.max(2, Math.floor(kTowns.length / 3)));
+        var currentProc = k._employees.procurers.length;
+        var pendingProc = k._employeePostings.filter(function(p) { return p.type === 'procurer'; }).reduce(function(s, p) { return s + (p.slotsTotal - p.slotsFilled); }, 0);
+
+        if (currentProc + pendingProc < desiredProc && treasury > 2500) {
+            var hireProc = Math.min(2, desiredProc - currentProc - pendingProc);
+            if (hireProc > 0) {
+                k._employeePostings.push({
+                    id: 'emp_proc_' + world.day + '_' + Math.floor(rng.random() * 9999),
+                    type: 'procurer', towns: kTowns.map(function(t) { return t.id; }),
+                    slotsTotal: hireProc, slotsFilled: 0,
+                    weeklyPay: 20 + Math.floor(rng.random() * 15), reservedGold: 0, postedDay: world.day
+                });
+            }
+        }
+
+        // AI procurement orders: during war, stock up military; peacetime, stock essentials
+        if (!k._procurementOrders) k._procurementOrders = [];
+        if (currentProc > 0 && k._procurementOrders.length < 5) {
+            var atWar = k.atWar && k.atWar.size > 0;
+            if (atWar) {
+                var milNeeds = ['swords', 'armor', 'bows', 'arrows'];
+                for (var mi = 0; mi < milNeeds.length; mi++) {
+                    var stock = (k.militaryStockpile || {})[milNeeds[mi]] || 0;
+                    if (stock < 30 && k._procurementOrders.filter(function(o) { return o.goodId === milNeeds[mi] && o.remaining > 0; }).length === 0) {
+                        k._procurementOrders.push({
+                            id: 'pord_ai_' + world.day + '_' + Math.floor(rng.random() * 9999),
+                            goodId: milNeeds[mi], remaining: 20 + Math.floor(rng.random() * 20),
+                            filled: 0, maxPrice: 100, createdDay: world.day
+                        });
+                        break; // one new order per tick
+                    }
+                }
+            } else if (treasury > 5000) {
+                // Peacetime: stock food and essential trade goods
+                var peaceGoods = ['bread', 'wheat', 'cloth', 'tools'];
+                var picked = peaceGoods[Math.floor(rng.random() * peaceGoods.length)];
+                var existingOrder = k._procurementOrders.filter(function(o) { return o.goodId === picked && o.remaining > 0; });
+                if (existingOrder.length === 0) {
+                    k._procurementOrders.push({
+                        id: 'pord_ai_' + world.day + '_' + Math.floor(rng.random() * 9999),
+                        goodId: picked, remaining: 15 + Math.floor(rng.random() * 15),
+                        filled: 0, maxPrice: 50, createdDay: world.day
+                    });
+                }
+            }
+        }
+    }
+
     // ── Soldier Transfers Tick: soldiers arrive at destination ──
     function _tickSoldierTransfers(k) {
         if (!k._soldierTransfers || k._soldierTransfers.length === 0) return;
@@ -1051,6 +1352,11 @@
                 tickKingTravel(k);
             }
 
+            // ---- AI King employee management (monthly) ----
+            if (!_playerIsKingHere && world.day % 30 === 0) {
+                _aiKingHireEmployees(k, rng);
+            }
+
             // ---- Process pending RA consultation decisions (daily) ----
             if (!_playerIsKingHere) {
                 tickPendingKingDecisions(k);
@@ -1078,6 +1384,11 @@
 
             // ---- Process recruitment postings (NPCs decide to enlist) ----
             _tickRecruitmentPostings(k, rng);
+
+            // ---- Process employee postings (guards, procurers, royal guards) ----
+            _tickEmployeePostings(k, rng);
+            _tickProcurers(k, rng);
+            _tickEmployeeWages(k);
 
             // ---- Process soldier transfers (arrivals) ----
             _tickSoldierTransfers(k);
