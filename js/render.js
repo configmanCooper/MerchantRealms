@@ -499,6 +499,9 @@ window.Renderer = (function () {
         // 6. Caravans
         renderCaravans(player);
 
+        // 6b. Marching armies
+        renderArmies();
+
         // 7. Player marker
         renderPlayerMarker(player);
 
@@ -541,6 +544,7 @@ window.Renderer = (function () {
         renderTowns();
         if (mapMode === 1) renderStrategicTownOverlays();
         renderCaravansSimple(player);
+        renderArmiesSimple();
         renderPlayerMarker(player);
         renderHoverHighlight();
 
@@ -650,7 +654,7 @@ window.Renderer = (function () {
             renderTowns();
             if (mapMode === 1) renderStrategicTownOverlays();
             renderCaravansSimple(player);
-
+            renderArmiesSimple();
             sctx.restore();
 
             // Restore main ctx and camera
@@ -2901,6 +2905,153 @@ window.Renderer = (function () {
             }
 
             ctx.restore();
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  6b. ARMY MARKERS (marching armies on the map)
+    // ═══════════════════════════════════════════════════════════
+
+    function renderArmies() {
+        var armies = null;
+        try { armies = Engine.getArmies(); } catch(e) { return; }
+        if (!armies || armies.length === 0) return;
+        var townMap = _frameTownMap;
+        if (!townMap) return;
+
+        for (var ai = 0; ai < armies.length; ai++) {
+            var army = armies[ai];
+            if (army._besieging || army._retreating) continue; // only show marching armies
+
+            var fromT = townMap[army.fromTownId];
+            var toT = townMap[army.toTownId];
+            if (!fromT || !toT) continue;
+
+            // Calculate position along route
+            var ax, ay;
+            if (army.route && army.route.legs && army.route.legs.length > 0) {
+                var legIdx = army.legIndex || 0;
+                var legProg = army.legProgress || 0;
+                if (legIdx >= army.route.legs.length) legIdx = army.route.legs.length - 1;
+                var leg = army.route.legs[legIdx];
+                var legFrom = townMap[leg.from];
+                var legTo = townMap[leg.to];
+                if (legFrom && legTo) {
+                    ax = legFrom.x + (legTo.x - legFrom.x) * Math.min(1, legProg);
+                    ay = legFrom.y + (legTo.y - legFrom.y) * Math.min(1, legProg);
+                } else {
+                    var p = army.progress || 0;
+                    ax = fromT.x + (toT.x - fromT.x) * p;
+                    ay = fromT.y + (toT.y - fromT.y) * p;
+                }
+            } else {
+                var p2 = army.progress || 0;
+                ax = fromT.x + (toT.x - fromT.x) * p2;
+                ay = fromT.y + (toT.y - fromT.y) * p2;
+            }
+
+            // Determine army color by kingdom
+            var armyColor = '#c44e52';
+            var armyBorder = '#802020';
+            try {
+                var aK = Engine.findKingdom(army.kingdomId);
+                if (aK && aK.color) { armyColor = aK.color; }
+                // Check if this is the player's kingdom
+                if (typeof Player !== 'undefined' && Player.state && Player.state.kingState &&
+                    Player.state.kingState.kingdomId === army.kingdomId) {
+                    armyColor = '#55a868';
+                    armyBorder = '#2d6e3f';
+                }
+            } catch(e) {}
+
+            var sc = 1.0 / Math.max(camera.zoom, 0.5);
+
+            ctx.save();
+            ctx.translate(ax, ay);
+            ctx.scale(sc, sc);
+
+            // Shield shape
+            ctx.fillStyle = armyColor;
+            ctx.strokeStyle = armyBorder;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(0, -8);
+            ctx.lineTo(6, -4);
+            ctx.lineTo(6, 2);
+            ctx.quadraticCurveTo(6, 7, 0, 10);
+            ctx.quadraticCurveTo(-6, 7, -6, 2);
+            ctx.lineTo(-6, -4);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Crossed swords icon on shield
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.moveTo(-3, -3); ctx.lineTo(3, 5);
+            ctx.moveTo(3, -3); ctx.lineTo(-3, 5);
+            ctx.stroke();
+
+            // Soldier count label
+            var soldierText = '' + (army.soldiers || '?');
+            ctx.font = 'bold 7px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.fillStyle = '#000';
+            ctx.fillText(soldierText, 0, 11);
+            ctx.fillStyle = '#fff';
+            ctx.fillText(soldierText, 0.5, 10.5);
+
+            ctx.restore();
+        }
+    }
+
+    function renderArmiesSimple() {
+        var armies = null;
+        try { armies = Engine.getArmies(); } catch(e) { return; }
+        if (!armies || armies.length === 0) return;
+        var townMap = _frameTownMap;
+        if (!townMap) return;
+
+        for (var ai = 0; ai < armies.length; ai++) {
+            var army = armies[ai];
+            if (army._besieging || army._retreating) continue;
+
+            var fromT = townMap[army.fromTownId];
+            var toT = townMap[army.toTownId];
+            if (!fromT || !toT) continue;
+
+            var p = army.progress || 0;
+            if (army.route && army.route.legs && army.route.legs.length > 0) {
+                var legIdx = army.legIndex || 0;
+                var legProg = army.legProgress || 0;
+                if (legIdx < army.route.legs.length) {
+                    var leg = army.route.legs[legIdx];
+                    var lf = townMap[leg.from]; var lt = townMap[leg.to];
+                    if (lf && lt) {
+                        var cx = lf.x + (lt.x - lf.x) * Math.min(1, legProg);
+                        var cy = lf.y + (lt.y - lf.y) * Math.min(1, legProg);
+                        ctx.fillStyle = '#c44e52';
+                        ctx.beginPath();
+                        ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.strokeStyle = '#802020';
+                        ctx.lineWidth = 1;
+                        ctx.stroke();
+                        continue;
+                    }
+                }
+            }
+            var ax = fromT.x + (toT.x - fromT.x) * p;
+            var ay = fromT.y + (toT.y - fromT.y) * p;
+            ctx.fillStyle = '#c44e52';
+            ctx.beginPath();
+            ctx.arc(ax, ay, 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#802020';
+            ctx.lineWidth = 1;
+            ctx.stroke();
         }
     }
 
