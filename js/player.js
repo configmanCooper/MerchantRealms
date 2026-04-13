@@ -6635,6 +6635,25 @@
             }
         }
 
+        // Generate NPC petitions for king to review
+        if (!kingdom._pendingPetitions) kingdom._pendingPetitions = [];
+        if (kingdom._pendingPetitions.length < 5) {
+            if (!kingdom._nextPetitionDay) {
+                var _petRng = Engine.getRng();
+                kingdom._nextPetitionDay = Engine.getDay() + 3 + Math.floor(_petRng.random() * 5);
+            }
+            if (Engine.getDay() >= kingdom._nextPetitionDay) {
+                _generateNpcPetition(kingdom);
+                var _petRng2 = Engine.getRng();
+                kingdom._nextPetitionDay = Engine.getDay() + 3 + Math.floor(_petRng2.random() * 5);
+            }
+        }
+
+        // Process king's armies
+        if (kingdom._armies && kingdom._armies.length > 0) {
+            _processKingArmies(kingdom);
+        }
+
         // Player stays at capital (enforce)
         if (!player.kingState.foreignVisitTarget) {
             var _capTown = null;
@@ -6668,6 +6687,195 @@
                     handlePlayerDeath();
                     return;
                 }
+            }
+        }
+    }
+
+    // ── NPC Petition Generation ──
+    function _generateNpcPetition(kingdom) {
+        var rng = Engine.getRng();
+        var day = Engine.getDay();
+        var towns = [];
+        try { towns = Engine.getTowns().filter(function(t) { return t.kingdomId === kingdom.id; }); } catch(e) {}
+
+        // Find eligible citizens (rank 1+)
+        var candidates = [];
+        try {
+            var allPeople = Engine.getPeople ? Engine.getPeople() : (Engine.getWorld() ? Engine.getWorld().people || [] : []);
+            for (var _gpi = 0; _gpi < allPeople.length; _gpi++) {
+                var _gpp = allPeople[_gpi];
+                if (!_gpp.alive || _gpp.kingdomId !== kingdom.id) continue;
+                var _gpRank = (_gpp.socialRank && _gpp.socialRank[kingdom.id]) || 0;
+                if (_gpRank < 1) continue;
+                var _gpWeight = 1;
+                if (_gpRank >= 6) _gpWeight = 3;
+                else if (_gpRank >= 5) _gpWeight = 2;
+                else if (_gpRank >= 4) _gpWeight = 1.5;
+                else if (_gpRank >= 3) _gpWeight = 1.2;
+                candidates.push({ person: _gpp, rank: _gpRank, weight: _gpWeight });
+            }
+        } catch(e) {}
+
+        if (candidates.length === 0) return;
+
+        // Weighted random selection
+        var totalWeight = 0;
+        for (var _gwi = 0; _gwi < candidates.length; _gwi++) totalWeight += candidates[_gwi].weight;
+        var pick = rng.random() * totalWeight;
+        var cumulative = 0;
+        var chosen = candidates[0];
+        for (var _gwj = 0; _gwj < candidates.length; _gwj++) {
+            cumulative += candidates[_gwj].weight;
+            if (pick <= cumulative) { chosen = candidates[_gwj]; break; }
+        }
+
+        var petitioner = chosen.person;
+        var petTown = petitioner.townId ? Engine.findTown(petitioner.townId) : null;
+
+        // Build contextual petition options
+        var petOptions = [];
+        var roads = [];
+        try { roads = Engine.getRoads(); } catch(e) {}
+
+        if (petTown) {
+            if ((petTown.garrison || 0) < 3) {
+                petOptions.push({ typeId: 'increase_security', title: 'Increase Security in ' + petTown.name, desc: petTown.name + ' has too few guards. Please deploy more soldiers.', targetData: { townId: petTown.id } });
+            }
+            if ((petTown.happiness || 50) < 40) {
+                petOptions.push({ typeId: 'fund_festival', title: 'Fund a Festival in ' + petTown.name, desc: 'The people of ' + petTown.name + ' are unhappy. A festival would raise spirits.', targetData: { townId: petTown.id } });
+            }
+            var _hasMarket = false;
+            var _ptBlds = petTown.buildings || [];
+            for (var _bmi = 0; _bmi < _ptBlds.length; _bmi++) { if (_ptBlds[_bmi].type === 'marketplace') { _hasMarket = true; break; } }
+            if (!_hasMarket && (petTown.population || 0) > 30) {
+                petOptions.push({ typeId: 'build_market', title: 'Build Market in ' + petTown.name, desc: petTown.name + ' needs a marketplace to boost trade.', targetData: { townId: petTown.id } });
+            }
+            var _hasTentCamps = false;
+            for (var _tci2 = 0; _tci2 < _ptBlds.length; _tci2++) { if (_ptBlds[_tci2].type === 'tent_camp') { _hasTentCamps = true; break; } }
+            if (_hasTentCamps) {
+                petOptions.push({ typeId: 'demolish_tent_camps', title: 'Demolish Tent Camps in ' + petTown.name, desc: 'Tent camps in ' + petTown.name + ' are unsanitary. Demolish them.', targetData: { townId: petTown.id } });
+            }
+            if ((petTown.walls || 0) < 2) {
+                petOptions.push({ typeId: 'build_defense', title: 'Build Defenses in ' + petTown.name, desc: petTown.name + ' is vulnerable. Build walls or watchtowers.', targetData: { townId: petTown.id } });
+            }
+            if (petTown.category === 'outpost' && (petTown.population || 0) >= 20) {
+                petOptions.push({ typeId: 'promote_outpost', title: 'Promote ' + petTown.name + ' to Village', desc: petTown.name + ' has grown large enough to be a village.', targetData: { townId: petTown.id } });
+            }
+            petOptions.push({ typeId: 'repair_infrastructure', title: 'Repair Infrastructure in ' + petTown.name, desc: 'Roads and buildings in ' + petTown.name + ' need maintenance.', targetData: { townId: petTown.id } });
+        }
+
+        // Road checks — bandits and destroyed bridges
+        for (var _rci = 0; _rci < roads.length; _rci++) {
+            var _rcRoad = roads[_rci];
+            if (!_rcRoad.fromTownId || !_rcRoad.toTownId) continue;
+            var _rcFrom = Engine.findTown(_rcRoad.fromTownId);
+            var _rcTo = Engine.findTown(_rcRoad.toTownId);
+            if (!_rcFrom || !_rcTo) continue;
+            if (_rcFrom.kingdomId !== kingdom.id && _rcTo.kingdomId !== kingdom.id) continue;
+            if ((_rcRoad.banditThreat || 0) > 30) {
+                petOptions.push({ typeId: 'clear_bandits', title: 'Clear Bandits', desc: 'The road between ' + (_rcFrom.name || '?') + ' and ' + (_rcTo.name || '?') + ' is plagued by bandits.', targetData: { roadIndex: _rci } });
+            }
+            if (_rcRoad.bridges) {
+                for (var _bri = 0; _bri < _rcRoad.bridges.length; _bri++) {
+                    if (_rcRoad.bridges[_bri].destroyed) {
+                        petOptions.push({ typeId: 'repair_bridge', title: 'Repair Bridge', desc: 'A bridge on the road between ' + (_rcFrom.name || '?') + ' and ' + (_rcTo.name || '?') + ' is destroyed.', targetData: { roadIndex: _rci } });
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Kingdom-level petitions
+        var _petRank2 = chosen.rank;
+        if ((kingdom.taxRate || 0.08) > 0.15 && _petRank2 <= 3) {
+            petOptions.push({ typeId: 'lower_taxes', title: 'Lower Taxes', desc: 'The tax rate is too high for common folk. Please lower it.', targetData: {} });
+        }
+        if ((kingdom.taxRate || 0.08) < 0.10 && _petRank2 >= 4) {
+            petOptions.push({ typeId: 'raise_taxes', title: 'Raise Taxes', desc: 'The treasury needs more revenue. Consider raising taxes.', targetData: {} });
+        }
+
+        var _petAtWar = kingdom.atWar && ((kingdom.atWar.size > 0) || (Array.isArray(kingdom.atWar) && kingdom.atWar.length > 0));
+        if (_petAtWar) {
+            petOptions.push({ typeId: 'seek_peace', title: 'Seek Peace', desc: 'This war is destroying our kingdom. Please sue for peace.', targetData: {} });
+        }
+        if (!_petAtWar) {
+            try {
+                var _petKingdoms = Engine.getWorld().kingdoms;
+                for (var _pki = 0; _pki < _petKingdoms.length; _pki++) {
+                    if (_petKingdoms[_pki].id !== kingdom.id) {
+                        petOptions.push({ typeId: 'establish_trade_agreement', title: 'Trade Agreement with ' + _petKingdoms[_pki].name, desc: 'We should establish trade relations with ' + _petKingdoms[_pki].name + '.', targetData: { targetKingdomId: _petKingdoms[_pki].id } });
+                        break;
+                    }
+                }
+            } catch(e) {}
+        }
+
+        if (petOptions.length === 0) return;
+
+        var chosenPet = petOptions[Math.floor(rng.random() * petOptions.length)];
+        var urgency = 'normal';
+        if (chosenPet.typeId === 'declare_war' || chosenPet.typeId === 'seek_peace' || chosenPet.typeId === 'repair_bridge') urgency = 'high';
+        if ((chosenPet.typeId === 'clear_bandits' || chosenPet.typeId === 'increase_security') && rng.random() > 0.5) urgency = 'high';
+
+        kingdom._pendingPetitions.push({
+            id: 'pet_' + day + '_' + Math.floor(rng.random() * 10000),
+            petitionerId: petitioner.id,
+            petitionerName: (petitioner.firstName || '') + ' ' + (petitioner.lastName || ''),
+            petitionerRank: chosen.rank,
+            typeId: chosenPet.typeId,
+            title: chosenPet.title,
+            desc: chosenPet.desc,
+            targetData: chosenPet.targetData,
+            createdDay: day,
+            urgency: urgency
+        });
+    }
+
+    // ── Army Processing ──
+    function _processKingArmies(kingdom) {
+        var day = Engine.getDay();
+        var rng = Engine.getRng();
+        for (var _ai = kingdom._armies.length - 1; _ai >= 0; _ai--) {
+            var army = kingdom._armies[_ai];
+            if (!army) { kingdom._armies.splice(_ai, 1); continue; }
+
+            if (army.status === 'marching' && day >= army.arrivalDay) {
+                // Battle resolution
+                var targetTown = Engine.findTown(army.targetTownId);
+                if (!targetTown) { army.status = 'returning'; army.returnDay = day + Math.max(3, army.arrivalDay - army.departDay); continue; }
+
+                var atkPower = army.soldiers * (0.8 + rng.random() * 0.4);
+                var defPower = (targetTown.garrison || 5) * (0.8 + rng.random() * 0.4);
+
+                if (atkPower > defPower) {
+                    // Victory
+                    var losses = Math.floor(army.soldiers * (0.1 + rng.random() * 0.2));
+                    army.soldiers = Math.max(1, army.soldiers - losses);
+                    var garrisonLoss = Math.floor((targetTown.garrison || 5) * (0.5 + rng.random() * 0.3));
+                    targetTown.garrison = Math.max(0, (targetTown.garrison || 5) - garrisonLoss);
+                    // Increase enemy war exhaustion
+                    var enemyK = Engine.findKingdom(army.targetKingdomId);
+                    if (enemyK) enemyK._warExhaustion = Math.min(100, (enemyK._warExhaustion || 0) + 8 + Math.floor(rng.random() * 7));
+                    Engine.logEvent('⚔️ Victory! Our army defeated the garrison at ' + targetTown.name + '! Lost ' + losses + ' soldiers, enemy lost ' + garrisonLoss + '.');
+                    army.status = 'returning';
+                    army.returnDay = day + Math.max(3, army.arrivalDay - army.departDay);
+                } else {
+                    // Defeat
+                    var losses2 = Math.floor(army.soldiers * (0.3 + rng.random() * 0.3));
+                    army.soldiers = Math.max(0, army.soldiers - losses2);
+                    Engine.logEvent('💀 Defeat! Our army was repelled at ' + targetTown.name + '. Lost ' + losses2 + ' soldiers.');
+                    if (army.soldiers <= 0) {
+                        kingdom._armies.splice(_ai, 1);
+                        continue;
+                    }
+                    army.status = 'returning';
+                    army.returnDay = day + Math.max(3, army.arrivalDay - army.departDay);
+                }
+            } else if (army.status === 'returning' && day >= army.returnDay) {
+                // Army returns — add surviving soldiers back to military strength
+                kingdom.militaryStrength = Math.min(100, (kingdom.militaryStrength || 50) + Math.floor(army.soldiers / 5));
+                Engine.logEvent('🏰 An army of ' + army.soldiers + ' soldiers has returned home.');
+                kingdom._armies.splice(_ai, 1);
             }
         }
     }
@@ -6799,6 +7007,291 @@
         if (kingdom && kingdom.happiness != null) kingdom.happiness = Math.min(100, kingdom.happiness + 3);
         Engine.logEvent('👑 ' + (player.sex === 'F' ? 'Queen' : 'King') + ' ' + player.fullName + ' holds court, hearing petitions from the people. (+3 happiness)');
         return { success: true, message: 'Court held. People heard, happiness improved.' };
+    }
+
+    // ── ORDER COSTS for petition approval and direct royal orders ──
+    var _ORDER_COSTS = {
+        build_road: 350, increase_security: 100, clear_bandits: 150,
+        lower_taxes: 0, raise_taxes: 0, build_market: 400,
+        repair_infrastructure: 200, establish_trade_agreement: 100,
+        ban_goods: 0, unban_goods: 0, repair_bridge: 300,
+        declare_war: 300, seek_peace: 0, fund_festival: 200,
+        demolish_tent_camps: 50, build_sea_route: 500,
+        promote_outpost: 250, build_defense: 300,
+        build_structure: 400, fortify_town: 150
+    };
+
+    function kingGetOrderCost(typeId) {
+        return _ORDER_COSTS[typeId] || 100;
+    }
+
+    function kingApprovePetition(petitionId) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        if (!kingdom._pendingPetitions) return { success: false, message: 'No petitions.' };
+
+        var idx = -1;
+        for (var _api = 0; _api < kingdom._pendingPetitions.length; _api++) {
+            if (kingdom._pendingPetitions[_api].id === petitionId) { idx = _api; break; }
+        }
+        if (idx < 0) return { success: false, message: 'Petition not found.' };
+
+        var petition = kingdom._pendingPetitions[idx];
+        var cost = _ORDER_COSTS[petition.typeId] || 100;
+        if (kingdom.gold < cost) return { success: false, message: 'Insufficient treasury. Need ' + cost + 'g.' };
+
+        kingdom.gold -= cost;
+
+        // Execute the petition action using existing infrastructure
+        var fakePetition = {
+            typeId: petition.typeId,
+            targetData: petition.targetData || {},
+            kingdomId: kingdom.id
+        };
+        executePetitionAction(fakePetition);
+
+        // Relationship bonus with petitioner
+        if (petition.petitionerId && modifyRelationship) {
+            modifyRelationship(petition.petitionerId, 5);
+        }
+
+        Engine.logEvent('👑 Petition approved: ' + petition.title + ' (Cost: ' + cost + 'g)');
+        kingdom._pendingPetitions.splice(idx, 1);
+        return { success: true, message: 'Petition approved! ' + petition.title + ' — Cost: ' + cost + 'g.' };
+    }
+
+    function kingRejectPetition(petitionId) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        if (!kingdom._pendingPetitions) return { success: false, message: 'No petitions.' };
+
+        var idx = -1;
+        for (var _rpi = 0; _rpi < kingdom._pendingPetitions.length; _rpi++) {
+            if (kingdom._pendingPetitions[_rpi].id === petitionId) { idx = _rpi; break; }
+        }
+        if (idx < 0) return { success: false, message: 'Petition not found.' };
+
+        var petition = kingdom._pendingPetitions[idx];
+        // Relationship penalty with petitioner
+        if (petition.petitionerId && modifyRelationship) {
+            modifyRelationship(petition.petitionerId, -3);
+        }
+        Engine.logEvent('📜 Petition rejected: ' + petition.title);
+        kingdom._pendingPetitions.splice(idx, 1);
+        return { success: true, message: 'Petition rejected.' };
+    }
+
+    function kingExecuteOrder(orderId, targetData) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+
+        var cost = _ORDER_COSTS[orderId] || 100;
+        if (kingdom.gold < cost) return { success: false, message: 'Insufficient treasury. Need ' + cost + 'g.' };
+
+        kingdom.gold -= cost;
+        var fakePetition = {
+            typeId: orderId,
+            targetData: targetData || {},
+            kingdomId: kingdom.id
+        };
+        executePetitionAction(fakePetition);
+        Engine.logEvent('👑 Royal Order executed: ' + orderId + ' (Cost: ' + cost + 'g)');
+        player.kingState.decreesIssued = (player.kingState.decreesIssued || 0) + 1;
+        return { success: true, message: 'Order executed! Cost: ' + cost + 'g.' };
+    }
+
+    function kingRaiseArmy(soldierCount) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+
+        soldierCount = Math.max(10, Math.min(200, parseInt(soldierCount) || 10));
+        var cost = Math.floor(soldierCount / 10) * 100;
+        if (kingdom.gold < cost) return { success: false, message: 'Need ' + cost + 'g to raise ' + soldierCount + ' soldiers.' };
+
+        kingdom.gold -= cost;
+        if (!kingdom._armies) kingdom._armies = [];
+        kingdom.militaryStrength = Math.min(100, (kingdom.militaryStrength || 50) + Math.floor(soldierCount / 5));
+
+        Engine.logEvent('🪖 ' + soldierCount + ' soldiers raised for ' + cost + 'g. Military strength increased.');
+        return { success: true, message: soldierCount + ' soldiers raised! Cost: ' + cost + 'g.', soldiers: soldierCount };
+    }
+
+    function kingSendArmy(targetTownId, soldiers) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+
+        soldiers = Math.max(10, parseInt(soldiers) || 30);
+        var targetTown = Engine.findTown(targetTownId);
+        if (!targetTown) return { success: false, message: 'Target town not found.' };
+
+        // Check we are at war with the target's kingdom
+        if (!kingdom.atWar || !kingdom.atWar.has || !kingdom.atWar.has(targetTown.kingdomId)) {
+            return { success: false, message: 'Not at war with ' + (targetTown.kingdomId || 'that kingdom') + '.' };
+        }
+
+        if (!kingdom._armies) kingdom._armies = [];
+        var day = Engine.getDay();
+
+        // Calculate travel time based on distance
+        var dist = 100; // default
+        try {
+            var capTown = null;
+            var kTowns = Engine.getTowns();
+            for (var _sti = 0; _sti < kTowns.length; _sti++) {
+                if (kTowns[_sti].kingdomId === kingdom.id && kTowns[_sti].isCapital) { capTown = kTowns[_sti]; break; }
+            }
+            if (capTown && targetTown) {
+                dist = Math.sqrt(Math.pow((capTown.x || 0) - (targetTown.x || 0), 2) + Math.pow((capTown.y || 0) - (targetTown.y || 0), 2));
+            }
+        } catch(e) {}
+
+        var armySpeed = (CONFIG.CARAVAN_BASE_SPEED || 120) * (CONFIG.ARMY_ROAD_SPEED_MULT || 1.0) * 0.5;
+        var travelDays = Math.max(3, Math.ceil(dist / Math.max(armySpeed, 1)));
+
+        kingdom._armies.push({
+            id: 'army_' + day + '_' + Math.floor(Engine.getRng().random() * 10000),
+            soldiers: soldiers,
+            targetTownId: targetTownId,
+            targetKingdomId: targetTown.kingdomId,
+            status: 'marching',
+            departDay: day,
+            arrivalDay: day + travelDays,
+            returnDay: 0
+        });
+
+        Engine.logEvent('⚔️ An army of ' + soldiers + ' soldiers marches toward ' + targetTown.name + '! ETA: ' + travelDays + ' days.');
+        return { success: true, message: 'Army of ' + soldiers + ' sent to ' + targetTown.name + '. Arrives in ' + travelDays + ' days.' };
+    }
+
+    function kingFortifyTown(townId) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+
+        var town = Engine.findTown(townId);
+        if (!town || town.kingdomId !== kingdom.id) return { success: false, message: 'Town not found or not in your kingdom.' };
+
+        var cost = 150;
+        if (kingdom.gold < cost) return { success: false, message: 'Need ' + cost + 'g to fortify ' + town.name + '.' };
+
+        kingdom.gold -= cost;
+        town.garrison = (town.garrison || 0) + 5;
+        Engine.logEvent('🏰 ' + town.name + ' fortified! +5 garrison soldiers. Cost: ' + cost + 'g.');
+        return { success: true, message: town.name + ' fortified with 5 additional soldiers.' };
+    }
+
+    function kingRecruitSoldiers(count) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        count = Math.max(1, Math.min(100, parseInt(count) || 10));
+        var costPer = CONFIG.SOLDIER_RECRUIT_COST || 50;
+        var totalCost = count * costPer;
+        if (kingdom.gold < totalCost) return { success: false, message: 'Need ' + totalCost + 'g to recruit ' + count + ' soldiers.' };
+        kingdom.gold -= totalCost;
+        kingdom.soldiers = (kingdom.soldiers || 0) + count;
+        Engine.logEvent('🎖️ Recruited ' + count + ' soldiers for ' + totalCost + 'g.');
+        return { success: true, message: 'Recruited ' + count + ' soldiers! Cost: ' + totalCost + 'g.' };
+    }
+
+    function kingDischargeSoldiers(count) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        count = Math.max(1, Math.min(kingdom.soldiers || 0, parseInt(count) || 5));
+        if ((kingdom.soldiers || 0) < count) return { success: false, message: 'Not enough soldiers to discharge.' };
+        kingdom.soldiers -= count;
+        Engine.logEvent('📉 Discharged ' + count + ' soldiers.');
+        return { success: true, message: 'Discharged ' + count + ' soldiers.' };
+    }
+
+    function kingReinforceTown(townId) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        var town = Engine.findTown(townId);
+        if (!town || town.kingdomId !== kingdom.id) return { success: false, message: 'Town not in your kingdom.' };
+        var cost = 75;
+        if (kingdom.gold < cost) return { success: false, message: 'Need ' + cost + 'g to reinforce.' };
+        kingdom.gold -= cost;
+        town.garrison = (town.garrison || 0) + 5;
+        Engine.logEvent('🛡️ Sent 5 soldiers to reinforce ' + town.name + '. Cost: ' + cost + 'g.');
+        return { success: true, message: town.name + ' reinforced with 5 soldiers.' };
+    }
+
+    function kingProcureMilitary(itemId, cost) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        cost = parseInt(cost) || 25;
+        if (kingdom.gold < cost) return { success: false, message: 'Need ' + cost + 'g.' };
+        kingdom.gold -= cost;
+        if (!kingdom.militaryStockpile) kingdom.militaryStockpile = {};
+        var qty = itemId === 'arrows' ? 10 : 1;
+        kingdom.militaryStockpile[itemId] = (kingdom.militaryStockpile[itemId] || 0) + qty;
+        Engine.logEvent('🔨 Procured ' + qty + ' ' + itemId + ' for ' + cost + 'g.');
+        return { success: true, message: 'Purchased ' + qty + ' ' + itemId + '.' };
+    }
+
+    function kingBuyStockpile(itemId, qty, priceEach) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        qty = parseInt(qty) || 10;
+        priceEach = parseInt(priceEach) || 10;
+        var totalCost = qty * priceEach;
+        if (kingdom.gold < totalCost) return { success: false, message: 'Need ' + totalCost + 'g.' };
+        // Find capital market and reduce supply
+        try {
+            var allTowns = Engine.getTowns();
+            for (var _bsi = 0; _bsi < allTowns.length; _bsi++) {
+                if (allTowns[_bsi].kingdomId === kingdom.id && allTowns[_bsi].isCapital && allTowns[_bsi].market && allTowns[_bsi].market[itemId]) {
+                    var avail = allTowns[_bsi].market[itemId].supply || 0;
+                    var buyQty = Math.min(qty, Math.floor(avail));
+                    if (buyQty < 1) return { success: false, message: 'Not enough supply in capital market.' };
+                    allTowns[_bsi].market[itemId].supply -= buyQty;
+                    kingdom.gold -= buyQty * priceEach;
+                    if (!kingdom.goodsStockpile) kingdom.goodsStockpile = {};
+                    kingdom.goodsStockpile[itemId] = (kingdom.goodsStockpile[itemId] || 0) + buyQty;
+                    Engine.logEvent('📦 Bought ' + buyQty + ' ' + itemId + ' for stockpile (' + (buyQty * priceEach) + 'g).');
+                    return { success: true, message: 'Bought ' + buyQty + ' ' + itemId + ' for stockpile.' };
+                }
+            }
+        } catch(e) {}
+        return { success: false, message: 'Capital market not found.' };
+    }
+
+    function kingSellStockpile(itemId) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        if (!kingdom.goodsStockpile || !kingdom.goodsStockpile[itemId] || kingdom.goodsStockpile[itemId] < 1) {
+            return { success: false, message: 'No ' + itemId + ' in stockpile.' };
+        }
+        var sellQty = Math.min(10, Math.floor(kingdom.goodsStockpile[itemId]));
+        // Sell at capital market price
+        var sellPrice = 5;
+        try {
+            var allTowns = Engine.getTowns();
+            for (var _ssi = 0; _ssi < allTowns.length; _ssi++) {
+                if (allTowns[_ssi].kingdomId === kingdom.id && allTowns[_ssi].isCapital && allTowns[_ssi].market && allTowns[_ssi].market[itemId]) {
+                    sellPrice = Math.round(allTowns[_ssi].market[itemId].price * 0.8) || 5;
+                    allTowns[_ssi].market[itemId].supply = (allTowns[_ssi].market[itemId].supply || 0) + sellQty;
+                    break;
+                }
+            }
+        } catch(e) {}
+        kingdom.goodsStockpile[itemId] -= sellQty;
+        if (kingdom.goodsStockpile[itemId] <= 0) delete kingdom.goodsStockpile[itemId];
+        var revenue = sellQty * sellPrice;
+        kingdom.gold += revenue;
+        Engine.logEvent('💰 Sold ' + sellQty + ' ' + itemId + ' from stockpile for ' + revenue + 'g.');
+        return { success: true, message: 'Sold ' + sellQty + ' ' + itemId + ' for ' + revenue + 'g.' };
     }
 
     function kingFleeKingdom() {
@@ -32858,6 +33351,19 @@
         kingHostFeast,
         kingHoldCourt,
         kingFleeKingdom,
+        kingApprovePetition,
+        kingRejectPetition,
+        kingExecuteOrder,
+        kingGetOrderCost,
+        kingRaiseArmy,
+        kingSendArmy,
+        kingFortifyTown,
+        kingRecruitSoldiers,
+        kingDischargeSoldiers,
+        kingReinforceTown,
+        kingProcureMilitary,
+        kingBuyStockpile,
+        kingSellStockpile,
         adviseKing,
         getPendingKingDecisions,
         respondToKingDecision,

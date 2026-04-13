@@ -21372,9 +21372,12 @@
             }
 
             // Kingdom procurement AI (every 7 days)
+            // Skip for player-king's kingdom (player manages procurement)
             if (world.day % 7 === 0) {
                 for (const k of world.kingdoms) {
-                    tickKingdomProcurement(k);
+                    var _pIsKing = false;
+                    try { _pIsKing = Player && Player.isPlayerKing && Player.isPlayerKing() && Player.state && Player.state.kingState && Player.state.kingState.kingdomId === k.id; } catch(e) {}
+                    if (!_pIsKing) tickKingdomProcurement(k);
                 }
                 Engine.tickEliteMerchantBidding();
             }

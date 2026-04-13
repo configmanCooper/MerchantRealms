@@ -94,6 +94,157 @@
     // ========================================================
     // §14 DIPLOMACY & KINGDOM AI TICK
     // ========================================================
+
+    // Check if the player is king of the given kingdom
+    function _isPlayerKingOf(k) {
+        try {
+            return Player && Player.isPlayerKing && Player.isPlayerKing() &&
+                   Player.state && Player.state.kingState &&
+                   Player.state.kingState.kingdomId === k.id;
+        } catch (e) { return false; }
+    }
+
+    // Generate an advisor suggestion for the player-king instead of AI executing
+    function _addAdvisorSuggestion(k, category, icon, title, desc, actionId, actionData) {
+        if (!k._advisorSuggestions) k._advisorSuggestions = [];
+        // Don't duplicate suggestions of the same type within 10 days
+        for (var _si = 0; _si < k._advisorSuggestions.length; _si++) {
+            if (k._advisorSuggestions[_si].actionId === actionId) return;
+        }
+        // Cap at 12 suggestions
+        if (k._advisorSuggestions.length >= 12) k._advisorSuggestions.shift();
+        k._advisorSuggestions.push({
+            id: actionId + '_' + (world.day || 0),
+            category: category,
+            icon: icon,
+            title: title,
+            desc: desc,
+            actionId: actionId,
+            actionData: actionData || {},
+            createdDay: world.day || 0
+        });
+    }
+
+    // Generate suggestions that mirror what kingdomAI would have done
+    function _generateKingAISuggestions(k) {
+        var rng = world.rng;
+        var happiness = k.happiness || 50;
+        var gold = k.gold || 0;
+        var atWar = k.atWar && k.atWar.size > 0;
+        var pers = k.kingPersonality || {};
+
+        // Wartime suggestions
+        if (atWar) {
+            var soldiers = ((_tickCache.soldiersByKingdom || {})[k.id] || []).length;
+            if (soldiers < 20) {
+                _addAdvisorSuggestion(k, 'military', '🪖', 'Recruit More Soldiers',
+                    'Your Majesty, our army is thin with only ' + soldiers + ' soldiers. We should recruit more fighters.',
+                    'recruit_soldiers', { urgency: 'high' });
+            }
+            // Weapon procurement
+            var stockpile = k.militaryStockpile || {};
+            if ((stockpile.swords || 0) < soldiers * 0.5) {
+                _addAdvisorSuggestion(k, 'military', '⚔️', 'Procure Weapons',
+                    'We are short on swords. Many soldiers are under-equipped for battle.',
+                    'procure_weapons', { item: 'swords', needed: Math.max(10, soldiers - (stockpile.swords || 0)) });
+            }
+            // Fortify borders
+            var borderTowns = [];
+            try {
+                var kTowns = world.towns.filter(function(t) { return t.kingdomId === k.id; });
+                for (var _bti = 0; _bti < kTowns.length; _bti++) {
+                    if ((kTowns[_bti].garrison || 0) < 15) borderTowns.push(kTowns[_bti]);
+                }
+            } catch (e) {}
+            if (borderTowns.length > 0) {
+                _addAdvisorSuggestion(k, 'military', '🏰', 'Reinforce Town Garrisons',
+                    borderTowns.length + ' town' + (borderTowns.length > 1 ? 's have' : ' has') + ' weak garrisons. Consider reinforcing defenses.',
+                    'fortify_towns', { towns: borderTowns.slice(0, 3).map(function(t) { return t.id; }) });
+            }
+        }
+
+        // Financial suggestions
+        if (gold < 2000) {
+            _addAdvisorSuggestion(k, 'economy', '💰', 'Treasury Running Low',
+                'The royal treasury holds only ' + Math.floor(gold) + 'g. Consider raising taxes or commissioning trade.',
+                'raise_revenue', { urgency: gold < 500 ? 'critical' : 'high' });
+        }
+        if (gold > 15000 && !atWar) {
+            _addAdvisorSuggestion(k, 'economy', '🏗️', 'Invest Treasury Surplus',
+                'The treasury overflows with ' + Math.floor(gold) + 'g. Invest in infrastructure or festivals.',
+                'invest_surplus', {});
+        }
+
+        // Happiness suggestions
+        if (happiness < 30) {
+            _addAdvisorSuggestion(k, 'welfare', '😟', 'People Are Unhappy',
+                'Kingdom happiness is dangerously low at ' + Math.round(happiness) + '%. Lower taxes, distribute food, or hold court.',
+                'address_unrest', { urgency: happiness < 20 ? 'critical' : 'high' });
+        }
+
+        // Plague
+        var plagueTowns = [];
+        try {
+            plagueTowns = world.towns.filter(function(t) { return t.kingdomId === k.id && t.plagueActive; });
+        } catch (e) {}
+        if (plagueTowns.length > 0) {
+            _addAdvisorSuggestion(k, 'welfare', '🏥', 'Plague Spreading',
+                plagueTowns.length + ' town' + (plagueTowns.length > 1 ? 's are' : ' is') + ' afflicted by plague. Send medical supplies or quarantine.',
+                'combat_plague', { towns: plagueTowns.map(function(t) { return t.id; }) });
+        }
+
+        // Food shortage
+        try {
+            var hungryTowns = world.towns.filter(function(t) {
+                return t.kingdomId === k.id && t.foodShortage;
+            });
+            if (hungryTowns.length > 0) {
+                _addAdvisorSuggestion(k, 'welfare', '🌾', 'Food Shortage',
+                    'People are starving in ' + hungryTowns.length + ' town' + (hungryTowns.length > 1 ? 's' : '') + '. Distribute grain immediately.',
+                    'food_relief', { urgency: 'critical' });
+            }
+        } catch (e) {}
+
+        // Infrastructure (peacetime)
+        if (!atWar && gold > 3000) {
+            try {
+                var lowProsperity = world.towns.filter(function(t) {
+                    return t.kingdomId === k.id && (t.prosperity || 50) < 35;
+                });
+                if (lowProsperity.length > 0) {
+                    _addAdvisorSuggestion(k, 'infrastructure', '🏗️', 'Towns Need Development',
+                        lowProsperity.length + ' town' + (lowProsperity.length > 1 ? 's have' : ' has') + ' low prosperity. Build infrastructure.',
+                        'build_infrastructure', { towns: lowProsperity.slice(0, 3).map(function(t) { return t.id; }) });
+                }
+            } catch (e) {}
+        }
+
+        // Diplomatic (peacetime, hostile neighbor)
+        if (!atWar) {
+            try {
+                var hostileK = [];
+                for (var _hki = 0; _hki < world.kingdoms.length; _hki++) {
+                    var _hk = world.kingdoms[_hki];
+                    if (_hk.id === k.id) continue;
+                    var rel = (k.relations || {})[_hk.id] || 0;
+                    if (rel < -20) hostileK.push(_hk);
+                }
+                if (hostileK.length > 0) {
+                    _addAdvisorSuggestion(k, 'diplomacy', '⚠️', 'Hostile Relations',
+                        'Relations with ' + hostileK[0].name + ' are deteriorating. Prepare defenses or seek diplomacy.',
+                        'hostile_neighbor', { kingdomId: hostileK[0].id });
+                }
+            } catch (e) {}
+        }
+
+        // Prune old suggestions (>30 days old)
+        if (k._advisorSuggestions) {
+            k._advisorSuggestions = k._advisorSuggestions.filter(function(s) {
+                return (world.day - s.createdDay) < 30;
+            });
+        }
+    }
+
     function tickDiplomacy() {
         const rng = world.rng;
 
@@ -608,10 +759,15 @@
             }
 
             // ---- Kingdom AI priorities ----
-            // Run more frequently during wartime (every 7 days vs 30 in peace)
+            // When player is king: skip AI, generate suggestions instead
+            var _playerIsKingHere = _isPlayerKingOf(k);
             const aiInterval = k.atWar.size > 0 ? 7 : 30;
             if (world.day % aiInterval === 0) {
-                kingdomAI(k);
+                if (_playerIsKingHere) {
+                    _generateKingAISuggestions(k);
+                } else {
+                    kingdomAI(k);
+                }
                 tickTownFounding(k);
             }
 
@@ -627,13 +783,15 @@
                 if (!k.king || !findPerson(k.king) || !findPerson(k.king).alive) {
                     attemptEmergencySuccession(k);
                 }
-                tickKingMood(k);
+                if (!_playerIsKingHere) {
+                    tickKingMood(k);
+                    tickKingDecisions(k);
+                }
                 tickSuccessionCrisis(k);
                 // Auto-resolve pending election after 30 days
                 if (k._pendingElection && (world.day - k._pendingElection.startDay) >= 30) {
                     _resolvePendingElection(k, null);
                 }
-                tickKingDecisions(k);
                 tickRebellion(k);
                 tickKingdomHappinessConsequences(k);
                 tickSurrender(k);
@@ -642,23 +800,35 @@
             }
 
             // ---- Kingdom purchasing from market (daily) ----
-            tickKingdomPurchasing(k);
+            // Player-king controls purchasing manually
+            if (!_playerIsKingHere) {
+                tickKingdomPurchasing(k);
+            }
 
             // ---- King travel — royal progress & diplomatic missions (daily) ----
-            tickKingTravel(k);
+            if (!_playerIsKingHere) {
+                tickKingTravel(k);
+            }
 
             // ---- Process pending RA consultation decisions (daily) ----
-            tickPendingKingDecisions(k);
+            if (!_playerIsKingHere) {
+                tickPendingKingDecisions(k);
+            }
 
             // ---- Directed player commissions (daily deadline check) ----
             checkDirectedCommissionDeadline(k);
 
             // ---- Royal Feast system (daily) ----
-            tickKingdomFeasts(k);
+            // Player-king schedules feasts manually
+            if (!_playerIsKingHere) {
+                tickKingdomFeasts(k);
+            }
 
             // ---- Noble conspiracies & king unrest response (monthly) ----
             tickNobleConspiracies(k);
-            tickKingUnrestResponse(k);
+            if (!_playerIsKingHere) {
+                tickKingUnrestResponse(k);
+            }
 
             // ---- Update military strength and soldier count ----
             k.militaryStrength = computeMilitaryStrength(k);

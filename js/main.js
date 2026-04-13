@@ -1210,6 +1210,13 @@ window.Game = (function () {
                 items.push({ icon: '🏗️', label: 'Build', action: 'UI.openBuildDialog()' });
                 items.push({ icon: '👥', label: 'Hire Workers', action: 'UI.openHireDialog()' });
             }
+            // King war option: send army to enemy town
+            if (typeof Player !== 'undefined' && Player.isPlayerKing && Player.isPlayerKing()) {
+                var _pkKingdom = Player.getPlayerKingdom ? Player.getPlayerKingdom() : null;
+                if (_pkKingdom && _pkKingdom.atWar && _pkKingdom.atWar.has && _pkKingdom.atWar.has(town.kingdomId)) {
+                    items.push({ icon: '⚔️', label: 'Send Army to ' + town.name, action: "UI._openSendArmyModal('" + town.id + "')" });
+                }
+            }
         } else if (hit.type === 'person') {
             const p = hit.data;
             items.push({ icon: '👁', label: 'View Details', action: `UI.showPersonDetail(Engine.getPerson('${p.id}'))` });

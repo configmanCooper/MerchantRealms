@@ -1098,6 +1098,10 @@
         }
 
         // ---- Smart Financial Strategy (C-2: 7 days during war, 30 during peace, 3 during crisis) ----
+        // Skip auto-financial strategy when player is king (player manages finances)
+        var _pIsKingFin = false;
+        try { _pIsKingFin = Player && Player.isPlayerKing && Player.isPlayerKing() && Player.state && Player.state.kingState && Player.state.kingState.kingdomId === k.id; } catch(e) {}
+        if (!_pIsKingFin) {
         if (!k._lastFinancialStrategyDay) k._lastFinancialStrategyDay = 0;
         var finStrategyInterval = k.atWar && k.atWar.size > 0 ? 7 : (CONFIG.KINGDOM_FINANCIAL_STRATEGY_INTERVAL || 30);
         // Emergency: review every 3 days if treasury critically low
@@ -1106,6 +1110,7 @@
         if (world.day - k._lastFinancialStrategyDay >= finStrategyInterval) {
             k._lastFinancialStrategyDay = world.day;
             tickKingdomFinancialStrategy(k);
+        }
         }
 
         // Bankruptcy warning — stored as background data, not toasted
