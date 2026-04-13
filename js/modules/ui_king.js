@@ -549,20 +549,20 @@
                     _statusText = 'Besieging';
                 } else if (_ar.status === 'marching') {
                     var _prog = _ar._progress || 0;
-                    if (_prog > 0 && _prog < 1) {
-                        var _estTotal = (_ar.arrivalDay && _ar.departDay) ? (_ar.arrivalDay - _ar.departDay) : 0;
-                        if (_estTotal > 0) {
-                            var _daysLeft = Math.max(0, Math.round(_estTotal * (1 - _prog)));
-                            _statusText = 'Marching (' + _daysLeft + 'd left)';
+                    var _estTotal = (_ar.arrivalDay && _ar.departDay) ? (_ar.arrivalDay - _ar.departDay) : 0;
+                    if (_estTotal > 0) {
+                        // Use progress if available, otherwise use day-based countdown
+                        var _daysLeft;
+                        if (_prog > 0) {
+                            _daysLeft = Math.max(0, Math.round(_estTotal * (1 - _prog)));
                         } else {
-                            _statusText = 'Marching (' + Math.round(_prog * 100) + '%)';
+                            _daysLeft = Math.max(0, _ar.arrivalDay - _day);
                         }
-                    } else if (_prog >= 1) {
-                        _statusText = 'Arriving';
+                        _statusText = 'Marching (' + _daysLeft + 'd left)';
+                    } else if (_prog > 0) {
+                        _statusText = 'Marching (' + Math.round(_prog * 100) + '%)';
                     } else {
-                        // No progress yet, use arrivalDay fallback
-                        var _fb = (_ar.arrivalDay || 0) - _day;
-                        _statusText = 'Marching' + (_fb > 0 ? ' (' + _fb + 'd left)' : '');
+                        _statusText = 'Marching';
                     }
                 } else {
                     _statusText = _ar.status || 'Unknown';
