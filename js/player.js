@@ -8533,28 +8533,51 @@
         if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
         var kingdom = Engine.findKingdom(player.kingState.kingdomId);
         if (!kingdom) return { success: false, message: 'Kingdom not found.' };
-        count = Math.max(1, Math.min(100, parseInt(count) || 10));
+        count = Math.max(1, Math.min(20, parseInt(count) || 5));
         var costPer = CONFIG.SOLDIER_RECRUIT_COST || 50;
-        var totalCost = count * costPer;
-        if (kingdom.gold < totalCost) return { success: false, message: 'Need ' + totalCost + 'g to recruit ' + count + ' soldiers.' };
-        kingdom.gold -= totalCost;
-        kingdom.soldiers = (kingdom.soldiers || 0) + count;
 
-        // Add recruited soldiers to capital garrison
-        var capTown = null;
+        // Find willing NPCs across kingdom towns
+        var recruited = 0;
         var kTowns = Engine.getTowns();
-        for (var _sti = 0; _sti < kTowns.length; _sti++) {
-            if (kTowns[_sti].kingdomId === kingdom.id && kTowns[_sti].isCapital) { capTown = kTowns[_sti]; break; }
-        }
-        if (!capTown) {
-            for (var _sti2 = 0; _sti2 < kTowns.length; _sti2++) {
-                if (kTowns[_sti2].kingdomId === kingdom.id) { capTown = kTowns[_sti2]; break; }
+        for (var _sti = 0; _sti < kTowns.length && recruited < count; _sti++) {
+            var town = kTowns[_sti];
+            if (town.kingdomId !== kingdom.id || town.isWilderness) continue;
+
+            // Find idle laborers willing to serve
+            var idle = [];
+            try {
+                idle = Engine.getPeople ? Engine.getPeople(town.id) : [];
+                idle = idle.filter(function(p) {
+                    return p.alive && (p.occupation === 'laborer' || p.occupation === 'none') &&
+                           p.age >= (CONFIG.COMING_OF_AGE || 16) && p.age <= 50 &&
+                           p.status !== 'indentured';
+                });
+            } catch(e) { continue; }
+
+            var toRecruit = Math.min(idle.length, count - recruited);
+            for (var _ri = 0; _ri < toRecruit; _ri++) {
+                if (kingdom.gold < costPer) break;
+                var uType = 'infantry';
+                var supply = (town.market && town.market.supply) || {};
+                if ((supply.horses || 0) > 0 && (supply.saddles || 0) > 0 && Math.random() < 0.15) uType = 'cavalry';
+                else if ((supply.bows || 0) > 0 && Math.random() < 0.25) uType = 'archer';
+                Engine.recruitSoldier(idle[_ri], town, kingdom, uType);
+                kingdom.gold -= costPer;
+                recruited++;
             }
         }
-        if (capTown) capTown.garrison = (capTown.garrison || 0) + count;
 
-        Engine.logEvent('🎖️ Recruited ' + count + ' soldiers at ' + (capTown ? capTown.name : 'capital') + ' for ' + totalCost + 'g.');
-        return { success: true, message: 'Recruited ' + count + ' soldiers at ' + (capTown ? capTown.name : 'capital') + '! Cost: ' + totalCost + 'g.' };
+        if (recruited === 0) {
+            // Check if conscription is enabled
+            if (kingdom.laws && kingdom.laws.conscription) {
+                return { success: false, message: 'No willing recruits found. Conscription may draft reluctant NPCs over time.' };
+            }
+            return { success: false, message: 'No willing recruits (idle laborers) found in any kingdom town. Enable conscription to force recruitment.' };
+        }
+
+        var totalCost = recruited * costPer;
+        Engine.logEvent('🎖️ Recruited ' + recruited + ' soldiers across the kingdom for ' + totalCost + 'g.');
+        return { success: true, message: 'Recruited ' + recruited + (recruited < count ? ' of ' + count + ' requested' : '') + ' soldiers! Cost: ' + totalCost + 'g.' };
     }
 
     function kingDischargeSoldiers(count) {
@@ -8672,6 +8695,75 @@
         kingdom.gold += revenue;
         Engine.logEvent('💰 Sold ' + sellQty + ' ' + itemId + ' from stockpile for ' + revenue + 'g.');
         return { success: true, message: 'Sold ' + sellQty + ' ' + itemId + ' for ' + revenue + 'g.' };
+    }
+
+    function kingCommissionGoods(goodId, qty) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        qty = Math.max(5, Math.min(50, qty || 10));
+        // Cost: upfront payment of ~50% of typical market price per unit
+        var baseCost = 5;
+        try {
+            var _allT = Engine.getTowns();
+            for (var _i = 0; _i < _allT.length; _i++) {
+                if (_allT[_i].kingdomId === kingdom.id && _allT[_i].market && _allT[_i].market[goodId]) {
+                    baseCost = _allT[_i].market[goodId].price || 5;
+                    break;
+                }
+            }
+        } catch(e) {}
+        var totalCost = Math.ceil(baseCost * 0.5 * qty);
+        if ((kingdom.gold || 0) < totalCost) return { success: false, message: 'Treasury cannot afford ' + totalCost + 'g for this commission.' };
+        kingdom.gold -= totalCost;
+        if (!kingdom._commissions) kingdom._commissions = [];
+        // Check for existing commission of same good
+        for (var _ci = 0; _ci < kingdom._commissions.length; _ci++) {
+            if (kingdom._commissions[_ci].good === goodId && (kingdom._commissions[_ci].filled || 0) < kingdom._commissions[_ci].qty) {
+                kingdom._commissions[_ci].qty += qty;
+                Engine.logEvent('📋 Expanded commission for ' + goodId + ' by ' + qty + ' (total: ' + kingdom._commissions[_ci].qty + '). Cost: ' + totalCost + 'g.');
+                return { success: true, message: 'Expanded ' + goodId + ' commission by ' + qty + ' for ' + totalCost + 'g.' };
+            }
+        }
+        kingdom._commissions.push({ good: goodId, qty: qty, filled: 0, day: Engine.getDay ? Engine.getDay() : 0, cost: totalCost });
+        if (kingdom._commissions.length > 20) kingdom._commissions.shift();
+        Engine.logEvent('📋 Commissioned ' + qty + ' ' + goodId + ' for ' + totalCost + 'g from the treasury.');
+        return { success: true, message: 'Commissioned ' + qty + ' ' + goodId + ' for ' + totalCost + 'g.' };
+    }
+
+    function kingSendStockpile(goodId, townId, qty) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        qty = Math.max(1, Math.min(50, qty || 5));
+        // Check stockpile
+        var fromGoods = kingdom.goodsStockpile && kingdom.goodsStockpile[goodId] ? kingdom.goodsStockpile[goodId] : 0;
+        var fromMil = kingdom.militaryStockpile && kingdom.militaryStockpile[goodId] ? kingdom.militaryStockpile[goodId] : 0;
+        var avail = fromGoods + fromMil;
+        if (avail < qty) return { success: false, message: 'Only ' + avail + ' ' + goodId + ' in stockpile (need ' + qty + ').' };
+        // Find target town
+        var town = Engine.findTown(townId);
+        if (!town || town.kingdomId !== kingdom.id) return { success: false, message: 'Town not in your kingdom.' };
+        // Deduct from stockpile (goods first, then military)
+        var remaining = qty;
+        if (fromGoods > 0 && remaining > 0) {
+            var take = Math.min(fromGoods, remaining);
+            kingdom.goodsStockpile[goodId] -= take;
+            if (kingdom.goodsStockpile[goodId] <= 0) delete kingdom.goodsStockpile[goodId];
+            remaining -= take;
+        }
+        if (fromMil > 0 && remaining > 0) {
+            var take2 = Math.min(fromMil, remaining);
+            kingdom.militaryStockpile[goodId] -= take2;
+            if (kingdom.militaryStockpile[goodId] <= 0) delete kingdom.militaryStockpile[goodId];
+            remaining -= take2;
+        }
+        // Add to town market
+        if (!town.market) town.market = {};
+        if (!town.market[goodId]) town.market[goodId] = { supply: 0, demand: 0, price: 10 };
+        town.market[goodId].supply = (town.market[goodId].supply || 0) + qty;
+        Engine.logEvent('📦 Sent ' + qty + ' ' + goodId + ' from stockpile to ' + (town.name || townId) + '.');
+        return { success: true, message: 'Sent ' + qty + ' ' + goodId + ' to ' + (town.name || townId) + '.' };
     }
 
     function kingFleeKingdom() {
@@ -35117,6 +35209,8 @@
         kingProcureMilitary,
         kingBuyStockpile,
         kingSellStockpile,
+        kingCommissionGoods,
+        kingSendStockpile,
         adviseKing,
         getPendingKingDecisions,
         respondToKingDecision,

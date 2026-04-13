@@ -829,6 +829,7 @@
     function _kingStockpileTab(kingdom, ks) {
         var html = '';
 
+        var _kTowns = Engine.getTowns().filter(function(t) { return t.kingdomId === kingdom.id && !t.isOutpost && !t.isWilderness; });
         var _goodsStockpile = kingdom.goodsStockpile || {};
         var _milStockpile = kingdom.militaryStockpile || {};
 
@@ -943,6 +944,65 @@
             }
         } catch(e) {
             html += '<div style="font-size:0.68rem;color:#888;">Unable to load market data.</div>';
+        }
+        html += '</div>';
+
+        // Commission goods for production
+        html += '<div style="background:rgba(0,0,0,0.15);padding:8px;border-radius:6px;margin-top:8px;margin-bottom:8px;">';
+        html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:4px;">📋 Commission Goods Production</div>';
+        html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:6px;">Pay artisans in advance. Orders are filled over time by kingdom producers.</div>';
+        var _commGoods = ['swords', 'armor', 'bows', 'arrows', 'bread', 'cloth', 'tools', 'ships'];
+        html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:4px;">';
+        html += '<select id="_roCommGood" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;max-width:100px;">';
+        for (var _cgi = 0; _cgi < _commGoods.length; _cgi++) html += '<option value="' + _commGoods[_cgi] + '">' + _commGoods[_cgi] + '</option>';
+        html += '</select>';
+        html += '<input type="number" id="_roCommQty" min="5" max="50" value="10" style="font-size:0.65rem;width:50px;padding:2px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;">';
+        html += '<button class="btn-medieval" data-action="kingCommissionGoods" style="font-size:0.62rem;padding:2px 6px;">📋 Commission</button>';
+        html += '</div>';
+        var _commissions = kingdom._commissions || [];
+        if (_commissions.length > 0) {
+            html += '<div style="font-size:0.62rem;color:#aaa;margin-top:3px;">';
+            for (var _cci = 0; _cci < _commissions.length; _cci++) {
+                var _cc = _commissions[_cci];
+                var _ccLeft = Math.max(0, (_cc.qty || 0) - (_cc.filled || 0));
+                html += '<div>' + _cc.good + ': ' + (_cc.filled || 0) + '/' + _cc.qty + ' filled' + (_ccLeft > 0 ? ' (' + _ccLeft + ' remaining)' : ' ✅') + '</div>';
+            }
+            html += '</div>';
+        }
+        html += '</div>';
+
+        // Send goods to town market
+        html += '<div style="background:rgba(0,0,0,0.15);padding:8px;border-radius:6px;margin-bottom:8px;">';
+        html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:4px;">📦 Send Stockpile to Town Market</div>';
+        html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:6px;">Send goods from the kingdom stockpile to a specific town market.</div>';
+        var _stockpileItems = [];
+        if (kingdom.goodsStockpile) {
+            for (var _sk in kingdom.goodsStockpile) {
+                if (kingdom.goodsStockpile[_sk] > 0) _stockpileItems.push(_sk);
+            }
+        }
+        if (kingdom.militaryStockpile) {
+            for (var _mk2 in kingdom.militaryStockpile) {
+                if (kingdom.militaryStockpile[_mk2] > 0 && _stockpileItems.indexOf(_mk2) < 0) _stockpileItems.push(_mk2);
+            }
+        }
+        if (_stockpileItems.length > 0) {
+            html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">';
+            html += '<select id="_roSendGood" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;max-width:100px;">';
+            for (var _sgi2 = 0; _sgi2 < _stockpileItems.length; _sgi2++) {
+                var _sgItem = _stockpileItems[_sgi2];
+                var _sgQty = (kingdom.goodsStockpile && kingdom.goodsStockpile[_sgItem]) || (kingdom.militaryStockpile && kingdom.militaryStockpile[_sgItem]) || 0;
+                html += '<option value="' + _sgItem + '">' + _sgItem + ' (' + _sgQty + ')</option>';
+            }
+            html += '</select>';
+            html += '<select id="_roSendTown" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;max-width:120px;">';
+            for (var _sti3 = 0; _sti3 < _kTowns.length; _sti3++) html += '<option value="' + _kTowns[_sti3].id + '">' + escapeHtml(_kTowns[_sti3].name) + '</option>';
+            html += '</select>';
+            html += '<input type="number" id="_roSendQty" min="1" max="50" value="5" style="font-size:0.65rem;width:40px;padding:2px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;">';
+            html += '<button class="btn-medieval" data-action="kingSendStockpile" style="font-size:0.62rem;padding:2px 6px;">📦 Send</button>';
+            html += '</div>';
+        } else {
+            html += '<div style="font-size:0.68rem;color:#888;">No goods in stockpile to send.</div>';
         }
         html += '</div>';
 
@@ -2791,6 +2851,23 @@
     });
     UI.registerAction('kingSellStockpile', function(_t, d) {
         var r = Player.kingSellStockpile ? Player.kingSellStockpile(d.id) : { success: false, message: 'Not available.' };
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.openKingPanel('stockpile');
+    });
+    UI.registerAction('kingCommissionGoods', function() {
+        var g = document.getElementById('_roCommGood'), q = document.getElementById('_roCommQty');
+        if (!g || !g.value) { UI.toast('Select a good.', 'warning'); return; }
+        var qty = q ? parseInt(q.value) || 10 : 10;
+        var r = Player.kingCommissionGoods ? Player.kingCommissionGoods(g.value, qty) : { success: false, message: 'Not available.' };
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.openKingPanel('stockpile');
+    });
+    UI.registerAction('kingSendStockpile', function() {
+        var g = document.getElementById('_roSendGood'), t = document.getElementById('_roSendTown'), q = document.getElementById('_roSendQty');
+        if (!g || !g.value) { UI.toast('Select a good.', 'warning'); return; }
+        if (!t || !t.value) { UI.toast('Select a town.', 'warning'); return; }
+        var qty = q ? parseInt(q.value) || 5 : 5;
+        var r = Player.kingSendStockpile ? Player.kingSendStockpile(g.value, t.value, qty) : { success: false, message: 'Not available.' };
         UI.toast(r.message, r.success ? 'success' : 'warning');
         UI.openKingPanel('stockpile');
     });

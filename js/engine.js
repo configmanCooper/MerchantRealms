@@ -12702,6 +12702,35 @@
                 logEvent(`📉 ${k.name}'s shrewd ruler lowers taxes to ${Math.round(k.taxRate * 100)}% to encourage trade growth.`);
             }
         }
+
+        // ---- Commission Fulfillment ----
+        // Buy goods from kingdom markets to fill active commissions
+        if (k._commissions && k._commissions.length > 0) {
+            for (var _cmI = k._commissions.length - 1; _cmI >= 0; _cmI--) {
+                var _cm = k._commissions[_cmI];
+                if (!_cm || (_cm.filled || 0) >= _cm.qty) {
+                    // Complete — add to stockpile and remove
+                    if (_cm && (_cm.filled || 0) >= _cm.qty) k._commissions.splice(_cmI, 1);
+                    continue;
+                }
+                // Try to buy 1-3 units per tick from kingdom markets
+                var _cmNeed = Math.min(3, _cm.qty - (_cm.filled || 0));
+                for (var _townIt = k.territories.values(), _townStep = _townIt.next(); !_townStep.done && _cmNeed > 0; _townStep = _townIt.next()) {
+                    var _cmTown = findTown(_townStep.value);
+                    if (!_cmTown || !_cmTown.market || !_cmTown.market.supply) continue;
+                    var _cmAvail = _cmTown.market.supply[_cm.good] || 0;
+                    if (_cmAvail <= 1) continue; // leave at least 1 in market
+                    var _cmTake = Math.min(_cmNeed, Math.floor(_cmAvail * 0.5)); // take up to half
+                    if (_cmTake <= 0) continue;
+                    _cmTown.market.supply[_cm.good] -= _cmTake;
+                    _cm.filled = (_cm.filled || 0) + _cmTake;
+                    _cmNeed -= _cmTake;
+                    // Add to stockpile
+                    if (!k.goodsStockpile) k.goodsStockpile = {};
+                    k.goodsStockpile[_cm.good] = (k.goodsStockpile[_cm.good] || 0) + _cmTake;
+                }
+            }
+        }
     }
 
     // ========================================================
