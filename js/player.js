@@ -19666,7 +19666,6 @@
         }
 
         var rng = Engine.getRng();
-        if (typeof rng !== 'function') return;
         var townPeople = Engine.getPeople(player.townId);
         if (!townPeople || townPeople.length === 0) return;
 

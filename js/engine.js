@@ -22102,7 +22102,18 @@
         getPeopleInKingdom(id) { return getPeopleInKingdom(id); },
         transferTown(townId, fromKingdomId, toKingdomId, method) { return transferTown(townId, fromKingdomId, toKingdomId, method); },
         logEvent(msg, details, category) { logEvent(msg, details, category); },
-        getRng() { return world ? world.rng : null; },
+        getRng() {
+            if (world && world.rng) return world.rng;
+            // Fallback RNG when world not yet initialized
+            var _fallback = function() { return Math.random(); };
+            _fallback.chance = function(c) { return Math.random() < c; };
+            _fallback.randInt = function(a, b) { return a + Math.floor(Math.random() * (b - a + 1)); };
+            _fallback.randFloat = function(a, b) { return a + Math.random() * (b - a); };
+            _fallback.pick = function(arr) { return arr[Math.floor(Math.random() * arr.length)]; };
+            _fallback.shuffle = function(arr) { for (var i = arr.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = arr[i]; arr[i] = arr[j]; arr[j] = t; } return arr; };
+            _fallback.random = function() { return Math.random(); };
+            return _fallback;
+        },
         killPerson(p, cause) { return killPerson(p, cause); },
         getTerrainGrid() { return world ? { grid: world.terrain, cols: world.gridCols, rows: world.gridRows } : null; },
         getActiveWars() { return world ? (world.activeWars || {}) : {}; },
