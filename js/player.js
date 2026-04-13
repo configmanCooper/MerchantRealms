@@ -7119,6 +7119,16 @@
                     }
                     army._progress = Math.min(1.0, totalProgress);
                     army.status = 'marching';
+
+                    // Estimate days left from distance and speed
+                    var _fromT = Engine.findTown(engArmy.fromTownId);
+                    var _toT = Engine.findTown(engArmy.toTownId);
+                    if (_fromT && _toT) {
+                        var _dist = Math.hypot(_toT.x - _fromT.x, _toT.y - _fromT.y);
+                        var _spd = ((CONFIG.CARAVAN_BASE_SPEED || 120) * 0.5);
+                        var _totalDays = Math.max(2, Math.ceil(_dist / Math.max(_spd, 1)));
+                        army._daysLeft = Math.max(0, Math.round(_totalDays * (1 - army._progress)));
+                    }
                 }
             } else {
                 // Engine army is gone — battle resolved or army destroyed
