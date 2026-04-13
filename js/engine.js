@@ -12609,15 +12609,15 @@
             '<p style="color:var(--text-secondary);text-align:center;">Population: ' + pop + ' · Buildings: ' + town.buildings.length + '</p>' +
             '<p>How shall the conquered people be treated?</p>' +
             '<div style="display:flex;flex-direction:column;gap:10px;margin-top:15px;">' +
-            '<button class="btn-medieval" data-action="conquestChoice" data-id="' + town.id + '" data-val="citizenship" style="padding:12px;background:rgba(46,125,50,0.15);border-color:rgba(76,175,80,0.4);">' +
-            '<div style="font-weight:bold;font-size:1em;">🤝 Grant Citizenship</div>' +
-            '<div style="font-size:0.8em;color:var(--text-secondary);margin-top:4px;">Welcome the people as full citizens. Town happiness +20. Loyalty grows over time. Best for long-term stability.</div></button>' +
-            '<button class="btn-medieval" data-action="conquestChoice" data-id="' + town.id + '" data-val="servitude" style="padding:12px;background:rgba(255,152,0,0.12);border-color:rgba(255,152,0,0.4);">' +
-            '<div style="font-weight:bold;font-size:1em;">⛓️ Impose Servitude</div>' +
-            '<div style="font-size:0.8em;color:var(--text-secondary);margin-top:4px;">7 years of indentured servitude. Wages go to kingdom treasury. Town happiness drops. Risk of unrest.</div></button>' +
-            '<button class="btn-medieval" data-action="conquestChoice" data-id="' + town.id + '" data-val="raid" style="padding:12px;background:rgba(183,28,28,0.15);border-color:rgba(183,28,28,0.4);">' +
-            '<div style="font-weight:bold;font-size:1em;">🔥 Raid &amp; Plunder</div>' +
-            '<div style="font-size:0.8em;color:var(--text-secondary);margin-top:4px;">Seize wealth, kill resisters. Immediate gold but massive destruction. Town will be devastated for years.</div></button>' +
+            '<button class="btn-medieval" data-action="conquestChoice" data-id="' + town.id + '" data-val="citizenship" style="padding:12px;background:rgba(46,125,50,0.25);border:2px solid rgba(76,175,80,0.6);">' +
+            '<div style="font-weight:bold;font-size:1em;color:#a5d6a7;">🤝 Grant Citizenship</div>' +
+            '<div style="font-size:0.8em;color:#ccc;margin-top:4px;">Welcome the people as full citizens. Town happiness +20. Loyalty grows over time. Best for long-term stability.</div></button>' +
+            '<button class="btn-medieval" data-action="conquestChoice" data-id="' + town.id + '" data-val="servitude" style="padding:12px;background:rgba(255,152,0,0.2);border:2px solid rgba(255,183,77,0.6);">' +
+            '<div style="font-weight:bold;font-size:1em;color:#ffcc80;">⛓️ Impose Servitude</div>' +
+            '<div style="font-size:0.8em;color:#ccc;margin-top:4px;">7 years of indentured servitude. Wages go to kingdom treasury. Town happiness drops. Risk of unrest.</div></button>' +
+            '<button class="btn-medieval" data-action="conquestChoice" data-id="' + town.id + '" data-val="raid" style="padding:12px;background:rgba(183,28,28,0.25);border:2px solid rgba(229,115,115,0.6);">' +
+            '<div style="font-weight:bold;font-size:1em;color:#ef9a9a;">🔥 Raid &amp; Plunder</div>' +
+            '<div style="font-size:0.8em;color:#ccc;margin-top:4px;">Seize wealth, kill resisters. Immediate gold but massive destruction. Town will be devastated for years.</div></button>' +
             '</div></div>';
         UI.openModal('⚔️ Conquest of ' + (town.name || 'Town'), html);
     }
