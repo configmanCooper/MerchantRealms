@@ -4,6 +4,33 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.71.0] - Post-Refactor Audit & God Mode Enhancements
+
+### Fixed
+- 9 silent Engine API failures (getMarketPrice triple-def, getKingdomHappiness/getKingMoodModifiers/getMilitaryBreakdown id-vs-object, getRng internal call, king UI display, notification filter restore, dead duplicate exports)
+- Module parameter consistency (engine_diplomacy buildNewRoad 4th param, ui_buildings getMarketPrice town.id)
+- God mode Invincible and Bandits toggle crash (event delegation `this` bug)
+- 3 critical empty catch blocks now log warnings
+
+### Added
+- God mode: King rank (7) in Set Rank dropdown — kills current king, grants full royal privileges
+- God mode: Full NPC identity transfer on Become NPC (name, age, sex, gold, occupation, socialRank, citizenship, noble/king status, family ties)
+- God mode: Old player stuffed into Elite Merchant with full data (gold, inventory, skills, personality, reputation, spouse linkage)
+- NPC Browser: Social rank badges (👑King, 🏰Lord, 🎖️Noble, ⚒️Guildmaster)
+
+### Validated
+- 153/153 API wrapper tests pass (every Engine/Player/UI method with id+object inputs)
+- 0/1680 methods lost from module split
+- 5000-tick stability: zero NaN, zero Infinity, zero errors
+- Sections 1-10 simulation audit + 28 phase comprehensive test all pass
+
+## [0.70.0] - Code Architecture Overhaul (H1 + C3)
+
+### Changed
+- H1: 25 IIFE extension modules extracted (47,262 lines, 40.8% reduction)
+- C3: ~800 inline onclick → data-action + registerAction (~500 handlers)
+- Notification system overhaul with background gossip + Street Ears skill
+
 ## [0.69.0] - Become King
 
 ### Added
