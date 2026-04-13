@@ -5753,10 +5753,23 @@
                             }
                         }
                     } else {
-                        // Indentured servants: wages go to kingdom treasury
+                        // Indentured servants: 80% of wages go to kingdom, 20% to worker
                         if (p.status === 'indentured' && p.servitudeKingdomId) {
                             var servK2 = findKingdom(p.servitudeKingdomId);
-                            if (servK2) servK2.gold += dailyWage;
+                            var _servTax = p.servitudeEarningsTax || 0.80;
+                            var _kShare = dailyWage * _servTax;
+                            var _pShare = dailyWage - _kShare;
+                            if (servK2) servK2.gold += _kShare;
+                            p.gold += _pShare;
+                            // Track earnings toward buyout
+                            p.servitudeGoldPaid = (p.servitudeGoldPaid || 0) + _kShare;
+                            // Check buyout: if paid enough, free them
+                            if (p.servitudeGoldPaid >= (p.servitudeFreedomCost || 1000)) {
+                                p.status = p._preServitudeStatus || 'peasant';
+                                delete p.servitudeEndDay; delete p.servitudeKingdomId;
+                                delete p.servitudeEarningsTax; delete p.servitudeTravelBan;
+                                delete p.servitudeGoldPaid; delete p.servitudeFreedomCost;
+                            }
                         } else {
                             p.gold += dailyWage;
                         }
@@ -5799,7 +5812,9 @@
                 if (world.rng.chance(0.02) && town) {
                     // Never migrate the player's spouse or children
                     const isPlayerFamily = p.spouseId === 'player' || (p.parentIds && p.parentIds.includes('player'));
-                    if (!isPlayerFamily) {
+                    // Indentured servants cannot travel
+                    const _servBan = p.status === 'indentured' && p.servitudeTravelBan;
+                    if (!isPlayerFamily && !_servBan) {
                     const betterTowns = world.towns.filter(t =>
                         t.id !== p.townId && t.prosperity > 20
                     );
@@ -6178,7 +6193,7 @@
                     migrateReason = migrateReason || 'unhappiness';
                 }
 
-                if (migrateChance > 0 && !isPlayerFamily && world.rng.chance(migrateChance)) {
+                if (migrateChance > 0 && !isPlayerFamily && !(p.status === 'indentured' && p.servitudeTravelBan) && world.rng.chance(migrateChance)) {
                     // Pick destination: safe towns with higher prosperity
                     const safeTowns = world.towns.filter(t => {
                         if (t.id === p.townId) return false;
@@ -11954,6 +11969,76 @@
                 }
             }
 
+            // ── War Strategy Layer: phases, border defense, coordinated attacks ──
+            var _warPhase = k._warPhase || 'buildup';
+            var _warPhaseDays = world.day - (k._warPhaseStartDay || world.day);
+            var _pers = k.kingPersonality || {};
+            var _kStrength = computeMilitaryStrength(k);
+
+            // Determine strongest enemy in current wars
+            var _strongestEnemy = null, _strongestEnemyStr = 0;
+            for (var _weId of k.atWar) {
+                var _we = findKingdom(_weId);
+                if (!_we) continue;
+                var _weStr = computeMilitaryStrength(_we);
+                if (_weStr > _strongestEnemyStr) { _strongestEnemy = _we; _strongestEnemyStr = _weStr; }
+            }
+
+            // Phase transitions
+            if (_warPhase === 'buildup' && (_warPhaseDays > 30 || _kStrength > _strongestEnemyStr * 0.8)) {
+                _warPhase = 'offensive';
+                k._warPhaseStartDay = world.day;
+            } else if (_warPhase === 'offensive' && _warPhaseDays > 60) {
+                // After sustained offensive, try capital strike if possible
+                if (_kStrength > _strongestEnemyStr * 1.2 && _pers.courage !== 'cowardly') {
+                    _warPhase = 'capital_strike';
+                    k._warPhaseStartDay = world.day;
+                } else {
+                    _warPhase = 'offensive'; // continue
+                }
+            } else if (_warPhase === 'capital_strike' && _warPhaseDays > 45) {
+                _warPhase = 'offensive'; // reset after attempt
+                k._warPhaseStartDay = world.day;
+            }
+            k._warPhase = _warPhase;
+            if (!k._warPhaseStartDay) k._warPhaseStartDay = world.day;
+
+            // Border defense: move soldiers from interior to border towns
+            if (rng.chance(0.08)) {
+                var _borderTowns = [];
+                var _interiorTowns = [];
+                for (var _bdi = 0; _bdi < k.territories.length; _bdi++) {
+                    var _bdTown = findTown(k.territories[_bdi]);
+                    if (!_bdTown) continue;
+                    var _isBorderTown = false;
+                    for (var _rdj = 0; _rdj < world.roads.length; _rdj++) {
+                        var _rd = world.roads[_rdj];
+                        if (_rd.fromTownId !== _bdTown.id && _rd.toTownId !== _bdTown.id) continue;
+                        var _neighborId = _rd.fromTownId === _bdTown.id ? _rd.toTownId : _rd.fromTownId;
+                        var _neighbor = findTown(_neighborId);
+                        if (_neighbor && k.atWar.has(_neighbor.kingdomId)) { _isBorderTown = true; break; }
+                    }
+                    if (_isBorderTown) _borderTowns.push(_bdTown);
+                    else _interiorTowns.push(_bdTown);
+                }
+
+                // Transfer soldiers from interior towns with excess to under-defended border towns
+                for (var _btk = 0; _btk < _borderTowns.length; _btk++) {
+                    var _bTown = _borderTowns[_btk];
+                    if (_bTown.garrison >= 20) continue; // already well-defended
+                    var _needed = 20 - _bTown.garrison;
+                    for (var _itk = 0; _itk < _interiorTowns.length && _needed > 0; _itk++) {
+                        var _iTown = _interiorTowns[_itk];
+                        var _iExcess = _iTown.garrison - 8; // keep min 8 in interior
+                        if (_iExcess <= 0) continue;
+                        var _transfer = Math.min(_needed, _iExcess, 5); // move up to 5 per tick
+                        _iTown.garrison -= _transfer;
+                        _bTown.garrison += _transfer;
+                        _needed -= _transfer;
+                    }
+                }
+            }
+
             // Wartime AI continued: conscription, watchtowers, army raising (per-town)
             for (const townId of k.territories) {
                 const town = findTown(townId);
@@ -12179,7 +12264,10 @@
                     continue;
                 }
 
-                if (availableSoldiers > 5 && rng.chance(0.3)) {
+                // Phase-based army raising: buildup=conservative, offensive=aggressive, capital_strike=focused
+                var _raiseChance = _warPhase === 'buildup' ? 0.1 : (_warPhase === 'capital_strike' ? 0.4 : 0.3);
+                var _minAvail = _warPhase === 'buildup' ? 10 : 5;
+                if (availableSoldiers > _minAvail && rng.chance(_raiseChance)) {
                     const armySize = Math.min(Math.floor(town.garrison * 0.5), availableSoldiers);
                     town.garrison -= armySize;
 
@@ -12221,10 +12309,16 @@
 
                             // Score: prefer short routes, weak garrisons, high-value targets
                             var routeScore = 100;
-                            routeScore -= route.totalTime * 0.5; // Faster routes preferred (reduced from ×2)
+                            routeScore -= route.totalTime * 0.5; // Faster routes preferred
                             routeScore -= (cand.garrison || 0) * 0.5; // Weaker targets preferred
                             routeScore += (cand.population || 0) * 0.01; // Higher pop = more valuable
                             routeScore += cand.isCapital ? 30 : 0; // Capitals are high-value
+                            // War phase bonuses
+                            if (_warPhase === 'capital_strike' && cand.isCapital) routeScore += 60; // Heavy capital priority
+                            if (_warPhase === 'offensive' && (cand.garrison || 0) < armySize * 0.7) routeScore += 20; // Favor winnable fights
+                            // Avoid already-being-attacked targets (coordinate)
+                            var _alreadyTargeted = world.armies.some(function(a) { return a.kingdomId === k.id && a.toTownId === cand.id; });
+                            if (_alreadyTargeted) routeScore -= 40; // Don't pile on same target
                             // Penalize routes with lots of offroad legs
                             var offroadLegs = route.legs.filter(function(l) { return l.type === 'offroad'; }).length;
                             routeScore -= offroadLegs * 10;
@@ -12723,7 +12817,21 @@
             }
         }
 
-        // 8. Return the town for further processing
+        // 8. Reconquest: restore indentured servants from the conquering kingdom
+        // If town was reconquered by their original kingdom, free them
+        var _townPeople = getPeopleInTown(townId);
+        for (var _rsi = 0; _rsi < _townPeople.length; _rsi++) {
+            var _rp = _townPeople[_rsi];
+            if (_rp.status === 'indentured' && _rp._preServitudeKingdomId === toKingdomId) {
+                _rp.status = _rp._preServitudeStatus || 'peasant';
+                delete _rp.servitudeEndDay; delete _rp.servitudeKingdomId;
+                delete _rp.servitudeEarningsTax; delete _rp.servitudeTravelBan;
+                delete _rp.servitudeGoldPaid; delete _rp.servitudeFreedomCost;
+                delete _rp._preServitudeStatus; delete _rp._preServitudeKingdomId;
+            }
+        }
+
+        // 9. Return the town for further processing
         return town;
     }
 
@@ -12834,10 +12942,16 @@
         var townPeople = getPeopleInTown(town.id);
         for (const person of townPeople) {
             person.kingdomId = kingdom.id;
+            // Store previous status for restoration on reconquest
+            person._preServitudeStatus = person.status || 'peasant';
+            person._preServitudeKingdomId = person._preServitudeKingdomId || person.kingdomId;
             person.status = 'indentured';
             person.servitudeEndDay = world.day + CONFIG.SERVITUDE_DURATION_DAYS;
-            person.servitudeFreedomCost = CONFIG.SERVITUDE_FREEDOM_COST;
+            person.servitudeFreedomCost = CONFIG.SERVITUDE_FREEDOM_COST || 1000;
             person.servitudeKingdomId = kingdom.id;
+            person.servitudeEarningsTax = 0.80; // 80% of earnings go to kingdom
+            person.servitudeTravelBan = true; // Cannot travel
+            person.servitudeGoldPaid = 0; // Track buyout progress
         }
         town.happiness = Math.max(0, (town.happiness || 50) + CONFIG.CONQUEST_SERVITUDE_HAPPINESS);
 
@@ -12849,8 +12963,9 @@
             effects: [
                 townPeople.length + ' residents become indentured servants',
                 'Servitude lasts ' + CONFIG.SERVITUDE_DURATION_DAYS + ' days (7 years)',
-                'Freedom can be purchased for ' + CONFIG.SERVITUDE_FREEDOM_COST + 'g',
-                'Wages go to ' + kingdom.name + '\'s treasury',
+                'Freedom can be purchased for ' + (CONFIG.SERVITUDE_FREEDOM_COST || 1000) + 'g',
+                '80% of wages go to ' + kingdom.name + '\'s treasury',
+                'Cannot travel until freed',
                 'Town happiness ' + CONFIG.CONQUEST_SERVITUDE_HAPPINESS,
             ],
             kingdoms: [kingdom.id],
@@ -12949,14 +13064,18 @@
 
             // Auto-release when servitude period ends
             if (world.day >= (person.servitudeEndDay || Infinity)) {
-                person.status = 'citizen';
+                person.status = person._preServitudeStatus || 'peasant';
                 delete person.servitudeEndDay;
                 delete person.servitudeFreedomCost;
                 delete person.servitudeKingdomId;
+                delete person.servitudeEarningsTax;
+                delete person.servitudeTravelBan;
+                delete person.servitudeGoldPaid;
+                delete person._preServitudeStatus;
                 logEvent(`${person.firstName} ${person.lastName} has completed their period of servitude.`, {
                     type: 'servitude_release',
                     cause: person.firstName + '\'s indentured servitude term has expired.',
-                    effects: ['Status changed to citizen', 'Free to work and earn wages normally'],
+                    effects: ['Status restored to ' + person.status, 'Free to work and travel normally'],
                 });
                 continue;
             }
@@ -12974,10 +13093,14 @@
                     if (servKingdom) {
                         servKingdom.gold += (person.servitudeFreedomCost || CONFIG.SERVITUDE_FREEDOM_COST);
                     }
-                    person.status = 'citizen';
+                    person.status = person._preServitudeStatus || 'peasant';
                     delete person.servitudeEndDay;
                     delete person.servitudeFreedomCost;
                     delete person.servitudeKingdomId;
+                    delete person.servitudeEarningsTax;
+                    delete person.servitudeTravelBan;
+                    delete person.servitudeGoldPaid;
+                    delete person._preServitudeStatus;
                     logEvent(`${person.firstName} ${person.lastName} has bought their freedom!`, {
                         type: 'servitude_buyout',
                         cause: person.firstName + ' paid ' + CONFIG.SERVITUDE_FREEDOM_COST + 'g to buy their freedom.',
@@ -14109,6 +14232,54 @@
         army._besieging = true; // Flag so tickMilitary skips movement
     }
 
+    // Apply battle results to the player character (XP, injury, death risk)
+    function _applyPlayerBattleOutcome(rng, outcome, town) {
+        if (typeof Player === 'undefined' || !Player.state || !Player.state.alive) return;
+        var ps = Player.state;
+        var combat = (ps.skills && ps.skills.combat) || 10;
+        var rankReduction = Math.max(0, (combat - 20) / 10 * 0.02);
+        var equipBonus = 0;
+        if (ps.equipment) {
+            if (ps.equipment.armor === 'excellent') equipBonus = 0.25;
+            else if (ps.equipment.armor === 'good') equipBonus = 0.15;
+            else if (ps.equipment.armor === 'basic') equipBonus = 0.05;
+        }
+
+        var baseDeathRate, baseInjuryRate;
+        if (outcome === 'attacker_win') { baseDeathRate = 0.02; baseInjuryRate = 0.05; }
+        else if (outcome === 'attacker_loss') { baseDeathRate = 0.04; baseInjuryRate = 0.10; }
+        else if (outcome === 'defender_win') { baseDeathRate = 0.01; baseInjuryRate = 0.03; }
+        else { baseDeathRate = 0.03; baseInjuryRate = 0.08; } // defender_loss
+
+        var deathChance = Math.max(0.002, baseDeathRate - rankReduction - equipBonus * 0.5);
+        var injuryChance = Math.max(0.005, baseInjuryRate - rankReduction - equipBonus);
+
+        // Battle XP — always gain combat skill from participating
+        if (ps.skills) {
+            var xpGain = (CONFIG.SOLDIER_BATTLE_XP_GAIN || 5);
+            if (outcome === 'attacker_win' || outcome === 'defender_win') xpGain += 3; // bonus for winning
+            ps.skills.combat = Math.min(CONFIG.SOLDIER_MAX_COMBAT_SKILL || 100, (ps.skills.combat || 0) + xpGain);
+        }
+        ps.battlesWon = (ps.battlesWon || 0) + 1;
+
+        if (rng.chance(deathChance)) {
+            // Player dies in battle — handled by Player module
+            ps.alive = false;
+            ps.causeOfDeath = 'Killed in the battle of ' + (town.name || 'unknown');
+            ps.deathDay = world.day;
+            logEvent('💀 ' + (ps.fullName || 'The player') + ' was killed in battle at ' + (town.name || 'unknown') + '!', null, 'military');
+        } else if (rng.chance(injuryChance)) {
+            ps.injured = true;
+            ps.injuryDay = world.day;
+            ps.injuryType = rng.pick(['wound', 'broken_bone', 'concussion', 'arrow_wound']);
+            ps.injuryDuration = rng.randInt(14, 90);
+            logEvent('🩹 ' + (ps.fullName || 'You') + ' was injured in battle at ' + (town.name || 'unknown') + ' (' + ps.injuryType.replace('_', ' ') + ').', null, 'military');
+        } else {
+            var wonSide = (outcome === 'attacker_win' || outcome === 'defender_win');
+            logEvent('⚔️ ' + (ps.fullName || 'You') + ' fought in the battle of ' + (town.name || 'unknown') + (wonSide ? ' — Victory!' : ' — Defeat.') + ' (Combat +' + (ps.skills ? (CONFIG.SOLDIER_BATTLE_XP_GAIN || 5) + (wonSide ? 3 : 0) : 0) + ')', null, 'military');
+        }
+    }
+
     function resolveBattleInstant(army, town) {
         const rng = world.rng;
         const attackK = findKingdom(army.kingdomId);
@@ -14134,6 +14305,17 @@
             for (var _si = 0; _si < atkSoldiers.length; _si++) totalEff += getSoldierEffectiveness(atkSoldiers[_si]);
             var avgEff = totalEff / atkSoldiers.length;
             attackStrength *= avgEff; // Average effectiveness multiplies total strength
+        }
+        // Player combat contribution — attacker side
+        var _playerInBattle = null;
+        if (typeof Player !== 'undefined' && Player.state && Player.state.alive &&
+            (Player.state.occupation === 'soldier' || Player.state.occupation === 'guard') &&
+            Player.state.kingdomId === army.kingdomId) {
+            var _pEff = getSoldierEffectiveness(Player.state);
+            // Player counts as a high-value individual combatant (+5-25% depending on skill)
+            var _pBonus = (_pEff - 1.0) * 0.15; // Scale to meaningful bonus
+            if (_pBonus > 0) attackStrength *= (1 + _pBonus);
+            _playerInBattle = 'attacker';
         }
         // Apply weapon quality bonus from attacking kingdom stockpile
         attackStrength *= (1 + getKingdomWeaponQualityBonus(attackK));
@@ -14191,6 +14373,15 @@
             var defAvgEff = defTotalEff / defSoldiers.length;
             defenseStrength *= defAvgEff;
         }
+        // Player combat contribution — defender side
+        if (!_playerInBattle && typeof Player !== 'undefined' && Player.state && Player.state.alive &&
+            (Player.state.occupation === 'soldier' || Player.state.occupation === 'guard') &&
+            Player.state.townId === town.id && Player.state.kingdomId === town.kingdomId) {
+            var _pDefEff = getSoldierEffectiveness(Player.state);
+            var _pDefBonus = (_pDefEff - 1.0) * 0.15;
+            if (_pDefBonus > 0) defenseStrength *= (1 + _pDefBonus);
+            _playerInBattle = 'defender';
+        }
         // Apply defending kingdom's weapon quality bonus
         defenseStrength *= (1 + getKingdomWeaponQualityBonus(defendK));
         // Apply castle defense bonus (capped at +50%)
@@ -14240,6 +14431,11 @@
             // ~4% death chance per battle for footmen, ~8% injury, reduced by rank/veterancy
             applySoldierCasualties(attackK, town, rng, 'attacker_win');
             if (defendK) applySoldierCasualties(defendK, town, rng, 'defender_loss');
+
+            // Player soldier battle outcome
+            if (_playerInBattle) {
+                _applyPlayerBattleOutcome(rng, _playerInBattle === 'attacker' ? 'attacker_win' : 'defender_loss', town);
+            }
 
             // --- MILITIA CASUALTIES (2-5% of civilian population killed in siege) ---
             const civKillRate = rng.randFloat(0.02, 0.05);
@@ -14372,6 +14568,11 @@
             // Individual soldier casualties — losers take heavier casualties
             applySoldierCasualties(attackK, town, rng, 'attacker_loss');
             if (defendK) applySoldierCasualties(defendK, town, rng, 'defender_win');
+
+            // Player soldier battle outcome
+            if (_playerInBattle) {
+                _applyPlayerBattleOutcome(rng, _playerInBattle === 'attacker' ? 'attacker_loss' : 'defender_win', town);
+            }
 
             logEvent(`Attack on ${town.name} repelled! The garrison holds.`);
             // Morale tracking (M-3)

@@ -456,6 +456,88 @@
             html += '</div></div>';
         }
 
+        // ── Economic Orders ──
+        html += '<div style="font-size:0.8rem;color:#d4a843;margin:10px 0 6px;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px;">💰 Economic Orders</div>';
+
+        // Export Ban
+        html += '<div style="background:rgba(0,0,0,0.1);padding:6px;border-radius:4px;margin-bottom:4px;">';
+        html += '<div style="font-size:0.75rem;color:#ddd;margin-bottom:4px;">🚢 Export Ban <span style="font-size:0.62rem;color:#888;">(Block exports of a good to a kingdom)</span></div>';
+        var _exportBans = (kingdom.laws && kingdom.laws.exportBans) || [];
+        html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">';
+        var _exGoods = ['wheat', 'bread', 'fish', 'wine', 'ale', 'wool', 'cloth', 'silk', 'iron', 'tools', 'swords', 'armor', 'bows', 'wood', 'stone', 'salt', 'spices', 'horses'];
+        html += '<select id="_roExportGood" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;max-width:100px;">';
+        for (var _egi = 0; _egi < _exGoods.length; _egi++) html += '<option value="' + _exGoods[_egi] + '">' + _exGoods[_egi] + '</option>';
+        html += '</select>';
+        var _otherKingdoms = [];
+        try { _otherKingdoms = Engine.getKingdoms().filter(function(ok) { return ok.id !== kingdom.id; }); } catch(e) {}
+        html += '<select id="_roExportKingdom" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;max-width:100px;">';
+        html += '<option value="all">All Kingdoms</option>';
+        for (var _oki = 0; _oki < _otherKingdoms.length; _oki++) html += '<option value="' + _otherKingdoms[_oki].id + '">' + escapeHtml(_otherKingdoms[_oki].name) + '</option>';
+        html += '</select>';
+        html += '<button class="btn-medieval" data-action="kingExportBan" style="font-size:0.62rem;padding:2px 6px;">🚫 Ban</button>';
+        html += '<button class="btn-medieval" data-action="kingExportUnban" style="font-size:0.62rem;padding:2px 6px;">✅ Lift</button>';
+        html += '</div>';
+        if (_exportBans.length > 0) {
+            html += '<div style="font-size:0.6rem;color:#c44e52;margin-top:3px;">Active bans: ';
+            for (var _ebi = 0; _ebi < _exportBans.length; _ebi++) {
+                var _eb = _exportBans[_ebi];
+                html += _eb.good + ' → ' + (_eb.target === 'all' ? 'All' : (_eb.targetName || _eb.target));
+                if (_ebi < _exportBans.length - 1) html += ', ';
+            }
+            html += '</div>';
+        }
+        html += '</div>';
+
+        // Production Bounty
+        html += '<div style="background:rgba(0,0,0,0.1);padding:6px;border-radius:4px;margin-bottom:4px;">';
+        html += '<div style="font-size:0.75rem;color:#ddd;margin-bottom:4px;">🏭 Production Bounty <span style="font-size:0.62rem;color:#888;">(+2g per unit produced)</span> <span style="font-size:0.62rem;color:#e0c58a;">(' + formatGold(100) + '/season)</span></div>';
+        var _activeBounties = (kingdom.laws && kingdom.laws.productionBounties) || [];
+        html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">';
+        html += '<select id="_roBountyGood" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;max-width:120px;">';
+        for (var _bgi = 0; _bgi < _exGoods.length; _bgi++) html += '<option value="' + _exGoods[_bgi] + '">' + _exGoods[_bgi] + '</option>';
+        html += '</select>';
+        html += '<button class="btn-medieval" data-action="kingSetBounty" style="font-size:0.62rem;padding:2px 6px;">📜 Set</button>';
+        html += '<button class="btn-medieval" data-action="kingRemoveBounty" style="font-size:0.62rem;padding:2px 6px;">❌ Remove</button>';
+        html += '</div>';
+        if (_activeBounties.length > 0) html += '<div style="font-size:0.6rem;color:#55a868;margin-top:3px;">Active bounties: ' + _activeBounties.join(', ') + '</div>';
+        html += '</div>';
+
+        // Goods Subsidy
+        html += '<div style="background:rgba(0,0,0,0.1);padding:6px;border-radius:4px;margin-bottom:4px;">';
+        html += '<div style="font-size:0.75rem;color:#ddd;margin-bottom:4px;">💸 Goods Subsidy <span style="font-size:0.62rem;color:#888;">(Kingdom pays 30% of price)</span> <span style="font-size:0.62rem;color:#e0c58a;">(' + formatGold(150) + '/season)</span></div>';
+        var _activeSubsidies = (kingdom.laws && kingdom.laws.goodsSubsidies) || [];
+        html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">';
+        html += '<select id="_roSubsidyGood" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;max-width:120px;">';
+        for (var _sgi = 0; _sgi < _exGoods.length; _sgi++) html += '<option value="' + _exGoods[_sgi] + '">' + _exGoods[_sgi] + '</option>';
+        html += '</select>';
+        html += '<button class="btn-medieval" data-action="kingSetSubsidy" style="font-size:0.62rem;padding:2px 6px;">💸 Set</button>';
+        html += '<button class="btn-medieval" data-action="kingRemoveSubsidy" style="font-size:0.62rem;padding:2px 6px;">❌ Remove</button>';
+        html += '</div>';
+        if (_activeSubsidies.length > 0) html += '<div style="font-size:0.6rem;color:#5dade2;margin-top:3px;">Subsidized: ' + _activeSubsidies.join(', ') + '</div>';
+        html += '</div>';
+
+        // Land Subsidy
+        html += '<div style="background:rgba(0,0,0,0.1);padding:6px;border-radius:4px;margin-bottom:4px;">';
+        html += '<div style="font-size:0.75rem;color:#ddd;margin-bottom:4px;">🏡 Land Subsidy <span style="font-size:0.62rem;color:#888;">(Reduce land costs 25%)</span> <span style="font-size:0.62rem;color:#e0c58a;">(' + formatGold(200) + '/season)</span></div>';
+        var _landSubTowns = (kingdom.laws && kingdom.laws.landSubsidyTowns) || [];
+        html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">';
+        html += '<select id="_roLandSubTown" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;max-width:140px;">';
+        html += '<option value="">Select town...</option>';
+        for (var _lsi = 0; _lsi < _roTowns.length; _lsi++) html += '<option value="' + _roTowns[_lsi].id + '">' + escapeHtml(_roTowns[_lsi].name) + '</option>';
+        html += '</select>';
+        html += '<button class="btn-medieval" data-action="kingSetLandSubsidy" style="font-size:0.62rem;padding:2px 6px;">🏡 Set</button>';
+        html += '<button class="btn-medieval" data-action="kingRemoveLandSubsidy" style="font-size:0.62rem;padding:2px 6px;">❌ Remove</button>';
+        html += '</div>';
+        if (_landSubTowns.length > 0) {
+            var _lsNames = [];
+            for (var _lsni = 0; _lsni < _landSubTowns.length; _lsni++) {
+                var _lst = Engine.findTown(_landSubTowns[_lsni]);
+                _lsNames.push(_lst ? _lst.name : _landSubTowns[_lsni]);
+            }
+            html += '<div style="font-size:0.6rem;color:#55a868;margin-top:3px;">Land subsidies in: ' + _lsNames.join(', ') + '</div>';
+        }
+        html += '</div>';
+
         html += '</div>';
         return html;
     }
@@ -798,22 +880,30 @@
         }
         html += '</div></div>';
 
-        // Procurement — buy weapons for military
+        // Procurement — buy weapons for military from kingdom markets (cheapest available)
         html += '<div style="background:rgba(0,0,0,0.15);padding:8px;border-radius:6px;margin-bottom:8px;">';
         html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:4px;">🔨 Procure Military Equipment</div>';
-        html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:6px;">Purchase weapons and armor for the military stockpile from the treasury.</div>';
-        var _procureItems = [
-            { id: 'swords', name: '⚔️ Swords', cost: 25 },
-            { id: 'armor', name: '🛡️ Armor', cost: 35 },
-            { id: 'bows', name: '🏹 Bows', cost: 20 },
-            { id: 'arrows', name: '🎯 Arrows (10)', cost: 5 },
-            { id: 'horses', name: '🐴 Horses', cost: 80 }
-        ];
+        html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:6px;">Buy from the cheapest kingdom market. Price varies by supply.</div>';
+        var _milItems = ['swords', 'armor', 'bows', 'arrows', 'horses'];
+        var _milNames = { swords: '⚔️ Swords', armor: '🛡️ Armor', bows: '🏹 Bows', arrows: '🎯 Arrows (10)', horses: '🐴 Horses' };
         html += '<div style="display:flex;flex-wrap:wrap;gap:4px;">';
-        for (var _pci = 0; _pci < _procureItems.length; _pci++) {
-            var _pc = _procureItems[_pci];
-            var _canBuy = (kingdom.gold || 0) >= _pc.cost;
-            html += '<button class="btn-medieval" data-action="kingProcureMilitary" data-id="' + _pc.id + '" data-val="' + _pc.cost + '" style="font-size:0.65rem;padding:3px 8px;' + (!_canBuy ? 'opacity:0.5;' : '') + '" ' + (!_canBuy ? 'disabled' : '') + '>' + _pc.name + ' (' + formatGold(_pc.cost) + ')</button>';
+        for (var _pci = 0; _pci < _milItems.length; _pci++) {
+            var _milId = _milItems[_pci];
+            // Find cheapest price across all kingdom towns
+            var _cheapest = Infinity, _cheapTown = null, _totalAvail = 0;
+            for (var _mti = 0; _mti < _kTowns.length; _mti++) {
+                var _mt = _kTowns[_mti];
+                var _avail = (_mt.market && _mt.market.supply) ? (_mt.market.supply[_milId] || 0) : 0;
+                _totalAvail += _avail;
+                if (_avail > 0) {
+                    var _pr = 25;
+                    try { _pr = Engine.getMarketPrice ? Engine.getMarketPrice(_mt, _milId) : ((_mt.market[_milId] && _mt.market[_milId].price) || 25); } catch(e) {}
+                    if (_pr < _cheapest) { _cheapest = _pr; _cheapTown = _mt; }
+                }
+            }
+            var _displayPrice = _cheapest < Infinity ? Math.ceil(_cheapest) : '—';
+            var _canBuy = _totalAvail > 0 && _cheapest < Infinity && (kingdom.gold || 0) >= _cheapest;
+            html += '<button class="btn-medieval" data-action="kingProcureMilitary" data-id="' + _milId + '" data-val="' + (_cheapest < Infinity ? Math.ceil(_cheapest) : 0) + '" style="font-size:0.65rem;padding:3px 8px;' + (!_canBuy ? 'opacity:0.5;' : '') + '" ' + (!_canBuy ? 'disabled' : '') + '>' + _milNames[_milId] + ' (' + (_totalAvail > 0 ? formatGold(_displayPrice) + ', ' + _totalAvail + ' avail' : 'None!') + ')</button>';
         }
         html += '</div></div>';
 
@@ -2767,6 +2857,48 @@
         var s = document.getElementById('_roPromoteOutpost');
         if (!s || !s.value) { UI.toast('Select an outpost.', 'warning'); return; }
         var r = Player.kingExecuteOrder('promote_outpost', { townId: s.value }); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions');
+    });
+
+    // Economic order actions
+    UI.registerAction('kingExportBan', function() {
+        var g = document.getElementById('_roExportGood'), k = document.getElementById('_roExportKingdom');
+        if (!g || !g.value) { UI.toast('Select a good.', 'warning'); return; }
+        var r = Player.kingEconomicOrder('export_ban', { good: g.value, target: k ? k.value : 'all' }); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions');
+    });
+    UI.registerAction('kingExportUnban', function() {
+        var g = document.getElementById('_roExportGood'), k = document.getElementById('_roExportKingdom');
+        if (!g || !g.value) { UI.toast('Select a good.', 'warning'); return; }
+        var r = Player.kingEconomicOrder('export_unban', { good: g.value, target: k ? k.value : 'all' }); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions');
+    });
+    UI.registerAction('kingSetBounty', function() {
+        var g = document.getElementById('_roBountyGood');
+        if (!g || !g.value) { UI.toast('Select a good.', 'warning'); return; }
+        var r = Player.kingEconomicOrder('set_bounty', { good: g.value }); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions');
+    });
+    UI.registerAction('kingRemoveBounty', function() {
+        var g = document.getElementById('_roBountyGood');
+        if (!g || !g.value) { UI.toast('Select a good.', 'warning'); return; }
+        var r = Player.kingEconomicOrder('remove_bounty', { good: g.value }); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions');
+    });
+    UI.registerAction('kingSetSubsidy', function() {
+        var g = document.getElementById('_roSubsidyGood');
+        if (!g || !g.value) { UI.toast('Select a good.', 'warning'); return; }
+        var r = Player.kingEconomicOrder('set_subsidy', { good: g.value }); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions');
+    });
+    UI.registerAction('kingRemoveSubsidy', function() {
+        var g = document.getElementById('_roSubsidyGood');
+        if (!g || !g.value) { UI.toast('Select a good.', 'warning'); return; }
+        var r = Player.kingEconomicOrder('remove_subsidy', { good: g.value }); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions');
+    });
+    UI.registerAction('kingSetLandSubsidy', function() {
+        var t = document.getElementById('_roLandSubTown');
+        if (!t || !t.value) { UI.toast('Select a town.', 'warning'); return; }
+        var r = Player.kingEconomicOrder('set_land_subsidy', { townId: t.value }); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions');
+    });
+    UI.registerAction('kingRemoveLandSubsidy', function() {
+        var t = document.getElementById('_roLandSubTown');
+        if (!t || !t.value) { UI.toast('Select a town.', 'warning'); return; }
+        var r = Player.kingEconomicOrder('remove_land_subsidy', { townId: t.value }); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions');
     });
 
     // War management actions

@@ -8206,6 +8206,92 @@
         return { success: true, message: 'Order executed! Cost: ' + cost + 'g.' };
     }
 
+    function kingEconomicOrder(action, data) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        if (!kingdom.laws) kingdom.laws = {};
+
+        if (action === 'export_ban') {
+            if (!kingdom.laws.exportBans) kingdom.laws.exportBans = [];
+            var exists = kingdom.laws.exportBans.some(function(b) { return b.good === data.good && b.target === data.target; });
+            if (exists) return { success: false, message: 'Export ban already exists for ' + data.good + '.' };
+            var targetName = data.target === 'all' ? 'All Kingdoms' : data.target;
+            try {
+                var _tk = Engine.findKingdom(data.target);
+                if (_tk) targetName = _tk.name;
+            } catch(e) {}
+            kingdom.laws.exportBans.push({ good: data.good, target: data.target, targetName: targetName, setDay: Engine.getDay() });
+            Engine.logEvent('🚢 Export ban: ' + data.good + ' → ' + targetName, null, 'kingdom');
+            return { success: true, message: 'Export ban set: ' + data.good + ' to ' + targetName + '.' };
+        }
+        if (action === 'export_unban') {
+            if (!kingdom.laws.exportBans) return { success: false, message: 'No export bans active.' };
+            var idx = -1;
+            for (var _eui = 0; _eui < kingdom.laws.exportBans.length; _eui++) {
+                if (kingdom.laws.exportBans[_eui].good === data.good && kingdom.laws.exportBans[_eui].target === data.target) { idx = _eui; break; }
+            }
+            if (idx < 0) return { success: false, message: 'No ban found for ' + data.good + '.' };
+            kingdom.laws.exportBans.splice(idx, 1);
+            Engine.logEvent('✅ Export ban lifted: ' + data.good, null, 'kingdom');
+            return { success: true, message: 'Export ban lifted for ' + data.good + '.' };
+        }
+        if (action === 'set_bounty') {
+            if (!kingdom.laws.productionBounties) kingdom.laws.productionBounties = [];
+            if (kingdom.laws.productionBounties.indexOf(data.good) >= 0) return { success: false, message: 'Bounty already active for ' + data.good + '.' };
+            if (kingdom.gold < 100) return { success: false, message: 'Need 100g in treasury for bounty.' };
+            kingdom.gold -= 100;
+            kingdom.laws.productionBounties.push(data.good);
+            Engine.logEvent('🏭 Production bounty set: +2g per ' + data.good + ' produced.', null, 'kingdom');
+            return { success: true, message: 'Production bounty set for ' + data.good + '. Cost: 100g/season.' };
+        }
+        if (action === 'remove_bounty') {
+            if (!kingdom.laws.productionBounties) return { success: false, message: 'No bounties active.' };
+            var bIdx = kingdom.laws.productionBounties.indexOf(data.good);
+            if (bIdx < 0) return { success: false, message: 'No bounty for ' + data.good + '.' };
+            kingdom.laws.productionBounties.splice(bIdx, 1);
+            Engine.logEvent('❌ Production bounty removed: ' + data.good, null, 'kingdom');
+            return { success: true, message: 'Bounty removed for ' + data.good + '.' };
+        }
+        if (action === 'set_subsidy') {
+            if (!kingdom.laws.goodsSubsidies) kingdom.laws.goodsSubsidies = [];
+            if (kingdom.laws.goodsSubsidies.indexOf(data.good) >= 0) return { success: false, message: 'Subsidy already active for ' + data.good + '.' };
+            if (kingdom.gold < 150) return { success: false, message: 'Need 150g in treasury for subsidy.' };
+            kingdom.gold -= 150;
+            kingdom.laws.goodsSubsidies.push(data.good);
+            Engine.logEvent('💸 Goods subsidy set: ' + data.good + ' prices reduced 30%.', null, 'kingdom');
+            return { success: true, message: 'Subsidy set for ' + data.good + '. Cost: 150g/season.' };
+        }
+        if (action === 'remove_subsidy') {
+            if (!kingdom.laws.goodsSubsidies) return { success: false, message: 'No subsidies active.' };
+            var sIdx = kingdom.laws.goodsSubsidies.indexOf(data.good);
+            if (sIdx < 0) return { success: false, message: 'No subsidy for ' + data.good + '.' };
+            kingdom.laws.goodsSubsidies.splice(sIdx, 1);
+            Engine.logEvent('❌ Goods subsidy removed: ' + data.good, null, 'kingdom');
+            return { success: true, message: 'Subsidy removed for ' + data.good + '.' };
+        }
+        if (action === 'set_land_subsidy') {
+            if (!kingdom.laws.landSubsidyTowns) kingdom.laws.landSubsidyTowns = [];
+            if (kingdom.laws.landSubsidyTowns.indexOf(data.townId) >= 0) return { success: false, message: 'Land subsidy already active for this town.' };
+            if (kingdom.gold < 200) return { success: false, message: 'Need 200g in treasury for land subsidy.' };
+            kingdom.gold -= 200;
+            kingdom.laws.landSubsidyTowns.push(data.townId);
+            var tName = data.townId;
+            try { var _lt = Engine.findTown(data.townId); if (_lt) tName = _lt.name; } catch(e) {}
+            Engine.logEvent('🏡 Land subsidy set in ' + tName + '. Property costs -25%.', null, 'kingdom');
+            return { success: true, message: 'Land subsidy set in ' + tName + '. Cost: 200g/season.' };
+        }
+        if (action === 'remove_land_subsidy') {
+            if (!kingdom.laws.landSubsidyTowns) return { success: false, message: 'No land subsidies active.' };
+            var lIdx = kingdom.laws.landSubsidyTowns.indexOf(data.townId);
+            if (lIdx < 0) return { success: false, message: 'No land subsidy for this town.' };
+            kingdom.laws.landSubsidyTowns.splice(lIdx, 1);
+            Engine.logEvent('❌ Land subsidy removed.', null, 'kingdom');
+            return { success: true, message: 'Land subsidy removed.' };
+        }
+        return { success: false, message: 'Unknown economic order: ' + action };
+    }
+
     function kingRaiseArmy(soldierCount) {
         if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
         var kingdom = Engine.findKingdom(player.kingState.kingdomId);
@@ -8500,14 +8586,36 @@
         if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
         var kingdom = Engine.findKingdom(player.kingState.kingdomId);
         if (!kingdom) return { success: false, message: 'Kingdom not found.' };
-        cost = parseInt(cost) || 25;
-        if (kingdom.gold < cost) return { success: false, message: 'Need ' + cost + 'g.' };
-        kingdom.gold -= cost;
-        if (!kingdom.militaryStockpile) kingdom.militaryStockpile = {};
+
+        // Scan all kingdom towns for cheapest supply of this item
+        var allTowns = [];
+        try { allTowns = Engine.getTowns(); } catch(e) {}
+        var bestTown = null, bestPrice = Infinity;
+        for (var _mi = 0; _mi < allTowns.length; _mi++) {
+            var _mt = allTowns[_mi];
+            if (_mt.kingdomId !== kingdom.id || _mt.isWilderness) continue;
+            if (!_mt.market || !_mt.market.supply) continue;
+            var _avail = _mt.market.supply[itemId] || 0;
+            if (_avail < 1) continue;
+            var _price = 25; // default
+            try { _price = Engine.getMarketPrice ? Engine.getMarketPrice(_mt, itemId) : (_mt.market[itemId] && _mt.market[itemId].price ? _mt.market[itemId].price : 25); } catch(e) {}
+            if (_price < bestPrice) { bestPrice = _price; bestTown = _mt; }
+        }
+        if (!bestTown) return { success: false, message: 'No ' + itemId + ' available in any kingdom market.' };
+
         var qty = itemId === 'arrows' ? 10 : 1;
-        kingdom.militaryStockpile[itemId] = (kingdom.militaryStockpile[itemId] || 0) + qty;
-        Engine.logEvent('🔨 Procured ' + qty + ' ' + itemId + ' for ' + cost + 'g.');
-        return { success: true, message: 'Purchased ' + qty + ' ' + itemId + '.' };
+        var actualAvail = bestTown.market.supply[itemId] || 0;
+        var buyQty = Math.min(qty, Math.floor(actualAvail));
+        if (buyQty < 1) return { success: false, message: 'No ' + itemId + ' available.' };
+        var totalCost = Math.ceil(bestPrice * buyQty);
+        if (kingdom.gold < totalCost) return { success: false, message: 'Need ' + totalCost + 'g. (Cheapest in ' + bestTown.name + ' at ' + Math.ceil(bestPrice) + 'g each)' };
+
+        kingdom.gold -= totalCost;
+        bestTown.market.supply[itemId] -= buyQty;
+        if (!kingdom.militaryStockpile) kingdom.militaryStockpile = {};
+        kingdom.militaryStockpile[itemId] = (kingdom.militaryStockpile[itemId] || 0) + buyQty;
+        Engine.logEvent('🔨 Procured ' + buyQty + ' ' + itemId + ' from ' + bestTown.name + ' for ' + totalCost + 'g.');
+        return { success: true, message: 'Bought ' + buyQty + ' ' + itemId + ' from ' + bestTown.name + ' (' + totalCost + 'g).' };
     }
 
     function kingBuyStockpile(itemId, qty, priceEach) {
@@ -34998,6 +35106,7 @@
         kingApprovePetition,
         kingRejectPetition,
         kingExecuteOrder,
+        kingEconomicOrder,
         kingGetOrderCost,
         kingRaiseArmy,
         kingSendArmy,
