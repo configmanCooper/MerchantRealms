@@ -2139,7 +2139,66 @@
     UI.registerAction('kingSetTaxRate', function() { var v = parseInt(document.getElementById('_kingTaxSlider').value) / 100; var r = Player.kingSetTaxRate(v); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
     UI.registerAction('kingRepealLaw', function(_t, d) { var r = Player.kingRepealLaw(d.id); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
     UI.registerAction('kingEnactLaw', function(_t, d) { var r = Player.kingEnactLaw(d.id); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
-    UI.registerAction('kingSuePeace', function(_t, d) { var r = Player.kingSuePeace(d.id); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
+    UI.registerAction('kingSuePeace', function(_t, d) {
+        // Show peace terms before confirming
+        try {
+            var kingdom = Engine.findKingdom(Player.state.kingState.kingdomId);
+            var target = Engine.findKingdom(d.id);
+            if (!kingdom || !target) { UI.toast('Kingdom not found', 'error'); return; }
+            if (!kingdom.atWar || !kingdom.atWar.has || !kingdom.atWar.has(d.id)) { UI.toast('Not at war with ' + (target.name || 'them'), 'warning'); return; }
+
+            var tribute = Math.floor(kingdom.gold * 0.2);
+            var ourTowns = kingdom.territories ? (kingdom.territories.size || kingdom.territories.length || 0) : 0;
+            var theirTowns = target.territories ? (target.territories.size || target.territories.length || 0) : 0;
+            var ourSoldiers = kingdom.soldiers || 0;
+            var theirSoldiers = target.soldiers || 0;
+
+            var html = '<div style="padding:10px;">';
+            html += '<div style="text-align:center;font-size:2em;margin-bottom:8px;">🕊️</div>';
+            html += '<p style="color:var(--gold);text-align:center;font-weight:bold;font-size:1.1em;">Peace Terms with ' + escapeHtml(target.name) + '</p>';
+
+            // War comparison
+            html += '<div style="display:flex;justify-content:space-between;gap:12px;margin:12px 0;font-size:0.85rem;">';
+            html += '<div style="flex:1;padding:8px;background:rgba(46,125,50,0.15);border-radius:6px;text-align:center;">';
+            html += '<div style="color:#a5d6a7;font-weight:bold;">' + escapeHtml(kingdom.name) + '</div>';
+            html += '<div style="color:#ccc;margin-top:4px;">🏘️ ' + ourTowns + ' towns</div>';
+            html += '<div style="color:#ccc;">⚔️ ' + ourSoldiers + ' soldiers</div>';
+            html += '<div style="color:#ccc;">💰 ' + formatGold(Math.floor(kingdom.gold || 0)) + '</div>';
+            html += '</div>';
+            html += '<div style="flex:1;padding:8px;background:rgba(183,28,28,0.15);border-radius:6px;text-align:center;">';
+            html += '<div style="color:#ef9a9a;font-weight:bold;">' + escapeHtml(target.name) + '</div>';
+            html += '<div style="color:#ccc;margin-top:4px;">🏘️ ' + theirTowns + ' towns</div>';
+            html += '<div style="color:#ccc;">⚔️ ' + theirSoldiers + ' soldiers</div>';
+            html += '<div style="color:#ccc;">💰 ' + formatGold(Math.floor(target.gold || 0)) + '</div>';
+            html += '</div></div>';
+
+            // Terms
+            html += '<div style="padding:10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;margin:10px 0;">';
+            html += '<div style="color:var(--gold);font-weight:bold;margin-bottom:6px;">📜 Terms of Surrender:</div>';
+            html += '<div style="color:#ccc;font-size:0.85rem;">';
+            html += '• <strong style="color:#e57373;">Tribute payment:</strong> ' + formatGold(tribute) + ' (20% of your treasury)<br>';
+            html += '• <strong style="color:#81c784;">Peace treaty:</strong> 180 days of guaranteed peace<br>';
+            html += '• <strong style="color:#64b5f6;">War ends:</strong> All hostilities cease immediately';
+            html += '</div></div>';
+
+            if (tribute > kingdom.gold * 0.5) {
+                html += '<div style="color:#e57373;font-size:0.8rem;text-align:center;margin:6px 0;">⚠️ This tribute is a significant portion of your treasury!</div>';
+            }
+
+            html += '<div style="display:flex;gap:8px;margin-top:14px;">';
+            html += '<button class="btn-medieval" data-action="kingSuePeaceConfirm" data-id="' + d.id + '" style="flex:1;padding:10px;background:rgba(93,173,226,0.3);border:2px solid rgba(93,173,226,0.6);">';
+            html += '<div style="font-weight:bold;color:#90caf9;">🕊️ Accept Terms & Sue for Peace</div>';
+            html += '<div style="font-size:0.75rem;color:#aaa;margin-top:2px;">Pay ' + formatGold(tribute) + ' tribute</div></button>';
+            html += '<button class="btn-medieval" data-action="closeModal" style="flex:1;padding:10px;background:rgba(100,100,100,0.2);border:2px solid rgba(150,150,150,0.4);">';
+            html += '<div style="font-weight:bold;color:#ccc;">✋ Continue the War</div></button>';
+            html += '</div></div>';
+
+            UI.openModal('🕊️ Sue for Peace — ' + escapeHtml(target.name), html);
+        } catch(e) {
+            UI.toast('Error showing peace terms', 'error');
+        }
+    });
+    UI.registerAction('kingSuePeaceConfirm', function(_t, d) { var r = Player.kingSuePeace(d.id); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
     UI.registerAction('kingDeclareWar', function(_t, d) { var r = Player.kingDeclareWar(d.id); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
     UI.registerAction('kingHostFeast', function() { var r = Player.kingHostFeast(); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
     UI.registerAction('kingHoldCourt', function() { var r = Player.kingHoldCourt(); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
