@@ -364,6 +364,308 @@
         return html;
     }
 
+    // ── King Assign Directives ──
+    // Analyzes kingdom state and presents context-appropriate directives the king can issue
+    function _kingAssignDirectivesSection(kingdom) {
+        var html = '';
+        var day = 0;
+        try { day = Engine.getDay(); } catch (e) {}
+        var rng = null;
+        try { rng = Engine.getRng(); } catch (e) {}
+
+        // Analyze kingdom state for context
+        var atWar = kingdom.atWar && (kingdom.atWar.size > 0 || (Array.isArray(kingdom.atWar) && kingdom.atWar.length > 0));
+        var happiness = kingdom.happiness || 50;
+        var treasury = kingdom.gold || 0;
+        var towns = [];
+        try { towns = Engine.getTowns().filter(function(t) { return t.kingdomId === kingdom.id && !t.isOutpost && !t.isWilderness; }); } catch (e) {}
+        var plagueCount = 0;
+        var foodShortage = false;
+        var lowHappinessTowns = [];
+        for (var _ti = 0; _ti < towns.length; _ti++) {
+            if (towns[_ti].plagueActive) plagueCount++;
+            if (towns[_ti].foodShortage || (towns[_ti].marketSupply && (towns[_ti].marketSupply.wheat || 0) < 10 && (towns[_ti].marketSupply.bread || 0) < 10)) foodShortage = true;
+            if ((towns[_ti].happiness || 50) < 35) lowHappinessTowns.push(towns[_ti]);
+        }
+
+        // Get eligible nobles to assign to
+        var nobles = [];
+        try {
+            var allPeople = Engine.getPeople ? Engine.getPeople() : [];
+            for (var _ni = 0; _ni < allPeople.length; _ni++) {
+                var _np = allPeople[_ni];
+                if (!_np.alive || !_np.socialRank) continue;
+                var _npRank = 0;
+                if (typeof _np.socialRank === 'object') _npRank = _np.socialRank[kingdom.id] || 0;
+                else if (typeof _np.socialRank === 'number') _npRank = _np.socialRank;
+                if (_npRank >= 4) nobles.push({ person: _np, rank: _npRank });
+            }
+        } catch (e) {}
+
+        // Check existing active royal directives issued by the king
+        var issuedDirectives = kingdom._kingDirectives || [];
+
+        // Build suggested directives based on kingdom state
+        var suggestions = [];
+
+        // WAR directives
+        if (atWar) {
+            suggestions.push({ id: 'supply_warfront', icon: '⚔️', title: 'Supply the War Effort', desc: 'Order a noble to deliver military goods to the front lines.', urgency: 'critical', cat: 'military' });
+            suggestions.push({ id: 'recruit_soldiers', icon: '🛡️', title: 'Recruit Soldiers', desc: 'Command a noble to recruit fighting men from their towns.', urgency: 'high', cat: 'military' });
+            suggestions.push({ id: 'fortify_border', icon: '🏰', title: 'Fortify Border Towns', desc: 'Order fortification of border settlements.', urgency: 'high', cat: 'military' });
+            suggestions.push({ id: 'scout_enemy', icon: '🔭', title: 'Scout Enemy Territory', desc: 'Send a noble to spy on enemy movements.', urgency: 'high', cat: 'military' });
+        }
+
+        // PLAGUE directives
+        if (plagueCount > 0) {
+            suggestions.push({ id: 'plague_response', icon: '🏥', title: 'Combat the Plague', desc: 'Order medical supplies delivered to ' + plagueCount + ' afflicted town' + (plagueCount > 1 ? 's' : '') + '.', urgency: 'critical', cat: 'welfare' });
+            suggestions.push({ id: 'quarantine_towns', icon: '🚧', title: 'Enforce Quarantine', desc: 'Order quarantine measures to contain the spread.', urgency: 'high', cat: 'welfare' });
+        }
+
+        // FOOD SHORTAGE directives
+        if (foodShortage) {
+            suggestions.push({ id: 'food_relief', icon: '🌾', title: 'Emergency Food Relief', desc: 'Order grain delivered to starving towns.', urgency: 'critical', cat: 'economy' });
+        }
+
+        // LOW HAPPINESS directives
+        if (lowHappinessTowns.length > 0) {
+            var unhappyNames = lowHappinessTowns.slice(0, 3).map(function(t) { return t.name; }).join(', ');
+            suggestions.push({ id: 'quell_unrest', icon: '🕊️', title: 'Quell Unrest', desc: 'Order a noble to restore order in ' + unhappyNames + '.', urgency: 'high', cat: 'welfare' });
+            suggestions.push({ id: 'distribute_gold', icon: '💰', title: 'Distribute Royal Aid', desc: 'Send gold from the treasury to help struggling towns.', urgency: 'normal', cat: 'economy' });
+        }
+
+        // LOW TREASURY directives
+        if (treasury < 5000) {
+            suggestions.push({ id: 'collect_taxes', icon: '💰', title: 'Special Tax Collection', desc: 'Order nobles to collect extra taxes from their provinces.', urgency: 'high', cat: 'economy' });
+            suggestions.push({ id: 'trade_expedition', icon: '🐪', title: 'Royal Trade Expedition', desc: 'Commission a noble to trade on behalf of the crown.', urgency: 'normal', cat: 'economy' });
+        }
+
+        // INFRASTRUCTURE (always relevant)
+        suggestions.push({ id: 'build_roads', icon: '🛤️', title: 'Improve Roads', desc: 'Order road improvements between key towns.', urgency: 'normal', cat: 'infrastructure' });
+        suggestions.push({ id: 'build_buildings', icon: '🏗️', title: 'Kingdom Construction', desc: 'Order construction of needed buildings in towns.', urgency: 'normal', cat: 'infrastructure' });
+
+        // DIPLOMACY (peacetime)
+        if (!atWar) {
+            suggestions.push({ id: 'diplomatic_mission', icon: '📜', title: 'Diplomatic Mission', desc: 'Send a noble as envoy to a neighboring kingdom.', urgency: 'normal', cat: 'diplomacy' });
+            suggestions.push({ id: 'trade_agreement', icon: '🤝', title: 'Negotiate Trade Agreement', desc: 'Order a noble to establish trade relations.', urgency: 'normal', cat: 'diplomacy' });
+        }
+
+        // SECURITY (always)
+        suggestions.push({ id: 'suppress_smuggling', icon: '🔍', title: 'Suppress Smuggling Ring', desc: 'Order investigation of reported smuggling activity.', urgency: 'normal', cat: 'security' });
+        suggestions.push({ id: 'capture_criminal', icon: '🎯', title: 'Capture Wanted Criminal', desc: 'Issue a bounty for the capture of a known criminal.', urgency: 'normal', cat: 'security' });
+
+        // Sort by urgency
+        var urgencyOrder = { critical: 0, high: 1, normal: 2, low: 3 };
+        suggestions.sort(function(a, b) { return (urgencyOrder[a.urgency] || 2) - (urgencyOrder[b.urgency] || 2); });
+
+        // Render
+        html += '<div style="background:rgba(44,62,80,0.15);border:1px solid rgba(212,168,67,0.3);border-radius:6px;padding:8px;margin-bottom:8px;">';
+        html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:6px;">📜 Issue Royal Directives</div>';
+        html += '<div style="font-size:0.68rem;color:#aaa;margin-bottom:8px;">As ruler, you can issue directives to your nobles. Select a task and assign it.</div>';
+
+        // Show currently issued directives
+        if (issuedDirectives.length > 0) {
+            html += '<div style="margin-bottom:8px;">';
+            html += '<div style="font-size:0.75rem;color:#5dade2;margin-bottom:4px;">⚡ Active Royal Orders (' + issuedDirectives.length + ')</div>';
+            for (var _adi = 0; _adi < issuedDirectives.length; _adi++) {
+                var _ad = issuedDirectives[_adi];
+                var _adNoble = null;
+                try { _adNoble = Engine.findPerson(_ad.assigneeId); } catch (e) {}
+                var _adDaysLeft = Math.max(0, (_ad.deadlineDay || 0) - day);
+                html += '<div style="background:rgba(0,0,0,0.15);padding:5px 6px;border-radius:4px;margin-bottom:3px;font-size:0.72rem;">';
+                html += '<div style="color:#ccc;">' + (_ad.icon || '📜') + ' ' + escapeHtml(_ad.title || 'Directive') + '</div>';
+                html += '<div style="color:#888;">Assigned to: ' + (_adNoble ? _adNoble.firstName + ' ' + _adNoble.lastName : 'Unknown') + ' — ' + _adDaysLeft + 'd left';
+                if (_ad.progress) html += ' — ' + Math.round(_ad.progress) + '% done';
+                html += '</div></div>';
+            }
+            html += '</div>';
+        }
+
+        // Available directives to issue
+        html += '<div style="max-height:300px;overflow-y:auto;">';
+        for (var _si = 0; _si < suggestions.length; _si++) {
+            var _s = suggestions[_si];
+            var urgColor = _s.urgency === 'critical' ? '#c44e52' : _s.urgency === 'high' ? '#e67e22' : '#5dade2';
+            var urgLabel = _s.urgency === 'critical' ? '⚠️ CRITICAL' : _s.urgency === 'high' ? '🔶 HIGH' : '🔵 Normal';
+            var catColors = { military: '#c44e52', welfare: '#55a868', economy: '#d4a843', infrastructure: '#5dade2', diplomacy: '#9b59b6', security: '#e67e22' };
+            var catColor = catColors[_s.cat] || '#aaa';
+
+            html += '<div style="background:rgba(0,0,0,0.12);border:1px solid rgba(255,255,255,0.08);border-left:3px solid ' + urgColor + ';padding:6px 8px;border-radius:4px;margin-bottom:4px;">';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+            html += '<div style="flex:1;">';
+            html += '<div style="font-size:0.78rem;color:#ddd;">' + _s.icon + ' ' + _s.title + ' <span style="font-size:0.6rem;color:' + catColor + ';text-transform:uppercase;">' + _s.cat + '</span></div>';
+            html += '<div style="font-size:0.65rem;color:#999;">' + _s.desc + '</div>';
+            html += '<div style="font-size:0.6rem;color:' + urgColor + ';margin-top:2px;">' + urgLabel + '</div>';
+            html += '</div>';
+            html += '<button class="btn-medieval" data-action="kingIssueDirective" data-id="' + _s.id + '" data-kingdom="' + kingdom.id + '" style="font-size:0.65rem;padding:3px 8px;flex-shrink:0;margin-left:6px;">📜 Issue</button>';
+            html += '</div></div>';
+        }
+        html += '</div>';
+
+        // Noble count for context
+        if (nobles.length === 0) {
+            html += '<div style="font-size:0.72rem;color:#c44e52;margin-top:6px;">⚠️ No nobles available to assign directives to.</div>';
+        } else {
+            html += '<div style="font-size:0.68rem;color:#888;margin-top:6px;">' + nobles.length + ' noble' + (nobles.length > 1 ? 's' : '') + ' available for assignment.</div>';
+        }
+
+        html += '</div>';
+        return html;
+    }
+
+    // Handle issuing a directive — show noble selection
+    function _kingIssueDirectiveUI(directiveId, kingdomId) {
+        var kingdom = null;
+        try { kingdom = Engine.findKingdom(kingdomId); } catch (e) {}
+        if (!kingdom) { toast('Kingdom not found.', 'error'); return; }
+
+        // Find eligible nobles
+        var nobles = [];
+        try {
+            var allPeople = Engine.getPeople ? Engine.getPeople() : [];
+            for (var _ni = 0; _ni < allPeople.length; _ni++) {
+                var _np = allPeople[_ni];
+                if (!_np.alive || !_np.socialRank) continue;
+                var _npRank = 0;
+                if (typeof _np.socialRank === 'object') _npRank = _np.socialRank[kingdom.id] || 0;
+                else if (typeof _np.socialRank === 'number') _npRank = _np.socialRank;
+                if (_npRank >= 4) {
+                    // Check if already on a directive
+                    var _busy = false;
+                    var issued = kingdom._kingDirectives || [];
+                    for (var _bi = 0; _bi < issued.length; _bi++) {
+                        if (issued[_bi].assigneeId === _np.id) { _busy = true; break; }
+                    }
+                    nobles.push({ person: _np, rank: _npRank, busy: _busy });
+                }
+            }
+        } catch (e) {}
+
+        nobles.sort(function(a, b) { return b.rank - a.rank; });
+
+        // Build the directive info
+        var directives = {
+            supply_warfront: { icon: '⚔️', title: 'Supply the War Effort', days: 30, reward: 'Military supplies delivered' },
+            recruit_soldiers: { icon: '🛡️', title: 'Recruit Soldiers', days: 20, reward: 'New troops recruited' },
+            fortify_border: { icon: '🏰', title: 'Fortify Border Towns', days: 25, reward: 'Defenses strengthened' },
+            scout_enemy: { icon: '🔭', title: 'Scout Enemy Territory', days: 15, reward: 'Intelligence gathered' },
+            plague_response: { icon: '🏥', title: 'Combat the Plague', days: 20, reward: 'Medical aid delivered' },
+            quarantine_towns: { icon: '🚧', title: 'Enforce Quarantine', days: 15, reward: 'Quarantine enforced' },
+            food_relief: { icon: '🌾', title: 'Emergency Food Relief', days: 15, reward: 'Famine averted' },
+            quell_unrest: { icon: '🕊️', title: 'Quell Unrest', days: 20, reward: 'Happiness +10 in target towns' },
+            distribute_gold: { icon: '💰', title: 'Distribute Royal Aid', days: 10, reward: 'Happiness boost, costs 500g' },
+            collect_taxes: { icon: '💰', title: 'Special Tax Collection', days: 20, reward: 'Extra revenue collected' },
+            trade_expedition: { icon: '🐪', title: 'Royal Trade Expedition', days: 30, reward: 'Trade profits for treasury' },
+            build_roads: { icon: '🛤️', title: 'Improve Roads', days: 25, reward: 'Faster trade routes' },
+            build_buildings: { icon: '🏗️', title: 'Kingdom Construction', days: 30, reward: 'New buildings constructed' },
+            diplomatic_mission: { icon: '📜', title: 'Diplomatic Mission', days: 20, reward: 'Improved foreign relations' },
+            trade_agreement: { icon: '🤝', title: 'Negotiate Trade Agreement', days: 15, reward: 'Trade benefits' },
+            suppress_smuggling: { icon: '🔍', title: 'Suppress Smuggling Ring', days: 20, reward: 'Crime reduced, contraband seized' },
+            capture_criminal: { icon: '🎯', title: 'Capture Wanted Criminal', days: 15, reward: 'Criminal captured, justice served' }
+        };
+
+        var dir = directives[directiveId] || { icon: '📜', title: directiveId, days: 20, reward: 'Task completed' };
+
+        var html = '<div style="padding:8px;">';
+        html += '<div style="text-align:center;margin-bottom:12px;">';
+        html += '<div style="font-size:1.2em;">' + dir.icon + '</div>';
+        html += '<div style="font-size:0.9rem;color:#d4a843;font-weight:bold;">' + dir.title + '</div>';
+        html += '<div style="font-size:0.72rem;color:#aaa;">Duration: ' + dir.days + ' days | Outcome: ' + dir.reward + '</div>';
+        html += '</div>';
+
+        html += '<div style="font-size:0.8rem;color:#ddd;margin-bottom:8px;">Select a noble to carry out this directive:</div>';
+
+        if (nobles.length === 0) {
+            html += '<div style="color:#c44e52;font-size:0.78rem;">No eligible nobles found.</div>';
+        } else {
+            html += '<div style="max-height:250px;overflow-y:auto;">';
+            for (var _ni2 = 0; _ni2 < nobles.length; _ni2++) {
+                var _nb = nobles[_ni2];
+                var _nbP = _nb.person;
+                var _nbRankName = _nb.rank >= 6 ? 'Royal Advisor' : _nb.rank >= 5 ? 'Lord' : 'Minor Noble';
+                var _nbTown = _nbP.townId ? Engine.findTown(_nbP.townId) : null;
+                var _nbRel = Player.getRelationship ? Player.getRelationship(_nbP.id) : { level: 0 };
+                var _nbRelLvl = _nbRel.level || 0;
+                var _relColor = _nbRelLvl >= 60 ? '#55a868' : _nbRelLvl >= 30 ? '#ccb974' : '#c44e52';
+                var _disabled = _nb.busy;
+
+                html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 6px;margin-bottom:3px;background:rgba(0,0,0,0.15);border-radius:4px;' + (_disabled ? 'opacity:0.5;' : '') + '">';
+                html += '<div>';
+                html += '<div style="font-size:0.78rem;color:#ddd;">' + (_nbP.firstName || '') + ' ' + (_nbP.lastName || '') + ' <span style="font-size:0.65rem;color:#888;">' + _nbRankName + '</span></div>';
+                html += '<div style="font-size:0.65rem;color:#888;">' + (_nbTown ? _nbTown.name : '?') + ' | Rel: <span style="color:' + _relColor + ';">' + Math.floor(_nbRelLvl) + '</span></div>';
+                html += '</div>';
+                if (_disabled) {
+                    html += '<span style="font-size:0.65rem;color:#e67e22;">Already assigned</span>';
+                } else {
+                    html += '<button class="btn-medieval" data-action="kingConfirmDirective" data-id="' + directiveId + '" data-kingdom="' + kingdom.id + '" data-val="' + _nbP.id + '" style="font-size:0.65rem;padding:3px 8px;">📜 Assign</button>';
+                }
+                html += '</div>';
+            }
+            html += '</div>';
+        }
+
+        html += '</div>';
+        openModal(dir.icon + ' Issue Directive', html, '<button class="btn-medieval" data-action="openKingPanel" data-id="nobility">Cancel</button>');
+    }
+
+    // Confirm and issue the directive
+    function _kingConfirmDirective(directiveId, kingdomId, nobleId) {
+        var kingdom = null;
+        try { kingdom = Engine.findKingdom(kingdomId); } catch (e) {}
+        if (!kingdom) { toast('Kingdom not found.', 'error'); return; }
+        var noble = null;
+        try { noble = Engine.findPerson(nobleId); } catch (e) {}
+        if (!noble) { toast('Noble not found.', 'error'); return; }
+
+        var day = 0;
+        try { day = Engine.getDay(); } catch (e) {}
+
+        var dirInfo = {
+            supply_warfront: { icon: '⚔️', title: 'Supply the War Effort', days: 30 },
+            recruit_soldiers: { icon: '🛡️', title: 'Recruit Soldiers', days: 20 },
+            fortify_border: { icon: '🏰', title: 'Fortify Border Towns', days: 25 },
+            scout_enemy: { icon: '🔭', title: 'Scout Enemy Territory', days: 15 },
+            plague_response: { icon: '🏥', title: 'Combat the Plague', days: 20 },
+            quarantine_towns: { icon: '🚧', title: 'Enforce Quarantine', days: 15 },
+            food_relief: { icon: '🌾', title: 'Emergency Food Relief', days: 15 },
+            quell_unrest: { icon: '🕊️', title: 'Quell Unrest', days: 20 },
+            distribute_gold: { icon: '💰', title: 'Distribute Royal Aid', days: 10 },
+            collect_taxes: { icon: '💰', title: 'Special Tax Collection', days: 20 },
+            trade_expedition: { icon: '🐪', title: 'Royal Trade Expedition', days: 30 },
+            build_roads: { icon: '🛤️', title: 'Improve Roads', days: 25 },
+            build_buildings: { icon: '🏗️', title: 'Kingdom Construction', days: 30 },
+            diplomatic_mission: { icon: '📜', title: 'Diplomatic Mission', days: 20 },
+            trade_agreement: { icon: '🤝', title: 'Negotiate Trade Agreement', days: 15 },
+            suppress_smuggling: { icon: '🔍', title: 'Suppress Smuggling Ring', days: 20 },
+            capture_criminal: { icon: '🎯', title: 'Capture Wanted Criminal', days: 15 }
+        };
+        var dir = dirInfo[directiveId] || { icon: '📜', title: directiveId, days: 20 };
+
+        if (!kingdom._kingDirectives) kingdom._kingDirectives = [];
+        kingdom._kingDirectives.push({
+            id: directiveId + '_' + day,
+            directiveType: directiveId,
+            icon: dir.icon,
+            title: dir.title,
+            assigneeId: nobleId,
+            issuedDay: day,
+            deadlineDay: day + dir.days,
+            progress: 0,
+            status: 'active'
+        });
+
+        // Affect noble relationship (slight resentment from orders, mitigated by high relationship)
+        if (Player.modifyRelationship) {
+            var relChange = -2; // slight cost of commanding
+            Player.modifyRelationship(nobleId, relChange);
+        }
+
+        var nobleName = noble.firstName + ' ' + noble.lastName;
+        Engine.logEvent('📜 ' + (Player.state.sex === 'F' ? 'Queen' : 'King') + ' ' + Player.state.fullName + ' has ordered ' + nobleName + ' to ' + dir.title.toLowerCase() + '.');
+        toast('📜 ' + nobleName + ' has been assigned: ' + dir.title, 'success');
+        openKingPanel('nobility');
+    }
+
     function _kingNobilityTab(kingdom, ks) {
         var html = '';
         var p = Player.state;
@@ -495,14 +797,8 @@
             }
         } catch (e) { /* ignore */ }
 
-        // ── ROYAL DIRECTIVES ──
-        try {
-            if (typeof _buildRoyalDirectivesSection === 'function') {
-                html += _buildRoyalDirectivesSection(citizenKingdomId, day);
-            } else if (typeof UI._buildRoyalDirectivesSection === 'function') {
-                html += UI._buildRoyalDirectivesSection(citizenKingdomId, day);
-            }
-        } catch (e) { /* ignore */ }
+        // ── ASSIGN ROYAL DIRECTIVES ──
+        html += _kingAssignDirectivesSection(kingdom);
 
         // ── COUNCIL VOTES ──
         var _activeVotes = [];
@@ -683,5 +979,7 @@
     UI.registerAction('kingElectionAbstain', function(_t, d) { Engine._resolvePendingElection(Engine.findKingdom(d.kingdom), null); UI.closeModal(); UI.toast('You abstained from voting.', 'warning'); });
     UI.registerAction('_confirmKingFlee', function() { _confirmKingFlee(); });
     UI.registerAction('_resolveRevolt', function(_t, d) { _resolveRevolt(d.id, d.val); });
+    UI.registerAction('kingIssueDirective', function(_t, d) { _kingIssueDirectiveUI(d.id, d.kingdom); });
+    UI.registerAction('kingConfirmDirective', function(_t, d) { _kingConfirmDirective(d.id, d.kingdom, d.val); });
 
 })(window.UI);

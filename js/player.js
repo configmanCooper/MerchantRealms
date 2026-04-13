@@ -6470,6 +6470,102 @@
     // ========================================================
     // §11.5C KING MODE TICK (called daily when player is king)
     // ========================================================
+
+    function _applyDirectiveEffects(kingdom, directive) {
+        var rng = Engine.getRng();
+        var nobleName = '';
+        try { var _an = Engine.findPerson(directive.assigneeId); if (_an) nobleName = _an.firstName + ' ' + _an.lastName; } catch (e) {}
+
+        switch (directive.directiveType) {
+            case 'supply_warfront':
+                kingdom.militaryStrength = Math.min(100, (kingdom.militaryStrength || 50) + rng.intBetween(5, 12));
+                Engine.logEvent('📜 ' + nobleName + ' has delivered military supplies to the front lines. Military strength increased.');
+                break;
+            case 'recruit_soldiers':
+                kingdom.militaryStrength = Math.min(100, (kingdom.militaryStrength || 50) + rng.intBetween(3, 8));
+                Engine.logEvent('📜 ' + nobleName + ' has recruited new soldiers for the army.');
+                break;
+            case 'fortify_border':
+                kingdom.militaryStrength = Math.min(100, (kingdom.militaryStrength || 50) + rng.intBetween(4, 10));
+                Engine.logEvent('📜 ' + nobleName + ' has fortified border defenses.');
+                break;
+            case 'scout_enemy':
+                Engine.logEvent('📜 ' + nobleName + ' has returned with intelligence on enemy movements.');
+                break;
+            case 'plague_response':
+                // Reduce plague in random town
+                try {
+                    var _pTowns = Engine.getTowns().filter(function(t) { return t.kingdomId === kingdom.id && t.plagueActive; });
+                    if (_pTowns.length > 0) {
+                        var _pt = _pTowns[rng.intBetween(0, _pTowns.length - 1)];
+                        _pt.plagueActive = false;
+                        Engine.logEvent('📜 ' + nobleName + ' delivered medical aid to ' + _pt.name + '. The plague has been contained!');
+                    } else {
+                        Engine.logEvent('📜 ' + nobleName + ' delivered medical supplies across the kingdom.');
+                    }
+                } catch (e) { Engine.logEvent('📜 ' + nobleName + ' completed medical directive.'); }
+                break;
+            case 'quarantine_towns':
+                Engine.logEvent('📜 ' + nobleName + ' has enforced quarantine measures. Plague spread slowed.');
+                break;
+            case 'food_relief':
+                kingdom.happiness = Math.min(100, (kingdom.happiness || 50) + rng.intBetween(3, 8));
+                Engine.logEvent('📜 ' + nobleName + ' distributed food to starving towns. Happiness improved.');
+                break;
+            case 'quell_unrest':
+                kingdom.happiness = Math.min(100, (kingdom.happiness || 50) + rng.intBetween(5, 12));
+                kingdom.unrest = Math.max(0, (kingdom.unrest || 0) - rng.intBetween(5, 15));
+                Engine.logEvent('📜 ' + nobleName + ' has restored order. Happiness increased, unrest decreased.');
+                break;
+            case 'distribute_gold':
+                var _cost = Math.min(kingdom.gold || 0, 500);
+                kingdom.gold = Math.max(0, (kingdom.gold || 0) - _cost);
+                kingdom.happiness = Math.min(100, (kingdom.happiness || 50) + rng.intBetween(5, 10));
+                Engine.logEvent('📜 ' + nobleName + ' distributed ' + _cost + 'g of royal aid. The people are grateful.');
+                break;
+            case 'collect_taxes':
+                var _taxRevenue = rng.intBetween(500, 1500);
+                kingdom.gold = (kingdom.gold || 0) + _taxRevenue;
+                kingdom.happiness = Math.max(0, (kingdom.happiness || 50) - rng.intBetween(2, 5));
+                Engine.logEvent('📜 ' + nobleName + ' collected ' + _taxRevenue + 'g in special taxes. Treasury boosted, but people are displeased.');
+                break;
+            case 'trade_expedition':
+                var _tradeProfit = rng.intBetween(300, 1200);
+                kingdom.gold = (kingdom.gold || 0) + _tradeProfit;
+                Engine.logEvent('📜 ' + nobleName + '\'s trade expedition returned with ' + _tradeProfit + 'g profit for the crown.');
+                break;
+            case 'build_roads':
+                kingdom.prosperity = Math.min(100, (kingdom.prosperity || 50) + rng.intBetween(2, 5));
+                Engine.logEvent('📜 ' + nobleName + ' has improved road infrastructure. Trade flows more freely.');
+                break;
+            case 'build_buildings':
+                kingdom.prosperity = Math.min(100, (kingdom.prosperity || 50) + rng.intBetween(3, 7));
+                Engine.logEvent('📜 ' + nobleName + ' oversaw construction of new buildings in the kingdom.');
+                break;
+            case 'diplomatic_mission':
+                Engine.logEvent('📜 ' + nobleName + ' completed a diplomatic mission to a neighboring kingdom.');
+                break;
+            case 'trade_agreement':
+                kingdom.prosperity = Math.min(100, (kingdom.prosperity || 50) + rng.intBetween(2, 5));
+                Engine.logEvent('📜 ' + nobleName + ' negotiated favorable trade terms.');
+                break;
+            case 'suppress_smuggling':
+                kingdom.unrest = Math.max(0, (kingdom.unrest || 0) - rng.intBetween(3, 8));
+                Engine.logEvent('📜 ' + nobleName + ' broke up a smuggling ring. Order restored.');
+                break;
+            case 'capture_criminal':
+                Engine.logEvent('📜 ' + nobleName + ' captured a wanted criminal. Justice is served!');
+                break;
+            default:
+                Engine.logEvent('📜 ' + nobleName + ' completed a royal directive: ' + (directive.title || 'unknown'));
+                break;
+        }
+
+        if (typeof UI !== 'undefined' && UI.toast) {
+            UI.toast('📜 ' + nobleName + ' completed: ' + (directive.title || 'Royal Directive'), 'success');
+        }
+    }
+
     function tickKingMode() {
         if (!player.isKing || !player.kingState) return;
         var kingdom = Engine.findKingdom(player.kingState.kingdomId);
@@ -6510,6 +6606,34 @@
         else if (kHappiness < 45) revoltRisk = 30;
         else if (kHappiness < 60) revoltRisk = 10;
         player.kingState.revoltRisk = revoltRisk;
+
+        // Process king-issued directives
+        if (kingdom._kingDirectives && kingdom._kingDirectives.length > 0) {
+            var day = Engine.getDay();
+            var rng2 = Engine.getRng();
+            for (var _kdi = kingdom._kingDirectives.length - 1; _kdi >= 0; _kdi--) {
+                var _kd = kingdom._kingDirectives[_kdi];
+                if (!_kd || _kd.status !== 'active') continue;
+                // Progress: ~4-6% per day depending on noble's rank/ability
+                var _assignee = Engine.findPerson(_kd.assigneeId);
+                var _abilityBonus = 1.0;
+                if (_assignee) {
+                    var _aRank = (_assignee.socialRank && _assignee.socialRank[kingdom.id]) || 4;
+                    _abilityBonus = 0.8 + _aRank * 0.1; // rank 4=1.2, rank 5=1.3, rank 6=1.4
+                }
+                var progressPerDay = (100 / ((_kd.deadlineDay - _kd.issuedDay) || 20)) * _abilityBonus;
+                _kd.progress = Math.min(100, (_kd.progress || 0) + progressPerDay + (rng2.random() - 0.3));
+
+                // Check completion
+                if (_kd.progress >= 100 || day >= _kd.deadlineDay) {
+                    _kd.status = 'completed';
+                    _kd.completedDay = day;
+                    // Apply directive effects
+                    _applyDirectiveEffects(kingdom, _kd);
+                    kingdom._kingDirectives.splice(_kdi, 1);
+                }
+            }
+        }
 
         // Player stays at capital (enforce)
         if (!player.kingState.foreignVisitTarget) {
