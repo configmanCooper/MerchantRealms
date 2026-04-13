@@ -410,9 +410,9 @@ function showTownDetail(town) {
         } catch(e) { /* no-op */ }
 
         var _anyoneSick = _playerSick || _sickCompanions.length > 0;
-        if (_medFacilities.hasHospital || _medFacilities.hasClinic) {
-            var _medIcon = _medFacilities.hasHospital ? '🏥' : '⚕️';
-            var _medLabel = _medFacilities.hasHospital ? 'Visit Hospital' : 'Visit Clinic';
+        if (_medFacilities.hasHospital || _medFacilities.hasClinic || _anyoneSick) {
+            var _medIcon = _medFacilities.hasHospital ? '🏥' : _medFacilities.hasClinic ? '⚕️' : '🩹';
+            var _medLabel = _medFacilities.hasHospital ? 'Visit Hospital' : _medFacilities.hasClinic ? 'Visit Clinic' : 'Health Status';
             var _medStyle = _anyoneSick
                 ? 'animation:pulse 2s infinite;'
                 : '';

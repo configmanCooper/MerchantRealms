@@ -458,8 +458,6 @@
                 if (bt === 'clinic') hasClinic = true;
             }
         }
-        // Cities/capitals always have implicit hospital
-        if (town.category === 'city' || town.category === 'capital_city') hasHospital = true;
         return { hasHospital: hasHospital, hasClinic: hasClinic };
     }
 
