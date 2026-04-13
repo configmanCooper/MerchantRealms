@@ -34367,16 +34367,15 @@
     }
 
     function _autoWorkHandleVitals(aw) {
-        // Auto-rest if energy too low (< 30)
-        if (player.energy < 30) {
+        // Auto-rest if energy drops below 50, rest until 100
+        if (player.energy < 50) {
             aw.currentAction = 'Resting...';
             var restOpts = Player.getAvailableRestOptions();
             if (restOpts && restOpts.length > 0) {
-                // Sort by energy rate descending, prefer free options
                 restOpts.sort(function(a, b) { return (b.energyPerTick || 0) - (a.energyPerTick || 0); });
                 var best = restOpts[0];
-                var ticksNeeded = Math.ceil((70 - (player.energy || 0)) / (best.energyPerTick || 1));
-                ticksNeeded = Math.max(2, Math.min(ticksNeeded, 20));
+                var ticksNeeded = Math.ceil((100 - (player.energy || 0)) / (best.energyPerTick || 1));
+                ticksNeeded = Math.max(2, Math.min(ticksNeeded, 40));
                 Player.restForTicks(best.id, ticksNeeded);
             }
             return false; // vitals handled, don't work this tick

@@ -10546,7 +10546,7 @@ window.UI = (function () {
                 html += '</div>';
                 html += '<div style="display:flex;gap:4px;">';
                 html += '<button class="btn-medieval btn-work" data-action="executeWork" data-id="' + i + '">Work</button>';
-                html += '<button class="btn-medieval" data-action="startAutoWorkUI" data-id="' + i + '" style="font-size:0.7rem;padding:4px 8px;background:rgba(100,180,100,0.2);border-color:rgba(100,180,100,0.4);" title="Repeat this job automatically">🔄 Auto</button>';
+                html += '<button class="btn-medieval" data-action="startAutoWorkUI" data-id="' + i + '" style="font-size:0.75rem;padding:4px 10px;background:rgba(80,160,80,0.35);border-color:rgba(120,200,120,0.5);color:#c8e6c9;text-shadow:1px 1px 2px rgba(0,0,0,0.7);" title="Repeat this job automatically">&#x27F3; Auto</button>';
                 html += '</div>';
                 html += '</div>';
             }
