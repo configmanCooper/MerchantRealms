@@ -7300,8 +7300,22 @@
         if (kingdom.gold < totalCost) return { success: false, message: 'Need ' + totalCost + 'g to recruit ' + count + ' soldiers.' };
         kingdom.gold -= totalCost;
         kingdom.soldiers = (kingdom.soldiers || 0) + count;
-        Engine.logEvent('🎖️ Recruited ' + count + ' soldiers for ' + totalCost + 'g.');
-        return { success: true, message: 'Recruited ' + count + ' soldiers! Cost: ' + totalCost + 'g.' };
+
+        // Add recruited soldiers to capital garrison
+        var capTown = null;
+        var kTowns = Engine.getTowns();
+        for (var _sti = 0; _sti < kTowns.length; _sti++) {
+            if (kTowns[_sti].kingdomId === kingdom.id && kTowns[_sti].isCapital) { capTown = kTowns[_sti]; break; }
+        }
+        if (!capTown) {
+            for (var _sti2 = 0; _sti2 < kTowns.length; _sti2++) {
+                if (kTowns[_sti2].kingdomId === kingdom.id) { capTown = kTowns[_sti2]; break; }
+            }
+        }
+        if (capTown) capTown.garrison = (capTown.garrison || 0) + count;
+
+        Engine.logEvent('🎖️ Recruited ' + count + ' soldiers at ' + (capTown ? capTown.name : 'capital') + ' for ' + totalCost + 'g.');
+        return { success: true, message: 'Recruited ' + count + ' soldiers at ' + (capTown ? capTown.name : 'capital') + '! Cost: ' + totalCost + 'g.' };
     }
 
     function kingDischargeSoldiers(count) {
