@@ -73,6 +73,7 @@
     var tickKingTravel = function(k) { return Engine.tickKingTravel(k); };
     var tickPendingKingDecisions = function(k) { return Engine.tickPendingKingDecisions(k); };
     var tickKingdomFeasts = function(k) { return Engine.tickKingdomFeasts(k); };
+    var tickKingdomCourt = function(k) { return Engine.tickKingdomCourt(k); };
     var tickNobleConspiracies = function(k) { return Engine.tickNobleConspiracies(k); };
     var tickKingUnrestResponse = function(k) { return Engine.tickKingUnrestResponse(k); };
     var tickNobleIncome = function() { return Engine.tickNobleIncome(); };
@@ -919,6 +920,11 @@
             // Player-king schedules feasts manually
             if (!_playerIsKingHere) {
                 tickKingdomFeasts(k);
+            }
+
+            // ---- AI Court system (daily check, runs every 30-60 days) ----
+            if (!_playerIsKingHere) {
+                tickKingdomCourt(k);
             }
 
             // ---- Noble conspiracies & king unrest response (monthly) ----

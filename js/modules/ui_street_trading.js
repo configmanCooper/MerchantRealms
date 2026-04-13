@@ -571,6 +571,30 @@ function openNobilityDialog() {
     }
     html += '</div></div>';
 
+    // ── DISCOVERED SECRETS (H2 fix) ──
+    var _secrets = Player.getState ? Player.getState()._discoveredSecrets : null;
+    if (_secrets && _secrets.length > 0) {
+        html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(201,168,76,0.15);border-radius:8px;padding:10px;margin-bottom:10px;">';
+        html += '<div style="font-size:0.85rem;color:var(--gold);margin-bottom:6px;">📜 Discovered Secrets (' + _secrets.length + ')</div>';
+        var _shown = 0;
+        for (var _si = _secrets.length - 1; _si >= 0 && _shown < 5; _si--) {
+            var _sec = _secrets[_si];
+            var _secType = (_sec.type || 'unknown').replace(/_/g, ' ');
+            var _secColor = _sec.used ? '#666' : '#c9a84c';
+            var _secIcon = _sec.used ? '✓' : '🔗';
+            html += '<div style="font-size:0.78rem;color:' + _secColor + ';padding:2px 0;">';
+            html += _secIcon + ' <b>' + escapeHtml(_sec.nobleName || 'Unknown') + '</b> — ' + escapeHtml(_secType);
+            if (_sec.used) html += ' <span style="color:#555;">(used)</span>';
+            html += '</div>';
+            _shown++;
+        }
+        if (_secrets.length > 5) {
+            html += '<div style="font-size:0.7rem;color:#888;">...and ' + (_secrets.length - 5) + ' more</div>';
+        }
+        html += '<div style="font-size:0.65rem;color:#888;margin-top:4px;">Exposed secrets grant blackmail leverage over nobles, boosting scheme success rates.</div>';
+        html += '</div>';
+    }
+
     // ── ALERTS SECTION ──
     var alerts = [];
     if (commission && commission.status === 'pending') {

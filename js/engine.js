@@ -8477,7 +8477,10 @@
             for (var ci = 0; ci < kMinorNobles.length; ci++) {
                 var mn = kMinorNobles[ci];
                 var pers = mn.personality || {};
-                var score = (pers.ambition || 50) * 0.5 + (mn.gold || 0) * 0.01 + (pers.intelligence || 50) * 0.3;
+                // Scandalized or low-reputation nobles are not promoted (C3 fix)
+                var _mnRep = (mn.reputation && mn.reputation[kId]) != null ? mn.reputation[kId] : 50;
+                if (mn._scandalized || _mnRep < 25) continue;
+                var score = (pers.ambition || 50) * 0.5 + (mn.gold || 0) * 0.01 + (pers.intelligence || 50) * 0.3 + _mnRep * 0.2;
                 if (mn.age >= 30 && score > bestScore) {
                     bestScore = score;
                     bestCandidate = mn;
@@ -8615,11 +8618,50 @@
                 logEvent('👑 ' + k.name + ' has elevated ' + elevated.firstName + ' ' + elevated.lastName + ' to nobility to fill vacant positions.');
             }
         }
-    }
 
-    // ========================================================
-    // §N-9a KING FAMILY AI — King remarriage + RA special favors
-    // ========================================================
+        // ── Noble Demotion AI — king demotes scandalized or persistently disloyal nobles (C3/M3 fix) ──
+        var allNoblesForDemotion = kLords.concat(kMinorNobles);
+        for (var dmi = 0; dmi < allNoblesForDemotion.length; dmi++) {
+            var dNoble = allNoblesForDemotion[dmi];
+            if (!dNoble || !dNoble.alive) continue;
+            if (dNoble.id === k.king) continue; // can't demote the king
+            var dRank = (dNoble.socialRank && dNoble.socialRank[kId]) || 0;
+            if (dRank < 4) continue;
+            var dRep = (dNoble.reputation && dNoble.reputation[kId]) != null ? dNoble.reputation[kId] : 50;
+            var dLoyalty = dNoble.kingLoyalty != null ? dNoble.kingLoyalty : 50;
+
+            // Scandalized noble with very low reputation: 25% chance/month demotion
+            var shouldDemote = false;
+            var demoteReason = '';
+            if (dNoble._scandalized && dRep < 20 && rng.chance(0.25)) {
+                shouldDemote = true;
+                demoteReason = 'public scandal';
+            }
+            // Persistently disloyal: loyalty < 20 for king's patience
+            else if (dLoyalty < 20 && dRep < 30 && rng.chance(0.15)) {
+                shouldDemote = true;
+                demoteReason = 'disloyalty to the crown';
+            }
+            // Very low reputation without scandal: 10% chance
+            else if (dRep < 15 && rng.chance(0.10)) {
+                shouldDemote = true;
+                demoteReason = 'loss of standing at court';
+            }
+
+            if (shouldDemote) {
+                var newRank = Math.max(3, dRank - 1);
+                dNoble.socialRank[kId] = newRank;
+                dNoble._scandalized = false; // scandal consumed
+                dNoble.kingLoyalty = Math.min(100, (dNoble.kingLoyalty || 0) + 10); // humbled
+                var _isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId;
+                logEvent('📉 ' + dNoble.firstName + ' ' + (dNoble.lastName || '') + ' has been stripped of noble rank in ' + k.name + ' for ' + demoteReason + '.', {
+                    type: 'noble_demotion', kingdomId: kId,
+                    cause: demoteReason,
+                    effects: ['Noble rank reduced', 'Court influence diminished']
+                }, _isPlayerK ? 'my_kingdom' : 'foreign_kingdoms');
+            }
+        }
+    }
     function tickKingFamilyAI(k) {
         if (!k || !k.king) return;
         var rng = world.rng;
@@ -10017,6 +10059,20 @@
         var rng = world.rng;
         var lean = 'yes'; // default: lean with king's proposal
 
+        // Check if this noble's vote has been manipulated by the player
+        if (noble._manipulatedVotes) {
+            var day = world.day;
+            var manipGeneral = noble._manipulatedVotes['general'];
+            var manipSpecific = noble._manipulatedVotes[vote.type];
+            if ((manipSpecific && manipSpecific > day) || (manipGeneral && manipGeneral > day)) {
+                // Manipulated nobles vote YES (supporting player's agenda)
+                // 85% reliable — 15% chance they vote their conscience anyway
+                if (!rng.chance(0.15)) {
+                    return 'yes';
+                }
+            }
+        }
+
         // Loyalty to king: loyal nobles follow the king
         if (noble.kingLoyalty != null && noble.kingLoyalty > 60) {
             lean = 'yes';
@@ -10042,6 +10098,22 @@
                 lean = 'yes'; // peace/unbanning helps trade
             } else if (vote.type === 'declare_war' || vote.type === 'ban_goods') {
                 lean = 'no'; // war/banning hurts finances
+            }
+        }
+
+        // Scandalized nobles are demoralized and more likely to oppose the king
+        if (noble._scandalized) {
+            if (rng.chance(0.60)) lean = 'no';
+        }
+
+        // Noble-to-noble relationships affect voting (H1 fix)
+        // If the vote was proposed by a specific noble, check relationship
+        if (vote._proposerId && noble._nobleRelationships) {
+            var _relToProposer = noble._nobleRelationships[vote._proposerId] || 0;
+            if (_relToProposer < -50 && rng.chance(0.40)) {
+                lean = 'no'; // hates the proposer — opposes their motion
+            } else if (_relToProposer > 50 && rng.chance(0.30)) {
+                lean = 'yes'; // allies with proposer — supports their motion
             }
         }
 
@@ -10141,6 +10213,16 @@
                 for (var ri = 0; ri < vote.voters.length; ri++) {
                     var v = vote.voters[ri];
                     var w = weightMap[v.rank] || 1;
+                    // Scandalized or low-reputation nobles lose vote weight (C3 fix)
+                    var _vNoble = findPerson(v.id);
+                    if (_vNoble) {
+                        var _vRep = (_vNoble.reputation && _vNoble.reputation[kingdom.id]) != null ? _vNoble.reputation[kingdom.id] : 50;
+                        if (_vNoble._scandalized || _vRep < 20) {
+                            w = Math.max(1, Math.floor(w * 0.5)); // scandalized: half weight
+                        } else if (_vRep < 35) {
+                            w = Math.max(1, Math.floor(w * 0.75)); // low rep: 75% weight
+                        }
+                    }
                     if (v.vote === 'yes') { yesWeight += w; yesCount++; }
                     else if (v.vote === 'no') { noWeight += w; noCount++; }
                     // undecided = abstain, weight not counted in total
@@ -20286,6 +20368,103 @@
     }
 
     // ========================================================
+    // §19a-court AI COURT SYSTEM — NPC kings hold court (H3 fix)
+    // ========================================================
+
+    function tickKingdomCourt(k) {
+        if (!k || !k.king) return;
+        var rng = world.rng;
+        var kId = k.id;
+        var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId;
+        var category = isPlayerK ? 'my_kingdom' : 'foreign_kingdoms';
+
+        // Schedule first court session
+        if (k._nextCourtDay == null) {
+            k._nextCourtDay = world.day + rng.randInt(20, 40);
+        }
+
+        // Only proceed on court day
+        if (world.day < k._nextCourtDay) return;
+
+        var kingPerson = findPerson(k.king);
+        if (!kingPerson || !kingPerson.alive) return;
+        var kingName = kingPerson.firstName || 'The King';
+        var kPers = k.kingPersonality || kingPerson.personality || {};
+
+        // Hold court — generate and process petitions
+        var happinessBonus = 2;
+        var petitionsProcessed = 0;
+        var courtEvents = [];
+
+        // Generate 2-5 random petitions from nobles and citizens
+        var numPetitions = rng.randInt(2, 5);
+        var kNobles = world.people.filter(function(p) {
+            return p.alive && p.socialRank && p.socialRank[kId] >= 4 && p.socialRank[kId] <= 6;
+        });
+
+        for (var pi = 0; pi < numPetitions; pi++) {
+            var petitionTypes = ['tax_relief', 'military_funding', 'building_request', 'trade_dispute', 'noble_grievance', 'festival_request'];
+            var pType = rng.pick(petitionTypes);
+            var petitioner = kNobles.length > 0 && rng.chance(0.4) ? rng.pick(kNobles) : null;
+            var petName = petitioner ? (petitioner.firstName || 'A noble') : 'A citizen';
+
+            // King AI decides based on personality
+            var approved = false;
+            switch (pType) {
+                case 'tax_relief':
+                    approved = (kPers.warmth === 'compassionate' || kPers.warmth === 'kind') ? rng.chance(0.70) :
+                               (kPers.greed === 'generous') ? rng.chance(0.60) : rng.chance(0.30);
+                    if (approved) { k.happiness = Math.min(100, (k.happiness || 50) + 1); happinessBonus += 1; }
+                    break;
+                case 'military_funding':
+                    approved = (kPers.courage === 'brave') ? rng.chance(0.70) :
+                               (kPers.intelligence === 'brilliant') ? rng.chance(0.50) : rng.chance(0.40);
+                    break;
+                case 'building_request':
+                    approved = (kPers.intelligence === 'brilliant' || kPers.intelligence === 'clever') ? rng.chance(0.65) : rng.chance(0.40);
+                    break;
+                case 'trade_dispute':
+                    approved = rng.chance(0.50); // balanced by default
+                    break;
+                case 'noble_grievance':
+                    if (petitioner) {
+                        // King considers noble's loyalty and reputation
+                        var _petLoyalty = petitioner.kingLoyalty != null ? petitioner.kingLoyalty : 50;
+                        var _petRep = (petitioner.reputation && petitioner.reputation[kId]) != null ? petitioner.reputation[kId] : 50;
+                        approved = rng.chance(Math.min(0.80, (_petLoyalty + _petRep) / 200));
+                        if (approved) {
+                            petitioner.kingLoyalty = Math.min(100, (petitioner.kingLoyalty || 50) + 5);
+                        } else {
+                            petitioner.kingLoyalty = Math.max(0, (petitioner.kingLoyalty || 50) - 3);
+                        }
+                    } else {
+                        approved = rng.chance(0.40);
+                    }
+                    break;
+                case 'festival_request':
+                    approved = (kPers.warmth === 'compassionate' || kPers.warmth === 'kind') ? rng.chance(0.80) : rng.chance(0.35);
+                    if (approved) happinessBonus += 2;
+                    break;
+            }
+            petitionsProcessed++;
+            courtEvents.push(petName + ' petitioned for ' + pType.replace(/_/g, ' ') + ': ' + (approved ? 'GRANTED' : 'DENIED'));
+        }
+
+        // Apply happiness from holding court
+        k.happiness = Math.min(100, (k.happiness || 50) + happinessBonus);
+
+        // Log court session
+        logEvent('⚖️ ' + kingName + ' held court in ' + k.name + '. ' + petitionsProcessed + ' petitions heard. (+'  + happinessBonus + ' happiness)', {
+            type: 'court_session', kingdomId: kId,
+            cause: 'Regular court session',
+            effects: courtEvents.slice(0, 3) // show first 3 petitions
+        }, category);
+
+        // Schedule next court in 30-60 days
+        k._nextCourtDay = world.day + rng.randInt(30, 60);
+    }
+
+    // ========================================================
     // §19b ROYAL FEAST SYSTEM
     // ========================================================
 
@@ -20799,8 +20978,20 @@
         });
 
         if (dissidents.length >= 2 && rng.chance(0.20)) {
+            // Filter out dissidents who hate each other (H1 fix — hostile nobles refuse to co-conspire)
+            var compatiblePlotters = [dissidents[0]];
+            for (var cpi = 1; cpi < dissidents.length; cpi++) {
+                var canJoin = true;
+                for (var cpj = 0; cpj < compatiblePlotters.length; cpj++) {
+                    var _relBetween = (dissidents[cpi]._nobleRelationships && dissidents[cpi]._nobleRelationships[compatiblePlotters[cpj].id]) || 0;
+                    if (_relBetween < -60) { canJoin = false; break; } // too hostile
+                }
+                if (canJoin) compatiblePlotters.push(dissidents[cpi]);
+            }
+
+            if (compatiblePlotters.length >= 2) {
             // Form conspiracy
-            var plotterIds = dissidents.map(function(p) { return p.id; });
+            var plotterIds = compatiblePlotters.map(function(p) { return p.id; });
             var hasCoupLeader = dissidents.some(function(p) {
                 return p.personality && p.personality.ambition > 70;
             });
@@ -20817,6 +21008,7 @@
             logEvent('🤫 Whispers of a ' + plotType + ' plot spread among the discontented nobles of ' + k.name + '.', {
                 type: 'conspiracy_formed', kingdomId: kId
             }, category);
+            } // end compatiblePlotters >= 2
         }
     }
 
@@ -22065,6 +22257,7 @@
         tickKingTravel: tickKingTravel,
         tickPendingKingDecisions: tickPendingKingDecisions,
         tickKingdomFeasts: tickKingdomFeasts,
+        tickKingdomCourt: tickKingdomCourt,
         tickNobleConspiracies: tickNobleConspiracies,
         tickKingUnrestResponse: tickKingUnrestResponse,
         tickNobleIncome: tickNobleIncome,

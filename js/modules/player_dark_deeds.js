@@ -2844,6 +2844,25 @@
         }
         var successChance = Math.min(0.85, baseSuccess + influenceBonus);
 
+        // Find the king first — refund if not found (H4 fix)
+        var king = null;
+        var people = Engine.getPeople ? Engine.getPeople(noble.townId || town.id) : [];
+        if (people) {
+            for (var ki = 0; ki < people.length; ki++) {
+                if (people[ki].isKing) { king = people[ki]; break; }
+            }
+        }
+        if (!king) {
+            var kTowns = Engine.getWorld ? Engine.getWorld().towns.filter(function(t) { return t.kingdomId === kingdom.id; }) : [];
+            for (var kti = 0; kti < kTowns.length && !king; kti++) {
+                var kp = Engine.getPeople(kTowns[kti].id);
+                if (kp) for (var kpi = 0; kpi < kp.length; kpi++) { if (kp[kpi].isKing) { king = kp[kpi]; break; } }
+            }
+        }
+        if (!king) {
+            return { success: false, message: 'The kingdom has no king to undermine. Gold refunded.' };
+        }
+
         player.gold -= 500;
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.scheme || 4);
 
@@ -2858,22 +2877,6 @@
         }
 
         if (rng && rng.chance(successChance)) {
-            // Reduce noble's loyalty to king
-            var king = null;
-            var people = Engine.getPeople ? Engine.getPeople(noble.townId || town.id) : [];
-            if (people) {
-                for (var ki = 0; ki < people.length; ki++) {
-                    if (people[ki].isKing) { king = people[ki]; break; }
-                }
-            }
-            if (!king) {
-                // Find king from all kingdom towns
-                var kTowns = Engine.getWorld ? Engine.getWorld().towns.filter(function(t) { return t.kingdomId === kingdom.id; }) : [];
-                for (var kti = 0; kti < kTowns.length && !king; kti++) {
-                    var kp = Engine.getPeople(kTowns[kti].id);
-                    if (kp) for (var kpi = 0; kpi < kp.length; kpi++) { if (kp[kpi].isKing) { king = kp[kpi]; break; } }
-                }
-            }
             if (king) {
                 if (!noble._nobleRelationships) noble._nobleRelationships = {};
                 var loyaltyDrop = rng.randInt(15, 30);
@@ -2887,7 +2890,6 @@
                 Engine.logEvent('🏴 ' + noble.firstName + '\'s loyalty to the crown wavers.');
                 return { success: true, message: '🏴 ' + noble.firstName + ' is now more disillusioned with the king! Loyalty dropped by ' + loyaltyDrop + '. (' + Math.round(successChance * 100) + '% chance)' };
             }
-            return { success: false, message: 'Could not find the king to undermine.' };
         }
 
         recordCorruptAction('turn_noble_against_king', false);
@@ -3065,16 +3067,37 @@
             }
             if (noble.reputation === undefined) noble.reputation = {};
             noble.reputation[kingdom.id] = Math.max(0, (noble.reputation[kingdom.id] || 50) - rng.randInt(20, 35));
-            // Noble is humiliated — possible demotion tracked for later
             noble._scandalized = true;
             noble._scandalDay = Engine.getDay();
+
+            // Store discovered secrets for player use (H2 fix)
+            var secretTypes = ['embezzlement', 'affair', 'treason_letters', 'hidden_debts', 'forged_documents', 'secret_alliance', 'bribery', 'tax_evasion'];
+            var secretType = rng.pick(secretTypes);
+            if (!player._discoveredSecrets) player._discoveredSecrets = [];
+            player._discoveredSecrets.push({
+                nobleId: nobleId,
+                nobleName: noble.firstName + ' ' + (noble.lastName || ''),
+                type: secretType,
+                day: Engine.getDay(),
+                kingdomId: kingdom.id,
+                used: false
+            });
+            // Exposed secrets grant blackmail leverage automatically
+            if (!player.blackmailTargets) player.blackmailTargets = {};
+            if (!player.blackmailTargets[nobleId]) {
+                player.blackmailTargets[nobleId] = {
+                    type: secretType,
+                    day: Engine.getDay(),
+                    leverage: 'exposed_secrets'
+                };
+            }
 
             recordCorruptAction('expose_secrets', false);
             grantXP(30, 'Exposed noble secrets');
             player.notoriety += 10;
             _trackDnaTask('expose_noble');
             Engine.logEvent('💥 Scandalous revelations about ' + noble.firstName + ' ' + (noble.lastName || '') + ' rock the court of ' + kingdom.name + '!');
-            return { success: true, message: '💥 ' + noble.firstName + '\'s secrets are exposed! Reputation devastated, all nobles distance themselves. (' + Math.round(successChance * 100) + '% chance)' };
+            return { success: true, message: '💥 ' + noble.firstName + '\'s secrets exposed (' + secretType.replace(/_/g, ' ') + ')! Reputation devastated, all nobles distance themselves. You now have blackmail leverage. (' + Math.round(successChance * 100) + '% chance)' };
         }
 
         recordCorruptAction('expose_secrets', false);
