@@ -38,6 +38,48 @@
     // §19F  KINGDOM FINANCES & BANKRUPTCY
     // ========================================================
 
+    // ---- Kingdom Financial Ledger ----
+    // Records every income/expense transaction for reporting
+    var LEDGER_MAX = 500;
+    function recordKingdomTransaction(k, type, amount, description, category) {
+        if (!k || !amount) return;
+        if (!k._financialLedger) k._financialLedger = [];
+        k._financialLedger.push({
+            day: world ? world.day : 0,
+            type: type,           // 'income' or 'expense'
+            amount: Math.abs(amount),
+            category: category || 'other', // trade_tax, property_tax, income_tax, transport, stockpile_sale, soldier_upkeep, building_upkeep, employee_wages, procurement, war, construction, coronation, other
+            desc: description || ''
+        });
+        // Cap ledger size
+        if (k._financialLedger.length > LEDGER_MAX) {
+            k._financialLedger = k._financialLedger.slice(-LEDGER_MAX);
+        }
+    }
+
+    function getKingdomLedger(k, days) {
+        if (!k || !k._financialLedger) return [];
+        if (!days) return k._financialLedger;
+        var cutoff = (world ? world.day : 0) - days;
+        return k._financialLedger.filter(function(e) { return e.day >= cutoff; });
+    }
+
+    function getKingdomLedgerSummary(k, days) {
+        var entries = getKingdomLedger(k, days);
+        var income = {}, expenses = {}, totalIncome = 0, totalExpenses = 0;
+        for (var i = 0; i < entries.length; i++) {
+            var e = entries[i];
+            if (e.type === 'income') {
+                income[e.category] = (income[e.category] || 0) + e.amount;
+                totalIncome += e.amount;
+            } else {
+                expenses[e.category] = (expenses[e.category] || 0) + e.amount;
+                totalExpenses += e.amount;
+            }
+        }
+        return { income: income, expenses: expenses, totalIncome: totalIncome, totalExpenses: totalExpenses, net: totalIncome - totalExpenses, entries: entries.length };
+    }
+
     // ---- Trade Tax Collection (called from market transactions) ----
     function collectTradeTax(kingdomId, amount, goodId) {
         if (!world || !kingdomId || amount <= 0) return;
@@ -58,6 +100,7 @@
             k.gold += taxAmount;
             k.tradeTaxRevenue = (k.tradeTaxRevenue || 0) + taxAmount;
             k.taxRevenue = (k.taxRevenue || 0) + taxAmount;
+            recordKingdomTransaction(k, 'income', taxAmount, 'Trade tax' + (goodId ? ' (' + goodId + ')' : ''), 'trade_tax');
         }
 
         // Trade subsidy: pay bonus to merchants importing subsidized goods
@@ -68,6 +111,7 @@
                     if (k.gold >= bonus) {
                         k.gold -= bonus;
                         sub.unitsPaid = (sub.unitsPaid || 0) + 1;
+                        recordKingdomTransaction(k, 'expense', bonus, 'Trade subsidy (' + goodId + ')', 'subsidies');
                     }
                 }
             }
@@ -128,6 +172,7 @@
         k.gold += totalPropertyTax;
         k.propertyTaxRevenue = totalPropertyTax;
         k.taxRevenue = (k.taxRevenue || 0) + totalPropertyTax;
+        if (totalPropertyTax > 0) recordKingdomTransaction(k, 'income', totalPropertyTax, 'Monthly property taxes', 'property_tax');
         if (totalPropertyTax > 50) {
             logEvent(`📜 ${k.name} collects ${totalPropertyTax}g in property taxes.`, {
                 type: 'property_tax', kingdomId: k.id, cause: 'Monthly property tax collection', effects: []
@@ -171,6 +216,7 @@
         k.gold += totalIncomeTax;
         k.incomeTaxRevenue = totalIncomeTax;
         k.taxRevenue = (k.taxRevenue || 0) + totalIncomeTax;
+        if (totalIncomeTax > 0) recordKingdomTransaction(k, 'income', totalIncomeTax, 'Seasonal income taxes', 'income_tax');
         if (totalIncomeTax > 100) {
             logEvent(`📜 ${k.name} collects ${totalIncomeTax}g in seasonal income taxes.`, {
                 type: 'income_tax', kingdomId: k.id, cause: 'Seasonal income tax assessment', effects: []
@@ -189,12 +235,18 @@
 
         const soldiers = (_tickCache.soldiersByKingdom || {})[k.id] || [];
 
+        // ---- LEDGER-BASED FINANCIAL AWARENESS ----
+        // Use real financial ledger data for 90-day trend analysis
+        var _ledgerSum90 = getKingdomLedgerSummary(k, 90);
+        var _ledgerSum30 = getKingdomLedgerSummary(k, 30);
+        var _incomeGrowing = _ledgerSum30.totalIncome > 0 && _ledgerSum90.entries > 10 ? (_ledgerSum30.totalIncome * 3) > _ledgerSum90.totalIncome : false;
+        var _expenseGrowing = _ledgerSum30.totalExpenses > 0 && _ledgerSum90.entries > 10 ? (_ledgerSum30.totalExpenses * 3) > _ledgerSum90.totalExpenses : false;
+
         // ---- BUDGET SUSTAINABILITY REVIEW ----
-        // Kings periodically evaluate if their budget is sustainable and take corrective action
-        // Options: raise taxes, sell stockpile, encourage trade, cut expenses, or discharge soldiers
         var _bsFs = getKingdomFinancialState(k);
-        var _bsDailyIncome = (_bsFs.lastSeasonRevenue || 0) / 90;
-        var _bsDailyCost = soldiers.length * 1 + soldiers.length * CONFIG.KINGDOM_SOLDIER_DAILY_COST / 30 + _bsFs.monthlyBuildingCost / 30;
+        // Prefer ledger data if available, fall back to old revenue tracking
+        var _bsDailyIncome = _ledgerSum90.entries > 5 ? _ledgerSum90.totalIncome / 90 : (_bsFs.lastSeasonRevenue || 0) / 90;
+        var _bsDailyCost = _ledgerSum90.entries > 5 ? _ledgerSum90.totalExpenses / 90 : (soldiers.length * 1 + soldiers.length * CONFIG.KINGDOM_SOLDIER_DAILY_COST / 30 + _bsFs.monthlyBuildingCost / 30);
         var _bsBalance = _bsDailyIncome - _bsDailyCost;
         // If expenses exceed income, kings take corrective action
         if (_bsBalance < -2 && (soldiers.length > 5 || treasury < 3000)) {
@@ -282,6 +334,7 @@
                         }
                     }
                     if (_bsSoldItems > 0) {
+                        recordKingdomTransaction(k, 'income', _bsSoldGold, 'Sold ' + _bsSoldItems + ' surplus military items', 'stockpile_sale');
                         logEvent('🏰 ' + k.name + ' sells ' + _bsSoldItems + ' surplus military items for ' + _bsSoldGold + 'g.', {
                             type: 'stockpile_sale', cause: 'Budget sustainability', effects: ['Treasury bolstered']
                         });
@@ -475,6 +528,7 @@
                 }
                 if (levy > 0) {
                     k.gold += levy;
+                    recordKingdomTransaction(k, 'income', levy, 'Emergency wealth tax from citizens', 'emergency_tax');
                     boostKingdomHappiness(k, -10);
                     logEvent(`💰 ${k.name} imposes an emergency wealth tax! ${levy}g collected from citizens.`, {
                         type: 'emergency_tax', kingdomId: k.id, cause: 'Near-bankruptcy', effects: ['Happiness drops significantly (-10)', 'Citizens lose savings', 'Unrest may follow']
@@ -816,6 +870,57 @@
                 k.crimePunishments[crimeToAdjust.id] = newP;
             }
         }
+
+        // ---- PROACTIVE WEALTH BUILDING (ledger trend-aware, every 30 days) ----
+        // Smart/ambitious kings invest in the kingdom when treasury is healthy and income is growing
+        if (treasury > 3000 && _bsBalance > 0 && world.day % 30 === 0) {
+            // Personality-based investment willingness
+            var _investChance = 0.3;
+            if (p.ambition === 'ambitious') _investChance += 0.2;
+            if (p.intelligence === 'brilliant') _investChance += 0.15;
+            else if (p.intelligence === 'clever') _investChance += 0.08;
+            if (p.greed === 'generous') _investChance += 0.1;
+            else if (p.greed === 'greedy' || p.greed === 'corrupt') _investChance -= 0.15; // hoarders don't invest
+
+            if (rng.chance(_investChance)) {
+                // If income is growing (30-day income > 1/3 of 90-day), be more confident
+                var _investBudget = _incomeGrowing ? Math.floor(treasury * 0.15) : Math.floor(treasury * 0.08);
+                _investBudget = Math.min(_investBudget, Math.floor(_bsBalance * 30)); // don't invest more than 1 month's net
+
+                if (_investBudget > 200) {
+                    // Priority: build production buildings in towns that lack them
+                    var _invested = false;
+                    for (var _tid of k.territories) {
+                        var _invTown = findTown(_tid);
+                        if (!_invTown) continue;
+                        var _hasMarket = _invTown.buildings.some(function(b) { return b.type === 'market'; });
+                        if (!_hasMarket && _investBudget >= 400) {
+                            kingdomBuild(k, _invTown, 'market', rng);
+                            recordKingdomTransaction(k, 'expense', 400, 'Investment: market in ' + _invTown.name, 'construction');
+                            _invested = true;
+                            break;
+                        }
+                        var _hasBakery = _invTown.buildings.some(function(b) { return b.type === 'bakery'; });
+                        if (!_hasBakery && _investBudget >= 300 && _invTown.population > 80) {
+                            kingdomBuild(k, _invTown, 'bakery', rng);
+                            recordKingdomTransaction(k, 'expense', 300, 'Investment: bakery in ' + _invTown.name, 'construction');
+                            _invested = true;
+                            break;
+                        }
+                    }
+                    if (_invested) {
+                        logKingAction(k, '🏗️ Invested in kingdom infrastructure (trending: ' + (_incomeGrowing ? 'income growing' : 'stable') + ')');
+                    }
+                }
+            }
+        }
+
+        // If expenses are growing faster than income, proactive kings cut early
+        if (_expenseGrowing && !_incomeGrowing && treasury > 2000 && (p.intelligence === 'brilliant' || p.intelligence === 'clever')) {
+            if (world.day % 30 === 0 && rng.chance(0.4)) {
+                logKingAction(k, '📊 Financial review: expenses growing faster than income. Monitoring closely.');
+            }
+        }
     }
     function getKingdomFinancialState(k) {
         var soldierCount = ((_tickCache.soldiersByKingdom || {})[k.id] || []).length;
@@ -1034,6 +1139,11 @@
         const soldierCost = soldiers.length * CONFIG.KINGDOM_SOLDIER_DAILY_COST / 30;
         const buildingCost = totalBuildings * CONFIG.KINGDOM_BUILDING_DAILY_COST / 30;
         k.gold -= (soldierCost + buildingCost);
+        // Ledger: record daily costs as weekly aggregate to avoid flooding (every 7 days)
+        if (world.day % 7 === 0) {
+            if (soldierCost > 0) recordKingdomTransaction(k, 'expense', Math.round(soldierCost * 7), soldiers.length + ' soldiers weekly upkeep', 'soldier_upkeep');
+            if (buildingCost > 0) recordKingdomTransaction(k, 'expense', Math.round(buildingCost * 7), totalBuildings + ' buildings weekly upkeep', 'building_upkeep');
+        }
 
         // ---- Kingdom Transport Upkeep (seasonal) ----
         if (k.laws && k.laws.kingdomTransport) {
@@ -1043,9 +1153,9 @@
             }
             var transportCostPerTown = (CONFIG.KINGDOM_TRANSPORT ? CONFIG.KINGDOM_TRANSPORT.baseCostPerTown : 50);
             var transportCost = transportCostPerTown * numTowns;
-            // Deduct per season (every 90 days)
             if (world.day % 90 === 0) {
                 k.gold -= transportCost;
+                recordKingdomTransaction(k, 'expense', transportCost, 'Public transport upkeep (' + numTowns + ' towns)', 'transport');
                 // If kingdom can't afford, they cancel it
                 if (k.gold < 0) {
                     k.laws.kingdomTransport = false;
@@ -1069,6 +1179,7 @@
             var revenue = totalPassengers * rate;
             k.gold += revenue;
             k.transportRevenue = (k.transportRevenue || 0) + revenue;
+            if (revenue > 0) recordKingdomTransaction(k, 'income', revenue, 'Public transport fares (' + totalPassengers + ' passengers)', 'transport');
         }
 
         // ---- Periodic Financial Report (every 90 days, for auditing) ----
@@ -1527,6 +1638,9 @@
     Engine.tickKingdomFinances = tickKingdomFinances;
     Engine.tickRandomInspections = tickRandomInspections;
     Engine.getKingdomFinancialState = getKingdomFinancialState;
+    Engine.recordKingdomTransaction = recordKingdomTransaction;
+    Engine.getKingdomLedger = getKingdomLedger;
+    Engine.getKingdomLedgerSummary = getKingdomLedgerSummary;
 
     // ── Sync hook ──
     var _origTick = Engine.tick;

@@ -347,6 +347,7 @@
                         }
                         order.remaining -= buyQty;
                         order.filled = (order.filled || 0) + buyQty;
+                        if (Engine.recordKingdomTransaction) Engine.recordKingdomTransaction(k, 'expense', totalCost, 'Procurer bought ' + buyQty + 'x ' + order.goodId + ' in ' + (procTown.name || '?'), 'procurement');
                     }
                 }
             } else {
@@ -399,6 +400,12 @@
                     logEvent('💸 Kingdom employee quit (unpaid): ' + (emp.name || 'unknown'), null, isP ? 'my_kingdom' : 'foreign_kingdoms');
                 }
             }
+        }
+
+        // Record aggregate employee wages in kingdom ledger
+        if (totalPaid > 0 && Engine.recordKingdomTransaction) {
+            var empCounts = (k._employees.procurers ? k._employees.procurers.length : 0) + (k._employees.guards ? k._employees.guards.length : 0) + (k._employees.royalGuards ? k._employees.royalGuards.length : 0);
+            Engine.recordKingdomTransaction(k, 'expense', totalPaid, 'Weekly wages for ' + empCounts + ' employees', 'employee_wages');
         }
 
         // Guard crime reduction: each guard reduces theft/crime chance in their town

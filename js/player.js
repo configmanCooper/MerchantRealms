@@ -9323,75 +9323,60 @@
         return { success: true, message: count + ' soldiers transferring from ' + fromTown.name + ' → ' + toTown.name + '. Arrival in ' + travelDays + ' days.' };
     }
 
-    function kingProcureMilitary(itemId, cost) {
+    function kingProcureMilitary(itemId, qty) {
+        // Creates a procurement order for military goods — fulfilled over time by procurers
         if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
         var kingdom = Engine.findKingdom(player.kingState.kingdomId);
         if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        qty = Math.max(1, Math.min(500, parseInt(qty) || (itemId === 'arrows' ? 20 : 5)));
 
-        // Scan all kingdom towns for cheapest supply of this item
+        // Scan for current market price to set a reasonable maxPrice
         var allTowns = [];
         try { allTowns = Engine.getTowns(); } catch(e) {}
-        var bestTown = null, bestPrice = Infinity;
+        var avgPrice = 25;
+        var priceCount = 0;
         for (var _mi = 0; _mi < allTowns.length; _mi++) {
             var _mt = allTowns[_mi];
             if (_mt.kingdomId !== kingdom.id || _mt.isWilderness) continue;
             if (!_mt.market || !_mt.market.supply) continue;
-            var _avail = _mt.market.supply[itemId] || 0;
-            if (_avail < 1) continue;
-            var _price = 25; // default
-            try { _price = Engine.getMarketPrice ? Engine.getMarketPrice(_mt, itemId) : (_mt.market[itemId] && _mt.market[itemId].price ? _mt.market[itemId].price : 25); } catch(e) {}
-            if (_price < bestPrice) { bestPrice = _price; bestTown = _mt; }
+            if ((_mt.market.supply[itemId] || 0) < 1) continue;
+            var _price = 25;
+            try { _price = Engine.getMarketPrice ? Engine.getMarketPrice(_mt, itemId) : ((_mt.market[itemId] && _mt.market[itemId].price) || 25); } catch(e) {}
+            avgPrice += _price;
+            priceCount++;
         }
-        if (!bestTown) return { success: false, message: 'No ' + itemId + ' available in any kingdom market.' };
+        if (priceCount > 0) avgPrice = Math.ceil(avgPrice / (priceCount + 1));
+        var maxPrice = Math.ceil(avgPrice * 1.5); // willing to pay up to 150% of average
 
-        var qty = itemId === 'arrows' ? 10 : 1;
-        var actualAvail = bestTown.market.supply[itemId] || 0;
-        var buyQty = Math.min(qty, Math.floor(actualAvail));
-        if (buyQty < 1) return { success: false, message: 'No ' + itemId + ' available.' };
-        var totalCost = Math.ceil(bestPrice * buyQty);
-        if (kingdom.gold < totalCost) return { success: false, message: 'Need ' + totalCost + 'g. (Cheapest in ' + bestTown.name + ' at ' + Math.ceil(bestPrice) + 'g each)' };
-
-        kingdom.gold -= totalCost;
-        bestTown.market.supply[itemId] -= buyQty;
-        if (!kingdom.militaryStockpile) kingdom.militaryStockpile = {};
-        kingdom.militaryStockpile[itemId] = (kingdom.militaryStockpile[itemId] || 0) + buyQty;
-        Engine.logEvent('🔨 Procured ' + buyQty + ' ' + itemId + ' from ' + bestTown.name + ' for ' + totalCost + 'g.');
-        return { success: true, message: 'Bought ' + buyQty + ' ' + itemId + ' from ' + bestTown.name + ' (' + totalCost + 'g).' };
+        return kingSetProcurementOrder(itemId, qty, maxPrice);
     }
 
-    function kingBuyStockpile(itemId, qty, priceEach) {
+    function kingBuyStockpile(itemId, qty) {
+        // Creates a procurement order — fulfilled over time by procurers
         if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
         var kingdom = Engine.findKingdom(player.kingState.kingdomId);
         if (!kingdom) return { success: false, message: 'Kingdom not found.' };
         qty = Math.max(1, Math.min(500, parseInt(qty) || 10));
 
-        // Find cheapest supply across all kingdom towns
+        // Scan for current market price to set a reasonable maxPrice
         var allTowns = [];
         try { allTowns = Engine.getTowns(); } catch(e) {}
-        var bestTown = null, bestPrice = Infinity, bestAvail = 0;
+        var avgPrice = 10;
+        var priceCount = 0;
         for (var _bsi = 0; _bsi < allTowns.length; _bsi++) {
             var _bt = allTowns[_bsi];
             if (_bt.kingdomId !== kingdom.id || _bt.isWilderness) continue;
             if (!_bt.market || !_bt.market.supply) continue;
-            var _avail = _bt.market.supply[itemId] || 0;
-            if (_avail < 1) continue;
+            if ((_bt.market.supply[itemId] || 0) < 1) continue;
             var _price = 10;
             try { _price = Engine.getMarketPrice ? Engine.getMarketPrice(_bt, itemId) : ((_bt.market[itemId] && _bt.market[itemId].price) || 10); } catch(e) {}
-            if (_price < bestPrice) { bestPrice = _price; bestTown = _bt; bestAvail = _avail; }
+            avgPrice += _price;
+            priceCount++;
         }
-        if (!bestTown) return { success: false, message: 'No ' + itemId + ' available in any kingdom market.' };
+        if (priceCount > 0) avgPrice = Math.ceil(avgPrice / (priceCount + 1));
+        var maxPrice = Math.ceil(avgPrice * 1.5);
 
-        var buyQty = Math.min(qty, Math.floor(bestAvail));
-        if (buyQty < 1) return { success: false, message: 'No ' + itemId + ' available.' };
-        var totalCost = Math.ceil(bestPrice * buyQty);
-        if (kingdom.gold < totalCost) return { success: false, message: 'Need ' + totalCost + 'g. (Cheapest in ' + bestTown.name + ' at ' + Math.ceil(bestPrice) + 'g each)' };
-
-        kingdom.gold -= totalCost;
-        bestTown.market.supply[itemId] -= buyQty;
-        if (!kingdom.goodsStockpile) kingdom.goodsStockpile = {};
-        kingdom.goodsStockpile[itemId] = (kingdom.goodsStockpile[itemId] || 0) + buyQty;
-        Engine.logEvent('📦 Bought ' + buyQty + ' ' + itemId + ' from ' + bestTown.name + ' for stockpile (' + totalCost + 'g).');
-        return { success: true, message: 'Bought ' + buyQty + ' ' + itemId + ' from ' + bestTown.name + ' (' + totalCost + 'g).' };
+        return kingSetProcurementOrder(itemId, qty, maxPrice);
     }
 
     function kingSellStockpile(itemId) {
@@ -9418,6 +9403,7 @@
         if (kingdom.goodsStockpile[itemId] <= 0) delete kingdom.goodsStockpile[itemId];
         var revenue = sellQty * sellPrice;
         kingdom.gold += revenue;
+        if (Engine.recordKingdomTransaction) Engine.recordKingdomTransaction(kingdom, 'income', revenue, 'Sold ' + sellQty + 'x ' + itemId + ' from stockpile', 'stockpile_sale');
         Engine.logEvent('💰 Sold ' + sellQty + ' ' + itemId + ' from stockpile for ' + revenue + 'g.');
         return { success: true, message: 'Sold ' + sellQty + ' ' + itemId + ' for ' + revenue + 'g.' };
     }
@@ -9441,6 +9427,7 @@
         var totalCost = Math.ceil(baseCost * 0.5 * qty);
         if ((kingdom.gold || 0) < totalCost) return { success: false, message: 'Treasury cannot afford ' + totalCost + 'g for this commission.' };
         kingdom.gold -= totalCost;
+        if (Engine.recordKingdomTransaction) Engine.recordKingdomTransaction(kingdom, 'expense', totalCost, 'Commission: ' + qty + 'x ' + goodId, 'commissions');
         if (!kingdom._commissions) kingdom._commissions = [];
         // Check for existing commission of same good
         for (var _ci = 0; _ci < kingdom._commissions.length; _ci++) {

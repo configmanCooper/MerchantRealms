@@ -67,6 +67,7 @@
             { id: 'court', icon: '🏰', label: 'Court' + ((kingdom._pendingPetitions && kingdom._pendingPetitions.length > 0) ? ' (' + kingdom._pendingPetitions.length + ')' : '') },
             { id: 'nobility', icon: '🏅', label: 'Nobility' },
             { id: 'employees', icon: '👷', label: 'Employees' },
+            { id: 'finances', icon: '💰', label: 'Finances' },
             { id: 'threats', icon: '⚠️', label: 'Threats' }
         ];
         html += '<div style="display:flex;gap:3px;margin-bottom:10px;flex-wrap:wrap;">';
@@ -86,6 +87,7 @@
         else if (_kingTab === 'court') html += _kingCourtTab(kingdom, ks);
         else if (_kingTab === 'nobility') html += _kingNobilityTab(kingdom, ks);
         else if (_kingTab === 'employees') html += _kingEmployeesTab(kingdom, ks);
+        else if (_kingTab === 'finances') html += _kingFinancesTab(kingdom, ks);
         else if (_kingTab === 'threats') html += _kingThreatsTab(kingdom, ks);
 
         html += '</div>';
@@ -949,81 +951,105 @@
         }
         html += '</div></div>';
 
-        // Procurement — buy weapons for military from kingdom markets (cheapest available)
+        // Procurement — create orders for military goods (fulfilled by procurers over time)
         html += '<div style="background:rgba(0,0,0,0.15);padding:8px;border-radius:6px;margin-bottom:8px;">';
-        html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:4px;">🔨 Procure Military Equipment</div>';
-        html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:6px;">Buy from the cheapest kingdom market. Price varies by supply.</div>';
-        var _milItems = ['swords', 'armor', 'bows', 'arrows', 'horses'];
-        var _milNames = { swords: '⚔️ Swords', armor: '🛡️ Armor', bows: '🏹 Bows', arrows: '🎯 Arrows (10)', horses: '🐴 Horses' };
-        html += '<div style="display:flex;flex-wrap:wrap;gap:4px;">';
-        for (var _pci = 0; _pci < _milItems.length; _pci++) {
-            var _milId = _milItems[_pci];
-            // Find cheapest price across all kingdom towns
-            var _cheapest = Infinity, _cheapTown = null, _totalAvail = 0;
-            for (var _mti = 0; _mti < _kTowns.length; _mti++) {
-                var _mt = _kTowns[_mti];
-                var _avail = (_mt.market && _mt.market.supply) ? (_mt.market.supply[_milId] || 0) : 0;
-                _totalAvail += _avail;
-                if (_avail > 0) {
-                    var _pr = 25;
-                    try { _pr = Engine.getMarketPrice ? Engine.getMarketPrice(_mt, _milId) : ((_mt.market[_milId] && _mt.market[_milId].price) || 25); } catch(e) {}
-                    if (_pr < _cheapest) { _cheapest = _pr; _cheapTown = _mt; }
-                }
-            }
-            var _displayPrice = _cheapest < Infinity ? Math.ceil(_cheapest) : '—';
-            var _canBuy = _totalAvail > 0 && _cheapest < Infinity && (kingdom.gold || 0) >= _cheapest;
-            html += '<button class="btn-medieval" data-action="kingProcureMilitary" data-id="' + _milId + '" data-val="' + (_cheapest < Infinity ? Math.ceil(_cheapest) : 0) + '" style="font-size:0.65rem;padding:3px 8px;' + (!_canBuy ? 'opacity:0.5;' : '') + '" ' + (!_canBuy ? 'disabled' : '') + '>' + _milNames[_milId] + ' (' + (_totalAvail > 0 ? formatGold(_displayPrice) + ', ' + _totalAvail + ' avail' : 'None!') + ')</button>';
+        html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:4px;">🔨 Order Military Equipment</div>';
+        html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:6px;">Create procurement orders — kingdom procurers will buy from markets over time.</div>';
+        var _milItems2 = [
+            { key: 'swords', icon: '⚔️', name: 'Swords' },
+            { key: 'armor', icon: '🛡️', name: 'Armor' },
+            { key: 'bows', icon: '🏹', name: 'Bows' },
+            { key: 'arrows', icon: '🎯', name: 'Arrows' },
+            { key: 'horses', icon: '🐴', name: 'Horses' },
+            { key: 'saddles', icon: '🐎', name: 'Saddles' },
+            { key: 'shields', icon: '🛡️', name: 'Shields' }
+        ];
+        html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">';
+        html += '<select id="_milOrdGood" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;">';
+        for (var _mo2 = 0; _mo2 < _milItems2.length; _mo2++) {
+            var _mI2 = _milItems2[_mo2];
+            html += '<option value="' + _mI2.key + '">' + _mI2.icon + ' ' + _mI2.name + '</option>';
         }
-        html += '</div></div>';
+        html += '</select>';
+        html += '<input type="number" id="_milOrdQty" min="1" max="500" value="10" style="font-size:0.65rem;width:55px;padding:2px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;">';
+        html += '<button class="btn-medieval" data-action="kingProcureMilitary" style="font-size:0.62rem;padding:2px 6px;">📋 Place Order</button>';
+        html += '</div>';
+        // Show active procurer count
+        var _procCount = 0;
+        try { var _empSum = Player.kingGetEmployeeSummary(); if (_empSum) _procCount = _empSum.procurers.length; } catch(e) {}
+        if (_procCount === 0) {
+            html += '<div style="font-size:0.65rem;color:#c44e52;">⚠️ No procurers hired! Orders won\'t be filled. Hire procurers in the Employees tab.</div>';
+        } else {
+            html += '<div style="font-size:0.65rem;color:#7a7;">✓ ' + _procCount + ' procurer' + (_procCount > 1 ? 's' : '') + ' active — orders will be filled over time.</div>';
+        }
+        html += '</div>';
 
-        // Buy goods for stockpile — from cheapest kingdom market
+        // Order goods for stockpile — creates procurement orders
         html += '<div style="background:rgba(0,0,0,0.15);padding:8px;border-radius:6px;">';
-        html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:4px;">🛒 Buy Goods for Stockpile</div>';
-        html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:6px;">Purchase goods from the cheapest kingdom market into the stockpile.</div>';
+        html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:4px;">📋 Order Goods for Stockpile</div>';
+        html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:6px;">Create procurement orders — procurers travel the kingdom buying from local markets.</div>';
         try {
-            // Collect all goods across all kingdom towns with cheapest prices
-            var _goodsMap = {};
-            for (var _kti = 0; _kti < _kTowns.length; _kti++) {
-                var _kt = _kTowns[_kti];
-                if (!_kt.market) continue;
-                var _mKeys = Object.keys(_kt.market);
-                for (var _gki = 0; _gki < _mKeys.length; _gki++) {
-                    var _gk = _mKeys[_gki];
-                    var _gData = _kt.market[_gk];
-                    if (!_gData || !_gData.supply || _gData.supply < 1) continue;
-                    var _gPrice = _gData.price || 10;
-                    if (!_goodsMap[_gk]) {
-                        _goodsMap[_gk] = { totalAvail: 0, cheapestPrice: Infinity, cheapestTown: '' };
-                    }
-                    _goodsMap[_gk].totalAvail += Math.floor(_gData.supply);
-                    if (_gPrice < _goodsMap[_gk].cheapestPrice) {
-                        _goodsMap[_gk].cheapestPrice = _gPrice;
-                        _goodsMap[_gk].cheapestTown = _kt.name;
+            // Build a list of all available goods
+            var _goodsSet = {};
+            if (typeof CONFIG !== 'undefined' && CONFIG.ITEMS) {
+                var _itemKeys = Object.keys(CONFIG.ITEMS);
+                for (var _ik = 0; _ik < _itemKeys.length; _ik++) {
+                    var _iDef = CONFIG.ITEMS[_itemKeys[_ik]];
+                    if (_iDef && _iDef.name) _goodsSet[_itemKeys[_ik]] = _iDef.name;
+                }
+            }
+            // Also add any goods currently in kingdom markets
+            for (var _kti2 = 0; _kti2 < _kTowns.length; _kti2++) {
+                var _kt2 = _kTowns[_kti2];
+                if (!_kt2.market) continue;
+                var _mKeys2 = Object.keys(_kt2.market);
+                for (var _mk2 = 0; _mk2 < _mKeys2.length; _mk2++) {
+                    if (!_goodsSet[_mKeys2[_mk2]] && _kt2.market[_mKeys2[_mk2]] && _kt2.market[_mKeys2[_mk2]].supply > 0) {
+                        _goodsSet[_mKeys2[_mk2]] = _mKeys2[_mk2];
                     }
                 }
             }
-            var _goodsList = Object.keys(_goodsMap);
-            _goodsList.sort();
-            if (_goodsList.length > 0) {
+            var _sortedGoods = Object.keys(_goodsSet).sort(function(a, b) { return (_goodsSet[a] || a).localeCompare(_goodsSet[b] || b); });
+            if (_sortedGoods.length > 0) {
                 html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">';
                 html += '<select id="_kBuyGood" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;max-width:160px;">';
-                for (var _gli = 0; _gli < _goodsList.length; _gli++) {
-                    var _gId = _goodsList[_gli];
-                    var _gInfo = _goodsMap[_gId];
-                    var _gDef = CONFIG.ITEMS ? CONFIG.ITEMS[_gId] : null;
-                    var _gName = _gDef ? (_gDef.name || _gId) : _gId;
-                    html += '<option value="' + _gId + '">' + _gName + ' (' + Math.floor(_gInfo.totalAvail) + ' @ ' + formatGold(Math.ceil(_gInfo.cheapestPrice)) + ')</option>';
+                for (var _sg2 = 0; _sg2 < _sortedGoods.length; _sg2++) {
+                    var _sgId = _sortedGoods[_sg2];
+                    html += '<option value="' + _sgId + '">' + escapeHtml(_goodsSet[_sgId]) + '</option>';
                 }
                 html += '</select>';
-                html += '<input type="number" id="_kBuyQty" min="1" max="500" value="10" style="font-size:0.65rem;width:55px;padding:2px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;">';
-                html += '<button class="btn-medieval" data-action="kingBuyStockpile" style="font-size:0.62rem;padding:2px 6px;">🛒 Buy</button>';
+                html += '<input type="number" id="_kBuyQty" min="1" max="500" value="20" style="font-size:0.65rem;width:55px;padding:2px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;">';
+                html += '<button class="btn-medieval" data-action="kingBuyStockpile" style="font-size:0.62rem;padding:2px 6px;">📋 Place Order</button>';
                 html += '</div>';
             } else {
-                html += '<div style="font-size:0.68rem;color:#888;">No goods available in kingdom markets.</div>';
+                html += '<div style="font-size:0.68rem;color:#888;">No goods known.</div>';
             }
         } catch(e) {
-            html += '<div style="font-size:0.68rem;color:#888;">Unable to load market data.</div>';
+            html += '<div style="font-size:0.68rem;color:#888;">Unable to load goods data.</div>';
         }
+        // Show active procurement orders
+        try {
+            var _kForOrders = Engine.findKingdom(Player.state.kingState.kingdomId);
+            var _orders = (_kForOrders && _kForOrders._procurementOrders) ? _kForOrders._procurementOrders.filter(function(o) { return o.remaining > 0; }) : [];
+            if (_orders.length > 0) {
+                html += '<div style="margin-top:6px;border-top:1px solid #444;padding-top:4px;">';
+                html += '<div style="font-size:0.72rem;color:#d4c9a0;margin-bottom:3px;">📦 Active Orders (' + _orders.length + '):</div>';
+                for (var _oi = 0; _oi < _orders.length; _oi++) {
+                    var _ord = _orders[_oi];
+                    var _oItemDef = (typeof CONFIG !== 'undefined' && CONFIG.ITEMS) ? CONFIG.ITEMS[_ord.goodId] : null;
+                    var _oName = _oItemDef ? (_oItemDef.name || _ord.goodId) : _ord.goodId;
+                    var _oIcon = _oItemDef && _oItemDef.icon ? _oItemDef.icon : '📦';
+                    var _oFilled = _ord.filled || 0;
+                    var _oTotal = _oFilled + _ord.remaining;
+                    html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 4px;background:rgba(0,0,0,0.1);border-radius:3px;margin-bottom:2px;">';
+                    html += '<span style="font-size:0.65rem;color:#d4c9a0;">' + _oIcon + ' ' + escapeHtml(_oName) + '</span>';
+                    html += '<span style="font-size:0.65rem;color:#aaa;">' + _oFilled + '/' + _oTotal + ' (max ' + _ord.maxPrice + 'g ea)</span>';
+                    html += '<button class="btn-medieval" data-action="kingCancelProcOrder" data-id="' + _ord.id + '" style="font-size:0.55rem;padding:1px 4px;background:rgba(196,78,82,0.3);">✕</button>';
+                    html += '</div>';
+                }
+                html += '</div>';
+            }
+        } catch(e) {}
         html += '</div>';
 
         // Commission goods for production
@@ -1907,6 +1933,142 @@
                 html += '</div>';
             }
         }
+        html += '</div>';
+
+        return html;
+    }
+
+    // =========================================================================
+    // Kingdom Finances Tab — Income/Expense breakdown, 30/90 day view, forecast
+    // =========================================================================
+    function _kingFinancesTab(kingdom, ks) {
+        var html = '';
+        var treasury = Math.floor(kingdom.gold || 0);
+
+        // Treasury header
+        html += '<div style="background:rgba(0,0,0,0.15);padding:8px;border-radius:6px;margin-bottom:8px;text-align:center;">';
+        html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:4px;">💰 Royal Treasury</div>';
+        html += '<div style="font-size:1.3rem;color:#e0c58a;font-weight:bold;">' + formatGold(treasury) + '</div>';
+        html += '</div>';
+
+        // Category labels for display
+        var _catLabels = {
+            trade_tax: '🏪 Trade Tax', property_tax: '🏠 Property Tax', income_tax: '📋 Income Tax',
+            transport: '🚂 Transport', stockpile_sale: '📦 Stockpile Sales', coronation: '👑 Coronation',
+            soldier_upkeep: '⚔️ Soldiers', building_upkeep: '🏗️ Buildings', employee_wages: '👷 Employee Wages',
+            procurement: '🛒 Procurement', commissions: '📜 Commissions', subsidies: '💸 Subsidies',
+            war: '⚔️ War Costs', construction: '🏗️ Construction', other: '📦 Other'
+        };
+
+        // Get ledger summaries
+        var sum30 = null, sum90 = null;
+        try {
+            if (Engine.getKingdomLedgerSummary) {
+                sum30 = Engine.getKingdomLedgerSummary(kingdom, 30);
+                sum90 = Engine.getKingdomLedgerSummary(kingdom, 90);
+            }
+        } catch(e) {}
+        if (!sum30) sum30 = { income: {}, expenses: {}, totalIncome: 0, totalExpenses: 0, net: 0, entries: 0 };
+        if (!sum90) sum90 = { income: {}, expenses: {}, totalIncome: 0, totalExpenses: 0, net: 0, entries: 0 };
+
+        // Helper to render a breakdown section
+        function _renderBreakdown(label, data, color) {
+            var h = '';
+            var keys = Object.keys(data).sort(function(a, b) { return (data[b] || 0) - (data[a] || 0); });
+            if (keys.length === 0) {
+                h += '<div style="font-size:0.68rem;color:#666;">No records.</div>';
+                return h;
+            }
+            for (var i = 0; i < keys.length; i++) {
+                var cat = keys[i];
+                var amt = Math.floor(data[cat]);
+                if (amt === 0) continue;
+                var catLabel = _catLabels[cat] || ('📦 ' + cat);
+                h += '<div style="display:flex;justify-content:space-between;padding:2px 6px;margin-bottom:1px;background:rgba(0,0,0,0.08);border-radius:3px;">';
+                h += '<span style="font-size:0.68rem;color:#bbb;">' + catLabel + '</span>';
+                h += '<span style="font-size:0.68rem;color:' + color + ';">' + formatGold(amt) + '</span>';
+                h += '</div>';
+            }
+            return h;
+        }
+
+        // 30-day view
+        html += '<div style="background:rgba(0,0,0,0.15);padding:8px;border-radius:6px;margin-bottom:8px;">';
+        html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:6px;">📅 Last 30 Days</div>';
+
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;">';
+        // Income column
+        html += '<div>';
+        html += '<div style="font-size:0.72rem;color:#7a7;margin-bottom:3px;">📈 Income: <span style="color:#8c8;">' + formatGold(Math.floor(sum30.totalIncome)) + '</span></div>';
+        html += _renderBreakdown('Income', sum30.income, '#8c8');
+        html += '</div>';
+        // Expenses column
+        html += '<div>';
+        html += '<div style="font-size:0.72rem;color:#c44e52;margin-bottom:3px;">📉 Expenses: <span style="color:#e88;">' + formatGold(Math.floor(sum30.totalExpenses)) + '</span></div>';
+        html += _renderBreakdown('Expenses', sum30.expenses, '#e88');
+        html += '</div>';
+        html += '</div>';
+
+        var net30 = Math.floor(sum30.net);
+        var netColor30 = net30 >= 0 ? '#8c8' : '#e88';
+        html += '<div style="text-align:center;padding:4px;background:rgba(0,0,0,0.1);border-radius:4px;margin-bottom:4px;">';
+        html += '<span style="font-size:0.72rem;color:#aaa;">Net (30d): </span>';
+        html += '<span style="font-size:0.8rem;font-weight:bold;color:' + netColor30 + ';">' + (net30 >= 0 ? '+' : '') + formatGold(net30) + '</span>';
+        html += '</div>';
+        html += '</div>';
+
+        // 90-day view
+        html += '<div style="background:rgba(0,0,0,0.15);padding:8px;border-radius:6px;margin-bottom:8px;">';
+        html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:6px;">📅 Last 90 Days</div>';
+
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;">';
+        html += '<div>';
+        html += '<div style="font-size:0.72rem;color:#7a7;margin-bottom:3px;">📈 Income: <span style="color:#8c8;">' + formatGold(Math.floor(sum90.totalIncome)) + '</span></div>';
+        html += _renderBreakdown('Income', sum90.income, '#8c8');
+        html += '</div>';
+        html += '<div>';
+        html += '<div style="font-size:0.72rem;color:#c44e52;margin-bottom:3px;">📉 Expenses: <span style="color:#e88;">' + formatGold(Math.floor(sum90.totalExpenses)) + '</span></div>';
+        html += _renderBreakdown('Expenses', sum90.expenses, '#e88');
+        html += '</div>';
+        html += '</div>';
+
+        var net90 = Math.floor(sum90.net);
+        var netColor90 = net90 >= 0 ? '#8c8' : '#e88';
+        html += '<div style="text-align:center;padding:4px;background:rgba(0,0,0,0.1);border-radius:4px;">';
+        html += '<span style="font-size:0.72rem;color:#aaa;">Net (90d): </span>';
+        html += '<span style="font-size:0.8rem;font-weight:bold;color:' + netColor90 + ';">' + (net90 >= 0 ? '+' : '') + formatGold(net90) + '</span>';
+        html += '</div>';
+        html += '</div>';
+
+        // 30-day Treasury Forecast
+        html += '<div style="background:rgba(0,0,0,0.15);padding:8px;border-radius:6px;margin-bottom:8px;">';
+        html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:4px;">🔮 30-Day Forecast</div>';
+        var dailyNet30 = sum30.entries > 0 ? net30 / 30 : 0;
+        var forecast30 = Math.floor(treasury + dailyNet30 * 30);
+        var fcColor = forecast30 >= treasury ? '#8c8' : (forecast30 > 0 ? '#e0c58a' : '#e88');
+        html += '<div style="text-align:center;">';
+        html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:4px;">Based on current income/expense trends:</div>';
+        html += '<div style="font-size:1.1rem;font-weight:bold;color:' + fcColor + ';">' + formatGold(forecast30) + '</div>';
+        html += '<div style="font-size:0.65rem;color:#888;">(' + (dailyNet30 >= 0 ? '+' : '') + formatGold(Math.round(dailyNet30)) + '/day average)</div>';
+        if (forecast30 < 0) {
+            var daysUntilBankrupt = dailyNet30 < 0 ? Math.floor(treasury / Math.abs(dailyNet30)) : 999;
+            html += '<div style="font-size:0.72rem;color:#e88;margin-top:4px;">⚠️ Treasury will be depleted in ~' + daysUntilBankrupt + ' days at current rate!</div>';
+        }
+        html += '</div></div>';
+
+        // Quick financial health indicator
+        html += '<div style="background:rgba(0,0,0,0.15);padding:8px;border-radius:6px;">';
+        html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:4px;">📊 Financial Health</div>';
+        var healthRating = 'Unknown';
+        var healthColor = '#888';
+        if (sum30.entries > 5) {
+            if (net30 > 500 && treasury > 5000) { healthRating = 'Excellent'; healthColor = '#4a4'; }
+            else if (net30 > 0 && treasury > 2000) { healthRating = 'Good'; healthColor = '#8c8'; }
+            else if (net30 > -100 && treasury > 500) { healthRating = 'Stable'; healthColor = '#e0c58a'; }
+            else if (net30 > -500) { healthRating = 'Concerning'; healthColor = '#e8a'; }
+            else { healthRating = 'Critical'; healthColor = '#e44'; }
+        }
+        html += '<div style="text-align:center;font-size:0.9rem;font-weight:bold;color:' + healthColor + ';">' + healthRating + '</div>';
         html += '</div>';
 
         return html;
@@ -3324,8 +3486,11 @@
     });
 
     // Stockpile actions
-    UI.registerAction('kingProcureMilitary', function(_t, d) {
-        var r = Player.kingProcureMilitary ? Player.kingProcureMilitary(d.id, parseInt(d.val) || 0) : { success: false, message: 'Not available.' };
+    UI.registerAction('kingProcureMilitary', function() {
+        var goodEl = document.getElementById('_milOrdGood'), qtyEl = document.getElementById('_milOrdQty');
+        if (!goodEl || !goodEl.value) { UI.toast('Select a military item.', 'warning'); return; }
+        var qty = qtyEl ? parseInt(qtyEl.value) || 10 : 10;
+        var r = Player.kingProcureMilitary ? Player.kingProcureMilitary(goodEl.value, qty) : { success: false, message: 'Not available.' };
         UI.toast(r.message, r.success ? 'success' : 'warning');
         UI.openKingPanel('stockpile');
     });

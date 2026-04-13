@@ -7067,6 +7067,34 @@
             }
         }
         newKing.gold += 100;
+
+        // Transfer new king's personal assets to the kingdom (buildings + gold)
+        var _transferredGold = 0;
+        var _transferredBuildings = 0;
+        if (newKing.gold > 0) {
+            _transferredGold = newKing.gold;
+            kingdom.gold = (kingdom.gold || 0) + newKing.gold;
+            newKing.gold = 0;
+        }
+        // Transfer NPC-owned buildings to kingdom
+        for (var _tBi = 0; _tBi < world.towns.length; _tBi++) {
+            var _tTown = world.towns[_tBi];
+            if (!_tTown || !_tTown.buildings) continue;
+            for (var _tBj = 0; _tBj < _tTown.buildings.length; _tBj++) {
+                var _tBld = _tTown.buildings[_tBj];
+                if (_tBld.ownerId === newKing.id) {
+                    _tBld.ownerId = null; // kingdom-owned
+                    _transferredBuildings++;
+                }
+            }
+        }
+        if (_transferredGold > 0 || _transferredBuildings > 0) {
+            logEvent('👑 ' + newKing.firstName + ' ' + newKing.lastName + ' transfers ' + (_transferredGold > 0 ? _transferredGold + 'g' : '') + (_transferredGold > 0 && _transferredBuildings > 0 ? ' and ' : '') + (_transferredBuildings > 0 ? _transferredBuildings + ' building' + (_transferredBuildings > 1 ? 's' : '') : '') + ' to the crown of ' + kingdom.name + '.', { type: 'succession', kingdomId: kingdom.id });
+            if (_transferredGold > 0 && typeof Engine !== 'undefined' && Engine.recordKingdomTransaction) {
+                Engine.recordKingdomTransaction(kingdom, 'income', _transferredGold, 'Coronation: ' + newKing.firstName + ' ' + newKing.lastName + ' assets transferred', 'coronation');
+            }
+        }
+
         if (!cause || cause !== 'election') {
             logEvent(`${newKing.firstName} ${newKing.lastName} becomes the new ruler of ${kingdom.name}.`, { type: 'succession', kingdomId: kingdom.id });
         }
