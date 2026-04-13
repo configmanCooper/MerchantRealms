@@ -12620,39 +12620,8 @@
             '<div style="font-size:0.8em;color:#ccc;margin-top:4px;">Seize wealth, kill resisters. Immediate gold but massive destruction. Town will be devastated for years.</div></button>' +
             '</div></div>';
         UI.openModal('⚔️ Conquest of ' + (town.name || 'Town'), html);
-    }
-
-    // Register conquest choice action
-    if (typeof UI !== 'undefined' && UI.registerAction) {
-        UI.registerAction('conquestChoice', function(_t, d) {
-            var town = findTown(d.id);
-            var kingdom = null;
-            try {
-                if (Player && Player.state && Player.state.kingState) {
-                    kingdom = findKingdom(Player.state.kingState.kingdomId);
-                }
-            } catch(e) {}
-            if (!town || !kingdom) {
-                if (typeof UI !== 'undefined') UI.toast('Error: town or kingdom not found', 'error');
-                return;
-            }
-            var choice = d.val;
-            if (choice === 'citizenship') {
-                grantCitizenship(town, kingdom);
-            } else if (choice === 'servitude') {
-                imposeServitude(town, kingdom);
-            } else if (choice === 'raid') {
-                raidTown(town, kingdom);
-            }
-            // Remove from pending
-            if (kingdom._pendingConquestChoices) {
-                kingdom._pendingConquestChoices = kingdom._pendingConquestChoices.filter(function(c) { return c.townId !== town.id; });
-            }
-            if (typeof UI !== 'undefined') {
-                UI.closeModal();
-                UI.toast('📜 ' + town.name + ': ' + (choice === 'citizenship' ? 'Granted citizenship' : choice === 'servitude' ? 'Imposed servitude' : 'Raided and plundered'), 'success');
-            }
-        });
+        // Lock the modal so player must choose — cannot close or dismiss
+        if (UI.setConquestLock) UI.setConquestLock(true);
     }
 
     function grantCitizenship(town, kingdom) {

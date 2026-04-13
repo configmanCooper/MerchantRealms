@@ -31,6 +31,7 @@ window.UI = (function () {
     let selectedPersonId = null;
     let _bankruptcyLock = false; // When true, player must resolve bankruptcy before accessing menus
     let _encounterLocked = false; // When true, encounter dialog cannot be closed — must resolve
+    let _conquestLocked = false;  // When true, conquest choice modal cannot be closed — must choose
     var _rightPanelTownId = null; // Track which town is shown in right panel for auto-refresh
     var _rightPanelRefreshCounter = 0;
     var _rightPanelDirty = false; // Set true when game state changes require immediate refresh
@@ -494,6 +495,37 @@ window.UI = (function () {
         registerAction('closeAndOpenNobility', function() { closeModal(); UI.openNobilityDialog(); });
         registerAction('closeAndOpenSpouse', function() { closeModal(); UI.openSpousePanel(); });
         registerAction('openLeaderboard', function() { openLeaderboard(); });
+
+        // Conquest choice — buttons in the conquest modal (must be registered here, not engine.js, because engine loads before UI)
+        registerAction('conquestChoice', function(_t, d) {
+            var town = null, kingdom = null;
+            try {
+                town = Engine.findTown(d.id);
+                if (Player && Player.state && Player.state.kingState) {
+                    kingdom = Engine.findKingdom(Player.state.kingState.kingdomId);
+                }
+            } catch(e) {}
+            if (!town || !kingdom) {
+                toast('Error: town or kingdom not found', 'error');
+                return;
+            }
+            var choice = d.val;
+            if (choice === 'citizenship') {
+                Engine.grantCitizenship(town, kingdom);
+            } else if (choice === 'servitude') {
+                Engine.imposeServitude(town, kingdom);
+            } else if (choice === 'raid') {
+                Engine.raidTown(town, kingdom);
+            }
+            if (kingdom._pendingConquestChoices) {
+                kingdom._pendingConquestChoices = kingdom._pendingConquestChoices.filter(function(c) { return c.townId !== town.id; });
+            }
+            _conquestLocked = false;
+            var closeBtn = document.getElementById('btnCloseModal');
+            if (closeBtn) closeBtn.style.display = '';
+            closeModal();
+            toast('📜 ' + town.name + ': ' + (choice === 'citizenship' ? 'Granted citizenship' : choice === 'servitude' ? 'Imposed servitude' : 'Raided and plundered'), 'success');
+        });
 
 
 
@@ -1493,6 +1525,14 @@ window.UI = (function () {
                 return;
             }
         }
+        // Block opening non-conquest modals while conquest decision pending
+        if (_conquestLocked) {
+            var ctl = (title || '').toLowerCase();
+            if (ctl.indexOf('conquest') === -1) {
+                toast('⚔️ You must decide the fate of the conquered town first!', 'warning');
+                return;
+            }
+        }
         const mt = el.modalTitle || document.getElementById('modalTitle');
         const mb = el.modalBody || document.getElementById('modalBody');
         const mf = el.modalFooter || document.getElementById('modalFooter');
@@ -1519,6 +1559,7 @@ window.UI = (function () {
     function closeModal() {
         if (_isBankruptcyBlocked()) return;
         if (_encounterLocked) return;
+        if (_conquestLocked) return;
         const mo = el.modalOverlay || document.getElementById('modalOverlay');
         if (mo) mo.classList.add('hidden');
         // Reset drag position so next modal opens centered
@@ -10746,6 +10787,13 @@ window.UI = (function () {
     // Register the encounter dialog callback for player.js to call
     window._showEncounterDialog = showEncounterDialog;
 
+    // Conquest lock — called from engine.js when conquest choice modal is shown
+    function setConquestLock(locked) {
+        _conquestLocked = !!locked;
+        var closeBtn = document.getElementById('btnCloseModal');
+        if (closeBtn) closeBtn.style.display = locked ? 'none' : '';
+    }
+
     // ═══════════════════════════════════════════════════════════
     //  HEALTH DIALOG
     // ═══════════════════════════════════════════════════════════
@@ -14763,6 +14811,7 @@ window.UI = (function () {
         // Encounter System
         showEncounterDialog,
         resolveEncounterChoice,
+        setConquestLock,
         hireGuardUI: function() {
             if (typeof Player === 'undefined' || !Player.hirePersonalGuard) return;
             var result = Player.hirePersonalGuard();
