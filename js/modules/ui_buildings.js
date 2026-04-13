@@ -2309,6 +2309,38 @@
                 }
             }
         }
+
+        // Check kingdom quest interactive data for search_buildings targets
+        var kqInteractive = Player.state._kqInteractiveData || {};
+        for (var qid in kqInteractive) {
+            var qiData = kqInteractive[qid];
+            if (!qiData || qiData.type !== 'search_buildings') continue;
+            for (var _ti = 0; _ti < qiData.targets.length; _ti++) {
+                var tgt = qiData.targets[_ti];
+                if (tgt.townId === townId && tgt.buildingType === buildingType && !tgt.searched) {
+                    // Find the quest title
+                    var questTitle = '';
+                    try {
+                        var kqData = Player.state.kingdomQuests || {};
+                        for (var kid in kqData) {
+                            var active = kqData[kid].active || [];
+                            for (var qi = 0; qi < active.length; qi++) {
+                                if (active[qi].id === qid) { questTitle = active[qi].title; break; }
+                            }
+                            if (questTitle) break;
+                        }
+                    } catch(e) {}
+                    var safQid = qid.replace(/"/g, '&quot;');
+                    html += '<div style="background:rgba(212,168,67,0.15);padding:8px;border-radius:6px;border:1px solid rgba(212,168,67,0.3);margin-top:8px;">';
+                    html += '<div style="font-size:0.8rem;color:#d4a843;">🔍 Kingdom Quest: Search for Evidence</div>';
+                    if (questTitle) html += '<div style="font-size:0.65rem;color:#aaa;margin:2px 0;">Quest: ' + UI.escapeHtml(questTitle) + '</div>';
+                    html += '<div style="font-size:0.68rem;color:#aaa;margin:4px 0;">Search this building for evidence. (' + (qiData.evidenceFound || 0) + '/' + qiData.evidenceNeeded + ' found)</div>';
+                    html += '<button class="btn-medieval" data-action="searchBuildingForQuestUI" data-id="' + safQid + '" data-val="' + _ti + '" style="font-size:0.72rem;padding:4px 10px;">🔍 Search for Evidence</button>';
+                    html += '</div>';
+                }
+            }
+        }
+
         return html;
     }
 
@@ -2317,6 +2349,11 @@
     UI.registerAction('openBuildingDetail', function(_t, d) { UI.openBuildingDetail(d.id, d.val); });
     UI.registerAction('searchBuildingEvidence', function(_t, d) {
         var r = Player.searchBuildingForEvidence ? Player.searchBuildingForEvidence(parseInt(d.id), parseInt(d.val)) : { success: false, message: 'Evidence search not available.' };
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        if (r.success) UI.openTownMarket();
+    });
+    UI.registerAction('searchBuildingForQuestUI', function(_t, d) {
+        var r = Player.searchBuildingForEvidence ? Player.searchBuildingForEvidence(d.id, parseInt(d.val)) : { success: false, message: 'Evidence search not available.' };
         UI.toast(r.message, r.success ? 'success' : 'warning');
         if (r.success) UI.openTownMarket();
     });

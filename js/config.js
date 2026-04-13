@@ -3098,17 +3098,17 @@ const MULTISTEP_ACTIONS = {
     investigate: {
         totalSteps: 3,
         steps: [
-            { label: 'Gather Evidence', narrative: 'Travel to the area of interest and begin collecting information.', tickCost: 2, goldCost: 15, successBase: 0.90, skillKey: 'underworld' },
-            { label: 'Interview Witnesses', narrative: 'Speak with locals and key figures to piece together what happened.', tickCost: 3, goldCost: 10, successBase: 0.80, skillKey: 'social' },
+            { label: 'Gather Evidence', narrative: 'Search specific buildings across the kingdom for clues and physical evidence.', tickCost: 2, goldCost: 15, successBase: 0.90, skillKey: 'underworld', interactive: 'search_buildings' },
+            { label: 'Interview Witnesses', narrative: 'Track down and interview key people who may have witnessed suspicious activity.', tickCost: 3, goldCost: 10, successBase: 0.80, skillKey: 'social', interactive: 'interview_npcs' },
             { label: 'Report Findings', narrative: 'Compile your evidence and deliver a comprehensive report.', tickCost: 2, goldCost: 0, successBase: 0.85, skillKey: 'social' }
         ]
     },
     capture_criminal: {
         totalSteps: 3,
         steps: [
-            { label: 'Get Bounty Details', narrative: 'Review the bounty notice and gather information about the target\'s habits.', tickCost: 1, goldCost: 10, successBase: 0.95, skillKey: 'survival' },
-            { label: 'Track Target', narrative: 'Follow leads to the criminal\'s last known location and close in.', tickCost: 3, goldCost: 25, successBase: 0.70, skillKey: 'survival' },
-            { label: 'Attempt Capture', narrative: 'Confront and apprehend the criminal. Be prepared for a fight.', tickCost: 2, goldCost: 0, successBase: 0.60, skillKey: 'survival' }
+            { label: 'Get Bounty Details', narrative: 'Review the bounty notice and gather information about the target\'s habits.', tickCost: 1, goldCost: 10, successBase: 0.95, skillKey: 'survival', interactive: 'skip' },
+            { label: 'Track Target', narrative: 'Ask around in towns where the criminal was last seen to discover their whereabouts.', tickCost: 3, goldCost: 25, successBase: 0.70, skillKey: 'survival', interactive: 'ask_npcs' },
+            { label: 'Attempt Capture', narrative: 'Find the criminal and apprehend them. Be prepared for a fight.', tickCost: 2, goldCost: 0, successBase: 0.60, skillKey: 'survival', interactive: 'capture' }
         ]
     },
     intercept: {
@@ -3122,8 +3122,8 @@ const MULTISTEP_ACTIONS = {
         totalSteps: 3,
         steps: [
             { label: 'Organize Search Parties', narrative: 'Rally guards and volunteers to form search teams.', tickCost: 2, goldCost: 30, successBase: 0.90, skillKey: 'social' },
-            { label: 'Sweep the Area', narrative: 'Lead coordinated sweeps through suspected hideouts and routes.', tickCost: 4, goldCost: 20, successBase: 0.75, skillKey: 'survival' },
-            { label: 'Close the Net', narrative: 'Corner the fugitive and bring them to justice.', tickCost: 2, goldCost: 0, successBase: 0.60, skillKey: 'survival' }
+            { label: 'Sweep the Area', narrative: 'Lead coordinated sweeps through suspected hideouts and safe houses.', tickCost: 4, goldCost: 20, successBase: 0.75, skillKey: 'survival', interactive: 'search_buildings' },
+            { label: 'Close the Net', narrative: 'Corner the fugitive and bring them to justice.', tickCost: 2, goldCost: 0, successBase: 0.60, skillKey: 'survival', interactive: 'capture' }
         ]
     }
 };

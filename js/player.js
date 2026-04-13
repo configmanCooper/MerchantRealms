@@ -669,6 +669,7 @@
         player._kqVisitedTowns = {};  // questId → [townId] for visit tracking
         player._kqGoldSpent = {};     // questId → gold spent so far
         player._kqActionDone = {};    // questId → true for one-off action quests
+        player._kqInteractiveData = {};  // questId → interactive step data (search targets, NPC interviews, etc.)
         player.smugglingSkill = 0;
         player.jailedUntilDay = 0;
         player.aiMerchantSiblings = [];
@@ -14140,6 +14141,7 @@
             _kqVisitedTowns: structuredClone(player._kqVisitedTowns || {}),
             _kqGoldSpent: structuredClone(player._kqGoldSpent || {}),
             _kqActionDone: structuredClone(player._kqActionDone || {}),
+            _kqInteractiveData: structuredClone(player._kqInteractiveData || {}),
             _kqActionAttempts: structuredClone(player._kqActionAttempts || {}),
             _kqStepProgress: structuredClone(player._kqStepProgress || {}),
             _kqCompletedTotal: player._kqCompletedTotal || 0,
@@ -14250,6 +14252,7 @@
         player._kqVisitedTowns = data._kqVisitedTowns ? structuredClone(data._kqVisitedTowns) : {};
         player._kqGoldSpent = data._kqGoldSpent ? structuredClone(data._kqGoldSpent) : {};
         player._kqActionDone = data._kqActionDone ? structuredClone(data._kqActionDone) : {};
+        player._kqInteractiveData = data._kqInteractiveData ? structuredClone(data._kqInteractiveData) : {};
         player._kqActionAttempts = data._kqActionAttempts ? structuredClone(data._kqActionAttempts) : {};
         player._kqStepProgress = data._kqStepProgress ? structuredClone(data._kqStepProgress) : {};
         player._kqCompletedTotal = data._kqCompletedTotal || 0;

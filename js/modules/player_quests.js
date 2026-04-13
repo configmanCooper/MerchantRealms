@@ -1232,6 +1232,14 @@
         player._kqGoldSpent[quest.id] = 0;
         player._kqActionDone[quest.id] = false;
 
+        // Generate interactive data for the first step if applicable
+        if (quest.requirements && quest.requirements.action && quest.requirements.action.type) {
+            var msConf = (typeof MULTISTEP_ACTIONS !== 'undefined') ? MULTISTEP_ACTIONS[quest.requirements.action.type] : null;
+            if (msConf && msConf.steps[0] && msConf.steps[0].interactive) {
+                _generateInteractiveData(quest, 0);
+            }
+        }
+
         Engine.logEvent('📜 Accepted kingdom quest: ' + quest.title);
         return { success: true, message: 'Quest accepted: ' + quest.title };
     }
@@ -1330,6 +1338,9 @@
         delete player._kqVisitedTowns[questId];
         delete player._kqGoldSpent[questId];
         delete player._kqActionDone[questId];
+        if (player._kqInteractiveData) delete player._kqInteractiveData[questId];
+        if (player._kqStepProgress) delete player._kqStepProgress[questId];
+        if (player._kqActionAttempts) delete player._kqActionAttempts[questId];
 
         Engine.logEvent('❌ Abandoned kingdom quest: ' + quest.title);
         return { success: true, message: 'Quest abandoned. (-' + repLoss + ' rep, -' + relLoss + ' king rel)' };
@@ -1422,6 +1433,9 @@
         delete player._kqVisitedTowns[questId];
         delete player._kqGoldSpent[questId];
         delete player._kqActionDone[questId];
+        if (player._kqInteractiveData) delete player._kqInteractiveData[questId];
+        if (player._kqStepProgress) delete player._kqStepProgress[questId];
+        if (player._kqActionAttempts) delete player._kqActionAttempts[questId];
 
         // Tracking for achievements
         player._kqCompletedTotal = (player._kqCompletedTotal || 0) + 1;
@@ -1835,6 +1849,10 @@
                 } else {
                     var nextStep = multiStep.steps[currentStepIdx + 1];
                     Engine.logEvent('✅ Step ' + (currentStepIdx + 1) + '/' + multiStep.totalSteps + ' complete: ' + currentStep.label + '. Next: ' + nextStep.label);
+                    // Generate interactive data for next step if applicable
+                    if (nextStep.interactive) {
+                        _generateInteractiveData(quest, currentStepIdx + 1);
+                    }
                 }
             } else {
                 trackKQActionDone(questId);
@@ -2454,6 +2472,480 @@
         return { success: true, message: 'Auto-renew ' + (enabled ? 'enabled' : 'disabled') + ' for ' + gName + '.' };
     }
 
+    // ============================================================
+    // §16E  INTERACTIVE QUEST STEP SYSTEM
+    // ============================================================
+    // Building types valid as search targets for evidence-gathering
+    var _SEARCHABLE_BUILDING_TYPES = ['warehouse', 'tavern', 'market_stall', 'blacksmith', 'smelter', 'tanner', 'bakery', 'winery', 'dock', 'guild_hall'];
+
+    function _generateInteractiveData(quest, stepIndex) {
+        _sync();
+        var rng = Engine.getRng();
+        if (!rng) return;
+        var msConfig = MULTISTEP_ACTIONS[quest.requirements.action ? quest.requirements.action.type : ''];
+        if (!msConfig) return;
+        var step = msConfig.steps[stepIndex];
+        if (!step || !step.interactive) return;
+
+        if (!player._kqInteractiveData) player._kqInteractiveData = {};
+        var kingdomId = quest.kingdomId;
+        var kingdom = null;
+        try { kingdom = Engine.findKingdom(kingdomId); } catch(e) {}
+
+        // Get towns in this kingdom
+        var kingdomTowns = [];
+        try {
+            var w = Engine.getWorld();
+            if (w && w.towns) kingdomTowns = w.towns.filter(function(t) { return t.kingdomId === kingdomId; });
+        } catch(e) {}
+        if (kingdomTowns.length === 0) return;
+
+        // Get living people in the kingdom with socialRank >= 1
+        var kingdomPeople = [];
+        try {
+            var w2 = Engine.getWorld();
+            if (w2 && w2.people) {
+                kingdomPeople = w2.people.filter(function(p) {
+                    if (!p.alive || p.id === 'player') return false;
+                    if (p.townId) {
+                        for (var ti = 0; ti < kingdomTowns.length; ti++) {
+                            if (kingdomTowns[ti].id === p.townId) return true;
+                        }
+                    }
+                    return false;
+                });
+            }
+        } catch(e) {}
+
+        var interactiveType = step.interactive;
+
+        if (interactiveType === 'skip') {
+            // Auto-complete: no interactive data needed, just advance the step
+            if (!player._kqStepProgress) player._kqStepProgress = {};
+            player._kqStepProgress[quest.id] = stepIndex + 1;
+            // Check if this was the last step
+            if (stepIndex + 1 >= msConfig.totalSteps) {
+                trackKQActionDone(quest.id);
+            } else {
+                // Recursively generate for next step if also interactive
+                var nextStep = msConfig.steps[stepIndex + 1];
+                if (nextStep && nextStep.interactive) {
+                    _generateInteractiveData(quest, stepIndex + 1);
+                }
+            }
+            Engine.logEvent('📋 ' + step.label + ' — auto-completed.');
+            return;
+        }
+
+        if (interactiveType === 'search_buildings') {
+            var targetCount = 2 + (rng.chance(0.5) ? 1 : 0); // 2-3 targets
+            var targets = [];
+            var usedKeys = {};
+            for (var si = 0; si < targetCount * 5 && targets.length < targetCount; si++) {
+                var town = kingdomTowns[rng.randInt(0, kingdomTowns.length - 1)];
+                if (!town || !town.buildings || town.buildings.length === 0) continue;
+                // Find buildings of searchable types in this town
+                var validBuildings = [];
+                for (var bi = 0; bi < town.buildings.length; bi++) {
+                    var bld = town.buildings[bi];
+                    if (_SEARCHABLE_BUILDING_TYPES.indexOf(bld.type) !== -1) {
+                        validBuildings.push(bld.type);
+                    }
+                }
+                if (validBuildings.length === 0) continue;
+                var bType = validBuildings[rng.randInt(0, validBuildings.length - 1)];
+                var key = town.id + ':' + bType;
+                if (usedKeys[key]) continue;
+                usedKeys[key] = true;
+                targets.push({
+                    townId: town.id,
+                    townName: town.name,
+                    buildingType: bType,
+                    searched: false,
+                    foundEvidence: false
+                });
+            }
+            if (targets.length < 2) {
+                // Fallback: fill remaining with first available
+                for (var ti2 = 0; ti2 < kingdomTowns.length && targets.length < 2; ti2++) {
+                    var t2 = kingdomTowns[ti2];
+                    if (!t2.buildings) continue;
+                    for (var bi2 = 0; bi2 < t2.buildings.length && targets.length < 2; bi2++) {
+                        var bt2 = t2.buildings[bi2].type;
+                        if (_SEARCHABLE_BUILDING_TYPES.indexOf(bt2) === -1) continue;
+                        var k2 = t2.id + ':' + bt2;
+                        if (usedKeys[k2]) continue;
+                        usedKeys[k2] = true;
+                        targets.push({ townId: t2.id, townName: t2.name, buildingType: bt2, searched: false, foundEvidence: false });
+                    }
+                }
+            }
+            var evidenceNeeded = Math.max(1, targets.length - 1);
+            player._kqInteractiveData[quest.id] = {
+                type: 'search_buildings',
+                stepIndex: stepIndex,
+                targets: targets,
+                evidenceFound: 0,
+                evidenceNeeded: evidenceNeeded
+            };
+        } else if (interactiveType === 'interview_npcs') {
+            var npcCount = 2 + (rng.chance(0.5) ? 1 : 0); // 2-3
+            var npcTargets = [];
+            var usedNpcs = {};
+            // Prefer NPCs with socialRank >= 1 but accept any alive NPC
+            var eligibleNpcs = kingdomPeople.filter(function(p) {
+                if (p.socialRank) {
+                    for (var sk in p.socialRank) {
+                        if ((p.socialRank[sk] || 0) >= 1) return true;
+                    }
+                }
+                return p.occupation && p.occupation !== 'none';
+            });
+            if (eligibleNpcs.length < npcCount) eligibleNpcs = kingdomPeople;
+
+            for (var ni = 0; ni < npcCount * 5 && npcTargets.length < npcCount; ni++) {
+                if (eligibleNpcs.length === 0) break;
+                var npc = eligibleNpcs[rng.randInt(0, eligibleNpcs.length - 1)];
+                if (usedNpcs[npc.id]) continue;
+                usedNpcs[npc.id] = true;
+                var npcTown = null;
+                try { npcTown = Engine.findTown(npc.townId); } catch(e2) {}
+                npcTargets.push({
+                    npcId: npc.id,
+                    npcName: (npc.firstName || '') + ' ' + (npc.lastName || ''),
+                    townId: npc.townId,
+                    townName: npcTown ? npcTown.name : 'Unknown',
+                    interviewed: false,
+                    hadInfo: false
+                });
+            }
+            var infoNeeded = Math.max(1, npcTargets.length - 1);
+            player._kqInteractiveData[quest.id] = {
+                type: 'interview_npcs',
+                stepIndex: stepIndex,
+                targets: npcTargets,
+                infoGathered: 0,
+                infoNeeded: infoNeeded
+            };
+        } else if (interactiveType === 'ask_npcs') {
+            // Bounty tracking: generate criminal name and NPC clues
+            var firstNames = NAMES ? NAMES.male.concat(NAMES.female) : ['Unknown'];
+            var lastNames = NAMES ? NAMES.surnames : ['Criminal'];
+            var criminalName = firstNames[rng.randInt(0, firstNames.length - 1)] + ' ' + lastNames[rng.randInt(0, lastNames.length - 1)];
+
+            // Pick 3 towns where criminal was "seen"
+            var seenTowns = [];
+            var townPool = kingdomTowns.slice();
+            for (var sti = 0; sti < 3 && townPool.length > 0; sti++) {
+                var idx = rng.randInt(0, townPool.length - 1);
+                seenTowns.push(townPool[idx]);
+                townPool.splice(idx, 1);
+            }
+
+            // Pick NPCs in those towns who might know something
+            var clueNpcs = [];
+            var usedClueNpcs = {};
+            for (var cti = 0; cti < seenTowns.length; cti++) {
+                var townNpcs = kingdomPeople.filter(function(p) { return p.townId === seenTowns[cti].id; });
+                // Pick 1-2 NPCs per town
+                var perTown = 1 + (rng.chance(0.4) ? 1 : 0);
+                for (var cni = 0; cni < perTown && townNpcs.length > 0; cni++) {
+                    var cidx = rng.randInt(0, townNpcs.length - 1);
+                    var cNpc = townNpcs[cidx];
+                    if (usedClueNpcs[cNpc.id]) { townNpcs.splice(cidx, 1); cni--; continue; }
+                    usedClueNpcs[cNpc.id] = true;
+                    clueNpcs.push({
+                        npcId: cNpc.id,
+                        npcName: (cNpc.firstName || '') + ' ' + (cNpc.lastName || ''),
+                        townId: cNpc.townId,
+                        townName: seenTowns[cti].name,
+                        asked: false,
+                        knowsLocation: false
+                    });
+                    townNpcs.splice(cidx, 1);
+                }
+            }
+
+            // Mark 1-2 NPCs as knowing the location
+            var knowCount = Math.min(2, Math.max(1, Math.floor(clueNpcs.length * 0.4)));
+            var knowIndices = [];
+            for (var ki = 0; ki < knowCount * 5 && knowIndices.length < knowCount; ki++) {
+                var ridx = rng.randInt(0, clueNpcs.length - 1);
+                if (knowIndices.indexOf(ridx) === -1) knowIndices.push(ridx);
+            }
+            for (var kwi = 0; kwi < knowIndices.length; kwi++) {
+                clueNpcs[knowIndices[kwi]].knowsLocation = true;
+            }
+
+            // Criminal hides in one of the seen towns
+            var crimTown = seenTowns[rng.randInt(0, seenTowns.length - 1)];
+            var clueTexts = [
+                'They were seen near the ' + (crimTown.name || 'town') + ' area',
+                'A merchant mentioned dealing with them recently',
+                'Someone matching their description was spotted at a tavern'
+            ];
+
+            player._kqInteractiveData[quest.id] = {
+                type: 'ask_npcs',
+                stepIndex: stepIndex,
+                criminalName: criminalName,
+                lastSeenTowns: seenTowns.map(function(t) { return { id: t.id, name: t.name }; }),
+                clues: clueTexts,
+                npcClues: clueNpcs,
+                criminalFound: false,
+                criminalTownId: crimTown.id,
+                criminalTownName: crimTown.name,
+                criminalNpcId: null
+            };
+        } else if (interactiveType === 'capture') {
+            // Capture step: look for ask_npcs data from previous step to get criminal info
+            var prevData = player._kqInteractiveData[quest.id];
+            if (prevData && prevData.type === 'ask_npcs' && prevData.criminalFound) {
+                player._kqInteractiveData[quest.id] = {
+                    type: 'capture',
+                    stepIndex: stepIndex,
+                    targetName: prevData.criminalName,
+                    targetTownId: prevData.criminalTownId,
+                    targetTownName: prevData.criminalTownName,
+                    targetNpcId: prevData.criminalNpcId
+                };
+            } else {
+                // No previous ask data (manhunt path) — generate a criminal target
+                var captTown = kingdomTowns[rng.randInt(0, kingdomTowns.length - 1)];
+                var cFirstNames = NAMES ? NAMES.male.concat(NAMES.female) : ['Fugitive'];
+                var cLastNames = NAMES ? NAMES.surnames : ['Unknown'];
+                var capName = cFirstNames[rng.randInt(0, cFirstNames.length - 1)] + ' ' + cLastNames[rng.randInt(0, cLastNames.length - 1)];
+                player._kqInteractiveData[quest.id] = {
+                    type: 'capture',
+                    stepIndex: stepIndex,
+                    targetName: capName,
+                    targetTownId: captTown.id,
+                    targetTownName: captTown.name,
+                    targetNpcId: null
+                };
+            }
+        }
+    }
+
+    // Search a building for evidence (called from building detail UI)
+    function searchBuildingForEvidence(questId, targetIndex) {
+        _sync();
+        if (!player._kqInteractiveData) return { success: false, message: 'No interactive data.' };
+        var iData = player._kqInteractiveData[questId];
+        if (!iData || iData.type !== 'search_buildings') return { success: false, message: 'No search data for this quest.' };
+        if (targetIndex < 0 || targetIndex >= iData.targets.length) return { success: false, message: 'Invalid target.' };
+
+        var target = iData.targets[targetIndex];
+        if (target.searched) return { success: false, message: 'You already searched this building.' };
+
+        // Validate player is in the right town
+        if (player.townId !== target.townId || player.traveling) {
+            return { success: false, message: 'You must be in ' + target.townName + ' to search this building.' };
+        }
+
+        target.searched = true;
+        var rng = Engine.getRng();
+        var found = rng ? rng.chance(0.70) : (Math.random() < 0.70);
+
+        if (found) {
+            target.foundEvidence = true;
+            iData.evidenceFound = (iData.evidenceFound || 0) + 1;
+            Engine.logEvent('🔍 Found evidence at ' + target.buildingType + ' in ' + target.townName + '!');
+
+            // Check if we have enough evidence to complete the step
+            if (iData.evidenceFound >= iData.evidenceNeeded) {
+                _advanceInteractiveStep(questId);
+                return { success: true, message: '🔍 Evidence found! You\'ve gathered enough evidence — step complete!' };
+            }
+            return { success: true, message: '🔍 You found useful evidence! (' + iData.evidenceFound + '/' + iData.evidenceNeeded + ')' };
+        } else {
+            Engine.logEvent('🔍 Searched ' + target.buildingType + ' in ' + target.townName + ' but found nothing useful.');
+            // Check if all searched but not enough evidence
+            var allSearched = iData.targets.every(function(t) { return t.searched; });
+            if (allSearched && iData.evidenceFound < iData.evidenceNeeded) {
+                return { success: true, message: '🔍 Nothing found here. All locations searched but not enough evidence — try the regular action button to proceed.' };
+            }
+            return { success: true, message: '🔍 You searched thoroughly but found nothing useful here.' };
+        }
+    }
+
+    // Interview an NPC for quest info
+    function interviewNpcForQuest(questId, targetIndex) {
+        _sync();
+        if (!player._kqInteractiveData) return { success: false, message: 'No interactive data.' };
+        var iData = player._kqInteractiveData[questId];
+        if (!iData || iData.type !== 'interview_npcs') return { success: false, message: 'No interview data for this quest.' };
+        if (targetIndex < 0 || targetIndex >= iData.targets.length) return { success: false, message: 'Invalid target.' };
+
+        var target = iData.targets[targetIndex];
+        if (target.interviewed) return { success: false, message: 'You already interviewed ' + target.npcName + '.' };
+
+        if (player.townId !== target.townId || player.traveling) {
+            return { success: false, message: 'You must be in ' + target.townName + ' to interview ' + target.npcName + '.' };
+        }
+
+        target.interviewed = true;
+        var rng = Engine.getRng();
+        var hadInfo = rng ? rng.chance(0.60) : (Math.random() < 0.60);
+
+        if (hadInfo) {
+            target.hadInfo = true;
+            iData.infoGathered = (iData.infoGathered || 0) + 1;
+            Engine.logEvent('🗣️ ' + target.npcName + ' provided useful information!');
+
+            if (iData.infoGathered >= iData.infoNeeded) {
+                _advanceInteractiveStep(questId);
+                return { success: true, message: '🗣️ ' + target.npcName + ' told you what you needed to know — step complete!' };
+            }
+            return { success: true, message: '🗣️ ' + target.npcName + ' had useful information! (' + iData.infoGathered + '/' + iData.infoNeeded + ')' };
+        } else {
+            Engine.logEvent('🗣️ ' + target.npcName + ' had nothing useful to share.');
+            var allAsked = iData.targets.every(function(t) { return t.interviewed; });
+            if (allAsked && iData.infoGathered < iData.infoNeeded) {
+                return { success: true, message: '🗣️ ' + target.npcName + ' couldn\'t help. All contacts interviewed but not enough info — try the regular action button to proceed.' };
+            }
+            return { success: true, message: '🗣️ ' + target.npcName + ' didn\'t have any useful information.' };
+        }
+    }
+
+    // Ask an NPC about a criminal (bounty tracking)
+    function askNpcAboutCriminal(questId, targetIndex) {
+        _sync();
+        if (!player._kqInteractiveData) return { success: false, message: 'No interactive data.' };
+        var iData = player._kqInteractiveData[questId];
+        if (!iData || iData.type !== 'ask_npcs') return { success: false, message: 'No tracking data for this quest.' };
+        if (targetIndex < 0 || targetIndex >= iData.npcClues.length) return { success: false, message: 'Invalid target.' };
+
+        var target = iData.npcClues[targetIndex];
+        if (target.asked) return { success: false, message: 'You already asked this person.' };
+
+        if (player.townId !== target.townId || player.traveling) {
+            return { success: false, message: 'You must be in ' + target.townName + ' to ask ' + target.npcName + '.' };
+        }
+
+        target.asked = true;
+
+        if (target.knowsLocation) {
+            iData.criminalFound = true;
+            Engine.logEvent('🔎 ' + target.npcName + ' revealed that ' + iData.criminalName + ' is hiding in ' + iData.criminalTownName + '!');
+            _advanceInteractiveStep(questId);
+            return {
+                success: true,
+                message: '🔎 ' + target.npcName + ' knows where ' + iData.criminalName + ' is! They\'re in ' + iData.criminalTownName + '! Step complete!',
+                revealedLocation: iData.criminalTownName
+            };
+        } else {
+            Engine.logEvent('🔎 ' + target.npcName + ' doesn\'t know where ' + iData.criminalName + ' is.');
+            var allAsked2 = iData.npcClues.every(function(n) { return n.asked; });
+            if (allAsked2 && !iData.criminalFound) {
+                return { success: true, message: '🔎 ' + target.npcName + ' doesn\'t know. All leads exhausted — try the regular action button to proceed.' };
+            }
+            return { success: true, message: '🔎 ' + target.npcName + ' hasn\'t seen ' + iData.criminalName + ' recently.' };
+        }
+    }
+
+    // Attempt to capture a criminal
+    function attemptCaptureCriminal(questId) {
+        _sync();
+        if (!player._kqInteractiveData) return { success: false, message: 'No interactive data.' };
+        var iData = player._kqInteractiveData[questId];
+        if (!iData || iData.type !== 'capture') return { success: false, message: 'No capture data for this quest.' };
+
+        if (player.townId !== iData.targetTownId || player.traveling) {
+            return { success: false, message: 'You must be in ' + iData.targetTownName + ' to attempt capture of ' + iData.targetName + '.' };
+        }
+
+        var rng = Engine.getRng();
+        // Base 60% chance, boosted by combat skills
+        var captureChance = 0.60;
+        if (Player.hasSkill && Player.hasSkill('combat_proficiency')) captureChance += 0.10;
+        if (Player.hasSkill && Player.hasSkill('wilderness_survival')) captureChance += 0.05;
+        if (Player.hasSkill && Player.hasSkill('discrete')) captureChance += 0.05;
+        captureChance = Math.min(0.95, captureChance);
+
+        var success = rng ? rng.chance(captureChance) : (Math.random() < captureChance);
+
+        if (success) {
+            Engine.logEvent('🎯 You captured ' + iData.targetName + '!');
+            _advanceInteractiveStep(questId);
+            return { success: true, message: '🎯 You successfully captured ' + iData.targetName + '! Step complete!' };
+        } else {
+            Engine.logEvent('🎯 ' + iData.targetName + ' escaped your grasp!');
+            // Criminal escapes — for capture_criminal quests, reset the ask_npcs data
+            var actionType = '';
+            try {
+                var kingdomId = quest ? quest.kingdomId : _getPlayerKingdomId();
+                var kqData = player.kingdomQuests[kingdomId];
+                if (kqData) {
+                    for (var qi = 0; qi < kqData.active.length; qi++) {
+                        if (kqData.active[qi].id === questId) {
+                            actionType = kqData.active[qi].requirements.action ? kqData.active[qi].requirements.action.type : '';
+                            break;
+                        }
+                    }
+                }
+            } catch(e) {}
+
+            if (actionType === 'capture_criminal') {
+                // Reset to previous step — must find them again
+                if (!player._kqStepProgress) player._kqStepProgress = {};
+                var prevStep = Math.max(0, (player._kqStepProgress[questId] || 0) - 1);
+                player._kqStepProgress[questId] = prevStep;
+
+                // Find the quest and regenerate ask_npcs data
+                var q = _findActiveQuest(questId);
+                if (q) {
+                    _generateInteractiveData(q, prevStep);
+                }
+                return { success: false, message: '🎯 ' + iData.targetName + ' escaped! You\'ll need to track them down again.' };
+            }
+
+            return { success: false, message: '🎯 ' + iData.targetName + ' escaped! Try again.' };
+        }
+    }
+
+    // Helper to find an active quest by ID
+    function _findActiveQuest(questId) {
+        _sync();
+        if (!player.kingdomQuests) return null;
+        for (var kid in player.kingdomQuests) {
+            var kqData = player.kingdomQuests[kid];
+            if (!kqData || !kqData.active) continue;
+            for (var qi = 0; qi < kqData.active.length; qi++) {
+                if (kqData.active[qi].id === questId) return kqData.active[qi];
+            }
+        }
+        return null;
+    }
+
+    // Advance from an interactive step to the next
+    function _advanceInteractiveStep(questId) {
+        _sync();
+        if (!player._kqStepProgress) player._kqStepProgress = {};
+        var currentStep = player._kqStepProgress[questId] || 0;
+        player._kqStepProgress[questId] = currentStep + 1;
+
+        // Find the quest to check total steps
+        var quest = _findActiveQuest(questId);
+        if (!quest) return;
+        var actionType = quest.requirements.action ? quest.requirements.action.type : '';
+        var msConfig = MULTISTEP_ACTIONS[actionType];
+        if (!msConfig) return;
+
+        if (currentStep + 1 >= msConfig.totalSteps) {
+            // All steps done
+            trackKQActionDone(questId);
+            Engine.logEvent('✅ All steps completed for quest: ' + quest.title);
+        } else {
+            // Generate interactive data for next step if needed
+            var nextStep = msConfig.steps[currentStep + 1];
+            if (nextStep && nextStep.interactive) {
+                _generateInteractiveData(quest, currentStep + 1);
+            }
+            Engine.logEvent('✅ Step ' + (currentStep + 1) + '/' + msConfig.totalSteps + ' complete. Next: ' + nextStep.label);
+        }
+    }
+
     // ── Export to Player ──────────────────────────────────────
     // Town Quests
     Player.generateTownQuests = generateTownQuests;
@@ -2479,6 +2971,10 @@
     Player.trackKQGoldSpent = trackKQGoldSpent;
     Player.trackKQActionDone = trackKQActionDone;
     Player.attemptKQAction = attemptKQAction;
+    Player.searchBuildingForEvidence = searchBuildingForEvidence;
+    Player.interviewNpcForQuest = interviewNpcForQuest;
+    Player.askNpcAboutCriminal = askNpcAboutCriminal;
+    Player.attemptCaptureCriminal = attemptCaptureCriminal;
 
     // NPC Interactions
     Player.getAvailableInteractions = getAvailableInteractions;

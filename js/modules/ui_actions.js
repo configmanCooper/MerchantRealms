@@ -1585,6 +1585,64 @@ function showPersonDetail(person) {
             </div>
         </div>`;
 
+        // ── Kingdom Quest Interactive Buttons (interview, ask, capture) ──
+        if (isInSameTown) {
+            var _kqInteractive = Player.state._kqInteractiveData || {};
+            var _kqQuestButtons = '';
+            for (var _kqId in _kqInteractive) {
+                var _kqiData = _kqInteractive[_kqId];
+                if (!_kqiData) continue;
+
+                if (_kqiData.type === 'interview_npcs') {
+                    for (var _kqni = 0; _kqni < _kqiData.targets.length; _kqni++) {
+                        var _kqnTarget = _kqiData.targets[_kqni];
+                        if (_kqnTarget.npcId === person.id && !_kqnTarget.interviewed) {
+                            var _kqTitle = '';
+                            try {
+                                var _kqAll = Player.state.kingdomQuests || {};
+                                for (var _kqKid in _kqAll) { var _kqAct = _kqAll[_kqKid].active || []; for (var _kqAi = 0; _kqAi < _kqAct.length; _kqAi++) { if (_kqAct[_kqAi].id === _kqId) { _kqTitle = _kqAct[_kqAi].title; break; } } if (_kqTitle) break; }
+                            } catch(e) {}
+                            _kqQuestButtons += '<div style="background:rgba(100,150,212,0.12);padding:8px;border-radius:6px;border:1px solid rgba(100,150,212,0.3);margin-bottom:6px;">';
+                            _kqQuestButtons += '<div style="font-size:0.78rem;color:#6496d4;font-weight:bold;">🗣️ Interview for Quest</div>';
+                            if (_kqTitle) _kqQuestButtons += '<div style="font-size:0.65rem;color:#aaa;margin:2px 0;">' + escapeHtml(_kqTitle) + '</div>';
+                            _kqQuestButtons += '<div style="font-size:0.68rem;color:#aaa;margin:2px 0;">This person may have information (' + (_kqiData.infoGathered || 0) + '/' + _kqiData.infoNeeded + ' gathered)</div>';
+                            _kqQuestButtons += '<button class="btn-medieval" data-action="interviewNpcForQuestUI" data-id="' + _kqId.replace(/"/g, '&quot;') + '" data-val="' + _kqni + '" style="font-size:0.75rem;padding:5px 12px;background:rgba(100,150,212,0.2);border-color:rgba(100,150,212,0.4);">🗣️ Interview about Quest</button>';
+                            _kqQuestButtons += '</div>';
+                        }
+                    }
+                } else if (_kqiData.type === 'ask_npcs') {
+                    for (var _kqci = 0; _kqci < _kqiData.npcClues.length; _kqci++) {
+                        var _kqcTarget = _kqiData.npcClues[_kqci];
+                        if (_kqcTarget.npcId === person.id && !_kqcTarget.asked) {
+                            var _kqTitle2 = '';
+                            try {
+                                var _kqAll2 = Player.state.kingdomQuests || {};
+                                for (var _kqKid2 in _kqAll2) { var _kqAct2 = _kqAll2[_kqKid2].active || []; for (var _kqAi2 = 0; _kqAi2 < _kqAct2.length; _kqAi2++) { if (_kqAct2[_kqAi2].id === _kqId) { _kqTitle2 = _kqAct2[_kqAi2].title; break; } } if (_kqTitle2) break; }
+                            } catch(e) {}
+                            _kqQuestButtons += '<div style="background:rgba(180,120,60,0.12);padding:8px;border-radius:6px;border:1px solid rgba(180,120,60,0.3);margin-bottom:6px;">';
+                            _kqQuestButtons += '<div style="font-size:0.78rem;color:#b4783c;font-weight:bold;">🔎 Ask about ' + escapeHtml(_kqiData.criminalName) + '</div>';
+                            if (_kqTitle2) _kqQuestButtons += '<div style="font-size:0.65rem;color:#aaa;margin:2px 0;">' + escapeHtml(_kqTitle2) + '</div>';
+                            _kqQuestButtons += '<div style="font-size:0.68rem;color:#aaa;margin:2px 0;">This person may know where the criminal is hiding.</div>';
+                            _kqQuestButtons += '<button class="btn-medieval" data-action="askNpcAboutCriminalUI" data-id="' + _kqId.replace(/"/g, '&quot;') + '" data-val="' + _kqci + '" style="font-size:0.75rem;padding:5px 12px;background:rgba(180,120,60,0.2);border-color:rgba(180,120,60,0.4);">🔎 Ask about Criminal</button>';
+                            _kqQuestButtons += '</div>';
+                        }
+                    }
+                } else if (_kqiData.type === 'capture') {
+                    // Show capture button if this NPC's town matches OR if player is in the right town
+                    if (_kqiData.targetTownId === person.townId && _kqiData.targetTownId === Player.townId) {
+                        _kqQuestButtons += '<div style="background:rgba(200,60,60,0.12);padding:8px;border-radius:6px;border:1px solid rgba(200,60,60,0.3);margin-bottom:6px;">';
+                        _kqQuestButtons += '<div style="font-size:0.78rem;color:#c83c3c;font-weight:bold;">🎯 Criminal Target: ' + escapeHtml(_kqiData.targetName) + '</div>';
+                        _kqQuestButtons += '<div style="font-size:0.68rem;color:#aaa;margin:2px 0;">This is the fugitive you\'re looking for! Attempt to capture them.</div>';
+                        _kqQuestButtons += '<button class="btn-medieval" data-action="attemptCaptureCriminalUI" data-id="' + _kqId.replace(/"/g, '&quot;') + '" style="font-size:0.75rem;padding:5px 12px;background:rgba(200,60,60,0.2);border-color:rgba(200,60,60,0.4);">🎯 Attempt Capture</button>';
+                        _kqQuestButtons += '</div>';
+                    }
+                }
+            }
+            if (_kqQuestButtons) {
+                html += '<div class="detail-section"><h3>📜 Quest Actions</h3>' + _kqQuestButtons + '</div>';
+            }
+        }
+
         if (isInSameTown) {
             // ── Noble Access Check ──
             var _talkCheck = Player.canTalkTo ? Player.canTalkTo(person.id) : { canTalk: true };
@@ -3640,6 +3698,21 @@ function clickTown(townId) {
     UI.registerAction('treatCompanionUI', function(_t, d) { UI.treatCompanionUI(d.type, d.id, d.val); });
     UI.registerAction('takeHorseFromWorker', function(_t, d) { var r = Player.takeHorseFromWorker(d.id); UI.toast(r.message, r.success ? 'success' : 'warning'); if (r.success) { try { var p = Engine.findPerson(d.id); if (p) UI.showPersonDetail(p); } catch(e) {} } });
     UI.registerAction('requestSignature', function(_t, d) { var r = Player.requestSignature(d.id, d.val); UI.toast(r.message, r.signed ? 'success' : 'warning'); try { var p = Engine.getPerson(d.val); if (p) UI.showPersonDetail(p); } catch(e) {} });
+    UI.registerAction('interviewNpcForQuestUI', function(_t, d) {
+        var r = Player.interviewNpcForQuest ? Player.interviewNpcForQuest(d.id, parseInt(d.val)) : { success: false, message: 'Interview not available.' };
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        try { var p = Engine.getPerson(Player.state._kqInteractiveData[d.id].targets[parseInt(d.val)].npcId); if (p) UI.showPersonDetail(p); } catch(e) {}
+    });
+    UI.registerAction('askNpcAboutCriminalUI', function(_t, d) {
+        var r = Player.askNpcAboutCriminal ? Player.askNpcAboutCriminal(d.id, parseInt(d.val)) : { success: false, message: 'Ask not available.' };
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        try { var p = Engine.getPerson(Player.state._kqInteractiveData[d.id].npcClues[parseInt(d.val)].npcId); if (p) UI.showPersonDetail(p); } catch(e) {}
+    });
+    UI.registerAction('attemptCaptureCriminalUI', function(_t, d) {
+        var r = Player.attemptCaptureCriminal ? Player.attemptCaptureCriminal(d.id) : { success: false, message: 'Capture not available.' };
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        if (typeof UI.openStreetTrading === 'function') UI.openStreetTrading();
+    });
     UI.registerAction('complyRequisition', function(_t, d) { Player.executeRequisition(d.id, Number(d.val)); UI.closeModal(); UI.toast('⚠️ Guards seized ' + d.val + ' ' + d.type + '.', 'danger'); });
     UI.registerAction('bribeRequisitionGuard', function(_t, d) { var r = Player.bribeRequisitionGuard(Number(d.cost)); UI.closeModal(); if (!r.success) { Player.executeRequisition(d.id, Number(d.val)); } });
     UI.registerAction('_resistRequisition', function(_t, d) { UI._resistRequisition(d.id, Number(d.val), d.kingdom); });

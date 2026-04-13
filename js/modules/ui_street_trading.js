@@ -1541,6 +1541,74 @@ function _buildKQCard(quest, kingdomId, day, isPersonal) {
     return html;
 }
 
+// Build interactive step UI for quest active card
+function _buildInteractiveStepUI(questId, iData, kingdomId) {
+    var html = '';
+    var safQid = questId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    var safKid = kingdomId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+    if (iData.type === 'search_buildings') {
+        html += '<div style="background:rgba(212,168,67,0.1);padding:6px 8px;border-radius:6px;border:1px solid rgba(212,168,67,0.25);margin:4px 0 4px 8px;">';
+        html += '<div style="font-size:0.68rem;color:#d4a843;font-weight:bold;margin-bottom:4px;">🔍 Search these buildings for evidence (' + (iData.evidenceFound || 0) + '/' + iData.evidenceNeeded + '):</div>';
+        for (var si = 0; si < iData.targets.length; si++) {
+            var t = iData.targets[si];
+            var icon = t.searched ? (t.foundEvidence ? '✅' : '❌') : '⬜';
+            var color = t.searched ? (t.foundEvidence ? '#55a868' : '#888') : '#e67e22';
+            var bName = t.buildingType.replace(/_/g, ' ');
+            bName = bName.charAt(0).toUpperCase() + bName.slice(1);
+            html += '<div style="font-size:0.62rem;color:' + color + ';margin-left:4px;">' + icon + ' ' + escapeHtml(bName) + ' in ' + escapeHtml(t.townName);
+            if (!t.searched) html += ' <span style="color:#888;font-style:italic;">— go to Town Market in ' + escapeHtml(t.townName) + '</span>';
+            html += '</div>';
+        }
+        html += '</div>';
+    } else if (iData.type === 'interview_npcs') {
+        html += '<div style="background:rgba(100,150,212,0.1);padding:6px 8px;border-radius:6px;border:1px solid rgba(100,150,212,0.25);margin:4px 0 4px 8px;">';
+        html += '<div style="font-size:0.68rem;color:#6496d4;font-weight:bold;margin-bottom:4px;">🗣️ Interview these people (' + (iData.infoGathered || 0) + '/' + iData.infoNeeded + '):</div>';
+        for (var ni = 0; ni < iData.targets.length; ni++) {
+            var n = iData.targets[ni];
+            var nIcon = n.interviewed ? (n.hadInfo ? '✅' : '❌') : '⬜';
+            var nColor = n.interviewed ? (n.hadInfo ? '#55a868' : '#888') : '#6496d4';
+            html += '<div style="font-size:0.62rem;color:' + nColor + ';margin-left:4px;">' + nIcon + ' ' + escapeHtml(n.npcName) + ' in ' + escapeHtml(n.townName);
+            if (!n.interviewed) html += ' <span style="color:#888;font-style:italic;">— find them in town</span>';
+            html += '</div>';
+        }
+        html += '</div>';
+    } else if (iData.type === 'ask_npcs') {
+        html += '<div style="background:rgba(180,120,60,0.1);padding:6px 8px;border-radius:6px;border:1px solid rgba(180,120,60,0.25);margin:4px 0 4px 8px;">';
+        html += '<div style="font-size:0.68rem;color:#b4783c;font-weight:bold;margin-bottom:4px;">🔎 Track down ' + escapeHtml(iData.criminalName) + ':</div>';
+        html += '<div style="font-size:0.6rem;color:#999;margin-bottom:4px;">Last seen in: ';
+        var townNames = [];
+        for (var lsi = 0; lsi < (iData.lastSeenTowns || []).length; lsi++) {
+            townNames.push(escapeHtml(iData.lastSeenTowns[lsi].name || '?'));
+        }
+        html += townNames.join(', ') + '</div>';
+        if (iData.clues && iData.clues.length > 0) {
+            html += '<div style="font-size:0.58rem;color:#888;margin-bottom:3px;font-style:italic;">Clues: ' + escapeHtml(iData.clues[0]) + '</div>';
+        }
+        html += '<div style="font-size:0.62rem;color:#aaa;margin-bottom:2px;">Ask NPCs in these towns:</div>';
+        for (var ci = 0; ci < iData.npcClues.length; ci++) {
+            var c = iData.npcClues[ci];
+            var cIcon = c.asked ? '✅' : '⬜';
+            var cColor = c.asked ? '#888' : '#b4783c';
+            html += '<div style="font-size:0.62rem;color:' + cColor + ';margin-left:4px;">' + cIcon + ' ' + escapeHtml(c.npcName) + ' in ' + escapeHtml(c.townName);
+            if (!c.asked) html += ' <span style="color:#888;font-style:italic;">— find them</span>';
+            html += '</div>';
+        }
+        if (iData.criminalFound) {
+            html += '<div style="font-size:0.65rem;color:#55a868;font-weight:bold;margin-top:4px;">✅ Location revealed: ' + escapeHtml(iData.criminalTownName || '?') + '</div>';
+        }
+        html += '</div>';
+    } else if (iData.type === 'capture') {
+        html += '<div style="background:rgba(200,60,60,0.1);padding:6px 8px;border-radius:6px;border:1px solid rgba(200,60,60,0.25);margin:4px 0 4px 8px;">';
+        html += '<div style="font-size:0.68rem;color:#c83c3c;font-weight:bold;">🎯 Capture ' + escapeHtml(iData.targetName) + '</div>';
+        html += '<div style="font-size:0.62rem;color:#aaa;margin-top:2px;">Location: ' + escapeHtml(iData.targetTownName || '?') + ' — travel there and attempt capture</div>';
+        html += '<button class="btn-medieval" data-action="attemptCaptureCriminalUI" data-id="' + safQid + '" data-kingdom="' + safKid + '" style="font-size:0.68rem;padding:4px 10px;margin-top:4px;background:rgba(200,60,60,0.2) !important;border-color:rgba(200,60,60,0.4) !important;">🎯 Attempt Capture</button>';
+        html += '</div>';
+    }
+
+    return html;
+}
+
 function _buildKQActiveCard(quest, kingdomId, day, progress) {
     var html = '';
     var daysLeft = Math.max(0, (quest.expiresDay || 0) - day);
@@ -1674,9 +1742,23 @@ function _buildKQActiveCard(quest, kingdomId, day, progress) {
                     html += '<div style="font-size:0.62rem;color:#e67e22;margin-left:12px;">⚠️ ' + _aqAttempts + ' total attempt' + (_aqAttempts > 1 ? 's' : '') + ' so far</div>';
                 }
 
+                // Check for interactive step
+                var _curStep = _msConfig.steps[_msProgress];
+                var _interactiveType = _curStep ? _curStep.interactive : null;
+                var _iData = (Player.state._kqInteractiveData || {})[quest.id];
+
+                if (_interactiveType && _iData) {
+                    // Show interactive targets
+                    html += _buildInteractiveStepUI(quest.id, _iData, kingdomId);
+                }
+
+                // Always show the regular action button as fallback
                 var safActId2 = quest.id.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                 var safKid2 = kingdomId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                 var _curStepBtn = _msConfig.steps[_msProgress];
+                if (_interactiveType && _iData) {
+                    html += '<div style="font-size:0.58rem;color:#666;margin-top:4px;margin-left:8px;">Or use the manual action:</div>';
+                }
                 html += '<button class="btn-medieval" data-action="_attemptKQActionUI" data-id="' + safActId2 + '" data-kingdom="' + safKid2 + '" style="font-size:0.7rem;padding:4px 12px;margin-top:4px;background:rgba(231,126,35,0.2) !important;border-color:rgba(231,126,35,0.4) !important;">▶️ ' + escapeHtml(_curStepBtn ? _curStepBtn.label : 'Next Step') + '</button>';
             } else if (_aqMech) {
                 // Show action details with proper attempt button
@@ -2121,6 +2203,11 @@ function _switchProposeActionTab(tabId, kingdomId) {
     UI.registerAction('openVotingDialog', function(_t, d) { if (d.id) UI.openVotingDialog(d.id); });
     UI.registerAction('_switchKQTab', function(_t, d) { UI._switchKQTab(d.tab, d.kingdom); });
     UI.registerAction('_attemptKQActionUI', function(_t, d) { if (d.id && d.kingdom) UI._attemptKQActionUI(d.id, d.kingdom); });
+    UI.registerAction('attemptCaptureCriminalUI', function(_t, d) {
+        var r = Player.attemptCaptureCriminal ? Player.attemptCaptureCriminal(d.id) : { success: false, message: 'Capture not available.' };
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.openStreetTrading();
+    });
 
     // Complex IIFE handlers
     UI.registerAction('deliverKingCommissionAction', function() {
