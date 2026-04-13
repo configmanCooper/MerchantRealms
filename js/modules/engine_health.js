@@ -416,7 +416,7 @@
                     }
                     if (!_isNotable && _pState.spouseId === person.id) _isNotable = true;
                     if (!_isNotable && _pState.relationships && (_pState.relationships[person.id] || 0) > 20) _isNotable = true;
-                } catch(e) {}
+                } catch(e) { console.warn('[Health] relationship check error:', e.message); }
             }
             if (_isNotable) {
                 var _roleTag = person.isKing ? '👑 King ' : person.isNoble ? '🏰 Noble ' : person.isEliteMerchant ? '💰 Elite Merchant ' : '';
@@ -509,7 +509,7 @@
                         var _ps = Player.state || Player;
                         if (_ps.spouseId === person.id) _isNotable = true;
                         if (!_isNotable && _ps.relationships && (_ps.relationships[person.id] || 0) > 20) _isNotable = true;
-                    } catch(e) {}
+                    } catch(e) { console.warn('[Health] relationship check error:', e.message); }
                 }
                 if (_isNotable) {
                     var _roleTag = person.isKing ? '👑 King ' : person.isNoble ? '🏰 Noble ' : person.isEliteMerchant ? '💰 Elite Merchant ' : '';

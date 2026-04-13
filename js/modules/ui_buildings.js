@@ -834,7 +834,7 @@
             var _cSupCost = 0;
             var _cSupDef = _cond.type === 'Illness' ? (_tSupIllness[_cond.sev] || {}) : (_tSupInjury[_cond.sev] || {});
             for (var _csk in _cSupDef) {
-                var _cPrice = (Engine.getMarketPrice ? Engine.getMarketPrice(town, _csk) : 5) || 5;
+                var _cPrice = (Engine.getMarketPrice ? Engine.getMarketPrice(town.id, _csk) : 5) || 5;
                 _cSupCost += _cPrice * _cSupDef[_csk];
             }
             var _cProfit = _cFee - _cSupCost;

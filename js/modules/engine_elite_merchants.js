@@ -2753,7 +2753,7 @@
                     for (var _ugMatId in ugBt.materials) {
                         var _ugQty = ugBt.materials[_ugMatId];
                         var _ugMatPrice = 0;
-                        try { _ugMatPrice = getMarketPrice(ugRef.townId, _ugMatId) || 0; } catch(e) {}
+                        try { _ugMatPrice = getMarketPrice(ugRef.townId, _ugMatId) || 0; } catch(e) { console.warn('[EM] getMarketPrice error:', e.message); }
                         if (_ugMatPrice <= 0) { var _ugRes = findResourceById(_ugMatId); _ugMatPrice = _ugRes ? (_ugRes.basePrice || 5) : 5; }
                         _ugBaseMaterialHalf += Math.floor(_ugQty * _ugMatPrice * 0.5);
                     }

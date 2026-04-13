@@ -38,7 +38,7 @@
     var recruitSoldier = function(person, town, k, type) { return Engine.recruitSoldier(person, town, k, type); };
     var kingdomBuild = function(k, town, type, rng) { return Engine.kingdomBuild(k, town, type, rng); };
     var distributeConstructionWages = function(townId, amount, rng) { return Engine.distributeConstructionWages(townId, amount, rng); };
-    var buildNewRoad = function(from, to, kingdomId) { return Engine.buildNewRoad(from, to, kingdomId); };
+    var buildNewRoad = function(from, to, kingdomId, opts) { return Engine.buildNewRoad(from, to, kingdomId, opts); };
     var checkWaterPath = function(x1, y1, x2, y2) { return Engine.checkWaterPath(x1, y1, x2, y2); };
     var computeRoadImportance = function(a, b) { return Engine.computeRoadImportance(a, b); };
     var rebuildBridge = function(roadIndex, bridgeId) { return Engine.rebuildBridge(roadIndex, bridgeId); };
