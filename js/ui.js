@@ -463,7 +463,7 @@ window.UI = (function () {
         registerAction('specialAction', function(_t, d) { if (d.id) UI.specialAction(d.id); });
         registerAction('familyAction', function(_t, d) { if (d.id) UI.familyAction(d.id); });
         registerAction('spouseInteraction', function(_t, d) { if (d.id) UI.spouseInteraction(d.id); });
-        registerAction('treatCompanionUI', function(_t, d) { if (d.id && d.type) treatCompanionUI(d.id, d.type); });
+        registerAction('treatCompanionUI', function(_t, d) { if (d.type) treatCompanionUI(d.type, d.id, d.val); });
         registerAction('setNotifFilter', function(_t, d) { if (d.key && d.val) setNotifFilter(d.key, d.val); });
         registerAction('setTradeQty', function(_t, d) { if (d.type && d.id) setTradeQty(d.type, d.id, parseInt(d.qty)||1, parseFloat(d.price)||0); });
         registerAction('collectOutputUI', function(_t, d) { if (d.id) UI.collectOutputUI(d.id); });
