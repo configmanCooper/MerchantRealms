@@ -8896,55 +8896,108 @@
         return { success: true, message: town.name + ' fortified with 5 additional soldiers.' };
     }
 
-    function kingRecruitSoldiers(count) {
+    function kingRecruitSoldiers(count, townId) {
         if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
         var kingdom = Engine.findKingdom(player.kingState.kingdomId);
         if (!kingdom) return { success: false, message: 'Kingdom not found.' };
-        count = Math.max(1, Math.min(20, parseInt(count) || 5));
+        count = Math.max(1, Math.min(50, parseInt(count) || 5));
         var costPer = CONFIG.SOLDIER_RECRUIT_COST || 50;
 
-        // Find willing NPCs across kingdom towns
-        var recruited = 0;
+        // Initialize postings array
+        if (!kingdom._recruitmentPostings) kingdom._recruitmentPostings = [];
+
+        // Limit active postings to 3
+        if (kingdom._recruitmentPostings.length >= 3) {
+            return { success: false, message: 'Already have 3 active recruitment postings. Wait for them to fill.' };
+        }
+
+        // If no town specified, post across all towns
+        var targetTowns = [];
+        if (townId) {
+            var t = Engine.findTown(townId);
+            if (!t || t.kingdomId !== kingdom.id) return { success: false, message: 'Town not in your kingdom.' };
+            targetTowns.push(townId);
+        } else {
+            var kTowns = Engine.getTowns();
+            for (var _ti = 0; _ti < kTowns.length; _ti++) {
+                if (kTowns[_ti].kingdomId === kingdom.id && !kTowns[_ti].isWilderness) {
+                    targetTowns.push(kTowns[_ti].id);
+                }
+            }
+        }
+
+        // Reserve gold for recruitment bounty (pay upfront)
+        var reserveGold = count * costPer;
+        if ((kingdom.gold || 0) < reserveGold) {
+            var canAfford = Math.floor((kingdom.gold || 0) / costPer);
+            if (canAfford < 1) return { success: false, message: 'Need at least ' + costPer + 'g for recruitment.' };
+            count = canAfford;
+            reserveGold = count * costPer;
+        }
+        kingdom.gold -= reserveGold;
+
+        kingdom._recruitmentPostings.push({
+            id: 'post_' + Engine.getDay() + '_' + Math.floor(Math.random() * 9999),
+            towns: targetTowns,
+            slotsTotal: count,
+            slotsFilled: 0,
+            payPerSoldier: costPer,
+            reservedGold: reserveGold,
+            postedDay: Engine.getDay(),
+            isConscription: false
+        });
+
+        Engine.logEvent('📜 Posted recruitment for ' + count + ' soldiers across ' + targetTowns.length + ' towns (' + reserveGold + 'g reserved). NPCs will respond over time.');
+        return { success: true, message: 'Recruitment posting created for ' + count + ' soldiers (' + reserveGold + 'g reserved). NPCs will enlist over the coming days.' };
+    }
+
+    function kingConscriptSoldiers(count) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        if (!kingdom.laws || !kingdom.laws.conscription) {
+            return { success: false, message: 'Conscription law must be active to conscript soldiers.' };
+        }
+        count = Math.max(1, Math.min(30, parseInt(count) || 5));
+
+        if (!kingdom._recruitmentPostings) kingdom._recruitmentPostings = [];
+        if (kingdom._recruitmentPostings.length >= 3) {
+            return { success: false, message: 'Already have 3 active recruitment postings. Wait for them to fill.' };
+        }
+
+        // Conscription pays only 20% of normal rate
+        var normalCost = CONFIG.SOLDIER_RECRUIT_COST || 50;
+        var conscriptPay = Math.round(normalCost * 0.2);
+        var reserveGold = count * conscriptPay;
+        if ((kingdom.gold || 0) < reserveGold) {
+            var canAfford = Math.floor((kingdom.gold || 0) / conscriptPay);
+            if (canAfford < 1) return { success: false, message: 'Need at least ' + conscriptPay + 'g for conscription.' };
+            count = canAfford;
+            reserveGold = count * conscriptPay;
+        }
+        kingdom.gold -= reserveGold;
+
+        var targetTowns = [];
         var kTowns = Engine.getTowns();
-        for (var _sti = 0; _sti < kTowns.length && recruited < count; _sti++) {
-            var town = kTowns[_sti];
-            if (town.kingdomId !== kingdom.id || town.isWilderness) continue;
-
-            // Find idle laborers willing to serve
-            var idle = [];
-            try {
-                idle = Engine.getPeople ? Engine.getPeople(town.id) : [];
-                idle = idle.filter(function(p) {
-                    return p.alive && (p.occupation === 'laborer' || p.occupation === 'none') &&
-                           p.age >= (CONFIG.COMING_OF_AGE || 16) && p.age <= 50 &&
-                           p.status !== 'indentured';
-                });
-            } catch(e) { continue; }
-
-            var toRecruit = Math.min(idle.length, count - recruited);
-            for (var _ri = 0; _ri < toRecruit; _ri++) {
-                if (kingdom.gold < costPer) break;
-                var uType = 'infantry';
-                var supply = (town.market && town.market.supply) || {};
-                if ((supply.horses || 0) > 0 && (supply.saddles || 0) > 0 && Math.random() < 0.15) uType = 'cavalry';
-                else if ((supply.bows || 0) > 0 && Math.random() < 0.25) uType = 'archer';
-                Engine.recruitSoldier(idle[_ri], town, kingdom, uType);
-                kingdom.gold -= costPer;
-                recruited++;
+        for (var _ti = 0; _ti < kTowns.length; _ti++) {
+            if (kTowns[_ti].kingdomId === kingdom.id && !kTowns[_ti].isWilderness) {
+                targetTowns.push(kTowns[_ti].id);
             }
         }
 
-        if (recruited === 0) {
-            // Check if conscription is enabled
-            if (kingdom.laws && kingdom.laws.conscription) {
-                return { success: false, message: 'No willing recruits found. Conscription may draft reluctant NPCs over time.' };
-            }
-            return { success: false, message: 'No willing recruits (idle laborers) found in any kingdom town. Enable conscription to force recruitment.' };
-        }
+        kingdom._recruitmentPostings.push({
+            id: 'conscript_' + Engine.getDay() + '_' + Math.floor(Math.random() * 9999),
+            towns: targetTowns,
+            slotsTotal: count,
+            slotsFilled: 0,
+            payPerSoldier: conscriptPay,
+            reservedGold: reserveGold,
+            postedDay: Engine.getDay(),
+            isConscription: true
+        });
 
-        var totalCost = recruited * costPer;
-        Engine.logEvent('🎖️ Recruited ' + recruited + ' soldiers across the kingdom for ' + totalCost + 'g.');
-        return { success: true, message: 'Recruited ' + recruited + (recruited < count ? ' of ' + count + ' requested' : '') + ' soldiers! Cost: ' + totalCost + 'g.' };
+        Engine.logEvent('⚠️ Conscription order issued for ' + count + ' soldiers (' + conscriptPay + 'g each, ' + reserveGold + 'g reserved). Males 18+ will be drafted.');
+        return { success: true, message: 'Conscription order for ' + count + ' soldiers at ' + conscriptPay + 'g each. Eligible males will be drafted over time.' };
     }
 
     function kingDischargeSoldiers(count) {
@@ -8959,17 +9012,55 @@
     }
 
     function kingReinforceTown(townId) {
+        // This now opens a transfer modal — the actual transfer is done by kingTransferSoldiers
+        return { success: false, message: 'Use the Transfer Soldiers button to move soldiers between towns.' };
+    }
+
+    function kingTransferSoldiers(fromTownId, toTownId, count) {
         if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
         var kingdom = Engine.findKingdom(player.kingState.kingdomId);
         if (!kingdom) return { success: false, message: 'Kingdom not found.' };
-        var town = Engine.findTown(townId);
-        if (!town || town.kingdomId !== kingdom.id) return { success: false, message: 'Town not in your kingdom.' };
-        var cost = 75;
-        if (kingdom.gold < cost) return { success: false, message: 'Need ' + cost + 'g to reinforce.' };
-        kingdom.gold -= cost;
-        town.garrison = (town.garrison || 0) + 5;
-        Engine.logEvent('🛡️ Sent 5 soldiers to reinforce ' + town.name + '. Cost: ' + cost + 'g.');
-        return { success: true, message: town.name + ' reinforced with 5 soldiers.' };
+        var fromTown = Engine.findTown(fromTownId);
+        var toTown = Engine.findTown(toTownId);
+        if (!fromTown || fromTown.kingdomId !== kingdom.id) return { success: false, message: 'Source town not in your kingdom.' };
+        if (!toTown || toTown.kingdomId !== kingdom.id) return { success: false, message: 'Destination town not in your kingdom.' };
+        if (fromTownId === toTownId) return { success: false, message: 'Source and destination must differ.' };
+
+        count = Math.max(1, parseInt(count) || 5);
+        var available = (fromTown.garrison || 0) - 3; // keep minimum 3
+        if (available < 1) return { success: false, message: fromTown.name + ' needs at least 3 soldiers for basic defense.' };
+        if (count > available) count = available;
+
+        // Calculate travel time between towns
+        var travelDays = 1;
+        try {
+            var route = Engine.findArmyRoute(fromTownId, toTownId, kingdom.id);
+            if (route && route.totalTime) {
+                travelDays = Math.max(1, Math.ceil(route.totalTime));
+            } else {
+                // Fallback: estimate by distance
+                var dx = (fromTown.x || 0) - (toTown.x || 0);
+                var dy = (fromTown.y || 0) - (toTown.y || 0);
+                var dist = Math.sqrt(dx * dx + dy * dy);
+                travelDays = Math.max(1, Math.ceil(dist / ((CONFIG.CARAVAN_BASE_SPEED || 120) * 0.5)));
+            }
+        } catch(e) { travelDays = 3; }
+
+        // Remove from source garrison
+        fromTown.garrison = Math.max(0, (fromTown.garrison || 0) - count);
+
+        // Create transfer order
+        if (!kingdom._soldierTransfers) kingdom._soldierTransfers = [];
+        kingdom._soldierTransfers.push({
+            fromTownId: fromTownId,
+            toTownId: toTownId,
+            count: count,
+            departDay: Engine.getDay(),
+            arrivalDay: Engine.getDay() + travelDays
+        });
+
+        Engine.logEvent('🚶 ' + count + ' soldiers marching from ' + fromTown.name + ' to ' + toTown.name + ' (arrival in ' + travelDays + ' days).');
+        return { success: true, message: count + ' soldiers transferring from ' + fromTown.name + ' → ' + toTown.name + '. Arrival in ' + travelDays + ' days.' };
     }
 
     function kingProcureMilitary(itemId, cost) {
@@ -35578,8 +35669,10 @@
         kingSendArmy,
         kingFortifyTown,
         kingRecruitSoldiers,
+        kingConscriptSoldiers,
         kingDischargeSoldiers,
         kingReinforceTown,
+        kingTransferSoldiers,
         kingProcureMilitary,
         kingBuyStockpile,
         kingSellStockpile,

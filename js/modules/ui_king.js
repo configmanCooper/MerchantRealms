@@ -747,24 +747,68 @@
         html += '<div style="background:rgba(0,0,0,0.2);padding:4px;border-radius:4px;text-align:center;font-size:0.68rem;"><span style="color:#aaa;">🐴 Horses</span><br><span style="color:#d4c9a0;">' + _horses + '</span></div>';
         html += '</div></div>';
 
-        // Recruitment
+        // Recruitment Postings
         html += '<div style="background:rgba(0,0,0,0.15);padding:8px;border-radius:6px;margin-bottom:8px;">';
         html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:4px;">🎖️ Soldier Recruitment</div>';
         var _recruitCost = CONFIG.SOLDIER_RECRUIT_COST || 50;
-        html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:6px;">Each soldier costs ' + formatGold(_recruitCost) + ' to recruit. Soldiers need weapons from the stockpile to be effective.</div>';
+        html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:6px;">Post recruitment orders for soldiers (' + formatGold(_recruitCost) + '/soldier). NPCs will enlist over time from their towns.</div>';
+
+        // Show active postings
+        var _postings = kingdom._recruitmentPostings || [];
+        if (_postings.length > 0) {
+            html += '<div style="margin-bottom:6px;">';
+            for (var _pi = 0; _pi < _postings.length; _pi++) {
+                var _post = _postings[_pi];
+                var _pctFilled = Math.round(_post.slotsFilled / _post.slotsTotal * 100);
+                var _pType = _post.isConscription ? '⚠️ Conscription' : '📜 Voluntary';
+                var _pColor = _pctFilled >= 80 ? '#55a868' : _pctFilled >= 40 ? '#e0c58a' : '#c44e52';
+                html += '<div style="padding:3px 6px;margin-bottom:2px;background:rgba(0,0,0,0.1);border-radius:4px;font-size:0.7rem;">';
+                html += '<span style="color:#d4c9a0;">' + _pType + '</span> ';
+                html += '<span style="color:' + _pColor + ';">' + _post.slotsFilled + '/' + _post.slotsTotal + ' filled (' + _pctFilled + '%)</span>';
+                html += ' <span style="color:#888;">· Day ' + _post.postedDay + ' · ' + formatGold(_post.payPerSoldier) + '/ea</span>';
+                html += '</div>';
+            }
+            html += '</div>';
+        }
+
         html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">';
-        html += '<label style="font-size:0.72rem;color:#d4c9a0;">Recruit:</label>';
-        html += '<input type="number" id="_kingRecruitCount" min="1" max="100" value="10" style="width:60px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#d4c9a0;padding:2px 4px;font-size:0.72rem;text-align:center;">';
+        html += '<label style="font-size:0.72rem;color:#d4c9a0;">Post for:</label>';
+        html += '<input type="number" id="_kingRecruitCount" min="1" max="50" value="10" style="width:60px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#d4c9a0;padding:2px 4px;font-size:0.72rem;text-align:center;">';
         html += '<span style="font-size:0.65rem;color:#888;">soldiers</span>';
         html += '</div>';
         var _canAfford = (kingdom.gold || 0) >= _recruitCost;
-        html += '<button class="btn-medieval" data-action="kingRecruitSoldiers" style="font-size:0.72rem;padding:4px 12px;' + (!_canAfford ? 'opacity:0.5;' : '') + '" ' + (!_canAfford ? 'disabled' : '') + '>🎖️ Recruit Soldiers</button>';
+        var _postingsFull = _postings.length >= 3;
+        html += '<div style="display:flex;gap:4px;flex-wrap:wrap;">';
+        html += '<button class="btn-medieval" data-action="kingRecruitSoldiers" style="font-size:0.72rem;padding:4px 12px;' + (!_canAfford || _postingsFull ? 'opacity:0.5;' : '') + '" ' + (!_canAfford || _postingsFull ? 'disabled' : '') + '>🎖️ Post Recruitment</button>';
+        // Conscription button
+        var _hasConscription = kingdom.laws && kingdom.laws.conscription;
+        var _conscriptPay = Math.round(_recruitCost * 0.2);
+        html += '<button class="btn-medieval" data-action="kingConscriptSoldiers" style="font-size:0.72rem;padding:4px 12px;' + (!_hasConscription || _postingsFull ? 'opacity:0.5;' : '') + '" ' + (!_hasConscription || _postingsFull ? 'disabled' : '') + '>⚠️ Conscript (' + formatGold(_conscriptPay) + '/ea)</button>';
+        html += '</div>';
+        if (_postingsFull) html += '<div style="font-size:0.65rem;color:#e67e22;margin-top:2px;">Max 3 active postings. Wait for them to fill.</div>';
         if (!_canAfford) html += '<div style="font-size:0.65rem;color:#c44e52;margin-top:2px;">Not enough treasury gold.</div>';
+        if (!_hasConscription) html += '<div style="font-size:0.65rem;color:#888;margin-top:2px;">Enable Conscription law to use forced recruitment (males 18+).</div>';
         html += '</div>';
 
-        // Garrison per town
+        // Garrison per town with transfer UI
         html += '<div style="background:rgba(0,0,0,0.15);padding:8px;border-radius:6px;margin-bottom:8px;">';
         html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:4px;">🏰 Town Garrisons</div>';
+
+        // Show pending transfers
+        var _transfers = kingdom._soldierTransfers || [];
+        if (_transfers.length > 0) {
+            html += '<div style="margin-bottom:6px;padding:4px;background:rgba(200,170,100,0.08);border-radius:4px;">';
+            html += '<div style="font-size:0.7rem;color:#d4a843;margin-bottom:2px;">🚶 In Transit:</div>';
+            for (var _tri = 0; _tri < _transfers.length; _tri++) {
+                var _tr = _transfers[_tri];
+                var _trTo = Engine.findTown(_tr.toTownId);
+                var _trFrom = Engine.findTown(_tr.fromTownId);
+                var _daysLeft = Math.max(0, _tr.arrivalDay - (Engine.getDay ? Engine.getDay() : 0));
+                html += '<div style="font-size:0.65rem;color:#aaa;padding:1px 4px;">' + _tr.count + ' soldiers: ' + (_trFrom ? _trFrom.name : '?') + ' → ' + (_trTo ? _trTo.name : '?') + ' (' + _daysLeft + 'd left)</div>';
+            }
+            html += '</div>';
+        }
+
         try {
             var _kTowns = Engine.getTowns().filter(function(t) { return t.kingdomId === kingdom.id && !t.isOutpost && !t.isWilderness; });
             _kTowns.sort(function(a, b) { return (a.garrison || 0) - (b.garrison || 0); }); // weakest first
@@ -773,10 +817,12 @@
                 var _garr = _gt.garrison || 0;
                 var _garrColor = _garr >= 20 ? '#55a868' : _garr >= 10 ? '#d4c9a0' : _garr >= 5 ? '#e67e22' : '#c44e52';
                 html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 6px;margin-bottom:2px;background:rgba(0,0,0,0.1);border-radius:4px;">';
-                html += '<span style="font-size:0.72rem;color:#d4c9a0;">' + (_gt.isCapital ? '⭐ ' : '') + (_gt.name || '?') + '</span>';
+                html += '<span style="font-size:0.72rem;color:#d4c9a0;">' + (_gt.isCapital ? '⭐ ' : '') + escapeHtml(_gt.name || '?') + '</span>';
                 html += '<div style="display:flex;align-items:center;gap:4px;">';
                 html += '<span style="font-size:0.72rem;color:' + _garrColor + ';">' + _garr + ' soldiers</span>';
-                html += '<button class="btn-medieval" data-action="kingReinforceTown" data-id="' + _gt.id + '" style="font-size:0.6rem;padding:1px 6px;">+5</button>';
+                if (_garr > 3) {
+                    html += '<button class="btn-medieval" data-action="kingOpenTransfer" data-id="' + _gt.id + '" style="font-size:0.55rem;padding:1px 5px;" title="Transfer soldiers from this town">📤 Transfer</button>';
+                }
                 html += '</div></div>';
             }
         } catch(e) {}
@@ -2855,6 +2901,13 @@
         UI.toast(r.message, r.success ? 'success' : 'warning');
         UI.openKingPanel('military');
     });
+    UI.registerAction('kingConscriptSoldiers', function() {
+        var el = document.getElementById('_kingRecruitCount');
+        var count = el ? parseInt(el.value) || 10 : 10;
+        var r = Player.kingConscriptSoldiers ? Player.kingConscriptSoldiers(count) : { success: false, message: 'Conscription not available.' };
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.openKingPanel('military');
+    });
     UI.registerAction('kingDischargeSoldiers', function() {
         var el = document.getElementById('_kingDischargeCount');
         var count = el ? parseInt(el.value) || 5 : 5;
@@ -2862,9 +2915,48 @@
         UI.toast(r.message, r.success ? 'success' : 'warning');
         UI.openKingPanel('military');
     });
-    UI.registerAction('kingReinforceTown', function(_t, d) {
-        var r = Player.kingReinforceTown ? Player.kingReinforceTown(d.id) : { success: false, message: 'Reinforcement system not available.' };
+    UI.registerAction('kingOpenTransfer', function(_t, d) {
+        var fromTownId = d.id;
+        var fromTown = Engine.findTown(fromTownId);
+        if (!fromTown) { UI.toast('Town not found.', 'warning'); return; }
+        var kId = Player.state && Player.state.kingState ? Player.state.kingState.kingdomId : null;
+        if (!kId) return;
+        var kingdom = Engine.findKingdom(kId);
+        if (!kingdom) return;
+
+        var available = Math.max(0, (fromTown.garrison || 0) - 3);
+        var html = '<div style="padding:8px;">';
+        html += '<p style="font-size:0.85rem;color:#d4c9a0;">Transfer soldiers from <b>' + escapeHtml(fromTown.name) + '</b> (' + available + ' available, 3 minimum kept)</p>';
+        html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">';
+        html += '<label style="font-size:0.75rem;">Count:</label>';
+        html += '<input type="number" id="_transferCount" min="1" max="' + available + '" value="' + Math.min(5, available) + '" style="width:60px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#d4c9a0;padding:2px 4px;font-size:0.75rem;">';
+        html += '</div>';
+        html += '<label style="font-size:0.75rem;">Destination:</label>';
+        html += '<select id="_transferDest" style="width:100%;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#d4c9a0;padding:4px;font-size:0.75rem;margin-top:4px;">';
+        var _otherTowns = Engine.getTowns().filter(function(t) { return t.kingdomId === kId && t.id !== fromTownId && !t.isWilderness; });
+        for (var _oi = 0; _oi < _otherTowns.length; _oi++) {
+            var _ot = _otherTowns[_oi];
+            html += '<option value="' + _ot.id + '">' + escapeHtml(_ot.name) + ' (' + (_ot.garrison || 0) + ' soldiers)</option>';
+        }
+        html += '</select></div>';
+
+        var footer = '<button class="btn-medieval" data-action="kingExecuteTransfer" data-id="' + fromTownId + '">🚶 Transfer</button> <button class="btn-medieval" data-action="closeModal">Cancel</button>';
+        openModal('📤 Transfer Soldiers — ' + fromTown.name, html, footer);
+    });
+    UI.registerAction('kingExecuteTransfer', function(_t, d) {
+        var fromId = d.id;
+        var destEl = document.getElementById('_transferDest');
+        var countEl = document.getElementById('_transferCount');
+        var toId = destEl ? destEl.value : '';
+        var count = countEl ? parseInt(countEl.value) || 5 : 5;
+        if (!toId) { UI.toast('Select a destination.', 'warning'); return; }
+        var r = Player.kingTransferSoldiers ? Player.kingTransferSoldiers(fromId, toId, count) : { success: false, message: 'Transfer not available.' };
         UI.toast(r.message, r.success ? 'success' : 'warning');
+        if (r.success) UI.openKingPanel('military');
+    });
+    UI.registerAction('kingReinforceTown', function(_t, d) {
+        // Legacy — redirect to transfer
+        UI.toast('Use the Transfer button to move soldiers between towns.', 'info');
         UI.openKingPanel('military');
     });
 

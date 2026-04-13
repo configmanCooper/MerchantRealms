@@ -3980,7 +3980,7 @@ window.UI = (function () {
         if (!data) return;
         var people = data.people;
         var townName = data.townName;
-        page = page || 0;
+        page = parseInt(page, 10) || 0;
         window._townPeoplePage = page;
 
         // Filter alive only
@@ -4013,6 +4013,18 @@ window.UI = (function () {
             filtered = filtered.filter(function (p) { return p.occupation === 'noble' || p.occupation === 'lord' || p.occupation === 'royal'; });
         } else if (filterBy === 'elite-merchants') {
             filtered = filtered.filter(function (p) { return p.isEliteMerchant || p.eliteMerchant || (p.gold && p.gold > 500 && (p.occupation === 'merchant' || p.occupation === 'trader')); });
+        } else if (filterBy === 'soldiers') {
+            filtered = filtered.filter(function (p) { return p.occupation === 'soldier'; });
+        } else if (filterBy === 'guards') {
+            filtered = filtered.filter(function (p) { return p.occupation === 'guard'; });
+        } else if (filterBy === 'farmers') {
+            filtered = filtered.filter(function (p) { return p.occupation === 'farmer'; });
+        } else if (filterBy === 'miners') {
+            filtered = filtered.filter(function (p) { return p.occupation === 'miner'; });
+        } else if (filterBy === 'laborers') {
+            filtered = filtered.filter(function (p) { return p.occupation === 'laborer'; });
+        } else if (filterBy === 'craftsmen') {
+            filtered = filtered.filter(function (p) { return p.occupation === 'craftsman' || p.occupation === 'artisan' || p.occupation === 'blacksmith' || p.occupation === 'carpenter' || p.occupation === 'weaver'; });
         } else if (filterBy === 'workers') {
             filtered = filtered.filter(function (p) { return p.occupation === 'laborer' || p.occupation === 'craftsman' || p.occupation === 'artisan' || p.occupation === 'worker'; });
         } else if (filterBy === 'unemployed') {
@@ -4080,7 +4092,8 @@ window.UI = (function () {
             ['all','All'],['known','Known'],['friends','Friends (20+)'],['close-friends','Close Friends (60+)'],
             ['employed-by-me','My Workers'],['unmarried','Unmarried Adults'],
             ['nobles','Nobles'],['merchants','Merchants'],['elite-merchants','Elite Merchants'],
-            ['workers','Workers/Crafters'],['unemployed','Unemployed'],
+            ['soldiers','Soldiers'],['guards','Guards'],['farmers','Farmers'],['miners','Miners'],
+            ['laborers','Laborers'],['craftsmen','Craftsmen'],['workers','All Workers'],['unemployed','Unemployed'],
             ['adults','Adults'],['children','Children'],
             ['male','Male'],['female','Female']
         ];

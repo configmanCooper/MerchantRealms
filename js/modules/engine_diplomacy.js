@@ -92,6 +92,133 @@
     var createTreaty = function(a, b, isSurrender, loser, isExhaustion) { return Engine.createTreaty(a, b, isSurrender, loser, isExhaustion); };
     var getWarExhaustionRecruitMod = function(k) { return Engine.getWarExhaustionRecruitMod(k); };
     var getTentCampDiseaseMod = function(town) { return Engine.getTentCampDiseaseMod(town); };
+    var recruitSoldier = function(person, town, kingdom, unitType) { return Engine.recruitSoldier(person, town, kingdom, unitType); };
+    var findArmyRoute = function(from, to, kId) { return Engine.findArmyRoute(from, to, kId); };
+
+    // ── Recruitment Postings Tick: NPCs respond to postings over time ──
+    function _tickRecruitmentPostings(k, rng) {
+        if (!k._recruitmentPostings || k._recruitmentPostings.length === 0) return;
+        var dayNow = world.day;
+
+        for (var pi = k._recruitmentPostings.length - 1; pi >= 0; pi--) {
+            var post = k._recruitmentPostings[pi];
+            var remaining = post.slotsTotal - post.slotsFilled;
+            if (remaining <= 0) {
+                k._recruitmentPostings.splice(pi, 1);
+                continue;
+            }
+            // Expire old postings after 30 days, refund remaining gold
+            if (dayNow - post.postedDay > 30) {
+                var refund = remaining * post.payPerSoldier;
+                k.gold = (k.gold || 0) + refund;
+                var isPlayerK = false;
+                try { isPlayerK = _isPlayerKingOf(k); } catch(e) {}
+                logEvent('📜 Recruitment posting expired (' + post.slotsFilled + '/' + post.slotsTotal + ' filled). ' + refund + 'g refunded.', null, isPlayerK ? 'my_kingdom' : 'foreign_kingdoms');
+                k._recruitmentPostings.splice(pi, 1);
+                continue;
+            }
+
+            // Each tick: 1-3 NPCs per town may respond (higher for conscription)
+            var fillRate = post.isConscription ? 3 : 2;
+            var filledThisTick = 0;
+
+            for (var ti = 0; ti < post.towns.length && remaining > 0; ti++) {
+                var town = findTown(post.towns[ti]);
+                if (!town) continue;
+
+                var eligible;
+                if (post.isConscription) {
+                    // Conscription: any male 18+, not already soldier/guard, not indentured
+                    eligible = getPeopleInTown(town.id).filter(function(p) {
+                        return p.alive && p.sex === 'M' && p.age >= 18 &&
+                               p.occupation !== 'soldier' && p.occupation !== 'guard' &&
+                               p.status !== 'indentured' && !p.conscripted;
+                    });
+                } else {
+                    // Voluntary: idle laborers/unemployed willing to serve
+                    eligible = getPeopleInTown(town.id).filter(function(p) {
+                        return p.alive && (p.occupation === 'laborer' || p.occupation === 'none' || p.occupation === 'unemployed') &&
+                               p.age >= (CONFIG.COMING_OF_AGE || 16) && p.age <= 50 &&
+                               p.status !== 'indentured';
+                    });
+                }
+
+                if (eligible.length === 0) continue;
+
+                // Willingness check: higher for well-paid, lower for conscription
+                var maxPerTown = Math.min(fillRate, remaining, eligible.length);
+                for (var ei = 0; ei < maxPerTown; ei++) {
+                    var candidate = eligible[ei];
+                    var willingness = 0.3; // base 30% chance per tick
+
+                    if (post.isConscription) {
+                        willingness = 0.6; // forced, but not instant
+                        // Penalty: people with established jobs resist more
+                        if (candidate.occupation === 'farmer') willingness *= 0.7;
+                        if (candidate.occupation === 'miner') willingness *= 0.6;
+                        if (candidate.occupation === 'craftsman' || candidate.occupation === 'artisan') willingness *= 0.5;
+                        if (candidate.occupation === 'merchant' || candidate.occupation === 'trader') willingness *= 0.3;
+                    } else {
+                        // Higher pay = more willing
+                        if (post.payPerSoldier >= 50) willingness += 0.1;
+                        if (post.payPerSoldier >= 75) willingness += 0.1;
+                        // Patriotic/brave NPCs more willing
+                        var _cP = candidate.personality || {};
+                        if ((_cP.loyalty || 50) > 60) willingness += 0.1;
+                        if ((_cP.courage || 50) > 60) willingness += 0.1;
+                    }
+
+                    if (rng.chance(Math.min(0.85, willingness))) {
+                        var uType = 'infantry';
+                        var townSupply = (town.market && town.market.supply) || {};
+                        if ((townSupply.horses || 0) > 0 && (townSupply.saddles || 0) > 0 && rng.chance(0.15)) uType = 'cavalry';
+                        else if ((townSupply.bows || 0) > 0 && rng.chance(0.25)) uType = 'archer';
+                        if (post.isConscription) candidate.conscripted = true;
+                        recruitSoldier(candidate, town, k, uType);
+                        post.slotsFilled++;
+                        remaining--;
+                        filledThisTick++;
+                    }
+                }
+            }
+
+            // Notify periodically when recruits join
+            if (filledThisTick > 0 && (post.slotsFilled % 5 === 0 || post.slotsFilled >= post.slotsTotal)) {
+                var isPlayerK2 = false;
+                try { isPlayerK2 = _isPlayerKingOf(k); } catch(e) {}
+                var pctFilled = Math.round(post.slotsFilled / post.slotsTotal * 100);
+                logEvent('🎖️ ' + (post.isConscription ? 'Conscription' : 'Recruitment') + ': ' + post.slotsFilled + '/' + post.slotsTotal + ' (' + pctFilled + '% filled)', null, isPlayerK2 ? 'my_kingdom' : 'foreign_kingdoms');
+            }
+
+            // Complete posting
+            if (post.slotsFilled >= post.slotsTotal) {
+                k._recruitmentPostings.splice(pi, 1);
+            }
+        }
+    }
+
+    // ── Soldier Transfers Tick: soldiers arrive at destination ──
+    function _tickSoldierTransfers(k) {
+        if (!k._soldierTransfers || k._soldierTransfers.length === 0) return;
+        var dayNow = world.day;
+        var isPlayerK = false;
+        try { isPlayerK = _isPlayerKingOf(k); } catch(e) {}
+
+        for (var si = k._soldierTransfers.length - 1; si >= 0; si--) {
+            var tr = k._soldierTransfers[si];
+            if (dayNow >= tr.arrivalDay) {
+                var toTown = findTown(tr.toTownId);
+                if (toTown && toTown.kingdomId === k.id) {
+                    toTown.garrison = (toTown.garrison || 0) + tr.count;
+                    logEvent('🏰 ' + tr.count + ' soldiers arrived at ' + toTown.name + '.', null, isPlayerK ? 'my_kingdom' : 'foreign_kingdoms');
+                } else {
+                    // Town changed hands during transfer — soldiers lost
+                    logEvent('⚠️ ' + tr.count + ' soldiers arrived at a town no longer controlled. They dispersed.', null, isPlayerK ? 'my_kingdom' : 'foreign_kingdoms');
+                }
+                k._soldierTransfers.splice(si, 1);
+            }
+        }
+    }
 
 
     // ========================================================
@@ -934,6 +1061,12 @@
             if (!_playerIsKingHere) {
                 tickKingUnrestResponse(k);
             }
+
+            // ---- Process recruitment postings (NPCs decide to enlist) ----
+            _tickRecruitmentPostings(k, rng);
+
+            // ---- Process soldier transfers (arrivals) ----
+            _tickSoldierTransfers(k);
 
             // ---- Update military strength and soldier count ----
             k.militaryStrength = computeMilitaryStrength(k);
@@ -2107,8 +2240,18 @@
                         if (threatened.garrison < CONFIG.GARRISON_MIN + 10) {
                             const transfer = Math.min(5, safe.garrison - CONFIG.GARRISON_MIN);
                             if (transfer > 0) {
+                                // AI uses transfer system with travel time
                                 safe.garrison -= transfer;
-                                threatened.garrison += transfer;
+                                if (!k._soldierTransfers) k._soldierTransfers = [];
+                                var _travelDays = 2;
+                                try {
+                                    var _route = findArmyRoute(safe.id, threatened.id, k.id);
+                                    if (_route && _route.totalTime) _travelDays = Math.max(1, Math.ceil(_route.totalTime));
+                                } catch(e) {}
+                                k._soldierTransfers.push({
+                                    fromTownId: safe.id, toTownId: threatened.id,
+                                    count: transfer, departDay: world.day, arrivalDay: world.day + _travelDays
+                                });
                             }
                         }
                     }
@@ -4733,8 +4876,16 @@
                 var totalCost = cnt * costPer;
                 if (kingdom.gold < totalCost) return { success: false, message: 'Need ' + totalCost + 'g (have ' + Math.floor(kingdom.gold) + 'g).' };
                 kingdom.gold -= totalCost;
-                recTown.garrison = (recTown.garrison || 0) + cnt;
-                logEvent('🛡️ Recruited ' + cnt + ' soldiers at ' + recTown.name + '. Cost: ' + totalCost + 'g.');
+                // Use posting system instead of instant garrison
+                if (!kingdom._recruitmentPostings) kingdom._recruitmentPostings = [];
+                kingdom._recruitmentPostings.push({
+                    id: 'prop_' + world.day + '_' + Math.floor(Math.random() * 9999),
+                    towns: [recTown.id],
+                    slotsTotal: cnt, slotsFilled: 0,
+                    payPerSoldier: costPer, reservedGold: totalCost,
+                    postedDay: world.day, isConscription: false
+                });
+                logEvent('📜 Recruitment posting for ' + cnt + ' soldiers at ' + recTown.name + '. Cost: ' + totalCost + 'g. NPCs will enlist over time.');
                 break;
 
             case 'supply':
@@ -4776,8 +4927,17 @@
                 var fortCost = proposal.cost || 150;
                 if (kingdom.gold < fortCost) return { success: false, message: 'Need ' + fortCost + 'g (have ' + Math.floor(kingdom.gold) + 'g).' };
                 kingdom.gold -= fortCost;
-                fortTown.garrison = (fortTown.garrison || 0) + 5;
-                logEvent('🏰 ' + fortTown.name + ' fortified! +5 garrison soldiers. Cost: ' + fortCost + 'g.');
+                // Fortification creates a recruitment posting for 5 soldiers at this town
+                if (!kingdom._recruitmentPostings) kingdom._recruitmentPostings = [];
+                kingdom._recruitmentPostings.push({
+                    id: 'fort_' + world.day + '_' + Math.floor(Math.random() * 9999),
+                    towns: [fortTown.id],
+                    slotsTotal: 5, slotsFilled: 0,
+                    payPerSoldier: CONFIG.SOLDIER_RECRUIT_COST || 50,
+                    reservedGold: 5 * (CONFIG.SOLDIER_RECRUIT_COST || 50),
+                    postedDay: world.day, isConscription: false
+                });
+                logEvent('🏰 ' + fortTown.name + ' being fortified! Recruitment posted for 5 soldiers. Cost: ' + fortCost + 'g.');
                 break;
 
             default:

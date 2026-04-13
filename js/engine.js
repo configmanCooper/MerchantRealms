@@ -12063,27 +12063,44 @@
             if (rng.chance(0.15)) _maxNewRecruits += rng.randInt(0, 2);
             if (rng.chance(0.10)) _maxNewRecruits = Math.max(0, _maxNewRecruits - 1);
 
-            var _wRecruited = 0;
-            for (const townId of k.territories) {
-                const town = findTown(townId);
-                if (!town) continue;
-                if (_wRecruited >= _maxNewRecruits) break;
-
-                // Recruit idle people as soldiers (with gold cost)
-                var idle = getPeopleInTown(town.id).filter(function(p) {
-                    return (p.occupation === 'laborer' || p.occupation === 'none') &&
-                    p.age >= CONFIG.COMING_OF_AGE && p.age <= 50;
-                });
-                const toRecruit = Math.min(idle.length, _maxNewRecruits - _wRecruited);
-                for (let i = 0; i < toRecruit; i++) {
-                    if (k.gold < 50) break; // need at least 50g to recruit
-                    var uType = 'infantry';
-                    var townSupply = town.market.supply || {};
-                    if ((townSupply.horses || 0) > 0 && (townSupply.saddles || 0) > 0 && rng.chance(0.15)) uType = 'cavalry';
-                    else if ((townSupply.bows || 0) > 0 && rng.chance(0.25)) uType = 'archer';
-                    recruitSoldier(idle[i], town, k, uType);
-                    k.gold -= 50; // recruitment cost
-                    _wRecruited++;
+            // AI creates recruitment postings instead of instant recruitment
+            if (_maxNewRecruits > 0) {
+                if (!k._recruitmentPostings) k._recruitmentPostings = [];
+                // Only create new posting if under limit and no recent posting
+                var _activePostCount = k._recruitmentPostings.length;
+                if (_activePostCount < 3) {
+                    var _costPer = CONFIG.SOLDIER_RECRUIT_COST || 50;
+                    var _canReserve = Math.floor((k.gold || 0) / _costPer);
+                    var _toPost = Math.min(_maxNewRecruits, _canReserve);
+                    if (_toPost > 0) {
+                        var _aiTowns = [];
+                        for (var _rti = 0; _rti < (k.territories || []).length; _rti++) {
+                            var _rtTown = findTown(k.territories[_rti]);
+                            if (_rtTown && !_rtTown.isWilderness) _aiTowns.push(k.territories[_rti]);
+                        }
+                        var _reserveGold = _toPost * _costPer;
+                        k.gold -= _reserveGold;
+                        // Desperate AI with conscription law uses conscription (20% pay)
+                        var _useConscript = false;
+                        if (k.laws && k.laws.conscription && _kStrength < _strongestEnemyStr * 0.5) {
+                            _useConscript = true;
+                            var _conscriptPay = Math.round(_costPer * 0.2);
+                            var _refundDiff = _reserveGold - (_toPost * _conscriptPay);
+                            k.gold += _refundDiff;
+                            _reserveGold = _toPost * _conscriptPay;
+                            _costPer = _conscriptPay;
+                        }
+                        k._recruitmentPostings.push({
+                            id: 'ai_' + world.day + '_' + Math.floor(rng.random() * 9999),
+                            towns: _aiTowns,
+                            slotsTotal: _toPost,
+                            slotsFilled: 0,
+                            payPerSoldier: _costPer,
+                            reservedGold: _reserveGold,
+                            postedDay: world.day,
+                            isConscription: _useConscript
+                        });
+                    }
                 }
             }
 
