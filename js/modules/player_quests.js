@@ -2218,7 +2218,352 @@
                 timeHours: si.timeHours || 1
             });
         }
+
+        // Trait-reveal tailored interactions — appear when personality traits are known
+        var traitInteractions = _getTraitBasedInteractions(personId, person);
+        for (var ti = 0; ti < traitInteractions.length; ti++) {
+            var tInt = traitInteractions[ti];
+            interactions.push({
+                id: tInt.id,
+                name: tInt.name,
+                icon: tInt.icon,
+                description: tInt.description,
+                cost: 0,
+                gain: tInt.gain,
+                rating: tInt.gain >= 3 ? 'great' : 'good',
+                showRating: hasSocialInsight,
+                available: !atLimit,
+                atCooldownLimit: atLimit,
+                dateProgress: tInt.dateProgress || 15,
+                timeHours: 1,
+                isTraitInteraction: true
+            });
+        }
+
+        // NPC Gossip — available at relationship 20+ based on occupation
+        var relLevel = player.relationships[personId] ? player.relationships[personId].level : 0;
+        if (relLevel >= 20) {
+            var day = 0;
+            try { day = Engine.getDay(); } catch(e) {}
+            if (!player._npcGossipCooldowns) player._npcGossipCooldowns = {};
+            var gossipOnCooldown = (player._npcGossipCooldowns[personId] || 0) >= day;
+            var gossipDesc = _getGossipDescription(person);
+            if (gossipDesc) {
+                interactions.push({
+                    id: 'ask_gossip',
+                    name: 'Ask for Information',
+                    icon: '👂',
+                    description: gossipDesc,
+                    cost: 0,
+                    gain: 0.5,
+                    rating: 'good',
+                    showRating: false,
+                    available: !atLimit && !gossipOnCooldown,
+                    atCooldownLimit: atLimit,
+                    dateProgress: 5,
+                    timeHours: 1,
+                    isGossip: true,
+                    gossipCooldown: gossipOnCooldown
+                });
+            }
+        }
+
+        // Relationship-gated jobs — available at occupation-specific thresholds
+        var jobInteractions = _getRelationshipJobs(personId, person, relLevel);
+        for (var ji = 0; ji < jobInteractions.length; ji++) {
+            interactions.push(jobInteractions[ji]);
+        }
+
         return interactions;
+    }
+
+    // ── Trait-Based Interaction Helpers ──────────────────────
+    function _getTraitBasedInteractions(personId, person) {
+        var interactions = [];
+        var revealed = player.revealedTraits[personId];
+        if (!revealed || !revealed.traits) return interactions;
+        var pers = person.personality || {};
+        var knownTraits = revealed.traits;
+
+        if (knownTraits.ambition && pers.ambition > 55) {
+            interactions.push({
+                id: 'trait_discuss_ambitions', name: 'Discuss Ambitions', icon: '🌟',
+                description: 'You know they\'re ambitious — discuss their goals for a deeper bond',
+                gain: 4.0, dateProgress: 20
+            });
+        }
+        if (knownTraits.warmth && pers.warmth > 55) {
+            interactions.push({
+                id: 'trait_heartfelt_chat', name: 'Heartfelt Chat', icon: '❤️',
+                description: 'You know they\'re warm-hearted — open up for a meaningful conversation',
+                gain: 4.0, dateProgress: 20
+            });
+        }
+        if (knownTraits.intelligence && pers.intelligence > 55) {
+            interactions.push({
+                id: 'trait_intellectual_debate', name: 'Intellectual Debate', icon: '📚',
+                description: 'You know they\'re sharp — engage in stimulating discussion',
+                gain: 3.5, dateProgress: 18
+            });
+        }
+        if (knownTraits.honesty && pers.honesty > 55) {
+            interactions.push({
+                id: 'trait_honest_confession', name: 'Honest Confession', icon: '🤲',
+                description: 'You know they value honesty — share something genuine about yourself',
+                gain: 3.5, dateProgress: 18
+            });
+        }
+        if (knownTraits.loyalty && pers.loyalty > 55) {
+            interactions.push({
+                id: 'trait_pledge_loyalty', name: 'Pledge Mutual Loyalty', icon: '🤝',
+                description: 'You know they value loyalty — affirm your commitment to the friendship',
+                gain: 4.0, dateProgress: 20
+            });
+        }
+        if (knownTraits.frugality && pers.frugality > 55) {
+            interactions.push({
+                id: 'trait_share_savings_tips', name: 'Share Savings Tips', icon: '💰',
+                description: 'You know they\'re frugal — bond over penny-pinching wisdom',
+                gain: 3.0, dateProgress: 15
+            });
+        }
+        return interactions;
+    }
+
+    // ── NPC Gossip System Helpers ─────────────────────────────
+    function _getGossipDescription(person) {
+        var occ = person.occupation || '';
+        if (occ === 'farmer' || occ === 'fisher') return 'Ask about harvest forecasts, weather patterns, and rural gossip';
+        if (occ === 'merchant' || occ === 'trader') return 'Ask about prices in other towns and trade opportunities';
+        if (occ === 'guard' || occ === 'soldier') return 'Ask about security threats, bandit activity, and military movements';
+        if (occ === 'innkeeper' || occ === 'barkeep' || occ === 'tavern_keeper') return 'Ask about town gossip, visiting travelers, and local rumors';
+        if (occ === 'doctor' || occ === 'healer' || occ === 'herbalist') return 'Ask about disease outbreaks, medicinal herbs, and health concerns';
+        if (occ === 'scholar' || occ === 'priest' || occ === 'teacher' || occ === 'monk') return 'Ask about historical knowledge, local lore, and scholarly news';
+        if (occ === 'noble' || person.isNoble) return 'Ask about court politics, noble scandals, and kingdom affairs';
+        if (occ === 'blacksmith' || occ === 'carpenter' || occ === 'baker' || occ === 'craftsman') return 'Ask about material availability, supply shortages, and craft guild news';
+        return null;
+    }
+
+    function _generateGossipMessage(person) {
+        var occ = person.occupation || '';
+        var fn = person.firstName || 'Someone';
+        var pers = person.personality || {};
+        var relLevel = player.relationships[person.id] ? player.relationships[person.id].level : 0;
+        var isHonest = (pers.honesty || 50) > 60;
+
+        var rng = Engine.getRng ? Engine.getRng() : null;
+        var townId = person.townId || player.townId;
+        var town = null;
+        try { town = Engine.getTown(townId); } catch(e) {}
+
+        // Higher relationship = more useful info
+        var detailLevel = relLevel >= 60 ? 'detailed' : relLevel >= 40 ? 'good' : 'vague';
+
+        if (occ === 'farmer' || occ === 'fisher') {
+            var seasonMsgs = {
+                vague: [
+                    fn + ' mutters something about the harvest — sounds like it could go either way.',
+                    fn + ' mentions the weather has been unpredictable lately.'
+                ],
+                good: [
+                    fn + ' says the harvest looks ' + (rng && rng.chance(0.5) ? 'promising this season' : 'worse than usual') + '.',
+                    fn + ' warns about ' + (rng && rng.chance(0.5) ? 'possible flooding in the lowlands' : 'a dry spell coming') + '.'
+                ],
+                detailed: [
+                    fn + ' shares that food prices will likely ' + (rng && rng.chance(0.5) ? 'rise significantly — stock up now while it\'s cheap' : 'drop soon — the harvest is bountiful') + '.',
+                    fn + ' confides: "Between us, I\'ve heard the grain supply in neighboring towns is running low. Smart traders could profit."'
+                ]
+            };
+            return (seasonMsgs[detailLevel] || seasonMsgs.vague)[rng ? Math.floor(rng.random() * 2) : 0];
+        }
+
+        if (occ === 'merchant' || occ === 'trader') {
+            // Try to give actual useful price info
+            var tradeMsgs = {
+                vague: [
+                    fn + ' mentions trade has been ' + (rng && rng.chance(0.5) ? 'slow' : 'brisk') + ' lately.',
+                    fn + ' hints that some goods are overpriced in nearby towns.'
+                ],
+                good: [
+                    fn + ' reveals: "I\'ve heard there\'s strong demand for ' + _getRandomTradableGood(rng) + ' a few towns over."',
+                    fn + ' tips you off: "Prices for ' + _getRandomTradableGood(rng) + ' are ' + (rng && rng.chance(0.5) ? 'very low' : 'unusually high') + ' in the region right now."'
+                ],
+                detailed: [
+                    fn + ' leans in: "A caravan just arrived from the east — they\'re practically giving away ' + _getRandomTradableGood(rng) + '. Buy now, sell south. Trust me."',
+                    fn + ' whispers: "Word in the merchants\' circle is that ' + _getRandomTradableGood(rng) + ' supply is drying up. Anyone holding stock will make a fortune soon."'
+                ]
+            };
+            return (tradeMsgs[detailLevel] || tradeMsgs.vague)[rng ? Math.floor(rng.random() * 2) : 0];
+        }
+
+        if (occ === 'guard' || occ === 'soldier') {
+            var guardMsgs = {
+                vague: [
+                    fn + ' mentions something about increased patrols on the roads.',
+                    fn + ' says the watch has been busy lately but won\'t go into details.'
+                ],
+                good: [
+                    fn + ' warns: "Bandits have been spotted on the roads ' + (rng && rng.chance(0.5) ? 'to the north' : 'south of town') + '. Travel carefully."',
+                    fn + ' shares: "' + (rng && rng.chance(0.5) ? 'The garrison is understaffed — could be trouble if there\'s an attack.' : 'We\'ve beefed up patrols. The roads should be safer for now.') + '"'
+                ],
+                detailed: [
+                    fn + ' confides: "Between us? ' + (rng && rng.chance(0.5) ? 'There are rumors of war brewing. The king\'s been calling in soldiers from the countryside.' : 'I overheard the captain — a smuggling ring is operating in town. Watch your back.') + '"',
+                    fn + ' whispers: "The military is moving troops ' + (rng && rng.chance(0.5) ? 'toward the border' : 'to fortify the capital') + '. Something big is coming. You didn\'t hear it from me."'
+                ]
+            };
+            return (guardMsgs[detailLevel] || guardMsgs.vague)[rng ? Math.floor(rng.random() * 2) : 0];
+        }
+
+        if (occ === 'innkeeper' || occ === 'barkeep' || occ === 'tavern_keeper') {
+            var innMsgs = {
+                vague: [
+                    fn + ' shares some local gossip, but it\'s nothing you haven\'t heard before.',
+                    fn + ' mentions a few interesting travelers have passed through recently.'
+                ],
+                good: [
+                    fn + ' leans over: "' + (rng && rng.chance(0.5) ? 'A wealthy merchant was bragging about huge profits from ' + _getRandomTradableGood(rng) + ' last night.' : 'I overheard some nobles arguing about the king\'s latest decision. Tensions are high.') + '"',
+                    fn + ' shares: "A group of ' + (rng && rng.chance(0.5) ? 'mercenaries were recruiting here last night. Something\'s stirring.' : 'traders from a foreign kingdom just arrived. They\'re looking for local contacts.') + '"'
+                ],
+                detailed: [
+                    fn + ' whispers urgently: "' + (rng && rng.chance(0.5) ? 'A spy was caught last week — the kingdom is on high alert. Be careful what you say in public.' : 'A noble was in here drunk, boasting about a scheme against another noble. Court intrigue at its finest.') + '"',
+                    fn + ' confides: "' + (rng && rng.chance(0.5) ? 'Overheard a caravan master say the roads east are completely blocked by bandits. Big money in escorted convoys right now.' : 'Between us — the king is planning a festival soon. Smart merchants are already stockpiling luxury goods.') + '"'
+                ]
+            };
+            return (innMsgs[detailLevel] || innMsgs.vague)[rng ? Math.floor(rng.random() * 2) : 0];
+        }
+
+        if (occ === 'noble' || person.isNoble) {
+            var nobleMsgs = {
+                vague: [
+                    fn + ' makes vague comments about court politics. Hard to tell what\'s real.',
+                    fn + ' mentions some dissatisfaction among the nobility but changes the subject.'
+                ],
+                good: [
+                    fn + ' shares: "' + (rng && rng.chance(0.5) ? 'The king has been making unpopular decisions. Several nobles are... displeased.' : 'A new alliance is being discussed between two powerful noble houses. Watch that space.') + '"',
+                    fn + ' reveals: "' + (rng && rng.chance(0.5) ? 'Taxes may change soon. The king is considering a new economic policy.' : 'A noble has been pushing for war. The court is divided on the matter.') + '"'
+                ],
+                detailed: [
+                    fn + ' leans in conspiratorially: "' + (rng && rng.chance(0.5) ? 'I have it on good authority that the king plans to demote a certain noble. If you want their former position...' : 'There\'s a plot forming against the crown. I\'m telling you because I trust you — tread carefully.') + '"',
+                    fn + ' confides quietly: "' + (rng && rng.chance(0.5) ? 'The king\'s health isn\'t what it was. Smart nobles are already positioning themselves for... succession.' : 'A foreign kingdom is secretly negotiating with one of our nobles. Treason, some would call it.') + '"'
+                ]
+            };
+            return (nobleMsgs[detailLevel] || nobleMsgs.vague)[rng ? Math.floor(rng.random() * 2) : 0];
+        }
+
+        // Default gossip for other occupations
+        var defaultMsgs = [
+            fn + ' shares some local gossip: "' + (rng && rng.chance(0.5) ? 'Business has been good for most folks around here.' : 'People are worried about the economy lately.') + '"',
+            fn + ' mentions: "' + (rng && rng.chance(0.5) ? 'The town feels busier than usual. Trade must be picking up.' : 'I heard someone important is visiting town soon.') + '"'
+        ];
+        return defaultMsgs[rng ? Math.floor(rng.random() * 2) : 0];
+    }
+
+    function _getRandomTradableGood(rng) {
+        var goods = ['grain', 'wool', 'iron', 'leather', 'cloth', 'salt', 'spices', 'wine', 'ale', 'tools', 'fish', 'meat', 'pottery', 'rope', 'planks'];
+        return goods[rng ? Math.floor(rng.random() * goods.length) : 0];
+    }
+
+    // ── Relationship-Gated Jobs ──────────────────────────────
+    function _getRelationshipJobs(personId, person, relLevel) {
+        var jobs = [];
+        var occ = person.occupation || '';
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+        if (!player._npcJobCooldowns) player._npcJobCooldowns = {};
+
+        // Farmer 30+: Harvest help (seasonal)
+        if ((occ === 'farmer' || occ === 'fisher') && relLevel >= 30) {
+            var jobKey = personId + '_harvest_help';
+            var onCooldown = (player._npcJobCooldowns[jobKey] || 0) > day;
+            jobs.push({
+                id: 'npc_job_harvest',
+                name: '🌾 Help with Harvest',
+                icon: '🌾',
+                description: person.firstName + ' could use help bringing in the harvest. Good pay for a day\'s work.',
+                cost: 0,
+                gain: 2.0,
+                rating: 'good',
+                showRating: false,
+                available: !onCooldown,
+                atCooldownLimit: false,
+                dateProgress: 10,
+                timeHours: 4,
+                isJob: true,
+                jobType: 'harvest_help',
+                jobCooldown: onCooldown
+            });
+        }
+
+        // Merchant 40+: Trade caravan assistance
+        if ((occ === 'merchant' || occ === 'trader') && relLevel >= 40) {
+            var jobKey2 = personId + '_caravan_assist';
+            var onCooldown2 = (player._npcJobCooldowns[jobKey2] || 0) > day;
+            jobs.push({
+                id: 'npc_job_caravan',
+                name: '🐪 Join Trade Caravan',
+                icon: '🐪',
+                description: person.firstName + ' is sending a caravan and could use an extra hand. Travel and profit!',
+                cost: 0,
+                gain: 2.0,
+                rating: 'good',
+                showRating: false,
+                available: !onCooldown2 && !player.traveling,
+                atCooldownLimit: false,
+                dateProgress: 15,
+                timeHours: 8,
+                isJob: true,
+                jobType: 'caravan_assist',
+                jobCooldown: onCooldown2
+            });
+        }
+
+        // Guard 40+: Militia training
+        if ((occ === 'guard' || occ === 'soldier') && relLevel >= 40) {
+            var jobKey3 = personId + '_militia_training';
+            var onCooldown3 = (player._npcJobCooldowns[jobKey3] || 0) > day;
+            jobs.push({
+                id: 'npc_job_militia',
+                name: '⚔️ Militia Training',
+                icon: '⚔️',
+                description: person.firstName + ' offers to train you in combat. Builds fighting skill and earns respect.',
+                cost: 0,
+                gain: 2.5,
+                rating: 'good',
+                showRating: false,
+                available: !onCooldown3,
+                atCooldownLimit: false,
+                dateProgress: 12,
+                timeHours: 4,
+                isJob: true,
+                jobType: 'militia_training',
+                jobCooldown: onCooldown3
+            });
+        }
+
+        // Innkeeper 30+: Work the bar
+        if ((occ === 'innkeeper' || occ === 'barkeep' || occ === 'tavern_keeper') && relLevel >= 30) {
+            var jobKey4 = personId + '_bar_work';
+            var onCooldown4 = (player._npcJobCooldowns[jobKey4] || 0) > day;
+            jobs.push({
+                id: 'npc_job_bar',
+                name: '🍺 Work the Bar',
+                icon: '🍺',
+                description: person.firstName + ' needs help running the tavern tonight. Earn gold and meet people.',
+                cost: 0,
+                gain: 1.5,
+                rating: 'good',
+                showRating: false,
+                available: !onCooldown4,
+                atCooldownLimit: false,
+                dateProgress: 10,
+                timeHours: 4,
+                isJob: true,
+                jobType: 'bar_work',
+                jobCooldown: onCooldown4
+            });
+        }
+
+        return jobs;
     }
 
     function interactWithNPC(personId, interactionId) {
@@ -2251,7 +2596,20 @@
         for (var i = 0; i < socialInteractions.length; i++) {
             if (socialInteractions[i].id === interactionId) { interaction = socialInteractions[i]; break; }
         }
-        if (!interaction) return { success: false, message: 'Unknown interaction.' };
+
+        // Handle special interaction types: gossip, trait-based, jobs
+        if (!interaction) {
+            if (interactionId === 'ask_gossip') {
+                return _handleGossipInteraction(personId, person);
+            }
+            if (interactionId && interactionId.indexOf('trait_') === 0) {
+                return _handleTraitInteraction(personId, person, interactionId);
+            }
+            if (interactionId && interactionId.indexOf('npc_job_') === 0) {
+                return _handleJobInteraction(personId, person, interactionId);
+            }
+            return { success: false, message: 'Unknown interaction.' };
+        }
 
         // Cost check
         if (player.gold < (interaction.cost || 0)) {
@@ -2353,6 +2711,213 @@
 
         Player.grantXP(2, 'social_interaction');
         return { success: true, message: msg, gain: gain };
+    }
+
+    // ── Special Interaction Handlers ─────────────────────────
+
+    function _handleGossipInteraction(personId, person) {
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+
+        // Check gossip cooldown (once per day per NPC)
+        if (!player._npcGossipCooldowns) player._npcGossipCooldowns = {};
+        if ((player._npcGossipCooldowns[personId] || 0) >= day) {
+            return { success: false, message: person.firstName + ' says: "I\'ve told you everything I know for now. Try again tomorrow."' };
+        }
+
+        // Advance time
+        if (typeof Game !== 'undefined' && Game.advanceTicks) {
+            Game.advanceTicks(3);
+        }
+
+        // Set cooldown
+        player._npcGossipCooldowns[personId] = day;
+
+        // Generate gossip message
+        var gossipMsg = _generateGossipMessage(person);
+
+        // Small relationship gain
+        Player.modifyRelationship(personId, 0.5);
+
+        // Track interaction cooldown
+        if (!player._npcInteractions) player._npcInteractions = {};
+        if (!player._npcInteractions[personId] || player._npcInteractions[personId].day !== day) {
+            player._npcInteractions[personId] = { day: day, count: 0 };
+        }
+        player._npcInteractions[personId].count++;
+
+        Player.grantXP(2, 'gossip');
+        return { success: true, message: '👂 ' + gossipMsg };
+    }
+
+    function _handleTraitInteraction(personId, person, interactionId) {
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+
+        var traitInteractions = _getTraitBasedInteractions(personId, person);
+        var matched = null;
+        for (var i = 0; i < traitInteractions.length; i++) {
+            if (traitInteractions[i].id === interactionId) { matched = traitInteractions[i]; break; }
+        }
+        if (!matched) return { success: false, message: 'That conversation topic is no longer available.' };
+
+        // Advance time
+        if (typeof Game !== 'undefined' && Game.advanceTicks) {
+            Game.advanceTicks(3);
+        }
+
+        // Apply 2x relationship gain (the whole point of trait interactions)
+        var gain = matched.gain;
+        Player.modifyRelationship(personId, gain);
+
+        // Progress trait reveal
+        if (matched.dateProgress > 0) {
+            if (!player.dateProgress[personId]) {
+                player.dateProgress[personId] = { traitProgress: 0, quirkProgress: 0 };
+            }
+            player.dateProgress[personId].traitProgress += matched.dateProgress;
+        }
+
+        // Track interaction cooldown
+        if (!player._npcInteractions) player._npcInteractions = {};
+        if (!player._npcInteractions[personId] || player._npcInteractions[personId].day !== day) {
+            player._npcInteractions[personId] = { day: day, count: 0 };
+        }
+        player._npcInteractions[personId].count++;
+
+        var gainSign = gain >= 0 ? '+' : '';
+        Player.grantXP(3, 'trait_interaction');
+        return { success: true, message: matched.name + ': 💚 Relationship ' + gainSign + gain.toFixed(1) + '. Your knowledge of their personality deepened the conversation!' };
+    }
+
+    function _handleJobInteraction(personId, person, interactionId) {
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+        if (!player._npcJobCooldowns) player._npcJobCooldowns = {};
+        var rng = Engine.getRng ? Engine.getRng() : null;
+
+        var fn = person.firstName || 'Someone';
+        var occ = person.occupation || '';
+
+        if (interactionId === 'npc_job_harvest') {
+            var jobKey = personId + '_harvest_help';
+            if ((player._npcJobCooldowns[jobKey] || 0) > day) {
+                return { success: false, message: fn + ' says: "I don\'t need help right now. Come back in a few days."' };
+            }
+            // Advance time (half a day)
+            if (typeof Game !== 'undefined' && Game.advanceTicks) {
+                Game.advanceTicks(10);
+            }
+            // Pay: 8-15g based on farming skill
+            var farmSkill = Player.hasSkill('farming') || Player.hasSkill('advanced_farming');
+            var harvestPay = farmSkill ? (12 + (rng ? Math.floor(rng.random() * 4) : 2)) : (8 + (rng ? Math.floor(rng.random() * 4) : 1));
+            player.gold += harvestPay;
+            Player.modifyRelationship(personId, 2.0);
+            player._npcJobCooldowns[jobKey] = day + 7; // 7-day cooldown
+            // Track cooldown
+            if (!player._npcInteractions) player._npcInteractions = {};
+            if (!player._npcInteractions[personId] || player._npcInteractions[personId].day !== day) {
+                player._npcInteractions[personId] = { day: day, count: 0 };
+            }
+            player._npcInteractions[personId].count++;
+            Player.grantXP(5, 'harvest_work');
+            return { success: true, message: '🌾 You helped ' + fn + ' with the harvest! Earned ' + harvestPay + 'g. 💚 Relationship +2.0' };
+        }
+
+        if (interactionId === 'npc_job_caravan') {
+            var jobKey2 = personId + '_caravan_assist';
+            if ((player._npcJobCooldowns[jobKey2] || 0) > day) {
+                return { success: false, message: fn + ' says: "No caravans going out right now. Check back later."' };
+            }
+            if (player.traveling) {
+                return { success: false, message: 'You can\'t join a caravan while already traveling.' };
+            }
+            // Advance time (full day)
+            if (typeof Game !== 'undefined' && Game.advanceTicks) {
+                Game.advanceTicks(20);
+            }
+            // Pay: 15-25g + trade XP
+            var merchantSkill = Player.hasSkill('merchant_discount') || Player.hasSkill('trade_routes');
+            var caravanPay = merchantSkill ? (20 + (rng ? Math.floor(rng.random() * 6) : 3)) : (15 + (rng ? Math.floor(rng.random() * 6) : 2));
+            player.gold += caravanPay;
+            Player.modifyRelationship(personId, 2.0);
+            player._npcJobCooldowns[jobKey2] = day + 14; // 14-day cooldown
+            if (!player._npcInteractions) player._npcInteractions = {};
+            if (!player._npcInteractions[personId] || player._npcInteractions[personId].day !== day) {
+                player._npcInteractions[personId] = { day: day, count: 0 };
+            }
+            player._npcInteractions[personId].count++;
+            Player.grantXP(8, 'caravan_assist');
+            return { success: true, message: '🐪 You joined ' + fn + '\'s trade caravan! Earned ' + caravanPay + 'g and valuable trade experience. 💚 Relationship +2.0' };
+        }
+
+        if (interactionId === 'npc_job_militia') {
+            var jobKey3 = personId + '_militia_training';
+            if ((player._npcJobCooldowns[jobKey3] || 0) > day) {
+                return { success: false, message: fn + ' says: "Rest up first. Training tomorrow."' };
+            }
+            // Advance time (half a day)
+            if (typeof Game !== 'undefined' && Game.advanceTicks) {
+                Game.advanceTicks(10);
+            }
+            // Combat XP + relationship
+            Player.modifyRelationship(personId, 2.5);
+            player._npcJobCooldowns[jobKey3] = day + 7; // 7-day cooldown
+            if (!player._npcInteractions) player._npcInteractions = {};
+            if (!player._npcInteractions[personId] || player._npcInteractions[personId].day !== day) {
+                player._npcInteractions[personId] = { day: day, count: 0 };
+            }
+            player._npcInteractions[personId].count++;
+            Player.grantXP(10, 'militia_training');
+            // Slight combat skill boost (if skill system allows)
+            player.stats.combatVictories = (player.stats.combatVictories || 0) + 0;
+            return { success: true, message: '⚔️ ' + fn + ' put you through rigorous training! +10 XP and valuable combat experience. 💚 Relationship +2.5' };
+        }
+
+        if (interactionId === 'npc_job_bar') {
+            var jobKey4 = personId + '_bar_work';
+            if ((player._npcJobCooldowns[jobKey4] || 0) > day) {
+                return { success: false, message: fn + ' says: "We\'re covered for tonight. Come back in a few days."' };
+            }
+            // Advance time (evening shift)
+            if (typeof Game !== 'undefined' && Game.advanceTicks) {
+                Game.advanceTicks(10);
+            }
+            // Pay: 5-10g + social bonuses
+            var barPay = 5 + (rng ? Math.floor(rng.random() * 6) : 2);
+            player.gold += barPay;
+            Player.modifyRelationship(personId, 1.5);
+            player._npcJobCooldowns[jobKey4] = day + 5; // 5-day cooldown
+
+            // Bonus: meet 1-2 random people in town (small relationship gain)
+            var _townPeople = [];
+            try { _townPeople = Engine.getPeople(player.townId) || []; } catch(e) {}
+            var _metCount = 0;
+            var _metNames = [];
+            if (_townPeople.length > 0 && rng) {
+                var _shuffled = _townPeople.slice().sort(function() { return rng.random() - 0.5; });
+                for (var _bp = 0; _bp < _shuffled.length && _metCount < 2; _bp++) {
+                    var _bp2 = _shuffled[_bp];
+                    if (_bp2.id === personId || _bp2.id === player.spouseId) continue;
+                    if (!_bp2.alive) continue;
+                    Player.modifyRelationship(_bp2.id, 1.0);
+                    _metNames.push(_bp2.firstName);
+                    _metCount++;
+                }
+            }
+
+            if (!player._npcInteractions) player._npcInteractions = {};
+            if (!player._npcInteractions[personId] || player._npcInteractions[personId].day !== day) {
+                player._npcInteractions[personId] = { day: day, count: 0 };
+            }
+            player._npcInteractions[personId].count++;
+            Player.grantXP(4, 'bar_work');
+            var barMsg = '🍺 You worked the bar for ' + fn + '! Earned ' + barPay + 'g. 💚 Relationship +1.5';
+            if (_metNames.length > 0) barMsg += '. Met ' + _metNames.join(' and ') + ' while serving drinks!';
+            return { success: true, message: barMsg };
+        }
+
+        return { success: false, message: 'Unknown job.' };
     }
 
     // ── Guild Membership System ──────────────────────────────

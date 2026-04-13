@@ -3130,7 +3130,7 @@ window.UI = (function () {
         }
     }
 
-    // NPC greeting based on rank comparison and personality
+    // NPC greeting based on rank comparison, personality, AND relationship level
     function _getNpcGreeting(person, personName) {
         if (!person) return '';
         var pers = person.personality || {};
@@ -3155,6 +3155,30 @@ window.UI = (function () {
         if (typeof Player !== 'undefined' && Player.state && Player.state.socialRank) {
             for (var pk in Player.state.socialRank) {
                 if ((Player.state.socialRank[pk] || 0) > playerRank) playerRank = Player.state.socialRank[pk];
+            }
+        }
+
+        // Get relationship level for greeting evolution
+        var relLevel = 0;
+        if (typeof Player !== 'undefined' && Player.getRelationship) {
+            var _rel = Player.getRelationship(person.id);
+            if (_rel) relLevel = _rel.level || 0;
+        }
+
+        // Relationship-based greeting override — close friends/friends get warm personal greetings
+        if (relLevel >= 60) {
+            var closeFriendGreetings = _getCloseFriendGreetings(person, personName, npcRank);
+            if (closeFriendGreetings.length > 0) {
+                var pick = closeFriendGreetings[Math.floor(Math.random() * closeFriendGreetings.length)];
+                return '<div style="padding:8px 12px;margin-bottom:10px;background:rgba(46,204,64,0.08);border-left:3px solid rgba(46,204,64,0.4);border-radius:0 6px 6px 0;font-style:italic;color:var(--text-secondary,#ccc);font-size:0.9em;">' +
+                    '<span style="color:#2ecc40;font-weight:bold;">' + (personName || 'friend') + ' 💚:</span> ' + pick + '</div>';
+            }
+        } else if (relLevel >= 40) {
+            var friendGreetings = _getFriendGreetings(person, personName, npcRank);
+            if (friendGreetings.length > 0) {
+                var pick = friendGreetings[Math.floor(Math.random() * friendGreetings.length)];
+                return '<div style="padding:8px 12px;margin-bottom:10px;background:rgba(255,215,0,0.08);border-left:3px solid rgba(255,215,0,0.4);border-radius:0 6px 6px 0;font-style:italic;color:var(--text-secondary,#ccc);font-size:0.9em;">' +
+                    '<span style="color:#ffd700;font-weight:bold;">' + (personName || 'friend') + ' 💛:</span> ' + pick + '</div>';
             }
         }
 
@@ -3379,6 +3403,89 @@ window.UI = (function () {
             '<span style="color:var(--gold,#ffd700);font-weight:bold;">' + fn + ':</span> ' + pick + '</div>';
     }
 
+    // Relationship-based greeting overrides
+    function _getFriendGreetings(person, personName, npcRank) {
+        var fn = personName || 'friend';
+        var occ = person.occupation || '';
+        var playerName = (typeof Player !== 'undefined' && Player.state) ? Player.state.firstName : 'friend';
+        if (npcRank >= 7) return [
+            '"' + playerName + '! Come in, come in. I always have time for you, my friend."',
+            '"Ah, my trusted ' + playerName + '. Your visits brighten even the heaviest of crowns."',
+            '"' + playerName + '! I was just speaking well of you to the court. Sit — let us talk."'
+        ];
+        if (npcRank >= 4) return [
+            '"' + playerName + '! My dear friend. Come, let us share some wine and good conversation."',
+            '"Ah, there you are! I was hoping you\'d visit. I have news that might interest you."',
+            '"' + playerName + '! A welcome sight. The court is duller without you."'
+        ];
+        if (occ === 'merchant' || occ === 'trader') return [
+            '"' + playerName + '! My favorite customer — and I mean that sincerely. Come see what I\'ve set aside for you."',
+            '"Ah, ' + playerName + '! I\'ve been saving a special deal just for you. Friends like you deserve it."',
+            '"' + playerName + ', wonderful to see you! Business is better when friends are involved."'
+        ];
+        if (occ === 'guard' || occ === 'soldier') return [
+            '"' + playerName + '! Good to see you. Walk with me — I could use the company on patrol."',
+            '"Ah, ' + playerName + '. *relaxes stance* Always a pleasure. How are things?"',
+            '"' + playerName + '! If anyone gives you trouble, you let me know. Friends look out for each other."'
+        ];
+        if (occ === 'farmer' || occ === 'fisher') return [
+            '"' + playerName + '! Pull up a seat. I just made some fresh cider — you have to try it."',
+            '"Ah, ' + playerName + '! The crops are coming in well. I saved some of the best for you."',
+            '"' + playerName + '! Good timing. I was about to take a break. Let\'s catch up."'
+        ];
+        if (occ === 'innkeeper' || occ === 'barkeep' || occ === 'tavern_keeper') return [
+            '"' + playerName + '! Your drink is already being poured. I know what you like by now."',
+            '"Ah, my favorite regular! Sit down — the first round is on the house today."',
+            '"' + playerName + '! The tavern always feels livelier when you\'re here."'
+        ];
+        return [
+            '"' + playerName + '! My friend! How wonderful to see you. Come, let\'s talk."',
+            '"Ah, ' + playerName + '! I was just thinking about you. How have you been?"',
+            '"' + playerName + '! Always a pleasure. You brighten my day, truly."'
+        ];
+    }
+
+    function _getCloseFriendGreetings(person, personName, npcRank) {
+        var fn = personName || 'friend';
+        var occ = person.occupation || '';
+        var playerName = (typeof Player !== 'undefined' && Player.state) ? Player.state.firstName : 'friend';
+        if (npcRank >= 7) return [
+            '"' + playerName + '! My dearest friend and confidant. Come — I have something important to discuss with you, and only you."',
+            '"Ah, ' + playerName + '. The one person in this kingdom I truly trust. Sit with me."',
+            '"' + playerName + '! *embraces warmly* You are like family to me. Tell me — what news?"'
+        ];
+        if (npcRank >= 4) return [
+            '"' + playerName + '! *clasps your hand* My truest friend. The court is full of vipers, but you — you are genuine."',
+            '"Ah, ' + playerName + '. The one noble soul I can count on. Come, I have something to tell you in confidence."',
+            '"' + playerName + '! I was just telling my spouse how fortunate I am to have a friend like you."'
+        ];
+        if (occ === 'merchant' || occ === 'trader') return [
+            '"' + playerName + '! *beams* My closest friend and best customer! Everything in this shop is yours at cost — always."',
+            '"Ah, ' + playerName + '! You know, I\'d trust you with the keys to my shop. That says everything."',
+            '"' + playerName + '! Come, come — I\'ve been holding something special for you. Only the best for my dearest friend."'
+        ];
+        if (occ === 'guard' || occ === 'soldier') return [
+            '"' + playerName + '! *grins widely* My closest friend on or off duty. You ever need anything — anything — I\'m there."',
+            '"Ah, ' + playerName + '. I\'d take an arrow for you and you know it. How are you, old friend?"',
+            '"' + playerName + '! Come walk the walls with me. I\'ve got stories that\'ll make your jaw drop."'
+        ];
+        if (occ === 'farmer' || occ === 'fisher') return [
+            '"' + playerName + '! *hugs* My dearest friend! The harvest is in and you\'re getting a full share. I insist."',
+            '"Ah, ' + playerName + '! I\'ve known you long enough that you feel like family. My door is always open."',
+            '"' + playerName + '! Sit, eat. You\'ve been too good to me over the years. Let me repay a little kindness."'
+        ];
+        if (occ === 'innkeeper' || occ === 'barkeep' || occ === 'tavern_keeper') return [
+            '"' + playerName + '! *pours premium ale* My oldest and dearest friend! You drink free tonight — and every night, if I had my way."',
+            '"Ah, ' + playerName + '! This tavern wouldn\'t be the same without you. You\'re practically co-owner at this point."',
+            '"' + playerName + '! Come here, come here — I need your advice. You\'re the wisest person I know."'
+        ];
+        return [
+            '"' + playerName + '! *lights up with joy* My closest friend in all the world! I\'ve missed you!"',
+            '"Ah, ' + playerName + '! There you are. I don\'t know what I\'d do without you. Truly."',
+            '"' + playerName + '! I consider you family at this point. You know that, don\'t you?"'
+        ];
+    }
+
     function talkToPerson(personId) {
         if (typeof Player === 'undefined' || !Player.getAvailableInteractions) return;
         var interactions = Player.getAvailableInteractions(personId);
@@ -3412,12 +3519,28 @@ window.UI = (function () {
             var borderColor = '#555';
             var textColor = '#ccc';
 
+            // Section headers for new interaction categories
+            if (j > 0 && si.isTraitInteraction && !interactions[j-1].isTraitInteraction) {
+                html += '<div style="margin:10px 0 4px;padding:4px 8px;font-size:0.8em;color:#2ecc40;font-weight:bold;border-top:1px solid #333;padding-top:8px">🌟 TRAIT INSIGHTS — Tailored conversations from knowing their personality</div>';
+            }
+            if (j > 0 && si.isGossip && !interactions[j-1].isGossip) {
+                html += '<div style="margin:10px 0 4px;padding:4px 8px;font-size:0.8em;color:#d4a017;font-weight:bold;border-top:1px solid #333;padding-top:8px">👂 INFORMATION — Ask about what they know</div>';
+            }
+            if (j > 0 && si.isJob && !(interactions[j-1] && interactions[j-1].isJob)) {
+                html += '<div style="margin:10px 0 4px;padding:4px 8px;font-size:0.8em;color:#3498db;font-weight:bold;border-top:1px solid #333;padding-top:8px">💼 WORK — Jobs available through your friendship</div>';
+            }
+
             if (si.showRating) {
                 if (si.rating === 'great') { borderColor = '#2ecc40'; bgColor = '#1a3a1a'; }
                 else if (si.rating === 'good') { borderColor = '#88cc44'; bgColor = '#223322'; }
                 else if (si.rating === 'neutral') { borderColor = '#bbbb44'; bgColor = '#2a2a22'; }
                 else if (si.rating === 'bad') { borderColor = '#cc4444'; bgColor = '#3a1a1a'; }
             }
+
+            // Special coloring for new interaction types
+            if (si.isTraitInteraction) { borderColor = '#2ecc40'; bgColor = '#1a2a1a'; }
+            if (si.isGossip) { borderColor = '#d4a017'; bgColor = '#2a2510'; }
+            if (si.isJob) { borderColor = '#3498db'; bgColor = '#1a2030'; }
 
             var opacity = si.available ? '1' : '0.5';
             var cursor = si.available ? 'pointer' : 'not-allowed';
@@ -3435,6 +3558,12 @@ window.UI = (function () {
             if (si.showRating) {
                 var ratingText = si.rating === 'great' ? '🟢 Great match' : si.rating === 'good' ? '🟡 Good' : si.rating === 'neutral' ? '⚪ Neutral' : '🔴 Poor match';
                 html += '<div style="font-size:0.78em;color:' + borderColor + ';margin-top:2px">' + ratingText + '</div>';
+            }
+            if (si.gossipCooldown) {
+                html += '<div style="font-size:0.78em;color:#999;margin-top:2px">⏳ Already asked today — try again tomorrow</div>';
+            }
+            if (si.jobCooldown) {
+                html += '<div style="font-size:0.78em;color:#999;margin-top:2px">⏳ Not available yet — check back in a few days</div>';
             }
             html += '</div></div>';
         }

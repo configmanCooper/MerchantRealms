@@ -207,6 +207,11 @@
         _nobleDossier: {},              // { nobleId: { personality:{}, relationships:{}, loyalty, discoveredDay } }
         notorietyReduction: null,       // { type: 'lay_low'|'cleanse_identity', startDay, endDay, dailyReduction } or null
 
+        // ── NPC Memory & Gossip ──
+        _npcMemoryEvents: {},           // { personId: [20, 40, 60] } — thresholds already triggered
+        _npcGossipCooldowns: {},        // { personId: day } — last gossip request day
+        _npcJobCooldowns: {},           // { 'personId_jobType': expiresDay } — relationship job cooldowns
+
         // ── Crown & Royal Advisor State ──
         isRoyalAdvisorFromKing: false,
         royalAdvisorKingdomId: null,
@@ -18639,6 +18644,7 @@
         }
 
         const rel = player.relationships[personId];
+        var oldLevel = rel.level;
         rel.level = Math.max(0, Math.min(100, rel.level + amount));
         if (type) rel.type = type;
         // Update type label based on level thresholds
@@ -18651,6 +18657,79 @@
                 }
             }
         }
+
+        // NPC Memory System — trigger one-time dialogue at relationship thresholds
+        if (amount > 0 && rel.level > oldLevel) {
+            if (!player._npcMemoryEvents) player._npcMemoryEvents = {};
+            if (!player._npcMemoryEvents[personId]) player._npcMemoryEvents[personId] = [];
+            var memThresholds = [20, 40, 60];
+            for (var _mt = 0; _mt < memThresholds.length; _mt++) {
+                var thresh = memThresholds[_mt];
+                if (oldLevel < thresh && rel.level >= thresh && player._npcMemoryEvents[personId].indexOf(thresh) === -1) {
+                    player._npcMemoryEvents[personId].push(thresh);
+                    _triggerNpcMemoryDialogue(personId, thresh);
+                }
+            }
+        }
+    }
+
+    function _triggerNpcMemoryDialogue(personId, threshold) {
+        var person = null;
+        try { person = Engine.findPerson(personId); } catch(e) {}
+        if (!person) return;
+        var occ = person.occupation || 'commoner';
+        var fn = person.firstName || 'Someone';
+        var playerName = player.firstName || 'friend';
+
+        var messages = {
+            20: {
+                farmer: '"' + playerName + '! Good to see you again. You\'re becoming a regular face around the fields."',
+                merchant: '"Ah, ' + playerName + '! I was hoping you\'d come by. I always save the good deals for friends."',
+                guard: '"' + playerName + '. *nods approvingly* You\'re alright. Keep your nose clean and we\'ll get along fine."',
+                innkeeper: '"' + playerName + '! Your usual spot is open. It\'s good to have regulars I actually like."',
+                noble: '"I\'m beginning to remember your name, ' + playerName + '. That\'s more than most commoners can say."',
+                doctor: '"' + playerName + ', how nice. A patient I actually enjoy seeing — and not because you\'re sick!"',
+                default: '"' + playerName + '! I was just thinking about you. Funny how that works, isn\'t it?"'
+            },
+            40: {
+                farmer: '"You know, ' + playerName + ', you\'re practically family now. If you ever need a hand, you just ask."',
+                merchant: '"' + playerName + ', my friend! Between you and me, I hear things about prices in other towns. Ask me sometime."',
+                guard: '"' + playerName + '! Come, walk with me on patrol. I trust you enough to share what I see on these streets."',
+                innkeeper: '"' + playerName + '! Sit, sit. First drink is on the house today. You\'ve earned it, old friend."',
+                noble: '"' + playerName + ', I must say — you\'ve proven yourself. Not many earn my genuine respect."',
+                doctor: '"' + playerName + ', I consider you a true friend. If you\'re ever unwell, come to me first. I\'ll see you right."',
+                default: '"I consider you a real friend, ' + playerName + '. That means something to me."'
+            },
+            60: {
+                farmer: '"I remember when you were just a wandering stranger, ' + playerName + '. Look at us now — thick as thieves!"',
+                merchant: '"' + playerName + ', you\'re one of the few people I truly trust. In this business, that\'s worth more than gold."',
+                guard: '"' + playerName + ', if trouble ever comes your way, you send word. I\'ll be there. That\'s a promise."',
+                innkeeper: '"' + playerName + '! You\'re more than a customer now — you\'re family. This tavern will always have a place for you."',
+                noble: '"' + playerName + ', few people in this realm have earned my loyalty. You are one of them. Remember that."',
+                doctor: '"' + playerName + ', in all my years of practice, few have become as dear to me as you. Your friendship is a blessing."',
+                default: '"' + playerName + ', I want you to know — you\'re one of the most important people in my life. Truly."'
+            }
+        };
+
+        var occKey = occ;
+        if (occ === 'trader') occKey = 'merchant';
+        if (occ === 'soldier') occKey = 'guard';
+        if (occ === 'barkeep' || occ === 'tavern_keeper') occKey = 'innkeeper';
+        if (occ === 'blacksmith' || occ === 'carpenter' || occ === 'baker' || occ === 'craftsman') occKey = 'default';
+        if (occ === 'fisher') occKey = 'farmer';
+        if (occ === 'healer' || occ === 'herbalist') occKey = 'doctor';
+        if (occ === 'scholar' || occ === 'priest' || occ === 'teacher' || occ === 'monk') occKey = 'default';
+        if (person.occupation === 'noble' || person.isNoble) occKey = 'noble';
+
+        var threshMsgs = messages[threshold] || messages[20];
+        var msg = threshMsgs[occKey] || threshMsgs['default'];
+        var emoji = threshold === 20 ? '🤝' : threshold === 40 ? '💛' : '💚';
+        var label = threshold === 20 ? 'Friendly' : threshold === 40 ? 'Good Friends' : 'Close Friends';
+
+        if (typeof toast !== 'undefined') {
+            toast(emoji + ' ' + fn + ': ' + msg, 'success');
+        }
+        try { Engine.logEvent(emoji + ' Relationship milestone with ' + fn + ' (' + label + '): ' + msg, null, 'social'); } catch(e) {}
     }
 
     function getRelationshipLabel(level) {
