@@ -535,7 +535,7 @@ window.UI = (function () {
         registerAction('_godCureNpc', function(_t, d) { var pp=Engine.getPeople().find(function(x){return x.id===d.id;}); if(!pp){return;} pp.sick=false; pp.illness=null; pp.injured=false; pp.injuryType=null; pp.health=100; UI.toast('💚 Cured ' + (pp ? pp.firstName : '?') + '','success'); });
         registerAction('_godInflictInjury', function(_t, d) { var pp=Engine.getPeople().find(function(x){return x.id===d.id;}); if(!pp){UI.toast('NPC not found','error'); return;} var types=['wound','broken_bone','concussion','arrow_wound']; var names=['Wound','Broken Bone','Concussion','Arrow Wound']; var choice=prompt('Inflict injury on ' + (pp ? pp.firstName : '?') + ':\\n'+types.map(function(id,i){return (i+1)+'. '+names[i];}).join('\\n')+'\\n\\nEnter number (1-4):'); if(!choice)return; var idx=parseInt(choice,10)-1; if(idx<0||idx>=types.length){UI.toast('Invalid choice','error');return;} pp.injured=true; pp.injuryDay=Engine.getDay(); pp.injuryType=types[idx]; pp.health=Math.max(10,(pp.health||100)-20); UI.toast('🤕 '+names[idx]+' inflicted on ' + (pp ? pp.firstName : '?') + '','warning'); });
         registerAction('_godInflictIllness', function(_t, d) { var pp=Engine.getPeople().find(function(x){return x.id===d.id;}); if(!pp){UI.toast('NPC not found','error'); return;} var ills=['cold','flu','food_poisoning','fever','dysentery','pneumonia','typhus','plague']; var names=['Cold','Flu','Food Poisoning','Fever','Dysentery','Pneumonia','Typhus','Plague']; var choice=prompt('Inflict illness on ' + (pp ? pp.firstName : '?') + ':\\n'+ills.map(function(id,i){return (i+1)+'. '+names[i];}).join('\\n')+'\\n\\nEnter number (1-8):'); if(!choice)return; var idx=parseInt(choice,10)-1; if(idx<0||idx>=ills.length){UI.toast('Invalid choice','error');return;} var ok=Engine.infectNPC(pp, ills[idx], 'god_mode'); if(ok){UI.toast('🤒 '+names[idx]+' inflicted on ' + (pp ? pp.firstName : '?') + '','warning');} else {UI.toast('Failed (already sick or immune)','info');} });
-        registerAction('_godBecomeNpc', function(_t, d) { var target=Engine.getPeople().find(function(x){return x.id===d.id}); if(!target){UI.toast('NPC not found','error'); return;} if(!confirm('Become '+target.firstName+'? Your old character becomes an Elite Merchant.')){return;} var st=Player.state; var oldClone={id:'p_former_'+Engine.getDay(), firstName:st.firstName, lastName:st.lastName, sex:st.sex, age:st.age, gold:st.gold, townId:st.townId, personality:Object.assign({},st.personality||{}), skills:Object.assign({},st.skills||{}), needs:{food:80,shelter:80,safety:80,wealth:50}, alive:true, occupation:'merchant', isEliteMerchant:true, strategy:'opportunist', npcMerchantInventory:{}, emCaravans:[], _formerPlayer:true, spouseId:null, childrenIds:(st.childrenIds||[]).slice(), parentIds:(st.parentIds||[]).slice()}; var oldName=oldClone.firstName+' '+oldClone.lastName; var world=Engine.getWorld(); if(world.eliteMerchants){world.eliteMerchants.push(oldClone);} Engine.addPerson(oldClone); st.townId=target.townId; st.gold=target.gold||100; st.firstName=target.firstName; st.lastName=target.lastName; st.sex=target.sex; st.age=target.age; st.personality=Object.assign({},target.personality||st.personality); st.spouseId=target.spouseId||null; if(target.spouseId){var sp=Engine.getPeople().find(function(x){return x.id===target.spouseId}); if(sp)sp.spouseId='player';} st.childrenIds=(target.childrenIds||[]).slice(); st.parentIds=(target.parentIds||[]).slice(); st.traveling=false; st.travelRoute=null; st.travelProgress=0; st.travelDestination=null; st.travelOrigin=null; st.travelPaid=0; st.travelMode=null; st.travelBySea=false; st.travelOffroad=false; st.travelTotalDist=0; target.alive=false; target._deathDay=Engine.getDay(); target._absorbed=true; UI.toast('🔄 You are now '+st.firstName+'! Old character ('+oldName+') is now an Elite Merchant.','success'); });
+        registerAction('_godBecomeNpc', function(_t, d) { var target=Engine.getPeople().find(function(x){return x.id===d.id}); if(!target){UI.toast('NPC not found','error'); return;} var rankNames=['Peasant','Citizen','Burgher','Guildmaster','Minor Noble','Lord','Royal Advisor','King']; var npcRank=0; var kingIds={}; var kds=Engine.getKingdoms(); for(var kki=0;kki<kds.length;kki++){if(kds[kki].king)kingIds[kds[kki].king]=kds[kki].name;} var isKing=!!kingIds[target.id]; if(isKing){npcRank=7;}else if(target.socialRank){for(var srk in target.socialRank){if((target.socialRank[srk]||0)>npcRank)npcRank=target.socialRank[srk];}} var npcRankLabel=rankNames[npcRank]||'Peasant'; var npcFullName=target.firstName+' '+target.lastName; if(!confirm('Become '+npcFullName+'?\n\n📋 Status: '+npcRankLabel+(isKing?' of '+kingIds[target.id]:'')+'\n💰 Gold: '+Math.floor(target.gold||0)+'\n🏷️ Occupation: '+(target.occupation||'none')+'\n📍 Town: '+(Engine.findTown(target.townId)?Engine.findTown(target.townId).name:'?')+'\n🎂 Age: '+(target.age||'?')+'\n\nYour old character becomes an Elite Merchant.')){return;} var st=Player.state; var oldClone={id:'p_former_'+Engine.getDay(), firstName:st.firstName, lastName:st.lastName, sex:st.sex, age:st.age, gold:st.gold, townId:st.townId, personality:Object.assign({},st.personality||{}), skills:Object.assign({},st.skills||{}), needs:{food:80,shelter:80,safety:80,wealth:50}, alive:true, occupation:'merchant', isEliteMerchant:true, strategy:'opportunist', npcMerchantInventory:{}, emCaravans:[], _formerPlayer:true, spouseId:null, childrenIds:(st.childrenIds||[]).slice(), parentIds:(st.parentIds||[]).slice()}; var oldName=oldClone.firstName+' '+oldClone.lastName; var world=Engine.getWorld(); if(world.eliteMerchants){world.eliteMerchants.push(oldClone);} Engine.addPerson(oldClone); st.firstName=target.firstName; st.lastName=target.lastName; st.sex=target.sex; st.age=target.age; st.townId=target.townId; st.gold=target.gold||100; st.personality=Object.assign({},target.personality||{}); st.spouseId=target.spouseId||null; if(target.spouseId){var sp=Engine.getPeople().find(function(x){return x.id===target.spouseId}); if(sp)sp.spouseId='player';} st.childrenIds=(target.childrenIds||[]).slice(); st.parentIds=(target.parentIds||[]).slice(); st.occupation=target.occupation||'merchant'; st.socialRank=target.socialRank?Object.assign({},target.socialRank):{}; st.isNoble=npcRank>=4; st.citizenshipKingdomId=target.kingdomId||target.citizenshipKingdomId||st.citizenshipKingdomId; st.houseType=target.houseType||null; if(isKing){var bkk=kds.find(function(kk){return kk.king===target.id;}); if(bkk){bkk.king='player_king'; st.isKing=true; st.kingdomId=bkk.id; st.occupation='king'; st.citizenshipKingdomId=bkk.id; st.socialRank[bkk.id]=7; st.politicalCapital=10; st.royalAdvisorKingdomId=bkk.id; st.isRoyalAdvisorFromKing=true; st.royalAdvisorBenefits={noTaxes:true,immuneToLaws:true,kingdomNeverSeizes:true,swayOverKing:true};}} else {st.isKing=false;} if(npcRank>=5){st.lordTownId=target.townId;} else {st.lordTownId=null;} if(npcRank>=6){st.politicalCapital=st.politicalCapital||3; st.royalAdvisorKingdomId=st.citizenshipKingdomId; st.isRoyalAdvisorFromKing=true;} st.traveling=false; st.travelRoute=null; st.travelProgress=0; st.travelDestination=null; st.travelOrigin=null; st.travelPaid=0; st.travelMode=null; st.travelBySea=false; st.travelOffroad=false; st.travelTotalDist=0; target.alive=false; target._deathDay=Engine.getDay(); target._absorbed=true; UI.toast('🔄 You are now '+npcFullName+' ('+npcRankLabel+(isKing?' of '+kingIds[target.id]:'')+')! Old character ('+oldName+') is now an Elite Merchant.','success'); });
         registerAction('_godPossessNpc', function(_t, d) { window._gmPossessedNpc=d.id; UI.toast('👁️ Possessing ' + ((Engine.getPerson && Engine.getPerson(d.id) || {}).firstName || '?') + '','info') });
         registerAction('_godForceMarry', function(_t, d) { var oldSp=Player.state.spouseId; if(oldSp){var op=Engine.getPeople().find(function(x){return x.id===oldSp;}); if(op)op.spouseId=null;} Player.state.spouseId=d.id; Player.state.spouseRelationship=50; var pp=Engine.getPeople().find(function(x){return x.id===d.id2;}); if(pp){if(pp.spouseId){var os=Engine.getPeople().find(function(x){return x.id===pp.spouseId;}); if(os)os.spouseId=null;} pp.spouseId='player';} UI.toast('💒 Married ' + (pp ? pp.firstName : '?') + '!','success'); });
         registerAction('_godGiveGoldToNpc', function(_t, d) { var pp=Engine.getPeople().find(function(x){return x.id===d.id;}); if(pp){pp.gold=(pp.gold||0)+1000; UI.toast('💰+1000g to ' + (pp ? pp.firstName : '?') + '','success');} });
@@ -12227,7 +12227,7 @@ window.UI = (function () {
             }
         } catch(e) {}
         html += '<select id="gm-set-rank" style="background:#333; color:#fff; border:1px solid #666; margin:2px; padding:2px;">';
-        var _gmRankNames = ['Peasant','Citizen','Burgher','Guildmaster','Minor Noble','Lord','Royal Advisor'];
+        var _gmRankNames = ['Peasant','Citizen','Burgher','Guildmaster','Minor Noble','Lord','Royal Advisor','👑 King (kills current king)'];
         for (var _gri = 0; _gri < _gmRankNames.length; _gri++) {
             html += '<option value="' + _gri + '"' + (_gri === _gmCurrentRank ? ' selected' : '') + '>' + _gmRankNames[_gri] + '</option>';
         }
@@ -12571,11 +12571,16 @@ window.UI = (function () {
                 var badge = isKing ? '👑' : npc.isEliteMerchant ? '⭐' : '👤';
                 var kingdomInfo = isKing ? ' [King of ' + kingIds[npc.id] + ']' : '';
 
+                var npcSocialRank = 0;
+                if (isKing) { npcSocialRank = 7; } else if (npc.socialRank) { for (var _srk in npc.socialRank) { if ((npc.socialRank[_srk]||0) > npcSocialRank) npcSocialRank = npc.socialRank[_srk]; } }
+                var _npcRankNames = ['Peasant','Citizen','Burgher','Guildmaster','Minor Noble','Lord','Royal Advisor','King'];
+                var npcRankBadge = npcSocialRank >= 7 ? '👑' : npcSocialRank >= 5 ? '🏰' : npcSocialRank >= 4 ? '🎖️' : npcSocialRank >= 3 ? '⚒️' : '';
+
                 html += '<div style="margin:3px 0; padding:4px; background:#1e1e2e; border-radius:3px; border-left:2px solid ' + (isKing ? '#FFD700' : npc.isEliteMerchant ? '#FFA500' : '#555') + ';">';
                 html += badge + ' <b>' + (npc.firstName || '?') + ' ' + (npc.lastName || '') + '</b>';
                 html += ' <span style="color:#888;">Age:' + (npc.age || '?') + ' ' + (npc.sex || '?') + '</span>';
                 html += kingdomInfo;
-                html += '<br>💰' + Math.floor(npc.gold || 0).toLocaleString() + 'g | 📍' + (npcTown ? npcTown.name : '?') + ' | 🏷️' + (npc.occupation || '?');
+                html += '<br>💰' + Math.floor(npc.gold || 0).toLocaleString() + 'g | 📍' + (npcTown ? npcTown.name : '?') + ' | 🏷️' + (npc.occupation || '?') + ' | ' + npcRankBadge + _npcRankNames[npcSocialRank];
                 if (npc.isEliteMerchant) html += ' | 🎯' + (npc.strategy || '?');
                 if (isKing && npc.mood) html += ' | 😊' + npc.mood;
 
@@ -12861,10 +12866,59 @@ window.UI = (function () {
     function _godModeSetRank() {
         var sel = document.getElementById('gm-set-rank');
         var r = parseInt(sel.value, 10);
-        if (isNaN(r) || r < 0 || r > 6) { toast('Invalid rank', 'error'); return; }
+        if (isNaN(r) || r < 0 || r > 7) { toast('Invalid rank', 'error'); return; }
         var kid = Player.state.citizenshipKingdomId || Object.keys(Player.state.socialRank || {})[0] || 'k_1';
         if (!Player.state.socialRank) Player.state.socialRank = {};
         var prevRank = Player.state.socialRank[kid] || 0;
+
+        // Special handling for King (rank 7)
+        if (r === 7) {
+            var kingdoms = Engine.getKingdoms();
+            var kingdom = null;
+            for (var ki = 0; ki < kingdoms.length; ki++) {
+                if (kingdoms[ki].id === kid) { kingdom = kingdoms[ki]; break; }
+            }
+            if (!kingdom) { toast('Kingdom not found: ' + kid, 'error'); return; }
+            var currentKing = kingdom.king ? Engine.findPerson(kingdom.king) : null;
+            var kingName = currentKing ? (currentKing.firstName + ' ' + currentKing.lastName) : 'the current ruler';
+            if (!confirm('👑 BECOME KING?\n\nThis will kill ' + kingName + ' and make you ruler of ' + kingdom.name + '.\n\nProceed?')) return;
+
+            // Kill the current king
+            if (currentKing && currentKing.alive) {
+                Engine.killPerson(currentKing, 'god_mode');
+            }
+
+            // Set player as king — use a fake person ID for the kingdom.king slot
+            kingdom.king = 'player_king';
+            kingdom.kingPersonality = {
+                intelligence: 'brilliant',
+                temperament: 'fair',
+                ambition: 'ambitious',
+                greed: 'fair',
+                courage: 'brave'
+            };
+            kingdom.kingMood = 'content';
+            kingdom.kingMoodReason = 'seized the throne by divine will';
+
+            Player.state.socialRank[kid] = 7;
+            Player.state.occupation = 'king';
+            Player.state.isNoble = true;
+            Player.state.isKing = true;
+            Player.state.kingdomId = kid;
+            Player.state.royalAdvisorKingdomId = kid;
+            Player.state.isRoyalAdvisorFromKing = true;
+            Player.state.politicalCapital = 10;
+            Player.state.royalAdvisorBenefits = { noTaxes: true, immuneToLaws: true, kingdomNeverSeizes: true, swayOverKing: true };
+            if (!Player.state.lordTownId) Player.state.lordTownId = Player.state.townId || null;
+
+            if (!Player.state.rankSince) Player.state.rankSince = {};
+            Player.state.rankSince[kid] = typeof Engine !== 'undefined' && Engine.getDay ? Engine.getDay() : 0;
+
+            toast('👑 You are now KING of ' + kingdom.name + '! ' + kingName + ' is dead.', 'success');
+            Engine.logEvent('👑 ' + Player.state.firstName + ' ' + Player.state.lastName + ' has seized the throne of ' + kingdom.name + ' by divine intervention!', { type: 'succession', kingdomId: kid }, 'my_kingdom');
+            return;
+        }
+
         Player.state.socialRank[kid] = r;
 
         // Clean up privileges from higher ranks when demoting
@@ -12973,8 +13027,8 @@ window.UI = (function () {
         if (!Player.state.rankSince) Player.state.rankSince = {};
         Player.state.rankSince[kid] = typeof Engine !== 'undefined' && Engine.getDay ? Engine.getDay() : 0;
 
-        var names = ['Peasant', 'Citizen', 'Burgher', 'Guildmaster', 'Minor Noble', 'Lord', 'Royal Advisor'];
-        toast('Set rank to ' + (names[r] || r) + ' in ' + kid + (r >= 6 ? ' (+3 political capital)' : ''), 'success');
+        var names = ['Peasant', 'Citizen', 'Burgher', 'Guildmaster', 'Minor Noble', 'Lord', 'Royal Advisor', 'King'];
+        toast('Set rank to ' + (names[r] || r) + ' in ' + kid + (r >= 6 ? ' (+' + (r >= 7 ? '10' : '3') + ' political capital)' : ''), 'success');
         if (r >= 1 && typeof Player.showRankCeremony === 'function') {
             Player.showRankCeremony(r, kid);
         }
