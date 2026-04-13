@@ -595,6 +595,53 @@ function openNobilityDialog() {
         html += '</div>';
     }
 
+    // ── COURT INTELLIGENCE (M2 — noble relationship viewer) ──
+    try {
+        var _myKingdomId = null;
+        for (var _ck = 0; _ck < kingdoms.length; _ck++) {
+            if ((Player.getState ? Player.getState().socialRank : {})[kingdoms[_ck].id] >= 4) {
+                _myKingdomId = kingdoms[_ck].id;
+                break;
+            }
+        }
+        if (_myKingdomId && typeof Engine !== 'undefined' && Engine.getWorldData) {
+            var _wd = Engine.getWorldData();
+            var _allPeople = _wd && _wd.people ? _wd.people : [];
+            var _courtNobles = [];
+            for (var _cn = 0; _cn < _allPeople.length; _cn++) {
+                var _p = _allPeople[_cn];
+                if (_p && _p.alive && _p.socialRank && _p.socialRank[_myKingdomId] >= 4) {
+                    _courtNobles.push(_p);
+                }
+            }
+            if (_courtNobles.length > 0) {
+                html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(108,155,209,0.15);border-radius:8px;padding:10px;margin-bottom:10px;">';
+                html += '<div style="font-size:0.85rem;color:#6c9bd1;margin-bottom:6px;">🏛️ Court Intelligence (' + _courtNobles.length + ' nobles)</div>';
+                var _kingPerson = null;
+                var _myK = Engine.findKingdom ? Engine.findKingdom(_myKingdomId) : null;
+                if (_myK && _myK.king) _kingPerson = Engine.findPerson ? Engine.findPerson(_myK.king) : null;
+                for (var _ci = 0; _ci < Math.min(8, _courtNobles.length); _ci++) {
+                    var _cn2 = _courtNobles[_ci];
+                    var _cnRank = _cn2.socialRank[_myKingdomId] || 4;
+                    var _cnRankLabel = _cnRank >= 6 ? 'RA' : _cnRank >= 5 ? 'Lord' : 'Noble';
+                    var _cnLoyalty = _cn2._nobleRelationships && _kingPerson ? (_cn2._nobleRelationships[_kingPerson.id] || 0) : 0;
+                    var _cnLoyColor = _cnLoyalty >= 30 ? '#55a868' : _cnLoyalty >= 0 ? '#ccb974' : '#c44e52';
+                    var _cnRep = (_cn2.reputation && _cn2.reputation[_myKingdomId]) ? _cn2.reputation[_myKingdomId] : 50;
+                    var _cnScan = _cn2._scandalized ? ' 💥' : '';
+                    var _cnFaction = _cn2._faction ? (' [' + _cn2._faction.charAt(0).toUpperCase() + _cn2._faction.slice(1) + ']') : '';
+                    html += '<div style="font-size:0.78rem;padding:2px 0;color:#ccc;">';
+                    html += '<b>' + escapeHtml(_cn2.firstName || '?') + '</b> [' + _cnRankLabel + ']';
+                    html += ' — King rel: <span style="color:' + _cnLoyColor + ';">' + _cnLoyalty + '</span>';
+                    html += ' | Rep: ' + Math.floor(_cnRep) + _cnScan + _cnFaction;
+                    html += '</div>';
+                }
+                if (_courtNobles.length > 8) html += '<div style="font-size:0.7rem;color:#888;">...and ' + (_courtNobles.length - 8) + ' more</div>';
+                html += '<div style="font-size:0.65rem;color:#888;margin-top:4px;">Shows noble-to-king relationships and reputation. Use schemes to shift the balance of power.</div>';
+                html += '</div>';
+            }
+        }
+    } catch(e) {}
+
     // ── ALERTS SECTION ──
     var alerts = [];
     if (commission && commission.status === 'pending') {

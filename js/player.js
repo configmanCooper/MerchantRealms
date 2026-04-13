@@ -201,6 +201,10 @@
         doubleNobleAgent: null,         // { targetKingdomId, sponsorKingdomId, tasks: [...], startDay, completed: 0 } or null
         nobleIntrigues: {},             // { targetNobleId: { type, startDay, ... } }
         _discoveredSecrets: [],         // [{ nobleId, nobleName, type, day, kingdomId, used }]
+        _schemeCooldowns: {},           // { 'schemeId_targetId': expiresDay }
+        _schemeTargetHistory: {},       // { nobleId: count } — times targeted (for M6 escalating detection)
+        _schemeLog: [],                 // [{ scheme, target, success, caught, message, day }] — last 20
+        _nobleDossier: {},              // { nobleId: { personality:{}, relationships:{}, loyalty, discoveredDay } }
         notorietyReduction: null,       // { type: 'lay_low'|'cleanse_identity', startDay, endDay, dailyReduction } or null
 
         // ── Crown & Royal Advisor State ──

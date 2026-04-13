@@ -11357,6 +11357,26 @@ window.UI = (function () {
             html += '</div>';
         }
 
+        // Scheme Log (M4) — recent scheme outcomes
+        try {
+            var _schemeLog = Player.state._schemeLog || [];
+            if (_schemeLog.length > 0) {
+                html += '<div style="border-top:1px solid var(--border);margin-top:10px;padding-top:8px;">';
+                html += '<h4 style="font-size:0.9rem;margin-bottom:6px;">📜 Scheme Log</h4>';
+                var _logStart = Math.max(0, _schemeLog.length - 10);
+                for (var _li = _schemeLog.length - 1; _li >= _logStart; _li--) {
+                    var _le = _schemeLog[_li];
+                    var _leIcon = _le.caught ? '🚨' : _le.success ? '✅' : '❌';
+                    var _leColor = _le.caught ? '#c44e52' : _le.success ? '#55a868' : '#aaa';
+                    var _leScheme = (_le.scheme || '').replace(/_/g, ' ');
+                    html += '<div style="font-size:0.78rem;color:' + _leColor + ';margin:2px 0;padding:3px 6px;background:rgba(0,0,0,0.15);border-radius:3px;">';
+                    html += _leIcon + ' Day ' + (_le.day || '?') + ' — <strong>' + escapeHtml(_leScheme) + '</strong> vs ' + escapeHtml(_le.target || '?');
+                    html += '</div>';
+                }
+                html += '</div>';
+            }
+        } catch(e) {}
+
         openModal('🗡️ Dark Deeds — Schemes', html);
     }
 

@@ -4007,6 +4007,15 @@
                 rnKl += rng.randInt(-10, 10);
                 rn.kingLoyalty = Math.max(0, Math.min(100, Math.round(rnKl)));
             }
+            // L2: Assign faction to existing nobles if missing
+            if (!rn._faction) {
+                var _rnP2 = rn.personality || {};
+                var _rnFs = [(_rnP2.loyalty || 50), (_rnP2.intelligence || 50), (_rnP2.ambition || 50)];
+                var _rnFn = ['loyalist', 'reformist', 'expansionist'];
+                var _rnFm = 0, _rnFi = 0;
+                for (var _rfi = 0; _rfi < _rnFs.length; _rfi++) { if (_rnFs[_rfi] > _rnFm) { _rnFm = _rnFs[_rfi]; _rnFi = _rfi; } }
+                rn._faction = _rnFn[_rnFi];
+            }
         }
 
         // Generate additional nobles to fill the target counts
@@ -4079,6 +4088,14 @@
             klBase -= person.personality.ambition * 0.15;
             klBase += rng.randInt(-10, 10);
             person.kingLoyalty = Math.max(0, Math.min(100, Math.round(klBase)));
+            // L2: Assign noble faction based on personality
+            var _factions = ['loyalist', 'reformist', 'expansionist'];
+            var _fScore = [person.personality.loyalty, person.personality.intelligence, person.personality.ambition];
+            var _fMax = 0, _fIdx = 0;
+            for (var _fi = 0; _fi < _fScore.length; _fi++) {
+                if (_fScore[_fi] > _fMax) { _fMax = _fScore[_fi]; _fIdx = _fi; }
+            }
+            person._faction = _factions[_fIdx];
             people.push(person);
             var town = kTowns.find(function(t) { return t.id === townId; });
             if (town) town.population = (town.population || 0) + 1;
@@ -6638,7 +6655,7 @@
                     var _ec = _electionCandidates[_eci];
                     var _ecRank = (_ec.socialRank && _ec.socialRank[kingdom.id]) || 0;
                     // Vote weight by rank: RA(6+)=3, Lord(5)=2, other nobles=1
-                    var _ecVoteWeight = _ecRank >= 6 ? 3 : _ecRank >= 5 ? 2 : 1;
+                    var _ecVoteWeight = _ecRank >= 6 ? 5 : _ecRank >= 5 ? 2 : 1; // L1: RA vote weight 5
                     // Base score from rank, wealth, personality
                     var _ecScore = _ecRank * 10 + Math.min((_ec.gold || 0), 5000) * 0.001 +
                         (_ec.personality ? (_ec.personality.intelligence || 50) * 0.3 + (_ec.personality.ambition || 50) * 0.2 : 25);
@@ -6689,7 +6706,7 @@
                     var _elTotalVotes = 0;
                     for (var _evi = 0; _evi < _elVoterPool.length; _evi++) {
                         var _evVoter = _elVoterPool[_evi];
-                        var _evWeight = (_evVoter.socialRank && _evVoter.socialRank[kingdom.id]) >= 6 ? 3 : (_evVoter.socialRank && _evVoter.socialRank[kingdom.id]) >= 5 ? 2 : 1;
+                        var _evWeight = (_evVoter.socialRank && _evVoter.socialRank[kingdom.id]) >= 6 ? 5 : (_evVoter.socialRank && _evVoter.socialRank[kingdom.id]) >= 5 ? 2 : 1; // L1: RA vote weight 5
                         var _evBestId = null, _evBestScore = -1;
                         for (var _ecci = 0; _ecci < _elVoterPool.length; _ecci++) {
                             var _evCand = _elVoterPool[_ecci];
@@ -6832,7 +6849,7 @@
             var _playerVoteWeight = 1;
             if (typeof Player !== 'undefined' && Player.state && Player.state.socialRank) {
                 var _pvRank = Player.state.socialRank[kingdom.id] || 0;
-                _playerVoteWeight = _pvRank >= 6 ? 3 : _pvRank >= 5 ? 2 : 1;
+                _playerVoteWeight = _pvRank >= 6 ? 5 : _pvRank >= 5 ? 2 : 1; // L1: RA vote weight 5
             }
             scores[playerVoteId] += 30 * _playerVoteWeight;
         }
@@ -6844,7 +6861,7 @@
             var totalVoteWeight = 0;
             for (var vi = 0; vi < voterPool.length; vi++) {
                 var voter = voterPool[vi];
-                var voteWeight = (voter.socialRank && voter.socialRank[kingdom.id]) >= 6 ? 3 : (voter.socialRank && voter.socialRank[kingdom.id]) >= 5 ? 2 : 1;
+                var voteWeight = (voter.socialRank && voter.socialRank[kingdom.id]) >= 6 ? 5 : (voter.socialRank && voter.socialRank[kingdom.id]) >= 5 ? 2 : 1; // L1: RA vote weight 5
                 var bestId = null, bestScore = -1;
                 for (var ci = 0; ci < voterPool.length; ci++) {
                     var cand = voterPool[ci];
@@ -8630,6 +8647,14 @@
             var dRep = (dNoble.reputation && dNoble.reputation[kId]) != null ? dNoble.reputation[kId] : 50;
             var dLoyalty = dNoble.kingLoyalty != null ? dNoble.kingLoyalty : 50;
 
+            // M3: Track persistent low loyalty over time
+            if (dLoyalty < 20) {
+                if (!dNoble._lowLoyaltySince) dNoble._lowLoyaltySince = world.day;
+            } else {
+                dNoble._lowLoyaltySince = 0;
+            }
+            var _loyaltyDays = dNoble._lowLoyaltySince ? (world.day - dNoble._lowLoyaltySince) : 0;
+
             // Scandalized noble with very low reputation: 25% chance/month demotion
             var shouldDemote = false;
             var demoteReason = '';
@@ -8637,7 +8662,12 @@
                 shouldDemote = true;
                 demoteReason = 'public scandal';
             }
-            // Persistently disloyal: loyalty < 20 for king's patience
+            // M3: Persistently disloyal for 60+ days — guaranteed review, high chance of demotion
+            else if (_loyaltyDays >= 60 && dLoyalty < 20 && rng.chance(0.40)) {
+                shouldDemote = true;
+                demoteReason = 'persistent disloyalty to the crown';
+            }
+            // Disloyal + low rep — moderate chance
             else if (dLoyalty < 20 && dRep < 30 && rng.chance(0.15)) {
                 shouldDemote = true;
                 demoteReason = 'disloyalty to the crown';
@@ -10117,6 +10147,25 @@
             }
         }
 
+        // L2: Faction-based voting — same-faction nobles vote together
+        if (noble._faction && vote._proposerFaction) {
+            if (noble._faction === vote._proposerFaction) {
+                if (rng.chance(0.35)) lean = 'yes'; // faction solidarity
+            }
+        }
+        // Expansionist faction leans yes for war/annexation
+        if (noble._faction === 'expansionist' && (vote.type === 'declare_war' || vote.type === 'annex')) {
+            if (rng.chance(0.40)) lean = 'yes';
+        }
+        // Reformist faction leans yes for policy changes, no for war
+        if (noble._faction === 'reformist') {
+            if (vote.type === 'major_policy' || vote.type === 'unban_goods') {
+                if (rng.chance(0.35)) lean = 'yes';
+            } else if (vote.type === 'declare_war') {
+                if (rng.chance(0.30)) lean = 'no';
+            }
+        }
+
         // Random factor: 20% chance to flip
         if (rng.chance(0.20)) {
             lean = (lean === 'yes') ? 'no' : 'yes';
@@ -10208,7 +10257,7 @@
                 var noWeight = 0;
                 var yesCount = 0;
                 var noCount = 0;
-                var weightMap = { 7: 5, 6: 3, 5: 2, 4: 1 };
+                var weightMap = { 7: 5, 6: 5, 5: 2, 4: 1 }; // L1: RA vote weight 5
 
                 for (var ri = 0; ri < vote.voters.length; ri++) {
                     var v = vote.voters[ri];
@@ -20514,8 +20563,22 @@
             var attendRate = (rng.randInt(60, 80)) / 100;
             var shuffled = rng.shuffle(allNobles.slice());
             var attendCount = Math.max(1, Math.floor(shuffled.length * attendRate));
-            for (var ai = 0; ai < attendCount && ai < shuffled.length; ai++) {
-                k._activeFeast.attendees.push(shuffled[ai].id);
+
+            // L5: If player is king, check for custom invitation list
+            var _playerIsKing = false;
+            try {
+                _playerIsKing = typeof Player !== 'undefined' && Player.state && Player.state.isKing && Player.state.kingState && Player.state.kingState.kingdomId === kId;
+            } catch(e) {}
+            if (_playerIsKing && k._playerFeastInvites && k._playerFeastInvites.length > 0) {
+                // Use player's custom invite list
+                for (var _pfi = 0; _pfi < k._playerFeastInvites.length; _pfi++) {
+                    k._activeFeast.attendees.push(k._playerFeastInvites[_pfi]);
+                }
+                k._playerFeastInvites = null; // consumed
+            } else {
+                for (var ai = 0; ai < attendCount && ai < shuffled.length; ai++) {
+                    k._activeFeast.attendees.push(shuffled[ai].id);
+                }
             }
 
             // Add player if they're a noble in this kingdom
@@ -20721,6 +20784,25 @@
             }
             var chatMsg = 'You had a private chat with ' + chatName + '. (+' + chatBonus + ' relationship)';
             if (traitRevealed) chatMsg += ' You learned something about their personality.';
+            // M5: Feed private chat into noble dossier
+            try {
+                if (typeof Player !== 'undefined' && Player.getState) {
+                    var _ps = Player.getState();
+                    if (!_ps._nobleDossier) _ps._nobleDossier = {};
+                    if (!_ps._nobleDossier[chatTarget]) _ps._nobleDossier[chatTarget] = { personality: {}, relationships: {}, discoveredDay: world.day };
+                    _ps._nobleDossier[chatTarget]._lastChatDay = world.day;
+                    if (chatPerson && chatPerson.personality) {
+                        var _cpk = Object.keys(chatPerson.personality);
+                        if (_cpk.length > 0) {
+                            var _rpk = rng.pick(_cpk);
+                            _ps._nobleDossier[chatTarget].personality[_rpk] = chatPerson.personality[_rpk];
+                        }
+                    }
+                    if (chatPerson && chatPerson.kingLoyalty != null) {
+                        _ps._nobleDossier[chatTarget].loyalty = chatPerson.kingLoyalty;
+                    }
+                }
+            } catch(e) {}
             feast.events.push(chatMsg);
             result = { success: true, message: chatMsg };
 
@@ -20746,6 +20828,20 @@
                     intelOptions.push('You learned that ' + stressedName + ' is under financial stress.');
                 }
                 var intel = rng.pick(intelOptions);
+                // M5: Feed eavesdrop intel into noble dossier
+                try {
+                    if (typeof Player !== 'undefined' && Player.getState && discontentNobles.length > 0) {
+                        var _ps2 = Player.getState();
+                        if (!_ps2._nobleDossier) _ps2._nobleDossier = {};
+                        for (var _di = 0; _di < discontentNobles.length; _di++) {
+                            var _dn = discontentNobles[_di];
+                            if (!_dn || !_dn.id) continue;
+                            if (!_ps2._nobleDossier[_dn.id]) _ps2._nobleDossier[_dn.id] = { personality: {}, relationships: {}, discoveredDay: world.day };
+                            _ps2._nobleDossier[_dn.id].loyalty = _dn.kingLoyalty;
+                            _ps2._nobleDossier[_dn.id]._discontentOverheard = true;
+                        }
+                    }
+                } catch(e) {}
                 feast.events.push(intel);
                 result = { success: true, message: intel };
             } else if (rng.chance(0.20)) {
@@ -20786,6 +20882,17 @@
                 var nameA = obsPersonA.firstName || 'Noble A';
                 var nameB = obsPersonB.firstName || 'Noble B';
                 var obsMsg = nameA + ' and ' + nameB + ' seem to be ' + relDesc + '.';
+                // M5: Feed observed relationship into noble dossier
+                try {
+                    if (typeof Player !== 'undefined' && Player.getState) {
+                        var _ps3 = Player.getState();
+                        if (!_ps3._nobleDossier) _ps3._nobleDossier = {};
+                        if (!_ps3._nobleDossier[obsA]) _ps3._nobleDossier[obsA] = { personality: {}, relationships: {}, discoveredDay: world.day };
+                        if (!_ps3._nobleDossier[obsB]) _ps3._nobleDossier[obsB] = { personality: {}, relationships: {}, discoveredDay: world.day };
+                        _ps3._nobleDossier[obsA].relationships[obsB] = relScore;
+                        _ps3._nobleDossier[obsB].relationships[obsA] = relScore;
+                    }
+                } catch(e) {}
                 feast.events.push(obsMsg);
                 result = { success: true, message: obsMsg };
             } else {

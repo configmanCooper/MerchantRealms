@@ -32,6 +32,49 @@
         return punishResult;
     }
 
+    // M1: Scheme cooldown system — 7-14 day cooldowns per scheme per target
+    function _checkSchemeCooldown(schemeId, targetId) {
+        if (!player._schemeCooldowns) player._schemeCooldowns = {};
+        var key = schemeId + '_' + targetId;
+        var expires = player._schemeCooldowns[key] || 0;
+        var day = Engine.getDay ? Engine.getDay() : 0;
+        if (day < expires) {
+            return { blocked: true, daysLeft: Math.ceil(expires - day) };
+        }
+        return { blocked: false };
+    }
+    function _setSchemeCooldown(schemeId, targetId, days) {
+        if (!player._schemeCooldowns) player._schemeCooldowns = {};
+        var key = schemeId + '_' + targetId;
+        player._schemeCooldowns[key] = (Engine.getDay ? Engine.getDay() : 0) + days;
+    }
+
+    // M6: Escalating detection for repeat targeting
+    function _getRepeatTargetPenalty(nobleId) {
+        if (!player._schemeTargetHistory) player._schemeTargetHistory = {};
+        var count = player._schemeTargetHistory[nobleId] || 0;
+        return count * 0.05; // +5% detection per previous targeting
+    }
+    function _recordSchemeTarget(nobleId) {
+        if (!player._schemeTargetHistory) player._schemeTargetHistory = {};
+        player._schemeTargetHistory[nobleId] = (player._schemeTargetHistory[nobleId] || 0) + 1;
+    }
+
+    // M4: Scheme outcome log
+    function _logSchemeOutcome(schemeId, targetName, success, caught, message) {
+        if (!player._schemeLog) player._schemeLog = [];
+        player._schemeLog.push({
+            scheme: schemeId,
+            target: targetName,
+            success: success,
+            caught: caught || false,
+            message: message,
+            day: Engine.getDay ? Engine.getDay() : 0
+        });
+        // Keep last 20 entries
+        if (player._schemeLog.length > 20) player._schemeLog.shift();
+    }
+
     function calculateCorruptDetection(baseDetection, town) {
         _sync();
         let detection = baseDetection;
@@ -58,12 +101,10 @@
             detection *= 1.15; // Suspicious: 15% harder
         }
         detection += _notoriety * 0.002; // additional flat scaling
-        // Noble notoriety also increases detection for noble-level schemes
+        // Noble notoriety: smooth continuous detection scaling (0-40% increase)
         var _nobleNot = player.nobleNotoriety || 0;
-        if (_nobleNot >= 50) {
-            detection *= 1.2;  // Nobles are watching: 20% harder
-        } else if (_nobleNot >= 25) {
-            detection *= 1.1;  // Nobles are wary: 10% harder
+        if (_nobleNot > 0) {
+            detection *= 1 + (_nobleNot * 0.004);
         }
         // Bribed guards reduction
         if (town && player.bribedGuards[town.id]) {
@@ -1197,7 +1238,20 @@
         player.notoriety += 5;
         recordCorruptAction('insider_trading', false);
         grantXP(10, 'Insider trading');
-        return { success: true, message: `✅ Insider info: Upcoming ${infoType.replace(/_/g, ' ')} in ${kingdom.name} in ~30 days.` };
+
+        // L4: Generate profit tip based on insider info type
+        var _profitTip = '';
+        if (infoType === 'ban_good') {
+            _profitTip = 'Buy up stock before the ban — prices will skyrocket on the black market!';
+        } else if (infoType === 'unban_good') {
+            _profitTip = 'Stock up now while black market prices are low — legal demand will spike!';
+        } else if (infoType === 'tax_change') {
+            _profitTip = 'Tax changes affect trade margins — consider adjusting your trade routes.';
+        } else if (infoType === 'new_law') {
+            _profitTip = 'New laws may restrict or enable industries — check your buildings.';
+        }
+
+        return { success: true, message: `✅ Insider info: Upcoming ${infoType.replace(/_/g, ' ')} in ${kingdom.name} in ~30 days.` + (_profitTip ? ' 💡 ' + _profitTip : '') };
     }
 
     // ── Dark Deeds Tick (called from playerTick) ──
@@ -2770,8 +2824,16 @@
         if (!nobleA || !nobleA.alive || !nobleB || !nobleB.alive) return { success: false, message: 'Both nobles must be alive.' };
         if (nobleAId === nobleBId) return { success: false, message: 'Must select two different nobles.' };
 
+        // M1: Cooldown check
+        var _cdA = _checkSchemeCooldown('pit_nobles', nobleAId);
+        var _cdB = _checkSchemeCooldown('pit_nobles', nobleBId);
+        if (_cdA.blocked) return { success: false, message: 'You must wait ' + _cdA.daysLeft + ' more days before targeting ' + nobleA.firstName + ' again.' };
+        if (_cdB.blocked) return { success: false, message: 'You must wait ' + _cdB.daysLeft + ' more days before targeting ' + nobleB.firstName + ' again.' };
+
         var rng = Engine.getRng();
         var detection = calculateCorruptDetection(0.25, town);
+        // M6: Escalating detection for repeat targeting
+        detection += _getRepeatTargetPenalty(nobleAId) + _getRepeatTargetPenalty(nobleBId);
 
         // Influence bonuses from having nobles in your pocket
         var bonusA = _getNobleInfluenceBonus(nobleAId);
@@ -2790,15 +2852,18 @@
             recordCorruptAction('pit_nobles', true);
             player.notoriety += 10;
             var _nnResult = _addNobleNotorietyAndCheck(CONFIG.NOBLE_NOTORIETY_DIRECT_NOBLE_ADD || 20, 'manipulating nobles');
-            // Both nobles hate you now
             modifyRelationship(nobleAId, -20);
             modifyRelationship(nobleBId, -20);
+            _recordSchemeTarget(nobleAId); _recordSchemeTarget(nobleBId);
+            _setSchemeCooldown('pit_nobles', nobleAId, 14);
+            _setSchemeCooldown('pit_nobles', nobleBId, 14);
             var _nnMsg = _nnResult && _nnResult.punished ? ' ' + _nnResult.message : '';
-            return { success: false, caught: true, message: '🚨 CAUGHT! ' + nobleA.firstName + ' and ' + nobleB.firstName + ' realized your manipulation. -500g fine, -20 relationship with both.' + _nnMsg };
+            var _cMsg = '🚨 CAUGHT! ' + nobleA.firstName + ' and ' + nobleB.firstName + ' realized your manipulation. -500g fine, -20 relationship with both.' + _nnMsg;
+            _logSchemeOutcome('pit_nobles', nobleA.firstName + ' & ' + nobleB.firstName, false, true, _cMsg);
+            return { success: false, caught: true, message: _cMsg };
         }
 
         if (rng && rng.chance(successChance)) {
-            // Success: damage their mutual relationship
             if (!nobleA._nobleRelationships) nobleA._nobleRelationships = {};
             if (!nobleB._nobleRelationships) nobleB._nobleRelationships = {};
             var damage = rng.randInt(15, 30);
@@ -2808,13 +2873,22 @@
             grantXP(20, 'Pitted nobles against each other');
             player.notoriety += 5;
             _trackDnaTask('pit_two_nobles');
+            _setSchemeCooldown('pit_nobles', nobleAId, 10);
+            _setSchemeCooldown('pit_nobles', nobleBId, 10);
+            _recordSchemeTarget(nobleAId); _recordSchemeTarget(nobleBId);
+            var _msg = '🗡️ Successfully pitted ' + nobleA.firstName + ' against ' + nobleB.firstName + '! Their relationship dropped by ' + damage + '. (' + Math.round(successChance * 100) + '% chance)';
+            _logSchemeOutcome('pit_nobles', nobleA.firstName + ' & ' + nobleB.firstName, true, false, _msg);
             Engine.logEvent('🗡️ Tensions rise between ' + nobleA.firstName + ' and ' + nobleB.firstName + '.');
-            return { success: true, message: '🗡️ Successfully pitted ' + nobleA.firstName + ' against ' + nobleB.firstName + '! Their relationship dropped by ' + damage + '. (' + Math.round(successChance * 100) + '% chance)' };
+            return { success: true, message: _msg };
         }
 
+        _setSchemeCooldown('pit_nobles', nobleAId, 7);
+        _setSchemeCooldown('pit_nobles', nobleBId, 7);
         recordCorruptAction('pit_nobles', false);
         player.notoriety += 2;
-        return { success: false, message: 'Your scheming didn\'t take hold. ' + nobleA.firstName + ' and ' + nobleB.firstName + ' saw through the manipulation. (' + Math.round(successChance * 100) + '% chance)' };
+        var _failMsg = 'Your scheming didn\'t take hold. ' + nobleA.firstName + ' and ' + nobleB.firstName + ' saw through the manipulation. (' + Math.round(successChance * 100) + '% chance)';
+        _logSchemeOutcome('pit_nobles', nobleA.firstName + ' & ' + nobleB.firstName, false, false, _failMsg);
+        return { success: false, message: _failMsg };
     }
 
     // (N1b) Turn Noble Against King — undermine a noble's loyalty
@@ -2831,8 +2905,13 @@
         var noble = Engine.findPerson ? Engine.findPerson(nobleId) : null;
         if (!noble || !noble.alive) return { success: false, message: 'Noble not found or dead.' };
 
+        // M1: Cooldown check
+        var _cd = _checkSchemeCooldown('turn_noble', nobleId);
+        if (_cd.blocked) return { success: false, message: 'You must wait ' + _cd.daysLeft + ' more days before targeting ' + noble.firstName + ' again.' };
+
         var rng = Engine.getRng();
         var detection = calculateCorruptDetection(0.30, town);
+        detection += _getRepeatTargetPenalty(nobleId); // M6
         var influenceBonus = _getNobleInfluenceBonus(nobleId);
         var baseSuccess = 0.25;
         if (hasSkill('silver_tongue_dark')) baseSuccess += 0.10;
@@ -2872,8 +2951,12 @@
             player.notoriety += 15;
             var _nnResult = _addNobleNotorietyAndCheck(CONFIG.NOBLE_NOTORIETY_DIRECT_NOBLE_ADD || 20, 'turning a noble against the king');
             modifyRelationship(nobleId, -15);
+            _recordSchemeTarget(nobleId);
+            _setSchemeCooldown('turn_noble', nobleId, 14);
             var _nnMsg = _nnResult && _nnResult.punished ? ' ' + _nnResult.message : '';
-            return { success: false, caught: true, message: '🚨 CAUGHT trying to turn ' + noble.firstName + ' against the king! Fined 1000g, jailed 5 days, -25 rep, -15 relationship.' + _nnMsg };
+            var _cMsg = '🚨 CAUGHT trying to turn ' + noble.firstName + ' against the king! Fined 1000g, jailed 5 days, -25 rep, -15 relationship.' + _nnMsg;
+            _logSchemeOutcome('turn_noble', noble.firstName, false, true, _cMsg);
+            return { success: false, caught: true, message: _cMsg };
         }
 
         if (rng && rng.chance(successChance)) {
@@ -2881,20 +2964,26 @@
                 if (!noble._nobleRelationships) noble._nobleRelationships = {};
                 var loyaltyDrop = rng.randInt(15, 30);
                 noble._nobleRelationships[king.id] = Math.max(-100, (noble._nobleRelationships[king.id] || 0) - loyaltyDrop);
-                // Boost noble's relationship with player (they trust you)
                 modifyRelationship(nobleId, 5);
                 recordCorruptAction('turn_noble_against_king', false);
                 grantXP(25, 'Turned noble against king');
                 player.notoriety += 8;
                 _trackDnaTask('turn_noble_king');
+                _setSchemeCooldown('turn_noble', nobleId, 14);
+                _recordSchemeTarget(nobleId);
+                var _sMsg = '🏴 ' + noble.firstName + ' is now more disillusioned with the king! Loyalty dropped by ' + loyaltyDrop + '. (' + Math.round(successChance * 100) + '% chance)';
+                _logSchemeOutcome('turn_noble', noble.firstName, true, false, _sMsg);
                 Engine.logEvent('🏴 ' + noble.firstName + '\'s loyalty to the crown wavers.');
-                return { success: true, message: '🏴 ' + noble.firstName + ' is now more disillusioned with the king! Loyalty dropped by ' + loyaltyDrop + '. (' + Math.round(successChance * 100) + '% chance)' };
+                return { success: true, message: _sMsg };
             }
         }
 
+        _setSchemeCooldown('turn_noble', nobleId, 7);
         recordCorruptAction('turn_noble_against_king', false);
         player.notoriety += 3;
-        return { success: false, message: noble.firstName + ' remains loyal to the crown. Your persuasion failed. (' + Math.round(successChance * 100) + '% chance)' };
+        var _fMsg = noble.firstName + ' remains loyal to the crown. Your persuasion failed. (' + Math.round(successChance * 100) + '% chance)';
+        _logSchemeOutcome('turn_noble', noble.firstName, false, false, _fMsg);
+        return { success: false, message: _fMsg };
     }
 
     // (N1c) Discredit Noble — damage a noble's standing with the king and court
@@ -2911,8 +3000,12 @@
         var noble = Engine.findPerson ? Engine.findPerson(nobleId) : null;
         if (!noble || !noble.alive) return { success: false, message: 'Noble not found or dead.' };
 
+        var _cd = _checkSchemeCooldown('discredit', nobleId);
+        if (_cd.blocked) return { success: false, message: 'You must wait ' + _cd.daysLeft + ' more days before targeting ' + noble.firstName + ' again.' };
+
         var rng = Engine.getRng();
         var detection = calculateCorruptDetection(0.25, town);
+        detection += _getRepeatTargetPenalty(nobleId);
         var influenceBonus = _getNobleInfluenceBonus(nobleId);
         var baseSuccess = 0.30;
         if (hasSkill('master_forger')) baseSuccess += 0.15; // forged evidence
@@ -2929,25 +3022,23 @@
             player.notoriety += 12;
             var _nnResult = _addNobleNotorietyAndCheck(CONFIG.NOBLE_NOTORIETY_DIRECT_NOBLE_ADD || 20, 'discrediting a noble');
             modifyRelationship(nobleId, -25);
+            _recordSchemeTarget(nobleId);
+            _setSchemeCooldown('discredit', nobleId, 14);
             var _nnMsg = _nnResult && _nnResult.punished ? ' ' + _nnResult.message : '';
-            return { success: false, caught: true, message: '🚨 CAUGHT trying to discredit ' + noble.firstName + '! -600g fine, -20 rep, ' + noble.firstName + ' despises you (-25 relationship).' + _nnMsg };
+            var _cMsg = '🚨 CAUGHT trying to discredit ' + noble.firstName + '! -600g fine, -20 rep, ' + noble.firstName + ' despises you (-25 relationship).' + _nnMsg;
+            _logSchemeOutcome('discredit', noble.firstName, false, true, _cMsg);
+            return { success: false, caught: true, message: _cMsg };
         }
 
         if (rng && rng.chance(successChance)) {
-            // Reduce noble's reputation in the kingdom
             if (noble.socialRank && noble.socialRank[kingdom.id] !== undefined) {
-                // Damage reputation with other nobles and king
                 var nobles = _getKingdomNobles(kingdom.id);
-                var damaged = 0;
                 for (var ni = 0; ni < nobles.length; ni++) {
                     if (nobles[ni].id === nobleId) continue;
                     if (!nobles[ni]._nobleRelationships) nobles[ni]._nobleRelationships = {};
-                    var drop = rng.randInt(5, 15);
-                    nobles[ni]._nobleRelationships[nobleId] = Math.max(-100, (nobles[ni]._nobleRelationships[nobleId] || 0) - drop);
-                    damaged++;
+                    nobles[ni]._nobleRelationships[nobleId] = Math.max(-100, (nobles[ni]._nobleRelationships[nobleId] || 0) - rng.randInt(5, 15));
                 }
             }
-            // Damage noble's personal reputation
             if (noble.reputation === undefined) noble.reputation = {};
             noble.reputation[kingdom.id] = Math.max(0, (noble.reputation[kingdom.id] || 50) - rng.randInt(10, 20));
 
@@ -2955,13 +3046,20 @@
             grantXP(20, 'Discredited noble');
             player.notoriety += 6;
             _trackDnaTask('discredit_noble');
+            _setSchemeCooldown('discredit', nobleId, 10);
+            _recordSchemeTarget(nobleId);
+            var _sMsg = '📜 Successfully discredited ' + noble.firstName + '! Their standing with the court has dropped. (' + Math.round(successChance * 100) + '% chance)';
+            _logSchemeOutcome('discredit', noble.firstName, true, false, _sMsg);
             Engine.logEvent('📜 Rumors about ' + noble.firstName + '\'s incompetence spread through the court.');
-            return { success: true, message: '📜 Successfully discredited ' + noble.firstName + '! Their standing with the court has dropped. (' + Math.round(successChance * 100) + '% chance)' };
+            return { success: true, message: _sMsg };
         }
 
+        _setSchemeCooldown('discredit', nobleId, 7);
         recordCorruptAction('discredit_noble', false);
         player.notoriety += 2;
-        return { success: false, message: 'Your misinformation campaign failed to gain traction. (' + Math.round(successChance * 100) + '% chance)' };
+        var _fMsg = 'Your misinformation campaign failed to gain traction. (' + Math.round(successChance * 100) + '% chance)';
+        _logSchemeOutcome('discredit', noble.firstName, false, false, _fMsg);
+        return { success: false, message: _fMsg };
     }
 
     // (N1d) Manipulate Noble's Vote — sway a noble's position on a proposal
@@ -2978,8 +3076,12 @@
         var noble = Engine.findPerson ? Engine.findPerson(nobleId) : null;
         if (!noble || !noble.alive) return { success: false, message: 'Noble not found or dead.' };
 
+        var _cd = _checkSchemeCooldown('manipulate_vote', nobleId);
+        if (_cd.blocked) return { success: false, message: 'You must wait ' + _cd.daysLeft + ' more days before targeting ' + noble.firstName + ' again.' };
+
         var rng = Engine.getRng();
         var detection = calculateCorruptDetection(0.15, town);
+        detection += _getRepeatTargetPenalty(nobleId);
         var influenceBonus = _getNobleInfluenceBonus(nobleId);
         var baseSuccess = 0.35;
         if (hasSkill('kingmaker_skill')) baseSuccess += 0.15;
@@ -2996,12 +3098,15 @@
             player.notoriety += 5;
             var _nnResult = _addNobleNotorietyAndCheck(CONFIG.NOBLE_NOTORIETY_DIRECT_NOBLE_ADD || 20, 'manipulating noble votes');
             modifyRelationship(nobleId, -10);
+            _recordSchemeTarget(nobleId);
+            _setSchemeCooldown('manipulate_vote', nobleId, 14);
             var _nnMsg = _nnResult && _nnResult.punished ? ' ' + _nnResult.message : '';
-            return { success: false, caught: true, message: '🚨 CAUGHT trying to buy ' + noble.firstName + '\'s vote! -300g fine.' + _nnMsg };
+            var _cMsg = '🚨 CAUGHT trying to buy ' + noble.firstName + '\'s vote! -300g fine.' + _nnMsg;
+            _logSchemeOutcome('manipulate_vote', noble.firstName, false, true, _cMsg);
+            return { success: false, caught: true, message: _cMsg };
         }
 
         if (rng && rng.chance(successChance)) {
-            // Noble now supports the player's position
             if (!noble._manipulatedVotes) noble._manipulatedVotes = {};
             noble._manipulatedVotes[proposalType || 'general'] = Engine.getDay() + 60;
             modifyRelationship(nobleId, 3);
@@ -3009,12 +3114,19 @@
             grantXP(15, 'Manipulated noble vote');
             player.notoriety += 3;
             _trackDnaTask('manipulate_votes');
-            return { success: true, message: '🤝 ' + noble.firstName + ' will support your position for 60 days. (' + Math.round(successChance * 100) + '% chance)' };
+            _setSchemeCooldown('manipulate_vote', nobleId, 10);
+            _recordSchemeTarget(nobleId);
+            var _sMsg = '🤝 ' + noble.firstName + ' will support your position for 60 days. (' + Math.round(successChance * 100) + '% chance)';
+            _logSchemeOutcome('manipulate_vote', noble.firstName, true, false, _sMsg);
+            return { success: true, message: _sMsg };
         }
 
+        _setSchemeCooldown('manipulate_vote', nobleId, 7);
         recordCorruptAction('manipulate_vote', false);
         player.notoriety += 1;
-        return { success: false, message: noble.firstName + ' refused your influence. (' + Math.round(successChance * 100) + '% chance)' };
+        var _fMsg = noble.firstName + ' refused your influence. (' + Math.round(successChance * 100) + '% chance)';
+        _logSchemeOutcome('manipulate_vote', noble.firstName, false, false, _fMsg);
+        return { success: false, message: _fMsg };
     }
 
     // (N1e) Expose Noble's Secrets — use spies/information to publicly shame a noble
@@ -3031,11 +3143,14 @@
         var noble = Engine.findPerson ? Engine.findPerson(nobleId) : null;
         if (!noble || !noble.alive) return { success: false, message: 'Noble not found or dead.' };
 
-        // Spy network in this town or kingdom helps
+        var _cd = _checkSchemeCooldown('expose_secrets', nobleId);
+        if (_cd.blocked) return { success: false, message: 'You must wait ' + _cd.daysLeft + ' more days before targeting ' + noble.firstName + ' again.' };
+
         var hasLocalSpy = player.spyNetworks && player.spyNetworks[town.id];
 
         var rng = Engine.getRng();
         var detection = calculateCorruptDetection(0.20, town);
+        detection += _getRepeatTargetPenalty(nobleId);
         var influenceBonus = _getNobleInfluenceBonus(nobleId);
         var baseSuccess = 0.25;
         if (hasSkill('dark_connections')) baseSuccess += 0.10;
@@ -3053,12 +3168,15 @@
             player.notoriety += 15;
             var _nnResult = _addNobleNotorietyAndCheck(CONFIG.NOBLE_NOTORIETY_DIRECT_NOBLE_ADD || 20, 'exposing noble secrets');
             modifyRelationship(nobleId, -30);
+            _recordSchemeTarget(nobleId);
+            _setSchemeCooldown('expose_secrets', nobleId, 14);
             var _nnMsg = _nnResult && _nnResult.punished ? ' ' + _nnResult.message : '';
-            return { success: false, caught: true, message: '🚨 CAUGHT investigating ' + noble.firstName + '\'s secrets! -800g fine, 3 days jail, ' + noble.firstName + ' is your enemy (-30 rel).' + _nnMsg };
+            var _cMsg = '🚨 CAUGHT investigating ' + noble.firstName + '\'s secrets! -800g fine, 3 days jail, ' + noble.firstName + ' is your enemy (-30 rel).' + _nnMsg;
+            _logSchemeOutcome('expose_secrets', noble.firstName, false, true, _cMsg);
+            return { success: false, caught: true, message: _cMsg };
         }
 
         if (rng && rng.chance(successChance)) {
-            // Massive reputation damage to the noble
             var allNobles = _getKingdomNobles(kingdom.id);
             for (var ni = 0; ni < allNobles.length; ni++) {
                 if (allNobles[ni].id === nobleId) continue;
@@ -3070,7 +3188,6 @@
             noble._scandalized = true;
             noble._scandalDay = Engine.getDay();
 
-            // Store discovered secrets for player use (H2 fix)
             var secretTypes = ['embezzlement', 'affair', 'treason_letters', 'hidden_debts', 'forged_documents', 'secret_alliance', 'bribery', 'tax_evasion'];
             var secretType = rng.pick(secretTypes);
             if (!player._discoveredSecrets) player._discoveredSecrets = [];
@@ -3082,7 +3199,6 @@
                 kingdomId: kingdom.id,
                 used: false
             });
-            // Exposed secrets grant blackmail leverage automatically
             if (!player.blackmailTargets) player.blackmailTargets = {};
             if (!player.blackmailTargets[nobleId]) {
                 player.blackmailTargets[nobleId] = {
@@ -3096,13 +3212,20 @@
             grantXP(30, 'Exposed noble secrets');
             player.notoriety += 10;
             _trackDnaTask('expose_noble');
+            _setSchemeCooldown('expose_secrets', nobleId, 14);
+            _recordSchemeTarget(nobleId);
+            var _sMsg = '💥 ' + noble.firstName + '\'s secrets exposed (' + secretType.replace(/_/g, ' ') + ')! Reputation devastated, all nobles distance themselves. You now have blackmail leverage. (' + Math.round(successChance * 100) + '% chance)';
+            _logSchemeOutcome('expose_secrets', noble.firstName, true, false, _sMsg);
             Engine.logEvent('💥 Scandalous revelations about ' + noble.firstName + ' ' + (noble.lastName || '') + ' rock the court of ' + kingdom.name + '!');
-            return { success: true, message: '💥 ' + noble.firstName + '\'s secrets exposed (' + secretType.replace(/_/g, ' ') + ')! Reputation devastated, all nobles distance themselves. You now have blackmail leverage. (' + Math.round(successChance * 100) + '% chance)' };
+            return { success: true, message: _sMsg };
         }
 
+        _setSchemeCooldown('expose_secrets', nobleId, 7);
         recordCorruptAction('expose_secrets', false);
         player.notoriety += 3;
-        return { success: false, message: 'Couldn\'t find anything damaging on ' + noble.firstName + '. (' + Math.round(successChance * 100) + '% chance)' };
+        var _fMsg = 'Couldn\'t find anything damaging on ' + noble.firstName + '. (' + Math.round(successChance * 100) + '% chance)';
+        _logSchemeOutcome('expose_secrets', noble.firstName, false, false, _fMsg);
+        return { success: false, message: _fMsg };
     }
 
     // ══════════════════════════════════════════════════════
