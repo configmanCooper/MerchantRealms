@@ -8218,6 +8218,13 @@
             modifier += (CONFIG.KINGDOM_HAPPINESS_WEALTHY_BONUS || 2);
         }
 
+        // Conscription law penalty
+        if (k.laws && k.laws.conscription) {
+            var conscriptPenalty = -3;
+            if (k.atWar && k.atWar.size > 0) conscriptPenalty = -5;
+            modifier += conscriptPenalty;
+        }
+
         return Math.max(0, Math.min(100, baseHappiness + modifier));
     }
 
@@ -12191,6 +12198,14 @@
                         recruitSoldier(conscript, town, k, 'infantry');
                         conscript.conscripted = true;
                         conscript.conscriptDay = world.day;
+                        // Happiness hit for conscripted NPC
+                        if (!conscript.needs) conscript.needs = {};
+                        var _cDrop = 25 + Math.floor(rng.random() * 20);
+                        var _cPers = conscript.personality || {};
+                        if ((_cPers.courage || 50) > 65) _cDrop = Math.round(_cDrop * 0.6);
+                        if ((_cPers.ambition || 50) > 60) _cDrop = Math.round(_cDrop * 0.75);
+                        if (conscript.spouse || conscript.spouseId) _cDrop = Math.round(_cDrop * 1.3);
+                        conscript.needs.happiness = Math.max(5, (conscript.needs.happiness || 50) - _cDrop);
                     }
                 }
 

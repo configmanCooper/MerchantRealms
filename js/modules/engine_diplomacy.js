@@ -173,7 +173,21 @@
                         var townSupply = (town.market && town.market.supply) || {};
                         if ((townSupply.horses || 0) > 0 && (townSupply.saddles || 0) > 0 && rng.chance(0.15)) uType = 'cavalry';
                         else if ((townSupply.bows || 0) > 0 && rng.chance(0.25)) uType = 'archer';
-                        if (post.isConscription) candidate.conscripted = true;
+                        if (post.isConscription) {
+                            candidate.conscripted = true;
+                            // Severe individual happiness blow for conscription
+                            if (!candidate.needs) candidate.needs = {};
+                            var _baseDrop = 25 + Math.floor(rng.random() * 20); // -25 to -44
+                            var _cp = candidate.personality || {};
+                            // Brave/loyal NPCs take it better
+                            if ((_cp.courage || 50) > 65) _baseDrop = Math.round(_baseDrop * 0.6);
+                            else if ((_cp.courage || 50) > 50) _baseDrop = Math.round(_baseDrop * 0.8);
+                            // Ambitious NPCs see opportunity, less unhappy
+                            if ((_cp.ambition || 50) > 60) _baseDrop = Math.round(_baseDrop * 0.75);
+                            // NPCs with families suffer more
+                            if (candidate.spouse || candidate.spouseId) _baseDrop = Math.round(_baseDrop * 1.3);
+                            candidate.needs.happiness = Math.max(5, (candidate.needs.happiness || 50) - _baseDrop);
+                        }
                         recruitSoldier(candidate, town, k, uType);
                         post.slotsFilled++;
                         remaining--;
