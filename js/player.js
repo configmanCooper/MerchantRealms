@@ -20557,6 +20557,13 @@
                 player.notificationFilters[subKeys[i]] = false;
             }
         }
+        // When a top-level category is turned ON, also restore all sub-filters to on (delete = default on)
+        if (value === true && key.indexOf('.') === -1) {
+            var subKeys = _getSubKeysForCategory(key);
+            for (var i = 0; i < subKeys.length; i++) {
+                delete player.notificationFilters[subKeys[i]];
+            }
+        }
     }
 
     // Sub-key definitions for each category (mirrors UI filterDefs)
@@ -32310,7 +32317,7 @@
 
         // Validated state setters (C1)
         modifyGold: _modifyGold,
-        modifyReputation: _modifyReputation,
+        // modifyReputation — enhanced version with royal marriage bonus at line ~32495 overrides
         modifyTownRep: _modifyTownRep,
         setTownId: _setTownId,
         modifyEnergy: _modifyEnergy,
@@ -32425,7 +32432,7 @@
         getPendingWarChoice,
         petitionForLicense,
         petitionForProductionPermit,
-        hasLicense(kingdomId, resourceId) { return hasLicense(kingdomId, resourceId); },
+        hasLicense,
         hasProductionPermit(kingdomId, resourceId) {
             return player.productionPermits && player.productionPermits[kingdomId] &&
                    player.productionPermits[kingdomId].includes(resourceId);

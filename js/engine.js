@@ -16021,7 +16021,7 @@
 
         // Street Ears skill: 25% chance to surface as toast
         if (Player && typeof Player.hasSkill === 'function' && Player.hasSkill('street_ears')) {
-            var rng = getRng();
+            var rng = world.rng;
             if (rng.chance(0.25)) {
                 if (typeof UI !== 'undefined' && UI.toast) {
                     UI.toast('🗣️ ' + message, 'info', 'npc_activity', true);
@@ -21770,7 +21770,7 @@
         equipSoldier: equipSoldier,
         getSoldierEffectiveness: getSoldierEffectiveness,
         scoutEnemyStrength: scoutEnemyStrength,
-        computeMilitaryStrength: computeMilitaryStrength,
+        // computeMilitaryStrength — wrapper version at line ~22112 handles both id and object
         logEvent: logEvent,
         storeBackgroundGossip: _storeBackgroundGossip,
         getBackgroundGossip: getBackgroundGossip,
@@ -21828,7 +21828,7 @@
         createBridgeObjects: createBridgeObjects,
         registerPerson: registerPerson,
         registerTown: function(t) { townIndex[t.id] = t; },
-        getMarketPrice: getMarketPrice,
+        // getMarketPrice — wrapper version in API section handles both id and object
         // collectTradeTax — set by engine_kingdom_finances.js module
         distributeConstructionWages: distributeConstructionWages,
         rebuildBridge: rebuildBridge,
@@ -21856,14 +21856,20 @@
         // Exports needed by engine_diplomacy.js module
         tickWarExhaustion: tickWarExhaustion,
         applyWarExhaustionEffects: applyWarExhaustionEffects,
-        getKingMoodModifiers: getKingMoodModifiers,
+        getKingMoodModifiers: function(idOrObj) {
+            var k = (typeof idOrObj === 'object' && idOrObj !== null) ? idOrObj : findKingdom(idOrObj);
+            return k ? getKingMoodModifiers(k) : null;
+        },
         shouldCallToArms: shouldCallToArms,
         processCallToArms: processCallToArms,
         initiateCouncilVote: initiateCouncilVote,
         // tickKingdomFinancialStrategy — set by engine_kingdom_finances.js module
         kingdomAI: kingdomAI,
         tickTownFounding: tickTownFounding,
-        getKingdomHappiness: getKingdomHappiness,
+        getKingdomHappiness: function(idOrObj) {
+            var k = (typeof idOrObj === 'object' && idOrObj !== null) ? idOrObj : findKingdom(idOrObj);
+            return k ? getKingdomHappiness(k) : 50;
+        },
         tickCouncilVotes: tickCouncilVotes,
         tickKingMood: tickKingMood,
         tickSuccessionCrisis: tickSuccessionCrisis,
@@ -22099,8 +22105,8 @@
         computeRoadImportance(tA, tB) { return computeRoadImportance(tA, tB); },
         getArmyWorldPosition(army) { return getArmyWorldPosition(army); },
 
-        getMarketPrice(townId, resourceId) {
-            const town = findTown(townId);
+        getMarketPrice(townIdOrObj, resourceId) {
+            const town = (typeof townIdOrObj === 'object' && townIdOrObj !== null) ? townIdOrObj : findTown(townIdOrObj);
             return town ? getMarketPrice(town, resourceId) : 0;
         },
         collectTradeTax(kingdomId, amount) { Engine.collectTradeTax(kingdomId, amount); },
@@ -22108,15 +22114,14 @@
         getHospitalFees(townId) { return Engine.getHospitalFees(townId); },
         toggleMedicalAutobuy(townId, buildingId) { return Engine.toggleMedicalAutobuy(townId, buildingId); },
         kickPatientFromQueue(townId, buildingId, personId) { return Engine.kickPatientFromQueue(townId, buildingId, personId); },
-        getMarketPrice(town, resourceId) { return getMarketPrice(town, resourceId); },
         computeMilitaryStrength(idOrObj) {
             if (!world) return 0;
             const k = (typeof idOrObj === 'object' && idOrObj !== null) ? idOrObj : findKingdom(idOrObj);
             return k ? computeMilitaryStrength(k) : 0;
         },
-        getMilitaryBreakdown(kingdomId) {
+        getMilitaryBreakdown(idOrObj) {
             if (!world) return null;
-            const k = findKingdom(kingdomId);
+            const k = (typeof idOrObj === 'object' && idOrObj !== null) ? idOrObj : findKingdom(idOrObj);
             if (!k) return null;
             const soldiers = world.people.filter(p =>
                 p.alive && p.kingdomId === k.id && (p.occupation === 'soldier' || p.occupation === 'guard')

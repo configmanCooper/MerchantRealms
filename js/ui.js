@@ -14110,8 +14110,8 @@ window.UI = (function () {
                 html += '<td style="padding:3px 6px;text-align:center;color:#ccc;">' + kkRankName + '</td>';
                 // King relationship
                 var kingRel = '—';
-                if (kk.kingId && relationships[kk.kingId] != null) {
-                    var kr = relationships[kk.kingId];
+                if (kk.king && relationships[kk.king] != null) {
+                    var kr = relationships[kk.king];
                     var krCol = kr >= 60 ? '#2ecc71' : kr >= 30 ? '#f39c12' : '#e74c3c';
                     kingRel = '<span style="color:' + krCol + ';">' + kr + '</span>';
                 }
