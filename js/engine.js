@@ -12468,6 +12468,62 @@
         return choice;
     }
 
+    // Player-king conquest choice modal
+    function _showConquestChoiceModal(town, kingdom) {
+        if (typeof UI === 'undefined' || !UI.openModal) return;
+        var pop = getPeopleInTown(town.id).length;
+        var html = '<div style="padding:10px;">' +
+            '<div style="text-align:center;font-size:2em;margin-bottom:10px;">⚔️🏰</div>' +
+            '<p style="font-size:1.1em;color:var(--gold);text-align:center;font-weight:bold;">Your armies have conquered ' + (town.name || 'a town') + '!</p>' +
+            '<p style="color:var(--text-secondary);text-align:center;">Population: ' + pop + ' · Buildings: ' + town.buildings.length + '</p>' +
+            '<p>How shall the conquered people be treated?</p>' +
+            '<div style="display:flex;flex-direction:column;gap:10px;margin-top:15px;">' +
+            '<button class="btn-medieval" data-action="conquestChoice" data-id="' + town.id + '" data-val="citizenship" style="padding:12px;background:rgba(46,125,50,0.15);border-color:rgba(76,175,80,0.4);">' +
+            '<div style="font-weight:bold;font-size:1em;">🤝 Grant Citizenship</div>' +
+            '<div style="font-size:0.8em;color:var(--text-secondary);margin-top:4px;">Welcome the people as full citizens. Town happiness +20. Loyalty grows over time. Best for long-term stability.</div></button>' +
+            '<button class="btn-medieval" data-action="conquestChoice" data-id="' + town.id + '" data-val="servitude" style="padding:12px;background:rgba(255,152,0,0.12);border-color:rgba(255,152,0,0.4);">' +
+            '<div style="font-weight:bold;font-size:1em;">⛓️ Impose Servitude</div>' +
+            '<div style="font-size:0.8em;color:var(--text-secondary);margin-top:4px;">7 years of indentured servitude. Wages go to kingdom treasury. Town happiness drops. Risk of unrest.</div></button>' +
+            '<button class="btn-medieval" data-action="conquestChoice" data-id="' + town.id + '" data-val="raid" style="padding:12px;background:rgba(183,28,28,0.15);border-color:rgba(183,28,28,0.4);">' +
+            '<div style="font-weight:bold;font-size:1em;">🔥 Raid &amp; Plunder</div>' +
+            '<div style="font-size:0.8em;color:var(--text-secondary);margin-top:4px;">Seize wealth, kill resisters. Immediate gold but massive destruction. Town will be devastated for years.</div></button>' +
+            '</div></div>';
+        UI.openModal('⚔️ Conquest of ' + (town.name || 'Town'), html);
+    }
+
+    // Register conquest choice action
+    if (typeof UI !== 'undefined' && UI.registerAction) {
+        UI.registerAction('conquestChoice', function(_t, d) {
+            var town = findTown(d.id);
+            var kingdom = null;
+            try {
+                if (Player && Player.state && Player.state.kingState) {
+                    kingdom = findKingdom(Player.state.kingState.kingdomId);
+                }
+            } catch(e) {}
+            if (!town || !kingdom) {
+                if (typeof UI !== 'undefined') UI.toast('Error: town or kingdom not found', 'error');
+                return;
+            }
+            var choice = d.val;
+            if (choice === 'citizenship') {
+                grantCitizenship(town, kingdom);
+            } else if (choice === 'servitude') {
+                imposeServitude(town, kingdom);
+            } else if (choice === 'raid') {
+                raidTown(town, kingdom);
+            }
+            // Remove from pending
+            if (kingdom._pendingConquestChoices) {
+                kingdom._pendingConquestChoices = kingdom._pendingConquestChoices.filter(function(c) { return c.townId !== town.id; });
+            }
+            if (typeof UI !== 'undefined') {
+                UI.closeModal();
+                UI.toast('📜 ' + town.name + ': ' + (choice === 'citizenship' ? 'Granted citizenship' : choice === 'servitude' ? 'Imposed servitude' : 'Raided and plundered'), 'success');
+            }
+        });
+    }
+
     function grantCitizenship(town, kingdom) {
         var townPeople = getPeopleInTown(town.id);
         for (const person of townPeople) {
@@ -12999,6 +13055,51 @@
         for (const army of world.armies) {
             // Skip armies currently besieging a town — they're handled by tickSieges
             if (army._besieging) continue;
+
+            // Handle army recovery after failed siege — rest then re-attack
+            if (army._recoveryUntil) {
+                if (world.day >= army._recoveryUntil) {
+                    delete army._recoveryUntil;
+                    var retargetTown = army._retargetTown ? findTown(army._retargetTown) : null;
+                    delete army._retargetTown;
+                    if (retargetTown && retargetTown.kingdomId !== army.kingdomId && army.soldiers >= 5) {
+                        // Re-attack the town
+                        resolveBattle(army, retargetTown);
+                    } else {
+                        // Target already taken or army too weak — retreat
+                        army.status = 'returning';
+                        army._retreating = true;
+                    }
+                }
+                continue; // Skip normal movement during recovery
+            }
+
+            // Handle retreating armies — remove when they "arrive home"
+            if (army._retreating) {
+                army._retreatProgress = (army._retreatProgress || 0) + 0.25; // ~4 days to return
+                if (army._retreatProgress >= 1.0) {
+                    // Army returned home — soldiers rejoin garrison
+                    var homeK = findKingdom(army.kingdomId);
+                    if (homeK && homeK.territories.size > 0) {
+                        var capitalTown = null;
+                        for (var _htId of homeK.territories) {
+                            var _ht = findTown(_htId);
+                            if (_ht && _ht.isCapital) { capitalTown = _ht; break; }
+                        }
+                        if (!capitalTown) {
+                            for (var _htId2 of homeK.territories) {
+                                capitalTown = findTown(_htId2);
+                                if (capitalTown) break;
+                            }
+                        }
+                        if (capitalTown) {
+                            capitalTown.garrison = (capitalTown.garrison || 0) + Math.max(0, army.soldiers);
+                        }
+                    }
+                    toRemove.push(army.id);
+                }
+                continue;
+            }
 
             // Advance army along route
             const fromTown = findTown(army.fromTownId);
@@ -13550,12 +13651,41 @@
 
             // Siege resolution check
             if (siege.daysElapsed >= siege.duration || siege.defenderMorale <= 0 || army.morale <= 0) {
-                // Resolve the siege — instant battle determines winner
+                // Check if town was conquered (attacker won) or held (defender won)
+                var townKingdomBefore = town.kingdomId;
                 resolveBattleInstant(army, town);
+                var townConquered = (town.kingdomId !== townKingdomBefore && town.kingdomId === army.kingdomId);
+
                 delete town.siege;
-                // Remove the besieging army from world
                 delete army._besieging;
-                world.armies = world.armies.filter(function(a) { return a.id !== army.id; });
+
+                if (townConquered) {
+                    // Town taken — army absorbed into garrison (already handled in resolveBattleInstant)
+                    world.armies = world.armies.filter(function(a) { return a.id !== army.id; });
+                } else if (army.soldiers > 0) {
+                    // Defender held — evaluate whether to retry or retreat
+                    var armyStr = army.soldiers;
+                    var garrisonStr = town.garrison || 1;
+                    var armyMorale = army.morale || 50;
+
+                    if (armyStr > garrisonStr * 0.8 && armyMorale > 20 && army.soldiers >= 10) {
+                        // Still strong enough — rest then re-attack
+                        army._recoveryUntil = world.day + 2; // 2-day recovery
+                        army._retargetTown = town.id;
+                        army._besieging = false;
+                        // Recover some morale during rest
+                        army.morale = Math.min(100, (army.morale || 50) + 10);
+                        logEvent('⚔️ ' + (findKingdom(army.kingdomId) || {}).name + '\'s army regroups outside ' + town.name + ' — preparing for another assault.', null, 'military');
+                    } else {
+                        // Too weak or demoralized — retreat home
+                        army.status = 'returning';
+                        army._retreating = true;
+                        logEvent('🏳️ ' + (findKingdom(army.kingdomId) || {}).name + '\'s army retreats from ' + town.name + ' — too weakened to continue.', null, 'military');
+                    }
+                } else {
+                    // Army destroyed
+                    world.armies = world.armies.filter(function(a) { return a.id !== army.id; });
+                }
             }
         }
     }
@@ -13759,8 +13889,8 @@
         // Wall upgrade building further boosts siege defense
         defenseStrength *= (effectiveWallMult + Math.min(defWallUpgradeBonus, 0.40));
 
-        // --- DEFENDER HOME TERRITORY BONUS (+25% combat effectiveness) ---
-        defenseStrength *= 1.25;
+        // --- DEFENDER HOME TERRITORY BONUS (+15% combat effectiveness) ---
+        defenseStrength *= 1.15;
 
         // --- GARRISON MORALE MODIFIER (M-3) ---
         var garrisonMorale = town.garrisonMorale || (CONFIG.MORALE_GARRISON_DEFAULT || 70);
@@ -13772,8 +13902,8 @@
             return p.occupation !== 'soldier' && p.occupation !== 'guard' &&
             p.age >= CONFIG.COMING_OF_AGE && p.age <= 55;
         });
-        const militiaCount = Math.floor(civilians.length * 0.10);
-        const militiaStrength = militiaCount * 0.4; // militia fight at 40% of infantry effectiveness
+        const militiaCount = Math.floor(civilians.length * 0.05);
+        const militiaStrength = militiaCount * 0.3; // militia fight at 30% of infantry effectiveness
         defenseStrength += militiaStrength;
 
         defenseStrength *= (1 + rng.randFloat(-CONFIG.BATTLE_RANDOMNESS, CONFIG.BATTLE_RANDOMNESS));
@@ -13832,8 +13962,27 @@
                 transferredTown.prosperity = Math.max(0, transferredTown.prosperity - 20);
                 transferredTown._justConquered = true;
 
-                // Apply conquest decision (citizenship/servitude/raid)
-                applyConquestDecision(transferredTown, attackK);
+                // Apply conquest decision — player-king chooses, AI decides otherwise
+                var _isPlayerKingConqueror = false;
+                try {
+                    _isPlayerKingConqueror = typeof Player !== 'undefined' && Player.isPlayerKing && Player.isPlayerKing() &&
+                        Player.state && Player.state.kingState && Player.state.kingState.kingdomId === attackK.id;
+                } catch(e) {}
+
+                if (_isPlayerKingConqueror) {
+                    // Store pending conquest choice for the player
+                    if (!attackK._pendingConquestChoices) attackK._pendingConquestChoices = [];
+                    attackK._pendingConquestChoices.push({
+                        townId: transferredTown.id,
+                        townName: transferredTown.name,
+                        population: getPeopleInTown(transferredTown.id).length,
+                        day: world.day
+                    });
+                    // Show conquest choice modal
+                    _showConquestChoiceModal(transferredTown, attackK);
+                } else {
+                    applyConquestDecision(transferredTown, attackK);
+                }
             }
 
             logEvent(`${attackK ? attackK.name : 'An army'} conquers ${town.name}!`);
@@ -13891,10 +14040,16 @@
                 }
             }
         } else {
-            // Defender wins
-            const attackerLoss = Math.floor(army.soldiers * rng.randFloat(0.4, 0.8));
+            // Defender wins — but both sides take heavy losses
+            const attackerLoss = Math.floor(army.soldiers * rng.randFloat(0.3, 0.6));
             army.soldiers -= attackerLoss;
-            town.garrison = Math.max(0, town.garrison - Math.floor(town.garrison * rng.randFloat(0.1, 0.3)));
+            // Army morale drops from defeat
+            army.morale = Math.max(5, (army.morale || 50) - rng.randInt(10, 25));
+            // Garrison takes significant losses even when winning (20-45%)
+            var defLossRate = rng.randFloat(0.20, 0.45);
+            town.garrison = Math.max(1, town.garrison - Math.floor(town.garrison * defLossRate));
+            // Garrison morale drops from costly defense
+            town.garrisonMorale = Math.max(10, (town.garrisonMorale || 70) - rng.randInt(5, 15));
 
             // Individual soldier casualties — losers take heavier casualties
             applySoldierCasualties(attackK, town, rng, 'attacker_loss');
