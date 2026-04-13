@@ -4,6 +4,63 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.72.0] - Kingdom Management Overhaul (War, Economy, Nobility, Auto-Work)
+
+### Added — War & Military
+- Army consolidation system: soldiers must travel from garrisons to staging point before deployment
+- Military AI proposals: AI suggests strategies (attacks, defenses) for player-king approval
+- Accept/reject peace offers and surrender offers in King UI War Management
+- Mounted cavalry: entire troop can be sent with horses+saddles for 25% faster march
+- AI strategic mount decisions (resource-aware, not automatic)
+- Player combat skill/equipment now affects battle outcomes when player is king
+- Border town fortification: AI prepares defenses before invasion
+
+### Added — Kingdom Economy & Employees
+- Kingdom employee system: procurers, guards, royal guards as actual NPC job postings
+- Procurement order system: kingdom buys from real markets at real prices via procurer NPCs
+- Kingdom finances tab: income/expenses for 30/90 days with 30-day treasury forecast
+- NPC asset transfer: king's personal businesses/caravans become kingdom-owned
+- Stockpile commissions: king can commission goods for royal stockpile
+- Goods transfer: send goods from stockpile to specific town markets
+- Export bans, goods subsidies, product bounties, land subsidies as king UI economic policies
+
+### Added — Nobility & Loyalty
+- Noble perceived loyalty vs real loyalty: two separate numbers, king sees perceived
+- Noble manipulation: nobles can make king think others are loyal/disloyal
+- King investigation: multiple actions to uncover loyalty discrepancies
+- Noble fear system (0-100): affects loyalty, perceived loyalty, relationships based on personality
+- Noble punishment system: fines, jail, asset seizure, execution with cascading consequences
+- Audience wave effects: promoting one noble may make others jealous (affects loyalty/relationships)
+- Feast/court attendance: nobles AI decides based on relationships, loyalty, goals
+
+### Added — Recruitment & Conscription
+- Soldier recruitment via posting system (not instant): NPCs decide if they want to enlist
+- Conscription law: 20% pay, male 18+, non-soldier/guard NPCs forced if law active
+- Conscription happiness penalties: slight kingdom-wide, severe for conscripted individuals
+- Garrison transfers: soldiers must travel between locations (organic travel time)
+- Occupation-based NPC sorting in town view
+
+### Added — Player Jobs & Auto-Work
+- Kingdom procurer/guard/royal guard jobs visible in player work dialog when kingdom is hiring
+- Auto-work system for ALL jobs: repeat job automatically with auto-rest/eat/drink
+- Auto-rest at energy < 50, recovers to 100 (improved thresholds)
+- Auto-buy food/drink from local market when inventory depleted
+- Auto-build 1-2 relationship points/day with same-occupation NPCs
+- Procurer/guard auto-travel: generates multi-town missions, auto-restarts on completion
+- Persistent auto-work UI overlay with stop button (visible in town + during travel)
+- Auto-work stops automatically if job becomes unavailable (player notified)
+
+### Fixed
+- Subsidized land button text now readable (dark green on gold background)
+- Auto button readable (was broken emoji, now HTML entity with proper contrast)
+- Promotion progress label: "Gold Earned" → "Gold Earned from Trading"
+- Route time over-weighting in war target selection (was 2× multiplier dominating)
+- Indentured servant system: conquered population gets 80% earnings tax for 7 years
+- War AI: offensive strategy diversity (no longer identical constant random attacks)
+- King UI population display (was showing 0)
+- Town view NPC list errors
+- Peace petition now routes to best available option
+
 ## [0.71.0] - Post-Refactor Audit & God Mode Enhancements
 
 ### Fixed
