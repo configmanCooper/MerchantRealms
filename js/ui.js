@@ -10593,10 +10593,17 @@ window.UI = (function () {
         const injuries = Player.injuries || [];
         const illnesses = Player.illnesses || [];
 
-        if (injuries.length === 0 && illnesses.length === 0) {
+        // Check for sick companions before deciding to return early
+        var _earlyComps = (typeof Player !== 'undefined' && Player.getTreatableCompanions) ? Player.getTreatableCompanions() : [];
+
+        if (injuries.length === 0 && illnesses.length === 0 && _earlyComps.length === 0) {
             html += '<p class="text-dim">You are healthy!</p>';
             openModal('🏥 Health', html);
             return;
+        }
+
+        if (injuries.length === 0 && illnesses.length === 0) {
+            html += '<p class="text-dim">You are healthy!</p>';
         }
 
         // Check medical facility availability
@@ -10746,10 +10753,10 @@ window.UI = (function () {
                     html += '<div style="font-size:0.72rem;color:#aaa;margin:2px 0;">Health: ' + _sc.health + '</div>';
                     html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">';
                     if (_compHasDoc) {
-                        html += '<button class="btn-medieval" data-action="treatCompanionUI" data-id="' + _sc.type + '" data-val="' + _sc.id + '" data-type="player" style="font-size:0.7rem;padding:3px 8px;background:rgba(40,120,40,0.3);border-color:rgba(60,180,60,0.5);">⚕️ Treat</button>';
+                        html += '<button class="btn-medieval" data-action="treatCompanionUI" data-type="' + _sc.type + '" data-id="' + _sc.id + '" data-val="player" style="font-size:0.7rem;padding:3px 8px;background:rgba(40,120,40,0.3);border-color:rgba(60,180,60,0.5);">⚕️ Treat</button>';
                     }
                     if (hasHospital || hasClinic) {
-                        html += '<button class="btn-medieval" data-action="treatCompanionUI" data-id="' + _sc.type + '" data-val="' + _sc.id + '" data-type="hospital" style="font-size:0.7rem;padding:3px 8px;background:rgba(40,80,160,0.3);border-color:rgba(60,120,220,0.5);">🏥 Hospital</button>';
+                        html += '<button class="btn-medieval" data-action="treatCompanionUI" data-type="' + _sc.type + '" data-id="' + _sc.id + '" data-val="hospital" style="font-size:0.7rem;padding:3px 8px;background:rgba(40,80,160,0.3);border-color:rgba(60,120,220,0.5);">🏥 Hospital</button>';
                     }
                     html += '</div></div>';
                 }
@@ -12829,9 +12836,9 @@ window.UI = (function () {
                         if (Player.townId && !Player.traveling && _gNpc.townId === Player.townId) {
                             var _gHasDoc = Player.hasSkill && (Player.hasSkill('field_medic') || Player.hasSkill('doctor'));
                             if (_gHasDoc) {
-                                html += '<button class="btn-medieval" data-action="treatCompanionUI" data-id="guard" data-val="' + g.personId + '" data-type="player" style="font-size:0.65rem;padding:2px 6px;background:rgba(40,120,40,0.3);border-color:rgba(60,180,60,0.5);" title="Treat with medical skill">⚕️</button>';
+                                html += '<button class="btn-medieval" data-action="treatCompanionUI" data-type="guard" data-id="' + g.personId + '" data-val="player" style="font-size:0.65rem;padding:2px 6px;background:rgba(40,120,40,0.3);border-color:rgba(60,180,60,0.5);" title="Treat with medical skill">⚕️</button>';
                             }
-                            html += '<button class="btn-medieval" data-action="treatCompanionUI" data-id="guard" data-val="' + g.personId + '" data-type="hospital" style="font-size:0.65rem;padding:2px 6px;background:rgba(40,80,160,0.3);border-color:rgba(60,120,220,0.5);" title="Take to hospital">🏥</button>';
+                            html += '<button class="btn-medieval" data-action="treatCompanionUI" data-type="guard" data-id="' + g.personId + '" data-val="hospital" style="font-size:0.65rem;padding:2px 6px;background:rgba(40,80,160,0.3);border-color:rgba(60,120,220,0.5);" title="Take to hospital">🏥</button>';
                         }
                     }
                 }
