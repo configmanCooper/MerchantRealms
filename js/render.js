@@ -2921,15 +2921,20 @@ window.Renderer = (function () {
 
         for (var ai = 0; ai < armies.length; ai++) {
             var army = armies[ai];
-            if (army._besieging || army._retreating) continue; // only show marching armies
+            if (army._retreating) continue;
+
+            var isBesieging = !!army._besieging;
 
             var fromT = townMap[army.fromTownId];
             var toT = townMap[army.toTownId];
             if (!fromT || !toT) continue;
 
-            // Calculate position along route
+            // Calculate position along route (besieging armies sit at destination)
             var ax, ay;
-            if (army.route && army.route.legs && army.route.legs.length > 0) {
+            if (isBesieging) {
+                ax = toT.x;
+                ay = toT.y;
+            } else if (army.route && army.route.legs && army.route.legs.length > 0) {
                 var legIdx = army.legIndex || 0;
                 var legProg = army.legProgress || 0;
                 if (legIdx >= army.route.legs.length) legIdx = army.route.legs.length - 1;
@@ -2953,14 +2958,15 @@ window.Renderer = (function () {
             // Determine army color by kingdom
             var armyColor = '#c44e52';
             var armyBorder = '#802020';
+            var isPlayerArmy = false;
             try {
                 var aK = Engine.findKingdom(army.kingdomId);
                 if (aK && aK.color) { armyColor = aK.color; }
-                // Check if this is the player's kingdom
                 if (typeof Player !== 'undefined' && Player.state && Player.state.kingState &&
                     Player.state.kingState.kingdomId === army.kingdomId) {
                     armyColor = '#55a868';
                     armyBorder = '#2d6e3f';
+                    isPlayerArmy = true;
                 }
             } catch(e) {}
 
@@ -2970,38 +2976,66 @@ window.Renderer = (function () {
             ctx.translate(ax, ay);
             ctx.scale(sc, sc);
 
-            // Shield shape
+            // Offset besieging marker so it doesn't overlap the town icon
+            if (isBesieging) ctx.translate(18, -18);
+
+            // Shield shape (3× larger: was ±6/10, now ±18/30)
             ctx.fillStyle = armyColor;
             ctx.strokeStyle = armyBorder;
-            ctx.lineWidth = 1;
+            ctx.lineWidth = 2;
             ctx.beginPath();
-            ctx.moveTo(0, -8);
-            ctx.lineTo(6, -4);
-            ctx.lineTo(6, 2);
-            ctx.quadraticCurveTo(6, 7, 0, 10);
-            ctx.quadraticCurveTo(-6, 7, -6, 2);
-            ctx.lineTo(-6, -4);
+            ctx.moveTo(0, -24);
+            ctx.lineTo(18, -12);
+            ctx.lineTo(18, 6);
+            ctx.quadraticCurveTo(18, 21, 0, 30);
+            ctx.quadraticCurveTo(-18, 21, -18, 6);
+            ctx.lineTo(-18, -12);
             ctx.closePath();
             ctx.fill();
             ctx.stroke();
 
-            // Crossed swords icon on shield
+            // Crossed swords icon on shield (3× larger)
             ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 1.2;
+            ctx.lineWidth = 2.5;
             ctx.beginPath();
-            ctx.moveTo(-3, -3); ctx.lineTo(3, 5);
-            ctx.moveTo(3, -3); ctx.lineTo(-3, 5);
+            ctx.moveTo(-8, -9); ctx.lineTo(8, 15);
+            ctx.moveTo(8, -9); ctx.lineTo(-8, 15);
+            ctx.stroke();
+            // Sword hilts
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(-11, -6); ctx.lineTo(-5, -12);
+            ctx.moveTo(11, -6); ctx.lineTo(5, -12);
             ctx.stroke();
 
-            // Soldier count label
+            // Besieging indicator — pulsing ring
+            if (isBesieging) {
+                ctx.strokeStyle = '#ff6666';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([4, 4]);
+                ctx.beginPath();
+                ctx.arc(0, 3, 26, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
+            // Soldier count label (3× larger: was 7px, now 18px)
             var soldierText = '' + (army.soldiers || '?');
-            ctx.font = 'bold 7px sans-serif';
+            ctx.font = 'bold 18px sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'top';
+            // Shadow for readability
             ctx.fillStyle = '#000';
-            ctx.fillText(soldierText, 0, 11);
+            ctx.fillText(soldierText, 1, 32);
             ctx.fillStyle = '#fff';
-            ctx.fillText(soldierText, 0.5, 10.5);
+            ctx.fillText(soldierText, 0, 31);
+
+            // Status label beneath count
+            if (isBesieging) {
+                ctx.font = 'bold 12px sans-serif';
+                ctx.fillStyle = '#ff6666';
+                ctx.fillText('SIEGE', 0, 50);
+            }
 
             ctx.restore();
         }
@@ -3016,35 +3050,57 @@ window.Renderer = (function () {
 
         for (var ai = 0; ai < armies.length; ai++) {
             var army = armies[ai];
-            if (army._besieging || army._retreating) continue;
+            if (army._retreating) continue;
 
+            var isBesieging = !!army._besieging;
             var fromT = townMap[army.fromTownId];
             var toT = townMap[army.toTownId];
             if (!fromT || !toT) continue;
 
-            var p = army.progress || 0;
-            if (army.route && army.route.legs && army.route.legs.length > 0) {
+            var cx, cy;
+            if (isBesieging) {
+                cx = toT.x + 10;
+                cy = toT.y - 10;
+            } else if (army.route && army.route.legs && army.route.legs.length > 0) {
                 var legIdx = army.legIndex || 0;
                 var legProg = army.legProgress || 0;
                 if (legIdx < army.route.legs.length) {
                     var leg = army.route.legs[legIdx];
                     var lf = townMap[leg.from]; var lt = townMap[leg.to];
                     if (lf && lt) {
-                        var cx = lf.x + (lt.x - lf.x) * Math.min(1, legProg);
-                        var cy = lf.y + (lt.y - lf.y) * Math.min(1, legProg);
-                        ctx.fillStyle = '#c44e52';
-                        ctx.beginPath();
-                        ctx.arc(cx, cy, 5, 0, Math.PI * 2);
-                        ctx.fill();
-                        ctx.strokeStyle = '#802020';
-                        ctx.lineWidth = 1;
-                        ctx.stroke();
-                        continue;
+                        cx = lf.x + (lt.x - lf.x) * Math.min(1, legProg);
+                        cy = lf.y + (lt.y - lf.y) * Math.min(1, legProg);
                     }
                 }
             }
-            var ax = fromT.x + (toT.x - fromT.x) * p;
-            var ay = fromT.y + (toT.y - fromT.y) * p;
+            if (cx == null) {
+                var p = army.progress || 0;
+                cx = fromT.x + (toT.x - fromT.x) * p;
+                cy = fromT.y + (toT.y - fromT.y) * p;
+            }
+
+            var sc = 1.0 / Math.max(camera.zoom, 0.5);
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.scale(sc, sc);
+
+            // Larger dot (was 5px radius)
+            ctx.fillStyle = isBesieging ? '#ff6666' : '#c44e52';
+            ctx.beginPath();
+            ctx.arc(0, 0, 12, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#802020';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Soldier count text
+            ctx.font = 'bold 12px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#fff';
+            ctx.fillText('' + (army.soldiers || '?'), 0, 0);
+
+            ctx.restore();
             ctx.fillStyle = '#c44e52';
             ctx.beginPath();
             ctx.arc(ax, ay, 5, 0, Math.PI * 2);
