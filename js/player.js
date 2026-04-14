@@ -589,6 +589,20 @@
 
         // Clean up fully paid debts
         player.debts = player.debts.filter(function(d) { return d.amount > 0.5; });
+
+        // 90-day unpaid debt → forced bankruptcy
+        if (player.debts.length > 0 && !(player.bankruptcy && player.bankruptcy.active)) {
+            var oldestUnpaidAge = 0;
+            for (var dk = 0; dk < player.debts.length; dk++) {
+                var dAge = day - (player.debts[dk].dayIncurred || 0);
+                if (dAge > oldestUnpaidAge) oldestUnpaidAge = dAge;
+            }
+            if (oldestUnpaidAge >= 90) {
+                Engine.logEvent('💸 Your debts have gone unpaid for over 90 days! The kingdom intervenes.', null, 'finance');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('💸 Debts unpaid 90+ days — bankruptcy!', 'danger', 'critical');
+                triggerDebtBankruptcy();
+            }
+        }
     }
 
     // ════════════════════════════════════════════════════════
@@ -32654,9 +32668,28 @@
         }
     }
 
-    function triggerBankruptcy() {
+    function triggerBankruptcy(reason) {
         if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(0);
 
+        // Also discharge the debt system debts during bankruptcy
+        var debtSystemTotal = getTotalDebt();
+        if (debtSystemTotal > 0) {
+            // Apply rep losses from debt system before clearing
+            for (var di = 0; di < (player.debts || []).length; di++) {
+                var d = player.debts[di];
+                if (d.creditorType === 'kingdom' && player.reputation) {
+                    player.reputation[d.creditorId] = Math.max(0, (player.reputation[d.creditorId] || 50) - 15);
+                } else if (d.creditorType === 'npc' && player.relationships) {
+                    var rel = player.relationships[d.creditorId];
+                    if (rel) rel.level = Math.max(0, (rel.level || 50) - 25);
+                }
+            }
+            player.debts = [];
+            player._lastDebtEnforcementDay = 0;
+            player.bankruptcyCount = (player.bankruptcyCount || 0) + 1;
+        }
+
+        var totalOwed = Math.abs(player.gold) + debtSystemTotal;
         var assetValue = calculateAssetValue();
 
         if (assetValue > 0) {
@@ -32678,11 +32711,31 @@
             var choices = getBankruptcyChoices();
 
             if (typeof UI !== 'undefined' && UI.showBankruptcyDialog) {
-                UI.showBankruptcyDialog(Math.abs(player.gold), choices);
+                UI.showBankruptcyDialog(Math.max(totalOwed, Math.abs(player.gold)), choices, reason || null);
             } else {
                 handleBankruptcyChoice('indenture');
             }
         }
+    }
+
+    /**
+     * Voluntary bankruptcy — triggered by player clicking "Declare Bankruptcy" in financial report.
+     */
+    function triggerVoluntaryBankruptcy() {
+        if (player.bankruptcy && player.bankruptcy.active) return;
+        if (!player.alive) return;
+        // Must have debts to declare voluntary bankruptcy
+        if ((!player.debts || player.debts.length === 0) && player.gold >= 0) return;
+        triggerBankruptcy('voluntary');
+    }
+
+    /**
+     * Debt-triggered bankruptcy — called when debts go unpaid for 90+ days.
+     */
+    function triggerDebtBankruptcy() {
+        if (player.bankruptcy && player.bankruptcy.active) return;
+        if (!player.alive) return;
+        triggerBankruptcy('unpaid_debts');
     }
 
     function calculateAssetValue() {
@@ -32841,7 +32894,7 @@
             available: eliteMerchants.length > 0,
             label: '⛓️ Indentured Servant',
             description: 'An elite merchant pays off your debt. You owe them your debt plus 1,000g. Serve until you can pay it off or find another way out.',
-            detail: 'Debt: ' + (Math.abs(player.gold) + 1000) + 'g | Same escape options as servant start'
+            detail: 'Debt: ' + (Math.abs(player.gold) + getTotalDebt() + 1000) + 'g | Same escape options as servant start'
         });
 
         // Option 2: Military enlistment (requires active war)
@@ -32946,8 +32999,14 @@
     }
 
     function handleBankruptcyChoice(choice) {
-        var debtAmount = Math.abs(player.gold);
+        var debtAmount = Math.abs(player.gold) + getTotalDebt();
         player.bankruptDays = 0;
+
+        // Clear debt system debts (they are being discharged by the bankruptcy choice)
+        if (player.debts && player.debts.length > 0) {
+            player.debts = [];
+            player._lastDebtEnforcementDay = 0;
+        }
 
         // If player has an unpaid guild loan and picks indenture/military/priest, forgive the loan
         if (choice !== 'guild_loan' && player.activeLoan) {
@@ -36716,6 +36775,7 @@
         deductGoldOrDebt,
         payDebt,
         declareBankruptcy,
+        triggerVoluntaryBankruptcy,
         getTotalDebt,
         hasDebt,
         hasSpecialLaw,

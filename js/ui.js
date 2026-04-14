@@ -709,10 +709,10 @@ window.UI = (function () {
             else { UI.toast('❌ ' + result.message, 'error'); }
         });
         registerAction('_declareBankruptcy', function() {
-            if (!confirm('⚠️ DECLARE BANKRUPTCY?\n\nThis will erase all debts but:\n• All gold will be seized\n• All inventory will be seized\n• All buildings will be seized\n• Reputation with creditors will be damaged\n\nAre you sure?')) return;
-            var result = Player.declareBankruptcy();
-            if (result.success) { UI.toast('💥 ' + result.message, 'danger'); UI.closeModal(); }
-            else { UI.toast('❌ ' + result.message, 'error'); }
+            // Use the full bankruptcy system (same as 0-gold-for-7-days)
+            if (typeof Player !== 'undefined' && Player.triggerVoluntaryBankruptcy) {
+                Player.triggerVoluntaryBankruptcy();
+            }
         });
         registerAction('openInventory', function() { openPlayerInventory(); });
         registerAction('buyContainer', function(_t, d) { if (d.id) UI.buyContainer(d.id); });
@@ -6693,11 +6693,19 @@ window.UI = (function () {
     //  BANKRUPTCY DIALOG
     // ═══════════════════════════════════════════════════════════
 
-    function showBankruptcyDialog(debtAmount, choices) {
+    function showBankruptcyDialog(debtAmount, choices, reason) {
         _bankruptcyLock = true;
+        var reasonText = '';
+        if (reason === 'voluntary') {
+            reasonText = 'You have chosen to declare bankruptcy to discharge your debts.';
+        } else if (reason === 'unpaid_debts') {
+            reasonText = 'Your debts have gone unpaid for over 90 days. The kingdom has intervened.';
+        } else {
+            reasonText = 'You have been in debt for 7 consecutive days with no assets to seize.';
+        }
         var bodyHtml = '<div style="padding:15px;text-align:center;">';
         bodyHtml += '<p style="color:#ff6b6b;font-size:18px;margin-bottom:10px;">💸 You are bankrupt!</p>';
-        bodyHtml += '<p style="color:#ccc;font-size:14px;margin-bottom:5px;">You have been in debt for 7 consecutive days with no assets to seize.</p>';
+        bodyHtml += '<p style="color:#ccc;font-size:14px;margin-bottom:5px;">' + reasonText + '</p>';
         bodyHtml += '<p style="color:#ff9;font-size:14px;margin-bottom:20px;">Outstanding debt: <strong>' + debtAmount + 'g</strong></p>';
         bodyHtml += '<p style="color:#aaa;font-size:13px;margin-bottom:15px;">The kingdom demands you choose your fate:</p>';
         bodyHtml += '</div>';
