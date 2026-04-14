@@ -1425,12 +1425,12 @@
             checkDirectedCommissionDeadline(k);
 
             // ---- Royal Feast system (daily) ----
-            // Player-king schedules feasts manually
-            if (!_playerIsKingHere) {
-                tickKingdomFeasts(k);
-            }
+            // Always tick feasts: activates pending feasts/courts, ends expired, runs events.
+            // NPC auto-scheduling is guarded inside the function itself.
+            tickKingdomFeasts(k);
 
             // ---- AI Court system (daily check, runs every 30-60 days) ----
+            // NPC-only: AI king processes petitions automatically
             if (!_playerIsKingHere) {
                 tickKingdomCourt(k);
             }

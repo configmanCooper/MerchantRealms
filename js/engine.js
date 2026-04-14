@@ -22079,8 +22079,9 @@
             k._pendingCourt = null;
         }
 
-        // Start new feast (NPC kingdom auto-feast)
-        if (!k._activeFeast && !k._pendingFeast && !k._pendingCourt && !(k._courtSession && k._courtSession.cases && k._courtSession.cases.some(function(c) { return !c.resolved; })) && world.day >= k._nextFeastDay) {
+        // Start new feast (NPC kingdom auto-feast — skip if player is king, they schedule manually)
+        var _isPlayerKingForFeast = typeof Player !== 'undefined' && Player.state && Player.state.isKing && Player.state.kingState && Player.state.kingState.kingdomId === k.id;
+        if (!_isPlayerKingForFeast && !k._activeFeast && !k._pendingFeast && !k._pendingCourt && !(k._courtSession && k._courtSession.cases && k._courtSession.cases.some(function(c) { return !c.resolved; })) && world.day >= k._nextFeastDay) {
             var feastTownId = k.capital || (k.territories && k.territories.size > 0 ? Array.from(k.territories)[0] : null);
             if (!feastTownId) return;
             var feastTown = findTown(feastTownId);

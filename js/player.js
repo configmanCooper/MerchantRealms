@@ -7829,8 +7829,6 @@
         // Mutual exclusion
         if (kingdom._activeFeast) return { success: false, message: 'Cannot hold court while a feast is in progress.' };
         if (kingdom._pendingFeast) return { success: false, message: 'Cannot hold court while a feast is being planned.' };
-        var daysSinceLast = Engine.getDay() - (player.kingState.courtHeldDay || 0);
-        if (daysSinceLast < 30) return { success: false, message: 'Must wait ' + (30 - daysSinceLast) + ' more days before holding court.' };
         // If court already active with unresolved cases, reopen it
         if (kingdom._courtSession && kingdom._courtSession.cases.some(function(c) { return !c.resolved; })) {
             return { success: true, message: 'Court is already in session!', openCourt: true, kingdomId: player.kingState.kingdomId };
@@ -7840,7 +7838,10 @@
             var daysUntil = kingdom._pendingCourt.courtDay - Engine.getDay();
             return { success: true, message: 'Court is scheduled to convene in ' + daysUntil + ' days.', pendingCourt: true, kingdomId: player.kingState.kingdomId };
         }
-        // If no leadDays specified, return schedule options
+        // Check cooldown AFTER checking existing sessions (so reopen/pending status still works)
+        var daysSinceLast = Engine.getDay() - (player.kingState.courtHeldDay || 0);
+        if (daysSinceLast < 30) return { success: false, message: 'Must wait ' + (30 - daysSinceLast) + ' more days before holding court.' };
+        // If no leadDays specified, return schedule options (don't set courtHeldDay yet!)
         if (!leadDays) {
             return { success: true, showSchedule: true, eventType: 'court', kingdomId: player.kingState.kingdomId };
         }

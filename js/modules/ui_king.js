@@ -1022,37 +1022,29 @@
         html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:4px;">📋 Order Goods for Stockpile</div>';
         html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:6px;">Create procurement orders — procurers travel the kingdom buying from local markets.</div>';
         try {
-            // Build a list of all available goods
+            // Build a list of all non-military goods from RESOURCE_TYPES
             var _goodsSet = {};
-            if (typeof CONFIG !== 'undefined' && CONFIG.ITEMS) {
-                var _itemKeys = Object.keys(CONFIG.ITEMS);
-                for (var _ik = 0; _ik < _itemKeys.length; _ik++) {
-                    var _iDef = CONFIG.ITEMS[_itemKeys[_ik]];
-                    if (_iDef && _iDef.name) _goodsSet[_itemKeys[_ik]] = _iDef.name;
-                }
-            }
-            // Also add any goods currently in kingdom markets
-            for (var _kti2 = 0; _kti2 < _kTowns.length; _kti2++) {
-                var _kt2 = _kTowns[_kti2];
-                if (!_kt2.market) continue;
-                var _mKeys2 = Object.keys(_kt2.market);
-                for (var _mk2 = 0; _mk2 < _mKeys2.length; _mk2++) {
-                    if (!_goodsSet[_mKeys2[_mk2]] && _kt2.market[_mKeys2[_mk2]] && _kt2.market[_mKeys2[_mk2]].supply > 0) {
-                        _goodsSet[_mKeys2[_mk2]] = _mKeys2[_mk2];
+            var _excludeCats = { military: true, quest: true, contraband: true };
+            if (typeof RESOURCE_TYPES !== 'undefined') {
+                var _rtKeys = Object.keys(RESOURCE_TYPES);
+                for (var _ik = 0; _ik < _rtKeys.length; _ik++) {
+                    var _iDef = RESOURCE_TYPES[_rtKeys[_ik]];
+                    if (_iDef && _iDef.id && _iDef.name && !_excludeCats[_iDef.category]) {
+                        _goodsSet[_iDef.id] = { name: _iDef.name, icon: _iDef.icon || '📦' };
                     }
                 }
             }
-            var _sortedGoods = Object.keys(_goodsSet).sort(function(a, b) { return (_goodsSet[a] || a).localeCompare(_goodsSet[b] || b); });
+            var _sortedGoods = Object.keys(_goodsSet).sort(function(a, b) { return (_goodsSet[a].name || a).localeCompare(_goodsSet[b].name || b); });
             if (_sortedGoods.length > 0) {
                 html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">';
-                html += '<select id="_kBuyGood" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;max-width:160px;">';
+                html += '<select id="_kBuyGood" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;max-width:200px;">';
                 for (var _sg2 = 0; _sg2 < _sortedGoods.length; _sg2++) {
                     var _sgId = _sortedGoods[_sg2];
-                    html += '<option value="' + _sgId + '">' + escapeHtml(_goodsSet[_sgId]) + '</option>';
+                    html += '<option value="' + _sgId + '">' + _goodsSet[_sgId].icon + ' ' + escapeHtml(_goodsSet[_sgId].name) + '</option>';
                 }
                 html += '</select>';
                 html += '<input type="number" id="_kBuyQty" min="1" max="500" value="20" style="font-size:0.65rem;width:55px;padding:2px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;">';
-                html += '<button class="btn-medieval" data-action="kingBuyStockpile" style="font-size:0.62rem;padding:2px 6px;">📋 Place Order</button>';
+                html += '<button class="btn-medieval" data-action="kingBuyStockpile" style="font-size:0.72rem;padding:3px 8px;color:#e8dcc8 !important;">📋 PLACE ORDER</button>';
                 html += '</div>';
             } else {
                 html += '<div style="font-size:0.68rem;color:#888;">No goods known.</div>';
