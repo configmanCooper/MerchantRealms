@@ -11511,6 +11511,627 @@
     }
 
     // ========================================================
+    // §14A3z-R TOWN REVOLT SYSTEM
+    // ========================================================
+
+    /**
+     * Main daily tick for the town revolt system.
+     * Tracks revolt pressure when town happiness is critically low,
+     * rolls for revolts with escalating chance, and ticks active revolts.
+     */
+    function tickTownRevolts() {
+        var rng = world.rng;
+        var criticalThreshold = CONFIG.TOWN_REVOLT_CRITICAL_HAPPINESS || 20;
+        var pressureInterval = CONFIG.TOWN_REVOLT_PRESSURE_INTERVAL || 30;
+        var baseChance = CONFIG.TOWN_REVOLT_BASE_CHANCE || 0.04;
+        var escalation = CONFIG.TOWN_REVOLT_CHANCE_ESCALATION || 0.03;
+        var maxChance = CONFIG.TOWN_REVOLT_MAX_CHANCE || 0.45;
+        var cooldownDays = CONFIG.TOWN_REVOLT_COOLDOWN || 60;
+
+        for (var ti = 0; ti < world.towns.length; ti++) {
+            var town = world.towns[ti];
+            if (!town || !town.kingdomId) continue;
+
+            // Tick active revolt first
+            if (town._activeRevolt) {
+                _tickActiveRevolt(town);
+                continue;
+            }
+
+            // Check cooldown
+            if (town._revoltCooldownUntil && world.day < town._revoltCooldownUntil) continue;
+
+            // Skip if under siege (already in crisis)
+            if (town.siege) continue;
+
+            var h = town.happiness || 50;
+            var pop = typeof town.population === 'number' ? town.population : 0;
+            if (pop < 20) continue; // too small for a revolt
+
+            if (h < criticalThreshold) {
+                // Town is critically unhappy — build pressure
+                town._revoltPressureDays = (town._revoltPressureDays || 0) + 1;
+
+                // Check for revolt every pressureInterval days
+                if (town._revoltPressureDays >= pressureInterval && town._revoltPressureDays % pressureInterval === 0) {
+                    var periodsOfPressure = Math.floor(town._revoltPressureDays / pressureInterval);
+                    var revoltChance = Math.min(maxChance, baseChance + (periodsOfPressure - 1) * escalation);
+
+                    if (rng.chance(revoltChance)) {
+                        _startTownRevolt(town);
+                    }
+                }
+            } else {
+                // Town is no longer critically unhappy — rapidly decay pressure
+                if (town._revoltPressureDays && town._revoltPressureDays > 0) {
+                    // Lose 3 days of pressure per day of recovery
+                    town._revoltPressureDays = Math.max(0, town._revoltPressureDays - 3);
+                    if (town._revoltPressureDays === 0) delete town._revoltPressureDays;
+                }
+            }
+        }
+    }
+
+    /**
+     * Start a town revolt — select rebels, equip from stockpile, create revolt state.
+     */
+    function _startTownRevolt(town) {
+        var rng = world.rng;
+        var k = findKingdom(town.kingdomId);
+        if (!k) return;
+
+        var maxRebelAge = CONFIG.TOWN_REVOLT_MAX_REBEL_AGE || 40;
+        var rebelHappinessThreshold = CONFIG.TOWN_REVOLT_REBEL_HAPPINESS_THRESHOLD || 35;
+        var minRebels = CONFIG.TOWN_REVOLT_MIN_REBELS || 5;
+
+        // Find unhappy NPCs under the age threshold in this town
+        var townPeople = getPeopleInTown(town.id);
+        var potentialRebels = [];
+        for (var i = 0; i < townPeople.length; i++) {
+            var p = townPeople[i];
+            if (!p.alive) continue;
+            if (p.isKing || p.occupation === 'king' || p.occupation === 'queen' || p.occupation === 'reigning_queen') continue;
+            if ((p.age || 25) > maxRebelAge) continue;
+            if (p.occupation === 'soldier' || p.occupation === 'guard') continue; // defenders, not rebels
+            // Check individual happiness
+            var pH = p.happiness || p.morale || (town.happiness || 50);
+            if (pH < rebelHappinessThreshold) {
+                potentialRebels.push(p);
+            }
+        }
+
+        if (potentialRebels.length < minRebels) return; // not enough angry people
+
+        // Select rebels — up to 60% of potential rebels actually join
+        var rebelCount = Math.max(minRebels, Math.floor(potentialRebels.length * rng.randFloat(0.4, 0.7)));
+        rebelCount = Math.min(rebelCount, potentialRebels.length);
+
+        // Shuffle and pick
+        for (var si = potentialRebels.length - 1; si > 0; si--) {
+            var sj = rng.randInt(0, si);
+            var tmp = potentialRebels[si];
+            potentialRebels[si] = potentialRebels[sj];
+            potentialRebels[sj] = tmp;
+        }
+        var rebels = potentialRebels.slice(0, rebelCount);
+        var rebelIds = rebels.map(function(r) { return r.id; });
+
+        // Pick revolt group name (avoid reusing active names)
+        var usedNames = {};
+        for (var ui = 0; ui < world.kingdoms.length; ui++) {
+            usedNames[world.kingdoms[ui].name] = true;
+        }
+        for (var uti = 0; uti < world.towns.length; uti++) {
+            if (world.towns[uti]._activeRevolt) usedNames[world.towns[uti]._activeRevolt.groupName] = true;
+        }
+        var namePool = (typeof NAMES !== 'undefined' && NAMES.revoltKingdoms) ? NAMES.revoltKingdoms : [];
+        var availableNames = namePool.filter(function(n) { return !usedNames[n]; });
+        var groupName = availableNames.length > 0 ? rng.pick(availableNames) : ('Rebels of ' + town.name);
+
+        // Auto-equip rebels from kingdom stockpile (swords, armor, bows, arrows ONLY)
+        var ms = k.militaryStockpile || {};
+        var equippedSwords = 0, equippedArmor = 0, equippedBows = 0, equippedArrows = 0;
+
+        // NO horses, blasting powder, or demolition tools
+        for (var ri = 0; ri < rebels.length; ri++) {
+            if ((ms.swords || 0) > 0) { ms.swords--; equippedSwords++; }
+            if ((ms.armor || 0) > 0) { ms.armor--; equippedArmor++; }
+        }
+        // Bows for ~30% of rebels
+        var bowsNeeded = Math.floor(rebels.length * 0.3);
+        for (var bi = 0; bi < bowsNeeded; bi++) {
+            if ((ms.bows || 0) > 0 && (ms.arrows || 0) >= 5) {
+                ms.bows--; ms.arrows -= 5;
+                equippedBows++; equippedArrows += 5;
+            }
+        }
+
+        // Calculate rebel fighting strength
+        var rebelStrength = rebels.length;
+        var equipMult = 1.0;
+        if (equippedSwords > 0) equipMult += 0.3 * (equippedSwords / rebels.length);
+        if (equippedArmor > 0) equipMult += 0.2 * (equippedArmor / rebels.length);
+        if (equippedBows > 0) equipMult += 0.15 * (equippedBows / rebels.length);
+        rebelStrength = Math.floor(rebelStrength * equipMult);
+
+        // Defender strength: garrison soldiers + guards (guards at half effectiveness)
+        var garrison = town.garrison || 0;
+        var guards = 0;
+        for (var gi = 0; gi < townPeople.length; gi++) {
+            if (townPeople[gi].alive && townPeople[gi].occupation === 'guard') guards++;
+        }
+        var defenderStrength = garrison + Math.floor(guards * (CONFIG.TOWN_REVOLT_GUARD_EFFECTIVENESS || 0.5));
+
+        // Auto-equip defenders from kingdom stockpile (same items, automatic)
+        var defEquipSwords = 0, defEquipArmor = 0, defEquipBows = 0;
+        var totalDefenders = garrison + guards;
+        for (var dei = 0; dei < totalDefenders; dei++) {
+            if ((ms.swords || 0) > 0) { ms.swords--; defEquipSwords++; }
+            if ((ms.armor || 0) > 0) { ms.armor--; defEquipArmor++; }
+        }
+        var defBowsNeeded = Math.floor(totalDefenders * 0.25);
+        for (var dbi = 0; dbi < defBowsNeeded; dbi++) {
+            if ((ms.bows || 0) > 0 && (ms.arrows || 0) >= 5) {
+                ms.bows--; ms.arrows -= 5;
+                defEquipBows++;
+            }
+        }
+        var defEquipMult = 1.0;
+        if (defEquipSwords > 0 && totalDefenders > 0) defEquipMult += 0.3 * (defEquipSwords / totalDefenders);
+        if (defEquipArmor > 0 && totalDefenders > 0) defEquipMult += 0.2 * (defEquipArmor / totalDefenders);
+        if (defEquipBows > 0 && totalDefenders > 0) defEquipMult += 0.15 * (defEquipBows / totalDefenders);
+        defenderStrength = Math.floor(defenderStrength * defEquipMult);
+
+        var siegeDuration = CONFIG.TOWN_REVOLT_SIEGE_DURATION || 7;
+
+        town._activeRevolt = {
+            groupName: groupName,
+            parentKingdomId: town.kingdomId,
+            rebelIds: rebelIds,
+            rebelCount: rebels.length,
+            rebelStrength: rebelStrength,
+            rebelMorale: 80 + rng.randInt(0, 15),
+            defenderCount: totalDefenders,
+            defenderStrength: defenderStrength,
+            defenderMorale: town.garrisonMorale || 70,
+            startDay: world.day,
+            duration: siegeDuration,
+            daysElapsed: 0,
+            garrison: garrison,
+            guards: guards,
+            rebelEquipment: { swords: equippedSwords, armor: equippedArmor, bows: equippedBows, arrows: equippedArrows },
+            defenderEquipment: { swords: defEquipSwords, armor: defEquipArmor, bows: defEquipBows },
+        };
+
+        // Block the town like a siege
+        town._revoltBlocked = true;
+
+        logEvent('🔥 REVOLT! ' + groupName + ' rises up in ' + town.name + '! ' + rebels.length + ' rebels fight against ' + totalDefenders + ' defenders.', {
+            type: 'town_revolt_start',
+            town: town.name,
+            kingdom: k.name,
+            rebels: rebels.length,
+            defenders: totalDefenders,
+            groupName: groupName,
+            effects: ['Town blocked during revolt', 'Trade halted', 'Citizens take cover']
+        }, 'sensitive_intel');
+
+        // Notify player if they are in this town or are king of this kingdom
+        if (typeof Player !== 'undefined' && Player.state) {
+            var ps = Player.state;
+            var isPlayerKing = typeof Player.isPlayerKing === 'function' && Player.isPlayerKing() &&
+                ps.kingState && ps.kingState.kingdomId === k.id;
+            if (ps.townId === town.id || isPlayerKing) {
+                if (typeof UI !== 'undefined' && UI.toast) {
+                    UI.toast('🔥 ' + groupName + ' revolt in ' + town.name + '!', 'danger', 'critical');
+                }
+            }
+        }
+    }
+
+    /**
+     * Daily tick for an active town revolt. Handles attrition, morale, and resolution.
+     */
+    function _tickActiveRevolt(town) {
+        var revolt = town._activeRevolt;
+        if (!revolt) return;
+        var rng = world.rng;
+
+        revolt.daysElapsed++;
+
+        // Daily rebel attrition (1-3% casualties per day)
+        var rebelCasualties = Math.max(1, Math.floor(revolt.rebelCount * rng.randFloat(0.01, 0.03)));
+        revolt.rebelCount = Math.max(0, revolt.rebelCount - rebelCasualties);
+        revolt.rebelStrength = Math.max(0, revolt.rebelStrength - rebelCasualties);
+
+        // Kill some rebel NPCs
+        for (var ci = 0; ci < rebelCasualties && revolt.rebelIds.length > 0; ci++) {
+            var deadIdx = rng.randInt(0, revolt.rebelIds.length - 1);
+            var deadRebel = findPerson(revolt.rebelIds[deadIdx]);
+            if (deadRebel) killPerson(deadRebel, 'revolt');
+            revolt.rebelIds.splice(deadIdx, 1);
+        }
+
+        // Daily defender attrition (0.5-2% casualties per day)
+        var defCasualties = Math.max(0, Math.floor(revolt.defenderCount * rng.randFloat(0.005, 0.02)));
+        revolt.defenderCount = Math.max(0, revolt.defenderCount - defCasualties);
+        revolt.defenderStrength = Math.max(0, revolt.defenderStrength - defCasualties);
+
+        // Kill defender soldiers from garrison
+        var garrisonLoss = Math.min(defCasualties, revolt.garrison);
+        revolt.garrison = Math.max(0, revolt.garrison - garrisonLoss);
+        town.garrison = Math.max(0, (town.garrison || 0) - garrisonLoss);
+        // Remaining casualties from guards
+        var guardLoss = defCasualties - garrisonLoss;
+        if (guardLoss > 0) {
+            revolt.guards = Math.max(0, revolt.guards - guardLoss);
+            var guardNpcs = getPeopleInTown(town.id).filter(function(p) { return p.alive && p.occupation === 'guard'; });
+            for (var gli = 0; gli < guardLoss && guardNpcs.length > 0; gli++) {
+                var gIdx = rng.randInt(0, guardNpcs.length - 1);
+                killPerson(guardNpcs[gIdx], 'revolt');
+                guardNpcs.splice(gIdx, 1);
+            }
+        }
+
+        // Morale decay
+        revolt.rebelMorale = Math.max(0, revolt.rebelMorale - rng.randFloat(1.5, 3.5));
+        revolt.defenderMorale = Math.max(0, revolt.defenderMorale - rng.randFloat(1.0, 2.5));
+
+        // Outnumbered morale penalty
+        if (revolt.rebelCount > revolt.defenderCount * 1.5) {
+            revolt.defenderMorale = Math.max(0, revolt.defenderMorale - 2);
+        } else if (revolt.defenderCount > revolt.rebelCount * 1.5) {
+            revolt.rebelMorale = Math.max(0, revolt.rebelMorale - 2);
+        }
+
+        // Town happiness drops during revolt
+        if (town.happiness != null) {
+            town.happiness = Math.max(0, town.happiness - 1.0);
+        }
+
+        // Check for resolution
+        var resolved = false;
+        var rebelsWin = false;
+
+        // Time expired — compare strengths
+        if (revolt.daysElapsed >= revolt.duration) {
+            resolved = true;
+            rebelsWin = revolt.rebelStrength > revolt.defenderStrength;
+        }
+        // Rebels all dead or morale collapsed
+        if (revolt.rebelCount <= 0 || revolt.rebelMorale <= 0) {
+            resolved = true;
+            rebelsWin = false;
+        }
+        // Defenders all dead or morale collapsed
+        if (revolt.defenderCount <= 0 || revolt.defenderMorale <= 0) {
+            resolved = true;
+            rebelsWin = true;
+        }
+
+        if (resolved) {
+            if (rebelsWin) {
+                _resolveRevoltWin(town, revolt);
+            } else {
+                _resolveRevoltLose(town, revolt);
+            }
+        }
+    }
+
+    /**
+     * Rebels win — create a new kingdom from the revolt group.
+     */
+    function _resolveRevoltWin(town, revolt) {
+        var rng = world.rng;
+        var parentK = findKingdom(revolt.parentKingdomId);
+        var groupName = revolt.groupName;
+
+        // Pick a king from surviving rebels — prefer ambitious/brave personalities
+        var survivingRebels = [];
+        for (var i = 0; i < revolt.rebelIds.length; i++) {
+            var r = findPerson(revolt.rebelIds[i]);
+            if (r && r.alive) survivingRebels.push(r);
+        }
+
+        var newKing = null;
+        if (survivingRebels.length > 0) {
+            // Score each rebel for leadership
+            var bestScore = -1;
+            for (var ri = 0; ri < survivingRebels.length; ri++) {
+                var rebel = survivingRebels[ri];
+                var score = rng.randInt(0, 20);
+                var pers = rebel.personality || {};
+                if (pers.ambition === 'ambitious') score += 30;
+                else if (pers.ambition === 'content') score += 10;
+                if (pers.courage === 'brave') score += 25;
+                else if (pers.courage === 'cautious') score += 10;
+                if (pers.intelligence === 'brilliant' || pers.intelligence === 'clever') score += 15;
+                if (pers.temperament === 'stern' || pers.temperament === 'fair') score += 10;
+                if ((rebel.age || 25) >= 20 && (rebel.age || 25) <= 35) score += 10;
+                if (score > bestScore) { bestScore = score; newKing = rebel; }
+            }
+        }
+
+        if (!newKing && survivingRebels.length > 0) {
+            newKing = survivingRebels[0];
+        }
+
+        // Generate kingdom personality based on new king
+        var kp = newKing ? (newKing.personality || {}) : {};
+        var generosity = kp.generosity || rng.pick(['generous', 'fair', 'miserly']);
+        var militarism = rng.pick(['defensive', 'aggressive']); // revolt kingdoms tend toward military readiness
+        var justice = kp.justice || rng.pick(['just', 'pragmatic']);
+        var tradition = rng.pick(['progressive', 'moderate']); // revolters are reformers
+        var intelligence = kp.intelligence || rng.pick(['clever', 'average']);
+        var temperament = kp.temperament || rng.pick(['fair', 'stern']);
+        var ambition = kp.ambition || 'ambitious';
+        var greed = kp.greed || rng.pick(['fair', 'greedy']);
+        var courage = kp.courage || 'brave';
+
+        // Pick a color for the new kingdom
+        var usedColors = {};
+        for (var ki = 0; ki < world.kingdoms.length; ki++) usedColors[world.kingdoms[ki].color] = true;
+        var revoltColors = ['#d35400', '#8e44ad', '#16a085', '#c0392b', '#2980b9', '#f39c12', '#1abc9c', '#e74c3c', '#9b59b6', '#27ae60'];
+        var newColor = '#d35400';
+        for (var ci = 0; ci < revoltColors.length; ci++) {
+            if (!usedColors[revoltColors[ci]]) { newColor = revoltColors[ci]; break; }
+        }
+
+        // Create the new kingdom
+        var newKingdomId = uid('k');
+        var newKingdom = {
+            id: newKingdomId,
+            name: groupName,
+            color: newColor,
+            culture: parentK ? parentK.culture : 'balanced',
+            king: newKing ? newKing.id : null,
+            kingPersonality: {
+                generosity: generosity,
+                militarism: militarism,
+                justice: justice,
+                tradition: tradition,
+                icon: '🔥',
+                intelligence: intelligence,
+                temperament: temperament,
+                ambition: ambition,
+                greed: greed,
+                courage: courage,
+            },
+            gold: CONFIG.TOWN_REVOLT_WIN_TREASURY || 500,
+            _startingGold: CONFIG.TOWN_REVOLT_WIN_TREASURY || 500,
+            _lastCrisisCheck: 0,
+            taxRevenue: 0,
+            guardBudget: 0.2,
+            taxRate: 0.08,
+            propertyTaxRate: 0.01,
+            incomeTaxRate: 0.03,
+            healthcareTaxRate: 0.05,
+            healthcareTaxRevenue: 0,
+            tradeTaxRevenue: 0,
+            propertyTaxRevenue: 0,
+            incomeTaxRevenue: 0,
+            _lastPropertyTaxDay: 0,
+            _lastIncomeTaxDay: 0,
+            _lastFinancialStrategyDay: 0,
+            _financialActions: [],
+            _currencyDebased: false,
+            _debasementInflation: 0,
+            militaryStrength: 0,
+            prosperity: town.prosperity || 40,
+            happiness: 55, // fresh start — hope bonus
+            peaceTreaties: {},
+            relations: {},
+            atWar: new Set(),
+            alliances: new Set(),
+            allianceMeta: {},
+            succession: [],
+            territories: new Set(),
+            laws: {
+                bannedGoods: [],
+                tradeTariff: 0.05,
+                conscription: false,
+                guildRestrictions: false,
+                goodsTaxes: {},
+                restrictedGoods: [],
+                specialLaws: [],
+                freeWellWater: true,
+                kingdomTransport: false,
+                transportRate: 15,
+                licenseFees: {},
+            },
+            flavorText: 'Born from revolution in ' + town.name + ', ' + groupName + ' fights for a new order.',
+            crimePunishments: {},
+            procurement: { orders: [], deals: [], needs: {}, preferredMerchants: {}, lastAssessmentDay: 0 },
+            militaryStockpile: { swords: 0, armor: 0, bows: 0, arrows: 0, horses: 0 },
+            goodsStockpile: {},
+            lastTaxIncreaseDay: 0,
+            tournament: null,
+            kingMood: { current: 'content', since: world.day, reason: 'New kingdom born' },
+            kingActionLog: [],
+            successionCrisis: null,
+            immigrationPolicy: 'open',
+            warExhaustion: 0,
+            healthPolicies: [],
+            _activeVotes: [],
+            _lastSeasonTaxRevenue: 100,
+        };
+
+        // Transfer town to new kingdom
+        if (parentK && parentK.territories) parentK.territories.delete(town.id);
+        newKingdom.territories.add(town.id);
+        town.kingdomId = newKingdomId;
+        town.isCapital = true; // only town, so it's the capital
+
+        // Transfer rebel equipment to new kingdom stockpile
+        newKingdom.militaryStockpile.swords = revolt.rebelEquipment.swords || 0;
+        newKingdom.militaryStockpile.armor = revolt.rebelEquipment.armor || 0;
+        newKingdom.militaryStockpile.bows = revolt.rebelEquipment.bows || 0;
+        newKingdom.militaryStockpile.arrows = revolt.rebelEquipment.arrows || 0;
+
+        // Set new king
+        if (newKing) {
+            newKing.isKing = true;
+            newKing.occupation = 'king';
+            newKing.kingdomId = newKingdomId;
+            if (newKing.socialRank) newKing.socialRank[newKingdomId] = 7;
+            else { newKing.socialRank = {}; newKing.socialRank[newKingdomId] = 7; }
+        }
+
+        // Set surviving rebels as citizens of new kingdom
+        for (var sri = 0; sri < revolt.rebelIds.length; sri++) {
+            var rebel = findPerson(revolt.rebelIds[sri]);
+            if (rebel && rebel.alive) {
+                rebel.kingdomId = newKingdomId;
+                // Top rebels become minor nobles
+                if (sri < 3 && rebel.id !== (newKing ? newKing.id : null)) {
+                    if (!rebel.socialRank) rebel.socialRank = {};
+                    rebel.socialRank[newKingdomId] = 4; // minor noble
+                }
+            }
+        }
+
+        // Set garrison from surviving rebels
+        town.garrison = Math.max(2, Math.floor(revolt.rebelIds.length * 0.3));
+        town.garrisonMorale = 70;
+
+        // Relations with other kingdoms: inverse of their relations with parent
+        for (var oki = 0; oki < world.kingdoms.length; oki++) {
+            var otherK = world.kingdoms[oki];
+            if (otherK.id === newKingdomId) continue;
+            if (parentK && parentK.relations && parentK.relations[otherK.id] != null) {
+                // Inverse on sliding scale: if they love parent (+80), they hate revolt (-80)
+                var parentRel = parentK.relations[otherK.id] || 0;
+                var invertedRel = -parentRel;
+                // Add some randomness
+                invertedRel += rng.randInt(-10, 10);
+                invertedRel = Math.max(-100, Math.min(100, invertedRel));
+                newKingdom.relations[otherK.id] = invertedRel;
+                otherK.relations[newKingdomId] = invertedRel;
+            } else {
+                // No existing relationship — start neutral-negative
+                var neutralRel = rng.randInt(-30, 10);
+                newKingdom.relations[otherK.id] = neutralRel;
+                otherK.relations[newKingdomId] = neutralRel;
+            }
+        }
+
+        // Immediately at war with parent kingdom
+        if (parentK) {
+            newKingdom.atWar.add(parentK.id);
+            parentK.atWar.add(newKingdomId);
+            newKingdom.relations[parentK.id] = -80;
+            if (parentK.relations) parentK.relations[newKingdomId] = -80;
+
+            // Track war metadata
+            if (world.activeWars) {
+                var warId = uid('war');
+                world.activeWars[warId] = {
+                    id: warId,
+                    aggressorId: newKingdomId,
+                    defenderId: parentK.id,
+                    startDay: world.day,
+                    cause: 'revolt',
+                    battles: 0,
+                    territoryChanges: 1,
+                };
+            }
+        }
+
+        // Add to world kingdoms
+        world.kingdoms.push(newKingdom);
+
+        // Clear revolt state
+        delete town._activeRevolt;
+        delete town._revoltBlocked;
+        delete town._revoltPressureDays;
+
+        logEvent('🏴 ' + groupName + ' WINS! ' + town.name + ' is now an independent kingdom!' +
+            (newKing ? ' ' + (newKing.firstName || newKing.name || 'A rebel leader') + ' crowned as king.' : ''), {
+            type: 'town_revolt_win',
+            town: town.name,
+            newKingdom: groupName,
+            parentKingdom: parentK ? parentK.name : 'unknown',
+            newKing: newKing ? (newKing.firstName || newKing.name) : null,
+            effects: ['New kingdom created', 'At war with ' + (parentK ? parentK.name : 'parent'), 'Town independence']
+        }, 'sensitive_intel');
+
+        // Check if parent kingdom has 0 towns — eliminate if so
+        if (parentK && parentK.territories && parentK.territories.size === 0) {
+            logEvent('💀 ' + parentK.name + ' has lost all territories and ceases to exist!', {
+                type: 'kingdom_eliminated',
+                kingdom: parentK.name,
+                cause: 'Lost last town to revolt'
+            }, 'sensitive_intel');
+        }
+
+        // Notify player
+        if (typeof Player !== 'undefined' && Player.state) {
+            var ps = Player.state;
+            if (ps.townId === town.id || (typeof Player.isPlayerKing === 'function' && Player.isPlayerKing() && ps.kingState && ps.kingState.kingdomId === revolt.parentKingdomId)) {
+                if (typeof UI !== 'undefined' && UI.toast) {
+                    UI.toast('🏴 ' + groupName + ' has taken ' + town.name + '!', 'danger', 'critical');
+                }
+            }
+        }
+    }
+
+    /**
+     * Defenders win — suppress the revolt, apply cooldown.
+     */
+    function _resolveRevoltLose(town, revolt) {
+        var rng = world.rng;
+        var k = findKingdom(revolt.parentKingdomId || town.kingdomId);
+        var cooldownDays = CONFIG.TOWN_REVOLT_COOLDOWN || 60;
+
+        // Kill remaining rebel NPCs (execution of captured rebels — 30% die)
+        for (var ri = 0; ri < revolt.rebelIds.length; ri++) {
+            var rebel = findPerson(revolt.rebelIds[ri]);
+            if (rebel && rebel.alive) {
+                if (rng.chance(0.30)) {
+                    killPerson(rebel, 'revolt_suppression');
+                } else {
+                    // Survivors lose more happiness, get a mark
+                    if (rebel.happiness != null) rebel.happiness = Math.max(0, rebel.happiness - 20);
+                    rebel._revoltParticipant = true;
+                    rebel._revoltSuppressedDay = world.day;
+                }
+            }
+        }
+
+        // Set cooldown
+        town._revoltCooldownUntil = world.day + cooldownDays;
+
+        // Clear revolt state
+        delete town._activeRevolt;
+        delete town._revoltBlocked;
+
+        // Small happiness boost — order restored
+        if (town.happiness != null) {
+            town.happiness = Math.min(100, town.happiness + 5);
+        }
+
+        logEvent('🛡️ Revolt in ' + town.name + ' SUPPRESSED! ' + revolt.groupName + ' has been defeated.', {
+            type: 'town_revolt_lose',
+            town: town.name,
+            kingdom: k ? k.name : 'unknown',
+            groupName: revolt.groupName,
+            effects: ['Revolt cooldown ' + cooldownDays + ' days', 'Rebels punished', 'Order restored']
+        }, 'sensitive_intel');
+
+        // Notify player
+        if (typeof Player !== 'undefined' && Player.state) {
+            var ps = Player.state;
+            var isPlayerKing = typeof Player.isPlayerKing === 'function' && Player.isPlayerKing() &&
+                ps.kingState && ps.kingState.kingdomId === (k ? k.id : '');
+            if (ps.townId === town.id || isPlayerKing) {
+                if (typeof UI !== 'undefined' && UI.toast) {
+                    UI.toast('🛡️ Revolt in ' + town.name + ' suppressed!', 'success');
+                }
+            }
+        }
+    }
+
+    // ========================================================
     // §14A3z NOBLE BUILDING INCOME TICK (every 10 days)
     // ========================================================
     function tickNobleIncome() {
@@ -24427,6 +25048,10 @@
             tickTravelDemand();
             tickNPCTransport();
 
+            // Daily town revolt system (pressure, formation, battle, resolution)
+            // Runs BEFORE happiness fluctuation so it checks yesterday's ending happiness
+            tickTownRevolts();
+
             // Daily happiness fluctuation (drains + boosts)
             tickHappinessFluctuation();
             // Daily town happiness consequences (scaled percentage-based)
@@ -24979,6 +25604,7 @@
         _resolvePendingElection: _resolvePendingElection,
         tickRebellion: tickRebellion,
         tickKingdomHappinessConsequences: tickKingdomHappinessConsequences,
+        tickTownRevolts: tickTownRevolts,
         tickSurrender: tickSurrender,
         tickNobleAI: tickNobleAI,
         tickKingFamilyAI: tickKingFamilyAI,

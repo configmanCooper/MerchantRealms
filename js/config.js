@@ -347,6 +347,20 @@ const CONFIG = {
     KINGDOM_REBELLION_SECESSION_CHANCE: 0.03, // max per-town seasonal secession chance
     KINGDOM_REBELLION_COLLAPSE_CHANCE: 0.12,  // max seasonal collapse chance (if also bankrupt)
 
+    // ── Town Revolt System ──
+    TOWN_REVOLT_CRITICAL_HAPPINESS: 20,       // town happiness below this is "critically unhappy"
+    TOWN_REVOLT_PRESSURE_INTERVAL: 30,        // pressure builds every 30 days of critical happiness
+    TOWN_REVOLT_BASE_CHANCE: 0.04,            // 4% base chance per 30-day pressure check
+    TOWN_REVOLT_CHANCE_ESCALATION: 0.03,      // +3% per additional 30-day period of critical happiness
+    TOWN_REVOLT_MAX_CHANCE: 0.45,             // max 45% chance per check
+    TOWN_REVOLT_COOLDOWN: 60,                 // days before another revolt can happen after one fails
+    TOWN_REVOLT_MIN_REBELS: 5,               // minimum rebels needed to start a revolt
+    TOWN_REVOLT_MAX_REBEL_AGE: 40,            // rebels must be under this age
+    TOWN_REVOLT_REBEL_HAPPINESS_THRESHOLD: 35,// only NPCs with personal happiness below this join
+    TOWN_REVOLT_GUARD_EFFECTIVENESS: 0.5,     // guards fight at half soldier effectiveness
+    TOWN_REVOLT_SIEGE_DURATION: 7,            // revolt battle lasts up to 7 days
+    TOWN_REVOLT_WIN_TREASURY: 500,            // starting gold for new revolt kingdom
+
     // Kingdom happiness modifiers (applied when calculating kingdom happiness from town avg)
     KINGDOM_HAPPINESS_WAR_PENALTY: 3,         // per active war
     KINGDOM_HAPPINESS_BANKRUPT_PENALTY: 8,    // if kingdom is bankrupt
@@ -3214,6 +3228,31 @@ const NAMES = {
                'Gallowick','Embervale','Northmarch','Whitecliff','Greywatch','Lionspire',
                'Dawnkeep','Mistral','Oakenhold','Winterfell','Crimsonhold','Highcrest',
                'Ravenmark','Dreadmount','Tidewall','Sablewood'],
+    revoltKingdoms: [
+        'The Free People','The Unbroken','Liberation Front','The Unchained',
+        'Dawn of Freedom','The Risen','The Common Cause','The Iron Will','The Defiant',
+        'Brotherhood of the Anvil','The Red Banner','Sons of Liberty','The New Dawn',
+        'The Embers','The Reclaimed','Freeborn Union','The Last Stand',
+        'The Burning Brand','The Shattered Crown','The Open Hand','Sovereign Commune',
+        'The Phoenix Rising','The Unbowed','The Hearthguard','Children of the Soil','The Liberated',
+        'The Torchbearers','Republic of Equals','Brotherhood of Ash','The Breaking',
+        'Free Council','The Uprising','The Chainbreakers','The Unsworn',
+        'The Bold','Covenant of the Free','The Stonewall','The United Front','The Sovereign Many',
+        'The Firebrands','The Common Folk','The Reclaimers','The New Order','The Freed',
+        'Brotherhood of Iron','The Dawn Guard','The Awakened','Freeholders Union',
+        'The Bannerless','The Unshackled','The Rising Tide','The Vanguard',
+        'The Reborn','League of the Free','The Kindled','The Stalwart',
+        'The Outcasts','Covenant of Flame','The Reckonists','The Breaking Dawn','The Untamed',
+        'The New Accord','Brotherhood of the Hearth','The Severance','Free Republic','The Resolute',
+        'The Resistance','The True Folk','The Iron Pact','The Liberators',
+        'The Common Bond','The Forgeborn','Free Dominion','The Tempest','The Unruled',
+        'The Red Dawn','Brotherhood of Thorns','The Covenant','The Pathmakers',
+        'The Risen Many','The Freeblades','The New Compact','The Stormborn',
+        'The Uncrowned','Sovereign Brotherhood','The Bright Rebellion','The Remakers','The True Republic',
+        'The Peoples Shield','The Peoples Voice','The Peoples Hammer','The Peoples March',
+        'The Peoples Flame','The Peoples Bastion','The Peoples Vow','The Peoples Will','The Peoples Stand',
+        'Accord of the Free','The Unfettered','The Steadfast'
+    ],
     towns: ['Millhaven','Oakbridge','Stonecross','Riverford','Highwall','Irongate','Greendale','Foxhollow',
             'Thornfield','Bridgewater','Ashwick','Goldleaf','Pinecrest','Ravensbrook','Silverstream',
             'Copperhill','Willowmere','Hawksrest','Deepwell','Marshton','Windhill','Redwater','Longbarrow',

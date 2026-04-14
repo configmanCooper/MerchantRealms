@@ -2976,6 +2976,11 @@ function confirmTravel(townId, optionId) {
             _showSiegeEntryPopup(townId, optionId, _sTown);
             return;
         }
+        // Check for active revolt (blocks town like a siege)
+        if (_sTown && _sTown._activeRevolt && _sTown._revoltBlocked) {
+            _showRevoltEntryPopup(townId, optionId, _sTown);
+            return;
+        }
     }
 
     // No quarantine or siege — execute travel
@@ -3092,6 +3097,187 @@ function _siegeSneakAttempt(townId, optionId) {
         if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚫 Spotted by sentries! You had to turn back.', 'danger');
         if (typeof UI !== 'undefined' && UI.closeModal) UI.closeModal();
     }
+}
+
+// ── REVOLT ENTRY POPUP ──
+function _showRevoltEntryPopup(townId, optionId, town) {
+    var revolt = town._activeRevolt;
+    var parentK = typeof Engine !== 'undefined' && Engine.findKingdom ? Engine.findKingdom(revolt.parentKingdomId) : null;
+    var parentName = parentK ? parentK.name : 'the Kingdom';
+    var groupName = revolt.groupName || 'Rebels';
+
+    var rebelStr = revolt.rebelStrength || revolt.rebelCount || 0;
+    var defStr = revolt.defenderStrength || revolt.defenderCount || 0;
+    var totalStr = rebelStr + defStr;
+    var rebelPct = totalStr > 0 ? Math.round(rebelStr / totalStr * 100) : 50;
+    var defPct = 100 - rebelPct;
+
+    // Sneak chance — base 25%, skills add more
+    var sneakChance = 0.25;
+    if (typeof Player !== 'undefined' && Player.hasSkill) {
+        if (Player.hasSkill('discrete')) sneakChance += 0.10;
+        if (Player.hasSkill('street_smart')) sneakChance += 0.05;
+    }
+    var sneakPct = Math.round(sneakChance * 100);
+
+    var combatSkillBonus = 0;
+    if (typeof Player !== 'undefined' && Player.hasSkill) {
+        if (Player.hasSkill('combat_trained')) combatSkillBonus += 10;
+        if (Player.hasSkill('tactical_leader')) combatSkillBonus += 5;
+    }
+
+    var html = '<div style="text-align:center;margin-bottom:12px;">';
+    html += '<h3 style="color:#ff6b6b;margin:0;">🔥 REVOLT in ' + (town.name || 'Town') + '!</h3>';
+    html += '<p style="color:#f0e6d2;font-size:0.85rem;margin:6px 0;">' + groupName + ' has risen against ' + parentName + '!</p>';
+    html += '<div style="display:flex;justify-content:space-around;margin:8px 0;">';
+    html += '<div style="text-align:center;"><span style="color:#ff6b6b;">🔥 ' + groupName + '</span><br><strong>' + (revolt.rebelCount || '?') + '</strong> rebels (' + rebelPct + '%)</div>';
+    html += '<div style="text-align:center;"><span style="color:#55a868;">🛡️ ' + parentName + '</span><br><strong>' + (revolt.defenderCount || '?') + '</strong> defenders (' + defPct + '%)</div>';
+    html += '</div>';
+    html += '<p style="color:#b8a88a;font-size:0.8rem;margin:4px 0;">Day ' + revolt.daysElapsed + ' of ' + revolt.duration + '</p>';
+    html += '</div>';
+
+    // Option: sneak in
+    html += '<button class="btn-medieval" style="width:100%;padding:8px 10px;font-size:0.9rem;margin-bottom:6px;background:rgba(44,62,80,0.5);border:2px solid rgba(149,165,166,0.5);color:#f0e6d2;" data-action="_revoltSneak" data-id="' + townId + '" data-val="' + optionId + '">🤫 Sneak into town (~' + sneakPct + '% success)</button>';
+
+    // Option: join rebels
+    html += '<button class="btn-medieval" style="width:100%;padding:8px 10px;font-size:0.9rem;margin-bottom:6px;background:rgba(196,78,82,0.35);border:2px solid rgba(196,78,82,0.7);color:#f0e6d2;" data-action="_revoltJoinSide" data-id="' + townId + '" data-val="' + optionId + '" data-side="rebels" data-win="' + Math.min(95, rebelPct + combatSkillBonus) + '">🔥 <strong style="color:#ff6b6b;">Join ' + groupName + '</strong> (Rebels — ~' + Math.min(95, rebelPct + combatSkillBonus) + '% win)</button>';
+
+    // Option: join defenders
+    html += '<button class="btn-medieval" style="width:100%;padding:8px 10px;font-size:0.9rem;margin-bottom:6px;background:rgba(46,204,113,0.25);border:2px solid rgba(46,204,113,0.5);color:#f0e6d2;" data-action="_revoltJoinSide" data-id="' + townId + '" data-val="' + optionId + '" data-side="defenders" data-win="' + Math.min(95, defPct + combatSkillBonus) + '">🛡️ <strong style="color:#55a868;">Join ' + parentName + '</strong> (Defenders — ~' + Math.min(95, defPct + combatSkillBonus) + '% win)</button>';
+
+    // Option: turn back
+    html += '<button class="btn-medieval" style="width:100%;padding:8px 10px;font-size:0.9rem;background:rgba(80,80,80,0.4);border:2px solid rgba(120,120,120,0.5);color:#b8a88a;" data-action="_revoltTurnBack">↩️ Turn back</button>';
+
+    if (typeof openModal === 'function') {
+        openModal('Revolt in ' + (town.name || 'Town'), html);
+    } else if (typeof UI !== 'undefined' && UI.openModal) {
+        UI.openModal('Revolt in ' + (town.name || 'Town'), html);
+    }
+}
+
+function _revoltSneak(townId, optionId) {
+    var rng = typeof Engine !== 'undefined' && Engine.getRng ? Engine.getRng() : null;
+    if (!rng) return;
+    var sneakChance = 0.25;
+    if (typeof Player !== 'undefined' && Player.hasSkill) {
+        if (Player.hasSkill('discrete')) sneakChance += 0.10;
+        if (Player.hasSkill('street_smart')) sneakChance += 0.05;
+    }
+    if (rng.random() < sneakChance) {
+        if (typeof UI !== 'undefined' && UI.toast) UI.toast('🤫 You slipped past the chaos undetected!', 'success');
+        if (typeof UI !== 'undefined' && UI.closeModal) UI.closeModal();
+        var options = _travelOptions || [];
+        for (var i = 0; i < options.length; i++) {
+            if (options[i].id === optionId) { _executeTravel(townId, options[i]); return; }
+        }
+    } else {
+        if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚫 The streets are too dangerous! You had to turn back.', 'danger');
+        if (typeof UI !== 'undefined' && UI.closeModal) UI.closeModal();
+    }
+}
+
+function _revoltJoinSide(townId, optionId, side, winChance) {
+    var rng = typeof Engine !== 'undefined' && Engine.getRng ? Engine.getRng() : null;
+    if (!rng) return;
+    var town = typeof Engine !== 'undefined' && Engine.findTown ? Engine.findTown(townId) : null;
+    if (!town || !town._activeRevolt) { if (typeof UI !== 'undefined' && UI.closeModal) UI.closeModal(); return; }
+    var revolt = town._activeRevolt;
+
+    var winPct = Math.min(95, Math.max(5, parseInt(winChance) || 50));
+    var won = rng.random() * 100 < winPct;
+    var parentK = typeof Engine !== 'undefined' && Engine.findKingdom ? Engine.findKingdom(revolt.parentKingdomId) : null;
+
+    if (typeof UI !== 'undefined' && UI.closeModal) UI.closeModal();
+
+    // Injury/death calculation
+    var deathChance = won ? 0.04 : 0.10;
+    var severeInjuryChance = won ? 0.15 : 0.30;
+    var moderateInjuryChance = won ? 0.25 : 0.35;
+    if (typeof Player !== 'undefined' && Player.hasSkill) {
+        if (Player.hasSkill('combat_trained')) { deathChance *= 0.6; severeInjuryChance *= 0.7; }
+        if (Player.hasSkill('first_aid')) { severeInjuryChance *= 0.8; moderateInjuryChance *= 0.8; }
+    }
+
+    // Check death
+    if (rng.random() < deathChance && !window._godInvincible) {
+        if (typeof Player !== 'undefined' && Player.state) Player.state.deathCause = 'Killed in the revolt at ' + (town.name || 'a town');
+        if (typeof Engine !== 'undefined' && Engine.logEvent) Engine.logEvent('💀 You were killed fighting in the revolt at ' + (town.name || 'a town') + '!');
+        if (typeof Player !== 'undefined' && Player.handlePlayerDeath) Player.handlePlayerDeath();
+        return;
+    }
+
+    // Check injury
+    var injuryMsg = '';
+    if (rng.random() < severeInjuryChance) {
+        if (typeof Player !== 'undefined' && Player.state) {
+            Player.state.injured = true;
+            Player.state.injurySeverity = 'severe';
+            Player.state.injuryType = 'battle_wound';
+            Player.state.injuryDay = typeof Engine !== 'undefined' && Engine.getDay ? Engine.getDay() : 0;
+        }
+        injuryMsg = ' You suffered a severe battle wound!';
+    } else if (rng.random() < moderateInjuryChance) {
+        if (typeof Player !== 'undefined' && Player.state) {
+            Player.state.injured = true;
+            Player.state.injurySeverity = 'moderate';
+            Player.state.injuryType = 'battle_wound';
+            Player.state.injuryDay = typeof Engine !== 'undefined' && Engine.getDay ? Engine.getDay() : 0;
+        }
+        injuryMsg = ' You suffered a moderate wound.';
+    }
+
+    var alliedName = side === 'rebels' ? (revolt.groupName || 'Rebels') : (parentK ? parentK.name : 'Defenders');
+
+    if (won) {
+        // Give a small combat boost to the side the player joined
+        if (side === 'rebels') {
+            revolt.rebelMorale = Math.min(100, (revolt.rebelMorale || 50) + 10);
+            revolt.rebelStrength = Math.floor((revolt.rebelStrength || 0) * 1.1);
+        } else {
+            revolt.defenderMorale = Math.min(100, (revolt.defenderMorale || 50) + 10);
+            revolt.defenderStrength = Math.floor((revolt.defenderStrength || 0) * 1.1);
+        }
+
+        // Reputation with relevant faction
+        if (typeof Player !== 'undefined' && Player.state) {
+            if (side === 'defenders' && parentK) {
+                Player.state.reputation = Player.state.reputation || {};
+                Player.state.reputation[parentK.id] = Math.min(100, (Player.state.reputation[parentK.id] || 50) + 5);
+            }
+        }
+
+        if (typeof Engine !== 'undefined' && Engine.logEvent) Engine.logEvent('⚔️ You fought alongside ' + alliedName + ' in the revolt and won!' + injuryMsg);
+        if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚔️ Victory! You helped ' + alliedName + '!' + injuryMsg, 'success');
+
+        // Add journal entry
+        if (typeof Player !== 'undefined' && Player.addJournalEntry) {
+            Player.addJournalEntry('Fought in revolt at ' + town.name + ' alongside ' + alliedName + ' — victorious!' + injuryMsg);
+        }
+    } else {
+        if (side === 'rebels') {
+            revolt.rebelMorale = Math.max(0, (revolt.rebelMorale || 50) - 5);
+        } else {
+            revolt.defenderMorale = Math.max(0, (revolt.defenderMorale || 50) - 5);
+        }
+
+        if (typeof Engine !== 'undefined' && Engine.logEvent) Engine.logEvent('⚔️ You fought alongside ' + alliedName + ' in the revolt but lost the skirmish.' + injuryMsg);
+        if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚔️ Defeat. ' + alliedName + ' lost ground.' + injuryMsg, 'warning');
+
+        if (typeof Player !== 'undefined' && Player.addJournalEntry) {
+            Player.addJournalEntry('Fought in revolt at ' + town.name + ' alongside ' + alliedName + ' — defeated.' + injuryMsg);
+        }
+    }
+
+    // Enter the town
+    var options = _travelOptions || [];
+    for (var i = 0; i < options.length; i++) {
+        if (options[i].id === optionId) { _executeTravel(townId, options[i]); return; }
+    }
+}
+
+function _revoltTurnBack() {
+    if (typeof UI !== 'undefined' && UI.closeModal) UI.closeModal();
+    if (typeof UI !== 'undefined' && UI.toast) UI.toast('↩️ You turned back from the revolt.', 'info');
 }
 
 function _siegeJoinSide(townId, optionId, side, winChance) {
@@ -3900,6 +4086,9 @@ function clickTown(townId) {
     UI._siegeSneakAttempt      = _siegeSneakAttempt;
     UI._siegeJoinSide          = _siegeJoinSide;
     UI._siegeTurnBack          = _siegeTurnBack;
+    UI._revoltSneak            = _revoltSneak;
+    UI._revoltJoinSide         = _revoltJoinSide;
+    UI._revoltTurnBack         = _revoltTurnBack;
     UI.showRouteDangerDetail   = showRouteDangerDetail;
     UI.turnBackUI              = turnBackUI;
     UI.stopTravelUI            = stopTravelUI;
@@ -4015,6 +4204,9 @@ function clickTown(townId) {
     UI.registerAction('_siegeSneakAttempt', function(_t, d) { UI._siegeSneakAttempt(d.id, d.val); });
     UI.registerAction('_siegeJoinSide', function(_t, d) { UI._siegeJoinSide(d.id, d.val, d.side, d.win); });
     UI.registerAction('_siegeTurnBack', function() { UI._siegeTurnBack(); });
+    UI.registerAction('_revoltSneak', function(_t, d) { UI._revoltSneak(d.id, d.val); });
+    UI.registerAction('_revoltJoinSide', function(_t, d) { UI._revoltJoinSide(d.id, d.val, d.side, d.win); });
+    UI.registerAction('_revoltTurnBack', function() { UI._revoltTurnBack(); });
     UI.registerAction('installShipAddon', function(_t, d) { UI.installShipAddon(d.id, d.val); });
 
     // Numeric-arg handlers (data-idx)
