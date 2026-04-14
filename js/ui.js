@@ -14533,7 +14533,7 @@ window.UI = (function () {
         html += '</div></div>';
 
         // ── POLITICAL INFLUENCE ──
-        var rankNames = ['Peasant', 'Commoner', 'Merchant', 'Guild Master', 'Nobleman', 'Lord', 'Baron', 'Count', 'Duke', 'Archduke'];
+        var rankNames = ['Peasant', 'Citizen', 'Burgher', 'Guildmaster', 'Minor Noble', 'Lord', 'Royal Advisor', 'King'];
         var socialRank = (p.socialRank && citizenKId) ? (p.socialRank[citizenKId] || 0) : 0;
         var rankName = rankNames[socialRank] || ('Rank ' + socialRank);
         var reputation = (p.reputation && citizenKId) ? (p.reputation[citizenKId] || 50) : 50;
@@ -14575,13 +14575,13 @@ window.UI = (function () {
         html += '<div style="display:flex;flex-wrap:wrap;gap:16px;">';
         html += '<div style="flex:1;min-width:280px;">';
         html += _impactBar(politicalScore, 'Overall Political', '#FFD700');
-        html += _impactBar(Math.min(100, socialRank * 11), 'Social Standing', '#FFD700');
+        html += _impactBar(Math.min(100, socialRank * 14.3), 'Social Standing', '#FFD700');
         html += _impactBar(reputation, 'Kingdom Reputation', '#4fc3f7');
         html += _impactBar(Math.min(100, highRelCount * 5), 'Key Relationships', '#2ecc71');
         html += _impactBar(Math.min(100, petitionsSuccess * 15), 'Legislative Impact', '#9b59b6');
         html += '</div>';
         html += '<div style="flex:1;min-width:200px;">';
-        html += _statRow('Social Rank', '<span style="color:#FFD700;">' + rankName + '</span>', '(' + socialRank + '/9)');
+        html += _statRow('Social Rank', '<span style="color:#FFD700;">' + rankName + '</span>', '(' + socialRank + '/7)');
         html += _statRow('Kingdom Reputation', reputation + '/100');
         html += _statRow('Petitions Filed', petitionsTotal);
         html += _statRow('Petitions Approved', petitionsSuccess);
