@@ -7720,6 +7720,8 @@
         if (!k) return;
         if (typeof k.warExhaustion !== 'number') k.warExhaustion = 0;
         k.warExhaustion = Math.min(100, k.warExhaustion + 5);
+        // C3: Track recent battle losses for noble loyalty drain
+        k._recentBattleLosses = (k._recentBattleLosses || 0) + 1;
     }
 
     // Called when a kingdom loses a town
@@ -7924,11 +7926,33 @@
             a.peaceTreaties[b.id] = world.day + naDuration;
             b.peaceTreaties[a.id] = world.day + naDuration;
 
-        // ── EXHAUSTION: minimal terms ──
+        // ── EXHAUSTION: moderate terms (C4: now includes reparations) ──
         } else if (treatyType === 'exhaustion') {
             var naDurationExh = 180;
             treaty.terms.nonAggression = { duration: naDurationExh, expiresDay: world.day + naDurationExh };
             treaty.expiresDay = world.day + naDurationExh;
+
+            // C4: Exhaustion peace — both sides pay small mutual reparations (war costs)
+            var _exhRepRate = CONFIG.WAR_REPARATIONS_RATE || 0.03;
+            var _exhRepA = Math.floor((a.gold || 0) * _exhRepRate);
+            var _exhRepB = Math.floor((b.gold || 0) * _exhRepRate);
+            if (_exhRepA > 30 || _exhRepB > 30) {
+                // Weaker side pays slightly more
+                var _exhWeaker = (a.gold || 0) < (b.gold || 0) ? a : b;
+                var _exhStronger = _exhWeaker.id === a.id ? b : a;
+                var _exhTotal = Math.floor((_exhWeaker.gold || 0) * _exhRepRate * 2);
+                if (_exhTotal > 30) {
+                    treaty.terms.reparations = {
+                        payer: _exhWeaker.id,
+                        receiver: _exhStronger.id,
+                        totalAmount: _exhTotal,
+                        paidPerMonth: Math.ceil(_exhTotal / 4),
+                        paid: 0,
+                        lastPayDay: world.day,
+                        percentOfTreasury: Math.round(_exhRepRate * 200)
+                    };
+                }
+            }
 
             if (!a.peaceTreaties) a.peaceTreaties = {};
             if (!b.peaceTreaties) b.peaceTreaties = {};
@@ -10779,13 +10803,13 @@
                 happinessDelta += (50 - currentHappiness) * 0.08;
             }
 
-            // High tax drain (escalating brackets)
-            if (taxPct > 20) {
-                happinessDelta -= 2.0;
-            } else if (taxPct > 15) {
-                happinessDelta -= 1.0;
-            } else if (taxPct > 10) {
-                happinessDelta -= 0.3;
+            // C1: Tax happiness — 10% is neutral (zero effect), sliding scale ±2 max
+            if (taxPct > 10) {
+                // Above 10%: penalty scales up to -2 at 25%+
+                happinessDelta -= Math.min(2.0, (taxPct - 10) * 0.133);
+            } else if (taxPct < 10) {
+                // Below 10%: bonus scales up to +2 at 0%
+                happinessDelta += Math.min(2.0, (10 - taxPct) * 0.2);
             }
 
             // Food shortage: check bread/food supply
@@ -10799,9 +10823,9 @@
                 happinessDelta -= 3.0; // food shortage
             }
 
-            // War penalty
+            // C1: War penalty (reduced from -1.5 to -1 per war)
             if (kingdom.atWar.size > 0) {
-                happinessDelta -= kingdom.atWar.size * 1.5;
+                happinessDelta -= kingdom.atWar.size * 1.0;
             }
 
             // Crime penalty
@@ -10823,19 +10847,19 @@
 
             // --- BOOSTS ---
 
-            // Prosperity bonus
+            // C1: Prosperity bonus (increased from +1 to +1.5)
             if ((town.prosperity || 50) > 60) {
-                happinessDelta += 1.0;
+                happinessDelta += 1.5;
             } else if ((town.prosperity || 50) > 40) {
                 happinessDelta += 0.5;
             }
 
-            // Food surplus
+            // C1: Food surplus (increased from +1 to +1.5)
             if (totalFood > foodDemand * 2) {
-                happinessDelta += 1.0;
+                happinessDelta += 1.5;
             }
 
-            // Peace bonus: +0.8/day if kingdom not at war for 90+ days
+            // C1: Peace bonus (increased from +0.8 to +1.0/day)
             if (kingdom.atWar.size === 0) {
                 let lastWarEndDay = 0;
                 if (kingdom.peaceTreaties) {
@@ -10846,16 +10870,11 @@
                     }
                 }
                 if (world.day - lastWarEndDay > 90) {
-                    happinessDelta += 0.8;
+                    happinessDelta += 1.0;
                 }
             }
 
-            // Low tax bonus
-            if (taxPct < 5) {
-                happinessDelta += 1.5;
-            } else if (taxPct <= 10) {
-                happinessDelta += 0.5; // moderate tax bonus
-            }
+            // (Tax bonus/penalty handled above in C1 tax section — 10% neutral)
 
             // Festival afterglow: +2/day for 15 days after festival
             if (town._festivalDay && (world.day - town._festivalDay) < 15) {
@@ -12221,6 +12240,12 @@
             var k = world.kingdoms[ki];
             var kId = k.id;
             var kHappiness = k.happiness != null ? k.happiness : 50;
+
+            // C3: Decay recent battle losses by 1 per month (nobles forget over time)
+            if (k._recentBattleLosses && k._recentBattleLosses > 0) {
+                k._recentBattleLosses = Math.max(0, k._recentBattleLosses - 1);
+            }
+
             var nobles = world.people.filter(function(p) {
                 return p.alive && p.socialRank &&
                     (p.socialRank[kId] === 4 || p.socialRank[kId] === 5 || p.socialRank[kId] === 6);
@@ -12299,6 +12324,34 @@
                 // Financial stress
                 if ((noble.gold || 0) < 50) {
                     loyaltyDrift -= 2;
+                }
+
+                // C3: High taxes drain loyalty (-1/month above 20% tax rate)
+                var kTaxRate = ((k.taxRate || 0.10) * 100);
+                if (kTaxRate > 20) {
+                    loyaltyDrift -= 1;
+                }
+
+                // C3: Food shortages drain loyalty (-3/month if any territory has food shortage)
+                var kTownsForLoyalty = world.towns.filter(function(t) { return t.kingdomId === kId; });
+                var hasFoodShortage = false;
+                for (var _fsi = 0; _fsi < kTownsForLoyalty.length; _fsi++) {
+                    var _fsTown = kTownsForLoyalty[_fsi];
+                    var _fsFoodTypes = ['bread', 'meat', 'fish', 'wheat', 'eggs'];
+                    var _fsTotalFood = 0;
+                    for (var _fsfi = 0; _fsfi < _fsFoodTypes.length; _fsfi++) {
+                        _fsTotalFood += (_fsTown.market && _fsTown.market.supply ? (_fsTown.market.supply[_fsFoodTypes[_fsfi]] || 0) : 0);
+                    }
+                    var _fsDemand = (typeof _fsTown.population === 'number' ? _fsTown.population : 10) * 0.5;
+                    if (_fsTotalFood < _fsDemand) { hasFoodShortage = true; break; }
+                }
+                if (hasFoodShortage) {
+                    loyaltyDrift -= 3;
+                }
+
+                // C3: War losses drain loyalty (-2 per recent battle lost, tracked on kingdom)
+                if (k._recentBattleLosses && k._recentBattleLosses > 0) {
+                    loyaltyDrift -= Math.min(6, k._recentBattleLosses * 2);
                 }
 
                 // Natural drift toward personality-based baseline
@@ -23966,12 +24019,167 @@
     // §19c NOBLE CONSPIRACY SYSTEM
     // ========================================================
 
+    /**
+     * C3: Unified catch chance for any king assassination attempt.
+     * Base scales by plotter count: 1=70%, 2=50%, 3=35%, 4+=25%.
+     * Modified by: plotter intelligence/dishonesty (lower), royal guard strength (higher),
+     * king intelligence (higher), assassination risk awareness (higher).
+     */
+    function _computeAssassinationCatchChance(plotterCount, plotterPersons, kingdom) {
+        // Base by plotter count
+        var base;
+        if (plotterCount <= 1) base = 0.70;
+        else if (plotterCount === 2) base = 0.50;
+        else if (plotterCount === 3) base = 0.35;
+        else base = 0.25;
+
+        // Plotters' average cunning reduces catch chance
+        var avgIntel = 0, avgDishonesty = 0;
+        for (var i = 0; i < plotterPersons.length; i++) {
+            var pp = plotterPersons[i];
+            if (!pp) continue;
+            var pPers = pp.personality || {};
+            avgIntel += (pPers.intelligence || 50);
+            avgDishonesty += (100 - (pPers.honesty || 50)); // dishonesty = 100 - honesty
+        }
+        if (plotterPersons.length > 0) {
+            avgIntel /= plotterPersons.length;
+            avgDishonesty /= plotterPersons.length;
+        }
+        // High intelligence: up to -15% catch chance
+        base -= Math.max(0, (avgIntel - 50) * 0.003); // e.g. intel 80 → -0.09
+        // High dishonesty: up to -10% catch chance (better at covering tracks)
+        base -= Math.max(0, (avgDishonesty - 50) * 0.002); // e.g. dishonesty 80 → -0.06
+
+        // Royal guard strength increases catch chance
+        var rgCount = 0;
+        if (kingdom && kingdom._royalGuards) {
+            rgCount = Array.isArray(kingdom._royalGuards) ? kingdom._royalGuards.length : 0;
+        }
+        base += Math.min(0.10, rgCount * 0.015); // up to +10% from guards
+
+        // King's intelligence helps detect plots
+        var kingPerson = findPerson(kingdom ? kingdom.king : null);
+        if (kingPerson) {
+            var kingIntel = (kingPerson.personality || {}).intelligence || 50;
+            if (kingIntel > 65) base += 0.05;
+            else if (kingIntel < 35) base -= 0.05;
+        }
+
+        // High assassination risk awareness boosts vigilance
+        if (kingdom && (kingdom.assassinationRisk || 0) > 40) {
+            base += 0.05;
+        }
+
+        return Math.max(0.10, Math.min(0.90, base));
+    }
+
+    /**
+     * C3: Spread suspicion after an assassination attempt.
+     * If caught: loyal nobles get big relationship penalties with plotters, less loyal get smaller ones.
+     * If not caught: suspicion still spreads but blame is diluted across plotters.
+     */
+    function _spreadAssassinationSuspicion(allNobles, plotterPersons, wasCaught, plotterCount, rng) {
+        var plotterIds = {};
+        for (var pi = 0; pi < plotterPersons.length; pi++) {
+            if (plotterPersons[pi]) plotterIds[plotterPersons[pi].id] = true;
+        }
+        // Blame dilution: more plotters = less blame per individual
+        var blameFactor = plotterCount <= 1 ? 1.0 : (plotterCount === 2 ? 0.7 : (plotterCount === 3 ? 0.5 : 0.35));
+
+        for (var ni = 0; ni < allNobles.length; ni++) {
+            var n = allNobles[ni];
+            if (!n.alive || plotterIds[n.id]) continue;
+            if (!n._nobleRelationships) continue;
+
+            var isLoyal = (n.kingLoyalty || 50) > 60;
+            for (var pj = 0; pj < plotterPersons.length; pj++) {
+                var plotter = plotterPersons[pj];
+                if (!plotter || !plotter.alive) continue;
+                var penalty;
+                if (wasCaught) {
+                    // Caught: definite blame — loyal nobles furious, others wary
+                    penalty = isLoyal ? Math.floor(-15 * blameFactor) : Math.floor(-5 * blameFactor);
+                } else {
+                    // Not caught: suspicion — loyal nobles suspicious, others slightly wary
+                    penalty = isLoyal ? Math.floor(-8 * blameFactor) : Math.floor(-2 * blameFactor);
+                }
+                n._nobleRelationships[plotter.id] = Math.max(-100, (n._nobleRelationships[plotter.id] || 0) + penalty);
+            }
+        }
+    }
+
     function tickNobleConspiracies(k) {
         if (!k || world.day % 30 !== 0) return;
         var rng = world.rng;
         var kId = k.id;
         var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId;
         var category = isPlayerK ? 'my_kingdom' : 'foreign_kingdoms';
+
+        // C3: Single-noble assassination attempts (loyalty < 25)
+        var allNobles = world.people.filter(function(p) {
+            return p.alive && p.socialRank && p.socialRank[kId] >= 4 && p.socialRank[kId] <= 6;
+        });
+        for (var sni = 0; sni < allNobles.length; sni++) {
+            var sNoble = allNobles[sni];
+            if (sNoble.kingLoyalty != null && sNoble.kingLoyalty < 25 && !sNoble._arrested) {
+                var sP = sNoble.personality || {};
+                // Only ambitious or brave nobles attempt solo assassination
+                if ((sP.ambition || 50) < 55 && (sP.courage || 50) < 50) continue;
+                // 3% chance per month a very disloyal noble attempts assassination
+                if (!rng.chance(0.03)) continue;
+
+                var kingPerson = findPerson(k.king);
+                var kingName = kingPerson ? (kingPerson.firstName + ' ' + (kingPerson.lastName || '')).trim() : 'The King';
+                var assassinName = (sNoble.firstName || 'A noble') + ' ' + (sNoble.lastName || '');
+
+                // Success chance: 20% base, +10% if brave, +10% if cunning/dishonest
+                var assassinChance = 0.20;
+                if ((sP.courage || 50) > 65) assassinChance += 0.10;
+                if ((sP.honesty || 50) < 35) assassinChance += 0.10;
+
+                // C3: Unified catch chance — 1 noble = 70% base
+                var caughtChance = _computeAssassinationCatchChance(1, [sNoble], k);
+
+                if (rng.chance(assassinChance)) {
+                    // Assassination succeeds — but was the assassin caught?
+                    var wasCaught = rng.chance(caughtChance);
+                    logEvent('💀 ' + assassinName.trim() + ' assassinates ' + kingName + ' of ' + k.name + '!' + (wasCaught ? ' But the assassin is identified and seized!' : ''), {
+                        type: 'solo_assassination', kingdomId: kId,
+                        cause: assassinName.trim() + ' acted alone out of deep hatred for the crown',
+                        effects: ['The king is dead', wasCaught ? 'The assassin was caught and will be executed' : 'The assassin escaped into the shadows']
+                    }, category);
+
+                    if (kingPerson && kingPerson.alive) {
+                        killPerson(kingPerson, 'assassination');
+                    }
+                    handleKingDeath(k, 'assassination');
+
+                    if (wasCaught) {
+                        killPerson(sNoble, 'executed');
+                    }
+                    // Suspicion spreads regardless — other nobles wary
+                    _spreadAssassinationSuspicion(allNobles, [sNoble], wasCaught, 1, rng);
+                    return; // Only one assassination per tick
+                } else {
+                    // Assassination fails — higher catch chance on failure (+15%)
+                    var failCaught = rng.chance(Math.min(0.95, caughtChance + 0.15));
+                    logEvent('⚔️ ' + assassinName.trim() + ' attempts to assassinate ' + kingName + ' of ' + k.name + ' but fails!' + (failCaught ? ' The assassin is caught and executed!' : ' The assassin escapes.'), {
+                        type: 'solo_assassination_failed', kingdomId: kId,
+                        cause: 'A lone noble attempted regicide',
+                        effects: [failCaught ? 'The would-be assassin is executed for treason' : 'The assassin evaded capture but suspicion spreads']
+                    }, category);
+
+                    if (failCaught) {
+                        killPerson(sNoble, 'executed');
+                    }
+                    _spreadAssassinationSuspicion(allNobles, [sNoble], failCaught, 1, rng);
+                    // Boost king's guard vigilance
+                    k.assassinationRisk = Math.min(100, (k.assassinationRisk || 0) + 30);
+                    return;
+                }
+            }
+        }
 
         // If there's an active conspiracy, advance it
         if (k._conspiracy) {
@@ -24019,10 +24227,10 @@
             return;
         }
 
-        // No active conspiracy — check if one should form
+        // No active conspiracy — check if one should form (C3: threshold lowered from <30 to <45)
         var dissidents = world.people.filter(function(p) {
             return p.alive && p.socialRank && p.socialRank[kId] >= 4 && p.socialRank[kId] <= 6 &&
-                   p.kingLoyalty != null && p.kingLoyalty < 30;
+                   p.kingLoyalty != null && p.kingLoyalty < 45;
         });
 
         if (dissidents.length >= 2 && rng.chance(0.20)) {
@@ -24068,26 +24276,73 @@
         var kingPerson = findPerson(k.king);
         var kingName = kingPerson ? (kingPerson.firstName + ' ' + (kingPerson.lastName || '')) : 'The King';
 
+        // Gather plotter person objects
+        var plotterPersons = [];
+        for (var pi = 0; pi < conspiracy.plotters.length; pi++) {
+            var pp = findPerson(conspiracy.plotters[pi]);
+            if (pp && pp.alive) plotterPersons.push(pp);
+        }
+        var plotterCount = plotterPersons.length;
+
+        // Gather all nobles for suspicion spreading
+        var allNobles = world.people.filter(function(p) {
+            return p.alive && p.socialRank && p.socialRank[kId] >= 4 && p.socialRank[kId] <= 6;
+        });
+
+        // C3: Unified catch chance based on plotter count
+        var caughtChance = _computeAssassinationCatchChance(plotterCount, plotterPersons, k);
+
         if (conspiracy.type === 'assassination') {
-            if (rng.chance(0.40)) {
-                // Assassination succeeds
-                logEvent('💀 ' + kingName.trim() + ' of ' + k.name + ' has been assassinated by conspirators!', {
+            // Success chance: 40% base, +5% per plotter above 1 (more plotters = more attempts)
+            var assassinSuccessChance = 0.40 + Math.max(0, (plotterCount - 1) * 0.05);
+            assassinSuccessChance = Math.min(0.70, assassinSuccessChance);
+
+            if (rng.chance(assassinSuccessChance)) {
+                // Assassination succeeds — but were plotters caught?
+                var wasCaught = rng.chance(caughtChance);
+                logEvent('💀 ' + kingName.trim() + ' of ' + k.name + ' has been assassinated by ' + plotterCount + ' conspirators!' +
+                    (wasCaught ? ' The plotters are identified!' : ' The assassins vanish into the shadows.'), {
                     type: 'king_assassinated', kingdomId: kId,
-                    cause: 'A conspiracy of disloyal nobles carried out an assassination',
-                    effects: ['The king is dead', 'Succession is triggered', 'The kingdom is thrown into chaos']
+                    cause: 'A conspiracy of ' + plotterCount + ' disloyal nobles carried out an assassination',
+                    effects: ['The king is dead', 'Succession is triggered',
+                        wasCaught ? 'The conspirators were identified and face execution' : 'The assassins escaped — suspicion spreads']
                 }, category);
+
                 if (kingPerson && kingPerson.alive) {
                     killPerson(kingPerson, 'assassination');
                 }
                 handleKingDeath(k, 'assassination');
+
+                if (wasCaught) {
+                    // Each plotter faces execution — blame split among them
+                    for (var ci = 0; ci < plotterPersons.length; ci++) {
+                        var cp = plotterPersons[ci];
+                        if (cp && cp.alive && cp.id !== 'player') {
+                            if (rng.chance(0.70)) { // 70% execution chance when caught
+                                killPerson(cp, 'executed');
+                                logEvent('⚔️ ' + (cp.firstName || 'A conspirator') + ' was executed for regicide in ' + k.name + '.', {
+                                    type: 'conspiracy_execution', kingdomId: kId
+                                }, category);
+                            } else {
+                                cp._arrested = true;
+                                cp.kingLoyalty = Math.min(100, (cp.kingLoyalty || 0) + 30);
+                            }
+                        }
+                    }
+                }
+                // Suspicion always spreads
+                _spreadAssassinationSuspicion(allNobles, plotterPersons, wasCaught, plotterCount, rng);
                 k._conspiracy = null;
+
             } else {
-                // Assassination fails
-                _conspiracyFails(k, conspiracy, category);
+                // Assassination fails — higher catch chance on failure (+15%)
+                var failCaught = rng.chance(Math.min(0.95, caughtChance + 0.15));
+                _conspiracyFails(k, conspiracy, category, failCaught, plotterPersons, allNobles, plotterCount);
             }
+
         } else if (conspiracy.type === 'coup') {
             // Coup success depends on plotters' combined military support vs king's garrison
-            var plotterSupport = conspiracy.plotters.length * 20;
+            var plotterSupport = plotterCount * 20;
             var garrison = k.soldiers || 0;
             var coupChance = plotterSupport > garrison ? 0.50 : 0.20;
 
@@ -24095,13 +24350,13 @@
                 // Coup succeeds — find leader (highest ambition)
                 var leader = null;
                 var highestAmbition = -1;
-                for (var ci = 0; ci < conspiracy.plotters.length; ci++) {
-                    var cp = findPerson(conspiracy.plotters[ci]);
-                    if (cp && cp.alive) {
-                        var amb = (cp.personality ? cp.personality.ambition : 50) || 50;
+                for (var li = 0; li < plotterPersons.length; li++) {
+                    var lp = plotterPersons[li];
+                    if (lp && lp.alive) {
+                        var amb = (lp.personality ? lp.personality.ambition : 50) || 50;
                         if (amb > highestAmbition) {
                             highestAmbition = amb;
-                            leader = cp;
+                            leader = lp;
                         }
                     }
                 }
@@ -24132,34 +24387,63 @@
 
                 k._conspiracy = null;
             } else {
-                // Coup fails
-                _conspiracyFails(k, conspiracy, category);
+                // Coup fails — catch chance applies
+                var coupFailCaught = rng.chance(Math.min(0.95, caughtChance + 0.10));
+                _conspiracyFails(k, conspiracy, category, coupFailCaught, plotterPersons, allNobles, plotterCount);
             }
         }
     }
 
-    function _conspiracyFails(k, conspiracy, category) {
+    function _conspiracyFails(k, conspiracy, category, wasCaught, plotterPersons, allNobles, plotterCount) {
         var rng = world.rng;
-        logEvent('⚔️ A ' + conspiracy.type + ' attempt in ' + k.name + ' has failed! The plotters are being rounded up.', {
-            type: 'conspiracy_failed', kingdomId: k.id,
-            cause: 'The conspiracy attempted their plot but failed',
-            effects: ['Plotters are arrested or killed', 'The kingdom is shaken']
-        }, category);
 
-        for (var fi = 0; fi < conspiracy.plotters.length; fi++) {
-            var fp = findPerson(conspiracy.plotters[fi]);
-            if (fp && fp.alive && conspiracy.plotters[fi] !== 'player') {
-                if (rng.chance(0.40)) {
-                    killPerson(fp, 'executed');
-                    logEvent('⚔️ ' + (fp.firstName || 'A conspirator') + ' was executed for treason in ' + k.name + '.', {
-                        type: 'conspiracy_execution', kingdomId: k.id
-                    }, category);
-                } else {
-                    fp._arrested = true;
-                    fp.kingLoyalty = Math.min(100, (fp.kingLoyalty || 0) + 30);
+        // Backwards compat: if called from old code without new params, use old behavior
+        if (wasCaught === undefined) {
+            wasCaught = true;
+            plotterPersons = [];
+            for (var _i = 0; _i < conspiracy.plotters.length; _i++) {
+                var _pp = findPerson(conspiracy.plotters[_i]);
+                if (_pp && _pp.alive) plotterPersons.push(_pp);
+            }
+            plotterCount = plotterPersons.length;
+            allNobles = world.people.filter(function(p) {
+                return p.alive && p.socialRank && p.socialRank[k.id] >= 4 && p.socialRank[k.id] <= 6;
+            });
+        }
+
+        if (wasCaught) {
+            logEvent('⚔️ A ' + conspiracy.type + ' attempt in ' + k.name + ' has failed! The plotters are identified and rounded up.', {
+                type: 'conspiracy_failed', kingdomId: k.id,
+                cause: 'The conspiracy attempted their plot but failed and were caught',
+                effects: ['Plotters face arrest or execution', 'The kingdom is shaken', plotterCount + ' conspirators identified']
+            }, category);
+
+            for (var fi = 0; fi < plotterPersons.length; fi++) {
+                var fp = plotterPersons[fi];
+                if (fp && fp.alive && fp.id !== 'player') {
+                    if (rng.chance(0.50)) { // 50% execution on failed + caught
+                        killPerson(fp, 'executed');
+                        logEvent('⚔️ ' + (fp.firstName || 'A conspirator') + ' was executed for treason in ' + k.name + '.', {
+                            type: 'conspiracy_execution', kingdomId: k.id
+                        }, category);
+                    } else {
+                        fp._arrested = true;
+                        fp.kingLoyalty = Math.min(100, (fp.kingLoyalty || 0) + 30);
+                    }
                 }
             }
+        } else {
+            logEvent('⚔️ A ' + conspiracy.type + ' attempt in ' + k.name + ' has failed! The plotters escape into hiding.', {
+                type: 'conspiracy_failed', kingdomId: k.id,
+                cause: 'The conspiracy attempted their plot but failed — the plotters were not identified',
+                effects: ['Plotters escaped', 'Suspicion spreads among the nobility', 'The king grows more vigilant']
+            }, category);
+            // Boost assassination risk since an attempt was made
+            k.assassinationRisk = Math.min(100, (k.assassinationRisk || 0) + 25);
         }
+
+        // Spread suspicion regardless
+        _spreadAssassinationSuspicion(allNobles, plotterPersons, wasCaught, plotterCount, rng);
         k._conspiracy = null;
     }
 

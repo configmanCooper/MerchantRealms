@@ -939,7 +939,14 @@
             }
         }
         // Monthly upkeep costs
+        // C4: Scale soldier cost with army size
+        var _fScaleThreshold = CONFIG.MILITARY_MAINTENANCE_SCALE_THRESHOLD || 30;
+        var _fScaleRate = CONFIG.MILITARY_MAINTENANCE_SCALE_RATE || 0.02;
         var monthlySoldierCost = soldierCount * CONFIG.KINGDOM_SOLDIER_DAILY_COST;
+        if (soldierCount > _fScaleThreshold) {
+            var _fExcess = soldierCount - _fScaleThreshold;
+            monthlySoldierCost += _fExcess * _fScaleRate * CONFIG.KINGDOM_SOLDIER_DAILY_COST * soldierCount;
+        }
         var monthlyBuildingCost = totalBuildings * CONFIG.KINGDOM_BUILDING_DAILY_COST;
         var monthlyUpkeep = monthlySoldierCost + monthlyBuildingCost;
 
@@ -1136,7 +1143,16 @@
         }
 
         // Daily costs (deducted from treasury) — mandatory (H-3 priority 1 & 2)
-        const soldierCost = soldiers.length * CONFIG.KINGDOM_SOLDIER_DAILY_COST / 30;
+        // C4: Scale military maintenance with army size — above threshold, extra cost per soldier
+        var _scaleThreshold = CONFIG.MILITARY_MAINTENANCE_SCALE_THRESHOLD || 30;
+        var _scaleRate = CONFIG.MILITARY_MAINTENANCE_SCALE_RATE || 0.02;
+        var _baseSoldierCost = soldiers.length * CONFIG.KINGDOM_SOLDIER_DAILY_COST / 30;
+        var _scaledExtra = 0;
+        if (soldiers.length > _scaleThreshold) {
+            var _excess = soldiers.length - _scaleThreshold;
+            _scaledExtra = _excess * _scaleRate * CONFIG.KINGDOM_SOLDIER_DAILY_COST / 30 * soldiers.length;
+        }
+        const soldierCost = _baseSoldierCost + _scaledExtra;
         const buildingCost = totalBuildings * CONFIG.KINGDOM_BUILDING_DAILY_COST / 30;
         k.gold -= (soldierCost + buildingCost);
         // Ledger: record daily costs as weekly aggregate to avoid flooding (every 7 days)

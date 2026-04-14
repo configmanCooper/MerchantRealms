@@ -125,16 +125,46 @@ const CONFIG = {
 
     // Diplomacy
     RELATION_WAR_THRESHOLD: -35,        // Was -60; lowered so wars actually trigger
-    RELATION_ALLIANCE_THRESHOLD: 70,
-    RELATION_DECAY_RATE: 0.1,           // Was 0.5; much slower decay lets grudges accumulate
+    RELATION_ALLIANCE_THRESHOLD: 50,    // C5: Was 70; lowered to 50 so alliances form more often
+    RELATION_DECAY_RATE: 0.06,          // C5: Was 0.1; reduced to let relations persist longer
     WAR_CHANCE_PER_DAY: 0.01,           // Was 0.002; 5x more likely once threshold met
     PEACE_CHANCE_PER_DAY: 0.008,        // Was 0.005; slightly faster peace for balance
     WARTIME_SUPPLY_COST_PER_SOLDIER: 2, // Gold per soldier per day during wartime (was hardcoded 5)
-    DISPUTE_CHANCE: 0.04,               // Was 0.01 (hardcoded); 4x more border disputes
+    DISPUTE_CHANCE: 0.02,               // C5: Was 0.04; reduced from 4% to 2% for less noise
     DISPUTE_MIN: 5,                     // Border dispute minimum relation penalty
     DISPUTE_MAX: 18,                    // Border dispute maximum relation penalty
     AGREEMENT_MIN: 5,                   // Trade agreement bonus min
     AGREEMENT_MAX: 15,                  // Trade agreement bonus max(weaker than disputes)
+    SHARED_ENEMY_RELATION_BONUS: 2,     // C5: +2 relations/month with kingdoms fighting same enemy
+
+    // War AI (C2)
+    WAR_EVAL_MIN_INTERVAL: 30,          // Minimum days between war evaluations
+    WAR_EVAL_MAX_INTERVAL: 90,          // Maximum days between war evaluations
+    CASUS_BELLI_WAR_THRESHOLD: -40,     // Relations threshold for casus belli war
+    CASUS_BELLI_EXHAUSTION_MAX: 30,     // Max war exhaustion to consider new war
+    CASUS_BELLI_DECAY_PER_DAY: 0.5,     // Casus belli strength decay per day
+
+    // Happiness Boost Actions (C1)
+    KING_HAPPINESS_BOOST_COOLDOWN: 90,  // Days between major happiness-boosting actions
+    KING_TAX_HOLIDAY_COST: 0,           // Tax holiday costs forgone revenue
+    KING_GRAND_FEAST_COST: 800,         // Grand feast for the people
+    KING_GRAND_FEAST_HAPPINESS: 15,     // Happiness boost from grand feast
+    KING_DEBT_FORGIVENESS_COST: 500,    // Forgiving debts of poorest citizens
+    KING_DEBT_FORGIVENESS_HAPPINESS: 10,
+    KING_GAMES_TOURNAMENT_COST: 1000,   // Games/tournament spectacle
+    KING_GAMES_TOURNAMENT_HAPPINESS: 18,
+    KING_TAX_REBATE_COST_PER_POP: 3,    // Gold per population for tax rebate
+    KING_TAX_REBATE_HAPPINESS: 12,
+
+    // Gold Sinks (C4)
+    MILITARY_MAINTENANCE_SCALE_THRESHOLD: 30, // Army above this size gets scaled upkeep
+    MILITARY_MAINTENANCE_SCALE_RATE: 0.02,    // Extra cost multiplier per soldier above threshold
+    KINGDOM_TOWN_IMPROVEMENT_COST: 400,       // Cost for town improvement projects
+    KINGDOM_GRAND_PROJECT_COST: 2000,         // Major construction (cathedral, grand market, etc.)
+    KINGDOM_GRAND_PROJECT_DURATION: 90,       // Days to complete
+    DIPLOMATIC_GIFT_SCALE_FACTOR: 0.05,       // Scale gift cost with kingdom wealth (5% of treasury, min 500)
+    FEAST_COST_WEALTH_SCALE: 0.01,            // Scale feast cost with treasury (1% of treasury, min 300)
+    WAR_REPARATIONS_RATE: 0.03,               // Monthly reparation as % of treasury
 
     // Military
     SOLDIER_UPKEEP: 3,

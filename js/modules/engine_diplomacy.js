@@ -764,6 +764,50 @@
                 else if (val < 0) k.relations[otherId] = Math.min(0, val + CONFIG.RELATION_DECAY_RATE);
             }
 
+            // ---- C5: Shared-enemy bonus (+2 relations/month with kingdoms fighting same enemy) ----
+            if (k.atWar && k.atWar.size > 0 && world.day % 30 === 0) {
+                for (const other of world.kingdoms) {
+                    if (other.id === k.id || k.atWar.has(other.id)) continue;
+                    // Check if other kingdom is at war with any of our enemies
+                    var _sharedEnemies = 0;
+                    for (var _seId of k.atWar) {
+                        if (other.atWar && other.atWar.has(_seId)) _sharedEnemies++;
+                    }
+                    if (_sharedEnemies > 0) {
+                        var _seBonus = (CONFIG.SHARED_ENEMY_RELATION_BONUS || 2) * _sharedEnemies;
+                        k.relations[other.id] = Math.min(100, (k.relations[other.id] || 0) + _seBonus);
+                        other.relations[k.id] = Math.min(100, (other.relations[k.id] || 0) + _seBonus);
+                    }
+                }
+            }
+
+            // ---- C5: Proactive diplomatic AI — Non-Aggression Pacts ----
+            if (world.day % 30 === 0 && rng.chance(0.08)) {
+                var _napCandidates = world.kingdoms.filter(function(o) {
+                    return o.id !== k.id && !k.atWar.has(o.id) &&
+                           (k.relations[o.id] || 0) > -10 && (k.relations[o.id] || 0) < 40 &&
+                           !(k.peaceTreaties && k.peaceTreaties[o.id] && world.day < k.peaceTreaties[o.id]);
+                });
+                if (_napCandidates.length > 0) {
+                    var _napTarget = rng.pick(_napCandidates);
+                    // Create a non-aggression pact (270 days, ~9 months)
+                    if (!k.peaceTreaties) k.peaceTreaties = {};
+                    if (!_napTarget.peaceTreaties) _napTarget.peaceTreaties = {};
+                    var _napDuration = 270;
+                    k.peaceTreaties[_napTarget.id] = world.day + _napDuration;
+                    _napTarget.peaceTreaties[k.id] = world.day + _napDuration;
+                    // Small relation boost
+                    k.relations[_napTarget.id] = Math.min(100, (k.relations[_napTarget.id] || 0) + 5);
+                    _napTarget.relations[k.id] = Math.min(100, (_napTarget.relations[k.id] || 0) + 5);
+                    logEvent('🕊️ ' + k.name + ' and ' + _napTarget.name + ' sign a non-aggression pact! (' + _napDuration + ' days)', {
+                        type: 'non_aggression_pact',
+                        cause: 'Diplomatic negotiations led to a peace agreement',
+                        effects: ['Neither kingdom may declare war for ' + _napDuration + ' days', 'Relations +5 both ways'],
+                        kingdoms: [k.id, _napTarget.id]
+                    });
+                }
+            }
+
             // ---- Random relation shifts (border disputes / trade agreements) ----
             if (rng.chance(CONFIG.DISPUTE_CHANCE || 0.03)) {
                 const otherKingdoms = world.kingdoms.filter(o => o.id !== k.id);
@@ -803,7 +847,66 @@
                 }
             }
 
-            // ---- War declaration ----
+            // ---- C2: Casus Belli tracking (accumulates justification for war) ----
+            if (!k._casusBelli) k._casusBelli = {};
+            // Border raids (random event that creates war justification)
+            if (rng.chance(0.01)) {
+                var _cbTargets = world.kingdoms.filter(function(o) { return o.id !== k.id && !k.atWar.has(o.id); });
+                if (_cbTargets.length > 0) {
+                    var _cbTarget = rng.pick(_cbTargets);
+                    var _cbAmt = rng.randInt(10, 25);
+                    k._casusBelli[_cbTarget.id] = Math.min(100, (k._casusBelli[_cbTarget.id] || 0) + _cbAmt);
+                    k.relations[_cbTarget.id] = Math.max(-100, (k.relations[_cbTarget.id] || 0) - Math.floor(_cbAmt * 0.5));
+                    logEvent('🗡️ Raiders from ' + _cbTarget.name + ' attack ' + k.name + '\'s border settlements! (+' + _cbAmt + ' casus belli)', {
+                        type: 'border_raid', kingdoms: [k.id, _cbTarget.id],
+                        cause: 'Armed raiders from across the border',
+                        effects: ['War justification grows', 'Relations worsen by ' + Math.floor(_cbAmt * 0.5)]
+                    });
+                }
+            }
+            // Trade disputes create casus belli
+            if (rng.chance(0.008)) {
+                var _tdTargets = world.kingdoms.filter(function(o) { return o.id !== k.id && !k.atWar.has(o.id) && (k.relations[o.id] || 0) < 0; });
+                if (_tdTargets.length > 0) {
+                    var _tdTarget = rng.pick(_tdTargets);
+                    k._casusBelli[_tdTarget.id] = Math.min(100, (k._casusBelli[_tdTarget.id] || 0) + 15);
+                    logEvent('⚖️ Trade dispute between ' + k.name + ' and ' + _tdTarget.name + '! Merchants demand action. (+15 casus belli)', {
+                        type: 'trade_dispute', kingdoms: [k.id, _tdTarget.id]
+                    });
+                }
+            }
+            // Insults between kings (personality-driven)
+            if (rng.chance(0.005) && (k.kingPersonality || {}).temperament === 'aggressive') {
+                var _insTargets = world.kingdoms.filter(function(o) { return o.id !== k.id && !k.atWar.has(o.id); });
+                if (_insTargets.length > 0) {
+                    var _insTarget = rng.pick(_insTargets);
+                    k._casusBelli[_insTarget.id] = Math.min(100, (k._casusBelli[_insTarget.id] || 0) + 20);
+                    _insTarget._casusBelli = _insTarget._casusBelli || {};
+                    _insTarget._casusBelli[k.id] = Math.min(100, (_insTarget._casusBelli[k.id] || 0) + 10);
+                    k.relations[_insTarget.id] = Math.max(-100, (k.relations[_insTarget.id] || 0) - 5);
+                    _insTarget.relations[k.id] = Math.max(-100, (_insTarget.relations[k.id] || 0) - 5);
+                    logEvent('😤 The king of ' + k.name + ' publicly insults ' + _insTarget.name + '! Diplomatic relations sour.', {
+                        type: 'diplomatic_insult', kingdoms: [k.id, _insTarget.id],
+                        effects: ['Casus belli grows', 'Relations -5 both ways']
+                    });
+                }
+            }
+            // Decay casus belli over time
+            for (var _cbKey in k._casusBelli) {
+                if (k._casusBelli[_cbKey] > 0) {
+                    k._casusBelli[_cbKey] = Math.max(0, k._casusBelli[_cbKey] - (CONFIG.CASUS_BELLI_DECAY_PER_DAY || 0.5));
+                }
+            }
+
+            // ---- C2: Periodic war evaluation (every 30-90 days based on personality) ----
+            var _warEvalInterval = (k.kingPersonality || {}).temperament === 'aggressive'
+                ? (CONFIG.WAR_EVAL_MIN_INTERVAL || 30)
+                : ((k.kingPersonality || {}).ambition === 'ambitious'
+                    ? rng.randInt(CONFIG.WAR_EVAL_MIN_INTERVAL || 30, 60)
+                    : (CONFIG.WAR_EVAL_MAX_INTERVAL || 90));
+            if (!k._lastWarEvalDay) k._lastWarEvalDay = world.day - _warEvalInterval;
+
+            // ---- War declaration (original + casus belli enhanced) ----
             for (const other of world.kingdoms) {
                 if (other.id === k.id || (k.atWar && k.atWar.has(other.id))) continue;
                 // Enforce peace treaties
@@ -819,17 +922,43 @@
                         warChance *= 0.5;
                     }
                 }
+
+                // C2: Casus belli provides additional war trigger
+                var _cbScore = (k._casusBelli && k._casusBelli[other.id]) || 0;
+                var _cbWarThreshold = CONFIG.CASUS_BELLI_WAR_THRESHOLD || -40;
+                var _cbExhMax = CONFIG.CASUS_BELLI_EXHAUSTION_MAX || 30;
+                if (_cbScore > 40 && rel < _cbWarThreshold && (k.warExhaustion || 0) < _cbExhMax) {
+                    warChance += 0.015 * (_cbScore / 100); // Up to +1.5% daily from strong casus belli
+                }
+
+                // C2: Periodic war evaluation — aggressive kings evaluate weak neighbors
+                if ((world.day - (k._lastWarEvalDay || 0)) >= _warEvalInterval) {
+                    var _kp = k.kingPersonality || {};
+                    if (_kp.temperament === 'aggressive' || _kp.ambition === 'ambitious') {
+                        var _evalOurStr = computeMilitaryStrength(k);
+                        var _evalTheirStr = computeMilitaryStrength(other);
+                        // Aggressive kings target kingdoms at < 50% their strength
+                        if (_evalOurStr > _evalTheirStr * 2 && rel < 10 && (k.warExhaustion || 0) < _cbExhMax) {
+                            warChance += 0.02; // Strong bonus for targeting weak neighbors
+                        }
+                        // Ambitious kings target wealthy but militarily weak kingdoms
+                        if (_kp.ambition === 'ambitious' && _evalOurStr > _evalTheirStr * 1.5 && (other.gold || 0) > (k.gold || 0) * 1.5) {
+                            warChance += 0.01;
+                        }
+                    }
+                }
+
                 // Prosperity jealousy: ambitious kings may attack much more prosperous neighbors
                 if (k.kingPersonality && k.kingPersonality.ambition === 'ambitious') {
                     var ourAvgProsp = 0, ourTownCount = 0;
-                    for (var oti = 0; oti < (k.territories || []).length; oti++) {
-                        var ot = findTown(k.territories[oti]);
+                    for (var oti = 0; oti < (k.territories ? k.territories.size : 0); oti++) {
+                        var ot = findTown(Array.from(k.territories)[oti]);
                         if (ot) { ourAvgProsp += (ot.prosperity || 50); ourTownCount++; }
                     }
                     ourAvgProsp = ourTownCount > 0 ? ourAvgProsp / ourTownCount : 50;
                     var theirAvgProsp = 0, theirTownCount = 0;
-                    for (var tti = 0; tti < (other.territories || []).length; tti++) {
-                        var tt = findTown(other.territories[tti]);
+                    for (var tti = 0; tti < (other.territories ? other.territories.size : 0); tti++) {
+                        var tt = findTown(Array.from(other.territories)[tti]);
                         if (tt) { theirAvgProsp += (tt.prosperity || 50); theirTownCount++; }
                     }
                     theirAvgProsp = theirTownCount > 0 ? theirAvgProsp / theirTownCount : 50;
@@ -846,11 +975,17 @@
                     var ourStrength = computeMilitaryStrength(k);
                     // Only declare if we think we're at least 70% of their strength
                     if (ourStrength >= scoutedEnemy * 0.7) {
+                        // Reset war eval timer
+                        k._lastWarEvalDay = world.day;
+                        // Clear casus belli on war declaration
+                        if (k._casusBelli) k._casusBelli[other.id] = 0;
+
                         if (isPlayerRoyalAdvisorOf(k)) {
+                            var _cbJustification = _cbScore > 40 ? ' Casus belli: ' + Math.floor(_cbScore) + '/100.' : '';
                             proposeKingDecision(k, {
                                 type: 'declare_war',
                                 description: 'Declare war on ' + other.name,
-                                details: 'Our military strength: ' + Math.floor(ourStrength) + '. Enemy estimate: ' + Math.floor(scoutedEnemy) + '. Relations: ' + Math.floor(k.relations[other.id] || 0),
+                                details: 'Our military strength: ' + Math.floor(ourStrength) + '. Enemy estimate: ' + Math.floor(scoutedEnemy) + '. Relations: ' + Math.floor(k.relations[other.id] || 0) + '.' + _cbJustification,
                                 conviction: Math.min(0.9, 0.5 + ((k.kingPersonality || {}).ambition === 'ambitious' ? 0.15 : 0) + ((k.kingPersonality || {}).temperament === 'aggressive' ? 0.15 : 0) + (_wMood.warMod > 1.5 ? 0.10 : _wMood.warMod < 0.5 ? -0.15 : 0)),
                                 execute: (function(kRef, otherRef) { return function() { declareWar(kRef, otherRef); }; })(k, other)
                             });
@@ -866,6 +1001,10 @@
                         }
                     }
                 }
+            }
+            // Update war eval day
+            if ((world.day - (k._lastWarEvalDay || 0)) >= _warEvalInterval) {
+                k._lastWarEvalDay = world.day;
             }
 
             // ---- Alliance formation (relations >= threshold) ----
@@ -3250,18 +3389,19 @@
             }
         }
 
-        // b. Send diplomatic gifts
-        if (treasury > (CONFIG.KINGDOM_GIFT_DIPLOMACY_COST || 500) && rng.chance(p.generosity === 'generous' ? 0.2 : 0.05)) {
+        // b. Send diplomatic gifts (C4: cost scales with kingdom wealth)
+        var _dipGiftCost = Math.max(CONFIG.KINGDOM_GIFT_DIPLOMACY_COST || 500, Math.floor(treasury * (CONFIG.DIPLOMATIC_GIFT_SCALE_FACTOR || 0.05)));
+        if (treasury > _dipGiftCost * 2 && rng.chance(p.generosity === 'generous' ? 0.2 : 0.05)) {
             const worstRelation = world.kingdoms.filter(o => o.id !== k.id && !k.atWar.has(o.id))
                 .sort((a, b) => (k.relations[a.id] || 0) - (k.relations[b.id] || 0))[0];
             if (worstRelation && (k.relations[worstRelation.id] || 0) < 30) {
-                const giftCost = CONFIG.KINGDOM_GIFT_DIPLOMACY_COST || 500;
-                k.gold -= giftCost;
-                const relBoost = CONFIG.KINGDOM_GIFT_DIPLOMACY_RELATION || 15;
+                k.gold -= _dipGiftCost;
+                // C4: Bigger gifts = bigger relation boost (scaled proportionally)
+                var relBoost = Math.min(25, Math.floor((CONFIG.KINGDOM_GIFT_DIPLOMACY_RELATION || 15) * (_dipGiftCost / 500)));
                 k.relations[worstRelation.id] = Math.min(100, (k.relations[worstRelation.id] || 0) + relBoost);
                 worstRelation.relations[k.id] = Math.min(100, (worstRelation.relations[k.id] || 0) + Math.floor(relBoost * 0.5));
-                logEvent(`🎁 ${k.name} sends a diplomatic gift to ${worstRelation.name} (${giftCost}g).`, {
-                    type: 'diplomatic_gift', cause: 'Improving strained relations', effects: ['Relations +' + relBoost, 'Treasury -' + giftCost + 'g']
+                logEvent(`🎁 ${k.name} sends a diplomatic gift to ${worstRelation.name} (${_dipGiftCost}g).`, {
+                    type: 'diplomatic_gift', cause: 'Improving strained relations', effects: ['Relations +' + relBoost, 'Treasury -' + _dipGiftCost + 'g']
                 });
             }
         }
@@ -3516,10 +3656,12 @@
         // =============================================
         // 11. SOCIAL/CIVIC ACTIONS
         // =============================================
+        // 11. SOCIAL/CIVIC ACTIONS
+        // =============================================
         // H-3: Festivals, public works, welfare only when treasury > 12 months upkeep
         var _civicFs = Engine.getKingdomFinancialState(k);
-        // a. Hold festivals (foolish/dim kings may party while broke, smart kings need healthy treasury, greedy never)
-        var festCostCheck = CONFIG.KINGDOM_FESTIVAL_COST || 300;
+        // C4: Scale festival cost with kingdom wealth (min 300, 1% of treasury)
+        var festCostCheck = Math.max(CONFIG.KINGDOM_FESTIVAL_COST || 300, Math.floor(treasury * (CONFIG.FEAST_COST_WEALTH_SCALE || 0.01)));
         var grandFestGate = (p.intelligence === 'foolish' || p.intelligence === 'dim') ? festCostCheck : Math.max(2000, festCostCheck * 5);
         if (p.greed === 'greedy' || p.greed === 'corrupt') grandFestGate = Infinity;
         if (k.gold > grandFestGate && _civicFs.canFestival && rng.chance(0.08)) {
@@ -3580,6 +3722,173 @@
             logKingAction(k, '🤲 Distributed gold to the poor (-' + cost + 'g, +' + happyBoost + ' happiness)');
         }
 
+        // f. C4: Town Improvement Projects (gold sink — improves specific towns)
+        if (k.gold > (CONFIG.KINGDOM_TOWN_IMPROVEMENT_COST || 400) * 3 && _civicFs.canFestival && rng.chance(0.04)) {
+            var _tiCost = CONFIG.KINGDOM_TOWN_IMPROVEMENT_COST || 400;
+            // Find lowest-prosperity town in kingdom
+            var _tiTowns = [];
+            for (var _tiTid of k.territories) { var _tiT = findTown(_tiTid); if (_tiT) _tiTowns.push(_tiT); }
+            _tiTowns.sort(function(a, b) { return (a.prosperity || 50) - (b.prosperity || 50); });
+            if (_tiTowns.length > 0 && _tiTowns[0].prosperity < 60) {
+                k.gold -= _tiCost;
+                _tiTowns[0].prosperity = Math.min(100, (_tiTowns[0].prosperity || 50) + 5);
+                _tiTowns[0].happiness = Math.min(100, (_tiTowns[0].happiness || 50) + 3);
+                logKingAction(k, '🏘️ Town improvement in ' + (_tiTowns[0].name || 'a town') + ' (-' + _tiCost + 'g, +5 prosperity, +3 happiness)');
+                logEvent('🏘️ ' + k.name + ' invests in improving ' + (_tiTowns[0].name || 'a town') + '! Roads paved, wells dug, buildings repaired.', {
+                    type: 'town_improvement', kingdomId: k.id, townId: _tiTowns[0].id,
+                    effects: ['Prosperity +5', 'Happiness +3', 'Treasury -' + _tiCost + 'g']
+                });
+            }
+        }
+
+        // g. C4: Grand Kingdom Projects (major gold sink — cathedral, grand market, great wall)
+        var _gpCost = CONFIG.KINGDOM_GRAND_PROJECT_COST || 2000;
+        var _gpDuration = CONFIG.KINGDOM_GRAND_PROJECT_DURATION || 90;
+        if (!k._grandProject && k.gold > _gpCost * 3 && _civicFs.canFestival && rng.chance(0.02)) {
+            var _gpTypes = [
+                { name: 'Grand Cathedral', icon: '⛪', happyBoost: 8, prospBoost: 5, desc: 'A magnificent cathedral rises' },
+                { name: 'Great Market Hall', icon: '🏛️', happyBoost: 5, prospBoost: 10, desc: 'A sprawling market hall is constructed' },
+                { name: 'Royal Academy', icon: '📚', happyBoost: 4, prospBoost: 8, desc: 'A royal academy of learning is founded' },
+                { name: 'Grand Fortification', icon: '🏰', happyBoost: 3, prospBoost: 3, desc: 'Massive walls and towers are erected' },
+                { name: 'Monument to the Crown', icon: '🗿', happyBoost: 6, prospBoost: 2, desc: 'A grand monument commemorates the kingdom' }
+            ];
+            var _gpChoice = rng.pick(_gpTypes);
+            var _gpCapital = null;
+            for (var _gptId of k.territories) { var _gpt = findTown(_gptId); if (_gpt && _gpt.isCapital) { _gpCapital = _gpt; break; } }
+            if (!_gpCapital) { for (var _gpt2Id of k.territories) { _gpCapital = findTown(_gpt2Id); break; } }
+            if (_gpCapital) {
+                k.gold -= _gpCost;
+                k._grandProject = {
+                    type: _gpChoice.name,
+                    icon: _gpChoice.icon,
+                    townId: _gpCapital.id,
+                    startDay: world.day,
+                    completeDay: world.day + _gpDuration,
+                    happyBoost: _gpChoice.happyBoost,
+                    prospBoost: _gpChoice.prospBoost
+                };
+                logKingAction(k, _gpChoice.icon + ' Began ' + _gpChoice.name + ' in ' + _gpCapital.name + ' (-' + _gpCost + 'g, ' + _gpDuration + ' days)');
+                logEvent(_gpChoice.icon + ' ' + k.name + ' begins construction of a ' + _gpChoice.name + ' in ' + _gpCapital.name + '! (' + _gpDuration + ' days, ' + _gpCost + 'g)', {
+                    type: 'grand_project_start', kingdomId: k.id, townId: _gpCapital.id,
+                    effects: ['Treasury -' + _gpCost + 'g', 'Completes in ' + _gpDuration + ' days', 'Will boost prosperity and happiness']
+                });
+            }
+        }
+        // Check for grand project completion
+        if (k._grandProject && world.day >= k._grandProject.completeDay) {
+            var _gpTown = findTown(k._grandProject.townId);
+            if (_gpTown) {
+                _gpTown.prosperity = Math.min(100, (_gpTown.prosperity || 50) + k._grandProject.prospBoost);
+                boostKingdomHappiness(k, k._grandProject.happyBoost);
+            }
+            logEvent(k._grandProject.icon + ' The ' + k._grandProject.type + ' in ' + (_gpTown ? _gpTown.name : 'the capital') + ' is complete! ' + k.name + ' celebrates!', {
+                type: 'grand_project_complete', kingdomId: k.id,
+                effects: ['Happiness +' + k._grandProject.happyBoost, 'Prosperity +' + k._grandProject.prospBoost, k._grandProject.type + ' stands as a symbol of the kingdom']
+            });
+            logKingAction(k, k._grandProject.icon + ' ' + k._grandProject.type + ' completed! (+' + k._grandProject.happyBoost + ' happiness, +' + k._grandProject.prospBoost + ' prosperity)');
+            k._grandProject = null;
+        }
+
+        // =============================================
+        // 11b. C1: MAJOR HAPPINESS-BOOSTING ACTIONS (90-day cooldown)
+        // =============================================
+        var happyBoostCooldown = CONFIG.KING_HAPPINESS_BOOST_COOLDOWN || 90;
+        var canMajorHappyBoost = !k._lastHappinessBoostDay || (world.day - k._lastHappinessBoostDay) >= happyBoostCooldown;
+        if (canMajorHappyBoost && happiness < 45) {
+            var boostActionTaken = false;
+
+            // Priority order depends on king personality and treasury
+            // Games & Tournament: ambitious/brave kings, costs 1000g
+            if (!boostActionTaken && (p.ambition === 'ambitious' || p.courage === 'brave') &&
+                treasury > (CONFIG.KING_GAMES_TOURNAMENT_COST || 1000) * 2 && rng.chance(0.20)) {
+                var gameCost = CONFIG.KING_GAMES_TOURNAMENT_COST || 1000;
+                var gameHappy = CONFIG.KING_GAMES_TOURNAMENT_HAPPINESS || 18;
+                k.gold -= gameCost;
+                boostKingdomHappiness(k, gameHappy);
+                k._lastHappinessBoostDay = world.day;
+                boostActionTaken = true;
+                logKingAction(k, '🏟️ Hosted a grand tournament (-' + gameCost + 'g, +' + gameHappy + ' happiness)');
+                logEvent('🏟️ ' + k.name + ' hosts a grand tournament! Knights joust and the people cheer. (+' + gameHappy + ' happiness)', {
+                    type: 'games_tournament', kingdomId: k.id, cause: 'A spectacular display of martial prowess',
+                    effects: ['Happiness +' + gameHappy, 'Treasury -' + gameCost + 'g', '90-day cooldown']
+                });
+            }
+
+            // Grand Feast: generous/kind kings, costs 800g
+            if (!boostActionTaken && (p.generosity === 'generous' || p.temperament === 'kind') &&
+                treasury > (CONFIG.KING_GRAND_FEAST_COST || 800) * 2 && rng.chance(0.25)) {
+                var feastCost = CONFIG.KING_GRAND_FEAST_COST || 800;
+                var feastHappy = CONFIG.KING_GRAND_FEAST_HAPPINESS || 15;
+                k.gold -= feastCost;
+                boostKingdomHappiness(k, feastHappy);
+                for (var _fti = 0; _fti < k.territories.size; _fti++) {
+                    var _ftId = Array.from(k.territories)[_fti];
+                    var _ft = findTown(_ftId);
+                    if (_ft) _ft._festivalDay = world.day;
+                }
+                k._lastHappinessBoostDay = world.day;
+                boostActionTaken = true;
+                logKingAction(k, '🍖 Grand feast for the people (-' + feastCost + 'g, +' + feastHappy + ' happiness)');
+                logEvent('🍖 ' + k.name + ' throws a grand feast for the common folk! Food and drink flow freely. (+' + feastHappy + ' happiness)', {
+                    type: 'grand_feast_people', kingdomId: k.id, cause: 'Generosity and concern for the people',
+                    effects: ['Happiness +' + feastHappy, 'Treasury -' + feastCost + 'g', '90-day cooldown']
+                });
+            }
+
+            // Tax Rebate: clever/brilliant kings, costs vary by pop
+            if (!boostActionTaken && (p.intelligence === 'brilliant' || p.intelligence === 'clever')) {
+                var totalPop = 0;
+                for (var _trI = 0; _trI < (k.territories ? k.territories.size : 0); _trI++) {
+                    var _trId = Array.from(k.territories)[_trI];
+                    var _trT = findTown(_trId);
+                    if (_trT) totalPop += (typeof _trT.population === 'number' ? _trT.population : 0);
+                }
+                var rebateCost = totalPop * (CONFIG.KING_TAX_REBATE_COST_PER_POP || 3);
+                var rebateHappy = CONFIG.KING_TAX_REBATE_HAPPINESS || 12;
+                if (rebateCost > 100 && treasury > rebateCost * 2 && rng.chance(0.15)) {
+                    k.gold -= rebateCost;
+                    boostKingdomHappiness(k, rebateHappy);
+                    k._lastHappinessBoostDay = world.day;
+                    boostActionTaken = true;
+                    logKingAction(k, '💰 Tax rebate for citizens (-' + Math.floor(rebateCost) + 'g, +' + rebateHappy + ' happiness)');
+                    logEvent('💰 ' + k.name + ' issues a tax rebate to all citizens! Gold flows back to the people. (+' + rebateHappy + ' happiness)', {
+                        type: 'tax_rebate', kingdomId: k.id, cause: 'Strategic tax relief to boost morale',
+                        effects: ['Happiness +' + rebateHappy, 'Treasury -' + Math.floor(rebateCost) + 'g', '90-day cooldown']
+                    });
+                }
+            }
+
+            // Debt Forgiveness: just/kind kings, costs 500g
+            if (!boostActionTaken && (p.justice === 'just' || p.temperament === 'kind') &&
+                treasury > (CONFIG.KING_DEBT_FORGIVENESS_COST || 500) * 2 && rng.chance(0.20)) {
+                var debtCost = CONFIG.KING_DEBT_FORGIVENESS_COST || 500;
+                var debtHappy = CONFIG.KING_DEBT_FORGIVENESS_HAPPINESS || 10;
+                k.gold -= debtCost;
+                boostKingdomHappiness(k, debtHappy);
+                k._lastHappinessBoostDay = world.day;
+                boostActionTaken = true;
+                logKingAction(k, '📜 Forgave debts of poorest citizens (-' + debtCost + 'g, +' + debtHappy + ' happiness)');
+                logEvent('📜 ' + k.name + ' forgives the debts of its poorest citizens! Relief spreads through the land. (+' + debtHappy + ' happiness)', {
+                    type: 'debt_forgiveness', kingdomId: k.id, cause: 'Act of royal mercy',
+                    effects: ['Happiness +' + debtHappy, 'Treasury -' + debtCost + 'g', '90-day cooldown']
+                });
+            }
+
+            // Fallback: any king with enough gold can do basic happiness action
+            if (!boostActionTaken && happiness < 30 && treasury > 600 && rng.chance(0.15)) {
+                var basicCost = 400;
+                var basicHappy = 8;
+                k.gold -= basicCost;
+                boostKingdomHappiness(k, basicHappy);
+                k._lastHappinessBoostDay = world.day;
+                logKingAction(k, '🎪 Public entertainments and food distribution (-' + basicCost + 'g, +' + basicHappy + ' happiness)');
+                logEvent('🎪 ' + k.name + ' organizes public entertainments and food distribution. (+' + basicHappy + ' happiness)', {
+                    type: 'public_entertainment', kingdomId: k.id, cause: 'Desperate attempt to lift morale',
+                    effects: ['Happiness +' + basicHappy, 'Treasury -' + basicCost + 'g', '90-day cooldown']
+                });
+            }
+        }
+
         // 12. UPDATE ROYAL ADVISORS periodically
         if (world.day % CONFIG.ROYAL_ADVISOR_UPDATE_INTERVAL === 0) {
             Engine.updateRoyalAdvisors(k.id);
@@ -3599,11 +3908,44 @@
             k.laws.specialLaws.push({ id: 'noble_council', name: 'Noble Council', desc: 'Major decisions require a vote of the nobility.', icon: '🗳️', effect: 'noble_council' });
             if (!k._activeVotes) k._activeVotes = [];
             boostKingdomHappiness(k, 10);
+            // Noble council immediate loyalty boost on enactment
+            var _ncEnactNobles = world.people.filter(function(np) {
+                return np.alive && np.socialRank && np.socialRank[k.id] >= 4 && np.socialRank[k.id] <= 6;
+            });
+            for (var _ncei = 0; _ncei < _ncEnactNobles.length; _ncei++) {
+                var _nceN = _ncEnactNobles[_ncei];
+                _nceN.kingLoyalty = Math.min(100, (_nceN.kingLoyalty || 50) + 5);
+                _nceN.fearOfKing = Math.max(0, (_nceN.fearOfKing || 15) - 3);
+                _nceN.perceivedKingLoyalty = Math.min(100, (_nceN.perceivedKingLoyalty || _nceN.kingLoyalty || 50) + 3);
+            }
             logKingAction(k, '🗳️ Established a Noble Council');
             logEvent('🗳️ ' + k.name + ' establishes a Noble Council! Major decisions now require noble approval. (+10 happiness)', {
                 type: 'law_change', kingdomId: k.id,
                 cause: 'The ruler seeks to share power and stabilize the realm.',
-                effects: ['Major decisions (war, peace, alliances, bans) now voted on', 'Kingdom happiness +10', 'Nobles gain political influence']
+                effects: ['Major decisions (war, peace, alliances, bans) now voted on', 'Kingdom happiness +10', 'Nobles gain political influence', 'Noble loyalty +5, fear -3']
+            });
+        }
+        // Noble Council repeal — ambitious/greedy kings may repeal when stability returns
+        if (hasSpecialLaw(k, 'noble_council') &&
+            (p.ambition === 'ambitious' || p.greed === 'greedy' || p.greed === 'corrupt') &&
+            happiness > 60 && rng.chance(0.05)) {
+            k.laws.specialLaws = k.laws.specialLaws.filter(function(l) { return l.id !== 'noble_council'; });
+            // Double-negative: -10 loyalty, -6 king relationship, +6 fear
+            var _ncRepealNobles = world.people.filter(function(np) {
+                return np.alive && np.socialRank && np.socialRank[k.id] >= 4 && np.socialRank[k.id] <= 6;
+            });
+            for (var _ncri = 0; _ncri < _ncRepealNobles.length; _ncri++) {
+                var _ncrN = _ncRepealNobles[_ncri];
+                _ncrN.kingLoyalty = Math.max(0, (_ncrN.kingLoyalty || 50) - 10);
+                _ncrN.fearOfKing = Math.min(100, (_ncrN.fearOfKing || 15) + 6);
+                _ncrN.perceivedKingLoyalty = Math.max(0, (_ncrN.perceivedKingLoyalty || _ncrN.kingLoyalty || 50) - 6);
+            }
+            boostKingdomHappiness(k, -10);
+            logKingAction(k, '🗳️ Dissolved the Noble Council — power returns to the crown');
+            logEvent('🗳️ ' + k.name + ' dissolves the Noble Council! The king seizes back all decision-making power. (-10 happiness, nobles furious)', {
+                type: 'law_change', kingdomId: k.id,
+                cause: 'The king consolidates power by disbanding the council.',
+                effects: ['Noble Council dissolved', 'Happiness -10', 'Noble loyalty -10, fear +6', 'Nobles lose political voice']
             });
         }
 
@@ -3726,6 +4068,125 @@
             k.laws.specialLaws = k.laws.specialLaws.filter(function(l) { return l.id !== 'right_to_camps'; });
             logKingAction(k, '⛺ Revoked Right to Camps');
             logEvent('🚫 ' + k.name + ' revokes the Right to Camps. Only the king may authorize shelter.', { type: 'law_change', kingdomId: k.id });
+        }
+
+        // =============================================
+        // 13b. C3: UNPOPULAR KING DECISIONS (NPC kings make decisions that drain loyalty but serve a purpose)
+        // =============================================
+        if (world.day % 30 === 0 && !_isPlayerKingOf(k)) {
+            // Greedy/corrupt kings raise taxes to fill treasury (drains loyalty but enriches kingdom)
+            if ((p.greed === 'greedy' || p.greed === 'corrupt') && (k.taxRate || 0.10) < 0.20 && rng.chance(0.08)) {
+                var oldTax = k.taxRate || 0.10;
+                k.taxRate = Math.min(0.25, oldTax + 0.05);
+                logKingAction(k, '💰 Raised taxes to ' + Math.round(k.taxRate * 100) + '% (greed)');
+                logEvent('💰 The king of ' + k.name + ' raises taxes! Citizens grumble. (+' + Math.round((k.taxRate - oldTax) * 100) + '% tax)', {
+                    type: 'unpopular_decision', kingdomId: k.id,
+                    cause: 'The king demands more gold from the people',
+                    effects: ['Tax rate increased to ' + Math.round(k.taxRate * 100) + '%', 'Noble loyalty will suffer', 'Treasury income increases']
+                });
+            }
+
+            // Ambitious kings seize noble estates (enriches crown but enrages nobles)
+            if (p.ambition === 'ambitious' && treasury < 2000 && rng.chance(0.04)) {
+                var _seizeNobles = world.people.filter(function(np) {
+                    return np.alive && np.socialRank && np.socialRank[k.id] >= 4 && np.socialRank[k.id] <= 5 &&
+                           (np.gold || 0) > 200;
+                });
+                if (_seizeNobles.length > 0) {
+                    var _seizeTarget = rng.pick(_seizeNobles);
+                    var _seizeAmt = Math.floor((_seizeTarget.gold || 0) * 0.3);
+                    _seizeTarget.gold -= _seizeAmt;
+                    k.gold += _seizeAmt;
+                    _seizeTarget.kingLoyalty = Math.max(0, (_seizeTarget.kingLoyalty || 50) - 25);
+                    logKingAction(k, '👑 Seized ' + _seizeAmt + 'g from ' + (_seizeTarget.firstName || 'a noble') + '\'s estate');
+                    logEvent('👑 ' + k.name + '\'s king seizes wealth from ' + (_seizeTarget.firstName || 'a noble') + '\'s estate! (-' + _seizeAmt + 'g from noble, -25 loyalty)', {
+                        type: 'unpopular_decision', kingdomId: k.id,
+                        cause: 'The king needs gold and takes it from the nobility',
+                        effects: ['Treasury +' + _seizeAmt + 'g', 'Noble loyalty -25', 'Other nobles grow wary']
+                    });
+                    // Other nobles become wary
+                    var _snNobles = world.people.filter(function(np) {
+                        return np.alive && np.id !== _seizeTarget.id && np.socialRank && np.socialRank[k.id] >= 4;
+                    });
+                    for (var _sni = 0; _sni < _snNobles.length; _sni++) {
+                        _snNobles[_sni].kingLoyalty = Math.max(0, (_snNobles[_sni].kingLoyalty || 50) - 5);
+                    }
+                }
+            }
+
+            // Paranoid kings purge court members (removes threats but creates enemies)
+            if (moodCurrent === 'paranoid' && rng.chance(0.06)) {
+                var _purgeTargets = world.people.filter(function(np) {
+                    return np.alive && np.socialRank && np.socialRank[k.id] >= 4 && np.socialRank[k.id] <= 5 &&
+                           (np.perceivedKingLoyalty || 50) < 40;
+                });
+                if (_purgeTargets.length > 0) {
+                    var _purgeTarget = rng.pick(_purgeTargets);
+                    _purgeTarget.socialRank[k.id] = 3; // demoted to commoner
+                    _purgeTarget.kingLoyalty = Math.max(0, (_purgeTarget.kingLoyalty || 50) - 30);
+                    k.assassinationRisk = Math.max(0, (k.assassinationRisk || 0) - 10);
+                    logKingAction(k, '😡 Stripped ' + (_purgeTarget.firstName || 'a noble') + ' of their title (paranoia)');
+                    logEvent('😡 ' + k.name + '\'s king strips ' + (_purgeTarget.firstName || 'a noble') + ' of their noble title!', {
+                        type: 'unpopular_decision', kingdomId: k.id,
+                        cause: 'The paranoid king suspects treachery',
+                        effects: ['Noble stripped of rank', 'Assassination risk reduced', 'Other nobles fear the king more']
+                    });
+                    // Other nobles fear increases
+                    var _pnNobles = world.people.filter(function(np) {
+                        return np.alive && np.id !== _purgeTarget.id && np.socialRank && np.socialRank[k.id] >= 4;
+                    });
+                    for (var _pni = 0; _pni < _pnNobles.length; _pni++) {
+                        _pnNobles[_pni].fearOfKing = Math.min(100, (_pnNobles[_pni].fearOfKing || 15) + 10);
+                    }
+                }
+            }
+
+            // Wartime conscription (fills army but angers citizens and nobles)
+            if (k.atWar && k.atWar.size > 0 && (k.soldiers || 0) < 20 && rng.chance(0.10)) {
+                var _conscripts = 0;
+                for (var _ctId of k.territories) {
+                    var _ct = findTown(_ctId);
+                    if (!_ct) continue;
+                    var _ctPeople = getPeopleInTown(_ct.id);
+                    var _ctEligible = _ctPeople.filter(function(cp) {
+                        return cp.alive && cp.age >= 16 && cp.age <= 45 && cp.sex === 'M' &&
+                               cp.occupation !== 'soldier' && cp.occupation !== 'guard';
+                    });
+                    var _ctCount = Math.min(3, _ctEligible.length);
+                    for (var _cci = 0; _cci < _ctCount; _cci++) {
+                        var _conscript = _ctEligible[_cci];
+                        _conscript.occupation = 'soldier';
+                        _conscript._conscripted = true;
+                        _conscripts++;
+                    }
+                }
+                if (_conscripts > 0) {
+                    boostKingdomHappiness(k, -5);
+                    logKingAction(k, '⚔️ Conscripted ' + _conscripts + ' citizens into the army');
+                    logEvent('⚔️ ' + k.name + ' conscripts ' + _conscripts + ' citizens! Families weep as men are marched to war. (-5 happiness)', {
+                        type: 'unpopular_decision', kingdomId: k.id,
+                        cause: 'Wartime desperation requires more soldiers',
+                        effects: ['Army +' + _conscripts + ' soldiers', 'Happiness -5', 'Noble loyalty may suffer']
+                    });
+                }
+            }
+        }
+
+        // =============================================
+        // 13c. NOBLE COUNCIL VOTING LAW LOYALTY EFFECTS
+        // =============================================
+        if (world.day % 30 === 0 && hasSpecialLaw(k, 'noble_council')) {
+            // +5 loyalty, +3 king relationship, -3 fear per 30 days for all nobles
+            var _ncNobles = world.people.filter(function(np) {
+                return np.alive && np.socialRank && np.socialRank[k.id] >= 4 && np.socialRank[k.id] <= 6;
+            });
+            for (var _nci = 0; _nci < _ncNobles.length; _nci++) {
+                var _ncN = _ncNobles[_nci];
+                _ncN.kingLoyalty = Math.min(100, (_ncN.kingLoyalty || 50) + 5);
+                _ncN.fearOfKing = Math.max(0, (_ncN.fearOfKing || 15) - 3);
+                // +3 king relationship: boost perceived loyalty as proxy
+                _ncN.perceivedKingLoyalty = Math.min(100, (_ncN.perceivedKingLoyalty || _ncN.kingLoyalty || 50) + 3);
+            }
         }
 
         // ── Kingdom Transport Decision (every 30 days) ──
