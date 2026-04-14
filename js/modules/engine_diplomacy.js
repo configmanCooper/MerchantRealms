@@ -5219,15 +5219,13 @@
                 if (townSupply.bows) townSupply.bows = Math.max(0, townSupply.bows - bowsUsed);
                 if (townSupply.arrows) townSupply.arrows = Math.max(0, townSupply.arrows - arrowsUsed);
 
-                // Check if army should be mounted (proposal.mounted or enough horses+saddles)
+                // Check if army should be mounted (proposal.mounted or enough horses)
                 var _propMounted = !!proposal.mounted;
                 if (_propMounted) {
                     var _pH = townSupply.horses || 0;
-                    var _pS = townSupply.saddles || 0;
-                    if (_pH >= soldiers && _pS >= soldiers) {
-                        // Consume horses + saddles for mounted
+                    if (_pH >= soldiers) {
+                        // Consume horses for mounted
                         townSupply.horses = Math.max(0, (townSupply.horses || 0) - soldiers);
-                        townSupply.saddles = Math.max(0, (townSupply.saddles || 0) - soldiers);
                     } else {
                         _propMounted = false; // Not enough horses, send unmounted
                     }

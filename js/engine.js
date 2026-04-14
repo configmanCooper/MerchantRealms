@@ -12968,8 +12968,7 @@
                             // AI decides whether to mount entire army — strategic decision, not automatic
                             // Only mount when: capital_strike phase, long route, or high-value target. Uses kingdom stockpile only.
                             var _spHorses = (k.militaryStockpile && k.militaryStockpile.horses) || 0;
-                            var _spSaddles = (k.militaryStockpile && k.militaryStockpile.saddles) || 0;
-                            var _canMount = _spHorses >= armySize && _spSaddles >= armySize;
+                            var _canMount = _spHorses >= armySize;
                             var _aiMounted = false;
                             if (_canMount && bestRoute) {
                                 // Mount when: capital strike, route > 8 days, or target is capital
@@ -13009,9 +13008,8 @@
 
                             // Consume equipment
                             if (_aiMounted) {
-                                // All mounted: consume horses+saddles from kingdom stockpile
+                                // All mounted: consume horses from kingdom stockpile
                                 k.militaryStockpile.horses = Math.max(0, (k.militaryStockpile.horses || 0) - armySize);
-                                k.militaryStockpile.saddles = Math.max(0, (k.militaryStockpile.saddles || 0) - armySize);
                                 town.market.supply.swords = Math.max(0, (town.market.supply.swords || 0) - Math.min(swords, armySize));
                             } else {
                                 const swordsUsed = Math.min(swords, actualInf + actualCav);

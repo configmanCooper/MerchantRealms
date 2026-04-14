@@ -2794,22 +2794,21 @@
         // Consolidation info
         html += '<div id="_armyConsolidationInfo" style="font-size:0.72rem;margin-bottom:10px;"></div>';
 
-        // Mounted option — check horse+saddle availability in kingdom stockpile only
-        var _totalHorses = 0, _totalSaddles = 0;
+        // Mounted option — check horse availability in kingdom stockpile
+        var _totalHorses = 0;
         try {
             var _spk = kingdom.militaryStockpile || {};
             _totalHorses = (_spk.horses || 0);
-            _totalSaddles = (_spk.saddles || 0);
         } catch(e) {}
-        var _mountLimit = Math.min(_totalHorses, _totalSaddles);
+        var _mountLimit = _totalHorses;
         html += '<div style="margin-bottom:10px;padding:6px;background:rgba(139,69,19,0.15);border:1px solid rgba(139,69,19,0.3);border-radius:5px;">';
         html += '<label style="font-size:0.75rem;color:#d4a843;display:flex;align-items:center;gap:6px;cursor:pointer;">';
         html += '<input type="checkbox" id="_armyMounted" style="cursor:pointer;"' + (_mountLimit <= 0 ? ' disabled' : '') + '>';
         html += '🐴 Send as Mounted Cavalry (25% faster march)';
         html += '</label>';
-        html += '<div style="font-size:0.65rem;color:#999;margin-top:3px;">Kingdom stockpile: ' + _totalHorses + ' horses, ' + _totalSaddles + ' saddles (' + _mountLimit + ' can mount).</div>';
+        html += '<div style="font-size:0.65rem;color:#999;margin-top:3px;">Kingdom stockpile: ' + _totalHorses + ' horses (' + _mountLimit + ' can mount).</div>';
         if (_mountLimit <= 0) {
-            html += '<div style="font-size:0.65rem;color:#e57373;margin-top:2px;">⚠️ Not enough horses and saddles in stockpile for mounted army.</div>';
+            html += '<div style="font-size:0.65rem;color:#e57373;margin-top:2px;">⚠️ Not enough horses in stockpile for mounted army.</div>';
         }
         html += '</div>';
 

@@ -9283,14 +9283,13 @@
             return { success: false, message: 'Not at war with ' + (targetTown.kingdomId || 'that kingdom') + '.' };
         }
 
-        // Check for mounted army option — all soldiers need horses + saddles from kingdom stockpile only
+        // Check for mounted army option — all soldiers need horses from kingdom stockpile
         var sendMounted = !!options.mounted;
         if (sendMounted) {
             var stockpile = kingdom.militaryStockpile || {};
             var totalHorses = stockpile.horses || 0;
-            var totalSaddles = stockpile.saddles || 0;
-            if (totalHorses < soldiers || totalSaddles < soldiers) {
-                return { success: false, message: 'Mounted army needs ' + soldiers + ' horses AND saddles in the kingdom stockpile. Stockpile has ' + totalHorses + ' horses, ' + totalSaddles + ' saddles.' };
+            if (totalHorses < soldiers) {
+                return { success: false, message: 'Mounted army needs ' + soldiers + ' horses in the kingdom stockpile. Stockpile has ' + totalHorses + ' horses.' };
             }
         }
 
@@ -9365,11 +9364,10 @@
         // Split army composition based on mounted option
         var inf, arch, cav;
         if (sendMounted) {
-            // All cavalry — consume horses and saddles from kingdom stockpile only
+            // All cavalry — consume horses from kingdom stockpile
             inf = 0; arch = 0; cav = soldiers;
             var _sp = kingdom.militaryStockpile || {};
             _sp.horses = Math.max(0, (_sp.horses || 0) - soldiers);
-            _sp.saddles = Math.max(0, (_sp.saddles || 0) - soldiers);
         } else {
             // Standard split: 60% infantry, 25% archers, 15% cavalry
             inf = Math.floor(soldiers * 0.6);
