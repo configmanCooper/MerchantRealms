@@ -13546,6 +13546,26 @@ window.UI = (function () {
         }
         html += '</tbody></table></div>';
 
+        // ── Kingdom Employees ──
+        html += '<h4 style="color:#FFD700;margin:16px 0 6px;">👷 Kingdom Employees</h4>';
+        html += '<div style="display:flex;flex-wrap:wrap;gap:8px;">';
+        for (var _ei = 0; _ei < kData.length; _ei++) {
+            var _ek = kData[_ei].k;
+            var _emp = _ek._employees || { procurers: [], guards: [], royalGuards: [] };
+            var _gCount = _emp.guards ? _emp.guards.length : 0;
+            var _rgCount = _emp.royalGuards ? _emp.royalGuards.length : 0;
+            var _pCount = _emp.procurers ? _emp.procurers.length : 0;
+            var _total = _gCount + _rgCount + _pCount;
+            html += '<div style="flex:1;min-width:140px;background:#1a1a2e;border-radius:4px;padding:8px;border-left:4px solid ' + (_ek.color || '#666') + ';">';
+            html += '<div style="font-weight:bold;font-size:0.82rem;margin-bottom:4px;">' + (_ek.name || '?') + '</div>';
+            html += '<div style="font-size:0.75rem;color:#aaa;">👮 Guards: <span style="color:#e0c58a;">' + _gCount + '</span></div>';
+            html += '<div style="font-size:0.75rem;color:#aaa;">🛡️ Royal Guards: <span style="color:#e0c58a;">' + _rgCount + '</span></div>';
+            html += '<div style="font-size:0.75rem;color:#aaa;">📦 Procurers: <span style="color:#e0c58a;">' + _pCount + '</span></div>';
+            html += '<div style="font-size:0.72rem;color:#888;margin-top:3px;">Total: ' + _total + '</div>';
+            html += '</div>';
+        }
+        html += '</div>';
+
         // ── Inter-Kingdom Relations Matrix ──
         var warThresh = (typeof CONFIG !== 'undefined' && CONFIG.RELATION_WAR_THRESHOLD) ? CONFIG.RELATION_WAR_THRESHOLD : -35;
         var warWarnThresh = warThresh + 20; // yellow zone
