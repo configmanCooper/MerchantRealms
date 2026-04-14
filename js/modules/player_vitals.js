@@ -14,6 +14,15 @@
     var modifyRelationship = Player.modifyRelationship;
     var _applyConditionHealthHit = Player._applyConditionHealthHit;
 
+    // Check if the next food to be consumed (oldest FIFO cohort) is stale
+    function _isNextFoodStale(storageObj, foodId) {
+        if (!CONFIG.PERISHABLE_FOODS || !CONFIG.PERISHABLE_FOODS[foodId]) return false;
+        if (!storageObj._foodAge || !storageObj._foodAge[foodId] || storageObj._foodAge[foodId].length === 0) return false;
+        var oldest = storageObj._foodAge[foodId][0];
+        var age = (typeof Engine !== 'undefined' ? Engine.getDay() : 0) - oldest.day;
+        return age >= CONFIG.PERISHABLE_FOODS[foodId].stale;
+    }
+
     // ========================================================
     // §12J HUNGER / FOOD SYSTEM
     // ========================================================
@@ -53,10 +62,13 @@
                         const supply = town.market.supply[foodId] || 0;
                         const price = town.market.prices[foodId] || 5;
                         if (supply > 0 && player.gold >= price) {
+                            var _staleM = _isNextFoodStale(town.market, foodId);
                             town.market.supply[foodId]--;
+                            Engine.removeFoodCohort(town.market, foodId, 1);
                             player.gold -= price;
                             logFinance(-price, 'food_drink', 'Bought food/drink');
-                            const restore = HUNGER_CONFIG.RAW_FOOD_TYPES.includes(foodId) ? HUNGER_CONFIG.RAW_FOOD_RESTORE : HUNGER_CONFIG.FOOD_RESTORE;
+                            var restore = HUNGER_CONFIG.RAW_FOOD_TYPES.includes(foodId) ? HUNGER_CONFIG.RAW_FOOD_RESTORE : HUNGER_CONFIG.FOOD_RESTORE;
+                            if (_staleM) restore = Math.floor(restore / 2);
                             player.hunger = Math.min(HUNGER_CONFIG.MAX, player.hunger + restore);
                             bought = true;
                             break;
@@ -72,8 +84,12 @@
             let fed = false;
             for (const foodId of HUNGER_CONFIG.FOOD_TYPES) {
                 if ((player.inventory[foodId] || 0) > 0) {
+                    var _staleT1 = _isNextFoodStale(player, foodId);
                     player.inventory[foodId]--;
-                    player.hunger = Math.min(HUNGER_CONFIG.MAX, player.hunger + HUNGER_CONFIG.FOOD_RESTORE);
+                    Engine.removeFoodCohort(player, foodId, 1);
+                    var _restoreT1 = HUNGER_CONFIG.FOOD_RESTORE;
+                    if (_staleT1) _restoreT1 = Math.floor(_restoreT1 / 2);
+                    player.hunger = Math.min(HUNGER_CONFIG.MAX, player.hunger + _restoreT1);
                     fed = true;
                     break;
                 }
@@ -81,8 +97,12 @@
             if (!fed) {
                 for (const foodId of HUNGER_CONFIG.RAW_FOOD_TYPES) {
                     if ((player.inventory[foodId] || 0) > 0) {
+                        var _staleT2 = _isNextFoodStale(player, foodId);
                         player.inventory[foodId]--;
-                        player.hunger = Math.min(HUNGER_CONFIG.MAX, player.hunger + HUNGER_CONFIG.RAW_FOOD_RESTORE);
+                        Engine.removeFoodCohort(player, foodId, 1);
+                        var _restoreT2 = HUNGER_CONFIG.RAW_FOOD_RESTORE;
+                        if (_staleT2) _restoreT2 = Math.floor(_restoreT2 / 2);
+                        player.hunger = Math.min(HUNGER_CONFIG.MAX, player.hunger + _restoreT2);
                         fed = true;
                         break;
                     }
@@ -1058,9 +1078,12 @@
             for (var i = 0; i < allTypes.length; i++) {
                 var fid = allTypes[i];
                 if ((player.inventory[fid] || 0) > 0) {
+                    var _stale = _isNextFoodStale(player, fid);
                     player.inventory[fid]--;
+                    Engine.removeFoodCohort(player, fid, 1);
                     if (player.inventory[fid] <= 0) delete player.inventory[fid];
                     var restore = HUNGER_CONFIG.RAW_FOOD_TYPES.indexOf(fid) !== -1 ? HUNGER_CONFIG.RAW_FOOD_RESTORE : HUNGER_CONFIG.FOOD_RESTORE;
+                    if (_stale) restore = Math.floor(restore / 2);
                     player.hunger = Math.min(HUNGER_CONFIG.MAX, player.hunger + restore);
                     eaten++;
                     found = true;

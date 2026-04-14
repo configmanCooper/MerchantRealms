@@ -3783,6 +3783,18 @@ const HUNGER_CONFIG = {
     GUARD_FOOD_PER_DAY: 1,
 };
 
+// Food spoilage thresholds (days)
+CONFIG.PERISHABLE_FOODS = {
+    bread:          { stale: 30, destroy: 45 },
+    meat:           { stale: 30, destroy: 45 },
+    poultry:        { stale: 30, destroy: 45 },
+    fish:           { stale: 25, destroy: 40 },
+    eggs:           { stale: 20, destroy: 35 },
+    vegetables:     { stale: 20, destroy: 35 },
+    grapes:         { stale: 15, destroy: 30 },
+    preserved_food: { stale: 60, destroy: 90 },
+};
+
 const THIRST_CONFIG = {
     MAX: 100,
     START: 80,

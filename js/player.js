@@ -1089,6 +1089,8 @@
 
         player.stats.totalGoldSpent += totalCost;
         town.market.supply[resourceId] -= qty;
+        // Transfer food age from market to player inventory (anti-exploit)
+        Engine.transferFoodCohorts(town.market, player, resourceId, qty);
         // Market Manipulator: trades have 2x impact on supply (phantom removal)
         if (hasSkill('market_manipulator')) {
             town.market.supply[resourceId] = Math.max(0, (town.market.supply[resourceId] || 0) - qty);
@@ -1410,6 +1412,11 @@
         if (sellFromStorage > 0 && player.townStorage[player.townId]) {
             player.townStorage[player.townId][resourceId] = (player.townStorage[player.townId][resourceId] || 0) - sellFromStorage;
             if (player.townStorage[player.townId][resourceId] <= 0) delete player.townStorage[player.townId][resourceId];
+        }
+        // Transfer food age from player/storage to market (anti-exploit)
+        if (sellFromCarried > 0) Engine.transferFoodCohorts(player, town.market, resourceId, sellFromCarried);
+        if (sellFromStorage > 0 && player.townStorage[player.townId]) {
+            Engine.transferFoodCohorts(player.townStorage[player.townId], town.market, resourceId, sellFromStorage);
         }
         town.market.supply[resourceId] = (town.market.supply[resourceId] || 0) + qty;
         // Market Manipulator: trades have 2x impact on supply (phantom addition)
@@ -5393,6 +5400,8 @@
                     if (!bldKingdom.goodsStockpile) bldKingdom.goodsStockpile = {};
                     var producedGood = _activeProduces;
                     bldKingdom.goodsStockpile[producedGood] = (bldKingdom.goodsStockpile[producedGood] || 0) + tithe;
+                    // Track food age for kingdom stockpile
+                    Engine.pushFoodCohort(bldKingdom, producedGood, tithe, Engine.getDay());
                     // Also credit gold value to the crown for economic tracking
                     var res = findResource(_activeProduces);
                     var titheGold = tithe * (res ? res.basePrice : 1);
@@ -5474,10 +5483,12 @@
                 if (spaceInBld >= actualOutput) {
                     // Fits in building storage
                     bld.inventory[_activeProduces] = (bld.inventory[_activeProduces] || 0) + actualOutput;
+                    Engine.pushFoodCohort(bld, _activeProduces, actualOutput, day);
                 } else {
                     // Store what fits
                     if (spaceInBld > 0) {
                         bld.inventory[_activeProduces] = (bld.inventory[_activeProduces] || 0) + spaceInBld;
+                        Engine.pushFoodCohort(bld, _activeProduces, spaceInBld, day);
                     }
                     // Overflow sells directly to market at full market price
                     // BUT NOT for outpost buildings — outposts have no market access
@@ -5497,6 +5508,8 @@
                             player.stats.totalGoodsSold = (player.stats.totalGoodsSold || 0) + overflow;
                             if (sellTown.market.supply) {
                                 sellTown.market.supply[_activeProduces] = (sellTown.market.supply[_activeProduces] || 0) + overflow;
+                                // Transfer food ages from building to market (anti-exploit)
+                                Engine.transferFoodCohorts(bld, sellTown.market, _activeProduces, overflow);
                             }
                             var _ovResName = res ? res.name : _activeProduces;
                             logFinance(revenue, 'building_sales', 'Sold ' + overflow + ' ' + _ovResName + ' (storage full)');

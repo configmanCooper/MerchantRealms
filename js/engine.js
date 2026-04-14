@@ -4765,6 +4765,8 @@
                         }
                         if (_prodAmount > 0) {
                             town.market.supply[activeProduces] = (town.market.supply[activeProduces] || 0) + _prodAmount;
+                            // Track food age for spoilage
+                            _pushFoodCohort(town.market, activeProduces, _prodAmount, world.day);
                         }
                     }
 
@@ -5013,6 +5015,7 @@
                     const consumed = Math.min(available, Math.ceil(available * consumeRatio));
                     if (consumed > 0) {
                         town.market.supply[fType] -= consumed;
+                        _removeFoodCohort(town.market, fType, consumed);
                         Engine.collectTradeTax(town.kingdomId, consumed * getMarketPrice(town, fType), fType);
                         foodRemaining -= consumed;
                     }
@@ -5333,6 +5336,15 @@
                     price *= prospFactor;
                 }
                 price = Math.max(bp * 0.25, Math.min(bp * 4, price));
+                // Stale food discount — if some supply is stale, blend price down
+                if (CONFIG.PERISHABLE_FOODS && CONFIG.PERISHABLE_FOODS[r.id] && s > 0) {
+                    var staleCount = (town.market._staleFood && town.market._staleFood[r.id]) || 0;
+                    if (staleCount > 0) {
+                        var stalePct = Math.min(1, staleCount / s);
+                        // Stale portion gets 50% discount, blended with fresh portion
+                        price *= (1 - stalePct * 0.5);
+                    }
+                }
                 town.market.prices[r.id] = Math.round(price * 100) / 100;
             }
 
@@ -22411,6 +22423,204 @@
     }
 
     // ========================================================
+    // §19F FOOD SPOILAGE / DECAY SYSTEM
+    // ========================================================
+
+    // Push a food production cohort onto a storage object's _foodAge ledger
+    function _pushFoodCohort(storageObj, resource, qty, day) {
+        if (!CONFIG.PERISHABLE_FOODS[resource] || qty <= 0) return;
+        if (!storageObj._foodAge) storageObj._foodAge = {};
+        if (!storageObj._foodAge[resource]) storageObj._foodAge[resource] = [];
+        var cohorts = storageObj._foodAge[resource];
+        // Merge with same-day cohort
+        if (cohorts.length > 0 && cohorts[cohorts.length - 1].day === day) {
+            cohorts[cohorts.length - 1].qty += qty;
+        } else {
+            cohorts.push({ qty: qty, day: day });
+        }
+    }
+
+    // Remove food from oldest cohorts (FIFO). Returns array of removed cohort slices.
+    function _removeFoodCohort(storageObj, resource, qty) {
+        if (!CONFIG.PERISHABLE_FOODS[resource] || qty <= 0) return [];
+        if (!storageObj._foodAge || !storageObj._foodAge[resource]) return [];
+        var cohorts = storageObj._foodAge[resource];
+        var removed = [];
+        var left = qty;
+        while (left > 0 && cohorts.length > 0) {
+            if (cohorts[0].qty <= left) {
+                left -= cohorts[0].qty;
+                removed.push(cohorts.shift());
+            } else {
+                removed.push({ qty: left, day: cohorts[0].day });
+                cohorts[0].qty -= left;
+                left = 0;
+            }
+        }
+        if (cohorts.length === 0) delete storageObj._foodAge[resource];
+        return removed;
+    }
+
+    // Transfer food cohorts between storages, preserving age (anti-exploit)
+    function _transferFoodCohorts(fromStorage, toStorage, resource, qty) {
+        var removed = _removeFoodCohort(fromStorage, resource, qty);
+        for (var i = 0; i < removed.length; i++) {
+            _pushFoodCohort(toStorage, resource, removed[i].qty, removed[i].day);
+        }
+    }
+
+    // Reconcile _foodAge totals with actual supply count (safety net)
+    function _reconcileFoodAge(storageObj, resource, actualQty, currentDay) {
+        if (!CONFIG.PERISHABLE_FOODS[resource]) return;
+        if (!storageObj._foodAge) storageObj._foodAge = {};
+        if (!storageObj._foodAge[resource]) storageObj._foodAge[resource] = [];
+        var cohorts = storageObj._foodAge[resource];
+        var tracked = 0;
+        for (var i = 0; i < cohorts.length; i++) tracked += cohorts[i].qty;
+
+        if (tracked > actualQty) {
+            // Supply decreased (consumption) — remove from oldest
+            var excess = tracked - actualQty;
+            while (excess > 0 && cohorts.length > 0) {
+                if (cohorts[0].qty <= excess) {
+                    excess -= cohorts[0].qty;
+                    cohorts.shift();
+                } else {
+                    cohorts[0].qty -= excess;
+                    excess = 0;
+                }
+            }
+        } else if (tracked < actualQty) {
+            // Supply increased without explicit tracking — treat as today's production
+            _pushFoodCohort(storageObj, resource, actualQty - tracked, currentDay);
+        }
+        if (actualQty <= 0) delete storageObj._foodAge[resource];
+    }
+
+    // Get stale count for a food in a storage
+    function _getStaleFoodCount(storageObj, resource, currentDay) {
+        if (!storageObj._foodAge || !storageObj._foodAge[resource]) return 0;
+        var thresholds = CONFIG.PERISHABLE_FOODS[resource];
+        if (!thresholds) return 0;
+        var cohorts = storageObj._foodAge[resource];
+        var stale = 0;
+        for (var i = 0; i < cohorts.length; i++) {
+            var age = currentDay - cohorts[i].day;
+            if (age >= thresholds.stale && age < thresholds.destroy) stale += cohorts[i].qty;
+        }
+        return stale;
+    }
+
+    // Process a single storage's food decay. Returns total destroyed count.
+    function _decayFoodInStorage(storageObj, supplyObj, currentDay) {
+        var perishables = CONFIG.PERISHABLE_FOODS;
+        var totalDestroyed = 0;
+        for (var foodId in perishables) {
+            var supply = supplyObj[foodId] || 0;
+            if (supply <= 0) {
+                if (storageObj._foodAge && storageObj._foodAge[foodId]) delete storageObj._foodAge[foodId];
+                continue;
+            }
+            _reconcileFoodAge(storageObj, foodId, supply, currentDay);
+            var thresholds = perishables[foodId];
+            var cohorts = storageObj._foodAge ? storageObj._foodAge[foodId] : null;
+            if (!cohorts || cohorts.length === 0) continue;
+
+            var destroyed = 0;
+            for (var ci = cohorts.length - 1; ci >= 0; ci--) {
+                var age = currentDay - cohorts[ci].day;
+                if (age >= thresholds.destroy) {
+                    destroyed += cohorts[ci].qty;
+                    cohorts.splice(ci, 1);
+                }
+            }
+            if (destroyed > 0) {
+                supplyObj[foodId] = Math.max(0, (supplyObj[foodId] || 0) - destroyed);
+                if (supplyObj[foodId] <= 0) delete supplyObj[foodId];
+                totalDestroyed += destroyed;
+            }
+            // Track stale count
+            if (!storageObj._staleFood) storageObj._staleFood = {};
+            var staleCount = _getStaleFoodCount(storageObj, foodId, currentDay);
+            if (staleCount > 0) {
+                storageObj._staleFood[foodId] = staleCount;
+            } else {
+                delete storageObj._staleFood[foodId];
+            }
+        }
+        return totalDestroyed;
+    }
+
+    // Main daily food decay tick
+    function tickFoodDecay() {
+        var currentDay = world.day;
+
+        // 1. Town markets
+        for (var ti = 0; ti < world.towns.length; ti++) {
+            var town = world.towns[ti];
+            if (!town.market || !town.market.supply) continue;
+            var destroyed = _decayFoodInStorage(town.market, town.market.supply, currentDay);
+            if (destroyed > 0 && town.market.supply) {
+                // Small happiness impact from rotting food
+                if (town.happiness != null) town.happiness = Math.max(0, town.happiness - 0.1);
+            }
+        }
+
+        // 2. Player inventory
+        if (typeof Player !== 'undefined' && Player.state && Player.state.inventory) {
+            var ps = Player.state;
+            var perishables = CONFIG.PERISHABLE_FOODS;
+            for (var foodId in perishables) {
+                var pQty = ps.inventory[foodId] || 0;
+                if (pQty <= 0) continue;
+                _reconcileFoodAge(ps, foodId, pQty, currentDay);
+                var thresholds = perishables[foodId];
+                var cohorts = ps._foodAge ? ps._foodAge[foodId] : null;
+                if (!cohorts) continue;
+                var destroyed = 0;
+                for (var ci = cohorts.length - 1; ci >= 0; ci--) {
+                    if (currentDay - cohorts[ci].day >= thresholds.destroy) {
+                        destroyed += cohorts[ci].qty;
+                        cohorts.splice(ci, 1);
+                    }
+                }
+                if (destroyed > 0) {
+                    ps.inventory[foodId] = Math.max(0, (ps.inventory[foodId] || 0) - destroyed);
+                    if (ps.inventory[foodId] <= 0) delete ps.inventory[foodId];
+                    var _rn = findResource(foodId);
+                    logEvent('🦠 ' + destroyed + ' ' + (_rn ? _rn.name : foodId) + ' spoiled in your inventory.', null, 'my_business');
+                }
+            }
+        }
+
+        // 3. Player buildings
+        if (typeof Player !== 'undefined' && Player.state && Player.state.buildings) {
+            for (var bi = 0; bi < Player.state.buildings.length; bi++) {
+                var bld = Player.state.buildings[bi];
+                if (!bld.inventory) continue;
+                _decayFoodInStorage(bld, bld.inventory, currentDay);
+            }
+        }
+
+        // 4. Kingdom stockpiles
+        for (var ki = 0; ki < world.kingdoms.length; ki++) {
+            var k = world.kingdoms[ki];
+            if (!k.goodsStockpile) continue;
+            _decayFoodInStorage(k, k.goodsStockpile, currentDay);
+        }
+
+        // 5. Player town storage
+        if (typeof Player !== 'undefined' && Player.state && Player.state.townStorage) {
+            for (var townId in Player.state.townStorage) {
+                var ts = Player.state.townStorage[townId];
+                if (!ts) continue;
+                if (!ts._foodAge) ts._foodAge = {};
+                _decayFoodInStorage(ts, ts, currentDay);
+            }
+        }
+    }
+
+    // ========================================================
     // §20 MAIN GENERATE & TICK
     // ========================================================
 
@@ -22879,6 +23089,9 @@
             tickTaxConsequences();
             // Daily mercenary expiry & war zone supply drain
             tickMercenaryExpiry();
+
+            // Food spoilage / decay (every 3 days for perf, still accurate)
+            if (world.day % 3 === 0) tickFoodDecay();
 
             // Toll Collection
             if (world.day % (CONFIG.TOLL_COLLECTION_INTERVAL || 1) === 0) {
@@ -23444,6 +23657,13 @@
         createTreaty: createTreaty,
         getWarExhaustionRecruitMod: getWarExhaustionRecruitMod,
         getTentCampDiseaseMod: getTentCampDiseaseMod,
+
+        // Food spoilage helpers
+        pushFoodCohort: _pushFoodCohort,
+        removeFoodCohort: _removeFoodCohort,
+        transferFoodCohorts: _transferFoodCohorts,
+        reconcileFoodAge: _reconcileFoodAge,
+        getStaleFoodCount: _getStaleFoodCount,
 
         // God Mode helpers — operate on real kingdoms by ID (bypass gameplay costs)
         godDeclareWar(k1Id, k2Id) {

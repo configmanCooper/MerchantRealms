@@ -702,6 +702,7 @@ window.UI = (function () {
         registerAction('_reopenWarChoice', function(_t, d) { if (d.id) UI._reopenWarChoice(d.id); });
         registerAction('openPlayerImpact', function() { UI.openPlayerImpact(); });
         registerAction('openFinancialReport', function() { UI.openFinancialReport(); });
+        registerAction('openInventory', function() { openPlayerInventory(); });
         registerAction('buyContainer', function(_t, d) { if (d.id) UI.buyContainer(d.id); });
         registerAction('mountContainerUI', function(_t, d) { if (d.id) UI.mountContainerUI(d.id); });
         registerAction('dismountContainerUI', function() { UI.dismountContainerUI(); });
@@ -1662,8 +1663,16 @@ window.UI = (function () {
                 var weight = res ? (res.weight || 1) * qty : qty;
                 var value = res ? (res.basePrice || 0) * qty : 0;
                 totalWeight += weight;
+                // Stale food indicator
+                var staleTag = '';
+                if (CONFIG.PERISHABLE_FOODS && CONFIG.PERISHABLE_FOODS[resId]) {
+                    var staleCount = typeof Engine !== 'undefined' && Engine.getStaleFoodCount ? Engine.getStaleFoodCount(Player.state, resId, Engine.getDay()) : 0;
+                    if (staleCount > 0) {
+                        staleTag = ' <span style="color:#b8860b;font-size:0.75rem;" title="Stale food gives half hunger restore">(' + staleCount + ' stale)</span>';
+                    }
+                }
                 html += '<tr style="border-bottom:1px solid #333;">';
-                html += '<td style="padding:3px 4px;">' + name + '</td>';
+                html += '<td style="padding:3px 4px;">' + name + staleTag + '</td>';
                 html += '<td style="padding:3px 4px;text-align:right;">' + qty + '</td>';
                 html += '<td style="padding:3px 4px;text-align:right;">' + weight + '</td>';
                 html += '<td style="padding:3px 4px;text-align:right;color:#d4af37;">' + value + 'g</td>';
@@ -5039,7 +5048,8 @@ window.UI = (function () {
                 mt.innerHTML = mt.textContent +
                     ' <button class="btn-medieval" data-action="openJournal" style="font-size:0.65rem;padding:3px 10px;margin-left:10px;vertical-align:middle;">📖 Journal</button>' +
                     ' <button class="btn-medieval" data-action="openFinancialReport" style="font-size:0.65rem;padding:3px 10px;vertical-align:middle;">📊 Financial Report</button>' +
-                    ' <button class="btn-medieval" data-action="openPlayerImpact" style="font-size:0.65rem;padding:3px 10px;vertical-align:middle;">🏆 Player Impact</button>';
+                    ' <button class="btn-medieval" data-action="openPlayerImpact" style="font-size:0.65rem;padding:3px 10px;vertical-align:middle;">🏆 Player Impact</button>' +
+                    ' <button class="btn-medieval" data-action="openInventory" style="font-size:0.65rem;padding:3px 10px;vertical-align:middle;">📦 Inventory</button>';
             }
         }, 30);
     }
