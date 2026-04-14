@@ -11611,7 +11611,7 @@
             if (!p.alive) continue;
             if (p.isKing || p.occupation === 'king' || p.occupation === 'queen' || p.occupation === 'reigning_queen') continue;
             if ((p.age || 25) > maxRebelAge) continue;
-            if (p.occupation === 'soldier' || p.occupation === 'guard') continue; // defenders, not rebels
+            // H3: Former guards/soldiers who are unhappy CAN join rebels (they defect)
             // Check individual happiness
             var pH = p.happiness || p.morale || (town.happiness || 50);
             if (pH < rebelHappinessThreshold) {
@@ -11619,7 +11619,7 @@
             }
         }
 
-        if (potentialRebels.length < minRebels) return; // not enough angry people
+        if (potentialRebels.length < minRebels) return;
 
         // Select rebels — up to 60% of potential rebels actually join
         var rebelCount = Math.max(minRebels, Math.floor(potentialRebels.length * rng.randFloat(0.4, 0.7)));
@@ -11634,6 +11634,114 @@
         }
         var rebels = potentialRebels.slice(0, rebelCount);
         var rebelIds = rebels.map(function(r) { return r.id; });
+
+        // H3: Calculate rebel effectiveness based on occupation
+        var _rebelEffectiveStr = 0;
+        for (var _rei = 0; _rei < rebels.length; _rei++) {
+            var _reb = rebels[_rei];
+            var _rebOcc = _reb.occupation || 'commoner';
+            if (_rebOcc === 'soldier' || _rebOcc === 'guard') {
+                _rebelEffectiveStr += 0.9; // former combat roles: 90% as effective as soldiers
+                // Defecting soldiers lose garrison
+                if (_rebOcc === 'soldier' && town.garrison > 0) town.garrison = Math.max(0, town.garrison - 1);
+            } else {
+                _rebelEffectiveStr += 0.5; // non-combat: 50% as effective
+            }
+        }
+
+        // H3: Rebels try to acquire gear from local market
+        var _townSup = (town.market && town.market.supply) ? town.market.supply : {};
+        var _rebelSwords = 0, _rebelArmor = 0, _rebelBows = 0, _rebelArrows = 0;
+        for (var _rgi = 0; _rgi < rebels.length; _rgi++) {
+            var _rgReb = rebels[_rgi];
+            var _rgGold = _rgReb.gold || 0;
+            // Try to buy a sword
+            if ((_townSup.swords || 0) > 0 && _rgGold >= 15) {
+                if (rng.chance(0.7)) { // 70% chance they attempt purchase
+                    _townSup.swords--;
+                    _rgReb.gold = Math.max(0, _rgGold - 15);
+                    _rebelSwords++;
+                    _rgGold = _rgReb.gold;
+                }
+            }
+            // Try to buy armor
+            if ((_townSup.armor || 0) > 0 && _rgGold >= 20) {
+                if (rng.chance(0.5)) {
+                    _townSup.armor--;
+                    _rgReb.gold = Math.max(0, _rgGold - 20);
+                    _rebelArmor++;
+                    _rgGold = _rgReb.gold;
+                }
+            }
+            // If banned or not in market, try smuggling (risk of jail)
+            if (_rebelSwords <= _rgi && ((_townSup.swords || 0) === 0 || (k.laws && k.laws.bannedGoods && k.laws.bannedGoods.indexOf('swords') >= 0))) {
+                if (rng.chance(0.15)) { // 15% try smuggling
+                    if (rng.chance(0.4)) { // 40% get caught
+                        // Caught smuggling — apply kingdom punishment
+                        var _smugPunish = (k.crimePunishments && k.crimePunishments.smuggling) || {};
+                        if (_smugPunish.type === 'jail' || !_smugPunish.type) {
+                            _rgReb._imprisoned = true;
+                            _rgReb._imprisonedDay = world.day;
+                            _rgReb._imprisonedDuration = _smugPunish.jailDays || 30;
+                        }
+                        if (_smugPunish.fine) _rgReb.gold = Math.max(0, (_rgReb.gold || 0) - _smugPunish.fine);
+                        // Remove from rebels
+                        rebelIds.splice(rebelIds.indexOf(_rgReb.id), 1);
+                    } else {
+                        _rebelSwords++; // successful smuggling
+                    }
+                }
+            }
+        }
+        rebels = rebels.filter(function(r) { return rebelIds.indexOf(r.id) >= 0; });
+        if (rebels.length < minRebels) return; // not enough rebels left after arrests
+
+        // H3: Disloyal nobles can participate — provide resources and fighters
+        var _nobleParticipants = [];
+        var _allNobles = world.people.filter(function(np) {
+            return np.alive && np.socialRank && np.socialRank[k.id] >= 4 && np.socialRank[k.id] <= 6;
+        });
+        for (var _npi = 0; _npi < _allNobles.length; _npi++) {
+            var _noble = _allNobles[_npi];
+            var _nLoyalty = _noble.kingLoyalty || 50;
+            var _nKingRel = _noble.perceivedKingLoyalty || _nLoyalty;
+            var _nFear = _noble.fearOfKing || 15;
+            var _nPers = _noble.personality || {};
+
+            // Only nobles with loyalty < 35 AND relationship with king < 20
+            if (_nLoyalty >= 35 || _nKingRel >= 20) continue;
+
+            var _joinChance = 0.15; // base 15% chance
+            // Personality modifiers
+            if (_nPers.ambition === 'ambitious') _joinChance += 0.15;
+            if (_nPers.courage === 'brave') _joinChance += 0.10;
+            if (_nPers.courage === 'cowardly') _joinChance -= 0.10;
+            // Fear effects: high fear DECREASES chance for cowardly, INCREASES for brave (angry)
+            if (_nFear > 50) {
+                if (_nPers.courage === 'cowardly' || (_nPers.ambition || 50) < 30) {
+                    _joinChance -= 0.15; // too scared
+                } else if (_nPers.courage === 'brave') {
+                    _joinChance += 0.10; // anger at tyranny
+                }
+            }
+            // Nobles in the town are more likely to join
+            if (_noble.townId === town.id) _joinChance += 0.15;
+            else _joinChance -= 0.10; // would need to travel
+
+            if (rng.chance(Math.max(0.02, _joinChance))) {
+                _nobleParticipants.push(_noble);
+                // Noble provides weapons/armor from their wealth
+                var _nobleGold = _noble.gold || 0;
+                var _nobleWeapons = Math.min(5, Math.floor(_nobleGold / 25));
+                if (_nobleWeapons > 0) {
+                    _rebelSwords += _nobleWeapons;
+                    _rebelArmor += Math.floor(_nobleWeapons * 0.6);
+                    _noble.gold -= _nobleWeapons * 25;
+                }
+                rebelIds.push(_noble.id);
+                _rebelEffectiveStr += 1.5; // nobles fight with higher effectiveness
+            }
+        }
 
         // Pick revolt group name (avoid reusing active names)
         var usedNames = {};
@@ -11665,13 +11773,18 @@
             }
         }
 
-        // Calculate rebel fighting strength
-        var rebelStrength = rebels.length;
+        // H3: Add self-acquired rebel gear to the stockpile equipment
+        equippedSwords += _rebelSwords;
+        equippedArmor += _rebelArmor;
+
+        // Calculate rebel fighting strength using H3 effectiveness-based system
+        var rebelStrength = Math.floor(_rebelEffectiveStr); // already accounts for job effectiveness
+        var totalRebelGear = equippedSwords + equippedArmor + equippedBows;
         var equipMult = 1.0;
-        if (equippedSwords > 0) equipMult += 0.3 * (equippedSwords / rebels.length);
-        if (equippedArmor > 0) equipMult += 0.2 * (equippedArmor / rebels.length);
-        if (equippedBows > 0) equipMult += 0.15 * (equippedBows / rebels.length);
-        rebelStrength = Math.floor(rebelStrength * equipMult);
+        if (equippedSwords > 0) equipMult += 0.3 * (equippedSwords / Math.max(1, rebels.length));
+        if (equippedArmor > 0) equipMult += 0.2 * (equippedArmor / Math.max(1, rebels.length));
+        if (equippedBows > 0) equipMult += 0.15 * (equippedBows / Math.max(1, rebels.length));
+        rebelStrength = Math.max(1, Math.floor(rebelStrength * equipMult));
 
         // Defender strength: garrison soldiers + guards (guards at half effectiveness)
         var garrison = town.garrison || 0;
@@ -11720,6 +11833,7 @@
             guards: guards,
             rebelEquipment: { swords: equippedSwords, armor: equippedArmor, bows: equippedBows, arrows: equippedArrows },
             defenderEquipment: { swords: defEquipSwords, armor: defEquipArmor, bows: defEquipBows },
+            nobleParticipants: _nobleParticipants.map(function(n) { return n.id; }), // H3: track noble involvement
         };
 
         // Block the town like a siege
@@ -11845,16 +11959,33 @@
         var parentK = findKingdom(revolt.parentKingdomId);
         var groupName = revolt.groupName;
 
-        // Pick a king from surviving rebels — prefer ambitious/brave personalities
+        // Pick a king from surviving rebels — H3: noble participants get priority
         var survivingRebels = [];
         for (var i = 0; i < revolt.rebelIds.length; i++) {
             var r = findPerson(revolt.rebelIds[i]);
             if (r && r.alive) survivingRebels.push(r);
         }
 
+        // H3: Identify surviving noble participants
+        var _noblePartIds = revolt.nobleParticipants || [];
+        var _survivingNobles = survivingRebels.filter(function(r) { return _noblePartIds.indexOf(r.id) >= 0; });
+
         var newKing = null;
-        if (survivingRebels.length > 0) {
-            // Score each rebel for leadership
+        // H3: Noble participants who survived have a much higher chance of becoming king
+        if (_survivingNobles.length > 0) {
+            var bestNobleScore = -1;
+            for (var _snki = 0; _snki < _survivingNobles.length; _snki++) {
+                var _snNoble = _survivingNobles[_snki];
+                var _snPers = _snNoble.personality || {};
+                var _snScore = 50 + rng.randInt(0, 20); // nobles start with a 50pt advantage
+                if (_snPers.ambition === 'ambitious') _snScore += 30;
+                if (_snPers.courage === 'brave') _snScore += 20;
+                if (_snPers.intelligence === 'brilliant' || _snPers.intelligence === 'clever') _snScore += 15;
+                if (_snScore > bestNobleScore) { bestNobleScore = _snScore; newKing = _snNoble; }
+            }
+        }
+        // If no noble survived or no nobles participated, pick from common rebels
+        if (!newKing && survivingRebels.length > 0) {
             var bestScore = -1;
             for (var ri = 0; ri < survivingRebels.length; ri++) {
                 var rebel = survivingRebels[ri];
@@ -11873,6 +12004,17 @@
 
         if (!newKing && survivingRebels.length > 0) {
             newKing = survivingRebels[0];
+        }
+
+        // H3: Noble participants lose all status with parent kingdom
+        for (var _nlsi = 0; _nlsi < _noblePartIds.length; _nlsi++) {
+            var _nlNoble = findPerson(_noblePartIds[_nlsi]);
+            if (_nlNoble && _nlNoble.alive && parentK) {
+                if (_nlNoble.socialRank) delete _nlNoble.socialRank[parentK.id];
+                _nlNoble.kingLoyalty = 0;
+                _nlNoble.perceivedKingLoyalty = 0;
+                _nlNoble.fearOfKing = 0;
+            }
         }
 
         // Generate kingdom personality based on new king
@@ -12001,8 +12143,16 @@
             var rebel = findPerson(revolt.rebelIds[sri]);
             if (rebel && rebel.alive) {
                 rebel.kingdomId = newKingdomId;
-                // Top rebels become minor nobles
-                if (sri < 3 && rebel.id !== (newKing ? newKing.id : null)) {
+                // H3: Noble participants become nobles in new kingdom (rank 5-6)
+                var _isNobleRevolt = _noblePartIds.indexOf(rebel.id) >= 0;
+                if (_isNobleRevolt && rebel.id !== (newKing ? newKing.id : null)) {
+                    if (!rebel.socialRank) rebel.socialRank = {};
+                    rebel.socialRank[newKingdomId] = rng.chance(0.4) ? 6 : 5; // 40% Royal Advisor, 60% Lord
+                    rebel.kingLoyalty = 70 + rng.randInt(0, 20); // very loyal to kingdom they helped create
+                    rebel.perceivedKingLoyalty = rebel.kingLoyalty;
+                    rebel.fearOfKing = rng.randInt(5, 20);
+                } else if (sri < 3 && rebel.id !== (newKing ? newKing.id : null)) {
+                    // Top non-noble rebels become minor nobles
                     if (!rebel.socialRank) rebel.socialRank = {};
                     rebel.socialRank[newKingdomId] = 4; // minor noble
                 }
@@ -12102,17 +12252,42 @@
         var k = findKingdom(revolt.parentKingdomId || town.kingdomId);
         var cooldownDays = CONFIG.TOWN_REVOLT_COOLDOWN || 60;
 
-        // Kill remaining rebel NPCs (execution of captured rebels — 30% die)
+        // Kill remaining rebel NPCs (execution of captured rebels — 30% die, nobles 50%)
+        var _noblePartIds = revolt.nobleParticipants || [];
         for (var ri = 0; ri < revolt.rebelIds.length; ri++) {
             var rebel = findPerson(revolt.rebelIds[ri]);
             if (rebel && rebel.alive) {
-                if (rng.chance(0.30)) {
-                    killPerson(rebel, 'revolt_suppression');
+                var _isNobleParticipant = _noblePartIds.indexOf(rebel.id) >= 0;
+                var _execChance = _isNobleParticipant ? 0.50 : 0.30; // nobles executed at higher rate as traitors
+                if (rng.chance(_execChance)) {
+                    killPerson(rebel, _isNobleParticipant ? 'revolt_treason_execution' : 'revolt_suppression');
+                    if (_isNobleParticipant) {
+                        logEvent('⚔️ Noble ' + rebel.name + ' executed for treason after revolt in ' + town.name, {
+                            type: 'noble_revolt_execution', noble: rebel.name, town: town.name
+                        }, 'kingdom');
+                    }
                 } else {
-                    // Survivors lose more happiness, get a mark
                     if (rebel.happiness != null) rebel.happiness = Math.max(0, rebel.happiness - 20);
                     rebel._revoltParticipant = true;
                     rebel._revoltSuppressedDay = world.day;
+                    // H3: Noble participants who survive lose all noble rank — stripped as traitors
+                    if (_isNobleParticipant && k) {
+                        if (rebel.socialRank) delete rebel.socialRank[k.id];
+                        rebel.kingLoyalty = 0;
+                        rebel.perceivedKingLoyalty = 0;
+                        rebel.fearOfKing = 80; // terrified after failed revolt
+                        // Massive relationship penalty with all nobles in kingdom
+                        for (var _pni = 0; _pni < world.people.length; _pni++) {
+                            var _pn = world.people[_pni];
+                            if (_pn.alive && _pn.socialRank && (_pn.socialRank[k.id] >= 4)) {
+                                if (!_pn.relationships) _pn.relationships = {};
+                                _pn.relationships[rebel.id] = Math.max(-100, (_pn.relationships[rebel.id] || 0) - 40);
+                            }
+                        }
+                        logEvent('🔗 Noble ' + rebel.name + ' stripped of rank for revolt participation in ' + town.name, {
+                            type: 'noble_revolt_stripped', noble: rebel.name, town: town.name
+                        }, 'kingdom');
+                    }
                 }
             }
         }
@@ -13561,9 +13736,9 @@
                     continue;
                 }
 
-                // Phase-based army raising: buildup=conservative, offensive=aggressive, capital_strike=focused
-                var _raiseChance = _warPhase === 'buildup' ? 0.1 : (_warPhase === 'capital_strike' ? 0.4 : 0.3);
-                var _minAvail = _warPhase === 'buildup' ? 10 : 5;
+                // H2: Phase-based army raising with improved deployment rates
+                var _raiseChance = _warPhase === 'buildup' ? 0.15 : (_warPhase === 'capital_strike' ? 0.50 : 0.35);
+                var _minAvail = _warPhase === 'buildup' ? 8 : 5;
                 if (availableSoldiers > _minAvail && rng.chance(_raiseChance)) {
                     const armySize = Math.min(Math.floor(town.garrison * 0.5), availableSoldiers);
                     town.garrison -= armySize;
@@ -13903,6 +14078,139 @@
                         });
                         logEvent(k.name + ' has commissioned a ' + picked.def.name + ' at ' + town.name + ' for trade.');
                         break; // one per tick
+                    }
+                }
+            }
+
+            // ── H2: PEACETIME SOLDIER RECRUITMENT ──
+            // Kings maintain a minimum garrison in peacetime. Military/aggressive kings maintain more.
+            var _ptPers = k.kingPersonality || {};
+            var _ptTargetGarPerTown = 8; // base target per town
+            if (_ptPers.militarism === 'warlike' || _ptPers.militarism === 'aggressive') _ptTargetGarPerTown = 15;
+            else if (_ptPers.militarism === 'defensive') _ptTargetGarPerTown = 12;
+            else if (_ptPers.courage === 'brave') _ptTargetGarPerTown = 10;
+
+            var _ptNeedsRecruits = false;
+            for (var _ptTid of k.territories) {
+                var _ptTown = findTown(_ptTid);
+                if (!_ptTown) continue;
+                if ((_ptTown.garrison || 0) < _ptTargetGarPerTown) _ptNeedsRecruits = true;
+            }
+
+            // Recruit if below target and affordable (every 10 days check)
+            if (_ptNeedsRecruits && world.day % 10 === 0 && k.gold > 500) {
+                if (!k._recruitmentPostings) k._recruitmentPostings = [];
+                var _ptActivePostings = k._recruitmentPostings.length;
+                if (_ptActivePostings < 2) {
+                    var _ptRecruitCost = CONFIG.SOLDIER_RECRUIT_COST || 50;
+                    var _ptCount = Math.min(5, Math.floor(k.gold * 0.05 / _ptRecruitCost));
+                    if (_ptCount > 0) {
+                        var _ptTowns = [];
+                        for (var _ptTid2 of k.territories) {
+                            var _ptT2 = findTown(_ptTid2);
+                            if (_ptT2 && !_ptT2.isWilderness) _ptTowns.push(_ptTid2);
+                        }
+                        var _ptReserve = _ptCount * _ptRecruitCost;
+                        k.gold -= _ptReserve;
+                        k._recruitmentPostings.push({
+                            id: 'pt_' + world.day + '_' + Math.floor(rng.random() * 9999),
+                            towns: _ptTowns,
+                            slotsTotal: _ptCount,
+                            slotsFilled: 0,
+                            payPerSoldier: _ptRecruitCost,
+                            reservedGold: _ptReserve,
+                            postedDay: world.day,
+                            isConscription: false
+                        });
+                    }
+                }
+            }
+
+            // ── H2: PEACETIME MILITARY GOODS PROCUREMENT ──
+            // Kings stockpile weapons/armor to be ready for war
+            if (world.day % 30 === 0 && k.gold > 1000) {
+                if (!k.militaryStockpile) k.militaryStockpile = { swords: 0, armor: 0, bows: 0, arrows: 0, horses: 0 };
+                var _ptMs = k.militaryStockpile;
+                var _ptWantSwords = (_ptMs.swords || 0) < 20;
+                var _ptWantArmor = (_ptMs.armor || 0) < 15;
+                var _ptWantBows = (_ptMs.bows || 0) < 10;
+                var _ptWantArrows = (_ptMs.arrows || 0) < 50;
+                var _ptBoughtAny = false;
+                for (var _ptTid3 of k.territories) {
+                    var _ptT3 = findTown(_ptTid3);
+                    if (!_ptT3 || !_ptT3.market || !_ptT3.market.supply) continue;
+                    var _ptSup = _ptT3.market.supply;
+                    if (_ptWantSwords && (_ptSup.swords || 0) > 5) {
+                        var _ptBuyS = Math.min(10, (_ptSup.swords || 0) - 3);
+                        var _ptPriceS = (getMarketPrice(_ptT3, 'swords') || 20) * _ptBuyS;
+                        if (_ptPriceS < k.gold * 0.1) {
+                            _ptSup.swords -= _ptBuyS;
+                            k.gold -= _ptPriceS;
+                            k.militaryStockpile.swords = (_ptMs.swords || 0) + _ptBuyS;
+                            _ptBoughtAny = true;
+                        }
+                    }
+                    if (_ptWantArmor && (_ptSup.armor || 0) > 3) {
+                        var _ptBuyA = Math.min(8, (_ptSup.armor || 0) - 2);
+                        var _ptPriceA = (getMarketPrice(_ptT3, 'armor') || 30) * _ptBuyA;
+                        if (_ptPriceA < k.gold * 0.1) {
+                            _ptSup.armor -= _ptBuyA;
+                            k.gold -= _ptPriceA;
+                            k.militaryStockpile.armor = (_ptMs.armor || 0) + _ptBuyA;
+                            _ptBoughtAny = true;
+                        }
+                    }
+                    if (_ptWantBows && (_ptSup.bows || 0) > 2) {
+                        var _ptBuyB = Math.min(5, (_ptSup.bows || 0) - 1);
+                        var _ptPriceB = (getMarketPrice(_ptT3, 'bows') || 15) * _ptBuyB;
+                        if (_ptPriceB < k.gold * 0.08) {
+                            _ptSup.bows -= _ptBuyB;
+                            k.gold -= _ptPriceB;
+                            k.militaryStockpile.bows = (_ptMs.bows || 0) + _ptBuyB;
+                            _ptBoughtAny = true;
+                        }
+                    }
+                    if (_ptWantArrows && (_ptSup.arrows || 0) > 20) {
+                        var _ptBuyAr = Math.min(30, (_ptSup.arrows || 0) - 10);
+                        var _ptPriceAr = (getMarketPrice(_ptT3, 'arrows') || 3) * _ptBuyAr;
+                        if (_ptPriceAr < k.gold * 0.05) {
+                            _ptSup.arrows -= _ptBuyAr;
+                            k.gold -= _ptPriceAr;
+                            k.militaryStockpile.arrows = (_ptMs.arrows || 0) + _ptBuyAr;
+                            _ptBoughtAny = true;
+                        }
+                    }
+                    if (_ptBoughtAny) break;
+                }
+            }
+
+            // ── H2: PEACETIME NORMAL GOODS PROCUREMENT (bandages, splints, food) ──
+            if (world.day % 30 === 0 && k.gold > 500) {
+                if (!k.goodsStockpile) k.goodsStockpile = {};
+                var _ptGs = k.goodsStockpile;
+                var _ptGoodsNeeded = [
+                    { id: 'bandages', target: 20, max: 10 },
+                    { id: 'splints', target: 10, max: 5 },
+                    { id: 'bread', target: 30, max: 15 },
+                    { id: 'meat', target: 15, max: 8 }
+                ];
+                for (var _ptGi = 0; _ptGi < _ptGoodsNeeded.length; _ptGi++) {
+                    var _ptGood = _ptGoodsNeeded[_ptGi];
+                    if ((_ptGs[_ptGood.id] || 0) >= _ptGood.target) continue;
+                    for (var _ptTid4 of k.territories) {
+                        var _ptT4 = findTown(_ptTid4);
+                        if (!_ptT4 || !_ptT4.market || !_ptT4.market.supply) continue;
+                        var _ptAvail = (_ptT4.market.supply[_ptGood.id] || 0);
+                        if (_ptAvail > _ptGood.max) {
+                            var _ptBuyG = Math.min(_ptGood.max, _ptAvail - Math.floor(_ptGood.max * 0.5));
+                            var _ptPriceG = (getMarketPrice(_ptT4, _ptGood.id) || 5) * _ptBuyG;
+                            if (_ptPriceG < k.gold * 0.05) {
+                                _ptT4.market.supply[_ptGood.id] -= _ptBuyG;
+                                k.gold -= _ptPriceG;
+                                _ptGs[_ptGood.id] = (_ptGs[_ptGood.id] || 0) + _ptBuyG;
+                                break;
+                            }
+                        }
                     }
                 }
             }
@@ -16068,6 +16376,8 @@
             attackK.battleRecord = attackK.battleRecord || { wins: 0, losses: 0, streak: 0 };
             attackK.battleRecord.wins++;
             attackK.battleRecord.streak = Math.max(0, attackK.battleRecord.streak) + 1;
+            // H1: Track recent battle wins for noble fear boost
+            attackK._recentBattleWins = (attackK._recentBattleWins || 0) + 1;
             if (defendK) {
                 defendK.battleRecord = defendK.battleRecord || { wins: 0, losses: 0, streak: 0 };
                 defendK.battleRecord.losses++;
@@ -16300,6 +16610,8 @@
             winnerK.battleRecord = winnerK.battleRecord || { wins: 0, losses: 0, streak: 0 };
             winnerK.battleRecord.wins++;
             winnerK.battleRecord.streak = Math.max(0, winnerK.battleRecord.streak) + 1;
+            // H1: Track recent battle wins for noble fear boost
+            winnerK._recentBattleWins = (winnerK._recentBattleWins || 0) + 1;
             // Winner morale boost
             if (winner.morale != null) winner.morale = Math.min(100, winner.morale + (CONFIG.MORALE_VICTORY_BOOST || 5));
         }

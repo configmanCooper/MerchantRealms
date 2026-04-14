@@ -4162,6 +4162,7 @@
                 }
                 if (_conscripts > 0) {
                     boostKingdomHappiness(k, -5);
+                    k._lastConscriptionDay = world.day; // H1: Track for noble fear
                     logKingAction(k, '⚔️ Conscripted ' + _conscripts + ' citizens into the army');
                     logEvent('⚔️ ' + k.name + ' conscripts ' + _conscripts + ' citizens! Families weep as men are marched to war. (-5 happiness)', {
                         type: 'unpopular_decision', kingdomId: k.id,
@@ -4186,6 +4187,132 @@
                 _ncN.fearOfKing = Math.max(0, (_ncN.fearOfKing || 15) - 3);
                 // +3 king relationship: boost perceived loyalty as proxy
                 _ncN.perceivedKingLoyalty = Math.min(100, (_ncN.perceivedKingLoyalty || _ncN.kingLoyalty || 50) + 3);
+            }
+        }
+
+        // =============================================
+        // 13d. H1: NOBLE FEAR ACTIVATION — King periodically punishes nobles, fear effects
+        // =============================================
+        if (world.day % 15 === 0 && !_isPlayerKingOf(k)) {
+            var _h1Nobles = world.people.filter(function(np) {
+                return np.alive && np.socialRank && np.socialRank[k.id] >= 4 && np.socialRank[k.id] <= 6;
+            });
+            if (_h1Nobles.length > 0) {
+                var _h1Pers = k.kingPersonality || {};
+                var _h1Mood = (k.kingMood && k.kingMood.current) || 'content';
+
+                // Harsh/stern/paranoid kings punish nobles periodically
+                var _h1PunishChance = 0.02; // base 2%
+                if (_h1Pers.temperament === 'stern' || _h1Pers.temperament === 'cruel') _h1PunishChance += 0.08;
+                if (_h1Pers.justice === 'draconian' || _h1Pers.justice === 'harsh') _h1PunishChance += 0.06;
+                if (_h1Mood === 'paranoid') _h1PunishChance += 0.10;
+                if (_h1Mood === 'wrathful') _h1PunishChance += 0.12;
+                // Generous/kind kings almost never punish randomly
+                if (_h1Pers.temperament === 'kind' || _h1Pers.generosity === 'generous') _h1PunishChance *= 0.3;
+
+                if (rng.chance(_h1PunishChance)) {
+                    // Pick a target: prefer nobles with low perceived loyalty
+                    var _h1Targets = _h1Nobles.filter(function(n) { return (n.perceivedKingLoyalty || n.kingLoyalty || 50) < 50; });
+                    if (_h1Targets.length === 0) _h1Targets = _h1Nobles; // harsh kings punish randomly
+                    var _h1Target = rng.pick(_h1Targets);
+                    var _h1TargetName = (_h1Target.firstName || 'a noble') + ' ' + (_h1Target.lastName || '');
+
+                    // Severity: fine (common), imprisonment (moderate), execution (rare but devastating)
+                    var _h1SeverityRoll = rng.random();
+                    var _h1ExecThresh = (_h1Pers.temperament === 'cruel') ? 0.12 : ((_h1Pers.justice === 'draconian') ? 0.08 : 0.03);
+                    var _h1JailThresh = _h1ExecThresh + ((_h1Pers.temperament === 'stern') ? 0.30 : 0.20);
+
+                    if (_h1SeverityRoll < _h1ExecThresh) {
+                        // EXECUTION — maximum fear spike
+                        killPerson(_h1Target, 'executed_by_king');
+                        logKingAction(k, '💀 Executed ' + _h1TargetName + ' for suspected disloyalty');
+                        logEvent('💀 ' + k.name + '\'s king EXECUTES noble ' + _h1TargetName + '! The court trembles.', {
+                            type: 'noble_execution', kingdomId: k.id,
+                            cause: 'The king suspects treachery',
+                            effects: ['Noble killed', 'All nobles fear increases dramatically', 'Some may become more loyal, others may plot revenge']
+                        });
+                        // Massive fear spike for ALL nobles
+                        for (var _h1fi = 0; _h1fi < _h1Nobles.length; _h1fi++) {
+                            var _h1n = _h1Nobles[_h1fi];
+                            if (_h1n.id === _h1Target.id) continue;
+                            var _h1FearBoost = 25 + rng.randInt(0, 15);
+                            _h1n.fearOfKing = Math.min(100, (_h1n.fearOfKing || 15) + _h1FearBoost);
+                            // Fear personality effects on loyalty
+                            var _h1np = _h1n.personality || {};
+                            if ((_h1np.courage === 'cowardly' || (_h1np.ambition || 50) < 30) && (_h1n.kingLoyalty || 50) < 60) {
+                                // Cowardly/unambitious nobles become more "loyal" (submissive) from fear
+                                _h1n.kingLoyalty = Math.min(100, (_h1n.kingLoyalty || 50) + 8);
+                                _h1n.perceivedKingLoyalty = Math.min(100, (_h1n.perceivedKingLoyalty || 50) + 15);
+                            } else if (_h1np.courage === 'brave' || (_h1np.ambition || 50) > 70) {
+                                // Brave/ambitious nobles become LESS loyal (resentful of tyranny)
+                                _h1n.kingLoyalty = Math.max(0, (_h1n.kingLoyalty || 50) - 8);
+                            } else {
+                                // Average nobles: increase perceived loyalty (acting more carefully) but slight loyalty drop
+                                _h1n.perceivedKingLoyalty = Math.min(100, (_h1n.perceivedKingLoyalty || 50) + 10);
+                                _h1n.kingLoyalty = Math.max(0, (_h1n.kingLoyalty || 50) - 3);
+                            }
+                        }
+                    } else if (_h1SeverityRoll < _h1JailThresh) {
+                        // IMPRISONMENT — moderate fear spike
+                        _h1Target._imprisoned = true;
+                        _h1Target._imprisonedDay = world.day;
+                        _h1Target._imprisonedDuration = 30 + rng.randInt(0, 60);
+                        _h1Target.kingLoyalty = Math.max(0, (_h1Target.kingLoyalty || 50) - 20);
+                        logKingAction(k, '⛓️ Imprisoned ' + _h1TargetName + ' for suspected disloyalty');
+                        logEvent('⛓️ ' + k.name + '\'s king IMPRISONS noble ' + _h1TargetName + '!', {
+                            type: 'noble_imprisonment', kingdomId: k.id,
+                            cause: 'The king suspects disloyalty',
+                            effects: ['Noble imprisoned', 'Moderate fear increase for all nobles']
+                        });
+                        for (var _h1ji = 0; _h1ji < _h1Nobles.length; _h1ji++) {
+                            var _h1jn = _h1Nobles[_h1ji];
+                            if (_h1jn.id === _h1Target.id) continue;
+                            _h1jn.fearOfKing = Math.min(100, (_h1jn.fearOfKing || 15) + 10 + rng.randInt(0, 5));
+                            var _h1jp = _h1jn.personality || {};
+                            if (_h1jp.courage === 'cowardly' || (_h1jp.ambition || 50) < 30) {
+                                _h1jn.perceivedKingLoyalty = Math.min(100, (_h1jn.perceivedKingLoyalty || 50) + 8);
+                            } else if (_h1jp.courage === 'brave' || (_h1jp.ambition || 50) > 70) {
+                                _h1jn.kingLoyalty = Math.max(0, (_h1jn.kingLoyalty || 50) - 4);
+                            }
+                        }
+                    } else {
+                        // FINE — mild fear, common punishment
+                        var _h1Fine = Math.min((_h1Target.gold || 0), Math.floor(rng.randFloat(50, 200)));
+                        _h1Target.gold = Math.max(0, (_h1Target.gold || 0) - _h1Fine);
+                        k.gold += _h1Fine;
+                        _h1Target.kingLoyalty = Math.max(0, (_h1Target.kingLoyalty || 50) - 5);
+                        logKingAction(k, '💰 Fined ' + _h1TargetName + ' ' + _h1Fine + 'g for displeasing the crown');
+                        logEvent('💰 ' + k.name + '\'s king fines noble ' + _h1TargetName + ' ' + _h1Fine + 'g.', {
+                            type: 'noble_fine', kingdomId: k.id
+                        });
+                        for (var _h1fni = 0; _h1fni < _h1Nobles.length; _h1fni++) {
+                            if (_h1Nobles[_h1fni].id !== _h1Target.id) {
+                                _h1Nobles[_h1fni].fearOfKing = Math.min(100, (_h1Nobles[_h1fni].fearOfKing || 15) + 3);
+                            }
+                        }
+                    }
+                }
+
+                // War victory fear boost (check monthly)
+                if (k._recentBattleWins && k._recentBattleWins > 0) {
+                    var _h1WinFear = Math.min(10, k._recentBattleWins * 3);
+                    for (var _h1wi = 0; _h1wi < _h1Nobles.length; _h1wi++) {
+                        _h1Nobles[_h1wi].fearOfKing = Math.min(100, (_h1Nobles[_h1wi].fearOfKing || 15) + _h1WinFear);
+                        // War victories make cowardly nobles more loyal
+                        var _h1wp = _h1Nobles[_h1wi].personality || {};
+                        if (_h1wp.courage === 'cowardly') {
+                            _h1Nobles[_h1wi].kingLoyalty = Math.min(100, (_h1Nobles[_h1wi].kingLoyalty || 50) + 2);
+                        }
+                    }
+                    k._recentBattleWins = Math.max(0, k._recentBattleWins - 1); // decay
+                }
+
+                // Conscription and property seizure slightly increase fear (already handled above but ensure tracking)
+                if (k._lastConscriptionDay && (world.day - k._lastConscriptionDay) < 30) {
+                    for (var _h1ci = 0; _h1ci < _h1Nobles.length; _h1ci++) {
+                        _h1Nobles[_h1ci].fearOfKing = Math.min(100, (_h1Nobles[_h1ci].fearOfKing || 15) + 2);
+                    }
+                }
             }
         }
 
