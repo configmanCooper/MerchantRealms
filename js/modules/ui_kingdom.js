@@ -776,10 +776,11 @@
             html += 'background:rgba(100,100,100,0.12);border:1px solid rgba(100,100,100,0.3);color:#888;">';
             html += '<span>🚫 <strong>Fertility:</strong> ' + status.fertilityReason + '</span>';
         }
-        // Try for Baby button
-        if (!status.isPregnant && status.canConceive && babyInfo.canTryToday) {
+        // Try for Baby button (hide if spouse is traveling)
+        var _spouseTraveling = (status.activity === 'traveling');
+        if (!status.isPregnant && status.canConceive && babyInfo.canTryToday && !_spouseTraveling) {
             html += '<button class="btn-medieval" data-action="tryForBaby" style="font-size:11px;padding:4px 10px;margin-left:8px;white-space:nowrap;">💕 Try for Baby (' + babyInfo.chance + '%)</button>';
-        } else if (!status.isPregnant && status.canConceive && !babyInfo.canTryToday) {
+        } else if (!status.isPregnant && status.canConceive && !babyInfo.canTryToday && !_spouseTraveling) {
             html += '<span style="font-size:11px;color:#886;margin-left:8px;white-space:nowrap;">⏳ Already tried today</span>';
         }
         html += '</div>';

@@ -5245,8 +5245,46 @@
                     infantry: _propMounted ? 0 : inf, archers: _propMounted ? 0 : arch, cavalry: _propMounted ? soldiers : cav,
                     mounted: _propMounted,
                     morale: CONFIG.ARMY_DEFAULT_MORALE || 80,
-                    supplies: CONFIG.ARMY_DEFAULT_SUPPLIES || 100
+                    supplies: CONFIG.ARMY_DEFAULT_SUPPLIES || 100,
+                    demolitionTools: 0,
+                    blastingPowder: 0
                 };
+
+                // AI: strategically send demolition tools and blasting powder from kingdom stockpile
+                var _kingPersonality = kingdom.personality || {};
+                var _isAggressive = _kingPersonality.military === 'warlike' || _kingPersonality.military === 'aggressive';
+                var _demoAvail = 0, _blastAvail = 0;
+                for (var _kti2 = 0; _kti2 < world.towns.length; _kti2++) {
+                    var _kt2 = world.towns[_kti2];
+                    if (!kingdom.territories.has(_kt2.id)) continue;
+                    _demoAvail += (_kt2.market.supply.demolition_tools || 0);
+                    _blastAvail += (_kt2.market.supply.blasting_powder || 0);
+                }
+                // Send up to 10 demolition tools if available (always if aggressive, 60% chance otherwise)
+                var _sendDemo = Math.min(10, _demoAvail);
+                if (_sendDemo > 0 && (_isAggressive || world.rng.chance(0.6))) {
+                    armyObj.demolitionTools = _sendDemo;
+                    // Consume from kingdom towns
+                    var _demoLeft = _sendDemo;
+                    for (var _kti3 = 0; _kti3 < world.towns.length && _demoLeft > 0; _kti3++) {
+                        var _kt3 = world.towns[_kti3];
+                        if (!kingdom.territories.has(_kt3.id)) continue;
+                        var _take = Math.min(_demoLeft, _kt3.market.supply.demolition_tools || 0);
+                        if (_take > 0) { _kt3.market.supply.demolition_tools -= _take; _demoLeft -= _take; }
+                    }
+                }
+                // Send up to 10 blasting powder if available (always if aggressive, 40% chance otherwise)
+                var _sendBlast = Math.min(10, _blastAvail);
+                if (_sendBlast > 0 && (_isAggressive || world.rng.chance(0.4))) {
+                    armyObj.blastingPowder = _sendBlast;
+                    var _blastLeft = _sendBlast;
+                    for (var _kti4 = 0; _kti4 < world.towns.length && _blastLeft > 0; _kti4++) {
+                        var _kt4 = world.towns[_kti4];
+                        if (!kingdom.territories.has(_kt4.id)) continue;
+                        var _take2 = Math.min(_blastLeft, _kt4.market.supply.blasting_powder || 0);
+                        if (_take2 > 0) { _kt4.market.supply.blasting_powder -= _take2; _blastLeft -= _take2; }
+                    }
+                }
                 if (route.legs.length > 0) {
                     armyObj.route = route;
                     armyObj.legIndex = 0;

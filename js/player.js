@@ -5318,7 +5318,38 @@
             }
             var workerSkillMod = 1.0 + totalSkill * 0.0005;
 
-            const rawOutput = _activeRate * workerFraction * seasonMod * (1 + ((bld.level || 1) - 1) * 0.10) * prodBonus * workerSkillMod * (player.spouseProdMod || 1.0);
+            // Siege production penalty for player buildings (50%)
+            var _pSiegePenalty = 1.0;
+            if (town.siege) _pSiegePenalty = 0.5;
+
+            // Optional boost (manure for farms, charcoal for smelters)
+            var _pOptBoostMod = 1.0;
+            if (bt.optionalBoost) {
+                var _pBoostRes = bt.optionalBoost.resource;
+                var _pBoostConsume = bt.optionalBoost.consumeRate || 1;
+                var _pBoostKey = '_boostStorage_' + _pBoostRes;
+                var _pBoostMax = bt.optionalBoost.storageMax || 20;
+                if (bld[_pBoostKey] == null) bld[_pBoostKey] = 0;
+                // Auto-buy boost resource from market
+                if (bld[_pBoostKey] < _pBoostMax && bld.autoBuy !== false) {
+                    var _pMarketAvail = (town.market && town.market.supply && town.market.supply[_pBoostRes]) || 0;
+                    var _pWant = Math.min(_pBoostMax - bld[_pBoostKey], _pMarketAvail, 5);
+                    if (_pWant > 0) {
+                        var _pBPrice = (town.market.prices[_pBoostRes] || 5) * _pWant;
+                        if (player.gold >= _pBPrice) {
+                            town.market.supply[_pBoostRes] -= _pWant;
+                            player.gold -= _pBPrice;
+                            bld[_pBoostKey] += _pWant;
+                        }
+                    }
+                }
+                if (bld[_pBoostKey] >= _pBoostConsume) {
+                    bld[_pBoostKey] -= _pBoostConsume;
+                    _pOptBoostMod = 1.0 + (bt.optionalBoost.bonusPct / 100);
+                }
+            }
+
+            const rawOutput = _activeRate * workerFraction * seasonMod * (1 + ((bld.level || 1) - 1) * 0.10) * prodBonus * workerSkillMod * (player.spouseProdMod || 1.0) * _pSiegePenalty * _pOptBoostMod;
             const output = Math.round(rawOutput);
 
             // ═══════════════════════════════════════════════════════════
@@ -5486,6 +5517,26 @@
                             player.stats.totalGoldEarned += _fbRev2;
                             logFinance(_fbRev2, 'building_sales', 'Sold ' + overflow + ' ' + ((_fbRes2 && _fbRes2.name) || _activeProduces) + ' (town missing fallback)');
                         }
+                    }
+                }
+            }
+
+            // Byproduct production for player buildings (manure, separate from output storage)
+            if (bt.byproduct && actualOutput > 0) {
+                var _pbRes = bt.byproduct.resource;
+                var _pbRate = bt.byproduct.rate || 1;
+                var _pbKey = '_byproductStorage_' + _pbRes;
+                var _pbMax = bt.byproductStorage || 30;
+                if (bld[_pbKey] == null) bld[_pbKey] = 0;
+                var _pbAmt = Math.ceil(_pbRate * workerFraction * _pSiegePenalty);
+                var _pbSpace = _pbMax - bld[_pbKey];
+                if (_pbAmt > 0) {
+                    var _pbStored = Math.min(_pbAmt, Math.max(0, _pbSpace));
+                    bld[_pbKey] += _pbStored;
+                    // Overflow goes to market
+                    var _pbOverflow = _pbAmt - _pbStored;
+                    if (_pbOverflow > 0 && town && town.market && town.market.supply) {
+                        town.market.supply[_pbRes] = (town.market.supply[_pbRes] || 0) + _pbOverflow;
                     }
                 }
             }
@@ -9080,7 +9131,49 @@
             mounted: sendMounted,
             morale: CONFIG.ARMY_DEFAULT_MORALE || 80,
             supplies: CONFIG.ARMY_DEFAULT_SUPPLIES || 100,
+            demolitionTools: 0,
+            blastingPowder: 0
         };
+
+        // Player can send demolition tools and blasting powder from kingdom stockpile
+        var _reqDemo = Math.min(10, parseInt(options.demolitionTools) || 0);
+        var _reqBlast = Math.min(10, parseInt(options.blastingPowder) || 0);
+        if (_reqDemo > 0 || _reqBlast > 0) {
+            var _kStockpile = kingdom.militaryStockpile || {};
+            // Check availability across kingdom towns
+            var _demoPool = 0, _blastPool = 0;
+            var kTowns2 = Engine.getTowns();
+            for (var _tci = 0; _tci < kTowns2.length; _tci++) {
+                if (kTowns2[_tci].kingdomId !== kingdom.id) continue;
+                _demoPool += (kTowns2[_tci].market.supply.demolition_tools || 0);
+                _blastPool += (kTowns2[_tci].market.supply.blasting_powder || 0);
+            }
+            _demoPool += (_kStockpile.demolition_tools || 0);
+            _blastPool += (_kStockpile.blasting_powder || 0);
+            var _actualDemo = Math.min(_reqDemo, _demoPool);
+            var _actualBlast = Math.min(_reqBlast, _blastPool);
+            // Consume from stockpile first, then towns
+            if (_actualDemo > 0) {
+                armyObj.demolitionTools = _actualDemo;
+                var _dl = _actualDemo;
+                if (_kStockpile.demolition_tools) { var _t = Math.min(_dl, _kStockpile.demolition_tools); _kStockpile.demolition_tools -= _t; _dl -= _t; }
+                for (var _tci2 = 0; _tci2 < kTowns2.length && _dl > 0; _tci2++) {
+                    if (kTowns2[_tci2].kingdomId !== kingdom.id) continue;
+                    var _t2 = Math.min(_dl, kTowns2[_tci2].market.supply.demolition_tools || 0);
+                    if (_t2 > 0) { kTowns2[_tci2].market.supply.demolition_tools -= _t2; _dl -= _t2; }
+                }
+            }
+            if (_actualBlast > 0) {
+                armyObj.blastingPowder = _actualBlast;
+                var _bl = _actualBlast;
+                if (_kStockpile.blasting_powder) { var _t3 = Math.min(_bl, _kStockpile.blasting_powder); _kStockpile.blasting_powder -= _t3; _bl -= _t3; }
+                for (var _tci3 = 0; _tci3 < kTowns2.length && _bl > 0; _tci3++) {
+                    if (kTowns2[_tci3].kingdomId !== kingdom.id) continue;
+                    var _t4 = Math.min(_bl, kTowns2[_tci3].market.supply.blasting_powder || 0);
+                    if (_t4 > 0) { kTowns2[_tci3].market.supply.blasting_powder -= _t4; _bl -= _t4; }
+                }
+            }
+        }
 
         // If consolidation is needed, add delay before army departs
         if (consolidationDays > 0) {

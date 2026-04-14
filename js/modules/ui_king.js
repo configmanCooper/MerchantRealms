@@ -2813,6 +2813,33 @@
         }
         html += '</div>';
 
+        // Siege supplies: demolition tools + blasting powder
+        var _totalDemo = 0, _totalBlast = 0;
+        try {
+            var _allT = Engine.getTowns ? Engine.getTowns() : [];
+            for (var _si2 = 0; _si2 < _allT.length; _si2++) {
+                if (_allT[_si2].kingdomId !== kingdom.id) continue;
+                _totalDemo += (_allT[_si2].market.supply.demolition_tools || 0);
+                _totalBlast += (_allT[_si2].market.supply.blasting_powder || 0);
+            }
+            var _spk2 = kingdom.militaryStockpile || {};
+            _totalDemo += (_spk2.demolition_tools || 0);
+            _totalBlast += (_spk2.blasting_powder || 0);
+        } catch(e) {}
+        html += '<div style="margin-bottom:10px;padding:6px;background:rgba(120,50,20,0.15);border:1px solid rgba(120,50,20,0.3);border-radius:5px;">';
+        html += '<div style="font-size:0.75rem;color:#d4a843;margin-bottom:4px;">💥 Siege Supplies <span style="font-size:0.65rem;color:#999;">(damage enemy buildings)</span></div>';
+        html += '<div style="display:flex;gap:12px;align-items:center;margin-bottom:4px;">';
+        html += '<label style="font-size:0.7rem;color:#bbb;">⛏️ Demolition Tools (max 10):</label>';
+        html += '<input type="number" id="_armyDemoTools" min="0" max="' + Math.min(10, _totalDemo) + '" value="0" style="font-size:0.75rem;width:55px;padding:3px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:4px;">';
+        html += '<span style="font-size:0.63rem;color:#888;">' + _totalDemo + ' avail (+1% atk each)</span>';
+        html += '</div>';
+        html += '<div style="display:flex;gap:12px;align-items:center;">';
+        html += '<label style="font-size:0.7rem;color:#bbb;">💥 Blasting Powder (max 10):</label>';
+        html += '<input type="number" id="_armyBlastPowder" min="0" max="' + Math.min(10, _totalBlast) + '" value="0" style="font-size:0.75rem;width:55px;padding:3px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:4px;">';
+        html += '<span style="font-size:0.63rem;color:#888;">' + _totalBlast + ' avail (+2% atk each)</span>';
+        html += '</div>';
+        html += '</div>';
+
         // Send button
         html += '<button class="btn-medieval" data-action="kingSendArmyConfirm" data-id="' + townId + '" style="padding:8px 16px;background:rgba(196,78,82,0.3) !important;border:2px solid rgba(196,78,82,0.5) !important;">';
         html += '<div style="font-weight:bold;color:#ef9a9a;">⚔️ Send Army</div></button>';
@@ -3660,10 +3687,14 @@
         var cnt2 = document.getElementById('_armySendCount');
         var stagingSel = document.getElementById('_armyStagingTown');
         var mountedCb = document.getElementById('_armyMounted');
+        var demoInput = document.getElementById('_armyDemoTools');
+        var blastInput = document.getElementById('_armyBlastPowder');
         var soldiers = cnt2 ? parseInt(cnt2.value) || 30 : 30;
         var stagingTownId = stagingSel ? stagingSel.value : null;
         var mounted = mountedCb ? mountedCb.checked : false;
-        var r = Player.kingSendArmy(d.id, soldiers, stagingTownId, { mounted: mounted }); UI.closeModal(); UI.toast(r.message, r.success ? 'success' : 'warning');
+        var demolitionTools = demoInput ? parseInt(demoInput.value) || 0 : 0;
+        var blastingPowder = blastInput ? parseInt(blastInput.value) || 0 : 0;
+        var r = Player.kingSendArmy(d.id, soldiers, stagingTownId, { mounted: mounted, demolitionTools: demolitionTools, blastingPowder: blastingPowder }); UI.closeModal(); UI.toast(r.message, r.success ? 'success' : 'warning');
     });
 
     // ── Treasury Transfer Actions ──

@@ -1426,6 +1426,36 @@
             }
         }
 
+        // --- Post-processing: ensure at least 1 sulfur mine and 1 charcoal kiln per kingdom ---
+        for (var _ski = 0; _ski < kingdoms.length; _ski++) {
+            var _sk = kingdoms[_ski];
+            var _skTowns = towns.filter(function(t) { return _sk.territories.has(t.id); });
+            var _hasSulfurMine = false;
+            var _hasCharcoalKiln = false;
+            for (var _sti = 0; _sti < _skTowns.length; _sti++) {
+                for (var _sbi = 0; _sbi < _skTowns[_sti].buildings.length; _sbi++) {
+                    if (_skTowns[_sti].buildings[_sbi].type === 'sulfur_mine') _hasSulfurMine = true;
+                    if (_skTowns[_sti].buildings[_sbi].type === 'charcoal_kiln') _hasCharcoalKiln = true;
+                }
+            }
+            // Place sulfur mine in a mountain town with sulfur deposit (or add deposit)
+            if (!_hasSulfurMine && _skTowns.length > 0) {
+                var _smTown = _skTowns.find(function(t) { return t.naturalDeposits && t.naturalDeposits.sulfur; });
+                if (!_smTown) {
+                    // Find a mountain-ish town and add sulfur deposit
+                    _smTown = _skTowns.find(function(t) { return t.naturalDeposits && t.naturalDeposits.iron_ore; }) || _skTowns[0];
+                    if (!_smTown.naturalDeposits) _smTown.naturalDeposits = {};
+                    _smTown.naturalDeposits.sulfur = rng.randInt(CONFIG.NATURAL_DEPOSITS.sulfur.min, CONFIG.NATURAL_DEPOSITS.sulfur.max);
+                }
+                _smTown.buildings.push({ type: 'sulfur_mine', ownerId: _sk.id, level: 1, condition: 'new', workers: [], storage: {} });
+            }
+            // Place charcoal kiln in any town with wood access
+            if (!_hasCharcoalKiln && _skTowns.length > 0) {
+                var _ckTown = _skTowns.find(function(t) { return t.naturalDeposits && t.naturalDeposits.wood; }) || _skTowns[0];
+                _ckTown.buildings.push({ type: 'charcoal_kiln', ownerId: _sk.id, level: 1, condition: 'new', workers: [], storage: {} });
+            }
+        }
+
         return towns;
     }
 
@@ -1978,6 +2008,8 @@
                 town.naturalDeposits.iron_ore = depRng.randInt(ND.iron_ore.min, ND.iron_ore.max);
                 town.naturalDeposits.stone = depRng.randInt(ND.stone.min, ND.stone.max);
                 if (depRng.chance(0.65)) town.naturalDeposits.gold_ore = depRng.randInt(ND.gold_ore.min, ND.gold_ore.max);
+                // Sulfur: 40% chance in mountains, separate from iron
+                if (depRng.chance(0.40)) town.naturalDeposits.sulfur = depRng.randInt(ND.sulfur.min, ND.sulfur.max);
             } else if (terrainBias === 'forest') {
                 // Scale wood deposit by actual forest tile count: 1 deposit per ~3 tiles
                 var _forestDeposit = Math.floor(forestTiles / 3);
@@ -4553,6 +4585,12 @@
                     warZonePenalty = 0.7; // -30% production during post-war recovery
                 }
 
+                // --- SIEGE PENALTY: 50% production when under siege ---
+                var siegePenalty = 1.0;
+                if (town.siege) {
+                    siegePenalty = 0.5;
+                }
+
                 // --- HAPPINESS PRODUCTIVITY MODIFIER ---
                 var happyMod = 1.0;
                 var townHappy = town.happiness || 50;
@@ -4641,7 +4679,7 @@
                         successRate = Math.min(1.0, 0.05 + avgSkill * 0.00944);
                     }
 
-                    var baseOutput = Math.floor(tierRate * workerFraction * seasonMod * (bld.level || 1) * conditionEff * apprenticePenalty * warZonePenalty * happyMod * _townHousingProd);
+                    var baseOutput = Math.floor(tierRate * workerFraction * seasonMod * (bld.level || 1) * conditionEff * apprenticePenalty * warZonePenalty * siegePenalty * happyMod * _townHousingProd);
                     var produced = 0;
                     var failed = 0;
                     for (var u = 0; u < baseOutput; u++) {
@@ -4683,7 +4721,32 @@
                     var avgWorkerSkillStd = getAverageWorkerSkill(bld, town);
                     var workerSkillMod = 0.90 + avgWorkerSkillStd * 0.01;
 
-                    const output = Math.round(activeRate * workerFraction * seasonMod * (bld.level || 1) * conditionEff * apprenticePenalty * fertilityMod * wildlifeMod * warZonePenalty * happyMod * _townHousingProd * workerSkillMod);
+                    // Optional boost (manure for farms, charcoal for smelters)
+                    var optBoostMod = 1.0;
+                    if (bt.optionalBoost && bld.ownerId !== 'player') {
+                        var _boostRes = bt.optionalBoost.resource;
+                        var _boostConsume = bt.optionalBoost.consumeRate || 1;
+                        var _boostStorageKey = '_boostStorage_' + _boostRes;
+                        // Initialize boost storage if missing
+                        if (bld[_boostStorageKey] == null) bld[_boostStorageKey] = 0;
+                        // Try to refill from market
+                        var _boostMax = bt.optionalBoost.storageMax || 20;
+                        if (bld[_boostStorageKey] < _boostMax) {
+                            var _marketAvail = town.market.supply[_boostRes] || 0;
+                            var _want = Math.min(_boostMax - bld[_boostStorageKey], _marketAvail, 5);
+                            if (_want > 0) {
+                                town.market.supply[_boostRes] -= _want;
+                                bld[_boostStorageKey] += _want;
+                            }
+                        }
+                        // Consume boost resource
+                        if (bld[_boostStorageKey] >= _boostConsume) {
+                            bld[_boostStorageKey] -= _boostConsume;
+                            optBoostMod = 1.0 + (bt.optionalBoost.bonusPct / 100);
+                        }
+                    }
+
+                    const output = Math.ceil(activeRate * workerFraction * seasonMod * (bld.level || 1) * conditionEff * apprenticePenalty * fertilityMod * wildlifeMod * warZonePenalty * siegePenalty * happyMod * _townHousingProd * workerSkillMod * optBoostMod);
                     // Animal Husbandry: player livestock buildings produce 10% more
                     var livestockTypes = ['cattle_ranch', 'sheep_farm', 'chicken_farm', 'pig_farm', 'horse_ranch'];
                     var animalBonus = 0;
@@ -4709,6 +4772,27 @@
                     if (bld.type === 'cattle_ranch' && output > 0 && bld.ownerId !== 'player') {
                         var hideOutput = Math.max(1, Math.floor(output * 0.4));
                         town.market.supply.hide = (town.market.supply.hide || 0) + hideOutput;
+                    }
+
+                    // Byproduct production (manure from animal buildings)
+                    // Stored separately — does NOT use output storage
+                    if (bt.byproduct && output > 0 && bld.ownerId !== 'player') {
+                        var _bpRes = bt.byproduct.resource;
+                        var _bpRate = bt.byproduct.rate || 1;
+                        var _bpStorageKey = '_byproductStorage_' + _bpRes;
+                        var _bpMax = bt.byproductStorage || 30;
+                        if (bld[_bpStorageKey] == null) bld[_bpStorageKey] = 0;
+                        var _bpAmt = Math.ceil(_bpRate * workerFraction * siegePenalty);
+                        var _bpSpace = _bpMax - bld[_bpStorageKey];
+                        if (_bpAmt > 0) {
+                            var _bpStored = Math.min(_bpAmt, Math.max(0, _bpSpace));
+                            bld[_bpStorageKey] += _bpStored;
+                            // Any excess beyond cap goes to market
+                            var _bpOverflow = _bpAmt - _bpStored;
+                            if (_bpOverflow > 0) {
+                                town.market.supply[_bpRes] = (town.market.supply[_bpRes] || 0) + _bpOverflow;
+                            }
+                        }
                     }
 
                     // Minor XP for non-military work
@@ -12045,6 +12129,26 @@
                     }
                 }
             }
+
+            // Strategic purchase of siege supplies when at war
+            if (k.atWar && k.atWar.size > 0 && k.gold > 200) {
+                var _siegeGoods = ['demolition_tools', 'blasting_powder'];
+                for (var _sgi = 0; _sgi < _siegeGoods.length; _sgi++) {
+                    var _sg = _siegeGoods[_sgi];
+                    var _sgAvail = town.market.supply[_sg] || 0;
+                    var _sgStockpile = (k.militaryStockpile && k.militaryStockpile[_sg]) || 0;
+                    if (_sgStockpile < 10 && _sgAvail > 0) {
+                        var _sgBuy = Math.min(3, _sgAvail, 10 - _sgStockpile);
+                        var _sgPrice = (town.market.prices[_sg] || 50) * _sgBuy;
+                        if (k.gold >= _sgPrice) {
+                            town.market.supply[_sg] -= _sgBuy;
+                            k.gold -= _sgPrice;
+                            if (!k.militaryStockpile) k.militaryStockpile = {};
+                            k.militaryStockpile[_sg] = (k.militaryStockpile[_sg] || 0) + _sgBuy;
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -14286,6 +14390,38 @@
         var siegeCost = Math.min(500, Math.max(100, army.soldiers * 5));
         attackK.gold = Math.max(0, attackK.gold - siegeCost);
 
+        // Building damage from demolition tools and blasting powder
+        var _siegeRng = world.rng;
+        if (army.demolitionTools && army.demolitionTools > 0) {
+            for (var _di = 0; _di < Math.min(army.demolitionTools, 10); _di++) {
+                if (_siegeRng.chance(0.05)) { // 5% chance per tool to damage a building
+                    var _validBlds = town.buildings.filter(function(b) { return b.condition !== 'destroyed'; });
+                    if (_validBlds.length > 0) {
+                        var _target = _validBlds[Math.floor(_siegeRng.random() * _validBlds.length)];
+                        _target.condition = 'damaged';
+                        logEvent('Siege of ' + town.name + ': demolition tools damaged ' + (BUILDING_TYPES[_target.type.toUpperCase()] || {}).name || _target.type, null, 'military');
+                    }
+                }
+            }
+        }
+        if (army.blastingPowder && army.blastingPowder > 0) {
+            for (var _bi = 0; _bi < Math.min(army.blastingPowder, 10); _bi++) {
+                if (_siegeRng.chance(0.20)) { // 20% chance per unit to damage a building
+                    var _validBlds2 = town.buildings.filter(function(b) { return b.condition !== 'destroyed'; });
+                    if (_validBlds2.length > 0) {
+                        var _target2 = _validBlds2[Math.floor(_siegeRng.random() * _validBlds2.length)];
+                        if (_siegeRng.chance(0.05)) { // 5% chance to destroy
+                            _target2.condition = 'destroyed';
+                            logEvent('Siege of ' + town.name + ': blasting powder DESTROYED ' + (BUILDING_TYPES[_target2.type.toUpperCase()] || {}).name || _target2.type, null, 'military');
+                        } else {
+                            _target2.condition = 'damaged';
+                            logEvent('Siege of ' + town.name + ': blasting powder damaged ' + (BUILDING_TYPES[_target2.type.toUpperCase()] || {}).name || _target2.type, null, 'military');
+                        }
+                    }
+                }
+            }
+        }
+
         logEvent(attackK.name + ' begins a siege of ' + town.name + '! (Est. ' + siegeDuration + ' days)', null, 'military');
     }
 
@@ -14315,6 +14451,11 @@
             // Daily defender attrition
             var defAttrition = Math.max(0, Math.floor(town.garrison * (CONFIG.SIEGE_DAILY_DEFENDER_ATTRITION || 0.002)));
             town.garrison = Math.max(1, town.garrison - defAttrition);
+
+            // Siege happiness decay: -0.5 per day under siege
+            if (town.happiness != null) {
+                town.happiness = Math.max(0, town.happiness - 0.5);
+            }
 
             // Starvation mechanic
             if (siege.daysElapsed > (CONFIG.SIEGE_STARVATION_START_DAY || 21)) {
@@ -14614,6 +14755,18 @@
         if (army.leaderId) {
             var _leader = findPerson(army.leaderId);
             if (_leader && _leader.alive) attackStrength *= 1.25;
+        }
+        // Demolition tools: +1% per tool, max 10%
+        var _demoBonus = 0;
+        if (army.demolitionTools && army.demolitionTools > 0) {
+            _demoBonus = Math.min(army.demolitionTools, 10) * 0.01;
+            attackStrength *= (1 + _demoBonus);
+        }
+        // Blasting powder: +2% per unit, max 20%
+        var _blastBonus = 0;
+        if (army.blastingPowder && army.blastingPowder > 0) {
+            _blastBonus = Math.min(army.blastingPowder, 10) * 0.02;
+            attackStrength *= (1 + _blastBonus);
         }
         attackStrength *= (1 + rng.randFloat(-CONFIG.BATTLE_RANDOMNESS, CONFIG.BATTLE_RANDOMNESS));
 

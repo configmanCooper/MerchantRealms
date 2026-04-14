@@ -1693,8 +1693,14 @@ const RESOURCE_TYPES = {
     ARROWS_GOOD:      { id: 'arrows_good',        name: 'Good Arrows',      category: 'military', basePrice: 15,  icon: '➳🔵',  weight: 1, tier: 'good',      baseItem: 'arrows' },
 
     // --- Demolition & Sabotage goods ---
-    BLASTING_POWDER:  { id: 'blasting_powder',  name: 'Blasting Powder',  category: 'contraband', basePrice: 40, icon: '💥', weight: 2 },
+    BLASTING_POWDER:  { id: 'blasting_powder',  name: 'Blasting Powder',  category: 'military', basePrice: 50, icon: '💥', weight: 2 },
     DEMOLITION_TOOLS: { id: 'demolition_tools', name: 'Demolition Tools', category: 'military',   basePrice: 55, icon: '⛏️', weight: 4 },
+
+    // --- Industrial / Processing goods ---
+    CHARCOAL:         { id: 'charcoal',         name: 'Charcoal',         category: 'processed', basePrice: 6,  icon: '⬛', weight: 1 },
+    MANURE:           { id: 'manure',            name: 'Manure',           category: 'raw',       basePrice: 1,  icon: '💩', weight: 2 },
+    SULFUR:           { id: 'sulfur',            name: 'Sulfur',           category: 'raw',       basePrice: 12, icon: '🟡', weight: 1 },
+    SALTPETER:        { id: 'saltpeter',         name: 'Saltpeter',       category: 'processed', basePrice: 18, icon: '🧂', weight: 1 },
 
     // --- Fashion & Luxury goods ---
     SILK:             { id: 'silk',             name: 'Silk',            category: 'luxury',    basePrice: 35,  icon: '🧣', weight: 1 },
@@ -1740,18 +1746,18 @@ const RESOURCE_TYPES = {
 // ============================================================
 
 const BUILDING_TYPES = {
-    WHEAT_FARM:    { id: 'wheat_farm',    name: 'Wheat Farm',    cost: 200,  workers: 3, produces: 'wheat',    consumes: {},                       rate: 8, category: 'farm',       storage: 80, materials: { wood: 10, stone: 5 } },
-    CATTLE_RANCH:  { id: 'cattle_ranch',  name: 'Cattle Ranch',  cost: 350,  workers: 3, produces: 'meat',     consumes: { wheat: 2 },             rate: 4, category: 'farm',       storage: 60, canProduce: ['meat', 'hide'], materials: { wood: 15, planks: 5 } },
-    SHEEP_FARM:    { id: 'sheep_farm',    name: 'Sheep Farm',    cost: 250,  workers: 2, produces: 'wool',     consumes: { wheat: 1 },             rate: 5, category: 'farm',       storage: 60, materials: { wood: 10, stone: 3 } },
-    CHICKEN_FARM:  { id: 'chicken_farm',  name: 'Chicken Farm',  cost: 150,  workers: 2, produces: 'eggs',     consumes: { wheat: 1 },             rate: 10, category: 'farm',      storage: 60, materials: { wood: 8 } },
+    WHEAT_FARM:    { id: 'wheat_farm',    name: 'Wheat Farm',    cost: 200,  workers: 3, produces: 'wheat',    consumes: {},                       rate: 8, category: 'farm',       storage: 80, optionalBoost: { resource: 'manure', bonusPct: 25, consumeRate: 1, storageName: 'Manure Storage', storageMax: 20 }, materials: { wood: 10, stone: 5 } },
+    CATTLE_RANCH:  { id: 'cattle_ranch',  name: 'Cattle Ranch',  cost: 350,  workers: 3, produces: 'meat',     consumes: { wheat: 2 },             rate: 4, category: 'farm',       storage: 60, canProduce: ['meat', 'hide'], byproduct: { resource: 'manure', rate: 3 }, byproductStorage: 30, materials: { wood: 15, planks: 5 } },
+    SHEEP_FARM:    { id: 'sheep_farm',    name: 'Sheep Farm',    cost: 250,  workers: 2, produces: 'wool',     consumes: { wheat: 1 },             rate: 5, category: 'farm',       storage: 60, byproduct: { resource: 'manure', rate: 2 }, byproductStorage: 30, materials: { wood: 10, stone: 3 } },
+    CHICKEN_FARM:  { id: 'chicken_farm',  name: 'Chicken Farm',  cost: 150,  workers: 2, produces: 'eggs',     consumes: { wheat: 1 },             rate: 10, category: 'farm',      storage: 60, byproduct: { resource: 'manure', rate: 1 }, byproductStorage: 30, materials: { wood: 8 } },
     IRON_MINE:     { id: 'iron_mine',     name: 'Iron Mine',     cost: 500,  workers: 5, produces: 'iron_ore', consumes: {},                       rate: 5, category: 'mine',       storage: 80, materials: { wood: 20, stone: 15, tools: 3 } },
     GOLD_MINE:     { id: 'gold_mine',     name: 'Gold Mine',     cost: 800,  workers: 5, produces: 'gold_ore', consumes: {},                       rate: 2, category: 'mine',       storage: 40, materials: { wood: 25, stone: 20, tools: 5, iron: 3 } },
     LUMBER_CAMP:   { id: 'lumber_camp',   name: 'Lumber Camp',   cost: 200,  workers: 4, produces: 'wood',     consumes: {},                       rate: 7, category: 'harvest',    storage: 100, materials: { stone: 5, tools: 2 } },
     QUARRY:        { id: 'quarry',        name: 'Quarry',        cost: 400,  workers: 4, produces: 'stone',    consumes: {},                       rate: 4, category: 'mine',       storage: 80, materials: { wood: 15, tools: 3 } },
-    VINEYARD:      { id: 'vineyard',      name: 'Vineyard',      cost: 400,  workers: 3, produces: 'grapes',   consumes: {},                       rate: 4, category: 'farm',       storage: 60, materials: { wood: 12, stone: 5 } },
-    HORSE_RANCH:   { id: 'horse_ranch',   name: 'Horse Ranch',   cost: 600,  workers: 3, produces: 'horses',   consumes: { wheat: 3 },             rate: 2, category: 'farm',       storage: 30, materials: { wood: 20, planks: 8, stone: 5 } },
+    VINEYARD:      { id: 'vineyard',      name: 'Vineyard',      cost: 400,  workers: 3, produces: 'grapes',   consumes: {},                       rate: 4, category: 'farm',       storage: 60, optionalBoost: { resource: 'manure', bonusPct: 25, consumeRate: 1, storageName: 'Manure Storage', storageMax: 20 }, materials: { wood: 12, stone: 5 } },
+    HORSE_RANCH:   { id: 'horse_ranch',   name: 'Horse Ranch',   cost: 600,  workers: 3, produces: 'horses',   consumes: { wheat: 3 },             rate: 2, category: 'farm',       storage: 30, byproduct: { resource: 'manure', rate: 4 }, byproductStorage: 30, materials: { wood: 20, planks: 8, stone: 5 } },
     FLOUR_MILL:    { id: 'flour_mill',    name: 'Flour Mill',    cost: 300,  workers: 2, produces: 'flour',    consumes: { wheat: 3 },             rate: 6, category: 'processing', storage: 60, materials: { wood: 12, stone: 10 } },
-    SMELTER:       { id: 'smelter',       name: 'Smelter',       cost: 400,  workers: 3, produces: 'iron',     consumes: { iron_ore: 2, wood: 1 }, rate: 4, category: 'processing', storage: 60, materials: { stone: 20, bricks: 5, iron: 2 } },
+    SMELTER:       { id: 'smelter',       name: 'Smelter',       cost: 400,  workers: 3, produces: 'iron',     consumes: { iron_ore: 2, wood: 1 }, rate: 4, category: 'processing', storage: 60, optionalBoost: { resource: 'charcoal', bonusPct: 25, consumeRate: 1, storageName: 'Charcoal Storage', storageMax: 30 }, materials: { stone: 20, bricks: 5, iron: 2 } },
     SAWMILL:       { id: 'sawmill',       name: 'Sawmill',       cost: 250,  workers: 2, produces: 'planks',   consumes: { wood: 2 },              rate: 5, category: 'processing', storage: 60, materials: { wood: 10, stone: 5, iron: 1 } },
     WEAVER:        { id: 'weaver',        name: 'Weaver',        cost: 300,  workers: 2, produces: 'cloth',    consumes: { wool: 2 },              rate: 5, category: 'processing', storage: 50, materials: { wood: 10, planks: 5 }, canProduce: ['cloth', 'rope', 'rope_from_cloth'],
         availableProducts: {
@@ -1781,7 +1787,7 @@ const BUILDING_TYPES = {
         availableProducts: {
             swords:           { produces: 'swords',           consumes: { iron: 2, wood: 1 },              rate: 3 },
             swords_good:      { produces: 'swords_good',      consumes: { iron: 3, wood: 2 },              rate: 2 },
-            swords_excellent: { produces: 'swords_excellent',  consumes: { iron: 5, wood: 3 },              rate: 1 },
+            swords_excellent: { produces: 'swords_excellent',  consumes: { iron: 5, wood: 3, charcoal: 2 }, rate: 1 },
             tools:            { produces: 'tools',            consumes: { iron: 1, wood: 1 },              rate: 3 },
             iron:             { produces: 'iron',             consumes: { iron_ore: 2, wood: 1 },          rate: 4 },
             demolition_tools: { produces: 'demolition_tools', consumes: { iron: 3, rope: 2, wood: 3 },    rate: 1 },
@@ -1791,7 +1797,7 @@ const BUILDING_TYPES = {
         availableProducts: {
             armor:            { produces: 'armor',            consumes: { iron: 3, leather: 2 },           rate: 2 },
             armor_good:       { produces: 'armor_good',       consumes: { iron: 5, leather: 3 },           rate: 1 },
-            armor_excellent:  { produces: 'armor_excellent',   consumes: { iron: 8, leather: 5 },           rate: 1 },
+            armor_excellent:  { produces: 'armor_excellent',   consumes: { iron: 8, leather: 5, charcoal: 2 }, rate: 1 },
         },
     },
     WAREHOUSE:     { id: 'warehouse',     name: 'Warehouse',     cost: 500,  workers: 1, produces: null,       consumes: {},                       rate: 0, category: 'storage',    storage: 800, materials: { wood: 20, stone: 10, planks: 10, bricks: 5 } },
@@ -1848,7 +1854,15 @@ const BUILDING_TYPES = {
     },
     CLAY_PIT:      { id: 'clay_pit',      name: 'Clay Pit',      cost: 200,  workers: 3, produces: 'clay',           consumes: {},                          rate: 6, category: 'mine',       storage: 80, materials: { wood: 8, tools: 2 } },
     SMOKEHOUSE:    { id: 'smokehouse',    name: 'Smokehouse',    cost: 300,  workers: 2, produces: 'preserved_food', consumes: { meat: 2, salt: 1 },        rate: 4, category: 'processing', storage: 50, materials: { wood: 12, stone: 8, bricks: 3 } },
-    PIG_FARM:      { id: 'pig_farm',      name: 'Pig Farm',      cost: 200,  workers: 2, produces: 'meat',           consumes: { wheat: 2 },                rate: 5, category: 'farm',       storage: 60, materials: { wood: 10, stone: 3 } },
+    CHARCOAL_KILN: { id: 'charcoal_kiln', name: 'Charcoal Kiln', cost: 250,  workers: 2, produces: 'charcoal',        consumes: { wood: 3 },                 rate: 4, category: 'processing', storage: 60, materials: { stone: 12, bricks: 8 }, icon: '⬛', description: 'Burns wood or hemp into charcoal for smelting and weapon forging.',
+        canProduce: ['charcoal', 'charcoal_from_hemp'],
+        availableProducts: {
+            charcoal:           { produces: 'charcoal', consumes: { wood: 3 },  rate: 4 },
+            charcoal_from_hemp: { produces: 'charcoal', consumes: { hemp: 3 },  rate: 3 },
+        },
+    },
+    SULFUR_MINE:   { id: 'sulfur_mine',   name: 'Sulfur Mine',   cost: 400,  workers: 3, produces: 'sulfur',          consumes: {},                          rate: 4, category: 'mine',       storage: 60, materials: { wood: 15, stone: 10, tools: 2 }, icon: '🟡', description: 'Extracts sulfur from natural deposits. Used for medicine and blasting powder.' },
+    PIG_FARM:      { id: 'pig_farm',      name: 'Pig Farm',      cost: 200,  workers: 2, produces: 'meat',           consumes: { wheat: 2 },                rate: 5, category: 'farm',       storage: 60, byproduct: { resource: 'manure', rate: 2 }, byproductStorage: 30, materials: { wood: 10, stone: 3 } },
     PASTURE:       { id: 'pasture',       name: 'Pasture',       cost: 100,  workers: 1, produces: null,             consumes: { wheat: 1 },                rate: 0, category: 'farm',       livestockCapacity: 10, materials: { wood: 5 } },
     WATCHTOWER:    { id: 'watchtower',    name: 'Watchtower',    cost: 500,  workers: 2, produces: null,             consumes: {},                          rate: 0, category: 'military',   archerBonus: 0.5, materials: { stone: 30, wood: 15, bricks: 15 } },
     BARRACKS:      { id: 'barracks',      name: 'Barracks',      cost: 600,  workers: 3, produces: null,             consumes: {},                          rate: 0, category: 'military',   recruitBonus: 2,  materials: { stone: 40, wood: 30, bricks: 10 } },
@@ -1912,27 +1926,29 @@ const BUILDING_TYPES = {
     // --- Goods audit buildings ---
     PEARL_DIVER:      { id: 'pearl_diver',      name: 'Pearl Diver',     cost: 350,  workers: 2, produces: 'pearls',         consumes: {},                          rate: 2, category: 'harvest',    storage: 20, portOnly: true, materials: { wood: 12, rope: 3 } },
     APOTHECARY:       { id: 'apothecary',       name: 'Apothecary',      cost: 400,  workers: 1, produces: 'herbal_remedy',  consumes: { herbs: 3 },                rate: 2, category: 'medical',   storage: 30, materials: { wood: 8, stone: 5 }, icon: '⚗️', description: 'Produces medicines and remedies from herbs. Healing Tonic requires level 3+. Antidotes require an Advanced Apothecary.',
-        canProduce: ['herbal_remedy', 'herbal_poultice', 'healing_tonic', 'fever_tonic', 'poison', 'blasting_powder'],
+        canProduce: ['herbal_remedy', 'herbal_poultice', 'healing_tonic', 'fever_tonic', 'poison', 'blasting_powder', 'saltpeter'],
         availableProducts: {
             herbal_remedy:   { produces: 'herbal_remedy',   consumes: { herbs: 3 },                 rate: 2 },
             herbal_poultice: { produces: 'herbal_poultice', consumes: { herbs: 2, cloth: 1 },       rate: 2 },
             healing_tonic:   { produces: 'healing_tonic',   consumes: { herbs: 4, honey: 1 },       rate: 1, minLevel: 3 },
-            fever_tonic:     { produces: 'fever_tonic',     consumes: { herbs: 3, water: 2 },       rate: 1 },
+            fever_tonic:     { produces: 'fever_tonic',     consumes: { herbs: 3, water: 2, sulfur: 1 }, rate: 1 },
             poison:          { produces: 'poison',          consumes: { hemp: 2 },                  rate: 1 },
-            blasting_powder: { produces: 'blasting_powder', consumes: { salt: 4, hemp: 2 },         rate: 2 },
+            saltpeter:       { produces: 'saltpeter',       consumes: { manure: 4 },                rate: 2 },
+            blasting_powder: { produces: 'blasting_powder', consumes: { saltpeter: 2, charcoal: 1, sulfur: 1 }, rate: 2 },
         },
     },
     ADVANCED_APOTHECARY: { id: 'advanced_apothecary', name: 'Advanced Apothecary', cost: 800, workers: 3, produces: 'healing_tonic', consumes: { herbs: 4, honey: 1 }, rate: 2, category: 'medical', storage: 60, materials: { stone: 15, wood: 12, planks: 8, iron: 3 }, icon: '🧬', description: 'A full-service medical laboratory. Produces all medicines including antidotes and tonics at higher rates.', minTownCategory: 'town',
-        canProduce: ['herbal_remedy', 'herbal_poultice', 'healing_tonic', 'fever_tonic', 'splint', 'antidote', 'poison', 'blasting_powder'],
+        canProduce: ['herbal_remedy', 'herbal_poultice', 'healing_tonic', 'fever_tonic', 'splint', 'antidote', 'poison', 'blasting_powder', 'saltpeter'],
         availableProducts: {
             herbal_remedy:   { produces: 'herbal_remedy',   consumes: { herbs: 3 },                 rate: 3 },
             herbal_poultice: { produces: 'herbal_poultice', consumes: { herbs: 2, cloth: 1 },       rate: 3 },
             healing_tonic:   { produces: 'healing_tonic',   consumes: { herbs: 4, honey: 1 },       rate: 2 },
-            fever_tonic:     { produces: 'fever_tonic',     consumes: { herbs: 3, water: 2 },       rate: 2 },
+            fever_tonic:     { produces: 'fever_tonic',     consumes: { herbs: 3, water: 2, sulfur: 1 }, rate: 2 },
             splint:          { produces: 'splint',          consumes: { wood: 2, cloth: 1 },        rate: 3 },
-            antidote:        { produces: 'antidote',        consumes: { herbs: 5, honey: 2 },       rate: 2 },
+            antidote:        { produces: 'antidote',        consumes: { herbs: 5, honey: 2, sulfur: 1 }, rate: 2 },
             poison:          { produces: 'poison',          consumes: { hemp: 2 },                  rate: 2 },
-            blasting_powder: { produces: 'blasting_powder', consumes: { salt: 4, hemp: 2 },         rate: 3 },
+            saltpeter:       { produces: 'saltpeter',       consumes: { manure: 4 },                rate: 3 },
+            blasting_powder: { produces: 'blasting_powder', consumes: { saltpeter: 2, charcoal: 1, sulfur: 1 }, rate: 3 },
         },
     },
     HUNTING_LODGE:    { id: 'hunting_lodge',    name: 'Hunting Lodge',   cost: 250,  workers: 2, produces: 'hide',           consumes: {},                          rate: 4, category: 'harvest',    storage: 50, materials: { wood: 15 } },
@@ -4068,6 +4084,7 @@ CONFIG.NATURAL_DEPOSITS = {
     stone:     { min: 10000, max: 30000, terrain: 'mountain', renewable: false },
     clay:      { min: 8000, max: 20000, terrain: 'any', renewable: false },
     salt:      { min: 4000, max: 12000, terrain: 'coastal', renewable: false },
+    sulfur:    { min: 3000, max: 10000, terrain: 'mountain', renewable: false },
     wood:      { min: 6000, max: 16000, terrain: 'forest', renewable: true, regenPerDay: 1, canPlant: true },
     fish:      { min: 2000, max: 6000, terrain: 'coastal', renewable: true, regenPerDay: 2, overfishRecoveryDays: 30 },
 };
@@ -4080,6 +4097,7 @@ CONFIG.DEPOSIT_REQUIREMENTS = {
     fishery:      { deposit: 'fish',     label: 'Fish Stocks' },
     salt_works:   { deposit: 'salt',     label: 'Salt Deposit' },
     clay_pit:     { deposit: 'clay',     label: 'Clay Deposit' },
+    sulfur_mine:  { deposit: 'sulfur',   label: 'Sulfur Deposit' },
 };
 CONFIG.SOIL_FERTILITY = {
     degradePerSeason: 0.01,
@@ -4651,6 +4669,7 @@ CONFIG.ACTION_TICK_COSTS = {
 // ============================================================
 CONFIG.KINGDOM_BUILDING_TYPES = [
     'barracks', 'armory', 'watchtower', 'blacksmith', 'armorer', 'bakery', 'flour_mill',
+    'charcoal_kiln', 'sulfur_mine',
     'castle', 'training_grounds', 'siege_workshop', 'stables',
     'hospital', 'clinic', 'herb_garden', 'apothecary', 'advanced_apothecary', 'bandage_workshop',
     'granary', 'treasury_vault', 'courthouse',
@@ -4676,6 +4695,8 @@ CONFIG.KINGDOM_BUILD_TIMES = {
     bandage_workshop:  { build: 8,  repair: 3  },
     bakery:            { build: 8,  repair: 3  },
     flour_mill:        { build: 10, repair: 4  },
+    charcoal_kiln:     { build: 8,  repair: 3  },
+    sulfur_mine:       { build: 12, repair: 5  },
     blacksmith:        { build: 10, repair: 4  },
     armorer:           { build: 12, repair: 5  },
     granary:           { build: 10, repair: 4  },
