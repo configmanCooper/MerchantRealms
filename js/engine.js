@@ -12621,8 +12621,9 @@
             if (rng.chance(0.08)) {
                 var _borderTowns = [];
                 var _interiorTowns = [];
-                for (var _bdi = 0; _bdi < k.territories.length; _bdi++) {
-                    var _bdTown = findTown(k.territories[_bdi]);
+                var _bdTerritories = Array.from(k.territories);
+                for (var _bdi = 0; _bdi < _bdTerritories.length; _bdi++) {
+                    var _bdTown = findTown(_bdTerritories[_bdi]);
                     if (!_bdTown) continue;
                     var _isBorderTown = false;
                     for (var _rdj = 0; _rdj < world.roads.length; _rdj++) {
@@ -13296,8 +13297,9 @@
                 }
             } else if (k.gold > _sg * 1.5 && rngLocal.chance(0.05)) {
                 // Healthy treasury: invest in infrastructure instead of lowering
-                for (var tiIdx = 0; tiIdx < k.territories.length; tiIdx++) {
-                    var investTown = findTown(k.territories[tiIdx]);
+                var _investTerritories = Array.from(k.territories);
+                for (var tiIdx = 0; tiIdx < _investTerritories.length; tiIdx++) {
+                    var investTown = findTown(_investTerritories[tiIdx]);
                     if (investTown && investTown.prosperity < 80) {
                         investTown.prosperity = Math.min(100, investTown.prosperity + 2);
                         break;
@@ -22009,7 +22011,7 @@
 
         // Start new feast
         if (!k._activeFeast && world.day >= k._nextFeastDay) {
-            var feastTownId = k.capital || (k.territories && k.territories[0]);
+            var feastTownId = k.capital || (k.territories && k.territories.size > 0 ? Array.from(k.territories)[0] : null);
             if (!feastTownId) return;
             var feastTown = findTown(feastTownId);
             var feastTownName = feastTown ? feastTown.name : 'the capital';

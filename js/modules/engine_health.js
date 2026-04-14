@@ -1018,8 +1018,9 @@
 
         // Kingdom AI: build medical infrastructure when needed
         if (kingdom.gold > 500 && rng.chance(0.02)) {
-            for (var _mbi = 0; _mbi < kingdom.territories.length; _mbi++) {
-                var _mbTown = findTown(kingdom.territories[_mbi]);
+            var _mbTerritoriesArr = Array.from(kingdom.territories);
+            for (var _mbi = 0; _mbi < _mbTerritoriesArr.length; _mbi++) {
+                var _mbTown = findTown(_mbTerritoriesArr[_mbi]);
                 if (!_mbTown) continue;
                 var _hasSickNpcs = world.people.some(function(p) { return p.alive && p.townId === _mbTown.id && p.sick; });
                 if (!_hasSickNpcs && !rng.chance(0.1)) continue;

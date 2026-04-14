@@ -7652,7 +7652,7 @@ window.UI = (function () {
         for (const k of kingdoms) {
             const king = k.king ? Engine.findPerson(k.king) : null;
             const kingName = king ? king.firstName + ' ' + king.lastName : 'Unknown';
-            const numTowns = k.territories ? k.territories.length : 0;
+            const numTowns = k.territories ? (k.territories.size != null ? k.territories.size : (k.territories.length || 0)) : 0;
             const prosperityPct = Math.max(0, Math.min(100, k.prosperity || 0));
             const wealthLabel = k.gold > 10000 ? '💰 Wealthy' : k.gold > 5000 ? '💰 Moderate' : '💰 Poor';
             const isHome = typeof Player !== 'undefined' && Player.isPlayerCitizenOf ? Player.isPlayerCitizenOf(k.id) : (typeof Player !== 'undefined' && Player.citizenshipKingdomId ? k.id === Player.citizenshipKingdomId : false);
@@ -12238,7 +12238,7 @@ window.UI = (function () {
             var k = kingdoms[ki];
             var kingPerson = k.king ? Engine.getPerson(k.king) : null;
             var kingName = kingPerson ? (kingPerson.firstName + ' ' + kingPerson.lastName) : 'Unknown';
-            var numTowns = k.territories ? k.territories.length : 0;
+            var numTowns = k.territories ? (k.territories.size != null ? k.territories.size : (k.territories.length || 0)) : 0;
             var kColor = k.color || '#ccc';
 
             html += '<div style="border:1px solid var(--border);border-left:3px solid ' + kColor + ';border-radius:6px;padding:10px;cursor:pointer;" ';
