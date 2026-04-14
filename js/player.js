@@ -32757,11 +32757,183 @@
 
     /**
      * Debt-triggered bankruptcy — called when debts go unpaid for 90+ days.
+     * Kingdom seizes assets one at a time (gold full value, goods/buildings half value)
+     * to pay off debts. Only shows bankruptcy UI if debts remain after seizure.
      */
     function triggerDebtBankruptcy() {
         if (player.bankruptcy && player.bankruptcy.active) return;
         if (!player.alive) return;
-        triggerBankruptcy('unpaid_debts');
+
+        if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(0);
+
+        var totalDebtBefore = getTotalDebt();
+        var seized = { gold: 0, buildings: 0, goods: 0, houses: 0, ships: 0, caravans: 0 };
+
+        // Helper: pay down debts with a given amount. Returns leftover.
+        function payDownDebts(amount) {
+            if (amount <= 0 || !player.debts || player.debts.length === 0) return amount;
+            var remaining = amount;
+            for (var i = 0; i < player.debts.length && remaining > 0; i++) {
+                var d = player.debts[i];
+                if (d.amount <= 0) continue;
+                var pay = Math.min(remaining, d.amount);
+                d.amount -= pay;
+                remaining -= pay;
+                // Pay kingdom creditors
+                if (d.creditorType === 'kingdom') {
+                    var ck = Engine.findKingdom ? Engine.findKingdom(d.creditorId) : null;
+                    if (ck) ck.gold = (ck.gold || 0) + Math.floor(pay);
+                }
+            }
+            // Clean up paid debts
+            player.debts = player.debts.filter(function(d) { return d.amount > 0.5; });
+            return remaining;
+        }
+
+        function debtsRemain() { return player.debts && player.debts.length > 0 && getTotalDebt() > 0; }
+
+        // 1. Seize gold (full value)
+        if (player.gold > 0 && debtsRemain()) {
+            seized.gold = player.gold;
+            payDownDebts(player.gold);
+            player.gold = 0;
+        }
+
+        // 2. Seize buildings one at a time (half value)
+        for (var bi = player.buildings.length - 1; bi >= 0 && debtsRemain(); bi--) {
+            var bld = player.buildings[bi];
+            if (!bld.active) continue;
+            var bt = Engine.findBuildingType(bld.type);
+            var bldValue = bt ? Math.floor(bt.cost * (bld.level || 1) * 0.5) : 0;
+            bld.active = false;
+            if (bld.workers) {
+                for (var w = 0; w < bld.workers.length; w++) {
+                    var wPerson = Engine.findPerson(bld.workers[w]);
+                    if (wPerson) wPerson.employerId = null;
+                }
+                bld.workers = [];
+            }
+            // Remove from town
+            var bldTown = Engine.findTown ? Engine.findTown(bld.townId) : null;
+            if (bldTown && bldTown.buildings) {
+                for (var tj = 0; tj < bldTown.buildings.length; tj++) {
+                    if (bldTown.buildings[tj].id === bld.id) { bldTown.buildings.splice(tj, 1); break; }
+                }
+            }
+            player.buildings.splice(bi, 1);
+            seized.buildings++;
+            payDownDebts(bldValue);
+        }
+
+        // Fire remaining employees if buildings were seized
+        if (seized.buildings > 0) {
+            for (var e = 0; e < player.employees.length; e++) {
+                var emp = Engine.findPerson(player.employees[e]);
+                if (emp) emp.employerId = null;
+            }
+            player.employees = [];
+        }
+
+        // 3. Seize inventory goods one at a time (half value)
+        var invKeys = Object.keys(player.inventory || {});
+        for (var gi = 0; gi < invKeys.length && debtsRemain(); gi++) {
+            var gResId = invKeys[gi];
+            var gQty = player.inventory[gResId];
+            if (gQty <= 0) continue;
+            var gRes = findResource(gResId);
+            var goodValue = gRes ? Math.floor(gRes.basePrice * gQty * 0.5) : 0;
+            delete player.inventory[gResId];
+            seized.goods++;
+            payDownDebts(goodValue);
+        }
+
+        // 4. Seize town storage goods one at a time (half value)
+        var storageKeys = Object.keys(player.townStorage || {});
+        for (var si = 0; si < storageKeys.length && debtsRemain(); si++) {
+            var stTownId = storageKeys[si];
+            var storage = player.townStorage[stTownId];
+            var stKeys = Object.keys(storage || {});
+            for (var ski = 0; ski < stKeys.length && debtsRemain(); ski++) {
+                var stResId = stKeys[ski];
+                var stQty = storage[stResId];
+                if (stQty <= 0) continue;
+                var stRes = findResource(stResId);
+                var stValue = stRes ? Math.floor(stRes.basePrice * stQty * 0.5) : 0;
+                delete storage[stResId];
+                seized.goods++;
+                payDownDebts(stValue);
+            }
+        }
+
+        // 5. Seize houses one at a time (half value)
+        if (player.houses) {
+            for (var hi = player.houses.length - 1; hi >= 0 && debtsRemain(); hi--) {
+                payDownDebts(100); // half of ~200g house value
+                player.houses.splice(hi, 1);
+                seized.houses++;
+            }
+            if (player.houses.length === 0) player.primaryHouseId = null;
+        }
+
+        // 6. Seize ships one at a time (half value)
+        if (player.ships) {
+            for (var shi = player.ships.length - 1; shi >= 0 && debtsRemain(); shi--) {
+                var ship = player.ships[shi];
+                var sType = CONFIG.SHIP_TYPES ? CONFIG.SHIP_TYPES[ship.type] : null;
+                var shipVal = sType ? Math.floor(sType.cost * ((ship.condition || 100) / 100) * 0.5) : 0;
+                player.ships.splice(shi, 1);
+                seized.ships++;
+                payDownDebts(shipVal);
+            }
+        }
+
+        // 7. Seize caravans and their goods (half value)
+        for (var ci = player.caravans.length - 1; ci >= 0 && debtsRemain(); ci--) {
+            var caravan = player.caravans[ci];
+            if (!caravan.active) continue;
+            var caravanVal = 0;
+            if (caravan.goods) {
+                for (var cgId in caravan.goods) {
+                    var cgQty = caravan.goods[cgId];
+                    var cgRes = findResource(cgId);
+                    if (cgRes) caravanVal += cgRes.basePrice * cgQty;
+                }
+            }
+            caravan.active = false;
+            seized.caravans++;
+            payDownDebts(Math.floor(caravanVal * 0.5));
+        }
+        player.caravans = player.caravans.filter(function(c) { return c.active; });
+
+        // 8. Seize weapon/armor (half value)
+        if (debtsRemain() && player.weapon) { payDownDebts(25); player.weapon = null; }
+        if (debtsRemain() && player.armor) { payDownDebts(38); player.armor = null; }
+
+        // Build summary
+        var parts = [];
+        if (seized.gold > 0) parts.push(seized.gold + 'g gold');
+        if (seized.buildings > 0) parts.push(seized.buildings + ' building' + (seized.buildings > 1 ? 's' : ''));
+        if (seized.goods > 0) parts.push(seized.goods + ' type' + (seized.goods > 1 ? 's' : '') + ' of goods');
+        if (seized.houses > 0) parts.push(seized.houses + ' house' + (seized.houses > 1 ? 's' : ''));
+        if (seized.ships > 0) parts.push(seized.ships + ' ship' + (seized.ships > 1 ? 's' : ''));
+        if (seized.caravans > 0) parts.push(seized.caravans + ' caravan' + (seized.caravans > 1 ? 's' : ''));
+        var seizedDesc = parts.length > 0 ? parts.join(', ') : 'nothing';
+
+        if (!debtsRemain()) {
+            // All debts paid — no bankruptcy UI needed
+            player.debts = [];
+            player._lastDebtEnforcementDay = 0;
+            player.bankruptDays = 0;
+            Engine.logEvent('💸 The kingdom seized your assets to pay off your debts: ' + seizedDesc + '. Your ' + Math.floor(totalDebtBefore) + 'g debt is now settled.', null, 'finance');
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('💸 Kingdom seized assets — debts paid! (' + seizedDesc + ')', 'warning', 'critical');
+            if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(1);
+        } else {
+            // Debts remain — show full bankruptcy UI
+            var remainingDebt = getTotalDebt();
+            Engine.logEvent('💸 The kingdom seized ' + seizedDesc + ' but ' + Math.floor(remainingDebt) + 'g in debt remains. You must choose your fate.', null, 'finance');
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('💸 Assets seized but debt remains!', 'danger', 'critical');
+            triggerBankruptcy('unpaid_debts');
+        }
     }
 
     function calculateAssetValue() {
