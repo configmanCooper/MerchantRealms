@@ -278,24 +278,43 @@
         var _courtReady = Engine.getDay() - (ks.courtHeldDay || 0) >= 30;
         var _activeFeastK = null;
         try { _activeFeastK = Engine.getActiveFeast(ks.kingdomId); } catch(e) {}
+        var _pendingFeastK = null;
+        try { _pendingFeastK = Engine.getPendingFeast ? Engine.getPendingFeast(ks.kingdomId) : null; } catch(e) {}
         var _activeCourtK = null;
         try { _activeCourtK = Engine.getCourtSession ? Engine.getCourtSession(ks.kingdomId) : null; } catch(e) {}
+        var _pendingCourtK = null;
+        try { _pendingCourtK = Engine.getPendingCourt ? Engine.getPendingCourt(ks.kingdomId) : null; } catch(e) {}
         var _courtHasUnresolved = _activeCourtK && _activeCourtK.cases && _activeCourtK.cases.some(function(c) { return !c.resolved; });
+        // Mutual exclusion flags
+        var _hasFeastActivity = _activeFeastK || _pendingFeastK;
+        var _hasCourtActivity = _courtHasUnresolved || _pendingCourtK;
         html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">';
         if (_activeFeastK) {
             var _fDaysLeft = Math.max(0, (_activeFeastK.endDay || 0) - Engine.getDay());
             html += '<button class="btn-medieval" data-action="kingOpenActiveFeast" style="font-size:0.72rem;padding:4px 10px;background:rgba(200,150,50,0.3);border-color:rgba(200,150,50,0.5);">🎪 Feast in Progress (' + _fDaysLeft + 'd left)</button>';
+        } else if (_pendingFeastK) {
+            var _pfDays = Math.max(0, (_pendingFeastK.startDay || 0) - Engine.getDay());
+            var _pfAccepted = (_pendingFeastK.invitedNobles || []).filter(function(n) { return n.accepted; }).length;
+            html += '<button class="btn-medieval" disabled style="font-size:0.72rem;padding:4px 10px;background:rgba(200,150,50,0.2);border-color:rgba(200,150,50,0.3);">📅 Feast in ' + _pfDays + 'd (' + _pfAccepted + ' attending)</button>';
         } else {
-            html += '<button class="btn-medieval" data-action="kingHostFeast" style="font-size:0.72rem;padding:4px 10px;' + (!_feastReady ? 'opacity:0.5;' : '') + '" ' + (!_feastReady ? 'disabled' : '') + '>🎉 Host Feast (500g)</button>';
+            var _feastDisabled = !_feastReady || _hasCourtActivity;
+            html += '<button class="btn-medieval" data-action="kingHostFeast" style="font-size:0.72rem;padding:4px 10px;' + (_feastDisabled ? 'opacity:0.5;' : '') + '" ' + (_feastDisabled ? 'disabled' : '') + '>🎉 Host Feast (500g)</button>';
         }
         if (_courtHasUnresolved) {
             html += '<button class="btn-medieval" data-action="kingOpenActiveCourt" style="font-size:0.72rem;padding:4px 10px;background:rgba(80,120,200,0.3);border-color:rgba(80,120,200,0.5);">⚖️ Court in Session (' + _activeCourtK.cases.filter(function(c){ return !c.resolved; }).length + ' cases)</button>';
+        } else if (_pendingCourtK) {
+            var _pcDays = Math.max(0, (_pendingCourtK.courtDay || 0) - Engine.getDay());
+            var _pcAccepted = (_pendingCourtK.invitedNobles || []).filter(function(n) { return n.accepted; }).length;
+            html += '<button class="btn-medieval" disabled style="font-size:0.72rem;padding:4px 10px;background:rgba(80,120,200,0.2);border-color:rgba(80,120,200,0.3);">📅 Court in ' + _pcDays + 'd (' + _pcAccepted + ' attending)</button>';
         } else {
-            html += '<button class="btn-medieval" data-action="kingHoldCourt" style="font-size:0.72rem;padding:4px 10px;' + (!_courtReady ? 'opacity:0.5;' : '') + '" ' + (!_courtReady ? 'disabled' : '') + '>🏰 Hold Court</button>';
+            var _courtDisabled = !_courtReady || _hasFeastActivity;
+            html += '<button class="btn-medieval" data-action="kingHoldCourt" style="font-size:0.72rem;padding:4px 10px;' + (_courtDisabled ? 'opacity:0.5;' : '') + '" ' + (_courtDisabled ? 'disabled' : '') + '>🏰 Hold Court</button>';
         }
         html += '</div>';
-        if (!_activeFeastK && !_feastReady) html += '<div style="font-size:0.65rem;color:#888;margin-top:4px;">Feast available in ' + (30 - (Engine.getDay() - (ks.feastHeldDay || 0))) + ' days</div>';
-        if (!_courtHasUnresolved && !_courtReady) html += '<div style="font-size:0.65rem;color:#888;">Court available in ' + (30 - (Engine.getDay() - (ks.courtHeldDay || 0))) + ' days</div>';
+        if (!_activeFeastK && !_pendingFeastK && !_feastReady) html += '<div style="font-size:0.65rem;color:#888;margin-top:4px;">Feast available in ' + (30 - (Engine.getDay() - (ks.feastHeldDay || 0))) + ' days</div>';
+        if (_hasFeastActivity && !_courtHasUnresolved && !_pendingCourtK) html += '<div style="font-size:0.65rem;color:#888;margin-top:4px;">Court unavailable while feast is active/planned</div>';
+        if (_hasCourtActivity && !_activeFeastK && !_pendingFeastK) html += '<div style="font-size:0.65rem;color:#888;margin-top:4px;">Feast unavailable while court is active/planned</div>';
+        if (!_courtHasUnresolved && !_pendingCourtK && !_courtReady) html += '<div style="font-size:0.65rem;color:#888;">Court available in ' + (30 - (Engine.getDay() - (ks.courtHeldDay || 0))) + ' days</div>';
         // Tribute collection
         var _tributeReady = Engine.getDay() - (ks._vassalTributeDay || 0) >= 30;
         html += '<div style="margin-top:6px;">';
@@ -3168,21 +3187,74 @@
     UI.registerAction('kingDeclareWar', function(_t, d) { var r = Player.kingDeclareWar(d.id); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
     UI.registerAction('kingHostFeast', function() {
         var r = Player.kingHostFeast();
-        UI.toast(r.message, r.success ? 'success' : 'warning');
-        if (r.success && r.openFeast && r.kingdomId) {
+        if (r.showSchedule) {
+            _openEventScheduleModal('feast', r.kingdomId);
+        } else if (r.success && r.openFeast && r.kingdomId) {
+            UI.toast(r.message, 'success');
             UI.openFeastDialog(r.kingdomId);
+        } else if (r.success && r.pendingFeast) {
+            UI.toast(r.message, 'success');
+            UI.openKingPanel('decisions');
         } else {
+            UI.toast(r.message, r.success ? 'info' : 'warning');
             UI.openKingPanel('decisions');
         }
     });
     UI.registerAction('kingHoldCourt', function() {
         var r = Player.kingHoldCourt();
-        UI.toast(r.message, r.success ? 'success' : 'warning');
-        if (r.success && r.openCourt && r.kingdomId) {
+        if (r.showSchedule) {
+            _openEventScheduleModal('court', r.kingdomId);
+        } else if (r.success && r.openCourt && r.kingdomId) {
+            UI.toast(r.message, 'success');
             UI.openCourtSessionDialog(r.kingdomId);
+        } else if (r.success && r.pendingCourt) {
+            UI.toast(r.message, 'success');
+            UI.openKingPanel('decisions');
         } else {
+            UI.toast(r.message, r.success ? 'info' : 'warning');
             UI.openKingPanel('decisions');
         }
+    });
+
+    // Scheduling modal for feast/court
+    function _openEventScheduleModal(eventType, kingdomId) {
+        var isFeast = eventType === 'feast';
+        var title = isFeast ? '🎉 Schedule Royal Feast' : '⚖️ Schedule Royal Court';
+        var desc = isFeast
+            ? 'Choose when to hold the feast. Nobles must travel to the capital — more lead time means more nobles can attend.'
+            : 'Choose when to hold court. Nobles must travel to the capital — more lead time means more nobles can attend. Nobles are more likely to attend court than a feast.';
+        var html = '';
+        html += '<div style="background:linear-gradient(135deg,rgba(200,150,50,0.12),rgba(200,150,50,0.04));border:1px solid rgba(200,150,50,0.3);border-radius:8px;padding:12px;margin-bottom:12px;">';
+        html += '<div style="font-size:0.85rem;color:#ddd;">' + escapeHtml(desc) + '</div>';
+        html += '</div>';
+        var options = [
+            { days: 3, label: '3 Days', desc: 'Short notice — only nearby nobles can attend', icon: '⚡' },
+            { days: 7, label: '7 Days', desc: 'Standard — most nobles in the kingdom can attend', icon: '📅' },
+            { days: 30, label: '30 Days', desc: 'Grand event — maximum attendance from all corners of the realm', icon: '🏰' }
+        ];
+        for (var i = 0; i < options.length; i++) {
+            var opt = options[i];
+            html += '<button class="btn-medieval" data-action="kingScheduleEvent" data-val="' + opt.days + '" data-type="' + eventType + '" data-kingdom="' + kingdomId + '" style="display:block;width:100%;text-align:left;padding:10px 14px;margin-bottom:6px;font-size:0.8rem;">';
+            html += opt.icon + ' <strong>' + opt.label + '</strong>';
+            if (isFeast) html += ' <span style="color:#f0c040;">(500g)</span>';
+            html += '<br><span style="font-size:0.7rem;color:#aaa;">' + opt.desc + '</span>';
+            html += '</button>';
+        }
+        var footerHtml = '<button class="btn-medieval" data-action="kingBackToDecisions">Cancel</button>';
+        openModal(title, html, footerHtml);
+    }
+
+    UI.registerAction('kingScheduleEvent', function(_t, d) {
+        var days = parseInt(d.val);
+        var type = d.type;
+        var r;
+        if (type === 'feast') {
+            r = Player.kingHostFeast(days);
+        } else {
+            r = Player.kingHoldCourt(days);
+        }
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.openKingPanel('decisions');
     });
     UI.registerAction('kingOpenActiveFeast', function() {
         var kId = Player.state && Player.state.kingState ? Player.state.kingState.kingdomId : null;

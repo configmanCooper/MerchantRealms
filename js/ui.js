@@ -609,6 +609,21 @@ window.UI = (function () {
         registerAction('offerNobleLoan', function(_t, d) { var amt=parseInt(document.getElementById('loanAmountInput').value);var r=Player.offerNobleLoan(d.id,amt);UI.toast(r.message,r.success?'success':'warning');if(r.success)UI.closeModal();else UI.openNobleLoanDialog(d.id2); });
         registerAction('closeAndOpenNobilityDialog', function() { UI.closeModal(); UI.openNobilityDialog(); });
         registerAction('doFeastAction', function(_t, d) { var r=Engine.doFeastAction ? Engine.doFeastAction(d.kingdom,d.id) : null;UI.toast(r&&r.message?r.message:'Action performed.',r&&r.success?'success':'warning');UI.openFeastDialog(d.kingdom); });
+        registerAction('skipFeastDay', function(_t, d) {
+            var kId = d.kingdom;
+            if (!kId) return;
+            // Advance the game by one day (Engine.tick()) to get to next feast day
+            try { Engine.tick(); } catch(e) {}
+            // Check if feast is still active
+            var feast = null;
+            try { feast = Engine.getActiveFeast(kId); } catch(e) {}
+            if (feast) {
+                UI.openFeastDialog(kId);
+            } else {
+                UI.toast('The feast has ended.', 'info');
+                try { UI.openKingPanel('decisions'); } catch(e) {}
+            }
+        });
         registerAction('showPersonDetailById', function(_t, d) { UI.showPersonDetail(Engine.getPerson(d.id)) });
         registerAction('openVotingDialog', function(_t, d) { if (d.id) UI.openVotingDialog(d.id); });
         registerAction('tryInfluenceVote', function(_t, d) { UI._tryInfluenceVote(d.id,d.id2); });
@@ -11455,6 +11470,9 @@ window.UI = (function () {
         html += '<div style="background:linear-gradient(135deg,rgba(200,150,50,0.15),rgba(200,150,50,0.05));border:1px solid rgba(200,150,50,0.3);border-radius:8px;padding:12px;margin-bottom:10px;">';
         html += '<div style="font-size:0.9rem;font-weight:bold;color:#f0c040;">🎪 Royal Feast in ' + escapeHtml(feastTown) + (isKing ? ' (Your Feast)' : '') + '</div>';
         html += '<div style="font-size:0.78rem;color:#ccc;margin-top:4px;">' + daysLeft + ' day' + (daysLeft !== 1 ? 's' : '') + ' remaining • ' + actionsLeft + '/' + maxActions + ' action' + (actionsLeft !== 1 ? 's' : '') + ' left today</div>';
+        if (isKing && actionsLeft <= 0 && daysLeft > 0) {
+            html += '<div style="margin-top:6px;"><button class="btn-medieval" data-action="skipFeastDay" data-kingdom="' + kingdomId + '" style="font-size:0.72rem;padding:4px 12px;background:rgba(93,173,226,0.3);border-color:rgba(93,173,226,0.5);">⏭️ Skip to Next Feast Day</button></div>';
+        }
         html += '</div>';
 
         // Attending nobles

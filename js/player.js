@@ -7750,23 +7750,37 @@
         return { success: true, message: 'Withdrew ' + amount + 'g. Treasury: ' + Math.floor(kingdom.gold) + 'g.' };
     }
 
-    function kingHostFeast() {
+    function kingHostFeast(leadDays) {
         if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
         var kingdom = Engine.findKingdom(player.kingState.kingdomId);
         if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        // Mutual exclusion
+        if (kingdom._courtSession && kingdom._courtSession.cases && kingdom._courtSession.cases.some(function(c) { return !c.resolved; })) {
+            return { success: false, message: 'Cannot host a feast while court is in session.' };
+        }
+        if (kingdom._pendingCourt) return { success: false, message: 'Cannot host a feast while court is being planned.' };
         var daysSinceLast = Engine.getDay() - (player.kingState.feastHeldDay || 0);
         if (daysSinceLast < 30) return { success: false, message: 'Must wait ' + (30 - daysSinceLast) + ' more days before hosting another feast.' };
         // If feast already active, just open it
         if (kingdom._activeFeast) {
             return { success: true, message: 'A feast is already in progress!', openFeast: true, kingdomId: player.kingState.kingdomId };
         }
+        // If feast already pending, show status
+        if (kingdom._pendingFeast) {
+            var daysUntil = kingdom._pendingFeast.startDay - Engine.getDay();
+            return { success: true, message: 'A feast is scheduled to begin in ' + daysUntil + ' days.', pendingFeast: true, kingdomId: player.kingState.kingdomId };
+        }
+        // If no leadDays specified, return schedule options
+        if (!leadDays) {
+            return { success: true, showSchedule: true, eventType: 'feast', kingdomId: player.kingState.kingdomId };
+        }
         var feastCost = 500;
         if (kingdom.gold < feastCost) return { success: false, message: 'Treasury needs ' + feastCost + 'g for a feast.' };
         kingdom.gold -= feastCost;
         player.kingState.feastHeldDay = Engine.getDay();
-        // Create the actual feast event via engine
-        var feast = Engine.startRoyalFeast(player.kingState.kingdomId);
-        if (!feast) return { success: false, message: 'Could not start feast.' };
+        // Create the feast event via engine with scheduling
+        var feast = Engine.startRoyalFeast(player.kingState.kingdomId, leadDays);
+        if (!feast) return { success: false, message: 'Could not schedule feast.' };
         // Boost happiness
         if (kingdom.happiness != null) kingdom.happiness = Math.min(100, kingdom.happiness + 5);
         // Boost noble relationships
@@ -7777,27 +7791,51 @@
                 if (_fRank >= 3) modifyRelationship(_fId, 5);
             }
         }
-        Engine.logEvent('👑 ' + (player.sex === 'F' ? 'Queen' : 'King') + ' ' + player.fullName + ' hosts a grand royal feast! (+5 happiness, +5 noble relations)');
+        var title = player.sex === 'F' ? 'Queen' : 'King';
+        if (leadDays > 0) {
+            var acceptCount = (feast.invitedNobles || []).filter(function(n) { return n.accepted; }).length;
+            Engine.logEvent('👑 ' + title + ' ' + player.fullName + ' has announced a grand royal feast in ' + leadDays + ' days! ' + acceptCount + ' nobles plan to attend.');
+            return { success: true, message: 'Feast scheduled in ' + leadDays + ' days! ' + acceptCount + ' nobles plan to attend.', pendingFeast: true, kingdomId: player.kingState.kingdomId };
+        }
+        Engine.logEvent('👑 ' + title + ' ' + player.fullName + ' hosts a grand royal feast! (+5 happiness, +5 noble relations)');
         return { success: true, message: 'Grand feast begun! The feast lasts 3 days. You have 5 actions per day.', openFeast: true, kingdomId: player.kingState.kingdomId };
     }
 
-    function kingHoldCourt() {
+    function kingHoldCourt(leadDays) {
         if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
-        var daysSinceLast = Engine.getDay() - (player.kingState.courtHeldDay || 0);
-        if (daysSinceLast < 30) return { success: false, message: 'Must wait ' + (30 - daysSinceLast) + ' more days before holding court.' };
         var kingdom = Engine.findKingdom(player.kingState.kingdomId);
         if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        // Mutual exclusion
+        if (kingdom._activeFeast) return { success: false, message: 'Cannot hold court while a feast is in progress.' };
+        if (kingdom._pendingFeast) return { success: false, message: 'Cannot hold court while a feast is being planned.' };
+        var daysSinceLast = Engine.getDay() - (player.kingState.courtHeldDay || 0);
+        if (daysSinceLast < 30) return { success: false, message: 'Must wait ' + (30 - daysSinceLast) + ' more days before holding court.' };
         // If court already active with unresolved cases, reopen it
         if (kingdom._courtSession && kingdom._courtSession.cases.some(function(c) { return !c.resolved; })) {
             return { success: true, message: 'Court is already in session!', openCourt: true, kingdomId: player.kingState.kingdomId };
         }
+        // If court already pending, show status
+        if (kingdom._pendingCourt) {
+            var daysUntil = kingdom._pendingCourt.courtDay - Engine.getDay();
+            return { success: true, message: 'Court is scheduled to convene in ' + daysUntil + ' days.', pendingCourt: true, kingdomId: player.kingState.kingdomId };
+        }
+        // If no leadDays specified, return schedule options
+        if (!leadDays) {
+            return { success: true, showSchedule: true, eventType: 'court', kingdomId: player.kingState.kingdomId };
+        }
         player.kingState.courtHeldDay = Engine.getDay();
-        // Create court session with generated cases
-        var court = Engine.startCourtSession(player.kingState.kingdomId);
-        if (!court) return { success: false, message: 'Could not start court session.' };
+        // Create court session with scheduling
+        var court = Engine.startCourtSession(player.kingState.kingdomId, leadDays);
+        if (!court) return { success: false, message: 'Could not schedule court.' };
         // Boost reputation and reduce revolt risk
         if (kingdom.happiness != null) kingdom.happiness = Math.min(100, kingdom.happiness + 3);
-        Engine.logEvent('👑 ' + (player.sex === 'F' ? 'Queen' : 'King') + ' ' + player.fullName + ' holds court, hearing petitions from the people. (+3 happiness)');
+        var title = player.sex === 'F' ? 'Queen' : 'King';
+        if (leadDays > 0) {
+            var acceptCount = (court.invitedNobles || []).filter(function(n) { return n.accepted; }).length;
+            Engine.logEvent('👑 ' + title + ' ' + player.fullName + ' has announced a court session in ' + leadDays + ' days. ' + acceptCount + ' nobles plan to attend.');
+            return { success: true, message: 'Court scheduled in ' + leadDays + ' days! ' + acceptCount + ' nobles plan to attend.', pendingCourt: true, kingdomId: player.kingState.kingdomId };
+        }
+        Engine.logEvent('👑 ' + title + ' ' + player.fullName + ' holds court, hearing petitions from the people. (+3 happiness)');
         return { success: true, message: 'Court is now in session! ' + court.cases.length + ' cases to hear.', openCourt: true, kingdomId: player.kingState.kingdomId };
     }
 

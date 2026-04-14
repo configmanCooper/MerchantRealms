@@ -22009,8 +22009,78 @@
             k._activeFeast = null;
         }
 
-        // Start new feast
-        if (!k._activeFeast && world.day >= k._nextFeastDay) {
+        // Activate pending feast when start day arrives
+        if (k._pendingFeast && world.day >= k._pendingFeast.startDay && !k._activeFeast) {
+            var pf = k._pendingFeast;
+            var arrivedNobles = [];
+            for (var _pi = 0; _pi < (pf.invitedNobles || []).length; _pi++) {
+                var inv = pf.invitedNobles[_pi];
+                if (inv.accepted && inv.arrivalDay <= world.day) {
+                    arrivedNobles.push(inv.id);
+                }
+            }
+            k._activeFeast = {
+                id: pf.id,
+                townId: pf.townId,
+                startDay: pf.startDay,
+                endDay: pf.endDay,
+                attendees: arrivedNobles,
+                events: [],
+                _playerActionsToday: 0,
+                _playerActionDay: 0,
+                _kingHosted: pf._kingHosted,
+                _maxActionsPerDay: pf._maxActionsPerDay || 5
+            };
+            // King always attends their own feast
+            try {
+                var _pfPlayerPersonId = (typeof Player !== 'undefined' && Player.personId) ? Player.personId : 'player';
+                if (k._activeFeast.attendees.indexOf(_pfPlayerPersonId) < 0) {
+                    var _pIsKingFeast = typeof Player !== 'undefined' && Player.state && Player.state.isKing && Player.state.kingState && Player.state.kingState.kingdomId === k.id;
+                    if (_pIsKingFeast) k._activeFeast.attendees.push(_pfPlayerPersonId);
+                }
+            } catch(e) {}
+
+            var isPlayerK2 = typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id;
+            logEvent('🎪 The Royal Feast in ' + (pf.townName || k.name) + ' has begun! ' + arrivedNobles.length + ' nobles in attendance.', {
+                type: 'feast_started', kingdomId: k.id, townId: pf.townId
+            }, isPlayerK2 ? 'my_kingdom' : 'foreign_kingdoms');
+            k._pendingFeast = null;
+        }
+
+        // Activate pending court when court day arrives
+        if (k._pendingCourt && world.day >= k._pendingCourt.courtDay && !k._courtSession) {
+            var pc = k._pendingCourt;
+            var courtNobles = [];
+            for (var _ci2 = 0; _ci2 < (pc.invitedNobles || []).length; _ci2++) {
+                var cinv = pc.invitedNobles[_ci2];
+                if (cinv.accepted && cinv.arrivalDay <= world.day) {
+                    courtNobles.push({
+                        id: cinv.id,
+                        name: cinv.name,
+                        loyalty: cinv.loyalty,
+                        fear: cinv.fear,
+                        personality: cinv.personality
+                    });
+                }
+            }
+            k._courtSession = {
+                id: pc.id,
+                day: world.day,
+                cases: pc.cases,
+                nobles: courtNobles,
+                events: [],
+                _resolvedCount: 0
+            };
+
+            var isPlayerK3 = typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id;
+            logEvent('⚖️ Royal Court is now in session in ' + (pc.townName || k.name) + '! ' + courtNobles.length + ' nobles in attendance.', {
+                type: 'court_started', kingdomId: k.id, townId: pc.townId
+            }, isPlayerK3 ? 'my_kingdom' : 'foreign_kingdoms');
+            k._pendingCourt = null;
+        }
+
+        // Start new feast (NPC kingdom auto-feast)
+        if (!k._activeFeast && !k._pendingFeast && !k._pendingCourt && !(k._courtSession && k._courtSession.cases && k._courtSession.cases.some(function(c) { return !c.resolved; })) && world.day >= k._nextFeastDay) {
             var feastTownId = k.capital || (k.territories && k.territories.size > 0 ? Array.from(k.territories)[0] : null);
             if (!feastTownId) return;
             var feastTown = findTown(feastTownId);
@@ -22050,21 +22120,11 @@
                 }
                 k._playerFeastInvites = null; // consumed
             } else {
-                // Personality-based attendance: loyal/social nobles more likely to attend
+                // Personality-based attendance using shared function
                 for (var ai = 0; ai < shuffled.length; ai++) {
                     var _fNoble = shuffled[ai];
-                    var _fNP = _fNoble.personality || {};
-                    var _fAttendChance = 0.65;
-                    // Loyal nobles always show up
-                    if ((_fNoble.kingLoyalty || 50) > 70) _fAttendChance += 0.2;
-                    else if ((_fNoble.kingLoyalty || 50) < 30) _fAttendChance -= 0.25;
-                    // Social nobles love feasts
-                    if ((_fNP.social || 50) > 60) _fAttendChance += 0.15;
-                    // Ambitious nobles attend to gain influence
-                    if ((_fNP.ambition || 50) > 65) _fAttendChance += 0.1;
-                    // Jailed nobles can't attend
-                    if (_fNoble._jailedUntilDay && world.day < _fNoble._jailedUntilDay) _fAttendChance = 0;
-                    if (rng.chance(Math.max(0.1, Math.min(0.95, _fAttendChance)))) {
+                    var _fAttendChance = _computeNobleAttendChance(_fNoble, 'feast', 0);
+                    if (rng.chance(_fAttendChance)) {
                         k._activeFeast.attendees.push(_fNoble.id);
                     }
                 }
@@ -22677,16 +22737,116 @@
     }
 
     // ── King: Start Royal Feast on demand ──
-    function startRoyalFeast(kingdomId) {
+    // Estimate travel days for an NPC from one town to another
+    function _estimateNobleTravelDays(fromTownId, toTownId) {
+        if (!fromTownId || !toTownId || fromTownId === toTownId) return 0;
+        var path = findPath(fromTownId, toTownId);
+        if (!path || path.length === 0) return 999;
+        return Math.max(1, Math.ceil(path.length * 1.5));
+    }
+
+    // Compute noble attendance chance for feast or court
+    // eventType: 'feast' or 'court' — court has higher base attendance
+    function _computeNobleAttendChance(noble, eventType, leadDays) {
+        var np = noble.personality || {};
+        var baseFeast = 0.55;
+        var baseCourt = 0.70;
+        var attendChance = eventType === 'court' ? baseCourt : baseFeast;
+
+        // Loyalty to king
+        var loyalty = noble.kingLoyalty || 50;
+        if (loyalty > 70) attendChance += 0.20;
+        else if (loyalty > 50) attendChance += 0.10;
+        else if (loyalty < 30) attendChance -= 0.20;
+
+        // Social personality — social nobles love feasts, attend court dutifully
+        if ((np.social || 50) > 60) attendChance += (eventType === 'feast' ? 0.15 : 0.08);
+        // Ambitious nobles attend to gain influence
+        if ((np.ambition || 50) > 65) attendChance += 0.10;
+        // Fear of king makes court attendance more likely
+        if (eventType === 'court' && (noble.fearOfKing || 15) > 40) attendChance += 0.10;
+
+        // Relationship with other nobles attending — social people like gatherings
+        // (simplified: higher social = more likely)
+        if ((np.warmth || 50) > 60) attendChance += 0.05;
+
+        // Jailed nobles can't attend
+        if (noble._jailedUntilDay && world.day < noble._jailedUntilDay) return 0;
+
+        // More lead time = easier to prepare
+        if (leadDays >= 7) attendChance += 0.05;
+        if (leadDays >= 30) attendChance += 0.10;
+
+        return Math.max(0.10, Math.min(0.95, attendChance));
+    }
+
+    function startRoyalFeast(kingdomId, leadDays) {
         var k = findKingdom(kingdomId);
         if (!k) return null;
-        if (k._activeFeast) return k._activeFeast; // already active
+        if (k._activeFeast) return k._activeFeast;
+        if (k._pendingFeast) return k._pendingFeast;
+        // Mutual exclusion: no feast during court
+        if (k._courtSession && k._courtSession.cases && k._courtSession.cases.some(function(c) { return !c.resolved; })) return null;
+        if (k._pendingCourt) return null;
+
         var feastTownId = k.capital || (k.territories && k.territories.size > 0 ? Array.from(k.territories)[0] : null);
         if (!feastTownId) return null;
         var feastTown = findTown(feastTownId);
         var feastTownName = feastTown ? feastTown.name : 'the capital';
         var rng = world.rng;
+        var kId = k.id;
 
+        leadDays = leadDays || 0;
+        var startDay = world.day + leadDays;
+        var endDay = startDay + 3;
+
+        // Gather all nobles
+        var allNobles = world.people.filter(function(p) {
+            return p.alive && p.socialRank && p.socialRank[kId] >= 4 && p.socialRank[kId] <= 7;
+        });
+
+        if (leadDays > 0) {
+            // Scheduled feast — nobles must travel and decide
+            var invitedNobles = [];
+            for (var ai = 0; ai < allNobles.length; ai++) {
+                var noble = allNobles[ai];
+                var travelDays = _estimateNobleTravelDays(noble.townId, feastTownId);
+                var canArrive = travelDays <= leadDays;
+                var attendChance = _computeNobleAttendChance(noble, 'feast', leadDays);
+                var willAttend = canArrive && rng.chance(attendChance);
+                invitedNobles.push({
+                    id: noble.id,
+                    name: ((noble.firstName || '') + ' ' + (noble.lastName || '')).trim(),
+                    travelDays: travelDays,
+                    arrivalDay: world.day + travelDays,
+                    accepted: willAttend,
+                    canArrive: canArrive
+                });
+            }
+
+            k._pendingFeast = {
+                id: 'feast_' + world.day,
+                townId: feastTownId,
+                townName: feastTownName,
+                scheduledDay: world.day,
+                startDay: startDay,
+                endDay: endDay,
+                leadDays: leadDays,
+                invitedNobles: invitedNobles,
+                _kingHosted: true,
+                _maxActionsPerDay: 5
+            };
+
+            var acceptCount = invitedNobles.filter(function(n) { return n.accepted; }).length;
+            logEvent('🎪 A Royal Feast has been announced in ' + feastTownName + '! Beginning in ' + leadDays + ' days. ' + acceptCount + ' nobles plan to attend.', {
+                type: 'feast_announced', kingdomId: kId, townId: feastTownId
+            }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId ? 'my_kingdom' : 'foreign_kingdoms');
+
+            k._nextFeastDay = endDay + rng.randInt(60, 120);
+            return k._pendingFeast;
+        }
+
+        // Instant feast (NPC-triggered or leadDays=0)
         k._activeFeast = {
             id: 'feast_' + world.day,
             townId: feastTownId,
@@ -22700,21 +22860,10 @@
             _maxActionsPerDay: 5
         };
 
-        // Populate attendees: all alive nobles rank 4-7
-        var kId = k.id;
-        var allNobles = world.people.filter(function(p) {
-            return p.alive && p.socialRank && p.socialRank[kId] >= 4 && p.socialRank[kId] <= 7;
-        });
-        for (var ai = 0; ai < allNobles.length; ai++) {
-            var _fNoble = allNobles[ai];
-            var _fNP = _fNoble.personality || {};
-            var _fAttendChance = 0.70;
-            if ((_fNoble.kingLoyalty || 50) > 70) _fAttendChance += 0.2;
-            else if ((_fNoble.kingLoyalty || 50) < 30) _fAttendChance -= 0.20;
-            if ((_fNP.social || 50) > 60) _fAttendChance += 0.15;
-            if ((_fNP.ambition || 50) > 65) _fAttendChance += 0.1;
-            if (_fNoble._jailedUntilDay && world.day < _fNoble._jailedUntilDay) _fAttendChance = 0;
-            if (rng.chance(Math.max(0.15, Math.min(0.95, _fAttendChance)))) {
+        for (var ai2 = 0; ai2 < allNobles.length; ai2++) {
+            var _fNoble = allNobles[ai2];
+            var attendChance2 = _computeNobleAttendChance(_fNoble, 'feast', 0);
+            if (rng.chance(attendChance2)) {
                 k._activeFeast.attendees.push(_fNoble.id);
             }
         }
@@ -22782,10 +22931,16 @@
           grantEffect: { happiness: -3, fearAll: 3 }, denyEffect: { happiness: 2 }, compromiseEffect: { happiness: 0, fearAll: 1 } }
     ];
 
-    function startCourtSession(kingdomId) {
+    function startCourtSession(kingdomId, leadDays) {
         var k = findKingdom(kingdomId);
         if (!k) return null;
+        // Mutual exclusion: no court during feast
+        if (k._activeFeast || k._pendingFeast) return null;
+        if (k._pendingCourt) return k._pendingCourt;
         var rng = world.rng;
+
+        leadDays = leadDays || 0;
+        var courtDay = world.day + leadDays;
 
         // Get kingdom data for filling case templates
         var towns = [];
@@ -22799,6 +22954,10 @@
             return p.alive && p.socialRank && p.socialRank[k.id] >= 4 && p.socialRank[k.id] <= 7;
         });
         var foreignKingdoms = getKingdoms().filter(function(fk) { return fk.id !== k.id; });
+
+        var courtTownId = k.capital || (k.territories && k.territories.size > 0 ? Array.from(k.territories)[0] : null);
+        var courtTown = courtTownId ? findTown(courtTownId) : null;
+        var courtTownName = courtTown ? courtTown.name : 'the capital';
 
         // Generate 5-8 cases
         var numCases = rng.randInt(5, 8);
@@ -22864,22 +23023,61 @@
             cases.push(caseObj);
         }
 
-        // Generate noble reactions: which nobles attend court and their stance on cases
-        var courtNobles = [];
-        for (var ni = 0; ni < nobles.length; ni++) {
-            var n = nobles[ni];
-            var _np = n.personality || {};
-            var attendChance = 0.65;
-            if ((n.kingLoyalty || 50) > 70) attendChance += 0.2;
-            if ((_np.social || 50) > 60) attendChance += 0.1;
-            if (n._jailedUntilDay && world.day < n._jailedUntilDay) attendChance = 0;
-            if (rng.chance(Math.max(0.15, Math.min(0.95, attendChance)))) {
-                courtNobles.push({
+        if (leadDays > 0) {
+            // Scheduled court — nobles must travel and decide
+            var invitedNobles = [];
+            for (var ni = 0; ni < nobles.length; ni++) {
+                var n = nobles[ni];
+                var _np = n.personality || {};
+                var travelDays = _estimateNobleTravelDays(n.townId, courtTownId);
+                var canArrive = travelDays <= leadDays;
+                var attendChance = _computeNobleAttendChance(n, 'court', leadDays);
+                var willAttend = canArrive && rng.chance(attendChance);
+                invitedNobles.push({
                     id: n.id,
                     name: ((n.firstName || '') + ' ' + (n.lastName || '')).trim(),
+                    travelDays: travelDays,
+                    arrivalDay: world.day + travelDays,
+                    accepted: willAttend,
+                    canArrive: canArrive,
                     loyalty: n.kingLoyalty || 50,
                     fear: n.fearOfKing || 15,
                     personality: _np
+                });
+            }
+
+            k._pendingCourt = {
+                id: 'court_' + world.day,
+                townId: courtTownId,
+                townName: courtTownName,
+                scheduledDay: world.day,
+                courtDay: courtDay,
+                leadDays: leadDays,
+                cases: cases,
+                invitedNobles: invitedNobles
+            };
+
+            var acceptCount = invitedNobles.filter(function(n) { return n.accepted; }).length;
+            logEvent('⚖️ Royal Court has been announced in ' + courtTownName + '! Convening in ' + leadDays + ' days. ' + acceptCount + ' nobles plan to attend.', {
+                type: 'court_announced', kingdomId: k.id, townId: courtTownId
+            }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id ? 'my_kingdom' : 'foreign_kingdoms');
+
+            return k._pendingCourt;
+        }
+
+        // Instant court session (NPC or leadDays=0)
+        var courtNobles = [];
+        for (var ni2 = 0; ni2 < nobles.length; ni2++) {
+            var n3 = nobles[ni2];
+            var _np3 = n3.personality || {};
+            var attendChance3 = _computeNobleAttendChance(n3, 'court', 0);
+            if (rng.chance(attendChance3)) {
+                courtNobles.push({
+                    id: n3.id,
+                    name: ((n3.firstName || '') + ' ' + (n3.lastName || '')).trim(),
+                    loyalty: n3.kingLoyalty || 50,
+                    fear: n3.fearOfKing || 15,
+                    personality: _np3
                 });
             }
         }
@@ -26173,17 +26371,25 @@
             var k = findKingdom(kingdomId);
             return k ? k._activeFeast : null;
         },
+        getPendingFeast: function(kingdomId) {
+            var k = findKingdom(kingdomId);
+            return k ? k._pendingFeast : null;
+        },
+        getPendingCourt: function(kingdomId) {
+            var k = findKingdom(kingdomId);
+            return k ? k._pendingCourt : null;
+        },
         doFeastAction: function(kingdomId, actionId) {
             return doFeastAction(kingdomId, actionId);
         },
         doCourtAction: function(kingdomId, actionId) {
             return doCourtAction(kingdomId, actionId);
         },
-        startRoyalFeast: function(kingdomId) {
-            return startRoyalFeast(kingdomId);
+        startRoyalFeast: function(kingdomId, leadDays) {
+            return startRoyalFeast(kingdomId, leadDays);
         },
-        startCourtSession: function(kingdomId) {
-            return startCourtSession(kingdomId);
+        startCourtSession: function(kingdomId, leadDays) {
+            return startCourtSession(kingdomId, leadDays);
         },
         getCourtSession: function(kingdomId) {
             var k = findKingdom(kingdomId);
