@@ -1470,14 +1470,23 @@
             }
         }
 
-        // Helper: pick random non-island town
-        var _pickGapTown = function(portOnly) {
+        // Helper: pick random non-island town, optionally preferring a kingdom culture
+        var _pickGapTown = function(portOnly, preferCulture) {
             var pool = towns.filter(function(t) {
                 if (t.isIsland) return false;
                 if (portOnly && !t.isPort) return false;
                 return true;
             });
-            return pool.length > 0 ? pool[rng.randInt(0, pool.length - 1)] : null;
+            if (pool.length === 0) return null;
+            // If a culture preference is given, bias towards kingdoms with that culture
+            if (preferCulture) {
+                var culturePool = pool.filter(function(t) {
+                    var kk = kingdoms.find(function(k) { return k.territories.has(t.id); });
+                    return kk && kk.culture === preferCulture;
+                });
+                if (culturePool.length > 0 && rng.chance(0.70)) return culturePool[rng.randInt(0, culturePool.length - 1)];
+            }
+            return pool[rng.randInt(0, pool.length - 1)];
         };
 
         // Helper: add gap-fill building
@@ -1502,53 +1511,59 @@
 
         // Phase 1: For each building type with 0 global instances, roll chance to place one.
         // 'products' = for buildings with produces:null, pick a random product to assign.
+        // 'culture' = prefer placing in a kingdom with this culture (70% bias).
         var _gapList = [
             // Buildings never placed in normal worldgen
-            { type: 'apiary',              chance: 0.80 },
+            { type: 'apiary',              chance: 0.80, culture: 'agricultural' },
             { type: 'canvas_workshop',     chance: 0.85, products: ['bedroll', 'tent', 'waterskin'] },
-            { type: 'herbalist_hut',       chance: 0.75 },
-            { type: 'saddler',             chance: 0.65 },
-            { type: 'butcher',             chance: 0.70 },
+            { type: 'herbalist_hut',       chance: 0.75, culture: 'agricultural' },
+            { type: 'saddler',             chance: 0.65, culture: 'military' },
+            { type: 'butcher',             chance: 0.70, culture: 'agricultural' },
             { type: 'drum_maker',          chance: 0.55 },
             // Buildings only in capitals with low probability
-            { type: 'perfumery',           chance: 0.70 },
+            { type: 'perfumery',           chance: 0.70, culture: 'mercantile' },
             { type: 'instrument_workshop', chance: 0.70, products: ['lute', 'flute', 'harp', 'drum', 'hurdy_gurdy'] },
-            { type: 'goldsmith',           chance: 0.65 },
-            { type: 'fine_tailor',         chance: 0.65 },
-            { type: 'tapestry_loom',       chance: 0.55 },
-            { type: 'silk_weaver',         chance: 0.70 },
+            { type: 'goldsmith',           chance: 0.65, culture: 'mercantile' },
+            { type: 'fine_tailor',         chance: 0.65, culture: 'mercantile' },
+            { type: 'tapestry_loom',       chance: 0.55, culture: 'mercantile' },
+            { type: 'silk_weaver',         chance: 0.70, culture: 'mercantile' },
             // Buildings that can fail all probability rolls in regular worldgen
-            { type: 'vineyard',            chance: 0.80 },
-            { type: 'brewery',             chance: 0.80 },
-            { type: 'smokehouse',          chance: 0.75 },
-            { type: 'winery',              chance: 0.75 },
-            { type: 'jeweler',             chance: 0.70 },
-            { type: 'carpenter',           chance: 0.80 },
+            { type: 'vineyard',            chance: 0.80, culture: 'agricultural' },
+            { type: 'brewery',             chance: 0.80, culture: 'agricultural' },
+            { type: 'smokehouse',          chance: 0.75, culture: 'agricultural' },
+            { type: 'winery',              chance: 0.75, culture: 'agricultural' },
+            { type: 'jeweler',             chance: 0.70, culture: 'mercantile' },
+            { type: 'carpenter',           chance: 0.80, culture: 'industrial' },
             { type: 'hunting_lodge',       chance: 0.85 },
-            { type: 'horse_ranch',         chance: 0.75 },
-            { type: 'tanner',              chance: 0.85 },
-            { type: 'weaver',              chance: 0.85 },
-            { type: 'toolsmith',           chance: 0.85 },
-            { type: 'rope_maker',          chance: 0.80 },
-            { type: 'brick_kiln',          chance: 0.75 },
-            { type: 'clay_pit',            chance: 0.75 },
+            { type: 'horse_ranch',         chance: 0.75, culture: 'military' },
+            { type: 'tanner',              chance: 0.85, culture: 'industrial' },
+            { type: 'weaver',              chance: 0.85, culture: 'industrial' },
+            { type: 'toolsmith',           chance: 0.85, culture: 'industrial' },
+            { type: 'rope_maker',          chance: 0.80, culture: 'industrial' },
+            { type: 'brick_kiln',          chance: 0.75, culture: 'industrial' },
+            { type: 'clay_pit',            chance: 0.75, culture: 'industrial' },
             { type: 'gold_mine',           chance: 0.70 },
-            { type: 'sheep_farm',          chance: 0.85 },
-            { type: 'pig_farm',            chance: 0.80 },
+            { type: 'sheep_farm',          chance: 0.85, culture: 'agricultural' },
+            { type: 'pig_farm',            chance: 0.80, culture: 'agricultural' },
             { type: 'bandage_workshop',    chance: 0.80 },
             { type: 'apothecary',          chance: 0.80 },
             { type: 'advanced_apothecary', chance: 0.65 },
             { type: 'pearl_diver',         chance: 0.65, portOnly: true },
             { type: 'tailor',              chance: 0.85 },
-            { type: 'wheelwright',         chance: 0.80, kingdom: true },
+            { type: 'wheelwright',         chance: 0.80, kingdom: true, culture: 'industrial' },
             { type: 'string_maker',        chance: 0.70 },
+            { type: 'fletcher',            chance: 0.75, culture: 'military' },
+            { type: 'arrow_maker',         chance: 0.70, culture: 'military' },
+            { type: 'armorer',             chance: 0.70, culture: 'military' },
+            { type: 'charcoal_kiln',       chance: 0.80, culture: 'industrial' },
+            { type: 'sulfur_mine',         chance: 0.70, culture: 'industrial' },
         ];
 
         for (var _gli = 0; _gli < _gapList.length; _gli++) {
             var _gl = _gapList[_gli];
             if ((_btCounts[_gl.type] || 0) > 0) continue; // already exists
             if (!rng.chance(_gl.chance)) continue;
-            var _glTown = _pickGapTown(_gl.portOnly);
+            var _glTown = _pickGapTown(_gl.portOnly, _gl.culture);
             if (!_glTown) continue;
             var _glProd = _gl.products ? _gl.products[rng.randInt(0, _gl.products.length - 1)] : null;
             _addGapBld(_glTown, _gl.type, _glProd, _gl.kingdom);
@@ -1594,6 +1609,60 @@
                         _dvBld.currentProduct = _dv.products[rng.randInt(0, _dv.products.length - 1)];
                     }
                 }
+            }
+        }
+
+        // Phase 3: Guarantee military-related production exists.
+        // Ensure at least one blacksmith produces demolition_tools globally,
+        // and at least one apothecary/building produces blasting_powder globally.
+        var _hasDemoTools = false;
+        var _hasBlastPowder = false;
+        for (var _p3t = 0; _p3t < towns.length; _p3t++) {
+            for (var _p3b = 0; _p3b < (towns[_p3t].buildings || []).length; _p3b++) {
+                var _p3Bld = towns[_p3t].buildings[_p3b];
+                if (_p3Bld.type === 'blacksmith' && _p3Bld.currentProduct === 'demolition_tools') _hasDemoTools = true;
+                if (_p3Bld.type === 'apothecary' && _p3Bld.currentProduct === 'blasting_powder') _hasBlastPowder = true;
+            }
+        }
+        if (!_hasDemoTools) {
+            // Find any blacksmith without a set product and set it to demolition_tools, preferring military kingdoms
+            var _dtCandidates = [];
+            for (var _dt1 = 0; _dt1 < towns.length; _dt1++) {
+                for (var _dt2 = 0; _dt2 < (towns[_dt1].buildings || []).length; _dt2++) {
+                    if (towns[_dt1].buildings[_dt2].type === 'blacksmith' && !towns[_dt1].buildings[_dt2].currentProduct) {
+                        var _dtKk = kingdoms.find(function(k) { return k.territories.has(towns[_dt1].id); });
+                        _dtCandidates.push({ bld: towns[_dt1].buildings[_dt2], military: _dtKk && _dtKk.culture === 'military' });
+                    }
+                }
+            }
+            // Prefer military kingdom blacksmiths
+            var _dtMil = _dtCandidates.filter(function(c) { return c.military; });
+            var _dtPick = _dtMil.length > 0 ? _dtMil[rng.randInt(0, _dtMil.length - 1)] : (_dtCandidates.length > 0 ? _dtCandidates[rng.randInt(0, _dtCandidates.length - 1)] : null);
+            if (_dtPick) {
+                _dtPick.bld.currentProduct = 'demolition_tools';
+            } else {
+                // No blacksmith at all — place a new one in a military kingdom
+                var _dtTown = _pickGapTown(false, 'military');
+                if (_dtTown) _addGapBld(_dtTown, 'blacksmith', 'demolition_tools', true);
+            }
+        }
+        if (!_hasBlastPowder) {
+            var _bpCandidates = [];
+            for (var _bp1 = 0; _bp1 < towns.length; _bp1++) {
+                for (var _bp2 = 0; _bp2 < (towns[_bp1].buildings || []).length; _bp2++) {
+                    if (towns[_bp1].buildings[_bp2].type === 'apothecary' && !towns[_bp1].buildings[_bp2].currentProduct) {
+                        var _bpKk = kingdoms.find(function(k) { return k.territories.has(towns[_bp1].id); });
+                        _bpCandidates.push({ bld: towns[_bp1].buildings[_bp2], military: _bpKk && _bpKk.culture === 'military' });
+                    }
+                }
+            }
+            var _bpMil = _bpCandidates.filter(function(c) { return c.military; });
+            var _bpPick = _bpMil.length > 0 ? _bpMil[rng.randInt(0, _bpMil.length - 1)] : (_bpCandidates.length > 0 ? _bpCandidates[rng.randInt(0, _bpCandidates.length - 1)] : null);
+            if (_bpPick) {
+                _bpPick.bld.currentProduct = 'blasting_powder';
+            } else {
+                var _bpTown = _pickGapTown(false, 'military');
+                if (_bpTown) _addGapBld(_bpTown, 'apothecary', 'blasting_powder', true);
             }
         }
 

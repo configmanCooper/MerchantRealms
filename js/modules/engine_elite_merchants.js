@@ -504,13 +504,13 @@
 
     const STRATEGY_BUILDINGS = {
         food_monopoly:     ['wheat_farm', 'flour_mill', 'bakery', 'cattle_ranch', 'fishery', 'smokehouse', 'chicken_farm', 'restaurant', 'warehouse_small'],
-        military_supplier: ['blacksmith', 'iron_mine', 'smelter', 'toolsmith', 'armory_shop', 'warehouse_small'],
+        military_supplier: ['blacksmith', 'iron_mine', 'smelter', 'toolsmith', 'armory_shop', 'warehouse_small', 'wheelwright'],
         luxury_trader:     ['jeweler', 'vineyard', 'winery', 'weaver', 'jewelers_boutique', 'clothing_shop', 'warehouse_small'],
-        diversified:       ['wheat_farm', 'bakery', 'blacksmith', 'weaver', 'sawmill', 'tanner', 'general_store', 'tavern', 'warehouse_small'],
+        diversified:       ['wheat_farm', 'bakery', 'blacksmith', 'weaver', 'sawmill', 'tanner', 'general_store', 'tavern', 'warehouse_small', 'wheelwright'],
         political_climber: ['vineyard', 'winery', 'jeweler', 'market_stall', 'jewelers_boutique', 'warehouse_small'],
         war_profiteer:     ['blacksmith', 'smelter', 'iron_mine', 'bakery', 'armory_shop', 'warehouse'],
-        land_baron:        ['wheat_farm', 'cattle_ranch', 'sheep_farm', 'lumber_camp', 'iron_mine', 'pig_farm', 'restaurant', 'warehouse'],
-        trade_network:     ['market_stall', 'weaver', 'salt_works', 'tanner', 'toolsmith', 'brewery', 'smokehouse', 'general_store', 'warehouse'],
+        land_baron:        ['wheat_farm', 'cattle_ranch', 'sheep_farm', 'lumber_camp', 'iron_mine', 'pig_farm', 'restaurant', 'warehouse', 'wheelwright'],
+        trade_network:     ['market_stall', 'weaver', 'salt_works', 'tanner', 'toolsmith', 'brewery', 'smokehouse', 'general_store', 'warehouse', 'wheelwright'],
         medical_supplier:  ['herb_garden', 'apothecary', 'advanced_apothecary', 'bandage_workshop', 'clinic', 'herbalist_hut', 'warehouse_small'],
     };
 
@@ -572,6 +572,9 @@
         // Financial distress tracking
         if (em._lowGoldDays === undefined) em._lowGoldDays = 0;
         if (em._criticalGoldDays === undefined) em._criticalGoldDays = 0;
+        // Wagon/transport ownership
+        if (em._wagons === undefined) em._wagons = 0;
+        if (em._lastWagonCheck === undefined) em._lastWagonCheck = 0;
         // Elite merchant skill system
         if (!em.emSkills) em.emSkills = {};
         if (em.emXp === undefined) em.emXp = 0;
@@ -773,6 +776,9 @@
                 var totalWeight = 0;
                 var maxCapacity = Math.min(CONFIG.EM_CARAVAN_CAPACITY_MAX || 200,
                                            CONFIG.EM_CARAVAN_CAPACITY_MIN + Math.floor((em.gold || 0) / 50));
+                // Wagon bonus: each wagon owned adds 100 capacity
+                var _wagonBonus = Math.min((em._wagons || 0), 3) * 100;
+                maxCapacity += _wagonBonus;
 
                 // Score based on goods we can send from inventory
                 for (var resId in inv) {
@@ -833,7 +839,7 @@
                     fromTownId: em.townId,
                     toTownId: bestDest,
                     goods: bestGoods,
-                    capacity: CONFIG.EM_CARAVAN_CAPACITY_MAX || 200,
+                    capacity: (CONFIG.EM_CARAVAN_CAPACITY_MAX || 200) + Math.min((em._wagons || 0), 3) * 100,
                     progress: 0,
                     speed: CONFIG.EM_CARAVAN_SPEED || 0.08,
                     startDay: world.day,
@@ -1672,6 +1678,70 @@
             var buildInterval = Math.max(5, Math.floor(sMod.buildFreq * ((personality.ambition || 50) > 65 ? 0.7 : 1.0)));
             if (day % buildInterval === 0) {
                 eliteBuildAI(em, town, rng, strategy);
+            }
+
+            // ---- 3a. WAGON ACQUISITION (every 15 days) ----
+            // EMs try to buy wagons to increase caravan capacity (max 3 wagons)
+            if (day % 15 === 0 && (em._wagons || 0) < 3 && (em.gold || 0) > 500) {
+                var _wantWagon = (em._wagons || 0) === 0 || (em.gold || 0) > 2000;
+                if (_wantWagon) {
+                    // Try to buy wagon from local market
+                    var _wagonBought = false;
+                    if (town.market && (town.market.supply.wagon || 0) > 0) {
+                        var _wPrice = town.market.prices.wagon || 120;
+                        if ((em.gold || 0) >= _wPrice) {
+                            em.gold -= _wPrice;
+                            town.market.supply.wagon = (town.market.supply.wagon || 0) - 1;
+                            em._wagons = (em._wagons || 0) + 1;
+                            _wagonBought = true;
+                        }
+                    }
+                    // Try small_wagon as fallback
+                    if (!_wagonBought && town.market && (town.market.supply.small_wagon || 0) > 0) {
+                        var _swPrice = town.market.prices.small_wagon || 75;
+                        if ((em.gold || 0) >= _swPrice) {
+                            em.gold -= _swPrice;
+                            town.market.supply.small_wagon = (town.market.supply.small_wagon || 0) - 1;
+                            em._wagons = (em._wagons || 0) + 1;
+                            _wagonBought = true;
+                        }
+                    }
+                    // If no wagons available and EM is wealthy, consider building a wheelwright
+                    if (!_wagonBought && (em._lastWagonCheck || 0) + 60 < day && (em.gold || 0) > 1500) {
+                        em._lastWagonCheck = day;
+                        var _hasWheelwright = (em.buildings || []).some(function(b) { return b.type === 'wheelwright'; });
+                        if (!_hasWheelwright) {
+                            // Check if there's a wheelwright in town at all
+                            var _townHasWW = (town.buildings || []).some(function(b) { return b.type === 'wheelwright'; });
+                            if (!_townHasWW) {
+                                // Check town has a sawmill for planks supply chain
+                                var _townHasSawmill = (town.buildings || []).some(function(b) { return b.type === 'sawmill'; });
+                                if (_townHasSawmill) {
+                                    var _wwBt = findBuildingType('wheelwright');
+                                    if (_wwBt && (em.gold || 0) >= _wwBt.cost) {
+                                        var maxR_ww = 0;
+                                        for (var rkId_ww in em.socialRank) { if ((em.socialRank[rkId_ww] || 0) > maxR_ww) maxR_ww = em.socialRank[rkId_ww]; }
+                                        var rDef_ww = CONFIG.SOCIAL_RANKS[maxR_ww] || CONFIG.SOCIAL_RANKS[0];
+                                        var _maxBlds = rDef_ww.maxBuildings || 2;
+                                        var _maxSlots = CONFIG.TOWN_CATEGORIES[town.category] ? CONFIG.TOWN_CATEGORIES[town.category].maxBuildingSlots : 10;
+                                        if ((em.buildings || []).length < _maxBlds && town.buildings.length < _maxSlots) {
+                                            em.gold -= _wwBt.cost;
+                                            var _wwBld = { type: 'wheelwright', level: 1, ownerId: em.id, townId: town.id, workers: [], upgrades: [], builtDay: day, currentProduct: 'wagon' };
+                                            town.buildings.push(_wwBld);
+                                            if (!em.buildings) em.buildings = [];
+                                            em.buildings.push({ type: 'wheelwright', townId: town.id, level: 1 });
+                                            logEvent(em.firstName + ' ' + (em.lastName || '') + ' builds a Wheelwright to produce wagons for caravans.', {
+                                                type: 'elite_supply_chain',
+                                                cause: em.firstName + ' invests in wagon production for trade logistics.',
+                                                effects: ['New Wheelwright produces wagons', em.firstName + ' invested ' + _wwBt.cost + 'g']
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // ---- 3b. WORKER HIRING & MANAGEMENT (every 7 days) ----
