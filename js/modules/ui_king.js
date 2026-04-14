@@ -74,7 +74,7 @@
         for (var _ti = 0; _ti < tabs.length; _ti++) {
             var _tab = tabs[_ti];
             var _active = _kingTab === _tab.id;
-            html += '<button class="btn-medieval" data-action="openKingPanel" data-id="' + _tab.id + '" style="flex:1;min-width:60px;font-size:0.72rem;padding:5px 4px;' + (_active ? 'background:rgba(212,168,67,0.35) !important;border-color:rgba(212,168,67,0.6) !important;color:#d4a843;' : '') + '">' + _tab.icon + ' ' + _tab.label + '</button>';
+            html += '<button class="btn-medieval" data-action="openKingPanel" data-id="' + _tab.id + '" style="flex:0 1 auto;min-width:auto;font-size:0.68rem;padding:5px 6px;white-space:nowrap;' + (_active ? 'background:rgba(212,168,67,0.35) !important;border-color:rgba(212,168,67,0.6) !important;color:#d4a843;' : '') + '">' + _tab.icon + ' ' + _tab.label + '</button>';
         }
         html += '</div>';
 

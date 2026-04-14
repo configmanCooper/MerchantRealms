@@ -1456,6 +1456,139 @@
             }
         }
 
+        // --- Post-processing: initial kingdom stockpile and employees based on king personality ---
+        for (var _ksi = 0; _ksi < kingdoms.length; _ksi++) {
+            var _ks = kingdoms[_ksi];
+            var _kp = _ks.kingPersonality || {};
+            var _ksTowns = towns.filter(function(t) { return _ks.territories.has(t.id); });
+            var _capitalTown = towns.find(function(t) { return t.id === _ks.capitalId; });
+
+            // ── Starting Stockpile ──
+            // All kingdoms get baseline food/goods; personality shifts the amounts
+            if (!_ks.goodsStockpile) _ks.goodsStockpile = {};
+            var _baseFood = 20 + rng.randInt(0, 15);
+            var _baseMil = 10 + rng.randInt(0, 10);
+            var _baseGoods = 10 + rng.randInt(0, 10);
+
+            // Warlike/ambitious kings: more military
+            if (_kp.ambition === 'warlike' || _kp.ambition === 'ambitious' || _kp.militarism === 'aggressive') {
+                _baseMil = Math.floor(_baseMil * 1.6);
+                _ks.militaryStockpile.swords = (_ks.militaryStockpile.swords || 0) + _baseMil;
+                _ks.militaryStockpile.armor = (_ks.militaryStockpile.armor || 0) + Math.floor(_baseMil * 0.7);
+                _ks.militaryStockpile.bows = (_ks.militaryStockpile.bows || 0) + Math.floor(_baseMil * 0.5);
+                _ks.militaryStockpile.arrows = (_ks.militaryStockpile.arrows || 0) + _baseMil * 3;
+                _ks.militaryStockpile.horses = (_ks.militaryStockpile.horses || 0) + Math.floor(_baseMil * 0.3);
+            } else {
+                _ks.militaryStockpile.swords = (_ks.militaryStockpile.swords || 0) + _baseMil;
+                _ks.militaryStockpile.armor = (_ks.militaryStockpile.armor || 0) + Math.floor(_baseMil * 0.5);
+                _ks.militaryStockpile.bows = (_ks.militaryStockpile.bows || 0) + Math.floor(_baseMil * 0.3);
+                _ks.militaryStockpile.arrows = (_ks.militaryStockpile.arrows || 0) + _baseMil * 2;
+            }
+
+            // Generous kings: more food stockpile; greedy kings: more trade goods
+            if (_kp.temperament === 'generous' || _kp.values === 'people_first') {
+                _baseFood = Math.floor(_baseFood * 1.5);
+            }
+            if (_kp.temperament === 'greedy' || _kp.values === 'wealth') {
+                _baseGoods = Math.floor(_baseGoods * 1.5);
+            }
+
+            _ks.goodsStockpile.bread = (_ks.goodsStockpile.bread || 0) + _baseFood;
+            _ks.goodsStockpile.wheat = (_ks.goodsStockpile.wheat || 0) + Math.floor(_baseFood * 0.8);
+            _ks.goodsStockpile.meat = (_ks.goodsStockpile.meat || 0) + Math.floor(_baseFood * 0.4);
+            _ks.goodsStockpile.cloth = (_ks.goodsStockpile.cloth || 0) + _baseGoods;
+            _ks.goodsStockpile.tools = (_ks.goodsStockpile.tools || 0) + Math.floor(_baseGoods * 0.6);
+            _ks.goodsStockpile.wood = (_ks.goodsStockpile.wood || 0) + Math.floor(_baseGoods * 1.2);
+            _ks.goodsStockpile.stone = (_ks.goodsStockpile.stone || 0) + Math.floor(_baseGoods * 0.8);
+
+            // ── Starting Employees: directly create guards, royal guards, procurers ──
+            if (!_ks._employees) _ks._employees = { procurers: [], guards: [], royalGuards: [] };
+            if (!_ks._employeePostings) _ks._employeePostings = [];
+            if (!_ks._procurementOrders) _ks._procurementOrders = [];
+
+            // Guards: 2 per town
+            var _guardCount = _ksTowns.length * 2;
+            for (var _gi = 0; _gi < _ksTowns.length; _gi++) {
+                var _gTown = _ksTowns[_gi];
+                var _gPeople = (world.people || []).filter(function(p) {
+                    return p.alive && p.townId === _gTown.id && p.age >= 16 && p.age <= 55 &&
+                           (p.occupation === 'none' || p.occupation === 'laborer' || p.occupation === 'farmer' || p.occupation === 'unemployed' || !p.occupation) &&
+                           !_ks._employees.guards.some(function(e) { return e.npcId === p.id; });
+                });
+                var _gHire = Math.min(2, _gPeople.length);
+                for (var _ghi = 0; _ghi < _gHire; _ghi++) {
+                    var _gNpc = _gPeople[_ghi];
+                    _gNpc.previousOccupation = _gNpc.occupation;
+                    _gNpc.occupation = 'guard';
+                    _gNpc.employerId = 'kingdom_' + _ks.id;
+                    _ks._employees.guards.push({
+                        id: 'emp_' + _gNpc.id + '_0',
+                        npcId: _gNpc.id,
+                        name: (_gNpc.firstName || '') + ' ' + (_gNpc.lastName || ''),
+                        type: 'guard',
+                        townId: _gTown.id,
+                        weeklyPay: 15 + rng.randInt(0, 8),
+                        hiredDay: 0
+                    });
+                }
+            }
+
+            // Royal Guards: 2-4 in capital
+            var _rgTarget = 2 + rng.randInt(0, 2);
+            if (_capitalTown) {
+                var _rgPeople = (world.people || []).filter(function(p) {
+                    return p.alive && p.townId === _capitalTown.id && p.age >= 18 && p.age <= 35 &&
+                           (p.occupation === 'none' || p.occupation === 'laborer' || p.occupation === 'farmer' || !p.occupation) &&
+                           !_ks._employees.royalGuards.some(function(e) { return e.npcId === p.id; }) &&
+                           !_ks._employees.guards.some(function(e) { return e.npcId === p.id; });
+                });
+                var _rgHire = Math.min(_rgTarget, _rgPeople.length);
+                for (var _rgi = 0; _rgi < _rgHire; _rgi++) {
+                    var _rgNpc = _rgPeople[_rgi];
+                    _rgNpc.previousOccupation = _rgNpc.occupation;
+                    _rgNpc.occupation = 'royal_guard';
+                    _rgNpc.employerId = 'kingdom_' + _ks.id;
+                    _ks._employees.royalGuards.push({
+                        id: 'emp_' + _rgNpc.id + '_0',
+                        npcId: _rgNpc.id,
+                        name: (_rgNpc.firstName || '') + ' ' + (_rgNpc.lastName || ''),
+                        type: 'royal_guard',
+                        townId: _capitalTown.id,
+                        weeklyPay: 35 + rng.randInt(0, 10),
+                        hiredDay: 0
+                    });
+                }
+            }
+
+            // Procurers: 1-3 spread across towns
+            var _procTarget = 1 + rng.randInt(0, 2);
+            for (var _pri = 0; _pri < Math.min(_procTarget, _ksTowns.length); _pri++) {
+                var _pTown = _ksTowns[_pri % _ksTowns.length];
+                var _pPeople = (world.people || []).filter(function(p) {
+                    return p.alive && p.townId === _pTown.id && p.age >= 16 && p.age <= 60 &&
+                           (p.occupation === 'none' || p.occupation === 'laborer' || p.occupation === 'farmer' || p.occupation === 'merchant' || !p.occupation) &&
+                           !_ks._employees.procurers.some(function(e) { return e.npcId === p.id; }) &&
+                           !_ks._employees.guards.some(function(e) { return e.npcId === p.id; }) &&
+                           !_ks._employees.royalGuards.some(function(e) { return e.npcId === p.id; });
+                });
+                if (_pPeople.length > 0) {
+                    var _pNpc = _pPeople[0];
+                    _pNpc.previousOccupation = _pNpc.occupation;
+                    _pNpc.occupation = 'procurer';
+                    _pNpc.employerId = 'kingdom_' + _ks.id;
+                    _ks._employees.procurers.push({
+                        id: 'emp_' + _pNpc.id + '_0',
+                        npcId: _pNpc.id,
+                        name: (_pNpc.firstName || '') + ' ' + (_pNpc.lastName || ''),
+                        type: 'procurer',
+                        townId: _pTown.id,
+                        weeklyPay: 20 + rng.randInt(0, 10),
+                        hiredDay: 0
+                    });
+                }
+            }
+        }
+
         return towns;
     }
 

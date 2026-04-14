@@ -13932,6 +13932,52 @@ window.UI = (function () {
                 html += '</div></div>';
             }
         }
+
+        // Active Armies
+        html += '<h4 style="color:#FFD700;margin:12px 0 6px;">🏴 Active Armies</h4>';
+        var armies = Engine.getArmies ? Engine.getArmies() : [];
+        if (!armies || armies.length === 0) {
+            html += '<div style="color:#888;font-style:italic;padding:4px;">No armies in the field.</div>';
+        } else {
+            html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.78rem;">';
+            html += '<thead><tr style="background:#1a1a2e;color:#FFD700;">';
+            html += '<th style="padding:5px;border-bottom:2px solid #FFD700;">Kingdom</th>';
+            html += '<th style="padding:5px;border-bottom:2px solid #FFD700;">Soldiers</th>';
+            html += '<th style="padding:5px;border-bottom:2px solid #FFD700;">Comp.</th>';
+            html += '<th style="padding:5px;border-bottom:2px solid #FFD700;">Target</th>';
+            html += '<th style="padding:5px;border-bottom:2px solid #FFD700;">Status</th>';
+            html += '<th style="padding:5px;border-bottom:2px solid #FFD700;">Morale</th>';
+            html += '<th style="padding:5px;border-bottom:2px solid #FFD700;">Leader</th>';
+            html += '<th style="padding:5px;border-bottom:2px solid #FFD700;">Go</th>';
+            html += '</tr></thead><tbody>';
+            for (var ai = 0; ai < armies.length; ai++) {
+                var army = armies[ai];
+                var aKing = kingdomMap[army.kingdomId];
+                var aColor = aKing ? aKing.color : '#888';
+                var aKName = aKing ? aKing.name : (army.kingdomId || '?');
+                var targetTown = army.toTownId ? Engine.findTown(army.toTownId) : null;
+                var targetName = targetTown ? targetTown.name : '?';
+                var status = army.siege ? '🏰 Besieging' : army.progress >= 1 ? '⚔️ Arrived' : '🚶 Marching (' + Math.floor((army.progress || 0) * 100) + '%)';
+                var comp = (army.infantry || 0) + 'I/' + (army.archers || 0) + 'A/' + (army.cavalry || 0) + 'C';
+                var leaderName = '—';
+                if (army.leaderId) {
+                    try { var _ldr = Engine.getPerson(army.leaderId); if (_ldr) leaderName = _ldr.firstName + ' ' + _ldr.lastName; } catch(e) {}
+                }
+                var teleportTown = army.siege ? army.toTownId : (army.fromTownId || army.toTownId);
+                html += '<tr style="border-bottom:1px solid #333;">';
+                html += '<td style="padding:4px;border-left:4px solid ' + aColor + ';font-weight:bold;">' + aKName + '</td>';
+                html += '<td style="padding:4px;">' + (army.soldiers || 0) + '</td>';
+                html += '<td style="padding:4px;font-size:0.72rem;">' + comp + '</td>';
+                html += '<td style="padding:4px;">' + escapeHtml(targetName) + '</td>';
+                html += '<td style="padding:4px;">' + status + '</td>';
+                html += '<td style="padding:4px;">' + _waBar(army.morale || 50, 100, (army.morale || 50) > 60 ? '#4c4' : '#f44', 50) + ' ' + Math.round(army.morale || 50) + '</td>';
+                html += '<td style="padding:4px;font-size:0.72rem;">' + escapeHtml(leaderName) + '</td>';
+                html += '<td style="padding:4px;"><button class="btn-medieval" data-action="_handler_6" data-param1="' + teleportTown + '" style="font-size:0.6rem;padding:2px 5px;">📍</button></td>';
+                html += '</tr>';
+            }
+            html += '</tbody></table></div>';
+        }
+
         return html;
     }
 
