@@ -14193,23 +14193,31 @@
             if (army._retreating) {
                 army._retreatProgress = (army._retreatProgress || 0) + 0.25; // ~4 days to return
                 if (army._retreatProgress >= 1.0) {
-                    // Army returned home — soldiers rejoin garrison
+                    // Army returned home — soldiers rejoin garrison of closest kingdom town
                     var homeK = findKingdom(army.kingdomId);
-                    if (homeK && homeK.territories.size > 0) {
-                        var capitalTown = null;
+                    var destTown = null;
+                    // First check if there's a specific retreat target
+                    if (army._retreatTargetTownId) {
+                        destTown = findTown(army._retreatTargetTownId);
+                    }
+                    // Otherwise find closest kingdom town to the army's current position
+                    if (!destTown && homeK && homeK.territories.size > 0) {
+                        var _bestDist = Infinity;
+                        var armyTown = findTown(army.toTownId || army.fromTownId);
+                        var ax = armyTown ? (armyTown.x || 0) : 0;
+                        var ay = armyTown ? (armyTown.y || 0) : 0;
                         for (var _htId of homeK.territories) {
                             var _ht = findTown(_htId);
-                            if (_ht && _ht.isCapital) { capitalTown = _ht; break; }
-                        }
-                        if (!capitalTown) {
-                            for (var _htId2 of homeK.territories) {
-                                capitalTown = findTown(_htId2);
-                                if (capitalTown) break;
+                            if (_ht) {
+                                var _dx = (_ht.x || 0) - ax;
+                                var _dy = (_ht.y || 0) - ay;
+                                var _dist = Math.sqrt(_dx * _dx + _dy * _dy);
+                                if (_dist < _bestDist) { _bestDist = _dist; destTown = _ht; }
                             }
                         }
-                        if (capitalTown) {
-                            capitalTown.garrison = (capitalTown.garrison || 0) + Math.max(0, army.soldiers);
-                        }
+                    }
+                    if (destTown) {
+                        destTown.garrison = (destTown.garrison || 0) + Math.max(0, army.soldiers);
                     }
                     toRemove.push(army.id);
                 }
@@ -14787,6 +14795,40 @@
                 army.morale = Math.max(0, (army.morale || 50) - 0.5);
             }
 
+            // Outnumbered retreat: if army has fewer troops than garrison, escalating daily retreat chance
+            if (army.soldiers < (town.garrison || 0)) {
+                // Track how many consecutive days outnumbered
+                siege._outnumberedDays = (siege._outnumberedDays || 0) + 1;
+                // Base 10% + 5% per day outnumbered (caps at 80%)
+                var retreatChance = Math.min(0.80, 0.10 + siege._outnumberedDays * 0.05);
+                if (rng.chance(retreatChance)) {
+                    // Find closest kingdom town for retreat
+                    var retreatK = findKingdom(army.kingdomId);
+                    var retreatTown = null;
+                    var bestDist = Infinity;
+                    if (retreatK && retreatK.territories && retreatK.territories.size > 0) {
+                        for (var _rTownId of retreatK.territories) {
+                            var _rTown = findTown(_rTownId);
+                            if (_rTown && _rTown.id !== town.id) {
+                                var dx = (_rTown.x || 0) - (town.x || 0);
+                                var dy = (_rTown.y || 0) - (town.y || 0);
+                                var dist = Math.sqrt(dx * dx + dy * dy);
+                                if (dist < bestDist) { bestDist = dist; retreatTown = _rTown; }
+                            }
+                        }
+                    }
+                    army.status = 'returning';
+                    army._retreating = true;
+                    army._retreatTargetTownId = retreatTown ? retreatTown.id : null;
+                    delete army._besieging;
+                    delete town.siege;
+                    logEvent('🏳️ ' + (retreatK || {}).name + '\'s army retreats from ' + town.name + ' — outnumbered by the garrison (day ' + siege._outnumberedDays + ' outnumbered).', null, 'military');
+                    continue;
+                }
+            } else {
+                siege._outnumberedDays = 0;
+            }
+
             // Check for relief armies (every N days)
             if (siege.daysElapsed % (CONFIG.SIEGE_RELIEF_ARMY_CHECK_DAYS || 7) === 0) {
                 var reliefArmy = world.armies.find(function(a) {
@@ -14832,9 +14874,25 @@
                         army.morale = Math.min(100, (army.morale || 50) + 10);
                         logEvent('⚔️ ' + (findKingdom(army.kingdomId) || {}).name + '\'s army regroups outside ' + town.name + ' — preparing for another assault.', null, 'military');
                     } else {
-                        // Too weak or demoralized — retreat home
+                        // Too weak or demoralized — retreat to closest friendly town
                         army.status = 'returning';
                         army._retreating = true;
+                        // Find closest kingdom town
+                        var retK = findKingdom(army.kingdomId);
+                        var retTown = null;
+                        var retBest = Infinity;
+                        if (retK && retK.territories && retK.territories.size > 0) {
+                            for (var _retTId of retK.territories) {
+                                var _retT = findTown(_retTId);
+                                if (_retT && _retT.id !== town.id) {
+                                    var _rdx = (_retT.x || 0) - (town.x || 0);
+                                    var _rdy = (_retT.y || 0) - (town.y || 0);
+                                    var _rdist = Math.sqrt(_rdx * _rdx + _rdy * _rdy);
+                                    if (_rdist < retBest) { retBest = _rdist; retTown = _retT; }
+                                }
+                            }
+                        }
+                        army._retreatTargetTownId = retTown ? retTown.id : null;
                         logEvent('🏳️ ' + (findKingdom(army.kingdomId) || {}).name + '\'s army retreats from ' + town.name + ' — too weakened to continue.', null, 'military');
                     }
                 } else {

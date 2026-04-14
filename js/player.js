@@ -6359,9 +6359,9 @@
         // Ensure player is marked dead (some callers set alive=false before calling)
         player.alive = false;
 
-        // Early-game protection: no death in first 180 days
+        // Early-game protection: no death in first 60 days
         var currentDay = (typeof Engine !== 'undefined' && Engine.getDay) ? Engine.getDay() : 9999;
-        if (currentDay <= 180) {
+        if (currentDay <= 60) {
             // Revive player instead of dying
             player.alive = true;
             player.health = Math.max(player.health || 0, 30);
@@ -6582,8 +6582,26 @@
         player.horses = [];
         player.storageContainer = null;
         player.jailedUntilDay = 0;
-        // Debts carry over to heir (they inherit the family debts)
-        // player.debts stays as-is
+        // Debts are subtracted from inheritance gold — heir does NOT inherit debts
+        if (player.debts && player.debts.length > 0) {
+            var totalDebtAmount = getTotalDebt();
+            if (totalDebtAmount > 0) {
+                // Pay creditors from inheritance
+                for (var di = 0; di < player.debts.length; di++) {
+                    var d = player.debts[di];
+                    if (d.creditorType === 'kingdom') {
+                        var ck = Engine.findKingdom ? Engine.findKingdom(d.creditorId) : null;
+                        if (ck) ck.gold = (ck.gold || 0) + Math.floor(Math.min(d.amount, player.gold));
+                    }
+                }
+                player.gold = Math.max(0, player.gold - totalDebtAmount);
+                if (totalDebtAmount > 0) {
+                    Engine.logEvent('💀 ' + oldName + '\'s outstanding debts of ' + Math.floor(totalDebtAmount) + 'g were settled from the estate.' + (player.gold <= 0 ? ' The heir receives no inheritance.' : ''), null, 'finance');
+                }
+            }
+            player.debts = [];
+            player._lastDebtEnforcementDay = 0;
+        }
 
         // XP transfer: old XP/ratio + XP bank (dynasty surplus)
         var xpTransfer = Math.floor(player.xp / (XP_REWARDS.HEIR_TRANSFER_RATIO || 10));
