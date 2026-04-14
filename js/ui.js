@@ -11438,16 +11438,23 @@ window.UI = (function () {
         var day = 0;
         try { day = Engine.getDay(); } catch (e) {}
         var daysLeft = Math.max(0, (feast.endDay || 0) - day);
-        var actionsLeft = 3 - (feast._playerActionsToday || 0);
+        var maxActions = feast._maxActionsPerDay || 3;
+        var actionsLeft = maxActions - (feast._playerActionsToday || 0);
         var feastTown = '';
         try { var ft = Engine.findTown(feast.townId); feastTown = ft ? ft.name : ''; } catch (e) {}
+
+        // Detect if player is king of this kingdom
+        var isKing = false;
+        try {
+            isKing = Player.state && Player.state.isKing && Player.state.kingState && Player.state.kingState.kingdomId === kingdomId;
+        } catch(e) {}
 
         var html = '';
 
         // Feast header
         html += '<div style="background:linear-gradient(135deg,rgba(200,150,50,0.15),rgba(200,150,50,0.05));border:1px solid rgba(200,150,50,0.3);border-radius:8px;padding:12px;margin-bottom:10px;">';
-        html += '<div style="font-size:0.9rem;font-weight:bold;color:#f0c040;">🎪 Royal Feast in ' + escapeHtml(feastTown) + '</div>';
-        html += '<div style="font-size:0.78rem;color:#ccc;margin-top:4px;">' + daysLeft + ' day' + (daysLeft !== 1 ? 's' : '') + ' remaining • ' + actionsLeft + ' action' + (actionsLeft !== 1 ? 's' : '') + ' left today</div>';
+        html += '<div style="font-size:0.9rem;font-weight:bold;color:#f0c040;">🎪 Royal Feast in ' + escapeHtml(feastTown) + (isKing ? ' (Your Feast)' : '') + '</div>';
+        html += '<div style="font-size:0.78rem;color:#ccc;margin-top:4px;">' + daysLeft + ' day' + (daysLeft !== 1 ? 's' : '') + ' remaining • ' + actionsLeft + '/' + maxActions + ' action' + (actionsLeft !== 1 ? 's' : '') + ' left today</div>';
         html += '</div>';
 
         // Attending nobles
@@ -11468,17 +11475,40 @@ window.UI = (function () {
             html += '</div></div>';
         }
 
-        // Feast actions
+        // King-specific noble selector
+        if (isKing) {
+            html += '<div style="background:rgba(200,150,50,0.08);border:1px solid rgba(200,150,50,0.2);border-radius:6px;padding:8px;margin-bottom:8px;">';
+            html += '<div style="font-size:0.75rem;color:#f0c040;margin-bottom:4px;">👑 Target Noble (for royal actions):</div>';
+            html += '<select id="_feastNobleSelect" style="width:100%;background:#1a1a2e;color:#eee;border:1px solid rgba(200,150,50,0.3);border-radius:4px;padding:4px 8px;font-size:0.75rem;">';
+            html += '<option value="">— Random attendee —</option>';
+            for (var ns = 0; ns < attendees.length; ns++) {
+                var nsPerson = null;
+                try { nsPerson = Engine.getPerson(attendees[ns]); } catch(e) {}
+                if (!nsPerson) continue;
+                var playerPId = '';
+                try { playerPId = Player.personId || 'player'; } catch(e) {}
+                if (attendees[ns] === playerPId || attendees[ns] === 'player') continue;
+                html += '<option value="' + attendees[ns] + '">' + escapeHtml(nsPerson.firstName) + ' ' + escapeHtml(nsPerson.lastName) + '</option>';
+            }
+            html += '</select>';
+            html += '</div>';
+        }
+
+        // Standard feast actions
         var feastActions = [
-            { id: 'mingle', icon: '🤝', name: 'Mingle & Socialize', desc: 'Build relationships with attending nobles (+3-8 relationship with random attendee)', category: 'social' },
-            { id: 'toast_king', icon: '🥂', name: 'Toast the King', desc: 'Publicly toast the king to gain favor (+2 king relationship, +1 kingdom rep)', category: 'social' },
-            { id: 'private_chat', icon: '💬', name: 'Private Conversation', desc: 'Pull a noble aside for a deeper conversation (+5-10 relationship, chance to learn secrets)', category: 'social' },
-            { id: 'eavesdrop', icon: '👂', name: 'Eavesdrop', desc: 'Listen in on conversations to learn kingdom secrets or noble plans', category: 'intel' },
-            { id: 'observe_court', icon: '👀', name: 'Observe Court Politics', desc: 'Watch noble interactions to learn about their relationships and loyalties', category: 'intel' },
-            { id: 'spread_rumor', icon: '🗣️', name: 'Spread a Rumor', desc: 'Plant a rumor to damage a noble\'s reputation or influence opinions', category: 'scheme' },
-            { id: 'forge_alliance', icon: '🤝', name: 'Forge Alliance', desc: 'Privately propose an alliance or pact with a noble', category: 'scheme' },
-            { id: 'pit_nobles', icon: '⚔️', name: 'Pit Nobles Against Each Other', desc: 'Subtly cause friction between two nobles (-10 their mutual relationship)', category: 'scheme' }
+            { id: 'mingle', icon: '🤝', name: 'Mingle & Socialize', desc: 'Build relationships (+3-8 relationship)', category: 'social' },
+            { id: 'private_chat', icon: '💬', name: 'Private Conversation', desc: 'Deep conversation (+5-10 relationship, secrets)', category: 'social' },
+            { id: 'eavesdrop', icon: '👂', name: 'Eavesdrop', desc: 'Learn kingdom secrets or noble plans', category: 'intel' },
+            { id: 'observe_court', icon: '👀', name: 'Observe Court Politics', desc: 'Learn about noble relationships', category: 'intel' },
+            { id: 'spread_rumor', icon: '🗣️', name: 'Spread a Rumor', desc: 'Damage noble reputation', category: 'scheme' },
+            { id: 'forge_alliance', icon: '🤝', name: 'Forge Alliance', desc: 'Propose pact with a noble', category: 'scheme' },
+            { id: 'pit_nobles', icon: '⚔️', name: 'Pit Nobles', desc: 'Cause friction (-10 mutual)', category: 'scheme' }
         ];
+
+        // Add non-king-specific actions
+        if (!isKing) {
+            feastActions.splice(1, 0, { id: 'toast_king', icon: '🥂', name: 'Toast the King', desc: 'Gain king favor (+2 relationship, +1 rep)', category: 'social' });
+        }
 
         var categories = [
             { id: 'social', icon: '🤝', name: 'Social' },
@@ -11486,15 +11516,32 @@ window.UI = (function () {
             { id: 'scheme', icon: '🎭', name: 'Schemes' }
         ];
 
+        // King-specific actions section
+        if (isKing) {
+            categories.unshift({ id: 'royal', icon: '👑', name: 'Royal Actions' });
+
+            var kingActions = [
+                { id: 'royal_toast', icon: '🥂', name: 'Royal Toast', desc: 'Honor a specific noble publicly (+12 loyalty, others envious)', category: 'royal' },
+                { id: 'royal_decree', icon: '📢', name: 'Royal Decree', desc: 'Make a kingdom announcement (happiness + loyalty)', category: 'royal' },
+                { id: 'royal_challenge', icon: '🏆', name: 'Royal Challenge', desc: 'Challenge a noble to a contest (fear or respect)', category: 'royal' },
+                { id: 'grant_feast_favor', icon: '🎁', name: 'Grant Royal Favor', desc: 'Grant a boon to a noble (+10-15 loyalty, +5-10 rel)', category: 'royal' },
+                { id: 'subtle_interrogation', icon: '🔍', name: 'Subtle Interrogation', desc: 'Probe a noble for intel during conversation', category: 'royal' }
+            ];
+
+            feastActions = kingActions.concat(feastActions);
+        }
+
         for (var ci = 0; ci < categories.length; ci++) {
             var cat = categories[ci];
             var catActions = feastActions.filter(function(a) { return a.category === cat.id; });
+            if (catActions.length === 0) continue;
             html += '<div style="margin-bottom:8px;">';
-            html += '<div style="font-size:0.82rem;font-weight:bold;color:#ddd;margin-bottom:4px;">' + cat.icon + ' ' + cat.name + '</div>';
+            html += '<div style="font-size:0.82rem;font-weight:bold;color:' + (cat.id === 'royal' ? '#f0c040' : '#ddd') + ';margin-bottom:4px;">' + cat.icon + ' ' + cat.name + '</div>';
             for (var fai = 0; fai < catActions.length; fai++) {
                 var fa = catActions[fai];
                 var disabled = actionsLeft <= 0;
-                html += '<button class="btn-medieval" data-action="doFeastAction" data-kingdom="' + kingdomId + '" data-id="' + fa.id + '" data-kingdom2="' + kingdomId + '" style="display:block;width:100%;text-align:left;padding:6px 10px;margin-bottom:3px;font-size:0.75rem;' + (disabled ? 'opacity:0.4;cursor:not-allowed;' : '') + '" ' + (disabled ? 'disabled' : '') + '>';
+                var actionName = (isKing && fa.category === 'royal') ? 'doKingFeastAction' : 'doFeastAction';
+                html += '<button class="btn-medieval" data-action="' + actionName + '" data-kingdom="' + kingdomId + '" data-id="' + fa.id + '" style="display:block;width:100%;text-align:left;padding:6px 10px;margin-bottom:3px;font-size:0.75rem;' + (disabled ? 'opacity:0.4;cursor:not-allowed;' : '') + (fa.category === 'royal' ? 'border-color:rgba(200,150,50,0.4);' : '') + '" ' + (disabled ? 'disabled' : '') + '>';
                 html += fa.icon + ' <strong>' + fa.name + '</strong><br>';
                 html += '<span style="font-size:0.68rem;color:#aaa;">' + fa.desc + '</span>';
                 html += '</button>';
@@ -11505,15 +11552,16 @@ window.UI = (function () {
         // Feast events log
         if (feast.events && feast.events.length > 0) {
             html += '<div style="margin-top:8px;border-top:1px solid rgba(200,150,50,0.2);padding-top:8px;">';
-            html += '<div style="font-size:0.78rem;font-weight:bold;color:#f0c040;margin-bottom:4px;">📰 Feast Events</div>';
-            html += '<div style="max-height:120px;overflow-y:auto;">';
-            for (var ei = feast.events.length - 1; ei >= Math.max(0, feast.events.length - 8); ei--) {
+            html += '<div style="font-size:0.78rem;font-weight:bold;color:#f0c040;margin-bottom:4px;">📰 Feast Events (' + feast.events.length + ')</div>';
+            html += '<div style="max-height:150px;overflow-y:auto;">';
+            for (var ei = feast.events.length - 1; ei >= Math.max(0, feast.events.length - 12); ei--) {
                 html += '<div style="font-size:0.72rem;color:#bbb;margin-bottom:3px;padding:3px 6px;background:rgba(0,0,0,0.15);border-radius:4px;">' + escapeHtml(feast.events[ei]) + '</div>';
             }
             html += '</div></div>';
         }
 
-        var footerHtml = '<button class="btn-medieval" data-action="closeAndOpenNobilityDialog">Back</button>';
+        var backAction = isKing ? 'kingBackToDecisions' : 'closeAndOpenNobilityDialog';
+        var footerHtml = '<button class="btn-medieval" data-action="' + backAction + '">Back</button>';
         openModal('🎪 Royal Feast', html, footerHtml);
     }
 

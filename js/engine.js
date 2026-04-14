@@ -22110,6 +22110,11 @@
         if (k._activeFeast && rng.chance(0.30)) {
             _triggerFeastDynamicEvent(k);
         }
+
+        // AI noble feast actions (personality-driven)
+        if (k._activeFeast) {
+            tickFeastNobleActions(k);
+        }
     }
 
     function _triggerFeastDynamicEvent(k) {
@@ -22223,8 +22228,9 @@
             feast._playerActionDay = world.day;
         }
 
-        if (feast._playerActionsToday >= 3) {
-            return { success: false, message: 'You have used all 3 feast actions for today.' };
+        if (feast._playerActionsToday >= (feast._maxActionsPerDay || 3)) {
+            var maxAct = feast._maxActionsPerDay || 3;
+            return { success: false, message: 'You have used all ' + maxAct + ' feast actions for today.' };
         }
 
         var rng = world.rng;
@@ -22509,6 +22515,151 @@
                 result = { success: false, message: 'Your attempt to pit ' + pitNameA + ' against ' + pitNameB + ' failed.' };
             }
 
+        // ── King-specific feast actions ──
+        } else if (actionId === 'royal_toast') {
+            // King picks a specific noble to toast — big loyalty boost, others jealous
+            if (otherAttendees.length === 0) return { success: false, message: 'No nobles to toast.' };
+            var toastTarget = feast._selectedNobleId ? feast._selectedNobleId : rng.pick(otherAttendees);
+            feast._selectedNobleId = null;
+            var toastPerson = findPerson(toastTarget);
+            if (!toastPerson) return { success: false, message: 'Noble not found.' };
+            var toastName = (toastPerson.firstName || 'a noble') + ' ' + (toastPerson.lastName || '');
+            toastPerson.kingLoyalty = Math.min(100, (toastPerson.kingLoyalty || 50) + 12);
+            if (toastPerson.perceivedKingLoyalty != null) toastPerson.perceivedKingLoyalty = Math.min(100, toastPerson.perceivedKingLoyalty + 8);
+            try { if (typeof Player !== 'undefined' && Player.modifyRelationship) Player.modifyRelationship(toastTarget, 8); } catch(e) {}
+            // Others with high ambition get jealous
+            for (var _rti = 0; _rti < otherAttendees.length; _rti++) {
+                if (otherAttendees[_rti] === toastTarget) continue;
+                var _rtNoble = findPerson(otherAttendees[_rti]);
+                if (_rtNoble && _rtNoble.personality && (_rtNoble.personality.ambition || 50) > 65) {
+                    _rtNoble.kingLoyalty = Math.max(0, (_rtNoble.kingLoyalty || 50) - 2);
+                }
+            }
+            feast.events.push('The king raised a grand toast to ' + toastName.trim() + '!');
+            result = { success: true, message: '🥂 You raised a grand toast to ' + toastName.trim() + '! (+12 loyalty, +8 relationship). Ambitious nobles grow envious.' };
+
+        } else if (actionId === 'royal_decree') {
+            // King makes an announcement at the feast
+            var decreeTypes = [
+                { id: 'prosperity', label: 'Declare Prosperity', desc: 'Announce the kingdom prospers', happBoost: 5, loyBoost: 3, msg: 'The king declared the kingdom prosperous!' },
+                { id: 'honor_military', label: 'Honor the Military', desc: 'Praise military service', happBoost: 2, loyBoost: 5, msg: 'The king honored the kingdom\'s brave soldiers!' },
+                { id: 'forgive_debts', label: 'Forgive Minor Debts', desc: 'Forgive small debts', happBoost: 8, loyBoost: 2, msg: 'The king forgave minor debts of commoners!' },
+                { id: 'new_festival', label: 'Announce Festival', desc: 'Declare a kingdom festival', happBoost: 6, loyBoost: 4, msg: 'The king announced a grand festival for the realm!' }
+            ];
+            var decree = feast._selectedDecree ? decreeTypes.find(function(d) { return d.id === feast._selectedDecree; }) : rng.pick(decreeTypes);
+            feast._selectedDecree = null;
+            if (!decree) decree = decreeTypes[0];
+            if (k.happiness != null) k.happiness = Math.min(100, k.happiness + decree.happBoost);
+            for (var _di = 0; _di < feast.attendees.length; _di++) {
+                var _dp = findPerson(feast.attendees[_di]);
+                if (_dp && _dp.kingLoyalty != null) _dp.kingLoyalty = Math.min(100, _dp.kingLoyalty + decree.loyBoost);
+            }
+            feast.events.push(decree.msg);
+            result = { success: true, message: '📢 ' + decree.msg + ' (+' + decree.happBoost + ' happiness, +' + decree.loyBoost + ' noble loyalty)' };
+
+        } else if (actionId === 'royal_challenge') {
+            // King challenges a noble to a contest — drinking, debate, etc.
+            if (otherAttendees.length === 0) return { success: false, message: 'No nobles to challenge.' };
+            var challTarget = feast._selectedNobleId ? feast._selectedNobleId : rng.pick(otherAttendees);
+            feast._selectedNobleId = null;
+            var challPerson = findPerson(challTarget);
+            if (!challPerson) return { success: false, message: 'Noble not found.' };
+            var challName = (challPerson.firstName || 'a noble');
+            var contests = ['a drinking contest', 'a debate on philosophy', 'a game of wits', 'an archery contest', 'a chess match'];
+            var contest = rng.pick(contests);
+            var kingWins = rng.chance(0.55);
+            if (kingWins) {
+                challPerson.fearOfKing = Math.min(100, (challPerson.fearOfKing || 15) + 5);
+                try { if (typeof Player !== 'undefined' && Player.modifyRelationship) Player.modifyRelationship(challTarget, 3); } catch(e) {}
+                feast.events.push('The king challenged ' + challName + ' to ' + contest + ' and WON!');
+                result = { success: true, message: '🏆 You challenged ' + challName + ' to ' + contest + ' and won! (+5 their fear, +3 respect)' };
+            } else {
+                challPerson.fearOfKing = Math.max(0, (challPerson.fearOfKing || 15) - 3);
+                challPerson.kingLoyalty = Math.min(100, (challPerson.kingLoyalty || 50) + 5);
+                feast.events.push('The king challenged ' + challName + ' to ' + contest + ' and graciously lost.');
+                result = { success: true, message: '🤝 You challenged ' + challName + ' to ' + contest + ' and lost graciously. They respect you more. (+5 loyalty)' };
+            }
+
+        } else if (actionId === 'grant_feast_favor') {
+            // King grants a boon to a specific noble
+            if (otherAttendees.length === 0) return { success: false, message: 'No nobles to favor.' };
+            var favorTarget = feast._selectedNobleId ? feast._selectedNobleId : rng.pick(otherAttendees);
+            feast._selectedNobleId = null;
+            var favorPerson = findPerson(favorTarget);
+            if (!favorPerson) return { success: false, message: 'Noble not found.' };
+            var favorName = (favorPerson.firstName || 'a noble');
+            var favors = [
+                { label: 'a royal commendation', loyBoost: 10, relBoost: 10 },
+                { label: 'exclusive trading rights', loyBoost: 8, relBoost: 5 },
+                { label: 'a gift of fine wine', loyBoost: 5, relBoost: 8 },
+                { label: 'a position at court', loyBoost: 15, relBoost: 5 }
+            ];
+            var favor = rng.pick(favors);
+            favorPerson.kingLoyalty = Math.min(100, (favorPerson.kingLoyalty || 50) + favor.loyBoost);
+            try { if (typeof Player !== 'undefined' && Player.modifyRelationship) Player.modifyRelationship(favorTarget, favor.relBoost); } catch(e) {}
+            feast.events.push('The king granted ' + favorName + ' ' + favor.label + '!');
+            result = { success: true, message: '🎁 You granted ' + favorName + ' ' + favor.label + '! (+' + favor.loyBoost + ' loyalty, +' + favor.relBoost + ' relationship)' };
+
+        } else if (actionId === 'subtle_interrogation') {
+            // King subtly probes a noble for information during the feast
+            if (otherAttendees.length === 0) return { success: false, message: 'No nobles to probe.' };
+            var probeTarget = feast._selectedNobleId ? feast._selectedNobleId : rng.pick(otherAttendees);
+            feast._selectedNobleId = null;
+            var probePerson = findPerson(probeTarget);
+            if (!probePerson) return { success: false, message: 'Noble not found.' };
+            var probeName = (probePerson.firstName || 'a noble');
+            var intel = [];
+            var realLoy = probePerson.kingLoyalty || 50;
+            var percLoy = probePerson.perceivedKingLoyalty != null ? probePerson.perceivedKingLoyalty : realLoy;
+            // Reveal loyalty closer to truth
+            var revealAmt = 0.4 + rng.random() * 0.3;
+            probePerson.perceivedKingLoyalty = percLoy + (realLoy - percLoy) * revealAmt;
+            var loyLabel = realLoy >= 70 ? 'very loyal' : realLoy >= 50 ? 'somewhat loyal' : realLoy >= 30 ? 'uncertain' : 'hostile';
+            intel.push('seems ' + loyLabel);
+            // Reveal personality trait
+            if (probePerson.personality) {
+                var traits = Object.keys(probePerson.personality);
+                if (traits.length > 0) {
+                    var trait = rng.pick(traits);
+                    var val = probePerson.personality[trait];
+                    var tDesc = val > 70 ? 'very high ' + trait : val > 50 ? 'moderate ' + trait : 'low ' + trait;
+                    intel.push('has ' + tDesc);
+                }
+            }
+            // Check allies
+            if (probePerson._nobleRelationships) {
+                var allies = [], enemies = [];
+                for (var _nrk in probePerson._nobleRelationships) {
+                    if (probePerson._nobleRelationships[_nrk] > 30) { var _a = findPerson(_nrk); if (_a) allies.push(_a.firstName); }
+                    if (probePerson._nobleRelationships[_nrk] < -30) { var _e = findPerson(_nrk); if (_e) enemies.push(_e.firstName); }
+                }
+                if (allies.length > 0) intel.push('allied with ' + allies.slice(0, 2).join(', '));
+                if (enemies.length > 0) intel.push('rivals with ' + enemies.slice(0, 2).join(', '));
+            }
+            // Feed into dossier
+            try {
+                if (typeof Player !== 'undefined' && Player.getState) {
+                    var _ps = Player.getState();
+                    if (!_ps._nobleDossier) _ps._nobleDossier = {};
+                    if (!_ps._nobleDossier[probeTarget]) _ps._nobleDossier[probeTarget] = { personality: {}, relationships: {}, discoveredDay: world.day };
+                    _ps._nobleDossier[probeTarget].loyalty = probePerson.perceivedKingLoyalty;
+                    _ps._nobleDossier[probeTarget]._lastProbedDay = world.day;
+                    if (probePerson.personality) {
+                        for (var _pk in probePerson.personality) {
+                            _ps._nobleDossier[probeTarget].personality[_pk] = probePerson.personality[_pk];
+                        }
+                    }
+                }
+            } catch(e) {}
+            // 15% chance noble notices and gets fearful
+            var noticed = rng.chance(0.15);
+            if (noticed) {
+                probePerson.fearOfKing = Math.min(100, (probePerson.fearOfKing || 15) + 8);
+                intel.push('(they noticed your probing)');
+            }
+            feast.events.push('You subtly interrogated ' + probeName + ' during conversation.');
+            result = { success: true, message: '🔍 You subtly probed ' + probeName + ': ' + intel.join('; ') + '.' };
+
         } else {
             return { success: false, message: 'Unknown feast action: ' + actionId };
         }
@@ -22521,6 +22672,463 @@
         } catch (e) { /* Game not loaded */ }
 
         return result;
+    }
+
+    // ── King: Start Royal Feast on demand ──
+    function startRoyalFeast(kingdomId) {
+        var k = findKingdom(kingdomId);
+        if (!k) return null;
+        if (k._activeFeast) return k._activeFeast; // already active
+        var feastTownId = k.capital || (k.territories && k.territories.size > 0 ? Array.from(k.territories)[0] : null);
+        if (!feastTownId) return null;
+        var feastTown = findTown(feastTownId);
+        var feastTownName = feastTown ? feastTown.name : 'the capital';
+        var rng = world.rng;
+
+        k._activeFeast = {
+            id: 'feast_' + world.day,
+            townId: feastTownId,
+            startDay: world.day,
+            endDay: world.day + 3,
+            attendees: [],
+            events: [],
+            _playerActionsToday: 0,
+            _playerActionDay: 0,
+            _kingHosted: true,
+            _maxActionsPerDay: 5
+        };
+
+        // Populate attendees: all alive nobles rank 4-7
+        var kId = k.id;
+        var allNobles = world.people.filter(function(p) {
+            return p.alive && p.socialRank && p.socialRank[kId] >= 4 && p.socialRank[kId] <= 7;
+        });
+        for (var ai = 0; ai < allNobles.length; ai++) {
+            var _fNoble = allNobles[ai];
+            var _fNP = _fNoble.personality || {};
+            var _fAttendChance = 0.70;
+            if ((_fNoble.kingLoyalty || 50) > 70) _fAttendChance += 0.2;
+            else if ((_fNoble.kingLoyalty || 50) < 30) _fAttendChance -= 0.20;
+            if ((_fNP.social || 50) > 60) _fAttendChance += 0.15;
+            if ((_fNP.ambition || 50) > 65) _fAttendChance += 0.1;
+            if (_fNoble._jailedUntilDay && world.day < _fNoble._jailedUntilDay) _fAttendChance = 0;
+            if (rng.chance(Math.max(0.15, Math.min(0.95, _fAttendChance)))) {
+                k._activeFeast.attendees.push(_fNoble.id);
+            }
+        }
+
+        // King always attends
+        try {
+            var playerPersonId = (typeof Player !== 'undefined' && Player.personId) ? Player.personId : 'player';
+            if (k._activeFeast.attendees.indexOf(playerPersonId) < 0) {
+                k._activeFeast.attendees.push(playerPersonId);
+            }
+        } catch(e) {}
+
+        k._nextFeastDay = world.day + rng.randInt(60, 120);
+
+        logEvent('🎪 The ' + (k.governmentType === 'monarchy' ? 'king' : 'ruler') + ' of ' + k.name + ' is hosting a Royal Feast in ' + feastTownName + '! (3 days)', {
+            type: 'feast_started', kingdomId: kId, townId: feastTownId
+        }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId ? 'my_kingdom' : 'foreign_kingdoms');
+
+        return k._activeFeast;
+    }
+
+    // ── King: Start Court Session with generated cases ──
+    var _COURT_CASE_TYPES = [
+        { id: 'merchant_tax', category: 'commoner', icon: '💰', title: 'Merchant Tax Dispute',
+          desc: 'A prominent merchant claims the tax collector overcharged them by {amount}g.',
+          grantEffect: { happiness: 2, treasury: -100 }, denyEffect: { happiness: -3 }, compromiseEffect: { happiness: 0, treasury: -50 } },
+        { id: 'land_dispute', category: 'noble', icon: '🏰', title: 'Noble Land Dispute',
+          desc: '{noble1} and {noble2} dispute ownership of farmland near {town}.',
+          grantEffect: { loyA: 10, loyB: -8 }, denyEffect: { loyA: -8, loyB: 10 }, compromiseEffect: { loyA: 2, loyB: 2 } },
+        { id: 'theft_case', category: 'criminal', icon: '⚖️', title: 'Theft Case',
+          desc: 'A commoner stands accused of stealing grain from the town granary.',
+          grantEffect: { happiness: -2 }, denyEffect: { happiness: 3 }, compromiseEffect: { happiness: 1 } },
+        { id: 'food_petition', category: 'commoner', icon: '🍞', title: 'Food Shortage Petition',
+          desc: 'Peasants from {town} petition for food aid. Their crops were devastated.',
+          grantEffect: { happiness: 5, treasury: -200 }, denyEffect: { happiness: -5 }, compromiseEffect: { happiness: 2, treasury: -100 } },
+        { id: 'trade_rights', category: 'noble', icon: '📦', title: 'Trade Rights Request',
+          desc: '{noble1} requests exclusive trading rights for {good} in {town}.',
+          grantEffect: { loyA: 12, happiness: -1 }, denyEffect: { loyA: -6 }, compromiseEffect: { loyA: 5 } },
+        { id: 'military_honors', category: 'military', icon: '⚔️', title: 'Military Honors',
+          desc: 'A captain requests recognition for bravery in battle. Granting may inspire soldiers.',
+          grantEffect: { happiness: 3, morale: 5 }, denyEffect: { morale: -5 }, compromiseEffect: { morale: 2 } },
+        { id: 'temple_funding', category: 'clergy', icon: '⛪', title: 'Temple Funding Request',
+          desc: 'The head priest requests 300g to repair the temple in {town}.',
+          grantEffect: { happiness: 4, treasury: -300 }, denyEffect: { happiness: -2 }, compromiseEffect: { happiness: 2, treasury: -150 } },
+        { id: 'foreign_envoy', category: 'diplomacy', icon: '🕊️', title: 'Foreign Envoy',
+          desc: 'An envoy from {foreignKingdom} proposes improved trade relations.',
+          grantEffect: { happiness: 2, diplomacy: 5 }, denyEffect: { diplomacy: -5 }, compromiseEffect: { diplomacy: 2 } },
+        { id: 'noble_accusation', category: 'noble', icon: '🗡️', title: 'Noble Accusation',
+          desc: '{noble1} accuses {noble2} of plotting against the crown.',
+          grantEffect: { loyA: 8, loyB: -15, fearAll: 5 }, denyEffect: { loyA: -10, loyB: 5 }, compromiseEffect: { loyA: -2, loyB: -2, fearAll: 2 } },
+        { id: 'tax_reduction', category: 'commoner', icon: '📜', title: 'Tax Reduction Plea',
+          desc: 'Town elders of {town} plead for reduced taxes due to poor harvest.',
+          grantEffect: { happiness: 6, treasury: -150 }, denyEffect: { happiness: -4 }, compromiseEffect: { happiness: 3, treasury: -75 } },
+        { id: 'building_permit', category: 'commoner', icon: '🏗️', title: 'Building Permit',
+          desc: 'A guild master requests permission to build a new workshop in {town}.',
+          grantEffect: { happiness: 3, building: true }, denyEffect: { happiness: -1 }, compromiseEffect: { happiness: 1 } },
+        { id: 'noble_marriage', category: 'noble', icon: '💍', title: 'Marriage Alliance Proposal',
+          desc: '{noble1} seeks royal blessing for a marriage alliance with a foreign family.',
+          grantEffect: { loyA: 15, diplomacy: 3 }, denyEffect: { loyA: -10 }, compromiseEffect: { loyA: 5 } },
+        { id: 'bandit_threat', category: 'military', icon: '🏴', title: 'Bandit Threat Report',
+          desc: 'Scouts report bandits threatening trade routes near {town}. The captain requests troops.',
+          grantEffect: { happiness: 4, security: 10 }, denyEffect: { happiness: -3, security: -5 }, compromiseEffect: { happiness: 1, security: 3 } },
+        { id: 'heresy_accusation', category: 'clergy', icon: '🔥', title: 'Heresy Accusation',
+          desc: 'A local priest accuses a scholar of heresy. The scholar pleads for mercy.',
+          grantEffect: { happiness: -3, fearAll: 3 }, denyEffect: { happiness: 2 }, compromiseEffect: { happiness: 0, fearAll: 1 } }
+    ];
+
+    function startCourtSession(kingdomId) {
+        var k = findKingdom(kingdomId);
+        if (!k) return null;
+        var rng = world.rng;
+
+        // Get kingdom data for filling case templates
+        var towns = [];
+        if (k.territories) {
+            k.territories.forEach(function(tId) {
+                var t = findTown(tId);
+                if (t) towns.push(t);
+            });
+        }
+        var nobles = world.people.filter(function(p) {
+            return p.alive && p.socialRank && p.socialRank[k.id] >= 4 && p.socialRank[k.id] <= 7;
+        });
+        var foreignKingdoms = getKingdoms().filter(function(fk) { return fk.id !== k.id; });
+
+        // Generate 5-8 cases
+        var numCases = rng.randInt(5, 8);
+        var available = rng.shuffle(_COURT_CASE_TYPES.slice());
+        var cases = [];
+
+        for (var ci = 0; ci < Math.min(numCases, available.length); ci++) {
+            var tmpl = available[ci];
+            var caseObj = {
+                id: tmpl.id + '_' + world.day + '_' + ci,
+                typeId: tmpl.id,
+                category: tmpl.category,
+                icon: tmpl.icon,
+                title: tmpl.title,
+                desc: tmpl.desc,
+                grantEffect: JSON.parse(JSON.stringify(tmpl.grantEffect || {})),
+                denyEffect: JSON.parse(JSON.stringify(tmpl.denyEffect || {})),
+                compromiseEffect: JSON.parse(JSON.stringify(tmpl.compromiseEffect || {})),
+                resolved: false,
+                resolution: null,
+                nobleA: null,
+                nobleB: null,
+                townId: null,
+                good: null,
+                foreignKingdomName: null
+            };
+
+            // Fill template vars
+            var townName = 'the capital';
+            if (towns.length > 0) {
+                var ct = rng.pick(towns);
+                townName = ct.name;
+                caseObj.townId = ct.id;
+            }
+            caseObj.desc = caseObj.desc.replace(/\{town\}/g, townName);
+            caseObj.desc = caseObj.desc.replace(/\{amount\}/g, String(rng.randInt(50, 300)));
+
+            if (nobles.length >= 2 && caseObj.desc.indexOf('{noble1}') >= 0) {
+                var n1 = rng.pick(nobles);
+                var remaining = nobles.filter(function(n) { return n.id !== n1.id; });
+                var n2 = remaining.length > 0 ? rng.pick(remaining) : n1;
+                caseObj.nobleA = n1.id;
+                caseObj.nobleB = n2.id;
+                caseObj.desc = caseObj.desc.replace(/\{noble1\}/g, (n1.firstName || 'A noble') + ' ' + (n1.lastName || ''));
+                caseObj.desc = caseObj.desc.replace(/\{noble2\}/g, (n2.firstName || 'Another noble') + ' ' + (n2.lastName || ''));
+            } else {
+                caseObj.desc = caseObj.desc.replace(/\{noble1\}/g, 'A noble');
+                caseObj.desc = caseObj.desc.replace(/\{noble2\}/g, 'another noble');
+            }
+
+            if (foreignKingdoms.length > 0 && caseObj.desc.indexOf('{foreignKingdom}') >= 0) {
+                var fk = rng.pick(foreignKingdoms);
+                caseObj.foreignKingdomName = fk.name;
+                caseObj.desc = caseObj.desc.replace(/\{foreignKingdom\}/g, fk.name);
+            } else {
+                caseObj.desc = caseObj.desc.replace(/\{foreignKingdom\}/g, 'a neighboring kingdom');
+            }
+
+            var goods = ['grain', 'iron', 'cloth', 'wine', 'timber', 'salt', 'spices'];
+            caseObj.good = rng.pick(goods);
+            caseObj.desc = caseObj.desc.replace(/\{good\}/g, caseObj.good);
+
+            cases.push(caseObj);
+        }
+
+        // Generate noble reactions: which nobles attend court and their stance on cases
+        var courtNobles = [];
+        for (var ni = 0; ni < nobles.length; ni++) {
+            var n = nobles[ni];
+            var _np = n.personality || {};
+            var attendChance = 0.65;
+            if ((n.kingLoyalty || 50) > 70) attendChance += 0.2;
+            if ((_np.social || 50) > 60) attendChance += 0.1;
+            if (n._jailedUntilDay && world.day < n._jailedUntilDay) attendChance = 0;
+            if (rng.chance(Math.max(0.15, Math.min(0.95, attendChance)))) {
+                courtNobles.push({
+                    id: n.id,
+                    name: ((n.firstName || '') + ' ' + (n.lastName || '')).trim(),
+                    loyalty: n.kingLoyalty || 50,
+                    fear: n.fearOfKing || 15,
+                    personality: _np
+                });
+            }
+        }
+
+        k._courtSession = {
+            id: 'court_' + world.day,
+            day: world.day,
+            cases: cases,
+            nobles: courtNobles,
+            events: [],
+            _resolvedCount: 0
+        };
+
+        logEvent('⚖️ The ' + (k.governmentType === 'monarchy' ? 'king' : 'ruler') + ' of ' + k.name + ' is holding court!', {
+            type: 'court_started', kingdomId: k.id
+        }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id ? 'my_kingdom' : 'foreign_kingdoms');
+
+        return k._courtSession;
+    }
+
+    // ── Resolve Court Case ──
+    function resolveCourtCase(kingdomId, caseId, resolution) {
+        var k = findKingdom(kingdomId);
+        if (!k || !k._courtSession) return { success: false, message: 'No court session active.' };
+        var court = k._courtSession;
+        var caseObj = null;
+        for (var i = 0; i < court.cases.length; i++) {
+            if (court.cases[i].id === caseId) { caseObj = court.cases[i]; break; }
+        }
+        if (!caseObj) return { success: false, message: 'Case not found.' };
+        if (caseObj.resolved) return { success: false, message: 'Case already resolved.' };
+
+        var rng = world.rng;
+        var effects = {};
+        if (resolution === 'grant') effects = caseObj.grantEffect;
+        else if (resolution === 'deny') effects = caseObj.denyEffect;
+        else if (resolution === 'compromise') effects = caseObj.compromiseEffect;
+        else if (resolution === 'delegate') {
+            // Delegate to a random attending noble — they resolve it randomly
+            if (court.nobles.length === 0) return { success: false, message: 'No nobles to delegate to.' };
+            var delegate = rng.pick(court.nobles);
+            var delegateP = findPerson(delegate.id);
+            var delegateName = delegate.name || 'a noble';
+            // Noble resolves based on personality
+            var _np = delegate.personality || {};
+            if ((_np.honesty || 50) > 60) effects = caseObj.compromiseEffect;
+            else if ((_np.ambition || 50) > 60) effects = caseObj.grantEffect;
+            else effects = caseObj.denyEffect;
+            // Delegating boosts that noble's loyalty
+            if (delegateP) delegateP.kingLoyalty = Math.min(100, (delegateP.kingLoyalty || 50) + 5);
+            court.events.push('Case delegated to ' + delegateName + ' for resolution.');
+        } else {
+            return { success: false, message: 'Invalid resolution.' };
+        }
+
+        caseObj.resolved = true;
+        caseObj.resolution = resolution;
+        court._resolvedCount++;
+
+        // Apply effects
+        var msgs = [];
+        if (effects.happiness) {
+            if (k.happiness != null) k.happiness = Math.max(0, Math.min(100, k.happiness + effects.happiness));
+            msgs.push((effects.happiness > 0 ? '+' : '') + effects.happiness + ' happiness');
+        }
+        if (effects.treasury) {
+            k.gold = Math.max(0, (k.gold || 0) + effects.treasury);
+            msgs.push((effects.treasury > 0 ? '+' : '') + effects.treasury + 'g treasury');
+        }
+        if (effects.loyA && caseObj.nobleA) {
+            var nA = findPerson(caseObj.nobleA);
+            if (nA) nA.kingLoyalty = Math.max(0, Math.min(100, (nA.kingLoyalty || 50) + effects.loyA));
+            msgs.push('Noble A loyalty ' + (effects.loyA > 0 ? '+' : '') + effects.loyA);
+        }
+        if (effects.loyB && caseObj.nobleB) {
+            var nB = findPerson(caseObj.nobleB);
+            if (nB) nB.kingLoyalty = Math.max(0, Math.min(100, (nB.kingLoyalty || 50) + effects.loyB));
+            msgs.push('Noble B loyalty ' + (effects.loyB > 0 ? '+' : '') + effects.loyB);
+        }
+        if (effects.fearAll) {
+            for (var fi = 0; fi < court.nobles.length; fi++) {
+                var fp = findPerson(court.nobles[fi].id);
+                if (fp) fp.fearOfKing = Math.min(100, (fp.fearOfKing || 15) + effects.fearAll);
+            }
+            msgs.push('+' + effects.fearAll + ' fear (all nobles)');
+        }
+        if (effects.morale) {
+            msgs.push((effects.morale > 0 ? '+' : '') + effects.morale + ' military morale');
+        }
+        if (effects.diplomacy) {
+            msgs.push((effects.diplomacy > 0 ? '+' : '') + effects.diplomacy + ' diplomacy');
+        }
+
+        // Noble reactions based on personality
+        var nobleReactions = [];
+        for (var ri = 0; ri < court.nobles.length; ri++) {
+            var rn = court.nobles[ri];
+            var rnP = rn.personality || {};
+            var rnPerson = findPerson(rn.id);
+            if (!rnPerson) continue;
+            var reactionChance = 0.35;
+            if (caseObj.nobleA === rn.id || caseObj.nobleB === rn.id) reactionChance = 0.80;
+            if (!rng.chance(reactionChance)) continue;
+
+            var reaction = '';
+            if (resolution === 'grant') {
+                if ((rnP.warmth || 50) > 60) { reaction = rn.name + ' nodded approvingly.'; rnPerson.kingLoyalty = Math.min(100, (rnPerson.kingLoyalty || 50) + 1); }
+                else if ((rnP.ambition || 50) > 65 && caseObj.category === 'noble') { reaction = rn.name + ' seemed envious of the favor shown.'; rnPerson.kingLoyalty = Math.max(0, (rnPerson.kingLoyalty || 50) - 1); }
+            } else if (resolution === 'deny') {
+                if ((rnP.honesty || 50) > 60) { reaction = rn.name + ' whispered that the ruling was just.'; rnPerson.kingLoyalty = Math.min(100, (rnPerson.kingLoyalty || 50) + 1); }
+                else if ((rn.loyalty || 50) < 40) { reaction = rn.name + ' frowned at the harsh ruling.'; rnPerson.kingLoyalty = Math.max(0, (rnPerson.kingLoyalty || 50) - 2); }
+            } else if (resolution === 'compromise') {
+                if ((rnP.intelligence || 50) > 60) { reaction = rn.name + ' acknowledged the wisdom of compromise.'; rnPerson.kingLoyalty = Math.min(100, (rnPerson.kingLoyalty || 50) + 2); }
+            }
+            if (reaction) nobleReactions.push(reaction);
+        }
+
+        var resultMsg = '⚖️ Case "' + caseObj.title + '" — ' + resolution.toUpperCase() + '. ' + msgs.join(', ') + '.';
+        court.events.push(resultMsg);
+        for (var _nri = 0; _nri < nobleReactions.length; _nri++) {
+            court.events.push(nobleReactions[_nri]);
+        }
+
+        // Check if all cases resolved — end court session
+        var allResolved = court.cases.every(function(c) { return c.resolved; });
+        if (allResolved) {
+            court.events.push('All cases have been heard. Court is adjourned.');
+            logEvent('⚖️ Court session in ' + k.name + ' has concluded. ' + court._resolvedCount + ' cases resolved.', null,
+                typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id ? 'my_kingdom' : 'foreign_kingdoms');
+        }
+
+        return { success: true, message: resultMsg, nobleReactions: nobleReactions, allResolved: allResolved };
+    }
+
+    // ── AI Noble Feast Actions (called during feast tick) ──
+    function tickFeastNobleActions(k) {
+        if (!k || !k._activeFeast) return;
+        var feast = k._activeFeast;
+        var rng = world.rng;
+        if (feast.attendees.length < 2) return;
+
+        // Each day, 2-4 nobles take actions
+        var numActions = rng.randInt(2, Math.min(4, feast.attendees.length));
+        var shuffled = rng.shuffle(feast.attendees.slice());
+        var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id;
+        var category = isPlayerK ? 'my_kingdom' : 'foreign_kingdoms';
+
+        for (var i = 0; i < numActions; i++) {
+            var nobleId = shuffled[i];
+            var noble = findPerson(nobleId);
+            if (!noble || !noble.alive) continue;
+            // Skip player character
+            try {
+                var playerPId = (typeof Player !== 'undefined' && Player.personId) ? Player.personId : 'player';
+                if (nobleId === playerPId || nobleId === 'player') continue;
+            } catch(e) {}
+
+            var np = noble.personality || {};
+            var nName = (noble.firstName || 'A noble');
+            var loyalty = noble.kingLoyalty || 50;
+            var fear = noble.fearOfKing || 15;
+            var action = '';
+
+            // Choose action based on personality
+            if (loyalty >= 70 && rng.chance(0.4)) {
+                // Loyal nobles toast the king or support others
+                if (rng.chance(0.5)) {
+                    noble.kingLoyalty = Math.min(100, loyalty + 2);
+                    action = nName + ' raised a toast to the king, praising their wise rule.';
+                } else {
+                    var otherLoyals = feast.attendees.filter(function(id) {
+                        var p = findPerson(id); return p && id !== nobleId && (p.kingLoyalty || 50) > 60;
+                    });
+                    if (otherLoyals.length > 0) {
+                        var ally = findPerson(rng.pick(otherLoyals));
+                        if (ally) {
+                            if (!noble._nobleRelationships) noble._nobleRelationships = {};
+                            noble._nobleRelationships[ally.id] = Math.min(100, (noble._nobleRelationships[ally.id] || 0) + 5);
+                            action = nName + ' and ' + (ally.firstName || 'a noble') + ' bonded over shared loyalty to the crown.';
+                        }
+                    }
+                }
+            } else if (loyalty < 30 && fear < 40 && rng.chance(0.35)) {
+                // Disloyal + not fearful: whisper against king or form faction
+                var otherDisloyal = feast.attendees.filter(function(id) {
+                    var p = findPerson(id); return p && id !== nobleId && (p.kingLoyalty || 50) < 40;
+                });
+                if (otherDisloyal.length > 0) {
+                    var conspirator = findPerson(rng.pick(otherDisloyal));
+                    if (conspirator) {
+                        if (!noble._nobleRelationships) noble._nobleRelationships = {};
+                        noble._nobleRelationships[conspirator.id] = Math.min(100, (noble._nobleRelationships[conspirator.id] || 0) + 8);
+                        if (!conspirator._nobleRelationships) conspirator._nobleRelationships = {};
+                        conspirator._nobleRelationships[nobleId] = Math.min(100, (conspirator._nobleRelationships[nobleId] || 0) + 8);
+                        action = nName + ' and ' + (conspirator.firstName || 'a noble') + ' were seen whispering in a dark corner.';
+                    }
+                } else {
+                    action = nName + ' made thinly veiled criticisms of royal policy.';
+                    noble.perceivedKingLoyalty = Math.max(0, (noble.perceivedKingLoyalty != null ? noble.perceivedKingLoyalty : loyalty) - 3);
+                }
+            } else if ((np.ambition || 50) > 65 && rng.chance(0.40)) {
+                // Ambitious nobles try to gain attention
+                if (rng.chance(0.5)) {
+                    noble.perceivedKingLoyalty = Math.min(100, (noble.perceivedKingLoyalty != null ? noble.perceivedKingLoyalty : loyalty) + 3);
+                    action = nName + ' loudly praised the king\'s wisdom, seeking favor.';
+                } else {
+                    // Challenge another noble
+                    var rivals = feast.attendees.filter(function(id) { return id !== nobleId; });
+                    if (rivals.length > 0) {
+                        var rival = findPerson(rng.pick(rivals));
+                        if (rival) {
+                            if (!noble._nobleRelationships) noble._nobleRelationships = {};
+                            if (!rival._nobleRelationships) rival._nobleRelationships = {};
+                            var outcome = rng.chance(0.5);
+                            if (outcome) {
+                                noble._nobleRelationships[rival.id] = Math.min(100, (noble._nobleRelationships[rival.id] || 0) + 3);
+                                action = nName + ' challenged ' + (rival.firstName || 'a noble') + ' to a friendly contest and won gracefully.';
+                            } else {
+                                noble._nobleRelationships[rival.id] = Math.max(-100, (noble._nobleRelationships[rival.id] || 0) - 5);
+                                rival._nobleRelationships[nobleId] = Math.max(-100, (rival._nobleRelationships[nobleId] || 0) - 3);
+                                action = nName + ' challenged ' + (rival.firstName || 'a noble') + ' to a contest that turned into a bitter argument!';
+                            }
+                        }
+                    }
+                }
+            } else if ((np.social || 50) > 60 && rng.chance(0.40)) {
+                // Social nobles mingle
+                var others = feast.attendees.filter(function(id) { return id !== nobleId; });
+                if (others.length > 0) {
+                    var friend = findPerson(rng.pick(others));
+                    if (friend) {
+                        if (!noble._nobleRelationships) noble._nobleRelationships = {};
+                        noble._nobleRelationships[friend.id] = Math.min(100, (noble._nobleRelationships[friend.id] || 0) + 4);
+                        if (!friend._nobleRelationships) friend._nobleRelationships = {};
+                        friend._nobleRelationships[nobleId] = Math.min(100, (friend._nobleRelationships[nobleId] || 0) + 3);
+                        action = nName + ' charmed ' + (friend.firstName || 'a noble') + ' with witty conversation.';
+                    }
+                }
+            } else if (fear >= 60 && rng.chance(0.30)) {
+                // Fearful nobles are overly subservient
+                noble.perceivedKingLoyalty = Math.min(100, (noble.perceivedKingLoyalty != null ? noble.perceivedKingLoyalty : loyalty) + 5);
+                action = nName + ' nervously agreed with everything the king said.';
+            }
+
+            if (action) {
+                feast.events.push(action);
+                if (isPlayerK) {
+                    logEvent('🎪 ' + action, { type: 'feast_noble_action', kingdomId: k.id }, category);
+                }
+            }
+        }
     }
 
     // ========================================================
@@ -25568,6 +26176,27 @@
         },
         doCourtAction: function(kingdomId, actionId) {
             return doCourtAction(kingdomId, actionId);
+        },
+        startRoyalFeast: function(kingdomId) {
+            return startRoyalFeast(kingdomId);
+        },
+        startCourtSession: function(kingdomId) {
+            return startCourtSession(kingdomId);
+        },
+        getCourtSession: function(kingdomId) {
+            var k = findKingdom(kingdomId);
+            return k ? k._courtSession : null;
+        },
+        resolveCourtCase: function(kingdomId, caseId, resolution) {
+            return resolveCourtCase(kingdomId, caseId, resolution);
+        },
+        setFeastSelectedNoble: function(kingdomId, nobleId) {
+            var k = findKingdom(kingdomId);
+            if (k && k._activeFeast) k._activeFeast._selectedNobleId = nobleId;
+        },
+        setFeastSelectedDecree: function(kingdomId, decreeId) {
+            var k = findKingdom(kingdomId);
+            if (k && k._activeFeast) k._activeFeast._selectedDecree = decreeId;
         },
 
         // ---- Conspiracy API ----

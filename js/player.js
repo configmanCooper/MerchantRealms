@@ -7756,14 +7756,21 @@
         if (!kingdom) return { success: false, message: 'Kingdom not found.' };
         var daysSinceLast = Engine.getDay() - (player.kingState.feastHeldDay || 0);
         if (daysSinceLast < 30) return { success: false, message: 'Must wait ' + (30 - daysSinceLast) + ' more days before hosting another feast.' };
+        // If feast already active, just open it
+        if (kingdom._activeFeast) {
+            return { success: true, message: 'A feast is already in progress!', openFeast: true, kingdomId: player.kingState.kingdomId };
+        }
         var feastCost = 500;
         if (kingdom.gold < feastCost) return { success: false, message: 'Treasury needs ' + feastCost + 'g for a feast.' };
         kingdom.gold -= feastCost;
         player.kingState.feastHeldDay = Engine.getDay();
-        // Boost happiness and noble relationships
+        // Create the actual feast event via engine
+        var feast = Engine.startRoyalFeast(player.kingState.kingdomId);
+        if (!feast) return { success: false, message: 'Could not start feast.' };
+        // Boost happiness
         if (kingdom.happiness != null) kingdom.happiness = Math.min(100, kingdom.happiness + 5);
+        // Boost noble relationships
         for (var _fId in player.relationships) {
-            var _fRel = player.relationships[_fId];
             var _fPerson = Engine.findPerson(_fId);
             if (_fPerson && _fPerson.alive && _fPerson.kingdomId === kingdom.id) {
                 var _fRank = (_fPerson.socialRank && _fPerson.socialRank[kingdom.id]) || 0;
@@ -7771,19 +7778,27 @@
             }
         }
         Engine.logEvent('👑 ' + (player.sex === 'F' ? 'Queen' : 'King') + ' ' + player.fullName + ' hosts a grand royal feast! (+5 happiness, +5 noble relations)');
-        return { success: true, message: 'Grand feast held! Happiness +5, noble relationships improved.' };
+        return { success: true, message: 'Grand feast begun! The feast lasts 3 days. You have 5 actions per day.', openFeast: true, kingdomId: player.kingState.kingdomId };
     }
 
     function kingHoldCourt() {
         if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
         var daysSinceLast = Engine.getDay() - (player.kingState.courtHeldDay || 0);
         if (daysSinceLast < 30) return { success: false, message: 'Must wait ' + (30 - daysSinceLast) + ' more days before holding court.' };
-        player.kingState.courtHeldDay = Engine.getDay();
         var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        // If court already active with unresolved cases, reopen it
+        if (kingdom._courtSession && kingdom._courtSession.cases.some(function(c) { return !c.resolved; })) {
+            return { success: true, message: 'Court is already in session!', openCourt: true, kingdomId: player.kingState.kingdomId };
+        }
+        player.kingState.courtHeldDay = Engine.getDay();
+        // Create court session with generated cases
+        var court = Engine.startCourtSession(player.kingState.kingdomId);
+        if (!court) return { success: false, message: 'Could not start court session.' };
         // Boost reputation and reduce revolt risk
-        if (kingdom && kingdom.happiness != null) kingdom.happiness = Math.min(100, kingdom.happiness + 3);
+        if (kingdom.happiness != null) kingdom.happiness = Math.min(100, kingdom.happiness + 3);
         Engine.logEvent('👑 ' + (player.sex === 'F' ? 'Queen' : 'King') + ' ' + player.fullName + ' holds court, hearing petitions from the people. (+3 happiness)');
-        return { success: true, message: 'Court held. People heard, happiness improved.' };
+        return { success: true, message: 'Court is now in session! ' + court.cases.length + ' cases to hear.', openCourt: true, kingdomId: player.kingState.kingdomId };
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -8396,8 +8411,8 @@
         return result;
     }
 
-    // ── Investigate Noble (discover real vs perceived loyalty) ──
-    function kingInvestigateNoble(nobleId) {
+    // ── Investigate Noble — enhanced with multiple investigation methods ──
+    function kingInvestigateNoble(nobleId, method) {
         if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
         var kingdom = Engine.findKingdom(player.kingState.kingdomId);
         if (!kingdom) return { success: false, message: 'Kingdom not found.' };
@@ -8405,43 +8420,159 @@
         if (!noble || !noble.alive) return { success: false, message: 'Noble not found.' };
         var nobleName = ((noble.firstName || '') + ' ' + (noble.lastName || '')).trim();
 
-        // Cost: 50g for investigation
-        if ((kingdom.gold || 0) < 50) return { success: false, message: 'Treasury needs 50g for an investigation.' };
-        kingdom.gold -= 50;
+        // If no method specified, return available methods (for UI to show panel)
+        if (!method) {
+            return { success: true, showPanel: true, nobleId: nobleId, nobleName: nobleName, message: 'Choose investigation method.' };
+        }
 
-        var realLoy = noble.kingLoyalty || 50;
-        var percLoy = noble.perceivedKingLoyalty != null ? noble.perceivedKingLoyalty : realLoy;
-        var diff = Math.abs(realLoy - percLoy);
-
-        // Investigation reveals partial truth — moves perceived closer to real
-        var revealAmount = 0.3 + (Math.random() * 0.4); // reveal 30-70% of the gap
-        noble.perceivedKingLoyalty = percLoy + (realLoy - percLoy) * revealAmount;
-        noble.perceivedKingLoyalty = Math.max(0, Math.min(100, noble.perceivedKingLoyalty));
-
-        // Being investigated increases noble's fear slightly
-        noble.fearOfKing = Math.min(100, (noble.fearOfKing || 15) + 5);
-
-        // Update noble dossier
+        var rng = Engine.getRng();
         if (!player._nobleDossier) player._nobleDossier = {};
         if (!player._nobleDossier[nobleId]) player._nobleDossier[nobleId] = { personality: {}, relationships: {}, discoveredDay: Engine.getDay() };
-        player._nobleDossier[nobleId].loyalty = noble.perceivedKingLoyalty;
-        player._nobleDossier[nobleId]._investigatedDay = Engine.getDay();
+        var dossier = player._nobleDossier[nobleId];
 
-        // Reveal fear level from investigation
-        var _fearLabel = '';
-        var _fear = noble.fearOfKing || 0;
-        if (_fear >= 70) _fearLabel = ' They seem terrified of the crown.';
-        else if (_fear >= 45) _fearLabel = ' They appear quite fearful.';
-        else if (_fear >= 25) _fearLabel = ' They show some apprehension.';
+        var results = [];
+        var cost = 0;
 
-        var newPercLabel = _loyaltyLabelText(noble.perceivedKingLoyalty);
-        if (diff > 15) {
-            Engine.logEvent('🔍 Investigation into ' + nobleName + ' reveals discrepancy — their true loyalty differs from appearances! Now assessed as: ' + newPercLabel);
-            return { success: true, message: '🔍 Investigation reveals ' + nobleName + '\'s loyalty is not as it seems! Reassessed as: ' + newPercLabel + '.' + _fearLabel + ' (cost: 50g)' };
+        if (method === 'spy') {
+            // Hire Spies — reveals loyalty, personality, alliances over time
+            cost = 50;
+            if ((kingdom.gold || 0) < cost) return { success: false, message: 'Treasury needs ' + cost + 'g.' };
+            kingdom.gold -= cost;
+            // Reveal loyalty
+            var realLoy = noble.kingLoyalty || 50;
+            var percLoy = noble.perceivedKingLoyalty != null ? noble.perceivedKingLoyalty : realLoy;
+            noble.perceivedKingLoyalty = percLoy + (realLoy - percLoy) * (0.5 + rng.random() * 0.3);
+            noble.perceivedKingLoyalty = Math.max(0, Math.min(100, noble.perceivedKingLoyalty));
+            dossier.loyalty = noble.perceivedKingLoyalty;
+            var loyLabel = realLoy >= 70 ? 'loyal' : realLoy >= 50 ? 'neutral' : realLoy >= 30 ? 'uncertain' : 'disloyal';
+            results.push('Loyalty assessment: ' + loyLabel + ' (' + Math.round(noble.perceivedKingLoyalty) + ')');
+            // Reveal 1-2 personality traits
+            if (noble.personality) {
+                var traits = Object.keys(noble.personality);
+                var numReveal = Math.min(traits.length, 1 + (rng.chance(0.5) ? 1 : 0));
+                var shuffled = rng.shuffle(traits.slice());
+                for (var ti = 0; ti < numReveal; ti++) {
+                    dossier.personality[shuffled[ti]] = noble.personality[shuffled[ti]];
+                    var val = noble.personality[shuffled[ti]];
+                    results.push(shuffled[ti] + ': ' + (val > 70 ? 'very high' : val > 50 ? 'moderate' : 'low'));
+                }
+            }
+            noble.fearOfKing = Math.min(100, (noble.fearOfKing || 15) + 3);
+            dossier._lastSpyDay = Engine.getDay();
+
+        } else if (method === 'bribe_servants') {
+            // Bribe Servants — instant detailed info but expensive
+            cost = 100;
+            if ((kingdom.gold || 0) < cost) return { success: false, message: 'Treasury needs ' + cost + 'g.' };
+            kingdom.gold -= cost;
+            // Reveal true loyalty exactly
+            noble.perceivedKingLoyalty = noble.kingLoyalty || 50;
+            dossier.loyalty = noble.perceivedKingLoyalty;
+            results.push('TRUE loyalty: ' + Math.round(noble.perceivedKingLoyalty));
+            // Reveal fear
+            dossier.fear = noble.fearOfKing || 15;
+            results.push('Fear of king: ' + Math.round(noble.fearOfKing || 15));
+            // Reveal all personality
+            if (noble.personality) {
+                for (var pk in noble.personality) {
+                    dossier.personality[pk] = noble.personality[pk];
+                }
+                results.push('All personality traits revealed');
+            }
+            // Reveal daily activities
+            if (noble._plotting) results.push('⚠️ ACTIVELY PLOTTING against the crown!');
+            if (noble._financiallyStressed) results.push('💸 Financially stressed');
+            // 20% chance servants reveal bribe to noble → relationship damage
+            if (rng.chance(0.20)) {
+                noble.kingLoyalty = Math.max(0, (noble.kingLoyalty || 50) - 5);
+                results.push('⚠️ Noble learned of the bribery! (-5 loyalty)');
+            }
+            dossier._lastBribeDay = Engine.getDay();
+
+        } else if (method === 'search_finances') {
+            // Check financial records
+            cost = 25;
+            if ((kingdom.gold || 0) < cost) return { success: false, message: 'Treasury needs ' + cost + 'g.' };
+            kingdom.gold -= cost;
+            var wealth = noble._wealth || rng.randInt(100, 2000);
+            noble._wealth = wealth;
+            dossier.wealth = wealth;
+            results.push('Estimated wealth: ' + wealth + 'g');
+            if (noble._financiallyStressed) results.push('💸 Under financial stress');
+            else results.push('💰 Financially stable');
+            if (noble._debtsOwed && noble._debtsOwed > 0) results.push('Owes ' + noble._debtsOwed + 'g in debts');
+            // Check for suspicious transactions
+            if (rng.chance(0.25)) {
+                results.push('⚠️ Suspicious gold transfers detected — possible bribes');
+                dossier._suspiciousFinances = true;
+            }
+            noble.fearOfKing = Math.min(100, (noble.fearOfKing || 15) + 2);
+            dossier._lastFinanceCheckDay = Engine.getDay();
+
+        } else if (method === 'check_alliances') {
+            // Discover alliances and enemies
+            cost = 75;
+            if ((kingdom.gold || 0) < cost) return { success: false, message: 'Treasury needs ' + cost + 'g.' };
+            kingdom.gold -= cost;
+            if (noble._nobleRelationships) {
+                for (var nrk in noble._nobleRelationships) {
+                    var rel = noble._nobleRelationships[nrk];
+                    dossier.relationships[nrk] = rel;
+                    var relPerson = Engine.findPerson(nrk);
+                    var relName = relPerson ? ((relPerson.firstName || '') + ' ' + (relPerson.lastName || '')).trim() : 'Unknown';
+                    if (rel > 30) results.push('Allied with ' + relName + ' (' + rel + ')');
+                    else if (rel < -30) results.push('Rivals with ' + relName + ' (' + rel + ')');
+                }
+                if (results.length === 0) results.push('No strong alliances or rivalries detected');
+            } else {
+                results.push('No known alliances or rivalries');
+            }
+            // Check if in conspiracy
+            if (noble._conspiracyMember) {
+                results.push('⚠️ PART OF A CONSPIRACY!');
+                dossier._knownConspirator = true;
+            }
+            noble.fearOfKing = Math.min(100, (noble.fearOfKing || 15) + 4);
+            dossier._lastAllianceCheckDay = Engine.getDay();
+
+        } else if (method === 'shadow') {
+            // Shadow the noble — learn daily activities
+            cost = 50;
+            if ((kingdom.gold || 0) < cost) return { success: false, message: 'Treasury needs ' + cost + 'g.' };
+            kingdom.gold -= cost;
+            var activities = [];
+            if (noble._plotting) activities.push('Attended a secret meeting with disloyal nobles');
+            if ((noble.kingLoyalty || 50) < 30) activities.push('Visited foreign merchants — possible espionage');
+            if ((noble.personality || {}).ambition > 70) activities.push('Held private meetings with other ambitious nobles');
+            if ((noble.personality || {}).social > 60) activities.push('Threw a private dinner party');
+            if (noble._financiallyStressed) activities.push('Visited a moneylender in the market district');
+            if (activities.length === 0) activities.push('Led a normal routine — nothing suspicious');
+            // Add some flavor
+            var flavors = ['Visited the temple at dawn', 'Trained with a sword master', 'Spent hours in the library', 'Inspected their estates'];
+            activities.push(rng.pick(flavors));
+            for (var ai = 0; ai < activities.length; ai++) results.push(activities[ai]);
+            // Small chance of being spotted
+            if (rng.chance(0.15)) {
+                noble.fearOfKing = Math.min(100, (noble.fearOfKing || 15) + 10);
+                results.push('⚠️ Your agents were spotted! Noble is now more fearful.');
+            }
+            dossier._lastShadowDay = Engine.getDay();
+
         } else {
-            Engine.logEvent('🔍 Investigation into ' + nobleName + ' confirms their loyalty appears genuine. Assessed: ' + newPercLabel);
-            return { success: true, message: '🔍 Investigation confirms ' + nobleName + '\'s loyalty appears genuine. (' + newPercLabel + ')' + _fearLabel + ' (cost: 50g)' };
+            return { success: false, message: 'Unknown investigation method.' };
         }
+
+        dossier._investigatedDay = Engine.getDay();
+        Engine.logEvent('🔍 Investigation into ' + nobleName + ' (' + method + '): ' + results[0]);
+
+        return {
+            success: true,
+            message: '🔍 Investigation of ' + nobleName + ' (' + cost + 'g):\n' + results.join('\n'),
+            results: results,
+            cost: cost,
+            method: method,
+            nobleId: nobleId
+        };
     }
 
     // Helper for loyalty text labels

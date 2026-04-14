@@ -276,12 +276,26 @@
         html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:4px;">🎉 Events</div>';
         var _feastReady = Engine.getDay() - (ks.feastHeldDay || 0) >= 30;
         var _courtReady = Engine.getDay() - (ks.courtHeldDay || 0) >= 30;
+        var _activeFeastK = null;
+        try { _activeFeastK = Engine.getActiveFeast(ks.kingdomId); } catch(e) {}
+        var _activeCourtK = null;
+        try { _activeCourtK = Engine.getCourtSession ? Engine.getCourtSession(ks.kingdomId) : null; } catch(e) {}
+        var _courtHasUnresolved = _activeCourtK && _activeCourtK.cases && _activeCourtK.cases.some(function(c) { return !c.resolved; });
         html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">';
-        html += '<button class="btn-medieval" data-action="kingHostFeast" style="font-size:0.72rem;padding:4px 10px;' + (!_feastReady ? 'opacity:0.5;' : '') + '" ' + (!_feastReady ? 'disabled' : '') + '>🎉 Host Feast (500g)</button>';
-        html += '<button class="btn-medieval" data-action="kingHoldCourt" style="font-size:0.72rem;padding:4px 10px;' + (!_courtReady ? 'opacity:0.5;' : '') + '" ' + (!_courtReady ? 'disabled' : '') + '>🏰 Hold Court</button>';
+        if (_activeFeastK) {
+            var _fDaysLeft = Math.max(0, (_activeFeastK.endDay || 0) - Engine.getDay());
+            html += '<button class="btn-medieval" data-action="kingOpenActiveFeast" style="font-size:0.72rem;padding:4px 10px;background:rgba(200,150,50,0.3);border-color:rgba(200,150,50,0.5);">🎪 Feast in Progress (' + _fDaysLeft + 'd left)</button>';
+        } else {
+            html += '<button class="btn-medieval" data-action="kingHostFeast" style="font-size:0.72rem;padding:4px 10px;' + (!_feastReady ? 'opacity:0.5;' : '') + '" ' + (!_feastReady ? 'disabled' : '') + '>🎉 Host Feast (500g)</button>';
+        }
+        if (_courtHasUnresolved) {
+            html += '<button class="btn-medieval" data-action="kingOpenActiveCourt" style="font-size:0.72rem;padding:4px 10px;background:rgba(80,120,200,0.3);border-color:rgba(80,120,200,0.5);">⚖️ Court in Session (' + _activeCourtK.cases.filter(function(c){ return !c.resolved; }).length + ' cases)</button>';
+        } else {
+            html += '<button class="btn-medieval" data-action="kingHoldCourt" style="font-size:0.72rem;padding:4px 10px;' + (!_courtReady ? 'opacity:0.5;' : '') + '" ' + (!_courtReady ? 'disabled' : '') + '>🏰 Hold Court</button>';
+        }
         html += '</div>';
-        if (!_feastReady) html += '<div style="font-size:0.65rem;color:#888;margin-top:4px;">Feast available in ' + (30 - (Engine.getDay() - (ks.feastHeldDay || 0))) + ' days</div>';
-        if (!_courtReady) html += '<div style="font-size:0.65rem;color:#888;">Court available in ' + (30 - (Engine.getDay() - (ks.courtHeldDay || 0))) + ' days</div>';
+        if (!_activeFeastK && !_feastReady) html += '<div style="font-size:0.65rem;color:#888;margin-top:4px;">Feast available in ' + (30 - (Engine.getDay() - (ks.feastHeldDay || 0))) + ' days</div>';
+        if (!_courtHasUnresolved && !_courtReady) html += '<div style="font-size:0.65rem;color:#888;">Court available in ' + (30 - (Engine.getDay() - (ks.courtHeldDay || 0))) + ' days</div>';
         // Tribute collection
         var _tributeReady = Engine.getDay() - (ks._vassalTributeDay || 0) >= 30;
         html += '<div style="margin-top:6px;">';
@@ -3152,8 +3166,32 @@
     UI.registerAction('kingAcceptPeaceOffer', function(_t, d) { var r = Player.kingAcceptPeaceOffer(d.id); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
     UI.registerAction('kingRejectPeaceOffer', function(_t, d) { var r = Player.kingRejectPeaceOffer(d.id); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
     UI.registerAction('kingDeclareWar', function(_t, d) { var r = Player.kingDeclareWar(d.id); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
-    UI.registerAction('kingHostFeast', function() { var r = Player.kingHostFeast(); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
-    UI.registerAction('kingHoldCourt', function() { var r = Player.kingHoldCourt(); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions'); });
+    UI.registerAction('kingHostFeast', function() {
+        var r = Player.kingHostFeast();
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        if (r.success && r.openFeast && r.kingdomId) {
+            UI.openFeastDialog(r.kingdomId);
+        } else {
+            UI.openKingPanel('decisions');
+        }
+    });
+    UI.registerAction('kingHoldCourt', function() {
+        var r = Player.kingHoldCourt();
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        if (r.success && r.openCourt && r.kingdomId) {
+            UI.openCourtSessionDialog(r.kingdomId);
+        } else {
+            UI.openKingPanel('decisions');
+        }
+    });
+    UI.registerAction('kingOpenActiveFeast', function() {
+        var kId = Player.state && Player.state.kingState ? Player.state.kingState.kingdomId : null;
+        if (kId) UI.openFeastDialog(kId);
+    });
+    UI.registerAction('kingOpenActiveCourt', function() {
+        var kId = Player.state && Player.state.kingState ? Player.state.kingState.kingdomId : null;
+        if (kId) UI.openCourtSessionDialog(kId);
+    });
 
     // ── Court Management Actions ──
     UI.registerAction('kingGrantAudience', function(_t, d) {
@@ -3350,8 +3388,23 @@
     // ── Investigate Noble ──
     UI.registerAction('kingInvestigateNoble', function(_t, d) {
         var r = Player.kingInvestigateNoble ? Player.kingInvestigateNoble(d.id) : { success: false, message: 'Not available.' };
-        UI.toast(r.message, r.success ? 'success' : 'info');
-        UI.openKingPanel('court');
+        if (r.success && r.showPanel) {
+            UI.openInvestigationPanel(r.nobleId, r.nobleName);
+        } else {
+            UI.toast(r.message, r.success ? 'success' : 'info');
+            UI.openKingPanel('court');
+        }
+    });
+
+    // ── Investigation Method Execution ──
+    UI.registerAction('kingInvestigateMethod', function(_t, d) {
+        var r = Player.kingInvestigateNoble ? Player.kingInvestigateNoble(d.id, d.val) : { success: false, message: 'Not available.' };
+        if (r.success && r.results) {
+            // Show results in the investigation panel
+            UI.openInvestigationResults(d.id, r);
+        } else {
+            UI.toast(r.message, r.success ? 'success' : 'warning');
+        }
     });
     UI.registerAction('kingFleeConfirm', function() { var r = Player.kingFleeKingdom(); UI.closeModal(); UI.toast(r.message, r.success ? 'success' : 'warning'); });
     UI.registerAction('kingElectionVote', function(_t, d) { Engine._resolvePendingElection(Engine.findKingdom(d.kingdom), d.id); UI.closeModal(); UI.toast('Your vote has been cast.', 'success'); });
@@ -3710,6 +3763,244 @@
         var r = Player.kingWithdrawTreasury(amount);
         UI.toast(r.message, r.success ? 'success' : 'warning');
         UI.openKingPanel('overview');
+    });
+
+    // ═══════════════════════════════════════════════════════════
+    // §COURT-SESSION — Court Session Dialog (King holds court with cases)
+    // ═══════════════════════════════════════════════════════════
+
+    function openCourtSessionDialog(kingdomId) {
+        var court = null;
+        try { court = Engine.getCourtSession ? Engine.getCourtSession(kingdomId) : null; } catch(e) {}
+        if (!court || !court.cases) {
+            toast('No court session active.', 'info');
+            return;
+        }
+
+        var html = '';
+        var unresolvedCount = court.cases.filter(function(c) { return !c.resolved; }).length;
+        var resolvedCount = court._resolvedCount || 0;
+
+        // Header
+        html += '<div style="background:linear-gradient(135deg,rgba(80,120,200,0.15),rgba(80,120,200,0.05));border:1px solid rgba(80,120,200,0.3);border-radius:8px;padding:12px;margin-bottom:10px;">';
+        html += '<div style="font-size:0.9rem;font-weight:bold;color:#5dade2;">⚖️ Royal Court Session</div>';
+        html += '<div style="font-size:0.78rem;color:#ccc;margin-top:4px;">' + unresolvedCount + ' case' + (unresolvedCount !== 1 ? 's' : '') + ' pending • ' + resolvedCount + ' resolved</div>';
+        if (court.nobles && court.nobles.length > 0) {
+            html += '<div style="font-size:0.72rem;color:#aaa;margin-top:4px;">👥 Nobles attending: ';
+            for (var ni = 0; ni < Math.min(court.nobles.length, 8); ni++) {
+                html += (ni > 0 ? ', ' : '') + escapeHtml(court.nobles[ni].name);
+            }
+            if (court.nobles.length > 8) html += ' +' + (court.nobles.length - 8) + ' more';
+            html += '</div>';
+        }
+        html += '</div>';
+
+        // Cases — unresolved first
+        var categories = { commoner: { icon: '👨‍🌾', color: '#a8d5a2' }, noble: { icon: '👑', color: '#f0c040' }, criminal: { icon: '⚖️', color: '#c44e52' }, military: { icon: '⚔️', color: '#5dade2' }, clergy: { icon: '⛪', color: '#c8a0ff' }, diplomacy: { icon: '🕊️', color: '#55a868' } };
+        var unresolved = court.cases.filter(function(c) { return !c.resolved; });
+        var resolved = court.cases.filter(function(c) { return c.resolved; });
+
+        if (unresolved.length > 0) {
+            html += '<div style="margin-bottom:8px;font-size:0.82rem;font-weight:bold;color:#ddd;">📋 Pending Cases</div>';
+            for (var ui = 0; ui < unresolved.length; ui++) {
+                var uc = unresolved[ui];
+                var catDef = categories[uc.category] || { icon: '📜', color: '#ccc' };
+                html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(80,120,200,0.2);border-radius:6px;padding:10px;margin-bottom:6px;">';
+                html += '<div style="font-size:0.82rem;font-weight:bold;color:' + catDef.color + ';">' + uc.icon + ' ' + escapeHtml(uc.title) + '</div>';
+                html += '<div style="font-size:0.72rem;color:#bbb;margin:4px 0 8px 0;">' + escapeHtml(uc.desc) + '</div>';
+                html += '<div style="display:flex;gap:4px;flex-wrap:wrap;">';
+                html += '<button class="btn-medieval" data-action="resolveCourtCase" data-id="' + uc.id + '" data-val="grant" data-kingdom="' + kingdomId + '" style="font-size:0.7rem;padding:3px 10px;background:rgba(85,168,104,0.3);border-color:rgba(85,168,104,0.5);">✅ Grant</button>';
+                html += '<button class="btn-medieval" data-action="resolveCourtCase" data-id="' + uc.id + '" data-val="deny" data-kingdom="' + kingdomId + '" style="font-size:0.7rem;padding:3px 10px;background:rgba(196,78,82,0.3);border-color:rgba(196,78,82,0.5);">❌ Deny</button>';
+                html += '<button class="btn-medieval" data-action="resolveCourtCase" data-id="' + uc.id + '" data-val="compromise" data-kingdom="' + kingdomId + '" style="font-size:0.7rem;padding:3px 10px;background:rgba(230,126,34,0.3);border-color:rgba(230,126,34,0.5);">🤝 Compromise</button>';
+                if (court.nobles && court.nobles.length > 0) {
+                    html += '<button class="btn-medieval" data-action="resolveCourtCase" data-id="' + uc.id + '" data-val="delegate" data-kingdom="' + kingdomId + '" style="font-size:0.7rem;padding:3px 10px;background:rgba(93,173,226,0.3);border-color:rgba(93,173,226,0.5);">📋 Delegate</button>';
+                }
+                html += '</div>';
+                // Show effect previews
+                html += '<div style="font-size:0.65rem;color:#777;margin-top:4px;">';
+                var _previewGrant = [], _previewDeny = [], _previewComp = [];
+                if (uc.grantEffect.happiness) _previewGrant.push((uc.grantEffect.happiness > 0 ? '+' : '') + uc.grantEffect.happiness + ' happ');
+                if (uc.grantEffect.treasury) _previewGrant.push((uc.grantEffect.treasury > 0 ? '+' : '') + uc.grantEffect.treasury + 'g');
+                if (uc.grantEffect.loyA) _previewGrant.push('Noble loyalty ' + (uc.grantEffect.loyA > 0 ? '+' : '') + uc.grantEffect.loyA);
+                if (uc.denyEffect.happiness) _previewDeny.push((uc.denyEffect.happiness > 0 ? '+' : '') + uc.denyEffect.happiness + ' happ');
+                if (uc.compromiseEffect.happiness) _previewComp.push((uc.compromiseEffect.happiness > 0 ? '+' : '') + uc.compromiseEffect.happiness + ' happ');
+                if (uc.compromiseEffect.treasury) _previewComp.push((uc.compromiseEffect.treasury > 0 ? '+' : '') + uc.compromiseEffect.treasury + 'g');
+                if (_previewGrant.length > 0) html += 'Grant: ' + _previewGrant.join(', ') + ' · ';
+                if (_previewDeny.length > 0) html += 'Deny: ' + _previewDeny.join(', ') + ' · ';
+                if (_previewComp.length > 0) html += 'Compromise: ' + _previewComp.join(', ');
+                html += '</div>';
+                html += '</div>';
+            }
+        }
+
+        // Resolved cases (collapsed)
+        if (resolved.length > 0) {
+            html += '<div style="margin-top:8px;border-top:1px solid rgba(80,120,200,0.2);padding-top:8px;">';
+            html += '<div style="font-size:0.78rem;font-weight:bold;color:#888;margin-bottom:4px;">✅ Resolved Cases (' + resolved.length + ')</div>';
+            html += '<div style="max-height:100px;overflow-y:auto;">';
+            for (var ri = 0; ri < resolved.length; ri++) {
+                var rc = resolved[ri];
+                var resColor = rc.resolution === 'grant' ? '#55a868' : rc.resolution === 'deny' ? '#c44e52' : '#e67e22';
+                html += '<div style="font-size:0.68rem;color:#777;margin-bottom:2px;">' + rc.icon + ' ' + escapeHtml(rc.title) + ' — <span style="color:' + resColor + ';">' + (rc.resolution || '').toUpperCase() + '</span></div>';
+            }
+            html += '</div></div>';
+        }
+
+        // Court events log
+        if (court.events && court.events.length > 0) {
+            html += '<div style="margin-top:8px;border-top:1px solid rgba(80,120,200,0.2);padding-top:8px;">';
+            html += '<div style="font-size:0.78rem;font-weight:bold;color:#5dade2;margin-bottom:4px;">📰 Court Events</div>';
+            html += '<div style="max-height:120px;overflow-y:auto;">';
+            for (var ei = court.events.length - 1; ei >= Math.max(0, court.events.length - 10); ei--) {
+                html += '<div style="font-size:0.68rem;color:#aaa;margin-bottom:2px;padding:2px 6px;background:rgba(0,0,0,0.15);border-radius:3px;">' + escapeHtml(court.events[ei]) + '</div>';
+            }
+            html += '</div></div>';
+        }
+
+        var footerHtml = '<button class="btn-medieval" data-action="kingBackToDecisions">Back to Decisions</button>';
+        openModal('⚖️ Royal Court', html, footerHtml);
+    }
+    UI.openCourtSessionDialog = openCourtSessionDialog;
+
+    UI.registerAction('resolveCourtCase', function(_t, d) {
+        var r = Engine.resolveCourtCase ? Engine.resolveCourtCase(d.kingdom, d.id, d.val) : { success: false, message: 'Not available.' };
+        if (r.success) {
+            toast(r.message, 'success');
+            // Show noble reactions
+            if (r.nobleReactions && r.nobleReactions.length > 0) {
+                for (var nri = 0; nri < r.nobleReactions.length; nri++) {
+                    toast(r.nobleReactions[nri], 'info');
+                }
+            }
+        } else {
+            toast(r.message, 'warning');
+        }
+        // Refresh court dialog
+        if (r.allResolved) {
+            UI.openKingPanel('decisions');
+        } else {
+            UI.openCourtSessionDialog(d.kingdom);
+        }
+    });
+
+    UI.registerAction('kingBackToDecisions', function() { UI.openKingPanel('decisions'); });
+
+    // ═══════════════════════════════════════════════════════════
+    // §INVESTIGATION — Investigation Panel (King investigates noble)
+    // ═══════════════════════════════════════════════════════════
+
+    function openInvestigationPanel(nobleId, nobleName) {
+        var html = '';
+        html += '<div style="background:linear-gradient(135deg,rgba(93,173,226,0.12),rgba(93,173,226,0.04));border:1px solid rgba(93,173,226,0.3);border-radius:8px;padding:12px;margin-bottom:10px;">';
+        html += '<div style="font-size:0.9rem;font-weight:bold;color:#5dade2;">🔍 Investigate ' + escapeHtml(nobleName) + '</div>';
+        html += '<div style="font-size:0.72rem;color:#aaa;margin-top:4px;">Choose your investigation method. Each has different costs, risks, and information revealed.</div>';
+        html += '</div>';
+
+        // Show existing dossier info
+        var dossier = null;
+        try { dossier = Player.state && Player.state._nobleDossier ? Player.state._nobleDossier[nobleId] : null; } catch(e) {}
+        if (dossier) {
+            html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(93,173,226,0.15);border-radius:6px;padding:8px;margin-bottom:8px;">';
+            html += '<div style="font-size:0.78rem;font-weight:bold;color:#ddd;margin-bottom:4px;">📁 Current Dossier</div>';
+            if (dossier.loyalty != null) html += '<div style="font-size:0.7rem;color:#aaa;">Loyalty: <span style="color:' + (dossier.loyalty >= 60 ? '#55a868' : dossier.loyalty >= 40 ? '#e0c58a' : '#c44e52') + ';">' + Math.round(dossier.loyalty) + '</span></div>';
+            if (dossier.fear != null) html += '<div style="font-size:0.7rem;color:#aaa;">Fear: ' + Math.round(dossier.fear) + '</div>';
+            if (dossier.wealth != null) html += '<div style="font-size:0.7rem;color:#aaa;">Wealth: ~' + dossier.wealth + 'g</div>';
+            var pTraits = Object.keys(dossier.personality || {});
+            if (pTraits.length > 0) {
+                html += '<div style="font-size:0.7rem;color:#aaa;">Traits: ';
+                for (var pi = 0; pi < pTraits.length; pi++) {
+                    var val = dossier.personality[pTraits[pi]];
+                    html += (pi > 0 ? ', ' : '') + pTraits[pi] + ': ' + (val > 70 ? '<span style="color:#55a868;">high</span>' : val > 50 ? '<span style="color:#e0c58a;">mid</span>' : '<span style="color:#c44e52;">low</span>');
+                }
+                html += '</div>';
+            }
+            var relKeys = Object.keys(dossier.relationships || {});
+            if (relKeys.length > 0) {
+                html += '<div style="font-size:0.7rem;color:#aaa;">Relationships: ';
+                for (var rli = 0; rli < Math.min(relKeys.length, 4); rli++) {
+                    var rp = null; try { rp = Engine.getPerson(relKeys[rli]); } catch(e) {}
+                    var rn = rp ? (rp.firstName || 'Unknown') : 'Unknown';
+                    var rv = dossier.relationships[relKeys[rli]];
+                    html += (rli > 0 ? ', ' : '') + rn + ': <span style="color:' + (rv > 30 ? '#55a868' : rv < -30 ? '#c44e52' : '#aaa') + ';">' + rv + '</span>';
+                }
+                html += '</div>';
+            }
+            if (dossier._knownConspirator) html += '<div style="font-size:0.7rem;color:#c44e52;font-weight:bold;">⚠️ Known conspirator!</div>';
+            if (dossier._suspiciousFinances) html += '<div style="font-size:0.7rem;color:#e67e22;">⚠️ Suspicious finances</div>';
+            html += '</div>';
+        }
+
+        // Investigation methods
+        var methods = [
+            { id: 'spy', icon: '🕵️', name: 'Hire Spies', cost: 50, desc: 'Reveals loyalty assessment and 1-2 personality traits. Moderate fear increase.', risk: 'Low' },
+            { id: 'bribe_servants', icon: '💰', name: 'Bribe Their Servants', cost: 100, desc: 'Reveals TRUE loyalty, fear, ALL personality, plotting status. Risk: 20% servant reveals bribe.', risk: 'Moderate' },
+            { id: 'search_finances', icon: '📊', name: 'Search Financial Records', cost: 25, desc: 'Reveals wealth, debts, financial stress, suspicious transactions.', risk: 'Low' },
+            { id: 'check_alliances', icon: '🤝', name: 'Check Alliances', cost: 75, desc: 'Reveals all noble alliances and rivalries. Detects conspiracies.', risk: 'Moderate' },
+            { id: 'shadow', icon: '👤', name: 'Shadow the Noble', cost: 50, desc: 'Observes daily activities. Can reveal plotting, secret meetings, habits.', risk: '15% chance spotted' }
+        ];
+
+        for (var mi = 0; mi < methods.length; mi++) {
+            var m = methods[mi];
+            html += '<button class="btn-medieval" data-action="kingInvestigateMethod" data-id="' + nobleId + '" data-val="' + m.id + '" style="display:block;width:100%;text-align:left;padding:8px 12px;margin-bottom:4px;font-size:0.75rem;">';
+            html += m.icon + ' <strong>' + m.name + '</strong> <span style="color:#f0c040;">(' + m.cost + 'g)</span><br>';
+            html += '<span style="font-size:0.68rem;color:#aaa;">' + m.desc + '</span><br>';
+            html += '<span style="font-size:0.62rem;color:#e67e22;">Risk: ' + m.risk + '</span>';
+            html += '</button>';
+        }
+
+        var footerHtml = '<button class="btn-medieval" data-action="kingBackToCourt">Back to Court</button>';
+        openModal('🔍 Investigation: ' + escapeHtml(nobleName), html, footerHtml);
+    }
+    UI.openInvestigationPanel = openInvestigationPanel;
+
+    function openInvestigationResults(nobleId, result) {
+        var html = '';
+        html += '<div style="background:rgba(93,173,226,0.1);border:1px solid rgba(93,173,226,0.3);border-radius:8px;padding:12px;margin-bottom:10px;">';
+        html += '<div style="font-size:0.9rem;font-weight:bold;color:#5dade2;">🔍 Investigation Results</div>';
+        html += '<div style="font-size:0.72rem;color:#aaa;margin-top:4px;">Method: ' + escapeHtml(result.method || 'Unknown') + ' (Cost: ' + (result.cost || 0) + 'g)</div>';
+        html += '</div>';
+
+        if (result.results && result.results.length > 0) {
+            html += '<div style="background:rgba(0,0,0,0.2);border-radius:6px;padding:10px;">';
+            for (var ri = 0; ri < result.results.length; ri++) {
+                var isWarning = result.results[ri].indexOf('⚠️') >= 0;
+                html += '<div style="font-size:0.78rem;color:' + (isWarning ? '#c44e52' : '#ccc') + ';margin-bottom:4px;padding:4px 8px;background:rgba(0,0,0,0.15);border-radius:4px;">';
+                html += escapeHtml(result.results[ri]);
+                html += '</div>';
+            }
+            html += '</div>';
+        }
+
+        var nobleName = '';
+        try { var np = Engine.getPerson(nobleId); if (np) nobleName = (np.firstName || '') + ' ' + (np.lastName || ''); } catch(e) {}
+
+        var footerHtml = '<button class="btn-medieval" data-action="kingInvestigateNoble" data-id="' + nobleId + '">🔍 Investigate Again</button> ';
+        footerHtml += '<button class="btn-medieval" data-action="kingBackToCourt">Back to Court</button>';
+        openModal('🔍 Results: ' + escapeHtml(nobleName.trim()), html, footerHtml);
+    }
+    UI.openInvestigationResults = openInvestigationResults;
+
+    // ═══════════════════════════════════════════════════════════
+    // §FEAST-KING — Enhanced Feast Dialog for King (noble selection)
+    // ═══════════════════════════════════════════════════════════
+
+    // Register action for king-specific feast actions with noble selection
+    UI.registerAction('doKingFeastAction', function(_t, d) {
+        var kingdomId = d.kingdom;
+        var actionId = d.id;
+        // Set selected noble if applicable
+        var nobleSelect = document.getElementById('_feastNobleSelect');
+        if (nobleSelect && nobleSelect.value) {
+            try { Engine.setFeastSelectedNoble(kingdomId, nobleSelect.value); } catch(e) {}
+        }
+        // Set selected decree if applicable
+        var decreeSelect = document.getElementById('_feastDecreeSelect');
+        if (decreeSelect && decreeSelect.value) {
+            try { Engine.setFeastSelectedDecree(kingdomId, decreeSelect.value); } catch(e) {}
+        }
+        var r = Engine.doFeastAction ? Engine.doFeastAction(kingdomId, actionId) : null;
+        toast(r && r.message ? r.message : 'Action performed.', r && r.success ? 'success' : 'warning');
+        UI.openFeastDialog(kingdomId);
     });
 
 })(window.UI);
