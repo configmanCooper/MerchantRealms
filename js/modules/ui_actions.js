@@ -2969,8 +2969,235 @@ function confirmTravel(townId, optionId) {
         }
     }
 
-    // No quarantine or player passes freely — execute travel
+    // Check siege before executing travel (skip for god mode warp)
+    if (optionId !== 'god_warp') {
+        var _sTown = typeof Engine !== 'undefined' && Engine.findTown ? Engine.findTown(townId) : null;
+        if (_sTown && _sTown.siege) {
+            _showSiegeEntryPopup(townId, optionId, _sTown);
+            return;
+        }
+    }
+
+    // No quarantine or siege — execute travel
     _executeTravel(townId, opt);
+}
+
+// ── SIEGE ENTRY POPUP ──
+function _showSiegeEntryPopup(townId, optionId, town) {
+    var siege = town.siege;
+    var attackK = typeof Engine !== 'undefined' && Engine.findKingdom ? Engine.findKingdom(siege.attackerKingdomId) : null;
+    var defendK = typeof Engine !== 'undefined' && Engine.findKingdom ? Engine.findKingdom(siege.defenderKingdomId) : null;
+    var attackName = attackK ? attackK.name : 'Attackers';
+    var defendName = defendK ? defendK.name : 'Defenders';
+    var army = null;
+    if (typeof Engine !== 'undefined' && Engine.getWorld) {
+        var _w = Engine.getWorld();
+        if (_w && _w.armies) army = _w.armies.find(function(a) { return a.id === siege.armyId; });
+    }
+    var attackStrength = army ? army.soldiers : 50;
+    var defendStrength = (town.garrison || 0) + (town.garrisonMilitary || 0);
+    var totalStrength = attackStrength + defendStrength;
+    var attackPct = totalStrength > 0 ? Math.round(attackStrength / totalStrength * 100) : 50;
+    var defendPct = 100 - attackPct;
+
+    // Sneak chance — base 30%, +10% discrete, +5% street_smart
+    var sneakChance = 0.30;
+    if (typeof Player !== 'undefined' && Player.hasSkill) {
+        if (Player.hasSkill('discrete')) sneakChance += 0.10;
+        if (Player.hasSkill('street_smart')) sneakChance += 0.05;
+        if (Player.hasSkill('cartographer')) sneakChance += 0.05;
+    }
+    var sneakPct = Math.round(sneakChance * 100);
+
+    // Combat injury/death chances based on side strength
+    var joinAttackWinChance = attackPct;
+    var joinDefendWinChance = defendPct;
+    var combatSkillBonus = 0;
+    if (typeof Player !== 'undefined' && Player.hasSkill) {
+        if (Player.hasSkill('combat_trained')) combatSkillBonus += 10;
+        if (Player.hasSkill('tactical_leader')) combatSkillBonus += 5;
+    }
+
+    var html = '<div style="max-width:480px;">';
+
+    // Header
+    html += '<div style="text-align:center;margin-bottom:12px;">';
+    html += '<div style="font-size:2rem;">⚔️🏰</div>';
+    html += '<div style="font-size:1.2rem;color:var(--gold-bright);font-weight:bold;margin-top:4px;">' + (town.name || 'Town') + ' is Under Siege!</div>';
+    html += '</div>';
+
+    // Siege info
+    html += '<div style="background:rgba(196,78,82,0.15);border:1px solid rgba(196,78,82,0.3);border-radius:6px;padding:10px;margin-bottom:10px;">';
+    html += '<div style="font-size:0.85rem;color:var(--parchment);">⚔️ <strong style="color:#e67e22;">' + attackName + '</strong> (' + attackStrength + ' soldiers) is besieging <strong style="color:#55a868;">' + defendName + '</strong>\'s ' + (town.name || 'town') + ' (' + defendStrength + ' garrison).</div>';
+    html += '<div style="font-size:0.8rem;color:#aaa;margin-top:4px;">Day ' + (siege.daysElapsed || 0) + ' of siege</div>';
+    html += '</div>';
+
+    // Strength bar
+    html += '<div style="margin-bottom:10px;">';
+    html += '<div style="display:flex;justify-content:space-between;font-size:0.75rem;color:var(--parchment);margin-bottom:2px;">';
+    html += '<span>⚔️ ' + attackName + ' ' + attackPct + '%</span><span>🛡️ ' + defendName + ' ' + defendPct + '%</span>';
+    html += '</div>';
+    html += '<div style="height:8px;border-radius:4px;background:rgba(255,255,255,0.1);overflow:hidden;">';
+    html += '<div style="height:100%;width:' + attackPct + '%;background:linear-gradient(90deg,#c44e52,' + (attackPct > 60 ? '#ff6b6b' : '#c44e52') + ');"></div>';
+    html += '</div></div>';
+
+    // OPTIONS
+    html += '<div style="font-size:0.85rem;color:var(--gold);font-weight:bold;margin-bottom:6px;">Choose your action:</div>';
+
+    // 1. Sneak in
+    html += '<div style="margin-bottom:8px;">';
+    html += '<button class="btn-medieval" style="width:100%;padding:8px 10px;font-size:0.9rem;background:rgba(196,78,82,0.25);border:2px solid rgba(196,78,82,0.6);color:#f0e6d2;" data-action="_siegeSneakAttempt" data-id="' + townId + '" data-val="' + optionId + '">🤫 <strong style="color:#fff;">Sneak In</strong> (<span style="color:#e67e22;font-weight:bold;">' + sneakPct + '%</span>)</button>';
+    html += '<div style="font-size:0.7rem;color:#999;margin-top:2px;">Slip past the siege lines unnoticed. Failure means turning back.</div>';
+    html += '</div>';
+
+    // 2. Join attackers
+    html += '<div style="margin-bottom:8px;">';
+    html += '<button class="btn-medieval" style="width:100%;padding:8px 10px;font-size:0.9rem;background:rgba(196,78,82,0.35);border:2px solid rgba(196,78,82,0.7);color:#f0e6d2;" data-action="_siegeJoinSide" data-id="' + townId + '" data-val="' + optionId + '" data-side="attacker" data-win="' + (joinAttackWinChance + combatSkillBonus) + '">⚔️ <strong style="color:#ff6b6b;">Join ' + attackName + '</strong> (Attackers — ~' + Math.min(95, joinAttackWinChance + combatSkillBonus) + '% win)</button>';
+    html += '<div style="font-size:0.7rem;color:#999;margin-top:2px;">⚠️ <strong style="color:#e67e22;">DANGEROUS</strong> — Risk of injury or death. Reputation consequences with both kingdoms.</div>';
+    html += '</div>';
+
+    // 3. Join defenders
+    html += '<div style="margin-bottom:8px;">';
+    html += '<button class="btn-medieval" style="width:100%;padding:8px 10px;font-size:0.9rem;background:rgba(46,204,113,0.25);border:2px solid rgba(46,204,113,0.5);color:#f0e6d2;" data-action="_siegeJoinSide" data-id="' + townId + '" data-val="' + optionId + '" data-side="defender" data-win="' + (joinDefendWinChance + combatSkillBonus) + '">🛡️ <strong style="color:#55a868;">Join ' + defendName + '</strong> (Defenders — ~' + Math.min(95, joinDefendWinChance + combatSkillBonus) + '% win)</button>';
+    html += '<div style="font-size:0.7rem;color:#999;margin-top:2px;">⚠️ <strong style="color:#e67e22;">DANGEROUS</strong> — Risk of injury or death. You enter the town if defenders win.</div>';
+    html += '</div>';
+
+    // 4. Turn back
+    html += '<div style="margin-bottom:4px;">';
+    html += '<button class="btn-medieval" style="width:100%;padding:8px 10px;font-size:0.85rem;background:rgba(255,255,255,0.08);border:2px solid rgba(255,255,255,0.2);color:#aaa;" data-action="_siegeTurnBack">🔙 <strong>Turn Back</strong></button>';
+    html += '</div>';
+
+    html += '</div>';
+    openModal('⚔️ Siege at ' + (town.name || 'Town'), html);
+}
+
+function _siegeSneakAttempt(townId, optionId) {
+    var rng = typeof Engine !== 'undefined' && Engine.getRng ? Engine.getRng() : null;
+    if (!rng) return;
+    var sneakChance = 0.30;
+    if (typeof Player !== 'undefined' && Player.hasSkill) {
+        if (Player.hasSkill('discrete')) sneakChance += 0.10;
+        if (Player.hasSkill('street_smart')) sneakChance += 0.05;
+        if (Player.hasSkill('cartographer')) sneakChance += 0.05;
+    }
+    if (rng.random() < sneakChance) {
+        if (typeof UI !== 'undefined' && UI.toast) UI.toast('🤫 You slipped past the siege lines undetected!', 'success');
+        if (typeof UI !== 'undefined' && UI.closeModal) UI.closeModal();
+        // Find the travel option and execute
+        var options = _travelOptions || [];
+        for (var i = 0; i < options.length; i++) {
+            if (options[i].id === optionId) { _executeTravel(townId, options[i]); return; }
+        }
+    } else {
+        if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚫 Spotted by sentries! You had to turn back.', 'danger');
+        if (typeof UI !== 'undefined' && UI.closeModal) UI.closeModal();
+    }
+}
+
+function _siegeJoinSide(townId, optionId, side, winChance) {
+    var rng = typeof Engine !== 'undefined' && Engine.getRng ? Engine.getRng() : null;
+    if (!rng) return;
+    var town = typeof Engine !== 'undefined' && Engine.findTown ? Engine.findTown(townId) : null;
+    if (!town || !town.siege) { if (typeof UI !== 'undefined' && UI.closeModal) UI.closeModal(); return; }
+    var siege = town.siege;
+
+    var winPct = Math.min(95, Math.max(5, parseInt(winChance) || 50));
+    var won = rng.random() * 100 < winPct;
+    var playerKingdomId = typeof Player !== 'undefined' && Player.state ? Player.state.citizenshipKingdomId : null;
+
+    // Determine allied/enemy kingdoms
+    var alliedKingdomId = side === 'attacker' ? siege.attackerKingdomId : siege.defenderKingdomId;
+    var enemyKingdomId = side === 'attacker' ? siege.defenderKingdomId : siege.attackerKingdomId;
+    var alliedK = typeof Engine !== 'undefined' && Engine.findKingdom ? Engine.findKingdom(alliedKingdomId) : null;
+    var enemyK = typeof Engine !== 'undefined' && Engine.findKingdom ? Engine.findKingdom(enemyKingdomId) : null;
+    var alliedName = alliedK ? alliedK.name : 'Allies';
+
+    if (typeof UI !== 'undefined' && UI.closeModal) UI.closeModal();
+
+    // Injury/death calculation
+    var deathChance = won ? 0.03 : 0.08; // 3% if won, 8% if lost
+    var severeInjuryChance = won ? 0.12 : 0.25;
+    var moderateInjuryChance = won ? 0.25 : 0.35;
+    if (typeof Player !== 'undefined' && Player.hasSkill) {
+        if (Player.hasSkill('combat_trained')) { deathChance *= 0.6; severeInjuryChance *= 0.7; }
+        if (Player.hasSkill('first_aid')) { severeInjuryChance *= 0.8; moderateInjuryChance *= 0.8; }
+    }
+
+    // Check death
+    if (rng.random() < deathChance && !window._godInvincible) {
+        if (typeof Player !== 'undefined' && Player.state) Player.state.deathCause = 'Killed in the siege of ' + (town.name || 'a town');
+        if (typeof Engine !== 'undefined' && Engine.logEvent) Engine.logEvent('💀 ' + (typeof Player !== 'undefined' && Player.state ? Player.state.fullName : 'You') + ' was killed fighting in the siege of ' + (town.name || 'a town') + '!');
+        if (typeof Player !== 'undefined' && Player.handlePlayerDeath) Player.handlePlayerDeath();
+        return;
+    }
+
+    // Check injury
+    var injuryMsg = '';
+    if (rng.random() < severeInjuryChance) {
+        if (typeof Player !== 'undefined' && Player.state) {
+            Player.state.injured = true;
+            Player.state.injurySeverity = 'severe';
+            Player.state.injuryType = 'battle_wound';
+            Player.state.injuryDay = typeof Engine !== 'undefined' && Engine.getDay ? Engine.getDay() : 0;
+        }
+        injuryMsg = ' You suffered a severe battle wound!';
+    } else if (rng.random() < moderateInjuryChance) {
+        if (typeof Player !== 'undefined' && Player.state) {
+            Player.state.injured = true;
+            Player.state.injurySeverity = 'moderate';
+            Player.state.injuryType = 'battle_wound';
+            Player.state.injuryDay = typeof Engine !== 'undefined' && Engine.getDay ? Engine.getDay() : 0;
+        }
+        injuryMsg = ' You suffered a moderate wound.';
+    }
+
+    if (won) {
+        // Reputation gains with allied kingdom
+        if (typeof Player !== 'undefined' && Player.state) {
+            Player.state.reputation = Player.state.reputation || {};
+            Player.state.reputation[alliedKingdomId] = Math.min(100, (Player.state.reputation[alliedKingdomId] || 50) + 3);
+            // +5 relationship with allied king
+            if (alliedK && alliedK.kingId) {
+                if (typeof Player !== 'undefined' && Player.modifyRelationship) Player.modifyRelationship(alliedK.kingId, 5, 'battle_ally');
+            }
+            // +2 with all allied nobles
+            var _people = typeof Engine !== 'undefined' && Engine.getPeople ? Engine.getPeople() : [];
+            for (var _i = 0; _i < _people.length; _i++) {
+                var _p = _people[_i];
+                if (_p.alive && _p.socialRank && (_p.socialRank[alliedKingdomId] || 0) >= 4) {
+                    if (typeof Player !== 'undefined' && Player.modifyRelationship) Player.modifyRelationship(_p.id, 2, 'battle_ally');
+                }
+            }
+            // Reputation loss with enemy
+            Player.state.reputation[enemyKingdomId] = Math.max(0, (Player.state.reputation[enemyKingdomId] || 50) - 1);
+            if (enemyK && enemyK.kingId) {
+                if (typeof Player !== 'undefined' && Player.modifyRelationship) Player.modifyRelationship(enemyK.kingId, -2, 'battle_enemy');
+            }
+        }
+        if (typeof Engine !== 'undefined' && Engine.logEvent) Engine.logEvent('⚔️ You fought alongside ' + alliedName + ' and won the battle!' + injuryMsg);
+        if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚔️ Victory! You helped ' + alliedName + ' win! +3 kingdom rep.' + injuryMsg, 'success');
+
+        // If defending side won, player enters the town
+        if (side === 'defender') {
+            var options = _travelOptions || [];
+            for (var i = 0; i < options.length; i++) {
+                if (options[i].id === optionId) { _executeTravel(townId, options[i]); return; }
+            }
+        }
+    } else {
+        // Lost the battle
+        if (typeof Player !== 'undefined' && Player.state) {
+            Player.state.reputation = Player.state.reputation || {};
+            Player.state.reputation[alliedKingdomId] = Math.min(100, (Player.state.reputation[alliedKingdomId] || 50) + 1); // still get some rep for trying
+        }
+        if (typeof Engine !== 'undefined' && Engine.logEvent) Engine.logEvent('⚔️ You fought alongside ' + alliedName + ' but your side was defeated.' + injuryMsg);
+        if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚔️ Defeat! ' + alliedName + ' lost the battle.' + injuryMsg, 'danger');
+    }
+}
+
+function _siegeTurnBack() {
+    if (typeof UI !== 'undefined' && UI.closeModal) UI.closeModal();
+    if (typeof UI !== 'undefined' && UI.toast) UI.toast('🔙 You turned back from the besieged town.', 'info');
 }
 
 function _showQuarantinePopup(townId, optionId, qInfo) {
@@ -3670,6 +3897,9 @@ function clickTown(townId) {
     UI._quarantineSneakAttempt = _quarantineSneakAttempt;
     UI._quarantineBribeAttempt = _quarantineBribeAttempt;
     UI._quarantineDoctorPersuade = _quarantineDoctorPersuade;
+    UI._siegeSneakAttempt      = _siegeSneakAttempt;
+    UI._siegeJoinSide          = _siegeJoinSide;
+    UI._siegeTurnBack          = _siegeTurnBack;
     UI.showRouteDangerDetail   = showRouteDangerDetail;
     UI.turnBackUI              = turnBackUI;
     UI.stopTravelUI            = stopTravelUI;
@@ -3782,6 +4012,9 @@ function clickTown(townId) {
     UI.registerAction('confirmTravel', function(_t, d) { UI.confirmTravel(d.id, d.val); });
     UI.registerAction('_quarantineSneakAttempt', function(_t, d) { UI._quarantineSneakAttempt(d.id, d.val); });
     UI.registerAction('_quarantineDoctorPersuade', function(_t, d) { UI._quarantineDoctorPersuade(d.id, d.val); });
+    UI.registerAction('_siegeSneakAttempt', function(_t, d) { UI._siegeSneakAttempt(d.id, d.val); });
+    UI.registerAction('_siegeJoinSide', function(_t, d) { UI._siegeJoinSide(d.id, d.val, d.side, d.win); });
+    UI.registerAction('_siegeTurnBack', function() { UI._siegeTurnBack(); });
     UI.registerAction('installShipAddon', function(_t, d) { UI.installShipAddon(d.id, d.val); });
 
     // Numeric-arg handlers (data-idx)

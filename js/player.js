@@ -15638,6 +15638,119 @@
         }
     }
 
+    // ── NOBLE ARMY LEADERSHIP ORDER ──
+    // King AI may order the player (if noble rank 4-5) to lead an army
+    function tickNobleArmyLeaderOrder() {
+        if (player.isKing || !player.alive) return;
+        if (player._armyLeaderActive) return; // already leading
+        var kId = player.citizenshipKingdomId;
+        if (!kId) return;
+        var rank = player.socialRank[kId] || 0;
+        if (rank < 4 || rank > 5) return; // must be minor noble or lord
+        var k = Engine.findKingdom(kId);
+        if (!k || !k.atWar || k.atWar.size === 0) return;
+
+        // Check if pending order exists
+        if (player._pendingArmyLeaderOrder) {
+            var order = player._pendingArmyLeaderOrder;
+            // Order expires after 2 days without response
+            if (Engine.getDay() > order.issuedDay + 2) {
+                // Player ignored the order — lose rep and relationship
+                player.reputation[kId] = Math.max(0, (player.reputation[kId] || 50) - 10);
+                if (k.kingId) modifyRelationship(k.kingId, -20, 'defied_order');
+                Engine.logEvent('👑 You failed to respond to the king\'s order to lead the army. The king is displeased.');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('👑 The king is furious that you ignored his order! -10 kingdom rep, -20 king relationship.', 'danger', 'kingdom');
+                player._pendingArmyLeaderOrder = null;
+            }
+            return;
+        }
+
+        // Check every 15 days if the AI king wants to assign a noble leader
+        var day = Engine.getDay();
+        if (day % 15 !== 0) return;
+        var rng = Engine.getRng();
+        if (!rng) return;
+
+        // King personality affects likelihood
+        var personality = k.kingPersonality || {};
+        var assignChance = 0.10; // 10% base every 15 days
+        if (personality.military === 'warlike') assignChance = 0.20;
+        if (personality.military === 'aggressive') assignChance = 0.15;
+
+        // Check if there are armies without leaders
+        var armies = Engine.getArmies ? Engine.getArmies() : [];
+        var leaderlessArmies = armies.filter(function(a) {
+            return a.kingdomId === kId && !a.leaderId && a.soldiers >= 15;
+        });
+        if (leaderlessArmies.length === 0) return;
+        if (!rng.chance(assignChance)) return;
+
+        // Issue the order
+        var targetArmy = leaderlessArmies[rng.randInt(0, leaderlessArmies.length - 1)];
+        var targetTown = Engine.findTown(targetArmy.toTownId);
+        player._pendingArmyLeaderOrder = {
+            armyId: targetArmy.id,
+            targetTownName: targetTown ? targetTown.name : 'the front',
+            soldiers: targetArmy.soldiers,
+            issuedDay: day,
+            kingdomId: kId
+        };
+        Engine.logEvent('👑 The king orders you to lead the army attacking ' + (targetTown ? targetTown.name : 'the enemy') + '!');
+        if (typeof UI !== 'undefined' && UI.toast) {
+            UI.toast('👑 Royal Order: Lead the army to ' + (targetTown ? targetTown.name : 'battle') + '! (' + targetArmy.soldiers + ' soldiers)', 'warning', 'kingdom');
+        }
+    }
+
+    function respondToArmyLeaderOrder(accept) {
+        if (!player._pendingArmyLeaderOrder) return { success: false, message: 'No pending order.' };
+        var order = player._pendingArmyLeaderOrder;
+        var kId = order.kingdomId;
+        var k = Engine.findKingdom(kId);
+
+        if (accept) {
+            // Find the army
+            var armies = Engine.getArmies ? Engine.getArmies() : [];
+            var army = armies.find(function(a) { return a.id === order.armyId; });
+            if (!army || army.soldiers <= 0) {
+                player._pendingArmyLeaderOrder = null;
+                return { success: false, message: 'The army no longer exists.' };
+            }
+            army.leaderId = 'player';
+            player._armyLeaderActive = {
+                armyId: army.id,
+                startDay: Engine.getDay(),
+                kingdomId: kId
+            };
+            // Auto-travel to where the army is headed
+            if (army.toTownId && army.toTownId !== player.townId) {
+                player.autoTravelTarget = army.toTownId;
+            }
+            player._pendingArmyLeaderOrder = null;
+            Engine.logEvent('⚔️ You accepted the order to lead the army! March to ' + order.targetTownName + '.');
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚔️ You are now leading the army! Travel to ' + order.targetTownName + '.', 'success');
+            return { success: true, message: 'You are now leading the army.' };
+        } else {
+            // Refuse — severe consequences
+            player.reputation[kId] = Math.max(0, (player.reputation[kId] || 50) - 10);
+            if (k && k.kingId) modifyRelationship(k.kingId, -20, 'refused_order');
+            // Other nobles may also lose respect
+            var people = Engine.getPeople ? Engine.getPeople() : [];
+            for (var _i = 0; _i < people.length; _i++) {
+                var _p = people[_i];
+                if (_p.alive && _p.socialRank && (_p.socialRank[kId] || 0) >= 4) {
+                    // Loyal nobles dislike refusers
+                    if ((_p.kingLoyalty || 50) >= 60) {
+                        modifyRelationship(_p.id, -3, 'coward');
+                    }
+                }
+            }
+            player._pendingArmyLeaderOrder = null;
+            Engine.logEvent('❌ You refused the king\'s order to lead the army. This will not be forgotten.');
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('❌ Refused royal order! -10 kingdom rep, -20 king relationship.', 'danger', 'kingdom');
+            return { success: true, message: 'You refused. The king is displeased.' };
+        }
+    }
+
     function tickMilitaryCareer() {
         if (!player.militaryActive || !player.alive) return;
 
@@ -16549,6 +16662,11 @@
             pendingWorkPay: player.pendingWorkPay || 0,
             pendingWorkName: player.pendingWorkName || '',
             workDaysCompleted: player.workDaysCompleted || 0,
+            // Hidden patronage discount
+            _patronageDiscount: player._patronageDiscount ? structuredClone(player._patronageDiscount) : null,
+            // Noble army leadership
+            _pendingArmyLeaderOrder: player._pendingArmyLeaderOrder ? structuredClone(player._pendingArmyLeaderOrder) : null,
+            _armyLeaderActive: player._armyLeaderActive ? structuredClone(player._armyLeaderActive) : null,
             // Outposts
             outposts: structuredClone(player.outposts || []),
             // Conscription
@@ -16968,6 +17086,9 @@
         player.pendingWorkPay = data.pendingWorkPay || 0;
         player.pendingWorkName = data.pendingWorkName || '';
         player.workDaysCompleted = data.workDaysCompleted || 0;
+        player._patronageDiscount = data._patronageDiscount || null;
+        player._pendingArmyLeaderOrder = data._pendingArmyLeaderOrder || null;
+        player._armyLeaderActive = data._armyLeaderActive || null;
         player._streetTradesCache = null;
         player._streetTradesDay = 0;
         // Inventory Capacity
@@ -18599,6 +18720,9 @@
         // Military career tick
         tickMilitaryCareer();
 
+        // Check for king's order to lead an army (if player is a minor noble or lord)
+        tickNobleArmyLeaderOrder();
+
         // Auto-travel job tick
         tickAutoTravelJob();
 
@@ -18677,6 +18801,43 @@
 
         // Check conditions (win conditions now return null and handle themselves)
         checkWinConditions();
+
+        // ── HIDDEN PATRONAGE SYSTEM ──
+        // Every 30 days, check if player has 4+ friends 2 ranks above them.
+        // If so, small chance of a "good word" event reducing promotion costs.
+        // This mechanic is deliberately hidden from the player.
+        if (Engine.getDay() > 30 && Engine.getDay() % 30 === 0) {
+            var _pkId = player.citizenshipKingdomId;
+            var _pRank = _pkId ? (player.socialRank[_pkId] || 0) : 0;
+            if (_pRank < 5 && _pkId) { // only matters if player isn't already Lord+
+                var _targetRank = _pRank + 2;
+                var _highFriends = 0;
+                for (var _pid in player.relationships) {
+                    var _prel = player.relationships[_pid];
+                    if (!_prel || (_prel.level || 0) < 60) continue; // must be friends (60+)
+                    var _pPerson = Engine.findPerson ? Engine.findPerson(_pid) : null;
+                    if (!_pPerson || !_pPerson.alive) continue;
+                    var _pPersonRank = _pPerson.socialRank ? (_pPerson.socialRank[_pkId] || 0) : 0;
+                    if (_pPersonRank >= _targetRank) _highFriends++;
+                }
+                if (_highFriends >= 4) {
+                    // Chance scales: 4 friends = 5%, each extra +5%, max 25%
+                    var _patronChance = Math.min(0.25, 0.05 + (_highFriends - 4) * 0.05);
+                    var _prng = Engine.getRng();
+                    if (_prng && _prng.random() < _patronChance) {
+                        if (!player._patronageDiscount) player._patronageDiscount = {};
+                        player._patronageDiscount[_pkId] = {
+                            goldReduction: 0.25,
+                            feeReduction: 0.25,
+                            grantedDay: Engine.getDay(),
+                            expiresDay: Engine.getDay() + 180
+                        };
+                        Engine.logEvent('Several influential figures spoke highly of you to the court. Your path to advancement may be easier now.');
+                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('✨ Influential friends put in a good word for you at court! Promotion costs may be reduced.', 'success', 'social');
+                    }
+                }
+            }
+        }
     }
 
     // ========================================================
@@ -19479,6 +19640,13 @@
             _comDiscount = 0.90;
             _comDiscountStr = ' (10% noble marriage discount)';
         }
+        // Hidden patronage discount (stacks with marriage)
+        var _patronDisc = player._patronageDiscount && player._patronageDiscount[kId];
+        if (_patronDisc && _patronDisc.expiresDay > Engine.getDay()) {
+            _comDiscount *= (1 - (_patronDisc.goldReduction || 0));
+            var _feeExtra = _patronDisc.feeReduction || 0;
+            _comDiscountStr += _comDiscountStr ? ' + patronage' : ' (patronage)';
+        }
         var effectiveGoldReq = Math.floor(nextRank.goldReq * _comDiscount);
         if (goldEarned < effectiveGoldReq) reasons.push(`Need ${effectiveGoldReq.toLocaleString()}g earned (have ${Math.floor(goldEarned).toLocaleString()}g)${_comDiscountStr}`);
 
@@ -19693,6 +19861,11 @@
         var _comDiscount = 1.0;
         if (_mw && _mw.spouseRank >= 2 && (nextRank.id === 'burgher' || nextRank.id === 'guildmaster')) _comDiscount = 0.75;
         if (_mw && _mw.spouseRank >= nextRank.index && (nextRank.id === 'minor_noble' || nextRank.id === 'lord' || nextRank.id === 'royal_advisor')) _comDiscount = 0.90;
+        // Hidden patronage discount
+        var _patronDisc = player._patronageDiscount && player._patronageDiscount[kId];
+        if (_patronDisc && _patronDisc.expiresDay > Engine.getDay()) {
+            _comDiscount *= (1 - (_patronDisc.goldReduction || 0));
+        }
         var effectiveGoldReq = Math.floor(nextRank.goldReq * _comDiscount);
         var effectiveRepReq = nextRank.repReq;
         if (hasSkill('royal_favor')) effectiveRepReq = Math.floor(effectiveRepReq * 0.75);
@@ -25866,6 +26039,69 @@
             modifyRelationship(job.npcId, 3, 'employer');
         }
 
+        // ── JOB PERKS: Low-paying jobs give extra benefits ──
+        var jobPerkMsg = '';
+        if (finalPay <= 6 && rng && town) {
+            var _jobPerkTable = {
+                'Help at the bakery':        { relationship: true, goodChance: 0.15, goods: ['bread'], goodQty: 1, skillAfter: 45, skill: 'herbalism', skillName: 'Herbalism' },
+                'Help on the farm':          { relationship: true, goodChance: 0.12, goods: ['wheat', 'eggs'], goodQty: 2, skillAfter: 40, skill: 'soil_knowledge', skillName: 'Soil Knowledge' },
+                'Assist the tailor':         { relationship: true, goodChance: 0.10, goods: ['cloth'], goodQty: 1, skillAfter: 50, skill: 'efficient_builder', skillName: 'Crafting' },
+                'Load cargo at the dock':    { relationship: true, goodChance: 0.12, goods: ['rope', 'salt', 'fish'], goodQty: 1, skillAfter: 30, skill: 'expert_navigator', skillName: 'Seafaring' },
+                'Tend a market stall':       { relationship: true, nobleChance: 0.008, goodChance: 0, skillAfter: 60, skill: 'smooth_talker', skillName: 'Smooth Talker' },
+                'Organize warehouse inventory': { relationship: true, goodChance: 0.08, goods: ['planks', 'iron'], goodQty: 1 },
+                'Assist at the smithy':      { relationship: true, goodChance: 0.07, goods: ['iron', 'tools'], goodQty: 1, skillAfter: 55, skill: 'efficient_builder', skillName: 'Crafting' },
+            };
+            var _perk = _jobPerkTable[job.name];
+            if (_perk) {
+                // Build relationship with 1-2 random NPCs working in the same town
+                if (_perk.relationship) {
+                    var _townPeople = Engine.getPeopleInTown ? Engine.getPeopleInTown(town.id) : [];
+                    var _coworkers = _townPeople.filter(function(p) { return p.alive && p.id && p.age >= 16; });
+                    if (_coworkers.length > 0) {
+                        var _numRels = rng.randInt(1, 2);
+                        for (var _ri = 0; _ri < _numRels && _ri < _coworkers.length; _ri++) {
+                            var _rp = _coworkers[rng.randInt(0, _coworkers.length - 1)];
+                            if (_rp && _rp.id) modifyRelationship(_rp.id, 1, 'coworker');
+                        }
+                    }
+                }
+                // Chance to receive a free good (cheap goods: ~every 5-10 days)
+                if (_perk.goodChance > 0 && _perk.goods && rng.random() < _perk.goodChance) {
+                    var _giftGood = _perk.goods[rng.randInt(0, _perk.goods.length - 1)];
+                    var _giftRes = findResource(_giftGood);
+                    var _giftName = _giftRes ? _giftRes.name : _giftGood;
+                    var _giftWeight = _giftRes ? (_giftRes.weight || 1) : 1;
+                    var _carriedW = Player.getCarriedWeight();
+                    var _carryC = Player.getCarryCapacity();
+                    if (_carriedW + _giftWeight * (_perk.goodQty || 1) <= _carryC) {
+                        player.inventory[_giftGood] = (player.inventory[_giftGood] || 0) + (_perk.goodQty || 1);
+                        jobPerkMsg += ' 🎁 Your employer gave you ' + (_perk.goodQty || 1) + ' ' + _giftName + '!';
+                    }
+                }
+                // Rare chance to get in good graces of a noble (big break: ~every 90-120 days)
+                if (_perk.nobleChance && rng.random() < _perk.nobleChance) {
+                    var _allNobles = (Engine.getPeople ? Engine.getPeople() : []).filter(function(p) {
+                        return p.alive && p.townId === town.id && p.socialRank && p.socialRank[town.kingdomId] >= 4;
+                    });
+                    if (_allNobles.length > 0) {
+                        var _luckyNoble = _allNobles[rng.randInt(0, _allNobles.length - 1)];
+                        modifyRelationship(_luckyNoble.id, 8, 'patron');
+                        jobPerkMsg += ' ✨ ' + (_luckyNoble.firstName || 'A noble') + ' noticed your hard work and took a liking to you! (+8 relationship)';
+                    }
+                }
+                // Skill learning from sustained low-paying work (separate from JOB_SKILL_THRESHOLDS)
+                if (_perk.skillAfter && _perk.skill && !hasSkill(_perk.skill)) {
+                    var _jpExpKey = '_jobPerkExp_' + job.name.replace(/\s/g, '_');
+                    player[_jpExpKey] = (player[_jpExpKey] || 0) + 1;
+                    if (player[_jpExpKey] >= _perk.skillAfter) {
+                        Player.unlockSkill(_perk.skill);
+                        jobPerkMsg += ' 📚 Through sustained work, you learned ' + _perk.skillName + '!';
+                        player[_jpExpKey] = 0;
+                    }
+                }
+            }
+        }
+
         // Advance ticks instantly — the world simulates forward (capped for safety)
         var ticksToAdvance = Math.min(ticksRequired, 60);
         if (typeof Game !== 'undefined' && Game.advanceTicks) {
@@ -26076,7 +26312,7 @@
         // Journal — job completion
         autoJournalCapture('job', 'Worked as ' + job.name + ' and earned ' + finalPay + 'g for ' + job.hours + ' hours of labor.' + (lootMsg ? ' Found some extra goods too.' : ''), { mood: finalPay >= 30 ? 'content' : 'weary' });
 
-        return { success: true, message: `Completed ${job.name} (${job.hours}hrs, ${ticksRequired} ticks) — earned ${finalPay}g (${payPerTick}g/tick).${lootMsg}${spyEventMsg}${instrumentMsg}${customsMsg}${medHealMsg}` };
+        return { success: true, message: `Completed ${job.name} (${job.hours}hrs, ${ticksRequired} ticks) — earned ${finalPay}g (${payPerTick}g/tick).${lootMsg}${spyEventMsg}${instrumentMsg}${customsMsg}${medHealMsg}${jobPerkMsg}` };
     }
 
     // ========================================================
@@ -36296,6 +36532,9 @@
 
         // Protection Racket
         respondToRacket,
+
+        // Noble Army Leadership
+        respondToArmyLeaderOrder,
 
         // Relationships & courtship
         getRelationship,

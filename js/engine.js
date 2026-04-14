@@ -14610,6 +14610,11 @@
         // Apply morale modifier
         const moraleMod = (army.morale != null) ? Math.max(CONFIG.ARMY_LOW_MORALE_COMBAT_PENALTY, army.morale / 100) : 1.0;
         attackStrength *= moraleMod;
+        // Noble leader effectiveness bonus (25%)
+        if (army.leaderId) {
+            var _leader = findPerson(army.leaderId);
+            if (_leader && _leader.alive) attackStrength *= 1.25;
+        }
         attackStrength *= (1 + rng.randFloat(-CONFIG.BATTLE_RANDOMNESS, CONFIG.BATTLE_RANDOMNESS));
 
         // Defense garrison composition (estimated from town supply)
@@ -14709,6 +14714,11 @@
             // Player soldier battle outcome
             if (_playerInBattle) {
                 _applyPlayerBattleOutcome(rng, _playerInBattle === 'attacker' ? 'attacker_win' : 'defender_loss', town);
+            }
+
+            // Noble army leader outcome — attacker won
+            if (army.leaderId) {
+                _resolveNobleLeaderBattleOutcome(army, 'win', town, rng);
             }
 
             // --- MILITIA CASUALTIES (2-5% of civilian population killed in siege) ---
@@ -14848,6 +14858,11 @@
                 _applyPlayerBattleOutcome(rng, _playerInBattle === 'attacker' ? 'attacker_loss' : 'defender_win', town);
             }
 
+            // Noble army leader outcome — attacker lost
+            if (army.leaderId) {
+                _resolveNobleLeaderBattleOutcome(army, 'loss', town, rng);
+            }
+
             logEvent(`Attack on ${town.name} repelled! The garrison holds.`);
             // Morale tracking (M-3)
             if (defendK) {
@@ -14867,6 +14882,71 @@
             // War goals: defender wins
             if (defendK && attackK) incrementWarGoalBattles(defendK, attackK);
         }
+    }
+
+    // Noble leader battle outcome: win → +5 kingdom rep, +10 king rel; loss → jailed 30-90 days, ransom
+    function _resolveNobleLeaderBattleOutcome(army, outcome, town, rng) {
+        var leader = findPerson(army.leaderId);
+        if (!leader || !leader.alive) { army.leaderId = null; return; }
+        var k = findKingdom(army.kingdomId);
+        var leaderName = (leader.firstName || 'Noble') + ' ' + (leader.lastName || '');
+
+        if (outcome === 'win') {
+            // Victory rewards
+            if (k && k.kingId) {
+                // +10 king relationship
+                if (leader._relationships) {
+                    if (!leader._relationships[k.kingId]) leader._relationships[k.kingId] = 0;
+                    leader._relationships[k.kingId] = Math.min(100, leader._relationships[k.kingId] + 10);
+                }
+            }
+            // +5 kingdom rep
+            if (leader.socialRank && army.kingdomId) {
+                leader.kingdomRep = Math.min(100, (leader.kingdomRep || 50) + 5);
+            }
+            // Small injury chance even on victory (5%)
+            if (rng.chance(0.05)) {
+                leader.injured = true;
+                leader.injuryDay = world.day;
+                leader.injurySeverity = 'moderate';
+                logEvent('⚔️ ' + leaderName + ' was wounded leading the victorious army at ' + (town.name || 'battle') + '.', null, 'military');
+            }
+            // Loyalty boost from victory
+            leader.kingLoyalty = Math.min(100, (leader.kingLoyalty || 50) + 5);
+            logEvent('🏆 ' + leaderName + ' led the army to victory at ' + (town.name || 'battle') + '!', null, 'military');
+        } else {
+            // Defeat — noble captured, jailed
+            var deathChance = 0.02; // extremely unlikely to die
+            if (rng.chance(deathChance)) {
+                leader.alive = false;
+                leader.deathDay = world.day;
+                leader.causeOfDeath = 'Killed leading the army at ' + (town.name || 'battle');
+                logEvent('💀 ' + leaderName + ' was killed leading the army at ' + (town.name || 'battle') + '!', null, 'military');
+            } else {
+                // Jailed by enemy kingdom
+                var jailDays = rng.randInt(30, 90);
+                var ransomCost = rng.randInt(500, 2000);
+                var enemyKingdomId = town.kingdomId;
+                leader._jailed = {
+                    inKingdomId: enemyKingdomId,
+                    untilDay: world.day + jailDays,
+                    ransomCost: ransomCost,
+                    capturedDay: world.day
+                };
+                leader.occupation = 'prisoner';
+                logEvent('⛓️ ' + leaderName + ' was captured after defeat at ' + (town.name || 'battle') + '! Ransom: ' + ransomCost + 'g.', null, 'military');
+                // Check if own king pays ransom (high loyalty + high rep)
+                if (k && k.gold >= ransomCost && (leader.kingLoyalty || 0) >= 60 && (leader.kingdomRep || 0) >= 65) {
+                    if (rng.chance(0.50)) {
+                        k.gold -= ransomCost;
+                        delete leader._jailed;
+                        leader.occupation = null;
+                        logEvent('👑 ' + (k.name || 'The kingdom') + ' paid ' + ransomCost + 'g ransom for ' + leaderName + '.', null, 'kingdom');
+                    }
+                }
+            }
+        }
+        army.leaderId = null; // Leader no longer with army after battle
     }
 
     function resolveFieldBattle(a, b) {

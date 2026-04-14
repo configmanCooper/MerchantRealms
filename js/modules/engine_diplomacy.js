@@ -95,6 +95,58 @@
     var recruitSoldier = function(person, town, kingdom, unitType) { return Engine.recruitSoldier(person, town, kingdom, unitType); };
     var findArmyRoute = function(from, to, kId) { return Engine.findArmyRoute(from, to, kId); };
 
+    // ── Noble Army Leader Selection ──
+    // King AI picks a minor noble or lord (NOT royal advisor) to lead an army
+    function _pickNobleArmyLeader(kingdom, army, world) {
+        if (!kingdom || !world) return null;
+        var rng = world.rng;
+        if (!rng) return null;
+
+        // Check if this king's personality is warlike enough to assign leaders
+        var personality = kingdom.kingPersonality || {};
+        var warlike = personality.military === 'warlike' || personality.military === 'aggressive';
+        var strategic = personality.diplomatic === 'cunning' || personality.diplomatic === 'strategic';
+        // Base chance: 40% for warlike kings, 25% for strategic, 15% for others
+        var assignChance = warlike ? 0.40 : (strategic ? 0.25 : 0.15);
+        // Higher chance for larger armies
+        if (army.soldiers >= 30) assignChance += 0.10;
+        if (army.soldiers >= 60) assignChance += 0.10;
+
+        if (!rng.chance(assignChance)) return null;
+
+        // Skip if player is king of this kingdom (player makes this decision via UI)
+        if (typeof Player !== 'undefined' && Player.isPlayerKing && Player.isPlayerKing()) {
+            var ps = Player.state;
+            if (ps && ps.kingState && ps.kingState.kingdomId === kingdom.id) return null;
+        }
+
+        // Find eligible nobles: minor nobles (rank 4) and lords (rank 5), NOT royal advisors (rank 6)
+        var nobles = (Engine.getPeopleInKingdom ? Engine.getPeopleInKingdom(kingdom.id) : []).filter(function(p) {
+            if (!p.alive || !p.socialRank) return false;
+            var rank = p.socialRank[kingdom.id] || 0;
+            if (rank < 4 || rank > 5) return false; // Only minor nobles and lords
+            if (p._jailed) return false; // Already jailed
+            if (p.occupation === 'prisoner') return false;
+            // Not already leading an army
+            for (var _ai = 0; _ai < world.armies.length; _ai++) {
+                if (world.armies[_ai].leaderId === p.id) return false;
+            }
+            return true;
+        });
+
+        if (nobles.length === 0) return null;
+
+        // Prefer: minor nobles first (more expendable), then lords
+        var minorNobles = nobles.filter(function(n) { return (n.socialRank[kingdom.id] || 0) === 4; });
+        var lords = nobles.filter(function(n) { return (n.socialRank[kingdom.id] || 0) === 5; });
+
+        // 70% chance to pick minor noble if available, 30% lord
+        var pool = (minorNobles.length > 0 && rng.chance(0.70)) ? minorNobles : (lords.length > 0 ? lords : minorNobles);
+        if (pool.length === 0) return null;
+
+        return pool[rng.randInt(0, pool.length - 1)];
+    }
+
     // ── Recruitment Postings Tick: NPCs respond to postings over time ──
     function _tickRecruitmentPostings(k, rng) {
         if (!k._recruitmentPostings || k._recruitmentPostings.length === 0) return;
@@ -5201,6 +5253,13 @@
                     armyObj.legProgress = 0;
                 }
                 world.armies.push(armyObj);
+
+                // Assign a noble leader if king AI decides (minor nobles/lords only, not royal advisors)
+                var _nobleLeader = _pickNobleArmyLeader(kingdom, armyObj, world);
+                if (_nobleLeader) {
+                    armyObj.leaderId = _nobleLeader.id;
+                    logEvent('🏰 ' + (_nobleLeader.firstName || 'A noble') + ' ' + (_nobleLeader.lastName || '') + ' leads the army to ' + tgtT.name + '.', null, 'military');
+                }
 
                 // Track in kingdom._armies for King UI
                 if (!kingdom._armies) kingdom._armies = [];
