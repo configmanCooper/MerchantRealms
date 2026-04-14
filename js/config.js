@@ -1248,6 +1248,7 @@ const CONFIG = {
     ARMY_OFFROAD_SPEED_MULT: 0.3,       // Armies move at 30% speed offroad (big penalty)
     ARMY_SEA_SPEED_MULT: 0.6,           // Armies at 60% speed on sea transports
     ARMY_ROAD_SPEED_MULT: 1.0,          // Normal speed on roads
+    ARMY_BASE_SPEED_RATIO: 0.625,       // Army base speed = caravan speed * this (was 0.5, +25%)
     ARMY_MAX_OFFROAD_RANGE: 4000,       // Max offroad distance between towns for army routing
     ARMY_MIN_GARRISON_RATIO: 0.4,       // Keep at least 40% of garrison when dispatching
 

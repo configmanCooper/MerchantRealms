@@ -2987,7 +2987,7 @@
         var toTown = findTown(toTownId);
         if (!fromTown || !toTown) return null;
 
-        var baseSpeed = CONFIG.CARAVAN_BASE_SPEED * 0.5;
+        var baseSpeed = CONFIG.CARAVAN_BASE_SPEED * (CONFIG.ARMY_BASE_SPEED_RATIO || 0.625);
         var roadMult = CONFIG.ARMY_ROAD_SPEED_MULT || 1.0;
         var offroadMult = CONFIG.ARMY_OFFROAD_SPEED_MULT || 0.3;
         var seaMult = CONFIG.ARMY_SEA_SPEED_MULT || 0.6;
@@ -14259,7 +14259,7 @@
                 }
 
                 var legDist = Math.hypot(legTo.x - legFrom.x, legTo.y - legFrom.y);
-                var baseSpeed = (army.speed || CONFIG.CARAVAN_BASE_SPEED * 0.5);
+                var baseSpeed = (army.speed || CONFIG.CARAVAN_BASE_SPEED * (CONFIG.ARMY_BASE_SPEED_RATIO || 0.625));
                 // Mounted armies travel 25% faster (all cavalry on horseback)
                 if (army.mounted) baseSpeed *= 1.25;
                 // Apply speed modifier based on leg type
@@ -14293,7 +14293,7 @@
             } else {
                 // Legacy: straight-line movement (backwards compatible)
                 const dist = Math.hypot(toTown.x - fromTown.x, toTown.y - fromTown.y);
-                const speed = (army.speed || CONFIG.CARAVAN_BASE_SPEED * 0.5) * (army.mounted ? 1.25 : 1);
+                const speed = (army.speed || CONFIG.CARAVAN_BASE_SPEED * (CONFIG.ARMY_BASE_SPEED_RATIO || 0.625)) * (army.mounted ? 1.25 : 1);
                 army.progress += speed / Math.max(dist, 1);
 
                 if (army.progress >= 1.0) {

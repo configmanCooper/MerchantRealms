@@ -7483,7 +7483,7 @@
                     var _toT = Engine.findTown(engArmy.toTownId);
                     if (_fromT && _toT) {
                         var _dist = Math.hypot(_toT.x - _fromT.x, _toT.y - _fromT.y);
-                        var _spd = ((CONFIG.CARAVAN_BASE_SPEED || 120) * 0.5);
+                        var _spd = ((CONFIG.CARAVAN_BASE_SPEED || 120) * (CONFIG.ARMY_BASE_SPEED_RATIO || 0.625));
                         var _totalDays = Math.max(2, Math.ceil(_dist / Math.max(_spd, 1)));
                         army._daysLeft = Math.max(0, Math.round(_totalDays * (1 - army._progress)));
                     }
@@ -9347,7 +9347,7 @@
                     var oAvail = Math.max(0, (allKTowns[_sti3].garrison || 0) - 3);
                     if (oAvail > 0) {
                         var oDist = Math.hypot(allKTowns[_sti3].x - stagingTown.x, allKTowns[_sti3].y - stagingTown.y);
-                        var oSpeed = (CONFIG.CARAVAN_BASE_SPEED || 120) * 0.5;
+                        var oSpeed = (CONFIG.CARAVAN_BASE_SPEED || 120) * (CONFIG.ARMY_BASE_SPEED_RATIO || 0.625);
                         otherTowns.push({ town: allKTowns[_sti3], available: oAvail, days: Math.max(1, Math.ceil(oDist / Math.max(oSpeed, 1))) });
                     }
                 }
@@ -9499,7 +9499,7 @@
             travelDays += Math.max(2, Math.ceil(routeTime));
         } else {
             var dist = Math.hypot(targetTown.x - stagingTown.x, targetTown.y - stagingTown.y);
-            var baseArmySpeed = (CONFIG.CARAVAN_BASE_SPEED || 120) * 0.5;
+            var baseArmySpeed = (CONFIG.CARAVAN_BASE_SPEED || 120) * (CONFIG.ARMY_BASE_SPEED_RATIO || 0.625);
             if (sendMounted) baseArmySpeed *= 1.25; // 25% faster
             travelDays += Math.max(2, Math.ceil(dist / Math.max(baseArmySpeed, 1)));
         }
@@ -9695,7 +9695,7 @@
                 var dx = (fromTown.x || 0) - (toTown.x || 0);
                 var dy = (fromTown.y || 0) - (toTown.y || 0);
                 var dist = Math.sqrt(dx * dx + dy * dy);
-                travelDays = Math.max(1, Math.ceil(dist / ((CONFIG.CARAVAN_BASE_SPEED || 120) * 0.5)));
+                travelDays = Math.max(1, Math.ceil(dist / ((CONFIG.CARAVAN_BASE_SPEED || 120) * (CONFIG.ARMY_BASE_SPEED_RATIO || 0.625))));
             }
         } catch(e) { travelDays = 3; }
 

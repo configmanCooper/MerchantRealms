@@ -2878,7 +2878,7 @@
         // Route info: travel time + ship warning
         if (routeInfoEl && stagingTown && tgt) {
             var dist = Math.hypot(tgt.x - stagingTown.x, tgt.y - stagingTown.y);
-            var baseArmySpeed = ((typeof CONFIG !== 'undefined' ? CONFIG.CARAVAN_BASE_SPEED : 120) || 120) * 0.5;
+            var baseArmySpeed = ((typeof CONFIG !== 'undefined' ? CONFIG.CARAVAN_BASE_SPEED : 120) || 120) * ((typeof CONFIG !== 'undefined' && CONFIG.ARMY_BASE_SPEED_RATIO) || 0.625);
             var travelDays = Math.max(2, Math.ceil(dist / Math.max(baseArmySpeed, 1)));
             var routeHtml = '🗺️ March: ~<strong>' + travelDays + ' days</strong> from ' + escapeHtml(stagingTown.name) + ' to ' + escapeHtml(tgt.name);
 
@@ -2955,7 +2955,7 @@
                             var oAvail = Math.max(0, (allT[oi].garrison || 0) - 3);
                             if (oAvail > 0) {
                                 var oDist = Math.hypot(allT[oi].x - stagingTown.x, allT[oi].y - stagingTown.y);
-                                var oSpeed = ((typeof CONFIG !== 'undefined' ? CONFIG.CARAVAN_BASE_SPEED : 120) || 120) * 0.5;
+                                var oSpeed = ((typeof CONFIG !== 'undefined' ? CONFIG.CARAVAN_BASE_SPEED : 120) || 120) * ((typeof CONFIG !== 'undefined' && CONFIG.ARMY_BASE_SPEED_RATIO) || 0.625);
                                 var oDays = Math.max(1, Math.ceil(oDist / Math.max(oSpeed, 1)));
                                 otherTowns.push({ name: allT[oi].name, available: oAvail, days: oDays });
                             }
@@ -3009,7 +3009,7 @@
         }
         if (!fromTown) return { days: 0, fromName: '?' };
         var dist = Math.hypot(targetTown.x - fromTown.x, targetTown.y - fromTown.y);
-        var baseArmySpeed = ((typeof CONFIG !== 'undefined' ? CONFIG.CARAVAN_BASE_SPEED : 120) || 120) * 0.5;
+        var baseArmySpeed = ((typeof CONFIG !== 'undefined' ? CONFIG.CARAVAN_BASE_SPEED : 120) || 120) * ((typeof CONFIG !== 'undefined' && CONFIG.ARMY_BASE_SPEED_RATIO) || 0.625);
         var days = Math.max(2, Math.ceil(dist / Math.max(baseArmySpeed, 1)));
         return { days: days, fromName: fromTown.name || '?' };
     }
