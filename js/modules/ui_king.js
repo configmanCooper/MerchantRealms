@@ -135,8 +135,8 @@
         html += '</div>';
         html += '<div style="display:flex;gap:6px;align-items:center;">';
         html += '<input type="number" id="_treasuryAmount" min="10" value="100" style="font-size:0.68rem;width:70px;padding:3px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;">';
-        html += '<button class="btn-medieval" data-action="kingDonateTreasury" style="font-size:0.62rem;padding:3px 8px;background:rgba(85,168,104,0.3) !important;border-color:rgba(85,168,104,0.5) !important;">💰 Donate</button>';
-        html += '<button class="btn-medieval" data-action="kingWithdrawTreasury" style="font-size:0.62rem;padding:3px 8px;background:rgba(196,78,82,0.3) !important;border-color:rgba(196,78,82,0.5) !important;">🏦 Withdraw</button>';
+        html += '<button class="btn-medieval" data-action="kingDonateTreasury" style="font-size:0.72rem;padding:4px 12px;color:#e8dcc8 !important;background:rgba(85,168,104,0.4) !important;border-color:rgba(85,168,104,0.6) !important;">💰 Donate</button>';
+        html += '<button class="btn-medieval" data-action="kingWithdrawTreasury" style="font-size:0.72rem;padding:4px 12px;color:#e8dcc8 !important;background:rgba(196,78,82,0.45) !important;border-color:rgba(196,78,82,0.7) !important;">🏦 Withdraw</button>';
         html += '</div>';
         html += '</div>';
         html += '<div style="background:rgba(0,0,0,0.15);padding:8px;border-radius:6px;margin-bottom:10px;">';
@@ -262,9 +262,9 @@
                 html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 6px;margin-bottom:2px;background:rgba(0,0,0,0.1);border-radius:4px;">';
                 html += '<span style="font-size:0.75rem;color:' + (_atWar ? '#c44e52' : '#d4c9a0') + ';">' + (_atWar ? '⚔️' : '🤝') + ' ' + _tgt.name + '</span>';
                 if (_atWar) {
-                    html += '<button class="btn-medieval" data-action="kingSuePeace" data-id="' + _tgt.id + '" style="font-size:0.65rem;padding:2px 8px;background:rgba(93,173,226,0.3) !important;border-color:rgba(93,173,226,0.5) !important;">🕊️ Sue Peace</button>';
+                    html += '<button class="btn-medieval" data-action="kingSuePeace" data-id="' + _tgt.id + '" style="font-size:0.72rem;padding:4px 12px;color:#e8dcc8 !important;background:rgba(93,173,226,0.4) !important;border-color:rgba(93,173,226,0.6) !important;">🕊️ Sue Peace</button>';
                 } else {
-                    html += '<button class="btn-medieval" data-action="kingDeclareWar" data-id="' + _tgt.id + '" style="font-size:0.65rem;padding:2px 8px;background:rgba(196,78,82,0.3) !important;border-color:rgba(196,78,82,0.5) !important;">⚔️ Declare War</button>';
+                    html += '<button class="btn-medieval" data-action="kingDeclareWar" data-id="' + _tgt.id + '" style="font-size:0.72rem;padding:4px 12px;color:#e8dcc8 !important;background:rgba(196,78,82,0.45) !important;border-color:rgba(196,78,82,0.7) !important;">⚔️ Declare War</button>';
                 }
                 html += '</div>';
             }
@@ -1782,8 +1782,55 @@
             _advIdx++;
         }
 
-        // Cap at 4 suggestions
-        if (suggestions.length > 4) suggestions.length = 4;
+        // Suggest trade agreements if at peace with kingdoms we have decent relations with
+        if (!atWar) {
+            try {
+                var _tradeK = Engine.getWorld().kingdoms;
+                var hasTradeAgreement = ks._tradeAgreements && ks._tradeAgreements.length > 0;
+                if (!hasTradeAgreement) {
+                    for (var _tki = 0; _tki < _tradeK.length; _tki++) {
+                        if (_tradeK[_tki].id === kingdom.id) continue;
+                        var _tRel = kingdom.relations ? (kingdom.relations[_tradeK[_tki].id] || 0) : 0;
+                        if (_tRel > 20) {
+                            suggestions.push({ advisor: advisors[_advIdx % advisors.length], icon: '🤝', text: 'We have no trade agreements. ' + escapeHtml(_tradeK[_tki].name) + ' has favorable relations — a trade deal would benefit us both.', action: 'openKingPanel', actionParam: 'decisions', actionLabel: '🏛️ Diplomacy' });
+                            _advIdx++;
+                            break;
+                        }
+                    }
+                }
+            } catch(e) {}
+        }
+
+        // Suggest feast/court if none held recently
+        var daysSinceFeast = Engine.getDay() - (ks.feastHeldDay || 0);
+        var daysSinceCourt = Engine.getDay() - (ks.courtHeldDay || 0);
+        if (daysSinceFeast > 60 && !kingdom._activeFeast && !kingdom._pendingFeast && treasury > 1000) {
+            suggestions.push({ advisor: advisors[_advIdx % advisors.length], icon: '🎉', text: 'It has been ' + daysSinceFeast + ' days since a royal feast. Hosting one would improve noble relations and happiness.', action: 'openKingPanel', actionParam: 'decisions', actionLabel: '🎉 Events' });
+            _advIdx++;
+        }
+        if (daysSinceCourt > 60 && !kingdom._courtSession && !kingdom._pendingCourt) {
+            suggestions.push({ advisor: advisors[_advIdx % advisors.length], icon: '⚖️', text: 'The people await your judgment. Holding court would address their petitions and boost your reputation.', action: 'openKingPanel', actionParam: 'decisions', actionLabel: '⚖️ Events' });
+            _advIdx++;
+        }
+
+        // Suggest recruiting soldiers if garrison is thin
+        var totalGarrison = 0;
+        for (var _tgi = 0; _tgi < towns.length; _tgi++) totalGarrison += (towns[_tgi].garrison || 0);
+        if (totalGarrison < towns.length * 10 && treasury > 2000) {
+            suggestions.push({ advisor: advisors[_advIdx % advisors.length], icon: '🪖', text: 'Our garrisons are thin. Recruiting soldiers would strengthen our defenses against potential threats.', action: 'openKingPanel', actionParam: 'military', actionLabel: '🪖 Military' });
+            _advIdx++;
+        }
+
+        // Suggest quarantine action — with concrete instructions
+        if (plagueCount > 0) {
+            var plagueTowns = [];
+            for (var _pti = 0; _pti < towns.length; _pti++) { if (towns[_pti].plagueActive) plagueTowns.push(towns[_pti].name); }
+            suggestions.push({ advisor: advisors[_advIdx % advisors.length], icon: '🦠', text: 'Quarantine needed! ' + plagueTowns.join(', ') + ' ha' + (plagueTowns.length > 1 ? 've' : 's') + ' active plague. Issue a quarantine directive from the Directives tab to contain the spread.', action: 'openKingPanel', actionParam: 'directives', actionLabel: '🏥 Directives' });
+            _advIdx++;
+        }
+
+        // Cap at 5 suggestions
+        if (suggestions.length > 5) suggestions.length = 5;
 
         if (suggestions.length === 0) return '';
 

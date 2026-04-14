@@ -263,6 +263,15 @@
         hospBld._treatmentStats.treated++;
         hospBld._treatmentStats.feeEarned += cost;
 
+        // 20% chance treatment didn't work
+        var rng = Engine.getRng();
+        if (rng.chance(0.20)) {
+            // Treatment failed — condition remains, gold still spent
+            var waitDesc2 = _queueWaitTicks > 0 ? ', waited ~' + Math.round(_queueWaitTicks / 60 * 10) / 10 + ' days in queue' : '';
+            Engine.logEvent('🏥 ' + player.fullName + ' was treated at the hospital for ' + condition.name + ' but the treatment was not effective. (' + cost + 'g spent)');
+            return { success: true, treatmentFailed: true, message: 'Treatment for ' + condition.name + ' was not effective. The hospital could not cure it this time. (' + cost + 'g spent)' + waitDesc2 };
+        }
+
         list.splice(conditionIndex, 1);
 
         var waitDesc = _queueWaitTicks > 0 ? ', waited ~' + Math.round(_queueWaitTicks / 60 * 10) / 10 + ' days in queue' : '';
@@ -341,6 +350,13 @@
 
         var waitDesc = _queueWaitTicks > 0 ? ', waited ~' + Math.round(_queueWaitTicks / 60 * 10) / 10 + ' days in queue' : '';
         var nobleNote = _playerIsNoble ? ' 👑 Noble priority.' : '';
+
+        // 20% chance treatment didn't work
+        var rng = Engine.getRng();
+        if (rng.chance(0.20)) {
+            Engine.logEvent(player.fullName + ' was treated at the clinic for ' + condition.name + ' but the treatment was not effective. (' + cost + 'g spent)');
+            return { success: true, treatmentFailed: true, message: 'Treatment for ' + condition.name + ' was not effective at the clinic. (' + cost + 'g spent)' + waitDesc + nobleNote };
+        }
 
         // Clinic fully cures all conditions (time + cost is the tradeoff vs hospital)
         list.splice(conditionIndex, 1);
@@ -680,14 +696,27 @@
                 player.stats.totalGoldSpent += cost;
                 _payHealthcareRevenue(town, cost);
 
-                // Hospital always succeeds
+                // Treatment duration — spouse must stay at hospital
+                var spouseTreatDays = condSeverity === 'severe' ? 5 : condSeverity === 'moderate' ? 3 : 1;
+                spouse._hospitalTreatmentEndDay = Engine.getDay() + spouseTreatDays;
+                spouse._hospitalTownId = player.townId;
+
+                // 20% chance treatment didn't work
+                var rng2 = Engine.getRng();
+                if (rng2.chance(0.20)) {
+                    Engine.logEvent('🏥 ' + spouse.firstName + ' is at the hospital, but the treatment may not be effective. Cost: ' + cost + 'g. They must stay ' + spouseTreatDays + ' day(s).');
+                    spouse._treatmentFailed = true;
+                    return { success: true, treatmentFailed: true, message: spouse.firstName + ' sent to hospital (' + cost + 'g). Must stay ' + spouseTreatDays + ' day(s). ⚠️ Treatment may not be effective.' };
+                }
+
+                // Hospital always succeeds (when it works)
                 ai.condition = 'healthy';
                 ai.daysSick = 0;
                 ai.daysInjured = 0;
                 ai.health = Math.min(ai.health + 40, CONFIG.SPOUSE_AI ? CONFIG.SPOUSE_AI.HEALTH_MAX : 100);
                 modifyRelationship(player.spouseId, 3);
-                Engine.logEvent('🏥 ' + spouse.firstName + ' was treated at the hospital. Cost: ' + cost + 'g.');
-                return { success: true, message: spouse.firstName + ' was treated at the hospital for ' + cost + 'g. Fully recovered!' };
+                Engine.logEvent('🏥 ' + spouse.firstName + ' was sent to the hospital for treatment. Cost: ' + cost + 'g. They must stay ' + spouseTreatDays + ' day(s).');
+                return { success: true, message: spouse.firstName + ' sent to hospital (' + cost + 'g). Must stay ' + spouseTreatDays + ' day(s). You may leave without them.' };
             }
         }
 
@@ -771,7 +800,7 @@
                 Engine.logEvent('⚕️ ' + player.fullName + ' treated ' + (npc.firstName || 'a companion') + ' using ' + usedSup + '.');
                 return { success: true, message: 'Treated ' + (npc.firstName || 'companion') + ' using ' + usedSup + '.' };
             } else {
-                // Hospital treatment for family/guard NPC — same cost as player, no time advance
+                // Hospital treatment for family/guard NPC
                 var npcSev = 'minor';
                 if (npc.injuries && npc.injuries.length > 0) npcSev = npc.injuries[0].severity || 'moderate';
                 else if (npc.illnesses && npc.illnesses.length > 0) npcSev = npc.illnesses[0].severity || 'moderate';
@@ -782,10 +811,23 @@
                 var cost2 = hospInfo3 && hospInfo3.fees ? (hospInfo3.fees[npcSev] || getHospitalCost({ productCost: 10 }, npcSev)) : getHospitalCost({ productCost: 10 }, npcSev);
                 if (player.gold < cost2) return { success: false, message: 'Not enough gold. Hospital costs ' + cost2 + 'g.' };
 
-                // No Game.advanceTicks — companion stays at hospital, player continues
                 player.gold -= cost2;
                 player.stats.totalGoldSpent += cost2;
                 _payHealthcareRevenue(town, cost2);
+
+                // Treatment duration — companion must stay at hospital
+                var treatDays = npcSev === 'severe' ? 5 : npcSev === 'moderate' ? 3 : 1;
+                npc._hospitalTreatmentEndDay = Engine.getDay() + treatDays;
+                npc._hospitalTownId = player.townId;
+
+                // 20% chance treatment didn't work
+                var rng2 = Engine.getRng();
+                if (rng2.chance(0.20)) {
+                    Engine.logEvent('🏥 ' + (npc.firstName || 'Your companion') + ' is being treated at the hospital but the treatment may not be effective. Cost: ' + cost2 + 'g. They must stay for ' + treatDays + ' day(s).');
+                    // Still lock them at hospital for duration, but don't cure
+                    npc._treatmentFailed = true;
+                    return { success: true, treatmentFailed: true, message: (npc.firstName || 'Companion') + ' sent to hospital (' + cost2 + 'g). They must stay ' + treatDays + ' day(s). ⚠️ Treatment may not be effective.' };
+                }
 
                 // Hospital clears all conditions
                 npc.injuries = [];
@@ -799,8 +841,8 @@
                 if (npc._illnessTreatPaid) delete npc._illnessTreatPaid;
 
                 modifyRelationship(targetId, 5);
-                Engine.logEvent('🏥 ' + (npc.firstName || 'Your companion') + ' was treated at the hospital. Cost: ' + cost2 + 'g.');
-                return { success: true, message: (npc.firstName || 'Companion') + ' was treated at the hospital for ' + cost2 + 'g.' };
+                Engine.logEvent('🏥 ' + (npc.firstName || 'Your companion') + ' was sent to the hospital for treatment. Cost: ' + cost2 + 'g. They must stay for ' + treatDays + ' day(s).');
+                return { success: true, message: (npc.firstName || 'Companion') + ' treated at hospital (' + cost2 + 'g). They must stay ' + treatDays + ' day(s). You may leave without them.' };
             }
         }
 
@@ -867,6 +909,46 @@
         if (npc._illnessTreatPaid) delete npc._illnessTreatPaid;
         _payHealthcareRevenue(town, cost);
         Engine.logEvent('🏥 ' + (npc.firstName || 'A family member') + ' sought treatment at the hospital (' + cost + 'g).');
+    }
+
+    // Tick hospitalized companions — release them when treatment duration is over
+    function _tickHospitalizedCompanions() {
+        _sync();
+        var day = Engine.getDay();
+
+        // Check all family and guards for hospital stays
+        var npcIds = [];
+        if (player.spouseId) npcIds.push(player.spouseId);
+        var childIds = player.childrenIds || [];
+        for (var ci = 0; ci < childIds.length; ci++) npcIds.push(childIds[ci]);
+        var guards = player.guards || [];
+        for (var gi = 0; gi < guards.length; gi++) {
+            if (guards[gi].personId) npcIds.push(guards[gi].personId);
+        }
+
+        for (var ni = 0; ni < npcIds.length; ni++) {
+            var npc = Engine.findPerson(npcIds[ni]);
+            if (!npc || !npc.alive) continue;
+            if (!npc._hospitalTreatmentEndDay) continue;
+
+            if (day >= npc._hospitalTreatmentEndDay) {
+                var npcName = npc.firstName || 'Your companion';
+                if (npc._treatmentFailed) {
+                    // Treatment didn't work — they still have their conditions
+                    Engine.logEvent('🏥 ' + npcName + ' has been released from the hospital, but the treatment was not effective. They are still unwell.');
+                    if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚠️ ' + npcName + '\'s treatment failed — still sick', 'warning');
+                } else {
+                    Engine.logEvent('🏥 ' + npcName + ' has been released from the hospital, fully recovered.');
+                }
+                // Move them to the hospital town if they're not there already
+                if (npc._hospitalTownId) {
+                    npc.townId = npc._hospitalTownId;
+                }
+                delete npc._hospitalTreatmentEndDay;
+                delete npc._hospitalTownId;
+                delete npc._treatmentFailed;
+            }
+        }
     }
 
     // Get treatable companions (for UI display)
@@ -1199,6 +1281,7 @@
     Player.getTreatableCompanions = getTreatableCompanions;
     Player.tickInjuriesAndIllnesses = tickInjuriesAndIllnesses;
     Player._tickFamilyAutoTreatment = _tickFamilyAutoTreatment;
+    Player._tickHospitalizedCompanions = _tickHospitalizedCompanions;
     Player.getWorstConditionSeverity = getWorstConditionSeverity;
     Player.getWorkEfficiencyModifier = getWorkEfficiencyModifier;
     Player.canDoPhysicalWork = canDoPhysicalWork;

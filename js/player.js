@@ -466,6 +466,7 @@
 
     function declareBankruptcy() {
         if (!player.debts || player.debts.length === 0) return { success: false, message: 'No debts to discharge.' };
+        if (player.isKing) return { success: false, message: 'As ruler, you cannot declare bankruptcy. Use the royal treasury to pay your debts.' };
         var totalDebt = getTotalDebt();
         // Consequences: lose all gold, lose all inventory, rep loss with all creditors
         player.gold = 0;
@@ -622,11 +623,17 @@
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚨 LAST DAY — bankruptcy tomorrow!', 'danger', 'critical');
             }
 
-            // 90-day unpaid debt → forced bankruptcy
-            if (oldestUnpaidAge >= 90) {
+            // 90-day unpaid debt → forced bankruptcy (kings exempt — they have treasury)
+            if (oldestUnpaidAge >= 90 && !player.isKing) {
                 Engine.logEvent('💸 Your debts have gone unpaid for over 90 days! The kingdom intervenes.', null, 'finance');
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('💸 Debts unpaid 90+ days — bankruptcy!', 'danger', 'critical');
                 triggerDebtBankruptcy();
+            } else if (oldestUnpaidAge >= 90 && player.isKing) {
+                Engine.logEvent('💸 Your personal debts have been unpaid for over 90 days. As ruler, you are shielded, but your reputation suffers.', null, 'finance');
+                // Rep penalty for king with old debts
+                if (player.reputation && player.citizenshipKingdomId) {
+                    player.reputation[player.citizenshipKingdomId] = Math.max(0, (player.reputation[player.citizenshipKingdomId] || 50) - 2);
+                }
             }
         }
     }
@@ -4015,7 +4022,10 @@
         if (!player.guards || player.guards.length === 0 || !player.townId) return;
         for (var _mgi = 0; _mgi < player.guards.length; _mgi++) {
             var _gNpc = player.guards[_mgi].personId ? Engine.findPerson(player.guards[_mgi].personId) : null;
-            if (_gNpc && _gNpc.alive) _gNpc.townId = player.townId;
+            if (!_gNpc || !_gNpc.alive) continue;
+            // Skip guards currently hospitalized — they must stay for treatment
+            if (_gNpc._hospitalTreatmentEndDay && Engine.getDay() < _gNpc._hospitalTreatmentEndDay) continue;
+            _gNpc.townId = player.townId;
         }
     }
 
@@ -18670,6 +18680,9 @@
         // Auto-treatment for sick children and guards
         Player._tickFamilyAutoTreatment();
 
+        // Check hospitalized companions (treatment duration completion)
+        if (Player._tickHospitalizedCompanions) Player._tickHospitalizedCompanions();
+
         // Wedding planning countdown
         tickWeddingPlan();
 
@@ -32960,6 +32973,7 @@
     function triggerDebtBankruptcy() {
         if (player.bankruptcy && player.bankruptcy.active) return;
         if (!player.alive) return;
+        if (player.isKing) return; // Kings cannot go bankrupt
 
         if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(0);
 

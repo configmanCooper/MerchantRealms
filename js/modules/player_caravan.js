@@ -1043,6 +1043,8 @@
                 var _fm = player.familyMembers[_fci];
                 var _fp = Engine.findPerson(_fm.npcId);
                 if (_fp && _fp.alive && _fp.townId === _originIdFam) {
+                    // Skip companions currently hospitalized — they must stay for treatment
+                    if (_fp._hospitalTreatmentEndDay && Engine.getDay() < _fp._hospitalTreatmentEndDay) continue;
                     player.travelCompanions.push({ npcId: _fm.npcId, name: _fm.name, role: _fm.role });
                 }
             }
