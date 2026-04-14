@@ -1558,6 +1558,7 @@
             { type: 'armorer',             chance: 0.70, culture: 'military' },
             { type: 'charcoal_kiln',       chance: 0.80, culture: 'industrial' },
             { type: 'sulfur_mine',         chance: 0.70, culture: 'industrial' },
+            { type: 'powder_works',        chance: 0.85, culture: 'military' },
         ];
 
         for (var _gli = 0; _gli < _gapList.length; _gli++) {
@@ -1617,18 +1618,20 @@
 
         // Phase 3: Guarantee military-related production exists.
         // Ensure at least one blacksmith produces demolition_tools globally,
-        // and at least one apothecary/building produces blasting_powder globally.
+        // at least one building produces blasting_powder globally,
+        // and at least one powder_works exists globally.
         var _hasDemoTools = false;
         var _hasBlastPowder = false;
+        var _hasPowderWorks = false;
         for (var _p3t = 0; _p3t < towns.length; _p3t++) {
             for (var _p3b = 0; _p3b < (towns[_p3t].buildings || []).length; _p3b++) {
                 var _p3Bld = towns[_p3t].buildings[_p3b];
                 if (_p3Bld.type === 'blacksmith' && _p3Bld.currentProduct === 'demolition_tools') _hasDemoTools = true;
-                if (_p3Bld.type === 'apothecary' && _p3Bld.currentProduct === 'blasting_powder') _hasBlastPowder = true;
+                if ((_p3Bld.type === 'apothecary' || _p3Bld.type === 'advanced_apothecary' || _p3Bld.type === 'powder_works') && _p3Bld.currentProduct === 'blasting_powder') _hasBlastPowder = true;
+                if (_p3Bld.type === 'powder_works') _hasPowderWorks = true;
             }
         }
         if (!_hasDemoTools) {
-            // Find any blacksmith without a set product and set it to demolition_tools, preferring military kingdoms
             var _dtCandidates = [];
             for (var _dt1 = 0; _dt1 < towns.length; _dt1++) {
                 for (var _dt2 = 0; _dt2 < (towns[_dt1].buildings || []).length; _dt2++) {
@@ -1638,24 +1641,33 @@
                     }
                 }
             }
-            // Prefer military kingdom blacksmiths
             var _dtMil = _dtCandidates.filter(function(c) { return c.military; });
             var _dtPick = _dtMil.length > 0 ? _dtMil[rng.randInt(0, _dtMil.length - 1)] : (_dtCandidates.length > 0 ? _dtCandidates[rng.randInt(0, _dtCandidates.length - 1)] : null);
             if (_dtPick) {
                 _dtPick.bld.currentProduct = 'demolition_tools';
             } else {
-                // No blacksmith at all — place a new one in a military kingdom
                 var _dtTown = _pickGapTown(false, 'military');
                 if (_dtTown) _addGapBld(_dtTown, 'blacksmith', 'demolition_tools', true);
             }
         }
+        // Guarantee at least one powder_works exists
+        if (!_hasPowderWorks) {
+            var _pwTown = _pickGapTown(false, 'military');
+            if (_pwTown) _addGapBld(_pwTown, 'powder_works', 'saltpeter', true);
+        }
+        // Guarantee blasting_powder production — prefer setting a powder_works to it
         if (!_hasBlastPowder) {
             var _bpCandidates = [];
             for (var _bp1 = 0; _bp1 < towns.length; _bp1++) {
                 for (var _bp2 = 0; _bp2 < (towns[_bp1].buildings || []).length; _bp2++) {
-                    if (towns[_bp1].buildings[_bp2].type === 'apothecary' && !towns[_bp1].buildings[_bp2].currentProduct) {
+                    var _bpBld = towns[_bp1].buildings[_bp2];
+                    if (_bpBld.type === 'powder_works' && (!_bpBld.currentProduct || _bpBld.currentProduct === 'saltpeter')) {
                         var _bpKk = kingdoms.find(function(k) { return k.territories.has(towns[_bp1].id); });
-                        _bpCandidates.push({ bld: towns[_bp1].buildings[_bp2], military: _bpKk && _bpKk.culture === 'military' });
+                        _bpCandidates.push({ bld: _bpBld, military: _bpKk && _bpKk.culture === 'military' });
+                    }
+                    if ((_bpBld.type === 'apothecary' || _bpBld.type === 'advanced_apothecary') && !_bpBld.currentProduct) {
+                        var _bpKk2 = kingdoms.find(function(k) { return k.territories.has(towns[_bp1].id); });
+                        _bpCandidates.push({ bld: _bpBld, military: _bpKk2 && _bpKk2.culture === 'military' });
                     }
                 }
             }
@@ -1665,7 +1677,7 @@
                 _bpPick.bld.currentProduct = 'blasting_powder';
             } else {
                 var _bpTown = _pickGapTown(false, 'military');
-                if (_bpTown) _addGapBld(_bpTown, 'apothecary', 'blasting_powder', true);
+                if (_bpTown) _addGapBld(_bpTown, 'powder_works', 'blasting_powder', true);
             }
         }
 
@@ -2582,7 +2594,18 @@
             'herb_garden': { herbs: 20 },
             'herbalist_hut': { herbal_tea: 10 },
             'wheelwright': { cart: 5, small_wagon: 2, wagon: 1 },
+            'powder_works': { saltpeter: 8, blasting_powder: 3 },
+            'charcoal_kiln': { charcoal: 10 },
         };
+
+        // Seed manure in towns that have animal buildings
+        var _animalTypes = { 'cattle_ranch': 15, 'sheep_farm': 10, 'chicken_farm': 5, 'horse_ranch': 20, 'pig_farm': 10 };
+        for (var _ami = 0; _ami < (town.buildings || []).length; _ami++) {
+            var _amBld = town.buildings[_ami];
+            if (_animalTypes[_amBld.type]) {
+                town.market.supply.manure = (town.market.supply.manure || 0) + _animalTypes[_amBld.type];
+            }
+        }
 
         const popScale = Math.max(town.population / 100, 0.3);
         for (let bIdx = 0; bIdx < (town.buildings || []).length; bIdx++) {

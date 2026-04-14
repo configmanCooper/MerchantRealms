@@ -493,18 +493,18 @@
 
     const STRATEGY_GOODS = {
         food_monopoly:     ['wheat', 'bread', 'meat', 'fish', 'eggs', 'flour', 'preserved_food'],
-        military_supplier: ['swords', 'armor', 'bows', 'iron', 'iron_ore', 'tools', 'weapons'],
+        military_supplier: ['swords', 'armor', 'bows', 'iron', 'iron_ore', 'tools', 'weapons', 'blasting_powder', 'demolition_tools'],
         luxury_trader:     ['jewelry', 'wine', 'silk', 'spices', 'gold_ore', 'dye', 'furniture'],
         diversified:       ['wheat', 'cloth', 'tools', 'iron', 'wood', 'bread', 'wool'],
         political_climber: ['wine', 'jewelry', 'silk', 'furniture', 'spices'],
-        war_profiteer:     ['swords', 'armor', 'bows', 'bread', 'preserved_food', 'iron', 'weapons'],
+        war_profiteer:     ['swords', 'armor', 'bows', 'bread', 'preserved_food', 'iron', 'weapons', 'blasting_powder', 'demolition_tools'],
         land_baron:        ['wheat', 'wood', 'stone', 'wool', 'iron_ore'],
         trade_network:     ['cloth', 'tools', 'salt', 'spices', 'wine', 'dye', 'leather', 'preserved_food', 'ale'],
     };
 
     const STRATEGY_BUILDINGS = {
         food_monopoly:     ['wheat_farm', 'flour_mill', 'bakery', 'cattle_ranch', 'fishery', 'smokehouse', 'chicken_farm', 'restaurant', 'warehouse_small'],
-        military_supplier: ['blacksmith', 'iron_mine', 'smelter', 'toolsmith', 'armory_shop', 'warehouse_small', 'wheelwright'],
+        military_supplier: ['blacksmith', 'iron_mine', 'smelter', 'toolsmith', 'armory_shop', 'warehouse_small', 'wheelwright', 'powder_works'],
         luxury_trader:     ['jeweler', 'vineyard', 'winery', 'weaver', 'jewelers_boutique', 'clothing_shop', 'warehouse_small'],
         diversified:       ['wheat_farm', 'bakery', 'blacksmith', 'weaver', 'sawmill', 'tanner', 'general_store', 'tavern', 'warehouse_small', 'wheelwright'],
         political_climber: ['vineyard', 'winery', 'jeweler', 'market_stall', 'jewelers_boutique', 'warehouse_small'],

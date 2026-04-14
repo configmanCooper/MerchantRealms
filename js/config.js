@@ -1862,6 +1862,13 @@ const BUILDING_TYPES = {
         },
     },
     SULFUR_MINE:   { id: 'sulfur_mine',   name: 'Sulfur Mine',   cost: 400,  workers: 3, produces: 'sulfur',          consumes: {},                          rate: 4, category: 'mine',       storage: 60, materials: { wood: 15, stone: 10, tools: 2 }, icon: '🟡', description: 'Extracts sulfur from natural deposits. Used for medicine and blasting powder.' },
+    POWDER_WORKS:  { id: 'powder_works',  name: 'Powder Works',  cost: 600,  workers: 3, produces: 'saltpeter',       consumes: { manure: 4 },               rate: 3, category: 'processing', storage: 40, materials: { stone: 15, bricks: 10, wood: 8 }, icon: '💣', description: 'Refines manure into saltpeter and mixes blasting powder from saltpeter, charcoal, and sulfur.',
+        canProduce: ['saltpeter', 'blasting_powder'],
+        availableProducts: {
+            saltpeter:       { produces: 'saltpeter',       consumes: { manure: 4 },                              rate: 3 },
+            blasting_powder: { produces: 'blasting_powder', consumes: { saltpeter: 2, charcoal: 1, sulfur: 1 },   rate: 2 },
+        },
+    },
     PIG_FARM:      { id: 'pig_farm',      name: 'Pig Farm',      cost: 200,  workers: 2, produces: 'meat',           consumes: { wheat: 2 },                rate: 5, category: 'farm',       storage: 60, byproduct: { resource: 'manure', rate: 2 }, byproductStorage: 30, materials: { wood: 10, stone: 3 } },
     PASTURE:       { id: 'pasture',       name: 'Pasture',       cost: 100,  workers: 1, produces: null,             consumes: { wheat: 1 },                rate: 0, category: 'farm',       livestockCapacity: 10, materials: { wood: 5 } },
     WATCHTOWER:    { id: 'watchtower',    name: 'Watchtower',    cost: 500,  workers: 2, produces: null,             consumes: {},                          rate: 0, category: 'military',   archerBonus: 0.5, materials: { stone: 30, wood: 15, bricks: 15 } },
