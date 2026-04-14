@@ -9259,6 +9259,138 @@
         return _ORDER_COSTS[typeId] || 100;
     }
 
+    function kingBuildStructure(buildingTypeId, townId) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        if (!townId) return { success: false, message: 'Select a town.' };
+        var town = Engine.findTown(townId);
+        if (!town) return { success: false, message: 'Town not found.' };
+        if (!kingdom.territories || !kingdom.territories.has(townId)) return { success: false, message: 'That town is not in your kingdom.' };
+
+        var bt = Engine.findBuildingType(buildingTypeId);
+        if (!bt) return { success: false, message: 'Unknown building type.' };
+
+        // Check constraints
+        if (bt.capitalOnly && town.id !== kingdom.capital) return { success: false, message: bt.name + ' can only be built in the capital.' };
+        if (bt.portOnly) {
+            var isPort = town.isPort || (town.buildings && town.buildings.some(function(b) { return b.type === 'dock' && b.active; }));
+            if (!isPort) return { success: false, message: bt.name + ' requires a port town.' };
+        }
+        if (bt.minTownCategory) {
+            var townCats = { 'outpost': 0, 'hamlet': 1, 'village': 2, 'town': 3, 'city': 4, 'capital': 5 };
+            var townCat = town.category || (town.population > 500 ? 'city' : town.population > 200 ? 'town' : 'village');
+            if ((townCats[townCat] || 0) < (townCats[bt.minTownCategory] || 0)) {
+                return { success: false, message: bt.name + ' requires at least a ' + bt.minTownCategory + '. ' + town.name + ' is a ' + townCat + '.' };
+            }
+        }
+
+        // Check natural deposit requirement
+        var depReq = typeof CONFIG !== 'undefined' && CONFIG.DEPOSIT_REQUIREMENTS ? CONFIG.DEPOSIT_REQUIREMENTS[bt.id] : null;
+        if (depReq) {
+            var townDeposits = town.naturalDeposits || {};
+            if (!townDeposits[depReq.deposit] || townDeposits[depReq.deposit] <= 0) {
+                return { success: false, message: 'No ' + depReq.label.toLowerCase() + ' in ' + town.name + '. This building requires a natural deposit.' };
+            }
+        }
+
+        // Calculate labor cost
+        var laborCost = bt.cost || 0;
+
+        // Calculate material cost — source from kingdom stockpile + town market
+        var materialCost = 0;
+        var materialsNeeded = {};
+        var materialSources = {};
+        if (bt.materials) {
+            var mats = bt.materials;
+            for (var matId in mats) {
+                if (!mats.hasOwnProperty(matId)) continue;
+                var qty = mats[matId];
+                // Check kingdom military stockpile
+                var fromMilStock = 0;
+                if (kingdom.militaryStockpile && kingdom.militaryStockpile[matId]) {
+                    fromMilStock = Math.min(qty, kingdom.militaryStockpile[matId]);
+                }
+                var remaining = qty - fromMilStock;
+                // Check kingdom goods stockpile
+                var fromGoodsStock = 0;
+                if (remaining > 0 && kingdom.goodsStockpile && kingdom.goodsStockpile[matId]) {
+                    fromGoodsStock = Math.min(remaining, kingdom.goodsStockpile[matId]);
+                }
+                remaining = remaining - fromGoodsStock;
+                // Check town market
+                var fromMarket = 0;
+                var marketAvail = (town.market && town.market.supply && town.market.supply[matId]) || 0;
+                if (remaining > 0) {
+                    fromMarket = Math.min(remaining, marketAvail);
+                }
+                remaining = remaining - fromMarket;
+
+                if (remaining > 0) {
+                    var res = findResource(matId);
+                    var resName = res ? res.name : matId;
+                    var totalAvail = fromMilStock + fromGoodsStock + fromMarket;
+                    return { success: false, message: 'Not enough ' + resName + '. Need ' + qty + ', available: ' + totalAvail + ' (stockpile: ' + (fromMilStock + fromGoodsStock) + ', market: ' + fromMarket + ').' };
+                }
+
+                materialSources[matId] = { milStock: fromMilStock, goodsStock: fromGoodsStock, market: fromMarket };
+                // Market cost
+                if (fromMarket > 0) {
+                    var matPrice = 0;
+                    try { matPrice = Engine.getMarketPrice(townId, matId) || 0; } catch(e) {}
+                    if (matPrice <= 0) { var res2 = findResource(matId); matPrice = res2 ? (res2.basePrice || 5) : 5; }
+                    materialCost += fromMarket * matPrice;
+                }
+            }
+        }
+
+        var totalCost = laborCost + materialCost;
+        if (kingdom.gold < totalCost) {
+            return { success: false, message: 'Treasury insufficient. Need ' + Math.floor(totalCost) + 'g (labor: ' + Math.floor(laborCost) + 'g + materials: ' + Math.floor(materialCost) + 'g). Treasury: ' + Math.floor(kingdom.gold) + 'g.' };
+        }
+
+        // Deduct cost
+        kingdom.gold -= totalCost;
+
+        // Deduct materials from sources
+        if (bt.materials) {
+            for (var matId2 in materialSources) {
+                if (!materialSources.hasOwnProperty(matId2)) continue;
+                var src = materialSources[matId2];
+                if (src.milStock > 0 && kingdom.militaryStockpile) {
+                    kingdom.militaryStockpile[matId2] = (kingdom.militaryStockpile[matId2] || 0) - src.milStock;
+                    if (kingdom.militaryStockpile[matId2] <= 0) delete kingdom.militaryStockpile[matId2];
+                }
+                if (src.goodsStock > 0 && kingdom.goodsStockpile) {
+                    kingdom.goodsStockpile[matId2] = (kingdom.goodsStockpile[matId2] || 0) - src.goodsStock;
+                    if (kingdom.goodsStockpile[matId2] <= 0) delete kingdom.goodsStockpile[matId2];
+                }
+                if (src.market > 0 && town.market && town.market.supply) {
+                    town.market.supply[matId2] = (town.market.supply[matId2] || 0) - src.market;
+                    if (town.market.supply[matId2] <= 0) delete town.market.supply[matId2];
+                }
+            }
+        }
+
+        // Create building
+        if (!town.buildings) town.buildings = [];
+        town.buildings.push({
+            type: bt.id,
+            level: 1,
+            ownerId: kingdom.id,
+            active: true,
+            workers: [],
+            storage: bt.storage || 0,
+            _builtDay: Engine.getDay()
+        });
+        town.prosperity = Math.min(100, (town.prosperity || 50) + 3);
+
+        var title = player.sex === 'F' ? 'Queen' : 'King';
+        Engine.logEvent('🏗️ ' + title + ' ' + player.fullName + ' ordered a ' + bt.name + ' built in ' + town.name + '! (Cost: ' + Math.floor(totalCost) + 'g)');
+        autoJournalCapture('king', 'I ordered a ' + bt.name + ' built in ' + town.name + ' at a cost of ' + Math.floor(totalCost) + 'g.', { mood: 'reflective' });
+        return { success: true, message: bt.name + ' built in ' + town.name + '! Cost: ' + Math.floor(totalCost) + 'g (labor: ' + Math.floor(laborCost) + 'g + materials: ' + Math.floor(materialCost) + 'g).' };
+    }
+
     function kingApprovePetition(petitionId) {
         if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
         var kingdom = Engine.findKingdom(player.kingState.kingdomId);
@@ -37587,6 +37719,7 @@
         kingApprovePetition,
         kingRejectPetition,
         kingExecuteOrder,
+        kingBuildStructure,
         kingEconomicOrder,
         kingGetOrderCost,
         kingRaiseArmy,

@@ -366,16 +366,54 @@
         html += '<button class="btn-medieval" data-action="kingOrderBuildRoad" style="font-size:0.62rem;padding:2px 6px;">Build</button>';
         html += '</div></div>';
 
-        // Build Structure
+        // Build Structure — dynamic from BUILDING_TYPES
         html += '<div style="background:rgba(0,0,0,0.1);padding:6px;border-radius:4px;margin-bottom:4px;">';
-        html += '<div style="font-size:0.75rem;color:#ddd;margin-bottom:4px;">🏗️ Build Structure <span style="font-size:0.62rem;color:#e0c58a;">(' + formatGold(400) + ')</span></div>';
+        html += '<div style="font-size:0.75rem;color:#ddd;margin-bottom:4px;">🏗️ Build Structure <span style="font-size:0.58rem;color:#aaa;">(cost = labor + materials at market price)</span></div>';
         html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">';
         html += '<select id="_roBuildTown" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;max-width:120px;">';
         html += '<option value="">Town...</option>';
         for (var _rok = 0; _rok < _roTowns.length; _rok++) html += '<option value="' + _roTowns[_rok].id + '">' + escapeHtml(_roTowns[_rok].name) + '</option>';
         html += '</select>';
-        html += '<select id="_roBuildType" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;">';
-        html += '<option value="marketplace">Marketplace</option><option value="clinic">Clinic</option><option value="hospital">Hospital</option><option value="watchtower">Watchtower</option>';
+        html += '<select id="_roBuildType" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;max-width:200px;">';
+        html += '<option value="">Select building...</option>';
+        // Group by category
+        var _btCatOrder = [
+            { cat: 'military', label: '⚔️ Military' },
+            { cat: 'civic', label: '🏛️ Civic' },
+            { cat: 'medical', label: '🏥 Medical' },
+            { cat: 'farm', label: '🌾 Farm' },
+            { cat: 'harvest', label: '🪓 Harvest' },
+            { cat: 'mine', label: '⛏️ Mine' },
+            { cat: 'processing', label: '⚙️ Processing' },
+            { cat: 'finished', label: '📦 Finished Goods' },
+            { cat: 'luxury', label: '💎 Luxury' },
+            { cat: 'storage', label: '🏪 Storage' },
+            { cat: 'trade', label: '💰 Trade' },
+            { cat: 'port', label: '⚓ Port' },
+            { cat: 'retail', label: '🍻 Retail' }
+        ];
+        var _btByCategory = {};
+        if (typeof BUILDING_TYPES !== 'undefined') {
+            for (var _btk in BUILDING_TYPES) {
+                if (!BUILDING_TYPES.hasOwnProperty(_btk)) continue;
+                var _btDef = BUILDING_TYPES[_btk];
+                var _btCat = _btDef.category || 'other';
+                if (!_btByCategory[_btCat]) _btByCategory[_btCat] = [];
+                _btByCategory[_btCat].push(_btDef);
+            }
+        }
+        for (var _bci = 0; _bci < _btCatOrder.length; _bci++) {
+            var _catKey = _btCatOrder[_bci].cat;
+            var _catItems = _btByCategory[_catKey];
+            if (!_catItems || _catItems.length === 0) continue;
+            _catItems.sort(function(a, b) { return (a.cost || 0) - (b.cost || 0); });
+            html += '<optgroup label="' + escapeHtml(_btCatOrder[_bci].label) + '">';
+            for (var _bii = 0; _bii < _catItems.length; _bii++) {
+                var _bi = _catItems[_bii];
+                html += '<option value="' + _bi.id + '">' + escapeHtml(_bi.name) + ' (' + formatGold(_bi.cost || 0) + ' labor)</option>';
+            }
+            html += '</optgroup>';
+        }
         html += '</select>';
         html += '<button class="btn-medieval" data-action="kingOrderBuildStructure" style="font-size:0.62rem;padding:2px 6px;">Build</button>';
         html += '</div></div>';
@@ -3736,7 +3774,8 @@
     UI.registerAction('kingOrderBuildStructure', function() {
         var t = document.getElementById('_roBuildTown'); var bt = document.getElementById('_roBuildType');
         if (!t || !t.value) { UI.toast('Select a town.', 'warning'); return; }
-        var r = Player.kingExecuteOrder('build_market', { townId: t.value, buildingType: bt ? bt.value : 'marketplace' }); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions');
+        if (!bt || !bt.value) { UI.toast('Select a building type.', 'warning'); return; }
+        var r = Player.kingBuildStructure(bt.value, t.value); UI.toast(r.message, r.success ? 'success' : 'warning'); if (r.success) UI.openKingPanel('decisions');
     });
     UI.registerAction('kingOrderSecurity', function() {
         var t = document.getElementById('_roSecTown');

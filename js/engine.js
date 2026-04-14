@@ -22047,6 +22047,11 @@
             k._pendingFeast = null;
         }
 
+        // Clean up fully-resolved court sessions so they don't block new ones
+        if (k._courtSession && k._courtSession.cases && !k._courtSession.cases.some(function(c) { return !c.resolved; })) {
+            k._courtSession = null;
+        }
+
         // Activate pending court when court day arrives
         if (k._pendingCourt && world.day >= k._pendingCourt.courtDay && !k._courtSession) {
             var pc = k._pendingCourt;
@@ -22938,6 +22943,10 @@
         // Mutual exclusion: no court during feast
         if (k._activeFeast || k._pendingFeast) return null;
         if (k._pendingCourt) return k._pendingCourt;
+        // Clean up fully-resolved court session so it doesn't block new one
+        if (k._courtSession && k._courtSession.cases && !k._courtSession.cases.some(function(c) { return !c.resolved; })) {
+            k._courtSession = null;
+        }
         var rng = world.rng;
 
         leadDays = leadDays || 0;
