@@ -1011,7 +1011,7 @@
                 bonus = Math.floor(bonus * 2);
             }
             // Love songs popular in peaceful kingdoms
-            if (theme === 'love' && (!k.atWar || (Array.isArray(k.atWar) ? k.atWar.length === 0 : true))) {
+            if (theme === 'love' && (!k.atWar || (k.atWar instanceof Set ? k.atWar.size === 0 : (Array.isArray(k.atWar) ? k.atWar.length === 0 : true)))) {
                 bonus = Math.floor(bonus * 1.5);
             }
             // Comedy popular everywhere (slight universal bonus)
@@ -1517,7 +1517,7 @@
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.war_council || 15);
         
         var rng = Engine.getRng();
-        var atWarArr = Array.isArray(playerK.atWar) ? playerK.atWar : [playerK.atWar];
+        var atWarArr = playerK.atWar instanceof Set ? [...playerK.atWar] : (Array.isArray(playerK.atWar) ? playerK.atWar : [playerK.atWar]);
         var enemyId = atWarArr[rng.randInt(0, atWarArr.length - 1)];
         var enemyK = Engine.findKingdom(enemyId);
         

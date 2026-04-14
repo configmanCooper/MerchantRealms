@@ -22675,7 +22675,7 @@
             var percLoy = probePerson.perceivedKingLoyalty != null ? probePerson.perceivedKingLoyalty : realLoy;
             // Reveal loyalty closer to truth
             var revealAmt = 0.4 + rng.random() * 0.3;
-            probePerson.perceivedKingLoyalty = percLoy + (realLoy - percLoy) * revealAmt;
+            probePerson.perceivedKingLoyalty = Math.max(0, Math.min(100, percLoy + (realLoy - percLoy) * revealAmt));
             var loyLabel = realLoy >= 70 ? 'very loyal' : realLoy >= 50 ? 'somewhat loyal' : realLoy >= 30 ? 'uncertain' : 'hostile';
             intel.push('seems ' + loyLabel);
             // Reveal personality trait

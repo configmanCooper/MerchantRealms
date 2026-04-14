@@ -625,8 +625,8 @@
             // War/Peace options
             let kingdoms;
             try { kingdoms = Engine.getKingdoms(); } catch (e) { kingdoms = []; }
-            const enemies = kingdoms.filter(k => k.id !== kingdomId && kingdom.atWar && kingdom.atWar.includes(k.id));
-            const potentials = kingdoms.filter(k => k.id !== kingdomId && (!kingdom.atWar || !kingdom.atWar.includes(k.id)));
+            const enemies = kingdoms.filter(k => k.id !== kingdomId && kingdom.atWar && (kingdom.atWar.has ? kingdom.atWar.has(k.id) : kingdom.atWar.includes(k.id)));
+            const potentials = kingdoms.filter(k => k.id !== kingdomId && (!kingdom.atWar || !(kingdom.atWar.has ? kingdom.atWar.has(k.id) : kingdom.atWar.includes(k.id))));
 
             if (enemies.length > 0) {
                 for (const enemy of enemies) {

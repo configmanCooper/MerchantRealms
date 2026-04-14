@@ -3490,7 +3490,7 @@ window.Renderer = (function () {
         const ts = CONFIG.TILE_SIZE;
 
         for (const kingdom of kingdoms) {
-            if (!kingdom.atWar || !kingdom.atWar.length) continue;
+            if (!kingdom.atWar || !(kingdom.atWar instanceof Set ? kingdom.atWar.size : kingdom.atWar.length)) continue;
 
             // Find center of this kingdom
             const kTowns = towns.filter(t => t.kingdomId === kingdom.id);

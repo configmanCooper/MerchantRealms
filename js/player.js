@@ -7542,6 +7542,7 @@
         kingdom.laws.specialLaws.push({ id: lawId, enactedDay: Engine.getDay() });
         Engine.logEvent('👑 Royal Decree: ' + (lawDef.name || lawId) + ' enacted in ' + kingdom.name + '.');
         player.kingState.decreesIssued = (player.kingState.decreesIssued || 0) + 1;
+        autoJournalCapture('king', 'I enacted the law "' + (lawDef.name || lawId) + '" in ' + kingdom.name + '. May it serve the realm well.', { mood: 'proud' });
         return { success: true, message: lawDef.name + ' enacted.' };
     }
 
@@ -7557,6 +7558,7 @@
         kingdom.laws.specialLaws.splice(idx, 1);
         var lawDef = (CONFIG.SPECIAL_LAWS || []).find(function(l) { return l.id === lawId; });
         Engine.logEvent('👑 Royal Decree: ' + (lawDef ? lawDef.name : lawId) + ' repealed in ' + kingdom.name + '.');
+        autoJournalCapture('king', 'I repealed the law "' + (lawDef ? lawDef.name : lawId) + '" in ' + kingdom.name + '.', { mood: 'reflective' });
         return { success: true, message: (lawDef ? lawDef.name : lawId) + ' repealed.' };
     }
 
@@ -7578,6 +7580,7 @@
         target.atWar.add(kingdom.id);
         Engine.logEvent('⚔️ ' + kingdom.name + ' declares war on ' + target.name + '!', { type: 'war_declaration', kingdomId: kingdom.id });
         player.kingState.warsStarted = (player.kingState.warsStarted || 0) + 1;
+        autoJournalCapture('king', 'I declared war on ' + target.name + '. May our armies prevail and our cause be just.', { mood: 'determined' });
         return { success: true, message: 'War declared against ' + target.name + '!' };
     }
 
@@ -7600,6 +7603,7 @@
         kingdom.peaceTreaties[targetKingdomId] = Engine.getDay() + 180;
         Engine.logEvent('🕊️ ' + kingdom.name + ' sues for peace with ' + (target ? target.name : 'the enemy') + '. Tribute: ' + tribute + 'g.');
         player.kingState.peacesMade = (player.kingState.peacesMade || 0) + 1;
+        autoJournalCapture('king', 'I sued for peace with ' + (target ? target.name : 'the enemy') + ', paying ' + tribute + 'g in tribute. War takes its toll on all.', { mood: 'reflective' });
         return { success: true, message: 'Peace achieved! Tribute paid: ' + tribute + 'g.' };
     }
 
@@ -7689,6 +7693,10 @@
         if (goldReceived > 0) msg += ' Received ' + goldReceived + 'g.';
         if (cededNames.length > 0) msg += ' Gained: ' + cededNames.join(', ') + '.';
         Engine.logEvent(msg, null, 'military');
+        var journalText = isSurrender
+            ? enemy.name + ' has surrendered to us.' + (goldReceived > 0 ? ' We received ' + goldReceived + 'g.' : '') + (cededNames.length > 0 ? ' We gained ' + cededNames.join(', ') + '.' : '') + ' Victory is ours.'
+            : 'I accepted peace with ' + enemy.name + '.' + (goldReceived > 0 ? ' They paid ' + goldReceived + 'g.' : '') + (cededNames.length > 0 ? ' We gained ' + cededNames.join(', ') + '.' : '');
+        autoJournalCapture('king', journalText, { mood: isSurrender ? 'triumphant' : 'content' });
         return { success: true, message: msg };
     }
 
@@ -7721,6 +7729,7 @@
         }
 
         Engine.logEvent('🔥 Rejected peace offer from ' + enemyName + '. The war continues!', null, 'military');
+        autoJournalCapture('king', 'I rejected ' + enemyName + '\'s plea for peace. We will not stop until victory is ours.', { mood: 'determined' });
         return { success: true, message: 'Rejected peace from ' + enemyName + '. War continues!' };
     }
 
@@ -7795,9 +7804,11 @@
         if (leadDays > 0) {
             var acceptCount = (feast.invitedNobles || []).filter(function(n) { return n.accepted; }).length;
             Engine.logEvent('👑 ' + title + ' ' + player.fullName + ' has announced a grand royal feast in ' + leadDays + ' days! ' + acceptCount + ' nobles plan to attend.');
+            autoJournalCapture('king', 'I announced a grand royal feast to be held in ' + leadDays + ' days. ' + acceptCount + ' nobles plan to attend.', { mood: 'hopeful' });
             return { success: true, message: 'Feast scheduled in ' + leadDays + ' days! ' + acceptCount + ' nobles plan to attend.', pendingFeast: true, kingdomId: player.kingState.kingdomId };
         }
         Engine.logEvent('👑 ' + title + ' ' + player.fullName + ' hosts a grand royal feast! (+5 happiness, +5 noble relations)');
+        autoJournalCapture('king', 'I hosted a grand royal feast. The halls rang with laughter and merriment.', { mood: 'content' });
         return { success: true, message: 'Grand feast begun! The feast lasts 3 days. You have 5 actions per day.', openFeast: true, kingdomId: player.kingState.kingdomId };
     }
 
@@ -7833,9 +7844,11 @@
         if (leadDays > 0) {
             var acceptCount = (court.invitedNobles || []).filter(function(n) { return n.accepted; }).length;
             Engine.logEvent('👑 ' + title + ' ' + player.fullName + ' has announced a court session in ' + leadDays + ' days. ' + acceptCount + ' nobles plan to attend.');
+            autoJournalCapture('king', 'I announced a court session to be held in ' + leadDays + ' days. ' + acceptCount + ' nobles plan to attend.', { mood: 'reflective' });
             return { success: true, message: 'Court scheduled in ' + leadDays + ' days! ' + acceptCount + ' nobles plan to attend.', pendingCourt: true, kingdomId: player.kingState.kingdomId };
         }
         Engine.logEvent('👑 ' + title + ' ' + player.fullName + ' holds court, hearing petitions from the people. (+3 happiness)');
+        autoJournalCapture('king', 'I held court today, listening to petitions from nobles and commoners alike.', { mood: 'reflective' });
         return { success: true, message: 'Court is now in session! ' + court.cases.length + ' cases to hear.', openCourt: true, kingdomId: player.kingState.kingdomId };
     }
 
@@ -8446,6 +8459,10 @@
             on.fearOfKing = Math.min(100, (on.fearOfKing || 15) + _otherFear);
         }
 
+        // Journal entry for notable punishments
+        var punishLabels = { fine: 'fined', jail: 'imprisoned', seize_gold: 'confiscated gold from', seize_business: 'seized properties of', strip_title: 'stripped the title of', execute: 'executed' };
+        autoJournalCapture('king', 'I ' + (punishLabels[punishmentType] || 'punished') + ' ' + nobleName + '. The court took notice.', { mood: punishmentType === 'execute' ? 'determined' : 'reflective' });
+
         return result;
     }
 
@@ -9055,6 +9072,7 @@
 
         if (kingdom.relations) kingdom.relations[targetKingdomId] = Math.min(100, relations + 10);
         Engine.logEvent('👑 ' + kingdom.name + ' and ' + target.name + ' establish a trade agreement! (+10 relations)');
+        autoJournalCapture('king', 'I established a trade agreement with ' + target.name + '. Commerce will flow between our kingdoms for 90 days.', { mood: 'content' });
         return { success: true, message: 'Trade agreement established with ' + target.name + ' for 90 days! Relations +10.' };
     }
 
@@ -9103,6 +9121,7 @@
         });
 
         Engine.logEvent('👑 ' + nobleName + ' departs as diplomatic envoy to ' + target.name + '. (returns in ' + duration + ' days)');
+        autoJournalCapture('king', 'I sent ' + nobleName + ' as a diplomatic envoy to ' + target.name + '. May their mission strengthen our bonds.', { mood: 'hopeful' });
         return { success: true, message: nobleName + ' sent as envoy to ' + target.name + '. Returns in ' + duration + ' days.' };
     }
 
@@ -9155,6 +9174,7 @@
         }
 
         Engine.logEvent('👑 Royal tribute collected: ' + totalTribute + 'g from ' + details.length + ' noble(s).');
+        autoJournalCapture('king', 'I collected ' + totalTribute + 'g in tribute from ' + details.length + ' nobles. The crown\'s coffers grow.', { mood: 'content' });
         return { success: true, message: 'Tribute collected: ' + totalTribute + 'g from ' + details.length + ' noble(s). (Loyalty slightly decreased)' };
     }
 
@@ -9696,6 +9716,7 @@
         } else {
             Engine.logEvent('⚔️ An army of ' + soldiers + (sendMounted ? ' mounted cavalry' : ' soldiers') + ' marches from ' + stagingTown.name + ' toward ' + targetTown.name + '!');
         }
+        autoJournalCapture('king', 'I dispatched an army of ' + soldiers + (sendMounted ? ' mounted cavalry' : ' soldiers') + ' from ' + stagingTown.name + ' to march on ' + targetTown.name + '.', { mood: 'determined' });
         return { success: true, message: msg };
     }
 
@@ -12391,7 +12412,7 @@
 
             case 'political_gossip': {
                 var gKingdom = Engine.findKingdom(person.kingdomId);
-                var atWar = gKingdom && gKingdom.atWar ? [].concat(gKingdom.atWar) : [];
+                var atWar = gKingdom && gKingdom.atWar ? Array.from(gKingdom.atWar) : [];
                 var allies = gKingdom && gKingdom.alliances ? [].concat(gKingdom.alliances) : [];
                 var gossip = '';
                 if (atWar.length > 0) {

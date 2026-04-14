@@ -1055,7 +1055,7 @@ function showKingdomDetail(kingdom) {
         for (const [kId, val] of Object.entries(kingdom.relations)) {
             const other = kingdoms.find(k => k.id == kId);
             if (!other) continue;
-            const isWar = kingdom.atWar && kingdom.atWar.includes(kId);
+            const isWar = kingdom.atWar && (kingdom.atWar.has ? kingdom.atWar.has(kId) : kingdom.atWar.includes(kId));
             html += `<div class="detail-row">
                 <span class="label">${other.name}</span>
                 <span class="value ${isWar ? 'text-danger' : val > 50 ? 'text-success' : val < -30 ? 'text-warning' : ''}">${isWar ? '⚔ AT WAR' : val}</span>

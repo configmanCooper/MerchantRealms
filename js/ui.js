@@ -7700,7 +7700,7 @@ window.UI = (function () {
                 if (k.laws.guildRestrictions) lawsHtml += `<div class="law-item">🔨 Guild Restrictions</div>`;
             }
 
-            const warList = k.atWar && k.atWar.length > 0 ? k.atWar.map(wId => {
+            const warList = k.atWar && k.atWar.size > 0 ? Array.from(k.atWar).map(wId => {
                 const wk = kingdoms.find(kk => kk.id === wId);
                 return wk ? wk.name : wId;
             }).join(', ') : '';
@@ -7757,7 +7757,7 @@ window.UI = (function () {
 
             // War and alliance status
             var warStatusHtml = '';
-            if (k.atWar && Array.isArray(k.atWar) && k.atWar.length > 0) {
+            if (k.atWar && ((k.atWar instanceof Set && k.atWar.size > 0) || (Array.isArray(k.atWar) && k.atWar.length > 0))) {
                 warStatusHtml = '<div class="kc-row" style="color:var(--danger);font-weight:bold;">⚔️ At War with: ' + warList + '</div>';
             } else {
                 warStatusHtml = '<div class="kc-row" style="color:#55a868;">☮️ At Peace</div>';
@@ -7832,7 +7832,7 @@ window.UI = (function () {
                     matrixHtml += '<td>──</td>';
                 } else {
                     const rel = ki.relations[kj.id] || 0;
-                    const atWar = ki.atWar && ki.atWar.includes(kj.id);
+                    const atWar = ki.atWar && (ki.atWar.has ? ki.atWar.has(kj.id) : ki.atWar.includes(kj.id));
                     let emoji, cls;
                     if (atWar) { emoji = '💀'; cls = 'diplo-war'; }
                     else if (rel > 60) { emoji = '😊'; cls = 'diplo-ally'; }

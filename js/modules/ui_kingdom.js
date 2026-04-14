@@ -41,7 +41,7 @@
                 if (ok.id === k.id) continue;
                 const relVal = k.relations[ok.id] || 0;
                 let relIcon = '✓', relLabel = 'Peace', relClass = 'rel-peace';
-                if (k.atWar && k.atWar.includes(ok.id)) { relIcon = '⚔️'; relLabel = 'War'; relClass = 'rel-war'; }
+                if (k.atWar && (k.atWar.has ? k.atWar.has(ok.id) : k.atWar.includes(ok.id))) { relIcon = '⚔️'; relLabel = 'War'; relClass = 'rel-war'; }
                 else if (relVal >= CONFIG.RELATION_ALLIANCE_THRESHOLD) { relIcon = '🤝'; relLabel = 'Alliance'; relClass = 'rel-alliance'; }
                 else if (relVal < -30) { relIcon = '⚠️'; relLabel = 'Tense'; relClass = 'rel-tense'; }
                 relHtml += '<span class="kingdom-rel ' + relClass + '">' + relIcon + ' ' + ok.name + ' (' + relLabel + ')</span> ';
@@ -291,7 +291,7 @@
             if (milPicker) {
                 milPicker.style.display = 'block';
                 var kingdoms = Engine.getKingdoms();
-                var warKingdoms = kingdoms.filter(function(k) { return k.atWar && k.atWar.length > 0; });
+                var warKingdoms = kingdoms.filter(function(k) { return k.atWar && (k.atWar instanceof Set ? k.atWar.size > 0 : k.atWar.length > 0); });
                 var optHtml = '';
                 if (warKingdoms.length === 0) {
                     optHtml = '<p style="color:#ff8888;">No kingdoms are currently at war. The world will be regenerated with conflict.</p>';
