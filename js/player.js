@@ -590,13 +590,39 @@
         // Clean up fully paid debts
         player.debts = player.debts.filter(function(d) { return d.amount > 0.5; });
 
-        // 90-day unpaid debt → forced bankruptcy
+        // Debt reminders and bankruptcy countdown warnings
         if (player.debts.length > 0 && !(player.bankruptcy && player.bankruptcy.active)) {
             var oldestUnpaidAge = 0;
             for (var dk = 0; dk < player.debts.length; dk++) {
                 var dAge = day - (player.debts[dk].dayIncurred || 0);
                 if (dAge > oldestUnpaidAge) oldestUnpaidAge = dAge;
             }
+            var daysUntilBankruptcy = 90 - oldestUnpaidAge;
+            var totalDebtAmt = Math.floor(getTotalDebt());
+            var payHint = ' Open your Financial Report (Character menu → 📊) to pay off debts.';
+
+            // Every-30-day reminder (at 30, 60 days of age)
+            if (oldestUnpaidAge > 0 && oldestUnpaidAge % 30 === 0 && daysUntilBankruptcy > 14) {
+                Engine.logEvent('💸 Debt reminder: you owe ' + totalDebtAmt + 'g. ' + daysUntilBankruptcy + ' days until forced bankruptcy.' + payHint, null, 'finance');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('💸 Debt reminder: ' + totalDebtAmt + 'g owed — ' + daysUntilBankruptcy + ' days left', 'warning');
+            }
+
+            // Countdown warnings at 30, 14, 3, 1 days before bankruptcy
+            if (daysUntilBankruptcy === 30) {
+                Engine.logEvent('⚠️ WARNING: 30 days until forced bankruptcy! You owe ' + totalDebtAmt + 'g.' + payHint, null, 'finance');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚠️ 30 days until bankruptcy! Pay your debts!', 'warning', 'critical');
+            } else if (daysUntilBankruptcy === 14) {
+                Engine.logEvent('⚠️ URGENT: 14 days until forced bankruptcy! You owe ' + totalDebtAmt + 'g.' + payHint, null, 'finance');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚠️ 14 days until bankruptcy!', 'danger', 'critical');
+            } else if (daysUntilBankruptcy === 3) {
+                Engine.logEvent('🚨 CRITICAL: 3 days until forced bankruptcy! You owe ' + totalDebtAmt + 'g! Pay immediately!' + payHint, null, 'finance');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚨 3 DAYS until bankruptcy! Pay now!', 'danger', 'critical');
+            } else if (daysUntilBankruptcy === 1) {
+                Engine.logEvent('🚨 FINAL WARNING: Tomorrow the kingdom seizes everything! You owe ' + totalDebtAmt + 'g!' + payHint, null, 'finance');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚨 LAST DAY — bankruptcy tomorrow!', 'danger', 'critical');
+            }
+
+            // 90-day unpaid debt → forced bankruptcy
             if (oldestUnpaidAge >= 90) {
                 Engine.logEvent('💸 Your debts have gone unpaid for over 90 days! The kingdom intervenes.', null, 'finance');
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('💸 Debts unpaid 90+ days — bankruptcy!', 'danger', 'critical');
