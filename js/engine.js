@@ -5394,38 +5394,43 @@
             }
 
             // Natural demand (pop-based)— comprehensive for all goods
+            // H4: Population density scaling — larger towns have slightly higher per-capita demand
+            var popScale = 1.0;
+            if (pop > 200) popScale = 1.0 + (pop - 200) * 0.0005; // +0.05% per person above 200
+            popScale = Math.min(1.4, popScale); // cap at 40% bonus for megacities
+            var scaledPop = pop * popScale;
             // Food
-            town.market.demand.bread = Math.ceil(pop * 0.8);
-            town.market.demand.meat = Math.ceil(pop * 0.25);
-            town.market.demand.poultry = Math.ceil(pop * 0.1);
-            town.market.demand.eggs = Math.ceil(pop * 0.15);
-            town.market.demand.fish = Math.ceil(pop * (town.isPort ? 0.3 : 0.05));
-            town.market.demand.preserved_food = Math.ceil(pop * 0.05);
+            town.market.demand.bread = Math.ceil(scaledPop * 0.8);
+            town.market.demand.meat = Math.ceil(scaledPop * 0.25);
+            town.market.demand.poultry = Math.ceil(scaledPop * 0.1);
+            town.market.demand.eggs = Math.ceil(scaledPop * 0.15);
+            town.market.demand.fish = Math.ceil(scaledPop * (town.isPort ? 0.3 : 0.05));
+            town.market.demand.preserved_food = Math.ceil(scaledPop * 0.05);
 
             // Raw material population demand
-            town.market.demand.wheat = Math.ceil(pop * 0.05);
-            town.market.demand.wood = Math.ceil(pop * 0.02);
-            town.market.demand.wool = Math.ceil(pop * 0.01);
+            town.market.demand.wheat = Math.ceil(scaledPop * 0.05);
+            town.market.demand.wood = Math.ceil(scaledPop * 0.02);
+            town.market.demand.wool = Math.ceil(scaledPop * 0.01);
 
             // Livestock demand
-            town.market.demand.livestock_cow = Math.ceil(pop * 0.002);
-            town.market.demand.livestock_pig = Math.ceil(pop * 0.003);
+            town.market.demand.livestock_cow = Math.ceil(scaledPop * 0.002);
+            town.market.demand.livestock_pig = Math.ceil(scaledPop * 0.003);
 
             // Materials & daily needs
-            town.market.demand.clothes = Math.ceil(pop * 0.05);
-            town.market.demand.tools = Math.ceil(pop * 0.03);
-            town.market.demand.furniture = Math.ceil(pop * 0.01);
-            town.market.demand.rope = Math.ceil(pop * 0.01);
+            town.market.demand.clothes = Math.ceil(scaledPop * 0.05);
+            town.market.demand.tools = Math.ceil(scaledPop * 0.03);
+            town.market.demand.furniture = Math.ceil(scaledPop * 0.01);
+            town.market.demand.rope = Math.ceil(scaledPop * 0.01);
 
             // Luxury & comfort
-            town.market.demand.wine = Math.ceil(pop * 0.03);
-            town.market.demand.salt = Math.ceil(pop * 0.04);
-            town.market.demand.jewelry = Math.ceil(pop * 0.005);
+            town.market.demand.wine = Math.ceil(scaledPop * 0.03);
+            town.market.demand.salt = Math.ceil(scaledPop * 0.04);
+            town.market.demand.jewelry = Math.ceil(scaledPop * 0.005);
 
             // Construction
-            town.market.demand.planks = Math.ceil(pop * 0.02);
-            town.market.demand.bricks = Math.ceil(pop * 0.015);
-            town.market.demand.stone = Math.ceil(pop * 0.01);
+            town.market.demand.planks = Math.ceil(scaledPop * 0.02);
+            town.market.demand.bricks = Math.ceil(scaledPop * 0.015);
+            town.market.demand.stone = Math.ceil(scaledPop * 0.01);
 
             // Military (scales with garrison and war status)
             var atWar = kingdom && kingdom.atWar && kingdom.atWar.size > 0;
@@ -5604,6 +5609,29 @@
                 }
             }
 
+            // L1: Compute EM supply share per good (organic monopoly detection)
+            // Count EM-owned vs total production buildings per output good
+            town._emSupplyShare = {};
+            var _emProdCount = {}, _totalProdCount = {};
+            for (var _esbi = 0; _esbi < town.buildings.length; _esbi++) {
+                var _esBld = town.buildings[_esbi];
+                var _esBt = findBuildingType(_esBld.type);
+                if (!_esBt || !_esBt.produces) continue;
+                var _esProd = _esBt.produces;
+                _totalProdCount[_esProd] = (_totalProdCount[_esProd] || 0) + 1;
+                if (_esBld.ownerId) {
+                    var _esOwner = findPerson(_esBld.ownerId);
+                    if (_esOwner && _esOwner.isEliteMerchant) {
+                        _emProdCount[_esProd] = (_emProdCount[_esProd] || 0) + 1;
+                    }
+                }
+            }
+            for (var _espk in _totalProdCount) {
+                if (_totalProdCount[_espk] > 1 && _emProdCount[_espk]) {
+                    town._emSupplyShare[_espk] = _emProdCount[_espk] / _totalProdCount[_espk];
+                }
+            }
+
             // ---- Market price recalculation ----
             for (const key in RESOURCE_TYPES) {
                 const r = RESOURCE_TYPES[key];
@@ -5611,18 +5639,25 @@
                 const s = town.market.supply[r.id] || 0;
                 const d = town.market.demand[r.id] || 0;
                 let price;
+                // H4: Demand elasticity — high demand/low supply causes steeper price increases
+                let sdRatio = (d > 0 && s > 0) ? d / s : (d > 0 ? 3.0 : 1.0);
+                let elasticityMult = 1.0;
+                if (sdRatio > 2.0) elasticityMult = 1 + (sdRatio - 2.0) * 0.15; // prices accelerate when demand >> supply
+                else if (sdRatio < 0.5) elasticityMult = 0.85; // surplus pushes price down faster
+
                 if (s === 0 && d > 0) {
-                    price = bp * 3.0;
+                    price = bp * 3.0 * elasticityMult;
                 } else if (s === 0) {
                     price = bp * 1.5;
                 } else {
-                    price = bp * (1 + (d - s) * CONFIG.SUPPLY_DEMAND_FACTOR);
+                    price = bp * (1 + (d - s) * CONFIG.SUPPLY_DEMAND_FACTOR) * elasticityMult;
                 }
                 if (typeof town.prosperity === 'number') {
                     var prospFactor = 1 + (town.prosperity - 50) * 0.002;
                     price *= prospFactor;
                 }
-                price = Math.max(bp * 0.25, Math.min(bp * 4, price));
+                // H4: Widened floor/ceiling — 15% to 600% of base price
+                price = Math.max(bp * 0.15, Math.min(bp * 6.0, price));
                 // Stale food discount — if some supply is stale, blend price down
                 if (CONFIG.PERISHABLE_FOODS && CONFIG.PERISHABLE_FOODS[r.id] && s > 0) {
                     var staleCount = (town.market._staleFood && town.market._staleFood[r.id]) || 0;
@@ -5631,6 +5666,14 @@
                         // Stale portion gets 50% discount, blended with fresh portion
                         price *= (1 - stalePct * 0.5);
                     }
+                }
+                // L1: Elite Merchant supply concentration — when EMs control majority of
+                // production for a good, reduced competition allows slight price markup (organic)
+                if (s > 0 && town._emSupplyShare && town._emSupplyShare[r.id] > 0.6) {
+                    var _emShare = town._emSupplyShare[r.id];
+                    // 60-100% market share → 0-8% price premium (organic monopoly effect)
+                    var _emPremium = (_emShare - 0.6) * 0.2;
+                    price *= (1 + _emPremium);
                 }
                 town.market.prices[r.id] = Math.round(price * 100) / 100;
             }
@@ -5774,10 +5817,10 @@
                 }
             }
             // Safety clamp: prevent negative and non-integer supply values
-            for (var key in town.market.supply) {
-                var sv = town.market.supply[key];
-                if (sv < 0) { town.market.supply[key] = 0; }
-                else if (sv !== (sv | 0)) { town.market.supply[key] = Math.floor(sv); }
+            for (var _scKey in town.market.supply) {
+                var sv = town.market.supply[_scKey];
+                if (sv < 0) { town.market.supply[_scKey] = 0; }
+                else if (sv !== (sv | 0)) { town.market.supply[_scKey] = Math.floor(sv); }
             }
         }
 
@@ -12691,6 +12734,155 @@
     }
 
     // ========================================================
+    // §14A2b M4 — NOBLE PERSONALITY-DRIVEN BEHAVIOR (every 30 days)
+    // ========================================================
+    function tickNoblePersonalityActions() {
+        if (world.day % 30 !== 15) return; // offset from tickNobleRelationships
+        var rng = world.rng;
+        var day = world.day;
+
+        for (var ki = 0; ki < world.kingdoms.length; ki++) {
+            var k = world.kingdoms[ki];
+            var kId = k.id;
+            var nobles = world.people.filter(function(p) {
+                return p.alive && p.socialRank &&
+                    (p.socialRank[kId] === 4 || p.socialRank[kId] === 5 || p.socialRank[kId] === 6);
+            });
+
+            for (var ni = 0; ni < nobles.length; ni++) {
+                var noble = nobles[ni];
+                var nP = noble.personality || {};
+                var nRank = noble.socialRank[kId] || 4;
+                var loyalty = noble.kingLoyalty != null ? noble.kingLoyalty : 50;
+                var fear = noble.fearOfKing || 15;
+
+                // === AMBITIOUS NOBLES: Scheme more ===
+                if ((nP.ambition || 50) > 65) {
+                    // Seek promotion: build reputation with king
+                    if (nRank < 6 && loyalty > 55 && rng.chance(0.08)) {
+                        // Ambitious + loyal = political climber — boost reputation
+                        if (!noble.reputation) noble.reputation = {};
+                        noble.reputation[kId] = Math.min(100, (noble.reputation[kId] || 50) + rng.randInt(1, 3));
+                    }
+                    // Undermine rivals more aggressively
+                    if ((nP.honesty || 50) < 50 && rng.chance(0.06)) {
+                        var _schemeTargets = nobles.filter(function(n) {
+                            return n.id !== noble.id && n.alive && (n.socialRank[kId] || 0) >= nRank;
+                        });
+                        if (_schemeTargets.length > 0) {
+                            var _target = rng.pick(_schemeTargets);
+                            // Spread rumors: lower target's perceived loyalty
+                            if (_target.perceivedKingLoyalty == null) _target.perceivedKingLoyalty = _target.kingLoyalty || 50;
+                            _target.perceivedKingLoyalty = Math.max(5, _target.perceivedKingLoyalty - rng.randInt(2, 5));
+                            // Risk: if target has high intelligence, they may catch the schemer
+                            if (((_target.personality || {}).intelligence || 50) > 65 && rng.chance(0.25)) {
+                                if (!_target._nobleRelationships) _target._nobleRelationships = {};
+                                _target._nobleRelationships[noble.id] = Math.max(-100, (_target._nobleRelationships[noble.id] || 0) - 15);
+                            }
+                        }
+                    }
+                    // Ambitious nobles with low loyalty secretly build faction support
+                    if (loyalty < 40 && fear < 50 && rng.chance(0.04)) {
+                        var _factionAllies = nobles.filter(function(n) {
+                            return n.id !== noble.id && n.alive && (n.kingLoyalty || 50) < 45;
+                        });
+                        for (var _fai = 0; _fai < _factionAllies.length && _fai < 2; _fai++) {
+                            if (!noble._nobleRelationships) noble._nobleRelationships = {};
+                            noble._nobleRelationships[_factionAllies[_fai].id] = Math.min(100,
+                                (noble._nobleRelationships[_factionAllies[_fai].id] || 0) + rng.randInt(3, 8));
+                        }
+                    }
+                }
+
+                // === LOYAL NOBLES: Provide benefits to the crown ===
+                if ((nP.loyalty || 50) > 60 && loyalty > 60) {
+                    // Tax efficiency: loyal nobles ensure taxes are collected properly
+                    if (rng.chance(0.05) && nRank >= 5) {
+                        // Small gold bonus to kingdom from efficient tax collection
+                        var _taxBonus = Math.floor(rng.randInt(10, 30) * (nRank === 6 ? 2 : 1));
+                        k.gold = (k.gold || 0) + _taxBonus;
+                    }
+                    // Morale support: loyal nobles boost local happiness
+                    if (rng.chance(0.04) && noble.townId) {
+                        var _loyalTown = findTown(noble.townId);
+                        if (_loyalTown && _loyalTown.kingdomId === kId) {
+                            _loyalTown.happiness = Math.min(100, (_loyalTown.happiness || 50) + 0.5);
+                        }
+                    }
+                    // Information gathering: loyal nobles report on disloyal ones
+                    if (rng.chance(0.03) && (nP.intelligence || 50) > 50) {
+                        var _suspects = nobles.filter(function(n) {
+                            return n.id !== noble.id && (n.kingLoyalty || 50) < 35;
+                        });
+                        for (var _si2 = 0; _si2 < _suspects.length; _si2++) {
+                            // Push perceived loyalty toward real loyalty (revealing disloyalty)
+                            var _susp = _suspects[_si2];
+                            if (_susp.perceivedKingLoyalty != null && _susp.perceivedKingLoyalty > (_susp.kingLoyalty || 50) + 10) {
+                                _susp.perceivedKingLoyalty = Math.max(0, _susp.perceivedKingLoyalty - rng.randInt(2, 5));
+                            }
+                        }
+                    }
+                    // Loyal nobles donate to kingdom during crisis
+                    if ((k.gold || 0) < 1000 && (noble.gold || 0) > 500 && rng.chance(0.06)) {
+                        var _donateAmt = Math.floor((noble.gold || 0) * 0.05);
+                        noble.gold -= _donateAmt;
+                        k.gold = (k.gold || 0) + _donateAmt;
+                    }
+                }
+
+                // === SOCIAL NOBLES (high warmth): Engage in diplomacy ===
+                if ((nP.warmth || 50) > 60) {
+                    // Build relationships with other nobles
+                    if (rng.chance(0.08)) {
+                        var _socialTargets = nobles.filter(function(n) {
+                            return n.id !== noble.id && n.alive;
+                        });
+                        if (_socialTargets.length > 0) {
+                            var _socialT = rng.pick(_socialTargets);
+                            if (!noble._nobleRelationships) noble._nobleRelationships = {};
+                            if (!_socialT._nobleRelationships) _socialT._nobleRelationships = {};
+                            noble._nobleRelationships[_socialT.id] = Math.min(100,
+                                (noble._nobleRelationships[_socialT.id] || 0) + rng.randInt(2, 5));
+                            _socialT._nobleRelationships[noble.id] = Math.min(100,
+                                (_socialT._nobleRelationships[noble.id] || 0) + rng.randInt(1, 3));
+                        }
+                    }
+                    // Mediate conflicts between feuding nobles
+                    if ((nP.intelligence || 50) > 50 && rng.chance(0.04)) {
+                        for (var _mi = 0; _mi < nobles.length; _mi++) {
+                            for (var _mj = _mi + 1; _mj < nobles.length; _mj++) {
+                                var _nA = nobles[_mi], _nB = nobles[_mj];
+                                if (_nA._nobleRelationships && _nA._nobleRelationships[_nB.id] != null &&
+                                    _nA._nobleRelationships[_nB.id] < -30) {
+                                    // Social noble mediates: improve relationship slightly
+                                    _nA._nobleRelationships[_nB.id] = Math.min(100, _nA._nobleRelationships[_nB.id] + rng.randInt(2, 6));
+                                    if (_nB._nobleRelationships) _nB._nobleRelationships[_nA.id] = _nA._nobleRelationships[_nB.id];
+                                    break; // one mediation per cycle
+                                }
+                            }
+                        }
+                    }
+                    // Social nobles with high rank act as diplomatic envoys
+                    if (nRank >= 5 && rng.chance(0.03)) {
+                        // Improve relations with a random other kingdom
+                        var _otherKingdoms = world.kingdoms.filter(function(ok) {
+                            return ok.id !== kId && ok.alive !== false && !(k.atWar && k.atWar.has(ok.id));
+                        });
+                        if (_otherKingdoms.length > 0) {
+                            var _dipTarget = rng.pick(_otherKingdoms);
+                            var _relBoost = rng.randInt(1, 3);
+                            if (!k.relations) k.relations = {};
+                            if (!_dipTarget.relations) _dipTarget.relations = {};
+                            k.relations[_dipTarget.id] = Math.min(100, (k.relations[_dipTarget.id] || 0) + _relBoost);
+                            _dipTarget.relations[kId] = Math.min(100, (_dipTarget.relations[kId] || 0) + Math.ceil(_relBoost * 0.5));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ========================================================
     // §14A3 TAX CONSEQUENCES SYSTEM (called daily)
     // ========================================================
     function tickTaxConsequences() {
@@ -18615,12 +18807,31 @@
             if (details.townId) event.townId = details.townId;
         }
         world.eventLog.push(event);
-        // Preserve major events in permanent history
+        // Preserve major events in permanent world chronicle (L4)
         if (details && details.type) {
-            var majorTypes = ['war_declared', 'warDeclared', 'warEnded', 'peace', 'surrender', 'territory_transfer', 'kingdom_collapse', 'economic_collapse', 'revolt'];
+            var majorTypes = ['war_declared', 'warDeclared', 'warEnded', 'peace', 'surrender',
+                'territory_transfer', 'kingdom_collapse', 'economic_collapse', 'revolt',
+                'town_revolt_win', 'town_revolt_lose', 'king_death', 'coronation', 'succession',
+                'alliance_formed', 'alliance_broken', 'assassination', 'assassination_attempt',
+                'conspiracy_discovered', 'feast_started', 'court_session', 'law_passed', 'law_repealed',
+                'noble_revolt_execution', 'noble_revolt_stripped', 'battle_result',
+                'kingdom_bankruptcy', 'plague_started', 'plague_ended', 'siege_started', 'siege_ended',
+                'non_aggression_pact', 'royal_marriage'];
             if (majorTypes.indexOf(details.type) !== -1) {
                 if (!world.majorEventHistory) world.majorEventHistory = [];
-                world.majorEventHistory.push({ day: world.day, message: msg, details: details });
+                var _chronicleEntry = { day: world.day, message: msg, details: details };
+                // Track if player is involved
+                try {
+                    if (typeof Player !== 'undefined' && Player.state) {
+                        var _pKid = Player.state.kingState ? Player.state.kingState.kingdomId : Player.citizenshipKingdomId;
+                        if (details.kingdomId === _pKid || (details.kingdoms && details.kingdoms.indexOf(_pKid) >= 0)) {
+                            _chronicleEntry.playerInvolved = true;
+                        }
+                    }
+                } catch(e) {}
+                world.majorEventHistory.push(_chronicleEntry);
+                // Cap at 500 entries to prevent unbounded growth
+                while (world.majorEventHistory.length > 500) world.majorEventHistory.shift();
             }
         }
         // Auto-clear events older than 180 days
@@ -22865,8 +23076,20 @@
             effects: courtEvents.slice(0, 3) // show first 3 petitions
         }, category);
 
-        // Schedule next court in 30-60 days
-        k._nextCourtDay = world.day + rng.randInt(30, 60);
+        // M1: Schedule next court — smarter timing based on king personality and situation
+        var _courtBaseMin = 25, _courtBaseMax = 50; // tighter range (was 30-60)
+        var _kp = k.kingPersonality || {};
+        // Fair/just kings hold court more often
+        if (_kp.justice === 'just' || _kp.temperament === 'fair') { _courtBaseMin -= 5; _courtBaseMax -= 10; }
+        // Stern/harsh kings hold court less
+        if (_kp.temperament === 'harsh' || _kp.temperament === 'tyrannical') { _courtBaseMin += 5; _courtBaseMax += 10; }
+        // During wartime, hold court more to address petitions
+        if (k.atWar && k.atWar.size > 0) { _courtBaseMin -= 5; _courtBaseMax -= 10; }
+        // Low happiness → king should hold court to help
+        if ((k.happiness || 50) < 35) { _courtBaseMin -= 5; _courtBaseMax -= 10; }
+        _courtBaseMin = Math.max(15, _courtBaseMin);
+        _courtBaseMax = Math.max(_courtBaseMin + 5, _courtBaseMax);
+        k._nextCourtDay = world.day + rng.randInt(_courtBaseMin, _courtBaseMax);
     }
 
     // ── Player Court Actions (non-king noble attending court) ──
@@ -22983,7 +23206,7 @@
 
         // Schedule first feast if not yet scheduled
         if (k._nextFeastDay == null) {
-            k._nextFeastDay = world.day + rng.randInt(60, 120);
+            k._nextFeastDay = world.day + rng.randInt(30, 70); // M1: was 60-120, start feasting sooner
         }
 
         // End expired feast
@@ -23157,7 +23380,24 @@
                 effects: ['Nobles gather in ' + feastTownName, 'The feast lasts 3 days']
             }, isPlayerK ? 'my_kingdom' : 'foreign_kingdoms');
 
-            k._nextFeastDay = world.day + rng.randInt(60, 120);
+            // M1: Smarter feast scheduling based on king personality and kingdom state
+            var _feastBaseMin = 45, _feastBaseMax = 90; // tighter range (was 60-120)
+            var _fkp = k.kingPersonality || {};
+            // Warm/compassionate kings feast more
+            if (_fkp.warmth === 'compassionate' || _fkp.warmth === 'kind') { _feastBaseMin -= 10; _feastBaseMax -= 20; }
+            // Generous kings feast more
+            if (_fkp.greed === 'generous') { _feastBaseMin -= 10; _feastBaseMax -= 15; }
+            // Miserly kings feast less
+            if (_fkp.greed === 'miserly' || _fkp.greed === 'greedy') { _feastBaseMin += 15; _feastBaseMax += 20; }
+            // Low happiness → hold feast to boost morale
+            if ((k.happiness || 50) < 40) { _feastBaseMin -= 10; _feastBaseMax -= 15; }
+            // Wealthy kingdoms feast more often
+            if ((k.gold || 0) > 15000) { _feastBaseMin -= 5; _feastBaseMax -= 10; }
+            // Poor kingdoms delay feasts
+            if ((k.gold || 0) < 3000) { _feastBaseMin += 15; _feastBaseMax += 20; }
+            _feastBaseMin = Math.max(25, _feastBaseMin);
+            _feastBaseMax = Math.max(_feastBaseMin + 10, _feastBaseMax);
+            k._nextFeastDay = world.day + rng.randInt(_feastBaseMin, _feastBaseMax);
         }
 
         // Dynamic feast events (30% chance per day during active feast)
@@ -25905,6 +26145,12 @@
 
         getArmies() { return world ? world.armies : []; },
 
+        // L4: World Chronicle — returns categorized major event history
+        getWorldChronicle() {
+            if (!world || !world.majorEventHistory) return [];
+            return world.majorEventHistory;
+        },
+
         addArmy(armyObj) {
             if (!world || !world.armies) return null;
             if (!armyObj.id) armyObj.id = uid('army');
@@ -26213,6 +26459,7 @@
         tickKingUnrestResponse: tickKingUnrestResponse,
         tickNobleIncome: tickNobleIncome,
         tickNobleRelationships: tickNobleRelationships,
+        tickNoblePersonalityActions: tickNoblePersonalityActions,
         tickKingdomConstruction: tickKingdomConstruction,
         tickTreaties: tickTreaties,
         checkWarGoals: checkWarGoals,

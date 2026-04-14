@@ -80,6 +80,7 @@
     var tickKingUnrestResponse = function(k) { return Engine.tickKingUnrestResponse(k); };
     var tickNobleIncome = function() { return Engine.tickNobleIncome(); };
     var tickNobleRelationships = function() { return Engine.tickNobleRelationships(); };
+    var tickNoblePersonalityActions = function() { return Engine.tickNoblePersonalityActions(); };
     var tickKingdomConstruction = function() { return Engine.tickKingdomConstruction(); };
     var tickTreaties = function() { return Engine.tickTreaties(); };
     var checkWarGoals = function() { return Engine.checkWarGoals(); };
@@ -1607,6 +1608,9 @@
 
         // ---- Noble relationships & king loyalty (every 30 days) ----
         tickNobleRelationships();
+
+        // ---- M4: Noble personality-driven actions (every 30 days, offset) ----
+        tickNoblePersonalityActions();
 
         // ---- Process construction & repair timers (daily) ----
         tickKingdomConstruction();

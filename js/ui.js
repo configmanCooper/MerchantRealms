@@ -7887,7 +7887,13 @@ window.UI = (function () {
         }
         statusHtml += '</div>';
 
-        const html = cardsHtml + matrixHtml + statusHtml;
+        // L4: World History button
+        let historyBtnHtml = '<div style="text-align:center;margin:12px 0;">' +
+            '<button class="btn-medieval" id="btnWorldChronicle" style="font-size:1rem;padding:8px 20px;' +
+            'background:rgba(180,140,50,0.15);border-color:rgba(180,140,50,0.4);color:#e8dcc8;">' +
+            '📜 World History Chronicle</button></div>';
+
+        const html = historyBtnHtml + cardsHtml + matrixHtml + statusHtml;
         openModal('👑 Kingdoms of the Realm', html);
 
         // Attach kingdom card button handlers
@@ -7905,6 +7911,110 @@ window.UI = (function () {
                 else if (action === 'donate') UI.openKingdomDonateDialog(kid);
             });
         }
+        // L4: World History Chronicle button handler
+        var btnChronicle = document.getElementById('btnWorldChronicle');
+        if (btnChronicle) {
+            btnChronicle.addEventListener('click', function() {
+                openWorldChronicle();
+            });
+        }
+    }
+
+    // ============================================================
+    // L4 — WORLD HISTORICAL CHRONICLE
+    // ============================================================
+    function openWorldChronicle() {
+        var chronicle = [];
+        try { chronicle = Engine.getWorldChronicle(); } catch(e) {}
+        var currentDay = 0;
+        try { currentDay = Engine.getDay(); } catch(e) {}
+
+        // Categorize events
+        var categories = {
+            wars: { icon: '⚔️', label: 'Wars & Battles', events: [] },
+            politics: { icon: '👑', label: 'Royal & Political', events: [] },
+            revolts: { icon: '🔥', label: 'Revolts & Uprisings', events: [] },
+            diplomacy: { icon: '🤝', label: 'Diplomacy & Treaties', events: [] },
+            disasters: { icon: '💀', label: 'Disasters & Crises', events: [] },
+            laws: { icon: '📜', label: 'Laws & Decrees', events: [] },
+            social: { icon: '🎪', label: 'Feasts & Court', events: [] }
+        };
+
+        var warTypes = ['war_declared', 'warDeclared', 'warEnded', 'peace', 'surrender', 'battle_result', 'siege_started', 'siege_ended'];
+        var politicsTypes = ['king_death', 'coronation', 'succession', 'assassination', 'assassination_attempt', 'conspiracy_discovered', 'noble_revolt_execution', 'noble_revolt_stripped'];
+        var revoltTypes = ['revolt', 'town_revolt_win', 'town_revolt_lose'];
+        var diploTypes = ['alliance_formed', 'alliance_broken', 'non_aggression_pact', 'royal_marriage', 'territory_transfer'];
+        var disasterTypes = ['kingdom_collapse', 'economic_collapse', 'kingdom_bankruptcy', 'plague_started', 'plague_ended'];
+        var lawTypes = ['law_passed', 'law_repealed'];
+        var socialTypes = ['feast_started', 'court_session'];
+
+        for (var i = 0; i < chronicle.length; i++) {
+            var evt = chronicle[i];
+            var dtype = (evt.details && evt.details.type) ? evt.details.type : '';
+            if (warTypes.indexOf(dtype) >= 0) categories.wars.events.push(evt);
+            else if (politicsTypes.indexOf(dtype) >= 0) categories.politics.events.push(evt);
+            else if (revoltTypes.indexOf(dtype) >= 0) categories.revolts.events.push(evt);
+            else if (diploTypes.indexOf(dtype) >= 0) categories.diplomacy.events.push(evt);
+            else if (disasterTypes.indexOf(dtype) >= 0) categories.disasters.events.push(evt);
+            else if (lawTypes.indexOf(dtype) >= 0) categories.laws.events.push(evt);
+            else if (socialTypes.indexOf(dtype) >= 0) categories.social.events.push(evt);
+            else categories.politics.events.push(evt); // default
+        }
+
+        // Helper: format day as year/season/day
+        function formatChronicleDay(day) {
+            var year = Math.floor(day / 360) + 1;
+            var dayInYear = day % 360;
+            var seasons = ['Spring', 'Summer', 'Autumn', 'Winter'];
+            var season = seasons[Math.floor(dayInYear / 90)] || 'Spring';
+            var dayInSeason = (dayInYear % 90) + 1;
+            return 'Year ' + year + ', ' + season + ' Day ' + dayInSeason;
+        }
+
+        var html = '<div style="max-height:70vh;overflow-y:auto;padding:0 8px;">';
+        html += '<p style="color:#aaa;font-style:italic;margin-bottom:12px;">A chronicle of the great events that have shaped this world. ' +
+                'Total recorded events: ' + chronicle.length + '</p>';
+
+        // Show categories with events
+        var catKeys = ['wars', 'politics', 'revolts', 'diplomacy', 'disasters', 'laws', 'social'];
+        for (var ci = 0; ci < catKeys.length; ci++) {
+            var cat = categories[catKeys[ci]];
+            if (cat.events.length === 0) continue;
+
+            html += '<div style="margin:12px 0;">';
+            html += '<h3 style="color:var(--gold);border-bottom:1px solid rgba(180,140,50,0.3);padding-bottom:4px;margin-bottom:8px;">' +
+                    cat.icon + ' ' + escapeHtml(cat.label) + ' <span style="color:#888;font-size:0.8rem;">(' + cat.events.length + ')</span></h3>';
+
+            // Show events newest first, cap at 30 per category
+            var evts = cat.events.slice().reverse();
+            var showCount = Math.min(evts.length, 30);
+            for (var ei = 0; ei < showCount; ei++) {
+                var e = evts[ei];
+                var dayLabel = formatChronicleDay(e.day);
+                var playerMark = e.playerInvolved ? ' <span style="color:var(--gold);">★</span>' : '';
+                var msgText = escapeHtml(e.message).replace(/[⚔️🛡️👑🔥💀🎪⚖️🤝📜💰🏰🗡️🔗📨]/g, function(m) { return '<span>' + m + '</span>'; });
+
+                html += '<div style="margin:4px 0;padding:4px 8px;border-left:2px solid rgba(180,140,50,0.2);font-size:0.85rem;">';
+                html += '<span style="color:#888;font-size:0.75rem;">' + escapeHtml(dayLabel) + '</span>' + playerMark + '<br>';
+                html += '<span style="color:#ddd;">' + msgText + '</span>';
+                html += '</div>';
+            }
+            if (evts.length > 30) {
+                html += '<div style="color:#888;font-size:0.75rem;text-align:center;">...and ' + (evts.length - 30) + ' earlier events</div>';
+            }
+            html += '</div>';
+        }
+
+        if (chronicle.length === 0) {
+            html += '<p style="color:#888;text-align:center;margin:40px 0;">No major events have been recorded yet. History awaits...</p>';
+        }
+
+        html += '</div>';
+        html += '<div style="text-align:center;margin-top:12px;">';
+        html += '<button class="btn-medieval" data-action="openKingdomsDialog" style="padding:6px 16px;">← Back to Kingdoms</button>';
+        html += '</div>';
+
+        openModal('📜 World Chronicle — The History of the Realm', html);
     }
 
     // ── SOCIAL STATUS PAGE (in character dialog) ──

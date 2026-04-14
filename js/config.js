@@ -190,7 +190,7 @@ const CONFIG = {
     MIGRATION_CHECK_INTERVAL: 30,         // days between migration checks
     MIGRATION_BASE_COST: 30,              // gold to migrate
     MIGRATION_MAX_PERCENT: 0.05,          // max 5% can leave per cycle
-    MIGRATION_WAR_MAX_PERCENT: 0.20,      // 20% during war/famine/conquest
+    MIGRATION_WAR_MAX_PERCENT: 0.09,      // M2: 9% during war/famine/conquest (was 20%, gradual migration)
     MIGRATION_SCORE_THRESHOLD: 50,        // score needed to trigger migration
 
     // Frontline
@@ -315,8 +315,8 @@ const CONFIG = {
 
     // Migration Waves
     MIGRATION_PLAGUE_CHANCE: 0.015,       // per person per day during plague
-    MIGRATION_WAR_CHANCE: 0.01,
-    MIGRATION_HUNGER_CHANCE: 0.008,
+    MIGRATION_WAR_CHANCE: 0.006,          // M2: reduced from 0.01 for gradual migration
+    MIGRATION_HUNGER_CHANCE: 0.005,       // M2: reduced from 0.008 for gradual migration
     MIGRATION_LOW_HAPPINESS_CHANCE: 0.003,
     MIGRATION_WAVE_THRESHOLD: 5,          // log migration event when 5+ people flee at once
 
