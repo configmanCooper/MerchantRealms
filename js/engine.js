@@ -1456,6 +1456,147 @@
             }
         }
 
+        // --- Post-processing: global production gap filling ---
+        // Ensure most producible goods have at least some production somewhere
+        // in the world. Without this, many building types (perfumery, canvas_workshop,
+        // apiary, etc.) are never placed and ~50% of goods go unproduced.
+
+        // Count building types globally
+        var _btCounts = {};
+        for (var _cbi = 0; _cbi < towns.length; _cbi++) {
+            for (var _cbj = 0; _cbj < (towns[_cbi].buildings || []).length; _cbj++) {
+                var _bType = towns[_cbi].buildings[_cbj].type;
+                _btCounts[_bType] = (_btCounts[_bType] || 0) + 1;
+            }
+        }
+
+        // Helper: pick random non-island town
+        var _pickGapTown = function(portOnly) {
+            var pool = towns.filter(function(t) {
+                if (t.isIsland) return false;
+                if (portOnly && !t.isPort) return false;
+                return true;
+            });
+            return pool.length > 0 ? pool[rng.randInt(0, pool.length - 1)] : null;
+        };
+
+        // Helper: add gap-fill building
+        var _addGapBld = function(town, type, product, asKingdom) {
+            var owner = null;
+            if (asKingdom) {
+                var kk = kingdoms.find(function(k) { return k.territories.has(town.id); });
+                owner = kk ? kk.id : null;
+            }
+            var bld = { type: type, level: 1, ownerId: owner, condition: 'new', workers: [], storage: {} };
+            if (product) bld.currentProduct = product;
+            town.buildings.push(bld);
+            _btCounts[type] = (_btCounts[type] || 0) + 1;
+            if (type === 'gold_mine') {
+                if (!town.naturalDeposits) town.naturalDeposits = {};
+                if (!town.naturalDeposits.gold_ore) {
+                    var _gdCfg = CONFIG.NATURAL_DEPOSITS && CONFIG.NATURAL_DEPOSITS.gold_ore;
+                    town.naturalDeposits.gold_ore = rng.randInt(_gdCfg ? _gdCfg.min : 500, _gdCfg ? _gdCfg.max : 3000);
+                }
+            }
+        };
+
+        // Phase 1: For each building type with 0 global instances, roll chance to place one.
+        // 'products' = for buildings with produces:null, pick a random product to assign.
+        var _gapList = [
+            // Buildings never placed in normal worldgen
+            { type: 'apiary',              chance: 0.80 },
+            { type: 'canvas_workshop',     chance: 0.85, products: ['bedroll', 'tent', 'waterskin'] },
+            { type: 'herbalist_hut',       chance: 0.75 },
+            { type: 'saddler',             chance: 0.65 },
+            { type: 'butcher',             chance: 0.70 },
+            { type: 'drum_maker',          chance: 0.55 },
+            // Buildings only in capitals with low probability
+            { type: 'perfumery',           chance: 0.70 },
+            { type: 'instrument_workshop', chance: 0.70, products: ['lute', 'flute', 'harp', 'drum', 'hurdy_gurdy'] },
+            { type: 'goldsmith',           chance: 0.65 },
+            { type: 'fine_tailor',         chance: 0.65 },
+            { type: 'tapestry_loom',       chance: 0.55 },
+            { type: 'silk_weaver',         chance: 0.70 },
+            // Buildings that can fail all probability rolls in regular worldgen
+            { type: 'vineyard',            chance: 0.80 },
+            { type: 'brewery',             chance: 0.80 },
+            { type: 'smokehouse',          chance: 0.75 },
+            { type: 'winery',              chance: 0.75 },
+            { type: 'jeweler',             chance: 0.70 },
+            { type: 'carpenter',           chance: 0.80 },
+            { type: 'hunting_lodge',       chance: 0.85 },
+            { type: 'horse_ranch',         chance: 0.75 },
+            { type: 'tanner',              chance: 0.85 },
+            { type: 'weaver',              chance: 0.85 },
+            { type: 'toolsmith',           chance: 0.85 },
+            { type: 'rope_maker',          chance: 0.80 },
+            { type: 'brick_kiln',          chance: 0.75 },
+            { type: 'clay_pit',            chance: 0.75 },
+            { type: 'gold_mine',           chance: 0.70 },
+            { type: 'sheep_farm',          chance: 0.85 },
+            { type: 'pig_farm',            chance: 0.80 },
+            { type: 'bandage_workshop',    chance: 0.80 },
+            { type: 'apothecary',          chance: 0.80 },
+            { type: 'advanced_apothecary', chance: 0.65 },
+            { type: 'pearl_diver',         chance: 0.65, portOnly: true },
+            { type: 'tailor',              chance: 0.85 },
+            { type: 'wheelwright',         chance: 0.80, kingdom: true },
+            { type: 'string_maker',        chance: 0.70 },
+        ];
+
+        for (var _gli = 0; _gli < _gapList.length; _gli++) {
+            var _gl = _gapList[_gli];
+            if ((_btCounts[_gl.type] || 0) > 0) continue; // already exists
+            if (!rng.chance(_gl.chance)) continue;
+            var _glTown = _pickGapTown(_gl.portOnly);
+            if (!_glTown) continue;
+            var _glProd = _gl.products ? _gl.products[rng.randInt(0, _gl.products.length - 1)] : null;
+            _addGapBld(_glTown, _gl.type, _glProd, _gl.kingdom);
+        }
+
+        // Phase 1b: For multi-output buildings (canvas_workshop, instrument_workshop),
+        // try to place 1-2 extras so multiple product types can be produced.
+        var _extraMulti = [
+            { type: 'canvas_workshop',     products: ['bedroll', 'tent', 'waterskin', 'camping_kit'], maxExtra: 2, chance: 0.45 },
+            { type: 'instrument_workshop', products: ['lute', 'flute', 'harp', 'drum', 'hurdy_gurdy'], maxExtra: 1, chance: 0.40 },
+        ];
+        for (var _emi = 0; _emi < _extraMulti.length; _emi++) {
+            var _em = _extraMulti[_emi];
+            if ((_btCounts[_em.type] || 0) === 0) continue;
+            for (var _emj = 0; _emj < _em.maxExtra; _emj++) {
+                if (!rng.chance(_em.chance)) continue;
+                var _emTown = _pickGapTown(false);
+                if (!_emTown) continue;
+                _addGapBld(_emTown, _em.type, _em.products[rng.randInt(0, _em.products.length - 1)], false);
+            }
+        }
+
+        // Phase 2: Diversify existing multi-product buildings.
+        // With some chance, switch a building to an alternate product so goods
+        // like mead, demolition_tools, saddles etc. have some production.
+        var _diversify = [
+            { type: 'brewery',             products: ['mead', 'cider'],                chance: 0.30 },
+            { type: 'blacksmith',          products: ['demolition_tools'],              chance: 0.12 },
+            { type: 'apothecary',          products: ['fever_tonic', 'saltpeter'],      chance: 0.20 },
+            { type: 'advanced_apothecary', products: ['antidote'],                      chance: 0.30 },
+            { type: 'bandage_workshop',    products: ['splint', 'herbal_poultice'],     chance: 0.25 },
+            { type: 'jeweler',             products: ['pearl_jewelry'],                 chance: 0.20 },
+            { type: 'wheelwright',         products: ['small_wagon', 'wagon'],          chance: 0.15 },
+            { type: 'weaver',              products: ['rope'],                          chance: 0.20 },
+            { type: 'tailor',              products: ['saddles'],                        chance: 0.15 },
+        ];
+        for (var _dvi = 0; _dvi < _diversify.length; _dvi++) {
+            var _dv = _diversify[_dvi];
+            for (var _dvt = 0; _dvt < towns.length; _dvt++) {
+                for (var _dvb = 0; _dvb < (towns[_dvt].buildings || []).length; _dvb++) {
+                    var _dvBld = towns[_dvt].buildings[_dvb];
+                    if (_dvBld.type === _dv.type && !_dvBld.currentProduct && rng.chance(_dv.chance)) {
+                        _dvBld.currentProduct = _dv.products[rng.randInt(0, _dv.products.length - 1)];
+                    }
+                }
+            }
+        }
+
         // --- Post-processing: initial kingdom stockpile and employees based on king personality ---
         for (var _ksi = 0; _ksi < kingdoms.length; _ksi++) {
             var _ks = kingdoms[_ksi];
