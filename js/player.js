@@ -19138,6 +19138,15 @@
         // Injuries & illnesses tick
         Player.tickInjuriesAndIllnesses();
 
+        // Safety net: if health reached 0 from any source, trigger death (unless god mode invincible)
+        if (player.alive && player.health <= 0 && !window._godInvincible) {
+            if (!player.deathCause) player.deathCause = 'Health reached zero';
+            Engine.logEvent('💀 ' + player.fullName + ' has died. ' + (player.deathCause || 'Health depleted.'));
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('☠️ ' + (player.deathCause || 'Health reached zero') + '!', 'danger', 'critical');
+            handlePlayerDeath();
+            return;
+        }
+
         // Dark Deeds tick
         Player.darkDeedsTick();
 

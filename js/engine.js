@@ -13490,6 +13490,11 @@
             }
         }
 
+        // 7b. Kingdom elimination: if the losing kingdom has 0 territories, dissolve it
+        if (fromK && fromK.territories.size === 0) {
+            eliminateKingdom(fromK, toK);
+        }
+
         // 8. Reconquest: restore indentured servants from the conquering kingdom
         // If town was reconquered by their original kingdom, free them
         var _townPeople = getPeopleInTown(townId);
@@ -13506,6 +13511,96 @@
 
         // 9. Return the town for further processing
         return town;
+    }
+
+    /**
+     * Eliminate a kingdom that has lost all its territories.
+     * Ends all wars, disbands armies, removes from active kingdoms list.
+     */
+    function eliminateKingdom(deadK, conquerorK) {
+        var deadName = deadK.name || 'Unknown Kingdom';
+
+        // End all wars involving this kingdom
+        if (deadK.atWar && deadK.atWar.size > 0) {
+            var warEnemies = Array.from(deadK.atWar);
+            for (var wi = 0; wi < warEnemies.length; wi++) {
+                var enemyK = findKingdom(warEnemies[wi]);
+                if (enemyK && enemyK.atWar) {
+                    enemyK.atWar.delete(deadK.id);
+                }
+            }
+            deadK.atWar.clear();
+        }
+
+        // Remove any active wars from the war registry
+        if (world.wars) {
+            for (var wId in world.wars) {
+                var war = world.wars[wId];
+                if (war.kingdomA === deadK.id || war.kingdomB === deadK.id) {
+                    delete world.wars[wId];
+                }
+            }
+        }
+
+        // Disband all armies belonging to this kingdom
+        if (world.armies) {
+            world.armies = world.armies.filter(function(a) { return a.kingdomId !== deadK.id; });
+        }
+
+        // Remove all alliances
+        if (deadK.alliances) {
+            for (var ai = 0; ai < deadK.alliances.length; ai++) {
+                var allyK = findKingdom(deadK.alliances[ai]);
+                if (allyK && allyK.alliances) {
+                    allyK.alliances = allyK.alliances.filter(function(id) { return id !== deadK.id; });
+                }
+            }
+            deadK.alliances = [];
+        }
+
+        // Fire all kingdom employees
+        if (deadK._employees) {
+            var empTypes = ['procurers', 'guards', 'royalGuards'];
+            for (var et = 0; et < empTypes.length; et++) {
+                var empList = deadK._employees[empTypes[et]] || [];
+                for (var ei = 0; ei < empList.length; ei++) {
+                    var emp = findPerson(empList[ei]);
+                    if (emp) { emp.employerId = null; emp.occupation = 'peasant'; }
+                }
+            }
+            deadK._employees = { procurers: [], guards: [], royalGuards: [] };
+        }
+
+        // Mark the kingdom as destroyed
+        deadK.destroyed = true;
+        deadK.destroyedDay = world.day;
+        deadK.destroyedBy = conquerorK ? conquerorK.id : null;
+        deadK.gold = 0;
+        deadK.soldiers = 0;
+
+        // Handle player if they are king of the destroyed kingdom
+        if (typeof Player !== 'undefined' && Player.state) {
+            var ps = Player.state;
+            if (ps.isKing && ps.citizenshipKingdomId === deadK.id) {
+                ps.isKing = false;
+                ps.kingdomId = null;
+                if (ps.socialRank) ps.socialRank[deadK.id] = 0;
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('👑💀 Your kingdom has fallen! You are no longer king.', 'danger', 'critical');
+            }
+        }
+
+        // Log the event
+        logEvent('💀👑 ' + deadName + ' has been destroyed! All territories lost.' +
+            (conquerorK ? ' Conquered by ' + conquerorK.name + '.' : ''), {
+            type: 'kingdom_destroyed',
+            cause: deadName + ' lost its last territory and has ceased to exist.',
+            effects: [
+                deadName + '\'s armies have been disbanded',
+                'All wars and alliances dissolved',
+                deadName + '\'s king has been deposed',
+            ],
+            kingdoms: conquerorK ? [deadK.id, conquerorK.id] : [deadK.id],
+        });
     }
 
     function applyConquestDecision(town, kingdom) {
@@ -23684,8 +23779,8 @@
 
         getKingdoms() {
             if (!world) return [];
-            // Serialize Sets for safe consumption
-            return world.kingdoms.map(k => ({
+            // Filter out destroyed kingdoms, serialize Sets for safe consumption
+            return world.kingdoms.filter(function(k) { return !k.destroyed; }).map(k => ({
                 ...k,
                 atWar: [...k.atWar],
                 territories: [...k.territories],
