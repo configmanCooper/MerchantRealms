@@ -702,6 +702,18 @@ window.UI = (function () {
         registerAction('_reopenWarChoice', function(_t, d) { if (d.id) UI._reopenWarChoice(d.id); });
         registerAction('openPlayerImpact', function() { UI.openPlayerImpact(); });
         registerAction('openFinancialReport', function() { UI.openFinancialReport(); });
+        registerAction('_payDebt', function(_t, d) {
+            if (!d.id || !d.val) return;
+            var result = Player.payDebt(d.id, parseInt(d.val, 10));
+            if (result.success) { UI.toast('✅ ' + result.message, 'success'); UI.openFinancialReport(); }
+            else { UI.toast('❌ ' + result.message, 'error'); }
+        });
+        registerAction('_declareBankruptcy', function() {
+            if (!confirm('⚠️ DECLARE BANKRUPTCY?\n\nThis will erase all debts but:\n• All gold will be seized\n• All inventory will be seized\n• All buildings will be seized\n• Reputation with creditors will be damaged\n\nAre you sure?')) return;
+            var result = Player.declareBankruptcy();
+            if (result.success) { UI.toast('💥 ' + result.message, 'danger'); UI.closeModal(); }
+            else { UI.toast('❌ ' + result.message, 'error'); }
+        });
         registerAction('openInventory', function() { openPlayerInventory(); });
         registerAction('buyContainer', function(_t, d) { if (d.id) UI.buyContainer(d.id); });
         registerAction('mountContainerUI', function(_t, d) { if (d.id) UI.mountContainerUI(d.id); });
@@ -920,7 +932,16 @@ window.UI = (function () {
         // Gold
         try {
             if (typeof Player !== 'undefined' && el.playerGold) {
-                el.playerGold.textContent = '🪙 ' + formatGold(Player.gold);
+                var _goldText = '🪙 ' + formatGold(Player.gold);
+                if (Player.hasDebt && Player.hasDebt()) {
+                    _goldText += ' 💸';
+                    el.playerGold.style.color = '#e74c3c';
+                    el.playerGold.title = 'Debt: ' + formatGold(Math.floor(Player.getTotalDebt())) + ' — Open Financial Report to manage';
+                } else {
+                    el.playerGold.style.color = '';
+                    el.playerGold.title = '';
+                }
+                el.playerGold.textContent = _goldText;
             }
         } catch (_e) { /* no-op */ }
         // Vital stats + XP
@@ -1014,7 +1035,9 @@ window.UI = (function () {
 
             // Player info
             if (typeof Player !== 'undefined') {
-                el.playerGold.textContent = `🪙 ${formatGold(Player.gold)}`;
+                var _updGoldText = `🪙 ${formatGold(Player.gold)}`;
+                if (Player.hasDebt && Player.hasDebt()) _updGoldText += ' 💸';
+                el.playerGold.textContent = _updGoldText;
 
                 // Player name and character info
                 if (el.playerName) {
@@ -5261,6 +5284,8 @@ window.UI = (function () {
             food_drink: '🍞 Food & Drink',
             housing: '🏠 Housing',
             guild: '⚔️ Guild Fees',
+            debt_payment: '💸 Debt Payments',
+            bankruptcy: '💥 Bankruptcy',
             other: '❓ Other'
         };
 
@@ -5392,9 +5417,43 @@ window.UI = (function () {
         }
 
         reportHtml += '<details style="margin-top:14px;"><summary style="cursor:pointer;color:#FFD700;font-size:0.9rem;padding:4px 0;">📋 Recent Transactions (' + txList.length + ')</summary>'
-            + '<div style="max-height:250px;overflow-y:auto;margin-top:6px;padding:4px;">' + recentTx + '</div></details>'
+            + '<div style="max-height:250px;overflow-y:auto;margin-top:6px;padding:4px;">' + recentTx + '</div></details>';
 
-            + '<div style="text-align:center;margin-top:10px;font-size:0.7rem;color:#666;">'
+        // ── Debt Section ──
+        var _debts = Player.state.debts || [];
+        if (_debts.length > 0) {
+            var _totalDebt = 0;
+            for (var _ddi = 0; _ddi < _debts.length; _ddi++) _totalDebt += _debts[_ddi].amount;
+            reportHtml += '<div style="background:rgba(200,50,50,0.12);border:1px solid rgba(200,50,50,0.4);border-radius:6px;padding:10px;margin-top:12px;">';
+            reportHtml += '<div style="font-size:0.9rem;color:#e74c3c;font-weight:bold;margin-bottom:6px;">💸 Outstanding Debts — ' + formatGold(Math.floor(_totalDebt)) + ' total</div>';
+            reportHtml += '<div style="font-size:0.7rem;color:#cc8844;margin-bottom:8px;">Interest: 10% every 90 days. Unpaid debts block promotions, building, and hiring.</div>';
+            for (var _ddj = 0; _ddj < _debts.length; _ddj++) {
+                var _dd = _debts[_ddj];
+                var _ddAge = Engine.getDay() - (_dd.dayIncurred || 0);
+                reportHtml += '<div style="background:rgba(0,0,0,0.3);border:1px solid #333;border-radius:4px;padding:6px 8px;margin-bottom:6px;">';
+                reportHtml += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+                reportHtml += '<span style="color:#ccc;font-size:0.82rem;">' + escapeHtml(_dd.creditorName || 'Unknown') + '</span>';
+                reportHtml += '<span style="color:#e74c3c;font-weight:bold;font-size:0.9rem;">' + formatGold(Math.floor(_dd.amount)) + '</span>';
+                reportHtml += '</div>';
+                reportHtml += '<div style="font-size:0.7rem;color:#888;margin-top:2px;">' + escapeHtml(_dd.reason || 'Unpaid fine') + ' · ' + _ddAge + ' days old</div>';
+                // Pay buttons
+                var _ddPayAmts = [10, 50, 100];
+                reportHtml += '<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap;">';
+                for (var _pk = 0; _pk < _ddPayAmts.length; _pk++) {
+                    var _pAmt = Math.min(_ddPayAmts[_pk], Math.ceil(_dd.amount));
+                    reportHtml += '<button class="btn-medieval" data-action="_payDebt" data-id="' + _dd.id + '" data-val="' + _pAmt + '" style="font-size:0.7rem;padding:2px 8px;">Pay ' + _pAmt + 'g</button>';
+                }
+                // Pay All button
+                reportHtml += '<button class="btn-medieval" data-action="_payDebt" data-id="' + _dd.id + '" data-val="' + Math.ceil(_dd.amount) + '" style="font-size:0.7rem;padding:2px 8px;background:rgba(40,100,40,0.3);border-color:#4a4;">Pay All (' + formatGold(Math.ceil(_dd.amount)) + ')</button>';
+                reportHtml += '</div></div>';
+            }
+            reportHtml += '<div style="text-align:center;margin-top:8px;">';
+            reportHtml += '<button class="btn-medieval" data-action="_declareBankruptcy" style="font-size:0.8rem;padding:4px 16px;background:rgba(139,0,0,0.3);border-color:#8b0000;color:#e74c3c;">💥 Declare Bankruptcy</button>';
+            reportHtml += '<div style="font-size:0.65rem;color:#888;margin-top:3px;">Erases all debts but seizes all gold, inventory & buildings. Rep damage.</div>';
+            reportHtml += '</div></div>';
+        }
+
+        reportHtml += '<div style="text-align:center;margin-top:10px;font-size:0.7rem;color:#666;">'
             + 'Based on tracked transactions · Last 30 of ' + currentDay + ' days'
             + '</div></div>';
 

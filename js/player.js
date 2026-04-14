@@ -72,6 +72,10 @@
         // Smuggling
         smugglingSkill: 0,
         jailedUntilDay: 0,      // day when jail sentence ends
+        // Debt tracking
+        debts: [],              // { id, creditorType, creditorId, creditorName, amount, originalAmount, dayIncurred, lastInterestDay, reason }
+        _lastDebtEnforcementDay: 0,
+        bankruptcyCount: 0,
         // Inheritance tracking
         aiMerchantSiblings: [], // sibling AI merchants created on death
         // Spouse personality / dating / regency
@@ -361,6 +365,230 @@
             }
             if (firstValid > 0) player.financialLedger.splice(0, firstValid);
         }
+    }
+
+    // ════════════════════════════════════════════════════════
+    // §1B  DEBT SYSTEM
+    // ════════════════════════════════════════════════════════
+
+    /**
+     * Safely deduct gold. If player can't afford the full amount, deduct what
+     * they have and create a debt for the remainder.
+     * @param {number} amount - total gold to deduct (positive number)
+     * @param {string} creditorType - 'kingdom', 'npc', 'guild', 'other'
+     * @param {string} creditorId - id of the creditor (kingdomId, npcId, etc.)
+     * @param {string} creditorName - display name of the creditor
+     * @param {string} reason - why the debt was incurred
+     * @returns {number} amount actually deducted from gold (may be less than amount)
+     */
+    function deductGoldOrDebt(amount, creditorType, creditorId, creditorName, reason) {
+        if (!amount || !isFinite(amount) || amount <= 0) return 0;
+        // NaN guard
+        if (isNaN(player.gold) || player.gold === undefined || player.gold === null) player.gold = 0;
+        var canPay = Math.min(amount, player.gold);
+        var remainder = amount - canPay;
+        player.gold -= canPay;
+        if (player.gold < 0) player.gold = 0; // safety clamp
+        if (remainder > 0) {
+            _addDebt(creditorType, creditorId, creditorName, remainder, reason);
+        }
+        return canPay;
+    }
+
+    function _addDebt(creditorType, creditorId, creditorName, amount, reason) {
+        if (!player.debts) player.debts = [];
+        // Merge into existing debt to same creditor if present
+        for (var i = 0; i < player.debts.length; i++) {
+            if (player.debts[i].creditorId === creditorId && player.debts[i].creditorType === creditorType) {
+                player.debts[i].amount += amount;
+                player.debts[i].reason = reason;
+                Engine.logEvent('💸 Your debt to ' + creditorName + ' increased by ' + Math.floor(amount) + 'g (total: ' + Math.floor(player.debts[i].amount) + 'g).', null, 'finance');
+                return;
+            }
+        }
+        var debt = {
+            id: 'debt_' + Engine.getDay() + '_' + Math.floor(Math.random() * 9999),
+            creditorType: creditorType,
+            creditorId: creditorId,
+            creditorName: creditorName,
+            amount: amount,
+            originalAmount: amount,
+            dayIncurred: Engine.getDay(),
+            lastInterestDay: Engine.getDay(),
+            reason: reason
+        };
+        player.debts.push(debt);
+        Engine.logEvent('💸 You now owe ' + Math.floor(amount) + 'g to ' + creditorName + ' (' + reason + ').', null, 'finance');
+    }
+
+    function getTotalDebt() {
+        if (!player.debts) return 0;
+        var total = 0;
+        for (var i = 0; i < player.debts.length; i++) total += player.debts[i].amount;
+        return total;
+    }
+
+    function hasDebt() {
+        return player.debts && player.debts.length > 0 && getTotalDebt() > 0;
+    }
+
+    function payDebt(debtId, amount) {
+        if (!player.debts) return { success: false, message: 'No debts.' };
+        if (isNaN(player.gold)) player.gold = 0;
+        var debt = null;
+        for (var i = 0; i < player.debts.length; i++) {
+            if (player.debts[i].id === debtId) { debt = player.debts[i]; break; }
+        }
+        if (!debt) return { success: false, message: 'Debt not found.' };
+        if (amount <= 0 || !isFinite(amount)) return { success: false, message: 'Invalid amount.' };
+        amount = Math.min(amount, debt.amount, player.gold);
+        if (amount <= 0) return { success: false, message: 'Cannot afford any payment.' };
+        player.gold -= amount;
+        if (player.gold < 0) player.gold = 0;
+        debt.amount -= amount;
+        logFinance(-amount, 'debt_payment', 'Paid debt to ' + debt.creditorName);
+        // Transfer gold to creditor
+        if (debt.creditorType === 'kingdom') {
+            var k = Engine.findKingdom ? Engine.findKingdom(debt.creditorId) : null;
+            if (k) k.gold = (k.gold || 0) + amount;
+        } else if (debt.creditorType === 'npc') {
+            var npc = Engine.getPerson ? Engine.getPerson(debt.creditorId) : null;
+            if (npc) npc.gold = (npc.gold || 0) + amount;
+        }
+        if (debt.amount <= 0.5) {
+            // Debt paid off
+            player.debts = player.debts.filter(function(d) { return d.id !== debtId; });
+            Engine.logEvent('✅ Debt to ' + debt.creditorName + ' fully paid off!', null, 'finance');
+            return { success: true, message: 'Debt to ' + debt.creditorName + ' paid off!', paidOff: true };
+        }
+        return { success: true, message: 'Paid ' + Math.floor(amount) + 'g toward debt to ' + debt.creditorName + '. Remaining: ' + Math.floor(debt.amount) + 'g.' };
+    }
+
+    function declareBankruptcy() {
+        if (!player.debts || player.debts.length === 0) return { success: false, message: 'No debts to discharge.' };
+        var totalDebt = getTotalDebt();
+        // Consequences: lose all gold, lose all inventory, rep loss with all creditors
+        player.gold = 0;
+        player.inventory = {};
+        // Seize all buildings and sell them (give nothing to player)
+        var bldCount = (player.buildings || []).length;
+        for (var bi = 0; bi < (player.buildings || []).length; bi++) {
+            var bld = player.buildings[bi];
+            var town = Engine.findTown ? Engine.findTown(bld.townId) : null;
+            if (town && town.buildings) {
+                for (var tj = 0; tj < town.buildings.length; tj++) {
+                    if (town.buildings[tj].id === bld.id) { town.buildings.splice(tj, 1); break; }
+                }
+            }
+        }
+        player.buildings = [];
+        // Rep losses
+        for (var di = 0; di < player.debts.length; di++) {
+            var d = player.debts[di];
+            if (d.creditorType === 'kingdom' && player.reputation) {
+                player.reputation[d.creditorId] = Math.max(0, (player.reputation[d.creditorId] || 50) - 15);
+            } else if (d.creditorType === 'npc' && player.relationships) {
+                var rel = player.relationships[d.creditorId];
+                if (rel) rel.level = Math.max(0, (rel.level || 50) - 25);
+            }
+        }
+        player.debts = [];
+        player.bankruptcyCount = (player.bankruptcyCount || 0) + 1;
+        // Cannot rank up penalty is inherent (checked elsewhere)
+        logFinance(0, 'bankruptcy', 'Declared bankruptcy — ' + Math.floor(totalDebt) + 'g discharged');
+        Engine.logEvent('💥 ' + player.fullName + ' declared bankruptcy! ' + Math.floor(totalDebt) + 'g in debts discharged. All assets seized. ' + bldCount + ' buildings lost.', null, 'finance');
+        return { success: true, message: 'Declared bankruptcy. ' + Math.floor(totalDebt) + 'g discharged. All gold, inventory, and ' + bldCount + ' buildings seized. Reputation damaged.' };
+    }
+
+    /**
+     * Tick debt interest and enforcement. Called from Player.tick() daily.
+     * Interest: 10% every 90 days. Enforcement escalates with debt size.
+     */
+    function tickDebts() {
+        if (!player.debts || player.debts.length === 0) return;
+        var day = Engine.getDay();
+        var rng = Engine.getRng();
+
+        for (var i = player.debts.length - 1; i >= 0; i--) {
+            var debt = player.debts[i];
+            // Interest: 10% every 90 days
+            if (day - (debt.lastInterestDay || debt.dayIncurred) >= 90) {
+                var interest = Math.floor(debt.amount * 0.10);
+                if (interest < 1) interest = 1;
+                debt.amount += interest;
+                debt.lastInterestDay = day;
+                Engine.logEvent('📈 Interest: debt to ' + debt.creditorName + ' grew by ' + interest + 'g (now ' + Math.floor(debt.amount) + 'g).', null, 'finance');
+            }
+        }
+
+        // Enforcement check every 30 days
+        if (day - (player._lastDebtEnforcementDay || 0) < 30) return;
+        player._lastDebtEnforcementDay = day;
+
+        for (var j = 0; j < player.debts.length; j++) {
+            var d = player.debts[j];
+            if (d.amount < 50) continue; // too small to enforce
+
+            if (d.creditorType === 'kingdom') {
+                // Kingdom enforcement
+                if (d.amount >= 500) {
+                    // Large debt: kingdom may jail you
+                    var jailChance = Math.min(0.40, d.amount / 5000);
+                    if (rng && rng.chance(jailChance) && (!player.jailedUntilDay || player.jailedUntilDay <= day)) {
+                        var jailDays = Math.min(60, Math.floor(d.amount / 50));
+                        player.jailedUntilDay = day + jailDays;
+                        player.jailReason = 'Unpaid debt to ' + d.creditorName;
+                        // Reduce debt by jailed time * 5g/day
+                        var jailPay = jailDays * 5;
+                        d.amount = Math.max(0, d.amount - jailPay);
+                        Engine.logEvent('⛓️ Jailed ' + jailDays + ' days by ' + d.creditorName + ' for unpaid debt! ' + jailPay + 'g worked off.', null, 'finance');
+                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('⛓️ Jailed for ' + jailDays + ' days — unpaid debt to ' + d.creditorName + '!', 'danger', 'critical');
+                        if (d.amount <= 0) { player.debts.splice(j, 1); j--; }
+                        break; // only one jail per cycle
+                    }
+                }
+                if (d.amount >= 200) {
+                    // Medium debt: kingdom rep loss
+                    if (rng && rng.chance(0.25) && player.reputation) {
+                        player.reputation[d.creditorId] = Math.max(0, (player.reputation[d.creditorId] || 50) - 2);
+                    }
+                }
+            } else if (d.creditorType === 'npc') {
+                // NPC enforcement — send thugs for large debts
+                if (d.amount >= 300 && rng && rng.chance(Math.min(0.30, d.amount / 3000))) {
+                    // Injury from debt collectors
+                    var injuries = player.injuries || [];
+                    var severity = d.amount >= 1000 ? 'severe' : 'moderate';
+                    injuries.push({
+                        type: 'beating', name: 'Debt Collector Beating',
+                        severity: severity, dayOccurred: day, treated: false,
+                        source: 'debt_collectors_' + d.creditorId
+                    });
+                    player.injuries = injuries;
+                    var hpHit = severity === 'severe' ? 25 : 12;
+                    player.health = Math.max(0, (player.health || 100) - hpHit);
+                    Engine.logEvent('🗡️ Debt collectors from ' + d.creditorName + ' roughed you up! (' + severity + ' injury)', null, 'combat');
+                    if (typeof UI !== 'undefined' && UI.toast) UI.toast('🗡️ Debt collectors attacked you! -' + hpHit + ' HP', 'danger', 'critical');
+                }
+                // Extremely large NPC debt: death risk
+                if (d.amount >= 2000 && rng && rng.chance(0.05)) {
+                    player.health = 0;
+                    player.alive = false;
+                    player.dead = true;
+                    player.deathReason = 'Killed by debt collectors sent by ' + d.creditorName;
+                    Engine.logEvent('💀 ' + player.fullName + ' was killed by debt collectors sent by ' + d.creditorName + '!', null, 'combat');
+                    if (typeof UI !== 'undefined' && UI.toast) UI.toast('💀 Killed by debt collectors!', 'danger', 'critical');
+                    return;
+                }
+                // Relationship decay
+                if (d.amount >= 100 && player.relationships && player.relationships[d.creditorId]) {
+                    player.relationships[d.creditorId].level = Math.max(0, (player.relationships[d.creditorId].level || 50) - 3);
+                }
+            }
+        }
+
+        // Clean up fully paid debts
+        player.debts = player.debts.filter(function(d) { return d.amount > 0.5; });
     }
 
     // ════════════════════════════════════════════════════════
@@ -688,6 +916,9 @@
         player._kqInteractiveData = {};  // questId → interactive step data (search targets, NPC interviews, etc.)
         player.smugglingSkill = 0;
         player.jailedUntilDay = 0;
+        player.debts = [];
+        player._lastDebtEnforcementDay = 0;
+        player.bankruptcyCount = 0;
         player.aiMerchantSiblings = [];
         // Spouse personality / dating / regency
         player.revealedTraits = {};
@@ -933,14 +1164,12 @@
             if (hasSkill('contraband_network')) _embargoDetect2 *= 0.4;
             if (rng && rng.chance(_embargoDetect2)) {
                 const fine = Math.floor((town.market.prices[resourceId] || 1) * qty * CONFIG.EMBARGO_FINE_MULTIPLIER);
-                const actualFine = Math.min(fine, player.gold);
-                player.gold -= actualFine;
-                logFinance(-actualFine, 'fines', 'Fine');
+                var _embPaid = deductGoldOrDebt(fine, 'kingdom', kingdom ? kingdom.id : 'unknown', kingdom ? kingdom.name : 'Kingdom', 'Embargo violation fine');
+                logFinance(-_embPaid, 'fines', 'Embargo fine');
                 if (kingdom) {
-                    kingdom.gold = (kingdom.gold || 0) + actualFine;
                     player.reputation[kingdom.id] = Math.max(0, (player.reputation[kingdom.id] || 50) - CONFIG.EMBARGO_REP_PENALTY);
                 }
-                return { success: false, message: `🚫 Caught violating trade embargo! Fined ${actualFine}g. Smuggling embargoed goods is a serious offense.`, caught: true };
+                return { success: false, message: `🚫 Caught violating trade embargo! Fined ${fine}g. Smuggling embargoed goods is a serious offense.`, caught: true };
             }
             // Successful smuggling — premium price
         }
@@ -1202,12 +1431,8 @@
             if (hasSkill('contraband_network')) _embargoDetect *= 0.4; // 60% reduction
             if (rng && rng.chance(_embargoDetect)) {
                 const fine = Math.floor(price * qty * CONFIG.EMBARGO_FINE_MULTIPLIER);
-                const actualFine = Math.min(fine, player.gold);
-                player.gold -= actualFine;
-                // Seized goods and fine go to kingdom coffers
-                if (kingdom) {
-                    kingdom.gold = (kingdom.gold || 0) + actualFine;
-                }
+                deductGoldOrDebt(fine, 'kingdom', kingdom ? kingdom.id : 'unknown', kingdom ? kingdom.name : 'Kingdom', 'Embargo violation fine (selling)');
+                // Seized goods
                 var embargoFromCarried = Math.min(qty, player.inventory[resourceId] || 0);
                 var embargoFromStorage = qty - embargoFromCarried;
                 player.inventory[resourceId] -= embargoFromCarried;
@@ -1536,6 +1761,7 @@
         if (player.traveling) return { success: false, message: 'Cannot build while traveling.' };
         if (player.indentured && player.indentured.active) return { success: false, message: 'Indentured servants cannot own buildings.' };
         if (isBankruptcyPriestRestricted()) return { success: false, message: 'Your priestly vows forbid owning buildings. Complete your pilgrimage first.' };
+        if (hasDebt()) return { success: false, message: 'Cannot build while in debt (' + Math.floor(getTotalDebt()) + 'g outstanding). Pay off debts first.' };
 
         // Energy check
         var eBuild = Player.checkEnergyForAction(ENERGY_CONFIG.BUILD_COST || 5);
@@ -2210,6 +2436,7 @@
     function hireWorker(personId) {
         if (player.indentured && player.indentured.active) return { success: false, message: 'Indentured servants cannot hire employees.' };
         if (isBankruptcyPriestRestricted()) return { success: false, message: 'Your priestly vows forbid hiring workers. Complete your pilgrimage first.' };
+        if (hasDebt()) return { success: false, message: 'Cannot hire while in debt (' + Math.floor(getTotalDebt()) + 'g outstanding). Pay off debts first.' };
         const person = Engine.findPerson(personId);
         if (!person) return { success: false, message: 'Person not found.' };
         if (!person.alive) return { success: false, message: 'Person is not alive.' };
@@ -6070,7 +6297,7 @@
                     punishment.type = 'fine';
                     punishment.amount = rng.randInt(200, 600);
                     resultMsg = '💰 ' + kingName + ' fines you ' + punishment.amount + 'g for your scheming!';
-                    player.gold = Math.max(0, player.gold - punishment.amount);
+                    deductGoldOrDebt(punishment.amount, 'kingdom', kingdom ? kingdom.id : 'unknown', kingdom ? kingdom.name : 'Kingdom', 'King\'s fine for scheming');
                 }
                 break;
 
@@ -6097,8 +6324,8 @@
                     resultMsg = '🏛️ ' + kingName + ' has seized ' + seizedBuildings.join(', ') + ' for the kingdom treasury!';
                 } else {
                     // No buildings to seize → take gold instead
-                    var seizeGold = Math.min(player.gold, rng.randInt(300, 1000));
-                    player.gold -= seizeGold;
+                    var seizeGold = rng.randInt(300, 1000);
+                    deductGoldOrDebt(seizeGold, 'kingdom', kingdom ? kingdom.id : 'unknown', kingdom ? kingdom.name : 'Kingdom', 'Gold seized by king');
                     resultMsg = '💰 ' + kingName + ' confiscates ' + seizeGold + 'g from your coffers!';
                 }
                 break;
@@ -6109,8 +6336,8 @@
                 break;
 
             case 'fine':
-                var fineAmt = Math.min(player.gold, punishment.amount || 200);
-                player.gold -= fineAmt;
+                var fineAmt = punishment.amount || 200;
+                deductGoldOrDebt(fineAmt, 'kingdom', kingdom ? kingdom.id : 'unknown', kingdom ? kingdom.name : 'Kingdom', 'King\'s fine for scheming');
                 resultMsg = '💰 ' + kingName + ' fines you ' + fineAmt + 'g — consider this a warning!';
                 break;
         }
@@ -6355,6 +6582,8 @@
         player.horses = [];
         player.storageContainer = null;
         player.jailedUntilDay = 0;
+        // Debts carry over to heir (they inherit the family debts)
+        // player.debts stays as-is
 
         // XP transfer: old XP/ratio + XP bank (dynasty surplus)
         var xpTransfer = Math.floor(player.xp / (XP_REWARDS.HEIR_TRANSFER_RATIO || 10));
@@ -16596,6 +16825,9 @@
             adviseCooldown: player.adviseCooldown || 0,
             smugglingSkill: player.smugglingSkill,
             jailedUntilDay: player.jailedUntilDay,
+            debts: structuredClone(player.debts || []),
+            _lastDebtEnforcementDay: player._lastDebtEnforcementDay || 0,
+            bankruptcyCount: player.bankruptcyCount || 0,
             aiMerchantSiblings: structuredClone(player.aiMerchantSiblings),
             // XP & Progression
             xp: player.xp,
@@ -17012,6 +17244,9 @@
         player.adviseCooldown = data.adviseCooldown || 0;
         player._doctorPersuasionCooldown = 0; // Reset on load — cooldowns are session-only
         player.jailedUntilDay = data.jailedUntilDay || 0;
+        player.debts = data.debts || [];
+        player._lastDebtEnforcementDay = data._lastDebtEnforcementDay || 0;
+        player.bankruptcyCount = data.bankruptcyCount || 0;
         player.aiMerchantSiblings = data.aiMerchantSiblings || [];
         // XP & Progression
         player.xp = data.xp || 0;
@@ -18030,8 +18265,9 @@
             if ((_bcRng ? _bcRng.random() : Math.random()) < detectChance) {
                 player.jailedUntilDay = Engine.getDay() + 20;
                 player.jailReason = 'Illegal border crossing';
-                var fine = Math.min(player.gold, Math.floor(player.gold * 0.25));
-                player.gold -= fine;
+                var fine = Math.floor((player.gold || 0) * 0.25);
+                if (fine < 10) fine = 10;
+                deductGoldOrDebt(fine, 'kingdom', destKingdom.id, destKingdom.name, 'Illegal border crossing fine');
                 Engine.logEvent('⚠️ You were caught trying to cross the border illegally! Jailed for 20 days and fined ' + fine + 'g.');
                 return { allowed: false, caught: true, message: 'Caught crossing closed border! Jailed 20 days, fined ' + fine + 'g.' };
             }
@@ -18144,6 +18380,11 @@
         }
 
         player.stats.daysPlayed++;
+
+        // NaN gold safety guard
+        if (isNaN(player.gold) || player.gold === undefined || player.gold === null) player.gold = 0;
+        if (player.gold < 0) player.gold = 0;
+        if (!player.debts) player.debts = [];
 
         // Check for war conflicts between kingdoms player has rank in
         const warConflict = checkWarConflicts();
@@ -18681,6 +18922,9 @@
 
         // Forced requisition check (corrupt kingdoms seize goods)
         tickForcedRequisition();
+
+        // Debt interest and enforcement
+        tickDebts();
 
         // Exclusive citizenship law enforcement
         tickExclusiveCitizenship();
@@ -19764,6 +20008,9 @@
         // Fee check — also discounted by marriage
         var effectiveFee = nextRank.fee ? Math.floor(nextRank.fee * _comDiscount) : 0;
         if (effectiveFee && player.gold < effectiveFee) reasons.push(`Need ${effectiveFee.toLocaleString()}g fee (have ${Math.floor(player.gold).toLocaleString()}g)${_comDiscountStr}`);
+
+        // Debt check — cannot rank up with outstanding debts
+        if (hasDebt()) reasons.push('Must pay off all debts before promotion (' + Math.floor(getTotalDebt()) + 'g outstanding)');
 
         // Rank-specific requirements
         // Marriage bypass: marrying someone 2+ ranks above target rank bypasses all rank-specific requirements
@@ -36448,6 +36695,11 @@
         playerConvertFarm,
         playerDemolishBuilding,
         logFinance,
+        deductGoldOrDebt,
+        payDebt,
+        declareBankruptcy,
+        getTotalDebt,
+        hasDebt,
         hasSpecialLaw,
         isNightTime,
         // deductGoodsFromPools → player_inventory.js

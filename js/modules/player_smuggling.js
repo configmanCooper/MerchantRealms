@@ -118,20 +118,16 @@
             // Special law: blood_price — pay 2x fine instead of jail
             if (hasSpecialLaw(kingdom, 'blood_price')) {
                 const bloodFine = fineAmount * 2;
-                const actualFine = Math.min(bloodFine, player.gold);
-                player.gold -= actualFine;
-                kingdom.gold = (kingdom.gold || 0) + actualFine;
+                Player.deductGoldOrDebt(bloodFine, 'kingdom', kingdom.id, kingdom.name, 'Blood Price smuggling fine');
                 deductGoodsFromPools(resourceId, qty);
                 player.reputation[kingdom.id] = Math.max(0, (player.reputation[kingdom.id] || 50) - _smugRepPenalty);
                 player.achievementStats.smuggleStreak = 0;
                 unlockAchievement('caught_ach');
-                Engine.logEvent(`${player.fullName} paid the Blood Price (${actualFine}g) to avoid jail in ${town.name}.`, null, 'my_actions');
-                return { success: false, message: `Caught! Blood Price paid: ${actualFine}g. No jail time.`, caught: true };
+                Engine.logEvent(`${player.fullName} paid the Blood Price (${bloodFine}g) to avoid jail in ${town.name}.`, null, 'my_actions');
+                return { success: false, message: `Caught! Blood Price paid: ${bloodFine}g. No jail time.`, caught: true };
             }
 
-            const actualFine = Math.min(fineAmount, player.gold);
-            player.gold -= actualFine;
-            kingdom.gold = (kingdom.gold || 0) + actualFine;
+            Player.deductGoldOrDebt(fineAmount, 'kingdom', kingdom.id, kingdom.name, 'Smuggling fine');
             deductGoodsFromPools(resourceId, qty);
             player.reputation[kingdom.id] = Math.max(0, (player.reputation[kingdom.id] || 50) - _smugRepPenalty);
             let jailDays = (rng ? rng.randInt(CONFIG.SMUGGLING_JAIL_DAYS_MIN, CONFIG.SMUGGLING_JAIL_DAYS_MAX) : CONFIG.SMUGGLING_JAIL_DAYS_MIN);

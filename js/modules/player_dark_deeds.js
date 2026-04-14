@@ -222,8 +222,10 @@
             }
         }
 
-        const actualFine = Math.min(fine, player.gold);
-        player.gold -= actualFine;
+        if (fine > 0) {
+            var _kingdom = Engine.findKingdom ? Engine.findKingdom(kId) : null;
+            Player.deductGoldOrDebt(fine, 'kingdom', kId || 'unknown', _kingdom ? _kingdom.name : 'Kingdom', 'Criminal fine (' + (crimeId || 'offense') + ')');
+        }
         if (kId && repLoss > 0) {
             player.reputation[kId] = Math.max(0, (player.reputation[kId] || 50) - repLoss);
         }

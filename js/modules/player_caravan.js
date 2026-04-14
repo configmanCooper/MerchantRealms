@@ -345,21 +345,17 @@
                 player.jailedUntilDay = Engine.getDay() + jailDays;
                 player.jailReason = 'Violating ' + qLabel;
                 if (punishment.fine > 0) {
-                    var actualFine = Math.min(punishment.fine, player.gold);
-                    player.gold -= actualFine;
-                    if (kingdom) kingdom.gold = (kingdom.gold || 0) + actualFine;
+                    Player.deductGoldOrDebt(punishment.fine, 'kingdom', kingdom ? kingdom.id : 'unknown', kingdom ? kingdom.name : 'Kingdom', 'Fine for violating ' + qLabel);
                 }
                 Engine.logEvent('🚔 ' + player.fullName + ' was caught violating ' + qLabel + ' at ' + t.name + '! Jailed for ' + jailDays + ' days' + (punishment.fine > 0 ? ' and fined ' + punishment.fine + 'g' : '') + '.', null, 'my_actions');
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚔 Caught! Jailed ' + jailDays + ' days for violating ' + qLabel + '.', 'error', 'critical');
                 return { allowed: false, message: '🚧 Caught violating ' + qLabel + ' at ' + t.name + '! Jailed for ' + jailDays + ' days' + (punishment.fine > 0 ? ', fined ' + punishment.fine + 'g' : '') + '.' };
             } else {
-                // Fine only
-                var actualFine2 = Math.min(punishment.fine, player.gold);
-                player.gold -= actualFine2;
-                if (kingdom) kingdom.gold = (kingdom.gold || 0) + actualFine2;
-                Engine.logEvent('🚧 ' + player.fullName + ' was caught at ' + t.name + ' ' + qLabel + ' and fined ' + actualFine2 + 'g.', null, 'my_actions');
-                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚧 Caught! Fined ' + actualFine2 + 'g for violating ' + qLabel + '.', 'warning', 'critical');
-                return { allowed: false, message: '🚧 Caught at ' + t.name + ' ' + qLabel + '! Fined ' + actualFine2 + 'g and turned away.' };
+                // Fine only — remainder becomes debt
+                Player.deductGoldOrDebt(punishment.fine, 'kingdom', kingdom ? kingdom.id : 'unknown', kingdom ? kingdom.name : 'Kingdom', 'Fine for violating ' + qLabel);
+                Engine.logEvent('🚧 ' + player.fullName + ' was caught at ' + t.name + ' ' + qLabel + ' and fined ' + punishment.fine + 'g.', null, 'my_actions');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚧 Caught! Fined ' + punishment.fine + 'g for violating ' + qLabel + '.', 'warning', 'critical');
+                return { allowed: false, message: '🚧 Caught at ' + t.name + ' ' + qLabel + '! Fined ' + punishment.fine + 'g and turned away.' };
             }
         }
         return null; // no quarantine on route
@@ -761,20 +757,16 @@
                 player.jailedUntilDay = Engine.getDay() + _bJailDays;
                 player.jailReason = 'Bribery and violating ' + _bqLabel;
                 if (_bPunishment.fine > 0) {
-                    var _bActualFine = Math.min(_bPunishment.fine, player.gold);
-                    player.gold -= _bActualFine;
-                    if (_bKingdom) _bKingdom.gold = (_bKingdom.gold || 0) + _bActualFine;
+                    Player.deductGoldOrDebt(_bPunishment.fine, 'kingdom', _bKingdom ? _bKingdom.id : 'unknown', _bKingdom ? _bKingdom.name : 'Kingdom', 'Fine for bribery and violating ' + _bqLabel);
                 }
                 Engine.logEvent('🚔 ' + player.fullName + ' was caught bribing a guard at ' + _bt.name + ' ' + _bqLabel + '! Jailed for ' + _bJailDays + ' days' + (_bPunishment.fine > 0 ? ' and fined ' + _bPunishment.fine + 'g' : '') + '.', null, 'my_actions');
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚔 Caught bribing! Jailed ' + _bJailDays + ' days for bribery and violating ' + _bqLabel + '.', 'error', 'critical');
                 return { allowed: false, message: '🚧 Caught bribing a guard at ' + _bt.name + '! Jailed for ' + _bJailDays + ' days' + (_bPunishment.fine > 0 ? ', fined ' + _bPunishment.fine + 'g' : '') + '.' };
             } else {
-                var _bActualFine2 = Math.min(_bPunishment.fine, player.gold);
-                player.gold -= _bActualFine2;
-                if (_bKingdom) _bKingdom.gold = (_bKingdom.gold || 0) + _bActualFine2;
-                Engine.logEvent('🚧 ' + player.fullName + ' was caught bribing a guard at ' + _bt.name + ' ' + _bqLabel + ' and fined ' + _bActualFine2 + 'g.', null, 'my_actions');
-                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚧 Caught bribing! Fined ' + _bActualFine2 + 'g for bribery and violating ' + _bqLabel + '.', 'warning', 'critical');
-                return { allowed: false, message: '🚧 Caught bribing at ' + _bt.name + ' ' + _bqLabel + '! Fined ' + _bActualFine2 + 'g and turned away.' };
+                Player.deductGoldOrDebt(_bPunishment.fine, 'kingdom', _bKingdom ? _bKingdom.id : 'unknown', _bKingdom ? _bKingdom.name : 'Kingdom', 'Fine for bribery at ' + _bt.name);
+                Engine.logEvent('🚧 ' + player.fullName + ' was caught bribing a guard at ' + _bt.name + ' ' + _bqLabel + ' and fined ' + _bPunishment.fine + 'g.', null, 'my_actions');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚧 Caught bribing! Fined ' + _bPunishment.fine + 'g for bribery and violating ' + _bqLabel + '.', 'warning', 'critical');
+                return { allowed: false, message: '🚧 Caught bribing at ' + _bt.name + ' ' + _bqLabel + '! Fined ' + _bPunishment.fine + 'g and turned away.' };
             }
         }
         return null;
