@@ -1516,10 +1516,11 @@
             // Buildings never placed in normal worldgen
             { type: 'apiary',              chance: 0.80, culture: 'agricultural' },
             { type: 'canvas_workshop',     chance: 0.85, products: ['bedroll', 'tent', 'waterskin'] },
-            { type: 'herbalist_hut',       chance: 0.75, culture: 'agricultural' },
+            { type: 'herbalist_hut',       chance: 0.90, culture: 'agricultural' },
             { type: 'saddler',             chance: 0.65, culture: 'military' },
             { type: 'butcher',             chance: 0.70, culture: 'agricultural' },
             { type: 'drum_maker',          chance: 0.55 },
+            { type: 'cattle_ranch',        chance: 0.90, culture: 'agricultural' },
             // Buildings only in capitals with low probability
             { type: 'perfumery',           chance: 0.70, culture: 'mercantile' },
             { type: 'instrument_workshop', chance: 0.70, products: ['lute', 'flute', 'harp', 'drum', 'hurdy_gurdy'] },
@@ -1592,13 +1593,15 @@
         var _diversify = [
             { type: 'brewery',             products: ['mead', 'cider'],                chance: 0.30 },
             { type: 'blacksmith',          products: ['demolition_tools'],              chance: 0.12 },
-            { type: 'apothecary',          products: ['fever_tonic', 'saltpeter'],      chance: 0.20 },
-            { type: 'advanced_apothecary', products: ['antidote'],                      chance: 0.30 },
+            { type: 'apothecary',          products: ['fever_tonic', 'saltpeter'],      chance: 0.25 },
+            { type: 'advanced_apothecary', products: ['antidote'],                      chance: 0.35 },
             { type: 'bandage_workshop',    products: ['splint', 'herbal_poultice'],     chance: 0.25 },
             { type: 'jeweler',             products: ['pearl_jewelry'],                 chance: 0.20 },
-            { type: 'wheelwright',         products: ['small_wagon', 'wagon'],          chance: 0.15 },
+            { type: 'wheelwright',         products: ['small_wagon', 'wagon'],          chance: 0.25 },
             { type: 'weaver',              products: ['rope'],                          chance: 0.20 },
-            { type: 'tailor',              products: ['saddles'],                        chance: 0.15 },
+            { type: 'tailor',              products: ['clothes'],                        chance: 0.40 },
+            { type: 'canvas_workshop',     products: ['waterskin', 'bedroll'],           chance: 0.30 },
+            { type: 'instrument_workshop', products: ['flute', 'harp'],                  chance: 0.30 },
         ];
         for (var _dvi = 0; _dvi < _diversify.length; _dvi++) {
             var _dv = _diversify[_dvi];
@@ -1711,92 +1714,10 @@
             _ks.goodsStockpile.wood = (_ks.goodsStockpile.wood || 0) + Math.floor(_baseGoods * 1.2);
             _ks.goodsStockpile.stone = (_ks.goodsStockpile.stone || 0) + Math.floor(_baseGoods * 0.8);
 
-            // ── Starting Employees: directly create guards, royal guards, procurers ──
+            // ── Starting Employees: init structures (actual hiring happens post-people generation) ──
             if (!_ks._employees) _ks._employees = { procurers: [], guards: [], royalGuards: [] };
             if (!_ks._employeePostings) _ks._employeePostings = [];
             if (!_ks._procurementOrders) _ks._procurementOrders = [];
-
-            // Guards: 2 per town
-            var _guardCount = _ksTowns.length * 2;
-            for (var _gi = 0; _gi < _ksTowns.length; _gi++) {
-                var _gTown = _ksTowns[_gi];
-                var _gPeople = (world.people || []).filter(function(p) {
-                    return p.alive && p.townId === _gTown.id && p.age >= 16 && p.age <= 55 &&
-                           (p.occupation === 'none' || p.occupation === 'laborer' || p.occupation === 'farmer' || p.occupation === 'unemployed' || !p.occupation) &&
-                           !_ks._employees.guards.some(function(e) { return e.npcId === p.id; });
-                });
-                var _gHire = Math.min(2, _gPeople.length);
-                for (var _ghi = 0; _ghi < _gHire; _ghi++) {
-                    var _gNpc = _gPeople[_ghi];
-                    _gNpc.previousOccupation = _gNpc.occupation;
-                    _gNpc.occupation = 'guard';
-                    _gNpc.employerId = 'kingdom_' + _ks.id;
-                    _ks._employees.guards.push({
-                        id: 'emp_' + _gNpc.id + '_0',
-                        npcId: _gNpc.id,
-                        name: (_gNpc.firstName || '') + ' ' + (_gNpc.lastName || ''),
-                        type: 'guard',
-                        townId: _gTown.id,
-                        weeklyPay: 15 + rng.randInt(0, 8),
-                        hiredDay: 0
-                    });
-                }
-            }
-
-            // Royal Guards: 2-4 in capital
-            var _rgTarget = 2 + rng.randInt(0, 2);
-            if (_capitalTown) {
-                var _rgPeople = (world.people || []).filter(function(p) {
-                    return p.alive && p.townId === _capitalTown.id && p.age >= 18 && p.age <= 35 &&
-                           (p.occupation === 'none' || p.occupation === 'laborer' || p.occupation === 'farmer' || !p.occupation) &&
-                           !_ks._employees.royalGuards.some(function(e) { return e.npcId === p.id; }) &&
-                           !_ks._employees.guards.some(function(e) { return e.npcId === p.id; });
-                });
-                var _rgHire = Math.min(_rgTarget, _rgPeople.length);
-                for (var _rgi = 0; _rgi < _rgHire; _rgi++) {
-                    var _rgNpc = _rgPeople[_rgi];
-                    _rgNpc.previousOccupation = _rgNpc.occupation;
-                    _rgNpc.occupation = 'royal_guard';
-                    _rgNpc.employerId = 'kingdom_' + _ks.id;
-                    _ks._employees.royalGuards.push({
-                        id: 'emp_' + _rgNpc.id + '_0',
-                        npcId: _rgNpc.id,
-                        name: (_rgNpc.firstName || '') + ' ' + (_rgNpc.lastName || ''),
-                        type: 'royal_guard',
-                        townId: _capitalTown.id,
-                        weeklyPay: 35 + rng.randInt(0, 10),
-                        hiredDay: 0
-                    });
-                }
-            }
-
-            // Procurers: 1-3 spread across towns
-            var _procTarget = 1 + rng.randInt(0, 2);
-            for (var _pri = 0; _pri < Math.min(_procTarget, _ksTowns.length); _pri++) {
-                var _pTown = _ksTowns[_pri % _ksTowns.length];
-                var _pPeople = (world.people || []).filter(function(p) {
-                    return p.alive && p.townId === _pTown.id && p.age >= 16 && p.age <= 60 &&
-                           (p.occupation === 'none' || p.occupation === 'laborer' || p.occupation === 'farmer' || p.occupation === 'merchant' || !p.occupation) &&
-                           !_ks._employees.procurers.some(function(e) { return e.npcId === p.id; }) &&
-                           !_ks._employees.guards.some(function(e) { return e.npcId === p.id; }) &&
-                           !_ks._employees.royalGuards.some(function(e) { return e.npcId === p.id; });
-                });
-                if (_pPeople.length > 0) {
-                    var _pNpc = _pPeople[0];
-                    _pNpc.previousOccupation = _pNpc.occupation;
-                    _pNpc.occupation = 'procurer';
-                    _pNpc.employerId = 'kingdom_' + _ks.id;
-                    _ks._employees.procurers.push({
-                        id: 'emp_' + _pNpc.id + '_0',
-                        npcId: _pNpc.id,
-                        name: (_pNpc.firstName || '') + ' ' + (_pNpc.lastName || ''),
-                        type: 'procurer',
-                        townId: _pTown.id,
-                        weeklyPay: 20 + rng.randInt(0, 10),
-                        hiredDay: 0
-                    });
-                }
-            }
         }
 
         return towns;
@@ -23140,6 +23061,96 @@
 
             // Populate world.eliteMerchants array (always 20)
             world.eliteMerchants = world.people.filter(function(p) { return p.alive && p.isEliteMerchant; });
+
+            // ── Hire starting kingdom employees (requires people to exist) ──
+            var _empRng = createRNG(seed * 3 + 20);
+            for (var _eksi = 0; _eksi < world.kingdoms.length; _eksi++) {
+                var _eks = world.kingdoms[_eksi];
+                if (!_eks._employees) _eks._employees = { procurers: [], guards: [], royalGuards: [] };
+                var _eksTowns = world.towns.filter(function(t) { return _eks.territories.has(t.id); });
+                var _eCapital = world.towns.find(function(t) { return t.id === _eks.capitalId; });
+
+                // Guards: 2 per town
+                for (var _egi = 0; _egi < _eksTowns.length; _egi++) {
+                    var _egTown = _eksTowns[_egi];
+                    var _egPool = world.people.filter(function(p) {
+                        return p.alive && p.townId === _egTown.id && p.age >= 16 && p.age <= 55 &&
+                               (p.occupation === 'none' || p.occupation === 'laborer' || p.occupation === 'farmer' || p.occupation === 'unemployed' || !p.occupation) &&
+                               !_eks._employees.guards.some(function(e) { return e.npcId === p.id; });
+                    });
+                    var _egHire = Math.min(2, _egPool.length);
+                    for (var _egh = 0; _egh < _egHire; _egh++) {
+                        var _egNpc = _egPool[_egh];
+                        _egNpc.previousOccupation = _egNpc.occupation;
+                        _egNpc.occupation = 'guard';
+                        _egNpc.employerId = 'kingdom_' + _eks.id;
+                        _eks._employees.guards.push({
+                            id: 'emp_' + _egNpc.id + '_0',
+                            npcId: _egNpc.id,
+                            name: (_egNpc.firstName || '') + ' ' + (_egNpc.lastName || ''),
+                            type: 'guard',
+                            townId: _egTown.id,
+                            weeklyPay: 15 + _empRng.randInt(0, 8),
+                            hiredDay: 0
+                        });
+                    }
+                }
+
+                // Royal Guards: 2-4 in capital
+                if (_eCapital) {
+                    var _ergTarget = 2 + _empRng.randInt(0, 2);
+                    var _ergPool = world.people.filter(function(p) {
+                        return p.alive && p.townId === _eCapital.id && p.age >= 18 && p.age <= 35 &&
+                               (p.occupation === 'none' || p.occupation === 'laborer' || p.occupation === 'farmer' || !p.occupation) &&
+                               !_eks._employees.royalGuards.some(function(e) { return e.npcId === p.id; }) &&
+                               !_eks._employees.guards.some(function(e) { return e.npcId === p.id; });
+                    });
+                    var _ergHire = Math.min(_ergTarget, _ergPool.length);
+                    for (var _ergi = 0; _ergi < _ergHire; _ergi++) {
+                        var _ergNpc = _ergPool[_ergi];
+                        _ergNpc.previousOccupation = _ergNpc.occupation;
+                        _ergNpc.occupation = 'royal_guard';
+                        _ergNpc.employerId = 'kingdom_' + _eks.id;
+                        _eks._employees.royalGuards.push({
+                            id: 'emp_' + _ergNpc.id + '_0',
+                            npcId: _ergNpc.id,
+                            name: (_ergNpc.firstName || '') + ' ' + (_ergNpc.lastName || ''),
+                            type: 'royal_guard',
+                            townId: _eCapital.id,
+                            weeklyPay: 35 + _empRng.randInt(0, 10),
+                            hiredDay: 0
+                        });
+                    }
+                }
+
+                // Procurers: 1-3 spread across towns
+                var _epTarget = 1 + _empRng.randInt(0, 2);
+                for (var _epi = 0; _epi < Math.min(_epTarget, _eksTowns.length); _epi++) {
+                    var _epTown = _eksTowns[_epi % _eksTowns.length];
+                    var _epPool = world.people.filter(function(p) {
+                        return p.alive && p.townId === _epTown.id && p.age >= 16 && p.age <= 60 &&
+                               (p.occupation === 'none' || p.occupation === 'laborer' || p.occupation === 'farmer' || p.occupation === 'merchant' || !p.occupation) &&
+                               !_eks._employees.procurers.some(function(e) { return e.npcId === p.id; }) &&
+                               !_eks._employees.guards.some(function(e) { return e.npcId === p.id; }) &&
+                               !_eks._employees.royalGuards.some(function(e) { return e.npcId === p.id; });
+                    });
+                    if (_epPool.length > 0) {
+                        var _epNpc = _epPool[0];
+                        _epNpc.previousOccupation = _epNpc.occupation;
+                        _epNpc.occupation = 'procurer';
+                        _epNpc.employerId = 'kingdom_' + _eks.id;
+                        _eks._employees.procurers.push({
+                            id: 'emp_' + _epNpc.id + '_0',
+                            npcId: _epNpc.id,
+                            name: (_epNpc.firstName || '') + ' ' + (_epNpc.lastName || ''),
+                            type: 'procurer',
+                            townId: _epTown.id,
+                            weeklyPay: 20 + _empRng.randInt(0, 10),
+                            hiredDay: 0
+                        });
+                    }
+                }
+            }
 
             // ── Assign ownership to unowned buildings ──
             // ~70% NPC, ~20% EM, ~10% kingdom. Kingdom always owns military & civic buildings.
