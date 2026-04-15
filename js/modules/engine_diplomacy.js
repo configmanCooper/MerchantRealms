@@ -1107,6 +1107,9 @@
             if (!k.allianceMeta) k.allianceMeta = {};
 
             // Check if any kingdom is much larger/stronger — seek alliances against them
+            // Cooldown: only evaluate threat alliances every 30 days
+            if ((world.day - (k._lastThreatAllianceCheck || 0)) >= 30) {
+                k._lastThreatAllianceCheck = world.day;
             var kStrength = computeMilitaryStrength(k);
             var kTerritorySize = k.territories ? k.territories.size : 0;
             for (const threat of world.kingdoms) {
@@ -1131,9 +1134,8 @@
                     // Ally must also be threatened by same kingdom
                     var allyThreatened = (threatStr > allyStr * 1.5) || (threatSize > allySize * 1.5);
                     if (!allyThreatened) continue;
-                    // Chance based on threat severity
-                    var threatAllianceChance = 0.005 + (threatStr / (kStrength + 1)) * 0.005;
-                    if (rng.chance(threatAllianceChance)) {
+                    // Reduced chance — once per 30 days evaluation
+                    if (rng.chance(0.15)) {
                         if (!ally.alliances) ally.alliances = new Set();
                         if (!ally.allianceMeta) ally.allianceMeta = {};
                         k.alliances.add(ally.id);
@@ -1149,6 +1151,7 @@
                     }
                 }
             }
+            } // end 30-day threat alliance cooldown
             for (const other of world.kingdoms) {
                 if (other.id === k.id) continue;
                 if (!other.alliances) other.alliances = new Set();
@@ -1167,8 +1170,8 @@
                     });
                     if (_sharedEnemy) {
                         allianceRelThresh -= 15; // Much easier to ally when fighting same enemy
-                        // Also boost relations between kingdoms with shared enemies
-                        k.relations[other.id] = (k.relations[other.id] || 0) + rng.randFloat(0.5, 2.0);
+                        // Modest daily relation boost for co-belligerents
+                        k.relations[other.id] = (k.relations[other.id] || 0) + rng.randFloat(0.05, 0.2);
                     }
                 }
                 // H3: Diplomatic kings form alliances easier
@@ -1177,6 +1180,8 @@
                     allianceRelThresh -= 5;
                 }
                 if (rel >= allianceRelThresh && !k.alliances.has(other.id) && !k.atWar.has(other.id)) {
+                    // Daily roll gate — only 3% chance per day to actually form (prevents constant forming/dissolving)
+                    if (!rng.chance(0.03)) continue;
                     // Form alliance — most alliances are defensive by default
                     var newAllianceType = rel >= 90 && rng.chance(0.25) ? 'offensive' : 'defensive';
                     if (isPlayerRoyalAdvisorOf(k)) {
