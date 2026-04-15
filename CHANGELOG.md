@@ -4,6 +4,31 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.74.0] - Player King UI Parity, EM Growth & Treasury Spending
+
+### Added — Player King Diplomacy
+- Non-Aggression Pact proposals (75g, >-10 relations, 270 days)
+- Mutual Defense Pact proposals (150g, 20+ relations, 360 days)
+- Border Accord proposals (50g, 10+ relations, 180 days)
+- Diplomacy section shows all active treaty types with color-coded badges
+- Per-kingdom proposal buttons with relation threshold gating
+
+### Added — King Conspiracy & Noble Response
+- Conspiracy response panel: Arrest All, Execute Ringleader, Pardon All
+- Noble pardon mechanic: release from prison, +loyalty, remove from conspiracy
+- Pardon button next to Punish in noble court tab
+
+### Added — Elite Merchant Growth
+- Faster organic promotion (0.50 chance), dual candidate per check
+- Boom town EM spawning (8% per thriving town)
+- Revolt EM creation (top 1-2 wealthiest participants)
+- +500g gold bonus on all NPC→EM promotions
+
+### Added — Treasury Spending AI
+- Personality-driven kingdom spending (military, buildings, infra, expansion, war prep)
+- Noble reactions to spending, price inflation from demand pressure
+- Inter-kingdom trade deals, relationship→loyalty drift, threat-based alliances
+
 ## [0.73.0] - World Simulation & Diplomacy Overhaul
 
 ### Added — Diplomatic Systems
